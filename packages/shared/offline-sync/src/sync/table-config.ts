@@ -260,7 +260,9 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
     ],
   },
   board_climb_stats: {
-    refreshRevisionByBoardType: { spray: 1 },
+    // Revision 2 supersedes spray's earlier replay and backfills every downloaded scope.
+    refreshRevision: 2,
+    refreshColumns: ['play_count'],
     queryName: 'syncClimbStats',
     cursorColumn: UPDATED_AT_CURSOR,
     operationKey: 'SYNC_CLIMB_STATS',
@@ -273,6 +275,7 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
       'display_difficulty',
       'benchmark_difficulty',
       'ascensionist_count',
+      'play_count',
       'difficulty_average',
       'quality_average',
       // Per viewer on climbs set on Boardsesh: the server sends the first

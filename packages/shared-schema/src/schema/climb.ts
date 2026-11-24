@@ -29,6 +29,8 @@ export const climbTypeDefs = /* GraphQL */ `
     statsAngle: Int
     "Number of people who have completed this climb"
     ascensionist_count: Int!
+    "Approximate recorded board selections lasting at least 30 seconds at angle. Refreshed hourly. Null when unavailable."
+    play_count: Float
     "Difficulty grade of the climb (e.g., 'V5', '6B+')"
     difficulty: String!
     "Average quality rating from users"

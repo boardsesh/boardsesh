@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
+import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { syncQueries } from '../graphql/resolvers/sync/queries';
 import { db } from '../db/client';
 
 // Migration 0146's trigger WHEN guards: internal-only and no-op UPDATEs must
@@ -172,6 +174,33 @@ describe('board_climb_stats sync-field trigger guard', () => {
     expect(after.quality_normalized).toBe(true);
     expect(after.updated_at).toBe(before.updated_at);
     expect(Number(after.sync_seq)).toBe(Number(before.sync_seq));
+  });
+
+  it('replays only the changed Plays angle and suppresses an identical rewrite', async () => {
+    await db.execute(sql`INSERT INTO board_climbs (uuid, board_type, layout_id, name, is_listed)
+      VALUES (${climbUuid}, 'kilter', 1, 'Plays Guard Fixture', true)`);
+    await db.execute(sql`INSERT INTO board_climb_stats (board_type, climb_uuid, angle)
+      VALUES ('kilter', ${climbUuid}, 30)`);
+    const context = { isAuthenticated: true, userId: USER_ID } as ConnectionContext;
+    const input = { boardType: 'kilter', layoutId: 1, limit: 10 };
+    const first = await syncQueries.syncClimbStats({}, input, context);
+    expect(first.documents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ angle: 30, play_count: '0' }),
+        expect.objectContaining({ angle: 40, play_count: '0' }),
+      ]),
+    );
+    await db.execute(sql`UPDATE board_climb_stats SET play_count = 9
+      WHERE board_type = 'kilter' AND climb_uuid = ${climbUuid} AND angle = 40`);
+    const changed = await syncQueries.syncClimbStats({}, { ...input, cursor: first.cursor }, context);
+    expect(changed.documents).toEqual([
+      expect.objectContaining({ angle: 40, play_count: '9', ascensionist_count: '5' }),
+    ]);
+    expect(BigInt(changed.cursor.syncSeq)).toBeGreaterThan(BigInt(first.cursor.syncSeq));
+    await db.execute(sql`UPDATE board_climb_stats SET play_count = 9 WHERE climb_uuid = ${climbUuid} AND angle = 40`);
+    const unchanged = await syncQueries.syncClimbStats({}, { ...input, cursor: changed.cursor }, context);
+    expect(unchanged.documents).toEqual([]);
+    expect(unchanged.cursor).toEqual(changed.cursor);
   });
 
   it('bumps the cursor when a stat actually changes', async () => {

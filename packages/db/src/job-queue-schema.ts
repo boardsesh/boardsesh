@@ -650,7 +650,7 @@ export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly Work
     // Catalog and history the jobs scan.
     { table: 'board_climbs', privileges: ['SELECT'] },
     { table: 'board_climb_stats', privileges: ['SELECT'] },
-    // Plays refresh owns only this server-side count; never grades or sync cursors.
+    // Plays refresh writes this one count. The stats trigger advances the cursor.
     { table: 'board_climb_stats', privileges: ['UPDATE'], columns: ['play_count'] },
     { table: 'board_climb_holds', privileges: ['SELECT'] },
     { table: 'board_placements', privileges: ['SELECT'] },
@@ -867,6 +867,12 @@ function workerGrantBlock(login: string, role: BackgroundWorkerRole | undefined)
     EXECUTE format('GRANT USAGE ON SEQUENCE public.%I TO %I', owned_sequence, grantee_name);
   END LOOP;`
     : '';
+  // Unlike INSERT grants, the Plays column UPDATE reaches a sequence only through
+  // the stats sync trigger. Reapply its exact grant after the revoke below.
+  const statsCursorGrant =
+    role === 'batch'
+      ? "\n  EXECUTE format('GRANT USAGE ON SEQUENCE public.board_climb_stats_sync_seq_seq TO %I', grantee_name);"
+      : '';
   return `DO $grants$
 DECLARE
   grantee_name text := ${sqlLiteral(login)};
@@ -888,7 +894,7 @@ BEGIN
   LOOP
     EXECUTE format('REVOKE ALL (%I) ON public.%I FROM %I', granted_column.column_name, granted_column.table_name, grantee_name);
   END LOOP;
-${grants.map(grantExecute).join('\n')}${sequenceGrants}
+${grants.map(grantExecute).join('\n')}${sequenceGrants}${statsCursorGrant}
 END
 $grants$`;
 }

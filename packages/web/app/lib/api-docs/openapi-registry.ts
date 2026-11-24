@@ -56,6 +56,14 @@ export const LitUpHoldsMapSchema = z
   .describe('Map of hold IDs to their lit-up state codes')
   .openapi('LitUpHoldsMap');
 
+const playCountSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .nullable()
+  .optional()
+  .describe('Approximate recorded board selections lasting at least 30 seconds at this angle. Refreshed hourly.');
+
 export const ClimbSchema = z
   .object({
     uuid: z.string().describe('Unique identifier for the climb'),
@@ -66,6 +74,7 @@ export const ClimbSchema = z
     frames: z.string().describe('Encoded hold positions and colors'),
     angle: z.number().describe('Board angle in degrees'),
     ascensionist_count: z.number().describe('Number of people who have completed this climb'),
+    play_count: playCountSchema,
     difficulty: z.string().describe('Difficulty grade of the climb'),
     quality_average: z.string().describe('Average quality rating'),
     stars: z.number().describe('Star rating (0-5), rounded from quality_average'),
@@ -94,6 +103,7 @@ export const ClimbStatsSchema = z
   .object({
     angle: z.number().describe('Board angle'),
     ascensionist_count: z.number().describe('Number of ascents at this angle'),
+    play_count: playCountSchema,
     difficulty: z.string().nullable().describe('Difficulty at this angle'),
     quality_average: z.number().nullable().describe('Average quality rating'),
     benchmark_difficulty: z.string().nullable().describe('Benchmark difficulty if set'),

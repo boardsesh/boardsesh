@@ -120,6 +120,79 @@ afterEach(() => {
 });
 
 describe('reference schema refresh', () => {
+  it('replays Plays after an upgrade and after a legacy delta omits a previously covered count', async () => {
+    const table = 'board_climb_stats';
+    const checkpointKey = `checkpoint:${table}:${SCOPE}`;
+    const previousRefresh = { ...OLD, revision: 1, complete: true, mode: 'refresh' } as const;
+    await seedLegacy();
+    await db.runAsync(
+      `INSERT INTO board_climb_stats (board_type, climb_uuid, angle, updated_at, sync_seq)
+      VALUES ('tension', 'hidden', 40, ?, 10)`,
+      [OLD.updatedAt],
+    );
+    await setCheckpoint(db, checkpointKey, HEAD);
+    await writeSchemaRefreshState(db, table, SCOPE, previousRefresh);
+
+    const otherTables = source();
+    let statsCursor = OLD;
+    let counts: readonly Record<string, unknown>[] = [{}];
+    const pullStats: GraphQLFetch = async <T>(query: string, variables?: Record<string, unknown>) => {
+      if (!query.includes('syncClimbStats(')) return otherTables<T>(query, variables);
+      const cursor = (variables?.cursor as SyncCheckpoint | undefined) ?? REFRESH_START_CURSOR;
+      const pending = compareCheckpoints(statsCursor, cursor) > 0;
+      return {
+        syncClimbStats: {
+          documents: pending
+            ? counts.map((count, index) => ({
+                board_type: 'tension',
+                climb_uuid: 'hidden',
+                angle: 40 + index * 10,
+                updated_at: statsCursor.updatedAt,
+                sync_seq: statsCursor.syncSeq,
+                ...count,
+              }))
+            : [],
+          cursor: pending ? statsCursor : cursor,
+          hasMore: false,
+        },
+      } as T;
+    };
+    const localCounts = () =>
+      db.getAllAsync<{ angle: number; play_count: number | null }>(
+        'SELECT angle, play_count FROM board_climb_stats ORDER BY angle',
+      );
+
+    await sync(pullStats);
+    expect(await localCounts()).toEqual([{ angle: 40, play_count: null }]);
+    expect(await getSchemaRefreshState(db, table, SCOPE)).toEqual(previousRefresh);
+    expect(await getCheckpoint(db, checkpointKey)).toEqual(HEAD);
+
+    counts = [{ play_count: '17' }, { play_count: '0' }];
+    await sync(pullStats);
+    expect(await localCounts()).toEqual([
+      { angle: 40, play_count: 17 },
+      { angle: 50, play_count: 0 },
+    ]);
+    expect(await getSchemaRefreshState(db, table, SCOPE)).toMatchObject({ revision: 2, complete: true });
+    expect(await getCheckpoint(db, checkpointKey)).toEqual(HEAD);
+
+    statsCursor = { updatedAt: '2026-09-08T00:00:00.000Z', syncSeq: '201' };
+    counts = [{}];
+    unmetered = false;
+    await sync(pullStats);
+    expect((await localCounts())[0].play_count).toBeNull();
+    expect(await getSchemaRefreshState(db, table, SCOPE)).toBeNull();
+    expect(await getCheckpoint(db, checkpointKey)).toEqual(statsCursor);
+    unmetered = true;
+    counts = [{ play_count: '18' }, { play_count: '0' }];
+    await sync(pullStats);
+    expect(await localCounts()).toEqual([
+      { angle: 40, play_count: 18 },
+      { angle: 50, play_count: 0 },
+    ]);
+    expect(await getSchemaRefreshState(db, table, SCOPE)).toMatchObject({ revision: 2, complete: true });
+  });
+
   it('accepts increasing microseconds even when the sequence decreases', async () => {
     const first = { ...climb('hidden', 200), updated_at: '2026-09-06T00:00:00.000100Z' };
     const second = { ...climb('second', 10), updated_at: '2026-09-06T00:00:00.000900Z' };
@@ -461,7 +534,7 @@ describe('spray-only refresh for retired_by_reset', () => {
     });
     expect(await getSchemaRefreshState(db, 'board_climbs', SPRAY_SCOPE)).toMatchObject({ revision: 3, complete: true });
     expect(await getSchemaRefreshState(db, 'board_climb_stats', SPRAY_SCOPE)).toMatchObject({
-      revision: 1,
+      revision: 2,
       complete: true,
     });
     expect(await getSchemaRefreshState(db, 'board_climb_grades', SPRAY_SCOPE)).toMatchObject({

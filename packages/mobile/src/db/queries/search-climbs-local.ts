@@ -1,6 +1,6 @@
 import { getLocalUserId, type OfflineDatabase } from '@boardsesh/offline-sync';
 import type { BoardName, Climb, ClimbSearchInput } from '@boardsesh/shared-schema';
-import { resolveClimbNoMatch } from '@boardsesh/shared-schema';
+import { resolveClimbNoMatch, toPlayCount } from '@boardsesh/shared-schema';
 import { getBoardCapabilities, isSizeScopedBoard } from '@boardsesh/board-config';
 import { getTallWideScope } from '@boardsesh/board-constants';
 import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
@@ -791,6 +791,7 @@ export type LocalClimbRow = {
   frames_count: number | null;
   frames_pace: number | null;
   ascensionist_count: number | null;
+  play_count?: string | null;
   /** The angle the stats on this row came from; null when the climb has none at
    *  either the browsed or its own set angle. */
   stats_angle: number | null;
@@ -875,6 +876,7 @@ export function mapRowToClimb(
     angle,
     statsAngle: row.stats_angle ?? null,
     ascensionist_count: Number(row.ascensionist_count ?? 0),
+    play_count: toPlayCount(row.play_count),
     // On the board's own scale, so it matches the server's `boulder_name` (MoonBoard's 16 is "6a/V2").
     difficulty: getGradeLabel(difficultyId, boardType),
     quality_average: row.quality_average !== null ? String(roundTo(row.quality_average, 2)) : '0',
@@ -1228,6 +1230,7 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
       c.missing_hold_count, c.holds_revision_number, c.characteristics,
       c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
       ${eff('ascensionist_count')} AS ascensionist_count,
+      CAST(s.play_count AS TEXT) AS play_count,
       ${effectiveDisplayDifficultySql(boardType, crossAngle)} AS display_difficulty,
       ${eff('difficulty_average')} AS difficulty_average,
       ${eff('quality_average')} AS quality_average,

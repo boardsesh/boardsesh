@@ -88,6 +88,7 @@ vi.mock('../db/queries/util/table-select', () => ({
       boardType: 'boardType',
       angle: 'angle',
       ascensionistCount: 'ascensionistCount',
+      playCount: 'playCount',
       qualityAverage: 'qualityAverage',
       difficultyAverage: 'difficultyAverage',
       displayDifficulty: 'displayDifficulty',
@@ -151,6 +152,7 @@ function rawClimbRow(overrides: Record<string, unknown> = {}) {
     angle: 40,
     ascensionistCount: 5,
     ascensionist_count: '5',
+    play_count: '17',
     displayDifficulty: 20,
     difficulty_id: 20,
     qualityAverage: 4.5,
@@ -206,7 +208,7 @@ const REQUIRED_SELECT_KEYS = [
  * comes off the joined stats row instead (`best.angle AS stats_angle`), which
  * that guard checks separately.
  */
-const REQUIRED_STATS_SELECT_KEYS = ['statsAngle'] as const;
+const REQUIRED_STATS_SELECT_KEYS = ['statsAngle', 'play_count'] as const;
 
 /**
  * `Climb` fields every mapper must land those columns on, with the value
@@ -232,6 +234,7 @@ const REQUIRED_CLIMB_FIELDS: Record<string, unknown> = {
   // board it is not the browsed angle, and a list row that drops it leaves the
   // play drawer unable to say the grade beside it belongs to another angle.
   statsAngle: 40,
+  play_count: 17,
 };
 
 /** Render nested QueryBuilder projections as well as literal SQL chunks. */
@@ -372,6 +375,7 @@ const ENTRY_POINTS: EntryPoint[] = [
           characteristics: ['no_match'],
           stats_angle: 40,
           ascensionist_count: 5,
+          play_count: '17',
           difficulty_id: 20,
           quality_average: 4.5,
           difficulty_error: 0.1,
@@ -414,6 +418,8 @@ for (const entryPoint of ENTRY_POINTS) {
         // `stats_angle` is aliased out of the best_angle CTE, not off board_climbs,
         // so it gets its own spelling rather than the two-halves check below.
         expect(statement).toContain('AS stats_angle');
+        expect(statement).toContain('stats.play_count');
+        expect(statement).toContain('best.play_count::text AS play_count');
         for (const column of REQUIRED_SELECT_KEYS) {
           // Both halves: the QueryBuilder projection inside owned_climbs and
           // the raw outer SELECT that carries the field out to the mapper.

@@ -415,13 +415,20 @@ describe('local playlist view parity', () => {
     await member('one', 0, { angle: 25 });
     await stats('one', 18, { angle: 30, ascents: 20 });
     await stats('one', 24, { angle: 40, ascents: 20 });
-    expect((await readPage())?.playlistClimbs.climbs[0]).toMatchObject({ angle: 30, ascensionist_count: 20 });
+    await db.execAsync(`UPDATE board_climb_stats SET play_count = CASE WHEN angle = 30 THEN 2 ELSE 0 END
+      WHERE climb_uuid = 'one'`);
+    expect((await readPage())?.playlistClimbs.climbs[0]).toMatchObject({
+      angle: 30,
+      ascensionist_count: 20,
+      play_count: 2,
+    });
     expect((await readPage({ activeBoardName: 'kilter', activeAngle: 40 }))?.playlistClimbs.climbs[0]).toMatchObject({
       angle: 40,
+      play_count: 0,
     });
     expect(
       (await readPage({ boardName: 'kilter', layoutId: 1, sizeId: 5, angle: 50 }))?.playlistClimbs.climbs[0],
-    ).toMatchObject({ angle: 50, statsAngle: 30 });
+    ).toMatchObject({ angle: 50, statsAngle: 30, play_count: null });
     expect(await pageUuids({ activeBoardName: 'kilter', activeAngle: 25, view: { minGrade: 20 } })).toEqual([]);
     expect(await pageUuids({ activeBoardName: 'kilter', activeAngle: 40, view: { minGrade: 20 } })).toEqual(['one']);
   });

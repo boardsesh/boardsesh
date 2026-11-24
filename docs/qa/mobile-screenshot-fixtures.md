@@ -223,6 +223,15 @@ as it did when recorded. A recording that already holds the field, a copy
 anywhere else or a second copy, and every other document change still fail the
 drift check.
 
+Exact-angle climb and stats reads accept the nullable Plays selection added in
+#8020 only directly after their existing ascent count. Replay fills `play_count`
+or `playCount` with `null` at the operation's known climb/stats path: the old
+recording cannot prove a measured zero. The adapter composes with the existing
+smart-playlist `unfilteredCount` adapter. It rejects aliases, duplicate or moved
+selections, malformed response paths and unrelated document changes, while
+preserving null and empty results. Current recordings keep their recorded counts
+through the normal exact-match path. No stored fixture bytes or hashes change.
+
 Recordings still go to ignored `packages/mobile/screenshot-fixtures/`, or an explicit
 `--fixtures-dir`. Downloads never touch that directory. Publish a sanitized merged
 recording with `vp run mobile:screenshot-fixtures-publish -- [recording-directory]`,

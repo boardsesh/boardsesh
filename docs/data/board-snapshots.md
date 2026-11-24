@@ -431,8 +431,10 @@ layout artifact but intentionally outside the enabled size.
   the next live threshold scan rebuilds the stale-schema artifact.
 - **`ARTIFACT_SCHEMA_VERSION`** is derived from the migrations. It is the highest version with a statement
   naming `board_climbs`, `board_climb_stats` or `board_climb_grades` (the same whole-word match the export
-  uses to pick artifact DDL, minus `DEVICE_ONLY_STATEMENTS`). It is 12 today (`board_climbs.retired_by_reset`,
-  #6024). It was 11 for the climb revision columns on `board_climbs` (#6023), and 7 (`missing_hold_count`) through v10: a migration that touches only
+  uses to pick artifact DDL, minus `DEVICE_ONLY_STATEMENTS`). It is 16 today (`board_climb_stats.play_count`,
+  #8020). Apps at v16 fall back to paged sync for older artifacts until the export rebuilds them. Older apps
+  can still import v16 artifacts and skip the extra column. The floor was 12 for `board_climbs.retired_by_reset`
+  (#6024) and 11 for the climb revision columns on `board_climbs` (#6023), and 7 (`missing_hold_count`) through v10: a migration that touches only
   device-side tables (v8 spray walls, v9 followed authors, v10 holds index), or that adds only a
   device-only statement to an artifact table (v13's ranking index on `board_climb_stats`), raises
   `LATEST_SCHEMA_VERSION` but not this, so older artifacts stay importable and downloads keep coming

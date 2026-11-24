@@ -17,6 +17,7 @@ import {
   type SimilarClimb,
   type SimilarClimbsInput,
   SUPPORTED_BOARDS,
+  toPlayCount,
   USER_SPECIFIC_SEARCH_PARAMS,
 } from '@boardsesh/shared-schema';
 import type { BoardName } from '@boardsesh/board-constants';
@@ -665,6 +666,7 @@ export const climbQueries = {
       .select({
         angle: dbSchema.boardClimbStats.angle,
         ascensionistCount: dbSchema.boardClimbStats.ascensionistCount,
+        playCount: dbSchema.boardClimbStats.playCount,
         qualityAverage: dbSchema.boardClimbStats.qualityAverage,
         difficultyAverage: dbSchema.boardClimbStats.difficultyAverage,
         displayDifficulty: dbSchema.boardClimbStats.displayDifficulty,
@@ -693,7 +695,11 @@ export const climbQueries = {
       )
       .orderBy(asc(dbSchema.boardClimbStats.angle));
 
-    return rows.map(({ updatedAt, ...row }) => ({ ...row, createdAt: updatedAt.toISOString() }));
+    return rows.map(({ updatedAt, ...row }) => ({
+      ...row,
+      playCount: toPlayCount(row.playCount),
+      createdAt: updatedAt.toISOString(),
+    }));
   },
 
   /**
@@ -730,6 +736,7 @@ export const climbQueries = {
       .select({
         angle: dbSchema.boardClimbStats.angle,
         ascensionistCount: dbSchema.boardClimbStats.ascensionistCount,
+        playCount: dbSchema.boardClimbStats.playCount,
         qualityAverage: dbSchema.boardClimbStats.qualityAverage,
         difficultyAverage: dbSchema.boardClimbStats.difficultyAverage,
         displayDifficulty: dbSchema.boardClimbStats.displayDifficulty,
@@ -781,6 +788,7 @@ export const climbQueries = {
 
     return rows.map((row) => ({
       ...row,
+      playCount: toPlayCount(row.playCount),
       // Mirror the REST endpoint: round display difficulty to a grade id and label it.
       difficulty: row.displayDifficulty == null ? null : getGradeLabel(Math.round(row.displayDifficulty), boardName),
       syncSeq: row.syncSeq,
@@ -841,6 +849,7 @@ export const climbQueries = {
         climbUuid: dbSchema.boardClimbStats.climbUuid,
         angle: dbSchema.boardClimbStats.angle,
         ascensionistCount: dbSchema.boardClimbStats.ascensionistCount,
+        playCount: dbSchema.boardClimbStats.playCount,
         qualityAverage: dbSchema.boardClimbStats.qualityAverage,
         difficultyAverage: dbSchema.boardClimbStats.difficultyAverage,
         displayDifficulty: dbSchema.boardClimbStats.displayDifficulty,
@@ -889,6 +898,7 @@ export const climbQueries = {
       (requestedUuidsByCanonical.get(row.climbUuid) ?? [row.climbUuid]).map((requestedUuid) => ({
         ...row,
         climbUuid: requestedUuid,
+        playCount: toPlayCount(row.playCount),
         difficulty: row.displayDifficulty == null ? null : getGradeLabel(Math.round(row.displayDifficulty), boardName),
         syncSeq: row.syncSeq,
       })),

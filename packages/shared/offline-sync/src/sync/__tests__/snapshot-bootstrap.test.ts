@@ -303,6 +303,7 @@ function compareCursor(a: Cursor, b: Cursor): number {
  */
 function makeGraphqlFetch(options?: {
   climbServerRows?: Array<{ doc: Record<string, unknown>; cursor: Cursor }>;
+  statsServerRows?: Array<{ doc: Record<string, unknown>; cursor: Cursor }>;
   gradeServerRows?: Array<{ doc: Record<string, unknown>; cursor: Cursor }>;
 }) {
   const capturedClimbCursors: Array<Cursor | undefined> = [];
@@ -328,7 +329,14 @@ function makeGraphqlFetch(options?: {
     }
     if (query.includes('syncClimbStats')) {
       capturedStatsCursors.push(cursor);
-      return { syncClimbStats: { documents: [], cursor: cursor ?? emptyCursor, hasMore: false } } as T;
+      const rows = (options?.statsServerRows ?? []).filter((row) => !cursor || compareCursor(row.cursor, cursor) > 0);
+      return {
+        syncClimbStats: {
+          documents: rows.map((row) => row.doc),
+          cursor: rows.at(-1)?.cursor ?? cursor ?? emptyCursor,
+          hasMore: false,
+        },
+      } as T;
     }
     if (query.includes('syncClimbs')) {
       capturedClimbCursors.push(cursor);
@@ -1294,22 +1302,37 @@ describe('pullSync snapshot bootstrap', () => {
     expect(errors).toEqual([{ stage: 'import', attempt: 0 }]);
   });
 
-  it('skips the download entirely when the MANIFEST already reports a stale schemaVersion', async () => {
-    // The artifact itself is current — only the manifest entry is stale. The
-    // pre-check must skip before the (multi-MB) download, not after.
+  it('skips a v15 snapshot before importing rows and recovers Plays with a paged pull', async () => {
     const filePath = join(workDir, 'stale-manifest.db');
     buildArtifact({
       filePath,
       climbs: [{ uuid: 'c-artifact', compatibleSizeIds: [5] }],
-      stats: [],
+      stats: [{ climbUuid: 'c-artifact', angle: 40 }],
       climbsWatermark: CLIMBS_WATERMARK,
       statsWatermark: STATS_WATERMARK,
+      schemaVersion: 15,
     });
+    const legacyArtifact = new DatabaseSync(filePath);
+    legacyArtifact.exec('ALTER TABLE board_climb_stats DROP COLUMN play_count');
+    legacyArtifact.close();
     const source = makeSnapshotSource({
-      manifest: makeManifest([makeEntry({ schemaVersion: ARTIFACT_SCHEMA_VERSION - 1 })]),
+      manifest: makeManifest([makeEntry({ schemaVersion: 15 })]),
       fileForEntry: () => filePath,
     });
-    const { fetch } = makeGraphqlFetch({
+    const { fetch, capturedStatsCursors } = makeGraphqlFetch({
+      statsServerRows: [
+        {
+          doc: {
+            board_type: 'kilter',
+            climb_uuid: 'c-paged',
+            angle: 40,
+            play_count: '0',
+            updated_at: STATS_WATERMARK.updatedAt,
+            sync_seq: STATS_WATERMARK.syncSeq,
+          },
+          cursor: STATS_WATERMARK,
+        },
+      ],
       climbServerRows: [
         {
           doc: { uuid: 'c-paged', name: 'paged', compatible_size_ids: JSON.stringify([5]) },
@@ -1321,6 +1344,10 @@ describe('pullSync snapshot bootstrap', () => {
     await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
 
     expect(source.downloadArtifact).not.toHaveBeenCalled();
+    expect(capturedStatsCursors[0]).toBeUndefined();
+    expect(await db.getAllAsync('SELECT climb_uuid, angle, play_count FROM board_climb_stats')).toEqual([
+      { climb_uuid: 'c-paged', angle: 40, play_count: 0 },
+    ]);
     // Paged crawl ran this cycle and no attempt was burned.
     const climbs = await db.getAllAsync<{ uuid: string }>('SELECT uuid FROM board_climbs ORDER BY uuid');
     expect(climbs.map((row) => row.uuid)).toEqual(['c-paged']);
