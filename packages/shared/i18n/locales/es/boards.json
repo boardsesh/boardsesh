@@ -2046,7 +2046,7 @@
     "point": "{{series}} · {{countText}} ({{share}})",
     "unknown": "Grado desconocido",
     "scopes": "Alcance de la comparación",
-    "spray": "Vías del plafón de presas",
+    "spray": "Inventario del Spraywall",
     "led": "Lista elegida para el plafón LED",
     "included": "Incluido · {{countText}} variantes",
     "boardGroup": "{{board}} · {{physical}}",
