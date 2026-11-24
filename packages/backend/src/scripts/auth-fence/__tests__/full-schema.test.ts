@@ -143,11 +143,11 @@ ${triggers}`);
       AS present`;
     if (!rankings.present) {
       const tables = readFileSync(
-        new URL('../../../../../db/drizzle/0346_gym_climb_rankings.sql', import.meta.url),
+        new URL('../../../../../db/drizzle/0348_gym_climb_rankings.sql', import.meta.url),
         'utf8',
       );
       const trigger = readFileSync(
-        new URL('../../../../../db/drizzle/0347_gym_tick_vote_invalidation.sql', import.meta.url),
+        new URL('../../../../../db/drizzle/0349_gym_tick_vote_invalidation.sql', import.meta.url),
         'utf8',
       );
       await owner.unsafe(`${tables}
