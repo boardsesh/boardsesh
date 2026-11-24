@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-24T11:08:51.459Z",
+  "generatedAt": "2026-11-24T11:29:01.753Z",
   "entries": [
+    {
+      "prNumber": 8087,
+      "category": "new",
+      "title": "Compare your gym’s recorded climbers and sends, then inspect twelve weeks of board activity. See where history is still too short to compare.",
+      "mergedAt": "2026-11-24T11:24:18Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8087"
+    },
     {
       "prNumber": 8110,
       "category": "improved",
