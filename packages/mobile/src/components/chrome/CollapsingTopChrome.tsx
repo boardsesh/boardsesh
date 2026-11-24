@@ -401,7 +401,9 @@ type CollapsingNativeBarHeaderProps = Pick<
  * - On the iPhone Duo rail every action is a native item, so UIKit can move it
  *   onto the rail: account and + leading; the angle (a title item, which stays
  *   in the bar), then history and ⋯ (Climbs) or the board switcher (Discover),
- *   then the bulb, trailing. + keeps the highest visibility priority.
+ *   then the bulb, trailing. + keeps the highest visibility priority. On Climbs
+ *   + is the first row of ⋯ instead: UIKit does not keep the rail's bar items
+ *   clear of the tab bar, and four items reached it on the closed Duo.
  * - On an iPad the trailing group stays native items: UIKit lays them out
  *   beside its sidebar button and the portrait top tab bar, which a custom
  *   island collided with. The bulb stays the glass bulb there (its long press
@@ -451,8 +453,9 @@ function CollapsingNativeBarHeader({
   // The native title item only on the rail; a horizontal bar has the glass "40°".
   const islandAngle = !onRail && angleItem != null;
   const barAngle = onRail ? angleItem : null;
-  // On Climbs in a compact bar, + becomes the first row of ⋯.
-  const createInMenu = climbListBarActions != null && canCreate && !onRail && widthClass === 'compact';
+  // On Climbs in a compact bar, + becomes the first row of ⋯. On the Duo rail too:
+  // account, +, history and ⋯ stacked into the tab bar on the closed outer display.
+  const createInMenu = climbListBarActions != null && canCreate && (onRail || widthClass === 'compact');
   const createInIsland = canCreate && !createInMenu;
   const createRow = useMemo(
     () => (createInMenu ? { label: createAccessibilityLabel, onPress: onCreate } : null),
@@ -495,12 +498,12 @@ function CollapsingNativeBarHeader({
   // On the rail only: a horizontal bar keeps the glass left island.
   const leftItems = useMemo(() => {
     if (!onRail) return undefined;
-    const factory = barItemsFactory(canCreate ? [accountItem, createItem] : [accountItem]);
+    const factory = barItemsFactory(createInIsland ? [accountItem, createItem] : [accountItem]);
     // No caller passes a leading action today; kept as a custom view so nothing
     // is dropped. A custom view stays in the bar on iPhone Duo.
     if (!isValidElement(leadingAction)) return factory;
     return () => [...(factory?.() ?? []), { type: 'custom' as const, element: leadingAction }];
-  }, [onRail, canCreate, accountItem, createItem, leadingAction]);
+  }, [onRail, createInIsland, accountItem, createItem, leadingAction]);
 
   // The iPhone's trailing island: the same glass slots as the leading one.
   const trailingIslandSlots = climbListBarActions
