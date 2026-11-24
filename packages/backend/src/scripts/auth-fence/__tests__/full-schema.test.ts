@@ -113,11 +113,11 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
         'spray_exposure_policy_invalidate','spray_exposure_climb_key','spray_exposure_fence_key')) AS present`;
     if (!exposure.present) {
       const tables = readFileSync(
-        new URL('../../../../../db/drizzle/0342_gym_grade_inventory.sql', import.meta.url),
+        new URL('../../../../../db/drizzle/0343_gym_grade_inventory.sql', import.meta.url),
         'utf8',
       );
       const triggers = readFileSync(
-        new URL('../../../../../db/drizzle/0343_observe_spray_inventory.sql', import.meta.url),
+        new URL('../../../../../db/drizzle/0344_observe_spray_inventory.sql', import.meta.url),
         'utf8',
       );
       await owner.unsafe(`${tables}

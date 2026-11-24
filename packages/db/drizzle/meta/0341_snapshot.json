@@ -1,5 +1,5 @@
 {
-  "id": "c1e7c636-51fb-4fc7-b351-1a4494f98511",
+  "id": "9ba5b0e9-9627-47f9-9689-a6ebc9b180b8",
   "prevId": "b0555408-7b92-4c34-8e71-dcd755f6a749",
   "version": "7",
   "dialect": "postgresql",
@@ -10141,60 +10141,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.gym_reporting_observations": {
-      "name": "gym_reporting_observations",
-      "schema": "",
-      "columns": {
-        "gym_id": {
-          "name": "gym_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "contract_version": {
-          "name": "contract_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "clock_timestamp()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "gym_reporting_observations_gym_id_gyms_id_fk": {
-          "name": "gym_reporting_observations_gym_id_gyms_id_fk",
-          "tableFrom": "gym_reporting_observations",
-          "tableTo": "gyms",
-          "columnsFrom": [
-            "gym_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "gym_reporting_observations_gym_id_contract_version_pk": {
-          "name": "gym_reporting_observations_gym_id_contract_version_pk",
-          "columns": [
-            "gym_id",
-            "contract_version"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.gyms": {
       "name": "gyms",
       "schema": "",
@@ -12172,6 +12118,27 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "board_moderation_events_actor_created_idx": {
+          "name": "board_moderation_events_actor_created_idx",
+          "columns": [
+            {
+              "expression": "actor_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -13629,28 +13596,6 @@
           "method": "btree",
           "with": {}
         },
-        "boardsesh_ticks_reporting_unbounded_idx": {
-          "name": "boardsesh_ticks_reporting_unbounded_idx",
-          "columns": [
-            {
-              "expression": "board_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"boardsesh_ticks\".\"origin\" = 'native'\n        AND \"boardsesh_ticks\".\"reporting_attribution\" IN ('uuid', 'presence', 'session', 'edit')\n        AND (\"boardsesh_ticks\".\"reporting_time_precision\" IS DISTINCT FROM 'instant'\n          OR \"boardsesh_ticks\".\"reporting_climbed_at\" IS DISTINCT FROM \"boardsesh_ticks\".\"climbed_at\")",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "boardsesh_ticks_user_climb_lookup_idx": {
           "name": "boardsesh_ticks_user_climb_lookup_idx",
           "columns": [
@@ -14073,34 +14018,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "board_climb_events_reporting_actor_time_idx": {
-          "name": "board_climb_events_reporting_actor_time_idx",
-          "columns": [
-            {
-              "expression": "board_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "confirmed_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"board_climb_events\".\"source\" = 'boardsesh' AND \"board_climb_events\".\"user_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -26266,6 +26183,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "board_moderation_event_id": {
+          "name": "board_moderation_event_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -26343,6 +26266,19 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
+        },
+        "directory_notification_context_board_moderation_event_id_board_moderation_events_id_fk": {
+          "name": "directory_notification_context_board_moderation_event_id_board_moderation_events_id_fk",
+          "tableFrom": "directory_notification_context",
+          "tableTo": "board_moderation_events",
+          "columnsFrom": [
+            "board_moderation_event_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -26376,6 +26312,12 @@
         "note": {
           "name": "note",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "suggested_setup": {
+          "name": "suggested_setup",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
@@ -26878,7 +26820,9 @@
         "removed_from_gym",
         "deleted",
         "edited_by_staff",
-        "relinked"
+        "relinked",
+        "setup_changed_by_climber",
+        "setup_change_undone"
       ]
     },
     "public.board_moderation_actor_role": {
@@ -26891,7 +26835,8 @@
         "gym_editor",
         "community_leader",
         "community_admin",
-        "global_admin"
+        "global_admin",
+        "climber"
       ]
     },
     "public.session_origin": {
@@ -27005,7 +26950,8 @@
         "gym_report_opened",
         "gym_report_resolved",
         "gym_claimed_with_your_board",
-        "gym_claim_denied"
+        "gym_claim_denied",
+        "board_setup_changed_by_climber"
       ]
     },
     "public.feed_item_type": {
@@ -27224,7 +27170,8 @@
         "creator",
         "gym_staff",
         "admin",
-        "auto"
+        "auto",
+        "climber"
       ]
     },
     "public.directory_report_status": {

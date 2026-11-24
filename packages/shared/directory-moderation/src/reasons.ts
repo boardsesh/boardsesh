@@ -83,8 +83,12 @@ export type DirectoryReportOutcome = (typeof RESOLVED_DIRECTORY_REPORT_STATUSES)
 export const DIRECTORY_REPORT_RECIPIENTS = ['creator', 'gym_staff', 'admin'] as const;
 export type DirectoryReportRecipient = (typeof DIRECTORY_REPORT_RECIPIENTS)[number];
 
-/** Who closed a report. `auto` is the system: the merge tool, or a sweep that found the target gone. */
-export const DIRECTORY_REPORT_RESOLVER_ROLES = ['creator', 'gym_staff', 'admin', 'auto'] as const;
+/**
+ * Who closed a report. `auto` is the system: the merge tool, or a sweep that
+ * found the target gone. `climber` is a climber whose suggested setup changed
+ * the board at a gym nobody runs (`setupSuggestionDecision`).
+ */
+export const DIRECTORY_REPORT_RESOLVER_ROLES = ['creator', 'gym_staff', 'admin', 'auto', 'climber'] as const;
 export type DirectoryReportResolverRole = (typeof DIRECTORY_REPORT_RESOLVER_ROLES)[number];
 
 /**

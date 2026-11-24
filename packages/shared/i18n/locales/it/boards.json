@@ -194,6 +194,35 @@
     "groupError": "Impossibile cambiare il raggruppamento. Controlla le opzioni e riprova."
   },
   "mobile": {
+    "setupSuggestion": {
+      "holds": "Prese",
+      "choose": "Scegli",
+      "unchangedHint": "Scegli cosa c'è sulla parete, oppure spiega in una nota cosa non va.",
+      "previewEveryone": "Cambia per tutti a {{gym}}. La modifica si può annullare.",
+      "previewStaff": "Lo staff di {{gym}} la controlla prima.",
+      "previewCreator": "Chi ha aggiunto il pannello la controlla prima.",
+      "appliedTitle": "Configurazione aggiornata",
+      "appliedBody": "Ora a {{gym}} tutti arrampicano su {{setup}}.",
+      "appliedBodyGeneric": "Ora tutti arrampicano su {{setup}}.",
+      "climbNow": "Arrampica ora",
+      "alreadySetUp": "Il pannello è già configurato così.",
+      "reviewClaimedGym": "Inoltrata allo staff di {{gym}}. Ti avvisiamo appena è sistemata.",
+      "reviewClaimedGymGeneric": "Inoltrata allo staff della palestra. Ti avvisiamo appena è sistemata.",
+      "reviewNoGym": "Inoltrata a chi ha aggiunto il pannello. Ti avvisiamo appena è sistemata.",
+      "reviewRecentChange": "Qualcuno ha cambiato questo pannello nelle ultime {{hours}} ore, quindi il tuo suggerimento viene controllato prima. Ti avvisiamo appena è sistemata.",
+      "reviewRecentlyUndone": "Una modifica a questo pannello è stata annullata negli ultimi {{days}} giorni, quindi il tuo suggerimento viene controllato prima. Ti avvisiamo appena è sistemata.",
+      "reviewDailyLimit_one": "Hai cambiato {{count}} pannello nell'ultimo giorno, quindi questo suggerimento viene controllato prima. Ti avvisiamo appena è sistemata.",
+      "reviewDailyLimit_other": "Hai cambiato {{count}} pannelli nell'ultimo giorno, quindi questo suggerimento viene controllato prima. Ti avvisiamo appena è sistemata.",
+      "reviewClashes": "Il tuo suggerimento coinciderebbe con un altro pannello, quindi viene controllato prima. Ti avvisiamo appena è sistemata.",
+      "suggestedHeading": "Configurazioni suggerite",
+      "suggested_one": "{{count}} climber ha suggerito {{setup}}",
+      "suggested_other": "{{count}} climber hanno suggerito {{setup}}",
+      "otherSuggested_one": "{{count}} altra configurazione suggerita",
+      "otherSuggested_other": "{{count}} altre configurazioni suggerite",
+      "useSetup": "Usa questa configurazione",
+      "useSetupLabel": "Usa questa configurazione: {{setup}}",
+      "editYourself": "Modificalo tu"
+    },
     "edit": {
       "screenTitle": "Modifica pannello",
       "save": "Salva le modifiche",
@@ -1840,7 +1869,28 @@
     "signInBody": "Accedi e ti riportiamo subito qui.",
     "boardListLink": "Qualcosa non va con questo pannello?",
     "web": {
-      "noteRequiredLabel": "Spiega cosa non va (almeno 10 caratteri)"
+      "noteRequiredLabel": "Spiega cosa non va (almeno 10 caratteri)",
+      "setup": {
+        "question": "Cosa c'è in parete?",
+        "layout": "Layout",
+        "size": "Dimensione",
+        "holds": "Prese",
+        "angle": "Inclinazione",
+        "previewEveryone": "Così cambia per tutti a {{gym}}. Si può annullare.",
+        "previewStaff": "Lo staff di {{gym}} lo controlla prima.",
+        "previewCreator": "Chi ha aggiunto questo pannello lo controlla prima.",
+        "applied": "Configurazione aggiornata per tutti a {{gym}}.",
+        "appliedUnnamed": "Configurazione aggiornata per tutti.",
+        "climbInApp": "Scalalo subito nell'app Boardsesh.",
+        "reviewClaimedGym": "Inviata allo staff di {{gym}}. Ti avvisiamo appena è sistemata.",
+        "reviewClaimedGymUnnamed": "Inviata allo staff della palestra. Ti avvisiamo appena è sistemata.",
+        "reviewNoGym": "Inviata a chi ha aggiunto questo pannello. Ti avvisiamo appena è sistemata.",
+        "reviewRecentChange": "Qualcuno ha cambiato questo pannello nelle ultime 24 ore, quindi la tua proposta viene controllata prima. Ti avvisiamo appena è sistemata.",
+        "reviewRecentlyUndone": "Una modifica recente a questo pannello è stata annullata, quindi la tua proposta viene controllata prima. Ti avvisiamo appena è sistemata.",
+        "reviewDailyLimit": "Hai cambiato {{limit}} pannelli nelle ultime 24 ore, quindi questo viene controllato prima. Ti avvisiamo appena è sistemata.",
+        "reviewClashes": "Questa configurazione si scontra con un altro pannello, quindi viene controllata prima. Ti avvisiamo appena è sistemata.",
+        "alreadySetUp": "È già configurato così."
+      }
     }
   },
   "reportReview": {
@@ -1884,7 +1934,13 @@
     "back": "Indietro",
     "close": "Chiudi",
     "web": {
-      "keepPartial": "Chiuse {{closed}} segnalazioni su {{total}}. Riprova per le altre."
+      "keepPartial": "Chiuse {{closed}} segnalazioni su {{total}}. Riprova per le altre.",
+      "suggested_one": "{{count}} climber ha proposto {{setup}}",
+      "suggested_other": "{{count}} climber hanno proposto {{setup}}",
+      "suggestedIsCurrent": "Il pannello ha già questa configurazione",
+      "useSetup": "Usa questa configurazione",
+      "useSetupFailed": "Impossibile cambiare la configurazione. Riprova.",
+      "editYourself": "Modificalo tu"
     }
   },
   "whoCanEdit": {

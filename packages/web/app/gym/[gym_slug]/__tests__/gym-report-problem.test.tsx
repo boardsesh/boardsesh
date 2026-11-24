@@ -28,6 +28,8 @@ vi.mock('@/app/components/providers/auth-modal-provider', () => ({
 const trackGymFunnelEvent = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/gym-funnel-analytics', () => ({ trackGymFunnelEvent }));
 
+vi.mock('@/app/lib/i18n/use-locale-router', () => ({ useLocaleRouter: () => ({ refresh: vi.fn() }) }));
+
 vi.mock('@/app/hooks/use-ws-auth-token', () => ({ useWsAuthToken: () => ({ token: 'test-token' }) }));
 vi.mock('@/app/lib/graphql/client', () => ({ createGraphQLHttpClient: () => ({ request: vi.fn() }) }));
 
@@ -35,8 +37,8 @@ import { GymReportProblemHost, ReportBoardButton, ReportGymButton } from '../gym
 
 const gym = { uuid: 'gym-1', name: 'Crux', slug: 'crux', listingState: 'RUN_BY_GYM' as const, canClaim: false };
 const boards = [
-  { uuid: 'board-a', name: 'Kilter', label: 'Kilter · Original 12x12 · 40°', ownerId: 'sam' },
-  { uuid: 'board-b', name: 'Tension', label: 'Tension · TB2 · 30°', ownerId: null },
+  { uuid: 'board-a', name: 'Kilter', label: 'Kilter · Original 12x12 · 40°', ownerId: 'sam', setup: null },
+  { uuid: 'board-b', name: 'Tension', label: 'Tension · TB2 · 30°', ownerId: null, setup: null },
 ];
 
 function renderGymPage(hostGym = gym) {

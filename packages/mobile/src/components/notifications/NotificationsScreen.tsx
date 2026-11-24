@@ -15,6 +15,7 @@ import { CommentSheet } from '../you/CommentSheet';
 import { notificationClimbRender } from './notification-climb-render';
 import { NotificationRow } from './NotificationRow';
 import { useNotificationNavigation, type OpenCommentThread } from './use-notification-navigation';
+import { useUndoSetupChange } from './use-undo-setup-change';
 import {
   useAnswerFollowRequest,
   useGroupedNotifications,
@@ -24,6 +25,7 @@ import {
 import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useTheme } from '../../providers/theme-provider';
+import { useDirectorySetupSuggestionsEnabled } from '../../providers/feature-flags-provider';
 import { spacing } from '../../theme/tokens';
 
 // Module-level so the empty-list identity is stable across renders, and hoisted
@@ -33,14 +35,21 @@ const EMPTY_GROUPS: GroupedNotification[] = [];
 const keyExtractor = (group: GroupedNotification) => group.uuid;
 
 /**
- * Three row shapes share this list: a 44x56 board thumbnail, a 40pt avatar,
- * and a follow request with its Approve / Decline buttons. FlashList recycles a cell's subtree across items, so without this it
+ * Four row shapes share this list: a 44x56 board thumbnail, a 40pt avatar,
+ * a follow request with its Approve / Decline buttons, and a climber's setup
+ * change with its Undo. FlashList recycles a cell's subtree across items, so without this it
  * would hand a thumbnail cell to an avatar row and remount the whole leading
  * slot mid-scroll. Separate types keep a recycling pool per shape — the same
  * thing GymListPanel and LogbookTab do. Hoisted so the prop identity is stable.
  */
 const getItemType = (group: GroupedNotification) =>
-  group.type === 'follow_request' ? 'followRequest' : notificationClimbRender(group) ? 'climb' : 'plain';
+  group.type === 'follow_request'
+    ? 'followRequest'
+    : group.type === 'board_setup_changed_by_climber'
+      ? 'setupChange'
+      : notificationClimbRender(group)
+        ? 'climb'
+        : 'plain';
 
 /** The thread a tapped comment/vote row opens; null while the sheet is closed. */
 type CommentThread = { entityType: SocialEntityType; entityId: string };
@@ -82,6 +91,10 @@ export default function NotificationsScreen() {
   const { mutate: markAllAsRead } = useMarkAllAsRead();
   // Stable (React Query's mutateAsync), so it can ride into every memoized row.
   const answerFollowRequest = useAnswerFollowRequest();
+  // Undo on a climber's setup change, behind the same flag as the setup fields.
+  const undoSetupChange = useUndoSetupChange();
+  const setupSuggestionsEnabled = useDirectorySetupSuggestionsEnabled();
+  const onUndoSetupChange = setupSuggestionsEnabled ? undoSetupChange : undefined;
 
   // The comment thread lives here rather than in the navigation hook so that
   // hook keeps returning ONE stable callback: `openCommentThread` is empty-dep
@@ -135,9 +148,14 @@ export default function NotificationsScreen() {
 
   const renderItem = useCallback(
     ({ item }: { item: GroupedNotification }) => (
-      <NotificationRow notification={item} onPress={handlePress} onAnswerFollowRequest={answerFollowRequest} />
+      <NotificationRow
+        notification={item}
+        onPress={handlePress}
+        onAnswerFollowRequest={answerFollowRequest}
+        onUndoSetupChange={onUndoSetupChange}
+      />
     ),
-    [handlePress, answerFollowRequest],
+    [handlePress, answerFollowRequest, onUndoSetupChange],
   );
 
   return (

@@ -88,6 +88,42 @@ Tracked under epic #8043.
 
 Implementation calls made while building, recorded so they can be revisited.
 
+### Suggested setups (2026-11-23)
+
+"Set up wrong" gains real dropdowns, and the climber can climb the corrected setup straight away. Mechanics: "Suggested setup" in [directory-reports.md](directory-reports.md#suggested-setup).
+
+The founder's answers:
+
+1. **No private copy.** A suggestion changes the gym's board for everyone.
+2. **At a gym nobody runs, the change applies straight away.** At a gym run by the gym, its staff review it first.
+3. **Every climber change at a gym nobody runs stays in a history** that admins review, and admins can undo it. The board's creator and the gym's staff can undo it too.
+4. **Same board type only:** layout, size, holds and angle. A wrong board type stays "Listed twice" or "Something else".
+5. **The dropdowns ship in the app and on the website.** "Climb it now" is app-only, because www has no climbing.
+
+Defaults chosen with them, open to change:
+
+- **"Nobody runs it" means `listingState` is not `RUN_BY_GYM`**, so `UNCLAIMED` and `CLIMBER_LISTED`. It matches the gym page's "Not claimed yet" and "Added by a climber".
+- **A board with no gym** (a home wall) goes to its creator for review. It never changes straight away.
+- **Spray walls keep the note field.** They have no layout to pick.
+- **No account-age gate.** It would block the climber standing at the wall. Three limits and undo cover abuse instead: one climber change per board per 24 hours, review for 90 days after an undo, and 3 changes per climber per 24 hours.
+
+Calls made building the contract (PR 1):
+
+- **The per-climber limit is a rolling 24 hours**, not a calendar day, so it doesn't depend on anyone's time zone.
+- **A report a climber's change closes is resolved by `climber`**, a new resolver role, rather than `admin` or `auto`. Counting it as `admin` would hide climber fixes inside the launch metric (the share of reports closed without an admin).
+- **The creator's notice links to its setup change** (`directory_notification_context.board_moderation_event_id`), so it can show before and after and offer Undo without searching the event history.
+- **`reportBoard` keeps its result type.** `DirectoryReportSubmitResult` gains `setupOutcome`, `setupReviewReason` and `board`, which read null for gym reports, rather than a new board-only type that would change the type app builds already query.
+- **`DirectoryReportNote.note` stays non-null.** A reporter who only suggested a setup has an empty note, so app builds from before the setup fields still render the row.
+- **With the `directory-setup-suggestions` flag off**, a suggestion is still stored and goes to review with no reason, so turning the flag on never strands one.
+
+Calls made building the resolvers (PR 1):
+
+- **A reporter already on the waiting report replaces their suggestion**, and it is decided again. It only touches their own row and reaches nobody new, and it lets a climber whose suggestion waited on a limit try again later.
+- **"Staff" who may undo are the gym's owner and admins** (`viewerGymManagerRole`), the same people who may edit the gym's boards, so an undo never reaches further than a hand edit would. Editors may not.
+- **A clash is checked before the board is written**, with reads only, so `CLASHES` sends the suggestion to review inside the same transaction instead of failing the report.
+- **A report a change closes at once sends no "report opened" notice.** The creator hears about the change instead, which offers Undo.
+- **An undo is an edit:** it closes the board's waiting "Set up wrong" reports as fixed, and keeps `updateBoard`'s serial guard. It skips the owner-duplicate prompt, since it restores the board's own earlier setup.
+
 ### PR 1: backend power model
 
 - A staff removal blocks the creator from re-linking the board to that gym. The block lifts when staff put it back, which writes a `relinked` event. A staff attach that lifts no block writes no event.

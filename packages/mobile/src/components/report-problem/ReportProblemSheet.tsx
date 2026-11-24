@@ -44,6 +44,13 @@ export type ReportProblemSheetProps<R extends string> = {
   onSend: () => void;
   /** The report went through: the body becomes this line and the trailing action Done. */
   doneMessage?: string | null;
+  /** A heading above the done line ("Setup updated"). */
+  doneTitle?: string | null;
+  /**
+   * What the climber can do next, under the done line ("Climb it now"). When it
+   * is there it is the primary action, so the top bar's Done steps back.
+   */
+  doneAction?: ReactNode;
   /** The sheet can't take a report at all; shown in place of the form, with Done. */
   unavailableMessage?: string | null;
   /** Shown under the form while the phone is offline. */
@@ -75,6 +82,8 @@ export function ReportProblemSheet<R extends string>({
   pending,
   onSend,
   doneMessage,
+  doneTitle,
+  doneAction,
   unavailableMessage,
   offlineMessage,
   errorMessage,
@@ -99,7 +108,7 @@ export function ReportProblemSheet<R extends string>({
       leading={finished ? undefined : { kind: 'cancel', onPress: guard.requestClose }}
       trailing={
         finished
-          ? { kind: 'forward', label: tCommon('actions.done'), onPress: onClose, prominent: true }
+          ? { kind: 'forward', label: tCommon('actions.done'), onPress: onClose, prominent: !doneAction }
           : {
               // A report goes to someone else, but a compact sheet header sends it
               // with the ✓ (mobile-chrome.md, "Feedback and report submits").
@@ -136,9 +145,17 @@ export function ReportProblemSheet<R extends string>({
       {unavailableMessage ? (
         <Text>{unavailableMessage}</Text>
       ) : doneMessage ? (
-        <Text accessibilityLiveRegion="polite" testID={testID ? `${testID}-done` : undefined}>
-          {doneMessage}
-        </Text>
+        <>
+          {doneTitle ? (
+            <Text variant="headline" accessibilityRole="header" testID={testID ? `${testID}-done-title` : undefined}>
+              {doneTitle}
+            </Text>
+          ) : null}
+          <Text accessibilityLiveRegion="polite" testID={testID ? `${testID}-done` : undefined}>
+            {doneMessage}
+          </Text>
+          {doneAction}
+        </>
       ) : (
         <>
           {question ? (

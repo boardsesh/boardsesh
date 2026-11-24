@@ -1,6 +1,14 @@
 import type { TFunction } from 'i18next';
-import type { ReportAudience } from '@boardsesh/directory-moderation';
-import type { DirectoryReportReason, DirectoryReportTargetKind } from '@boardsesh/shared-schema';
+import {
+  SETUP_CHANGES_PER_CLIMBER_PER_DAY,
+  type ReportAudience,
+  type SetupSuggestionPreview,
+} from '@boardsesh/directory-moderation';
+import type {
+  BoardSetupReviewReason,
+  DirectoryReportReason,
+  DirectoryReportTargetKind,
+} from '@boardsesh/shared-schema';
 
 /**
  * A report reason as a climber reads it. Static-literal keys: the i18n linter
@@ -109,5 +117,38 @@ export function reportAudienceLine(
       return t('report.routeTeam', { gym });
     case 'team':
       return t('report.routeGym');
+  }
+}
+
+/**
+ * The line at the foot of the dialog once the setup fields show: what Send does
+ * with the suggestion (`setupPreviewFor`). It takes the routing line's place.
+ */
+export function setupPreviewLine(preview: SetupSuggestionPreview, gym: string | null, t: TFunction<'boards'>): string {
+  switch (preview) {
+    case 'applies_for_everyone':
+      return t('report.web.setup.previewEveryone', { gym: gym ?? '' });
+    case 'staff_review':
+      return t('report.web.setup.previewStaff', { gym: gym ?? '' });
+    case 'creator_review':
+      return t('report.web.setup.previewCreator');
+  }
+}
+
+/** The done state for a suggestion that went to review, by the server's reason. */
+export function setupReviewLine(reason: BoardSetupReviewReason, gym: string | null, t: TFunction<'boards'>): string {
+  switch (reason) {
+    case 'CLAIMED_GYM':
+      return gym ? t('report.web.setup.reviewClaimedGym', { gym }) : t('report.web.setup.reviewClaimedGymUnnamed');
+    case 'NO_GYM':
+      return t('report.web.setup.reviewNoGym');
+    case 'RECENT_CHANGE':
+      return t('report.web.setup.reviewRecentChange');
+    case 'RECENTLY_UNDONE':
+      return t('report.web.setup.reviewRecentlyUndone');
+    case 'DAILY_LIMIT':
+      return t('report.web.setup.reviewDailyLimit', { limit: SETUP_CHANGES_PER_CLIMBER_PER_DAY });
+    case 'CLASHES':
+      return t('report.web.setup.reviewClashes');
   }
 }

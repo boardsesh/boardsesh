@@ -29,6 +29,8 @@ import { boardTypeProperty } from '@boardsesh/analytics';
 import QrLandingTracker from '@/app/components/climb-front-door/qr-landing-tracker';
 import BoardReportLink from '@/app/components/directory-reports/board-report-link';
 import { isDirectoryReportsEnabled } from '@/app/lib/directory-reports/directory-reports-flag';
+import { isDirectorySetupSuggestionsEnabled } from '@/app/lib/directory-reports/directory-setup-suggestions-flag';
+import { getStoreButtonLabels } from '@/app/lib/store-button-labels.server';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 
@@ -204,13 +206,16 @@ export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
   const parsedParams = boardToRouteParamsFromAngleSegment(board, params.angle);
   if (!parsedParams) return notFound();
   const page = parseFrontDoorPage(searchParams.page);
-  const [listData, reportsEnabled] = await Promise.all([
+  const [listData, reportsEnabled, setupSuggestionsEnabled] = await Promise.all([
     fetchFrontDoorListPage(parsedParams, page),
     isDirectoryReportsEnabled(),
+    isDirectorySetupSuggestionsEnabled(),
   ]);
   if (!listData) return notFound();
   const { boardDetails, climbs, hasMore, preloadUrls } = listData;
   const reportLocale = reportsEnabled ? await getLocale() : null;
+  // The app link after a suggestion changed the board. Read only when the dialog can show it.
+  const reportStoreLabels = reportsEnabled && setupSuggestionsEnabled ? await getStoreButtonLabels() : null;
 
   return (
     <>
@@ -241,7 +246,11 @@ export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
             // The board layout loads `climbs` and `feed`; the dialog's words are
             // the `boards` catalogue's `report` branch, and only that branch ships.
             <I18nProvider locale={reportLocale} namespaces={['boards']} resourceKeys={{ boards: ['report'] }}>
-              <BoardReportLink boardUuid={board.uuid} />
+              <BoardReportLink
+                boardUuid={board.uuid}
+                setupSuggestionsEnabled={setupSuggestionsEnabled}
+                storeLabels={reportStoreLabels}
+              />
             </I18nProvider>
           ) : undefined
         }

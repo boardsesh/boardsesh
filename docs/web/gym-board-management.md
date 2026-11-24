@@ -79,6 +79,23 @@ dialog's approved state link there ("Check your boards").
   or open 14 days) is shown with "Our team is looking at this one" and can't
   be kept here; one still with the creator or staff shows the date it moves
   to the team.
+- **Suggested setups.** A "Set up wrong" report whose reporters picked a
+  setup lists it under the report, grouped by equal setup ("2 climbers
+  suggested Original · 12×14 · Commercial · Bolt Ons"), with **Use this
+  setup** for a viewer who may edit the board (`canEdit`). It sends
+  `updateBoard` with that layout, size, sets and, on a board that doesn't
+  tilt, angle (`suggestedSetupUpdateInput`; the grouping and the "has this
+  setup now" check are `groupSuggestedSetups` and `setupMatches`, all in
+  `@boardsesh/directory-moderation` and shared with the app), which closes
+  the board's "Set up wrong" reports as fixed. A save that would copy another
+  board of the same owner opens the edit form's duplicate prompt
+  (`duplicate-board-config-dialog.tsx`); Save anyway sends
+  `allowDuplicateConfig`. A suggestion the board already has reads "The board
+  has this setup now". While a Use this setup button shows, Fix the setup
+  reads **Edit it yourself**. While a setup saves, every other answer (the
+  other Use this setup buttons, Edit it yourself, Remove, Delete, It's right
+  as it is, and the keep step's Send) is disabled and its handler refuses, so
+  a report never closes as kept while its setup changes.
 
 `gym-board-permissions.ts` keeps only `canManageGymBoards` (owner or admin: who
 may link their own boards) and `linkableBoards`.
