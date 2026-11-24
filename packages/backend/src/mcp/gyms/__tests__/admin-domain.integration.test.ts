@@ -274,6 +274,67 @@ describe('canonical URL repair after a gym merge', () => {
     });
   });
 
+  it.each(['previous', 'requested'])('ignores an ordinary deleted gym sharing the %s URL', async (slugKind) => {
+    await makeMergedAlias();
+    const [deletedGym] = await db
+      .insert(tables.gyms)
+      .values({
+        uuid: randomUUID(),
+        slug: slugKind === 'previous' ? gym.slug : duplicateGym.slug,
+        name: 'Ordinary deleted listing',
+        ownerId,
+        deletedAt: new Date(),
+      })
+      .returning();
+    await expect(repairGymCanonicalSlug(await canonicalRepairInput(), context(adminId))).resolves.toMatchObject({
+      slug: duplicateGym.slug,
+    });
+    for (const slug of [gym.slug!, duplicateGym.slug!])
+      expect((await resolveCanonicalGymBySlug(slug))?.uuid).toBe(gym.uuid);
+    const [unchanged] = await db.select().from(tables.gyms).where(eq(tables.gyms.id, deletedGym!.id));
+    expect(unchanged).toEqual(deletedGym);
+  });
+
+  it('excludes ordinary deleted listings before applying the collider limit', async () => {
+    await makeMergedAlias();
+    await db.insert(tables.gyms).values(
+      Array.from({ length: 101 }, () => ({
+        uuid: randomUUID(),
+        slug: duplicateGym.slug,
+        name: 'Ordinary deleted listing',
+        ownerId,
+        deletedAt: new Date(),
+      })),
+    );
+    await expect(repairGymCanonicalSlug(await canonicalRepairInput(), context(adminId))).resolves.toMatchObject({
+      slug: duplicateGym.slug,
+    });
+    expect((await resolveCanonicalGymBySlug(gym.slug!))?.uuid).toBe(gym.uuid);
+  });
+
+  it.each(['previous', 'requested'])(
+    'still refuses an unrelated merged tombstone sharing the %s URL',
+    async (slugKind) => {
+      await makeMergedAlias();
+      const [unrelated] = await db
+        .insert(tables.gyms)
+        .values({ uuid: randomUUID(), name: 'Unrelated survivor', ownerId })
+        .returning();
+      await db.insert(tables.gyms).values({
+        uuid: randomUUID(),
+        slug: slugKind === 'previous' ? gym.slug : duplicateGym.slug,
+        name: 'Unrelated merged listing',
+        ownerId,
+        deletedAt: new Date(),
+        mergedIntoGymId: unrelated!.id,
+      });
+      await expect(repairGymCanonicalSlug(await canonicalRepairInput(), context(adminId))).rejects.toMatchObject({
+        extensions: { code: 'CONFLICT' },
+      });
+      expect((await resolveCanonicalGymByUuid(gym.uuid))?.slug).toBe(gym.slug);
+    },
+  );
+
   it('refuses a merged alias that belongs to another survivor', async () => {
     const [unrelated] = await db
       .insert(tables.gyms)

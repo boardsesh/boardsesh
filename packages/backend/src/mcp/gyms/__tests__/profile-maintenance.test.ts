@@ -1,12 +1,44 @@
 import { randomUUID } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import * as tables from '@boardsesh/db/schema';
 import { db, runWithDatabaseTransaction } from '../../../db/client';
 import { findGymMcpTool } from '../registry';
 import { getGymImageSource, gymImageAttributionSchema, recordGymImageSource } from '../media-source';
 
+beforeEach(async () => {
+  await db
+    .insert(tables.users)
+    .values({
+      id: 'test-source-owner',
+      email: 'test-source-owner@example.test',
+      name: 'Source editor',
+    })
+    .onConflictDoNothing();
+});
+
 describe('gym MCP partial profile maintenance', () => {
+  it('clears a deleted editor identity while retaining the current image source credit', async () => {
+    const gymUuid = randomUUID();
+    const source = { imageUrl: 'https://gym.example/photo.jpg', attribution: { credit: 'Gym photographer' } };
+    await recordGymImageSource({
+      gymId: 8150,
+      gymUuid,
+      actorUserId: 'test-source-owner',
+      kind: 'photo',
+      previousUrl: null,
+      storedUrl: '/static/gym-photos/credited.jpg',
+      source,
+    });
+    await db.delete(tables.users).where(eq(tables.users.id, 'test-source-owner'));
+    const [audit] = await db
+      .select()
+      .from(tables.gymDirectoryRepairAudit)
+      .where(eq(tables.gymDirectoryRepairAudit.gymUuid, gymUuid));
+    expect(audit.actorUserId).toBeNull();
+    expect(await getGymImageSource(gymUuid, 'photo', '/static/gym-photos/credited.jpg')).toMatchObject({ source });
+    await db.delete(tables.gymDirectoryRepairAudit).where(eq(tables.gymDirectoryRepairAudit.gymUuid, gymUuid));
+  });
   it('saves requested fields and reads them back without changing ownership, membership or visibility', async () => {
     const ownerId = randomUUID();
     const memberId = randomUUID();

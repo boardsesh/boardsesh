@@ -86,8 +86,23 @@ describe('hosted gym administrative tool advertisement', () => {
   it('never advertises admin actions on an ordinary connection, even for an admin account', async () => {
     await createGymMcpServer(principal);
     expect(advertisedNames()).toEqual([capabilityName, 'list_managed_gyms']);
-    expect(mocks.hasAdmin).toHaveBeenCalledWith(principal.userId);
+    expect(mocks.hasAdmin).not.toHaveBeenCalled();
     expect(mocks.media).toHaveBeenCalledWith(expect.any(Object), principal);
+  });
+
+  it('returns identical ordinary capabilities for admin and non-admin accounts without reading their role', async () => {
+    const responses: unknown[] = [];
+    for (const accountHasAdmin of [true, false]) {
+      mocks.hasAdmin.mockResolvedValue(accountHasAdmin);
+      mocks.registerTool.mockClear();
+      await createGymMcpServer({ ...principal, userId: `account-${accountHasAdmin}` });
+      const registration = mocks.registerTool.mock.calls.find(([name]) => name === capabilityName);
+      const handler = registration?.[2] as () => Promise<{ structuredContent: Record<string, unknown> }>;
+      responses.push((await handler()).structuredContent);
+    }
+    expect(responses[0]).toEqual(responses[1]);
+    expect(responses[0]).toMatchObject({ isGlobalAdmin: null });
+    expect(mocks.hasAdmin).not.toHaveBeenCalled();
   });
 
   it('advertises only the explicitly granted admin category', async () => {

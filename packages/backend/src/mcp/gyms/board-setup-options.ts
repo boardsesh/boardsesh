@@ -4,7 +4,9 @@ import { GraphQLError } from 'graphql';
 
 function unavailable(boardType: BoardName): never {
   throw new GraphQLError(
-    `Setup options are unavailable for ${boardType}. Choose a supported catalogue board type or retry after its catalogue is restored.`,
+    boardType === 'spray'
+      ? 'Spray walls have no static catalogue. Open the selected spray wall’s management page to edit its photo and holds.'
+      : `Setup options are unavailable for ${boardType}. Choose a supported catalogue board type or retry after its catalogue is restored.`,
     { extensions: { code: 'BOARD_SETUP_OPTIONS_UNAVAILABLE' } },
   );
 }

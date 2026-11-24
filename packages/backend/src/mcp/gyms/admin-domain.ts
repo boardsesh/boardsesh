@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { and, asc, count, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as tables from '@boardsesh/db/schema';
@@ -94,7 +94,14 @@ export async function repairGymCanonicalSlug(input: CanonicalSlugRepairInput, co
     const colliders = await db
       .select()
       .from(tables.gyms)
-      .where(or(eq(tables.gyms.slug, input.slug), candidate.slug ? eq(tables.gyms.slug, candidate.slug) : sql`false`))
+      .where(
+        and(
+          or(eq(tables.gyms.slug, input.slug), candidate.slug ? eq(tables.gyms.slug, candidate.slug) : sql`false`),
+          // Public reads ignore ordinary deletions; only live URLs and merge
+          // tombstones reserve a slug or count toward the bounded review set.
+          or(isNull(tables.gyms.deletedAt), isNotNull(tables.gyms.mergedIntoGymId)),
+        ),
+      )
       .limit(101);
     if (colliders.length > 100) refusal('Too many records reserve these URLs. Review the directory first.');
     const chains = await Promise.all([aliasCandidate, ...colliders].map(gymAliasChain));
@@ -134,7 +141,11 @@ export async function repairGymCanonicalSlug(input: CanonicalSlugRepairInput, co
     };
     if (!resolvesToSurvivor(alias))
       refusal('That alias does not resolve to the selected survivor. Repair the merge first.');
-    for (const collider of locked.filter((row) => row.slug === input.slug || (gym.slug && row.slug === gym.slug))) {
+    for (const collider of locked.filter(
+      (row) =>
+        (row.deletedAt === null || row.mergedIntoGymId !== null) &&
+        (row.slug === input.slug || (gym.slug && row.slug === gym.slug)),
+    )) {
       if (!resolvesToSurvivor(collider))
         refusal('A requested URL belongs to another gym or an invalid redirect chain.');
     }

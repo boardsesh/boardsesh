@@ -72,7 +72,12 @@ async function send(handler: ReturnType<typeof handlerFor>, method: string, para
   await handler(incoming, response as unknown as ServerResponse);
   expect(response.statusCode).toBe(200);
   return JSON.parse(responseBody) as {
-    result?: { tools?: { name: string }[]; isError?: boolean; content?: { type: string; text: string }[] };
+    result?: {
+      tools?: { name: string }[];
+      isError?: boolean;
+      content?: { type: string; text: string }[];
+      structuredContent?: Record<string, unknown>;
+    };
     error?: { code: number; message: string };
   };
 }
@@ -95,6 +100,21 @@ beforeEach(() => {
 });
 
 describe('real SDK calls to undiscoverable gym tools', () => {
+  it('keeps ordinary capabilities and admin-call denials independent of the account global role', async () => {
+    const capabilities: unknown[] = [];
+    const denials: unknown[] = [];
+    for (const accountHasAdmin of [true, false]) {
+      fixtures.hasAdmin.mockResolvedValue(accountHasAdmin);
+      const handler = handlerFor();
+      capabilities.push((await send(handler, 'tools/call', { name: 'get_gym_mcp_capabilities' })).result);
+      denials.push((await send(handler, 'tools/call', { name: 'repair_gym_canonical_slug' })).result);
+    }
+    expect(capabilities[0]).toEqual(capabilities[1]);
+    expect(capabilities[0]).toMatchObject({ structuredContent: { isGlobalAdmin: null } });
+    expect(denials[0]).toEqual(denials[1]);
+    expect(fixtures.hasAdmin).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['update_gym_profile', 'gyms:write'],
     ['repair_gym_canonical_slug', 'gyms:admin:write'],
@@ -123,14 +143,18 @@ describe('real SDK calls to undiscoverable gym tools', () => {
   });
 
   it('names a revoked global-admin role before validating repair arguments', async () => {
-    fixtures.hasAdmin.mockResolvedValue(false);
     const handler = handlerFor(['gyms:admin:write']);
+    expect((await send(handler, 'tools/list')).result?.tools?.map((tool) => tool.name)).toContain(
+      'repair_gym_canonical_slug',
+    );
+    fixtures.hasAdmin.mockResolvedValue(false);
     const listed = await send(handler, 'tools/list');
     expect(listed.result?.tools?.map((tool) => tool.name)).not.toContain('repair_gym_canonical_slug');
     expectForbidden(
       await send(handler, 'tools/call', { name: 'repair_gym_canonical_slug', arguments: { confirm: false } }),
       'A current global Boardsesh admin role is required.',
     );
+    expect(fixtures.hasAdmin).toHaveBeenCalledTimes(3);
   });
 
   it('keeps unknown names on the SDK not-found path', async () => {

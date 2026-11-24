@@ -274,6 +274,77 @@ describe.skipIf(integrationConfig.databaseUrl === null)('location sync freeze gu
     },
   );
 
+  it.each([false, true])(
+    'does not resurrect a deleted gym whose retained URL is now a merge alias (source alias: %s)',
+    async (hasSourceAlias) => {
+      const rollback = new Error('rollback deleted gym URL reservation fixture');
+      await createDb()
+        .transaction(async (tx) => {
+          const fixtureId = randomUUID();
+          const original = baseRecord({
+            sourceKey: `tension:deleted-board-${fixtureId}`,
+            gymSourceKey: `tension:deleted-gym-${fixtureId}`,
+            gymName: `Deleted gym ${fixtureId}`,
+          });
+          await upsertPublicBoardLocations(tx, [original]);
+          const [deletedGym] = await tx
+            .select()
+            .from(gyms)
+            .where(eq(gyms.uuid, gymUuidForSource(original.gymSourceKey)));
+          const oldSlug = `retained-${fixtureId}`;
+          const deletedAt = new Date();
+          await tx
+            .update(gyms)
+            .set({ slug: oldSlug, deletedAt, syncFrozenAt: null })
+            .where(eq(gyms.id, deletedGym!.id));
+          await tx
+            .update(userBoards)
+            .set({ gymId: null })
+            .where(eq(userBoards.uuid, boardUuidForSource(original.sourceKey)));
+          if (!hasSourceAlias)
+            await tx.delete(locationSyncGymSources).where(eq(locationSyncGymSources.sourceKey, original.gymSourceKey));
+          const [survivor] = await tx
+            .insert(gyms)
+            .values({
+              uuid: randomUUID(),
+              slug: `canonical-${fixtureId}`,
+              name: 'Independent canonical gym',
+              ownerId: SYSTEM_USER_ID,
+            })
+            .returning();
+          await tx.insert(gyms).values({
+            uuid: randomUUID(),
+            slug: oldSlug,
+            name: 'Preserved merge alias',
+            ownerId: SYSTEM_USER_ID,
+            deletedAt: new Date(),
+            mergedIntoGymId: survivor!.id,
+          });
+          const result = await upsertPublicBoardLocations(tx, [
+            { ...original, gymName: `Changed upstream name ${fixtureId}` },
+          ]);
+          expect(result.gymsUpserted).toBe(0);
+          const [saved] = await tx.select().from(gyms).where(eq(gyms.id, deletedGym!.id));
+          expect(saved).toMatchObject({ slug: oldSlug, deletedAt, syncFrozenAt: null, mergedIntoGymId: null });
+          const [board] = await tx
+            .select()
+            .from(userBoards)
+            .where(eq(userBoards.uuid, boardUuidForSource(original.sourceKey)));
+          expect(board!.gymId).toBeNull();
+          const [sourceAlias] = await tx
+            .select()
+            .from(locationSyncGymSources)
+            .where(eq(locationSyncGymSources.sourceKey, original.gymSourceKey));
+          if (hasSourceAlias) expect(sourceAlias!.gymId).toBe(deletedGym!.id);
+          else expect(sourceAlias).toBeUndefined();
+          throw rollback;
+        })
+        .catch((error: unknown) => {
+          if (error !== rollback) throw error;
+        });
+    },
+  );
+
   it('keeps frozen edits, then refreshes and resurrects both rows after an explicit release', async () => {
     const db = createDb();
     const rollback = new Error('rollback freeze fixture');

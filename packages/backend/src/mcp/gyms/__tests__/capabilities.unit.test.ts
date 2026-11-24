@@ -8,6 +8,19 @@ const tools = [
 ] as const;
 
 describe('gym MCP scope discovery', () => {
+  it('does not disclose account-specific global admin status without explicit admin scope consent', () => {
+    const adminAccount = gymMcpCapabilities(['gyms:read', 'gyms:write'], true, tools);
+    const ordinaryAccount = gymMcpCapabilities(['gyms:read', 'gyms:write'], false, tools);
+    expect(adminAccount).toEqual(ordinaryAccount);
+    expect(adminAccount.isGlobalAdmin).toBeNull();
+    expect(adminAccount.actions[2]).toMatchObject({
+      requiredScope: 'gyms:admin:read',
+      requiresGlobalAdmin: true,
+      available: false,
+    });
+    expect(adminAccount.actions[2]).not.toHaveProperty('missingCapability');
+  });
+
   it('names the missing profile and image scope without enabling the tools', () => {
     const result = gymMcpCapabilities(['gyms:read'], false, tools);
     for (const name of ['update_gym_profile', 'set_gym_image', 'remove_gym_image']) {

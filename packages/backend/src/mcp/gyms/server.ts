@@ -9,16 +9,13 @@ import { hasAdmin } from '../../graphql/resolvers/social/roles';
 import { z } from 'zod';
 import { gymMcpCapabilities } from './capabilities';
 import { GraphQLError } from 'graphql';
-
-const mediaToolScopes = {
-  get_gym_image_source: 'gyms:read',
-  set_gym_image: 'gyms:write',
-  remove_gym_image: 'gyms:write',
-} as const;
+import { GYM_MCP_ADMIN_SCOPES } from './configuration';
+import { gymMcpMediaToolMetadata } from './media-tool-metadata';
 
 /** One server per HTTP request; no authenticated state can cross users or replicas. */
 export async function createGymMcpServer(principal: GymMcpPrincipal, selectedTool?: string): Promise<McpServer> {
-  const canUseAdminTools = await hasAdmin(principal.userId);
+  const hasAdminScope = GYM_MCP_ADMIN_SCOPES.some((scope) => principal.scopes.includes(scope));
+  const canUseAdminTools = hasAdminScope ? await hasAdmin(principal.userId) : false;
   const server = new McpServer(
     { name: 'Boardsesh gym management', version: '1.0.0' },
     {
@@ -28,18 +25,16 @@ export async function createGymMcpServer(principal: GymMcpPrincipal, selectedToo
   );
   const requestedTool = gymMcpTools.find((tool) => tool.name === selectedTool);
   const requiredScope =
-    requestedTool?.scope ??
-    (selectedTool && Object.hasOwn(mediaToolScopes, selectedTool)
-      ? mediaToolScopes[selectedTool as keyof typeof mediaToolScopes]
-      : undefined);
+    requestedTool?.scope ?? gymMcpMediaToolMetadata.find((tool) => tool.name === selectedTool)?.scope;
   const missingScope = requiredScope !== undefined && !principal.scopes.includes(requiredScope);
-  const missingAdmin = requestedTool?.category === 'admin' && !canUseAdminTools;
+  const requiresAdmin = requestedTool?.category === 'admin';
+  const missingAdmin = requiresAdmin && hasAdminScope && !canUseAdminTools;
   if (selectedTool && (missingScope || missingAdmin)) {
     // This server handles one tools/call request only. List requests never get
     // denied stubs, and permission refusal must precede tool-argument validation.
     const message = [
       ...(missingScope ? [`Reconnect to Boardsesh and request ${requiredScope} to use ${selectedTool}.`] : []),
-      ...(missingAdmin ? ['A current global Boardsesh admin role is required.'] : []),
+      ...(requiresAdmin ? ['A current global Boardsesh admin role is required.'] : []),
     ].join(' ');
     server.registerTool(
       selectedTool,
@@ -63,12 +58,12 @@ export async function createGymMcpServer(principal: GymMcpPrincipal, selectedToo
     'get_gym_mcp_capabilities',
     {
       description:
-        'Explain which named gym tools this connection can discover, their required OAuth scopes and any missing global admin role. Use when profile, photo or repair tools are missing. Reconnect with the named scopes; existing connections never gain scopes automatically.',
+        'Explain which named gym tools this connection can discover and their required OAuth scopes and roles. Global admin status is checked only after explicit admin scope consent. Use when profile, photo or repair tools are missing. Reconnect with the named scopes; existing connections never gain scopes automatically.',
       inputSchema: z.object({}).strict(),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     async () => {
-      const result = gymMcpCapabilities(principal.scopes, canUseAdminTools, gymMcpTools);
+      const result = gymMcpCapabilities(principal.scopes, hasAdminScope ? canUseAdminTools : null, gymMcpTools);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], structuredContent: result };
     },
   );

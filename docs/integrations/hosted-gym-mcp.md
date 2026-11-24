@@ -48,6 +48,9 @@ example. Directory repairs have a separate global-admin surface described below.
 If a tool is missing, call `get_gym_mcp_capabilities` (no arguments). It is
 available on ordinary and admin-only connections and returns granted scopes,
 each named operation's required scope, and any missing global-admin role.
+Without an explicit admin scope, global-admin status is `null`: ordinary
+connections neither read nor disclose that account role. After admin consent,
+the current role determines which admin tools are available.
 `update_gym_profile`, `set_gym_image` and `remove_gym_image` already exist and
 require **`gyms:write` plus current gym edit access**. A token approved only for
 admin repairs does not include ordinary gym writes. Reconnect requesting
@@ -192,6 +195,11 @@ evidence. Older and web-uploaded images may have no recorded source. A later
 replacement never inherits a different image's credit. `get_gym` returns the
 saved profile, photo and logo; photo changes preserve the other image and all
 unpatched profile fields.
+
+Directory audit actor IDs clear automatically when that account is deleted,
+matching existing gym-merge audits. The repair evidence and sanitized image
+source/credit remain; source readback selects only evidence matching the gym's
+current saved image and never returns actor identity or older image records.
 
 `get_board_setup_options` uses the shared board-setup catalogue, including
 MoonBoard's code-defined layouts. For `boardType=moonboard`, Masters 2019 is

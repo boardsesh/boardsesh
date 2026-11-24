@@ -60,7 +60,9 @@ describe('gym MCP board setup catalogue', () => {
   });
 
   it('returns an actionable error for a board without a static catalogue', () => {
-    expect(() => getGymBoardSetupOptions('spray')).toThrow(/Choose a supported catalogue board type/);
+    expect(() => getGymBoardSetupOptions('spray')).toThrow(
+      'Spray walls have no static catalogue. Open the selected spray wall’s management page to edit its photo and holds.',
+    );
     expect(() => getGymBoardSetupOptions('spray')).toThrow(
       expect.objectContaining({ extensions: { code: 'BOARD_SETUP_OPTIONS_UNAVAILABLE' } }),
     );

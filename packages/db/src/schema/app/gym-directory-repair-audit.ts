@@ -1,6 +1,7 @@
 import { pgTable, bigserial, bigint, text, jsonb, timestamp, index } from 'drizzle-orm/pg-core';
+import { users } from '../auth/users';
 
-/** Immutable directory-maintenance evidence; retained after account or gym deletion. */
+/** Directory evidence survives deletion; actor identity clears with the account, like gym merge audits. */
 export const gymDirectoryRepairAudit = pgTable(
   'gym_directory_repair_audit',
   {
@@ -8,7 +9,7 @@ export const gymDirectoryRepairAudit = pgTable(
     operation: text('operation').notNull(),
     gymId: bigint('gym_id', { mode: 'number' }).notNull(),
     gymUuid: text('gym_uuid').notNull(),
-    actorUserId: text('actor_user_id').notNull(),
+    actorUserId: text('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
     reason: text('reason').notNull(),
     before: jsonb('before').notNull(),
     after: jsonb('after').notNull(),

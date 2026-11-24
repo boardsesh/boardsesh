@@ -27,6 +27,8 @@ vi.mock('../dispatch', () => ({
 }));
 
 import { registerGymMcpMediaTools } from '../media-tools';
+import { gymMcpMediaToolMetadata } from '../media-tool-metadata';
+import { gymMcpCapabilities } from '../capabilities';
 
 const gymUuid = '11111111-1111-4111-8111-111111111111';
 const storedUrl = `/static/gym-photos/${gymUuid}.22222222-2222-4222-8222-222222222222.png`;
@@ -39,6 +41,13 @@ const principal: GymMcpPrincipal = {
   accessTokenHash: 'test-hash',
   connectionLastUsedAt: null,
 };
+const mediaScopeCases: { scopes: string[] }[] = [
+  { scopes: [] },
+  { scopes: ['gyms:read'] },
+  { scopes: ['gyms:write'] },
+  { scopes: ['gyms:read', 'gyms:write'] },
+  { scopes: ['gyms:admin:read'] },
+];
 
 async function callImageTool(name: string, arguments_: Record<string, unknown>) {
   const server = new McpServer({ name: 'gym-media-test', version: '1.0.0' });
@@ -95,6 +104,29 @@ describe('gym image action retries', () => {
     imageUrl: 'https://images.example/photo.png',
     confirm: true,
   };
+
+  it.each(mediaScopeCases)(
+    'keeps actual media registration and advertised metadata aligned for scopes $scopes',
+    async ({ scopes }) => {
+      const server = new McpServer({ name: 'media-metadata-test', version: '1' });
+      const register = vi.spyOn(server, 'registerTool');
+      try {
+        registerGymMcpMediaTools(server, { ...principal, scopes });
+        const expected = gymMcpMediaToolMetadata.filter((tool) => scopes.includes(tool.scope));
+        const registered = register.mock.calls.map(([name]) => name);
+        expect(registered).toEqual(expected.map((tool) => tool.name));
+        const capabilities = gymMcpCapabilities(scopes, null, []);
+        expect(capabilities.actions.map(({ name, requiredScope }) => ({ name, scope: requiredScope }))).toEqual(
+          gymMcpMediaToolMetadata.map(({ name, scope }) => ({ name, scope })),
+        );
+        expect(capabilities.actions.filter((action) => action.available).map((action) => action.name)).toEqual(
+          registered,
+        );
+      } finally {
+        await server.close();
+      }
+    },
+  );
 
   it('publishes a prepared unique image through the authorized gym update', async () => {
     const result = await callImageTool('set_gym_image', input);

@@ -102,6 +102,11 @@ on a connection approved for `gyms:admin:write`. Board setup options use the
 shared catalogue cascade so MoonBoard (including screw-on feet) and Woods are
 available alongside Aurora boards; an incomplete catalogue is an explicit error.
 
+Ordinary scopes never read or disclose the account's global-admin role;
+capabilities report that status as `null` until an admin scope is explicitly
+consented. Media registration, capability discovery and hidden-call denials share
+one name/scope catalogue in `media-tool-metadata.ts`.
+
 ## Validation
 
 The document test validates every committed operation against the shared schema
