@@ -552,7 +552,7 @@ export type OgFamilyArtSpec = {
 /**
  * A real photograph in the art slot instead of a rendered board: a gym's public
  * photo, or a spray wall's with its climb already drawn on it. The loader has
- * gated it, decoded it and sized it to fit `ogFamilyBoardBox('full')`.
+ * gated it, decoded it and sized it to fit `ogFamilyBoardBox()`.
  */
 export type OgFamilyPhotoArt = {
   /** JPEG of exactly `width` x `height`. */
@@ -617,10 +617,7 @@ async function loadOgFamilyPlane(
   return { plane: composed, hit: false };
 }
 
-async function renderOgFamilyArtLayers(
-  art: OgFamilyArtSpec,
-  slot: 'full' | 'narrow',
-): Promise<{
+async function renderOgFamilyArtLayers(art: OgFamilyArtSpec): Promise<{
   layers: OgFamilyArtLayers;
   bokeh: ReturnType<typeof getOgBokehInput>;
   wasmMs: number;
@@ -642,7 +639,7 @@ async function renderOgFamilyArtLayers(
     includeBackground: true,
     dimBackground: 0,
     isOgVariant: true,
-    ogBox: ogFamilyBoardBox(slot),
+    ogBox: ogFamilyBoardBox(),
   });
   const wasmT0 = performance.now();
   const overlay = await renderer.render(JSON.stringify(prepared.config));
@@ -652,25 +649,16 @@ async function renderOgFamilyArtLayers(
   const { plane, hit } = await loadOgFamilyPlane(prepared.boardDetails, overlay.width, overlay.height);
   const planeMs = performance.now() - planeT0;
 
-  const bokeh = getOgBokehInput(prepared.config);
-  // Centroid of the lit holds in the rendered board's pixels, so the narrow slot
-  // can centre its crop on what is actually lit.
-  const pixelsPerSourceUnit = overlay.width / prepared.config.board_width;
-  const litCentroidX =
-    bokeh.points.length > 0
-      ? (bokeh.points.reduce((sum, point) => sum + point.x, 0) / bokeh.points.length) * pixelsPerSourceUnit
-      : undefined;
-
   return {
     layers: {
       plane,
       overlay: Buffer.from(overlay.rgba.buffer, overlay.rgba.byteOffset, overlay.rgba.byteLength),
       width: overlay.width,
       height: overlay.height,
-      placement: placeOgFamilyBoard(slot, overlay.width, overlay.height, litCentroidX),
-      frame: slot === 'full',
+      placement: placeOgFamilyBoard(overlay.width, overlay.height),
+      frame: true,
     },
-    bokeh,
+    bokeh: getOgBokehInput(prepared.config),
     wasmMs,
     planeMs,
     planeHit: hit,
@@ -704,7 +692,7 @@ export async function renderOgFamilyArt(params: OgFamilyRenderParams): Promise<O
     let bokeh: ReturnType<typeof getOgBokehInput> = content.fieldGlow ?? { points: [], source: { w: 1200, h: 630 } };
 
     if (art && content.slot !== 'none') {
-      const rendered = await renderOgFamilyArtLayers(art, content.slot);
+      const rendered = await renderOgFamilyArtLayers(art);
       artLayers = rendered.layers;
       bokeh = rendered.bokeh;
       wasmMs = rendered.wasmMs;
@@ -854,16 +842,13 @@ async function warmOgFamilyPlane(
   fallback: { layout_id: number; size_id: number; set_ids: number[] },
 ): Promise<void> {
   if (!overlayRenderer) return;
-  await renderOgFamilyArtLayers(
-    {
-      boardName,
-      layoutId: fallback.layout_id,
-      sizeId: fallback.size_id,
-      setIds: fallback.set_ids.join(','),
-      frames: '',
-    },
-    'full',
-  );
+  await renderOgFamilyArtLayers({
+    boardName,
+    layoutId: fallback.layout_id,
+    sizeId: fallback.size_id,
+    setIds: fallback.set_ids.join(','),
+    frames: '',
+  });
 }
 
 /** Test-only reset for process-lifetime render state. */

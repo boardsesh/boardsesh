@@ -116,7 +116,7 @@ function digestImage(image: Buffer): string {
  */
 export async function decodeGymPhoto(bytes: Buffer): Promise<OgFamilyPhotoArt | null> {
   if (!isDecodableAvatarBytes(bytes)) return null;
-  const { width, height } = ogFamilyBoardBox('full');
+  const { width, height } = ogFamilyBoardBox();
   const image = await openPhoto(bytes)
     .rotate()
     .resize(width, height, { fit: 'cover' })
@@ -181,7 +181,7 @@ export async function renderSprayWallPhoto(params: {
   frames: string;
 }): Promise<OgFamilyPhotoArt | null> {
   const { photoUrl, version, holds, frames } = params;
-  const box = ogFamilyBoardBox('full');
+  const box = ogFamilyBoardBox();
   const bytes = await fetchPhotoBytes(photoUrl, WALL_PHOTO_FETCH_TIMEOUT_MS);
   if (!bytes || !isDecodableAvatarBytes(bytes)) return null;
   try {

@@ -18,8 +18,8 @@ import { OG_IMAGE_HEIGHT } from '../headers';
 import { listCatalogueEntries } from '../render-version-projection';
 
 /** Render scale for a board in a slot, the same formula `buildRenderConfig` uses. */
-function scaledBoard(slot: 'full' | 'narrow', boardWidth: number, boardHeight: number) {
-  const box = ogFamilyBoardBox(slot);
+function scaledBoard(boardWidth: number, boardHeight: number) {
+  const box = ogFamilyBoardBox();
   const scale = Math.min(box.width / boardWidth, box.height / boardHeight);
   return { width: Math.max(1, Math.round(boardWidth * scale)), height: Math.max(1, Math.round(boardHeight * scale)) };
 }
@@ -40,48 +40,31 @@ const measured = listCatalogueEntries().flatMap((entry) => {
   return [{ label: `${entry.boardName}/${entry.layoutId}-${entry.sizeId}`, details }];
 });
 
-const ALL_SLOTS: readonly OgFamilySlot[] = ['full', 'narrow', 'none'];
-const ART_SLOTS = ['full', 'narrow'] as const;
+const ALL_SLOTS: readonly OgFamilySlot[] = ['full', 'none'];
 
 describe('family art slots against the whole catalogue', () => {
   it('measures the whole catalogue', () => {
     expect(measured.length).toBeGreaterThan(40);
   });
 
-  it.each(ART_SLOTS)('%s: every board sits inside its slot and off the column', (slot) => {
-    const bounds = ogFamilyArtBounds(slot)!;
+  it('every board sits whole inside the art slot and off the column', () => {
+    const bounds = ogFamilyArtBounds('full')!;
     for (const { label, details } of measured) {
-      const { width, height } = scaledBoard(slot, details.boardWidth, details.boardHeight);
-      // Worst-case centroids for a narrow crop: both board edges and the middle.
-      for (const centroid of [0, width / 2, width]) {
-        const placement = placeOgFamilyBoard(slot, width, height, centroid);
-        expect(placement.canvasLeft, label).toBeGreaterThanOrEqual(bounds.left);
-        expect(placement.canvasLeft + placement.visibleWidth, label).toBeLessThanOrEqual(bounds.right);
-        expect(placement.canvasTop, label).toBeGreaterThanOrEqual(0);
-        expect(placement.canvasTop + placement.visibleHeight, label).toBeLessThanOrEqual(OG_IMAGE_HEIGHT);
-        expect(placement.sourceLeft, label).toBeGreaterThanOrEqual(0);
-        expect(placement.sourceLeft + placement.visibleWidth, label).toBeLessThanOrEqual(width);
-      }
+      const { width, height } = scaledBoard(details.boardWidth, details.boardHeight);
+      const placement = placeOgFamilyBoard(width, height);
+      expect(placement.canvasLeft, label).toBeGreaterThanOrEqual(bounds.left);
+      expect(placement.canvasLeft + placement.visibleWidth, label).toBeLessThanOrEqual(bounds.right);
+      expect(placement.canvasTop, label).toBeGreaterThanOrEqual(0);
+      expect(placement.canvasTop + placement.visibleHeight, label).toBeLessThanOrEqual(OG_IMAGE_HEIGHT);
+      // Whole, not a slice: a cropped board cuts holds off the climb it shows.
+      // One pixel of slack for the scale and the placement rounding separately.
+      expect(placement.visibleWidth, label).toBeGreaterThanOrEqual(width - 1);
+      expect(placement.visibleHeight, label).toBeGreaterThanOrEqual(height - 1);
     }
   });
 
-  it.each(ART_SLOTS)('%s: the art never reaches the text column', (slot) => {
-    expect(ogFamilyArtBounds(slot)!.right).toBeLessThan(ogFamilyColumnLeft(slot));
-  });
-
-  it('crops a narrow slice around the lit holds, not the board middle', () => {
-    const atLeftEdge = placeOgFamilyBoard('narrow', 1000, 600, 40);
-    const atRightEdge = placeOgFamilyBoard('narrow', 1000, 600, 960);
-
-    expect(atLeftEdge.sourceLeft).toBe(0);
-    expect(atRightEdge.sourceLeft).toBe(710);
-  });
-
-  it('centres a board narrower than the slot', () => {
-    const placement = placeOgFamilyBoard('narrow', 200, 600, 100);
-
-    expect(placement.canvasLeft).toBe(45);
-    expect(placement.visibleWidth).toBe(200);
+  it('the art never reaches the text column', () => {
+    expect(ogFamilyArtBounds('full')!.right).toBeLessThan(ogFamilyColumnLeft('full'));
   });
 });
 
@@ -201,13 +184,14 @@ describe('family blocks stay clear of each other', () => {
     expect(overlaps(hero, blocks.identity!)).toBe(false);
   });
 
-  it('keeps the aside outside the crop and off the hero and name on a narrow card', async () => {
+  it('stacks the aside under the hero and dots, clear of the art and the wordmark', async () => {
     const { hero, blocks } = await renderOgFamilyTextLayers({
-      slot: 'narrow',
+      slot: 'full',
       fontFamily: 'Noto Sans',
       identity: { name: 'A very long display name somebody typed', avatar: null, sizePt: 30 },
       hero: { runs: [{ text: '7c+/V10', color: OG_FAMILY_WHITE }], maxPt: 170, wrap: false, tight: true },
       rows: [{ runs: heroRuns('17 sends, all flashed'), sizePt: 34, weight: 800 }],
+      dots: { dots: Array.from({ length: 17 }, () => ({ color: '#FFD400', filled: true })), total: 17 },
       aside: {
         eyebrow: 'HARDEST SEND',
         title: 'A really very long climb name somebody typed on their phone',
@@ -216,16 +200,47 @@ describe('family blocks stay clear of each other', () => {
     });
 
     expect(hero.left + hero.width).toBeLessThanOrEqual(OG_FAMILY_CROP_RIGHT);
-    expect(blocks.aside!.left).toBeGreaterThanOrEqual(OG_FAMILY_CROP_RIGHT);
-    expect(overlaps(hero, blocks.aside!)).toBe(false);
-    expect(overlaps(blocks.identity!, blocks.aside!)).toBe(false);
+    expect(blocks.aside).toBeDefined();
+    expect(blocks.aside!.top).toBeGreaterThanOrEqual(blocks.dots!.top + blocks.dots!.height);
+    expect(blocks.aside!.left).toBeGreaterThanOrEqual(ogFamilyArtBounds('full')!.right);
+    expect(blocks.aside!.left + blocks.aside!.width).toBeLessThanOrEqual(1176);
     expect(blocks.aside!.top + blocks.aside!.height).toBeLessThan(574);
+  });
+
+  it('lifts the hero above the centre to make room for the aside', async () => {
+    const card = {
+      slot: 'full' as const,
+      fontFamily: 'Noto Sans',
+      identity: { name: 'Marco', avatar: null, sizePt: 30 },
+      hero: { runs: [{ text: '7a/V6', color: OG_FAMILY_WHITE }], maxPt: 170, wrap: false, tight: true },
+      rows: [{ runs: heroRuns('6 sends, 3 flashed'), sizePt: 34, weight: 800 }],
+    };
+    const without = await renderOgFamilyTextLayers(card);
+    const withAside = await renderOgFamilyTextLayers({
+      ...card,
+      aside: { eyebrow: 'HARDEST SEND', title: 'Anything', lines: ['Sent', 'Tension at 40°'] },
+    });
+
+    expect(withAside.hero.top).toBeLessThan(without.hero.top);
+  });
+
+  it('drops the aside rather than run it past the floor', async () => {
+    const { blocks } = await renderOgFamilyTextLayers({
+      slot: 'full',
+      fontFamily: 'Noto Sans',
+      hero: { runs: [{ text: '7a/V6', color: OG_FAMILY_WHITE }], maxPt: 96, wrap: false, tight: true },
+      // Small rows fill the column to within one row of its floor.
+      rows: Array.from({ length: 30 }, () => ({ runs: heroRuns('A row that fills'), sizePt: 18, weight: 500 })),
+      aside: { eyebrow: 'HARDEST SEND', title: 'Anything', lines: ['Sent'] },
+    });
+
+    expect(blocks.aside).toBeUndefined();
   });
 
   it('keeps the dots inside the crop however many there are', async () => {
     for (const count of [1, 10, 11, 17, 40, 60, 200]) {
       const { hero, blocks } = await renderOgFamilyTextLayers({
-        slot: 'narrow',
+        slot: 'full',
         fontFamily: 'Noto Sans',
         hero: { runs: [{ text: '6a/V3', color: OG_FAMILY_WHITE }], maxPt: 170, wrap: false, tight: true },
         rows: [{ runs: heroRuns('A line'), sizePt: 34, weight: 800 }],
@@ -243,7 +258,7 @@ describe('family blocks stay clear of each other', () => {
 
   it('keeps the rings and attempt label inside the crop', async () => {
     const { blocks } = await renderOgFamilyTextLayers({
-      slot: 'narrow',
+      slot: 'full',
       fontFamily: 'Noto Sans',
       hero: { runs: [{ text: '7a+/V7', color: OG_FAMILY_WHITE }], maxPt: 170, wrap: false, tight: true },
       rows: [],
@@ -325,7 +340,7 @@ describe('a place card eyebrow', () => {
   const eyebrow = (text: string) => ({ runs: [{ text, color: OG_FAMILY_MUTED }], sizePt: 26, weight: 700 });
   const hero = (text: string) => ({ runs: [{ text, color: OG_FAMILY_WHITE }], maxPt: 66, minPt: 28, wrap: true });
 
-  it.each<[string, Exclude<OgFamilySlot, 'narrow'>, string, string]>([
+  it.each<[string, OgFamilySlot, string, string]>([
     ['a short name', 'full', 'Kilter 40°', 'Kaserne'],
     ['a three-line name', 'full', 'Kilter + Tension + MoonBoard', 'The Climbing Hangar, Plymouth'],
     ['a very long boards line', 'full', 'Kilter + Tension + MoonBoard + Decoy + Touchstone + Grasshopper', 'Lab'],
@@ -376,7 +391,7 @@ describe('the icon and wordmark corner stays clear', () => {
     [
       'recap dots and a tall aside',
       {
-        slot: 'narrow',
+        slot: 'full',
         fontFamily: 'Noto Sans',
         identity: { name: 'Sam', avatar: { kind: 'monogram', letter: 'S', color: '#FFD400' }, sizePt: 30 },
         hero: { runs: heroRuns('6a/V3'), maxPt: 170, wrap: false, tight: true },

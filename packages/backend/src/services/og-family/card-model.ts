@@ -300,9 +300,8 @@ export function buildJoinCardContent(params: {
   fontFamily: string;
 }): OgFamilyCardContent {
   const { name, board, art, fontFamily } = params;
-  // The name is the hero, so the art gives up width: the narrow slice leaves it
-  // the whole crop to grow into.
-  const slot: OgFamilySlot = art ? 'narrow' : 'none';
+  // The whole board, like every other card: a slice of it cut the climb in half.
+  const slot: OgFamilySlot = art ? 'full' : 'none';
 
   const rows: OgFamilyRow[] = [];
   if (board) {
@@ -703,7 +702,7 @@ export function buildSetterCardContent(params: {
 
 // --- session recap ---------------------------------------------------------
 
-/** One line is enough at the 593px hero width; this bounds the list, not what is shown. */
+/** More than one line of dots ever shows; this bounds the list, not what is shown. */
 const RECAP_MAX_DOTS_KEPT = 60;
 /** Rings are for a handful of tries, not every one of a long project. */
 const RECAP_MAX_RINGS = 24;
@@ -794,7 +793,9 @@ export function buildRecapCardContent(params: {
   fontFamily: string;
 }): OgFamilyCardContent {
   const { recap, art, fontFamily } = params;
-  const slot: OgFamilySlot = art ? 'narrow' : 'none';
+  // The whole board, like every other card: a slice of it cut the climb in half.
+  // The hardest send goes under the stack, which lifts the grade above centre.
+  const slot: OgFamilySlot = art ? 'full' : 'none';
   const grade = recap.featured ? resolveCardGrade(recap.featured.boardType, recap.featured.difficulty) : null;
   const accent = grade?.color ?? OG_FAMILY_WHITE;
   const line = recapLine(recap);
