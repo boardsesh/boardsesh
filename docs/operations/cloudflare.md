@@ -898,7 +898,7 @@ rule and before the challenge. It blocks a `GET` to www or ws whose UA carries a
 generic automation signature (`bot`, `crawler`, `spider`, `scraper`,
 `headless`, `python`, `go-http-client`, `java/`, `libwww`, `wget/`, `curl/`,
 `scrapy`, `httpclient`) unless the agent is on the allow list. The "unless" is
-rule order: the allow rule's `skip` runs first. So a crawler now has to be
+rule order: the allow rule's `skip` runs before the default-deny rule. So a crawler now has to be
 named to get in, instead of named to be kept out.
 
 Why: `Lightpanda/1.0`, a headless browser for AI agents, was 96% of a www log
@@ -934,9 +934,10 @@ The limits, on purpose:
   the Railway hostname, and Playwright's headless Chromium says
   `HeadlessChrome`. Named crawlers are refused in every environment.
 
-The zone is on the Free plan, which allows 5 custom rules in total. This rule
-is the fourth, so one slot is left. Anything new should extend an existing
-rule's expression before it takes that slot.
+The zone is on the Free plan, which allows 5 custom rules in total. All five
+slots are now used: the Perplexity public-guide exception from #8130 precedes
+the four existing rules. Extend an existing rule where possible; another
+custom rule needs a slot freed or a plan change.
 
 The SEO-scraper tokens on the block rule are now mostly redundant. Keep them for
 one release, then prune them.
@@ -965,23 +966,34 @@ policy classification conflict, not a missing repo allowlist entry. Cloudflare
 describes this enforcement for crawlers it considers noncompliant in its
 [Bot Preference Sync explanation](https://blog.cloudflare.com/bot-preference-sync/).
 
-The proposed `boardsesh:perplexity-public-guides` custom rule matches only GET
+The repo-managed `boardsesh:perplexity-public-guides` custom rule matches only GET
 requests on www for PerplexityBot and eleven exact public document paths: the
 six guides, homepage, `/boards`, `/robots.txt`, sitemap index and guide shard.
 It must precede `boardsesh:allow-search-crawlers`, whose skip of the remaining
 custom rules would otherwise prevent evaluation. It skips only the bot phase;
 it does not exempt API/auth/write traffic or climb-view pages, and does not
-skip the managed-WAF or rate-limit phases. **Live phase verification is a
-release gate:** `http_request_sbfm` is a hypothesis until a before/after probe
-proves the matched managed rule runs there. A rule accepted by the dashboard
-is not evidence that crawling was fixed. Keep Training Disallow and the
-explicit training-crawler block rule intact.
+skip the managed-WAF or rate-limit phases. The `http_request_sbfm` skip was
+verified with before/after requests after the config deployment, not merely
+accepted by the dashboard. Keep Training Disallow and the explicit
+training-crawler block rule intact.
 
-Production state at handoff: **not deployed**. Automatic approval review
-rejected the persistent exception deployment pending the owner's explicit
-approval of its scope and impact. The prepared dashboard form and proposed
-source configuration are not a production receipt. Keep the PR draft until
-approval and live phase verification are complete.
+The initial dashboard deployment was rejected by automatic approval review.
+The owner subsequently approved the scoped exception and required config as
+code, then merged #8130 (`dc143e81c0`). The unused dashboard form was canceled;
+the repo's `deploy-cloudflare` job is the deployment path. The merged commit's
+queued run was superseded by the next main push, as designed. The
+[surviving production job](https://github.com/boardsesh/boardsesh/actions/runs/45470266040/job/138717052434)
+applied exactly one planned change at **19:30:22 UTC** and reported the zone
+converged. Its source commit was `e07872ed7c`, which includes #8130.
+
+At 19:31 UTC, synthetic PerplexityBot GETs returned **200 on all eleven allowed
+documents**. The out-of-scope `/auth/login` remained **403**. All six explicit
+training tokens (GPTBot, ClaudeBot, Amazonbot, Bytespider, CCBot and
+meta-externalagent) returned **403** on `/apps/kilter`; OAI-SearchBot returned
+200. This verifies the intended exception without a dashboard mutation or a
+zone-wide policy change. The exact paths, status codes and Cloudflare Ray IDs
+are recorded in `docs/web/seo-app-guides/rollout-2026-11-24.json`. These requests
+are operator probes, not proof of crawler identity or actual crawler visits.
 
 For day-zero load, a capped Railway HTTP sample contained 501 www requests
 from 18:38:02 through 18:40:08 UTC, with none of the four newly allowed search

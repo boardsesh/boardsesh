@@ -1,0 +1,281 @@
+{
+  "checkedAt": "2026-11-24T19:31:29.908028+00:00",
+  "checks": [
+    {
+      "agent": "PerplexityBot",
+      "path": "/",
+      "status": 200,
+      "ray": "a5fad5913a14ffef-AMS"
+    },
+    {
+      "agent": "PerplexityBot",
+      "path": "/boards",
+      "status": 200,
+      "ray": "a5fad5912aab9f66-AMS"
+    },
+    {
+      "agent": "PerplexityBot",
+      "path": "/apps",
+      "status": 200,
+      "ray": "a5fad5912c55d0d1-AMS"
+    },
+    {
+      "agent": "PerplexityBot",
+      "path": "/apps/kilter",
+      "status": 200,
+      "ray": "a5fad5968848acfe-AMS"
+    },
+    {
+      "agent": "PerplexityBot",
+      "path": "/apps/aurora",
+      "status": 200,
+      "ray": "a5fad5954951b8cc-AMS"
+    },
+    {
+      "agent": "PerplexityBot",
+      "path": "/apps/moonboard",
+      "status": 200,
+      "ray": "a5fad595ab0a0bb0-AMS"
+    },
+    {
+      "agent": "PerplexityBot",
+      "path": "/apps/woods",
+      "status": 200,
+      "ray": "a5fad5997987b945-AMS"
+    },
+    {
+      "agent": "PerplexityBot",
+      "path": "/compare/spray-wall-apps",
+      "status": 200,
+      "ray": "a5fad59c6a9606e9-AMS"
+    },
+    {
+      "agent": "PerplexityBot",
+      "path": "/sitemap.xml",
+      "status": 200,
+      "ray": "a5fad59d0ba766e2-AMS"
+    },
+    {
+      "agent": "PerplexityBot",
+      "path": "/sitemaps/app-guides.xml",
+      "status": 200,
+      "ray": "a5fad59f0cdc2f8f-AMS"
+    },
+    {
+      "agent": "PerplexityBot",
+      "path": "/robots.txt",
+      "status": 200,
+      "ray": "a5fad5a05f0d0b44-AMS"
+    },
+    {
+      "agent": "GPTBot",
+      "path": "/apps/kilter",
+      "status": 403,
+      "ray": "a5fad5a1beeab902-AMS"
+    },
+    {
+      "agent": "ClaudeBot",
+      "path": "/apps/kilter",
+      "status": 403,
+      "ray": "a5fad5a39985bdf3-AMS"
+    },
+    {
+      "agent": "Amazonbot",
+      "path": "/apps/kilter",
+      "status": 403,
+      "ray": "a5fad5a38c31fea2-AMS"
+    },
+    {
+      "agent": "Bytespider",
+      "path": "/apps/kilter",
+      "status": 403,
+      "ray": "a5fad5a3a8b6f794-AMS"
+    },
+    {
+      "agent": "CCBot",
+      "path": "/apps/kilter",
+      "status": 403,
+      "ray": "a5fad5a59c98070a-AMS"
+    },
+    {
+      "agent": "meta-externalagent",
+      "path": "/apps/kilter",
+      "status": 403,
+      "ray": "a5fad5a5aac829d3-AMS"
+    }
+  ],
+  "deployment": {
+    "sourceCommit": "e07872ed7cc1d86b7b930b57abaa0d55bfc36728",
+    "includesPullRequest": 8130,
+    "workflowRun": 45470266040,
+    "jobId": 138717052434,
+    "appliedAt": "2026-11-24T19:30:22Z",
+    "plannedChanges": 1,
+    "source": "repo config via deploy-cloudflare",
+    "dashboardMutations": false
+  },
+  "scopeChecks": [
+    {
+      "agent": "PerplexityBot",
+      "path": "/apps/kilter",
+      "status": 200,
+      "ray": "a5fad4d729dfef02-AMS"
+    },
+    {
+      "agent": "PerplexityBot",
+      "path": "/apps/woods",
+      "status": 200,
+      "ray": "a5fad4d728886627-AMS"
+    },
+    {
+      "agent": "PerplexityBot",
+      "path": "/sitemap.xml",
+      "status": 200,
+      "ray": "a5fad4d72fff66e5-AMS"
+    },
+    {
+      "agent": "PerplexityBot",
+      "path": "/auth/login",
+      "status": 403,
+      "ray": "a5fad4dcad26f8c2-AMS"
+    },
+    {
+      "agent": "GPTBot",
+      "path": "/apps/kilter",
+      "status": 403,
+      "ray": "a5fad4daedd12d31-AMS"
+    },
+    {
+      "agent": "ClaudeBot",
+      "path": "/apps/kilter",
+      "status": 403,
+      "ray": "a5fad4db2bd3fea2-AMS"
+    },
+    {
+      "agent": "OAI-SearchBot",
+      "path": "/apps/kilter",
+      "status": 200,
+      "ray": "a5fad4dd3e5bc891-AMS"
+    }
+  ],
+  "bing": {
+    "site": "https://boardsesh.com/",
+    "verification": "Google Search Console import",
+    "sitemap": "https://www.boardsesh.com/sitemap.xml",
+    "status": "Submitted / Processing",
+    "observedDate": "2026-11-24"
+  },
+  "method": "GET",
+  "host": "www.boardsesh.com",
+  "googleIndexInspection": {
+    "checkedAt": "2026-11-24 19:34:04 UTC",
+    "property": "sc-domain:boardsesh.com",
+    "results": [
+      {
+        "url": "https://www.boardsesh.com/apps/kilter",
+        "verdict": "PASS",
+        "coverageState": "Submitted and indexed",
+        "robotsTxtState": "ALLOWED",
+        "indexingState": "INDEXING_ALLOWED",
+        "lastCrawlTime": "2026-11-24T18:42:09Z",
+        "pageFetchState": "SUCCESSFUL",
+        "googleCanonical": "https://www.boardsesh.com/apps/kilter",
+        "userCanonical": "https://www.boardsesh.com/apps/kilter",
+        "sitemap": ["https://www.boardsesh.com/sitemap.xml", "https://www.boardsesh.com/sitemaps/app-guides.xml"],
+        "crawledAs": "MOBILE"
+      },
+      {
+        "url": "https://www.boardsesh.com/apps/moonboard",
+        "verdict": "PASS",
+        "coverageState": "Submitted and indexed",
+        "robotsTxtState": "ALLOWED",
+        "indexingState": "INDEXING_ALLOWED",
+        "lastCrawlTime": "2026-11-24T18:42:09Z",
+        "pageFetchState": "SUCCESSFUL",
+        "googleCanonical": "https://www.boardsesh.com/apps/moonboard",
+        "userCanonical": "https://www.boardsesh.com/apps/moonboard",
+        "sitemap": ["https://www.boardsesh.com/sitemap.xml", "https://www.boardsesh.com/sitemaps/app-guides.xml"],
+        "crawledAs": "MOBILE"
+      },
+      {
+        "url": "https://www.boardsesh.com/apps/aurora",
+        "verdict": "PASS",
+        "coverageState": "Submitted and indexed",
+        "robotsTxtState": "ALLOWED",
+        "indexingState": "INDEXING_ALLOWED",
+        "lastCrawlTime": "2026-11-24T18:46:08Z",
+        "pageFetchState": "SUCCESSFUL",
+        "googleCanonical": "https://www.boardsesh.com/apps/aurora",
+        "userCanonical": "https://www.boardsesh.com/apps/aurora",
+        "sitemap": ["https://www.boardsesh.com/sitemap.xml", "https://www.boardsesh.com/sitemaps/app-guides.xml"],
+        "crawledAs": "MOBILE"
+      },
+      {
+        "url": "https://www.boardsesh.com/compare/spray-wall-apps",
+        "verdict": "PASS",
+        "coverageState": "Submitted and indexed",
+        "robotsTxtState": "ALLOWED",
+        "indexingState": "INDEXING_ALLOWED",
+        "lastCrawlTime": "2026-11-24T18:48:10Z",
+        "pageFetchState": "SUCCESSFUL",
+        "googleCanonical": "https://www.boardsesh.com/compare/spray-wall-apps",
+        "userCanonical": "https://www.boardsesh.com/compare/spray-wall-apps",
+        "crawledAs": "MOBILE"
+      },
+      {
+        "url": "https://www.boardsesh.com/apps",
+        "verdict": "PASS",
+        "coverageState": "Submitted and indexed",
+        "robotsTxtState": "ALLOWED",
+        "indexingState": "INDEXING_ALLOWED",
+        "lastCrawlTime": "2026-11-24T18:48:10Z",
+        "pageFetchState": "SUCCESSFUL",
+        "googleCanonical": "https://www.boardsesh.com/apps",
+        "userCanonical": "https://www.boardsesh.com/apps",
+        "sitemap": ["https://www.boardsesh.com/sitemap.xml", "https://www.boardsesh.com/sitemaps/app-guides.xml"],
+        "crawledAs": "MOBILE"
+      },
+      {
+        "url": "https://www.boardsesh.com/apps/woods",
+        "verdict": "PASS",
+        "coverageState": "Submitted and indexed",
+        "robotsTxtState": "ALLOWED",
+        "indexingState": "INDEXING_ALLOWED",
+        "lastCrawlTime": "2026-11-24T18:54:22Z",
+        "pageFetchState": "SUCCESSFUL",
+        "googleCanonical": "https://www.boardsesh.com/apps/woods",
+        "userCanonical": "https://www.boardsesh.com/apps/woods",
+        "crawledAs": "MOBILE"
+      },
+      {
+        "url": "https://www.boardsesh.com/",
+        "verdict": "PASS",
+        "coverageState": "Submitted and indexed",
+        "robotsTxtState": "ALLOWED",
+        "indexingState": "INDEXING_ALLOWED",
+        "lastCrawlTime": "2026-11-24T19:00:12Z",
+        "pageFetchState": "SUCCESSFUL",
+        "googleCanonical": "https://www.boardsesh.com/",
+        "userCanonical": "https://www.boardsesh.com/",
+        "referringUrls": [
+          "https://github.com/boardsesh/boardsesh/issues/4358",
+          "https://github.com/marcodejongh/boardsesh"
+        ],
+        "crawledAs": "MOBILE"
+      },
+      {
+        "url": "https://www.boardsesh.com/boards",
+        "verdict": "PASS",
+        "coverageState": "Submitted and indexed",
+        "robotsTxtState": "ALLOWED",
+        "indexingState": "INDEXING_ALLOWED",
+        "lastCrawlTime": "2026-11-24T19:00:12Z",
+        "pageFetchState": "SUCCESSFUL",
+        "googleCanonical": "https://www.boardsesh.com/boards",
+        "userCanonical": "https://www.boardsesh.com/boards",
+        "crawledAs": "MOBILE"
+      }
+    ]
+  },
+  "interpretation": "Synthetic user-agent probes verify policy behavior, not real crawler identity or visits. Google indexing is separately verified by the inspection API snapshot."
+}
