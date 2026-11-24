@@ -30,8 +30,9 @@ vi.mock('../../TextAction', () => ({
   TextAction: ({ label, onPress }: { label: string; onPress: () => void }) =>
     createElement('button', { type: 'button', onClick: onPress, 'data-text-action': true }, label),
 }));
-vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ systemColors: {} }) }));
-vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemOrange: 'orange' } }));
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: {}, brandColors: { warning: 'amber' } }),
+}));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12 }, borderRadius: { md: 8 } }));
 
 const { BoardHoldsSummary } = await import('../BoardHoldsSummary');

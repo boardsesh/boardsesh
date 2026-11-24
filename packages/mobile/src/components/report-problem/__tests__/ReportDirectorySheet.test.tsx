@@ -25,6 +25,8 @@ const track = vi.hoisted(() => vi.fn());
 const gymBoardsArgs = vi.hoisted(() => [] as (string | null)[]);
 const fetchBoard = vi.hoisted(() => vi.fn());
 const activateOptions = vi.hoisted(() => [] as unknown[]);
+// The last `dirty` the sheet handed its discard guard.
+const guard = vi.hoisted(() => ({ dirty: false }));
 // The report sheet's own dismissal, which the claim handoff waits for.
 const dismissal = vi.hoisted(() => ({
   calls: 0,
@@ -165,10 +167,10 @@ vi.mock('../../RadioGroup', () => ({
 }));
 vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ systemColors: {} }) }));
 vi.mock('../../../hooks/use-unsaved-sheet-guard', () => ({
-  useUnsavedSheetGuard: ({ onClose }: { onClose: () => void }) => ({
-    requestClose: onClose,
-    enablePanDownToClose: true,
-  }),
+  useUnsavedSheetGuard: ({ onClose, dirty }: { onClose: () => void; dirty: boolean }) => {
+    guard.dirty = dirty;
+    return { requestClose: onClose, enablePanDownToClose: true };
+  },
 }));
 vi.mock('../../../lib/connectivity/use-connectivity', () => ({
   useConnectivity: () => ({ effectiveOffline: state.offline }),
@@ -354,12 +356,15 @@ describe('ReportDirectorySheet on a board', () => {
   it('opens no claim when the host went away during the handoff', async () => {
     state.gym = { uuid: 'gym-1', name: 'Crux', listingState: 'UNCLAIMED', canClaim: true };
     const onClaim = vi.fn();
-    const screen = renderBoard(onClaim);
+    const onClose = vi.fn();
+    const screen = renderBoard(onClaim, board, onClose);
     fireEvent.click(screen.getByTestId('report-problem-claim'));
     await act(async () => {
       dismissal.resolve?.({ status: 'aborted' });
     });
     expect(onClaim).not.toHaveBeenCalled();
+    // Still done with: a host waiting on the report must never hang.
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('waits for a connection', () => {
@@ -737,17 +742,21 @@ describe('ReportDirectorySheet opened from the builder with a setup', () => {
   } as UserBoard;
   const climbersSetup = { layoutId: 5, sizeId: 1, setIds: '17,18,19,20,21' };
 
-  function renderPrefilled(climbNowOffered = true) {
-    return render(
+  function prefilled(climbNowOffered = true, onClose = vi.fn(), closeAfterDismissed = false) {
+    return (
       <ReportDirectorySheet
         target={{ kind: 'board', board: noFeet }}
-        onClose={vi.fn()}
+        onClose={onClose}
         onClaim={vi.fn()}
         initialReason="wrong_setup"
         initialSetup={climbersSetup}
         climbNowOffered={climbNowOffered}
-      />,
+        closeAfterDismissed={closeAfterDismissed}
+      />
     );
+  }
+  function renderPrefilled(climbNowOffered = true, onClose = vi.fn(), closeAfterDismissed = false) {
+    return render(prefilled(climbNowOffered, onClose, closeAfterDismissed));
   }
   const send = (screen: ReturnType<typeof render>) => screen.getByTestId('sheet-top-bar-trailing') as HTMLButtonElement;
 
@@ -803,5 +812,84 @@ describe('ReportDirectorySheet opened from the builder with a setup', () => {
     });
     expect(screen.getByTestId('report-problem-done-title')).toBeTruthy();
     expect(screen.queryByTestId('report-problem-climb-now')).toBeNull();
+  });
+});
+
+describe('ReportDirectorySheet opened from the builder: closing and the generated note', () => {
+  const noFeet = {
+    ...board,
+    boardType: 'moonboard',
+    layoutId: 5,
+    sizeId: 1,
+    setIds: '17,18,19,21',
+    angle: 40,
+    isAngleAdjustable: true,
+  } as UserBoard;
+  const climbersSetup = { layoutId: 5, sizeId: 1, setIds: '17,18,19,20,21' };
+  function sheet(onClose = vi.fn(), closeAfterDismissed = false) {
+    return (
+      <ReportDirectorySheet
+        target={{ kind: 'board', board: noFeet }}
+        onClose={onClose}
+        onClaim={vi.fn()}
+        initialReason="wrong_setup"
+        initialSetup={climbersSetup}
+        closeAfterDismissed={closeAfterDismissed}
+      />
+    );
+  }
+  const generated =
+    'report.setupNote{"setup":"Masters 2019 · Standard · 11x18 Grid · Hold Set A, Hold Set B, Original School Holds, Screw-on Feet, Wooden Holds"}';
+  const noteField = (screen: ReturnType<typeof render>) =>
+    screen.getByLabelText('report.noteLabel') as HTMLTextAreaElement;
+
+  it('closes without asking to discard until the climber changes something', () => {
+    state.setupSuggestions = true;
+    state.gym = { uuid: 'gym-1', name: 'Crux', listingState: 'UNCLAIMED', canClaim: false };
+    const screen = render(sheet());
+    expect(guard.dirty).toBe(false);
+    fireEvent.change(noteField(screen), { target: { value: 'Feet on the left' } });
+    expect(guard.dirty).toBe(true);
+  });
+
+  it('treats the generated note as untouched too', () => {
+    const screen = render(sheet());
+    expect(noteField(screen).value).toBe(generated);
+    expect(guard.dirty).toBe(false);
+  });
+
+  it('drops the generated note once the setup fields appear, or another reason is picked', () => {
+    const screen = render(sheet());
+    expect(noteField(screen).value).toBe(generated);
+    state.setupSuggestions = true;
+    screen.rerender(sheet());
+    expect(screen.getByTestId('setup-suggestion-holds')).toBeTruthy();
+    expect(noteField(screen).value).toBe('');
+
+    state.setupSuggestions = false;
+    const other = render(sheet());
+    fireEvent.click(within(other.container).getByLabelText('report.boardReasons.gone'));
+    expect((within(other.container).getByLabelText('report.noteLabel') as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('keeps a note the climber edited when the fields appear', () => {
+    const screen = render(sheet());
+    fireEvent.change(noteField(screen), { target: { value: `${generated} and the kicker` } });
+    state.setupSuggestions = true;
+    screen.rerender(sheet());
+    expect(noteField(screen).value).toBe(`${generated} and the kicker`);
+  });
+
+  it('tells the host it closed only once the sheet has slid away', async () => {
+    const onClose = vi.fn();
+    const screen = render(sheet(onClose, true));
+    fireEvent.click(screen.getByTestId('sheet-top-bar-leading'));
+    fireEvent.click(screen.getByTestId('sheet-top-bar-leading'));
+    expect(dismissal.calls).toBe(1);
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => {
+      dismissal.resolve?.({ status: 'dismissed' });
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

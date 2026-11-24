@@ -10,7 +10,6 @@ import { likelySetupOmissions } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
@@ -42,7 +41,7 @@ export const BoardHoldsSummary = memo(function BoardHoldsSummary({
   disabled = false,
 }: BoardHoldsSummaryProps) {
   const { t } = useTranslation('boards');
-  const { systemColors } = useTheme();
+  const { systemColors, brandColors } = useTheme();
 
   const selectedCount = useMemo(() => {
     const selected = new Set(selectedSetIds);
@@ -80,10 +79,10 @@ export const BoardHoldsSummary = memo(function BoardHoldsSummary({
         : omissions.map((omission) => (
             <View
               key={omission.setId}
-              style={[styles.omission, { borderColor: iosSystemColors.systemOrange }]}
+              style={[styles.omission, { borderColor: brandColors.warning }]}
               testID={`board-holds-omission-${omission.setId}`}
             >
-              <Icon name="info" size={16} color={iosSystemColors.systemOrange} />
+              <Icon name="info" size={16} color={brandColors.warning} />
               <Text variant="footnote" color={systemColors.label} style={styles.omissionText}>
                 {t('mobile.create.omissionHint', { set: omission.name })}
               </Text>

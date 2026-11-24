@@ -18,7 +18,7 @@
 // (`initialReason`, `initialSetup`), or written into the note while the setup
 // fields are off. Nothing is sent until the climber taps Send.
 
-import { useCallback, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -26,6 +26,7 @@ import {
   initialSetupSelection,
   isSetupChanged,
   isSetupSelectionComplete,
+  normaliseSetIds,
   setupSelectionReducer,
   toSuggestedSetup,
   type SetupSelection,
@@ -190,6 +191,13 @@ export function setupReviewLine(reason: BoardSetupReviewReason, gym: string, t: 
 /** A setup the sheet can open on instead of the board's own: the climber's, from the builder. */
 export type ReportInitialSetup = { layoutId: number; sizeId: number; setIds: string };
 
+/** A selection as a comparable key: layout, size, sets in canonical order, and a fixed angle. */
+function selectionKey(selection: SetupSelection | null): string {
+  if (!selection) return '';
+  const angle = selection.angleIsFixed ? String(selection.angle) : '';
+  return `${selection.layoutId ?? ''}|${selection.sizeId ?? ''}|${normaliseSetIds(selection.setIds.join(','))}|${angle}`;
+}
+
 /** The setup reducer over a board this build may not know (no selection, no fields). */
 function setupReducer(selection: SetupSelection | null, action: SetupSelectionAction): SetupSelection | null {
   return selection ? setupSelectionReducer(selection, action) : selection;
@@ -225,6 +233,7 @@ export function ReportDirectorySheet({
   initialReason = null,
   initialSetup = null,
   climbNowOffered = true,
+  closeAfterDismissed = false,
 }: {
   target: ReportProblemTarget;
   onClose: () => void;
@@ -245,6 +254,13 @@ export function ReportDirectorySheet({
    * the host moves on once this sheet closes (the builder's near-miss fix).
    */
   climbNowOffered?: boolean;
+  /**
+   * Call `onClose` only once this sheet has fully slid away, for a host that
+   * navigates as soon as the report is done with (the builder's near-miss fix):
+   * leaving while a native sheet is still dismissing is the overlap the
+   * presentation coordinator exists to prevent.
+   */
+  closeAfterDismissed?: boolean;
 }) {
   const { t } = useTranslation('boards');
   const { effectiveOffline } = useConnectivity();
@@ -283,11 +299,24 @@ export function ReportDirectorySheet({
     isSetupSuggestionAllowed(reason, board.boardType);
   // With the setup fields off (the flag, or a board they don't cover), the
   // climber's setup goes into the note instead, for them to send or edit.
-  const [note, setNote] = useState(() => {
+  const [generatedNote] = useState(() => {
     if (!board || !initialSetup || initialReason !== 'wrong_setup' || showSetupFields) return '';
     const setup = formatSetupSummary(board.boardType, initialSetup);
     return setup ? t('report.setupNote', { setup }).slice(0, REPORT_NOTE_MAX_LENGTH) : '';
   });
+  const [note, setNote] = useState(generatedNote);
+  // That note says the setup in words only while nothing better says it: the
+  // setup fields appearing (the flag resolving late) or another reason take it
+  // away, unless the climber has made it their own.
+  useEffect(() => {
+    if (!generatedNote) return;
+    if (showSetupFields || reason !== 'wrong_setup') {
+      setNote((current) => (current === generatedNote ? '' : current));
+    }
+  }, [generatedNote, showSetupFields, reason]);
+  // What the sheet opened on, so a report nobody has touched yet closes
+  // without asking to discard it.
+  const [initialSelectionKey] = useState(() => selectionKey(selection));
   // Changed, and whole: a layout the catalogue lists no sets for can't be sent.
   const setupChanged =
     showSetupFields &&
@@ -308,11 +337,28 @@ export function ReportDirectorySheet({
       claiming.current = true;
       const dismissal = await dismissManagedSheetAndWait(sheetRef.current);
       // The host went away mid-handoff: nothing left to present the claim from.
-      if (dismissal.status === 'aborted') return;
+      // Still say the report is done, so a host waiting on it never hangs.
+      if (dismissal.status === 'aborted') {
+        onClose();
+        return;
+      }
       onClaim(claimTarget);
     },
-    [onClaim],
+    [onClaim, onClose],
   );
+
+  // Done, Cancel, a pan-down or being displaced. A host that leaves the route
+  // on close waits for the sheet to be gone first.
+  const closing = useRef(false);
+  const close = useCallback(() => {
+    if (!closeAfterDismissed) {
+      onClose();
+      return;
+    }
+    if (closing.current) return;
+    closing.current = true;
+    void dismissManagedSheetAndWait(sheetRef.current).then(() => onClose());
+  }, [closeAfterDismissed, onClose]);
 
   const reportBoard = useReportBoard();
   const reportGym = useReportGym();
@@ -665,8 +711,12 @@ export function ReportDirectorySheet({
       doneAction={doneAction}
       offlineMessage={effectiveOffline ? t('report.offline') : null}
       errorMessage={mutation.isError && !alreadySetUp ? t('report.error') : null}
-      dirty={reason !== null || note.length > 0 || setupChanged}
-      onClose={onClose}
+      dirty={
+        reason !== initialReason ||
+        (note.length > 0 && note !== generatedNote) ||
+        (setupChanged && selectionKey(selection) !== initialSelectionKey)
+      }
+      onClose={close}
       sheetRef={sheetRef}
       testID="report-problem"
     />

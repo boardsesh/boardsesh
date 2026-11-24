@@ -1269,6 +1269,10 @@ export const SHARED_EVENTS = {
   // with no draft to compare against: the find step has none), lookup: ok |
   // failed, trigger: find_step (the gym's wall list) | pre_submit (Save was
   // refused with BOARD_EXISTING_WALLS) }. Once per gym and type per screen.
+  // From PR 3 of #8151, pre_submit also carries mismatchCount (walls on another
+  // layout or size, from the follow-up lookup with the climber's setup; they
+  // never block, so the refusal doesn't name them) and mismatchLookup: ok |
+  // failed | none (no gym to look in). It fires once that lookup has settled.
   BoardWallCandidatesShown: 'Board Wall Candidates Shown',
   // The climber took an existing wall instead of adding one: followed (when it
   // wasn't theirs yet) and made active. Props: { match: exact | near_miss |

@@ -32,8 +32,10 @@ export type OpenReportOptions = {
   /** Off hides the done step's "Climb it now": the caller has bound the board already. */
   climbNowOffered?: boolean;
   /**
-   * Called once the report is done with: its sheet closed, or the claim sheet
-   * it handed over to closed. Not called when a later `openReport` replaces it.
+   * Called once the report is done with: its sheet has fully slid away, or the
+   * claim sheet it handed over to has closed. Also called straight away when
+   * no sheet opens (signed out: login opens instead), so a caller waiting on it
+   * never hangs. Not called when a later `openReport` replaces it.
    */
   onClosed?: () => void;
 };
@@ -80,6 +82,7 @@ export function useReportProblemHost(): ReportProblemHost {
     (next: ReportProblemTarget, options: OpenReportOptions = {}) => {
       if (!isAuthenticated) {
         router.push('/auth/login');
+        options.onClosed?.();
         return;
       }
       onClosedRef.current = options.onClosed ?? null;
@@ -117,6 +120,7 @@ export function useReportProblemHost(): ReportProblemHost {
             initialReason={opened.options.initialReason ?? null}
             initialSetup={opened.options.initialSetup ?? null}
             climbNowOffered={opened.options.climbNowOffered ?? true}
+            closeAfterDismissed={opened.options.onClosed !== undefined}
           />
         ) : null}
         {claimGym ? (

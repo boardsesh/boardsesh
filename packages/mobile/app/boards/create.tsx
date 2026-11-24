@@ -145,9 +145,13 @@ type ExistingWallsPrompt = {
    * The gym's walls on another layout or size (#8151, PR 3): never named by a
    * refusal, since they never block, but often the same wall entered wrong.
    * Looked up with the draft; empty until then, and when that lookup fails.
+   * `nearby` is the other listing a wall is on when it isn't this gym's own,
+   * so its row says which gym and how far.
    */
-  mismatch: UserBoard[];
+  mismatch: MismatchWall[];
 };
+
+type MismatchWall = { board: UserBoard; nearby: { gymName: string; distanceMeters: number | null } | null };
 
 /**
  * One setup as a comparable key: board type, layout, size and the sets in
@@ -502,39 +506,59 @@ export default function CreateBoard() {
       setExistingWalls((current) =>
         current && current.named === named ? { ...current, boards, loadFailed } : current,
       );
+      // The gym's walls on another layout or size never block, so the refusal
+      // never names them: ask for them with the draft. Advisory, so a failure
+      // just leaves that shelf out. The gym is the one the board was sent with,
+      // or else the one a named wall is on (the server may have attached it).
+      // A wall on a listing within 150 m stays, with that listing's name on its
+      // row: a second listing of the same gym is exactly where copies hide.
+      const namedUuids = new Set(named.map((wall) => wall.boardUuid));
+      const gymUuid = knownGymUuid ?? boards.find((board) => board.gymUuid)?.gymUuid ?? null;
+      let mismatchLookup: 'ok' | 'failed' | 'none' = 'none';
+      let mismatchCount = 0;
+      if (gymUuid) {
+        try {
+          const { candidates } = await fetchExistingWallCandidates({
+            boardType,
+            gymUuid,
+            layoutId: draft.layoutId,
+            sizeId: draft.sizeId,
+            setIds: draft.setIds,
+          });
+          const mismatch: MismatchWall[] = candidates
+            .filter(
+              (candidate) => candidate.matchKind === 'LAYOUT_OR_SIZE_DIFFERS' && !namedUuids.has(candidate.board.uuid),
+            )
+            .map((candidate) => ({
+              board: candidate.board,
+              nearby:
+                candidate.source === 'NEARBY_LISTING'
+                  ? { gymName: candidate.gymName, distanceMeters: candidate.gymDistanceMeters ?? null }
+                  : null,
+            }));
+          mismatchLookup = 'ok';
+          mismatchCount = mismatch.length;
+          setExistingWalls((current) => (current && current.named === named ? { ...current, mismatch } : current));
+        } catch {
+          // Advisory only: the walls that block are already on the sheet.
+          mismatchLookup = 'failed';
+        }
+      }
+      // Once both lookups have settled, so the counts are what the sheet shows.
       track(SHARED_EVENTS.BoardWallCandidatesShown, {
         boardType,
         exactCount: named.filter((wall) => wall.matchKind === 'EXACT').length,
         nearMissCount: named.filter(
           (wall) => wall.matchKind === 'SETS_DIFFER' || wall.matchKind === 'LAYOUT_OR_SIZE_DIFFERS',
         ).length,
+        mismatchCount,
+        mismatchLookup,
         nearbyCount: 0,
         otherTypeCount: 0,
         atGymCount: named.filter((wall) => wall.matchKind === null).length,
         lookup: boards.length === 0 && named.length > 0 ? 'failed' : 'ok',
         trigger: 'pre_submit',
       });
-      // The gym's walls on another layout or size never block, so the refusal
-      // never names them: ask for them with the draft. Advisory, so a failure
-      // just leaves that shelf out. The gym is the one the board was sent with,
-      // or else the one a named wall is on (the server may have attached it).
-      const gymUuid = knownGymUuid ?? boards.find((board) => board.gymUuid)?.gymUuid ?? null;
-      if (!gymUuid) return;
-      try {
-        const { candidates } = await fetchExistingWallCandidates({
-          boardType,
-          gymUuid,
-          layoutId: draft.layoutId,
-          sizeId: draft.sizeId,
-          setIds: draft.setIds,
-        });
-        const mismatch = candidates
-          .filter((candidate) => candidate.matchKind === 'LAYOUT_OR_SIZE_DIFFERS')
-          .map((candidate) => candidate.board);
-        setExistingWalls((current) => (current && current.named === named ? { ...current, mismatch } : current));
-      } catch {
-        // Advisory only: the walls that block are already on the sheet.
-      }
     },
     [],
   );
@@ -871,8 +895,16 @@ export default function CreateBoard() {
     if (!existingWalls?.boards) return [];
     const matchKinds = new Map(existingWalls.named.map((wall) => [wall.boardUuid, wall.matchKind]));
     const named = existingWalls.boards.map((board) => ({ board, matchKind: matchKinds.get(board.uuid) ?? null }));
-    return arrangeExistingWalls(existingWalls.draft, named, existingWalls.mismatch);
+    return arrangeExistingWalls(
+      existingWalls.draft,
+      named,
+      existingWalls.mismatch.map((wall) => wall.board),
+    );
   }, [existingWalls?.boards, existingWalls?.named, existingWalls?.draft, existingWalls?.mismatch]);
+  const nearbyListings = useMemo(
+    () => new Map((existingWalls?.mismatch ?? []).map((wall) => [wall.board.uuid, wall.nearby])),
+    [existingWalls?.mismatch],
+  );
   const existingWallsByKey = useMemo(() => {
     const byKey = new Map<string, ExistingWall>();
     for (const shelf of arrangedWalls) for (const wall of shelf.walls) byKey.set(wall.board.uuid, wall);
@@ -883,7 +915,11 @@ export default function CreateBoard() {
       arrangedWalls.map((shelf) => ({
         key: shelf.key,
         items: shelf.walls.flatMap(({ board, difference }) => {
-          const item = wallCandidateItem(board, { copy: wallRowCopy, viewerId });
+          const item = wallCandidateItem(board, {
+            copy: wallRowCopy,
+            viewerId,
+            nearby: nearbyListings.get(board.uuid) ?? null,
+          });
           if (!item) return [];
           if (!difference) return [item];
           return [
@@ -891,8 +927,11 @@ export default function CreateBoard() {
           ];
         }),
       })),
-    [arrangedWalls, wallRowCopy, differenceCopy, viewerId],
+    [arrangedWalls, wallRowCopy, differenceCopy, viewerId, nearbyListings],
   );
+  // The title counts the walls on the sheet once they're in; the refusal's
+  // count until then.
+  const shownWallCount = existingWallShelves.reduce((total, shelf) => total + shelf.items.length, 0);
   // "Use it and fix its setup" goes through Report a problem, so it is offered
   // on the walls a report is: not the climber's own, nor one they can edit.
   const fixableWallKeys = useMemo(() => {
@@ -1045,7 +1084,7 @@ export default function CreateBoard() {
         <ExistingWallsSheet
           gymName={builder.selectedGym?.name ?? existingWalls.boards?.[0]?.gymName ?? null}
           boardLabel={boardTypeLabel(builder.boardName)}
-          wallCount={existingWalls.named.length}
+          wallCount={shownWallCount > 0 ? shownWallCount : existingWalls.named.length}
           shelves={existingWallShelves}
           fixableKeys={fixableWallKeys}
           canKeepMine={(existingWalls.boards?.length ?? 0) > 0}

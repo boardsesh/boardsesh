@@ -185,21 +185,30 @@ vi.mock('../../../src/components/board-discovery/ExistingWallsSheet', () => ({
       loadFailed ? createElement('span', { key: 'failed' }, 'walls failed') : null,
       ...shelves.flatMap((shelf) =>
         shelf.items.map((item, index) =>
-          createElement('div', { key: item.key, 'data-shelf': shelf.key, 'data-wall': item.key }, [
-            createElement('span', { key: 'line' }, item.detailLines?.[0] ?? ''),
-            createElement(
-              'button',
-              { key: 'use', type: 'button', onClick: () => onUse(item, index, shelf.key) },
-              `use ${item.title}`,
-            ),
-            fixableKeys.has(item.key)
-              ? createElement(
-                  'button',
-                  { key: 'fix', type: 'button', onClick: () => onFixSetup(item, index, shelf.key) },
-                  `fix ${item.title}`,
-                )
-              : null,
-          ]),
+          createElement(
+            'div',
+            {
+              key: item.key,
+              'data-shelf': shelf.key,
+              'data-wall': item.key,
+              'data-lines': (item.detailLines ?? []).join(' | '),
+            },
+            [
+              createElement('span', { key: 'line' }, item.detailLines?.[0] ?? ''),
+              createElement(
+                'button',
+                { key: 'use', type: 'button', onClick: () => onUse(item, index, shelf.key) },
+                `use ${item.title}`,
+              ),
+              fixableKeys.has(item.key)
+                ? createElement(
+                    'button',
+                    { key: 'fix', type: 'button', onClick: () => onFixSetup(item, index, shelf.key) },
+                    `fix ${item.title}`,
+                  )
+                : null,
+            ],
+          ),
         ),
       ),
       canKeepMine ? createElement('button', { key: 'keep', type: 'button', onClick: onKeepMine }, 'keep mine') : null,
@@ -1045,6 +1054,50 @@ describe('CreateBoard near-miss walls (#8151)', () => {
     expect(createBoardMock.mock.calls[1][0].acknowledgedWallUuids).toEqual(['no-feet']);
   });
 
+  it('counts every wall it shows in the title, and reports the lower shelf once it settles', async () => {
+    refuseWithNearMiss();
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(screen.getByText('use Wall seeded-2016')).toBeTruthy());
+    expect(screen.getByText('Boulder Space has 2')).toBeTruthy();
+    const shown = trackMock.mock.calls.filter(([name]) => name === 'Board Wall Candidates Shown');
+    expect(shown).toHaveLength(1);
+    expect(shown[0][1]).toMatchObject({ nearMissCount: 1, mismatchCount: 1, mismatchLookup: 'ok' });
+  });
+
+  it('names the nearby listing on a wall found there, not this gym', async () => {
+    refuseWithNearMiss();
+    const annexWall = { ...seeded2016, uuid: 'annex-2016', name: 'Wall annex-2016' } as UserBoard;
+    fetchExistingWallCandidatesMock.mockResolvedValue({
+      candidates: [
+        {
+          board: noFeet,
+          matchKind: 'SETS_DIFFER',
+          source: 'SELECTED_GYM',
+          gymName: 'Boulder Space',
+          gymDistanceMeters: null,
+        },
+        {
+          board: annexWall,
+          matchKind: 'LAYOUT_OR_SIZE_DIFFERS',
+          source: 'NEARBY_LISTING',
+          gymName: 'Boulder Space Annex',
+          gymDistanceMeters: 82.4,
+        },
+      ],
+      truncated: false,
+    });
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(screen.getByText('use Wall annex-2016')).toBeTruthy());
+    const row = screen.getByTestId('existing-walls').querySelector('[data-wall="annex-2016"]');
+    expect(row?.getAttribute('data-lines')).toContain(
+      'mobile.findWall.nearbyGym {"gym":"Boulder Space Annex","distance":82}',
+    );
+    const own = screen.getByTestId('existing-walls').querySelector('[data-wall="no-feet"]');
+    expect(own?.getAttribute('data-lines')).not.toContain('mobile.findWall.nearbyGym');
+  });
+
   it('keeps the named walls when the lower shelf cannot load', async () => {
     refuseWithNearMiss();
     fetchExistingWallCandidatesMock.mockRejectedValue(new Error('rate limited'));
@@ -1054,6 +1107,12 @@ describe('CreateBoard near-miss walls (#8151)', () => {
     await waitFor(() => expect(screen.getByText('use Wall no-feet')).toBeTruthy());
     expect(screen.queryByText('use Wall seeded-2016')).toBeNull();
     expect(screen.queryByText('walls failed')).toBeNull();
+    await waitFor(() =>
+      expect(trackMock.mock.calls.find(([name]) => name === 'Board Wall Candidates Shown')?.[1]).toMatchObject({
+        mismatchCount: 0,
+        mismatchLookup: 'failed',
+      }),
+    );
   });
 
   it('uses a near miss as it is, saying so', async () => {

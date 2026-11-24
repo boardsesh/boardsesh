@@ -497,7 +497,7 @@
         "extraSets": "Hat auch {{sets}}",
         "choiceTitle": "Ist das deine Wand?",
         "choiceBody": "Das Setup passt nicht zu deinem. Wenn du an dieser Wand kletterst, nimm sie, damit deine Begehungen bei denen deiner Crew landen.",
-        "choiceUseAsIs": "So nutzen, wie es ist",
+        "choiceUseAsIs": "So nutzen, wie sie ist",
         "choiceFixSetup": "Nutzen und Setup korrigieren",
         "choiceDifferent": "Nein, das ist eine andere Wand"
       },
