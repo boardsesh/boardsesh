@@ -41,8 +41,8 @@ A note is optional, trimmed, and at most 500 characters. `other` needs a note of
 
 Migration 0334 (`packages/db/src/schema/app/directory-reports.ts`):
 
-- `directory_reports`: one problem with one target. `target_kind` is `board` or `gym`; a check holds exactly one of `board_id` / `gym_id`, the one the kind names. A board report keeps `gym_id_at_report` (the gym it was at, or for `relist_request` the gym that removed it), because a removal clears the board's own link. `status` is `open`, `escalated` (in the admin queue), or an outcome: `fixed`, `removed`, `deleted`, `kept`, `merged`. A second check holds `resolved_at` set exactly when the status is an outcome. `resolved_by_role` is `creator`, `gym_staff`, `admin` or `auto` (the system). Two partial unique indexes allow one waiting (`open` or `escalated`) report per (board, reason) and per (gym, reason).
-- `directory_report_reporters`: who reported, with their note. Unique per (report, reporter) while the reporter's account exists; an account deletion nulls `reporter_id` and leaves the report.
+- `directory_reports`: one problem with one target. `target_kind` is `board` or `gym`; a check holds exactly one of `board_id` / `gym_id`, the one the kind names. A board report keeps `gym_id_at_report` (the gym it was at, or for `relist_request` the gym that removed it), because a removal clears the board's own link. `status` is `open`, `escalated` (in the admin queue), or an outcome: `fixed`, `removed`, `deleted`, `kept`, `merged`. A second check holds `resolved_at` set exactly when the status is an outcome. `resolved_by_role` is `creator`, `gym_staff`, `admin`, `auto` (the system) or `climber` (a climber's suggested setup changed the board). Two partial unique indexes allow one waiting (`open` or `escalated`) report per (board, reason) and per (gym, reason).
+- `directory_report_reporters`: who reported, with their note and, since migration 0337, the setup they suggest (`suggested_setup`). Unique per (report, reporter) while the reporter's account exists; an account deletion nulls `reporter_id` and leaves the report.
 - `directory_notification_context`: what a notification of this feature is about, keyed by the notification's uuid (report, board, gym, reminder flag, the staff role that acted). A side table, because `notifications` is large and hot; `app_feedback_messages.notification_uuid` is the same shape.
 - `admin_daily_digests`: one row per UTC day the digest ran (`sending`, then `sent` or `empty`), with the window it covered.
 
@@ -87,6 +87,9 @@ SDL: `packages/shared-schema/src/schema/directory-reports.ts`. Operation documen
 | `boardReports(boardUuid)` | creator, routed gym staff, global admins; `[]` for anyone else | waiting and recently closed reports, newest first |
 | `myDirectoryReportsToReview(includeResolved, first)` | signed in | reports on my boards and routed to gyms I staff: waiting first (oldest first), then closed (newest first) |
 | `adminDirectoryReports(status, targetKind, first, after)` | global admins | the admin queue; `status` defaults to `escalated` |
+| `reportBoard(input: { …, suggestedSetup? })` | as above | also `setupOutcome`, `setupReviewReason` and, when applied, `board` (see "Suggested setup") |
+| `undoBoardSetupChange(eventId)` | global admins, the creator (not SYSTEM), the gym's owner and admins | the board with its old setup back |
+| `adminBoardSetupChanges(first, after)` | global admins | climbers' setup changes, newest first |
 | `UserBoard.openReportCount` | | waiting reports the viewer can act on; null unless they are the creator, staff of the board's gym or of a report's gym, or a global admin |
 | `UserBoard.viewerHasOpenReport` | | the viewer is a reporter on a waiting report; null signed out |
 | `Notification.directoryNotice`, `GroupedNotification.directoryNotice` | | what a directory notification is about (below) |
@@ -94,6 +97,70 @@ SDL: `packages/shared-schema/src/schema/directory-reports.ts`. Operation documen
 `openReportCount` and `viewerHasOpenReport` are computed in `enrichBoard` / `enrichBoards` with two reads for the whole list (`loadBoardReportFlags`), never a query per row.
 
 An admin closing a report as `removed` or `deleted` must have done it first with the existing mutations (`detachBoardFromGym`, `deleteBoard`, `updateGym isListed: false`, `deleteGym`); the mutation checks the board or gym. `fixed` and `merged` are not checked.
+
+## Suggested setup
+
+"Set up wrong" on a board that isn't a spray wall can carry the setup the climber says is right: the layout, the size, the hold sets and, on a board that doesn't tilt, the angle. All within the board's own type: a wrong board type stays "Listed twice" or "Something else". A spray wall keeps the note field; it has no layout to pick. The founder's decisions behind it (2026-11-23) are in [gym-board-governance.md](gym-board-governance.md#suggested-setups-2026-11-23).
+
+| Board is at… | After Send | "Climb it now"? |
+|---|---|---|
+| A gym nobody runs (`UNCLAIMED` or `CLIMBER_LISTED`), no limit hit | The board changes for everyone. Its waiting "Set up wrong" reports close as `fixed`. The creator is told and can undo. | Yes |
+| A gym run by the gym (`RUN_BY_GYM`) | The suggestion waits on the report for the gym's staff, who get **Use this setup** | No: the "fixed" notice opens the board |
+| No gym, or any limit hit | The suggestion waits on the report, routed as any report: the creator, then the admin queue after 14 days | No: the "fixed" notice opens the board |
+
+The rule is `setupSuggestionDecision` in `packages/shared/directory-moderation/src/setup-suggestion.ts`, and the backend decides with it. The clients word the line above Send with `setupSuggestionPreview`, the gym half of the same rule ("This changes it for everyone at {gym}", "{gym}'s staff check it first", or the creator checks it), and show the setup fields only where `isSetupSuggestionAllowed(reason, boardType)` holds. A limit can still send a suggestion the line promised would apply to review; the result says which (`setupOutcome`, `setupReviewReason`).
+
+The fields hold their state in `@boardsesh/board-config`'s `setupSelection` (`packages/shared/board-config/src/setup-selection.ts`): the board builder's reset rules (a new layout picks its default size and every set of it, a new size picks every set of it), the options for each row over the catalogue cascade and `getBoardAngleOptions`, `isSetupChanged` (Send works once the setup differs) and `toSuggestedSetup`, which writes the sets in `normaliseSetIds` order.
+
+### Limits
+
+Once the gym allows a change, these send it to review instead, checked in this order; the first one hit is the reason:
+
+| Reason | When |
+|---|---|
+| `RECENTLY_UNDONE` | A climber change to this board was undone in the last 90 days (`SETUP_CHANGE_REVIEW_DAYS_AFTER_UNDO`) |
+| `RECENT_CHANGE` | A climber changed this board in the last 24 hours (`SETUP_CHANGE_BOARD_COOLDOWN_HOURS`) |
+| `DAILY_LIMIT` | This climber made 3 changes, on any boards, in the last 24 hours (`SETUP_CHANGES_PER_CLIMBER_PER_DAY`, a rolling window) |
+| `CLASHES` | Backend only: the new setup would make the board a copy of another board with the same owner (`findOwnedBlockingDuplicate`), or clash with a serial number (`lockAndAssertBoardSerialAvailable`) |
+
+The gym reasons are `CLAIMED_GYM` (run by the gym) and `NO_GYM`. A gym whose listing state isn't known counts as no gym. The windows are read from `board_moderation_events`. The board row is taken `FOR UPDATE` before they are read, so of two suggestions on one board at the same moment, one applies and the other goes to review as `RECENT_CHANGE`.
+
+There is no account-age gate: it would block the climber standing at the wall. The limits and undo cover abuse instead.
+
+### Refused, never sent to review
+
+`reportBoard` refuses these with `BAD_USER_INPUT`, and files nothing:
+
+- a suggestion with a reason other than `wrong_setup`, or on a spray wall;
+- an unknown layout, size or sets for the board's type (`assertKnownBoardConfig`), or an angle the board's type doesn't support (`isBoardAngleSupported`);
+- the setup the board has now (sets compared in `normaliseSetIds` order; the angle only on a board that doesn't tilt).
+
+### What a change writes
+
+In the filing transaction:
+
+1. The board's `layout_id`, `size_id`, `set_ids` and, on a board that doesn't tilt, `angle`, with `updated_at` and `sync_frozen_at`. The freeze is the one staff edits set, so the location sync can't put the old setup back.
+2. `onBoardEdited` with the actor role `climber`. The board's waiting `wrong_setup` reports close as `fixed` with resolver role `climber`, the one just filed included. Their reporters hear `board_report_resolved`, except the climber who made the change.
+3. A `board_moderation_events` row: `setup_changed_by_climber`, actor role `climber`, `details` `{ before, after, reportUuid }`.
+4. `board_setup_changed_by_climber` to the creator, unless the board is synced (SYSTEM). Its context row's `board_moderation_event_id` points at the event, so `directoryNotice` carries `setupChangeEventId`, `setupBefore`, `setupAfter` and `setupChangeState` for the notice's Undo.
+
+Everyone else who has the board active picks up the new setup the next time the app opens or comes to the foreground: `use-active-board-self-heal.ts` reverts the stored config to the server's, the angle excepted. `reportBoard` returns the changed `board` for Climb it now.
+
+A suggestion that goes to review is kept on the reporter's row (`directory_report_reporters.suggested_setup`) and shown to the people the report reached as `DirectoryReportNote.suggestedSetup`. Reporters stay anonymous, as for notes. A note row with only a suggestion has an empty `note`. Staff's **Use this setup** sends the existing `updateBoard`, which closes the report as `fixed`.
+
+### Undo
+
+`undoBoardSetupChange(eventId)` puts back the setup a climber's change replaced. Global admins, the board's creator (not for a synced board) and the owner and admins of the board's gym may undo. It is a compare-and-set under the board's row lock: the board must still have the change's `after`. Otherwise it is refused with `BOARD_SETUP_CHANGED_SINCE` (`isBoardSetupChangedSinceError` in `@boardsesh/graphql/errors`), which also covers a change someone already undid. It restores `before`, writes `setup_change_undone` (`details` `{ before, after, undoesEventId }`) and starts the board's 90 days of review. The report the change closed stays closed. The refile cooldown ("Filing a report", step 4) doesn't hold after an undo: a climber can suggest again straight away, and for 90 days that goes to review.
+
+`adminBoardSetupChanges(first, after)` lists every change, newest first, for the admin's Setup changes by climbers tab: the board, its gym, before and after, the climber's name, when, and `state` (`LIVE`; `UNDONE`; `CHANGED_SINCE`, the board changed again since).
+
+### The `directory-setup-suggestions` flag
+
+A server flag with the same rules as [`directory-reports`](#the-directory-reports-flag): one switch for the whole service, evaluated for the fixed id `system:directory-setup-suggestions`, cached 60 s, decided by `FEATURE_FLAG_OVERRIDES` when that names it, and off when PostHog can't answer. Turn it on with a plain 100% condition.
+
+While it is off, a suggestion is still checked, stored and shown to the people who review the report, but it never changes a board: `setupOutcome` is `SENT_FOR_REVIEW` with no `setupReviewReason`. The app reads the same flag before it shows the setup fields, and www does the same. Turn it on once this backend is deployed and the app and www builds that show the fields are live.
+
+Backend events, after commit: `Board Setup Suggested` {outcome, reason, boardType, gymState} and `Board Setup Change Undone` {by}.
 
 ## Closing a report
 
@@ -152,6 +219,7 @@ At most 10 report pushes reach one person in 24 hours (`DIRECTORY_REPORT_PUSHES_
 | `board_edited_by_staff` | creator | someone else changes their board |
 | `gym_claimed_with_your_board` | creators with a board at the gym | the gym is claimed (entity: the gym; names their oldest board there) |
 | `gym_claim_denied` | the claimant | their claim is denied, expires or is reverted (entity: the gym) |
+| `board_setup_changed_by_climber` | creator (not SYSTEM) | a climber's suggested setup changed their board (see "Suggested setup") |
 
 The two claim notices are described in [gym-claims.md](gym-claims.md).
 
@@ -241,7 +309,8 @@ They are sent once the action's transaction commits, so an action that rolls bac
 
 ## Where it lives
 
-- Routing, reasons, note rules, timing: `packages/shared/directory-moderation/`.
+- Routing, reasons, note rules, timing, the suggested setup rule: `packages/shared/directory-moderation/`.
+- The setup fields' state: `packages/shared/board-config/src/setup-selection.ts`.
 - Tables: `packages/db/src/schema/app/directory-reports.ts`.
 - Resolvers: `packages/backend/src/graphql/resolvers/social/directory-reports/` (`submit.ts`, `read.ts`, `lifecycle.ts`, `notices.ts`, `core.ts`).
 - Sweep and digest: `packages/backend/src/services/directory-report-sweep.ts`; the email in `email/email-service.ts`.
