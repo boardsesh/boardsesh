@@ -640,3 +640,56 @@ export type ReportGymDuplicateStatus = 'reported' | 'already_reported';
 export type ReportGymDuplicateResult = {
   status: ReportGymDuplicateStatus;
 };
+
+export type GymGradeInventoryStatus =
+  | 'READY'
+  | 'OWNER_ONLY'
+  | 'WALL_UNAVAILABLE'
+  | 'CHOOSE_COLLECTION'
+  | 'COLLECTION_UNAVAILABLE'
+  | 'COLLECTION_EMPTY';
+
+export type GymGradeInventoryBoard = {
+  boardUuid: string;
+  physicalBoardUuid: string;
+  boardName: string;
+  kind: 'SPRAY_WALL' | 'LED_COLLECTION';
+  status: GymGradeInventoryStatus;
+  included: boolean;
+  variantCount: number;
+  collectionName: string | null;
+};
+
+export type GymGradeComparison = {
+  gymUuid: string;
+  asOf: string;
+  startAt: string;
+  timeZone: string;
+  availableCount: number;
+  sendCount: number;
+  grades: {
+    boardType: string;
+    difficultyId: number | null;
+    availableCount: number;
+    sendCount: number;
+  }[];
+  boards: GymGradeInventoryBoard[];
+};
+
+export type GymGradeCollectionPage = {
+  collections: { uuid: string; name: string }[];
+  nextCursor: string | null;
+};
+
+export type GymGradeCollectionOptionsInput = {
+  gymUuid: string;
+  boardUuid: string;
+  search?: string;
+  cursor?: string | null;
+};
+
+export type SetGymGradeCollectionInput = {
+  gymUuid: string;
+  boardUuid: string;
+  playlistUuid: string | null;
+};

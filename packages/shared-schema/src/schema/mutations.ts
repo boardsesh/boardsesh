@@ -597,6 +597,7 @@ export const mutationsTypeDefs = /* GraphQL */ `
     updateGym(input: UpdateGymInput!): Gym!
     setGymReportingTimeZone(input: SetGymReportingTimeZoneInput!): Boolean!
     setGymReportingBoardAlias(input: SetGymReportingBoardAliasInput!): Boolean!
+    setGymGradeCollection(input: SetGymGradeCollectionInput!): Boolean!
 
     """
     Soft-delete a gym.

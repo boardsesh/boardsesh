@@ -67,3 +67,41 @@ Recent activity is aggregated in SQL over the older of the three selected period
 ### Deployment
 
 Before applying the journaled reach migration to an existing deployment, prebuild both same-name indexes concurrently using the columns and predicates in the migration. The names are `boardsesh_ticks_reporting_unbounded_idx` and `board_climb_events_reporting_actor_time_idx`. Verify that both indexes are valid before the migrator runs. This keeps the index builds off the migrator's write-blocking transaction. Fresh databases build both indexes through the migration.
+
+## Grade comparison and spray availability
+
+Grade comparison is a private staff snapshot. Each selected installed board
+contributes either its active spray-wall inventory or its compatible chosen
+LED playlist. Current feeds, busy times and engagement use their own scope.
+The report verifies access to a private playlist on every read, including for
+a staff member who could see the board but can't access its selected playlist.
+
+A current variant is the canonical climb, actual angle and original
+orientation. An LED playlist's saved angle takes precedence on an adjustable
+board, and a legacy row without an angle uses the board's angle. A fixed
+installation includes rows at its angle. Supply counts each compatible variant
+once per verified physical installation. A send must come from the exact
+logical configuration that offered the variant. Both series use the same
+current exact-angle reference grade. Their percentages divide by the visible
+inventory and send totals separately.
+
+Spray exposure starts at the first successful fenced observation of a
+published, visible, intact variant on its current board and active published
+photo version. Owner-only walls are outside the shared venue inventory.
+A writer can stop the measured interval. After a change, new measured
+availability needs another coherent observation. Gaps are unknown and prior
+intervals remain available to eligible Quiet climbs reports. A reset clone
+starts its own history. These timestamps record observed availability, with
+no assumption about when a setter installed the climb. Exposure records
+contain spray variants only.
+
+Availability and history are read from bounded results. Scope or history
+overflow never yields a partial denominator. Missing exposure does not hide a
+valid current grade comparison. Both clients recheck private grade and picker
+results after foregrounding, reconnecting or changing scope, and retire each
+receipt after five minutes.
+
+The web database login reaches the source writers but has no direct access to
+the comparison mapping, exposure records or sequence. The auth fence verifies
+the complete exposure trigger, function and journal dependency set before it
+approves the new writer path.

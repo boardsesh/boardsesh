@@ -2395,6 +2395,20 @@
       "when": 1795478677614,
       "tag": "0341_gym_reach_observations",
       "breakpoints": true
+    },
+    {
+      "idx": 342,
+      "version": "7",
+      "when": 1795478701827,
+      "tag": "0342_gym_grade_inventory",
+      "breakpoints": true
+    },
+    {
+      "idx": 343,
+      "version": "7",
+      "when": 1795478701828,
+      "tag": "0343_observe_spray_inventory",
+      "breakpoints": true
     }
   ]
 }

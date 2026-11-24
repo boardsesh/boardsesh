@@ -4868,6 +4868,72 @@ Input for the gym Insights query. `period` sets the window length: `week`
 (7 days, the default) or `month` (30 days). The comparison window is always the
 equally-long span immediately before it.
 """
+enum GymGradeInventoryKind {
+  SPRAY_WALL
+  LED_COLLECTION
+}
+
+enum GymGradeInventoryStatus {
+  READY
+  OWNER_ONLY
+  WALL_UNAVAILABLE
+  CHOOSE_COLLECTION
+  COLLECTION_UNAVAILABLE
+  COLLECTION_EMPTY
+}
+
+type GymGradeInventoryBoard {
+  boardUuid: ID!
+  physicalBoardUuid: ID!
+  boardName: String!
+  kind: GymGradeInventoryKind!
+  status: GymGradeInventoryStatus!
+  included: Boolean!
+  variantCount: Int!
+  collectionName: String
+}
+
+type GymGradeComparisonBucket {
+  boardType: String!
+  difficultyId: Int
+  availableCount: Int!
+  sendCount: Int!
+}
+
+type GymGradeComparison {
+  gymUuid: ID!
+  asOf: String!
+  startAt: String!
+  timeZone: String!
+  availableCount: Int!
+  sendCount: Int!
+  grades: [GymGradeComparisonBucket!]!
+  boards: [GymGradeInventoryBoard!]!
+}
+
+type GymGradeCollectionOption {
+  uuid: ID!
+  name: String!
+}
+
+type GymGradeCollectionPage {
+  collections: [GymGradeCollectionOption!]!
+  nextCursor: String
+}
+
+input GymGradeCollectionOptionsInput {
+  gymUuid: ID!
+  boardUuid: ID!
+  search: String
+  cursor: String
+}
+
+input SetGymGradeCollectionInput {
+  gymUuid: ID!
+  boardUuid: ID!
+  playlistUuid: ID
+}
+
 input GymStatsInput {
   "The gym to report on. The caller must have gym edit access."
   gymUuid: ID!
@@ -9592,6 +9658,9 @@ type Query {
   bounded to the gym's linked boards and the time window.
   """
   gymStats(input: GymStatsInput!): GymStats!
+  "Compare current inventory and attributable sends. Requires live gym staff access."
+  gymGradeComparison(input: GymStatsInput!): GymGradeComparison!
+  gymGradeCollectionOptions(input: GymGradeCollectionOptionsInput!): GymGradeCollectionPage!
 
   """
   Candidate duplicate-gym clusters for the /admin/gym-duplicates review queue
@@ -10660,6 +10729,7 @@ type Mutation {
   updateGym(input: UpdateGymInput!): Gym!
   setGymReportingTimeZone(input: SetGymReportingTimeZoneInput!): Boolean!
   setGymReportingBoardAlias(input: SetGymReportingBoardAliasInput!): Boolean!
+  setGymGradeCollection(input: SetGymGradeCollectionInput!): Boolean!
 
   """
   Soft-delete a gym.

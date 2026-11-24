@@ -680,6 +680,8 @@ const NOT_APPLICABLE: Record<string, string> = {
   'Query.strayBoardsForGym': 'boards NEAR a gym and not linked to it; the seeded wall is linked',
   'Query.gymKiosk': 'kiosk configuration, and the seed creates none',
   'Query.gymKiosks': 'kiosk configuration, and the seed creates none',
+  'Query.gymGradeCollectionOptions':
+    'staff LED playlist picker. selectorBoard rejects spray before the playlist lookup, and the response contains only collection UUIDs and names. gym-grade-comparison.test.ts proves the owner can find a compatible private Kilter collection.',
   'Query.holdOutlines': 'community-admin only, and it reads the hold catalogue rather than climbs',
 
   // --- moderation queue -------------------------------------------------------

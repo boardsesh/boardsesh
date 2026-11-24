@@ -332,6 +332,15 @@ const sessionWorkoutsSchema = readFileSync(
   'utf8',
 );
 
+const gymInventorySchema = readFileSync(
+  new URL('../../../db/drizzle/0342_gym_grade_inventory.sql', import.meta.url),
+  'utf8',
+);
+const sprayExposureSchema = readFileSync(
+  new URL('../../../db/drizzle/0343_observe_spray_inventory.sql', import.meta.url),
+  'utf8',
+);
+
 export const schemaSQL = `
   DROP TABLE IF EXISTS logbook_snapshot_session_chunks;
   DROP TABLE IF EXISTS logbook_session_changes;
@@ -2687,4 +2696,13 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${gymReportingAliasVenueGuard};
   DROP TABLE IF EXISTS gym_reporting_observations;
   ${gymReachObservationsSchema};
+  DROP FUNCTION IF EXISTS spray_exposure_board_change(), spray_exposure_wall_change(),
+    spray_exposure_version_change(), spray_exposure_policy_change(), spray_exposure_climb_change(),
+    spray_exposure_invalidate(text, text, text), spray_exposure_policy_invalidate(text),
+    spray_exposure_fence_key(text, text), spray_exposure_climb_key(integer, text) CASCADE;
+  DROP TABLE IF EXISTS gym_board_grade_collections, spray_exposure_invalidations,
+    spray_exposure_observations, spray_exposure_checkpoints;
+  DROP SEQUENCE IF EXISTS spray_exposure_event_seq;
+  ${gymInventorySchema};
+  ${sprayExposureSchema};
 `;

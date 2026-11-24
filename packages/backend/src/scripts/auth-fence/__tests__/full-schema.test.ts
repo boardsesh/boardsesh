@@ -103,6 +103,27 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
         ),
       );
     }
+    const [exposure] = await owner<{ present: boolean }[]>`SELECT
+      EXISTS (SELECT 1 FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relname IN (
+        'gym_board_grade_collections','spray_exposure_invalidations','spray_exposure_observations',
+        'spray_exposure_checkpoints','spray_exposure_event_seq'))
+      OR EXISTS (SELECT 1 FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN (
+        'spray_exposure_board_change','spray_exposure_wall_change','spray_exposure_version_change',
+        'spray_exposure_policy_change','spray_exposure_climb_change','spray_exposure_invalidate',
+        'spray_exposure_policy_invalidate','spray_exposure_climb_key','spray_exposure_fence_key')) AS present`;
+    if (!exposure.present) {
+      const tables = readFileSync(
+        new URL('../../../../../db/drizzle/0342_gym_grade_inventory.sql', import.meta.url),
+        'utf8',
+      );
+      const triggers = readFileSync(
+        new URL('../../../../../db/drizzle/0343_observe_spray_inventory.sql', import.meta.url),
+        'utf8',
+      );
+      await owner.unsafe(`${tables}
+${triggers}`);
+    }
+    // A partial fixture is left intact so verifyFence rejects it.
     const plan = await runAuthFence(['plan', '--confirm-host', address.hostname], environment);
     if (plan.mode !== 'plan') throw new Error('PLAN_EXPECTED');
     expect(plan.sql).toContain('CREATE ROLE "boardsesh_web" LOGIN');
@@ -300,6 +321,87 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
       .catch((error: unknown) => {
         if (!(error instanceof Error) || error.message !== 'ROLLBACK_FIXTURE') throw error;
       });
+    await expect(verifyFence(owner)).resolves.toMatchObject({ verified: true });
+  });
+
+  it('lets restricted web source writers invalidate spray exposure without direct access to its tables, sequence or routines', async () => {
+    const userId = randomUUID();
+    const boardUuid = randomUUID();
+    await owner`INSERT INTO public.users (id, email) VALUES (${userId}, ${`${userId}@example.invalid`})`;
+    await owner`INSERT INTO public.user_boards (uuid, slug, name, owner_id, board_type, layout_id, size_id, set_ids)
+      VALUES (${boardUuid}, ${boardUuid}, 'Spray fence board', ${userId}, 'spray', 9001, 9001, '1')`;
+    await expect(verifyFence(owner)).resolves.toMatchObject({ verified: true });
+    const [before] = await owner<{ count: number }[]>`SELECT count(*)::int AS count
+      FROM public.spray_exposure_invalidations WHERE kind='board' AND key=${boardUuid}`;
+    await web`UPDATE public.user_boards SET angle = 45 WHERE uuid = ${boardUuid}`;
+    const [after] = await owner<{ count: number }[]>`SELECT count(*)::int AS count
+      FROM public.spray_exposure_invalidations WHERE kind='board' AND key=${boardUuid}`;
+    expect(after.count).toBe(before.count + 1);
+
+    for (const statement of [
+      'SELECT * FROM public.gym_board_grade_collections',
+      'SELECT * FROM public.spray_exposure_invalidations',
+      'SELECT * FROM public.spray_exposure_observations',
+      'SELECT * FROM public.spray_exposure_checkpoints',
+      "SELECT nextval('public.spray_exposure_event_seq')",
+      "SELECT public.spray_exposure_invalidate('board', 'fixture', NULL)",
+      "SELECT public.spray_exposure_policy_invalidate('fixture')",
+      'DELETE FROM public.users WHERE false',
+    ]) {
+      await expect(webStatement(statement), statement).rejects.toMatchObject({ code: '42501' });
+    }
+    const executable = await owner<{ name: string }[]>`
+      SELECT proname AS name FROM pg_proc routine WHERE routine.pronamespace = 'public'::regnamespace
+        AND proname IN ('spray_exposure_board_change','spray_exposure_wall_change','spray_exposure_version_change',
+          'spray_exposure_policy_change','spray_exposure_climb_change')
+        AND has_function_privilege('boardsesh_web', routine.oid, 'EXECUTE')`;
+    expect(executable).toEqual([]);
+  });
+
+  it('refuses substitute spray routines, attachment drift and executable sink changes', async () => {
+    const mutations = [
+      [
+        `CREATE OR REPLACE FUNCTION public.spray_exposure_fence_key(dependency text, source_key text)
+          RETURNS bigint LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE SET search_path = pg_catalog
+          AS $$ SELECT 1::bigint $$`,
+        'UNREVIEWED_SPRAY_EXPOSURE_ROUTINE',
+      ],
+      [
+        `CREATE FUNCTION public.spray_exposure_policy_invalidate(board_uuid text, extra text DEFAULT NULL)
+          RETURNS void LANGUAGE sql SET search_path = pg_catalog AS $$ SELECT NULL::void $$`,
+        'UNREVIEWED_SPRAY_EXPOSURE_ROUTINE',
+      ],
+      [
+        'DROP TRIGGER spray_exposure_version_update ON public.spray_wall_versions',
+        'UNREVIEWED_SPRAY_EXPOSURE_ATTACHMENT',
+      ],
+      [
+        `DROP TRIGGER spray_exposure_board_insert ON public.user_boards;
+          CREATE TRIGGER spray_exposure_board_insert AFTER INSERT ON public.user_boards
+          FOR EACH ROW WHEN (NEW.board_type = 'kilter') EXECUTE FUNCTION public.spray_exposure_board_change()`,
+        'UNREVIEWED_SPRAY_EXPOSURE_ATTACHMENT',
+      ],
+      [
+        `CREATE FUNCTION public.exposure_fence_noop() RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = pg_catalog
+          AS $$ BEGIN RETURN NEW; END; $$;
+          CREATE TRIGGER exposure_fence_noop BEFORE INSERT ON public.spray_exposure_invalidations
+          FOR EACH ROW EXECUTE FUNCTION public.exposure_fence_noop()`,
+        'UNREVIEWED_SPRAY_EXPOSURE_CLOSURE',
+      ],
+      ['ALTER SEQUENCE public.spray_exposure_event_seq CACHE 10', 'UNREVIEWED_SPRAY_EXPOSURE_CLOSURE'],
+      ['GRANT SELECT ON public.spray_exposure_checkpoints TO boardsesh_web', 'UNREVIEWED_GYM_INVENTORY_PRIVILEGE'],
+    ] as const;
+    for (const [mutation, result] of mutations) {
+      await owner
+        .begin(async (transaction) => {
+          await transaction.unsafe(mutation);
+          await expect(verifyFence(transaction)).rejects.toThrow(result);
+          throw new Error('ROLLBACK_FIXTURE');
+        })
+        .catch((error: unknown) => {
+          if (!(error instanceof Error) || error.message !== 'ROLLBACK_FIXTURE') throw error;
+        });
+    }
     await expect(verifyFence(owner)).resolves.toMatchObject({ verified: true });
   });
 
@@ -564,6 +666,20 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
             { statement: string }[]
           >`SELECT format('ALTER SCHEMA %I OWNER TO %I',nspname,${ddlOwner}::text) AS statement FROM pg_namespace WHERE nspname !~ '^pg_' AND nspname <> 'information_schema'`;
           for (const { statement } of schemas) await transaction.unsafe(statement);
+          // Keep each reviewed routine under the same owner as its sink.
+          for (const signature of [
+            'public.spray_exposure_fence_key(text, text)',
+            'public.spray_exposure_climb_key(integer, text)',
+            'public.spray_exposure_invalidate(text, text, text)',
+            'public.spray_exposure_policy_invalidate(text)',
+            'public.spray_exposure_board_change()',
+            'public.spray_exposure_wall_change()',
+            'public.spray_exposure_version_change()',
+            'public.spray_exposure_policy_change()',
+            'public.spray_exposure_climb_change()',
+          ]) {
+            await transaction.unsafe(`ALTER FUNCTION ${signature} OWNER TO ${quoteIdentifier(ddlOwner)}`);
+          }
           await transaction.unsafe(
             `CREATE FUNCTION public.ba04_separate_helper() RETURNS void LANGUAGE sql SECURITY DEFINER AS 'SELECT'; ALTER FUNCTION public.ba04_separate_helper() OWNER TO ${quoteIdentifier(helperOwner)}`,
           );
