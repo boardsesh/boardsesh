@@ -352,9 +352,53 @@ describe('setter ProfilePage + ItemList JSON-LD', () => {
     expect((profilePage.mainEntity as Record<string, unknown>).url).toBe(
       'https://www.boardsesh.com/setter/setterperson',
     );
-    expect(itemList.mainEntityOfPage).toEqual({ '@id': 'https://www.boardsesh.com/setter/setterperson?page=2' });
+    expect(itemList.url).toBe('https://www.boardsesh.com/setter/setterperson?page=2');
     expect((itemList.itemListElement as Array<Record<string, unknown>>).map((item) => item.position)).toEqual([51, 52]);
   });
+
+  it.each([1, 2])('keeps the Person as the only main entity on page %i', (page) => {
+    const graph = setterGraph(page);
+    const profilePage = graph.find((node) => node['@type'] === 'ProfilePage')!;
+
+    expect(profilePage.mainEntity).toEqual({
+      '@type': 'Person',
+      name: 'Setter Person',
+      url: 'https://www.boardsesh.com/setter/setterperson',
+    });
+    // mainEntityOfPage is the inverse of mainEntity. An ItemList pointing
+    // back at this ProfilePage gives it a second, invalid main-entity type.
+    expect(graph.filter((node) => node.mainEntityOfPage)).toEqual([]);
+    expect(graph.map((node) => node['@type'])).toEqual(['ProfilePage', 'ItemList']);
+  });
+
+  it.each(['empty', 'unlinked', 'unresolved'] as const)(
+    'keeps a valid Person profile when the climb list is %s',
+    (listState) => {
+      const graph = payload(
+        <SetterJsonLd
+          username="Jo & Ann"
+          displayName="Jo & Ann"
+          climbs={listState === 'empty' ? [] : setterClimbs}
+          boardDetailsByClimb={listState === 'unresolved' ? {} : boardDetailsByClimb}
+          unlinkedClimbUuids={listState === 'unlinked' ? new Set(setterClimbs.map((entry) => entry.uuid)) : new Set()}
+          page={1}
+        />,
+      )['@graph'];
+
+      expect(graph).toEqual([
+        {
+          '@type': 'ProfilePage',
+          '@id': 'https://www.boardsesh.com/setter/Jo%20%26%20Ann',
+          url: 'https://www.boardsesh.com/setter/Jo%20%26%20Ann',
+          mainEntity: {
+            '@type': 'Person',
+            name: 'Jo & Ann',
+            url: 'https://www.boardsesh.com/setter/Jo%20%26%20Ann',
+          },
+        },
+      ]);
+    },
+  );
 
   it('advertises exactly the URLs the rows link to, omitting the unlinked ones', () => {
     const [, itemList] = setterGraph(1, new Set([setterClimbs[1].uuid]));

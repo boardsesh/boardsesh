@@ -504,7 +504,8 @@ describe('the setter front door, as a crawler reads its head', () => {
     const profilePage = graph.find((node) => node['@type'] === 'ProfilePage');
     expect(profilePage?.['@id']).toBe(canonical);
     expect(profilePage?.url).toBe(canonical);
-    expect(graph.find((node) => node['@type'] === 'ItemList')?.mainEntityOfPage?.['@id']).toBe(canonical);
+    expect(graph.find((node) => node['@type'] === 'ItemList')?.url).toBe(canonical);
+    expect(graph.some((node) => node.mainEntityOfPage)).toBe(false);
   });
 
   it('noindexes a page that renders no crawlable climb link at all', async () => {

@@ -69,11 +69,10 @@ export default function SetterJsonLd({
     ];
   });
 
-  // A `@graph` rather than nesting the list under the ProfilePage: `ItemList`
-  // is not a valid value for `mainEntity` (that is the Person) nor for
-  // `mainEntityOfPage` (that expects the page itself). Two sibling nodes, the
-  // list pointing back at the page through `mainEntityOfPage`, is the shape
-  // Google's own examples use.
+  // Keep the list beside the ProfilePage, linked by its document URL only.
+  // mainEntityOfPage is the inverse of mainEntity: pointing the ItemList at
+  // this page would add it as a second main entity. Google requires every
+  // ProfilePage mainEntity to be a Person or Organization, not an ItemList.
   return (
     <JsonLd
       data={{
@@ -93,7 +92,7 @@ export default function SetterJsonLd({
             ? [
                 {
                   '@type': 'ItemList',
-                  mainEntityOfPage: { '@id': pageUrl },
+                  url: pageUrl,
                   numberOfItems: listItems.length,
                   itemListElement: listItems,
                 },

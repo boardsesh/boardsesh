@@ -883,3 +883,21 @@ way climbs has one — is #5073.
   drops its source header. Withdrawing the surface therefore takes a smoke change
   as well as the environment variable — the same tripwire that used to point the
   other way.
+
+## Setter structured data
+
+Setter pages emit a `ProfilePage` whose sole `mainEntity` is the named `Person`,
+plus a sibling `ItemList` for crawlable climb links. The list's `url` names the
+current document, including `?page=N`; its positions remain global. Empty lists
+and climbs without canonical links are omitted.
+
+Do not connect that list using `mainEntityOfPage`. Schema.org defines it as the
+inverse of `mainEntity`, which adds the list as another main entity of the
+profile. Google's ProfilePage feature accepts only `Person` or `Organization`
+there. See [Google's ProfilePage requirements](https://developers.google.com/search/docs/appearance/structured-data/profile-page)
+and [Schema.org's inverse-property definition](https://schema.org/mainEntityOfPage).
+
+After deployment, run populated and empty-list markup through Google's Rich
+Results Test, then check `/setter/kk88` and `/setter/Panda11` in URL mode.
+Search Console's URL Inspection reflects Google's last crawl; confirm the
+error clears after recrawling rather than treating local tests as crawl evidence.
