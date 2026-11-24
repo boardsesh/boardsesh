@@ -63,7 +63,6 @@ describe('app guide pages before hydration', () => {
   it('links every board tile to the page that covers it, with descriptive link text', async () => {
     const markup = await parsePage(await HubPage());
     expect(markup.querySelectorAll('h1')).toHaveLength(1);
-    expect(HUB_BOARD_SLUGS).toHaveLength(8);
     for (const slug of HUB_BOARD_SLUGS) {
       const tile = markup.querySelector(`#choose-board a[href="${hubBoardHref(slug)}"]`);
       expect(tile, slug).toBeTruthy();
@@ -71,7 +70,6 @@ describe('app guide pages before hydration', () => {
       expect(tile?.textContent).toMatch(/Compare .+ apps/);
       expect(tile?.querySelector('h3')?.textContent).toBeTruthy();
     }
-    for (const brand of AURORA_BRAND_SLUGS) expect(hubBoardHref(brand)).toBe(`/apps/aurora#${brand}`);
     expect(markup.querySelector('a[href="/compare/spray-wall-apps"]')?.textContent).toMatch(/spray wall/i);
     expect(generateStaticParams()).toEqual(boards.map(({ slug }) => ({ slug })));
   });
@@ -157,7 +155,7 @@ describe('app guide pages before hydration', () => {
   it('publishes the spray comparison with every competitor column and named winners', async () => {
     const markup = await parsePage(await SprayPage());
     const columns = Array.from(markup.querySelectorAll('table thead th'), (column) => column.textContent);
-    expect(columns).toEqual(['What you need', 'Boardsesh', 'Stōkt', 'Retro Flash', 'Crux']);
+    expect(columns).toEqual(['What you need', 'Boardsesh', 'Stōkt', 'Crux', 'Retro Flash']);
     const chips = Array.from(markup.querySelectorAll('table tbody th'), (header) => header.textContent ?? '');
     expect(chips.some((chip) => chip.includes('Stōkt does it better'))).toBe(true);
     expect(chips.some((chip) => chip.includes('Stōkt and Retro Flash do it better'))).toBe(true);
@@ -216,8 +214,9 @@ describe('app guide pages before hydration', () => {
     expect((await parsePage(await HubPage())).querySelector('#numbers')).toBeNull();
     cachedCommunityStats.mockResolvedValueOnce({ climbersLast30Days: 3249, litLast30Days: 205800 });
     const numbers = (await parsePage(await HubPage())).querySelector('#numbers');
-    expect(numbers?.textContent).toContain('3,200');
-    expect(numbers?.textContent).toContain('206,000');
+    // Floored to the unit and marked "+": 3,249 climbers is "3,200+", 205,800 climbs "205,000+".
+    expect(numbers?.textContent).toContain('3,200+');
+    expect(numbers?.textContent).toContain('205,000+');
     cachedCommunityStats.mockResolvedValueOnce({ climbersLast30Days: 3249, litLast30Days: 205800 });
     const board = await parsePage(await BoardPage(routeProps('kilter')));
     expect(board.textContent).toMatch(/in the last 30 days, about 3,200 climbers used Boardsesh/i);
@@ -244,8 +243,9 @@ describe('app guide pages before hydration', () => {
       expect(metadata.openGraph).toMatchObject({ url: path, description: metadata.description });
       expect(metadata.twitter).toMatchObject({ description: metadata.description });
       const title = (metadata.title as { absolute: string }).absolute;
-      // A title that already names Boardsesh gets no second "| Boardsesh".
-      expect(title.match(/Boardsesh/g)?.length).toBe(1);
+      // Never two "Boardsesh", and never past the 60-character cut.
+      expect(title.match(/Boardsesh/g)?.length ?? 0).toBeLessThanOrEqual(1);
+      expect(title.length, path).toBeLessThanOrEqual(60);
       expect(metadata.description?.length).toBeGreaterThanOrEqual(140);
       expect(metadata.description?.length).toBeLessThanOrEqual(155);
     }

@@ -250,6 +250,12 @@ export async function StatsBand({ t }: { t: T }) {
   const stats = await cachedCommunityStats();
   if (!stats) return null;
   const numberFormat = new Intl.NumberFormat(DEFAULT_LOCALE);
+  // Rolling counts, floored to their unit and marked "+": never rounded up past
+  // what happened, and a stat below its unit is left out rather than shown as 0.
+  const atLeast = (count: number, unit: number) =>
+    count >= unit
+      ? t('appGuides:common.atLeast', { value: numberFormat.format(Math.floor(count / unit) * unit) })
+      : null;
   const items = [
     {
       id: 'rating',
@@ -258,12 +264,12 @@ export async function StatsBand({ t }: { t: T }) {
     },
     {
       id: 'climbers',
-      value: numberFormat.format(Math.round(stats.climbersLast30Days / 100) * 100),
+      value: atLeast(stats.climbersLast30Days, 100),
       label: t('appGuides:pages.hub.numbers.climbersLabel'),
     },
     {
       id: 'climbs',
-      value: numberFormat.format(Math.round(stats.litLast30Days / 1000) * 1000),
+      value: atLeast(stats.litLast30Days, 1000),
       label: t('appGuides:pages.hub.numbers.climbsLabel'),
     },
   ];
@@ -273,14 +279,16 @@ export async function StatsBand({ t }: { t: T }) {
         {t('appGuides:common.numbersHeading')}
       </Typography>
       <Box component="ul" className={styles.stats}>
-        {items.map((item) => (
-          <li key={item.id}>
-            <span className={styles.statNumber}>{item.value}</span>
-            <Typography component="span" color="text.secondary">
-              {item.label}
-            </Typography>
-          </li>
-        ))}
+        {items
+          .flatMap((item) => (item.value === null ? [] : [item]))
+          .map((item) => (
+            <li key={item.id}>
+              <span className={styles.statNumber}>{item.value}</span>
+              <Typography component="span" color="text.secondary">
+                {item.label}
+              </Typography>
+            </li>
+          ))}
       </Box>
       <Typography component="p" color="text.secondary" className={styles.statsNote}>
         {t('appGuides:pages.hub.numbers.freshness')}

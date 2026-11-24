@@ -70,9 +70,6 @@
         "competitor_other": "{{app}} do it better"
       },
       "legendItems": {
-        "boardsesh": "Boardsesh does it better",
-        "only": "Only Boardsesh does it",
-        "same": "About the same",
         "competitor": "{{app}} does it better"
       }
     },
@@ -127,14 +124,14 @@
     },
     "diagrams": {
       "url": "app.boardsesh.com",
-      "pixel": "Pixel",
-      "galaxy": "Galaxy",
       "anyAndroid": "Android 7+",
       "iphone": "iPhone",
       "android": "Any Android",
       "browser": "Browser",
       "ipad": "iPad",
-      "androidTablet": "Android tablet"
+      "androidTablet": "Android tablet",
+      "anyMaker": "Any maker",
+      "emailSignIn": "Email sign-in"
     },
     "diagramNote": "Drawing of the browser app, not a screenshot",
     "numbersHeading": "Boardsesh in numbers",
@@ -148,7 +145,8 @@
       "other": "Other sources",
       "hero": "The summary at the top"
     },
-    "profileCardAlt": "Boardsesh profile: 254 climbs sent across 9 board layouts, including MoonBoard Masters and Kilter Homewall"
+    "profileCardAlt": "Boardsesh profile: 254 climbs sent across 9 board layouts, including MoonBoard Masters and Kilter Homewall",
+    "atLeast": "{{value}}+"
   },
   "pages": {
     "hub": {
@@ -218,7 +216,7 @@
         "tiles": {
           "queue": {
             "title": "One queue for the whole crew",
-            "body": "Up to 500 climbs in one queue, built from separate phones by invite link, with undo and Next on your iPhone Lock Screen."
+            "body": "Up to 500 climbs from separate phones, and one queue can mix boards. Pick a climb on another wall at your gym and Boardsesh switches to it, with Next on your iPhone Lock Screen."
           },
           "workouts": {
             "title": "7 workout types",
@@ -258,7 +256,7 @@
           },
           "one-logbook": {
             "q": "Can one app log Kilter, Tension and MoonBoard together?",
-            "a": "Yes. Boardsesh keeps every board in one logbook, imports a Kilter or Tension account, an Aurora file or a MoonBoard CSV, and exports it all any time."
+            "a": "Yes. Every board shares one logbook, with Kilter, Tension, Aurora file and MoonBoard CSV imports, and at a gym you switch walls in the same session, even within one queue."
           },
           "offline": {
             "q": "Does it work without signal?",
@@ -348,7 +346,7 @@
           },
           "one-logbook": {
             "title": "One logbook for every board",
-            "body": "Kilter's app covers Kilter boards. Boardsesh covers 8 board brands plus spray walls, so your Kilter sends sit next to your Tension and MoonBoard sends in one profile."
+            "body": "Kilter's app covers Kilter boards. Boardsesh covers 8 board brands plus spray walls, so your Kilter sends sit next to your Tension and MoonBoard sends in one profile. At a gym with several boards, switch walls in the same session without changing apps."
           }
         }
       },
@@ -403,7 +401,7 @@
           },
           "other-boards": {
             "feature": "Other boards in the same app",
-            "boardsesh": "8 board brands plus spray walls, in one profile and one logbook.",
+            "boardsesh": "8 board brands plus spray walls; switch walls at the gym, even within one queue",
             "official": "Covers Kilter boards; since version 2.3 one playlist can mix boards."
           },
           "curated": {
@@ -611,7 +609,7 @@
           },
           "logbook": {
             "feature": "One logbook across boards",
-            "boardsesh": "All five brands share a logbook with Kilter, MoonBoard, Woods and spray walls",
+            "boardsesh": "All five brands, Kilter, MoonBoard and Woods in one logbook; switch walls mid-session",
             "official": "One app and one logbook per brand"
           },
           "data": {
@@ -836,7 +834,7 @@
           },
           "one-logbook": {
             "title": "One logbook for every board",
-            "body": "Bring a Moon CSV in once and your sends sit next to your Kilter, Tension and Woods sessions, with stats across all of them."
+            "body": "Bring a Moon CSV in once and your sends sit next to your Kilter, Tension and Woods sessions, with stats across all of them. Switch to the gym's Kilter or Tension in the same session, even within one queue."
           }
         }
       },
@@ -1251,85 +1249,85 @@
             "feature": "Cost for a home wall",
             "boardsesh": "Free: no wall fee, no yearly pass, no ads",
             "stokt": "Usually paid: $40 to $300 per setup or reset; a free self-scan since Aug 2026",
-            "retroFlash": "Yearly Home Wall pass since July 2026, from $4.99; ads on Android",
-            "crux": "Free for home walls, no cap on climbs; Patreon extras"
+            "crux": "Free for home walls, no cap on climbs; Patreon extras",
+            "retroFlash": "Yearly Home Wall pass since July 2026, from $4.99; ads on Android"
           },
           "gym-price": {
             "feature": "Cost for a gym or commercial wall",
             "boardsesh": "Free, gyms included; link the wall to your gym page",
             "stokt": "$40 to $300 per setup and reset by wall size; walls stay active 12 months",
-            "retroFlash": "Gym Year Pass: $14.99 (Tier 1) or $29.99 (Tier 2)",
-            "crux": "Gym plans from $25 a month, or $240 a year"
+            "crux": "Gym plans from $25 a month, or $240 a year",
+            "retroFlash": "Gym Year Pass: $14.99 (Tier 1) or $29.99 (Tier 2)"
           },
           "setup": {
             "feature": "Setting up your wall",
             "boardsesh": "Free: a photo finds holds, then you fix them by hand; up to 1,500 holds per wall",
             "stokt": "Stōkt maps every hold for you, for a fee ($40 to $300); a free self-scan exists",
-            "retroFlash": "Wall setup in the app; the listing doesn't mention photo detection",
-            "crux": "Photo scan outlines holds in about 1 second, its own figure; edit by hand"
+            "crux": "Photo scan outlines holds in about 1 second, its own figure; edit by hand",
+            "retroFlash": "Wall setup in the app; the listing doesn't mention photo detection"
           },
           "privacy": {
             "feature": "Private and shared walls",
             "boardsesh": "Private, link-only or public, with a QR code for the wall",
             "stokt": "Private and public walls, plus private problems and public lists",
-            "retroFlash": "Private walls; The ARCADE shares problems across walls",
-            "crux": "Share a wall by link; friends climb it, or set too if you allow it"
+            "crux": "Share a wall by link; friends climb it, or set too if you allow it",
+            "retroFlash": "Private walls; The ARCADE shares problems across walls"
           },
           "community": {
             "feature": "Community and wall network",
             "boardsesh": "Public walls by link or QR code; follows, comments and a crew feed",
             "stokt": "More than 2,000 walls, with crowd grades, comments, follows and a feed",
-            "retroFlash": "A community of climbers setting on each other's walls",
-            "crux": "Gym leaderboards, per-gym forums, comments and beta videos"
+            "crux": "Gym leaderboards, per-gym forums, comments and beta videos",
+            "retroFlash": "A community of climbers setting on each other's walls"
           },
           "leds": {
             "feature": "LEDs on the wall",
             "boardsesh": "Works with WLED, a low-cost open-source LED controller, over Wi-Fi",
             "stokt": "Sells its own LED kit (EU, UK); your own LEDs need Pro at $20 a month",
-            "retroFlash": "No LED support in the store listing",
-            "crux": "No LED control found; LED boards are scanned like any wall"
+            "crux": "No LED control found; LED boards are scanned like any wall",
+            "retroFlash": "No LED support in the store listing"
           },
           "offline": {
             "feature": "Offline use",
             "boardsesh": "Walls, climbs and logbook read from the phone; sends sync later",
             "stokt": "Offline use isn't documented",
-            "retroFlash": "Not documented; one reviewer asked for it in 2024",
-            "crux": "Offline use isn't documented"
+            "crux": "Offline use isn't documented",
+            "retroFlash": "Not documented; one reviewer asked for it in 2024"
           },
           "devices": {
             "feature": "Where it runs",
             "boardsesh": "iPhone, iPad, Android and a browser app at app.boardsesh.com",
             "stokt": "iPhone, iPad, Android and a desktop editor; 3.6 stars on Android, 4.8 on iPhone",
-            "retroFlash": "iPhone, iPad and Android; the Android app shows ads. No web app found",
-            "crux": "iPhone, Android and a web version; 5.0 stars on both stores"
+            "crux": "iPhone, Android and a web version; 5.0 stars on both stores",
+            "retroFlash": "iPhone, iPad and Android; the Android app shows ads. No web app found"
           },
           "tablet": {
             "feature": "Tablet layout",
             "boardsesh": "iPad sidebar and landscape player; hold editor with Apple Pencil support",
             "stokt": "Built for iPad; its iPad screenshots show the phone layout",
-            "retroFlash": "Built for iPad; its iPad screenshots show the phone layout stretched",
-            "crux": "An iPhone app that runs on iPad; no tablet layout documented"
+            "crux": "An iPhone app that runs on iPad; no tablet layout documented",
+            "retroFlash": "Built for iPad; its iPad screenshots show the phone layout stretched"
           },
           "other-boards": {
             "feature": "Kilter, Tension and MoonBoard in the same app",
             "boardsesh": "8 board brands plus spray walls, with one logbook and one profile",
             "stokt": "No board support documented",
-            "retroFlash": "No board support documented",
-            "crux": "Board walls are scanned like any spray wall; no board catalogues documented"
+            "crux": "Board walls are scanned like any spray wall; no board catalogues documented",
+            "retroFlash": "No board support documented"
           },
           "symmetry": {
             "feature": "Symmetric walls",
             "boardsesh": "No mirrored climbs on spray walls",
             "stokt": "Mirrors climbs on symmetric walls",
-            "retroFlash": "Supports symmetric walls",
-            "crux": "Symmetric walls not documented"
+            "crux": "Symmetric walls not documented",
+            "retroFlash": "Supports symmetric walls"
           },
           "grading": {
             "feature": "Grades",
             "boardsesh": "Climbers vote the grade; shown as V or Font, your choice",
             "stokt": "Climbers vote the grade; Hueco, Font or Dankyu",
-            "retroFlash": "Custom grades, or no grades at all",
-            "crux": "Climbers suggest grades"
+            "crux": "Climbers suggest grades",
+            "retroFlash": "Custom grades, or no grades at all"
           }
         }
       },

@@ -65,7 +65,7 @@ export const COMPETITOR_NAMES = {
   aurora: { official: 'Aurora board apps' },
   moonboard: { official: 'MoonBoard app' },
   woods: { official: 'Woods Board app' },
-  'spray-wall-apps': { stokt: 'Stōkt', retroFlash: 'Retro Flash', crux: 'Crux' },
+  'spray-wall-apps': { stokt: 'Stōkt', crux: 'Crux', retroFlash: 'Retro Flash' },
 } as const satisfies Record<ComparisonPageId, Record<string, string>>;
 
 /** Real captures in the repo a page may show. No diagram ids here: diagrams are drawn, not captured. */
@@ -160,6 +160,19 @@ export type AppGuideRegistry = { hub: HubPageRegistry } & { [Id in ComparisonPag
 
 /** Claims that may only render where their evidence is registered. */
 export type GatedClaimId = 'googleCertified';
+
+/** The pages where a gated claim may render (if its sources are registered there too). */
+export const GATED_CLAIM_PAGES: Record<GatedClaimId, readonly AppGuidePageId[]> = {
+  googleCertified: ['moonboard'],
+};
+
+/**
+ * The catalog paths the renderer can hide claim by claim. A claim anywhere else
+ * on a page outside `GATED_CLAIM_PAGES` would render ungated, so the importer
+ * refuses it.
+ */
+export const GATEABLE_PATH =
+  /^(comparison\.rows|only\.tiles|faq\.items|verdict\.pickIf|verdict\.keepIf|everyBoard\.tiles)\.[^.]+$/;
 
 export const GATED_CLAIM_PATTERNS: Record<GatedClaimId, RegExp> = {
   // The competitor half of the Android contrast ("needs a Google-certified phone").

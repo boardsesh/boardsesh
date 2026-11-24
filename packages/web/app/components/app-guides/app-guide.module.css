@@ -39,6 +39,8 @@
 .crumbs [aria-current] {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  min-width: 44px;
   min-height: 44px;
 }
 
@@ -1342,10 +1344,6 @@
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-}
-
-.subHeading {
-  margin: var(--spacing-10) 0 0;
 }
 
 @media (max-width: 899px) {

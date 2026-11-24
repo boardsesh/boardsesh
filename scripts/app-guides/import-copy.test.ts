@@ -180,7 +180,7 @@ describe('import-copy', () => {
     });
     const result = importComparisonPage('spray-wall-apps', spray, { allowPending: false });
     expect(errors(result)).toEqual([]);
-    expect(result.registry).toMatchObject({ competitors: ['stokt', 'retroFlash', 'crux'] });
+    expect(result.registry).toMatchObject({ competitors: ['stokt', 'crux', 'retroFlash'] });
     expect((result.registry as unknown as { rows: { id: string; winners: string[] }[] }).rows.at(-1)).toMatchObject({
       id: 'community',
       winners: ['stokt'],
@@ -237,6 +237,20 @@ describe('import-copy', () => {
     expect(
       (result.registry as unknown as { steps: { screenshot: string | null }[] }).steps.map((step) => step.screenshot),
     ).toEqual(['board', null, 'logbook', 'profile']);
+  });
+
+  it('refuses a gated claim where the renderer could not hide it', () => {
+    const claim = 'MoonBoard needs a Google-certified phone.';
+    const kilter = boardPage((page) => {
+      (page.hero as { lead: string }).lead = claim;
+    });
+    expect(errors(importComparisonPage('kilter', kilter, { allowPending: false }))).toEqual([
+      "hero.lead makes the googleCertified claim where it can't be hidden; move it into a row, tile, FAQ or bullet",
+    ]);
+    const inRow = boardPage((page) => {
+      rows(page)[0].official = claim;
+    });
+    expect(errors(importComparisonPage('kilter', inRow, { allowPending: false }))).toEqual([]);
   });
 
   it('tags the Google-certified contrast wherever the copy makes it', () => {

@@ -4,8 +4,11 @@ These are indexable marketing pages: `/apps`, one page per board app
 (`/apps/kilter`, `/apps/aurora`, `/apps/moonboard`, `/apps/woods`) and
 `/compare/spray-wall-apps`. Tension, Decoy, Touchstone, Grasshopper and So iLL run
 builds of the same Aurora app, so they share `/apps/aurora`, with an anchored
-section per brand. Their old `/apps/<brand>` URLs (and the `/es`, `/fr`, `/de`,
-`/it` aliases) 308 to `/apps/aurora#<brand>` from `next.config.mjs`. The hub keeps a
+section per brand. Their old `/apps/<brand>` URLs 308 to `/apps/aurora#<brand>`
+from `next.config.mjs`. A localized alias takes two hops and ends in the same place:
+`/es/apps/tension` 308s to its locale twin `/es/apps/aurora#tension`, which the
+middleware 307s to `/apps/aurora` (the browser keeps the `#tension`); `/zh-CN/...`
+is 307ed to English first, then 308ed. The hub keeps a
 tile per board brand; the Aurora tiles link to their section. One canonical URL per
 page also serves alternative and "best app" searches. `/boards` remains the layout
 directory; `/spraywalls` remains the setup page.

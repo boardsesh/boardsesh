@@ -5,6 +5,7 @@ import {
   APP_GUIDE_SLUGS,
   AURORA_BRAND_SLUGS,
   COMPETITOR_NAMES,
+  GATED_CLAIM_PAGES,
   type AppGuidePageId,
   type AppGuideSlug,
   type ComparisonPageId,
@@ -54,7 +55,7 @@ export type ComparisonGuide = ComparisonPageRegistry & {
   kind: 'comparison';
   path: GuidePath;
   /**
-   * The board for board-specific widgets (Check your board, the CTA art), or null
+   * The board for board-specific art (the hero card, the CTA band), or null
    * on the spray wall page. The Aurora page covers five boards and uses Tension's.
    */
   boardType: CatalogBoard | null;
@@ -79,7 +80,7 @@ export type HubGuide = HubPageRegistry & {
 };
 
 export type AppGuidePage = ComparisonGuide | HubGuide;
-/** A board page; `id` is one of the eight slugs. */
+/** A board app page; `id` is one of APP_GUIDE_SLUGS. */
 export type AppGuide = ComparisonGuide & { id: AppGuideSlug; boardType: CatalogBoard };
 
 const CHECKED_AT = '2026-11-23';
@@ -104,7 +105,7 @@ export const BOARDSESH_APP_STORE_RATING = {
  * Never claimed for Kilter or the Aurora apps, and not on the hub.
  */
 export const GATED_CLAIMS: Record<GatedClaimId, { pages: readonly AppGuidePageId[]; sourceIds: readonly string[] }> = {
-  googleCertified: { pages: ['moonboard'], sourceIds: ['grapheneos'] },
+  googleCertified: { pages: GATED_CLAIM_PAGES.googleCertified, sourceIds: ['grapheneos'] },
 };
 
 export function isClaimVisible(page: Pick<AppGuidePage, 'id' | 'claims' | 'sources'>, path: string): boolean {
@@ -191,7 +192,6 @@ export type TileArt =
 
 const TILE_ART: Record<string, TileArt> = {
   browser: { kind: 'diagram', diagram: 'browser' },
-  web: { kind: 'diagram', diagram: 'browser' },
   android: { kind: 'diagram', diagram: 'android' },
   tablet: { kind: 'diagram', diagram: 'tablet' },
   devices: { kind: 'diagram', diagram: 'devices' },

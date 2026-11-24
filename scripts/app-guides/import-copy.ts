@@ -5,8 +5,8 @@
  *
  *   vp run app-guides:import -- <copy-dir> [--allow-pending] [--draft] [--check] [--only kilter,hub] [--date YYYY-MM-DD]
  *
- * Reads `<copy-dir>/<page>.json` for every page id it finds (hub, the eight
- * board slugs, spray-wall-apps) and writes:
+ * Reads `<copy-dir>/<page>.json` for every page id it finds (hub, the board
+ * guides in APP_GUIDE_SLUGS, spray-wall-apps) and writes:
  *
  * - `pages.<page>` in `appGuides.json` for every locale folder. Only English is
  *   published; the other catalogs carry the same English text so key parity
@@ -54,9 +54,12 @@ function parseArgs(argv: string[]) {
     if (arg === '--allow-pending') options.allowPending = true;
     else if (arg === '--draft') options.draft = true;
     else if (arg === '--check') options.check = true;
-    else if (arg === '--only') options.only = argv[++index]?.split(',');
-    else if (arg === '--date') options.date = argv[++index];
-    else if (arg === '--') continue;
+    else if (arg === '--only' || arg === '--date') {
+      const value = argv[++index];
+      if (!value || value.startsWith('--')) throw new Error(`${arg} needs a value`);
+      if (arg === '--only') options.only = value.split(',');
+      else options.date = value;
+    } else if (arg === '--') continue;
     else if (arg.startsWith('--')) throw new Error(`Unknown flag ${arg}`);
     else positional.push(arg);
   }
@@ -150,7 +153,11 @@ async function main() {
   writeRegistry(registry as AppGuideRegistry);
   written.push(relative(repoRoot, REGISTRY_FILE));
   // Leave the files in the repo's formatting, so a re-run produces no diff.
-  spawnSync('vp', ['check', '--fix', ...written], { cwd: repoRoot, stdio: 'ignore' });
+  const format = spawnSync('vp', ['check', '--fix', ...written], { cwd: repoRoot, stdio: 'ignore' });
+  if (format.status !== 0) {
+    console.error('`vp check --fix` failed on the written files; run it by hand before committing.');
+    process.exit(1);
+  }
   console.log(`Wrote ${written.length} files.`);
 }
 

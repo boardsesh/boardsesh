@@ -13,6 +13,8 @@
 import {
   AURORA_BRAND_SLUGS,
   COMPETITOR_NAMES,
+  GATEABLE_PATH,
+  GATED_CLAIM_PAGES,
   GATED_CLAIM_PATTERNS,
   GUIDE_SHOTS,
   HUB_BOARD_SLUGS,
@@ -309,6 +311,14 @@ export function findClaims(page: CatalogPage): { path: string; claim: GatedClaim
   return claims;
 }
 
+/** A gated claim off its allowed pages must sit where the renderer can hide it. */
+function checkClaims(reader: PageReader, page: AppGuidePageId, claims: { path: string; claim: GatedClaimId }[]) {
+  for (const { path, claim } of claims) {
+    if (GATED_CLAIM_PAGES[claim].includes(page) || GATEABLE_PATH.test(path)) continue;
+    reader.error(path, `makes the ${claim} claim where it can't be hidden; move it into a row, tile, FAQ or bullet`);
+  }
+}
+
 export function importComparisonPage(page: ComparisonPageId, json: Json, options: ImportOptions): ImportResult {
   const reader = new PageReader(page, options);
   if (json.page !== page) reader.error('page', `says "${String(json.page)}", expected "${page}"`);
@@ -389,7 +399,15 @@ export function importComparisonPage(page: ComparisonPageId, json: Json, options
 
     let winners: readonly string[] = [];
     if (rowVerdict === 'competitor') {
-      const declared = Array.isArray(entry.winners) ? (entry.winners as string[]) : undefined;
+      if (
+        entry.winners !== undefined &&
+        (!Array.isArray(entry.winners) || entry.winners.some((winner) => typeof winner !== 'string'))
+      ) {
+        reader.error(`${path}.winners`, 'must be a list of competitor ids');
+      }
+      const declared = Array.isArray(entry.winners)
+        ? entry.winners.filter((winner): winner is string => typeof winner === 'string')
+        : undefined;
       winners = declared ?? (competitors.length === 1 ? competitors : (COMPETITOR_WINNERS[page]?.[id] ?? []));
       if (winners.length === 0) {
         reader.error(
@@ -577,6 +595,8 @@ export function importComparisonPage(page: ComparisonPageId, json: Json, options
     item('hero', hero.sourceIds, false),
   ]);
 
+  const claims = findClaims(catalog);
+  checkClaims(reader, page, claims);
   return {
     catalog,
     registry: {
@@ -594,7 +614,7 @@ export function importComparisonPage(page: ComparisonPageId, json: Json, options
       brands,
       faq: faq.registry,
       sources,
-      claims: findClaims(catalog),
+      claims,
     },
     issues: reader.issues,
   };
@@ -683,6 +703,8 @@ export function importHubPage(json: Json, options: ImportOptions): ImportResult 
     sources: labels,
   };
   warnUncited(reader, sources, [...everyTiles, ...faq.registry, item('hero', hero.sourceIds, false)]);
+  const claims = findClaims(catalog);
+  checkClaims(reader, 'hub', claims);
   return {
     catalog,
     registry: {
@@ -693,7 +715,7 @@ export function importHubPage(json: Json, options: ImportOptions): ImportResult 
       everyBoard: everyTiles,
       faq: faq.registry,
       sources,
-      claims: findClaims(catalog),
+      claims,
     },
     issues: reader.issues,
   };

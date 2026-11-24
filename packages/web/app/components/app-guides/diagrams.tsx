@@ -53,7 +53,7 @@ export function BrowserDiagram({ t }: { t: T }) {
 type Outline = { id: string; shape?: 'phone' | 'laptop' | 'tablet' };
 
 const OUTLINES: Record<'android' | 'devices' | 'tablet', readonly Outline[]> = {
-  android: [{ id: 'pixel' }, { id: 'galaxy' }, { id: 'anyAndroid' }],
+  android: [{ id: 'anyAndroid' }, { id: 'anyMaker' }, { id: 'emailSignIn' }],
   devices: [{ id: 'iphone' }, { id: 'android' }, { id: 'browser', shape: 'laptop' }],
   tablet: [
     { id: 'ipad', shape: 'tablet' },

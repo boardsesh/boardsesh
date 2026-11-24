@@ -134,7 +134,7 @@ export default function ComparisonTable({ guide, t }: { guide: ComparisonGuide; 
         title={t(`appGuides:pages.${guide.id}.comparison.heading`)}
         lead={t(`appGuides:pages.${guide.id}.comparison.lead`)}
       />
-      <Box className={styles.frame}>
+      <Box className={wide ? `${styles.frame} ${styles.frameWide}` : styles.frame}>
         {/* Explicit roles keep table semantics when CSS turns rows into cards on phones. */}
         <Table role="table" aria-labelledby={headingId} className={`${styles.table} ${wide ? styles.wide : ''}`}>
           <TableHead role="rowgroup">
@@ -226,9 +226,10 @@ export default function ComparisonTable({ guide, t }: { guide: ComparisonGuide; 
           .map((verdict) => (
             <li key={verdict}>
               <HoldRing role={VERDICT_RING[verdict]} size="xs" />
+              {/* The same words as the chips, so the key reads like the table. */}
               {verdict === 'competitor'
                 ? t('appGuides:common.comparison.legendItems.competitor', { app: legendCompetitor })
-                : t(`appGuides:common.comparison.legendItems.${verdict}`)}
+                : verdictLabel(t, guide, { verdict, winners: [] })}
             </li>
           ))}
         <li>{t('appGuides:common.comparison.legendTap')}</li>

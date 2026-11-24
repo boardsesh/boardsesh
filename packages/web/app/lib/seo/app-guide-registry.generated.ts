@@ -1272,7 +1272,7 @@ export const APP_GUIDE_REGISTRY = {
         sourceIds: ['bs-spray', 'stokt-faq', 'retro-appstore'],
       },
     ],
-    competitors: ['stokt', 'retroFlash', 'crux'],
+    competitors: ['stokt', 'crux', 'retroFlash'],
     rows: [
       {
         id: 'price',

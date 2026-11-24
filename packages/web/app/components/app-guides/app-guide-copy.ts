@@ -30,8 +30,9 @@ export async function getAppGuideMetadata(guide: AppGuidePage): Promise<Metadata
     openGraphType: guide.id === 'spray-wall-apps' ? 'article' : 'website',
   });
   // Comparison titles already name Boardsesh ("Boardsesh vs the Kilter Board App"),
-  // so the site suffix would only push the board name past the 60-character cut.
-  if (!/\bBoardsesh\b/.test(title)) return metadata;
+  // and a long title (the hub's 58) has no room for " | Boardsesh" before the
+  // 60-character cut: either way the suffix only pushes search words off the end.
+  if (!/\bBoardsesh\b/.test(title) && `${title} | Boardsesh`.length <= 60) return metadata;
   return {
     ...metadata,
     title: { absolute: title },

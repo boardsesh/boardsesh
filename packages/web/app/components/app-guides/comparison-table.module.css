@@ -176,7 +176,9 @@
   font-size: var(--font-size-base);
 }
 
-@media (max-width: 899px) {
+/* Cards over the same DOM: three-column tables at 760px and below, and the
+ * five-column spray table from 899px (below that its columns get too narrow). */
+@media (max-width: 760px) {
   .frame {
     overflow: visible;
     border: 0;
@@ -248,6 +250,83 @@
   }
 
   .cellLabel img {
+    flex: none;
+    width: 18px;
+    height: 18px;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 899px) {
+  .frameWide {
+    overflow: visible;
+    border: 0;
+    background: none;
+  }
+
+  .table.wide,
+  .table.wide tbody {
+    display: block;
+  }
+
+  .table.wide thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .table.wide tbody {
+    display: grid;
+    gap: var(--spacing-3);
+  }
+
+  .table.wide tbody tr {
+    display: block;
+    overflow: hidden;
+    border: 1px solid var(--separator);
+    border-radius: var(--border-radius-lg);
+    background: var(--semantic-surface);
+  }
+
+  .table.wide .cell {
+    display: block;
+    width: auto;
+    padding: 14px var(--spacing-4);
+    border-bottom: 0;
+    font-size: var(--font-size-base);
+  }
+
+  .table.wide .rowHead {
+    padding-bottom: 6px;
+  }
+
+  .table.wide .featureName {
+    font-size: var(--font-size-lg);
+  }
+
+  /* The verdict comes first in each card, so the chips alone give the gist. */
+  .wide .rowMeta {
+    justify-content: space-between;
+    margin-top: 6px;
+  }
+
+  .table.wide td + td {
+    border-top: 1px solid var(--separator);
+  }
+
+  .wide .cellLabel {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    margin-bottom: 2px;
+    color: var(--neutral-500);
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .wide .cellLabel img {
     flex: none;
     width: 18px;
     height: 18px;
