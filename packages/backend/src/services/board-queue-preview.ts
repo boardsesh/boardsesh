@@ -1,6 +1,6 @@
 import { canReadClimbContent } from './board-session-privacy';
 import { canAccessResourceWithoutLink } from './privacy';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { BoardQueuePreview, BoardQueuePreviewItem, ClimbQueueItem, QueueState } from '@boardsesh/shared-schema';
 import { upNextStart } from '@boardsesh/queue';
 import { db } from '../db/client';
@@ -12,6 +12,8 @@ import {
   buildEmptyBoardQueuePreview,
   isPublicActiveSession,
   readBoardSessionPreviewGate,
+  readAttestedMergedPreviewSources,
+  resolveMergedSessionPreviewBoardId,
 } from './board-queue-preview-tombstone';
 import { logger } from '../utils/logger';
 
@@ -138,6 +140,31 @@ export async function resolvePublicPreviewSessionForBoard(
     // Ended/deleted bound session → stale binding; fall through (see above).
   }
 
+  // A public-only admin merge can leave a config-path session bound solely
+  // to the former board in Redis. Read those attested bindings without moving
+  // them; the canonical live binding above always keeps precedence.
+  const inheritedIds: string[] = [];
+  for (const source of await readAttestedMergedPreviewSources(boardId)) {
+    const sessionId = await pubsub.getBoardSession(String(source.id));
+    if (sessionId && (await pubsub.getSessionBoard(sessionId)) === String(source.id)) inheritedIds.push(sessionId);
+  }
+  if (inheritedIds.length) {
+    const sessions = await db
+      .select({ id: dbSchema.boardSessions.id, boardId: dbSchema.boardSessions.boardId })
+      .from(dbSchema.boardSessions)
+      .where(and(inArray(dbSchema.boardSessions.id, inheritedIds), eq(dbSchema.boardSessions.status, 'active')))
+      .orderBy(desc(dbSchema.boardSessions.lastActivity), desc(dbSchema.boardSessions.id));
+    let publicSessionId: string | null = null;
+    for (const session of sessions) {
+      if (session.boardId !== null && session.boardId !== boardId) continue;
+      const gate = await readBoardSessionPreviewGate(session.id);
+      if (!gate || gate.status !== 'active') continue;
+      if (!gate.isPublic) return null;
+      publicSessionId ??= session.id;
+    }
+    if (publicSessionId) return publicSessionId;
+  }
+
   // Durable fallback: newest active public session linked to this board.
   const [row] = await db
     .select({ id: dbSchema.boardSessions.id })
@@ -245,7 +272,14 @@ export async function publishBoardQueuePreviewForSession(sessionId: string): Pro
   const boundSessionId = await pubsub.getBoardSession(boardId);
   if (boundSessionId !== sessionId) return;
 
-  if (!(await isBoardAnonReadable(Number(boardId)))) return;
+  if (!(await isBoardAnonReadable(Number(boardId)))) {
+    const canonicalBoardId = await resolveMergedSessionPreviewBoardId(sessionId, Number(boardId));
+    if (canonicalBoardId === null || !(await isPublicActiveSession(sessionId))) return;
+    // A merge cannot take the wall from an existing public or private incumbent.
+    if ((await resolvePublicPreviewSessionForBoard(canonicalBoardId)) !== sessionId) return;
+    await republishBoardQueuePreviewForBoard(canonicalBoardId);
+    return;
+  }
   if (!(await isPublicActiveSession(sessionId))) return;
 
   // Queue copies can outlive an item's audience. Use the same current climb

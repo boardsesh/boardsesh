@@ -1,9 +1,23 @@
 import { GraphQLError } from 'graphql';
 import { parseBoardPath, parseNamedBoardPath } from '@boardsesh/board-config';
 import { and, eq, isNull } from 'drizzle-orm';
-import { userBoards } from '@boardsesh/db/schema';
+import { userBoards, users } from '@boardsesh/db/schema';
 import { db } from '../db/client';
+import type { DbTransaction } from '../db/after-commit';
+import { lockActiveBoardForWrite } from './board-reference-lock';
+import { getPostgresErrorCode } from '../utils/postgres-errors';
 import { canAccessResource, canAccessResourceWithoutLink, isLiveSessionMemberOnHomeWall } from './privacy';
+
+export const SESSION_BOARD_LOCK_TIMEOUT_MS = 2000;
+
+/** Session inserts take this FK lock before a board, matching account/privacy writers. */
+export async function lockSessionCreatorBeforeBoards(
+  transaction: DbTransaction,
+  creatorUserId: string | null | undefined,
+): Promise<void> {
+  if (creatorUserId)
+    await transaction.select({ id: users.id }).from(users).where(eq(users.id, creatorUserId)).for('key share').limit(1);
+}
 
 /**
  * The board a session path names, or null for a plain config path. A home
@@ -56,4 +70,31 @@ export async function resolveSessionBoardId(
     throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
   }
   return board.id;
+}
+
+/** Session-reference writers keep this active identity stable through their transaction. */
+export async function resolveLockedSessionBoardId(
+  transaction: DbTransaction,
+  boardPath: string,
+  viewerId: string | null | undefined,
+  inSessionId?: string,
+): Promise<number | null> {
+  const boardId = await resolveSessionBoardId(boardPath, viewerId, inSessionId);
+  if (boardId === null) return null;
+  await lockSessionCreatorBeforeBoards(transaction, viewerId);
+  try {
+    const board = await lockActiveBoardForWrite(
+      transaction,
+      { id: boardId },
+      { lockTimeoutMs: SESSION_BOARD_LOCK_TIMEOUT_MS },
+    );
+    // Access may have changed after the candidate read; re-read it while pinned.
+    if (!board || (await resolveSessionBoardId(boardPath, viewerId, inSessionId)) !== boardId)
+      throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
+    return boardId;
+  } catch (error) {
+    if (getPostgresErrorCode(error) === '55P03' || getPostgresErrorCode(error) === '40P01')
+      throw new GraphQLError('This board is changing. Retry the session action.', { extensions: { code: 'CONFLICT' } });
+    throw error;
+  }
 }

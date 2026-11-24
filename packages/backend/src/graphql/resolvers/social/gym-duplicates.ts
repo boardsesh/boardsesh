@@ -606,7 +606,7 @@ export const socialGymDuplicateMutations = {
           duplicateGymId: duplicate.candidate.id,
           clusterSignature,
           movedCounts: mergeResult.counts,
-          movedRows: mergeResult.movedRows,
+          movedRows: { ...mergeResult.movedRows, ...(validatedInput.reason ? { reason: validatedInput.reason } : {}) },
           warnings: mergeResult.warnings,
           performedBy: adminUserId,
         });

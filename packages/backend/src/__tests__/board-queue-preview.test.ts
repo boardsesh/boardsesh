@@ -37,6 +37,8 @@ import { userMutations } from '../graphql/resolvers/users/mutations';
 import { sessionEditMutations } from '../graphql/resolvers/social/session-mutations';
 import * as boardQueuePreviewService from '../services/board-queue-preview';
 import { createBarrier } from './helpers/concurrency';
+import { mergeDuplicateBoards } from '../services/merge-duplicate-boards';
+import { boardRepairStateHash } from '../services/board-repair-state';
 import { notifyResourcePrivacyChanged } from '../services/board-session-privacy';
 
 const TEST_USER_ID = 'board-queue-preview-test-user';
@@ -1618,6 +1620,241 @@ describe('board-queue-preview first-bind seed', () => {
 // pubsub connects only when Redis is reachable (CI configures it); skip
 // cleanly otherwise, mirroring board-presence.test.ts.
 // ============================================================
+describe('board-queue-preview after an explicit board merge', () => {
+  beforeAll(async () => {
+    await pubsub.initialize();
+    if (process.env.REDIS_URL) expect(pubsub.isRedisConnected()).toBe(true);
+  });
+  beforeEach(async () => {
+    await cleanup();
+    await seedUser();
+  });
+  afterEach(async () => {
+    await cleanup();
+  });
+
+  async function mergedSession(nullPrimary = false) {
+    const original = await makeBoardRow({ isPublic: true });
+    const canonical = await makeBoardRow({ isPublic: true });
+    await db
+      .insert(dbSchema.communityRoles)
+      .values({ userId: TEST_USER_ID, role: 'admin', boardType: null, grantedBy: TEST_USER_ID });
+    const [gym] = await db
+      .insert(dbSchema.gyms)
+      .values({ uuid: uuidv4(), slug: uuidv4(), ownerId: TEST_USER_ID, name: 'Preview merge gym' })
+      .returning();
+    await db
+      .update(dbSchema.userBoards)
+      .set({ gymId: gym.id })
+      .where(sql`${dbSchema.userBoards.id} IN (${original.id}, ${canonical.id})`);
+    const sessionId = await makeSession({ boardId: nullPrimary ? null : original.id, isPublic: true });
+    const queue = [makeQueueItem(41)];
+    await seedQueueState(sessionId, queue, queue[0]);
+    await bindSessionToBoard(sessionId, original.id);
+    const selected = await db
+      .select()
+      .from(dbSchema.userBoards)
+      .where(sql`${dbSchema.userBoards.id} IN (${original.id}, ${canonical.id})`);
+    await mergeDuplicateBoards(
+      {
+        gymUuid: gym.uuid,
+        canonicalBoardUuid: canonical.uuid,
+        duplicateBoardUuids: [original.uuid],
+        reason: 'Confirmed duplicate public wall for preview regression.',
+        expectedStates: selected.map((board) => ({
+          boardUuid: board.uuid,
+          stateHash: boardRepairStateHash(board, undefined),
+        })),
+      },
+      authCtx(),
+    );
+    await sleep(100);
+    return { original, canonical, sessionId };
+  }
+
+  it('inherits a Redis-only config-path session through an attested public merge, including queue updates and end', async () => {
+    const { original, canonical, sessionId } = await mergedSession(true);
+    const [session] = await db.select().from(dbSchema.boardSessions).where(eq(dbSchema.boardSessions.id, sessionId));
+    expect(session.boardId).toBeNull();
+    expect(
+      await db.select().from(dbSchema.sessionBoards).where(eq(dbSchema.sessionBoards.sessionId, sessionId)),
+    ).toEqual([]);
+    expect((await getBoardQueuePreviewSnapshot(canonical.id))?.current?.queueItemUuid).toBe('queue-item-41');
+    const received: BoardQueuePreview[] = [];
+    const unsubscribe = await pubsub.subscribeBoardQueuePreview(String(canonical.id), (preview) =>
+      received.push(preview),
+    );
+    try {
+      await publishBoardQueuePreviewForSession(sessionId);
+      await waitFor(() => received.length === 1);
+      expect(received[0].current?.queueItemUuid).toBe('queue-item-41');
+      expect(await pubsub.getSessionBoard(sessionId)).toBe(String(original.id));
+      expect(await pubsub.getBoardSession(String(canonical.id))).toBeNull();
+      await db
+        .update(dbSchema.boardSessions)
+        .set({ status: 'ended', endedAt: new Date() })
+        .where(eq(dbSchema.boardSessions.id, sessionId));
+      await publishBoardQueuePreviewTombstoneForSession(sessionId);
+      await waitFor(() => received.length === 2);
+      expect(received[1]).toMatchObject({ current: null, queueLength: 0 });
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('publishes later queue events on the active canonical board without rewriting Redis bindings', async () => {
+    const { original, canonical, sessionId } = await mergedSession();
+    const received: BoardQueuePreview[] = [];
+    const unsubscribe = await pubsub.subscribeBoardQueuePreview(String(canonical.id), (preview) =>
+      received.push(preview),
+    );
+    try {
+      await publishBoardQueuePreviewForSession(sessionId);
+      await waitFor(() => received.length === 1);
+      expect(received).toHaveLength(1);
+      expect(received[0]).toMatchObject({
+        boardId: canonical.id,
+        queueLength: 1,
+        current: { queueItemUuid: 'queue-item-41' },
+      });
+      expect(await pubsub.getSessionBoard(sessionId)).toBe(String(original.id));
+      expect(await pubsub.getBoardSession(String(canonical.id))).toBeNull();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it.each([false, true])(
+    'does not let the merged source take over an incumbent canonical session: public=%s',
+    async (isPublic) => {
+      const { canonical, sessionId } = await mergedSession(true);
+      const incumbent = await makeSession({ boardId: canonical.id, isPublic });
+      const queue = [makeQueueItem(42)];
+      await seedQueueState(incumbent, queue, queue[0]);
+      await bindSessionToBoard(incumbent, canonical.id);
+      const received: BoardQueuePreview[] = [];
+      const unsubscribe = await pubsub.subscribeBoardQueuePreview(String(canonical.id), (preview) =>
+        received.push(preview),
+      );
+      try {
+        await publishBoardQueuePreviewForSession(sessionId);
+        expect(received).toHaveLength(0);
+        await db
+          .update(dbSchema.boardSessions)
+          .set({ status: 'ended', endedAt: new Date() })
+          .where(eq(dbSchema.boardSessions.id, sessionId));
+        await publishBoardQueuePreviewTombstoneForSession(sessionId);
+        await waitFor(() => received.length === 1);
+        expect(received).toHaveLength(1);
+        if (isPublic) expect(received[0].current?.queueItemUuid).toBe('queue-item-42');
+        else expect(received[0]).toMatchObject({ current: null, queueLength: 0 });
+      } finally {
+        unsubscribe();
+      }
+    },
+  );
+
+  it('clears the canonical preview when the merged source session ends and no current session remains', async () => {
+    const { canonical, sessionId } = await mergedSession();
+    const received: BoardQueuePreview[] = [];
+    const unsubscribe = await pubsub.subscribeBoardQueuePreview(String(canonical.id), (preview) =>
+      received.push(preview),
+    );
+    try {
+      await db
+        .update(dbSchema.boardSessions)
+        .set({ status: 'ended', endedAt: new Date() })
+        .where(eq(dbSchema.boardSessions.id, sessionId));
+      await publishBoardQueuePreviewTombstoneForSession(sessionId);
+      await waitFor(() => received.length === 1);
+      expect(received).toHaveLength(1);
+      expect(received[0]).toMatchObject({ boardId: canonical.id, current: null, upNext: [], queueLength: 0 });
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it.each([false, true])(
+    'does not redirect a legacy private loser without public-only attestation: nullPrimary=%s',
+    async (nullPrimary) => {
+      const { original, canonical, sessionId } = await mergedSession(nullPrimary);
+      await db.delete(dbSchema.boardModerationEvents).where(eq(dbSchema.boardModerationEvents.boardId, canonical.id));
+      await db.update(dbSchema.userBoards).set({ isPublic: false }).where(eq(dbSchema.userBoards.id, original.id));
+      if (nullPrimary) expect(await getBoardQueuePreviewSnapshot(canonical.id)).toBeNull();
+      const publish = vi.spyOn(pubsub, 'publishBoardQueuePreview');
+      try {
+        await publishBoardQueuePreviewForSession(sessionId);
+        await db
+          .update(dbSchema.boardSessions)
+          .set({ status: 'ended', endedAt: new Date() })
+          .where(eq(dbSchema.boardSessions.id, sessionId));
+        await publishBoardQueuePreviewTombstoneForSession(sessionId);
+        expect(publish).not.toHaveBeenCalled();
+      } finally {
+        publish.mockRestore();
+      }
+    },
+  );
+
+  it('refuses inherited preview routing after an attested source receives an explicit privacy denial', async () => {
+    const { original, canonical, sessionId } = await mergedSession(true);
+    await db.insert(dbSchema.resourcePrivacy).values({
+      kind: 'board',
+      resourceId: original.uuid,
+      ownerId: TEST_USER_ID,
+      audience: 'only_me',
+      locationAudience: 'only_me',
+    });
+    expect(await getBoardQueuePreviewSnapshot(canonical.id)).toBeNull();
+    const publish = vi.spyOn(pubsub, 'publishBoardQueuePreview');
+    try {
+      await publishBoardQueuePreviewForSession(sessionId);
+      await db
+        .update(dbSchema.boardSessions)
+        .set({ status: 'ended', endedAt: new Date() })
+        .where(eq(dbSchema.boardSessions.id, sessionId));
+      await publishBoardQueuePreviewTombstoneForSession(sessionId);
+      expect(publish).not.toHaveBeenCalled();
+    } finally {
+      publish.mockRestore();
+    }
+  });
+
+  it.each(['plain-delete', 'different-durable-board'] as const)(
+    'does not redirect previews without matching merge and durable evidence: %s',
+    async (kind) => {
+      const { original, canonical, sessionId } = await mergedSession();
+      if (kind === 'plain-delete')
+        await db
+          .update(dbSchema.userBoards)
+          .set({ mergedIntoBoardUuid: null })
+          .where(eq(dbSchema.userBoards.id, original.id));
+      else {
+        const otherBoardId = await makeBoard({ isPublic: true });
+        await db
+          .update(dbSchema.boardSessions)
+          .set({ boardId: otherBoardId })
+          .where(eq(dbSchema.boardSessions.id, sessionId));
+      }
+      const received: BoardQueuePreview[] = [];
+      const unsubscribe = await pubsub.subscribeBoardQueuePreview(String(canonical.id), (preview) =>
+        received.push(preview),
+      );
+      try {
+        await publishBoardQueuePreviewForSession(sessionId);
+        await db
+          .update(dbSchema.boardSessions)
+          .set({ status: 'ended', endedAt: new Date() })
+          .where(eq(dbSchema.boardSessions.id, sessionId));
+        await publishBoardQueuePreviewTombstoneForSession(sessionId);
+        expect(received).toHaveLength(0);
+      } finally {
+        unsubscribe();
+      }
+    },
+  );
+});
+
 describe('board-queue-preview Redis binding', () => {
   const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6380';
   let redisOn = false;

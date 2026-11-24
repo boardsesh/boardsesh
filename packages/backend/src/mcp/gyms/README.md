@@ -3,7 +3,8 @@
 `registry.ts` is the explicit action catalogue. `media-tools.ts` registers the two
 image actions. Every action uses the caller's live Boardsesh identity, existing
 gym/board permissions and existing resolver validation. Clients cannot submit a
-GraphQL document, choose another actor, or request global-admin operations.
+GraphQL document or choose another actor. Explicit admin scopes expose the
+separately gated directory-repair tools in `admin-tools.ts`.
 
 | Existing gym surface | MCP actions | Important permission boundary |
 | --- | --- | --- |
@@ -67,11 +68,27 @@ deployment order.
 
 ## Deliberate boundaries
 
-These tools cover the gym page, rather than every resolver containing the word
-"gym". Global-admin claim review/revert, ownership reassignment, arbitrary gym
-merges, orphan/duplicate audits and cron refreshes remain outside this server.
+The ordinary tools cover the gym page, rather than every resolver containing the
+word "gym". Global-admin claim review/revert, ownership reassignment and cron
+refreshes remain outside this server.
 `deleteGym` and `addGymMember` exist in the backend but are not controls in the
 current web Manage page, so they are not automatically exposed.
+
+`gyms:admin:read` adds explicit-ID duplicate inspection. `gyms:admin:write` adds
+reasoned setup corrections, explicit location publication/hiding, audited gym
+merges, and serial-independent public catalogue board merges. The normal consent
+defaults never include these scopes. Both the OAuth grant and a live global admin
+role are required, including tool discovery and receipt replay; a gym admin or a
+board-scoped community admin is insufficient. Setup corrections retain the existing
+duplicate-config acknowledgement and privacy restrictions. Only the dedicated
+location repair can override another board owner's location policy.
+
+Repair hashes are obtained by inspection and checked under row locks. Board merges
+require matching normalized configurations and explicit same-physical-wall
+acknowledgement, preserve original reporting and moderation provenance, and refuse
+restricted access state or incompatible dependent settings. Existing serial dedupe
+uses the same extracted history migration body; its discovery and locking contract
+remains separate. See [the operator workflow](../../../../../docs/integrations/hosted-gym-mcp.md#administrative-duplicate-repairs).
 
 MCP board projections omit pairing serials and numeric internal IDs. Existing
 field-level privacy determines creator names, locations and readable board

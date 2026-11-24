@@ -121,7 +121,14 @@ describe('hosted gym MCP transport', () => {
     expect(result.body).toMatchObject({
       resource: 'https://api.boardsesh.com/mcp/gyms',
       authorization_servers: ['https://api.boardsesh.com/api/auth'],
-      scopes_supported: ['gyms:read', 'gyms:write', 'gyms:access:write', 'offline_access'],
+      scopes_supported: [
+        'gyms:read',
+        'gyms:write',
+        'gyms:access:write',
+        'offline_access',
+        'gyms:admin:read',
+        'gyms:admin:write',
+      ],
     });
     expect(authenticate).not.toHaveBeenCalled();
   });
@@ -130,6 +137,7 @@ describe('hosted gym MCP transport', () => {
     const handler = createGymMcpHandler({ mode: 'on', partnerMode: 'open' });
     const result = await request(handler, { headers: { authorization: '' } });
     expect(result.status).toBe(401);
+    expect(result.headers.get('www-authenticate')).not.toContain('gyms:admin:');
     expect(result.headers.get('www-authenticate')).toContain(
       `resource_metadata="https://api.boardsesh.com${GYM_MCP_METADATA_PATH}"`,
     );
@@ -178,6 +186,49 @@ describe('hosted gym MCP transport', () => {
     expect(called.body).toMatchObject({ id: 2, result: { content: [{ type: 'text', text: 'gym-owner' }] } });
     expect(createServer).toHaveBeenCalledTimes(2);
     expect(called.headers.get('cache-control')).toBe('no-store');
+  });
+
+  it.each(['gyms:admin:read', 'gyms:admin:write'])(
+    'serves initialization and tool calls with only %s',
+    async (scope) => {
+      const handler = createGymMcpHandler({
+        mode: 'on',
+        partnerMode: 'open',
+        authenticate: async () => ({ principal: { ...principal, scopes: [scope] } }),
+        createServer: serverFor,
+      });
+      expect(
+        await request(handler, {
+          body: {
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'initialize',
+            params: {
+              protocolVersion: '2025-11-25',
+              capabilities: {},
+              clientInfo: { name: 'admin-test', version: '1' },
+            },
+          },
+        }),
+      ).toMatchObject({ status: 200, body: { id: 1, result: { serverInfo: { name: 'gym-test' } } } });
+      expect(
+        await request(handler, {
+          body: { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'get_gym_actor', arguments: {} } },
+        }),
+      ).toMatchObject({ status: 200, body: { id: 2, result: { content: [{ text: 'gym-owner' }] } } });
+    },
+  );
+
+  it('requires a read or explicit admin scope before dispatch', async () => {
+    const createServer = vi.fn(serverFor);
+    const handler = createGymMcpHandler({
+      mode: 'on',
+      partnerMode: 'open',
+      authenticate: async () => ({ principal: { ...principal, scopes: ['gyms:write'] } }),
+      createServer,
+    });
+    expect(await request(handler)).toMatchObject({ status: 403, body: { error: 'insufficient_scope' } });
+    expect(createServer).not.toHaveBeenCalled();
   });
 
   it('creates a distinct actor-bound server for every request', async () => {

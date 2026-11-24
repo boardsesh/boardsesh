@@ -186,7 +186,10 @@ export function isGenericBoardName(name: string, boardType: string): boolean {
  * A public survivor may only accept metadata from a public loser. This keeps
  * private gym, coordinate, location-name, and board-name details private.
  */
-export function chooseMetadataDonor(losers: SerialBoardRow[], publicOnly = false): SerialBoardRow | null {
+export function chooseMetadataDonor<Board extends Pick<SerialBoardRow, 'id' | 'ownerId' | 'gymId' | 'isPublic'>>(
+  losers: Board[],
+  publicOnly = false,
+): Board | null {
   const eligibleLosers = publicOnly ? losers.filter((board) => board.isPublic) : losers;
   const withGym = eligibleLosers.filter((board) => board.gymId !== null);
   const donorPool = withGym.length > 0 ? withGym : eligibleLosers;

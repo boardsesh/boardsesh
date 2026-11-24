@@ -19,6 +19,7 @@ import { readableSocialEntityIds } from './entity-read-access';
 import { GraphQLError } from 'graphql';
 import { validateEntityExists } from './entity-validation';
 import { lockReferencedClimb } from '../climbs/spray-climb-lock';
+import { lockActiveBoardForWrite } from '../../../services/board-reference-lock';
 import { publishSocialEvent } from '../../../events/index';
 import { pubsub } from '../../../pubsub/index';
 import crypto from 'crypto';
@@ -577,6 +578,50 @@ export const socialCommentMutations = {
     // where it would be orphaned and could notify about a climb that is gone.
     const commentResult = await db.transaction(async (tx) => {
       if (entityType === 'climb') await lockReferencedClimb(tx, entityId);
+      if (entityType === 'board') {
+        if (!(await lockActiveBoardForWrite(tx, { uuid: entityId }))) throw new Error('Content not available');
+      } else if (entityType === 'gym') {
+        const [gym] = await tx
+          .select({ id: dbSchema.gyms.id })
+          .from(dbSchema.gyms)
+          .where(
+            and(
+              eq(dbSchema.gyms.uuid, entityId),
+              isNull(dbSchema.gyms.deletedAt),
+              isNull(dbSchema.gyms.mergedIntoGymId),
+            ),
+          )
+          .for('share')
+          .limit(1);
+        if (!gym) throw new Error('Content not available');
+      }
+      if (entityType === 'board' || entityType === 'gym') {
+        // A merge either waits for this insert or wins first and refuses the
+        // stale identity. Recheck visibility after acquiring its shared lock.
+        const [visibility] = await tx
+          .select({
+            allowed: socialEntityPrivacyCondition(sql`${entityType}`, sql`${entityId}`, userId, 'by-reference'),
+          })
+          .from(sql`(SELECT 1) privacy_check`);
+        if (visibility?.allowed !== true) throw new Error('Content not available');
+        if (parentCommentUuid) {
+          const [parent] = await tx
+            .select({ id: dbSchema.comments.id })
+            .from(dbSchema.comments)
+            .where(
+              and(
+                eq(dbSchema.comments.uuid, parentCommentUuid),
+                eq(dbSchema.comments.entityType, entityType),
+                eq(dbSchema.comments.entityId, entityId),
+                isNull(dbSchema.comments.deletedAt),
+                commentPrivacyCondition(userId, dbSchema.comments, { entityType, entityId }),
+              ),
+            )
+            .for('share')
+            .limit(1);
+          if (!parent) throw new Error('Parent comment not found');
+        }
+      }
       const inserted = await insertComment({ ...commentParams, executor: tx });
       if (validated.privacy) {
         await setContentPrivacy(

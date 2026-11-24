@@ -43,7 +43,7 @@ gyms it gains access to later. A lost role removes the corresponding access;
 OAuth approval does not grant a gym role. Ordinary membership alone is not
 management access. Existing per-operation rules remain authoritative: gym staff
 cannot delete another climber's board or edit someone else's comment, for
-example. Global-admin console operations are not gym-page operations.
+example. Directory repairs have a separate global-admin surface described below.
 
 The consent screen displays the client identity hostname separately from the
 client's self-reported name. A client calling itself ChatGPT or Claude does not
@@ -59,6 +59,80 @@ entered only on the Boardsesh sign-in page. Disconnecting in Settings →
 Connected apps stops future tool calls and refreshes. Information already
 shared with the assistant remains with it. The same Connected apps scope
 descriptions appear on web and mobile.
+
+## Administrative duplicate repairs
+
+Global administrators can explicitly consent to `gyms:admin:read` and
+`gyms:admin:write` on the same MCP resource. Neither scope is part of the
+ordinary connection defaults. Existing tokens do not gain these scopes when
+the server is updated. A connection needs fresh consent requesting the admin
+scopes; a gym's owner, staff admin or board-scoped community admin does not
+qualify. The server checks the live global role at consent, token exchange,
+refresh, tool discovery, every call and retry replay. Revocation prevents new
+admin actions and access to their receipts.
+
+The admin read scope allows inspection across gym listings, including differently
+named duplicates. The admin write scope allows cross-owner directory corrections
+and merges, including deliberately making a board's location public. The consent
+and Connected apps descriptions state this authority explicitly. Ordinary board
+editing retains its owner-only privacy rules.
+
+| Admin tool | Operation |
+| --- | --- |
+| `inspect_gym_duplicates` | Compare explicit gym UUIDs, board configurations, owner account IDs and display names, privacy, history counts and distances; return current state hashes. Pairing credentials, emails and individual climber activity are omitted. |
+| `correct_gym_board_setup` | Correct layout, size, hold sets, angle or adjustability through the existing board writer. Use `allowDuplicateConfig=true` explicitly when a confirmed duplicate already has that setup. Existing logged climbs keep their original problem identities. |
+| `correct_gym_board_location_visibility` | Set location visibility explicitly, synchronizing `hideLocation` and the location policy without changing owner, board audience or access grants. Record the reason and previous state. |
+| `merge_duplicate_gyms` | Choose the surviving gym UUID, move its duplicates' linked records, retain the survivor's owner, and keep old gym links resolving through merge tombstones. Board rows remain separate. |
+| `merge_duplicate_gym_boards` | Consolidate confirmed records of one physical public catalogue wall by UUID. Serial numbers are optional. Preserve history, ticks, follows, pins, valid TV layouts and old links. The survivor keeps its owner. |
+
+All admin writes require an explicit reason, `confirm=true`, a UUID retry key and
+the current state hash for every affected gym or board. Board merges additionally
+require `samePhysicalWall=true`: matching coordinates or configurations alone are
+not proof. Hashes cover configuration, ownership and privacy state; a changed
+record requires a new inspection. Reuse a retry key only with the exact original
+arguments. Successful merge retries recognize the resulting tombstones rather
+than trying to merge them again.
+
+The chosen board keeps its owner. A different real creator of a merged-away row
+loses editing ownership, follows the survivor and receives a moderation notice.
+Inspect the owner account IDs and display names first. Such a merge requires
+`allowOwnershipChange=true`; leaving it false refuses the merge. SYSTEM-only
+source rows do not need that extra acknowledgement. The audit records the choice
+and original owners; no email addresses or pairing serials are returned.
+
+Affected TV layouts must pass the current strict writer schema. An invalid or
+unknown layout returns a conflict naming the kiosk UUID and stays unchanged;
+repair it separately before retrying. Merge invalidation clears only loser board
+previews. The survivor is refreshed from its current session, and later queue
+updates and session endings follow explicit merge pointers while respecting the
+current public or private session on that wall.
+
+A typical repair follows this order:
+
+1. Inspect the explicit gym UUIDs and establish which physical gym/wall they describe.
+2. Merge duplicate gyms into the chosen survivor, preserving the intended ownership.
+3. Inspect again and correct stale board configurations separately.
+4. Explicitly correct location visibility if the operator wants that change.
+5. Inspect again, then merge the matching board UUIDs into the chosen survivor.
+
+The initial board-merge contract supports public, listed catalogue boards. Spray
+walls, restricted policies, explicit access grants, active share links, existing
+physical reporting groups and conflicting grade collections require their own
+review and return a conflict rather than silently changing access or settings.
+Legacy hidden-location flags remain restrictive unless explicitly corrected.
+
+Event sequences advance above every reserved sequence. Reporting board/gym
+snapshots, original moderation events and source provenance retain their original
+identities; merging cannot retroactively establish where a climb happened or
+grant staff access to hidden activity. Directory reports close through the existing
+report lifecycle. Gym merge audits and board moderation records retain the acting
+admin and reason. Updates and their receipt commit together; notifications and
+TV refreshes wait until that outer commit. Referencing writers lock the active
+identity so a concurrent action either commits before consolidation or refuses a
+stale merged identity.
+
+These tools provide operations only. Shipping them neither activates the connector
+nor applies a production merge.
 
 ## Images and reports
 
@@ -161,3 +235,5 @@ the public endpoint is activated or that either provider's live client passed.
 Before enabling `on`, decide the open-registration policy and retention of
 unconnected CIMD clients; the current implementation does not expire those
 client records. The pilot origin restriction remains a pilot-only policy.
+
+Preview inheritance from a Redis-only session requires a recent direct public-board merge audit on the current survivor. Older CLI merges and later flattened merge chains fail closed; report a fresh climb on the survivor to establish its current binding. No Redis binding is rewritten by the merge.

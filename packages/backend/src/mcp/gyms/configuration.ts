@@ -1,14 +1,16 @@
 import {
   GYM_MCP_RESOURCE,
   GYM_MCP_SCOPES,
+  GYM_MCP_DEFAULT_SCOPES,
+  GYM_MCP_ADMIN_SCOPES,
   parseGymMcpMode,
   type GymMcpMode,
 } from '@boardsesh/auth-protocol/partner-oauth';
 import { readPartnerOAuthMode } from '../../auth/partner/mode';
 import { logger } from '../../utils/logger';
 
-export { GYM_MCP_RESOURCE, GYM_MCP_SCOPES, type GymMcpMode };
-export type GymMcpScope = 'gyms:read' | 'gyms:write' | 'gyms:access:write';
+export { GYM_MCP_RESOURCE, GYM_MCP_SCOPES, GYM_MCP_DEFAULT_SCOPES, GYM_MCP_ADMIN_SCOPES, type GymMcpMode };
+export type GymMcpScope = Exclude<(typeof GYM_MCP_SCOPES)[number], 'offline_access'>;
 export const DEFAULT_GYM_MCP_PILOT_CLIENT_ORIGINS = ['https://chatgpt.com', 'https://claude.ai'] as const;
 const INVALID_PILOT_ORIGINS_WARNING_INTERVAL_MS = 60_000;
 let lastInvalidPilotOriginsWarningAt: number | undefined;

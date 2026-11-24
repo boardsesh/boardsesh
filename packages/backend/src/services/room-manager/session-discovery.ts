@@ -1,5 +1,11 @@
 import { GraphQLError } from 'graphql';
-import { resolveSessionBoardId } from '../session-board-binding';
+import {
+  resolveLockedSessionBoardId,
+  resolveSessionBoardId,
+  SESSION_BOARD_LOCK_TIMEOUT_MS,
+} from '../session-board-binding';
+import { lockActiveBoardForWrite } from '../board-reference-lock';
+import type { DbTransaction } from '../../db/after-commit';
 import { publishSessionBoardPathChanged } from '../session-wall-refresh';
 import {
   notifyResourcePrivacyChanged,
@@ -7,7 +13,7 @@ import {
   sessionsVisibleUserIds,
 } from '../board-session-privacy';
 import { requireResourceAccess, resourceAccessCondition, sessionBoardLocationCondition } from '../privacy';
-import { db } from '../../db/client';
+import { db, runWithDatabaseTransaction } from '../../db/client';
 import { sessions, type Session } from '../../db/schema';
 import { sessionBoards } from '@boardsesh/db/schema/app';
 import { eq, and, asc, gt, gte, lt, lte, ne, sql, getTableColumns } from 'drizzle-orm';
@@ -66,25 +72,38 @@ export async function updateSessionBoardPathIfChanged(
   viewerId?: string | null,
   changedByParticipantId: string | null = null,
 ): Promise<string | null> {
-  const transition = await db.transaction(async (tx) => {
+  const transition = await runWithDatabaseTransaction(async (executor) => {
+    const tx = executor as unknown as DbTransaction;
+    const [snapshot] = await tx
+      .select({ boardPath: sessions.boardPath, boardId: sessions.boardId })
+      .from(sessions)
+      .where(eq(sessions.id, sessionId));
+    if (!snapshot) throw new Error(`updateSessionBoardPathIfChanged: session ${sessionId} not found`);
+    const boardId = await resolveSessionBoardId(boardPath, viewerId, sessionId);
+    const previousPathBoardId =
+      snapshot.boardId ?? (await resolveSessionBoardId(snapshot.boardPath ?? '', viewerId, sessionId));
+    // A session is readable only through every wall it references. Prior wall
+    // activity stays capped when the party moves to another wall.
+    const parents = [
+      ...new Set([snapshot.boardId, previousPathBoardId, boardId].filter((id): id is number => id !== null)),
+    ];
+    for (const parentId of [...parents].sort((first, second) => first - second)) {
+      if (!(await lockActiveBoardForWrite(tx, { id: parentId }, { lockTimeoutMs: SESSION_BOARD_LOCK_TIMEOUT_MS })))
+        throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
+    }
+    // Board-before-session matches tick writers. Recheck the snapshot after
+    // taking the session lock so a concurrent wall move cannot supply access.
     const [existing] = await tx
       .select({ boardPath: sessions.boardPath, boardId: sessions.boardId })
       .from(sessions)
       .where(eq(sessions.id, sessionId))
       .for('update');
-    if (!existing) throw new Error(`updateSessionBoardPathIfChanged: session ${sessionId} not found`);
-    // Resolved under the row lock: a crew member's access to a home wall comes
-    // from this session being on it (#7013), so it must be judged against the
-    // session as it is now, not before a racing move off the wall committed.
-    const boardId = await resolveSessionBoardId(boardPath, viewerId, sessionId);
+    if (!existing || existing.boardPath !== snapshot.boardPath || existing.boardId !== snapshot.boardId)
+      throw new GraphQLError('This session changed. Retry the session action.', { extensions: { code: 'CONFLICT' } });
+    if ((await resolveSessionBoardId(boardPath, viewerId, sessionId)) !== boardId)
+      throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
     await requireResourceAccess('session', sessionId, viewerId);
-    const previousPathBoardId = await resolveSessionBoardId(existing.boardPath ?? '', viewerId, sessionId);
     if (existing.boardPath === boardPath && existing.boardId === boardId) return null;
-    // A session is readable only through every wall it references. Prior wall
-    // activity stays capped when the party moves to another wall.
-    const parents = [
-      ...new Set([existing.boardId, previousPathBoardId, boardId].filter((id): id is number => id !== null)),
-    ];
     if (parents.length)
       await tx
         .insert(sessionBoards)
@@ -136,29 +155,14 @@ export async function createDiscoverableSession(
 ): Promise<Session> {
   const now = new Date();
 
-  const boardId = await resolveSessionBoardId(boardPath, userId);
+  return runWithDatabaseTransaction(async (executor) => {
+    const tx = executor as unknown as DbTransaction;
+    const boardId = await resolveLockedSessionBoardId(tx, boardPath, userId);
 
-  const result = await db
-    .insert(sessions)
-    .values({
-      id: sessionId,
-      boardPath,
-      latitude,
-      longitude,
-      discoverable: true,
-      createdByUserId: userId,
-      name: name || null,
-      lastActivity: now,
-      goal: goal || null,
-      isPermanent: isPermanent || false,
-      color: color || null,
-      startedAt: now,
-      boardId,
-      isPublic,
-    })
-    .onConflictDoUpdate({
-      target: sessions.id,
-      set: {
+    const result = await tx
+      .insert(sessions)
+      .values({
+        id: sessionId,
         boardPath,
         latitude,
         longitude,
@@ -172,17 +176,35 @@ export async function createDiscoverableSession(
         startedAt: now,
         boardId,
         isPublic,
-      },
-      setWhere: and(
-        eq(sessions.createdByUserId, userId),
-        eq(sessions.boardPath, boardPath),
-        sql`${sessions.boardId} IS NOT DISTINCT FROM ${boardId}`,
-      ),
-    })
-    .returning();
+      })
+      .onConflictDoUpdate({
+        target: sessions.id,
+        set: {
+          boardPath,
+          latitude,
+          longitude,
+          discoverable: true,
+          createdByUserId: userId,
+          name: name || null,
+          lastActivity: now,
+          goal: goal || null,
+          isPermanent: isPermanent || false,
+          color: color || null,
+          startedAt: now,
+          boardId,
+          isPublic,
+        },
+        setWhere: and(
+          eq(sessions.createdByUserId, userId),
+          eq(sessions.boardPath, boardPath),
+          sql`${sessions.boardId} IS NOT DISTINCT FROM ${boardId}`,
+        ),
+      })
+      .returning();
 
-  if (!result[0]) throw new GraphQLError('Session not found', { extensions: { code: 'NOT_FOUND' } });
-  return result[0];
+    if (!result[0]) throw new GraphQLError('Session not found', { extensions: { code: 'NOT_FOUND' } });
+    return result[0];
+  });
 }
 
 /**

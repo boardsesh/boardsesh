@@ -101,10 +101,12 @@ vi.mock('../db/client', () => {
     update: vi.fn().mockReturnThis(),
     set: vi.fn().mockReturnThis(),
   };
+  const transaction = vi.fn((callback: (tx: typeof database) => Promise<unknown>) => callback(database));
   return {
+    runWithDatabaseTransaction: vi.fn((callback: (tx: typeof database) => Promise<unknown>) => transaction(callback)),
     db: {
       ...database,
-      transaction: vi.fn((callback: (tx: typeof database) => Promise<unknown>) => callback(database)),
+      transaction,
     },
   };
 });

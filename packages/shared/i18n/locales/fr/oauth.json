@@ -72,7 +72,9 @@
       "sessionsRead": "Lire tes séances terminées, tes notes de bilan privées et tes entraînements complets, y compris ceux d’autres applications",
       "gymsRead": "Lire les salles que tu peux gérer, leurs boards, leurs membres et leurs rapports d’activité",
       "gymsWrite": "Modifier tes salles, boards, écrans et discussions selon tes autorisations actuelles",
-      "gymsAccessWrite": "Modifier les accès de l’équipe là où ton rôle actuel le permet"
+      "gymsAccessWrite": "Modifier les accès de l’équipe là où ton rôle actuel le permet",
+      "gymsAdminRead": "Examiner les doublons de salles et de boards dans Boardsesh en tant qu’administrateur global",
+      "gymsAdminWrite": "Corriger et fusionner les fiches de salles et de boards, y compris rendre leur emplacement public, en tant qu’administrateur global"
     },
     "cannot": "Elle ne peut rien modifier dans ton compte et ne voit jamais ton mot de passe.",
     "notReviewed": "Boardsesh n'a pas vérifié cette app. Ne connecte que des apps de confiance.",

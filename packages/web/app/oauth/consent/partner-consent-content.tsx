@@ -37,6 +37,7 @@ const READ_ONLY_SCOPES: ReadonlySet<string> = new Set([
   'sessions:read',
   'workouts:read',
   'gyms:read',
+  'gyms:admin:read',
   'offline_access',
 ]);
 
@@ -83,6 +84,10 @@ function ScopeLine({ scope, includesOnlyMeTicks }: ConsentDetails['scopes'][numb
         return t('consent.scopes.gymsWrite');
       case 'gyms:access:write':
         return t('consent.scopes.gymsAccessWrite');
+      case 'gyms:admin:read':
+        return t('consent.scopes.gymsAdminRead');
+      case 'gyms:admin:write':
+        return t('consent.scopes.gymsAdminWrite');
       default:
         return t('consent.scopes.other', { scope });
     }

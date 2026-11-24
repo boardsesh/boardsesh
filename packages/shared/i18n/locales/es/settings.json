@@ -633,7 +633,9 @@
         "gymsRead": "Leer los rocódromos que puedes gestionar, incluidos sus plafones, miembros e informes de actividad",
         "gymsWrite": "Actualizar tus rocódromos, plafones, pantallas y conversaciones según tus permisos actuales",
         "gymsAccessWrite": "Cambiar el acceso del personal donde tu rol actual lo permita",
-        "gymAccess": "El acceso incluye todos los rocódromos que puedes gestionar ahora y los que gestiones más adelante. Si pierdes un rol, pierdes ese acceso."
+        "gymAccess": "El acceso incluye todos los rocódromos que puedes gestionar ahora y los que gestiones más adelante. Si pierdes un rol, pierdes ese acceso.",
+        "gymsAdminRead": "Revisar registros duplicados de rocódromos y plafones de Boardsesh como administrador global",
+        "gymsAdminWrite": "Corregir y fusionar registros de rocódromos y plafones, incluida la publicación de sus ubicaciones, como administrador global"
       },
       "disconnect": "Desconectar",
       "disconnectA11y": "Desconectar {{app}}",

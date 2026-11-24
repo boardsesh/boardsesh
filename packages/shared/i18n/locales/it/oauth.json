@@ -72,7 +72,9 @@
       "sessionsRead": "Leggere le tue sessioni completate, le note private del riepilogo e gli allenamenti completi, inclusi quelli di altre app",
       "gymsRead": "Leggere le palestre che puoi gestire, inclusi pannelli, membri e rapporti di attività",
       "gymsWrite": "Aggiornare palestre, pannelli, schermi e discussioni secondo i tuoi permessi attuali",
-      "gymsAccessWrite": "Modificare gli accessi dello staff dove il tuo ruolo attuale lo consente"
+      "gymsAccessWrite": "Modificare gli accessi dello staff dove il tuo ruolo attuale lo consente",
+      "gymsAdminRead": "Esaminare i duplicati delle palestre e dei pannelli in Boardsesh come amministratore globale",
+      "gymsAdminWrite": "Correggere e unire le schede di palestre e pannelli, anche rendendo pubbliche le posizioni dei pannelli, come amministratore globale"
     },
     "cannot": "Non può modificare nulla del tuo account e non vede mai la tua password.",
     "notReviewed": "Boardsesh non ha verificato questa app. Collega solo app di cui ti fidi.",

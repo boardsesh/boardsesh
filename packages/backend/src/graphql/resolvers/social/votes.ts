@@ -1,5 +1,5 @@
 import { canReadSocialEntity, socialEntityPrivacyCondition } from '../shared/activity-privacy';
-import { eq, and, inArray, sql } from 'drizzle-orm';
+import { eq, and, inArray, isNull, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import type { ConnectionContext, SocialEntityType } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
@@ -8,6 +8,7 @@ import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/h
 import { VoteInputSchema, BulkVoteSummaryInputSchema, SocialEntityTypeSchema } from '../../../validation/schemas';
 import { validateEntityExists } from './entity-validation';
 import { lockReferencedClimb } from '../climbs/spray-climb-lock';
+import { lockActiveBoardForWrite } from '../../../services/board-reference-lock';
 import { readableSocialEntityIds } from './entity-read-access';
 import { publishSocialEvent } from '../../../events/index';
 import { logger } from '../../../utils/logger';
@@ -218,9 +219,34 @@ export const socialVoteMutations = {
     // can be hard-deleted by its setter (`deleteClimb`, #5960). Holding the climb
     // until the vote commits stops a vote landing after the delete's sweep.
     const isFirstVote =
-      entityType === 'climb'
+      entityType === 'climb' || entityType === 'board' || entityType === 'gym'
         ? await db.transaction(async (tx) => {
-            await lockReferencedClimb(tx, entityId);
+            if (entityType === 'climb') await lockReferencedClimb(tx, entityId);
+            else if (entityType === 'board') {
+              if (!(await lockActiveBoardForWrite(tx, { uuid: entityId }))) throw new Error('Content not available');
+            } else {
+              const [gym] = await tx
+                .select({ id: dbSchema.gyms.id })
+                .from(dbSchema.gyms)
+                .where(
+                  and(
+                    eq(dbSchema.gyms.uuid, entityId),
+                    isNull(dbSchema.gyms.deletedAt),
+                    isNull(dbSchema.gyms.mergedIntoGymId),
+                  ),
+                )
+                .for('share')
+                .limit(1);
+              if (!gym) throw new Error('Content not available');
+            }
+            if (entityType !== 'climb') {
+              const [visibility] = await tx
+                .select({
+                  allowed: socialEntityPrivacyCondition(sql`${entityType}`, sql`${entityId}`, userId, 'by-reference'),
+                })
+                .from(sql`(SELECT 1) privacy_check`);
+              if (visibility?.allowed !== true) throw new Error('Content not available');
+            }
             return writeVote(tx);
           })
         : await writeVote(db);

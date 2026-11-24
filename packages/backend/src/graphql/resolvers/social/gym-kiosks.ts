@@ -13,7 +13,7 @@ import {
   KioskHeartbeatInputSchema,
   UUIDSchema,
 } from '../../../validation/schemas';
-import { isUniqueViolation } from '../../../utils/postgres-errors';
+import { getPostgresErrorCode, isUniqueViolation } from '../../../utils/postgres-errors';
 import { resourceAccessCondition } from '../../../services/privacy';
 import {
   recordKioskHeartbeat,
@@ -298,7 +298,11 @@ async function kioskExistsForGym(kioskUuid: string, gymUuid: string): Promise<bo
 }
 
 /** Verify every board referenced by a layout is alive and linked to this gym. */
-async function assertLayoutBoardsInGym(gymId: number, layout: KioskLayout): Promise<void> {
+async function assertLayoutBoardsInGym(
+  executor: Pick<typeof db, 'select'>,
+  gymId: number,
+  layout: KioskLayout,
+): Promise<void> {
   const referenced = new Set<string>(layout.boards.map((slot) => slot.boardUuid));
   // The strict schema already forces a single-board leaderboard to be one of the
   // slot boards, but re-collect it so the gym-link check covers it explicitly.
@@ -307,7 +311,7 @@ async function assertLayoutBoardsInGym(gymId: number, layout: KioskLayout): Prom
   }
   if (referenced.size === 0) return;
 
-  const aliveRows = await db
+  const aliveRows = await executor
     .select({ uuid: dbSchema.userBoards.uuid })
     .from(dbSchema.userBoards)
     .where(
@@ -315,11 +319,14 @@ async function assertLayoutBoardsInGym(gymId: number, layout: KioskLayout): Prom
         eq(dbSchema.userBoards.gymId, gymId),
         inArray(dbSchema.userBoards.uuid, [...referenced]),
         isNull(dbSchema.userBoards.deletedAt),
+        isNull(dbSchema.userBoards.mergedIntoBoardUuid),
         // The read side drops an archived spray wall from its slot, so a layout
         // naming one would save a slot that can never show anything.
         boardIsNotArchivedSprayWall(),
       ),
-    );
+    )
+    .orderBy(asc(dbSchema.userBoards.id))
+    .for('share');
   const alive = new Set(aliveRows.map((row) => row.uuid));
   const missing = [...referenced].filter((uuid) => !alive.has(uuid));
   if (missing.length > 0) {
@@ -438,7 +445,14 @@ export const socialGymKioskMutations = {
         // the count-then-insert below can't race — without this, two calls one
         // below MAX_KIOSKS_PER_GYM could both pass the check and leave the gym
         // over the cap (the only DB invariant is the slug index).
-        await tx.select({ id: dbSchema.gyms.id }).from(dbSchema.gyms).where(eq(dbSchema.gyms.id, gym.id)).for('update');
+        const [liveGym] = await tx
+          .select({ id: dbSchema.gyms.id })
+          .from(dbSchema.gyms)
+          .where(
+            and(eq(dbSchema.gyms.id, gym.id), isNull(dbSchema.gyms.deletedAt), isNull(dbSchema.gyms.mergedIntoGymId)),
+          )
+          .for('update');
+        if (!liveGym) throw new GraphQLError('Gym not found', { extensions: { code: 'NOT_FOUND' } });
 
         // Enforce the per-gym kiosk cap (live kiosks only; a soft-deleted row
         // frees its slot).
@@ -502,20 +516,45 @@ export const socialGymKioskMutations = {
     if (validated.name !== undefined) updateValues.name = validated.name;
     if (validated.slug !== undefined) updateValues.slug = validated.slug;
 
-    if (validated.layout !== undefined) {
-      await assertLayoutBoardsInGym(kiosk.gymId, validated.layout);
-      // Backend is the layout schema authority: persist the schema-parsed output.
-      updateValues.layout = validated.layout;
-    }
+    if (validated.layout !== undefined) updateValues.layout = validated.layout;
 
     let updated: KioskRow;
     try {
-      [updated] = await db
-        .update(dbSchema.gymKiosks)
-        .set(updateValues)
-        .where(eq(dbSchema.gymKiosks.id, kiosk.id))
-        .returning();
+      updated = await db.transaction(async (transaction) => {
+        // Board -> kiosk matches duplicate-board merge ordering. Holding every
+        // referenced board through the write prevents a waiting save from
+        // restoring a UUID that a concurrent merge just removed from its layout.
+        if (validated.layout !== undefined) await assertLayoutBoardsInGym(transaction, kiosk.gymId, validated.layout);
+        const [liveKiosk] = await transaction
+          .select()
+          .from(dbSchema.gymKiosks)
+          .where(and(eq(dbSchema.gymKiosks.id, kiosk.id), isNull(dbSchema.gymKiosks.deletedAt)))
+          .for('update');
+        if (!liveKiosk || liveKiosk.gymId !== gym.id)
+          throw new GraphQLError('Kiosk not found', { extensions: { code: 'NOT_FOUND' } });
+        // Gym merges lock gym -> board, so never wait for the inverse lock here.
+        const [liveGym] = await transaction
+          .select({ id: dbSchema.gyms.id })
+          .from(dbSchema.gyms)
+          .where(
+            and(
+              eq(dbSchema.gyms.id, liveKiosk.gymId),
+              isNull(dbSchema.gyms.deletedAt),
+              isNull(dbSchema.gyms.mergedIntoGymId),
+            ),
+          )
+          .for('share', { noWait: true });
+        if (!liveGym) throw new GraphQLError('Kiosk not found', { extensions: { code: 'NOT_FOUND' } });
+        const [saved] = await transaction
+          .update(dbSchema.gymKiosks)
+          .set(updateValues)
+          .where(eq(dbSchema.gymKiosks.id, liveKiosk.id))
+          .returning();
+        return saved;
+      });
     } catch (error) {
+      if (getPostgresErrorCode(error) === '55P03')
+        throw new GraphQLError('This gym is changing. Retry the kiosk update.', { extensions: { code: 'CONFLICT' } });
       if (isUniqueViolation(error, 'gym_kiosks_unique_gym_slug')) {
         throw new GraphQLError('A kiosk with that slug already exists in this gym', {
           extensions: { code: 'KIOSK_SLUG_ALREADY_EXISTS' },

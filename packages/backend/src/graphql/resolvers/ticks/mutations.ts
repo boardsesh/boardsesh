@@ -566,12 +566,13 @@ const inputClimbAlias = aliasedTable(dbSchema.boardClimbAliases, 'beta_link_inpu
 export async function resolveBetaLinkTickContext(
   input: { boardType: string; climbUuid: string; angle?: number | null; tickUuid?: string | null; link?: string },
   userId: string,
+  executor: Pick<typeof db, 'select'> = db,
 ): Promise<BetaLinkTickContext> {
   if (!input.tickUuid) {
     return { tickUuid: null, boardId: null, angle: input.angle ?? null };
   }
 
-  const [tick] = await db
+  const [tick] = await executor
     .select({
       uuid: dbSchema.boardseshTicks.uuid,
       userId: dbSchema.boardseshTicks.userId,
@@ -628,7 +629,7 @@ export async function resolveBetaLinkTickContext(
     });
   }
 
-  const [existingTickBetaLink] = await db
+  const [existingTickBetaLink] = await executor
     .select({ link: dbSchema.boardBetaLinks.link })
     .from(dbSchema.boardBetaLinks)
     .where(eq(dbSchema.boardBetaLinks.tickUuid, tick.uuid))
@@ -1730,7 +1731,7 @@ export const tickMutations = {
     // use; the two-token cost is a side effect of the gating architecture, not
     // a deliberate rate ceiling, but 15/min is still the effective limit.
     await applyRateLimit(ctx, 30, 'beta-link-validation');
-    const tickContext = await resolveBetaLinkTickContext({ ...validated, link: normalizedLink }, userId);
+    await resolveBetaLinkTickContext({ ...validated, link: normalizedLink }, userId);
 
     // Validation runs first — it's an outbound HTTP fetch we don't want to
     // hold a DB connection open for. attachBetaLink is a deliberate user
@@ -1755,37 +1756,63 @@ export const tickMutations = {
     }
 
     try {
-      await db.transaction(async (tx) => {
-        const [inserted] = await tx
-          .insert(dbSchema.boardBetaLinks)
-          .values({
-            boardType: validated.boardType,
-            climbUuid: validated.climbUuid,
-            link: normalizedLink,
-            shortcode: getInstagramMediaId(normalizedLink),
-            videoIdentity: betaLinkIdentity(normalizedLink),
-            tickUuid: tickContext.tickUuid,
-            boardId: tickContext.boardId,
-            angle: tickContext.angle,
-            isListed: true,
-            thumbnail: betaPlan.thumbnail,
-            foreignUsername: betaPlan.foreignUsername,
-            createdAt: now,
-            createdByUserId: userId,
-          })
-          .onConflictDoNothing()
-          .returning({ link: dbSchema.boardBetaLinks.link });
-        if (inserted && validated.privacy) {
-          await setContentPrivacy(
-            tx,
-            userId,
-            'beta',
-            betaPrivacyEntityId(validated.boardType, validated.climbUuid, normalizedLink),
-            validated.privacy.audience,
-            validated.privacy.privacyRevision,
-          );
-        }
-      });
+      await retryTickMutationOnChangedSurface(() =>
+        db.transaction(async (tx) => {
+          // The validation fetch deliberately held no database locks. Its tick
+          // may now belong to the merge survivor, so derive the context again.
+          let tickContext = await resolveBetaLinkTickContext({ ...validated, link: normalizedLink }, userId, tx);
+          if (tickContext.tickUuid) {
+            if (tickContext.boardId !== null) {
+              // Board-before-tick matches tick edits and merge. Ordinary deleted
+              // boards retain historical beta attribution; merge tombstones do not.
+              const [board] = await tx
+                .select({ id: dbSchema.userBoards.id, mergedIntoBoardUuid: dbSchema.userBoards.mergedIntoBoardUuid })
+                .from(dbSchema.userBoards)
+                .where(eq(dbSchema.userBoards.id, tickContext.boardId))
+                .for('share')
+                .limit(1);
+              if (!board || board.mergedIntoBoardUuid) throw new TickMutationSurfaceChangedError();
+            }
+            const [lockedTick] = await tx
+              .select({ boardId: dbSchema.boardseshTicks.boardId })
+              .from(dbSchema.boardseshTicks)
+              .where(eq(dbSchema.boardseshTicks.uuid, tickContext.tickUuid))
+              .for('share')
+              .limit(1);
+            if (!lockedTick || lockedTick.boardId !== tickContext.boardId) throw new TickMutationSurfaceChangedError();
+            tickContext = await resolveBetaLinkTickContext({ ...validated, link: normalizedLink }, userId, tx);
+          }
+          const [inserted] = await tx
+            .insert(dbSchema.boardBetaLinks)
+            .values({
+              boardType: validated.boardType,
+              climbUuid: validated.climbUuid,
+              link: normalizedLink,
+              shortcode: getInstagramMediaId(normalizedLink),
+              videoIdentity: betaLinkIdentity(normalizedLink),
+              tickUuid: tickContext.tickUuid,
+              boardId: tickContext.boardId,
+              angle: tickContext.angle,
+              isListed: true,
+              thumbnail: betaPlan.thumbnail,
+              foreignUsername: betaPlan.foreignUsername,
+              createdAt: now,
+              createdByUserId: userId,
+            })
+            .onConflictDoNothing()
+            .returning({ link: dbSchema.boardBetaLinks.link });
+          if (inserted && validated.privacy) {
+            await setContentPrivacy(
+              tx,
+              userId,
+              'beta',
+              betaPrivacyEntityId(validated.boardType, validated.climbUuid, normalizedLink),
+              validated.privacy.audience,
+              validated.privacy.privacyRevision,
+            );
+          }
+        }),
+      );
     } catch (err) {
       if (err instanceof GraphQLError) throw err;
       logger.error('[attachBetaLink] insert failed after validation passed:', err);

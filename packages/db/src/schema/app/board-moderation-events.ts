@@ -70,6 +70,29 @@ export type BoardSetupSnapshot = {
  * wrote it, and for the two setup-change actions the setups on either side.
  */
 export type BoardModerationEventDetails = {
+  adminRepair?: {
+    previousHideLocation: boolean;
+    hideLocation: boolean;
+    previousLocationAudience: string | null;
+    locationAudience: string | null;
+    reason: string;
+  };
+  merge?: {
+    canonicalBoardUuid: string;
+    duplicateBoardUuids: string[];
+    allowOwnershipChange?: boolean;
+    before: Array<{
+      uuid: string;
+      ownerId: string;
+      name: string;
+      layoutId: number;
+      sizeId: number;
+      setIds: string;
+      hideLocation: boolean;
+      isUnlisted: boolean;
+    }>;
+    counts: Record<string, number>;
+  };
   fields?: string[];
   mutation?: string;
   /** Setup changes: the setup before this event. */

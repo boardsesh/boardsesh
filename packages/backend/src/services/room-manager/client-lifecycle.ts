@@ -1,11 +1,12 @@
 import { GraphQLError } from 'graphql';
 import { normaliseOrphanCurrent } from '@boardsesh/queue';
-import { resolveSessionBoardId } from '../session-board-binding';
+import { resolveLockedSessionBoardId } from '../session-board-binding';
+import type { DbTransaction } from '../../db/after-commit';
 import { getPrivacySettings, legacyResourceAudience, requireResourceAccess } from '../privacy';
 import { resourcePrivacy } from '@boardsesh/db/schema';
 import { sessionParticipantId } from '../board-session-privacy';
 import type { ClimbQueueItem, SessionUser } from '@boardsesh/shared-schema';
-import { db } from '../../db/client';
+import { db, runWithDatabaseTransaction } from '../../db/client';
 import { sessions, boardSessionParticipants } from '../../db/schema';
 import type { DistributedStateManager } from '../distributed-state';
 import type {
@@ -1101,12 +1102,13 @@ export async function ensureSessionRecordExists(
   isPublic?: boolean,
 ): Promise<boolean> {
   const now = new Date();
-  const boardId = await resolveSessionBoardId(boardPath, userId);
   const defaultAudience = userId ? (await getPrivacySettings(userId)).defaultSessionAudience : 'public';
   // A legacy private session is unlisted: off the listings, the link still joins.
   const audience =
     isPublic === false ? legacyResourceAudience(defaultAudience, 'unlisted', 'session') : defaultAudience;
-  return db.transaction(async (tx) => {
+  return runWithDatabaseTransaction(async (executor) => {
+    const tx = executor as unknown as DbTransaction;
+    const boardId = await resolveLockedSessionBoardId(tx, boardPath, userId);
     const inserted = await tx
       .insert(sessions)
       .values({

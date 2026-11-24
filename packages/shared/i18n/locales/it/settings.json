@@ -633,7 +633,9 @@
         "gymsRead": "Leggere le palestre che puoi gestire, inclusi pannelli, membri e rapporti di attività",
         "gymsWrite": "Aggiornare palestre, pannelli, schermi e discussioni secondo i tuoi permessi attuali",
         "gymsAccessWrite": "Modificare gli accessi dello staff dove il tuo ruolo attuale lo consente",
-        "gymAccess": "L’accesso comprende tutte le palestre che puoi gestire ora e quelle che gestirai in futuro. Se perdi un ruolo, perdi quell’accesso."
+        "gymAccess": "L’accesso comprende tutte le palestre che puoi gestire ora e quelle che gestirai in futuro. Se perdi un ruolo, perdi quell’accesso.",
+        "gymsAdminRead": "Esaminare i duplicati delle palestre e dei pannelli in Boardsesh come amministratore globale",
+        "gymsAdminWrite": "Correggere e unire le schede di palestre e pannelli, anche rendendo pubbliche le posizioni dei pannelli, come amministratore globale"
       },
       "disconnect": "Scollega",
       "disconnectA11y": "Scollega {{app}}",

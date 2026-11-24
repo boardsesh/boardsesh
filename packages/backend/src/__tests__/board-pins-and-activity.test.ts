@@ -79,6 +79,7 @@ function createMockChain(resolveValue: unknown = []) {
     'delete',
     'update',
     'set',
+    'for',
   ];
 
   chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve(resolveValue).then(resolve);
@@ -102,6 +103,10 @@ function mockBoardLookup(found: boolean) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockDb.transaction.mockImplementation((work: (transaction: typeof mockDb) => Promise<unknown>) => work(mockDb));
+  mockDb.select.mockReturnValue(
+    createMockChain([{ uuid: BOARD_UUID, deletedAt: null, mergedIntoBoardUuid: null }]).chain,
+  );
 });
 
 describe('pinBoard', () => {

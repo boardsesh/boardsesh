@@ -72,7 +72,9 @@
       "sessionsRead": "Leer tus sesiones completadas, notas privadas del resumen y entrenamientos completos, incluidos los de otras aplicaciones",
       "gymsRead": "Leer los rocódromos que puedes gestionar, incluidos sus plafones, miembros e informes de actividad",
       "gymsWrite": "Actualizar tus rocódromos, plafones, pantallas y conversaciones según tus permisos actuales",
-      "gymsAccessWrite": "Cambiar el acceso del personal donde tu rol actual lo permita"
+      "gymsAccessWrite": "Cambiar el acceso del personal donde tu rol actual lo permita",
+      "gymsAdminRead": "Revisar registros duplicados de rocódromos y plafones de Boardsesh como administrador global",
+      "gymsAdminWrite": "Corregir y fusionar registros de rocódromos y plafones, incluida la publicación de sus ubicaciones, como administrador global"
     },
     "cannot": "No puede cambiar nada de tu cuenta y nunca ve tu contraseña.",
     "notReviewed": "Boardsesh no ha revisado esta app. Conecta solo apps de confianza.",

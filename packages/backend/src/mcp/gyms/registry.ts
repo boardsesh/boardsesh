@@ -32,6 +32,7 @@ import {
   type GymToolResult,
 } from './domain';
 import type { GymMcpScope } from './auth';
+import { gymMcpAdminTools } from './admin-tools';
 
 const pagination = {
   limit: z.number().int().min(1).max(50).default(20),
@@ -57,6 +58,7 @@ type GymCategory =
   | 'comments'
   | 'kiosks'
   | 'insights'
+  | 'admin'
   | 'public';
 
 export type GymMcpAuthorizedAction = (execute?: GymToolExecutor) => Promise<GymToolResult>;
@@ -192,6 +194,7 @@ const body = z.string().trim().min(1).max(2000);
 
 /** Every reachable gym-page action has an explicit, typed entry. No generic query/operation tool. */
 export const gymMcpTools: readonly GymMcpTool[] = [
+  ...gymMcpAdminTools,
   defineTool({
     name: 'list_managed_gyms',
     category: 'overview',

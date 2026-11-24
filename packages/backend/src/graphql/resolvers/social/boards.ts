@@ -57,7 +57,7 @@ import { syncLocationGeography } from './location-geography';
 import { getUserCommunityRoles, rolesGrantAdminOrLeader, requireAdmin, type CommunityRoleScope } from './roles';
 import { rolesGrantAdmin } from '@boardsesh/community-roles';
 import { gymClaimProbationEndsAt, gymClaimProbationError, loadGymClaimProbations } from './gym-claim-guardrails';
-import type { BoardModerationActorRole } from '@boardsesh/db/schema';
+import type { BoardModerationActorRole, BoardModerationEventDetails } from '@boardsesh/db/schema';
 import {
   recordBoardModerationEvent,
   recordStaffBoardEdit,
@@ -65,7 +65,7 @@ import {
   type ModerationExecutor,
 } from './board-moderation-events';
 import { onBoardDeleted } from './directory-reports/lifecycle';
-import { transactionWithAfterCommit } from '../../../db/after-commit';
+import { transactionWithAfterCommit, type DbTransaction } from '../../../db/after-commit';
 import { loadBoardReportFlags } from './directory-reports/read';
 import {
   SYSTEM_BOARD_OWNER_ID,
@@ -2056,6 +2056,39 @@ export const socialBoardQueries = {
 // Mutations
 // ============================================
 
+/** Preference writers commit before a merge, or explicitly refuse a stale merged identity. */
+async function mutateBoardPreference(
+  boardUuid: string,
+  requireActive: boolean,
+  work: (transaction: DbTransaction, boardUuid: string) => Promise<unknown>,
+): Promise<boolean> {
+  return db.transaction(
+    async (transaction) => {
+      const [board] = await transaction
+        .select({
+          uuid: dbSchema.userBoards.uuid,
+          deletedAt: dbSchema.userBoards.deletedAt,
+          mergedIntoBoardUuid: dbSchema.userBoards.mergedIntoBoardUuid,
+        })
+        .from(dbSchema.userBoards)
+        .where(eq(dbSchema.userBoards.uuid, boardUuid))
+        .for('share')
+        .limit(1);
+      if (board?.mergedIntoBoardUuid)
+        throw new GraphQLError('This board was merged. Refresh your boards before changing this preference.', {
+          extensions: { code: 'CONFLICT' },
+        });
+      if (!board || (requireActive && board.deletedAt)) {
+        if (requireActive) throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
+        return true;
+      }
+      await work(transaction, board.uuid);
+      return true;
+    },
+    { isolationLevel: 'read committed' },
+  );
+}
+
 type ValidatedBoardUpdate = z.infer<typeof UpdateBoardInputSchema>;
 
 /** Admin authority changes metadata access, never ownership or wall publication. */
@@ -2113,6 +2146,7 @@ export async function updateBoardRecord(
   input: unknown,
   ctx: ConnectionContext,
   access: 'standard' | 'admin' = 'standard',
+  audit?: { reason: string; details?: BoardModerationEventDetails },
 ): Promise<typeof dbSchema.userBoards.$inferSelect> {
   requireAuthenticated(ctx);
   if (access === 'admin') await requireAdmin(ctx);
@@ -2507,6 +2541,8 @@ export async function updateBoardRecord(
         mutation: access === 'admin' ? 'adminUpdateBoard' : 'updateBoard',
         fields: changedBoardFields(validatedInput, board),
         actorRole: access === 'admin' ? 'global_admin' : undefined,
+        reason: audit?.reason,
+        details: audit?.details,
       });
       return rows;
     });
@@ -3195,13 +3231,11 @@ export const socialBoardMutations = {
     const validatedInput = validateInput(FollowBoardInputSchema, input, 'input');
     const userId = ctx.userId!;
 
-    await db
-      .delete(dbSchema.boardFollows)
-      .where(
-        and(eq(dbSchema.boardFollows.userId, userId), eq(dbSchema.boardFollows.boardUuid, validatedInput.boardUuid)),
-      );
-
-    return true;
+    return mutateBoardPreference(validatedInput.boardUuid, false, async (transaction, boardUuid) => {
+      await transaction
+        .delete(dbSchema.boardFollows)
+        .where(and(eq(dbSchema.boardFollows.userId, userId), eq(dbSchema.boardFollows.boardUuid, boardUuid)));
+    });
   },
 
   /**
@@ -3219,31 +3253,21 @@ export const socialBoardMutations = {
     const validatedInput = validateInput(PinBoardInputSchema, input, 'input');
     const userId = ctx.userId!;
 
-    const [board] = await db
-      .select({ uuid: dbSchema.userBoards.uuid })
-      .from(dbSchema.userBoards)
-      .where(and(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid), isNull(dbSchema.userBoards.deletedAt)))
-      .limit(1);
-
-    if (!board) {
-      throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
-    }
-
-    await db
-      .insert(dbSchema.userBoardActivity)
-      .values({ userId, boardUuid: board.uuid, pinnedAt: new Date() })
-      .onConflictDoUpdate({
-        target: [dbSchema.userBoardActivity.userId, dbSchema.userBoardActivity.boardUuid],
-        // COALESCE keeps an existing pin's original time. Only pinnedAt is
-        // touched — clobbering lastUsedAt here would reset the recency of a
-        // board you just pinned.
-        set: {
-          pinnedAt: sql`COALESCE(${dbSchema.userBoardActivity.pinnedAt}, now())`,
-          updatedAt: new Date(),
-        },
-      });
-
-    return true;
+    return mutateBoardPreference(validatedInput.boardUuid, true, async (transaction, boardUuid) => {
+      await transaction
+        .insert(dbSchema.userBoardActivity)
+        .values({ userId, boardUuid, pinnedAt: new Date() })
+        .onConflictDoUpdate({
+          target: [dbSchema.userBoardActivity.userId, dbSchema.userBoardActivity.boardUuid],
+          // COALESCE keeps an existing pin's original time. Only pinnedAt is
+          // touched — clobbering lastUsedAt here would reset the recency of a
+          // board you just pinned.
+          set: {
+            pinnedAt: sql`COALESCE(${dbSchema.userBoardActivity.pinnedAt}, now())`,
+            updatedAt: new Date(),
+          },
+        });
+    });
   },
 
   /**
@@ -3260,17 +3284,12 @@ export const socialBoardMutations = {
     const userId = ctx.userId!;
 
     // The row is kept, not deleted — it still carries last_used_at.
-    await db
-      .update(dbSchema.userBoardActivity)
-      .set({ pinnedAt: null, updatedAt: new Date() })
-      .where(
-        and(
-          eq(dbSchema.userBoardActivity.userId, userId),
-          eq(dbSchema.userBoardActivity.boardUuid, validatedInput.boardUuid),
-        ),
-      );
-
-    return true;
+    return mutateBoardPreference(validatedInput.boardUuid, false, async (transaction, boardUuid) => {
+      await transaction
+        .update(dbSchema.userBoardActivity)
+        .set({ pinnedAt: null, updatedAt: new Date() })
+        .where(and(eq(dbSchema.userBoardActivity.userId, userId), eq(dbSchema.userBoardActivity.boardUuid, boardUuid)));
+    });
   },
 
   /**
@@ -3293,31 +3312,21 @@ export const socialBoardMutations = {
     const validatedInput = validateInput(RecordBoardOpenedInputSchema, input, 'input');
     const userId = ctx.userId!;
 
-    const [board] = await db
-      .select({ uuid: dbSchema.userBoards.uuid })
-      .from(dbSchema.userBoards)
-      .where(and(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid), isNull(dbSchema.userBoards.deletedAt)))
-      .limit(1);
+    return mutateBoardPreference(validatedInput.boardUuid, true, async (transaction, boardUuid) => {
+      const now = new Date();
 
-    if (!board) {
-      throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
-    }
-
-    const now = new Date();
-
-    await db
-      .insert(dbSchema.userBoardActivity)
-      .values({ userId, boardUuid: board.uuid, lastUsedAt: now })
-      .onConflictDoUpdate({
-        target: [dbSchema.userBoardActivity.userId, dbSchema.userBoardActivity.boardUuid],
-        // GREATEST, not a plain assignment: a delayed or replayed call must
-        // never drag the timestamp backwards. pinnedAt is untouched.
-        set: {
-          lastUsedAt: sql`GREATEST(${dbSchema.userBoardActivity.lastUsedAt}, excluded.last_used_at)`,
-          updatedAt: now,
-        },
-      });
-
-    return true;
+      await transaction
+        .insert(dbSchema.userBoardActivity)
+        .values({ userId, boardUuid, lastUsedAt: now })
+        .onConflictDoUpdate({
+          target: [dbSchema.userBoardActivity.userId, dbSchema.userBoardActivity.boardUuid],
+          // GREATEST, not a plain assignment: a delayed or replayed call must
+          // never drag the timestamp backwards. pinnedAt is untouched.
+          set: {
+            lastUsedAt: sql`GREATEST(${dbSchema.userBoardActivity.lastUsedAt}, excluded.last_used_at)`,
+            updatedAt: now,
+          },
+        });
+    });
   },
 };

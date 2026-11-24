@@ -388,6 +388,8 @@ export const OrphanGymsInputSchema = z.object({
 export const MergeGymsInputSchema = z.object({
   canonicalGymUuid: UUIDSchema,
   duplicateGymUuids: z.array(UUIDSchema).min(1, 'Pick at least one duplicate').max(50),
+  // Internal administrative callers can retain their rationale in the merge audit.
+  reason: z.string().trim().min(10).max(1000).optional(),
   // Explicit acknowledgement required to keep a SYSTEM listing as the survivor
   // over a user-owned or claim-approved duplicate (an inverted pre-selection).
   allowSystemCanonicalOverride: z.boolean().optional().default(false),
