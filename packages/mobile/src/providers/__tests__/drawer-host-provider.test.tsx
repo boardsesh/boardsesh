@@ -1392,21 +1392,6 @@ describe('DrawerHostProvider play drawer open target', () => {
     expect(queue.setCurrentClimb).not.toHaveBeenCalled();
   });
 
-  it('stages a Link target without a second navigation or leaking navigation options', async () => {
-    const hosts: Array<HostValue> = [];
-    const routes: Array<RouteValue> = [];
-    renderHost(
-      (host) => hosts.push(host),
-      (route) => routes.push(route),
-    );
-    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
-    routerNavigate.mockClear();
-    const climb = makeQueueItem('zoom-head').climb as unknown as Climb;
-    act(() => hosts.at(-1)?.openPlayDrawer(climb, { navigate: false }));
-    await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(climb));
-    expect(routerNavigate).not.toHaveBeenCalled();
-    expect(routes.at(-1)?.playTarget?.options).toEqual({ previewQueueItem: expect.objectContaining({ climb }) });
-  });
   it('does not leak boardConfig into the open target', async () => {
     const hosts: Array<HostValue> = [];
     const routes: Array<RouteValue> = [];
@@ -1589,7 +1574,7 @@ describe('DrawerHostProvider play drawer open target', () => {
       frames.clear();
       act(() => callbacks.forEach((callback) => callback(0)));
     }
-    function openPendingTarget(navigate = true) {
+    function openPendingTarget() {
       const hosts: Array<HostValue> = [];
       const routes: Array<RouteValue> = [];
       const view = renderHost(
@@ -1602,7 +1587,6 @@ describe('DrawerHostProvider play drawer open target', () => {
       const otherBoard: BoardConfig = { boardName: 'tension', layoutId: 8, sizeId: 7, setIds: '5,6', angle: 35 };
       act(() =>
         hosts.at(-1)?.openPlayDrawer(makeQueueItem('fresh').climb as unknown as Climb, {
-          ...(navigate ? {} : { navigate: false as const }),
           boardConfig: otherBoard,
         }),
       );
@@ -1639,14 +1623,6 @@ describe('DrawerHostProvider play drawer open target', () => {
       expect(routerNavigate).toHaveBeenCalledTimes(1);
     });
 
-    it('never auto-navigates a pending target written with navigate:false', () => {
-      const { routes, pendingNonce } = openPendingTarget(false);
-      expect(frames.size).toBe(0);
-      flushReplay();
-      expect(routerNavigate).not.toHaveBeenCalled();
-      expect(routes.at(-1)?.playTarget?.nonce).toBe(pendingNonce);
-    });
-
     it('cancels replay when the pending target is served or superseded', () => {
       const { hosts, routes, pendingNonce, consumedNonce } = openPendingTarget();
       act(() => routes.at(-1)!.onPlayDrawerTargetConsumed(pendingNonce));
@@ -1656,9 +1632,7 @@ describe('DrawerHostProvider play drawer open target', () => {
       act(() => hosts.at(-1)!.openPlayDrawer(makeQueueItem('newest').climb as unknown as Climb));
       act(() => routes.at(-1)!.onPlayDrawerClosed(consumedNonce));
       expect(frames.size).toBe(1);
-      act(() =>
-        hosts.at(-1)!.openPlayDrawer(makeQueueItem('supersedes').climb as unknown as Climb, { navigate: false }),
-      );
+      act(() => hosts.at(-1)!.openPlayDrawer(makeQueueItem('supersedes').climb as unknown as Climb));
       expect(frames.size).toBe(0);
       routerNavigate.mockClear();
       flushReplay();

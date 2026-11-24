@@ -84,7 +84,7 @@ export function ClimbCapsule({ height = TOOLBAR_CAPSULE_HEIGHT, endAction, endAc
   const { systemColors } = useTheme();
   const { boardConfig } = useDrawerHost();
   const { resolveGrade } = useDisplayGrade();
-  const { openPlay, preparePlay, currentItem, pick } = useAccessoryClimbTap();
+  const { openPlay, currentItem, pick } = useAccessoryClimbTap();
   // Connection state drives the leading control + the "you have control" glow.
   // Read from the single source so the bar can't disagree with the drawer bulb.
   const { inAppBoardConnection, bluetooth } = useBoardConnectionState();
@@ -137,7 +137,6 @@ export function ClimbCapsule({ height = TOOLBAR_CAPSULE_HEIGHT, endAction, endAc
         style={[styles.tapArea, { height, borderRadius: capsuleRadius }]}
         accessibilityLabel={currentClimb.name}
         onOpen={openPlay}
-        onPrepare={preparePlay}
       >
         <LargeContentViewer
           style={[styles.labelSlot, { left: labelLeft, right: labelRight }]}

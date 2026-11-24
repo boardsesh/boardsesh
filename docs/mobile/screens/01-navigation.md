@@ -83,7 +83,7 @@ The bar itself depends on the device:
   the phone tab bar in a narrow Split View. Each tab is one content column, with
   no player pane or wall column beside it. The current climb rides the bottom
   accessory, as on iPhone (Music's MiniPlayer), and tapping it or any climb opens
-  the full-screen `/play` player (the accessory zooms into it). Five tabs, as
+  the full-screen `/play` player (it slides up, like a climb row). Five tabs, as
   on iPhone (HIG Tab bars: "aim for a default list of five or fewer"): the
   iPad-only On the Wall tab became the **Wall display**, below. One resolver,
   `resolveCurrentClimbSurface`

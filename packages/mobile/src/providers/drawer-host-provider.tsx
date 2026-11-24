@@ -162,8 +162,6 @@ export function boardConfigsMatch(left: BoardConfig | null, right: BoardConfig |
 }
 
 export type OpenPlayDrawerOptions = PlayDrawerOpenOptions & {
-  /** A Link owns navigation when it supplies the native zoom source. */
-  navigate?: false;
   /** Switch the drawer to a different board config before opening (e.g. the
    *  caller is opening a climb that belongs to a board other than the user's
    *  default). The override is applied via state, so the actual open happens
@@ -608,7 +606,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     (climb: Climb, options?: OpenPlayDrawerOptions) => {
       if (composerCredentialScope !== getCredentialGeneration()) return;
       // Pull `boardConfig` out so it doesn't reach the open target.
-      const { boardConfig: override, navigate = true, ...requestedOptions } = options ?? {};
+      const { boardConfig: override, ...requestedOptions } = options ?? {};
       const openOptions =
         !requestedOptions.previewQueueItem &&
         !requestedOptions.committedExternally &&
@@ -657,13 +655,11 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       const target = { climb, options: openOptions, nonce: playTargetNonceRef.current };
       playTargetRef.current = target;
       setPlayTarget(target);
-      if (navigate) {
-        navigationRequestedTargetRef.current = {
-          nonce: target.nonce,
-          credentialGeneration: getCredentialGeneration(),
-        };
-        navigateToPlayer();
-      }
+      navigationRequestedTargetRef.current = {
+        nonce: target.nonce,
+        credentialGeneration: getCredentialGeneration(),
+      };
+      navigateToPlayer();
     },
     [setPaneTarget, setPlayTarget, composerCredentialScope],
   );

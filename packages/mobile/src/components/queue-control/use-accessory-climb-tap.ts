@@ -21,8 +21,6 @@ export type AccessoryClimbTap = {
   openGesture: GestureType;
   /** The same open as a plain callback, for non-gesture callers. */
   openPlay: () => void;
-  /** Stage the bar's climb before a Link performs its own native navigation. */
-  preparePlay: () => boolean;
   /** The item the bar shows: the last pick's, or the queue's current. */
   currentItem: ClimbQueueItem | null | undefined;
   /** The last pick on the bar, or null while it shows the queue's current climb. */
@@ -42,13 +40,6 @@ export function useAccessoryClimbTap(): AccessoryClimbTap {
     openPlayDrawer(accessoryClimb, barOpenOptions(pick));
   }, [openPlayDrawer, accessoryClimb, pick]);
 
-  const preparePlay = useCallback(() => {
-    if (!accessoryClimb) return false;
-    hapticLight();
-    openPlayDrawer(accessoryClimb, { ...barOpenOptions(pick), navigate: false });
-    return true;
-  }, [openPlayDrawer, accessoryClimb, pick]);
-
   const openGesture = useMemo(
     () =>
       Gesture.Tap()
@@ -60,5 +51,5 @@ export function useAccessoryClimbTap(): AccessoryClimbTap {
     [handleOpenPlay],
   );
 
-  return { openGesture, openPlay: handleOpenPlay, preparePlay, currentItem: item, pick };
+  return { openGesture, openPlay: handleOpenPlay, currentItem: item, pick };
 }
