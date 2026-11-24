@@ -46,6 +46,7 @@ export type AppGuidePage =
   | (GuidePageContent & { id: 'hub' | 'spray-wall-apps'; screenshot: GuideScreenshot });
 
 const CHECKED_AT = '2026-11-23';
+const WORKOUT_UPDATE_DATE = '2026-11-24';
 
 const help = {
   bluetooth: { id: 'bluetooth', href: '/help/board-and-bluetooth' },
@@ -62,8 +63,8 @@ function boardGallery(boardType: BoardName): GuideLink {
   return { id: 'boards', href: `/boards#${boardType}` };
 }
 
-function source(id: string, url: GuideSource['url']): GuideSource {
-  return { id, url, checkedAt: CHECKED_AT };
+function source(id: string, url: GuideSource['url'], checkedAt: VerificationDate = CHECKED_AT): GuideSource {
+  return { id, url, checkedAt };
 }
 
 const auroraDirectory = source('aurora', 'https://auroraclimbing.com/');
@@ -86,6 +87,12 @@ export const BOARDSESH_APP_STORE_RATING = {
 } as const;
 
 const boardseshStore = source('boardseshStore', BOARDSESH_APP_STORE_RATING.source);
+const boardseshWorkoutStore = source('boardseshStore', BOARDSESH_APP_STORE_RATING.source, WORKOUT_UPDATE_DATE);
+const boardseshWorkoutGuide = source(
+  'boardseshWorkoutGuide',
+  'https://github.com/boardsesh/boardsesh/blob/6e14bac8ba24b49161a4a26f0d5b90a2fd0f78f0/docs/product/workout-stages.md#building-a-workout',
+  WORKOUT_UPDATE_DATE,
+);
 
 const guides = {
   kilter: {
@@ -93,8 +100,8 @@ const guides = {
     path: '/apps/kilter',
     boardType: 'kilter',
     screenshot: 'kilter',
-    updatedAt: CHECKED_AT,
-    workflow: [{ id: 'layout' }, { id: 'preview' }, { id: 'queue' }, { id: 'import' }, { id: 'auroraImport' }],
+    updatedAt: WORKOUT_UPDATE_DATE,
+    workflow: [{ id: 'layout' }, { id: 'preview' }, { id: 'training' }, { id: 'import' }, { id: 'auroraImport' }],
     comparisonRows: [
       {
         id: 'discovery',
@@ -105,12 +112,13 @@ const guides = {
         sourceIds: ['boardseshPlayer', 'boardseshPlayerButtons', 'boardseshTickControls', 'officialScreenshots'],
       },
       { id: 'session', sourceIds: ['boardseshSessions', 'official', 'support'] },
+      { id: 'training', sourceIds: ['boardseshStore', 'boardseshWorkoutGuide', 'official'] },
       { id: 'history', sourceIds: ['boardseshMigration', 'support'] },
       { id: 'auroraImportTiming', sourceIds: ['boardseshAuroraImport', 'claim', 'claimWaitReports'] },
     ],
     competitors: ['official'],
     sources: [
-      source('official', 'https://kilterboard.io/'),
+      source('official', 'https://kilterboard.io/', WORKOUT_UPDATE_DATE),
       source('officialScreenshots', 'https://play.google.com/store/apps/details?id=com.kiltergrips.kilter_board_app'),
       source('support', 'https://kilterboard.io/support'),
       source('claim', 'https://kilterboard.io/claim'),
@@ -140,7 +148,8 @@ const guides = {
         'https://github.com/boardsesh/boardsesh/blob/2b98df0e2175136fc87075f1db2cdf9f49d8df72/packages/mobile/src/components/LogAscentSheetView.tsx#L158-L185',
       ),
       boardGallerySource('kilter'),
-      boardseshStore,
+      boardseshWorkoutStore,
+      boardseshWorkoutGuide,
       boardseshSessions,
       boardseshMigration,
     ],
@@ -151,16 +160,16 @@ const guides = {
     path: '/apps/tension',
     boardType: 'tension',
     screenshot: 'tension',
-    updatedAt: CHECKED_AT,
+    updatedAt: WORKOUT_UPDATE_DATE,
     workflow: [{ id: 'layout' }, { id: 'training' }, { id: 'import' }],
     comparisonRows: [
       { id: 'layout', sourceIds: ['boardseshGallery', 'aurora', 'layouts'] },
-      { id: 'training', sourceIds: ['boardseshStore', 'circuits', 'timer'] },
+      { id: 'training', sourceIds: ['boardseshStore', 'boardseshWorkoutGuide', 'official', 'circuits', 'timer'] },
       { id: 'history', sourceIds: ['boardseshMigration', 'official'] },
     ],
     competitors: ['official'],
     sources: [
-      source('official', 'https://apps.apple.com/us/app/tension-board-2/id1488028660'),
+      source('official', 'https://apps.apple.com/us/app/tension-board-2/id1488028660', WORKOUT_UPDATE_DATE),
       source('layouts', 'https://tensionclimbing.com/pages/faqs'),
       source(
         'circuits',
@@ -169,7 +178,8 @@ const guides = {
       source('timer', 'https://tensionclimbing.com/blogs/tension-board/app-resource-series-episode-6-using-a-timer'),
       auroraDirectory,
       boardGallerySource('tension'),
-      boardseshStore,
+      boardseshWorkoutStore,
+      boardseshWorkoutGuide,
       boardseshMigration,
     ],
     related: [help.findingClimbs, help.migration, help.bluetooth, help.sprayComparison],
@@ -179,16 +189,17 @@ const guides = {
     path: '/apps/moonboard',
     boardType: 'moonboard',
     screenshot: 'moonboard',
-    updatedAt: CHECKED_AT,
-    workflow: [{ id: 'setup' }, { id: 'controller' }, { id: 'import' }],
+    updatedAt: WORKOUT_UPDATE_DATE,
+    workflow: [{ id: 'setup' }, { id: 'controller' }, { id: 'training' }, { id: 'import' }],
     comparisonRows: [
       { id: 'benchmarks', sourceIds: ['boardseshGallery', 'boardseshClimbs', 'benchmarks'] },
       { id: 'lighting', sourceIds: ['led', 'audit'] },
+      { id: 'training', sourceIds: ['boardseshStore', 'boardseshWorkoutGuide', 'official'] },
       { id: 'history', sourceIds: ['boardseshGallery', 'official'] },
     ],
     competitors: ['official'],
     sources: [
-      source('official', 'https://apps.apple.com/us/app/moon-board/id6446842142'),
+      source('official', 'https://apps.apple.com/us/app/moon-board/id6446842142', WORKOUT_UPDATE_DATE),
       source('benchmarks', 'https://eu.moonclimbing.com/using-moonboard-app'),
       source('led', 'https://moonclimbing.com/moonboard/led/moonboard-led-system-v5.html'),
       source(
@@ -200,6 +211,8 @@ const guides = {
         'boardseshClimbs',
         'https://github.com/boardsesh/boardsesh/blob/95f9c5d1f42064e9d8073c861f4f3a7209d4bae4/packages/mobile/src/components/ClimbFilterSheetContent.tsx#L328-L344',
       ),
+      boardseshWorkoutStore,
+      boardseshWorkoutGuide,
     ],
     related: [help.bluetooth, help.findingClimbs, help.logbook],
   },
@@ -208,8 +221,8 @@ const guides = {
     path: '/apps/decoy',
     boardType: 'decoy',
     screenshot: null,
-    updatedAt: CHECKED_AT,
-    workflow: [{ id: 'size' }, { id: 'turns' }, { id: 'history' }],
+    updatedAt: WORKOUT_UPDATE_DATE,
+    workflow: [{ id: 'size' }, { id: 'turns' }, { id: 'training' }, { id: 'history' }],
     comparisonRows: [
       { id: 'search', sourceIds: ['boardseshGallery', 'official'] },
       { id: 'session', sourceIds: ['boardseshStore', 'boardseshSessions', 'official'] },
@@ -221,6 +234,7 @@ const guides = {
       boardGallerySource('decoy'),
       boardseshStore,
       boardseshSessions,
+      boardseshWorkoutGuide,
     ],
     related: [boardGallery('decoy'), help.sessions, help.bluetooth],
   },
@@ -229,8 +243,8 @@ const guides = {
     path: '/apps/touchstone',
     boardType: 'touchstone',
     screenshot: null,
-    updatedAt: CHECKED_AT,
-    workflow: [{ id: 'wall' }, { id: 'project' }, { id: 'history' }],
+    updatedAt: WORKOUT_UPDATE_DATE,
+    workflow: [{ id: 'wall' }, { id: 'project' }, { id: 'training' }, { id: 'history' }],
     comparisonRows: [
       { id: 'session', sourceIds: ['boardseshGallery', 'boardseshSessions', 'official'] },
       { id: 'history', sourceIds: ['boardseshLogbook', 'boardseshStore', 'official'] },
@@ -243,6 +257,7 @@ const guides = {
       boardseshSessions,
       boardseshLogbook,
       boardseshStore,
+      boardseshWorkoutGuide,
     ],
     related: [boardGallery('touchstone'), help.logbook, help.findingClimbs],
   },
@@ -251,8 +266,8 @@ const guides = {
     path: '/apps/grasshopper',
     boardType: 'grasshopper',
     screenshot: null,
-    updatedAt: CHECKED_AT,
-    workflow: [{ id: 'kit' }, { id: 'angle' }, { id: 'history' }],
+    updatedAt: WORKOUT_UPDATE_DATE,
+    workflow: [{ id: 'kit' }, { id: 'angle' }, { id: 'training' }, { id: 'history' }],
     comparisonRows: [
       { id: 'search', sourceIds: ['boardseshGallery', 'kits', 'official'] },
       { id: 'session', sourceIds: ['boardseshStore', 'boardseshSessions', 'official'] },
@@ -265,6 +280,7 @@ const guides = {
       boardGallerySource('grasshopper'),
       boardseshStore,
       boardseshSessions,
+      boardseshWorkoutGuide,
     ],
     related: [boardGallery('grasshopper'), help.bluetooth, help.findingClimbs],
   },
@@ -273,8 +289,8 @@ const guides = {
     path: '/apps/so-ill',
     boardType: 'soill',
     screenshot: null,
-    updatedAt: CHECKED_AT,
-    workflow: [{ id: 'layout' }, { id: 'crew' }, { id: 'history' }],
+    updatedAt: WORKOUT_UPDATE_DATE,
+    workflow: [{ id: 'layout' }, { id: 'crew' }, { id: 'training' }, { id: 'history' }],
     comparisonRows: [
       { id: 'search', sourceIds: ['boardseshGallery', 'connect', 'official'] },
       { id: 'session', sourceIds: ['boardseshStore', 'boardseshSessions', 'official'] },
@@ -287,6 +303,7 @@ const guides = {
       boardGallerySource('soill'),
       boardseshStore,
       boardseshSessions,
+      boardseshWorkoutGuide,
     ],
     related: [boardGallery('soill'), help.sessions, help.logbook],
   },
@@ -295,8 +312,8 @@ const guides = {
     path: '/apps/woods',
     boardType: 'woods',
     screenshot: null,
-    updatedAt: CHECKED_AT,
-    workflow: [{ id: 'size' }, { id: 'rules' }, { id: 'session' }],
+    updatedAt: WORKOUT_UPDATE_DATE,
+    workflow: [{ id: 'size' }, { id: 'rules' }, { id: 'session' }, { id: 'training' }],
     comparisonRows: [
       { id: 'rules', sourceIds: ['boardseshWoods', 'sizes', 'official'] },
       { id: 'history', sourceIds: ['boardseshStore', 'boardseshGallery', 'official'] },
@@ -312,6 +329,7 @@ const guides = {
       ),
       boardGallerySource('woods'),
       boardseshStore,
+      boardseshWorkoutGuide,
     ],
     related: [boardGallery('woods'), help.bluetooth, help.logbook],
   },
@@ -327,11 +345,11 @@ export const APP_GUIDE_HUB = {
   id: 'hub',
   path: '/apps',
   screenshot: 'queue',
-  updatedAt: CHECKED_AT,
+  updatedAt: WORKOUT_UPDATE_DATE,
   workflow: [],
   comparisonRows: [],
   competitors: [],
-  sources: [],
+  sources: [boardseshWorkoutStore, boardseshWorkoutGuide],
   related: [help.boards, help.bluetooth, help.sessions],
 } as const satisfies AppGuidePage;
 

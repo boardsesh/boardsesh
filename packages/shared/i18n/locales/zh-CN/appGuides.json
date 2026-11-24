@@ -26,10 +26,14 @@
       "title": "Climbing Board Apps | Boardsesh",
       "description": "Find a climbing board app for Kilter, Tension, MoonBoard, Woods and more. Check compatible layouts, LED control and logbook imports before installing.",
       "heading": "One climbing app for your boards",
-      "intro": "Get Boardsesh free for iPhone or Android to find climbs, light compatible boards, and keep one logbook across the walls you climb. With a shared session, your crew can add problems to the same queue from their own phones.",
+      "intro": "Get Boardsesh free for iPhone or Android to find climbs, light compatible boards and keep one logbook across your walls. Build a workout at your grade, preview the climbs and set rests or intervals for timed blocks. In a shared session, your crew can add problems to the same queue from their own phones.",
       "compatibility": "Choose your board below to check the exact layout, how to connect to the LEDs, and whether you can bring your logbook. If you set on your own holds, start with the spray wall comparison.",
       "tradeoffs": "You can explore the browser app before your session. Browser LED control requires Web Bluetooth and a compatible controller. On iPhone, use the native app for Bluetooth lighting.",
       "screenshotAlt": "Boardsesh shared climb queue with problems and grades from a group session",
+      "sources": {
+        "boardseshStore": "Boardsesh App Store listing and workout features",
+        "boardseshWorkoutGuide": "Boardsesh workout builder and timed blocks"
+      },
       "related": {
         "boards": "See supported board layouts",
         "bluetooth": "Connect to a board over Bluetooth",
@@ -51,11 +55,11 @@
         },
         "preview": {
           "title": "See the holds before you light a climb",
-          "body": "Scan the thumbnails for a hold pattern you want to try. Swipe sideways through climb previews, then tap Put on board to light your pick on a connected wall."
+          "body": "Scan the hold thumbnails and swipe through previews. Connect near the board and tap Put on board to light your pick. Start a shared session so each climber can queue their next problem."
         },
-        "queue": {
-          "title": "Light a climb and share the queue",
-          "body": "Connect from the app while you’re near the LEDs. Start a shared session so each climber can add their next problem from their own phone."
+        "training": {
+          "title": "Build a Kilter workout",
+          "body": "Pick a target grade and add a warm-up, then choose a block such as 4x4 or On the Minute. Preview the climbs and rests before you start. Follow your reps or intervals in the app."
         },
         "import": {
           "title": "Link your current Kilter account",
@@ -85,6 +89,11 @@
           "boardsesh": "Connect to the LEDs and build a live queue together from separate phones.",
           "official": "Bluetooth lighting, a board map and shareable climbs."
         },
+        "training": {
+          "label": "Plan a workout",
+          "boardsesh": "Build a workout from warm-up and training blocks at your chosen grade. Preview the climbs, then follow your reps, rests or intervals on timed blocks.",
+          "official": "Kilter documents playlists for organizing climbs and creating training circuits."
+        },
         "history": {
           "label": "Current Kilter account",
           "boardsesh": "Link your current Kilter account to copy your history. New entries stay in Boardsesh.",
@@ -109,7 +118,8 @@
         "boardseshPlayerButtons": "Boardsesh app source for default climb control placement",
         "boardseshTickControls": "Boardsesh app source for the logging sheet footer",
         "boardseshGallery": "Kilter layouts in Boardsesh",
-        "boardseshStore": "Boardsesh App Store listing and Verified climb filter",
+        "boardseshStore": "Boardsesh App Store listing, including Verified climbs and workouts",
+        "boardseshWorkoutGuide": "Boardsesh workout builder and timed blocks",
         "boardseshSessions": "Boardsesh shared session and queue guide",
         "boardseshMigration": "Boardsesh Kilter logbook import guide"
       },
@@ -125,7 +135,7 @@
       "heading": "Boardsesh for Tension Board",
       "intro": "Boardsesh is an independent alternative to the official Tension Board app for TB1 and TB2. Use it on iPhone or Android to find climbs at your wall angle, light them and keep your sends from every board in one logbook.",
       "compatibility": "Boardsesh supports Tension Board 1 and Tension Board 2 in both Mirror and Spray layouts. TB2 Spray is the manufactured Tension hold layout. For a wall with your own hold placement, use the photo-based spray wall setup.",
-      "tradeoffs": "The official Tension app has circuits and a timer. Stay with it if your training and history already live there. Boardsesh supports group queues and cross-board logging, and can copy your Tension history in one direction.",
+      "tradeoffs": "The official Tension app offers Workout AI, circuits and a timer. Boardsesh lets you combine warm-ups and timed blocks, share a queue with your crew and keep a logbook across boards. Imports run one way into Boardsesh.",
       "screenshotAlt": "Boardsesh displaying a Tension Board climb and its marked holds",
       "workflow": {
         "layout": {
@@ -134,7 +144,7 @@
         },
         "training": {
           "title": "Build a session at that angle",
-          "body": "Filter the climb list by grade and angle. Save warm-ups to a playlist or pick 4x4s for a session with four climbs repeated over four rounds."
+          "body": "Set your wall angle and choose a target grade. Add a 4x4 block and preview the climbs and rests. The default is four climbs, each done four times in a row. Follow the rep counter as you go."
         },
         "import": {
           "title": "Bring in older sessions",
@@ -152,8 +162,8 @@
         },
         "training": {
           "label": "Plan a session",
-          "boardsesh": "Use playlists, a shared queue and workouts such as 4x4s.",
-          "official": "Tension documents creating circuits and using a timer in the app."
+          "boardsesh": "Combine a warm-up with a 4x4, Pyramid or other blocks. Preview the climbs before you start. Timed blocks guide your reps, rests or intervals.",
+          "official": "Workout AI generates a climb list from your workout type and logbook. Tension also documents circuits and a timer."
         },
         "history": {
           "label": "Log sends",
@@ -162,13 +172,14 @@
         }
       },
       "sources": {
-        "official": "Aurora’s official Tension Board 2 app",
+        "official": "Tension Board 2 App Store listing and Workout AI release notes",
         "layouts": "Tension’s board and layout FAQ",
         "circuits": "Tension’s circuit tutorial",
         "timer": "Tension’s timer tutorial",
         "aurora": "Aurora’s Tension app downloads and board links",
         "boardseshGallery": "Tension layouts in Boardsesh",
         "boardseshStore": "Boardsesh App Store listing and workout features",
+        "boardseshWorkoutGuide": "Boardsesh workout builder and timed blocks",
         "boardseshMigration": "Boardsesh Tension logbook import guide"
       },
       "related": {
@@ -195,6 +206,10 @@
           "title": "Check the LED controller",
           "body": "If your board uses a supported legacy profile, connect in the app and try one climb. You can still follow the on-screen grid and log the session with the LEDs off."
         },
+        "training": {
+          "title": "Build a workout for your MoonBoard setup",
+          "body": "Add a warm-up and a Grade Focus block at your target grade. Preview the climbs available for your setup and angle before you start."
+        },
         "import": {
           "title": "Copy your MoonBoard logbook",
           "body": "If you have a MoonBoard CSV export, open the MoonBoard card in Settings → Connected apps and import the file. It copies matching logbook entries into Boardsesh."
@@ -214,6 +229,11 @@
           "boardsesh": "Legacy Nordic UART and RedBear profiles. Check your controller before relying on LEDs.",
           "official": "Moon supports its LED system in the official app and publishes hardware and setup instructions."
         },
+        "training": {
+          "label": "Plan a workout",
+          "boardsesh": "Build a workout from blocks such as Grade Focus or Limit Bouldering. Preview the climbs and follow the rest timer on timed blocks.",
+          "official": "Moon’s app lets you save problem lists for warm-ups, projects and training circuits."
+        },
         "history": {
           "label": "Log a session",
           "boardsesh": "Copy a CSV into a logbook shared across supported boards. Future ticks stay in Boardsesh.",
@@ -226,7 +246,9 @@
         "led": "MoonBoard LED system documentation",
         "audit": "Boardsesh MoonBoard controller compatibility audit",
         "boardseshGallery": "MoonBoard layouts and CSV import in Boardsesh",
-        "boardseshClimbs": "Boardsesh app source for the Benchmark filter"
+        "boardseshClimbs": "Boardsesh app source for the Benchmark filter",
+        "boardseshStore": "Boardsesh App Store listing and workout features",
+        "boardseshWorkoutGuide": "Boardsesh workout builder and timed blocks"
       },
       "related": {
         "bluetooth": "Connect to a compatible LED controller",
@@ -250,6 +272,10 @@
         "turns": {
           "title": "Give everyone a turn",
           "body": "Connect to the LED kit, start a shared session and have your crew add problems to the queue while the current climber is on the wall."
+        },
+        "training": {
+          "title": "Build a volume block",
+          "body": "Choose Volume and a target grade for your Dungeon Trainer. Review the generated climbs for your wall size and angle before starting."
         },
         "history": {
           "title": "Bring over Decoy ticks",
@@ -276,7 +302,8 @@
         "aurora": "Aurora’s Decoy downloads and support",
         "boardseshGallery": "Dungeon Trainer layout and import support in Boardsesh",
         "boardseshStore": "Boardsesh App Store listing and cross-board logbook",
-        "boardseshSessions": "Boardsesh shared session and queue guide"
+        "boardseshSessions": "Boardsesh shared session and queue guide",
+        "boardseshWorkoutGuide": "Boardsesh workout builder"
       },
       "related": {
         "boards": "See the Dungeon Trainer layout",
@@ -300,6 +327,10 @@
         "project": {
           "title": "Build a shortlist for the next visit",
           "body": "Find a few problems with the grade filter. Log attempts on projects or save them to a playlist so you can find them next time."
+        },
+        "training": {
+          "title": "Train around a target grade",
+          "body": "Choose Grade Focus for the Winter 2020 wall. Set your target grade and review the workout preview to see which climbs are available at your angle."
         },
         "history": {
           "title": "Copy your Aurora history",
@@ -327,7 +358,8 @@
         "boardseshGallery": "Touchstone Winter 2020 layout and LED support in Boardsesh",
         "boardseshSessions": "Boardsesh shared session and queue guide",
         "boardseshLogbook": "Boardsesh guide to logging attempts and sends",
-        "boardseshStore": "Boardsesh App Store listing and cross-board logbook"
+        "boardseshStore": "Boardsesh App Store listing and cross-board logbook",
+        "boardseshWorkoutGuide": "Boardsesh workout builder"
       },
       "related": {
         "boards": "See the Touchstone Winter 2020 layout",
@@ -351,6 +383,10 @@
         "angle": {
           "title": "Set the angle for your training",
           "body": "Choose the angle shown on your wall, then browse by grade. The angle you pick is the one recorded with your attempt or send."
+        },
+        "training": {
+          "title": "Plan a grade pyramid",
+          "body": "Choose Pyramid and a target grade. Preview the climbs on the way up and down for your Grasshopper size and angle."
         },
         "history": {
           "title": "Bring sends from the Grasshopper app",
@@ -378,7 +414,8 @@
         "aurora": "Aurora’s Grasshopper downloads and support",
         "boardseshGallery": "Grasshopper 2020 layout and import support in Boardsesh",
         "boardseshStore": "Boardsesh App Store listing and cross-board logbook",
-        "boardseshSessions": "Boardsesh shared session and queue guide"
+        "boardseshSessions": "Boardsesh shared session and queue guide",
+        "boardseshWorkoutGuide": "Boardsesh workout builder"
       },
       "related": {
         "boards": "See the Grasshopper 2020 layout",
@@ -402,6 +439,10 @@
         "crew": {
           "title": "Line up the next problems",
           "body": "Connect to the LEDs and start a shared session. While someone climbs, the other climbers can add their picks from their own phones."
+        },
+        "training": {
+          "title": "Build a short training block",
+          "body": "Add a Volume block for your Connect Board. Preview the climbs for your target grade and angle, then adjust the block if the list comes up short."
         },
         "history": {
           "title": "Copy your So iLL logbook",
@@ -429,7 +470,8 @@
         "aurora": "Aurora’s So iLL downloads and support",
         "boardseshGallery": "So iLL Summer 2024 layout and import support in Boardsesh",
         "boardseshStore": "Boardsesh App Store listing and cross-board logbook",
-        "boardseshSessions": "Boardsesh shared session and queue guide"
+        "boardseshSessions": "Boardsesh shared session and queue guide",
+        "boardseshWorkoutGuide": "Boardsesh workout builder"
       },
       "related": {
         "boards": "See the So iLL Summer 2024 layout",
@@ -457,6 +499,10 @@
         "session": {
           "title": "Log today’s climbing",
           "body": "Light the climb on a compatible Woods LED controller or follow the diagram on screen. Log the send or attempt from the climb."
+        },
+        "training": {
+          "title": "Check which climbs fill your workout",
+          "body": "Build a Grade Focus block for your Woods size and angle. If the preview runs short, shorten the block or loosen the climb filters."
         }
       },
       "competitors": {
@@ -484,7 +530,8 @@
         "sizes": "Escape Climbing’s Woods sizes and LED kit options",
         "boardseshWoods": "Boardsesh Woods climb rules and publishing documentation",
         "boardseshGallery": "Woods Board layouts and account import details in Boardsesh",
-        "boardseshStore": "Boardsesh App Store listing and cross-board logbook"
+        "boardseshStore": "Boardsesh App Store listing and cross-board logbook",
+        "boardseshWorkoutGuide": "Boardsesh workout builder"
       },
       "related": {
         "boards": "See both Woods Board layouts",

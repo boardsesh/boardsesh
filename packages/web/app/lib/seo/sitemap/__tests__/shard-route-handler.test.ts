@@ -278,7 +278,7 @@ describe('buildSitemapIndexXml', () => {
     expect(xml).toContain('<sitemapindex');
     expect(xml).toContain('https://www.boardsesh.com/sitemaps/static.xml');
     expect(xml).toContain(
-      '<loc>https://www.boardsesh.com/sitemaps/app-guides.xml</loc>\n    <lastmod>2026-11-23T00:00:00.000Z</lastmod>',
+      '<loc>https://www.boardsesh.com/sitemaps/app-guides.xml</loc>\n    <lastmod>2026-11-24T00:00:00.000Z</lastmod>',
     );
     expect(xml).toContain('https://www.boardsesh.com/sitemaps/boards.xml');
     expect(xml).toContain('https://www.boardsesh.com/sitemaps/playlists.xml');
@@ -536,7 +536,7 @@ describe('locale expansion is observable in the rendered shard', () => {
     expect(xml).not.toMatch(/<loc>[^<]*boardsesh\.com\/(de|es|fr)\//);
   });
 
-  it('publishes the ten English guide URLs with their editorial update date', async () => {
+  it('publishes the ten English guide URLs with their editorial update dates', async () => {
     const { GET } = await import('@/app/sitemaps/app-guides.xml/route');
     const response = await GET();
     const xml = await response.text();
@@ -547,7 +547,10 @@ describe('locale expansion is observable in the rendered shard', () => {
     expect(locations).toHaveLength(10);
     expect(locations.sort()).toEqual(paths.map((path) => `https://www.boardsesh.com${path}`).sort());
     expect(xml).not.toContain('xhtml:link');
-    expect(xml.match(/<lastmod>2026-11-23T00:00:00.000Z<\/lastmod>/g)).toHaveLength(10);
+    expect(xml.match(/<lastmod>2026-11-24T00:00:00.000Z<\/lastmod>/g)).toHaveLength(9);
+    expect(xml).toContain(
+      '<loc>https://www.boardsesh.com/compare/spray-wall-apps</loc>\n    <lastmod>2026-11-23T00:00:00.000Z</lastmod>',
+    );
   });
 
   it('emits one URL per item with no alternates block, not one per locale', async () => {
