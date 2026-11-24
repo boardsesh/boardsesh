@@ -647,6 +647,12 @@ export default defineConfig({
         command: 'tsx packages/web/scripts/check-untranslated-strings.ts',
         cache: false,
       },
+      // Writer copy for /apps and /compare/spray-wall-apps -> appGuides.json + the page registry.
+      // `vp run app-guides:import -- <copy-dir> [--allow-pending] [--check]`; see the script header.
+      'app-guides:import': {
+        command: 'tsx scripts/app-guides/import-copy.ts',
+        cache: false,
+      },
       // Render design previews, publish them to dev storage, and update links.
       'design:mockups': {
         command: 'tsx packages/web/scripts/capture-design-mockups.ts',
