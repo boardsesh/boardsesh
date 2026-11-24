@@ -10,8 +10,8 @@ import { PressableSurface } from '../PressableSurface';
 // nearby-name dedup guards before minting. A raw create-gym form in the app
 // would bypass those and become a fresh source of duplicate gyms.
 
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { useCallback, useEffect, useMemo, useState, type ComponentType } from 'react';
+import { View, ActivityIndicator, StyleSheet, type FlatListProps } from 'react-native';
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { Gym } from '@boardsesh/shared-schema';
@@ -25,6 +25,7 @@ import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticLight } from '../../lib/haptics';
 import { spacing, borderRadius } from '../../theme/tokens';
+import { GymSearchList } from './GymSearchList';
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 
 export type PickedGym = {
@@ -53,48 +54,8 @@ type GymPickerSheetProps = {
 
 const SNAP_POINTS = MEDIUM_LARGE_SNAP_POINTS;
 
-const keyExtractor = (gym: Gym) => gym.uuid;
-
-const GymRow = memo(function GymRow({
-  gym,
-  isSelected,
-  onSelect,
-}: {
-  gym: Gym;
-  isSelected: boolean;
-  onSelect: (gym: Gym) => void;
-}) {
-  const styles = useTypographyStyles(createStyles);
-  const { systemColors, brandColors } = useTheme();
-  const handlePress = useCallback(() => {
-    hapticLight();
-    onSelect(gym);
-  }, [gym, onSelect]);
-
-  return (
-    <PressableSurface
-      onPress={handlePress}
-      accessibilityRole="button"
-      accessibilityState={{ selected: isSelected }}
-      style={({ pressed }) => [
-        styles.row,
-        { backgroundColor: pressed ? systemColors.tertiaryBackground : 'transparent' },
-      ]}
-    >
-      <View style={styles.rowText}>
-        <Text variant="body" color={systemColors.label} numberOfLines={1}>
-          {gym.name}
-        </Text>
-        {gym.address ? (
-          <Text variant="footnote" color={systemColors.secondaryLabel} numberOfLines={1}>
-            {gym.address}
-          </Text>
-        ) : null}
-      </View>
-      {isSelected ? <Icon name="check.small" size={20} color={brandColors.primary} /> : null}
-    </PressableSurface>
-  );
-});
+// The sheet's own list, so the sheet's scroll owns the drag.
+const SheetGymList = BottomSheetFlatList as unknown as ComponentType<FlatListProps<Gym>>;
 
 export function GymPickerSheet({
   selectedUuid,
@@ -137,13 +98,6 @@ export function GymPickerSheet({
     hapticLight();
     onSelect(null);
   }, [onSelect]);
-
-  const renderItem = useCallback(
-    ({ item }: { item: Gym }) => (
-      <GymRow gym={item} isSelected={item.uuid === selectedUuid} onSelect={handleSelectGym} />
-    ),
-    [selectedUuid, handleSelectGym],
-  );
 
   const needsLocation = coords == null && search.trim().length === 0;
 
@@ -248,16 +202,13 @@ export function GymPickerSheet({
           </Text>
         </View>
       ) : (
-        <BottomSheetFlatList
+        <GymSearchList
+          ListComponent={SheetGymList}
           style={styles.list}
-          data={gyms}
-          // The search field keeps the keyboard up; without this the first tap
-          // on a result only dismissed it and a second tap picked the gym (#5960).
-          keyboardShouldPersistTaps="handled"
-          keyExtractor={keyExtractor}
-          renderItem={renderItem}
+          gyms={gyms}
+          selectedUuid={selectedUuid}
+          onSelect={handleSelectGym}
           contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
         />
       )}
     </ModalSheet>

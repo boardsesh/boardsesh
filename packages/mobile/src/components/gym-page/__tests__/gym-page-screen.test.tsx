@@ -17,6 +17,7 @@ type Actions = {
   onSignIn: () => void;
   onStaffTool: (tool: string) => void;
   onStartRow: (row: string) => void;
+  onSetUpBoard: () => void;
 };
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn(), back: vi.fn(), setParams: vi.fn() }));
@@ -48,6 +49,7 @@ const state = vi.hoisted(() => ({
   offline: { isOffline: false, isBlocked: false, reason: null as string | null },
   reportAction: null as { open: () => void; sheet: ReactNode } | null,
   boardSheets: null as ReactNode,
+  gymFirst: false,
 }));
 
 vi.mock('react-native', () => ({
@@ -174,12 +176,21 @@ vi.mock('../GymPageSections', () => {
       createElement('div', { 'data-testid': 'block-boards-header' }, String(count)),
     GymBoardsLoading: block('boards-loading'),
     GymBoardsError: block('boards-error'),
-    GymBoardsEmpty: block('boards-empty'),
+    GymBoardsEmpty: ({ actions }: { actions: Actions }) =>
+      createElement(
+        'div',
+        { 'data-testid': 'block-boards-empty' },
+        createElement('button', { onClick: actions.onSetUpBoard, type: 'button' }, 'set-up-board'),
+      ),
     GymInfoSection: block('info'),
     GymClaimCardBlock: ({ card }: { card: string }) => createElement('div', { 'data-testid': `block-claim-${card}` }),
     GymReportSection: block('report'),
   };
 });
+vi.mock('../../../providers/feature-flags-provider', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../providers/feature-flags-provider')>()),
+  useCreateBoardGymFirstEnabled: () => state.gymFirst,
+}));
 vi.mock('../use-gym-page-data', () => ({
   useGymPageGym: () => state.gymQuery,
   useGymPendingClaim: () => ({ data: null, refetch: vi.fn().mockResolvedValue(undefined) }),
@@ -245,6 +256,7 @@ beforeEach(() => {
   state.offline = { isOffline: false, isBlocked: false, reason: null };
   state.reportAction = null;
   state.boardSheets = null;
+  state.gymFirst = false;
   headerCapture.accessory = null;
 });
 
@@ -431,5 +443,30 @@ describe('GymPageScreen', () => {
     state.boards = { ...state.boards, data: [], isPending: false };
     render(<GymPageScreen />);
     expect(kinds()).toContain('block-boards-empty');
+  });
+
+  it('opens the builder from Set up a board with the gym-first flag off', () => {
+    state.boards = { ...state.boards, data: [], isPending: false };
+    render(<GymPageScreen />);
+    fireEvent.click(screen.getByText('set-up-board'));
+    expect(routerMock.push).toHaveBeenCalledWith(expect.objectContaining({ pathname: '/boards/create' }));
+  });
+
+  // #8151: the gym is already known, so Set up a board opens straight on its
+  // walls, where an existing one can be taken before a copy is added.
+  it("opens straight on the gym's walls from Set up a board with the gym-first flag on", () => {
+    state.gymFirst = true;
+    state.boards = { ...state.boards, data: [], isPending: false };
+    render(<GymPageScreen />);
+    fireEvent.click(screen.getByText('set-up-board'));
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/boards/find-wall',
+      params: expect.objectContaining({ gymUuid: 'gym-uuid-1', entry: 'gym_page' }),
+    });
+    expect(trackMock).toHaveBeenCalledWith('Board Kind Chosen', {
+      kind: 'gym',
+      surface: 'gym_page',
+      preAnswered: true,
+    });
   });
 });

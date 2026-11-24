@@ -92,6 +92,11 @@ function BoardsLayout() {
       {/* The full-screen board builder, pushed onto the boards stack (not a
           nested sheet): a back chevron is the drill-in affordance and there's no
           dueling pan-to-dismiss over the already-modal picker. */}
+      {/* The gym-first create flow (#8151): home or gym, then the gym and its
+          walls, then the builder. Pushed routes like the builder: the wall list
+          is a list a climber reads and scrolls, not a quick choice. */}
+      <Stack.Screen name="where" options={{ title: tBoards('mobile.boardWhere.title') }} />
+      <Stack.Screen name="find-wall" options={{ title: tBoards('mobile.findWall.screenTitle') }} />
       <Stack.Screen name="create" options={{ title: tBoards('mobile.create.screenTitle') }} />
       {/* The full vertical board list with the per-board offline-download console,
           drilled into from "Your boards" on the picker. Editing, deleting and

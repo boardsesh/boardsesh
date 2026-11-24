@@ -369,6 +369,11 @@ export { fetchAllMyBoards } from './fetch-all-my-boards';
 // `useGymBoards` is split out for that same reason — it has its own suite —
 // and re-exported here so gym callers keep one import path.
 export { useGymBoards } from './use-gym-boards';
+export {
+  useExistingWallCandidates,
+  fetchExistingWallCandidates,
+  EXISTING_WALL_CANDIDATES_QUERY_KEY,
+} from './use-existing-wall-candidates';
 
 /**
  * A single gym by uuid, including the viewer's `canEdit` flag. Backs the
@@ -619,8 +624,10 @@ export function useCreateBoard() {
       return response.createBoard;
     },
     onSuccess: () => {
-      // A freshly created board should appear in the user's board list.
+      // A freshly created board should appear in the user's board list, and in
+      // its gym's wall list the next time someone looks for it there.
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
+      void queryClient.invalidateQueries({ queryKey: ['existingWallCandidates'] });
     },
   });
 }
@@ -907,6 +914,8 @@ export function useFollowBoard(options?: {
     },
     onSuccess: (_followed, board) => {
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
+      // A gym's wall list badges the walls the climber follows.
+      void queryClient.invalidateQueries({ queryKey: ['existingWallCandidates'] });
       options?.onFollowed?.(board);
     },
     // Config-level (survives unmount, like onSuccess). A rejected follow otherwise

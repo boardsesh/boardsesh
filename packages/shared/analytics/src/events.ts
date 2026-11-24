@@ -1029,6 +1029,12 @@ export const SHARED_EVENTS = {
   // and board-creation counts.
   // `isPublic` is absent on a reset's replacement: the clone is private until
   // its publish gives it the old wall's audience, which the client cannot see.
+  //
+  // From 2026-11 (#8151) the mobile builder adds `kind` (home | gym | null: the
+  // flow the builder was opened from, null when it was opened bare or the
+  // create-board-gym-first flag is off), `candidateCount` (existing walls the
+  // climber was shown and said were different, 0 when none) and
+  // `confirmedDistinct` (the create went out as CONFIRMED_SEPARATE).
   BoardCreated: 'Board Created',
   // Props: { boardType, source, error_reason: 'duplicate_config' | 'rate_limited'
   //          | 'auth' | 'board_limit' | 'exception' }. 'board_limit' is the
@@ -1065,6 +1071,12 @@ export const SHARED_EVENTS = {
   //          picker path that opened it), submitAttempted (Save was tapped at
   //          least once, so a server refusal or a duplicate prompt came first),
   //          secondsOpen }.
+  // From 2026-11 (#8151) it also carries `kind` (home | gym | null, as on Board
+  // Created) and `step`: form (the builder), or, with the
+  // create-board-gym-first flag, choice ("Where's this board?") or find (the
+  // gym search and wall list). The gym-first screens send only kind, step,
+  // openedFrom and secondsOpen. One event per flow: the step the climber left
+  // from reports it and the screens under it stay quiet.
   BoardBuilderAbandoned: 'Board Builder Abandoned',
   // Spray walls — the add-a-wall funnel (epic #5346, SW-09). Four steps, each
   // fired once per wall, so the drop-off between them is readable without a
@@ -1221,10 +1233,55 @@ export const SHARED_EVENTS = {
   // (the gym finder), surface: picker (the + in the picker's top bar) | manage
   // (the + on Manage boards) | empty_state (the buttons under "No boards yet")
   // | first_run ("Where do you climb?": My own board, My Spraywall, Find your
-  // gym on the map) }. Fires on the tap, before the route opens; what the route
-  // makes has its own events (Board Created, the spray funnel, Board Picker
-  // Selection Completed with gym_finder). Expected about 1 per 10 picker opens.
+  // gym on the map) | gym_page (a gym page's "Set up a board", from 2026-11),
+  // boardKind?: home | gym (from 2026-11, #8151, only with the
+  // create-board-gym-first flag: which of the + menu's two board rows, or the
+  // entry that already said; absent when the choice is still to come on
+  // "Where's this board?" or the flag is off) }. Fires on the tap, before the
+  // route opens; what the route makes has its own events (Board Created, the
+  // spray funnel, Board Picker Selection Completed with gym_finder). Expected
+  // about 1 per 10 picker opens.
   BoardPickerAddSelected: 'Board Picker Add Selected',
+  // The gym-first create-board flow (#8151, flag create-board-gym-first). None
+  // of these carry coordinates or anything typed. Funnel: Board Kind Chosen
+  // (gym) -> Board Wall Search Started -> Board Wall Candidates Shown -> Board
+  // Wall Candidate Used (followed an existing wall: no board created) or Board
+  // Wall Not Listed Confirmed -> Board Created.
+  //
+  // Home or gym answered. Props: { kind: home | gym, surface: picker | manage
+  // | where ("Where's this board?") | first_run | in_range | gym_page,
+  // preAnswered (the entry already said which: first run's My own board, In
+  // range's It's my own board, a gym page) }.
+  BoardKindChosen: 'Board Kind Chosen',
+  // The climber began looking for their gym's wall. Props: { method: location
+  // (a fix came back) | text (the first search typed; length only) | gym_page
+  // (opened straight on a gym's walls), boardType (the chip chosen, or null),
+  // queryLength }. Once per method per screen.
+  BoardWallSearchStarted: 'Board Wall Search Started',
+  // A gym's existing walls came back. Props: { boardType, exactCount,
+  // nearMissCount (SETS_DIFFER + LAYOUT_OR_SIZE_DIFFERS), nearbyCount (walls on
+  // public listings within 150 m), otherTypeCount (the gym's walls of other
+  // types, collapsed under Other boards here), atGymCount (walls at the gym
+  // with no draft to compare against: the find step has none), lookup: ok |
+  // failed, trigger: find_step (the gym's wall list) | pre_submit (Save was
+  // refused with BOARD_EXISTING_WALLS) }. Once per gym and type per screen.
+  BoardWallCandidatesShown: 'Board Wall Candidates Shown',
+  // The climber took an existing wall instead of adding one: followed (when it
+  // wasn't theirs yet) and made active. Props: { match: exact | near_miss |
+  // nearby | at_gym (no draft to compare) | other_type | search (a board found
+  // by name on the find step), position (0-based, as drawn in its shelf),
+  // alreadyFollowed, fixSetupStarted (always false until the near-miss sheet
+  // lands), trigger: find_step | pre_submit }.
+  BoardWallCandidateUsed: 'Board Wall Candidate Used',
+  // The climber said theirs is a different wall and went on to the builder.
+  // Props: { candidateCount (walls they were shown and set aside), lookup: ok
+  // | failed ("Add it anyway": the check could not run) }. Not sent when the
+  // gym had no walls: there was nothing to confirm.
+  BoardWallNotListedConfirmed: 'Board Wall Not Listed Confirmed',
+  // A lookup on the gym-first screens failed (shown as Try again, never as "no
+  // boards"). Props: { stage: gyms | gym_boards | nearby_boards, error_reason:
+  // offline | rate_limited | exception }.
+  BoardWallLookupFailed: 'Board Wall Lookup Failed',
   // A gym's page opened, once per gym per visit, after the gym loaded and the
   // viewer's identity resolved. Props: { surface: app (the app's gym page,
   // from 2026-11) | web (reserved for www's /gym/{slug}), listingState:

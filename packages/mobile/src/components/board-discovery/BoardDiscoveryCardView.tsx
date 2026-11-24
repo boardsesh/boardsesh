@@ -86,6 +86,14 @@ export type DiscoveryBoardItem = {
   offlineState?: BoardDownloadState;
   sprayImport?: SprayWallImportProgress | null;
   importStatusStale?: boolean;
+  /**
+   * More lines under the subtitle, for a row that has to tell walls apart
+   * rather than just name them: a gym's wall list (#8151) shows every hold
+   * set, the climber and send counts and who added it. Rows only.
+   */
+  detailLines?: readonly string[];
+  /** A short neutral pill beside the title ("Your board", "Following"). Rows only. */
+  badge?: string | null;
 };
 
 /**

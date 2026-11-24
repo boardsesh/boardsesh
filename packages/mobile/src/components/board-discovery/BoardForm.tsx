@@ -97,6 +97,11 @@ type BoardFormProps = {
    * audience control once the privacy rollout has replaced it. Owner only.
    */
   sprayTrainingSection?: ReactNode;
+  /**
+   * Open More options with the location field focused: the gym-first flow's
+   * "My gym isn't listed" (#8151), whose next step is typing where the board is.
+   */
+  focusLocationOnOpen?: boolean;
 };
 
 /**
@@ -119,6 +124,7 @@ export function BoardForm({
   sprayBackgroundSection,
   sprayLedSection,
   sprayTrainingSection,
+  focusLocationOnOpen = false,
 }: BoardFormProps) {
   const headerHeight = useHeaderHeight();
   const { t } = useTranslation('boards');
@@ -147,7 +153,7 @@ export function BoardForm({
   // them. Keep the lower fields scrollable above it, as on the profile form.
   const keyboardHeight = useKeyboardHeight(Platform.OS === 'android');
   const { width: windowWidth } = useWindowDimensions();
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(focusLocationOnOpen);
   const [timerPairingOpen, setTimerPairingOpen] = useState(false);
   const [gymPickerOpen, setGymPickerOpen] = useState(false);
 
@@ -481,7 +487,11 @@ export function BoardForm({
 
             <SwitchRow label={t('mobile.create.ownBoard')} value={builder.isOwned} onValueChange={builder.setIsOwned} />
             {!privacySettings?.enabled ? (
-              <BoardVisibilityFields builder={builder} hideVisibilitySwitches={isSprayWall} />
+              <BoardVisibilityFields
+                builder={builder}
+                hideVisibilitySwitches={isSprayWall}
+                autoFocusLocation={focusLocationOnOpen}
+              />
             ) : null}
 
             {/* Lights heads the group the serial belongs to — both describe the

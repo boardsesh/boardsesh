@@ -60,7 +60,12 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
   usePopularBoardConfigs: () => ({ data: undefined }),
   fetchBoardByUuid: fetchBoardByUuidMock,
   fetchBoardsBySerialNumbers: fetchBoardsBySerialNumbersMock,
+  useGym: () => ({ data: undefined }),
 }));
+
+vi.mock('../../../src/providers/feature-flags-provider', () => ({ useCreateBoardGymFirstEnabled: () => false }));
+vi.mock('../../../src/components/board-discovery/DiscoveryBoardArt', () => ({ DiscoveryBoardArt: () => null }));
+vi.mock('../../../src/components/board-discovery/ExistingWallsSheet', () => ({ ExistingWallsSheet: () => null }));
 
 vi.mock('../../../src/lib/graphql/use-active-board', () => ({
   useSetActiveBoard: () => setActiveBoardMock,
@@ -89,7 +94,10 @@ vi.mock('../../../src/providers/auth-provider', () => ({
 
 vi.mock('../../../src/lib/analytics', () => ({ track: trackMock }));
 
-vi.mock('@boardsesh/board-config', () => ({ toBoardName: (value: string) => value }));
+vi.mock('@boardsesh/board-config', () => ({
+  toBoardName: (value: string) => value,
+  boardSetupLabelParts: () => ({ layout: null, size: null, sets: [], angle: null }),
+}));
 vi.mock('../../../src/lib/boards/board-config-preset', () => ({ presetBoardConfig: () => null }));
 
 vi.mock('../../../src/lib/haptics', () => ({ hapticSelection: vi.fn() }));
@@ -107,6 +115,8 @@ vi.mock('../../../src/components/board-discovery/use-board-builder', () => ({
 
 vi.mock('../../../src/components/board-discovery/board-builder-labels', () => ({
   formatDefaultBoardName: () => 'My wall',
+  formatGymBoardName: () => 'Gym wall',
+  boardTypeLabel: (boardName: string) => boardName,
 }));
 
 vi.mock('../../../src/components/board-discovery/BoardForm', () => ({

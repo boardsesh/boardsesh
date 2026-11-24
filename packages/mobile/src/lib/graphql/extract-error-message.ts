@@ -273,8 +273,10 @@ export function readSprayWallArtRefusalReason(error: unknown): string | null {
 export {
   isDuplicateBoardError,
   readDuplicateBoardError,
+  readExistingWallsError,
   isBoardLimitError,
   isBoardRemovedByGymError,
   isSystemBoardDeleteInsteadError,
   type DuplicateBoardError,
+  type ExistingWallErrorCandidate,
 } from '@boardsesh/graphql/errors';

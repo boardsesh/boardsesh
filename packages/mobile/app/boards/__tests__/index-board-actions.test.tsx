@@ -413,6 +413,7 @@ vi.mock('../../../src/providers/feature-flags-provider', () => ({
   useFeatureFlag: () => false,
   useOfflineDownloadsEnabled: () => true,
   usePickerAutoScanEnabled: () => true,
+  useCreateBoardGymFirstEnabled: () => false,
 }));
 vi.mock('../../../src/offline/use-downloaded-scope-keys', () => ({ useDownloadedScopeKeys: () => ({ data: [] }) }));
 vi.mock('../../../src/offline/use-offline-catalog-state', () => ({ useOfflineCatalogState: () => null }));

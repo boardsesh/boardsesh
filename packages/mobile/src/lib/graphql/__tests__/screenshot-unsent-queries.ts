@@ -39,6 +39,8 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'ClimbStatsHistory',
   'ConfirmSprayWallVisibility',
   'ContentAudience',
+  // The gym-first create flow (#8151): behind create-board-gym-first, which capture flows don't open.
+  'ExistingWallCandidates',
   'GetActivityFeed',
   'GetAngles',
   'GetBetaLinks',

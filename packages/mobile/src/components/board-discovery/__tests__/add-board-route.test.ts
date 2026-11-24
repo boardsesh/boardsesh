@@ -49,6 +49,42 @@ describe('addBoardRoute', () => {
       expected: { pathname: '/boards/spray/new', params: {} },
     },
     {
+      name: 'gym-first: My own board opens the builder preset, as a home board',
+      kind: 'board',
+      context: { returnTo: '/(tabs)/climbs', source: 'no_board', boardKind: 'home' },
+      expected: {
+        pathname: '/boards/create',
+        params: { returnTo: '/(tabs)/climbs', source: 'no_board', kind: 'home', preset: '1' },
+      },
+    },
+    {
+      name: 'gym-first: A board at my gym opens the gym search',
+      kind: 'board',
+      context: { returnTo: '/(tabs)/climbs', source: 'onboarding', boardKind: 'gym' },
+      expected: { pathname: '/boards/find-wall', params: { returnTo: '/(tabs)/climbs', source: 'onboarding' } },
+    },
+    {
+      name: "gym-first: a gym page opens straight on that gym's walls",
+      kind: 'board',
+      context: { returnTo: '/(tabs)/climbs', boardKind: 'gym', gymUuid: 'gym-1' },
+      expected: {
+        pathname: '/boards/find-wall',
+        params: { returnTo: '/(tabs)/climbs', gymUuid: 'gym-1', entry: 'gym_page' },
+      },
+    },
+    {
+      name: "gym-first: an entry that hasn't said asks Where's this board?",
+      kind: 'board',
+      context: { source: 'no_board', boardKind: 'ask' },
+      expected: { pathname: '/boards/where', params: { source: 'no_board' } },
+    },
+    {
+      name: 'the wall wizard ignores a board kind',
+      kind: 'spraywall',
+      context: { boardKind: 'gym' },
+      expected: { pathname: '/boards/spray/new', params: {} },
+    },
+    {
       name: 'Manage boards, with no return or source',
       kind: 'board',
       context: {},

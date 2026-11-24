@@ -27,6 +27,8 @@ const followBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const fetchBoardsBySerialNumbersMock = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 const fetchBoardByUuidMock = vi.hoisted(() => vi.fn());
 const dismissToMock = vi.hoisted(() => vi.fn());
+const replaceMock = vi.hoisted(() => vi.fn());
+const setSelectedGymMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
 const confirmMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const refetchPrivacySettingsMock = vi.hoisted(() => vi.fn());
@@ -39,6 +41,10 @@ const state = vi.hoisted(() => ({
   isPublic: undefined as boolean | undefined,
   isUnlisted: undefined as boolean | undefined,
   audience: undefined as string | undefined,
+  gymFirst: false,
+  gym: undefined as Record<string, unknown> | undefined,
+  selectedGym: null as { uuid: string; name: string } | null,
+  gymUuid: undefined as string | undefined,
 }));
 const popularConfigs = vi.hoisted(() => ({ configs: [{ boardType: 'moonboard', layoutId: 3 }] }));
 const presetBoardConfigMock = vi.hoisted(() => vi.fn());
@@ -92,7 +98,7 @@ function duplicateError() {
 }
 
 vi.mock('expo-router', () => ({
-  useRouter: () => ({ dismissTo: dismissToMock }),
+  useRouter: () => ({ dismissTo: dismissToMock, replace: replaceMock }),
   useLocalSearchParams: () => state.params,
 }));
 
@@ -107,6 +113,47 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
   usePopularBoardConfigs: () => ({ data: popularConfigs }),
   fetchBoardByUuid: fetchBoardByUuidMock,
   fetchBoardsBySerialNumbers: fetchBoardsBySerialNumbersMock,
+  useGym: (gymUuid: string | null) => ({ data: gymUuid ? state.gym : undefined }),
+}));
+
+vi.mock('../../../src/providers/feature-flags-provider', () => ({
+  useCreateBoardGymFirstEnabled: () => state.gymFirst,
+}));
+vi.mock('../../../src/components/board-discovery/DiscoveryBoardArt', () => ({ DiscoveryBoardArt: () => null }));
+
+// The "already has" sheet (#8151), as buttons: each wall, then Keep setting up mine.
+type SheetItem = { key: string; title: string };
+vi.mock('../../../src/components/board-discovery/ExistingWallsSheet', () => ({
+  ExistingWallsSheet: ({
+    gymName,
+    wallCount,
+    items,
+    loading,
+    loadFailed,
+    onUse,
+    onKeepMine,
+  }: {
+    gymName: string | null;
+    wallCount: number;
+    items: SheetItem[];
+    loading: boolean;
+    loadFailed: boolean;
+    onUse: (item: SheetItem, position: number) => void;
+    onKeepMine: () => void;
+  }) =>
+    createElement('div', { 'data-testid': 'existing-walls' }, [
+      createElement('span', { key: 'title' }, `${gymName ?? 'no gym'} has ${wallCount}`),
+      loading ? createElement('span', { key: 'loading' }, 'loading walls') : null,
+      loadFailed ? createElement('span', { key: 'failed' }, 'walls failed') : null,
+      ...items.map((item, index) =>
+        createElement(
+          'button',
+          { key: item.key, type: 'button', onClick: () => onUse(item, index) },
+          `use ${item.title}`,
+        ),
+      ),
+      createElement('button', { key: 'keep', type: 'button', onClick: onKeepMine }, 'keep mine'),
+    ]),
 }));
 
 vi.mock('../../../src/lib/graphql/use-active-board', () => ({
@@ -152,7 +199,10 @@ const builderState = vi.hoisted(() => ({
   sizeId: 1,
   rawLayoutName: 'Standard',
   coords: null,
-  selectedGym: null,
+  get selectedGym() {
+    return state.selectedGym;
+  },
+  setSelectedGym: setSelectedGymMock,
   buildCreateInput: () => ({
     boardType: 'moonboard',
     layoutId: 3,
@@ -164,6 +214,7 @@ const builderState = vi.hoisted(() => ({
     audience: state.audience,
     isPublic: state.isPublic,
     isUnlisted: state.isUnlisted,
+    gymUuid: state.gymUuid,
   }),
 }));
 
@@ -176,12 +227,24 @@ vi.mock('../../../src/components/board-discovery/use-board-builder', () => ({
 
 vi.mock('../../../src/components/board-discovery/board-builder-labels', () => ({
   formatDefaultBoardName: () => 'Default name',
+  formatGymBoardName: ({ gymName }: { gymName: string }) => `${gymName} MoonBoard`,
+  boardTypeLabel: (boardName: string) => boardName,
 }));
 
 // Stand-ins that expose just enough DOM to drive the flow.
 vi.mock('../../../src/components/board-discovery/BoardForm', () => ({
-  BoardForm: ({ onSubmit, errorMessage }: { onSubmit: () => void; errorMessage?: string | null }) =>
-    createElement('div', null, [
+  BoardForm: ({
+    onSubmit,
+    errorMessage,
+    defaultName,
+    focusLocationOnOpen,
+  }: {
+    onSubmit: () => void;
+    errorMessage?: string | null;
+    defaultName: string;
+    focusLocationOnOpen?: boolean;
+  }) =>
+    createElement('div', { 'data-default-name': defaultName, 'data-focus-location': String(!!focusLocationOnOpen) }, [
       createElement('button', { key: 'submit', type: 'button', onClick: onSubmit }, 'submit'),
       errorMessage ? createElement('span', { key: 'error', 'data-testid': 'error' }, errorMessage) : null,
     ]),
@@ -222,7 +285,10 @@ vi.mock('../../../src/components/board-discovery/SerialReuseConfirmSheet', () =>
       : null,
 }));
 
-vi.mock('@boardsesh/board-config', () => ({ toBoardName: (value: string) => value }));
+vi.mock('@boardsesh/board-config', () => ({
+  toBoardName: (value: string | undefined) => value ?? null,
+  boardSetupLabelParts: () => ({ layout: null, size: null, sets: [], angle: null }),
+}));
 
 vi.mock('react-native', () => ({
   View: ({ children }: Children) => createElement('div', null, children),
@@ -241,6 +307,10 @@ beforeEach(() => {
   state.isUnlisted = undefined;
   refetchPrivacySettingsMock.mockResolvedValue({ data: { isPrivate: false, enabled: state.privacyEnabled } });
   state.audience = undefined;
+  state.gymFirst = false;
+  state.gym = undefined;
+  state.selectedGym = null;
+  state.gymUuid = undefined;
   confirmMock.mockResolvedValue(true);
   builderCalls.options = [];
   builderState.presetKept = false;
@@ -566,6 +636,8 @@ describe('Board Builder Abandoned', () => {
       openedFrom: 'no_board',
       submitAttempted: false,
       secondsOpen: 0,
+      kind: null,
+      step: 'form',
     });
   });
 
@@ -607,3 +679,220 @@ vi.mock('../../../src/lib/graphql/hooks/use-privacy', () => ({
     refetch: refetchPrivacySettingsMock,
   }),
 }));
+
+/** A graphql-request ClientError carrying the server's existing-wall refusal (#8151). */
+function existingWallsError(candidates: { boardUuid: string; matchKind: string | null }[]) {
+  return {
+    response: {
+      errors: [
+        {
+          message: 'This gym already has this wall',
+          extensions: { code: 'BOARD_EXISTING_WALLS', candidates },
+        },
+      ],
+    },
+  };
+}
+
+const gymWall = {
+  uuid: 'gym-wall',
+  name: 'Boulder Space MoonBoard',
+  boardType: 'moonboard',
+  layoutId: 3,
+  sizeId: 1,
+  setIds: '5,6,7,8,9,10',
+  angle: 40,
+  ownerId: 'someone-else',
+  isFollowedByMe: false,
+  gymName: 'Boulder Space',
+} as unknown as UserBoard;
+
+describe('CreateBoard existing-wall recheck (#8151)', () => {
+  it('always asks the server to check for existing walls, flag or not', async () => {
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(createBoardMock).toHaveBeenCalledTimes(1));
+    expect(createBoardMock.mock.calls[0][0].existingWallCheck).toBe('REJECT_IF_FOUND');
+    expect(createBoardMock.mock.calls[0][0].acknowledgedWallUuids).toBeUndefined();
+  });
+
+  it('confirms the walls the climber set aside on the wall list', async () => {
+    state.params = { kind: 'gym', gymUuid: 'gym-1', boardType: 'moonboard', acknowledged: 'wall-a,wall-b' };
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(createBoardMock).toHaveBeenCalledTimes(1));
+    expect(createBoardMock.mock.calls[0][0]).toMatchObject({
+      existingWallCheck: 'CONFIRMED_SEPARATE',
+      acknowledgedWallUuids: ['wall-a', 'wall-b'],
+    });
+    const created = trackMock.mock.calls.find(([name]) => name === 'Board Created');
+    expect(created?.[1]).toMatchObject({ kind: 'gym', candidateCount: 2, confirmedDistinct: true });
+  });
+
+  it('shows the walls the refusal named and keeps the form', async () => {
+    state.selectedGym = { uuid: 'gym-1', name: 'Boulder Space' };
+    createBoardMock.mockRejectedValueOnce(existingWallsError([{ boardUuid: 'gym-wall', matchKind: 'EXACT' }]));
+    fetchBoardByUuidMock.mockResolvedValue(gymWall);
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(screen.getByText('use Boulder Space MoonBoard')).toBeTruthy());
+    expect(screen.getByText('Boulder Space has 1')).toBeTruthy();
+    expect(fetchBoardByUuidMock).toHaveBeenCalledWith('gym-wall');
+    // Nothing created, nothing bound, the form still there.
+    expect(setActiveBoardMock).not.toHaveBeenCalled();
+    expect(screen.getByText('submit')).toBeTruthy();
+    const shown = trackMock.mock.calls.find(([name]) => name === 'Board Wall Candidates Shown');
+    expect(shown?.[1]).toMatchObject({ exactCount: 1, lookup: 'ok', trigger: 'pre_submit' });
+  });
+
+  it('resends as CONFIRMED_SEPARATE with every named wall on Keep setting up mine', async () => {
+    createBoardMock.mockRejectedValueOnce(
+      existingWallsError([
+        { boardUuid: 'gym-wall', matchKind: 'EXACT' },
+        { boardUuid: 'hidden-wall', matchKind: 'SETS_DIFFER' },
+      ]),
+    );
+    fetchBoardByUuidMock.mockImplementation(async (uuid: string) => (uuid === 'gym-wall' ? gymWall : null));
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(screen.getByText('keep mine')).toBeTruthy());
+    fireEvent.click(screen.getByText('keep mine'));
+
+    await waitFor(() => expect(createBoardMock).toHaveBeenCalledTimes(2));
+    expect(createBoardMock.mock.calls[1][0]).toMatchObject({
+      existingWallCheck: 'CONFIRMED_SEPARATE',
+      acknowledgedWallUuids: ['gym-wall', 'hidden-wall'],
+    });
+    await waitFor(() => expect(dismissToMock).toHaveBeenCalled());
+  });
+
+  it('keeps an earlier override on the resend', async () => {
+    createBoardMock
+      .mockRejectedValueOnce(duplicateError())
+      .mockRejectedValueOnce(existingWallsError([{ boardUuid: 'gym-wall', matchKind: 'EXACT' }]));
+    fetchBoardByUuidMock.mockResolvedValue(gymWall);
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(screen.getByTestId('duplicate-prompt')).toBeTruthy());
+    fireEvent.click(screen.getByText('add another'));
+    await waitFor(() => expect(screen.getByText('keep mine')).toBeTruthy());
+    fireEvent.click(screen.getByText('keep mine'));
+
+    await waitFor(() => expect(createBoardMock).toHaveBeenCalledTimes(3));
+    expect(createBoardMock.mock.calls[2][0]).toMatchObject({
+      allowDuplicateConfig: true,
+      existingWallCheck: 'CONFIRMED_SEPARATE',
+      acknowledgedWallUuids: ['gym-wall'],
+    });
+  });
+
+  it('follows the wall and binds it on Use this board, creating nothing', async () => {
+    createBoardMock.mockRejectedValueOnce(existingWallsError([{ boardUuid: 'gym-wall', matchKind: 'EXACT' }]));
+    fetchBoardByUuidMock.mockResolvedValue(gymWall);
+    const { unmount } = render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(screen.getByText('use Boulder Space MoonBoard')).toBeTruthy());
+    fireEvent.click(screen.getByText('use Boulder Space MoonBoard'));
+
+    await waitFor(() => expect(setActiveBoardMock).toHaveBeenCalledWith(gymWall));
+    expect(followBoardMock).toHaveBeenCalledWith(gymWall);
+    expect(createBoardMock).toHaveBeenCalledTimes(1);
+    const used = trackMock.mock.calls.find(([name]) => name === 'Board Wall Candidate Used');
+    expect(used?.[1]).toMatchObject({ match: 'exact', position: 0, alreadyFollowed: false, trigger: 'pre_submit' });
+    unmount();
+    expect(trackMock.mock.calls.filter(([name]) => name === 'Board Builder Abandoned')).toEqual([]);
+  });
+
+  it('says the walls could not be loaded and still lets the climber keep theirs', async () => {
+    createBoardMock.mockRejectedValueOnce(existingWallsError([{ boardUuid: 'gym-wall', matchKind: 'EXACT' }]));
+    fetchBoardByUuidMock.mockRejectedValue(new Error('offline'));
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(screen.getByText('walls failed')).toBeTruthy());
+    expect(screen.queryByText(/^use /)).toBeNull();
+    const shown = trackMock.mock.calls.find(([name]) => name === 'Board Wall Candidates Shown');
+    expect(shown?.[1]).toMatchObject({ lookup: 'failed' });
+    fireEvent.click(screen.getByText('keep mine'));
+    await waitFor(() => expect(createBoardMock).toHaveBeenCalledTimes(2));
+    expect(createBoardMock.mock.calls[1][0].acknowledgedWallUuids).toEqual(['gym-wall']);
+  });
+});
+
+describe('CreateBoard from the gym-first flow (#8151)', () => {
+  it('prefills the gym from the wall list, coordinates and all, once', async () => {
+    state.params = { kind: 'gym', gymUuid: 'gym-1', boardType: 'moonboard' };
+    state.gym = { uuid: 'gym-1', name: 'Boulder Space', latitude: 52.1, longitude: 4.3 };
+    const { rerender } = render(createElement(CreateBoard));
+    rerender(createElement(CreateBoard));
+    await waitFor(() => expect(setSelectedGymMock).toHaveBeenCalledTimes(1));
+    expect(setSelectedGymMock).toHaveBeenCalledWith({
+      uuid: 'gym-1',
+      name: 'Boulder Space',
+      latitude: 52.1,
+      longitude: 4.3,
+    });
+  });
+
+  it('opens on the board type the wall list chose', () => {
+    state.params = { kind: 'gym', gymUuid: 'gym-1', boardType: 'kilter' };
+    render(createElement(CreateBoard));
+    expect(builderCalls.options[0]?.initialBoardName).toBe('kilter');
+  });
+
+  it('names a gym board for the gym', () => {
+    state.params = { kind: 'gym', gymUuid: 'gym-1' };
+    state.selectedGym = { uuid: 'gym-1', name: 'Boulder Space' };
+    const { container } = render(createElement(CreateBoard));
+    expect(container.querySelector('[data-default-name]')?.getAttribute('data-default-name')).toBe(
+      'Boulder Space MoonBoard',
+    );
+  });
+
+  it("focuses the location field for My gym isn't listed", () => {
+    state.params = { kind: 'gym', focusLocation: '1' };
+    const { container } = render(createElement(CreateBoard));
+    expect(container.querySelector('[data-focus-location]')?.getAttribute('data-focus-location')).toBe('true');
+  });
+
+  it("asks Where's this board? first for a bare open with the flag on", () => {
+    state.gymFirst = true;
+    state.params = { returnTo: '/(tabs)/discover', source: 'no_board' };
+    const { unmount } = render(createElement(CreateBoard));
+    expect(replaceMock).toHaveBeenCalledWith({
+      pathname: '/boards/where',
+      params: { returnTo: '/(tabs)/discover', source: 'no_board' },
+    });
+    expect(screen.queryByText('submit')).toBeNull();
+    unmount();
+    // The hand-off is not an abandonment: the choice screen reports for itself.
+    expect(trackMock.mock.calls.filter(([name]) => name === 'Board Builder Abandoned')).toEqual([]);
+  });
+
+  it.each([
+    { name: 'a preset open', params: { preset: '1' } },
+    { name: 'a kind already said', params: { kind: 'home', preset: '1' } },
+    { name: 'a gym already chosen', params: { kind: 'gym', gymUuid: 'gym-1' } },
+  ])('opens the builder for $name', ({ params }) => {
+    state.gymFirst = true;
+    state.params = params;
+    render(createElement(CreateBoard));
+    expect(replaceMock).not.toHaveBeenCalled();
+    expect(screen.getByText('submit')).toBeTruthy();
+  });
+
+  it('opens the builder for a bare open with the flag off', () => {
+    render(createElement(CreateBoard));
+    expect(replaceMock).not.toHaveBeenCalled();
+  });
+
+  it('says which flow a builder left from on Board Builder Abandoned', () => {
+    state.params = { kind: 'home', preset: '1' };
+    const { unmount } = render(createElement(CreateBoard));
+    unmount();
+    const abandoned = trackMock.mock.calls.find(([name]) => name === 'Board Builder Abandoned');
+    expect(abandoned?.[1]).toMatchObject({ kind: 'home', step: 'form' });
+  });
+});

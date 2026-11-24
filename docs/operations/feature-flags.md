@@ -208,6 +208,14 @@ diagnostic) applies on native. The whole surface lives in three files:
   `useBackendOutageDetectionEnabled` and published to the store by
   `ConnectivityBridge`; the 20 s request deadline stays on either way. See
   `docs/data/offline-sync.md` → "Backend reachability".
+  `create-board-gym-first` is a POSITIVE flag (read through
+  `useCreateBoardGymFirstEnabled`, unresolved or off = off) for the gym-first
+  create-board flow (#8151): the + menu's "My own board" and "A board at my
+  gym" rows, "Where's this board?", the gym search and the gym's wall list, and
+  a gym page's Set up a board opening on its walls. Off, the menu keeps its one
+  "Set up a board" row. It gates the screens only: the builder sends
+  `existingWallCheck` whatever it says, so the server's check runs either way.
+  See `docs/product/existing-wall-check.md`, "The app".
   `climb-moderation-kill` is a kill switch (read through
   `useClimbModerationEnabled`, unresolved = enabled) that takes down the whole
   community-moderation surface at once: the "Report climb" action, the More-tab

@@ -68,6 +68,8 @@ const state = vi.hoisted(() => ({
   snapshotSourceAvailable: true,
   /** `offline-download-progress`. Defaults ON, like the real flag. */
   downloadProgressEnabled: true,
+  /** `create-board-gym-first` (#8151). */
+  gymFirst: false,
   syncStatus: {
     isSyncing: false,
     progress: null as {
@@ -176,18 +178,25 @@ vi.mock('expo-router', () => ({
   useNavigation: () => navigationMock,
 }));
 vi.mock('../../../src/components/board-discovery/AddBoardMenu', () => ({
-  AddBoardMenu: ({ onSelect }: { onSelect: (kind: string) => void }) =>
-    createElement(
-      'div',
-      null,
-      ['board', 'spraywall', 'gym_map'].map((kind) =>
+  AddBoardMenu: ({
+    onSelect,
+    gymFirst,
+  }: {
+    onSelect: (kind: string, boardKind?: string) => void;
+    gymFirst?: boolean;
+  }) =>
+    createElement('div', { 'data-gym-first': String(!!gymFirst) }, [
+      ...['board', 'spraywall', 'gym_map'].map((kind) =>
         createElement('button', { key: kind, type: 'button', onClick: () => onSelect(kind) }, `add ${kind}`),
       ),
-    ),
+      createElement('button', { key: 'gym', type: 'button', onClick: () => onSelect('board', 'gym') }, 'add gym board'),
+    ]),
 }));
 const trackAddSelectedMock = vi.hoisted(() => vi.fn());
+const trackKindChosenMock = vi.hoisted(() => vi.fn());
 vi.mock('../../../src/lib/boards/board-picker-add-analytics', () => ({
   trackBoardPickerAddSelected: trackAddSelectedMock,
+  trackBoardKindChosen: trackKindChosenMock,
 }));
 
 /** The header's trailing item as the screen last set it, or null. */
@@ -343,6 +352,7 @@ vi.mock('../../../src/providers/theme-provider', () => ({
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
   useOfflineDownloadsEnabled: () => true,
   useOfflineDownloadProgressEnabled: () => state.downloadProgressEnabled,
+  useCreateBoardGymFirstEnabled: () => state.gymFirst,
 }));
 vi.mock('../../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
@@ -503,6 +513,7 @@ beforeEach(() => {
   state.bootstrapMetadataRead = undefined;
   state.snapshotSourceAvailable = true;
   state.downloadProgressEnabled = true;
+  state.gymFirst = false;
   state.syncStatus = {
     isSyncing: false,
     progress: null,
@@ -1240,6 +1251,34 @@ describe('My Boards with no usable network list', () => {
     fireEvent.click(screen.getByRole('button', { name: 'add gym_map' }));
     expect(trackAddSelectedMock).toHaveBeenCalledWith({ kind: 'gym_map', surface: 'manage' });
     expect(routerMock.push).toHaveBeenLastCalledWith({ pathname: '/gyms', params: {} });
+  });
+
+  // #8151: with the gym-first flag the + menu splits, and an entry that hasn't
+  // said whose board it is asks on "Where's this board?".
+  it('routes the + menu and Create board through the gym-first flow when the flag is on', () => {
+    state.gymFirst = true;
+    state.profileId = 'me';
+    state.myBoards = {
+      data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+
+    render(createElement(ManageBoards));
+    const plus = headerPlus();
+    expect(plus).not.toBeNull();
+    if (!plus) return;
+    const { container } = render(createElement(plus));
+    expect(container.querySelector('[data-gym-first="true"]')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'add gym board' }));
+    expect(trackAddSelectedMock).toHaveBeenCalledWith({ kind: 'board', surface: 'manage', boardKind: 'gym' });
+    expect(trackKindChosenMock).toHaveBeenCalledWith({ kind: 'gym', surface: 'manage', preAnswered: false });
+    expect(routerMock.push).toHaveBeenLastCalledWith({ pathname: '/boards/find-wall', params: {} });
+
+    fireEvent.click(screen.getByRole('button', { name: 'add board' }));
+    expect(routerMock.push).toHaveBeenLastCalledWith({ pathname: '/boards/where', params: {} });
   });
 
   it('degrades to the downloaded list, not the error state, when the profile fails online', () => {
