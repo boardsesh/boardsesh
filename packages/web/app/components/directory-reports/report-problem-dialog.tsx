@@ -64,6 +64,7 @@ import {
   setupPreviewFor,
   shouldResetReportDialog,
   sentMessageFor,
+  sentMessageForError,
   type ReportBoardSetup,
   type ReportDraft,
   type ReportProblemTarget,
@@ -99,8 +100,9 @@ type ReportProblemDialogProps = {
    */
   storeLabels?: StoreButtonLabels | null;
   /**
-   * A suggestion changed the board for everyone: the page reads it again, so
-   * its rows and a reopened dialog show the new setup.
+   * A suggestion changed the board for everyone, or the server found the board
+   * already has it: the page reads it again, so its rows and a reopened dialog
+   * show the setup it has now.
    */
   onSetupApplied?: () => void;
 };
@@ -127,8 +129,10 @@ const MIN_GYM_SEARCH_LENGTH = 2;
  * Angle on a board that doesn't tilt), starting on the board's current setup,
  * and Send waits for a setup that differs. The foot line then says what Send
  * does: change it for everyone at a gym nobody runs, or wait for the gym's
- * staff or the board's creator. Sent, a change that applied says so and points
- * to the app to climb it; one that went to review says why.
+ * staff or the board's creator; no line when the gym's state didn't load. Sent,
+ * a change that applied says so and points to the app to climb it; one that
+ * went to review says why. A board someone fixed since the page read it
+ * already has the setup, and the dialog says so.
  */
 export default function ReportProblemDialog({
   open,
@@ -184,17 +188,24 @@ export default function ReportProblemDialog({
       if (target.kind === 'board') {
         const input = buildReportBoardInput(target.board.uuid, draft, setupBoard);
         if (!input) return;
-        const response = await client.request<ReportBoardMutationResponse, ReportBoardMutationVariables>(REPORT_BOARD, {
-          input,
-        });
+        const setupSummary =
+          setupBoard && input.suggestedSetup ? boardSetupSummary(setupBoard.boardType, input.suggestedSetup) : null;
+        let message: ReportSentMessage;
+        try {
+          const response = await client.request<ReportBoardMutationResponse, ReportBoardMutationVariables>(
+            REPORT_BOARD,
+            { input },
+          );
+          message = sentMessageFor(response.reportBoard);
+        } catch (error) {
+          // The board already has the suggested setup: done, not a failure.
+          const settled = sentMessageForError(error);
+          if (!settled) throw error;
+          message = settled;
+        }
         if (isCurrent()) {
-          const message = sentMessageFor(response.reportBoard);
-          setSent({
-            message,
-            setupSummary:
-              setupBoard && input.suggestedSetup ? boardSetupSummary(setupBoard.boardType, input.suggestedSetup) : null,
-          });
-          if (message.kind === 'setup_applied') onSetupApplied?.();
+          setSent({ message, setupSummary });
+          if (message.kind === 'setup_applied' || message.kind === 'setup_unchanged') onSetupApplied?.();
         }
       } else {
         const input = buildReportGymInput(target.gym.uuid, draft);
@@ -243,6 +254,8 @@ export default function ReportProblemDialog({
     );
   } else if (sent) {
     const gymName = target.gym?.name ?? null;
+    // The board now has the suggested setup, whether this send changed it or it already had it.
+    const boardIsOnSetup = sent.message.kind === 'setup_applied' || sent.message.kind === 'setup_unchanged';
     body = (
       <>
         <Box
@@ -251,13 +264,13 @@ export default function ReportProblemDialog({
         >
           <CheckCircleOutlined color="success" sx={{ fontSize: 40 }} />
           <Typography variant="body1">{sentLine(sent.message, gymName, t)}</Typography>
-          {sent.message.kind === 'setup_applied' && sent.setupSummary && (
+          {boardIsOnSetup && sent.setupSummary && (
             <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
               {sent.setupSummary}
             </Typography>
           )}
         </Box>
-        {sent.message.kind === 'setup_applied' && <ClimbItInTheApp labels={storeLabels} />}
+        {boardIsOnSetup && <ClimbItInTheApp labels={storeLabels} />}
       </>
     );
   } else {
@@ -317,6 +330,8 @@ function sentLine(message: ReportSentMessage, gym: string | null, t: TFunction<'
       return gym ? t('report.web.setup.applied', { gym }) : t('report.web.setup.appliedUnnamed');
     case 'setup_review':
       return setupReviewLine(message.reason, gym, t);
+    case 'setup_unchanged':
+      return t('report.web.setup.alreadySetUp');
     case 'sent':
       return t('report.sent');
   }
@@ -380,6 +395,7 @@ function ReportForm({
   const required = noteIsRequired(draft.reason);
   const creatorName = target.kind === 'board' ? target.board.ownerDisplayName : null;
   const setupSelection = setupBoard ? draftSetupSelection(draft, setupBoard) : null;
+  const setupPreview = setupSelection ? setupPreviewFor(target) : null;
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -470,11 +486,14 @@ function ReportForm({
 
       {failure && <Alert severity="error">{failure === 'offline' ? t('report.offline') : t('report.error')}</Alert>}
 
-      <Typography variant="body2" color="text.secondary">
-        {setupSelection
-          ? setupPreviewLine(setupPreviewFor(target), target.gym?.name ?? null, t)
-          : reportAudienceLine(audience, { creator: creatorName, gym: target.gym?.name ?? null }, t)}
-      </Typography>
+      {/* With the setup fields showing, a gym whose state didn't load gets no line: no guess at who decides. */}
+      {(!setupSelection || setupPreview) && (
+        <Typography variant="body2" color="text.secondary">
+          {setupPreview
+            ? setupPreviewLine(setupPreview, target.gym?.name ?? null, t)
+            : reportAudienceLine(audience, { creator: creatorName, gym: target.gym?.name ?? null }, t)}
+        </Typography>
+      )}
 
       {claimGym?.slug && (
         <MuiLink

@@ -1842,7 +1842,7 @@
         "size": "Dimensione",
         "holds": "Prese",
         "angle": "Inclinazione",
-        "previewEveryone": "Così cambia per tutti a {{gym}}.",
+        "previewEveryone": "Così cambia per tutti a {{gym}}. Si può annullare.",
         "previewStaff": "Lo staff di {{gym}} lo controlla prima.",
         "previewCreator": "Chi ha aggiunto questo pannello lo controlla prima.",
         "applied": "Configurazione aggiornata per tutti a {{gym}}.",
@@ -1854,7 +1854,8 @@
         "reviewRecentChange": "Qualcuno ha cambiato questo pannello nelle ultime 24 ore, quindi la tua proposta viene controllata prima. Ti avvisiamo appena è sistemata.",
         "reviewRecentlyUndone": "Una modifica recente a questo pannello è stata annullata, quindi la tua proposta viene controllata prima. Ti avvisiamo appena è sistemata.",
         "reviewDailyLimit": "Hai cambiato {{limit}} pannelli nelle ultime 24 ore, quindi questo viene controllato prima. Ti avvisiamo appena è sistemata.",
-        "reviewClashes": "Questa configurazione si scontra con un altro pannello, quindi viene controllata prima. Ti avvisiamo appena è sistemata."
+        "reviewClashes": "Questa configurazione si scontra con un altro pannello, quindi viene controllata prima. Ti avvisiamo appena è sistemata.",
+        "alreadySetUp": "È già configurato così."
       }
     }
   },

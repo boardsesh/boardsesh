@@ -271,7 +271,7 @@ describe('ReportProblemDialog, setup fields', () => {
     expect(comboboxText('Size')).toBe(setupSizeLabel(kilterSize));
     // A board that tilts has no angle row: its angle isn't part of the setup.
     expect(screen.queryByRole('combobox', { name: 'Angle' })).toBeNull();
-    expect(screen.getByText('This changes it for everyone at Crux.')).toBeTruthy();
+    expect(screen.getByText('This changes it for everyone at Crux. It can be undone.')).toBeTruthy();
     expect(sendButton().disabled).toBe(true);
 
     pick('Size', setupSizeLabel(otherKilterSize));
@@ -297,6 +297,74 @@ describe('ReportProblemDialog, setup fields', () => {
     const sets = getBoardSetsForLayoutAndSize('kilter', otherKilterLayout.id, defaultSize.id);
     expect(comboboxText('Holds')).toBe(sets.map((set) => set.name).join(', '));
     expect(sendButton().disabled).toBe(false);
+  });
+
+  it('says nothing above Send when the gym is known but its state did not load', () => {
+    renderDialog(
+      { ...unclaimedTarget, gym: { uuid: 'gym-1', name: 'Crux', slug: 'crux', listingState: null, canClaim: false } },
+      { setupSuggestionsEnabled: true },
+    );
+    fireEvent.click(screen.getByLabelText(/Set up wrong/));
+    pick('Size', setupSizeLabel(otherKilterSize));
+    expect(screen.queryByText('This changes it for everyone at Crux. It can be undone.')).toBeNull();
+    expect(screen.queryByText('Crux staff check it first.')).toBeNull();
+    expect(screen.queryByText('The climber who added this board checks it first.')).toBeNull();
+    expect(screen.queryByText(/will see this/)).toBeNull();
+    expect(sendButton().disabled).toBe(false);
+  });
+
+  it('unchecks the set the climber tapped on a board carrying a set the catalogue does not list', async () => {
+    mockRequest.mockResolvedValue({
+      reportBoard: {
+        status: 'created',
+        reportUuid: 'r1',
+        routedTo: ['creator'],
+        otherReporterCount: 0,
+        setupOutcome: 'APPLIED',
+        setupReviewReason: null,
+        board: null,
+      },
+    });
+    const listed = getBoardSetsForLayoutAndSize('kilter', kilterLayout.id, kilterSize.id);
+    if (listed.length < 2) throw new Error('Expected a Kilter size with two sets');
+    renderDialog(
+      {
+        ...unclaimedTarget,
+        board: { ...boardTarget.board, setup: { ...kilterSetup, setIds: `99999,${kilterSetup.setIds}` } },
+      },
+      { setupSuggestionsEnabled: true },
+    );
+    fireEvent.click(screen.getByLabelText(/Set up wrong/));
+    // The unlisted set is never part of the pick, so the fields open unchanged.
+    expect(comboboxText('Holds')).toBe(listed.map((set) => set.name).join(', '));
+    expect(sendButton().disabled).toBe(true);
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Holds' }));
+    fireEvent.click(screen.getByRole('option', { name: listed[0].name }));
+    // A multi-select stays open after a tap: close it to read the field.
+    fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    expect(comboboxText('Holds')).toBe(
+      listed
+        .slice(1)
+        .map((set) => set.name)
+        .join(', '),
+    );
+    expect(sendButton().disabled).toBe(false);
+    fireEvent.click(sendButton());
+
+    const remaining = listed
+      .slice(1)
+      .map((set) => set.id)
+      .sort((first, second) => first - second)
+      .join(',');
+    await waitFor(() =>
+      expect(mockRequest).toHaveBeenCalledWith(REPORT_BOARD, {
+        input: expect.objectContaining({
+          suggestedSetup: { layoutId: kilterLayout.id, sizeId: kilterSize.id, setIds: remaining, angle: null },
+        }),
+      }),
+    );
   });
 
   it('never lets the holds go to zero', () => {
@@ -382,6 +450,52 @@ describe('ReportProblemDialog, setup fields', () => {
     await waitFor(() => expect(screen.getByText("Sent to Crux staff. We'll tell you when it's fixed.")).toBeTruthy());
     expect(document.querySelector('a[data-store-badge]')).toBeNull();
     expect(onSetupApplied).not.toHaveBeenCalled();
+  });
+
+  it('says the board is already set up that way when the server finds no change, and reads it again', async () => {
+    mockRequest.mockRejectedValue(
+      Object.assign(new Error('That is the setup the board has now.'), {
+        response: {
+          errors: [
+            {
+              message: 'That is the setup the board has now.',
+              extensions: { code: 'BAD_USER_INPUT', reason: 'SETUP_UNCHANGED' },
+            },
+          ],
+        },
+      }),
+    );
+    const onSetupApplied = vi.fn();
+    renderDialog(unclaimedTarget, { setupSuggestionsEnabled: true, storeLabels, onSetupApplied });
+    fireEvent.click(screen.getByLabelText(/Set up wrong/));
+    pick('Size', setupSizeLabel(otherKilterSize));
+    fireEvent.click(sendButton());
+
+    await waitFor(() => expect(screen.getByText("It's already set up that way.")).toBeTruthy());
+    expect(onSetupApplied).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Your report didn't go through. Try again.")).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    // The board is on that setup, so the app link stays: the climber can climb it.
+    expect(document.querySelectorAll('a[data-store-badge]').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
+  });
+
+  it('still says the send failed for any other refusal', async () => {
+    mockRequest.mockRejectedValue(
+      Object.assign(new Error('Unknown layout'), {
+        response: { errors: [{ message: 'Unknown layout', extensions: { code: 'BAD_USER_INPUT' } }] },
+      }),
+    );
+    const onSetupApplied = vi.fn();
+    renderDialog(unclaimedTarget, { setupSuggestionsEnabled: true, onSetupApplied });
+    fireEvent.click(screen.getByLabelText(/Set up wrong/));
+    pick('Size', setupSizeLabel(otherKilterSize));
+    fireEvent.click(sendButton());
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect(screen.queryByText("It's already set up that way.")).toBeNull();
+    expect(onSetupApplied).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Send' })).toBeTruthy();
   });
 
   it("keeps today's words for a suggestion that went to review with no reason", async () => {

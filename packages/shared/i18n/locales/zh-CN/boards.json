@@ -1842,7 +1842,7 @@
         "size": "尺寸",
         "holds": "岩点",
         "angle": "角度",
-        "previewEveryone": "这会为 {{gym}} 的所有人更改设置。",
+        "previewEveryone": "这会为 {{gym}} 的所有人更改设置。之后可以撤销。",
         "previewStaff": "{{gym}} 的工作人员会先审核。",
         "previewCreator": "添加这块训练板的攀岩者会先审核。",
         "applied": "已为 {{gym}} 的所有人更新设置。",
@@ -1854,7 +1854,8 @@
         "reviewRecentChange": "过去一天内有人改过这块训练板，所以你的建议会先经过审核。修正后我们会通知你。",
         "reviewRecentlyUndone": "这块训练板最近的一次更改被撤销了，所以你的建议会先经过审核。修正后我们会通知你。",
         "reviewDailyLimit": "你在过去一天内已更改 {{limit}} 块训练板，所以这次会先经过审核。修正后我们会通知你。",
-        "reviewClashes": "这个设置与另一块训练板冲突，所以会先经过审核。修正后我们会通知你。"
+        "reviewClashes": "这个设置与另一块训练板冲突，所以会先经过审核。修正后我们会通知你。",
+        "alreadySetUp": "它已经是这个设置了。"
       }
     }
   },

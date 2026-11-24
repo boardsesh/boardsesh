@@ -19,6 +19,7 @@ import {
   reportErrorKind,
   reportReasonsFor,
   sentMessageFor,
+  sentMessageForError,
   setupFieldsBoard,
   setupPreviewFor,
   shouldResetReportDialog,
@@ -341,6 +342,18 @@ describe('the setup fields', () => {
     expect(setupPreviewFor(boardTarget({ gym: runGym }))).toBe('staff_review');
     expect(setupPreviewFor(boardTarget({ gym: null }))).toBe('creator_review');
   });
+
+  it('say nothing above Send when the gym is known but its state did not load', () => {
+    // The rule would read an unknown state as no gym ("the creator checks it first") while the server may apply it.
+    expect(setupPreviewFor(boardTarget({ gym: { ...unclaimedGym, listingState: null } }))).toBeNull();
+  });
+
+  it('start without a set the catalogue does not list, and open unchanged', () => {
+    const withUnlisted: ReportBoardSetup = { ...kilterSetup, setIds: `${kilterSetup.setIds},99999` };
+    const selection = draftSetupSelection(wrongSetup, withUnlisted);
+    expect(selection?.setIds).toEqual(kilterSetIds);
+    expect(canSendReport(wrongSetup, withUnlisted)).toBe(false);
+  });
 });
 
 describe('the done state after a suggested setup', () => {
@@ -356,6 +369,18 @@ describe('the done state after a suggested setup', () => {
         setupReviewReason: 'CLAIMED_GYM',
       }),
     ).toEqual({ kind: 'setup_review', reason: 'CLAIMED_GYM' });
+  });
+
+  it('reads a refusal of the setup the board has now as done, and nothing else', () => {
+    const unchanged = {
+      response: {
+        errors: [{ message: 'same', extensions: { code: 'BAD_USER_INPUT', reason: 'SETUP_UNCHANGED' } }],
+      },
+    };
+    expect(sentMessageForError(unchanged)).toEqual({ kind: 'setup_unchanged' });
+    const otherBadInput = { response: { errors: [{ message: 'bad', extensions: { code: 'BAD_USER_INPUT' } }] } };
+    expect(sentMessageForError(otherBadInput)).toBeNull();
+    expect(sentMessageForError(new Error('network down'))).toBeNull();
   });
 
   it("keeps today's words when the server gives no reason (the flag off)", () => {

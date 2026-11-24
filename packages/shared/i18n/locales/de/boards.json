@@ -1842,7 +1842,7 @@
         "size": "Größe",
         "holds": "Griffe",
         "angle": "Winkel",
-        "previewEveryone": "Das ändert es für alle in {{gym}}.",
+        "previewEveryone": "Das ändert es für alle in {{gym}}. Es lässt sich rückgängig machen.",
         "previewStaff": "Das Team von {{gym}} prüft es zuerst.",
         "previewCreator": "Die Person, die dieses Board angelegt hat, prüft es zuerst.",
         "applied": "Einrichtung für alle in {{gym}} aktualisiert.",
@@ -1854,7 +1854,8 @@
         "reviewRecentChange": "Jemand hat dieses Board in den letzten 24 Stunden geändert, deshalb wird dein Vorschlag zuerst geprüft. Wir sagen dir Bescheid, sobald es korrigiert ist.",
         "reviewRecentlyUndone": "Eine kürzliche Änderung an diesem Board wurde rückgängig gemacht, deshalb wird dein Vorschlag zuerst geprüft. Wir sagen dir Bescheid, sobald es korrigiert ist.",
         "reviewDailyLimit": "Du hast in den letzten 24 Stunden {{limit}} Boards geändert, deshalb wird dieses zuerst geprüft. Wir sagen dir Bescheid, sobald es korrigiert ist.",
-        "reviewClashes": "Diese Einrichtung kollidiert mit einem anderen Board, deshalb wird sie zuerst geprüft. Wir sagen dir Bescheid, sobald es korrigiert ist."
+        "reviewClashes": "Diese Einrichtung kollidiert mit einem anderen Board, deshalb wird sie zuerst geprüft. Wir sagen dir Bescheid, sobald es korrigiert ist.",
+        "alreadySetUp": "Es ist schon so eingerichtet."
       }
     }
   },

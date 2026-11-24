@@ -106,7 +106,8 @@ export default function BoardReportLink({
   });
 
   // The gym's own reads are a nicety: without them the routing line assumes
-  // nobody runs the gym and the duplicate picker offers only "Not sure".
+  // nobody runs the gym, the setup fields show no line above Send (the
+  // listing state stays null), and the duplicate picker offers only "Not sure".
   const gymSettled = gymUuid === null || (!gymQuery.isPending && !gymBoardsQuery.isPending);
   const target = useMemo((): ReportProblemTarget | null => {
     const board = boardQuery.data;

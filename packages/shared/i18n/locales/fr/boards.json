@@ -1842,7 +1842,7 @@
         "size": "Taille",
         "holds": "Prises",
         "angle": "Inclinaison",
-        "previewEveryone": "Ça la change pour tout le monde à {{gym}}.",
+        "previewEveryone": "Ça la change pour tout le monde à {{gym}}. On peut l'annuler.",
         "previewStaff": "L'équipe de {{gym}} vérifie d'abord.",
         "previewCreator": "La personne qui a ajouté cette board vérifie d'abord.",
         "applied": "Configuration mise à jour pour tout le monde à {{gym}}.",
@@ -1854,7 +1854,8 @@
         "reviewRecentChange": "Quelqu'un a changé cette board ces dernières 24 heures, donc ta proposition est vérifiée d'abord. On te prévient dès que c'est corrigé.",
         "reviewRecentlyUndone": "Un changement récent sur cette board a été annulé, donc ta proposition est vérifiée d'abord. On te prévient dès que c'est corrigé.",
         "reviewDailyLimit": "Tu as changé {{limit}} boards ces dernières 24 heures, donc celle-ci est vérifiée d'abord. On te prévient dès que c'est corrigé.",
-        "reviewClashes": "Cette configuration entre en conflit avec une autre board, donc elle est vérifiée d'abord. On te prévient dès que c'est corrigé."
+        "reviewClashes": "Cette configuration entre en conflit avec une autre board, donc elle est vérifiée d'abord. On te prévient dès que c'est corrigé.",
+        "alreadySetUp": "Elle est déjà configurée comme ça."
       }
     }
   },

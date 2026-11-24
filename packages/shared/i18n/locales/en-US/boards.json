@@ -1842,7 +1842,7 @@
         "size": "Size",
         "holds": "Holds",
         "angle": "Angle",
-        "previewEveryone": "This changes it for everyone at {{gym}}.",
+        "previewEveryone": "This changes it for everyone at {{gym}}. It can be undone.",
         "previewStaff": "{{gym}} staff check it first.",
         "previewCreator": "The climber who added this board checks it first.",
         "applied": "Setup updated for everyone at {{gym}}.",
@@ -1854,7 +1854,8 @@
         "reviewRecentChange": "Someone changed this board in the last day, so yours gets checked first. We'll tell you when it's fixed.",
         "reviewRecentlyUndone": "A recent change to this board was undone, so yours gets checked first. We'll tell you when it's fixed.",
         "reviewDailyLimit": "You changed {{limit}} boards in the last day, so this one gets checked first. We'll tell you when it's fixed.",
-        "reviewClashes": "That setup clashes with another board, so it gets checked first. We'll tell you when it's fixed."
+        "reviewClashes": "That setup clashes with another board, so it gets checked first. We'll tell you when it's fixed.",
+        "alreadySetUp": "It's already set up that way."
       }
     }
   },

@@ -1842,7 +1842,7 @@
         "size": "Tamaño",
         "holds": "Presas",
         "angle": "Ángulo",
-        "previewEveryone": "Esto lo cambia para todos en {{gym}}.",
+        "previewEveryone": "Esto lo cambia para todos en {{gym}}. Se puede deshacer.",
         "previewStaff": "El personal de {{gym}} lo revisa primero.",
         "previewCreator": "Quien añadió este plafón lo revisa primero.",
         "applied": "Configuración actualizada para todos en {{gym}}.",
@@ -1854,7 +1854,8 @@
         "reviewRecentChange": "Alguien cambió este plafón en el último día, así que el tuyo se revisa primero. Te avisaremos cuando esté arreglado.",
         "reviewRecentlyUndone": "Se deshizo un cambio reciente en este plafón, así que el tuyo se revisa primero. Te avisaremos cuando esté arreglado.",
         "reviewDailyLimit": "Cambiaste {{limit}} plafones en el último día, así que este se revisa primero. Te avisaremos cuando esté arreglado.",
-        "reviewClashes": "Esa configuración choca con otro plafón, así que se revisa primero. Te avisaremos cuando esté arreglado."
+        "reviewClashes": "Esa configuración choca con otro plafón, así que se revisa primero. Te avisaremos cuando esté arreglado.",
+        "alreadySetUp": "Ya está configurado así."
       }
     }
   },

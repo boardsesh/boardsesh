@@ -61,17 +61,20 @@ export default function SetupSuggestionFields({ selection, onChange }: SetupSugg
     [options.angles, selection.angle],
   );
   const dispatch = (action: SetupSelectionAction) => onChange(setupSelectionReducer(selection, action));
-  const setNames = new Map(options.sets.map((set) => [set.id, set.name]));
-  const onlySetId = selection.setIds.length === 1 ? selection.setIds[0] : null;
+  // What the Holds field shows checked. The selection only ever holds sets the
+  // catalogue lists for its layout and size (`initialSetupSelection` drops any
+  // other, and every transition picks from the catalogue), so this is the
+  // selection itself, and a tap's diff below runs against exactly these ids.
+  const shownSetIds = selection.setIds;
+  const onlySetId = shownSetIds.length === 1 ? shownSetIds[0] : null;
 
   const handleSetsChange = (event: SelectChangeEvent<number[]>) => {
     const next = event.target.value;
     if (typeof next === 'string') return;
     // One tap toggles one set: whichever id is in one list and not the other.
     const toggled =
-      next.find((setId) => !selection.setIds.includes(setId)) ??
-      selection.setIds.find((setId) => !next.includes(setId));
-    if (toggled === undefined || (next.length === 0 && selection.setIds.length > 0)) return;
+      next.find((setId) => !shownSetIds.includes(setId)) ?? shownSetIds.find((setId) => !next.includes(setId));
+    if (toggled === undefined || next.length === 0) return;
     dispatch({ type: 'toggleSet', setId: toggled });
   };
 
@@ -126,7 +129,7 @@ export default function SetupSuggestionFields({ selection, onChange }: SetupSugg
           labelId={`${fieldId}-holds`}
           label={t('report.web.setup.holds')}
           multiple
-          value={selection.setIds.filter((setId) => setNames.has(setId))}
+          value={shownSetIds}
           onChange={handleSetsChange}
           renderValue={(selected) =>
             options.sets
@@ -136,7 +139,7 @@ export default function SetupSuggestionFields({ selection, onChange }: SetupSugg
           }
         >
           {options.sets.map((set) => {
-            const checked = selection.setIds.includes(set.id);
+            const checked = shownSetIds.includes(set.id);
             return (
               <MenuItem key={set.id} value={set.id} disabled={checked && onlySetId === set.id}>
                 <Checkbox checked={checked} tabIndex={-1} disableRipple sx={{ p: 0, mr: 1.5 }} />

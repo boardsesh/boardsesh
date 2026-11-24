@@ -22,6 +22,7 @@ import {
   type SetupSelection,
   type SetupSelectionBoard,
 } from '@boardsesh/board-config';
+import { isBoardSetupUnchangedError } from '@boardsesh/graphql/errors';
 import {
   SYSTEM_BOARD_OWNER_ID,
   type BoardSetupReviewReason,
@@ -252,8 +253,13 @@ export function claimNudgeGym(target: ReportProblemTarget): ReportGymSubject | n
  * will do with the suggestion, from the gym half of the server's rule
  * (`setupSuggestionPreview`). A limit the page can't see can still send it to
  * review; the done state says so.
+ *
+ * Null, for no line at all, when the board is at a gym whose listing state the
+ * page couldn't read (the gym read failed): the rule would read that as no gym
+ * and say the creator checks it first, while the server may apply it.
  */
-export function setupPreviewFor(target: ReportProblemTarget): SetupSuggestionPreview {
+export function setupPreviewFor(target: ReportProblemTarget): SetupSuggestionPreview | null {
+  if (target.gym !== null && target.gym.listingState === null) return null;
   return setupSuggestionPreview({ hasGym: target.gym !== null, gymListingState: target.gym?.listingState ?? null });
 }
 
@@ -261,13 +267,16 @@ export function setupPreviewFor(target: ReportProblemTarget): SetupSuggestionPre
  * What the done state says. `setup_applied`: the suggestion changed the board
  * for everyone. `setup_review`: it waits for review, and why. A suggestion that
  * went to review with no reason (the server flag off) reads as any report.
+ * `setup_unchanged`: the server refused the suggestion because the board
+ * already has that setup ({@link sentMessageForError}).
  */
 export type ReportSentMessage =
   | { kind: 'sent' }
   | { kind: 'joined'; count: number }
   | { kind: 'already' }
   | { kind: 'setup_applied' }
-  | { kind: 'setup_review'; reason: BoardSetupReviewReason };
+  | { kind: 'setup_review'; reason: BoardSetupReviewReason }
+  | { kind: 'setup_unchanged' };
 
 export function sentMessageFor(
   result: Pick<DirectoryReportSubmitResult, 'status' | 'otherReporterCount' | 'setupOutcome' | 'setupReviewReason'>,
@@ -281,6 +290,17 @@ export function sentMessageFor(
     return { kind: 'joined', count: result.otherReporterCount };
   }
   return { kind: 'sent' };
+}
+
+/**
+ * A failed send that still ends in the done state, or null for a real failure.
+ * The server refuses a suggestion of the setup the board has now
+ * (`isBoardSetupUnchangedError`): the page read the board before someone fixed
+ * it. The board is already right, so the dialog says so instead of an error
+ * the climber can't get past.
+ */
+export function sentMessageForError(error: unknown): ReportSentMessage | null {
+  return isBoardSetupUnchangedError(error) ? { kind: 'setup_unchanged' } : null;
 }
 
 /** A failed send: no connection, or anything else. Never the server's English. */
