@@ -2046,7 +2046,7 @@
     "point": "{{series}} · {{countText}} ({{share}})",
     "unknown": "Unknown grade",
     "scopes": "Comparison scope",
-    "spray": "Spray wall inventory",
+    "spray": "Spraywall inventory",
     "led": "Selected LED playlist",
     "included": "Included · {{countText}} variants",
     "boardGroup": "{{board}} · {{physical}}",

@@ -2046,7 +2046,7 @@
     "point": "{{series}} · {{countText}} ({{share}})",
     "unknown": "Cotation inconnue",
     "scopes": "Périmètre de la comparaison",
-    "spray": "Blocs disponibles sur le spraywall",
+    "spray": "Blocs disponibles sur le Spraywall",
     "led": "Liste choisie pour le panneau LED",
     "included": "Inclus · {{countText}} variantes",
     "boardGroup": "{{board}} · {{physical}}",
