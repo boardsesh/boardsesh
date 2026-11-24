@@ -77,10 +77,17 @@ export type BackendAnalyticsEvent =
   // whose share resolved without an admin is the launch metric;
   // `Board Removed From Gym` {by} and `Board Deleted` {by}, where `by` is
   // creator | gym_staff | moderator | admin.
+  // Suggested setups: `Board Setup Suggested` {outcome: APPLIED |
+  // SENT_FOR_REVIEW, reason: a BoardSetupReviewReason or null, boardType,
+  // gymState: UNCLAIMED | CLIMBER_LISTED | RUN_BY_GYM | NO_GYM} for every
+  // report that carried one, and `Board Setup Change Undone` {by: creator |
+  // gym_staff | admin}.
   | 'Board Report Submitted'
   | 'Board Report Resolved'
   | 'Board Removed From Gym'
-  | 'Board Deleted';
+  | 'Board Deleted'
+  | 'Board Setup Suggested'
+  | 'Board Setup Change Undone';
 
 /**
  * Backend events are operational telemetry sent under legitimate interest, not

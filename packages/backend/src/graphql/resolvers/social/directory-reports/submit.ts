@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { and, desc, eq, exists, gt, inArray, isNull, notInArray, sql, type SQL } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import * as dbSchema from '@boardsesh/db/schema';
-import type { DirectoryReport } from '@boardsesh/db/schema';
+import type { BoardSetupSnapshot, DirectoryReport } from '@boardsesh/db/schema';
+import type { BoardSetupInput } from '@boardsesh/shared-schema';
 import {
   isBoardReportReason,
   normalizeReportNote,
@@ -17,7 +18,9 @@ import {
   type DirectoryReportRouting,
 } from '@boardsesh/directory-moderation';
 import { db } from '../../../../db/client';
+import { transactionWithAfterCommit } from '../../../../db/after-commit';
 import { captureBackendEvent } from '../../../../services/analytics/posthog';
+import { isDirectorySetupSuggestionsEnabled } from '../../../../services/directory-setup-suggestions-flag';
 import { canAccessBoard } from '../../../../services/privacy';
 import { gymVisibleCondition } from '../gym-visibility';
 import { isBoardHeldOffGym } from '../board-moderation-events';
@@ -32,6 +35,12 @@ import {
   type GymFacts,
 } from './core';
 import { sendDirectoryNotices, type PendingDirectoryNotice } from './notices';
+import {
+  assertSuggestionDiffersNow,
+  checkedSuggestedSetup,
+  settleSetupSuggestion,
+  type SettledSuggestion,
+} from './setup-suggestion';
 
 // ============================================
 // Directory reports: filing one
@@ -48,6 +57,8 @@ export type FiledReport = {
   status: SubmitStatus;
   report: DirectoryReport;
   otherReporterCount: number;
+  /** What the report's suggested setup did; null when it carried none, or nothing was filed. */
+  setup: SettledSuggestion | null;
 };
 
 type ReportTarget = { kind: 'board'; board: BoardFacts } | { kind: 'gym'; gym: GymFacts };
@@ -62,6 +73,12 @@ type FileReportInput = {
   duplicateOfGymId: number | null;
   note: string | null;
   routing: DirectoryReportRouting;
+  /**
+   * A "Set up wrong" report's suggested setup (docs/product/directory-reports.md,
+   * "Suggested setup"). `mayApply` is the `directory-setup-suggestions` flag,
+   * read before the transaction: off, the suggestion is stored and waits.
+   */
+  suggestion?: { setup: BoardSetupSnapshot; mayApply: boolean } | null;
 };
 
 function badInput(message: string): GraphQLError {
@@ -209,11 +226,23 @@ async function routeBoard(
 /** Validate a `reportBoard` call and route it. Throws the error the reporter should read. */
 export async function prepareBoardReport(
   reporterId: string,
-  input: { boardUuid: string; reason: BoardReportReason; duplicateOfBoardUuid?: string | null; note?: string | null },
+  input: {
+    boardUuid: string;
+    reason: BoardReportReason;
+    duplicateOfBoardUuid?: string | null;
+    note?: string | null;
+    suggestedSetup?: BoardSetupInput | null;
+  },
 ): Promise<FileReportInput> {
   const board = await loadReadableBoard(input.boardUuid, reporterId);
   if (!board) throw boardNotFound();
   const note = checkedReportNote(input.reason, input.note);
+  const suggestion = input.suggestedSetup
+    ? {
+        setup: await checkedSuggestedSetup(board, input.reason, input.suggestedSetup),
+        mayApply: await isDirectorySetupSuggestionsEnabled(),
+      }
+    : null;
 
   let duplicateOfBoardId: number | null = null;
   if (input.reason !== 'relist_request' && input.duplicateOfBoardUuid) {
@@ -231,6 +260,7 @@ export async function prepareBoardReport(
     duplicateOfBoardId,
     duplicateOfGymId: null,
     note,
+    suggestion,
     ...(await routeBoard(board, reporterId, input.reason)),
   };
 }
@@ -241,12 +271,18 @@ export async function prepareBoardReport(
  * lock, so a delete, removal or move that committed since is seen and the next
  * one waits. A board deleted or merged since is not found, as it would be now;
  * one whose gym or owner changed is routed again.
+ *
+ * A report with a suggested setup may change the board, so it takes the row
+ * `FOR UPDATE` instead: it never upgrades a share lock, and two climbers'
+ * suggestions on one board take turns, the second reading the first's change.
+ * Under that lock the suggestion must still differ from the board's setup.
  */
 async function boardReportUnderLock(input: FileReportInput, executor: DirectoryExecutor): Promise<FileReportInput> {
   if (input.target.kind !== 'board') return input;
   const prepared = input.target.board;
-  const board = await lockBoardFacts(prepared.id, executor);
+  const board = await lockBoardFacts(prepared.id, executor, input.suggestion ? 'update' : 'share');
   if (!board || board.deletedAt !== null || board.mergedIntoBoardUuid !== null) throw boardNotFound();
+  if (input.suggestion) await assertSuggestionDiffersNow(executor, board.id, input.suggestion.setup);
   if (board.gymId === prepared.gymId && board.ownerId === prepared.ownerId) return input;
   if (!isBoardReportReason(input.reason)) return input;
   return {
@@ -263,6 +299,11 @@ async function boardReportUnderLock(input: FileReportInput, executor: DirectoryE
  * reaches its people with a notice and a push, so a reporter who disagrees with
  * an outcome can't push the creator again and again. A report someone else has
  * opened since is joined as usual (null here).
+ *
+ * A "Set up wrong" report is the exception once a climber's setup change to
+ * the board has been undone since it closed: the setup it was closed over is
+ * gone, so the reporter may file again straight away (a suggestion then goes
+ * to review for 90 days, `RECENTLY_UNDONE`).
  */
 async function refusedRefile(
   executor: DirectoryExecutor,
@@ -295,6 +336,7 @@ async function refusedRefile(
     .orderBy(desc(dbSchema.directoryReports.resolvedAt))
     .limit(1);
   if (!closed) return null;
+  if (await setupChangeUndoneSince(executor, closed)) return null;
   const [waiting] = await executor
     .select({ id: dbSchema.directoryReports.id })
     .from(dbSchema.directoryReports)
@@ -308,7 +350,29 @@ async function refusedRefile(
     .limit(1);
   if (waiting) return null;
   const reporterCount = await countReporters(executor, closed.id);
-  return { status: 'already_reported', report: closed, otherReporterCount: Math.max(0, reporterCount - 1) };
+  return {
+    status: 'already_reported',
+    report: closed,
+    otherReporterCount: Math.max(0, reporterCount - 1),
+    setup: null,
+  };
+}
+
+/** Whether a climber's setup change to this closed "Set up wrong" report's board was undone after it closed. */
+async function setupChangeUndoneSince(executor: DirectoryExecutor, closed: DirectoryReport): Promise<boolean> {
+  if (closed.reason !== 'wrong_setup' || closed.boardId == null || closed.resolvedAt == null) return false;
+  const [undo] = await executor
+    .select({ id: dbSchema.boardModerationEvents.id })
+    .from(dbSchema.boardModerationEvents)
+    .where(
+      and(
+        eq(dbSchema.boardModerationEvents.boardId, closed.boardId),
+        eq(dbSchema.boardModerationEvents.action, 'setup_change_undone'),
+        gt(dbSchema.boardModerationEvents.createdAt, closed.resolvedAt),
+      ),
+    )
+    .limit(1);
+  return undo !== undefined;
 }
 
 /** Validate a `reportGym` call and route it. Throws the error the reporter should read. */
@@ -376,12 +440,51 @@ async function countReporters(executor: DirectoryExecutor, reportId: number): Pr
 }
 
 /**
+ * What the report's suggested setup does, once the report and the reporter's
+ * row are written (setup-suggestion.ts). Null for a report without one.
+ */
+async function settleFiledSuggestion(
+  executor: DirectoryExecutor,
+  input: FileReportInput,
+  report: DirectoryReport,
+): Promise<SettledSuggestion | null> {
+  if (input.target.kind !== 'board' || !input.suggestion) return null;
+  return settleSetupSuggestion(executor, {
+    actorId: input.reporterId,
+    board: input.target.board,
+    suggestion: input.suggestion.setup,
+    mayApply: input.suggestion.mayApply,
+    report,
+  });
+}
+
+/** The report as it stands after a suggestion that applied closed it. */
+async function reloadReport(executor: DirectoryExecutor, report: DirectoryReport): Promise<DirectoryReport> {
+  const [current] = await executor
+    .select()
+    .from(dbSchema.directoryReports)
+    .where(eq(dbSchema.directoryReports.id, report.id))
+    .limit(1);
+  return current ?? report;
+}
+
+/**
  * Open a report or join the waiting one, and tell the people it reaches. One
  * transaction; the partial unique index decides a race between two first
  * reporters, and the loser joins the winner's report.
+ *
+ * A suggested setup is stored on the reporter's row whether the report was
+ * opened, joined or already theirs, and then settled (`settleFiledSuggestion`).
+ * One that applies closes the report it rode on in the same transaction, so a
+ * report it opened tells nobody it opened: the creator hears about the change
+ * instead. A reporter already on the waiting report replaces their earlier
+ * suggestion with this one: it is only ever their own row, it reaches nobody
+ * new (joining is quiet), and it lets a climber whose first suggestion waited
+ * on a limit try again once the limit has passed.
  */
 export async function fileReport(prepared: FileReportInput): Promise<FiledReport> {
-  const filed = await db.transaction(async (tx) => {
+  const suggestedSetup = prepared.suggestion?.setup ?? null;
+  const filed = await transactionWithAfterCommit(async (tx): Promise<FiledReport> => {
     const input = await boardReportUnderLock(prepared, tx);
     const targetColumns =
       input.target.kind === 'board'
@@ -430,9 +533,11 @@ export async function fileReport(prepared: FileReportInput): Promise<FiledReport
       if (created) {
         await tx
           .insert(dbSchema.directoryReportReporters)
-          .values({ reportId: created.id, reporterId: input.reporterId, note: input.note });
-        const report = await notifyNewReport(tx, input, created);
-        return { status: 'created' as const, report, otherReporterCount: 0 };
+          .values({ reportId: created.id, reporterId: input.reporterId, note: input.note, suggestedSetup });
+        const setup = await settleFiledSuggestion(tx, input, created);
+        const report =
+          setup?.outcome === 'APPLIED' ? await reloadReport(tx, created) : await notifyNewReport(tx, input, created);
+        return { status: 'created' as const, report, otherReporterCount: 0, setup };
       }
 
       const [waiting] = await tx
@@ -452,12 +557,23 @@ export async function fileReport(prepared: FileReportInput): Promise<FiledReport
 
       const joined = await tx
         .insert(dbSchema.directoryReportReporters)
-        .values({ reportId: waiting.id, reporterId: input.reporterId, note: input.note })
+        .values({ reportId: waiting.id, reporterId: input.reporterId, note: input.note, suggestedSetup })
         .onConflictDoNothing({
           target: [dbSchema.directoryReportReporters.reportId, dbSchema.directoryReportReporters.reporterId],
           where: sql`${dbSchema.directoryReportReporters.reporterId} IS NOT NULL`,
         })
         .returning({ id: dbSchema.directoryReportReporters.id });
+      if (joined.length === 0 && suggestedSetup) {
+        await tx
+          .update(dbSchema.directoryReportReporters)
+          .set({ suggestedSetup })
+          .where(
+            and(
+              eq(dbSchema.directoryReportReporters.reportId, waiting.id),
+              eq(dbSchema.directoryReportReporters.reporterId, input.reporterId),
+            ),
+          );
+      }
       let report = waiting;
       // A later reporter can name the other board or gym the first one didn't.
       if (
@@ -475,10 +591,12 @@ export async function fileReport(prepared: FileReportInput): Promise<FiledReport
           .returning();
       }
       const reporterCount = await countReporters(tx, waiting.id);
+      const setup = await settleFiledSuggestion(tx, input, report);
       return {
         status: joined.length > 0 ? ('added' as const) : ('already_reported' as const),
-        report,
+        report: setup?.outcome === 'APPLIED' ? await reloadReport(tx, report) : report,
         otherReporterCount: Math.max(0, reporterCount - 1),
+        setup,
       };
     }
     throw new GraphQLError("Your report didn't go through. Try again.", {
@@ -494,6 +612,16 @@ export async function fileReport(prepared: FileReportInput): Promise<FiledReport
       routedTo: filed.report.routedTo.join(','),
     },
   });
+  if (filed.setup && prepared.target.kind === 'board') {
+    captureBackendEvent('Board Setup Suggested', {
+      properties: {
+        outcome: filed.setup.outcome,
+        reason: filed.setup.reviewReason,
+        boardType: prepared.target.board.boardType,
+        gymState: filed.setup.gymState,
+      },
+    });
+  }
   return filed;
 }
 

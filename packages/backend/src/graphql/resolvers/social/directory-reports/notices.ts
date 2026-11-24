@@ -21,6 +21,7 @@ import { logger } from '../../../../utils/logger';
 import { gymVisibleCondition } from '../gym-visibility';
 import { WAITING_STATUSES, type DirectoryExecutor } from './core';
 import { isDirectoryNoticeType, type DirectoryNoticeType } from './notice-types';
+import { readSetupSnapshot, setupChangeStates, toBoardSetup, type RecordedSetupChange } from './setup-snapshot';
 
 export { DIRECTORY_NOTICE_TYPES, isDirectoryNoticeType, type DirectoryNoticeType } from './notice-types';
 
@@ -42,6 +43,9 @@ export { DIRECTORY_NOTICE_TYPES, isDirectoryNoticeType, type DirectoryNoticeType
 //   that was just claimed, naming the board (gym-claims.ts).
 // - `gym_claim_denied`: to a claimant whose claim was denied, expired or
 //   reverted (gym-claims.ts, gym-claim-revert.ts).
+// - `board_setup_changed_by_climber`: to a board's creator (not SYSTEM) when a
+//   climber's suggested setup changed it (setup-suggestion.ts). Its context
+//   names the change, so the notice can show before and after and offer Undo.
 //
 // The rules every one of them follows:
 //
@@ -95,6 +99,7 @@ export { DIRECTORY_NOTICE_TYPES, isDirectoryNoticeType, type DirectoryNoticeType
 // i18n-keep notifications.items.gymReportKeptByTeam
 // i18n-keep notifications.items.gymClaimedWithYourBoard
 // i18n-keep notifications.items.gymClaimDenied
+// i18n-keep notifications.items.boardSetupChangedByClimber
 
 export type DirectoryNoticeTarget =
   | { kind: 'board'; boardId: number; boardUuid: string; ownerId: string }
@@ -111,6 +116,8 @@ export type PendingDirectoryNotice = {
   boardId?: number | null;
   /** Staff action notices: the authority the actor used. */
   actorRole?: BoardModerationActorRole | null;
+  /** `board_setup_changed_by_climber`: the `setup_changed_by_climber` event. */
+  boardModerationEventId?: number | null;
   isReminder?: boolean;
   /** Also send a push to the recipient's registered devices. */
   push?: boolean;
@@ -195,6 +202,7 @@ export async function sendDirectoryNotices(
       gymId: notice.target.kind === 'gym' ? notice.target.gymId : (notice.gymId ?? null),
       isReminder: notice.isReminder ?? false,
       actorRole: notice.actorRole ?? null,
+      boardModerationEventId: notice.boardModerationEventId ?? null,
     });
     if (notice.push) await enqueuePush(executor, uuid, notice.recipientId);
     written.push(uuid);
@@ -382,6 +390,7 @@ export async function enrichDirectoryNotices(targets: DirectoryNoticeHolder[], r
       gymId: dbSchema.directoryNotificationContext.gymId,
       isReminder: dbSchema.directoryNotificationContext.isReminder,
       actorRole: dbSchema.directoryNotificationContext.actorRole,
+      boardModerationEventId: dbSchema.directoryNotificationContext.boardModerationEventId,
       report: {
         uuid: dbSchema.directoryReports.uuid,
         targetKind: dbSchema.directoryReports.targetKind,
@@ -434,6 +443,7 @@ export async function enrichDirectoryNotices(targets: DirectoryNoticeHolder[], r
   const boardById = new Map(boards.map((board) => [board.id, board]));
   const gymById = new Map(gyms.map((gym) => [gym.id, gym]));
   const contextByUuid = new Map(contexts.map((context) => [context.notificationUuid, context]));
+  const setupChanges = await loadNoticeSetupChanges(contexts);
 
   for (const holder of holders) {
     const context = contextByUuid.get(holder.uuid);
@@ -463,9 +473,62 @@ export async function enrichDirectoryNotices(targets: DirectoryNoticeHolder[], r
       actorRole: noticeActorRole(context.actorRole),
       isReminder: context.isReminder,
       recipientIsCreator: board?.ownerId === recipientId,
+      ...noticeSetupFields(
+        context.boardModerationEventId != null ? setupChanges.get(context.boardModerationEventId) : undefined,
+      ),
     };
     if (gym && !holder.gymName) holder.gymName = gym.name;
   }
+}
+
+type NoticeSetupChange = RecordedSetupChange & {
+  before: NonNullable<ReturnType<typeof readSetupSnapshot>>;
+  state: NonNullable<DirectoryNotice['setupChangeState']>;
+};
+
+/**
+ * The climber setup changes these notices name (`board_setup_changed_by_climber`),
+ * with where each stands now: one read of the events, then two for their states.
+ */
+async function loadNoticeSetupChanges(
+  contexts: ReadonlyArray<{ boardModerationEventId: number | null }>,
+): Promise<Map<number, NoticeSetupChange>> {
+  const eventIds = [
+    ...new Set(
+      contexts.flatMap((context) => (context.boardModerationEventId != null ? [context.boardModerationEventId] : [])),
+    ),
+  ];
+  if (eventIds.length === 0) return new Map();
+  const events = await db
+    .select({
+      id: dbSchema.boardModerationEvents.id,
+      boardId: dbSchema.boardModerationEvents.boardId,
+      action: dbSchema.boardModerationEvents.action,
+      details: dbSchema.boardModerationEvents.details,
+    })
+    .from(dbSchema.boardModerationEvents)
+    .where(inArray(dbSchema.boardModerationEvents.id, eventIds));
+  const changes = events.flatMap((event) => {
+    const before = readSetupSnapshot(event.details?.before);
+    const after = readSetupSnapshot(event.details?.after);
+    if (event.action !== 'setup_changed_by_climber' || !before || !after) return [];
+    return [{ id: event.id, boardId: event.boardId, before, after }];
+  });
+  const states = await setupChangeStates(changes);
+  return new Map(changes.map((change) => [change.id, { ...change, state: states.get(change.id) ?? 'CHANGED_SINCE' }]));
+}
+
+/** The `directoryNotice` fields of a climber setup change, all null for every other notice. */
+function noticeSetupFields(
+  change: NoticeSetupChange | undefined,
+): Pick<DirectoryNotice, 'setupChangeEventId' | 'setupBefore' | 'setupAfter' | 'setupChangeState'> {
+  if (!change) return { setupChangeEventId: null, setupBefore: null, setupAfter: null, setupChangeState: null };
+  return {
+    setupChangeEventId: String(change.id),
+    setupBefore: toBoardSetup(change.before),
+    setupAfter: toBoardSetup(change.after),
+    setupChangeState: change.state,
+  };
 }
 
 // ============================================

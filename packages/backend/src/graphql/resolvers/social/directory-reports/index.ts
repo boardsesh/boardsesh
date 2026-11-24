@@ -7,7 +7,9 @@ import { db } from '../../../../db/client';
 import { isDirectoryReportsEnabled } from '../../../../services/directory-reports-flag';
 import { canAccessResource } from '../../../../services/privacy';
 import {
+  AdminBoardSetupChangesArgsSchema,
   AdminDirectoryReportsArgsSchema,
+  BoardModerationEventIdSchema,
   MyDirectoryReportsToReviewArgsSchema,
   ReportBoardInputSchema,
   ReportGymInputSchema,
@@ -15,6 +17,7 @@ import {
 } from '../../../../validation/schemas';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../../shared/helpers';
 import { getUserCommunityRoles, requireAdmin } from '../roles';
+import { enrichBoard } from '../boards';
 import { isSystemOwner, loadBoardFacts, loadGymFacts, WAITING_STATUSES } from './core';
 import { transactionWithAfterCommit } from '../../../../db/after-commit';
 import { notInAdminQueue, resolveWaitingReports } from './lifecycle';
@@ -30,6 +33,7 @@ import {
   viewerRoleFor,
 } from './read';
 import { fileReport, prepareBoardReport, prepareGymReport, type FiledReport } from './submit';
+import { adminSetupChangesPage, undoClimberSetupChange } from './setup-changes';
 
 export { loadBoardReportFlags } from './read';
 export { resolveReportsForMergedBoard } from './lifecycle';
@@ -46,6 +50,8 @@ export { fileReport, prepareGymReport } from './submit';
 const REPORT_RATE_LIMIT = 5;
 /** Per-minute ceiling on closing reports, which creators, staff and admins do by hand. */
 const RESOLVE_RATE_LIMIT = 30;
+/** Per-minute ceiling on undoing climbers' setup changes, which creators, staff and admins do by hand. */
+const UNDO_SETUP_CHANGE_RATE_LIMIT = 20;
 
 const DEFAULT_PAGE_SIZE = 50;
 
@@ -57,18 +63,22 @@ async function requireReportsEnabled(): Promise<void> {
   }
 }
 
-function submitResult(filed: FiledReport) {
+/**
+ * The `DirectoryReportSubmitResult`. A suggested setup that applied returns the
+ * board with its new setup, read once the change has committed, for "Climb it
+ * now"; the reporter could read the board when they filed.
+ */
+async function submitResult(filed: FiledReport, viewerId: string) {
+  const { setup } = filed;
   return {
     status: filed.status,
     reportUuid: filed.report.uuid,
     routedTo: filed.report.routedTo,
     otherReporterCount: filed.otherReporterCount,
+    setupOutcome: setup?.outcome ?? null,
+    setupReviewReason: setup?.reviewReason ?? null,
+    board: setup?.outcome === 'APPLIED' ? await enrichBoard(setup.board, viewerId) : null,
   };
-}
-
-/** The suggested setup resolvers are not written yet (docs/product/directory-reports.md, "Suggested setup"). */
-function setupSuggestionsNotImplemented(): GraphQLError {
-  return new GraphQLError('Not implemented yet', { extensions: { code: 'NOT_IMPLEMENTED' } });
 }
 
 function reportNotFound(): GraphQLError {
@@ -117,10 +127,11 @@ export const directoryReportQueries = {
     });
   },
 
-  // TODO(setup-suggest PR1 resolver agent): list setup_changed_by_climber events, newest first.
-  adminBoardSetupChanges: async (_: unknown, _args: unknown, ctx: ConnectionContext) => {
+  /** Climbers' setup changes, newest first, with where each stands. Global admins only. */
+  adminBoardSetupChanges: async (_: unknown, args: unknown, ctx: ConnectionContext) => {
     await requireAdmin(ctx);
-    throw setupSuggestionsNotImplemented();
+    const validated = validateInput(AdminBoardSetupChangesArgsSchema, args ?? {}, 'adminBoardSetupChanges');
+    return adminSetupChangesPage({ first: validated.first ?? DEFAULT_PAGE_SIZE, after: validated.after ?? null });
   },
 };
 
@@ -131,7 +142,7 @@ export const directoryReportMutations = {
     await applyRateLimit(ctx, REPORT_RATE_LIMIT, 'reportBoard');
     const validated = validateInput(ReportBoardInputSchema, input, 'input');
     const prepared = await prepareBoardReport(ctx.userId!, validated);
-    return submitResult(await fileReport(prepared));
+    return submitResult(await fileReport(prepared), ctx.userId!);
   },
 
   reportGym: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
@@ -140,7 +151,7 @@ export const directoryReportMutations = {
     await applyRateLimit(ctx, REPORT_RATE_LIMIT, 'reportGym');
     const validated = validateInput(ReportGymInputSchema, input, 'input');
     const prepared = await prepareGymReport(ctx.userId!, validated);
-    return submitResult(await fileReport(prepared));
+    return submitResult(await fileReport(prepared), ctx.userId!);
   },
 
   /**
@@ -220,10 +231,17 @@ export const directoryReportMutations = {
     return presented;
   },
 
-  // TODO(setup-suggest PR1 resolver agent): compare-and-set undo of a setup_changed_by_climber event.
-  undoBoardSetupChange: async (_: unknown, _args: { eventId: string }, ctx: ConnectionContext) => {
+  /**
+   * Put back the setup a climber's change replaced: global admins, the board's
+   * creator (not SYSTEM) and the owner and admins of the board's gym
+   * (setup-changes.ts). Returns the board as it reads now.
+   */
+  undoBoardSetupChange: async (_: unknown, { eventId }: { eventId: unknown }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
-    throw setupSuggestionsNotImplemented();
+    await applyRateLimit(ctx, UNDO_SETUP_CHANGE_RATE_LIMIT, 'undoBoardSetupChange');
+    const validatedEventId = validateInput(BoardModerationEventIdSchema, eventId, 'eventId');
+    const restored = await undoClimberSetupChange(ctx.userId!, validatedEventId);
+    return enrichBoard(restored, ctx.userId!);
   },
 };
 
