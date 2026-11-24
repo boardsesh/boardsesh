@@ -83,7 +83,7 @@ export const gymMcpAdminTools: readonly GymMcpTool[] = [
   adminTool({
     name: 'inspect_gym_duplicates',
     description:
-      'Global admin only: compare explicit gym UUIDs, their board setups, ownership types, privacy and history counts, even when names differ. Returns state hashes for repairs. Does not expose pairing credentials or individual climber activity.',
+      'Global admin only: compare explicit gym UUIDs, their board setups, owner account IDs and display names, privacy and history counts, even when names differ. Returns state hashes for repairs. Does not expose pairing credentials or individual climber activity.',
     schema: z
       .object({ gymUuids: z.array(UUIDSchema).min(1).max(10).refine(distinctUuids, 'Choose each gym once.') })
       .strict(),
@@ -157,7 +157,7 @@ export const gymMcpAdminTools: readonly GymMcpTool[] = [
   adminTool({
     name: 'merge_duplicate_gym_boards',
     description:
-      'Global admin only: merge explicit UUIDs for confirmed duplicate records of one physical catalogue wall. Serial numbers are optional. Merge gym listings and correct mismatched setups first; every board must share the gym and normalized configuration. Preserves ticks, history sequences, follows, pins, old links and reporting provenance. Restricted policies or unresolved dependent settings may block the merge. Location restrictions remain unless explicitly corrected beforehand.',
+      'Global admin only: merge explicit UUIDs for confirmed duplicate records of one physical catalogue wall. Serial numbers are optional. The survivor keeps its owner; other real creators lose editing ownership, become followers and receive a notice. Inspect owner IDs/display names and set allowOwnershipChange=true explicitly for cross-owner merges. Merge gym listings and correct mismatched setups first; every board must share the gym and normalized configuration. Preserves ticks, history sequences, follows, pins, old links and reporting provenance. Restricted policies or unresolved dependent settings may block the merge. Location restrictions remain unless explicitly corrected beforehand.',
     write: true,
     schema: z
       .object({
@@ -169,6 +169,12 @@ export const gymMcpAdminTools: readonly GymMcpTool[] = [
           .array(z.object({ boardUuid: UUIDSchema, stateHash }).strict())
           .min(2)
           .max(11),
+        allowOwnershipChange: z
+          .boolean()
+          .default(false)
+          .describe(
+            'Explicitly acknowledge that the survivor keeps its owner while different real creators lose editing ownership, become followers and receive a notice. Inspect owner IDs and display names before setting true.',
+          ),
         samePhysicalWall: z
           .literal(true)
           .describe(
@@ -191,7 +197,13 @@ export const gymMcpAdminTools: readonly GymMcpTool[] = [
       }),
     authorizeReplay: (arguments_, context) =>
       authorizeAdminMergeReplay('board', arguments_.canonicalBoardUuid, arguments_.duplicateBoardUuids, context),
-    run: ({ gymUuid, canonicalBoardUuid, duplicateBoardUuids, reason, expectedStates }, context) =>
-      mergeDuplicateBoards({ gymUuid, canonicalBoardUuid, duplicateBoardUuids, reason, expectedStates }, context),
+    run: (
+      { gymUuid, canonicalBoardUuid, duplicateBoardUuids, allowOwnershipChange, reason, expectedStates },
+      context,
+    ) =>
+      mergeDuplicateBoards(
+        { gymUuid, canonicalBoardUuid, duplicateBoardUuids, allowOwnershipChange, reason, expectedStates },
+        context,
+      ),
   }),
 ];

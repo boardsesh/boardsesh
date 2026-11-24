@@ -58,6 +58,7 @@ const boardMerge = {
   duplicateBoardUuids: [duplicateBoardUuid],
   expectedStates: [boardUuid, duplicateBoardUuid].map((boardUuid) => ({ boardUuid, stateHash })),
   samePhysicalWall: true,
+  allowOwnershipChange: true,
   idempotencyKey,
   confirm: true,
   reason,
@@ -257,12 +258,29 @@ describe('gym MCP administrative repair tools', () => {
         canonicalBoardUuid: boardUuid,
         duplicateBoardUuids: [duplicateBoardUuid],
         expectedStates: boardMerge.expectedStates,
+        allowOwnershipChange: true,
         reason,
       },
       context,
     );
     expect(domain.mergeDuplicateBoards.mock.calls[0]?.[0]).not.toHaveProperty('serialNumber');
     expect(domain.mergeAdminGyms).not.toHaveBeenCalled();
+  });
+
+  it('defaults board ownership changes to refusal and forwards only an explicit acknowledgement', async () => {
+    const merge = tool('merge_duplicate_gym_boards');
+    await merge.run({ ...boardMerge, allowOwnershipChange: undefined }, context);
+    expect(domain.mergeDuplicateBoards).toHaveBeenLastCalledWith(
+      expect.objectContaining({ allowOwnershipChange: false }),
+      context,
+    );
+    await merge.run({ ...boardMerge, allowOwnershipChange: true }, context);
+    expect(domain.mergeDuplicateBoards).toHaveBeenLastCalledWith(
+      expect.objectContaining({ allowOwnershipChange: true }),
+      context,
+    );
+    expect(merge.description).toContain('lose editing ownership');
+    expect(merge.description).toContain('owner IDs/display names');
   });
 
   it('requires an explicit override before keeping system gym ownership', async () => {

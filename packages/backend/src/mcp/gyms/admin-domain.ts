@@ -93,6 +93,16 @@ export async function inspectGymDuplicates(gymUuids: string[], context: Connecti
               ),
             )
         : [];
+      const ownerIds = [...new Set([...gyms.map((gym) => gym.ownerId), ...boards.map((board) => board.ownerId)])];
+      const owners = await db
+        .select({ id: tables.users.id, name: tables.users.name, displayName: tables.userProfiles.displayName })
+        .from(tables.users)
+        .leftJoin(tables.userProfiles, eq(tables.userProfiles.userId, tables.users.id))
+        .where(inArray(tables.users.id, ownerIds));
+      const ownerDisplayName = (ownerId: string) => {
+        const owner = owners.find((candidate) => candidate.id === ownerId);
+        return owner?.displayName || owner?.name || null;
+      };
       const boardIds = boards.map((board) => board.id);
       const boardUuids = boards.map((board) => board.uuid);
       const events = boardIds.length
@@ -136,6 +146,8 @@ export async function inspectGymDuplicates(gymUuids: string[], context: Connecti
           latitude: gym.latitude,
           longitude: gym.longitude,
           ownership: gym.ownerId === SYSTEM_OWNER ? 'system' : 'user',
+          ownerId: gym.ownerId,
+          ownerDisplayName: ownerDisplayName(gym.ownerId),
           isPublic: gym.isPublic,
           isListed: gym.isListed,
           deletedAt: gym.deletedAt?.toISOString() ?? null,
@@ -160,6 +172,8 @@ export async function inspectGymDuplicates(gymUuids: string[], context: Connecti
                 angle: board.angle,
                 isAngleAdjustable: board.isAngleAdjustable,
                 ownership: board.ownerId === SYSTEM_OWNER ? 'system' : 'user',
+                ownerId: board.ownerId,
+                ownerDisplayName: ownerDisplayName(board.ownerId),
                 isPublic: board.isPublic,
                 isUnlisted: board.isUnlisted,
                 hideLocation: board.hideLocation,

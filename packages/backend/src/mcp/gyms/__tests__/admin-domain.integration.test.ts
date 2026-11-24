@@ -117,17 +117,20 @@ describe('global-admin duplicate inspection and repair', () => {
     });
   });
 
-  it('compares differently named gyms and returns repair hashes without secrets or climber identities', async () => {
+  it('compares differently named gyms with visible owner identities, omitting pairing secrets and emails', async () => {
     await db
       .update(tables.userBoards)
       .set({ serialNumber: 'pairing-secret' })
       .where(eq(tables.userBoards.id, board.id));
+    await db.insert(tables.userProfiles).values({ userId: ownerId, displayName: 'Telefonplan crew' });
     const result = await inspectGymDuplicates([gym.uuid, duplicateGym.uuid], context(adminId));
     expect(result.gyms).toHaveLength(2);
     expect(result.distances[0]?.meters).toBeGreaterThan(4);
     expect(result.distances[0]?.meters).toBeLessThan(5);
     expect(result.gyms.find((entry) => entry.gymUuid === gym.uuid)?.boards[0]).toMatchObject({
       boardUuid: board.uuid,
+      ownerId,
+      ownerDisplayName: 'Telefonplan crew',
       hasSerialNumber: true,
       hideLocation: true,
       ticks: 0,
@@ -135,7 +138,8 @@ describe('global-admin duplicate inspection and repair', () => {
       stateHash: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
     expect(JSON.stringify(result)).not.toContain('pairing-secret');
-    expect(JSON.stringify(result)).not.toContain(ownerId);
+    expect(result.gyms[0]).toMatchObject({ ownerId, ownerDisplayName: 'Telefonplan crew' });
+    expect(JSON.stringify(result)).not.toContain(`${ownerId}@example.test`);
   });
 
   it('publishes location explicitly while retaining the board owner, audience and access grants', async () => {

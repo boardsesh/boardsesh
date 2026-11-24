@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { and, eq, inArray } from 'drizzle-orm';
-import { emptyKioskLayout } from '@boardsesh/kiosk';
+import { emptyKioskLayout, type KioskLayout } from '@boardsesh/kiosk';
 import * as tables from '@boardsesh/db/schema';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import type { ConnectionContext, ClimbQueueItem } from '@boardsesh/shared-schema';
 import { db, runWithDatabaseTransaction } from '../db/client';
 import {
   mergeDuplicateBoards,
@@ -14,6 +14,8 @@ import { findActiveBoardsBySerial } from '../graphql/resolvers/board-presence/sh
 import { boardRepairStateHash } from '../services/board-repair-state';
 import * as preview from '../services/board-queue-preview';
 import * as privacy from '../services/board-session-privacy';
+import { pubsub } from '../pubsub';
+import { roomManager } from '../services/room-manager';
 import { SYSTEM_USER_ID } from '@boardsesh/db/queries';
 import { settleDirectoryNoticePublishes } from '../graphql/resolvers/social/directory-reports/notices';
 import { __resetDirectoryReportsFlagForTests } from '../services/directory-reports-flag';
@@ -52,6 +54,7 @@ async function stateInput(): Promise<MergeDuplicateBoardsInput> {
     canonicalBoardUuid: boards[0]!.uuid,
     duplicateBoardUuids: boards.slice(1).map((board) => board.uuid),
     reason: 'Confirmed same physical MoonBoard at Telefonplan.',
+    allowOwnershipChange: true,
     expectedStates: currentBoards.map((board) => ({
       boardUuid: board.uuid,
       stateHash: boardRepairStateHash(
@@ -66,6 +69,8 @@ beforeEach(async () => {
   vi.restoreAllMocks();
   vi.spyOn(preview, 'publishBoardQueuePreviewTombstoneForBoard').mockResolvedValue(undefined);
   vi.spyOn(privacy, 'notifyResourcePrivacyChanged').mockResolvedValue(undefined);
+  vi.spyOn(preview, 'republishBoardQueuePreviewsForSession').mockResolvedValue(undefined);
+  vi.spyOn(preview, 'republishBoardQueuePreviewForBoard').mockResolvedValue(undefined);
   const adminId = randomUUID();
   const firstOwner = randomUUID();
   const secondOwner = randomUUID();
@@ -316,6 +321,200 @@ describe('explicit public board merge', () => {
     expect((await findActiveBoardsBySerial(serialNumber, db, 'moonboard')).map((board) => board.uuid)).toEqual([
       boards[1]!.uuid,
     ]);
+  });
+
+  it('requires explicit acknowledgement when a different real creator loses editing ownership', async () => {
+    const input = await stateInput();
+    await expect(mergeDuplicateBoards({ ...input, allowOwnershipChange: undefined }, context)).rejects.toThrow(
+      'allowOwnershipChange=true',
+    );
+    await expect(mergeDuplicateBoards({ ...input, allowOwnershipChange: false }, context)).rejects.toThrow(
+      'lose editing ownership',
+    );
+    const [unchanged] = await db.select().from(tables.userBoards).where(eq(tables.userBoards.id, boards[1]!.id));
+    expect(unchanged!.deletedAt).toBeNull();
+    await mergeDuplicateBoards({ ...input, allowOwnershipChange: true }, context);
+    const [canonical] = await db.select().from(tables.userBoards).where(eq(tables.userBoards.id, boards[0]!.id));
+    expect(canonical!.ownerId).toBe(boards[0]!.ownerId);
+    const [follow] = await db
+      .select()
+      .from(tables.boardFollows)
+      .where(
+        and(eq(tables.boardFollows.boardUuid, canonical!.uuid), eq(tables.boardFollows.userId, boards[1]!.ownerId)),
+      );
+    expect(follow).toBeDefined();
+    const [audit] = await db
+      .select()
+      .from(tables.boardModerationEvents)
+      .where(eq(tables.boardModerationEvents.boardId, canonical!.id));
+    expect(audit!.details!.merge!.allowOwnershipChange).toBe(true);
+  });
+
+  it('requires acknowledgement before a SYSTEM survivor replaces a real creator’s ownership', async () => {
+    await db
+      .insert(tables.users)
+      .values({ id: SYSTEM_USER_ID, email: 'system-merge-ownership@test.com' })
+      .onConflictDoNothing();
+    await db.update(tables.userBoards).set({ ownerId: SYSTEM_USER_ID }).where(eq(tables.userBoards.id, boards[0]!.id));
+    systemBoardUuids.push(boards[0]!.uuid);
+    await expect(
+      mergeDuplicateBoards({ ...(await stateInput()), allowOwnershipChange: false }, context),
+    ).rejects.toThrow('allowOwnershipChange=true');
+  });
+
+  it('needs no ownership acknowledgement for the same creator', async () => {
+    await db
+      .update(tables.userBoards)
+      .set({ ownerId: boards[0]!.ownerId })
+      .where(eq(tables.userBoards.id, boards[1]!.id));
+    await mergeDuplicateBoards({ ...(await stateInput()), allowOwnershipChange: undefined }, context);
+    const [audit] = await db
+      .select()
+      .from(tables.boardModerationEvents)
+      .where(eq(tables.boardModerationEvents.boardId, boards[0]!.id));
+    expect(audit!.details!.merge!.allowOwnershipChange).toBe(false);
+  });
+
+  it('invalidates only loser previews and republishes live survivor queues from pre-existing and moved sessions', async () => {
+    vi.mocked(privacy.notifyResourcePrivacyChanged).mockRestore();
+    vi.mocked(preview.publishBoardQueuePreviewTombstoneForBoard).mockRestore();
+    vi.mocked(preview.republishBoardQueuePreviewsForSession).mockRestore();
+    vi.mocked(preview.republishBoardQueuePreviewForBoard).mockRestore();
+    const existingId = randomUUID();
+    const movedId = randomUUID();
+    const sessions = await db
+      .insert(tables.boardSessions)
+      .values([
+        {
+          id: existingId,
+          boardPath: `/b/${boards[0]!.slug}/40`,
+          boardId: boards[0]!.id,
+          createdByUserId: boards[0]!.ownerId,
+          isPublic: true,
+        },
+        {
+          id: movedId,
+          boardPath: `/b/${boards[1]!.slug}/40`,
+          boardId: boards[1]!.id,
+          createdByUserId: boards[1]!.ownerId,
+          isPublic: true,
+        },
+      ])
+      .returning();
+    const item: ClimbQueueItem = {
+      uuid: randomUUID(),
+      climb: {
+        uuid: randomUUID(),
+        setter_username: 'Setter',
+        name: 'Queue climb',
+        frames: 'p1r12',
+        angle: 40,
+        ascensionist_count: 0,
+        difficulty: 'V0',
+        quality_average: '0',
+        stars: 0,
+        difficulty_error: '0',
+        benchmark_difficulty: null,
+      },
+    };
+    const queue: Awaited<ReturnType<typeof roomManager.getQueueState>> = {
+      queue: [item],
+      currentClimbQueueItem: item,
+      sequence: 1,
+      stateHash: 'queue',
+      stateHashOrdered: 'queue',
+      version: 1,
+      historyCount: 0,
+      currentChangedAt: null,
+    };
+    vi.spyOn(roomManager, 'getQueueState').mockResolvedValue(queue);
+    vi.spyOn(pubsub, 'getSessionBoard').mockImplementation(async (sessionId) =>
+      String(sessionId === movedId ? boards[1]!.id : boards[0]!.id),
+    );
+    vi.spyOn(pubsub, 'getBoardSession').mockImplementation(async (boardId) =>
+      boardId === String(boards[0]!.id) ? existingId : movedId,
+    );
+    const published = vi.spyOn(pubsub, 'publishBoardQueuePreview').mockImplementation(() => {});
+    const republished = vi.spyOn(preview, 'republishBoardQueuePreviewsForSession');
+    const notified = vi.spyOn(privacy, 'notifyResourcePrivacyChanged');
+    try {
+      await mergeDuplicateBoards(await stateInput(), context);
+      await vi.waitFor(() => expect(republished).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() =>
+        expect(published.mock.calls.filter(([boardId]) => boardId === String(boards[0]!.id))).toHaveLength(3),
+      );
+      expect(republished).toHaveBeenCalledWith(existingId, boards[0]!.id);
+      expect(republished).toHaveBeenCalledWith(movedId, boards[0]!.id);
+      expect(notified).toHaveBeenCalledExactlyOnceWith('board', boards[1]!.uuid);
+      const survivorPreviews = published.mock.calls
+        .filter(([boardId]) => boardId === String(boards[0]!.id))
+        .map(([, snapshot]) => snapshot);
+      expect(
+        survivorPreviews.every(
+          (snapshot) => snapshot.current?.queueItemUuid === item.uuid && snapshot.queueLength === 1,
+        ),
+      ).toBe(true);
+      expect(published.mock.calls.filter(([boardId]) => boardId === String(boards[1]!.id))).toHaveLength(1);
+    } finally {
+      await db.delete(tables.boardSessions).where(
+        inArray(
+          tables.boardSessions.id,
+          sessions.map((session) => session.id),
+        ),
+      );
+    }
+  });
+
+  it.each([
+    'duplicate-slots',
+    'broken-slot',
+    'future-version',
+    'invalid-toggle',
+    'unknown-setting',
+    'unknown-slot-setting',
+  ] as const)('refuses affected invalid kiosk layouts without changing stored data: %s', async (kind) => {
+    const raw: Record<string, unknown> = { ...emptyKioskLayout(), boards: [{ boardUuid: boards[1]!.uuid }] };
+    if (kind === 'duplicate-slots') raw.boards = [{ boardUuid: boards[1]!.uuid }, { boardUuid: boards[1]!.uuid }];
+    if (kind === 'broken-slot') raw.boards = [{ boardUuid: boards[1]!.uuid }, { boardUuid: 'broken' }];
+    if (kind === 'future-version') raw.version = 99;
+    if (kind === 'invalid-toggle') raw.showInstallQr = 'yes';
+    if (kind === 'unknown-setting') raw.futureSetting = 'keep this';
+    if (kind === 'unknown-slot-setting') raw.boards = [{ boardUuid: boards[1]!.uuid, futureSetting: 'keep this' }];
+    const [kiosk] = await db
+      .insert(tables.gymKiosks)
+      .values({
+        uuid: randomUUID(),
+        gymId: gym.id,
+        slug: randomUUID(),
+        name: 'Invalid TV',
+        layout: raw as unknown as KioskLayout,
+      })
+      .returning();
+    await expect(mergeDuplicateBoards(await stateInput(), context)).rejects.toMatchObject({
+      message: expect.stringContaining(kiosk!.uuid),
+      extensions: { code: 'CONFLICT' },
+    });
+    const [unchanged] = await db.select().from(tables.gymKiosks).where(eq(tables.gymKiosks.id, kiosk!.id));
+    expect(unchanged!.layout).toEqual(raw);
+    const [duplicate] = await db.select().from(tables.userBoards).where(eq(tables.userBoards.id, boards[1]!.id));
+    expect(duplicate!.deletedAt).toBeNull();
+  });
+
+  it('leaves unrelated invalid kiosk layouts untouched', async () => {
+    const raw = { version: 99, boards: [{ boardUuid: randomUUID() }], futureSetting: 'keep this' };
+    const [kiosk] = await db
+      .insert(tables.gymKiosks)
+      .values({
+        uuid: randomUUID(),
+        gymId: gym.id,
+        slug: randomUUID(),
+        name: 'Unrelated TV',
+        layout: raw as unknown as KioskLayout,
+      })
+      .returning();
+    await mergeDuplicateBoards(await stateInput(), context);
+    const [unchanged] = await db.select().from(tables.gymKiosks).where(eq(tables.gymKiosks.id, kiosk!.id));
+    expect(unchanged!.layout).toEqual(raw);
   });
 
   it('moves kiosk board/leaderboard references and collapses duplicate slots', async () => {

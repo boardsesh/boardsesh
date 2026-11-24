@@ -80,6 +80,7 @@ export type BoardModerationEventDetails = {
   merge?: {
     canonicalBoardUuid: string;
     duplicateBoardUuids: string[];
+    allowOwnershipChange?: boolean;
     before: Array<{
       uuid: string;
       ownerId: string;

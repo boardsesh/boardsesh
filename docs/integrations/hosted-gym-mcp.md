@@ -79,11 +79,11 @@ editing retains its owner-only privacy rules.
 
 | Admin tool | Operation |
 | --- | --- |
-| `inspect_gym_duplicates` | Compare explicit gym UUIDs, board configurations, ownership types, privacy, history counts and distances; return current state hashes. Pairing credentials and individual climber activity are omitted. |
+| `inspect_gym_duplicates` | Compare explicit gym UUIDs, board configurations, owner account IDs and display names, privacy, history counts and distances; return current state hashes. Pairing credentials, emails and individual climber activity are omitted. |
 | `correct_gym_board_setup` | Correct layout, size, hold sets, angle or adjustability through the existing board writer. Use `allowDuplicateConfig=true` explicitly when a confirmed duplicate already has that setup. Existing logged climbs keep their original problem identities. |
 | `correct_gym_board_location_visibility` | Set location visibility explicitly, synchronizing `hideLocation` and the location policy without changing owner, board audience or access grants. Record the reason and previous state. |
 | `merge_duplicate_gyms` | Choose the surviving gym UUID, move its duplicates' linked records, retain the survivor's owner, and keep old gym links resolving through merge tombstones. Board rows remain separate. |
-| `merge_duplicate_gym_boards` | Consolidate confirmed records of one physical public catalogue wall by UUID. Serial numbers are optional. Preserve history, ticks, follows, pins, TV layouts and old links. |
+| `merge_duplicate_gym_boards` | Consolidate confirmed records of one physical public catalogue wall by UUID. Serial numbers are optional. Preserve history, ticks, follows, pins, valid TV layouts and old links. The survivor keeps its owner. |
 
 All admin writes require an explicit reason, `confirm=true`, a UUID retry key and
 the current state hash for every affected gym or board. Board merges additionally
@@ -92,6 +92,20 @@ not proof. Hashes cover configuration, ownership and privacy state; a changed
 record requires a new inspection. Reuse a retry key only with the exact original
 arguments. Successful merge retries recognize the resulting tombstones rather
 than trying to merge them again.
+
+The chosen board keeps its owner. A different real creator of a merged-away row
+loses editing ownership, follows the survivor and receives a moderation notice.
+Inspect the owner account IDs and display names first. Such a merge requires
+`allowOwnershipChange=true`; leaving it false refuses the merge. SYSTEM-only
+source rows do not need that extra acknowledgement. The audit records the choice
+and original owners; no email addresses or pairing serials are returned.
+
+Affected TV layouts must pass the current strict writer schema. An invalid or
+unknown layout returns a conflict naming the kiosk UUID and stays unchanged;
+repair it separately before retrying. Merge invalidation clears only loser board
+previews. The survivor is refreshed from its current session, and later queue
+updates and session endings follow explicit merge pointers while respecting the
+current public or private session on that wall.
 
 A typical repair follows this order:
 
@@ -221,3 +235,5 @@ the public endpoint is activated or that either provider's live client passed.
 Before enabling `on`, decide the open-registration policy and retention of
 unconnected CIMD clients; the current implementation does not expire those
 client records. The pilot origin restriction remains a pilot-only policy.
+
+Preview inheritance from a Redis-only session requires a recent direct public-board merge audit on the current survivor. Older CLI merges and later flattened merge chains fail closed; report a fresh climb on the survivor to establish its current binding. No Redis binding is rewritten by the merge.

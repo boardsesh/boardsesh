@@ -5,13 +5,19 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as tables from '@boardsesh/db/schema';
 import { mergeLockedBoards, lockBoardSerialWrite, SYSTEM_USER_ID, type BoardMergeRow } from '@boardsesh/db/queries';
 import { normaliseSetIds } from '@boardsesh/board-config';
-import { KioskLayoutSchema, parseKioskLayoutLenient, type KioskLayout } from '@boardsesh/kiosk';
+import {
+  KioskLayoutSchema,
+  KioskBoardSlotSchema,
+  KioskLeaderboardSchema,
+  MAX_KIOSK_BOARDS,
+  type KioskLayout,
+} from '@boardsesh/kiosk';
 import { afterCommit, transactionWithAfterCommit } from '../db/after-commit';
 import { requireAdmin } from '../graphql/resolvers/social/roles';
 import { applyRateLimit } from '../graphql/resolvers/shared/helpers';
 import { resolveReportsForMergedBoard } from '../graphql/resolvers/social/directory-reports';
 import { recordBoardModerationEvent } from '../graphql/resolvers/social/board-moderation-events';
-import { publishBoardQueuePreviewTombstoneForBoard } from './board-queue-preview';
+import { republishBoardQueuePreviewsForSession, republishBoardQueuePreviewForBoard } from './board-queue-preview';
 import { notifyResourcePrivacyChanged } from './board-session-privacy';
 import { boardRepairStateHash } from './board-repair-state';
 import { logger } from '../utils/logger';
@@ -26,6 +32,7 @@ const MergeDuplicateBoardsSchema = z
     gymUuid: z.uuid(),
     canonicalBoardUuid: z.uuid(),
     duplicateBoardUuids: z.array(z.uuid()).min(1).max(10),
+    allowOwnershipChange: z.boolean().default(false),
     reason: z.string().trim().min(10).max(1000),
     expectedStates: z
       .array(z.object({ boardUuid: z.uuid(), stateHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict())
@@ -33,7 +40,7 @@ const MergeDuplicateBoardsSchema = z
       .max(11),
   })
   .strict();
-export type MergeDuplicateBoardsInput = z.infer<typeof MergeDuplicateBoardsSchema>;
+export type MergeDuplicateBoardsInput = z.input<typeof MergeDuplicateBoardsSchema>;
 
 function conflict(message: string): never {
   throw new GraphQLError(message, { extensions: { code: 'CONFLICT' } });
@@ -63,6 +70,24 @@ export function mergeKioskBoardReferences(
               : layout.leaderboard.boardUuid,
         };
   return KioskLayoutSchema.parse({ ...layout, boards, leaderboard });
+}
+
+const StrictStoredKioskLayoutSchema = KioskLayoutSchema.safeExtend({
+  boards: z.array(KioskBoardSlotSchema.strict()).max(MAX_KIOSK_BOARDS),
+  leaderboard: KioskLeaderboardSchema.strict().nullable().default(null),
+}).strict();
+
+function kioskReferencesDuplicates(stored: unknown, duplicateUuids: ReadonlySet<string>): boolean {
+  if (typeof stored !== 'object' || stored === null) return false;
+  const layout = stored as Record<string, unknown>;
+  const slots = Array.isArray(layout.boards) ? layout.boards : [];
+  const hasDuplicate = (slot: unknown) =>
+    typeof slot === 'object' &&
+    slot !== null &&
+    'boardUuid' in slot &&
+    typeof slot.boardUuid === 'string' &&
+    duplicateUuids.has(slot.boardUuid);
+  return slots.some(hasDuplicate) || hasDuplicate(layout.leaderboard);
 }
 
 function asMergeRow(board: typeof tables.userBoards.$inferSelect): BoardMergeRow {
@@ -144,6 +169,14 @@ export async function mergeDuplicateBoards(input: MergeDuplicateBoardsInput, con
         if (boards.some((board) => ownerByBoardUuid.get(board.uuid) !== board.ownerId))
           conflict('A selected board changed owners during the merge. Inspect the boards again.');
         const canonical = boards.find((board) => board.uuid === validated.canonicalBoardUuid)!;
+        const changesOwnership = boards.some(
+          (board) =>
+            duplicateSet.has(board.uuid) && board.ownerId !== SYSTEM_USER_ID && board.ownerId !== canonical.ownerId,
+        );
+        if (changesOwnership && !validated.allowOwnershipChange)
+          conflict(
+            'The survivor keeps its current owner. Other creators lose editing ownership and follow the survivor. Inspect the owners and set allowOwnershipChange=true to acknowledge this change.',
+          );
         const serialNumbers = [
           ...new Set(boards.flatMap((board) => (board.serialNumber?.trim() ? [board.serialNumber] : []))),
         ].sort();
@@ -276,21 +309,25 @@ export async function mergeDuplicateBoards(input: MergeDuplicateBoardsInput, con
           .orderBy(asc(tables.gymKiosks.id))
           .for('update', { noWait: true });
         const kioskUpdates = kiosks.flatMap((kiosk) => {
-          const { layout } = parseKioskLayoutLenient(kiosk.layout);
-          const referencesDuplicate =
-            layout.boards.some((slot) => duplicateSet.has(slot.boardUuid)) ||
-            (layout.leaderboard?.boardUuid != null && duplicateSet.has(layout.leaderboard.boardUuid));
-          return referencesDuplicate
-            ? [{ kiosk, layout: mergeKioskBoardReferences(layout, duplicateSet, canonical.uuid) }]
-            : [];
+          if (!kioskReferencesDuplicates(kiosk.layout, duplicateSet)) return [];
+          const parsed = StrictStoredKioskLayoutSchema.safeParse(kiosk.layout);
+          if (!parsed.success)
+            conflict(
+              `Kiosk ${kiosk.uuid} has an invalid stored layout. Correct that layout before merging these boards.`,
+            );
+          return [{ kiosk, layout: mergeKioskBoardReferences(parsed.data, duplicateSet, canonical.uuid) }];
         });
         const flattenedIds = locked
           .filter((board) => board.mergedIntoBoardUuid !== null && duplicateSet.has(board.mergedIntoBoardUuid))
           .map((board) => board.id);
         // Rebinding can own a session before consulting its board. Refuse that
         // inverse lock order rather than waiting while holding the merge boards.
-        await transaction
-          .select({ id: tables.boardSessions.id })
+        const affectedSessions = await transaction
+          .select({
+            id: tables.boardSessions.id,
+            status: tables.boardSessions.status,
+            endedAt: tables.boardSessions.endedAt,
+          })
           .from(tables.boardSessions)
           .where(
             or(
@@ -380,7 +417,13 @@ export async function mergeDuplicateBoards(input: MergeDuplicateBoardsInput, con
         const details = {
           mutation: 'mergeDuplicateBoards',
           fields: serialToBackfill === undefined ? ['mergedIntoBoardUuid'] : ['mergedIntoBoardUuid', 'serialNumber'],
-          merge: { canonicalBoardUuid: canonical.uuid, duplicateBoardUuids: duplicateUuids, before, counts },
+          merge: {
+            canonicalBoardUuid: canonical.uuid,
+            duplicateBoardUuids: duplicateUuids,
+            allowOwnershipChange: validated.allowOwnershipChange,
+            before,
+            counts,
+          },
         };
         await recordBoardModerationEvent(transaction, {
           boardId: canonical.id,
@@ -409,8 +452,19 @@ export async function mergeDuplicateBoards(input: MergeDuplicateBoardsInput, con
           });
         }
         afterCommit(transaction, () => {
-          void Promise.all(boards.map((board) => publishBoardQueuePreviewTombstoneForBoard(board.id)))
-            .then(() => notifyResourcePrivacyChanged('board', canonical.uuid))
+          // Privacy invalidation clears only merged-away identities. Once those
+          // clears finish, seed the survivor from every affected active session;
+          // never leave a live survivor displaying a merge tombstone.
+          void Promise.all(duplicateUuids.map((uuid) => notifyResourcePrivacyChanged('board', uuid)))
+            .then(async () => {
+              await Promise.all(
+                affectedSessions
+                  .filter((session) => session.status === 'active' && session.endedAt === null)
+                  .map((session) => republishBoardQueuePreviewsForSession(session.id, canonical.id)),
+              );
+              // A Redis-bound config-path session can have no durable board ID.
+              await republishBoardQueuePreviewForBoard(canonical.id);
+            })
             .catch((error: unknown) =>
               logger.warn('Board merge preview refresh failed after commit', {
                 error: error instanceof Error ? error.message : String(error),
@@ -419,6 +473,7 @@ export async function mergeDuplicateBoards(input: MergeDuplicateBoardsInput, con
         });
         return {
           canonicalBoardUuid: canonical.uuid,
+          canonicalOwnerId: canonical.ownerId,
           mergedBoardUuids: duplicateUuids,
           counts,
           reportsClosed,

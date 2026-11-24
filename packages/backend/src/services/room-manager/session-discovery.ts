@@ -1,5 +1,9 @@
 import { GraphQLError } from 'graphql';
-import { resolveLockedSessionBoardId } from '../session-board-binding';
+import {
+  resolveLockedSessionBoardId,
+  resolveSessionBoardId,
+  SESSION_BOARD_LOCK_TIMEOUT_MS,
+} from '../session-board-binding';
 import { lockActiveBoardForWrite } from '../board-reference-lock';
 import type { DbTransaction } from '../../db/after-commit';
 import { publishSessionBoardPathChanged } from '../session-wall-refresh';
@@ -70,29 +74,36 @@ export async function updateSessionBoardPathIfChanged(
 ): Promise<string | null> {
   const transition = await runWithDatabaseTransaction(async (executor) => {
     const tx = executor as unknown as DbTransaction;
+    const [snapshot] = await tx
+      .select({ boardPath: sessions.boardPath, boardId: sessions.boardId })
+      .from(sessions)
+      .where(eq(sessions.id, sessionId));
+    if (!snapshot) throw new Error(`updateSessionBoardPathIfChanged: session ${sessionId} not found`);
+    const boardId = await resolveSessionBoardId(boardPath, viewerId, sessionId);
+    const previousPathBoardId =
+      snapshot.boardId ?? (await resolveSessionBoardId(snapshot.boardPath ?? '', viewerId, sessionId));
+    // A session is readable only through every wall it references. Prior wall
+    // activity stays capped when the party moves to another wall.
+    const parents = [
+      ...new Set([snapshot.boardId, previousPathBoardId, boardId].filter((id): id is number => id !== null)),
+    ];
+    for (const parentId of [...parents].sort((first, second) => first - second)) {
+      if (!(await lockActiveBoardForWrite(tx, { id: parentId }, { lockTimeoutMs: SESSION_BOARD_LOCK_TIMEOUT_MS })))
+        throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
+    }
+    // Board-before-session matches tick writers. Recheck the snapshot after
+    // taking the session lock so a concurrent wall move cannot supply access.
     const [existing] = await tx
       .select({ boardPath: sessions.boardPath, boardId: sessions.boardId })
       .from(sessions)
       .where(eq(sessions.id, sessionId))
       .for('update');
-    if (!existing) throw new Error(`updateSessionBoardPathIfChanged: session ${sessionId} not found`);
-    // Resolved under the row lock: a crew member's access to a home wall comes
-    // from this session being on it (#7013), so it must be judged against the
-    // session as it is now, not before a racing move off the wall committed.
-    const boardId = await resolveLockedSessionBoardId(tx, boardPath, viewerId, sessionId);
+    if (!existing || existing.boardPath !== snapshot.boardPath || existing.boardId !== snapshot.boardId)
+      throw new GraphQLError('This session changed. Retry the session action.', { extensions: { code: 'CONFLICT' } });
+    if ((await resolveSessionBoardId(boardPath, viewerId, sessionId)) !== boardId)
+      throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
     await requireResourceAccess('session', sessionId, viewerId);
-    const previousPathBoardId =
-      existing.boardId ?? (await resolveLockedSessionBoardId(tx, existing.boardPath ?? '', viewerId, sessionId));
     if (existing.boardPath === boardPath && existing.boardId === boardId) return null;
-    // A session is readable only through every wall it references. Prior wall
-    // activity stays capped when the party moves to another wall.
-    const parents = [
-      ...new Set([existing.boardId, previousPathBoardId, boardId].filter((id): id is number => id !== null)),
-    ];
-    for (const parentId of [...parents].sort((first, second) => first - second)) {
-      if (!(await lockActiveBoardForWrite(tx, { id: parentId }, { noWait: true })))
-        throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
-    }
     if (parents.length)
       await tx
         .insert(sessionBoards)
