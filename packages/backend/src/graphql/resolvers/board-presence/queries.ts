@@ -136,7 +136,10 @@ export const boardPresenceQueries = {
     // somebody's home and needs the wall's own rule. See assertSprayBoardIsReadable.
     await assertSprayBoardIsReadable(visibilityBoard, readerId, boardUuid, db);
     return redactBoardClimbs(
-      filterRecentBoardHistory((await pubsub.getRecentBoardClimbs(String(boardId))).filter(isNativeBoardClimb), Date.now()),
+      filterRecentBoardHistory(
+        (await pubsub.getRecentBoardClimbs(String(boardId))).filter(isNativeBoardClimb),
+        Date.now(),
+      ),
       ctx.userId,
       boardId,
       boardUuid,

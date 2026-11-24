@@ -110,6 +110,7 @@ afterEach(async () => {
     `kilter-live:${boardId}:owner`,
     `kilter-live:${boardId}:next`,
     `board:${boardId}:kilter-history`,
+    `board:${boardId}:aurora-history`,
     `board:${boardId}:history`,
     `board:${boardId}:seq`,
   );
@@ -462,6 +463,43 @@ describe('Kilter history integration', () => {
     expect(
       await db.select().from(schema.boardClimbEvents).where(eq(schema.boardClimbEvents.boardId, boardId)),
     ).toHaveLength(5);
+  });
+
+  it('applies the window to opted-in Aurora pages and cached displays', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-24T12:00:00.123Z'));
+    const displays = [
+      { seq: 1, sentAt: '2026-11-17T12:00:00.122999Z' },
+      { seq: 2, sentAt: '2026-11-17T12:00:00.123000Z' },
+      { seq: 3, sentAt: '2026-11-17T12:00:00.123001Z' },
+      { seq: 4, sentAt: '2026-11-24T11:00:00Z' },
+    ];
+    await db.insert(schema.boardClimbEvents).values(
+      displays.map(({ seq, sentAt }) => ({
+        boardId,
+        boardType: 'kilter',
+        climbUuid,
+        seq,
+        confirmedAt: sentAt,
+        source: 'aurora',
+      })),
+    );
+    await publisher.set(
+      `board:${boardId}:aurora-history`,
+      JSON.stringify(displays.map((display) => ({ ...display, climbUuid, source: 'aurora' }))),
+      'EX',
+      604800,
+    );
+    expect(await readBoardHistoryPage(boardId)).toEqual({ entries: [], nextCursor: null });
+    expect(await readMergedRecentHistory(boardId)).toEqual([]);
+    const first = await readBoardHistoryPage(boardId, 1, undefined, true);
+    expect(first.entries.map((entry) => entry.seq)).toEqual([4]);
+    const final = await readBoardHistoryPage(boardId, 2, first.nextCursor, true);
+    expect(final.entries.map((entry) => entry.seq)).toEqual([3, 2]);
+    expect(final.nextCursor).toBeNull();
+    expect((await readMergedRecentHistory(boardId, true)).map((entry) => entry.seq)).toEqual([4, 3, 2]);
+    clock.mockReturnValue(Date.parse('2026-11-24T12:00:00.124Z'));
+    expect(await readBoardHistoryPage(boardId, 2, first.nextCursor, true)).toEqual({ entries: [], nextCursor: null });
+    expect((await readMergedRecentHistory(boardId, true)).map((entry) => entry.seq)).toEqual([4]);
   });
 
   it('rechecks native and imported Redis entries even when a newer write refreshed their key TTL', async () => {
