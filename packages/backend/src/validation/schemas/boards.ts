@@ -25,6 +25,9 @@ const NullableBoardSerialInputSchema = z.preprocess((value) => {
   return trimmed === '' ? null : trimmed;
 }, BoardSerialSchema.optional().nullable());
 
+/** Cap on `CreateBoardInput.acknowledgedWallUuids`; also the most candidates `existingWallCandidates` returns. */
+export const MAX_ACKNOWLEDGED_WALL_UUIDS = 40;
+
 /**
  * Create board input validation schema
  */
@@ -67,11 +70,41 @@ export const CreateBoardInputSchema = z
     // has confirmed this really is a separate physical wall that happens to reuse
     // a serial, they pass true to skip the BOARD_SERIAL_EXISTS guard.
     allowDuplicateSerial: z.boolean().optional(),
+    // The existing-wall recheck (#8151). Absent (or null) means no check, so a
+    // client that never sends it gets exactly the old behaviour.
+    existingWallCheck: z.enum(['REJECT_IF_FOUND', 'CONFIRMED_SEPARATE']).nullish(),
+    acknowledgedWallUuids: z
+      .array(UUIDSchema)
+      .max(MAX_ACKNOWLEDGED_WALL_UUIDS, `At most ${MAX_ACKNOWLEDGED_WALL_UUIDS} acknowledged walls`)
+      .nullish(),
   })
   .refine((input) => isBoardAngleSupported(input.boardType, input.angle), {
     message: BOARD_ANGLE_VALIDATION_MESSAGE,
     path: ['angle'],
   });
+
+/**
+ * existingWallCandidates input. The draft setup is all-or-nothing: without all
+ * three of layoutId, sizeId and setIds there is nothing to classify against.
+ */
+export const ExistingWallCandidatesInputSchema = z
+  .object({
+    boardType: BoardNameSchema.refine((boardType) => boardType !== 'spray', {
+      message: 'Spray walls have their own setup',
+    }),
+    gymUuid: UUIDSchema,
+    layoutId: z.number().int().positive('Layout ID must be positive').nullish(),
+    sizeId: z.number().int().positive('Size ID must be positive').nullish(),
+    setIds: NumericCsvSchema.nullish(),
+    limit: z.number().int().min(1).max(MAX_ACKNOWLEDGED_WALL_UUIDS).nullish(),
+  })
+  .refine(
+    (input) => {
+      const draftFields = [input.layoutId, input.sizeId, input.setIds].filter((field) => field != null);
+      return draftFields.length === 0 || draftFields.length === 3;
+    },
+    { message: 'Send layoutId, sizeId and setIds together, or none of them', path: ['layoutId'] },
+  );
 
 /**
  * Update board input validation schema

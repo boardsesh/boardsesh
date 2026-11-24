@@ -77,6 +77,7 @@ import { gymActivityStatsMutations } from './social/gym-activity-stats';
 import { setterSitemapMutations } from './social/setter-sitemap';
 import { socialGymMatchQueries } from './social/gym-matching';
 import { socialGymStrayBoardQueries, socialGymStrayBoardMutations } from './social/gym-stray-boards';
+import { socialBoardWallCandidateQueries } from './social/board-wall-candidates';
 import { socialGymKioskQueries, socialGymKioskMutations } from './social/gym-kiosks';
 import { socialGymInsightsQueries } from './social/gym-insights';
 import { gymGradeComparisonQueries, gymGradeComparisonMutations } from './social/gym-grade-comparison';
@@ -170,6 +171,7 @@ export const resolvers = {
     ...gymAddressLookupQueries,
     ...socialGymMatchQueries,
     ...socialGymStrayBoardQueries,
+    ...socialBoardWallCandidateQueries,
     ...socialGymKioskQueries,
     ...socialGymInsightsQueries,
     ...gymGradeComparisonQueries,

@@ -96,9 +96,11 @@ const BOUNDING_BOX_SAFETY_FACTOR = 1.02;
  * IDs of every gym whose `merged_into_gym_id` chain resolves to `canonicalGymId`
  * — the reverse of resolveCanonicalGym. Walks children (rows pointing INTO the
  * frontier) breadth-first, bounded to MAX_MERGE_HOPS with a visited guard so a
- * cyclic pointer terminates. The canonical gym itself is excluded.
+ * cyclic pointer terminates. The canonical gym itself is excluded. Exported for
+ * the existing-wall check (board-wall-candidates.ts), which searches a merged
+ * listing's strays as part of the chosen gym.
  */
-async function collectMergedTwinGymIds(canonicalGymId: number): Promise<number[]> {
+export async function collectMergedTwinGymIds(canonicalGymId: number): Promise<number[]> {
   const twinIds = new Set<number>();
   let frontier: number[] = [canonicalGymId];
   for (let hop = 0; hop < MAX_MERGE_HOPS && frontier.length > 0; hop++) {

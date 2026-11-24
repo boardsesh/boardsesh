@@ -800,6 +800,16 @@ export const queriesTypeDefs = /* GraphQL */ `
     gymBoards(gymUuid: ID!): [UserBoard!]!
 
     """
+    Walls that may already be the one a climber is about to add at a gym (#8151):
+    boards of the given type on the gym, on listings merged into it, and on
+    public, listed gyms within 150 m (at most 10). Only walls the caller can see
+    are returned or counted: their own, and public listed boards. A private gym
+    the caller can't edit throws NOT_FOUND. Auth-optional and rate-limited. A
+    failed lookup throws; it never answers with an empty list.
+    """
+    existingWallCandidates(input: ExistingWallCandidatesInput!): ExistingWallCandidates!
+
+    """
     Boards that probably belong to a gym but aren't linked to it yet, for the
     gym's Boards tab. Requires edit access to the gym. Returns two kinds of
     candidate: boards on a listing whose merged_into chain resolves to this gym

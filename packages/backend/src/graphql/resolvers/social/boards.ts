@@ -44,7 +44,7 @@ import {
   BOARD_ANGLE_VALIDATION_MESSAGE,
   isBoardAngleSupported,
 } from '../../../validation/schemas';
-import { generateUniqueGymSlug, requireBoardGymLinkAccess, userCanEditGym } from './gyms';
+import { generateUniqueGymSlug, requireBoardGymLinkAccess, resolveCanonicalGymByUuid, userCanEditGym } from './gyms';
 import { resolveAutoGymForBoard } from './gym-matching';
 import {
   loadProjectionGym,
@@ -52,6 +52,7 @@ import {
   projectBoardLocation,
 } from '../../../services/board-location-projection';
 import { findBlockingDuplicate, type BoardLocation } from './board-duplicates';
+import { assertNoExistingWalls, type WallSearchAnchor } from './existing-wall-check';
 import { assertBoardCapNotReached } from './board-limits';
 import { syncLocationGeography } from './location-geography';
 import { getUserCommunityRoles, rolesGrantAdminOrLeader, requireAdmin, type CommunityRoleScope } from './roles';
@@ -2877,13 +2878,55 @@ export const socialBoardMutations = {
     const uuid = uuidv4();
     const slug = await generateUniqueSlug(validatedInput.name);
 
+    // The existing-wall recheck (#8151, docs/product/existing-wall-check.md).
+    // Opt-in: a client that doesn't send `existingWallCheck` gets exactly the
+    // behaviour from before it existed. It only runs for a board without a
+    // serial (the serial guard already settles those) and only once the board
+    // lands on a gym. Spray walls have their own setup and never run it.
+    const wallCheckMode =
+      validatedInput.existingWallCheck != null &&
+      !validatedInput.serialNumber &&
+      !isSprayBoardType(validatedInput.boardType)
+        ? validatedInput.existingWallCheck
+        : null;
+    const wallCheckDraft = {
+      boardType: validatedInput.boardType,
+      layoutId: validatedInput.layoutId,
+      sizeId: validatedInput.sizeId,
+      setIds: validatedInput.setIds,
+    };
+    const checkExistingWalls = (anchor: WallSearchAnchor, executor?: DbTransaction) =>
+      wallCheckMode == null
+        ? Promise.resolve()
+        : assertNoExistingWalls({
+            anchor,
+            draft: wallCheckDraft,
+            viewerId: userId,
+            mode: wallCheckMode,
+            acknowledgedWallUuids: validatedInput.acknowledgedWallUuids ?? [],
+            lockExecutor: executor,
+            readExecutor: executor,
+          });
+
     // Resolve the gym this board belongs to. An explicit gymUuid goes through the
     // shared link gate (owner/admin, or a nearby public gym the caller is adding
     // their own board to); otherwise infer one from the location.
     let gymId: number | null = null;
+    let wallCheckGym: Extract<WallSearchAnchor, { kind: 'gym' }>['gym'] | null = null;
     let mintGymNamed: string | null = null;
 
     if (validatedInput.gymUuid) {
+      if (wallCheckMode != null) {
+        // Before the link gate, so a create refused over an existing wall never
+        // spends the climber's 5/min foreign-gym link bucket. Only for a gym the
+        // caller may see: a missing or hidden private gym goes on to the gate,
+        // which refuses it as "Gym not found" exactly as before, rather than
+        // this check answering differently for it.
+        const requestedGym = await resolveCanonicalGymByUuid(validatedInput.gymUuid);
+        if (requestedGym && (requestedGym.isPublic || (await userCanEditGym(requestedGym, userId)))) {
+          await checkExistingWalls({ kind: 'gym', gym: requestedGym });
+        }
+      }
       const gym = await requireBoardGymLinkAccess({
         ctx,
         gymUuid: validatedInput.gymUuid,
@@ -2893,6 +2936,7 @@ export const socialBoardMutations = {
         boardLongitude: incomingLocation.longitude,
       });
       gymId = gym.id;
+      if (wallCheckMode != null) wallCheckGym = gym;
     } else {
       const resolution = await resolveAutoGymForBoard({
         userId,
@@ -2902,6 +2946,14 @@ export const socialBoardMutations = {
       });
       if (resolution.action === 'attach') {
         gymId = resolution.gymId;
+        if (wallCheckMode != null) {
+          const [attachedGym] = await db
+            .select()
+            .from(dbSchema.gyms)
+            .where(eq(dbSchema.gyms.id, resolution.gymId))
+            .limit(1);
+          wallCheckGym = attachedGym ?? null;
+        }
       } else if (resolution.action === 'mint') {
         mintGymNamed = resolution.name;
       }
@@ -2967,6 +3019,12 @@ export const socialBoardMutations = {
     const insertGuardedBoard = async (linkedGymId: number | null) => {
       try {
         return await db.transaction(async (tx) => {
+          // The authoritative existing-wall check: under the gym-wall locks, so a
+          // concurrent create of the same wall is seen. Gym locks before the
+          // serial lock. A no-op without `existingWallCheck`.
+          if (wallCheckMode != null && linkedGymId != null && wallCheckGym != null) {
+            await checkExistingWalls({ kind: 'gym', gym: wallCheckGym }, tx);
+          }
           await lockAndAssertBoardSerialAvailable(tx, validatedInput, userId);
           const [insertedBoard] = await tx
             .insert(dbSchema.userBoards)
@@ -2987,6 +3045,15 @@ export const socialBoardMutations = {
         const gymUuid = uuidv4();
         const gymSlug = await generateUniqueGymSlug(gymName);
         const result = await db.transaction(async (tx) => {
+          // Minting a new gym: the walls that count are on public, listed gyms
+          // within 150 m of the typed location. Without coordinates there is no
+          // "nearby" to search.
+          if (wallCheckMode != null && incomingLocation.latitude != null && incomingLocation.longitude != null) {
+            await checkExistingWalls(
+              { kind: 'point', latitude: incomingLocation.latitude, longitude: incomingLocation.longitude },
+              tx,
+            );
+          }
           await lockAndAssertBoardSerialAvailable(tx, validatedInput, userId);
 
           const [newGym] = await tx
@@ -3022,7 +3089,14 @@ export const socialBoardMutations = {
         // The serial guard is a product decision, not an auto-gym failure. Never
         // swallow it and retry the insert below — that fallback would create the
         // very cross-owner duplicate the guard just refused.
-        if (error instanceof GraphQLError && error.extensions.code === 'BOARD_SERIAL_EXISTS') throw error;
+        // Likewise the existing-wall refusal: falling back would add the very
+        // copy the climber is being asked about, just without a gym.
+        if (
+          error instanceof GraphQLError &&
+          (error.extensions.code === 'BOARD_SERIAL_EXISTS' || error.extensions.code === 'BOARD_EXISTING_WALLS')
+        ) {
+          throw error;
+        }
         // The gym couldn't be minted; still create the board, unlinked, rather
         // than failing the whole create.
         logger.error('Auto-gym creation failed, creating board without gym:', error);

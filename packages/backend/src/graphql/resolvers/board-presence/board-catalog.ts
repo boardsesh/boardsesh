@@ -15,9 +15,22 @@ import { NumericCsvSchema } from '../../../validation/schemas';
 
 const POSTGRES_INTEGER_MAX = 2_147_483_647;
 
-function throwUnknownBoardConfig(): never {
+/** The input field a catalogue refusal is about, so a client can mark that field. */
+export type UnknownBoardConfigField = 'boardType' | 'layoutId' | 'sizeId' | 'setIds';
+
+/**
+ * `extensions.field` names the first field the catalogue refused, checked in
+ * cascade order (board type, layout, size, sets). `invalidSetIds` lists the
+ * set ids the layout and size don't have, when the sets were the problem and
+ * each id parsed. Both are additive: older clients read only the code.
+ */
+function throwUnknownBoardConfig(field: UnknownBoardConfigField, invalidSetIds?: number[]): never {
   throw new GraphQLError('Unknown board configuration', {
-    extensions: { code: 'UNKNOWN_BOARD_CONFIG' },
+    extensions: {
+      code: 'UNKNOWN_BOARD_CONFIG',
+      field,
+      ...(invalidSetIds && invalidSetIds.length > 0 ? { invalidSetIds } : {}),
+    },
   });
 }
 
@@ -27,18 +40,51 @@ function isPostgresInteger(value: number): boolean {
 
 function validateAndParseSetIds(setIds: string): number[] {
   if (!NumericCsvSchema.safeParse(setIds).success) {
-    throwUnknownBoardConfig();
+    throwUnknownBoardConfig('setIds');
   }
 
   const uniqueSetIds = new Set<number>();
   for (const rawSetId of setIds.split(',')) {
     const parsedSetId = Number(rawSetId);
     if (!isPostgresInteger(parsedSetId)) {
-      throwUnknownBoardConfig();
+      throwUnknownBoardConfig('setIds');
     }
     uniqueSetIds.add(parsedSetId);
   }
   return [...uniqueSetIds];
+}
+
+/**
+ * On the refusal path only: whether the layout, or the size on that layout,
+ * is what the catalogue lacks. Otherwise the sets are the problem. Two
+ * one-row probes, run after the main check has already failed, so a valid
+ * create never pays for them.
+ */
+async function firstUnknownAuroraField(
+  executor: Pick<typeof db, 'select'>,
+  boardType: string,
+  layoutId: number,
+  productSizeId: number,
+): Promise<UnknownBoardConfigField> {
+  const associations = dbSchema.boardProductSizesLayoutsSets;
+  const [layoutRow] = await executor
+    .select({ layoutId: associations.layoutId })
+    .from(associations)
+    .where(and(eq(associations.boardType, boardType), eq(associations.layoutId, layoutId)))
+    .limit(1);
+  if (!layoutRow) return 'layoutId';
+  const [sizeRow] = await executor
+    .select({ layoutId: associations.layoutId })
+    .from(associations)
+    .where(
+      and(
+        eq(associations.boardType, boardType),
+        eq(associations.layoutId, layoutId),
+        eq(associations.productSizeId, productSizeId),
+      ),
+    )
+    .limit(1);
+  return sizeRow ? 'setIds' : 'sizeId';
 }
 
 /**
@@ -56,52 +102,58 @@ export async function assertKnownBoardConfig(
   setIds: string,
   executor: Pick<typeof db, 'select'> = db,
 ): Promise<void> {
-  if (!isPostgresInteger(layoutId) || !isPostgresInteger(productSizeId)) {
-    throwUnknownBoardConfig();
+  if (!isPostgresInteger(layoutId)) {
+    throwUnknownBoardConfig('layoutId');
+  }
+  if (!isPostgresInteger(productSizeId)) {
+    throwUnknownBoardConfig('sizeId');
   }
   const uniqueSetIds = validateAndParseSetIds(setIds);
 
   if (boardType === 'moonboard') {
-    if (productSizeId !== MOONBOARD_SIZE.id) {
-      throwUnknownBoardConfig();
-    }
-
     const layoutEntry = Object.entries(MOONBOARD_LAYOUTS).find(([, layout]) => layout.id === layoutId);
     if (!layoutEntry) {
-      throwUnknownBoardConfig();
+      throwUnknownBoardConfig('layoutId');
+    }
+    if (productSizeId !== MOONBOARD_SIZE.id) {
+      throwUnknownBoardConfig('sizeId');
     }
 
     const [layoutKey] = layoutEntry;
     const layoutSetIds = new Set(
       MOONBOARD_SETS[layoutKey as keyof typeof MOONBOARD_SETS].map((boardSet) => boardSet.id),
     );
-    if (uniqueSetIds.some((setId) => !layoutSetIds.has(setId))) {
-      throwUnknownBoardConfig();
+    const unknownSetIds = uniqueSetIds.filter((setId) => !layoutSetIds.has(setId));
+    if (unknownSetIds.length > 0) {
+      throwUnknownBoardConfig('setIds', unknownSetIds);
     }
     return;
   }
 
   if (boardType === 'woods') {
     if (layoutId !== WOODS_LAYOUTS.woods.id) {
-      throwUnknownBoardConfig();
+      throwUnknownBoardConfig('layoutId');
     }
 
     const woodsSizeIds = new Set(Object.values(WOODS_SIZES).map((woodsSize) => woodsSize.id));
     if (!woodsSizeIds.has(productSizeId)) {
-      throwUnknownBoardConfig();
+      throwUnknownBoardConfig('sizeId');
     }
 
     // Woods ships one synthetic hold set, so the only membership that means
     // anything is that set. Anything else names holds the board doesn't have.
     const woodsSetIds = new Set<number>(WOODS_SETS.map((woodsSet) => woodsSet.id));
     if (uniqueSetIds.length !== woodsSetIds.size || uniqueSetIds.some((setId) => !woodsSetIds.has(setId))) {
-      throwUnknownBoardConfig();
+      throwUnknownBoardConfig(
+        'setIds',
+        uniqueSetIds.filter((setId) => !woodsSetIds.has(setId)),
+      );
     }
     return;
   }
 
   if (!(AURORA_BOARDS as readonly string[]).includes(boardType)) {
-    throwUnknownBoardConfig();
+    throwUnknownBoardConfig('boardType');
   }
 
   const matchingAssociations = await executor
@@ -130,6 +182,10 @@ export async function assertKnownBoardConfig(
 
   const matchedSetIds = new Set(matchingAssociations.flatMap(({ setId }) => (setId === null ? [] : [setId])));
   if (matchedSetIds.size !== uniqueSetIds.length) {
-    throwUnknownBoardConfig();
+    const field = await firstUnknownAuroraField(executor, boardType, layoutId, productSizeId);
+    throwUnknownBoardConfig(
+      field,
+      field === 'setIds' ? uniqueSetIds.filter((setId) => !matchedSetIds.has(setId)) : undefined,
+    );
   }
 }
