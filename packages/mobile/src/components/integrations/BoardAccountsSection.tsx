@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Modal, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { File } from 'expo-file-system';
 import * as Clipboard from 'expo-clipboard';
@@ -57,6 +57,13 @@ import {
 } from '../../lib/aurora-credentials';
 
 type ImportPhase = 'preview' | 'importing' | 'complete' | 'error';
+type AuroraImportPhase = ImportPhase | 'selecting' | 'preparing';
+type AuroraImportSession = {
+  boardType: AuroraBoardName;
+  pickerStarted: boolean;
+  importStarted: boolean;
+  canRetry: boolean;
+};
 type ImportStep = 'climbs' | 'resolving' | 'dedup' | 'ascents' | 'attempts' | 'circuits';
 type MoonBoardExportPreview = {
   username?: string;
@@ -314,9 +321,18 @@ export function BoardAccountsSection() {
   const [importBoard, setImportBoard] = useState<AuroraBoardName | null>(null);
   const [importPreview, setImportPreview] = useState<AuroraExportPreview | null>(null);
   const [importData, setImportData] = useState<StrippedAuroraExportData | null>(null);
-  const [importPhase, setImportPhase] = useState<ImportPhase | null>(null);
+  const [importPhase, setImportPhase] = useState<AuroraImportPhase | null>(null);
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importFileError, setImportFileError] = useState<string | null>(null);
+  const [importWarning, setImportWarning] = useState<string | null>(null);
+  const importSession = useRef<AuroraImportSession | null>(null);
+  useEffect(
+    () => () => {
+      importSession.current = null;
+    },
+    [],
+  );
 
   const deleteCredentialMutation = useMutation({
     mutationFn: deleteAuroraCredential,
@@ -384,6 +400,9 @@ export function BoardAccountsSection() {
   );
 
   const resetImport = useCallback(() => {
+    importSession.current = null;
+    setImportFileError(null);
+    setImportWarning(null);
     setImportBoard(null);
     setImportPreview(null);
     setImportData(null);
@@ -419,62 +438,104 @@ export function BoardAccountsSection() {
     [confirm, deleteCredentialMutation, t, tCommon],
   );
 
-  const handleImportPress = useCallback(
-    (boardType: AuroraBoardName) => {
-      setImportBoard(boardType);
+  const selectAuroraFile = useCallback(
+    (session: AuroraImportSession) => {
+      if (importSession.current !== session || session.pickerStarted) return;
+      session.pickerStarted = true;
       void (async () => {
+        let parsingFile = false;
         try {
           const DocumentPicker = await import('expo-document-picker');
+          if (importSession.current !== session) return;
           const document = await DocumentPicker.getDocumentAsync({
             type: getImportPickerTypes('auroraJson', Platform.OS),
             copyToCacheDirectory: true,
           });
+          if (importSession.current !== session) return;
           if (document.canceled) {
-            setImportBoard(null);
+            resetImport();
             return;
           }
 
           const asset = document.assets[0];
-          if (!asset) {
-            setImportBoard(null);
-            return;
-          }
+          if (!asset) throw new Error('missing_file');
           if (asset.size != null && asset.size > MAX_IMPORT_SIZE_BYTES) {
-            showToast(t('aurora.import.tooLarge'), 'error');
-            setImportBoard(null);
+            session.canRetry = true;
+            setImportFileError(t('aurora.import.tooLarge'));
+            setImportPhase('error');
             return;
           }
 
+          setImportPhase('preparing');
           const text = await new File(asset.uri).text();
+          if (importSession.current !== session) return;
+          parsingFile = true;
           const parsedJson = JSON.parse(text) as unknown;
           if (!isRecord(parsedJson)) throw new Error('invalid_json');
-          const parsed = parseAuroraExportJson(parsedJson, boardType);
+          const parsed = parseAuroraExportJson(parsedJson, session.boardType);
 
-          if (parsed.boardMismatchLayoutName) {
-            showToast(
-              t('aurora.mobile.importBoardWarning', {
-                layoutName: parsed.boardMismatchLayoutName,
-                boardName: boardTypeLabel(boardType),
-              }),
-              'warning',
-              5000,
-            );
-          }
-
+          setImportWarning(
+            parsed.boardMismatchLayoutName
+              ? t('aurora.mobile.importBoardWarning', {
+                  layoutName: parsed.boardMismatchLayoutName,
+                  boardName: boardTypeLabel(session.boardType),
+                })
+              : null,
+          );
           setImportData(parsed.data);
           setImportPreview(parsed.preview);
           setImportPhase('preview');
         } catch (error) {
-          showToast(getAuroraFileErrorMessage(t, error), 'error');
-          setImportBoard(null);
+          if (importSession.current !== session) return;
+          session.canRetry = true;
+          setImportFileError(parsingFile ? getAuroraFileErrorMessage(t, error) : t('aurora.import.readError'));
+          setImportPhase('error');
         }
       })();
     },
-    [showToast, t],
+    [resetImport, t],
   );
 
+  const handleImportPress = useCallback(
+    (boardType: AuroraBoardName) => {
+      if (importSession.current) return;
+      const session = { boardType, pickerStarted: false, importStarted: false, canRetry: false };
+      importSession.current = session;
+      setImportBoard(boardType);
+      setImportPhase('selecting');
+      // Browsers require the file chooser to start from the user's tap. Native
+      // waits for onShow, so Files is presented above an already-visible host.
+      if (Platform.OS === 'web') selectAuroraFile(session);
+    },
+    [selectAuroraFile],
+  );
+
+  const handleImportShown = useCallback(() => {
+    if (importSession.current) selectAuroraFile(importSession.current);
+  }, [selectAuroraFile]);
+
+  const handleImportRetry = useCallback(() => {
+    const previousSession = importSession.current;
+    if (!previousSession?.canRetry) return;
+    previousSession.canRetry = false;
+    const session = {
+      boardType: previousSession.boardType,
+      pickerStarted: false,
+      importStarted: false,
+      canRetry: false,
+    };
+    importSession.current = session;
+    setImportFileError(null);
+    setImportWarning(null);
+    setImportPhase('selecting');
+    // The host is already presented when retry is tapped.
+    selectAuroraFile(session);
+  }, [selectAuroraFile]);
+
   const handleImportConfirm = useCallback(() => {
-    if (!importBoard || !importData) return;
+    const session = importSession.current;
+    if (!session || session.importStarted || !importBoard || !importData) return;
+    session.importStarted = true;
 
     setImportPhase('importing');
     setImportPreview(null);
@@ -484,6 +545,7 @@ export function BoardAccountsSection() {
     void (async () => {
       try {
         await streamAuroraImport(importBoard, importData, (event: ImportProgressEvent) => {
+          if (importSession.current !== session) return;
           if (event.type === 'progress') {
             setImportProgress({
               step: event.step,
@@ -511,10 +573,9 @@ export function BoardAccountsSection() {
           showToast(t('aurora.mobile.importFailed'), 'error');
         });
       } catch {
-        setImportPhase('error');
-        showToast(t('aurora.mobile.importFailed'), 'error');
+        if (importSession.current === session) setImportPhase('error');
       } finally {
-        setImportData(null);
+        if (importSession.current === session) setImportData(null);
       }
     })();
   }, [importBoard, importData, queryClient, showToast, t]);
@@ -614,6 +675,10 @@ export function BoardAccountsSection() {
       <ImportDialog
         visible={importPhase !== null}
         phase={importPhase}
+        fileError={importFileError}
+        warning={importWarning}
+        onShow={handleImportShown}
+        onRetry={handleImportRetry}
         boardName={importBoard ? boardTypeLabel(importBoard) : ''}
         preview={importPreview}
         progress={importProgress}
@@ -1235,8 +1300,12 @@ function BoardAccountCard({
 }
 
 type ImportDialogProps = {
+  fileError: string | null;
+  warning: string | null;
+  onShow: () => void;
+  onRetry: () => void;
   visible: boolean;
-  phase: ImportPhase | null;
+  phase: AuroraImportPhase | null;
   boardName: string;
   preview: AuroraExportPreview | null;
   progress: ImportProgress | null;
@@ -1248,6 +1317,10 @@ type ImportDialogProps = {
 };
 
 function ImportDialog({
+  fileError,
+  warning,
+  onShow,
+  onRetry,
   visible,
   phase,
   boardName,
@@ -1262,7 +1335,9 @@ function ImportDialog({
   const { t } = useTranslation('settings');
   const { t: tCommon } = useTranslation('common');
   let title = t('aurora.import.dialog.errorTitle');
-  if (phase === 'preview') {
+  if (phase === 'selecting' || phase === 'preparing') {
+    title = t('aurora.mobile.importPreparingTitle');
+  } else if (phase === 'preview') {
     title = t('aurora.import.dialog.previewTitle');
   } else if (phase === 'importing') {
     title = t('aurora.import.dialog.importingTitle');
@@ -1275,7 +1350,8 @@ function ImportDialog({
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={phase === 'importing' ? undefined : onCancel}
+      onShow={onShow}
+      onRequestClose={phase === 'importing' || phase === 'selecting' ? undefined : onCancel}
     >
       <View style={styles.modalBackdrop}>
         <View style={[styles.modalCard, styles.importModalCard, { backgroundColor: systemColors.secondaryBackground }]}>
@@ -1283,11 +1359,22 @@ function ImportDialog({
             {title}
           </Text>
 
+          {phase === 'selecting' || phase === 'preparing' ? (
+            <View style={styles.importProgressBlock}>
+              <ActivityIndicator />
+              <Text variant="subheadline" color={systemColors.secondaryLabel}>
+                {phase === 'selecting' ? t('aurora.mobile.importSelecting') : t('aurora.mobile.importPreparing')}
+              </Text>
+              <Button title={tCommon('actions.cancel')} variant="text" role="cancel" onPress={onCancel} />
+            </View>
+          ) : null}
+
           {phase === 'preview' && preview ? (
             <>
               <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.modalCopy}>
                 {t('aurora.mobile.importPreviewIntro', { username: preview.username, boardName })}
               </Text>
+              {warning ? <Text variant="subheadline">{warning}</Text> : null}
               <View style={[styles.summaryBox, { backgroundColor: systemColors.tertiaryBackground }]}>
                 <SummaryLine label={t('aurora.import.dialog.draftClimbs', { count: preview.climbs })} />
                 <SummaryLine label={t('aurora.import.dialog.ascents', { count: preview.ascents })} />
@@ -1328,10 +1415,11 @@ function ImportDialog({
           {phase === 'error' ? (
             <>
               <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.modalCopy}>
-                {t('aurora.mobile.importInterrupted')}
+                {fileError ?? t('aurora.mobile.importInterrupted')}
               </Text>
               <View style={styles.modalActions}>
                 <Button title={tCommon('actions.close')} onPress={onCancel} />
+                {fileError ? <Button title={t('aurora.mobile.importChooseAnother')} onPress={onRetry} /> : null}
               </View>
             </>
           ) : null}
