@@ -21,6 +21,7 @@ import {
   parseKioskLayoutLenient,
   type KioskLayout,
   type KioskLeaderboardPeriod,
+  type KioskTheme,
 } from '@boardsesh/kiosk';
 
 export type KioskEditorLeaderboard = {
@@ -36,6 +37,8 @@ export type KioskEditorState = {
   leaderboard: KioskEditorLeaderboard | null;
   /** When true, every board on the kiosk renders its own install-Boardsesh QR. */
   showInstallQr: boolean;
+  /** Explicit appearance for this kiosk, independent of the editor's OS theme. */
+  theme: KioskTheme;
 };
 
 /**
@@ -49,6 +52,7 @@ export function editorStateFromLayout(layout: unknown): KioskEditorState {
     boardUuids: parsed.boards.map((slot) => slot.boardUuid),
     leaderboard: parsed.leaderboard === null ? null : { ...parsed.leaderboard },
     showInstallQr: parsed.showInstallQr,
+    theme: parsed.theme,
   };
 }
 
@@ -146,6 +150,12 @@ export function setInstallQrEnabled(state: KioskEditorState, enabled: boolean): 
   return { ...state, showInstallQr: enabled };
 }
 
+/** Change this kiosk's appearance without touching its boards or leaderboard. */
+export function setKioskTheme(state: KioskEditorState, theme: KioskTheme): KioskEditorState {
+  if (state.theme === theme) return state;
+  return { ...state, theme };
+}
+
 /** Serialise editor state to the wire/storage `KioskLayout` shape. */
 export function serializeKioskLayout(state: KioskEditorState): KioskLayout {
   return {
@@ -153,6 +163,7 @@ export function serializeKioskLayout(state: KioskEditorState): KioskLayout {
     boards: state.boardUuids.map((boardUuid) => ({ boardUuid })),
     leaderboard: state.leaderboard === null ? null : { ...state.leaderboard },
     showInstallQr: state.showInstallQr,
+    theme: state.theme,
   };
 }
 
@@ -161,6 +172,7 @@ export function editorStatesEqual(first: KioskEditorState, second: KioskEditorSt
   if (first.boardUuids.length !== second.boardUuids.length) return false;
   if (first.boardUuids.some((uuid, index) => uuid !== second.boardUuids[index])) return false;
   if (first.showInstallQr !== second.showInstallQr) return false;
+  if (first.theme !== second.theme) return false;
   if (first.leaderboard === null || second.leaderboard === null) {
     return first.leaderboard === second.leaderboard;
   }

@@ -88,6 +88,23 @@ describe('KioskLeaderboardSchema', () => {
 describe('KioskLayoutSchema (strict writer)', () => {
   it('accepts the empty layout', () => {
     expect(KioskLayoutSchema.safeParse(emptyKioskLayout()).success).toBe(true);
+    expect(emptyKioskLayout().theme).toBe('dark');
+  });
+
+  it('defaults legacy layouts to dark without a version bump', () => {
+    const layout = KioskLayoutSchema.parse({ version: 1, boards: [slot(BOARD_A)] });
+    expect(layout.theme).toBe('dark');
+    expect(layout.version).toBe(1);
+    expect(layout.boards).toEqual([slot(BOARD_A)]);
+  });
+
+  it.each(['dark', 'light'])('accepts an explicit %s appearance', (theme) => {
+    const layout = KioskLayoutSchema.parse({ version: KIOSK_LAYOUT_VERSION, boards: [], theme });
+    expect(layout.theme).toBe(theme);
+  });
+
+  it.each([null, 'automatic', 'Light', true, 17])('rejects a malformed theme: %j', (theme) => {
+    expect(KioskLayoutSchema.safeParse({ version: KIOSK_LAYOUT_VERSION, boards: [], theme }).success).toBe(false);
   });
 
   it('treats an empty boards array as valid (create-then-configure)', () => {
@@ -195,33 +212,63 @@ describe('KioskLayoutSchema (strict writer)', () => {
   });
 
   // The epic's forward-compat contract: later PRs add fields (a slot `variant`,
-  // a top-level theme, rail styling) ADDITIVELY, without a version bump. That
+  // top-level display options, rail styling) ADDITIVELY, without a version bump. That
   // only works if the writer schema strips unknown keys instead of rejecting
   // them — a future `.strict()`/strictObject hardening would silently break the
   // contract, so this test pins the stripping behaviour at every nesting level.
   it('strips unknown keys at every nesting level instead of rejecting them', () => {
     const layout = KioskLayoutSchema.parse({
       version: KIOSK_LAYOUT_VERSION,
-      theme: 'dark',
+      displayDensity: 'compact',
       boards: [{ boardUuid: BOARD_A, variant: 'compact' }],
       leaderboard: { boardUuid: BOARD_A, period: 'week', style: 'minimal' },
     });
-    expect(layout).not.toHaveProperty('theme');
+    expect(layout).not.toHaveProperty('displayDensity');
     expect(layout.boards[0]).not.toHaveProperty('variant');
     expect(layout.leaderboard).not.toHaveProperty('style');
     expect(layout).toEqual({
       version: KIOSK_LAYOUT_VERSION,
       boards: [slot(BOARD_A)],
       leaderboard: { boardUuid: BOARD_A, period: 'week' },
-      // showInstallQr is a KNOWN writer-schema field (default false), so it
-      // rides along in the parsed output — the unknown keys (theme/variant/
-      // style) are what this test pins as stripped.
+      // Known additive fields receive their defaults; unknown displayDensity,
+      // variant and style keys are stripped.
       showInstallQr: false,
+      theme: 'dark',
     });
   });
 });
 
 describe('parseKioskLayoutLenient (forward-compat reader)', () => {
+  it.each([undefined, null, 'automatic', 'Light', false, 17, {}, []])(
+    'defaults absent or malformed theme %j to dark while preserving the configuration',
+    (theme) => {
+      const result = parseKioskLayoutLenient({
+        version: KIOSK_LAYOUT_VERSION,
+        boards: [slot(BOARD_A)],
+        leaderboard: { boardUuid: BOARD_A, period: 'week' },
+        showInstallQr: true,
+        theme,
+      });
+      expect(result.layout.theme).toBe('dark');
+      expect(result.layout.boards).toEqual([slot(BOARD_A)]);
+      expect(result.layout.leaderboard).toEqual({ boardUuid: BOARD_A, period: 'week' });
+      expect(result.layout.showInstallQr).toBe(true);
+      expect(result.droppedBoardCount).toBe(0);
+      expect(result.droppedLeaderboard).toBe(false);
+    },
+  );
+
+  it.each(['dark', 'light'])('keeps a saved %s theme when repairing board slots', (theme) => {
+    const result = parseKioskLayoutLenient({
+      version: KIOSK_LAYOUT_VERSION,
+      boards: [slot(BOARD_A), { boardUuid: 'bad' }],
+      theme,
+    });
+    expect(result.layout.theme).toBe(theme);
+    expect(result.layout.boards).toEqual([slot(BOARD_A)]);
+    expect(result.droppedBoardCount).toBe(1);
+  });
+
   it('returns the empty layout for an unknown top-level version, reporting the discarded config', () => {
     // The wholesale discard must not read as "nothing dropped": callers surface
     // these flags as data-loss warnings, so report the stored board count and

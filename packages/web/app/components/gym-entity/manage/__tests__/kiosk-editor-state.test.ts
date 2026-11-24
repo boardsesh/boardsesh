@@ -8,6 +8,7 @@ import {
   removeBoardSlot,
   serializeKioskLayout,
   setInstallQrEnabled,
+  setKioskTheme,
   setLeaderboardEnabled,
   setLeaderboardPeriod,
   setLeaderboardScope,
@@ -25,8 +26,9 @@ function stateWith(
   boardUuids: string[],
   leaderboard: KioskEditorState['leaderboard'] = null,
   showInstallQr = false,
+  theme: KioskEditorState['theme'] = 'dark',
 ): KioskEditorState {
-  return { boardUuids, leaderboard, showInstallQr };
+  return { boardUuids, leaderboard, showInstallQr, theme };
 }
 
 describe('editorStateFromLayout', () => {
@@ -41,12 +43,23 @@ describe('editorStateFromLayout', () => {
   });
 
   it('degrades corrupt input to an empty state instead of throwing', () => {
-    expect(editorStateFromLayout('garbage')).toEqual({ boardUuids: [], leaderboard: null, showInstallQr: false });
+    expect(editorStateFromLayout('garbage')).toEqual({
+      boardUuids: [],
+      leaderboard: null,
+      showInstallQr: false,
+      theme: 'dark',
+    });
     expect(editorStateFromLayout(emptyKioskLayout())).toEqual({
       boardUuids: [],
       leaderboard: null,
       showInstallQr: false,
+      theme: 'dark',
     });
+  });
+
+  it('reads a saved theme and defaults legacy layouts to dark', () => {
+    expect(editorStateFromLayout({ version: 1, boards: [] }).theme).toBe('dark');
+    expect(editorStateFromLayout({ version: 1, boards: [], theme: 'light' }).theme).toBe('light');
   });
 
   it('reads the showInstallQr toggle', () => {
@@ -135,7 +148,7 @@ describe('removeBoardSlot', () => {
   it('turns the rail off when the last board goes (editor invariant)', () => {
     const initial = stateWith([boardA], { boardUuid: null, period: 'session' });
     const state = removeBoardSlot(initial, 0);
-    expect(state).toEqual({ boardUuids: [], leaderboard: null, showInstallQr: false });
+    expect(state).toEqual({ boardUuids: [], leaderboard: null, showInstallQr: false, theme: 'dark' });
   });
 
   it('preserves the install-QR toggle when the last board goes', () => {
@@ -185,6 +198,7 @@ describe('serializeKioskLayout', () => {
       boards: [{ boardUuid: boardA }, { boardUuid: boardB }],
       leaderboard: { boardUuid: boardA, period: 'day' },
       showInstallQr: false,
+      theme: 'dark',
     });
   });
 
@@ -194,9 +208,33 @@ describe('serializeKioskLayout', () => {
     expect(() => KioskLayoutSchema.parse(layout)).not.toThrow();
   });
 
-  it('round-trips through editorStateFromLayout', () => {
-    const state = stateWith([boardC, boardA], { boardUuid: null, period: 'month' }, true);
+  it.each(['dark', 'light'] as const)('round-trips the %s theme through saved JSON', (theme) => {
+    const state = stateWith([boardC, boardA], { boardUuid: null, period: 'month' }, true, theme);
+    const saved = JSON.parse(JSON.stringify(KioskLayoutSchema.parse(serializeKioskLayout(state)))) as unknown;
+    expect(editorStateFromLayout(saved)).toEqual(state);
     expect(editorStateFromLayout(serializeKioskLayout(state))).toEqual(state);
+  });
+});
+
+describe('setKioskTheme', () => {
+  it('changes only the theme and preserves the previous state', () => {
+    const dark = stateWith([boardA], { boardUuid: boardA, period: 'week' }, true);
+    const light = setKioskTheme(dark, 'light');
+    expect(light.theme).toBe('light');
+    expect(dark.theme).toBe('dark');
+    expect(light.boardUuids).toBe(dark.boardUuids);
+    expect(light.leaderboard).toBe(dark.leaderboard);
+    expect(light.showInstallQr).toBe(true);
+    expect(setKioskTheme(light, 'dark')).toEqual(dark);
+  });
+
+  it('returns the same state when the appearance is unchanged', () => {
+    const dark = stateWith([]);
+    expect(setKioskTheme(dark, 'dark')).toBe(dark);
+  });
+
+  it('can select light for an unconfigured kiosk', () => {
+    expect(setKioskTheme(stateWith([]), 'light').theme).toBe('light');
   });
 });
 
@@ -221,6 +259,14 @@ describe('setInstallQrEnabled', () => {
 });
 
 describe('editorStatesEqual', () => {
+  it('marks a theme-only edit dirty and becomes clean when reverted', () => {
+    for (const dark of [stateWith([]), stateWith([boardA], { boardUuid: boardA, period: 'week' })]) {
+      const light = setKioskTheme(dark, 'light');
+      expect(editorStatesEqual(dark, light)).toBe(false);
+      expect(editorStatesEqual(dark, setKioskTheme(light, 'dark'))).toBe(true);
+    }
+  });
+
   it('drives the dirty flag structurally', () => {
     const first = stateWith([boardA], { boardUuid: null, period: 'session' });
     const second = stateWith([boardA], { boardUuid: null, period: 'session' });

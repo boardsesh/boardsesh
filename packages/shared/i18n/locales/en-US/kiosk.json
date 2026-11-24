@@ -351,6 +351,12 @@
       "createFailed": "Couldn't create the kiosk."
     },
     "editor": {
+      "appearance": {
+        "label": "Appearance",
+        "light": "Light",
+        "dark": "Dark",
+        "description": "Choose how this screen looks. Other kiosks keep their own appearance."
+      },
       "back": "All kiosks",
       "save": "Save layout",
       "saved": "Kiosk saved.",

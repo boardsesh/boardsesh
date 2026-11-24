@@ -351,6 +351,12 @@
       "createFailed": "Der Kiosk ließ sich nicht anlegen."
     },
     "editor": {
+      "appearance": {
+        "label": "Darstellung",
+        "light": "Hell",
+        "dark": "Dunkel",
+        "description": "Wähl, wie dieser Bildschirm aussieht. Andere Kioske behalten ihre eigene Darstellung."
+      },
       "back": "Alle Kioske",
       "save": "Layout speichern",
       "saved": "Kiosk gespeichert.",

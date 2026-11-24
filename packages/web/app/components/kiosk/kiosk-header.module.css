@@ -58,8 +58,8 @@
 
 .reconnectChip {
   font-size: var(--kiosk-font-small);
-  color: var(--kiosk-surface);
-  background: var(--color-warning);
+  color: var(--kiosk-on-warning);
+  background: var(--kiosk-warning);
   border-radius: var(--border-radius-full);
   padding: var(--spacing-1) var(--spacing-3);
   white-space: nowrap;

@@ -13,7 +13,7 @@
 }
 
 .topRow .rank {
-  color: var(--kiosk-accent);
+  color: var(--kiosk-accent-text);
 }
 
 .rank {

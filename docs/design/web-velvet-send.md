@@ -2,13 +2,14 @@
 
 How `packages/web` consumes the Velvet Send tokens. It moved here from [ai-design-guidelines.md](ai-design-guidelines.md), which describes the system itself.
 
-The web app renders Velvet Send in **dark only**, on the same neutral **Graphite** surfaces as the app's
+The main web UI renders Velvet Send in **dark only**, on the same neutral **Graphite** surfaces as the app's
 Material variant: www and the Expo browser app at `/app` share one page, one card and one set of labels, so
 there is no seam between them. Violet is for action and state only: links and text actions, the one filled
-CTA, focus, and the tonal container under a selected or current item. Wiring notes specific to web:
+CTA, focus, and the tonal container under a selected or current item. Kiosk screens have a scoped
+Light / Dark choice, described below; it does not change the main web UI. Wiring notes specific to web:
 
-- **One scheme, no branching.** `packages/web` has no light palette, no `darkTokens`, no colour-mode
-  provider and no theme toggle — they came out with the climbing UI (#4467) and the collapse that
+- **One scheme for the main web UI.** There is no site-wide light palette, no `darkTokens`, no colour-mode
+  provider and no site-wide theme toggle — they came out with the climbing UI (#4467) and the collapse that
   followed. `themeTokens` in `app/theme/theme-config.ts` *is* the dark set, `mui-theme.ts` exports a
   single `darkTheme`, and `index.css` has one `:root` block. Two fences in
   `app/theme/__tests__/velvet-tokens-parity.test.ts` keep it that way: one fails if an
@@ -112,6 +113,23 @@ CTA, focus, and the tonal container under a selected or current item. Wiring not
 
 **Shared across web and mobile:** the brand palette + colour helpers (`@boardsesh/velvet-tokens`) and the
 climbing **grade colours** (`@boardsesh/board-constants`). Both are platform-agnostic and stay shared.
+
+## Kiosk appearance
+
+Each gym kiosk can use **Light** or **Dark**, selected in its editor. The choice lives in that kiosk's
+persisted `layout.theme` (`light` or `dark`), alongside its boards and leaderboard settings. New kiosks,
+older layouts without the field, and invalid theme values read as `dark`. This is an explicit screen
+setting, independent of the viewer's OS appearance and other kiosks at the same gym.
+
+The public server render and the editor's live preview use the same scoped kiosk theme. Switch the
+whole palette together: background, raised panels, text, borders, overlays and attribution. Resolve gym
+accents against the selected surfaces and adjust contrast in either direction as needed; a pale accent
+that works on dark cannot be assumed readable on white. Preserve uploaded logos' colours and alpha.
+Dark lettering in a logo may need Light appearance to stay readable; do not recolour the logo itself.
+
+Keep the exception inside the kiosk theme scope. The manage page remains dark, and the gym-level
+`brandBackgroundColor` does not choose a kiosk's appearance. No global theme provider, OS-driven CSS
+branching or arbitrary custom background picker is needed.
 
 
 ## Public page frame

@@ -35,6 +35,7 @@ import {
   removeBoardSlot,
   serializeKioskLayout,
   setInstallQrEnabled,
+  setKioskTheme,
   setLeaderboardEnabled,
   setLeaderboardPeriod,
   setLeaderboardScope,
@@ -47,6 +48,7 @@ import KioskBoardSlots, { type KioskEditorSlot } from './kiosk-board-slots';
 import KioskLayoutBadge from './kiosk-layout-badge';
 import KioskLeaderboardSettings from './kiosk-leaderboard-settings';
 import KioskInstallQrSettings from './kiosk-install-qr-settings';
+import KioskAppearanceSettings from './kiosk-appearance-settings';
 import KioskPreview from './kiosk-preview';
 import EmbedCodeDialog, { type EmbedCodeDialogState } from './embed-code-dialog';
 
@@ -236,6 +238,13 @@ export default function KioskEditor({
         }}
       >
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+          <KioskAppearanceSettings
+            theme={editorState.theme}
+            onChange={(theme) => applyStateChange(setKioskTheme(editorState, theme))}
+          />
+
+          <Divider />
+
           <Box>
             <Typography variant="subtitle1" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold, mb: 1 }}>
               {t('manage.editor.boardsHeading')}

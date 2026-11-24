@@ -351,6 +351,12 @@
       "createFailed": "无法创建展示终端。"
     },
     "editor": {
+      "appearance": {
+        "label": "外观",
+        "light": "浅色",
+        "dark": "深色",
+        "description": "选择此屏幕的外观。其他展示终端的外观保持不变。"
+      },
       "back": "全部展示终端",
       "save": "保存布局",
       "saved": "展示终端已保存。",
