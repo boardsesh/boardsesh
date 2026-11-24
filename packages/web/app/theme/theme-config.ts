@@ -24,6 +24,7 @@
 // on #262626 (3.27:1) but not on containers.highest #2E2E2E (2.94:1), so a filled
 // CTA never sits above the elevated surface.
 
+import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
 import {
   blendOpaque,
   brandColorsDark,
@@ -35,6 +36,10 @@ import {
 } from '@boardsesh/velvet-tokens';
 
 const graphite = materialSurfaces.dark;
+
+// The Kilter Original role codes (12 start, 13 hand, 14 finish, 15 foot). The hand
+// role is drawn in Boardsesh's own cyan, not the LED wire colour.
+const kilterRoles = HOLD_STATE_MAP.kilter;
 const graphiteContainers = materialSurfaceContainers.dark;
 const graphiteTonal = materialTonalContainers.dark;
 
@@ -255,6 +260,22 @@ export const themeTokens = {
   },
 
   // Z-index scale
+  /**
+   * The small marketing layer that only www marketing pages read (board app
+   * comparisons, home, gym marketing). Nothing in the app UI or the violet rules
+   * changes. Mirrored as `--lit-*` and `--radius-tray` in index.css.
+   */
+  marketing: {
+    /** Lit hold rings. Decorative glyphs only; see the `--lit-*` note in index.css. */
+    lit: {
+      start: kilterRoles[12].color,
+      hand: kilterRoles[13].boardseshDisplayColor ?? kilterRoles[13].color,
+      finish: kilterRoles[14].color,
+      foot: kilterRoles[15].color,
+    },
+    radiusTray: 24,
+  },
+
   zIndex: {
     dropdown: 1000,
     sticky: 1020,

@@ -1,4 +1,10 @@
-import { createTheme, type ThemeOptions, type Components, type Theme } from '@mui/material/styles';
+import {
+  createTheme,
+  type ThemeOptions,
+  type Components,
+  type Theme,
+  type TypographyStyle,
+} from '@mui/material/styles';
 import { themeTokens } from './theme-config';
 
 // Velvet Send adds two brand channels MUI doesn't ship by default:
@@ -15,6 +21,29 @@ declare module '@mui/material/styles' {
   interface PaletteOptions {
     primaryFill?: PaletteOptions['primary'];
     accent?: PaletteOptions['primary'];
+  }
+}
+// The marketing type layer (www comparison, home and gym marketing pages only):
+// a section heading bigger than the site h2, the lead paragraph under it, and the
+// small sentence-case label above it. Sentence case on purpose: locale-blind
+// uppercase is banned, and German and Italian need the room.
+declare module '@mui/material/styles' {
+  interface TypographyVariants {
+    marketingH2: TypographyStyle;
+    lead: TypographyStyle;
+    eyebrow: TypographyStyle;
+  }
+  interface TypographyVariantsOptions {
+    marketingH2?: TypographyStyle;
+    lead?: TypographyStyle;
+    eyebrow?: TypographyStyle;
+  }
+}
+declare module '@mui/material/Typography' {
+  interface TypographyPropsVariantOverrides {
+    marketingH2: true;
+    lead: true;
+    eyebrow: true;
   }
 }
 declare module '@mui/material/Button' {
@@ -49,6 +78,13 @@ declare module '@mui/material/SvgIcon' {
 // palette (foreground in light vs dark); raw `themeTokens.*` is only for values that
 // are intentionally scheme-invariant.
 const sharedComponents: Components<Theme> = {
+  // The marketing variants render as the element their role implies when a caller
+  // forgets `component`; unmapped variants keep MUI's own defaults.
+  MuiTypography: {
+    defaultProps: {
+      variantMapping: { marketingH2: 'h2', lead: 'p', eyebrow: 'p' },
+    },
+  },
   // Keyboard focus ring for every ButtonBase-derived control (Button, IconButton, Tab,
   // MenuItem, ListItemButton, …). MUI ships `outline: 0` on ButtonBase root and the
   // branch's bare `:focus-visible` CSS rule in index.css loses the cascade to emotion
@@ -548,6 +584,27 @@ const sharedOptions: Partial<ThemeOptions> = {
       fontSize: themeTokens.typography.fontSize.xs,
       fontWeight: themeTokens.typography.fontWeight.normal,
       lineHeight: 16 / 12,
+    },
+    marketingH2: {
+      fontFamily: 'var(--font-display), sans-serif',
+      fontSize: 40,
+      fontWeight: themeTokens.typography.fontWeight.bold,
+      lineHeight: 1.1,
+      letterSpacing: '-0.02em',
+      textWrap: 'balance',
+      '@media (max-width: 600px)': { fontSize: 28 },
+    },
+    lead: {
+      fontSize: themeTokens.typography.fontSize.xl,
+      lineHeight: themeTokens.typography.lineHeight.normal,
+      color: themeTokens.neutral[500],
+      '@media (max-width: 600px)': { fontSize: themeTokens.typography.fontSize.lg },
+    },
+    eyebrow: {
+      fontSize: themeTokens.typography.fontSize.sm,
+      fontWeight: themeTokens.typography.fontWeight.semibold,
+      lineHeight: 1.4,
+      color: themeTokens.neutral[500],
     },
   },
   shape: {
