@@ -12,6 +12,7 @@ import { notFound, permanentRedirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { GET_GYM_KIOSK } from '@boardsesh/graphql/operations';
 import type { GymKiosk, GymKioskBoard } from '@boardsesh/shared-schema';
+import { parseKioskLayoutLenient } from '@boardsesh/kiosk';
 import { getGraphQLHttpUrl } from '@/app/lib/graphql/client';
 import { SSR_BACKEND_FETCH_TIMEOUT_MS } from '@/app/lib/ssr-fetch-deadline';
 import { getPublicBackendHttpUrl } from '@/app/lib/backend-url';
@@ -139,10 +140,14 @@ export default async function KioskPageRenderer({ gymSlug, kioskSlug }: { gymSlu
   const locale = await getLocale();
   const { t } = await getServerTranslation('kiosk');
 
+  // Resolve appearance before constructing the initial rasters, so connecting
+  // the live feed cannot swap a dark-washed seed into a light screen.
+  const kioskTheme = parseKioskLayoutLenient(kiosk.layout).layout.theme;
+
   const slots: RenderableSlot[] = (
     await Promise.all(
       kiosk.boards.map(async (board): Promise<RenderableSlot | null> => {
-        const slotData = await buildBoardSlotData(board);
+        const slotData = await buildBoardSlotData(board, kioskTheme);
         if (slotData === null) return null;
         return { board, ...slotData };
       }),
@@ -208,6 +213,7 @@ export default async function KioskPageRenderer({ gymSlug, kioskSlug }: { gymSlu
                     bareBoardImageUrl={slot.bareBoardImageUrl}
                     slug={slot.board.slug}
                     showInstallQr={viewModel.showInstallQr}
+                    theme={viewModel.theme}
                   />
                 ))}
               </KioskLayout>

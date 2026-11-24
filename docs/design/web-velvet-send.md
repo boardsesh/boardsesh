@@ -127,6 +127,11 @@ accents against the selected surfaces and adjust contrast in either direction as
 that works on dark cannot be assumed readable on white. Preserve uploaded logos' colours and alpha.
 Dark lettering in a logo may need Light appearance to stay readable; do not recolour the logo itself.
 
+Board rasters follow the same selection. Pass `boardFieldColorForScheme(layout.theme)` from
+`@boardsesh/board-look` to the renderer's `field_color` for both the server seed and live updates.
+The shared Aura look already turns off the dark veil against the white Light field. The editor
+preview must update its rasters when the unsaved theme changes, including when the wall is clear.
+
 Keep the exception inside the kiosk theme scope. The manage page remains dark, and the gym-level
 `brandBackgroundColor` does not choose a kiosk's appearance. No global theme provider, OS-driven CSS
 branching or arbitrary custom background picker is needed.

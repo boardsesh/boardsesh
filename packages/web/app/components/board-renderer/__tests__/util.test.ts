@@ -275,6 +275,56 @@ describe('buildOverlayUrl', () => {
     expect(classic).not.toContain('field_color');
   });
 
+  it('preserves the existing dark-field URL when no field override is supplied', () => {
+    const options = { thumbnail: true, includeBackground: true, format: 'png' as const, colorScheme: 'dark' as const };
+    const url = buildBoardRenderUrl(boardDetails, 'p1r12,p2r13', options);
+
+    expect(url).toBe(
+      'https://ws.boardsesh.com/render/board?board_name=kilter&layout_id=1&size_id=7&set_ids=1,20' +
+        '&frames=p1r12%2Cp2r13&thumbnail=1&include_background=1&format=png&color_scheme=dark' +
+        `&render_mode=aura&field_color=%23181225&v=${BOARD_RENDER_VERSION}`,
+    );
+    expect(buildBoardRenderUrl(boardDetails, 'p1r12,p2r13', { ...options, fieldColor: BOARD_FIELD_COLORS.dark })).toBe(
+      url,
+    );
+  });
+
+  it('gives a white Aura field its own encoded cache URL without a fragment', () => {
+    const dark = buildBoardRenderUrl(boardDetails, 'p1r12', { includeBackground: true });
+    const light = buildBoardRenderUrl(boardDetails, 'p1r12', {
+      includeBackground: true,
+      fieldColor: BOARD_FIELD_COLORS.light,
+    });
+    const parsedLight = new URL(light);
+
+    expect(light).not.toBe(dark);
+    expect(light.replace('field_color=%23FFFFFF', 'field_color=%23181225')).toBe(dark);
+    expect(parsedLight.searchParams.getAll('field_color')).toEqual([BOARD_FIELD_COLORS.light]);
+    expect(parsedLight.hash).toBe('');
+    expect(light.endsWith(`&v=${BOARD_RENDER_VERSION}`)).toBe(true);
+  });
+
+  it.each(['light', 'dark'] as const)(
+    'keeps the %s board-art selection independent of the Aura field',
+    (colorScheme) => {
+      const url = buildBoardRenderUrl(boardDetails, 'p1r12', { colorScheme, fieldColor: BOARD_FIELD_COLORS.light });
+      const params = new URL(url).searchParams;
+
+      expect(params.get('field_color')).toBe(BOARD_FIELD_COLORS.light);
+      expect(params.get('color_scheme')).toBe(colorScheme === 'dark' ? 'dark' : null);
+    },
+  );
+
+  it('ignores the Aura field override for classic drawing', () => {
+    const options = { includeBackground: true, colorScheme: 'dark' as const, renderMode: 'classic' as const };
+    const classic = buildBoardRenderUrl(boardDetails, 'p1r12', options);
+
+    expect(buildBoardRenderUrl(boardDetails, 'p1r12', { ...options, fieldColor: BOARD_FIELD_COLORS.light })).toBe(
+      classic,
+    );
+    expect(new URL(classic).searchParams.has('field_color')).toBe(false);
+  });
+
   it('threads the drawing through the layered art builder', () => {
     // `BoardImageLayers` builds its overlay through here, so a mode that stopped
     // at the component boundary would leave the fallback drawing classic.
