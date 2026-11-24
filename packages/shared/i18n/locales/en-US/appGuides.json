@@ -61,6 +61,7 @@
       "legend": "What the row labels mean",
       "verdicts": {
         "boardsesh": "Boardsesh does it better",
+        "boardseshShared": "{{apps}} do it best",
         "only": "Only in Boardsesh",
         "same": "Same in both",
         "sameAll": "Same in all {{count}}",
@@ -1220,10 +1221,17 @@
         "rows": {
           "price": {
             "feature": "Cost for a home wall",
-            "boardsesh": "Free: no wall fee, no yearly pass, no ads. Up to 10 walls per account.",
-            "stokt": "FAQ: $40 to $300 per setup or reset. App 7.0.0 (Aug 2026): self-scans start free",
-            "retroFlash": "Free download; home walls and gyms need a yearly pass since July 2026 ($4.99 home)",
-            "crux": "Free for home walls, no cap on climbs; Patreon extras. Gym plans from $25 a month"
+            "boardsesh": "Free: no wall fee, no yearly pass, no ads",
+            "stokt": "Usually paid: $40 to $300 per setup or reset; a free self-scan since Aug 2026",
+            "retroFlash": "Yearly Home Wall pass since July 2026, from $4.99; ads on Android",
+            "crux": "Free for home walls, no cap on climbs; Patreon extras"
+          },
+          "gym-price": {
+            "feature": "Cost for a gym or commercial wall",
+            "boardsesh": "Free, gyms included; link the wall to your gym page",
+            "stokt": "$40 to $300 per setup and reset by wall size; walls stay active 12 months",
+            "retroFlash": "Gym Year Pass: $14.99 (Tier 1) or $29.99 (Tier 2)",
+            "crux": "Gym plans from $25 a month, or $240 a year"
           },
           "setup": {
             "feature": "Setting up your wall",

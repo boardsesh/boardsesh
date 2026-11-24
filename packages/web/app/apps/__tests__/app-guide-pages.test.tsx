@@ -158,6 +158,11 @@ describe('app guide pages before hydration', () => {
     expect(chips.some((chip) => chip.includes('Stōkt does it better'))).toBe(true);
     expect(chips.some((chip) => chip.includes('Stōkt and Retro Flash do it better'))).toBe(true);
     expect(chips.some((chip) => chip.includes('Same in all 4'))).toBe(true);
+    // A shared Boardsesh win names both apps and marks the other app's cell as a winner too.
+    const shared = markup.querySelector('#compare-row-price')?.closest('tr');
+    expect(shared?.querySelector('th')?.textContent).toContain('Boardsesh and Crux do it best');
+    expect(shared?.querySelector('td[data-product="crux"]')?.hasAttribute('data-shared-win')).toBe(true);
+    expect(shared?.querySelector('td[data-product="stokt"]')?.hasAttribute('data-shared-win')).toBe(false);
     expect(markup.querySelector('#other-apps li h3')).toBeTruthy();
     expect(markup.querySelector('a[href="/help/spray-walls"]')).toBeTruthy();
   });

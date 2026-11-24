@@ -396,11 +396,26 @@ export function importComparisonPage(page: ComparisonPageId, json: Json, options
           reader.error(`${path}.winners`, `"${winner}" is not a competitor on this page`);
       }
     }
+    // A Boardsesh win another app shares ("Boardsesh and Crux do it best").
+    let sharedWith: string[] = [];
+    if (entry.sharedWith !== undefined) {
+      if (!Array.isArray(entry.sharedWith) || entry.sharedWith.some((shared) => typeof shared !== 'string')) {
+        reader.error(`${path}.sharedWith`, 'must be a list of competitor ids');
+      } else {
+        sharedWith = entry.sharedWith as string[];
+        if (rowVerdict !== 'boardsesh') reader.error(`${path}.sharedWith`, 'is only allowed on a "boardsesh" row');
+        for (const shared of sharedWith) {
+          if (!competitors.includes(shared))
+            reader.error(`${path}.sharedWith`, `"${shared}" is not a competitor on this page`);
+        }
+      }
+    }
     rowText[id] = text;
     rows.push({
       id,
       verdict: rowVerdict ?? 'same',
       winners,
+      ...(sharedWith.length > 0 ? { sharedWith } : {}),
       sourceIds: cited.ids,
       pendingCells,
       ...(cited.pending || pendingCells.length > 0 || isPendingAny(text.boardsesh as string) ? { pending: true } : {}),

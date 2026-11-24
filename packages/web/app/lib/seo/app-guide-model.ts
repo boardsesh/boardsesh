@@ -92,6 +92,8 @@ export type GuideRow = GuideItem & {
   verdict: GuideVerdict;
   /** Competitor ids that do this row better. Set only when `verdict` is `competitor`. */
   winners: readonly string[];
+  /** Competitors that match Boardsesh on a `boardsesh` row ("Boardsesh and Crux do it best"). */
+  sharedWith?: readonly string[];
   /** Competitor cells that still hold a `[PENDING-…]` placeholder. */
   pendingCells: readonly string[];
 };

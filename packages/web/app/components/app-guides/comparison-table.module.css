@@ -56,7 +56,9 @@
   height: 28px;
 }
 
-.table [data-product='boardsesh'] {
+/* The Boardsesh column, and a competitor cell that shares a Boardsesh win, read as winners. */
+.table [data-product='boardsesh'],
+.table [data-shared-win] {
   background: var(--semantic-fill-subtle);
 }
 

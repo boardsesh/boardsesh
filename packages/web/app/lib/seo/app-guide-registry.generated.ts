@@ -1218,17 +1218,25 @@ export const APP_GUIDE_REGISTRY = {
     rows: [
       {
         id: 'price',
-        verdict: 'same',
+        verdict: 'boardsesh',
         winners: [],
+        sharedWith: ['crux'],
         sourceIds: [
           'bs-spray',
           'stokt-faq',
           'stokt-reset',
           'stokt-appstore',
           'retro-appstore',
+          'retro-play',
           'crux-home',
-          'crux-site',
         ],
+        pendingCells: [],
+      },
+      {
+        id: 'gym-price',
+        verdict: 'boardsesh',
+        winners: [],
+        sourceIds: ['bs-spray', 'stokt-add-wall', 'stokt-faq', 'retro-appstore', 'crux-site'],
         pendingCells: [],
       },
       {

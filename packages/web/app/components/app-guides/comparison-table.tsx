@@ -36,13 +36,29 @@ type ResolvedRow = GuideRow & { claimHidden: boolean };
 export function resolveRow(guide: ComparisonGuide, row: GuideRow): ResolvedRow {
   const claimHidden = !isClaimVisible(guide, `comparison.rows.${row.id}`);
   const unsourcedOnly = row.verdict === 'only' && row.sourceIds.length === 0;
-  return { ...row, verdict: claimHidden || unsourcedOnly ? 'boardsesh' : row.verdict, claimHidden };
+  return {
+    ...row,
+    verdict: claimHidden || unsourcedOnly ? 'boardsesh' : row.verdict,
+    sharedWith: claimHidden ? [] : row.sharedWith,
+    claimHidden,
+  };
 }
 
-export function verdictLabel(t: T, guide: ComparisonGuide, row: Pick<GuideRow, 'verdict' | 'winners'>): string {
+export function verdictLabel(
+  t: T,
+  guide: ComparisonGuide,
+  row: Pick<GuideRow, 'verdict' | 'winners' | 'sharedWith'>,
+): string {
   switch (row.verdict) {
     case 'boardsesh':
-      return t('appGuides:common.comparison.verdicts.boardsesh');
+      return row.sharedWith?.length
+        ? t('appGuides:common.comparison.verdicts.boardseshShared', {
+            apps: listFormat.format([
+              t('appGuides:common.boardsesh'),
+              ...row.sharedWith.map((shared) => guide.competitorNames[shared] ?? shared),
+            ]),
+          })
+        : t('appGuides:common.comparison.verdicts.boardsesh');
     case 'only':
       return t('appGuides:common.comparison.verdicts.only');
     case 'same':
@@ -166,6 +182,7 @@ export default function ComparisonTable({ guide, t }: { guide: ComparisonGuide; 
                         role="cell"
                         headers={`compare-row-${row.id} compare-col-${column.id}`}
                         data-product={column.id}
+                        data-shared-win={row.sharedWith?.includes(column.id) ? '' : undefined}
                         className={styles.cell}
                       >
                         <Box component="span" aria-hidden="true" className={styles.cellLabel}>

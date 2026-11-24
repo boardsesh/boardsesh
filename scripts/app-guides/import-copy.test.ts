@@ -193,6 +193,30 @@ describe('import-copy', () => {
     expect(errors(importComparisonPage('spray-wall-apps', spray, { allowPending: false }))).toEqual([]);
   });
 
+  it('lets a Boardsesh win be shared with named competitors, and nowhere else', () => {
+    const spray = boardPage((page) => {
+      page.page = 'spray-wall-apps';
+      for (const row of rows(page)) {
+        delete row.official;
+        row.competitors = { stokt: 'Stōkt cell.', retroFlash: 'Retro Flash cell.', crux: 'Crux cell.' };
+        if (row.verdict === 'official') Object.assign(row, { verdict: 'competitor', winners: ['stokt'] });
+      }
+      rows(page)[1].sharedWith = ['crux'];
+    });
+    const result = importComparisonPage('spray-wall-apps', spray, { allowPending: false });
+    expect(errors(result)).toEqual([]);
+    const registry = result.registry as unknown as { rows: { id: string; sharedWith?: string[] }[] };
+    expect(registry.rows[1]).toMatchObject({ id: 'history', sharedWith: ['crux'] });
+    expect(registry.rows[0].sharedWith).toBeUndefined();
+
+    rows(spray)[1].sharedWith = ['strava'];
+    rows(spray)[0].sharedWith = ['crux'];
+    expect(errors(importComparisonPage('spray-wall-apps', spray, { allowPending: false }))).toEqual([
+      'comparison.rows.lighting.sharedWith is only allowed on a "boardsesh" row',
+      'comparison.rows.history.sharedWith "strava" is not a competitor on this page',
+    ]);
+  });
+
   it('tags the Google-certified contrast wherever the copy makes it', () => {
     expect(
       findClaims({
