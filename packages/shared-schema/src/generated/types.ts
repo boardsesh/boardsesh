@@ -4508,6 +4508,85 @@ export type GymClaimStatus =
   /** An approved claim a Boardsesh admin took back (revertGymClaim). The gym is unclaimed again. */
   | 'revoked';
 
+export type GymClimbRankingInput = {
+  boardUuid?: InputMaybe<Scalars['ID']['input']>;
+  cursor?: InputMaybe<Scalars['String']['input']>;
+  gymUuid: Scalars['ID']['input'];
+  mode: GymClimbRankingMode;
+  period?: InputMaybe<GymStatsPeriod>;
+};
+
+export type GymClimbRankingMode = 'GRADE_FEEDBACK' | 'MOST_DISCUSSED' | 'MOST_SENT' | 'QUIET_CLIMBS' | 'TOP_RATED';
+
+export type GymClimbRankingRow = {
+  __typename?: 'GymClimbRankingRow';
+  authorCount?: Maybe<Scalars['Int']['output']>;
+  boardName: Scalars['String']['output'];
+  commentCount?: Maybe<Scalars['Int']['output']>;
+  firstKnownAvailableAt?: Maybe<Scalars['String']['output']>;
+  gradeDelta?: Maybe<Scalars['Float']['output']>;
+  knownLifetimeDays?: Maybe<Scalars['Float']['output']>;
+  knownWindowDays?: Maybe<Scalars['Float']['output']>;
+  lastSendAt?: Maybe<Scalars['String']['output']>;
+  lastSendDate?: Maybe<Scalars['String']['output']>;
+  lastSendEndAt?: Maybe<Scalars['String']['output']>;
+  physicalBoardUuid: Scalars['ID']['output'];
+  qualityMean?: Maybe<Scalars['Float']['output']>;
+  rank: Scalars['Int']['output'];
+  sendCount?: Maybe<Scalars['Int']['output']>;
+  senderCount?: Maybe<Scalars['Int']['output']>;
+  sendsPerDay?: Maybe<Scalars['Float']['output']>;
+  target: GymClimbRankingTarget;
+  voterCount?: Maybe<Scalars['Int']['output']>;
+};
+
+export type GymClimbRankingStatus =
+  | 'EXPOSURE_UNAVAILABLE'
+  | 'PAGE_CHANGED'
+  | 'READY'
+  | 'SCOPE_TOO_LARGE'
+  | 'TEMPORARILY_UNAVAILABLE';
+
+export type GymClimbRankingTarget = {
+  __typename?: 'GymClimbRankingTarget';
+  angle: Scalars['Int']['output'];
+  boardSlug: Scalars['String']['output'];
+  boardType: Scalars['String']['output'];
+  climbUuid: Scalars['ID']['output'];
+  isMirror: Scalars['Boolean']['output'];
+  layoutId: Scalars['Int']['output'];
+  logicalBoardUuid: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
+  referenceDifficulty?: Maybe<Scalars['Int']['output']>;
+  setIds: Scalars['String']['output'];
+  shareable: Scalars['Boolean']['output'];
+  sizeId: Scalars['Int']['output'];
+};
+
+export type GymClimbRankingTargetInput = {
+  angle: Scalars['Int']['input'];
+  boardUuid?: InputMaybe<Scalars['ID']['input']>;
+  climbUuid: Scalars['ID']['input'];
+  gymUuid: Scalars['ID']['input'];
+  isMirror: Scalars['Boolean']['input'];
+  logicalBoardUuid: Scalars['ID']['input'];
+  period?: InputMaybe<GymStatsPeriod>;
+};
+
+export type GymClimbRankings = {
+  __typename?: 'GymClimbRankings';
+  asOf?: Maybe<Scalars['String']['output']>;
+  mode: GymClimbRankingMode;
+  nextCursor?: Maybe<Scalars['String']['output']>;
+  quietAvailable: Scalars['Boolean']['output'];
+  rows: Array<GymClimbRankingRow>;
+  startAt?: Maybe<Scalars['String']['output']>;
+  status: GymClimbRankingStatus;
+  timeZone?: Maybe<Scalars['String']['output']>;
+  timeZoneConfigured: Scalars['Boolean']['output'];
+  truncated: Scalars['Boolean']['output'];
+};
+
 /** The strongest ownership-claim state on a gym row. */
 export type GymClusterClaimStatus =
   /** A claim was approved (ownership transferred). */
@@ -8950,6 +9029,8 @@ export type Query = {
   gymBoards: Array<UserBoard>;
   /** Get a gym by slug (for URL routing). */
   gymBySlug?: Maybe<Gym>;
+  gymClimbRankingTarget: GymClimbRankingTarget;
+  gymClimbRankings: GymClimbRankings;
   gymGradeCollectionOptions: GymGradeCollectionPage;
   /** Compare current inventory and attributable sends. Requires live gym staff access. */
   gymGradeComparison: GymGradeComparison;
@@ -9972,6 +10053,16 @@ export type QueryGymBoardsArgs = {
 /** Root query type for all read operations. */
 export type QueryGymBySlugArgs = {
   slug: Scalars['String']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryGymClimbRankingTargetArgs = {
+  input: GymClimbRankingTargetInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryGymClimbRankingsArgs = {
+  input: GymClimbRankingInput;
 };
 
 /** Root query type for all read operations. */
@@ -13904,6 +13995,8 @@ export type TickReportingTimeInput = {
 /** Input for recording a climb attempt. */
 export type TickReportingTimePrecision = 'day' | 'instant';
 
+export type TickReportingVoteField = 'DIFFICULTY' | 'QUALITY';
+
 /** Status of a climb attempt. */
 export type TickStatus =
   /** Did not complete */
@@ -14324,6 +14417,8 @@ export type UpdateTickInput = {
   /** User's quality rating (1-5) */
   quality?: InputMaybe<Scalars['Int']['input']>;
   reportingTime?: InputMaybe<TickReportingTimeInput>;
+  /** Rating fields explicitly touched by the climber in this edit. */
+  reportingVoteFields?: InputMaybe<Array<TickReportingVoteField>>;
   /** Result of the attempt */
   status?: InputMaybe<TickStatus>;
 };
@@ -15103,6 +15198,13 @@ export type ResolversTypes = ResolversObject<{
   GymClaimMethod: GymClaimMethod;
   GymClaimRequestStatus: GymClaimRequestStatus;
   GymClaimStatus: GymClaimStatus;
+  GymClimbRankingInput: GymClimbRankingInput;
+  GymClimbRankingMode: GymClimbRankingMode;
+  GymClimbRankingRow: ResolverTypeWrapper<GymClimbRankingRow>;
+  GymClimbRankingStatus: GymClimbRankingStatus;
+  GymClimbRankingTarget: ResolverTypeWrapper<GymClimbRankingTarget>;
+  GymClimbRankingTargetInput: GymClimbRankingTargetInput;
+  GymClimbRankings: ResolverTypeWrapper<GymClimbRankings>;
   GymClusterClaimStatus: GymClusterClaimStatus;
   GymConnection: ResolverTypeWrapper<GymConnection>;
   GymDayActivity: ResolverTypeWrapper<GymDayActivity>;
@@ -15469,6 +15571,7 @@ export type ResolversTypes = ResolversObject<{
   TickBoardOptions: ResolverTypeWrapper<TickBoardOptions>;
   TickReportingTimeInput: TickReportingTimeInput;
   TickReportingTimePrecision: TickReportingTimePrecision;
+  TickReportingVoteField: TickReportingVoteField;
   TickStatus: TickStatus;
   TimePeriod: TimePeriod;
   ToggleFavoriteInput: ToggleFavoriteInput;
@@ -15769,6 +15872,11 @@ export type ResolversParentTypes = ResolversObject<{
   GymBusyWeekday: GymBusyWeekday;
   GymClaim: GymClaim;
   GymClaimConnection: GymClaimConnection;
+  GymClimbRankingInput: GymClimbRankingInput;
+  GymClimbRankingRow: GymClimbRankingRow;
+  GymClimbRankingTarget: GymClimbRankingTarget;
+  GymClimbRankingTargetInput: GymClimbRankingTargetInput;
+  GymClimbRankings: GymClimbRankings;
   GymConnection: GymConnection;
   GymDayActivity: GymDayActivity;
   GymGradeCollectionOption: GymGradeCollectionOption;
@@ -18453,6 +18561,67 @@ export type GymClaimConnectionResolvers<
   claims?: Resolver<Array<ResolversTypes['GymClaim']>, ParentType, ContextType>;
   hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   totalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type GymClimbRankingRowResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymClimbRankingRow'] = ResolversParentTypes['GymClimbRankingRow'],
+> = ResolversObject<{
+  authorCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  boardName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  commentCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  firstKnownAvailableAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  gradeDelta?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  knownLifetimeDays?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  knownWindowDays?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  lastSendAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  lastSendDate?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  lastSendEndAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  physicalBoardUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  qualityMean?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  rank?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  sendCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  senderCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  sendsPerDay?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  target?: Resolver<ResolversTypes['GymClimbRankingTarget'], ParentType, ContextType>;
+  voterCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type GymClimbRankingTargetResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymClimbRankingTarget'] = ResolversParentTypes['GymClimbRankingTarget'],
+> = ResolversObject<{
+  angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  boardSlug?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  climbUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  isMirror?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  logicalBoardUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  referenceDifficulty?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  setIds?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  shareable?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type GymClimbRankingsResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymClimbRankings'] = ResolversParentTypes['GymClimbRankings'],
+> = ResolversObject<{
+  asOf?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  mode?: Resolver<ResolversTypes['GymClimbRankingMode'], ParentType, ContextType>;
+  nextCursor?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  quietAvailable?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  rows?: Resolver<Array<ResolversTypes['GymClimbRankingRow']>, ParentType, ContextType>;
+  startAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['GymClimbRankingStatus'], ParentType, ContextType>;
+  timeZone?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  timeZoneConfigured?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  truncated?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -21317,6 +21486,18 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryGymBySlugArgs, 'slug'>
   >;
+  gymClimbRankingTarget?: Resolver<
+    ResolversTypes['GymClimbRankingTarget'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryGymClimbRankingTargetArgs, 'input'>
+  >;
+  gymClimbRankings?: Resolver<
+    ResolversTypes['GymClimbRankings'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryGymClimbRankingsArgs, 'input'>
+  >;
   gymGradeCollectionOptions?: Resolver<
     ResolversTypes['GymGradeCollectionPage'],
     ParentType,
@@ -24011,6 +24192,9 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   GymBusyWeekday?: GymBusyWeekdayResolvers<ContextType>;
   GymClaim?: GymClaimResolvers<ContextType>;
   GymClaimConnection?: GymClaimConnectionResolvers<ContextType>;
+  GymClimbRankingRow?: GymClimbRankingRowResolvers<ContextType>;
+  GymClimbRankingTarget?: GymClimbRankingTargetResolvers<ContextType>;
+  GymClimbRankings?: GymClimbRankingsResolvers<ContextType>;
   GymConnection?: GymConnectionResolvers<ContextType>;
   GymDayActivity?: GymDayActivityResolvers<ContextType>;
   GymGradeCollectionOption?: GymGradeCollectionOptionResolvers<ContextType>;

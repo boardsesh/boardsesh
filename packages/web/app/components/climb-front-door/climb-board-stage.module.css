@@ -36,8 +36,15 @@
   margin-inline: auto;
 }
 
-.art > img {
+.art > img,
+.art > svg {
   grid-area: 1 / 1;
+  width: 100%;
+  height: auto;
+}
+
+.art[data-mirrored] {
+  transform: scaleX(-1);
 }
 
 @media (min-width: 900px) {

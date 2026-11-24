@@ -123,10 +123,24 @@ function unknownInputFieldClause(fieldName: string): string {
   return clause;
 }
 
-function graphqlErrorsRejectUnknownInputField(errors: unknown, unknownFieldClause: string): boolean {
+function graphqlErrorsRejectUnknownInputField(
+  errors: unknown,
+  unknownFieldClause: string,
+  inputType?: string,
+): boolean {
   if (!Array.isArray(errors)) return false;
-  for (const entry of errors as Array<{ message?: unknown }>) {
-    if (typeof entry?.message === 'string' && entry.message.includes(unknownFieldClause)) return true;
+  for (const entry of errors as Array<{ message?: unknown; path?: unknown }>) {
+    if (typeof entry?.message !== 'string') continue;
+    if (inputType !== undefined) {
+      if (
+        entry.path === undefined &&
+        entry.message.startsWith('Variable "$input" got invalid value') &&
+        entry.message.includes(`${unknownFieldClause} by type "${inputType}"`)
+      )
+        return true;
+    } else if (entry.message.includes(unknownFieldClause)) {
+      return true;
+    }
   }
   return false;
 }
@@ -155,7 +169,12 @@ function graphqlErrorsRejectUnknownInputField(errors: unknown, unknownFieldClaus
  * The caller decides what to do with the answer; this is not a permanence
  * verdict (`isPermanentRejection` still says yes for these).
  */
-export function graphqlErrorRejectsUnknownInputField(error: unknown, fieldName: string, depth = 0): boolean {
+export function graphqlErrorRejectsUnknownInputField(
+  error: unknown,
+  fieldName: string,
+  inputType?: string,
+  depth = 0,
+): boolean {
   if (error === null || typeof error !== 'object') return false;
   const errorRecord = error as Record<string, unknown>;
   // A plain substring test, not a RegExp: the field name is matched literally,
@@ -164,16 +183,22 @@ export function graphqlErrorRejectsUnknownInputField(error: unknown, fieldName: 
 
   if (depth < MAX_CAUSE_DEPTH) {
     const cause = errorRecord.cause;
-    if (cause !== undefined && cause !== error && graphqlErrorRejectsUnknownInputField(cause, fieldName, depth + 1)) {
+    if (
+      cause !== undefined &&
+      cause !== error &&
+      graphqlErrorRejectsUnknownInputField(cause, fieldName, inputType, depth + 1)
+    ) {
       return true;
     }
   }
 
-  if (graphqlErrorsRejectUnknownInputField(errorRecord.errors, unknownFieldClause)) return true;
+  if (graphqlErrorsRejectUnknownInputField(errorRecord.errors, unknownFieldClause, inputType)) return true;
 
   const response = errorRecord.response;
   if (response !== null && typeof response === 'object') {
-    if (graphqlErrorsRejectUnknownInputField((response as Record<string, unknown>).errors, unknownFieldClause)) {
+    if (
+      graphqlErrorsRejectUnknownInputField((response as Record<string, unknown>).errors, unknownFieldClause, inputType)
+    ) {
       return true;
     }
   }

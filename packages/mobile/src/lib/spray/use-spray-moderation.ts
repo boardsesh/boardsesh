@@ -1,3 +1,4 @@
+import { retireGymClimbRankings } from '../privacy/privacy-cache';
 import { useEffect, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { rolesGrantAdmin } from '@boardsesh/community-roles';
@@ -98,6 +99,7 @@ export function useReviewSprayWall() {
         )
       ).setSprayWallHidden,
     onSuccess: (result) => {
+      void retireGymClimbRankings(queryClient);
       queryClient.setQueriesData<SprayWallReportData[]>({ queryKey: SPRAY_REPORTS_QUERY_KEY }, (reports) =>
         reports?.filter((report) => report.wallUuid !== result.uuid),
       );

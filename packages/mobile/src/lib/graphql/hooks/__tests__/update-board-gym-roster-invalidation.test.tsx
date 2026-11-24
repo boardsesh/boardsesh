@@ -4,6 +4,8 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { gymReportingQueryKey } from '@boardsesh/graphql';
+import { gymClimbRankingsQueryKey } from '@boardsesh/board-react';
+import { getGymRankingRetirementGeneration } from '../../../privacy/privacy-cache';
 import { gymBoardsQueryKey } from '../../query-keys';
 
 const request = vi.hoisted(() => vi.fn());
@@ -57,19 +59,53 @@ function setup() {
 }
 
 describe('board edits refresh the gym roster', () => {
-  it.each([true, false])('clears the old gym report only when detach commits (%s)', async (removed) => {
-    request.mockResolvedValueOnce({ detachBoardFromGym: removed });
+  const removalError = new Error('Board removal did not commit');
+
+  it.each([
+    { name: 'committed', outcome: true },
+    { name: 'false', outcome: false },
+    { name: 'rejected', outcome: removalError },
+  ])('retires the gym reports and copied player only when detach commits ($name)', async ({ outcome }) => {
+    if (outcome instanceof Error) request.mockRejectedValueOnce(outcome);
+    else request.mockResolvedValueOnce({ detachBoardFromGym: outcome });
+
     const { client, wrapper } = setup();
     const report = gymReportingQueryKey('viewer-1', 'gym-1', 'board-1', 'week');
     const otherReport = gymReportingQueryKey('viewer-1', 'gym-2', null, 'week');
-    client.setQueryData(report, { boards: ['board-1'] });
-    client.setQueryData(otherReport, { boards: [] });
+    const rankings = gymClimbRankingsQueryKey(
+      'viewer-1',
+      1,
+      { gymUuid: 'gym-1', boardUuid: 'board-1', period: 'week', mode: 'MOST_SENT' },
+      1,
+    );
+    const otherRankings = gymClimbRankingsQueryKey(
+      'viewer-1',
+      1,
+      { gymUuid: 'gym-2', period: 'week', mode: 'MOST_SENT' },
+      1,
+    );
+    const reportReceipt = { boards: ['board-1'] };
+    const rankingReceipt = { rows: ['climb-1'] };
+    const otherReportReceipt = { boards: ['board-2'] };
+    const otherRankingReceipt = { rows: ['climb-2'] };
+    client.setQueryData(report, reportReceipt);
+    client.setQueryData(rankings, rankingReceipt);
+    client.setQueryData(otherReport, otherReportReceipt);
+    client.setQueryData(otherRankings, otherRankingReceipt);
+    const generation = getGymRankingRetirementGeneration();
     const { result } = renderHook(() => useDetachBoardFromGym(), { wrapper });
     await act(async () => {
-      await result.current.mutateAsync({ gymUuid: 'gym-1', boardUuid: 'board-1' });
+      const detach = result.current.mutateAsync({ gymUuid: 'gym-1', boardUuid: 'board-1' });
+      if (outcome instanceof Error) await expect(detach).rejects.toBe(outcome);
+      else await expect(detach).resolves.toBe(outcome);
     });
-    expect(client.getQueryData(report)).toEqual(removed ? undefined : { boards: ['board-1'] });
-    expect(client.getQueryData(otherReport)).toEqual({ boards: [] });
+
+    const retired = outcome === true;
+    expect(client.getQueryData(report)).toEqual(retired ? undefined : reportReceipt);
+    expect(client.getQueryData(rankings)).toEqual(retired ? undefined : rankingReceipt);
+    expect(client.getQueryData(otherReport)).toEqual(otherReportReceipt);
+    expect(client.getQueryData(otherRankings)).toEqual(otherRankingReceipt);
+    expect(getGymRankingRetirementGeneration() - generation).toBe(retired ? 1 : 0);
   });
 
   it('useUpdateBoard invalidates the cached gym roster', async () => {

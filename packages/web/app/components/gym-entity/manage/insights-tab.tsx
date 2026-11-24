@@ -8,8 +8,6 @@ import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
-import List from '@mui/material/List';
-import ListItem from '@mui/material/ListItem';
 import MenuItem from '@mui/material/MenuItem';
 import Skeleton from '@mui/material/Skeleton';
 import TextField from '@mui/material/TextField';
@@ -39,8 +37,7 @@ import {
   type GetGymStatsQueryResponse,
   type GetGymStatsQueryVariables,
 } from '@boardsesh/graphql';
-import type { GymStats, GymStatsPeriod } from '@boardsesh/shared-schema';
-import { boardTypeLabel } from '@boardsesh/board-constants';
+import type { GymClimbRankingMode, GymStats, GymStatsPeriod } from '@boardsesh/shared-schema';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import SelectedCheck from '@/app/components/ui/selected-check';
@@ -50,6 +47,7 @@ import { GymReachReport } from './gym-reach-overview';
 import { GymGradeComparisonPanel } from './gym-grade-comparison';
 import { GymAngleUsage } from './gym-angle-usage';
 import { GymBusyTimesCard } from './gym-busy-times';
+import { GymClimbRankingsPanel } from './gym-climb-rankings';
 
 let reconnectAt = 0;
 function subscribeOnline(onChange: () => void) {
@@ -136,26 +134,6 @@ function ReportingResults({ stats, trend }: { stats: GymStats; trend: GymTrendSe
               <Chip label={t('gymReporting.sends', { countText: number.format(stats.current.ascentCount) })} />
             </Box>
           )}
-          {stats.topClimbs.length > 0 && (
-            <Box>
-              <Typography variant="subtitle2">{t('gymReporting.topClimbs')}</Typography>
-              <List dense disablePadding data-testid="insights-top-climbs">
-                {stats.topClimbs.map((climb) => (
-                  <ListItem
-                    key={`${climb.boardType}:${climb.climbUuid}:${climb.angle}`}
-                    disableGutters
-                    sx={{ gap: 1, flexWrap: 'wrap' }}
-                  >
-                    <Typography variant="body2">{climb.name ?? boardTypeLabel(climb.boardType)}</Typography>
-                    {climb.gradeName && <Chip label={climb.gradeName} size="small" />}
-                    <Typography variant="body2" color="text.secondary">
-                      {t('gymReporting.sends', { countText: number.format(climb.ascentCount) })}
-                    </Typography>
-                  </ListItem>
-                ))}
-              </List>
-            </Box>
-          )}
         </>
       ) : (
         <Typography variant="body2" role="status">
@@ -175,6 +153,8 @@ type ReportingFilters = {
   boardUuid: string | null;
   setBoardUuid: (boardUuid: string | null) => void;
   trend: GymTrendSelection;
+  mode: GymClimbRankingMode;
+  setMode: (mode: GymClimbRankingMode) => void;
 };
 
 function InsightsReport({
@@ -186,6 +166,8 @@ function InsightsReport({
   boardUuid,
   setBoardUuid,
   trend,
+  mode,
+  setMode,
 }: ReportingViewer & ReportingFilters) {
   const { t, i18n } = useTranslation('boards');
   const reconnect = useSyncExternalStore(subscribeOnline, getConnectivity, () => 0);
@@ -331,6 +313,16 @@ function InsightsReport({
       />
       {stats && state === 'ready' && (
         <>
+          <GymClimbRankingsPanel
+            viewerId={viewer}
+            token={token}
+            gymUuid={stats.gymUuid}
+            overviewGymUuid={gymUuid}
+            boardUuid={boardUuid}
+            period={period}
+            mode={mode}
+            chooseMode={setMode}
+          />
           <GymGradeComparisonPanel
             key={`${boardUuid ?? ''}:${period}`}
             viewerId={viewer}
@@ -352,6 +344,7 @@ function InsightsViewer({ viewer, gymUuid, token }: ReportingViewer) {
   const [boardUuid, setBoardUuid] = useState<string | null>(null);
   const [week, setWeek] = useState<string | null>(null);
   const [metric, setMetric] = useState<GymTrendMetric>('climbers');
+  const [mode, setMode] = useState<GymClimbRankingMode>('MOST_SENT');
   const chooseBoard = (next: string | null) => {
     if (next !== boardUuid) setWeek(null);
     setBoardUuid(next);
@@ -372,6 +365,8 @@ function InsightsViewer({ viewer, gymUuid, token }: ReportingViewer) {
       boardUuid={boardUuid}
       setBoardUuid={chooseBoard}
       trend={{ metric, setMetric, week, setWeek }}
+      mode={mode}
+      setMode={setMode}
     />
   );
 }

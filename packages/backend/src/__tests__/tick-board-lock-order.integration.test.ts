@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { getWorkerDatabaseName } from './worker-db';
 
 vi.mock('../events', () => ({ publishSocialEvent: vi.fn(async () => undefined) }));
 vi.mock('../graphql/resolvers/ticks/debounced-climb-stats-publisher', () => ({
@@ -240,7 +241,8 @@ describe('updateTick board/session lock ordering against serial merges', () => {
     const [databaseIdentity] = rowsFromResult<{ databaseName: string }>(
       await db.execute(sql`SELECT current_database() AS "databaseName"`),
     );
-    if (!/^boardsesh_(?:backend_test_w\d+|pr5627_[a-z0-9_]+)$/.test(databaseIdentity?.databaseName ?? '')) {
+    const databaseName = databaseIdentity?.databaseName;
+    if (databaseName !== getWorkerDatabaseName() && !/^boardsesh_pr5627_[a-z0-9_]+$/.test(databaseName ?? '')) {
       throw new Error('The tick lock-order suite requires a dedicated disposable test database.');
     }
     await db.insert(schema.boardClimbs).values({

@@ -1,3 +1,4 @@
+import { retireGymClimbRankings } from '../../privacy/privacy-cache';
 // Delete one of the caller's own spray climbs (#5960). The server refuses with
 // `CLIMB_HAS_TICKS` once anybody has logged it; `deleteClimbRefusal` in
 // `components/climb-actions/delete-climb-rules.ts` maps the codes to copy.
@@ -44,6 +45,7 @@ export function useDeleteClimb() {
       return { deleted: response.deleteClimb, authGeneration };
     },
     onSuccess: ({ authGeneration }, variables) => {
+      void retireGymClimbRankings(queryClient);
       const invalidateClimbLists = () => {
         void queryClient.invalidateQueries({ queryKey: SEARCH_CLIMBS_QUERY_KEY });
         void queryClient.invalidateQueries({ queryKey: INFINITE_SEARCH_CLIMBS_QUERY_KEY });

@@ -1,3 +1,4 @@
+import { retireGymClimbRankings } from '../../privacy/privacy-cache';
 import { offlineWriteFetch } from '../../../offline/offline-write-transport';
 import { useQuery, useMutation, useQueryClient, keepPreviousData, onlineManager } from '@tanstack/react-query';
 import type {
@@ -32,7 +33,6 @@ import {
   type UpdateSessionVariables,
   type UpdateSessionResponse,
 } from '@boardsesh/graphql/operations';
-import { retireGymReportingReceiptsForGym } from '@boardsesh/graphql';
 import { GET_FAVORITES, type FavoritesQueryResponse } from '@boardsesh/graphql/operations/favorites';
 import { getGradesForBoard, toBoardName } from '@boardsesh/board-config';
 import { useBoardAdapter } from '@boardsesh/board-react';
@@ -643,6 +643,7 @@ export function useUpdateBoard() {
       return response.updateBoard;
     },
     onSuccess: (updated) => {
+      void retireGymClimbRankings(queryClient);
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['board', updated.uuid] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });
@@ -757,7 +758,7 @@ export function useDetachBoardFromGym() {
       return response.detachBoardFromGym;
     },
     onSuccess: (removed, variables) => {
-      if (removed) void retireGymReportingReceiptsForGym(queryClient, variables.gymUuid);
+      if (removed) void retireGymClimbRankings(queryClient, variables.gymUuid);
       void queryClient.invalidateQueries({ queryKey: ['board', variables.boardUuid] });
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });
@@ -818,6 +819,7 @@ export function useRevokeGymWriteAccess() {
       return response.revokeGymWriteAccess;
     },
     onSuccess: (_revoked, input) => {
+      void retireGymClimbRankings(queryClient);
       void queryClient.invalidateQueries({ queryKey: ['gymMembers', input.gymUuid] });
       void queryClient.invalidateQueries({ queryKey: ['gym', input.gymUuid] });
     },
@@ -869,6 +871,7 @@ export function useDeleteBoard() {
       return response.deleteBoard;
     },
     onSuccess: (_deleted, boardUuid) => {
+      void retireGymClimbRankings(queryClient);
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['board', boardUuid] });
     },

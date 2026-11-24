@@ -268,6 +268,7 @@ vi.mock('expo-router', () => ({ router: { dismiss: vi.fn() } }));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'random-uuid' }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en-US' } }) }));
 vi.mock('react-native-safe-area-context', () => ({
+  SafeAreaView: ({ children }: { children?: ReactNode }) => createElement('main', null, children),
   useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
 }));
 
@@ -527,6 +528,18 @@ vi.mock('../../../lib/graphql/hooks', () => ({
     return { data: undefined };
   },
 }));
+vi.mock('../../Text', () => ({
+  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+}));
+vi.mock('../../../hooks/use-grade-format', () => ({
+  useGradeFormat: () => ({ formatGradeByDifficultyId: () => 'V4' }),
+}));
+vi.mock('expo-image', () => ({ Image: () => null }));
+vi.mock('react-native-svg', () => ({
+  default: ({ children }: { children?: ReactNode }) => createElement('svg', null, children),
+  Circle: () => null,
+  Polygon: () => null,
+}));
 vi.mock('../../../hooks/use-display-grade', () => ({ useDisplayGrade: () => ({ boardseshActive: false }) }));
 vi.mock('../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => null }));
 vi.mock('../../../hooks/use-share-climb', () => ({ useShareClimb: () => vi.fn() }));
@@ -782,6 +795,42 @@ describe('takeover identity for a sanitized saved board', () => {
       expect(recorded.actionBar.at(-1)?.wallControlBoardId).toBe(expected);
     },
   );
+});
+
+describe('staff rankings on the real player boundary', () => {
+  it('never mounts queue, tick or wall controls for a matching active configuration', () => {
+    driveTheWall();
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'wall-current');
+    const onOpenQueue = vi.fn();
+    const onSwitchBoard = vi.fn();
+    const rendered = render(
+      createElement(PlayDrawer, {
+        boardConfig: TWELVE_BY_TWELVE,
+        onOpenQueue,
+        onSwitchBoard,
+        openTarget: {
+          nonce: 1,
+          climb: TWELVE_CLIMB,
+          options: {
+            rankedPreview: {
+              boardConfig: TWELVE_BY_TWELVE,
+              referenceDifficulty: 16,
+              authorization: { isCurrent: () => true, subscribe: () => () => {} },
+            },
+          },
+        },
+      }),
+    );
+    expect(recorded.actionBar).toEqual([]);
+    expect(recorded.logAscent).toEqual([]);
+    expect(recorded.lightbulb).toEqual([]);
+    expect(recorded.actionsMenu).toEqual([]);
+    expect(setCurrentClimb).not.toHaveBeenCalled();
+    expect(playNext).not.toHaveBeenCalled();
+    expect(onOpenQueue).not.toHaveBeenCalled();
+    expect(onSwitchBoard).not.toHaveBeenCalled();
+    expect(rendered.getByText(TWELVE_CLIMB.name)).toBeTruthy();
+  });
 });
 
 describe('PlayDrawer relay board compatibility', () => {

@@ -58,6 +58,38 @@ describe('board_climbs update replay identity', () => {
   });
 });
 
+describe('queued native vote intent compatibility', () => {
+  const marked = { uuid: 'tick-vote', quality: 4, reportingVoteFields: ['QUALITY'] };
+  const message =
+    'Variable "$input" got invalid value {}; Field "reportingVoteFields" is not defined by type "UpdateTickInput".';
+
+  it('retries once with the underlying rating only after variable coercion rejection', async () => {
+    const rejection = { response: { errors: [{ message }] } };
+    const graphqlFetch = vi.fn().mockRejectedValueOnce(rejection).mockResolvedValueOnce({});
+    await processMutation(pendingMutation({ payload: JSON.stringify(marked) }), graphqlFetch);
+    expect(graphqlFetch).toHaveBeenCalledTimes(2);
+    expect(graphqlFetch.mock.calls[0][1]).toEqual({
+      uuid: marked.uuid,
+      input: { quality: 4, reportingVoteFields: ['QUALITY'] },
+    });
+    expect(graphqlFetch.mock.calls[1][1]).toEqual({ uuid: marked.uuid, input: { quality: 4 } });
+  });
+
+  it.each([
+    { response: { errors: [{ message, path: ['updateTick'] }] } },
+    { response: { errors: [{ message: message.replace('UpdateTickInput', 'SaveTickInput') }] } },
+    { response: { errors: [{ message: message.replace('reportingVoteFields', 'somethingElse') }] } },
+    { response: { errors: [{ message: message.substring(message.indexOf('Field')) }] } },
+    new Error('Network timeout'),
+  ])('preserves failures that do not establish pre-execution rejection', async (failure) => {
+    const graphqlFetch = vi.fn().mockRejectedValue(failure);
+    await expect(processMutation(pendingMutation({ payload: JSON.stringify(marked) }), graphqlFetch)).rejects.toBe(
+      failure,
+    );
+    expect(graphqlFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('boardsesh_ticks update dispatch', () => {
   it('whitelists UpdateTickInput fields: uuid rides as a variable, stray keys are dropped', async () => {
     const graphqlFetch = vi.fn().mockResolvedValue({});
@@ -95,6 +127,7 @@ describe('boardsesh_ticks update dispatch', () => {
       attemptCount: 0,
       quality: 1,
       difficulty: 10,
+      reportingVoteFields: ['QUALITY', 'DIFFICULTY'],
       isBenchmark: false,
       comment: '',
       climbedAt: '2026-05-01T02:00:00Z',

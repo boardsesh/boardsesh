@@ -1816,12 +1816,19 @@ input SaveTickInput {
   videoUrl: String
 }
 
+enum TickReportingVoteField {
+  QUALITY
+  DIFFICULTY
+}
+
 """
 Input for updating an existing tick.
 All fields are optional — only provided fields are updated.
 """
 input UpdateTickInput {
   privacy: PrivacyPublicationInput
+  "Rating fields explicitly touched by the climber in this edit."
+  reportingVoteFields: [TickReportingVoteField!]
   "Omit to preserve attribution; null clears it; a UUID selects a compatible physical board."
   boardUuid: String
   "Result of the attempt"
@@ -5026,6 +5033,89 @@ input SetGymGradeCollectionInput {
   gymUuid: ID!
   boardUuid: ID!
   playlistUuid: ID
+}
+
+enum GymClimbRankingMode {
+  MOST_SENT
+  TOP_RATED
+  MOST_DISCUSSED
+  GRADE_FEEDBACK
+  QUIET_CLIMBS
+}
+
+enum GymClimbRankingStatus {
+  READY
+  SCOPE_TOO_LARGE
+  TEMPORARILY_UNAVAILABLE
+  EXPOSURE_UNAVAILABLE
+  PAGE_CHANGED
+}
+
+input GymClimbRankingInput {
+  gymUuid: ID!
+  boardUuid: ID
+  period: GymStatsPeriod
+  mode: GymClimbRankingMode!
+  cursor: String
+}
+
+input GymClimbRankingTargetInput {
+  gymUuid: ID!
+  boardUuid: ID
+  period: GymStatsPeriod
+  logicalBoardUuid: ID!
+  climbUuid: ID!
+  angle: Int!
+  isMirror: Boolean!
+}
+
+type GymClimbRankingTarget {
+  logicalBoardUuid: ID!
+  boardSlug: String!
+  boardType: String!
+  layoutId: Int!
+  sizeId: Int!
+  setIds: String!
+  climbUuid: ID!
+  name: String!
+  angle: Int!
+  isMirror: Boolean!
+  referenceDifficulty: Int
+  shareable: Boolean!
+}
+
+type GymClimbRankingRow {
+  rank: Int!
+  physicalBoardUuid: ID!
+  boardName: String!
+  target: GymClimbRankingTarget!
+  sendCount: Int
+  senderCount: Int
+  qualityMean: Float
+  voterCount: Int
+  commentCount: Int
+  authorCount: Int
+  gradeDelta: Float
+  firstKnownAvailableAt: String
+  lastSendAt: String
+  lastSendEndAt: String
+  lastSendDate: String
+  knownLifetimeDays: Float
+  knownWindowDays: Float
+  sendsPerDay: Float
+}
+
+type GymClimbRankings {
+  status: GymClimbRankingStatus!
+  mode: GymClimbRankingMode!
+  quietAvailable: Boolean!
+  startAt: String
+  asOf: String
+  timeZone: String
+  timeZoneConfigured: Boolean!
+  rows: [GymClimbRankingRow!]!
+  nextCursor: String
+  truncated: Boolean!
 }
 
 input GymStatsInput {
@@ -9769,6 +9859,8 @@ type Query {
   gymStats(input: GymStatsInput!): GymStats!
   "Compare current inventory and attributable sends. Requires live gym staff access."
   gymGradeComparison(input: GymStatsInput!): GymGradeComparison!
+  gymClimbRankings(input: GymClimbRankingInput!): GymClimbRankings!
+  gymClimbRankingTarget(input: GymClimbRankingTargetInput!): GymClimbRankingTarget!
   gymGradeCollectionOptions(input: GymGradeCollectionOptionsInput!): GymGradeCollectionPage!
 
   """

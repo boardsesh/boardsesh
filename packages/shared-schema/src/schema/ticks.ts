@@ -161,12 +161,19 @@ export const ticksTypeDefs = /* GraphQL */ `
     videoUrl: String
   }
 
+  enum TickReportingVoteField {
+    QUALITY
+    DIFFICULTY
+  }
+
   """
   Input for updating an existing tick.
   All fields are optional — only provided fields are updated.
   """
   input UpdateTickInput {
     privacy: PrivacyPublicationInput
+    "Rating fields explicitly touched by the climber in this edit."
+    reportingVoteFields: [TickReportingVoteField!]
     "Omit to preserve attribution; null clears it; a UUID selects a compatible physical board."
     boardUuid: String
     "Result of the attempt"

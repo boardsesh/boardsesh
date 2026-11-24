@@ -344,7 +344,7 @@ export async function withGymReportingScope<Result>(
 
 const timestampUtc = (stamp: SQL) => sql`(${stamp} AT TIME ZONE 'UTC')`;
 
-function identifiedActor(userId: SQL, boardId: SQL, viewerId: string): SQL {
+export function identifiedActor(userId: SQL, boardId: SQL, viewerId: string): SQL {
   return sql`CASE WHEN ${userId} IS NOT NULL
     AND (${userActivityVisibilityCondition(userId, viewerId)} OR ${restrictedBoardMemberIdentityCondition(userId, boardId, viewerId)})
     AND NOT ${anonymousOnBoardCondition(userId, boardId, viewerId)}
@@ -378,6 +378,9 @@ type ReportingActivityBounds = {
   sendsOnly?: boolean;
   includeBoardsWhen?: SQL;
   identifiedOnly?: boolean;
+  ticksOnly?: boolean;
+  /** Internal condition over the raw tick, selected logical board and canonical alias. */
+  candidateTickWhen?: SQL;
 } & (
   | { firstObservedOnly?: false; start?: string; predecessorDaysOnly?: false }
   | { firstObservedOnly?: false; start: string; predecessorDaysOnly: true }
@@ -655,7 +658,7 @@ export function reportingActivitySql(scope: GymReportingScope, bounds: Reporting
         actorFilter: boundActor(sql`display.user_id`),
         identifiedOnly: bounds.identifiedOnly,
         tail:
-          bounds.sendsOnly || bounds.predecessorDaysOnly
+          bounds.sendsOnly || bounds.ticksOnly || bounds.predecessorDaysOnly
             ? sql`AND false`
             : bounds.firstObservedOnly
               ? sql`ORDER BY display.confirmed_at LIMIT 1`
@@ -673,6 +676,7 @@ export function reportingActivitySql(scope: GymReportingScope, bounds: Reporting
         identifiedOnly: bounds.identifiedOnly,
         tail: sql`
           ${bounds.sendsOnly ? sql`AND tick.status IN ('flash', 'send')` : sql``}
+          ${bounds.candidateTickWhen ? sql`AND (${bounds.candidateTickWhen})` : sql``}
           ${
             bounds.firstObservedOnly
               ? sql`AND ${certifiedTickTime} AND tick.reporting_time_precision = 'instant' ORDER BY tick.climbed_at LIMIT 1`

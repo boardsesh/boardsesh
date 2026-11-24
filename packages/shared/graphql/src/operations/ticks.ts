@@ -624,6 +624,7 @@ export type DeleteTickVariables = {
 };
 
 export type UpdateTickInput = {
+  reportingVoteFields?: Array<'QUALITY' | 'DIFFICULTY'>;
   privacy?: { audience: 'public' | 'followers' | 'only_me'; privacyRevision: number };
   boardUuid?: string | null;
   status?: 'flash' | 'send' | 'attempt';

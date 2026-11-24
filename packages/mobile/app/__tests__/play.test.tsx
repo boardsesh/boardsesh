@@ -17,6 +17,7 @@ const navigation = vi.hoisted(() => ({
   beforeRemove: null as ((event: { defaultPrevented: boolean }) => void) | null,
   addListener: vi.fn<(event: string, listener: (event: { defaultPrevented: boolean }) => void) => () => void>(),
 }));
+const routeBoard = vi.hoisted(() => ({ available: true }));
 const onClosed = vi.hoisted(() => vi.fn());
 const routeTarget = vi.hoisted(() => ({ current: null as PlayDrawerOpenTarget | null, consumed: vi.fn() }));
 const player = vi.hoisted(() => ({
@@ -35,7 +36,10 @@ const queueSheet = vi.hoisted(() => ({
 const logAscentHost = vi.hoisted(() => ({ open: vi.fn(), queueOpeners: [] as unknown[] }));
 // An iPhone by default; the iPad cases change it before rendering.
 const device = vi.hoisted(() => ({ isPad: false, width: 400, height: 900 }));
-const drawerProps = vi.hoisted(() => ({ fitBoardToHeight: undefined as boolean | undefined }));
+const drawerProps = vi.hoisted(() => ({
+  fitBoardToHeight: undefined as boolean | undefined,
+  boardConfig: null as { boardName: string; layoutId: number; sizeId: number; setIds: string; angle: number } | null,
+}));
 const boardConfig = { boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: '1', angle: 40 };
 
 // The play route now asks which boards stand at this gym, to decide whether a
@@ -105,6 +109,7 @@ vi.mock('../../src/components/play-drawer', () => ({
     onOpenQueue,
     dismissPlayerAndWait,
     fitBoardToHeight,
+    boardConfig: displayedBoard,
     renderSidePanel,
   }: {
     swipeDismiss: SwipeDismissAnimation;
@@ -112,11 +117,13 @@ vi.mock('../../src/components/play-drawer', () => ({
     onOpenQueue: () => void;
     dismissPlayerAndWait: () => Promise<DismissAndWaitResult>;
     fitBoardToHeight?: boolean;
+    boardConfig: typeof boardConfig;
     renderSidePanel?: (displayed: null) => ReactNode;
   }) => {
     player.swipeDismiss = swipeDismiss;
     player.dismissAndWait = dismissPlayerAndWait;
     drawerProps.fitBoardToHeight = fitBoardToHeight;
+    drawerProps.boardConfig = displayedBoard;
     return createElement(
       'div',
       null,
@@ -174,7 +181,7 @@ vi.mock('../../src/components/tick/use-log-ascent-sheet-host', () => ({
 }));
 vi.mock('../../src/providers/drawer-host-provider', () => ({
   usePlayDrawerRoute: () => ({
-    activeBoardConfig: boardConfig,
+    activeBoardConfig: routeBoard.available ? boardConfig : null,
     onPlayDrawerClosed: onClosed,
     onPlayDrawerTargetConsumed: routeTarget.consumed,
     playTarget: routeTarget.current,
@@ -223,6 +230,8 @@ beforeEach(() => {
   queueSheet.mounted = 0;
   Object.assign(device, { isPad: false, width: 400, height: 900 });
   drawerProps.fitBoardToHeight = undefined;
+  drawerProps.boardConfig = null;
+  routeBoard.available = true;
   vi.clearAllMocks();
   navigation.isFocused.mockReturnValue(true);
   navigation.beforeRemove = null;
@@ -664,5 +673,35 @@ describe('iPad player arrangement', () => {
     renderPlayer();
     expect(screen.queryByTestId('side-panel')).toBeNull();
     expect(drawerProps.fitBoardToHeight).toBe(false);
+  });
+});
+
+describe('staff ranking route ownership', () => {
+  it('opens the exact inspection without a selected board and never falls back after withdrawal', () => {
+    const rankedBoard = { boardName: 'tension', layoutId: 8, sizeId: 7, setIds: '5,6', angle: 35 };
+    routeBoard.available = false;
+    routeTarget.current = {
+      nonce: 1,
+      climb: { uuid: 'ranked' } as PlayDrawerOpenTarget['climb'],
+      options: {
+        rankedPreview: {
+          boardConfig: rankedBoard,
+          referenceDifficulty: null,
+          authorization: { isCurrent: () => true, subscribe: () => () => {} },
+        },
+      },
+    };
+    const { rerender, unmount } = renderPlayer();
+    expect(drawerProps.boardConfig).toEqual(rankedBoard);
+    expect(routeTarget.consumed).toHaveBeenCalledWith(1);
+    expect(screen.queryByTestId('route-tick-host')).toBeNull();
+    routeTarget.current = null;
+    routeBoard.available = true;
+    rerender(createElement(PlayScreen));
+    expect(screen.queryByRole('button', { name: 'Open queue' })).toBeNull();
+    expect(screen.queryByTestId('route-tick-host')).toBeNull();
+    expect(router.dismiss).toHaveBeenCalledOnce();
+    unmount();
+    expect(onClosed).toHaveBeenCalledWith(1);
   });
 });

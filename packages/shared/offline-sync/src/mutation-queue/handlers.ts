@@ -42,6 +42,7 @@ type MutationDispatch = {
 // (this runtime package deliberately has no dependencies, so the type-only
 // check lives with the tests).
 export const UPDATE_TICK_INPUT_FIELDS = [
+  'reportingVoteFields',
   'privacy',
   'boardUuid',
   'status',
@@ -74,7 +75,7 @@ export const UPDATE_TICK_INPUT_FIELDS = [
  */
 const DROPPABLE_INPUT_FIELDS: Record<string, readonly string[]> = {
   SaveTick: ['climbRevision', 'reportingTime'],
-  UpdateTick: ['reportingTime'],
+  UpdateTick: ['reportingTime', 'reportingVoteFields'],
 };
 
 /**
@@ -90,7 +91,16 @@ function withoutRejectedInputFields(
   const droppable = DROPPABLE_INPUT_FIELDS[mutationName];
   const input = variables.input;
   if (!droppable || input === null || typeof input !== 'object') return null;
-  const rejected = droppable.filter((field) => field in input && graphqlErrorRejectsUnknownInputField(error, field));
+  const rejected = droppable.filter(
+    (field) =>
+      field in input &&
+      graphqlErrorRejectsUnknownInputField(
+        error,
+        field,
+        field === 'reportingVoteFields' ? 'UpdateTickInput' : undefined,
+      ),
+  );
+
   if (rejected.length === 0) return null;
   const trimmedInput: Record<string, unknown> = { ...(input as Record<string, unknown>) };
   for (const field of rejected) delete trimmedInput[field];

@@ -1,11 +1,20 @@
 import type postgres from 'postgres';
 import { createHash } from 'node:crypto';
 import {
+  GYM_RANKING_PRIVATE_TABLES,
+  GYM_VOTE_SOURCE_COLUMNS,
+  GYM_VOTE_TRIGGER,
+  GYM_VOTE_TRIGGER_SHA256,
+  verifyGymVoteClosure,
+} from './auth-gym-ranking-acl';
+import {
   GYM_INVENTORY_PRIVATE_TABLES,
   SPRAY_EXPOSURE_EVENT_SEQUENCE,
   sprayExposureTriggerIdentity,
   verifySprayExposureClosure,
 } from './auth-spray-exposure-acl';
+
+const PRIVATE_REPORTING_TABLES = [...GYM_INVENTORY_PRIVATE_TABLES, ...GYM_RANKING_PRIVATE_TABLES];
 
 export const WEB_ROLE = 'boardsesh_web';
 export const quoteIdentifier = (identifier: string) => `"${identifier.replaceAll('"', '""')}"`;
@@ -154,7 +163,7 @@ export function fencePlan(catalog: FenceCatalog, options: { readonly ddlOwner?: 
       relation.name !== 'auth_session' &&
       relation.name !== '__drizzle_migrations' &&
       !BACKEND_ONLY_PARTNER_TABLES.includes(relation.name) &&
-      !GYM_INVENTORY_PRIVATE_TABLES.includes(relation.name) &&
+      !PRIVATE_REPORTING_TABLES.includes(relation.name) &&
       ['r', 'p'].includes(relation.kind);
     if (readable) apply.push(`GRANT SELECT ON TABLE ${target} TO ${role};`);
     if (!identity && readable) apply.push(`GRANT INSERT, UPDATE, DELETE ON TABLE ${target} TO ${role};`);
@@ -348,7 +357,7 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
     FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
     WHERE namespace.nspname !~ '^pg_' AND namespace.nspname <> 'information_schema' AND relation.relkind IN ('r','p','v','m','f')`;
   for (const relation of relationPrivileges) {
-    if (GYM_INVENTORY_PRIVATE_TABLES.includes(relation.name) && (relation.reads || relation.writes)) {
+    if (PRIVATE_REPORTING_TABLES.includes(relation.name) && (relation.reads || relation.writes)) {
       throw new Error('UNREVIEWED_GYM_INVENTORY_PRIVILEGE');
     }
     if ((protectedIdentityTable(relation.name) || !['r', 'p'].includes(relation.kind)) && relation.writes)
@@ -429,6 +438,17 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
       }
     >
   > = {
+    [GYM_VOTE_TRIGGER]: {
+      relation: 'boardsesh_ticks',
+      sha256: GYM_VOTE_TRIGGER_SHA256,
+      configuration: ['search_path=pg_catalog'],
+      attachment: {
+        name: 'trg_invalidate_gym_tick_votes',
+        type: 17,
+        deferred: false,
+        columns: GYM_VOTE_SOURCE_COLUMNS,
+      },
+    },
     revoke_gym_reporting_aliases_on_board_move: {
       relation: 'user_boards',
       sha256: 'f645b67ae38be89b9af89bf000c68336c1d24e85e2335a32ecc79eebfddab243',
@@ -466,6 +486,7 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
     },
   };
   const verifiedExposure = await verifySprayExposureClosure(client, WEB_ROLE);
+  await verifyGymVoteClosure(client, WEB_ROLE);
   for (const trigger of triggerFunctions) {
     // This exact identity was verified alongside its helper, source and sink
     // closure above. The public schema and ordinary role checks still apply.

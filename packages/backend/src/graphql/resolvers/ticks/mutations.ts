@@ -44,6 +44,7 @@ import { findTickClimb, tickBoardFitsClimb } from './board-options';
 import { reconcileInferredSessions } from '../../../services/inferred-sessions/reconcile';
 import { parseClimbedAt } from '../../../services/inferred-sessions/timestamps';
 import { tickReportingTime } from '../../../services/reporting-time';
+import { attestGymTickVotes } from './gym-vote-evidence';
 import { publishSessionWallChangedByTick } from '../../../services/session-wall-refresh';
 import {
   acquireUserTickMutationLock,
@@ -1545,6 +1546,10 @@ export const tickMutations = {
           .returning();
 
         if (!createdTick) return [];
+        await attestGymTickVotes(tx, createdTick, [
+          ...(validatedInput.quality == null ? [] : ['QUALITY' as const]),
+          ...(validatedInput.difficulty == null ? [] : ['DIFFICULTY' as const]),
+        ]);
         if (validatedInput.privacy) {
           await setContentPrivacy(
             tx,
@@ -1853,9 +1858,7 @@ export const tickMutations = {
           });
         }
 
-        const updates: Partial<typeof dbSchema.boardseshTicks.$inferInsert> = {
-          updatedAt: new Date().toISOString(),
-        };
+        const updates: Partial<typeof dbSchema.boardseshTicks.$inferInsert> = {};
         if (validatedInput.boardUuid !== undefined) {
           updates.boardId = selectedBoard?.id ?? null;
           if (targetTick.origin === 'native') {
@@ -1896,12 +1899,25 @@ export const tickMutations = {
           updates.attemptCount = 1;
         }
 
-        const updatedTicks = await tx
-          .update(dbSchema.boardseshTicks)
-          .set(updates)
-          .where(inArray(dbSchema.boardseshTicks.uuid, affectedUuids))
-          .returning();
+        // An explicit confirmation still certifies a vote if the underlying tick is unchanged.
+        // Do not manufacture a sync or partner event for that evidence-only write.
+        const proofOnly =
+          !!validatedInput.reportingVoteFields?.length &&
+          !validatedInput.privacy &&
+          existingTicks.every((tick) =>
+            Object.entries(updates).every(
+              ([field, fieldValue]) => tick[field as keyof dbSchema.BoardseshTick] === fieldValue,
+            ),
+          );
+        const updatedTicks = proofOnly
+          ? existingTicks
+          : await tx
+              .update(dbSchema.boardseshTicks)
+              .set({ ...updates, updatedAt: new Date().toISOString() })
+              .where(inArray(dbSchema.boardseshTicks.uuid, affectedUuids))
+              .returning();
         const updatedTarget = updatedTicks.find((tick) => tick.uuid === uuid)!;
+        await attestGymTickVotes(tx, updatedTarget, validatedInput.reportingVoteFields ?? []);
         if (validatedInput.privacy) {
           for (const affectedUuid of affectedUuids) {
             await setContentPrivacy(
@@ -1918,8 +1934,8 @@ export const tickMutations = {
         // Keep linked beta videos at the angle of the edited ascent.
         let movedBetaLinks = false;
         if (
-          existingTicks.some((tick) => tick.angle !== updatedTarget.angle) ||
-          validatedInput.boardUuid !== undefined
+          !proofOnly &&
+          (existingTicks.some((tick) => tick.angle !== updatedTarget.angle) || validatedInput.boardUuid !== undefined)
         ) {
           const moved = await tx
             .update(dbSchema.boardBetaLinks)
@@ -1932,7 +1948,7 @@ export const tickMutations = {
           movedBetaLinks = moved.length > 0;
         }
 
-        if (validatedInput.boardUuid !== undefined) {
+        if (!proofOnly && validatedInput.boardUuid !== undefined) {
           await tx
             .update(dbSchema.feedItems)
             .set({
@@ -1952,10 +1968,9 @@ export const tickMutations = {
         // An edit can move climbed_at, which moves the tick between runs — so both the
         // window it left and the one it joined need redrawing. Reconciling the old
         // timestamp first leaves the tick's new home authoritative.
-        for (const climbedAt of new Set([
-          ...existingTicks.map((tick) => tick.climbedAt),
-          ...updatedTicks.map((tick) => tick.climbedAt),
-        ])) {
+        for (const climbedAt of proofOnly
+          ? []
+          : new Set([...existingTicks.map((tick) => tick.climbedAt), ...updatedTicks.map((tick) => tick.climbedAt)])) {
           await reconcileInferredSessions(tx, userId, parseClimbedAt(climbedAt));
         }
 
@@ -1984,6 +1999,7 @@ export const tickMutations = {
           updatedTicks,
           updatedTarget,
           movedBetaLinks,
+          proofOnly,
           boardDisplayName: attributedBoard?.name ?? null,
         };
       }),
@@ -1996,24 +2012,26 @@ export const tickMutations = {
     // each recompute is its own transaction, so they run concurrently: both
     // must finish before the response, but the wall-clock cost is the slower
     // of the two rather than their sum.
-    const touchedStatsKeys = distinctTickStatsKeys([...mutationResult.existingTicks, ...mutationResult.updatedTicks]);
-    await Promise.all(touchedStatsKeys.map((key) => recomputeClimbStatsNow(key.boardType, key.climbUuid, key.angle)));
-    for (const key of touchedStatsKeys) {
-      queueClimbStatsRecompute(key.boardType, key.climbUuid, key.angle);
-    }
-    if (mutationResult.movedBetaLinks) {
-      invalidateRecentBetaLinksCache().catch((err) => {
-        logger.error('[updateTick] recent-beta-links cache invalidation failed:', err);
-      });
-    }
-    for (const { boardId, boardType } of distinctTickBoards([
-      ...mutationResult.existingTicks,
-      ...mutationResult.updatedTicks,
-    ])) {
-      queueBoardStatsPublish(boardId, boardType);
-    }
-    for (const sessionId of distinctTickSessions(mutationResult.existingTicks)) {
-      publishDebouncedSessionStats(sessionId);
+    if (!mutationResult.proofOnly) {
+      const touchedStatsKeys = distinctTickStatsKeys([...mutationResult.existingTicks, ...mutationResult.updatedTicks]);
+      await Promise.all(touchedStatsKeys.map((key) => recomputeClimbStatsNow(key.boardType, key.climbUuid, key.angle)));
+      for (const key of touchedStatsKeys) {
+        queueClimbStatsRecompute(key.boardType, key.climbUuid, key.angle);
+      }
+      if (mutationResult.movedBetaLinks) {
+        invalidateRecentBetaLinksCache().catch((err) => {
+          logger.error('[updateTick] recent-beta-links cache invalidation failed:', err);
+        });
+      }
+      for (const { boardId, boardType } of distinctTickBoards([
+        ...mutationResult.existingTicks,
+        ...mutationResult.updatedTicks,
+      ])) {
+        queueBoardStatsPublish(boardId, boardType);
+      }
+      for (const sessionId of distinctTickSessions(mutationResult.existingTicks)) {
+        publishDebouncedSessionStats(sessionId);
+      }
     }
 
     const updated = mutationResult.updatedTarget;

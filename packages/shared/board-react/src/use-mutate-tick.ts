@@ -12,6 +12,7 @@ import {
   type GetUserGroupedAscentsFeedQueryResponse,
 } from '@boardsesh/graphql/operations';
 import { getBoulderGradesForBoard } from '@boardsesh/board-constants/boulder-grade-mapping';
+import { isUnrecognizedTickVoteMarker } from '@boardsesh/graphql';
 import { useBoardAdapter } from './adapter';
 import type { LogbookEntry } from './logbook-keys';
 
@@ -102,8 +103,19 @@ export function useUpdateTick() {
   return useMutation({
     mutationFn: async (variables: { uuid: string; input: UpdateTickInput }) => {
       if (!isAuthenticated) throw new Error('Not authenticated');
-      const response = await executeHttp<UpdateTickResponse, UpdateTickVariables>(UPDATE_TICK, variables);
-      return response.updateTick;
+      try {
+        const response = await executeHttp<UpdateTickResponse, UpdateTickVariables>(UPDATE_TICK, variables);
+        return response.updateTick;
+      } catch (error) {
+        if (!variables.input.reportingVoteFields?.length || !isUnrecognizedTickVoteMarker(error)) throw error;
+        const input = { ...variables.input };
+        delete input.reportingVoteFields;
+        const response = await executeHttp<UpdateTickResponse, UpdateTickVariables>(UPDATE_TICK, {
+          uuid: variables.uuid,
+          input,
+        });
+        return response.updateTick;
+      }
     },
     onSuccess: async (updatedTick) => {
       await reconcileTickInLogbooks(queryClient, updatedTick.uuid, (entry) => ({

@@ -235,6 +235,7 @@ BEGIN
           AND procedure.pronargs = 0 AND procedure.prosecdef
           AND procedure.prolang = (SELECT oid FROM pg_catalog.pg_language WHERE lanname = 'plpgsql')
           AND (procedure.proname, pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(procedure.prosrc, 'UTF8')), 'hex')) IN (
+            ('invalidate_gym_tick_votes', '2657a55f4dd37fff70daf2c7b8b70e912b26ddcf204998116cb6a4e88abc3878'),
             ('partner_account_deletion_events', '467385c20855be8979e184cdbce603d51328d25d6de64003b48b2279a10af7b5'),
             ('partner_connection_lifecycle_events', '958d841f4c621cf8cadcccffd06677da569654bd997ce5e87383776511c09c6e'),
             ('revoke_gym_reporting_aliases_on_board_move', 'f645b67ae38be89b9af89bf000c68336c1d24e85e2335a32ecc79eebfddab243'),
@@ -270,6 +271,7 @@ BEGIN
              AND procedure.pronargs = 0 AND procedure.prosecdef
              AND procedure.prolang = (SELECT oid FROM pg_catalog.pg_language WHERE lanname = 'plpgsql')
              AND (procedure.proname, pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(procedure.prosrc, 'UTF8')), 'hex')) IN (
+               ('invalidate_gym_tick_votes', '2657a55f4dd37fff70daf2c7b8b70e912b26ddcf204998116cb6a4e88abc3878'),
                ('partner_account_deletion_events', '467385c20855be8979e184cdbce603d51328d25d6de64003b48b2279a10af7b5'),
                ('partner_connection_lifecycle_events', '958d841f4c621cf8cadcccffd06677da569654bd997ce5e87383776511c09c6e'),
                ('revoke_gym_reporting_aliases_on_board_move', 'f645b67ae38be89b9af89bf000c68336c1d24e85e2335a32ecc79eebfddab243'),
