@@ -1334,6 +1334,13 @@
   cursor: pointer;
 }
 
+.page .faqQuestion {
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+}
+
 .faq summary::-webkit-details-marker {
   display: none;
 }

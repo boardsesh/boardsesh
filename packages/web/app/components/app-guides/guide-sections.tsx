@@ -587,7 +587,12 @@ export function Faq({
       <Box className={styles.faq}>
         {items.map((item, index) => (
           <details key={item.id} open={index === 0}>
-            <summary>{item.q}</summary>
+            {/* The question is the item's heading (an <h3> under the FAQ's <h2>); it keeps the summary's look. */}
+            <summary>
+              <Typography component="h3" className={styles.faqQuestion}>
+                {item.q}
+              </Typography>
+            </summary>
             <Typography component="p" color="text.secondary">
               {item.a}
             </Typography>
@@ -763,7 +768,8 @@ export function SourcesDisclosure({ guide, t, groups }: { guide: AppGuidePage; t
         </Typography>
         {allGroups.map((group) => (
           <React.Fragment key={group.id}>
-            <Typography component="h3" id={group.id} className={styles.sourceGroup}>
+            {/* A label, not a heading: as h3s these repeated every section title in the outline. */}
+            <Typography component="p" id={group.id} className={styles.sourceGroup}>
               {group.title}
             </Typography>
             <Box component="ul" className={styles.sourceList}>

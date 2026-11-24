@@ -149,6 +149,9 @@ describe('app guide pages before hydration', () => {
     expect(faq[0].hasAttribute('open')).toBe(true);
     expect(faq[1].hasAttribute('open')).toBe(false);
     expect(faq[1].querySelector('p')?.textContent?.length).toBeGreaterThan(20);
+    // Each question is a real heading inside its summary; the source group labels are not.
+    expect(faq[1].querySelector('summary > h3')?.textContent?.length).toBeGreaterThan(5);
+    expect(markup.querySelectorAll('#sources h3')).toHaveLength(0);
 
     expect(markup.textContent).toContain('Boardsesh is an independent app.');
     expect(markup.textContent).toMatch(/We make Boardsesh/);
