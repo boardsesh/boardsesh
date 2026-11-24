@@ -4,9 +4,9 @@
  */
 
 import { readFileSync } from 'node:fs';
-const gymMcpSchema = readFileSync(new URL('../../../db/drizzle/0342_hosted_gym_mcp.sql', import.meta.url), 'utf8');
+const gymMcpSchema = readFileSync(new URL('../../../db/drizzle/0345_hosted_gym_mcp.sql', import.meta.url), 'utf8');
 const gymMcpReceiptRetentionSchema = readFileSync(
-  new URL('../../../db/drizzle/0343_gym_mcp_receipt_retention.sql', import.meta.url),
+  new URL('../../../db/drizzle/0346_gym_mcp_receipt_retention.sql', import.meta.url),
   'utf8',
 );
 const sitemapSummarySchema = readFileSync(

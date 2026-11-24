@@ -1,6 +1,6 @@
 {
-  "id": "13100ac0-479e-43df-a1e9-28c521d5de8a",
-  "prevId": "bfee8abc-b295-4f14-8820-2ee3abb94b64",
+  "id": "83dca826-0e86-4afe-9c59-e5d8f54f75d8",
+  "prevId": "f6217f92-3282-42a4-be97-daf9c362d1fb",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -10338,6 +10338,60 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.gym_reporting_observations": {
+      "name": "gym_reporting_observations",
+      "schema": "",
+      "columns": {
+        "gym_id": {
+          "name": "gym_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "contract_version": {
+          "name": "contract_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "clock_timestamp()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "gym_reporting_observations_gym_id_gyms_id_fk": {
+          "name": "gym_reporting_observations_gym_id_gyms_id_fk",
+          "tableFrom": "gym_reporting_observations",
+          "tableTo": "gyms",
+          "columnsFrom": [
+            "gym_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "gym_reporting_observations_gym_id_contract_version_pk": {
+          "name": "gym_reporting_observations_gym_id_contract_version_pk",
+          "columns": [
+            "gym_id",
+            "contract_version"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.gyms": {
       "name": "gyms",
       "schema": "",
@@ -13793,6 +13847,28 @@
           "method": "btree",
           "with": {}
         },
+        "boardsesh_ticks_reporting_unbounded_idx": {
+          "name": "boardsesh_ticks_reporting_unbounded_idx",
+          "columns": [
+            {
+              "expression": "board_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"boardsesh_ticks\".\"origin\" = 'native'\n        AND \"boardsesh_ticks\".\"reporting_attribution\" IN ('uuid', 'presence', 'session', 'edit')\n        AND (\"boardsesh_ticks\".\"reporting_time_precision\" IS DISTINCT FROM 'instant'\n          OR \"boardsesh_ticks\".\"reporting_climbed_at\" IS DISTINCT FROM \"boardsesh_ticks\".\"climbed_at\")",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "boardsesh_ticks_user_climb_lookup_idx": {
           "name": "boardsesh_ticks_user_climb_lookup_idx",
           "columns": [
@@ -14215,6 +14291,34 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "board_climb_events_reporting_actor_time_idx": {
+          "name": "board_climb_events_reporting_actor_time_idx",
+          "columns": [
+            {
+              "expression": "board_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "confirmed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"board_climb_events\".\"source\" = 'boardsesh' AND \"board_climb_events\".\"user_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -26282,6 +26386,318 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.gym_board_grade_collections": {
+      "name": "gym_board_grade_collections",
+      "schema": "",
+      "columns": {
+        "board_id": {
+          "name": "board_id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "playlist_id": {
+          "name": "playlist_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "gym_board_grade_collections_board_id_user_boards_id_fk": {
+          "name": "gym_board_grade_collections_board_id_user_boards_id_fk",
+          "tableFrom": "gym_board_grade_collections",
+          "tableTo": "user_boards",
+          "columnsFrom": [
+            "board_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "gym_board_grade_collections_playlist_id_playlists_id_fk": {
+          "name": "gym_board_grade_collections_playlist_id_playlists_id_fk",
+          "tableFrom": "gym_board_grade_collections",
+          "tableTo": "playlists",
+          "columnsFrom": [
+            "playlist_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.spray_exposure_checkpoints": {
+      "name": "spray_exposure_checkpoints",
+      "schema": "",
+      "columns": {
+        "board_id": {
+          "name": "board_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "board_uuid": {
+          "name": "board_uuid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gym_id": {
+          "name": "gym_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "wall_id": {
+          "name": "wall_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version_id": {
+          "name": "version_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "layout_id": {
+          "name": "layout_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "angle": {
+          "name": "angle",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "observed_at": {
+          "name": "observed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "spray_exposure_checkpoint_binding_pk": {
+          "name": "spray_exposure_checkpoint_binding_pk",
+          "columns": [
+            "board_id",
+            "board_uuid",
+            "gym_id",
+            "wall_id",
+            "version_id",
+            "layout_id",
+            "angle"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.spray_exposure_invalidations": {
+      "name": "spray_exposure_invalidations",
+      "schema": "",
+      "columns": {
+        "seq": {
+          "name": "seq",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "nextval('public.spray_exposure_event_seq')"
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "observed_at": {
+          "name": "observed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "spray_exposure_invalidation_key_idx": {
+          "name": "spray_exposure_invalidation_key_idx",
+          "columns": [
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.spray_exposure_observations": {
+      "name": "spray_exposure_observations",
+      "schema": "",
+      "columns": {
+        "board_id": {
+          "name": "board_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "board_uuid": {
+          "name": "board_uuid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gym_id": {
+          "name": "gym_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "wall_id": {
+          "name": "wall_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version_id": {
+          "name": "version_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "layout_id": {
+          "name": "layout_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "angle": {
+          "name": "angle",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "seq": {
+          "name": "seq",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "nextval('public.spray_exposure_event_seq')"
+        },
+        "climb_uuid": {
+          "name": "climb_uuid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "observed_at": {
+          "name": "observed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "spray_exposure_observation_variant_idx": {
+          "name": "spray_exposure_observation_variant_idx",
+          "columns": [
+            {
+              "expression": "board_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "wall_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "layout_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "climb_uuid",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "angle",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.admin_daily_digests": {
       "name": "admin_daily_digests",
       "schema": "",
@@ -27414,6 +27830,16 @@
       "startWith": "1",
       "minValue": "1",
       "maxValue": "2147483647",
+      "cache": "1",
+      "cycle": false
+    },
+    "public.spray_exposure_event_seq": {
+      "name": "spray_exposure_event_seq",
+      "schema": "public",
+      "increment": "1",
+      "startWith": "1",
+      "minValue": "1",
+      "maxValue": "9223372036854775807",
       "cache": "1",
       "cycle": false
     }
