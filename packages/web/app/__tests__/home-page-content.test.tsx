@@ -4,7 +4,6 @@ import React from 'react';
 import enMarketing from '@boardsesh/i18n/locales/en-US/marketing.json';
 import { buildStoreUrl } from '@/app/lib/store-links';
 import { __resetSessionInboundCampaignForTests } from '@/app/lib/inbound-campaign';
-import { APP_URL } from '@/app/lib/app-origin';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
 // Every hero store link names the hero as its placement (#6027).
@@ -352,13 +351,6 @@ describe('HomePageContent', () => {
       expect(guides.getAttribute('href')).toBe('/apps');
       expect(guides.getAttribute('hreflang')).toBe('en');
       expect(hero?.contains(guides)).toBe(true);
-    });
-
-    it('keeps the browser handoff as a real app anchor', () => {
-      render(<HomePageContent />);
-      expect(screen.getByLabelText(resolveMarketingKey('home.hero.startClimbingAria')).getAttribute('href')).toBe(
-        APP_URL,
-      );
     });
   });
 

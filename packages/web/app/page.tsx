@@ -66,6 +66,7 @@ export default async function Home() {
           'importLink',
           'sprayTitle',
           'sprayLead',
+          'homeSprayPhotoAlt',
           'sprayRoute',
           'photoGuide',
           'proofNote',
