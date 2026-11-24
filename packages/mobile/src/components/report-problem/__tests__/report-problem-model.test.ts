@@ -5,8 +5,11 @@ import {
   canReportBoard,
   canReportGym,
   canSendReport,
+  canSendSetupReport,
   gymReportAudience,
   reportDoneCopy,
+  setupDoneCopy,
+  setupSuggestionLine,
   showClaimNudge,
   viewerCanFixBoard,
 } from '../report-problem-model';
@@ -122,5 +125,42 @@ describe('the report sheet', () => {
     expect(reportDoneCopy({ status: 'created', otherReporterCount: 0 })).toEqual({ kind: 'sent' });
     expect(reportDoneCopy({ status: 'added', otherReporterCount: 2 })).toEqual({ kind: 'joined', count: 2 });
     expect(reportDoneCopy({ status: 'already_reported', otherReporterCount: 3 })).toEqual({ kind: 'already_reported' });
+  });
+});
+
+describe('suggesting the setup', () => {
+  it('sends a changed setup with or without a note, and an unchanged one only with enough words', () => {
+    expect(canSendSetupReport({ setupChanged: true, note: '' })).toBe(true);
+    expect(canSendSetupReport({ setupChanged: false, note: '' })).toBe(false);
+    expect(canSendSetupReport({ setupChanged: false, note: '  12x14  ' })).toBe(false);
+    expect(canSendSetupReport({ setupChanged: false, note: 'The kicker is gone' })).toBe(true);
+    expect(canSendSetupReport({ setupChanged: true, note: 'x'.repeat(501) })).toBe(false);
+  });
+
+  it('words the line under Send from the gym, and waits for the gym to load', () => {
+    expect(setupSuggestionLine({ boardGymUuid: 'gym-1', gymListingState: 'UNCLAIMED' })).toBe('applies_for_everyone');
+    expect(setupSuggestionLine({ boardGymUuid: 'gym-1', gymListingState: 'CLIMBER_LISTED' })).toBe(
+      'applies_for_everyone',
+    );
+    expect(setupSuggestionLine({ boardGymUuid: 'gym-1', gymListingState: 'RUN_BY_GYM' })).toBe('staff_review');
+    expect(setupSuggestionLine({ boardGymUuid: null, gymListingState: null })).toBe('creator_review');
+    expect(setupSuggestionLine({ boardGymUuid: 'gym-1', gymListingState: null })).toBeNull();
+  });
+
+  it('picks the done step from the outcome', () => {
+    const board = { uuid: 'board-1' } as never;
+    expect(setupDoneCopy({ setupOutcome: 'APPLIED', setupReviewReason: null, board })).toEqual({
+      kind: 'applied',
+      board,
+    });
+    expect(setupDoneCopy({ setupOutcome: 'SENT_FOR_REVIEW', setupReviewReason: 'CLAIMED_GYM', board: null })).toEqual({
+      kind: 'review',
+      reason: 'CLAIMED_GYM',
+    });
+    // The server's flag is off: no reason, so the plain done line.
+    expect(setupDoneCopy({ setupOutcome: 'SENT_FOR_REVIEW', setupReviewReason: null, board: null })).toBeNull();
+    expect(setupDoneCopy({ setupOutcome: null, setupReviewReason: null, board: null })).toBeNull();
+    // Applied without the board to climb: nothing to offer.
+    expect(setupDoneCopy({ setupOutcome: 'APPLIED', setupReviewReason: null, board: null })).toBeNull();
   });
 });

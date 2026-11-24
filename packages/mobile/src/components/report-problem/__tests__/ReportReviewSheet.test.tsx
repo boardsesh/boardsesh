@@ -5,10 +5,13 @@ import { createElement, type ReactNode } from 'react';
 import type { DirectoryReport, UserBoard } from '@boardsesh/shared-schema';
 import { ReportReviewSheet } from '../ReportReviewSheet';
 
-const state = vi.hoisted(() => ({ reports: [] as DirectoryReport[] }));
+const state = vi.hoisted(() => ({ reports: [] as DirectoryReport[], setupSuggestions: false }));
 const resolveAsync = vi.hoisted(() => vi.fn());
 const refreshReads = vi.hoisted(() => vi.fn());
 const showToast = vi.hoisted(() => vi.fn());
+const updateBoardAsync = vi.hoisted(() => vi.fn());
+const applyChangedBoard = vi.hoisted(() => vi.fn());
+const confirm = vi.hoisted(() => vi.fn());
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -18,7 +21,8 @@ vi.mock('react-i18next', () => ({
 }));
 vi.mock('react-native', () => ({
   Platform: { OS: 'android' },
-  View: ({ children }: { children: ReactNode }) => createElement('div', null, children),
+  View: ({ children, testID }: { children: ReactNode; testID?: string }) =>
+    createElement('div', { 'data-testid': testID }, children),
   StyleSheet: { create: (styles: unknown) => styles },
 }));
 vi.mock('../../ModalSheet', () => ({
@@ -61,6 +65,25 @@ vi.mock('../../../hooks/use-unsaved-sheet-guard', () => ({
     enablePanDownToClose: true,
   }),
 }));
+vi.mock('../../Button', () => ({
+  Button: ({
+    title,
+    onPress,
+    disabled,
+    testID,
+  }: {
+    title: string;
+    onPress: () => void;
+    disabled?: boolean;
+    testID?: string;
+  }) => createElement('button', { type: 'button', onClick: onPress, disabled, 'data-testid': testID }, title),
+}));
+vi.mock('../../../lib/graphql/hooks', () => ({ useUpdateBoard: () => ({ mutateAsync: updateBoardAsync }) }));
+vi.mock('../../../lib/boards/use-apply-changed-board', () => ({ useApplyChangedBoard: () => applyChangedBoard }));
+vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => confirm }));
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useDirectorySetupSuggestionsEnabled: () => state.setupSuggestions,
+}));
 vi.mock('../../../lib/graphql/hooks/use-directory-reports', () => ({
   useBoardReports: () => ({ data: state.reports, isLoading: false, isError: false }),
   useResolveDirectoryReport: () => ({ mutateAsync: resolveAsync }),
@@ -85,12 +108,19 @@ function report(overrides: Partial<DirectoryReport>): DirectoryReport {
   };
 }
 
+// Kilter Original 12×12 with kickboard, Bolt Ons and Screw Ons: real catalogue ids.
 const board = {
   uuid: 'board-1',
   name: 'Crux Kilter',
   ownerId: 'alex',
   gymUuid: 'gym-1',
   gymName: 'Crux',
+  boardType: 'kilter',
+  layoutId: 1,
+  sizeId: 10,
+  setIds: '1,20',
+  angle: 40,
+  isAngleAdjustable: true,
   canEdit: true,
   canDelete: true,
   canRemoveFromGym: true,
@@ -98,6 +128,11 @@ const board = {
 
 beforeEach(() => {
   state.reports = [report({})];
+  state.setupSuggestions = false;
+  updateBoardAsync.mockReset();
+  applyChangedBoard.mockReset();
+  applyChangedBoard.mockResolvedValue(undefined);
+  confirm.mockReset();
   resolveAsync.mockReset();
   resolveAsync.mockResolvedValue({});
   refreshReads.mockReset();
@@ -215,5 +250,116 @@ describe('ReportReviewSheet', () => {
     state.reports = [report({ status: 'fixed', resolvedAt: '2026-11-21T10:00:00.000Z' })];
     const screen = render(<ReportReviewSheet board={board} viewerUserId="alex" onClose={vi.fn()} onAction={vi.fn()} />);
     expect(screen.getByTestId('report-review-empty')).toBeTruthy();
+  });
+});
+
+describe('ReportReviewSheet with suggested setups', () => {
+  const suggestion = (layoutId: number, sizeId: number, setIds: string, createdAt: string) => ({
+    note: '',
+    createdAt,
+    reporter: null,
+    suggestedSetup: { layoutId, sizeId, setIds, angle: null },
+  });
+
+  beforeEach(() => {
+    state.setupSuggestions = true;
+    state.reports = [
+      report({
+        reporterCount: 3,
+        notes: [
+          // Same setup twice, sets in another order: one group of 2.
+          suggestion(1, 10, '20', '2026-11-20T10:00:00.000Z'),
+          suggestion(1, 10, '20', '2026-11-21T10:00:00.000Z'),
+          suggestion(1, 7, '1,20', '2026-11-22T10:00:00.000Z'),
+          // What the board already has: nothing to use.
+          suggestion(1, 10, '20,1', '2026-11-22T11:00:00.000Z'),
+          { note: 'The angle is 45 not 40', createdAt: '2026-11-19T10:00:00.000Z', reporter: null },
+        ],
+      }),
+    ];
+  });
+
+  it('groups equal setups, most suggested first, and keeps only written notes as notes', () => {
+    const screen = render(<ReportReviewSheet board={board} viewerUserId="alex" onClose={vi.fn()} onAction={vi.fn()} />);
+    const lines = [...screen.getByTestId('report-review-suggestions').querySelectorAll('span')].map(
+      (line) => line.textContent,
+    );
+    expect(lines).toEqual([
+      'mobile.setupSuggestion.suggestedHeading',
+      'mobile.setupSuggestion.suggested{"count":2,"setup":"Original · 12×12 with kickboard · Square · Screw Ons"}',
+      'mobile.setupSuggestion.suggested{"count":1,"setup":"Original · 12×14 · Commercial · Bolt Ons + Screw Ons"}',
+    ]);
+    expect(screen.queryByText('“”')).toBeNull();
+    expect(screen.getByText('“The angle is 45 not 40”')).toBeTruthy();
+    expect(screen.getByTestId('report-review-fix').textContent).toContain('mobile.setupSuggestion.editYourself');
+  });
+
+  it('Use this setup saves that setup on the board, then closes', async () => {
+    const updated = { ...board, setIds: '20' };
+    updateBoardAsync.mockResolvedValue(updated);
+    const onClose = vi.fn();
+    const screen = render(<ReportReviewSheet board={board} viewerUserId="alex" onClose={onClose} onAction={vi.fn()} />);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('report-review-use-setup-1:10:20:'));
+    });
+    expect(updateBoardAsync).toHaveBeenCalledTimes(1);
+    expect(updateBoardAsync).toHaveBeenCalledWith({ boardUuid: 'board-1', layoutId: 1, sizeId: 10, setIds: '20' });
+    expect(applyChangedBoard).toHaveBeenCalledWith(updated);
+    expect(refreshReads).toHaveBeenCalledWith('board-1');
+    expect(showToast).toHaveBeenCalledWith('reportReview.fixedToast', 'success');
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('asks before saving a setup the owner already has elsewhere, then saves it anyway', async () => {
+    const duplicate = {
+      response: {
+        errors: [
+          {
+            extensions: {
+              code: 'BOARD_DUPLICATE_CONFIG',
+              existingBoardUuid: 'board-2',
+              existingBoardName: 'Home Kilter',
+            },
+          },
+        ],
+      },
+    };
+    updateBoardAsync.mockRejectedValueOnce(duplicate).mockResolvedValueOnce(board);
+    confirm.mockResolvedValue(true);
+    const onClose = vi.fn();
+    const screen = render(<ReportReviewSheet board={board} viewerUserId="alex" onClose={onClose} onAction={vi.fn()} />);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('report-review-use-setup-1:7:1,20:'));
+    });
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'mobile.edit.duplicate.title',
+        message: 'mobile.edit.duplicate.body{"name":"Home Kilter"}',
+        confirmLabel: 'mobile.edit.duplicate.saveAnyway',
+      }),
+    );
+    expect(updateBoardAsync.mock.calls.map(([input]) => input)).toEqual([
+      { boardUuid: 'board-1', layoutId: 1, sizeId: 7, setIds: '1,20' },
+      { boardUuid: 'board-1', layoutId: 1, sizeId: 7, setIds: '1,20', allowDuplicateConfig: true },
+    ]);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('stays open and says so when the save fails, or the climber keeps the board as it is', async () => {
+    updateBoardAsync.mockRejectedValueOnce(new Error('offline'));
+    const onClose = vi.fn();
+    const screen = render(<ReportReviewSheet board={board} viewerUserId="alex" onClose={onClose} onAction={vi.fn()} />);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('report-review-use-setup-1:10:20:'));
+    });
+    expect(screen.getByTestId('report-review-use-setup-error').textContent).toBe('reportReview.keepError');
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('shows no suggestions while the flag is off', () => {
+    state.setupSuggestions = false;
+    const screen = render(<ReportReviewSheet board={board} viewerUserId="alex" onClose={vi.fn()} onAction={vi.fn()} />);
+    expect(screen.queryByTestId('report-review-suggestions')).toBeNull();
+    expect(screen.getByTestId('report-review-fix').textContent).toContain('reportReview.fix');
   });
 });

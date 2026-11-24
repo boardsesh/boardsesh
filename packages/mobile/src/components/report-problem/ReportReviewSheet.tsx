@@ -6,6 +6,11 @@
 // owns the board edit route and the confirms the picker already runs for its
 // own menu. "It's right as it is" is step 2 of this sheet: an optional note,
 // then every report this viewer may close is closed as kept.
+//
+// Setups climbers suggested on "Set up wrong" (the `directory-setup-suggestions`
+// flag) are grouped by setup, each with "Use this setup": the same `updateBoard`
+// the edit screen saves with, which closes the waiting reports as fixed. The
+// edit route stays one row down as "Edit it yourself".
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, type ColorValue } from 'react-native';
@@ -15,7 +20,9 @@ import {
   normalizeReportNote,
   type DirectoryReportReason,
 } from '@boardsesh/directory-moderation';
+import { isDuplicateBoardError, readDuplicateBoardError } from '@boardsesh/graphql/errors';
 import type { DirectoryReport, UserBoard } from '@boardsesh/shared-schema';
+import { Button } from '../Button';
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { ModalSheet } from '../ModalSheet';
 import { SheetTopBar } from '../SheetTopBar';
@@ -32,12 +39,25 @@ import {
   useRefreshBoardReportReads,
   useResolveDirectoryReport,
 } from '../../lib/graphql/hooks/use-directory-reports';
+import { useUpdateBoard } from '../../lib/graphql/hooks';
+import { useApplyChangedBoard } from '../../lib/boards/use-apply-changed-board';
+import { useConfirm } from '../../providers/dialog-provider';
+import { useDirectorySetupSuggestionsEnabled } from '../../providers/feature-flags-provider';
 import { getCachedDateTimeFormat } from '../../lib/intl-formatter-cache';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { dismissManagedSheetAndWait, type ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
 import { spacing } from '../../theme/tokens';
-import { keepableReports, reviewFootnote, reviewNotes, waitingReports } from './report-review-model';
+import {
+  keepableReports,
+  reviewFootnote,
+  reviewNotes,
+  suggestedSetupGroups,
+  suggestedSetupUpdateInput,
+  waitingReports,
+  type SuggestedSetupGroup,
+} from './report-review-model';
+import { formatSetupSummary } from './setup-summary';
 
 /** What the host does for a board action picked in the sheet. */
 export type ReportReviewAction = 'fix' | 'remove' | 'delete';
@@ -88,8 +108,11 @@ export function ReportReviewSheet({
   onAction: (action: ReportReviewAction, board: UserBoard) => void;
 }) {
   const { t, i18n } = useTranslation('boards');
+  const { t: tCommon } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
+  const confirm = useConfirm();
+  const setupSuggestionsEnabled = useDirectorySetupSuggestionsEnabled();
   const { data: reports, isLoading, isError } = useBoardReports(board.uuid);
   const resolve = useResolveDirectoryReport();
   const [step, setStep] = useState<'list' | 'keep'>('list');
@@ -105,6 +128,23 @@ export function ReportReviewSheet({
   const waiting = useMemo(() => waitingReports(reports ?? []), [reports]);
   const keepable = useMemo(() => keepableReports(waiting), [waiting]);
   const notes = useMemo(() => reviewNotes(waiting), [waiting]);
+  const { layoutId, sizeId, setIds, angle, boardType } = board;
+  const suggestions = useMemo(
+    () => (setupSuggestionsEnabled ? suggestedSetupGroups(waiting, { layoutId, sizeId, setIds, angle }) : []),
+    [setupSuggestionsEnabled, waiting, layoutId, sizeId, setIds, angle],
+  );
+  // Each group's sentence, worked out once per list rather than per render.
+  const suggestionLines = useMemo(
+    () =>
+      suggestions.map((group) => ({
+        group,
+        text: t('mobile.setupSuggestion.suggested', {
+          count: group.count,
+          setup: formatSetupSummary(boardType, group.setup) ?? '',
+        }),
+      })),
+    [suggestions, boardType, t],
+  );
   const footnote = reviewFootnote(waiting);
   const locale = i18n.resolvedLanguage ?? i18n.language;
   const footnoteText =
@@ -139,6 +179,67 @@ export function ReportReviewSheet({
     [onClose, onAction, board],
   );
   const changeReply = useCallback((next: string) => setReply(next.slice(0, REPORT_NOTE_MAX_LENGTH)), []);
+
+  // "Use this setup": the edit screen's save, with its question when the owner
+  // already has a board with this setup at this place.
+  const { mutateAsync: updateBoardAsync } = useUpdateBoard();
+  const applyChangedBoard = useApplyChangedBoard();
+  const usingSetup = useRef(false);
+  const [usingKey, setUsingKey] = useState<string | null>(null);
+  const [useSetupFailed, setUseSetupFailed] = useState(false);
+  const applySuggestedSetup = useCallback(
+    async (group: SuggestedSetupGroup) => {
+      if (usingSetup.current) return;
+      usingSetup.current = true;
+      setUsingKey(group.key);
+      setUseSetupFailed(false);
+      let allowDuplicateConfig = false;
+      try {
+        for (;;) {
+          try {
+            const updated = await updateBoardAsync(
+              suggestedSetupUpdateInput(board.uuid, group.setup, { allowDuplicateConfig }),
+            );
+            try {
+              await applyChangedBoard(updated);
+            } catch {
+              // Saved on the server; the active board heals on the next foreground.
+            }
+            refreshReportReads(board.uuid);
+            showToast(t('reportReview.fixedToast'), 'success');
+            onClose();
+            return;
+          } catch (error) {
+            if (allowDuplicateConfig || !isDuplicateBoardError(error)) throw error;
+            // Null whenever the viewer is not the board's owner: the server
+            // keeps the other board's name and place from staff.
+            const duplicate = readDuplicateBoardError(error);
+            const saveAnyway = await confirm({
+              title: t('mobile.edit.duplicate.title'),
+              message: duplicate?.boardName
+                ? duplicate.locationName
+                  ? t('mobile.edit.duplicate.bodyWithLocation', {
+                      name: duplicate.boardName,
+                      location: duplicate.locationName,
+                    })
+                  : t('mobile.edit.duplicate.body', { name: duplicate.boardName })
+                : t('mobile.edit.duplicate.bodyGeneric'),
+              confirmLabel: t('mobile.edit.duplicate.saveAnyway'),
+              cancelLabel: tCommon('actions.cancel'),
+            });
+            if (!saveAnyway) return;
+            allowDuplicateConfig = true;
+          }
+        }
+      } catch {
+        setUseSetupFailed(true);
+      } finally {
+        usingSetup.current = false;
+        setUsingKey(null);
+      }
+    },
+    [updateBoardAsync, board.uuid, applyChangedBoard, refreshReportReads, showToast, t, tCommon, onClose, confirm],
+  );
   const resolveAsync = resolve.mutateAsync;
   const sendKeep = useCallback(async () => {
     if (keeping || keepable.length === 0) return;
@@ -254,6 +355,41 @@ export function ReportReviewSheet({
                   </Text>
                 ))}
               </View>
+              {suggestionLines.length > 0 ? (
+                <View style={styles.reasons} testID="report-review-suggestions">
+                  <Text variant="subheadline" tone="secondary" accessibilityRole="header">
+                    {t('mobile.setupSuggestion.suggestedHeading')}
+                  </Text>
+                  {suggestionLines.map(({ group, text }) => (
+                    <View key={group.key} style={styles.suggestion}>
+                      <Text variant="body">{text}</Text>
+                      {board.canEdit ? (
+                        <Button
+                          title={t('mobile.setupSuggestion.useSetup')}
+                          accessibilityLabel={t('mobile.setupSuggestion.useSetupLabel', {
+                            setup: formatSetupSummary(boardType, group.setup) ?? '',
+                          })}
+                          variant="tonal"
+                          size="small"
+                          loading={usingKey === group.key}
+                          disabled={usingKey !== null}
+                          onPress={() => void applySuggestedSetup(group)}
+                          testID={`report-review-use-setup-${group.key}`}
+                        />
+                      ) : null}
+                    </View>
+                  ))}
+                  {useSetupFailed ? (
+                    <Text
+                      accessibilityLiveRegion="polite"
+                      color={brandColors.error}
+                      testID="report-review-use-setup-error"
+                    >
+                      {t('reportReview.keepError')}
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
               {notes.length > 0 ? (
                 <View style={styles.reasons}>
                   <Text variant="subheadline" tone="secondary" accessibilityRole="header">
@@ -278,7 +414,7 @@ export function ReportReviewSheet({
               <ReviewActionRow
                 key="fix"
                 icon="edit"
-                label={t('reportReview.fix')}
+                label={suggestionLines.length > 0 ? t('mobile.setupSuggestion.editYourself') : t('reportReview.fix')}
                 hint={t('reportReview.fixHint')}
                 color={systemColors.label}
                 onPress={() => void act('fix')}
@@ -369,4 +505,5 @@ function ReviewActionRow({
 const styles = StyleSheet.create({
   body: { padding: spacing[4], gap: spacing[3] },
   reasons: { gap: spacing[1] },
+  suggestion: { gap: spacing[2], alignItems: 'flex-start', paddingVertical: spacing[1] },
 });

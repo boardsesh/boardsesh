@@ -160,6 +160,31 @@
     "groupError": "Couldn’t change the board grouping. Check the choices and try again."
   },
   "mobile": {
+    "setupSuggestion": {
+      "holds": "Holds",
+      "unchangedHint": "Pick what's on the wall, or say what's wrong in a note.",
+      "previewEveryone": "Changes it for everyone at {{gym}}. Admins can undo it.",
+      "previewStaff": "{{gym}}'s staff check it first.",
+      "previewCreator": "Whoever added it checks it first.",
+      "appliedTitle": "Setup updated",
+      "appliedBody": "Everyone at {{gym}} now climbs {{setup}}.",
+      "appliedBodyGeneric": "Everyone now climbs {{setup}}.",
+      "climbNow": "Climb it now",
+      "reviewClaimedGym": "Sent to {{gym}}'s staff. We'll tell you when it's fixed.",
+      "reviewClaimedGymGeneric": "Sent to the gym's staff. We'll tell you when it's fixed.",
+      "reviewNoGym": "Sent to whoever added it. We'll tell you when it's fixed.",
+      "reviewRecentChange": "Someone changed this board in the last {{hours}} hours, so yours gets checked first. We'll tell you when it's fixed.",
+      "reviewRecentlyUndone": "A change to this board was undone in the last {{days}} days, so yours gets checked first. We'll tell you when it's fixed.",
+      "reviewDailyLimit_one": "You've changed {{count}} board in the last day, so this one gets checked first. We'll tell you when it's fixed.",
+      "reviewDailyLimit_other": "You've changed {{count}} boards in the last day, so this one gets checked first. We'll tell you when it's fixed.",
+      "reviewClashes": "It would match another board, so it gets checked first. We'll tell you when it's fixed.",
+      "suggestedHeading": "Setups they suggested",
+      "suggested_one": "{{count}} climber suggested {{setup}}",
+      "suggested_other": "{{count}} climbers suggested {{setup}}",
+      "useSetup": "Use this setup",
+      "useSetupLabel": "Use this setup: {{setup}}",
+      "editYourself": "Edit it yourself"
+    },
     "edit": {
       "screenTitle": "Edit board",
       "save": "Save changes",

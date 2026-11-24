@@ -309,13 +309,21 @@ export const SHARED_EVENTS = {
   ClimbReported: 'Climb Reported',
   // A climber sent "Report a problem" on a board or gym listing from the app
   // (docs/product/directory-reports.md). Props: { targetKind: 'board' | 'gym',
-  // reason, status: 'created' | 'added' | 'already_reported', platform }.
+  // reason, status: 'created' | 'added' | 'already_reported', platform,
+  // hadSuggestion, setupOutcome }. `hadSuggestion` is true when a "Set up wrong"
+  // report carried a suggested setup; `setupOutcome` is the server's answer to
+  // it ('APPLIED' | 'SENT_FOR_REVIEW'), null without one.
   // Deliberately not the backend's `Board Report Submitted`: that one counts
   // every filed report anonymously after its transaction commits and feeds the
   // launch metric. This one is the climber's side, tied to their person, so a
   // funnel from the menu row to a sent report can be read. Two names keep an
   // insight on either from counting every report twice.
   ReportProblemSent: 'Report Problem Sent',
+  // A climber's suggested setup changed the board for everyone, and they
+  // tapped "Climb it now" on the report sheet's done step. Props: { boardType,
+  // gymListingState }. Read it against `Report Problem Sent` with
+  // `setupOutcome: 'APPLIED'` for how many go straight to the wall.
+  BoardSetupClimbedNow: 'Board Setup Climbed Now',
   OpenInAuroraApp: 'Open in Aurora App',
   CreatePlaylist: 'Create Playlist',
   AddToPlaylist: 'Add to Playlist',

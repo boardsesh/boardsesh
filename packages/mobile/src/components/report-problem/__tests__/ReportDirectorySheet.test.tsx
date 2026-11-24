@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => async () => false }));
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render, within } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
-import type { Gym, UserBoard } from '@boardsesh/shared-schema';
+import type { BoardSetupReviewReason, Gym, UserBoard } from '@boardsesh/shared-schema';
 import { ReportDirectorySheet } from '../ReportDirectorySheet';
 
 const state = vi.hoisted(() => ({
@@ -12,7 +12,13 @@ const state = vi.hoisted(() => ({
   gymBoards: [] as { uuid: string; name: string }[],
   boardPending: false,
   boardError: false,
+  setupSuggestions: false,
+  activeBoard: null as Partial<UserBoard> | null,
 }));
+// "Climb it now": the cache write and the bind, in the order they ran.
+const calls = vi.hoisted(() => [] as string[]);
+const activate = vi.hoisted(() => vi.fn());
+const applyChangedBoard = vi.hoisted(() => vi.fn());
 const boardMutate = vi.hoisted(() => vi.fn());
 const gymMutate = vi.hoisted(() => vi.fn());
 const track = vi.hoisted(() => vi.fn());
@@ -30,8 +36,56 @@ vi.mock('react-i18next', () => ({
 }));
 vi.mock('react-native', () => ({
   Platform: { OS: 'android' },
-  View: ({ children }: { children: ReactNode }) => createElement('div', null, children),
+  View: ({ children, testID }: { children: ReactNode; testID?: string }) =>
+    createElement('div', { 'data-testid': testID }, children),
   StyleSheet: { create: (styles: unknown) => styles },
+}));
+// Each menu row as buttons, one per action, so a test picks by label.
+vi.mock('../../AppMenu', () => ({
+  AppMenu: ({
+    label,
+    actions,
+    onSelectIndex,
+  }: {
+    label: string;
+    actions: { label: string; selected?: boolean; disabled?: boolean }[];
+    onSelectIndex: (index: number) => void;
+  }) =>
+    createElement(
+      'div',
+      { 'data-value': label },
+      actions.map((action, index) =>
+        createElement('button', {
+          key: action.label,
+          type: 'button',
+          'aria-label': action.label,
+          'aria-pressed': action.selected === true,
+          disabled: action.disabled === true,
+          onClick: () => onSelectIndex(index),
+        }),
+      ),
+    ),
+}));
+vi.mock('../../InsetGroupedList', () => ({
+  InsetGroupedList: ({ children }: { children: ReactNode }) => createElement('div', null, children),
+  insetGroupedRowStyles: { row: {}, leading: {}, text: {} },
+}));
+vi.mock('../../Button', () => ({
+  Button: ({ title, onPress, testID }: { title: string; onPress: () => void; testID?: string }) =>
+    createElement('button', { type: 'button', onClick: onPress, 'data-testid': testID }, title),
+}));
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useDirectorySetupSuggestionsEnabled: () => state.setupSuggestions,
+  useFeatureFlag: () => undefined,
+}));
+vi.mock('../../../lib/graphql/use-active-board', () => ({
+  useActiveBoard: () => ({ data: state.activeBoard }),
+}));
+vi.mock('../../../lib/boards/use-activate-board', () => ({ useActivateBoard: () => activate }));
+vi.mock('../../../lib/boards/use-apply-changed-board', () => ({
+  useApplyChangedBoard: () => applyChangedBoard,
+  boardKeepingLocalAngle: (board: UserBoard, active: UserBoard | null) =>
+    active?.uuid === board.uuid && board.isAngleAdjustable ? { ...board, angle: active.angle } : board,
 }));
 vi.mock('../../ModalSheet', () => ({
   ModalSheet: ({ children, header }: { children: ReactNode; header: ReactNode }) =>
@@ -118,6 +172,7 @@ vi.mock('../../../lib/graphql/hooks/use-directory-reports', () => ({
   useReportGym: () => ({ mutate: gymMutate, isPending: false, isError: false }),
 }));
 
+// Kilter Original 12×12 with kickboard, Bolt Ons and Screw Ons: real catalogue ids.
 const board = {
   uuid: 'board-1',
   name: 'Crux Kilter',
@@ -126,10 +181,15 @@ const board = {
   gymUuid: 'gym-1',
   gymName: 'Crux',
   boardType: 'kilter',
+  layoutId: 1,
+  sizeId: 10,
+  setIds: '1,20',
+  angle: 40,
+  isAngleAdjustable: true,
 } as UserBoard;
 
-function renderBoard(onClaim = vi.fn()) {
-  return render(<ReportDirectorySheet target={{ kind: 'board', board }} onClose={vi.fn()} onClaim={onClaim} />);
+function renderBoard(onClaim = vi.fn(), target: UserBoard = board, onClose = vi.fn()) {
+  return render(<ReportDirectorySheet target={{ kind: 'board', board: target }} onClose={onClose} onClaim={onClaim} />);
 }
 
 beforeEach(() => {
@@ -139,6 +199,17 @@ beforeEach(() => {
     gymBoards: [],
     boardPending: false,
     boardError: false,
+    setupSuggestions: false,
+    activeBoard: null,
+  });
+  calls.length = 0;
+  activate.mockReset();
+  activate.mockImplementation(async () => {
+    calls.push('activate');
+  });
+  applyChangedBoard.mockReset();
+  applyChangedBoard.mockImplementation(async () => {
+    calls.push('apply');
   });
   boardMutate.mockReset();
   gymMutate.mockReset();
@@ -185,7 +256,17 @@ describe('ReportDirectorySheet on a board', () => {
       reason: 'wrong_setup',
       status: 'added',
       platform: 'android',
+      hadSuggestion: false,
+      setupOutcome: null,
     });
+  });
+
+  it('keeps the plain note field on Set up wrong while the setup flag is off', () => {
+    const screen = renderBoard();
+    fireEvent.click(screen.getByLabelText('report.boardReasons.wrongSetup'));
+    expect(screen.queryByTestId('setup-suggestion-fields')).toBeNull();
+    // Today's rule: a note is optional, so Send is ready without one.
+    expect((screen.getByTestId('sheet-top-bar-trailing') as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('shows the done line for each status', () => {
@@ -272,5 +353,217 @@ describe('ReportDirectorySheet on a gym', () => {
     expect(screen.getByTestId('report-problem-audience').textContent).toBe('report.routeStaff{"name":"","gym":"Crux"}');
     fireEvent.click(screen.getByTestId('sheet-top-bar-trailing'));
     expect(gymMutate.mock.calls[0][0]).toEqual({ gymUuid: 'gym-1', reason: 'wrong_details', note: null });
+  });
+});
+
+describe('ReportDirectorySheet suggesting the setup', () => {
+  const send = (screen: ReturnType<typeof renderBoard>) =>
+    screen.getByTestId('sheet-top-bar-trailing') as HTMLButtonElement;
+  const row = (screen: ReturnType<typeof renderBoard>, name: string) =>
+    within(screen.getByTestId(`setup-suggestion-${name}`));
+  const value = (screen: ReturnType<typeof renderBoard>, name: string) =>
+    screen.getByTestId(`setup-suggestion-${name}`).querySelector('[data-value]')?.getAttribute('data-value');
+
+  beforeEach(() => {
+    state.setupSuggestions = true;
+    state.gym = { uuid: 'gym-1', name: 'Crux', listingState: 'UNCLAIMED', canClaim: false };
+  });
+
+  function openWrongSetup(target: UserBoard = board) {
+    const screen = renderBoard(vi.fn(), target);
+    fireEvent.click(screen.getByLabelText('report.boardReasons.wrongSetup'));
+    return screen;
+  }
+
+  it("opens on the board's setup, and keeps Send off until something differs", () => {
+    const screen = openWrongSetup();
+    expect(value(screen, 'layout')).toBe('Original');
+    expect(value(screen, 'size')).toBe('12×12 with kickboard · Square');
+    expect(value(screen, 'holds')).toBe('Bolt Ons + Screw Ons');
+    // The board tilts, so its angle is not part of the setup.
+    expect(screen.queryByTestId('setup-suggestion-angle')).toBeNull();
+    expect(send(screen).disabled).toBe(true);
+    expect(screen.getByTestId('report-problem-setup-hint').textContent).toBe('mobile.setupSuggestion.unchangedHint');
+    fireEvent.click(row(screen, 'size').getByLabelText('12×14 · Commercial'));
+    expect(send(screen).disabled).toBe(false);
+    expect(screen.queryByTestId('report-problem-setup-hint')).toBeNull();
+  });
+
+  it('resets the size and holds when the layout changes', () => {
+    const screen = openWrongSetup();
+    fireEvent.click(row(screen, 'holds').getByLabelText('Screw Ons'));
+    expect(value(screen, 'holds')).toBe('Bolt Ons');
+    fireEvent.click(row(screen, 'layout').getByLabelText('Homewall'));
+    // Homewall's default size, with every set of it.
+    expect(value(screen, 'size')).toBe('7×10 · Full Ride');
+    expect(value(screen, 'holds')).toBe('Mainline + Auxiliary');
+  });
+
+  it('never leaves the board without holds', () => {
+    const screen = openWrongSetup();
+    fireEvent.click(row(screen, 'holds').getByLabelText('Screw Ons'));
+    const last = row(screen, 'holds').getByLabelText('Bolt Ons') as HTMLButtonElement;
+    expect(last.disabled).toBe(true);
+    fireEvent.click(last);
+    expect(value(screen, 'holds')).toBe('Bolt Ons');
+  });
+
+  it('takes a long enough note instead of a changed setup', () => {
+    const screen = openWrongSetup();
+    fireEvent.change(screen.getByLabelText('report.noteLabel'), { target: { value: 'Short' } });
+    expect(send(screen).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('report.noteLabel'), { target: { value: 'The kicker is gone' } });
+    expect(send(screen).disabled).toBe(false);
+    fireEvent.click(send(screen));
+    expect(boardMutate.mock.calls[0][0]).toEqual({
+      boardUuid: 'board-1',
+      reason: 'wrong_setup',
+      duplicateOfBoardUuid: null,
+      note: 'The kicker is gone',
+    });
+  });
+
+  it('offers the angle on a board that does not tilt, and sends it', () => {
+    const moon = {
+      ...board,
+      boardType: 'moonboard',
+      layoutId: 2,
+      sizeId: 1,
+      setIds: '2,3,4',
+      angle: 40,
+      isAngleAdjustable: false,
+    } as UserBoard;
+    const screen = openWrongSetup(moon);
+    expect(value(screen, 'angle')).toBe('40°');
+    fireEvent.click(row(screen, 'angle').getByLabelText('25°'));
+    fireEvent.click(send(screen));
+    expect(boardMutate.mock.calls[0][0].suggestedSetup).toEqual({ layoutId: 2, sizeId: 1, setIds: '2,3,4', angle: 25 });
+  });
+
+  it('says what happens to a changed setup, from the gym', () => {
+    const screen = openWrongSetup();
+    fireEvent.click(row(screen, 'holds').getByLabelText('Screw Ons'));
+    expect(screen.getByTestId('report-problem-audience').textContent).toBe(
+      'mobile.setupSuggestion.previewEveryone{"gym":"Crux"}',
+    );
+  });
+
+  it("asks the gym's staff first at a gym that runs itself", () => {
+    state.gym = { uuid: 'gym-1', name: 'Crux', listingState: 'RUN_BY_GYM', canClaim: false };
+    const screen = openWrongSetup();
+    fireEvent.click(row(screen, 'holds').getByLabelText('Screw Ons'));
+    expect(screen.getByTestId('report-problem-audience').textContent).toBe(
+      'mobile.setupSuggestion.previewStaff{"gym":"Crux"}',
+    );
+  });
+
+  const applied = { ...board, layoutId: 8, sizeId: 17, setIds: '26,27', angle: 30 } as UserBoard;
+
+  function sendHomewall() {
+    const screen = openWrongSetup();
+    fireEvent.click(row(screen, 'layout').getByLabelText('Homewall'));
+    fireEvent.click(send(screen));
+    expect(boardMutate.mock.calls[0][0]).toEqual({
+      boardUuid: 'board-1',
+      reason: 'wrong_setup',
+      duplicateOfBoardUuid: null,
+      note: null,
+      suggestedSetup: { layoutId: 8, sizeId: 17, setIds: '26,27', angle: null },
+    });
+    return screen;
+  }
+
+  it('applies for everyone, then Climb it now binds the returned board once the sheet is gone', async () => {
+    const screen = sendHomewall();
+    act(() => {
+      boardMutate.mock.calls[0][1].onSuccess({
+        status: 'created',
+        reportUuid: 'r1',
+        routedTo: ['creator'],
+        otherReporterCount: 0,
+        setupOutcome: 'APPLIED',
+        setupReviewReason: null,
+        board: applied,
+      });
+    });
+    expect(track).toHaveBeenCalledWith(
+      'Report Problem Sent',
+      expect.objectContaining({
+        hadSuggestion: true,
+        setupOutcome: 'APPLIED',
+      }),
+    );
+    // The board's reads take the new setup straight away.
+    expect(applyChangedBoard).toHaveBeenCalledWith(applied);
+    expect(screen.getByTestId('report-problem-done-title').textContent).toBe('mobile.setupSuggestion.appliedTitle');
+    expect(screen.getByTestId('report-problem-done').textContent).toBe(
+      'mobile.setupSuggestion.appliedBody{"gym":"Crux","setup":"Homewall · 7×10 · Full Ride · Mainline + Auxiliary"}',
+    );
+    calls.length = 0;
+    applyChangedBoard.mockClear();
+
+    fireEvent.click(screen.getByTestId('report-problem-climb-now'));
+    fireEvent.click(screen.getByTestId('report-problem-climb-now'));
+    expect(track).toHaveBeenCalledWith('Board Setup Climbed Now', {
+      boardType: 'kilter',
+      gymListingState: 'UNCLAIMED',
+    });
+    expect(dismissal.calls).toBe(1);
+    expect(activate).not.toHaveBeenCalled();
+    await act(async () => {
+      dismissal.resolve?.({ status: 'dismissed' });
+    });
+    expect(calls).toEqual(['apply', 'activate']);
+    expect(applyChangedBoard).toHaveBeenCalledWith(applied);
+    expect(activate).toHaveBeenCalledTimes(1);
+    expect(activate).toHaveBeenCalledWith(applied);
+  });
+
+  it("keeps the climber's own angle when the board is the one they are on", async () => {
+    state.activeBoard = { ...board, angle: 50 };
+    const screen = sendHomewall();
+    act(() => {
+      boardMutate.mock.calls[0][1].onSuccess({
+        status: 'created',
+        reportUuid: 'r1',
+        routedTo: ['creator'],
+        otherReporterCount: 0,
+        setupOutcome: 'APPLIED',
+        setupReviewReason: null,
+        board: applied,
+      });
+    });
+    fireEvent.click(screen.getByTestId('report-problem-climb-now'));
+    await act(async () => {
+      dismissal.resolve?.({ status: 'dismissed' });
+    });
+    expect(activate).toHaveBeenCalledWith({ ...applied, angle: 50 });
+  });
+
+  it.each<[BoardSetupReviewReason | null, string]>([
+    ['CLAIMED_GYM', 'mobile.setupSuggestion.reviewClaimedGym{"gym":"Crux"}'],
+    ['NO_GYM', 'mobile.setupSuggestion.reviewNoGym'],
+    ['RECENT_CHANGE', 'mobile.setupSuggestion.reviewRecentChange{"hours":24}'],
+    ['RECENTLY_UNDONE', 'mobile.setupSuggestion.reviewRecentlyUndone{"days":90}'],
+    ['DAILY_LIMIT', 'mobile.setupSuggestion.reviewDailyLimit{"count":3}'],
+    ['CLASHES', 'mobile.setupSuggestion.reviewClashes'],
+    // The server's flag is off: the suggestion is kept for review, with today's line.
+    [null, 'report.sent'],
+  ])('says why a suggestion waits (%s)', (reason, line) => {
+    const screen = sendHomewall();
+    act(() => {
+      boardMutate.mock.calls[0][1].onSuccess({
+        status: 'created',
+        reportUuid: 'r1',
+        routedTo: ['creator'],
+        otherReporterCount: 0,
+        setupOutcome: 'SENT_FOR_REVIEW',
+        setupReviewReason: reason,
+        board: null,
+      });
+    });
+    expect(screen.getByTestId('report-problem-done').textContent).toBe(line);
+    expect(screen.queryByTestId('report-problem-climb-now')).toBeNull();
+    expect(applyChangedBoard).not.toHaveBeenCalled();
   });
 });

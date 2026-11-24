@@ -9,16 +9,26 @@
 import {
   BOARD_REPORT_REASONS_FOR_REPORTERS,
   GYM_REPORT_REASONS,
+  OTHER_REASON_NOTE_MIN_LENGTH,
+  SETUP_SUGGESTION_REPORT_REASON,
+  normalizeReportNote,
   pickReportAudience,
   reportNoteProblem,
   routeBoardReport,
   routeGymReport,
+  setupSuggestionPreview,
   type BoardReportReason,
   type GymListingState,
   type GymReportReason,
   type ReportAudience,
+  type SetupSuggestionPreview,
 } from '@boardsesh/directory-moderation';
-import { SYSTEM_BOARD_OWNER_ID, type DirectoryReportSubmitResult } from '@boardsesh/shared-schema';
+import {
+  SYSTEM_BOARD_OWNER_ID,
+  type BoardSetupReviewReason,
+  type DirectoryReportSubmitResult,
+  type UserBoard,
+} from '@boardsesh/shared-schema';
 
 /** The reasons a climber picks from, in sheet order. */
 export const BOARD_REASONS: readonly BoardReportReason[] = BOARD_REPORT_REASONS_FOR_REPORTERS;
@@ -125,4 +135,52 @@ export function reportDoneCopy(
     return { kind: 'joined', count: result.otherReporterCount };
   }
   return { kind: 'sent' };
+}
+
+/**
+ * Whether Send is enabled on "Set up wrong" while the setup fields show: the
+ * climber picked a setup that differs from the board's, or, with the setup
+ * left as it is, wrote a note long enough to act on (the "Something else"
+ * minimum, {@link OTHER_REASON_NOTE_MIN_LENGTH}). A note is never too long.
+ */
+export function canSendSetupReport({ setupChanged, note }: { setupChanged: boolean; note: string }): boolean {
+  if (reportNoteProblem(SETUP_SUGGESTION_REPORT_REASON, note) !== null) return false;
+  if (setupChanged) return true;
+  return (normalizeReportNote(note)?.length ?? 0) >= OTHER_REASON_NOTE_MIN_LENGTH;
+}
+
+/**
+ * The line under Send while a changed setup is picked: what happens to it,
+ * worded from the gym's listing state, the half of the server's rule a client
+ * can see. Null while the board's gym is still loading, so the line never
+ * says "whoever added it" about a board that has a gym.
+ */
+export function setupSuggestionLine({
+  boardGymUuid,
+  gymListingState,
+}: {
+  boardGymUuid: string | null;
+  gymListingState: GymListingState | null;
+}): SetupSuggestionPreview | null {
+  if (boardGymUuid && gymListingState === null) return null;
+  return setupSuggestionPreview({ hasGym: !!boardGymUuid, gymListingState });
+}
+
+/**
+ * The done step for a report that carried a suggested setup:
+ * - `applied`: it changed the board for everyone; the sheet offers "Climb it now" with `board`.
+ * - `review`: it waits for someone, and `reason` says why.
+ * - null: no suggestion, or the `directory-setup-suggestions` flag is off on
+ *   the server (`SENT_FOR_REVIEW` with no reason): the plain done line.
+ */
+export type SetupDoneCopy = { kind: 'applied'; board: UserBoard } | { kind: 'review'; reason: BoardSetupReviewReason };
+
+export function setupDoneCopy(
+  result: Pick<DirectoryReportSubmitResult, 'setupOutcome' | 'setupReviewReason' | 'board'>,
+): SetupDoneCopy | null {
+  if (result.setupOutcome === 'APPLIED' && result.board) return { kind: 'applied', board: result.board };
+  if (result.setupOutcome === 'SENT_FOR_REVIEW' && result.setupReviewReason) {
+    return { kind: 'review', reason: result.setupReviewReason };
+  }
+  return null;
 }
