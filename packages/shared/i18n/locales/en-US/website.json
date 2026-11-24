@@ -88,7 +88,7 @@
     "nearbyCapped": "Showing the {{shown}} closest of {{total}} spray walls",
     "selectedArea": "Spray walls within {{radius}} km of {{place}}"
   },
-  "appGuidesLink": "Board app guides (English)",
-  "boardAppGuideLink": "App compatibility with {{board}} (English)",
-  "sprayComparisonLink": "Compare spray wall apps (English)"
+  "appGuidesLink": "Board app comparisons",
+  "boardAppGuideLink": "Compare {{board}} apps",
+  "sprayComparisonLink": "Compare spray wall apps"
 }

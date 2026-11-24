@@ -136,7 +136,7 @@ describe('supported boards public entry', () => {
     }
     expect(document.querySelector('#spray figcaption')?.textContent).toBe('Bring your own spray wall');
     expect([...document.querySelectorAll('#spray a')].map((link) => link.textContent)).toEqual([
-      'Compare spray wall apps (English)',
+      'Compare spray wall apps',
       'Find a spray wall',
       'Set up your spray wall',
     ]);
@@ -144,7 +144,7 @@ describe('supported boards public entry', () => {
     expect(document.querySelectorAll('a[href="/bring-your-logbook"]')).toHaveLength(1);
   });
 
-  it('server-renders a crawlable English guide link for every board and spray wall', async () => {
+  it('server-renders a crawlable guide link that names the comparison for every board and spray wall', async () => {
     const document = await renderPage();
     const guidePaths = {
       kilter: '/apps/kilter',
@@ -158,7 +158,8 @@ describe('supported boards public entry', () => {
       spray: '/compare/spray-wall-apps',
     };
     for (const [board, href] of Object.entries(guidePaths)) {
-      expect(document.querySelector(`#${board} a[href="${href}"]`)?.textContent).toMatch(/\(English\)$/);
+      // English pages say what the page compares; "(English)" is only for the localized pages.
+      expect(document.querySelector(`#${board} a[href="${href}"]`)?.textContent).toMatch(/^Compare .+ apps$/);
     }
   });
 
