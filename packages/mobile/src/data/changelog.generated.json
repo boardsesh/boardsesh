@@ -1,6 +1,27 @@
 {
-  "generatedAt": "2026-11-24T11:29:01.753Z",
+  "generatedAt": "2026-11-24T13:33:20.573Z",
   "entries": [
+    {
+      "prNumber": 8114,
+      "category": "fixed",
+      "title": "Climb grades line up at the right edge in your browser.",
+      "mergedAt": "2026-11-24T12:41:33Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8114"
+    },
+    {
+      "prNumber": 8115,
+      "category": "improved",
+      "title": "See the board clearly on light gym screens, including when the lit climb changes.",
+      "mergedAt": "2026-11-24T11:52:43Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8115"
+    },
+    {
+      "prNumber": 8113,
+      "category": "fixed",
+      "title": "Get an email link to your bug report when using Hide My Email.",
+      "mergedAt": "2026-11-24T11:52:33Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8113"
+    },
     {
       "prNumber": 8087,
       "category": "new",
