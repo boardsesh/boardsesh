@@ -42,12 +42,6 @@ const CTA_LABELS: Record<string, string> = {
   moonboard: 'Browse MoonBoard problems',
   woods: 'Browse Woods climbs',
 };
-const CTA_BOARDS: Record<string, string> = {
-  kilter: 'kilter',
-  aurora: 'tension',
-  moonboard: 'moonboard',
-  woods: 'woods',
-};
 const { i18n } = await getServerTranslationForLocale('fr', 'common');
 
 async function parsePage(element: ReactNode) {
@@ -97,13 +91,12 @@ describe('app guide pages before hydration', () => {
     expect(markup.querySelectorAll('#verdict ul')[0]?.querySelectorAll('li')).toHaveLength(5);
 
     // The one filled action opens the browser app; both store badges carry this page's placement.
-    // The filled button says what it opens, and deep-links to this board's climb list.
+    // The filled button says what it opens, and opens the board picker so the climber picks their
+    // own wall: never one preselected layout, size or angle.
     const browse = Array.from(markup.querySelectorAll<HTMLAnchorElement>(`a[href^="${APP_URL}/"]`)).find(
       (link) => link.textContent === CTA_LABELS[slug],
     );
-    expect(browse?.getAttribute('href'), slug).toMatch(
-      new RegExp(`^${APP_URL}/${CTA_BOARDS[slug]}/[^/]+/[^/]+/[^/]+/40/list$`),
-    );
+    expect(browse?.getAttribute('href'), slug).toBe(`${APP_URL}/boards`);
     expect(browse?.getAttribute('aria-label')).toBe(`${CTA_LABELS[slug]} in the Boardsesh browser app`);
     expect(markup.querySelector('a[data-store-badge="ios"]')?.getAttribute('href')).toContain(`compare-${slug}`);
     expect(markup.querySelector('a[data-store-badge="android"]')?.getAttribute('href')).toContain(`compare-${slug}`);
@@ -368,7 +361,10 @@ describe('page-level claims from the registry', () => {
   it('says how each page lights the wall, and where its filled button goes', async () => {
     const pages = Object.fromEntries((await renderAll()).map(({ id, markup }) => [id, markup]));
     const strip = (id: string) => pages[id].querySelector('ul[aria-label="Where Boardsesh runs"]')?.textContent ?? '';
-    expect(strip('hub')).toContain('Connect using any browser that supports Web Bluetooth');
+    expect(strip('hub')).toContain('Your web browser');
+    expect(strip('hub')).toContain(
+      'Chrome and Edge light the board over Web Bluetooth; Safari and Firefox can browse and log',
+    );
     expect(pages.hub.querySelector('#every-board .lead, #every-board h2 + p')?.textContent).toMatch(
       /Learn the app once/,
     );

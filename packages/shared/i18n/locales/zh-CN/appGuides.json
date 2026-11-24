@@ -28,10 +28,10 @@
         "body": "Android 7.0 or newer, any maker"
       },
       "browser": {
-        "title": "Any web browser",
+        "title": "Your web browser",
         "body": "Chrome and Edge light the board too",
         "bodyNoLighting": "Browse, queue and log at app.boardsesh.com",
-        "bodyFamilies": "Connect using any browser that supports Web Bluetooth"
+        "bodyFamilies": "Chrome and Edge light the board over Web Bluetooth; Safari and Firefox can browse and log"
       }
     },
     "eyebrows": {

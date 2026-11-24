@@ -15,7 +15,6 @@ import StartClimbingButton from '@/app/components/start-climbing-button';
 import { brandCtaSx } from '@/app/components/ui/brand-cta';
 import { quietLinkSx } from '@/app/components/ui/quiet-link';
 import { DEFAULT_LOCALE } from '@/app/lib/i18n/config';
-import { getBoardGalleryLayouts } from '@/app/boards/board-gallery';
 import { APP_URL } from '@/app/lib/app-origin';
 import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
 import {
@@ -148,12 +147,13 @@ export function RunsOnStrip({ t, runsOn }: { t: T; runsOn: RunsOn }) {
   );
 }
 
-/** The browser-app URL a page's filled button opens: a board's climb list, spray setup, or the app's root. */
+/** The app routes a filled button can open, besides the app's root. */
+const PRIMARY_ACTION_ROUTES = { 'board-picker': '/boards', 'spray-setup': '/boards/spray/new' } as const;
+
+/** The browser-app URL a page's filled button opens: the board picker, spray setup, or the app's root. */
 function primaryActionHref(action: PrimaryAction): string {
-  if (action.target.kind === 'root') return APP_URL;
-  if (action.target.kind === 'spray-setup') return buildAppHandoffUrl('/boards/spray/new');
-  const layout = getBoardGalleryLayouts(action.target.board)[0];
-  return layout ? buildAppHandoffUrl(layout.browseHref) : APP_URL;
+  const { kind } = action.target;
+  return kind === 'root' ? APP_URL : buildAppHandoffUrl(PRIMARY_ACTION_ROUTES[kind]);
 }
 
 /**

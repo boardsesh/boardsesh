@@ -96,7 +96,7 @@ export type RunsOn = { ios: 'bluetooth' | 'wled'; browser: 'lights' | 'lightsFam
  * spray wall setup; `root` the app's own board picker.
  */
 export type PrimaryAction = {
-  target: { kind: 'root' } | { kind: 'board'; board: CatalogBoard } | { kind: 'spray-setup' };
+  target: { kind: 'root' } | { kind: 'board-picker' } | { kind: 'spray-setup' };
 };
 
 export type AppGuidePage = ComparisonGuide | HubGuide;
@@ -228,13 +228,18 @@ const RUNS_ON: Record<AppGuidePageId, RunsOn> = {
   'spray-wall-apps': { ios: 'wled', browser: 'browseOnly' },
 };
 
-/** Where each page's filled button opens the browser app (the label is `common.cta.<page>`). */
+/**
+ * Where each page's filled button opens the browser app (the label is `common.cta.<page>`).
+ * A board page opens the board picker, never one layout, size and angle: a Kilter climber
+ * could be on any of a dozen walls, and the Aurora page covers five brands. The app has no
+ * picker per board family, so every board page opens the same one.
+ */
 const PRIMARY_ACTION: Record<AppGuidePageId, PrimaryAction> = {
   hub: { target: { kind: 'root' } },
-  kilter: { target: { kind: 'board', board: 'kilter' } },
-  aurora: { target: { kind: 'board', board: 'tension' } },
-  moonboard: { target: { kind: 'board', board: 'moonboard' } },
-  woods: { target: { kind: 'board', board: 'woods' } },
+  kilter: { target: { kind: 'board-picker' } },
+  aurora: { target: { kind: 'board-picker' } },
+  moonboard: { target: { kind: 'board-picker' } },
+  woods: { target: { kind: 'board-picker' } },
   'spray-wall-apps': { target: { kind: 'spray-setup' } },
 };
 
