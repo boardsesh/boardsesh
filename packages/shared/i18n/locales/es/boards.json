@@ -1835,7 +1835,28 @@
     "signInBody": "Inicia sesión y te traemos de vuelta aquí.",
     "boardListLink": "¿Algo mal con este plafón?",
     "web": {
-      "noteRequiredLabel": "Cuéntales qué pasa (mínimo 10 caracteres)"
+      "noteRequiredLabel": "Cuéntales qué pasa (mínimo 10 caracteres)",
+      "setup": {
+        "question": "¿Qué hay en el muro?",
+        "layout": "Layout",
+        "size": "Tamaño",
+        "holds": "Presas",
+        "angle": "Ángulo",
+        "previewEveryone": "Esto lo cambia para todos en {{gym}}. Se puede deshacer.",
+        "previewStaff": "El personal de {{gym}} lo revisa primero.",
+        "previewCreator": "Quien añadió este plafón lo revisa primero.",
+        "applied": "Configuración actualizada para todos en {{gym}}.",
+        "appliedUnnamed": "Configuración actualizada para todos.",
+        "climbInApp": "Escálalo ya en la app de Boardsesh.",
+        "reviewClaimedGym": "Enviado al personal de {{gym}}. Te avisaremos cuando esté arreglado.",
+        "reviewClaimedGymUnnamed": "Enviado al personal del rocódromo. Te avisaremos cuando esté arreglado.",
+        "reviewNoGym": "Enviado a quien añadió este plafón. Te avisaremos cuando esté arreglado.",
+        "reviewRecentChange": "Alguien cambió este plafón en el último día, así que el tuyo se revisa primero. Te avisaremos cuando esté arreglado.",
+        "reviewRecentlyUndone": "Se deshizo un cambio reciente en este plafón, así que el tuyo se revisa primero. Te avisaremos cuando esté arreglado.",
+        "reviewDailyLimit": "Cambiaste {{limit}} plafones en el último día, así que este se revisa primero. Te avisaremos cuando esté arreglado.",
+        "reviewClashes": "Esa configuración choca con otro plafón, así que se revisa primero. Te avisaremos cuando esté arreglado.",
+        "alreadySetUp": "Ya está configurado así."
+      }
     }
   },
   "reportReview": {
@@ -1879,7 +1900,13 @@
     "back": "Atrás",
     "close": "Cerrar",
     "web": {
-      "keepPartial": "Se cerraron {{closed}} de {{total}} reportes. Inténtalo de nuevo con el resto."
+      "keepPartial": "Se cerraron {{closed}} de {{total}} reportes. Inténtalo de nuevo con el resto.",
+      "suggested_one": "{{count}} escalador sugirió {{setup}}",
+      "suggested_other": "{{count}} escaladores sugirieron {{setup}}",
+      "suggestedIsCurrent": "El plafón ya tiene esta configuración",
+      "useSetup": "Usar esta configuración",
+      "useSetupFailed": "No se pudo cambiar la configuración. Inténtalo de nuevo.",
+      "editYourself": "Editarlo tú"
     }
   },
   "whoCanEdit": {

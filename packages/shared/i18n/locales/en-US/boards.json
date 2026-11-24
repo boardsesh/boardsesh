@@ -1835,7 +1835,28 @@
     "signInBody": "Log in and we'll bring you straight back here.",
     "boardListLink": "Something wrong with this board?",
     "web": {
-      "noteRequiredLabel": "Tell them what's wrong (10 characters minimum)"
+      "noteRequiredLabel": "Tell them what's wrong (10 characters minimum)",
+      "setup": {
+        "question": "What's on the wall?",
+        "layout": "Layout",
+        "size": "Size",
+        "holds": "Holds",
+        "angle": "Angle",
+        "previewEveryone": "This changes it for everyone at {{gym}}. It can be undone.",
+        "previewStaff": "{{gym}} staff check it first.",
+        "previewCreator": "The climber who added this board checks it first.",
+        "applied": "Setup updated for everyone at {{gym}}.",
+        "appliedUnnamed": "Setup updated for everyone.",
+        "climbInApp": "Climb it now in the Boardsesh app.",
+        "reviewClaimedGym": "Sent to {{gym}} staff. We'll tell you when it's fixed.",
+        "reviewClaimedGymUnnamed": "Sent to the gym's staff. We'll tell you when it's fixed.",
+        "reviewNoGym": "Sent to the climber who added this board. We'll tell you when it's fixed.",
+        "reviewRecentChange": "Someone changed this board in the last day, so yours gets checked first. We'll tell you when it's fixed.",
+        "reviewRecentlyUndone": "A recent change to this board was undone, so yours gets checked first. We'll tell you when it's fixed.",
+        "reviewDailyLimit": "You changed {{limit}} boards in the last day, so this one gets checked first. We'll tell you when it's fixed.",
+        "reviewClashes": "That setup clashes with another board, so it gets checked first. We'll tell you when it's fixed.",
+        "alreadySetUp": "It's already set up that way."
+      }
     }
   },
   "reportReview": {
@@ -1879,7 +1900,13 @@
     "back": "Back",
     "close": "Close",
     "web": {
-      "keepPartial": "Closed {{closed}} of {{total}} reports. Try again for the rest."
+      "keepPartial": "Closed {{closed}} of {{total}} reports. Try again for the rest.",
+      "suggested_one": "{{count}} climber suggested {{setup}}",
+      "suggested_other": "{{count}} climbers suggested {{setup}}",
+      "suggestedIsCurrent": "The board has this setup now",
+      "useSetup": "Use this setup",
+      "useSetupFailed": "Couldn't change the setup. Try again.",
+      "editYourself": "Edit it yourself"
     }
   },
   "whoCanEdit": {

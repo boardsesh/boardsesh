@@ -30,6 +30,10 @@ const reportsEnabled = vi.hoisted(() => ({ current: true }));
 vi.mock('@/app/lib/directory-reports/directory-reports-flag', () => ({
   isDirectoryReportsEnabled: vi.fn(async () => reportsEnabled.current),
 }));
+const setupSuggestionsEnabled = vi.hoisted(() => ({ current: false }));
+vi.mock('@/app/lib/directory-reports/directory-setup-suggestions-flag', () => ({
+  isDirectorySetupSuggestionsEnabled: vi.fn(async () => setupSuggestionsEnabled.current),
+}));
 
 const executeAuthenticatedGraphQL = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/graphql/server-graphql', () => ({ executeAuthenticatedGraphQL }));
@@ -39,8 +43,30 @@ const { ReportBoardButton, ReportGymButton, GymReportProblemHost } = await impor
 const GymReportDuplicateCta = (await import('../gym-report-duplicate-cta')).default;
 
 const BOARDS = [
-  { uuid: 'board-a', slug: 'crux-kilter', name: 'Crux - Kilter', boardType: 'kilter', angle: 40, ownerId: 'sam' },
-  { uuid: 'board-b', slug: 'crux-tension', name: 'Crux Tension', boardType: 'tension', angle: 30, ownerId: null },
+  {
+    uuid: 'board-a',
+    slug: 'crux-kilter',
+    name: 'Crux - Kilter',
+    boardType: 'kilter',
+    layoutId: 1,
+    sizeId: 10,
+    setIds: '1,20',
+    angle: 40,
+    isAngleAdjustable: true,
+    ownerId: 'sam',
+  },
+  {
+    uuid: 'board-b',
+    slug: 'crux-tension',
+    name: 'Crux Tension',
+    boardType: 'tension',
+    layoutId: 9,
+    sizeId: 1,
+    setIds: '8',
+    angle: 30,
+    isAngleAdjustable: false,
+    ownerId: null,
+  },
 ];
 
 function gym(slug: string, overrides: Partial<Gym> = {}): Gym {
@@ -91,6 +117,7 @@ const renderPage = (slug: string) =>
 beforeEach(() => {
   executeAuthenticatedGraphQL.mockReset();
   reportsEnabled.current = true;
+  setupSuggestionsEnabled.current = false;
 });
 
 describe('Report a problem on the gym page', () => {
@@ -122,6 +149,25 @@ describe('Report a problem on the gym page', () => {
     for (const button of [...elementsOfType(tree, ReportBoardButton), ...elementsOfType(tree, ReportGymButton)]) {
       expect((button.props as { gymUuid: string }).gymUuid).toBe('uuid-report-island');
     }
+  });
+
+  it("hands the dialog each board's setup, and the setup-suggestions flag as the page read it", async () => {
+    respondWith(gym('report-setup', { listingState: 'UNCLAIMED', isClaimed: false }));
+    let props = elementsOfType(await renderPage('report-setup'), GymReportProblemHost)[0].props as React.ComponentProps<
+      typeof GymReportProblemHost
+    >;
+    expect(props.setupSuggestionsEnabled).toBe(false);
+    expect(props.boards.map((board) => board.setup)).toEqual([
+      { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40, isAngleAdjustable: true },
+      { boardType: 'tension', layoutId: 9, sizeId: 1, setIds: '8', angle: 30, isAngleAdjustable: false },
+    ]);
+
+    setupSuggestionsEnabled.current = true;
+    props = elementsOfType(await renderPage('report-setup'), GymReportProblemHost)[0].props as React.ComponentProps<
+      typeof GymReportProblemHost
+    >;
+    expect(props.setupSuggestionsEnabled).toBe(true);
+    expect(props.storeLabels).toMatchObject({ locale: 'en-US' });
   });
 
   it('shows staff nothing to report: they fix things from Manage gym', async () => {

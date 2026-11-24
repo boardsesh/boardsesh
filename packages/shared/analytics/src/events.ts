@@ -1044,8 +1044,9 @@ export const SHARED_EVENTS = {
   // converting, creation is silently dead-ending again.
   // Props: { boardType, source, hasLocation }. `source` names the surface AND the
   // flow: 'popular_seed' (a Popular setups card, retired 2026-11) / 'scratch' /
-  // 'web_drawer' are creates; 'mobile_edit' /
-  // 'web_edit_drawer' are edits, where the choice is save-anyway vs keep-editing
+  // 'web_drawer' are creates; 'mobile_edit' / 'web_edit_drawer' /
+  // 'web_report_review' (Manage gym's Use this setup) are edits, where the
+  // choice is save-anyway vs keep-editing
   // (there is no existing board to switch to), so they never convert to
   // ReusedExisting — split on `source` before reading that ratio.
   BoardDuplicatePrompted: 'Board Duplicate Prompted',
