@@ -84,13 +84,15 @@ dialog's approved state link there ("Check your boards").
   suggested Original · 12×14 · Commercial · Bolt Ons"), with **Use this
   setup** for a viewer who may edit the board (`canEdit`). It sends
   `updateBoard` with that layout, size, sets and, on a board that doesn't
-  tilt, angle (`setupUpdateInput` in `report-review-logic.ts`), which closes
+  tilt, angle (`suggestedSetupUpdateInput`; the grouping and the "has this
+  setup now" check are `groupSuggestedSetups` and `setupMatches`, all in
+  `@boardsesh/directory-moderation` and shared with the app), which closes
   the board's "Set up wrong" reports as fixed. A save that would copy another
   board of the same owner opens the edit form's duplicate prompt
   (`duplicate-board-config-dialog.tsx`); Save anyway sends
   `allowDuplicateConfig`. A suggestion the board already has reads "The board
-  has this setup now". With suggestions on the dialog, Fix the setup reads
-  **Edit it yourself**.
+  has this setup now". While a Use this setup button shows, Fix the setup
+  reads **Edit it yourself**.
 
 `gym-board-permissions.ts` keeps only `canManageGymBoards` (owner or admin: who
 may link their own boards) and `linkableBoards`.
