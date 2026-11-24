@@ -139,7 +139,7 @@ export async function readGymReachOverview(
   tx: GymReportingTransaction,
   scope: GymReportingScope,
   observationStartedAt: string | null,
-): Promise<GymReachOverview> {
+): Promise<{ overview: GymReachOverview; hasUnboundedIdentifiedTime: boolean }> {
   const { older, weeks } = await readOverviewWindows(tx, scope);
   const windows = [
     { ...scope.current, key: 'current' },
@@ -154,7 +154,7 @@ export async function readGymReachOverview(
     windows.map(({ key, startAt, endAt }) => sql`(${key}::text, ${startAt}::timestamptz, ${endAt}::timestamptz)`),
     sql`, `,
   );
-  const [summary] = rowsFromResult<Cohorts & { windows: ActivityWindow[] }>(
+  const [summary] = rowsFromResult<Cohorts & { windows: ActivityWindow[]; hasUnboundedIdentifiedTime: boolean }>(
     await tx.execute(sql`
     WITH windows(key, start_at, end_at) AS (VALUES ${windowValues}),
     activity AS MATERIALIZED (
@@ -215,6 +215,7 @@ export async function readGymReachOverview(
     first_current AS (${scopedFirstCountsSql(scope, 'current', scope.current.startAt)}),
     first_previous AS (${scopedFirstCountsSql(scope, 'previous', scope.previous.startAt)})
     SELECT (SELECT json_agg(totals) FROM totals) AS windows,
+      EXISTS (SELECT 1 FROM unbounded WHERE actor_id IS NOT NULL) AS "hasUnboundedIdentifiedTime",
       (SELECT count(*)::int FROM cohort_people previous JOIN cohort_people current USING (actor_id)
         WHERE previous.key = 'previous' AND current.key = 'current') AS returned,
       (SELECT count(*)::int FROM cohort_people previous JOIN cohort_people older USING (actor_id)
@@ -246,7 +247,7 @@ export async function readGymReachOverview(
     hasFullTemporalCoverage(older, observationStartedAt) && !olderActivity.reachUncertain,
     olderActivity.hadActivity,
   );
-  return {
+  const overview: GymReachOverview = {
     observationStartedAt,
     baselineStartAt: older.startAt,
     current,
@@ -265,4 +266,5 @@ export async function readGymReachOverview(
       };
     }),
   };
+  return { overview, hasUnboundedIdentifiedTime: summary.hasUnboundedIdentifiedTime };
 }

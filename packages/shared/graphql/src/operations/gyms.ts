@@ -418,6 +418,30 @@ export const GET_GYM_STATS = gql`
         includesCurrentBoardHistory
         isPartial
       }
+      busyTimes {
+        status
+        startDate
+        endDate
+        coveredDates
+        firstCoveredDate
+        instantDisplays
+        instantTicks
+        dateOnlyRecords
+        unplacedDateOnlyRecords
+        unknownTimeRecords
+        hasUnboundedUnknownTime
+        weekdays {
+          dayOfWeek
+          eligibleDates
+          recordedClimbers
+        }
+        hours {
+          dayOfWeek
+          hour
+          eligibleDates
+          recordedClimbers
+        }
+      }
       reachOverview {
         observationStartedAt
         baselineStartAt

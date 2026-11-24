@@ -5,6 +5,7 @@ import { ownedOrPublicClimbCondition } from '@boardsesh/db/queries';
 import { selectedFieldNames } from '../shared/selected-fields';
 import { activateGymReachObservation, readGymReachObservation } from './gym-reporting-observation';
 import { readGymReachOverview } from './gym-reporting-overview';
+import { readGymBusyTimes } from './gym-busy-times';
 import type { ConnectionContext, GymDayActivity, GymStats, GymTopClimb } from '@boardsesh/shared-schema';
 import {
   readGymReportingCoverage,
@@ -97,15 +98,22 @@ export const socialGymInsightsQueries = {
     ctx: ConnectionContext,
     info?: GraphQLResolveInfo,
   ): Promise<GymStats> => {
-    const includeReach = selectedFieldNames(info)?.has('reachOverview') ?? false;
+    const fields = selectedFieldNames(info);
+    const includeReach = fields?.has('reachOverview') ?? false;
+    const includeBusyTimes = fields?.has('busyTimes') ?? false;
     const result = await withGymReportingScope(input, ctx, async (tx, scope) => {
       const angleBoards = scopedGymAngleBoards(scope);
       const [snapshot] = rowsFromResult<Snapshot>(await tx.execute(gymStatsSnapshotSql(scope, angleBoards)));
       const coverage = await readGymReportingCoverage(tx, scope);
-      const observation = includeReach ? await readGymReachObservation(tx, scope) : null;
-      const reachOverview = observation ? await readGymReachOverview(tx, scope, observation.startedAt) : null;
+      const observation = includeReach || includeBusyTimes ? await readGymReachObservation(tx, scope) : null;
+      const reach = includeReach && observation ? await readGymReachOverview(tx, scope, observation.startedAt) : null;
+      const busyTimes =
+        includeBusyTimes && observation
+          ? await readGymBusyTimes(tx, scope, observation.startedAt, reach?.hasUnboundedIdentifiedTime)
+          : null;
       const stats: GymStats = {
-        reachOverview,
+        reachOverview: reach?.overview ?? null,
+        busyTimes,
         gymUuid: scope.gym.uuid,
         gymName: scope.gym.name,
         boardUuid: scope.boardUuid,

@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
 import { GYM_REPORTING_RECEIPT_MS, gymReportingQueryKey } from '@boardsesh/graphql';
 import type {
   Gym,
   GymAngleUsageRow,
+  GymBusyTimes,
   GymGradeCollectionPage,
   GymGradeComparison,
   GymReachOverview,
@@ -45,10 +46,6 @@ vi.mock('@/app/lib/graphql/client', () => ({
     },
   }),
 }));
-vi.mock('@/app/components/charts/css-bar-chart', () => ({
-  CssBarChart: ({ ariaLabel }: { ariaLabel?: string }) => <div role="img" aria-label={ariaLabel} />,
-}));
-
 const gym = { uuid: 'gym-one' } as Gym;
 const activeWindow = {
   startAt: '2026-10-31T20:00:00Z',
@@ -154,6 +151,33 @@ const emptyGrades: GymGradeComparison = {
   sendCount: 0,
   grades: [],
   boards: [],
+};
+
+const busyWeekdays = Array.from({ length: 7 }, (_, index) => ({
+  dayOfWeek: index + 1,
+  eligibleDates: index === 2 ? 0 : 12,
+  recordedClimbers: index === 0 ? 36 : 0,
+}));
+const busyTimes: GymBusyTimes = {
+  status: 'ready',
+  startDate: '2026-08-09',
+  endDate: '2026-11-06',
+  firstCoveredDate: '2026-08-10',
+  coveredDates: 72,
+  instantDisplays: 4,
+  instantTicks: 3,
+  dateOnlyRecords: 0,
+  unplacedDateOnlyRecords: 0,
+  unknownTimeRecords: 0,
+  hasUnboundedUnknownTime: false,
+  weekdays: busyWeekdays,
+  hours: busyWeekdays.flatMap((entry) =>
+    Array.from({ length: 24 }, (_, hour) => ({
+      ...entry,
+      hour,
+      recordedClimbers: entry.dayOfWeek === 1 && hour === 0 ? 36 : 0,
+    })),
+  ),
 };
 
 function renderTab() {
@@ -272,6 +296,56 @@ describe('InsightsTab', () => {
     expect(screen.getByText('1 confirmed LED displays')).toBeTruthy();
     expect(screen.queryByText(tiedLabel)).toBeNull();
   });
+
+  // The real 168-cell grid and both Numbers tables can outlast the default CI timeout.
+  it('shows 90-day activity with no overview activity and supports roving focus and exact numbers', async () => {
+    mocks.request.mockResolvedValue({
+      gymStats: { ...report, busyTimes, current: { ...activeWindow, displayCount: 0, tickCount: 0 } },
+    });
+    renderTab();
+    const grid = await screen.findByRole('grid', { name: 'Activity by local hour' });
+    const cells = within(grid).getAllByRole('gridcell');
+    expect(cells).toHaveLength(168);
+    expect(screen.getByText(/Last 90 completed local dates.*Aug 9, 2026.*Nov 6, 2026.*America\/Denver/)).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Busiest recorded board activity' })).toBeTruthy();
+    expect(screen.queryByText('Sends by weekday')).toBeNull();
+    expect(
+      screen.getAllByRole('button', { name: /recorded climbers per day|^[A-Z][a-z]+\. No eligible dates/ }),
+    ).toHaveLength(7);
+    const first = within(cells[0]).getByRole('button', {
+      name: /Monday.*3 recorded climbers per hour.*36 counted across 12/,
+    });
+    const nextDay = within(cells[24]).getByRole('button', { name: /Tuesday.*0 recorded climbers per hour/ });
+    expect(first.tabIndex).toBe(0);
+    expect(nextDay.tabIndex).toBe(-1);
+    act(() => first.focus());
+    fireEvent.keyDown(first, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(nextDay);
+    expect(nextDay.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText(/Tuesday.*0 recorded climbers per hour.*12 eligible dates/)).toBeTruthy();
+    expect(within(cells[48]).getByRole('button', { name: /Wednesday.*No eligible dates/ })).toBeTruthy();
+    const charts = screen.getByRole('button', { name: 'Charts', pressed: true });
+    const numbers = screen.getByRole('button', { name: 'Numbers', pressed: false });
+    const selectedCheck = '[data-selected-check]';
+    const group = screen.getByRole('group', { name: 'Busy times view' });
+    expect(group.querySelectorAll(selectedCheck)).toHaveLength(1);
+    expect(charts.querySelector(selectedCheck)?.getAttribute('aria-hidden')).toBe('true');
+    expect(numbers.querySelector(selectedCheck)).toBeNull();
+    fireEvent.click(numbers);
+    expect(charts.getAttribute('aria-pressed')).toBe('false');
+    expect(charts.querySelector(selectedCheck)).toBeNull();
+    expect(numbers.getAttribute('aria-pressed')).toBe('true');
+    expect(numbers.querySelector(selectedCheck)?.getAttribute('aria-hidden')).toBe('true');
+    expect(group.querySelectorAll(selectedCheck)).toHaveLength(1);
+    expect(within(screen.getByRole('table', { name: 'Activity by weekday' })).getAllByRole('row')).toHaveLength(8);
+    expect(within(screen.getByRole('table', { name: 'Activity by local hour' })).getAllByRole('row')).toHaveLength(25);
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Weekday for hourly counts' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Wednesday' }));
+    expect(
+      within(screen.getByRole('table', { name: 'Activity by local hour' })).getAllByRole('row', { name: /Wednesday/ }),
+    ).toHaveLength(24);
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+  }, 15_000);
 
   it.each(['displayCount', 'tickCount'] as const)('keeps the report visible with %s and zero sends', async (source) => {
     mocks.request.mockResolvedValue({

@@ -4871,6 +4871,59 @@ type GymBoardAngleUsage {
   unknownAngle: GymAngleActivityCounts!
 }
 
+enum GymBusyTimesStatus {
+  ready
+  zoneRequired
+  historyUnavailable
+  calendarUnavailable
+}
+
+type GymBusyWeekday {
+  "ISO weekday, Monday 1 through Sunday 7."
+  dayOfWeek: Int!
+  "Completed covered dates of this weekday."
+  eligibleDates: Int!
+  "Sum of distinct identified climbers per eligible date."
+  recordedClimbers: Int!
+}
+
+type GymBusyHour {
+  "ISO weekday, Monday 1 through Sunday 7."
+  dayOfWeek: Int!
+  "Civil hour from 0 to 23 in the gym time zone."
+  hour: Int!
+  "Completed covered dates on which this local hour existed."
+  eligibleDates: Int!
+  "Sum of distinct identified climbers per eligible date and civil hour."
+  recordedClimbers: Int!
+}
+
+type GymBusyTimes {
+  status: GymBusyTimesStatus!
+  "First nominal local date of the fixed 90-day interval."
+  startDate: String
+  "Last nominal local date of the fixed 90-day interval."
+  endDate: String
+  coveredDates: Int!
+  firstCoveredDate: String
+  "Identified confirmed display records with a trustworthy occurrence instant in covered dates."
+  instantDisplays: Int!
+  "Identified eligible ticks with a trustworthy occurrence instant in covered dates."
+  instantTicks: Int!
+  "Eligible identified date-only ticks that could have occurred in a covered date."
+  dateOnlyRecords: Int!
+  "Date-only ticks with no definite assignment to a covered date."
+  unplacedDateOnlyRecords: Int!
+  "Identified candidates with unproved time in the bounded source scan."
+  unknownTimeRecords: Int!
+  "At least one in-scope identified tick has no provable occurrence date, regardless of its saved timestamp."
+  hasUnboundedUnknownTime: Boolean!
+  "Seven weekday cells in ISO order."
+  weekdays: [GymBusyWeekday!]!
+  "168 weekday and civil-hour cells in ISO weekday then hour order."
+  hours: [GymBusyHour!]!
+}
+
 type GymStats {
   gymName: String!
   boardUuid: ID
@@ -4881,6 +4934,7 @@ type GymStats {
   timeZoneConfigured: Boolean!
   coverage: GymReportingCoverage!
   reachOverview: GymReachOverview
+  busyTimes: GymBusyTimes
   "The gym these stats are for."
   gymUuid: ID!
   "Window length in days (7 for the default week)."

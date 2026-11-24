@@ -511,6 +511,34 @@ export type GymBoardAngleUsage = {
   unknownAngle: GymAngleActivityCounts;
 };
 
+export type GymBusyTimesStatus = 'ready' | 'zoneRequired' | 'historyUnavailable' | 'calendarUnavailable';
+
+export type GymBusyWeekday = {
+  /** ISO weekday, Monday 1 through Sunday 7. */
+  dayOfWeek: number;
+  eligibleDates: number;
+  /** Sum of distinct people in each eligible date or date/hour. */
+  recordedClimbers: number;
+};
+
+export type GymBusyHour = GymBusyWeekday & { hour: number };
+
+export type GymBusyTimes = {
+  status: GymBusyTimesStatus;
+  startDate: string | null;
+  endDate: string | null;
+  coveredDates: number;
+  firstCoveredDate: string | null;
+  instantDisplays: number;
+  instantTicks: number;
+  dateOnlyRecords: number;
+  unplacedDateOnlyRecords: number;
+  unknownTimeRecords: number;
+  hasUnboundedUnknownTime: boolean;
+  weekdays: GymBusyWeekday[];
+  hours: GymBusyHour[];
+};
+
 export type GymStats = {
   gymName: string;
   boardUuid: string | null;
@@ -521,6 +549,7 @@ export type GymStats = {
   timeZoneConfigured: boolean;
   coverage: GymReportingCoverage;
   reachOverview?: GymReachOverview | null;
+  busyTimes?: GymBusyTimes | null;
   gymUuid: string;
   periodDays: number;
   current: GymStatsWindow;
