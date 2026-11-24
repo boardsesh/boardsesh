@@ -940,6 +940,13 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     sprayWallHoldUsage(wallUuid: ID!, holdIds: [Int!]!): [SprayWallHoldUsage!]!
 
+    """
+    Distinct published and draft climbs that use any of the given holds. A climb
+    using several requested holds counts once. Same editing and archive gates
+    as sprayWallHoldUsage. Accepts up to the wall's 1500 holds in one call.
+    """
+    sprayWallHoldUsageSummary(wallUuid: ID!, holdIds: [Int!]!): SprayWallHoldUsageSummary!
+
     "Every wall the caller owns, newest first. Includes walls with no published version."
     mySprayWalls: [SprayWall!]!
 

@@ -1,5 +1,5 @@
 import { Alert } from 'react-native';
-import { GET_SPRAY_WALL_HOLD_USAGE } from '@boardsesh/graphql/operations/spray-walls';
+import { GET_SPRAY_WALL_HOLD_USAGE_SUMMARY } from '@boardsesh/graphql/operations/spray-walls';
 import { sprayWallHoldsRemovedInUse } from '@boardsesh/analytics';
 import { getHttpClient } from '../graphql/client';
 import { trackSprayEvent } from './spray-telemetry';
@@ -13,22 +13,16 @@ import { trackSprayEvent } from './spray-telemetry';
  * marked as missing a hold (`missing_hold_count`) until someone remixes it.
  */
 
-/** The server answers at most this many holds per call. */
-const HOLD_USAGE_BATCH = 500;
-
-type HoldUsageRow = { holdId: number; publishedClimbCount: number; draftClimbCount: number };
-type HoldUsageResponse = { sprayWallHoldUsage: HoldUsageRow[] };
-
-/** How many climbs use a set of holds, summed over the holds. */
+/** Distinct climbs that use any of the holds in a removal. */
 export type SprayHoldUsage = { publishedClimbCount: number; draftClimbCount: number };
+type HoldUsageResponse = { sprayWallHoldUsageSummary: SprayHoldUsage };
 
 /**
- * How many published and draft climbs use these holds, or `null` when it could
- * not be read (offline, an older backend, a refusal). Never rejects.
+ * Count the whole save in one request. A climb using several affected holds
+ * counts once, including when the save spans more than 500 holds.
  *
- * Summed per hold, so a climb that uses two of the holds counts twice. The
- * confirm says "{{count}} published climbs" off that sum, which can overstate
- * and never understate: the error that matters here is the silent one.
+ * Offline, an older backend or a refusal returns null, so the confirmation uses
+ * its generic wording. Never fall back to the old per-hold sum.
  */
 export async function fetchSprayHoldUsage(
   wallUuid: string,
@@ -37,19 +31,11 @@ export async function fetchSprayHoldUsage(
   const ids = [...new Set(holdIds)];
   if (ids.length === 0) return { publishedClimbCount: 0, draftClimbCount: 0 };
   try {
-    let publishedClimbCount = 0;
-    let draftClimbCount = 0;
-    for (let start = 0; start < ids.length; start += HOLD_USAGE_BATCH) {
-      const response = await getHttpClient().request<HoldUsageResponse>(GET_SPRAY_WALL_HOLD_USAGE, {
-        wallUuid,
-        holdIds: ids.slice(start, start + HOLD_USAGE_BATCH),
-      });
-      for (const row of response.sprayWallHoldUsage) {
-        publishedClimbCount += row.publishedClimbCount;
-        draftClimbCount += row.draftClimbCount;
-      }
-    }
-    return { publishedClimbCount, draftClimbCount };
+    const response = await getHttpClient().request<HoldUsageResponse>(GET_SPRAY_WALL_HOLD_USAGE_SUMMARY, {
+      wallUuid,
+      holdIds: ids,
+    });
+    return response.sprayWallHoldUsageSummary;
   } catch {
     return null;
   }

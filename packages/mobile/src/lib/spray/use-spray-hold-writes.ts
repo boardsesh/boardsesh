@@ -18,6 +18,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { REMOVE_SPRAY_WALL_HOLDS, UPSERT_SPRAY_WALL_HOLDS } from '@boardsesh/graphql/operations/spray-walls';
 import { getHttpClient } from '../graphql/client';
+import { normalizeSprayHoldWriteError } from './spray-hold-write-error';
 import type { SprayHoldWritePlan } from '../../components/outline-editor/spray-hold-writes';
 import { sprayWallDraftQueryKey } from './use-spray-wall-draft';
 
@@ -67,21 +68,31 @@ export function useSaveSprayHolds() {
       onRemoved,
     }: SaveSprayHoldsVariables): Promise<SaveSprayHoldsResult> => {
       const client = getHttpClient();
+      // The marker is validated with each mutation's input. An old or rolled-back
+      // backend refuses it before its resolver can remove or replace any hold.
+      // Mark BOTH halves so a rollback between requests cannot silently publish
+      // refinement semantics this client never confirmed.
+      const preserveClimbLinks = plan.upsert.some((hold) => hold.id != null);
+      const compatibilityInput = preserveClimbLinks ? { preserveClimbLinks: true } : {};
       let removed = 0;
-      if (plan.removeIds.length > 0) {
-        const response = await client.request<RemoveResponse>(REMOVE_SPRAY_WALL_HOLDS, {
-          input: { wallUuid, versionId, holdIds: [...plan.removeIds] },
-        });
-        removed = response.removeSprayWallHolds;
-        await onRemoved?.(plan.removeIds);
-      }
-
       let written = 0;
-      if (plan.upsert.length > 0) {
-        const response = await client.request<UpsertResponse>(UPSERT_SPRAY_WALL_HOLDS, {
-          input: { wallUuid, versionId, holds: plan.upsert },
-        });
-        written = response.upsertSprayWallHolds.length;
+      try {
+        if (plan.removeIds.length > 0) {
+          const response = await client.request<RemoveResponse>(REMOVE_SPRAY_WALL_HOLDS, {
+            input: { wallUuid, versionId, holdIds: [...plan.removeIds], ...compatibilityInput },
+          });
+          removed = response.removeSprayWallHolds;
+          await onRemoved?.(plan.removeIds);
+        }
+
+        if (plan.upsert.length > 0) {
+          const response = await client.request<UpsertResponse>(UPSERT_SPRAY_WALL_HOLDS, {
+            input: { wallUuid, versionId, holds: plan.upsert, ...compatibilityInput },
+          });
+          written = response.upsertSprayWallHolds.length;
+        }
+      } catch (error) {
+        throw preserveClimbLinks ? normalizeSprayHoldWriteError(error) : error;
       }
 
       return { written, removed };

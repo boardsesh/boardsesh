@@ -1581,7 +1581,7 @@
     "body_other": "{{count}} veröffentlichte Boulder nutzen diese Griffe. Sie werden als Boulder mit fehlendem Griff markiert, bis sie jemand remixt.",
     "bodyUnknown": "Vielleicht nutzen Boulder diese Griffe. Sie werden als Boulder mit fehlendem Griff markiert, bis sie jemand remixt.",
     "removeAnyway": "Trotzdem entfernen",
-    "keep": "Griffe behalten"
+    "keep": "Weiter bearbeiten"
   },
   "sprayCaps": {
     "holds": "Eine Spraywall trägt bis zu {{max}} Griffe. Verwirf ein paar und speichere erneut.",

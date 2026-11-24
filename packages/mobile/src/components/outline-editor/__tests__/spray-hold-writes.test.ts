@@ -337,19 +337,24 @@ function planWith(removeIds: number[], upsertIds: (number | undefined)[] = []): 
 }
 
 describe('holdIdsLeavingTheWall', () => {
-  // The server records a move as a removal plus a new hold, so a stored hold
-  // whose geometry goes out again leaves the wall just like a removed one.
-  it('names every removal and every stored hold that moves, once each', () => {
-    expect(holdIdsLeavingTheWall(planWith([4, 9], [9, 12, undefined]).plan)).toEqual([4, 9, 12]);
+  it('names actual removals once, excluding corrections and additions', () => {
+    expect(holdIdsLeavingTheWall(planWith([4, 9, 4], [12, undefined]).plan)).toEqual([4, 9]);
   });
 
-  // A resize keeps the centre, and the server still supersedes the hold, so a
-  // climb that used it loses it: it has to be asked about like a removal.
-  it('names a stored hold resized in place, centre unchanged', () => {
-    const state = run([storedHold(7), storedHold(8)], { type: 'RESIZE_HOLD', id: 7, r: 30 });
+  it.each([
+    { type: 'RESIZE_HOLD', id: 7, r: 30 },
+    { type: 'MOVE_HOLD', id: 7, cx: 105, cy: 205 },
+    { type: 'SET_OUTLINE', id: 7, geometry: { cx: 100, cy: 200, r: 20, outline: [-1, -1, 1, -1, 1, 1, -1, 1] } },
+  ] satisfies SprayEditorAction[])('does not warn about correcting a hold: $type', (action) => {
+    const state = run([storedHold(7), storedHold(8)], action);
     const plan = buildSprayHoldWritePlan(state, IDENTITY_HOMOGRAPHY);
-    expect(plan.upsert).toEqual([expect.objectContaining({ id: 7, cx: 100, cy: 200 })]);
-    expect(holdIdsLeavingTheWall(plan)).toEqual([7]);
+    expect(plan.upsert).toEqual([expect.objectContaining({ id: 7 })]);
+    expect(holdIdsLeavingTheWall(plan)).toEqual([]);
+  });
+
+  it('does not warn when a switched-off hold is revived before saving', () => {
+    const state = run([storedHold(7)], { type: 'TOGGLE_HOLD', id: 7 }, { type: 'TOGGLE_HOLD', id: 7 });
+    expect(holdIdsLeavingTheWall(buildSprayHoldWritePlan(state, IDENTITY_HOMOGRAPHY))).toEqual([]);
   });
 
   it('names nothing for a save that only adds holds', () => {
@@ -369,10 +374,10 @@ describe('confirmPlanRemovals', () => {
     const ask = vi.fn(async () => true);
     const planned = planWith([4], [7]);
     await expect(confirmPlanRemovals(() => planned, ask)).resolves.toBe(planned);
-    expect(ask).toHaveBeenCalledExactlyOnceWith([4, 7]);
+    expect(ask).toHaveBeenCalledExactlyOnceWith([4]);
   });
 
-  it('aborts the save on "Keep holds"', async () => {
+  it('aborts the save on "Keep editing"', async () => {
     const onAsking = vi.fn();
     await expect(
       confirmPlanRemovals(
@@ -383,6 +388,22 @@ describe('confirmPlanRemovals', () => {
     ).resolves.toBeNull();
     // The screen is held while asking, and given back either way.
     expect(onAsking.mock.calls).toEqual([[true], [false]]);
+  });
+
+  it('keeps edits and undo available after cancelling a removal', async () => {
+    const before = run([storedHold(7)]);
+    const edited = sprayEditorReducer(before, { type: 'DELETE', id: 7 });
+    const planned = { plan: buildSprayHoldWritePlan(edited, IDENTITY_HOMOGRAPHY) };
+    await expect(
+      confirmPlanRemovals(
+        () => planned,
+        async () => false,
+      ),
+    ).resolves.toBeNull();
+    expect(edited.removedIds).toEqual([7]);
+    const undone = sprayEditorReducer(edited, { type: 'UNDO' });
+    expect(undone.holds[7]).toEqual(before.holds[7]);
+    expect(undone.removedIds).toEqual([]);
   });
 
   it('asks again only about a hold taken off while the check was up', async () => {

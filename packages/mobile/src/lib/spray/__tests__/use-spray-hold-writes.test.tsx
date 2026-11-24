@@ -27,6 +27,7 @@ const requestMock = vi.hoisted(() => vi.fn());
 vi.mock('../../graphql/client', () => ({ getHttpClient: () => ({ request: requestMock }) }));
 
 import { useSaveSprayHolds } from '../use-spray-hold-writes';
+import { extractGraphqlMessage } from '../../graphql/extract-error-message';
 import type { SprayHoldWritePlan } from '../../../components/outline-editor/spray-hold-writes';
 
 const PLAN: SprayHoldWritePlan = {
@@ -66,7 +67,11 @@ function deferredInvalidationWrapper() {
 
 /** Which document each call carried, in the order the hook sent them. */
 function sentDocuments(): string[] {
-  return requestMock.mock.calls.map(([document]) => (document === REMOVE_SPRAY_WALL_HOLDS ? 'remove' : 'upsert'));
+  return requestMock.mock.calls.map(([document]) => {
+    if (document === REMOVE_SPRAY_WALL_HOLDS) return 'remove';
+    if (document === UPSERT_SPRAY_WALL_HOLDS) return 'upsert';
+    throw new Error('Unexpected GraphQL document');
+  });
 }
 
 beforeEach(() => {
@@ -82,11 +87,10 @@ describe('useSaveSprayHolds', () => {
           finishCheckpoint = resolve;
         }),
     );
-    requestMock.mockImplementation((document: unknown) =>
-      document === REMOVE_SPRAY_WALL_HOLDS
-        ? Promise.resolve({ removeSprayWallHolds: 2 })
-        : Promise.reject(new Error('upsert failed')),
-    );
+    requestMock.mockImplementation((document: unknown) => {
+      if (document === REMOVE_SPRAY_WALL_HOLDS) return Promise.resolve({ removeSprayWallHolds: 2 });
+      return Promise.reject(new Error('upsert failed'));
+    });
     const { result } = renderHook(() => useSaveSprayHolds(), { wrapper });
     let saving: Promise<unknown> | undefined;
     act(() => {
@@ -109,7 +113,7 @@ describe('useSaveSprayHolds', () => {
 
   it('fires onRemoved after the remove resolves and before the upsert is sent', async () => {
     // Recorded at the moment `onRemoved` runs: if the hook fired it after both
-    // calls (or never), this snapshot would not be `['remove']`.
+    // calls (or never), this snapshot would not end at the removal.
     let documentsWhenRemovedFired: string[] | null = null;
     const onRemoved = vi.fn(() => {
       documentsWhenRemovedFired = sentDocuments();
@@ -166,7 +170,9 @@ describe('useSaveSprayHolds', () => {
 
   it('does not fire onRemoved when there is nothing to remove', async () => {
     const onRemoved = vi.fn();
-    requestMock.mockResolvedValue({ upsertSprayWallHolds: [{ id: 7 }] });
+    requestMock.mockImplementation((document: unknown) => {
+      return Promise.resolve({ upsertSprayWallHolds: [{ id: 7 }] });
+    });
 
     const { result } = renderHook(() => useSaveSprayHolds(), { wrapper });
     await act(async () => {
@@ -207,8 +213,7 @@ describe('useSaveSprayHolds', () => {
     });
 
     expect(onRemoved).not.toHaveBeenCalled();
-    expect(requestMock).toHaveBeenCalledTimes(1);
-    expect(requestMock.mock.calls[0][0]).toBe(REMOVE_SPRAY_WALL_HOLDS);
+    expect(sentDocuments()).toEqual(['remove']);
   });
 
   it("awaits the draft refetch before the caller's onSuccess runs", async () => {
@@ -254,10 +259,161 @@ describe('useSaveSprayHolds', () => {
     });
 
     expect(requestMock).toHaveBeenNthCalledWith(1, REMOVE_SPRAY_WALL_HOLDS, {
-      input: { wallUuid: 'wall-1', versionId: '77', holdIds: [8, 9] },
+      input: { wallUuid: 'wall-1', versionId: '77', holdIds: [8, 9], preserveClimbLinks: true },
     });
     expect(requestMock).toHaveBeenNthCalledWith(2, UPSERT_SPRAY_WALL_HOLDS, {
-      input: { wallUuid: 'wall-1', versionId: '77', holds: PLAN.upsert },
+      input: { wallUuid: 'wall-1', versionId: '77', holds: PLAN.upsert, preserveClimbLinks: true },
     });
   });
+
+  it.each(
+    [undefined, 'BAD_USER_INPUT', 'GRAPHQL_VALIDATION_FAILED'].flatMap((code) => [
+      { scenario: 'refinement only', plan: { ...PLAN, removeIds: [] }, document: UPSERT_SPRAY_WALL_HOLDS, code },
+      { scenario: 'removal and refinement together', plan: PLAN, document: REMOVE_SPRAY_WALL_HOLDS, code },
+    ]),
+  )('rejects marked $scenario on an older backend ($code) before any writes land', async ({ plan, document, code }) => {
+    const message =
+      'Variable "$input" got invalid value { preserveClimbLinks: true }; Field "preserveClimbLinks" is not defined by type "UpsertSprayWallHoldsInput".';
+    const unsupported = Object.assign(new Error(message), {
+      response: { errors: [{ message, ...(code ? { extensions: { code } } : {}) }] },
+    });
+    requestMock.mockRejectedValueOnce(unsupported);
+    const onRemoved = vi.fn();
+    const { Wrapper, invalidateSpy } = deferredInvalidationWrapper();
+    const { result } = renderHook(() => useSaveSprayHolds(), { wrapper: Wrapper });
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({
+          wallUuid: 'wall-1',
+          versionNumber: 3,
+          versionId: '77',
+          plan,
+          onRemoved,
+        }),
+      ).rejects.toMatchObject({ cause: unsupported });
+    });
+    expect(requestMock).toHaveBeenCalledTimes(1);
+    expect(requestMock.mock.calls[0][0]).toBe(document);
+    expect(requestMock.mock.calls[0][1]).toMatchObject({ input: { preserveClimbLinks: true } });
+    expect(onRemoved).not.toHaveBeenCalled();
+    expect(invalidateSpy).not.toHaveBeenCalled();
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(extractGraphqlMessage(result.current.error)).toBeNull();
+  });
+
+  it('omits the compatibility marker when the save only adds new holds', async () => {
+    requestMock.mockImplementation((document: unknown) => {
+      if (document !== UPSERT_SPRAY_WALL_HOLDS) return Promise.reject(new Error('Unexpected GraphQL request'));
+      return Promise.resolve({ upsertSprayWallHolds: [{ id: 90 }] });
+    });
+    const { result } = renderHook(() => useSaveSprayHolds(), { wrapper });
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({
+          wallUuid: 'wall-1',
+          versionNumber: 3,
+          versionId: '77',
+          plan: {
+            ...PLAN,
+            upsert: [{ cx: 10, cy: 20, r: 5, outline: null, source: 'MANUAL' }],
+            writtenIds: [-1],
+            removeIds: [],
+          },
+        }),
+      ).resolves.toEqual({ written: 1, removed: 0 });
+    });
+    expect(sentDocuments()).toEqual(['upsert']);
+    expect(requestMock.mock.calls[0][1].input).not.toHaveProperty('preserveClimbLinks');
+  });
+
+  it('omits the compatibility marker when the save only removes holds', async () => {
+    requestMock.mockImplementation((document: unknown) => {
+      if (document !== REMOVE_SPRAY_WALL_HOLDS) return Promise.reject(new Error('Unexpected GraphQL request'));
+      return Promise.resolve({ removeSprayWallHolds: 2 });
+    });
+    const onRemoved = vi.fn();
+    const { result } = renderHook(() => useSaveSprayHolds(), { wrapper });
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({
+          wallUuid: 'wall-1',
+          versionNumber: 3,
+          versionId: '77',
+          plan: { ...PLAN, upsert: [], writtenIds: [] },
+          onRemoved,
+        }),
+      ).resolves.toEqual({ written: 0, removed: 2 });
+    });
+    expect(sentDocuments()).toEqual(['remove']);
+    expect(requestMock.mock.calls[0][1].input).not.toHaveProperty('preserveClimbLinks');
+    expect(onRemoved).toHaveBeenCalledExactlyOnceWith(PLAN.removeIds);
+  });
+
+  it('keeps the removal checkpoint if a rollback rejects the marked upsert', async () => {
+    const message = 'Field "preserveClimbLinks" is not defined by type "UpsertSprayWallHoldsInput".';
+    const unsupported = { response: { errors: [{ message, extensions: { code: 'BAD_USER_INPUT' } }] } };
+    requestMock.mockImplementation((document: unknown) => {
+      if (document === REMOVE_SPRAY_WALL_HOLDS) return Promise.resolve({ removeSprayWallHolds: 2 });
+      return Promise.reject(unsupported);
+    });
+    const onRemoved = vi.fn();
+    const { result } = renderHook(() => useSaveSprayHolds(), { wrapper });
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({
+          wallUuid: 'wall-1',
+          versionNumber: 3,
+          versionId: '77',
+          plan: PLAN,
+          onRemoved,
+        }),
+      ).rejects.toMatchObject({ cause: unsupported });
+    });
+    expect(sentDocuments()).toEqual(['remove', 'upsert']);
+    expect(onRemoved).toHaveBeenCalledExactlyOnceWith(PLAN.removeIds);
+    for (const [, variables] of requestMock.mock.calls) {
+      expect(variables.input.preserveClimbLinks).toBe(true);
+    }
+  });
+
+  it('marks every save without relying on a cached capability check', async () => {
+    requestMock.mockImplementation((document: unknown) => {
+      return Promise.resolve({ upsertSprayWallHolds: [{ id: 7 }] });
+    });
+    const { result } = renderHook(() => useSaveSprayHolds(), { wrapper });
+    const variables = { wallUuid: 'wall-1', versionNumber: 3, versionId: '77', plan: { ...PLAN, removeIds: [] } };
+    await act(async () => {
+      await result.current.mutateAsync(variables);
+    });
+    requestMock.mockRejectedValueOnce(new Error('backend rolled back'));
+    await act(async () => {
+      await expect(result.current.mutateAsync(variables)).rejects.toThrow('backend rolled back');
+    });
+    expect(sentDocuments()).toEqual(['upsert', 'upsert']);
+    for (const [, variables] of requestMock.mock.calls) {
+      expect(variables.input.preserveClimbLinks).toBe(true);
+    }
+  });
+
+  it.each(['SPRAY_WALL_ARCHIVED', 'RATE_LIMITED', 'BAD_USER_INPUT'])(
+    'preserves structured %s write refusals for the editor',
+    async (code) => {
+      const refusal = Object.assign(new Error('Server guidance'), {
+        response: { errors: [{ message: 'Server guidance', extensions: { code } }] },
+      });
+      requestMock.mockRejectedValueOnce(refusal);
+      const { result } = renderHook(() => useSaveSprayHolds(), { wrapper });
+      await act(async () => {
+        await expect(
+          result.current.mutateAsync({
+            wallUuid: 'wall-1',
+            versionNumber: 3,
+            versionId: '77',
+            plan: PLAN,
+          }),
+        ).rejects.toBe(refusal);
+      });
+      expect(sentDocuments()).toEqual(['remove']);
+    },
+  );
 });

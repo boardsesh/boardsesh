@@ -71,10 +71,10 @@ const maintenanceTransport: SprayHoldMaintenanceTransport = {
     );
     return response.createSprayWallVersion;
   },
-  publishDraft: async (versionId) => {
+  publishDraft: async (input) => {
     const response = await getHttpClient().request<{ publishSprayWallVersion: SprayWallVersion }>(
       PUBLISH_SPRAY_WALL_VERSION,
-      { input: { versionId } },
+      { input },
     );
     return response.publishSprayWallVersion;
   },
