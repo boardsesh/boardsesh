@@ -185,7 +185,7 @@ The review sheet (`ReportReviewSheet`) groups the suggestions on the waiting "Se
 The `board_setup_changed_by_climber` row (the board's creator and the gym's owner and admins get it, and its push opens the board's detail sheet) says what the board climbs now and offers **Undo** while `setupChangeState` is `LIVE`. Undo asks first, checks the row is still `LIVE` in the loaded inbox once the confirm closes, then writes the restored board where the app reads it. A double tap asks once and sends once. How a refusal reads:
 
 - `BOARD_SETUP_CHANGED_SINCE`: "It changed again since. Open the board to check it." The row moves to `CHANGED_SINCE`.
-- `BOARD_SETUP_ALREADY_UNDONE`: "Someone already put the old setup back." The row moves to `UNDONE` and the board is read again.
+- `BOARD_SETUP_ALREADY_UNDONE`: "Someone already put the old setup back." The row moves to `UNDONE` and the board is read again by uuid and written the way a successful undo writes it, the stored active board included. A failed read leaves the line as it is; the active board heals on the next foreground.
 - `NOT_FOUND` (the board moved gyms or went private, or the viewer's role at the gym ended): "You can't undo this any more." Undo goes from the row.
 - No connection, or any other failure: "Couldn't undo it. Try again when connected." Undo stays.
 

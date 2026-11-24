@@ -9,6 +9,7 @@ import { GROUPED_NOTIFICATIONS_QUERY_KEY } from '../../../lib/graphql/notificati
 const confirm = vi.hoisted(() => vi.fn());
 const undo = vi.hoisted(() => vi.fn());
 const applyChangedBoard = vi.hoisted(() => vi.fn());
+const fetchBoard = vi.hoisted(() => vi.fn());
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -18,6 +19,7 @@ vi.mock('react-i18next', () => ({
 vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => confirm }));
 vi.mock('../../../lib/graphql/hooks/use-directory-reports', () => ({ useUndoBoardSetupChange: () => undo }));
 vi.mock('../../../lib/boards/use-apply-changed-board', () => ({ useApplyChangedBoard: () => applyChangedBoard }));
+vi.mock('../../../lib/graphql/hooks/fetch-board-by-uuid', () => ({ fetchBoardByUuid: fetchBoard }));
 
 import { useUndoSetupChange } from '../use-undo-setup-change';
 
@@ -71,6 +73,7 @@ beforeEach(() => {
   undo.mockReset();
   applyChangedBoard.mockReset();
   applyChangedBoard.mockResolvedValue(undefined);
+  fetchBoard.mockReset();
 });
 
 describe('useUndoSetupChange', () => {
@@ -100,8 +103,6 @@ describe('useUndoSetupChange', () => {
 
   it.each([
     ['BOARD_SETUP_CHANGED_SINCE', 'changed_since'],
-    // Someone put it back first: the row reads as undone.
-    ['BOARD_SETUP_ALREADY_UNDONE', 'already_undone'],
     // The board moved gyms or went private, or the viewer's role ended.
     ['NOT_FOUND', 'not_allowed'],
   ])('answers %s with %s, and writes no board', async (code, outcome) => {
@@ -109,7 +110,39 @@ describe('useUndoSetupChange', () => {
     undo.mockRejectedValue(refusal(code));
     const { result } = renderUndo();
     await expect(result.current(row())).resolves.toBe(outcome);
+    expect(fetchBoard).not.toHaveBeenCalled();
     expect(applyChangedBoard).not.toHaveBeenCalled();
+  });
+
+  it('reads the board again and writes it when someone put the old setup back first', async () => {
+    confirm.mockResolvedValue(true);
+    undo.mockRejectedValue(refusal('BOARD_SETUP_ALREADY_UNDONE'));
+    fetchBoard.mockResolvedValue(restored);
+    const { result } = renderUndo();
+    await expect(result.current(row())).resolves.toBe('already_undone');
+    expect(fetchBoard).toHaveBeenCalledWith('board-1');
+    expect(applyChangedBoard).toHaveBeenCalledWith(restored);
+  });
+
+  it.each([
+    ['the read fails', () => fetchBoard.mockRejectedValue(new Error('offline'))],
+    ['the board is gone', () => fetchBoard.mockResolvedValue(null)],
+  ])('still reads as already undone, writing no board, when %s', async (_case, arrange) => {
+    confirm.mockResolvedValue(true);
+    undo.mockRejectedValue(refusal('BOARD_SETUP_ALREADY_UNDONE'));
+    arrange();
+    const { result } = renderUndo();
+    await expect(result.current(row())).resolves.toBe('already_undone');
+    expect(applyChangedBoard).not.toHaveBeenCalled();
+  });
+
+  it('still reads as already undone when the stored active board fails to take the board', async () => {
+    confirm.mockResolvedValue(true);
+    undo.mockRejectedValue(refusal('BOARD_SETUP_ALREADY_UNDONE'));
+    fetchBoard.mockResolvedValue(restored);
+    applyChangedBoard.mockRejectedValue(new Error('disk full'));
+    const { result } = renderUndo();
+    await expect(result.current(row())).resolves.toBe('already_undone');
   });
 
   it('undoes nothing when the change stopped being live while the confirm was up', async () => {

@@ -11,6 +11,7 @@ import type { GroupedNotification } from '@boardsesh/shared-schema';
 import { useConfirm } from '../../providers/dialog-provider';
 import { useUndoBoardSetupChange } from '../../lib/graphql/hooks/use-directory-reports';
 import { useApplyChangedBoard } from '../../lib/boards/use-apply-changed-board';
+import { fetchBoardByUuid } from '../../lib/graphql/hooks/fetch-board-by-uuid';
 import { extractGraphqlCode } from '../../lib/graphql/extract-error-message';
 import { findCachedNotification } from '../../lib/graphql/notification-read-cache';
 import { formatSetupSummary } from '../report-problem/setup-summary';
@@ -19,9 +20,10 @@ import { canUndoSetupChange, type UndoSetupChange } from './setup-change-notice'
 /**
  * Returns the inbox's Undo: confirm, then put the old setup back, then write
  * the restored board where the app reads it (the active board included, so a
- * climber on it climbs the old setup again straight away). Its inputs change
- * only with the language or the signed-in account, so the rows it is handed to
- * stay memoised.
+ * climber on it climbs the old setup again straight away). When someone else
+ * put it back first, the board is read again and written the same way. Its
+ * inputs change only with the language or the signed-in account, so the rows
+ * it is handed to stay memoised.
  */
 export function useUndoSetupChange(): UndoSetupChange {
   const { t } = useTranslation('notifications');
@@ -56,7 +58,22 @@ export function useUndoSetupChange(): UndoSetupChange {
         restored = await undo({ eventId, notification });
       } catch (error) {
         if (isBoardSetupChangedSinceError(error)) return 'changed_since';
-        if (isBoardSetupAlreadyUndoneError(error)) return 'already_undone';
+        if (isBoardSetupAlreadyUndoneError(error)) {
+          // The old setup is back, but this device's active board is a stored
+          // copy that never re-reads on its own: read the board as it is now
+          // and write it the way a successful undo does.
+          const boardUuid = notice.boardUuid;
+          if (boardUuid) {
+            try {
+              const current = await fetchBoardByUuid(boardUuid);
+              if (current) await applyChangedBoard(current);
+            } catch {
+              // The row still reads as undone; the active board heals from the
+              // server on the next foreground (use-active-board-self-heal).
+            }
+          }
+          return 'already_undone';
+        }
         if (extractGraphqlCode(error) === 'NOT_FOUND') return 'not_allowed';
         throw error;
       }
