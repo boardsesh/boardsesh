@@ -84,6 +84,7 @@ describe('notificationCopy', () => {
     ['board_removed_from_gym', 'items.boardRemovedFromGymGeneric'],
     ['board_deleted_by_staff', 'items.boardDeletedByStaffGeneric'],
     ['board_edited_by_staff', 'items.boardEditedByStaffGeneric'],
+    ['board_setup_changed_by_climber', 'items.boardSetupChangedByClimberGeneric'],
     ['gym_report_opened', 'items.gymReportOpenedGeneric'],
     ['gym_report_resolved', 'items.gymReportResolvedGeneric'],
     ['gym_claimed_with_your_board', 'items.gymClaimedWithYourBoardGeneric'],
@@ -388,6 +389,16 @@ describe('notificationCopy: directory notices', () => {
     expect(copyFor('board_edited_by_staff', { actorRole: 'gym_staff' }).textI18nKey).toBe('items.boardEditedByStaff');
     expect(copyFor('board_edited_by_staff', { actorRole: 'moderator' }).textI18nKey).toBe(
       'items.boardEditedByModerator',
+    );
+  });
+
+  it("names the board a climber's suggested setup changed", () => {
+    expect(copyFor('board_setup_changed_by_climber')).toEqual({
+      textI18nKey: 'items.boardSetupChangedByClimber',
+      params: { board: 'Crux Kilter' },
+    });
+    expect(copyFor('board_setup_changed_by_climber', { boardName: null }).textI18nKey).toBe(
+      'items.boardSetupChangedByClimberGeneric',
     );
   });
 

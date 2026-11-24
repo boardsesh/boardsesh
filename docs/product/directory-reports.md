@@ -142,7 +142,7 @@ In the filing transaction:
 1. The board's `layout_id`, `size_id`, `set_ids` and, on a board that doesn't tilt, `angle`, with `updated_at` and `sync_frozen_at`. The freeze is the one staff edits set, so the location sync can't put the old setup back.
 2. `onBoardEdited` with the actor role `climber`. The board's waiting `wrong_setup` reports close as `fixed` with resolver role `climber`, the one just filed included. Their reporters hear `board_report_resolved`, except the climber who made the change.
 3. A `board_moderation_events` row: `setup_changed_by_climber`, actor role `climber`, `details` `{ before, after, reportUuid }`.
-4. `board_setup_changed_by_climber` to the creator, unless the board is synced (SYSTEM). Its context row's `board_moderation_event_id` points at the event, so `directoryNotice` carries `setupChangeEventId`, `setupBefore`, `setupAfter` and `setupChangeState` for the notice's Undo.
+4. `board_setup_changed_by_climber` to the creator, unless the board is synced (SYSTEM). Its context row's `board_moderation_event_id` points at the event, so `directoryNotice` carries `setupChangeEventId`, `setupBefore`, `setupAfter` and `setupChangeState` for the notice's Undo. The app words it "A climber changed the setup of your board {{board}}" (`items.boardSetupChangedByClimber`) and opens the board's detail sheet.
 
 Everyone else who has the board active picks up the new setup the next time the app opens or comes to the foreground: `use-active-board-self-heal.ts` reverts the stored config to the server's, the angle excepted. `reportBoard` returns the changed `board` for Climb it now.
 
