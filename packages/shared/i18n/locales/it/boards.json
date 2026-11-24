@@ -480,13 +480,14 @@
         "switchError": "Impossibile passare a quel pannello. Riprova."
       },
       "existingWalls": {
-        "title": "{{gym}} ha già {{n}} pannelli {{board}}",
-        "titleOne": "{{gym}} ha già un pannello {{board}}",
-        "titleNoGym": "Questa palestra ha già {{n}} pannelli {{board}}",
+        "title_one": "{{gym}} ha già un pannello {{board}}",
+        "title_other": "{{gym}} ha già {{count}} pannelli {{board}}",
+        "titleNoGym_one": "Questa palestra ha già un pannello {{board}}",
+        "titleNoGym_other": "Questa palestra ha già {{count}} pannelli {{board}}",
         "body": "Usa quello su cui arrampica già la tua crew, così le ripetizioni finiscono insieme. Continua a configurare il tuo solo se è una parete diversa.",
         "useBoard": "Usa questo pannello",
         "keepMine": "Continua con il mio",
-        "loadFailed": "Impossibile caricare quei pannelli. Puoi comunque continuare con il tuo."
+        "loadFailed": "Impossibile caricare tutti quei pannelli. Riprova per vederli prima di continuare con il tuo."
       }
     },
     "custom": {
@@ -571,6 +572,7 @@
       "otherBoardsHere": "Altri pannelli qui ({{n}})",
       "otherShow": "Mostra",
       "otherHide": "Nascondi",
+      "truncated": "Ecco le prime {{count}} pareti. Cerca per nome per trovare la tua.",
       "stats": "{{climbers}} climber · {{sends}} ripetizioni",
       "addedBy": "Aggiunto da {{name}}",
       "adjustable": "Regolabile",
@@ -580,12 +582,13 @@
       "boardNotListed": "Il mio pannello non è in elenco",
       "addAnyway": "Aggiungilo comunque",
       "lookupFailed": "Impossibile caricare i pannelli di {{gym}}",
-      "emptyTitle": "Ancora nessun pannello {{board}} a {{gym}}",
+      "emptyTitle": "Nessuno ha ancora aggiunto un pannello {{board}} a {{gym}}",
       "setUpFirst": "Configura il primo",
       "useError": "Impossibile passare a quel pannello. Riprova.",
       "confirmTitle": "Aggiungere un nuovo pannello a {{gym}}?",
-      "confirmBody": "Solo se è una parete diversa dai {{n}} qui sopra. Una seconda copia separa le tue ripetizioni da quelle della crew che ci arrampica già.",
-      "confirmBodyLookupFailed": "Non siamo riusciti a controllare i pannelli di {{gym}}. Aggiungere comunque il tuo?",
+      "confirmBody_one": "Solo se è una parete diversa da quella qui sopra. Una seconda copia separa le tue ripetizioni da quelle della crew che ci arrampica già.",
+      "confirmBody_other": "Solo se è una parete diversa dalle {{count}} qui sopra. Una seconda copia separa le tue ripetizioni da quelle della crew che ci arrampica già.",
+      "confirmBodyLookupFailed": "Impossibile controllare i pannelli di {{gym}}. Aggiungere comunque il tuo?",
       "confirmDifferent": "È una parete diversa",
       "confirmKeepLooking": "Continua a cercare"
     },

@@ -22,10 +22,19 @@ export function boardFlowTicket(): number {
   return sequence;
 }
 
-/** A board was created, reused or followed: no screen in this flow was abandoned. */
-export function noteBoardFlowSecured(): void {
+/**
+ * A board was created, reused or followed: no screen in this flow was
+ * abandoned. Returns an undo for a bind that then failed, so the climber who
+ * leaves after it is still counted.
+ */
+export function noteBoardFlowSecured(): () => void {
+  const previousEnd = lastEndedAt;
   sequence += 1;
   lastEndedAt = sequence;
+  const securedAt = sequence;
+  return () => {
+    if (lastEndedAt === securedAt) lastEndedAt = previousEnd;
+  };
 }
 
 /**

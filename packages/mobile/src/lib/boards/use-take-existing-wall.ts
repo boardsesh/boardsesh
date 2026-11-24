@@ -38,8 +38,15 @@ export function useTakeExistingWall({
     async (board: UserBoard): Promise<{ alreadyFollowed: boolean }> => {
       const alreadyFollowed = wallRelation(board, viewerId) !== null;
       if (!alreadyFollowed) await followWall(board);
-      noteBoardFlowSecured();
-      await activate(board, { pickSource: 'gym_finder' });
+      // Before the bind, whose navigation unmounts the flow's screens; undone
+      // if the bind fails, so leaving afterwards still counts as a quit.
+      const undoSecured = noteBoardFlowSecured();
+      try {
+        await activate(board, { pickSource: 'gym_finder' });
+      } catch (error) {
+        undoSecured();
+        throw error;
+      }
       return { alreadyFollowed };
     },
     [followWall, activate, viewerId],

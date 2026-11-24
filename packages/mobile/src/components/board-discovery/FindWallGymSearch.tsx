@@ -237,6 +237,11 @@ export function FindWallGymSearch({ initialBoardType, returnTo, source }: FindWa
     (item: DiscoveryBoardItem, position: number) => {
       const board = boardsByUuid.get(item.key);
       if (!board || takingRef.current) return;
+      // Following a wall needs an account, like adding one.
+      if (!isAuthenticated) {
+        router.push('/auth/login');
+        return;
+      }
       takingRef.current = true;
       setUseError(false);
       void takeWall(board)
@@ -254,7 +259,7 @@ export function FindWallGymSearch({ initialBoardType, returnTo, source }: FindWa
           takingRef.current = false;
         });
     },
-    [boardsByUuid, takeWall],
+    [boardsByUuid, takeWall, isAuthenticated, router],
   );
 
   const retry = useCallback(() => {

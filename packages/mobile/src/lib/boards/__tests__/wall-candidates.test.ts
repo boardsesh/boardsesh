@@ -6,7 +6,6 @@ import {
   countWallCandidates,
   groupWallCandidates,
   MAX_ACKNOWLEDGED_WALLS,
-  parseAcknowledgedParam,
   wallCandidateItem,
   wallCandidateMatch,
   wallRelation,
@@ -178,15 +177,5 @@ describe('acknowledged walls', () => {
     const uuids = Array.from({ length: 50 }, (_, index) => `wall-${index}`);
     expect(acknowledgedWallUuids(['a', 'b', 'a'])).toEqual(['a', 'b']);
     expect(acknowledgedWallUuids(uuids)).toHaveLength(MAX_ACKNOWLEDGED_WALLS);
-  });
-
-  it.each([
-    { value: 'a,b, c', expected: ['a', 'b', 'c'] },
-    { value: 'a,,a', expected: ['a'] },
-    { value: '', expected: [] },
-    { value: undefined, expected: [] },
-    { value: ['a'], expected: [] },
-  ])('reads the route param $value', ({ value, expected }) => {
-    expect(parseAcknowledgedParam(value)).toEqual(expected);
   });
 });

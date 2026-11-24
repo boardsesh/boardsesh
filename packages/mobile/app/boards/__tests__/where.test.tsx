@@ -10,7 +10,8 @@ type Children = { children?: ReactNode };
 
 const pushMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
-const state = vi.hoisted(() => ({ params: {} as Record<string, string | undefined> }));
+const replaceMock = vi.hoisted(() => vi.fn());
+const state = vi.hoisted(() => ({ params: {} as Record<string, string | undefined>, gymFirst: true }));
 
 vi.mock('react-native', () => ({
   ScrollView: ({ children }: Children) => createElement('div', null, children),
@@ -18,7 +19,7 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
 vi.mock('expo-router', () => ({
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => ({ push: pushMock, replace: replaceMock }),
   useLocalSearchParams: () => state.params,
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -30,6 +31,9 @@ vi.mock('../../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
 }));
 vi.mock('../../../src/lib/analytics', () => ({ track: trackMock }));
+vi.mock('../../../src/providers/feature-flags-provider', () => ({
+  useCreateBoardGymFirstEnabled: () => state.gymFirst,
+}));
 vi.mock('../../../src/theme/tokens', () => ({ spacing: { 3: 12, 4: 16 } }));
 
 const { default: BoardWhere } = await import('../where');
@@ -37,6 +41,7 @@ const { default: BoardWhere } = await import('../where');
 beforeEach(() => {
   vi.clearAllMocks();
   state.params = { returnTo: '/(tabs)/climbs', source: 'no_board' };
+  state.gymFirst = true;
 });
 
 function events(name: string) {
@@ -78,5 +83,18 @@ describe("Where's this board?", () => {
     expect(events('Board Builder Abandoned')).toEqual([
       { kind: null, step: 'choice', openedFrom: 'no_board', secondsOpen: 0 },
     ]);
+  });
+
+  // A deep link or a stale route with the flag off: the builder as it was.
+  it('hands straight on to the builder with the flag off, and reports nothing', () => {
+    state.gymFirst = false;
+    const { unmount } = render(createElement(BoardWhere));
+    expect(replaceMock).toHaveBeenCalledWith({
+      pathname: '/boards/create',
+      params: { returnTo: '/(tabs)/climbs', source: 'no_board' },
+    });
+    expect(screen.queryAllByRole('button')).toEqual([]);
+    unmount();
+    expect(events('Board Builder Abandoned')).toEqual([]);
   });
 });

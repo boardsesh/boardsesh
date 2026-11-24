@@ -480,13 +480,14 @@
         "switchError": "无法切换到这块训练板，请重试。"
       },
       "existingWalls": {
-        "title": "{{gym}} 已有 {{n}} 块 {{board}} 训练板",
-        "titleOne": "{{gym}} 已有一块 {{board}} 训练板",
-        "titleNoGym": "这个岩馆已有 {{n}} 块 {{board}} 训练板",
+        "title_one": "{{gym}} 已有一块 {{board}} 训练板",
+        "title_other": "{{gym}} 已有 {{count}} 块 {{board}} 训练板",
+        "titleNoGym_one": "这个岩馆已有一块 {{board}} 训练板",
+        "titleNoGym_other": "这个岩馆已有 {{count}} 块 {{board}} 训练板",
         "body": "使用伙伴们已经在爬的那块，完攀记录就会在一起。只有当你的是另一面墙时才继续设置。",
         "useBoard": "使用这块训练板",
         "keepMine": "继续设置我的",
-        "loadFailed": "无法加载这些训练板。你仍然可以继续设置你的。"
+        "loadFailed": "无法加载全部训练板。请重试，看到它们后再继续设置你的。"
       }
     },
     "custom": {
@@ -571,6 +572,7 @@
       "otherBoardsHere": "这里的其他训练板（{{n}}）",
       "otherShow": "显示",
       "otherHide": "隐藏",
+      "truncated": "这里显示前 {{count}} 面墙。按名称搜索找到你的。",
       "stats": "{{climbers}} 位攀岩者 · {{sends}} 次完攀",
       "addedBy": "由 {{name}} 添加",
       "adjustable": "可调角度",
@@ -580,11 +582,12 @@
       "boardNotListed": "列表里没有我的训练板",
       "addAnyway": "仍然添加",
       "lookupFailed": "无法加载 {{gym}} 的训练板",
-      "emptyTitle": "{{gym}} 还没有 {{board}} 训练板",
+      "emptyTitle": "{{gym}} 还没有人添加 {{board}} 训练板",
       "setUpFirst": "设置第一块",
       "useError": "无法切换到这块训练板，请重试。",
       "confirmTitle": "在 {{gym}} 添加新训练板？",
-      "confirmBody": "仅当它与上面 {{n}} 块不是同一面墙时才添加。重复添加会把你的完攀和已经在那里攀爬的伙伴分开。",
+      "confirmBody_one": "仅当它与上面那块不是同一面墙时才添加。重复添加会把你的完攀和已经在那里攀爬的伙伴分开。",
+      "confirmBody_other": "仅当它与上面 {{count}} 块不是同一面墙时才添加。重复添加会把你的完攀和已经在那里攀爬的伙伴分开。",
       "confirmBodyLookupFailed": "我们无法检查 {{gym}} 的训练板。仍然添加你的吗？",
       "confirmDifferent": "这是另一面墙",
       "confirmKeepLooking": "继续查找"

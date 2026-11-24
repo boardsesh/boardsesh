@@ -4,7 +4,7 @@
 // the builder; a gym board goes to finding the wall that's probably already
 // there. Only reachable with the `create-board-gym-first` flag on.
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -15,6 +15,7 @@ import { trackBoardKindChosen, type BoardKind } from '../../src/lib/boards/board
 import { boardFlowTicket, claimBoardFlowAbandonment } from '../../src/lib/boards/board-create-flow';
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
 import { track } from '../../src/lib/analytics';
+import { useCreateBoardGymFirstEnabled } from '../../src/providers/feature-flags-provider';
 import { spacing } from '../../src/theme/tokens';
 
 export default function BoardWhere() {
@@ -23,6 +24,20 @@ export default function BoardWhere() {
   const { t } = useTranslation('boards');
   const bottomChrome = useBottomChromeMetrics();
   const { returnTo, source } = params;
+  // Flag off (a deep link, a stale route): the builder as it was. Decided at
+  // mount, like the builder's own redirect here, so a flag that resolves later
+  // never swaps the screen under the climber.
+  const gymFirstEnabled = useCreateBoardGymFirstEnabled();
+  const [redirectToBuilder] = useState(() => !gymFirstEnabled);
+  useEffect(() => {
+    if (!redirectToBuilder) return;
+    const builderParams: Record<string, string> = {};
+    if (returnTo !== undefined) builderParams.returnTo = returnTo;
+    if (source !== undefined) builderParams.source = source;
+    router.replace({ pathname: '/boards/create', params: builderParams });
+    // Once, at mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // `Board Builder Abandoned` at step `choice`: the climber left without
   // answering. A deeper screen that reported first, or a board secured
@@ -31,7 +46,7 @@ export default function BoardWhere() {
     const openedAtMs = Date.now();
     const ticket = boardFlowTicket();
     return () => {
-      if (!claimBoardFlowAbandonment(ticket)) return;
+      if (redirectToBuilder || !claimBoardFlowAbandonment(ticket)) return;
       track(SHARED_EVENTS.BoardBuilderAbandoned, {
         kind: null,
         step: 'choice',
@@ -52,6 +67,8 @@ export default function BoardWhere() {
   );
   const onOwn = useCallback(() => choose('home'), [choose]);
   const onGym = useCallback(() => choose('gym'), [choose]);
+
+  if (redirectToBuilder) return null;
 
   return (
     <ScrollView

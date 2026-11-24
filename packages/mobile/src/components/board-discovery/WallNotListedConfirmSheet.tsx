@@ -60,7 +60,7 @@ export function WallNotListedConfirmSheet({
         <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.centered}>
           {lookupFailed
             ? t('mobile.findWall.confirmBodyLookupFailed', { gym: gymName })
-            : t('mobile.findWall.confirmBody', { n: candidateCount })}
+            : t('mobile.findWall.confirmBody', { count: candidateCount })}
         </Text>
         <Button
           title={lookupFailed ? t('mobile.findWall.addAnyway') : t('mobile.findWall.confirmDifferent')}

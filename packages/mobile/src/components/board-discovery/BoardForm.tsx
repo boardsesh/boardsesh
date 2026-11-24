@@ -102,6 +102,10 @@ type BoardFormProps = {
    * "My gym isn't listed" (#8151), whose next step is typing where the board is.
    */
   focusLocationOnOpen?: boolean;
+  /** Hold Save off without a spinner: something the board needs is still loading (the prefilled gym). */
+  submitBlocked?: boolean;
+  /** A way out of `errorMessage`, drawn under it (Try again). */
+  errorAction?: { label: string; onPress: () => void };
 };
 
 /**
@@ -125,6 +129,8 @@ export function BoardForm({
   sprayLedSection,
   sprayTrainingSection,
   focusLocationOnOpen = false,
+  submitBlocked = false,
+  errorAction,
 }: BoardFormProps) {
   const headerHeight = useHeaderHeight();
   const { t } = useTranslation('boards');
@@ -238,7 +244,7 @@ export function BoardForm({
       kind: 'confirm',
       label: submitLabel,
       onPress: submit,
-      disabled: !builder.canCreate || submitting,
+      disabled: !builder.canCreate || submitting || submitBlocked,
       loading: submitting,
       prominent: true,
     },
@@ -288,6 +294,9 @@ export function BoardForm({
           >
             {errorMessage}
           </Text>
+        ) : null}
+        {errorMessage && errorAction ? (
+          <Button title={errorAction.label} variant="text" onPress={errorAction.onPress} />
         ) : null}
         {/* Live board art — turns layout/size/set IDs into a recognizable wall. */}
         <View style={[styles.preview, { backgroundColor: systemColors.secondaryBackground }]}>

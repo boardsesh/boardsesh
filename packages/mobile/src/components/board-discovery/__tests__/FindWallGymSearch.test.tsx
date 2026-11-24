@@ -326,6 +326,21 @@ describe('FindWallGymSearch My gym isn’t listed', () => {
     });
   });
 
+  it('sends a signed-out climber to sign in from a board row, following nothing', async () => {
+    state.signedIn = false;
+    state.gyms.data = { gyms: [] };
+    state.boards.data = {
+      boards: [
+        { uuid: 'wall-1', name: 'Crag MoonBoard', boardType: 'moonboard', layoutId: 5, sizeId: 1, setIds: '17' },
+      ],
+    };
+    renderSearch();
+    await typeSearch('crag');
+    fireEvent.click(screen.getByText('Crag MoonBoard'));
+    expect(pushMock).toHaveBeenCalledWith('/auth/login');
+    expect(takeWallMock).not.toHaveBeenCalled();
+  });
+
   it('sends a signed-out climber to sign in', () => {
     state.signedIn = false;
     renderSearch();

@@ -3,8 +3,8 @@
 // up a board" opens straight on its walls (`entry=gym_page`). Only reachable
 // with the `create-board-gym-first` flag on.
 
-import { useEffect } from 'react';
-import { useLocalSearchParams } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { toBoardName } from '@boardsesh/board-config';
 import { FindWallGymSearch } from '../../src/components/board-discovery/FindWallGymSearch';
@@ -12,6 +12,7 @@ import { GymWallList } from '../../src/components/board-discovery/GymWallList';
 import { isPickableBoardType } from '../../src/lib/boards/find-wall-state';
 import { boardFlowTicket, claimBoardFlowAbandonment } from '../../src/lib/boards/board-create-flow';
 import { track } from '../../src/lib/analytics';
+import { useCreateBoardGymFirstEnabled } from '../../src/providers/feature-flags-provider';
 
 export default function FindWall() {
   const params = useLocalSearchParams<{
@@ -26,13 +27,28 @@ export default function FindWall() {
   const parsedType = toBoardName(params.boardType);
   const initialBoardType = isPickableBoardType(parsedType) ? parsedType : null;
 
+  // Flag off (a deep link, a stale route): the builder as it was, decided at
+  // mount so a flag that resolves later never swaps the screen out.
+  const router = useRouter();
+  const gymFirstEnabled = useCreateBoardGymFirstEnabled();
+  const [redirectToBuilder] = useState(() => !gymFirstEnabled);
+  useEffect(() => {
+    if (!redirectToBuilder) return;
+    const builderParams: Record<string, string> = {};
+    if (params.returnTo !== undefined) builderParams.returnTo = params.returnTo;
+    if (params.source !== undefined) builderParams.source = params.source;
+    router.replace({ pathname: '/boards/create', params: builderParams });
+    // Once, at mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // `Board Builder Abandoned` at step `find`, unless a wall was taken or a
   // deeper screen already reported (board-create-flow.ts).
   useEffect(() => {
     const openedAtMs = Date.now();
     const ticket = boardFlowTicket();
     return () => {
-      if (!claimBoardFlowAbandonment(ticket)) return;
+      if (redirectToBuilder || !claimBoardFlowAbandonment(ticket)) return;
       track(SHARED_EVENTS.BoardBuilderAbandoned, {
         kind: 'gym',
         step: 'find',
@@ -44,6 +60,7 @@ export default function FindWall() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  if (redirectToBuilder) return null;
   if (gymUuid) {
     return (
       <GymWallList

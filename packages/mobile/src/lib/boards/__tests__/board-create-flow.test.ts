@@ -26,6 +26,13 @@ describe('board create flow abandonment', () => {
     expect(claimBoardFlowAbandonment(find)).toBe(true);
   });
 
+  it('reopens the flow when a secured bind is taken back', () => {
+    const find = boardFlowTicket();
+    const undo = noteBoardFlowSecured();
+    undo();
+    expect(claimBoardFlowAbandonment(find)).toBe(true);
+  });
+
   it('starts a new flow clean after the last one ended', () => {
     noteBoardFlowSecured();
     const builder = boardFlowTicket();

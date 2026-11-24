@@ -10,7 +10,8 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 const followMock = vi.hoisted(() => vi.fn());
 const activateMock = vi.hoisted(() => vi.fn());
 const activateOptions = vi.hoisted(() => ({ last: null as unknown }));
-const securedMock = vi.hoisted(() => vi.fn());
+const undoSecuredMock = vi.hoisted(() => vi.fn());
+const securedMock = vi.hoisted(() => vi.fn(() => undoSecuredMock));
 
 vi.mock('../../graphql/hooks', () => ({ useFollowBoard: () => ({ mutateAsync: followMock }) }));
 vi.mock('../use-activate-board', () => ({
@@ -29,6 +30,7 @@ const wall = { uuid: 'wall-1', name: 'Gym wall', ownerId: 'someone', isFollowedB
 
 beforeEach(() => {
   vi.clearAllMocks();
+  securedMock.mockImplementation(() => undoSecuredMock);
   followMock.mockResolvedValue(undefined);
   activateMock.mockResolvedValue(undefined);
 });
@@ -61,6 +63,13 @@ describe('useTakeExistingWall', () => {
     await expect(take('viewer')(wall)).rejects.toThrow('follow failed');
     expect(activateMock).not.toHaveBeenCalled();
     expect(securedMock).not.toHaveBeenCalled();
+  });
+
+  it('takes back the secured mark when the bind fails, so leaving still counts', async () => {
+    activateMock.mockRejectedValueOnce(new Error('storage full'));
+    await expect(take('viewer')(wall)).rejects.toThrow('storage full');
+    expect(securedMock).toHaveBeenCalled();
+    expect(undoSecuredMock).toHaveBeenCalled();
   });
 
   it('closes out first run from an onboarding picker, and rethrows a failed bind', () => {

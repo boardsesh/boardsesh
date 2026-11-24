@@ -480,13 +480,14 @@
         "switchError": "Zu diesem Board konnte nicht gewechselt werden. Versuch es nochmal."
       },
       "existingWalls": {
-        "title": "{{gym}} hat schon {{n}} {{board}}-Boards",
-        "titleOne": "{{gym}} hat schon ein {{board}}-Board",
-        "titleNoGym": "Diese Halle hat schon {{n}} {{board}}-Boards",
+        "title_one": "{{gym}} hat schon ein {{board}}-Board",
+        "title_other": "{{gym}} hat schon {{count}} {{board}}-Boards",
+        "titleNoGym_one": "Diese Halle hat schon ein {{board}}-Board",
+        "titleNoGym_other": "Diese Halle hat schon {{count}} {{board}}-Boards",
         "body": "Nimm das Board, an dem deine Crew schon klettert, damit eure Begehungen zusammen landen. Richte deins nur weiter ein, wenn es eine andere Wand ist.",
         "useBoard": "Dieses Board nutzen",
         "keepMine": "Meins weiter einrichten",
-        "loadFailed": "Diese Boards konnten nicht geladen werden. Du kannst deins trotzdem weiter einrichten."
+        "loadFailed": "Nicht alle Boards konnten geladen werden. Versuch es nochmal, um sie zu sehen, bevor du deins weiter einrichtest."
       }
     },
     "custom": {
@@ -571,6 +572,7 @@
       "otherBoardsHere": "Andere Boards hier ({{n}})",
       "otherShow": "Anzeigen",
       "otherHide": "Ausblenden",
+      "truncated": "Hier stehen die ersten {{count}} Wände. Such nach Namen, um deine zu finden.",
       "stats": "{{climbers}} Kletterer*innen · {{sends}} Begehungen",
       "addedBy": "Hinzugefügt von {{name}}",
       "adjustable": "Verstellbar",
@@ -580,11 +582,12 @@
       "boardNotListed": "Mein Board fehlt in der Liste",
       "addAnyway": "Trotzdem hinzufügen",
       "lookupFailed": "Die Boards von {{gym}} konnten nicht geladen werden",
-      "emptyTitle": "In {{gym}} ist noch kein {{board}}-Board eingetragen",
+      "emptyTitle": "In {{gym}} hat noch niemand ein {{board}}-Board eingetragen",
       "setUpFirst": "Richte das erste ein",
       "useError": "Zu diesem Board konnte nicht gewechselt werden. Versuch es nochmal.",
       "confirmTitle": "Neues Board in {{gym}} hinzufügen?",
-      "confirmBody": "Nur wenn es eine andere Wand ist als die {{n}} oben. Eine zweite Kopie trennt deine Begehungen von denen der Crew, die dort schon klettert.",
+      "confirmBody_one": "Nur wenn es eine andere Wand ist als die oben. Eine zweite Kopie trennt deine Begehungen von denen der Crew, die dort schon klettert.",
+      "confirmBody_other": "Nur wenn es eine andere Wand ist als die {{count}} oben. Eine zweite Kopie trennt deine Begehungen von denen der Crew, die dort schon klettert.",
       "confirmBodyLookupFailed": "Wir konnten die Boards von {{gym}} nicht prüfen. Deins trotzdem hinzufügen?",
       "confirmDifferent": "Es ist eine andere Wand",
       "confirmKeepLooking": "Weiter suchen"

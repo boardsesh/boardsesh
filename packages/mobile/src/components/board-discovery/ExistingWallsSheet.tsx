@@ -35,12 +35,17 @@ type ExistingWallsSheetProps = {
   items: readonly DiscoveryBoardItem[];
   /** The walls are still being looked up. */
   loading: boolean;
-  /** The lookup failed: the title and Keep setting up mine still work. */
+  /**
+   * Some named wall couldn't be shown. Keep setting up mine still works for
+   * the walls that were, and the server names the rest again; Try again looks
+   * them all up afresh.
+   */
   loadFailed: boolean;
   /** A choice is in flight: everything is inert. */
   busy: boolean;
   onUse: (item: DiscoveryBoardItem, position: number) => void;
   onKeepMine: () => void;
+  onRetry: () => void;
   onDismiss: () => void;
   BoardArt: ComponentType<DiscoveryBoardArtProps>;
 };
@@ -55,6 +60,7 @@ export const ExistingWallsSheet = memo(function ExistingWallsSheet({
   busy,
   onUse,
   onKeepMine,
+  onRetry,
   onDismiss,
   BoardArt,
 }: ExistingWallsSheetProps) {
@@ -62,10 +68,8 @@ export const ExistingWallsSheet = memo(function ExistingWallsSheet({
   const { systemColors } = useTheme();
 
   const title = gymName
-    ? wallCount === 1
-      ? t('mobile.create.existingWalls.titleOne', { gym: gymName, board: boardLabel })
-      : t('mobile.create.existingWalls.title', { gym: gymName, n: wallCount, board: boardLabel })
-    : t('mobile.create.existingWalls.titleNoGym', { n: wallCount, board: boardLabel });
+    ? t('mobile.create.existingWalls.title', { gym: gymName, count: wallCount, board: boardLabel })
+    : t('mobile.create.existingWalls.titleNoGym', { count: wallCount, board: boardLabel });
   const firstItem = items[0];
 
   return (
@@ -90,6 +94,16 @@ export const ExistingWallsSheet = memo(function ExistingWallsSheet({
           {loadFailed ? t('mobile.create.existingWalls.loadFailed') : t('mobile.create.existingWalls.body')}
         </Text>
         {loading ? <ActivityIndicator size="small" color={systemColors.accent} /> : null}
+        {loadFailed && !loading ? (
+          <Button
+            title={t('mobile.findWall.retry')}
+            onPress={onRetry}
+            disabled={busy}
+            variant="text"
+            size="medium"
+            testID="existing-walls-retry"
+          />
+        ) : null}
         {items.length > 0 ? (
           <BoardRowList
             items={items}
@@ -109,14 +123,18 @@ export const ExistingWallsSheet = memo(function ExistingWallsSheet({
             style={styles.fullWidth}
           />
         ) : null}
-        <Button
-          title={t('mobile.create.existingWalls.keepMine')}
-          onPress={onKeepMine}
-          disabled={busy}
-          variant="tonal"
-          size="medium"
-          style={styles.fullWidth}
-        />
+        {/* Only for walls the climber has seen: acknowledging one they never
+            saw would let a copy through unchecked. */}
+        {items.length > 0 ? (
+          <Button
+            title={t('mobile.create.existingWalls.keepMine')}
+            onPress={onKeepMine}
+            disabled={busy}
+            variant="tonal"
+            size="medium"
+            style={styles.fullWidth}
+          />
+        ) : null}
       </View>
     </ModalSheet>
   );

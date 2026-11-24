@@ -174,23 +174,12 @@ export function wallCandidateItem(
 }
 
 /**
- * The uuids the climber is shown and, by going on to add theirs, says are
- * different walls: what `acknowledgedWallUuids` carries. The server caps the
- * list at 40.
+ * The uuids the climber was shown on the builder's "already has" sheet and
+ * said are different walls: what `acknowledgedWallUuids` carries. Repeats
+ * dropped, the first ones kept, capped at the server's 40.
  */
 export const MAX_ACKNOWLEDGED_WALLS = 40;
 
 export function acknowledgedWallUuids(boardUuids: readonly string[]): string[] {
   return [...new Set(boardUuids)].slice(0, MAX_ACKNOWLEDGED_WALLS);
-}
-
-/** The `acknowledged` route param: comma-separated uuids, read defensively. */
-export function parseAcknowledgedParam(value: unknown): string[] {
-  if (typeof value !== 'string' || value.trim().length === 0) return [];
-  return acknowledgedWallUuids(
-    value
-      .split(',')
-      .map((uuid) => uuid.trim())
-      .filter((uuid) => uuid.length > 0),
-  );
 }

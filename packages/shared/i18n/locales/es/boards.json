@@ -480,13 +480,14 @@
         "switchError": "No se pudo cambiar a ese plafón. Inténtalo de nuevo."
       },
       "existingWalls": {
-        "title": "{{gym}} ya tiene {{n}} plafones {{board}}",
-        "titleOne": "{{gym}} ya tiene un plafón {{board}}",
-        "titleNoGym": "Este rocódromo ya tiene {{n}} plafones {{board}}",
+        "title_one": "{{gym}} ya tiene un plafón {{board}}",
+        "title_other": "{{gym}} ya tiene {{count}} plafones {{board}}",
+        "titleNoGym_one": "Este rocódromo ya tiene un plafón {{board}}",
+        "titleNoGym_other": "Este rocódromo ya tiene {{count}} plafones {{board}}",
         "body": "Usa el que ya escala tu gente, para que tus encadenes queden juntos. Sigue configurando el tuyo solo si es un muro distinto.",
         "useBoard": "Usar este plafón",
         "keepMine": "Seguir configurando el mío",
-        "loadFailed": "No se pudieron cargar esos plafones. Puedes seguir configurando el tuyo."
+        "loadFailed": "No se pudieron cargar todos esos plafones. Inténtalo de nuevo para verlos antes de seguir con el tuyo."
       }
     },
     "custom": {
@@ -571,6 +572,7 @@
       "otherBoardsHere": "Otros plafones aquí ({{n}})",
       "otherShow": "Mostrar",
       "otherHide": "Ocultar",
+      "truncated": "Se muestran los primeros {{count}} muros. Busca por nombre para encontrar el tuyo.",
       "stats": "{{climbers}} escaladores · {{sends}} encadenes",
       "addedBy": "Añadido por {{name}}",
       "adjustable": "Ajustable",
@@ -580,11 +582,12 @@
       "boardNotListed": "Mi plafón no aparece",
       "addAnyway": "Añadirlo igualmente",
       "lookupFailed": "No se pudieron cargar los plafones de {{gym}}",
-      "emptyTitle": "Aún no hay ningún plafón {{board}} en {{gym}}",
+      "emptyTitle": "Nadie ha añadido aún un plafón {{board}} en {{gym}}",
       "setUpFirst": "Configura el primero",
       "useError": "No se pudo cambiar a ese plafón. Inténtalo de nuevo.",
       "confirmTitle": "¿Añadir un plafón nuevo en {{gym}}?",
-      "confirmBody": "Solo si es un muro distinto de los {{n}} de arriba. Una segunda copia separa tus encadenes de los de quienes ya escalan ahí.",
+      "confirmBody_one": "Solo si es un muro distinto del de arriba. Una segunda copia separa tus encadenes de los de quienes ya escalan ahí.",
+      "confirmBody_other": "Solo si es un muro distinto de los {{count}} de arriba. Una segunda copia separa tus encadenes de los de quienes ya escalan ahí.",
       "confirmBodyLookupFailed": "No pudimos comprobar los plafones de {{gym}}. ¿Añadir el tuyo igualmente?",
       "confirmDifferent": "Es otro muro",
       "confirmKeepLooking": "Seguir buscando"

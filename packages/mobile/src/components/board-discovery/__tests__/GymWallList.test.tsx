@@ -26,6 +26,7 @@ const state = vi.hoisted(() => ({
   > | null,
   gymError: false,
   gymBoards: [] as { uuid: string; boardType: string }[] | undefined,
+  gymBoardsError: false,
   candidates: {
     data: undefined as { candidates: unknown[]; truncated: boolean } | undefined,
     isLoading: false,
@@ -59,7 +60,7 @@ vi.mock('@boardsesh/board-config', () => ({
 vi.mock('../board-builder-labels', () => ({ boardTypeLabel: (boardName: string) => `label:${boardName}` }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useGym: () => ({ data: state.gym ?? undefined, isError: state.gymError, refetch: refetchMock }),
-  useGymBoards: () => ({ data: state.gymBoards }),
+  useGymBoards: () => ({ data: state.gymBoards, isError: state.gymBoardsError }),
   useProfile: () => ({ data: state.signedIn ? { id: 'viewer' } : undefined }),
   useExistingWallCandidates: (input: unknown) => {
     state.candidatesInput = input;
@@ -225,6 +226,7 @@ beforeEach(() => {
   state.gym = { uuid: 'gym-1', name: 'Boulder Space', latitude: 52.1, longitude: 4.3, canEdit: false };
   state.gymError = false;
   state.gymBoards = [];
+  state.gymBoardsError = false;
   state.candidates = { data: { candidates: [], truncated: false }, isLoading: false, isError: false };
   state.candidatesInput = null;
   state.canReport = true;
@@ -281,19 +283,20 @@ describe('GymWallList', () => {
     await waitFor(() => expect(screen.getByTestId('gym-walls-use-error')).toBeTruthy());
   });
 
-  it('confirms before adding another, then opens the builder with every wall acknowledged', () => {
+  it('confirms before adding another, then opens the builder acknowledging nothing', () => {
     state.candidates.data = { candidates: [candidate('a'), candidate('b')], truncated: false };
     renderList();
     fireEvent.click(screen.getByText('mobile.findWall.boardNotListed'));
     expect(screen.getByText('separate from 2')).toBeTruthy();
     fireEvent.click(screen.getByText('confirm'));
+    // The builder's first Save is checked against the real setup: the list has
+    // none, so it hands over no acknowledged walls.
     expect(pushMock).toHaveBeenCalledWith({
       pathname: '/boards/create',
       params: {
         kind: 'gym',
         gymUuid: 'gym-1',
         boardType: 'moonboard',
-        acknowledged: 'a,b',
         returnTo: '/(tabs)/climbs',
         source: 'no_board',
       },
@@ -372,6 +375,28 @@ describe('GymWallList', () => {
     expect(screen.queryByText('mobile.findWall.boardNotListed')).toBeNull();
     fireEvent.click(screen.getByText('mobile.gymPage.report'));
     expect(reportOpenMock).toHaveBeenCalled();
+  });
+
+  it('sends a signed-out climber to sign in from a wall row, following nothing', () => {
+    state.signedIn = false;
+    state.candidates.data = { candidates: [candidate('a')], truncated: false };
+    renderList();
+    fireEvent.click(screen.getByText('Wall a'));
+    expect(pushMock).toHaveBeenCalledWith('/auth/login');
+    expect(takeWallMock).not.toHaveBeenCalled();
+  });
+
+  it('says when the server held some walls back', () => {
+    state.candidates.data = { candidates: [candidate('a')], truncated: true };
+    renderList();
+    expect(screen.getByTestId('gym-walls-truncated').textContent).toContain('mobile.findWall.truncated');
+  });
+
+  it('asks which board when the gym roster fails to load', () => {
+    state.gymBoards = undefined;
+    state.gymBoardsError = true;
+    renderList({ initialBoardType: null });
+    expect(screen.getByText('mobile.findWall.pickBoardType')).toBeTruthy();
   });
 
   it('lets the gym own staff add one even without coordinates', () => {

@@ -480,13 +480,14 @@
         "switchError": "Couldn't switch to that board. Try again."
       },
       "existingWalls": {
-        "title": "{{gym}} already has {{n}} {{board}}s",
-        "titleOne": "{{gym}} already has a {{board}}",
-        "titleNoGym": "This gym already has {{n}} {{board}}s",
+        "title_one": "{{gym}} already has a {{board}}",
+        "title_other": "{{gym}} already has {{count}} {{board}} walls",
+        "titleNoGym_one": "This gym already has a {{board}}",
+        "titleNoGym_other": "This gym already has {{count}} {{board}} walls",
         "body": "Use the one your crew climbs on, so your sends land together. Only keep setting up yours if it's a separate wall.",
         "useBoard": "Use this board",
         "keepMine": "Keep setting up mine",
-        "loadFailed": "Couldn't load those boards. You can still keep setting up yours."
+        "loadFailed": "Couldn't load all of those boards. Try again to see them before you keep setting up yours."
       }
     },
     "custom": {
@@ -571,6 +572,7 @@
       "otherBoardsHere": "Other boards here ({{n}})",
       "otherShow": "Show",
       "otherHide": "Hide",
+      "truncated": "Showing the first {{count}} walls here. Search by name to find yours.",
       "stats": "{{climbers}} climbers · {{sends}} sends",
       "addedBy": "Added by {{name}}",
       "adjustable": "Adjustable",
@@ -580,11 +582,12 @@
       "boardNotListed": "My board isn't listed",
       "addAnyway": "Add it anyway",
       "lookupFailed": "Couldn't load {{gym}}'s boards",
-      "emptyTitle": "No {{board}}s listed at {{gym}} yet",
+      "emptyTitle": "Nobody has listed a {{board}} at {{gym}} yet",
       "setUpFirst": "Set up the first one",
       "useError": "Couldn't switch to that board. Try again.",
       "confirmTitle": "Add a new board at {{gym}}?",
-      "confirmBody": "Only if it's a separate wall from the {{n}} above. A second copy splits your sends from the crew already climbing there.",
+      "confirmBody_one": "Only if it's a separate wall from the one above. A second copy splits your sends from the crew already climbing there.",
+      "confirmBody_other": "Only if it's a separate wall from the {{count}} above. A second copy splits your sends from the crew already climbing there.",
       "confirmBodyLookupFailed": "We couldn't check {{gym}}'s boards. Add yours anyway?",
       "confirmDifferent": "It's a different wall",
       "confirmKeepLooking": "Keep looking"

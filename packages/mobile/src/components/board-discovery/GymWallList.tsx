@@ -31,7 +31,6 @@ import {
   type LookupState,
 } from '../../lib/boards/find-wall-state';
 import {
-  acknowledgedWallUuids,
   countWallCandidates,
   groupWallCandidates,
   wallCandidateItem,
@@ -58,7 +57,7 @@ import { WallNotListedConfirmSheet } from './WallNotListedConfirmSheet';
 /** Rows a shelf shows before "Show all N". */
 export const WALL_SHELF_COLLAPSED_ROW_COUNT = 5;
 
-/** The server's most: everything the climber is shown can be acknowledged. */
+/** The server's most walls per lookup; `truncated` says when there were more. */
 const WALL_CANDIDATES_LIMIT = 40;
 
 type GymWallListProps = {
@@ -223,6 +222,11 @@ export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry
     (item: DiscoveryBoardItem, position: number) => {
       const row = rowLookup.get(item.key);
       if (!row || takingRef.current) return;
+      // Following a wall needs an account, like adding one.
+      if (!isAuthenticated) {
+        router.push('/auth/login');
+        return;
+      }
       takingRef.current = true;
       setUseError(false);
       void takeWall(row.board)
@@ -240,7 +244,7 @@ export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry
           takingRef.current = false;
         });
     },
-    [rowLookup, takeWall],
+    [rowLookup, takeWall, isAuthenticated, router],
   );
 
   // --- my board isn't listed ---
@@ -248,17 +252,16 @@ export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry
   const notListed = notListedRowState({ walls, signedIn: isAuthenticated, gymLinkable });
   const reportAction = useGymReportAction(gym);
   const [confirming, setConfirming] = useState(false);
-  const openBuilder = useCallback(
-    (acknowledged: readonly string[]) => {
-      const params: Record<string, string> = { kind: 'gym', gymUuid };
-      if (boardType) params.boardType = boardType;
-      if (acknowledged.length > 0) params.acknowledged = acknowledged.join(',');
-      if (returnTo !== undefined) params.returnTo = returnTo;
-      if (source !== undefined) params.source = source;
-      router.push({ pathname: '/boards/create', params });
-    },
-    [gymUuid, boardType, returnTo, source, router],
-  );
+  // Never with the walls listed here acknowledged: this list has no setup to
+  // compare against, so the builder's first Save is always REJECT_IF_FOUND on
+  // the real one, and its "already has" sheet is the gate (#8151).
+  const openBuilder = useCallback(() => {
+    const params: Record<string, string> = { kind: 'gym', gymUuid };
+    if (boardType) params.boardType = boardType;
+    if (returnTo !== undefined) params.returnTo = returnTo;
+    if (source !== undefined) params.source = source;
+    router.push({ pathname: '/boards/create', params });
+  }, [gymUuid, boardType, returnTo, source, router]);
   const onNotListed = useCallback(() => {
     switch (notListed) {
       case 'sign_in':
@@ -268,7 +271,7 @@ export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry
         reportAction?.open();
         return;
       case 'direct':
-        openBuilder([]);
+        openBuilder();
         return;
       case 'confirm':
       case 'add_anyway':
@@ -281,13 +284,12 @@ export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry
   const onConfirmNotListed = useCallback(() => {
     setConfirming(false);
     const lookupFailed = walls === 'failed';
-    const shown = lookupFailed ? [] : acknowledgedWallUuids(candidates.map((candidate) => candidate.board.uuid));
     track(SHARED_EVENTS.BoardWallNotListedConfirmed, {
-      candidateCount: shown.length,
+      candidateCount: lookupFailed ? 0 : candidates.length,
       lookup: lookupFailed ? 'failed' : 'ok',
     });
-    openBuilder(shown);
-  }, [walls, candidates, openBuilder]);
+    openBuilder();
+  }, [walls, candidates.length, openBuilder]);
   const onDismissConfirm = useCallback(() => setConfirming(false), []);
 
   const [otherExpanded, setOtherExpanded] = useState(false);
@@ -334,7 +336,7 @@ export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry
         testID="gym-walls"
       >
         <View style={styles.chips}>
-          {boardType === null && gymBoards !== undefined ? (
+          {boardType === null && (gymBoards !== undefined || gymBoardsQuery.isError) ? (
             <Text variant="subheadline" tone="secondary">
               {t('mobile.findWall.pickBoardType')}
             </Text>
@@ -397,6 +399,12 @@ export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry
             ))
           : null}
 
+        {walls === 'listed' && candidatesQuery.data?.truncated ? (
+          <Text variant="footnote" tone="secondary" style={styles.inlineError} testID="gym-walls-truncated">
+            {t('mobile.findWall.truncated', { count: WALL_CANDIDATES_LIMIT })}
+          </Text>
+        ) : null}
+
         {otherItems.length > 0 ? (
           <ShelfSection
             title={t('mobile.findWall.otherBoardsHere', { n: otherItems.length })}
@@ -406,6 +414,7 @@ export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry
             }}
             testID="gym-walls-other"
           >
+            {/* Collapsed rows like every shelf, so the list stays bounded. */}
             {otherExpanded ? <WallShelfRows items={otherItems} onSelect={onUseWall} /> : null}
           </ShelfSection>
         ) : null}

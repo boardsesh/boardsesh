@@ -1033,7 +1033,8 @@ export const SHARED_EVENTS = {
   // From 2026-11 (#8151) the mobile builder adds `kind` (home | gym | null: the
   // flow the builder was opened from, null when it was opened bare or the
   // create-board-gym-first flag is off), `candidateCount` (existing walls the
-  // climber was shown and said were different, 0 when none) and
+  // climber was shown on the builder's "already has" sheet, against their
+  // setup, and said were different; 0 when none) and
   // `confirmedDistinct` (the create went out as CONFIRMED_SEPARATE).
   BoardCreated: 'Board Created',
   // Props: { boardType, source, error_reason: 'duplicate_config' | 'rate_limited'
@@ -1274,7 +1275,8 @@ export const SHARED_EVENTS = {
   // lands), trigger: find_step | pre_submit }.
   BoardWallCandidateUsed: 'Board Wall Candidate Used',
   // The climber said theirs is a different wall and went on to the builder.
-  // Props: { candidateCount (walls they were shown and set aside), lookup: ok
+  // Props: { candidateCount (walls listed when they confirmed; nothing is
+  // acknowledged here, the builder's Save is still checked), lookup: ok
   // | failed ("Add it anyway": the check could not run) }. Not sent when the
   // gym had no walls: there was nothing to confirm.
   BoardWallNotListedConfirmed: 'Board Wall Not Listed Confirmed',
