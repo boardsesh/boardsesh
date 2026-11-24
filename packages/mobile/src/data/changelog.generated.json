@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-11-24T18:49:12.714Z",
+  "generatedAt": "2026-11-24T19:33:02.922Z",
   "entries": [
+    {
+      "prNumber": 8112,
+      "category": "new",
+      "title": "Pilot support for managing your gym, boards and TVs from ChatGPT or Claude.",
+      "mergedAt": "2026-11-24T19:26:37Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8112"
+    },
+    {
+      "prNumber": 8123,
+      "category": "improved",
+      "title": "See a preview and clear progress when bringing your old Aurora logbook across. File errors stay visible so you can choose another export and try again.",
+      "mergedAt": "2026-11-24T19:10:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8123"
+    },
     {
       "prNumber": 8124,
       "category": "new",

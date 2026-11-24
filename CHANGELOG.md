@@ -8,6 +8,7 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### New
 
+- Pilot support for managing your gym, boards and TVs from ChatGPT or Claude. ([#8112](https://github.com/boardsesh/boardsesh/pull/8112))
 - Your gym’s local time is picked from its map location or public address. Staff can still choose a different time zone. ([#8124](https://github.com/boardsesh/boardsesh/pull/8124))
 - See how Boardsesh compares with the Kilter, Aurora, MoonBoard, Woods and spray wall apps, row by row with sources, before your first session. ([#8098](https://github.com/boardsesh/boardsesh/pull/8098))
 - Compare your gym’s recorded climbers and sends, then inspect twelve weeks of board activity. See where history is still too short to compare. ([#8087](https://github.com/boardsesh/boardsesh/pull/8087))
@@ -15,6 +16,7 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### Improved
 
+- See a preview and clear progress when bringing your old Aurora logbook across. File errors stay visible so you can choose another export and try again. ([#8123](https://github.com/boardsesh/boardsesh/pull/8123))
 - Refine Spraywall holds without breaking your climbs. ([#8111](https://github.com/boardsesh/boardsesh/pull/8111))
   Removal warnings count each climb once.
   Choose Keep editing to return to your edits before saving.
