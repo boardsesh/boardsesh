@@ -276,9 +276,9 @@ describe('climb-view canonical parity (A1 landed in W-15)', () => {
     const slugCanonical = canonicalPath(slug.alternates?.canonical);
 
     expect(slugCanonical).toBe(legacyCanonical);
-    // The physical alias stays readable/indexable, but its links must not
-    // multiply the shared catalog into another crawl graph for each gym wall.
-    expect(slug.robots).toEqual({ index: true, follow: false });
+    // The physical alias stays readable while search results belong to the
+    // catalogue. Crawlers can still follow links from the alias.
+    expect(slug.robots).toEqual({ index: false, follow: true });
     expect(legacy.robots).toBeUndefined();
     // Non-vacuous: the shared string is the config-tuple tree, not `/b`.
     expect(slugCanonical.startsWith('/b/')).toBe(false);
@@ -474,7 +474,7 @@ describe('/list canonical parity (A1 landed in W-15)', () => {
     const slugCanonical = canonicalPath(slug.alternates?.canonical);
 
     expect(slugCanonical).toBe(legacyCanonical);
-    expect(slug.robots).toEqual({ index: true, follow: false });
+    expect(slug.robots).toEqual({ index: false, follow: true });
     expect(legacy.robots).toBeUndefined();
     expect(slugCanonical.startsWith('/b/')).toBe(false);
     expect(slugCanonical).toMatch(/^\/kilter\/.*\/40\/list$/);
