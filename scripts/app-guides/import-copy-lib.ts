@@ -77,6 +77,7 @@ const COMPETITOR_WINNERS: Partial<Record<ComparisonPageId, Record<string, readon
     setup: ['stokt'],
     community: ['stokt'],
     symmetry: ['stokt', 'retroFlash'],
+    'gym-walls': ['crux'],
   },
 };
 

@@ -1313,10 +1313,10 @@ export const APP_GUIDE_REGISTRY = {
         pendingCells: [],
       },
       {
-        id: 'privacy',
-        verdict: 'same',
-        winners: [],
-        sourceIds: ['bs-features', 'stokt-appstore', 'retro-appstore', 'crux-home'],
+        id: 'gym-walls',
+        verdict: 'competitor',
+        winners: ['crux'],
+        sourceIds: ['bs-spray', 'stokt-appstore', 'retro-appstore', 'crux-site'],
         pendingCells: [],
       },
       {

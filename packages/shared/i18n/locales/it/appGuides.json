@@ -1274,12 +1274,12 @@
             "crux": "Photo scan outlines holds in about 1 second, its own figure; edit by hand",
             "retroFlash": "Wall setup in the app; the listing doesn't mention photo detection"
           },
-          "privacy": {
-            "feature": "Private and shared walls",
-            "boardsesh": "Private, link-only or public, with a QR code for the wall",
-            "stokt": "Private and public walls, plus private problems and public lists",
-            "crux": "Share a wall by link; friends climb it, or set too if you allow it",
-            "retroFlash": "Private walls; The ARCADE shares problems across walls"
+          "gym-walls": {
+            "feature": "Your gym's regular walls",
+            "boardsesh": "Boards and spray walls only; not the routes and boulders on a gym's regular walls",
+            "stokt": "Spray walls and boards; regular gym sets not documented",
+            "crux": "Setters and climbers use it on every wall in a gym, not only spray walls",
+            "retroFlash": "Spray walls only; regular gym sets not documented"
           },
           "community": {
             "feature": "Community and wall network",
