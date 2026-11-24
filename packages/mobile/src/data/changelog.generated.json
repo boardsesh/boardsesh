@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-24T22:00:31.533Z",
+  "generatedAt": "2026-11-24T23:40:34.925Z",
   "entries": [
+    {
+      "prNumber": 8142,
+      "category": "fixed",
+      "title": "See the last seven days of climbs lit on your wall.",
+      "mergedAt": "2026-11-24T23:35:13Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8142"
+    },
     {
       "prNumber": 8152,
       "category": "fixed",

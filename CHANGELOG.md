@@ -30,6 +30,7 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### Fixed
 
+- See the last seven days of climbs lit on your wall. ([#8142](https://github.com/boardsesh/boardsesh/pull/8142))
 - Repair merged gym links and keep your gym profile and photos current through your assistant. ([#8152](https://github.com/boardsesh/boardsesh/pull/8152))
   Choose MoonBoard setups, including Masters 2019 and screw-on feet.
 - MoonBoard black holds and grid letters are now easy to see on boardsesh.com ([#8153](https://github.com/boardsesh/boardsesh/pull/8153))
