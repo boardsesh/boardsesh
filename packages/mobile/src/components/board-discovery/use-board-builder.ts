@@ -8,7 +8,9 @@ import {
   getBoardLayouts,
   getBoardSizesForLayoutId,
   getBoardSetsForLayoutAndSize,
-  getDefaultBoardSizeForLayout,
+  selectSetupLayout,
+  selectSetupSize,
+  toggleSetupSet,
 } from '@boardsesh/board-config';
 import { defaultAngle } from '../../lib/boards/default-angle';
 import type { BoardConfigPreset } from '../../lib/boards/board-config-preset';
@@ -204,6 +206,8 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
   const rawLayoutName = layouts.find((layout) => layout.id === layoutId)?.name ?? boardName;
 
   // Each level resets everything below it so the cascade stays consistent.
+  // The reset rules are `@boardsesh/board-config`'s setup selection, the same
+  // ones the "Set up wrong" report fields use, so the two never drift.
   // Stable across renders (deps are only the levels above) so memoised chip
   // rows don't re-render when an unrelated field — e.g. the dragged angle —
   // changes. With a preset, "resets" means "moves to that type's preset", so a
@@ -221,12 +225,12 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
   const selectLayout = useCallback(
     (next: number) => {
       setupTouchedRef.current = true;
-      setLayoutId(next);
-      const defaultSize = getDefaultBoardSizeForLayout(boardName, next);
-      setSizeId(defaultSize);
-      setSetIds(
-        defaultSize != null ? getBoardSetsForLayoutAndSize(boardName, next, defaultSize).map((set) => set.id) : [],
-      );
+      // The layout's default size and every set of it come with it. The rule
+      // replaces every level below the board type, so none is passed in.
+      const selected = selectSetupLayout({ boardName, layoutId: null, sizeId: null, setIds: [] }, next);
+      setLayoutId(selected.layoutId);
+      setSizeId(selected.sizeId);
+      setSetIds(selected.setIds);
     },
     [boardName],
   );
@@ -235,15 +239,20 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
       // Pre-select every set for the size — the common case (a "Full Ride" owner
       // has them all), and why the set toggles live behind Advanced.
       setupTouchedRef.current = true;
-      setSizeId(next);
-      setSetIds(layoutId != null ? getBoardSetsForLayoutAndSize(boardName, layoutId, next).map((set) => set.id) : []);
+      const selected = selectSetupSize({ boardName, layoutId, sizeId: null, setIds: [] }, next);
+      setSizeId(selected.sizeId);
+      setSetIds(selected.setIds);
     },
     [boardName, layoutId],
   );
-  const toggleSet = useCallback((id: number) => {
-    setupTouchedRef.current = true;
-    setSetIds((prev) => (prev.includes(id) ? prev.filter((set) => set !== id) : [...prev, id]));
-  }, []);
+  const toggleSet = useCallback(
+    (id: number) => {
+      setupTouchedRef.current = true;
+      // A toggle reads only the sets, so the levels between are left out.
+      setSetIds((prev) => toggleSetupSet({ boardName, layoutId: null, sizeId: null, setIds: prev }, id).setIds);
+    },
+    [boardName],
+  );
 
   const canCreate = layoutId != null && sizeId != null && setIds.length > 0;
   // The selection is exactly the preset the builder chose for this board type:
