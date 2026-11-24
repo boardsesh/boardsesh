@@ -369,6 +369,11 @@
             "boardsesh": "Imports Aurora's file the moment you load it, and links your current Kilter account.",
             "official": "Upload Aurora's file at /claim (6 MB cap); Kilter quotes 5 to 7 business days."
           },
+          "export": {
+            "feature": "Export your data",
+            "boardsesh": "Export your logbook yourself, any time, as Boardsesh or Aurora JSON",
+            "official": "No self-serve export documented"
+          },
           "finding": {
             "feature": "Find climbs",
             "boardsesh": "7 sorts, hold and zone filters, tall and wide climbs, similar climbs, beta videos.",
@@ -508,7 +513,8 @@
         "boardsesh-privacy": "Boardsesh privacy policy (no ads, data not sold)",
         "boardsesh-about": "About Boardsesh (Apache 2.0 code, logbook export)",
         "bs-board-look": "Boardsesh board look: glowing holds, the default since 2.4",
-        "bs-hold-colours": "Boardsesh accessibility hold colours sent to Aurora controllers"
+        "bs-hold-colours": "Boardsesh accessibility hold colours sent to Aurora controllers",
+        "bs-export": "Boardsesh self-service data export (Settings, Account, Export climbing data)"
       }
     },
     "aurora": {
@@ -609,6 +615,11 @@
             "feature": "Move your data in and out",
             "boardsesh": "Sign in once per brand and every Aurora logbook lands in one Boardsesh logbook",
             "official": "No self-serve export listed; each brand keeps its own logbook"
+          },
+          "export": {
+            "feature": "Export your data",
+            "boardsesh": "Export your logbook yourself, any time, as Boardsesh or Aurora JSON",
+            "official": "No self-serve export; email each brand's support for a copy"
           },
           "tablet": {
             "feature": "Tablet layout",
@@ -778,7 +789,8 @@
         "bs-aurora-sync": "Boardsesh code: Aurora account sync hosts for all six Aurora brands",
         "bs-board-look": "Boardsesh board look: glowing holds, the default since 2.4",
         "bs-hold-colours": "Boardsesh accessibility hold colours sent to Aurora controllers",
-        "bs-beta-links": "Boardsesh code: beta links show as soon as they are attached"
+        "bs-beta-links": "Boardsesh code: beta links show as soon as they are attached",
+        "bs-export": "Boardsesh self-service data export (Settings, Account, Export climbing data)"
       }
     },
     "moonboard": {
@@ -858,6 +870,11 @@
             "feature": "Bring your logbook",
             "boardsesh": "Imports Moon's CSV; favourites live in your account and export as JSON.",
             "official": "Logbook and lists sync to Moon; favourites saved on the phone go on reinstall."
+          },
+          "export": {
+            "feature": "Export your data",
+            "boardsesh": "Export your logbook yourself, any time, as JSON",
+            "official": "No in-app export; you email Moon for a CSV. Climbers report waiting weeks"
           },
           "crew": {
             "feature": "Climb with a crew",
@@ -974,7 +991,9 @@
         "boardsesh-app-web": "Boardsesh browser app",
         "boardsesh-tablet": "Boardsesh docs: iPad and Android tablet layout",
         "boardsesh-about": "About Boardsesh (logbook export)",
-        "bs-board-look": "Boardsesh board look: glowing holds, the default since 2.4"
+        "bs-board-look": "Boardsesh board look: glowing holds, the default since 2.4",
+        "bs-export": "Boardsesh self-service data export (Settings, Account, Export climbing data)",
+        "moon-reddit-data": "r/Moonboard, 14 Sep 2026: a climber still waiting weeks for a CSV; Moon apologises and says custom Android ROMs are not supported"
       }
     },
     "woods": {
@@ -1060,6 +1079,11 @@
             "feature": "One logbook across boards",
             "boardsesh": "Woods sends share a logbook with Kilter, Tension, MoonBoard and spray walls",
             "official": "Built for the Woods Board and its own logbook"
+          },
+          "export": {
+            "feature": "Export your data",
+            "boardsesh": "Export your logbook yourself, any time, as JSON",
+            "official": "No self-serve export documented"
           },
           "offline": {
             "feature": "Climb with no signal",
@@ -1167,7 +1191,8 @@
         "woods-sizes": "Escape Climbing: Woods Board sizes and LED kit options",
         "bs-woods": "Boardsesh docs: Woods climb rules, authoring and the September 2026 catalogue audit",
         "bs-sessions": "Boardsesh help: sessions and the shared queue",
-        "bs-appstore": "Boardsesh on the App Store (iPhone and iPad)"
+        "bs-appstore": "Boardsesh on the App Store (iPhone and iPad)",
+        "bs-export": "Boardsesh self-service data export (Settings, Account, Export climbing data)"
       }
     },
     "spray-wall-apps": {

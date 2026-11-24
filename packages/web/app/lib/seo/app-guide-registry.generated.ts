@@ -196,6 +196,13 @@ export const APP_GUIDE_REGISTRY = {
         pendingCells: [],
       },
       {
+        id: 'export',
+        verdict: 'boardsesh',
+        winners: [],
+        sourceIds: ['bs-export', 'kilter-appstore', 'kilter-site'],
+        pendingCells: [],
+      },
+      {
         id: 'finding',
         verdict: 'same',
         winners: [],
@@ -402,6 +409,11 @@ export const APP_GUIDE_REGISTRY = {
         url: 'https://github.com/boardsesh/boardsesh/blob/b3a0285908da0d9e4be984ebe5731ed72b33de10/docs/mobile/screens/12-bluetooth.md',
         checkedAt: '2026-11-24',
       },
+      {
+        id: 'bs-export',
+        url: 'https://github.com/boardsesh/boardsesh/blob/b3a0285908da0d9e4be984ebe5731ed72b33de10/docs/product/user-data-exports.md',
+        checkedAt: '2026-11-24',
+      },
     ],
     claims: [],
     updatedAt: '2026-11-24',
@@ -503,6 +515,13 @@ export const APP_GUIDE_REGISTRY = {
         verdict: 'boardsesh',
         winners: [],
         sourceIds: ['tension-store', 'decoy-appstore', 'bs-aurora-sync', 'bs-import'],
+        pendingCells: [],
+      },
+      {
+        id: 'export',
+        verdict: 'boardsesh',
+        winners: [],
+        sourceIds: ['bs-export', 'tension-site', 'decoy-site'],
         pendingCells: [],
       },
       {
@@ -738,6 +757,11 @@ export const APP_GUIDE_REGISTRY = {
         url: 'https://github.com/boardsesh/boardsesh/blob/b3a0285908da0d9e4be984ebe5731ed72b33de10/packages/backend/src/graphql/resolvers/ticks/mutations.ts',
         checkedAt: '2026-11-24',
       },
+      {
+        id: 'bs-export',
+        url: 'https://github.com/boardsesh/boardsesh/blob/b3a0285908da0d9e4be984ebe5731ed72b33de10/docs/product/user-data-exports.md',
+        checkedAt: '2026-11-24',
+      },
     ],
     claims: [],
     updatedAt: '2026-11-24',
@@ -807,6 +831,13 @@ export const APP_GUIDE_REGISTRY = {
         pendingCells: [],
       },
       {
+        id: 'export',
+        verdict: 'boardsesh',
+        winners: [],
+        sourceIds: ['bs-export', 'moon-appstore', 'moon-reddit-data'],
+        pendingCells: [],
+      },
+      {
         id: 'crew',
         verdict: 'boardsesh',
         winners: [],
@@ -824,7 +855,7 @@ export const APP_GUIDE_REGISTRY = {
         id: 'android',
         verdict: 'only',
         winners: [],
-        sourceIds: ['grapheneos'],
+        sourceIds: ['grapheneos', 'moon-reddit-data'],
         pendingCells: [],
       },
       {
@@ -988,6 +1019,16 @@ export const APP_GUIDE_REGISTRY = {
         url: 'https://github.com/boardsesh/boardsesh/blob/b3a0285908da0d9e4be984ebe5731ed72b33de10/packages/shared/board-look/README.md',
         checkedAt: '2026-11-24',
       },
+      {
+        id: 'bs-export',
+        url: 'https://github.com/boardsesh/boardsesh/blob/b3a0285908da0d9e4be984ebe5731ed72b33de10/docs/product/user-data-exports.md',
+        checkedAt: '2026-11-24',
+      },
+      {
+        id: 'moon-reddit-data',
+        url: 'https://www.reddit.com/r/Moonboard/comments/1wg05he/important_if_the_moonboard_app_isnt_working/',
+        checkedAt: '2026-11-24',
+      },
     ],
     claims: [
       {
@@ -1074,6 +1115,13 @@ export const APP_GUIDE_REGISTRY = {
         verdict: 'only',
         winners: [],
         sourceIds: ['woods-appstore'],
+        pendingCells: [],
+      },
+      {
+        id: 'export',
+        verdict: 'boardsesh',
+        winners: [],
+        sourceIds: ['bs-export', 'woods-appstore'],
         pendingCells: [],
       },
       {
@@ -1188,6 +1236,11 @@ export const APP_GUIDE_REGISTRY = {
       {
         id: 'bs-appstore',
         url: 'https://apps.apple.com/us/app/boardsesh/id6761350784',
+        checkedAt: '2026-11-24',
+      },
+      {
+        id: 'bs-export',
+        url: 'https://github.com/boardsesh/boardsesh/blob/b3a0285908da0d9e4be984ebe5731ed72b33de10/docs/product/user-data-exports.md',
         checkedAt: '2026-11-24',
       },
     ],
