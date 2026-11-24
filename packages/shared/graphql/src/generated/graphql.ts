@@ -920,7 +920,9 @@ export type BoardDiscoveryInput = {
 
 export type BoardHistoryPage = {
   __typename?: 'BoardHistoryPage';
+  /** Displays within the rolling seven-day window, newest display time first. */
   entries: Array<BoardPresenceClimb>;
+  /** Null when no more entries remain within the window. */
   nextCursor?: Maybe<Scalars['String']['output']>;
 };
 
@@ -8712,19 +8714,18 @@ export type Query = {
   /** Public physical boards ranked by distinct climbers before limiting; optionally within one public gym. */
   boardDiscovery: Array<BoardDiscoveryBoard>;
   /**
-   * Durable history of what was pushed to a board (survives past the 1 week
-   * Redis window (BOARD_HISTORY_TTL)), newest-first by `seq`. For keyset
+   * Last seven days of native displays pushed to a board, newest-first by `seq`. For keyset
    * paging pass the `seq` of the last item from the previous page as
    * `before` (not `sentAt`) — `seq` is unique and monotonic per board, so
    * paging never repeats or skips even when several sends share a `sentAt`
    * second. A non-integer `before` is rejected with BAD_USER_INPUT. `limit`
-   * is capped at 100. This is the lasting "what was on the wall" record;
-   * `boardRecentClimbs` is the hot 1 week cache. Access follows the board's
+   * is capped at 100. The rolling server-time window applies before pagination;
+   * older rows remain stored but cannot be paged through here. Access follows the board's
    * policy: the board id alone is the no-link reading, `boardUuid` adds the
    * link. A board the caller may not read is masked as NOT_FOUND.
    */
   boardHistory: Array<BoardPresenceClimb>;
-  /** Chronological durable history with an opaque, board-scoped pagination cursor. */
+  /** Last seven days of chronological display history with an opaque, board-scoped cursor. Expired cursors return an empty final page. */
   boardHistoryPage: BoardHistoryPage;
   /**
    * Get leaderboard for a board. Anonymous access is allowed for public and
@@ -8776,11 +8777,11 @@ export type Query = {
   boardQueuePreview?: Maybe<BoardQueuePreview>;
   /**
    * Backfill the recent "now on the wall" history for a board (last ~50, 1
-   * week window (BOARD_HISTORY_TTL)) from the Redis FIFO. Used by late joiners
+   * week window, checked against server time) from the Redis FIFO. Used by late joiners
    * before the live `boardNowPlaying` subscription takes over.
    */
   boardRecentClimbs: Array<BoardPresenceClimb>;
-  /** Merged native and imported recent displays, used to infer the current climb by display time. */
+  /** Merged native and imported displays from the last seven days, used to infer the current climb by display time. */
   boardRecentHistory: Array<BoardPresenceClimb>;
   /**
    * Reports about one board, waiting and closed in the last 30 days, newest

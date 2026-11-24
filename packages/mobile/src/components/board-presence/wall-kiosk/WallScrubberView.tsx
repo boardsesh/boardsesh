@@ -277,6 +277,9 @@ function WallScrubberViewComponent({ preview, ledless, onConnect, takeVirtualWal
 
   return (
     <View style={styles.root}>
+      <Text variant="caption2" color={systemColors.secondaryLabel} style={styles.rangeReadout}>
+        {t('mobile.boardPresence.historyWindow')}
+      </Text>
       {navRow}
       {confirmSlot}
       {isPreviewing ? (

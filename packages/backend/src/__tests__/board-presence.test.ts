@@ -4100,7 +4100,7 @@ describe('board-presence durable history (board_climb_events)', () => {
     // Five rows at the SAME confirmed_at second with distinct monotonic seq —
     // exactly the case a confirmedAt-only cursor would repeat or skip across
     // pages.
-    const sameTs = '2026-01-01 00:00:00';
+    const sameTs = new Date().toISOString();
     for (const seq of [10, 11, 12, 13, 14]) {
       await db.insert(dbSchema.boardClimbEvents).values({
         boardId: boardId,
@@ -4141,6 +4141,40 @@ describe('board-presence durable history (board_climb_events)', () => {
     expect((error as GraphQLError).extensions?.code).toBe('BAD_USER_INPUT');
   });
 
+  it('applies the same seven-day window to legacy sequence pages and recent cached history', async () => {
+    const boardId = await resolveBoardId(`WINDOW-${Date.now()}`);
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-24T12:00:00.123Z'));
+    for (const [seq, confirmedAt, source] of [
+      [1, '2026-11-17 12:00:00.123000', 'boardsesh'],
+      [2, '2026-11-17 12:00:00.123001', 'boardsesh'],
+      [3, '2026-11-17 12:00:00.122999', 'boardsesh'],
+      [4, '2026-11-24 11:00:00', 'kilter'],
+      [5, '2026-01-01 12:00:00', 'boardsesh'],
+    ] as const) {
+      await db
+        .insert(dbSchema.boardClimbEvents)
+        .values({ boardId, boardType: 'kilter', climbUuid: TEST_CLIMB_UUID, angle: 40, seq, confirmedAt, source });
+    }
+    const first = await boardPresenceQueries.boardHistory(undefined, { boardId, limit: 1 }, authCtx());
+    expect(first.map((entry) => entry.seq)).toEqual([2]);
+    expect(
+      (await boardPresenceQueries.boardHistory(undefined, { boardId, before: '2' }, authCtx())).map(
+        (entry) => entry.seq,
+      ),
+    ).toEqual([1]);
+    expect(await boardPresenceQueries.boardHistory(undefined, { boardId, before: '1' }, authCtx())).toEqual([]);
+    const recent = { climbUuid: TEST_CLIMB_UUID, seq: 2, sentAt: '2026-11-17T12:00:00.123001Z' };
+    const expired = { ...recent, seq: 3, sentAt: '2026-11-17T12:00:00.122999Z' };
+    vi.spyOn(pubsub, 'getRecentBoardClimbs').mockResolvedValue([expired, recent]);
+    expect(
+      (await boardPresenceQueries.boardRecentClimbs(undefined, { boardId }, authCtx())).map((entry) => entry.seq),
+    ).toEqual([2]);
+    clock.mockReturnValue(Date.parse('2026-11-24T12:00:00.124Z'));
+    expect(await boardPresenceQueries.boardHistory(undefined, { boardId, before: '2' }, authCtx())).toEqual([]);
+    expect(await boardPresenceQueries.boardRecentClimbs(undefined, { boardId }, authCtx())).toEqual([]);
+    expect(await countEvents(boardId)).toBe(5);
+  });
+
   it('treats a whitespace-only cursor as no cursor (first page), never a silently empty page', async () => {
     const boardId = await resolveBoardId(`WS-${Date.now()}`);
     for (const seq of [1, 2]) {
@@ -4150,7 +4184,7 @@ describe('board-presence durable history (board_climb_events)', () => {
         climbUuid: TEST_CLIMB_UUID,
         angle: 40,
         seq: seq,
-        confirmedAt: '2026-01-01 00:00:00',
+        confirmedAt: new Date().toISOString(),
       });
     }
     // Number(' ') is 0, so without the trim guard this returned an empty page.
@@ -4377,7 +4411,7 @@ describe('board-presence connection holder', () => {
         climbUuid: TEST_CLIMB_UUID,
         angle: 40,
         seq: 1,
-        confirmedAt: '2026-01-01 00:00:00',
+        confirmedAt: new Date().toISOString(),
       });
 
       const history = await boardPresenceQueries.boardHistory(undefined, { boardId }, anon());

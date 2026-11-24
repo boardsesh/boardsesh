@@ -64,6 +64,8 @@ const CLIMB_UUID = 'anon-boards-climb';
 const SESSION_CLIMB_UUID = 'anon-boards-session-climb';
 const SPRAY_LAYOUT_ID = 987_654;
 const SPRAY_CLIMB_UUID = 'anon-boards-spray-climb';
+// Wall-display privacy needs visible history; logbook fixtures below remain historical.
+const HISTORY_DISPLAYED_AT_MS = Date.now() - 86_400_000;
 
 type TestBoard = { id: number; uuid: string; slug: string };
 let gymBoard: TestBoard;
@@ -117,7 +119,7 @@ async function seedBoardHistory(boardId: number, seqBase: number): Promise<void>
       identityPolicyVersion: 1,
       seq: seqBase + index,
       name: 'Anonymous boards climb',
-      confirmedAt: `2026-10-0${index + 1}T10:00:00Z`,
+      confirmedAt: new Date(HISTORY_DISPLAYED_AT_MS + index * 60_000).toISOString(),
     })),
   );
 }
@@ -197,7 +199,7 @@ async function seedClimberSessionTick(sessionId: string, boardId: number): Promi
 const historySender = async (boardId: number, reader: string | null) => {
   const history = await boardPresenceQueries.boardHistory(undefined, { boardId }, viewer(reader));
   expect(history).toHaveLength(2);
-  return history.find((row) => row.name === 'Anonymous boards climb' && row.sentAt.startsWith('2026-10-01'));
+  return history.find((row) => row.name === 'Anonymous boards climb' && row.seq === 1);
 };
 
 beforeAll(async () => {

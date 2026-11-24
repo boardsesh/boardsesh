@@ -205,6 +205,7 @@ export function useBoardPresence(
   client: BoardPresenceClient | null,
   onCatchUp?: (info: BoardPresenceCatchUpInfo) => void,
   boardUuid: string | null = null,
+  onRefresh?: () => void,
 ): UseBoardPresenceResult {
   const [state, dispatch] = useReducer(boardPresenceReducer, initialBoardPresenceState);
   const [isLive, setIsLive] = useState(false);
@@ -243,6 +244,8 @@ export function useBoardPresence(
   // subscription effect (keyed on [boardId, client]) to tear down and re-attach.
   const onCatchUpRef = useRef(onCatchUp);
   onCatchUpRef.current = onCatchUp;
+  const onRefreshRef = useRef(onRefresh);
+  onRefreshRef.current = onRefresh;
   // Points at the active effect-run's `runCatchUp`, so the stable `refresh()`
   // action and the AppState/reconnect triggers can invoke it without being
   // listed in the effect deps. Null while inert.
@@ -453,6 +456,9 @@ export function useBoardPresence(
     };
     const refreshReader = (reason: BoardPresenceCatchUpReason) => {
       if (!isCurrent()) return;
+      // Recheck retained historical display immediately, even if the network
+      // catch-up stalls. Current climb, holder and sequence state stay intact.
+      onRefreshRef.current?.();
       if (streamFailed) attachStream();
       runCatchUp(reason);
     };

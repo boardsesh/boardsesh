@@ -20,6 +20,7 @@ import {
 import type { BoardPresenceClient } from '../types';
 import { useBoardHistoryPagination } from '../use-board-history-pagination';
 import { useBoardClimbRecentSenders } from '../use-board-climb-recent-senders';
+import { BOARD_HISTORY_WINDOW_MS } from '@boardsesh/board-presence';
 
 // What the shared graphql-client subscribe wrapper hands an error sink: an
 // Error carrying the server's GraphQL errors (`GraphQLOperationError`).
@@ -33,10 +34,12 @@ const NOT_FOUND_ERROR = graphqlOperationError('NOT_FOUND', 'Board not found');
 const RATE_LIMITED_ERROR = graphqlOperationError('RATE_LIMITED', 'Rate limit exceeded. Try again in 30 seconds.');
 
 // Build a BoardPresenceClimb with only the fields the reducer/hook care about.
+const TEST_NOW = Date.parse('2026-11-24T12:00:00.000Z');
+
 const climb = (climbUuid: string, seq: number, overrides: Partial<BoardPresenceClimb> = {}): BoardPresenceClimb => ({
   climbUuid,
   seq,
-  sentAt: new Date(seq * 1000).toISOString(),
+  sentAt: new Date(TEST_NOW - 1_000_000 + seq * 1000).toISOString(),
   name: `Climb ${climbUuid}`,
   angle: 40,
   ...overrides,
@@ -49,7 +52,7 @@ const setEvent = (presenceClimb: BoardPresenceClimb): BoardPresenceEvent => ({
 
 const clearEvent = (seq: number): BoardPresenceEvent => ({
   __typename: 'BoardClimbCleared',
-  clearedAt: new Date(seq * 1000).toISOString(),
+  clearedAt: new Date(TEST_NOW - 1_000_000 + seq * 1000).toISOString(),
   seq,
 });
 
@@ -241,7 +244,10 @@ function makeClient() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.spyOn(Date, 'now').mockReturnValue(TEST_NOW);
 });
+
+afterEach(() => vi.restoreAllMocks());
 
 describe('useBoardPresence — null inputs', () => {
   it('stays inert with a null boardId', () => {
@@ -271,7 +277,10 @@ describe('useBoardPresence — Kilter current climb', () => {
   it('keeps the newest display across mixed backfill, native backfill, and live events without reporting it', async () => {
     const harness = makeClient();
     const native = climb('native', 1);
-    const imported = climb('kilter', 100, { source: 'kilter', sentAt: new Date(2000).toISOString() });
+    const imported = climb('kilter', 100, {
+      source: 'kilter',
+      sentAt: new Date(TEST_NOW - 1_000_000 + 2000).toISOString(),
+    });
     harness.client.fetchRecentHistory = vi.fn(async () => [imported, native]);
     const { result } = renderHook(() => useBoardPresence(1, harness.client));
     await waitFor(() => expect(result.current.currentClimb).toEqual(imported));
@@ -280,13 +289,16 @@ describe('useBoardPresence — Kilter current climb', () => {
     });
     expect(result.current.currentClimb).toEqual(imported);
 
-    const nextNative = climb('new-native', 2, { sentAt: new Date(3000).toISOString() });
+    const nextNative = climb('new-native', 2, { sentAt: new Date(TEST_NOW - 1_000_000 + 3000).toISOString() });
     act(() => harness.emit(setEvent(nextNative)));
     expect(result.current.currentClimb).toEqual(nextNative);
     act(() => harness.emit({ __typename: 'BoardHistoryUpdated', climbs: [imported], seq: 100 }));
     expect(result.current.currentClimb).toEqual(nextNative);
 
-    const nextImport = climb('new-kilter', 101, { source: 'kilter', sentAt: new Date(4000).toISOString() });
+    const nextImport = climb('new-kilter', 101, {
+      source: 'kilter',
+      sentAt: new Date(TEST_NOW - 1_000_000 + 4000).toISOString(),
+    });
     act(() => harness.emit({ __typename: 'BoardHistoryUpdated', climbs: [nextImport, imported], seq: 101 }));
     expect(result.current.currentClimb).toEqual(nextImport);
     expect(result.current.history).toEqual([nextImport, nextNative, imported, native]);
@@ -297,7 +309,10 @@ describe('useBoardPresence — Kilter current climb', () => {
   it('recovers the latest Kilter display on reconnect without stale native backfill overriding it', async () => {
     const harness = makeClient();
     const native = climb('native', 1);
-    const imported = climb('kilter', 100, { source: 'kilter', sentAt: new Date(2000).toISOString() });
+    const imported = climb('kilter', 100, {
+      source: 'kilter',
+      sentAt: new Date(TEST_NOW - 1_000_000 + 2000).toISOString(),
+    });
     const fetchRecentHistory = vi.fn().mockResolvedValueOnce([native]).mockResolvedValue([imported, native]);
     harness.client.fetchRecentHistory = fetchRecentHistory;
     const { result } = renderHook(() => useBoardPresence(1, harness.client));
@@ -1010,7 +1025,7 @@ describe('useBoardPresence — actions', () => {
 describe('useBoardPresence — Turn off all lights (#7015)', () => {
   const clearOf = (seq: number, climbUuid: string | null): BoardPresenceEvent => ({
     __typename: 'BoardClimbCleared',
-    clearedAt: new Date(seq * 1000).toISOString(),
+    clearedAt: new Date(TEST_NOW - 1_000_000 + seq * 1000).toISOString(),
     seq,
     climbUuid,
   });
@@ -1142,6 +1157,75 @@ describe('useBoardPresence — connection holder', () => {
 });
 
 describe('BoardPresenceProvider — split contexts', () => {
+  it('expires retained history on foreground without changing the live hero, holder or sequence', async () => {
+    const harness = makeClient();
+    const pagedClimb = climb('paged', 0);
+    harness.client.fetchHistoryPage = vi.fn(async () => ({ entries: [pagedClimb], nextCursor: null }));
+    let feed: ReturnType<typeof useBoardPresenceFeed> | undefined;
+    let current: ReturnType<typeof useBoardPresenceCurrent> | undefined;
+    let actions: ReturnType<typeof useBoardPresenceActions> | undefined;
+    let pagination: ReturnType<typeof useBoardHistoryPagination> | undefined;
+    function Reader() {
+      feed = useBoardPresenceFeed();
+      current = useBoardPresenceCurrent();
+      actions = useBoardPresenceActions();
+      pagination = useBoardHistoryPagination();
+      return null;
+    }
+    await act(async () => {
+      render(
+        <BoardPresenceProvider boardId={1} client={harness.client}>
+          <Reader />
+        </BoardPresenceProvider>,
+      );
+    });
+    const liveClimb = climb('still-lit', 1);
+    act(() => {
+      harness.emit(setEvent(liveClimb));
+      harness.emit(connectionEvent(2, holder()));
+    });
+    expect(feed?.history).toEqual([liveClimb]);
+    expect(pagination?.olderHistory).toEqual([pagedClimb]);
+    const beforeExpiry = current;
+    vi.mocked(Date.now).mockReturnValue(TEST_NOW + BOARD_HISTORY_WINDOW_MS + 1);
+    act(() => actions?.refresh('foreground'));
+    expect(feed?.history).toEqual([]);
+    expect(pagination?.olderHistory).toEqual([]);
+    expect(current).toBe(beforeExpiry);
+    expect(current?.currentClimb).toEqual(liveClimb);
+    expect(current?.holder).toEqual(holder());
+    expect(current?.lastConnectionSeq).toBe(2);
+  });
+
+  it('keeps a cleared wall dark when its retained history expires', () => {
+    const harness = makeClient();
+    let feed: ReturnType<typeof useBoardPresenceFeed> | undefined;
+    let current: ReturnType<typeof useBoardPresenceCurrent> | undefined;
+    let actions: ReturnType<typeof useBoardPresenceActions> | undefined;
+    function Reader() {
+      feed = useBoardPresenceFeed();
+      current = useBoardPresenceCurrent();
+      actions = useBoardPresenceActions();
+      return null;
+    }
+    render(
+      <BoardPresenceProvider boardId={1} client={harness.client}>
+        <Reader />
+      </BoardPresenceProvider>,
+    );
+    act(() => {
+      harness.emit(setEvent(climb('cleared', 1)));
+      harness.emit(clearEvent(2));
+    });
+    const beforeExpiry = current;
+    vi.mocked(Date.now).mockReturnValue(TEST_NOW + BOARD_HISTORY_WINDOW_MS + 1);
+    act(() => actions?.refresh('foreground'));
+    expect(feed?.history).toEqual([]);
+    expect(current).toBe(beforeExpiry);
+    expect(current?.currentClimb).toBeNull();
+    expect(current?.clearedClimbUuid).toBe('cleared');
+  });
+
   it('keeps action-only consumers stable when current/feed state changes', async () => {
     const harness = makeClient();
     const renderCounts = { actions: 0, current: 0, feed: 0 };

@@ -1,11 +1,11 @@
-import { isNativeBoardClimb } from '@boardsesh/board-presence';
 import { getGradeColor } from '@boardsesh/board-constants';
 import { isAuroraBoardName } from '@boardsesh/aurora-sync/api';
+import { BOARD_HISTORY_WINDOW_MS, filterRecentBoardHistory, isNativeBoardClimb } from '@boardsesh/board-presence';
 import { withRecentSenderBoardContext } from '../shared/board-session-privacy';
 import { tickPrivacyCondition } from '../shared/activity-privacy';
 import { redactBoardClimbs, redactBoardStats, redactBoardHolder } from '../../../services/board-session-privacy';
 import { visibleActivityUserIds } from '../../../services/privacy';
-import { and, asc, desc, eq, inArray, lt, max, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lt, max, or } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type {
   BoardClimbRecentSender,
@@ -136,7 +136,10 @@ export const boardPresenceQueries = {
     // somebody's home and needs the wall's own rule. See assertSprayBoardIsReadable.
     await assertSprayBoardIsReadable(visibilityBoard, readerId, boardUuid, db);
     return redactBoardClimbs(
-      (await pubsub.getRecentBoardClimbs(String(boardId))).filter(isNativeBoardClimb),
+      filterRecentBoardHistory(
+        (await pubsub.getRecentBoardClimbs(String(boardId))).filter(isNativeBoardClimb),
+        Date.now(),
+      ),
       ctx.userId,
       boardId,
       boardUuid,
@@ -145,8 +148,8 @@ export const boardPresenceQueries = {
   },
 
   /**
-   * Durable history of what was pushed to a board, from `board_climb_events`
-   * (survives past the 1-week Redis window). Newest-first, keyset-paged via
+   * Last seven days of what was pushed to a board, from `board_climb_events`.
+   * Newest sequence first, keyset-paged via
    * `before`: an opaque cursor that is the `seq` of the last row of the
    * previous page.
    *
@@ -204,6 +207,7 @@ export const boardPresenceQueries = {
     const boardMatch = and(
       eq(dbSchema.boardClimbEvents.boardId, boardId),
       eq(dbSchema.boardClimbEvents.source, 'boardsesh'),
+      gte(dbSchema.boardClimbEvents.confirmedAt, new Date(Date.now() - BOARD_HISTORY_WINDOW_MS).toISOString()),
     );
     // Join the sender (nullable — a user can be deleted, leaving userId null) so
     // history rows carry the same display identity + profile link as the live

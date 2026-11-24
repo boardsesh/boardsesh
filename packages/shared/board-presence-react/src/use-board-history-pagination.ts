@@ -1,10 +1,11 @@
 // Durable chronology is paged independently of the sparse, bounded Redis window.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { boardHistoryEntryKey, mergeBoardHistory } from '@boardsesh/board-presence';
+import { boardHistoryEntryKey, filterRecentBoardHistory, mergeBoardHistory } from '@boardsesh/board-presence';
 export { boardHistoryEntryKey } from '@boardsesh/board-presence';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import { useBoardPresenceClient, useBoardPresenceFeed } from './board-presence-provider';
 import { boardHistoryCursor } from './types';
+import { useRecentBoardHistory } from './use-recent-board-history';
 
 const DEFAULT_PAGE_SIZE = 50;
 
@@ -60,6 +61,7 @@ export function useBoardHistoryPagination(
   const nextCursorRef = useRef<string | undefined>(undefined);
   const legacyCursorRef = useRef<ReturnType<typeof boardHistoryCursor> | undefined>(undefined);
   const [olderHistory, setOlderHistory] = useState<BoardPresenceClimb[]>([]);
+  const { history: recentOlderHistory, recheckHistory } = useRecentBoardHistory(olderHistory);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   // Unknown until the first page resolves — default to true so the first
   // `loadOlder` call is never suppressed by this flag.
@@ -134,8 +136,10 @@ export function useBoardHistoryPagination(
       return;
     }
 
-    const knownClimbs = [...liveHistoryRef.current, ...olderHistoryRef.current];
-    const minSeq = lowestKnownSeq(knownClimbs);
+    // A refresh resets the legacy cursor to the current live window. Retained
+    // pages are display caches, not a cursor: using their oldest row here can
+    // skip the entire current window after returning from a long suspension.
+    const minSeq = lowestKnownSeq(filterRecentBoardHistory(liveHistoryRef.current, Date.now()));
     const cursor = legacyCursorRef.current ?? (minSeq === null ? undefined : boardHistoryCursor(minSeq));
 
     const requestGeneration = generationRef.current;
@@ -176,7 +180,11 @@ export function useBoardHistoryPagination(
         // live-feed shape is the richer one (mirrors the reducer's
         // `mergeHistory` policy).
         const deduped = page.filter((climb) => !knownKeys.has(boardHistoryEntryKey(climb)));
-        const nextOlderHistory = mergeBoardHistory(olderHistoryRef.current, deduped);
+        const nowMs = Date.now();
+        const nextOlderHistory = mergeBoardHistory(
+          filterRecentBoardHistory(olderHistoryRef.current, nowMs),
+          filterRecentBoardHistory(deduped, nowMs),
+        );
         nextCursorRef.current = nextCursor ?? undefined;
         if (!activeClient.fetchHistoryPage && page.length) legacyCursorRef.current = boardHistoryCursor(page.at(-1)!);
         olderHistoryRef.current = nextOlderHistory;
@@ -203,6 +211,7 @@ export function useBoardHistoryPagination(
   }, [pageSize]);
 
   const refreshHistory = useCallback(() => {
+    recheckHistory();
     generationRef.current += 1;
     nextCursorRef.current = undefined;
     legacyCursorRef.current = undefined;
@@ -210,7 +219,7 @@ export function useBoardHistoryPagination(
     hasMoreRef.current = true;
     setHasMore(true);
     loadOlder();
-  }, [loadOlder]);
+  }, [loadOlder, recheckHistory]);
 
   useEffect(() => {
     // One initial page per mounted panel/board, never an automatic page drain.
@@ -218,7 +227,7 @@ export function useBoardHistoryPagination(
     return client?.onReconnect?.(() => refreshHistory());
   }, [boardId, boardUuid, client, loadOlder, refreshHistory]);
 
-  const visibleHistory = scopeMatches ? olderHistory : [];
+  const visibleHistory = scopeMatches ? recentOlderHistory : [];
   const visibleLoading = scopeMatches && isLoadingOlder;
   const visibleHasMore = !scopeMatches || hasMore;
   const visibleError = scopeMatches && loadError;

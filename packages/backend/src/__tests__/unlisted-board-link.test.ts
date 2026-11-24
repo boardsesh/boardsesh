@@ -162,6 +162,23 @@ const ID_KEYED_READS: ReadonlyArray<
     (boardId, boardUuid, ctx) => boardPresenceQueries.boardHistory(undefined, { boardId, boardUuid, limit: 5 }, ctx),
   ],
   [
+    'boardHistoryPage with expired cursor',
+    (boardId, boardUuid, ctx) =>
+      boardPresenceQueries.boardHistoryPage(
+        undefined,
+        {
+          boardId,
+          boardUuid,
+          before: Buffer.from(JSON.stringify([boardId, '2000-01-01 00:00:00', 1])).toString('base64url'),
+        },
+        ctx,
+      ),
+  ],
+  [
+    'boardHistory with exhausted cursor',
+    (boardId, boardUuid, ctx) => boardPresenceQueries.boardHistory(undefined, { boardId, boardUuid, before: '1' }, ctx),
+  ],
+  [
     'boardClimbRecentSenders',
     (boardId, boardUuid, ctx) =>
       boardPresenceQueries.boardClimbRecentSenders(

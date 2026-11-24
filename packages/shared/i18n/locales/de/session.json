@@ -575,6 +575,7 @@
       "emptyTitle": "Noch niemand an dieser Wand",
       "emptyBody": "Verbinde dich und beleuchte einen Boulder, um die Historie zu starten.",
       "historyHeader": "An dieser Wand beleuchtet",
+      "historyWindow": "Letzte 7 Tage",
       "statsHeader": "Diese Wand",
       "statSent_one": "Begehung",
       "statSent_other": "Begehungen",

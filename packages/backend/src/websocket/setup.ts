@@ -7,11 +7,11 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import type { Server as HttpServer, IncomingMessage } from 'http';
 import { useServer, type Extra as WsExtra } from 'graphql-ws/use/ws';
 import type { Context as GqlWsContext } from 'graphql-ws';
-import { GraphQLError, parse, type DocumentNode } from 'graphql';
+import { GraphQLError, parse } from 'graphql';
 import * as Sentry from '@sentry/node';
 import { schema } from '../graphql/index';
 import { createContext, removeContext, getContext } from '../graphql/context';
-import { validateQueryDepth } from '../graphql/query-depth';
+import { validateOperation } from '../graphql/query-validation';
 import { roomManager } from '../services/room-manager';
 import { kilterLiveSync } from '../services/kilter-live-sync';
 import { auroraLiveSync } from '../services/aurora-live-sync';
@@ -309,6 +309,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
   useServer<Record<string, unknown>, CustomExtra>(
     {
       schema,
+      validate: validateOperation,
       // onConnect is called ONCE when client connects and sends ConnectionInit
       onConnect: async (ctx: ServerContext) => {
         // Extract and validate auth token
@@ -643,11 +644,11 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           );
         }
 
-        // Validate query depth to prevent DoS via deeply nested subscriptions
+        // Preserve parse-error redaction before graphql-ws performs its normal
+        // parse/validate/context flow with our shared operation limits.
         if (payload.query) {
-          let document: DocumentNode;
           try {
-            document = typeof payload.query === 'string' ? parse(payload.query) : payload.query;
+            parse(payload.query);
           } catch (error: unknown) {
             // A thrown parse error escapes into graphql-ws' generic server
             // logger. Return a safe error before its token-bearing source does.
@@ -661,10 +662,6 @@ export function setupWebSocketServer(httpServer: HttpServer): {
             // syntax error echoes client text. Rethrow it clipped: the socket still
             // closes with 4500, and the code, locations and extensions survive.
             throw error instanceof GraphQLError ? clipThrownGraphqlError(error) : error;
-          }
-          const depthError = validateQueryDepth(document);
-          if (depthError) {
-            return [new GraphQLError(depthError)];
           }
         }
       },

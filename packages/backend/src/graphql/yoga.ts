@@ -11,8 +11,7 @@ import type { AuthResult } from '../middleware/auth';
 import { resolveWebSocketClientIp, resolveWebSocketSocketPeerIp } from '../websocket/client-ip';
 import { CLIENT_PLATFORM_HEADER, type ConnectionContext } from '@boardsesh/shared-schema';
 import { CLIENT_IDENTITY_HEADER } from '@boardsesh/shared-schema/client-identity';
-import { maxDepthPlugin } from '@escape.tech/graphql-armor-max-depth';
-import { costLimitPlugin } from '@escape.tech/graphql-armor-cost-limit';
+import { operationLimitsPlugin } from './query-validation';
 import { isLocalDevelopment, isTestEnvironment } from '@boardsesh/db/client/config';
 import { logger } from '../utils/logger';
 import { wasErrorReported } from '../utils/sentry-dedupe';
@@ -150,15 +149,13 @@ export function createYogaInstance() {
   const yoga = createYoga<NodeServerContext>({
     schema,
     graphqlEndpoint: '/graphql',
-    // Depth/cost limiting for HTTP GraphQL requests.
-    // WebSocket subscriptions are protected separately via onSubscribe in websocket/setup.ts
+    // HTTP and WebSocket requests share the same depth and cost validation rules.
     // Response compression: Railway bills uncompressed egress even though
     // Cloudflare compresses to the client. See ./response-compression.ts.
     // clientUsagePlugin counts operations per client identity for the
     // once-a-minute usage summary (services/client-usage.ts); it gates nothing.
     plugins: [
-      maxDepthPlugin({ n: 10 }),
-      costLimitPlugin({ maxCost: 5000 }),
+      operationLimitsPlugin(),
       responseCompressionPlugin(),
       clientUsagePlugin(),
       appleAdsTokenPrivacyPlugin(),

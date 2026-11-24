@@ -15,6 +15,25 @@ export function isSupportedBoardClimb(climb: Pick<BoardPresenceClimb, 'source'>)
   return isNativeBoardClimb(climb) || isImportedBoardClimb(climb);
 }
 
+export const BOARD_HISTORY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** First millisecond after an entry falls outside the inclusive seven-day window. */
+export function boardHistoryExpiresAt(sentAt: string): number | null {
+  if (typeof sentAt !== 'string') return null;
+  const normalized = sortableTimestamp(sentAt);
+  const timestamp = Date.parse(normalized);
+  return Number.isFinite(timestamp) ? timestamp + BOARD_HISTORY_WINDOW_MS + 1 : null;
+}
+
+/** Filter display history only; current-climb and sequence state can outlive this window. */
+export function filterRecentBoardHistory(climbs: BoardPresenceClimb[], nowMs: number): BoardPresenceClimb[] {
+  const recent = climbs.filter((climb) => {
+    const expiresAt = boardHistoryExpiresAt(climb.sentAt);
+    return expiresAt !== null && nowMs < expiresAt;
+  });
+  return recent.length === climbs.length ? climbs : recent;
+}
+
 /** Normalize legacy naive UTC timestamps without losing upstream microseconds. */
 function sortableTimestamp(timestamp: string): string {
   const isoTimestamp = timestamp.replace(' ', 'T');

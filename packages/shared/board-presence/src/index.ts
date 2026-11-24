@@ -10,6 +10,9 @@ export {
   isImportedBoardClimb,
   isNativeBoardClimb,
   isSupportedBoardClimb,
+  BOARD_HISTORY_WINDOW_MS,
+  boardHistoryExpiresAt,
+  filterRecentBoardHistory,
 } from './history';
 
 export { mapBoardPresenceEnvelopeToAction } from './map-envelope';

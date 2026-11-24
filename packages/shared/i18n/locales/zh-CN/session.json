@@ -575,6 +575,7 @@
       "emptyTitle": "这面墙还没有人爬",
       "emptyBody": "连接并点亮一条线路，开启历史记录。",
       "historyHeader": "此墙点亮过的线路",
+      "historyWindow": "最近 7 天",
       "statsHeader": "这面墙",
       "statSent_one": "次完攀",
       "statSent_other": "次完攀",

@@ -269,9 +269,8 @@ export const BOARD_RECENT_CLIMBS = `
   }
 `;
 
-// Query — durable, keyset-paged history of what was lit on a board, from
-// `board_climb_events` (survives past the 1-week Redis window (BOARD_HISTORY_TTL)
-// that backs BOARD_RECENT_CLIMBS). Newest-first; `before` is an opaque cursor equal to the
+// Query — last seven days of native displays from `board_climb_events`.
+// Newest sequence first; `before` is an opaque cursor equal to the
 // `seq` of the previous page's last row, and `limit` is server-capped 1–100
 // (default 50). Reuses the same climb fields as the live feed so every wall
 // surface decodes one shape.

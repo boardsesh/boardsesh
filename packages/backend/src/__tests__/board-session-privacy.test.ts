@@ -77,6 +77,7 @@ vi.mock('../db/client', async () => {
 const { boardSessionPrivacyResolvers } = await import('../graphql/resolvers/shared/board-session-privacy');
 const {
   redactBoardClimbs,
+  redactBoardEvent,
   redactBoardHolder,
   redactBoardIdentity,
   redactBoardStats,
@@ -125,6 +126,22 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe('board history identity', () => {
+  it('expires delayed history batches at delivery while retaining live climb state', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-15T12:00:00Z'));
+    try {
+      const expired = { ...display, seq: 6, sentAt: '2026-10-08T11:59:59.999999Z' };
+      const batch = { __typename: 'BoardHistoryUpdated' as const, climbs: [display, expired], seq: 8 };
+      const first = await redactBoardEvent(batch, 'stranger', BOARD_ID);
+      expect(first).toMatchObject({ climbs: [{ seq: 7, sentByUserId: null }] });
+      clock.mockReturnValue(Date.parse('2026-10-15T12:00:00.001Z'));
+      expect(await redactBoardEvent(batch, 'stranger', BOARD_ID)).toMatchObject({ climbs: [] });
+      expect(
+        await redactBoardEvent({ __typename: 'BoardClimbSet', climb: expired }, 'stranger', BOARD_ID),
+      ).toMatchObject({ climb: { seq: 6, sentByUserId: null } });
+    } finally {
+      clock.mockRestore();
+    }
+  });
   it('keeps the climb, time and order while concealing attribution from a stranger', async () => {
     const [hidden] = await redactBoardClimbs([display], 'stranger', BOARD_ID);
     expect(hidden).toMatchObject({

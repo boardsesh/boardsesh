@@ -575,6 +575,7 @@
       "emptyTitle": "Nobody's on this wall yet",
       "emptyBody": "Connect and send a climb to kick off the history.",
       "historyHeader": "Lit on this wall",
+      "historyWindow": "Last 7 days",
       "statsHeader": "This wall",
       "statSent_one": "send",
       "statSent_other": "sends",
