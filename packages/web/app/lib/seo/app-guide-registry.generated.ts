@@ -471,6 +471,13 @@ export const APP_GUIDE_REGISTRY = {
         pendingCells: [],
       },
       {
+        id: 'beta',
+        verdict: 'boardsesh',
+        winners: [],
+        sourceIds: ['tension-store', 'grasshopper-appstore', 'bs-beta-links'],
+        pendingCells: [],
+      },
+      {
         id: 'workouts',
         verdict: 'boardsesh',
         winners: [],
@@ -724,6 +731,11 @@ export const APP_GUIDE_REGISTRY = {
       {
         id: 'bs-hold-colours',
         url: 'https://github.com/boardsesh/boardsesh/blob/b3a0285908da0d9e4be984ebe5731ed72b33de10/docs/mobile/screens/12-bluetooth.md',
+        checkedAt: '2026-11-24',
+      },
+      {
+        id: 'bs-beta-links',
+        url: 'https://github.com/boardsesh/boardsesh/blob/b3a0285908da0d9e4be984ebe5731ed72b33de10/packages/backend/src/graphql/resolvers/ticks/mutations.ts',
         checkedAt: '2026-11-24',
       },
     ],
@@ -1250,9 +1262,9 @@ export const APP_GUIDE_REGISTRY = {
       },
       {
         id: 'leds',
-        verdict: 'competitor',
-        winners: ['stokt'],
-        sourceIds: ['bs-spray-led', 'stokt-features', 'retro-appstore', 'crux-scan'],
+        verdict: 'same',
+        winners: [],
+        sourceIds: ['bs-spray-led', 'stokt-features', 'retro-appstore', 'crux-scan', 'wled', 'stokt-pro'],
         pendingCells: [],
       },
       {
@@ -1493,6 +1505,16 @@ export const APP_GUIDE_REGISTRY = {
       {
         id: 'stokt-add-wall',
         url: 'https://www.getstokt.com/add-wall',
+        checkedAt: '2026-11-24',
+      },
+      {
+        id: 'wled',
+        url: 'https://kno.wled.ge/',
+        checkedAt: '2026-11-24',
+      },
+      {
+        id: 'stokt-pro',
+        url: 'https://www.getstokt.com/stokt-pro',
         checkedAt: '2026-11-24',
       },
     ],

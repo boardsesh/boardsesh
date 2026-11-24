@@ -70,7 +70,6 @@ const COMPETITOR_WINNERS: Partial<Record<ComparisonPageId, Record<string, readon
   'spray-wall-apps': {
     setup: ['stokt'],
     community: ['stokt'],
-    leds: ['stokt'],
     symmetry: ['stokt', 'retroFlash'],
   },
 };

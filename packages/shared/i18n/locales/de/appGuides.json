@@ -584,6 +584,11 @@
             "boardsesh": "Up to 500 climbs, added from every phone in the session",
             "official": "No shared crew queue documented in any of the five listings"
           },
+          "beta": {
+            "feature": "Beta videos",
+            "boardsesh": "Shows on the climb as soon as you attach a public Instagram or TikTok link",
+            "official": "Post on Instagram with the suggested caption; Aurora links it. No timeframe given"
+          },
           "workouts": {
             "feature": "Workouts",
             "boardsesh": "7 workout types with warm-up and cool-down stages on every brand",
@@ -771,7 +776,8 @@
         "bs-workouts": "Boardsesh docs: workout catalogue depth and benchmark counts, measured October 2026",
         "bs-aurora-sync": "Boardsesh code: Aurora account sync hosts for all six Aurora brands",
         "bs-board-look": "Boardsesh board look: glowing holds, the default since 2.4",
-        "bs-hold-colours": "Boardsesh accessibility hold colours sent to Aurora controllers"
+        "bs-hold-colours": "Boardsesh accessibility hold colours sent to Aurora controllers",
+        "bs-beta-links": "Boardsesh code: beta links show as soon as they are attached"
       }
     },
     "moonboard": {
@@ -1181,12 +1187,12 @@
           "p2": "You also climb a Kilter, Tension or MoonBoard and want one logbook",
           "p3": "You climb in a garage or basement with no signal",
           "p4": "Your crew wants one queue on the wall, from phones, an iPad or a laptop",
-          "p5": "You want to mark holds on an iPad with an Apple Pencil"
+          "p5": "You want LEDs on your wall on a budget, with a WLED controller"
         },
         "keepIf": {
           "k1": "You want to climb in Stōkt's network of more than 2,000 walls",
-          "k2": "You want a ready-made LED kit, like the one Stōkt sells in the EU and UK",
-          "k3": "You need symmetric-wall mirroring or custom grades, which Retro Flash has"
+          "k2": "You will pay for a ready-made LED kit, sold by Stōkt in the EU and UK",
+          "k3": "You need mirrored climbs on a symmetric wall, as Stōkt and Retro Flash offer"
         },
         "bottomLine": "For a wall of your own, Boardsesh costs nothing, works offline and puts your spray wall in the same logbook as every gym board you climb. Crux is also free for home walls and scans fast; Stōkt has the most walls and will map every hold for you, for a fee."
       },
@@ -1242,8 +1248,8 @@
           },
           "leds": {
             "feature": "LEDs on the wall",
-            "boardsesh": "Your own WLED controller over Wi-Fi; Bluetooth firmware is an opt-in beta",
-            "stokt": "Its own LED kit, sold in the EU and UK; Pro can connect your own",
+            "boardsesh": "Works with WLED, a low-cost open-source LED controller, over Wi-Fi",
+            "stokt": "Sells its own LED kit (EU, UK); your own LEDs need Pro at $20 a month",
             "retroFlash": "No LED support in the store listing",
             "crux": "No LED control found; LED boards are scanned like any wall"
           },
@@ -1379,7 +1385,7 @@
           },
           "leds": {
             "q": "Can I light my spray wall with LEDs?",
-            "a": "Boardsesh lights holds through a WLED controller you wire yourself, over Wi-Fi, with Bluetooth as an opt-in beta. Stōkt sells its own LED kit in the EU and UK."
+            "a": "Yes, through WLED, a low-cost open-source LED controller you wire yourself and connect over Wi-Fi. Stōkt sells its own LED kit in the EU and UK."
           },
           "offline": {
             "q": "Does a spray wall app work without signal?",
@@ -1418,7 +1424,9 @@
         "crux-home": "Crux for home walls",
         "crux-scan": "Crux hold scanning",
         "boardclimbs-manifest": "Boardclimbs web app manifest",
-        "stokt-add-wall": "Stōkt: add a wall, setup fees by hold count"
+        "stokt-add-wall": "Stōkt: add a wall, setup fees by hold count",
+        "wled": "WLED project: open-source firmware for ESP32 LED controllers",
+        "stokt-pro": "Stōkt Pro: $20 a month"
       }
     }
   }
