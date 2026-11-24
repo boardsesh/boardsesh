@@ -205,8 +205,15 @@ describe('app guide pages before hydration', () => {
         expect.arrayContaining(['WebPage', 'BreadcrumbList', 'Organization', 'MobileApplication']),
       );
       expect(graph.find((entry) => entry['@type'] === 'WebPage')).toMatchObject({
+        datePublished: '2026-11-24',
         dateModified: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-        publisher: { '@id': expect.stringContaining('#organization') },
+        publisher: { '@id': expect.stringContaining('/#organization') },
+        isPartOf: { '@id': expect.stringContaining('/#website') },
+      });
+      // The same Organization entity the homepage defines, with its profiles.
+      expect(graph.find((entry) => entry['@type'] === 'Organization')).toMatchObject({
+        '@id': expect.stringContaining('/#organization'),
+        sameAs: ['https://github.com/marcodejongh/boardsesh', 'https://discord.gg/YXA8GsXfQK'],
       });
       expect(graph.filter((entry) => entry['@type'] === 'MobileApplication')).toEqual([
         expect.objectContaining({ name: 'Boardsesh' }),
