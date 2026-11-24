@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
 import { GYM_REPORTING_RECEIPT_MS, gymReportingQueryKey } from '@boardsesh/graphql';
-import type { Gym, GymStats } from '@boardsesh/shared-schema';
+import type { Gym, GymReachOverview, GymStats } from '@boardsesh/shared-schema';
 import { createTestQueryClient } from '@/app/test-utils/test-providers';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import InsightsTab from '../insights-tab';
@@ -79,6 +79,34 @@ const report: GymStats = {
   busiestDays: [{ dayOfWeek: 2, ascentCount: 3 }],
 };
 
+const count = (value: number) => ({ count: value, coverage: 'complete' as const });
+const reachWindow = {
+  climbers: count(12),
+  firstRecorded: count(4),
+  uncertainFirstRecorded: 0,
+  sends: count(3),
+  sendLoggers: 2,
+  sessions: count(2),
+};
+const reach: GymReachOverview = {
+  observationStartedAt: '2025-11-01T00:00:00Z',
+  baselineStartAt: '2026-10-17T20:00:00Z',
+  current: reachWindow,
+  previous: { ...reachWindow, climbers: count(8), sends: count(2) },
+  cameBack: { returning: 4, previousClimbers: 8, coverage: 'complete' },
+  previousCameBack: { returning: 2, previousClimbers: 8, coverage: 'complete' },
+  weeklyTrend: Array.from({ length: 12 }, (_, index) => {
+    const monday = Date.UTC(2026, 7, 17) + index * 7 * 86_400_000;
+    return {
+      startDate: new Date(monday).toISOString().slice(0, 10),
+      endDate: new Date(monday + 6 * 86_400_000).toISOString().slice(0, 10),
+      inProgress: index === 11,
+      climbers: index === 0 ? { count: 0, coverage: 'unavailable' } : count(index),
+      sends: count(index === 0 ? 0 : index + 2),
+    };
+  }),
+};
+
 function renderTab() {
   const queryClient = createTestQueryClient();
   const tree = () => (
@@ -117,6 +145,38 @@ describe('InsightsTab', () => {
     expect(screen.getByText(/Earliest display in this check.*Jan 2, 2026/)).toBeTruthy();
     expect(screen.getByText('No climb log with a recorded time found.')).toBeTruthy();
     expect(screen.getByText('Crimpy Traverse')).toBeTruthy();
+  });
+
+  it('renders five values and selectable exact trend counts independently from the selected period', async () => {
+    mocks.request.mockResolvedValue({ gymStats: { ...report, reachOverview: reach } });
+    renderTab();
+    await screen.findByText('Climbers recorded');
+    for (const title of ['First recorded here', 'Came back', 'Sends logged', 'Sessions', 'Last 12 weeks']) {
+      expect(screen.getByRole('heading', { name: title })).toBeTruthy();
+    }
+    expect(screen.getByText(/4 of 8 recorded climbers/)).toBeTruthy();
+    expect(screen.getByText('50%')).toBeTruthy();
+    expect(screen.getByText(/Days with a send, counted once/)).toBeTruthy();
+    const missing = screen.getByRole('button', { name: /Aug 17, 2026.*History unavailable/ });
+    fireEvent.focus(missing);
+    expect(missing.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText(/Aug 17, 2026.*History unavailable/)).toBeTruthy();
+    const climbers = screen.getByRole('button', { name: 'Climbers', pressed: true });
+    const sends = screen.getByRole('button', { name: 'Sends', pressed: false });
+    const selectedCheck = '[data-selected-check]';
+    const group = screen.getByRole('group', { name: 'Weekly measure' });
+    expect(group.querySelectorAll(selectedCheck)).toHaveLength(1);
+    expect(climbers.querySelector(selectedCheck)?.getAttribute('aria-hidden')).toBe('true');
+    expect(sends.querySelector(selectedCheck)).toBeNull();
+    fireEvent.click(sends);
+    expect(climbers.getAttribute('aria-pressed')).toBe('false');
+    expect(climbers.querySelector(selectedCheck)).toBeNull();
+    expect(sends.getAttribute('aria-pressed')).toBe('true');
+    expect(sends.querySelector(selectedCheck)?.getAttribute('aria-hidden')).toBe('true');
+    expect(group.querySelectorAll(selectedCheck)).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /Aug 17, 2026.*0 sends/ }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: /Nov 2, 2026.*13 sends.*In progress/ })).toBeTruthy();
+    expect(mocks.request).toHaveBeenCalledTimes(1);
   });
 
   it.each(['displayCount', 'tickCount'] as const)('keeps the report visible with %s and zero sends', async (source) => {

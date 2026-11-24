@@ -22,7 +22,11 @@ import { GymStatsInputSchema } from '../../../validation/schemas/gyms';
 import { applyRateLimit, validateInput } from '../shared/helpers';
 import { isSharedConfigFeedBoard, SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
 import { requireGymEditAccess } from './gyms';
-import { REPORTING_OFFSET_ENVELOPE_HOURS, reportingCivilPeriodsSql } from './gym-reporting-calendar';
+import {
+  hasReportingCalendarZoneSql,
+  REPORTING_OFFSET_ENVELOPE_HOURS,
+  reportingCivilPeriodsSql,
+} from './gym-reporting-calendar';
 
 const PERIOD_DAYS: Record<GymStatsPeriod, number> = { week: 7, month: 30, quarter: 90 };
 const FIRST_OBSERVED_LOOKBACK_MS = 365 * 24 * 60 * 60 * 1000;
@@ -262,13 +266,14 @@ type ReportingActivityBounds = {
   end: string;
   candidateActorIds?: SQL;
 } & (
-  | { firstObservedOnly?: false; start?: string }
+  | { firstObservedOnly?: false; start?: string; predecessorDaysOnly?: false }
+  | { firstObservedOnly?: false; start: string; predecessorDaysOnly: true }
   // The first-observed probes must have both index bounds before their LIMIT.
-  | { firstObservedOnly: true; start: string }
+  | { firstObservedOnly: true; start: string; predecessorDaysOnly?: never }
 );
 
 /** An author date and its attested saved time can differ by at most this much in UTC. */
-const REPORTING_AUTHOR_OVERHANG_HOURS = 24 + 2 * REPORTING_OFFSET_ENVELOPE_HOURS;
+export const REPORTING_AUTHOR_OVERHANG_HOURS = 24 + 2 * REPORTING_OFFSET_ENVELOPE_HOURS;
 const AUTHOR_CALENDAR_SAMPLE_BUDGET = 24_000;
 const GYM_CALENDAR_SAMPLE_BUDGET = 8_000;
 
@@ -314,45 +319,59 @@ function reportingTickTimesSql(timeZone: string): SQL {
   `;
 }
 
-/** Shared, authorized physical scope. Caller aggregates the rows in SQL and returns no identity list. */
-export function reportingActivitySql(scope: GymReportingScope, bounds: ReportingActivityBounds): SQL {
-  // An empty scope uses a typed null row in VALUES then filters it out. This
-  // keeps the same column types and predicates for every downstream caller.
-  const scopedBoards =
-    scope.activityBoards.length > 0
-      ? sql.join(
-          scope.activityBoards.map(({ id, physicalBoardUuid }) => sql`(${id}::bigint, ${physicalBoardUuid}::text)`),
-          sql`, `,
-        )
-      : sql`(NULL::bigint, NULL::text)`;
-  const acceptedGyms = sql.join(
+function reportingScopedBoardsSql(scope: GymReportingScope): SQL {
+  // The null seed preserves the column types for an empty authorized selection.
+  return scope.activityBoards.length > 0
+    ? sql.join(
+        scope.activityBoards.map(({ id, physicalBoardUuid }) => sql`(${id}::bigint, ${physicalBoardUuid}::text)`),
+        sql`, `,
+      )
+    : sql`(NULL::bigint, NULL::text)`;
+}
+
+const reportingAcceptedGymsSql = (scope: GymReportingScope) =>
+  sql.join(
     scope.canonicalGymIds.map((id) => sql`${id}`),
     sql`, `,
   );
-  const endUtc = sql`(${bounds.end}::timestamptz AT TIME ZONE 'UTC')`;
-  const beginUtc = bounds.start ? sql`(${bounds.start}::timestamptz AT TIME ZONE 'UTC')` : null;
-  const authorOverhang = sql`make_interval(hours => ${REPORTING_AUTHOR_OVERHANG_HOURS}::int)`;
-  const tickBegin = beginUtc && !bounds.firstObservedOnly ? sql`${beginUtc} - ${authorOverhang}` : beginUtc;
-  const tickEnd = bounds.firstObservedOnly ? endUtc : sql`${endUtc} + ${authorOverhang}`;
+const certifiedTickTime = sql`tick.reporting_climbed_at = tick.climbed_at`;
+function reportingAuthorDayContainsSavedTimeSql(authorDate: SQL, zone: SQL, storedAt: SQL): SQL {
+  return sql`(${authorDate} BETWEEN date '0001-01-01' AND date '9999-12-31'
+    AND CASE WHEN ${hasReportingCalendarZoneSql(zone)}
+      THEN (${timestampUtc(storedAt)} AT TIME ZONE ${zone})::date = ${authorDate}
+      ELSE false END)`;
+}
+
+const certifiedTickAuthorDay = sql`(${certifiedTickTime} AND tick.reporting_time_precision = 'day'
+  AND ${reportingAuthorDayContainsSavedTimeSql(
+    sql`tick.reporting_date`,
+    sql`tick.reporting_date_time_zone`,
+    sql`tick.climbed_at`,
+  )})`;
+const certifiedTickInstant = sql`(${certifiedTickTime} AND tick.reporting_time_precision = 'instant')`;
+// This static superset matches the partial index. It lets the board-only
+// probe bypass certified exact ticks before checking a possible author day.
+const unboundedTickEvidence = sql`(
+  (tick.reporting_time_precision IS DISTINCT FROM 'instant' OR tick.reporting_climbed_at IS DISTINCT FROM tick.climbed_at)
+  AND (${certifiedTickInstant} OR ${certifiedTickAuthorDay}) IS NOT TRUE
+)`;
+const authorOffsetEnvelope = sql`make_interval(hours => ${REPORTING_OFFSET_ENVELOPE_HOURS}::int)`;
+
+type ReportingSourceBounds = {
+  start?: SQL | null;
+  end?: SQL;
+  actorFilter: SQL;
+  tail: SQL;
+};
+
+function reportingDisplaySourceSql(
+  scope: GymReportingScope,
+  { start: beginUtc, end: endUtc, actorFilter, tail }: ReportingSourceBounds,
+): SQL {
+  const acceptedGyms = reportingAcceptedGymsSql(scope);
   const displayActor = identifiedActor(sql`display.user_id`, sql`display.board_id`, scope.viewerId);
-  const tickActor = identifiedActor(sql`tick.user_id`, sql`tick.board_id`, scope.viewerId);
   const displayClimb = sql`COALESCE(display_alias.canonical_uuid, display.climb_uuid)`;
-  const tickClimb = sql`COALESCE(tick_alias.canonical_uuid, tick.climb_uuid)`;
-  const certifiedTime = sql`tick.reporting_climbed_at = tick.climbed_at`;
-  const boundActor = (column: SQL) =>
-    bounds.candidateActorIds ? sql`AND ${column} IN (${bounds.candidateActorIds})` : sql``;
-
-  const tickTimes = bounds.firstObservedOnly
-    ? sql`SELECT tick.*, NULL::timestamptz AS possible_start_at, NULL::timestamptz AS possible_end_at,
-        (tick.occurred_at AT TIME ZONE ${scope.timeZone})::date AS local_date, 'instant'::text AS precision
-        FROM candidate_ticks tick`
-    : reportingTickTimesSql(scope.timeZone);
-
   return sql`
-    WITH scoped_boards(board_id, physical_board_uuid) AS (VALUES ${scopedBoards}),
-    precise_displays AS (
-      SELECT eligible.* FROM scoped_boards selected
-      CROSS JOIN LATERAL (
       SELECT 'display'::text AS source, display.id::text AS activity_id, display.board_id,
         selected.physical_board_uuid, display.board_type, ${displayClimb} AS climb_uuid,
         display.angle, display.reporting_mirrored AS is_mirror,
@@ -369,9 +388,9 @@ export function reportingActivitySql(scope: GymReportingScope, bounds: Reporting
       LEFT JOIN board_climb_aliases display_alias ON display_alias.board_type = display.board_type
         AND display_alias.alias_uuid = display.climb_uuid
       WHERE display.board_id = selected.board_id AND display.source = 'boardsesh' AND display.board_type = logical.board_type
-        AND display.confirmed_at < ${endUtc}
+        ${endUtc ? sql`AND display.confirmed_at < ${endUtc}` : sql``}
         ${beginUtc ? sql`AND display.confirmed_at >= ${beginUtc}` : sql``}
-        ${boundActor(sql`display.user_id`)}
+        ${actorFilter}
         AND (
           (display.reporting_board_id = display.board_id AND display.reporting_gym_id IN (${acceptedGyms}))
           OR (display.reporting_board_id IS NULL AND logical.owner_id <> ${SYSTEM_BOARD_OWNER_ID} AND NOT EXISTS (
@@ -379,12 +398,19 @@ export function reportingActivitySql(scope: GymReportingScope, bounds: Reporting
           ))
         )
         AND ${historicalClimbAllowed(sql`display.board_type`, sql`logical.layout_id`, displayClimb, scope.viewerId)}
-        ${bounds.firstObservedOnly ? sql`ORDER BY display.confirmed_at LIMIT 1` : sql``}
-      ) eligible
-    ),
-    candidate_ticks AS ${bounds.firstObservedOnly ? sql`` : sql`MATERIALIZED`} (
-      SELECT eligible.* FROM scoped_boards selected
-      CROSS JOIN LATERAL (
+        ${tail}
+  `;
+}
+
+function reportingTickSourceSql(
+  scope: GymReportingScope,
+  { start: tickBegin, end: tickEnd, actorFilter, tail }: ReportingSourceBounds,
+): SQL {
+  const acceptedGyms = reportingAcceptedGymsSql(scope);
+  const tickActor = identifiedActor(sql`tick.user_id`, sql`tick.board_id`, scope.viewerId);
+  const tickClimb = sql`COALESCE(tick_alias.canonical_uuid, tick.climb_uuid)`;
+  const certifiedTime = certifiedTickTime;
+  return sql`
       SELECT 'tick'::text AS source, tick.id::text AS activity_id, tick.board_id,
         selected.physical_board_uuid, tick.board_type, ${tickClimb} AS climb_uuid,
         tick.angle, tick.is_mirror, ${tickActor} AS actor_id,
@@ -400,30 +426,149 @@ export function reportingActivitySql(scope: GymReportingScope, bounds: Reporting
       WHERE tick.board_id = selected.board_id AND tick.origin = 'native' AND tick.board_type = logical.board_type
         AND tick.reporting_attribution IN ('uuid', 'presence', 'session', 'edit')
         AND tick.reporting_board_id = tick.board_id AND tick.reporting_gym_id IN (${acceptedGyms})
-        AND tick.climbed_at < ${tickEnd}
+        ${tickEnd ? sql`AND tick.climbed_at < ${tickEnd}` : sql``}
         ${tickBegin ? sql`AND tick.climbed_at >= ${tickBegin}` : sql``}
-        ${boundActor(sql`tick.user_id`)}
+        ${actorFilter}
         AND ${contentVisibilityCondition('tick', sql`tick.uuid`, sql`tick.user_id`, scope.viewerId)}
         AND ${historicalClimbAllowed(sql`tick.board_type`, sql`logical.layout_id`, tickClimb, scope.viewerId)}
-        ${bounds.firstObservedOnly ? sql`AND ${certifiedTime} AND tick.reporting_time_precision = 'instant' ORDER BY tick.climbed_at LIMIT 1` : sql``}
+        ${tail}
+  `;
+}
+
+/**
+ * For C/P candidate actors only. Earlier instants and suitably old certified
+ * days can be proved from the source indexes without normalizing old calendars.
+ * Missing or mismatched occurrence evidence has no justified date cutoff.
+ */
+export function reportingEarlierActivitySql(
+  scope: GymReportingScope,
+  actor: SQL,
+  probe: { kind: 'definite'; cutoff: string } | { kind: 'unbounded' },
+): SQL {
+  const cutoffUtc = probe.kind === 'definite' ? sql`(${probe.cutoff}::timestamptz AT TIME ZONE 'UTC')` : undefined;
+  const tickActor = identifiedActor(sql`tick.user_id`, sql`tick.board_id`, scope.viewerId);
+  const tick = reportingTickSourceSql(scope, {
+    end: cutoffUtc,
+    actorFilter: sql`AND tick.user_id = ${actor} AND ${tickActor} IS NOT NULL`,
+    tail: cutoffUtc
+      ? sql`AND (${certifiedTickInstant} OR (${certifiedTickAuthorDay}
+        AND (tick.reporting_date + 1)::timestamp + ${authorOffsetEnvelope} <= ${cutoffUtc}))`
+      : sql`AND ${unboundedTickEvidence}`,
+  });
+  const displayActor = identifiedActor(sql`display.user_id`, sql`display.board_id`, scope.viewerId);
+  const display = cutoffUtc
+    ? reportingDisplaySourceSql(scope, {
+        end: cutoffUtc,
+        actorFilter: sql`AND display.user_id = ${actor} AND display.user_id IS NOT NULL
+      AND (display.reporting_board_id IS NOT NULL OR display.identity_policy_version > 0)
+      AND ${displayActor} IS NOT NULL`,
+        tail: sql``,
+      })
+    : undefined;
+  return sql`(
+    WITH scoped_boards(board_id, physical_board_uuid) AS (VALUES ${reportingScopedBoardsSql(scope)})
+    SELECT
+      ${display ? sql`EXISTS (SELECT 1 FROM scoped_boards selected CROSS JOIN LATERAL (${display}) earlier_display) OR` : sql``}
+      EXISTS (SELECT 1 FROM scoped_boards selected CROSS JOIN LATERAL (${tick}) earlier_tick)
+  )`;
+}
+
+/**
+ * Compact unbounded evidence for window coverage. Neither the nominal tick
+ * timestamp nor the report scan range excludes such a record from a window.
+ * No calendar projection runs here. Actor IDs remain in the aggregate SQL.
+ */
+export function reportingUnboundedTickEvidenceSql(scope: GymReportingScope): SQL {
+  const possibleTicks = reportingTickSourceSql(scope, {
+    actorFilter: sql``,
+    tail: sql`AND ${unboundedTickEvidence}`,
+  });
+  return sql`
+    WITH scoped_boards(board_id, physical_board_uuid) AS (VALUES ${reportingScopedBoardsSql(scope)})
+    SELECT eligible.actor_id, bool_or(eligible.status IN ('flash', 'send')) AS possible_send
+    FROM scoped_boards selected CROSS JOIN LATERAL (${possibleTicks}) eligible
+    WHERE eligible.actor_id IS NOT NULL OR eligible.status IN ('flash', 'send')
+    GROUP BY eligible.actor_id
+  `;
+}
+
+/** Shared, authorized physical scope. Caller aggregates the rows in SQL and returns no identity list. */
+export function reportingActivitySql(scope: GymReportingScope, bounds: ReportingActivityBounds): SQL {
+  const endUtc = sql`(${bounds.end}::timestamptz AT TIME ZONE 'UTC')`;
+  const beginUtc = bounds.start ? sql`(${bounds.start}::timestamptz AT TIME ZONE 'UTC')` : null;
+  const authorOverhang = sql`make_interval(hours => ${REPORTING_AUTHOR_OVERHANG_HOURS}::int)`;
+  const tickBegin = beginUtc && !bounds.firstObservedOnly ? sql`${beginUtc} - ${authorOverhang}` : beginUtc;
+  const tickEnd = bounds.firstObservedOnly ? endUtc : sql`${endUtc} + ${authorOverhang}`;
+  const boundActor = (column: SQL) =>
+    bounds.candidateActorIds ? sql`AND ${column} IN (${bounds.candidateActorIds})` : sql``;
+
+  const tickTimes = bounds.firstObservedOnly
+    ? sql`SELECT tick.*, NULL::timestamptz AS possible_start_at, NULL::timestamptz AS possible_end_at,
+        (tick.occurred_at AT TIME ZONE ${scope.timeZone})::date AS local_date, 'instant'::text AS precision
+        FROM candidate_ticks tick`
+    : reportingTickTimesSql(scope.timeZone);
+
+  return sql`
+    WITH scoped_boards(board_id, physical_board_uuid) AS (VALUES ${reportingScopedBoardsSql(scope)}),
+    precise_displays AS (
+      SELECT eligible.* FROM scoped_boards selected
+      CROSS JOIN LATERAL (
+      ${reportingDisplaySourceSql(scope, {
+        start: beginUtc,
+        end: endUtc,
+        actorFilter: boundActor(sql`display.user_id`),
+        tail: bounds.firstObservedOnly
+          ? sql`ORDER BY display.confirmed_at LIMIT 1`
+          : bounds.predecessorDaysOnly
+            ? sql`AND false`
+            : sql``,
+      })}
       ) eligible
     ),
-    timed_ticks AS (${tickTimes})
-    SELECT * FROM precise_displays
+    candidate_ticks AS ${bounds.firstObservedOnly ? sql`` : sql`MATERIALIZED`} (
+      SELECT eligible.* FROM scoped_boards selected
+      CROSS JOIN LATERAL (
+      ${reportingTickSourceSql(scope, {
+        start: tickBegin,
+        end: tickEnd,
+        actorFilter: boundActor(sql`tick.user_id`),
+        tail: bounds.firstObservedOnly
+          ? sql`AND ${certifiedTickTime} AND tick.reporting_time_precision = 'instant' ORDER BY tick.climbed_at LIMIT 1`
+          : bounds.predecessorDaysOnly
+            ? sql`AND ${certifiedTickAuthorDay}`
+            : sql``,
+      })}
+      ) eligible
+    ),
+    timed_ticks AS (${tickTimes}),
+    timed_evidence AS (
+      SELECT *,
+        CASE WHEN precision = 'unknown' THEN
+          CASE WHEN candidate_precision = 'day'
+            AND ${reportingAuthorDayContainsSavedTimeSql(sql`author_date`, sql`author_zone`, sql`stored_at`)}
+          THEN tstzrange(
+            ${timestampUtc(sql`author_date::timestamp`)} - ${authorOffsetEnvelope},
+            ${timestampUtc(sql`(author_date + 1)::timestamp`)} + ${authorOffsetEnvelope}, '[)'
+          ) END
+        END AS uncertainty_span
+      FROM timed_ticks
+    )
+    SELECT *, NULL::tstzrange AS uncertainty_span
+    FROM precise_displays
     UNION ALL
     SELECT source, activity_id, board_id, physical_board_uuid, board_type, climb_uuid, angle, is_mirror, actor_id,
-      occurred_at, possible_start_at, possible_end_at, local_date, precision, attribution, status, quality, difficulty
-    FROM timed_ticks
+      occurred_at, possible_start_at, possible_end_at, local_date, precision, attribution, status, quality, difficulty,
+      uncertainty_span
+    FROM timed_evidence
     WHERE (precision = 'instant' AND occurred_at < ${bounds.end}::timestamptz
       ${bounds.start ? sql`AND occurred_at >= ${bounds.start}::timestamptz` : sql``})
       OR (precision = 'day' AND possible_start_at < ${bounds.end}::timestamptz
         AND possible_end_at > possible_start_at
         ${bounds.start ? sql`AND possible_end_at > ${bounds.start}::timestamptz` : sql``})
       OR (precision = 'unknown' AND (
-        stored_at < ${endUtc}
-        OR (candidate_precision = 'day' AND author_date BETWEEN date '0001-01-01' AND date '9999-12-31'
-          AND author_date::timestamp < ${endUtc} + make_interval(hours => ${REPORTING_OFFSET_ENVELOPE_HOURS}::int)
-          ${beginUtc ? sql`AND (author_date + 1)::timestamp > ${beginUtc} - make_interval(hours => ${REPORTING_OFFSET_ENVELOPE_HOURS}::int)` : sql``})
+        (uncertainty_span IS NULL AND stored_at < ${endUtc})
+        OR (lower(uncertainty_span) < ${bounds.end}::timestamptz
+          ${bounds.start ? sql`AND upper(uncertainty_span) > ${bounds.start}::timestamptz` : sql``})
       ))
   `;
 }

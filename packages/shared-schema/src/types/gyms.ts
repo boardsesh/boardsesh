@@ -451,6 +451,46 @@ export type GymReportingCoverage = {
   isPartial: boolean;
 };
 
+export type GymReachCoverage = 'complete' | 'partial' | 'unavailable';
+
+export type GymReachCount = {
+  count: number;
+  coverage: GymReachCoverage;
+};
+
+export type GymReachWindow = {
+  climbers: GymReachCount;
+  firstRecorded: GymReachCount;
+  uncertainFirstRecorded: number;
+  sends: GymReachCount;
+  sendLoggers: number;
+  sessions: GymReachCount;
+};
+
+export type GymReachReturn = {
+  returning: number;
+  previousClimbers: number;
+  coverage: GymReachCoverage;
+};
+
+export type GymReachWeek = {
+  startDate: string;
+  endDate: string;
+  inProgress: boolean;
+  climbers: GymReachCount;
+  sends: GymReachCount;
+};
+
+export type GymReachOverview = {
+  observationStartedAt: string | null;
+  baselineStartAt: string;
+  current: GymReachWindow;
+  previous: GymReachWindow;
+  cameBack: GymReachReturn;
+  previousCameBack: GymReachReturn;
+  weeklyTrend: GymReachWeek[];
+};
+
 export type GymStats = {
   gymName: string;
   boardUuid: string | null;
@@ -460,6 +500,7 @@ export type GymStats = {
   timeZone: string;
   timeZoneConfigured: boolean;
   coverage: GymReportingCoverage;
+  reachOverview?: GymReachOverview | null;
   gymUuid: string;
   periodDays: number;
   current: GymStatsWindow;

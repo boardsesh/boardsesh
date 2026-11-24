@@ -4652,6 +4652,60 @@ export type GymOwnershipUserSummary = {
   userId: Scalars['ID']['output'];
 };
 
+export type GymReachCount = {
+  __typename?: 'GymReachCount';
+  /** Count of available eligible records or people. Consult coverage before displaying zero. */
+  count: Scalars['Int']['output'];
+  coverage: GymReachCoverage;
+};
+
+export type GymReachCoverage = 'complete' | 'partial' | 'unavailable';
+
+export type GymReachOverview = {
+  __typename?: 'GymReachOverview';
+  /** UTC start of the interval immediately before the previous period. */
+  baselineStartAt: Scalars['String']['output'];
+  cameBack: GymReachReturn;
+  current: GymReachWindow;
+  /** UTC start of the forward observation contract for every accepted gym. */
+  observationStartedAt?: Maybe<Scalars['String']['output']>;
+  previous: GymReachWindow;
+  previousCameBack: GymReachReturn;
+  /** Twelve gym-local Monday-start weeks, including the week in progress. */
+  weeklyTrend: Array<GymReachWeek>;
+};
+
+export type GymReachReturn = {
+  __typename?: 'GymReachReturn';
+  /** A return rate can be displayed only with complete coverage and a positive denominator. */
+  coverage: GymReachCoverage;
+  previousClimbers: Scalars['Int']['output'];
+  returning: Scalars['Int']['output'];
+};
+
+export type GymReachWeek = {
+  __typename?: 'GymReachWeek';
+  climbers: GymReachCount;
+  /** Gym-local Sunday date in YYYY-MM-DD format. */
+  endDate: Scalars['String']['output'];
+  inProgress: Scalars['Boolean']['output'];
+  sends: GymReachCount;
+  /** Gym-local Monday date in YYYY-MM-DD format. */
+  startDate: Scalars['String']['output'];
+};
+
+export type GymReachWindow = {
+  __typename?: 'GymReachWindow';
+  climbers: GymReachCount;
+  /** First recorded here in available eligible records. It may change when older history arrives. */
+  firstRecorded: GymReachCount;
+  sendLoggers: Scalars['Int']['output'];
+  sends: GymReachCount;
+  /** Distinct identified climber and gym-local date with a send. */
+  sessions: GymReachCount;
+  uncertainFirstRecorded: Scalars['Int']['output'];
+};
+
 /** Why a climber reported a gym listing. */
 export type GymReportReason = 'closed' | 'duplicate' | 'not_a_gym' | 'other' | 'wrong_details';
 
@@ -4721,6 +4775,7 @@ export type GymStats = {
   periodDays: Scalars['Int']['output'];
   /** Counts for the window immediately before the current one (same length). */
   previous: GymStatsWindow;
+  reachOverview?: Maybe<GymReachOverview>;
   timeZone: Scalars['String']['output'];
   timeZoneConfigured: Scalars['Boolean']['output'];
   /** Top 10 climbs by ascents in the current window. */
