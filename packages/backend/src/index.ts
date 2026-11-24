@@ -7,7 +7,7 @@ import * as Sentry from '@sentry/node';
 import { startServer } from './server';
 import { redisClientManager } from './redis/client';
 import { closePool, closeReadPool } from '@boardsesh/db/client';
-import { closeCredentialDatabase } from './auth/credential-database';
+import { closeCredentialDatabase, qualifyPasswordChangeEvidenceAtStartup } from './auth/credential-database';
 import { closeDatabasePools } from './shutdown-database-pools';
 import { closeAdmissionPool } from './auth/admission-pool';
 import { shutdownPosthog } from './services/analytics/posthog';
@@ -46,6 +46,8 @@ async function main() {
   assertWebSessionWriterActivationConfiguration();
   assertBrowserSessionModeConfiguration();
   assertAccountGuessLimitConfiguration();
+  // Capture cannot begin before its new schema and exact LOGIN grants qualify.
+  await qualifyPasswordChangeEvidenceAtStartup();
   // Off (the default) runs no query. On qualifies against the database and
   // otherwise throws one fixed code and the process exits; after an authority
   // switch it boots inert instead (docs/auth/better-auth-identity-mirror.md).

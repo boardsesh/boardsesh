@@ -1,3 +1,4 @@
+import { passwordChangeEvidenceEnabled, readPasswordEvidenceAccounts } from './password-change-evidence';
 import { createHash, createHmac } from 'node:crypto';
 import { and, eq, gt, inArray, lt, lte, or, sql } from 'drizzle-orm';
 import type { DbInstance } from '@boardsesh/db/client';
@@ -381,7 +382,7 @@ export async function reservePasswordGuess(
 /** An account a typed email may sign in to, and when its password last changed. */
 export interface PasswordGuessAccount {
   readonly userId: string;
-  /** Null for an account with no password. */
+  /** Null when no trusted password-change evidence is available. */
   readonly passwordChangedAt: Date | null;
 }
 
@@ -401,16 +402,19 @@ export async function readPasswordGuessAccounts(
 ): Promise<readonly PasswordGuessAccount[] | 'unavailable'> {
   const normalizedEmail = normalizeAccountEmail(email);
   try {
+    const useEvidence = passwordChangeEvidenceEnabled();
     const outcome = await runWithDeadline(
       store,
       options.deadlineMs ?? PASSWORD_GUESS_DEADLINE_MS,
       (transaction) =>
-        transaction
-          .select({ userId: users.id, passwordChangedAt: userCredentials.updatedAt })
-          .from(users)
-          .leftJoin(userCredentials, eq(userCredentials.userId, users.id))
-          .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
-          .limit(MAX_ACCOUNTS_PER_EMAIL),
+        useEvidence
+          ? readPasswordEvidenceAccounts(transaction, normalizedEmail, MAX_ACCOUNTS_PER_EMAIL)
+          : transaction
+              .select({ userId: users.id, passwordChangedAt: userCredentials.updatedAt })
+              .from(users)
+              .leftJoin(userCredentials, eq(userCredentials.userId, users.id))
+              .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
+              .limit(MAX_ACCOUNTS_PER_EMAIL),
       () => {},
     );
     if (outcome.kind === 'late') {

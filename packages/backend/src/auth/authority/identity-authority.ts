@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { recordPasswordChangeEvidence } from '../password-change-evidence';
 import { accounts, authAccount, authSubjectCutoffs, userCredentials, users } from '@boardsesh/db/schema';
 import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import { createAuthorityAdapter, type AuthorityTransaction } from './adapter';
@@ -267,6 +268,7 @@ export function bindIdentityAuthority(
           },
         });
       else await transaction.insert(userCredentials).values({ userId, passwordHash });
+      await recordPasswordChangeEvidence(transaction, userId, passwordHash);
     },
     async replacePassword(expected, passwordHash) {
       const prepared = { ...expected };
@@ -283,6 +285,7 @@ export function bindIdentityAuthority(
           ],
           update: { password: passwordHash },
         });
+        if (changed) await recordPasswordChangeEvidence(transaction, prepared.userId, passwordHash);
         return Boolean(changed);
       }
       const changed = await transaction
@@ -292,6 +295,7 @@ export function bindIdentityAuthority(
           and(eq(userCredentials.userId, prepared.userId), eq(userCredentials.passwordHash, prepared.passwordHash)),
         )
         .returning({ userId: userCredentials.userId });
+      if (changed.length === 1) await recordPasswordChangeEvidence(transaction, prepared.userId, passwordHash);
       return changed.length === 1;
     },
     async insertProvider(identity, generation) {

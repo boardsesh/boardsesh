@@ -176,6 +176,8 @@ contracts and their remaining delivery/ingress gates.
 
 ## Passwords and provider links
 
+[Dedicated password-change evidence](better-auth-password-change-evidence.md) records only real captured writes; historical/imported age stays unknown. Its rollout remains default-off, all enforcement gates remain open, and partner consumers retain their current contract.
+
 Import bcrypt hashes using a tested custom verifier; Better Auth's default
 password hashing is scrypt. Preserve password bytes exactly. Do not rehash
 stored hashes, require password resets, or alter Unicode handling as an incidental
