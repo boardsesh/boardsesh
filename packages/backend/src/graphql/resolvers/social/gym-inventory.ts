@@ -100,7 +100,7 @@ export function sprayInventoryClimbCondition(layoutId: number): SQL {
 }
 
 /** The picker uses the same version ownership/status check, but allows some owner exemptions. */
-function currentSprayWallJoin(): SQL {
+export function currentSprayWallJoin(): SQL {
   return sql`
     LEFT JOIN spray_walls spray_wall ON spray_wall.board_uuid = user_boards.uuid
       AND spray_wall.layout_id = user_boards.layout_id AND spray_wall.deleted_at IS NULL
@@ -110,7 +110,7 @@ function currentSprayWallJoin(): SQL {
   `;
 }
 
-function sprayOnlyMeCondition(): SQL {
+export function sprayOnlyMeCondition(): SQL {
   return sql`EXISTS (SELECT 1 FROM resource_privacy inventory_policy
     WHERE inventory_policy.kind = 'board' AND inventory_policy.resource_id = user_boards.uuid
       AND inventory_policy.audience = 'only_me')`;
@@ -119,6 +119,7 @@ function sprayOnlyMeCondition(): SQL {
 export async function readInventoryBoards(
   tx: GymReportingTransaction,
   scope: GymReportingScope,
+  includeCollections = true,
 ): Promise<InventoryBoard[]> {
   if (scope.boardIds.length === 0) return [];
   const rows = rowsFromResult<InventoryBoardRow>(
@@ -128,16 +129,26 @@ export async function readInventoryBoards(
       user_boards.set_ids AS "setIds", user_boards.angle::int AS angle,
       user_boards.is_angle_adjustable AS "isAngleAdjustable",
       spray_wall.id::double precision AS "wallId", spray_version.id::double precision AS "versionId",
-      ${sprayOnlyMeCondition()} AS "onlyMe", selected.board_id IS NOT NULL AS selected,
-      CASE WHEN playlists.id IS NULL THEN NULL ELSE json_build_object(
+      ${sprayOnlyMeCondition()} AS "onlyMe", ${includeCollections ? sql`selected.board_id IS NOT NULL` : sql`false`} AS selected,
+      ${
+        includeCollections
+          ? sql`CASE WHEN playlists.id IS NULL THEN NULL ELSE json_build_object(
         'id', playlists.id::text, 'uuid', playlists.uuid, 'name', playlists.name,
         'boardType', playlists.board_type, 'layoutId', playlists.layout_id
-      ) END AS collection
+      ) END`
+          : sql`NULL::json`
+      } AS collection
     FROM user_boards
     ${currentSprayWallJoin()}
-    LEFT JOIN gym_board_grade_collections selected ON selected.board_id = user_boards.id
-      AND user_boards.board_type <> 'spray'
-    LEFT JOIN playlists ON playlists.id = selected.playlist_id AND ${playlistVisibilityCondition(scope.viewerId)}
+    ${
+      includeCollections
+        ? sql`
+      LEFT JOIN gym_board_grade_collections selected ON selected.board_id = user_boards.id
+        AND user_boards.board_type <> 'spray'
+      LEFT JOIN playlists ON playlists.id = selected.playlist_id AND ${playlistVisibilityCondition(scope.viewerId)}
+    `
+        : sql``
+    }
     WHERE user_boards.id IN (${sql.join(
       scope.boardIds.map((id) => sql`${id}`),
       sql`, `,

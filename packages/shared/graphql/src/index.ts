@@ -5,3 +5,4 @@ export * from './gym-busy-times';
 export * from './gym-reporting-overview';
 export * from './gym-grade-comparison';
 export * from './gym-angle-usage';
+export * from './gym-climb-ranking-format';

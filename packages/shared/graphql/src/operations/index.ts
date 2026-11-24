@@ -45,3 +45,4 @@ export * from './partner-webhooks';
 export * from './cnc-packs';
 export * from './offline-write-delivery';
 export * from './directory-reports';
+export * from './gym-climb-rankings';

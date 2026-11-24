@@ -17,7 +17,28 @@ export type BoardConfig = {
   angle: number;
 };
 
+export type PlayDrawerPreviewAuthorization = {
+  isCurrent: () => boolean;
+  subscribe: (listener: () => void) => () => void;
+};
+
+export type RankedSprayArt = {
+  uri: string;
+  width: number;
+  height: number;
+  holds: { id: number; cx: number; cy: number; r: number; outline?: number[]; color: string }[];
+};
+
+export type RankedClimbPreview = {
+  authorization: PlayDrawerPreviewAuthorization;
+  boardConfig: BoardConfig;
+  referenceDifficulty: number | null;
+  sprayArt?: RankedSprayArt;
+};
+
 export type PlayDrawerOpenOptions = {
+  /** A staff-only, read-only preview. Its board never becomes a player override. */
+  rankedPreview?: RankedClimbPreview;
   /** Already displayed art for this exact target; never changes queue semantics. */
   readyBoardArt?: ReadyBoardArtSnapshot;
   /**

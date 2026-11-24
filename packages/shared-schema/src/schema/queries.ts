@@ -852,6 +852,8 @@ export const queriesTypeDefs = /* GraphQL */ `
     gymStats(input: GymStatsInput!): GymStats!
     "Compare current inventory and attributable sends. Requires live gym staff access."
     gymGradeComparison(input: GymStatsInput!): GymGradeComparison!
+    gymClimbRankings(input: GymClimbRankingInput!): GymClimbRankings!
+    gymClimbRankingTarget(input: GymClimbRankingTargetInput!): GymClimbRankingTarget!
     gymGradeCollectionOptions(input: GymGradeCollectionOptionsInput!): GymGradeCollectionPage!
 
     """

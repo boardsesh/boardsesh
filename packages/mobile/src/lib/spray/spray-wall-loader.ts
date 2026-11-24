@@ -13,6 +13,7 @@
 // uuid never changes, while its render payload carries presigned photo URLs that
 // expire in fifteen minutes and holds that change with every published version.
 
+import { retireGymClimbRankings } from '../privacy/privacy-cache';
 import { getConnectivitySnapshot, subscribeConnectivity } from '../connectivity/connectivity-store';
 import { isNetworkError } from '@boardsesh/offline-sync/error-classification';
 import type { QueryClient } from '@tanstack/react-query';
@@ -966,6 +967,7 @@ export async function invalidateSprayWallRenderData(
   wallUuid: string,
   layoutId: number,
 ): Promise<void> {
+  void retireGymClimbRankings(queryClient);
   const generation = sprayPrivacyGeneration(layoutId);
   const loaderEpoch = sprayWallLoaderGeneration();
   await queryClient.invalidateQueries({ queryKey: sprayWallRenderDataQueryKey(wallUuid) });

@@ -18,7 +18,7 @@ import {
   type GymTrendMetric,
   type GymTrendSelection,
 } from '@boardsesh/graphql';
-import type { GymStats, GymStatsPeriod } from '@boardsesh/shared-schema';
+import type { GymClimbRankingMode, GymStats, GymStatsPeriod } from '@boardsesh/shared-schema';
 import { useAuth } from '../../src/providers/auth-provider';
 import { useTheme } from '../../src/providers/theme-provider';
 import { useStoredUserId } from '../../src/hooks/use-current-user-id';
@@ -42,6 +42,11 @@ import {
   GymAngleUsageListItem,
   type GymAngleUsageListRow,
 } from '../../src/components/gym-directory/GymAngleUsage';
+import {
+  GymClimbRankingListItem,
+  useGymClimbRankingRows,
+  type GymClimbRankingListRow,
+} from '../../src/components/gym-directory/GymClimbRankings';
 import { GymBusyTimesCard } from '../../src/components/gym-directory/GymBusyTimesCard';
 import { spacing } from '../../src/theme/tokens';
 
@@ -138,10 +143,14 @@ type ReportingFilters = {
   period: GymStatsPeriod;
   setPeriod: (period: GymStatsPeriod) => void;
   trend: GymTrendSelection;
+  mode: GymClimbRankingMode;
+  setMode: (mode: GymClimbRankingMode) => void;
 };
 
-const angleUsageRowKey = (row: GymAngleUsageListRow) => row.key;
-const angleUsageRowKind = (row: GymAngleUsageListRow) => row.kind;
+export type GymAnalyticsListRow = GymAngleUsageListRow | GymClimbRankingListRow;
+
+const analyticsRowKey = (row: GymAnalyticsListRow) => row.key;
+const analyticsRowKind = (row: GymAnalyticsListRow) => row.kind;
 
 function GymAnalyticsReport({
   viewerId,
@@ -151,6 +160,8 @@ function GymAnalyticsReport({
   period,
   setPeriod,
   trend,
+  mode,
+  setMode,
 }: ReportingScope & ReportingFilters) {
   const { t, i18n } = useTranslation('boards');
   const queryClient = useQueryClient();
@@ -162,9 +173,31 @@ function GymAnalyticsReport({
   const toggleAngle = useCallback((key: string) => {
     setExpandedAngle((expanded) => (expanded === key ? null : key));
   }, []);
-  const renderAngleUsageRow = useCallback<ListRenderItem<GymAngleUsageListRow>>(
-    ({ item }) => <GymAngleUsageListItem row={item} expanded={expandedAngle === item.key} onToggle={toggleAngle} />,
-    [expandedAngle, toggleAngle],
+  const { rows: rankingRows, openRow } = useGymClimbRankingRows({
+    viewerId,
+    gymUuid: stats?.gymUuid ?? gymUuid,
+    overviewGymUuid: gymUuid,
+    boardUuid,
+    period,
+    mode,
+    chooseMode: setMode,
+    active: query.state === 'ready',
+  });
+  const listRows: GymAnalyticsListRow[] = [...angleUsageRows, ...rankingRows];
+  const renderAnalyticsRow = useCallback<ListRenderItem<GymAnalyticsListRow>>(
+    ({ item }) => {
+      switch (item.kind) {
+        case 'ranked-climb':
+        case 'ranking-controls':
+        case 'ranking-paging':
+          return <GymClimbRankingListItem item={item} onOpen={openRow} />;
+        case 'board':
+        case 'angle':
+        case 'unknown':
+          return <GymAngleUsageListItem row={item} expanded={expandedAngle === item.key} onToggle={toggleAngle} />;
+      }
+    },
+    [expandedAngle, openRow, toggleAngle],
   );
   const selectedBoard = stats?.boards.find((board) => board.uuid === stats.boardUuid);
   const scopeOptions = [{ uuid: null, name: t('gymReporting.allBoards') }, ...(stats?.boards ?? [])];
@@ -298,10 +331,10 @@ function GymAnalyticsReport({
 
   return (
     <FlashList
-      data={angleUsageRows}
-      renderItem={renderAngleUsageRow}
-      keyExtractor={angleUsageRowKey}
-      getItemType={angleUsageRowKind}
+      data={listRows}
+      renderItem={renderAnalyticsRow}
+      keyExtractor={analyticsRowKey}
+      getItemType={analyticsRowKind}
       keyboardShouldPersistTaps="handled"
       contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={styles.content}
@@ -316,6 +349,7 @@ function GymAnalyticsViewer({ viewerId, gymUuid }: ReportingScope) {
   const [boardUuid, setBoardUuid] = useState<string | null>(null);
   const [week, setWeek] = useState<string | null>(null);
   const [metric, setMetric] = useState<GymTrendMetric>('climbers');
+  const [mode, setMode] = useState<GymClimbRankingMode>('MOST_SENT');
   const chooseBoard = (next: string | null) => {
     if (next !== boardUuid) setWeek(null);
     setBoardUuid(next);
@@ -332,6 +366,8 @@ function GymAnalyticsViewer({ viewerId, gymUuid }: ReportingScope) {
       trend={{ metric, setMetric, week, setWeek }}
       period={period}
       setPeriod={setPeriod}
+      mode={mode}
+      setMode={setMode}
     />
   );
 }

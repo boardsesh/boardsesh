@@ -1,5 +1,6 @@
 import { setContentPrivacy } from '../../../services/privacy';
 import { eq, and, isNull, count, sql } from 'drizzle-orm';
+import { GraphQLError } from 'graphql';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import type { ConnectionContext, SocialEntityType, ReleaseContext } from '@boardsesh/shared-schema';
 import { executeRows } from '@boardsesh/db/client';
@@ -22,6 +23,11 @@ import { lockReferencedClimb } from '../climbs/spray-climb-lock';
 import { publishSocialEvent } from '../../../events/index';
 import { pubsub } from '../../../pubsub/index';
 import crypto from 'crypto';
+import {
+  readTickCommentAttribution,
+  inheritsTickCommentAttribution,
+  insertTickCommentAttribution,
+} from './gym-comment-attribution';
 import { canReadSocialEntity, socialEntityPrivacyCondition, commentPrivacyCondition } from '../shared/activity-privacy';
 
 type CommentRow = {
@@ -540,56 +546,74 @@ export const socialCommentMutations = {
     await validateEntityExists(entityType, entityId, userId);
     if (!(await canReadSocialEntity(entityType, entityId, userId))) throw new Error('Content not available');
 
-    let parentCommentId: number | null = null;
-    if (parentCommentUuid) {
-      const [parent] = await db
-        .select({
-          id: dbSchema.comments.id,
-          entityType: dbSchema.comments.entityType,
-          entityId: dbSchema.comments.entityId,
-          deletedAt: dbSchema.comments.deletedAt,
-        })
-        .from(dbSchema.comments)
-        .where(
-          and(
-            eq(dbSchema.comments.uuid, parentCommentUuid),
-            commentPrivacyCondition(ctx?.userId, dbSchema.comments, { entityType, entityId }),
-          ),
-        )
-        .limit(1);
+    const commentResult = await db
+      .transaction(async (tx) => {
+        // The tick lock precedes the reply lock, matching the tick delete sweep.
+        const attribution = entityType === 'tick' ? await readTickCommentAttribution(tx, entityId, userId) : null;
+        if (entityType === 'climb') await lockReferencedClimb(tx, entityId);
+        let parentCommentId: number | null = null;
+        if (parentCommentUuid) {
+          const [parent] = await tx
+            .select({
+              id: dbSchema.comments.id,
+              entityType: dbSchema.comments.entityType,
+              entityId: dbSchema.comments.entityId,
+              deletedAt: dbSchema.comments.deletedAt,
+            })
+            .from(dbSchema.comments)
+            .where(
+              and(
+                eq(dbSchema.comments.uuid, parentCommentUuid),
+                commentPrivacyCondition(userId, dbSchema.comments, { entityType, entityId }),
+              ),
+            )
+            .limit(1)
+            .for('update');
+          if (!parent) throw new Error('Parent comment not found');
+          if (parent.deletedAt) throw new Error('Cannot reply to a deleted comment');
+          if (parent.entityType !== entityType || parent.entityId !== entityId) {
+            throw new Error('Parent comment belongs to a different entity');
+          }
+          parentCommentId = parent.id;
+        }
 
-      if (!parent) {
-        throw new Error('Parent comment not found');
-      }
-      if (parent.deletedAt) {
-        throw new Error('Cannot reply to a deleted comment');
-      }
-      if (parent.entityType !== entityType || parent.entityId !== entityId) {
-        throw new Error('Parent comment belongs to a different entity');
-      }
-      parentCommentId = parent.id;
-    }
-
-    const commentParams = { userId, entityType, entityId, body, parentCommentId, parentCommentUuid };
-    // The existence check above runs outside any transaction, and a spray climb
-    // can be hard-deleted by its setter (`deleteClimb`, #5960). Holding the climb
-    // until the insert commits stops a comment landing after the delete's sweep,
-    // where it would be orphaned and could notify about a climb that is gone.
-    const commentResult = await db.transaction(async (tx) => {
-      if (entityType === 'climb') await lockReferencedClimb(tx, entityId);
-      const inserted = await insertComment({ ...commentParams, executor: tx });
-      if (validated.privacy) {
-        await setContentPrivacy(
-          tx,
+        const inserted = await insertComment({
           userId,
-          'comment',
-          inserted.uuid,
-          validated.privacy.audience,
-          validated.privacy.privacyRevision,
-        );
-      }
-      return inserted;
-    });
+          entityType,
+          entityId,
+          body,
+          parentCommentId,
+          parentCommentUuid,
+          executor: tx,
+        });
+        if (
+          attribution &&
+          (parentCommentId === null || (await inheritsTickCommentAttribution(tx, parentCommentId, attribution)))
+        ) {
+          await insertTickCommentAttribution(tx, inserted.uuid, attribution);
+        }
+        if (validated.privacy) {
+          await setContentPrivacy(
+            tx,
+            userId,
+            'comment',
+            inserted.uuid,
+            validated.privacy.audience,
+            validated.privacy.privacyRevision,
+          );
+        }
+        return inserted;
+      })
+      .catch((failure: unknown) => {
+        const databaseError = failure as { code?: string; cause?: { code?: string } } | null;
+        const code = databaseError?.cause?.code ?? databaseError?.code;
+        if (code === '55P03' || code === '57014') {
+          throw new GraphQLError('Could not save the comment. Please try again.', {
+            extensions: { code: 'TEMPORARILY_UNAVAILABLE' },
+          });
+        }
+        throw failure;
+      });
 
     // Live comment update via PubSub (synchronous for real-time)
     publishCommentAddedLive(entityType, entityId, commentResult);
@@ -751,8 +775,15 @@ export const socialCommentMutations = {
       return true; // Already deleted
     }
 
-    // Use transaction to prevent race condition between reply check and delete
-    await db.transaction(async (tx) => {
+    // A new reply holds this same lock before it writes.
+    const deleted = await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ deletedAt: dbSchema.comments.deletedAt })
+        .from(dbSchema.comments)
+        .where(eq(dbSchema.comments.id, comment.id))
+        .limit(1)
+        .for('update');
+      if (!locked || locked.deletedAt) return false;
       const replyResult = await tx
         .select({ count: count() })
         .from(dbSchema.comments)
@@ -770,7 +801,9 @@ export const socialCommentMutations = {
         // Hard delete
         await tx.delete(dbSchema.comments).where(eq(dbSchema.comments.uuid, commentUuid));
       }
+      return true;
     });
+    if (!deleted) return true;
 
     // Live comment update via PubSub (synchronous, no notification needed)
     const entityKey = `${comment.entityType}:${comment.entityId}`;

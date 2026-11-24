@@ -1,4 +1,10 @@
 import type { QueryClient } from '@tanstack/react-query';
+import {
+  GYM_CLIMB_RANKINGS_QUERY_SEGMENT,
+  GYM_REPORTING_QUERY_ROOT,
+  retireGymReportingReceipt,
+  retireGymReportingReceiptsForGym,
+} from '@boardsesh/graphql';
 
 // The app does not listen to the backend's `privacyChanged` event (#6406 tracks
 // retiring it server-side). Every read is authorized by the server when it is
@@ -41,6 +47,7 @@ const OWN_CHANGE_UNAFFECTED_QUERY_ROOTS = new Set([
  * on screen refetch and the rest refetch when they are next shown.
  */
 export function refreshAfterOwnPrivacyChange(queryClient: QueryClient): Promise<void> {
+  void retireGymClimbRankings(queryClient);
   return queryClient.invalidateQueries({
     predicate: (query) => !OWN_CHANGE_UNAFFECTED_QUERY_ROOTS.has(String(query.queryKey[0])),
   });
@@ -66,4 +73,31 @@ export function subscribeToCredentialChanges(listener: () => void): () => void {
 export function invalidateCredentialSnapshots(): void {
   credentialGeneration += 1;
   for (const listener of credentialListeners) listener();
+}
+
+let gymRankingRetirementGeneration = 0;
+const gymRankingRetirementListeners = new Set<() => void>();
+
+export const getGymRankingRetirementGeneration = () => gymRankingRetirementGeneration;
+
+export function subscribeToGymRankingRetirements(listener: () => void) {
+  gymRankingRetirementListeners.add(listener);
+  return () => {
+    gymRankingRetirementListeners.delete(listener);
+  };
+}
+
+/** A write can retire the rank and its independent player receipt simultaneously. */
+export function retireGymClimbRankings(queryClient: QueryClient, detachedGymUuid?: string): Promise<unknown> {
+  gymRankingRetirementGeneration += 1;
+  for (const listener of gymRankingRetirementListeners) listener();
+  if (detachedGymUuid !== undefined) {
+    return retireGymReportingReceiptsForGym(queryClient, detachedGymUuid);
+  }
+  const queries = queryClient.getQueryCache().findAll({ queryKey: [GYM_REPORTING_QUERY_ROOT] });
+  return Promise.all(
+    queries
+      .filter(({ queryKey }) => queryKey[3] === GYM_CLIMB_RANKINGS_QUERY_SEGMENT)
+      .map(({ queryKey }) => retireGymReportingReceipt(queryClient, { queryKey, exact: true })),
+  );
 }

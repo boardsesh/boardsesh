@@ -79,7 +79,7 @@ function fakeQueryClient(): Parameters<typeof loadSprayWall>[0] {
   return {
     fetchQuery: ({ queryFn }: { queryFn: () => Promise<unknown> }) => queryFn(),
     invalidateQueries: invalidateQueriesMock,
-    getQueryCache: () => ({ getAll: () => [] }),
+    getQueryCache: () => ({ getAll: () => [], findAll: () => [] }),
     removeQueries: () => {},
   } as unknown as Parameters<typeof loadSprayWall>[0];
 }

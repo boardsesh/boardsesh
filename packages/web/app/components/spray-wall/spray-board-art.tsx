@@ -15,6 +15,7 @@ type SprayBoardArtProps = {
    * everywhere but the holds and is meant to sit on the Aura field colour.
    */
   fieldColor?: string | null;
+  referrerPolicy?: React.HTMLAttributeReferrerPolicy;
 };
 
 /**
@@ -38,6 +39,7 @@ export default function SprayBoardArt({
   frameHeight,
   marks,
   fieldColor,
+  referrerPolicy,
 }: SprayBoardArtProps) {
   return (
     <Box
@@ -58,6 +60,7 @@ export default function SprayBoardArt({
         component="img"
         src={imageUrl}
         alt={photoAlt}
+        referrerPolicy={referrerPolicy}
         width={frameWidth}
         height={frameHeight}
         sx={{

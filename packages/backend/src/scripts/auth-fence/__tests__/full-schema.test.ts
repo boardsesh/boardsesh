@@ -123,6 +123,36 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
       await owner.unsafe(`${tables}
 ${triggers}`);
     }
+    const [tickTimeBinding] = await owner<{ present: boolean }[]>`SELECT EXISTS (
+      SELECT 1 FROM pg_catalog.pg_attribute WHERE attrelid = 'public.boardsesh_ticks'::regclass
+        AND attname = 'reporting_climbed_at' AND NOT attisdropped) AS present`;
+    if (!tickTimeBinding.present) {
+      await owner.unsafe(
+        readFileSync(
+          new URL('../../../../../db/drizzle/0339_gym_reporting_tick_time_binding.sql', import.meta.url),
+          'utf8',
+        ),
+      );
+    }
+    const [rankings] = await owner<{ present: boolean }[]>`SELECT
+      to_regclass('public.gym_reporting_tick_votes') IS NOT NULL
+      OR to_regclass('public.gym_climb_comment_attributions') IS NOT NULL
+      OR EXISTS (SELECT 1 FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname = 'invalidate_gym_tick_votes')
+      OR EXISTS (SELECT 1 FROM pg_trigger trigger_row JOIN pg_class relation ON relation.oid = trigger_row.tgrelid
+        WHERE relation.relnamespace = 'public'::regnamespace AND trigger_row.tgname = 'trg_invalidate_gym_tick_votes')
+      AS present`;
+    if (!rankings.present) {
+      const tables = readFileSync(
+        new URL('../../../../../db/drizzle/0345_gym_climb_rankings.sql', import.meta.url),
+        'utf8',
+      );
+      const trigger = readFileSync(
+        new URL('../../../../../db/drizzle/0346_gym_tick_vote_invalidation.sql', import.meta.url),
+        'utf8',
+      );
+      await owner.unsafe(`${tables}
+${trigger}`);
+    }
     // A partial fixture is left intact so verifyFence rejects it.
     const plan = await runAuthFence(['plan', '--confirm-host', address.hostname], environment);
     if (plan.mode !== 'plan') throw new Error('PLAN_EXPECTED');
@@ -322,6 +352,61 @@ ${triggers}`);
         if (!(error instanceof Error) || error.message !== 'ROLLBACK_FIXTURE') throw error;
       });
     await expect(verifyFence(owner)).resolves.toMatchObject({ verified: true });
+  });
+
+  it('fences native vote evidence and pins its invalidation closure', async () => {
+    await expect(verifyFence(owner)).resolves.toMatchObject({ verified: true });
+    const userId = randomUUID();
+    const tickUuid = randomUUID();
+    await owner`INSERT INTO public.users (id, email) VALUES (${userId}, ${userId + '@example.invalid'})`;
+    const [tick] = await owner<{ id: string }[]>`
+      INSERT INTO public.boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status, climbed_at, quality)
+      VALUES (${tickUuid}, ${userId}, 'kilter', ${randomUUID()}, 40, 'send', now(), 4) RETURNING id
+    `;
+    await owner`INSERT INTO public.gym_reporting_tick_votes (tick_id, metric, attested_value)
+      VALUES (${tick.id}, 'QUALITY', 4)`;
+    await expect(webStatement('SELECT * FROM public.gym_reporting_tick_votes')).rejects.toMatchObject({
+      code: '42501',
+    });
+    await expect(webStatement('SELECT * FROM public.gym_climb_comment_attributions')).rejects.toMatchObject({
+      code: '42501',
+    });
+    await web`UPDATE public.boardsesh_ticks SET quality = 2 WHERE uuid = ${tickUuid}`;
+    expect(await owner`SELECT tick_id FROM public.gym_reporting_tick_votes WHERE tick_id = ${tick.id}`).toEqual([]);
+    for (const [change, failure] of [
+      ['GRANT INSERT ON public.gym_reporting_tick_votes TO boardsesh_web', 'UNREVIEWED_GYM_INVENTORY_PRIVILEGE'],
+      ['GRANT SELECT ON public.gym_climb_comment_attributions TO boardsesh_web', 'UNREVIEWED_GYM_INVENTORY_PRIVILEGE'],
+      [
+        'ALTER TABLE public.boardsesh_ticks DISABLE TRIGGER trg_invalidate_gym_tick_votes',
+        'UNREVIEWED_GYM_VOTE_CLOSURE',
+      ],
+      [
+        `CREATE FUNCTION public.review_vote_compare(bigint, bigint) RETURNS integer
+        LANGUAGE sql IMMUTABLE SET search_path = pg_catalog
+        AS $$ SELECT pg_catalog.btint8cmp($1, $2) $$;
+        CREATE OPERATOR CLASS public.review_vote_btree FOR TYPE bigint USING btree AS
+          OPERATOR 1 pg_catalog.< (bigint,bigint), OPERATOR 2 pg_catalog.<= (bigint,bigint),
+          OPERATOR 3 pg_catalog.= (bigint,bigint), OPERATOR 4 pg_catalog.>= (bigint,bigint),
+          OPERATOR 5 pg_catalog.> (bigint,bigint), FUNCTION 1 public.review_vote_compare(bigint,bigint);
+        CREATE INDEX review_vote_idx ON public.gym_reporting_tick_votes (tick_id public.review_vote_btree)`,
+        'UNREVIEWED_GYM_VOTE_CLOSURE',
+      ],
+      [
+        `CREATE FUNCTION public.vote_sink_unsafe() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog
+        AS $$ BEGIN RETURN OLD; END $$;
+        CREATE TRIGGER vote_sink_unsafe BEFORE DELETE ON public.gym_reporting_tick_votes
+          FOR EACH ROW EXECUTE FUNCTION public.vote_sink_unsafe()`,
+        'UNREVIEWED_GYM_VOTE_CLOSURE',
+      ],
+    ]) {
+      await expect(
+        owner.begin(async (transaction) => {
+          await transaction.unsafe(change);
+          await expect(verifyFence(transaction)).rejects.toThrow(failure);
+          throw new Error('rollback injected change');
+        }),
+      ).rejects.toThrow('rollback injected change');
+    }
   });
 
   it('lets restricted web source writers invalidate spray exposure without direct access to its tables, sequence or routines', async () => {
@@ -677,6 +762,7 @@ ${triggers}`);
             'public.spray_exposure_version_change()',
             'public.spray_exposure_policy_change()',
             'public.spray_exposure_climb_change()',
+            'public.invalidate_gym_tick_votes()',
           ]) {
             await transaction.unsafe(`ALTER FUNCTION ${signature} OWNER TO ${quoteIdentifier(ddlOwner)}`);
           }

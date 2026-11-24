@@ -85,6 +85,8 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
   const [status, setStatus] = useState<TickStatus>('send');
   const [difficulty, setDifficulty] = useState<number | null>(null);
   const [quality, setQuality] = useState<number | undefined>(undefined);
+  const [qualityTouched, setQualityTouched] = useState(false);
+  const [difficultyTouched, setDifficultyTouched] = useState(false);
   const [attemptCount, setAttemptCount] = useState(1);
   const [climbedAt, setClimbedAt] = useState(() => new Date());
   const [hasClimbedAtChanged, setHasClimbedAtChanged] = useState(false);
@@ -109,6 +111,8 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
     setStatus(ascent.status);
     setDifficulty(ascent.difficulty);
     setQuality(ascent.quality ?? undefined);
+    setQualityTouched(false);
+    setDifficultyTouched(false);
     setAttemptCount(Math.max(1, ascent.attemptCount));
     setClimbedAt(toEditableDate(ascent.climbedAt));
     setHasClimbedAtChanged(false);
@@ -150,6 +154,12 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
 
   const handleGradeSelect = useCallback((difficultyId: number | undefined) => {
     setDifficulty(difficultyId ?? null);
+    setDifficultyTouched(true);
+  }, []);
+
+  const handleQualitySelect = useCallback((rating: number | undefined) => {
+    setQuality(rating);
+    setQualityTouched(true);
   }, []);
 
   const handleClose = useCallback(() => {
@@ -170,12 +180,18 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
     const finalAttemptCount = status === 'flash' ? 1 : attemptCount;
     const input: UpdateTickInput = {
       status,
-      difficulty,
-      quality: quality ?? null,
       attemptCount: finalAttemptCount,
       comment,
       angle,
     };
+    if (difficultyTouched) {
+      input.difficulty = difficulty;
+      input.reportingVoteFields = ['DIFFICULTY'];
+    }
+    if (qualityTouched) {
+      input.quality = quality ?? null;
+      input.reportingVoteFields = [...(input.reportingVoteFields ?? []), 'QUALITY'];
+    }
     if (selectedBoard !== undefined) input.boardUuid = selectedBoard?.uuid ?? null;
     if (hasClimbedAtChanged) {
       const selectedDate = clampToNow(climbedAt);
@@ -206,9 +222,11 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
     climbedAt,
     comment,
     difficulty,
+    difficultyTouched,
     hasClimbedAtChanged,
     isMutating,
     quality,
+    qualityTouched,
     selectedBoard,
     sheetRef,
     status,
@@ -358,7 +376,7 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
           ) : null}
 
           <TickFormRow label={tTick('mobile.tick.starsLabel')}>
-            <StarRating value={quality} onChange={setQuality} size={STAR_GLYPH_SIZE} />
+            <StarRating value={quality} onChange={handleQualitySelect} size={STAR_GLYPH_SIZE} />
           </TickFormRow>
 
           {/* Flash means one try. The row stays MOUNTED and dims rather than

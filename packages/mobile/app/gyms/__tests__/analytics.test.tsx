@@ -12,11 +12,13 @@ import type {
   GymReachOverview,
   GymStats,
 } from '@boardsesh/shared-schema';
-import type { GymAngleUsageListRow } from '../../../src/components/gym-directory/GymAngleUsage';
+import type { GymAnalyticsListRow } from '../analytics';
 
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
   gradeRequest: vi.fn(),
+  rankingRequest: vi.fn(),
+  openPlayDrawer: vi.fn(),
   viewer: 'viewer-one',
   generation: 1,
   focused: true,
@@ -31,9 +33,9 @@ type PressProps = Children & {
   onPress?: () => void;
 };
 type FlashListProps = {
-  data: GymAngleUsageListRow[];
-  renderItem: (entry: { item: GymAngleUsageListRow }) => ReactNode;
-  keyExtractor: (item: GymAngleUsageListRow) => string;
+  data: GymAnalyticsListRow[];
+  renderItem: (entry: { item: GymAnalyticsListRow }) => ReactNode;
+  keyExtractor: (item: GymAnalyticsListRow) => string;
   ListHeaderComponent?: ReactNode;
   ListFooterComponent?: ReactNode;
 };
@@ -81,6 +83,7 @@ vi.mock('expo-router', () => ({
   Stack: { Screen: () => null },
   useLocalSearchParams: () => ({ gymUuid: 'gym-1' }),
   useIsFocused: () => mocks.focused,
+  useRouter: () => ({ push: vi.fn() }),
 }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -109,12 +112,14 @@ vi.mock('../../../src/lib/local-user-id', () => ({
 }));
 vi.mock('../../../src/lib/auth-store', () => ({
   captureAuthCredentialGeneration: () => mocks.generation,
+  subscribeAuthCredentialGenerationChanges: () => () => {},
   isAuthCredentialGenerationCurrent: (generation: number) => generation === mocks.generation,
 }));
 vi.mock('../../../src/lib/graphql/client', () => ({
   getHttpClient: () => ({
     request: (request: { document?: string } | string, variables?: unknown) => {
       const document = typeof request === 'string' ? request : request.document;
+      if (document?.includes('GetGymClimbRankings')) return mocks.rankingRequest(request);
       return /(?:GymGradeComparison|GymGradeCollectionOptions|SetGymGradeCollection)/.test(document ?? '')
         ? mocks.gradeRequest(request)
         : variables === undefined
@@ -122,6 +127,12 @@ vi.mock('../../../src/lib/graphql/client', () => ({
           : mocks.request(request, variables);
     },
   }),
+}));
+vi.mock('../../../src/providers/drawer-host-provider', () => ({
+  useDrawerHost: () => ({ openPlayDrawer: mocks.openPlayDrawer, usesDetailPane: false }),
+}));
+vi.mock('../../../src/lib/open-climb-in-play-drawer', () => ({
+  openClimbInPlayDrawer: vi.fn(),
 }));
 vi.mock('../../../src/hooks/use-grade-format', () => ({
   useGradeFormat: () => ({ formatGradeByDifficultyId: (grade: number) => 'V' + grade }),
@@ -379,6 +390,17 @@ function renderScreen() {
 
 beforeEach(() => {
   mocks.request.mockReset();
+  mocks.rankingRequest.mockReset().mockImplementation((request: { variables: { input: { mode: string } } }) =>
+    Promise.resolve({
+      gymClimbRankings: {
+        status: 'READY',
+        mode: request.variables.input.mode,
+        rows: [],
+        quietAvailable: false,
+        nextCursor: null,
+      },
+    }),
+  );
   mocks.gradeRequest.mockReset().mockResolvedValue({ gymGradeComparison: emptyGrades });
   mocks.viewer = 'viewer-one';
   mocks.generation = 1;
@@ -391,6 +413,33 @@ afterEach(() => {
 });
 
 describe('GymAnalyticsScreen', () => {
+  it('keeps the ranking mode and period when the player returns focus to Analytics', async () => {
+    mocks.request.mockResolvedValue({ gymStats: report });
+    const { rerender, tree } = renderScreen();
+    await screen.findByText('gymReporting.rankings.title');
+    fireEvent.click(screen.getByRole('button', { name: 'gymReporting.rankings.topRated' }));
+    fireEvent.click(screen.getByRole('button', { name: 'gymReporting.rangeDays 30' }));
+    await waitFor(() =>
+      expect(mocks.rankingRequest).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          variables: { input: { gymUuid: 'gym-1', boardUuid: null, period: 'month', mode: 'TOP_RATED' } },
+        }),
+      ),
+    );
+    const requestCount = mocks.rankingRequest.mock.calls.length;
+    mocks.focused = false;
+    rerender(tree());
+    expect(screen.queryByText('gymReporting.rankings.title')).toBeNull();
+    mocks.focused = true;
+    rerender(tree());
+    await waitFor(() => expect(mocks.rankingRequest.mock.calls.length).toBeGreaterThan(requestCount));
+    expect(mocks.rankingRequest).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        variables: { input: { gymUuid: 'gym-1', boardUuid: null, period: 'month', mode: 'TOP_RATED' } },
+      }),
+    );
+  });
+
   it('renders the full 90-day chart and exact numeric view with no overview activity', async () => {
     mocks.request.mockResolvedValue({
       gymStats: { ...report, busyTimes, current: { ...activeWindow, displayCount: 0, tickCount: 0 } },

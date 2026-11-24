@@ -748,3 +748,69 @@ export type SetGymGradeCollectionInput = {
   boardUuid: string;
   playlistUuid: string | null;
 };
+
+export type GymClimbRankingMode = 'MOST_SENT' | 'TOP_RATED' | 'MOST_DISCUSSED' | 'GRADE_FEEDBACK' | 'QUIET_CLIMBS';
+export type GymClimbRankingStatus =
+  | 'READY'
+  | 'SCOPE_TOO_LARGE'
+  | 'TEMPORARILY_UNAVAILABLE'
+  | 'EXPOSURE_UNAVAILABLE'
+  | 'PAGE_CHANGED';
+
+export type GymClimbRankingInput = GymStatsInput & { mode: GymClimbRankingMode; cursor?: string | null };
+
+export type GymClimbRankingTargetInput = GymStatsInput & {
+  logicalBoardUuid: string;
+  climbUuid: string;
+  angle: number;
+  isMirror: boolean;
+};
+
+export type GymClimbRankingTarget = {
+  logicalBoardUuid: string;
+  boardSlug: string;
+  boardType: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+  climbUuid: string;
+  name: string;
+  angle: number;
+  isMirror: boolean;
+  referenceDifficulty: number | null;
+  shareable: boolean;
+};
+
+export type GymClimbRankingRow = {
+  rank: number;
+  physicalBoardUuid: string;
+  boardName: string;
+  target: GymClimbRankingTarget;
+  sendCount: number | null;
+  senderCount: number | null;
+  qualityMean: number | null;
+  voterCount: number | null;
+  commentCount: number | null;
+  authorCount: number | null;
+  gradeDelta: number | null;
+  firstKnownAvailableAt: string | null;
+  lastSendAt: string | null;
+  lastSendEndAt: string | null;
+  lastSendDate: string | null;
+  knownLifetimeDays: number | null;
+  knownWindowDays: number | null;
+  sendsPerDay: number | null;
+};
+
+export type GymClimbRankings = {
+  status: GymClimbRankingStatus;
+  mode: GymClimbRankingMode;
+  quietAvailable: boolean;
+  startAt: string | null;
+  asOf: string | null;
+  timeZone: string | null;
+  timeZoneConfigured: boolean;
+  rows: GymClimbRankingRow[];
+  nextCursor: string | null;
+  truncated: boolean;
+};

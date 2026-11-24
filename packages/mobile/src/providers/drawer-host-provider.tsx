@@ -607,11 +607,14 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       if (composerCredentialScope !== getCredentialGeneration()) return;
       // Pull `boardConfig` out so it doesn't reach the open target.
       const { boardConfig: override, ...requestedOptions } = options ?? {};
-      const openOptions =
-        !requestedOptions.previewQueueItem &&
-        !requestedOptions.committedExternally &&
-        !requestedOptions.reopensCurrent &&
-        !isDrivingWall()
+      const rankedPreview = requestedOptions.rankedPreview;
+      if (rankedPreview && !rankedPreview.authorization.isCurrent()) return;
+      const openOptions: PlayDrawerOpenOptions = rankedPreview
+        ? { rankedPreview }
+        : !requestedOptions.previewQueueItem &&
+            !requestedOptions.committedExternally &&
+            !requestedOptions.reopensCurrent &&
+            !isDrivingWall()
           ? { ...requestedOptions, previewQueueItem: climbToQueueItem(climb) }
           : requestedOptions;
       if (replayFrameRef.current != null) {
@@ -619,24 +622,21 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         replayFrameRef.current = null;
       }
       navigationRequestedTargetRef.current = null;
-      // Set the board override BEFORE navigating so the route reads the right board
-      // from `activeBoardConfig` (reactive) on mount — no requestAnimationFrame /
-      // pending-replay dance. Only set an override that genuinely differs from the
-      // stored board; otherwise drop it so the drawer renders against the user's
-      // precise board (and clears any leftover override from a prior open).
-      if (override && !boardConfigsMatch(override, storedActiveBoardConfigRef.current)) {
-        setBoardConfigOverride(override);
-        overrideOwnerRef.current = usesDetailPaneRef.current ? 'pane' : 'route';
-      } else {
-        setBoardConfigOverride(null);
-        overrideOwnerRef.current = null;
+      // Analytics previews own their board inside the route. Passing it through
+      // the ordinary override would also retarget the eager spray wall loader.
+      if (!rankedPreview) {
+        if (override && !boardConfigsMatch(override, storedActiveBoardConfigRef.current)) {
+          setBoardConfigOverride(override);
+          overrideOwnerRef.current = usesDetailPaneRef.current ? 'pane' : 'route';
+        } else {
+          setBoardConfigOverride(null);
+          overrideOwnerRef.current = null;
+        }
+        setPreviewedClimbUuid(openOptions.previewQueueItem ? climb.uuid : null);
       }
-      setPreviewedClimbUuid(openOptions.previewQueueItem ? climb.uuid : null);
-      // A pane beside the list (the JS tablet shell, the Duo's split) hosts the
-      // drawer, so drive it in place instead of navigating to `/play`. The pane reads
-      // `paneTarget` via playDrawerPaneProps and re-applies on the bumped nonce (a
-      // re-tap of the same climb still re-applies). No router.navigate → no modal.
-      if (usesDetailPaneRef.current) {
+      // Ranking previews always use the dismissible route above Analytics.
+      // Ordinary opens still go to the adjacent pane when one is visible.
+      if (!rankedPreview && usesDetailPaneRef.current) {
         paneTargetNonceRef.current += 1;
         // The pane target outlives its first apply, and each tab mounts its own
         // pane: only the first player to apply it treats it as this tap.
@@ -705,7 +705,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     });
     if (decision === 'wait') return;
     setSplitRouteClosePending(false);
-    if (decision !== 'close' || !appStack) return;
+    if (decision !== 'close' || !appStack || playTargetRef.current?.options?.rankedPreview) return;
     const routePlayer = readRoutePlayerSnapshot();
     const carriedTarget = buildCarriedPaneTarget(routePlayer, paneTargetNonceRef.current + 1);
     if (carriedTarget) {
@@ -739,7 +739,8 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       // overlay there). On the tablet shell the old rule stands, byte for byte.
       const paneKeepsOverride =
         paneMountedRef.current && !(phoneSplitRef.current && overrideOwnerRef.current === 'route');
-      if (!targetPending && !paneKeepsOverride) setBoardConfigOverride(null);
+      const closingRankedPreview = playTargetRef.current?.options?.rankedPreview != null;
+      if (!targetPending && !paneKeepsOverride && !closingRankedPreview) setBoardConfigOverride(null);
       // Only drop the target this close was actually for. The reset runs from the
       // route's UNMOUNT cleanup — the end of the dismiss animation — and the list
       // underneath is live and tappable for that whole window (and for the pull-down
@@ -764,22 +765,30 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         !requested ||
         requested.nonce === consumedPlayTargetNonceRef.current ||
         requested.nonce === replayedTargetNonceRef.current ||
-        usesDetailPaneRef.current
+        (usesDetailPaneRef.current && !playTargetRef.current?.options?.rankedPreview)
       )
         return;
       if (replayFrameRef.current != null) cancelAnimationFrame(replayFrameRef.current);
       replayedTargetNonceRef.current = requested.nonce;
       replayFrameRef.current = requestAnimationFrame(() => {
         replayFrameRef.current = null;
+        const pendingTarget = playTargetRef.current;
+        const rankedPreview = pendingTarget?.options?.rankedPreview;
         if (
           !hostMountedRef.current ||
-          usesDetailPaneRef.current ||
+          (usesDetailPaneRef.current && !rankedPreview) ||
           navigationRequestedTargetRef.current !== requested ||
-          playTargetRef.current?.nonce !== requested.nonce ||
+          pendingTarget?.nonce !== requested.nonce ||
           consumedPlayTargetNonceRef.current === requested.nonce ||
           requested.credentialGeneration !== getCredentialGeneration()
         )
           return;
+        // The receipt can expire while the old route is animating out.
+        if (rankedPreview && !rankedPreview.authorization.isCurrent()) {
+          navigationRequestedTargetRef.current = null;
+          setPlayTarget((current) => (current?.nonce === requested.nonce ? null : current));
+          return;
+        }
         // The old /play has unmounted. Serve the pending tap without minting a
         // target nonce, redoing its commit, or changing its board override.
         navigateToPlayer();

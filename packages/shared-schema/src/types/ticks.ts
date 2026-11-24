@@ -64,6 +64,8 @@ export type TickReportingTimeInput = {
   timeZone?: string | null;
 };
 
+export type TickReportingVoteField = 'QUALITY' | 'DIFFICULTY';
+
 export type SaveTickInput = {
   privacy?: { audience: 'public' | 'followers' | 'only_me'; privacyRevision: number };
   uuid?: string;

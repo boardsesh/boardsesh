@@ -22,7 +22,11 @@ import {
   type UndoBoardSetupChangeMutationResponse,
   type UndoBoardSetupChangeMutationVariables,
 } from '@boardsesh/graphql/operations/directory-reports';
-import { isBoardSetupAlreadyUndoneError, isBoardSetupChangedSinceError } from '@boardsesh/graphql/errors';
+import {
+  isBoardSetupAlreadyUndoneError,
+  isBoardSetupChangedSinceError,
+  isBoardSetupUnchangedError,
+} from '@boardsesh/graphql/errors';
 import type {
   BoardSetupChangeState,
   GroupedNotification,
@@ -31,6 +35,7 @@ import type {
   ReportGymInput,
   ResolveDirectoryReportInput,
 } from '@boardsesh/shared-schema';
+import { retireGymClimbRankings } from '../../privacy/privacy-cache';
 import { getHttpClient } from '../client';
 import { GROUPED_NOTIFICATIONS_QUERY_KEY } from '../notification-read-cache';
 
@@ -85,7 +90,15 @@ export function useReportBoard() {
           input,
         })
       ).reportBoard,
-    onSuccess: (_result, input) => invalidateBoardReads(queryClient, input.boardUuid),
+    onSuccess: (result, input) => {
+      // The setup can commit even when the response has no board to copy.
+      if (result.setupOutcome === 'APPLIED') void retireGymClimbRankings(queryClient);
+      invalidateBoardReads(queryClient, input.boardUuid);
+    },
+    onError: (error) => {
+      // Another device can have already put the suggested setup on this board.
+      if (isBoardSetupUnchangedError(error)) void retireGymClimbRankings(queryClient);
+    },
   });
 }
 
@@ -179,6 +192,7 @@ export function useUndoBoardSetupChange() {
         )
       ).undoBoardSetupChange,
     onSuccess: (board, { notification }) => {
+      void retireGymClimbRankings(queryClient);
       setNoticeSetupChangeState(queryClient, notification.uuid, 'UNDONE');
       invalidateBoardReads(queryClient, board.uuid);
     },
@@ -186,6 +200,7 @@ export function useUndoBoardSetupChange() {
       if (isBoardSetupChangedSinceError(error)) {
         setNoticeSetupChangeState(queryClient, notification.uuid, 'CHANGED_SINCE');
       } else if (isBoardSetupAlreadyUndoneError(error)) {
+        void retireGymClimbRankings(queryClient);
         setNoticeSetupChangeState(queryClient, notification.uuid, 'UNDONE');
         const boardUuid = notification.directoryNotice?.boardUuid;
         if (boardUuid) invalidateBoardReads(queryClient, boardUuid);

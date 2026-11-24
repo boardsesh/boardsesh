@@ -239,7 +239,9 @@ const REVIEWED_SPRAY_EXPOSURE_FUNCTIONS = [
   'spray_exposure_policy_change',
   'spray_exposure_climb_change',
 ];
+const REVIEWED_GYM_VOTE_MIGRATION_SHA256 = 'cd7bd0a2ed595cc46801ab6ee732b47ba993a87537cc659bacff7b14ad458a7d';
 const REVIEWED_CATALOG_ONLY_MIGRATIONS = new Map([
+  [REVIEWED_GYM_VOTE_MIGRATION_SHA256, new Set(['invalidate_gym_tick_votes'])],
   [REVIEWED_SPRAY_EXPOSURE_MIGRATION_SHA256, new Set(REVIEWED_SPRAY_EXPOSURE_FUNCTIONS)],
   [
     REVIEWED_LIFECYCLE_MIGRATION_SHA256,
@@ -445,6 +447,19 @@ describe('the pin requires public then pg_catalog, and nothing else', () => {
         ]),
       ),
     ).toEqual(['revoke_gym_reporting_aliases_on_board_move']);
+  });
+
+  it('rejects a changed reporting vote definer dependency even with the same function name', () => {
+    const reviewed = migrationSources().find(
+      (source) => createHash('sha256').update(source).digest('hex') === REVIEWED_GYM_VOTE_MIGRATION_SHA256,
+    );
+    expect(reviewed).toBeDefined();
+    expect(unpinnedIn(foldMigrationSources([reviewed!]))).toEqual([]);
+    const edited = reviewed!.replace(
+      'DELETE FROM public.gym_reporting_tick_votes',
+      'DELETE FROM gym_reporting_tick_votes',
+    );
+    expect(unpinnedIn(foldMigrationSources([edited]))).toContain('invalidate_gym_tick_votes');
   });
 
   it('pins the exact spray exposure migration, including helpers and attachment predicates', () => {

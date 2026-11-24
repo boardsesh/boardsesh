@@ -147,3 +147,15 @@ The web database login reaches the source writers but has no direct access to
 the comparison mapping, exposure records or sequence. The auth fence verifies
 the complete exposure trigger, function and journal dependency set before it
 approves the new writer path.
+
+## Local climb rankings
+
+Each row is a climb variant at one named physical wall. Verified configurations can contribute to the same variant after the exact logical configuration, angle and supported orientation have been checked. Different installations keep separate rows. Spray modes use current inventory. LED modes use locally attributed activity independently of saved collections. Historical activity and reach keep their own eligibility.
+
+Most sent counts qualifying flash and send ticks, including legitimate repeats. Top rated and Grade feedback use eligible stars and grades the climber entered or explicitly confirmed in a qualifying Boardsesh tick. Existing values with no evidence of that write are outside the sample. Provider fills and replacements cannot provide that evidence. Each metric uses a person's latest provable value for the variant, with five voters required. Equally plausible values from uncertain dates count only when they agree. Grade feedback compares the median local vote to the current exact-angle reference grade on the board's own grade scale.
+
+Most discussed counts visible comments and replies on attributed ascent and attempt threads. A reply inherits the venue association from its eligible parent. Deleted comments never add events. A deleted parent that remains as a readable thread placeholder can still connect a visible reply. The server checks current target, board, tick and comment visibility. Existing global climb discussions, session chatter and logbook notes stay outside this ranking, and historical comments with unknown venue evidence stay unknown.
+
+Quiet climbs uses currently available spray-wall variants with at least 14 measured lifetime days. The rate divides sends during verified availability by the measured available time in the selected interval. Date-only sends count only when the whole possible time falls within a measured interval. A missing last send means there was no recorded send during measured availability. The report offers a review aid for setters and does not change any climb.
+
+Ranks and detail lookups use the current staff authorization and independently visible resources. The app displays the first 200 variants in pages of 20. A changed result restarts the list without reusing stale pages. Staff report data is held in memory and expires after five minutes. The public gym and climbing pages have no access to staff ranking payloads.
