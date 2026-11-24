@@ -113,6 +113,84 @@ describe('SetupChangeNotificationRow', () => {
     expect((screen.getByTestId('setup-change-undo') as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it('asks once and sends once on a double tap', async () => {
+    let finish: (outcome: 'undone') => void = () => undefined;
+    const onUndo = vi.fn(
+      () =>
+        new Promise<'undone'>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const screen = render(
+      <SetupChangeNotificationRow notification={row(notice())} onPress={vi.fn()} onUndo={onUndo} />,
+    );
+    // Both taps land before the first one re-renders the button disabled.
+    const button = screen.getByTestId('setup-change-undo');
+    await act(async () => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+    expect(onUndo).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finish('undone');
+    });
+    // Free again once it ended.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('setup-change-undo'));
+    });
+    expect(onUndo).toHaveBeenCalledTimes(2);
+  });
+
+  it('says someone else put the old setup back when they undid it first', async () => {
+    const onUndo = vi.fn().mockResolvedValue('already_undone');
+    const notification = row(notice());
+    const screen = render(<SetupChangeNotificationRow notification={notification} onPress={vi.fn()} onUndo={onUndo} />);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('setup-change-undo'));
+    });
+    // The inbox cache moves the notice to UNDONE.
+    screen.rerender(
+      <SetupChangeNotificationRow
+        notification={row(notice({ setupChangeState: 'UNDONE' }))}
+        onPress={vi.fn()}
+        onUndo={onUndo}
+      />,
+    );
+    expect(screen.queryByTestId('setup-change-undo')).toBeNull();
+    expect(screen.getByTestId('setup-change-status').textContent).toBe('setupChange.alreadyUndone');
+  });
+
+  it('drops Undo and says so once the server no longer lets this viewer undo it', async () => {
+    const onUndo = vi.fn().mockResolvedValue('not_allowed');
+    const screen = render(
+      <SetupChangeNotificationRow notification={row(notice())} onPress={vi.fn()} onUndo={onUndo} />,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('setup-change-undo'));
+    });
+    expect(screen.queryByTestId('setup-change-undo')).toBeNull();
+    expect(screen.getByTestId('setup-change-status').textContent).toBe('setupChange.notAllowed');
+  });
+
+  it("shows another notice's ending on none of its own once the cell is recycled", async () => {
+    const onUndo = vi.fn().mockResolvedValue('not_allowed');
+    const screen = render(
+      <SetupChangeNotificationRow notification={row(notice())} onPress={vi.fn()} onUndo={onUndo} />,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('setup-change-undo'));
+    });
+    screen.rerender(
+      <SetupChangeNotificationRow
+        notification={{ ...row(notice()), uuid: 'n2' } as GroupedNotification}
+        onPress={vi.fn()}
+        onUndo={onUndo}
+      />,
+    );
+    expect(screen.getByTestId('setup-change-undo')).toBeTruthy();
+    expect(screen.queryByTestId('setup-change-status')).toBeNull();
+  });
+
   it('drops Undo and points at the board once the board changed again', () => {
     const screen = render(
       <SetupChangeNotificationRow

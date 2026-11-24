@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { GroupedNotification } from '@boardsesh/shared-schema';
@@ -17,24 +17,30 @@ import { canUndoSetupChange, type UndoSetupChange } from './setup-change-notice'
 const AVATAR_SIZE = 40;
 const UNREAD_DOT_SIZE = 8;
 
+/** How this row's last Undo ended, when the notice's own state doesn't say. */
+type RowEnding = 'already_undone' | 'not_allowed' | 'failed';
+
 type SetupChangeNotificationRowProps = {
   notification: GroupedNotification;
   /** Stable handler from the screen: opens the board. */
   onPress: (notification: GroupedNotification) => void;
-  /** Stable handler from the screen: confirms, then puts the old setup back. */
+  /** Stable handler from the screen: confirms, then puts the old setup back, and says how it ended. */
   onUndo: UndoSetupChange;
 };
 
 /**
- * "A climber changed the setup of your board": the creator's notice that a
- * climber's suggestion changed their board for everyone, with Undo while the
- * change is still on the board (docs/product/directory-reports.md, "Suggested
- * setup").
+ * "A climber changed the setup of {board}": the notice that a climber's
+ * suggestion changed a board for everyone, sent to the board's creator and the
+ * gym's owner and admins, with Undo while the change is still on the board
+ * (docs/product/directory-reports.md, "Suggested setup").
  *
  * Like the follow request row, Undo is a button of its own beside the row's
  * tap target (which opens the board), never inside it. Once the change is
  * undone, or the board changed again since, the row says so instead. The
  * screen's cache moves `setupChangeState` on, so the line survives a scroll.
+ * Who undid it (someone else first) and an Undo the server no longer allows
+ * are this row's own state, so a recycled cell shows them only for the notice
+ * they belong to.
  */
 export function SetupChangeNotificationRow({ notification, onPress, onUndo }: SetupChangeNotificationRowProps) {
   const { t } = useTranslation('notifications');
@@ -42,9 +48,13 @@ export function SetupChangeNotificationRow({ notification, onPress, onUndo }: Se
   // Keyed by the row's uuid: FlashList hands a recycled cell, state and all, to
   // a different notification, and an undo in flight belongs to one notice.
   const [inFlightUuid, setInFlightUuid] = useState<string | null>(null);
-  const [failedUuid, setFailedUuid] = useState<string | null>(null);
+  const [ending, setEnding] = useState<{ uuid: string; kind: RowEnding } | null>(null);
   const pending = inFlightUuid === notification.uuid;
-  const failed = failedUuid === notification.uuid;
+  const ended = ending?.uuid === notification.uuid ? ending.kind : null;
+  const failed = ended === 'failed';
+  // A second tap lands before `pending` re-renders the button disabled: one
+  // confirm and one request per notice.
+  const undoing = useRef(new Set<string>());
 
   const copy = notificationCopy(notification, t('actorSummary.fallback'));
   const body = t(copy.textI18nKey, copy.params);
@@ -56,17 +66,23 @@ export function SetupChangeNotificationRow({ notification, onPress, onUndo }: Se
     [setupAfter, boardType],
   );
   const state = notice?.setupChangeState ?? null;
-  const undoable = canUndoSetupChange(notification);
+  const undoable = canUndoSetupChange(notification) && ended !== 'not_allowed';
 
   const handlePress = useCallback(() => onPress(notification), [onPress, notification]);
   const undo = useCallback(async () => {
-    setInFlightUuid(notification.uuid);
-    setFailedUuid(null);
+    const { uuid } = notification;
+    if (undoing.current.has(uuid)) return;
+    undoing.current.add(uuid);
+    setInFlightUuid(uuid);
+    setEnding(null);
     try {
-      await onUndo(notification);
+      const outcome = await onUndo(notification);
+      if (outcome === 'already_undone' || outcome === 'not_allowed') setEnding({ uuid, kind: outcome });
     } catch {
-      setFailedUuid(notification.uuid);
+      // No connection, or a server error: the line says to try again.
+      setEnding({ uuid, kind: 'failed' });
     } finally {
+      undoing.current.delete(uuid);
       setInFlightUuid(null);
     }
   }, [notification, onUndo]);
@@ -76,10 +92,14 @@ export function SetupChangeNotificationRow({ notification, onPress, onUndo }: Se
     state === 'CHANGED_SINCE'
       ? t('setupChange.changedSince')
       : state === 'UNDONE'
-        ? t('setupChange.undone')
-        : failed
-          ? t('setupChange.failed')
-          : null;
+        ? ended === 'already_undone'
+          ? t('setupChange.alreadyUndone')
+          : t('setupChange.undone')
+        : ended === 'not_allowed'
+          ? t('setupChange.notAllowed')
+          : failed
+            ? t('setupChange.failed')
+            : null;
 
   return (
     <View

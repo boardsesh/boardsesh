@@ -133,6 +133,8 @@
     "undoBodyGeneric": "Das Board bekommt für alle wieder seine alte Einrichtung.",
     "undoConfirm": "Rückgängig machen",
     "undone": "Die alte Einrichtung ist zurück.",
+    "alreadyUndone": "Jemand hat die alte Einrichtung schon zurückgeholt.",
+    "notAllowed": "Du kannst das nicht mehr rückgängig machen.",
     "changedSince": "Es wurde seitdem wieder geändert. Öffne das Board, um es zu prüfen.",
     "failed": "Rückgängig machen hat nicht geklappt. Versuch es mit Verbindung erneut."
   },

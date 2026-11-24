@@ -133,6 +133,8 @@
     "undoBodyGeneric": "La board repasse sur son ancienne configuration pour tout le monde.",
     "undoConfirm": "Annuler le changement",
     "undone": "L'ancienne configuration est revenue.",
+    "alreadyUndone": "Quelqu'un a déjà remis l'ancienne configuration.",
+    "notAllowed": "Tu ne peux plus annuler ce changement.",
     "changedSince": "Elle a encore changé depuis. Ouvre la board pour vérifier.",
     "failed": "Impossible d'annuler. Réessaie une fois connecté."
   },

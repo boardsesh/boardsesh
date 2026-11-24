@@ -133,6 +133,8 @@
     "undoBodyGeneric": "这块训练板将为所有人恢复原来的设置。",
     "undoConfirm": "撤销",
     "undone": "原来的设置已恢复。",
+    "alreadyUndone": "已经有人恢复了原来的设置。",
+    "notAllowed": "你已无法撤销此更改。",
     "changedSince": "之后又被改过了。打开训练板查看。",
     "failed": "未能撤销。联网后再试。"
   },

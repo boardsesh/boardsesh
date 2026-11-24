@@ -55,10 +55,10 @@ export function resolveNotificationRoute(
       return options.directoryReportsEnabled === false
         ? { path: '/boards', params: { board: payload.boardUuid, details: '1' } }
         : { path: '/boards', params: { board: payload.boardUuid, review: '1' } };
-    // A climber's suggested setup changed the creator's board: its detail
-    // sheet, as the inbox row opens it; Undo lives on that row. The backend
-    // sends this one to the inbox only today, so this covers a push that
-    // carries the board.
+    // A climber's suggested setup changed a board: its detail sheet, as the
+    // inbox row opens it; Undo lives on that row. The push goes to the board's
+    // creator and the gym's owner and admins, carrying { type,
+    // notificationUuid, boardUuid, setupChangeEventId }; only the board is read.
     case 'board_setup_changed_by_climber':
       if (typeof payload.boardUuid !== 'string' || !UUID_PATTERN.test(payload.boardUuid)) return null;
       return { path: '/boards', params: { board: payload.boardUuid, details: '1' } };

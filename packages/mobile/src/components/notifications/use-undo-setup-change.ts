@@ -1,14 +1,18 @@
 // Undo on the `board_setup_changed_by_climber` notice (docs/product/directory-reports.md,
 // "Suggested setup"): a climber's suggestion changed the board for everyone at
-// a gym nobody runs, and the board's creator puts the old setup back.
+// a gym nobody runs, and whoever got the notice (the board's creator, the gym's
+// owner or admins) puts the old setup back.
 
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { isBoardSetupChangedSinceError } from '@boardsesh/graphql/errors';
+import { useQueryClient } from '@tanstack/react-query';
+import { isBoardSetupAlreadyUndoneError, isBoardSetupChangedSinceError } from '@boardsesh/graphql/errors';
 import type { GroupedNotification } from '@boardsesh/shared-schema';
 import { useConfirm } from '../../providers/dialog-provider';
 import { useUndoBoardSetupChange } from '../../lib/graphql/hooks/use-directory-reports';
 import { useApplyChangedBoard } from '../../lib/boards/use-apply-changed-board';
+import { extractGraphqlCode } from '../../lib/graphql/extract-error-message';
+import { findCachedNotification } from '../../lib/graphql/notification-read-cache';
 import { formatSetupSummary } from '../report-problem/setup-summary';
 import { canUndoSetupChange, type UndoSetupChange } from './setup-change-notice';
 
@@ -23,6 +27,7 @@ export function useUndoSetupChange(): UndoSetupChange {
   const { t } = useTranslation('notifications');
   const { t: tCommon } = useTranslation('common');
   const confirm = useConfirm();
+  const queryClient = useQueryClient();
   const undo = useUndoBoardSetupChange();
   const applyChangedBoard = useApplyChangedBoard();
 
@@ -42,11 +47,17 @@ export function useUndoSetupChange(): UndoSetupChange {
         cancelLabel: tCommon('actions.cancel'),
       });
       if (!confirmed) return 'cancelled';
+      // The row may have moved on while the confirm was up (the inbox reloaded,
+      // or an Undo elsewhere landed): undo only a change that is still live.
+      const latest = findCachedNotification(queryClient, notification.uuid) ?? notification;
+      if (!canUndoSetupChange(latest)) return 'cancelled';
       let restored;
       try {
         restored = await undo({ eventId, notification });
       } catch (error) {
         if (isBoardSetupChangedSinceError(error)) return 'changed_since';
+        if (isBoardSetupAlreadyUndoneError(error)) return 'already_undone';
+        if (extractGraphqlCode(error) === 'NOT_FOUND') return 'not_allowed';
         throw error;
       }
       try {
@@ -57,6 +68,6 @@ export function useUndoSetupChange(): UndoSetupChange {
       }
       return 'undone';
     },
-    [t, tCommon, confirm, undo, applyChangedBoard],
+    [t, tCommon, confirm, queryClient, undo, applyChangedBoard],
   );
 }

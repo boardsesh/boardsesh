@@ -133,6 +133,8 @@
     "undoBodyGeneric": "El plafón vuelve a su configuración anterior para todos.",
     "undoConfirm": "Deshacer",
     "undone": "La configuración anterior ha vuelto.",
+    "alreadyUndone": "Alguien ya volvió a poner la configuración anterior.",
+    "notAllowed": "Ya no puedes deshacer este cambio.",
     "changedSince": "Ha vuelto a cambiar desde entonces. Abre el plafón para comprobarlo.",
     "failed": "No se pudo deshacer. Inténtalo de nuevo con conexión."
   },

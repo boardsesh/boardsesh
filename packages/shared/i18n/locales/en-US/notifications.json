@@ -133,6 +133,8 @@
     "undoBodyGeneric": "The board goes back to its old setup for everyone.",
     "undoConfirm": "Undo",
     "undone": "The old setup is back.",
+    "alreadyUndone": "Someone already put the old setup back.",
+    "notAllowed": "You can't undo this any more.",
     "changedSince": "It changed again since. Open the board to check it.",
     "failed": "Couldn't undo it. Try again when connected."
   },

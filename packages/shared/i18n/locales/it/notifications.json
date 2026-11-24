@@ -133,6 +133,8 @@
     "undoBodyGeneric": "Il pannello torna alla configurazione di prima per tutti.",
     "undoConfirm": "Annulla la modifica",
     "undone": "La configurazione di prima è tornata.",
+    "alreadyUndone": "Qualcuno ha già rimesso la configurazione di prima.",
+    "notAllowed": "Non puoi più annullare questa modifica.",
     "changedSince": "Da allora è cambiato di nuovo. Apri il pannello per controllare.",
     "failed": "Impossibile annullare. Riprova quando hai connessione."
   },

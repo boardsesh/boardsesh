@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
+import { createElement, type ReactNode } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { DirectoryNotice, GroupedNotification, UserBoard } from '@boardsesh/shared-schema';
+import { GROUPED_NOTIFICATIONS_QUERY_KEY } from '../../../lib/graphql/notification-read-cache';
 
 const confirm = vi.hoisted(() => vi.fn());
 const undo = vi.hoisted(() => vi.fn());
@@ -46,7 +49,24 @@ function row(overrides: Partial<DirectoryNotice> = {}): GroupedNotification {
 
 const restored = { uuid: 'board-1', layoutId: 1, sizeId: 10, setIds: '1,20' } as UserBoard;
 
+let queryClient: QueryClient;
+function wrapper({ children }: { children: ReactNode }) {
+  return createElement(QueryClientProvider, { client: queryClient }, children);
+}
+function renderUndo() {
+  return renderHook(() => useUndoSetupChange(), { wrapper });
+}
+/** The loaded inbox, holding these rows. */
+function seedInbox(...groups: GroupedNotification[]) {
+  queryClient.setQueryData(GROUPED_NOTIFICATIONS_QUERY_KEY, {
+    pages: [{ groups, totalCount: groups.length, unreadCount: 0, hasMore: false }],
+    pageParams: [null],
+  });
+}
+const refusal = (code: string) => ({ response: { errors: [{ message: code, extensions: { code } }] } });
+
 beforeEach(() => {
+  queryClient = new QueryClient();
   confirm.mockReset();
   undo.mockReset();
   applyChangedBoard.mockReset();
@@ -58,7 +78,7 @@ describe('useUndoSetupChange', () => {
     confirm.mockResolvedValue(true);
     undo.mockResolvedValue(restored);
     const notification = row();
-    const { result } = renderHook(() => useUndoSetupChange());
+    const { result } = renderUndo();
     await expect(result.current(notification)).resolves.toBe('undone');
     expect(confirm).toHaveBeenCalledWith({
       title: 'setupChange.undoTitle',
@@ -73,23 +93,52 @@ describe('useUndoSetupChange', () => {
 
   it('does nothing when the climber keeps the change', async () => {
     confirm.mockResolvedValue(false);
-    const { result } = renderHook(() => useUndoSetupChange());
+    const { result } = renderUndo();
     await expect(result.current(row())).resolves.toBe('cancelled');
     expect(undo).not.toHaveBeenCalled();
   });
 
-  it('answers changed_since when the board changed again', async () => {
+  it.each([
+    ['BOARD_SETUP_CHANGED_SINCE', 'changed_since'],
+    // Someone put it back first: the row reads as undone.
+    ['BOARD_SETUP_ALREADY_UNDONE', 'already_undone'],
+    // The board moved gyms or went private, or the viewer's role ended.
+    ['NOT_FOUND', 'not_allowed'],
+  ])('answers %s with %s, and writes no board', async (code, outcome) => {
     confirm.mockResolvedValue(true);
-    undo.mockRejectedValue({ response: { errors: [{ extensions: { code: 'BOARD_SETUP_CHANGED_SINCE' } }] } });
-    const { result } = renderHook(() => useUndoSetupChange());
-    await expect(result.current(row())).resolves.toBe('changed_since');
+    undo.mockRejectedValue(refusal(code));
+    const { result } = renderUndo();
+    await expect(result.current(row())).resolves.toBe(outcome);
     expect(applyChangedBoard).not.toHaveBeenCalled();
+  });
+
+  it('undoes nothing when the change stopped being live while the confirm was up', async () => {
+    const notification = row();
+    seedInbox(notification);
+    confirm.mockImplementation(async () => {
+      // The inbox reloaded meanwhile: another device undid it.
+      seedInbox(row({ setupChangeState: 'UNDONE' }));
+      return true;
+    });
+    const { result } = renderUndo();
+    await expect(result.current(notification)).resolves.toBe('cancelled');
+    expect(undo).not.toHaveBeenCalled();
+  });
+
+  it('undoes a change the loaded inbox still shows live', async () => {
+    const notification = row();
+    seedInbox(notification);
+    confirm.mockResolvedValue(true);
+    undo.mockResolvedValue(restored);
+    const { result } = renderUndo();
+    await expect(result.current(notification)).resolves.toBe('undone');
+    expect(undo).toHaveBeenCalledTimes(1);
   });
 
   it('throws any other failure for the row to show', async () => {
     confirm.mockResolvedValue(true);
     undo.mockRejectedValue(new Error('offline'));
-    const { result } = renderHook(() => useUndoSetupChange());
+    const { result } = renderUndo();
     await expect(result.current(row())).rejects.toThrow('offline');
   });
 
@@ -97,12 +146,12 @@ describe('useUndoSetupChange', () => {
     confirm.mockResolvedValue(true);
     undo.mockResolvedValue(restored);
     applyChangedBoard.mockRejectedValue(new Error('disk full'));
-    const { result } = renderHook(() => useUndoSetupChange());
+    const { result } = renderUndo();
     await expect(result.current(row())).resolves.toBe('undone');
   });
 
   it('asks nothing for a change that is no longer live', async () => {
-    const { result } = renderHook(() => useUndoSetupChange());
+    const { result } = renderUndo();
     await expect(result.current(row({ setupChangeState: 'UNDONE' }))).resolves.toBe('cancelled');
     expect(confirm).not.toHaveBeenCalled();
   });

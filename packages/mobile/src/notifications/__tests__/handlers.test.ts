@@ -62,6 +62,17 @@ describe('native import notification handlers', () => {
     expect(
       resolveNotificationRoute(notification({ type: 'board_setup_changed_by_climber', boardUuid: wallUuid })),
     ).toEqual({ path: '/boards', params: { board: wallUuid, details: '1' } });
+    // The push as the backend sends it, to the creator and the gym's owner and admins alike.
+    expect(
+      resolveNotificationRoute(
+        notification({
+          type: 'board_setup_changed_by_climber',
+          notificationUuid: 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff',
+          boardUuid: wallUuid,
+          setupChangeEventId: '42',
+        }),
+      ),
+    ).toEqual({ path: '/boards', params: { board: wallUuid, details: '1' } });
     expect(
       resolveNotificationRoute(notification({ type: 'board_setup_changed_by_climber', boardUuid: '../x' })),
     ).toBeNull();
