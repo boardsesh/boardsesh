@@ -6,6 +6,7 @@ import { executeGymDocument, resolveGymForTool } from './domain';
 import { prepareGymMcpImage, type PreparedGymImage } from './media';
 import { gymMcpToolFailure, recordGymMcpToolResult } from './tool-result';
 import { trackGymMcpToolWork } from './request-lifetime';
+import { getGymImageSource, gymImageAttributionSchema, recordGymImageSource } from './media-source';
 
 const imageIdentity = {
   gymUuid: z.uuid().describe('The gym UUID returned by the gym tools.'),
@@ -14,13 +15,47 @@ const imageIdentity = {
 };
 
 export function registerGymMcpMediaTools(server: McpServer, principal: GymMcpPrincipal): void {
+  if (principal.scopes.includes('gyms:read')) {
+    server.registerTool(
+      'get_gym_image_source',
+      {
+        description:
+          'Read the currently saved gym photo/logo URL and its recorded import source and credit. Requires gym edit access and gyms:read. Older or web-uploaded images can have no recorded source.',
+        inputSchema: z.object({ gymUuid: imageIdentity.gymUuid, kind: imageIdentity.kind }).strict(),
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      },
+      (arguments_) =>
+        trackGymMcpToolWork(async () => {
+          const startedAt = performance.now();
+          try {
+            const gym = await resolveGymForTool(arguments_.gymUuid, principal.userId);
+            const result = await getGymImageSource(
+              gym.uuid,
+              arguments_.kind,
+              (arguments_.kind === 'photo' ? gym.imageUrl : gym.logoUrl) ?? null,
+            );
+            recordGymMcpToolResult('get_gym_image_source', 'success', startedAt);
+            return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], structuredContent: result };
+          } catch (error) {
+            return gymMcpToolFailure(error, 'get_gym_image_source', startedAt);
+          }
+        }),
+    );
+  }
   if (!principal.scopes.includes('gyms:write')) return;
   server.registerTool(
     'set_gym_image',
     {
       description:
-        'Replace a gym photo or logo from a public HTTPS JPG, PNG, GIF, or WebP URL. Photos up to 5 MB; logos up to 2 MB. The URL must return the image directly. For a file on your device, use get_gym_upload_links and the gym page uploader.',
-      inputSchema: z.object({ ...imageIdentity, imageUrl: z.url().max(2048), confirm: z.literal(true) }),
+        'Requires gyms:write and gym edit access. Replace a gym photo or logo from a public HTTPS JPG, PNG, GIF, or WebP URL. Photos up to 5 MB; logos up to 2 MB. The URL must return the image directly. Supply attribution with source page, credit and license when known; read it back with get_gym_image_source. For a file on your device, use get_gym_upload_links and the gym page uploader.',
+      inputSchema: z
+        .object({
+          ...imageIdentity,
+          imageUrl: z.url().max(2048),
+          attribution: gymImageAttributionSchema.optional(),
+          confirm: z.literal(true),
+        })
+        .strict(),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
     },
     (arguments_, requestContext) =>
@@ -59,6 +94,18 @@ export function registerGymMcpMediaTools(server: McpServer, principal: GymMcpPri
                 },
                 createGymMcpContext(principal),
               );
+              await recordGymImageSource({
+                gymId: gym.id,
+                gymUuid: gym.uuid,
+                actorUserId: principal.userId,
+                kind: arguments_.kind,
+                previousUrl: (arguments_.kind === 'photo' ? gym.imageUrl : gym.logoUrl) ?? null,
+                storedUrl,
+                source: {
+                  imageUrl: arguments_.imageUrl,
+                  ...(arguments_.attribution ? { attribution: arguments_.attribution } : {}),
+                },
+              });
               return { gymUuid: gym.uuid, kind: arguments_.kind, storedUrl };
             },
             async () => {
@@ -109,6 +156,15 @@ export function registerGymMcpMediaTools(server: McpServer, principal: GymMcpPri
                 },
                 createGymMcpContext(principal),
               );
+              await recordGymImageSource({
+                gymId: gym.id,
+                gymUuid: gym.uuid,
+                actorUserId: principal.userId,
+                kind: arguments_.kind,
+                previousUrl: (arguments_.kind === 'photo' ? gym.imageUrl : gym.logoUrl) ?? null,
+                storedUrl: null,
+                source: null,
+              });
               return { gymUuid: gym.uuid, kind: arguments_.kind, storedUrl: null };
             },
             async () => {

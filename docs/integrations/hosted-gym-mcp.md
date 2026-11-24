@@ -45,6 +45,22 @@ management access. Existing per-operation rules remain authoritative: gym staff
 cannot delete another climber's board or edit someone else's comment, for
 example. Directory repairs have a separate global-admin surface described below.
 
+If a tool is missing, call `get_gym_mcp_capabilities` (no arguments). It is
+available on ordinary and admin-only connections and returns granted scopes,
+each named operation's required scope, and any missing global-admin role.
+`update_gym_profile`, `set_gym_image` and `remove_gym_image` already exist and
+require **`gyms:write` plus current gym edit access**. A token approved only for
+admin repairs does not include ordinary gym writes. Reconnect requesting
+`gyms:read gyms:write` for profile/photo work; request the admin scopes separately
+for directory repair. Existing tokens do not gain permissions after an update.
+Direct calls without a required scope name that scope in the authorization error.
+
+`update_gym_profile` accepts a partial `changes` object: `name`, `description`,
+`address`, `website`, `contactPhone`, `contactEmail` and `hours` are supported.
+Send only the fields being changed. Omitted fields, owner and memberships stay
+unchanged; explicit nullable fields can be cleared with `null`. Visibility is
+unchanged unless explicitly included. Read the saved result with `get_gym`.
+
 The consent screen displays the client identity hostname separately from the
 client's self-reported name. A client calling itself ChatGPT or Claude does not
 gain a trusted publisher identity or more permissions.
@@ -83,6 +99,7 @@ editing retains its owner-only privacy rules.
 | `correct_gym_board_setup` | Correct layout, size, hold sets, angle or adjustability through the existing board writer. Use `allowDuplicateConfig=true` explicitly when a confirmed duplicate already has that setup. Existing logged climbs keep their original problem identities. |
 | `correct_gym_board_location_visibility` | Set location visibility explicitly, synchronizing `hideLocation` and the location policy without changing owner, board audience or access grants. Record the reason and previous state. |
 | `merge_duplicate_gyms` | Choose the surviving gym UUID, move its duplicates' linked records, retain the survivor's owner, and keep old gym links resolving through merge tombstones. Board rows remain separate. |
+| `repair_gym_canonical_slug` | Promote an explicitly approved alias held by a merged gym to the active survivor's canonical URL. Exchange the two slugs while keeping owners, deleted state, merge pointers, old URLs and UUID resolution intact. |
 | `merge_duplicate_gym_boards` | Consolidate confirmed records of one physical public catalogue wall by UUID. Serial numbers are optional. Preserve history, ticks, follows, pins, valid TV layouts and old links. The survivor keeps its owner. |
 
 All admin writes require an explicit reason, `confirm=true`, a UUID retry key and
@@ -92,6 +109,17 @@ not proof. Hashes cover configuration, ownership and privacy state; a changed
 record requires a new inspection. Reuse a retry key only with the exact original
 arguments. Successful merge retries recognize the resulting tombstones rather
 than trying to merge them again.
+
+For a canonical URL repair, inspect the survivor and the alias-holding tombstone
+together. Supply `gymUuid`, `aliasGymUuid`, the approved `slug`, the survivor's
+`expectedStateHash` and tombstone's `expectedAliasStateHash`, plus the reason,
+`confirm=true` and `idempotencyKey`. The alias must already resolve through a
+valid merge chain to that active survivor. Unrelated slug collisions, cycles,
+deleted destinations and stale state are refused. The old survivor slug moves
+to the tombstone, so both URLs keep reaching the same gym without reviving a
+duplicate. Sharing links use the survivor's saved slug. The write and durable
+`gym_directory_repair_audit` record commit with the retry receipt; replay checks
+current global-admin authority and the surviving merge association.
 
 The chosen board keeps its owner. A different real creator of a merged-away row
 loses editing ownership, follows the survivor and receives a moderation notice.
@@ -146,6 +174,26 @@ the same stored object. Deploy the backend before the web uploader: the new
 web client requires the saved `gym` in the upload response. Older web clients
 remain compatible with the new backend. A generated image is not a
 substitute for the real gym photo required by the existing gym UI.
+
+Use `get_gym_upload_links` for the signed-in local-file upload pages, or
+`set_gym_image` with `kind=photo|logo`, `imageUrl`, `confirm=true` and a UUID
+`idempotencyKey` to import a direct public image. It accepts optional
+`attribution: { credit, pageUrl?, license? }`. Supply the real source and credit
+when known; the import URL is always recorded. Source evidence is saved in the
+directory audit in the same transaction as the image, independently of the
+seven-day retry-result retention. `get_gym_image_source` requires `gyms:read`
+and gym edit access and returns the currently saved URL and matching source
+evidence. Older and web-uploaded images may have no recorded source. A later
+replacement never inherits a different image's credit. `get_gym` returns the
+saved profile, photo and logo; photo changes preserve the other image and all
+unpatched profile fields.
+
+`get_board_setup_options` uses the shared board-setup catalogue, including
+MoonBoard's code-defined layouts. For `boardType=moonboard`, Masters 2019 is
+layout `5`, Standard is size `1`, and its sets are `17`–`23`, including Screw-on
+Feet (`20`). Catalogue inspection requires no controller serial. Empty or
+incomplete catalogues return `BOARD_SETUP_OPTIONS_UNAVAILABLE` with recovery
+guidance instead of a successful empty result.
 
 Activity results retain the website's reporting timezone, attribution and
 coverage caveats. An assistant should not treat missing reporting coverage as

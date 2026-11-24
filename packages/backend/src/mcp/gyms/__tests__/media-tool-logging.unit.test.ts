@@ -13,6 +13,10 @@ const fixtures = vi.hoisted(() => ({
   log: vi.fn(),
 }));
 vi.mock('../media', () => ({ prepareGymMcpImage: fixtures.prepare }));
+vi.mock('../media-source', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../media-source')>()),
+  recordGymImageSource: vi.fn(),
+}));
 vi.mock('../domain', () => ({ resolveGymForTool: fixtures.resolveGym, executeGymDocument: fixtures.execute }));
 vi.mock('../dispatch', () => ({
   hasGymMcpWriteReceipt: fixtures.hasReceipt,

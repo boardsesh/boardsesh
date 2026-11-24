@@ -278,7 +278,10 @@ describe('gym MCP mutation receipts', () => {
       run: mocks.run,
       authorize: mocks.authorize,
     });
-    await expect(executeGymMcpTool(principal, 'grant_gym_edit_access', {})).rejects.toThrow('allow');
+    await expect(executeGymMcpTool(principal, 'grant_gym_edit_access', {})).rejects.toMatchObject({
+      message: 'Reconnect to Boardsesh and request gyms:access:write to use grant_gym_edit_access.',
+      extensions: { code: 'FORBIDDEN', requiredScope: 'gyms:access:write' },
+    });
     expect(mocks.run).not.toHaveBeenCalled();
     expect(createGymMcpContext(principal)).toMatchObject({
       userId: 'actor',

@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { getBoardSelectorOptions } from '@boardsesh/board-constants/product-sizes';
 import { buildBoardEmbedSnippet, buildLeaderboardEmbedSnippet } from '@boardsesh/kiosk';
 import {
   UpdateGymInputSchema,
@@ -33,6 +32,7 @@ import {
 } from './domain';
 import type { GymMcpScope } from './auth';
 import { gymMcpAdminTools } from './admin-tools';
+import { getGymBoardSetupOptions } from './board-setup-options';
 
 const pagination = {
   limit: z.number().int().min(1).max(50).default(20),
@@ -276,13 +276,7 @@ export const gymMcpTools: readonly GymMcpTool[] = [
     schema: z.object({ ...gymIdentity, boardType: BoardNameSchema }).strict(),
     run: async ({ gymUuid, boardType }, context) => {
       await resolveGymForTool(gymUuid, context.userId!);
-      const options = getBoardSelectorOptions();
-      return {
-        boardType,
-        layouts: options.layouts[boardType],
-        sizes: Object.fromEntries(Object.entries(options.sizes).filter(([key]) => key.startsWith(`${boardType}-`))),
-        sets: Object.fromEntries(Object.entries(options.sets).filter(([key]) => key.startsWith(`${boardType}-`))),
-      };
+      return getGymBoardSetupOptions(boardType);
     },
   }),
   defineTool({

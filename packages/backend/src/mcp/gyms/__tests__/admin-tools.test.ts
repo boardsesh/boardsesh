@@ -7,6 +7,8 @@ import type { GymMcpPrincipal } from '../auth';
 const domain = vi.hoisted(() => ({
   assertGymMcpGlobalAdmin: vi.fn(),
   authorizeAdminMergeReplay: vi.fn(),
+  authorizeCanonicalSlugReplay: vi.fn(),
+  repairGymCanonicalSlug: vi.fn(),
   correctBoardLocationVisibility: vi.fn(),
   correctBoardSetup: vi.fn(),
   inspectGymDuplicates: vi.fn(),
@@ -28,7 +30,7 @@ vi.mock('../registry', () => ({
 }));
 
 import { gymMcpAdminTools } from '../admin-tools';
-import { executeGymMcpTool } from '../dispatch';
+import { executeGymMcpTool, gymMcpInputHash } from '../dispatch';
 
 const gymUuid = '00000000-0000-4000-8000-000000000001';
 const duplicateGymUuid = '00000000-0000-4000-8000-000000000002';
@@ -64,6 +66,16 @@ const boardMerge = {
   reason,
 };
 const writeArguments: Record<string, Record<string, unknown>> = {
+  repair_gym_canonical_slug: {
+    gymUuid,
+    aliasGymUuid: duplicateGymUuid,
+    slug: 'approved-gym',
+    expectedStateHash: stateHash,
+    expectedAliasStateHash: stateHash,
+    idempotencyKey,
+    confirm: true,
+    reason,
+  },
   correct_gym_board_setup: { ...identity, changes: { layoutId: 5, sizeId: 1, setIds: '17,18,19,20,21,22,23' } },
   correct_gym_board_location_visibility: { ...identity, hideLocation: false },
   merge_duplicate_gyms: gymMerge,
@@ -80,6 +92,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   domain.assertGymMcpGlobalAdmin.mockResolvedValue(undefined);
   domain.authorizeAdminMergeReplay.mockResolvedValue(undefined);
+  domain.authorizeCanonicalSlugReplay.mockResolvedValue(undefined);
   dispatch.receipt.mockResolvedValue([]);
   dispatch.insert.mockResolvedValue(undefined);
   dispatch.write.mockImplementation((_principal, _scope, work: () => Promise<unknown>) => work());
@@ -89,14 +102,16 @@ beforeEach(() => {
     domain.inspectGymDuplicates,
     domain.mergeAdminGyms,
     domain.mergeDuplicateBoards,
+    domain.repairGymCanonicalSlug,
   ])
     handler.mockResolvedValue({ saved: true });
 });
 
 describe('gym MCP administrative repair tools', () => {
-  it('advertises five fixed actions with separate administrative consent scopes', () => {
+  it('advertises fixed actions with separate administrative consent scopes', () => {
     expect(gymMcpAdminTools.map((entry) => entry.name)).toEqual([
       'inspect_gym_duplicates',
+      'repair_gym_canonical_slug',
       'correct_gym_board_setup',
       'correct_gym_board_location_visibility',
       'merge_duplicate_gyms',
@@ -192,6 +207,50 @@ describe('gym MCP administrative repair tools', () => {
       writeArguments.correct_gym_board_location_visibility,
       context,
     );
+  });
+
+  it('binds canonical URL repair to the inspected alias and refuses unrelated fields', async () => {
+    const repair = tool('repair_gym_canonical_slug');
+    const arguments_ = writeArguments.repair_gym_canonical_slug;
+    for (const invalid of [
+      { expectedAliasStateHash: undefined },
+      { expectedAliasStateHash: 'stale' },
+      { slug: 'INVALID URL' },
+      { ownerId: 'another-owner' },
+      { isPublic: false },
+    ])
+      expect(repair.inputSchema.safeParse({ ...arguments_, ...invalid }).success).toBe(false);
+    await repair.run(arguments_, context);
+    expect(domain.repairGymCanonicalSlug).toHaveBeenCalledWith(arguments_, context);
+  });
+
+  it('replays an identical canonical repair receipt without swapping slugs a second time', async () => {
+    const principal: GymMcpPrincipal = {
+      userId: context.userId!,
+      clientId: 'admin-assistant',
+      connectionId: 'admin-oauth-connection',
+      connectionGeneration: 1,
+      scopes: ['gyms:admin:write'],
+      accessTokenHash: 'hash-only',
+      connectionLastUsedAt: null,
+    };
+    const arguments_ = writeArguments.repair_gym_canonical_slug!;
+    const result = { gymUuid, slug: 'approved-gym' };
+    dispatch.receipt.mockResolvedValue([
+      {
+        operationName: 'repair_gym_canonical_slug',
+        inputHash: gymMcpInputHash(arguments_),
+        expiresAt: new Date(Date.now() + 60_000),
+        result,
+      },
+    ]);
+    await expect(executeGymMcpTool(principal, 'repair_gym_canonical_slug', arguments_)).resolves.toEqual(result);
+    expect(domain.authorizeCanonicalSlugReplay).toHaveBeenCalledWith(
+      arguments_,
+      expect.objectContaining({ userId: principal.userId }),
+    );
+    expect(domain.repairGymCanonicalSlug).not.toHaveBeenCalled();
+    expect(dispatch.insert).not.toHaveBeenCalled();
   });
 
   it.each([
