@@ -374,10 +374,17 @@ export function directoryNoticeCopy(
       return board && gym ? { textI18nKey: 'items.gymClaimedWithYourBoard', params: { board, gym } } : generic;
     case 'gym_claim_denied':
       return gym ? { textI18nKey: 'items.gymClaimDenied', params: { gym } } : generic;
-    // A climber's suggested setup changed the creator's board at a gym nobody
-    // runs (docs/product/directory-reports.md, "Suggested setup").
+    // A climber's suggested setup changed a board at a gym nobody runs
+    // (docs/product/directory-reports.md, "Suggested setup"). Its creator reads
+    // "your board"; the gym's owner and admins, told too so they can undo it,
+    // read the board and the gym.
     case 'board_setup_changed_by_climber':
-      return board ? { textI18nKey: 'items.boardSetupChangedByClimber', params: { board } } : generic;
+      if (notice.recipientIsCreator) {
+        return board ? { textI18nKey: 'items.boardSetupChangedByClimber', params: { board } } : generic;
+      }
+      return board && gym
+        ? { textI18nKey: 'items.boardSetupChangedByClimberAtGym', params: { board, gym } }
+        : { textI18nKey: 'items.boardSetupChangedByClimberStaffGeneric', params: {} };
   }
 }
 

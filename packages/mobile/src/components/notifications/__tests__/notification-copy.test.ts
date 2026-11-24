@@ -402,6 +402,16 @@ describe('notificationCopy: directory notices', () => {
     );
   });
 
+  it("tells the gym's staff which board at their gym a climber changed, never 'your board'", () => {
+    expect(copyFor('board_setup_changed_by_climber', { recipientIsCreator: false })).toEqual({
+      textI18nKey: 'items.boardSetupChangedByClimberAtGym',
+      params: { board: 'Crux Kilter', gym: 'Crux' },
+    });
+    expect(copyFor('board_setup_changed_by_climber', { recipientIsCreator: false, gymName: null }).textI18nKey).toBe(
+      'items.boardSetupChangedByClimberStaffGeneric',
+    );
+  });
+
   it('words the gym rows', () => {
     expect(copyFor('gym_report_opened', { targetKind: 'gym', reason: 'wrong_details' })).toEqual({
       textI18nKey: 'items.gymReportedWrongDetails',
