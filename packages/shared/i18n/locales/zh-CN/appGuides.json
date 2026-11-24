@@ -147,7 +147,15 @@
     },
     "profileCardAlt": "Boardsesh profile: 254 climbs sent across 9 board layouts, including MoonBoard Masters and Kilter Homewall",
     "atLeast": "{{value}}+",
-    "ratingStat": "out of 5 from {{count}} App Store ratings in {{storefronts}} countries"
+    "ratingStat": "out of 5 from {{count}} App Store ratings in {{storefronts}} countries",
+    "ratingPlay": "{{rating}} from {{count}} Google Play ratings",
+    "ratingPlayStat": "out of 5 from {{count}} Google Play ratings",
+    "quotes": {
+      "heading": "What climbers say",
+      "eyebrow": "From the stores",
+      "appStore": "App Store",
+      "googlePlay": "Google Play"
+    }
   },
   "pages": {
     "hub": {

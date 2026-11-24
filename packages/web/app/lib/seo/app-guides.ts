@@ -11,12 +11,13 @@ import {
   type ComparisonPageId,
   type ComparisonPageRegistry,
   type GatedClaimId,
+  type GuideQuote,
   type GuideShot,
   type HubBoardSlug,
   type HubPageRegistry,
   hubBoardHref,
 } from './app-guide-model';
-import { APP_GUIDE_REGISTRY } from './app-guide-registry.generated';
+import { APP_GUIDE_QUOTES, APP_GUIDE_REGISTRY } from './app-guide-registry.generated';
 
 export { APP_GUIDE_SLUGS, AURORA_BRAND_SLUGS, hubBoardHref, type AppGuideSlug, type GuideShot, type HubBoardSlug };
 
@@ -101,6 +102,24 @@ export const BOARDSESH_APP_STORE_RATING = {
   method: 'Sum of the public iTunes lookup over every storefront, count-weighted mean (vp run app-guides:rating)',
   verifiedAt: '2026-11-24',
 } as const;
+
+/**
+ * The public Google Play rating as the US listing shows it (4.6 from 38 on
+ * 2026-11-24). The Play Console's default figure (4.816) is not what a reader
+ * can check, so the page shows the public one.
+ */
+export const BOARDSESH_PLAY_RATING = {
+  platform: 'Google Play',
+  rating: 4.6,
+  count: 38,
+  source: 'https://play.google.com/store/apps/details?id=com.boardsesh.app&hl=en_US&gl=US',
+  verifiedAt: '2026-11-24',
+} as const;
+
+/** Verbatim store reviews chosen for a page, in quotes.json order. */
+export function quotesFor(pageId: AppGuidePageId): readonly GuideQuote[] {
+  return APP_GUIDE_QUOTES.filter((quote) => quote.pages.includes(pageId));
+}
 
 /**
  * Claims that render only where their evidence is registered. The importer tags

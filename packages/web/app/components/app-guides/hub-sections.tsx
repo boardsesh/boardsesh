@@ -9,7 +9,13 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import type { StoreButtonLabels } from '@/app/components/marketing/store-install-buttons';
 import { cachedCommunityStats } from '@/app/lib/graphql/server-cached-client';
 import { DEFAULT_LOCALE } from '@/app/lib/i18n/config';
-import { BOARDSESH_APP_STORE_RATING, hubBoardHref, isClaimVisible, type HubGuide } from '@/app/lib/seo/app-guides';
+import {
+  BOARDSESH_APP_STORE_RATING,
+  BOARDSESH_PLAY_RATING,
+  hubBoardHref,
+  isClaimVisible,
+  type HubGuide,
+} from '@/app/lib/seo/app-guides';
 import { boardDrawing, guideShot, sprayWallPhoto } from './app-guide-assets';
 import { TileDiagram } from './diagrams';
 import {
@@ -264,6 +270,11 @@ export async function StatsBand({ t }: { t: T }) {
         count: BOARDSESH_APP_STORE_RATING.count,
         storefronts: BOARDSESH_APP_STORE_RATING.storefronts,
       }),
+    },
+    {
+      id: 'play',
+      value: formatRating(BOARDSESH_PLAY_RATING.rating),
+      label: t('appGuides:common.ratingPlayStat', { count: BOARDSESH_PLAY_RATING.count }),
     },
     {
       id: 'climbers',

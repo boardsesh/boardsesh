@@ -59,8 +59,15 @@ directory; `/spraywalls` remains the setup page.
   rating counts and takes the count-weighted mean, and its output goes into
   `BOARDSESH_APP_STORE_RATING` with the date. Anyone can repeat it; App Store
   Connect may run a rating or two ahead of the lookup's cache, and the page shows
-  the public figure. The line links to the US listing. It is app-wide and does
-  not establish board-specific superiority. The
+  the public figure. The line links to the US listing. Beside it, the Google Play
+  figure is the public US listing as shown (`BOARDSESH_PLAY_RATING`, dated), not
+  the Play Console's default. Both are app-wide and do not establish
+  board-specific superiority.
+- "What climbers say" quotes verbatim public store reviews from `quotes.json`
+  (imported into `APP_GUIDE_QUOTES`, never into the translated catalog), one to
+  three per page, marked `lang="en"`, linked to the store listing and shown
+  without stars. App Store reviewers appear by nickname, Play reviewers by first
+  name and last initial. The
   JSON-LD is WebPage (with `dateModified` and an Organization publisher),
   BreadcrumbList, a MobileApplication for Boardsesh only, and an ItemList on the
   hub. No `Review`, `AggregateRating` or `FAQPage` markup is emitted. Existing

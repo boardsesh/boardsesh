@@ -167,6 +167,54 @@ function ProfileStory() {
 }
 
 const homewall: StoryBoardPresentation = { ...STORY_BOARDS['kilter-homewall-7x10'], label: 'Kilter Homewall' };
+const HOMEWALL_EXTRA = [
+  {
+    uuid: '02184e5f6f8a41379117e6f45acdb931',
+    name: 'Three Musketeers',
+    frames: 'p4214r43p4218r44p4241r43p4262r45p4265r45p4268r45p4274r43p4296r42p4328r43p4354r42p4407r45',
+    boardType: 'kilter',
+    layoutId: 8,
+    angle: 35,
+    setter_username: 'griffinwhiteside',
+    ascensionist_count: 1521,
+    difficulty: '5c/V2',
+    quality_average: '3.17',
+    stars: 3,
+    difficulty_error: '0.00',
+    benchmark_difficulty: null,
+  },
+  {
+    uuid: '403828250F6A459F9316527080375CEB',
+    name: 'Wax On',
+    frames: 'p4215r43p4225r43p4252r43p4261r45p4264r45p4307r43p4325r42p4326r42p4334r44',
+    boardType: 'kilter',
+    layoutId: 8,
+    angle: 35,
+    setter_username: 'griffinwhiteside',
+    ascensionist_count: 1513,
+    difficulty: '6c/V5',
+    quality_average: '3.20',
+    stars: 3,
+    difficulty_error: '0.00',
+    benchmark_difficulty: null,
+  },
+  {
+    uuid: '255402F2554441AAA6FB050679E82E49',
+    name: 'School Lunch Gulls 7x10',
+    frames: 'p4146r45p4158r43p4189r44p4208r42p4210r45p4212r43p4215r43p4218r44p4235r45p4241r43p4262r45p4296r42p4352r45',
+    boardType: 'kilter',
+    layoutId: 8,
+    angle: 35,
+    setter_username: 'kilterjackie',
+    ascensionist_count: 1503,
+    difficulty: '6a/V3',
+    quality_average: '3.16',
+    stars: 3,
+    difficulty_error: '0.00',
+    benchmark_difficulty: null,
+  },
+] as unknown as StoryBoardPresentation['climbs'];
+const homewallQueue: StoryBoardPresentation = { ...homewall, climbs: [...homewall.climbs, ...HOMEWALL_EXTRA] };
 
 const stories: StoryModule = {
   title: 'TEMP marketing (Android)',
@@ -181,7 +229,7 @@ const stories: StoryModule = {
       name: 'Player tension',
       layout: 'fullscreen',
       readiness: 'explicit',
-      render: (controls) => <PlayerScene {...controls} fixture={STORY_BOARDS['tension']} />,
+      render: (controls) => <PlayerScene {...controls} fixture={STORY_BOARDS['tension-2-spray']} />,
     },
     moonboard: {
       name: 'Player moonboard',
@@ -216,7 +264,7 @@ const stories: StoryModule = {
       ...queue.stories['up-next'],
       name: 'Queue on Kilter Homewall',
       render: (controls) => (
-        <StoryBoardFixtureContext value={homewall}>
+        <StoryBoardFixtureContext value={homewallQueue}>
           {queue.stories['up-next'].render(controls)}
         </StoryBoardFixtureContext>
       ),

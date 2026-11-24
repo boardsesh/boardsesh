@@ -13,6 +13,7 @@ import {
   GATED_CLAIMS,
   getAppGuide,
   isClaimVisible,
+  quotesFor,
 } from '@/app/lib/seo/app-guides';
 import { AURORA_BRAND_SLUGS, HUB_BOARD_SLUGS, hubBoardHref } from '@/app/lib/seo/app-guide-model';
 import HubPage, { generateMetadata as getHubMetadata } from '../page';
@@ -199,7 +200,16 @@ describe('app guide pages before hydration', () => {
     const markup = await parsePage(await BoardPage(routeProps('kilter')));
     const ratingSource = markup.querySelector('p a[href="https://apps.apple.com/us/app/boardsesh/id6761350784"]');
     expect(ratingSource?.textContent).toBe('4.7 out of 5 from 72 App Store ratings in 17 countries');
-    expect(ratingSource?.closest('p')?.textContent).toContain('Checked Nov 24, 2026');
+    const line = ratingSource?.closest('p');
+    const playLink = Array.from(line?.querySelectorAll('a') ?? []).find((link) =>
+      link.getAttribute('href')?.startsWith('https://play.google.com/store/apps/details?id=com.boardsesh.app'),
+    );
+    expect(playLink?.textContent).toBe('4.6 from 38 Google Play ratings');
+    expect(line?.textContent).toContain('Checked Nov 24, 2026');
+    // The closing band repeats the same line.
+    expect(
+      markup.querySelectorAll('a[href="https://apps.apple.com/us/app/boardsesh/id6761350784"]').length,
+    ).toBeGreaterThanOrEqual(2);
     expect(ratingSource?.closest('p')?.querySelector('time')?.getAttribute('datetime')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(markup.querySelector('a[data-store-badge="ios"] img')?.getAttribute('alt')).toBe(
       'Download on the App Store',
@@ -218,6 +228,7 @@ describe('app guide pages before hydration', () => {
     // Floored to the unit and marked "+": 3,249 climbers is "3,200+", 205,800 climbs "205,000+".
     expect(numbers?.textContent).toContain('3,200+');
     expect(numbers?.textContent).toContain('205,000+');
+    expect(numbers?.textContent).toContain('out of 5 from 38 Google Play ratings');
     cachedCommunityStats.mockResolvedValueOnce({ climbersLast30Days: 3249, litLast30Days: 205800 });
     const board = await parsePage(await BoardPage(routeProps('kilter')));
     expect(board.textContent).toMatch(/in the last 30 days, about 3,200 climbers used Boardsesh/i);
@@ -252,6 +263,42 @@ describe('app guide pages before hydration', () => {
     }
     expect(new Set(routes.map(({ metadata }) => JSON.stringify(metadata.title))).size).toBe(routes.length);
     expect(new Set(routes.map(({ metadata }) => metadata.description)).size).toBe(routes.length);
+  });
+});
+
+describe('what climbers say', () => {
+  it('quotes each page its picked store reviews verbatim, in English, with no stars or rating markup', async () => {
+    for (const { id, markup } of await renderAll()) {
+      const expected = quotesFor(id as Parameters<typeof quotesFor>[0]);
+      const cards = Array.from(markup.querySelectorAll('#quotes figure'));
+      expect(cards.length, id).toBe(expected.length);
+      expect(cards.length, id).toBeGreaterThanOrEqual(1);
+      expect(cards.length, id).toBeLessThanOrEqual(3);
+      cards.forEach((card, index) => {
+        const quote = expected[index];
+        const blockquote = card.querySelector('blockquote');
+        expect(blockquote?.getAttribute('lang')).toBe('en');
+        expect(blockquote?.textContent).toBe(`“${quote.text}”`);
+        const caption = card.querySelector('figcaption')?.textContent ?? '';
+        expect(caption).toContain(quote.author);
+        expect(caption).toContain(quote.store === 'appStore' ? 'App Store' : 'Google Play');
+        if (quote.country) expect(caption).toContain(quote.country);
+        expect(caption).toMatch(/[A-Z][a-z]{2} 2026/);
+      });
+      expect(markup.querySelector('#quotes')?.textContent).not.toMatch(/[★☆]/);
+      const json = markup.querySelector('script[type="application/ld+json"]')?.textContent ?? '';
+      expect(json, id).not.toMatch(/"Review"|AggregateRating|aggregateRating|reviewRating/);
+    }
+    // Verbatim: curly apostrophes survive as written.
+    expect(quotesFor('hub').some((quote) => quote.text.includes('I’m'))).toBe(true);
+  });
+
+  it('follows the comparison table on board pages and "Pick your board" on the hub', async () => {
+    const kilter = await parsePage(await BoardPage(routeProps('kilter')));
+    const comparison = kilter.querySelector('#comparison');
+    expect(comparison?.nextElementSibling?.id).toBe('quotes');
+    const hub = await parsePage(await HubPage());
+    expect(hub.querySelector('#choose-board')?.nextElementSibling?.id).toBe('quotes');
   });
 });
 

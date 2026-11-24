@@ -34,6 +34,7 @@ import {
   type SourceGroup,
 } from './guide-sections';
 import { BoardTileGrid, EveryBoardTray, HubHero, PlatformTrio, StatsBand } from './hub-sections';
+import QuoteStrip from './quote-strip';
 import SourcesAutoOpen from './sources-auto-open';
 import styles from './app-guide.module.css';
 
@@ -131,6 +132,7 @@ function ComparisonGuidePage({ guide, t, storeLabels }: AppGuideCopy & { guide: 
       <VerdictCards guide={guide} t={t} />
       <OnlyTray guide={guide} t={t} />
       <ComparisonTable guide={guide} t={t} />
+      <QuoteStrip pageId={guide.id} t={t} />
       <BrandCards guide={guide} t={t} />
       <OtherApps guide={guide} t={t} />
       <SessionSteps guide={guide} t={t} />
@@ -178,6 +180,7 @@ function HubGuidePage({ guide, t, storeLabels }: AppGuideCopy & { guide: HubGuid
       <GuideBreadcrumb t={t} crumbs={crumbs} />
       <HubHero guide={guide} t={t} storeLabels={storeLabels} byline={<Byline guide={guide} t={t} />} />
       <BoardTileGrid guide={guide} t={t} />
+      <QuoteStrip pageId={guide.id} t={t} />
       <EveryBoardTray guide={guide} t={t} />
       <PlatformTrio t={t} />
       <Suspense fallback={null}>

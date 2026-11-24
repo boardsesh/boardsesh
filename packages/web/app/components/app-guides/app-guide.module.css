@@ -1184,6 +1184,62 @@
   margin: 0;
 }
 
+/* ---------- What climbers say: verbatim store reviews, no stars ---------- */
+.quotes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: var(--spacing-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.quote {
+  display: grid;
+  align-content: space-between;
+  gap: var(--spacing-4);
+  height: 100%;
+  margin: 0;
+  padding: var(--spacing-6);
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-xl);
+  background: var(--semantic-surface);
+}
+
+.quote blockquote {
+  margin: 0;
+}
+
+.quote blockquote p {
+  margin: 0;
+  color: var(--neutral-900);
+  font-family: var(--font-display), sans-serif;
+  font-size: var(--font-size-lg);
+  font-weight: 550;
+  line-height: 1.45;
+}
+
+.quote figcaption {
+  display: grid;
+  gap: 2px;
+  font-size: var(--font-size-sm);
+}
+
+.quoteAuthor {
+  color: var(--neutral-900);
+  font-weight: 650;
+}
+
+.quoteMeta {
+  color: var(--neutral-500);
+}
+
+.quoteMeta a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
 /* ---------- FAQ ---------- */
 .faq {
   max-width: 820px;
@@ -1261,6 +1317,10 @@
 
 .ctaBand .ctaRow {
   margin-top: var(--spacing-6);
+}
+
+.ctaBand .ratingLine {
+  margin-top: var(--spacing-4);
 }
 
 .ctaBoard {
@@ -1768,7 +1828,7 @@
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
   margin: 0;
   padding: 0;
   list-style: none;

@@ -11,6 +11,7 @@
  * `[PENDING-…]` placeholders the editors use for unverified claims.
  */
 import {
+  APP_GUIDE_PAGE_IDS,
   AURORA_BRAND_SLUGS,
   COMPETITOR_NAMES,
   GATEABLE_PATH,
@@ -25,6 +26,7 @@ import {
   type ComparisonPageId,
   type ComparisonPageRegistry,
   type GatedClaimId,
+  type GuideQuote,
   type GuideItem,
   type GuideRow,
   type StepArt,
@@ -733,4 +735,51 @@ function warnUncited(reader: PageReader, sources: GuideSource[], items: GuideIte
 
 export function importPage(page: AppGuidePageId, json: Json, options: ImportOptions): ImportResult {
   return page === 'hub' ? importHubPage(json, options) : importComparisonPage(page, json, options);
+}
+
+const QUOTES_PER_PAGE = [1, 3] as const;
+
+/**
+ * `quotes.json`: verbatim store reviews, each tagged with the pages it goes on.
+ * The text is user-generated, so it lands in the registry as-is (never in the
+ * translated catalog) and is checked only for shape.
+ */
+export function importQuotes(json: Json): { quotes: GuideQuote[]; issues: ImportIssue[] } {
+  const reader = new PageReader('quotes', { allowPending: false });
+  const entries = reader.array(json.quotes, 'quotes', [1, 40]);
+  const quotes: GuideQuote[] = [];
+  for (const [id, { entry, path }] of reader.keyed(entries, 'quotes', (entry, path) => ({ entry, path }))) {
+    const store = entry.store;
+    if (store !== 'appStore' && store !== 'googlePlay')
+      reader.error(`${path}.store`, 'must be "appStore" or "googlePlay"');
+    const date = reader.text(entry.date, `${path}.date`);
+    if (date && !DATE.test(date)) reader.error(`${path}.date`, `must be YYYY-MM-DD (${date})`);
+    const country =
+      entry.country === null || entry.country === undefined ? null : reader.text(entry.country, `${path}.country`);
+    const pages = Array.isArray(entry.pages) ? (entry.pages as unknown[]) : [];
+    if (pages.length === 0) reader.error(`${path}.pages`, 'must name at least one page');
+    for (const page of pages) {
+      if (!(APP_GUIDE_PAGE_IDS as readonly unknown[]).includes(page))
+        reader.error(`${path}.pages`, `"${String(page)}" is not a page`);
+    }
+    // Take the text exactly as given: no trimming of inner whitespace, quotes or apostrophes.
+    const text = typeof entry.text === 'string' ? entry.text : '';
+    if (!text.trim()) reader.error(`${path}.text`, 'is missing or empty');
+    quotes.push({
+      id,
+      text,
+      author: reader.text(entry.author, `${path}.author`),
+      store: store === 'googlePlay' ? 'googlePlay' : 'appStore',
+      country,
+      date: date as GuideQuote['date'],
+      pages: pages.filter((page): page is AppGuidePageId => (APP_GUIDE_PAGE_IDS as readonly unknown[]).includes(page)),
+    });
+  }
+  for (const page of APP_GUIDE_PAGE_IDS) {
+    const count = quotes.filter((quote) => quote.pages.includes(page)).length;
+    const [min, max] = QUOTES_PER_PAGE;
+    if (count > max || (count > 0 && count < min))
+      reader.error('quotes', `${page} has ${count} quotes; expected ${min} to ${max}`);
+  }
+  return { quotes, issues: reader.issues };
 }

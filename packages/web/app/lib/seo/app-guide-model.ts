@@ -158,6 +158,22 @@ export type HubPageRegistry = GuidePageBase & {
 
 export type AppGuideRegistry = { hub: HubPageRegistry } & { [Id in ComparisonPageId]: ComparisonPageRegistry };
 
+/**
+ * A verbatim public store review. User-generated text: never translated, never
+ * trimmed beyond the owner's marked ellipsis, and kept out of the catalog.
+ */
+export type GuideQuote = {
+  id: string;
+  text: string;
+  /** App Store nickname, or first name and last initial (Play shows real names). */
+  author: string;
+  store: 'appStore' | 'googlePlay';
+  /** The App Store storefront's country, in English; Play reviews carry none. */
+  country: string | null;
+  date: VerificationDate;
+  pages: readonly AppGuidePageId[];
+};
+
 /** Claims that may only render where their evidence is registered. */
 export type GatedClaimId = 'googleCertified';
 

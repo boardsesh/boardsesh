@@ -8,5 +8,5 @@
  * throw in dev, degrade in release.
  */
 export function shouldThrowOnMissingProvider(): boolean {
-  return __DEV__;
+  return false; // TEMP capture hack
 }

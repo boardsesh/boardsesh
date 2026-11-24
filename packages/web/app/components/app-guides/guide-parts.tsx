@@ -15,7 +15,7 @@ import StartClimbingButton from '@/app/components/start-climbing-button';
 import { brandCtaSx } from '@/app/components/ui/brand-cta';
 import { quietLinkSx } from '@/app/components/ui/quiet-link';
 import { DEFAULT_LOCALE } from '@/app/lib/i18n/config';
-import { BOARDSESH_APP_STORE_RATING, type GuidePlacement } from '@/app/lib/seo/app-guides';
+import { BOARDSESH_APP_STORE_RATING, BOARDSESH_PLAY_RATING, type GuidePlacement } from '@/app/lib/seo/app-guides';
 import type { AppGuideCopy } from './app-guide-copy';
 import type { GuideImage } from './app-guide-assets';
 import HoldRing, { type HoldRole } from './hold-ring';
@@ -162,27 +162,47 @@ export function CtaRow({
   );
 }
 
-/** The dated all-storefront App Store rating, then the live 30-day line when the cached stats read works. */
+/**
+ * Both stores' public ratings with the date they were read: "4.7 out of 5 from 72
+ * App Store ratings in 17 countries · 4.6 from 38 Google Play ratings · Checked …".
+ * Each store's figure links to its listing. No stars, and no rating markup.
+ */
+export function RatingLine({ t }: { t: T }) {
+  const appStore = BOARDSESH_APP_STORE_RATING;
+  const play = BOARDSESH_PLAY_RATING;
+  // The older of the two reads, so the date never overstates either figure.
+  const checkedAt = [appStore.verifiedAt, play.verifiedAt].sort()[0];
+  return (
+    <Typography component="p" className={styles.ratingLine}>
+      <StarRounded aria-hidden className={styles.ratingIcon} />
+      <MuiLink href={appStore.source}>
+        {t('appGuides:common.rating', {
+          rating: ratingFormat.format(appStore.rating),
+          count: appStore.count,
+          storefronts: appStore.storefronts,
+        })}
+      </MuiLink>
+      <span aria-hidden="true" className={styles.ratingDate}>
+        ·
+      </span>
+      <MuiLink href={play.source}>
+        {t('appGuides:common.ratingPlay', { rating: ratingFormat.format(play.rating), count: play.count })}
+      </MuiLink>
+      <span aria-hidden="true" className={styles.ratingDate}>
+        ·
+      </span>
+      <time dateTime={checkedAt} className={styles.ratingDate}>
+        {t('appGuides:common.ratingCheckedAt', { date: dateFormat.format(new Date(checkedAt)) })}
+      </time>
+    </Typography>
+  );
+}
+
+/** The store ratings, then the live 30-day line when the cached stats read works. */
 export function ProofLines({ t, communityLine = true }: { t: T; communityLine?: boolean }) {
-  const rating = BOARDSESH_APP_STORE_RATING;
   return (
     <Box className={styles.proof}>
-      <Typography component="p" className={styles.ratingLine}>
-        <StarRounded aria-hidden className={styles.ratingIcon} />
-        <MuiLink href={rating.source}>
-          {t('appGuides:common.rating', {
-            rating: ratingFormat.format(rating.rating),
-            count: rating.count,
-            storefronts: rating.storefronts,
-          })}
-        </MuiLink>
-        <span aria-hidden="true" className={styles.ratingDate}>
-          ·
-        </span>
-        <time dateTime={rating.verifiedAt} className={styles.ratingDate}>
-          {t('appGuides:common.ratingCheckedAt', { date: dateFormat.format(new Date(rating.verifiedAt)) })}
-        </time>
-      </Typography>
+      <RatingLine t={t} />
       {communityLine ? (
         <Suspense fallback={null}>
           <CommunityProofLine locale={DEFAULT_LOCALE} />

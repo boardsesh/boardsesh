@@ -26,6 +26,7 @@ import {
   CtaRow,
   DeviceFrame,
   ProofLines,
+  RatingLine,
   RunsOnStrip,
   SectionHead,
   SourcePending,
@@ -590,6 +591,7 @@ export function CtaBand({
           {t(`appGuides:pages.${guide.id}.cta.body`)}
         </Typography>
         <CtaRow t={t} storeLabels={storeLabels} placement={placement} />
+        <RatingLine t={t} />
       </Box>
       <Box className={styles.ctaBoard} aria-hidden="true">
         <Image src={art.src} alt="" width={art.width} height={art.height} sizes="340px" loading="lazy" />
