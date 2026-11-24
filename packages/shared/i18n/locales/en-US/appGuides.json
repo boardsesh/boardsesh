@@ -376,8 +376,8 @@
           },
           "finding": {
             "feature": "Find climbs",
-            "boardsesh": "7 sorts; filter by holds, wall zone, sends, rating and beta video; similar climbs",
-            "official": "Grade, Verified, setter, holds and boulders or routes; tall/wide since 2.0; no zones"
+            "boardsesh": "7 sorts; filter by holds, zone, sends, rating, beta video; tall/wide on every layout",
+            "official": "Grade, Verified, setter, holds and boulders or routes; tall/wide on Homewall only"
           },
           "crew": {
             "feature": "Climb with a crew",
