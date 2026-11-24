@@ -28,6 +28,10 @@ const gymReportingAliasVenueGuard = readFileSync(
   new URL('../../../db/drizzle/0340_gym_reporting_alias_venue_guard.sql', import.meta.url),
   'utf8',
 );
+const gymReachObservationsSchema = readFileSync(
+  new URL('../../../db/drizzle/0341_gym_reach_observations.sql', import.meta.url),
+  'utf8',
+);
 const offlineWriteDeliverySchema = readFileSync(
   new URL('../../../db/drizzle/0332_offline_write_delivery.sql', import.meta.url),
   'utf8',
@@ -2681,4 +2685,6 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${gymReportingTickTimeBinding};
   DROP FUNCTION IF EXISTS public.revoke_gym_reporting_aliases_on_board_move();
   ${gymReportingAliasVenueGuard};
+  DROP TABLE IF EXISTS gym_reporting_observations;
+  ${gymReachObservationsSchema};
 `;

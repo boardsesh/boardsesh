@@ -19,7 +19,7 @@ import {
 } from './gym-reporting';
 import { requireGymEditAccess, requireGymOwnerOrAdmin } from './gyms';
 
-async function lockGymSettings(
+export async function lockGymSettings(
   tx: GymReportingTransaction,
   gymUuid: string,
   viewerId: string,

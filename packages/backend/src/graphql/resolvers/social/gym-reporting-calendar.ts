@@ -10,6 +10,14 @@ const offsetAt = (epoch: SQL, zone: SQL) => {
   return sql`extract(epoch FROM (timezone(${zone}, ${instant}) - timezone(interval '0', ${instant})))`;
 };
 
+export function hasReportingCalendarZoneSql(zone: SQL): SQL {
+  return sql`(${zone} = 'UTC' OR (
+    ${zone} ~ '^[A-Za-z_]+(/[A-Za-z0-9_+\\-]+)+$'
+    AND ${zone} NOT LIKE 'posix/%' AND ${zone} NOT LIKE 'right/%'
+    AND EXISTS (SELECT 1 FROM pg_timezone_names WHERE name = ${zone})
+  ))`;
+}
+
 type CalendarOptions = { sampleBudget: number; preferredTimeZone?: string };
 
 /**
@@ -35,9 +43,7 @@ export function reportingCivilPeriodsSql(periods: SQL, { sampleBudget, preferred
       SELECT zone, unnest(range_agg(outer_span)) AS envelope, sum(weight) AS weight
       FROM requested
       WHERE zone <> 'UTC' AND outer_span IS NOT NULL
-        AND zone ~ '^[A-Za-z_]+(/[A-Za-z0-9_+\\-]+)+$'
-        AND zone NOT LIKE 'posix/%' AND zone NOT LIKE 'right/%'
-        AND EXISTS (SELECT 1 FROM pg_timezone_names WHERE name = requested.zone)
+        AND ${hasReportingCalendarZoneSql(sql`requested.zone`)}
       GROUP BY zone
     ),
     envelope_seconds AS (

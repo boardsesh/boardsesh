@@ -4,7 +4,7 @@ import { createElement, type ReactNode } from 'react';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
 import { GYM_REPORTING_RECEIPT_MS, gymReportingQueryKey } from '@boardsesh/graphql';
-import type { GymStats } from '@boardsesh/shared-schema';
+import type { GymReachOverview, GymStats } from '@boardsesh/shared-schema';
 
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
@@ -37,7 +37,7 @@ vi.mock('../../../src/providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: true, isLoading: false }),
 }));
 vi.mock('../../../src/providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: {} }),
+  useTheme: () => ({ systemColors: {}, brandColors: { primary: '#8b5cf6' } }),
 }));
 vi.mock('../../../src/hooks/use-stack-screen-options', () => ({
   useStackScreenOptions: () => ({}),
@@ -85,6 +85,24 @@ vi.mock('../../../src/components/ActivityIndicator', () => ({
 vi.mock('../../../src/components/Button', () => ({
   Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
     createElement('button', { onClick: onPress, type: 'button' }, title),
+}));
+vi.mock('../../../src/components/PressableSurface', () => ({
+  PressableSurface: ({
+    children,
+    onPress,
+    accessibilityLabel,
+    accessibilityState,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    accessibilityLabel?: string;
+    accessibilityState?: { selected?: boolean };
+  }) =>
+    createElement(
+      'button',
+      { onClick: onPress, 'aria-label': accessibilityLabel, 'aria-pressed': accessibilityState?.selected },
+      children,
+    ),
 }));
 vi.mock('../../../src/components/Text', () => ({
   Text: ({ children }: Children) => createElement('span', null, children),
@@ -144,6 +162,34 @@ const report: GymStats = {
   busiestDays: [],
 };
 
+const count = (value: number) => ({ count: value, coverage: 'complete' as const });
+const reachWindow = {
+  climbers: count(12),
+  firstRecorded: count(4),
+  uncertainFirstRecorded: 0,
+  sends: count(3),
+  sendLoggers: 2,
+  sessions: count(2),
+};
+const reach: GymReachOverview = {
+  observationStartedAt: '2025-11-01T00:00:00Z',
+  baselineStartAt: '2026-10-17T20:00:00Z',
+  current: reachWindow,
+  previous: { ...reachWindow, climbers: count(8), sends: count(2) },
+  cameBack: { returning: 4, previousClimbers: 8, coverage: 'complete' },
+  previousCameBack: { returning: 2, previousClimbers: 8, coverage: 'complete' },
+  weeklyTrend: Array.from({ length: 12 }, (_, index) => {
+    const monday = Date.UTC(2026, 7, 17) + index * 7 * 86_400_000;
+    return {
+      startDate: new Date(monday).toISOString().slice(0, 10),
+      endDate: new Date(monday + 6 * 86_400_000).toISOString().slice(0, 10),
+      inProgress: index === 11,
+      climbers: index === 0 ? { count: 0, coverage: 'unavailable' } : count(index),
+      sends: count(index === 0 ? 0 : index + 2),
+    };
+  }),
+};
+
 function renderScreen() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const tree = () => (
@@ -192,6 +238,33 @@ describe('GymAnalyticsScreen', () => {
         }),
       ),
     );
+  });
+
+  it('shows five cards and lets a screen-reader user select exact weekly counts', async () => {
+    mocks.request.mockResolvedValue({ gymStats: { ...report, reachOverview: reach } });
+    renderScreen();
+    await screen.findByText('gymReach.climbers');
+    for (const title of [
+      'gymReach.first',
+      'gymReach.returned',
+      'gymReach.sends',
+      'gymReach.sessions',
+      'gymReach.trend',
+    ]) {
+      expect(screen.getByText(title)).toBeTruthy();
+    }
+    expect(screen.getByText('gymReach.returnedDefinition 4 8')).toBeTruthy();
+    const missing = screen.getByRole('button', { name: /Aug 17, 2026.*gymReach.missing/ });
+    fireEvent.click(missing);
+    expect(missing.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'gymReach.trendSends' }));
+    expect(
+      screen.getByRole('button', { name: /Aug 17, 2026.*gymReach.weekSends 0/ }).getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(
+      screen.getByRole('button', { name: /Nov 2, 2026.*gymReach.weekSends 13.*gymReach.inProgress/ }),
+    ).toBeTruthy();
+    expect(mocks.request).toHaveBeenCalledTimes(1);
   });
 
   it('shows null exact observations independently from date-only reporting activity', async () => {

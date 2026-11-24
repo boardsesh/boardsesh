@@ -4525,6 +4525,60 @@ export type GymOwnershipUserSummary = {
   userId: Scalars['ID']['output'];
 };
 
+export type GymReachCount = {
+  __typename?: 'GymReachCount';
+  /** Count of available eligible records or people. Consult coverage before displaying zero. */
+  count: Scalars['Int']['output'];
+  coverage: GymReachCoverage;
+};
+
+export type GymReachCoverage = 'complete' | 'partial' | 'unavailable';
+
+export type GymReachOverview = {
+  __typename?: 'GymReachOverview';
+  /** UTC start of the interval immediately before the previous period. */
+  baselineStartAt: Scalars['String']['output'];
+  cameBack: GymReachReturn;
+  current: GymReachWindow;
+  /** UTC start of the forward observation contract for every accepted gym. */
+  observationStartedAt?: Maybe<Scalars['String']['output']>;
+  previous: GymReachWindow;
+  previousCameBack: GymReachReturn;
+  /** Twelve gym-local Monday-start weeks, including the week in progress. */
+  weeklyTrend: Array<GymReachWeek>;
+};
+
+export type GymReachReturn = {
+  __typename?: 'GymReachReturn';
+  /** A return rate can be displayed only with complete coverage and a positive denominator. */
+  coverage: GymReachCoverage;
+  previousClimbers: Scalars['Int']['output'];
+  returning: Scalars['Int']['output'];
+};
+
+export type GymReachWeek = {
+  __typename?: 'GymReachWeek';
+  climbers: GymReachCount;
+  /** Gym-local Sunday date in YYYY-MM-DD format. */
+  endDate: Scalars['String']['output'];
+  inProgress: Scalars['Boolean']['output'];
+  sends: GymReachCount;
+  /** Gym-local Monday date in YYYY-MM-DD format. */
+  startDate: Scalars['String']['output'];
+};
+
+export type GymReachWindow = {
+  __typename?: 'GymReachWindow';
+  climbers: GymReachCount;
+  /** First recorded here in available eligible records. It may change when older history arrives. */
+  firstRecorded: GymReachCount;
+  sendLoggers: Scalars['Int']['output'];
+  sends: GymReachCount;
+  /** Distinct identified climber and gym-local date with a send. */
+  sessions: GymReachCount;
+  uncertainFirstRecorded: Scalars['Int']['output'];
+};
+
 /** Why a climber reported a gym listing. */
 export type GymReportReason = 'closed' | 'duplicate' | 'not_a_gym' | 'other' | 'wrong_details';
 
@@ -4594,6 +4648,7 @@ export type GymStats = {
   periodDays: Scalars['Int']['output'];
   /** Counts for the window immediately before the current one (same length). */
   previous: GymStatsWindow;
+  reachOverview?: Maybe<GymReachOverview>;
   timeZone: Scalars['String']['output'];
   timeZoneConfigured: Scalars['Boolean']['output'];
   /** Top 10 climbs by ascents in the current window. */
@@ -14662,6 +14717,12 @@ export type ResolversTypes = ResolversObject<{
   GymOwnershipLookupResult: ResolverTypeWrapper<GymOwnershipLookupResult>;
   GymOwnershipSummary: ResolverTypeWrapper<GymOwnershipSummary>;
   GymOwnershipUserSummary: ResolverTypeWrapper<GymOwnershipUserSummary>;
+  GymReachCount: ResolverTypeWrapper<GymReachCount>;
+  GymReachCoverage: GymReachCoverage;
+  GymReachOverview: ResolverTypeWrapper<GymReachOverview>;
+  GymReachReturn: ResolverTypeWrapper<GymReachReturn>;
+  GymReachWeek: ResolverTypeWrapper<GymReachWeek>;
+  GymReachWindow: ResolverTypeWrapper<GymReachWindow>;
   GymReportReason: GymReportReason;
   GymReportingBoard: ResolverTypeWrapper<GymReportingBoard>;
   GymReportingBoardConfig: ResolverTypeWrapper<GymReportingBoardConfig>;
@@ -15295,6 +15356,11 @@ export type ResolversParentTypes = ResolversObject<{
   GymOwnershipLookupResult: GymOwnershipLookupResult;
   GymOwnershipSummary: GymOwnershipSummary;
   GymOwnershipUserSummary: GymOwnershipUserSummary;
+  GymReachCount: GymReachCount;
+  GymReachOverview: GymReachOverview;
+  GymReachReturn: GymReachReturn;
+  GymReachWeek: GymReachWeek;
+  GymReachWindow: GymReachWindow;
   GymReportingBoard: GymReportingBoard;
   GymReportingBoardConfig: GymReportingBoardConfig;
   GymReportingCoverage: GymReportingCoverage;
@@ -17938,6 +18004,64 @@ export type GymOwnershipUserSummaryResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type GymReachCountResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymReachCount'] = ResolversParentTypes['GymReachCount'],
+> = ResolversObject<{
+  count?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  coverage?: Resolver<ResolversTypes['GymReachCoverage'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type GymReachOverviewResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymReachOverview'] = ResolversParentTypes['GymReachOverview'],
+> = ResolversObject<{
+  baselineStartAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  cameBack?: Resolver<ResolversTypes['GymReachReturn'], ParentType, ContextType>;
+  current?: Resolver<ResolversTypes['GymReachWindow'], ParentType, ContextType>;
+  observationStartedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  previous?: Resolver<ResolversTypes['GymReachWindow'], ParentType, ContextType>;
+  previousCameBack?: Resolver<ResolversTypes['GymReachReturn'], ParentType, ContextType>;
+  weeklyTrend?: Resolver<Array<ResolversTypes['GymReachWeek']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type GymReachReturnResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymReachReturn'] = ResolversParentTypes['GymReachReturn'],
+> = ResolversObject<{
+  coverage?: Resolver<ResolversTypes['GymReachCoverage'], ParentType, ContextType>;
+  previousClimbers?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  returning?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type GymReachWeekResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymReachWeek'] = ResolversParentTypes['GymReachWeek'],
+> = ResolversObject<{
+  climbers?: Resolver<ResolversTypes['GymReachCount'], ParentType, ContextType>;
+  endDate?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  inProgress?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  sends?: Resolver<ResolversTypes['GymReachCount'], ParentType, ContextType>;
+  startDate?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type GymReachWindowResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymReachWindow'] = ResolversParentTypes['GymReachWindow'],
+> = ResolversObject<{
+  climbers?: Resolver<ResolversTypes['GymReachCount'], ParentType, ContextType>;
+  firstRecorded?: Resolver<ResolversTypes['GymReachCount'], ParentType, ContextType>;
+  sendLoggers?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  sends?: Resolver<ResolversTypes['GymReachCount'], ParentType, ContextType>;
+  sessions?: Resolver<ResolversTypes['GymReachCount'], ParentType, ContextType>;
+  uncertainFirstRecorded?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type GymReportingBoardResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['GymReportingBoard'] = ResolversParentTypes['GymReportingBoard'],
@@ -17997,6 +18121,7 @@ export type GymStatsResolvers<
   gymUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   periodDays?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   previous?: Resolver<ResolversTypes['GymStatsWindow'], ParentType, ContextType>;
+  reachOverview?: Resolver<Maybe<ResolversTypes['GymReachOverview']>, ParentType, ContextType>;
   timeZone?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   timeZoneConfigured?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   topClimbs?: Resolver<Array<ResolversTypes['GymTopClimb']>, ParentType, ContextType>;
@@ -23186,6 +23311,11 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   GymOwnershipLookupResult?: GymOwnershipLookupResultResolvers<ContextType>;
   GymOwnershipSummary?: GymOwnershipSummaryResolvers<ContextType>;
   GymOwnershipUserSummary?: GymOwnershipUserSummaryResolvers<ContextType>;
+  GymReachCount?: GymReachCountResolvers<ContextType>;
+  GymReachOverview?: GymReachOverviewResolvers<ContextType>;
+  GymReachReturn?: GymReachReturnResolvers<ContextType>;
+  GymReachWeek?: GymReachWeekResolvers<ContextType>;
+  GymReachWindow?: GymReachWindowResolvers<ContextType>;
   GymReportingBoard?: GymReportingBoardResolvers<ContextType>;
   GymReportingBoardConfig?: GymReportingBoardConfigResolvers<ContextType>;
   GymReportingCoverage?: GymReportingCoverageResolvers<ContextType>;

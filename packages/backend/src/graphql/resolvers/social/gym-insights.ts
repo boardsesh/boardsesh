@@ -1,6 +1,10 @@
 import { sql } from 'drizzle-orm';
+import type { GraphQLResolveInfo } from 'graphql';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { ownedOrPublicClimbCondition } from '@boardsesh/db/queries';
+import { selectedFieldNames } from '../shared/selected-fields';
+import { activateGymReachObservation, readGymReachObservation } from './gym-reporting-observation';
+import { readGymReachOverview } from './gym-reporting-overview';
 import type { ConnectionContext, GymDayActivity, GymStats, GymTopClimb } from '@boardsesh/shared-schema';
 import {
   readGymReportingCoverage,
@@ -23,8 +27,14 @@ type Snapshot = {
 };
 
 export const socialGymInsightsQueries = {
-  gymStats: (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext): Promise<GymStats> =>
-    withGymReportingScope(input, ctx, async (tx, scope) => {
+  gymStats: async (
+    _: unknown,
+    { input }: { input: unknown },
+    ctx: ConnectionContext,
+    info?: GraphQLResolveInfo,
+  ): Promise<GymStats> => {
+    const includeReach = selectedFieldNames(info)?.has('reachOverview') ?? false;
+    const result = await withGymReportingScope(input, ctx, async (tx, scope) => {
       const [snapshot] = rowsFromResult<Snapshot>(
         await tx.execute(sql`
         WITH activity AS (${reportingActivitySql(scope, { start: scope.previous.startAt, end: scope.asOf })}),
@@ -84,7 +94,10 @@ export const socialGymInsightsQueries = {
       `),
       );
       const coverage = await readGymReportingCoverage(tx, scope);
-      return {
+      const observation = includeReach ? await readGymReachObservation(tx, scope) : null;
+      const reachOverview = observation ? await readGymReachOverview(tx, scope, observation.startedAt) : null;
+      const stats: GymStats = {
+        reachOverview,
         gymUuid: scope.gym.uuid,
         gymName: scope.gym.name,
         boardUuid: scope.boardUuid,
@@ -112,5 +125,9 @@ export const socialGymInsightsQueries = {
         topClimbs: snapshot.topClimbs,
         busiestDays: snapshot.busiestDays,
       };
-    }),
+      return { stats, activate: observation?.needsActivation ? scope : null };
+    });
+    if (result.activate) await activateGymReachObservation(result.activate);
+    return result.stats;
+  },
 };

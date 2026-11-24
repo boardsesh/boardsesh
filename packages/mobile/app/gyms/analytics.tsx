@@ -13,6 +13,8 @@ import {
   isGymReportingAccessError,
   SET_GYM_REPORTING_BOARD_ALIAS,
   SET_GYM_REPORTING_TIME_ZONE,
+  type GymTrendMetric,
+  type GymTrendSelection,
 } from '@boardsesh/graphql';
 import type { GymStats, GymStatsPeriod } from '@boardsesh/shared-schema';
 import { useAuth } from '../../src/providers/auth-provider';
@@ -31,9 +33,10 @@ import { Button } from '../../src/components/Button';
 import { SegmentedControl } from '../../src/components/SegmentedControl';
 import { Text } from '../../src/components/Text';
 import { GymReportingSettings } from '../../src/components/gym-directory/GymReportingSettings';
+import { GymReachReport } from '../../src/components/gym-directory/GymReachReport';
 import { spacing } from '../../src/theme/tokens';
 
-function ReportingResults({ stats }: { stats: GymStats }) {
+function ReportingResults({ stats, trend }: { stats: GymStats; trend: GymTrendSelection }) {
   const { t, i18n } = useTranslation('boards');
   const { systemColors } = useTheme();
   const locale = i18n.language || 'en-US';
@@ -95,7 +98,9 @@ function ReportingResults({ stats }: { stats: GymStats }) {
           </Text>
         </View>
       </View>
-      {gymReportingHasActivity(stats) ? (
+      {stats.reachOverview ? (
+        <GymReachReport stats={stats} overview={stats.reachOverview} selection={trend} />
+      ) : gymReportingHasActivity(stats) ? (
         <View style={styles.details}>
           <Text variant="headline">
             {t('gymReporting.climbers', { countText: number.format(stats.current.uniqueClimbers) })}
@@ -123,6 +128,7 @@ type ReportingFilters = {
   setBoardUuid: (boardUuid: string | null) => void;
   period: GymStatsPeriod;
   setPeriod: (period: GymStatsPeriod) => void;
+  trend: GymTrendSelection;
 };
 
 function GymAnalyticsReport({
@@ -132,6 +138,7 @@ function GymAnalyticsReport({
   setBoardUuid,
   period,
   setPeriod,
+  trend,
 }: ReportingScope & ReportingFilters) {
   const { t, i18n } = useTranslation('boards');
   const queryClient = useQueryClient();
@@ -228,7 +235,7 @@ function GymAnalyticsReport({
               })}
             </Text>
           )}
-          <ReportingResults stats={stats} />
+          <ReportingResults stats={stats} trend={trend} />
           {query.state === 'ready' && (
             <>
               <View style={styles.actions}>
@@ -246,6 +253,12 @@ function GymAnalyticsReport({
 function GymAnalyticsViewer({ viewerId, gymUuid }: ReportingScope) {
   const [period, setPeriod] = useState<GymStatsPeriod>('week');
   const [boardUuid, setBoardUuid] = useState<string | null>(null);
+  const [week, setWeek] = useState<string | null>(null);
+  const [metric, setMetric] = useState<GymTrendMetric>('climbers');
+  const chooseBoard = (next: string | null) => {
+    if (next !== boardUuid) setWeek(null);
+    setBoardUuid(next);
+  };
   const focused = useIsFocused();
   const foreground = useGymReportingForeground();
   if (!focused || !foreground) return null;
@@ -254,7 +267,8 @@ function GymAnalyticsViewer({ viewerId, gymUuid }: ReportingScope) {
       viewerId={viewerId}
       gymUuid={gymUuid}
       boardUuid={boardUuid}
-      setBoardUuid={setBoardUuid}
+      setBoardUuid={chooseBoard}
+      trend={{ metric, setMetric, week, setWeek }}
       period={period}
       setPeriod={setPeriod}
     />
