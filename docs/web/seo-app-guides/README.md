@@ -84,19 +84,26 @@ those claims. Pages never depend on an App Store request at render time.
 
 The six guides went live on **2026-11-24** (production deploy `b228496c5`).
 Release dates below refer to this guide rollout; the homepage and `/boards`
-already existed. A blank first-index date means indexing has not been confirmed,
-not that Google has rejected the page.
+already existed. The dates below record our first confirmed post-rollout
+inspection, not the exact time Google added a page to its index.
 
 | URL path | Guide rollout date | First confirmed indexed after rollout | Day-zero observation |
 | --- | --- | --- | --- |
-| `/apps/kilter` | 2026-11-24 | — | Discovered, currently not indexed; indexing requested |
-| `/apps/moonboard` | 2026-11-24 | — | Unknown to Google; indexing requested |
-| `/apps/aurora` | 2026-11-24 | — | Unknown to Google; indexing requested |
-| `/compare/spray-wall-apps` | 2026-11-24 | — | Unknown to Google; indexing requested |
-| `/apps` | 2026-11-24 | — | Discovered, currently not indexed; indexing requested |
-| `/apps/woods` | 2026-11-24 | — | Unknown to Google; indexing requested |
-| `/` | 2026-11-24 | — | Already indexed; last crawl 14:21:47 UTC predates rollout; recrawl requested |
-| `/boards` | 2026-11-24 | — | Unknown to Google; indexing requested |
+| `/apps/kilter` | 2026-11-24 | 2026-11-24 | Indexed; self-canonical; crawled 18:42:09 UTC |
+| `/apps/moonboard` | 2026-11-24 | 2026-11-24 | Indexed; self-canonical; crawled 18:42:09 UTC |
+| `/apps/aurora` | 2026-11-24 | 2026-11-24 | Indexed; self-canonical; crawled 18:46:08 UTC |
+| `/compare/spray-wall-apps` | 2026-11-24 | 2026-11-24 | Indexed; self-canonical; crawled 18:48:10 UTC |
+| `/apps` | 2026-11-24 | 2026-11-24 | Indexed; self-canonical; crawled 18:48:10 UTC |
+| `/apps/woods` | 2026-11-24 | 2026-11-24 | Indexed; self-canonical; crawled 18:54:22 UTC |
+| `/` | 2026-11-24 | 2026-11-24 | Existing index refreshed; self-canonical; crawled 19:00:12 UTC |
+| `/boards` | 2026-11-24 | 2026-11-24 | Indexed; self-canonical; crawled 19:00:12 UTC |
+
+The initial inspection found the guides and `/boards` unindexed. The final
+day-zero URL Inspection API check returned **Submitted and indexed** for all
+eight URLs, with successful fetches, indexing allowed, and matching Google-
+selected/user-declared canonicals. The homepage's final crawl is after rollout;
+it was already indexed before these changes. The exact final inspection fields
+are retained in `rollout-2026-11-24.json`.
 
 On November 24, Search Console accepted both
 `https://www.boardsesh.com/sitemap.xml` and
@@ -140,10 +147,19 @@ the ineligible verdict anticipated in #8122. This is the observed validator
 result, not a guarantee of rich-result display. No ratings were added to
 structured data to change eligibility.
 
-Bing's Google sign-in currently has no verified sites. Its sitemap submission
-is pending the owner's choice of importing the Search Console site (with the
-required Google permission) or signing in with the existing Microsoft account.
-Do not count this as a completed Bing submission.
+Bing imported and verified `https://boardsesh.com/` from Search Console on
+November 24. The initial import displayed a fetch failure; after the retry and
+a refresh, the property appeared as verified. The canonical www sitemap index
+`https://www.boardsesh.com/sitemap.xml` was explicitly submitted and appeared
+in Bing's sitemap table as **Submitted / Processing**. This records accepted
+submission, not completed processing or indexing. Bing's initial reports can
+take up to 48 hours to populate.
+
+The Perplexity exception from #8130 was applied through the repo's production
+workflow at 19:30:22 UTC. All eleven allowed documents returned 200 as
+PerplexityBot, while the login page and all six training-crawler probes remained
+403. See `docs/operations/cloudflare.md` for the managed-rule conflict, scope
+and deployment receipt, and `rollout-2026-11-24.json` for the exact probe results.
 
 Use these dated checkpoints, based on the release date (Europe/Amsterdam):
 
