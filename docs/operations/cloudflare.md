@@ -898,7 +898,7 @@ rule and before the challenge. It blocks a `GET` to www or ws whose UA carries a
 generic automation signature (`bot`, `crawler`, `spider`, `scraper`,
 `headless`, `python`, `go-http-client`, `java/`, `libwww`, `wget/`, `curl/`,
 `scrapy`, `httpclient`) unless the agent is on the allow list. The "unless" is
-rule order: the allow rule's `skip` runs first. So a crawler now has to be
+rule order: the allow rule's `skip` runs before the default-deny rule. So a crawler now has to be
 named to get in, instead of named to be kept out.
 
 Why: `Lightpanda/1.0`, a headless browser for AI agents, was 96% of a www log
@@ -934,9 +934,10 @@ The limits, on purpose:
   the Railway hostname, and Playwright's headless Chromium says
   `HeadlessChrome`. Named crawlers are refused in every environment.
 
-The zone is on the Free plan, which allows 5 custom rules in total. This rule
-is the fourth, so one slot is left. Anything new should extend an existing
-rule's expression before it takes that slot.
+The zone is on the Free plan, which allows 5 custom rules in total. All five
+slots are now used: the Perplexity public-guide exception from #8130 precedes
+the four existing rules. Extend an existing rule where possible; another
+custom rule needs a slot freed or a plan change.
 
 The SEO-scraper tokens on the block rule are now mostly redundant. Keep them for
 one release, then prune them.
