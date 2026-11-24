@@ -216,6 +216,18 @@
   margin-top: 28px;
 }
 
+/* "or open the browser app": its own line under the button and badges. */
+.ctaAppLine {
+  flex-basis: 100%;
+  margin: calc(-1 * var(--spacing-2)) 0 0;
+}
+
+.ctaAppLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
 .proof {
   display: grid;
   gap: 6px;

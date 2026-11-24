@@ -38,9 +38,16 @@ const boards = [
 const routeProps = (slug: string) => ({ params: Promise.resolve({ slug }) });
 const CTA_LABELS: Record<string, string> = {
   kilter: 'Browse Kilter climbs',
-  aurora: 'Browse Tension and Aurora climbs',
+  aurora: 'Pick your Tension or Aurora board',
   moonboard: 'Browse MoonBoard problems',
   woods: 'Browse Woods climbs',
+};
+/** The section of www's board gallery each page's button lands on. */
+const CTA_SECTIONS: Record<string, string> = {
+  kilter: 'kilter',
+  aurora: 'tension',
+  moonboard: 'moonboard',
+  woods: 'woods',
 };
 const { i18n } = await getServerTranslationForLocale('fr', 'common');
 
@@ -91,13 +98,15 @@ describe('app guide pages before hydration', () => {
     expect(markup.querySelectorAll('#verdict ul')[0]?.querySelectorAll('li')).toHaveLength(5);
 
     // The one filled action opens the browser app; both store badges carry this page's placement.
-    // The filled button says what it opens, and opens the board picker so the climber picks their
-    // own wall: never one preselected layout, size or angle.
-    const browse = Array.from(markup.querySelectorAll<HTMLAnchorElement>(`a[href^="${APP_URL}/"]`)).find(
+    // The filled button says what it opens, and lands on this family's section of www's board
+    // gallery, where the climber picks their own wall with no account: never one preselected
+    // layout, size or angle. The browser app stays one quiet link away in the hero.
+    const browse = Array.from(markup.querySelectorAll<HTMLAnchorElement>('a')).find(
       (link) => link.textContent === CTA_LABELS[slug],
     );
-    expect(browse?.getAttribute('href'), slug).toBe(`${APP_URL}/boards`);
-    expect(browse?.getAttribute('aria-label')).toBe(`${CTA_LABELS[slug]} in the Boardsesh browser app`);
+    expect(browse?.getAttribute('href'), slug).toBe(`/boards#${CTA_SECTIONS[slug]}`);
+    const hero = markup.querySelector('section[aria-labelledby="page-title"]');
+    expect(hero?.querySelector(`a[href="${APP_URL}"]`)?.textContent, slug).toBe('or open the browser app');
     expect(markup.querySelector('a[data-store-badge="ios"]')?.getAttribute('href')).toContain(`compare-${slug}`);
     expect(markup.querySelector('a[data-store-badge="android"]')?.getAttribute('href')).toContain(`compare-${slug}`);
 
@@ -375,7 +384,10 @@ describe('page-level claims from the registry', () => {
       Array.from(pages[id].querySelectorAll('a'))
         .find((link) => link.textContent === label)
         ?.getAttribute('href');
-    expect(button('hub', 'Find climbs for your board')).toBe(APP_URL);
+    expect(button('hub', 'Find climbs for your board')).toBe('/boards');
+    expect(button('hub', 'or open the browser app')).toBe(APP_URL);
+    // Setting up a spray wall needs an account anyway, so it opens the app with no second link.
+    expect(button('spray-wall-apps', 'or open the browser app')).toBeUndefined();
     expect(button('spray-wall-apps', 'Set up your spray wall')).toBe(`${APP_URL}/boards/spray/new`);
   });
 });

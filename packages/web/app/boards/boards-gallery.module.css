@@ -10,6 +10,8 @@
 .panel {
   grid-column: span 2;
   min-width: 0;
+  /* App guides link to a family's panel (`/boards#kilter`): land it below the fixed header. */
+  scroll-margin-top: calc(var(--global-header-height) + var(--spacing-4));
   padding: var(--spacing-5);
   border: 1px solid var(--separator);
   border-radius: var(--border-radius-xl);

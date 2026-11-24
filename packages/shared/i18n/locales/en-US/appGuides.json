@@ -161,12 +161,13 @@
     "cta": {
       "hub": "Find climbs for your board",
       "kilter": "Browse Kilter climbs",
-      "aurora": "Browse Tension and Aurora climbs",
+      "aurora": "Pick your Tension or Aurora board",
       "moonboard": "Browse MoonBoard problems",
       "woods": "Browse Woods climbs",
       "spray-wall-apps": "Set up your spray wall"
     },
-    "ctaAria": "{{label}} in the Boardsesh browser app"
+    "ctaAria": "{{label}} in the Boardsesh browser app",
+    "ctaBrowserApp": "or open the browser app"
   },
   "pages": {
     "hub": {

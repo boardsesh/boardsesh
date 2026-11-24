@@ -95,9 +95,11 @@ export type RunsOn = { ios: 'bluetooth' | 'wled'; browser: 'lights' | 'lightsFam
  * `/<board>/<layout>/<size>/<sets>/<angle>/list` route); `spray-setup` opens the
  * spray wall setup; `root` the app's own board picker.
  */
-export type PrimaryAction = {
-  target: { kind: 'root' } | { kind: 'board-picker' } | { kind: 'spray-setup' };
-};
+export type PrimaryAction =
+  /** www's public board gallery, at one family's section when `board` is set: no sign-in needed to browse. */
+  | { kind: 'boards'; board?: CatalogBoard }
+  /** The browser app's new spray wall flow: setting up a wall needs an account anyway. */
+  | { kind: 'spray-setup' };
 
 export type AppGuidePage = ComparisonGuide | HubGuide;
 /** A board app page; `id` is one of APP_GUIDE_SLUGS. */
@@ -229,18 +231,19 @@ const RUNS_ON: Record<AppGuidePageId, RunsOn> = {
 };
 
 /**
- * Where each page's filled button opens the browser app (the label is `common.cta.<page>`).
- * A board page opens the board picker, never one layout, size and angle: a Kilter climber
- * could be on any of a dozen walls, and the Aurora page covers five brands. The app has no
- * picker per board family, so every board page opens the same one.
+ * Where each page's filled button goes (the label is `common.cta.<page>`). A board page opens
+ * that family's section of www's board gallery, where each layout links to its public climb
+ * list: the climber picks their own wall, and a signed-out visitor can browse without an
+ * account. Never one preselected layout, size or angle. The Aurora page lands on Tension; the
+ * other Aurora brands sit beside it in the gallery.
  */
 const PRIMARY_ACTION: Record<AppGuidePageId, PrimaryAction> = {
-  hub: { target: { kind: 'root' } },
-  kilter: { target: { kind: 'board-picker' } },
-  aurora: { target: { kind: 'board-picker' } },
-  moonboard: { target: { kind: 'board-picker' } },
-  woods: { target: { kind: 'board-picker' } },
-  'spray-wall-apps': { target: { kind: 'spray-setup' } },
+  hub: { kind: 'boards' },
+  kilter: { kind: 'boards', board: 'kilter' },
+  aurora: { kind: 'boards', board: 'tension' },
+  moonboard: { kind: 'boards', board: 'moonboard' },
+  woods: { kind: 'boards', board: 'woods' },
+  'spray-wall-apps': { kind: 'spray-setup' },
 };
 
 /** Art for a feature tile, by tile id. A tile without a capture gets a diagram, never a borrowed screen. */
