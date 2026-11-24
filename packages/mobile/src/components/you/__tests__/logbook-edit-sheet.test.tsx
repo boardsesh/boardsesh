@@ -167,7 +167,10 @@ vi.mock('../../PressableSurface', () => ({
     disabled?: boolean;
   }) => createElement('button', { 'aria-label': accessibilityLabel, disabled, onClick: () => onPress?.() }, children),
 }));
-vi.mock('../../StarRating', () => ({ StarRating: () => null }));
+vi.mock('../../StarRating', () => ({
+  StarRating: ({ onChange }: { onChange: (rating: number | undefined) => void }) =>
+    createElement('button', { onClick: () => onChange(4) }, 'Confirm four stars'),
+}));
 vi.mock('../../SegmentedControl', () => ({
   SegmentedControl: ({
     options,
@@ -195,7 +198,10 @@ vi.mock('../../grade/GradeChip', () => ({
   GradeChip: ({ label, onPress }: { label: string; onPress: () => void }) =>
     createElement('button', { 'data-testid': `tries-${label}`, onClick: onPress }, label),
 }));
-vi.mock('../../grade', () => ({ GradeSingleSelectRail: () => null }));
+vi.mock('../../grade', () => ({
+  GradeSingleSelectRail: ({ onSelect }: { onSelect: (difficulty: number | undefined) => void }) =>
+    createElement('button', { onClick: () => onSelect(undefined) }, 'Clear grade'),
+}));
 vi.mock('@boardsesh/board-config', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@boardsesh/board-config')>();
   return {
@@ -340,6 +346,34 @@ afterEach(() => {
 });
 
 describe('LogbookEditSheet', () => {
+  it('does not send the seeded stars or difficulty when only an unrelated field was edited', () => {
+    renderSheet();
+    fireEvent.click(screen.getByTestId('tries-3'));
+    save();
+    const { input } = firstUpdateVariables();
+    expect(input).not.toHaveProperty('quality');
+    expect(input).not.toHaveProperty('difficulty');
+    expect(input).not.toHaveProperty('reportingVoteFields');
+  });
+
+  it('marks only the chosen rating even when it confirms the same value', () => {
+    renderSheet();
+    fireEvent.click(screen.getByText('Confirm four stars'));
+    save();
+    const { input } = firstUpdateVariables();
+    expect(input).toMatchObject({ quality: 4, reportingVoteFields: ['QUALITY'] });
+    expect(input).not.toHaveProperty('difficulty');
+  });
+
+  it('sends an explicit grade clear independently of the seeded stars', () => {
+    renderSheet();
+    fireEvent.click(screen.getByText('Clear grade'));
+    save();
+    const { input } = firstUpdateVariables();
+    expect(input).toMatchObject({ difficulty: null, reportingVoteFields: ['DIFFICULTY'] });
+    expect(input).not.toHaveProperty('quality');
+  });
+
   it('keeps an untouched board out of the mutation', () => {
     renderSheet(makeAscent({ boardId: 942, boardDisplayName: 'Original' }));
     expect(screen.getByText('Original')).toBeTruthy();

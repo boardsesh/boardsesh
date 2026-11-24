@@ -1,6 +1,6 @@
 import { and, eq, or, sql } from 'drizzle-orm';
 import { QueryBuilder } from 'drizzle-orm/pg-core';
-import type { ConnectionContext, Climb, BoardName } from '@boardsesh/shared-schema';
+import { toPlayCount, type ConnectionContext, type Climb, type BoardName } from '@boardsesh/shared-schema';
 import { resolveRenderBoard } from '@boardsesh/board-config';
 import { executeRows } from '@boardsesh/db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -157,6 +157,7 @@ export async function fetchUserClimbs(
     is_hidden: boolean | null;
     stats_angle: number | null;
     ascensionist_count: number | null;
+    play_count: string | null;
     difficulty_id: number | null;
     quality_average: number | null;
     difficulty_error: number | null;
@@ -175,6 +176,7 @@ export async function fetchUserClimbs(
           stats.climb_uuid,
           stats.angle,
           stats.ascensionist_count,
+          stats.play_count,
           stats.display_difficulty,
           stats.quality_average,
           stats.difficulty_average,
@@ -204,6 +206,7 @@ export async function fetchUserClimbs(
         owned_climbs.is_hidden,
         best.angle AS stats_angle,
         best.ascensionist_count,
+        best.play_count::text AS play_count,
         ROUND(best.display_difficulty::numeric, 0)::int AS difficulty_id,
         ROUND(best.quality_average::numeric, 2) AS quality_average,
         ROUND(best.difficulty_average::numeric - best.display_difficulty::numeric, 2) AS difficulty_error,
@@ -252,6 +255,7 @@ export async function fetchUserClimbs(
       angle: result.stats_angle ?? DEFAULT_ANGLE,
       statsAngle: result.stats_angle ?? null,
       ascensionist_count: Number(result.ascensionist_count || 0),
+      play_count: toPlayCount(result.play_count),
       difficulty: getGradeLabel(result.difficulty_id, boardName),
       quality_average: result.quality_average?.toString() || '0',
       stars: getClimbStars(result.quality_average),

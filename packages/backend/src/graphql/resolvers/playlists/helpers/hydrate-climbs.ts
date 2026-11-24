@@ -1,3 +1,4 @@
+import { toPlayCount } from '@boardsesh/shared-schema';
 import { climbDraftVisibilityCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { eq, and, inArray, sql, type SQL } from 'drizzle-orm';
 import { type Climb, type BoardName } from '@boardsesh/shared-schema';
@@ -214,6 +215,7 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       characteristics: tables.climbs.characteristics,
       statsAngle: tables.climbStats.angle,
       ascensionist_count: tables.climbStats.ascensionistCount,
+      play_count: sql<string | null>`${tables.climbStats.playCount}::text`,
       difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
       quality_average: sql<number>`ROUND(${tables.climbStats.qualityAverage}::numeric, 2)`,
       difficulty_error: sql<number>`ROUND(${tables.climbStats.difficultyAverage}::numeric - ${tables.climbStats.displayDifficulty}::numeric, 2)`,
@@ -316,6 +318,7 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       // which a caller-supplied wall angle overrides with the live board angle.
       statsAngle: row.statsAngle ?? null,
       ascensionist_count: Number(row.ascensionist_count || 0),
+      play_count: row.statsAngle === angle ? toPlayCount(row.play_count) : null,
       difficulty: getGradeLabel(row.difficulty_id, boardName),
       quality_average: row.quality_average?.toString() || '0',
       stars: getClimbStars(row.quality_average),

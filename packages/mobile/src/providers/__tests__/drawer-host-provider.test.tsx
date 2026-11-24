@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createElement, useEffect, useState, type ChangeEvent, type ReactNode } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
 import type { ClimbActionsTarget } from '../drawer-host-provider';
@@ -116,8 +116,19 @@ const presence = vi.hoisted(() => ({
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
+  PlatformColor: (name: string) => name,
+  DynamicColorIOS: (appearances: Record<string, string>) => ({ dynamic: appearances }),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({
+    children,
+    accessibilityRole,
+    style,
+  }: {
+    children?: ReactNode;
+    accessibilityRole?: string;
+    style?: unknown;
+  }) =>
+    createElement('div', accessibilityRole === 'image' ? { 'data-art-style': JSON.stringify(style) } : null, children),
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { onClick: onPress }, children),
   // The host width-budgets pane vs. sheet (resolveDetailPaneSurface). 1024 clears
@@ -188,6 +199,46 @@ vi.mock('../../components/play-drawer/AngleSelectorSheet', () => ({
 }));
 vi.mock('../../components/play-drawer', () => ({
   PlayDrawer: () => null,
+}));
+vi.mock('expo-image', () => ({
+  Image: ({ source, cachePolicy }: { source: { uri: string } | number; cachePolicy: string }) =>
+    createElement('img', {
+      src: typeof source === 'number' ? `/bundled/${source}` : source.uri,
+      'data-cache-policy': cachePolicy,
+    }),
+}));
+vi.mock('react-native-svg', () => ({
+  default: ({ children, viewBox }: { children?: ReactNode; viewBox: string }) =>
+    createElement('svg', { viewBox }, children),
+  Circle: () => null,
+  Polygon: () => null,
+}));
+vi.mock('react-native-safe-area-context', () => ({
+  SafeAreaView: ({ children }: { children?: ReactNode }) => createElement('main', null, children),
+  useSafeAreaInsets: () => ({ top: 0, left: 0, right: 0, bottom: 0 }),
+}));
+// Any rank falling back to the ordinary interactive player is a test failure.
+vi.mock('../../components/play-drawer/PlayCore', () => ({
+  PlayCore: () => {
+    throw new Error('Ranking opened the interactive player');
+  },
+}));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, vars?: Record<string, string>) => [key, ...Object.values(vars ?? {})].join(' '),
+    i18n: { language: 'en-US' },
+  }),
+}));
+vi.mock('../theme-provider', () => ({ useTheme: () => ({ colorScheme: 'dark' }) }));
+vi.mock('../../hooks/use-grade-format', () => ({
+  useGradeFormat: () => ({ formatGradeByDifficultyId: (grade: number | null) => (grade === null ? null : 'V4') }),
+}));
+vi.mock('../../components/Text', () => ({
+  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+}));
+vi.mock('../../components/Button', () => ({
+  Button: ({ title, onPress }: { title: string; onPress?: () => void }) =>
+    createElement('button', { onClick: onPress }, title),
 }));
 
 vi.mock('../../components/play-drawer/QueueSheet', async () => {
@@ -376,14 +427,18 @@ vi.mock('../../lib/boards/use-set-board-angle', () => ({
   useSetBoardAngle: () => vi.fn(async () => {}),
 }));
 
-// Mocked for the same reason every other data hook here is: the real module
-// reaches the GraphQL client, which pulls `expo-secure-store` at import time and
-// has no Node build. The provider only calls it to fill the spray registry for a
-// spray active board. Registry loading is separate from the host action wiring
-// exercised by the spray-wall cases below.
-vi.mock('../../lib/spray/use-spray-wall', () => ({
+// Keep the real eager hook and registry. Tests can inject a recording loader
+// without mounting the app's HTTP/credential provider.
+vi.mock('../../lib/spray/spray-wall-loader', () => ({
+  installSprayWallLoader: vi.fn(),
+  sprayWallByLayoutQueryKey: vi.fn(),
+  sprayWallRenderDataQueryKey: vi.fn(),
+  WALL_IDENTITY_STALE_TIME_MS: 0,
+  RENDER_DATA_STALE_TIME_MS: 0,
+}));
+vi.mock('../../lib/spray/use-spray-wall', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/spray/use-spray-wall')>()),
   useSprayWallLoader: () => {},
-  useSprayWall: () => ({ isLoading: false, isUnrenderable: false, loadState: 'idle' }),
 }));
 
 vi.mock('../../lib/graphql/use-active-board', () => ({
@@ -420,6 +475,8 @@ vi.mock('../../lib/climb-to-queue-item', () => ({
 }));
 
 import { router } from 'expo-router';
+import { PlayDrawer } from '../../components/play-drawer/PlayDrawer';
+import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import {
   DrawerHostProvider,
   useDrawerHost,
@@ -428,7 +485,7 @@ import {
   type BoardConfig,
 } from '../drawer-host-provider';
 import type { BoardSheetClimbAction } from '../../components/board-presence/BoardSheet';
-import { clearSprayWallRegistry, registerSprayWall } from '../../lib/spray/spray-wall-registry';
+import { clearSprayWallRegistry, registerSprayWall, setSprayWallLoader } from '../../lib/spray/spray-wall-registry';
 import { invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
 import { resetAllSettings } from '../../settings/hooks';
 import {
@@ -603,6 +660,7 @@ beforeEach(() => {
   presence.resolveAndBindBoardByUuid.mockClear();
   presence.resetPresence.mockClear();
   queue.setCurrentClimb.mockClear();
+  queue.playNext.mockClear();
   queue.activeClimbUuid = null;
   previewedClimbUuids.length = 0;
   layoutCfg.widthClass = 'compact';
@@ -1622,6 +1680,62 @@ describe('DrawerHostProvider play drawer open target', () => {
       flushReplay();
       expect(routerNavigate).toHaveBeenCalledTimes(1);
     });
+
+    it.each(['live', 'expired', 'retired'] as const)(
+      'rechecks a %s ranked receipt before replaying above a pane',
+      (receiptState) => {
+        layoutCfg.widthClass = 'regular';
+        const hosts: HostValue[] = [];
+        const routes: RouteValue[] = [];
+        renderHost(
+          (host) => hosts.push(host),
+          (route) => routes.push(route),
+        );
+        expect(hosts.at(-1)?.usesDetailPane).toBe(true);
+
+        const boardConfig: BoardConfig = { boardName: 'tension', layoutId: 8, sizeId: 7, setIds: '5,6', angle: 35 };
+        const expiresAt = 300_000;
+        let now = expiresAt - 1;
+        let retired = false;
+        const authorization = { isCurrent: () => !retired && now < expiresAt, subscribe: () => () => {} };
+        function openRankedClimb(uuid: string) {
+          openClimbInPlayDrawer(
+            { kind: 'climb', climb: makeQueueItem(uuid).climb as Climb, boardConfig },
+            { openPlayDrawer: hosts.at(-1)!.openPlayDrawer, router },
+            { preview: true, rankedPreview: { authorization, referenceDifficulty: 16 } },
+          );
+        }
+        act(() => openRankedClimb('consumed-ranking'));
+        const consumedNonce = routes.at(-1)!.playTarget!.nonce;
+        act(() => routes.at(-1)?.onPlayDrawerTargetConsumed(consumedNonce));
+        act(() => openRankedClimb('pending-ranking'));
+        const pendingNonce = routes.at(-1)!.playTarget!.nonce;
+        routerNavigate.mockClear();
+        act(() => routes.at(-1)?.onPlayDrawerClosed(consumedNonce));
+        expect(frames.size).toBe(1);
+
+        // Expiry and local retirement leave the host credential generation alone.
+        if (receiptState === 'expired') now = expiresAt;
+        if (receiptState === 'retired') retired = true;
+        flushReplay();
+
+        if (receiptState === 'live') {
+          expect(routerNavigate).toHaveBeenCalledExactlyOnceWith('/play');
+          expect(routes.at(-1)?.playTarget).toMatchObject({
+            nonce: pendingNonce,
+            climb: { uuid: 'pending-ranking' },
+            options: { rankedPreview: { boardConfig } },
+          });
+        } else {
+          expect(routerNavigate).not.toHaveBeenCalled();
+          expect(routes.at(-1)?.playTarget).toBeNull();
+        }
+        expect(hosts.at(-1)?.boardConfig?.boardName).toBe('kilter');
+        act(() => routes.at(-1)?.onPlayDrawerClosed(consumedNonce));
+        flushReplay();
+        expect(routerNavigate).toHaveBeenCalledTimes(receiptState === 'live' ? 1 : 0);
+      },
+    );
 
     it('cancels replay when the pending target is served or superseded', () => {
       const { hosts, routes, pendingNonce, consumedNonce } = openPendingTarget();
@@ -2647,5 +2761,190 @@ describe('DrawerHostProvider phone split (iPhone Duo open in landscape)', () => 
     await act(async () => {});
 
     expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
+  });
+});
+
+describe('staff ranking player handoff', () => {
+  function renderInspection() {
+    const hosts: HostValue[] = [];
+    const routes: RouteValue[] = [];
+    const close = vi.fn();
+    function InspectionProbe() {
+      const host = useDrawerHost();
+      const route = usePlayDrawerRoute();
+      const previewedClimbUuid = usePreviewedClimbUuid();
+      useEffect(() => {
+        hosts.push(host);
+      }, [host]);
+      useEffect(() => {
+        routes.push(route);
+      }, [route]);
+      useEffect(() => {
+        previewedClimbUuids.push(previewedClimbUuid);
+      }, [previewedClimbUuid]);
+      const preview = route.playTarget?.options?.rankedPreview;
+      return preview
+        ? createElement(PlayDrawer, {
+            boardConfig: preview.boardConfig,
+            openTarget: route.playTarget,
+            onClose: close,
+            onOpenQueue: vi.fn(),
+          })
+        : null;
+    }
+    const result = render(createElement(DrawerHostProvider, null, createElement(InspectionProbe)));
+    return { ...result, hosts, routes, close };
+  }
+
+  function authorizationReceipt() {
+    let valid = true;
+    const listeners = new Set<() => void>();
+    return {
+      isCurrent: () => valid,
+      subscribe(listener: () => void) {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+      retire() {
+        valid = false;
+        for (const listener of listeners) listener();
+      },
+    };
+  }
+
+  it.each([
+    [
+      'same configuration on two physical walls',
+      { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 },
+      false,
+    ],
+    [
+      'a different mirrored configuration',
+      { boardName: 'tension', layoutId: 10, sizeId: 7, setIds: '12,13', angle: 35 },
+      true,
+    ],
+  ] as const)(
+    'keeps %s read-only even when a player pane is available',
+    async (_description, boardConfig, mirrored) => {
+      layoutCfg.widthClass = 'regular';
+      activeBoard.stored = { ...activeBoard.defaultStored, setIds: '1,20' };
+      const { hosts, routes, close } = renderInspection();
+      const ordinaryPreview = makeQueueItem('ordinary-preview');
+      act(() => {
+        hosts.at(-1)!.openPlayDrawer(ordinaryPreview.climb as unknown as Climb, { previewQueueItem: ordinaryPreview });
+      });
+      expect(previewedClimbUuids).toEqual([null, ordinaryPreview.climb.uuid]);
+      const authorization = authorizationReceipt();
+      const climb = { ...makeQueueItem('private-rank').climb, angle: boardConfig.angle, mirrored } as Climb;
+      act(() => {
+        openClimbInPlayDrawer(
+          { kind: 'climb', climb, boardConfig },
+          { openPlayDrawer: hosts.at(-1)!.openPlayDrawer, router },
+          { preview: true, rankedPreview: { authorization, referenceDifficulty: 16 } },
+        );
+      });
+      expect(await screen.findByText('Climb private-rank')).toBeTruthy();
+      expect(
+        screen.getByText(`V4 · gymReporting.rankings.${mirrored ? 'mirrored' : 'original'}Angle ${boardConfig.angle}`),
+      ).toBeTruthy();
+      const inspection = screen.getByRole('main');
+      expect(
+        within(inspection)
+          .getAllByRole('button')
+          .map(({ textContent }) => textContent),
+      ).toEqual(['gymReporting.rankings.close']);
+      const art = inspection.querySelector('[data-art-style]');
+      expect(art?.querySelector('svg')?.getAttribute('viewBox')).toMatch(/^0 0 [1-9]\d* [1-9]\d*$/);
+      expect(art?.getAttribute('data-art-style')?.includes('"scaleX":-1')).toBe(mirrored);
+      expect(routes.at(-1)?.playTarget?.options?.rankedPreview?.boardConfig).toEqual(boardConfig);
+      expect(hosts.at(-1)?.boardConfig).toMatchObject({ boardName: 'kilter', angle: 40 });
+      expect(routerNavigate).toHaveBeenCalledWith('/play');
+      expect(previewedClimbUuids).toEqual([null, ordinaryPreview.climb.uuid]);
+      expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+      expect(queue.playNext).not.toHaveBeenCalled();
+      expect(activeBoard.setActiveBoard).not.toHaveBeenCalled();
+      act(() => authorization.retire());
+      expect(screen.queryByText('Climb private-rank')).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'gymReporting.rankings.close' }));
+      expect(close).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([
+    ['never asks the global loader for the ranked spray wall, even with an older registration there', true],
+    ['fails closed without ranked spray art even with an older global registration', false],
+  ] as const)('%s', async (_description, hasArt) => {
+    const loadWall = vi.fn(async (_layoutId: number) => {});
+    setSprayWallLoader(loadWall);
+    onTestFinished(() => {
+      clearSprayWallRegistry();
+      vi.useRealTimers();
+    });
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const olderPhoto = 'https://private.invalid/older';
+    const freshPhoto = 'https://private.invalid/authorized';
+    const selectedLayout = 1771;
+    const otherLayout = 3412;
+    const wall = {
+      wallUuid: 'old-capability',
+      angle: 50,
+      version: 1,
+      versionId: 1,
+      photoWidth: 100,
+      photoHeight: 100,
+      photoUrl: olderPhoto,
+      photoThumbUrl: null,
+      photoExpiresAt: '2099-01-01T00:00:00.000Z',
+      holds: [],
+      share: { slug: 'old', isUnlisted: true, isPublic: false },
+    };
+    registerSprayWall(otherLayout, wall);
+    vi.setSystemTime(Date.now() + 11 * 60_000);
+    activeBoard.stored = {
+      ...activeBoard.defaultStored,
+      boardType: 'spray',
+      layoutId: selectedLayout,
+      sizeId: selectedLayout,
+      setIds: '223',
+    };
+    const { hosts, routes } = renderInspection();
+    await waitFor(() => expect(loadWall).toHaveBeenCalledWith(selectedLayout));
+    const authorization = authorizationReceipt();
+    act(() => {
+      openClimbInPlayDrawer(
+        {
+          kind: 'climb',
+          climb: makeQueueItem('spray-rank').climb as Climb,
+          boardConfig: { boardName: 'spray', layoutId: otherLayout, sizeId: otherLayout, setIds: '444', angle: 50 },
+        },
+        { openPlayDrawer: hosts.at(-1)!.openPlayDrawer, router },
+        {
+          preview: true,
+          rankedPreview: {
+            authorization,
+            referenceDifficulty: null,
+            sprayArt: hasArt ? { uri: freshPhoto, width: 100, height: 100, holds: [] } : undefined,
+          },
+        },
+      );
+    });
+    if (hasArt) {
+      expect(screen.getByRole('img').getAttribute('src')).toBe(freshPhoto);
+      expect(screen.getByRole('img').getAttribute('data-cache-policy')).toBe('none');
+    } else {
+      expect(screen.getByText('gymReporting.rankings.climbUnavailable')).toBeTruthy();
+      expect(screen.queryByText('Climb spray-rank')).toBeNull();
+      expect(screen.queryByRole('img')).toBeNull();
+      expect(screen.getByRole('main').querySelector('svg')).toBeNull();
+    }
+    expect(loadWall.mock.calls.flat()).not.toContain(otherLayout);
+    act(() => authorization.retire());
+    expect(screen.queryByRole('img')).toBeNull();
+    const nonce = routes.at(-1)?.playTarget?.nonce;
+    act(() => routes.at(-1)?.onPlayDrawerClosed(nonce ?? null));
+    expect(loadWall.mock.calls.flat()).not.toContain(otherLayout);
+    expect(hosts.at(-1)?.boardConfig?.layoutId).toBe(selectedLayout);
   });
 });

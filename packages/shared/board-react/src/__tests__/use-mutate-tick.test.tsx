@@ -41,6 +41,41 @@ function invalidatedRoots(calls: unknown[][]): unknown[] {
   return calls.map((call) => (call[0] as { queryKey?: unknown[] } | undefined)?.queryKey?.[0]);
 }
 
+describe('native vote intent compatibility', () => {
+  const marked = { uuid: 'tick-1', input: { quality: 4, reportingVoteFields: ['QUALITY' as const] } };
+  const message =
+    'Variable "$input" got invalid value {}; Field "reportingVoteFields" is not defined by type "UpdateTickInput".';
+
+  it('retries only the underlying edit when an older schema rejects the marker', async () => {
+    const executeHttp = vi
+      .fn()
+      .mockRejectedValueOnce({ response: { errors: [{ message }] } })
+      .mockResolvedValueOnce({ updateTick: { uuid: 'tick-1' } });
+    const { wrapper } = createWrapper({ executeHttp: executeHttp as unknown as ExecuteHttp });
+    const { result } = renderHook(() => useUpdateTick(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync(marked);
+    });
+    expect(executeHttp).toHaveBeenCalledTimes(2);
+    expect(executeHttp.mock.calls[1][1]).toEqual({ uuid: marked.uuid, input: { quality: 4 } });
+  });
+
+  it.each([
+    { response: { errors: [{ message, path: ['updateTick'] }] } },
+    { response: { errors: [{ message: message.replace('UpdateTickInput', 'SaveTickInput') }] } },
+    { response: { errors: [{ message: message.replace('reportingVoteFields', 'somethingElse') }] } },
+    new Error('Transport timeout'),
+  ])('does not change and retry a possibly executed edit', async (failure) => {
+    const executeHttp = vi.fn().mockRejectedValue(failure);
+    const { wrapper } = createWrapper({ executeHttp: executeHttp as unknown as ExecuteHttp });
+    const { result } = renderHook(() => useUpdateTick(), { wrapper });
+    await act(async () => {
+      await expect(result.current.mutateAsync(marked)).rejects.toBe(failure);
+    });
+    expect(executeHttp).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('useUpdateTick (shared)', () => {
   it('rejects with "Not authenticated" and touches neither transport nor caches when signed out', async () => {
     const executeHttp = vi.fn();

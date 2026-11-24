@@ -271,6 +271,12 @@ export const MIGRATIONS: Migration[] = [
     statements: [],
     run: ensureOfflineWriteDeliveryJournal,
   },
+  {
+    // A downloaded row stays unknown until the server sends its count, including zero.
+    // This column is also required in board snapshots before they can stamp a cursor.
+    version: 16,
+    statements: ['ALTER TABLE board_climb_stats ADD COLUMN play_count INTEGER;'],
+  },
 ];
 
 const SCHEMA_VERSION_TABLE = `

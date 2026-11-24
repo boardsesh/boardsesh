@@ -261,6 +261,10 @@ export const UserLoggedSettersInputSchema = z.object({
  */
 export const UpdateTickInputSchema = z
   .object({
+    reportingVoteFields: z
+      .array(z.enum(['QUALITY', 'DIFFICULTY']))
+      .max(2)
+      .optional(),
     privacy: PrivacyPublicationInputSchema.optional(),
     boardUuid: UUIDSchema.nullable().optional(),
     status: z.enum(['flash', 'send', 'attempt']).optional(),
@@ -289,4 +293,10 @@ export const UpdateTickInputSchema = z
       return true;
     },
     { message: 'Flash requires attemptCount of 1', path: ['attemptCount'] },
+  )
+  .refine(
+    ({ reportingVoteFields = [], quality, difficulty }) =>
+      new Set(reportingVoteFields).size === reportingVoteFields.length &&
+      reportingVoteFields.every((metric) => (metric === 'QUALITY' ? quality : difficulty) !== undefined),
+    { message: 'Each marked rating must have a supplied value', path: ['reportingVoteFields'] },
   );

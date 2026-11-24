@@ -5,6 +5,7 @@
 
 type GraphqlErrorLike = {
   message?: string;
+  path?: unknown;
   extensions?: {
     code?: unknown;
     [key: string]: unknown;
@@ -17,6 +18,15 @@ function getGraphqlErrors(error: unknown): GraphqlErrorLike[] {
   if (Array.isArray(response?.errors)) return response.errors;
   const graphqlErrors = (error as { graphqlErrors?: GraphqlErrorLike[] }).graphqlErrors;
   return Array.isArray(graphqlErrors) ? graphqlErrors : [];
+}
+
+export function isUnrecognizedTickVoteMarker(error: unknown): boolean {
+  return getGraphqlErrors(error).some(
+    (entry) =>
+      entry.path === undefined &&
+      entry.message?.startsWith('Variable "$input" got invalid value') === true &&
+      entry.message.includes('Field "reportingVoteFields" is not defined by type "UpdateTickInput"'),
+  );
 }
 
 function asString(value: unknown): string | null {

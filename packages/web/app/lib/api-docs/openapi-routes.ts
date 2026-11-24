@@ -165,7 +165,7 @@ registry.registerPath({
   path: '/api/v1/{board_name}/climb-stats/{climb_uuid}',
   summary: 'Get climb statistics across all angles',
   description:
-    'Returns statistics for a climb at every angle it has been attempted. Useful for seeing how difficulty and popularity vary with angle.',
+    'Returns stored statistics by angle for the canonical climb UUID. Use the UUID from the climb detail response.',
   tags: ['Climbs'],
   request: {
     params: z.object({

@@ -8,10 +8,15 @@ export async function revokeWebPrivacySnapshots(queryClient: QueryClient): Promi
   const filters = {
     predicate: (query: { queryKey: readonly unknown[] }) => !TRANSPORT_QUERY_KEYS.has(String(query.queryKey[0])),
   };
-  await queryClient.cancelQueries(filters);
-  for (const query of queryClient.getQueryCache().findAll(filters)) {
-    query.setState({ data: undefined, dataUpdatedAt: 0, error: null, status: 'pending' });
-  }
+  const cancelled = queryClient.cancelQueries(filters);
+  const clear = () => {
+    for (const query of queryClient.getQueryCache().findAll(filters)) {
+      query.setState({ data: undefined, dataUpdatedAt: 0, error: null, status: 'pending' });
+    }
+  };
+  clear();
+  await cancelled;
+  clear();
   if (typeof window !== 'undefined') window.dispatchEvent(new Event(PRIVACY_REVOKED_EVENT));
   await queryClient.invalidateQueries(filters);
 }

@@ -33,6 +33,8 @@ export type Climb = {
   // angle supplied them (issue #5405); null when it has no stats anywhere.
   statsAngle?: number | null;
   ascensionist_count: number;
+  /** Approximate recorded board selections lasting at least 30 seconds at `angle`. */
+  play_count?: number | null;
   difficulty: string;
   quality_average: string;
   stars: number;

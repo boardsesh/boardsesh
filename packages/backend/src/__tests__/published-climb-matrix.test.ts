@@ -1,8 +1,14 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { createRequire } from 'node:module';
 import type * as GraphQLModule from 'graphql';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import * as schema from '@boardsesh/db/schema';
+import {
+  GET_SETTER_CLIMBS_FULL,
+  GET_SMART_PLAYLIST,
+  GET_USER_CLIMBS,
+  GET_USER_FAVORITE_CLIMBS,
+} from '@boardsesh/graphql/operations';
 import type { BoardPresenceStats, ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { schema as graphqlSchema } from '../graphql/index';
@@ -289,6 +295,85 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
   });
   afterAll(removeFixtures);
   beforeEach(() => resetAllRateLimits());
+
+  it('returns stored Plays at each Climb angle through the list operations', async () => {
+    const setter = 'matrix-plays-setter';
+    const [positive, zero, otherAngle] = ['matrix-plays-positive', 'matrix-plays-zero', 'matrix-plays-other-angle'];
+    const climbUuids = [positive, zero, otherAngle];
+    try {
+      await db.insert(schema.boardClimbs).values(
+        climbUuids.map((uuid) => ({
+          uuid,
+          boardType: BOARD,
+          layoutId: LAYOUT_ID,
+          userId: PUBLIC_SENDER,
+          setterUsername: setter,
+          name: uuid,
+          isDraft: false,
+          isListed: true,
+          isHidden: false,
+        })),
+      );
+      await db.insert(schema.boardClimbStats).values([
+        { boardType: BOARD, climbUuid: positive, angle: 40, playCount: 23, ascensionistCount: 10 },
+        { boardType: BOARD, climbUuid: positive, angle: 30, playCount: 77, ascensionistCount: 1 },
+        { boardType: BOARD, climbUuid: zero, angle: 40, playCount: 0, ascensionistCount: 7 },
+        { boardType: BOARD, climbUuid: zero, angle: 30, playCount: 64, ascensionistCount: 3 },
+        { boardType: BOARD, climbUuid: otherAngle, angle: 30, playCount: 5, ascensionistCount: 2 },
+      ]);
+      await db.insert(schema.userFavorites).values(
+        climbUuids.map((climbUuid) => ({
+          userId: PUBLIC_SENDER,
+          boardName: BOARD,
+          climbUuid,
+          angle: ANGLE,
+        })),
+      );
+
+      const assertClimbRows = async (
+        operation: string,
+        root: string,
+        input: Record<string, unknown>,
+        expectedOtherAngle: { angle: number; play_count: number | null },
+      ) => {
+        const result = await execute({
+          schema: graphqlSchema,
+          document: parse(operation),
+          contextValue: ctxFor(PUBLIC_SENDER),
+          variableValues: { input },
+        });
+        expect(result.errors, root).toBeUndefined();
+        expect(result.data?.[root], root).toMatchObject({
+          climbs: expect.arrayContaining([
+            expect.objectContaining({ uuid: positive, angle: 40, play_count: 23 }),
+            expect.objectContaining({ uuid: zero, angle: 40, play_count: 0 }),
+            expect.objectContaining({ uuid: otherAngle, ...expectedOtherAngle }),
+          ]),
+        });
+      };
+      const noRequestedAngle = { angle: 40, play_count: null };
+      const selectedOtherAngle = { angle: 30, play_count: 5 };
+      await assertClimbRows(GET_USER_FAVORITE_CLIMBS, 'userFavoriteClimbs', boardInput, noRequestedAngle);
+      await assertClimbRows(
+        GET_SETTER_CLIMBS_FULL,
+        'setterClimbsFull',
+        { username: setter, boardType: BOARD, angle: ANGLE },
+        noRequestedAngle,
+      );
+      await assertClimbRows(GET_SETTER_CLIMBS_FULL, 'setterClimbsFull', { username: setter }, selectedOtherAngle);
+      await assertClimbRows(GET_USER_CLIMBS, 'userClimbs', { userId: PUBLIC_SENDER }, selectedOtherAngle);
+      await assertClimbRows(
+        GET_SMART_PLAYLIST,
+        'smartPlaylist',
+        { type: 'LIKED_CLIMBS', userId: PUBLIC_SENDER },
+        selectedOtherAngle,
+      );
+    } finally {
+      await db.delete(schema.userFavorites).where(inArray(schema.userFavorites.climbUuid, climbUuids));
+      await db.delete(schema.boardClimbStats).where(inArray(schema.boardClimbStats.climbUuid, climbUuids));
+      await db.delete(schema.boardClimbs).where(inArray(schema.boardClimbs.uuid, climbUuids));
+    }
+  });
 
   it('kept the deleted author’s published climb, with no author', async () => {
     const [climb] = await db

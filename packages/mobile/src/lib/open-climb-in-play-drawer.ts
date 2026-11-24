@@ -1,6 +1,7 @@
 import { type useRouter } from 'expo-router';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { BoardConfig, OpenPlayDrawerOptions } from '../providers/drawer-host-provider';
+import type { RankedClimbPreview } from '../components/play-drawer/play-drawer-types';
 import { climbToQueueItem } from './climb-to-queue-item';
 import { getBoardConfigForPlaylist, renderBoardToPlaylistConfig } from './playlists/board-details-for-playlist';
 import { tickToClimb, type TickLike } from './tick-to-climb';
@@ -42,6 +43,7 @@ export type OpenClimbArgs =
 export type OpenClimbOptions = {
   /** View-only when true. Otherwise ticks and loaded climbs follow the lighting preference. */
   preview?: boolean;
+  rankedPreview?: Omit<RankedClimbPreview, 'boardConfig'>;
 };
 
 /**
@@ -69,6 +71,10 @@ export function openClimbInPlayDrawer(args: OpenClimbArgs, deps: OpenClimbDeps, 
   const preview = options?.preview === true || !isDrivingWall();
 
   if (args.kind === 'climb') {
+    if (options?.rankedPreview) {
+      openPlayDrawer(args.climb, { rankedPreview: { ...options.rankedPreview, boardConfig: args.boardConfig } });
+      return;
+    }
     openPlayDrawer(args.climb, {
       ...openModeOptions(args.climb, preview),
       boardConfig: args.boardConfig,

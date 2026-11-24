@@ -87,6 +87,7 @@ describe('climbStatsForAngles resolver', () => {
       {
         angle: 40,
         ascensionistCount: 12,
+        playCount: 98,
         qualityAverage: 3.5,
         difficultyAverage: 20.4,
         displayDifficulty: 20.6,
@@ -102,6 +103,7 @@ describe('climbStatsForAngles resolver', () => {
       {
         angle: 40,
         ascensionistCount: 12,
+        playCount: 98,
         qualityAverage: 3.5,
         difficultyAverage: 20.4,
         displayDifficulty: 20.6,
@@ -118,6 +120,7 @@ describe('climbStatsForAngles resolver', () => {
       {
         angle: 30,
         ascensionistCount: 0,
+        playCount: 0,
         qualityAverage: null,
         difficultyAverage: null,
         displayDifficulty: null,
@@ -129,8 +132,21 @@ describe('climbStatsForAngles resolver', () => {
 
     const [entry] = await callResolver('tension', 'CLIMB-2');
 
+    expect(entry.playCount).toBe(0);
     expect(entry.difficulty).toBeNull();
     expect(entry.displayDifficulty).toBeNull();
+  });
+
+  it('preserves counts above GraphQL Int range and rejects unsafe JS integers', async () => {
+    selectRows.rows = [
+      { angle: 30, playCount: 2_147_483_648, syncSeq: '1' },
+      { angle: 40, playCount: Number.MAX_SAFE_INTEGER + 1, syncSeq: '2' },
+    ];
+    const entries = await callResolver('kilter', 'CLIMB-1');
+    expect(entries.map(({ angle, playCount }) => [angle, playCount])).toEqual([
+      [30, 2_147_483_648],
+      [40, null],
+    ]);
   });
 
   it('returns an empty array for a climb with no logged angles', async () => {
@@ -219,6 +235,7 @@ describe('climbStatsForClimbs resolver', () => {
         climbUuid: 'CLIMB-1',
         angle: 40,
         ascensionistCount: 12,
+        playCount: 98,
         qualityAverage: 3.5,
         difficultyAverage: 20.4,
         displayDifficulty: 20.6,

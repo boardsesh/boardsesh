@@ -323,6 +323,8 @@ vi.mock('../../../lib/graphql/use-active-board', () => ({
 }));
 
 // --- Children ----------------------------------------------------------------
+// Staff inspection has its own render coverage in the cross-board and drawer-host suites.
+vi.mock('../RankedClimbInspection', () => ({ RankedClimbInspection: () => null }));
 // Recorded rather than stubbed: these three carry the props under test.
 // The tablet rule (#7000) reads the device's chrome; a phone here.
 vi.mock('../use-mini-player-mirrors', () => ({ useMiniPlayerMirrorsPlayer: () => false }));

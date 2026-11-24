@@ -228,6 +228,7 @@ export default async function ClimbFrontDoor({
             <ClimbBoardStage
               backgroundUrls={backgroundUrls}
               overlayUrl={overlayUrl}
+              allowMirrorFragment={Boolean(boardSlug && boardDetails.supportsMirroring)}
               boardWidth={boardDetails.boardWidth}
               boardHeight={boardDetails.boardHeight}
               alt={t('frontDoor.boardImageAlt', {

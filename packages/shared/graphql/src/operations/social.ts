@@ -436,6 +436,7 @@ export const GET_SETTER_CLIMBS_FULL = gql`
         framesPace
         angle
         ascensionist_count
+        play_count
         difficulty
         quality_average
         stars
@@ -494,6 +495,7 @@ export const GET_USER_CLIMBS = gql`
         framesPace
         angle
         ascensionist_count
+        play_count
         difficulty
         quality_average
         stars

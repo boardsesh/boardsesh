@@ -356,6 +356,15 @@ const sprayExposureSchema = readFileSync(
   'utf8',
 );
 
+const gymClimbRankingSchema = readFileSync(
+  new URL('../../../db/drizzle/0348_gym_climb_rankings.sql', import.meta.url),
+  'utf8',
+);
+const gymTickVoteTrigger = readFileSync(
+  new URL('../../../db/drizzle/0349_gym_tick_vote_invalidation.sql', import.meta.url),
+  'utf8',
+);
+
 export const schemaSQL = `
   DROP TABLE IF EXISTS logbook_snapshot_session_chunks;
   DROP TABLE IF EXISTS logbook_session_changes;
@@ -2243,6 +2252,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
             OLD.display_difficulty,
             OLD.benchmark_difficulty,
             OLD.ascensionist_count,
+            OLD.play_count,
             OLD.difficulty_average,
             OLD.quality_average,
             OLD.fa_username,
@@ -2254,6 +2264,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
             NEW.display_difficulty,
             NEW.benchmark_difficulty,
             NEW.ascensionist_count,
+            NEW.play_count,
             NEW.difficulty_average,
             NEW.quality_average,
             NEW.fa_username,
@@ -2729,4 +2740,8 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   DROP SEQUENCE IF EXISTS spray_exposure_event_seq;
   ${gymInventorySchema};
   ${sprayExposureSchema};
+  DROP FUNCTION IF EXISTS public.invalidate_gym_tick_votes() CASCADE;
+  DROP TABLE IF EXISTS gym_reporting_tick_votes, gym_climb_comment_attributions;
+  ${gymClimbRankingSchema};
+  ${gymTickVoteTrigger};
 `;

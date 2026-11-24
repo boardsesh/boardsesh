@@ -343,6 +343,7 @@ export type ClimbRow = {
    *  ticks, the queue and the BLE spill guard key on. See ./effective-stats. */
   statsAngle: number | null;
   ascensionist_count: number;
+  play_count?: number | null;
   difficulty: string;
   quality_average: string;
   stars: number;

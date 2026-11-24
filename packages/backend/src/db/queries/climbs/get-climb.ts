@@ -15,7 +15,7 @@ import {
   type StatsColumnKey,
 } from '@boardsesh/db/queries';
 import { boardClimbGrades } from '@boardsesh/db/schema';
-import type { Climb } from '@boardsesh/shared-schema';
+import { toPlayCount, type Climb } from '@boardsesh/shared-schema';
 import { logger } from '../../../utils/logger';
 
 type GetClimbParams = {
@@ -64,6 +64,7 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
       // browsed angle.
       stats_angle: resolvedStatsAngleSql(crossAngle),
       ascensionist_count: sql<number>`COALESCE(${statsColumn('ascensionistCount')}, 0)`,
+      play_count: sql<string | null>`${tables.climbStats.playCount}::text`,
       difficulty_id: sql<number | null>`ROUND(${statsColumn('displayDifficulty')}::numeric, 0)`,
       quality_average: sql<number>`ROUND(${statsColumn('qualityAverage')}::numeric, 2)`,
       // Two stats columns in one expression: both route through `statsColumn`,
@@ -156,6 +157,7 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
       // either angle — a genuine project.
       statsAngle: row.stats_angle ?? null,
       ascensionist_count: Number(row.ascensionist_count || 0),
+      play_count: toPlayCount(row.play_count),
       difficulty: getGradeLabel(row.difficulty_id, params.board_name),
       quality_average: row.quality_average?.toString() || '0',
       stars: getClimbStars(row.quality_average),

@@ -1021,6 +1021,89 @@ export const gymsTypeDefs = /* GraphQL */ `
     playlistUuid: ID
   }
 
+  enum GymClimbRankingMode {
+    MOST_SENT
+    TOP_RATED
+    MOST_DISCUSSED
+    GRADE_FEEDBACK
+    QUIET_CLIMBS
+  }
+
+  enum GymClimbRankingStatus {
+    READY
+    SCOPE_TOO_LARGE
+    TEMPORARILY_UNAVAILABLE
+    EXPOSURE_UNAVAILABLE
+    PAGE_CHANGED
+  }
+
+  input GymClimbRankingInput {
+    gymUuid: ID!
+    boardUuid: ID
+    period: GymStatsPeriod
+    mode: GymClimbRankingMode!
+    cursor: String
+  }
+
+  input GymClimbRankingTargetInput {
+    gymUuid: ID!
+    boardUuid: ID
+    period: GymStatsPeriod
+    logicalBoardUuid: ID!
+    climbUuid: ID!
+    angle: Int!
+    isMirror: Boolean!
+  }
+
+  type GymClimbRankingTarget {
+    logicalBoardUuid: ID!
+    boardSlug: String!
+    boardType: String!
+    layoutId: Int!
+    sizeId: Int!
+    setIds: String!
+    climbUuid: ID!
+    name: String!
+    angle: Int!
+    isMirror: Boolean!
+    referenceDifficulty: Int
+    shareable: Boolean!
+  }
+
+  type GymClimbRankingRow {
+    rank: Int!
+    physicalBoardUuid: ID!
+    boardName: String!
+    target: GymClimbRankingTarget!
+    sendCount: Int
+    senderCount: Int
+    qualityMean: Float
+    voterCount: Int
+    commentCount: Int
+    authorCount: Int
+    gradeDelta: Float
+    firstKnownAvailableAt: String
+    lastSendAt: String
+    lastSendEndAt: String
+    lastSendDate: String
+    knownLifetimeDays: Float
+    knownWindowDays: Float
+    sendsPerDay: Float
+  }
+
+  type GymClimbRankings {
+    status: GymClimbRankingStatus!
+    mode: GymClimbRankingMode!
+    quietAvailable: Boolean!
+    startAt: String
+    asOf: String
+    timeZone: String
+    timeZoneConfigured: Boolean!
+    rows: [GymClimbRankingRow!]!
+    nextCursor: String
+    truncated: Boolean!
+  }
+
   input GymStatsInput {
     "The gym to report on. The caller must have gym edit access."
     gymUuid: ID!

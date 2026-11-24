@@ -87,6 +87,7 @@ export const GET_USER_FAVORITE_CLIMBS = gql`
         framesPace
         angle
         ascensionist_count
+        play_count
         difficulty
         quality_average
         stars
@@ -130,6 +131,7 @@ export type UserFavoriteClimbsResult = {
     framesPace?: number | null;
     angle: number;
     ascensionist_count: number;
+    play_count?: number | null;
     difficulty: string;
     quality_average: string;
     stars: number;

@@ -1532,6 +1532,8 @@ export type Climb = {
   myDifficulty?: Maybe<Scalars['Int']['output']>;
   /** Name/title of the climb */
   name: Scalars['String']['output'];
+  /** Approximate recorded board selections lasting at least 30 seconds at angle. Refreshed hourly. Null when unavailable. */
+  play_count?: Maybe<Scalars['Float']['output']>;
   /** ISO timestamp of when this climb was first published (null while still a draft) */
   published_at?: Maybe<Scalars['String']['output']>;
   /** Average quality rating from users */
@@ -1957,7 +1959,7 @@ export type ClimbStatsEvent = {
 
 /**
  * Current statistics for a climb at one angle, read from the live stats table.
- * One entry per angle the climb has been logged at.
+ * One entry per angle with a stored statistics row.
  */
 export type ClimbStatsForAngle = {
   __typename?: 'ClimbStatsForAngle';
@@ -1975,6 +1977,8 @@ export type ClimbStatsForAngle = {
   faAt?: Maybe<Scalars['String']['output']>;
   /** Username of the first ascensionist */
   faUsername?: Maybe<Scalars['String']['output']>;
+  /** Approximate recorded board selections lasting at least 30 seconds at this angle. Refreshed hourly. Null when unavailable. */
+  playCount?: Maybe<Scalars['Float']['output']>;
   /** Average quality rating */
   qualityAverage?: Maybe<Scalars['Float']['output']>;
   /** Monotonic database revision, encoded as decimal text to preserve bigint precision */
@@ -2004,6 +2008,8 @@ export type ClimbStatsForClimb = {
   faAt?: Maybe<Scalars['String']['output']>;
   /** Username of the first ascensionist */
   faUsername?: Maybe<Scalars['String']['output']>;
+  /** Approximate recorded board selections lasting at least 30 seconds at this angle. Refreshed hourly. Null when unavailable. */
+  playCount?: Maybe<Scalars['Float']['output']>;
   /** Average quality rating */
   qualityAverage?: Maybe<Scalars['Float']['output']>;
   /** Monotonic database revision, encoded as decimal text to preserve bigint precision */
@@ -2026,6 +2032,8 @@ export type ClimbStatsHistoryEntry = {
   difficultyAverage?: Maybe<Scalars['Float']['output']>;
   /** Display difficulty value */
   displayDifficulty?: Maybe<Scalars['Float']['output']>;
+  /** Approximate recorded board selections lasting at least 30 seconds at this angle. Refreshed hourly. Null when unavailable. */
+  playCount?: Maybe<Scalars['Float']['output']>;
   /** Average quality rating */
   qualityAverage?: Maybe<Scalars['Float']['output']>;
 };
@@ -4504,6 +4512,85 @@ export type GymClaimStatus =
   | 'pending'
   /** An approved claim a Boardsesh admin took back (revertGymClaim). The gym is unclaimed again. */
   | 'revoked';
+
+export type GymClimbRankingInput = {
+  boardUuid?: InputMaybe<Scalars['ID']['input']>;
+  cursor?: InputMaybe<Scalars['String']['input']>;
+  gymUuid: Scalars['ID']['input'];
+  mode: GymClimbRankingMode;
+  period?: InputMaybe<GymStatsPeriod>;
+};
+
+export type GymClimbRankingMode = 'GRADE_FEEDBACK' | 'MOST_DISCUSSED' | 'MOST_SENT' | 'QUIET_CLIMBS' | 'TOP_RATED';
+
+export type GymClimbRankingRow = {
+  __typename?: 'GymClimbRankingRow';
+  authorCount?: Maybe<Scalars['Int']['output']>;
+  boardName: Scalars['String']['output'];
+  commentCount?: Maybe<Scalars['Int']['output']>;
+  firstKnownAvailableAt?: Maybe<Scalars['String']['output']>;
+  gradeDelta?: Maybe<Scalars['Float']['output']>;
+  knownLifetimeDays?: Maybe<Scalars['Float']['output']>;
+  knownWindowDays?: Maybe<Scalars['Float']['output']>;
+  lastSendAt?: Maybe<Scalars['String']['output']>;
+  lastSendDate?: Maybe<Scalars['String']['output']>;
+  lastSendEndAt?: Maybe<Scalars['String']['output']>;
+  physicalBoardUuid: Scalars['ID']['output'];
+  qualityMean?: Maybe<Scalars['Float']['output']>;
+  rank: Scalars['Int']['output'];
+  sendCount?: Maybe<Scalars['Int']['output']>;
+  senderCount?: Maybe<Scalars['Int']['output']>;
+  sendsPerDay?: Maybe<Scalars['Float']['output']>;
+  target: GymClimbRankingTarget;
+  voterCount?: Maybe<Scalars['Int']['output']>;
+};
+
+export type GymClimbRankingStatus =
+  | 'EXPOSURE_UNAVAILABLE'
+  | 'PAGE_CHANGED'
+  | 'READY'
+  | 'SCOPE_TOO_LARGE'
+  | 'TEMPORARILY_UNAVAILABLE';
+
+export type GymClimbRankingTarget = {
+  __typename?: 'GymClimbRankingTarget';
+  angle: Scalars['Int']['output'];
+  boardSlug: Scalars['String']['output'];
+  boardType: Scalars['String']['output'];
+  climbUuid: Scalars['ID']['output'];
+  isMirror: Scalars['Boolean']['output'];
+  layoutId: Scalars['Int']['output'];
+  logicalBoardUuid: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
+  referenceDifficulty?: Maybe<Scalars['Int']['output']>;
+  setIds: Scalars['String']['output'];
+  shareable: Scalars['Boolean']['output'];
+  sizeId: Scalars['Int']['output'];
+};
+
+export type GymClimbRankingTargetInput = {
+  angle: Scalars['Int']['input'];
+  boardUuid?: InputMaybe<Scalars['ID']['input']>;
+  climbUuid: Scalars['ID']['input'];
+  gymUuid: Scalars['ID']['input'];
+  isMirror: Scalars['Boolean']['input'];
+  logicalBoardUuid: Scalars['ID']['input'];
+  period?: InputMaybe<GymStatsPeriod>;
+};
+
+export type GymClimbRankings = {
+  __typename?: 'GymClimbRankings';
+  asOf?: Maybe<Scalars['String']['output']>;
+  mode: GymClimbRankingMode;
+  nextCursor?: Maybe<Scalars['String']['output']>;
+  quietAvailable: Scalars['Boolean']['output'];
+  rows: Array<GymClimbRankingRow>;
+  startAt?: Maybe<Scalars['String']['output']>;
+  status: GymClimbRankingStatus;
+  timeZone?: Maybe<Scalars['String']['output']>;
+  timeZoneConfigured: Scalars['Boolean']['output'];
+  truncated: Scalars['Boolean']['output'];
+};
 
 /** The strongest ownership-claim state on a gym row. */
 export type GymClusterClaimStatus =
@@ -8947,6 +9034,8 @@ export type Query = {
   gymBoards: Array<UserBoard>;
   /** Get a gym by slug (for URL routing). */
   gymBySlug?: Maybe<Gym>;
+  gymClimbRankingTarget: GymClimbRankingTarget;
+  gymClimbRankings: GymClimbRankings;
   gymGradeCollectionOptions: GymGradeCollectionPage;
   /** Compare current inventory and attributable sends. Requires live gym staff access. */
   gymGradeComparison: GymGradeComparison;
@@ -9969,6 +10058,16 @@ export type QueryGymBoardsArgs = {
 /** Root query type for all read operations. */
 export type QueryGymBySlugArgs = {
   slug: Scalars['String']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryGymClimbRankingTargetArgs = {
+  input: GymClimbRankingTargetInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryGymClimbRankingsArgs = {
+  input: GymClimbRankingInput;
 };
 
 /** Root query type for all read operations. */
@@ -13901,6 +14000,8 @@ export type TickReportingTimeInput = {
 /** Input for recording a climb attempt. */
 export type TickReportingTimePrecision = 'day' | 'instant';
 
+export type TickReportingVoteField = 'DIFFICULTY' | 'QUALITY';
+
 /** Status of a climb attempt. */
 export type TickStatus =
   /** Did not complete */
@@ -14321,6 +14422,8 @@ export type UpdateTickInput = {
   /** User's quality rating (1-5) */
   quality?: InputMaybe<Scalars['Int']['input']>;
   reportingTime?: InputMaybe<TickReportingTimeInput>;
+  /** Rating fields explicitly touched by the climber in this edit. */
+  reportingVoteFields?: InputMaybe<Array<TickReportingVoteField>>;
   /** Result of the attempt */
   status?: InputMaybe<TickStatus>;
 };
@@ -15661,6 +15764,7 @@ export type ClimbStatsForAnglesQuery = {
     __typename?: 'ClimbStatsForAngle';
     angle: number;
     ascensionistCount?: number | null;
+    playCount?: number | null;
     qualityAverage?: number | null;
     difficultyAverage?: number | null;
     displayDifficulty?: number | null;
@@ -15707,6 +15811,7 @@ export type ClimbStatsForClimbsQuery = {
     climbUuid: string;
     angle: number;
     ascensionistCount?: number | null;
+    playCount?: number | null;
     qualityAverage?: number | null;
     difficultyAverage?: number | null;
     displayDifficulty?: number | null;
@@ -15728,6 +15833,7 @@ export type ClimbStatsHistoryQuery = {
     __typename?: 'ClimbStatsHistoryEntry';
     angle: number;
     ascensionistCount?: number | null;
+    playCount?: number | null;
     qualityAverage?: number | null;
     difficultyAverage?: number | null;
     displayDifficulty?: number | null;
@@ -16011,6 +16117,7 @@ export type GetUserFavoriteClimbsQuery = {
       framesPace?: number | null;
       angle: number;
       ascensionist_count: number;
+      play_count?: number | null;
       difficulty: string;
       quality_average: string;
       stars: number;
@@ -16262,6 +16369,84 @@ export type AppBugReportChangedSubscriptionVariables = Exact<{ [key: string]: ne
 export type AppBugReportChangedSubscription = {
   __typename?: 'Subscription';
   appBugReportChanged: { __typename?: 'AppBugReportChangedEvent'; reportId: string };
+};
+
+export type GetGymClimbRankingsQueryVariables = Exact<{
+  input: GymClimbRankingInput;
+}>;
+
+export type GetGymClimbRankingsQuery = {
+  __typename?: 'Query';
+  gymClimbRankings: {
+    __typename?: 'GymClimbRankings';
+    status: GymClimbRankingStatus;
+    mode: GymClimbRankingMode;
+    quietAvailable: boolean;
+    startAt?: string | null;
+    asOf?: string | null;
+    timeZone?: string | null;
+    timeZoneConfigured: boolean;
+    nextCursor?: string | null;
+    truncated: boolean;
+    rows: Array<{
+      __typename?: 'GymClimbRankingRow';
+      rank: number;
+      physicalBoardUuid: string;
+      boardName: string;
+      sendCount?: number | null;
+      senderCount?: number | null;
+      qualityMean?: number | null;
+      voterCount?: number | null;
+      commentCount?: number | null;
+      authorCount?: number | null;
+      gradeDelta?: number | null;
+      firstKnownAvailableAt?: string | null;
+      lastSendAt?: string | null;
+      lastSendEndAt?: string | null;
+      lastSendDate?: string | null;
+      knownLifetimeDays?: number | null;
+      knownWindowDays?: number | null;
+      sendsPerDay?: number | null;
+      target: {
+        __typename?: 'GymClimbRankingTarget';
+        logicalBoardUuid: string;
+        boardSlug: string;
+        boardType: string;
+        layoutId: number;
+        sizeId: number;
+        setIds: string;
+        climbUuid: string;
+        name: string;
+        angle: number;
+        isMirror: boolean;
+        referenceDifficulty?: number | null;
+        shareable: boolean;
+      };
+    }>;
+  };
+};
+
+export type GetGymClimbRankingTargetQueryVariables = Exact<{
+  input: GymClimbRankingTargetInput;
+}>;
+
+export type GetGymClimbRankingTargetQuery = {
+  __typename?: 'Query';
+  gymClimbRankingTarget: {
+    __typename?: 'GymClimbRankingTarget';
+    logicalBoardUuid: string;
+    boardSlug: string;
+    boardType: string;
+    layoutId: number;
+    sizeId: number;
+    setIds: string;
+    climbUuid: string;
+    name: string;
+    angle: number;
+    isMirror: boolean;
+    referenceDifficulty?: number | null;
+    shareable: boolean;
+  };
 };
 
 export type GymOwnershipLookupQueryVariables = Exact<{
@@ -17144,6 +17329,7 @@ export type GetPlaylistClimbsQuery = {
       framesPace?: number | null;
       angle: number;
       ascensionist_count: number;
+      play_count?: number | null;
       difficulty: string;
       quality_average: string;
       stars: number;
@@ -17296,6 +17482,7 @@ export type GetSmartPlaylistQuery = {
       framesPace?: number | null;
       angle: number;
       ascensionist_count: number;
+      play_count?: number | null;
       difficulty: string;
       quality_average: string;
       stars: number;
@@ -18737,6 +18924,7 @@ export type GetSetterClimbsFullQuery = {
       framesPace?: number | null;
       angle: number;
       ascensionist_count: number;
+      play_count?: number | null;
       difficulty: string;
       quality_average: string;
       stars: number;
@@ -18774,6 +18962,7 @@ export type GetUserClimbsQuery = {
       framesPace?: number | null;
       angle: number;
       ascensionist_count: number;
+      play_count?: number | null;
       difficulty: string;
       quality_average: string;
       stars: number;
@@ -21775,6 +21964,7 @@ export const ClimbStatsForAnglesDocument = {
               selections: [
                 { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'ascensionistCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'playCount' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'qualityAverage' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'difficultyAverage' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'displayDifficulty' } },
@@ -21899,6 +22089,7 @@ export const ClimbStatsForClimbsDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'ascensionistCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'playCount' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'qualityAverage' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'difficultyAverage' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'displayDifficulty' } },
@@ -21956,6 +22147,7 @@ export const ClimbStatsHistoryDocument = {
               selections: [
                 { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'ascensionistCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'playCount' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'qualityAverage' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'difficultyAverage' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'displayDifficulty' } },
@@ -22713,6 +22905,7 @@ export const GetUserFavoriteClimbsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'framesPace' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'ascensionist_count' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'play_count' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'quality_average' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'stars' } },
@@ -23279,6 +23472,156 @@ export const AppBugReportChangedDocument = {
     },
   ],
 } as unknown as DocumentNode<AppBugReportChangedSubscription, AppBugReportChangedSubscriptionVariables>;
+export const GetGymClimbRankingsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetGymClimbRankings' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'GymClimbRankingInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'gymClimbRankings' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'mode' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'quietAvailable' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'startAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'asOf' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'timeZone' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'timeZoneConfigured' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'rows' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'rank' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'physicalBoardUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardName' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'target' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'logicalBoardUuid' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'boardSlug' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'sizeId' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'setIds' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'referenceDifficulty' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'shareable' } },
+                          ],
+                        },
+                      },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sendCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'senderCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'qualityMean' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'voterCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'commentCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'authorCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'gradeDelta' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'firstKnownAvailableAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'lastSendAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'lastSendEndAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'lastSendDate' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'knownLifetimeDays' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'knownWindowDays' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sendsPerDay' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'nextCursor' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'truncated' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetGymClimbRankingsQuery, GetGymClimbRankingsQueryVariables>;
+export const GetGymClimbRankingTargetDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetGymClimbRankingTarget' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'GymClimbRankingTargetInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'gymClimbRankingTarget' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'logicalBoardUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardSlug' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'sizeId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'setIds' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'referenceDifficulty' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'shareable' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetGymClimbRankingTargetQuery, GetGymClimbRankingTargetQueryVariables>;
 export const GymOwnershipLookupDocument = {
   kind: 'Document',
   definitions: [
@@ -25593,6 +25936,7 @@ export const GetPlaylistClimbsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'framesPace' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'ascensionist_count' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'play_count' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'quality_average' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'stars' } },
@@ -26016,6 +26360,7 @@ export const GetSmartPlaylistDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'framesPace' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'ascensionist_count' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'play_count' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'quality_average' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'stars' } },
@@ -29761,6 +30106,7 @@ export const GetSetterClimbsFullDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'framesPace' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'ascensionist_count' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'play_count' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'quality_average' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'stars' } },
@@ -29831,6 +30177,7 @@ export const GetUserClimbsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'framesPace' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'ascensionist_count' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'play_count' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'quality_average' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'stars' } },

@@ -5,6 +5,7 @@ export const CLIMB_STATS_FOR_ANGLES = gql`
     climbStatsForAngles(boardName: $boardName, climbUuid: $climbUuid) {
       angle
       ascensionistCount
+      playCount
       qualityAverage
       difficultyAverage
       displayDifficulty
@@ -19,6 +20,7 @@ export const CLIMB_STATS_FOR_ANGLES = gql`
 export type ClimbStatsForAnglesEntry = {
   angle: number;
   ascensionistCount: number | null;
+  playCount?: number | null;
   qualityAverage: number | null;
   difficultyAverage: number | null;
   displayDifficulty: number | null;
@@ -66,6 +68,7 @@ export const CLIMB_STATS_FOR_CLIMBS = gql`
       climbUuid
       angle
       ascensionistCount
+      playCount
       qualityAverage
       difficultyAverage
       displayDifficulty

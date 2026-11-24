@@ -71,3 +71,4 @@ export {
 export type { BoardContextType, BoardActionsContextType, BoardLogbookContextType } from './board-provider';
 
 export * from './use-gym-grade-comparison';
+export * from './use-gym-climb-rankings';

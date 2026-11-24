@@ -1,7 +1,12 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import * as preferenceStore from '../../preference-store';
 import { clearBoardArtGeometryCache } from '@boardsesh/board-art-geometry';
-import { clearBoardRenderDataCache, getBoardAspectRatio, getBoardRenderData } from '../../board-details';
+import {
+  clearBoardRenderDataCache,
+  getBoardAspectRatio,
+  getBoardRenderData,
+  getCatalogueBoardRenderData,
+} from '../../board-details';
 import { clearCreateBoardHoldsCache, getCreateBoardHolds } from '../../create-board-holds';
 import { createClimbDraftKey } from '../../create-climb-draft-store';
 import { createClimbScreenKey } from '../../create-climb-screen-key';
@@ -98,6 +103,12 @@ describe('getBoardRenderData — spray branch', () => {
       { id: 7, mirroredHoldId: null, cx: 100, cy: 200, r: 18 },
       { id: 8, mirroredHoldId: null, cx: 400, cy: 900, r: 22 },
     ]);
+  });
+
+  it('rejects a registered spray wall in the catalogue-only accessor', () => {
+    registerWall(1);
+    expect(getBoardRenderData(SPRAY_CONFIG)).toMatchObject({ boardWidth: 1200, boardHeight: 1600 });
+    expect(getCatalogueBoardRenderData(SPRAY_CONFIG)).toBeNull();
   });
 
   it('refuses a size id that is not the layout id', () => {

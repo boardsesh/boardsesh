@@ -279,7 +279,10 @@ const ARGUMENT_KINDS: Array<{ kind: SeedKind; when: (site: ArgumentSite) => bool
   // bare `uuid` are the same key.
   {
     kind: 'boardUuid',
-    when: ({ fieldName, argName }) => argName === 'boardUuid' || (argName === 'uuid' && /[Ss]prayWall/.test(fieldName)),
+    when: ({ fieldName, argName }) =>
+      argName === 'boardUuid' ||
+      (fieldName === 'gymClimbRankingTarget' && argName === 'logicalBoardUuid') ||
+      (argName === 'uuid' && /[Ss]prayWall/.test(fieldName)),
   },
   { kind: 'boardSlug', when: ({ fieldName, argName }) => argName === 'slug' && /[Bb]oard/.test(fieldName) },
   { kind: 'boardType', when: ({ argName }) => argName === 'boardType' || argName === 'boardName' },
@@ -1095,9 +1098,13 @@ async function seedWorld(): Promise<SeededWorld> {
   await db.execute(sql`
     INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, difficulty, quality,
                                  attempt_count, is_mirror, is_benchmark, session_id, board_id,
-                                 comment, climbed_at, created_at, updated_at)
+                                 comment, climbed_at, created_at, updated_at,
+                                 reporting_board_id, reporting_gym_id, reporting_attribution,
+                                 reporting_time_precision, reporting_climbed_at)
     VALUES (${tickUuid}, ${OWNER}, ${savedClimb.uuid}, 'spray', ${ANGLE}, 'send', 18, 3,
-            1, false, false, ${sessionId}, ${boardId}, ${TICK_COMMENT}, now(), now(), now())
+            1, false, false, ${sessionId}, ${boardId}, ${TICK_COMMENT},
+            now() AT TIME ZONE 'UTC', now(), now(), ${boardId}, ${Number(gymRow.id)}, 'session',
+            'instant', now() AT TIME ZONE 'UTC')
   `);
 
   // The workout the owner followed (#6903): one block on the wall's climb, so
@@ -1356,6 +1363,8 @@ describe('the spray-wall visibility sweep', () => {
       'Query.searchClimbs',
       'Query.userTicks',
       'Query.boardDiscovery',
+      'Query.gymClimbRankings',
+      'Query.gymClimbRankingTarget',
     ]) {
       expect(swept).toContain(key);
     }

@@ -10,6 +10,7 @@ import { unstable_cache } from 'next/cache';
 // oxlint-disable-next-line no-restricted-imports -- raw postgres-js sql usage; migrate to drizzle
 import { rowsFromResult, sql } from '@/app/lib/db/db';
 import { getGradeLabel, privateSafeFirstAscentAt, privateSafeFirstAscentName } from '@boardsesh/db/queries';
+import { toPlayCount } from '@boardsesh/shared-schema';
 import { sql as drizzleSql } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 
@@ -69,7 +70,9 @@ async function fetchClimbFromDb(
   // Direct-by-UUID lookups intentionally do NOT filter `frames_count = 1`.
   // Search/dedupe still skip multi-frame climbs (see queries/climbs/*),
   // but the player needs to be able to render them when a URL points at one.
-  const result = rowsFromResult<Climb & { difficulty_id: number | null }>(
+  const result = rowsFromResult<
+    Omit<Climb, 'play_count'> & { difficulty_id: number | null; play_count: string | null }
+  >(
     await withReadDeadline(
       'climb-select',
       sql`
@@ -103,6 +106,7 @@ async function fetchClimbFromDb(
         climbs.frames, climbs.frames_count as "framesCount", climbs.frames_pace as "framesPace",
         COALESCE(climb_stats.angle, ${angle}) as angle, climbs.angle as "catalogAngle",
         COALESCE(climb_stats.ascensionist_count, 0) as ascensionist_count,
+        climb_stats.play_count::text as play_count,
         ROUND(climb_stats.display_difficulty::numeric, 0) as difficulty_id,
         ROUND(climb_stats.quality_average::numeric, 2) as quality_average,
         ROUND(climb_stats.difficulty_average::numeric - climb_stats.display_difficulty::numeric, 2) AS difficulty_error,
@@ -133,6 +137,7 @@ async function fetchClimbFromDb(
   return {
     ...row,
     difficulty: getGradeLabel(row.difficulty_id),
+    play_count: toPlayCount(row.play_count),
     is_no_match: resolveClimbNoMatch(boardName, row.characteristics, row.description),
   } as Climb;
 }
@@ -201,6 +206,7 @@ export async function getClimb(params: ParsedBoardRouteParametersWithUuid): Prom
 export type ClimbStatsForAngle = {
   angle: number;
   ascensionist_count: string; // comes as string from DB
+  play_count?: number | null;
   quality_average: string | null; // comes as string from DB
   difficulty_average: number | null;
   display_difficulty: number | null;
@@ -253,6 +259,7 @@ async function fetchClimbStatsForAllAnglesFromDb(
     SELECT
       climb_stats.angle,
       COALESCE(climb_stats.ascensionist_count, 0) as ascensionist_count,
+      climb_stats.play_count::text as play_count,
       ROUND(climb_stats.quality_average::numeric, 2) as quality_average,
       climb_stats.difficulty_average,
       climb_stats.display_difficulty,
@@ -279,7 +286,9 @@ async function fetchClimbStatsForAllAnglesFromDb(
     )
     ORDER BY climb_stats.angle ASC
   `);
-  const result = rowsFromResult<ClimbStatsForAngle & { difficulty_id: number | null }>(
+  const result = rowsFromResult<
+    Omit<ClimbStatsForAngle, 'play_count'> & { difficulty_id: number | null; play_count: string | null }
+  >(
     await withReadDeadline(
       'climb-stats-all-angles',
       sql.unsafe(statsQuery.sql, statsQuery.params as Parameters<typeof sql.unsafe>[1]),
@@ -289,7 +298,8 @@ async function fetchClimbStatsForAllAnglesFromDb(
   return result.map((row) => ({
     ...row,
     difficulty: getGradeLabel(row.difficulty_id),
-  })) as ClimbStatsForAngle[];
+    play_count: toPlayCount(row.play_count),
+  }));
 }
 
 /**

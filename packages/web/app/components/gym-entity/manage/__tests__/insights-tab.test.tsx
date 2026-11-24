@@ -18,12 +18,13 @@ import InsightsTab from '../insights-tab';
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
   gradeRequest: vi.fn(),
+  rankingRequest: vi.fn(),
   viewer: 'viewer-one',
   status: 'authenticated',
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: (ns?: string) => ({
+  useTranslation: (ns?: string | readonly string[]) => ({
     t: (key: string, options?: Record<string, unknown>) => tFromCatalog(ns, key, options),
     i18n: { language: 'en-US' },
   }),
@@ -38,6 +39,7 @@ vi.mock('@/app/lib/graphql/client', () => ({
   createGraphQLHttpClient: () => ({
     request: (request: { document?: string } | string, variables?: unknown) => {
       const document = typeof request === 'string' ? request : request.document;
+      if (document?.includes('GetGymClimbRankings')) return mocks.rankingRequest(request);
       return /(?:GymGradeComparison|GymGradeCollectionOptions|SetGymGradeCollection)/.test(document ?? '')
         ? mocks.gradeRequest(request)
         : variables === undefined
@@ -198,6 +200,17 @@ beforeEach(() => {
   mocks.viewer = 'viewer-one';
   mocks.status = 'authenticated';
   mocks.request.mockReset();
+  mocks.rankingRequest.mockReset().mockImplementation((request: { variables: { input: { mode: string } } }) =>
+    Promise.resolve({
+      gymClimbRankings: {
+        status: 'READY',
+        mode: request.variables.input.mode,
+        rows: [],
+        quietAvailable: false,
+        nextCursor: null,
+      },
+    }),
+  );
   mocks.gradeRequest.mockReset().mockResolvedValue({ gymGradeComparison: emptyGrades });
 });
 
@@ -208,7 +221,7 @@ afterEach(() => {
 });
 
 describe('InsightsTab', () => {
-  it('shows gym-local windows, board scope, recorded activity and existing detail rows', async () => {
+  it('shows gym-local windows, board scope, recorded activity and the separate ranking', async () => {
     mocks.request.mockResolvedValue({ gymStats: report });
     renderTab();
     expect(await screen.findByText('12 climbers recorded')).toBeTruthy();
@@ -218,7 +231,8 @@ describe('InsightsTab', () => {
     expect(screen.getByText(/Activity times checked.*Nov 7, 2025.*Nov 7, 2026/)).toBeTruthy();
     expect(screen.getByText(/Earliest display in this check.*Jan 2, 2026/)).toBeTruthy();
     expect(screen.getByText('No climb log with a recorded time found.')).toBeTruthy();
-    expect(screen.getByText('Crimpy Traverse')).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Climb rankings' })).toBeTruthy();
+    expect(screen.queryByText('Crimpy Traverse')).toBeNull();
   });
 
   it('renders five values and selectable exact trend counts independently from the selected period', async () => {
@@ -545,7 +559,7 @@ describe('InsightsTab', () => {
       });
     };
     await advance(20);
-    expect(screen.getByText('Crimpy Traverse')).toBeTruthy();
+    expect(screen.getByText('12 climbers recorded')).toBeTruthy();
     act(() => onlineManager.setOnline(false));
     await advance(10);
     expect(screen.getByText(/Offline. Showing the report/)).toBeTruthy();
@@ -553,7 +567,7 @@ describe('InsightsTab', () => {
     const receivedAt = queryClient.getQueryState(key)?.dataUpdatedAt;
     expect(receivedAt).toBeTruthy();
     await advance((receivedAt ?? 0) + GYM_REPORTING_RECEIPT_MS - Date.now() - 1);
-    expect(screen.getByText('Crimpy Traverse')).toBeTruthy();
+    expect(screen.getByText('12 climbers recorded')).toBeTruthy();
     expect(screen.getByText(tiedLabel)).toBeTruthy();
     await advance(2);
     expect(screen.queryByText('Crimpy Traverse')).toBeNull();

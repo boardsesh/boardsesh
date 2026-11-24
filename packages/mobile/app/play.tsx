@@ -62,6 +62,12 @@ function PlayScreen() {
     onPlayDrawerTargetConsumed,
     playTarget,
   } = usePlayDrawerRoute();
+  const rankedPreview = playTarget?.options?.rankedPreview;
+  const shownRankedPreview = useRef(false);
+  if (playTarget) shownRankedPreview.current = Boolean(rankedPreview);
+  const withdrawnRanking = !playTarget && shownRankedPreview.current;
+  const rankingOwnsRoute = Boolean(rankedPreview) || withdrawnRanking;
+  const displayedBoardConfig = rankedPreview?.boardConfig ?? activeBoardConfig;
   const { boardConfig: storedBoardConfig, openPlayDrawer, getClimbActions } = useDrawerHost();
   const { openLogAscent, sheet: logAscentSheet } = useLogAscentSheetHost();
   const { setCurrentClimb } = useQueueActions();
@@ -70,6 +76,10 @@ function PlayScreen() {
   const { swipeDismiss, animatedStyle, onLayout, close, canConsumeTarget, dismissAndWait } = usePlaySwipeDismiss(
     playTarget?.nonce,
   );
+
+  useEffect(() => {
+    if (withdrawnRanking) close();
+  }, [close, withdrawnRanking]);
 
   // Landscape iPad: the board on the left, Up next / Logbook / Beta on the right.
   // The native iPad's only (the Music layout); Android tablets and the browser
@@ -231,13 +241,13 @@ function PlayScreen() {
         which also owns why that fill stays `level0` and untouchable (#4209).
         Rendered on the first frame so the present animates over it. */}
       <ScreenBackground {...backgroundProps} />
-      {activeBoardConfig ? (
+      {displayedBoardConfig && !withdrawnRanking ? (
         <>
           <PlayDrawer
             fieldColorOverride={fieldColor}
             swipeDismiss={swipeDismiss}
             onClose={close}
-            boardConfig={activeBoardConfig}
+            boardConfig={displayedBoardConfig}
             onAngleChange={onAngleChange}
             isAngleAdjustable={isAngleAdjustable}
             onOpenQueue={openQueue}
@@ -250,7 +260,7 @@ function PlayScreen() {
             fitBoardToHeight={sideBySide}
             renderSidePanel={sideBySide ? renderSidePanel : undefined}
           />
-          {mountQueue && queueBoard ? (
+          {!rankedPreview && mountQueue && queueBoard ? (
             <QueueSheet
               ref={queueSheetRef}
               board={queueBoard}
@@ -264,12 +274,12 @@ function PlayScreen() {
           ) : null}
         </>
       ) : null}
-      {logAscentSheet}
+      {!rankingOwnsRoute && logAscentSheet}
       {/* Host the BLE device picker from inside this route so a connect from the
         player's lightbulb (when disconnected) presents OVER the player. Claims
         the picker, suppressing the app-root instance while mounted. */}
-      <DevicePickerSheetHost registerExternal />
-      <RouteSheetsBusyReporter queueSheetUp={queueSheetUp} />
+      {!rankingOwnsRoute && <DevicePickerSheetHost registerExternal />}
+      {!rankingOwnsRoute && <RouteSheetsBusyReporter queueSheetUp={queueSheetUp} />}
     </Animated.View>
   );
 }

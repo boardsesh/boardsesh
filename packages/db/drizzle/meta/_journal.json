@@ -2437,6 +2437,27 @@
       "when": 1795529110954,
       "tag": "0347_gym_mcp_receipt_retention",
       "breakpoints": true
+    },
+    {
+      "idx": 348,
+      "version": "7",
+      "when": 1795548668787,
+      "tag": "0348_gym_climb_rankings",
+      "breakpoints": true
+    },
+    {
+      "idx": 349,
+      "version": "7",
+      "when": 1795548668788,
+      "tag": "0349_gym_tick_vote_invalidation",
+      "breakpoints": true
+    },
+    {
+      "idx": 350,
+      "version": "7",
+      "when": 1795549787423,
+      "tag": "0350_sync_climb_play_count",
+      "breakpoints": true
     }
   ]
 }

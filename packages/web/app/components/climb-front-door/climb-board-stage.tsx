@@ -4,12 +4,18 @@ import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
 import { toDarkArtUrl } from '@/app/components/board-renderer/util';
 import boardArtStyles from '@/app/components/board-renderer/board-art-theme.module.css';
 import styles from './climb-board-stage.module.css';
+import { ClimbBoardStageOrientation } from './climb-board-stage-orientation';
 
 type ClimbBoardStageProps = {
   /** Static board-photo layers, from `buildBoardArtLayers`. Empty unless the board ships dark art. */
   backgroundUrls: string[];
+  backgroundHasDarkArt?: boolean;
   /** The per-climb holds render, from `buildBoardArtLayers`. */
-  overlayUrl: string;
+  overlayUrl?: string;
+  /** Viewer-only hold overlay kept inline instead of sent to the shared image renderer. */
+  overlay?: React.ReactNode;
+  mirrored?: boolean;
+  allowMirrorFragment?: boolean;
   boardWidth: number;
   boardHeight: number;
   /** Alt text for the holds render, the one layer a screen reader announces. */
@@ -46,58 +52,77 @@ const boardLayerStyle: React.CSSProperties = {
  */
 export default function ClimbBoardStage({
   backgroundUrls,
+  backgroundHasDarkArt = true,
   overlayUrl,
+  overlay,
+  mirrored,
+  allowMirrorFragment,
   boardWidth,
   boardHeight,
   alt,
   children,
 }: ClimbBoardStageProps) {
-  return (
-    <Box className={styles.stage}>
-      {/* The frame is the dark field the render is drawn for, so the board reads
-          as one wall rather than a picture on a card. */}
-      <Box component="figure" className={styles.frame} sx={{ bgcolor: BOARD_FIELD_COLORS.dark }}>
-        {/* The ratio feeds the height cap in the stylesheet. */}
-        <Box className={styles.art} sx={{ '--board-aspect-ratio': String(boardWidth / boardHeight) }}>
-          {backgroundUrls.map((backgroundUrl) => (
-            <React.Fragment key={backgroundUrl}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={backgroundUrl}
-                alt=""
-                width={boardWidth}
-                height={boardHeight}
-                className={boardArtStyles.lightArt}
-                fetchPriority="high"
-                decoding="async"
-                style={boardLayerStyle}
-              />
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={toDarkArtUrl(backgroundUrl)}
-                alt=""
-                width={boardWidth}
-                height={boardHeight}
-                className={boardArtStyles.darkArt}
-                fetchPriority="high"
-                decoding="async"
-                style={boardLayerStyle}
-              />
-            </React.Fragment>
-          ))}
-          {/* eslint-disable-next-line @next/next/no-img-element -- the overlay route
-              is already an optimised render endpoint; next/image would add a second
-              proxy hop in front of the page's LCP element for no gain. */}
+  const aspectRatio = String(boardWidth / boardHeight);
+  const layers = (
+    <>
+      {backgroundUrls.map((backgroundUrl) => (
+        <React.Fragment key={backgroundUrl}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={overlayUrl}
-            alt={alt}
+            src={backgroundUrl}
+            alt=""
             width={boardWidth}
             height={boardHeight}
+            className={backgroundHasDarkArt ? boardArtStyles.lightArt : undefined}
             fetchPriority="high"
             decoding="async"
             style={boardLayerStyle}
           />
-        </Box>
+          {backgroundHasDarkArt && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={toDarkArtUrl(backgroundUrl)}
+              alt=""
+              width={boardWidth}
+              height={boardHeight}
+              className={boardArtStyles.darkArt}
+              fetchPriority="high"
+              decoding="async"
+              style={boardLayerStyle}
+            />
+          )}
+        </React.Fragment>
+      ))}
+      {overlayUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element -- this already uses the optimised render endpoint.
+        <img
+          src={overlayUrl}
+          alt={alt}
+          width={boardWidth}
+          height={boardHeight}
+          fetchPriority="high"
+          decoding="async"
+          style={boardLayerStyle}
+        />
+      ) : (
+        overlay
+      )}
+    </>
+  );
+  return (
+    <Box className={styles.stage}>
+      <Box component="figure" className={styles.frame} sx={{ bgcolor: BOARD_FIELD_COLORS.dark }}>
+        {allowMirrorFragment ? (
+          <ClimbBoardStageOrientation aspectRatio={aspectRatio}>{layers}</ClimbBoardStageOrientation>
+        ) : (
+          <Box
+            className={styles.art}
+            data-mirrored={mirrored || undefined}
+            sx={{ '--board-aspect-ratio': aspectRatio }}
+          >
+            {layers}
+          </Box>
+        )}
       </Box>
       {children}
     </Box>

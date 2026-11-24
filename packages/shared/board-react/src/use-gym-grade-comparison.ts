@@ -57,7 +57,12 @@ function useGymAccessPrefixes(viewerId: string, gymUuid: string, overviewGymUuid
 }
 
 /** Keep the reason and discard all prior evidence without starting a retry loop. */
-function denyGymReceipts(client: QueryClient, prefixes: readonly QueryKey[], error: unknown, rejectingKey?: QueryKey) {
+export function denyGymReportingReceipts(
+  client: QueryClient,
+  prefixes: readonly QueryKey[],
+  error: unknown,
+  rejectingKey?: QueryKey,
+) {
   const rejectingHash = rejectingKey ? hashKey(rejectingKey) : null;
   const denial = error instanceof Error ? error : new GymReportingAccessDeniedError(error);
   notifyManager.batch(() => {
@@ -100,7 +105,7 @@ function useVerifiedGymGradeRead<Data>(
         return await queryFn({ signal });
       } catch (error) {
         if (!signal.aborted && isGymReportingAccessError(error)) {
-          denyGymReceipts(queryClient, accessPrefixes, error, queryKey);
+          denyGymReportingReceipts(queryClient, accessPrefixes, error, queryKey);
         }
         throw error;
       }
@@ -197,7 +202,7 @@ export function useGymGradeCollectionPicker(
     },
     onError: (error) => {
       if (isGymReportingAccessError(error)) {
-        denyGymReceipts(queryClient, accessPrefixes, error);
+        denyGymReportingReceipts(queryClient, accessPrefixes, error);
       } else if (hasGraphqlErrorCode(error, 'COLLECTION_UNAVAILABLE')) {
         // A vanished or incompatible choice still permits the staff overview.
         // Revalidate the two receipts that can name a playlist and keep the

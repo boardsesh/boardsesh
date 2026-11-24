@@ -26,6 +26,13 @@ type BoardRenderData = {
   holdsData: HoldPlacement[];
 };
 
+type BoardRenderConfig = {
+  boardName: BoardName;
+  layoutId: number;
+  sizeId: number;
+  setIds: number[];
+};
+
 // `getBoardRenderData` is pure but does O(n) work over ~1400 hold tuples (a
 // filter plus per-hold coordinate math) on the PlayDrawer-open critical path and
 // on every carousel swap. The underlying placement data is static, so memoize by
@@ -40,20 +47,24 @@ const renderDataCache = new Map<string, BoardRenderData | null>();
  * `getBoardDetails()` geometry without handing mobile renderers network URLs.
  * Cached by board config — the placement data behind it never changes.
  */
-export function getBoardRenderData(params: {
-  boardName: BoardName;
-  layoutId: number;
-  sizeId: number;
-  setIds: number[];
-}): BoardRenderData | null {
-  const { boardName, layoutId, sizeId, setIds } = params;
-
+export function getBoardRenderData(params: BoardRenderConfig): BoardRenderData | null {
   // The spray token is `''` for every catalogue board, so no existing key moves
   // by a byte; for a wall it carries the version, which is the only thing that
   // changes when a reset replaces the photo and the hold generation under an
   // unchanged (layoutId, sizeId). Without it a reset would be served the
   // previous generation's holds out of this memo forever.
-  const cacheKey = `${boardName}-${layoutId}-${sizeId}-${setIds.join(',')}${sprayCacheToken(boardName, layoutId)}`;
+  return getCachedBoardRenderData(params, sprayCacheToken(params.boardName, params.layoutId));
+}
+
+/** Reads bundled geometry for surfaces that source their own authorized spray art. */
+export function getCatalogueBoardRenderData(params: BoardRenderConfig): BoardRenderData | null {
+  if (params.boardName === 'spray') return null;
+  return getCachedBoardRenderData(params, '');
+}
+
+function getCachedBoardRenderData(params: BoardRenderConfig, token: string): BoardRenderData | null {
+  const { boardName, layoutId, sizeId, setIds } = params;
+  const cacheKey = `${boardName}-${layoutId}-${sizeId}-${setIds.join(',')}${token}`;
   const cached = renderDataCache.get(cacheKey);
   if (cached !== undefined) return cached;
 
@@ -75,12 +86,7 @@ export function clearBoardRenderDataCache(): void {
   renderDataCache.clear();
 }
 
-function computeBoardRenderData(params: {
-  boardName: BoardName;
-  layoutId: number;
-  sizeId: number;
-  setIds: number[];
-}): BoardRenderData | null {
+function computeBoardRenderData(params: BoardRenderConfig): BoardRenderData | null {
   const { boardName, layoutId, sizeId, setIds } = params;
 
   if (boardName === 'moonboard') {
