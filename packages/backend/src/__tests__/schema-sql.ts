@@ -29,7 +29,7 @@ const gymReportingAliasVenueGuard = readFileSync(
   'utf8',
 );
 const gymReachObservationsSchema = readFileSync(
-  new URL('../../../db/drizzle/0341_gym_reach_observations.sql', import.meta.url),
+  new URL('../../../db/drizzle/0342_gym_reach_observations.sql', import.meta.url),
   'utf8',
 );
 const offlineWriteDeliverySchema = readFileSync(
