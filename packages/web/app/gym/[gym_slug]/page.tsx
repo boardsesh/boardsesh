@@ -32,7 +32,7 @@ import GymPopularClimbPreview, {
 } from '@/app/components/gym-entity/gym-popular-climb-preview';
 import { gymMapsUrl } from '@/app/lib/gym-maps-url';
 import { constructBoardSlugListUrl } from '@/app/lib/url-utils';
-import { boardTypeLabel } from '@boardsesh/board-constants';
+import { boardTypeLabel, CATALOGUE_BOARD_TYPES } from '@boardsesh/board-constants';
 import { parseGymQrLanding } from '@boardsesh/analytics';
 import { gymRedirectAttributionQuery } from '@/app/lib/gym-attribution';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
@@ -209,6 +209,45 @@ function resolveGymPhotoSrc(gym: Gym): string | null {
 
 type KioskTranslate = Awaited<ReturnType<typeof getServerTranslation>>['t'];
 
+/** Search copy uses stored addresses and public boards, never inferred locations or gym.boardTypes. */
+function buildGymSearchCopy(gym: Gym, boards: UserBoard[], locale: string, t: KioskTranslate) {
+  // Gym has no city field. Keep the address intact instead of guessing which
+  // comma-separated part is a town or reverse-geocoding its coordinates.
+  const location = gym.address?.trim();
+  const venue = location
+    ? t('gymPage.metaTitleLocation', { gymName: gym.name, location })
+    : /climb|boulder/i.test(gym.name)
+      ? t('gymPage.metaTitleName', { gymName: gym.name })
+      : t('gymPage.metaTitle', { gymName: gym.name });
+  const publicBoards = boards.filter((board) => CATALOGUE_BOARD_TYPES.includes(board.boardType));
+  const boardLabel = (board: UserBoard) => {
+    const label = boardTypeLabel(board.boardType);
+    return board.boardType === 'kilter' || board.boardType === 'tension' ? `${label} Board` : label;
+  };
+  const boardTypes = [...new Set(publicBoards.map(boardLabel))];
+  const configurations = [
+    ...new Set(
+      publicBoards.map((board) => {
+        const label = boardLabel(board);
+        // Imported zeroes mean unspecified. Adjustable boards have no fixed angle.
+        return board.isAngleAdjustable === false && Number.isFinite(board.angle) && board.angle !== 0
+          ? t('gymPage.metaBoardAngle', { board: label, angle: board.angle })
+          : label;
+      }),
+    ),
+  ];
+  const list = new Intl.ListFormat(locale, { type: 'conjunction' });
+  return {
+    title: boardTypes.length > 0 ? t('gymPage.metaTitleBoards', { venue, boards: list.format(boardTypes) }) : venue,
+    description:
+      configurations.length > 0
+        ? t('gymPage.metaDescriptionBoards', { venue, boards: list.format(configurations) })
+        : location
+          ? t('gymPage.metaDescriptionLocation', { gymName: gym.name, location })
+          : gym.description?.trim() || t('gymPage.metaDescription', { gymName: gym.name }),
+  };
+}
+
 /**
  * The share card and the words above it for a public gym: its own name and the
  * boards a stranger can see on its page, the same read the card draws from. No
@@ -219,8 +258,8 @@ async function buildGymShareCard(
   requestedSlug: string,
   locale: string,
   t: KioskTranslate,
+  boards: UserBoard[],
 ): Promise<{ ogTitle: string; ogDescription: string; imagePath?: string }> {
-  const boards = await fetchGymBoards(gym.uuid, undefined);
   const boardTypes = [...new Set(boards.map((board) => board.boardType))];
   const labels = boardTypes.map(boardTypeLabel);
 
@@ -262,8 +301,8 @@ export async function generateMetadata(props: GymRouteProps): Promise<Metadata> 
     });
   }
 
-  const title = t('gymPage.metaTitle', { gymName: gym.name });
-  const description = gym.description?.trim() || t('gymPage.metaDescription', { gymName: gym.name });
+  const boards = gym.isPublic ? await fetchGymBoards(gym.uuid, undefined) : [];
+  const { title, description } = buildGymSearchCopy(gym, boards, locale, t);
   // `path` is the SLUG PATH ONLY — never concatenate anything from
   // `searchParams` into it. Every canonical and every hreflang alternate is
   // built from this string, so a query string here would give
@@ -275,7 +314,7 @@ export async function generateMetadata(props: GymRouteProps): Promise<Metadata> 
   // it has one. A private gym is only ever seen by an editor previewing it, and
   // the backend card answers 404 for it, so it keeps the generic site card.
   const canonicalSlug = gym.slug || gym_slug;
-  const shareCard = gym.isPublic ? await buildGymShareCard(gym, canonicalSlug, locale, t) : {};
+  const shareCard = gym.isPublic ? await buildGymShareCard(gym, canonicalSlug, locale, t, boards) : {};
 
   // A gym that isn't a public venue — a private listing, or a climber's personal
   // home wall (see `gymIsIndexableVenue`) — gets `noindex, follow` AND NO

@@ -75,6 +75,12 @@
   "gymPage": {
     "metaTitle": "Kletterhalle {{gymName}}",
     "metaDescription": "Sieh dir die Boards und die Live-Wand von {{gymName}} auf Boardsesh an.",
+    "metaTitleName": "{{gymName}}",
+    "metaTitleLocation": "{{gymName}}, {{location}}",
+    "metaTitleBoards": "{{venue}}: {{boards}}",
+    "metaBoardAngle": "{{board}} mit {{angle}}°",
+    "metaDescriptionBoards": "{{venue}} bietet {{boards}}. Sieh, was an der Wand leuchtet, und öffne die Boulder in Boardsesh.",
+    "metaDescriptionLocation": "{{gymName}} ({{location}}). Sieh dir die Boards und die Live-Wand auf Boardsesh an.",
     "breadcrumbHome": "Boardsesh",
     "breadcrumbGyms": "Hallen",
     "manageGym": "Halle verwalten",

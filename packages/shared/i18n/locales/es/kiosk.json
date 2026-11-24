@@ -75,6 +75,12 @@
   "gymPage": {
     "metaTitle": "Rocódromo {{gymName}}",
     "metaDescription": "Mira los plafones y el muro en directo de {{gymName}} en Boardsesh.",
+    "metaTitleName": "{{gymName}}",
+    "metaTitleLocation": "{{gymName}}, {{location}}",
+    "metaTitleBoards": "{{venue}}: {{boards}}",
+    "metaBoardAngle": "{{board}} a {{angle}}°",
+    "metaDescriptionBoards": "{{venue}} tiene {{boards}}. Mira qué está iluminado en el muro y abre los bloques en Boardsesh.",
+    "metaDescriptionLocation": "{{gymName}} ({{location}}). Mira los plafones y el muro en directo en Boardsesh.",
     "breadcrumbHome": "Boardsesh",
     "breadcrumbGyms": "Rocódromos",
     "manageGym": "Gestionar rocódromo",
