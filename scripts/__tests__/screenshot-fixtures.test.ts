@@ -728,6 +728,118 @@ describe('legacy GetSmartPlaylist replay compatibility', () => {
   });
 });
 
+describe('legacy exact-angle Plays replay compatibility (#8020)', () => {
+  const legacy = 'query GetClimb { climb { uuid angle ascensionist_count } }';
+  const current = legacy.replace('ascensionist_count', 'ascensionist_count play_count');
+  const fixture = (query: string, operationName: string, data: unknown): GraphqlFixtureFile => ({
+    formatVersion: 1,
+    operationName,
+    documentHash: 'original-hash',
+    variablesHash: 'variables',
+    query,
+    variables: {},
+    response: { data },
+    status: 200,
+    recordedAt: '2026-01-01T00:00:00Z',
+    upstream: 'https://example.test',
+  });
+
+  it('represents unrecorded Plays as unavailable without changing recorded bytes', () => {
+    const climb = { uuid: 'c-1', angle: 40, ascensionist_count: 0 };
+    const recorded = fixture(legacy, 'GetClimb', { climb });
+    const bytes = JSON.stringify(recorded);
+    expect(replayCompatibleFixtureResponse(current, recorded)).toEqual({
+      response: { data: { climb: { ...climb, play_count: null } } },
+    });
+    expect(JSON.stringify(recorded)).toBe(bytes);
+  });
+
+  it.each(['ClimbStatsForAngles', 'ClimbStatsForClimbs', 'ClimbStatsHistory'])(
+    'adds camel-case unavailable values only at the %s stats path',
+    (operationName) => {
+      const root = operationName.charAt(0).toLowerCase() + operationName.slice(1);
+      const query = `query ${operationName} { ${root} { angle ascensionistCount } }`;
+      const row = { angle: 40, ascensionistCount: 9 };
+      const recorded = fixture(query, operationName, { [root]: [row], unrelated: { ascensionistCount: 2 } });
+      expect(
+        replayCompatibleFixtureResponse(query.replace('ascensionistCount', 'ascensionistCount playCount'), recorded),
+      ).toEqual({ response: { data: { [root]: [{ ...row, playCount: null }], unrelated: { ascensionistCount: 2 } } } });
+    },
+  );
+
+  it('composes with the approved smart-playlist adapter without editing its metadata', () => {
+    const query =
+      'query GetSmartPlaylist { smartPlaylist { meta { type } climbs { uuid ascensionist_count } totalCount hasMore } }';
+    const request = query
+      .replace('ascensionist_count', 'ascensionist_count play_count')
+      .replace('totalCount hasMore', 'totalCount unfilteredCount hasMore');
+    const smartPlaylist = {
+      meta: { type: 'FIVE_STARS' },
+      climbs: [{ uuid: 'c-1', ascensionist_count: 1 }],
+      totalCount: 1,
+      hasMore: false,
+    };
+    const recorded = fixture(query, 'GetSmartPlaylist', { smartPlaylist });
+    const bytes = JSON.stringify(recorded);
+    expect(replayCompatibleFixtureResponse(request, recorded)).toEqual({
+      response: {
+        data: {
+          smartPlaylist: {
+            ...smartPlaylist,
+            unfilteredCount: null,
+            climbs: [{ uuid: 'c-1', ascensionist_count: 1, play_count: null }],
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(recorded)).toBe(bytes);
+  });
+
+  it('preserves nullable and empty results', () => {
+    for (const data of [null, { climb: null }]) {
+      const recorded = fixture(legacy, 'GetClimb', data);
+      expect(replayCompatibleFixtureResponse(current, recorded)).toEqual({ response: recorded.response });
+    }
+    const query = 'query SearchClimbs { searchClimbs { climbs { ascensionist_count } hasMore } }';
+    const recorded = fixture(query, 'SearchClimbs', { searchClimbs: { climbs: [], hasMore: false } });
+    expect(
+      replayCompatibleFixtureResponse(query.replace('ascensionist_count', 'ascensionist_count play_count'), recorded),
+    ).toEqual({ response: recorded.response });
+  });
+
+  it('keeps other drift, aliases, duplicate selections and unrelated operations detectable', () => {
+    const recorded = fixture(legacy, 'GetClimb', { climb: { ascensionist_count: 1 } });
+    for (const request of [
+      current.replace('uuid', 'uuid name'),
+      current.replace('play_count', 'other: play_count'),
+      current.replace('play_count', 'play_count play_count'),
+      current.replace('ascensionist_count play_count', 'play_count ascensionist_count'),
+      current.replace('play_count', 'play_countSuffix'),
+      current.replace('uuid', 'uuid playCount'),
+      legacy,
+    ])
+      expect(replayCompatibleFixtureResponse(request, recorded)).toBeNull();
+    expect(
+      replayCompatibleFixtureResponse(current.replace('GetClimb', 'OtherClimb'), {
+        ...recorded,
+        operationName: 'OtherClimb',
+        query: legacy.replace('GetClimb', 'OtherClimb'),
+      }),
+    ).toBeNull();
+  });
+
+  it('refuses malformed response paths and recordings that already carry Plays', () => {
+    for (const data of [{}, [], { climb: 4 }, { climb: {} }, { climb: { ascensionist_count: 1, play_count: 0 } }]) {
+      expect(replayCompatibleFixtureResponse(current, fixture(legacy, 'GetClimb', data))).toBeNull();
+    }
+    const recorded = fixture(current, 'GetClimb', { climb: { ascensionist_count: 1, play_count: 0 } });
+    const bytes = JSON.stringify(recorded);
+    // Current recordings are handled by the ordinary exact-hash path.
+    expect(replayCompatibleFixtureResponse(current, recorded)).toBeNull();
+    expect(JSON.stringify(recorded)).toBe(bytes);
+  });
+});
+
 describe('legacy GetSessionWorkoutHeadlines replay compatibility (#7027)', () => {
   const legacy =
     'query GetSessionWorkoutHeadlines($sessionIds: [ID!]!) { sessionWorkoutHeadlines(sessionIds: $sessionIds) { sessionId userId mainKind mainTargetGrade secondMainKind blockCount extraMainBlocks } }';

@@ -304,6 +304,32 @@ describe('export-board-snapshots under the batch login', () => {
       ).resolves.toBeDefined();
       await expect(restricted`UPDATE board_layouts SET name = name WHERE false`).rejects.toThrow('permission denied');
       await expect(restricted`DELETE FROM board_climb_stats WHERE false`).rejects.toThrow('permission denied');
+
+      // Replay grant reconciliation before exercising the real, restricted worker connection.
+      await initializeJobQueueSchema(drizzle(owner), undefined, undefined, [`batch=${login}`]);
+      const [beforePlay] = await restricted`
+        SELECT updated_at, sync_seq FROM board_climb_stats
+        WHERE board_type = ${BOARD} AND climb_uuid = ${CLIMBS[0]} AND angle = 40
+      `;
+      const [afterPlay] = await restricted`
+        UPDATE board_climb_stats SET play_count = 7
+        WHERE board_type = ${BOARD} AND climb_uuid = ${CLIMBS[0]} AND angle = 40
+        RETURNING updated_at, sync_seq
+      `;
+      expect(afterPlay.updated_at).not.toBe(beforePlay.updated_at);
+      expect(BigInt(afterPlay.sync_seq)).toBeGreaterThan(BigInt(beforePlay.sync_seq));
+      const [unchanged] = await restricted`
+        UPDATE board_climb_stats SET play_count = 7
+        WHERE board_type = ${BOARD} AND climb_uuid = ${CLIMBS[0]} AND angle = 40
+        RETURNING updated_at, sync_seq
+      `;
+      expect(unchanged).toEqual(afterPlay);
+      await expect(restricted`UPDATE board_climb_stats SET display_difficulty = 19 WHERE false`).rejects.toThrow(
+        'permission denied',
+      );
+      await expect(restricted`
+        INSERT INTO board_climb_stats (board_type, climb_uuid, angle) VALUES (${BOARD}, ${CLIMBS[0]}, 50)
+      `).rejects.toThrow('permission denied');
     } finally {
       rmSync(workDir, { recursive: true, force: true });
       await restricted.end();

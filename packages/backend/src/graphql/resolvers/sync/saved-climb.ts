@@ -60,6 +60,7 @@ const statsColumns = {
   display_difficulty: boardClimbStats.displayDifficulty,
   benchmark_difficulty: boardClimbStats.benchmarkDifficulty,
   ascensionist_count: sql<string | null>`${boardClimbStats.ascensionistCount}::text`,
+  play_count: sql<string>`${boardClimbStats.playCount}::text`,
   difficulty_average: boardClimbStats.difficultyAverage,
   quality_average: boardClimbStats.qualityAverage,
   fa_username: boardClimbStats.faUsername,

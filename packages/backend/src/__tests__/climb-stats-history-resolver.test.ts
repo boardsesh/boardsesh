@@ -71,6 +71,7 @@ describe('climbStatsHistory resolver', () => {
       {
         angle: 40,
         ascensionistCount: 12,
+        playCount: 19,
         qualityAverage: 3.5,
         difficultyAverage: 20.4,
         displayDifficulty: 20.6,
@@ -84,6 +85,7 @@ describe('climbStatsHistory resolver', () => {
       {
         angle: 40,
         ascensionistCount: 12,
+        playCount: 19,
         qualityAverage: 3.5,
         difficultyAverage: 20.4,
         displayDifficulty: 20.6,

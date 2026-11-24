@@ -1434,6 +1434,8 @@ export type Climb = {
   myDifficulty?: Maybe<Scalars['Int']['output']>;
   /** Name/title of the climb */
   name: Scalars['String']['output'];
+  /** Approximate recorded board selections lasting at least 30 seconds at angle. Refreshed hourly. Null when unavailable. */
+  play_count?: Maybe<Scalars['Float']['output']>;
   /** ISO timestamp of when this climb was first published (null while still a draft) */
   published_at?: Maybe<Scalars['String']['output']>;
   /** Average quality rating from users */
@@ -1859,7 +1861,7 @@ export type ClimbStatsEvent = {
 
 /**
  * Current statistics for a climb at one angle, read from the live stats table.
- * One entry per angle the climb has been logged at.
+ * One entry per angle with a stored statistics row.
  */
 export type ClimbStatsForAngle = {
   __typename?: 'ClimbStatsForAngle';
@@ -1877,6 +1879,8 @@ export type ClimbStatsForAngle = {
   faAt?: Maybe<Scalars['String']['output']>;
   /** Username of the first ascensionist */
   faUsername?: Maybe<Scalars['String']['output']>;
+  /** Approximate recorded board selections lasting at least 30 seconds at this angle. Refreshed hourly. Null when unavailable. */
+  playCount?: Maybe<Scalars['Float']['output']>;
   /** Average quality rating */
   qualityAverage?: Maybe<Scalars['Float']['output']>;
   /** Monotonic database revision, encoded as decimal text to preserve bigint precision */
@@ -1906,6 +1910,8 @@ export type ClimbStatsForClimb = {
   faAt?: Maybe<Scalars['String']['output']>;
   /** Username of the first ascensionist */
   faUsername?: Maybe<Scalars['String']['output']>;
+  /** Approximate recorded board selections lasting at least 30 seconds at this angle. Refreshed hourly. Null when unavailable. */
+  playCount?: Maybe<Scalars['Float']['output']>;
   /** Average quality rating */
   qualityAverage?: Maybe<Scalars['Float']['output']>;
   /** Monotonic database revision, encoded as decimal text to preserve bigint precision */
@@ -1928,6 +1934,8 @@ export type ClimbStatsHistoryEntry = {
   difficultyAverage?: Maybe<Scalars['Float']['output']>;
   /** Display difficulty value */
   displayDifficulty?: Maybe<Scalars['Float']['output']>;
+  /** Approximate recorded board selections lasting at least 30 seconds at this angle. Refreshed hourly. Null when unavailable. */
+  playCount?: Maybe<Scalars['Float']['output']>;
   /** Average quality rating */
   qualityAverage?: Maybe<Scalars['Float']['output']>;
 };
@@ -16384,6 +16392,7 @@ export type ClimbResolvers<
   missingHoldCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   myDifficulty?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  play_count?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   published_at?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   quality_average?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   renderBoard?: Resolver<Maybe<ResolversTypes['RenderBoardConfig']>, ParentType, ContextType>;
@@ -16575,6 +16584,7 @@ export type ClimbStatsForAngleResolvers<
   displayDifficulty?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   faAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   faUsername?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  playCount?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   qualityAverage?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   syncSeq?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
@@ -16592,6 +16602,7 @@ export type ClimbStatsForClimbResolvers<
   displayDifficulty?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   faAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   faUsername?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  playCount?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   qualityAverage?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   syncSeq?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
@@ -16606,6 +16617,7 @@ export type ClimbStatsHistoryEntryResolvers<
   createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   difficultyAverage?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   displayDifficulty?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  playCount?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   qualityAverage?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;

@@ -736,8 +736,7 @@ export const boardClimbStats = pgTable(
     // strict prefix of it and is removed in migration 0250.
     ascensionistCount: bigint('ascensionist_count', { mode: 'number' }),
     // Estimated native board selections lasting at least 30 seconds, per angle.
-    // Server-only until the API/offline contract ships; do not advance the stats
-    // sync cursor when this hourly materialized count changes.
+    // The stats sync cursor advances only when this materialized count changes.
     playCount: bigint('play_count', { mode: 'number' }).notNull().default(0),
     upstreamAscensionistCount: bigint('upstream_ascensionist_count', { mode: 'number' }),
     boardseshAscensionistCount: bigint('boardsesh_ascensionist_count', { mode: 'number' }),

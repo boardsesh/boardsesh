@@ -3,7 +3,13 @@ import { fetchUserClimbs } from '../shared/user-climbs';
 import { userActivityVisibilityCondition } from '../../../services/privacy';
 import { eq, and, count, desc, sql, ilike, inArray } from 'drizzle-orm';
 import { isSizeScopedBoard } from '@boardsesh/board-config';
-import { type ConnectionContext, type Climb, type BoardName, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
+import {
+  type ConnectionContext,
+  type Climb,
+  type BoardName,
+  SUPPORTED_BOARDS,
+  toPlayCount,
+} from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
@@ -440,6 +446,7 @@ export const setterFollowQueries = {
           // specific-board mode has to state it rather than leave it undefined.
           statsAngle: tables.climbStats.angle,
           ascensionist_count: tables.climbStats.ascensionistCount,
+          play_count: sql<string | null>`${tables.climbStats.playCount}::text`,
           difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
           quality_average: sql<number>`ROUND(${tables.climbStats.qualityAverage}::numeric, 2)`,
           difficulty_error: sql<number>`ROUND(${tables.climbStats.difficultyAverage}::numeric - ${tables.climbStats.displayDifficulty}::numeric, 2)`,
@@ -497,6 +504,7 @@ export const setterFollowQueries = {
         angle,
         statsAngle: result.statsAngle ?? null,
         ascensionist_count: Number(result.ascensionist_count || 0),
+        play_count: toPlayCount(result.play_count),
         difficulty: getGradeLabel(result.difficulty_id, boardName),
         quality_average: result.quality_average?.toString() || '0',
         stars: getClimbStars(result.quality_average),
@@ -561,6 +569,7 @@ export const setterFollowQueries = {
           characteristics: tables.climbs.characteristics,
           statsAngle: tables.climbStats.angle,
           ascensionist_count: tables.climbStats.ascensionistCount,
+          play_count: sql<string | null>`${tables.climbStats.playCount}::text`,
           difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
           quality_average: sql<number>`ROUND(${tables.climbStats.qualityAverage}::numeric, 2)`,
           difficulty_error: sql<number>`ROUND(${tables.climbStats.difficultyAverage}::numeric - ${tables.climbStats.displayDifficulty}::numeric, 2)`,
@@ -630,6 +639,7 @@ export const setterFollowQueries = {
           angle: result.statsAngle ?? DEFAULT_ANGLE,
           statsAngle: result.statsAngle ?? null,
           ascensionist_count: Number(result.ascensionist_count || 0),
+          play_count: toPlayCount(result.play_count),
           difficulty: getGradeLabel(result.difficulty_id, boardName),
           quality_average: result.quality_average?.toString() || '0',
           stars: getClimbStars(result.quality_average),

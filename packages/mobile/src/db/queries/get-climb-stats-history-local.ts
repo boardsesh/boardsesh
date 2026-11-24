@@ -1,10 +1,12 @@
 import type { OfflineDatabase } from '@boardsesh/offline-sync';
+import { toPlayCount } from '@boardsesh/shared-schema';
 import type { ClimbStatsHistoryEntry } from '@boardsesh/graphql/operations';
 import { NOT_SOMEONE_ELSES_DRAFT_SQL } from './get-boardsesh-grade-local';
 
 type StatsRow = {
   angle: number;
   ascensionist_count: number | null;
+  play_count: string | null;
   quality_average: number | null;
   difficulty_average: number | null;
   display_difficulty: number | null;
@@ -36,7 +38,8 @@ export async function getClimbStatsHistoryLocal(
   input: { boardName: string; climbUuid: string; viewerId: string | null },
 ): Promise<ClimbStatsHistoryEntry[]> {
   const rows = await db.getAllAsync<StatsRow>(
-    `SELECT angle, ascensionist_count, quality_average, difficulty_average, display_difficulty, updated_at
+    `SELECT angle, ascensionist_count, CAST(play_count AS TEXT) AS play_count,
+       quality_average, difficulty_average, display_difficulty, updated_at
      FROM board_climb_stats
      WHERE board_type = ? AND climb_uuid = ? AND ascensionist_count > 0 AND ${NOT_SOMEONE_ELSES_DRAFT_SQL}
      ORDER BY angle ASC`,
@@ -45,6 +48,7 @@ export async function getClimbStatsHistoryLocal(
   return rows.map((row) => ({
     angle: row.angle,
     ascensionistCount: row.ascensionist_count,
+    playCount: toPlayCount(row.play_count),
     qualityAverage: row.quality_average,
     difficultyAverage: row.difficulty_average,
     displayDifficulty: row.display_difficulty,

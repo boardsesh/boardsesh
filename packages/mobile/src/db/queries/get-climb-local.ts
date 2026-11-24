@@ -66,6 +66,7 @@ export async function getClimbLocal(db: OfflineDatabase, input: GetClimbLocalInp
       c.missing_hold_count, c.holds_revision_number, c.characteristics,
       c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
       ${eff('ascensionist_count')} AS ascensionist_count,
+      CAST(s.play_count AS TEXT) AS play_count,
       ${effectiveDisplayDifficultySql(boardName, crossAngle)} AS display_difficulty,
       ${eff('difficulty_average')} AS difficulty_average,
       ${eff('quality_average')} AS quality_average,

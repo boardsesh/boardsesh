@@ -57,6 +57,7 @@ const ALTER_ADDED_COLUMNS: { version: number; table: string; column: string }[] 
   { version: 11, table: 'board_climbs', column: 'revision_number' },
   { version: 11, table: 'board_climbs', column: 'holds_revision_number' },
   { version: 12, table: 'board_climbs', column: 'retired_by_reset' },
+  { version: 16, table: 'board_climb_stats', column: 'play_count' },
 ];
 
 async function rollBackAlterColumnsAbove(
@@ -95,7 +96,7 @@ describe('runMigrations', () => {
       expect(indexes.map((index) => index.name)).toEqual(
         expect.arrayContaining(['idx_pending_mutations_entity', 'idx_pending_mutations_dependency']),
       );
-      expect(ARTIFACT_SCHEMA_VERSION).toBe(12);
+      expect(artifactSchemaVersion(MIGRATIONS.filter((entry) => entry.version <= 14))).toBe(12);
       expect(LATEST_SCHEMA_VERSION).toBeGreaterThan(13);
       await runMigrations(database);
       expect(await database.getFirstAsync('SELECT COUNT(*) AS count FROM pending_mutations')).toEqual({ count: 1 });
@@ -457,6 +458,7 @@ describe('runMigrations', () => {
     const upgradedDb = createTestDatabase();
     await runMigrations(upgradedDb);
     await upgradedDb.execAsync('DROP INDEX idx_stats_ascents;');
+    await rollBackAlterColumnsAbove(upgradedDb, 12);
     await upgradedDb.execAsync(`
       INSERT INTO board_climb_stats (board_type, climb_uuid, angle, ascensionist_count) VALUES
         ('kilter', 'b', 40, 7), ('kilter', 'a', 40, 7), ('kilter', 'c', 40, 90), ('kilter', 'd', 40, NULL),
@@ -541,8 +543,9 @@ describe('runMigrations', () => {
 });
 
 describe('ARTIFACT_SCHEMA_VERSION', () => {
-  it('is the last migration that changed an artifact table: v12, the full-reset retired flag', () => {
-    expect(ARTIFACT_SCHEMA_VERSION).toBe(12);
+  it('is the last migration that changed an artifact table: v16, per-angle Plays', () => {
+    expect(ARTIFACT_SCHEMA_VERSION).toBe(16);
+    expect(artifactSchemaVersion(MIGRATIONS.filter((entry) => entry.version <= 15))).toBe(12);
   });
 
   it('is not moved by device-only migrations (v8 spray_walls, v9 followed authors, v10 holds index)', () => {

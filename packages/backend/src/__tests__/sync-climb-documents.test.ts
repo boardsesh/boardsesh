@@ -45,7 +45,7 @@ describe('saved climb canonical mirror', () => {
     const result = await syncClimbDocuments({}, scope, context(SETTER));
     expect(result?.climb).toMatchObject({ uuid: CLIMB_UUID, name: 'Fresh climb', compatible_size_ids: [LAYOUT_ID] });
     expect(result?.stats).toMatchObject([
-      { climb_uuid: CLIMB_UUID, angle: 40, display_difficulty: 12, ascensionist_count: '1' },
+      { climb_uuid: CLIMB_UUID, angle: 40, display_difficulty: 12, ascensionist_count: '1', play_count: '0' },
     ]);
     expect(result).not.toHaveProperty('cursor');
     const canonicalStats = (await db.execute(sql`SELECT updated_at::text, sync_seq::text FROM board_climb_stats

@@ -25,6 +25,7 @@ const CLIMB_SEARCH_FIELDS = `
   angle
   statsAngle
   ascensionist_count
+  play_count
   difficulty
   quality_average
   stars
@@ -57,6 +58,7 @@ const CLIMB_DETAIL_FIELDS = `
   angle
   statsAngle
   ascensionist_count
+  play_count
   difficulty
   quality_average
   stars

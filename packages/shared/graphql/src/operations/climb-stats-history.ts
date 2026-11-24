@@ -5,6 +5,7 @@ export const CLIMB_STATS_HISTORY = gql`
     climbStatsHistory(boardName: $boardName, climbUuid: $climbUuid) {
       angle
       ascensionistCount
+      playCount
       qualityAverage
       difficultyAverage
       displayDifficulty
@@ -21,6 +22,7 @@ export type ClimbStatsHistoryVariables = {
 export type ClimbStatsHistoryEntry = {
   angle: number;
   ascensionistCount: number | null;
+  playCount?: number | null;
   qualityAverage: number | null;
   difficultyAverage: number | null;
   displayDifficulty: number | null;

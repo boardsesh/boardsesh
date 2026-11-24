@@ -98,6 +98,7 @@ always false or NULL; `is_listed` keeps its source value, so filter on it for a 
 size, so filter with `compatible_size_ids`.
 
 **`board_climb_stats`** — community stats per `(climb, angle)`: `ascensionist_count`,
+`play_count` (schema v16, estimated native selections lasting at least 30 seconds, refreshed hourly),
 `difficulty_average` and `display_difficulty` (in the board's native difficulty scale),
 `benchmark_difficulty` where the community designates benchmarks, `quality_average` (0–5 star
 scale), and first-ascent attribution (`fa_username`, `fa_at`).

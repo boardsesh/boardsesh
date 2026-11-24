@@ -788,7 +788,7 @@ export const syncQueries = {
       table: sql`board_climb_stats`,
       climbUuidColumn: sql`board_climb_stats.climb_uuid`,
       selectList: sql`board_type, climb_uuid, angle, display_difficulty, benchmark_difficulty,
-        ascensionist_count, difficulty_average, quality_average, ${privateSafeFirstAscentName({ boardType: sql`board_climb_stats.board_type`, climbUuid: sql`board_climb_stats.climb_uuid`, angle: sql`board_climb_stats.angle`, username: sql`board_climb_stats.fa_username` }, ctx.userId)} AS fa_username, fa_at, updated_at, sync_seq`,
+        ascensionist_count, play_count::text AS play_count, difficulty_average, quality_average, ${privateSafeFirstAscentName({ boardType: sql`board_climb_stats.board_type`, climbUuid: sql`board_climb_stats.climb_uuid`, angle: sql`board_climb_stats.angle`, username: sql`board_climb_stats.fa_username` }, ctx.userId)} AS fa_username, fa_at, updated_at, sync_seq`,
       updatedAtColumn: sql`board_climb_stats.updated_at`,
       seqColumn: sql`board_climb_stats.sync_seq`,
       boardType: validBoardType,
