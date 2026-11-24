@@ -26,7 +26,7 @@
       },
       "android": {
         "title": "Any Android phone",
-        "body": "Android 7.0 or newer, no Google sign-in needed"
+        "body": "Android 7.0 or newer, any maker"
       },
       "browser": {
         "title": "Any web browser",
@@ -130,10 +130,8 @@
       "browser": "Browser",
       "ipad": "iPad",
       "androidTablet": "Android tablet",
-      "anyMaker": "Any maker",
-      "emailSignIn": "Email sign-in"
+      "anyMaker": "Any maker"
     },
-    "diagramNote": "Drawing of the browser app, not a screenshot",
     "numbersHeading": "Boardsesh in numbers",
     "independence": "Boardsesh is an independent app. Kilter, Aurora, Moon and the other board makers don't make or endorse it.",
     "sources": {
@@ -155,7 +153,8 @@
       "eyebrow": "From the stores",
       "appStore": "App Store",
       "googlePlay": "Google Play"
-    }
+    },
+    "browserShotAlt": "Boardsesh in a web browser: the Kilter climb list next to Blue Jeans, a V4, ready to put on the board"
   },
   "pages": {
     "hub": {
@@ -246,7 +245,7 @@
         "lead": "The same Kilter climb on iPhone, on Android and in a browser. The app is free, has no ads, doesn't sell your data, and its code is open source.",
         "captions": {
           "ios": "iPhone: the Kilter climb view with the wall lit.",
-          "android": "Android: the same climb, no Google sign-in needed (email works).",
+          "android": "Android: the same climb, on any Android 7+ phone.",
           "browser": "Browser: app.boardsesh.com, lighting the wall from Chrome or Edge."
         }
       },

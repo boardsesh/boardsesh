@@ -17,7 +17,6 @@ import {
   type HubGuide,
 } from '@/app/lib/seo/app-guides';
 import { boardDrawing, guideShot, sprayWallPhoto } from './app-guide-assets';
-import { TileDiagram } from './diagrams';
 import {
   CtaRow,
   DeviceFrame,
@@ -28,7 +27,7 @@ import {
   formatRating,
   type T,
 } from './guide-parts';
-import { FeatureTiles, hubBoardType } from './guide-sections';
+import { BrowserShot, FeatureTiles, hubBoardType } from './guide-sections';
 import HoldRing, { type HoldRole } from './hold-ring';
 import styles from './app-guide.module.css';
 
@@ -235,15 +234,12 @@ export function PlatformTrio({ t }: { t: T }) {
           </figure>
         ))}
         <figure>
-          <Box className={`${styles.platformShot} ${styles.platformShotDiagram}`}>
-            <TileDiagram t={t} art={{ kind: 'diagram', diagram: 'browser' }} />
+          <Box className={`${styles.platformShot} ${styles.platformShotBrowser}`}>
+            <BrowserShot t={t} sizes="(max-width: 760px) 100vw, 430px" />
           </Box>
           <figcaption className={styles.platformCaption}>
             <LaptopOutlined aria-hidden />
-            <span>
-              {t('appGuides:pages.hub.devices.captions.browser')}
-              <span className={styles.diagramNote}>{t('appGuides:common.diagramNote')}</span>
-            </span>
+            <span>{t('appGuides:pages.hub.devices.captions.browser')}</span>
           </figcaption>
         </figure>
       </Box>

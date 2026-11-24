@@ -19,8 +19,21 @@ import {
   type GuideLink,
   type GuidePlacement,
 } from '@/app/lib/seo/app-guides';
-import { HUB_BOARD_SLUGS, type GuideShot, type HubBoardSlug, type StepArt } from '@/app/lib/seo/app-guide-model';
-import { boardDrawing, boardseshMark, guideShot, sprayWallPhoto, type GuideImage } from './app-guide-assets';
+import {
+  HUB_BOARD_SLUGS,
+  type AppGuidePageId,
+  type GuideShot,
+  type HubBoardSlug,
+  type StepArt,
+} from '@/app/lib/seo/app-guide-model';
+import {
+  boardDrawing,
+  boardseshMark,
+  browserCapture,
+  guideShot,
+  sprayWallPhoto,
+  type GuideImage,
+} from './app-guide-assets';
 import { TileDiagram } from './diagrams';
 import {
   CtaRow,
@@ -206,10 +219,13 @@ export type ResolvedTile = { id: string; title: string; body: string; pending?: 
 export function FeatureTiles({
   t,
   tiles,
+  pageId,
   layout = 'columns',
 }: {
   t: T;
   tiles: readonly ResolvedTile[];
+  /** Picks page-specific art, such as the Kilter browser capture. */
+  pageId?: AppGuidePageId;
   /** `columns`: art on top (board pages). `rows`: art beside the text, two up (hub). */
   layout?: 'columns' | 'rows';
 }) {
@@ -217,11 +233,18 @@ export function FeatureTiles({
   return (
     <Box component="ul" className={`${styles.tiles} ${gridClass}`}>
       {tiles.map((tile) => {
-        const art = tileArt(tile.id);
+        const art = tileArt(tile.id, pageId);
+        const artClass =
+          art.kind === 'profile-card'
+            ? `${styles.tileArt} ${styles.tileArtCard}`
+            : art.kind === 'browser-shot'
+              ? `${styles.tileArt} ${styles.tileArtBrowser}`
+              : styles.tileArt;
         return (
           <li key={tile.id} className={styles.tile}>
-            <Box className={art.kind === 'profile-card' ? `${styles.tileArt} ${styles.tileArtCard}` : styles.tileArt}>
+            <Box className={artClass}>
               {art.kind === 'profile-card' ? <ProfileCard t={t} /> : null}
+              {art.kind === 'browser-shot' ? <BrowserShot t={t} sizes="(max-width: 600px) 100vw, 360px" /> : null}
               {art.kind === 'shot' ? (
                 <Box className={styles.tileCrop}>
                   <TileShot shot={art.shot} />
@@ -266,6 +289,22 @@ function ProfileCard({ t }: { t: T }) {
   );
 }
 
+/** The real browser app on a Kilter wall, in its own landscape frame (never cropped to a phone). */
+export function BrowserShot({ t, sizes, className }: { t: T; sizes: string; className?: string }) {
+  const image = browserCapture();
+  return (
+    <Image
+      src={image.src}
+      alt={t('appGuides:common.browserShotAlt')}
+      width={image.width}
+      height={image.height}
+      sizes={sizes}
+      loading="lazy"
+      className={className ?? styles.browserShot}
+    />
+  );
+}
+
 function TileShot({ shot }: { shot: GuideShot }) {
   const image = guideShot(shot);
   return <Image src={image.src} alt="" width={image.width} height={image.height} sizes="230px" loading="lazy" />;
@@ -294,7 +333,7 @@ export function OnlyTray({ guide, t }: { guide: ComparisonGuide; t: T }) {
         title={t(`appGuides:pages.${guide.id}.only.heading`)}
         lead={t(`appGuides:pages.${guide.id}.only.lead`)}
       />
-      <FeatureTiles t={t} tiles={tiles} />
+      <FeatureTiles t={t} tiles={tiles} pageId={guide.id} />
     </Box>
   );
 }

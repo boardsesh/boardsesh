@@ -213,6 +213,8 @@ const BROWSER_LIGHTING: Record<AppGuidePageId, boolean> = {
 export type TileArt =
   /** The profile capture cropped to its "Across your boards" card: the proof that one logbook holds every board. */
   | { kind: 'profile-card' }
+  /** The real browser app on a Kilter wall (landscape). Kilter pages only: elsewhere it would show the wrong board. */
+  | { kind: 'browser-shot' }
   | { kind: 'shot'; shot: GuideShot }
   | { kind: 'diagram'; diagram: 'browser' | 'android' | 'tablet' | 'devices' | 'board' };
 
@@ -230,7 +232,11 @@ const TILE_ART: Record<string, TileArt> = {
   workouts: { kind: 'shot', shot: 'workouts' },
 };
 
-export function tileArt(tileId: string): TileArt {
+/** Browser tiles show the real Kilter browser capture where the page is about a Kilter Board. */
+const BROWSER_SHOT_PAGES: readonly AppGuidePageId[] = ['kilter'];
+
+export function tileArt(tileId: string, pageId?: AppGuidePageId): TileArt {
+  if (tileId === 'browser' && pageId && BROWSER_SHOT_PAGES.includes(pageId)) return { kind: 'browser-shot' };
   return TILE_ART[tileId] ?? { kind: 'diagram', diagram: 'board' };
 }
 

@@ -625,6 +625,22 @@
   transform: translateX(-50%);
 }
 
+/* The browser capture keeps its own landscape shape (1994 x 1681), never a phone crop. */
+.tile .tileArt.tileArtBrowser {
+  align-self: start;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  aspect-ratio: 1994 / 1681;
+}
+
+.browserShot {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 /* The profile card window (y 340 to 1070 of the 736 x 1600 capture). The box takes
  * the window's own shape; object-position puts its top edge at 340 / 1600: the
  * scaled image overflows the box by 1600/736 - 730/736 widths, and 340/736 of a
@@ -1781,8 +1797,9 @@
   background: var(--semantic-background);
 }
 
-.platformShotDiagram {
-  background: var(--semantic-surface);
+.platformTrio .platformShotBrowser {
+  height: auto;
+  aspect-ratio: 1994 / 1681;
 }
 
 .platformCaption {
@@ -1801,12 +1818,6 @@
   margin-top: 2px;
 }
 
-.diagramNote {
-  display: block;
-  color: var(--neutral-500);
-  font-size: 13px;
-}
-
 @media (max-width: 760px) {
   .platformTrio {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1822,7 +1833,7 @@
   }
 
   .platformTrio figure:last-child .platformShot {
-    height: 220px;
+    height: auto;
   }
 }
 

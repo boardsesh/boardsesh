@@ -3,7 +3,7 @@ import 'server-only';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { getBoardGalleryLayouts } from '@/app/boards/board-gallery';
 import { DEFAULT_LOCALE } from '@/app/lib/i18n/config';
-import { marketingScreenshot, type MarketingShot } from '@/app/lib/marketing-screenshots';
+import { BROWSER_KILTER_CAPTURE, marketingScreenshot, type MarketingShot } from '@/app/lib/marketing-screenshots';
 import type { GuideShot } from '@/app/lib/seo/app-guides';
 import { resolveShellStaticAssetUrl } from '@/app/lib/shell-static-asset-url';
 import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
@@ -38,6 +38,11 @@ export function boardDrawing(boardType: Exclude<BoardName, 'spray'>): GuideImage
     height: layout.height,
     caption: layout.caption,
   };
+}
+
+/** The browser app on a Kilter wall (landscape, about 1.19:1). */
+export function browserCapture(): GuideImage {
+  return resolved(BROWSER_KILTER_CAPTURE);
 }
 
 /** A real home spray wall, photographed for the spray wall guide. */

@@ -266,6 +266,29 @@ describe('app guide pages before hydration', () => {
   });
 });
 
+describe('the browser app', () => {
+  const alt = 'Boardsesh in a web browser: the Kilter climb list next to Blue Jeans, a V4, ready to put on the board';
+  const isBrowserShot = (image: Element) =>
+    decodeURIComponent(image.getAttribute('src') ?? '').includes('/images/app/web/kilter.webp');
+
+  it('shows the real Kilter browser capture on the hub and the Kilter page, and the drawing where it would be the wrong board', async () => {
+    for (const { id, markup } of await renderAll()) {
+      const shots = Array.from(markup.querySelectorAll('img')).filter(isBrowserShot);
+      if (id === 'hub' || id === 'kilter') {
+        expect(shots, id).toHaveLength(1);
+        expect(shots[0].getAttribute('alt')).toBe(alt);
+      } else {
+        expect(shots, id).toHaveLength(0);
+      }
+      expect(markup.textContent, id).not.toContain('not a screenshot');
+    }
+    const hub = await parsePage(await HubPage());
+    expect(Array.from(hub.querySelectorAll('#devices img')).some(isBrowserShot)).toBe(true);
+    const kilter = await parsePage(await BoardPage(routeProps('kilter')));
+    expect(Array.from(kilter.querySelectorAll('#differences img')).some(isBrowserShot)).toBe(true);
+  });
+});
+
 describe('what climbers say', () => {
   it('quotes each page its picked store reviews verbatim, in English, with no stars or rating markup', async () => {
     for (const { id, markup } of await renderAll()) {

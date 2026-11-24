@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import { describe, expect, it } from 'vite-plus/test';
 import { SUPPORTED_LOCALES } from '../i18n/config';
-import { marketingScreenshot, type MarketingShot } from '../marketing-screenshots';
+import { BROWSER_KILTER_CAPTURE, marketingScreenshot, type MarketingShot } from '../marketing-screenshots';
 
 const shots: MarketingShot[] = ['kilter', 'tension', 'moonboard', 'queue', 'wall-status', 'profile', 'spray-wall'];
 const publicRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../public');
@@ -55,5 +55,16 @@ describe('the workouts capture', () => {
         height: capture.height,
       });
     }
+  });
+});
+
+describe('the browser capture', () => {
+  it('declares the real size of the landscape Kilter browser shot', async () => {
+    const metadata = await sharp(`${publicRoot}${BROWSER_KILTER_CAPTURE.src}`).metadata();
+    expect({ width: metadata.width, height: metadata.height }).toEqual({
+      width: BROWSER_KILTER_CAPTURE.width,
+      height: BROWSER_KILTER_CAPTURE.height,
+    });
+    expect(BROWSER_KILTER_CAPTURE.width).toBeGreaterThan(BROWSER_KILTER_CAPTURE.height);
   });
 });

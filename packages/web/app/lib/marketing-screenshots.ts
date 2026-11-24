@@ -10,7 +10,19 @@ export type MarketingShot =
   | 'profile'
   | 'spray-wall'
   | 'workouts';
-type MarketingCapture = { src: string; width: number; height: number };
+export type MarketingCapture = { src: string; width: number; height: number };
+
+/**
+ * The browser app at app.boardsesh.com on a Kilter Board at 40°: the climb list
+ * beside Blue Jeans (V4), ready to put on the board. A real capture (the account
+ * avatar replaced with the neutral placeholder), landscape at about 1.19:1. It
+ * shows a Kilter wall, so only Kilter surfaces and browser-in-general ones use it.
+ */
+export const BROWSER_KILTER_CAPTURE: MarketingCapture = {
+  src: '/images/app/web/kilter.webp',
+  width: 1994,
+  height: 1681,
+};
 type MarketingCaptureSet = Record<MarketingShot, MarketingCapture>;
 type LocalizedCaptureSets = { 'en-US': MarketingCaptureSet } & Partial<
   Record<Exclude<Locale, 'en-US'>, MarketingCaptureSet>
