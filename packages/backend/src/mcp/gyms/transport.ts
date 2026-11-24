@@ -33,7 +33,7 @@ export interface GymMcpHandlerOptions {
   mode?: GymMcpMode;
   partnerMode?: PartnerOAuthMode;
   authenticate?: (token: string) => Promise<PartnerBearerResult>;
-  createServer?: (principal: PartnerApiPrincipal) => McpServer | Promise<McpServer>;
+  createServer?: (principal: PartnerApiPrincipal, selectedTool?: string) => McpServer | Promise<McpServer>;
 }
 
 function reply(res: ServerResponse, status: number, body?: unknown, headers: Record<string, string> = {}): void {
@@ -64,7 +64,8 @@ export function createGymMcpHandler({
   mode = readGymMcpMode(),
   partnerMode = readPartnerOAuthMode(),
   authenticate = async (token) => (await import('./auth')).authenticateGymMcpBearer(token),
-  createServer = async (principal) => (await import('./server')).createGymMcpServer(principal),
+  createServer = async (principal, selectedTool) =>
+    (await import('./server')).createGymMcpServer(principal, selectedTool),
 }: GymMcpHandlerOptions = {}): (req: IncomingMessage, res: ServerResponse) => Promise<boolean> {
   const enabled = mode !== 'off' && (partnerMode === 'allowlist' || partnerMode === 'open');
   const held = mode !== 'off' && partnerMode === 'hold';
@@ -239,7 +240,7 @@ export function createGymMcpHandler({
         sessionIdGenerator: undefined,
         enableJsonResponse: true,
       });
-      server = await createServer(principal);
+      server = await createServer(principal, selectedTool);
       requestAbort.signal.throwIfAborted();
       await server.connect(transport);
       requestAbort.signal.throwIfAborted();

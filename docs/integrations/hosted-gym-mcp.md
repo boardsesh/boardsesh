@@ -120,6 +120,8 @@ to the tombstone, so both URLs keep reaching the same gym without reviving a
 duplicate. Sharing links use the survivor's saved slug. The write and durable
 `gym_directory_repair_audit` record commit with the retry receipt; replay checks
 current global-admin authority and the surviving merge association.
+Merged aliases remain reserved when creating, renaming or importing another
+gym. A delayed edit cannot rename a listing that became a merge tombstone.
 
 The chosen board keeps its owner. A different real creator of a merged-away row
 loses editing ownership, follows the survivor and receives a moderation notice.
@@ -179,7 +181,10 @@ Use `get_gym_upload_links` for the signed-in local-file upload pages, or
 `set_gym_image` with `kind=photo|logo`, `imageUrl`, `confirm=true` and a UUID
 `idempotencyKey` to import a direct public image. It accepts optional
 `attribution: { credit, pageUrl?, license? }`. Supply the real source and credit
-when known; the import URL is always recorded. Source evidence is saved in the
+when known; a sanitized import URL is always recorded. Source and attribution-page
+URLs retain only HTTP(S) origin and path: credentials, query strings and fragments
+are removed before durable storage or readback. The original signed URL is used
+only to fetch the image. Source evidence is saved in the
 directory audit in the same transaction as the image, independently of the
 seven-day retry-result retention. `get_gym_image_source` requires `gyms:read`
 and gym edit access and returns the currently saved URL and matching source

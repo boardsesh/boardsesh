@@ -85,7 +85,9 @@ export async function generateUniqueGymSlug(name: string): Promise<string> {
     .where(
       and(
         or(eq(dbSchema.gyms.slug, baseSlug), ilike(dbSchema.gyms.slug, `${baseSlug.replace(/[%_\\]/g, '\\$&')}-%`)),
-        isNull(dbSchema.gyms.deletedAt),
+        // A merge tombstone still owns its old URL; reusing it would shadow
+        // the survivor's redirect, including URLs exchanged by an admin repair.
+        or(isNull(dbSchema.gyms.deletedAt), isNotNull(dbSchema.gyms.mergedIntoGymId)),
       ),
     );
 
@@ -1581,26 +1583,6 @@ export const socialGymMutations = {
     if (validatedInput.brandBackgroundColor !== undefined)
       updateValues.brandBackgroundColor = validatedInput.brandBackgroundColor;
 
-    // Handle slug update
-    if (validatedInput.slug !== undefined) {
-      const [slugConflict] = await db
-        .select({ id: dbSchema.gyms.id })
-        .from(dbSchema.gyms)
-        .where(
-          and(
-            eq(dbSchema.gyms.slug, validatedInput.slug),
-            isNull(dbSchema.gyms.deletedAt),
-            sql`${dbSchema.gyms.id} != ${gym.id}`,
-          ),
-        )
-        .limit(1);
-
-      if (slugConflict) {
-        throw new Error('Slug is already taken');
-      }
-      updateValues.slug = validatedInput.slug;
-    }
-
     // A change to the name, address, coordinates, website, phone or hours
     // closes the gym's "wrong address or details" reports as fixed, in this
     // transaction (docs/product/directory-reports.md). The manage form posts
@@ -1611,11 +1593,35 @@ export const socialGymMutations = {
       (field) => validatedInput[field as keyof typeof validatedInput] !== undefined,
     );
     const touchesMedia = validatedInput.imageUrl !== undefined || validatedInput.logoUrl !== undefined;
+    const touchesSlug = validatedInput.slug !== undefined;
     const updated = await transactionWithAfterCommit(async (tx) => {
       const [before] =
-        touchesReportedDetails || touchesMedia
+        touchesReportedDetails || touchesMedia || touchesSlug
           ? await tx.select().from(dbSchema.gyms).where(eq(dbSchema.gyms.id, gym.id)).limit(1).for('update')
           : [];
+      if (touchesSlug && (!before || before.deletedAt || before.mergedIntoGymId !== null)) {
+        throw new GraphQLError('The gym changed. Read the current gym before changing its URL.', {
+          extensions: { code: 'CONFLICT' },
+        });
+      }
+      // Compare with the locked current row: a stale form's old no-op slug
+      // must not undo a concurrent canonical URL repair. An actual no-op is
+      // allowed even when a same-gym merge tombstone carries the current slug.
+      if (validatedInput.slug !== undefined && validatedInput.slug !== before?.slug) {
+        const [slugConflict] = await tx
+          .select({ id: dbSchema.gyms.id })
+          .from(dbSchema.gyms)
+          .where(
+            and(
+              eq(dbSchema.gyms.slug, validatedInput.slug),
+              or(isNull(dbSchema.gyms.deletedAt), isNotNull(dbSchema.gyms.mergedIntoGymId)),
+              ne(dbSchema.gyms.id, gym.id),
+            ),
+          )
+          .limit(1);
+        if (slugConflict) throw new Error('Slug is already taken');
+        updateValues.slug = validatedInput.slug;
+      }
       const [row] = await tx.update(dbSchema.gyms).set(updateValues).where(eq(dbSchema.gyms.id, gym.id)).returning();
       if (before && row) {
         const previous: Record<string, unknown> = before;

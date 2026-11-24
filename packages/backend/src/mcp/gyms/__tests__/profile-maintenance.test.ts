@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import * as tables from '@boardsesh/db/schema';
 import { db, runWithDatabaseTransaction } from '../../../db/client';
 import { findGymMcpTool } from '../registry';
-import { getGymImageSource, recordGymImageSource } from '../media-source';
+import { getGymImageSource, gymImageAttributionSchema, recordGymImageSource } from '../media-source';
 
 describe('gym MCP partial profile maintenance', () => {
   it('saves requested fields and reads them back without changing ownership, membership or visibility', async () => {
@@ -103,6 +103,61 @@ describe('gym MCP partial profile maintenance', () => {
     expect(await getGymImageSource(gymUuid, 'logo', '/static/gym-photos/current.jpg')).toMatchObject({ source: null });
     expect(await getGymImageSource(gymUuid, 'photo', '/replacement-from-web.jpg')).toMatchObject({ source: null });
     expect(await getGymImageSource(gymUuid, 'photo', null)).toMatchObject({ source: null });
+    await db.delete(tables.gymDirectoryRepairAudit).where(eq(tables.gymDirectoryRepairAudit.gymUuid, gymUuid));
+  });
+
+  it('keeps signed fetch and source-page credentials out of durable attribution and readback', async () => {
+    const gymUuid = randomUUID();
+    await recordGymImageSource({
+      gymId: 8150,
+      gymUuid,
+      actorUserId: 'test-source-owner',
+      kind: 'photo',
+      previousUrl: 'https://legacy-user:legacy-password@legacy.example/logo.png?legacy-secret=token#legacy-secret',
+      storedUrl: '/static/gym-photos/credited.jpg',
+      source: {
+        imageUrl: 'https://cdn.example/photo.jpg?X-Amz-Signature=secret-fetch-token#private-fragment',
+        attribution: {
+          credit: 'Gym photographer',
+          pageUrl: 'https://private-user:private-password@gym.example/about?token=secret-page-token#secret-anchor',
+        },
+      },
+    });
+    const result = await getGymImageSource(gymUuid, 'photo', '/static/gym-photos/credited.jpg');
+    expect(result.source).toEqual({
+      imageUrl: 'https://cdn.example/photo.jpg',
+      attribution: { credit: 'Gym photographer', pageUrl: 'https://gym.example/about' },
+    });
+    const [audit] = await db
+      .select()
+      .from(tables.gymDirectoryRepairAudit)
+      .where(eq(tables.gymDirectoryRepairAudit.gymUuid, gymUuid));
+    expect(JSON.stringify(audit)).not.toMatch(/secret-|private-|X-Amz-Signature|token=/);
+    expect(audit.before).toEqual({ storedUrl: 'https://legacy.example/logo.png' });
+    expect(JSON.stringify(audit)).not.toMatch(/legacy-user|legacy-password|legacy-secret/);
+    expect(gymImageAttributionSchema.safeParse({ credit: 'Gym', pageUrl: 'invalid-url' }).success).toBe(false);
+    expect(gymImageAttributionSchema.safeParse({ credit: 'Gym', pageUrl: 'file:///private/photo' }).success).toBe(
+      false,
+    );
+    await db.delete(tables.gymDirectoryRepairAudit).where(eq(tables.gymDirectoryRepairAudit.gymUuid, gymUuid));
+  });
+
+  it('allows image removal when a historical URL is malformed', async () => {
+    const gymUuid = randomUUID();
+    await recordGymImageSource({
+      gymId: 8150,
+      gymUuid,
+      actorUserId: 'test-source-owner',
+      kind: 'logo',
+      previousUrl: 'invalid legacy URL',
+      storedUrl: null,
+      source: null,
+    });
+    const [audit] = await db
+      .select()
+      .from(tables.gymDirectoryRepairAudit)
+      .where(eq(tables.gymDirectoryRepairAudit.gymUuid, gymUuid));
+    expect(audit.before).toEqual({ storedUrl: null });
     await db.delete(tables.gymDirectoryRepairAudit).where(eq(tables.gymDirectoryRepairAudit.gymUuid, gymUuid));
   });
 });

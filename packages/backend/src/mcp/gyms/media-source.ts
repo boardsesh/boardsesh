@@ -5,7 +5,13 @@ import { db } from '../../db/client';
 
 export const gymImageAttributionSchema = z
   .object({
-    pageUrl: z.url().max(2048).optional().describe('The page that identifies the original image source.'),
+    pageUrl: z
+      .url({ protocol: /^https?$/ })
+      .max(2048)
+      .optional()
+      .describe(
+        'The page that identifies the original image source. Credentials, query and fragment are not retained.',
+      ),
     credit: z.string().trim().min(1).max(500).describe('Photographer, gym or rights-holder credit.'),
     license: z.string().trim().min(1).max(500).optional(),
   })
@@ -14,6 +20,46 @@ export const gymImageAttributionSchema = z
 export interface GymImageSource {
   imageUrl: string;
   attribution?: z.output<typeof gymImageAttributionSchema>;
+}
+
+function sourceIdentifier(sourceUrl: string): string {
+  const identifier = new URL(sourceUrl);
+  if (identifier.protocol !== 'http:' && identifier.protocol !== 'https:') {
+    throw new Error('Gym image sources require HTTP or HTTPS URLs.');
+  }
+  identifier.username = '';
+  identifier.password = '';
+  identifier.search = '';
+  identifier.hash = '';
+  return identifier.toString();
+}
+
+function previousImageIdentifier(previousUrl: string | null): string | null {
+  if (!previousUrl) return null;
+  try {
+    if (previousUrl.startsWith('/') && !previousUrl.startsWith('//')) {
+      return new URL(previousUrl, 'https://www.boardsesh.com').pathname;
+    }
+    return sourceIdentifier(previousUrl);
+  } catch {
+    // An invalid legacy URL must never prevent replacing or removing an image.
+    return null;
+  }
+}
+
+/** Fetch URLs can contain short-lived bearer material; audit only their public identifier. */
+function sanitizeGymImageSource(source: GymImageSource): GymImageSource {
+  return {
+    imageUrl: sourceIdentifier(source.imageUrl),
+    ...(source.attribution
+      ? {
+          attribution: {
+            ...source.attribution,
+            ...(source.attribution.pageUrl ? { pageUrl: sourceIdentifier(source.attribution.pageUrl) } : {}),
+          },
+        }
+      : {}),
+  };
 }
 
 export async function recordGymImageSource(input: {
@@ -31,9 +77,9 @@ export async function recordGymImageSource(input: {
     gymUuid: input.gymUuid,
     actorUserId: input.actorUserId,
     reason: input.source ? 'Confirmed gym image import.' : 'Confirmed gym image removal.',
-    before: { storedUrl: input.previousUrl },
+    before: { storedUrl: previousImageIdentifier(input.previousUrl) },
     after: { storedUrl: input.storedUrl },
-    details: input.source,
+    details: input.source ? sanitizeGymImageSource(input.source) : null,
   });
 }
 

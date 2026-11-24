@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { closePool, createDb, executeRows } from '@boardsesh/db/client';
-import { upsertPublicBoardLocations } from './upsert';
+import { gyms, locationSyncGymSources, userBoards } from '@boardsesh/db/schema';
+import { buildGymWriteIdentifiers, collectValidLocationRecords, upsertPublicBoardLocations } from './upsert';
 import type { PublicBoardLocationInput } from './types';
 import { findCrawledGymSourceKeys, findGymsDueForWallCrawl, markGymWallsCrawled } from '@boardsesh/db/queries';
 import { boardUuidForSource, gymUuidForSource, SYSTEM_USER_ID } from './ids';
@@ -155,6 +156,123 @@ describe.skipIf(integrationConfig.databaseUrl === null)('location sync freeze gu
   afterAll(async () => {
     await closePool();
   });
+
+  it.each([false, true])(
+    'does not shadow a merged URL when the source gym already exists: %s',
+    async (existingSourceGym) => {
+      const rollback = new Error('rollback reserved gym URL fixture');
+      await createDb()
+        .transaction(async (tx) => {
+          const fixtureId = randomUUID();
+          const original = baseRecord({
+            sourceKey: `tension:original-board-${fixtureId}`,
+            gymSourceKey: `tension:original-gym-${fixtureId}`,
+            gymName: `Original gym ${fixtureId}`,
+          });
+          await upsertPublicBoardLocations(tx, [original]);
+          const survivor = await readGym(tx, gymUuidForSource(original.gymSourceKey));
+          const incoming = baseRecord({
+            sourceKey: `tension:incoming-board-${fixtureId}`,
+            gymSourceKey: `tension:incoming-gym-${fixtureId}`,
+            gymName: `Incoming gym ${fixtureId}`,
+          });
+          const [valid] = collectValidLocationRecords([incoming]).validRecords;
+          const identifiers = buildGymWriteIdentifiers(incoming.gymSourceKey, valid!);
+          await tx.insert(gyms).values({
+            uuid: randomUUID(),
+            slug: identifiers.slug,
+            name: 'Merged gym alias',
+            ownerId: SYSTEM_USER_ID,
+            deletedAt: new Date(),
+            mergedIntoGymId: Number(survivor.id),
+          });
+          if (existingSourceGym)
+            await tx
+              .insert(gyms)
+              .values({ uuid: identifiers.uuid, name: 'Existing slugless source', ownerId: SYSTEM_USER_ID });
+          const result = await upsertPublicBoardLocations(tx, [incoming]);
+          expect(result.gymsUpserted).toBe(0);
+          const [sourceGym] = await tx.select().from(gyms).where(eq(gyms.uuid, identifiers.uuid));
+          if (existingSourceGym) expect(sourceGym).toMatchObject({ slug: null, name: 'Existing slugless source' });
+          else expect(sourceGym).toBeUndefined();
+          expect(
+            await tx
+              .select()
+              .from(locationSyncGymSources)
+              .where(eq(locationSyncGymSources.sourceKey, incoming.gymSourceKey)),
+          ).toEqual([]);
+          const [board] = await tx
+            .select()
+            .from(userBoards)
+            .where(eq(userBoards.uuid, boardUuidForSource(incoming.sourceKey)));
+          expect(board!.gymId).toBeNull();
+          const [alias] = await tx.select().from(gyms).where(eq(gyms.slug, identifiers.slug));
+          expect(alias).toMatchObject({ mergedIntoGymId: Number(survivor.id) });
+          expect(alias!.deletedAt).not.toBeNull();
+          throw rollback;
+        })
+        .catch((error: unknown) => {
+          if (error !== rollback) throw error;
+        });
+    },
+  );
+
+  it.each([false, true])(
+    'rebinds a frozen live source with a reserved generated URL (renamed: %s)',
+    async (renamed) => {
+      const rollback = new Error('rollback renamed live source fixture');
+      await createDb()
+        .transaction(async (tx) => {
+          const fixtureId = randomUUID();
+          const original = baseRecord({
+            sourceKey: `tension:renamed-board-${fixtureId}`,
+            gymSourceKey: `tension:renamed-gym-${fixtureId}`,
+            gymName: `Renamed gym ${fixtureId}`,
+          });
+          await upsertPublicBoardLocations(tx, [original]);
+          const uuid = gymUuidForSource(original.gymSourceKey);
+          const [survivor] = await tx.select().from(gyms).where(eq(gyms.uuid, uuid));
+          const currentSlug = renamed ? `approved-${fixtureId}` : survivor!.slug!;
+          await tx
+            .update(gyms)
+            .set({ slug: currentSlug, name: 'Frozen operator name', syncFrozenAt: new Date() })
+            .where(eq(gyms.id, survivor!.id));
+          await tx.delete(locationSyncGymSources).where(eq(locationSyncGymSources.sourceKey, original.gymSourceKey));
+          await tx.insert(gyms).values({
+            uuid: randomUUID(),
+            slug: survivor!.slug,
+            name: 'Old URL alias',
+            ownerId: SYSTEM_USER_ID,
+            deletedAt: new Date(),
+            mergedIntoGymId: survivor!.id,
+          });
+          const result = await upsertPublicBoardLocations(tx, [original]);
+          expect(result.gymsUpserted).toBe(1);
+          const [saved] = await tx.select().from(gyms).where(eq(gyms.uuid, uuid));
+          expect(saved).toMatchObject({
+            slug: currentSlug,
+            name: 'Frozen operator name',
+            deletedAt: null,
+            mergedIntoGymId: null,
+          });
+          expect(saved!.syncFrozenAt).not.toBeNull();
+          const [alias] = await tx
+            .select()
+            .from(locationSyncGymSources)
+            .where(eq(locationSyncGymSources.sourceKey, original.gymSourceKey));
+          expect(alias!.gymId).toBe(survivor!.id);
+          const [board] = await tx
+            .select()
+            .from(userBoards)
+            .where(eq(userBoards.uuid, boardUuidForSource(original.sourceKey)));
+          expect(board!.gymId).toBe(survivor!.id);
+          throw rollback;
+        })
+        .catch((error: unknown) => {
+          if (error !== rollback) throw error;
+        });
+    },
+  );
 
   it('keeps frozen edits, then refreshes and resurrects both rows after an explicit release', async () => {
     const db = createDb();

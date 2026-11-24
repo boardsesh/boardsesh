@@ -1,5 +1,5 @@
 import { currentStoreLocationSyncMode } from '@boardsesh/auth-protocol';
-import { and, eq, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { gymClaims, gyms, locationSyncGymSources, userBoards, users } from '@boardsesh/db/schema';
@@ -617,12 +617,45 @@ async function createOrUpdateSourceGym(
   assertActive?: LocationSyncAssertActive,
 ): Promise<number | null> {
   const gymIdentifiers = buildGymWriteIdentifiers(sourceKey, record);
+  let proposedSlug: string | null = gymIdentifiers.slug;
+  // Deterministic imported URLs must not shadow another gym's live page or
+  // merge redirect. Deleted merge sources retain their URLs after a repair.
+  // This also protects the COALESCE slug fill on existing slugless UUIDs.
+  const [reservedSlug] = await checkedSql(assertActive, () =>
+    db
+      .select({ id: gyms.id })
+      .from(gyms)
+      .where(
+        and(
+          eq(gyms.slug, gymIdentifiers.slug),
+          ne(gyms.uuid, gymIdentifiers.uuid),
+          or(isNull(gyms.deletedAt), isNotNull(gyms.mergedIntoGymId)),
+        ),
+      )
+      .limit(1),
+  );
+  if (reservedSlug) {
+    const [existingGym] = await checkedSql(assertActive, () =>
+      db
+        .select({ slug: gyms.slug })
+        .from(gyms)
+        .where(and(eq(gyms.uuid, gymIdentifiers.uuid), isNull(gyms.deletedAt), isNull(gyms.mergedIntoGymId)))
+        .limit(1),
+    );
+    if (!existingGym?.slug) return null;
+    // A live deterministic identity already owns its current URL, including
+    // legacy cases where a merge tombstone also carries that same slug.
+    // Do not propose its reserved old URL even for the INSERT half of the
+    // upsert. COALESCE retains the current URL; freeze/fallback behavior below
+    // still owns metadata refresh and source-alias binding.
+    proposedSlug = null;
+  }
   const [upsertedGym] = await checkedSql(assertActive, () =>
     db
       .insert(gyms)
       .values({
         uuid: gymIdentifiers.uuid,
-        slug: gymIdentifiers.slug,
+        slug: proposedSlug,
         ownerId: SYSTEM_USER_ID,
         name: record.gymName,
         address: record.gymAddress,
