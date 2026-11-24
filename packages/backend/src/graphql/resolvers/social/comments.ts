@@ -17,7 +17,6 @@ import { logger } from '../../../utils/logger';
 import { encodeOffsetCursor, decodeOffsetCursor } from '../../../utils/feed-cursor';
 import { sprayClimbVisibilityCondition, sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
 import { readableSocialEntityIds } from './entity-read-access';
-import { GraphQLError } from 'graphql';
 import { validateEntityExists } from './entity-validation';
 import { lockReferencedClimb } from '../climbs/spray-climb-lock';
 import { publishSocialEvent } from '../../../events/index';
