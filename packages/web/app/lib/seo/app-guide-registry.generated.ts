@@ -144,6 +144,11 @@ export const APP_GUIDE_REGISTRY = {
         url: 'https://apps.apple.com/us/app/tension-board-2/id1488028660',
         checkedAt: '2026-11-24',
       },
+      {
+        id: 'bs-design-guidelines',
+        url: 'https://github.com/boardsesh/boardsesh/blob/b3a0285908da0d9e4be984ebe5731ed72b33de10/docs/design/ai-design-guidelines.md',
+        checkedAt: '2026-11-24',
+      },
     ],
     claims: [
       {
@@ -222,6 +227,13 @@ export const APP_GUIDE_REGISTRY = {
         verdict: 'boardsesh',
         winners: [],
         sourceIds: ['kilter-appstore', 'kilter-site', 'kilter-support', 'boardsesh-app-web'],
+        pendingCells: [],
+      },
+      {
+        id: 'native',
+        verdict: 'boardsesh',
+        winners: [],
+        sourceIds: ['bs-design-guidelines', 'kilter-flutter'],
         pendingCells: [],
       },
       {
@@ -423,6 +435,16 @@ export const APP_GUIDE_REGISTRY = {
       {
         id: 'climbing-kilter-2026',
         url: 'https://www.climbing.com/news/why-the-kilter-board-app-suddenly-disappeared/',
+        checkedAt: '2026-11-24',
+      },
+      {
+        id: 'bs-design-guidelines',
+        url: 'https://github.com/boardsesh/boardsesh/blob/b3a0285908da0d9e4be984ebe5731ed72b33de10/docs/design/ai-design-guidelines.md',
+        checkedAt: '2026-11-24',
+      },
+      {
+        id: 'kilter-flutter',
+        url: 'https://play.google.com/store/apps/details?id=com.kiltergrips.kilter_board_app',
         checkedAt: '2026-11-24',
       },
     ],
@@ -863,6 +885,13 @@ export const APP_GUIDE_REGISTRY = {
         pendingCells: [],
       },
       {
+        id: 'native',
+        verdict: 'boardsesh',
+        winners: [],
+        sourceIds: ['bs-design-guidelines', 'moon-flutter'],
+        pendingCells: [],
+      },
+      {
         id: 'tablet',
         verdict: 'boardsesh',
         winners: [],
@@ -1026,6 +1055,16 @@ export const APP_GUIDE_REGISTRY = {
       {
         id: 'moon-reddit-weight',
         url: 'https://www.reddit.com/r/Moonboard/comments/1vx7imt/comment/p9rrpnm/',
+        checkedAt: '2026-11-24',
+      },
+      {
+        id: 'bs-design-guidelines',
+        url: 'https://github.com/boardsesh/boardsesh/blob/b3a0285908da0d9e4be984ebe5731ed72b33de10/docs/design/ai-design-guidelines.md',
+        checkedAt: '2026-11-24',
+      },
+      {
+        id: 'moon-flutter',
+        url: 'https://play.google.com/store/apps/details?id=com.trainingboard.moon&hl=en_US&gl=US',
         checkedAt: '2026-11-24',
       },
     ],
