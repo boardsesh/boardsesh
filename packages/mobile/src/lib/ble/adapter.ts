@@ -482,7 +482,10 @@ export class RNBleAdapter implements BluetoothAdapter {
       }, SCAN_TIMEOUT_MS);
 
       selectedDeviceId = await selectionPromise;
-      evidenceCollector.select(selectedDeviceId);
+      evidenceCollector.select(
+        selectedDeviceId,
+        [...devices.values()].find((device) => device.deviceId === selectedDeviceId)?.evidence,
+      );
       this.controllerEvidence = { scan: evidenceCollector.snapshot(selectedDeviceId, true), selectedDeviceId };
     } finally {
       this.controllerEvidence = {

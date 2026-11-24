@@ -318,7 +318,10 @@ public class BoardBleModule: Module {
         AsyncFunction("connectPreparedBoard") { (deviceId: String, preparationToken: String, promise: Promise) in
             BoardBleManager.shared.connectPreparedBoard(deviceId: deviceId, preparationToken: preparationToken) { result in
                 switch result {
-                case .success: promise.resolve(nil)
+                case .success:
+                    promise.resolve(BoardBleManager.shared.preparedConnectionEvidence(
+                        deviceId: deviceId, preparationToken: preparationToken
+                    ))
                 case .failure(let error): promise.reject("BLE_CONNECT_FAILED", error.localizedDescription)
                 }
             }

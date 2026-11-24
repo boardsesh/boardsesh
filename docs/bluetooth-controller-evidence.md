@@ -24,6 +24,17 @@ controller does not advertise it. A cached name is not necessarily the current
 advertised local name. Native targeted service discovery is not a complete
 GATT inventory. Native reconnects can have no fresh advertisement at all.
 
+Picker-cache summaries exclude unselected peripherals identified only by a
+generic transport service. An explicitly selected peripheral keeps priority
+when the evidence batch reaches its device limit. Picker capability comes
+from that scan's adapter; partial cached observations do not establish support
+for collecting advertisements before deduplication on an older native binary.
+
+New iOS binaries return an attempt-bound discovery snapshot with a successful
+prepared connection, before the first LED write. This preserves GATT evidence
+if that write drops the link. Older binaries keep their existing connection
+behavior and cannot supply this additional snapshot.
+
 Android raw scan records preserve advertisement structures that the BLE
 library's parsed manufacturer/service fields may discard. iOS CoreBluetooth
 does not expose an equivalent complete raw packet. Hex encoding preserves

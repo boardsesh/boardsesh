@@ -292,6 +292,41 @@ describe('useBoardBluetooth', () => {
     vi.useRealTimers();
   });
 
+  it('binds live picker evidence capability and explicit selection to its own adapter', async () => {
+    let capability: 'supported' | 'unsupported' = 'unsupported';
+    vi.mocked(createBluetoothAdapter).mockImplementation(
+      (devicePicker) =>
+        ({
+          ...makeFakeAdapter(),
+          getControllerEvidence: () => ({
+            scan: {
+              version: 1,
+              scanId: 'picker-scan',
+              source: 'native_ios_picker',
+              devices: [],
+              complete: false,
+              droppedCount: 0,
+              capability,
+            },
+          }),
+          requestAndConnect: async () => ({ deviceId: await devicePicker(() => {}), deviceName: 'MoonBoard' }),
+        }) as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'moonboard', layoutId: 1, sizeId: 1 }));
+    let connecting!: Promise<boolean>;
+    await act(async () => {
+      connecting = result.current.connect();
+    });
+    const picker = result.current.pickerState;
+    expect(picker?.getEvidenceContext?.()).toEqual({ capability: 'unsupported' });
+    capability = 'supported';
+    await act(async () => {
+      picker?.handleSelect('selected-uart');
+      await connecting;
+    });
+    expect(picker?.getEvidenceContext?.()).toEqual({ capability: 'supported', selectedDeviceId: 'selected-uart' });
+  });
+
   it('attaches the selected failed attempt evidence without adding events', async () => {
     const evidence = {
       scan: {

@@ -62,6 +62,7 @@ import {
   createBleEvidenceId,
   nativeControllerEvidence,
   type BleConnectionEvidence,
+  type BlePickerEvidenceContext,
 } from './controller-evidence';
 import type { NativeBleConnectedDevice } from '../../../modules/live-activity/src/index';
 import { reportHandledError } from '../error-reporting';
@@ -309,6 +310,8 @@ export type PickerState = {
   // Kept EMPTY while `searching`: boards only reach the sheet (and the serial
   // lookup behind it) once the list is on screen (#5658).
   devices: DiscoveredDevice[];
+  /** Read at the existing summary flush, scoped to this picker and adapter. */
+  getEvidenceContext?: () => BlePickerEvidenceContext;
   isScanning: boolean;
   handleSelect: (deviceId: string) => void;
   handleCancel: () => void;
@@ -330,6 +333,12 @@ export type PickerState = {
   // The closing sheet's dismissal settled: drop the picker state.
   handleClosed: () => void;
 };
+
+type EvidenceDevicePickerFn = (
+  subscribe: Parameters<DevicePickerFn>[0],
+  targetSearch?: Parameters<DevicePickerFn>[1],
+  getControllerEvidence?: () => BleConnectionEvidence | undefined,
+) => Promise<string>;
 
 // Identity of a board pairing: the silent-reconnect and adoption guards only
 // trust a remembered/native connection while the active board still matches.
@@ -1154,14 +1163,23 @@ export function useBoardBluetooth({
   // The picker for one connect. With a saved board (`targetSearch`) it opens at
   // the tap in `searching` and moves to `list` or closes itself, as the adapter
   // reports (see RNBleAdapter.requestAndConnect for the state machine, #5658).
-  const devicePicker = useCallback<DevicePickerFn>(
-    (subscribe, targetSearch) => {
+  const devicePicker = useCallback<EvidenceDevicePickerFn>(
+    (subscribe, targetSearch, getControllerEvidence) => {
       return new Promise<string>((resolve, reject) => {
         pickerSessionCounterRef.current += 1;
         const sessionId = pickerSessionCounterRef.current;
         // The picker promise settles exactly once, whoever gets there first: a
         // pick, a cancel, the auto-select, or connect()'s failure path.
         let settled = false;
+        let selectedDeviceId: string | undefined;
+        const getEvidenceContext = (): BlePickerEvidenceContext => {
+          const evidence = getControllerEvidence?.();
+          const selected = selectedDeviceId ?? evidence?.selectedDeviceId;
+          return {
+            capability: evidence?.scan.capability ?? 'unsupported',
+            ...(selected ? { selectedDeviceId: selected } : {}),
+          };
+        };
         let mode: PickerState['mode'] = targetSearch ? 'searching' : 'list';
         const targetUuid = boardUuidOrNull(boardUuid);
         // The box this phone remembers for the board by its BLE id (a MoonBoard
@@ -1208,6 +1226,7 @@ export function useBoardBluetooth({
         const handleSelect = (deviceId: string) => {
           if (settled) return;
           settled = true;
+          selectedDeviceId = deviceId;
           releaseRejectRef();
           // Keep the native sheet mounted through its dismissal, as for an
           // auto-selected board. Tearing it down here can blank the player
@@ -1247,6 +1266,7 @@ export function useBoardBluetooth({
           targetBoard,
           showAllBoards: false,
           devices: [],
+          getEvidenceContext,
           isScanning: true,
           handleSelect,
           handleCancel,
@@ -1942,7 +1962,7 @@ export function useBoardBluetooth({
       // requestAndConnect), so the catch below can scope its cleanup to it.
       let connectPickerSessionId: number | null = null;
       const connectDevicePicker: DevicePickerFn = (subscribe, targetSearch) => {
-        const pickerPromise = devicePicker(subscribe, targetSearch);
+        const pickerPromise = devicePicker(subscribe, targetSearch, () => connectAdapter?.getControllerEvidence?.());
         // The picker's executor ran synchronously, so the counter now holds its session.
         connectPickerSessionId ??= pickerSessionCounterRef.current;
         return pickerPromise;

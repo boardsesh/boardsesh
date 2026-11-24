@@ -105,6 +105,34 @@ final class BoardBleAssociationTests: XCTestCase {
         XCTAssertNil(manager.connectedDeviceInfo, file: file, line: line)
     }
 
+    func testPreparedConnectReturnsBoundEvidenceBeforeAnyDisconnectCanEraseLiveDiagnostics() {
+        let peripheral = FakeWritablePeripheral(name: "MoonBoard")
+        let token = prepare(configuration(), key: "evidence-wall")
+        var resolvedEvidence: [String: Any]?
+        manager.testHooks.sync {
+            manager.testHooks.setDiscoveredPeripheral(peripheral)
+            manager.connectPreparedBoard(deviceId: peripheral.identifier.uuidString, preparationToken: token) { result in
+                guard case .success = result else { return XCTFail("connect failed") }
+                resolvedEvidence = self.manager.preparedConnectionEvidence(
+                    deviceId: peripheral.identifier.uuidString, preparationToken: token
+                )
+            }
+        }
+        manager.testHooks.fireConnectionReady(peripheral: peripheral, characteristic: characteristic())
+        XCTAssertEqual(resolvedEvidence?["deviceId"] as? String, peripheral.identifier.uuidString)
+        XCTAssertEqual(resolvedEvidence?["preparationToken"] as? String, token)
+        let discovery = resolvedEvidence?["controllerEvidence"] as? [String: Any]
+        XCTAssertEqual(discovery?["discoveryOutcome"] as? String, "complete")
+        XCTAssertEqual(discovery?["writeCharacteristicUuid"] as? String, "6e400002-b5a3-f393-e0a9-e50e24dcca9e")
+        XCTAssertNil(manager.preparedConnectionEvidence(deviceId: peripheral.identifier.uuidString, preparationToken: "other-attempt"))
+        XCTAssertNil(manager.preparedConnectionEvidence(deviceId: UUID().uuidString, preparationToken: token))
+
+        manager.testHooks.sync { manager.disconnect {} }
+        XCTAssertNil(manager.connectedDeviceInfo)
+        XCTAssertEqual(discovery?["discoveryOutcome"] as? String, "complete")
+        XCTAssertEqual(discovery?["writeCharacteristicUuid"] as? String, "6e400002-b5a3-f393-e0a9-e50e24dcca9e")
+    }
+
     func testCancelledPickerInvalidatesCrossBrandAndSameBrandPairings() {
         for target in [configuration("kilter"), configuration("moonboard", layoutId: 1)] {
             let old = FakeWritablePeripheral(name: "MoonBoard")

@@ -38,6 +38,10 @@ export type BleConnectionEvidence = {
   writeServiceUuid?: string;
   writeCharacteristicUuid?: string;
 };
+export type BlePickerEvidenceContext = {
+  selectedDeviceId?: string;
+  capability: BleEvidenceBatch['capability'];
+};
 export type EvidencePacket = {
   deviceId: string;
   localName?: string | null;
@@ -112,13 +116,33 @@ export function blePlxEvidencePacket(device: {
     rawScanRecord: base64ToHex(device.rawScanRecord),
   };
 }
+function copyEvidenceDevice(device: BleEvidenceDevice): BleEvidenceDevice {
+  return {
+    ...device,
+    serviceUuids: [...device.serviceUuids],
+    serviceData: device.serviceData ? { ...device.serviceData } : undefined,
+    rawScanRecords: device.rawScanRecords ? [...device.rawScanRecords] : undefined,
+    originalLengths: { ...device.originalLengths },
+  };
+}
 export class BleEvidenceCollector {
   readonly scanId: string;
   private readonly entries = new Map<string, BleEvidenceDevice>();
   private droppedCount = 0;
   private selectedDeviceId?: string;
-  select(deviceId: string): void {
+  select(deviceId: string, cachedEvidence?: BleEvidenceDevice): void {
     this.selectedDeviceId = deviceId;
+    if (this.entries.has(deviceId) || cachedEvidence?.deviceId !== deviceId) return;
+    // The picker can outlive the bounded collector. Restore only the exact
+    // handle the climber chose, preserving its already-bounded observations.
+    const eligible = [...this.entries.values()].filter((device) =>
+      ['board_name', 'board_service'].includes(device.matchBasis),
+    );
+    if (eligible.length >= MAX_DEVICES) {
+      this.entries.delete(eligible[0].deviceId);
+      this.droppedCount += 1;
+    }
+    this.entries.set(deviceId, copyEvidenceDevice(cachedEvidence));
   }
   constructor(
     private readonly source: string,
@@ -208,13 +232,7 @@ export class BleEvidenceCollector {
       version: 1,
       scanId: this.scanId,
       source: this.source,
-      devices: eligible.slice(0, MAX_DEVICES).map((entry) => ({
-        ...entry,
-        serviceUuids: [...entry.serviceUuids],
-        serviceData: entry.serviceData ? { ...entry.serviceData } : undefined,
-        rawScanRecords: entry.rawScanRecords ? [...entry.rawScanRecords] : undefined,
-        originalLengths: { ...entry.originalLengths },
-      })),
+      devices: eligible.slice(0, MAX_DEVICES).map(copyEvidenceDevice),
       complete,
       droppedCount: this.droppedCount + Math.max(0, eligible.length - MAX_DEVICES),
       capability: 'supported',
@@ -288,15 +306,26 @@ export function evidenceBatchFromDevices(
   devices: readonly { evidence?: BleEvidenceDevice }[],
   source: string,
   scanId = createBleEvidenceId(),
+  context: BlePickerEvidenceContext = { capability: 'unsupported' },
 ): BleEvidenceBatch {
+  const eligible = devices.flatMap(({ evidence }) =>
+    evidence &&
+    (['board_name', 'board_service'].includes(evidence.matchBasis) || evidence.deviceId === context.selectedDeviceId)
+      ? [evidence]
+      : [],
+  );
+  eligible.sort(
+    (left, right) =>
+      Number(right.deviceId === context.selectedDeviceId) - Number(left.deviceId === context.selectedDeviceId),
+  );
   return {
     version: 1,
     scanId,
     source,
-    devices: devices.flatMap((device) => (device.evidence ? [device.evidence] : [])).slice(0, MAX_DEVICES),
+    devices: eligible.slice(0, MAX_DEVICES),
     complete: false,
-    droppedCount: Math.max(0, devices.length - MAX_DEVICES),
-    capability: 'supported',
+    droppedCount: Math.max(0, eligible.length - MAX_DEVICES),
+    capability: context.capability,
   };
 }
 export type NativeControllerEvidenceInput = {

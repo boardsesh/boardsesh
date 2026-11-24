@@ -486,6 +486,23 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         }
     }
 
+    /// Called synchronously from the successful prepared-connect completion on
+    /// the BLE queue, before an initial/native re-light can drop the link.
+    /// Return a value snapshot; JavaScript never needs a live-link lookup.
+    func preparedConnectionEvidence(deviceId: String, preparationToken: String) -> [String: Any]? {
+        runOnBleQueueSync {
+            guard controllerEvidenceDeviceId == deviceId,
+                  controllerEvidenceGeneration == connectionGeneration,
+                  // completePendingConnect consumes the active preparation
+                  // before invoking its callback; the completed evidence keeps
+                  // that request's token independently of the live connection.
+                  controllerEvidencePreparationToken == preparationToken,
+                  let snapshot = controllerEvidence else { return nil }
+            return ["deviceId": deviceId, "preparationToken": preparationToken,
+                    "connectionGeneration": connectionGeneration, "controllerEvidence": snapshot]
+        }
+    }
+
     func takeConnectEvidence(deviceId: String, preparationToken: String) -> [String: Any]? {
         runOnBleQueueSync {
             guard let failure = lastFailureEvidence, failure.deviceId == deviceId,

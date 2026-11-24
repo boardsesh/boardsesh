@@ -7,6 +7,7 @@ import {
 import {
   boardBleNative,
   type NativeBleConfigureBoardOptions,
+  type NativeBlePreparedConnectResult,
   type NativeBlePrepareBoardConnectionOptions,
   type NativeBleDisconnectEvent,
   type NativeBleScanEvent,
@@ -365,7 +366,10 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
       }, SCAN_TIMEOUT_MS);
 
       selectedDeviceId = await selectionPromise;
-      evidenceCollector.select(selectedDeviceId);
+      evidenceCollector.select(
+        selectedDeviceId,
+        [...devices.values()].find((device) => device.deviceId === selectedDeviceId)?.evidence,
+      );
       this.controllerEvidence = { ...this.controllerEvidence, selectedDeviceId };
     } finally {
       // A late advert after a cancel or a pick must not auto-select.
@@ -382,14 +386,41 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
         typeof native.getScanEvidence === 'function'
           ? await native.getScanEvidence(evidenceCollector.scanId, selectedId ?? '').catch(() => null)
           : null;
+      let finalScan = batch
+        ? nativeScanEvidence(batch, selectedId)
+        : {
+            ...evidenceCollector.snapshot(selectedId, true),
+            capability:
+              typeof native.startScanWithEvidence === 'function' ? ('supported' as const) : ('unsupported' as const),
+          };
+      if (selectedId && !finalScan.devices.some((device) => device.deviceId === selectedId)) {
+        // Native evidence keeps its first 30 eligible records, while the UI can
+        // list more. Reserve space for the exact physical controller selected.
+        // Fall back to the picker cache if later traffic evicted its JS record.
+        const pickerDevice = [...devices.values()].find((device) => device.deviceId === selectedId);
+        let selectedObservation = evidenceCollector
+          .snapshot(selectedId, true)
+          .devices.find((device) => device.deviceId === selectedId);
+        if (!selectedObservation && pickerDevice) {
+          selectedObservation = evidenceCollector.observe({
+            deviceId: selectedId,
+            cachedName: pickerDevice.name,
+            manufacturerData: pickerDevice.manufacturerData,
+            serviceData: pickerDevice.serviceData,
+          });
+        }
+        if (selectedObservation) {
+          const selectedFirst = [selectedObservation, ...finalScan.devices];
+          finalScan = {
+            ...finalScan,
+            devices: selectedFirst.slice(0, 30),
+            droppedCount: finalScan.droppedCount + Math.max(0, selectedFirst.length - 30),
+          };
+        }
+      }
       this.controllerEvidence = {
         ...this.controllerEvidence,
-        scan: batch
-          ? nativeScanEvidence(batch, selectedId)
-          : {
-              ...evidenceCollector.snapshot(selectedId, true),
-              capability: typeof native.startScanWithEvidence === 'function' ? 'supported' : 'unsupported',
-            },
+        scan: finalScan,
       };
     }
 
@@ -412,16 +443,31 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
       if (preparationGeneration !== this.preparationGeneration) {
         throw new Error('Board connection preparation superseded');
       }
+      let preparedConnectResult: NativeBlePreparedConnectResult | void = undefined;
       if (usesPreparedConnection) {
         if (!preparationToken || typeof native.connectPreparedBoard !== 'function') {
           throw new Error('Board connection is not prepared');
         }
-        await native.connectPreparedBoard(selectedDeviceId, preparationToken);
+        preparedConnectResult = await native.connectPreparedBoard(selectedDeviceId, preparationToken);
       } else {
         await native.connect(selectedDeviceId);
       }
       if (preparationGeneration !== this.preparationGeneration) {
         throw new Error('Board connection preparation superseded');
+      }
+      if (
+        preparedConnectResult &&
+        preparedConnectResult.deviceId === selectedDeviceId &&
+        preparedConnectResult.preparationToken === preparationToken &&
+        preparedConnectResult.controllerEvidence?.deviceId === selectedDeviceId &&
+        Number.isSafeInteger(preparedConnectResult.connectionGeneration) &&
+        preparedConnectResult.connectionGeneration > 0 &&
+        preparedConnectResult.controllerEvidence.connectionGeneration === preparedConnectResult.connectionGeneration
+      ) {
+        this.controllerEvidence = {
+          ...nativeControllerEvidence(selectedDeviceId, preparedConnectResult.controllerEvidence, 'native_ios_picker'),
+          scan: this.controllerEvidence!.scan,
+        };
       }
     } catch (error) {
       // A rejected connect can't carry structured data (Expo), so on failure

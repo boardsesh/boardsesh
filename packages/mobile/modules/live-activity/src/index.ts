@@ -70,6 +70,14 @@ export type NativeBleControllerEvidence = {
   writeCharacteristicUuid?: string;
 };
 
+/** Immutable success evidence returned by newer token-bound native connects. */
+export type NativeBlePreparedConnectResult = {
+  deviceId: string;
+  preparationToken: string;
+  connectionGeneration: number;
+  controllerEvidence: NativeBleControllerEvidence;
+};
+
 export type NativeBleScanEvidence = {
   version: 1;
   scanId: string;
@@ -239,7 +247,7 @@ type BoardBleNativeModule = {
    */
   prepareBoardConnection?(options: NativeBlePrepareBoardConnectionOptions): Promise<string>;
   /** Connect only for the attempt returned by prepareBoardConnection (#7122). */
-  connectPreparedBoard?(deviceId: string, preparationToken: string): Promise<void>;
+  connectPreparedBoard?(deviceId: string, preparationToken: string): Promise<NativeBlePreparedConnectResult | void>;
   disconnect(): Promise<void>;
   /**
    * Disconnect Bluetooth when driving ends (2.7): free the board but keep the

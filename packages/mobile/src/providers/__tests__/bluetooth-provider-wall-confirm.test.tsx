@@ -3668,6 +3668,46 @@ describe('BluetoothProvider wall-confirm integration', () => {
     expect(summary).not.toHaveProperty('bleScanId');
   });
 
+  it.each(['supported', 'unsupported'] as const)(
+    'filters unselected UART evidence and carries live picker capability: %s',
+    async (capability) => {
+      const collector = new BleEvidenceCollector('native_ios_picker', 'ios');
+      const board = collector.observe({ deviceId: 'board', localName: 'MoonBoard' });
+      const sensor = collector.observe({
+        deviceId: 'sensor',
+        serviceUuids: ['6e400001-b5a3-f393-e0a9-e50e24dcca9e'],
+        manufacturerData: 'deadbeef',
+      });
+      bluetooth.state.pickerState = {
+        devices: [
+          { deviceId: 'board', name: 'MoonBoard', rssi: -40, evidence: board },
+          { deviceId: 'sensor', name: 'Sensor', rssi: -40, evidence: sensor },
+        ],
+        getEvidenceContext: () => ({ capability }),
+        isScanning: true,
+        handleSelect: vi.fn(),
+        handleCancel: vi.fn(),
+        sessionId: 54,
+        showAllBoards: false,
+        mode: 'list',
+        presented: true,
+        closing: false,
+        handleDisplaced: vi.fn(),
+        handleClosed: vi.fn(),
+      };
+      const { rerender } = renderProvider();
+      await act(async () => {});
+      bluetooth.state.pickerState = null;
+      rerenderProvider(rerender);
+      const summaries = analytics.track.mock.calls.filter(([event]) => event === 'BLE Picker Devices Resolved');
+      expect(summaries).toHaveLength(1);
+      const evidence = JSON.parse(summaries[0][1].bleEvidence);
+      expect(evidence.scan.capability).toBe(capability);
+      expect(evidence.scan.devices.map((device: { deviceId: string }) => device.deviceId)).toEqual(['board']);
+      expect(summaries[0][1].bleEvidence).not.toContain('deadbeef');
+    },
+  );
+
   it('forwards picker selection after refreshing a matching recorded config', async () => {
     const handleSelect = vi.fn();
     bluetooth.state.pickerState = {

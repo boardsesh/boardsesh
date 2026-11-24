@@ -18,6 +18,8 @@ type ScanListener = (payload: {
   serviceUuids?: string[];
   scanId?: string;
   cachedName?: string;
+  manufacturerData?: string;
+  serviceData?: Record<string, string>;
 }) => void;
 type DisconnectListener = (payload: {
   deviceId: string;
@@ -89,6 +91,7 @@ afterEach(() => {
   delete (nativeMock as Record<string, unknown>).connectPreparedBoard;
   delete (nativeMock as Record<string, unknown>).startScanWithEvidence;
   delete (nativeMock as Record<string, unknown>).getScanEvidence;
+  delete (nativeMock as Record<string, unknown>).getConnectedDevice;
   vi.useRealTimers();
 });
 
@@ -1068,6 +1071,149 @@ describe('NativeIosBleAdapter.isAvailable on binaries that ask at the first scan
 });
 
 describe('native controller evidence scan ownership', () => {
+  it('retains prepared-connect discovery evidence when the first write disconnects before live diagnostics', async () => {
+    const preparedResult = {
+      deviceId: 'controller',
+      preparationToken: 'evidence-attempt',
+      connectionGeneration: 7,
+      controllerEvidence: {
+        deviceId: 'controller',
+        connectionGeneration: 7,
+        advertisementStatus: 'not_observed',
+        discoveredServices: ['6e400001-b5a3-f393-e0a9-e50e24dcca9e'],
+        discoveryMode: 'targeted',
+        discoveryOutcome: 'complete',
+        writeServiceUuid: '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
+        writeCharacteristicUuid: '6e400002-b5a3-f393-e0a9-e50e24dcca9e',
+      },
+    };
+    const getConnectedDevice = vi.fn().mockResolvedValue(null);
+    Object.assign(nativeMock, {
+      prepareBoardConnection: vi.fn().mockResolvedValue('evidence-attempt'),
+      connectPreparedBoard: vi.fn().mockResolvedValue(preparedResult),
+      getConnectedDevice,
+    });
+    const adapter = new NativeIosBleAdapter(() => Promise.resolve('controller'), 'moonboard');
+    await adapter.prepareBoardConnection(boardConfiguration);
+    const connection = await adapter.requestAndConnect();
+    nativeMock.write.mockImplementationOnce(async () => {
+      disconnectListeners[0]({ deviceId: 'controller', errorCode: 7 });
+      throw new Error('initial write dropped');
+    });
+    await expect(adapter.write(new Uint8Array([1]))).rejects.toThrow('initial write dropped');
+    expect(connection.evidence).toMatchObject({
+      selectedDeviceId: 'controller',
+      discoveredServices: preparedResult.controllerEvidence.discoveredServices,
+      discoveryMode: 'targeted',
+      discoveryOutcome: 'complete',
+      writeServiceUuid: preparedResult.controllerEvidence.writeServiceUuid,
+      writeCharacteristicUuid: preparedResult.controllerEvidence.writeCharacteristicUuid,
+    });
+    expect(adapter.getControllerEvidence()).toMatchObject(connection.evidence!);
+    expect(getConnectedDevice).not.toHaveBeenCalled();
+  });
+
+  it('does not fail a successful prepared connection when the native evidence envelope is incomplete', async () => {
+    Object.assign(nativeMock, {
+      prepareBoardConnection: vi.fn().mockResolvedValue('evidence-attempt'),
+      connectPreparedBoard: vi.fn().mockResolvedValue({
+        deviceId: 'controller',
+        preparationToken: 'evidence-attempt',
+        connectionGeneration: 7,
+      }),
+    });
+    const adapter = new NativeIosBleAdapter(() => Promise.resolve('controller'), 'moonboard');
+    await adapter.prepareBoardConnection(boardConfiguration);
+    const connection = await adapter.requestAndConnect();
+    expect(connection.deviceId).toBe('controller');
+    expect(connection.evidence?.discoveredServices).toBeUndefined();
+    await expect(adapter.write(new Uint8Array([1]))).resolves.toBeUndefined();
+  });
+
+  it.each([
+    { deviceId: 'different-controller', preparationToken: 'evidence-attempt', connectionGeneration: 7 },
+    { deviceId: 'controller', preparationToken: 'different-attempt', connectionGeneration: 7 },
+    { deviceId: 'controller', preparationToken: 'evidence-attempt', connectionGeneration: 8 },
+  ])('ignores mismatched prepared-connect discovery envelopes: %j', async (binding) => {
+    Object.assign(nativeMock, {
+      prepareBoardConnection: vi.fn().mockResolvedValue('evidence-attempt'),
+      connectPreparedBoard: vi.fn().mockResolvedValue({
+        ...binding,
+        controllerEvidence: {
+          deviceId: 'controller',
+          connectionGeneration: 7,
+          advertisementStatus: 'not_observed',
+          discoveredServices: ['wrong-generation-service'],
+          discoveryOutcome: 'complete',
+        },
+      }),
+    });
+    const adapter = new NativeIosBleAdapter(() => Promise.resolve('controller'), 'moonboard');
+    await adapter.prepareBoardConnection(boardConfiguration);
+    const connection = await adapter.requestAndConnect();
+    expect(connection.evidence?.discoveredServices).toBeUndefined();
+    expect(connection.evidence?.discoveryOutcome).toBeUndefined();
+    await expect(adapter.write(new Uint8Array([1]))).resolves.toBeUndefined();
+  });
+
+  it.each([31, 61])(
+    'retains the selected thirty-first board from %i picker devices when native omitted it',
+    async (deviceCount) => {
+      const startScanWithEvidence = vi.fn().mockResolvedValue(undefined);
+      const getScanEvidence = vi.fn(async (scanId: string) => ({
+        version: 1,
+        scanId,
+        complete: true,
+        droppedCount: 1,
+        devices: Array.from({ length: 30 }, (_, index) => ({
+          deviceId: `board-${index}`,
+          localName: 'MoonBoard',
+          serviceUuids: [],
+          advertisementStatus: 'observed',
+          observedAt: '2026-11-24T10:00:00.000Z',
+          truncated: false,
+        })),
+      }));
+      Object.assign(nativeMock, { startScanWithEvidence, getScanEvidence });
+      let selectDevice: (deviceId: string) => void = () => {};
+      const adapter = new NativeIosBleAdapter(
+        () => new Promise<string>((resolve) => (selectDevice = resolve)),
+        'moonboard',
+      );
+      const connecting = adapter.requestAndConnect();
+      await Promise.resolve();
+      const scanId = startScanWithEvidence.mock.calls[0][1] as string;
+      for (let index = 0; index < deviceCount; index += 1) {
+        scanListeners[0]({
+          device: { deviceId: `board-${index}`, name: 'MoonBoard' },
+          localName: 'MoonBoard',
+          cachedName: 'Cached controller label',
+          serviceUuids: ['6e400001-b5a3-f393-e0a9-e50e24dcca9e'],
+          serviceData: index === 30 ? { '0000fff0-0000-1000-8000-00805f9b34fb': '00'.repeat(600) } : undefined,
+          manufacturerData: index === 30 ? '000031' : '000000',
+          rssi: -60,
+          scanId,
+        });
+      }
+      selectDevice('board-30');
+      const connection = await connecting;
+      expect(connection.evidence?.scan.devices.find((device) => device.deviceId === 'board-30')).toMatchObject({
+        localName: 'MoonBoard',
+        cachedName: 'Cached controller label',
+        manufacturerData: '000031',
+        serviceUuids: ['6e400001-b5a3-f393-e0a9-e50e24dcca9e'],
+        serviceData: { '0000fff0-0000-1000-8000-00805f9b34fb': '00'.repeat(512) },
+        originalLengths: { 'serviceData.0000fff0-0000-1000-8000-00805f9b34fb': 1200 },
+        truncated: true,
+        handleKind: 'ios_uuid',
+      });
+      expect(connection.evidence?.scan.devices.length).toBeLessThanOrEqual(30);
+      expect(connection.evidence?.scan.capability).toBe('supported');
+      expect(connection.evidence?.scan.droppedCount).toBeGreaterThanOrEqual(1);
+      expect(getScanEvidence).toHaveBeenCalledWith(scanId, 'board-30');
+    },
+  );
+
   it('ignores buffered results from an older scan before auto-selection', async () => {
     const startScanWithEvidence = vi.fn().mockResolvedValue(undefined);
     const getScanEvidence = vi.fn().mockResolvedValue(null);

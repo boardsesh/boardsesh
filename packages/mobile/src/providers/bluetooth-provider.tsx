@@ -2016,6 +2016,7 @@ export function BluetoothProvider({
   // own session was flushed must not write into the next session's answer.
   const pickerSessionIdRef = useRef(0);
   const pickerEvidenceDevicesRef = useRef<PickerState['devices'] | undefined>(undefined);
+  const pickerEvidenceContextRef = useRef<PickerState['getEvidenceContext']>(undefined);
   const pickerEvidenceSessionRef = useRef<number | undefined>(undefined);
   useEffect(() => {
     // Only a picker that showed its list counts (#5658). One still searching for
@@ -2036,6 +2037,7 @@ export function BluetoothProvider({
       // The cache enriches these device objects between React updates. Build
       // the partial evidence batch only when the existing summary is emitted.
       pickerEvidenceDevicesRef.current = pickerState.devices;
+      pickerEvidenceContextRef.current = pickerState.getEvidenceContext;
       pickerEvidenceSessionRef.current = pickerState.sessionId;
       pickerResolutionStatsRef.current = summarizePickerResolution(
         pickerState.devices,
@@ -2050,8 +2052,10 @@ export function BluetoothProvider({
     }
     const finalStats = pickerResolutionStatsRef.current;
     const finalEvidenceDevices = pickerEvidenceDevicesRef.current;
+    const finalEvidenceContext = pickerEvidenceContextRef.current?.();
     const finalPickerSessionId = pickerEvidenceSessionRef.current;
     pickerEvidenceDevicesRef.current = undefined;
+    pickerEvidenceContextRef.current = undefined;
     pickerEvidenceSessionRef.current = undefined;
     if (!finalStats) {
       // No list showed this session: nothing the sheet saw belongs to the next.
@@ -2068,8 +2072,13 @@ export function BluetoothProvider({
     const seen = pickerSeenRef.current;
     pickerSessionWatchRef.current = null;
     pickerSeenRef.current = emptyPickerSeen();
+    const finalEvidenceBatch = finalEvidenceDevices
+      ? evidenceBatchFromDevices(finalEvidenceDevices, 'connection_picker_cache', '', finalEvidenceContext)
+      : undefined;
     const finalEvidenceProperties = bleEvidenceProperties(
-      finalEvidenceDevices ? evidenceBatchFromDevices(finalEvidenceDevices, 'connection_picker_cache', '') : undefined,
+      finalEvidenceBatch
+        ? { scan: finalEvidenceBatch, selectedDeviceId: finalEvidenceContext?.selectedDeviceId }
+        : undefined,
     );
     // A picker cache has no authoritative radio scan token.
     delete finalEvidenceProperties.bleScanId;

@@ -2,11 +2,89 @@ import { describe, expect, it } from 'vitest';
 import {
   BleEvidenceCollector,
   bleEvidenceProperties,
+  evidenceBatchFromDevices,
   nativeControllerEvidence,
   type BleConnectionEvidence,
 } from '../controller-evidence';
 
 describe('controller evidence', () => {
+  it('restores evicted selected evidence from its exact picker cache entry', () => {
+    const collector = new BleEvidenceCollector('picker', 'android');
+    const selected = collector.observe({
+      deviceId: 'first-board',
+      localName: 'MoonBoard',
+      manufacturerData: '000001',
+      rawScanRecord: '00020304',
+    });
+    for (let index = 0; index < 30; index += 1)
+      collector.observe({ deviceId: `other-${index}`, localName: 'MoonBoard' });
+    expect(collector.snapshot().devices.some((device) => device.deviceId === 'first-board')).toBe(false);
+    collector.select('first-board', selected);
+    const snapshot = collector.snapshot('first-board', true);
+    expect(snapshot.devices[0]).toMatchObject(selected);
+    expect(snapshot.devices).toHaveLength(30);
+  });
+
+  it('excludes unselected generic transports and unknown devices from picker-cache evidence', () => {
+    const collector = new BleEvidenceCollector('picker', 'ios');
+    const devices = [
+      {
+        evidence: collector.observe({
+          deviceId: 'sensor',
+          serviceUuids: ['6e400001-b5a3-f393-e0a9-e50e24dcca9e'],
+          manufacturerData: 'deadbeef',
+        }),
+      },
+      { evidence: collector.observe({ deviceId: 'unknown', manufacturerData: 'aabbcc' }) },
+      { evidence: collector.observe({ deviceId: 'board', localName: 'MoonBoard' }) },
+    ];
+    const batch = evidenceBatchFromDevices(devices, 'picker', 'scan');
+    expect(batch.devices.map((device) => device.deviceId)).toEqual(['board']);
+    expect(JSON.stringify(batch)).not.toContain('deadbeef');
+    expect(JSON.stringify(batch)).not.toContain('aabbcc');
+  });
+
+  it('applies the picker cap after excluding unrelated peripherals', () => {
+    const collector = new BleEvidenceCollector('picker', 'android');
+    const devices = Array.from({ length: 40 }, (_, index) => ({
+      evidence: collector.observe({ deviceId: `sensor-${index}` }),
+    }));
+    devices.push({ evidence: collector.observe({ deviceId: 'board', localName: 'Kilter Board' }) });
+    const batch = evidenceBatchFromDevices(devices, 'picker', 'scan');
+    expect(batch.devices.map((device) => device.deviceId)).toEqual(['board']);
+    expect(batch.droppedCount).toBe(0);
+  });
+
+  it('reserves picker evidence space for an explicitly selected generic peripheral', () => {
+    const collector = new BleEvidenceCollector('picker', 'ios');
+    const devices = Array.from({ length: 30 }, (_, index) => ({
+      evidence: collector.observe({ deviceId: `board-${index}`, localName: 'MoonBoard' }),
+    }));
+    devices.push({
+      evidence: collector.observe({
+        deviceId: 'selected-uart',
+        serviceUuids: ['6e400001-b5a3-f393-e0a9-e50e24dcca9e'],
+      }),
+    });
+    const batch = evidenceBatchFromDevices(devices, 'picker', 'scan', {
+      selectedDeviceId: 'selected-uart',
+      capability: 'supported',
+    });
+    expect(batch.devices).toHaveLength(30);
+    expect(batch.devices[0].deviceId).toBe('selected-uart');
+    expect(batch.droppedCount).toBe(1);
+  });
+
+  it.each(['supported', 'unsupported'] as const)('preserves the adapter picker capability: %s', (capability) => {
+    const batch = evidenceBatchFromDevices([], 'picker', 'scan', { capability });
+    expect(batch.capability).toBe(capability);
+    expect(batch.complete).toBe(false);
+  });
+
+  it('does not claim pre-dedupe picker support without adapter capability metadata', () => {
+    expect(evidenceBatchFromDevices([], 'picker').capability).toBe('unsupported');
+  });
+
   it('merges split packets before classification and distinguishes same-name handles', () => {
     const collector = new BleEvidenceCollector('test', 'android', 'scan');
     collector.observe({ deviceId: 'first', manufacturerData: '000102', rawScanRecord: '000102' });
