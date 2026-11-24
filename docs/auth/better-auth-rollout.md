@@ -262,6 +262,12 @@ Needs step B done, because `activate` refuses while collisions or non-normalized
 6. **Import:** with `AUTH_IDENTITY_DATABASE_URL` (the writer LOGIN on `pgdr.boardsesh.com`) and `AUTH_IDENTITY_MIRROR=on` in the operator shell, `vp run auth:import-identities -- plan --confirm-host pgdr.boardsesh.com --key-file ~/Private/boardsesh-ba04/digest-key --checkpoint ~/Private/boardsesh-ba04/checkpoints` (read-only, the default), then the same with `import --batch 200 --pause-ms 100`. Refusal codes are in [better-auth-identity-import.md](better-auth-identity-import.md#preconditions). Reconcile read-only afterwards and 24 hours later.
 7. **Switch:** `AUTH_LEGACY_BRIDGE_MODE=shadow`, then `on` once web sign-out is staged and generation revocation is allowed. Before generation revocation, `AUTH_WATCH_PAIRING_MODE=source-bound-staging`.
 
+Native registration is available under an enforced manifest only after its
+independent `CURRENT_STORE_NATIVE_REGISTRATION_MODE=reserved-staging` adoption.
+The activation-to-adoption window returns 503 and must be qualified in the
+recorded rollout order; reverting that selector alone while enforcement remains
+does not restore registration. See [registration-family availability](better-auth-registration-family.md).
+
 ### D. First-party clients (BA-05, BA-06)
 
 1. Native and watch (BA-06): code is on main (#7447, #7450, #7463, #7464). Open: installed original-key watch, queued ticks, hardware and FIT QA, downgrade.

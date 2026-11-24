@@ -49,6 +49,16 @@ an unreserved compatibility write: these new paths answer 503. Explicit
 `CURRENT_STORE_WEB_AUTH_MODE=backend-staging` still uses the existing qualified
 staged paths. `captureIdentityAuthority` remains strict.
 
+Native registration keeps its independent explicit `reserved-staging` selector.
+After `activate` enforces the manifest, the default compatibility selector
+returns 503 until that qualified native writer is adopted. Rolling back only
+its selector while enforcement remains also returns 503. Qualify this real
+availability window and the backend rollout order before activation; no
+automatic opt-in, unreserved enforced write or credential-format change closes
+it. The released-client matrix runs every success flow with the explicit
+prerequisite and independently checks omitted-selector refusal, unchanged
+credential storage, continued token usability and zero committed mutation.
+
 Web and default native creation take the same normalized-address advisory lock,
 then recheck the current live group before inserting. Preparation is not trusted
 as a live reservation. Before cleanup, stored whitespace and Unicode case rules
