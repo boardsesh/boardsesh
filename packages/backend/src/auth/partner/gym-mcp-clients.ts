@@ -13,6 +13,8 @@ import { oauthClient, oauthMcpClientPolicy } from '@boardsesh/db/schema/auth';
 import {
   GYM_MCP_RESOURCE,
   GYM_MCP_SCOPES,
+  GYM_MCP_DEFAULT_SCOPES,
+  GYM_MCP_ADMIN_SCOPES,
   gymMcpAllowsClientMetadata,
   type GymMcpConfiguration,
 } from '../../mcp/gyms/configuration';
@@ -217,7 +219,7 @@ export function createGymMcpClientDiscovery(
       }
       await databaseHandle
         .update(oauthClient)
-        .set({ requirePKCE: true, skipConsent: false })
+        .set({ requirePKCE: true, skipConsent: false, scopes: [...GYM_MCP_SCOPES] })
         .where(eq(oauthClient.clientId, clientId));
       // This is part of the same transaction as client creation. The CIMD
       // callback is best-effort, so it cannot establish required policy.
@@ -232,7 +234,9 @@ export function createGymMcpClientDiscovery(
           error_description: 'This assistant cannot be connected.',
         });
       }
-      return { ...client, requirePKCE: true, skipConsent: false };
+      // This is the server-owned capability ceiling, not a user's grant.
+      // Existing tokens and consents retain their original scope lists.
+      return { ...client, scopes: [...GYM_MCP_SCOPES], requirePKCE: true, skipConsent: false };
     },
   };
   return {
@@ -359,6 +363,6 @@ export function createGymMcpClientDiscovery(
 export const GYM_MCP_REGISTRATION_DEFAULTS = {
   clientRegistrationDefaultResources: [GYM_MCP_RESOURCE],
   clientRegistrationAllowedResources: [] as string[],
-  clientRegistrationDefaultScopes: [...GYM_MCP_SCOPES],
-  clientRegistrationAllowedScopes: [] as string[],
+  clientRegistrationDefaultScopes: [...GYM_MCP_DEFAULT_SCOPES],
+  clientRegistrationAllowedScopes: [...GYM_MCP_ADMIN_SCOPES],
 };

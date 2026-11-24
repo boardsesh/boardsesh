@@ -77,6 +77,18 @@ describe('the section', () => {
 });
 
 describe('a row', () => {
+  it('labels administrative gym access separately from ordinary gym permissions', () => {
+    const row = buildConnectedAppRow(
+      app({ scopes: ['gyms:admin:write', 'gyms:read', 'gyms:admin:read'] }),
+      echo,
+      formatters,
+    );
+    expect(row.scopes.map((scope) => scope.label)).toEqual([
+      'settings:integrations.partnerApps.scopes.gymsRead',
+      'settings:integrations.partnerApps.scopes.gymsAdminRead',
+      'settings:integrations.partnerApps.scopes.gymsAdminWrite',
+    ]);
+  });
   it('separates gym reads, writes and staff access and explains future gym access', () => {
     const row = buildConnectedAppRow(
       app({ scopes: ['gyms:access:write', 'gyms:write', 'gyms:read', 'offline_access'] }),

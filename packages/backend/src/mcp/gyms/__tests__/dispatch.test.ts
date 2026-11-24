@@ -189,6 +189,78 @@ describe('gym MCP mutation receipts', () => {
     expect(mocks.receipt).not.toHaveBeenCalled();
   });
 
+  it.each(['inspect_gym_duplicates', 'merge_duplicate_gym_boards'])(
+    'does not let ordinary gym consent execute %s',
+    async (name) => {
+      mocks.findTool.mockReturnValue({
+        name,
+        scope: name.startsWith('inspect_') ? 'gyms:admin:read' : 'gyms:admin:write',
+        readOnly: name.startsWith('inspect_'),
+        inputSchema: z.object({}),
+        run: mocks.run,
+        authorize: mocks.authorize,
+      });
+      await expect(executeGymMcpTool(principal, name, {})).rejects.toMatchObject({ extensions: { code: 'FORBIDDEN' } });
+      expect(mocks.write).not.toHaveBeenCalled();
+      expect(mocks.receipt).not.toHaveBeenCalled();
+      expect(mocks.run).not.toHaveBeenCalled();
+    },
+  );
+
+  it('replays an administrative merge receipt only after live tombstone authorization', async () => {
+    const name = 'merge_duplicate_gym_boards';
+    const adminPrincipal = { ...principal, scopes: ['gyms:admin:write'] };
+    const mergeResult = { canonicalBoardUuid: 'survivor', mergedBoardUuids: ['merged-tombstone'] };
+    mocks.findTool.mockReturnValue({
+      name,
+      scope: 'gyms:admin:write',
+      readOnly: false,
+      inputSchema: z.object({ gymUuid: z.string(), idempotencyKey: z.string(), body: z.string() }).strict(),
+      run: mocks.run,
+      authorize: mocks.authorize,
+    });
+    mocks.receipt.mockResolvedValue([receipt({ operationName: name, result: mergeResult })]);
+    await expect(executeGymMcpTool(adminPrincipal, name, arguments_)).resolves.toEqual(mergeResult);
+    expect(mocks.authorize).toHaveBeenCalledWith(
+      arguments_,
+      expect.objectContaining({ userId: principal.userId }),
+      true,
+    );
+    expect(mocks.run).not.toHaveBeenCalled();
+    expect(mocks.insert).not.toHaveBeenCalled();
+    const revoked = new GraphQLError('Global admin revoked', { extensions: { code: 'FORBIDDEN' } });
+    mocks.authorize.mockRejectedValueOnce(revoked);
+    await expect(executeGymMcpTool(adminPrincipal, name, arguments_)).rejects.toBe(revoked);
+    expect(mocks.run).not.toHaveBeenCalled();
+  });
+
+  it('keeps inspected-state changes distinct from retries of an administrative repair', async () => {
+    const name = 'correct_gym_board_location_visibility';
+    const adminPrincipal = { ...principal, scopes: ['gyms:admin:write'] };
+    const repair = { ...arguments_, expectedStateHash: 'a'.repeat(64), hideLocation: false };
+    mocks.findTool.mockReturnValue({
+      name,
+      scope: 'gyms:admin:write',
+      readOnly: false,
+      inputSchema: z
+        .object({
+          gymUuid: z.string(),
+          idempotencyKey: z.string(),
+          body: z.string(),
+          expectedStateHash: z.string(),
+          hideLocation: z.boolean(),
+        })
+        .strict(),
+      run: mocks.run,
+      authorize: mocks.authorize,
+    });
+    mocks.receipt.mockResolvedValue([receipt({ operationName: name, inputHash: gymMcpInputHash(repair) })]);
+    await expect(
+      executeGymMcpTool(adminPrincipal, name, { ...repair, expectedStateHash: 'b'.repeat(64) }),
+    ).rejects.toMatchObject({ extensions: { code: 'IDEMPOTENCY_CONFLICT' } });
+    expect(mocks.run).not.toHaveBeenCalled();
+  });
+
   it('hashes equivalent object-key orders equally, but distinguishes changes and array order', () => {
     expect(gymMcpInputHash({ gymUuid: 'gym', changes: { name: 'Name', address: null } })).toBe(
       gymMcpInputHash({ changes: { address: null, name: 'Name' }, gymUuid: 'gym' }),

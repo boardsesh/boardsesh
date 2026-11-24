@@ -633,7 +633,9 @@
         "gymsRead": "Read the gyms you can manage, including their boards, members and activity reports",
         "gymsWrite": "Update your gyms, boards, TVs and discussions within your current permissions",
         "gymsAccessWrite": "Change staff access where your current role allows it",
-        "gymAccess": "Access covers every gym you can manage now and any you manage later. Losing a gym role removes that access."
+        "gymAccess": "Access covers every gym you can manage now and any you manage later. Losing a gym role removes that access.",
+        "gymsAdminRead": "Inspect duplicate gym and board records across Boardsesh as a global admin",
+        "gymsAdminWrite": "Correct and merge gym and board records, including making board locations public, as a global admin"
       },
       "disconnect": "Disconnect",
       "disconnectA11y": "Disconnect {{app}}",

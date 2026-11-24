@@ -106,6 +106,8 @@ const SCOPE_ORDER = [
   'gyms:read',
   'gyms:write',
   'gyms:access:write',
+  'gyms:admin:read',
+  'gyms:admin:write',
   'offline_access',
 ];
 
@@ -162,6 +164,10 @@ export function describeConnectedAppScope(scope: string, t: ConnectedAppsTransla
       return { scope, label: t('settings:integrations.partnerApps.scopes.gymsWrite'), notes: [] };
     case 'gyms:access:write':
       return { scope, label: t('settings:integrations.partnerApps.scopes.gymsAccessWrite'), notes: [] };
+    case 'gyms:admin:read':
+      return { scope, label: t('settings:integrations.partnerApps.scopes.gymsAdminRead'), notes: [] };
+    case 'gyms:admin:write':
+      return { scope, label: t('settings:integrations.partnerApps.scopes.gymsAdminWrite'), notes: [] };
     default:
       return { scope, label: t('settings:integrations.partnerApps.scopes.other', { scope }), notes: [] };
   }

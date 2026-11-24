@@ -1,13 +1,16 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import {
   gymMcpWriteReceipts,
+  oauthAccessToken,
+  oauthRefreshToken,
   oauthAppPolicy,
   oauthClient,
   oauthClientResource,
   oauthMcpClientPolicy,
 } from '@boardsesh/db/schema/auth';
+import { communityRoles } from '@boardsesh/db/schema';
 import { db, deferDatabaseEffect } from '../../../db/client';
 import { createPartnerAuthorityRuntime, type PartnerAuthorityRuntime } from '../authority';
 import { createGymMcpClientDiscovery } from '../gym-mcp-clients';
@@ -26,7 +29,12 @@ import {
   type PartnerTestEnvironment,
   type TestClient,
 } from './partner-fixture';
-import { GYM_MCP_RESOURCE, GYM_MCP_SCOPES } from '../../../mcp/gyms/configuration';
+import {
+  GYM_MCP_RESOURCE,
+  GYM_MCP_SCOPES,
+  GYM_MCP_DEFAULT_SCOPES,
+  GYM_MCP_ADMIN_SCOPES,
+} from '../../../mcp/gyms/configuration';
 
 const CLIENT_ID = 'https://assistant.example/oauth/gym-client.json';
 const REDIRECT_URI = 'https://assistant.example/callback';
@@ -71,7 +79,7 @@ describe('hosted gym OAuth boundaries', () => {
     const client: TestClient = { clientId: CLIENT_ID, redirectUri: REDIRECT_URI, owner, answersConsentScreen: true };
     const authorization = await environment.authorize(
       client,
-      { resource: GYM_MCP_RESOURCE, scopes: [...GYM_MCP_SCOPES] },
+      { resource: GYM_MCP_RESOURCE, scopes: [...GYM_MCP_DEFAULT_SCOPES] },
       target,
     );
     const issued = await environment.exchange(client, authorization, target, { resource: GYM_MCP_RESOURCE });
@@ -133,6 +141,115 @@ describe('hosted gym OAuth boundaries', () => {
     ).toHaveLength(0);
   });
 
+  it('requires explicit global-admin consent and refuses board-scoped admins', async () => {
+    for (const boardType of [undefined, 'moonboard']) {
+      const owner = await environment.createClimber();
+      if (boardType) await db.insert(communityRoles).values({ userId: owner.userId, role: 'admin', boardType });
+      const client: TestClient = { clientId: CLIENT_ID, redirectUri: REDIRECT_URI, owner, answersConsentScreen: true };
+      const authorization = await environment.authorize(
+        client,
+        { resource: GYM_MCP_RESOURCE, scopes: [...GYM_MCP_ADMIN_SCOPES] },
+        target,
+      );
+      expect(authorization.response.status).toBe(403);
+      expect(await db.select().from(oauthAccessToken).where(eq(oauthAccessToken.userId, owner.userId))).toHaveLength(0);
+    }
+  });
+
+  it('steps an existing CIMD identity up only through new consent, leaving old tokens unchanged', async () => {
+    const ordinary = await issueGymTokens();
+    await db
+      .update(oauthClient)
+      .set({ scopes: [...GYM_MCP_DEFAULT_SCOPES] })
+      .where(eq(oauthClient.clientId, CLIENT_ID));
+    const owner = await environment.createClimber();
+    await db.insert(communityRoles).values({ userId: owner.userId, role: 'admin', boardType: null });
+    const client: TestClient = { clientId: CLIENT_ID, redirectUri: REDIRECT_URI, owner, answersConsentScreen: true };
+    const authorization = await environment.authorize(
+      client,
+      { resource: GYM_MCP_RESOURCE, scopes: [...GYM_MCP_DEFAULT_SCOPES, ...GYM_MCP_ADMIN_SCOPES] },
+      target,
+    );
+    const issued = await environment.exchange(client, authorization, target, { resource: GYM_MCP_RESOURCE });
+    expect(issued.response.status, JSON.stringify(issued.body)).toBe(200);
+    expect(issued.body.scope?.split(' ')).toEqual(expect.arrayContaining([...GYM_MCP_ADMIN_SCOPES]));
+    expect((await runtime.gymMcpApi!.authenticate(ordinary.issued.access_token!)).principal?.scopes).not.toEqual(
+      expect.arrayContaining([...GYM_MCP_ADMIN_SCOPES]),
+    );
+  });
+
+  it.each([undefined, ''])('keeps omitted or empty scopes ordinary even for a global admin: %s', async (scope) => {
+    const owner = await environment.createClimber();
+    await db.insert(communityRoles).values({ userId: owner.userId, role: 'admin', boardType: null });
+    const verifier = randomBytes(32).toString('base64url');
+    const query = new URLSearchParams({
+      response_type: 'code',
+      client_id: CLIENT_ID,
+      redirect_uri: REDIRECT_URI,
+      resource: GYM_MCP_RESOURCE,
+      state: randomUUID(),
+      code_challenge: createHash('sha256').update(verifier).digest('base64url'),
+      code_challenge_method: 'S256',
+    });
+    if (scope !== undefined) query.set('scope', scope);
+    const response = await target.handler(
+      new Request(`${TEST_CONFIGURATION.issuer}/oauth2/authorize?${query}`, {
+        headers: { [TEST_SESSION_HEADER]: owner.sessionToken },
+      }),
+    );
+    expect(response.status).toBe(302);
+    const location = response.headers.get('location')!;
+    expect(new URL(location).searchParams.get('scope')?.split(' ')).toEqual([...GYM_MCP_DEFAULT_SCOPES]);
+  });
+
+  it('rolls back token issuance after global admin is revoked between consent and exchange', async () => {
+    const owner = await environment.createClimber();
+    await db.insert(communityRoles).values({ userId: owner.userId, role: 'admin', boardType: null });
+    const client: TestClient = { clientId: CLIENT_ID, redirectUri: REDIRECT_URI, owner, answersConsentScreen: true };
+    const authorization = await environment.authorize(
+      client,
+      { resource: GYM_MCP_RESOURCE, scopes: [...GYM_MCP_DEFAULT_SCOPES, ...GYM_MCP_ADMIN_SCOPES] },
+      target,
+    );
+    await db.delete(communityRoles).where(eq(communityRoles.userId, owner.userId));
+    const issued = await environment.exchange(client, authorization, target, { resource: GYM_MCP_RESOURCE });
+    expect(issued.response.status).toBe(403);
+    expect(await db.select().from(oauthAccessToken).where(eq(oauthAccessToken.userId, owner.userId))).toHaveLength(0);
+    expect(await db.select().from(oauthRefreshToken).where(eq(oauthRefreshToken.userId, owner.userId))).toHaveLength(0);
+  });
+
+  it('rolls back revoked admin refreshes but permits explicit downscoping to ordinary access', async () => {
+    const owner = await environment.createClimber();
+    await db.insert(communityRoles).values({ userId: owner.userId, role: 'admin', boardType: null });
+    const client: TestClient = { clientId: CLIENT_ID, redirectUri: REDIRECT_URI, owner, answersConsentScreen: true };
+    const authorization = await environment.authorize(
+      client,
+      { resource: GYM_MCP_RESOURCE, scopes: [...GYM_MCP_DEFAULT_SCOPES, ...GYM_MCP_ADMIN_SCOPES] },
+      target,
+    );
+    const issued = await environment.exchange(client, authorization, target, { resource: GYM_MCP_RESOURCE });
+    expect(issued.response.status, JSON.stringify(issued.body)).toBe(200);
+    const accessBefore = await db.select().from(oauthAccessToken).where(eq(oauthAccessToken.userId, owner.userId));
+    const refreshBefore = await db.select().from(oauthRefreshToken).where(eq(oauthRefreshToken.userId, owner.userId));
+    await db.delete(communityRoles).where(eq(communityRoles.userId, owner.userId));
+    const refused = await environment.refresh(client, issued.body.refresh_token!, target);
+    expect(refused.response.status, JSON.stringify(refused.body)).toBe(403);
+    expect(await db.select().from(oauthAccessToken).where(eq(oauthAccessToken.userId, owner.userId))).toEqual(
+      accessBefore,
+    );
+    expect(await db.select().from(oauthRefreshToken).where(eq(oauthRefreshToken.userId, owner.userId))).toEqual(
+      refreshBefore,
+    );
+    const downscoped = await environment.refresh(
+      client,
+      issued.body.refresh_token!,
+      target,
+      GYM_MCP_DEFAULT_SCOPES.join(' '),
+    );
+    expect(downscoped.response.status, JSON.stringify(downscoped.body)).toBe(200);
+    expect(downscoped.body.scope?.split(' ')).not.toEqual(expect.arrayContaining([...GYM_MCP_ADMIN_SCOPES]));
+  });
+
   it('leaves managed training registrations and their token audience unchanged', async () => {
     const owner = await environment.createClimber();
     const registration = await runtime.authority.api.adminCreateOAuthClient({
@@ -182,7 +299,7 @@ describe('hosted gym OAuth boundaries', () => {
     const client: TestClient = { clientId: CLIENT_ID, redirectUri: REDIRECT_URI, owner };
     const authorization = await environment.authorize(
       client,
-      { resource: GYM_MCP_RESOURCE, scopes: [...GYM_MCP_SCOPES] },
+      { resource: GYM_MCP_RESOURCE, scopes: [...GYM_MCP_DEFAULT_SCOPES] },
       target,
     );
     expect(authorization.location).toEqual(expect.stringContaining('/oauth/consent?'));

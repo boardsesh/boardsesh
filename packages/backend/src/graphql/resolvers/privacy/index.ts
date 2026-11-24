@@ -1,6 +1,6 @@
 import { createAsyncIterator } from '../shared/async-iterators';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
-import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import { z } from 'zod';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
@@ -711,12 +711,42 @@ export const privacyMutations = {
     ctx: ConnectionContext,
   ) => {
     const userId = await privacyActor(ctx);
-    const resource = await getResourcePrivacy(kind, resourceId);
-    if (!resource || !resource.ownerId || resource.audience === 'only_me') notFound();
-    await db
-      .insert(schema.resourceGrants)
-      .values({ kind, resourceId, userId, status: 'pending' })
-      .onConflictDoNothing();
+    await db.transaction(async (transaction) => {
+      // The grant's user FK must not acquire a user lock after the board lock:
+      // owner privacy writers lock users before resources too.
+      await transaction
+        .select({ id: schema.users.id })
+        .from(schema.users)
+        .where(eq(schema.users.id, userId))
+        .for('key share');
+      const locked =
+        kind === 'board'
+          ? await transaction
+              .select({ id: schema.userBoards.id })
+              .from(schema.userBoards)
+              .where(
+                and(
+                  eq(schema.userBoards.uuid, resourceId),
+                  isNull(schema.userBoards.deletedAt),
+                  isNull(schema.userBoards.mergedIntoBoardUuid),
+                ),
+              )
+              .for('share')
+          : await transaction
+              .select({ id: schema.boardSessions.id })
+              .from(schema.boardSessions)
+              .where(eq(schema.boardSessions.id, resourceId))
+              .for('share');
+      if (locked.length === 0) notFound();
+      // Re-read after obtaining the resource lock. A merge/delete that won the
+      // lock must not leave a pending grant on its now-dead original identity.
+      const resource = await getResourcePrivacy(kind, resourceId, transaction);
+      if (!resource || !resource.ownerId || resource.audience === 'only_me') notFound();
+      await transaction
+        .insert(schema.resourceGrants)
+        .values({ kind, resourceId, userId, status: 'pending' })
+        .onConflictDoNothing();
+    });
     return true;
   },
   approveResourceAccess: async (

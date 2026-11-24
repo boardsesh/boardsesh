@@ -96,6 +96,15 @@ and concurrent followers' shared locks do not conflict with each other.
 
 ## The dedupe script
 
+Global administrators can also merge explicit UUIDs without a serial through
+`merge_duplicate_gym_boards` on the hosted gym MCP. That supported operation
+uses the extracted `mergeLockedBoards` history migration, with its own explicit
+same-wall confirmation, state checks, public catalogue/privacy preflight,
+report/TV/grade-collection handling and audit. Correct differing setups and
+location visibility as separate operations before consolidation. It does not
+invent a MoonBoard controller serial. See the
+[administrative repair workflow](../integrations/hosted-gym-mcp.md#administrative-duplicate-repairs).
+
 `vp run db:dedupe-serial-boards` (`packages/db/scripts/dedupe-serial-boards.ts`) —
 dry-run by default; `--apply`, `--limit <n>`, `--only-serial <s>`. Uses `DB_URL` first
 (maintainers run it against prod), `DATABASE_URL` otherwise; prefix `DB_URL=` to force

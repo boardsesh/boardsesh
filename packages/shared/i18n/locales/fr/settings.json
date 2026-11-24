@@ -633,7 +633,9 @@
         "gymsRead": "Lire les salles que tu peux gérer, leurs boards, leurs membres et leurs rapports d’activité",
         "gymsWrite": "Modifier tes salles, boards, écrans et discussions selon tes autorisations actuelles",
         "gymsAccessWrite": "Modifier les accès de l’équipe là où ton rôle actuel le permet",
-        "gymAccess": "L’accès couvre toutes les salles que tu peux gérer maintenant et celles que tu géreras plus tard. Perdre un rôle retire cet accès."
+        "gymAccess": "L’accès couvre toutes les salles que tu peux gérer maintenant et celles que tu géreras plus tard. Perdre un rôle retire cet accès.",
+        "gymsAdminRead": "Examiner les doublons de salles et de boards dans Boardsesh en tant qu’administrateur global",
+        "gymsAdminWrite": "Corriger et fusionner les fiches de salles et de boards, y compris rendre leur emplacement public, en tant qu’administrateur global"
       },
       "disconnect": "Déconnecter",
       "disconnectA11y": "Déconnecter {{app}}",

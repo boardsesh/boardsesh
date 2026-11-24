@@ -89,6 +89,21 @@ async function renderReady(detailsBody = details()) {
 }
 
 describe('PartnerConsentContent', () => {
+  it('explains that administrative writes can merge records and publish board locations', async () => {
+    await renderReady(details({ scopes: [{ scope: 'gyms:admin:write', includesOnlyMeTicks: false }] }));
+    expect(
+      screen.getByText(
+        'Correct and merge gym and board records, including making board locations public, as a global admin',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("It can't change anything in your account, and it never sees your password.")).toBeNull();
+  });
+
+  it('describes administrative audits as read-only', async () => {
+    await renderReady(details({ scopes: [{ scope: 'gyms:admin:read', includesOnlyMeTicks: false }] }));
+    expect(screen.getByText('Inspect duplicate gym and board records across Boardsesh as a global admin')).toBeTruthy();
+    expect(screen.getByText("It can't change anything in your account, and it never sees your password.")).toBeTruthy();
+  });
   it('explains current and future gym access and distinguishes writing from read-only access', async () => {
     await renderReady(
       details({

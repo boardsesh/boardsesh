@@ -174,11 +174,13 @@ export async function recordStaffBoardEdit(
     fields?: string[];
     /** Already known by the caller (the admin path). Resolved from the board otherwise. */
     actorRole?: BoardModerationActorRole;
+    reason?: string;
+    details?: BoardModerationEventDetails;
   },
 ): Promise<void> {
   const { actorUserId, board, mutation, fields } = input;
   // Any edit, the creator's included, may fix a "set up wrong" report.
-  if (board.ownerId === actorUserId || (fields !== undefined && fields.length === 0)) {
+  if ((board.ownerId === actorUserId && input.reason === undefined) || (fields !== undefined && fields.length === 0)) {
     await onBoardEdited(executor, { actorUserId, board, mutation, fields, actorRole: input.actorRole });
     return;
   }
@@ -186,13 +188,18 @@ export async function recordStaffBoardEdit(
   // refuses the edit here, and no report closes on it.
   const actorRole = input.actorRole ?? (await resolveBoardEditActorRole(actorUserId, board, executor));
   await onBoardEdited(executor, { actorUserId, board, mutation, fields, actorRole });
-  const details: BoardModerationEventDetails = fields === undefined ? { mutation } : { mutation, fields };
+  const details: BoardModerationEventDetails = {
+    ...input.details,
+    mutation,
+    ...(fields === undefined ? {} : { fields }),
+  };
   await recordBoardModerationEvent(executor, {
     boardId: board.id,
     gymId: board.gymId,
     actorUserId,
     actorRole,
     action: 'edited_by_staff',
+    reason: input.reason,
     details,
   });
 }

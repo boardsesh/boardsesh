@@ -1,5 +1,7 @@
 import { projectSessionBoardPath } from '../../../services/board-session-privacy';
-import { resolveSessionBoardId } from '../../../services/session-board-binding';
+import { resolveLockedSessionBoardId } from '../../../services/session-board-binding';
+import { lockActiveBoardForWrite } from '../../../services/board-reference-lock';
+import type { DbTransaction } from '../../../db/after-commit';
 import { canAccessResourceWithoutLink } from '../../../services/privacy';
 import { getPrivacySettings, legacyResourceAudience } from '../../../services/privacy';
 import { resourcePrivacy } from '@boardsesh/db/schema';
@@ -49,8 +51,8 @@ import {
 import { logger } from '../../../utils/logger';
 import { markErrorReported } from '../../../utils/sentry-dedupe';
 import type { CreateSessionInput } from '../shared/types';
-import { db } from '../../../db/client';
-import { esp32Controllers, userBoards } from '@boardsesh/db/schema/app';
+import { db, runWithDatabaseTransaction } from '../../../db/client';
+import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { sessionBoards, sessions } from '../../../db/schema';
 import {
   AppWorkoutError,
@@ -61,7 +63,7 @@ import { appWorkoutGraphError } from '../app-workouts/errors';
 import { parseAppWorkoutSeed, persistInitialAppWorkoutSeed } from '../../../services/public-api/workout-seed';
 import type { PartnerDatabase } from '../../../auth/partner/tables';
 import { readPartnerOAuthMode } from '../../../auth/partner/mode';
-import { eq, inArray } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { generateSessionSummary } from './session-summary';
 import { autoSyncSessionToIntegrations } from '../../../integrations/export-service';
 import { normalizeIanaTimezone } from '../../../utils/timezone';
@@ -341,35 +343,38 @@ export const sessionMutations = {
         (input.isPublic === false ? legacyResourceAudience(defaultAudience, 'unlisted', 'session') : defaultAudience);
       const isPublic = audience === 'public';
       if (!isPublic) requireAuthenticated(ctx);
-      const boardId = await resolveSessionBoardId(input.boardPath, ctx.userId);
-      const attachedIds = [...new Set(input.boardIds ?? [])];
-      if (attachedIds.length) {
-        const boards = await db
-          .select({ id: userBoards.id, uuid: userBoards.uuid, gymId: userBoards.gymId })
-          .from(userBoards)
-          .where(inArray(userBoards.id, attachedIds));
-        // A numeric board id is a sequential bigserial anyone can count, so it is
-        // never a board's link: each attached board takes the no-link reading.
-        // The one exception is the board the session path itself named, which
-        // `resolveSessionBoardId` already admitted through its link.
-        if (
-          boards.length !== attachedIds.length ||
-          (
-            await Promise.all(
-              boards.map(
-                async (board) =>
-                  Number(board.id) === boardId || canAccessResourceWithoutLink('board', board.uuid, ctx.userId),
-              ),
-            )
-          ).some((allowed) => !allowed)
-        ) {
-          throw new Error('One or more board IDs do not exist');
-        }
-        if (new Set(boards.map((board) => board.gymId).filter(Boolean)).size > 1)
-          throw new Error('All boards must belong to the same gym for multi-board sessions');
-      }
       // Persist the audience before exposing the ID or publishing a live roster.
-      const replayedSession = await db.transaction(async (tx) => {
+      const replayedSession = await runWithDatabaseTransaction(async (executor) => {
+        const tx = executor as unknown as DbTransaction;
+        const boardId = await resolveLockedSessionBoardId(tx, input.boardPath, ctx.userId);
+        const attachedIds = [...new Set(input.boardIds ?? [])];
+        if (attachedIds.length) {
+          const boards = [];
+          for (const attachedId of [...attachedIds].sort((first, second) => first - second)) {
+            const board = await lockActiveBoardForWrite(tx, { id: attachedId }, { noWait: true });
+            if (board) boards.push(board);
+          }
+          // A numeric board id is a sequential bigserial anyone can count, so it is
+          // never a board's link: each attached board takes the no-link reading.
+          // The one exception is the board the session path itself named, which
+          // `resolveSessionBoardId` already admitted through its link.
+          if (
+            boards.length !== attachedIds.length ||
+            (
+              await Promise.all(
+                boards.map(
+                  async (board) =>
+                    Number(board.id) === boardId || canAccessResourceWithoutLink('board', board.uuid, ctx.userId),
+                ),
+              )
+            ).some((allowed) => !allowed)
+          ) {
+            throw new Error('One or more board IDs do not exist');
+          }
+          if (new Set(boards.map((board) => board.gymId).filter(Boolean)).size > 1)
+            throw new Error('All boards must belong to the same gym for multi-board sessions');
+        }
+
         const partnerTransaction = tx as unknown as PartnerDatabase;
         const preparedWorkout = input.appWorkoutId
           ? await prepareAppWorkoutSessionStart(partnerTransaction, ctx.userId!, input.appWorkoutId, sessionId)

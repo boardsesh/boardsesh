@@ -11,7 +11,14 @@ import { PartnerRateLimited, RateLimitLedger } from '../../handlers/partner-rate
 import { getPartnerLimitIdentity } from '../../utils/client-ip';
 import { logger } from '../../utils/logger';
 import { recordGymMcpPendingAuthAddressRefusal, recordPublicApiRequest } from '../../services/public-api-usage';
-import { GYM_MCP_RESOURCE, GYM_MCP_SCOPES, readGymMcpMode, type GymMcpMode } from './configuration';
+import {
+  GYM_MCP_RESOURCE,
+  GYM_MCP_SCOPES,
+  GYM_MCP_DEFAULT_SCOPES,
+  GYM_MCP_ADMIN_SCOPES,
+  readGymMcpMode,
+  type GymMcpMode,
+} from './configuration';
 import { GymMcpRequestLifetime, runWithGymMcpRequestLifetime } from './request-lifetime';
 
 export const GYM_MCP_PATH = '/mcp/gyms';
@@ -35,7 +42,7 @@ function reply(res: ServerResponse, status: number, body?: unknown, headers: Rec
 }
 
 function challenge(error?: 'invalid_token' | 'insufficient_scope'): string {
-  return `Bearer resource_metadata="https://api.boardsesh.com${GYM_MCP_METADATA_PATH}", scope="${GYM_MCP_SCOPES.join(' ')}"${error ? `, error="${error}"` : ''}`;
+  return `Bearer resource_metadata="https://api.boardsesh.com${GYM_MCP_METADATA_PATH}", scope="${GYM_MCP_DEFAULT_SCOPES.join(' ')}"${error ? `, error="${error}"` : ''}`;
 }
 
 function toolName(body: unknown): string | undefined {
@@ -199,7 +206,11 @@ export function createGymMcpHandler({
       }
       principal = authentication.principal;
       releaseAddress();
-      if (!principal.scopes.includes('gyms:read')) {
+      if (
+        !principal.scopes.some(
+          (scope) => scope === 'gyms:read' || GYM_MCP_ADMIN_SCOPES.some((adminScope) => adminScope === scope),
+        )
+      ) {
         reply(res, 403, { error: 'insufficient_scope' }, { 'WWW-Authenticate': challenge('insufficient_scope') });
         return true;
       }

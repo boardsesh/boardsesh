@@ -25,8 +25,17 @@ A board belongs to the climber who made it. A gym listing belongs to the gym. Be
 - **Remove from gym** takes a climber's board off the gym's page, kiosks and map pin, and leaves it with its creator. Gym owners, admins and editors can do it. It freezes the location sync on that board, so the hourly sync can't put it back. The creator can't link it back to the same gym; they can ask to be re-listed through Report a problem.
 - **Delete** is for the board's creator, for gym owners and admins on synced (SYSTEM) boards at their gym, and for global admins on any board. Before this change, a gym owner or admin could delete any board at their gym (#8007).
 - **A synced board is deleted, never removed.** Gym staff can't remove a SYSTEM board from their gym; the gym's owner or admin deletes it, and anyone else reports it. Only a global admin can remove one.
-- **Merge into another board** will become the first staff action for duplicates once the board merge tool lands. It is built separately.
+- **Merge into another board** is available through the separately consented global-admin MCP repair tools for confirmed duplicate public catalogue walls. Gym staff do not inherit that authority. The operator chooses the survivor; original reporting provenance stays original and old board links follow tombstones.
 - Delete is a soft delete. Logged ascents are never removed or reassigned by a remove or a delete.
+
+Global-admin MCP directory repairs can also explicitly correct a board's location
+visibility, including another creator's board. This requires the separate
+`gyms:admin:write` consent, a current global role, a reason, confirmation and an
+inspected state hash. It updates the location policy and legacy flag together,
+records the previous visibility and acting admin, and notifies the creator through
+the ordinary moderation lifecycle. It does not change board ownership, the board's
+audience or access grants. Ordinary gym and admin board editors keep their existing
+owner-only privacy restriction. See the [repair workflow](../integrations/hosted-gym-mcp.md#administrative-duplicate-repairs).
 
 ### 2. Report a problem goes to the person who can fix it
 

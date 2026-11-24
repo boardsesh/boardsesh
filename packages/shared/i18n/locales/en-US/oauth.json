@@ -72,7 +72,9 @@
       "sessionsRead": "Read your completed sessions, private recap notes and full workouts, including workouts from other apps",
       "gymsRead": "Read the gyms you can manage, including their boards, members and activity reports",
       "gymsWrite": "Update your gyms, boards, TVs and discussions within your current permissions",
-      "gymsAccessWrite": "Change staff access where your current role allows it"
+      "gymsAccessWrite": "Change staff access where your current role allows it",
+      "gymsAdminRead": "Inspect duplicate gym and board records across Boardsesh as a global admin",
+      "gymsAdminWrite": "Correct and merge gym and board records, including making board locations public, as a global admin"
     },
     "cannot": "It can't change anything in your account, and it never sees your password.",
     "notReviewed": "Boardsesh hasn't reviewed this app. Only connect apps you trust.",

@@ -5,9 +5,13 @@ import { gymMcpTools } from './registry';
 import { registerGymMcpMediaTools } from './media-tools';
 import { gymMcpToolFailure, recordGymMcpToolResult } from './tool-result';
 import { trackGymMcpToolWork } from './request-lifetime';
+import { hasAdmin } from '../../graphql/resolvers/social/roles';
 
 /** One server per HTTP request; no authenticated state can cross users or replicas. */
-export function createGymMcpServer(principal: GymMcpPrincipal): McpServer {
+export async function createGymMcpServer(principal: GymMcpPrincipal): Promise<McpServer> {
+  const canUseAdminTools = principal.scopes.some((scope) => scope.startsWith('gyms:admin:'))
+    ? await hasAdmin(principal.userId)
+    : false;
   const server = new McpServer(
     { name: 'Boardsesh gym management', version: '1.0.0' },
     {
@@ -17,6 +21,7 @@ export function createGymMcpServer(principal: GymMcpPrincipal): McpServer {
   );
   for (const tool of gymMcpTools) {
     if (!principal.scopes.includes(tool.scope)) continue;
+    if (tool.category === 'admin' && !canUseAdminTools) continue;
     server.registerTool(
       tool.name,
       {

@@ -226,7 +226,7 @@ export function createPartnerAuthority(
       partnerSessionBridge(configuration),
       partnerRegistrationActorPlugin(),
       ...plugins,
-      ...(configuration.gymMcp ? [gymMcpConsentGuard(configuration)] : []),
+      ...(configuration.gymMcp ? [gymMcpConsentGuard(configuration, oauthOptions)] : []),
       partnerConsentGuard(configuration, oauthOptions),
       partnerFencePlugin(oauthOptions),
     ],

@@ -7,7 +7,10 @@ export const PARTNER_OAUTH_ISSUER = 'https://api.boardsesh.com/api/auth';
 
 /** Hosted gym tools use their own audience; training-app credentials cannot use it. */
 export const GYM_MCP_RESOURCE = 'https://api.boardsesh.com/mcp/gyms';
-export const GYM_MCP_SCOPES = ['gyms:read', 'gyms:write', 'gyms:access:write', 'offline_access'] as const;
+export const GYM_MCP_DEFAULT_SCOPES = ['gyms:read', 'gyms:write', 'gyms:access:write', 'offline_access'] as const;
+/** Administrative repair requires a separate, explicit consent grant. */
+export const GYM_MCP_ADMIN_SCOPES = ['gyms:admin:read', 'gyms:admin:write'] as const;
+export const GYM_MCP_SCOPES = [...GYM_MCP_DEFAULT_SCOPES, ...GYM_MCP_ADMIN_SCOPES] as const;
 export const GYM_MCP_MODES = ['off', 'pilot', 'on'] as const;
 export type GymMcpMode = (typeof GYM_MCP_MODES)[number];
 

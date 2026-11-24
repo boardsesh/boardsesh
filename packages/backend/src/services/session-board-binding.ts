@@ -3,6 +3,9 @@ import { parseBoardPath, parseNamedBoardPath } from '@boardsesh/board-config';
 import { and, eq, isNull } from 'drizzle-orm';
 import { userBoards } from '@boardsesh/db/schema';
 import { db } from '../db/client';
+import type { DbTransaction } from '../db/after-commit';
+import { lockActiveBoardForWrite } from './board-reference-lock';
+import { getPostgresErrorCode } from '../utils/postgres-errors';
 import { canAccessResource, canAccessResourceWithoutLink, isLiveSessionMemberOnHomeWall } from './privacy';
 
 /**
@@ -56,4 +59,26 @@ export async function resolveSessionBoardId(
     throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
   }
   return board.id;
+}
+
+/** Session-reference writers keep this active identity stable through their transaction. */
+export async function resolveLockedSessionBoardId(
+  transaction: DbTransaction,
+  boardPath: string,
+  viewerId: string | null | undefined,
+  inSessionId?: string,
+): Promise<number | null> {
+  const boardId = await resolveSessionBoardId(boardPath, viewerId, inSessionId);
+  if (boardId === null) return null;
+  try {
+    const board = await lockActiveBoardForWrite(transaction, { id: boardId }, { noWait: true });
+    // Access may have changed after the candidate read; re-read it while pinned.
+    if (!board || (await resolveSessionBoardId(boardPath, viewerId, inSessionId)) !== boardId)
+      throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
+    return boardId;
+  } catch (error) {
+    if (getPostgresErrorCode(error) === '55P03')
+      throw new GraphQLError('This board is changing. Retry the session action.', { extensions: { code: 'CONFLICT' } });
+    throw error;
+  }
 }
