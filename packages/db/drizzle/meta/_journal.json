@@ -2437,6 +2437,13 @@
       "when": 1795529110954,
       "tag": "0347_gym_mcp_receipt_retention",
       "breakpoints": true
+    },
+    {
+      "idx": 348,
+      "version": "7",
+      "when": 1795548792025,
+      "tag": "0348_aurora_live_history",
+      "breakpoints": true
     }
   ]
 }
