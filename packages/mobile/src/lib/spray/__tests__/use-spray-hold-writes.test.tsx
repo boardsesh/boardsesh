@@ -21,11 +21,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import {
-  GET_SPRAY_WALL_HOLD_USAGE_SUMMARY,
-  REMOVE_SPRAY_WALL_HOLDS,
-  UPSERT_SPRAY_WALL_HOLDS,
-} from '@boardsesh/graphql/operations/spray-walls';
+import { REMOVE_SPRAY_WALL_HOLDS, UPSERT_SPRAY_WALL_HOLDS } from '@boardsesh/graphql/operations/spray-walls';
 
 const requestMock = vi.hoisted(() => vi.fn());
 vi.mock('../../graphql/client', () => ({ getHttpClient: () => ({ request: requestMock }) }));
@@ -72,7 +68,6 @@ function deferredInvalidationWrapper() {
 /** Which document each call carried, in the order the hook sent them. */
 function sentDocuments(): string[] {
   return requestMock.mock.calls.map(([document]) => {
-    if (document === GET_SPRAY_WALL_HOLD_USAGE_SUMMARY) return 'capability';
     if (document === REMOVE_SPRAY_WALL_HOLDS) return 'remove';
     if (document === UPSERT_SPRAY_WALL_HOLDS) return 'upsert';
     throw new Error('Unexpected GraphQL document');
@@ -93,10 +88,6 @@ describe('useSaveSprayHolds', () => {
         }),
     );
     requestMock.mockImplementation((document: unknown) => {
-      if (document === GET_SPRAY_WALL_HOLD_USAGE_SUMMARY)
-        return Promise.resolve({
-          sprayWallHoldUsageSummary: { publishedClimbCount: 0, draftClimbCount: 0 },
-        });
       if (document === REMOVE_SPRAY_WALL_HOLDS) return Promise.resolve({ removeSprayWallHolds: 2 });
       return Promise.reject(new Error('upsert failed'));
     });
@@ -112,12 +103,12 @@ describe('useSaveSprayHolds', () => {
       });
     });
     await waitFor(() => expect(onRemoved).toHaveBeenCalled());
-    expect(sentDocuments()).toEqual(['capability', 'remove']);
+    expect(sentDocuments()).toEqual(['remove']);
     await act(async () => {
       finishCheckpoint?.();
       await expect(saving).rejects.toThrow('upsert failed');
     });
-    expect(sentDocuments()).toEqual(['capability', 'remove', 'upsert']);
+    expect(sentDocuments()).toEqual(['remove', 'upsert']);
   });
 
   it('fires onRemoved after the remove resolves and before the upsert is sent', async () => {
@@ -129,10 +120,6 @@ describe('useSaveSprayHolds', () => {
     });
 
     requestMock.mockImplementation((document: unknown) => {
-      if (document === GET_SPRAY_WALL_HOLD_USAGE_SUMMARY)
-        return Promise.resolve({
-          sprayWallHoldUsageSummary: { publishedClimbCount: 0, draftClimbCount: 0 },
-        });
       if (document === REMOVE_SPRAY_WALL_HOLDS) return Promise.resolve({ removeSprayWallHolds: 2 });
       return Promise.resolve({ upsertSprayWallHolds: [{ id: 7 }] });
     });
@@ -151,8 +138,8 @@ describe('useSaveSprayHolds', () => {
 
     expect(onRemoved).toHaveBeenCalledTimes(1);
     expect(onRemoved).toHaveBeenCalledWith(PLAN.removeIds);
-    expect(documentsWhenRemovedFired).toEqual(['capability', 'remove']);
-    expect(sentDocuments()).toEqual(['capability', 'remove', 'upsert']);
+    expect(documentsWhenRemovedFired).toEqual(['remove']);
+    expect(sentDocuments()).toEqual(['remove', 'upsert']);
     expect(saved).toEqual({ written: 1, removed: 2 });
   });
 
@@ -160,10 +147,6 @@ describe('useSaveSprayHolds', () => {
     // The whole point. The removals landed; the retry must not name them again.
     const onRemoved = vi.fn();
     requestMock.mockImplementation((document: unknown) => {
-      if (document === GET_SPRAY_WALL_HOLD_USAGE_SUMMARY)
-        return Promise.resolve({
-          sprayWallHoldUsageSummary: { publishedClimbCount: 0, draftClimbCount: 0 },
-        });
       if (document === REMOVE_SPRAY_WALL_HOLDS) return Promise.resolve({ removeSprayWallHolds: 2 });
       return Promise.reject(new Error('rate limited'));
     });
@@ -188,10 +171,6 @@ describe('useSaveSprayHolds', () => {
   it('does not fire onRemoved when there is nothing to remove', async () => {
     const onRemoved = vi.fn();
     requestMock.mockImplementation((document: unknown) => {
-      if (document === GET_SPRAY_WALL_HOLD_USAGE_SUMMARY)
-        return Promise.resolve({
-          sprayWallHoldUsageSummary: { publishedClimbCount: 0, draftClimbCount: 0 },
-        });
       return Promise.resolve({ upsertSprayWallHolds: [{ id: 7 }] });
     });
 
@@ -207,7 +186,7 @@ describe('useSaveSprayHolds', () => {
     });
 
     expect(onRemoved).not.toHaveBeenCalled();
-    expect(sentDocuments()).toEqual(['capability', 'upsert']);
+    expect(sentDocuments()).toEqual(['upsert']);
   });
 
   it('never sends an upsert the remove call did not survive', async () => {
@@ -216,10 +195,6 @@ describe('useSaveSprayHolds', () => {
     // the wall.
     const onRemoved = vi.fn();
     requestMock.mockImplementation((document: unknown) => {
-      if (document === GET_SPRAY_WALL_HOLD_USAGE_SUMMARY)
-        return Promise.resolve({
-          sprayWallHoldUsageSummary: { publishedClimbCount: 0, draftClimbCount: 0 },
-        });
       if (document === REMOVE_SPRAY_WALL_HOLDS) return Promise.reject(new Error('nope'));
       return Promise.resolve({ upsertSprayWallHolds: [{ id: 7 }] });
     });
@@ -238,7 +213,7 @@ describe('useSaveSprayHolds', () => {
     });
 
     expect(onRemoved).not.toHaveBeenCalled();
-    expect(sentDocuments()).toEqual(['capability', 'remove']);
+    expect(sentDocuments()).toEqual(['remove']);
   });
 
   it("awaits the draft refetch before the caller's onSuccess runs", async () => {
@@ -247,10 +222,6 @@ describe('useSaveSprayHolds', () => {
     // every other test green while re-introducing the race where the editor
     // re-seeds from the payload that predates its own save.
     requestMock.mockImplementation((document: unknown) => {
-      if (document === GET_SPRAY_WALL_HOLD_USAGE_SUMMARY)
-        return Promise.resolve({
-          sprayWallHoldUsageSummary: { publishedClimbCount: 0, draftClimbCount: 0 },
-        });
       if (document === REMOVE_SPRAY_WALL_HOLDS) return Promise.resolve({ removeSprayWallHolds: 2 });
       return Promise.resolve({ upsertSprayWallHolds: [{ id: 7 }] });
     });
@@ -278,10 +249,6 @@ describe('useSaveSprayHolds', () => {
 
   it('sends each half exactly what the plan carried', async () => {
     requestMock.mockImplementation((document: unknown) => {
-      if (document === GET_SPRAY_WALL_HOLD_USAGE_SUMMARY)
-        return Promise.resolve({
-          sprayWallHoldUsageSummary: { publishedClimbCount: 0, draftClimbCount: 0 },
-        });
       if (document === REMOVE_SPRAY_WALL_HOLDS) return Promise.resolve({ removeSprayWallHolds: 2 });
       return Promise.resolve({ upsertSprayWallHolds: [{ id: 7 }] });
     });
@@ -291,25 +258,24 @@ describe('useSaveSprayHolds', () => {
       await result.current.mutateAsync({ wallUuid: 'wall-1', versionNumber: 3, versionId: '77', plan: PLAN });
     });
 
-    expect(requestMock).toHaveBeenNthCalledWith(1, GET_SPRAY_WALL_HOLD_USAGE_SUMMARY, {
-      wallUuid: 'wall-1',
-      holdIds: [],
+    expect(requestMock).toHaveBeenNthCalledWith(1, REMOVE_SPRAY_WALL_HOLDS, {
+      input: { wallUuid: 'wall-1', versionId: '77', holdIds: [8, 9], preserveClimbLinks: true },
     });
-    expect(requestMock).toHaveBeenNthCalledWith(2, REMOVE_SPRAY_WALL_HOLDS, {
-      input: { wallUuid: 'wall-1', versionId: '77', holdIds: [8, 9] },
-    });
-    expect(requestMock).toHaveBeenNthCalledWith(3, UPSERT_SPRAY_WALL_HOLDS, {
-      input: { wallUuid: 'wall-1', versionId: '77', holds: PLAN.upsert },
+    expect(requestMock).toHaveBeenNthCalledWith(2, UPSERT_SPRAY_WALL_HOLDS, {
+      input: { wallUuid: 'wall-1', versionId: '77', holds: PLAN.upsert, preserveClimbLinks: true },
     });
   });
 
-  it.each([
-    ['refinement only', { ...PLAN, removeIds: [] }],
-    ['a removal and refinement together', PLAN],
-  ])('rejects %s on an older backend before any writes', async (_scenario, plan) => {
-    const message = 'Cannot query field "sprayWallHoldUsageSummary" on type "Query".';
+  it.each(
+    [undefined, 'BAD_USER_INPUT', 'GRAPHQL_VALIDATION_FAILED'].flatMap((code) => [
+      { scenario: 'refinement only', plan: { ...PLAN, removeIds: [] }, document: UPSERT_SPRAY_WALL_HOLDS, code },
+      { scenario: 'removal and refinement together', plan: PLAN, document: REMOVE_SPRAY_WALL_HOLDS, code },
+    ]),
+  )('rejects marked $scenario on an older backend ($code) before any writes land', async ({ plan, document, code }) => {
+    const message =
+      'Variable "$input" got invalid value { preserveClimbLinks: true }; Field "preserveClimbLinks" is not defined by type "UpsertSprayWallHoldsInput".';
     const unsupported = Object.assign(new Error(message), {
-      response: { errors: [{ message, extensions: { code: 'GRAPHQL_VALIDATION_FAILED' } }] },
+      response: { errors: [{ message, ...(code ? { extensions: { code } } : {}) }] },
     });
     requestMock.mockRejectedValueOnce(unsupported);
     const onRemoved = vi.fn();
@@ -326,20 +292,18 @@ describe('useSaveSprayHolds', () => {
         }),
       ).rejects.toMatchObject({ cause: unsupported });
     });
-    expect(sentDocuments()).toEqual(['capability']);
-    expect(requestMock).toHaveBeenCalledExactlyOnceWith(GET_SPRAY_WALL_HOLD_USAGE_SUMMARY, {
-      wallUuid: 'wall-1',
-      holdIds: [],
-    });
+    expect(requestMock).toHaveBeenCalledTimes(1);
+    expect(requestMock.mock.calls[0][0]).toBe(document);
+    expect(requestMock.mock.calls[0][1]).toMatchObject({ input: { preserveClimbLinks: true } });
     expect(onRemoved).not.toHaveBeenCalled();
     expect(invalidateSpy).not.toHaveBeenCalled();
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(extractGraphqlMessage(result.current.error)).toBeNull();
   });
 
-  it('does not probe support when the save only adds new holds', async () => {
+  it('omits the compatibility marker when the save only adds new holds', async () => {
     requestMock.mockImplementation((document: unknown) => {
-      if (document !== UPSERT_SPRAY_WALL_HOLDS) return Promise.reject(new Error('Unexpected capability probe'));
+      if (document !== UPSERT_SPRAY_WALL_HOLDS) return Promise.reject(new Error('Unexpected GraphQL request'));
       return Promise.resolve({ upsertSprayWallHolds: [{ id: 90 }] });
     });
     const { result } = renderHook(() => useSaveSprayHolds(), { wrapper });
@@ -359,11 +323,12 @@ describe('useSaveSprayHolds', () => {
       ).resolves.toEqual({ written: 1, removed: 0 });
     });
     expect(sentDocuments()).toEqual(['upsert']);
+    expect(requestMock.mock.calls[0][1].input).not.toHaveProperty('preserveClimbLinks');
   });
 
-  it('does not probe support when the save only removes holds', async () => {
+  it('omits the compatibility marker when the save only removes holds', async () => {
     requestMock.mockImplementation((document: unknown) => {
-      if (document !== REMOVE_SPRAY_WALL_HOLDS) return Promise.reject(new Error('Unexpected capability probe'));
+      if (document !== REMOVE_SPRAY_WALL_HOLDS) return Promise.reject(new Error('Unexpected GraphQL request'));
       return Promise.resolve({ removeSprayWallHolds: 2 });
     });
     const onRemoved = vi.fn();
@@ -380,15 +345,39 @@ describe('useSaveSprayHolds', () => {
       ).resolves.toEqual({ written: 0, removed: 2 });
     });
     expect(sentDocuments()).toEqual(['remove']);
+    expect(requestMock.mock.calls[0][1].input).not.toHaveProperty('preserveClimbLinks');
     expect(onRemoved).toHaveBeenCalledExactlyOnceWith(PLAN.removeIds);
   });
 
-  it('checks support again on the next save after a backend rollback', async () => {
+  it('keeps the removal checkpoint if a rollback rejects the marked upsert', async () => {
+    const message = 'Field "preserveClimbLinks" is not defined by type "UpsertSprayWallHoldsInput".';
+    const unsupported = { response: { errors: [{ message, extensions: { code: 'BAD_USER_INPUT' } }] } };
     requestMock.mockImplementation((document: unknown) => {
-      if (document === GET_SPRAY_WALL_HOLD_USAGE_SUMMARY)
-        return Promise.resolve({
-          sprayWallHoldUsageSummary: { publishedClimbCount: 0, draftClimbCount: 0 },
-        });
+      if (document === REMOVE_SPRAY_WALL_HOLDS) return Promise.resolve({ removeSprayWallHolds: 2 });
+      return Promise.reject(unsupported);
+    });
+    const onRemoved = vi.fn();
+    const { result } = renderHook(() => useSaveSprayHolds(), { wrapper });
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({
+          wallUuid: 'wall-1',
+          versionNumber: 3,
+          versionId: '77',
+          plan: PLAN,
+          onRemoved,
+        }),
+      ).rejects.toMatchObject({ cause: unsupported });
+    });
+    expect(sentDocuments()).toEqual(['remove', 'upsert']);
+    expect(onRemoved).toHaveBeenCalledExactlyOnceWith(PLAN.removeIds);
+    for (const [, variables] of requestMock.mock.calls) {
+      expect(variables.input.preserveClimbLinks).toBe(true);
+    }
+  });
+
+  it('marks every save without relying on a cached capability check', async () => {
+    requestMock.mockImplementation((document: unknown) => {
       return Promise.resolve({ upsertSprayWallHolds: [{ id: 7 }] });
     });
     const { result } = renderHook(() => useSaveSprayHolds(), { wrapper });
@@ -400,11 +389,14 @@ describe('useSaveSprayHolds', () => {
     await act(async () => {
       await expect(result.current.mutateAsync(variables)).rejects.toThrow('backend rolled back');
     });
-    expect(sentDocuments()).toEqual(['capability', 'upsert', 'capability']);
+    expect(sentDocuments()).toEqual(['upsert', 'upsert']);
+    for (const [, variables] of requestMock.mock.calls) {
+      expect(variables.input.preserveClimbLinks).toBe(true);
+    }
   });
 
-  it.each(['SPRAY_WALL_ARCHIVED', 'RATE_LIMITED'])(
-    'preserves structured %s probe refusals for the editor',
+  it.each(['SPRAY_WALL_ARCHIVED', 'RATE_LIMITED', 'BAD_USER_INPUT'])(
+    'preserves structured %s write refusals for the editor',
     async (code) => {
       const refusal = Object.assign(new Error('Server guidance'), {
         response: { errors: [{ message: 'Server guidance', extensions: { code } }] },
@@ -421,7 +413,7 @@ describe('useSaveSprayHolds', () => {
           }),
         ).rejects.toBe(refusal);
       });
-      expect(sentDocuments()).toEqual(['capability']);
+      expect(sentDocuments()).toEqual(['remove']);
     },
   );
 });

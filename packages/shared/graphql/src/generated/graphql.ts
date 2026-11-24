@@ -8440,6 +8440,8 @@ export type PublicUserProfile = {
 };
 
 export type PublishSprayWallVersionInput = {
+  /** Require a writer that preserves climb links when existing holds are refined. Omit for older clients; when supplied, must be true. */
+  preserveClimbLinks?: InputMaybe<Scalars['Boolean']['input']>;
   versionId: Scalars['ID']['input'];
 };
 
@@ -10853,6 +10855,8 @@ export type RemoveGymMemberInput = {
 
 export type RemoveSprayWallHoldsInput = {
   holdIds: Array<Scalars['Int']['input']>;
+  /** Require a writer that preserves climb links when existing holds are refined. Omit for older clients; when supplied, must be true. */
+  preserveClimbLinks?: InputMaybe<Scalars['Boolean']['input']>;
   versionId: Scalars['ID']['input'];
   wallUuid: Scalars['ID']['input'];
 };
@@ -14321,6 +14325,8 @@ export type UpsertHoldOutlineOverrideInput = {
 
 export type UpsertSprayWallHoldsInput = {
   holds: Array<SprayWallHoldInput>;
+  /** Require a writer that preserves climb links when existing holds are refined. Omit for older clients; when supplied, must be true. */
+  preserveClimbLinks?: InputMaybe<Scalars['Boolean']['input']>;
   /** The DRAFT version being edited. Published versions are immutable. */
   versionId: Scalars['ID']['input'];
   wallUuid: Scalars['ID']['input'];

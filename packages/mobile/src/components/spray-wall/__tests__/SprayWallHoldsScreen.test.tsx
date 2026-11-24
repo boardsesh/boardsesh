@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { sprayWallRemovalGeneration, unregisterSprayWall } from '../../../lib/spray/spray-wall-registry';
-import type { PreparedSprayHoldDraft } from '../../../lib/spray/spray-hold-maintenance';
+import type { PreparedSprayHoldDraft, SprayHoldMaintenanceTransport } from '../../../lib/spray/spray-hold-maintenance';
 
 const requests = vi.hoisted(() => ({
   prepare: vi.fn(),
@@ -15,6 +15,7 @@ const requests = vi.hoisted(() => ({
   fetchWall: vi.fn(),
   fetchArchive: vi.fn(),
   askUsage: vi.fn(),
+  graphql: vi.fn(),
 }));
 const refreshClimbs = vi.hoisted(() => vi.fn(async (_queryClient: unknown, _layoutId: number) => undefined));
 vi.mock('../../../lib/spray/refresh-published-spray-climbs', () => ({ refreshPublishedSprayClimbs: refreshClimbs }));
@@ -68,7 +69,7 @@ vi.mock('@boardsesh/graphql/operations/spray-walls', () => ({
   CREATE_SPRAY_WALL_VERSION: 'createVersion',
   PUBLISH_SPRAY_WALL_VERSION: 'publishVersion',
 }));
-vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: vi.fn() }) }));
+vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: requests.graphql }) }));
 vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
   fetchSprayWallVersions: requests.fetchWall,
   mySprayWallsQueryKey: ['mySprayWalls'],
@@ -139,6 +140,7 @@ function tryRemove() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  requests.graphql.mockReset().mockResolvedValue({ publishSprayWallVersion: { id: 'draft-2', status: 'PUBLISHED' } });
   requests.prepare.mockReset().mockResolvedValue(draft);
   requests.publish.mockReset().mockResolvedValue(undefined);
   requests.invalidate.mockReset().mockResolvedValue(undefined);
@@ -155,6 +157,19 @@ beforeEach(() => {
 });
 
 describe('SprayWallHoldsScreen', () => {
+  it('forwards the maintenance marker in the actual publish request', async () => {
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    await screen.findByTestId('editor');
+    // The resumed editor can publish without changing any more holds.
+    fireEvent.click(screen.getByTestId('editor'));
+    await waitFor(() => expect(requests.publish).toHaveBeenCalledTimes(1));
+    const transport = requests.publish.mock.calls[0][1] as SprayHoldMaintenanceTransport;
+    await transport.publishDraft({ versionId: 'draft-2', preserveClimbLinks: true });
+    expect(requests.graphql).toHaveBeenCalledExactlyOnceWith('publishVersion', {
+      input: { versionId: 'draft-2', preserveClimbLinks: true },
+    });
+  });
+
   it('opens Add mode from the climb editor and labels the return action', async () => {
     render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1', entry: 'climb-editor' }));
     await screen.findByTestId('editor');

@@ -130,8 +130,30 @@ describe('publishSprayHoldDraft', () => {
     const requests = transport();
     requests.fetchWall.mockResolvedValue(wall({ versions: [publishedVersion, draftVersion] }));
     await expect(publishSprayHoldDraft(preparedDraft, requests)).resolves.toBeUndefined();
-    expect(requests.publishDraft).toHaveBeenCalledExactlyOnceWith('draft-2');
+    expect(requests.publishDraft).toHaveBeenCalledExactlyOnceWith({ versionId: 'draft-2', preserveClimbLinks: true });
   });
+
+  it.each([undefined, 'BAD_USER_INPUT', 'GRAPHQL_VALIDATION_FAILED'])(
+    'guards a resumed no-change draft against an older backend (%s)',
+    async (code) => {
+      const requests = transport();
+      requests.fetchWall.mockResolvedValue(wall({ versions: [publishedVersion, draftVersion] }));
+      const resumed = await prepareSprayHoldDraft('wall-1', requests);
+      const message =
+        'Variable "$input" got invalid value { versionId: "draft-2", preserveClimbLinks: true }; Field "preserveClimbLinks" is not defined by type "PublishSprayWallVersionInput".';
+      const unsupported = Object.assign(new Error(message), {
+        response: { errors: [{ message, ...(code ? { extensions: { code } } : {}) }] },
+      });
+      requests.publishDraft.mockRejectedValueOnce(unsupported);
+      await expect(publishSprayHoldDraft(resumed, requests)).rejects.toMatchObject({ cause: unsupported });
+      expect(requests.createDraft).not.toHaveBeenCalled();
+      expect(requests.publishDraft).toHaveBeenCalledExactlyOnceWith({
+        versionId: 'draft-2',
+        preserveClimbLinks: true,
+      });
+      expect(requests.fetchWall).toHaveBeenCalledTimes(3);
+    },
+  );
 
   it.each(['PUBLISHED', 'SUPERSEDED'] as const)('does not republish a %s version', async (status) => {
     const requests = transport();

@@ -15,7 +15,8 @@ import {
   usePublishSprayWallVersion,
   useResetSprayWall,
 } from '../use-create-spray-wall';
-import { RESET_SPRAY_WALL } from '@boardsesh/graphql/operations/spray-walls';
+import { RESET_SPRAY_WALL, PUBLISH_SPRAY_WALL_VERSION } from '@boardsesh/graphql/operations/spray-walls';
+import { extractGraphqlMessage } from '../../graphql/extract-error-message';
 
 function queryWrapper(client: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -36,8 +37,28 @@ describe('spray wizard board roster refresh', () => {
     request.mockResolvedValue({ publishSprayWallVersion: { id: '17' } });
     const hook = renderHook(usePublishSprayWallVersion, { wrapper: queryWrapper(client) });
     await act(() => hook.result.current.mutateAsync('17'));
+    expect(request).toHaveBeenCalledExactlyOnceWith(PUBLISH_SPRAY_WALL_VERSION, {
+      input: { versionId: '17', preserveClimbLinks: true },
+    });
     expect(client.getQueryState(['myBoards', { offset: 0 }])?.isInvalidated).toBe(true);
     expect(client.getQueryState(['myBoards', { offset: 20 }])?.isInvalidated).toBe(true);
+  });
+
+  it('does not publish through the wizard hook when an older backend rejects its marker', async () => {
+    const message = 'Field "preserveClimbLinks" is not defined by type "PublishSprayWallVersionInput".';
+    const unsupported = { response: { errors: [{ message, extensions: { code: 'BAD_USER_INPUT' } }] } };
+    request.mockRejectedValueOnce(unsupported);
+    const client = new QueryClient();
+    client.setQueryData(['myBoards'], { boards: [] });
+    const hook = renderHook(usePublishSprayWallVersion, { wrapper: queryWrapper(client) });
+    await act(async () => {
+      await expect(hook.result.current.mutateAsync('17')).rejects.toMatchObject({ cause: unsupported });
+    });
+    expect(request).toHaveBeenCalledExactlyOnceWith(PUBLISH_SPRAY_WALL_VERSION, {
+      input: { versionId: '17', preserveClimbLinks: true },
+    });
+    expect(extractGraphqlMessage(hook.result.current.error)).toBeNull();
+    expect(client.getQueryState(['myBoards'])?.isInvalidated).toBe(false);
   });
 
   it('refreshes the picker after Start over deletes initial setup', async () => {

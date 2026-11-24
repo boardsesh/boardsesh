@@ -16,13 +16,9 @@
 // what it meant when it was made.
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  GET_SPRAY_WALL_HOLD_USAGE_SUMMARY,
-  REMOVE_SPRAY_WALL_HOLDS,
-  UPSERT_SPRAY_WALL_HOLDS,
-} from '@boardsesh/graphql/operations/spray-walls';
+import { REMOVE_SPRAY_WALL_HOLDS, UPSERT_SPRAY_WALL_HOLDS } from '@boardsesh/graphql/operations/spray-walls';
 import { getHttpClient } from '../graphql/client';
-import { isGraphqlValidationFailedError } from '../graphql/extract-error-message';
+import { normalizeSprayHoldWriteError } from './spray-hold-write-error';
 import type { SprayHoldWritePlan } from '../../components/outline-editor/spray-hold-writes';
 import { sprayWallDraftQueryKey } from './use-spray-wall-draft';
 
@@ -72,39 +68,31 @@ export function useSaveSprayHolds() {
       onRemoved,
     }: SaveSprayHoldsVariables): Promise<SaveSprayHoldsResult> => {
       const client = getHttpClient();
-      if (plan.upsert.some((hold) => hold.id != null)) {
-        // The summary query shipped with publish-time refinement remapping.
-        // An older or rolled-back backend would break climb links on this save,
-        // so check support again for every save, before even its removals land.
-        // A rejection leaves the caller's pending edits and removal checkpoint
-        // untouched. New holds and removal-only saves need no refinement support.
-        try {
-          await client.request(GET_SPRAY_WALL_HOLD_USAGE_SUMMARY, { wallUuid, holdIds: [] });
-        } catch (error) {
-          // The screen's localized save-failed copy handles schema mismatches;
-          // raw GraphQL field names are not useful guidance. Keep lifecycle and
-          // rate-limit refusals intact so their existing handling still applies.
-          if (isGraphqlValidationFailedError(error)) {
-            throw new Error('Spray hold refinement support is unavailable', { cause: error });
-          }
-          throw error;
-        }
-      }
+      // The marker is validated with each mutation's input. An old or rolled-back
+      // backend refuses it before its resolver can remove or replace any hold.
+      // Mark BOTH halves so a rollback between requests cannot silently publish
+      // refinement semantics this client never confirmed.
+      const preserveClimbLinks = plan.upsert.some((hold) => hold.id != null);
+      const compatibilityInput = preserveClimbLinks ? { preserveClimbLinks: true } : {};
       let removed = 0;
-      if (plan.removeIds.length > 0) {
-        const response = await client.request<RemoveResponse>(REMOVE_SPRAY_WALL_HOLDS, {
-          input: { wallUuid, versionId, holdIds: [...plan.removeIds] },
-        });
-        removed = response.removeSprayWallHolds;
-        await onRemoved?.(plan.removeIds);
-      }
-
       let written = 0;
-      if (plan.upsert.length > 0) {
-        const response = await client.request<UpsertResponse>(UPSERT_SPRAY_WALL_HOLDS, {
-          input: { wallUuid, versionId, holds: plan.upsert },
-        });
-        written = response.upsertSprayWallHolds.length;
+      try {
+        if (plan.removeIds.length > 0) {
+          const response = await client.request<RemoveResponse>(REMOVE_SPRAY_WALL_HOLDS, {
+            input: { wallUuid, versionId, holdIds: [...plan.removeIds], ...compatibilityInput },
+          });
+          removed = response.removeSprayWallHolds;
+          await onRemoved?.(plan.removeIds);
+        }
+
+        if (plan.upsert.length > 0) {
+          const response = await client.request<UpsertResponse>(UPSERT_SPRAY_WALL_HOLDS, {
+            input: { wallUuid, versionId, holds: plan.upsert, ...compatibilityInput },
+          });
+          written = response.upsertSprayWallHolds.length;
+        }
+      } catch (error) {
+        throw preserveClimbLinks ? normalizeSprayHoldWriteError(error) : error;
       }
 
       return { written, removed };

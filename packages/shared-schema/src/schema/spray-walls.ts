@@ -433,6 +433,8 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
   }
 
   input UpsertSprayWallHoldsInput {
+    "Require a writer that preserves climb links when existing holds are refined. Omit for older clients; when supplied, must be true."
+    preserveClimbLinks: Boolean
     wallUuid: ID!
     "The DRAFT version being edited. Published versions are immutable."
     versionId: ID!
@@ -440,12 +442,16 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
   }
 
   input RemoveSprayWallHoldsInput {
+    "Require a writer that preserves climb links when existing holds are refined. Omit for older clients; when supplied, must be true."
+    preserveClimbLinks: Boolean
     wallUuid: ID!
     versionId: ID!
     holdIds: [Int!]!
   }
 
   input PublishSprayWallVersionInput {
+    "Require a writer that preserves climb links when existing holds are refined. Omit for older clients; when supplied, must be true."
+    preserveClimbLinks: Boolean
     versionId: ID!
   }
 

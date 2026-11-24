@@ -222,6 +222,8 @@ export const SprayWallHoldInputSchema = z.object({
 });
 
 export const UpsertSprayWallHoldsInputSchema = z.object({
+  // An old GraphQL schema rejects this capability requirement before writing.
+  preserveClimbLinks: z.literal(true).optional(),
   wallUuid: UUIDSchema,
   versionId: BigIntIdSchema,
   // The batch cap is the per-wall cap: a client may legitimately send a whole
@@ -244,6 +246,8 @@ export const UpsertSprayWallHoldsInputSchema = z.object({
 });
 
 export const RemoveSprayWallHoldsInputSchema = z.object({
+  // An old GraphQL schema rejects this capability requirement before writing.
+  preserveClimbLinks: z.literal(true).optional(),
   wallUuid: UUIDSchema,
   versionId: BigIntIdSchema,
   holdIds: z
@@ -257,6 +261,8 @@ export const RemoveSprayWallHoldsInputSchema = z.object({
 });
 
 export const PublishSprayWallVersionInputSchema = z.object({
+  // An old GraphQL schema rejects this capability requirement before writing.
+  preserveClimbLinks: z.literal(true).optional(),
   versionId: BigIntIdSchema,
 });
 

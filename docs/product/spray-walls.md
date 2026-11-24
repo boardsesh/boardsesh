@@ -2428,9 +2428,12 @@ marked missing by earlier edits. An older offline authoring request still naming
 a replaced placement is refused as a stale hold; reload the climb before editing
 it again. It never silently restores old placement references. Deploy the
 database migration and backend
-before the mobile update. The app probes refinement support before any save
-containing existing-hold corrections; an older or rolled-back backend refuses
-that save before any removals or upserts. The probe runs again on every save.
+before the mobile update. Correction saves mark both removal and upsert requests
+with `preserveClimbLinks: true`, and maintenance publication always sends the
+same requirement, including a reopened draft with no new edits. Older GraphQL
+schemas reject each marked request before its resolver can write, so safety does
+not depend on a prior capability read or on the backend staying unchanged between
+requests. The marker is optional for older clients and accepts only true.
 Geometry-only edits do not show a removal confirmation.
 
 The usage check is advisory: a climb published between the check and the publish
