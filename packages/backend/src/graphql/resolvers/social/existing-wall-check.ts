@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, or, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, or, type SQL } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import {
   classifyWallMatch,
@@ -55,6 +55,7 @@ export type ExistingWallCheckMode = 'REJECT_IF_FOUND' | 'CONFIRMED_SEPARATE';
 /** A gym whose walls are searched. */
 export type WallScopeGym = {
   id: number;
+  /** The name shown on its walls. A merged listing shows the gym it merged into. */
   name: string;
   source: WallCandidateSource;
   /** Metres from the chosen gym (or typed location); null for the chosen gym and merged listings. */
@@ -68,6 +69,15 @@ export type WallSearchAnchor =
   | { kind: 'gym'; gym: Pick<GymRow, 'id' | 'name' | 'latitude' | 'longitude'> }
   | { kind: 'point'; latitude: number; longitude: number };
 
+/** The gyms one check searches, and the point "nearby" was measured from. */
+export type WallScope = {
+  gyms: WallScopeGym[];
+  /** The chosen gym's id, whose walls rank (and are read) first; null on the mint path. */
+  selectedGymId: number | null;
+  /** Null when there is nothing to measure "nearby" from (a gym without coordinates). */
+  center: { latitude: number; longitude: number } | null;
+};
+
 export type WallCandidate = {
   board: BoardRow;
   matchKind: WallMatchKind | null;
@@ -78,30 +88,56 @@ export type WallCandidate = {
   gymDistanceMeters: number | null;
 };
 
+/** Public, listed gyms within the search radius that aren't in the scope yet, nearest first. */
+async function nearbyScopeGyms(
+  center: { latitude: number; longitude: number },
+  excludeGymIds: ReadonlySet<number>,
+  limit: number,
+  executor?: WallReadExecutor,
+): Promise<WallScopeGym[]> {
+  const nearby = await findGymsWithin({
+    latitude: center.latitude,
+    longitude: center.longitude,
+    radiusMeters: WALL_SEARCH_RADIUS_METERS,
+    publicListedOnly: true,
+    executor,
+  });
+  return nearby
+    .filter((gym) => !excludeGymIds.has(gym.id))
+    .slice(0, limit)
+    .map((gym) => ({
+      id: gym.id,
+      name: gym.name,
+      source: 'NEARBY_LISTING' as const,
+      distanceMeters: gym.distanceMeters,
+      isLive: true,
+    }));
+}
+
 /**
  * The gyms whose walls count: the chosen gym, the listings an admin merged into
  * it (boards can be left behind on a merged twin), and public, listed gyms
  * within 150 m, nearest first and at most ten. A private gym nearby is never
  * searched, whoever owns it. A gym without coordinates has no "nearby".
+ *
+ * Reads on the pool. createBoard calls it BEFORE opening its transaction: a
+ * transaction that waited on a second pool connection would hold its own while
+ * it waited, and a handful of concurrent creates could take every connection.
  */
-export async function collectWallScopeGyms(anchor: WallSearchAnchor): Promise<WallScopeGym[]> {
-  const scope: WallScopeGym[] = [];
-  let center: { latitude: number; longitude: number } | null = null;
+export async function collectWallScope(anchor: WallSearchAnchor): Promise<WallScope> {
+  const gyms: WallScopeGym[] = [];
+  let center: WallScope['center'] = null;
+  let selectedGymId: number | null = null;
 
   if (anchor.kind === 'gym') {
     const { gym } = anchor;
-    scope.push({ id: gym.id, name: gym.name, source: 'SELECTED_GYM', distanceMeters: null, isLive: true });
-
-    const twinGymIds = await collectMergedTwinGymIds(gym.id);
-    if (twinGymIds.length > 0) {
-      const twins = await db
-        .select({ id: dbSchema.gyms.id, name: dbSchema.gyms.name })
-        .from(dbSchema.gyms)
-        .where(inArray(dbSchema.gyms.id, twinGymIds))
-        .orderBy(asc(dbSchema.gyms.id));
-      for (const twin of twins) {
-        scope.push({ id: twin.id, name: twin.name, source: 'MERGED_LISTING', distanceMeters: null, isLive: false });
-      }
+    selectedGymId = gym.id;
+    gyms.push({ id: gym.id, name: gym.name, source: 'SELECTED_GYM', distanceMeters: null, isLive: true });
+    // A merged twin is a soft-deleted old listing of this same gym. Its walls
+    // are shown under the gym's current name, never the old row's own name,
+    // which nobody vetted for public display after the merge.
+    for (const twinGymId of await collectMergedTwinGymIds(gym.id)) {
+      gyms.push({ id: twinGymId, name: gym.name, source: 'MERGED_LISTING', distanceMeters: null, isLive: false });
     }
     if (gym.latitude != null && gym.longitude != null) {
       center = { latitude: gym.latitude, longitude: gym.longitude };
@@ -111,25 +147,9 @@ export async function collectWallScopeGyms(anchor: WallSearchAnchor): Promise<Wa
   }
 
   if (center) {
-    const alreadyInScope = new Set(scope.map((scopeGym) => scopeGym.id));
-    const nearby = await findGymsWithin({
-      latitude: center.latitude,
-      longitude: center.longitude,
-      radiusMeters: WALL_SEARCH_RADIUS_METERS,
-      publicListedOnly: true,
-    });
-    for (const nearbyGym of nearby.filter((gym) => !alreadyInScope.has(gym.id)).slice(0, MAX_NEARBY_WALL_GYMS)) {
-      scope.push({
-        id: nearbyGym.id,
-        name: nearbyGym.name,
-        source: 'NEARBY_LISTING',
-        distanceMeters: nearbyGym.distanceMeters,
-        isLive: true,
-      });
-    }
+    gyms.push(...(await nearbyScopeGyms(center, new Set(gyms.map((gym) => gym.id)), MAX_NEARBY_WALL_GYMS)));
   }
-
-  return scope;
+  return { gyms, selectedGymId, center };
 }
 
 /**
@@ -155,16 +175,25 @@ function visibleWallCondition(viewerId: string | undefined): SQL {
  * `rowCapReached` is true when more rows existed than one check reads.
  */
 export async function readWallCandidates(opts: {
-  scope: readonly WallScopeGym[];
+  scope: WallScope;
   boardType: string;
   viewerId: string | undefined;
   draft: WallSetup | null;
+  /**
+   * Read only walls on the draft's layout and size. The recheck sets it: other
+   * layouts never block, so they must not spend the row cap.
+   */
+  draftLayoutOnly?: boolean;
   executor?: WallReadExecutor;
 }): Promise<{ candidates: WallCandidate[]; rowCapReached: boolean }> {
-  const { scope, boardType, viewerId, draft, executor = db } = opts;
-  if (scope.length === 0) return { candidates: [], rowCapReached: false };
+  const { scope, boardType, viewerId, draft, draftLayoutOnly = false, executor = db } = opts;
+  if (scope.gyms.length === 0) return { candidates: [], rowCapReached: false };
 
-  const scopeById = new Map(scope.map((scopeGym) => [scopeGym.id, scopeGym]));
+  const scopeById = new Map(scope.gyms.map((scopeGym) => [scopeGym.id, scopeGym]));
+  const mergedGymIds = scope.gyms.filter((scopeGym) => scopeGym.source === 'MERGED_LISTING').map((gym) => gym.id);
+  const sameLayout = draft
+    ? and(eq(dbSchema.userBoards.layoutId, draft.layoutId), eq(dbSchema.userBoards.sizeId, draft.sizeId))!
+    : undefined;
   const rows = await executor
     .select()
     .from(dbSchema.userBoards)
@@ -173,13 +202,25 @@ export async function readWallCandidates(opts: {
         inArray(dbSchema.userBoards.gymId, [...scopeById.keys()]),
         eq(dbSchema.userBoards.boardType, boardType),
         isNull(dbSchema.userBoards.deletedAt),
+        draftLayoutOnly ? sameLayout : undefined,
         visibleWallCondition(viewerId),
         // Spray walls have their own setup and never reach here by type; kept
         // so this read can never list an unpublished one if that changes.
         listableSprayWallCondition(viewerId),
       ),
     )
-    .orderBy(asc(dbSchema.userBoards.createdAt), asc(dbSchema.userBoards.uuid))
+    // The row cap must never push the chosen gym's own walls out for a busy
+    // neighbour's: the chosen gym first, then its merged listings, then the
+    // draft's layout, then oldest. The final order is compareWallCandidates'.
+    .orderBy(
+      ...[
+        scope.selectedGymId != null ? desc(eq(dbSchema.userBoards.gymId, scope.selectedGymId)) : undefined,
+        mergedGymIds.length > 0 ? desc(inArray(dbSchema.userBoards.gymId, mergedGymIds)) : undefined,
+        sameLayout ? desc(sameLayout) : undefined,
+        asc(dbSchema.userBoards.createdAt),
+        asc(dbSchema.userBoards.uuid),
+      ].filter((ordering): ordering is SQL => ordering != null),
+    )
     .limit(MAX_WALL_ROWS + 1);
 
   const rowCapReached = rows.length > MAX_WALL_ROWS;
@@ -225,8 +266,8 @@ function isComparableWall(candidate: WallCandidate): boolean {
  * - REJECT_IF_FOUND: every same-layout wall, sets equal or not.
  * - CONFIRMED_SEPARATE with acknowledged walls: an EXACT wall the climber was
  *   not shown. Walls they saw and called different no longer block.
- * - CONFIRMED_SEPARATE with an empty list: honoured only when there is no
- *   same-layout wall at all. Otherwise a client whose lookup failed (or a
+ * - CONFIRMED_SEPARATE with an empty list, or one naming none of the walls
+ *   found: honoured only when there is no same-layout wall at all. Otherwise a client whose lookup failed (or a
  *   script) could send the confirmation blind and skip the check entirely.
  */
 export function blockingWallCandidates(
@@ -235,8 +276,13 @@ export function blockingWallCandidates(
   acknowledgedWallUuids: readonly string[],
 ): WallCandidate[] {
   const comparable = candidates.filter(isComparableWall);
-  if (mode === 'REJECT_IF_FOUND' || acknowledgedWallUuids.length === 0) return comparable;
-  const acknowledged = new Set(acknowledgedWallUuids);
+  if (mode === 'REJECT_IF_FOUND') return comparable;
+  // Only an acknowledgement of a wall the server also found counts. A list of
+  // uuids that name nothing here is the same as an empty list, or one junk uuid
+  // would get round the empty-list rule.
+  const comparableUuids = new Set(comparable.map((candidate) => candidate.board.uuid));
+  const acknowledged = new Set(acknowledgedWallUuids.filter((wallUuid) => comparableUuids.has(wallUuid)));
+  if (acknowledged.size === 0) return comparable;
   return comparable.filter((candidate) => candidate.matchKind === 'EXACT' && !acknowledged.has(candidate.board.uuid));
 }
 
@@ -258,45 +304,60 @@ export function existingWallsError(blocking: readonly WallCandidate[]): GraphQLE
 }
 
 /**
- * createBoard's recheck. Collects the scope, takes the gym-wall locks on the
- * scope's live gyms (when `lockExecutor` is given, i.e. inside the insert's
- * transaction), reads the walls on `readExecutor`, and throws
- * BOARD_EXISTING_WALLS when the mode says so.
+ * createBoard's recheck, against a scope `collectWallScope` built before the
+ * caller's transaction. With `transaction` (the authoritative run inside the
+ * insert's transaction) it first takes the gym-wall locks on the scope's live
+ * gyms, then reads only on that transaction: never on the pool, so a create
+ * holds one connection, not two. Without it (the early run before the link
+ * gate) it reads on the pool and takes no lock.
  *
  * The locks come first in the transaction and before the board-serial lock.
  * With them held, two creates of the same wall at once serialize: the second
- * reads after the first commits and sees its board.
+ * reads after the first commits and sees its board. After the locks it looks
+ * for public listings nearby again, so a gym another create minted and
+ * committed while this one waited is searched too.
  */
 export async function assertNoExistingWalls(opts: {
-  anchor: WallSearchAnchor;
+  scope: WallScope;
   draft: WallSetup;
   viewerId: string;
   mode: ExistingWallCheckMode;
   acknowledgedWallUuids: readonly string[];
-  lockExecutor?: BoardSerialWriteCommandDb;
-  readExecutor?: WallReadExecutor;
+  transaction?: BoardSerialWriteCommandDb & WallReadExecutor;
 }): Promise<void> {
-  const { anchor, draft, viewerId, mode, acknowledgedWallUuids, lockExecutor, readExecutor } = opts;
-  const scope = await collectWallScopeGyms(anchor);
-  if (lockExecutor) {
+  const { draft, viewerId, mode, acknowledgedWallUuids, transaction } = opts;
+  let { scope } = opts;
+  if (transaction) {
     await lockGymWallWrites(
-      lockExecutor,
-      scope.filter((scopeGym) => scopeGym.isLive).map((scopeGym) => scopeGym.id),
+      transaction,
+      scope.gyms.filter((scopeGym) => scopeGym.isLive).map((scopeGym) => scopeGym.id),
     );
+    if (scope.center) {
+      const nearbyCount = scope.gyms.filter((scopeGym) => scopeGym.source === 'NEARBY_LISTING').length;
+      const newlyNearby = await nearbyScopeGyms(
+        scope.center,
+        new Set(scope.gyms.map((scopeGym) => scopeGym.id)),
+        Math.max(MAX_NEARBY_WALL_GYMS - nearbyCount, 0),
+        transaction,
+      );
+      if (newlyNearby.length > 0) scope = { ...scope, gyms: [...scope.gyms, ...newlyNearby] };
+    }
   }
   const { candidates } = await readWallCandidates({
     scope,
     boardType: draft.boardType,
     viewerId,
     draft,
-    executor: readExecutor,
+    draftLayoutOnly: true,
+    executor: transaction,
   });
   const blocking = blockingWallCandidates(candidates, mode, acknowledgedWallUuids);
   if (blocking.length > 0) throw existingWallsError(blocking);
 
   // The one path that adds a board beside a wall the climber saw: leave a trail,
-  // as the duplicate-config bypass does, so a script confirming every call shows up.
-  if (mode === 'CONFIRMED_SEPARATE' && candidates.some(isComparableWall)) {
+  // as the duplicate-config bypass does, so a script confirming every call shows
+  // up. Only from the authoritative run, so one create logs once.
+  if (transaction && mode === 'CONFIRMED_SEPARATE' && candidates.some(isComparableWall)) {
     logger.info('createBoard: existing walls acknowledged as separate', {
       userId: viewerId,
       boardType: draft.boardType,

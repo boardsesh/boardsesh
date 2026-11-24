@@ -385,6 +385,83 @@ describe('createBoard existing-wall recheck', () => {
     expect(await liveBoardsOwnedBy(CLIMBER)).toBe(1);
   });
 
+  it('treats an acknowledgement naming none of the walls found as an empty one', async () => {
+    const gym = await insertGym({ name: 'Klimmuur' });
+    const wallUuid = await insertWall({ gymId: gym.id });
+
+    const extensions = await captureExistingWalls(
+      createBoard({
+        gymUuid: gym.uuid,
+        existingWallCheck: 'CONFIRMED_SEPARATE',
+        acknowledgedWallUuids: [uuidv4()],
+      }),
+    );
+
+    expect(extensions?.candidates).toEqual([{ boardUuid: wallUuid, matchKind: 'EXACT' }]);
+    expect(await liveBoardsOwnedBy(CLIMBER)).toBe(0);
+  });
+
+  it("keeps the chosen gym's wall in the check when a busy neighbour has 100+ older walls", async () => {
+    const gym = await insertGym({ name: 'Klimmuur' });
+    const neighbour = await insertGym({ name: 'Big Hall', latitude: LAT_60M });
+    await db.insert(dbSchema.userBoards).values(
+      Array.from({ length: 105 }, (_, wallIndex) => {
+        const uuid = uuidv4();
+        return {
+          uuid,
+          slug: uuid,
+          ownerId: SETTER,
+          ...MOONBOARD_2016,
+          name: `Old wall ${wallIndex}`,
+          gymId: neighbour.id,
+          createdAt: new Date('2015-01-01'),
+        };
+      }),
+    );
+    const wallUuid = await insertWall({ gymId: gym.id, createdAt: new Date('2024-01-01') });
+
+    const extensions = await captureExistingWalls(
+      createBoard({ gymUuid: gym.uuid, existingWallCheck: 'REJECT_IF_FOUND' }),
+    );
+    expect(extensions?.candidates).toEqual([{ boardUuid: wallUuid, matchKind: 'EXACT' }]);
+
+    const listed = await existingWallCandidates({ gymUuid: gym.uuid, ...MASTERS_2019, limit: 40 });
+    expect(listed.candidates[0].board.uuid).toBe(wallUuid);
+    expect(listed.candidates).toHaveLength(40);
+    expect(listed.truncated).toBe(true);
+  });
+
+  it('serializes creates at two neighbouring gyms whose searches overlap', async () => {
+    const gymA = await insertGym({ name: 'Klimmuur' });
+    const gymB = await insertGym({ name: 'Klimmuur Boulder', latitude: LAT_60M });
+
+    const results = await Promise.allSettled([
+      createBoard({ gymUuid: gymA.uuid, latitude: BASE.latitude, existingWallCheck: 'REJECT_IF_FOUND' }, CLIMBER),
+      createBoard({ gymUuid: gymB.uuid, existingWallCheck: 'REJECT_IF_FOUND' }, CREW),
+    ]);
+
+    const rejected = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0].reason as { extensions?: { code?: string } }).extensions?.code).toBe('BOARD_EXISTING_WALLS');
+  });
+
+  it('lets only one of two simultaneous public mints near the same public gym through', async () => {
+    await insertGym({ name: 'Boulderhalle Nord' });
+    const publicMint = { audience: 'public', locationAudience: 'public', existingWallCheck: 'REJECT_IF_FOUND' };
+
+    const results = await Promise.allSettled([
+      createBoard({ ...publicMint, locationName: 'Garage One' }, CLIMBER),
+      createBoard({ ...publicMint, locationName: 'Garage Two', latitude: LAT_120M }, CREW),
+    ]);
+
+    const rejected = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0].reason as { extensions?: { code?: string } }).extensions?.code).toBe('BOARD_EXISTING_WALLS');
+    expect((await gymsOwnedBy(CLIMBER)) + (await gymsOwnedBy(CREW))).toBe(1);
+  });
+
   it('refuses before the foreign-gym link bucket is charged, and leaves MAX_BOARDS_PER_FOREIGN_GYM in force', async () => {
     const gym = await insertGym({ name: 'Klimmuur' });
     const wallUuid = await insertWall({ gymId: gym.id });
@@ -467,6 +544,8 @@ describe('existingWallCandidates', () => {
 
     expect(result.candidates.map((candidate) => candidate.source)).toEqual(['MERGED_LISTING', 'NEARBY_LISTING']);
     expect(result.candidates[0].gymDistanceMeters).toBeNull();
+    // A merged listing shows the gym it merged into, never the old row's own name.
+    expect(result.candidates[0].gymName).toBe('Klimmuur');
     expect(result.candidates[1].gymDistanceMeters).toBeGreaterThan(50);
     expect(result.candidates[1].gymDistanceMeters).toBeLessThan(70);
     expect(result.candidates[1].gymName).toBe('Klimmuur Boulder');
@@ -491,6 +570,26 @@ describe('existingWallCandidates', () => {
 
     const signedOut = await existingWallCandidates({ boardType: 'moonboard', gymUuid: gym.uuid }, anonCtx());
     expect(signedOut.candidates.map((candidate) => candidate.board.uuid)).toEqual([publicUuid]);
+  });
+
+  it('answers a signed-out climber with public walls only, classified against their draft', async () => {
+    const gym = await insertGym({ name: 'Klimmuur' });
+    const noFeetUuid = await insertWall({
+      gymId: gym.id,
+      config: MASTERS_2019_NO_FEET,
+      createdAt: new Date('2016-01-01'),
+    });
+    const exactUuid = await insertWall({ gymId: gym.id, createdAt: new Date('2017-01-01') });
+    await insertWall({ gymId: gym.id, isPublic: false, createdAt: new Date('2018-01-01') });
+    await insertWall({ gymId: gym.id, ownerId: CLIMBER, isUnlisted: true, createdAt: new Date('2019-01-01') });
+
+    const result = await existingWallCandidates({ gymUuid: gym.uuid, ...MASTERS_2019 }, anonCtx());
+
+    expect(result.candidates.map((candidate) => [candidate.board.uuid, candidate.matchKind])).toEqual([
+      [exactUuid, 'EXACT'],
+      [noFeetUuid, 'SETS_DIFFER'],
+    ]);
+    expect(result.truncated).toBe(false);
   });
 
   it('caps the list and says so', async () => {

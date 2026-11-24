@@ -52,7 +52,7 @@ import {
   projectBoardLocation,
 } from '../../../services/board-location-projection';
 import { findBlockingDuplicate, type BoardLocation } from './board-duplicates';
-import { assertNoExistingWalls, type WallSearchAnchor } from './existing-wall-check';
+import { assertNoExistingWalls, collectWallScope, type WallScope } from './existing-wall-check';
 import { assertBoardCapNotReached } from './board-limits';
 import { syncLocationGeography } from './location-geography';
 import { getUserCommunityRoles, rolesGrantAdminOrLeader, requireAdmin, type CommunityRoleScope } from './roles';
@@ -2895,24 +2895,29 @@ export const socialBoardMutations = {
       sizeId: validatedInput.sizeId,
       setIds: validatedInput.setIds,
     };
-    const checkExistingWalls = (anchor: WallSearchAnchor, executor?: DbTransaction) =>
+    // The scope (which gyms' walls count) is read on the pool, always BEFORE the
+    // insert's transaction opens. Inside the transaction only the lock and the
+    // wall read run, on the transaction itself, so a create never holds its
+    // transaction's connection while it waits for a second one.
+    const checkExistingWalls = (scope: WallScope, transaction?: DbTransaction) =>
       wallCheckMode == null
         ? Promise.resolve()
         : assertNoExistingWalls({
-            anchor,
+            scope,
             draft: wallCheckDraft,
             viewerId: userId,
             mode: wallCheckMode,
             acknowledgedWallUuids: validatedInput.acknowledgedWallUuids ?? [],
-            lockExecutor: executor,
-            readExecutor: executor,
+            transaction,
           });
 
     // Resolve the gym this board belongs to. An explicit gymUuid goes through the
     // shared link gate (owner/admin, or a nearby public gym the caller is adding
     // their own board to); otherwise infer one from the location.
     let gymId: number | null = null;
-    let wallCheckGym: Extract<WallSearchAnchor, { kind: 'gym' }>['gym'] | null = null;
+    // The gyms whose walls the recheck reads, once a gym is known. Null when the
+    // recheck is off or the board lands on no gym.
+    let wallCheckScope: WallScope | null = null;
     let mintGymNamed: string | null = null;
 
     if (validatedInput.gymUuid) {
@@ -2924,7 +2929,8 @@ export const socialBoardMutations = {
         // this check answering differently for it.
         const requestedGym = await resolveCanonicalGymByUuid(validatedInput.gymUuid);
         if (requestedGym && (requestedGym.isPublic || (await userCanEditGym(requestedGym, userId)))) {
-          await checkExistingWalls({ kind: 'gym', gym: requestedGym });
+          wallCheckScope = await collectWallScope({ kind: 'gym', gym: requestedGym });
+          await checkExistingWalls(wallCheckScope);
         }
       }
       const gym = await requireBoardGymLinkAccess({
@@ -2936,7 +2942,12 @@ export const socialBoardMutations = {
         boardLongitude: incomingLocation.longitude,
       });
       gymId = gym.id;
-      if (wallCheckMode != null) wallCheckGym = gym;
+      // The gate resolves the same canonical gym, so the early scope is reused.
+      // It is only missing when the early run was skipped for a gym the caller
+      // can't see, which the gate has just let through for its owner or admin.
+      if (wallCheckMode != null && (wallCheckScope == null || wallCheckScope.selectedGymId !== gym.id)) {
+        wallCheckScope = await collectWallScope({ kind: 'gym', gym });
+      }
     } else {
       const resolution = await resolveAutoGymForBoard({
         userId,
@@ -2950,12 +2961,26 @@ export const socialBoardMutations = {
           const [attachedGym] = await db
             .select()
             .from(dbSchema.gyms)
-            .where(eq(dbSchema.gyms.id, resolution.gymId))
+            .where(and(eq(dbSchema.gyms.id, resolution.gymId), isNull(dbSchema.gyms.deletedAt)))
             .limit(1);
-          wallCheckGym = attachedGym ?? null;
+          // The resolver just picked this gym as live. Gone a moment later means
+          // it was deleted or merged in between; fail rather than create without
+          // the check the client asked for.
+          if (!attachedGym) throw new Error('The gym for this board changed while it was being added. Try again.');
+          wallCheckScope = await collectWallScope({ kind: 'gym', gym: attachedGym });
         }
       } else if (resolution.action === 'mint') {
         mintGymNamed = resolution.name;
+        // Minting a new gym: the walls that count are on public, listed gyms
+        // within 150 m of the typed location. Without coordinates there is no
+        // "nearby" to search.
+        if (wallCheckMode != null && incomingLocation.latitude != null && incomingLocation.longitude != null) {
+          wallCheckScope = await collectWallScope({
+            kind: 'point',
+            latitude: incomingLocation.latitude,
+            longitude: incomingLocation.longitude,
+          });
+        }
       }
     }
 
@@ -3022,8 +3047,8 @@ export const socialBoardMutations = {
           // The authoritative existing-wall check: under the gym-wall locks, so a
           // concurrent create of the same wall is seen. Gym locks before the
           // serial lock. A no-op without `existingWallCheck`.
-          if (wallCheckMode != null && linkedGymId != null && wallCheckGym != null) {
-            await checkExistingWalls({ kind: 'gym', gym: wallCheckGym }, tx);
+          if (linkedGymId != null && wallCheckScope != null) {
+            await checkExistingWalls(wallCheckScope, tx);
           }
           await lockAndAssertBoardSerialAvailable(tx, validatedInput, userId);
           const [insertedBoard] = await tx
@@ -3045,14 +3070,8 @@ export const socialBoardMutations = {
         const gymUuid = uuidv4();
         const gymSlug = await generateUniqueGymSlug(gymName);
         const result = await db.transaction(async (tx) => {
-          // Minting a new gym: the walls that count are on public, listed gyms
-          // within 150 m of the typed location. Without coordinates there is no
-          // "nearby" to search.
-          if (wallCheckMode != null && incomingLocation.latitude != null && incomingLocation.longitude != null) {
-            await checkExistingWalls(
-              { kind: 'point', latitude: incomingLocation.latitude, longitude: incomingLocation.longitude },
-              tx,
-            );
+          if (wallCheckScope != null) {
+            await checkExistingWalls(wallCheckScope, tx);
           }
           await lockAndAssertBoardSerialAvailable(tx, validatedInput, userId);
 

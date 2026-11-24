@@ -1,5 +1,5 @@
 import type { WallCandidateSource, WallMatchKind } from '@boardsesh/shared-schema';
-import { normaliseSetIds, parseSetIds } from './set-ids';
+import { parseSetIds } from './set-ids';
 
 /*
  * How an existing wall compares with the board a climber is about to set up
@@ -11,7 +11,8 @@ import { normaliseSetIds, parseSetIds } from './set-ids';
  * different wall.
  *
  * - `EXACT`: same board type, layout, size and hold sets. Set order and
- *   repeats are ignored ("25,24" and "24,25" are one setup).
+ *   repeats are ignored ("25,24" and "24,25" are one setup), and ids are
+ *   compared as numbers ("017" is set 17).
  * - `SETS_DIFFER`: same layout and size, different hold sets: a subset, a
  *   superset or an overlap. Usually the same wall entered with a set missing.
  * - `LAYOUT_OR_SIZE_DIFFERS`: same board type, another layout or size. Shown
@@ -34,13 +35,23 @@ export type WallSetup = {
 };
 
 /**
+ * Set ids as numbers, deduped and sorted: "017,18", "18, 17" and "17,18,18"
+ * are one setup. Compares numbers rather than `normaliseSetIds`' strings, which
+ * keep a leading zero and so would call "017" and "17" different sets while
+ * `diffWallSetIds` (which parses) found no difference between them.
+ */
+function setIdKey(setIds: string): string {
+  return [...new Set(parseSetIds(setIds))].sort((first, second) => first - second).join(',');
+}
+
+/**
  * Compare a draft setup with an existing wall. Returns null when the board
  * types differ: a Kilter and a MoonBoard are never the same wall.
  */
 export function classifyWallMatch(draft: WallSetup, candidate: WallSetup): WallMatchKind | null {
   if (draft.boardType !== candidate.boardType) return null;
   if (draft.layoutId !== candidate.layoutId || draft.sizeId !== candidate.sizeId) return 'LAYOUT_OR_SIZE_DIFFERS';
-  return normaliseSetIds(draft.setIds) === normaliseSetIds(candidate.setIds) ? 'EXACT' : 'SETS_DIFFER';
+  return setIdKey(draft.setIds) === setIdKey(candidate.setIds) ? 'EXACT' : 'SETS_DIFFER';
 }
 
 /**

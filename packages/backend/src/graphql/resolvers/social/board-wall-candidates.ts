@@ -4,7 +4,7 @@ import { applyRateLimit, validateInput } from '../shared/helpers';
 import { ExistingWallCandidatesInputSchema } from '../../../validation/schemas';
 import { enrichBoards } from './boards';
 import { resolveCanonicalGymByUuid, userCanEditGym } from './gyms';
-import { collectWallScopeGyms, readWallCandidates } from './existing-wall-check';
+import { collectWallScope, readWallCandidates } from './existing-wall-check';
 
 const DEFAULT_CANDIDATE_LIMIT = 20;
 
@@ -41,7 +41,7 @@ export const socialBoardWallCandidateQueries = {
           }
         : null;
 
-    const scope = await collectWallScopeGyms({ kind: 'gym', gym });
+    const scope = await collectWallScope({ kind: 'gym', gym });
     const { candidates, rowCapReached } = await readWallCandidates({
       scope,
       boardType: validatedInput.boardType,

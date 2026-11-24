@@ -32,7 +32,7 @@ Set order and repeats are ignored (`normaliseSetIds`). Angle is never compared: 
 For a chosen gym:
 
 1. The gym itself. A merged listing's uuid resolves to the gym it merged into.
-2. Listings an admin merged into it (`collectMergedTwinGymIds`). Boards can be left behind on a merged twin.
+2. Listings an admin merged into it (`collectMergedTwinGymIds`). Boards can be left behind on a merged twin. Their walls show under the chosen gym's name, never the old listing's own name.
 3. Public, listed gyms within 150 m of the gym, nearest first, at most 10 (`findGymsWithin` with `publicListedOnly`). A private or unlisted gym nearby is never searched, whoever owns it. A gym with no coordinates has no "nearby".
 
 Only boards of the requested type, not deleted, that the caller can see count:
@@ -40,7 +40,9 @@ Only boards of the requested type, not deleted, that the caller can see count:
 - the caller's own boards, private or not, and
 - boards that are public and not unlisted, and that pass the resource-privacy override (`resourceAccessCondition` without the unlisted-link allowance).
 
-Gym staff get no wider view. A staff member adding a board is a climber like any other, and the check must never block on a wall a stranger would not see. One check reads at most 100 rows.
+Gym staff get no wider view. A staff member adding a board is a climber like any other, and the check must never block on a wall a stranger would not see.
+
+One check reads at most 100 rows. The chosen gym's walls are read first, then its merged listings, then walls on the draft's layout, then oldest, so a busy neighbour can't push the chosen gym's own wall out. The `createBoard` recheck reads only walls on the draft's layout and size, since no other wall can block it.
 
 ## The query
 
@@ -68,7 +70,7 @@ Two new `CreateBoardInput` fields:
 **When it runs.** Only for a board with no serial (the serial guard settles those), not a spray wall, and only once the board lands on a gym:
 
 - an explicit `gymUuid`;
-- a gym `resolveAutoGymForBoard` auto-attaches from a typed location;
+- a gym `resolveAutoGymForBoard` auto-attaches from a typed location (if that gym is deleted or merged in the moment between, the create fails rather than skipping the check);
 - a gym being minted from a typed location. Here the search is the public, listed gyms within 150 m of the typed coordinates. A name-only mint has nothing nearby to search.
 
 **Order.** After the same-owner duplicate guard. For an explicit `gymUuid` it runs once before `requireBoardGymLinkAccess`, so a refused create never spends the 5-per-minute `linkBoardToForeignGym` bucket. That early run is skipped for a gym the caller can't see, so a hidden private gym still answers "Gym not found" exactly as before. The authoritative run is inside the insert's transaction, under the gym-wall lock.
@@ -77,9 +79,9 @@ Two new `CreateBoardInput` fields:
 
 - `REJECT_IF_FOUND` refuses on any `EXACT` or `SETS_DIFFER` wall.
 - `CONFIRMED_SEPARATE` with acknowledged walls refuses only on an `EXACT` wall missing from the list. The walls the climber saw and called different no longer block.
-- `CONFIRMED_SEPARATE` with an empty list is honoured only when there is no `EXACT` or `SETS_DIFFER` wall at all. Otherwise a client whose lookup failed, or a script, could send the confirmation blind and skip the check.
+- `CONFIRMED_SEPARATE` with an empty list is honoured only when there is no `EXACT` or `SETS_DIFFER` wall at all. Otherwise a client whose lookup failed, or a script, could send the confirmation blind and skip the check. A list naming none of the walls the server found counts as empty, so one made-up uuid can't get round this.
 
-A confirmed create next to a wall the climber saw logs `createBoard: existing walls acknowledged as separate`, as the duplicate-config bypass does.
+A confirmed create next to a wall the climber saw logs `createBoard: existing walls acknowledged as separate` once, from the run inside the transaction, as the duplicate-config bypass does.
 
 **The refusal.** `BOARD_EXISTING_WALLS`, with `extensions.candidates: [{ boardUuid, matchKind }]` and nothing else: no names, owners or places. An error's extensions are a read channel. The client refetches `existingWallCandidates` to show the walls, which applies the full read rules. `readExistingWallsError` in `@boardsesh/graphql` reads it.
 
@@ -89,13 +91,22 @@ The per-gym caps in `requireBoardGymLinkAccess` (`MAX_BOARDS_PER_FOREIGN_GYM`, `
 
 ## Concurrency: the gym-wall lock
 
-Two climbers adding the same wall at the same moment could both read "no wall yet" and both insert. Inside the insert's transaction the recheck takes `pg_advisory_xact_lock(0x4757414c, gymId)` (ASCII "GWAL") for every live gym in the search, in ascending id order, before it reads the walls. The second create waits, then reads after the first commits and sees its board.
+Two climbers adding the same wall at the same moment could both read "no wall yet" and both insert. Inside the insert's transaction the recheck takes `pg_advisory_xact_lock(0x4757414c, key)` (ASCII "GWAL") for every live gym in the search, in ascending key order, before it reads the walls. The second create waits, then reads after the first commits and sees its board. Two creates at neighbouring gyms lock the same set, because each gym is in the other's search.
+
+The search scope (the merged listings and nearby gyms) is read on the pool BEFORE the transaction opens. Inside the transaction only the locks, one look for nearby listings, and the wall read run, all on the transaction's own connection. A transaction that waited on a second pool connection would hold its own while it waited, and the pool has 5: five concurrent creates would wedge the backend.
+
+After taking the locks the recheck looks again for public, listed gyms nearby, on the transaction. A gym another create minted and committed while this one waited is then searched too, without a lock: it was committed before this read, so its walls are already visible.
 
 - `lockGymWallWrites` in `packages/db/src/queries/boards/gym-wall-write-lock.ts`, beside the serial lock.
 - Taken first in the transaction, before the board-serial lock (`lockBoardSerialWrite`). The check only runs for boards without a serial, so in practice the serial lock is a no-op there, but the order is fixed.
 - Ascending order means two creates whose searches overlap always take shared locks in the same order and can't deadlock.
-- Gym ids are bigserial and the two-int form takes int4 keys, so the id is folded modulo 2^31. A fold collision only serializes two unrelated gyms.
+- Gym ids are bigserial and the two-int form takes int4 keys, so the id is folded modulo 2^31 and the keys are sorted after folding. A fold collision only serializes two unrelated gyms.
 - Merged listings are soft-deleted and nobody adds a board to them, so they aren't locked.
+
+Limits of the mint path, by design:
+
+- Two mints at the same spot serialize only through a public, listed gym that was already within 150 m when they started (both lock it). With no such gym nearby there is nothing to lock, and both can mint.
+- A minted gym is public only when its board's audience and location are both public. A home wall with a hidden location mints a private gym, which never enters anyone's search, so it never blocks another mint, as a private wall never blocks anything.
 
 The namespace is new. Other two-int namespaces in the repo: `0x4253524c` board serials ("BSRL"), `(8043, 1)` gym-claim auto-approve, `0x434c4942` climb duplicates, `0x46415653` favourites, `0x70757368` push tokens, `0x46524551` follow requests, `0x434e5354` analytics consent, `0x454d4b59` / `0x50535542` auth email and provider keys, `6975` the auth authority gate. Pick another for a new lock family.
 

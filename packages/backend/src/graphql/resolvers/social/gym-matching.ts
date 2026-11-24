@@ -246,9 +246,11 @@ export async function findGymsWithin(opts: {
   longitude: number;
   radiusMeters: number;
   publicListedOnly?: boolean;
+  /** Read on this connection instead of the pool, e.g. the transaction the caller already holds. */
+  executor?: Pick<typeof db, 'select'>;
 }): Promise<GymNameMatch[]> {
-  const { latitude, longitude, radiusMeters, publicListedOnly = false } = opts;
-  const rows = await db
+  const { latitude, longitude, radiusMeters, publicListedOnly = false, executor = db } = opts;
+  const rows = await executor
     .select(gymColumns)
     .from(dbSchema.gyms)
     .where(

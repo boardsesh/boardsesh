@@ -26,10 +26,12 @@ export async function lockGymWallWrites(
   commandDb: BoardSerialWriteCommandDb,
   gymIds: readonly number[],
 ): Promise<void> {
-  const orderedGymIds = [...new Set(gymIds)].sort((first, second) => first - second);
-  for (const gymId of orderedGymIds) {
-    await commandDb.execute(
-      sql`SELECT pg_advisory_xact_lock(${GYM_WALL_WRITE_LOCK_NAMESPACE}::int, ${gymId % INT4_KEY_SPACE}::int)`,
-    );
+  // Sorted by the key actually locked, not the raw id, so the order stays
+  // consistent even for ids past the fold.
+  const orderedLockKeys = [...new Set(gymIds.map((gymId) => gymId % INT4_KEY_SPACE))].sort(
+    (first, second) => first - second,
+  );
+  for (const lockKey of orderedLockKeys) {
+    await commandDb.execute(sql`SELECT pg_advisory_xact_lock(${GYM_WALL_WRITE_LOCK_NAMESPACE}::int, ${lockKey}::int)`);
   }
 }

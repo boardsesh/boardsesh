@@ -17,6 +17,12 @@ describe('classifyWallMatch', () => {
     expect(classifyWallMatch(MASTERS_2019, { ...MASTERS_2019, setIds: ' 17,18 ,19,20,20' })).toBe('EXACT');
   });
 
+  it('compares set ids as numbers, so a leading zero is the same set', () => {
+    expect(classifyWallMatch({ ...MASTERS_2019, setIds: '017,18' }, { ...MASTERS_2019, setIds: '17,18' })).toBe(
+      'EXACT',
+    );
+  });
+
   it('calls a missing, extra or swapped set SETS_DIFFER', () => {
     expect(classifyWallMatch(MASTERS_2019, { ...MASTERS_2019, setIds: '17,18,19' })).toBe('SETS_DIFFER');
     expect(classifyWallMatch(MASTERS_2019, { ...MASTERS_2019, setIds: '17,18,19,20,21' })).toBe('SETS_DIFFER');
