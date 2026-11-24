@@ -57,7 +57,7 @@ export type GymClaimCard = 'claim' | 'signIn' | 'pending' | 'denied' | 'deniedCl
 /** "Start here" for staff who have just started running the gym. At most three rows. */
 export type GymStartRow = 'boards' | 'hours' | 'tv';
 
-/** The staff tools: the edit form in the app, the rest on the website. */
+/** The staff tools: details and analytics in the app, board and TV management on the website. */
 export type GymStaffTool = 'editDetails' | 'nearbyBoards' | 'kiosks' | 'insights';
 
 /** Info rows, each only when the gym has set it. */
@@ -177,8 +177,8 @@ function startHereFor(gym: GymPageGym, staffRole: GymStaffRole | null): readonly
 
 /**
  * Staff tools for anyone who can edit the gym: its staff, and a community leader
- * or our team, who reach the same website console. Editing details is the only
- * one in the app; the rest are big-screen jobs on the website.
+ * or our team. Details and analytics open in the app; board and TV management
+ * open the website console.
  */
 function staffToolsFor(gym: GymPageGym): readonly GymStaffTool[] {
   return gym.canEdit ? ['editDetails', 'nearbyBoards', 'kiosks', 'insights'] : [];

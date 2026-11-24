@@ -2,6 +2,20 @@
 
 Gym Insights shows recorded Boardsesh board activity to staff. Access starts with the gym-edit gate and checks each board independently. A gym role gives no access to a private, unlisted, revoked, hidden or deleted board. A private configuration stays private when staff group it with a public configuration. The GraphQL endpoint returns counts and authorized climb references. Account IDs used to deduplicate counts stay inside the database.
 
+## Open the dashboard
+
+In the app (iOS, Android and Expo web), open **More → Gyms you run → Gym analytics**.
+The gym page also offers **Staff tools → Gym analytics**, opening the same in-app
+dashboard for that gym. Both entry points require gym edit access. On www, open
+the gym's **Manage → Insights** tab (`/gym/[gym_slug]/manage?tab=insights`).
+
+Set the gym's reporting time zone to activate the forward history coverage used
+by return rates and busy times. When unset, the app shows reporting settings
+above the report. This does not backfill unknown venue or occurrence evidence.
+
+The app receives these changes through the normal staged OTA release process;
+a merged mobile PR alone does not confirm delivery to an installed app.
+
 ## What counts
 
 | Measure | Eligible records |

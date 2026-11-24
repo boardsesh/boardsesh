@@ -312,8 +312,7 @@ function GymPageContent({
   );
   const isWebUrl = useCallback((url: string) => url.startsWith(WEB_BASE_URL), []);
   const openManage = useCallback(
-    (tab: 'boards' | 'kiosks' | 'insights') =>
-      void openExternal(buildGymManageUrl(gym.slug ?? gym.uuid, tab), isWebUrl),
+    (tab: 'boards' | 'kiosks') => void openExternal(buildGymManageUrl(gym.slug ?? gym.uuid, tab), isWebUrl),
     [openExternal, gym.slug, gym.uuid, isWebUrl],
   );
   const editGym = useCallback(() => {
@@ -356,7 +355,10 @@ function GymPageContent({
       },
       onStaffTool: (tool: GymStaffTool) => {
         if (tool === 'editDetails') editGym();
-        else if (tool === 'nearbyBoards') openManage('boards');
+        else if (tool === 'insights') {
+          hapticSelection();
+          router.push({ pathname: '/gyms/analytics', params: { gymUuid: gym.uuid } });
+        } else if (tool === 'nearbyBoards') openManage('boards');
         else openManage(tool);
       },
       onInfoRow: (row: GymInfoRow) => {
@@ -380,6 +382,7 @@ function GymPageContent({
       editGym,
       openManage,
       gym.website,
+      gym.uuid,
       gym.contactPhone,
       gym.contactEmail,
       router,

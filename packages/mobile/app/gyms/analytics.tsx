@@ -250,6 +250,9 @@ function GymAnalyticsReport({
       )}
       {stats && (
         <>
+          {query.state === 'ready' && !stats.timeZoneConfigured && (
+            <GymReportingSettings stats={stats} saveZone={saveZone} saveAlias={saveAlias} />
+          )}
           {query.state === 'stale' && (
             <Text accessibilityRole="alert">
               {t('gymReporting.stale', {
@@ -289,7 +292,7 @@ function GymAnalyticsReport({
           boardUuid={boardUuid}
           period={period}
         />
-        <GymReportingSettings stats={stats} saveZone={saveZone} saveAlias={saveAlias} />
+        {stats.timeZoneConfigured && <GymReportingSettings stats={stats} saveZone={saveZone} saveAlias={saveAlias} />}
       </View>
     ) : null;
 
