@@ -254,6 +254,20 @@ describe('app guide pages before hydration', () => {
   });
 });
 
+describe('page-level claims from the registry', () => {
+  it('offers "Bring your logbook" only where an import exists, and browser lighting only where it is backed', async () => {
+    for (const { id, markup } of await renderAll()) {
+      if (id === 'hub') continue;
+      const cta = markup.querySelector('#logbook a[href="/bring-your-logbook"], #logbook a[href="/help/logbook"]');
+      expect(cta?.getAttribute('href'), id).toBe(
+        ['woods', 'spray-wall-apps'].includes(id) ? '/help/logbook' : '/bring-your-logbook',
+      );
+      const strip = markup.querySelector('ul[aria-label="Where Boardsesh runs"]')?.textContent ?? '';
+      expect(strip.includes('Chrome and Edge light the board'), id).toBe(!['woods', 'spray-wall-apps'].includes(id));
+    }
+  });
+});
+
 describe('session steps', () => {
   it("shows only this page's own board or a board-neutral screen, and reads cleanly as text", async () => {
     for (const { id, markup } of await renderAll()) {

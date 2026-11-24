@@ -64,6 +64,10 @@ export type ComparisonGuide = ComparisonPageRegistry & {
   hero: { front: HeroArt; back: GuideShot };
   related: readonly GuideLink[];
   placement: GuidePlacement;
+  /** The logbook section's button: an import route, or the logbook help where history can't come across. */
+  logbookCta: 'import' | 'help';
+  /** Whether the hero may say Chrome and Edge light the board. */
+  browserLighting: boolean;
 };
 
 export type HubGuide = HubPageRegistry & {
@@ -71,6 +75,7 @@ export type HubGuide = HubPageRegistry & {
   path: '/apps';
   related: readonly GuideLink[];
   placement: 'compare-hub';
+  browserLighting: boolean;
 };
 
 export type AppGuidePage = ComparisonGuide | HubGuide;
@@ -150,6 +155,33 @@ const RELATED: Record<ComparisonPageId, readonly GuideLink[]> = {
   'spray-wall-apps': [help.spray, help.sessions, help.logbook],
 };
 
+/**
+ * "Bring your logbook" only where an import exists. Woods history can't be
+ * imported (the page says so), and a spray wall has no other app's logbook to
+ * bring, so both point at the logbook help instead.
+ */
+const LOGBOOK_CTA: Record<ComparisonPageId, ComparisonGuide['logbookCta']> = {
+  kilter: 'import',
+  aurora: 'import',
+  moonboard: 'import',
+  woods: 'help',
+  'spray-wall-apps': 'help',
+};
+
+/**
+ * Whether the hero's "Any web browser" line may claim Chrome and Edge light the
+ * board. Off on Woods (its own row says browser lighting is untested there) and
+ * on the spray page (the editors removed the spray LED claim).
+ */
+const BROWSER_LIGHTING: Record<AppGuidePageId, boolean> = {
+  hub: true,
+  kilter: true,
+  aurora: true,
+  moonboard: true,
+  woods: false,
+  'spray-wall-apps': false,
+};
+
 /** Art for a feature tile, by tile id. A tile without a capture gets a diagram, never a borrowed screen. */
 export type TileArt =
   /** The profile capture cropped to its "Across your boards" card: the proof that one logbook holds every board. */
@@ -189,6 +221,8 @@ function comparisonGuide(id: ComparisonPageId): ComparisonGuide {
     hero: HERO[id],
     related: RELATED[id],
     placement: isSpray ? 'compare-spray' : `compare-${id}`,
+    logbookCta: LOGBOOK_CTA[id],
+    browserLighting: BROWSER_LIGHTING[id],
   };
 }
 
@@ -204,6 +238,7 @@ export const APP_GUIDE_HUB: HubGuide = {
   path: '/apps',
   related: [help.boards, help.bluetooth, help.sessions],
   placement: 'compare-hub',
+  browserLighting: BROWSER_LIGHTING.hub,
 };
 
 export const APP_GUIDE_COMPARISON: ComparisonGuide = comparisonGuide('spray-wall-apps');

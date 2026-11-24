@@ -30,7 +30,8 @@
       },
       "browser": {
         "title": "Any web browser",
-        "body": "Chrome and Edge light the board too"
+        "body": "Chrome and Edge light the board too",
+        "bodyNoLighting": "Browse, queue and log at app.boardsesh.com"
       }
     },
     "eyebrows": {

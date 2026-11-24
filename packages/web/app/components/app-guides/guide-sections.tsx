@@ -90,7 +90,7 @@ export function ComparisonHero({
           {t(`appGuides:pages.${guide.id}.hero.lead`)}
         </Typography>
         {byline}
-        <RunsOnStrip t={t} />
+        <RunsOnStrip t={t} browserLighting={guide.browserLighting} />
         <CtaRow t={t} storeLabels={storeLabels} placement={guide.placement} />
         <ProofLines t={t} />
       </Box>
@@ -451,7 +451,7 @@ export function SessionSteps({ guide, t }: { guide: ComparisonGuide; t: T }) {
 
 export function LogbookTray({ guide, t }: { guide: ComparisonGuide; t: T }) {
   const capture = guideShot('logbook');
-  const isSpray = guide.boardType === null;
+  const importCta = guide.logbookCta === 'import';
   return (
     <Box
       component="section"
@@ -470,12 +470,12 @@ export function LogbookTray({ guide, t }: { guide: ComparisonGuide; t: T }) {
           />
           <Button
             component={LocaleLink}
-            href={isSpray ? '/help/logbook' : '/bring-your-logbook'}
+            href={importCta ? '/bring-your-logbook' : '/help/logbook'}
             locale={DEFAULT_LOCALE}
             variant="outlined"
             sx={OUTLINED_SX}
           >
-            {isSpray ? t('appGuides:common.logbookHelpCta') : t('appGuides:common.logbookCta')}
+            {importCta ? t('appGuides:common.logbookCta') : t('appGuides:common.logbookHelpCta')}
           </Button>
           <Box className={styles.importArt}>
             <Image

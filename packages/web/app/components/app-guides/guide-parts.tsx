@@ -103,8 +103,12 @@ export function WorksWithPill({ children }: { children: string }) {
   );
 }
 
-/** Where Boardsesh runs: iPhone, any Android phone, any browser. */
-export function RunsOnStrip({ t }: { t: T }) {
+/**
+ * Where Boardsesh runs: iPhone, any Android phone, any browser. `browserLighting`
+ * comes from the page's registry entry: off, the browser line says what the
+ * browser app does without claiming it lights this board.
+ */
+export function RunsOnStrip({ t, browserLighting }: { t: T; browserLighting: boolean }) {
   const items = [
     { id: 'ios', Icon: PhoneIphoneOutlined },
     { id: 'android', Icon: PhoneAndroidOutlined },
@@ -117,7 +121,11 @@ export function RunsOnStrip({ t }: { t: T }) {
           <Icon aria-hidden className={styles.runsOnIcon} />
           <span>
             <strong>{t(`appGuides:common.runsOn.${id}.title`)}</strong>
-            <span className={styles.runsOnBody}>{t(`appGuides:common.runsOn.${id}.body`)}</span>
+            <span className={styles.runsOnBody}>
+              {id === 'browser' && !browserLighting
+                ? t('appGuides:common.runsOn.browser.bodyNoLighting')
+                : t(`appGuides:common.runsOn.${id}.body`)}
+            </span>
           </span>
         </li>
       ))}
