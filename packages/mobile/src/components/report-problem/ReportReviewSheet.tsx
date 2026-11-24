@@ -10,7 +10,10 @@
 // Setups climbers suggested on "Set up wrong" (the `directory-setup-suggestions`
 // flag) are grouped by setup, each with "Use this setup": the same `updateBoard`
 // the edit screen saves with, which closes the waiting reports as fixed. The
-// edit route stays one row down as "Edit it yourself".
+// edit route stays one row down as "Edit it yourself". The most suggested few
+// show (`MAX_SUGGESTED_SETUPS_SHOWN`), the rest as one count, so the sheet's
+// scroll view never maps an unbounded list. While one of them saves, every
+// other answer waits: the review ends one way only.
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, type ColorValue } from 'react-native';
@@ -53,7 +56,13 @@ import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { dismissManagedSheetAndWait, type ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
 import { spacing } from '../../theme/tokens';
-import { keepableReports, reviewFootnote, reviewNotes, waitingReports } from './report-review-model';
+import {
+  MAX_SUGGESTED_SETUPS_SHOWN,
+  keepableReports,
+  reviewFootnote,
+  reviewNotes,
+  waitingReports,
+} from './report-review-model';
 import { formatSetupSummary } from './setup-summary';
 
 /** What the host does for a board action picked in the sheet. */
@@ -137,17 +146,20 @@ export function ReportReviewSheet({
       .flatMap((report) => report.notes);
     return groupSuggestedSetups(notes).filter((group) => !setupMatches(group.setup, current));
   }, [setupSuggestionsEnabled, waiting, layoutId, sizeId, setIds, angle]);
-  // Each group's sentence, worked out once per list rather than per render.
+  // The most suggested groups get a row each; the rest are one count below them.
+  const shownSuggestions = useMemo(() => suggestions.slice(0, MAX_SUGGESTED_SETUPS_SHOWN), [suggestions]);
+  const otherSuggestionCount = suggestions.length - shownSuggestions.length;
+  // Each shown group's sentence, worked out once per list rather than per render.
   const suggestionLines = useMemo(
     () =>
-      suggestions.map((group) => ({
+      shownSuggestions.map((group) => ({
         group,
         text: t('mobile.setupSuggestion.suggested', {
           count: group.count,
           setup: formatSetupSummary(boardType, group.setup) ?? '',
         }),
       })),
-    [suggestions, boardType, t],
+    [shownSuggestions, boardType, t],
   );
   // "Use this setup" shows for each group to a viewer who can edit the board,
   // and only then does the edit route read "Edit it yourself" beside it.
@@ -171,12 +183,15 @@ export function ReportReviewSheet({
   const usingSetup = useRef(false);
   const [usingKey, setUsingKey] = useState<string | null>(null);
   const [useSetupFailed, setUseSetupFailed] = useState(false);
+  // A "Use this setup" save is in flight: keep, remove, delete and the edit
+  // route wait for it, so a report never closes as kept while its setup changes.
+  const applyingSetup = usingKey !== null;
 
   // A swipe can't drop a save in flight: "It's right as it is" or "Use this setup".
   const guard = useUnsavedSheetGuard({
     visible: true,
     dirty: step === 'keep' && reply.trim().length > 0,
-    busy: keeping || usingKey !== null,
+    busy: keeping || applyingSetup,
     onClose,
   });
 
@@ -186,7 +201,7 @@ export function ReportReviewSheet({
   const acting = useRef(false);
   const act = useCallback(
     async (action: ReportReviewAction) => {
-      if (acting.current) return;
+      if (acting.current || usingSetup.current) return;
       acting.current = true;
       await dismissManagedSheetAndWait(sheetRef.current);
       onClose();
@@ -195,10 +210,14 @@ export function ReportReviewSheet({
     [onClose, onAction, board],
   );
   const changeReply = useCallback((next: string) => setReply(next.slice(0, REPORT_NOTE_MAX_LENGTH)), []);
+  const openKeepStep = useCallback(() => {
+    if (usingSetup.current) return;
+    setStep('keep');
+  }, []);
 
   const applySuggestedSetup = useCallback(
     async (group: SuggestedSetupGroup) => {
-      if (usingSetup.current) return;
+      if (usingSetup.current || acting.current) return;
       usingSetup.current = true;
       setUsingKey(group.key);
       setUseSetupFailed(false);
@@ -251,7 +270,7 @@ export function ReportReviewSheet({
   );
   const resolveAsync = resolve.mutateAsync;
   const sendKeep = useCallback(async () => {
-    if (keeping || keepable.length === 0) return;
+    if (keeping || keepable.length === 0 || usingSetup.current) return;
     setKeeping(true);
     setKeepFailure(null);
     const note = normalizeReportNote(reply);
@@ -381,13 +400,18 @@ export function ReportReviewSheet({
                           variant="tonal"
                           size="small"
                           loading={usingKey === group.key}
-                          disabled={usingKey !== null}
+                          disabled={applyingSetup}
                           onPress={() => void applySuggestedSetup(group)}
                           testID={`report-review-use-setup-${group.key}`}
                         />
                       ) : null}
                     </View>
                   ))}
+                  {otherSuggestionCount > 0 ? (
+                    <Text variant="body" tone="secondary" testID="report-review-other-suggestions">
+                      {t('mobile.setupSuggestion.otherSuggested', { count: otherSuggestionCount })}
+                    </Text>
+                  ) : null}
                   {useSetupFailed ? (
                     <Text
                       accessibilityLiveRegion="polite"
@@ -427,6 +451,7 @@ export function ReportReviewSheet({
                 hint={t('reportReview.fixHint')}
                 color={systemColors.label}
                 onPress={() => void act('fix')}
+                disabled={applyingSetup}
                 testID="report-review-fix"
               />
             ) : null}
@@ -438,6 +463,7 @@ export function ReportReviewSheet({
                 hint={removeHint}
                 color={systemColors.label}
                 onPress={() => void act('remove')}
+                disabled={applyingSetup}
                 testID="report-review-remove"
               />
             ) : null}
@@ -449,6 +475,7 @@ export function ReportReviewSheet({
                 hint={t('reportReview.deleteHint')}
                 color={brandColors.error}
                 onPress={() => void act('delete')}
+                disabled={applyingSetup}
                 testID="report-review-delete"
               />
             ) : null}
@@ -459,7 +486,8 @@ export function ReportReviewSheet({
                 label={t('reportReview.keep')}
                 hint={t('reportReview.keepHint')}
                 color={systemColors.label}
-                onPress={() => setStep('keep')}
+                onPress={openKeepStep}
+                disabled={applyingSetup}
                 testID="report-review-keep"
               />
             ) : null}
@@ -476,6 +504,7 @@ function ReviewActionRow({
   hint,
   color,
   onPress,
+  disabled = false,
   testID,
 }: {
   icon: IconName;
@@ -483,6 +512,7 @@ function ReviewActionRow({
   hint: string;
   color: ColorValue;
   onPress: () => void;
+  disabled?: boolean;
   testID?: string;
 }) {
   const { systemColors } = useTheme();
@@ -492,6 +522,7 @@ function ReviewActionRow({
       accessibilityLabel={label}
       accessibilityHint={hint}
       onPress={onPress}
+      disabled={disabled}
       feedback="opacity"
       testID={testID}
       style={insetGroupedRowStyles.row}

@@ -6,6 +6,13 @@
 import { isOpenDirectoryReportStatus } from '@boardsesh/directory-moderation';
 import type { DirectoryReport } from '@boardsesh/shared-schema';
 
+/**
+ * How many suggested setups the review sheet lists, most suggested first. Any
+ * more are one line ("2 other setups suggested"): the sheet is a scroll view,
+ * so its rows stay a bounded few instead of a nested virtualised list.
+ */
+export const MAX_SUGGESTED_SETUPS_SHOWN = 5;
+
 /** Reports still waiting on someone (`open` or `escalated`), oldest first. */
 export function waitingReports(reports: readonly DirectoryReport[]): DirectoryReport[] {
   return reports

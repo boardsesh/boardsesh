@@ -4,6 +4,7 @@ import { act, fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { DirectoryReport, UserBoard } from '@boardsesh/shared-schema';
 import { ReportReviewSheet } from '../ReportReviewSheet';
+import { MAX_SUGGESTED_SETUPS_SHOWN } from '../report-review-model';
 
 const state = vi.hoisted(() => ({ reports: [] as DirectoryReport[], setupSuggestions: false }));
 const resolveAsync = vi.hoisted(() => vi.fn());
@@ -42,9 +43,26 @@ vi.mock('../../InsetGroupedList', () => ({
   InsetGroupedList: ({ children }: { children: ReactNode }) => createElement('div', null, children),
   insetGroupedRowStyles: { row: {}, leading: {}, text: {} },
 }));
+// A disabled row says so with aria-disabled and still hands a tap to onPress,
+// so a test can show the handler itself refuses (a tap that landed before the
+// row re-rendered disabled).
 vi.mock('../../PressableSurface', () => ({
-  PressableSurface: ({ children, onPress, testID }: { children: ReactNode; onPress: () => void; testID?: string }) =>
-    createElement('button', { type: 'button', onClick: onPress, 'data-testid': testID }, children),
+  PressableSurface: ({
+    children,
+    onPress,
+    disabled,
+    testID,
+  }: {
+    children: ReactNode;
+    onPress: () => void;
+    disabled?: boolean;
+    testID?: string;
+  }) =>
+    createElement(
+      'button',
+      { type: 'button', onClick: onPress, 'aria-disabled': disabled ? 'true' : undefined, 'data-testid': testID },
+      children,
+    ),
 }));
 vi.mock('../../tick', () => ({
   TickNoteField: ({ value, onChangeText }: { value: string; onChangeText: (next: string) => void }) =>
@@ -379,6 +397,92 @@ describe('ReportReviewSheet with suggested setups', () => {
       finish(board);
     });
     expect(guardArgs.at(-1)?.busy).toBe(false);
+  });
+
+  it('lists the five most suggested setups, then one line for the rest', () => {
+    // Seven distinct setups: the angle tells them apart. Angle 55 was suggested
+    // twice, so it leads; the others follow newest first.
+    const angled = (angle: number, createdAt: string) => ({
+      ...suggestion(1, 10, '1,20', createdAt),
+      suggestedSetup: { layoutId: 1, sizeId: 10, setIds: '1,20', angle },
+    });
+    state.reports = [
+      report({
+        reporterCount: 8,
+        notes: [
+          angled(20, '2026-11-10T10:00:00.000Z'),
+          angled(25, '2026-11-11T10:00:00.000Z'),
+          angled(30, '2026-11-12T10:00:00.000Z'),
+          angled(35, '2026-11-13T10:00:00.000Z'),
+          angled(45, '2026-11-14T10:00:00.000Z'),
+          angled(50, '2026-11-15T10:00:00.000Z'),
+          angled(55, '2026-11-08T10:00:00.000Z'),
+          angled(55, '2026-11-09T10:00:00.000Z'),
+        ],
+      }),
+    ];
+    const screen = render(<ReportReviewSheet board={board} viewerUserId="alex" onClose={vi.fn()} onAction={vi.fn()} />);
+    const useButtons = [
+      ...screen.getByTestId('report-review-suggestions').querySelectorAll('[data-testid^="report-review-use-setup-"]'),
+    ].map((button) => button.getAttribute('data-testid'));
+    expect(MAX_SUGGESTED_SETUPS_SHOWN).toBe(5);
+    expect(useButtons).toEqual([
+      'report-review-use-setup-1:10:1,20:55',
+      'report-review-use-setup-1:10:1,20:50',
+      'report-review-use-setup-1:10:1,20:45',
+      'report-review-use-setup-1:10:1,20:35',
+      'report-review-use-setup-1:10:1,20:30',
+    ]);
+    expect(screen.getByTestId('report-review-other-suggestions').textContent).toBe(
+      'mobile.setupSuggestion.otherSuggested{"count":2}',
+    );
+  });
+
+  it('adds no count line when every suggestion has a row', () => {
+    const screen = render(<ReportReviewSheet board={board} viewerUserId="alex" onClose={vi.fn()} onAction={vi.fn()} />);
+    expect(screen.getByTestId('report-review-suggestions')).toBeTruthy();
+    expect(screen.queryByTestId('report-review-other-suggestions')).toBeNull();
+  });
+
+  it('holds every other answer while a Use this setup save is in flight', async () => {
+    let fail: (error: Error) => void = () => undefined;
+    updateBoardAsync.mockImplementation(
+      () =>
+        new Promise<UserBoard>((_resolve, reject) => {
+          fail = reject;
+        }),
+    );
+    const onClose = vi.fn();
+    const onAction = vi.fn();
+    const screen = render(
+      <ReportReviewSheet board={board} viewerUserId="alex" onClose={onClose} onAction={onAction} />,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('report-review-use-setup-1:10:20:'));
+    });
+    const competing = ['fix', 'remove', 'delete', 'keep'].map((action) =>
+      screen.getByTestId(`report-review-${action}`),
+    );
+    for (const row of competing) expect(row.getAttribute('aria-disabled')).toBe('true');
+    expect((screen.getByTestId('report-review-use-setup-1:7:1,20:') as HTMLButtonElement).disabled).toBe(true);
+
+    // A tap that lands anyway does nothing: no host action, no keep step.
+    await act(async () => {
+      for (const row of competing) fireEvent.click(row);
+    });
+    expect(onAction).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('reply')).toBeNull();
+    expect(resolveAsync).not.toHaveBeenCalled();
+    expect(updateBoardAsync).toHaveBeenCalledTimes(1);
+
+    // Once the save ends, the answers are back.
+    await act(async () => {
+      fail(new Error('offline'));
+    });
+    expect(screen.getByTestId('report-review-keep').getAttribute('aria-disabled')).toBeNull();
+    fireEvent.click(screen.getByTestId('report-review-keep'));
+    expect(screen.getByTestId('reply')).toBeTruthy();
   });
 
   it('keeps "Fix the setup" when no suggestion is left to use', () => {

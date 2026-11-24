@@ -183,6 +183,8 @@
       "suggestedHeading": "Vorgeschlagene Einrichtungen",
       "suggested_one": "{{count}} Kletterer*in hat {{setup}} vorgeschlagen",
       "suggested_other": "{{count}} Kletterer*innen haben {{setup}} vorgeschlagen",
+      "otherSuggested_one": "{{count}} weitere Einrichtung vorgeschlagen",
+      "otherSuggested_other": "{{count}} weitere Einrichtungen vorgeschlagen",
       "useSetup": "Diese Einrichtung übernehmen",
       "useSetupLabel": "Diese Einrichtung übernehmen: {{setup}}",
       "editYourself": "Selbst bearbeiten"

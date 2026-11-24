@@ -183,6 +183,8 @@
       "suggestedHeading": "Configuraciones que sugirieron",
       "suggested_one": "{{count}} escalador sugirió {{setup}}",
       "suggested_other": "{{count}} escaladores sugirieron {{setup}}",
+      "otherSuggested_one": "{{count}} configuración sugerida más",
+      "otherSuggested_other": "{{count}} configuraciones sugeridas más",
       "useSetup": "Usar esta configuración",
       "useSetupLabel": "Usar esta configuración: {{setup}}",
       "editYourself": "Editarlo tú"

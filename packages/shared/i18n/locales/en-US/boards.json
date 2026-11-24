@@ -183,6 +183,8 @@
       "suggestedHeading": "Setups they suggested",
       "suggested_one": "{{count}} climber suggested {{setup}}",
       "suggested_other": "{{count}} climbers suggested {{setup}}",
+      "otherSuggested_one": "{{count}} other setup suggested",
+      "otherSuggested_other": "{{count}} other setups suggested",
       "useSetup": "Use this setup",
       "useSetupLabel": "Use this setup: {{setup}}",
       "editYourself": "Edit it yourself"

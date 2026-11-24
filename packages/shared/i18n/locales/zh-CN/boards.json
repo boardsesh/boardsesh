@@ -183,6 +183,8 @@
       "suggestedHeading": "攀岩者建议的设置",
       "suggested_one": "{{count}} 位攀岩者建议 {{setup}}",
       "suggested_other": "{{count}} 位攀岩者建议 {{setup}}",
+      "otherSuggested_one": "另有 {{count}} 种建议的设置",
+      "otherSuggested_other": "另有 {{count}} 种建议的设置",
       "useSetup": "使用此设置",
       "useSetupLabel": "使用此设置：{{setup}}",
       "editYourself": "自己编辑"

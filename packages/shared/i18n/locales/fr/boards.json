@@ -183,6 +183,8 @@
       "suggestedHeading": "Configurations suggérées",
       "suggested_one": "{{count}} grimpeur a suggéré {{setup}}",
       "suggested_other": "{{count}} grimpeurs ont suggéré {{setup}}",
+      "otherSuggested_one": "{{count}} autre configuration suggérée",
+      "otherSuggested_other": "{{count}} autres configurations suggérées",
       "useSetup": "Utiliser cette configuration",
       "useSetupLabel": "Utiliser cette configuration : {{setup}}",
       "editYourself": "Modifier toi-même"
