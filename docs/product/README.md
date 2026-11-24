@@ -26,6 +26,7 @@ a production rollout or a physical-device result.
 | [Climb view options](climb-view-options.md) | `climb-view-options.md` |
 | [CNC build packs](cnc-packs.md) | `cnc-packs.md` |
 | [The current climb outside the queue (F3)](current-climb-outside-queue.md) | `current-climb-outside-queue.md` |
+| [Existing-wall check: finding a gym's walls before adding another](existing-wall-check.md) | `existing-wall-check.md` |
 | [Climb-wide favorites rollout](favorites-rollout.md) | `favorites-rollout.md` |
 | [Followed authors and Crew](followed-authors.md) | `followed-authors.md` |
 | [Who fixes a wrong board: gym and board governance](gym-board-governance.md) | `gym-board-governance.md` |
