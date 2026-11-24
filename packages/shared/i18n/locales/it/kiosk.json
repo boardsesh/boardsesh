@@ -351,6 +351,12 @@
       "createFailed": "Impossibile creare il kiosk."
     },
     "editor": {
+      "appearance": {
+        "label": "Aspetto",
+        "light": "Chiaro",
+        "dark": "Scuro",
+        "description": "Scegli l'aspetto di questo schermo. Gli altri kiosk mantengono il proprio aspetto."
+      },
       "back": "Tutti i kiosk",
       "save": "Salva layout",
       "saved": "Kiosk salvato.",

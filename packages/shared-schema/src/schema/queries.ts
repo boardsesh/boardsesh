@@ -848,6 +848,9 @@ export const queriesTypeDefs = /* GraphQL */ `
     bounded to the gym's linked boards and the time window.
     """
     gymStats(input: GymStatsInput!): GymStats!
+    "Compare current inventory and attributable sends. Requires live gym staff access."
+    gymGradeComparison(input: GymStatsInput!): GymGradeComparison!
+    gymGradeCollectionOptions(input: GymGradeCollectionOptionsInput!): GymGradeCollectionPage!
 
     """
     Candidate duplicate-gym clusters for the /admin/gym-duplicates review queue

@@ -418,6 +418,97 @@ export const GET_GYM_STATS = gql`
         includesCurrentBoardHistory
         isPartial
       }
+      busyTimes {
+        status
+        startDate
+        endDate
+        coveredDates
+        firstCoveredDate
+        instantDisplays
+        instantTicks
+        dateOnlyRecords
+        unplacedDateOnlyRecords
+        unknownTimeRecords
+        hasUnboundedUnknownTime
+        weekdays {
+          dayOfWeek
+          eligibleDates
+          recordedClimbers
+        }
+        hours {
+          dayOfWeek
+          hour
+          eligibleDates
+          recordedClimbers
+        }
+      }
+      reachOverview {
+        observationStartedAt
+        baselineStartAt
+        current {
+          climbers {
+            count
+            coverage
+          }
+          firstRecorded {
+            count
+            coverage
+          }
+          uncertainFirstRecorded
+          sends {
+            count
+            coverage
+          }
+          sendLoggers
+          sessions {
+            count
+            coverage
+          }
+        }
+        previous {
+          climbers {
+            count
+            coverage
+          }
+          firstRecorded {
+            count
+            coverage
+          }
+          uncertainFirstRecorded
+          sends {
+            count
+            coverage
+          }
+          sendLoggers
+          sessions {
+            count
+            coverage
+          }
+        }
+        cameBack {
+          returning
+          previousClimbers
+          coverage
+        }
+        previousCameBack {
+          returning
+          previousClimbers
+          coverage
+        }
+        weeklyTrend {
+          startDate
+          endDate
+          inProgress
+          climbers {
+            count
+            coverage
+          }
+          sends {
+            count
+            coverage
+          }
+        }
+      }
       periodDays
       current {
         startAt
@@ -446,6 +537,24 @@ export const GET_GYM_STATS = gql`
       busiestDays {
         dayOfWeek
         ascentCount
+      }
+      angleUsage {
+        boardUuid
+        knownAngleClimberCount
+        angles {
+          angle
+          distinctClimberCount
+          climberDayCount
+          unresolvedLocalDateTickCount
+          tickCount
+          sendCount
+          displayCount
+        }
+        unknownAngle {
+          tickCount
+          sendCount
+          displayCount
+        }
       }
     }
   }
@@ -1058,3 +1167,50 @@ export const PUBLIC_GYM_SITEMAP = gql`
 export type PublicGymSitemapQueryResponse = {
   publicGymSitemap: Array<{ slug: string; updatedAt: string }>;
 };
+
+export const GET_GYM_GRADE_COMPARISON = gql`
+  query GetGymGradeComparison($input: GymStatsInput!) {
+    gymGradeComparison(input: $input) {
+      gymUuid
+      asOf
+      startAt
+      timeZone
+      availableCount
+      sendCount
+      grades {
+        boardType
+        difficultyId
+        availableCount
+        sendCount
+      }
+      boards {
+        boardUuid
+        physicalBoardUuid
+        boardName
+        kind
+        status
+        included
+        variantCount
+        collectionName
+      }
+    }
+  }
+`;
+
+export const GET_GYM_GRADE_COLLECTION_OPTIONS = gql`
+  query GetGymGradeCollectionOptions($input: GymGradeCollectionOptionsInput!) {
+    gymGradeCollectionOptions(input: $input) {
+      collections {
+        uuid
+        name
+      }
+      nextCursor
+    }
+  }
+`;
+
+export const SET_GYM_GRADE_COLLECTION = gql`
+  mutation SetGymGradeCollection($input: SetGymGradeCollectionInput!) {
+    setGymGradeCollection(input: $input)
+  }
+`;

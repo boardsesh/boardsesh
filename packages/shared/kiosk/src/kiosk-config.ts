@@ -1,8 +1,10 @@
 import { z } from 'zod';
 import {
   KIOSK_DEFAULT_LEADERBOARD_PERIOD,
+  KIOSK_DEFAULT_THEME,
   KIOSK_LAYOUT_VERSION,
   KIOSK_LEADERBOARD_PERIODS,
+  KIOSK_THEMES,
   MAX_KIOSK_BOARDS,
 } from './constants';
 
@@ -57,6 +59,7 @@ export const KioskLayoutSchema = z
     // the app and feed the screen. Additive + defaulted, so older stored layouts
     // (and the lenient reader below) read it as false without a version bump.
     showInstallQr: z.boolean().default(false),
+    theme: z.enum(KIOSK_THEMES).default(KIOSK_DEFAULT_THEME),
   })
   .superRefine((layout, ctx) => {
     const seen = new Set<string>();
@@ -89,7 +92,13 @@ export type KioskLayout = z.infer<typeof KioskLayoutSchema>;
 
 /** The default empty layout a freshly created kiosk row stores. */
 export function emptyKioskLayout(): KioskLayout {
-  return { version: KIOSK_LAYOUT_VERSION, boards: [], leaderboard: null, showInstallQr: false };
+  return {
+    version: KIOSK_LAYOUT_VERSION,
+    boards: [],
+    leaderboard: null,
+    showInstallQr: false,
+    theme: KIOSK_DEFAULT_THEME,
+  };
 }
 
 export interface LenientKioskLayoutResult {
@@ -134,6 +143,7 @@ export function parseKioskLayoutLenient(value: unknown): LenientKioskLayoutResul
     boards?: unknown;
     leaderboard?: unknown;
     showInstallQr?: unknown;
+    theme?: unknown;
   };
 
   if (record.version !== KIOSK_LAYOUT_VERSION) {
@@ -149,6 +159,9 @@ export function parseKioskLayoutLenient(value: unknown): LenientKioskLayoutResul
   // Booleans need no repair: an absent field or any non-`true` value (including a
   // malformed one) reads as false — the safe off default for a new toggle.
   const showInstallQr = record.showInstallQr === true;
+  // Only an explicit light selection changes existing TVs' appearance. Unknown
+  // future theme values degrade to the same dark default as legacy layouts.
+  const theme = record.theme === 'light' ? 'light' : KIOSK_DEFAULT_THEME;
 
   const boards: KioskBoardSlot[] = [];
   let droppedBoardCount = 0;
@@ -188,7 +201,7 @@ export function parseKioskLayoutLenient(value: unknown): LenientKioskLayoutResul
   }
 
   return {
-    layout: { version: KIOSK_LAYOUT_VERSION, boards, leaderboard, showInstallQr },
+    layout: { version: KIOSK_LAYOUT_VERSION, boards, leaderboard, showInstallQr, theme },
     droppedBoardCount,
     droppedLeaderboard,
   };

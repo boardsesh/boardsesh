@@ -74,6 +74,44 @@ describe('BoardSlot art source', () => {
     expect(imageUrl.searchParams.get('frames')).toBe('');
     expect(imageUrl.searchParams.get('include_background')).toBe('1');
   });
+
+  it('switches a lit climb to the light field immediately when the kiosk theme changes', () => {
+    presenceSnapshot.current = { currentClimb: { frames: 'p1r12,p2r13' }, history: [] };
+    const { rerender } = renderSlot();
+    const image = screen.getByRole('presentation', { hidden: true });
+    const darkUrl = new URL(image.getAttribute('src')!, 'https://www.boardsesh.com');
+    expect(darkUrl.searchParams.get('field_color')).toBe('#181225');
+
+    rerender(
+      <BoardSlot
+        boardId={1}
+        boardName="Main Kilter"
+        angle={40}
+        boardDetails={boardDetails}
+        initialClimb={null}
+        initialClimbImageUrl={null}
+        bareBoardImageUrl="/bare.webp"
+        slug="main-kilter"
+        showInstallQr
+        theme="light"
+      />,
+    );
+    const lightUrl = new URL(image.getAttribute('src')!, 'https://www.boardsesh.com');
+    expect(lightUrl.searchParams.get('field_color')).toBe('#FFFFFF');
+    expect(lightUrl.searchParams.get('frames')).toBe(darkUrl.searchParams.get('frames'));
+    expect(lightUrl.href).not.toBe(darkUrl.href);
+  });
+
+  it('keeps the light field after a clear-wall live update', () => {
+    presenceSnapshot.current = { currentClimb: null, history: [{ frames: 'p1r12' }] };
+    renderSlot({ theme: 'light' });
+    const imageUrl = new URL(
+      screen.getByRole('presentation', { hidden: true }).getAttribute('src')!,
+      'https://www.boardsesh.com',
+    );
+    expect(imageUrl.searchParams.get('frames')).toBe('');
+    expect(imageUrl.searchParams.get('field_color')).toBe('#FFFFFF');
+  });
 });
 
 describe('BoardSlot install QR', () => {

@@ -9,6 +9,8 @@
 // Both use the same versioned, CDN-cacheable renderer without downloading WASM.
 
 import React, { useMemo } from 'react';
+import { boardFieldColorForScheme } from '@boardsesh/board-look';
+import { KIOSK_DEFAULT_THEME, type KioskTheme } from '@boardsesh/kiosk';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import type { BoardImageDetails } from '@/app/lib/types';
 import { buildBoardRenderUrl, toFlatFrames } from '../../board-renderer/util';
@@ -38,6 +40,8 @@ export type BoardSlotProps = {
   slug: string;
   /** Whether this kiosk shows the per-board install QR (kiosk layout toggle). */
   showInstallQr: boolean;
+  /** Matches the surrounding kiosk palette; embeds retain the dark default. */
+  theme?: KioskTheme;
 };
 
 export default function BoardSlot({
@@ -50,8 +54,10 @@ export default function BoardSlot({
   bareBoardImageUrl,
   slug,
   showInstallQr,
+  theme = KIOSK_DEFAULT_THEME,
 }: BoardSlotProps) {
   const snapshot = useKioskBoardPresence(boardId);
+  const fieldColor = boardFieldColorForScheme(theme);
 
   // Only trust the live feed once it has actually produced data — isLive flips
   // true before the backfill lands, and swapping to an empty wall for that
@@ -69,8 +75,8 @@ export default function BoardSlot({
   );
 
   const liveImageUrl = useMemo(
-    () => (hasLiveData ? buildBoardRenderUrl(boardDetails, liveFrames, { includeBackground: true }) : null),
-    [hasLiveData, boardDetails, liveFrames],
+    () => (hasLiveData ? buildBoardRenderUrl(boardDetails, liveFrames, { includeBackground: true, fieldColor }) : null),
+    [hasLiveData, boardDetails, liveFrames, fieldColor],
   );
   const imageUrl =
     liveImageUrl ?? (displayClimb !== null && initialClimbImageUrl !== null ? initialClimbImageUrl : bareBoardImageUrl);

@@ -15,6 +15,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { kioskPresetForBoardCount } from '@boardsesh/kiosk';
+import { boardFieldColorForScheme } from '@boardsesh/board-look';
 import type { Gym, GymKioskBoard, UserBoard } from '@boardsesh/shared-schema';
 import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 import { getBackendHttpUrl } from '@/app/lib/backend-url';
@@ -30,6 +31,7 @@ import LeaderboardRail from '../../kiosk/leaderboard-rail/leaderboard-rail';
 import { buildKioskViewModel } from '../../kiosk/kiosk-view-model';
 import layoutStyles from '../../kiosk/kiosk-layout.module.css';
 import { resolveGymLogoDisplayUrl } from '@/app/lib/gym-logo-display-url';
+import { resolveKioskPalette } from '@/app/lib/kiosk/brand-contrast';
 import { serializeKioskLayout, type KioskEditorState } from './kiosk-editor-state';
 import styles from './kiosk-preview.module.css';
 
@@ -41,7 +43,6 @@ type PreviewSlot =
       kind: 'board';
       board: GymKioskBoard;
       boardDetails: BoardImageDetails;
-      bareBoardImageUrl: string;
     }
   | {
       /**
@@ -89,7 +90,6 @@ function resolvePreviewSlot(boardUuid: string, gymBoards: UserBoard[]): PreviewS
       kind: 'board',
       board: kioskBoard,
       boardDetails,
-      bareBoardImageUrl: buildBoardRenderUrl(boardDetails, '', { includeBackground: true }),
     };
   } catch {
     return { kind: 'missing', boardUuid, name: userBoard.name };
@@ -149,12 +149,17 @@ export default function KioskPreview({ gym, kioskName, state, gymBoards }: Kiosk
     );
 
   const logoDisplayUrl = resolveGymLogoDisplayUrl(gym.logoUrl ?? null, getBackendHttpUrl());
+  const fieldColor = boardFieldColorForScheme(state.theme);
 
   return (
-    <div ref={frameRef} className={styles.frame}>
+    <div
+      ref={frameRef}
+      className={styles.frame}
+      style={{ backgroundColor: resolveKioskPalette(state.theme).surface, colorScheme: state.theme }}
+    >
       {scale > 0 && (
         <div className={styles.stage} style={{ transform: `scale(${scale})` }}>
-          <KioskThemeScope gym={gym}>
+          <KioskThemeScope gym={gym} theme={state.theme}>
             <ViewerKioskPresenceHub
               boardIds={distinctBoardIds}
               boardUuids={Object.fromEntries(viewModel.boards.map((board) => [board.boardId, board.boardUuid]))}
@@ -178,9 +183,13 @@ export default function KioskPreview({ gym, kioskName, state, gymBoards }: Kiosk
                           boardDetails={slot.boardDetails}
                           initialClimb={null}
                           initialClimbImageUrl={null}
-                          bareBoardImageUrl={slot.bareBoardImageUrl}
+                          bareBoardImageUrl={buildBoardRenderUrl(slot.boardDetails, '', {
+                            includeBackground: true,
+                            fieldColor,
+                          })}
                           slug={slot.board.slug}
                           showInstallQr={state.showInstallQr}
+                          theme={state.theme}
                         />
                       ) : (
                         <div key={`${slot.boardUuid}-${slotIndex}`} className={styles.missingSlot}>

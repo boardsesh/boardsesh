@@ -30,6 +30,12 @@ function layoutFor(boardUuids: string[], leaderboard: { boardUuid: string | null
 }
 
 describe('buildKioskViewModel', () => {
+  it('passes the saved theme to the renderer and defaults legacy or malformed themes to dark', () => {
+    expect(buildKioskViewModel({ layout: layoutFor([]), boards: [] }).theme).toBe('dark');
+    expect(buildKioskViewModel({ layout: { ...layoutFor([]), theme: 'light' }, boards: [] }).theme).toBe('light');
+    expect(buildKioskViewModel({ layout: { ...layoutFor([]), theme: 'invalid' }, boards: [] }).theme).toBe('dark');
+  });
+
   it('derives the preset from the RESOLVED board count', () => {
     const boards = [makeBoard(UUID_A, 1), makeBoard(UUID_B, 2)];
     const viewModel = buildKioskViewModel({ layout: layoutFor([UUID_A, UUID_B]), boards });

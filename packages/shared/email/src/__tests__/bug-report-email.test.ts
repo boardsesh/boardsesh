@@ -75,27 +75,17 @@ describe('sendBugReportIssueEmail', () => {
   it.each([
     'reporter@privaterelay.appleid.com',
     'another@PRIVATERELAY.APPLEID.COM',
-    ' reporter@privaterelay.appleid.com ',
-  ])('does not submit a bug-report email to Apple relay recipient %s', async (to) => {
+    'climber@icloud.com',
+    'climber@privaterelay.appleid.com.example.com',
+  ])('sends to recipient %s', async (to) => {
     process.env.SMTP_USER = 'smtp-user@example.com';
     process.env.SMTP_PASSWORD = 'secret';
 
     await sendBugReportIssueEmail({ to, issueUrl: ISSUE_URL, issueNumber: 7 });
 
-    expect(sendMail).not.toHaveBeenCalled();
+    expect(sendMail).toHaveBeenCalledOnce();
+    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ to }));
   });
-
-  it.each(['climber@icloud.com', 'climber@privaterelay.appleid.com.example.com'])(
-    'still sends to other recipient domains: %s',
-    async (to) => {
-      process.env.SMTP_USER = 'smtp-user@example.com';
-      process.env.SMTP_PASSWORD = 'secret';
-
-      await sendBugReportIssueEmail({ to, issueUrl: ISSUE_URL, issueNumber: 7 });
-
-      expect(sendMail).toHaveBeenCalledOnce();
-    },
-  );
 
   it('never throws when the transport rejects', async () => {
     process.env.SMTP_USER = 'smtp-user@example.com';

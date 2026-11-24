@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { contrastRatio, readableDarkText, readableLightText } from '@boardsesh/board-constants';
+import { KIOSK_THEMES } from '@boardsesh/kiosk';
 import {
   KIOSK_DARK_SURFACE,
   KIOSK_DEFAULT_ACCENT,
+  KIOSK_LIGHT_SURFACE,
   KIOSK_MIN_ACCENT_CONTRAST,
+  KIOSK_MIN_TEXT_CONTRAST,
   ensureReadableOnSurface,
   resolveKioskBrand,
+  resolveKioskPalette,
 } from '../brand-contrast';
 
 describe('ensureReadableOnSurface', () => {
@@ -37,6 +41,41 @@ describe('ensureReadableOnSurface', () => {
     expect(ensureReadableOnSurface('tomato', KIOSK_DARK_SURFACE, KIOSK_MIN_ACCENT_CONTRAST)).toBeNull();
     expect(ensureReadableOnSurface('#12345', KIOSK_DARK_SURFACE, KIOSK_MIN_ACCENT_CONTRAST)).toBeNull();
     expect(ensureReadableOnSurface('', KIOSK_DARK_SURFACE, KIOSK_MIN_ACCENT_CONTRAST)).toBeNull();
+  });
+
+  it('darkens a pale accent on white rather than lightening it', () => {
+    const resolved = ensureReadableOnSurface('#FDCF07', KIOSK_LIGHT_SURFACE, KIOSK_MIN_TEXT_CONTRAST);
+    expect(resolved).not.toBeNull();
+    expect(resolved).not.toBe('#fdcf07');
+    expect(contrastRatio(resolved!, KIOSK_LIGHT_SURFACE)).toBeGreaterThanOrEqual(KIOSK_MIN_TEXT_CONTRAST);
+  });
+});
+
+describe.each(KIOSK_THEMES)('%s kiosk palette', (theme) => {
+  const palette = resolveKioskPalette(theme);
+
+  it.each(['#FDCF07', '#4A778D', '#FFFFFF', '#000000', '#777777', '#ff0000'])(
+    'keeps brand fill, ordinary text and on-accent text readable for %s',
+    (accent) => {
+      const brand = resolveKioskBrand({ brandAccentColor: accent }, theme);
+      for (const surface of [palette.surface, palette.raised]) {
+        expect(contrastRatio(brand.accent, surface)).toBeGreaterThanOrEqual(KIOSK_MIN_ACCENT_CONTRAST);
+        expect(contrastRatio(brand.accentText, surface)).toBeGreaterThanOrEqual(KIOSK_MIN_TEXT_CONTRAST);
+        expect(contrastRatio(palette.text, surface)).toBeGreaterThanOrEqual(KIOSK_MIN_TEXT_CONTRAST);
+        expect(contrastRatio(palette.muted, surface)).toBeGreaterThanOrEqual(KIOSK_MIN_TEXT_CONTRAST);
+      }
+      expect(contrastRatio(brand.onAccent, brand.accent)).toBeGreaterThanOrEqual(KIOSK_MIN_TEXT_CONTRAST);
+    },
+  );
+
+  it('keeps the reconnect warning readable independently of the surface', () => {
+    expect(contrastRatio(palette.onWarning, palette.warning)).toBeGreaterThanOrEqual(KIOSK_MIN_TEXT_CONTRAST);
+  });
+
+  it('uses the selected palette for missing or malformed gym colours', () => {
+    const fallback = resolveKioskBrand({ brandAccentColor: 'invalid' }, theme);
+    expect(fallback.accent).toBe(palette.text.toLowerCase());
+    expect(resolveKioskBrand({}, theme)).toEqual(fallback);
   });
 });
 

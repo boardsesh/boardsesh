@@ -4326,6 +4326,41 @@ export type GymActivityStatsRefreshResult = {
   writeDurationMs: Scalars['Float']['output'];
 };
 
+export type GymAngleActivityCounts = {
+  __typename?: 'GymAngleActivityCounts';
+  /** Confirmed Boardsesh displays. */
+  displayCount: Scalars['Int']['output'];
+  /** Canonical native flashes and sends. */
+  sendCount: Scalars['Int']['output'];
+  /** Qualifying native ticks, including attempts. */
+  tickCount: Scalars['Int']['output'];
+};
+
+export type GymAngleUsageRow = {
+  __typename?: 'GymAngleUsageRow';
+  angle: Scalars['Int']['output'];
+  /** Distinct identified climber and definitely known gym-local date pairs. */
+  climberDayCount: Scalars['Int']['output'];
+  displayCount: Scalars['Int']['output'];
+  distinctClimberCount: Scalars['Int']['output'];
+  sendCount: Scalars['Int']['output'];
+  tickCount: Scalars['Int']['output'];
+  /** Identified ticks in the period without a provable gym-local date. */
+  unresolvedLocalDateTickCount: Scalars['Int']['output'];
+};
+
+export type GymBoardAngleUsage = {
+  __typename?: 'GymBoardAngleUsage';
+  /** Recorded compatible angles, ordered by degrees. */
+  angles: Array<GymAngleUsageRow>;
+  /** An independently authorized physical LED board in the selected scope. */
+  boardUuid: Scalars['ID']['output'];
+  /** Distinct identified climbers across all known angles on this physical board. */
+  knownAngleClimberCount: Scalars['Int']['output'];
+  /** Activity with missing or unsupported recorded angles, excluded from ranking. */
+  unknownAngle: GymAngleActivityCounts;
+};
+
 /**
  * One board-type + angle pair present at a gym, for the directory's board chips.
  * Deliberately minimal: a card renders "Kilter 40°", nothing else. Distinct pairs
@@ -4337,6 +4372,57 @@ export type GymBoardSummary = {
   angle: Scalars['Int']['output'];
   /** Board type (kilter, tension, moonboard, ...) */
   boardType: Scalars['String']['output'];
+};
+
+export type GymBusyHour = {
+  __typename?: 'GymBusyHour';
+  /** ISO weekday, Monday 1 through Sunday 7. */
+  dayOfWeek: Scalars['Int']['output'];
+  /** Completed covered dates on which this local hour existed. */
+  eligibleDates: Scalars['Int']['output'];
+  /** Civil hour from 0 to 23 in the gym time zone. */
+  hour: Scalars['Int']['output'];
+  /** Sum of distinct identified climbers per eligible date and civil hour. */
+  recordedClimbers: Scalars['Int']['output'];
+};
+
+export type GymBusyTimes = {
+  __typename?: 'GymBusyTimes';
+  coveredDates: Scalars['Int']['output'];
+  /** Eligible identified date-only ticks that could have occurred in a covered date. */
+  dateOnlyRecords: Scalars['Int']['output'];
+  /** Last nominal local date of the fixed 90-day interval. */
+  endDate?: Maybe<Scalars['String']['output']>;
+  firstCoveredDate?: Maybe<Scalars['String']['output']>;
+  /** At least one in-scope identified tick has no provable occurrence date, regardless of its saved timestamp. */
+  hasUnboundedUnknownTime: Scalars['Boolean']['output'];
+  /** 168 weekday and civil-hour cells in ISO weekday then hour order. */
+  hours: Array<GymBusyHour>;
+  /** Identified confirmed display records with a trustworthy occurrence instant in covered dates. */
+  instantDisplays: Scalars['Int']['output'];
+  /** Identified eligible ticks with a trustworthy occurrence instant in covered dates. */
+  instantTicks: Scalars['Int']['output'];
+  /** First nominal local date of the fixed 90-day interval. */
+  startDate?: Maybe<Scalars['String']['output']>;
+  status: GymBusyTimesStatus;
+  /** Identified candidates with unproved time in the bounded source scan. */
+  unknownTimeRecords: Scalars['Int']['output'];
+  /** Date-only ticks with no definite assignment to a covered date. */
+  unplacedDateOnlyRecords: Scalars['Int']['output'];
+  /** Seven weekday cells in ISO order. */
+  weekdays: Array<GymBusyWeekday>;
+};
+
+export type GymBusyTimesStatus = 'calendarUnavailable' | 'historyUnavailable' | 'ready' | 'zoneRequired';
+
+export type GymBusyWeekday = {
+  __typename?: 'GymBusyWeekday';
+  /** ISO weekday, Monday 1 through Sunday 7. */
+  dayOfWeek: Scalars['Int']['output'];
+  /** Completed covered dates of this weekday. */
+  eligibleDates: Scalars['Int']['output'];
+  /** Sum of distinct identified climbers per eligible date. */
+  recordedClimbers: Scalars['Int']['output'];
 };
 
 /** A pending or resolved gym ownership claim (admin queue). */
@@ -4450,6 +4536,72 @@ export type GymDayActivity = {
   /** Day of week (UTC), 0 = Sunday … 6 = Saturday. */
   dayOfWeek: Scalars['Int']['output'];
 };
+
+export type GymGradeCollectionOption = {
+  __typename?: 'GymGradeCollectionOption';
+  name: Scalars['String']['output'];
+  uuid: Scalars['ID']['output'];
+};
+
+export type GymGradeCollectionOptionsInput = {
+  boardUuid: Scalars['ID']['input'];
+  cursor?: InputMaybe<Scalars['String']['input']>;
+  gymUuid: Scalars['ID']['input'];
+  search?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type GymGradeCollectionPage = {
+  __typename?: 'GymGradeCollectionPage';
+  collections: Array<GymGradeCollectionOption>;
+  nextCursor?: Maybe<Scalars['String']['output']>;
+};
+
+export type GymGradeComparison = {
+  __typename?: 'GymGradeComparison';
+  asOf: Scalars['String']['output'];
+  availableCount: Scalars['Int']['output'];
+  boards: Array<GymGradeInventoryBoard>;
+  grades: Array<GymGradeComparisonBucket>;
+  gymUuid: Scalars['ID']['output'];
+  sendCount: Scalars['Int']['output'];
+  startAt: Scalars['String']['output'];
+  timeZone: Scalars['String']['output'];
+};
+
+export type GymGradeComparisonBucket = {
+  __typename?: 'GymGradeComparisonBucket';
+  availableCount: Scalars['Int']['output'];
+  boardType: Scalars['String']['output'];
+  difficultyId?: Maybe<Scalars['Int']['output']>;
+  sendCount: Scalars['Int']['output'];
+};
+
+export type GymGradeInventoryBoard = {
+  __typename?: 'GymGradeInventoryBoard';
+  boardName: Scalars['String']['output'];
+  boardUuid: Scalars['ID']['output'];
+  collectionName?: Maybe<Scalars['String']['output']>;
+  included: Scalars['Boolean']['output'];
+  kind: GymGradeInventoryKind;
+  physicalBoardUuid: Scalars['ID']['output'];
+  status: GymGradeInventoryStatus;
+  variantCount: Scalars['Int']['output'];
+};
+
+/**
+ * Input for the gym Insights query. `period` sets the window length: `week`
+ * (7 days, the default) or `month` (30 days). The comparison window is always the
+ * equally-long span immediately before it.
+ */
+export type GymGradeInventoryKind = 'LED_COLLECTION' | 'SPRAY_WALL';
+
+export type GymGradeInventoryStatus =
+  | 'CHOOSE_COLLECTION'
+  | 'COLLECTION_EMPTY'
+  | 'COLLECTION_UNAVAILABLE'
+  | 'OWNER_ONLY'
+  | 'READY'
+  | 'WALL_UNAVAILABLE';
 
 /**
  * A gym kiosk: a preset-based smart-TV wall dashboard, addressed publicly as
@@ -4652,6 +4804,60 @@ export type GymOwnershipUserSummary = {
   userId: Scalars['ID']['output'];
 };
 
+export type GymReachCount = {
+  __typename?: 'GymReachCount';
+  /** Count of available eligible records or people. Consult coverage before displaying zero. */
+  count: Scalars['Int']['output'];
+  coverage: GymReachCoverage;
+};
+
+export type GymReachCoverage = 'complete' | 'partial' | 'unavailable';
+
+export type GymReachOverview = {
+  __typename?: 'GymReachOverview';
+  /** UTC start of the interval immediately before the previous period. */
+  baselineStartAt: Scalars['String']['output'];
+  cameBack: GymReachReturn;
+  current: GymReachWindow;
+  /** UTC start of the forward observation contract for every accepted gym. */
+  observationStartedAt?: Maybe<Scalars['String']['output']>;
+  previous: GymReachWindow;
+  previousCameBack: GymReachReturn;
+  /** Twelve gym-local Monday-start weeks, including the week in progress. */
+  weeklyTrend: Array<GymReachWeek>;
+};
+
+export type GymReachReturn = {
+  __typename?: 'GymReachReturn';
+  /** A return rate can be displayed only with complete coverage and a positive denominator. */
+  coverage: GymReachCoverage;
+  previousClimbers: Scalars['Int']['output'];
+  returning: Scalars['Int']['output'];
+};
+
+export type GymReachWeek = {
+  __typename?: 'GymReachWeek';
+  climbers: GymReachCount;
+  /** Gym-local Sunday date in YYYY-MM-DD format. */
+  endDate: Scalars['String']['output'];
+  inProgress: Scalars['Boolean']['output'];
+  sends: GymReachCount;
+  /** Gym-local Monday date in YYYY-MM-DD format. */
+  startDate: Scalars['String']['output'];
+};
+
+export type GymReachWindow = {
+  __typename?: 'GymReachWindow';
+  climbers: GymReachCount;
+  /** First recorded here in available eligible records. It may change when older history arrives. */
+  firstRecorded: GymReachCount;
+  sendLoggers: Scalars['Int']['output'];
+  sends: GymReachCount;
+  /** Distinct identified climber and gym-local date with a send. */
+  sessions: GymReachCount;
+  uncertainFirstRecorded: Scalars['Int']['output'];
+};
+
 /** Why a climber reported a gym listing. */
 export type GymReportReason = 'closed' | 'duplicate' | 'not_a_gym' | 'other' | 'wrong_details';
 
@@ -4705,11 +4911,14 @@ export type GymSitemapEntry = {
 
 export type GymStats = {
   __typename?: 'GymStats';
+  /** Recorded angle usage on eligible physical LED boards in the current window. */
+  angleUsage: Array<GymBoardAngleUsage>;
   asOf: Scalars['String']['output'];
   boardUuid?: Maybe<Scalars['ID']['output']>;
   boards: Array<GymReportingBoard>;
   /** Ascents per day of week in the current window (only non-empty days). */
   busiestDays: Array<GymDayActivity>;
+  busyTimes?: Maybe<GymBusyTimes>;
   canManageBoardAliases: Scalars['Boolean']['output'];
   coverage: GymReportingCoverage;
   /** Counts for the current window (last `periodDays` days). */
@@ -4721,17 +4930,13 @@ export type GymStats = {
   periodDays: Scalars['Int']['output'];
   /** Counts for the window immediately before the current one (same length). */
   previous: GymStatsWindow;
+  reachOverview?: Maybe<GymReachOverview>;
   timeZone: Scalars['String']['output'];
   timeZoneConfigured: Scalars['Boolean']['output'];
   /** Top 10 climbs by ascents in the current window. */
   topClimbs: Array<GymTopClimb>;
 };
 
-/**
- * Input for the gym Insights query. `period` sets the window length: `week`
- * (7 days, the default) or `month` (30 days). The comparison window is always the
- * equally-long span immediately before it.
- */
 export type GymStatsInput = {
   /** An authorized physical board in the requested gym. Omit for all boards. */
   boardUuid?: InputMaybe<Scalars['ID']['input']>;
@@ -5943,6 +6148,7 @@ export type Mutation = {
    * omit it for the shipped behaviour.
    */
   setCurrentClimb?: Maybe<ClimbQueueItem>;
+  setGymGradeCollection: Scalars['Boolean']['output'];
   setGymReportingBoardAlias: Scalars['Boolean']['output'];
   setGymReportingTimeZone: Scalars['Boolean']['output'];
   /**
@@ -6963,6 +7169,11 @@ export type MutationSetCurrentClimbArgs = {
   item?: InputMaybe<ClimbQueueItemInput>;
   placement?: InputMaybe<CurrentClimbPlacement>;
   shouldAddToQueue?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSetGymGradeCollectionArgs = {
+  input: SetGymGradeCollectionInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -8727,6 +8938,9 @@ export type Query = {
   gymBoards: Array<UserBoard>;
   /** Get a gym by slug (for URL routing). */
   gymBySlug?: Maybe<Gym>;
+  gymGradeCollectionOptions: GymGradeCollectionPage;
+  /** Compare current inventory and attributable sends. Requires live gym staff access. */
+  gymGradeComparison: GymGradeComparison;
   /**
    * A gym's public kiosk (smart-TV wall dashboard) by gym slug, with an optional
    * kiosk slug. Public read, rate-limited, no login: a public gym's kiosks are
@@ -9738,6 +9952,16 @@ export type QueryGymBoardsArgs = {
 /** Root query type for all read operations. */
 export type QueryGymBySlugArgs = {
   slug: Scalars['String']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryGymGradeCollectionOptionsArgs = {
+  input: GymGradeCollectionOptionsInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryGymGradeComparisonArgs = {
+  input: GymStatsInput;
 };
 
 /** Root query type for all read operations. */
@@ -11963,6 +12187,12 @@ export type SetContentAudienceInput = {
   entityId: Scalars['ID']['input'];
   entityType: PrivacyContentType;
   privacyRevision: Scalars['Int']['input'];
+};
+
+export type SetGymGradeCollectionInput = {
+  boardUuid: Scalars['ID']['input'];
+  gymUuid: Scalars['ID']['input'];
+  playlistUuid?: InputMaybe<Scalars['ID']['input']>;
 };
 
 export type SetGymReportingBoardAliasInput = {

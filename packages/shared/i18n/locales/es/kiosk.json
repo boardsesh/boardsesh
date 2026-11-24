@@ -351,6 +351,12 @@
       "createFailed": "No se pudo crear el kiosco."
     },
     "editor": {
+      "appearance": {
+        "label": "Apariencia",
+        "light": "Claro",
+        "dark": "Oscuro",
+        "description": "Elige el aspecto de esta pantalla. Los demás kioscos conservan su propia apariencia."
+      },
       "back": "Todos los kioscos",
       "save": "Guardar diseño",
       "saved": "Kiosco guardado.",

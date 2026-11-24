@@ -28,6 +28,10 @@ const gymReportingAliasVenueGuard = readFileSync(
   new URL('../../../db/drizzle/0340_gym_reporting_alias_venue_guard.sql', import.meta.url),
   'utf8',
 );
+const gymReachObservationsSchema = readFileSync(
+  new URL('../../../db/drizzle/0342_gym_reach_observations.sql', import.meta.url),
+  'utf8',
+);
 const offlineWriteDeliverySchema = readFileSync(
   new URL('../../../db/drizzle/0332_offline_write_delivery.sql', import.meta.url),
   'utf8',
@@ -335,6 +339,15 @@ const sprayWallLedBrightnessSchema = readFileSync(
 // generated migration, after board_sessions and users.
 const sessionWorkoutsSchema = readFileSync(
   new URL('../../../db/drizzle/0284_session_workouts.sql', import.meta.url),
+  'utf8',
+);
+
+const gymInventorySchema = readFileSync(
+  new URL('../../../db/drizzle/0343_gym_grade_inventory.sql', import.meta.url),
+  'utf8',
+);
+const sprayExposureSchema = readFileSync(
+  new URL('../../../db/drizzle/0344_observe_spray_inventory.sql', import.meta.url),
   'utf8',
 );
 
@@ -2697,4 +2710,15 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${gymReportingTickTimeBinding};
   DROP FUNCTION IF EXISTS public.revoke_gym_reporting_aliases_on_board_move();
   ${gymReportingAliasVenueGuard};
+  DROP TABLE IF EXISTS gym_reporting_observations;
+  ${gymReachObservationsSchema};
+  DROP FUNCTION IF EXISTS spray_exposure_board_change(), spray_exposure_wall_change(),
+    spray_exposure_version_change(), spray_exposure_policy_change(), spray_exposure_climb_change(),
+    spray_exposure_invalidate(text, text, text), spray_exposure_policy_invalidate(text),
+    spray_exposure_fence_key(text, text), spray_exposure_climb_key(integer, text) CASCADE;
+  DROP TABLE IF EXISTS gym_board_grade_collections, spray_exposure_invalidations,
+    spray_exposure_observations, spray_exposure_checkpoints;
+  DROP SEQUENCE IF EXISTS spray_exposure_event_seq;
+  ${gymInventorySchema};
+  ${sprayExposureSchema};
 `;

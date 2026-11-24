@@ -21,6 +21,14 @@
  */
 export const KIOSK_LAYOUT_VERSION = 1;
 
+/** Explicit display appearance; unattended TVs never follow an OS preference. */
+export const KIOSK_THEMES = ['dark', 'light'] as const;
+
+export type KioskTheme = (typeof KIOSK_THEMES)[number];
+
+/** Preserve the appearance of kiosks saved before theme selection existed. */
+export const KIOSK_DEFAULT_THEME: KioskTheme = 'dark';
+
 /** Most board slots one kiosk can hold. The strict writer schema enforces this. */
 export const MAX_KIOSK_BOARDS = 4;
 

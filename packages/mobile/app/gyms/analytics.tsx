@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
+import { FlashList, type ListRenderItem } from '@shopify/flash-list';
 import { Stack, useIsFocused, useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
@@ -7,12 +8,15 @@ import {
   formatGymReportingObservationWindow,
   formatGymReportingTime,
   GYM_REPORTING_PERIODS,
+  gymBusyTimesScope,
   gymReportingHasActivity,
   gymReportingHasExactObservations,
   gymReportingQueryPrefix,
   isGymReportingAccessError,
   SET_GYM_REPORTING_BOARD_ALIAS,
   SET_GYM_REPORTING_TIME_ZONE,
+  type GymTrendMetric,
+  type GymTrendSelection,
 } from '@boardsesh/graphql';
 import type { GymStats, GymStatsPeriod } from '@boardsesh/shared-schema';
 import { useAuth } from '../../src/providers/auth-provider';
@@ -31,9 +35,17 @@ import { Button } from '../../src/components/Button';
 import { SegmentedControl } from '../../src/components/SegmentedControl';
 import { Text } from '../../src/components/Text';
 import { GymReportingSettings } from '../../src/components/gym-directory/GymReportingSettings';
+import { GymReachReport } from '../../src/components/gym-directory/GymReachReport';
+import { GymGradeComparisonPanel } from '../../src/components/gym-directory/GymGradeComparisonPanel';
+import {
+  buildGymAngleUsageRows,
+  GymAngleUsageListItem,
+  type GymAngleUsageListRow,
+} from '../../src/components/gym-directory/GymAngleUsage';
+import { GymBusyTimesCard } from '../../src/components/gym-directory/GymBusyTimesCard';
 import { spacing } from '../../src/theme/tokens';
 
-function ReportingResults({ stats }: { stats: GymStats }) {
+function ReportingResults({ stats, trend }: { stats: GymStats; trend: GymTrendSelection }) {
   const { t, i18n } = useTranslation('boards');
   const { systemColors } = useTheme();
   const locale = i18n.language || 'en-US';
@@ -95,7 +107,9 @@ function ReportingResults({ stats }: { stats: GymStats }) {
           </Text>
         </View>
       </View>
-      {gymReportingHasActivity(stats) ? (
+      {stats.reachOverview ? (
+        <GymReachReport stats={stats} overview={stats.reachOverview} selection={trend} />
+      ) : gymReportingHasActivity(stats) ? (
         <View style={styles.details}>
           <Text variant="headline">
             {t('gymReporting.climbers', { countText: number.format(stats.current.uniqueClimbers) })}
@@ -123,7 +137,11 @@ type ReportingFilters = {
   setBoardUuid: (boardUuid: string | null) => void;
   period: GymStatsPeriod;
   setPeriod: (period: GymStatsPeriod) => void;
+  trend: GymTrendSelection;
 };
+
+const angleUsageRowKey = (row: GymAngleUsageListRow) => row.key;
+const angleUsageRowKind = (row: GymAngleUsageListRow) => row.kind;
 
 function GymAnalyticsReport({
   viewerId,
@@ -132,11 +150,22 @@ function GymAnalyticsReport({
   setBoardUuid,
   period,
   setPeriod,
+  trend,
 }: ReportingScope & ReportingFilters) {
   const { t, i18n } = useTranslation('boards');
   const queryClient = useQueryClient();
   const query = useGymReporting(viewerId, gymUuid, boardUuid, period);
   const stats = query.state === 'ready' || query.state === 'stale' ? query.data : undefined;
+  const locale = i18n.language || 'en-US';
+  const angleUsageRows = useMemo(() => (stats ? buildGymAngleUsageRows(stats, locale) : []), [stats, locale]);
+  const [expandedAngle, setExpandedAngle] = useState<string | null>(null);
+  const toggleAngle = useCallback((key: string) => {
+    setExpandedAngle((expanded) => (expanded === key ? null : key));
+  }, []);
+  const renderAngleUsageRow = useCallback<ListRenderItem<GymAngleUsageListRow>>(
+    ({ item }) => <GymAngleUsageListItem row={item} expanded={expandedAngle === item.key} onToggle={toggleAngle} />,
+    [expandedAngle, toggleAngle],
+  );
   const selectedBoard = stats?.boards.find((board) => board.uuid === stats.boardUuid);
   const scopeOptions = [{ uuid: null, name: t('gymReporting.allBoards') }, ...(stats?.boards ?? [])];
   const number = new Intl.NumberFormat(i18n.language || 'en-US');
@@ -171,7 +200,7 @@ function GymAnalyticsReport({
     await refresh();
   }
 
-  return (
+  const reportHeader = (
     <View style={styles.section}>
       {stats && (
         <Text accessibilityRole="header" variant="title2">
@@ -228,24 +257,66 @@ function GymAnalyticsReport({
               })}
             </Text>
           )}
-          <ReportingResults stats={stats} />
+          <ReportingResults stats={stats} trend={trend} />
           {query.state === 'ready' && (
-            <>
-              <View style={styles.actions}>
-                <Button title={t('gymReporting.refresh')} variant="outlined" onPress={() => void query.refetch()} />
-              </View>
-              <GymReportingSettings stats={stats} saveZone={saveZone} saveAlias={saveAlias} />
-            </>
+            <View style={styles.actions}>
+              <Button title={t('gymReporting.refresh')} variant="outlined" onPress={() => void query.refetch()} />
+            </View>
           )}
         </>
       )}
+      <GymBusyTimesCard
+        key={JSON.stringify([gymUuid, boardUuid])}
+        report={stats?.busyTimes}
+        timeZone={stats?.timeZone}
+        scope={gymBusyTimesScope(stats)}
+      />
+      {angleUsageRows.length > 0 && (
+        <Text accessibilityRole="header" variant="title2">
+          {t('gymReporting.angleUsage.title')}
+        </Text>
+      )}
     </View>
+  );
+  const reportFooter =
+    stats && query.state === 'ready' ? (
+      <View style={styles.settings}>
+        <GymGradeComparisonPanel
+          key={`${boardUuid ?? ''}:${period}`}
+          viewerId={viewerId}
+          gymUuid={stats.gymUuid}
+          overviewGymUuid={gymUuid}
+          boardUuid={boardUuid}
+          period={period}
+        />
+        <GymReportingSettings stats={stats} saveZone={saveZone} saveAlias={saveAlias} />
+      </View>
+    ) : null;
+
+  return (
+    <FlashList
+      data={angleUsageRows}
+      renderItem={renderAngleUsageRow}
+      keyExtractor={angleUsageRowKey}
+      getItemType={angleUsageRowKind}
+      keyboardShouldPersistTaps="handled"
+      contentInsetAdjustmentBehavior="automatic"
+      contentContainerStyle={styles.content}
+      ListHeaderComponent={reportHeader}
+      ListFooterComponent={reportFooter}
+    />
   );
 }
 
 function GymAnalyticsViewer({ viewerId, gymUuid }: ReportingScope) {
   const [period, setPeriod] = useState<GymStatsPeriod>('week');
   const [boardUuid, setBoardUuid] = useState<string | null>(null);
+  const [week, setWeek] = useState<string | null>(null);
+  const [metric, setMetric] = useState<GymTrendMetric>('climbers');
+  const chooseBoard = (next: string | null) => {
+    if (next !== boardUuid) setWeek(null);
+    setBoardUuid(next);
+  };
   const focused = useIsFocused();
   const foreground = useGymReportingForeground();
   if (!focused || !foreground) return null;
@@ -254,7 +325,8 @@ function GymAnalyticsViewer({ viewerId, gymUuid }: ReportingScope) {
       viewerId={viewerId}
       gymUuid={gymUuid}
       boardUuid={boardUuid}
-      setBoardUuid={setBoardUuid}
+      setBoardUuid={chooseBoard}
+      trend={{ metric, setMetric, week, setWeek }}
       period={period}
       setPeriod={setPeriod}
     />
@@ -272,19 +344,17 @@ export default function GymAnalyticsScreen() {
   return (
     <View style={[styles.screen, { backgroundColor: systemColors.background }]}>
       <Stack.Screen options={{ ...options, title: t('gymReporting.title'), headerShown: true }} />
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={styles.content}
-      >
-        {isLoading || isLoadingViewer ? (
+      {isLoading || isLoadingViewer ? (
+        <View style={styles.content}>
           <ActivityIndicator size="large" />
-        ) : isAuthenticated && userId && typeof gymUuid === 'string' && gymUuid ? (
-          <GymAnalyticsViewer key={`${userId}:${gymUuid}`} viewerId={userId} gymUuid={gymUuid} />
-        ) : (
+        </View>
+      ) : isAuthenticated && userId && typeof gymUuid === 'string' && gymUuid ? (
+        <GymAnalyticsViewer key={`${userId}:${gymUuid}`} viewerId={userId} gymUuid={gymUuid} />
+      ) : (
+        <View style={styles.content}>
           <Text accessibilityRole="alert">{t('gymReporting.denied')}</Text>
-        )}
-      </ScrollView>
+        </View>
+      )}
     </View>
   );
 }
@@ -292,6 +362,7 @@ export default function GymAnalyticsScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   content: { padding: spacing[4] },
+  settings: { paddingTop: spacing[4], gap: spacing[4] },
   section: { gap: spacing[4] },
   details: { gap: spacing[1] },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing[2] },

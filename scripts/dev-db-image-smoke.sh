@@ -208,10 +208,10 @@ BEGIN
   -- not ours to ALTER — exclude it the way
   -- scripts/postgres18-production-role-transition.sh already does, by
   -- pg_depend.deptype = 'e', rather than by name.
-  -- The exact reviewed 0322 lifecycle and 0335 reporting alias bodies qualify
-  -- their public relations and pin pg_catalog alone. Keep their hashes aligned
-  -- with credential-writer-acl.ts and auth-web-acl.ts. A name or NULL
-  -- configuration never grants an exception.
+  -- The reviewed 0322 lifecycle, 0335 reporting alias, and 0338 spray exposure
+  -- trigger bodies qualify their public relations and pin pg_catalog alone.
+  -- Keep the exact tuples aligned with the credential-writer and auth-web ACL
+  -- audits. A name or NULL configuration never grants an exception.
   IF EXISTS (
     SELECT 1
     FROM pg_catalog.pg_proc AS procedure
@@ -237,7 +237,12 @@ BEGIN
           AND (procedure.proname, pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(procedure.prosrc, 'UTF8')), 'hex')) IN (
             ('partner_account_deletion_events', '467385c20855be8979e184cdbce603d51328d25d6de64003b48b2279a10af7b5'),
             ('partner_connection_lifecycle_events', '958d841f4c621cf8cadcccffd06677da569654bd997ce5e87383776511c09c6e'),
-            ('revoke_gym_reporting_aliases_on_board_move', 'f645b67ae38be89b9af89bf000c68336c1d24e85e2335a32ecc79eebfddab243')
+            ('revoke_gym_reporting_aliases_on_board_move', 'f645b67ae38be89b9af89bf000c68336c1d24e85e2335a32ecc79eebfddab243'),
+            ('spray_exposure_board_change', 'a5b9a6a15fa9b642b3a82d0557a8ea509fbb52e42a59386342a05a07e5161cbd'),
+            ('spray_exposure_climb_change', '3e76949ad298804cc6bbdebc6d4329402d412889f74c8a8f4a06edb3976b28d6'),
+            ('spray_exposure_policy_change', '22393e7eb8135ed6b1a3a9c04fcd823d9bac91a102dd4bcc30326d7047dbf8ea'),
+            ('spray_exposure_version_change', '8d4162050782726866cdb54d9715ba184eb772404ad393b356e4c0fe8f0c13fb'),
+            ('spray_exposure_wall_change', '60827d130962aa8daa73ffbdb838c44d643a99ac25c19d1c7f47b1453adc8b42')
           )
         )
       )
@@ -267,7 +272,12 @@ BEGIN
              AND (procedure.proname, pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(procedure.prosrc, 'UTF8')), 'hex')) IN (
                ('partner_account_deletion_events', '467385c20855be8979e184cdbce603d51328d25d6de64003b48b2279a10af7b5'),
                ('partner_connection_lifecycle_events', '958d841f4c621cf8cadcccffd06677da569654bd997ce5e87383776511c09c6e'),
-               ('revoke_gym_reporting_aliases_on_board_move', 'f645b67ae38be89b9af89bf000c68336c1d24e85e2335a32ecc79eebfddab243')
+               ('revoke_gym_reporting_aliases_on_board_move', 'f645b67ae38be89b9af89bf000c68336c1d24e85e2335a32ecc79eebfddab243'),
+               ('spray_exposure_board_change', 'a5b9a6a15fa9b642b3a82d0557a8ea509fbb52e42a59386342a05a07e5161cbd'),
+               ('spray_exposure_climb_change', '3e76949ad298804cc6bbdebc6d4329402d412889f74c8a8f4a06edb3976b28d6'),
+               ('spray_exposure_policy_change', '22393e7eb8135ed6b1a3a9c04fcd823d9bac91a102dd4bcc30326d7047dbf8ea'),
+               ('spray_exposure_version_change', '8d4162050782726866cdb54d9715ba184eb772404ad393b356e4c0fe8f0c13fb'),
+               ('spray_exposure_wall_change', '60827d130962aa8daa73ffbdb838c44d643a99ac25c19d1c7f47b1453adc8b42')
              )
            )
          ));

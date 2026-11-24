@@ -2395,6 +2395,27 @@
       "when": 1795506037104,
       "tag": "0341_board_setup_suggestions",
       "breakpoints": true
+    },
+    {
+      "idx": 342,
+      "version": "7",
+      "when": 1795510081319,
+      "tag": "0342_gym_reach_observations",
+      "breakpoints": true
+    },
+    {
+      "idx": 343,
+      "version": "7",
+      "when": 1795512012581,
+      "tag": "0343_gym_grade_inventory",
+      "breakpoints": true
+    },
+    {
+      "idx": 344,
+      "version": "7",
+      "when": 1795512012582,
+      "tag": "0344_observe_spray_inventory",
+      "breakpoints": true
     }
   ]
 }

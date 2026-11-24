@@ -451,6 +451,94 @@ export type GymReportingCoverage = {
   isPartial: boolean;
 };
 
+export type GymReachCoverage = 'complete' | 'partial' | 'unavailable';
+
+export type GymReachCount = {
+  count: number;
+  coverage: GymReachCoverage;
+};
+
+export type GymReachWindow = {
+  climbers: GymReachCount;
+  firstRecorded: GymReachCount;
+  uncertainFirstRecorded: number;
+  sends: GymReachCount;
+  sendLoggers: number;
+  sessions: GymReachCount;
+};
+
+export type GymReachReturn = {
+  returning: number;
+  previousClimbers: number;
+  coverage: GymReachCoverage;
+};
+
+export type GymReachWeek = {
+  startDate: string;
+  endDate: string;
+  inProgress: boolean;
+  climbers: GymReachCount;
+  sends: GymReachCount;
+};
+
+export type GymReachOverview = {
+  observationStartedAt: string | null;
+  baselineStartAt: string;
+  current: GymReachWindow;
+  previous: GymReachWindow;
+  cameBack: GymReachReturn;
+  previousCameBack: GymReachReturn;
+  weeklyTrend: GymReachWeek[];
+};
+
+export type GymAngleActivityCounts = {
+  tickCount: number;
+  sendCount: number;
+  displayCount: number;
+};
+
+export type GymAngleUsageRow = GymAngleActivityCounts & {
+  angle: number;
+  distinctClimberCount: number;
+  climberDayCount: number;
+  unresolvedLocalDateTickCount: number;
+};
+
+export type GymBoardAngleUsage = {
+  boardUuid: string;
+  knownAngleClimberCount: number;
+  angles: GymAngleUsageRow[];
+  unknownAngle: GymAngleActivityCounts;
+};
+
+export type GymBusyTimesStatus = 'ready' | 'zoneRequired' | 'historyUnavailable' | 'calendarUnavailable';
+
+export type GymBusyWeekday = {
+  /** ISO weekday, Monday 1 through Sunday 7. */
+  dayOfWeek: number;
+  eligibleDates: number;
+  /** Sum of distinct people in each eligible date or date/hour. */
+  recordedClimbers: number;
+};
+
+export type GymBusyHour = GymBusyWeekday & { hour: number };
+
+export type GymBusyTimes = {
+  status: GymBusyTimesStatus;
+  startDate: string | null;
+  endDate: string | null;
+  coveredDates: number;
+  firstCoveredDate: string | null;
+  instantDisplays: number;
+  instantTicks: number;
+  dateOnlyRecords: number;
+  unplacedDateOnlyRecords: number;
+  unknownTimeRecords: number;
+  hasUnboundedUnknownTime: boolean;
+  weekdays: GymBusyWeekday[];
+  hours: GymBusyHour[];
+};
+
 export type GymStats = {
   gymName: string;
   boardUuid: string | null;
@@ -460,6 +548,8 @@ export type GymStats = {
   timeZone: string;
   timeZoneConfigured: boolean;
   coverage: GymReportingCoverage;
+  reachOverview?: GymReachOverview | null;
+  busyTimes?: GymBusyTimes | null;
   gymUuid: string;
   periodDays: number;
   current: GymStatsWindow;
@@ -468,6 +558,7 @@ export type GymStats = {
   topClimbs: GymTopClimb[];
   /** Ascents per day of week in the current window (non-empty days only). */
   busiestDays: GymDayActivity[];
+  angleUsage: GymBoardAngleUsage[];
 };
 
 export type GymStatsInput = {
@@ -598,4 +689,57 @@ export type ReportGymDuplicateStatus = 'reported' | 'already_reported';
 
 export type ReportGymDuplicateResult = {
   status: ReportGymDuplicateStatus;
+};
+
+export type GymGradeInventoryStatus =
+  | 'READY'
+  | 'OWNER_ONLY'
+  | 'WALL_UNAVAILABLE'
+  | 'CHOOSE_COLLECTION'
+  | 'COLLECTION_UNAVAILABLE'
+  | 'COLLECTION_EMPTY';
+
+export type GymGradeInventoryBoard = {
+  boardUuid: string;
+  physicalBoardUuid: string;
+  boardName: string;
+  kind: 'SPRAY_WALL' | 'LED_COLLECTION';
+  status: GymGradeInventoryStatus;
+  included: boolean;
+  variantCount: number;
+  collectionName: string | null;
+};
+
+export type GymGradeComparison = {
+  gymUuid: string;
+  asOf: string;
+  startAt: string;
+  timeZone: string;
+  availableCount: number;
+  sendCount: number;
+  grades: {
+    boardType: string;
+    difficultyId: number | null;
+    availableCount: number;
+    sendCount: number;
+  }[];
+  boards: GymGradeInventoryBoard[];
+};
+
+export type GymGradeCollectionPage = {
+  collections: { uuid: string; name: string }[];
+  nextCursor: string | null;
+};
+
+export type GymGradeCollectionOptionsInput = {
+  gymUuid: string;
+  boardUuid: string;
+  search?: string;
+  cursor?: string | null;
+};
+
+export type SetGymGradeCollectionInput = {
+  gymUuid: string;
+  boardUuid: string;
+  playlistUuid: string | null;
 };

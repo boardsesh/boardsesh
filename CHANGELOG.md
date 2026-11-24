@@ -8,7 +8,12 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### New
 
+- Compare your gym’s recorded climbers and sends, then inspect twelve weeks of board activity. See where history is still too short to compare. ([#8087](https://github.com/boardsesh/boardsesh/pull/8087))
 - See recorded board activity at your gym, with local dates and verified wall groups. ([#8084](https://github.com/boardsesh/boardsesh/pull/8084))
+
+### Improved
+
+- Choose light or dark for each gym screen, with readable logos, climb details and leaderboards. ([#8110](https://github.com/boardsesh/boardsesh/pull/8110))
 
 ## 2026-11-23
 

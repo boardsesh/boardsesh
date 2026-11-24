@@ -3,7 +3,7 @@
  * Two-way static check over the i18n catalogs and the code that reads them,
  * across `packages/web/app/`, `packages/web/scripts/`, `packages/mobile/{src,app}/`,
  * `packages/backend/src/`, `packages/shared/workout-summary/src/` and
- * `packages/shared/connected-apps/src/`:
+ * `packages/shared/connected-apps/src/`, plus the shared gym report copy:
  *
  *   - ORPHANS — a key in `packages/shared/i18n/locales/en-US/<ns>.json` with no
  *     live reference. en-US is the source of truth — `es`, `fr`, `de`, and `it` fall
@@ -758,15 +758,19 @@ type Report = {
 function run(): Report {
   const namespaces = discoverNamespaces();
   const catalog = loadCatalog(namespaces);
-  const files = discoverFiles([
-    appRoot,
-    scriptsRoot,
-    mobileSrcRoot,
-    mobileAppRoot,
-    backendSrcRoot,
-    workoutSummarySrcRoot,
-    connectedAppsSrcRoot,
-  ]);
+  const files = [
+    ...discoverFiles([
+      appRoot,
+      scriptsRoot,
+      mobileSrcRoot,
+      mobileAppRoot,
+      backendSrcRoot,
+      workoutSummarySrcRoot,
+      connectedAppsSrcRoot,
+    ]),
+    join(packagesRoot, 'shared', 'graphql', 'src', 'gym-reporting-overview.ts'),
+    join(packagesRoot, 'shared', 'graphql', 'src', 'gym-busy-times.ts'),
+  ];
   const usedKeys = new Map<string, Set<string>>();
   const globs = new Map<string, GlobPattern[]>();
   const references: KeyReference[] = [];

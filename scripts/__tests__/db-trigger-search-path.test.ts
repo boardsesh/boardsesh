@@ -231,7 +231,16 @@ function createFunctionPinsPrescribedSearchPath(statement: string, reviewedCatal
 // Trusting a name or sanitized header would hide later unqualified dependencies.
 const REVIEWED_LIFECYCLE_MIGRATION_SHA256 = '4299773d153d91534002be3e51f643e71f427535274924349d3ff0b28ce7c73c';
 const REVIEWED_GYM_ALIAS_MIGRATION_SHA256 = '6cc723ef6dde8dc732ed30bb01d2d88e5ba7f199f608265156e1813c4159b1e8';
+const REVIEWED_SPRAY_EXPOSURE_MIGRATION_SHA256 = 'c9ed55b21dea08152b91df28fbc8018b1c55f0ccaadc37bcfbd409961179e529';
+const REVIEWED_SPRAY_EXPOSURE_FUNCTIONS = [
+  'spray_exposure_board_change',
+  'spray_exposure_wall_change',
+  'spray_exposure_version_change',
+  'spray_exposure_policy_change',
+  'spray_exposure_climb_change',
+];
 const REVIEWED_CATALOG_ONLY_MIGRATIONS = new Map([
+  [REVIEWED_SPRAY_EXPOSURE_MIGRATION_SHA256, new Set(REVIEWED_SPRAY_EXPOSURE_FUNCTIONS)],
   [
     REVIEWED_LIFECYCLE_MIGRATION_SHA256,
     new Set(['partner_account_deletion_events', 'partner_connection_lifecycle_events']),
@@ -436,6 +445,24 @@ describe('the pin requires public then pg_catalog, and nothing else', () => {
         ]),
       ),
     ).toEqual(['revoke_gym_reporting_aliases_on_board_move']);
+  });
+
+  it('pins the exact spray exposure migration, including helpers and attachment predicates', () => {
+    const reviewed = migrationSources().find(
+      (source) => createHash('sha256').update(source).digest('hex') === REVIEWED_SPRAY_EXPOSURE_MIGRATION_SHA256,
+    );
+    expect(reviewed).toBeDefined();
+    expect(unpinnedIn(foldMigrationSources([reviewed!]))).toEqual([]);
+    for (const modified of [
+      reviewed!.replace('hashtextextended(', 'pg_catalog.hashtextextended('),
+      reviewed!.replace('WHEN (NEW.board_type', 'WHEN (OLD.board_type'),
+      reviewed!.replace('INSERT INTO public.spray_exposure_invalidations', 'INSERT INTO spray_exposure_invalidations'),
+    ]) {
+      expect(modified).not.toBe(reviewed);
+      expect(unpinnedIn(foldMigrationSources([modified])).sort()).toEqual(
+        [...REVIEWED_SPRAY_EXPOSURE_FUNCTIONS].sort(),
+      );
+    }
   });
 
   it.each([

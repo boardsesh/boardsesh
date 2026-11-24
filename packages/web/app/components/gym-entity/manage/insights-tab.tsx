@@ -21,6 +21,7 @@ import {
   formatGymReportingTime,
   GET_GYM_STATS,
   GYM_REPORTING_PERIODS,
+  gymBusyTimesScope,
   gymReportingCountDelta,
   gymReportingHasActivity,
   gymReportingHasExactObservations,
@@ -33,6 +34,8 @@ import {
   scheduleGymReportingReceiptExpiry,
   SET_GYM_REPORTING_BOARD_ALIAS,
   SET_GYM_REPORTING_TIME_ZONE,
+  type GymTrendMetric,
+  type GymTrendSelection,
   type GetGymStatsQueryResponse,
   type GetGymStatsQueryVariables,
 } from '@boardsesh/graphql';
@@ -40,13 +43,13 @@ import type { GymStats, GymStatsPeriod } from '@boardsesh/shared-schema';
 import { boardTypeLabel } from '@boardsesh/board-constants';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
-import { CssBarChart } from '@/app/components/charts/css-bar-chart';
 import SelectedCheck from '@/app/components/ui/selected-check';
-import { themeTokens } from '@/app/theme/theme-config';
 import type { GymManageTabProps } from './tab-props';
 import { GymReportingSettings } from './gym-reporting-settings';
-
-const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
+import { GymReachReport } from './gym-reach-overview';
+import { GymGradeComparisonPanel } from './gym-grade-comparison';
+import { GymAngleUsage } from './gym-angle-usage';
+import { GymBusyTimesCard } from './gym-busy-times';
 
 let reconnectAt = 0;
 function subscribeOnline(onChange: () => void) {
@@ -64,28 +67,12 @@ function subscribeFocus(onChange: () => void) {
 
 export const computeWowDelta = gymReportingCountDelta;
 
-export function busiestDayOfWeek(days: GymStats['busiestDays']): number | null {
-  let best: GymStats['busiestDays'][number] | undefined;
-  for (const day of days) {
-    if (!best || day.ascentCount > best.ascentCount) best = day;
-  }
-  return best?.dayOfWeek ?? null;
-}
-
-function weekdayLabel(day: number, locale: string) {
-  return new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' }).format(
-    new Date(Date.UTC(2024, 0, 7 + day)),
-  );
-}
-
-function ReportingResults({ stats }: { stats: GymStats }) {
+function ReportingResults({ stats, trend }: { stats: GymStats; trend: GymTrendSelection }) {
   const { t, i18n } = useTranslation('boards');
   const locale = i18n.language || 'en-US';
   const number = new Intl.NumberFormat(locale);
   const observations = formatGymReportingObservationWindow(stats, locale);
   const time = (at: string) => formatGymReportingTime(at, stats.timeZone, locale);
-  const countByDay = new Map(stats.busiestDays.map((day) => [day.dayOfWeek, day.ascentCount]));
-  const busiestDay = busiestDayOfWeek(stats.busiestDays);
   const unknownTimes = stats.coverage.boundaryUncertainCount + stats.coverage.unknownTimeCount;
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
@@ -140,29 +127,13 @@ function ReportingResults({ stats }: { stats: GymStats }) {
           </Typography>
         </Box>
       </Box>
+      {stats.reachOverview && <GymReachReport stats={stats} overview={stats.reachOverview} selection={trend} />}
       {gymReportingHasActivity(stats) ? (
         <>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-            <Chip label={t('gymReporting.climbers', { countText: number.format(stats.current.uniqueClimbers) })} />
-            <Chip label={t('gymReporting.sends', { countText: number.format(stats.current.ascentCount) })} />
-            {busiestDay !== null && (
-              <Chip label={t('gymReporting.busiestDay', { day: weekdayLabel(busiestDay, locale) })} />
-            )}
-          </Box>
-          {stats.busiestDays.length > 0 && (
-            <Box>
-              <Typography variant="subtitle2">{t('gymReporting.byDay')}</Typography>
-              <CssBarChart
-                bars={WEEK_ORDER.map((day) => ({
-                  key: String(day),
-                  label: weekdayLabel(day, locale),
-                  segments: [{ value: countByDay.get(day) ?? 0, color: themeTokens.colors.primary }],
-                }))}
-                ariaLabel={t('gymReporting.byDay')}
-                height={160}
-                mobileHeight={120}
-                showLegend={false}
-              />
+          {!stats.reachOverview && (
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+              <Chip label={t('gymReporting.climbers', { countText: number.format(stats.current.uniqueClimbers) })} />
+              <Chip label={t('gymReporting.sends', { countText: number.format(stats.current.ascentCount) })} />
             </Box>
           )}
           {stats.topClimbs.length > 0 && (
@@ -191,6 +162,7 @@ function ReportingResults({ stats }: { stats: GymStats }) {
           {gymReportingHasExactObservations(stats) ? t('gymReporting.empty') : t('gymReporting.noHistory')}
         </Typography>
       )}
+      <GymAngleUsage key={`${stats.boardUuid ?? 'all'}:${stats.periodDays}:${stats.asOf}`} stats={stats} />
     </Box>
   );
 }
@@ -202,6 +174,7 @@ type ReportingFilters = {
   setPeriod: (period: GymStatsPeriod) => void;
   boardUuid: string | null;
   setBoardUuid: (boardUuid: string | null) => void;
+  trend: GymTrendSelection;
 };
 
 function InsightsReport({
@@ -212,6 +185,7 @@ function InsightsReport({
   setPeriod,
   boardUuid,
   setBoardUuid,
+  trend,
 }: ReportingViewer & ReportingFilters) {
   const { t, i18n } = useTranslation('boards');
   const reconnect = useSyncExternalStore(subscribeOnline, getConnectivity, () => 0);
@@ -346,8 +320,27 @@ function InsightsReport({
               })}
             </Alert>
           )}
-          <ReportingResults stats={stats} />
-          {state === 'ready' && <GymReportingSettings stats={stats} saveZone={saveZone} saveAlias={saveAlias} />}
+          <ReportingResults stats={stats} trend={trend} />
+        </>
+      )}
+      <GymBusyTimesCard
+        key={JSON.stringify([gymUuid, boardUuid])}
+        report={stats?.busyTimes}
+        timeZone={stats?.timeZone}
+        scope={gymBusyTimesScope(stats)}
+      />
+      {stats && state === 'ready' && (
+        <>
+          <GymGradeComparisonPanel
+            key={`${boardUuid ?? ''}:${period}`}
+            viewerId={viewer}
+            token={token}
+            gymUuid={stats.gymUuid}
+            overviewGymUuid={gymUuid}
+            boardUuid={boardUuid}
+            period={period}
+          />
+          <GymReportingSettings stats={stats} saveZone={saveZone} saveAlias={saveAlias} />
         </>
       )}
     </Box>
@@ -357,6 +350,12 @@ function InsightsReport({
 function InsightsViewer({ viewer, gymUuid, token }: ReportingViewer) {
   const [period, setPeriod] = useState<GymStatsPeriod>('week');
   const [boardUuid, setBoardUuid] = useState<string | null>(null);
+  const [week, setWeek] = useState<string | null>(null);
+  const [metric, setMetric] = useState<GymTrendMetric>('climbers');
+  const chooseBoard = (next: string | null) => {
+    if (next !== boardUuid) setWeek(null);
+    setBoardUuid(next);
+  };
   const focused = useSyncExternalStore(
     subscribeFocus,
     () => focusManager.isFocused(),
@@ -371,7 +370,8 @@ function InsightsViewer({ viewer, gymUuid, token }: ReportingViewer) {
       period={period}
       setPeriod={setPeriod}
       boardUuid={boardUuid}
-      setBoardUuid={setBoardUuid}
+      setBoardUuid={chooseBoard}
+      trend={{ metric, setMetric, week, setWeek }}
     />
   );
 }

@@ -5,6 +5,8 @@
 // Shared by the kiosk page renderer and the /embed/board/[board_uuid] widget.
 
 import 'server-only';
+import { boardFieldColorForScheme } from '@boardsesh/board-look';
+import { KIOSK_DEFAULT_THEME, type KioskTheme } from '@boardsesh/kiosk';
 import { BOARD_RECENT_CLIMBS } from '@boardsesh/graphql/operations';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import { getGraphQLHttpUrl } from '@/app/lib/graphql/client';
@@ -81,20 +83,24 @@ async function fetchInitialClimbs(boardId: number, boardUuid: string): Promise<B
  * the board's config can't be resolved to render details — the caller drops
  * the slot (kiosk presets degrade; the embed 404s).
  */
-export async function buildBoardSlotData(board: BoardSlotSource): Promise<BoardSlotData | null> {
+export async function buildBoardSlotData(
+  board: BoardSlotSource,
+  theme: KioskTheme = KIOSK_DEFAULT_THEME,
+): Promise<BoardSlotData | null> {
   const boardDetails = resolveBoardDetails(board);
   if (boardDetails === null) return null;
 
   const recentClimbs = await fetchInitialClimbs(board.boardId, board.boardUuid);
   const initialClimb = recentClimbs[0] ?? null;
   const flatFrames = toFlatFrames(initialClimb?.frames, boardDetails.board_name);
+  const fieldColor = boardFieldColorForScheme(theme);
   return {
     boardDetails,
     initialClimb,
     initialClimbImageUrl:
       initialClimb === null || flatFrames.length === 0
         ? null
-        : buildBoardRenderUrl(boardDetails, flatFrames, { includeBackground: true }),
-    bareBoardImageUrl: buildBoardRenderUrl(boardDetails, '', { includeBackground: true }),
+        : buildBoardRenderUrl(boardDetails, flatFrames, { includeBackground: true, fieldColor }),
+    bareBoardImageUrl: buildBoardRenderUrl(boardDetails, '', { includeBackground: true, fieldColor }),
   };
 }

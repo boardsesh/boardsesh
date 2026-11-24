@@ -30,7 +30,7 @@
   font-size: var(--kiosk-font-small);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--kiosk-accent);
+  color: var(--kiosk-accent-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

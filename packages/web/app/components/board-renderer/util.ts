@@ -38,6 +38,8 @@ type BuildBoardRenderUrlOptions = {
   format?: 'webp' | 'png' | 'jpg' | 'jpeg';
   /** Ask for the dark art siblings. Only meaningful for boards in `BOARDS_WITH_DARK_ART`. */
   colorScheme?: 'light' | 'dark';
+  /** Aura's play field, independent of the board-art sibling. Defaults to the existing dark field. */
+  fieldColor?: string;
   /**
    * Which drawing the server should render. Defaults to `aura`, the same
    * drawing the app has shipped since 2.4 — `classic` is the marker overlay,
@@ -52,7 +54,7 @@ type BuildBoardRenderUrlOptions = {
 };
 
 /**
- * The dark play field www and the share cards render Aura against — the same
+ * The default dark play field www and the share cards render Aura against — the same
  * field the app's play view composites over, so a card in a chat and the board
  * in the app are quieted by the same wash. Sent as a query param, which is what
  * gives the Aura render its own Cloudflare entry: board-render responses are
@@ -62,7 +64,8 @@ type BuildBoardRenderUrlOptions = {
  * from the value the renderer measures the veil against. Note what changing it
  * costs, though: the colour is IN the URL, so a new value is a new cache key for
  * every board image on the site — the old ones stay valid but nothing hits them
- * again, and the renderer draws the whole catalogue afresh.
+ * again, and the renderer draws the whole catalogue afresh. A light kiosk
+ * overrides `fieldColor` per request rather than changing this shared default.
  */
 const AURA_FIELD_COLOR = BOARD_FIELD_COLORS.dark;
 
@@ -132,7 +135,15 @@ function getBoardRenderEndpoint(): string {
 export const buildBoardRenderUrl = (
   boardDetails: BoardRouteIdentity,
   frames: string,
-  { thumbnail, includeBackground, variant, format, colorScheme, renderMode = 'aura' }: BuildBoardRenderUrlOptions = {},
+  {
+    thumbnail,
+    includeBackground,
+    variant,
+    format,
+    colorScheme,
+    fieldColor = AURA_FIELD_COLOR,
+    renderMode = 'aura',
+  }: BuildBoardRenderUrlOptions = {},
 ) => {
   let url =
     `${getBoardRenderEndpoint()}?board_name=${boardDetails.board_name}` +
@@ -166,7 +177,7 @@ export const buildBoardRenderUrl = (
   // asks for classic would otherwise get an aura render — and its `<img>`
   // fallback would disagree with the canvas beside it.
   if (renderMode === 'aura') {
-    url += `&render_mode=aura&field_color=${encodeURIComponent(AURA_FIELD_COLOR)}`;
+    url += `&render_mode=aura&field_color=${encodeURIComponent(fieldColor)}`;
   } else {
     url += '&render_mode=classic';
   }

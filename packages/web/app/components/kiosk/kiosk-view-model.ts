@@ -6,6 +6,7 @@ import {
   parseKioskLayoutLenient,
   type KioskLeaderboardPeriod,
   type KioskPreset,
+  type KioskTheme,
 } from '@boardsesh/kiosk';
 import type { GymKiosk, GymKioskBoard } from '@boardsesh/shared-schema';
 
@@ -16,6 +17,8 @@ export type KioskLeaderboardConfig = {
 };
 
 export type KioskViewModel = {
+  /** Saved appearance, normalized before server rendering. */
+  theme: KioskTheme;
   /**
    * The boards the kiosk renders, in slot order — the same list the caller
    * passed in (the backend-RESOLVED boards, further filtered by the renderer
@@ -73,6 +76,7 @@ export function buildKioskViewModel(kiosk: Pick<GymKiosk, 'layout' | 'boards'>):
   }
 
   return {
+    theme: layout.theme,
     boards,
     preset: kioskPresetForBoardCount(boards.length),
     leaderboard,

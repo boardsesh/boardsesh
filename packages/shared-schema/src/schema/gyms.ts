@@ -779,6 +779,144 @@ export const gymsTypeDefs = /* GraphQL */ `
     isPartial: Boolean!
   }
 
+  enum GymReachCoverage {
+    complete
+    partial
+    unavailable
+  }
+
+  type GymReachCount {
+    "Count of available eligible records or people. Consult coverage before displaying zero."
+    count: Int!
+    coverage: GymReachCoverage!
+  }
+
+  type GymReachWindow {
+    climbers: GymReachCount!
+    "First recorded here in available eligible records. It may change when older history arrives."
+    firstRecorded: GymReachCount!
+    uncertainFirstRecorded: Int!
+    sends: GymReachCount!
+    sendLoggers: Int!
+    "Distinct identified climber and gym-local date with a send."
+    sessions: GymReachCount!
+  }
+
+  type GymReachReturn {
+    returning: Int!
+    previousClimbers: Int!
+    "A return rate can be displayed only with complete coverage and a positive denominator."
+    coverage: GymReachCoverage!
+  }
+
+  type GymReachWeek {
+    "Gym-local Monday date in YYYY-MM-DD format."
+    startDate: String!
+    "Gym-local Sunday date in YYYY-MM-DD format."
+    endDate: String!
+    inProgress: Boolean!
+    climbers: GymReachCount!
+    sends: GymReachCount!
+  }
+
+  type GymReachOverview {
+    "UTC start of the forward observation contract for every accepted gym."
+    observationStartedAt: String
+    "UTC start of the interval immediately before the previous period."
+    baselineStartAt: String!
+    current: GymReachWindow!
+    previous: GymReachWindow!
+    cameBack: GymReachReturn!
+    previousCameBack: GymReachReturn!
+    "Twelve gym-local Monday-start weeks, including the week in progress."
+    weeklyTrend: [GymReachWeek!]!
+  }
+
+  type GymAngleActivityCounts {
+    "Qualifying native ticks, including attempts."
+    tickCount: Int!
+    "Canonical native flashes and sends."
+    sendCount: Int!
+    "Confirmed Boardsesh displays."
+    displayCount: Int!
+  }
+
+  type GymAngleUsageRow {
+    angle: Int!
+    distinctClimberCount: Int!
+    "Distinct identified climber and definitely known gym-local date pairs."
+    climberDayCount: Int!
+    "Identified ticks in the period without a provable gym-local date."
+    unresolvedLocalDateTickCount: Int!
+    tickCount: Int!
+    sendCount: Int!
+    displayCount: Int!
+  }
+
+  type GymBoardAngleUsage {
+    "An independently authorized physical LED board in the selected scope."
+    boardUuid: ID!
+    "Distinct identified climbers across all known angles on this physical board."
+    knownAngleClimberCount: Int!
+    "Recorded compatible angles, ordered by degrees."
+    angles: [GymAngleUsageRow!]!
+    "Activity with missing or unsupported recorded angles, excluded from ranking."
+    unknownAngle: GymAngleActivityCounts!
+  }
+
+  enum GymBusyTimesStatus {
+    ready
+    zoneRequired
+    historyUnavailable
+    calendarUnavailable
+  }
+
+  type GymBusyWeekday {
+    "ISO weekday, Monday 1 through Sunday 7."
+    dayOfWeek: Int!
+    "Completed covered dates of this weekday."
+    eligibleDates: Int!
+    "Sum of distinct identified climbers per eligible date."
+    recordedClimbers: Int!
+  }
+
+  type GymBusyHour {
+    "ISO weekday, Monday 1 through Sunday 7."
+    dayOfWeek: Int!
+    "Civil hour from 0 to 23 in the gym time zone."
+    hour: Int!
+    "Completed covered dates on which this local hour existed."
+    eligibleDates: Int!
+    "Sum of distinct identified climbers per eligible date and civil hour."
+    recordedClimbers: Int!
+  }
+
+  type GymBusyTimes {
+    status: GymBusyTimesStatus!
+    "First nominal local date of the fixed 90-day interval."
+    startDate: String
+    "Last nominal local date of the fixed 90-day interval."
+    endDate: String
+    coveredDates: Int!
+    firstCoveredDate: String
+    "Identified confirmed display records with a trustworthy occurrence instant in covered dates."
+    instantDisplays: Int!
+    "Identified eligible ticks with a trustworthy occurrence instant in covered dates."
+    instantTicks: Int!
+    "Eligible identified date-only ticks that could have occurred in a covered date."
+    dateOnlyRecords: Int!
+    "Date-only ticks with no definite assignment to a covered date."
+    unplacedDateOnlyRecords: Int!
+    "Identified candidates with unproved time in the bounded source scan."
+    unknownTimeRecords: Int!
+    "At least one in-scope identified tick has no provable occurrence date, regardless of its saved timestamp."
+    hasUnboundedUnknownTime: Boolean!
+    "Seven weekday cells in ISO order."
+    weekdays: [GymBusyWeekday!]!
+    "168 weekday and civil-hour cells in ISO weekday then hour order."
+    hours: [GymBusyHour!]!
+  }
+
   type GymStats {
     gymName: String!
     boardUuid: ID
@@ -788,6 +926,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     timeZone: String!
     timeZoneConfigured: Boolean!
     coverage: GymReportingCoverage!
+    reachOverview: GymReachOverview
+    busyTimes: GymBusyTimes
     "The gym these stats are for."
     gymUuid: ID!
     "Window length in days (7 for the default week)."
@@ -800,6 +940,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     topClimbs: [GymTopClimb!]!
     "Ascents per day of week in the current window (only non-empty days)."
     busiestDays: [GymDayActivity!]!
+    "Recorded angle usage on eligible physical LED boards in the current window."
+    angleUsage: [GymBoardAngleUsage!]!
   }
 
   """
@@ -807,6 +949,72 @@ export const gymsTypeDefs = /* GraphQL */ `
   (7 days, the default) or \`month\` (30 days). The comparison window is always the
   equally-long span immediately before it.
   """
+  enum GymGradeInventoryKind {
+    SPRAY_WALL
+    LED_COLLECTION
+  }
+
+  enum GymGradeInventoryStatus {
+    READY
+    OWNER_ONLY
+    WALL_UNAVAILABLE
+    CHOOSE_COLLECTION
+    COLLECTION_UNAVAILABLE
+    COLLECTION_EMPTY
+  }
+
+  type GymGradeInventoryBoard {
+    boardUuid: ID!
+    physicalBoardUuid: ID!
+    boardName: String!
+    kind: GymGradeInventoryKind!
+    status: GymGradeInventoryStatus!
+    included: Boolean!
+    variantCount: Int!
+    collectionName: String
+  }
+
+  type GymGradeComparisonBucket {
+    boardType: String!
+    difficultyId: Int
+    availableCount: Int!
+    sendCount: Int!
+  }
+
+  type GymGradeComparison {
+    gymUuid: ID!
+    asOf: String!
+    startAt: String!
+    timeZone: String!
+    availableCount: Int!
+    sendCount: Int!
+    grades: [GymGradeComparisonBucket!]!
+    boards: [GymGradeInventoryBoard!]!
+  }
+
+  type GymGradeCollectionOption {
+    uuid: ID!
+    name: String!
+  }
+
+  type GymGradeCollectionPage {
+    collections: [GymGradeCollectionOption!]!
+    nextCursor: String
+  }
+
+  input GymGradeCollectionOptionsInput {
+    gymUuid: ID!
+    boardUuid: ID!
+    search: String
+    cursor: String
+  }
+
+  input SetGymGradeCollectionInput {
+    gymUuid: ID!
+    boardUuid: ID!
+    playlistUuid: ID
+  }
+
   input GymStatsInput {
     "The gym to report on. The caller must have gym edit access."
     gymUuid: ID!
