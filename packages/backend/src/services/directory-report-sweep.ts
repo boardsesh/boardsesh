@@ -17,7 +17,8 @@
  *    for a person.
  * 5. Once a UTC day, from 08:00, the team gets the digest: reports that reached
  *    the admin queue since the last digest, claims that approved themselves,
- *    and the sections other features add. No email when every section is empty.
+ *    setups climbers changed, and the sections other features add. No email
+ *    when every section is empty.
  *
  * On the job queue: `DIRECTORY_REPORT_SWEEP_QUEUE` is `exclusive`, so one run is
  * queued or running across every replica.
@@ -27,6 +28,7 @@ import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, or, sql } 
 import * as dbSchema from '@boardsesh/db/schema';
 import type { DirectoryReport } from '@boardsesh/db/schema';
 import { DIRECTORY_REPORT_SWEEP_QUEUE } from '@boardsesh/db/job-queue-schema';
+import { boardSetupSummary } from '@boardsesh/board-config';
 import { ESCALATE_AFTER_DAYS, REMINDER_AFTER_DAYS } from '@boardsesh/directory-moderation';
 import { db } from '../db/client';
 import { transactionWithAfterCommit } from '../db/after-commit';
@@ -35,6 +37,7 @@ import { webPublicUrl } from '../utils/public-urls';
 import { ADMIN_DIGEST_MAX_ROWS, sendAdminDailyDigestEmail, type AdminDigestSection } from '../email/email-service';
 import { loadBoardFacts, loadGymFacts, WAITING_STATUSES } from '../graphql/resolvers/social/directory-reports/core';
 import { resolveWaitingReports } from '../graphql/resolvers/social/directory-reports/lifecycle';
+import { readSetupSnapshot, setupChangeStates } from '../graphql/resolvers/social/directory-reports/setup-snapshot';
 import {
   sendDirectoryNotices,
   type PendingDirectoryNotice,
@@ -379,10 +382,75 @@ export async function autoApprovedClaimsSection(window: AdminDigestWindow): Prom
   };
 }
 
+/** Rows the climbers' setup changes section lists; the rest are behind its link. */
+export const SETUP_CHANGES_DIGEST_ROWS = 10;
+
+/**
+ * Setups climbers changed in the window (docs/product/directory-reports.md,
+ * "Suggested setup"), newest first: the count, and up to
+ * {@link SETUP_CHANGES_DIGEST_ROWS} rows with the board, its gym and the setup
+ * before → after in words. Every row and the section link open the admin's
+ * Setup changes tab, where each one can be undone. A change already undone
+ * says so and still counts.
+ */
+export async function climberSetupChangesSection(window: AdminDigestWindow): Promise<AdminDigestSection | null> {
+  const events = dbSchema.boardModerationEvents;
+  const inWindow = and(
+    eq(events.action, 'setup_changed_by_climber'),
+    gt(events.createdAt, window.start),
+    lte(events.createdAt, window.end),
+  );
+  const [{ total }] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(events)
+    .where(inWindow);
+  if (total === 0) return null;
+  const rows = await db
+    .select({
+      id: events.id,
+      boardId: events.boardId,
+      details: events.details,
+      boardName: dbSchema.userBoards.name,
+      boardType: dbSchema.userBoards.boardType,
+      gymName: dbSchema.gyms.name,
+    })
+    .from(events)
+    .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.id, events.boardId))
+    .leftJoin(dbSchema.gyms, eq(dbSchema.gyms.id, events.gymId))
+    .where(inWindow)
+    .orderBy(desc(events.id))
+    .limit(SETUP_CHANGES_DIGEST_ROWS);
+  const recorded = rows.flatMap((row) => {
+    const before = readSetupSnapshot(row.details?.before);
+    const after = readSetupSnapshot(row.details?.after);
+    return before && after ? [{ row, before, after }] : [];
+  });
+  const states = await setupChangeStates(
+    recorded.map(({ row, after }) => ({ id: row.id, boardId: row.boardId, after })),
+  );
+  const tabUrl = `${webPublicUrl()}/admin/board-reports?tab=setup-changes`;
+  return {
+    key: 'climberSetupChanges',
+    heading: 'Setups climbers changed',
+    total,
+    moreUrl: tabUrl,
+    moreLabel: 'Open setup changes',
+    rows: recorded.map(({ row, before, after }) => {
+      const place = row.gymName ? ` at ${row.gymName}` : '';
+      const undone = states.get(row.id) === 'UNDONE' ? ' (already undone)' : '';
+      return {
+        label: `${row.boardName}${place}: ${boardSetupSummary(row.boardType, before)} → ${boardSetupSummary(row.boardType, after)}${undone}`,
+        url: tabUrl,
+      };
+    }),
+  };
+}
+
 /** The digest's sections, in the order the email shows them. */
 export const ADMIN_DIGEST_SECTION_PROVIDERS: readonly AdminDigestSectionProvider[] = [
   escalatedReportsSection,
   autoApprovedClaimsSection,
+  climberSetupChangesSection,
 ];
 
 export type AdminDigestOutcome = 'not_due' | 'claimed_elsewhere' | 'empty' | 'sent' | 'failed';

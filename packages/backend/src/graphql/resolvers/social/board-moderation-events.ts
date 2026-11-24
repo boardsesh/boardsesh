@@ -37,14 +37,19 @@ export function boardHeldOffGymError(): GraphQLError {
   return new GraphQLError(BOARD_HELD_OFF_GYM_MESSAGE, { extensions: { code: BOARD_HELD_OFF_GYM_CODE } });
 }
 
+/** Record one event in the caller's transaction, and return its id. */
 export async function recordBoardModerationEvent(
   executor: ModerationExecutor,
   event: NewBoardModerationEvent,
-): Promise<void> {
-  await executor.insert(dbSchema.boardModerationEvents).values(event);
+): Promise<number> {
+  const [recorded] = await executor
+    .insert(dbSchema.boardModerationEvents)
+    .values(event)
+    .returning({ id: dbSchema.boardModerationEvents.id });
   // Reports about the board close with the action, and its creator hears about
   // it (docs/product/directory-reports.md), in this same transaction.
   await onBoardModerationEvent(executor, event);
+  return recorded.id;
 }
 
 /**

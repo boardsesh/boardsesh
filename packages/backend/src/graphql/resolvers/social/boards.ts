@@ -162,7 +162,7 @@ type DuplicateBoardCandidate = {
  *
  * `excludeBoardId` is the row being edited — a board must never block itself.
  */
-async function findOwnedBlockingDuplicate(
+export async function findOwnedBlockingDuplicate(
   opts: {
     ownerId: string;
     boardType: string;
@@ -606,9 +606,10 @@ async function resolveBoardFollowingMerges(
 }
 
 /**
- * Enrich a board row with computed fields (counts, names, follow status).
+ * Enrich a board row with computed fields (counts, names, follow status). The
+ * caller has already checked the viewer may read the board.
  */
-async function enrichBoard(
+export async function enrichBoard(
   board: typeof dbSchema.userBoards.$inferSelect,
   authenticatedUserId?: string,
   distanceMeters?: number | null,

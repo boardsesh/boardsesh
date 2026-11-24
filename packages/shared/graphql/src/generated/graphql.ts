@@ -1181,6 +1181,107 @@ export type BoardSerialConfig = {
   updatedAt: Scalars['String']['output'];
 };
 
+/** A board's setup, as a suggestion or a recorded change carries it. */
+export type BoardSetup = {
+  __typename?: 'BoardSetup';
+  /** Set only when the angle is part of the setup (a board that doesn't tilt). */
+  angle?: Maybe<Scalars['Int']['output']>;
+  layoutId: Scalars['Int']['output'];
+  /** Hold set ids, comma-separated, in ascending order. */
+  setIds: Scalars['String']['output'];
+  sizeId: Scalars['Int']['output'];
+};
+
+/** One climber's change to a board's setup, made by a suggestion on a report. */
+export type BoardSetupChange = {
+  __typename?: 'BoardSetupChange';
+  after: BoardSetup;
+  before: BoardSetup;
+  board: BoardSetupChangeBoard;
+  /** The climber who suggested it. Null once their account is deleted. */
+  climberDisplayName?: Maybe<Scalars['String']['output']>;
+  /** When the change was made. */
+  createdAt: Scalars['String']['output'];
+  /** Pass to undoBoardSetupChange. */
+  eventId: Scalars['ID']['output'];
+  /** Null when the gym has been deleted since. */
+  gym?: Maybe<BoardSetupChangeGym>;
+  state: BoardSetupChangeState;
+};
+
+/** The board a climber changed, in the admin list of setup changes. */
+export type BoardSetupChangeBoard = {
+  __typename?: 'BoardSetupChangeBoard';
+  boardType: Scalars['String']['output'];
+  name: Scalars['String']['output'];
+  slug: Scalars['String']['output'];
+  uuid: Scalars['ID']['output'];
+};
+
+export type BoardSetupChangeConnection = {
+  __typename?: 'BoardSetupChangeConnection';
+  /** Newest first. */
+  changes: Array<BoardSetupChange>;
+  /** Pass as after for the next page; null on the last page. */
+  nextCursor?: Maybe<Scalars['String']['output']>;
+};
+
+/** The gym a board was at when a climber changed it. */
+export type BoardSetupChangeGym = {
+  __typename?: 'BoardSetupChangeGym';
+  name: Scalars['String']['output'];
+  slug?: Maybe<Scalars['String']['output']>;
+  uuid: Scalars['ID']['output'];
+};
+
+/**
+ * Where a climber's setup change stands. LIVE: the board still has it.
+ * UNDONE: someone put the old setup back. CHANGED_SINCE: the board changed
+ * again since, so it can't be undone.
+ */
+export type BoardSetupChangeState = 'CHANGED_SINCE' | 'LIVE' | 'UNDONE';
+
+/**
+ * A board's setup within its own board type: what a "Set up wrong" report can
+ * suggest. There is no board type: it is always the board's own.
+ */
+export type BoardSetupInput = {
+  /**
+   * Only for a board that doesn't tilt (isAngleAdjustable false). Leave it out to
+   * keep the angle. An angle other than the board's own must be one the board
+   * type's Angle row offers (the MoonBoard wide range included).
+   */
+  angle?: InputMaybe<Scalars['Int']['input']>;
+  /** A layout of the board's type. */
+  layoutId: Scalars['Int']['input'];
+  /** Hold set ids of that layout and size, comma-separated. At least one. */
+  setIds: Scalars['String']['input'];
+  /** A size of that layout. */
+  sizeId: Scalars['Int']['input'];
+};
+
+/** What a suggested setup did. */
+export type BoardSetupOutcome =
+  /** The board changed for everyone straight away. */
+  | 'APPLIED'
+  /** The suggestion waits on the report for someone who can change the board. */
+  | 'SENT_FOR_REVIEW';
+
+/** Why a suggested setup went to review instead of changing the board. */
+export type BoardSetupReviewReason =
+  /** The gym is run by the gym. Its staff check suggestions first. */
+  | 'CLAIMED_GYM'
+  /** The change would make this board a copy of another board with the same owner, or clash with a serial number. */
+  | 'CLASHES'
+  /** The reporter already changed 3 boards in the last 24 hours. */
+  | 'DAILY_LIMIT'
+  /** The board has no gym. Whoever added it checks suggestions first. */
+  | 'NO_GYM'
+  /** A climber's change to this board was undone, or put back by hand, in the last 90 days. */
+  | 'RECENTLY_UNDONE'
+  /** A climber changed this board's setup in the last 24 hours. */
+  | 'RECENT_CHANGE';
+
 /**
  * A home board's share link. A signed-in climber who opens it and chooses Join
  * becomes an approved member of the board; opening it alone grants nothing.
@@ -3000,8 +3101,8 @@ export type DeviceLogEntry = {
 
 /**
  * What a directory notification is about. Set on the board_report_*,
- * gym_report_*, board_removed_from_gym, board_deleted_by_staff and
- * board_edited_by_staff types.
+ * gym_report_*, board_removed_from_gym, board_deleted_by_staff,
+ * board_edited_by_staff and board_setup_changed_by_climber types.
  */
 export type DirectoryNotice = {
   __typename?: 'DirectoryNotice';
@@ -3025,6 +3126,14 @@ export type DirectoryNotice = {
   /** Resolved as kept: what the person who closed it said. */
   resolutionNote?: Maybe<Scalars['String']['output']>;
   resolvedByRole?: Maybe<DirectoryReportResolverRole>;
+  /** board_setup_changed_by_climber: the setup the climber changed it to. */
+  setupAfter?: Maybe<BoardSetup>;
+  /** board_setup_changed_by_climber: the setup before the change. */
+  setupBefore?: Maybe<BoardSetup>;
+  /** board_setup_changed_by_climber: the change, to pass to undoBoardSetupChange. */
+  setupChangeEventId?: Maybe<Scalars['ID']['output']>;
+  /** board_setup_changed_by_climber: where the change stands now. Offer Undo only while it is LIVE. */
+  setupChangeState?: Maybe<BoardSetupChangeState>;
   targetKind: DirectoryReportTargetKind;
 };
 
@@ -3050,7 +3159,7 @@ export type DirectoryReport = {
   gymName?: Maybe<Scalars['String']['output']>;
   /** Board reports: the gym the board was at when reported (for relist_request, the gym that removed it). Gym reports: the gym. */
   gymUuid?: Maybe<Scalars['ID']['output']>;
-  /** What reporters said, oldest first. Reporters without a note are counted but not listed. */
+  /** What reporters said, oldest first. Reporters with neither a note nor a suggested setup are counted but not listed. */
   notes: Array<DirectoryReportNote>;
   reason: DirectoryReportReason;
   remindedAt?: Maybe<Scalars['String']['output']>;
@@ -3082,8 +3191,11 @@ export type DirectoryReportConnection = {
 export type DirectoryReportNote = {
   __typename?: 'DirectoryReportNote';
   createdAt: Scalars['String']['output'];
+  /** What the reporter wrote. Empty when they suggested a setup and wrote nothing. */
   note: Scalars['String']['output'];
   reporter?: Maybe<DirectoryReportReporter>;
+  /** The setup this reporter suggested on a wrong_setup report, if any. */
+  suggestedSetup?: Maybe<BoardSetup>;
 };
 
 /** How a report was closed. */
@@ -3112,8 +3224,12 @@ export type DirectoryReportReporter = {
   userId: Scalars['ID']['output'];
 };
 
-/** Who closed a report. auto is the system (the merge tool, or a sweep that found the board or gym gone). */
-export type DirectoryReportResolverRole = 'admin' | 'auto' | 'creator' | 'gym_staff';
+/**
+ * Who closed a report. auto is the system (the merge tool, or a sweep that found
+ * the board or gym gone). climber is a climber whose suggested setup changed the
+ * board at a gym nobody runs.
+ */
+export type DirectoryReportResolverRole = 'admin' | 'auto' | 'climber' | 'creator' | 'gym_staff';
 
 /**
  * Where a report stands. open and escalated are still waiting (escalated: in the
@@ -3123,11 +3239,25 @@ export type DirectoryReportStatus = 'deleted' | 'escalated' | 'fixed' | 'kept' |
 
 export type DirectoryReportSubmitResult = {
   __typename?: 'DirectoryReportSubmitResult';
+  /**
+   * The board with its new setup, for 'Climb it now'. Set only when setupOutcome
+   * is APPLIED, and even then it can be null: the change has committed but the
+   * board could not be read back. Then refetch the board by its uuid; the
+   * change still applied.
+   */
+  board?: Maybe<UserBoard>;
   /** How many other climbers are on the same report, for 'N other climbers flagged this too'. */
   otherReporterCount: Scalars['Int']['output'];
   reportUuid: Scalars['ID']['output'];
   /** Who the report goes to, as the report sheet's routing line said. */
   routedTo: Array<DirectoryReportRecipient>;
+  /** What the suggested setup did. Null when the report carried none (and always for reportGym). */
+  setupOutcome?: Maybe<BoardSetupOutcome>;
+  /**
+   * Why the suggested setup went to review. Null when it applied, and when no
+   * suggestion can apply right now (the directory-setup-suggestions flag is off).
+   */
+  setupReviewReason?: Maybe<BoardSetupReviewReason>;
   status: DirectoryReportSubmitStatus;
 };
 
@@ -5930,6 +6060,19 @@ export type Mutation = {
    * Returns new favorite state.
    */
   toggleFavorite: ToggleFavoriteResult;
+  /**
+   * Put back the setup a climber's change replaced. For global admins, the
+   * board's creator (not for a synced board) and the owner and admins of the
+   * board's gym. Only while the board still has the climber's setup: a change
+   * someone undid first is refused with BOARD_SETUP_ALREADY_UNDONE
+   * (isBoardSetupAlreadyUndoneError; the old setup is back already), and one the
+   * board changed again since with BOARD_SETUP_CHANGED_SINCE
+   * (isBoardSetupChangedSinceError). Returns the board with its old setup back,
+   * and the sync freeze the change replaced while nobody edited the board since.
+   * The report the change closed stays closed, and for 90 days the board's
+   * suggestions go to review.
+   */
+  undoBoardSetupChange: UserBoard;
   /** Unfollow a board. */
   unfollowBoard: Scalars['Boolean']['output'];
   /** Unfollow a gym. */
@@ -6924,6 +7067,11 @@ export type MutationToggleFavoriteArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationUndoBoardSetupChangeArgs = {
+  eventId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationUnfollowBoardArgs = {
   input: FollowBoardInput;
 };
@@ -7271,6 +7419,7 @@ export type NotificationType =
   | 'board_removed_from_gym'
   | 'board_report_opened'
   | 'board_report_resolved'
+  | 'board_setup_changed_by_climber'
   | 'comment_on_board'
   | 'comment_on_climb'
   | 'comment_on_gym'
@@ -8174,6 +8323,11 @@ export type Query = {
   adminAppFeedback: AdminAppFeedbackResult;
   /** Stored editable metadata for one active board. Global admins only. */
   adminBoard?: Maybe<AdminBoard>;
+  /**
+   * Every change a climber's suggested setup made to a board, newest first, with
+   * where each one stands. Global admins only. first defaults to 50 (at most 100).
+   */
+  adminBoardSetupChanges: BoardSetupChangeConnection;
   /** Search all active registered boards, including private boards. Global admins only. */
   adminBoards: AdminBoardConnection;
   /**
@@ -9168,6 +9322,12 @@ export type QueryAdminAppFeedbackArgs = {
 /** Root query type for all read operations. */
 export type QueryAdminBoardArgs = {
   boardUuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryAdminBoardSetupChangesArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  first?: InputMaybe<Scalars['Int']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -10497,6 +10657,18 @@ export type ReportBoardInput = {
   /** Optional, trimmed, at most 500 characters. Required (10 or more characters) for other. */
   note?: InputMaybe<Scalars['String']['input']>;
   reason: BoardReportReason;
+  /**
+   * The setup the reporter says is right. Only with wrong_setup, and never on a
+   * spray wall. It must be a real setup of the board's type (a known layout,
+   * size and sets, and an angle the board type offers) and differ from the
+   * board's setup now; otherwise the report is refused with BAD_USER_INPUT and
+   * nothing is filed. The setup the board has now is refused with
+   * extensions.reason SETUP_UNCHANGED (isBoardSetupUnchangedError): the board
+   * may have been fixed since the client read it, so read it again. At a gym
+   * nobody runs (not RUN_BY_GYM) it changes the board for everyone straight away
+   * unless a limit sends it to review; see setupOutcome on the result.
+   */
+  suggestedSetup?: InputMaybe<BoardSetupInput>;
 };
 
 export type ReportClimbInput = {

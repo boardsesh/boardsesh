@@ -15,3 +15,5 @@ export * from './board-catalogue-cascade';
 export type { Angle, SetIdList, ClimbCompatibilityInput, BoardCompatibilityTarget } from './types';
 export * from './board-mirroring';
 export * from './tick-board';
+export * from './setup-selection';
+export * from './setup-labels';
