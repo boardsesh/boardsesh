@@ -92,13 +92,13 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
     // migration there as well. CI's canonical dump already contains it.
     if (!gymReporting.sink) {
       await owner.unsafe(
-        readFileSync(new URL('../../../../../db/drizzle/0337_gym_reporting_foundation.sql', import.meta.url), 'utf8'),
+        readFileSync(new URL('../../../../../db/drizzle/0338_gym_reporting_foundation.sql', import.meta.url), 'utf8'),
       );
     }
     if (!gymReporting.routine) {
       await owner.unsafe(
         readFileSync(
-          new URL('../../../../../db/drizzle/0339_gym_reporting_alias_venue_guard.sql', import.meta.url),
+          new URL('../../../../../db/drizzle/0340_gym_reporting_alias_venue_guard.sql', import.meta.url),
           'utf8',
         ),
       );

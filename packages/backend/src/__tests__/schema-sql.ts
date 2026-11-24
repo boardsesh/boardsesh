@@ -17,15 +17,15 @@ const feedbackConversationSchema = readFileSync(
   .filter((statement) => !statement.trim().startsWith('ALTER TYPE'))
   .join('\n');
 const gymReportingSchema = readFileSync(
-  new URL('../../../db/drizzle/0337_gym_reporting_foundation.sql', import.meta.url),
+  new URL('../../../db/drizzle/0338_gym_reporting_foundation.sql', import.meta.url),
   'utf8',
 );
 const gymReportingTickTimeBinding = readFileSync(
-  new URL('../../../db/drizzle/0338_gym_reporting_tick_time_binding.sql', import.meta.url),
+  new URL('../../../db/drizzle/0339_gym_reporting_tick_time_binding.sql', import.meta.url),
   'utf8',
 );
 const gymReportingAliasVenueGuard = readFileSync(
-  new URL('../../../db/drizzle/0339_gym_reporting_alias_venue_guard.sql', import.meta.url),
+  new URL('../../../db/drizzle/0340_gym_reporting_alias_venue_guard.sql', import.meta.url),
   'utf8',
 );
 const offlineWriteDeliverySchema = readFileSync(
@@ -618,6 +618,13 @@ export const schemaSQL = `
   -- CREATE TABLE block never lands on a worker DB that already exists. Backfill
   -- it here so tick_graded_at is present everywhere.
   ALTER TABLE "board_climb_stats" ADD COLUMN IF NOT EXISTS "tick_graded_at" timestamp;
+
+  ALTER TABLE "board_climb_stats" ADD COLUMN IF NOT EXISTS "play_count" bigint DEFAULT 0 NOT NULL;
+  DO $$ BEGIN
+    ALTER TABLE "board_climb_stats" ADD CONSTRAINT "board_climb_stats_play_count_nonnegative" CHECK (play_count >= 0);
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$;
+  CREATE INDEX IF NOT EXISTS board_climb_stats_positive_play_count_idx ON board_climb_stats (board_type,climb_uuid,angle) WHERE play_count>0;
 
   CREATE TABLE IF NOT EXISTS "board_climb_grades" (
     "board_type" text NOT NULL,

@@ -735,6 +735,10 @@ export const boardClimbStats = pgTable(
     // as a trailing key column) keeps working. The v1 index from 0068 was a
     // strict prefix of it and is removed in migration 0250.
     ascensionistCount: bigint('ascensionist_count', { mode: 'number' }),
+    // Estimated native board selections lasting at least 30 seconds, per angle.
+    // Server-only until the API/offline contract ships; do not advance the stats
+    // sync cursor when this hourly materialized count changes.
+    playCount: bigint('play_count', { mode: 'number' }).notNull().default(0),
     upstreamAscensionistCount: bigint('upstream_ascensionist_count', { mode: 'number' }),
     boardseshAscensionistCount: bigint('boardsesh_ascensionist_count', { mode: 'number' }),
     difficultyAverage: doublePrecision('difficulty_average'),
@@ -807,6 +811,10 @@ export const boardClimbStats = pgTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.boardType, table.climbUuid, table.angle] }),
+    positivePlayCountIdx: index('board_climb_stats_positive_play_count_idx')
+      .on(table.boardType, table.climbUuid, table.angle)
+      .where(sql`${table.playCount} > 0`),
+    playCountNonnegativeCheck: check('board_climb_stats_play_count_nonnegative', sql`${table.playCount} >= 0`),
     // Leading board_type: every syncClimbStats pull filters on it before walking
     // the (updated_at, sync_seq) cursor, so a per-board pull is one range scan.
     syncCursorIdx: index('board_climb_stats_sync_cursor_idx').on(table.boardType, table.updatedAt, table.syncSeq),

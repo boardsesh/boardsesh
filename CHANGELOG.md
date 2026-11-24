@@ -8,12 +8,23 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### New
 
+- Every gym now has its own page in the app: its boards, who runs it, and how to claim it. ([#8053](https://github.com/boardsesh/boardsesh/pull/8053))
+  Gym staff can take a climber's board off their gym without deleting it, and see who added each board.
+  Every gym shows who runs it, and gym staff can claim their listing from the gym page.
+  Removing a board you follow no longer looks like deleting it. Delete now says it's for everyone, and your logged sends stay.
+  Can't edit a board or gym? The screen now says who can.
+- Gym staff now take a climber's board off their gym's listing instead of deleting it. The climber keeps their board. ([#8051](https://github.com/boardsesh/boardsesh/pull/8051))
+  A board a gym took off its listing stays off, even after the next board sync.
+- Climbing in German or Italian? Grades now show in Font by default. You can switch back to V-grades in settings. ([#8093](https://github.com/boardsesh/boardsesh/pull/8093))
+- Climb, board and playlist pages show the official App Store or Google Play badge on your phone ([#8096](https://github.com/boardsesh/boardsesh/pull/8096))
+- On your phone the header no longer repeats the app link while the page's own store badge is showing. ([#8097](https://github.com/boardsesh/boardsesh/pull/8097))
 - Get the app straight from the App Store and Google Play badges on boardsesh.com, and scan the QR code on the home page to get it on your phone. ([#8049](https://github.com/boardsesh/boardsesh/pull/8049))
 - Buttons on boardsesh.com have cleaner rounded corners. ([#8041](https://github.com/boardsesh/boardsesh/pull/8041))
 - Climb pages on the website are easier to read: a darker background, bolder titles and one clear button. ([#8026](https://github.com/boardsesh/boardsesh/pull/8026))
 
 ### Improved
 
+- Gym kiosk screens match the new near-black look ([#8068](https://github.com/boardsesh/boardsesh/pull/8068))
 - Climbing in Spanish or French? Grades now show in Font by default. You can switch back to V-grades in settings. ([#8088](https://github.com/boardsesh/boardsesh/pull/8088))
 - Find public spray walls by name, town or nearby location on the website. ([#8050](https://github.com/boardsesh/boardsesh/pull/8050))
 

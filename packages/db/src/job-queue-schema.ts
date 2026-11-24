@@ -650,6 +650,8 @@ export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly Work
     // Catalog and history the jobs scan.
     { table: 'board_climbs', privileges: ['SELECT'] },
     { table: 'board_climb_stats', privileges: ['SELECT'] },
+    // Plays refresh owns only this server-side count; never grades or sync cursors.
+    { table: 'board_climb_stats', privileges: ['UPDATE'], columns: ['play_count'] },
     { table: 'board_climb_holds', privileges: ['SELECT'] },
     { table: 'board_placements', privileges: ['SELECT'] },
     { table: 'board_holes', privileges: ['SELECT'] },
@@ -683,7 +685,7 @@ export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly Work
     {
       table: 'user_boards',
       privileges: ['SELECT'],
-      columns: ['id', 'gym_id', 'uuid', 'owner_id', 'board_type', 'is_public', 'created_at', 'deleted_at'],
+      columns: ['id', 'gym_id', 'uuid', 'owner_id', 'board_type', 'is_public', 'created_at', 'deleted_at', 'slug'],
     },
     // The spray-wall fleet the health roll-up counts: the wall roster (join
     // key, layout for climbs, hold stock, deletion/hide state), the reset
@@ -701,7 +703,7 @@ export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly Work
     {
       table: 'board_climb_events',
       privileges: ['SELECT'],
-      columns: ['board_id', 'board_type', 'climb_uuid', 'user_id', 'confirmed_at'],
+      columns: ['board_id', 'board_type', 'climb_uuid', 'user_id', 'confirmed_at', 'angle', 'seq', 'source'],
     },
     // The recommendations job's writes.
     { table: 'board_setter_stats', privileges: ['SELECT', 'INSERT', 'UPDATE'] },
