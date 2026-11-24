@@ -9,7 +9,9 @@ import GymAiAssistantsCard from '../gym-ai-assistants-card';
 vi.mock('react-i18next', () => ({
   useTranslation: (namespace?: string) => ({ t: (key: string) => tFromCatalog(namespace, key) }),
 }));
-vi.mock('next-auth/react', () => ({ useSession: () => ({ data: { user: { id: 'gym-owner' } } }) }));
+vi.mock('@/app/components/providers/session-provider', () => ({
+  useBrowserSession: () => ({ data: { user: { id: 'gym-owner' } } }),
+}));
 vi.mock('@/app/hooks/use-ws-auth-token', () => ({ useWsAuthToken: () => ({ token: 'test-token' }) }));
 vi.mock('@/app/components/i18n/locale-link', () => ({
   default: React.forwardRef<HTMLAnchorElement, React.AnchorHTMLAttributes<HTMLAnchorElement>>(

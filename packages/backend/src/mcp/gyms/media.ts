@@ -1,4 +1,4 @@
-import { fetchClientMetadataResource } from '@better-auth/cimd/node';
+import { fetchPublicHttpsResource } from '../../auth/partner/secure-resource-fetch';
 import { GraphQLError } from 'graphql';
 import { GYM_PHOTO_MAX_UPLOAD_BYTES } from '@boardsesh/shared-schema';
 import { detectImageMimeType } from '../../lib/image-mime';
@@ -25,7 +25,7 @@ function invalidImage(message: string): never {
 export async function fetchGymMcpImage(
   imageUrl: string,
   kind: GymImageKind,
-  fetchResource: typeof fetchClientMetadataResource = fetchClientMetadataResource,
+  fetchResource: typeof fetchPublicHttpsResource = fetchPublicHttpsResource,
 ): Promise<{ bytes: Buffer; mimeType: string }> {
   const parsed = URL.canParse(imageUrl) ? new URL(imageUrl) : null;
   if (!parsed || parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port || parsed.hash) {

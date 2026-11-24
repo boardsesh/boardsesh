@@ -2,6 +2,7 @@ import { and, count, desc, eq, exists, inArray, isNull, ne, or } from 'drizzle-o
 import { GraphQLError, graphql } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as tables from '@boardsesh/db/schema';
+import { rolesGrantAdminOrLeader } from '@boardsesh/community-roles';
 import { db } from '../../db/client';
 import { isDatabaseLeakError } from '../../graphql/mask-error';
 import {
@@ -13,6 +14,7 @@ import {
   viewerCanSeeGym,
 } from '../../graphql/resolvers/social/gyms';
 import { canAccessResource } from '../../services/privacy';
+import { getPostgresErrorCode } from '../../utils/postgres-errors';
 import { gymMcpDocuments, type GymMcpDocumentName } from './documents';
 
 export type GymToolResult = Record<string, unknown>;
@@ -25,6 +27,21 @@ export type GymToolExecutor = (
 
 function notFound(): GraphQLError {
   return new GraphQLError('The gym or item is unavailable.', { extensions: { code: 'NOT_FOUND' } });
+}
+
+/**
+ * First-party board writers may lock the board before a gym. MCP already holds
+ * the gym, so it must never wait for a board held by that inverse lock order.
+ */
+async function lockBoardWithoutWaiting<Result>(work: () => PromiseLike<Result>): Promise<Result> {
+  try {
+    return await work();
+  } catch (error) {
+    if (getPostgresErrorCode(error) !== '55P03') throw error;
+    throw new GraphQLError('This board is changing. Retry the same action in a moment.', {
+      extensions: { code: 'CONFLICT' },
+    });
+  }
 }
 
 /** Only committed, fixed server documents reach GraphQL; callers cannot supply query text. */
@@ -50,28 +67,72 @@ export const executeGymDocument: GymToolExecutor = async (document, variables, c
   return result.data ?? {};
 };
 
-export async function resolveGymForTool(gymUuid: string, userId: string, management = true, lock = false) {
-  const gym = await resolveCanonicalGymByUuid(gymUuid);
+export async function resolveGymForTool(
+  gymUuid: string,
+  userId: string,
+  management = true,
+  lock = false,
+  authority: 'edit' | 'grant' = 'edit',
+) {
+  let gym = await resolveCanonicalGymByUuid(gymUuid);
   if (gym && lock) {
     const [locked] = await db
-      .select({ uuid: tables.gyms.uuid })
+      .select()
       .from(tables.gyms)
       .where(and(eq(tables.gyms.id, gym.id), isNull(tables.gyms.deletedAt), isNull(tables.gyms.mergedIntoGymId)))
       .for('update');
     if (!locked) throw notFound();
+    gym = locked;
     // Gym ownership, a staff membership, and a covering community role are
     // independent authorities. Hold each live row until the action commits,
     // including against legacy membership removals that do not lock the gym.
-    await db
-      .select({ id: tables.gymMembers.id })
+    const memberships = await db
+      .select({ role: tables.gymMembers.role })
       .from(tables.gymMembers)
       .where(and(eq(tables.gymMembers.gymId, gym.id), eq(tables.gymMembers.userId, userId)))
       .for('share');
-    await db
-      .select({ userId: tables.communityRoles.userId })
+    const roles = await db
+      .select({ role: tables.communityRoles.role, boardType: tables.communityRoles.boardType })
       .from(tables.communityRoles)
       .where(eq(tables.communityRoles.userId, userId))
+      .orderBy(tables.communityRoles.id)
       .for('share');
+    const directGymAccess =
+      gym.ownerId === userId ||
+      memberships.some(({ role }) => role === 'admin' || (authority === 'edit' && role === 'editor'));
+    if ((management || !gym.isPublic) && !directGymAccess && !rolesGrantAdminOrLeader(roles, null)) {
+      const coveredBoardTypes = [
+        ...new Set(
+          roles.flatMap((role) =>
+            role.boardType !== null && rolesGrantAdminOrLeader([role], role.boardType) ? [role.boardType] : [],
+          ),
+        ),
+      ];
+      // One pinned witness is sufficient for the existing "any matching live
+      // board" permission. Lowest ID makes the choice and lock order stable.
+      const [qualifyingBoard] =
+        coveredBoardTypes.length > 0
+          ? await lockBoardWithoutWaiting(() =>
+              db
+                .select({ id: tables.userBoards.id })
+                .from(tables.userBoards)
+                .where(
+                  and(
+                    eq(tables.userBoards.gymId, locked.id),
+                    isNull(tables.userBoards.deletedAt),
+                    inArray(tables.userBoards.boardType, coveredBoardTypes),
+                  ),
+                )
+                .orderBy(tables.userBoards.id)
+                .limit(1)
+                .for('share', { noWait: true }),
+            )
+          : [];
+      if (!qualifyingBoard) {
+        if (!gym.isPublic) throw notFound();
+        throw new GraphQLError('Not authorized to edit this gym', { extensions: { code: 'FORBIDDEN' } });
+      }
+    }
   }
   if (!gym || !(await viewerCanSeeGym(gym, userId))) throw notFound();
   if (management) await requireGymEditAccess(gym.uuid, userId);
@@ -84,18 +145,20 @@ export async function assertBoardInGym(
   userId: string,
   allowDeleted = false,
 ): Promise<void> {
-  const [board] = await db
-    .select({ uuid: tables.userBoards.uuid, deletedAt: tables.userBoards.deletedAt })
-    .from(tables.userBoards)
-    .where(
-      and(
-        eq(tables.userBoards.uuid, boardUuid),
-        eq(tables.userBoards.gymId, gymId),
-        allowDeleted ? undefined : isNull(tables.userBoards.deletedAt),
-      ),
-    )
-    .limit(1)
-    .for('share');
+  const [board] = await lockBoardWithoutWaiting(() =>
+    db
+      .select({ uuid: tables.userBoards.uuid, deletedAt: tables.userBoards.deletedAt })
+      .from(tables.userBoards)
+      .where(
+        and(
+          eq(tables.userBoards.uuid, boardUuid),
+          eq(tables.userBoards.gymId, gymId),
+          allowDeleted ? undefined : isNull(tables.userBoards.deletedAt),
+        ),
+      )
+      .limit(1)
+      .for('share', { noWait: true }),
+  );
   if (!board) throw notFound();
   if (!(allowDeleted && board.deletedAt !== null) && !(await canAccessResource('board', boardUuid, userId)))
     throw notFound();
@@ -138,6 +201,9 @@ export async function assertGymActionPermission(
 ): Promise<void> {
   const userId = context.userId!;
   if (name === 'grant_gym_edit_access' || name === 'revoke_gym_edit_access') {
+    // An editor's gym-edit permission cannot substitute for the covering
+    // community role that permits this distinct action.
+    await resolveGymForTool(gym.uuid, userId, true, true, 'grant');
     await requireGymGrantAccess(gym.uuid, userId);
   } else if (name === 'remove_gym_member' || name === 'group_gym_reporting_boards') {
     await requireGymOwnerOrAdmin(gym.uuid, userId);
@@ -202,11 +268,21 @@ export async function assertGymActionPermission(
 /** A creator unlinks their own board; staff detachment also freezes relinking/sync. */
 export async function authorizeGymBoardRemoval(gymUuid: string, boardUuid: string, userId: string, replay: boolean) {
   const gym = await resolveGymForTool(gymUuid, userId, true, true);
-  const [board] = await db
-    .select({ ownerId: tables.userBoards.ownerId, gymId: tables.userBoards.gymId })
-    .from(tables.userBoards)
-    .where(and(eq(tables.userBoards.uuid, boardUuid), isNull(tables.userBoards.deletedAt)))
-    .limit(1);
+  if (!(await canAccessResource('board', boardUuid, userId))) throw notFound();
+  const [board] = await lockBoardWithoutWaiting(() =>
+    db
+      .select({ ownerId: tables.userBoards.ownerId, gymId: tables.userBoards.gymId })
+      .from(tables.userBoards)
+      .where(
+        and(
+          eq(tables.userBoards.uuid, boardUuid),
+          isNull(tables.userBoards.deletedAt),
+          or(eq(tables.userBoards.gymId, gym.id), replay ? isNull(tables.userBoards.gymId) : undefined),
+        ),
+      )
+      .limit(1)
+      .for('update', { noWait: true }),
+  );
   if (
     !board ||
     (board.gymId !== gym.id && !(replay && board.gymId === null)) ||

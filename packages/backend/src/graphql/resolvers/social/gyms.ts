@@ -59,7 +59,7 @@ import {
 } from './board-moderation-events';
 import { onGymDetailsEdited, REPORT_FIXING_GYM_FIELDS } from './directory-reports/lifecycle';
 import { afterCommit, transactionWithAfterCommit } from '../../../db/after-commit';
-import { removeVersionedGymImage } from '../../../services/gym-image-storage';
+import { removeManagedGymImage } from '../../../services/gym-image-storage';
 
 // ============================================
 // Helpers
@@ -1522,10 +1522,10 @@ export const socialGymMutations = {
         const actorRole = changedFields.length > 0 ? await resolveGymEditActorRole(gym, userId, tx) : null;
         if (actorRole) await onGymDetailsEdited(tx, { gymId: gym.id, actorUserId: userId, actorRole, changedFields });
         if (before.imageUrl !== row.imageUrl) {
-          afterCommit(tx, () => removeVersionedGymImage(gym.uuid, 'photo', before.imageUrl));
+          afterCommit(tx, () => removeManagedGymImage(gym.uuid, 'photo', before.imageUrl));
         }
         if (before.logoUrl !== row.logoUrl) {
-          afterCommit(tx, () => removeVersionedGymImage(gym.uuid, 'logo', before.logoUrl));
+          afterCommit(tx, () => removeManagedGymImage(gym.uuid, 'logo', before.logoUrl));
         }
       }
       return row;

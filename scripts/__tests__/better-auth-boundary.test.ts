@@ -8,14 +8,30 @@ import { parse } from 'yaml';
 
 const repoRoot = resolve(import.meta.dirname, '../..');
 
-const BACKEND_RUNTIME_PACKAGES = ['@better-auth/drizzle-adapter', '@better-auth/oauth-provider', 'better-auth'];
+const BACKEND_RUNTIME_PACKAGES = [
+  '@better-auth/cimd',
+  '@better-auth/drizzle-adapter',
+  '@better-auth/oauth-provider',
+  'better-auth',
+];
 const PINNED_VERSION = '1.7.17';
 const BACKEND_MANIFEST_PATH = 'packages/backend/package.json';
 /** Better Auth stays inside the two backend-owned authority implementations. */
 const PARTNER_ROOT = 'packages/backend/src/auth/partner/';
 const FIRST_PARTY_AUTHORITY_ROOT = 'packages/backend/src/auth/authority/';
-/** Partner modules that load Better Auth at runtime. Everything else must stay importable with the mode off. */
-const PARTNER_RUNTIME_IMPORTERS = ['authority.ts', 'consent.ts', 'family-guard.ts', 'fence.ts', 'registration.ts'];
+/** Reviewed runtime importers. The transport wrapper alone imports its runtime only when called. */
+const PARTNER_SAFE_TRANSPORT_MODULE = 'secure-resource-fetch.ts';
+const PARTNER_RUNTIME_IMPORTERS = [
+  'authority.ts',
+  'consent.ts',
+  'family-guard.ts',
+  'fence.ts',
+  'registration.ts',
+  // Gym client discovery and its consent policy belong to this same authority.
+  'gym-mcp-clients.ts',
+  'gym-mcp-guard.ts',
+  PARTNER_SAFE_TRANSPORT_MODULE,
+];
 /**
  * The only production modules outside the partner folder that may reach into
  * it, and what each may load. None of these constructs an authority or opens a
@@ -33,6 +49,19 @@ const PARTNER_ENTRY_POINTS: Readonly<Record<string, readonly string[]>> = {
     '../../auth/partner/load-authority',
     '../../auth/partner/mode',
   ],
+  // Hosted gym tools share the issuer's opaque-token checks and revocation
+  // lock order. Authority construction still comes only through the loader.
+  'packages/backend/src/mcp/gyms/auth.ts': [
+    '../../auth/partner/load-authority',
+    '../../auth/partner/bearer',
+    '../../auth/partner/locks',
+    'type ../../auth/partner/tables',
+  ],
+  'packages/backend/src/mcp/gyms/configuration.ts': ['../../auth/partner/mode'],
+  'packages/backend/src/mcp/gyms/transport.ts': ['../../auth/partner/mode', 'type ../../auth/partner/bearer'],
+  // Images reuse only the DNS-pinned network primitive, with no auth/runtime
+  // initialization until an authorized tool explicitly requests a fetch.
+  'packages/backend/src/mcp/gyms/media.ts': ['../../auth/partner/secure-resource-fetch'],
   // The developer console's GraphQL operations (F12).
   'packages/backend/src/graphql/resolvers/oauth-clients/partner-registration.ts': [
     '../../../auth/partner/developer-access',
@@ -120,6 +149,7 @@ const PARTNER_ENTRY_TARGETS: Readonly<Record<string, readonly string[]>> = {
   'registration-rules.ts': [],
   'routes.ts': [],
   'transaction.ts': [],
+  [PARTNER_SAFE_TRANSPORT_MODULE]: [],
 };
 
 interface Manifest {
@@ -324,17 +354,26 @@ describe('Better Auth dependency boundary', () => {
   );
 
   it.each(Object.entries(PARTNER_ENTRY_TARGETS))(
-    'keeps %s, which an entry point loads, free of Better Auth and the authority',
+    'limits %s, which an entry point loads, to its reviewed authority dependencies',
     (file, allowedPartnerImports) => {
       const path = `${PARTNER_ROOT}${file}`;
       const specifiers = runtimeImportSpecifiers(readRepoFile(path));
-      expect(specifiers.some(isBetterAuthSpecifier)).toBe(false);
+      expect(specifiers.filter(isBetterAuthSpecifier)).toEqual(
+        file === PARTNER_SAFE_TRANSPORT_MODULE ? ['@better-auth/cimd/node'] : [],
+      );
       expect(specifiers).not.toContain('@boardsesh/db/client');
       expect(specifiers.filter((specifier) => resolvesIntoPartnerFolder(path, specifier)).sort()).toEqual(
         [...allowedPartnerImports].sort(),
       );
     },
   );
+
+  it('loads only the DNS-pinned transport at call time from its narrow network wrapper', () => {
+    const source = readRepoFile(`${PARTNER_ROOT}${PARTNER_SAFE_TRANSPORT_MODULE}`);
+    expect(source).toContain("await import('@better-auth/cimd/node')");
+    expect(runtimeImportSpecifiers(source)).toEqual(['@better-auth/cimd/node']);
+    expect(source).not.toMatch(/\b(?:betterAuth|oauthProvider|createDedicatedPool|createPartnerAuthority)\s*\(/);
+  });
 
   it('checks every reachable partner runtime module from the permitted entry points', () => {
     const directAndTransitive = [

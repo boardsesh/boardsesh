@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { once } from 'node:events';
-import { access, readFile, rm } from 'node:fs/promises';
+import { access, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import type { ConnectionContext, Gym } from '@boardsesh/shared-schema';
 
 const validateTokenMock = vi.hoisted(() => vi.fn());
 
@@ -23,6 +23,7 @@ const s3Control = vi.hoisted(() => ({
   forceS3: false,
   uploadError: null as Error | null,
   deleteCalls: [] as Array<{ gymUuid: string; keepExt?: string }>,
+  deleteObjectCalls: [] as string[],
   uploads: [] as Array<{ key: string; body: Buffer }>,
 }));
 
@@ -44,10 +45,19 @@ vi.mock('../storage/s3', async (importOriginal) => {
       if (s3Control.forceS3) return; // never touch real S3 from tests
       return actual.deleteGymLogosFromS3(targetGymUuid, keepExt);
     },
+    deleteFromS3: async (...args: Parameters<typeof actual.deleteFromS3>) => {
+      if (s3Control.forceS3) {
+        s3Control.deleteObjectCalls.push(args[1]);
+        return;
+      }
+      return actual.deleteFromS3(...args);
+    },
   };
 });
 
-const { db } = await import('../db/client');
+const { db, runWithDatabaseTransaction } = await import('../db/client');
+const imageStorage = await import('../services/gym-image-storage');
+const { storeVersionedGymImage } = imageStorage;
 const { handleGymLogoUpload, getGymLogosDir } = await import('../handlers/gym-logos');
 const { handleStaticGymLogo } = await import('../handlers/static');
 const { ALLOWED_IMAGE_SIZES, parseSizeParam, reencodeUploadedImage } = await import('../lib/image-resize');
@@ -122,9 +132,28 @@ function closeServer(server: Server): Promise<void> {
 
 async function removeUploadedLogos(): Promise<void> {
   const dir = getGymLogosDir();
-  await Promise.all(
-    ['jpg', 'png', 'gif', 'webp'].map((ext) => rm(path.join(dir, `${gymUuid}.${ext}`), { force: true })),
-  );
+  const fileNames = await logoFilesForGym();
+  await Promise.all(fileNames.map((fileName) => rm(path.join(dir, fileName), { force: true })));
+}
+
+async function logoFilesForGym(): Promise<string[]> {
+  try {
+    // Every test has a fresh gym UUID. Leave all other fixture files alone.
+    return (await readdir(getGymLogosDir())).filter((fileName) => fileName.startsWith(`${gymUuid}.`));
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return [];
+    throw error;
+  }
+}
+
+function logoStorageKey(logoUrl: string): string {
+  const pathname = new URL(logoUrl, 'https://uploads.boardsesh.test').pathname;
+  if (!pathname.startsWith(`/static/gym-logos/${gymUuid}.`)) throw new Error('Unexpected uploaded logo path');
+  return pathname.slice('/static/'.length);
+}
+
+function logoDiskPath(logoUrl: string): string {
+  return path.join(getGymLogosDir(), path.basename(logoStorageKey(logoUrl)));
 }
 
 async function uploadLogo(
@@ -171,10 +200,12 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   vi.clearAllMocks();
   s3Control.forceS3 = false;
   s3Control.uploadError = null;
   s3Control.deleteCalls = [];
+  s3Control.deleteObjectCalls = [];
   s3Control.uploads = [];
   await removeUploadedLogos();
 });
@@ -201,23 +232,26 @@ describe('POST /api/gym-logos', () => {
     }
   });
 
-  it('lets the gym owner upload a logo, serves it, and it persists via updateGym', async () => {
+  it('commits the owner logo attachment and returns the saved gym', async () => {
     validateTokenMock.mockResolvedValue({ userId: OWNER });
     const { baseUrl, server } = await startLogoServer();
     try {
       const response = await uploadLogo(baseUrl, { token: 'owner', gymUuid });
       expect(response.status).toBe(200);
-      const body = (await response.json()) as { success?: boolean; logoUrl?: string };
+      const body = (await response.json()) as { success: boolean; logoUrl: string; gym: Gym };
       expect(body.success).toBe(true);
-      expect(body.logoUrl).toMatch(new RegExp(`^/static/gym-logos/${gymUuid}\\.jpg\\?v=[0-9a-f-]{36}$`));
+      expect(body.logoUrl).toMatch(
+        new RegExp(`^/static/gym-logos/${gymUuid}\\.[0-9a-f-]{36}\\.jpg(?:\\?v=[0-9a-f-]{36})?$`),
+      );
 
       // The static route serves the stored re-encode back.
       const staticResponse = await fetch(`${baseUrl}${body.logoUrl}`);
       expect(staticResponse.status).toBe(200);
       expect(Buffer.from(await staticResponse.arrayBuffer())).toEqual(STORED_JPEG_BYTES);
 
-      // And the returned static path passes updateGym's logo validation + persists.
-      await socialGymMutations.updateGym(null, { input: { gymUuid, logoUrl: body.logoUrl! } }, authCtx(OWNER));
+      expect(body.gym.uuid).toBe(gymUuid);
+      expect(body.gym.logoUrl).toBe(body.logoUrl);
+      // The POST attaches the URL without another client mutation.
       const gym = await socialGymQueries.gym(null, { gymUuid }, authCtx(OWNER));
       expect(gym!.logoUrl).toBe(body.logoUrl);
     } finally {
@@ -408,8 +442,8 @@ describe('POST /api/gym-logos', () => {
         blob: new Blob([smuggled], { type: 'image/jpeg' }),
       });
       expect(response.status).toBe(200);
-
-      const written = await readFile(path.join(getGymLogosDir(), `${gymUuid}.jpg`));
+      const { logoUrl } = (await response.json()) as { logoUrl: string };
+      const written = await readFile(logoDiskPath(logoUrl));
       expect(written.includes(APPENDED_PAYLOAD_MARKER)).toBe(false);
       expect(written).toEqual(STORED_JPEG_BYTES);
     } finally {
@@ -428,12 +462,17 @@ describe('POST /api/gym-logos', () => {
         blob: new Blob([withAppendedPayload(JPEG_BYTES)], { type: 'image/jpeg' }),
       });
       expect(response.status).toBe(200);
+      const { logoUrl } = (await response.json()) as { logoUrl: string };
+      const storageKey = logoStorageKey(logoUrl);
 
       expect(s3Control.uploads).toHaveLength(ALLOWED_IMAGE_SIZES.length + 1);
       for (const { body } of s3Control.uploads) {
         expect(body.includes(APPENDED_PAYLOAD_MARKER)).toBe(false);
       }
-      const base = s3Control.uploads.find(({ key }) => key === `gym-logos/${gymUuid}.jpg`);
+      expect(s3Control.uploads.map(({ key }) => key).sort()).toEqual(
+        [storageKey, ...ALLOWED_IMAGE_SIZES.map((size) => `${storageKey}@${size}.jpg`)].sort(),
+      );
+      const base = s3Control.uploads.find(({ key }) => key === storageKey);
       expect(base?.body).toEqual(STORED_JPEG_BYTES);
     } finally {
       await closeServer(server);
@@ -471,7 +510,7 @@ describe('POST /api/gym-logos', () => {
       });
       expect(response.status).toBe(400);
       expect(await response.json()).toEqual({ error: 'File is not a readable image' });
-      await expect(access(path.join(getGymLogosDir(), `${gymUuid}.png`))).rejects.toThrow();
+      expect(await logoFilesForGym()).toEqual([]);
     } finally {
       await closeServer(server);
     }
@@ -495,14 +534,17 @@ describe('POST /api/gym-logos', () => {
     }
   });
 
-  it('cleans up the stale old-extension file after an extension-switch re-upload', async () => {
+  it('replaces a different extension and removes the old logo after a successful POST', async () => {
     validateTokenMock.mockResolvedValue({ userId: OWNER });
     const { baseUrl, server } = await startLogoServer();
     try {
       const jpegResponse = await uploadLogo(baseUrl, { token: 'owner', gymUuid });
       expect(jpegResponse.status).toBe(200);
-      const jpgPath = path.join(getGymLogosDir(), `${gymUuid}.jpg`);
-      await access(jpgPath); // old jpg exists
+      const jpegBody = (await jpegResponse.json()) as { logoUrl: string };
+      const jpgPath = logoDiskPath(jpegBody.logoUrl);
+      await access(jpgPath);
+      expect((await socialGymQueries.gym(null, { gymUuid }, authCtx(OWNER)))!.logoUrl).toBe(jpegBody.logoUrl);
+      expect((await fetch(`${baseUrl}${jpegBody.logoUrl}`)).status).toBe(200);
 
       const pngResponse = await uploadLogo(baseUrl, {
         token: 'owner',
@@ -511,13 +553,48 @@ describe('POST /api/gym-logos', () => {
         fileName: 'logo.png',
       });
       expect(pngResponse.status).toBe(200);
-      const pngBody = (await pngResponse.json()) as { logoUrl?: string };
+      const pngBody = (await pngResponse.json()) as { logoUrl: string; gym: Gym };
       expect(pngBody.logoUrl).toContain(`.png`);
-
-      // New png is served; stale jpg was removed after the successful write.
+      expect(pngBody.gym.logoUrl).toBe(pngBody.logoUrl);
       const staticResponse = await fetch(`${baseUrl}${pngBody.logoUrl}`);
       expect(staticResponse.status).toBe(200);
-      await expect(access(jpgPath)).rejects.toThrow();
+      expect((await socialGymQueries.gym(null, { gymUuid }, authCtx(OWNER)))!.logoUrl).toBe(pngBody.logoUrl);
+      await vi.waitFor(async () => {
+        await expect(access(jpgPath)).rejects.toThrow();
+      });
+      expect((await fetch(`${baseUrl}${pngBody.logoUrl}`)).status).toBe(200);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('keeps the unique replacement when an assistant clears the previous legacy logo before attachment', async () => {
+    validateTokenMock.mockResolvedValue({ userId: OWNER });
+    const { baseUrl, server } = await startLogoServer();
+    try {
+      const legacyUrl = `/static/gym-logos/${gymUuid}.jpg?v=old-web-upload`;
+      await mkdir(getGymLogosDir(), { recursive: true });
+      await writeFile(logoDiskPath(legacyUrl), STORED_JPEG_BYTES);
+      await socialGymMutations.updateGym(null, { input: { gymUuid, logoUrl: legacyUrl } }, authCtx(OWNER));
+      vi.spyOn(imageStorage, 'storeVersionedGymImage').mockImplementationOnce(async (...arguments_) => {
+        const preparedUrl = await storeVersionedGymImage(...arguments_);
+        // An assistant clears the old pointer after storage, before POST attaches.
+        await runWithDatabaseTransaction(async () => {
+          await socialGymMutations.updateGym(null, { input: { gymUuid, logoUrl: null } }, authCtx(OWNER));
+        });
+        await expect(access(logoDiskPath(legacyUrl))).rejects.toThrow();
+        await access(logoDiskPath(preparedUrl));
+        return preparedUrl;
+      });
+      const replacement = await uploadLogo(baseUrl, { token: 'owner', gymUuid });
+      expect(replacement.status).toBe(200);
+      const replacementBody = (await replacement.json()) as { logoUrl: string; gym: Gym };
+      expect(logoStorageKey(replacementBody.logoUrl)).not.toBe(logoStorageKey(legacyUrl));
+      expect(replacementBody.gym.logoUrl).toBe(replacementBody.logoUrl);
+      const servedReplacement = await fetch(`${baseUrl}${replacementBody.logoUrl}`);
+      expect(servedReplacement.status).toBe(200);
+      expect(Buffer.from(await servedReplacement.arrayBuffer())).toEqual(STORED_JPEG_BYTES);
+      expect((await socialGymQueries.gym(null, { gymUuid }, authCtx(OWNER)))!.logoUrl).toBe(replacementBody.logoUrl);
     } finally {
       await closeServer(server);
     }
@@ -525,30 +602,37 @@ describe('POST /api/gym-logos', () => {
 
   it('preserves the existing logo when the replacement upload fails (S3 write-first ordering)', async () => {
     validateTokenMock.mockResolvedValue({ userId: OWNER });
-    s3Control.forceS3 = true;
-    s3Control.uploadError = new Error('s3 unavailable');
     const { baseUrl, server } = await startLogoServer();
     try {
+      const original = await uploadLogo(baseUrl, { token: 'owner', gymUuid });
+      expect(original.status).toBe(200);
+      const originalBody = (await original.json()) as { logoUrl: string };
+      s3Control.forceS3 = true;
+      s3Control.uploadError = new Error('s3 unavailable');
       const response = await uploadLogo(baseUrl, { token: 'owner', gymUuid });
       expect(response.status).toBe(500);
       // The stale-logo cleanup must never run before the new object is written —
       // a failed replacement leaves the existing logo (and its stored logoUrl)
       // fully intact.
       expect(s3Control.deleteCalls).toEqual([]);
+      expect(s3Control.deleteObjectCalls).not.toContain(logoStorageKey(originalBody.logoUrl));
+      await access(logoDiskPath(originalBody.logoUrl));
+      expect((await socialGymQueries.gym(null, { gymUuid }, authCtx(OWNER)))!.logoUrl).toBe(originalBody.logoUrl);
     } finally {
       await closeServer(server);
     }
   });
 
-  it('cleans up other extensions only after a successful S3 write, keeping the new one', async () => {
+  it('does not delete unrelated S3 keys when attaching the first logo', async () => {
     validateTokenMock.mockResolvedValue({ userId: OWNER });
     s3Control.forceS3 = true; // upload succeeds via the stub; cleanup is recorded, not executed
     const { baseUrl, server } = await startLogoServer();
     try {
       const response = await uploadLogo(baseUrl, { token: 'owner', gymUuid });
       expect(response.status).toBe(200);
-      // Exactly one cleanup, after the write, preserving the new extension.
-      expect(s3Control.deleteCalls).toEqual([{ gymUuid, keepExt: 'jpg' }]);
+      // With no old attachment, no other stored object belongs to this write.
+      expect(s3Control.deleteCalls).toEqual([]);
+      expect(s3Control.deleteObjectCalls).toEqual([]);
     } finally {
       await closeServer(server);
     }

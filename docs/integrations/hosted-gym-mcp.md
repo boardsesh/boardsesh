@@ -64,7 +64,10 @@ descriptions appear on web and mobile.
 
 For photos and logos, provide a public HTTPS image URL to the assistant. Local
 files can still be uploaded from the gym's Profile or Branding tab. The upload
-path retains image type, size and decoding checks. A generated image is not a
+path retains image type, size and decoding checks. Web uploads save the gym's
+image in the same request. Every new upload gets a distinct filename; replacing
+or clearing an image removes its previous original and variants after commit,
+including older web uploads. A generated image is not a
 substitute for the real gym photo required by the existing gym UI.
 
 Activity results retain the website's reporting timezone, attribution and

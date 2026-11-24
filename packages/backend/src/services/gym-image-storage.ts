@@ -13,6 +13,10 @@ const VERSIONED_IMAGE_PATH = new RegExp(
   `^/static/(gym-photos|gym-logos)/(${UUID_PATTERN})\\.(${UUID_PATTERN})\\.(jpg|png|gif|webp)$`,
   'i',
 );
+const LEGACY_IMAGE_PATH = new RegExp(
+  `^/static/(gym-photos|gym-logos)/(${UUID_PATTERN})\\.(jpg|jpeg|png|gif|webp)(?:\\?v=[\\w-]+)?$`,
+  'i',
+);
 
 /** A distinct key per upload keeps an uncommitted or refused replacement invisible. */
 export async function storeVersionedGymImage(
@@ -69,6 +73,28 @@ export async function removeVersionedGymImage(
 ): Promise<void> {
   const key = versionedGymImageKey(gymUuid, kind, storedUrl);
   if (!key) return;
+  await removeGymImageKey(key);
+}
+
+/** Clear this gym's previous upload, including files written by the web uploader. */
+export async function removeManagedGymImage(
+  gymUuid: string,
+  kind: GymImageKind,
+  storedUrl: string | null | undefined,
+): Promise<void> {
+  if (!storedUrl) return;
+  const versionedKey = versionedGymImageKey(gymUuid, kind, storedUrl);
+  const legacyMatch = LEGACY_IMAGE_PATH.exec(storedUrl);
+  const prefix = kind === 'photo' ? 'gym-photos' : 'gym-logos';
+  const legacyKey =
+    legacyMatch && legacyMatch[1] === prefix && legacyMatch[2]?.toLowerCase() === gymUuid.toLowerCase()
+      ? storedUrl.slice('/static/'.length).split('?')[0]
+      : null;
+  const key = versionedKey ?? legacyKey;
+  if (key) await removeGymImageKey(key);
+}
+
+async function removeGymImageKey(key: string): Promise<void> {
   try {
     if (isS3Configured()) {
       await Promise.all(

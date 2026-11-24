@@ -8,7 +8,6 @@ import { db } from '../db/client';
 import { userCanEditGym } from '../graphql/resolvers/social/gyms';
 import { isS3Configured, deleteGymPhotosFromS3 } from '../storage/s3';
 import { logger } from '../utils/logger';
-import { buildStaticGymPhotoUrl } from '../lib/gym-photo-url';
 import { removeVersionedGymImage } from '../services/gym-image-storage';
 import {
   createGymImageUploadHandler,
@@ -27,16 +26,11 @@ const GYM_PHOTOS_DIR = './gym-photos';
 
 /** Exported so a test can pin the size cap to the one shared constant. */
 export const GYM_PHOTO_UPLOAD_CONFIG: GymImageUploadConfig = {
+  kind: 'photo',
   fileFieldName: 'photo',
   storagePrefix: 'gym-photos',
-  localDir: GYM_PHOTOS_DIR,
   maxFileSizeBytes: GYM_PHOTO_MAX_UPLOAD_BYTES,
   responseUrlKey: 'photoUrl',
-  buildStaticUrl: buildStaticGymPhotoUrl,
-  // Called through, not captured: binding the import here would freeze the
-  // module-init reference and make a later vi.spyOn on the storage module a
-  // no-op for this handler.
-  deleteStaleObjectsFromS3: (gymUuid, keepExt) => deleteGymPhotosFromS3(gymUuid, keepExt),
   messages: {
     notConfigured: 'Gym photo uploads are not configured. Please contact the administrator.',
     saveFailed: 'Failed to save gym photo',

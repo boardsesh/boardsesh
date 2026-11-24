@@ -2,7 +2,6 @@
 
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSession } from 'next-auth/react';
 import { useQuery } from '@tanstack/react-query';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -11,6 +10,7 @@ import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import { GET_MY_CONNECTED_APPS, type GetMyConnectedAppsResponse } from '@boardsesh/graphql/operations/connected-apps';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { useBrowserSession } from '@/app/components/providers/session-provider';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -18,7 +18,7 @@ import { themeTokens } from '@/app/theme/theme-config';
 /** Uses the same account-scoped cache as Settings, including disconnect invalidation. */
 export default function GymAiAssistantsCard() {
   const { t } = useTranslation('kiosk');
-  const { data: session } = useSession();
+  const { data: session } = useBrowserSession();
   const { token } = useWsAuthToken();
   const connections = useQuery({
     queryKey: ['myConnectedApps', session?.user?.id ?? null],
