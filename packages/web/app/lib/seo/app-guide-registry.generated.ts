@@ -1345,7 +1345,6 @@ export const APP_GUIDE_REGISTRY = {
         id: 'devices',
         verdict: 'boardsesh',
         winners: [],
-        sharedWith: ['crux'],
         sourceIds: [
           'bs-appstore',
           'stokt-appstore',
