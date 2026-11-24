@@ -27,5 +27,6 @@ a production rollout or a physical-device result.
 | [Growth metrics contract](growth-metrics.md) | `growth-metrics.md` |
 | [Gym funnel analytics](gym-funnel-analytics.md) | `gym-funnel-analytics.md` |
 | [Gym Insights reporting contract](gym-reporting.md) | `gym-reporting.md` |
+| [Busy times browser examples](../images/7968-busy-times/README.md) | `../images/7968-busy-times/README.md` |
 | [Mobile error telemetry (Sentry)](mobile-error-telemetry.md) | `mobile-error-telemetry.md` |
 | [Database signup reporting in PostHog](posthog-database-signups.md) | `posthog-database-signups.md` |
