@@ -352,7 +352,7 @@
           "k2": "You set climbs and want Kilter's own setter credit and claims.",
           "k3": "You want Kilter's Live at your Board view."
         },
-        "bottomLine": "Keep both if you like: they light the same board, one phone at a time. To try a session, pick your Kilter layout in Boardsesh, connect and climb; every send goes into your Boardsesh logbook."
+        "bottomLine": "Keep both if you like: they light the same board, one phone at a time. To try a session, open Boardsesh by the wall, let it find your board (or create it) and climb; every send goes into your Boardsesh logbook."
       },
       "only": {
         "heading": "Where Boardsesh goes further",
@@ -437,8 +437,8 @@
         "heading": "An evening on the Kilter Board",
         "steps": {
           "pick": {
-            "title": "Pick your board",
-            "body": "Choose Kilter Board, your layout and size, then connect from the list sorted by signal strength."
+            "title": "Find your board",
+            "body": "Open the board picker by the wall: Boardsesh asks for Bluetooth and location, then finds your Kilter by its Bluetooth box, or lets you create it."
           },
           "queue": {
             "title": "Build the queue",
@@ -566,7 +566,7 @@
           "k2": "You chase leaderboards, badges, Decoy Selects or the side-climb filter",
           "k3": "You set problems for climbers who use your brand's own app"
         },
-        "bottomLine": "Every Aurora app is free and lights its own brand well. To try Boardsesh, pick your brand and size, start a session and invite your crew; every send goes into your Boardsesh logbook."
+        "bottomLine": "Every Aurora app is free and lights its own brand well. To try it, open Boardsesh by the wall, let it find your board (or create it), start a session and invite your crew; every send goes into your Boardsesh logbook."
       },
       "only": {
         "heading": "What Boardsesh adds to an Aurora board",
@@ -707,8 +707,8 @@
         "heading": "A crew night on an Aurora board",
         "steps": {
           "brand": {
-            "title": "Pick brand and size",
-            "body": "Choose Tension, Decoy, Grasshopper, Touchstone or So iLL, then the layout, size and hold sets on your wall."
+            "title": "Find your board",
+            "body": "Open the board picker by the wall and Boardsesh finds your Tension, Decoy, Grasshopper, Touchstone or So iLL by its Bluetooth box, or lets you create it."
           },
           "angle": {
             "title": "Set the angle",
@@ -841,7 +841,7 @@
           "k1": "You publish problems or follow official MoonBoard rankings.",
           "k2": "You run a custom wall with Moon's hold recognition and LED mapping."
         },
-        "bottomLine": "Keep Moon's app for publishing and rankings. To try Boardsesh, pick your MoonBoard setup, connect and queue a few problems with your crew; every send goes into your Boardsesh logbook."
+        "bottomLine": "Keep Moon's app for publishing and rankings. To try it, let Boardsesh find your MoonBoard (or create it), then queue a few problems with your crew; every send goes into your Boardsesh logbook."
       },
       "only": {
         "heading": "Where Boardsesh goes further",
@@ -921,8 +921,8 @@
         "heading": "A night on your MoonBoard",
         "steps": {
           "setup": {
-            "title": "Match your hold setup",
-            "body": "Pick the year on your holds, from 2010 to Mini 2025, then 25 or 40 degrees."
+            "title": "Find your board",
+            "body": "Open the board picker by the wall and Boardsesh finds your MoonBoard over Bluetooth or by location, or lets you create it with your hold setup and angle."
           },
           "connect": {
             "title": "Connect the LEDs",
@@ -1039,7 +1039,7 @@
           "k2": "You publish problems to the official Woods database",
           "k3": "You want the full Woods catalogue behind your Woods account"
         },
-        "bottomLine": "The Woods app is where your account, the leaderboards and published climbs live. To try Boardsesh, pick your Woods size and angle, start a session and let friends add problems; new sends go into a fresh Boardsesh logbook, and nothing is written back."
+        "bottomLine": "The Woods app is where your account, the leaderboards and published climbs live. To try it, let Boardsesh find your Woods board (or create it), start a session and let friends add problems; new sends go into a fresh Boardsesh logbook, and nothing is written back."
       },
       "only": {
         "heading": "What Boardsesh adds to a Woods wall",
@@ -1124,8 +1124,8 @@
         "heading": "A session on a Woods Board",
         "steps": {
           "size": {
-            "title": "Pick 8x10 or 12x12",
-            "body": "Choose the Woods size on your wall, since each has its own hold and LED map."
+            "title": "Find your board",
+            "body": "Open the board picker by the wall and Boardsesh finds your Woods board over Bluetooth or by location, or lets you create it at 8x10 or 12x12."
           },
           "angle": {
             "title": "Set 20 to 70 degrees",
