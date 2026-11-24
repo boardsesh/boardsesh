@@ -190,7 +190,7 @@ export const APP_GUIDE_REGISTRY = {
       },
       {
         id: 'export',
-        verdict: 'boardsesh',
+        verdict: 'unlisted',
         winners: [],
         sourceIds: ['bs-export', 'kilter-appstore', 'kilter-site'],
         pendingCells: [],
@@ -211,7 +211,7 @@ export const APP_GUIDE_REGISTRY = {
       },
       {
         id: 'training',
-        verdict: 'boardsesh',
+        verdict: 'unlisted',
         winners: [],
         sourceIds: ['kilter-site', 'boardsesh-workouts'],
         pendingCells: [],
@@ -305,7 +305,7 @@ export const APP_GUIDE_REGISTRY = {
       },
       {
         id: 'old-logbook',
-        sourceIds: ['kilter-claim', 'boardsesh-bring-logbook'],
+        sourceIds: ['kilter-claim', 'boardsesh-bring-logbook', 'climbing-kilter-2026'],
       },
     ],
     sources: [
@@ -419,6 +419,11 @@ export const APP_GUIDE_REGISTRY = {
         url: 'https://apps.apple.com/us/app/id6755110303',
         checkedAt: '2026-11-24',
       },
+      {
+        id: 'climbing-kilter-2026',
+        url: 'https://www.climbing.com/news/why-the-kilter-board-app-suddenly-disappeared/',
+        checkedAt: '2026-11-24',
+      },
     ],
     claims: [],
     updatedAt: '2026-11-24',
@@ -482,7 +487,7 @@ export const APP_GUIDE_REGISTRY = {
       },
       {
         id: 'queue',
-        verdict: 'boardsesh',
+        verdict: 'unlisted',
         winners: [],
         sourceIds: ['tension-store', 'decoy-appstore', 'bs-sessions'],
         pendingCells: [],
@@ -496,9 +501,9 @@ export const APP_GUIDE_REGISTRY = {
       },
       {
         id: 'workouts',
-        verdict: 'boardsesh',
+        verdict: 'same',
         winners: [],
-        sourceIds: ['tension-store', 'decoy-appstore', 'bs-workouts'],
+        sourceIds: ['tension-store', 'bs-workouts'],
         pendingCells: [],
       },
       {
@@ -774,7 +779,7 @@ export const APP_GUIDE_REGISTRY = {
   moonboard: {
     id: 'moonboard',
     hasByline: true,
-    heroSourceIds: ['moon-ios-lookup', 'moon-help', 'audit', 'boardsesh-app-web'],
+    heroSourceIds: ['moon-help', 'moon-appstore', 'boardsesh-sessions', 'boardsesh-boards'],
     pickIf: ['p1', 'p2', 'p3', 'p4', 'p5'],
     keepIf: ['k1', 'k2'],
     tiles: [
@@ -818,14 +823,7 @@ export const APP_GUIDE_REGISTRY = {
         id: 'logging',
         verdict: 'boardsesh',
         winners: [],
-        sourceIds: ['moon-play'],
-        pendingCells: [],
-      },
-      {
-        id: 'offline',
-        verdict: 'boardsesh',
-        winners: [],
-        sourceIds: ['moon-appstore', 'moon-play', 'boardsesh-offline'],
+        sourceIds: ['moon-reddit-weight'],
         pendingCells: [],
       },
       {
@@ -844,21 +842,21 @@ export const APP_GUIDE_REGISTRY = {
       },
       {
         id: 'crew',
-        verdict: 'boardsesh',
+        verdict: 'unlisted',
         winners: [],
         sourceIds: ['moon-appstore', 'boardsesh-sessions', 'boardsesh-queue-limit'],
         pendingCells: [],
       },
       {
         id: 'training',
-        verdict: 'boardsesh',
+        verdict: 'unlisted',
         winners: [],
         sourceIds: ['moon-appstore', 'boardsesh-workouts'],
         pendingCells: [],
       },
       {
         id: 'android',
-        verdict: 'only',
+        verdict: 'boardsesh',
         winners: [],
         sourceIds: ['grapheneos', 'moon-reddit-data'],
         pendingCells: [],
@@ -904,7 +902,7 @@ export const APP_GUIDE_REGISTRY = {
       },
       {
         id: 'biometrics',
-        sourceIds: ['moon-play'],
+        sourceIds: ['moon-reddit-weight'],
       },
       {
         id: 'android',
@@ -924,11 +922,6 @@ export const APP_GUIDE_REGISTRY = {
       },
     ],
     sources: [
-      {
-        id: 'moon-ios-lookup',
-        url: 'https://itunes.apple.com/lookup?id=6446842142&country=us',
-        checkedAt: '2026-11-24',
-      },
       {
         id: 'moon-appstore',
         url: 'https://apps.apple.com/us/app/moon-board/id6446842142',
@@ -1000,11 +993,6 @@ export const APP_GUIDE_REGISTRY = {
         checkedAt: '2026-11-24',
       },
       {
-        id: 'boardsesh-offline',
-        url: 'https://github.com/boardsesh/boardsesh/blob/b3a0285908da0d9e4be984ebe5731ed72b33de10/docs/data/offline-reads.md',
-        checkedAt: '2026-11-24',
-      },
-      {
         id: 'boardsesh-app-web',
         url: 'https://app.boardsesh.com',
         checkedAt: '2026-11-24',
@@ -1032,6 +1020,11 @@ export const APP_GUIDE_REGISTRY = {
       {
         id: 'moon-reddit-data',
         url: 'https://www.reddit.com/r/Moonboard/comments/1wg05he/important_if_the_moonboard_app_isnt_working/',
+        checkedAt: '2026-11-24',
+      },
+      {
+        id: 'moon-reddit-weight',
+        url: 'https://www.reddit.com/r/Moonboard/comments/1vx7imt/comment/p9rrpnm/',
         checkedAt: '2026-11-24',
       },
     ],
@@ -1110,7 +1103,7 @@ export const APP_GUIDE_REGISTRY = {
       },
       {
         id: 'queue',
-        verdict: 'boardsesh',
+        verdict: 'unlisted',
         winners: [],
         sourceIds: ['woods-appstore', 'bs-sessions'],
         pendingCells: [],
@@ -1124,21 +1117,21 @@ export const APP_GUIDE_REGISTRY = {
       },
       {
         id: 'export',
-        verdict: 'boardsesh',
+        verdict: 'unlisted',
         winners: [],
         sourceIds: ['bs-export', 'woods-appstore'],
         pendingCells: [],
       },
       {
         id: 'offline',
-        verdict: 'boardsesh',
+        verdict: 'unlisted',
         winners: [],
         sourceIds: ['woods-appstore'],
         pendingCells: [],
       },
       {
         id: 'browser',
-        verdict: 'boardsesh',
+        verdict: 'unlisted',
         winners: [],
         sourceIds: ['woods-appstore', 'woods-play'],
         pendingCells: [],
@@ -1255,7 +1248,7 @@ export const APP_GUIDE_REGISTRY = {
   'spray-wall-apps': {
     id: 'spray-wall-apps',
     hasByline: true,
-    heroSourceIds: [],
+    heroSourceIds: ['crux-home', 'stokt-pricing', 'stokt-appstore', 'bs-features'],
     pickIf: ['p1', 'p2', 'p3', 'p4', 'p5'],
     keepIf: ['k1', 'k2', 'k3'],
     tiles: [
@@ -1336,7 +1329,7 @@ export const APP_GUIDE_REGISTRY = {
       },
       {
         id: 'offline',
-        verdict: 'boardsesh',
+        verdict: 'unlisted',
         winners: [],
         sourceIds: ['bs-features', 'stokt-appstore', 'retro-play', 'crux-play', 'crux-appstore'],
         pendingCells: [],

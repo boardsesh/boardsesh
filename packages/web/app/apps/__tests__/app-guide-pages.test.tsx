@@ -120,7 +120,7 @@ describe('app guide pages before hydration', () => {
     expect(rows.length).toBeGreaterThanOrEqual(7);
     for (const row of rows) {
       expect(row.querySelector('th[scope="row"]')?.textContent).toMatch(
-        /does it better|Only in Boardsesh|Same in both/,
+        /does it better|do it best|Only in Boardsesh|Same in both|doesn't list it|don't list it/,
       );
       for (const cell of row.querySelectorAll('td')) {
         const ids = cell.getAttribute('headers')?.split(' ') ?? [];
@@ -129,7 +129,9 @@ describe('app guide pages before hydration', () => {
       }
       // The verdict chip is the link to the row's sources.
       const chip = row.querySelector('th a[href^="#sources-"]');
-      expect(chip?.textContent).toMatch(/does it better|do it best|Only in Boardsesh|Same in both/);
+      expect(chip?.textContent).toMatch(
+        /does it better|do it best|Only in Boardsesh|Same in both|doesn't list it|don't list it/,
+      );
       expect(chip?.getAttribute('aria-label')).toMatch(/^.+\. See sources for .+$/);
       expect(chip?.getAttribute('aria-label')).not.toContain('—');
     }
