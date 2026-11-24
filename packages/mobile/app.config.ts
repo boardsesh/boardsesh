@@ -488,8 +488,6 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
           'Boardsesh connects to the LED controller on your network to light up the holds on your Spraywall.',
         NSLocationWhenInUseUsageDescription:
           'Boardsesh uses your location to show boards and gyms near you, and to put a board you add on the map.',
-        NSLocationAlwaysAndWhenInUseUsageDescription:
-          'Boardsesh uses your location to show boards and gyms near you, and to put a board you add on the map.',
         NSSupportsLiveActivities: true,
         // bluetooth-central: continuous BLE reconnect + write-during-background.
         // remote-notification: lets the backend's 90s APNs heartbeat update
@@ -570,6 +568,7 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       permissions: [
         'BLUETOOTH_SCAN',
         'BLUETOOTH_CONNECT',
+        'ACCESS_COARSE_LOCATION',
         'ACCESS_FINE_LOCATION',
         // Background BLE session: a connectedDevice foreground service keeps the
         // board connection alive while backgrounded; POST_NOTIFICATIONS (Android
@@ -602,7 +601,11 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       //   <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
       //       android:usesPermissionFlags="neverForLocation" tools:targetApi="31"/>
       // Keep fine location uncapped on purpose.
-      blockedPermissions: ['android.permission.BLUETOOTH_ADVERTISE'],
+      blockedPermissions: [
+        'android.permission.BLUETOOTH_ADVERTISE',
+        'android.permission.ACCESS_BACKGROUND_LOCATION',
+        'android.permission.FOREGROUND_SERVICE_LOCATION',
+      ],
       // expo-maps on Android renders Google Maps, which needs an API key. iOS
       // uses Apple Maps and needs none. Supplied via env so iOS works out of the
       // box; the Android map stays blank until GOOGLE_MAPS_API_KEY is set + a
@@ -635,6 +638,15 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
         {
           locationWhenInUsePermission:
             'Boardsesh uses your location to show boards and gyms near you, and to put a board you add on the map.',
+          // Nearby discovery accepts approximate locations and only takes a
+          // one-shot fix while the app is open. Do not add Always or precise
+          // location prompts through the plugin's defaults.
+          locationAlwaysPermission: false,
+          locationAlwaysAndWhenInUsePermission: false,
+          locationFullAccuracyPermission: false,
+          isIosBackgroundLocationEnabled: false,
+          isAndroidBackgroundLocationEnabled: false,
+          isAndroidForegroundServiceEnabled: false,
         },
       ],
       // Board search map. Location permissions are already handled by

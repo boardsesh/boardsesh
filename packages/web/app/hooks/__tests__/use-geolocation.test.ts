@@ -114,6 +114,25 @@ describe('useGeolocation', () => {
     expect(result.current.permissionState).toBe('granted');
   });
 
+  it('accepts approximate coordinates without requesting high accuracy', async () => {
+    mockGetCurrentPosition.mockImplementation((success: PositionCallback) => {
+      success(createPosition(52.36, 4.9, 5000));
+    });
+    const { result } = renderHook(() => useGeolocation());
+
+    await act(async () => {
+      await result.current.requestPermission();
+    });
+
+    expect(result.current.permissionState).toBe('granted');
+    expect(result.current.coordinates).toEqual({ latitude: 52.36, longitude: 4.9, accuracy: 5000 });
+    expect(mockGetCurrentPosition).toHaveBeenCalledWith(
+      expect.any(Function),
+      expect.any(Function),
+      expect.objectContaining({ enableHighAccuracy: false }),
+    );
+  });
+
   it('requestPermission handles permission denied (error code 1)', async () => {
     const posError = createPositionError(1, 'User denied Geolocation');
     mockGetCurrentPosition.mockImplementation((_success: PositionCallback, error: PositionErrorCallback) => {
