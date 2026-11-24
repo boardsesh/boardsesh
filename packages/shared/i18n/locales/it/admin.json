@@ -750,7 +750,7 @@
       "setupChanges": "Configurazioni cambiate dai climber"
     },
     "setupChanges": {
-      "description": "Le modifiche che le proposte dei climber hanno fatto ai pannelli di palestre che nessuno gestisce, prima le più recenti. Annulla rimette la configurazione precedente finché il pannello ha ancora quella del climber.",
+      "description": "Ogni configurazione di pannello cambiata dalla proposta di un climber, prima le più recenti. Succede solo nelle palestre che nessuno gestisce. Annulla rimette la configurazione precedente finché il pannello ha ancora quella del climber.",
       "before": "Prima",
       "after": "Dopo",
       "byLine": "Cambiata da {{name}} {{when}}",
@@ -764,6 +764,7 @@
       "confirmBody": "Torna a {{setup}} per tutti. Le proposte per questo pannello vengono controllate prima per i prossimi {{days}} giorni.",
       "undone": "Configurazione rimessa.",
       "changedSinceError": "Cambiata da allora: il pannello ora ha un'altra configurazione, quindi non si può annullare.",
+      "alreadyUndone": "Qualcuno ha già rimesso la configurazione precedente.",
       "empty": "Nessun climber ha ancora cambiato un pannello.",
       "error": "Impossibile caricare le modifiche alla configurazione. Riprova."
     }

@@ -750,7 +750,7 @@
       "setupChanges": "Cambios de configuración de escaladores"
     },
     "setupChanges": {
-      "description": "Cambios que las sugerencias de escaladores hicieron en plafones de rocódromos que nadie gestiona, los más nuevos primero. Deshacer recupera la configuración anterior mientras el plafón siga con la del escalador.",
+      "description": "Cada configuración de plafón que cambió la sugerencia de un escalador, las más nuevas primero. Solo pasa en rocódromos que nadie gestiona. Deshacer recupera la configuración anterior mientras el plafón siga con la del escalador.",
       "before": "Antes",
       "after": "Después",
       "byLine": "Cambiado por {{name}} {{when}}",
@@ -764,6 +764,7 @@
       "confirmBody": "Vuelve a {{setup}} para todos. Las sugerencias para este plafón se revisan primero durante los próximos {{days}} días.",
       "undone": "Configuración recuperada.",
       "changedSinceError": "Cambiado después: el plafón tiene ahora otra configuración, así que esto no se puede deshacer.",
+      "alreadyUndone": "Alguien ya recuperó la configuración anterior.",
       "empty": "Ningún escalador ha cambiado un plafón todavía.",
       "error": "No se pudieron cargar los cambios de configuración. Inténtalo de nuevo."
     }

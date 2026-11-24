@@ -9,7 +9,8 @@ import { getLocale } from '@/app/lib/i18n/get-locale';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { checkAdmin } from '@/app/lib/admin/check-admin';
 import { themeTokens } from '@/app/theme/theme-config';
-import BoardReportsPanel, { type BoardReportsTab } from '@/app/components/admin/board-reports-panel';
+import BoardReportsPanel from '@/app/components/admin/board-reports-panel';
+import { readBoardReportsTab } from '@/app/components/admin/board-setup-changes-logic';
 import LocaleLink from '@/app/components/i18n/locale-link';
 
 // Server-rendered so admin access is enforced before any markup ships, like
@@ -20,11 +21,6 @@ export const dynamic = 'force-dynamic';
 type AdminBoardReportsPageProps = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 };
-
-/** `?tab=setup-changes` opens the climbers' setup changes; anything else the report queue. */
-function readInitialTab(value: string | string[] | undefined): BoardReportsTab {
-  return value === 'setup-changes' ? 'setup-changes' : 'reports';
-}
 
 /** A report uuid from the daily digest's link (`?report=<uuid>`), or null. */
 function readHighlightedReport(value: string | string[] | undefined): string | null {
@@ -69,7 +65,7 @@ export default async function AdminBoardReportsPage({ searchParams }: AdminBoard
             {t('boardReports.backToAdmin')}
           </MuiLink>
         </Box>
-        <BoardReportsPanel highlightReportUuid={readHighlightedReport(report)} initialTab={readInitialTab(tab)} />
+        <BoardReportsPanel highlightReportUuid={readHighlightedReport(report)} initialTab={readBoardReportsTab(tab)} />
       </Container>
     </I18nProvider>
   );

@@ -15,6 +15,15 @@ vi.mock('@/app/hooks/use-ws-auth-token', () => ({
   useWsAuthToken: () => ({ token: 'admin-token' }),
 }));
 
+vi.mock('@/app/lib/i18n/use-locale-router', () => ({
+  useLocaleRouter: () => ({ replace: vi.fn() }),
+  usePathnameWithoutLocale: () => '/admin/board-reports',
+}));
+vi.mock('next/navigation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('next/navigation')>()),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 const mockShowMessage = vi.hoisted(() => vi.fn());
 vi.mock('@/app/components/providers/snackbar-provider', () => ({
   useSnackbar: () => ({ showMessage: mockShowMessage }),

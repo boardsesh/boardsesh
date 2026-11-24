@@ -28,6 +28,7 @@ import {
   type UndoBoardSetupChangeMutationVariables,
 } from '@boardsesh/graphql/operations';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
+import { refreshAccessToken } from '@/app/lib/auth/browser-access-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { relativeTimeFormatter } from '@/app/lib/relative-time';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
@@ -39,8 +40,8 @@ import {
   canUndoSetupChange,
   setupChangeBoardHref,
   setupChangeGymHref,
-  stateAfterUndo,
-  withChangeState,
+  setupUndoOutcome,
+  type SetupUndoOutcome,
 } from './board-setup-changes-logic';
 
 const linkSx = { minHeight: 44, display: 'inline-flex', alignItems: 'center', overflowWrap: 'anywhere' } as const;
@@ -54,12 +55,18 @@ const linkSx = { minHeight: 44, display: 'inline-flex', alignItems: 'center', ov
  * board changed again, so it can't be put back).
  *
  * **Undo** asks first, then sends `undoBoardSetupChange`. The server only puts
- * the old setup back while the board still has the climber's; when it refuses
- * (`BOARD_SETUP_CHANGED_SINCE`), the row says Changed since.
+ * the old setup back while the board still has the climber's. Whatever comes
+ * back (put back, someone put it back first, changed since, a failure), a
+ * message says so and the first page is read again, so every row shows where
+ * it stands now.
+ *
+ * Without a token (the ws-auth read failed) the list can't load: the panel
+ * says so and Retry asks for a token, rather than spinning, and an Undo says it
+ * didn't go through.
  */
 export default function BoardSetupChangesPanel() {
   const { t, i18n } = useTranslation('admin');
-  const { token } = useWsAuthToken();
+  const { token, isLoading: tokenLoading } = useWsAuthToken();
   const { showMessage } = useSnackbar();
   const [changes, setChanges] = useState<BoardSetupChange[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -67,6 +74,8 @@ export default function BoardSetupChangesPanel() {
   const [loadFailed, setLoadFailed] = useState(false);
   const [confirm, setConfirm] = useState<BoardSetupChange | null>(null);
   const [undoingEventId, setUndoingEventId] = useState<string | null>(null);
+  // One undo at a time, even from two taps in the same frame.
+  const undoingRef = useRef(false);
   const requestRef = useRef(0);
   // Read through a ref so a token rotation doesn't reload the list and drop pages already loaded.
   const tokenRef = useRef(token);
@@ -74,6 +83,8 @@ export default function BoardSetupChangesPanel() {
     tokenRef.current = token;
   }, [token]);
   const hasToken = Boolean(token);
+  // The token read gave up: nothing will load until a new one arrives.
+  const tokenUnavailable = !token && !tokenLoading;
   const [nowMs] = useState(() => Date.now());
   const relativeTime = useMemo(() => relativeTimeFormatter(i18n.language, nowMs), [i18n.language, nowMs]);
 
@@ -108,30 +119,57 @@ export default function BoardSetupChangesPanel() {
     };
   }, [fetchPage, hasToken]);
 
+  const retryLoad = () => {
+    // No token to read with: ask for one; the list loads once it arrives.
+    if (!tokenRef.current) void refreshAccessToken();
+    else void fetchPage(changes.length > 0 ? nextCursor : null);
+  };
+
   const undo = async (change: BoardSetupChange) => {
-    if (!token || undoingEventId !== null) return;
+    if (undoingRef.current) return;
+    const currentToken = tokenRef.current;
+    if (!currentToken) {
+      showMessage(t('boardReports.snackbar.failed'), 'error');
+      void refreshAccessToken();
+      return;
+    }
+    undoingRef.current = true;
     setUndoingEventId(change.eventId);
-    let state: BoardSetupChangeState | null;
     try {
-      await createGraphQLHttpClient(token).request<
-        UndoBoardSetupChangeMutationResponse,
-        UndoBoardSetupChangeMutationVariables
-      >(UNDO_BOARD_SETUP_CHANGE, { eventId: change.eventId });
-      state = stateAfterUndo({ ok: true });
-    } catch (error) {
-      state = stateAfterUndo({ ok: false, error });
-      if (state === null) console.error('[BoardSetupChangesPanel] Undo failed:', error);
+      let outcome: SetupUndoOutcome;
+      try {
+        await createGraphQLHttpClient(currentToken).request<
+          UndoBoardSetupChangeMutationResponse,
+          UndoBoardSetupChangeMutationVariables
+        >(UNDO_BOARD_SETUP_CHANGE, { eventId: change.eventId });
+        outcome = setupUndoOutcome({ ok: true });
+      } catch (error) {
+        outcome = setupUndoOutcome({ ok: false, error });
+        if (outcome === 'failed') console.error('[BoardSetupChangesPanel] Undo failed:', error);
+      }
+      switch (outcome) {
+        case 'undone':
+          showMessage(t('boardReports.setupChanges.undone'), 'success');
+          break;
+        case 'already_undone':
+          showMessage(t('boardReports.setupChanges.alreadyUndone'), 'info');
+          break;
+        case 'changed_since':
+          showMessage(t('boardReports.setupChanges.changedSinceError'), 'warning');
+          break;
+        case 'failed':
+          showMessage(t('boardReports.snackbar.failed'), 'error');
+          break;
+      }
+      // Whatever happened, read the first page again: it says where every change stands now.
+      await fetchPage(null);
     } finally {
+      undoingRef.current = false;
       setUndoingEventId(null);
     }
-    if (state === 'UNDONE') showMessage(t('boardReports.setupChanges.undone'), 'success');
-    else if (state === 'CHANGED_SINCE') showMessage(t('boardReports.setupChanges.changedSinceError'), 'warning');
-    else showMessage(t('boardReports.snackbar.failed'), 'error');
-    if (state !== null) {
-      const nextState = state;
-      setChanges((previous) => withChangeState(previous, change.eventId, nextState));
-    }
   };
+
+  const listFailed = loadFailed || tokenUnavailable;
 
   const stateLabel = (state: BoardSetupChangeState): string => {
     switch (state) {
@@ -150,17 +188,12 @@ export default function BoardSetupChangesPanel() {
         {t('boardReports.setupChanges.description')}
       </Typography>
 
-      {loadFailed && (
+      {listFailed && (
         <Alert
           severity="error"
           sx={{ mb: 2 }}
           action={
-            <Button
-              color="inherit"
-              size="small"
-              onClick={() => void fetchPage(changes.length > 0 ? nextCursor : null)}
-              sx={{ textTransform: 'none' }}
-            >
+            <Button color="inherit" size="small" onClick={retryLoad} sx={{ textTransform: 'none' }}>
               {t('boardReports.retry')}
             </Button>
           }
@@ -169,11 +202,11 @@ export default function BoardSetupChangesPanel() {
         </Alert>
       )}
 
-      {loading && changes.length === 0 ? (
+      {loading && changes.length === 0 && !tokenUnavailable ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
           <CircularProgress />
         </Box>
-      ) : changes.length === 0 && !loadFailed ? (
+      ) : changes.length === 0 && !listFailed ? (
         <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
           {t('boardReports.setupChanges.empty')}
         </Typography>

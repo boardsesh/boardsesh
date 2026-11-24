@@ -1,11 +1,33 @@
-import { isBoardSetupChangedSinceError } from '@boardsesh/graphql/errors';
-import type { BoardSetupChange, BoardSetupChangeState } from '@boardsesh/shared-schema';
+import { isBoardSetupAlreadyUndoneError, isBoardSetupChangedSinceError } from '@boardsesh/graphql/errors';
+import type { BoardSetupChange } from '@boardsesh/shared-schema';
 
 /**
  * The admin's "Setup changes by climbers" tab at `/admin/board-reports`, as
- * plain data (docs/product/directory-reports.md, "Undo"): which change can be
- * undone, where its links go, and what a row reads after an undo.
+ * plain data (docs/product/directory-reports.md, "Undo"): which tab the URL
+ * opens, which change can be undone, where its links go, and what an undo
+ * came to.
  */
+
+/** The page's two tabs: the report queue, and climbers' setup changes. */
+export type BoardReportsTab = 'reports' | 'setup-changes';
+
+/** `?tab=setup-changes` opens the climbers' setup changes; anything else the report queue. */
+export function readBoardReportsTab(value: string | string[] | undefined | null): BoardReportsTab {
+  return value === 'setup-changes' ? 'setup-changes' : 'reports';
+}
+
+/**
+ * The page's URL once `tab` is picked, for `router.replace`: `?tab=setup-changes`
+ * for the setup changes, no `tab` for the report queue (the default). Every other
+ * parameter (the digest's `?report=`) stays.
+ */
+export function boardReportsTabHref(pathname: string, search: string, tab: BoardReportsTab): string {
+  const params = new URLSearchParams(search);
+  if (tab === 'reports') params.delete('tab');
+  else params.set('tab', tab);
+  const query = params.toString();
+  return query ? `${pathname}?${query}` : pathname;
+}
 
 /** Changes per page; the server's default too. */
 export const SETUP_CHANGES_PAGE_SIZE = 50;
@@ -16,23 +38,23 @@ export function canUndoSetupChange(change: Pick<BoardSetupChange, 'state'>): boo
 }
 
 /**
- * What a row reads after Undo: `UNDONE` when it went through, `CHANGED_SINCE`
- * when the server refused it because the board changed again (or someone undid
- * it first, which the server reports the same way), null for any other
- * failure, which leaves the row as it was.
+ * What an Undo came to, for the message after it:
+ * - `undone`: the old setup is back.
+ * - `already_undone`: someone put it back first (`BOARD_SETUP_ALREADY_UNDONE`).
+ * - `changed_since`: the board changed again, so it can't be put back
+ *   (`BOARD_SETUP_CHANGED_SINCE`).
+ * - `failed`: anything else; nothing changed.
+ *
+ * The rows themselves come from the server: the panel reads the first page
+ * again after every outcome, so each change shows the state it has now.
  */
-export function stateAfterUndo(outcome: { ok: true } | { ok: false; error: unknown }): BoardSetupChangeState | null {
-  if (outcome.ok) return 'UNDONE';
-  return isBoardSetupChangedSinceError(outcome.error) ? 'CHANGED_SINCE' : null;
-}
+export type SetupUndoOutcome = 'undone' | 'already_undone' | 'changed_since' | 'failed';
 
-/** The list with one change's state replaced; the other rows are kept as they are. */
-export function withChangeState(
-  changes: readonly BoardSetupChange[],
-  eventId: string,
-  state: BoardSetupChangeState,
-): BoardSetupChange[] {
-  return changes.map((change) => (change.eventId === eventId ? { ...change, state } : change));
+export function setupUndoOutcome(outcome: { ok: true } | { ok: false; error: unknown }): SetupUndoOutcome {
+  if (outcome.ok) return 'undone';
+  if (isBoardSetupAlreadyUndoneError(outcome.error)) return 'already_undone';
+  if (isBoardSetupChangedSinceError(outcome.error)) return 'changed_since';
+  return 'failed';
 }
 
 /** A page appended to the list, skipping any change already in it (a change made between two reads). */
