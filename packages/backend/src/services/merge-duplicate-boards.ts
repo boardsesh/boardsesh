@@ -144,9 +144,10 @@ export async function mergeDuplicateBoards(input: MergeDuplicateBoardsInput, con
         if (boards.some((board) => ownerByBoardUuid.get(board.uuid) !== board.ownerId))
           conflict('A selected board changed owners during the merge. Inspect the boards again.');
         const canonical = boards.find((board) => board.uuid === validated.canonicalBoardUuid)!;
-        for (const serial of [
+        const serialNumbers = [
           ...new Set(boards.flatMap((board) => (board.serialNumber?.trim() ? [board.serialNumber] : []))),
-        ].sort()) {
+        ].sort();
+        for (const serial of serialNumbers) {
           await lockBoardSerialWrite(transaction, serial);
         }
         const [gym] = await transaction
@@ -178,8 +179,30 @@ export async function mergeDuplicateBoards(input: MergeDuplicateBoardsInput, con
         if (boards.some((board) => !board.isPublic || board.isUnlisted))
           conflict('This repair supports public, listed catalogue boards only.');
         // Different non-null controller identities are evidence this is not a confirmed wall.
-        if (new Set(boards.flatMap((board) => (board.serialNumber?.trim() ? [board.serialNumber] : []))).size > 1) {
+        if (serialNumbers.length > 1) {
           conflict('The selected boards have different controller serials. Resolve that evidence before merging.');
+        }
+        const serialToBackfill = !canonical.serialNumber?.trim() ? serialNumbers[0] : undefined;
+        if (serialToBackfill !== undefined && canonical.ownerId !== SYSTEM_USER_ID) {
+          // Serial reuse across owners is legitimate. Only another active board
+          // of this same owner/type would collide with the partial unique index.
+          // The serial advisory lock fences cooperating creates/edits while this
+          // preflight runs; do not take more board row locks after that lock.
+          const [ownedSerialConflict] = await transaction
+            .select({ id: tables.userBoards.id })
+            .from(tables.userBoards)
+            .where(
+              and(
+                eq(tables.userBoards.ownerId, canonical.ownerId),
+                eq(tables.userBoards.boardType, canonical.boardType),
+                eq(tables.userBoards.serialNumber, serialToBackfill),
+                isNull(tables.userBoards.deletedAt),
+              ),
+            );
+          if (ownedSerialConflict && !boards.some((board) => board.id === ownedSerialConflict.id))
+            conflict(
+              'The survivor owner already has another active board with this controller serial. Resolve that board before merging.',
+            );
         }
         const policies = await transaction
           .select()
@@ -293,6 +316,14 @@ export async function mergeDuplicateBoards(input: MergeDuplicateBoardsInput, con
           asMergeRow(canonical),
           flattenedIds,
         );
+        // Tombstone donors first: an owner may have bound the serial to one of
+        // those rows, and the active owner/type/serial index must stay unique.
+        if (serialToBackfill !== undefined) {
+          await transaction
+            .update(tables.userBoards)
+            .set({ serialNumber: serialToBackfill, updatedAt: new Date() })
+            .where(eq(tables.userBoards.id, canonical.id));
+        }
         await transaction
           .update(tables.userBoards)
           .set({ syncFrozenAt: new Date() })
@@ -348,7 +379,7 @@ export async function mergeDuplicateBoards(input: MergeDuplicateBoardsInput, con
         }));
         const details = {
           mutation: 'mergeDuplicateBoards',
-          fields: ['mergedIntoBoardUuid'],
+          fields: serialToBackfill === undefined ? ['mergedIntoBoardUuid'] : ['mergedIntoBoardUuid', 'serialNumber'],
           merge: { canonicalBoardUuid: canonical.uuid, duplicateBoardUuids: duplicateUuids, before, counts },
         };
         await recordBoardModerationEvent(transaction, {

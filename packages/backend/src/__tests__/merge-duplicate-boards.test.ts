@@ -10,6 +10,7 @@ import {
   mergeKioskBoardReferences,
   type MergeDuplicateBoardsInput,
 } from '../services/merge-duplicate-boards';
+import { findActiveBoardsBySerial } from '../graphql/resolvers/board-presence/shared';
 import { boardRepairStateHash } from '../services/board-repair-state';
 import * as preview from '../services/board-queue-preview';
 import * as privacy from '../services/board-session-privacy';
@@ -113,7 +114,7 @@ afterAll(async () => {
   await settleDirectoryNoticePublishes();
   if (systemBoardUuids.length)
     await db.delete(tables.userBoards).where(inArray(tables.userBoards.uuid, systemBoardUuids));
-  await db.delete(tables.users).where(inArray(tables.users.id, createdUsers));
+  if (createdUsers.length) await db.delete(tables.users).where(inArray(tables.users.id, createdUsers));
 });
 
 describe('explicit public board merge', () => {
@@ -197,6 +198,124 @@ describe('explicit public board merge', () => {
       reason: 'Confirmed same physical MoonBoard at Telefonplan.',
       details: { merge: { duplicateBoardUuids: [boards[1]!.uuid] } },
     });
+  });
+
+  it.each([
+    { missingSerial: null, sameOwner: false },
+    { missingSerial: '', sameOwner: false },
+    { missingSerial: '   ', sameOwner: false },
+    { missingSerial: null, sameOwner: true },
+  ])(
+    'retains controller discovery when the survivor serial is $missingSerial and sameOwner=$sameOwner',
+    async ({ missingSerial, sameOwner }) => {
+      const serialNumber = `merge-controller-${randomUUID()}`;
+      await db
+        .update(tables.userBoards)
+        .set({ serialNumber: missingSerial })
+        .where(eq(tables.userBoards.id, boards[0]!.id));
+      await db
+        .update(tables.userBoards)
+        .set({ serialNumber, ownerId: sameOwner ? boards[0]!.ownerId : boards[1]!.ownerId })
+        .where(eq(tables.userBoards.id, boards[1]!.id));
+      expect((await findActiveBoardsBySerial(serialNumber, db, 'moonboard')).map((board) => board.uuid)).toEqual([
+        boards[1]!.uuid,
+      ]);
+      await mergeDuplicateBoards(await stateInput(), context);
+      const [canonical] = await db.select().from(tables.userBoards).where(eq(tables.userBoards.id, boards[0]!.id));
+      expect(canonical!.serialNumber).toBe(serialNumber);
+      expect((await findActiveBoardsBySerial(serialNumber, db, 'moonboard')).map((board) => board.uuid)).toEqual([
+        boards[0]!.uuid,
+      ]);
+    },
+  );
+
+  it('preserves an existing agreed survivor serial', async () => {
+    const serialNumber = `merge-controller-${randomUUID()}`;
+    await db
+      .update(tables.userBoards)
+      .set({ serialNumber })
+      .where(
+        inArray(
+          tables.userBoards.id,
+          boards.map((board) => board.id),
+        ),
+      );
+    await mergeDuplicateBoards(await stateInput(), context);
+    const [canonical] = await db.select().from(tables.userBoards).where(eq(tables.userBoards.id, boards[0]!.id));
+    expect(canonical!.serialNumber).toBe(serialNumber);
+    expect((await findActiveBoardsBySerial(serialNumber, db, 'moonboard')).map((board) => board.uuid)).toEqual([
+      boards[0]!.uuid,
+    ]);
+  });
+
+  it('refuses conflicting controller serials without changing either active board', async () => {
+    const serialNumbers = boards.map(() => `merge-controller-${randomUUID()}`);
+    for (const [index, board] of boards.entries())
+      await db
+        .update(tables.userBoards)
+        .set({ serialNumber: serialNumbers[index]! })
+        .where(eq(tables.userBoards.id, board.id));
+    await expect(mergeDuplicateBoards(await stateInput(), context)).rejects.toThrow('different controller serials');
+    for (const [index, board] of boards.entries()) {
+      const candidates = await findActiveBoardsBySerial(serialNumbers[index]!, db, 'moonboard');
+      expect(candidates.map((candidate) => candidate.uuid)).toEqual([board.uuid]);
+    }
+  });
+
+  it('refuses a serial backfill that collides with the survivor owner’s unrelated active board', async () => {
+    const serialNumber = `merge-controller-${randomUUID()}`;
+    await db.update(tables.userBoards).set({ serialNumber }).where(eq(tables.userBoards.id, boards[1]!.id));
+    const [unrelated] = await db
+      .insert(tables.userBoards)
+      .values({ ...boards[0]!, id: undefined, uuid: randomUUID(), slug: randomUUID(), serialNumber })
+      .returning();
+    await expect(mergeDuplicateBoards(await stateInput(), context)).rejects.toThrow('already has another active board');
+    expect((await findActiveBoardsBySerial(serialNumber, db, 'moonboard')).map((board) => board.uuid).sort()).toEqual(
+      [boards[1]!.uuid, unrelated!.uuid].sort(),
+    );
+    const [canonical] = await db.select().from(tables.userBoards).where(eq(tables.userBoards.id, boards[0]!.id));
+    expect(canonical!.serialNumber).toBeNull();
+  });
+
+  it('retains legitimate serial reuse by another owner outside the merge', async () => {
+    const serialNumber = `merge-controller-${randomUUID()}`;
+    await db.update(tables.userBoards).set({ serialNumber }).where(eq(tables.userBoards.id, boards[1]!.id));
+    const [unrelated] = await db
+      .insert(tables.userBoards)
+      .values({
+        ...boards[0]!,
+        id: undefined,
+        uuid: randomUUID(),
+        slug: randomUUID(),
+        ownerId: context.userId!,
+        serialNumber,
+      })
+      .returning();
+    await mergeDuplicateBoards(await stateInput(), context);
+    expect((await findActiveBoardsBySerial(serialNumber, db, 'moonboard')).map((board) => board.uuid).sort()).toEqual(
+      [boards[0]!.uuid, unrelated!.uuid].sort(),
+    );
+    const [unchanged] = await db.select().from(tables.userBoards).where(eq(tables.userBoards.id, unrelated!.id));
+    expect(unchanged).toEqual(unrelated);
+  });
+
+  it('rolls back an inherited serial when the outer receipt transaction fails', async () => {
+    const serialNumber = `merge-controller-${randomUUID()}`;
+    await db.update(tables.userBoards).set({ serialNumber }).where(eq(tables.userBoards.id, boards[1]!.id));
+    const input = await stateInput();
+    await expect(
+      runWithDatabaseTransaction(async () => {
+        await mergeDuplicateBoards(input, context);
+        const [canonical] = await db.select().from(tables.userBoards).where(eq(tables.userBoards.id, boards[0]!.id));
+        expect(canonical!.serialNumber).toBe(serialNumber);
+        throw new Error('Receipt failed after serial transfer');
+      }),
+    ).rejects.toThrow('Receipt failed after serial transfer');
+    const [canonical] = await db.select().from(tables.userBoards).where(eq(tables.userBoards.id, boards[0]!.id));
+    expect(canonical!.serialNumber).toBeNull();
+    expect((await findActiveBoardsBySerial(serialNumber, db, 'moonboard')).map((board) => board.uuid)).toEqual([
+      boards[1]!.uuid,
+    ]);
   });
 
   it('moves kiosk board/leaderboard references and collapses duplicate slots', async () => {
