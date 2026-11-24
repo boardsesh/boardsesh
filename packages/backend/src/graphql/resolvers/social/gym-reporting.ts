@@ -18,6 +18,8 @@ import type {
   GymStatsPeriod,
 } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
+import { resolveGymReportingTimeZone } from '../../../services/gym-reporting-time-zone';
+import { resolveGymAddressLocation, type GymAddressLocation } from '../../../services/gym-address-location';
 import { GymStatsInputSchema } from '../../../validation/schemas/gyms';
 import { applyRateLimit, validateInput } from '../shared/helpers';
 import {
@@ -59,6 +61,7 @@ export type GymReportingScope = {
   periodDays: number;
   current: ReportingWindow;
   previous: ReportingWindow;
+  addressLocation?: GymAddressLocation | null;
 };
 
 export function requireReportingUser(ctx: ConnectionContext): string {
@@ -256,12 +259,16 @@ export async function withGymReportingScope<Result>(
     await applyRateLimit(ctx, bounded?.readsPerMinute ?? 30, bounded?.operation ?? 'gymStats');
   }
   const { gymUuid, boardUuid: requestedBoardUuid, period } = validateInput(GymStatsInputSchema, input, 'input');
+  // Address lookup may use HTTP; complete it before borrowing a reporting
+  // transaction connection. The snapshot independently checks the current row.
+  const addressLocation = await resolveGymAddressLocation(await requireGymEditAccess(gymUuid, viewerId));
   const legacyAsOf = bounded ? null : new Date().toISOString();
   return db.transaction(
     async (tx) => {
       const asOf = legacyAsOf ?? (await readBoundedReportingClock(tx));
       const gym = await requireGymEditAccess(gymUuid, viewerId, tx);
-      const timeZone = gym.reportingTimeZone ?? 'UTC';
+      const reportingTimeZone = await resolveGymReportingTimeZone(gym, tx, addressLocation);
+      const timeZone = reportingTimeZone ?? 'UTC';
       const periodDays = PERIOD_DAYS[period];
       const canonicalGymIds = await readReportingGymIds(tx, gym.id);
       const authorizedBoards = bounded
@@ -324,10 +331,11 @@ export async function withGymReportingScope<Result>(
         canonicalGymIds,
         canManageBoardAliases: gym.ownerId === viewerId || !!adminMembership,
         timeZone,
-        timeZoneConfigured: gym.reportingTimeZone !== null,
+        timeZoneConfigured: reportingTimeZone !== null,
         periodDays,
         current,
         previous,
+        addressLocation,
       });
     },
     { isolationLevel: 'repeatable read', accessMode: 'read only' },

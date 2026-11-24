@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import { parse, type GraphQLResolveInfo } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
@@ -9,6 +9,10 @@ import { socialGymInsightsQueries } from '../graphql/resolvers/social/gym-insigh
 import { gymReportingSettingsMutations } from '../graphql/resolvers/social/gym-reporting-settings';
 import { readGymBusyTimes } from '../graphql/resolvers/social/gym-busy-times';
 import { withGymReportingScope } from '../graphql/resolvers/social/gym-reporting';
+import { activateGymReachObservation } from '../graphql/resolvers/social/gym-reporting-observation';
+import { resolveGymAddressLocation } from '../services/gym-address-location';
+
+vi.mock('../services/gym-address-location', () => ({ resolveGymAddressLocation: vi.fn() }));
 
 const AS_OF = '2026-10-28T19:00:00.000Z';
 const OLD_FLOOR = '2025-01-01T00:00:00.000Z';
@@ -131,9 +135,138 @@ async function display(wall: Awaited<ReturnType<typeof board>>, actor: string | 
   `);
 }
 
-afterEach(() => vi.useRealTimers());
+beforeEach(() => vi.mocked(resolveGymAddressLocation).mockReset().mockResolvedValue(null));
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe('gym reach overview', () => {
+  it('looks up an authorized address before the reporting transaction and binds it to the current gym', async () => {
+    const owner = await user();
+    const venue = await gym(owner, null);
+    await board(venue);
+    const address = 'Damrak 1, Amsterdam, Netherlands';
+    await db.execute(sql`UPDATE gyms SET address = ${address} WHERE id = ${venue.id}`);
+    const transactionSpy = vi.spyOn(db, 'transaction');
+    vi.mocked(resolveGymAddressLocation).mockImplementationOnce(async () => {
+      expect(transactionSpy).not.toHaveBeenCalled();
+      return { address, latitude: 52.3676, longitude: 4.9041 };
+    });
+    const scope = await withGymReportingScope({ gymUuid: venue.uuid }, auth(owner), async (_, scope) => scope);
+    expect(transactionSpy).toHaveBeenCalledTimes(1);
+    expect(scope).toMatchObject({ timeZone: 'Europe/Amsterdam', timeZoneConfigured: true });
+    await db.execute(sql`UPDATE gyms SET address = 'Changed address' WHERE id = ${venue.id}`);
+    await activateGymReachObservation(scope);
+    expect(await receiptCount(venue.id)).toBe(0);
+  });
+
+  it.each(['address', 'is_public', 'is_listed'] as const)(
+    'ignores preflight evidence when %s changes before the snapshot',
+    async (changedField) => {
+      const owner = await user();
+      const venue = await gym(owner, null);
+      await board(venue);
+      const address = 'Damrak 1, Amsterdam, Netherlands';
+      await db.execute(sql`UPDATE gyms SET address = ${address} WHERE id = ${venue.id}`);
+      vi.mocked(resolveGymAddressLocation).mockImplementationOnce(async () => {
+        if (changedField === 'address') {
+          await db.execute(sql`UPDATE gyms SET address = 'Changed address' WHERE id = ${venue.id}`);
+        } else if (changedField === 'is_public') {
+          await db.execute(sql`UPDATE gyms SET is_public = false WHERE id = ${venue.id}`);
+        } else {
+          await db.execute(sql`UPDATE gyms SET is_listed = false WHERE id = ${venue.id}`);
+        }
+        return { address, latitude: 52.3676, longitude: 4.9041 };
+      });
+      const scope = await withGymReportingScope({ gymUuid: venue.uuid }, auth(owner), async (_, scope) => scope);
+      expect(scope).toMatchObject({ timeZone: 'UTC', timeZoneConfigured: false });
+      await activateGymReachObservation(scope);
+      expect(await receiptCount(venue.id)).toBe(0);
+    },
+  );
+
+  it('uses mapped gym time without persisting an override and preserves local DST boundaries', async () => {
+    vi.setSystemTime(new Date('2026-03-12T12:00:00Z'));
+    const owner = await user();
+    const venue = await gym(owner, null);
+    await board(venue);
+    await db.execute(sql`UPDATE gyms SET latitude = 40.7128, longitude = -74.006 WHERE id = ${venue.id}`);
+    const scope = await withGymReportingScope({ gymUuid: venue.uuid }, auth(owner), async (tx, reportingScope) => {
+      const [mode] = rowsFromResult<{ readOnly: string }>(
+        await tx.execute(sql`SELECT current_setting('transaction_read_only') AS "readOnly"`),
+      );
+      expect(mode.readOnly).toBe('on');
+      return reportingScope;
+    });
+    expect(scope).toMatchObject({ timeZone: 'America/New_York', timeZoneConfigured: true });
+    expect(new Date(scope.current.startAt).toISOString()).toBe('2026-03-05T13:00:00.000Z');
+    const [stored] = rowsFromResult<{ zone: string | null }>(
+      await db.execute(sql`SELECT reporting_time_zone AS zone FROM gyms WHERE id = ${venue.id}`),
+    );
+    expect(stored.zone).toBeNull();
+  });
+
+  it('recomputes the location default, preserves an override, and restores automatic mode when cleared', async () => {
+    const owner = await user();
+    const venue = await gym(owner, null);
+    await board(venue);
+    await db.execute(sql`UPDATE gyms SET latitude = 52.3676, longitude = 4.9041 WHERE id = ${venue.id}`);
+    const readZone = () =>
+      withGymReportingScope({ gymUuid: venue.uuid }, auth(owner), async (_, scope) => scope.timeZone);
+    expect(await readZone()).toBe('Europe/Amsterdam');
+    await gymReportingSettingsMutations.setGymReportingTimeZone(
+      null,
+      { input: { gymUuid: venue.uuid, timeZone: 'UTC' } },
+      auth(owner),
+    );
+    await db.execute(sql`UPDATE gyms SET latitude = -33.8688, longitude = 151.2093 WHERE id = ${venue.id}`);
+    expect(await readZone()).toBe('UTC');
+    await gymReportingSettingsMutations.setGymReportingTimeZone(
+      null,
+      { input: { gymUuid: venue.uuid, timeZone: null } },
+      auth(owner),
+    );
+    expect(await readZone()).toBe('Australia/Sydney');
+  });
+
+  it('activates forward coverage for mapped gyms only after the authorized first read', async () => {
+    const owner = await user();
+    const venue = await gym(owner, null);
+    await board(venue);
+    await db.execute(sql`UPDATE gyms SET latitude = 52.3676, longitude = 4.9041 WHERE id = ${venue.id}`);
+    await expect(
+      socialGymInsightsQueries.gymStats(null, { input: { gymUuid: venue.uuid } }, auth(await user()), overviewInfo),
+    ).rejects.toMatchObject({ extensions: { code: 'FORBIDDEN' } });
+    expect(resolveGymAddressLocation).not.toHaveBeenCalled();
+    expect(await receiptCount(venue.id)).toBe(0);
+    const first = await socialGymInsightsQueries.gymStats(
+      null,
+      { input: { gymUuid: venue.uuid } },
+      auth(owner),
+      overviewInfo,
+    );
+    expect(first).toMatchObject({ timeZone: 'Europe/Amsterdam', timeZoneConfigured: true });
+    expect(first.reachOverview?.observationStartedAt).toBeNull();
+    expect(await receiptCount(venue.id)).toBe(1);
+    vi.setSystemTime(new Date(Date.now() + 1000));
+    expect((await report(venue)).observationStartedAt).toBeTruthy();
+  });
+
+  it('rechecks the current locked location before activating an earlier inferred scope', async () => {
+    const owner = await user();
+    const venue = await gym(owner, null);
+    await board(venue);
+    await db.execute(sql`UPDATE gyms SET latitude = 52.3676, longitude = 4.9041 WHERE id = ${venue.id}`);
+    const scope = await withGymReportingScope({ gymUuid: venue.uuid }, auth(owner), async (_, scope) => scope);
+    await db.execute(sql`UPDATE gyms SET latitude = null, longitude = null WHERE id = ${venue.id}`);
+    await activateGymReachObservation(scope);
+    expect(await receiptCount(venue.id)).toBe(0);
+    expect(
+      await withGymReportingScope({ gymUuid: venue.uuid }, auth(owner), async (_, scope) => scope.timeZoneConfigured),
+    ).toBe(false);
+  });
+
   it('counts first records, returns and reactivated climbers across sources and physical boards', async () => {
     vi.setSystemTime(new Date(AS_OF));
     const [owner, pastAndPresent, returner, justNew, reactivated, previousOnly, unrelated] = await Promise.all(

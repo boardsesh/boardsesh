@@ -9,6 +9,11 @@ import { AccessibleTextInput } from '../AccessibleTextInput';
 import { AppMenu } from '../AppMenu';
 import { Button } from '../Button';
 import { Text } from '../Text';
+import { openValidatedUrl } from '../../lib/open-external-link';
+
+const GEOCODING_ATTRIBUTION_URL = 'https://www.openstreetmap.org/copyright';
+const openGeocodingAttribution = () =>
+  void openValidatedUrl(GEOCODING_ATTRIBUTION_URL, (url) => url === GEOCODING_ATTRIBUTION_URL);
 
 type Props = {
   stats: GymStats;
@@ -71,6 +76,9 @@ export function GymReportingSettings({ stats, saveZone, saveAlias }: Props) {
 
   return (
     <View style={styles.section}>
+      <Text variant="footnote" accessibilityRole="link" onPress={openGeocodingAttribution}>
+        {t('gymReporting.locationAttribution')}
+      </Text>
       {editingZone ? (
         <View style={styles.group}>
           <Text variant="headline">{t('gymReporting.timeZone')}</Text>

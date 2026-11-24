@@ -2,6 +2,7 @@ import { and, asc, inArray, sql } from 'drizzle-orm';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { gymReportingObservations, userBoards } from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
+import { resolveGymReportingTimeZone } from '../../../services/gym-reporting-time-zone';
 import { isSharedConfigFeedBoard } from '../board-presence/shared';
 import {
   authorizedReportingBoardCondition,
@@ -44,7 +45,7 @@ export async function readGymReachObservation(tx: GymReportingTransaction, scope
 export async function activateGymReachObservation(scope: GymReportingScope): Promise<void> {
   await db.transaction(async (tx) => {
     const gym = await lockGymSettings(tx, scope.gym.uuid, scope.viewerId, requireGymEditAccess);
-    if (!gym.reportingTimeZone) return;
+    if (!(await resolveGymReportingTimeZone(gym, tx, scope.addressLocation))) return;
     const readableBoards = (
       await tx
         .select()

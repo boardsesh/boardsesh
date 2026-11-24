@@ -17,11 +17,20 @@ test.describe('Create a gym from the directory', () => {
     const gymName = `Gym setup ${randomUUID().slice(0, 8)}`;
     const address = '123 Gym Setup Street, London';
     const hours = 'Mon-Fri 9am-9pm';
-    await page.route('https://nominatim.openstreetmap.org/search?**', (route) =>
-      route.fulfill({
-        json: [{ lat: '51.5074', lon: '-0.1278', display_name: address }],
-      }),
-    );
+    let addressLookups = 0;
+    await page.route('**/graphql', async (route) => {
+      const request = route.request();
+      if (request.method() !== 'POST') return route.continue();
+      const operation = request.postDataJSON() as { query?: unknown; variables?: { address?: unknown } };
+      if (typeof operation.query !== 'string' || !/\blookupGymAddressCoordinates\b/.test(operation.query)) {
+        return route.continue();
+      }
+      expect(operation.variables?.address).toBe(address);
+      addressLookups += 1;
+      await route.fulfill({
+        json: { data: { lookupGymAddressCoordinates: { latitude: 51.5074, longitude: -0.1278 } } },
+      });
+    });
 
     await loginAs(page, '/gyms');
     await page.getByTestId('gym-directory-map').getByRole('button', { name: 'Zoom in', exact: true }).click();
@@ -33,7 +42,10 @@ test.describe('Create a gym from the directory', () => {
     await page.getByLabel('Opening hours').fill(hours);
     await page.getByRole('button', { name: 'Set location on map' }).click();
     await page.getByPlaceholder('Search address or city...').fill(address);
+    expect(addressLookups).toBe(0);
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(page.getByRole('button', { name: /Location: 51\.5074, -0\.1278/ })).toBeVisible();
+    expect(addressLookups).toBe(1);
     await page.getByRole('button', { name: 'Save and choose boards' }).click();
     await expect(page).toHaveURL(/\/gyms\/new\?gym=/);
     const savedGymUuid = new URL(page.url()).searchParams.get('gym');

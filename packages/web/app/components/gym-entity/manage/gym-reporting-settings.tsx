@@ -8,6 +8,7 @@ import MenuItem from '@mui/material/MenuItem';
 import TextField from '@mui/material/TextField';
 import Alert from '@mui/material/Alert';
 import Typography from '@mui/material/Typography';
+import Link from '@mui/material/Link';
 import { gymReportingAliasSources, gymReportingAliasTargets, hasGraphqlErrorCode } from '@boardsesh/graphql';
 import type { GymStats } from '@boardsesh/shared-schema';
 
@@ -65,6 +66,9 @@ export function GymReportingSettings({ stats, saveZone, saveAlias }: Props) {
 
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
+      <Link href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" variant="body2">
+        {t('gymReporting.locationAttribution')}
+      </Link>
       {editingZone ? (
         <Box
           component="form"

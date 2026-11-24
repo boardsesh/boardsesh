@@ -4326,6 +4326,13 @@ export type GymActivityStatsRefreshResult = {
   writeDurationMs: Scalars['Float']['output'];
 };
 
+/** Coordinates from an explicit authenticated address search; null when no unambiguous match is available. */
+export type GymAddressCoordinates = {
+  __typename?: 'GymAddressCoordinates';
+  latitude: Scalars['Float']['output'];
+  longitude: Scalars['Float']['output'];
+};
+
 export type GymAngleActivityCounts = {
   __typename?: 'GymAngleActivityCounts';
   /** Confirmed Boardsesh displays. */
@@ -9014,6 +9021,8 @@ export type Query = {
    * Requires authentication.
    */
   isFollowing: Scalars['Boolean']['output'];
+  /** Explicit address search for a map pin. Authentication required; 5–500 characters; no autocomplete. */
+  lookupGymAddressCoordinates?: Maybe<GymAddressCoordinates>;
   /** Current release context. Available without signing in. */
   mobileReleaseStatus: ReleaseContext;
   /** The signed-in climber's current analytics consent, or null when they have never answered. */
@@ -10021,6 +10030,11 @@ export type QueryInstagramBetaScanArgs = {
 /** Root query type for all read operations. */
 export type QueryIsFollowingArgs = {
   userId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryLookupGymAddressCoordinatesArgs = {
+  address: Scalars['String']['input'];
 };
 
 /** Root query type for all read operations. */
