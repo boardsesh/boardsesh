@@ -15,6 +15,7 @@ vi.mock('../../PressableSurface', async () => {
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, fireEvent, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
+import type { ImportProgressEvent, ImportResult } from '@boardsesh/shared-schema';
 import {
   AMBIGUOUS_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
   DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
@@ -36,6 +37,9 @@ const mocks = vi.hoisted(() => ({
   parseMoonBoardCsv: vi.fn(),
   pickDocument: vi.fn(),
   fileText: vi.fn(),
+  parseAurora: vi.fn(),
+  autoShowModal: true,
+  modalOnShow: undefined as (() => void) | undefined,
   platform: { OS: 'ios' } as { OS: string },
   showToast: vi.fn(),
   openURL: vi.fn((_url: string) => Promise.resolve()),
@@ -84,10 +88,7 @@ vi.mock('../../../lib/aurora-credentials', async (importOriginal) => {
 
 vi.mock('@boardsesh/shared-schema', () => ({
   AURORA_BOARDS: mocks.auroraBoards,
-  parseAuroraExportJson: vi.fn(() => ({
-    data: { user: { username: 'aurora' }, ascents: [], attempts: [], circuits: [], climbs: [] },
-    preview: { username: 'aurora', ascents: 0, attempts: 0, circuits: 0, climbs: 0 },
-  })),
+  parseAuroraExportJson: mocks.parseAurora,
   decodeMoonBoardExportBytes: (bytes: Uint8Array) => new TextDecoder().decode(bytes),
   parseMoonBoardExportCsv: mocks.parseMoonBoardCsv,
 }));
@@ -131,35 +132,44 @@ vi.mock('@tanstack/react-query', () => ({
   }),
 }));
 
-type RNProps = { children?: ReactNode; visible?: boolean };
-vi.mock('react-native', () => ({
-  View: ({ children }: RNProps) => createElement('div', {}, children),
-  ScrollView: ({ children }: RNProps) => createElement('div', {}, children),
-  KeyboardAvoidingView: ({ children }: RNProps) => createElement('div', {}, children),
-  Modal: ({ visible, children }: RNProps) => (visible ? createElement('div', {}, children) : null),
-  ActivityIndicator: () => createElement('div', { 'data-spinner': 'true' }),
-  TextInput: ({
-    value,
-    onChangeText,
-    placeholder,
-  }: {
-    value?: string;
-    onChangeText?: (next: string) => void;
-    placeholder?: string;
-  }) =>
-    createElement('input', {
-      value: value ?? '',
-      'data-input': placeholder,
-      onChange: (event: { target: { value: string } }) => onChangeText?.(event.target.value),
-    }),
-  StyleSheet: {
-    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
-    create: (styles: Record<string, unknown>) => styles,
-    hairlineWidth: 1,
-  },
-  Platform: mocks.platform,
-  Linking: { openURL: mocks.openURL },
-}));
+type RNProps = { children?: ReactNode; visible?: boolean; onShow?: () => void };
+vi.mock('react-native', async () => {
+  const { useEffect } = await import('react');
+  return {
+    View: ({ children }: RNProps) => createElement('div', {}, children),
+    ScrollView: ({ children }: RNProps) => createElement('div', {}, children),
+    KeyboardAvoidingView: ({ children }: RNProps) => createElement('div', {}, children),
+    Modal: ({ visible, children, onShow }: RNProps) => {
+      if (onShow) mocks.modalOnShow = onShow;
+      useEffect(() => {
+        if (visible && mocks.autoShowModal) onShow?.();
+      }, [visible, onShow]);
+      return visible ? createElement('div', { 'data-modal': 'true' }, children) : null;
+    },
+    ActivityIndicator: () => createElement('div', { 'data-spinner': 'true' }),
+    TextInput: ({
+      value,
+      onChangeText,
+      placeholder,
+    }: {
+      value?: string;
+      onChangeText?: (next: string) => void;
+      placeholder?: string;
+    }) =>
+      createElement('input', {
+        value: value ?? '',
+        'data-input': placeholder,
+        onChange: (event: { target: { value: string } }) => onChangeText?.(event.target.value),
+      }),
+    StyleSheet: {
+      flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+      create: (styles: Record<string, unknown>) => styles,
+      hairlineWidth: 1,
+    },
+    Platform: mocks.platform,
+    Linking: { openURL: mocks.openURL },
+  };
+});
 
 vi.mock('expo-document-picker', () => ({ getDocumentAsync: mocks.pickDocument }));
 vi.mock('expo-file-system', () => ({
@@ -245,6 +255,12 @@ const input = (root: HTMLElement, placeholder: string) =>
 beforeEach(() => {
   mocks.auroraBoards.splice(0, mocks.auroraBoards.length, 'kilter', 'tension');
   mocks.platform.OS = 'ios';
+  mocks.autoShowModal = true;
+  mocks.modalOnShow = undefined;
+  mocks.parseAurora.mockReset().mockReturnValue({
+    data: { user: { username: 'aurora' }, ascents: [], attempts: [], circuits: [], climbs: [] },
+    preview: { username: 'aurora', ascents: 3, attempts: 2, circuits: 1, climbs: 0 },
+  });
 });
 
 describe('BoardAccountsSection — board cards', () => {
@@ -614,7 +630,17 @@ describe('BoardAccountsSection — MoonBoard card', () => {
 });
 
 describe('BoardAccountsSection — Aurora JSON import', () => {
+  function deferred<Result>() {
+    let resolve!: (result: Result) => void;
+    const promise = new Promise<Result>((complete) => {
+      resolve = complete;
+    });
+    return { promise, resolve };
+  }
+
   beforeEach(() => {
+    mocks.streamImport.mockReset();
+    mocks.invalidate.mockClear();
     mocks.showToast.mockReset();
     mocks.flags = {};
     mocks.credentials = [];
@@ -646,6 +672,190 @@ describe('BoardAccountsSection — Aurora JSON import', () => {
     });
   });
 
+  it('presents the native host before starting Files and keeps it through preview', async () => {
+    mocks.autoShowModal = false;
+    const selection = deferred<{ canceled: false; assets: { uri: string; size: number }[] }>();
+    const fileContents = deferred<string>();
+    mocks.pickDocument.mockReturnValue(selection.promise);
+    mocks.fileText.mockReturnValue(fileContents.promise);
+    const { container } = render(<BoardAccountsSection />);
+
+    fireEvent.click(button(container, 'aurora.card.import')!);
+    const host = container.querySelector('[data-modal]');
+    expect(host?.textContent).toContain('aurora.mobile.importSelecting');
+    expect(mocks.pickDocument).not.toHaveBeenCalled();
+
+    act(() => mocks.modalOnShow?.());
+    await waitFor(() => expect(mocks.pickDocument).toHaveBeenCalledTimes(1));
+    await act(async () => selection.resolve({ canceled: false, assets: [{ uri: 'file://export.json', size: 128 }] }));
+    expect(host?.textContent).toContain('aurora.mobile.importPreparing');
+    expect(mocks.streamImport).not.toHaveBeenCalled();
+
+    await act(async () => fileContents.resolve('{"user":{"username":"aurora"}}'));
+    expect(container.querySelector('[data-modal]')).toBe(host);
+    expect(host?.textContent).toContain('aurora.import.dialog.previewTitle');
+    expect(button(container, 'aurora.import.dialog.confirm')).not.toBeNull();
+    expect(mocks.streamImport).not.toHaveBeenCalled();
+  });
+
+  it('starts the web chooser from the tap without waiting for onShow', async () => {
+    mocks.platform.OS = 'web';
+    mocks.autoShowModal = false;
+    const { container } = render(<BoardAccountsSection />);
+    fireEvent.click(button(container, 'aurora.card.import')!);
+    await waitFor(() => expect(mocks.pickDocument).toHaveBeenCalledTimes(1));
+    expect(button(container, 'aurora.import.dialog.confirm')).not.toBeNull();
+  });
+
+  it('ignores duplicate import taps and repeated onShow callbacks', async () => {
+    mocks.autoShowModal = false;
+    const selection = deferred<{ canceled: true; assets: null }>();
+    mocks.pickDocument.mockReturnValue(selection.promise);
+    const { container } = render(<BoardAccountsSection />);
+    const importButton = button(container, 'aurora.card.import')!;
+    act(() => {
+      fireEvent.click(importButton);
+      fireEvent.click(importButton);
+    });
+    act(() => {
+      mocks.modalOnShow?.();
+      mocks.modalOnShow?.();
+    });
+    await waitFor(() => expect(mocks.pickDocument).toHaveBeenCalledTimes(1));
+    await act(async () => selection.resolve({ canceled: true, assets: null }));
+    expect(container.querySelector('[data-modal]')).toBeNull();
+    expect(mocks.fileText).not.toHaveBeenCalled();
+    expect(mocks.streamImport).not.toHaveBeenCalled();
+  });
+
+  it('ignores a file read that finishes after Cancel', async () => {
+    const fileContents = deferred<string>();
+    mocks.fileText.mockReturnValue(fileContents.promise);
+    const { container } = render(<BoardAccountsSection />);
+    fireEvent.click(button(container, 'aurora.card.import')!);
+    await waitFor(() => expect(container.textContent).toContain('aurora.mobile.importPreparing'));
+    fireEvent.click(button(container, 'actions.cancel')!);
+    await act(async () => fileContents.resolve('{"user":{"username":"aurora"}}'));
+    expect(container.querySelector('[data-modal]')).toBeNull();
+    expect(mocks.parseAurora).not.toHaveBeenCalled();
+    expect(mocks.streamImport).not.toHaveBeenCalled();
+  });
+
+  it('does not read a late selection after the screen unmounts', async () => {
+    const selection = deferred<{ canceled: false; assets: { uri: string; size: number }[] }>();
+    mocks.pickDocument.mockReturnValue(selection.promise);
+    const { container, unmount } = render(<BoardAccountsSection />);
+    fireEvent.click(button(container, 'aurora.card.import')!);
+    await waitFor(() => expect(mocks.pickDocument).toHaveBeenCalledTimes(1));
+    unmount();
+    await act(async () => selection.resolve({ canceled: false, assets: [{ uri: 'file://export.json', size: 128 }] }));
+    expect(mocks.fileText).not.toHaveBeenCalled();
+  });
+
+  it('shows unreadable-file errors inside the host and retries once on double tap', async () => {
+    mocks.fileText.mockRejectedValueOnce(new Error('native read failed'));
+    const { container } = render(<BoardAccountsSection />);
+    fireEvent.click(button(container, 'aurora.card.import')!);
+    await waitFor(() => expect(container.textContent).toContain('aurora.import.readError'));
+    const host = container.querySelector('[data-modal]');
+    const retryButton = button(container, 'aurora.mobile.importChooseAnother')!;
+    act(() => {
+      fireEvent.click(retryButton);
+      fireEvent.click(retryButton);
+    });
+    await waitFor(() => expect(button(container, 'aurora.import.dialog.confirm')).not.toBeNull());
+    expect(mocks.pickDocument).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[data-modal]')).toBe(host);
+    expect(container.textContent).not.toContain('native read failed');
+    expect(mocks.showToast).not.toHaveBeenCalled();
+  });
+
+  it('shows an oversized file error before reading its contents', async () => {
+    mocks.pickDocument.mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file://huge.json', size: 201 * 1024 * 1024 }],
+    });
+    const { container } = render(<BoardAccountsSection />);
+    fireEvent.click(button(container, 'aurora.card.import')!);
+    await waitFor(() => expect(container.textContent).toContain('aurora.import.tooLarge'));
+    expect(button(container, 'aurora.mobile.importChooseAnother')).not.toBeNull();
+    expect(mocks.fileText).not.toHaveBeenCalled();
+    expect(mocks.streamImport).not.toHaveBeenCalled();
+  });
+
+  it('keeps picker errors visible and lets the climber close them', async () => {
+    mocks.pickDocument.mockRejectedValue(new Error('native picker failed'));
+    const { container } = render(<BoardAccountsSection />);
+    fireEvent.click(button(container, 'aurora.card.import')!);
+    await waitFor(() => expect(container.textContent).toContain('aurora.import.readError'));
+    fireEvent.click(button(container, 'actions.close')!);
+    expect(container.querySelector('[data-modal]')).toBeNull();
+  });
+
+  it('keeps a board mismatch warning beside the preview', async () => {
+    mocks.parseAurora.mockReturnValue({
+      data: { user: { username: 'aurora' }, ascents: [], attempts: [], circuits: [], climbs: [] },
+      preview: { username: 'aurora', ascents: 3, attempts: 2, circuits: 1, climbs: 0 },
+      boardMismatchLayoutName: 'Tension Board',
+    });
+    const { container } = render(<BoardAccountsSection />);
+    fireEvent.click(button(container, 'aurora.card.import')!);
+    await waitFor(() => expect(container.textContent).toContain('aurora.mobile.importBoardWarning'));
+    expect(button(container, 'aurora.import.dialog.confirm')).not.toBeNull();
+    expect(mocks.showToast).not.toHaveBeenCalled();
+  });
+
+  it('shows progress and results in the same host after a single confirmation', async () => {
+    const finished = deferred<void>();
+    let emitEvent!: (event: ImportProgressEvent) => void;
+    mocks.streamImport.mockImplementation((_board: unknown, _export: unknown, onEvent: typeof emitEvent) => {
+      emitEvent = onEvent;
+      return finished.promise;
+    });
+    const { container } = render(<BoardAccountsSection />);
+    fireEvent.click(button(container, 'aurora.card.import')!);
+    await waitFor(() => expect(button(container, 'aurora.import.dialog.confirm')).not.toBeNull());
+    const host = container.querySelector('[data-modal]');
+    const confirmButton = button(container, 'aurora.import.dialog.confirm')!;
+    act(() => {
+      fireEvent.click(confirmButton);
+      fireEvent.click(confirmButton);
+    });
+    expect(mocks.streamImport).toHaveBeenCalledTimes(1);
+    act(() => emitEvent({ type: 'progress', step: 'ascents', current: 1, total: 3 }));
+    expect(host?.textContent).toContain('aurora.import.steps.ascents (1/3)');
+    const results: ImportResult = {
+      ascents: { imported: 3, skipped: 0, failed: 0 },
+      attempts: { imported: 2, skipped: 0, failed: 0 },
+      circuits: { imported: 1, skipped: 0, failed: 0 },
+      climbs: { imported: 0, skipped: 0, failed: 0 },
+      unresolvedClimbs: [],
+      unresolvedAscentClimbs: [],
+      unresolvedAttemptClimbs: [],
+      unresolvedCircuitClimbs: [],
+    };
+    await act(async () => {
+      emitEvent({ type: 'complete', results });
+      finished.resolve();
+    });
+    expect(container.querySelector('[data-modal]')).toBe(host);
+    expect(host?.textContent).toContain('aurora.import.dialog.completeTitle');
+    expect(mocks.invalidate).toHaveBeenCalledWith({ queryKey: ['auroraCredentials', 'unsynced'] });
+    fireEvent.click(button(container, 'actions.done')!);
+    expect(container.querySelector('[data-modal]')).toBeNull();
+  });
+
+  it('shows interrupted-import recovery when the server request fails', async () => {
+    mocks.streamImport.mockRejectedValue(new Error('network lost'));
+    const { container } = render(<BoardAccountsSection />);
+    fireEvent.click(button(container, 'aurora.card.import')!);
+    await waitFor(() => expect(button(container, 'aurora.import.dialog.confirm')).not.toBeNull());
+    fireEvent.click(button(container, 'aurora.import.dialog.confirm')!);
+    await waitFor(() => expect(container.textContent).toContain('aurora.mobile.importInterrupted'));
+    expect(button(container, 'actions.close')).not.toBeNull();
+    expect(button(container, 'aurora.mobile.importChooseAnother')).toBeNull();
+  });
+
   it('says the file is not a JSON export when it is not JSON at all', async () => {
     mocks.platform.OS = 'android';
     mocks.fileText.mockResolvedValue('ProblemId,Grade\n123,6B+');
@@ -654,8 +864,20 @@ describe('BoardAccountsSection — Aurora JSON import', () => {
     fireEvent.click(button(container, 'aurora.card.import')!);
 
     await waitFor(() => {
-      expect(mocks.showToast).toHaveBeenCalledWith('aurora.mobile.importNotJson', 'error');
+      expect(container.textContent).toContain('aurora.mobile.importNotJson');
+      expect(button(container, 'aurora.mobile.importChooseAnother')).not.toBeNull();
     });
+  });
+
+  it('keeps missing-user validation errors inside the dialog', async () => {
+    mocks.parseAurora.mockImplementation(() => {
+      throw new Error('missing_user');
+    });
+    const { container } = render(<BoardAccountsSection />);
+    fireEvent.click(button(container, 'aurora.card.import')!);
+    await waitFor(() => expect(container.textContent).toContain('aurora.mobile.importMissingUser'));
+    expect(button(container, 'aurora.mobile.importChooseAnother')).not.toBeNull();
+    expect(mocks.streamImport).not.toHaveBeenCalled();
   });
 
   it('asks for an Aurora export when the JSON is not one', async () => {
@@ -665,7 +887,8 @@ describe('BoardAccountsSection — Aurora JSON import', () => {
     fireEvent.click(button(container, 'aurora.card.import')!);
 
     await waitFor(() => {
-      expect(mocks.showToast).toHaveBeenCalledWith('aurora.mobile.importMissingUser', 'error');
+      expect(container.textContent).toContain('aurora.mobile.importMissingUser');
+      expect(button(container, 'aurora.mobile.importChooseAnother')).not.toBeNull();
     });
   });
 });

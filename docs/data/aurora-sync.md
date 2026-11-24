@@ -792,6 +792,14 @@ The old Aurora-operated Kilter app stopped working in March 2026. Climbers can i
   credential management is mobile-only.
 - **Mobile UI**: `packages/mobile/src/components/integrations/BoardAccountsSection.tsx`
 
+The mobile Aurora import opens its dialog before presenting the native file picker,
+and starts the picker only after the dialog's `onShow`. The same dialog stays
+visible while reading the file, previewing, importing, and reporting results.
+This avoids presenting a new iOS modal while Files is still dismissing (#8099).
+Read, JSON, and size errors stay inside the dialog with a **Choose another file**
+action; board mismatch warnings stay beside the preview. The browser starts its
+file chooser directly from the tap so it retains user activation.
+
 Web and mobile credential management use backend REST endpoints instead of
 Backend REST routes: `GET/POST/DELETE /api/aurora-credentials` for
 credential state, `GET /api/aurora-credentials/unsynced` for pending local
