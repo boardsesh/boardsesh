@@ -1,8 +1,8 @@
 'use client';
 
 // Gym photo uploader. Downscales client-side to ≤1920px, uploads to the
-// backend's POST /api/gym-photos (multipart, Bearer-authenticated), then
-// persists the returned photo path via updateGym.
+// backend's POST /api/gym-photos (multipart, Bearer-authenticated), which
+// attaches the returned photo to the gym.
 //
 // Unlike the logo uploader next door, every failure lands in an inline
 // <Alert severity="error"> rather than a snackbar: this sits inside a form the
@@ -174,19 +174,27 @@ export default function GymPhotoUploader({ gym, onGymChange }: GymPhotoUploaderP
         return;
       }
 
-      // Persist the backend-relative path verbatim: no deploy domain frozen
-      // into the row. Render sites resolve it via resolveGymPhotoDisplayUrl.
-      // Runtime-checked — an unexpected body must not store undefined.
-      const uploadPayload = (await response.json().catch(() => null)) as { photoUrl?: unknown } | null;
-      const photoUrl = typeof uploadPayload?.photoUrl === 'string' ? uploadPayload.photoUrl : null;
-      if (photoUrl === null) {
+      // The upload commits the attachment. Accept only this gym's matching
+      // saved result; never send a second write after a successful upload.
+      const uploadPayload = (await response.json().catch(() => null)) as {
+        success?: unknown;
+        photoUrl?: unknown;
+        gym?: Gym;
+      } | null;
+      const savedGym = uploadPayload?.gym;
+      if (
+        uploadPayload?.success !== true ||
+        typeof uploadPayload.photoUrl !== 'string' ||
+        !savedGym ||
+        typeof savedGym !== 'object' ||
+        savedGym.uuid !== gym.uuid ||
+        savedGym.imageUrl !== uploadPayload.photoUrl ||
+        typeof savedGym.name !== 'string'
+      ) {
         setErrorText(t('manage.profile.photo.uploadFailed'));
         return;
       }
-      const savedGymData = await updateGymMutation.execute({ input: { gymUuid: gym.uuid, imageUrl: photoUrl } });
-      if (savedGymData) {
-        onGymChange(savedGymData.updateGym);
-      }
+      onGymChange(savedGym);
     } catch (error) {
       console.error('Gym photo upload failed:', error);
       setErrorText(t('manage.profile.photo.uploadFailed'));
@@ -199,25 +207,11 @@ export default function GymPhotoUploader({ gym, onGymChange }: GymPhotoUploaderP
     setErrorText(null);
     setIsRemoving(true);
     try {
-      // Null the column FIRST. An orphaned object is a few hundred KB we can
-      // sweep later; a row still pointing at a deleted object is a broken
-      // image on the public gym page.
+      // The mutation clears the pointer and removes that exact prior object
+      // after commit, without touching a concurrent replacement.
       const clearedGymData = await updateGymMutation.execute({ input: { gymUuid: gym.uuid, imageUrl: null } });
       if (!clearedGymData) return;
       onGymChange(clearedGymData.updateGym);
-
-      const backendBaseUrl = getBackendHttpUrl();
-      if (!backendBaseUrl || !token) return;
-      // Best-effort object cleanup — the photo is already gone from the page,
-      // so a failure here is not the owner's problem.
-      try {
-        await guardedFetch(`${backendBaseUrl}/api/gym-photos?gymUuid=${encodeURIComponent(gym.uuid)}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}`, ...webClientIdentityHeaders() },
-        });
-      } catch (cleanupError) {
-        console.error('Gym photo object cleanup failed:', cleanupError);
-      }
     } finally {
       setIsRemoving(false);
     }

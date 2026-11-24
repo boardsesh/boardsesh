@@ -188,6 +188,9 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.1131.0
         version: 3.1131.0
+      '@better-auth/cimd':
+        specifier: 1.7.17
+        version: 1.7.17(@better-auth/core@1.7.17(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.9.1)(better-call@1.4.5(zod@4.4.3))(jose@6.2.10)(kysely@0.29.8)(nanostores@1.5.5))(@better-auth/oauth-provider@1.7.17(@better-auth/core@1.7.17(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.9.1)(better-call@1.4.5(zod@4.4.3))(jose@6.2.10)(kysely@0.29.8)(nanostores@1.5.5))(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-auth@1.7.17(504de5a0fd7dfb826b16ab1a40f6756e))(better-call@1.4.5(zod@4.4.3)))(better-auth@1.7.17(504de5a0fd7dfb826b16ab1a40f6756e))(better-call@1.4.5(zod@4.4.3))
       '@better-auth/drizzle-adapter':
         specifier: 1.7.17
         version: 1.7.17(@better-auth/core@1.7.17(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.9.1)(better-call@1.4.5(zod@4.4.3))(jose@6.2.10)(kysely@0.29.8)(nanostores@1.5.5))(@better-auth/utils@0.5.1)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(@types/better-sqlite3@9.6.0)(@types/pg@8.23.1)(better-sqlite3@13.2.0)(expo-sqlite@58.0.18(patch_hash=be9798b14b494c7d69bc51f94a06de4826ed7e99694b0c83d5fbd3c27066e2ab)(expo@58.0.26)(react-native@0.88.1(patch_hash=5ba8e0b13c37400bdaf6697e48d0526d632aa6c9233e3e8a67fad9ef29482ae4)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0))(kysely@0.29.8)(pg@8.23.0)(postgres@3.4.9(patch_hash=1c2f0335f127be464a29a2e1a0ab433b2881c5eda2ca8028da5641c6dcc93703)))
@@ -311,6 +314,9 @@ importers:
       '@graphql-tools/schema':
         specifier: ^10.0.38
         version: 10.1.0(graphql@16.14.2)
+      '@modelcontextprotocol/server':
+        specifier: 2.4.0
+        version: 2.4.0
       '@panva/hkdf':
         specifier: ^1.2.1
         version: 1.2.1
@@ -2886,6 +2892,14 @@ packages:
   '@bcoe/v8-coverage@1.0.2':
     resolution: {integrity: sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA==}
     engines: {node: '>=18'}
+
+  '@better-auth/cimd@1.7.17':
+    resolution: {integrity: sha512-xMRuw37IPfrUyMoeaZ5txHXRdwM4njRbu+5hWFk5t30kXKXtX2cI7dk5svh0cvKQRXxLqwPf9dPC12CHsYu1pQ==}
+    peerDependencies:
+      '@better-auth/core': ^1.7.17
+      '@better-auth/oauth-provider': ^1.7.17
+      better-auth: ^1.7.17
+      better-call: 1.4.5
 
   '@better-auth/core@1.7.17':
     resolution: {integrity: sha512-GB3OtOjNfeOKxKOQByXLdj3CNNDbZ65HdbfHSZhoLI6VzlURlb2VXMFnf05NE8fhDoytXY+zlbqTcwaWKTS7/g==}
@@ -13164,6 +13178,13 @@ snapshots:
       - supports-color
 
   '@bcoe/v8-coverage@1.0.2': {}
+
+  '@better-auth/cimd@1.7.17(@better-auth/core@1.7.17(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.9.1)(better-call@1.4.5(zod@4.4.3))(jose@6.2.10)(kysely@0.29.8)(nanostores@1.5.5))(@better-auth/oauth-provider@1.7.17(@better-auth/core@1.7.17(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.9.1)(better-call@1.4.5(zod@4.4.3))(jose@6.2.10)(kysely@0.29.8)(nanostores@1.5.5))(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-auth@1.7.17(504de5a0fd7dfb826b16ab1a40f6756e))(better-call@1.4.5(zod@4.4.3)))(better-auth@1.7.17(504de5a0fd7dfb826b16ab1a40f6756e))(better-call@1.4.5(zod@4.4.3))':
+    dependencies:
+      '@better-auth/core': 1.7.17(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.9.1)(better-call@1.4.5(zod@4.4.3))(jose@6.2.10)(kysely@0.29.8)(nanostores@1.5.5)
+      '@better-auth/oauth-provider': 1.7.17(@better-auth/core@1.7.17(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.9.1)(better-call@1.4.5(zod@4.4.3))(jose@6.2.10)(kysely@0.29.8)(nanostores@1.5.5))(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-auth@1.7.17(504de5a0fd7dfb826b16ab1a40f6756e))(better-call@1.4.5(zod@4.4.3))
+      better-auth: 1.7.17(504de5a0fd7dfb826b16ab1a40f6756e)
+      better-call: 1.4.5(zod@4.4.3)
 
   '@better-auth/core@1.7.17(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.9.1)(better-call@1.4.5(zod@4.4.3))(jose@6.2.10)(kysely@0.29.8)(nanostores@1.5.5)':
     dependencies:

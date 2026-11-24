@@ -104,7 +104,7 @@ Objects are reached through the backend's `/static/*` routes, which stream them 
 
 All four accept `?size=N` for `N` in `ALLOWED_IMAGE_SIZES` (`packages/shared-schema/src/image-sizes.ts`). When the media bucket has a public base URL, these routes redirect to its CDN, with sized requests addressing `<baseKey>@<size>.jpg`. The bucket cannot resize on demand.
 
-New Instagram and TikTok thumbnails write the shared `BETA_THUMBNAIL_REQUEST_SIZE` (280px) variant before the original and before returning a URL for the feed. Avatars and gym images write every allowed size on each upload; their `?v=` parameter prevents stale images after replacement. Without a public base URL, the backend proxies images and resizes on demand, caching variants only for immutable beta thumbnails.
+New Instagram and TikTok thumbnails write the shared `BETA_THUMBNAIL_REQUEST_SIZE` (280px) variant before the original and before returning a URL for the feed. Avatars and gym images write every allowed size on each upload. Avatars use `?v=` to prevent stale images after replacement. New gym images use distinct `<gymUuid>.<uploadUuid>.<ext>` keys; the web upload request also commits the gym's image reference and returns the saved gym. A failed attachment discards its new object. Changing or clearing the reference removes the previous managed original and variants after commit, including legacy `<gymUuid>.<ext>?v=…` uploads. Without a public base URL, the backend proxies images and resizes on demand, caching variants only for immutable beta thumbnails.
 
 ### Empty image objects
 
@@ -194,7 +194,7 @@ Three things about this path are deliberate:
 
 `vp run storage:migrate-user-media` (`scripts/migrate-user-media.ts`) copies the retired Railway bucket into the two R2 buckets. It is re-runnable: the plan skips any destination object already present at the same byte size, so a second pass moves only the delta — plus the ~182 objects under a **mutable** prefix, which are always recopied.
 
-A prefix is mutable when its objects can be rewritten at the same key: `avatars/`, `gym-logos/`, `gym-photos/` (overwritten on re-upload) and `user-data-exports/` (rewritten within its own ISO week). A listing carries no checksum, so for those a matching size does not prove matching content — a rewrite that lands on the same byte length between the bulk copy and the sweep would otherwise be skipped as already-done and would pass verification too, leaving the stale copy live. Beta thumbnails and OCR submissions are keyed by media id and timestamp respectively, so they stay on the cheap skip-by-size path, which is where the 50,719-object saving actually is.
+A prefix is mutable when its objects can be rewritten at the same key: `avatars/`, legacy keys in `gym-logos/` and `gym-photos/`, and `user-data-exports/` (rewritten within its own ISO week). The migration still treats both gym prefixes conservatively as mutable even though new gym uploads have unique keys. A listing carries no checksum, so for those a matching size does not prove matching content — a rewrite that lands on the same byte length between the bulk copy and the sweep would otherwise be skipped as already-done and would pass verification too, leaving the stale copy live. Beta thumbnails and OCR submissions are keyed by media id and timestamp respectively, so they stay on the cheap skip-by-size path, which is where the 50,719-object saving actually is.
 
 Credentials come from three prefixes — `LEGACY_*` for the Railway bucket (path-style), plus `MEDIA_*` and `PRIVATE_*`.
 

@@ -44,10 +44,19 @@ import { themeTokens } from '@/app/theme/theme-config';
 import GymWelcomeCard from './gym-welcome-card';
 import EmbedCodeDialog, { type EmbedCodeDialogState } from './embed-code-dialog';
 import { buildLeaderboardEmbedSnippet } from './embed-snippets';
+import GymAiAssistantsCard from './gym-ai-assistants-card';
 
 type QuickLinkTab = 'kiosks' | 'branding' | 'boards' | 'members' | 'insights' | 'profile';
 
-export default function OverviewTab({ gym }: { gym: Gym }) {
+export default function OverviewTab({
+  gym,
+  aiAssistantsAvailable = false,
+  aiAssistantsInvitationRequired = false,
+}: {
+  gym: Gym;
+  aiAssistantsAvailable?: boolean;
+  aiAssistantsInvitationRequired?: boolean;
+}) {
   const { t } = useTranslation('kiosk');
   const { token } = useWsAuthToken();
   const { data: session } = useSession();
@@ -129,6 +138,8 @@ export default function OverviewTab({ gym }: { gym: Gym }) {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
       <GymWelcomeCard gym={gym} />
+
+      {aiAssistantsAvailable && <GymAiAssistantsCard invitationRequired={aiAssistantsInvitationRequired} />}
 
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
         {logoDisplayUrl && (

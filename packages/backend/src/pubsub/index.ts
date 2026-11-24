@@ -22,6 +22,7 @@ import {
   type StoredBoardClear,
 } from './board-presence-store';
 import { logger } from '../utils/logger';
+import { queueDatabaseEffect } from '../db/client';
 
 // Board-presence gate/commit types live with their implementation in
 // board-presence-store.ts; re-exported here so consumers keep importing them
@@ -496,6 +497,7 @@ class PubSub {
    * Dispatches locally first, then publishes to Redis for other instances.
    */
   publishNotificationEvent(userId: string, event: NotificationEvent): void {
+    if (queueDatabaseEffect(() => this.publishNotificationEvent(userId, event))) return;
     this.notificationChannel.publish(userId, event);
   }
 
@@ -524,6 +526,7 @@ class PubSub {
    * Dispatches locally first, then publishes to Redis for other instances.
    */
   publishCommentEvent(entityKey: string, event: CommentEvent): void {
+    if (queueDatabaseEffect(() => this.publishCommentEvent(entityKey, event))) return;
     this.commentChannel.publish(entityKey, event);
   }
 
@@ -588,6 +591,7 @@ class PubSub {
    * readable board + isPublic session) — the channel itself is gate-free.
    */
   publishBoardQueuePreview(boardId: string, preview: BoardQueuePreview): void {
+    if (queueDatabaseEffect(() => this.publishBoardQueuePreview(boardId, preview))) return;
     this.boardQueueChannel.publish(boardId, preview);
   }
 

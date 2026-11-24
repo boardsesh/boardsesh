@@ -8,7 +8,7 @@ import { db } from '../db/client';
 import { userCanEditGym } from '../graphql/resolvers/social/gyms';
 import { isS3Configured, deleteGymPhotosFromS3 } from '../storage/s3';
 import { logger } from '../utils/logger';
-import { buildStaticGymPhotoUrl } from '../lib/gym-photo-url';
+import { removeVersionedGymImage } from '../services/gym-image-storage';
 import {
   createGymImageUploadHandler,
   deleteExistingLocalImages,
@@ -26,16 +26,11 @@ const GYM_PHOTOS_DIR = './gym-photos';
 
 /** Exported so a test can pin the size cap to the one shared constant. */
 export const GYM_PHOTO_UPLOAD_CONFIG: GymImageUploadConfig = {
+  kind: 'photo',
   fileFieldName: 'photo',
   storagePrefix: 'gym-photos',
-  localDir: GYM_PHOTOS_DIR,
   maxFileSizeBytes: GYM_PHOTO_MAX_UPLOAD_BYTES,
   responseUrlKey: 'photoUrl',
-  buildStaticUrl: buildStaticGymPhotoUrl,
-  // Called through, not captured: binding the import here would freeze the
-  // module-init reference and make a later vi.spyOn on the storage module a
-  // no-op for this handler.
-  deleteStaleObjectsFromS3: (gymUuid, keepExt) => deleteGymPhotosFromS3(gymUuid, keepExt),
   messages: {
     notConfigured: 'Gym photo uploads are not configured. Please contact the administrator.',
     saveFailed: 'Failed to save gym photo',
@@ -104,40 +99,36 @@ export async function handleGymPhotoDelete(req: IncomingMessage, res: ServerResp
     return;
   }
 
+  let previousPhotoUrl: string | null = null;
   try {
-    const [gym] = await db
-      .select()
-      .from(dbSchema.gyms)
-      .where(and(eq(dbSchema.gyms.uuid, gymUuid), isNull(dbSchema.gyms.deletedAt)))
-      .limit(1);
-
-    if (!gym) {
+    const removal = await db.transaction(async (transaction) => {
+      const [gym] = await transaction
+        .select()
+        .from(dbSchema.gyms)
+        .where(and(eq(dbSchema.gyms.uuid, gymUuid), isNull(dbSchema.gyms.deletedAt)))
+        .limit(1)
+        .for('update');
+      if (!gym) return { outcome: 'not_found' as const };
+      if (!(await userCanEditGym(gym, authResult.userId, transaction))) return { outcome: 'forbidden' as const };
+      await transaction
+        .update(dbSchema.gyms)
+        .set({ imageUrl: null, updatedAt: new Date() })
+        .where(eq(dbSchema.gyms.id, gym.id));
+      return { outcome: 'removed' as const, photoUrl: gym.imageUrl };
+    });
+    if (removal.outcome === 'not_found') {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Gym not found' }));
       return;
     }
-
-    const canEdit = await userCanEditGym(gym, authResult.userId);
-    if (!canEdit) {
+    if (removal.outcome === 'forbidden') {
       res.writeHead(403, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'You do not have permission to edit this gym' }));
       return;
     }
-  } catch (authzErr) {
-    logger.error('Failed to authorize gym photo delete:', authzErr);
-    res.writeHead(500, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Failed to authorize gym photo delete' }));
-    return;
-  }
-
-  // Clear the column before touching storage, and fail the request if it
-  // doesn't land — deleting the object while the row still references it is
-  // the one outcome worth returning an error for.
-  try {
-    await db
-      .update(dbSchema.gyms)
-      .set({ imageUrl: null, updatedAt: new Date() })
-      .where(eq(dbSchema.gyms.uuid, gymUuid));
+    // The current URL and its clear share a row lock. A concurrent replacement
+    // cannot leave the object actually removed here publicly retrievable.
+    previousPhotoUrl = removal.photoUrl;
   } catch (clearErr) {
     logger.error('Failed to clear gym photo URL:', clearErr);
     res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -148,6 +139,7 @@ export async function handleGymPhotoDelete(req: IncomingMessage, res: ServerResp
   // No keepExt — every extension goes. Best-effort from here: the photo is
   // already gone from every surface, so a storage failure leaves nothing worse
   // than an unreferenced object.
+  await removeVersionedGymImage(gymUuid, 'photo', previousPhotoUrl);
   if (isS3Configured()) {
     await deleteGymPhotosFromS3(gymUuid);
   } else {

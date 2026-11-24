@@ -6,7 +6,6 @@ import { normalizeReportNote, resolutionNoteProblem } from '@boardsesh/directory
 import { db } from '../../../../db/client';
 import { logger } from '../../../../utils/logger';
 import { isDirectoryReportsEnabled } from '../../../../services/directory-reports-flag';
-import { canAccessResource } from '../../../../services/privacy';
 import {
   AdminBoardSetupChangesArgsSchema,
   AdminDirectoryReportsArgsSchema,
@@ -19,19 +18,17 @@ import {
 import { applyRateLimit, requireAuthenticated, validateInput } from '../../shared/helpers';
 import { getUserCommunityRoles, requireAdmin } from '../roles';
 import { enrichBoard } from '../boards';
-import { isSystemOwner, loadBoardFacts, loadGymFacts, WAITING_STATUSES } from './core';
+import { isSystemOwner, loadGymFacts, WAITING_STATUSES } from './core';
 import { transactionWithAfterCommit } from '../../../../db/after-commit';
 import { notInAdminQueue, resolveWaitingReports } from './lifecycle';
 import {
   adminReportsPage,
   boardReportsFor,
-  loadReportViewer,
   presentReports,
-  reportGymId,
   reportsToReviewFor,
   viewerCanResolve,
   isInAdminQueue,
-  viewerRoleFor,
+  loadReportResolutionAuthority,
 } from './read';
 import { fileReport, prepareBoardReport, prepareGymReport, type FiledReport } from './submit';
 import { adminSetupChangesPage, undoClimberSetupChange } from './setup-changes';
@@ -192,24 +189,9 @@ export const directoryReportMutations = {
       .where(eq(dbSchema.directoryReports.uuid, validated.reportUuid))
       .limit(1);
     if (!report) throw reportNotFound();
-    const gymId = reportGymId(report);
-    const viewer = await loadReportViewer(
-      userId,
-      await getUserCommunityRoles(userId),
-      db,
-      gymId != null ? [gymId] : [],
-    );
-    const board = report.boardId != null ? (await loadBoardFacts([report.boardId])).get(report.boardId) : undefined;
-    const role = viewerRoleFor(report, board, viewer);
-    if (!role) throw reportNotFound();
-    // Staff act on a board report only while they can read the board.
-    if (
-      role === 'gym_staff' &&
-      report.targetKind === 'board' &&
-      (!board || board.deletedAt !== null || !(await canAccessResource('board', board.uuid, userId)))
-    ) {
-      throw reportNotFound();
-    }
+    const authority = await loadReportResolutionAuthority(report, userId);
+    if (!authority) throw reportNotFound();
+    const { viewer, board, role } = authority;
     if (!(WAITING_STATUSES as readonly string[]).includes(report.status)) throw reportClosed();
     if (!viewerCanResolve(report, role, viewer)) throw cannotResolve(report);
     if (validated.outcome !== 'kept' && !viewer.isAdmin) {

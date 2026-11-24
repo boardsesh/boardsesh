@@ -69,7 +69,10 @@
       "other": "Autre accès : {{scope}}",
       "workoutsRead": "Lire les résultats des séances prévues par cette application",
       "workoutsWrite": "Prévoir et annuler tes séances",
-      "sessionsRead": "Lire tes séances terminées, tes notes de bilan privées et tes entraînements complets, y compris ceux d’autres applications"
+      "sessionsRead": "Lire tes séances terminées, tes notes de bilan privées et tes entraînements complets, y compris ceux d’autres applications",
+      "gymsRead": "Lire les salles que tu peux gérer, leurs boards, leurs membres et leurs rapports d’activité",
+      "gymsWrite": "Modifier tes salles, boards, écrans et discussions selon tes autorisations actuelles",
+      "gymsAccessWrite": "Modifier les accès de l’équipe là où ton rôle actuel le permet"
     },
     "cannot": "Elle ne peut rien modifier dans ton compte et ne voit jamais ton mot de passe.",
     "notReviewed": "Boardsesh n'a pas vérifié cette app. Ne connecte que des apps de confiance.",
@@ -122,6 +125,8 @@
       "title": "Ça n'a pas marché",
       "body": "Rien n'a été partagé. Réessaie, ou retourne dans l'app et connecte-la à nouveau."
     },
-    "tryAgain": "Réessayer"
+    "tryAgain": "Réessayer",
+    "gymAccess": "L’accès couvre toutes les salles que tu peux gérer maintenant et celles que tu géreras plus tard. Perdre un rôle retire cet accès.",
+    "clientIdentity": "Identité du client : {{host}}"
   }
 }

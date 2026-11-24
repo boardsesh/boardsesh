@@ -606,7 +606,7 @@
     "partnerApps": {
       "title": "Apps mit Zugriff",
       "empty": "Noch keine Apps verbunden. Apps, die du mit deinem Boardsesh-Konto verbindest, erscheinen hier.",
-      "footer": "Eine getrennte App liest nichts Neues mehr. Was sie schon kopiert hat, bleibt bei ihr.",
+      "footer": "Wenn du eine App trennst, endet ihr Zugriff. Bereits kopierte Informationen bleiben bei der App.",
       "gone": "Diese App ist nicht mehr verbunden.",
       "loadFailed": "Diese App konnte nicht geladen werden. Prüf deine Verbindung und versuch es noch mal.",
       "retry": "Erneut versuchen",
@@ -617,7 +617,7 @@
       "lastUsed": "Zuletzt genutzt {{time}}",
       "lastUsedRecently": "In der letzten Stunde genutzt",
       "notUsedYet": "Noch nicht genutzt",
-      "suspended": "Boardsesh hat diese App pausiert. Sie kann gerade nichts lesen.",
+      "suspended": "Boardsesh hat diese App pausiert. Sie kann gerade nicht auf dein Konto zugreifen.",
       "suspendedShort": "Von Boardsesh pausiert",
       "scopes": {
         "logbookRead": "Sieht jeden Eintrag in deinem Routenbuch, auf jedem Board",
@@ -629,7 +629,11 @@
         "other": "Weiterer Zugriff: {{scope}}",
         "workoutsRead": "Ergebnisse der von dieser App geplanten Trainings lesen",
         "workoutsWrite": "Trainings für dich planen und absagen",
-        "sessionsRead": "Liest deine abgeschlossenen Sessions, privaten Rückblicknotizen und vollständigen Workouts, auch Workouts aus anderen Apps"
+        "sessionsRead": "Liest deine abgeschlossenen Sessions, privaten Rückblicknotizen und vollständigen Workouts, auch Workouts aus anderen Apps",
+        "gymsRead": "Die Hallen lesen, die du verwalten kannst, samt Boards, Mitgliedern und Aktivitätsberichten",
+        "gymsWrite": "Deine Hallen, Boards, Bildschirme und Diskussionen im Rahmen deiner aktuellen Rechte ändern",
+        "gymsAccessWrite": "Teamzugriffe ändern, soweit deine aktuelle Rolle es erlaubt",
+        "gymAccess": "Der Zugriff umfasst alle Hallen, die du jetzt oder später verwalten kannst. Verlierst du eine Rolle, endet dieser Zugriff."
       },
       "disconnect": "Trennen",
       "disconnectA11y": "{{app}} trennen",

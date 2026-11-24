@@ -579,7 +579,11 @@ test('registered browser JavaScript reads real 401 and 429 replies; an unregiste
     expect(unauthorized.status).toBe(401);
     expect(unauthorized.body).toMatchObject({ error: 'invalid_token' });
     expect(unauthorized.authenticate).toContain('invalid_token');
-    // The only 60/minute bucket we fill belongs to this run's newly registered client.
+    // The only bucket we fill belongs to this run's newly registered client.
+    // Redis uses fixed minute buckets. WebKit can cross a minute boundary while
+    // sending the burst, so allow enough requests to fill either of two buckets.
+    const requestsPerMinute = 60;
+    const maximumAttempts = requestsPerMinute * 2 + 1;
     const fields = {
       grant_type: 'authorization_code',
       client_id: fixture.client.client_id,
@@ -589,7 +593,7 @@ test('registered browser JavaScript reads real 401 and 429 replies; an unregiste
       resource: RESOURCE,
     };
     let limited: Awaited<ReturnType<typeof browserToken>> | undefined;
-    for (let attempt = 0; attempt < 61; attempt += 1) {
+    for (let attempt = 0; attempt < maximumAttempts; attempt += 1) {
       const reply = await browserToken(fixture.climber, fixture.server, fields);
       if (reply.status === 429) {
         limited = reply;
@@ -601,7 +605,7 @@ test('registered browser JavaScript reads real 401 and 429 replies; an unregiste
     expect(limited?.status).toBe(429);
     expect(limited?.body).toMatchObject({ error: 'rate_limited' });
     expect(Number(limited?.retryAfter)).toBeGreaterThan(0);
-    expect(limited?.limit).toBeTruthy();
+    expect(limited?.limit).toBe(String(requestsPerMinute));
     expect(limited?.remaining).toBe('0');
     const preflight = await fixture.appFetch(`${RESOURCE}/me`, {
       method: 'OPTIONS',

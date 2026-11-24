@@ -89,6 +89,28 @@ async function renderReady(detailsBody = details()) {
 }
 
 describe('PartnerConsentContent', () => {
+  it('explains current and future gym access and distinguishes writing from read-only access', async () => {
+    await renderReady(
+      details({
+        client: { ...details().client, identifierHost: 'claude.ai', serverManaged: true },
+        scopes: [
+          { scope: 'gyms:read', includesOnlyMeTicks: false },
+          { scope: 'gyms:write', includesOnlyMeTicks: false },
+          { scope: 'gyms:access:write', includesOnlyMeTicks: false },
+        ],
+      }),
+    );
+    expect(screen.getByText('Client identity: claude.ai')).toBeTruthy();
+    expect(screen.getByText(/Access covers every gym you can manage now and any you manage later/)).toBeTruthy();
+    expect(screen.getByText('Change staff access where your current role allows it')).toBeTruthy();
+    expect(screen.queryByText("It can't change anything in your account, and it never sees your password.")).toBeNull();
+  });
+
+  it('keeps a read-only gym connection explicitly read-only', async () => {
+    await renderReady(details({ scopes: [{ scope: 'gyms:read', includesOnlyMeTicks: false }] }));
+    expect(screen.getByText("It can't change anything in your account, and it never sees your password.")).toBeTruthy();
+    expect(screen.getByText(/Access covers every gym you can manage now/)).toBeTruthy();
+  });
   it('shows what the app gets, in plain words, and who is signed in', async () => {
     const heading = await renderReady();
     expect(heading.textContent).toBe('Connect Sequence to your Boardsesh account?');

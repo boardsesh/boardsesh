@@ -606,7 +606,7 @@
     "partnerApps": {
       "title": "Apps avec accès",
       "empty": "Aucune app connectée pour l’instant. Les apps que tu connectes à ton compte Boardsesh apparaissent ici.",
-      "footer": "Une app déconnectée ne lit plus rien de nouveau. Ce qu’elle a déjà copié reste chez elle.",
+      "footer": "Déconnecter une application arrête son accès. Ce qu’elle a déjà copié reste chez elle.",
       "gone": "Cette app n’est plus connectée.",
       "loadFailed": "Impossible de charger cette app. Vérifie ta connexion et réessaie.",
       "retry": "Réessayer",
@@ -617,7 +617,7 @@
       "lastUsed": "Dernière utilisation {{time}}",
       "lastUsedRecently": "Utilisée dans la dernière heure",
       "notUsedYet": "Pas encore utilisée",
-      "suspended": "Boardsesh a mis cette app en pause. Elle ne peut rien lire pour l’instant.",
+      "suspended": "Boardsesh a mis cette application en pause. Elle ne peut pas accéder à ton compte pour le moment.",
       "suspendedShort": "Mise en pause par Boardsesh",
       "scopes": {
         "logbookRead": "Voit toutes les entrées de ton carnet, sur toutes les boards",
@@ -629,7 +629,11 @@
         "other": "Autre accès : {{scope}}",
         "workoutsRead": "Lire les résultats des séances prévues par cette application",
         "workoutsWrite": "Prévoir et annuler tes séances",
-        "sessionsRead": "Lit tes séances terminées, tes notes de bilan privées et tes entraînements complets, y compris ceux d’autres applications"
+        "sessionsRead": "Lit tes séances terminées, tes notes de bilan privées et tes entraînements complets, y compris ceux d’autres applications",
+        "gymsRead": "Lire les salles que tu peux gérer, leurs boards, leurs membres et leurs rapports d’activité",
+        "gymsWrite": "Modifier tes salles, boards, écrans et discussions selon tes autorisations actuelles",
+        "gymsAccessWrite": "Modifier les accès de l’équipe là où ton rôle actuel le permet",
+        "gymAccess": "L’accès couvre toutes les salles que tu peux gérer maintenant et celles que tu géreras plus tard. Perdre un rôle retire cet accès."
       },
       "disconnect": "Déconnecter",
       "disconnectA11y": "Déconnecter {{app}}",

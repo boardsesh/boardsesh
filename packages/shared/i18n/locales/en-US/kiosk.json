@@ -461,6 +461,19 @@
     "comments": {
       "intro": "Reply to your gym's comment thread without leaving the console.",
       "heading": "What your crew's saying"
+    },
+    "aiAssistants": {
+      "title": "AI assistants",
+      "body": "Manage your gyms with ChatGPT or Claude. Connect your Boardsesh account once.",
+      "connect": "Connect an assistant",
+      "connections": "Manage connections",
+      "checking": "Checking assistant connections…",
+      "connected": "An assistant is connected",
+      "paused": "Assistant access is paused",
+      "notConnected": "No assistant connected yet",
+      "statusUnavailable": "Check your connections in Settings",
+      "pilotBody": "Assistant connections are in an invitation-only pilot. Wait for a Boardsesh invitation before starting sign-in.",
+      "pilotDetails": "Read pilot access details"
     }
   },
   "branding": {

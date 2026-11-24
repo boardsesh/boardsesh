@@ -103,6 +103,9 @@ const SCOPE_ORDER = [
   'profile:read',
   'workouts:write',
   'workouts:read',
+  'gyms:read',
+  'gyms:write',
+  'gyms:access:write',
   'offline_access',
 ];
 
@@ -149,6 +152,16 @@ export function describeConnectedAppScope(scope: string, t: ConnectedAppsTransla
       return { scope, label: t('settings:integrations.partnerApps.scopes.workoutsRead'), notes: [] };
     case 'workouts:write':
       return { scope, label: t('settings:integrations.partnerApps.scopes.workoutsWrite'), notes: [] };
+    case 'gyms:read':
+      return {
+        scope,
+        label: t('settings:integrations.partnerApps.scopes.gymsRead'),
+        notes: [t('settings:integrations.partnerApps.scopes.gymAccess')],
+      };
+    case 'gyms:write':
+      return { scope, label: t('settings:integrations.partnerApps.scopes.gymsWrite'), notes: [] };
+    case 'gyms:access:write':
+      return { scope, label: t('settings:integrations.partnerApps.scopes.gymsAccessWrite'), notes: [] };
     default:
       return { scope, label: t('settings:integrations.partnerApps.scopes.other', { scope }), notes: [] };
   }

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const control = vi.hoisted(() => ({
   token: vi.fn(),
   query: vi.fn(),
+  mcpAvailable: vi.fn(),
   redirect: vi.fn((destination: string): never => {
     throw new Error(`REDIRECT:${destination}`);
   }),
@@ -28,6 +29,7 @@ vi.mock('@/app/components/providers/i18n-provider', () => ({ default: 'test-i18n
 vi.mock('../manage-gym-content', () => ({ default: 'manage-gym-content' }));
 vi.mock('../manage-no-access', () => ({ default: 'manage-no-access' }));
 vi.mock('@/app/lib/directory-reports/directory-reports-flag', () => ({ isDirectoryReportsEnabled: async () => true }));
+vi.mock('@/app/lib/gym-mcp/availability.server', () => ({ getGymMcpAvailability: control.mcpAvailable }));
 import { GET_GYM_PENDING_CLAIM } from '@boardsesh/graphql/operations';
 import ManageGymPage, { generateMetadata } from '../page';
 
@@ -45,9 +47,18 @@ beforeEach(() => {
   vi.clearAllMocks();
   control.token.mockResolvedValue('editor-token');
   control.query.mockResolvedValue({ gymBySlug: privateGym });
+  control.mcpAvailable.mockResolvedValue({ enabled: false, invitationRequired: false });
 });
 
 describe('gym management page and the signed-in editor', () => {
+  it('uses backend rollout state to expose assistant setup', async () => {
+    const disabledPage = await ManageGymPage(props());
+    expect(disabledPage.props.children.props.aiAssistantsAvailable).toBe(false);
+    control.mcpAvailable.mockResolvedValue({ enabled: true, invitationRequired: true });
+    const enabledPage = await ManageGymPage(props());
+    expect(enabledPage.props.children.props.aiAssistantsAvailable).toBe(true);
+    expect(enabledPage.props.children.props.aiAssistantsInvitationRequired).toBe(true);
+  });
   it('renders the editor view and hides a private gym from non-editors', async () => {
     const page = await ManageGymPage(props());
     expect(page.props.children.type).toBe('manage-gym-content');

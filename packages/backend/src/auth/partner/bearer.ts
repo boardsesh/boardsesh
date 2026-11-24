@@ -1,5 +1,12 @@
 import { eq } from 'drizzle-orm';
-import { oauthAccessToken, oauthClient, oauthConnections, oauthGrants, oauthSession } from '@boardsesh/db/schema/auth';
+import {
+  oauthAccessToken,
+  oauthClient,
+  oauthConnections,
+  oauthGrants,
+  oauthSession,
+  oauthMcpClientPolicy,
+} from '@boardsesh/db/schema/auth';
 import type { PartnerDatabase } from './tables';
 
 /**
@@ -54,6 +61,7 @@ type PartnerBearerRow = {
   connectionRevokedAt: Date | null;
   connectionLastUsedAt: Date | null;
   clientDisabled: boolean | null;
+  mcpPolicySuspendedAt?: Date | null;
 };
 
 /**
@@ -73,7 +81,7 @@ export function judgePartnerBearer(
   if (row.revoked !== null) return { refusal: 'revoked' };
   if (row.confirmation !== null && row.confirmation !== undefined) return { refusal: 'sender_constrained' };
   if (!row.resources?.includes(resource)) return { refusal: 'wrong_audience' };
-  if (row.clientDisabled === true) return { refusal: 'client_disabled' };
+  if (row.clientDisabled === true || row.mcpPolicySuspendedAt) return { refusal: 'client_disabled' };
   if (row.sessionId !== null && (row.sessionExpiresAt === null || row.sessionExpiresAt.getTime() <= now.getTime())) {
     return { refusal: 'session_ended' };
   }
@@ -123,11 +131,13 @@ export async function findPartnerApiPrincipal(
       connectionRevokedAt: oauthConnections.revokedAt,
       connectionLastUsedAt: oauthConnections.lastUsedAt,
       clientDisabled: oauthClient.disabled,
+      mcpPolicySuspendedAt: oauthMcpClientPolicy.suspendedAt,
     })
     .from(oauthAccessToken)
     .innerJoin(oauthGrants, eq(oauthGrants.authorizationCodeId, oauthAccessToken.authorizationCodeId))
     .innerJoin(oauthConnections, eq(oauthConnections.id, oauthGrants.connectionId))
     .innerJoin(oauthClient, eq(oauthClient.clientId, oauthAccessToken.clientId))
+    .leftJoin(oauthMcpClientPolicy, eq(oauthMcpClientPolicy.clientId, oauthAccessToken.clientId))
     .leftJoin(oauthSession, eq(oauthSession.id, oauthAccessToken.sessionId))
     .where(eq(oauthAccessToken.token, accessTokenHash))
     .limit(1);

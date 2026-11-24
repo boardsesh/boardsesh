@@ -69,7 +69,10 @@
       "other": "Otro acceso: {{scope}}",
       "workoutsRead": "Leer los resultados de los entrenamientos de esta app",
       "workoutsWrite": "Planificar y cancelar tus entrenamientos",
-      "sessionsRead": "Leer tus sesiones completadas, notas privadas del resumen y entrenamientos completos, incluidos los de otras aplicaciones"
+      "sessionsRead": "Leer tus sesiones completadas, notas privadas del resumen y entrenamientos completos, incluidos los de otras aplicaciones",
+      "gymsRead": "Leer los rocódromos que puedes gestionar, incluidos sus plafones, miembros e informes de actividad",
+      "gymsWrite": "Actualizar tus rocódromos, plafones, pantallas y conversaciones según tus permisos actuales",
+      "gymsAccessWrite": "Cambiar el acceso del personal donde tu rol actual lo permita"
     },
     "cannot": "No puede cambiar nada de tu cuenta y nunca ve tu contraseña.",
     "notReviewed": "Boardsesh no ha revisado esta app. Conecta solo apps de confianza.",
@@ -122,6 +125,8 @@
       "title": "Algo no ha funcionado",
       "body": "No se ha compartido nada. Inténtalo de nuevo, o vuelve a la app y conéctala otra vez."
     },
-    "tryAgain": "Reintentar"
+    "tryAgain": "Reintentar",
+    "gymAccess": "El acceso incluye todos los rocódromos que puedes gestionar ahora y los que gestiones más adelante. Si pierdes un rol, pierdes ese acceso.",
+    "clientIdentity": "Identidad del cliente: {{host}}"
   }
 }

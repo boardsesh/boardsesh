@@ -1,5 +1,5 @@
 import { logger } from '../utils/logger';
-import { db } from './client';
+import { db, queueDatabaseEffect } from './client';
 
 // ============================================
 // Effects that wait for the commit
@@ -36,6 +36,7 @@ export async function transactionWithAfterCommit<T>(
     return work(tx);
   }, config);
   for (const effect of effects) {
+    if (queueDatabaseEffect(effect)) continue;
     try {
       effect();
     } catch (error) {
@@ -64,6 +65,7 @@ export function afterCommit(executor: object, effect: AfterCommitEffect): void {
     effects.push(effect);
     return;
   }
+  if (queueDatabaseEffect(effect)) return;
   if (executor !== db && !warnedAboutUnscopedTransaction) {
     warnedAboutUnscopedTransaction = true;
     logger.warn(

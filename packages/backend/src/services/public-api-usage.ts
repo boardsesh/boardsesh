@@ -9,12 +9,13 @@ const LATENCY_BOUNDS_MS = [10, 25, 50, 100, 250, 500, 1000, 2000, 5000, 10_000, 
 
 interface UsageBucket {
   clientId: string;
-  surface: 'api' | 'oauth';
+  surface: 'api' | 'oauth' | 'mcp';
   requests: number;
   clientErrors: number;
   serverErrors: number;
   rateLimited: number;
   connectionCapRefusals: number;
+  pendingAuthAddressRefusals: number;
   latency: number[];
 }
 
@@ -26,7 +27,13 @@ const ALERT_COOLDOWN_MS = 15 * 60_000;
 function bucketFor(clientId: string | undefined, surface: UsageBucket['surface']): UsageBucket {
   const identity = clientId ?? '(unauthenticated)';
   const candidateKey = `${surface}:${identity}`;
-  const key = buckets.has(candidateKey) || buckets.size < MAX_BUCKETS ? candidateKey : `${surface}:${OVERFLOW}`;
+  // Preserve one fixed anonymous MCP bucket even when dynamic app cardinality
+  // is full, so pre-auth admission counters never acquire another attribution.
+  const reservedAnonymousMcp = clientId === undefined && surface === 'mcp';
+  const key =
+    buckets.has(candidateKey) || buckets.size < MAX_BUCKETS || reservedAnonymousMcp
+      ? candidateKey
+      : `${surface}:${OVERFLOW}`;
   let bucket = buckets.get(key);
   if (!bucket) {
     bucket = {
@@ -37,6 +44,7 @@ function bucketFor(clientId: string | undefined, surface: UsageBucket['surface']
       serverErrors: 0,
       rateLimited: 0,
       connectionCapRefusals: 0,
+      pendingAuthAddressRefusals: 0,
       latency: Array.from({ length: LATENCY_BOUNDS_MS.length }, () => 0),
     };
     buckets.set(key, bucket);
@@ -65,6 +73,11 @@ export function recordPartnerConnectionCapRefusal(clientId: string): void {
   bucketFor(clientId, 'oauth').connectionCapRefusals += 1;
 }
 
+/** No actor is established yet; never label these refusals with request identities. */
+export function recordGymMcpPendingAuthAddressRefusal(): void {
+  bucketFor(undefined, 'mcp').pendingAuthAddressRefusals += 1;
+}
+
 export function flushPublicApiUsage(): void {
   const completed = buckets;
   buckets = new Map();
@@ -82,6 +95,7 @@ export function flushPublicApiUsage(): void {
       server_errors: bucket.serverErrors,
       rate_limited: bucket.rateLimited,
       connection_cap_refusals: bucket.connectionCapRefusals,
+      pending_auth_address_refusals: bucket.pendingAuthAddressRefusals,
       p95_ms: bucket.requests === 0 ? 0 : LATENCY_BOUNDS_MS[Math.max(0, percentileIndex)],
     };
     logger.info('[public-api-usage] per-minute summary', summary);

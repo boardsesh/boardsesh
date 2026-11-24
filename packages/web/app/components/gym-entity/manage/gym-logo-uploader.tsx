@@ -1,8 +1,8 @@
 'use client';
 
 // Gym logo uploader. Downscales client-side to ≤512px, uploads to the
-// backend's POST /api/gym-logos (multipart, Bearer-authenticated), then
-// persists the returned logoUrl via updateGym. Transparency is preserved:
+// backend's POST /api/gym-logos (multipart, Bearer-authenticated), which
+// attaches the returned logo to the gym. Transparency is preserved:
 // png/webp inputs re-encode as PNG (NOT the avatar JPEG-whitening flow, which
 // would flatten a transparent brand mark onto a white box).
 
@@ -159,20 +159,28 @@ export default function GymLogoUploader({ gym, logoDisplayUrl, onGymChange }: Gy
         return;
       }
 
-      // Persist the backend-relative path verbatim: no deploy domain frozen
-      // into the row. Render sites resolve it via resolveGymLogoDisplayUrl.
-      // Runtime-checked — an unexpected body must not store undefined.
-      const uploadPayload = (await response.json().catch(() => null)) as { logoUrl?: unknown } | null;
-      const logoUrl = typeof uploadPayload?.logoUrl === 'string' ? uploadPayload.logoUrl : null;
-      if (logoUrl === null) {
+      // The upload commits the attachment. Accept only this gym's matching
+      // saved result; never send a second write after a successful upload.
+      const uploadPayload = (await response.json().catch(() => null)) as {
+        success?: unknown;
+        logoUrl?: unknown;
+        gym?: Gym;
+      } | null;
+      const savedGym = uploadPayload?.gym;
+      if (
+        uploadPayload?.success !== true ||
+        typeof uploadPayload.logoUrl !== 'string' ||
+        !savedGym ||
+        typeof savedGym !== 'object' ||
+        savedGym.uuid !== gym.uuid ||
+        savedGym.logoUrl !== uploadPayload.logoUrl ||
+        typeof savedGym.name !== 'string'
+      ) {
         showMessage(t('branding.logo.uploadFailed'), 'error');
         return;
       }
-      const savedGymData = await updateGymMutation.execute({ input: { gymUuid: gym.uuid, logoUrl } });
-      if (savedGymData) {
-        onGymChange(savedGymData.updateGym);
-        showMessage(t('branding.logo.uploaded'), 'success');
-      }
+      onGymChange(savedGym);
+      showMessage(t('branding.logo.uploaded'), 'success');
     } catch (error) {
       console.error('Gym logo upload failed:', error);
       showMessage(t('branding.logo.uploadFailed'), 'error');

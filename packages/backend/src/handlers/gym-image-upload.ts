@@ -1,24 +1,22 @@
 import type { IncomingMessage, ServerResponse } from 'http';
+import { randomUUID } from 'node:crypto';
+import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { GraphQLError } from 'graphql';
 import Busboy from 'busboy';
 import path from 'path';
-import { randomUUID } from 'crypto';
-import { mkdir, writeFile, unlink } from 'fs/promises';
+import { unlink } from 'fs/promises';
 import { eq, and, isNull } from 'drizzle-orm';
 import { applyCorsHeaders } from './cors';
 import { guardUploadFileStream } from './http-utils';
 import { validateHttpAuthToken } from './auth-admission';
-import { isS3Configured, uploadToS3 } from '../storage/s3';
-import { detectImageMimeType, MIME_TO_EXT } from '../lib/image-mime';
-import {
-  MUTABLE_IMAGE_CACHE_CONTROL,
-  UndecodableImageError,
-  reencodeUploadedImage,
-  writeImageVariants,
-} from '../lib/image-resize';
+import { isS3Configured } from '../storage/s3';
+import { detectImageMimeType } from '../lib/image-mime';
+import { UndecodableImageError, reencodeUploadedImage } from '../lib/image-resize';
+import { removeVersionedGymImage, storeVersionedGymImage, type GymImageKind } from '../services/gym-image-storage';
 import { logger } from '../utils/logger';
-import { db } from '../db/client';
+import { db, runWithDatabaseTransaction } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { userCanEditGym } from '../graphql/resolvers/social/gyms';
+import { socialGymMutations, userCanEditGym } from '../graphql/resolvers/social/gyms';
 
 // Shared machinery behind the two gym image uploads — the kiosk/embed LOGO
 // (gym-logos.ts) and the public-page PHOTO (gym-photos.ts). The pieces that are
@@ -56,20 +54,15 @@ export function validateGymUuid(gymUuid: string): boolean {
 }
 
 export type GymImageUploadConfig = {
+  kind: GymImageKind;
   /** Multipart field name carrying the file (`logo`, `photo`). */
   fileFieldName: string;
   /** S3 key prefix AND local-dev directory name (`gym-logos`, `gym-photos`). */
   storagePrefix: string;
-  /** Local-dev directory path (used when S3 is not configured). */
-  localDir: string;
   /** Busboy hard cap on the uploaded file. */
   maxFileSizeBytes: number;
   /** JSON key the success response carries the stored URL under. */
   responseUrlKey: string;
-  /** Builds the backend-relative `/static/...` path persisted on the gym row. */
-  buildStaticUrl: (fileName: string, version: string) => string;
-  /** Best-effort stale-extension cleanup in S3 (write-first, clean-after). */
-  deleteStaleObjectsFromS3: (gymUuid: string, keepExt?: string) => Promise<void>;
   /**
    * Client-facing (English) error strings; the web layer localizes its own.
    * The size-cap message is NOT here — it is derived from maxFileSizeBytes so
@@ -134,27 +127,6 @@ export async function deleteExistingLocalImages(
 export function createGymImageUploadHandler(
   config: GymImageUploadConfig,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
-  // Track if directory has been initialized
-  let localDirInitialized = false;
-
-  /**
-   * Ensure the local-dev directory exists (called on first local-dev upload).
-   */
-  async function ensureLocalDir(): Promise<void> {
-    if (localDirInitialized) return;
-
-    try {
-      await mkdir(config.localDir, { recursive: true });
-      localDirInitialized = true;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-        localDirInitialized = true;
-      } else {
-        throw error;
-      }
-    }
-  }
-
   return async function handleGymImageUpload(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (!applyCorsHeaders(req, res)) return;
 
@@ -187,18 +159,6 @@ export function createGymImageUploadHandler(
       res.writeHead(501, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: config.messages.notConfigured }));
       return;
-    }
-
-    // Ensure local-dev directory exists (only needed without S3)
-    if (!useS3) {
-      try {
-        await ensureLocalDir();
-      } catch (error) {
-        logger.error(`Failed to create ${config.storagePrefix} directory:`, error);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Server configuration error' }));
-        return;
-      }
     }
 
     return new Promise<void>((resolve) => {
@@ -354,16 +314,11 @@ export function createGymImageUploadHandler(
           return;
         }
 
-        // Determine file extension
-        const ext = MIME_TO_EXT[mimeType] || 'jpg';
-        const imageFileName = `${gymUuid}.${ext}`;
-        let storedUrl: string;
-
-        // Write the new image FIRST, then clean up stale other-extension files.
-        // A same-extension re-upload overwrites its key in place, so the existing
-        // image is only ever removed once its replacement is durably saved — a
-        // failed upload can't leave the gym image-less while the gym row still
-        // points at a deleted object.
+        let storedUrl: string | undefined;
+        let attachmentCommitted = false;
+        const uploadGymUuid = gymUuid;
+        // A distinct key keeps concurrent replacements independent. Attach in
+        // this request so an interrupted client cannot abandon successful uploads.
         try {
           // Store sharp's re-encode, never the raw upload: a real JPEG with a
           // payload appended after its end marker passes the magic-byte check
@@ -371,31 +326,45 @@ export function createGymImageUploadHandler(
           // Same format, so the key and extension do not change. Runs before
           // the first write, so a rejection leaves the existing image alone.
           const storedBuffer = await reencodeUploadedImage(fileBuffer, mimeType);
-          if (useS3) {
-            const s3Key = `${config.storagePrefix}/${imageFileName}`;
-            // Variants first, then the base — see the note in handlers/avatars.ts.
-            await writeImageVariants(
-              storedBuffer,
-              s3Key,
-              (key, body, contentType) =>
-                uploadToS3('media', body, key, contentType, { cacheControl: MUTABLE_IMAGE_CACHE_CONTROL }),
-              undefined,
-              mimeType,
-              // storedBuffer already decoded once, so this should never fire;
-              // if a resize still fails, refuse rather than store the base
-              // bytes at every variant key.
-              { rejectUndecodable: true },
+          storedUrl = await storeVersionedGymImage(gymUuid, config.kind, storedBuffer, mimeType);
+          const uploadedUrl = storedUrl;
+          const savedGym = await runWithDatabaseTransaction(async (transaction) => {
+            const [currentGym] = await transaction
+              .select()
+              .from(dbSchema.gyms)
+              .where(and(eq(dbSchema.gyms.uuid, uploadGymUuid), isNull(dbSchema.gyms.deletedAt)))
+              .limit(1)
+              .for('update');
+            if (!currentGym) throw new GraphQLError('Gym not found', { extensions: { code: 'NOT_FOUND' } });
+            if (!(await userCanEditGym(currentGym, authenticatedUserId, transaction))) {
+              throw new GraphQLError('You do not have permission to edit this gym', {
+                extensions: { code: 'FORBIDDEN' },
+              });
+            }
+            const context: ConnectionContext = {
+              connectionId: `gym-image-${randomUUID()}`,
+              transport: 'http',
+              userId: authenticatedUserId,
+              isAuthenticated: true,
+              authCredentialProvided: true,
+              isCronAuthenticated: false,
+            };
+            return socialGymMutations.updateGym(
+              null,
+              {
+                input: {
+                  gymUuid: uploadGymUuid,
+                  ...(config.kind === 'photo' ? { imageUrl: uploadedUrl } : { logoUrl: uploadedUrl }),
+                },
+              },
+              context,
             );
-            await uploadToS3('media', storedBuffer, s3Key, mimeType);
-            // Backend-relative URL — we proxy the bytes from S3 ourselves, so no
-            // public-read ACL is required.
-            storedUrl = config.buildStaticUrl(imageFileName, randomUUID());
-          } else {
-            const filePath = path.join(config.localDir, imageFileName);
-            await writeFile(filePath, storedBuffer);
-            storedUrl = config.buildStaticUrl(imageFileName, randomUUID());
-          }
+          });
+          attachmentCommitted = true;
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, [config.responseUrlKey]: storedUrl, gym: savedGym }));
         } catch (saveErr) {
+          if (storedUrl && !attachmentCommitted) await removeVersionedGymImage(gymUuid, config.kind, storedUrl);
           if (saveErr instanceof UndecodableImageError) {
             // Also covers UPLOAD_MAX_INPUT_PIXELS: log sharp's reason so a real
             // device format that starts failing shows up.
@@ -408,6 +377,12 @@ export function createGymImageUploadHandler(
             resolve();
             return;
           }
+          if (saveErr instanceof GraphQLError && ['NOT_FOUND', 'FORBIDDEN'].includes(String(saveErr.extensions.code))) {
+            res.writeHead(saveErr.extensions.code === 'NOT_FOUND' ? 404 : 403, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: saveErr.message }));
+            resolve();
+            return;
+          }
           logger.error(`Failed to save ${config.logLabel}:`, saveErr);
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: config.messages.saveFailed }));
@@ -415,25 +390,6 @@ export function createGymImageUploadHandler(
           return;
         }
 
-        // Best-effort stale-extension cleanup (the helpers keep the new file and
-        // log real failures). A leftover stale-ext file is unreferenced — the
-        // stored URL points at the new key — so failure here is non-fatal.
-        //
-        // Known gap on a CROSS-EXTENSION replace: this drops the old object
-        // before the client has repointed the row, so if the caller's follow-up
-        // updateGym never lands, the row is left pointing at a deleted object.
-        // Unreachable through either console — the logo canvas emits png/jpeg
-        // per input type and the photo canvas always emits jpeg, so a re-upload
-        // overwrites its own key in place — but reachable by a direct API caller
-        // that switches extension and then drops the mutation.
-        if (useS3) {
-          await config.deleteStaleObjectsFromS3(gymUuid, ext);
-        } else {
-          await deleteExistingLocalImages(config.localDir, config.logLabel, gymUuid, ext);
-        }
-
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, [config.responseUrlKey]: storedUrl }));
         resolve();
       });
 

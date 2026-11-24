@@ -472,5 +472,50 @@
       "pending": "Pending"
     },
     "rotationAvailableAfter": "You can rotate again after {{time}}."
+  },
+  "gymMcp": {
+    "title": "Manage your gyms with an AI assistant",
+    "lead": "Connect ChatGPT or Claude to Boardsesh to check gym activity and manage your gym from a conversation.",
+    "availability": "Access is rolling out in stages. If connecting is unavailable for your account, keep using Manage gym and try again after you receive access.",
+    "links": {
+      "gyms": "Find your gym",
+      "connections": "Manage connected apps",
+      "support": "Get help connecting"
+    },
+    "setup": {
+      "title": "Connect your assistant",
+      "endpoint": "Hosted MCP server URL",
+      "copy": "Copy server URL",
+      "copied": "Server URL copied",
+      "copyFailed": "Copy did not work. Select the URL above and copy it.",
+      "steps": {
+        "add": "In ChatGPT plugins or Claude connectors, add a custom remote MCP server.",
+        "paste": "Paste the server URL. Choose OAuth and the published client identity option.",
+        "signIn": "Sign in to Boardsesh and review the gym permissions before allowing access.",
+        "try": "Open a conversation with the connector and ask which gyms you can manage."
+      },
+      "requirements": "You do not install anything or register a developer app. Your assistant account and workspace must allow custom MCP connections. Available settings and plans vary by provider.",
+      "chatgptGuide": "ChatGPT connection guide",
+      "claudeGuide": "Claude connection guide"
+    },
+    "access": {
+      "title": "What your assistant can do",
+      "gyms": "One connection covers all gyms your Boardsesh account can manage, including gyms you gain access to later. Your current role limits every action.",
+      "actions": "Read activity reports, edit gym details and branding, manage boards and TVs, reply to comments, and manage eligible staff access.",
+      "approvals": "Review write requests before approving them in your assistant. The assistant controls when approval appears; Boardsesh checks your current permissions for every operation.",
+      "privacy": "Tool results are shared with the assistant you choose. Your Boardsesh password is entered only on the Boardsesh sign-in page."
+    },
+    "examples": {
+      "title": "Try a request",
+      "activity": "“Show the last 30 days of activity at my gym, including coverage limits.”",
+      "tv": "“Create a TV display with our Kilter and Tension boards.”",
+      "profile": "“Update our gym description to say we open at 8 on Saturdays.”",
+      "photos": "For a photo or logo, provide a public HTTPS image URL. You can also upload a file from the gym’s profile or branding tab."
+    },
+    "disconnect": {
+      "title": "Stop assistant access",
+      "body": "Open Settings, find the assistant in Connected apps, and choose Disconnect. Future requests stop working. Information already shared remains with the assistant."
+    },
+    "pilotAvailability": "This connector is in an invitation-only pilot. Only invited Boardsesh accounts can connect. Wait for your invitation before following the sign-in steps below."
   }
 }

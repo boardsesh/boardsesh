@@ -461,6 +461,19 @@
     "comments": {
       "intro": "Antworte im Kommentar-Thread deiner Halle, ohne die Konsole zu verlassen.",
       "heading": "Was deine Crew sagt"
+    },
+    "aiAssistants": {
+      "title": "KI-Assistenten",
+      "body": "Verwalte deine Hallen mit ChatGPT oder Claude. Verbinde dein Boardsesh-Konto einmal.",
+      "connect": "Assistenten verbinden",
+      "connections": "Verbindungen verwalten",
+      "checking": "Verbindungen werden geprüft…",
+      "connected": "Ein Assistent ist verbunden",
+      "paused": "Der Zugriff des Assistenten ist pausiert",
+      "notConnected": "Noch kein Assistent verbunden",
+      "statusUnavailable": "Prüfe deine Verbindungen in den Einstellungen",
+      "pilotBody": "Der Zugang ist aktuell nur auf Einladung möglich. Warte auf eine Einladung von Boardsesh, bevor du dich zum Verbinden anmeldest.",
+      "pilotDetails": "Infos zum Pilotzugang lesen"
     }
   },
   "branding": {

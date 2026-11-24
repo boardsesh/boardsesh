@@ -6,6 +6,7 @@ import {
   oauthConnections,
   oauthConsent,
   oauthRefreshToken,
+  oauthMcpClientPolicy,
 } from '@boardsesh/db/schema/auth';
 import { endPartnerConnection } from './connection';
 import { lockPartnerConnection } from './locks';
@@ -57,10 +58,12 @@ export async function listConnectedApps(database: PartnerDatabase, userId: strin
       publisherName: oauthAppPolicy.publisherName,
       disabled: oauthClient.disabled,
       suspendedAt: oauthAppPolicy.suspendedAt,
+      mcpSuspendedAt: oauthMcpClientPolicy.suspendedAt,
     })
     .from(oauthConnections)
     .innerJoin(oauthClient, eq(oauthClient.clientId, oauthConnections.clientId))
     .leftJoin(oauthAppPolicy, eq(oauthAppPolicy.clientId, oauthConnections.clientId))
+    .leftJoin(oauthMcpClientPolicy, eq(oauthMcpClientPolicy.clientId, oauthConnections.clientId))
     .where(
       and(
         eq(oauthConnections.userId, userId),
@@ -123,7 +126,7 @@ export async function listConnectedApps(database: PartnerDatabase, userId: strin
     // Filtered on above; the column is nullable only for approvals not yet redeemed.
     connectedAt: connection.connectedAt as Date,
     lastUsedAt: connection.lastUsedAt,
-    suspended: connection.disabled === true || connection.suspendedAt !== null,
+    suspended: connection.disabled === true || connection.suspendedAt !== null || Boolean(connection.mcpSuspendedAt),
   }));
 }
 

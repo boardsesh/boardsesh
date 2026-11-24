@@ -1,4 +1,5 @@
 import { boolean, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { users } from './users';
 
 /**
@@ -270,6 +271,44 @@ export const oauthAppPolicy = pgTable(
     updatedAt: timestamptz('updated_at').defaultNow().notNull(),
   },
   (table) => [index('oauth_app_policy_owner_user_id_idx').on(table.ownerUserId)],
+);
+
+/** Public MCP client identities belong to their metadata origin, never to a gym owner's account. */
+export const oauthMcpClientPolicy = pgTable('oauth_mcp_client_policy', {
+  clientId: text('client_id')
+    .primaryKey()
+    .references(() => oauthClient.clientId, { onDelete: 'cascade' }),
+  maxActiveConnections: integer('max_active_connections').default(10000).notNull(),
+  maxNewConnectionsPerDay: integer('max_new_connections_per_day').default(1000).notNull(),
+  suspendedAt: timestamptz('suspended_at'),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+/** Retries share a result only within the exact account, OAuth client and connection generation. */
+export const gymMcpWriteReceipts = pgTable(
+  'gym_mcp_write_receipts',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    clientId: text('client_id')
+      .notNull()
+      .references(() => oauthClient.clientId, { onDelete: 'cascade' }),
+    connectionGeneration: integer('connection_generation').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    operationName: text('operation_name').notNull(),
+    inputHash: text('input_hash').notNull(),
+    result: jsonb('result').$type<unknown>(),
+    createdAt: timestamptz('created_at').defaultNow().notNull(),
+    expiresAt: timestamptz('expires_at')
+      .default(sql`now() + interval '7 days'`)
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.clientId, table.connectionGeneration, table.idempotencyKey] }),
+    index('gym_mcp_write_receipts_client_id_idx').on(table.clientId),
+    index('gym_mcp_write_receipts_expires_at_idx').on(table.expiresAt),
+  ],
 );
 
 /**

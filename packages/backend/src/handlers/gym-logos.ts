@@ -1,6 +1,4 @@
 import type { IncomingMessage, ServerResponse } from 'http';
-import { deleteGymLogosFromS3 } from '../storage/s3';
-import { buildStaticGymLogoUrl } from '../lib/gym-logo-url';
 import { createGymImageUploadHandler } from './gym-image-upload';
 
 // Gym logo upload configuration. Deliberately mirrors avatars.ts: 2MB cap, the
@@ -12,16 +10,11 @@ const GYM_LOGOS_DIR = './gym-logos';
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
 
 const uploadHandler = createGymImageUploadHandler({
+  kind: 'logo',
   fileFieldName: 'logo',
   storagePrefix: 'gym-logos',
-  localDir: GYM_LOGOS_DIR,
   maxFileSizeBytes: MAX_FILE_SIZE,
   responseUrlKey: 'logoUrl',
-  buildStaticUrl: buildStaticGymLogoUrl,
-  // Called through, not captured: binding the import here would freeze the
-  // module-init reference and make a later vi.spyOn on the storage module a
-  // no-op for this handler.
-  deleteStaleObjectsFromS3: (gymUuid, keepExt) => deleteGymLogosFromS3(gymUuid, keepExt),
   messages: {
     notConfigured: 'Gym logo uploads are not configured. Please contact the administrator.',
     saveFailed: 'Failed to save gym logo',

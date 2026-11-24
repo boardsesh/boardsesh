@@ -107,7 +107,7 @@ describe('GymPhotoUploader failure surfaces', () => {
 });
 
 describe('GymPhotoUploader removal', () => {
-  it('nulls the column first, then best-effort deletes the object', async () => {
+  it('clears the photo through one mutation without a second deletion request', async () => {
     const clearedGym = makeGym({ imageUrl: null });
     mockExecute.mockResolvedValue({ updateGym: clearedGym });
     const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ success: true }), { status: 200 }));
@@ -124,13 +124,9 @@ describe('GymPhotoUploader removal', () => {
     expect(mockExecute.mock.calls[0][0].input).toEqual({ gymUuid: 'gym-uuid-1', imageUrl: null });
 
     await waitFor(() => {
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(onGymChange).toHaveBeenCalledWith(clearedGym);
     });
-    const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe('https://ws.boardsesh.com/api/gym-photos?gymUuid=gym-uuid-1');
-    expect(init.method).toBe('DELETE');
-    expect(new Headers(init.headers).get('x-boardsesh-client')).toMatch(/^boardsesh-web\//);
-    expect(onGymChange).toHaveBeenCalledWith(clearedGym);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('leaves the object alone when clearing the column failed', async () => {

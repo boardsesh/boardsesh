@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { webSessionMode } from '@boardsesh/auth-protocol';
 import { browserSessionCookieName } from '@boardsesh/auth-protocol/browser-session-cookie';
@@ -155,7 +155,10 @@ function claimedClientId(req: IncomingMessage, fields: Record<string, string>): 
     if (separator > 0) basicClientId = new URLSearchParams(`v=${decoded.slice(0, separator)}`).get('v') ?? undefined;
   }
   const clientId = basicClientId ?? fields.client_id;
-  return clientId && CLIENT_ID_PATTERN.test(clientId) ? clientId : undefined;
+  if (!clientId) return undefined;
+  if (CLIENT_ID_PATTERN.test(clientId)) return clientId;
+  if (clientId.length <= 2048 && URL.canParse(clientId) && new URL(clientId).protocol === 'https:') return clientId;
+  return undefined;
 }
 
 /**
@@ -411,7 +414,10 @@ export function createPartnerAuthHandler({
     identity: PartnerLimitIdentity,
     ledger: RateLimitLedger,
   ): Promise<void> {
-    const bucketClientId = clientId ?? 'invalid';
+    const bucketClientId =
+      clientId && /^https:\/\//i.test(clientId)
+        ? `cimd-${createHash('sha256').update(clientId).digest('hex')}`
+        : (clientId ?? 'invalid');
     const perApp = (address: string) => `${bucketClientId}:${address}`;
     if (kind === 'token' && fields.grant_type === 'refresh_token') {
       await consumePerAddress(ledger, identity, 'oauth-refresh-ip', REFRESH_PER_APP_AND_IP, perApp);

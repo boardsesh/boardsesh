@@ -5,6 +5,17 @@
  */
 export const PARTNER_OAUTH_ISSUER = 'https://api.boardsesh.com/api/auth';
 
+/** Hosted gym tools use their own audience; training-app credentials cannot use it. */
+export const GYM_MCP_RESOURCE = 'https://api.boardsesh.com/mcp/gyms';
+export const GYM_MCP_SCOPES = ['gyms:read', 'gyms:write', 'gyms:access:write', 'offline_access'] as const;
+export const GYM_MCP_MODES = ['off', 'pilot', 'on'] as const;
+export type GymMcpMode = (typeof GYM_MCP_MODES)[number];
+
+export function parseGymMcpMode(rawMode: string | undefined): GymMcpMode {
+  const candidate = rawMode?.trim().toLowerCase();
+  return GYM_MCP_MODES.find((mode) => mode === candidate) ?? 'off';
+}
+
 /**
  * The developer terms a registration accepts (www `/developers/terms`). The
  * console sends it with every new app and the backend refuses any other value,

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../db/client';
+import { db, runWithDatabaseTransaction } from '../db/client';
 import { gymStatsSnapshotSql, socialGymInsightsQueries } from '../graphql/resolvers/social/gym-insights';
 import {
   readGymReportingCoverage,
@@ -17,6 +17,7 @@ import { reserveAndPersistBoardClimbEvent } from '../graphql/resolvers/board-pre
 import { socialGymMutations, socialGymQueries } from '../graphql/resolvers/social/gyms';
 import { socialGymStrayBoardMutations } from '../graphql/resolvers/social/gym-stray-boards';
 import { tickMutations } from '../graphql/resolvers/ticks/mutations';
+import { listManagedGyms, resolveGymForTool } from '../mcp/gyms/domain';
 
 /**
  * Real-DB coverage for the owner Insights query (gymStats):
@@ -251,6 +252,86 @@ afterAll(async () => {
 });
 
 describe('gymStats access guard', () => {
+  it('serializes independent MCP writers at gym authorization before a lock upgrade can deadlock', async () => {
+    let releaseOwner = () => {};
+    let markOwnerLocked = () => {};
+    let markAdminStarted = (pid: number) => {
+      void pid;
+    };
+    const ownerReleased = new Promise<void>((resolve) => {
+      releaseOwner = resolve;
+    });
+    const ownerLocked = new Promise<void>((resolve) => {
+      markOwnerLocked = resolve;
+    });
+    const adminStarted = new Promise<number>((resolve) => {
+      markAdminStarted = resolve;
+    });
+    let adminAuthorized = false;
+    const ownerTransaction = runWithDatabaseTransaction(async () => {
+      await resolveGymForTool(publicGym.uuid, OWNER, true, true);
+      markOwnerLocked();
+      await ownerReleased;
+    });
+    await ownerLocked;
+    const adminTransaction = runWithDatabaseTransaction(async () => {
+      const pidRows = await db.execute<{ pid: number }>(sql`SELECT pg_backend_pid() AS pid`);
+      markAdminStarted(Array.from(pidRows)[0]!.pid);
+      await resolveGymForTool(publicGym.uuid, ADMIN, true, true);
+      adminAuthorized = true;
+    });
+    try {
+      const adminPid = await adminStarted;
+      let waitsForLock = false;
+      for (let attempt = 0; attempt < 50 && !adminAuthorized && !waitsForLock; attempt += 1) {
+        const activity = await db.execute<{ waitType: string | null }>(sql`
+          SELECT wait_event_type AS "waitType" FROM pg_stat_activity WHERE pid = ${adminPid}
+        `);
+        waitsForLock = Array.from(activity)[0]?.waitType === 'Lock';
+        if (!waitsForLock && !adminAuthorized) await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      }
+      expect(waitsForLock).toBe(true);
+      expect(adminAuthorized).toBe(false);
+    } finally {
+      releaseOwner();
+      await Promise.all([ownerTransaction, adminTransaction]);
+    }
+    expect(adminAuthorized).toBe(true);
+  });
+
+  it('MCP management discovery excludes ordinary members before counting and pagination', async () => {
+    const owned = await insertGym({ ownerId: MEMBER, name: 'My gym', slug: 'mcp-owned-gym' });
+    expect(await listManagedGyms(MEMBER, 1, 0)).toMatchObject({
+      gyms: [expect.objectContaining({ uuid: owned.uuid, canEdit: true })],
+      totalCount: 1,
+      hasMore: false,
+    });
+    expect(await listManagedGyms(MEMBER, 1, 1)).toMatchObject({ gyms: [], totalCount: 1, hasMore: false });
+    for (const userId of [OWNER, ADMIN, EDITOR]) {
+      expect(await listManagedGyms(userId, 1, 0)).toMatchObject({
+        gyms: [expect.objectContaining({ uuid: publicGym.uuid, canEdit: true })],
+        totalCount: 1,
+      });
+    }
+  });
+
+  it('MCP pages every scoped community-managed gym without including an uncovered membership', async () => {
+    const leader = 'gi-mcp-community-leader';
+    await insertUser(leader);
+    await db.execute(sql`INSERT INTO community_roles (user_id, role, board_type)
+      VALUES (${leader}, 'community_leader', 'kilter') ON CONFLICT DO NOTHING`);
+    const uncovered = await insertGym({ ownerId: OWNER, name: 'Uncovered', slug: 'mcp-uncovered' });
+    await insertGymMember(uncovered.id, leader, 'member');
+    const first = await listManagedGyms(leader, 1, 0);
+    const second = await listManagedGyms(leader, 1, 1);
+    expect(first).toMatchObject({ totalCount: 2, hasMore: true });
+    expect(second).toMatchObject({ totalCount: 2, hasMore: false });
+    const combined = [...(first.gyms as Array<{ uuid: string }>), ...(second.gyms as Array<{ uuid: string }>)];
+    expect(new Set(combined.map((gym) => gym.uuid)).size).toBe(2);
+    expect(combined).toContainEqual(expect.objectContaining({ uuid: publicGym.uuid }));
+    expect(combined).not.toContainEqual(expect.objectContaining({ uuid: uncovered.uuid }));
+  });
+
   it('lets the owner, a gym admin, and a gym editor read stats', async () => {
     for (const user of [OWNER, ADMIN, EDITOR]) {
       const stats = await socialGymInsightsQueries.gymStats({}, { input: { gymUuid: publicGym.uuid } }, authCtx(user));

@@ -1,5 +1,6 @@
 import { PARTNER_DEVELOPER_TERMS_VERSION, PARTNER_OAUTH_ISSUER } from '@boardsesh/auth-protocol/partner-oauth';
 import { isProductionSentryEnvironment } from '@boardsesh/db/client/config';
+import { readGymMcpConfiguration, type GymMcpConfiguration } from '../../mcp/gyms/configuration';
 
 /** Shared with the www consent pages, which send the browser back to it. */
 export const PARTNER_ISSUER = PARTNER_OAUTH_ISSUER;
@@ -58,6 +59,8 @@ export interface PartnerAuthorityConfiguration {
    * the owner has not approved.
    */
   developerTermsVersion: string;
+  /** Absent unless the separately gated gym MCP resource is enabled. */
+  gymMcp?: GymMcpConfiguration;
 }
 
 export class PartnerAuthorityConfigurationError extends Error {
@@ -122,6 +125,7 @@ export function readPartnerAuthorityConfiguration(
     secrets: parsePartnerSecrets(environment.PARTNER_OAUTH_SECRETS),
     nextAuthSecret: requireNextAuthSecret(environment.NEXTAUTH_SECRET),
     developerTermsVersion: partnerDeveloperTermsVersion(environment, production),
+    ...(readGymMcpConfiguration(environment) ? { gymMcp: readGymMcpConfiguration(environment) } : {}),
   };
 }
 
