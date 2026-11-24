@@ -5,7 +5,8 @@ import { PASSWORD_GUESS_DEADLINE_MS } from './password-guess-windows';
  * The password guess counter's own connections (#7656). Not the shared primary
  * pool: that pool has 5 connections, and anyone able to keep it busy would push
  * every reserve past its 250 ms deadline, where the counter fails open. Here the
- * counter only queues behind other counter work, which the in-flight cap bounds.
+ * counter only queues behind other counter work. The counter's transaction
+ * lifetime bound also covers work still queued after its caller gives up.
  */
 export const PASSWORD_GUESS_POOL_MAX_ENV = 'AUTH_ACCOUNT_GUESS_LIMIT_POOL_MAX';
 /** Connections per backend replica. Counted in docs/operations/db-connectivity.md, "Connection budget". */

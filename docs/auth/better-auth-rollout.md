@@ -169,6 +169,19 @@ has a 400 ms total deadline; unavailable calls keep today's sign-in behavior
 and produce a bounded, credential-free diagnostic. The staged password path
 forwards the cookie to the backend and preserves its full daily-window 429.
 
+The backend bounds counter database work across all subjects at 32 underlying
+transaction lifetimes per process. Recognition, reservation, settlement,
+reset clearing and pruning share the same bound. A caller reaching its deadline
+does not free capacity while its transaction is queued or still settling.
+A reservation that commits late keeps its slot through its compensating
+uncount, so compensation does not need a second slot at capacity. Saturated
+calls return unavailable without submitting another transaction; the
+credential-free metrics include `reserveCapacity`, `giveBackCapacity`,
+`clearCapacity` and `pruneCapacity`. This does not add connections or open the
+pool while the mode is off. It bounds queued work; it does not prove that an
+attacker cannot force the counter to fail open. All four enforcement gates
+remain in place.
+
 `AUTH_DEVICE_TOKEN_SECRET` seeds a host-only, HttpOnly browser cookie after an
 admitted password, Google, Apple or native-transfer login. Session reads and
 sign-out do not rewrite it. Completed resets clear the email counter and seed
@@ -218,10 +231,10 @@ existing one-hour reply bound.
 
 | Gate | What it waits for |
 | --- | --- |
-| `FORCED_FAIL_OPEN_CLOSURE_UNPROVEN_IN_PRODUCTION_OBSERVE` | Production `observe` data showing that the per-subject in-flight caps (4 recognition lookups or reserves) and the counter's own pool keep the counter answering under real load: `reserveDeadline`, `reserveLockWait` and `reservePoolWait` near zero in the `type: password_guess_metrics` warnings, with an alert on them, plus 30 days of device-token seeding and under one would-be refusal a week that then signed in, including in-flight-capped attempts (#7656). A reviewed change empties the list. |
+| `FORCED_FAIL_OPEN_CLOSURE_UNPROVEN_IN_PRODUCTION_OBSERVE` | Production `observe` data showing that the per-subject in-flight caps (4 recognition lookups or reserves), the process-wide transaction lifetime bound and the counter's own pool keep the counter answering under real load: `reserveDeadline`, `reserveLockWait`, `reservePoolWait` and `reserveCapacity` near zero in the `type: password_guess_metrics` warnings, with an alert on them, plus 30 days of device-token seeding and under one would-be refusal a week that then signed in, including in-flight-capped attempts (#7656). A reviewed change empties the list. |
 | `RESET_DOES_NOT_RESCUE_NATIVE_OWNER` | A decision recorded on #7656, then code, for the native owner after a reset: the reset voids the phone's device token and refresh tokens, so the owner signs in unrecognised, and an attacker can refill the cleared email bucket before the new password is typed. The web is covered by the reset cookie (PR 4b). |
 | `PASSWORD_CHANGE_TIME_IGNORES_AUTHORITY` | The 5 s password-change rule reading the password's time through the bound identity authority. Today it reads `user_credentials.updated_at`; under the Better Auth authority the password lives in `auth_account`. A missing timestamp already counts the token as absent. |
-| `CROSS_SUBJECT_POOL_SATURATION` | A bound across subjects, or production proof: the in-flight cap is per subject, so a burst over many emails can fill the counter's pool and push the target's reserves to `reservePoolWait`, uncounted. |
+| `CROSS_SUBJECT_POOL_SATURATION` | Prove an overload or challenge policy that preserves owner access while preventing attacker-induced fail-open bypass. The process-wide 32-lifetime bound limits queued work, including work surviving caller deadlines and late compensation, but saturation still returns unavailable. A global refusal before device recognition could instead deny unrelated owners. Resource bounding alone does not close this gate. |
 
 **Startup assertions** (`packages/backend/src/index.ts`) refuse to boot: `AUTH_CUTOFF_ENFORCEMENT=observe` with any staged writer on; `AUTH_IDENTITY_MIRROR=on` unless every mirror precondition holds (today the code gates never do; after a switch it boots inert instead); `AUTH_NATIVE_REVOCATION_MODE=generation`; `CURRENT_STORE_WEB_SIGNOUT_MODE=backend-staging` (its own assertion in `web-session-configuration.ts`, not tied to a gate constant); `AUTH_LEGACY_BRIDGE_MODE=on` without both of the last two; `AUTH_BROWSER_SESSION_MODE` set to an unknown value, or to `better-auth` when any of its preconditions fails (each with its own `AUTH_BROWSER_SESSION_*` code) or while `BROWSER_SESSION_CUTOVER_BLOCKERS` is not empty (`AUTH_BROWSER_SESSION_CUTOVER_INCOMPLETE`; `authority/browser-session-mode.ts`).
 

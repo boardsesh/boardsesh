@@ -20,6 +20,7 @@ import {
 import { PASSWORD_GUESS_POOL_MAX_ENV } from '../password-guess-pool';
 import {
   __resetPasswordGuessStateForTests,
+  __passwordGuessTransactionLifetimesForTests,
   PASSWORD_GUESS_EMAIL_KEY_ENV,
   passwordGuessMetrics,
   type PasswordGuessStore,
@@ -31,6 +32,13 @@ const environment = {
   [DEVICE_TOKEN_SECRET_ENV]: DEVICE_SECRET,
 };
 const createdUserIds: string[] = [];
+const releaseHungStores: (() => void)[] = [];
+function hungStore(): PasswordGuessStore {
+  const pending = new Promise<never>((_resolve, reject) => {
+    releaseHungStores.push(() => reject(new Error('Test transaction released')));
+  });
+  return { transaction: vi.fn(() => pending) } as unknown as PasswordGuessStore;
+}
 
 /** Mid-hour, so a run never straddles an hour edge. */
 const MID_HOUR = () => new Date('2026-11-17T10:15:00.000Z');
@@ -105,7 +113,11 @@ describe('account guess limit against Postgres (#7656)', () => {
     __resetPasswordGuessLimitStateForTests();
     __resetPasswordGuessStateForTests();
   });
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(async () => {
+    for (const release of releaseHungStores.splice(0)) release();
+    await vi.waitFor(() => expect(__passwordGuessTransactionLifetimesForTests()).toBe(0));
+    vi.restoreAllMocks();
+  });
   afterAll(async () => {
     if (createdUserIds.length) await db.delete(users).where(inArray(users.id, createdUserIds));
   });
@@ -272,7 +284,7 @@ describe('account guess limit against Postgres (#7656)', () => {
     for (const mode of ['enforce', 'observe'] as const) {
       __resetPasswordGuessLimitStateForTests();
       vi.spyOn(logger, 'warn').mockImplementation(() => logger);
-      const hung = { transaction: vi.fn(() => new Promise(() => {})) } as unknown as PasswordGuessStore;
+      const hung = hungStore();
       // The production deadline: the four held reserves fail open at 250 ms.
       const guard = createPasswordGuessLimiter({ mode, store: () => hung, environment, now: MID_HOUR });
       const email = `inflight-${randomUUID()}@example.test`;
@@ -297,7 +309,7 @@ describe('account guess limit against Postgres (#7656)', () => {
     for (const mode of ['enforce', 'observe'] as const) {
       for (const deviceToken of [realToken, 'forged-token']) {
         __resetPasswordGuessLimitStateForTests();
-        const hung = { transaction: vi.fn(() => new Promise(() => {})) } as unknown as PasswordGuessStore;
+        const hung = hungStore();
         const guard = createPasswordGuessLimiter({ mode, store: () => hung, environment, now: MID_HOUR });
         const email = `recognition-${randomUUID()}@example.test`;
         const pending = Array.from({ length: 4 }, () => guard.admit({ email, deviceToken }));

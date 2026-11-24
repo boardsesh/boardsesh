@@ -285,6 +285,8 @@ export async function startEdge(options: EdgeOptions): Promise<Edge> {
     socket.on('close', () => sockets.delete(socket));
   });
   proxy.on('connect', (request: IncomingMessage, clientSocket: Duplex, head: Buffer) => {
+    // CONNECT removes Node's HTTP error listener before handing us the socket.
+    clientSocket.on('error', () => clientSocket.destroy());
     const [hostname, port] = (request.url ?? '').toLowerCase().split(':');
     if (port !== '443' || !(hostname in options.upstreams)) {
       clientSocket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
