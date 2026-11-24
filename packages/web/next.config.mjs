@@ -121,6 +121,9 @@ const BASE_REDIRECTS = [
     destination: `/apps/aurora#${brand}`,
     permanent: true,
   })),
+  // Only /compare/spray-wall-apps lives under /compare; a reader who trims the
+  // URL gets the guides hub instead of a 404.
+  { source: '/compare', destination: '/apps', permanent: true },
   {
     source: '/aurora-migration',
     destination: '/bring-your-logbook#old-kilter-app',

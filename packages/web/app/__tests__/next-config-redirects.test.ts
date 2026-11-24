@@ -292,6 +292,13 @@ describe('next.config redirects', () => {
     }
   });
 
+  it('sends a trimmed /compare URL to the app guides hub', () => {
+    expect(redirects.find((rule) => rule.source === '/compare')).toMatchObject({
+      destination: '/apps',
+      permanent: true,
+    });
+  });
+
   it('redirects old Aurora migration bookmarks to the export instructions in their locale', () => {
     for (const prefix of ['', ...LOCALE_PREFIXES]) {
       const source = `${prefix}/aurora-migration`;
