@@ -17,8 +17,13 @@ import { StyleSheet, View, type ColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import {
   REPORT_NOTE_MAX_LENGTH,
+  SETUP_SUGGESTION_REPORT_REASON,
+  groupSuggestedSetups,
   normalizeReportNote,
+  setupMatches,
+  suggestedSetupUpdateInput,
   type DirectoryReportReason,
+  type SuggestedSetupGroup,
 } from '@boardsesh/directory-moderation';
 import { isDuplicateBoardError, readDuplicateBoardError } from '@boardsesh/graphql/errors';
 import type { DirectoryReport, UserBoard } from '@boardsesh/shared-schema';
@@ -48,15 +53,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { dismissManagedSheetAndWait, type ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
 import { spacing } from '../../theme/tokens';
-import {
-  keepableReports,
-  reviewFootnote,
-  reviewNotes,
-  suggestedSetupGroups,
-  suggestedSetupUpdateInput,
-  waitingReports,
-  type SuggestedSetupGroup,
-} from './report-review-model';
+import { keepableReports, reviewFootnote, reviewNotes, waitingReports } from './report-review-model';
 import { formatSetupSummary } from './setup-summary';
 
 /** What the host does for a board action picked in the sheet. */
@@ -129,10 +126,17 @@ export function ReportReviewSheet({
   const keepable = useMemo(() => keepableReports(waiting), [waiting]);
   const notes = useMemo(() => reviewNotes(waiting), [waiting]);
   const { layoutId, sizeId, setIds, angle, boardType } = board;
-  const suggestions = useMemo(
-    () => (setupSuggestionsEnabled ? suggestedSetupGroups(waiting, { layoutId, sizeId, setIds, angle }) : []),
-    [setupSuggestionsEnabled, waiting, layoutId, sizeId, setIds, angle],
-  );
+  // The setups suggested on the waiting "Set up wrong" reports, one group per
+  // setup, most suggested first. One the board already has is left out: there
+  // is nothing to use.
+  const suggestions = useMemo(() => {
+    if (!setupSuggestionsEnabled) return [];
+    const current = { layoutId, sizeId, setIds, angle };
+    const notes = waiting
+      .filter((report) => report.reason === SETUP_SUGGESTION_REPORT_REASON)
+      .flatMap((report) => report.notes);
+    return groupSuggestedSetups(notes).filter((group) => !setupMatches(group.setup, current));
+  }, [setupSuggestionsEnabled, waiting, layoutId, sizeId, setIds, angle]);
   // Each group's sentence, worked out once per list rather than per render.
   const suggestionLines = useMemo(
     () =>

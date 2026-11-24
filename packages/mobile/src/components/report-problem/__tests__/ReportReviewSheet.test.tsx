@@ -276,6 +276,8 @@ describe('ReportReviewSheet with suggested setups', () => {
           { note: 'The angle is 45 not 40', createdAt: '2026-11-19T10:00:00.000Z', reporter: null },
         ],
       }),
+      // Only "Set up wrong" reports carry a setup to use.
+      report({ uuid: 'r2', reason: 'gone', notes: [suggestion(8, 17, '26,27', '2026-11-23T10:00:00.000Z')] }),
     ];
   });
 
@@ -287,7 +289,7 @@ describe('ReportReviewSheet with suggested setups', () => {
     expect(lines).toEqual([
       'mobile.setupSuggestion.suggestedHeading',
       'mobile.setupSuggestion.suggested{"count":2,"setup":"Original · 12×12 with kickboard · Square · Screw Ons"}',
-      'mobile.setupSuggestion.suggested{"count":1,"setup":"Original · 12×14 · Commercial · Bolt Ons + Screw Ons"}',
+      'mobile.setupSuggestion.suggested{"count":1,"setup":"Original · 12×14 · Commercial · Bolt Ons, Screw Ons"}',
     ]);
     expect(screen.queryByText('“”')).toBeNull();
     expect(screen.getByText('“The angle is 45 not 40”')).toBeTruthy();

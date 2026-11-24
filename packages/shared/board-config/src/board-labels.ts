@@ -89,10 +89,9 @@ export function boardPlaceLabel(board: BoardLabelSource, options?: BoardLabelOpt
 }
 
 // "Kilter Board Original" → "Original", "Tension Board 2 Mirror" → "Mirror".
-// Mirrors the builder's cleanLayoutName
-// (packages/mobile/src/components/board-discovery/board-builder-labels.ts);
-// that file keeps its own copy until the rest of the builder labels move here.
-// Exported for the setup labels (`setup-labels.ts`).
+// The one copy: the app's board builder re-exports it
+// (packages/mobile/src/components/board-discovery/board-builder-labels.ts), and
+// the setup labels (`setup-labels.ts`) name layouts with it.
 export function cleanLayoutName(rawName: string, boardName: string): string {
   const brand = formatBoardDisplayName(boardName);
   const cleaned = rawName
@@ -105,7 +104,7 @@ export function cleanLayoutName(rawName: string, boardName: string): string {
   return cleaned || rawName;
 }
 
-/** "12 x 14" → "12×14". Same cleanup the builder's formatSizeDimensions does. */
+/** "12 x 14" → "12×14". The app's board builder re-exports it. */
 export function formatSizeDimensions(size: { name: string }): string {
   return size.name
     .replace(/\s*high\s*/gi, '')

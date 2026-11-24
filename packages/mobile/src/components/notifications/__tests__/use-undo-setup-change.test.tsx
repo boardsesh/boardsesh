@@ -63,7 +63,7 @@ describe('useUndoSetupChange', () => {
     expect(confirm).toHaveBeenCalledWith({
       title: 'setupChange.undoTitle',
       message:
-        'setupChange.undoBody{"board":"Crux Kilter","setup":"Original · 12×12 with kickboard · Square · Bolt Ons + Screw Ons"}',
+        'setupChange.undoBody{"board":"Crux Kilter","setup":"Original · 12×12 with kickboard · Square · Bolt Ons, Screw Ons"}',
       confirmLabel: 'setupChange.undoConfirm',
       cancelLabel: 'actions.cancel',
     });

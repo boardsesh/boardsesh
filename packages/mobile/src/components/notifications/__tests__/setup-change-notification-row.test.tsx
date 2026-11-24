@@ -90,7 +90,7 @@ describe('SetupChangeNotificationRow', () => {
     const screen = render(<SetupChangeNotificationRow notification={notification} onPress={onPress} onUndo={onUndo} />);
     expect(screen.getByText('items.boardSetupChangedByClimber{"board":"Crux Kilter"}')).toBeTruthy();
     expect(
-      screen.getByText('setupChange.now{"setup":"Homewall · 7×10 · Full Ride · Mainline + Auxiliary"}'),
+      screen.getByText('setupChange.now{"setup":"Homewall · 7×10 · Full Ride · Mainline, Auxiliary"}'),
     ).toBeTruthy();
     fireEvent.click(screen.getByTestId('row'));
     expect(onPress).toHaveBeenCalledWith(notification);

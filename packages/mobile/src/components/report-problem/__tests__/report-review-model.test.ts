@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DirectoryReport } from '@boardsesh/shared-schema';
-import {
-  keepableReports,
-  reviewFootnote,
-  reviewNotes,
-  suggestedSetupGroups,
-  suggestedSetupUpdateInput,
-  waitingReports,
-} from '../report-review-model';
+import { keepableReports, reviewFootnote, reviewNotes, waitingReports } from '../report-review-model';
 
 function report(overrides: Partial<DirectoryReport>): DirectoryReport {
   return {
@@ -70,100 +63,19 @@ describe('report review model', () => {
   });
 });
 
+// Grouping, matching and the update input live in @boardsesh/directory-moderation
+// (suggested-setups.test.ts); the review sheet's test covers how it uses them.
 describe('suggested setups', () => {
-  const current = { layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
-  const note = (
-    setup: { layoutId: number; sizeId: number; setIds: string; angle?: number | null } | null,
-    at: string,
-  ) => ({
-    note: '',
-    createdAt: at,
-    reporter: null,
-    suggestedSetup: setup,
-  });
-
-  it('groups equal setups across reports, most suggested first, then the latest', () => {
-    const groups = suggestedSetupGroups(
-      [
-        report({
-          uuid: 'r1',
-          notes: [
-            note({ layoutId: 1, sizeId: 7, setIds: '1', angle: null }, '2026-11-20T10:00:00.000Z'),
-            note({ layoutId: 8, sizeId: 17, setIds: '27,26', angle: null }, '2026-11-21T10:00:00.000Z'),
-          ],
-        }),
-        report({
-          uuid: 'r2',
-          notes: [
-            note({ layoutId: 8, sizeId: 17, setIds: '26,27' }, '2026-11-19T10:00:00.000Z'),
-            note({ layoutId: 1, sizeId: 8, setIds: '1', angle: null }, '2026-11-22T10:00:00.000Z'),
-          ],
-        }),
-      ],
-      current,
-    );
-    expect(groups).toEqual([
-      { key: '8:17:26,27:', setup: { layoutId: 8, sizeId: 17, setIds: '26,27', angle: null }, count: 2 },
-      { key: '1:8:1:', setup: { layoutId: 1, sizeId: 8, setIds: '1', angle: null }, count: 1 },
-      { key: '1:7:1:', setup: { layoutId: 1, sizeId: 7, setIds: '1', angle: null }, count: 1 },
-    ]);
-  });
-
-  it("leaves out what the board already has, notes without a setup, and other reasons' notes", () => {
-    const groups = suggestedSetupGroups(
-      [
-        report({
-          notes: [
-            note({ layoutId: 1, sizeId: 10, setIds: '20,1', angle: null }, '2026-11-20T10:00:00.000Z'),
-            note({ layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 }, '2026-11-20T10:00:00.000Z'),
-            note(null, '2026-11-20T10:00:00.000Z'),
-          ],
-        }),
-        report({ reason: 'gone', notes: [note({ layoutId: 1, sizeId: 7, setIds: '1' }, '2026-11-20T10:00:00.000Z')] }),
-      ],
-      current,
-    );
-    expect(groups).toEqual([]);
-  });
-
-  it('keeps an angle a board that does not tilt was suggested at apart', () => {
-    const groups = suggestedSetupGroups(
-      [
-        report({
-          notes: [
-            note({ layoutId: 1, sizeId: 10, setIds: '1,20', angle: 25 }, '2026-11-20T10:00:00.000Z'),
-            note({ layoutId: 1, sizeId: 10, setIds: '1,20', angle: 25 }, '2026-11-21T10:00:00.000Z'),
-          ],
-        }),
-      ],
-      current,
-    );
-    expect(groups).toEqual([
-      { key: '1:10:1,20:25', setup: { layoutId: 1, sizeId: 10, setIds: '1,20', angle: 25 }, count: 2 },
-    ]);
-  });
-
-  it('turns a suggestion into the update input, the angle only when it has one', () => {
-    expect(suggestedSetupUpdateInput('board-1', { layoutId: 8, sizeId: 17, setIds: '27,26', angle: null })).toEqual({
-      boardUuid: 'board-1',
-      layoutId: 8,
-      sizeId: 17,
-      setIds: '26,27',
-    });
-    expect(
-      suggestedSetupUpdateInput(
-        'board-1',
-        { layoutId: 2, sizeId: 1, setIds: '2', angle: 25 },
-        { allowDuplicateConfig: true },
-      ),
-    ).toEqual({ boardUuid: 'board-1', layoutId: 2, sizeId: 1, setIds: '2', angle: 25, allowDuplicateConfig: true });
-  });
-
   it('shows only written notes as notes', () => {
     const notes = reviewNotes([
       report({
         notes: [
-          note({ layoutId: 1, sizeId: 7, setIds: '1' }, '2026-11-20T10:00:00.000Z'),
+          {
+            note: '',
+            createdAt: '2026-11-20T10:00:00.000Z',
+            reporter: null,
+            suggestedSetup: { layoutId: 1, sizeId: 7, setIds: '1', angle: null },
+          },
           { note: 'Kicker is gone', createdAt: '2026-11-21T10:00:00.000Z', reporter: null },
         ],
       }),

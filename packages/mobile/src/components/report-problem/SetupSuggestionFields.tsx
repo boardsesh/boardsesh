@@ -6,13 +6,17 @@
 //
 // The state is the caller's (`setupSelectionReducer` from @boardsesh/board-config),
 // so the reset rules are the board builder's: a new layout takes its default
-// size and every set of it, a new size every set of it.
+// size and every set of it, a new size every set of it. The words are
+// board-config's setup labels, the same ones www's fields and every summary use.
 
 import { memo, useCallback, useMemo, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import {
+  setupAngleLabel,
+  setupLayoutLabel,
   setupSelectionOptions,
+  setupSizeLabel,
   type SetupSelection,
   type SetupSelectionAction,
   type SetupSelectionOptions,
@@ -21,9 +25,7 @@ import { AppMenu } from '../AppMenu';
 import type { AppMenuAction } from '../AppMenu';
 import { InsetGroupedList, insetGroupedRowStyles } from '../InsetGroupedList';
 import { Text } from '../Text';
-import { cleanLayoutName, formatSizeLabel } from '../board-discovery/board-builder-labels';
 import { useFeatureFlag } from '../../providers/feature-flags-provider';
-import { formatAngleLabel } from './setup-summary';
 
 const NO_SETS: number[] = [];
 
@@ -86,20 +88,20 @@ export function SetupSuggestionFields({ selection, onAction, disabled = false }:
 
   const layoutRow = useMemo(() => {
     const actions: AppMenuAction[] = options.layouts.map((layout) => ({
-      label: cleanLayoutName(layout.name, boardName),
+      label: setupLayoutLabel(boardName, layout),
       selected: layout.id === layoutId,
     }));
     const current = options.layouts.find((layout) => layout.id === layoutId);
-    return { actions, value: current ? cleanLayoutName(current.name, boardName) : '' };
+    return { actions, value: current ? setupLayoutLabel(boardName, current) : '' };
   }, [options.layouts, layoutId, boardName]);
 
   const sizeRow = useMemo(() => {
     const actions: AppMenuAction[] = options.sizes.map((size) => ({
-      label: formatSizeLabel(size),
+      label: setupSizeLabel(size),
       selected: size.id === sizeId,
     }));
     const current = options.sizes.find((size) => size.id === sizeId);
-    return { actions, value: current ? formatSizeLabel(current) : '' };
+    return { actions, value: current ? setupSizeLabel(current) : '' };
   }, [options.sizes, sizeId]);
 
   const holdsRow = useMemo(() => {
@@ -111,7 +113,7 @@ export function SetupSuggestionFields({ selection, onAction, disabled = false }:
     const value = options.sets
       .filter((set) => selectedSetIds.has(set.id))
       .map((set) => set.name)
-      .join(' + ');
+      .join(', ');
     return { actions, value };
   }, [options, selectedSetIds]);
 
@@ -120,10 +122,10 @@ export function SetupSuggestionFields({ selection, onAction, disabled = false }:
       angleIsFixed
         ? {
             actions: options.angles.map((option): AppMenuAction => ({
-              label: formatAngleLabel(option),
+              label: setupAngleLabel(option),
               selected: option === angle,
             })),
-            value: formatAngleLabel(angle),
+            value: setupAngleLabel(angle),
           }
         : null,
     [angleIsFixed, options.angles, angle],

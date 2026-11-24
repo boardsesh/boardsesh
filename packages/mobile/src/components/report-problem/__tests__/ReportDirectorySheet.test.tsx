@@ -379,7 +379,7 @@ describe('ReportDirectorySheet suggesting the setup', () => {
     const screen = openWrongSetup();
     expect(value(screen, 'layout')).toBe('Original');
     expect(value(screen, 'size')).toBe('12×12 with kickboard · Square');
-    expect(value(screen, 'holds')).toBe('Bolt Ons + Screw Ons');
+    expect(value(screen, 'holds')).toBe('Bolt Ons, Screw Ons');
     // The board tilts, so its angle is not part of the setup.
     expect(screen.queryByTestId('setup-suggestion-angle')).toBeNull();
     expect(send(screen).disabled).toBe(true);
@@ -396,7 +396,7 @@ describe('ReportDirectorySheet suggesting the setup', () => {
     fireEvent.click(row(screen, 'layout').getByLabelText('Homewall'));
     // Homewall's default size, with every set of it.
     expect(value(screen, 'size')).toBe('7×10 · Full Ride');
-    expect(value(screen, 'holds')).toBe('Mainline + Auxiliary');
+    expect(value(screen, 'holds')).toBe('Mainline, Auxiliary');
   });
 
   it('never leaves the board without holds', () => {
@@ -497,7 +497,7 @@ describe('ReportDirectorySheet suggesting the setup', () => {
     expect(applyChangedBoard).toHaveBeenCalledWith(applied);
     expect(screen.getByTestId('report-problem-done-title').textContent).toBe('mobile.setupSuggestion.appliedTitle');
     expect(screen.getByTestId('report-problem-done').textContent).toBe(
-      'mobile.setupSuggestion.appliedBody{"gym":"Crux","setup":"Homewall · 7×10 · Full Ride · Mainline + Auxiliary"}',
+      'mobile.setupSuggestion.appliedBody{"gym":"Crux","setup":"Homewall · 7×10 · Full Ride · Mainline, Auxiliary"}',
     );
     calls.length = 0;
     applyChangedBoard.mockClear();
