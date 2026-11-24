@@ -106,6 +106,22 @@ describe('apple-app-site-association paths', () => {
     }
   });
 
+  it('keeps app guides and their locale aliases on the website', () => {
+    for (const prefix of ['', ...nonDefaultLocales.map((locale) => `/${locale}`)]) {
+      for (const route of [
+        '/apps',
+        '/apps/',
+        '/apps/kilter',
+        '/apps/aurora',
+        '/compare/spray-wall-apps',
+        '/compare/spray-wall-apps/',
+      ]) {
+        expect(opensInApp(paths, `${prefix}${route}?ref=search`)).toBe(false);
+      }
+      expect(opensInApp(paths, `${prefix}/app`)).toBe(true);
+    }
+  });
+
   it('still opens the login link the verify-email redirect sends in the app', () => {
     expect(opensInApp(paths, '/auth/login?verified=true')).toBe(true);
   });
@@ -178,6 +194,12 @@ describe('apple-app-site-association paths', () => {
       'NOT /de/developers/*',
       'NOT /it/developers/*',
       'NOT /zh-CN/developers/*',
+      'NOT /apps/*',
+      'NOT /es/apps/*',
+      'NOT /fr/apps/*',
+      'NOT /de/apps/*',
+      'NOT /it/apps/*',
+      'NOT /zh-CN/apps/*',
       'NOT /developers',
       'NOT /es/developers',
       'NOT /fr/developers',
@@ -190,6 +212,24 @@ describe('apple-app-site-association paths', () => {
       'NOT /de/auth/error',
       'NOT /it/auth/error',
       'NOT /zh-CN/auth/error',
+      'NOT /apps',
+      'NOT /es/apps',
+      'NOT /fr/apps',
+      'NOT /de/apps',
+      'NOT /it/apps',
+      'NOT /zh-CN/apps',
+      'NOT /compare/spray-wall-apps',
+      'NOT /es/compare/spray-wall-apps',
+      'NOT /fr/compare/spray-wall-apps',
+      'NOT /de/compare/spray-wall-apps',
+      'NOT /it/compare/spray-wall-apps',
+      'NOT /zh-CN/compare/spray-wall-apps',
+      'NOT /compare/spray-wall-apps/',
+      'NOT /es/compare/spray-wall-apps/',
+      'NOT /fr/compare/spray-wall-apps/',
+      'NOT /de/compare/spray-wall-apps/',
+      'NOT /it/compare/spray-wall-apps/',
+      'NOT /zh-CN/compare/spray-wall-apps/',
       '/*',
     ]);
   });

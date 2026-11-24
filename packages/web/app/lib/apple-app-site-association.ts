@@ -39,7 +39,7 @@ export const APPLE_APP_ID = '9L3HKPZBH3.com.boardsesh.app';
  * finish. Phones pick up this file days after it changes (see the route), so
  * these entries have to be live at least a week before those pages ship.
  */
-export const WEB_ONLY_PATH_PREFIXES = ['/gym', '/poster', '/oauth', '/developers'] as const;
+export const WEB_ONLY_PATH_PREFIXES = ['/gym', '/poster', '/oauth', '/developers', '/apps'] as const;
 
 /**
  * Exact paths that are web-only, excluded at the root and under every locale
@@ -51,7 +51,13 @@ export const WEB_ONLY_PATH_PREFIXES = ['/gym', '/poster', '/oauth', '/developers
  * this page only: `/auth/login` stays claimed, because the verify-email redirect
  * goes there and has to keep opening the app.
  */
-export const WEB_ONLY_EXACT_PATHS = ['/developers', '/auth/error'] as const;
+export const WEB_ONLY_EXACT_PATHS = [
+  '/developers',
+  '/auth/error',
+  '/apps',
+  '/compare/spray-wall-apps',
+  '/compare/spray-wall-apps/',
+] as const;
 
 /** Non-page paths the OS or a build tool fetches. Never locale-prefixed. */
 const INFRASTRUCTURE_EXCLUSIONS = ['NOT /api/*', 'NOT /_next/*', 'NOT /monitoring', 'NOT /.well-known/*'] as const;
