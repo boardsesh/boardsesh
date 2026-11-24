@@ -1,3 +1,6 @@
+// Leaf subpath, not the barrel: the dark-art naming rule is shared with the server
+// renderer and www, and the barrel would pull render pipeline modules into the bundle.
+import { toDarkArtPath } from '@boardsesh/board-render/background';
 import { BOARD_BACKGROUND_ASSETS } from './board-backgrounds-manifest';
 
 // Which bundled file a piece of board art resolves to: the variant and
@@ -21,13 +24,6 @@ export type BackgroundVariant = 'full' | 'thumb';
  * resolved before dark variants existed.
  */
 export type BackgroundColorScheme = 'light' | 'dark';
-
-/**
- * Suffix marking a dark-mode sibling, e.g.
- * `moonboard/moonboard2016/holdsetb.webp` -> `moonboard/moonboard2016/holdsetb.dark.webp`.
- * Written by scripts/generate-dark-board-art.ts; keep the two in sync.
- */
-const DARK_VARIANT_SUFFIX = '.dark.webp';
 
 /**
  * Map a full-resolution background manifest key produced by getBoardRenderData
@@ -75,7 +71,8 @@ export function resolveManifestKey(
     if (BOARD_BACKGROUND_ASSETS[thumbKey] !== undefined) manifestKey = thumbKey;
   }
   if (colorScheme === 'dark') {
-    const darkKey = `${manifestKey.replace(/\.webp$/, '')}${DARK_VARIANT_SUFFIX}`;
+    // e.g. `moonboard/moonboard2016/holdsetb.webp` -> `moonboard/moonboard2016/holdsetb.dark.webp`.
+    const darkKey = toDarkArtPath(manifestKey);
     if (BOARD_BACKGROUND_ASSETS[darkKey] !== undefined) return darkKey;
   }
   return manifestKey;

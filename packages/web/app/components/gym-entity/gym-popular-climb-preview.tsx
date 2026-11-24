@@ -8,7 +8,7 @@ import type { BoardDiscoveryBoard, BoardDiscoveryClimb } from '@boardsesh/shared
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
-import { buildBoardRenderUrl, hasDarkBoardArt } from '@/app/components/board-renderer/util';
+import { boardArtColorScheme, buildBoardRenderUrl } from '@/app/components/board-renderer/util';
 import { constructBoardSlugViewUrl } from '@/app/lib/url-utils';
 
 /** Optional during backend rollout; currentClimb always remains presence-only. */
@@ -38,7 +38,7 @@ export default function GymPopularClimbPreview({
       return {
         url: buildBoardRenderUrl(details, climb.frames, {
           includeBackground: true,
-          colorScheme: hasDarkBoardArt(boardName) ? 'dark' : undefined,
+          colorScheme: boardArtColorScheme(boardName),
         }),
         href: constructBoardSlugViewUrl(
           encodeURIComponent(board.slug),

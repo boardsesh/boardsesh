@@ -6,7 +6,7 @@ import Typography from '@mui/material/Typography';
 import { boardTypeLabel } from '@boardsesh/board-constants/board-type-labels';
 import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
 import { SUPPORTED_BOARDS, type BoardDiscoveryBoard } from '@boardsesh/shared-schema';
-import { buildBoardRenderUrl, hasDarkBoardArt } from '@/app/components/board-renderer/util';
+import { boardArtColorScheme, buildBoardRenderUrl } from '@/app/components/board-renderer/util';
 import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 import styles from './physical-board-preview.module.css';
 
@@ -28,7 +28,7 @@ export default function PhysicalBoardPreview({ board, label }: { board: BoardDis
         url: buildBoardRenderUrl(boardDetails, toFlatFrames(board.currentClimb?.frames ?? '', boardName), {
           thumbnail: true,
           includeBackground: true,
-          colorScheme: hasDarkBoardArt(boardName) ? 'dark' : undefined,
+          colorScheme: boardArtColorScheme(boardName),
         }),
       };
     } catch {

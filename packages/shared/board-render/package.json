@@ -10,6 +10,11 @@
       "import": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./background": {
+      "types": "./src/background.ts",
+      "import": "./src/background.ts",
+      "default": "./src/background.ts"
+    },
     "./render-config": {
       "types": "./src/render-config.ts",
       "import": "./src/render-config.ts",

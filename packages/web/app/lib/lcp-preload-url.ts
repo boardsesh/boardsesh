@@ -1,7 +1,7 @@
 import { getBoardImageDetailsForPlaylist, getBoardImageDetailsForBoard } from './board-image-details';
 import type { BoardName } from '@/app/lib/types';
 import type { SetIdList } from '@/app/lib/board-data';
-import { getImageUrl } from '@/app/components/board-renderer/util';
+import { buildBoardArtLayers, getImageUrl } from '@/app/components/board-renderer/util';
 
 /**
  * Compute the thumbnail URL for the first playlist's board image.
@@ -43,6 +43,11 @@ export function getPlaylistLcpPreloadUrl(
   }
 
   if (!boardDetails) return null;
+
+  // A board with server-resolved dark art (MoonBoard) draws its bare board as a composite,
+  // so the hint has to name that render, not the light photo it no longer shows.
+  const { overlayUrl } = buildBoardArtLayers(boardDetails, null, true);
+  if (overlayUrl) return overlayUrl;
 
   const firstImage = boardDetails.backgroundImagePaths[0];
   if (!firstImage) return null;

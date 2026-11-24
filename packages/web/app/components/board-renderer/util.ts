@@ -1,6 +1,8 @@
 import { toFlatFrames as toFlatFramesShared } from '@boardsesh/board-constants/hold-states';
 import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
 import type { RenderMode } from '@boardsesh/board-render/render-config';
+// Leaf subpath: the dark-art naming rule the server renderer and the mobile app share.
+import { toDarkArtPath } from '@boardsesh/board-render/background';
 // Leaf subpath for the same reason as the version constant below: `validation`
 // carries zod and nothing else, while the barrel would drag the sharp pipeline
 // into the client bundle.
@@ -90,23 +92,39 @@ function shouldUseCompatibilityPath(): boolean {
 }
 
 /**
- * Boards whose art has a dark-mode sibling committed under public/images.
+ * Boards whose art has dark-mode siblings committed under public/images. www is dark-only,
+ * so these boards always ask for their dark art.
  *
- * Woods is the only one on web: its art is hold sprites on an opaque white ground, which in
- * dark mode renders as a lit rectangle, so scripts/generate-woods-dark-art.ts keys that
- * ground out (issue #4753). MoonBoard has dark files too, but they were tuned against the
- * mobile app's surfaces and are not wired up here yet.
+ * - MoonBoard is drawn for a white wall: its A-K / 1-18 labels and its black set B hold
+ *   sheets measure ~1.1:1 against the dark field and vanish. scripts/generate-dark-board-art.ts
+ *   lifts only those layers (issue #3885); the mobile app has drawn them since.
+ * - Woods is hold sprites on an opaque white ground, which renders as a lit rectangle, so
+ *   scripts/generate-woods-dark-art.ts keys that ground out (issue #4753).
  *
- * This gate is what keeps the theme swap from doubling requests and server renders for every
- * other board — those would render identical bytes twice.
- *
- * Unlike mobile, which falls back when a key is absent from its bundle manifest, a missing
- * file here is a 404 — so util.test.ts walks the listed boards' image directories and fails
- * if any light `.webp` has lost its dark sibling.
+ * This gate keeps every other board on the render URL it has always had: adding
+ * `color_scheme=dark` there would re-render identical bytes under a new cache key.
+ * util.test.ts fails if a board's image directory gains a `.dark.webp` this list lacks.
  */
-export const BOARDS_WITH_DARK_ART: ReadonlySet<string> = new Set(['woods']);
+export const BOARDS_WITH_DARK_ART: ReadonlySet<string> = new Set(['moonboard', 'woods']);
+
+/**
+ * The subset of `BOARDS_WITH_DARK_ART` where EVERY light layer has a dark sibling, so the
+ * board photo can split out as static light/dark files (see `buildBoardArtLayers`).
+ *
+ * MoonBoard cannot: only its labels and set B sheets have siblings, and a browser asking for
+ * `holdseta.dark.webp` gets a 404, not a fallback. It goes through the server composite
+ * instead, whose `resolveArtPath` falls back per layer, the same rule the mobile app applies
+ * to its bundle. util.test.ts walks these boards' directories for a missing sibling.
+ */
+export const BOARDS_WITH_SPLIT_DARK_ART: ReadonlySet<string> = new Set(['woods']);
 
 export const hasDarkBoardArt = (board: BoardName) => BOARDS_WITH_DARK_ART.has(board);
+
+export const hasSplitDarkBoardArt = (board: BoardName) => BOARDS_WITH_SPLIT_DARK_ART.has(board);
+
+/** The `colorScheme` a server-composited render of this board should ask for. */
+export const boardArtColorScheme = (board: BoardName): 'dark' | undefined =>
+  hasDarkBoardArt(board) ? 'dark' : undefined;
 
 /**
  * Production and preview HTML point straight at Railway so a cache miss never
@@ -234,7 +252,11 @@ export type BoardArtLayers = {
    * let the stylesheet pick.
    */
   backgroundUrls: string[];
-  /** The per-climb hold render. Includes the board photo only when `backgroundUrls` is empty. */
+  /**
+   * The per-climb hold render. Includes the board photo only when `backgroundUrls` is empty.
+   * For a board whose dark art only the server can resolve (MoonBoard) this is set even with
+   * no climb, as the bare board: the static files would show the light art.
+   */
   overlayUrl: string | null;
 };
 
@@ -256,10 +278,17 @@ export const buildBoardArtLayers = (
   thumbnail?: boolean,
   renderMode?: RenderMode,
 ): BoardArtLayers => {
-  if (!hasDarkBoardArt(boardDetails.board_name)) {
+  if (!hasSplitDarkBoardArt(boardDetails.board_name)) {
+    const colorScheme = boardArtColorScheme(boardDetails.board_name);
+    // A climb with no frames on a server-themed board still needs the composite: it is the
+    // only way to get MoonBoard's per-layer dark art (see BOARDS_WITH_SPLIT_DARK_ART).
+    const overlayFrames = frames || (colorScheme ? '' : null);
     return {
       backgroundUrls: [],
-      overlayUrl: frames ? buildOverlayUrl(boardDetails, frames, thumbnail, undefined, renderMode) : null,
+      overlayUrl:
+        overlayFrames === null
+          ? null
+          : buildOverlayUrl(boardDetails, overlayFrames, thumbnail, colorScheme, renderMode),
     };
   }
 
@@ -387,14 +416,12 @@ const toThumbUrl = (webpUrl: string) => {
 };
 
 /**
- * Dark-mode sibling of a WebP art path: `foo.webp` -> `foo.dark.webp`.
- *
- * Same convention as `DARK_VARIANT_SUFFIX` in the mobile app's background-image-cache.ts,
- * written by scripts/generate-dark-board-art.ts and scripts/generate-woods-dark-art.ts. Only
- * Woods ships these on web today — callers are responsible for knowing a sibling exists,
- * because a missing one 404s rather than falling back the way the mobile manifest does.
+ * Dark-mode sibling of a WebP art URL: `foo.webp` -> `foo.dark.webp`, by the shared rule in
+ * `@boardsesh/board-render/background`. Only for `BOARDS_WITH_SPLIT_DARK_ART`: callers are
+ * responsible for knowing a sibling exists, because a missing one 404s rather than falling
+ * back the way the server renderer and the mobile bundle do.
  */
-export const toDarkArtUrl = (webpUrl: string) => webpUrl.replace(/\.webp$/, '.dark.webp');
+export const toDarkArtUrl = (webpUrl: string) => toDarkArtPath(webpUrl);
 
 export const getImageUrl = (imageUrl: string, board: BoardName, thumbnail?: boolean) => {
   // Absolute path (e.g. MoonBoard images already prefixed with /images/moonboard/...)

@@ -160,7 +160,7 @@ vi.mock('@/app/components/board-renderer/util', () => ({
   buildOgBoardRenderUrl: vi.fn(() => 'https://ws.boardsesh.com/og/climb'),
   // The fixtures here are Kilter, which has no dark art — so the front door emits its
   // single board image and these assertions keep counting one.
-  hasDarkBoardArt: (board: string) => board === 'woods',
+  hasSplitDarkBoardArt: (board: string) => board === 'woods',
 }));
 
 // Below-the-fold client islands. They are not what this file asserts, and
