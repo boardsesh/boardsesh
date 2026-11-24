@@ -8,6 +8,7 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### New
 
+- Your gym’s local time is picked from its map location or public address. Staff can still choose a different time zone. ([#8124](https://github.com/boardsesh/boardsesh/pull/8124))
 - See how Boardsesh compares with the Kilter, Aurora, MoonBoard, Woods and spray wall apps, row by row with sources, before your first session. ([#8098](https://github.com/boardsesh/boardsesh/pull/8098))
 - Compare your gym’s recorded climbers and sends, then inspect twelve weeks of board activity. See where history is still too short to compare. ([#8087](https://github.com/boardsesh/boardsesh/pull/8087))
 - See recorded board activity at your gym, with local dates and verified wall groups. ([#8084](https://github.com/boardsesh/boardsesh/pull/8084))
@@ -22,6 +23,8 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### Fixed
 
+- Open Gym analytics from your gym page without leaving the app. Find reporting time-zone setup above the charts when it is still needed. ([#8119](https://github.com/boardsesh/boardsesh/pull/8119))
+- Tapping the climb in the bar above your tabs now slides the player up like any other climb, and fast open-and-close no longer freezes the app ([#8127](https://github.com/boardsesh/boardsesh/pull/8127))
 - On iPhone Duo, the Climbs buttons on the side no longer overlap the tab bar. Create a climb lives in the ⋯ menu there. ([#8125](https://github.com/boardsesh/boardsesh/pull/8125))
 - Climb actions open beside the three-dot button or your pointer in the browser. ([#8117](https://github.com/boardsesh/boardsesh/pull/8117))
 - Climb grades line up at the right edge in your browser. ([#8114](https://github.com/boardsesh/boardsesh/pull/8114))

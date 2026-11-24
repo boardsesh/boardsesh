@@ -1,6 +1,27 @@
 {
-  "generatedAt": "2026-11-24T17:48:01.759Z",
+  "generatedAt": "2026-11-24T18:49:12.714Z",
   "entries": [
+    {
+      "prNumber": 8124,
+      "category": "new",
+      "title": "Your gym’s local time is picked from its map location or public address. Staff can still choose a different time zone.",
+      "mergedAt": "2026-11-24T18:31:22Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8124"
+    },
+    {
+      "prNumber": 8119,
+      "category": "fixed",
+      "title": "Open Gym analytics from your gym page without leaving the app. Find reporting time-zone setup above the charts when it is still needed.",
+      "mergedAt": "2026-11-24T18:30:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8119"
+    },
+    {
+      "prNumber": 8127,
+      "category": "fixed",
+      "title": "Tapping the climb in the bar above your tabs now slides the player up like any other climb, and fast open-and-close no longer freezes the app",
+      "mergedAt": "2026-11-24T18:28:09Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8127"
+    },
     {
       "prNumber": 8125,
       "category": "fixed",
