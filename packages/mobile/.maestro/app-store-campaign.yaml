@@ -375,8 +375,7 @@ name: multiboard App Store campaign sources
 - extendedWaitUntil:
     visible: 'Friday board crew'
     timeout: 60000
-# Open through the established board route; the native accessory zoom hides
-# its accessibility subtree from XCTest while the retained tab host is covered.
+# Open through the established board route.
 - openLink: com.boardsesh.app://home
 - tapOn:
     text: 'Open'

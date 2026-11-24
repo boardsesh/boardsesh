@@ -92,7 +92,6 @@ vi.mock('react-native-gesture-handler', () => ({
 
 import { useDrawerDismissGesture } from '../use-drawer-dismiss-gesture';
 import { usePlaySwipeDismiss } from '../use-play-swipe-dismiss';
-import { clearPlayerZoomOpen, notePlayerZoomOpen } from '../../../lib/player-zoom-presentation';
 
 const frames = new Map<number, FrameRequestCallback>();
 let nextFrame = 0;
@@ -133,7 +132,6 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
-  clearPlayerZoomOpen();
 });
 
 describe('play swipe dismissal target ownership', () => {
@@ -448,58 +446,16 @@ it('registers Android Back after the navigator effects on a cold mount', async (
   expect(bridge.timings.at(-1)?.target).toBe(900);
 });
 
-// #7733: UIKit's zoom from the tab accessory shrinks the list behind the player,
-// and only its own animated dismiss grows it back. A swipe that slid the player
-// away and then dismissed without animation snapped the list to full size.
-describe('swipe close after the accessory zoom', () => {
-  function renderPlayer() {
-    const scrollY = { value: 0 } as SharedValue<number>;
-    return renderHook(() => {
-      const motion = usePlaySwipeDismiss(1);
-      useDrawerDismissGesture({ onDismiss: motion.close, swipeDismiss: motion.swipeDismiss, scrollYSV: scrollY });
-      return motion;
-    });
-  }
-
-  it('hands a committed swipe to the animated native dismiss at once', () => {
-    notePlayerZoomOpen();
-    const { result } = renderPlayer();
-    releaseGesture();
-    // No offscreen slide waits on a completion: the card settles while UIKit zooms.
-    expect(bridge.springs).toHaveLength(0);
-    expect(result.current.swipeDismiss.translateY.value).toBe(0);
-    flushBridge();
-    expect(router.dismiss).toHaveBeenCalledTimes(1);
-    expect(navigation.setOptions).not.toHaveBeenCalledWith({ animation: 'none' });
+// #8126: every open slides, including the mini-player's, so every swipe close
+// slides offscreen first and then removes the route.
+it('slides a swiped player offscreen before removing it', () => {
+  const scrollY = { value: 0 } as SharedValue<number>;
+  const { result } = renderHook(() => {
+    const motion = usePlaySwipeDismiss(1);
+    useDrawerDismissGesture({ onDismiss: motion.close, swipeDismiss: motion.swipeDismiss, scrollYSV: scrollY });
+    return motion;
   });
-
-  it('ignores a chevron tap after the swipe handed off', () => {
-    notePlayerZoomOpen();
-    const { result } = renderPlayer();
-    releaseGesture();
-    act(() => result.current.close());
-    flushBridge();
-    expect(router.dismiss).toHaveBeenCalledTimes(1);
-  });
-
-  it('keeps the slide-then-remove close for a player opened from a climb row', () => {
-    const { result } = renderPlayer();
-    releaseGesture();
-    expect(bridge.springs).toHaveLength(1);
-    expect(result.current.swipeDismiss.onNativeDismiss).toBeUndefined();
-  });
-
-  it('keeps the slide-then-remove close on Android', () => {
-    platform.OS = 'android';
-    notePlayerZoomOpen();
-    const { result } = renderPlayer();
-    expect(result.current.swipeDismiss.onNativeDismiss).toBeUndefined();
-  });
-
-  it('leaves the next open to say how it was presented once the player unmounts', () => {
-    notePlayerZoomOpen();
-    renderPlayer().unmount();
-    const { result } = renderPlayer();
-    expect(result.current.swipeDismiss.onNativeDismiss).toBeUndefined();
-  });
+  releaseGesture();
+  expect(bridge.springs).toHaveLength(1);
+  expect(result.current.swipeDismiss).not.toHaveProperty('onNativeDismiss');
 });

@@ -92,15 +92,6 @@ describe('useAccessoryClimbTap', () => {
     tap.onEnd?.();
     expect(drawer.openPlayDrawer).not.toHaveBeenCalled();
   });
-
-  it('stages the queue head without competing with Link navigation', () => {
-    const { result } = renderHook(() => useAccessoryClimbTap());
-    result.current.preparePlay();
-    expect(drawer.openPlayDrawer).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-head' }), {
-      navigate: false,
-      reopensCurrent: true,
-    });
-  });
 });
 
 // Owner decision A: the bar shows the climber's last pick (a preview
@@ -149,16 +140,6 @@ describe('useAccessoryClimbTap with a last pick', () => {
       previewMirrored: true,
       previewLatchStart: { wallClimbUuid: 'climb-wall', at: 42 },
     });
-  });
-
-  it('stages the pick the same way for a Link', () => {
-    const item = pickUnderHead();
-    const { result } = renderHook(() => useAccessoryClimbTap());
-    result.current.preparePlay();
-    expect(drawer.openPlayDrawer).toHaveBeenCalledWith(
-      item.climb,
-      expect.objectContaining({ previewQueueItem: item, playlistSuggestionSource: track, navigate: false }),
-    );
   });
 
   it('shows the queue’s current once it changed after the pick', () => {

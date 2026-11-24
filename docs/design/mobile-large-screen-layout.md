@@ -9,8 +9,8 @@ How the mobile app adapts on iPad, Android tablets and web desktop. It moved her
 content column**; there is no player pane, wall column or wall strip beside it. The current climb rides
 the bottom accessory, Music's MiniPlayer (HIG Tab bars: "tab bars with an attached accessory, like the
 MiniPlayer in Music"), and tapping it, or any climb, opens the full-screen `/play` player, as on iPhone
-(HIG: "Don't change your app's functionality based on the space it occupies"). The accessory zooms
-into the player. The accessory shows the bar's climb, the last one you opened, not always the
+(HIG: "Don't change your app's functionality based on the space it occupies"). The accessory opens
+the player with the same slide as a climb row (#8126). The accessory shows the bar's climb, the last one you opened, not always the
 current one (see `nativeAccessory` in [mobile-chrome.md](mobile-chrome.md#aesthetic-vs-capability)). `resolveCurrentClimbSurface` (`src/hooks/current-climb-surface.ts`) is the one answer
 to "who shows the current climb": the floating JS bar, the bottom-chrome reserve, the rest pill and the
 drawer host's tap routing all read it, so the climb never shows twice. Tab content clears the

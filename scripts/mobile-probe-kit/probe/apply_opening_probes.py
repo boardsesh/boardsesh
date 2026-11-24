@@ -192,8 +192,18 @@ replace(route, "  const queueSheetRef = useRef<QueueSheetHandle>(null);", """  c
   // this route's effects and may schedule the first UI geometry marker.
   if (SERVING_CONDITION) probeOpeningTarget(probeOwner, playTarget.nonce, playTarget.climb.uuid, playTarget.climb.frames);
   const queueSheetRef = useRef<QueueSheetHandle>(null);""".replace("SERVING_CONDITION", serving_condition))
-replace(route, "    <Link.AppleZoomTarget>", "    <OpeningProbeRouteContext.Provider value={probeOwner}>\n    <Link.AppleZoomTarget>")
-replace(route, "    </Link.AppleZoomTarget>", "    </Link.AppleZoomTarget>\n    </OpeningProbeRouteContext.Provider>")
+# Builds before #8126 wrap the player in the accessory's zoom target; later
+# builds return the Animated.View directly. Wrap whichever root is present.
+if "<Link.AppleZoomTarget>" in read(route):
+    route_open = "    <Link.AppleZoomTarget>"
+    route_close = ("    </Link.AppleZoomTarget>",
+                   "    </Link.AppleZoomTarget>\n    </OpeningProbeRouteContext.Provider>")
+else:
+    route_open = "    <Animated.View style={[styles.root, animatedStyle]} onLayout={onLayout}>"
+    route_close = ("    </Animated.View>\n  );",
+                   "    </Animated.View>\n    </OpeningProbeRouteContext.Provider>\n  );")
+replace(route, route_open, "    <OpeningProbeRouteContext.Provider value={probeOwner}>\n" + route_open)
+replace(route, *route_close)
 
 hook = "src/hooks/use-native-climb-render.ts"
 add_import(hook, "import { probeOpeningDetail, useOpeningProbeOwner } from '../lib/perf-probe';")

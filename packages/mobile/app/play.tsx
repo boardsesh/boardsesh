@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions } from 'react-native';
 import Animated from 'react-native-reanimated';
-import { Link } from 'expo-router';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { ScreenBackground } from '../src/components/ScreenBackground';
 import { PlayDrawer } from '../src/components/play-drawer';
@@ -223,57 +222,55 @@ function PlayScreen() {
   );
 
   return (
-    <Link.AppleZoomTarget>
-      <Animated.View style={[styles.root, animatedStyle]} onLayout={onLayout}>
-        {/* Opaque background. The player is a transparentModal, so the live tabs
-          screen sits behind it and must not show through. On Liquid Glass it is
-          plain secondarySystemBackground: HIG Materials keeps glass on the
-          controls layer, not under the player's content. Material and Reduce
-          Transparency keep their opaque tonal surface — see ScreenBackground,
-          which also owns why that fill stays `level0` and untouchable (#4209).
-          Rendered on the first frame so the present animates over it. */}
-        <ScreenBackground {...backgroundProps} />
-        {activeBoardConfig ? (
-          <>
-            <PlayDrawer
-              fieldColorOverride={fieldColor}
-              swipeDismiss={swipeDismiss}
-              onClose={close}
-              boardConfig={activeBoardConfig}
-              onAngleChange={onAngleChange}
-              isAngleAdjustable={isAngleAdjustable}
-              onOpenQueue={openQueue}
-              boardMismatch={boardMismatch}
-              reachableBoardKeys={reachableBoardKeys}
-              mismatchBoardLabel={mismatchBoardLabel}
-              onSwitchBoard={onSwitchBoard}
-              dismissPlayerAndWait={dismissPlayerAndWait}
-              openTarget={playTarget}
-              fitBoardToHeight={sideBySide}
-              renderSidePanel={sideBySide ? renderSidePanel : undefined}
+    <Animated.View style={[styles.root, animatedStyle]} onLayout={onLayout}>
+      {/* Opaque background. The player is a transparentModal, so the live tabs
+        screen sits behind it and must not show through. On Liquid Glass it is
+        plain secondarySystemBackground: HIG Materials keeps glass on the
+        controls layer, not under the player's content. Material and Reduce
+        Transparency keep their opaque tonal surface — see ScreenBackground,
+        which also owns why that fill stays `level0` and untouchable (#4209).
+        Rendered on the first frame so the present animates over it. */}
+      <ScreenBackground {...backgroundProps} />
+      {activeBoardConfig ? (
+        <>
+          <PlayDrawer
+            fieldColorOverride={fieldColor}
+            swipeDismiss={swipeDismiss}
+            onClose={close}
+            boardConfig={activeBoardConfig}
+            onAngleChange={onAngleChange}
+            isAngleAdjustable={isAngleAdjustable}
+            onOpenQueue={openQueue}
+            boardMismatch={boardMismatch}
+            reachableBoardKeys={reachableBoardKeys}
+            mismatchBoardLabel={mismatchBoardLabel}
+            onSwitchBoard={onSwitchBoard}
+            dismissPlayerAndWait={dismissPlayerAndWait}
+            openTarget={playTarget}
+            fitBoardToHeight={sideBySide}
+            renderSidePanel={sideBySide ? renderSidePanel : undefined}
+          />
+          {mountQueue && queueBoard ? (
+            <QueueSheet
+              ref={queueSheetRef}
+              board={queueBoard}
+              onClose={requestCloseQueue}
+              onDismissed={handleQueueDismissed}
+              onClimbPress={handleClimbPress}
+              onOpenActions={handleOpenActions}
+              onSuggestionPress={handleSuggestionPress}
+              onTickHistory={handleTickHistory}
             />
-            {mountQueue && queueBoard ? (
-              <QueueSheet
-                ref={queueSheetRef}
-                board={queueBoard}
-                onClose={requestCloseQueue}
-                onDismissed={handleQueueDismissed}
-                onClimbPress={handleClimbPress}
-                onOpenActions={handleOpenActions}
-                onSuggestionPress={handleSuggestionPress}
-                onTickHistory={handleTickHistory}
-              />
-            ) : null}
-          </>
-        ) : null}
-        {logAscentSheet}
-        {/* Host the BLE device picker from inside this route so a connect from the
-          player's lightbulb (when disconnected) presents OVER the player. Claims
-          the picker, suppressing the app-root instance while mounted. */}
-        <DevicePickerSheetHost registerExternal />
-        <RouteSheetsBusyReporter queueSheetUp={queueSheetUp} />
-      </Animated.View>
-    </Link.AppleZoomTarget>
+          ) : null}
+        </>
+      ) : null}
+      {logAscentSheet}
+      {/* Host the BLE device picker from inside this route so a connect from the
+        player's lightbulb (when disconnected) presents OVER the player. Claims
+        the picker, suppressing the app-root instance while mounted. */}
+      <DevicePickerSheetHost registerExternal />
+      <RouteSheetsBusyReporter queueSheetUp={queueSheetUp} />
+    </Animated.View>
   );
 }
 

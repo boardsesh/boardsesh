@@ -88,7 +88,7 @@ type NativeAccessoryClimbRowProps = {
   /**
    * Who draws the bar around the row: UIKit's accessory platter (iOS 26), or the
    * Material card (`FloatingMiniPlayerCard`). It sets the phone's control budget
-   * (`miniPlayerPhoneGutter`), and only the platter keeps the zoom source.
+   * (`miniPlayerPhoneGutter`).
    */
   host?: MiniPlayerHost;
   testID?: string;
@@ -216,7 +216,7 @@ export function NativeAccessoryClimbRow({
   const { boardConfig, playDrawerPaneProps } = useDrawerHost();
   const { systemColors, brandColors } = useTheme();
   const { resolveGrade } = useDisplayGrade();
-  const { openPlay, preparePlay } = useAccessoryClimbTap();
+  const { openPlay } = useAccessoryClimbTap();
   const { t } = useTranslation('settings');
   const { bluetooth, inAppBoardConnection, localConnected, ledless, holderDisplayName } = useBoardConnectionState();
   // This phone's drive, as the bar's bulb reads it (`BulbDriveCue`). It changes
@@ -503,8 +503,6 @@ export function NativeAccessoryClimbRow({
         accessibilityLabel={climb.name}
         accessibilityValue={connectionValue}
         onOpen={openPlay}
-        onPrepare={preparePlay}
-        zoomSourceRetained={host === 'nativeAccessory'}
       >
         <LargeContentViewer
           style={styles.labelSlot}

@@ -932,7 +932,7 @@ targets. Its cleanup retires only the nonce it actually served, including that
 nonce's board override. The host retries an explicitly requested navigation once
 after unmount when a newer target is still pending. This retry preserves the
 nonce and checks the credential generation; it excludes pane opens,
-`navigate: false`, superseded targets, and targets another route already consumed.
+superseded targets, and targets another route already consumed.
 
 The tablet-shell and phone-split panes do not receive this route-owned animation. Keep the modal's
 live-behind presentation and accessory-host mount rules above when changing it.
@@ -1180,33 +1180,21 @@ A `react-native-screens` bump is a native-fingerprint change. It lands on `main`
 store builds, temporarily pausing OTA delivery to older binaries until users install the release
 (see `docs/operations/mobile-ota-updates.md`).
 
-## Player zoom from the tab accessory
+## Player open from the tab accessory
 
-On iPhone and iPad with the native tab accessory, tapping the current climb uses Router's native
-`Link.AppleZoom` source and `/play`'s `Link.AppleZoomTarget`. The tap stages the
-current queue head with `openPlayDrawer(climb, { navigate: false })` before Link
-navigates. This preserves the board override and existing play-target reset rules
-without a second navigation. Keep the source mounted in the tab accessory while
-the transparent player is open so closing it can zoom back to the same climb.
+The mini-player in the tab accessory opens `/play` with the same `openPlayDrawer` call and the same
+slide as a climb row. There is no zoom.
 
-Reduce Motion, floating toolbar hosts, Android and web use the existing opener. The iPad zooms
-from its accessory into the full-screen player like Music's MiniPlayer; it has no pane to open
-instead. The player's native interactive dismissal stays
-disabled; its existing vertical swipe owns dismissal, so two gestures cannot
-compete. Keep the lightbulb and tick controls outside the zoom source.
+It used to open with Router's `Link.AppleZoom` into a `Link.AppleZoomTarget` on `/play` (#7733).
+That zoom was removed in #8126 for two reasons:
 
-The zoom shrinks the tabs screen behind the transparent player to about 92%, and only UIKit's own
-animated dismiss grows it back (#7733). So a zoom-presented player closes through UIKit on every
-path: the chevron already did, and a committed swipe settles the card back to rest and calls the
-animated `router.dismiss()` at once. It never slides offscreen first and then dismisses with
-`animation: 'none'`, which showed the shrunken list during the slide and snapped it to full size
-after. The accessory's Link press records the zoom (`src/lib/player-zoom-presentation.ts`) and
-`usePlaySwipeDismiss` reads it once on mount. Players opened any other way keep the slide.
+- A tap or swipe while UIKit was still running the zoom's close could leave the player frozen
+  half-way, so the climber had to force-quit the app.
+- The zoom also had to bypass the player's own swipe close, and it hid the player from VoiceOver
+  (#7082).
 
-While VoiceOver runs, the accessory uses the existing opener too (#7082). After UIKit's zoom, the
-player's whole subtree and the zoom source itself are missing from the accessibility tree, while
-the row-style open keeps both. iOS tells React Native nothing about Voice Control, Switch Control or
-Full Keyboard Access, so those users still get the zoom and its missing tree.
+Don't bring the zoom back unless a device test shows UIKit can survive a re-open and a close during
+the zoom transition.
 
 ## See also
 

@@ -50,12 +50,6 @@ export type SwipeDismissAnimation = {
   revision?: SharedValue<number>;
   /** Called after the surface has finished sliding offscreen. */
   onComplete: (revision?: number) => void;
-  /**
-   * Set when the presentation must close natively (the accessory's zoom, #7733).
-   * A committed swipe then returns the surface to rest and calls this at once,
-   * so UIKit's animated dismiss runs instead of the offscreen slide.
-   */
-  onNativeDismiss?: (revision?: number) => void;
 };
 
 type UseDrawerDismissGestureOptions = {
@@ -121,15 +115,6 @@ export function useDrawerDismissGesture({
     if (revision === undefined) onDismissRef.current();
     else onDismissRef.current(revision);
   };
-  const onNativeDismiss = swipeDismiss?.onNativeDismiss;
-  const nativeDismissRef = useRef(onNativeDismiss);
-  nativeDismissRef.current = onNativeDismiss;
-  // Read on the UI thread at release; the callback itself stays on JS behind the ref.
-  const hasNativeDismiss = onNativeDismiss !== undefined;
-  const commitNativeDismiss = (revision?: number) => {
-    if (revision === undefined) nativeDismissRef.current?.();
-    else nativeDismissRef.current?.(revision);
-  };
 
   const gesture = useMemo(() => {
     const pan = Gesture.Pan()
@@ -185,12 +170,7 @@ export function useDrawerDismissGesture({
         if (committed) {
           const releasedRevision = startedRevision.value ?? undefined;
           isDismissing.value = true;
-          if (hasNativeDismiss) {
-            // UIKit's zoom shrank the screen behind; only its animated dismiss
-            // grows it back. Settle the card while UIKit zooms it into its source.
-            translateY.value = withSpring(0, { ...springs.snappy, overshootClamping: true });
-            runOnJS(commitNativeDismiss)(releasedRevision);
-          } else if (dismissHeight) {
+          if (dismissHeight) {
             // Never pause at the release position waiting for navigation/JS.
             // Continue this SAME transform, carrying the downward release speed.
             translateY.value = withSpring(
@@ -233,7 +213,6 @@ export function useDrawerDismissGesture({
     isOpening,
     dismissHeight,
     dismissRevision,
-    hasNativeDismiss,
     startedAtTop,
     startedRevision,
     scrollYSV,

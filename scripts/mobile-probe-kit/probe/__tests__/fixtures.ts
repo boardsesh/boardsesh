@@ -94,9 +94,11 @@ ${candidate ? "    (climb: Climb, readyBoardArt?: import('../../../src/lib/board
     'app/play.tsx': `import { useEffect, useRef } from 'react';
 function PlayScreen() {
   const queueSheetRef = useRef<QueueSheetHandle>(null);
-    <Link.AppleZoomTarget>
-    </Link.AppleZoomTarget>
-${candidate ? 'canConsumeTarget(playTarget.nonce);\n' : ''}`,
+${
+  current
+    ? '    <Animated.View style={[styles.root, animatedStyle]} onLayout={onLayout}>\n    </Animated.View>\n  );\n'
+    : '    <Link.AppleZoomTarget>\n    </Link.AppleZoomTarget>\n'
+}${candidate ? 'canConsumeTarget(playTarget.nonce);\n' : ''}`,
     'src/components/play-drawer/SwipeBoardCarousel.tsx': `import { useEffect } from 'react';
 ${current ? REANIMATED_CURRENT : REANIMATED_LEGACY}
   const isScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
