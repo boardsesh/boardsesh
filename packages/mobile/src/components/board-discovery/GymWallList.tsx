@@ -5,11 +5,14 @@
 // 150 m. The climber takes one ("Use this board", which follows it), or says
 // theirs isn't listed and goes on to the builder with the gym prefilled.
 //
-// Bounded lists in a ScrollView, as on the picker: at most 40 walls, five a
-// shelf until "Show all".
+// One virtualized FlashList: a header cell per shelf, each wall its own slice
+// of an inset-grouped card (`InsetGroupedCell`), five a shelf until "Show all".
+// The chips and the lookup states sit in the list header, the truncation hint
+// and "My board isn't listed" in its footer.
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { useNavigation, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -41,14 +44,19 @@ import {
 } from '../../lib/boards/wall-candidates';
 import { useTakeExistingWall } from '../../lib/boards/use-take-existing-wall';
 import { spacing } from '../../theme/tokens';
-import { ShelfSection } from '../ShelfHeader';
+import { SHELF_HEADER_CONTENT_GAP, SHELF_SECTION_GAP, ShelfHeader } from '../ShelfHeader';
+import { PressableSurface } from '../PressableSurface';
+import { insetGroupedRowStyles } from '../InsetGroupedList';
+import { InsetGroupedCell } from '../gym-page/InsetGroupedCell';
+import type { GroupedCellPosition } from '../gym-page/gym-page-view-model';
+import { gymWallListItems, type GymWallListItem, type WallListShelf } from '../../lib/boards/gym-wall-list-items';
 import { EmptyState } from '../EmptyState';
 import { Button } from '../Button';
 import { Text } from '../Text';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { useGymReportAction } from '../gym-page/use-gym-report-action';
 import { BoardConfigChips, type ChipOption } from './BoardConfigChips';
-import { BoardRowList } from './BoardRowList';
+import { BoardRow } from './BoardRow';
 import type { DiscoveryBoardItem } from './BoardDiscoveryCardView';
 import { DiscoveryBoardArt } from './DiscoveryBoardArt';
 import { boardTypeLabel } from './board-builder-labels';
@@ -59,6 +67,12 @@ export const WALL_SHELF_COLLAPSED_ROW_COUNT = 5;
 
 /** The server's most walls per lookup; `truncated` says when there were more. */
 const WALL_CANDIDATES_LIMIT = 40;
+
+/** The shelf key "Other boards here" uses in the list's cells. */
+const OTHER_SHELF_KEY = 'other';
+
+const keyExtractor = (cell: GymWallListItem) => cell.key;
+const getItemType = (cell: GymWallListItem) => cell.kind;
 
 type GymWallListProps = {
   gymUuid: string;
@@ -292,25 +306,78 @@ export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry
   }, [walls, candidates.length, openBuilder]);
   const onDismissConfirm = useCallback(() => setConfirming(false), []);
 
-  const [otherExpanded, setOtherExpanded] = useState(false);
-  const toggleOther = useCallback(() => setOtherExpanded((expanded) => !expanded), []);
+  const [otherOpen, setOtherOpen] = useState(false);
+  const toggleOther = useCallback(() => setOtherOpen((open) => !open), []);
+  // The shelves whose "Show all" was tapped.
+  const [expandedShelves, setExpandedShelves] = useState<ReadonlySet<string>>(() => new Set());
+  const expandShelf = useCallback(
+    (shelfKey: string) => setExpandedShelves((current) => new Set([...current, shelfKey])),
+    [],
+  );
   const retry = useCallback(() => {
     void candidatesQuery.refetch();
     if (gymQuery.isError) void gymQuery.refetch();
   }, [candidatesQuery, gymQuery]);
 
-  const shelfTitle = (key: WallShelfKey): string => {
-    switch (key) {
-      case 'same_setup':
-        return t('mobile.findWall.sameSetup');
-      case 'set_up_differently':
-        return t('mobile.findWall.setUpDifferently');
-      case 'listed_nearby':
-        return t('mobile.findWall.listedNearby');
-      case 'at_gym':
-        return t('mobile.findWall.atGym', { gym: gymName });
-    }
-  };
+  const shelfTitle = useCallback(
+    (key: WallShelfKey): string => {
+      switch (key) {
+        case 'same_setup':
+          return t('mobile.findWall.sameSetup');
+        case 'set_up_differently':
+          return t('mobile.findWall.setUpDifferently');
+        case 'listed_nearby':
+          return t('mobile.findWall.listedNearby');
+        case 'at_gym':
+          return t('mobile.findWall.atGym', { gym: gymName });
+      }
+    },
+    [t, gymName],
+  );
+
+  // --- the list's cells ---
+  const listShelves = useMemo<WallListShelf[]>(() => {
+    const listed: WallListShelf[] =
+      walls === 'listed'
+        ? shelves.map((shelf) => ({ key: shelf.key, title: shelfTitle(shelf.key), items: shelf.items }))
+        : [];
+    return [
+      ...listed,
+      {
+        key: OTHER_SHELF_KEY,
+        title: t('mobile.findWall.otherBoardsHere', { n: otherItems.length }),
+        items: otherItems,
+        toggle: { open: otherOpen },
+      },
+    ];
+  }, [walls, shelves, shelfTitle, otherItems, otherOpen, t]);
+  const cells = useMemo(
+    () => gymWallListItems(listShelves, expandedShelves, WALL_SHELF_COLLAPSED_ROW_COUNT),
+    [listShelves, expandedShelves],
+  );
+
+  const renderItem = useCallback(
+    ({ item: cell }: { item: GymWallListItem }) => {
+      switch (cell.kind) {
+        case 'header':
+          return (
+            <WallShelfHeaderCell
+              shelfKey={cell.shelfKey}
+              title={cell.title}
+              toggleOpen={cell.toggle ? cell.toggle.open : null}
+              onToggle={toggleOther}
+            />
+          );
+        case 'wall':
+          return <WallCell item={cell.item} position={cell.position} index={cell.index} onSelect={onUseWall} />;
+        case 'showAll':
+          return (
+            <ShowAllCell shelfKey={cell.shelfKey} count={cell.count} position={cell.position} onExpand={expandShelf} />
+          );
+      }
+    },
+    [toggleOther, onUseWall, expandShelf],
+  );
 
   if (gymQuery.isError && !gym) {
     return (
@@ -327,100 +394,86 @@ export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry
 
   const boardLabel = boardType ? boardTypeLabel(boardType) : '';
 
+  const listHeader = (
+    <View>
+      <View style={styles.chips}>
+        {boardType === null && (gymBoards !== undefined || gymBoardsQuery.isError) ? (
+          <Text variant="subheadline" tone="secondary">
+            {t('mobile.findWall.pickBoardType')}
+          </Text>
+        ) : null}
+        <BoardConfigChips groupLabel={t('mobile.findWall.boardType')} options={typeOptions} onSelect={setChosenType} />
+      </View>
+
+      {useError ? (
+        <Text variant="footnote" color={systemColors.error} style={styles.inlineError} testID="gym-walls-use-error">
+          {t('mobile.findWall.useError')}
+        </Text>
+      ) : null}
+
+      {walls === 'loading' ? (
+        <View style={styles.centerState}>
+          <ActivityIndicator size="small" />
+        </View>
+      ) : null}
+
+      {walls === 'offline' ? (
+        <EmptyState
+          size="section"
+          title={t('mobile.findWall.offline')}
+          actions={<Button title={t('mobile.findWall.retry')} variant="outlined" onPress={retry} />}
+          testID="gym-walls-offline"
+        />
+      ) : null}
+
+      {walls === 'failed' ? (
+        <EmptyState
+          size="section"
+          title={t('mobile.findWall.lookupFailed', { gym: gymName })}
+          actions={<Button title={t('mobile.findWall.retry')} variant="outlined" onPress={retry} />}
+          testID="gym-walls-failed"
+        />
+      ) : null}
+
+      {walls === 'empty' ? (
+        <EmptyState
+          size="section"
+          title={t('mobile.findWall.emptyTitle', { board: boardLabel, gym: gymName })}
+          actions={
+            notListed === 'direct' ? (
+              <Button title={t('mobile.findWall.setUpFirst')} onPress={onNotListed} />
+            ) : undefined
+          }
+          testID="gym-walls-empty"
+        />
+      ) : null}
+    </View>
+  );
+
+  const listFooter = (
+    <View>
+      {walls === 'listed' && candidatesQuery.data?.truncated ? (
+        <Text variant="footnote" tone="secondary" style={styles.inlineError} testID="gym-walls-truncated">
+          {t('mobile.findWall.truncated', { count: WALL_CANDIDATES_LIMIT })}
+        </Text>
+      ) : null}
+      <NotListedRow state={notListed} canReport={reportAction !== null} walls={walls} onPress={onNotListed} />
+    </View>
+  );
+
   return (
     <>
-      <ScrollView
+      <FlashList
+        data={cells}
+        renderItem={renderItem}
+        keyExtractor={keyExtractor}
+        getItemType={getItemType}
+        ListHeaderComponent={listHeader}
+        ListFooterComponent={listFooter}
         contentInsetAdjustmentBehavior="automatic"
-        style={styles.flex}
-        contentContainerStyle={[styles.container, { paddingBottom: bottomChrome.scrollBottomPadding }]}
+        contentContainerStyle={{ paddingTop: spacing[3], paddingBottom: bottomChrome.scrollBottomPadding }}
         testID="gym-walls"
-      >
-        <View style={styles.chips}>
-          {boardType === null && (gymBoards !== undefined || gymBoardsQuery.isError) ? (
-            <Text variant="subheadline" tone="secondary">
-              {t('mobile.findWall.pickBoardType')}
-            </Text>
-          ) : null}
-          <BoardConfigChips
-            groupLabel={t('mobile.findWall.boardType')}
-            options={typeOptions}
-            onSelect={setChosenType}
-          />
-        </View>
-
-        {useError ? (
-          <Text variant="footnote" color={systemColors.error} style={styles.inlineError} testID="gym-walls-use-error">
-            {t('mobile.findWall.useError')}
-          </Text>
-        ) : null}
-
-        {walls === 'loading' ? (
-          <View style={styles.centerState}>
-            <ActivityIndicator size="small" />
-          </View>
-        ) : null}
-
-        {walls === 'offline' ? (
-          <EmptyState
-            size="section"
-            title={t('mobile.findWall.offline')}
-            actions={<Button title={t('mobile.findWall.retry')} variant="outlined" onPress={retry} />}
-            testID="gym-walls-offline"
-          />
-        ) : null}
-
-        {walls === 'failed' ? (
-          <EmptyState
-            size="section"
-            title={t('mobile.findWall.lookupFailed', { gym: gymName })}
-            actions={<Button title={t('mobile.findWall.retry')} variant="outlined" onPress={retry} />}
-            testID="gym-walls-failed"
-          />
-        ) : null}
-
-        {walls === 'empty' ? (
-          <EmptyState
-            size="section"
-            title={t('mobile.findWall.emptyTitle', { board: boardLabel, gym: gymName })}
-            actions={
-              notListed === 'direct' ? (
-                <Button title={t('mobile.findWall.setUpFirst')} onPress={onNotListed} />
-              ) : undefined
-            }
-            testID="gym-walls-empty"
-          />
-        ) : null}
-
-        {walls === 'listed'
-          ? shelves.map((shelf) => (
-              <ShelfSection key={shelf.key} title={shelfTitle(shelf.key)} testID={`gym-walls-shelf-${shelf.key}`}>
-                <WallShelfRows items={shelf.items} onSelect={onUseWall} />
-              </ShelfSection>
-            ))
-          : null}
-
-        {walls === 'listed' && candidatesQuery.data?.truncated ? (
-          <Text variant="footnote" tone="secondary" style={styles.inlineError} testID="gym-walls-truncated">
-            {t('mobile.findWall.truncated', { count: WALL_CANDIDATES_LIMIT })}
-          </Text>
-        ) : null}
-
-        {otherItems.length > 0 ? (
-          <ShelfSection
-            title={t('mobile.findWall.otherBoardsHere', { n: otherItems.length })}
-            action={{
-              label: otherExpanded ? t('mobile.findWall.otherHide') : t('mobile.findWall.otherShow'),
-              onPress: toggleOther,
-            }}
-            testID="gym-walls-other"
-          >
-            {/* Collapsed rows like every shelf, so the list stays bounded. */}
-            {otherExpanded ? <WallShelfRows items={otherItems} onSelect={onUseWall} /> : null}
-          </ShelfSection>
-        ) : null}
-
-        <NotListedRow state={notListed} canReport={reportAction !== null} walls={walls} onPress={onNotListed} />
-      </ScrollView>
+      />
       {confirming ? (
         <WallNotListedConfirmSheet
           gymName={gymName}
@@ -435,20 +488,82 @@ export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry
   );
 }
 
-const WallShelfRows = memo(function WallShelfRows({
-  items,
+/** A shelf's title, with Show / Hide on a shelf that tucks its rows away. */
+const WallShelfHeaderCell = memo(function WallShelfHeaderCell({
+  shelfKey,
+  title,
+  toggleOpen,
+  onToggle,
+}: {
+  shelfKey: string;
+  title: string;
+  /** Null for a shelf that is always open. */
+  toggleOpen: boolean | null;
+  onToggle: () => void;
+}) {
+  const { t } = useTranslation('boards');
+  const action =
+    toggleOpen === null
+      ? undefined
+      : { label: toggleOpen ? t('mobile.findWall.otherHide') : t('mobile.findWall.otherShow'), onPress: onToggle };
+  return (
+    <View style={toggleOpen === false ? styles.closedShelfHeader : styles.shelfHeader}>
+      <ShelfHeader title={title} action={action} testID={`gym-walls-shelf-${shelfKey}`} />
+    </View>
+  );
+});
+
+/** One wall: a `BoardRow` as its own slice of the shelf's card. */
+const WallCell = memo(function WallCell({
+  item,
+  position,
+  index,
   onSelect,
 }: {
-  items: readonly DiscoveryBoardItem[];
-  onSelect: (item: DiscoveryBoardItem, position: number) => void;
+  item: DiscoveryBoardItem;
+  position: GroupedCellPosition;
+  index: number;
+  onSelect: (item: DiscoveryBoardItem, index: number) => void;
 }) {
+  const handlePress = useCallback((pressed: DiscoveryBoardItem) => onSelect(pressed, index), [onSelect, index]);
   return (
-    <BoardRowList
-      items={items}
-      onSelect={onSelect}
-      collapsedRowCount={WALL_SHELF_COLLAPSED_ROW_COUNT}
-      BoardArt={DiscoveryBoardArt}
-    />
+    <InsetGroupedCell position={position} separatorInset="regular" endGap={SHELF_SECTION_GAP}>
+      <BoardRow item={item} onPress={handlePress} BoardArt={DiscoveryBoardArt} />
+    </InsetGroupedCell>
+  );
+});
+
+/** "Show all N", the last row of a collapsed shelf's card. */
+const ShowAllCell = memo(function ShowAllCell({
+  shelfKey,
+  count,
+  position,
+  onExpand,
+}: {
+  shelfKey: string;
+  count: number;
+  position: GroupedCellPosition;
+  onExpand: (shelfKey: string) => void;
+}) {
+  const { t } = useTranslation('boards');
+  const { systemColors } = useTheme();
+  const handlePress = useCallback(() => onExpand(shelfKey), [onExpand, shelfKey]);
+  return (
+    <InsetGroupedCell position={position} separatorInset="regular" endGap={SHELF_SECTION_GAP}>
+      <PressableSurface
+        onPress={handlePress}
+        feedback="opacity"
+        rippleColor={systemColors.label as string}
+        accessibilityRole="button"
+        style={insetGroupedRowStyles.row}
+        testID={`gym-walls-show-all-${shelfKey}`}
+      >
+        <View style={insetGroupedRowStyles.leading} />
+        <Text variant="body" color={systemColors.accent} style={insetGroupedRowStyles.text}>
+          {t('mobile.inRange.showAll', { count })}
+        </Text>
+      </PressableSurface>
+    </InsetGroupedCell>
   );
 });
 
@@ -486,8 +601,12 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
-  container: {
-    paddingTop: spacing[3],
+  shelfHeader: {
+    paddingBottom: SHELF_HEADER_CONTENT_GAP,
+  },
+  // A closed shelf has no card under it to carry the gap to what follows.
+  closedShelfHeader: {
+    paddingBottom: SHELF_SECTION_GAP,
   },
   chips: {
     paddingHorizontal: spacing[4],

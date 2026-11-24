@@ -43,7 +43,7 @@ const state = vi.hoisted(() => ({
   isUnlisted: undefined as boolean | undefined,
   audience: undefined as string | undefined,
   gymFirst: false,
-  gym: undefined as Record<string, unknown> | undefined,
+  gym: undefined as Record<string, unknown> | null | undefined,
   gymError: false,
   selectedGym: null as { uuid: string; name: string } | null,
   gymUuid: undefined as string | undefined,
@@ -117,6 +117,8 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
   fetchBoardsBySerialNumbers: fetchBoardsBySerialNumbersMock,
   useGym: (gymUuid: string | null) => ({
     data: gymUuid ? state.gym : undefined,
+    // The server answers a gone gym with null: settled, no error.
+    isSuccess: gymUuid ? state.gym !== undefined : false,
     isError: gymUuid ? state.gymError : false,
     refetch: refetchGymMock,
   }),
@@ -955,6 +957,39 @@ describe('CreateBoard from the gym-first flow (#8151)', () => {
     );
     fireEvent.click(screen.getByText('submit'));
     await waitFor(() => expect(createBoardMock).toHaveBeenCalledTimes(1));
+  });
+
+  it('says a gym that is gone is gone, and lets the climber go on without it', async () => {
+    state.params = { kind: 'gym', gymUuid: 'gym-1', boardType: 'moonboard' };
+    state.gym = null;
+    const { container } = render(createElement(CreateBoard));
+    expect(screen.getByTestId('error').textContent).toBe('mobile.create.gymUnavailable');
+    expect(container.querySelector('[data-submit-blocked]')?.getAttribute('data-submit-blocked')).toBe('true');
+    fireEvent.click(screen.getByText('submit'));
+    expect(createBoardMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('mobile.create.chooseAnotherGym'));
+    expect(container.querySelector('[data-submit-blocked]')?.getAttribute('data-submit-blocked')).toBe('false');
+    expect(screen.queryByTestId('error')).toBeNull();
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(createBoardMock).toHaveBeenCalledTimes(1));
+    expect(setSelectedGymMock).not.toHaveBeenCalled();
+  });
+
+  it('lets a gym picked in the form unblock Save, and never overwrites it with a late prefill', async () => {
+    state.params = { kind: 'gym', gymUuid: 'gym-1', boardType: 'moonboard' };
+    const { container, rerender } = render(createElement(CreateBoard));
+    expect(container.querySelector('[data-submit-blocked]')?.getAttribute('data-submit-blocked')).toBe('true');
+
+    state.selectedGym = { uuid: 'gym-2', name: 'Crag Hall' };
+    rerender(createElement(CreateBoard));
+    expect(container.querySelector('[data-submit-blocked]')?.getAttribute('data-submit-blocked')).toBe('false');
+
+    state.gym = { uuid: 'gym-1', name: 'Boulder Space', latitude: 52.1, longitude: 4.3 };
+    rerender(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(createBoardMock).toHaveBeenCalledTimes(1));
+    expect(setSelectedGymMock).not.toHaveBeenCalled();
   });
 
   it('says the gym failed to load, with Try again, instead of saving without it', () => {

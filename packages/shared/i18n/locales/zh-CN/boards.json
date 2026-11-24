@@ -463,6 +463,8 @@
       "timerRemoveCta": "移除",
       "gym": "岩馆",
       "gymNone": "不在岩馆",
+      "gymUnavailable": "这个岩馆已不在 Boardsesh 上。请选择其他岩馆，或不关联岩馆直接设置训练板。",
+      "chooseAnotherGym": "选择其他岩馆",
       "clearLocation": "清除位置",
       "lights": "灯光",
       "hasLeds": "训练板装有 LED 灯",

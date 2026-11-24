@@ -463,6 +463,8 @@
       "timerRemoveCta": "Rimuovi",
       "gym": "Palestra",
       "gymNone": "Non in una palestra",
+      "gymUnavailable": "Questa palestra non è più su Boardsesh. Scegli un'altra palestra o configura il tuo pannello senza.",
+      "chooseAnotherGym": "Scegli un'altra palestra",
       "clearLocation": "Cancella la posizione",
       "lights": "Luci",
       "hasLeds": "Il pannello ha luci LED",

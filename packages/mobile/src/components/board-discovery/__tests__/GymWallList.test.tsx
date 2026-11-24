@@ -86,17 +86,61 @@ vi.mock('../../gym-page/use-gym-report-action', () => ({
     state.canReport ? { open: reportOpenMock, sheet: createElement('div', { key: 'report-sheet' }) } : null,
 }));
 vi.mock('../../ShelfHeader', () => ({
-  ShelfSection: ({
+  SHELF_HEADER_CONTENT_GAP: 8,
+  SHELF_SECTION_GAP: 28,
+  ShelfHeader: ({
     title,
     action,
-    children,
     testID,
-  }: Children & { title: string; testID?: string; action?: { label: string; onPress: () => void } }) =>
+  }: {
+    title: string;
+    testID?: string;
+    action?: { label: string; onPress: () => void };
+  }) =>
     createElement('section', { 'data-testid': testID }, [
       createElement('h2', { key: 'title' }, title),
       action ? createElement('button', { key: 'action', type: 'button', onClick: action.onPress }, action.label) : null,
-      createElement('div', { key: 'content' }, children),
     ]),
+}));
+// The list as its cells, in order, so what a climber would scroll through is on the page.
+type FlashListMockProps = {
+  data: { key: string }[];
+  renderItem: (info: { item: unknown; index: number }) => ReactNode;
+  keyExtractor: (item: never) => string;
+  getItemType?: (item: never) => string;
+  ListHeaderComponent?: ReactNode;
+  ListFooterComponent?: ReactNode;
+  testID?: string;
+};
+const flashList = vi.hoisted(() => ({ itemTypes: [] as string[] }));
+vi.mock('@shopify/flash-list', () => ({
+  FlashList: ({
+    data,
+    renderItem,
+    keyExtractor,
+    getItemType,
+    ListHeaderComponent,
+    ListFooterComponent,
+    testID,
+  }: FlashListMockProps) => {
+    flashList.itemTypes = getItemType ? data.map((item) => getItemType(item as never)) : [];
+    return createElement('div', { 'data-testid': testID }, [
+      createElement('div', { key: 'header' }, ListHeaderComponent),
+      ...data.map((item, index) =>
+        createElement('div', { key: keyExtractor(item as never), 'data-cell': true }, renderItem({ item, index })),
+      ),
+      createElement('div', { key: 'footer' }, ListFooterComponent),
+    ]);
+  },
+}));
+vi.mock('../../gym-page/InsetGroupedCell', () => ({
+  InsetGroupedCell: ({ children, position }: Children & { position: string }) =>
+    createElement('div', { 'data-position': position }, children),
+}));
+vi.mock('../../InsetGroupedList', () => ({ insetGroupedRowStyles: { row: {}, leading: {}, text: {} } }));
+vi.mock('../../PressableSurface', () => ({
+  PressableSurface: ({ children, onPress, testID }: Children & { onPress: () => void; testID?: string }) =>
+    createElement('button', { type: 'button', onClick: onPress, 'data-testid': testID }, children),
 }));
 vi.mock('../../EmptyState', () => ({
   EmptyState: ({ title, actions, testID }: { title: string; actions?: ReactNode; testID?: string }) =>
@@ -131,24 +175,18 @@ vi.mock('../BoardConfigChips', () => ({
       ),
     ),
 }));
-vi.mock('../BoardRowList', () => ({
-  BoardRowList: ({
-    items,
-    onSelect,
+vi.mock('../BoardRow', () => ({
+  BoardRow: ({
+    item,
+    onPress,
   }: {
-    items: { key: string; title: string; badge?: string | null; detailLines?: string[] }[];
-    onSelect: (item: unknown, position: number) => void;
+    item: { key: string; title: string; badge?: string | null };
+    onPress: (item: unknown) => void;
   }) =>
-    createElement(
-      'ul',
-      null,
-      items.map((item, index) =>
-        createElement('li', { key: item.key }, [
-          createElement('button', { key: 'row', type: 'button', onClick: () => onSelect(item, index) }, item.title),
-          item.badge ? createElement('span', { key: 'badge' }, item.badge) : null,
-        ]),
-      ),
-    ),
+    createElement('li', null, [
+      createElement('button', { key: 'row', type: 'button', onClick: () => onPress(item) }, item.title),
+      item.badge ? createElement('span', { key: 'badge' }, item.badge) : null,
+    ]),
 }));
 vi.mock('../DiscoveryBoardArt', () => ({ DiscoveryBoardArt: () => null }));
 vi.mock('../WallNotListedConfirmSheet', () => ({
@@ -434,6 +472,34 @@ describe('GymWallList', () => {
     expect(screen.queryByText('Wall k')).toBeNull();
     fireEvent.click(screen.getByText('mobile.findWall.otherShow'));
     expect(screen.getByText('Wall k')).toBeTruthy();
+  });
+
+  // Every wall is its own list cell, so a long shelf is virtualized, not a
+  // map inside a ScrollView.
+  it('draws each wall as its own cell, five a shelf until Show all', () => {
+    state.candidates.data = {
+      candidates: Array.from({ length: 8 }, (_, index) => candidate(`w${index}`)),
+      truncated: false,
+    };
+    renderList();
+    expect(flashList.itemTypes).toEqual(['header', 'wall', 'wall', 'wall', 'wall', 'wall', 'showAll']);
+    expect(screen.queryByText('Wall w5')).toBeNull();
+    fireEvent.click(screen.getByTestId('gym-walls-show-all-at_gym'));
+    expect(flashList.itemTypes.filter((type) => type === 'wall')).toHaveLength(8);
+    expect(screen.getByText('Wall w7')).toBeTruthy();
+  });
+
+  it('reports a tapped wall by its place in its shelf', async () => {
+    state.candidates.data = {
+      candidates: [
+        candidate('a'),
+        candidate('b', { source: 'NEARBY_LISTING', gymName: 'Crag Hall', gymDistanceMeters: 90 }),
+      ],
+      truncated: false,
+    };
+    renderList();
+    fireEvent.click(screen.getByText('Wall b'));
+    await waitFor(() => expect(events('Board Wall Candidate Used')[0]).toMatchObject({ match: 'nearby', position: 0 }));
   });
 
   it('counts a gym page opening as a search', () => {

@@ -463,6 +463,8 @@
       "timerRemoveCta": "Quitar",
       "gym": "Rocódromo",
       "gymNone": "No está en un rocódromo",
+      "gymUnavailable": "Este rocódromo ya no está en Boardsesh. Elige otro rocódromo o configura tu plafón sin él.",
+      "chooseAnotherGym": "Elegir otro rocódromo",
       "clearLocation": "Borrar ubicación",
       "lights": "Luces",
       "hasLeds": "El plafón tiene luces LED",

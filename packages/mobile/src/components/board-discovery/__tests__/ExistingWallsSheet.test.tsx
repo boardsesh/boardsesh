@@ -28,8 +28,33 @@ vi.mock('../../Button', () => ({
   Button: ({ title, onPress }: { title: string; onPress?: () => void }) =>
     createElement('button', { 'data-button': title, onClick: onPress }),
 }));
-vi.mock('../BoardRowList', () => ({
-  BoardRowList: ({ items }: { items: { key: string }[] }) => createElement('ul', { 'data-rows': items.length }),
+// The sheet's list as its header, then one cell per row, in order.
+type SheetListProps = {
+  data: { key: string }[];
+  renderItem: (info: { item: unknown; index: number }) => ReactNode;
+  keyExtractor: (item: never) => string;
+  ListHeaderComponent?: ReactNode;
+};
+vi.mock('@expo/ui/community/bottom-sheet', () => ({
+  BottomSheetFlatList: ({ data, renderItem, keyExtractor, ListHeaderComponent }: SheetListProps) =>
+    createElement('div', { 'data-list': true }, [
+      createElement('div', { key: 'header', 'data-list-header': true }, ListHeaderComponent),
+      createElement(
+        'ul',
+        { key: 'rows', 'data-rows': data.length },
+        data.map((item, index) =>
+          createElement('li', { key: keyExtractor(item as never) }, renderItem({ item, index })),
+        ),
+      ),
+    ]),
+}));
+vi.mock('../../gym-page/InsetGroupedCell', () => ({
+  InsetGroupedCell: ({ children, position }: { children?: ReactNode; position: string }) =>
+    createElement('div', { 'data-position': position }, children),
+}));
+vi.mock('../BoardRow', () => ({
+  BoardRow: ({ item, onPress }: { item: { key: string }; onPress: (item: unknown) => void }) =>
+    createElement('button', { 'data-row': item.key, onClick: () => onPress(item) }),
 }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 3: 12, 4: 16 } }));
 vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ systemColors: {} }) }));
@@ -93,5 +118,25 @@ describe('ExistingWallsSheet', () => {
     const { container } = renderSheet({ items: [], loading: true });
     expect(container.querySelector('[data-spinner]')).not.toBeNull();
     expect(container.querySelector('[data-button="mobile.create.existingWalls.keepMine"]')).toBeNull();
+  });
+
+  // A long list scrolls inside the sheet; the choices stay above it, in reach.
+  it('keeps both choices in reach with many walls, and virtualizes the rows', () => {
+    const items = Array.from({ length: 30 }, (_, index) => ({ key: `w${index}` })) as never[];
+    const { container, onUse } = renderSheet({ items, wallCount: 30 });
+    const header = container.querySelector('[data-list-header]');
+    expect(header?.querySelector('[data-button="mobile.create.existingWalls.useBoard"]')).not.toBeNull();
+    expect(header?.querySelector('[data-button="mobile.create.existingWalls.keepMine"]')).not.toBeNull();
+    expect(container.querySelector('[data-rows="30"]')).not.toBeNull();
+    expect(container.querySelector('[data-row="w0"]')?.parentElement?.getAttribute('data-position')).toBe('first');
+    expect(container.querySelector('[data-row="w29"]')?.parentElement?.getAttribute('data-position')).toBe('last');
+    (container.querySelector('[data-row="w12"]') as HTMLButtonElement).click();
+    expect(onUse).toHaveBeenCalledWith({ key: 'w12' }, 12);
+  });
+
+  it('ignores row taps while a choice is in flight', () => {
+    const { container, onUse } = renderSheet({ busy: true });
+    (container.querySelector('[data-row="a"]') as HTMLButtonElement).click();
+    expect(onUse).not.toHaveBeenCalled();
   });
 });

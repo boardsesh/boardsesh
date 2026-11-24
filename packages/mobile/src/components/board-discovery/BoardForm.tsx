@@ -104,8 +104,11 @@ type BoardFormProps = {
   focusLocationOnOpen?: boolean;
   /** Hold Save off without a spinner: something the board needs is still loading (the prefilled gym). */
   submitBlocked?: boolean;
-  /** A way out of `errorMessage`, drawn under it (Try again). */
-  errorAction?: { label: string; onPress: () => void };
+  /**
+   * A way out of `errorMessage`, drawn under it (Try again). `opensGymPicker`
+   * also opens the gym picker, for a prefilled gym that turned out to be gone.
+   */
+  errorAction?: { label: string; onPress: () => void; opensGymPicker?: boolean };
 };
 
 /**
@@ -296,7 +299,14 @@ export function BoardForm({
           </Text>
         ) : null}
         {errorMessage && errorAction ? (
-          <Button title={errorAction.label} variant="text" onPress={errorAction.onPress} />
+          <Button
+            title={errorAction.label}
+            variant="text"
+            onPress={() => {
+              errorAction.onPress();
+              if (errorAction.opensGymPicker) setGymPickerOpen(true);
+            }}
+          />
         ) : null}
         {/* Live board art — turns layout/size/set IDs into a recognizable wall. */}
         <View style={[styles.preview, { backgroundColor: systemColors.secondaryBackground }]}>

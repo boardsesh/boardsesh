@@ -463,6 +463,8 @@
       "timerRemoveCta": "Entfernen",
       "gym": "Halle",
       "gymNone": "Nicht in einer Halle",
+      "gymUnavailable": "Diese Halle gibt es auf Boardsesh nicht mehr. Wähl eine andere Halle oder richte dein Board ohne Halle ein.",
+      "chooseAnotherGym": "Andere Halle wählen",
       "clearLocation": "Standort löschen",
       "lights": "Beleuchtung",
       "hasLeds": "Board hat LED-Licht",

@@ -269,15 +269,27 @@ export default function CreateBoard() {
   const prefillGymQuery = useGym(prefillGymUuid);
   const prefillGym = prefillGymQuery.data;
   const [gymPrefilled, setGymPrefilled] = useState(false);
+  // The climber set the gym aside ("Choose another gym") after it turned out
+  // to be gone.
+  const [prefillCleared, setPrefillCleared] = useState(false);
+  // A gym the climber picks in the form wins: it unblocks Save, and a prefill
+  // that lands later never overwrites it.
+  const gymChosenInForm = builder.selectedGym != null && !gymPrefilled;
+  // The server answers a deleted or no-longer-visible gym with null, not an
+  // error: a settled null is a gym that isn't there any more.
+  const prefillUnavailable =
+    prefillGymUuid !== null && !gymPrefilled && prefillGymQuery.isSuccess && prefillGym == null;
   // Until the gym lands, a Save would create a board with no gym at all, so it
   // waits. A failed read says so, with Try again, rather than saving unlinked.
-  const prefillPending = prefillGymUuid !== null && !gymPrefilled;
+  const prefillPending = prefillGymUuid !== null && !gymPrefilled && !prefillCleared && !gymChosenInForm;
   const prefillFailed = prefillPending && prefillGymQuery.isError;
+  const prefillGone = prefillPending && prefillUnavailable;
   const refetchPrefillGym = prefillGymQuery.refetch;
   const retryPrefillGym = useCallback(() => void refetchPrefillGym(), [refetchPrefillGym]);
+  const clearPrefillGym = useCallback(() => setPrefillCleared(true), []);
   const { setSelectedGym } = builder;
   useEffect(() => {
-    if (!prefillGym || gymPrefilled) return;
+    if (!prefillGym || gymPrefilled || prefillCleared || gymChosenInForm) return;
     setGymPrefilled(true);
     setSelectedGym({
       uuid: prefillGym.uuid,
@@ -285,7 +297,7 @@ export default function CreateBoard() {
       latitude: prefillGym.latitude,
       longitude: prefillGym.longitude,
     });
-  }, [prefillGym, gymPrefilled, setSelectedGym]);
+  }, [prefillGym, gymPrefilled, prefillCleared, gymChosenInForm, setSelectedGym]);
 
   // A bare open of the builder (a deep link, an old entry) asks home or gym
   // first while the gym-first flow is on. Decided at mount only: a flag that
@@ -790,13 +802,22 @@ export default function CreateBoard() {
         builder={builder}
         defaultName={defaultName}
         submitting={submitting}
-        errorMessage={createError ?? (prefillFailed ? t('mobile.findWall.gymFailed') : null)}
+        errorMessage={
+          createError ??
+          (prefillGone ? t('mobile.create.gymUnavailable') : prefillFailed ? t('mobile.findWall.gymFailed') : null)
+        }
         onSubmit={() => void handleCreate()}
         submitLabel={t('mobile.create.save')}
         focusLocationOnOpen={params.focusLocation === '1'}
         submitBlocked={prefillPending}
         errorAction={
-          prefillFailed && !createError ? { label: t('mobile.findWall.retry'), onPress: retryPrefillGym } : undefined
+          createError
+            ? undefined
+            : prefillGone
+              ? { label: t('mobile.create.chooseAnotherGym'), onPress: clearPrefillGym, opensGymPicker: true }
+              : prefillFailed
+                ? { label: t('mobile.findWall.retry'), onPress: retryPrefillGym }
+                : undefined
         }
       />
       {existingWalls && (

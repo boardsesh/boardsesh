@@ -463,6 +463,8 @@
       "timerRemoveCta": "Remove",
       "gym": "Gym",
       "gymNone": "Not at a gym",
+      "gymUnavailable": "This gym isn't on Boardsesh anymore. Pick another gym, or set up your board without one.",
+      "chooseAnotherGym": "Choose another gym",
       "clearLocation": "Clear location",
       "lights": "Lights",
       "hasLeds": "Board has LED lights",
