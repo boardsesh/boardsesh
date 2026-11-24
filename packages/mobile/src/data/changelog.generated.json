@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-23T23:11:59.460Z",
+  "generatedAt": "2026-11-24T08:49:12.359Z",
   "entries": [
+    {
+      "prNumber": 8084,
+      "category": "new",
+      "title": "See recorded board activity at your gym, with local dates and verified wall groups.",
+      "mergedAt": "2026-11-24T07:36:47Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8084"
+    },
     {
       "prNumber": 8053,
       "category": "new",

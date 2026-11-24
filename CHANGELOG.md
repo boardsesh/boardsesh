@@ -4,6 +4,12 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/operations/mobile-ota-updates.md.
 
+## 2026-11-24
+
+### New
+
+- See recorded board activity at your gym, with local dates and verified wall groups. ([#8084](https://github.com/boardsesh/boardsesh/pull/8084))
+
 ## 2026-11-23
 
 ### New
