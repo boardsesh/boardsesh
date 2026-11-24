@@ -17,7 +17,9 @@ import { userBoards } from './boards';
  * - `setup_changed_by_climber`: a climber's suggested setup on a "Set up wrong"
  *   report changed the board's layout, size, sets or angle, straight away,
  *   because nobody runs its gym (docs/product/directory-reports.md, "Suggested
- *   setup"). By `climber`. `details` holds `before`, `after` and `reportUuid`.
+ *   setup"). By `climber`, or `board_owner` when the creator suggested it.
+ *   `details` holds `before`, `after`, `reportUuid` and the sync freeze on
+ *   either side (`syncFrozenAtBefore`, `syncFrozenAtSet`).
  * - `setup_change_undone`: the creator, the gym's staff or an admin put a
  *   climber's setup change back. `details` holds `before` (the climber's setup),
  *   `after` (the restored one) and `undoesEventId`.
@@ -78,6 +80,17 @@ export type BoardModerationEventDetails = {
   reportUuid?: string;
   /** `setup_change_undone`: the `setup_changed_by_climber` event it undid. */
   undoesEventId?: number;
+  /**
+   * `setup_changed_by_climber`: the board's `sync_frozen_at` before the change,
+   * as an ISO string, or null when it wasn't frozen. An undo puts it back.
+   */
+  syncFrozenAtBefore?: string | null;
+  /**
+   * `setup_changed_by_climber`: the `sync_frozen_at` the change set, as an ISO
+   * string. An undo puts `syncFrozenAtBefore` back only while the board still
+   * has this one; a freeze written since (an edit) stays.
+   */
+  syncFrozenAtSet?: string;
 };
 
 /**
@@ -135,6 +148,10 @@ export const boardModerationEvents = pgTable(
       table.gymId,
       table.createdAt.desc(),
     ),
+    // Serves a climber's setup changes in the last 24 hours (the per-climber
+    // limit on suggested setups). Not partial on the action: Postgres refuses
+    // an enum value in the transaction that added it, and the migration adds it.
+    actorCreatedIdx: index('board_moderation_events_actor_created_idx').on(table.actorUserId, table.createdAt),
   }),
 );
 

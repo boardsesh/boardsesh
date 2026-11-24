@@ -1889,9 +1889,10 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   DROP TYPE IF EXISTS directory_report_target_kind;
   ${directoryReportsSchema}
 
-  -- Suggested setups (migration 0337): enum values, the reporter's suggestion
-  -- and the notice's link to the setup change. The tables and types above are
-  -- dropped and made again first, so a reapplied fixture adds them once.
+  -- Suggested setups (migration 0337): enum values, the reporter's suggestion,
+  -- the notice's link to the setup change and the per-climber index on
+  -- board_moderation_events. The tables and types above are dropped and made
+  -- again first, so a reapplied fixture adds them once.
   ${boardSetupSuggestionsSchema}
 
   -- Board followers (enrichBoard counts these per board).
