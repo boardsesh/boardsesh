@@ -1,6 +1,6 @@
 {
-  "id": "83dca826-0e86-4afe-9c59-e5d8f54f75d8",
-  "prevId": "f6217f92-3282-42a4-be97-daf9c362d1fb",
+  "id": "a4e53d1c-e214-4d98-b9b7-f89157c178f7",
+  "prevId": "bb62a764-64fe-451e-ad25-190fd533a019",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -21245,6 +21245,13 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": false
+        },
+        "is_refinement": {
+          "name": "is_refinement",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "source": {
           "name": "source",
