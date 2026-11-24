@@ -75,6 +75,12 @@
   "gymPage": {
     "metaTitle": "{{gymName}} climbing gym",
     "metaDescription": "See the boards and live wall at {{gymName}} on Boardsesh.",
+    "metaTitleName": "{{gymName}}",
+    "metaTitleLocation": "{{gymName}}, {{location}}",
+    "metaTitleBoards": "{{venue}}: {{boards}}",
+    "metaBoardAngle": "{{board}} at {{angle}}°",
+    "metaDescriptionBoards": "{{venue}} has {{boards}}. See what is lit on the wall and open the climbs in Boardsesh.",
+    "metaDescriptionLocation": "{{gymName}} ({{location}}). See the boards and live wall on Boardsesh.",
     "breadcrumbHome": "Boardsesh",
     "breadcrumbGyms": "Gyms",
     "manageGym": "Manage gym",

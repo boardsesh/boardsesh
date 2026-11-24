@@ -75,6 +75,12 @@
   "gymPage": {
     "metaTitle": "Salle d'escalade {{gymName}}",
     "metaDescription": "Découvre les boards et le mur en direct de {{gymName}} sur Boardsesh.",
+    "metaTitleName": "{{gymName}}",
+    "metaTitleLocation": "{{gymName}}, {{location}}",
+    "metaTitleBoards": "{{venue}} : {{boards}}",
+    "metaBoardAngle": "{{board}} à {{angle}}°",
+    "metaDescriptionBoards": "{{venue}} propose {{boards}}. Découvre ce qui est allumé sur le mur et ouvre les blocs dans Boardsesh.",
+    "metaDescriptionLocation": "{{gymName}} ({{location}}). Découvre les boards et le mur en direct sur Boardsesh.",
     "breadcrumbHome": "Boardsesh",
     "breadcrumbGyms": "Salles",
     "manageGym": "Gérer la salle",

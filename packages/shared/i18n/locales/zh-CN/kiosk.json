@@ -75,6 +75,12 @@
   "gymPage": {
     "metaTitle": "{{gymName}} 攀岩馆",
     "metaDescription": "在 Boardsesh 查看 {{gymName}} 的训练板与岩墙实时画面。",
+    "metaTitleName": "{{gymName}}",
+    "metaTitleLocation": "{{gymName}}，{{location}}",
+    "metaTitleBoards": "{{venue}}：{{boards}}",
+    "metaBoardAngle": "{{board}}（{{angle}}°）",
+    "metaDescriptionBoards": "{{venue}}设有{{boards}}。查看墙上正在点亮的线路，并在 Boardsesh 中打开线路。",
+    "metaDescriptionLocation": "{{gymName}}（{{location}}）。在 Boardsesh 查看训练板和实时攀爬墙。",
     "breadcrumbHome": "Boardsesh",
     "breadcrumbGyms": "岩馆",
     "manageGym": "管理岩馆",

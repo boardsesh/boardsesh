@@ -65,3 +65,17 @@ Three visible Foundation Climbing queries totalled 116 clicks. Those are query
 counts, not a measured `/gym/` page segment. The gym URL filter could not be read
 because browser access was restricted. Review snippets separately showed 197
 invalid items; that issue is outside this change.
+
+## Individual gym search metadata
+
+Gym titles include the saved address and publicly listed catalogue board types
+when available. There is no structured city field: the address is kept verbatim,
+and coordinates are never converted into a guessed town. Without an address,
+the fallback keeps the gym name and omits “climbing gym” for names containing
+“climb” or “boulder”.
+
+Descriptions use the same public board rows, with recorded, nonzero fixed angles.
+Adjustable or unspecified angles are omitted. Board types on the gym summary
+are not enough to claim a board is available. When board reads fail or return no
+public catalogue boards, location copy or the existing description is used.
+Share card copy, canonical URLs, index eligibility and sitemap rules stay the same.

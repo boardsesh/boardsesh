@@ -75,6 +75,12 @@
   "gymPage": {
     "metaTitle": "Palestra di arrampicata {{gymName}}",
     "metaDescription": "Guarda i pannelli di {{gymName}} e cosa c'è in parete in diretta su Boardsesh.",
+    "metaTitleName": "{{gymName}}",
+    "metaTitleLocation": "{{gymName}}, {{location}}",
+    "metaTitleBoards": "{{venue}}: {{boards}}",
+    "metaBoardAngle": "{{board}} a {{angle}}°",
+    "metaDescriptionBoards": "{{venue}} ha {{boards}}. Scopri cosa è illuminato in parete e apri i blocchi in Boardsesh.",
+    "metaDescriptionLocation": "{{gymName}} ({{location}}). Scopri i pannelli e la parete in diretta su Boardsesh.",
     "breadcrumbHome": "Boardsesh",
     "breadcrumbGyms": "Palestre",
     "manageGym": "Gestisci palestra",
