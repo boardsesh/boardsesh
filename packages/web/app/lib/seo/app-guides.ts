@@ -1,83 +1,83 @@
 import 'server-only';
 
 import type { BoardName } from '@boardsesh/shared-schema';
+import {
+  APP_GUIDE_SLUGS,
+  AURORA_BRAND_SLUGS,
+  COMPETITOR_NAMES,
+  type AppGuidePageId,
+  type AppGuideSlug,
+  type ComparisonPageId,
+  type ComparisonPageRegistry,
+  type GatedClaimId,
+  type GuideShot,
+  type HubBoardSlug,
+  type HubPageRegistry,
+  hubBoardHref,
+} from './app-guide-model';
+import { APP_GUIDE_REGISTRY } from './app-guide-registry.generated';
 
-export const APP_GUIDE_SLUGS = [
-  'kilter',
-  'tension',
-  'moonboard',
-  'decoy',
-  'touchstone',
-  'grasshopper',
-  'so-ill',
-  'woods',
-] as const;
+export { APP_GUIDE_SLUGS, AURORA_BRAND_SLUGS, hubBoardHref, type AppGuideSlug, type GuideShot, type HubBoardSlug };
 
-export type AppGuideSlug = (typeof APP_GUIDE_SLUGS)[number];
+/**
+ * The board-app comparison pages: `/apps`, `/apps/<board>` and
+ * `/compare/spray-wall-apps`.
+ *
+ * Three layers:
+ * - `appGuides.json` holds every word, keyed by stable ids;
+ * - `app-guide-registry.generated.ts` holds what the writers' copy files say
+ *   about structure (verdicts, sources and their dates, screenshots, counts),
+ *   written by `scripts/app-guides/import-copy.ts`;
+ * - this file adds what is not copy: routes, board types, art, help links and
+ *   the gate on claims that need registered evidence.
+ */
+
 type GuidePath = '/apps' | `/apps/${AppGuideSlug}` | '/compare/spray-wall-apps';
-type VerificationDate = `${number}-${number}-${number}`;
-type GuideScreenshot = 'kilter' | 'tension' | 'moonboard' | 'spray-wall' | 'queue';
-type GuideCompetitor = 'official' | 'stokt' | 'retroFlash';
+export type GuidePlacement = 'compare-hub' | `compare-${AppGuideSlug}` | 'compare-spray';
+type CatalogBoard = Exclude<BoardName, 'spray'>;
 
-type GuideSection = { id: string };
-type GuideComparisonRow = GuideSection & { sourceIds: readonly string[] };
-type GuideSource = GuideSection & { url: `https://${string}`; checkedAt: VerificationDate };
-type GuideLink = GuideSection & { href: `/${string}` };
+export type RelatedLinkId =
+  | 'bluetooth'
+  | 'migration'
+  | 'logbook'
+  | 'sessions'
+  | 'findingClimbs'
+  | 'spray'
+  | 'sprayComparison'
+  | 'boards';
+export type GuideLink = { id: RelatedLinkId; href: `/${string}` };
 
-type GuidePageContent = {
+/** What fills the front hero frame: a real capture, the board as Boardsesh draws it, or the spray wall photo. */
+export type HeroArt = { kind: 'shot'; shot: GuideShot } | { kind: 'board' };
+
+export type ComparisonGuide = ComparisonPageRegistry & {
+  kind: 'comparison';
   path: GuidePath;
-  updatedAt: VerificationDate;
-  workflow: readonly GuideSection[];
-  comparisonRows: readonly GuideComparisonRow[];
-  competitors: readonly GuideCompetitor[];
-  sources: readonly GuideSource[];
+  /**
+   * The board for board-specific widgets (Check your board, the CTA art), or null
+   * on the spray wall page. The Aurora page covers five boards and uses Tension's.
+   */
+  boardType: CatalogBoard | null;
+  /** Every board type the page covers. */
+  boardTypes: readonly CatalogBoard[];
+  competitorNames: Readonly<Record<string, string>>;
+  hero: { front: HeroArt; back: GuideShot };
   related: readonly GuideLink[];
+  placement: GuidePlacement;
 };
 
-export type AppGuide<Slug extends AppGuideSlug = AppGuideSlug> = GuidePageContent & {
-  id: Slug;
-  path: `/apps/${Slug}`;
-  boardType: Slug extends 'so-ill' ? 'soill' : Extract<BoardName, Slug>;
-  screenshot: GuideScreenshot | null;
+export type HubGuide = HubPageRegistry & {
+  kind: 'hub';
+  path: '/apps';
+  related: readonly GuideLink[];
+  placement: 'compare-hub';
 };
 
-export type AppGuidePage =
-  | AppGuide
-  | (GuidePageContent & { id: 'hub' | 'spray-wall-apps'; screenshot: GuideScreenshot });
+export type AppGuidePage = ComparisonGuide | HubGuide;
+/** A board page; `id` is one of the eight slugs. */
+export type AppGuide = ComparisonGuide & { id: AppGuideSlug; boardType: CatalogBoard };
 
 const CHECKED_AT = '2026-11-23';
-const WORKOUT_UPDATE_DATE = '2026-11-24';
-const EDITORIAL_UPDATE_DATE = '2026-11-24';
-const SPRAY_PRICES_CHECKED_AT = '2026-11-24';
-const MOBILE_DESIGN_CHECKED_AT = '2026-11-24';
-
-const help = {
-  bluetooth: { id: 'bluetooth', href: '/help/board-and-bluetooth' },
-  migration: { id: 'migration', href: '/bring-your-logbook' },
-  logbook: { id: 'logbook', href: '/help/logbook' },
-  sessions: { id: 'sessions', href: '/help/sessions' },
-  findingClimbs: { id: 'findingClimbs', href: '/help/finding-climbs' },
-  spray: { id: 'spray', href: '/help/spray-walls' },
-  sprayComparison: { id: 'sprayComparison', href: '/compare/spray-wall-apps' },
-  boards: { id: 'boards', href: '/boards' },
-} as const satisfies Record<string, GuideLink>;
-
-function boardGallery(boardType: BoardName): GuideLink {
-  return { id: 'boards', href: `/boards#${boardType}` };
-}
-
-function source(id: string, url: GuideSource['url'], checkedAt: VerificationDate = CHECKED_AT): GuideSource {
-  return { id, url, checkedAt };
-}
-
-const auroraDirectory = source('aurora', 'https://auroraclimbing.com/');
-const boardseshSessions = source('boardseshSessions', 'https://www.boardsesh.com/help/sessions');
-const boardseshLogbook = source('boardseshLogbook', 'https://www.boardsesh.com/help/logbook');
-const boardseshMigration = source('boardseshMigration', 'https://www.boardsesh.com/bring-your-logbook');
-
-function boardGallerySource(boardType: BoardName): GuideSource {
-  return source('boardseshGallery', `https://www.boardsesh.com/boards#${boardType}`);
-}
 
 export const BOARDSESH_APP_STORE_RATING = {
   platform: 'Apple App Store',
@@ -89,342 +89,123 @@ export const BOARDSESH_APP_STORE_RATING = {
   verifiedAt: CHECKED_AT,
 } as const;
 
-const boardseshStore = source('boardseshStore', BOARDSESH_APP_STORE_RATING.source);
-const boardseshWorkoutStore = source('boardseshStore', BOARDSESH_APP_STORE_RATING.source, WORKOUT_UPDATE_DATE);
-const boardseshWorkoutGuide = source(
-  'boardseshWorkoutGuide',
-  'https://github.com/boardsesh/boardsesh/blob/6e14bac8ba24b49161a4a26f0d5b90a2fd0f78f0/docs/product/workout-stages.md#building-a-workout',
-  WORKOUT_UPDATE_DATE,
-);
-const boardseshWorkoutTimer = source(
-  'boardseshWorkoutTimer',
-  'https://github.com/boardsesh/boardsesh/blob/6d1b696a162ed7f74f3fbdad6259e6bbcd3f8dcb/docs/product/rest-timer.md#effective-pacing',
-  WORKOUT_UPDATE_DATE,
-);
-const boardseshMobileDesign = source(
-  'boardseshMobileDesign',
-  'https://github.com/boardsesh/boardsesh/blob/b3a0285908da0d9e4be984ebe5731ed72b33de10/docs/design/ai-design-guidelines.md#design-philosophy',
-  MOBILE_DESIGN_CHECKED_AT,
-);
-const boardseshAdaptiveLayout = source(
-  'boardseshAdaptiveLayout',
-  'https://github.com/boardsesh/boardsesh/blob/b3a0285908da0d9e4be984ebe5731ed72b33de10/docs/design/mobile-large-screen-layout.md#js-tablet-shell',
-  MOBILE_DESIGN_CHECKED_AT,
-);
+/**
+ * Claims that render only where their evidence is registered. The importer tags
+ * every catalog string that makes one (`claims` in the registry); a page shows
+ * it only if the page is listed here AND cites every source id the claim needs.
+ *
+ * `googleCertified`: "MoonBoard's Android app needs a Google-certified phone".
+ * Sourced for MoonBoard only (a GrapheneOS forum thread quoting Moon support).
+ * Never claimed for Kilter or the Aurora apps, and not on the hub.
+ */
+export const GATED_CLAIMS: Record<GatedClaimId, { pages: readonly AppGuidePageId[]; sourceIds: readonly string[] }> = {
+  googleCertified: { pages: ['moonboard'], sourceIds: ['grapheneos'] },
+};
 
-const guides = {
-  kilter: {
-    id: 'kilter',
-    path: '/apps/kilter',
-    boardType: 'kilter',
-    screenshot: 'kilter',
-    updatedAt: EDITORIAL_UPDATE_DATE,
-    workflow: [{ id: 'layout' }, { id: 'preview' }, { id: 'training' }, { id: 'import' }, { id: 'auroraImport' }],
-    comparisonRows: [
-      {
-        id: 'discovery',
-        sourceIds: ['boardseshClimbThumbnails', 'boardseshClimbPreviews', 'boardseshStore', 'support'],
-      },
-      {
-        id: 'climbControls',
-        sourceIds: [
-          'boardseshPlayer',
-          'boardseshPlayerButtons',
-          'boardseshTickControls',
-          'officialScreenshots',
-          'boardseshPlatformSheets',
-        ],
-      },
-      { id: 'session', sourceIds: ['boardseshSessions', 'official', 'support'] },
-      { id: 'training', sourceIds: ['boardseshWorkoutGuide', 'boardseshWorkoutTimer', 'official'] },
-      { id: 'history', sourceIds: ['boardseshMigration', 'support'] },
-      { id: 'auroraImportTiming', sourceIds: ['boardseshAuroraImport', 'claim', 'claimWaitReports'] },
-    ],
-    competitors: ['official'],
-    sources: [
-      source('official', 'https://kilterboard.io/', WORKOUT_UPDATE_DATE),
-      source('officialScreenshots', 'https://play.google.com/store/apps/details?id=com.kiltergrips.kilter_board_app'),
-      source('support', 'https://kilterboard.io/support'),
-      source('claim', 'https://kilterboard.io/claim'),
-      source(
-        'claimWaitReports',
-        'https://www.reddit.com/r/kilterboard/comments/1sxf45g/i_built_a_tool_to_import_my_old_aurora_logbook/',
-      ),
-      source(
-        'boardseshAuroraImport',
-        'https://github.com/boardsesh/boardsesh/blob/f3f23de86983599d8f58493758c05e2b32b689ec/packages/mobile/src/components/integrations/BoardAccountsSection.tsx#L476-L513',
-      ),
-      source(
-        'boardseshClimbThumbnails',
-        'https://github.com/boardsesh/boardsesh/blob/2b98df0e2175136fc87075f1db2cdf9f49d8df72/packages/mobile/src/components/ClimbListThumbnail.tsx#L88-L95',
-      ),
-      source('boardseshClimbPreviews', 'https://www.boardsesh.com/help/finding-climbs#player'),
-      source(
-        'boardseshPlayer',
-        'https://github.com/boardsesh/boardsesh/blob/2b98df0e2175136fc87075f1db2cdf9f49d8df72/docs/mobile/mobile-sheets-vs-routes.md#player-swipe-dismissal',
-      ),
-      source(
-        'boardseshPlayerButtons',
-        'https://github.com/boardsesh/boardsesh/blob/2b98df0e2175136fc87075f1db2cdf9f49d8df72/packages/mobile/src/lib/player-buttons.ts#L19-L54',
-      ),
-      source(
-        'boardseshTickControls',
-        'https://github.com/boardsesh/boardsesh/blob/2b98df0e2175136fc87075f1db2cdf9f49d8df72/packages/mobile/src/components/LogAscentSheetView.tsx#L158-L185',
-      ),
-      boardGallerySource('kilter'),
-      boardseshWorkoutStore,
-      boardseshWorkoutGuide,
-      boardseshWorkoutTimer,
-      boardseshSessions,
-      boardseshMigration,
-      source(
-        'boardseshPlatformSheets',
-        'https://github.com/boardsesh/boardsesh/blob/b3a0285908da0d9e4be984ebe5731ed72b33de10/docs/mobile/mobile-sheets-vs-routes.md#sheet-surfaces-app-owned-facade',
-        MOBILE_DESIGN_CHECKED_AT,
-      ),
-    ],
-    related: [help.bluetooth, help.migration, help.sessions],
-  },
-  tension: {
-    id: 'tension',
-    path: '/apps/tension',
-    boardType: 'tension',
-    screenshot: 'tension',
-    updatedAt: EDITORIAL_UPDATE_DATE,
-    workflow: [{ id: 'layout' }, { id: 'training' }, { id: 'import' }],
-    comparisonRows: [
-      { id: 'layout', sourceIds: ['boardseshGallery', 'aurora', 'layouts'] },
-      {
-        id: 'training',
-        sourceIds: ['boardseshWorkoutGuide', 'boardseshWorkoutTimer', 'official', 'circuits', 'timer'],
-      },
-      { id: 'history', sourceIds: ['boardseshMigration', 'official'] },
-    ],
-    competitors: ['official'],
-    sources: [
-      source('official', 'https://apps.apple.com/us/app/tension-board-2/id1488028660', WORKOUT_UPDATE_DATE),
-      source('layouts', 'https://tensionclimbing.com/pages/faqs'),
-      source(
-        'circuits',
-        'https://tensionclimbing.com/blogs/tension-board/app-resource-series-episode-5-creating-a-circuit',
-      ),
-      source('timer', 'https://tensionclimbing.com/blogs/tension-board/app-resource-series-episode-6-using-a-timer'),
-      auroraDirectory,
-      boardGallerySource('tension'),
-      boardseshWorkoutStore,
-      boardseshWorkoutGuide,
-      boardseshWorkoutTimer,
-      boardseshMigration,
-    ],
-    related: [help.findingClimbs, help.migration, help.bluetooth, help.sprayComparison],
-  },
-  moonboard: {
-    id: 'moonboard',
-    path: '/apps/moonboard',
-    boardType: 'moonboard',
-    screenshot: 'moonboard',
-    updatedAt: EDITORIAL_UPDATE_DATE,
-    workflow: [{ id: 'setup' }, { id: 'controller' }, { id: 'training' }, { id: 'import' }],
-    comparisonRows: [
-      { id: 'benchmarks', sourceIds: ['boardseshGallery', 'boardseshClimbs', 'benchmarks'] },
-      { id: 'lighting', sourceIds: ['led', 'audit'] },
-      { id: 'training', sourceIds: ['boardseshWorkoutGuide', 'boardseshWorkoutTimer', 'official'] },
-      { id: 'history', sourceIds: ['boardseshGallery', 'official'] },
-    ],
-    competitors: ['official'],
-    sources: [
-      source('official', 'https://apps.apple.com/us/app/moon-board/id6446842142', WORKOUT_UPDATE_DATE),
-      source('benchmarks', 'https://eu.moonclimbing.com/using-moonboard-app'),
-      source('led', 'https://moonclimbing.com/moonboard/led/moonboard-led-system-v5.html'),
-      source(
-        'audit',
-        'https://github.com/boardsesh/boardsesh/blob/95f9c5d1f42064e9d8073c861f4f3a7209d4bae4/docs/boards/moonboard-bluetooth-audit-2026-11-20.md',
-      ),
-      boardGallerySource('moonboard'),
-      source(
-        'boardseshClimbs',
-        'https://github.com/boardsesh/boardsesh/blob/95f9c5d1f42064e9d8073c861f4f3a7209d4bae4/packages/mobile/src/components/ClimbFilterSheetContent.tsx#L328-L344',
-      ),
-      boardseshWorkoutStore,
-      boardseshWorkoutGuide,
-      boardseshWorkoutTimer,
-    ],
-    related: [help.bluetooth, help.findingClimbs, help.logbook],
-  },
-  decoy: {
-    id: 'decoy',
-    path: '/apps/decoy',
-    boardType: 'decoy',
-    screenshot: null,
-    updatedAt: EDITORIAL_UPDATE_DATE,
-    workflow: [{ id: 'size' }, { id: 'turns' }, { id: 'training' }, { id: 'history' }],
-    comparisonRows: [
-      { id: 'search', sourceIds: ['boardseshGallery', 'official'] },
-      { id: 'session', sourceIds: ['boardseshStore', 'boardseshSessions', 'official'] },
-    ],
-    competitors: ['official'],
-    sources: [
-      source('official', 'https://apps.apple.com/us/app/decoy-board/id1539249879'),
-      auroraDirectory,
-      boardGallerySource('decoy'),
-      boardseshStore,
-      boardseshSessions,
-      boardseshWorkoutGuide,
-    ],
-    related: [boardGallery('decoy'), help.sessions, help.bluetooth],
-  },
-  touchstone: {
-    id: 'touchstone',
-    path: '/apps/touchstone',
-    boardType: 'touchstone',
-    screenshot: null,
-    updatedAt: EDITORIAL_UPDATE_DATE,
-    workflow: [{ id: 'wall' }, { id: 'project' }, { id: 'training' }, { id: 'history' }],
-    comparisonRows: [
-      { id: 'session', sourceIds: ['boardseshGallery', 'boardseshSessions', 'official'] },
-      { id: 'history', sourceIds: ['boardseshLogbook', 'boardseshStore', 'official'] },
-    ],
-    competitors: ['official'],
-    sources: [
-      source('official', 'https://apps.apple.com/us/app/touchstone-board/id1494642775'),
-      auroraDirectory,
-      boardGallerySource('touchstone'),
-      boardseshSessions,
-      boardseshLogbook,
-      boardseshStore,
-      boardseshWorkoutGuide,
-    ],
-    related: [boardGallery('touchstone'), help.logbook, help.findingClimbs],
-  },
-  grasshopper: {
-    id: 'grasshopper',
-    path: '/apps/grasshopper',
-    boardType: 'grasshopper',
-    screenshot: null,
-    updatedAt: EDITORIAL_UPDATE_DATE,
-    workflow: [{ id: 'kit' }, { id: 'angle' }, { id: 'training' }, { id: 'history' }],
-    comparisonRows: [
-      { id: 'search', sourceIds: ['boardseshGallery', 'kits', 'official'] },
-      { id: 'session', sourceIds: ['boardseshStore', 'boardseshSessions', 'official'] },
-    ],
-    competitors: ['official'],
-    sources: [
-      source('official', 'https://apps.apple.com/us/app/grasshopper-board/id1507596418'),
-      source('kits', 'https://shop.grasshopperclimbing.com/collections/adjustable-climbing-walls'),
-      auroraDirectory,
-      boardGallerySource('grasshopper'),
-      boardseshStore,
-      boardseshSessions,
-      boardseshWorkoutGuide,
-    ],
-    related: [boardGallery('grasshopper'), help.bluetooth, help.findingClimbs],
-  },
-  'so-ill': {
-    id: 'so-ill',
-    path: '/apps/so-ill',
-    boardType: 'soill',
-    screenshot: null,
-    updatedAt: EDITORIAL_UPDATE_DATE,
-    workflow: [{ id: 'layout' }, { id: 'crew' }, { id: 'training' }, { id: 'history' }],
-    comparisonRows: [
-      { id: 'search', sourceIds: ['boardseshGallery', 'connect', 'official'] },
-      { id: 'session', sourceIds: ['boardseshStore', 'boardseshSessions', 'official'] },
-    ],
-    competitors: ['official'],
-    sources: [
-      source('official', 'https://apps.apple.com/us/app/so-ill-board/id1358056082'),
-      source('connect', 'https://soillholds.com/products/connect-board'),
-      auroraDirectory,
-      boardGallerySource('soill'),
-      boardseshStore,
-      boardseshSessions,
-      boardseshWorkoutGuide,
-    ],
-    related: [boardGallery('soill'), help.sessions, help.logbook],
-  },
-  woods: {
-    id: 'woods',
-    path: '/apps/woods',
-    boardType: 'woods',
-    screenshot: null,
-    updatedAt: EDITORIAL_UPDATE_DATE,
-    workflow: [{ id: 'size' }, { id: 'rules' }, { id: 'session' }, { id: 'training' }],
-    comparisonRows: [
-      { id: 'rules', sourceIds: ['boardseshWoods', 'sizes', 'official'] },
-      { id: 'history', sourceIds: ['boardseshStore', 'boardseshGallery', 'official'] },
-      { id: 'publishing', sourceIds: ['boardseshWoods', 'official'] },
-    ],
-    competitors: ['official'],
-    sources: [
-      source('official', 'https://apps.apple.com/us/app/woods-board/id1619846872'),
-      source('sizes', 'https://escapeclimbing.com/products/woods-board'),
-      source(
-        'boardseshWoods',
-        'https://github.com/boardsesh/boardsesh/blob/95f9c5d1f42064e9d8073c861f4f3a7209d4bae4/docs/boards/woods-climb-rules.md',
-      ),
-      boardGallerySource('woods'),
-      boardseshStore,
-      boardseshWorkoutGuide,
-    ],
-    related: [boardGallery('woods'), help.bluetooth, help.logbook],
-  },
-} as const satisfies { [Slug in AppGuideSlug]: AppGuide<Slug> };
+export function isClaimVisible(page: Pick<AppGuidePage, 'id' | 'claims' | 'sources'>, path: string): boolean {
+  const known = new Set(page.sources.map((source) => source.id));
+  return page.claims
+    .filter((entry) => entry.path === path)
+    .every(({ claim }) => {
+      const gate = GATED_CLAIMS[claim];
+      return gate.pages.includes(page.id) && gate.sourceIds.every((id) => known.has(id));
+    });
+}
 
-export const APP_GUIDES: readonly AppGuide[] = APP_GUIDE_SLUGS.map((slug) => guides[slug]);
+const help = {
+  bluetooth: { id: 'bluetooth', href: '/help/board-and-bluetooth' },
+  migration: { id: 'migration', href: '/bring-your-logbook' },
+  logbook: { id: 'logbook', href: '/help/logbook' },
+  sessions: { id: 'sessions', href: '/help/sessions' },
+  findingClimbs: { id: 'findingClimbs', href: '/help/finding-climbs' },
+  spray: { id: 'spray', href: '/help/spray-walls' },
+  sprayComparison: { id: 'sprayComparison', href: '/compare/spray-wall-apps' },
+  boards: { id: 'boards', href: '/boards' },
+} as const satisfies Record<RelatedLinkId, GuideLink>;
+
+const BOARD_TYPES: Record<AppGuideSlug, readonly CatalogBoard[]> = {
+  kilter: ['kilter'],
+  aurora: ['tension', 'decoy', 'touchstone', 'grasshopper', 'soill'],
+  moonboard: ['moonboard'],
+  woods: ['woods'],
+};
+
+/**
+ * Hero art. Only Kilter, Tension (for the Aurora page) and MoonBoard have their own
+ * captures; Woods shows its real drawing rather than a Kilter screen under its name.
+ */
+const HERO: Record<ComparisonPageId, ComparisonGuide['hero']> = {
+  kilter: { front: { kind: 'shot', shot: 'kilter' }, back: 'queue' },
+  aurora: { front: { kind: 'shot', shot: 'tension' }, back: 'queue' },
+  moonboard: { front: { kind: 'shot', shot: 'moonboard' }, back: 'queue' },
+  woods: { front: { kind: 'board' }, back: 'profile' },
+  'spray-wall-apps': { front: { kind: 'shot', shot: 'spray-wall' }, back: 'profile' },
+};
+
+const RELATED: Record<ComparisonPageId, readonly GuideLink[]> = {
+  kilter: [help.bluetooth, help.migration, help.sessions],
+  aurora: [help.boards, help.migration, help.bluetooth, help.sessions],
+  moonboard: [help.bluetooth, help.findingClimbs, help.logbook],
+  woods: [help.boards, help.bluetooth, help.logbook],
+  'spray-wall-apps': [help.spray, help.sessions, help.logbook],
+};
+
+/** Art for a feature tile, by tile id. A tile without a capture gets a diagram, never a borrowed screen. */
+export type TileArt =
+  /** The profile capture cropped to its "Across your boards" card: the proof that one logbook holds every board. */
+  | { kind: 'profile-card' }
+  | { kind: 'shot'; shot: GuideShot }
+  | { kind: 'diagram'; diagram: 'browser' | 'android' | 'tablet' | 'devices' | 'board' };
+
+const TILE_ART: Record<string, TileArt> = {
+  browser: { kind: 'diagram', diagram: 'browser' },
+  web: { kind: 'diagram', diagram: 'browser' },
+  android: { kind: 'diagram', diagram: 'android' },
+  tablet: { kind: 'diagram', diagram: 'tablet' },
+  devices: { kind: 'diagram', diagram: 'devices' },
+  'one-logbook': { kind: 'profile-card' },
+  logbook: { kind: 'profile-card' },
+  history: { kind: 'shot', shot: 'logbook' },
+  queue: { kind: 'shot', shot: 'queue' },
+  crew: { kind: 'shot', shot: 'queue' },
+  'crew-queue': { kind: 'shot', shot: 'queue' },
+  workouts: { kind: 'shot', shot: 'workouts' },
+};
+
+export function tileArt(tileId: string): TileArt {
+  return TILE_ART[tileId] ?? { kind: 'diagram', diagram: 'board' };
+}
+
+function comparisonGuide(id: ComparisonPageId): ComparisonGuide {
+  const isSpray = id === 'spray-wall-apps';
+  return {
+    ...APP_GUIDE_REGISTRY[id],
+    id,
+    kind: 'comparison',
+    path: isSpray ? '/compare/spray-wall-apps' : `/apps/${id}`,
+    boardType: isSpray ? null : BOARD_TYPES[id][0],
+    boardTypes: isSpray ? [] : BOARD_TYPES[id],
+    competitorNames: COMPETITOR_NAMES[id],
+    hero: HERO[id],
+    related: RELATED[id],
+    placement: isSpray ? 'compare-spray' : `compare-${id}`,
+  };
+}
+
+export const APP_GUIDES: readonly AppGuide[] = APP_GUIDE_SLUGS.map((slug) => comparisonGuide(slug) as AppGuide);
 
 export function getAppGuide(slug: string): AppGuide | undefined {
   return APP_GUIDES.find((guide) => guide.id === slug);
 }
 
-export const APP_GUIDE_HUB = {
-  id: 'hub',
+export const APP_GUIDE_HUB: HubGuide = {
+  ...APP_GUIDE_REGISTRY.hub,
+  kind: 'hub',
   path: '/apps',
-  screenshot: 'queue',
-  updatedAt: EDITORIAL_UPDATE_DATE,
-  workflow: [],
-  comparisonRows: [],
-  competitors: [],
-  sources: [
-    boardseshWorkoutStore,
-    boardseshWorkoutGuide,
-    boardseshWorkoutTimer,
-    boardseshMobileDesign,
-    boardseshAdaptiveLayout,
-  ],
   related: [help.boards, help.bluetooth, help.sessions],
-} as const satisfies AppGuidePage;
+  placement: 'compare-hub',
+};
 
-export const APP_GUIDE_COMPARISON = {
-  id: 'spray-wall-apps',
-  path: '/compare/spray-wall-apps',
-  screenshot: 'spray-wall',
-  updatedAt: EDITORIAL_UPDATE_DATE,
-  workflow: [{ id: 'photo' }, { id: 'sharing' }, { id: 'reset' }],
-  comparisonRows: [
-    { id: 'setup', sourceIds: ['boardseshSpray', 'boardseshSetup', 'stokt', 'stoktPricing', 'retroFlashGoogle'] },
-    { id: 'features', sourceIds: ['boardseshPlaylists', 'boardseshSessions', 'stoktPro', 'retroFlashGoogle'] },
-    { id: 'lighting', sourceIds: ['boardseshStore', 'stoktPro', 'retroFlashApple', 'retroFlashGoogle'] },
-    { id: 'price', sourceIds: ['boardseshSpray', 'stoktPricing', 'stoktPro', 'retroFlashApple'] },
-  ],
-  competitors: ['stokt', 'retroFlash'],
-  sources: [
-    source('stokt', 'https://www.getstokt.com/'),
-    source('stoktPricing', 'https://www.getstokt.com/pricing', SPRAY_PRICES_CHECKED_AT),
-    source('stoktPro', 'https://www.getstokt.com/stokt-pro', SPRAY_PRICES_CHECKED_AT),
-    source(
-      'retroFlashApple',
-      'https://apps.apple.com/us/app/retro-flash-climbing/id1519582483',
-      SPRAY_PRICES_CHECKED_AT,
-    ),
-    source(
-      'retroFlashGoogle',
-      'https://play.google.com/store/apps/details?hl=en_US&id=com.arcadebouldering.system_wall',
-    ),
-    source('boardseshSpray', 'https://www.boardsesh.com/spraywalls', SPRAY_PRICES_CHECKED_AT),
-    source('boardseshSetup', 'https://www.boardsesh.com/help/spray-walls'),
-    source('boardseshPlaylists', 'https://www.boardsesh.com/help/finding-climbs#playlists'),
-    boardseshSessions,
-    boardseshStore,
-  ],
-  related: [help.spray, help.sessions, help.logbook],
-} as const satisfies AppGuidePage;
+export const APP_GUIDE_COMPARISON: ComparisonGuide = comparisonGuide('spray-wall-apps');
+
+export const ALL_APP_GUIDE_PAGES: readonly AppGuidePage[] = [APP_GUIDE_HUB, ...APP_GUIDES, APP_GUIDE_COMPARISON];

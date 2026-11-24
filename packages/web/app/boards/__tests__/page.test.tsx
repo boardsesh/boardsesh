@@ -148,12 +148,12 @@ describe('supported boards public entry', () => {
     const document = await renderPage();
     const guidePaths = {
       kilter: '/apps/kilter',
-      tension: '/apps/tension',
+      tension: '/apps/aurora#tension',
       moonboard: '/apps/moonboard',
-      decoy: '/apps/decoy',
-      touchstone: '/apps/touchstone',
-      grasshopper: '/apps/grasshopper',
-      soill: '/apps/so-ill',
+      decoy: '/apps/aurora#decoy',
+      touchstone: '/apps/aurora#touchstone',
+      grasshopper: '/apps/aurora#grasshopper',
+      soill: '/apps/aurora#so-ill',
       woods: '/apps/woods',
       spray: '/compare/spray-wall-apps',
     };

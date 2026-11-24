@@ -10,7 +10,7 @@ describe('app guide language boundaries', () => {
     ['/fr/boards', '/apps/kilter', 'fr', 'en-US', 'fr', true],
     ['/apps/kilter', '/boards', 'en-US', 'en-US', 'fr', true],
     ['/apps/kilter', '/fr/boards', 'en-US', 'fr', undefined, true],
-    ['/apps/kilter', '/apps/tension', 'en-US', 'en-US', 'fr', false],
+    ['/apps/kilter', '/apps/aurora', 'en-US', 'en-US', 'fr', false],
     ['/apps/kilter', '/compare/spray-wall-apps', 'en-US', 'en-US', 'fr', false],
     ['/fr/boards', '/fr/help', 'fr', 'fr', 'fr', false],
   ] as const)(

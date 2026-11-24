@@ -38,12 +38,8 @@ export const WEBSITE_JOURNEY_PLACEMENTS = [
   'run-a-wall',
   'compare-hub',
   'compare-kilter',
-  'compare-tension',
+  'compare-aurora',
   'compare-moonboard',
-  'compare-decoy',
-  'compare-touchstone',
-  'compare-grasshopper',
-  'compare-so-ill',
   'compare-woods',
   'compare-spray',
 ] as const;

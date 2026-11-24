@@ -6,14 +6,16 @@ export const APP_GUIDE_LOCALES = [DEFAULT_LOCALE] as const;
 export const APP_GUIDE_HUB_PATH = '/apps';
 export const APP_GUIDE_COMPARISON_PATH = '/compare/spray-wall-apps';
 
+// The Aurora boards (Tension, Decoy, Touchstone, Grasshopper, So iLL) run builds of
+// one app, so they share /apps/aurora and link to their own section of it.
 const BOARD_APP_GUIDE_PATHS = {
   kilter: '/apps/kilter',
-  tension: '/apps/tension',
+  tension: '/apps/aurora#tension',
   moonboard: '/apps/moonboard',
-  decoy: '/apps/decoy',
-  touchstone: '/apps/touchstone',
-  grasshopper: '/apps/grasshopper',
-  soill: '/apps/so-ill',
+  decoy: '/apps/aurora#decoy',
+  touchstone: '/apps/aurora#touchstone',
+  grasshopper: '/apps/aurora#grasshopper',
+  soill: '/apps/aurora#so-ill',
   woods: '/apps/woods',
   spray: APP_GUIDE_COMPARISON_PATH,
 } as const satisfies Record<BoardName, string>;

@@ -1,0 +1,74 @@
+/* Lit hold rings: the comparison pages' only colour beyond Graphite and violet.
+ * Decorative glyphs (rings, step markers, legend dots), always beside a word that
+ * says the same thing. They paint borders and glows, never text: the parity test
+ * fails any `color:` that reads a --lit-* token. */
+
+.ring {
+  --ring: var(--lit-start);
+  --ring-size: 14px;
+  --ring-width: 3px;
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
+  width: var(--ring-size);
+  height: var(--ring-size);
+  border: var(--ring-width) solid var(--ring);
+  border-radius: 50%;
+  box-shadow:
+    0 0 8px color-mix(in srgb, var(--ring) 60%, transparent),
+    inset 0 0 4px color-mix(in srgb, var(--ring) 45%, transparent);
+}
+
+.start {
+  --ring: var(--lit-start);
+}
+
+.hand {
+  --ring: var(--lit-hand);
+}
+
+.finish {
+  --ring: var(--lit-finish);
+}
+
+.foot {
+  --ring: var(--lit-foot);
+}
+
+/* The "Keep their app if" bullets: a hold that is not part of this climb. */
+.unlit {
+  --ring: var(--neutral-400);
+  box-shadow: none;
+}
+
+.xs {
+  --ring-size: 12px;
+  --ring-width: 2.5px;
+}
+
+.sm {
+  --ring-size: 16px;
+}
+
+.md {
+  --ring-size: 24px;
+}
+
+/* A numbered step marker: the digit sits inside the ring in the label ink. */
+.number {
+  --ring-size: 40px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--neutral-900);
+  font-family: var(--font-display), sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+@media (max-width: 600px) {
+  .number {
+    --ring-size: 32px;
+    font-size: 15px;
+  }
+}

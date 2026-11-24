@@ -114,12 +114,8 @@ export const APP_INSTALL_PLACEMENTS = [
   'setup-report',
   'compare-hub',
   'compare-kilter',
-  'compare-tension',
+  'compare-aurora',
   'compare-moonboard',
-  'compare-decoy',
-  'compare-touchstone',
-  'compare-grasshopper',
-  'compare-so-ill',
   'compare-woods',
   'compare-spray',
 ] as const;

@@ -127,12 +127,7 @@ function isEnglishWebsiteCopy(entry: CatalogEntry, locale: string): boolean {
   return entry.file === 'climbs.json' && entry.keyPath.startsWith('spray.');
 }
 function hasWrongEnglishWebSpelling(entry: CatalogEntry): boolean {
-  // This guide quotes the actual native action before explaining it in prose.
-  const prose =
-    entry.file === 'appGuides.json' && entry.keyPath === 'pages.spray-wall-apps.workflow.reset.body'
-      ? entry.value.replace(/\bReset this Spraywall\b/, '')
-      : entry.value;
-  return /\bspraywalls?\b|\bspray-walls?\b/i.test(prose);
+  return /\bspraywalls?\b|\bspray-walls?\b/i.test(entry.value);
 }
 
 type TermRule = {
@@ -330,20 +325,14 @@ describe('English website spray wall spelling', () => {
     }
   });
 
-  it('permits only the exact quoted reset action in the English guide', () => {
+  it('holds the app guides to two words too, with no quoted exception left', () => {
     const fixture = {
       file: 'appGuides.json',
-      keyPath: 'pages.spray-wall-apps.workflow.reset.body',
-      value: 'Choose Reset this Spraywall, then photograph your spray wall.',
+      keyPath: 'pages.spray-wall-apps.hero.lead',
+      value: 'Photograph your spray wall.',
     };
     expect(hasWrongEnglishWebSpelling(fixture)).toBe(false);
-    expect(hasWrongEnglishWebSpelling({ ...fixture, value: 'Choose Reset this Spraywalls.' })).toBe(true);
-    expect(hasWrongEnglishWebSpelling({ ...fixture, value: `${fixture.value} Your Spraywall remains.` })).toBe(true);
-    expect(hasWrongEnglishWebSpelling({ ...fixture, keyPath: 'pages.hub.intro' })).toBe(true);
-    const reset = loadStrings('en-US').find(
-      (entry) => entry.file === fixture.file && entry.keyPath === fixture.keyPath,
-    );
-    expect(reset?.value).toMatch(/\bReset this Spraywall\b/);
+    expect(hasWrongEnglishWebSpelling({ ...fixture, value: 'Choose Reset this Spraywall.' })).toBe(true);
   });
 
   it('keeps audited public prose in two words', () => {

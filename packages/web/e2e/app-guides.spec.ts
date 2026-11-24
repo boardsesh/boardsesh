@@ -3,12 +3,8 @@ import { expect, test } from '@playwright/test';
 const GUIDE_PATHS = [
   '/apps',
   '/apps/kilter',
-  '/apps/tension',
+  '/apps/aurora',
   '/apps/moonboard',
-  '/apps/decoy',
-  '/apps/touchstone',
-  '/apps/grasshopper',
-  '/apps/so-ill',
   '/apps/woods',
   '/compare/spray-wall-apps',
 ];
@@ -38,6 +34,16 @@ for (const width of [390, 1440]) {
         await expect(page.locator('main table')).toHaveCount(1);
         await expect(page.locator('main table')).toContainText('Boardsesh');
       }
+      // Every link and disclosure in the page body is a 44px target.
+      const shortTargets = await page.locator('main a, main summary, main button').evaluateAll((elements) =>
+        elements
+          .map((element) => ({
+            text: element.textContent?.trim().slice(0, 40),
+            height: element.getBoundingClientRect().height,
+          }))
+          .filter(({ height }) => height > 0 && height < 43.5),
+      );
+      expect(shortTargets).toEqual([]);
       if (pathname === '/apps/kilter' || pathname === '/compare/spray-wall-apps') {
         await page.screenshot({ path: testInfo.outputPath(`${width}.png`), fullPage: true });
       }
@@ -58,4 +64,13 @@ test('homepage guide link has visible copy and English guide navigation preserve
   await expect(page).toHaveURL(/\/apps\/kilter$/);
   expect(await page.evaluate(() => Reflect.get(window, '__appGuideDocument'))).toBe('retained');
   await expect(page.locator('main a[href*="play.google.com"]').first()).toHaveAttribute('href', /partner/);
+});
+
+test('old Aurora brand guides land on their section of /apps/aurora', async ({ page }) => {
+  for (const brand of ['tension', 'decoy', 'touchstone', 'grasshopper', 'so-ill']) {
+    const response = await page.goto(`/apps/${brand}`);
+    expect(response?.status()).toBe(200);
+    await expect(page).toHaveURL(new RegExp(`/apps/aurora#${brand}$`));
+    await expect(page.locator(`main li#${brand}`)).toBeVisible();
+  }
 });

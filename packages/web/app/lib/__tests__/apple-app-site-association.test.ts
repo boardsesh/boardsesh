@@ -112,7 +112,7 @@ describe('apple-app-site-association paths', () => {
         '/apps',
         '/apps/',
         '/apps/kilter',
-        '/apps/so-ill',
+        '/apps/aurora',
         '/compare/spray-wall-apps',
         '/compare/spray-wall-apps/',
       ]) {

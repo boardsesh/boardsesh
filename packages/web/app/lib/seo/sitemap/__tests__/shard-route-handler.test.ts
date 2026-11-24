@@ -536,18 +536,22 @@ describe('locale expansion is observable in the rendered shard', () => {
     expect(xml).not.toMatch(/<loc>[^<]*boardsesh\.com\/(de|es|fr)\//);
   });
 
-  it('publishes the ten English guide URLs with their editorial update dates', async () => {
+  it('publishes the six English guide URLs with their editorial update dates', async () => {
     const { GET } = await import('@/app/sitemaps/app-guides.xml/route');
     const response = await GET();
     const xml = await response.text();
     const locations = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map(([, location]) => location);
-    const paths = [APP_GUIDE_HUB_PATH, ...SUPPORTED_BOARDS.map(getBoardAppGuidePath)];
+    // Every board's guide, minus the `#brand` sections of /apps/aurora: one URL per page.
+    const paths = [
+      ...new Set([APP_GUIDE_HUB_PATH, ...SUPPORTED_BOARDS.map((board) => getBoardAppGuidePath(board).split('#')[0])]),
+    ];
 
     expect(response.status).toBe(200);
-    expect(locations).toHaveLength(10);
+    expect(paths).toHaveLength(6);
     expect(locations.sort()).toEqual(paths.map((path) => `https://www.boardsesh.com${path}`).sort());
+    expect(xml).not.toContain('#');
     expect(xml).not.toContain('xhtml:link');
-    expect(xml.match(/<lastmod>2026-11-24T00:00:00.000Z<\/lastmod>/g)).toHaveLength(10);
+    expect(xml.match(/<lastmod>2026-11-24T00:00:00.000Z<\/lastmod>/g)).toHaveLength(6);
     expect(xml).toContain(
       '<loc>https://www.boardsesh.com/compare/spray-wall-apps</loc>\n    <lastmod>2026-11-24T00:00:00.000Z</lastmod>',
     );

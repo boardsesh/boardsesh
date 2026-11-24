@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import type { TFunction } from 'i18next';
 import type { StoreButtonLabels } from '@/app/components/marketing/store-install-buttons';
 import { DEFAULT_LOCALE } from '@/app/lib/i18n/config';
@@ -17,14 +18,24 @@ export async function loadAppGuideCopy(): Promise<AppGuideCopy> {
   return { t, storeLabels };
 }
 
-export async function getAppGuideMetadata(guide: AppGuidePage) {
+export async function getAppGuideMetadata(guide: AppGuidePage): Promise<Metadata> {
   const { t } = await getServerTranslationForLocale(DEFAULT_LOCALE, 'appGuides');
-  return createPageMetadata({
-    title: t(`appGuides:pages.${guide.id}.title`),
-    description: t(`appGuides:pages.${guide.id}.description`),
+  const title = t(`appGuides:pages.${guide.id}.meta.title`);
+  const metadata = createPageMetadata({
+    title,
+    description: t(`appGuides:pages.${guide.id}.meta.description`),
     path: guide.path,
     locale: DEFAULT_LOCALE,
     availableLocales: APP_GUIDE_LOCALES,
     openGraphType: guide.id === 'spray-wall-apps' ? 'article' : 'website',
   });
+  // Comparison titles already name Boardsesh ("Boardsesh vs the Kilter Board App"),
+  // so the site suffix would only push the board name past the 60-character cut.
+  if (!/\bBoardsesh\b/.test(title)) return metadata;
+  return {
+    ...metadata,
+    title: { absolute: title },
+    openGraph: { ...metadata.openGraph, title },
+    twitter: { ...metadata.twitter, title },
+  };
 }
