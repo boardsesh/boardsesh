@@ -124,6 +124,20 @@
     "boardRelistTitle": "Put {{board}} back on {{gym}}?",
     "boardRelistBody": "The climber who added it asked to be listed again."
   },
+  "setupChange": {
+    "now": "Now {{setup}}",
+    "undo": "Undo",
+    "undoLabel": "Undo the change to {{board}}",
+    "undoTitle": "Put the old setup back?",
+    "undoBody": "{{board}} goes back to {{setup}} for everyone.",
+    "undoBodyGeneric": "The board goes back to its old setup for everyone.",
+    "undoConfirm": "Undo",
+    "undone": "The old setup is back.",
+    "alreadyUndone": "Someone already put the old setup back.",
+    "notAllowed": "You can't undo this any more.",
+    "changedSince": "It changed again since. Open the board to check it.",
+    "failed": "Couldn't undo it. Try again when connected."
+  },
   "explain": {
     "boardDeletedTitle": "{{board}} was deleted",
     "boardDeletedBody": "It's gone for every climber who saved it. Your logged sends stay in your logbook.",

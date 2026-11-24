@@ -154,6 +154,8 @@ What this means for targeting:
 
 ## Mobile flags
 
+The app keeps its own copy of the two Report a problem switches, read per climber from PostHog: `directory-reports` (`useDirectoryReportsEnabled`) and, on top of it, `directory-setup-suggestions` (`useDirectorySetupSuggestionsEnabled`): the setup menus on "Set up wrong", "Use this setup" on the review sheet and Undo on the climber-change notice. Both are positive and fail closed, so an unresolved flag shows the plain note field. The plain 100% condition that turns the server copy on turns these on too.
+
 Aura GPU rendering uses `aura-gpu-enabled`. Keep the flag active: **an active 0% release condition disables every GPU surface**, including the stationary swipe carousel, without changing the selected appearance. PNG supplies the same Aura artwork. Missing flags preserve the existing Kilter Homewall path; they do not enable additional catalogue layouts. The climber's own **GPU acceleration** switch (Settings > Board, MMKV key `gpuAcceleration`, on by default) sits between the two: precedence is remote kill switch (`aura-gpu-enabled` = false), then the user switch, then the rollout. The switch can only turn the GPU off, never force it on. `useGpuClimbOverlayEnabled` is the single gate (`auraGpuRolloutEnabled` takes `userEnabled` as an explicit input), so every surface follows it. See [GPU climb overlay](../rendering/gpu-climb-overlay-experiment.md#climber-switch).
 
 The boolean flag carries a versioned JSON payload under `true`:

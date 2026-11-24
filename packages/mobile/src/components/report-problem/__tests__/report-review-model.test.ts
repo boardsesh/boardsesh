@@ -62,3 +62,24 @@ describe('report review model', () => {
     expect(reviewNotes(waiting).map((entry) => entry.note)).toEqual(['New note', 'Old note']);
   });
 });
+
+// Grouping, matching and the update input live in @boardsesh/directory-moderation
+// (suggested-setups.test.ts); the review sheet's test covers how it uses them.
+describe('suggested setups', () => {
+  it('shows only written notes as notes', () => {
+    const notes = reviewNotes([
+      report({
+        notes: [
+          {
+            note: '',
+            createdAt: '2026-11-20T10:00:00.000Z',
+            reporter: null,
+            suggestedSetup: { layoutId: 1, sizeId: 7, setIds: '1', angle: null },
+          },
+          { note: 'Kicker is gone', createdAt: '2026-11-21T10:00:00.000Z', reporter: null },
+        ],
+      }),
+    ]);
+    expect(notes).toEqual([{ key: 'r1:1', note: 'Kicker is gone' }]);
+  });
+});

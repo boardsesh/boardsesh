@@ -219,6 +219,13 @@ export const FEATURE_FLAG_DEFINITIONS = [
     defaultEnabled: false,
   },
   {
+    key: 'directory-setup-suggestions',
+    label: 'Suggest the right setup on "Set up wrong"',
+    description:
+      'Layout, size, holds and angle menus on a "Set up wrong" report, the "Climb it now" step when the change applied, "Use this setup" on the report review sheet, and Undo on the climber-change notice. Sits on top of directory-reports. The same PostHog flag gates the backend (docs/product/directory-reports.md, "The directory-setup-suggestions flag"): turn it on with a plain 100% release once this build is out. A POSITIVE rollout flag: unresolved or off shows the plain note field.',
+    defaultEnabled: false,
+  },
+  {
     key: 'climb-moderation-kill',
     label: 'Disable climb reporting + moderation',
     description:
@@ -582,6 +589,16 @@ export function useClimbModerationEnabled(): boolean {
  */
 export function useDirectoryReportsEnabled(): boolean {
   return useFeatureFlag('directory-reports') === true;
+}
+
+/**
+ * Suggest the right setup on a "Set up wrong" report (docs/product/directory-reports.md,
+ * "Suggested setup"). Positive and fail-closed like `directory-reports`, which it
+ * sits on: off, missing or unresolved keeps the report's plain note field, hides
+ * "Use this setup" on the review sheet and Undo on the climber-change notice.
+ */
+export function useDirectorySetupSuggestionsEnabled(): boolean {
+  return useFeatureFlag('directory-setup-suggestions') === true;
 }
 
 /** Kill switch for the Android lock screen card (#7327). Missing or unresolved reads as enabled. */

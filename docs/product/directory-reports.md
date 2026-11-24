@@ -169,6 +169,32 @@ A change's state, on the creator's notice and in the admin list: `UNDONE` once a
 
 `adminBoardSetupChanges(first, after)` lists every change, newest first, for the admin's Setup changes by climbers tab: the board, its gym (null once that gym is deleted), before and after, the climber's name, when, and `state`. It pages by event id (`nextCursor` is the page's last id): ids follow the order the changes were made, since each takes its board's row lock first.
 
+### In the app
+
+The report sheet (`ReportDirectorySheet`, `packages/mobile/src/components/report-problem/`):
+
+- **Fields.** "Set up wrong" shows `SetupSuggestionFields`: Layout, Size, Holds and, on a board that doesn't tilt, Angle. Each row is a label and a native menu (`AppMenu`), opening on the board's setup. Holds ticks the picked sets; a tap toggles one, and the last one can't be removed. Labels are `@boardsesh/board-config`'s setup labels (`setupLayoutLabel`, `setupSizeLabel`, `setupAngleLabel`), which www's fields use too and the board builder re-exports. A value the catalogue doesn't list reads "Choose". A board type the build doesn't know keeps the note field.
+- **Send.** Works once the setup differs. A climber who leaves it as it is can still send with a note of at least 10 characters (the "Something else" minimum). Only a changed setup is sent as `suggestedSetup`.
+- **The line under Send.** Once the setup differs, it reads `setupSuggestionPreview`: "Changes it for everyone at {gym}. It can be undone.", "{gym}'s staff check it first." or "Whoever added it checks it first." While the board's gym state is unknown (still loading, or its read failed) a changed setup shows no line, so it never says the creator checks a board that has a gym. An unchanged setup shows the usual "who will see this" line.
+- **`APPLIED`.** The same sheet becomes "Setup updated" / "Everyone at {gym} now climbs {setup}." with **Climb it now**. The returned board goes into the board reads straight away, and into the active board when it is the one in use, so the climb list re-keys even if the climber taps Done. When `board` comes back null (the change committed but the server couldn't read the board back), the sheet reads it with `fetchBoardByUuid`: the line is worded from the setup that was sent, Climb it now spins until the board arrives, and a failed read keeps the line and drops the button. Climb it now waits for the sheet to slide away (`dismissManagedSheetAndWait`), then binds the board with `useActivateBoard` (`recognizesHeldBox: false`: a board picked from a report names no box the In range slot holds) and lands on Climbs. That bind is its only write. On a board that tilts, the climber's own angle stays (`boardKeepingLocalAngle`).
+- **Already set up.** A refusal with `isBoardSetupUnchangedError` (someone fixed the board while the sheet was open) reads the board again, says "It's already set up that way." and offers Climb it now the same way. Any other refusal keeps the form and the error line.
+- **`SENT_FOR_REVIEW`.** One line per `setupReviewReason`, e.g. `CLAIMED_GYM`: "Sent to {gym}'s staff. We'll tell you when it's fixed." No reason (the server flag is off) keeps the plain "Sent" line.
+
+The review sheet (`ReportReviewSheet`) groups the suggestions on the waiting "Set up wrong" reports by setup with `@boardsesh/directory-moderation`'s `groupSuggestedSetups`, most suggested first: "2 climbers suggested Original · 12×12 · Bolt Ons". A setup the board already has is left out (`setupMatches`). The five most suggested get a row each (`MAX_SUGGESTED_SETUPS_SHOWN`); any more are one line, "2 other setups suggested", so the sheet's scroll view never maps an unbounded list. **Use this setup**, for a viewer who can edit the board, sends `updateBoard` with `suggestedSetupUpdateInput`: the layout, size and sets, and the angle when the suggestion has one. A duplicate of the owner's other board asks the edit screen's question before saving with `allowDuplicateConfig`. While that save is in flight, a swipe can't close the sheet and every other answer (the other Use this setup buttons, "Edit it yourself", remove, delete and "It's right as it is") is disabled and refuses a tap, so a report never closes as kept while its setup changes. "Fix the setup" reads "Edit it yourself" only when Use this setup shows beside it.
+
+The `board_setup_changed_by_climber` row (the board's creator and the gym's owner and admins get it, and its push opens the board's detail sheet) says what the board climbs now and offers **Undo** while `setupChangeState` is `LIVE`. Undo asks first, checks the row is still `LIVE` in the loaded inbox once the confirm closes, then writes the restored board where the app reads it. A double tap asks once and sends once. How a refusal reads:
+
+- `BOARD_SETUP_CHANGED_SINCE`: "It changed again since. Open the board to check it." The row moves to `CHANGED_SINCE`.
+- `BOARD_SETUP_ALREADY_UNDONE`: "Someone already put the old setup back." The row moves to `UNDONE` and the board is read again by uuid and written the way a successful undo writes it, the stored active board included. A failed read leaves the line as it is; the active board heals on the next foreground.
+- `NOT_FOUND` (the board moved gyms or went private, or the viewer's role at the gym ended): "You can't undo this any more." Undo goes from the row.
+- No connection, or any other failure: "Couldn't undo it. Try again when connected." Undo stays.
+
+The inbox cache holds `CHANGED_SINCE` and `UNDONE`, so those lines survive a scroll. Who undid it and a refused Undo are the row's own state.
+
+The "fixed after your report" notice opens the board's detail sheet. Its **Set active** binds the board and returns to Climbs, so it is that notice's Climb it now.
+
+All of this is behind the app's copy of `directory-setup-suggestions` (`useDirectorySetupSuggestionsEnabled`, positive and fail-closed). Off, the sheet is the note field, and the review sheet and the notice show no suggestion actions. `Report Problem Sent` carries `hadSuggestion` and `setupOutcome`, and **Climb it now** sends `Board Setup Climbed Now` {boardType, gymListingState}.
+
 ### The `directory-setup-suggestions` flag
 
 A server flag with the same rules as [`directory-reports`](#the-directory-reports-flag): one switch for the whole service, evaluated for the fixed id `system:directory-setup-suggestions`, cached 60 s, decided by `FEATURE_FLAG_OVERRIDES` when that names it, and off when PostHog can't answer. Turn it on with a plain 100% condition.

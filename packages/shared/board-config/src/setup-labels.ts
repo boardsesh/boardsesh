@@ -28,7 +28,7 @@ function cleanKitDescription(description: string | null | undefined): string {
  * A size option. The same dimensions come in several kits (a Kilter Homewall
  * "10x12" is Full Ride, Mainline or Auxiliary), so the kit is part of the
  * label: "10×12 · Full Ride". A size with no kit description reads as its
- * dimensions alone. Same rule as the app's board builder (`formatSizeLabel`).
+ * dimensions alone. The app's board builder re-exports it as `formatSizeLabel`.
  */
 export function setupSizeLabel(size: { name: string; description?: string | null }): string {
   const dimensions = formatSizeDimensions(size);
