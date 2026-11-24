@@ -44,7 +44,7 @@ const directoryReportsSchema = readFileSync(
   .split('--> statement-breakpoint')
   .filter((statement) => !statement.trim().startsWith('ALTER TYPE'))
   .join('\n');
-// Suggested setups on "Set up wrong" reports (migration 0338). Notification
+// Suggested setups on "Set up wrong" reports (migration 0341). Notification
 // types are text in this fixture, so only that enum addition is skipped; the
 // board moderation and resolver role enums are real types here.
 const boardSetupSuggestionsSchema = readFileSync(
@@ -1889,7 +1889,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   DROP TYPE IF EXISTS directory_report_target_kind;
   ${directoryReportsSchema}
 
-  -- Suggested setups (migration 0338): enum values, the reporter's suggestion,
+  -- Suggested setups (migration 0341): enum values, the reporter's suggestion,
   -- the notice's link to the setup change and the per-climber index on
   -- board_moderation_events. The tables and types above are dropped and made
   -- again first, so a reapplied fixture adds them once.
