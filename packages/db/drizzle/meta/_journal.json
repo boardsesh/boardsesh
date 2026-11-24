@@ -2388,6 +2388,13 @@
       "when": 1795478508505,
       "tag": "0340_gym_reporting_alias_venue_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 341,
+      "version": "7",
+      "when": 1795506037104,
+      "tag": "0341_board_setup_suggestions",
+      "breakpoints": true
     }
   ]
 }

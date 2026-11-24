@@ -48,7 +48,7 @@ const directoryReportsSchema = readFileSync(
 // types are text in this fixture, so only that enum addition is skipped; the
 // board moderation and resolver role enums are real types here.
 const boardSetupSuggestionsSchema = readFileSync(
-  new URL('../../../db/drizzle/0338_board_setup_suggestions.sql', import.meta.url),
+  new URL('../../../db/drizzle/0341_board_setup_suggestions.sql', import.meta.url),
   'utf8',
 )
   .split('--> statement-breakpoint')

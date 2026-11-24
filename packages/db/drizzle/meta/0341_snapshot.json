@@ -1,6 +1,6 @@
 {
-  "id": "827839c3-a9c4-4f52-bf6b-207e22b2d41a",
-  "prevId": "b03067d5-3eff-4a18-bbb5-e4d2ff2caa86",
+  "id": "9ba5b0e9-9627-47f9-9689-a6ebc9b180b8",
+  "prevId": "b0555408-7b92-4c34-8e71-dcd755f6a749",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -10238,6 +10238,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "reporting_time_zone": {
+          "name": "reporting_time_zone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "hours": {
           "name": "hours",
           "type": "text",
@@ -11229,6 +11235,172 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.gym_reporting_board_aliases": {
+      "name": "gym_reporting_board_aliases",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "gym_id": {
+          "name": "gym_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "board_id": {
+          "name": "board_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "root_board_id": {
+          "name": "root_board_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "verified_by": {
+          "name": "verified_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verified_at": {
+          "name": "verified_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "revoked_by": {
+          "name": "revoked_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "gym_reporting_alias_active_board_idx": {
+          "name": "gym_reporting_alias_active_board_idx",
+          "columns": [
+            {
+              "expression": "board_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"gym_reporting_board_aliases\".\"revoked_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "gym_reporting_alias_active_root_idx": {
+          "name": "gym_reporting_alias_active_root_idx",
+          "columns": [
+            {
+              "expression": "root_board_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"gym_reporting_board_aliases\".\"revoked_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "gym_reporting_board_aliases_gym_id_gyms_id_fk": {
+          "name": "gym_reporting_board_aliases_gym_id_gyms_id_fk",
+          "tableFrom": "gym_reporting_board_aliases",
+          "tableTo": "gyms",
+          "columnsFrom": [
+            "gym_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "gym_reporting_board_aliases_board_id_user_boards_id_fk": {
+          "name": "gym_reporting_board_aliases_board_id_user_boards_id_fk",
+          "tableFrom": "gym_reporting_board_aliases",
+          "tableTo": "user_boards",
+          "columnsFrom": [
+            "board_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "gym_reporting_board_aliases_root_board_id_user_boards_id_fk": {
+          "name": "gym_reporting_board_aliases_root_board_id_user_boards_id_fk",
+          "tableFrom": "gym_reporting_board_aliases",
+          "tableTo": "user_boards",
+          "columnsFrom": [
+            "root_board_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "gym_reporting_board_aliases_verified_by_users_id_fk": {
+          "name": "gym_reporting_board_aliases_verified_by_users_id_fk",
+          "tableFrom": "gym_reporting_board_aliases",
+          "tableTo": "users",
+          "columnsFrom": [
+            "verified_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "gym_reporting_board_aliases_revoked_by_users_id_fk": {
+          "name": "gym_reporting_board_aliases_revoked_by_users_id_fk",
+          "tableFrom": "gym_reporting_board_aliases",
+          "tableTo": "users",
+          "columnsFrom": [
+            "revoked_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "gym_reporting_alias_different_boards": {
+          "name": "gym_reporting_alias_different_boards",
+          "value": "\"gym_reporting_board_aliases\".\"board_id\" <> \"gym_reporting_board_aliases\".\"root_board_id\""
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.user_board_activity": {
       "name": "user_board_activity",
       "schema": "",
@@ -11778,6 +11950,22 @@
           ],
           "isUnique": false,
           "where": "\"user_boards\".\"serial_number\" IS NOT NULL AND \"user_boards\".\"serial_number\" <> '' AND \"user_boards\".\"deleted_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "user_boards_merged_board_idx": {
+          "name": "user_boards_merged_board_idx",
+          "columns": [
+            {
+              "expression": "merged_into_board_uuid",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"user_boards\".\"merged_into_board_uuid\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -13122,6 +13310,48 @@
           "primaryKey": false,
           "notNull": false
         },
+        "reporting_board_id": {
+          "name": "reporting_board_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reporting_gym_id": {
+          "name": "reporting_gym_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reporting_attribution": {
+          "name": "reporting_attribution",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reporting_time_precision": {
+          "name": "reporting_time_precision",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reporting_climbed_at": {
+          "name": "reporting_climbed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reporting_date": {
+          "name": "reporting_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reporting_date_time_zone": {
+          "name": "reporting_date_time_zone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "aurora_type": {
           "name": "aurora_type",
           "type": "aurora_table_type",
@@ -13687,6 +13917,24 @@
         "setter": {
           "name": "setter",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reporting_board_id": {
+          "name": "reporting_board_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reporting_gym_id": {
+          "name": "reporting_gym_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reporting_mirrored": {
+          "name": "reporting_mirrored",
+          "type": "boolean",
           "primaryKey": false,
           "notNull": false
         },
