@@ -222,6 +222,17 @@
   margin-top: var(--spacing-6);
 }
 
+/* Two lines of the community sentence (16px at 1.5) on a laptop, three on a phone. */
+.proofCommunity {
+  min-height: calc(2 * 1.5 * var(--font-size-base));
+}
+
+@media (max-width: 600px) {
+  .proofCommunity {
+    min-height: calc(3 * 1.5 * var(--font-size-base));
+  }
+}
+
 /* A sentence, not a row of chips: it wraps like text, so the star stays with the
  * first figure instead of being stranded on its own line on a phone. */
 .page .ratingLine {

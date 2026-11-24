@@ -239,9 +239,13 @@ export function ProofLines({ t, communityLine = true }: { t: T; communityLine?: 
     <Box className={styles.proof}>
       <RatingLine t={t} />
       {communityLine ? (
-        <Suspense fallback={null}>
-          <CommunityProofLine locale={DEFAULT_LOCALE} />
-        </Suspense>
+        // The 30-day line streams in after the hero; its slot holds the line's usual
+        // height so a slow stats read can't push the hero down.
+        <Box className={styles.proofCommunity}>
+          <Suspense fallback={null}>
+            <CommunityProofLine locale={DEFAULT_LOCALE} />
+          </Suspense>
+        </Box>
       ) : null}
     </Box>
   );
