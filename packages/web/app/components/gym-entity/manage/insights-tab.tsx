@@ -48,6 +48,7 @@ import { themeTokens } from '@/app/theme/theme-config';
 import type { GymManageTabProps } from './tab-props';
 import { GymReportingSettings } from './gym-reporting-settings';
 import { GymReachReport } from './gym-reach-overview';
+import { GymGradeComparisonPanel } from './gym-grade-comparison';
 
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 
@@ -357,7 +358,20 @@ function InsightsReport({
             </Alert>
           )}
           <ReportingResults stats={stats} trend={trend} />
-          {state === 'ready' && <GymReportingSettings stats={stats} saveZone={saveZone} saveAlias={saveAlias} />}
+          {state === 'ready' && (
+            <>
+              <GymGradeComparisonPanel
+                key={`${boardUuid ?? ''}:${period}`}
+                viewerId={viewer}
+                token={token}
+                gymUuid={stats.gymUuid}
+                overviewGymUuid={gymUuid}
+                boardUuid={boardUuid}
+                period={period}
+              />
+              <GymReportingSettings stats={stats} saveZone={saveZone} saveAlias={saveAlias} />
+            </>
+          )}
         </>
       )}
     </Box>

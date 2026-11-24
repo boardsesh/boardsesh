@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import { rowsFromResult } from '@boardsesh/db/client';
 import {
@@ -20,7 +20,11 @@ import type {
 import { db } from '../../../db/client';
 import { GymStatsInputSchema } from '../../../validation/schemas/gyms';
 import { applyRateLimit, validateInput } from '../shared/helpers';
-import { isSharedConfigFeedBoard, SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
+import {
+  BOARD_CONFIG_PRESENCE_SLUG_PREFIX,
+  isSharedConfigFeedBoard,
+  SYSTEM_BOARD_OWNER_ID,
+} from '../board-presence/shared';
 import { requireGymEditAccess } from './gyms';
 import {
   hasReportingCalendarZoneSql,
@@ -80,15 +84,17 @@ export async function readReportingBoundaries(
   timeZone: string,
   asOf: string,
   periodDays: number,
+  microseconds = false,
 ): Promise<{ current: ReportingWindow; previous: ReportingWindow }> {
+  const stampFormat = microseconds ? 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"' : 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"';
   const [window] = rowsFromResult<{ currentStart: string; previousStart: string }>(
     await tx.execute(sql`
     WITH wall_clock AS (SELECT ${asOf}::timestamptz AT TIME ZONE ${timeZone} AS local_as_of)
     SELECT
       to_char(((local_as_of - make_interval(days => ${periodDays}::int)) AT TIME ZONE ${timeZone}) AT TIME ZONE 'UTC',
-              'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "currentStart",
+              ${stampFormat}) AS "currentStart",
       to_char(((local_as_of - make_interval(days => ${periodDays * 2}::int)) AT TIME ZONE ${timeZone}) AT TIME ZONE 'UTC',
-              'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "previousStart"
+              ${stampFormat}) AS "previousStart"
     FROM wall_clock
   `),
   );
@@ -146,35 +152,127 @@ function groupReportingBoards(
   return { boards: [...groups.values()], activityBoards };
 }
 
+const reportingBoardColumns = {
+  id: userBoards.id,
+  uuid: userBoards.uuid,
+  name: userBoards.name,
+  boardType: userBoards.boardType,
+  slug: userBoards.slug,
+  ownerId: userBoards.ownerId,
+};
+
+type BoundedReportingOptions = { maxBoards: number; operation: string; readsPerMinute: number; chargeRate?: boolean };
+
+function excludesSharedFeed(): SQL {
+  return sql`NOT (${userBoards.ownerId} = ${SYSTEM_BOARD_OWNER_ID}
+    AND starts_with(${userBoards.slug}, ${BOARD_CONFIG_PRESENCE_SLUG_PREFIX}))`;
+}
+
+export async function readBoundedReportingClock(tx: GymReportingTransaction): Promise<string> {
+  const [clock] = rowsFromResult<{ asOf: string }>(
+    await tx.execute(sql`
+    SELECT set_config('statement_timeout', '2000ms', true),
+      to_char(statement_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "asOf"
+  `),
+  );
+  return clock.asOf;
+}
+
+async function readBoundedReportingBoards(
+  tx: GymReportingTransaction,
+  gymId: number,
+  viewerId: string,
+  boardUuid: string | null | undefined,
+  gymIds: number[],
+  maxBoards: number,
+): Promise<AuthorizedBoard[]> {
+  const boardAccess = and(authorizedReportingBoardCondition(gymId, viewerId), excludesSharedFeed());
+  const activeAlias = and(inArray(gymReportingBoardAliases.gymId, gymIds), isNull(gymReportingBoardAliases.revokedAt));
+  if (!boardUuid) {
+    return tx
+      .select(reportingBoardColumns)
+      .from(userBoards)
+      .where(boardAccess)
+      .limit(maxBoards + 1);
+  }
+
+  const [selected] = await tx
+    .select(reportingBoardColumns)
+    .from(userBoards)
+    .where(and(boardAccess, eq(userBoards.uuid, boardUuid)))
+    .limit(1);
+  if (!selected) throw reportingBoardNotFound();
+  const [alias] = await tx
+    .select({ root: gymReportingBoardAliases.rootBoardId })
+    .from(gymReportingBoardAliases)
+    .where(and(activeAlias, eq(gymReportingBoardAliases.boardId, selected.id)))
+    .limit(1);
+
+  let root = selected;
+  if (alias) {
+    const [eligibleRoot] = await tx
+      .select(reportingBoardColumns)
+      .from(userBoards)
+      .where(and(boardAccess, eq(userBoards.id, alias.root), eq(userBoards.boardType, selected.boardType)))
+      .limit(1);
+    if (!eligibleRoot) return [selected];
+    const [higherAlias] = await tx
+      .select({ id: gymReportingBoardAliases.id })
+      .from(gymReportingBoardAliases)
+      .where(and(activeAlias, eq(gymReportingBoardAliases.boardId, eligibleRoot.id)))
+      .limit(1);
+    if (higherAlias) return [selected];
+    root = eligibleRoot;
+  }
+  const members = tx
+    .select({ id: gymReportingBoardAliases.boardId })
+    .from(gymReportingBoardAliases)
+    .where(and(activeAlias, eq(gymReportingBoardAliases.rootBoardId, root.id)));
+  return tx
+    .select(reportingBoardColumns)
+    .from(userBoards)
+    .where(
+      and(
+        boardAccess,
+        eq(userBoards.boardType, root.boardType),
+        or(eq(userBoards.id, root.id), inArray(userBoards.id, members)),
+      ),
+    )
+    .limit(maxBoards + 1);
+}
+
 export async function withGymReportingScope<Result>(
   input: unknown,
   ctx: ConnectionContext,
   callback: (tx: GymReportingTransaction, scope: GymReportingScope) => Promise<Result>,
+  bounded?: BoundedReportingOptions,
 ): Promise<Result> {
   const viewerId = requireReportingUser(ctx);
-  await applyRateLimit(ctx, 30, 'gymStats');
+  if (bounded?.chargeRate !== false) {
+    await applyRateLimit(ctx, bounded?.readsPerMinute ?? 30, bounded?.operation ?? 'gymStats');
+  }
   const { gymUuid, boardUuid: requestedBoardUuid, period } = validateInput(GymStatsInputSchema, input, 'input');
-  const asOf = new Date().toISOString();
+  const legacyAsOf = bounded ? null : new Date().toISOString();
   return db.transaction(
     async (tx) => {
+      const asOf = legacyAsOf ?? (await readBoundedReportingClock(tx));
       const gym = await requireGymEditAccess(gymUuid, viewerId, tx);
       const timeZone = gym.reportingTimeZone ?? 'UTC';
       const periodDays = PERIOD_DAYS[period];
       const canonicalGymIds = await readReportingGymIds(tx, gym.id);
-      const authorizedBoards = (
-        await tx
-          .select({
-            id: userBoards.id,
-            uuid: userBoards.uuid,
-            name: userBoards.name,
-            boardType: userBoards.boardType,
-            slug: userBoards.slug,
-            ownerId: userBoards.ownerId,
-          })
-          .from(userBoards)
-          .where(authorizedReportingBoardCondition(gym.id, viewerId))
-          .orderBy(asc(userBoards.name), asc(userBoards.id))
-      ).filter((board) => !isSharedConfigFeedBoard(board));
+      const authorizedBoards = bounded
+        ? await readBoundedReportingBoards(tx, gym.id, viewerId, requestedBoardUuid, canonicalGymIds, bounded.maxBoards)
+        : (
+            await tx
+              .select(reportingBoardColumns)
+              .from(userBoards)
+              .where(authorizedReportingBoardCondition(gym.id, viewerId))
+              .orderBy(asc(userBoards.name), asc(userBoards.id))
+          ).filter((board) => !isSharedConfigFeedBoard(board));
+      if (bounded && authorizedBoards.length > bounded.maxBoards) {
+        throw new GraphQLError('Reporting scope is too large', { extensions: { code: 'SCOPE_TOO_LARGE' } });
+      }
+      if (bounded) authorizedBoards.sort((left, right) => left.name.localeCompare(right.name) || left.id - right.id);
       const aliases =
         authorizedBoards.length > 0
           ? await tx
@@ -199,7 +297,7 @@ export async function withGymReportingScope<Result>(
       const selectedBoards = boardUuid
         ? activityBoards.filter((board) => board.physicalBoardUuid === boardUuid)
         : activityBoards;
-      const { current, previous } = await readReportingBoundaries(tx, timeZone, asOf, periodDays);
+      const { current, previous } = await readReportingBoundaries(tx, timeZone, asOf, periodDays, !!bounded);
       const [adminMembership] =
         gym.ownerId === viewerId
           ? [undefined]
@@ -265,6 +363,7 @@ export function reportingActivityInWindowSql(window: ReportingWindow): SQL {
 type ReportingActivityBounds = {
   end: string;
   candidateActorIds?: SQL;
+  sendsOnly?: boolean;
 } & (
   | { firstObservedOnly?: false; start?: string; predecessorDaysOnly?: false }
   | { firstObservedOnly?: false; start: string; predecessorDaysOnly: true }
@@ -517,11 +616,12 @@ export function reportingActivitySql(scope: GymReportingScope, bounds: Reporting
         start: beginUtc,
         end: endUtc,
         actorFilter: boundActor(sql`display.user_id`),
-        tail: bounds.firstObservedOnly
-          ? sql`ORDER BY display.confirmed_at LIMIT 1`
-          : bounds.predecessorDaysOnly
+        tail:
+          bounds.sendsOnly || bounds.predecessorDaysOnly
             ? sql`AND false`
-            : sql``,
+            : bounds.firstObservedOnly
+              ? sql`ORDER BY display.confirmed_at LIMIT 1`
+              : sql``,
       })}
       ) eligible
     ),
@@ -532,11 +632,16 @@ export function reportingActivitySql(scope: GymReportingScope, bounds: Reporting
         start: tickBegin,
         end: tickEnd,
         actorFilter: boundActor(sql`tick.user_id`),
-        tail: bounds.firstObservedOnly
-          ? sql`AND ${certifiedTickTime} AND tick.reporting_time_precision = 'instant' ORDER BY tick.climbed_at LIMIT 1`
-          : bounds.predecessorDaysOnly
-            ? sql`AND ${certifiedTickAuthorDay}`
-            : sql``,
+        tail: sql`
+          ${bounds.sendsOnly ? sql`AND tick.status IN ('flash', 'send')` : sql``}
+          ${
+            bounds.firstObservedOnly
+              ? sql`AND ${certifiedTickTime} AND tick.reporting_time_precision = 'instant' ORDER BY tick.climbed_at LIMIT 1`
+              : bounds.predecessorDaysOnly
+                ? sql`AND ${certifiedTickAuthorDay}`
+                : sql``
+          }
+        `,
       })}
       ) eligible
     ),

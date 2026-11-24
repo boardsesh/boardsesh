@@ -28,10 +28,16 @@ export const gymReportingQueryOptions = {
 } as const;
 
 export function isGymReportingAccessError(error: unknown) {
-  if (error instanceof GymReportingViewerChangedError) return true;
+  if (error instanceof GymReportingViewerChangedError || error instanceof GymReportingAccessDeniedError) return true;
   if (hasGraphqlErrorCode(error, 'FORBIDDEN', 'NOT_FOUND', 'UNAUTHENTICATED')) return true;
   const status = (error as { response?: { status?: number } } | null | undefined)?.response?.status;
   return status === 401 || status === 403;
+}
+
+export class GymReportingAccessDeniedError extends Error {
+  constructor(cause: unknown) {
+    super('Gym reporting access was denied', { cause });
+  }
 }
 
 export class GymReportingViewerChangedError extends Error {
@@ -113,7 +119,7 @@ export function gymReportingReadState({
   dataUpdatedAt,
   now = Date.now(),
 }: {
-  data?: GymStats;
+  data?: unknown;
   error: unknown;
   fetchStatus: 'fetching' | 'paused' | 'idle';
   isFetchedAfterMount: boolean;

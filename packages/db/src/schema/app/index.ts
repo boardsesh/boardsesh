@@ -66,4 +66,6 @@ export * from './partner-app-cap-audit';
 export * from './app-workouts';
 export * from './partner-webhooks';
 export * from './offline-write-delivery';
+
+export * from './gym-inventory';
 export * from './directory-reports';

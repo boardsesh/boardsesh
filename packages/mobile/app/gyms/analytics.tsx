@@ -34,6 +34,7 @@ import { SegmentedControl } from '../../src/components/SegmentedControl';
 import { Text } from '../../src/components/Text';
 import { GymReportingSettings } from '../../src/components/gym-directory/GymReportingSettings';
 import { GymReachReport } from '../../src/components/gym-directory/GymReachReport';
+import { GymGradeComparisonPanel } from '../../src/components/gym-directory/GymGradeComparisonPanel';
 import { spacing } from '../../src/theme/tokens';
 
 function ReportingResults({ stats, trend }: { stats: GymStats; trend: GymTrendSelection }) {
@@ -241,6 +242,14 @@ function GymAnalyticsReport({
               <View style={styles.actions}>
                 <Button title={t('gymReporting.refresh')} variant="outlined" onPress={() => void query.refetch()} />
               </View>
+              <GymGradeComparisonPanel
+                key={`${boardUuid ?? ''}:${period}`}
+                viewerId={viewerId}
+                gymUuid={stats.gymUuid}
+                overviewGymUuid={gymUuid}
+                boardUuid={boardUuid}
+                period={period}
+              />
               <GymReportingSettings stats={stats} saveZone={saveZone} saveAlias={saveAlias} />
             </>
           )}

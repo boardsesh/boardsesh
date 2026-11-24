@@ -69,3 +69,5 @@ export {
   BoardContext,
 } from './board-provider';
 export type { BoardContextType, BoardActionsContextType, BoardLogbookContextType } from './board-provider';
+
+export * from './use-gym-grade-comparison';

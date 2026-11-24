@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { createElement, type ReactNode } from 'react';
+import { createElement, type ChangeEvent, type ReactNode } from 'react';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
 import { GYM_REPORTING_RECEIPT_MS, gymReportingQueryKey } from '@boardsesh/graphql';
-import type { GymReachOverview, GymStats } from '@boardsesh/shared-schema';
+import type { GymGradeCollectionPage, GymGradeComparison, GymReachOverview, GymStats } from '@boardsesh/shared-schema';
 
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
+  gradeRequest: vi.fn(),
   viewer: 'viewer-one',
   generation: 1,
   focused: true,
@@ -53,7 +54,55 @@ vi.mock('../../../src/lib/auth-store', () => ({
   isAuthCredentialGenerationCurrent: (generation: number) => generation === mocks.generation,
 }));
 vi.mock('../../../src/lib/graphql/client', () => ({
-  getHttpClient: () => ({ request: mocks.request }),
+  getHttpClient: () => ({
+    request: (request: { document?: string } | string, variables?: unknown) => {
+      const document = typeof request === 'string' ? request : request.document;
+      return /(?:GymGradeComparison|GymGradeCollectionOptions|SetGymGradeCollection)/.test(document ?? '')
+        ? mocks.gradeRequest(request)
+        : variables === undefined
+          ? mocks.request(request)
+          : mocks.request(request, variables);
+    },
+  }),
+}));
+vi.mock('../../../src/hooks/use-grade-format', () => ({
+  useGradeFormat: () => ({ formatGradeByDifficultyId: (grade: number) => 'V' + grade }),
+}));
+vi.mock('../../../src/components/ModalSheet', () => ({
+  ModalSheet: ({ children, header }: Children & { header: ReactNode }) =>
+    createElement('div', { role: 'dialog' }, header, children),
+}));
+vi.mock('../../../src/components/AccessibleBottomSheetTextInput', () => ({
+  AccessibleBottomSheetTextInput: ({
+    value,
+    onChangeText,
+    accessibilityLabel,
+  }: {
+    value: string;
+    onChangeText: (value: string) => void;
+    accessibilityLabel: string;
+  }) =>
+    createElement('input', {
+      value,
+      onChange: (event: ChangeEvent<HTMLInputElement>) => onChangeText(event.currentTarget.value),
+      'aria-label': accessibilityLabel,
+    }),
+}));
+vi.mock('../../../src/components/sheet-presentation', () => ({
+  BottomSheetFlatList: ({
+    data,
+    keyExtractor,
+    renderItem,
+  }: {
+    data?: GymGradeCollectionPage['collections'];
+    keyExtractor: (item: GymGradeCollectionPage['collections'][number]) => string;
+    renderItem: (info: { item: GymGradeCollectionPage['collections'][number] }) => ReactNode;
+  }) =>
+    createElement(
+      'div',
+      null,
+      data?.map((item) => createElement('div', { key: keyExtractor(item) }, renderItem({ item }))),
+    ),
 }));
 vi.mock('../../../src/components/AppMenu', () => ({
   AppMenu: ({ actions, onSelectIndex }: MenuProps) =>
@@ -190,6 +239,17 @@ const reach: GymReachOverview = {
   }),
 };
 
+const emptyGrades: GymGradeComparison = {
+  gymUuid: report.gymUuid,
+  asOf: activeWindow.endAt,
+  startAt: activeWindow.startAt,
+  timeZone: report.timeZone,
+  availableCount: 0,
+  sendCount: 0,
+  grades: [],
+  boards: [],
+};
+
 function renderScreen() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const tree = () => (
@@ -202,6 +262,7 @@ function renderScreen() {
 
 beforeEach(() => {
   mocks.request.mockReset();
+  mocks.gradeRequest.mockReset().mockResolvedValue({ gymGradeComparison: emptyGrades });
   mocks.viewer = 'viewer-one';
   mocks.generation = 1;
   mocks.focused = true;
@@ -396,5 +457,94 @@ describe('GymAnalyticsScreen', () => {
     expect(firstSignal.aborted).toBe(true);
     await act(async () => completePrevious({ gymStats: report }));
     expect(screen.queryByText('gymReporting.climbers 2')).toBeNull();
+  });
+  it('keeps the playlist picker open while a denied choice and its private names are retired', async () => {
+    mocks.request.mockResolvedValue({ gymStats: report });
+    let completeGradeRefresh!: (payload: { gymGradeComparison: GymGradeComparison }) => void;
+    let completePickerRefresh!: (payload: { gymGradeCollectionOptions: GymGradeCollectionPage }) => void;
+    let gradeReads = 0;
+    let pickerReads = 0;
+    const choice = { uuid: 'withdrawn', name: 'Withdrawn candidate' };
+    const replacement = { uuid: 'replacement', name: 'Replacement candidate' };
+    const board = {
+      boardUuid: report.boards[0].uuid,
+      physicalBoardUuid: report.boards[0].uuid,
+      boardName: report.boards[0].name,
+      kind: 'LED_COLLECTION',
+      status: 'READY',
+      included: true,
+      variantCount: 1,
+      collectionName: 'Old private selection',
+    } as const;
+    const initial: GymGradeComparison = {
+      ...emptyGrades,
+      availableCount: 1,
+      grades: [{ boardType: 'kilter', difficultyId: null, availableCount: 1, sendCount: 0 }],
+      boards: [board],
+    };
+    const unavailable: GymGradeComparison = {
+      ...emptyGrades,
+      boards: [
+        {
+          ...board,
+          status: 'COLLECTION_UNAVAILABLE',
+          included: false,
+          variantCount: 0,
+          collectionName: null,
+        },
+      ],
+    };
+    const after: GymGradeComparison = { ...initial, boards: [{ ...board, collectionName: 'New private selection' }] };
+    mocks.gradeRequest.mockImplementation(
+      (request: { document: string; variables: { input: { playlistUuid?: string } } }) => {
+        if (request.document.includes('query GetGymGradeComparison')) {
+          if (++gradeReads === 1) return Promise.resolve({ gymGradeComparison: initial });
+          if (gradeReads === 2) {
+            return new Promise((resolve) => {
+              completeGradeRefresh = resolve;
+            });
+          }
+          return Promise.resolve({ gymGradeComparison: after });
+        }
+        if (request.document.includes('query GetGymGradeCollectionOptions')) {
+          if (++pickerReads === 1) {
+            return Promise.resolve({ gymGradeCollectionOptions: { collections: [choice], nextCursor: null } });
+          }
+          if (pickerReads === 2) {
+            return new Promise((resolve) => {
+              completePickerRefresh = resolve;
+            });
+          }
+          return Promise.resolve({ gymGradeCollectionOptions: { collections: [replacement], nextCursor: null } });
+        }
+        if (request.variables.input.playlistUuid === choice.uuid) {
+          return Promise.reject({ response: { errors: [{ extensions: { code: 'COLLECTION_UNAVAILABLE' } }] } });
+        }
+        return Promise.resolve({ setGymGradeCollection: true });
+      },
+    );
+
+    renderScreen();
+    await screen.findByText(/Old private selection/);
+    fireEvent.click(screen.getByRole('button', { name: 'gymGradeComparison.change' }));
+    fireEvent.click(await screen.findByRole('button', { name: choice.name }));
+    expect(await screen.findByText('gymGradeComparison.incompatible')).toBeTruthy();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByText('gymReporting.climbers 2')).toBeTruthy();
+    expect(screen.queryByText(/Old private selection/)).toBeNull();
+    expect(screen.queryByText(choice.name)).toBeNull();
+
+    await waitFor(() => {
+      expect(completeGradeRefresh).toBeDefined();
+      expect(completePickerRefresh).toBeDefined();
+    });
+    await act(async () => {
+      completeGradeRefresh({ gymGradeComparison: unavailable });
+      completePickerRefresh({ gymGradeCollectionOptions: { collections: [replacement], nextCursor: null } });
+    });
+    fireEvent.click(await screen.findByRole('button', { name: replacement.name }));
+    expect(await screen.findByText(/New private selection/)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByText('gymReporting.climbers 2')).toBeTruthy();
   });
 });

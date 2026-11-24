@@ -1125,3 +1125,50 @@ export const PUBLIC_GYM_SITEMAP = gql`
 export type PublicGymSitemapQueryResponse = {
   publicGymSitemap: Array<{ slug: string; updatedAt: string }>;
 };
+
+export const GET_GYM_GRADE_COMPARISON = gql`
+  query GetGymGradeComparison($input: GymStatsInput!) {
+    gymGradeComparison(input: $input) {
+      gymUuid
+      asOf
+      startAt
+      timeZone
+      availableCount
+      sendCount
+      grades {
+        boardType
+        difficultyId
+        availableCount
+        sendCount
+      }
+      boards {
+        boardUuid
+        physicalBoardUuid
+        boardName
+        kind
+        status
+        included
+        variantCount
+        collectionName
+      }
+    }
+  }
+`;
+
+export const GET_GYM_GRADE_COLLECTION_OPTIONS = gql`
+  query GetGymGradeCollectionOptions($input: GymGradeCollectionOptionsInput!) {
+    gymGradeCollectionOptions(input: $input) {
+      collections {
+        uuid
+        name
+      }
+      nextCursor
+    }
+  }
+`;
+
+export const SET_GYM_GRADE_COLLECTION = gql`
+  mutation SetGymGradeCollection($input: SetGymGradeCollectionInput!) {
+    setGymGradeCollection(input: $input)
+  }
+`;

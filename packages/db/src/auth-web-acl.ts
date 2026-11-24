@@ -1,5 +1,11 @@
 import type postgres from 'postgres';
 import { createHash } from 'node:crypto';
+import {
+  GYM_INVENTORY_PRIVATE_TABLES,
+  SPRAY_EXPOSURE_EVENT_SEQUENCE,
+  sprayExposureTriggerIdentity,
+  verifySprayExposureClosure,
+} from './auth-spray-exposure-acl';
 
 export const WEB_ROLE = 'boardsesh_web';
 export const quoteIdentifier = (identifier: string) => `"${identifier.replaceAll('"', '""')}"`;
@@ -129,6 +135,7 @@ export function fencePlan(catalog: FenceCatalog, options: { readonly ddlOwner?: 
     const target = `${quoteIdentifier(relation.schema)}.${quoteIdentifier(relation.name)}`;
     if (relation.kind === 'S') {
       apply.push(`REVOKE ALL ON SEQUENCE ${target} FROM PUBLIC, ${role};`);
+      if (relation.name === SPRAY_EXPOSURE_EVENT_SEQUENCE) continue;
       // An identity table's own sequence stays closed: the web never inserts there.
       const identitySequence = !!relation.sequenceOwner && protectedIdentityTable(relation.sequenceOwner);
       if (identitySequence && !BACKEND_ONLY_PARTNER_TABLES.includes(relation.sequenceOwner!))
@@ -146,6 +153,7 @@ export function fencePlan(catalog: FenceCatalog, options: { readonly ddlOwner?: 
       relation.name !== 'auth_session' &&
       relation.name !== '__drizzle_migrations' &&
       !BACKEND_ONLY_PARTNER_TABLES.includes(relation.name) &&
+      !GYM_INVENTORY_PRIVATE_TABLES.includes(relation.name) &&
       ['r', 'p'].includes(relation.kind);
     if (readable) apply.push(`GRANT SELECT ON TABLE ${target} TO ${role};`);
     if (!identity && readable) apply.push(`GRANT INSERT, UPDATE, DELETE ON TABLE ${target} TO ${role};`);
@@ -339,6 +347,9 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
     FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
     WHERE namespace.nspname !~ '^pg_' AND namespace.nspname <> 'information_schema' AND relation.relkind IN ('r','p','v','m','f')`;
   for (const relation of relationPrivileges) {
+    if (GYM_INVENTORY_PRIVATE_TABLES.includes(relation.name) && (relation.reads || relation.writes)) {
+      throw new Error('UNREVIEWED_GYM_INVENTORY_PRIVILEGE');
+    }
     if ((protectedIdentityTable(relation.name) || !['r', 'p'].includes(relation.kind)) && relation.writes)
       throw new Error('IDENTITY_WRITE_PATH');
     // The plan grants product tables SELECT/INSERT/UPDATE/DELETE only. TRIGGER can
@@ -353,15 +364,21 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
     )
       throw new Error('UNREVIEWED_READ_PATH');
   }
-  const sequencePrivileges = await client<{ owner: string | null; usable: boolean; settable: boolean }[]>`
-    SELECT (SELECT owning.relname FROM pg_depend dependency JOIN pg_class owning ON owning.oid = dependency.refobjid
+  const sequencePrivileges = await client<
+    { name: string; owner: string | null; usable: boolean; readable: boolean; settable: boolean }[]
+  >`
+    SELECT relation.relname AS name, (SELECT owning.relname FROM pg_depend dependency JOIN pg_class owning ON owning.oid = dependency.refobjid
         WHERE dependency.classid = 'pg_class'::regclass AND dependency.objid = relation.oid
           AND dependency.refclassid = 'pg_class'::regclass AND dependency.deptype IN ('a','i') LIMIT 1) AS owner,
       has_sequence_privilege(${WEB_ROLE},relation.oid,'USAGE,UPDATE') AS usable,
+      has_sequence_privilege(${WEB_ROLE},relation.oid,'SELECT') AS readable,
       has_sequence_privilege(${WEB_ROLE},relation.oid,'UPDATE') AS settable
     FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
     WHERE namespace.nspname !~ '^pg_' AND namespace.nspname <> 'information_schema' AND relation.relkind = 'S'`;
   for (const sequence of sequencePrivileges) {
+    if (sequence.name === SPRAY_EXPOSURE_EVENT_SEQUENCE && (sequence.usable || sequence.readable)) {
+      throw new Error('UNREVIEWED_GYM_INVENTORY_PRIVILEGE');
+    }
     if (sequence.owner && protectedIdentityTable(sequence.owner) && sequence.usable)
       throw new Error('IDENTITY_SEQUENCE_PATH');
     // setval is never granted: it can make another writer's nextval collide.
@@ -447,7 +464,17 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
       sha256: '6a594cadf5b21735e2cacb4c51860503c4ad2b54911354184725a87f67230c1b',
     },
   };
+  const verifiedExposure = await verifySprayExposureClosure(client, WEB_ROLE);
   for (const trigger of triggerFunctions) {
+    // This exact identity was verified alongside its helper, source and sink
+    // closure above. The public schema and ordinary role checks still apply.
+    if (
+      trigger.schema === 'public' &&
+      verifiedExposure.has(
+        sprayExposureTriggerIdentity(trigger.relationSchema, trigger.relation, trigger.triggerName, trigger.routine),
+      )
+    )
+      continue;
     const reviewed = reviewedTriggers[trigger.routine];
     if (
       !reviewed ||
