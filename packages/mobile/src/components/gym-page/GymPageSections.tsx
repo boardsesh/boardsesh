@@ -222,7 +222,7 @@ function useToolLabel(tool: GymStaffTool): string {
     case 'kiosks':
       return t('mobile.gymPage.kiosks');
     case 'insights':
-      return t('mobile.gymPage.insights');
+      return t('gymReporting.title');
   }
 }
 
@@ -253,7 +253,7 @@ const ToolRow = memo(function ToolRow({
     <GymLinkRow
       icon={TOOL_ICONS[tool]}
       label={label}
-      external={tool !== 'editDetails'}
+      external={tool === 'nearbyBoards' || tool === 'kiosks'}
       onPress={handlePress}
       testID={`gym-page-tool-${tool}`}
     />
@@ -282,7 +282,7 @@ export const GymStartHereSection = memo(function GymStartHereSection({
   );
 });
 
-/** Staff tools: edit the details here, the big-screen jobs on the website. */
+/** Staff tools: details and analytics in the app, board and TV management on the website. */
 export const GymStaffToolsSection = memo(function GymStaffToolsSection({
   tools,
   actions,

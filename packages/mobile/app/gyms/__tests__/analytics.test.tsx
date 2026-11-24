@@ -453,6 +453,16 @@ describe('GymAnalyticsScreen', () => {
     );
   });
 
+  it.each([false, true])('places time-zone settings before charts only when unset (%s)', async (configured) => {
+    mocks.request.mockResolvedValue({ gymStats: { ...report, timeZoneConfigured: configured } });
+    renderScreen();
+    const settingsButton = await screen.findByRole('button', { name: 'Save test zone' });
+    const recordedClimbers = screen.getByText('gymReporting.climbers 2');
+    const position = settingsButton.compareDocumentPosition(recordedClimbers);
+    expect(Boolean(position & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(!configured);
+    expect(screen.getAllByRole('button', { name: 'Save test zone' })).toHaveLength(1);
+  });
+
   it('shows five cards and lets a screen-reader user select exact weekly counts', async () => {
     mocks.request.mockResolvedValue({ gymStats: { ...report, reachOverview: reach } });
     renderScreen();

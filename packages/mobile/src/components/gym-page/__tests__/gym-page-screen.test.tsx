@@ -349,6 +349,13 @@ describe('GymPageScreen', () => {
     fireEvent.click(screen.getByText('tool-editDetails'));
     expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/gyms/edit', params: { gymUuid: 'gym-uuid-1' } });
 
+    fireEvent.click(screen.getByText('tool-insights'));
+    expect(routerMock.push).toHaveBeenLastCalledWith({
+      pathname: '/gyms/analytics',
+      params: { gymUuid: 'gym-uuid-1' },
+    });
+    expect(openUrlMock).not.toHaveBeenCalled();
+
     fireEvent.click(screen.getByText('tool-kiosks'));
     await Promise.resolve();
     expect(openUrlMock).toHaveBeenCalledWith(
