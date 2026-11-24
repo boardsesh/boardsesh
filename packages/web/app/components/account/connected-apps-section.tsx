@@ -48,27 +48,7 @@ import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { themeTokens } from '@/app/theme/theme-config';
-
-const RELATIVE_UNITS: ReadonlyArray<[Intl.RelativeTimeFormatUnit, number]> = [
-  ['year', 365 * 24 * 3600],
-  ['month', 30 * 24 * 3600],
-  ['week', 7 * 24 * 3600],
-  ['day', 24 * 3600],
-  ['hour', 3600],
-  ['minute', 60],
-];
-
-/** "3 hours ago" in the page's language. dayjs's relative time is English-only on the website. */
-function relativeTimeFormatter(locale: string, nowMs: number): (iso: string) => string {
-  const format = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
-  return (iso) => {
-    const seconds = (Date.parse(iso) - nowMs) / 1000;
-    for (const [unit, size] of RELATIVE_UNITS) {
-      if (Math.abs(seconds) >= size) return format.format(Math.round(seconds / size), unit);
-    }
-    return format.format(0, 'minute');
-  };
-}
+import { relativeTimeFormatter } from '@/app/lib/relative-time';
 
 /**
  * Settings › Connected apps on the website (#6981 F16): the apps a climber

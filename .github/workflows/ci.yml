@@ -1384,7 +1384,13 @@ jobs:
     # catalog-completeness parity test, which lives in this job.
     if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.i18nCatalogs == 'true'
     runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
-    timeout-minutes: 20
+    # A PR that touches a package almost everything imports (shared-schema,
+    # board-config, the i18n catalogs) makes `--changed` select nearly the whole
+    # suite, split over only 2 shards. Measured shard 1/2 times on such PRs:
+    # #8093 14.5 min, #8053 16.5 min, #8101 over 19 min (cancelled twice at 20,
+    # once mid-run, once in the post-step cache save after the tests passed).
+    # 30 leaves room without hiding a real hang for long.
+    timeout-minutes: 30
     strategy:
       # Same idiom as test-backend below. fail-fast stays false so a failure in
       # one shard still reports the other's failures — a cancelled sibling costs

@@ -146,6 +146,38 @@ export function isDirectoryReportClosedError(error: unknown): boolean {
   return getGraphqlErrors(error).some((graphqlError) => graphqlError.extensions?.code === 'REPORT_CLOSED');
 }
 
+/**
+ * `undoBoardSetupChange` on a change that can't be undone any more because the
+ * board's setup changed again since (an edit, another climber's change). Not a
+ * retry: the client says the board changed since and reads the board again. A
+ * change someone already undid is `isBoardSetupAlreadyUndoneError` instead.
+ */
+export function isBoardSetupChangedSinceError(error: unknown): boolean {
+  return getGraphqlErrors(error).some((graphqlError) => graphqlError.extensions?.code === 'BOARD_SETUP_CHANGED_SINCE');
+}
+
+/**
+ * `undoBoardSetupChange` on a change someone undid first (the creator, the
+ * gym's staff or an admin, from another device or the admin list). The old
+ * setup is already back, so callers treat it as done and read the board again.
+ */
+export function isBoardSetupAlreadyUndoneError(error: unknown): boolean {
+  return getGraphqlErrors(error).some((graphqlError) => graphqlError.extensions?.code === 'BOARD_SETUP_ALREADY_UNDONE');
+}
+
+/**
+ * `reportBoard` refusing a suggested setup because the board already has it
+ * (BAD_USER_INPUT with `extensions.reason` `SETUP_UNCHANGED`). Usually a page or
+ * sheet read before someone else fixed the board: the client reads the board
+ * again and says it may already be fixed, rather than showing a generic error.
+ */
+export function isBoardSetupUnchangedError(error: unknown): boolean {
+  return getGraphqlErrors(error).some(
+    (graphqlError) =>
+      graphqlError.extensions?.code === 'BAD_USER_INPUT' && graphqlError.extensions.reason === 'SETUP_UNCHANGED',
+  );
+}
+
 /** The exact message `detachBoardFromGym` throws (with `BAD_USER_INPUT`) when the board isn't at the gym. */
 const BOARD_NOT_AT_GYM_MESSAGE = 'This board is not listed at this gym.';
 

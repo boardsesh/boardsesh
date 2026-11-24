@@ -1,4 +1,10 @@
-import { isOpenDirectoryReportStatus } from '@boardsesh/directory-moderation';
+import {
+  groupSuggestedSetups,
+  isOpenDirectoryReportStatus,
+  setupMatches,
+  type CurrentBoardSetupForComparison,
+  type SuggestedSetupGroup,
+} from '@boardsesh/directory-moderation';
 import type { DirectoryReport } from '@boardsesh/shared-schema';
 
 /**
@@ -22,8 +28,13 @@ export type ReviewRow = {
   uuid: string;
   reason: DirectoryReport['reason'];
   reporterCount: number;
-  /** What reporters said, oldest first. `key` is stable for React. */
+  /** What reporters said, oldest first. `key` is stable for React. A reporter who only suggested a setup said nothing. */
   notes: Array<{ key: string; text: string }>;
+  /**
+   * The setups reporters suggested, grouped by equal setup, the most suggested
+   * first (`groupSuggestedSetups`, shared with the app's review sheet).
+   */
+  suggestions: SuggestedSetupGroup[];
   duplicateOfBoardName: string | null;
   /**
    * The line under the report: `team_queue` when it is in the admin queue and
@@ -42,7 +53,10 @@ export function reviewRows(reports: readonly DirectoryReport[]): ReviewRow[] {
       uuid: report.uuid,
       reason: report.reason,
       reporterCount: report.reporterCount,
-      notes: report.notes.map((note, index) => ({ key: `${note.createdAt}:${index}`, text: note.note })),
+      notes: report.notes
+        .map((note, index) => ({ key: `${note.createdAt}:${index}`, text: note.note }))
+        .filter((note) => note.text.trim().length > 0),
+      suggestions: groupSuggestedSetups(report.notes),
       duplicateOfBoardName: report.duplicateOfBoardName ?? null,
       // A report in the admin queue is `escalated` (routed there when it opened,
       // or open 14 days). A gym editor can't close an open one either, but the
@@ -57,4 +71,18 @@ export function reportsToKeep(reports: readonly DirectoryReport[]): string[] {
   return reports
     .filter((report) => isOpenDirectoryReportStatus(report.status) && report.viewerCanResolve)
     .map((report) => report.uuid);
+}
+
+/**
+ * Whether the dialog shows a **Use this setup** button: the viewer may edit the
+ * board, and some suggestion differs from the setup it has now (one it already
+ * has reads "The board has this setup now" instead). Only then does "Fix the
+ * setup" read as "Edit it yourself", the other way to fix it.
+ */
+export function offersUseThisSetup(
+  rows: readonly Pick<ReviewRow, 'suggestions'>[],
+  board: (CurrentBoardSetupForComparison & { canEdit?: boolean | null }) | null,
+): boolean {
+  if (!board?.canEdit) return false;
+  return rows.some((row) => row.suggestions.some((group) => !setupMatches(group.setup, board)));
 }

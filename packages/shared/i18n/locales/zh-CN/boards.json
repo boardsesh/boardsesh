@@ -213,6 +213,35 @@
     }
   },
   "mobile": {
+    "setupSuggestion": {
+      "holds": "岩点套装",
+      "choose": "选择",
+      "unchangedHint": "选出岩壁上的实际设置，或在备注里说明哪里不对。",
+      "previewEveryone": "这会为 {{gym}} 的所有人更改设置。之后可以撤销。",
+      "previewStaff": "{{gym}} 的工作人员会先检查。",
+      "previewCreator": "添加这块训练板的人会先检查。",
+      "appliedTitle": "设置已更新",
+      "appliedBody": "{{gym}} 的所有人现在都在 {{setup}} 上攀爬。",
+      "appliedBodyGeneric": "所有人现在都在 {{setup}} 上攀爬。",
+      "climbNow": "现在就去爬",
+      "alreadySetUp": "这块训练板已经是这个设置了。",
+      "reviewClaimedGym": "已转给 {{gym}} 的工作人员。修好后我们会通知你。",
+      "reviewClaimedGymGeneric": "已转给岩馆的工作人员。修好后我们会通知你。",
+      "reviewNoGym": "已转给添加这块训练板的人。修好后我们会通知你。",
+      "reviewRecentChange": "有人在过去 {{hours}} 小时内改过这块训练板，所以你的建议会先经过检查。修好后我们会通知你。",
+      "reviewRecentlyUndone": "过去 {{days}} 天内这块训练板有一次更改被撤销，所以你的建议会先经过检查。修好后我们会通知你。",
+      "reviewDailyLimit_one": "你在过去一天内已更改了 {{count}} 块训练板，所以这次会先经过检查。修好后我们会通知你。",
+      "reviewDailyLimit_other": "你在过去一天内已更改了 {{count}} 块训练板，所以这次会先经过检查。修好后我们会通知你。",
+      "reviewClashes": "你的建议会与另一块训练板重复，所以会先经过检查。修好后我们会通知你。",
+      "suggestedHeading": "攀岩者建议的设置",
+      "suggested_one": "{{count}} 位攀岩者建议 {{setup}}",
+      "suggested_other": "{{count}} 位攀岩者建议 {{setup}}",
+      "otherSuggested_one": "另有 {{count}} 种建议的设置",
+      "otherSuggested_other": "另有 {{count}} 种建议的设置",
+      "useSetup": "使用此设置",
+      "useSetupLabel": "使用此设置：{{setup}}",
+      "editYourself": "自己编辑"
+    },
     "edit": {
       "screenTitle": "编辑训练板",
       "save": "保存更改",
@@ -1859,7 +1888,28 @@
     "signInBody": "登录后我们会直接带你回到这里。",
     "boardListLink": "这块训练板有问题？",
     "web": {
-      "noteRequiredLabel": "说明哪里不对（至少 10 个字符）"
+      "noteRequiredLabel": "说明哪里不对（至少 10 个字符）",
+      "setup": {
+        "question": "岩壁上实际是什么？",
+        "layout": "布局",
+        "size": "尺寸",
+        "holds": "岩点",
+        "angle": "角度",
+        "previewEveryone": "这会为 {{gym}} 的所有人更改设置。之后可以撤销。",
+        "previewStaff": "{{gym}} 的工作人员会先审核。",
+        "previewCreator": "添加这块训练板的攀岩者会先审核。",
+        "applied": "已为 {{gym}} 的所有人更新设置。",
+        "appliedUnnamed": "已为所有人更新设置。",
+        "climbInApp": "现在就在 Boardsesh 应用里攀爬它。",
+        "reviewClaimedGym": "已发给 {{gym}} 的工作人员。修正后我们会通知你。",
+        "reviewClaimedGymUnnamed": "已发给岩馆的工作人员。修正后我们会通知你。",
+        "reviewNoGym": "已发给添加这块训练板的攀岩者。修正后我们会通知你。",
+        "reviewRecentChange": "过去一天内有人改过这块训练板，所以你的建议会先经过审核。修正后我们会通知你。",
+        "reviewRecentlyUndone": "这块训练板最近的一次更改被撤销了，所以你的建议会先经过审核。修正后我们会通知你。",
+        "reviewDailyLimit": "你在过去一天内已更改 {{limit}} 块训练板，所以这次会先经过审核。修正后我们会通知你。",
+        "reviewClashes": "这个设置与另一块训练板冲突，所以会先经过审核。修正后我们会通知你。",
+        "alreadySetUp": "它已经是这个设置了。"
+      }
     }
   },
   "reportReview": {
@@ -1903,7 +1953,13 @@
     "back": "返回",
     "close": "关闭",
     "web": {
-      "keepPartial": "已关闭 {{total}} 条报告中的 {{closed}} 条，请重试以关闭其余报告。"
+      "keepPartial": "已关闭 {{total}} 条报告中的 {{closed}} 条，请重试以关闭其余报告。",
+      "suggested_one": "{{count}} 位攀岩者建议了 {{setup}}",
+      "suggested_other": "{{count}} 位攀岩者建议了 {{setup}}",
+      "suggestedIsCurrent": "训练板现在就是这个设置",
+      "useSetup": "使用这个设置",
+      "useSetupFailed": "无法更改设置，请重试。",
+      "editYourself": "自己编辑"
     }
   },
   "whoCanEdit": {

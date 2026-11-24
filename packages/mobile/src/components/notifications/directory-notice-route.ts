@@ -29,6 +29,7 @@ const DIRECTORY_NOTICE_TYPES: ReadonlySet<GroupedNotification['type']> = new Set
   'gym_report_resolved',
   'gym_claimed_with_your_board',
   'gym_claim_denied',
+  'board_setup_changed_by_climber',
 ]);
 
 export function isDirectoryNoticeType(type: GroupedNotification['type']): boolean {
@@ -68,6 +69,7 @@ export function directoryNoticeRoute(
       };
     case 'board_edited_by_staff':
     case 'gym_claimed_with_your_board':
+    case 'board_setup_changed_by_climber':
       return boardUuid ? { kind: 'board', boardUuid, relistGym: null } : null;
     case 'board_deleted_by_staff':
       return { kind: 'explain', explanation: 'board_deleted', name: notice?.boardName ?? null };

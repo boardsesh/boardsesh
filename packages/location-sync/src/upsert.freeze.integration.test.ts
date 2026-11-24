@@ -40,6 +40,9 @@ type BoardStateRow = {
   syncFrozenAt: Date | string | null;
   serialNumber: string | null;
   layoutId: number | string;
+  sizeId: number | string;
+  setIds: string;
+  angle: number | string;
 };
 
 type AliasRow = { gymId: number | string };
@@ -94,7 +97,7 @@ async function readBoard(tx: Parameters<typeof upsertPublicBoardLocations>[0], u
     tx,
     sql`SELECT name, latitude, gym_id AS "gymId", deleted_at AS "deletedAt",
                sync_frozen_at AS "syncFrozenAt", serial_number AS "serialNumber",
-               layout_id AS "layoutId"
+               layout_id AS "layoutId", size_id AS "sizeId", set_ids AS "setIds", angle
         FROM user_boards WHERE uuid = ${uuid} LIMIT 1`,
   );
   expect(row, `expected a user_boards row for ${uuid}`).toBeTruthy();
@@ -300,6 +303,53 @@ describe.skipIf(integrationConfig.databaseUrl === null)('location sync freeze gu
         expect(removedBoard.gymId).toBeNull();
         expect(removedBoard.syncFrozenAt).not.toBeNull();
         expect(removedBoard.deletedAt).toBeNull();
+
+        throw rollback;
+      })
+      .catch((error: unknown) => {
+        if (error !== rollback) {
+          throw error;
+        }
+      });
+  });
+
+  it("keeps a climber's suggested setup (a climber setup change freezes the board)", async () => {
+    const db = createDb();
+    const rollback = new Error('rollback climber setup fixture');
+
+    await db
+      .transaction(async (tx) => {
+        const fixtureId = randomUUID();
+        const gymSourceKey = `tension:climber-setup-gym-${fixtureId}`;
+        const boardSourceKey = `tension:climber-setup-board-${fixtureId}`;
+        const boardUuid = boardUuidForSource(boardSourceKey);
+
+        await upsertPublicBoardLocations(tx, [
+          baseRecord({ sourceKey: boardSourceKey, gymSourceKey, isAngleAdjustable: false }),
+        ]);
+        expect((await readBoard(tx, boardUuid)).syncFrozenAt).toBeNull();
+
+        // The exact write a climber's suggested setup makes at a gym nobody runs
+        // (directory-reports/setup-suggestion.ts): the new layout, size, sets
+        // and, on a board that doesn't tilt, angle, then the freeze.
+        await tx.execute(sql`
+          UPDATE user_boards
+             SET layout_id = 11, size_id = 7, set_ids = '12,13,14', angle = 30,
+                 updated_at = NOW(), sync_frozen_at = NOW()
+           WHERE uuid = ${boardUuid}
+        `);
+
+        // The hourly sync still reports the board's old setup.
+        await upsertPublicBoardLocations(tx, [
+          baseRecord({ sourceKey: boardSourceKey, gymSourceKey, isAngleAdjustable: false }),
+        ]);
+
+        const changedBoard = await readBoard(tx, boardUuid);
+        expect(Number(changedBoard.layoutId)).toBe(11);
+        expect(Number(changedBoard.sizeId)).toBe(7);
+        expect(changedBoard.setIds).toBe('12,13,14');
+        expect(Number(changedBoard.angle)).toBe(30);
+        expect(changedBoard.syncFrozenAt).not.toBeNull();
 
         throw rollback;
       })

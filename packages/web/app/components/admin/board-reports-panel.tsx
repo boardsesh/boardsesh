@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'next/navigation';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
@@ -18,6 +19,8 @@ import DialogContentText from '@mui/material/DialogContentText';
 import DialogActions from '@mui/material/DialogActions';
 import MuiLink from '@mui/material/Link';
 import Stack from '@mui/material/Stack';
+import Tab from '@mui/material/Tab';
+import Tabs from '@mui/material/Tabs';
 import { REPORT_NOTE_MAX_LENGTH, normalizeReportNote } from '@boardsesh/directory-moderation';
 import type {
   DirectoryReport,
@@ -49,10 +52,13 @@ import {
 } from '@boardsesh/graphql/errors';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
+import { useLocaleRouter, usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { reportReasonLabel } from '@/app/components/directory-reports/report-copy';
 import { themeTokens } from '@/app/theme/theme-config';
+import BoardSetupChangesPanel from './board-setup-changes-panel';
+import { boardReportsTabHref, type BoardReportsTab } from './board-setup-changes-logic';
 import {
   adminActionsFor,
   orderAdminReports,
@@ -79,13 +85,64 @@ type KindFilter = 'all' | DirectoryReportTargetKind;
 type PendingConfirm = { report: DirectoryReport; action: AdminReportAction };
 
 /**
+ * `/admin/board-reports`: the report queue, and "Setup changes by climbers",
+ * the changes climbers' suggested setups made to boards at gyms nobody runs,
+ * each one an admin can undo (docs/product/directory-reports.md).
+ *
+ * The open tab is written back to the URL (`?tab=setup-changes`) with
+ * `router.replace`, so a reload or a shared link opens the same tab without a
+ * history entry per switch.
+ */
+export default function BoardReportsPanel({
+  highlightReportUuid,
+  initialTab = 'reports',
+}: {
+  highlightReportUuid: string | null;
+  /** `?tab=setup-changes` opens on the setup changes. */
+  initialTab?: BoardReportsTab;
+}) {
+  const { t } = useTranslation('admin');
+  const router = useLocaleRouter();
+  const pathname = usePathnameWithoutLocale();
+  const searchParams = useSearchParams();
+  const [tab, setTab] = useState<BoardReportsTab>(initialTab);
+  const changeTab = (next: BoardReportsTab) => {
+    setTab(next);
+    router.replace(boardReportsTabHref(pathname, searchParams.toString(), next), { scroll: false });
+  };
+  return (
+    <Box>
+      <Tabs
+        value={tab}
+        onChange={(_event, value: BoardReportsTab) => changeTab(value)}
+        variant="scrollable"
+        allowScrollButtonsMobile
+        sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
+      >
+        <Tab value="reports" label={t('boardReports.tabs.reports')} sx={{ textTransform: 'none', minHeight: 44 }} />
+        <Tab
+          value="setup-changes"
+          label={t('boardReports.tabs.setupChanges')}
+          sx={{ textTransform: 'none', minHeight: 44 }}
+        />
+      </Tabs>
+      {tab === 'reports' ? (
+        <DirectoryReportsQueue highlightReportUuid={highlightReportUuid} />
+      ) : (
+        <BoardSetupChangesPanel />
+      )}
+    </Box>
+  );
+}
+
+/**
  * The Boardsesh admin queue for board and gym reports
  * (docs/product/directory-reports.md): reports nobody else can act on (a synced
  * board at a gym nobody runs, a wrong place, most gym reports) and any report
  * still open after 14 days. Admins see who reported, which creators and staff
  * never do.
  */
-export default function BoardReportsPanel({ highlightReportUuid }: { highlightReportUuid: string | null }) {
+function DirectoryReportsQueue({ highlightReportUuid }: { highlightReportUuid: string | null }) {
   const { t, i18n } = useTranslation('admin');
   const { t: tBoards } = useTranslation('boards');
   const { token } = useWsAuthToken();

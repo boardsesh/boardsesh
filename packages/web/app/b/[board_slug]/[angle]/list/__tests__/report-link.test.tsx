@@ -19,6 +19,10 @@ const reportsEnabled = vi.hoisted(() => ({ current: false }));
 vi.mock('@/app/lib/directory-reports/directory-reports-flag', () => ({
   isDirectoryReportsEnabled: vi.fn(async () => reportsEnabled.current),
 }));
+const setupSuggestionsEnabled = vi.hoisted(() => ({ current: false }));
+vi.mock('@/app/lib/directory-reports/directory-setup-suggestions-flag', () => ({
+  isDirectorySetupSuggestionsEnabled: vi.fn(async () => setupSuggestionsEnabled.current),
+}));
 
 vi.mock('@/app/lib/board-slug-utils', () => ({
   resolveBoardBySlug: vi.fn(async () => ({
@@ -84,6 +88,7 @@ const renderPage = () =>
 
 beforeEach(() => {
   reportsEnabled.current = false;
+  setupSuggestionsEnabled.current = false;
 });
 
 describe('the board list Report a problem link', () => {
@@ -93,6 +98,16 @@ describe('the board list Report a problem link', () => {
     const links = findElements(tree, BoardReportLink);
     expect(links).toHaveLength(1);
     expect((links[0].props as { boardUuid: string }).boardUuid).toBe('board-uuid-1');
+  });
+
+  it('hands the link the setup-suggestions flag, and the store words only when the fields can show', async () => {
+    reportsEnabled.current = true;
+    let [link] = findElements(await renderPage(), BoardReportLink);
+    expect(link.props).toMatchObject({ setupSuggestionsEnabled: false, storeLabels: null });
+
+    setupSuggestionsEnabled.current = true;
+    [link] = findElements(await renderPage(), BoardReportLink);
+    expect(link.props).toMatchObject({ setupSuggestionsEnabled: true, storeLabels: { locale: 'en-US' } });
   });
 
   it('renders nothing while the flag is off', async () => {

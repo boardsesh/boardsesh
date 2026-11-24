@@ -27,3 +27,20 @@ export function applyNotificationGroupRead(client: QueryClient, notification: No
       : previous,
   );
 }
+
+/**
+ * One group as the loaded inbox holds it now, or null when no loaded page has
+ * it. For a handler that held a row across an await (a confirm) and must act
+ * on the row's state as it is now, not as it was when tapped.
+ */
+export function findCachedNotification(client: QueryClient, notificationUuid: string): GroupedNotification | null {
+  for (const [, data] of client.getQueriesData<GroupedNotificationPages>({
+    queryKey: GROUPED_NOTIFICATIONS_QUERY_KEY,
+  })) {
+    for (const page of data?.pages ?? []) {
+      const found = page.groups.find((group) => group.uuid === notificationUuid);
+      if (found) return found;
+    }
+  }
+  return null;
+}

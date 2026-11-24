@@ -744,6 +744,29 @@
     "empty": "这里没有内容。",
     "error": "无法加载报告，请重试。",
     "retry": "重试",
-    "loadMore": "加载更多"
+    "loadMore": "加载更多",
+    "tabs": {
+      "reports": "报告",
+      "setupChanges": "攀岩者更改的设置"
+    },
+    "setupChanges": {
+      "description": "攀岩者的建议改过的每一个训练板设置，最新的排在前面。这只会发生在无人经营的岩馆。只要训练板仍是攀岩者改后的设置，撤销就会恢复原来的设置。",
+      "before": "更改前",
+      "after": "更改后",
+      "byLine": "由 {{name}} 更改，{{when}}",
+      "state": {
+        "live": "生效中",
+        "undone": "已撤销",
+        "changedSince": "之后已更改"
+      },
+      "undo": "撤销",
+      "confirmTitle": "要撤销对 {{board}} 的更改吗？",
+      "confirmBody": "所有人看到的设置会恢复为 {{setup}}。接下来 {{days}} 天里，针对这块训练板的建议都会先经过审核。",
+      "undone": "已恢复原来的设置。",
+      "changedSinceError": "之后已更改：训练板现在是另一个设置，所以无法撤销。",
+      "alreadyUndone": "已经有人恢复了原来的设置。",
+      "empty": "还没有攀岩者更改过训练板。",
+      "error": "无法加载设置更改，请重试。"
+    }
   }
 }

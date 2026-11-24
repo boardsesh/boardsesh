@@ -213,6 +213,35 @@
     }
   },
   "mobile": {
+    "setupSuggestion": {
+      "holds": "Griffe",
+      "choose": "Auswählen",
+      "unchangedHint": "Wähl, was an der Wand ist, oder schreib in einer Notiz, was nicht stimmt.",
+      "previewEveryone": "Ändert es für alle bei {{gym}}. Das lässt sich rückgängig machen.",
+      "previewStaff": "Das Team von {{gym}} prüft es zuerst.",
+      "previewCreator": "Wer das Board angelegt hat, prüft es zuerst.",
+      "appliedTitle": "Einrichtung aktualisiert",
+      "appliedBody": "Alle bei {{gym}} klettern jetzt auf {{setup}}.",
+      "appliedBodyGeneric": "Alle klettern jetzt auf {{setup}}.",
+      "climbNow": "Jetzt klettern",
+      "alreadySetUp": "Das Board ist schon so eingerichtet.",
+      "reviewClaimedGym": "Weitergeleitet an das Team von {{gym}}. Wir sagen dir Bescheid, sobald es korrigiert ist.",
+      "reviewClaimedGymGeneric": "Weitergeleitet an das Team der Halle. Wir sagen dir Bescheid, sobald es korrigiert ist.",
+      "reviewNoGym": "Weitergeleitet an die Person, die das Board angelegt hat. Wir sagen dir Bescheid, sobald es korrigiert ist.",
+      "reviewRecentChange": "Jemand hat dieses Board in den letzten {{hours}} Stunden geändert, deshalb wird dein Vorschlag zuerst geprüft. Wir sagen dir Bescheid, sobald es korrigiert ist.",
+      "reviewRecentlyUndone": "Eine Änderung an diesem Board wurde in den letzten {{days}} Tagen rückgängig gemacht, deshalb wird dein Vorschlag zuerst geprüft. Wir sagen dir Bescheid, sobald es korrigiert ist.",
+      "reviewDailyLimit_one": "Du hast an einem Tag {{count}} Board geändert, deshalb wird dieser Vorschlag zuerst geprüft. Wir sagen dir Bescheid, sobald es korrigiert ist.",
+      "reviewDailyLimit_other": "Du hast an einem Tag {{count}} Boards geändert, deshalb wird dieser Vorschlag zuerst geprüft. Wir sagen dir Bescheid, sobald es korrigiert ist.",
+      "reviewClashes": "Dein Vorschlag würde einem anderen Board gleichen, deshalb wird er zuerst geprüft. Wir sagen dir Bescheid, sobald es korrigiert ist.",
+      "suggestedHeading": "Vorgeschlagene Einrichtungen",
+      "suggested_one": "{{count}} Kletterer*in hat {{setup}} vorgeschlagen",
+      "suggested_other": "{{count}} Kletterer*innen haben {{setup}} vorgeschlagen",
+      "otherSuggested_one": "{{count}} weitere Einrichtung vorgeschlagen",
+      "otherSuggested_other": "{{count}} weitere Einrichtungen vorgeschlagen",
+      "useSetup": "Diese Einrichtung übernehmen",
+      "useSetupLabel": "Diese Einrichtung übernehmen: {{setup}}",
+      "editYourself": "Selbst bearbeiten"
+    },
     "edit": {
       "screenTitle": "Board bearbeiten",
       "save": "Änderungen speichern",
@@ -1859,7 +1888,28 @@
     "signInBody": "Melde dich an und wir bringen dich direkt hierher zurück.",
     "boardListLink": "Stimmt etwas mit diesem Board nicht?",
     "web": {
-      "noteRequiredLabel": "Beschreib, was nicht stimmt (mindestens 10 Zeichen)"
+      "noteRequiredLabel": "Beschreib, was nicht stimmt (mindestens 10 Zeichen)",
+      "setup": {
+        "question": "Was hängt an der Wand?",
+        "layout": "Layout",
+        "size": "Größe",
+        "holds": "Griffe",
+        "angle": "Winkel",
+        "previewEveryone": "Das ändert es für alle in {{gym}}. Es lässt sich rückgängig machen.",
+        "previewStaff": "Das Team von {{gym}} prüft es zuerst.",
+        "previewCreator": "Die Person, die dieses Board angelegt hat, prüft es zuerst.",
+        "applied": "Einrichtung für alle in {{gym}} aktualisiert.",
+        "appliedUnnamed": "Einrichtung für alle aktualisiert.",
+        "climbInApp": "Kletter es jetzt in der Boardsesh-App.",
+        "reviewClaimedGym": "An das Team von {{gym}} geschickt. Wir sagen dir Bescheid, sobald es korrigiert ist.",
+        "reviewClaimedGymUnnamed": "An das Team der Halle geschickt. Wir sagen dir Bescheid, sobald es korrigiert ist.",
+        "reviewNoGym": "An die Person geschickt, die dieses Board angelegt hat. Wir sagen dir Bescheid, sobald es korrigiert ist.",
+        "reviewRecentChange": "Jemand hat dieses Board in den letzten 24 Stunden geändert, deshalb wird dein Vorschlag zuerst geprüft. Wir sagen dir Bescheid, sobald es korrigiert ist.",
+        "reviewRecentlyUndone": "Eine kürzliche Änderung an diesem Board wurde rückgängig gemacht, deshalb wird dein Vorschlag zuerst geprüft. Wir sagen dir Bescheid, sobald es korrigiert ist.",
+        "reviewDailyLimit": "Du hast in den letzten 24 Stunden {{limit}} Boards geändert, deshalb wird dieses zuerst geprüft. Wir sagen dir Bescheid, sobald es korrigiert ist.",
+        "reviewClashes": "Diese Einrichtung kollidiert mit einem anderen Board, deshalb wird sie zuerst geprüft. Wir sagen dir Bescheid, sobald es korrigiert ist.",
+        "alreadySetUp": "Es ist schon so eingerichtet."
+      }
     }
   },
   "reportReview": {
@@ -1903,7 +1953,13 @@
     "back": "Zurück",
     "close": "Schließen",
     "web": {
-      "keepPartial": "{{closed}} von {{total}} Meldungen geschlossen. Versuch es für den Rest erneut."
+      "keepPartial": "{{closed}} von {{total}} Meldungen geschlossen. Versuch es für den Rest erneut.",
+      "suggested_one": "{{count}} Kletterer*in hat {{setup}} vorgeschlagen",
+      "suggested_other": "{{count}} Kletterer*innen haben {{setup}} vorgeschlagen",
+      "suggestedIsCurrent": "Das Board hat diese Einrichtung schon",
+      "useSetup": "Diese Einrichtung übernehmen",
+      "useSetupFailed": "Die Einrichtung konnte nicht geändert werden. Versuch es erneut.",
+      "editYourself": "Selbst bearbeiten"
     }
   },
   "whoCanEdit": {

@@ -50,6 +50,9 @@ export type AppInstallSource = 'app-store' | 'google-play' | 'capacitor-retireme
  *    from md.
  *  - `home-qr-card`: the store badges in the QR card the home hero shows from
  *    1100px, apart from the phone's badge, which keeps `hero`.
+ *  - `setup-report`: the store badge (both badges from md) in the report
+ *    dialog after a climber's suggested setup changed a board for everyone
+ *    ("Climb it now in the Boardsesh app", docs/product/directory-reports.md).
  *  - `spray-climb`: a climb on a spray wall (`SprayClimbFrontDoor`).
  *  - `spray-wall`: a Spraywall's own page (`SprayWallFrontDoor`), where its
  *    share link and its printed QR land (#4415). After a scan the link id is
@@ -108,6 +111,7 @@ export const APP_INSTALL_PLACEMENTS = [
   'setter-qr-card',
   'playlist-qr-card',
   'home-qr-card',
+  'setup-report',
 ] as const;
 
 /**
