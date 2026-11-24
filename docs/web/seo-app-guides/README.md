@@ -1,38 +1,67 @@
 # Board app search pages
 
-These are indexable marketing pages: `/apps`, eight `/apps/<board>` pages, and
-`/compare/spray-wall-apps`. They answer broad app/download/compatibility searches
-with a recommendation, factual comparison and switching limits. One canonical URL
-per board also serves alternative and "best app" searches. `/boards` remains the
-layout directory; `/spraywalls` remains the setup page.
+These are indexable marketing pages: `/apps`, one page per board app
+(`/apps/kilter`, `/apps/aurora`, `/apps/moonboard`, `/apps/woods`) and
+`/compare/spray-wall-apps`. Tension, Decoy, Touchstone, Grasshopper and So iLL run
+builds of the same Aurora app, so they share `/apps/aurora`, with an anchored
+section per brand. Their old `/apps/<brand>` URLs (and the `/es`, `/fr`, `/de`,
+`/it` aliases) 308 to `/apps/aurora#<brand>` from `next.config.mjs`. The hub keeps a
+tile per board brand; the Aurora tiles link to their section. One canonical URL per
+page also serves alternative and "best app" searches. `/boards` remains the layout
+directory; `/spraywalls` remains the setup page.
+
+## Content model and the importer
+
+- Words live in `packages/shared/i18n/locales/<locale>/appGuides.json`, keyed by
+  stable ids (`pages.<page>.comparison.rows.<row>.official`). `common` holds the
+  page chrome and is edited by hand in `en-US`.
+- Structure lives in `packages/web/app/lib/seo/app-guide-registry.generated.ts`:
+  verdicts, winners, source ids, source URLs and checked dates, screenshots and
+  counts. `app-guide-model.ts` holds the shared types and the competitor display
+  names; `app-guides.ts` adds routes, art, help links and the claim gate.
+- Writers deliver one JSON file per page in the writer-brief shape. Import them with
+  `vp run app-guides:import -- <copy-dir>`. The importer validates length caps
+  (cells 90 characters, "Pick Boardsesh if" bullets 80 and starting with the
+  climber, FAQ answers two sentences, step text one sentence, meta descriptions 140
+  to 155), counts, verdict values (`boardsesh`, `only-boardsesh`, `tie`, `official`,
+  or `competitor` on the spray page), source ids, the honesty rule (one row the other
+  app wins or ties) and hub link text. It refuses `[PENDING-…]` placeholders unless
+  run with `--allow-pending` for a dev preview; `--draft` turns every rule into a
+  warning for previews; neither import is committed. It writes the English text to
+  all six locale folders (only English is published) and moves a page's "Updated"
+  date only when its copy or structure changed.
+- An "only in Boardsesh" row must cite a source; without one it renders as
+  "Boardsesh does it better". The Google-certified Android contrast is a gated claim
+  (`GATED_CLAIMS`): it renders only on the MoonBoard page and only while the
+  `grapheneos` source is registered there. `app-guide-pages.test.tsx` enforces both.
 
 ## Publication contract
 
-- The main content, links, ratings and comparison are in server-rendered HTML.
-  Each guide starts with a board-specific recommendation, then a concise comparison
-  and sections about using the app during a session. Jump links lead to the comparison,
-  session details, compatibility, downloads and sources. The hub links to the board
-  guides before asking readers to install. The publisher is identified near the lead.
+- The main content, links, ratings and comparison are in server-rendered HTML. Each
+  page opens with the matchup and a byline that says we make Boardsesh, then the
+  verdict ("Pick Boardsesh if" / "Keep the official app if"), what Boardsesh adds, a
+  real `<table>` with a verdict per row (cards on phones over the same DOM), a
+  session walkthrough, logbook import, an FAQ in `<details>`, "How we compared" and
+  one sources disclosure grouped by the claim each source backs.
 - Only English is published. The other five catalogs contain the same English
-  keys for catalog completeness, not translated pages. Metadata and the new
+  keys for catalog completeness, not translated pages. Metadata and the
   sitemap shard advertise only English. Localized aliases redirect temporarily
   to English without changing the visitor's language preference.
 - Product claims come from current code and linked primary sources. They do not
   imply a physical board was tested for this article. MoonBoard controller limits
   and one-way imports are explicit. An undocumented competitor feature is not
-  described as absent. The Kilter guide attributes dated climber reports about
-  import waits separately from Kilter's published estimate.
+  described as absent.
 - App Store ratings are an app-wide, storefront-specific snapshot with a count,
-  date and direct source. They do not establish board-specific superiority. No
-  imported `Review` or `AggregateRating` rich-result markup is emitted. Existing
+  date and direct source. They do not establish board-specific superiority. The
+  JSON-LD is WebPage (with `dateModified` and an Organization publisher),
+  BreadcrumbList, a MobileApplication for Boardsesh only, and an ItemList on the
+  hub. No `Review`, `AggregateRating` or `FAQPage` markup is emitted. Existing
   cached community activity figures retain their own scope and fallback.
 
 The PR author owns initial verification. Boardsesh maintainers check the sources
 and App Store snapshot monthly and after relevant app/controller releases. Editorial
 changes update the guide date; source and rating dates change only after checking
-those claims. Pages never depend on
-an App Store request at render time. The registry and catalogs hold the evidence;
-`app-guide-pages.test.tsx` verifies the server output and metadata.
+those claims. Pages never depend on an App Store request at render time.
 
 ## Search Console comparison
 
@@ -73,7 +102,10 @@ date requires actual inspection, not presence in a sitemap.
 ## Observed website outcomes
 
 `scripts/posthog/seo-app-guide-queries.ts` contains the reproducible HogQL builder
-for PostHog project 412845. It reuses the existing `$pageview`, `App Install Click`
+for PostHog project 412845. Its `APP_GUIDE_PATHS` still lists the five pre-merge
+Aurora brand pages: replacing them with `/apps/aurora` changes the fixture query
+whose hash `seo-app-guide-validation.json` pins, so that swap waits for a fresh
+PostHog fixture run. It reuses the existing `$pageview`, `App Install Click`
 and `Web App Opened` events. New finite `compare-*` placements also go into store
 campaign links. Capture still uses the existing consent, host and bot guards.
 No new identifier, consent counter or native attribution join is introduced.
