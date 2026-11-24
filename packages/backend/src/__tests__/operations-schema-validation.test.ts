@@ -303,6 +303,25 @@ describe('climb-list documents select the rule fields the play drawer renders', 
     });
   }
 
+  it('selects the candidate angle with Plays only in the public web similarity operation', () => {
+    const webFields = new Set<string>();
+    visit(parse(publicOperations.PUBLIC_SIMILAR_CLIMBS_QUERY), {
+      Field(node) {
+        webFields.add(node.name.value);
+      },
+    });
+    expect(webFields.has('angle')).toBe(true);
+    expect(webFields.has('playCount')).toBe(true);
+    expect(publicOperations.SIMILAR_CLIMBS_QUERY).not.toContain('playCount');
+  });
+
+  it('selects only the corresponding Plays field in native and web playlist operations', () => {
+    expect(publicOperations.GET_PLAYLIST_CLIMBS).toContain('play_count');
+    expect(publicOperations.GET_PLAYLIST_CLIMBS).not.toContain('publicPlayCount');
+    expect(publicOperations.GET_WEB_PLAYLIST_CLIMBS).toContain('publicPlayCount');
+    expect(publicOperations.GET_WEB_PLAYLIST_CLIMBS).not.toContain('play_count');
+  });
+
   it('SIMILAR_CLIMBS_QUERY selects characteristics, so a tapped similar climb keeps its rules', () => {
     const fields = new Set<string>();
     visit(parse(publicOperations.SIMILAR_CLIMBS_QUERY), {

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { renderToString } from 'react-dom/server';
 import ClimbViewSeoFragment from '@/app/components/climb-detail/climb-view-seo-fragment';
 import { resolveServerTree } from '@/app/lib/__tests__/helpers/resolve-server-tree';
-import { getClimbStatsForAllAngles, type ClimbStatsForAngle } from '@/app/lib/data/queries';
+import { getClimb, getClimbStatsForAllAngles, type ClimbStatsForAngle } from '@/app/lib/data/queries';
 import { getRedirectStatusCodeFromError, getURLFromRedirectError } from 'next/dist/client/components/redirect';
 import { isRedirectError } from 'next/dist/client/components/redirect-error';
 import { constructBoardSlugViewUrl, extractUuidFromSlug } from '@/app/lib/url-utils';
@@ -98,13 +98,16 @@ vi.mock('@/app/lib/board-image-details', async () => ({
 }));
 
 vi.mock('@/app/lib/data/queries', () => ({
-  getClimb: vi.fn(async () => ({
+  getClimb: vi.fn(async ({ angle = 40 }: { angle?: number } = {}) => ({
     uuid: 'test-climb',
     name: 'Test Climb',
     difficulty: 'V5',
     setter_username: 'setter-person',
     quality_average: '4.20',
     ascensionist_count: 12,
+    boardType: 'kilter',
+    angle,
+    play_count: angle === 40 ? 1204 : angle === 25 ? 0 : null,
     frames: 'p1r12',
     description: climbRow.description,
   })),
@@ -112,6 +115,7 @@ vi.mock('@/app/lib/data/queries', () => ({
     {
       angle: 25,
       ascensionist_count: '4',
+      play_count: 0,
       quality_average: '3.80',
       difficulty_average: 17,
       display_difficulty: 17,
@@ -124,6 +128,7 @@ vi.mock('@/app/lib/data/queries', () => ({
     {
       angle: 40,
       ascensionist_count: '12',
+      play_count: 1204,
       quality_average: '4.20',
       difficulty_average: 20,
       display_difficulty: 20,
@@ -205,6 +210,44 @@ async function renderFrontDoor(params = PARAMS): Promise<string> {
   })) as React.ReactElement;
   return renderToString(<>{await resolveServerTree(element)}</>);
 }
+
+it('server-renders Plays for the selected angle, including zero and unavailable', async () => {
+  for (const [angle, label] of [
+    ['40', 'plays.count(count=1204,formattedCount=1,204)'],
+    ['25', 'plays.count(count=0,formattedCount=0)'],
+    ['45', 'plays.unavailable'],
+  ]) {
+    const html = await renderFrontDoor({ ...PARAMS, angle });
+    const header = html.match(/<header[^>]*>[\s\S]*?<\/header>/)?.[0];
+    expect(header).toContain(label);
+    expect(header).toContain('sends(');
+    expect(header).toContain('id="climb-plays-explanation"');
+    expect(html).toContain('aria-describedby="climb-plays-explanation"');
+  }
+});
+
+it.each([
+  { detail: 0, label: 'plays.count(count=0,formattedCount=0)', tableValue: '0' },
+  { detail: null, label: 'plays.unavailable', tableValue: 'plays.valueUnavailable' },
+  { detail: undefined, label: 'plays.count(count=2200,formattedCount=2,200)', tableValue: '2,200' },
+])(
+  'uses one selected-angle observation across independently cached detail and angle rows ($detail)',
+  async ({ detail, label, tableValue }) => {
+    const base = await getClimb({ angle: 40 } as Parameters<typeof getClimb>[0]);
+    if (!base) throw new Error('Expected default climb fixture');
+    vi.mocked(getClimb).mockResolvedValueOnce({ ...base, play_count: detail });
+    vi.mocked(getClimbStatsForAllAngles).mockResolvedValueOnce([
+      { ...CURRENT_ANGLE_STATS, play_count: 2200 },
+      { ...CURRENT_ANGLE_STATS, angle: 25, play_count: 3300 },
+    ]);
+    const html = await renderFrontDoor();
+    expect(html.match(/<header[^>]*>[\s\S]*?<\/header>/)?.[0]).toContain(label);
+    const currentRow = html.match(/<tr[^>]*aria-current="page"[^>]*>[\s\S]*?<\/tr>/)?.[0];
+    expect(currentRow).toMatch(new RegExp(`>${tableValue}<`));
+    if (detail !== undefined) expect(currentRow).not.toContain('2,200');
+    expect(html).toContain('3,300');
+  },
+);
 
 const CURRENT_ANGLE_STATS: ClimbStatsForAngle = {
   angle: 40,
@@ -523,6 +566,9 @@ describe('an alias URL', () => {
     setter_username: 'setter-person',
     quality_average: '4.20',
     ascensionist_count: 12,
+    boardType: 'kilter',
+    angle: 40,
+    play_count: 6721,
     frames: 'p1r12',
     description: null,
   };
@@ -570,6 +616,8 @@ describe('an alias URL', () => {
     vi.mocked(getFrontDoorBetaLinks).mockClear();
     const html = await renderFrontDoor({ ...PARAMS, climb_uuid: landingSegment });
     expect(html).toContain('<h1');
+    expect(html).toContain('plays.count(count=6721,formattedCount=6,721)');
+    expect(html.match(/<tr[^>]*aria-current="page"[^>]*>[\s\S]*?<\/tr>/)?.[0]).toContain('6,721');
     expect(vi.mocked(getClimbStatsForAllAngles)).toHaveBeenCalledWith('kilter', canonicalUuid);
     expect(vi.mocked(getFrontDoorSimilarClimbs)).toHaveBeenCalledWith(
       expect.objectContaining({ climbUuid: canonicalUuid }),

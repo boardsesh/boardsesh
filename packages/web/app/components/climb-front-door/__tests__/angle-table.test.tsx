@@ -46,11 +46,12 @@ const STATS = [
     angle: 40,
     difficulty: '6c/V5',
     ascensionist_count: '1204',
+    play_count: 2468,
     quality_average: '3.80',
     quality_normalized: true,
     rating_count: '40',
   }),
-  statsRow({ angle: 25, difficulty: '6b/V4', ascensionist_count: '12', quality_average: '2.40' }),
+  statsRow({ angle: 25, play_count: 0, difficulty: '6b/V4', ascensionist_count: '12', quality_average: '2.40' }),
   statsRow({ angle: 50, difficulty: '7a/V6', ascensionist_count: '3' }),
 ];
 
@@ -79,15 +80,27 @@ describe('AngleTable', () => {
     ).toBeNull();
   });
 
-  it('lists every angle once, sorted, under the four column headers', async () => {
+  it('lists every angle once, sorted, under the five column headers', async () => {
     const html = await renderTable();
     expect(html).toContain('frontDoor.angles.heading');
-    expect(html.match(/scope="col"/g) ?? []).toHaveLength(4);
+    expect(html.match(/scope="col"/g) ?? []).toHaveLength(5);
+    expect(html).toContain('plays.label');
     for (const header of ['colAngle', 'colGrade', 'colSends', 'colQuality']) {
       expect(html).toContain(`frontDoor.angles.${header}`);
     }
     const angles = bodyRows(html).map((row) => row.match(/angleValue\(angle=(\d+)\)/)?.[1]);
     expect(angles).toEqual(['25', '40', '50']);
+  });
+
+  it('renders exact angle Plays, including zero and unavailable, as a separate stats column', async () => {
+    const html = await renderTable({ playsDescriptionId: 'climb-plays-explanation' });
+    const [zero, current, missing] = bodyRows(html);
+    expect(zero).toMatch(/<td[^>]*>0<\/td>/);
+    expect(current).toContain('2,468');
+    expect(missing).toContain('plays.valueUnavailable');
+    expect(html).toContain('aria-describedby="climb-plays-explanation"');
+    expect(html).toMatch(/colspan="5"/i);
+    expect(html).toContain('tabindex="0"');
   });
 
   it('names the table by its heading and each angle link by the climb and angle', async () => {

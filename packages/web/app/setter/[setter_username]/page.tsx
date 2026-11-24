@@ -14,6 +14,7 @@ import { setterQrUrl } from '@/app/lib/gym-attribution';
 import { getStoreButtonLabels } from '@/app/lib/store-button-labels.server';
 import BackButton from '@/app/components/back-button';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import PlaysExplanation from '@/app/components/climb-front-door/plays-explanation';
 import StaticClimbList from '@/app/components/climb-list/static-climb-list';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { getLocale } from '@/app/lib/i18n/get-locale';
@@ -525,8 +526,10 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
         <SetterMostSent picks={mostSentPicks} />
 
         <PageSection title={t('setter.climbsHeading', { name: setterData.displayName })}>
+          {links.fallbackBoardDetails ? <PlaysExplanation>{tClimbs('plays.explanation')}</PlaysExplanation> : null}
           {links.fallbackBoardDetails ? (
             <StaticClimbList
+              showPlays
               climbs={setterData.climbs}
               thumbnailCropsByClimb={buildClimbThumbnailCrops(
                 setterData.climbs,

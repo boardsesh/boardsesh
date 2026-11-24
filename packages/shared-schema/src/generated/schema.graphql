@@ -403,6 +403,8 @@ type Climb {
   ascensionist_count: Int!
   "Approximate recorded board selections lasting at least 30 seconds at angle. Refreshed hourly. Null when unavailable."
   play_count: Float
+  "Plays at the returned angle for an anonymously readable public playlist climb whose own UUID is the web link's destination. Null when unavailable."
+  publicPlayCount: Float
   "Difficulty grade of the climb (e.g., 'V5', '6B+')"
   difficulty: String!
   "Average quality rating from users"
@@ -6845,6 +6847,8 @@ type SimilarClimb {
   qualityAverage: Float
   "Number of recorded ascents at this angle."
   ascensionistCount: Int
+  "Stored Plays at this candidate's returned angle. Null when unavailable."
+  playCount: Float
   """
   Product sizes this climb fits on (denormalised from edge bounds). Callers
   on a smaller wall can use this to grey out climbs that extend beyond

@@ -108,6 +108,8 @@ export type SimilarClimb = {
   difficultyName?: string | null;
   qualityAverage?: number | null;
   ascensionistCount?: number | null;
+  /** Stored Plays at the candidate's returned angle, when selected and available. */
+  playCount?: number | null;
   compatibleSizeIds: number[];
   // Frame-derived hold sets. Null/undefined is unknown; [] requires no sets.
   requiredSetIds?: number[] | null;

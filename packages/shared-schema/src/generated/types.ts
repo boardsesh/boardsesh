@@ -1537,6 +1537,8 @@ export type Climb = {
   name: Scalars['String']['output'];
   /** Approximate recorded board selections lasting at least 30 seconds at angle. Refreshed hourly. Null when unavailable. */
   play_count?: Maybe<Scalars['Float']['output']>;
+  /** Plays at the returned angle for an anonymously readable public playlist climb whose own UUID is the web link's destination. Null when unavailable. */
+  publicPlayCount?: Maybe<Scalars['Float']['output']>;
   /** ISO timestamp of when this climb was first published (null while still a draft) */
   published_at?: Maybe<Scalars['String']['output']>;
   /** Average quality rating from users */
@@ -12583,6 +12585,8 @@ export type SimilarClimb = {
   frames?: Maybe<Scalars['String']['output']>;
   layoutId: Scalars['Int']['output'];
   name?: Maybe<Scalars['String']['output']>;
+  /** Stored Plays at this candidate's returned angle. Null when unavailable. */
+  playCount?: Maybe<Scalars['Float']['output']>;
   /** Average quality at this angle on the canonical 1-5 scale (board_climb_stats.quality_average). */
   qualityAverage?: Maybe<Scalars['Float']['output']>;
   /** Hold-set IDs required by the climb, derived from its frame placements. Null means unknown; an empty list requires no sets. */
@@ -17164,6 +17168,7 @@ export type ClimbResolvers<
   myDifficulty?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   play_count?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  publicPlayCount?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   published_at?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   quality_average?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   renderBoard?: Resolver<Maybe<ResolversTypes['RenderBoardConfig']>, ParentType, ContextType>;
@@ -23046,6 +23051,7 @@ export type SimilarClimbResolvers<
   frames?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   name?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  playCount?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   qualityAverage?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   requiredSetIds?: Resolver<Maybe<Array<ResolversTypes['Int']>>, ParentType, ContextType>;
   setterUsername?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;

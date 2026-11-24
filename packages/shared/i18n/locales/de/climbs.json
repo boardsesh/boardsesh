@@ -23,6 +23,14 @@
   },
   "sends_one": "{{formattedCount}} Begehung",
   "sends_other": "{{formattedCount}} Begehungen",
+  "plays": {
+    "label": "Auswahlen",
+    "count_one": "{{formattedCount}} Auswahl",
+    "count_other": "{{formattedCount}} Auswahlen",
+    "unavailable": "Auswahlen nicht verfügbar",
+    "valueUnavailable": "Nicht verfügbar",
+    "explanation": "Auswahlen geben ungefähr an, wie oft ein Boulder an einem Board mindestens 30 Sekunden lang ausgewählt blieb. Die Zahl wird stündlich neu berechnet und kann hier später erscheinen. Begehungen werden separat gezählt. Eine Auswahl kann auch erfasst werden, wenn kein Griff aufleuchtet."
+  },
   "metadata": {
     "list": {
       "title": "Boulder am {{boardName}} bei {{angle}}°",

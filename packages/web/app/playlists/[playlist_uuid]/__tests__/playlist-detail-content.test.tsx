@@ -5,7 +5,12 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { createTestQueryClient } from '@/app/test-utils/test-providers';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import { APP_URL } from '@/app/lib/app-origin';
-import type { Playlist, PlaylistClimbsResult } from '@boardsesh/graphql/operations/playlists';
+import {
+  GET_PLAYLIST_CLIMBS,
+  GET_WEB_PLAYLIST_CLIMBS,
+  type Playlist,
+  type PlaylistClimbsResult,
+} from '@boardsesh/graphql/operations/playlists';
 import PlaylistDetailContent from '../playlist-detail-content';
 
 /**
@@ -37,23 +42,28 @@ const mockPlaylist: Playlist = {
 } as Playlist;
 
 const mockExecuteGraphQL = vi.fn();
+const mockPlaylistClimbsRequest = vi.fn();
+const mockUsePlaylistClimbs = vi.fn();
 vi.mock('@/app/lib/graphql/client', () => ({
   executeGraphQL: (...args: unknown[]) => mockExecuteGraphQL(...args),
-  createGraphQLHttpClient: () => ({ request: vi.fn().mockResolvedValue({}) }),
+  createGraphQLHttpClient: () => ({ request: mockPlaylistClimbsRequest }),
 }));
 
 let mockAllClimbs: unknown[] = [];
 vi.mock('@boardsesh/playlists-react', () => ({
-  usePlaylistClimbs: () => ({
-    query: {
-      fetchNextPage: vi.fn(),
-      hasNextPage: false,
-      isFetching: false,
-      isFetchingNextPage: false,
-      isLoading: false,
-    },
-    allClimbs: mockAllClimbs,
-  }),
+  usePlaylistClimbs: (options: unknown) => {
+    mockUsePlaylistClimbs(options);
+    return {
+      query: {
+        fetchNextPage: vi.fn(),
+        hasNextPage: false,
+        isFetching: false,
+        isFetchingNextPage: false,
+        isLoading: false,
+      },
+      allClimbs: mockAllClimbs,
+    };
+  },
 }));
 
 vi.mock('@/app/hooks/use-ws-auth-token', () => ({
@@ -133,6 +143,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockAllClimbs = [];
   mockExecuteGraphQL.mockResolvedValue({ playlist: mockPlaylist });
+  mockPlaylistClimbsRequest.mockResolvedValue({});
 });
 
 const handoffOf = (container: HTMLElement) => container.querySelector('[data-cta="handoff"]');
@@ -175,6 +186,37 @@ describe('PlaylistDetailContent app hand-off', () => {
     );
     expect(handoff?.classList.contains('MuiButton-text')).toBe(true);
     expect(mobileInstall?.textContent).toContain(tFromCatalog('playlists', 'detail.cta.getAppHelper'));
+  });
+
+  it.each([true, false])('shows Plays only in a public playlist (public: %s)', (isPublic) => {
+    const climb = { uuid: 'counted', boardType: 'kilter', layoutId: 1, angle: 30 };
+    const published = { ...climb, publicPlayCount: 0 };
+    const ownerOnly = { ...climb, uuid: 'owner-only', play_count: 987, publicPlayCount: null };
+    const legacy = { ...climb, uuid: 'legacy', play_count: 555 };
+    mockAllClimbs = [published, ownerOnly, legacy];
+    const { container } = renderDetail({ ...mockPlaylist, isPublic });
+    expect(mockMultiboardProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        showPlays: isPublic,
+        climbs: [
+          { ...published, play_count: 0 },
+          { ...ownerOnly, play_count: null },
+          { ...legacy, play_count: undefined },
+        ],
+      }),
+    );
+    expect(container.textContent?.includes(tFromCatalog('climbs', 'plays.explanation'))).toBe(isPublic);
+  });
+
+  it('uses the same public-only document for filtered client fetches as for the SSR seed', async () => {
+    renderDetail();
+    expect(mockUsePlaylistClimbs).toHaveBeenCalled();
+    const { executeGraphQL: executeClimbPage } = mockUsePlaylistClimbs.mock.lastCall![0] as {
+      executeGraphQL: (query: string, variables: object) => Promise<unknown>;
+    };
+    const variables = { input: { playlistId: mockPlaylist.uuid, boardName: 'kilter', angle: 30, page: 1 } };
+    await executeClimbPage(GET_PLAYLIST_CLIMBS, variables);
+    expect(mockPlaylistClimbsRequest).toHaveBeenLastCalledWith(GET_WEB_PLAYLIST_CLIMBS, variables);
   });
 
   it('shows the QR card the server rendered on a public playlist', () => {

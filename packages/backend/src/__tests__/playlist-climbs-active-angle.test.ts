@@ -21,6 +21,7 @@ import { playlistQueries } from '../graphql/resolvers/playlists/queries';
 // is a faithful proxy for "which angle's grade is displayed".
 
 const PLAYLIST_UUID = 'pl-active-angle-1596';
+const OWNER = 'playlist-climbs-active-angle-owner';
 
 function makeCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext {
   return {
@@ -100,7 +101,7 @@ describe('playlistClimbs — active-angle override (real DB)', () => {
       VALUES (1, ${PLAYLIST_UUID}, 'kilter', 1, 'Active angle', true)
     `);
     // Public discovery still requires a real owner whose account permits it.
-    const ownerId = 'playlist-climbs-active-angle-owner';
+    const ownerId = OWNER;
     await db
       .insert(users)
       .values({ id: ownerId, email: `${ownerId}@test.invalid` })
@@ -181,6 +182,67 @@ describe('playlistClimbs — active-angle override (real DB)', () => {
     expect(byUuid['climb-a'].angle).toBe(50);
     // climb-C keeps its stored 30°.
     expect(byUuid['climb-c'].angle).toBe(30);
+  });
+
+  it('retains playlist order and authorized stats while gating public Plays in seeded and filtered pages', async () => {
+    const playlistUuid = 'pl-public-plays';
+    const playlistId = 2;
+    await db.execute(sql`
+      INSERT INTO playlists (id, uuid, board_type, layout_id, name, is_public)
+      VALUES (${playlistId}, ${playlistUuid}, 'kilter', 1, 'Public Plays', true)
+    `);
+    await db.insert(playlistOwnership).values({ playlistId: BigInt(playlistId), userId: OWNER, role: 'owner' });
+    await db.execute(sql`
+      INSERT INTO board_climbs (uuid, board_type, layout_id, name, frames, is_listed, is_draft, user_id, is_hidden)
+      VALUES ('plays-alias', 'kilter', 1, 'Plays fixture alias', 'p1r1', null, false, ${OWNER}, false),
+             ('plays-listed', 'kilter', 1, 'Plays fixture listed', 'p1r1', true, false, ${OWNER}, false),
+             ('plays-target', 'kilter', 1, 'Plays fixture target', 'p1r1', true, false, ${OWNER}, false),
+             ('plays-draft', 'kilter', 1, 'Plays fixture draft', 'p1r1', false, true, ${OWNER}, false),
+             ('plays-hidden', 'kilter', 1, 'Plays fixture hidden', 'p1r1', true, false, ${OWNER}, true)
+    `);
+    await db.execute(sql`
+      INSERT INTO board_climb_aliases (board_type, alias_uuid, canonical_uuid, source)
+      VALUES ('kilter', 'plays-alias', 'plays-target', 'test'),
+             ('kilter', 'plays-listed', 'plays-target', 'test')
+    `);
+    await db.execute(sql`
+      INSERT INTO board_climb_stats (board_type, climb_uuid, angle, display_difficulty, ascensionist_count, play_count)
+      VALUES ('kilter', 'plays-alias', 30, 18, 7, 210), ('kilter', 'plays-alias', 40, 20, 18, 910),
+             ('kilter', 'plays-listed', 30, 19, 4, 0), ('kilter', 'plays-listed', 40, 21, 8, 920),
+             ('kilter', 'plays-target', 30, 19, 5, 1204),
+             ('kilter', 'plays-draft', 30, 17, 2, 567),
+             ('kilter', 'plays-hidden', 30, 18, 3, 654)
+    `);
+    await db.execute(sql`
+      INSERT INTO playlist_climbs (playlist_id, climb_uuid, angle, position)
+      VALUES (${playlistId}, 'plays-alias', 30, 0), (${playlistId}, 'plays-listed', 30, 1),
+             (${playlistId}, 'plays-draft', 30, 2), (${playlistId}, 'plays-hidden', 30, 3),
+             (${playlistId}, 'plays-target', 30, 4)
+    `);
+
+    const viewer = makeCtx({ userId: OWNER, isAuthenticated: true });
+    for (const view of [undefined, { name: 'Plays fixture' }]) {
+      const { climbs } = await playlistQueries.playlistClimbs(
+        null,
+        { input: { playlistId: playlistUuid, page: 0, pageSize: 20, view } },
+        viewer,
+      );
+      expect(
+        climbs.map(({ uuid, angle, ascensionist_count, play_count, publicPlayCount }) => [
+          uuid,
+          angle,
+          ascensionist_count,
+          play_count,
+          publicPlayCount,
+        ]),
+      ).toEqual([
+        ['plays-alias', 30, 7, 210, null],
+        ['plays-listed', 30, 4, 0, 0],
+        ['plays-draft', 30, 2, 567, null],
+        ['plays-hidden', 30, 3, 654, null],
+        ['plays-target', 30, 5, 1204, 1204],
+      ]);
+    }
   });
 
   // The grades join in hydrateClimbsByRefs binds to `climbStats.angle` — the

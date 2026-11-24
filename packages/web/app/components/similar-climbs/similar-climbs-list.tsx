@@ -12,14 +12,14 @@ import BoardImageLayers from '@/app/components/board-renderer/board-image-layers
 import GradeTile from '@/app/components/climb-front-door/grade-tile';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
-import { formatSends, type TranslateSends } from '@/app/lib/format-climb-stats';
+import { formatPlays, formatSends, type TranslateSends } from '@/app/lib/format-climb-stats';
 import { formatFontGrade, formatVGrade } from '@/app/lib/grade-colors';
 import { climbGradeForSearch } from '@/app/lib/seo/climb-display';
 import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 import { resolveRenderBoard } from '@boardsesh/board-config/resolve-render-board';
 import { getDefaultBoardConfig, getDefaultClimbViewPath } from '@/app/lib/default-board-configs';
 import {
-  SIMILAR_CLIMBS_QUERY,
+  PUBLIC_SIMILAR_CLIMBS_QUERY,
   type SimilarClimbsResponse,
   type SimilarClimbsVariables,
 } from '@boardsesh/graphql/operations/new-climb-feed';
@@ -114,7 +114,7 @@ export default function SimilarClimbsList({
     queryFn: async () => {
       const client = createGraphQLHttpClient();
       const response = await client.request<SimilarClimbsResponse, SimilarClimbsVariables>(
-        SIMILAR_CLIMBS_QUERY,
+        PUBLIC_SIMILAR_CLIMBS_QUERY,
         variables,
       );
       return response.similarClimbs;
@@ -243,7 +243,7 @@ type SimilarClimbRowProps = {
 };
 
 function SimilarClimbRow({ climb, boardType, boardSlug, viewerBoardDetails, compatible }: SimilarClimbRowProps) {
-  const { t } = useTranslation('climbs');
+  const { t, i18n } = useTranslation('climbs');
   const angle = climb.angle ?? 0;
   const difficulty = climb.difficultyName ?? null;
 
@@ -346,6 +346,17 @@ function SimilarClimbRow({ climb, boardType, boardSlug, viewerBoardDetails, comp
           ) : null}
         </Box>
         <Box className={styles.byline}>{formatByline(climb, t)}</Box>
+        <Typography component="div" variant="body2" className={styles.plays}>
+          {climb.angle != null ? (
+            <>
+              {t('frontDoor.facts.angleValue', { angle })}{' '}
+              <Box component="span" aria-hidden="true">
+                ·
+              </Box>{' '}
+            </>
+          ) : null}
+          {formatPlays(climb.angle == null ? null : climb.playCount, i18n.language, t)}
+        </Typography>
       </Box>
       <Box className={styles.grade}>
         {hasVGrade ? (

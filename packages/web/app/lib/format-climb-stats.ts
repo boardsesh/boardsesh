@@ -1,3 +1,5 @@
+import { toPlayCount } from '@boardsesh/shared-schema';
+
 /** Format a count compactly: <1000 as-is, 1k–999k compact, ≥1m with decimal + m */
 export function formatCount(count: number): string {
   if (count >= 1_000_000) {
@@ -23,6 +25,28 @@ export type TranslateSends = (key: string, options: { count: number; formattedCo
  *  Passes the true `count` for plural selection and `formattedCount` for display. */
 export function formatSends(count: number, t: TranslateSends): string {
   return t('sends', { count, formattedCount: formatCount(count) });
+}
+
+/**
+ * The stored observation belongs to the climb's returned angle, even when its
+ * grade/sends come from another stats angle. Only an exact identity can show it.
+ */
+export function playCountAtAngle(
+  climb: { angle: number; boardType?: string; play_count?: number | null },
+  boardType: string,
+  angle: number,
+): number | null {
+  if (climb.angle !== angle || climb.boardType !== boardType) return null;
+  return toPlayCount(climb.play_count);
+}
+
+type TranslatePlays = (key: string, options?: { count: number; formattedCount: string }) => string;
+
+export function formatPlays(count: number | null | undefined, locale: string, t: TranslatePlays): string {
+  const playCount = toPlayCount(count);
+  return playCount === null
+    ? t('plays.unavailable')
+    : t('plays.count', { count: playCount, formattedCount: new Intl.NumberFormat(locale).format(playCount) });
 }
 
 /** Round quality_average to 1 decimal place */

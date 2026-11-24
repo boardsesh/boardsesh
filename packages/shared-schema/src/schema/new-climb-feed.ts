@@ -289,6 +289,8 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
     qualityAverage: Float
     "Number of recorded ascents at this angle."
     ascensionistCount: Int
+    "Stored Plays at this candidate's returned angle. Null when unavailable."
+    playCount: Float
     """
     Product sizes this climb fits on (denormalised from edge bounds). Callers
     on a smaller wall can use this to grey out climbs that extend beyond

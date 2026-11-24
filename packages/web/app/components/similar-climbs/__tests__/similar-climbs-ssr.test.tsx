@@ -32,7 +32,14 @@ import SimilarClimbsList from '../similar-climbs-list';
  */
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, options?: { angle?: number; formattedCount?: string }) => {
+      if (key === 'plays.count') return `${options?.formattedCount} plays`;
+      if (key === 'frontDoor.facts.angleValue') return `${options?.angle}°`;
+      return key;
+    },
+    i18n: { language: 'en-US' },
+  }),
 }));
 
 vi.mock('@/app/components/i18n/locale-link', () => ({
@@ -88,7 +95,7 @@ function makeBoardDetails(): BoardImageDetails {
 
 const seededClimbs = Array.from({ length: 6 }, (_, index) => makeSimilarClimb(index));
 
-function seededList(queryClient: QueryClient) {
+function seededList(queryClient: QueryClient, climbs = seededClimbs) {
   return (
     <QueryClientProvider client={queryClient}>
       <SimilarClimbsList
@@ -97,7 +104,7 @@ function seededList(queryClient: QueryClient) {
         viewerBoardDetails={makeBoardDetails()}
         climbUuid="ORIGIN-CLIMB"
         angle={40}
-        initialClimbs={seededClimbs}
+        initialClimbs={climbs}
       />
     </QueryClientProvider>
   );
@@ -178,8 +185,30 @@ describe('SimilarClimbsList server render', () => {
     expect(firstRow?.textContent).toContain('Similar Boulder 0');
     // The tile is aria-hidden; the hidden ", V4" is how a screen reader hears the grade.
     expect(firstRow?.textContent).toContain('frontDoor.hero.gradeForSearch');
-    expect(firstRow?.querySelector('[aria-hidden="true"]')?.textContent).toBe('V4');
+    expect([...firstRow!.querySelectorAll('[aria-hidden="true"]')].map((element) => element.textContent)).toContain(
+      'V4',
+    );
     expect(firstRow?.textContent).toContain('setter · ★3.0 · sends');
+  });
+
+  it('shows the linked 30° Plays in a 40° strip, distinguishing zero from legacy missing data', () => {
+    const html = renderToString(
+      seededList(makeQueryClient(), [
+        { ...makeSimilarClimb(0), angle: 30, playCount: 1204 },
+        { ...makeSimilarClimb(1), angle: 30, playCount: 0 },
+        { ...makeSimilarClimb(2), angle: 30 },
+        { ...makeSimilarClimb(3), angle: null, playCount: 1111 },
+      ]),
+    );
+    const document = new DOMParser().parseFromString(html, 'text/html');
+    const links = [...document.querySelectorAll('li > a')];
+    expect(links[0].getAttribute('href')).toContain('/30/view/');
+    expect(links[0].textContent).toContain('setter · ★3.0 · sends');
+    expect(links[0].textContent).toContain('30° · 1,204 plays');
+    expect(links[1].textContent).toContain('30° · 0 plays');
+    expect(links[2].textContent).toContain('30° · plays.unavailable');
+    expect(links[3].textContent).toContain('plays.unavailable');
+    expect(links[3].textContent).not.toContain('1,111');
   });
 
   it('renders no <button> cards — the queue-activation path is gone', () => {

@@ -55,8 +55,8 @@ import { findSimilarClimbs, type SimilarClimbResult } from './climb-similarity';
  */
 
 /** Bump when a code change alters what this query RETURNS for an existing key. */
-// v2: cached similarity rows carry nullable, frame-derived requiredSetIds.
-const CACHE_VERSION = 'v2';
+// v3: cached rows carry nullable Plays at the candidate's linked angle.
+const CACHE_VERSION = 'v3';
 
 /**
  * One hour, matching the web front door's own `revalidate`. The rows behind it

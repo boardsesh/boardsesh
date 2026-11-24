@@ -14,6 +14,7 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { buildCanonicalClimbViewUrl } from '@/app/lib/url-utils';
 import { themeTokens } from '@/app/theme/theme-config';
+import { formatPlays, playCountAtAngle } from '@/app/lib/format-climb-stats';
 import type { MostSentPick } from './setter-most-sent-picks';
 
 type SetterMostSentProps = {
@@ -158,7 +159,10 @@ const subSx = {
  */
 export default async function SetterMostSent({ picks }: SetterMostSentProps) {
   if (picks.length === 0) return null;
-  const { t, locale } = await getServerTranslation('profile');
+  const [{ t, locale }, { t: tClimbs }] = await Promise.all([
+    getServerTranslation('profile'),
+    getServerTranslation('climbs'),
+  ]);
   const numberFormat = new Intl.NumberFormat(locale);
 
   return (
@@ -260,7 +264,11 @@ export default async function SetterMostSent({ picks }: SetterMostSentProps) {
                     count: climb.ascensionist_count,
                     sends: numberFormat.format(climb.ascensionist_count),
                     angle: climb.angle,
-                  })}
+                  })}{' '}
+                  <Box component="span" aria-hidden="true">
+                    ·
+                  </Box>{' '}
+                  {formatPlays(playCountAtAngle(climb, boardDetails.board_name, climb.angle), locale, tClimbs)}
                 </Typography>
               </Box>
             </Box>

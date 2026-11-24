@@ -107,6 +107,14 @@ describe('the setter page queries', () => {
   const climbs = buildSetterClimbsQuery(db, 'marco', 0, SETTER_PAGE_SIZE).toSQL();
   const profile = buildSetterProfileQuery(db, 'marco').toSQL();
 
+  it('projects Plays from the same board and linked stats row as the angle', () => {
+    const sql = normalise(climbs.sql);
+    expect(sql).toContain('"board_climb_stats"."play_count"::text');
+    expect(sql).toContain('"board_climb_stats"."board_type" = "board_climbs"."board_type"');
+    expect(sql).toContain('"board_climb_stats"."climb_uuid" = "board_climbs"."uuid"');
+    expect(sql).toContain('"board_climb_stats"."angle" = (select "angle"');
+  });
+
   it('publishes only listed, non-draft, non-hidden climbs', () => {
     for (const rendered of [climbs, profile]) {
       const sql = normalise(rendered.sql);

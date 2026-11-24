@@ -89,6 +89,13 @@ a.row:focus-visible {
   text-overflow: ellipsis;
 }
 
+.plays {
+  color: var(--neutral-500);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
 .grade {
   display: flex;
   flex-direction: column;

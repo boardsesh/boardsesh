@@ -114,6 +114,30 @@ export const SIMILAR_CLIMBS_QUERY = gql`
   }
 `;
 
+// Keep the existing mobile document stable for offline dispatch and older GraphQL deployments.
+export const PUBLIC_SIMILAR_CLIMBS_QUERY = gql`
+  query PublicSimilarClimbs($input: SimilarClimbsInput!) {
+    similarClimbs(input: $input) {
+      uuid
+      name
+      setterUsername
+      angle
+      layoutId
+      frames
+      difficultyName
+      qualityAverage
+      ascensionistCount
+      playCount
+      compatibleSizeIds
+      characteristics
+      similarity
+      sharedHoldCount
+      candidateHoldCount
+      targetHoldCount
+    }
+  }
+`;
+
 /**
  * Create a climb on any board but MoonBoard.
  *

@@ -39,7 +39,15 @@ vi.mock('@/app/lib/i18n/server', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en-US' } }),
+  useTranslation: () => ({
+    t: (key: string, options?: { formattedCount?: string }) => {
+      if (key === 'plays.count')
+        return climbsEn.plays.count_other.replace('{{formattedCount}}', options?.formattedCount ?? '');
+      if (key === 'plays.unavailable') return climbsEn.plays.unavailable;
+      return key;
+    },
+    i18n: { language: 'en-US' },
+  }),
 }));
 
 // Every band of the page except the two under test. They pull in client
@@ -205,17 +213,31 @@ describe('front-door sections whose backend read timed out', () => {
 
   it('server-renders nearby-grade links under their own heading when shared holds have no matches', async () => {
     const nearbyClimb = { ...makeSimilarClimb(), uuid: 'NEARBY0', name: 'Nearby Boulder', difficultyName: '7a/V6' };
+    const items = [
+      { ...nearbyClimb, playCount: 1204 },
+      { ...nearbyClimb, uuid: 'NEARBY1', name: 'Nearby Zero', playCount: 0 },
+      { ...nearbyClimb, uuid: 'NEARBY2', name: 'Nearby Legacy' },
+    ];
     const html = await renderFrontDoor({
       similarClimbs: {
         status: 'loaded',
         items: [],
-        nearby: { status: 'loaded', grade: '7a+/V7', items: [nearbyClimb] },
+        nearby: { status: 'loaded', grade: '7a+/V7', items },
       },
       betaLinks: { status: 'loaded', items: [] },
     });
 
     expect(html).toContain('More Kilter Board Original climbs around V7 (7a+) at 40°');
-    expect(html).toContain('href="/kilter/original/12x12-square/screw_bolt/40/view/nearby-boulder-NEARBY0"');
+    const page = new DOMParser().parseFromString(html, 'text/html');
+    const links = page.querySelectorAll('a[href*="/view/nearby-"]');
+    expect([...links].map((link) => link.getAttribute('href'))).toEqual([
+      '/kilter/original/12x12-square/screw_bolt/40/view/nearby-boulder-NEARBY0',
+      '/kilter/original/12x12-square/screw_bolt/40/view/nearby-zero-NEARBY1',
+      '/kilter/original/12x12-square/screw_bolt/40/view/nearby-legacy-NEARBY2',
+    ]);
+    expect(links[0].textContent).toContain('1,204 plays');
+    expect(links[1].textContent).toContain('0 plays');
+    expect(links[2].textContent).toContain('Plays unavailable');
     expect(html).not.toContain('frontDoor.similar.heading');
     expect(html).not.toContain('similarClimbs.emptyOnLayout');
   });
@@ -228,5 +250,6 @@ describe('front-door sections whose backend read timed out', () => {
 
     expect(html).toContain('frontDoor.similar.nearbyUnavailable');
     expect(html).not.toContain('similarClimbs.emptyOnLayout');
+    expect(html).not.toContain('Plays unavailable');
   });
 });

@@ -1,4 +1,6 @@
 import React from 'react';
+import PlaysExplanation from '@/app/components/climb-front-door/plays-explanation';
+import { formatPlays, playCountAtAngle } from '@/app/lib/format-climb-stats';
 import Box from '@mui/material/Box';
 import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
@@ -86,6 +88,7 @@ export default async function SprayClimbFrontDoor({
   // The setter's own words: the one piece of genuinely unique prose on the
   // page. User-written, so it renders verbatim and never through `t()`.
   const setterNotes = getDisplayDescription(climb.description);
+  const plays = formatPlays(playCountAtAngle(climb, 'spray', angle), locale, t);
 
   const drawing = resolveSprayWallDrawing({
     photoUrl,
@@ -133,8 +136,13 @@ export default async function SprayClimbFrontDoor({
       )}
 
       <Typography variant="body1" sx={{ mt: 2 }}>
-        {setter ? t('spray.setterLine', { setter, senders }) : senders}
+        {setter ? t('spray.setterLine', { setter, senders }) : senders}{' '}
+        <Box component="span" aria-hidden="true">
+          ·
+        </Box>{' '}
+        {plays}
       </Typography>
+      <PlaysExplanation>{t('plays.explanation')}</PlaysExplanation>
 
       {setterNotes ? (
         <Box sx={sectionSx}>

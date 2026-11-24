@@ -23,6 +23,14 @@
   },
   "sends_one": "{{formattedCount}} encadene",
   "sends_other": "{{formattedCount}} encadenes",
+  "plays": {
+    "label": "Selecciones",
+    "count_one": "{{formattedCount}} selección",
+    "count_other": "{{formattedCount}} selecciones",
+    "unavailable": "Selecciones no disponibles",
+    "valueUnavailable": "No disponible",
+    "explanation": "Las selecciones estiman cuántas veces un bloque se mantuvo seleccionado en un plafón durante al menos 30 segundos. La cifra se recalcula cada hora y puede tardar más en aparecer aquí. Los encadenes se cuentan por separado. Una selección puede quedar registrada aunque no se haya encendido ninguna presa."
+  },
   "metadata": {
     "list": {
       "title": "Bloques de {{boardName}} a {{angle}}°",

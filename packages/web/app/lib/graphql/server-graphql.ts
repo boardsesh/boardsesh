@@ -8,7 +8,7 @@ import { GET_MY_BOARDS, type GetMyBoardsQueryResponse } from '@boardsesh/graphql
 import {
   GET_ALL_USER_PLAYLISTS,
   GET_PLAYLIST,
-  GET_PLAYLIST_CLIMBS,
+  GET_WEB_PLAYLIST_CLIMBS,
   type Playlist,
   type GetAllUserPlaylistsQueryResponse,
   type GetPlaylistQueryResponse,
@@ -132,7 +132,7 @@ export async function serverPlaylistClimbs(
 ): Promise<GetPlaylistClimbsQueryResponse['playlistClimbs'] | null> {
   try {
     const response = await executeAuthenticatedGraphQL<GetPlaylistClimbsQueryResponse>(
-      GET_PLAYLIST_CLIMBS,
+      GET_WEB_PLAYLIST_CLIMBS,
       { input },
       authToken,
     );

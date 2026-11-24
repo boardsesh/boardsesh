@@ -1534,6 +1534,8 @@ export type Climb = {
   name: Scalars['String']['output'];
   /** Approximate recorded board selections lasting at least 30 seconds at angle. Refreshed hourly. Null when unavailable. */
   play_count?: Maybe<Scalars['Float']['output']>;
+  /** Plays at the returned angle for an anonymously readable public playlist climb whose own UUID is the web link's destination. Null when unavailable. */
+  publicPlayCount?: Maybe<Scalars['Float']['output']>;
   /** ISO timestamp of when this climb was first published (null while still a draft) */
   published_at?: Maybe<Scalars['String']['output']>;
   /** Average quality rating from users */
@@ -12580,6 +12582,8 @@ export type SimilarClimb = {
   frames?: Maybe<Scalars['String']['output']>;
   layoutId: Scalars['Int']['output'];
   name?: Maybe<Scalars['String']['output']>;
+  /** Stored Plays at this candidate's returned angle. Null when unavailable. */
+  playCount?: Maybe<Scalars['Float']['output']>;
   /** Average quality at this angle on the canonical 1-5 scale (board_climb_stats.quality_average). */
   qualityAverage?: Maybe<Scalars['Float']['output']>;
   /** Hold-set IDs required by the climb, derived from its frame placements. Null means unknown; an empty list requires no sets. */
@@ -16808,6 +16812,33 @@ export type SimilarClimbsQuery = {
   }>;
 };
 
+export type PublicSimilarClimbsQueryVariables = Exact<{
+  input: SimilarClimbsInput;
+}>;
+
+export type PublicSimilarClimbsQuery = {
+  __typename?: 'Query';
+  similarClimbs: Array<{
+    __typename?: 'SimilarClimb';
+    uuid: string;
+    name?: string | null;
+    setterUsername?: string | null;
+    angle?: number | null;
+    layoutId: number;
+    frames?: string | null;
+    difficultyName?: string | null;
+    qualityAverage?: number | null;
+    ascensionistCount?: number | null;
+    playCount?: number | null;
+    compatibleSizeIds: Array<number>;
+    characteristics?: Array<string> | null;
+    similarity: number;
+    sharedHoldCount: number;
+    candidateHoldCount: number;
+    targetHoldCount: number;
+  }>;
+};
+
 export type SaveClimbMutationVariables = Exact<{
   input: SaveClimbInput;
 }>;
@@ -17330,6 +17361,45 @@ export type GetPlaylistClimbsQuery = {
       angle: number;
       ascensionist_count: number;
       play_count?: number | null;
+      difficulty: string;
+      quality_average: string;
+      stars: number;
+      difficulty_error: string;
+      benchmark_difficulty?: string | null;
+      boardseshDifficulty?: number | null;
+      boardseshConfidence?: string | null;
+      compatibleSizeIds?: Array<number> | null;
+      characteristics?: Array<string> | null;
+      is_no_match?: boolean | null;
+    }>;
+  };
+};
+
+export type GetWebPlaylistClimbsQueryVariables = Exact<{
+  input: GetPlaylistClimbsInput;
+}>;
+
+export type GetWebPlaylistClimbsQuery = {
+  __typename?: 'Query';
+  playlistClimbs: {
+    __typename?: 'PlaylistClimbsResult';
+    totalCount: number;
+    unfilteredCount?: number | null;
+    hasMore: boolean;
+    climbs: Array<{
+      __typename?: 'Climb';
+      uuid: string;
+      layoutId?: number | null;
+      boardType?: string | null;
+      setter_username: string;
+      name: string;
+      description?: string | null;
+      frames: string;
+      framesCount?: number | null;
+      framesPace?: number | null;
+      angle: number;
+      ascensionist_count: number;
+      publicPlayCount?: number | null;
       difficulty: string;
       quality_average: string;
       stars: number;
@@ -19657,6 +19727,8 @@ export type FrontDoorNearbyClimbsQuery = {
       difficulty: string;
       quality_average: string;
       ascensionist_count: number;
+      angle: number;
+      play_count?: number | null;
       compatibleSizeIds?: Array<number> | null;
     }>;
   };
@@ -24469,6 +24541,63 @@ export const SimilarClimbsDocument = {
     },
   ],
 } as unknown as DocumentNode<SimilarClimbsQuery, SimilarClimbsQueryVariables>;
+export const PublicSimilarClimbsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'PublicSimilarClimbs' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'SimilarClimbsInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'similarClimbs' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'qualityAverage' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'ascensionistCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'playCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'similarity' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'sharedHoldCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'candidateHoldCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'targetHoldCount' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<PublicSimilarClimbsQuery, PublicSimilarClimbsQueryVariables>;
 export const SaveClimbDocument = {
   kind: 'Document',
   definitions: [
@@ -25961,6 +26090,81 @@ export const GetPlaylistClimbsDocument = {
     },
   ],
 } as unknown as DocumentNode<GetPlaylistClimbsQuery, GetPlaylistClimbsQueryVariables>;
+export const GetWebPlaylistClimbsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetWebPlaylistClimbs' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'GetPlaylistClimbsInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'playlistClimbs' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'climbs' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setter_username' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'description' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'framesCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'framesPace' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'ascensionist_count' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'publicPlayCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'quality_average' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'stars' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty_error' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'benchmark_difficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'is_no_match' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'unfilteredCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetWebPlaylistClimbsQuery, GetWebPlaylistClimbsQueryVariables>;
 export const GetPlaylistSettersDocument = {
   kind: 'Document',
   definitions: [
@@ -31794,6 +31998,8 @@ export const FrontDoorNearbyClimbsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'quality_average' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'ascensionist_count' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'play_count' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
                     ],
                   },

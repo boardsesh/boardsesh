@@ -9,6 +9,7 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Typography from '@mui/material/Typography';
 import { visuallyHidden } from '@mui/utils';
+import { toPlayCount } from '@boardsesh/shared-schema';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { formatFontGrade, formatVGrade } from '@/app/lib/grade-colors';
 import { getServerTranslation } from '@/app/lib/i18n/server';
@@ -30,6 +31,8 @@ type AngleTableProps = {
   climbName: string;
   currentAngle: number;
   angleStats: ClimbStatsForAngle[];
+  currentPlays?: number | null;
+  playsDescriptionId?: string;
 };
 
 /** MUI's md breakpoint, as the page's CSS module writes it. */
@@ -38,7 +41,13 @@ const BELOW_MD = '@media (max-width: 899.98px)';
 // The card scrolls sideways inside itself if a locale's headers ever outgrow a
 // 390px phone, so the page never does.
 const tableCardSx = {
-  overflowX: 'auto' as const,
+  // Keep the absolutely positioned screen-reader labels inside the scroll box.
+  position: 'relative',
+  overflowX: 'auto',
+  boxSizing: 'border-box',
+  minWidth: 0,
+  maxWidth: '100%',
+  '&:focus-visible': { outline: '2px solid var(--color-primary)', outlineOffset: '-3px' },
   bgcolor: 'var(--semantic-surface)',
   border: '1px solid var(--separator)',
   borderRadius: `${themeTokens.borderRadius.xl}px`,
@@ -189,7 +198,7 @@ function GradeCellContent({
 
 /**
  * "Grades at every angle": one row per angle the climb has stats for, with its
- * grade, sends and quality, from the `angleStats` the page already loaded.
+ * grade, sends, Plays and quality, from the `angleStats` the page already loaded.
  *
  * The angle dimension is the front door's worst duplicate-content problem — one
  * climb, N near-identical pages — and this table turns it into an internal-link
@@ -205,6 +214,8 @@ export default async function AngleTable({
   climbName,
   currentAngle,
   angleStats,
+  currentPlays,
+  playsDescriptionId,
 }: AngleTableProps) {
   const { t, locale } = await getServerTranslation('climbs');
   if (angleStats.length === 0) return null;
@@ -222,8 +233,8 @@ export default async function AngleTable({
       <Typography variant="h5" component="h2" id="angle-table-heading" sx={frontDoorSectionHeadingSx}>
         {t('frontDoor.angles.heading')}
       </Typography>
-      <Box sx={tableCardSx}>
-        <Table aria-labelledby="angle-table-heading" sx={tableSx}>
+      <Box role="region" aria-labelledby="angle-table-heading" tabIndex={0} sx={tableCardSx}>
+        <Table aria-labelledby="angle-table-heading" aria-describedby={playsDescriptionId} sx={tableSx}>
           <TableHead>
             <TableRow>
               <TableCell component="th" scope="col" sx={headerCellSx}>
@@ -235,6 +246,9 @@ export default async function AngleTable({
               <TableCell component="th" scope="col" sx={rightHeaderCellSx}>
                 {t('frontDoor.angles.colSends')}
               </TableCell>
+              <TableCell component="th" scope="col" sx={{ ...rightHeaderCellSx, whiteSpace: 'normal' }}>
+                {t('plays.label')}
+              </TableCell>
               <TableCell component="th" scope="col" sx={rightHeaderCellSx}>
                 {t('frontDoor.angles.colQuality')}
               </TableCell>
@@ -243,6 +257,7 @@ export default async function AngleTable({
           <TableBody>
             {sortedStats.map((stats) => {
               const isCurrent = stats.angle === currentAngle;
+              const plays = isCurrent && currentPlays !== undefined ? currentPlays : toPlayCount(stats.play_count);
               const quality = normalizedQuality(stats);
               const formattedQuality = quality ? formatQualityAverage(quality.average, locale) : null;
               return (
@@ -280,7 +295,16 @@ export default async function AngleTable({
                     />
                   </TableCell>
                   <TableCell sx={numberCellSx}>{numberFormat.format(sendCount(stats.ascensionist_count))}</TableCell>
-                  <TableCell sx={qualityCellSx}>
+                  <TableCell sx={numberCellSx}>
+                    {plays === null ? (
+                      <Box component="span" sx={mutedSx}>
+                        {t('plays.valueUnavailable')}
+                      </Box>
+                    ) : (
+                      numberFormat.format(plays)
+                    )}
+                  </TableCell>
+                  <TableCell sx={formattedQuality ? numberCellSx : qualityCellSx}>
                     {formattedQuality ? (
                       <>
                         <Box component="span" aria-hidden="true">
@@ -307,7 +331,7 @@ export default async function AngleTable({
           {sortedStats.length > 1 && totalSends > 0 ? (
             <TableFooter>
               <TableRow>
-                <TableCell colSpan={4} sx={totalCellSx}>
+                <TableCell colSpan={5} sx={totalCellSx}>
                   {t('frontDoor.angles.total', {
                     count: totalSends,
                     formattedCount: numberFormat.format(totalSends),

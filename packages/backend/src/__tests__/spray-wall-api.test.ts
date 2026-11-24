@@ -3724,6 +3724,11 @@ describe('playlists paginate on what the viewer may actually see', () => {
     // rows the caller could never reach.
     const privateWall = await wallWithAClimb();
     const publicWall = await wallWithAClimb({ isPublic: true });
+    await db.execute(sql`
+      INSERT INTO board_climb_stats (board_type, climb_uuid, angle, play_count)
+      VALUES ('spray', ${privateWall.climbUuid}, 40, 987), ('spray', ${publicWall.climbUuid}, 40, 0)
+      ON CONFLICT (board_type, climb_uuid, angle) DO UPDATE SET play_count = EXCLUDED.play_count
+    `);
 
     const playlistUuid = uuidv4();
     await db.execute(sql`
@@ -3743,12 +3748,12 @@ describe('playlists paginate on what the viewer may actually see', () => {
              (${playlistId}, ${publicWall.climbUuid}, 40, 2, now(), now())
     `);
 
-    const read = async (viewer: string | null) =>
-      (await playlistQueries.playlistClimbs(
+    const read = (viewer: string | null) =>
+      playlistQueries.playlistClimbs(
         {},
         { input: { playlistId: playlistUuid, page: 0, pageSize: 20 } },
         ctxFor(viewer),
-      )) as { climbs: Array<{ uuid: string }>; totalCount: number };
+      );
 
     // A stranger sees only the public wall's climb, and the COUNT agrees with the
     // page — that agreement is the whole point.
@@ -3760,6 +3765,10 @@ describe('playlists paginate on what the viewer may actually see', () => {
     const asOwner = await read(OWNER);
     expect(asOwner.climbs).toHaveLength(2);
     expect(asOwner.totalCount).toBe(2);
+    expect(asOwner.climbs).toMatchObject([
+      { uuid: privateWall.climbUuid, play_count: 987, publicPlayCount: null },
+      { uuid: publicWall.climbUuid, play_count: 0, publicPlayCount: 0 },
+    ]);
   });
 });
 

@@ -1,3 +1,5 @@
+import { toPlayCount } from '@boardsesh/shared-schema';
+import { listedClimbDestinationUuidSql } from '../aliases';
 import { climbReferenceReadableCondition } from '../privacy';
 import { sql, type SQLWrapper } from 'drizzle-orm';
 import { boardClimbNeighbors, boardClimbs, boardClimbStats, boardDifficultyGrades } from '../../schema/index';
@@ -194,6 +196,7 @@ export type MaterializedSimilarClimb = {
   difficultyName: string | null;
   qualityAverage: number | null;
   ascensionistCount: number | null;
+  playCount: number | null;
   compatibleSizeIds: number[];
   requiredSetIds?: number[] | null;
   characteristics: string[] | null;
@@ -231,11 +234,40 @@ type MaterializedRow = {
   difficulty_name: string | null;
   quality_average: number | string | null;
   ascensionist_count: number | string | null;
+  play_count: string | null;
   shared_hold_count: number;
   candidate_hold_count: number;
   target_hold_count: number;
   similarity: number | string;
 };
+
+/**
+ * The public climb link uses the candidate's saved angle, even when the
+ * similarity request asks for grade and sends at a different angle. Resolve
+ * legacy aliases with the public detail's listed-row precedence, and require
+ * the destination to pass the same catalogue visibility gate as the candidate.
+ * Both callers apply this PK lookup only to the already-ranked, limited rows.
+ */
+export function similarClimbPlayCountSql(
+  boardType: string,
+  candidate: { uuid: SQLWrapper; layoutId: SQLWrapper; angle: SQLWrapper; isListed: SQLWrapper },
+) {
+  const canonicalUuid = listedClimbDestinationUuidSql({ ...candidate, boardType: sql`${boardType}` });
+  return sql<string | null>`(
+    SELECT ${boardClimbStats.playCount}::text
+    FROM ${boardClimbStats}
+    INNER JOIN ${boardClimbs}
+      ON ${boardClimbs.uuid} = ${boardClimbStats.climbUuid}
+     AND ${boardClimbs.boardType} = ${boardClimbStats.boardType}
+    WHERE ${boardClimbStats.boardType} = ${boardType}
+      AND ${boardClimbStats.climbUuid} = ${canonicalUuid}
+      AND ${boardClimbStats.angle} = ${candidate.angle}
+      AND ${boardClimbs.layoutId} = ${candidate.layoutId}
+      AND ${boardClimbs.isDraft} = FALSE
+      AND ${boardClimbs.isListed} IS NOT FALSE
+      AND ${boardClimbs.isHidden} = FALSE
+  )`;
+}
 
 /**
  * Read one climb's precomputed neighbours, re-checking each against the live
@@ -254,46 +286,58 @@ export async function getMaterializedSimilarClimbs(
   const safeLimit = Math.max(1, Math.min(200, limit));
   const similarity = sql`(${boardClimbNeighbors.sharedHoldCount}::float8 / (${boardClimbNeighbors.targetHoldCount} + ${boardClimbNeighbors.candidateHoldCount} - ${boardClimbNeighbors.sharedHoldCount}))`;
 
+  const playCount = similarClimbPlayCountSql(boardType, {
+    uuid: sql`ranked.uuid`,
+    layoutId: sql`ranked.layout_id`,
+    angle: sql`ranked.angle`,
+    isListed: sql`ranked.is_listed`,
+  });
   const result = await executor.execute(sql`
-    SELECT
-      ${boardClimbs.uuid} AS uuid,
-      ${boardClimbs.name} AS name,
-      ${boardClimbs.setterUsername} AS setter_username,
-      ${boardClimbs.angle} AS angle,
-      ${boardClimbs.layoutId} AS layout_id,
-      ${boardClimbs.frames} AS frames,
-      ${boardClimbs.compatibleSizeIds} AS compatible_size_ids,
-      ${boardClimbs.requiredSetIds} AS required_set_ids,
-      ${boardClimbs.characteristics} AS characteristics,
-      ${boardDifficultyGrades.boulderName} AS difficulty_name,
-      ${boardClimbStats.qualityAverage} AS quality_average,
-      ${boardClimbStats.ascensionistCount} AS ascensionist_count,
-      ${boardClimbNeighbors.sharedHoldCount} AS shared_hold_count,
-      ${boardClimbNeighbors.candidateHoldCount} AS candidate_hold_count,
-      ${boardClimbNeighbors.targetHoldCount} AS target_hold_count,
-      ${similarity} AS similarity
-    FROM ${boardClimbNeighbors}
-    INNER JOIN ${boardClimbs}
-      ON ${boardClimbs.uuid} = ${boardClimbNeighbors.neighborUuid}
-     AND ${boardClimbs.boardType} = ${boardClimbNeighbors.boardType}
-    LEFT JOIN ${boardClimbStats}
-      ON ${boardClimbStats.boardType} = ${boardClimbs.boardType}
-     AND ${boardClimbStats.climbUuid} = ${boardClimbs.uuid}
-     AND ${boardClimbStats.angle} = ${statsAngle != null ? sql`${statsAngle}` : boardClimbs.angle}
-    LEFT JOIN ${boardDifficultyGrades}
-      ON ${boardDifficultyGrades.boardType} = ${boardClimbs.boardType}
-     AND ${boardDifficultyGrades.difficulty} = ROUND(${boardClimbStats.displayDifficulty})
-    WHERE ${boardClimbNeighbors.boardType} = ${boardType}
-      AND ${boardClimbNeighbors.climbUuid} = ${climbUuid}
-      AND ${boardClimbs.layoutId} = ${layoutId}
-      AND ${boardClimbs.isDraft} = FALSE
-      AND ${boardClimbs.isListed} IS NOT FALSE
-      AND ${boardClimbs.isHidden} = FALSE
-      ${sizeId !== undefined ? sql`AND COALESCE(${boardClimbs.compatibleSizeIds}, '{}'::int[]) @> ARRAY[${sizeId}]::int[]` : sql``}
-      AND ${climbReferenceReadableCondition({ boardType: sql`${boardType}`, climbUuid: sql`${climbUuid}` }, viewerUserId)}
-      AND ${similarity} >= ${safeThreshold}
-    ORDER BY similarity DESC, COALESCE(${boardClimbStats.ascensionistCount}, 0) DESC, ${boardClimbs.uuid} ASC
-    LIMIT ${safeLimit}
+    WITH ranked AS MATERIALIZED (
+      SELECT
+        ${boardClimbs.uuid} AS uuid,
+        ${boardClimbs.name} AS name,
+        ${boardClimbs.setterUsername} AS setter_username,
+        ${boardClimbs.angle} AS angle,
+        ${boardClimbs.isListed} AS is_listed,
+        ${boardClimbs.layoutId} AS layout_id,
+        ${boardClimbs.frames} AS frames,
+        ${boardClimbs.compatibleSizeIds} AS compatible_size_ids,
+        ${boardClimbs.requiredSetIds} AS required_set_ids,
+        ${boardClimbs.characteristics} AS characteristics,
+        ${boardDifficultyGrades.boulderName} AS difficulty_name,
+        ${boardClimbStats.qualityAverage} AS quality_average,
+        ${boardClimbStats.ascensionistCount} AS ascensionist_count,
+        ${boardClimbNeighbors.sharedHoldCount} AS shared_hold_count,
+        ${boardClimbNeighbors.candidateHoldCount} AS candidate_hold_count,
+        ${boardClimbNeighbors.targetHoldCount} AS target_hold_count,
+        ${similarity} AS similarity
+      FROM ${boardClimbNeighbors}
+      INNER JOIN ${boardClimbs}
+        ON ${boardClimbs.uuid} = ${boardClimbNeighbors.neighborUuid}
+       AND ${boardClimbs.boardType} = ${boardClimbNeighbors.boardType}
+      LEFT JOIN ${boardClimbStats}
+        ON ${boardClimbStats.boardType} = ${boardClimbs.boardType}
+       AND ${boardClimbStats.climbUuid} = ${boardClimbs.uuid}
+       AND ${boardClimbStats.angle} = ${statsAngle != null ? sql`${statsAngle}` : boardClimbs.angle}
+      LEFT JOIN ${boardDifficultyGrades}
+        ON ${boardDifficultyGrades.boardType} = ${boardClimbs.boardType}
+       AND ${boardDifficultyGrades.difficulty} = ROUND(${boardClimbStats.displayDifficulty})
+      WHERE ${boardClimbNeighbors.boardType} = ${boardType}
+        AND ${boardClimbNeighbors.climbUuid} = ${climbUuid}
+        AND ${boardClimbs.layoutId} = ${layoutId}
+        AND ${boardClimbs.isDraft} = FALSE
+        AND ${boardClimbs.isListed} IS NOT FALSE
+        AND ${boardClimbs.isHidden} = FALSE
+        ${sizeId !== undefined ? sql`AND COALESCE(${boardClimbs.compatibleSizeIds}, '{}'::int[]) @> ARRAY[${sizeId}]::int[]` : sql``}
+        AND ${climbReferenceReadableCondition({ boardType: sql`${boardType}`, climbUuid: sql`${climbUuid}` }, viewerUserId)}
+        AND ${similarity} >= ${safeThreshold}
+      ORDER BY similarity DESC, COALESCE(${boardClimbStats.ascensionistCount}, 0) DESC, ${boardClimbs.uuid} ASC
+      LIMIT ${safeLimit}
+    )
+    SELECT ranked.*, ${playCount} AS play_count
+    FROM ranked
+    ORDER BY similarity DESC, COALESCE(ascensionist_count, 0) DESC, uuid ASC
   `);
 
   return rowsOf<MaterializedRow>(result).map((row) => ({
@@ -306,6 +350,7 @@ export async function getMaterializedSimilarClimbs(
     difficultyName: row.difficulty_name ?? null,
     qualityAverage: row.quality_average == null ? null : Number(row.quality_average),
     ascensionistCount: row.ascensionist_count == null ? null : Number(row.ascensionist_count),
+    playCount: toPlayCount(row.play_count),
     compatibleSizeIds: row.compatible_size_ids ?? [],
     requiredSetIds: row.required_set_ids ?? null,
     // `?? null`, not `?? []`: null is a climb whose rules were never recorded,

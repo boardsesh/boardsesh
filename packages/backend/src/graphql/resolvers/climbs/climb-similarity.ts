@@ -9,10 +9,11 @@ import {
   NO_MATCH_TRAILING_SQL_PATTERN,
   buildRuleSignature,
   isNoMatchClimb,
+  toPlayCount,
   usesAuroraNoMatchDescription,
 } from '@boardsesh/shared-schema';
 import { executeRows } from '@boardsesh/db/client';
-import { withSerialPlan } from '@boardsesh/db/queries';
+import { similarClimbPlayCountSql, withSerialPlan } from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
 import { climbStatsEffectiveAngleSql } from '../../../db/queries/util/climb-stats-join';
 
@@ -49,6 +50,7 @@ export type SimilarClimbResult = {
   difficultyName: string | null;
   qualityAverage: number | null;
   ascensionistCount: number | null;
+  playCount: number | null;
   compatibleSizeIds: number[];
   requiredSetIds?: number[] | null;
   characteristics: string[] | null;
@@ -363,6 +365,12 @@ export async function findSimilarClimbs({
   const safeThreshold = Math.max(0, Math.min(1, threshold));
   const safeLimit = Math.max(1, Math.min(200, limit));
   const targetHoldIdsJson = JSON.stringify(targetHoldIds);
+  const playCount = similarClimbPlayCountSql(boardType, {
+    uuid: sql`ranked.uuid`,
+    layoutId: sql`ranked.layout_id`,
+    angle: sql`ranked.angle`,
+    isListed: sql`ranked.is_listed`,
+  });
 
   // Production plans this catalog-wide aggregate with a Gather Merge. Bursts
   // of similar-climb requests then allocate one DSM segment per worker until
@@ -380,6 +388,7 @@ export async function findSimilarClimbs({
       difficulty_name: string | null;
       quality_average: number | null;
       ascensionist_count: number | null;
+      play_count: string | null;
       compatible_size_ids: number[] | null;
       required_set_ids: number[] | null;
       characteristics: string[] | null;
@@ -445,38 +454,44 @@ export async function findSimilarClimbs({
           AND hold_state IN ${KNOWN_HOLD_STATES_SQL}
           AND climb_uuid IN (SELECT uuid FROM candidate_overlaps)
         GROUP BY climb_uuid
+      ),
+      ranked AS MATERIALIZED (
+        SELECT
+          c.uuid AS uuid,
+          c.name AS name,
+          c.setter_username AS setter_username,
+          c.angle AS angle,
+          c.is_listed AS is_listed,
+          c.layout_id AS layout_id,
+          c.frames AS frames,
+          c.compatible_size_ids AS compatible_size_ids,
+          c.required_set_ids AS required_set_ids,
+          c.characteristics AS characteristics,
+          bdg.boulder_name AS difficulty_name,
+          ${dbSchema.boardClimbStats.qualityAverage} AS quality_average,
+          ${dbSchema.boardClimbStats.ascensionistCount} AS ascensionist_count,
+          o.shared::int AS shared,
+          cs.n::int AS candidate_hold_count,
+          (o.shared::float / (${targetSize} + cs.n - o.shared)) AS jaccard
+        FROM candidate_overlaps o
+        INNER JOIN candidate_sizes cs ON cs.uuid = o.uuid
+        INNER JOIN ${dbSchema.boardClimbs} c
+          ON c.uuid = o.uuid
+         AND c.board_type = ${boardType}
+        LEFT JOIN ${dbSchema.boardClimbStats}
+          ON ${dbSchema.boardClimbStats.boardType} = c.board_type
+         AND ${dbSchema.boardClimbStats.climbUuid} = c.uuid
+         AND ${dbSchema.boardClimbStats.angle} = ${statsAngle != null ? sql`${statsAngle}` : sql`c.angle`}
+        LEFT JOIN ${dbSchema.boardDifficultyGrades} bdg
+          ON bdg.board_type = c.board_type
+         AND bdg.difficulty = ROUND(${dbSchema.boardClimbStats.displayDifficulty})
+        WHERE (o.shared::float / (${targetSize} + cs.n - o.shared)) >= ${safeThreshold}
+        ORDER BY jaccard DESC, COALESCE(${dbSchema.boardClimbStats.ascensionistCount}, 0) DESC, c.uuid ASC
+        LIMIT ${safeLimit}
       )
-      SELECT
-        c.uuid AS uuid,
-        c.name AS name,
-        c.setter_username AS setter_username,
-        c.angle AS angle,
-        c.layout_id AS layout_id,
-        c.frames AS frames,
-        c.compatible_size_ids AS compatible_size_ids,
-        c.required_set_ids AS required_set_ids,
-        c.characteristics AS characteristics,
-        bdg.boulder_name AS difficulty_name,
-        ${dbSchema.boardClimbStats.qualityAverage} AS quality_average,
-        ${dbSchema.boardClimbStats.ascensionistCount} AS ascensionist_count,
-        o.shared::int AS shared,
-        cs.n::int AS candidate_hold_count,
-        (o.shared::float / (${targetSize} + cs.n - o.shared)) AS jaccard
-      FROM candidate_overlaps o
-      INNER JOIN candidate_sizes cs ON cs.uuid = o.uuid
-      INNER JOIN ${dbSchema.boardClimbs} c
-        ON c.uuid = o.uuid
-       AND c.board_type = ${boardType}
-      LEFT JOIN ${dbSchema.boardClimbStats}
-        ON ${dbSchema.boardClimbStats.boardType} = c.board_type
-       AND ${dbSchema.boardClimbStats.climbUuid} = c.uuid
-       AND ${dbSchema.boardClimbStats.angle} = ${statsAngle != null ? sql`${statsAngle}` : sql`c.angle`}
-      LEFT JOIN ${dbSchema.boardDifficultyGrades} bdg
-        ON bdg.board_type = c.board_type
-       AND bdg.difficulty = ROUND(${dbSchema.boardClimbStats.displayDifficulty})
-      WHERE (o.shared::float / (${targetSize} + cs.n - o.shared)) >= ${safeThreshold}
-      ORDER BY jaccard DESC, COALESCE(${dbSchema.boardClimbStats.ascensionistCount}, 0) DESC, c.uuid ASC
-      LIMIT ${safeLimit}
+      SELECT ranked.*, ${playCount} AS play_count
+      FROM ranked
+      ORDER BY jaccard DESC, COALESCE(ascensionist_count, 0) DESC, uuid ASC
       `,
     ),
   );
@@ -491,6 +506,7 @@ export async function findSimilarClimbs({
     difficultyName: row.difficulty_name ?? null,
     qualityAverage: row.quality_average == null ? null : Number(row.quality_average),
     ascensionistCount: row.ascensionist_count == null ? null : Number(row.ascensionist_count),
+    playCount: toPlayCount(row.play_count),
     compatibleSizeIds: row.compatible_size_ids ?? [],
     requiredSetIds: row.required_set_ids ?? null,
     // `?? null`, not `?? []`, unlike compatibleSizeIds above: an empty array is

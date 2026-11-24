@@ -74,15 +74,21 @@ async function render(
     artUrl?: string | null;
     setter?: string | null;
     senderCount?: string | number | null;
+    playCount?: number | null;
   } = {},
 ) {
   const { setter = CLIMB.setter_username, senderCount = CLIMB.ascensionist_count } = overrides;
   const element = await SprayClimbFrontDoor({
     // The component's prop types are the page's; the fixtures above are the
     // shapes those types describe, narrowed to what this component reads.
-    climb: { ...CLIMB, setter_username: setter, ascensionist_count: senderCount } as unknown as Parameters<
-      typeof SprayClimbFrontDoor
-    >[0]['climb'],
+    climb: {
+      ...CLIMB,
+      angle: 40,
+      boardType: 'spray',
+      setter_username: setter,
+      ascensionist_count: senderCount,
+      play_count: overrides.playCount,
+    } as unknown as Parameters<typeof SprayClimbFrontDoor>[0]['climb'],
     wallData: WALL_DATA,
     photoUrl: 'photoUrl' in overrides ? (overrides.photoUrl ?? null) : WALL_DATA.wall.publicPhotoUrl,
     art: overrides.art ?? null,
@@ -151,12 +157,20 @@ describe('SprayClimbFrontDoor', () => {
       ] as const) {
         for (const setter of ['marco', null]) {
           const html = await render({ setter, senderCount });
-          expect(html).toContain(`>${setter ? attribution : ''}${sentence}</p>`);
+          expect(html).toContain(`>${setter ? attribution : ''}${sentence}`);
           expect(html.includes('href="/setter/marco"')).toBe(Boolean(setter));
         }
       }
     },
   );
+
+  it('keeps a measured zero separate from a missing value and localizes Plays', async () => {
+    expect(await render({ playCount: 0 })).toContain('0 plays');
+    expect(await render()).toContain('Plays unavailable');
+    vi.mocked(getLocale).mockResolvedValue('de');
+    expect(await render({ playCount: 12345 })).toContain('12.345 Auswahlen');
+    expect(await render({ playCount: null })).toContain('Auswahlen nicht verfügbar');
+  });
 
   it('puts the climb in the first HTML byte: one h1, a summary, and the photo', async () => {
     const html = await render();

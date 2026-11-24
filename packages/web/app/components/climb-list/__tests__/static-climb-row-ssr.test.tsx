@@ -19,7 +19,11 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en-US' } }),
+  useTranslation: () => ({
+    t: (key: string, options?: { formattedCount?: string }) =>
+      key === 'plays.count' ? `${options?.formattedCount} plays` : key,
+    i18n: { language: 'en-US' },
+  }),
 }));
 
 vi.mock('@/app/components/board-renderer/board-image-layers', () => ({ default: () => null }));
@@ -54,8 +58,10 @@ function makeBoardDetails(): BoardImageDetails {
   };
 }
 
-function rowHtml(climb: Climb = makeClimb()) {
-  return renderToString(<StaticClimbRow climb={climb} boardDetails={makeBoardDetails()} pathname="/playlists/uuid" />);
+function rowHtml(climb: Climb = makeClimb(), options: { showPlays?: boolean; playsAngle?: number } = {}) {
+  return renderToString(
+    <StaticClimbRow climb={climb} boardDetails={makeBoardDetails()} pathname="/playlists/uuid" {...options} />,
+  );
 }
 
 describe('StaticClimbRow server HTML', () => {
@@ -70,6 +76,18 @@ describe('StaticClimbRow server HTML', () => {
     expect(html).toContain('Test Climb');
     expect(html).toContain('setter_joe');
     expect(html).toContain('12');
+  });
+
+  it('server-renders only the public row’s matching board and angle Plays', () => {
+    const optedIn = { showPlays: true, playsAngle: 40 };
+    const counted = makeClimb({ boardType: 'kilter', play_count: 1204 });
+    expect(rowHtml(counted, optedIn)).toContain('1,204 plays');
+    expect(rowHtml({ ...counted, play_count: 0 }, optedIn)).toContain('0 plays');
+    expect(rowHtml({ ...counted, play_count: undefined }, optedIn)).toContain('plays.unavailable');
+    expect(rowHtml({ ...counted, angle: 30 }, optedIn)).toContain('plays.unavailable');
+    expect(rowHtml({ ...counted, boardType: 'tension' }, optedIn)).toContain('plays.unavailable');
+    expect(rowHtml({ ...counted, is_draft: true }, optedIn)).not.toContain('1,204 plays');
+    expect(rowHtml(counted)).not.toContain('1,204 plays');
   });
 
   it('falls back to the raw difficulty when it has no V-grade to format', () => {

@@ -3,12 +3,15 @@
 import React, { useMemo } from 'react';
 import Box from '@mui/material/Box';
 import MuiLink from '@mui/material/Link';
+import Typography from '@mui/material/Typography';
+import { useTranslation } from 'react-i18next';
 import type { LogbookEntry } from '@boardsesh/board-react';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import ClimbThumbnail from '@/app/components/climb-card/climb-thumbnail';
 import ClimbTitle from '@/app/components/climb-card/climb-title';
 import { AscentStatus } from '@/app/components/climb-card/ascent-status';
 import ascentStyles from '@/app/components/climb-card/ascent-status.module.css';
+import { formatPlays, playCountAtAngle } from '@/app/lib/format-climb-stats';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { buildCanonicalClimbViewUrl, constructBoardSlugViewUrl } from '@/app/lib/url-utils';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -57,6 +60,10 @@ export type StaticClimbRowProps = {
   showSetter?: boolean;
   /** Add the angle the row links to, for a list whose climbs sit at different angles. */
   showAngle?: boolean;
+  /** Public catalog rows can show Plays from their linked climb data. */
+  showPlays?: boolean;
+  /** On a fixed-angle catalog page the row must also match the page angle. */
+  playsAngle?: number;
 };
 
 export type StaticClimbRowVariant = 'list' | 'card';
@@ -88,6 +95,23 @@ const thumbnailSx = {
 } as const;
 
 const centerSx = { flex: 1, minWidth: 0 } as const;
+
+const playsSx = {
+  display: 'block',
+  color: 'var(--neutral-500)',
+  fontSize: themeTokens.typography.fontSize.xs,
+  fontVariantNumeric: 'tabular-nums',
+  overflowWrap: 'anywhere',
+} as const;
+
+function StaticRowPlays({ count }: { count: number | null }) {
+  const { t, i18n } = useTranslation('climbs');
+  return (
+    <Typography component="span" sx={playsSx}>
+      {formatPlays(count, i18n.language, t)}
+    </Typography>
+  );
+}
 
 // The card's hover lives on the card itself, not on the anchor around it: the
 // anchor is a square box, and a square highlight behind a rounded card shows
@@ -125,6 +149,8 @@ const StaticClimbRow = ({
   variant = 'list',
   showSetter = true,
   showAngle = false,
+  showPlays = false,
+  playsAngle,
 }: StaticClimbRowProps) => {
   const isCard = variant === 'card';
   const href = useMemo(
@@ -191,6 +217,9 @@ const StaticClimbRow = ({
           titleFontSize={themeTokens.typography.fontSize.xl}
           isNoMatch={!!climb.is_no_match}
         />
+        {showPlays && !climb.is_draft && !climb.is_hidden ? (
+          <StaticRowPlays count={playCountAtAngle(climb, boardDetails.board_name, playsAngle ?? climb.angle)} />
+        ) : null}
       </Box>
     </Box>
   );

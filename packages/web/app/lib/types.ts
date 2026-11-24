@@ -19,6 +19,7 @@ export type Climb = {
   catalogAngle?: number | null;
   ascensionist_count: number;
   play_count?: number | null;
+  publicPlayCount?: number | null;
   difficulty: string;
   quality_average: string;
   stars: number;

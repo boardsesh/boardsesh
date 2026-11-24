@@ -6,6 +6,8 @@ import { visuallyHidden } from '@mui/utils';
 import GradeTile from '@/app/components/climb-front-door/grade-tile';
 import { formatQualityAverage } from '@/app/components/climb-front-door/climb-facts-format';
 import { frontDoorTitleSx } from '@/app/components/climb-front-door/front-door-heading-sx';
+import PlaysExplanation from '@/app/components/climb-front-door/plays-explanation';
+import { formatPlays, playCountAtAngle } from '@/app/lib/format-climb-stats';
 import { normalizedQuality } from '@/app/lib/climb-quality';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { climbBoardForSearch, climbGradeForSearch } from '@/app/lib/seo/climb-display';
@@ -22,6 +24,8 @@ type ClimbViewSeoFragmentProps = {
   angle?: number;
   /** The stats row for the angle being viewed, when there is one. Carries the quality. */
   currentAngleStats?: ClimbStatsForAngle;
+  currentPlays?: number | null;
+  playsDescriptionId?: string;
 };
 
 // Name on the left, grade tile on the right. Below md the tile sits beside the
@@ -84,11 +88,13 @@ const contextSx = {
   color: 'var(--neutral-500)',
 };
 
+const explanationSx = { gridColumn: '1 / -1' };
+
 const SETTER_SLOT = 'setter';
 
 /**
  * The climb page's heading block: the `<h1>`, the grade tile beside it, the
- * proof line ("4,171 sends · ★ 3.0 · set by BKBChicago") and the board and
+ * proof line ("4,171 sends · 3,214 plays · ★ 3.0 · set by BKBChicago") and the board and
  * angle under it.
  *
  * The `<h1>` is the climb name with the grade after it, visually hidden: the
@@ -100,14 +106,16 @@ const SETTER_SLOT = 'setter';
  * The star only shows when the angle's stats row carries a rating on the 1-5
  * scale — the same `normalizedQuality` rule the structured data uses — so an
  * Aurora 1-3 average is never printed as if it were out of five. Nothing in the
- * proof line is invented: a climb with no sends, no honest rating or no setter
- * simply drops that item.
+ * proof line is invented: missing sends, rating and setter drop out. The Plays
+ * item explicitly distinguishes an unavailable count from a measured zero.
  */
 export default async function ClimbViewSeoFragment({
   climb,
   boardDetails,
   angle,
   currentAngleStats,
+  currentPlays,
+  playsDescriptionId,
 }: ClimbViewSeoFragmentProps) {
   const { t, locale } = await getServerTranslation('climbs');
   // An unnamed climb gets a translated "Unnamed Kilter climb" rather than
@@ -121,6 +129,9 @@ export default async function ClimbViewSeoFragment({
   // i18next skips plural selection for a string count.
   const sends = Number(climb.ascensionist_count ?? 0);
   const quality = normalizedQuality(currentAngleStats);
+  const viewedAngle = angle ?? climb.angle;
+  const plays =
+    currentPlays === undefined ? playCountAtAngle(climb, boardDetails.board_name, viewedAngle) : currentPlays;
   const boardLabel = climbBoardForSearch(boardDetails.board_name, boardDetails.layout_name);
 
   const proofItems: Array<{ key: string; content: React.ReactNode }> = [];
@@ -130,6 +141,7 @@ export default async function ClimbViewSeoFragment({
       content: t('sends', { count: sends, formattedCount: new Intl.NumberFormat(locale).format(sends) }),
     });
   }
+  proofItems.push({ key: 'plays', content: formatPlays(plays, locale, t) });
   if (quality) {
     const formattedQuality = formatQualityAverage(quality.average, locale);
     proofItems.push({
@@ -175,28 +187,29 @@ export default async function ClimbViewSeoFragment({
       <Box sx={tileCellSx}>
         <GradeTile difficulty={climb.difficulty} boardName={boardDetails.board_name} />
       </Box>
-      {proofItems.length > 0 ? (
-        <Typography component="p" sx={proofSx}>
-          {proofItems.map(({ key, content }, index) => (
-            <React.Fragment key={key}>
-              {/* Spaces outside the hidden dot, so the text a crawler or a
-                  screen reader gets still has word breaks between items. */}
-              {index > 0 ? (
-                <>
-                  {' '}
-                  <Box component="span" aria-hidden="true" sx={proofSeparatorSx}>
-                    ·
-                  </Box>{' '}
-                </>
-              ) : null}
-              <span>{content}</span>
-            </React.Fragment>
-          ))}
-        </Typography>
-      ) : null}
-      <Typography component="p" sx={contextSx}>
-        {t('frontDoor.hero.boardAtAngle', { board: boardLabel, angle: angle ?? climb.angle })}
+      <Typography component="p" sx={proofSx}>
+        {proofItems.map(({ key, content }, index) => (
+          <React.Fragment key={key}>
+            {/* Spaces outside the hidden dot, so the text a crawler or a
+                screen reader gets still has word breaks between items. */}
+            {index > 0 ? (
+              <>
+                {' '}
+                <Box component="span" aria-hidden="true" sx={proofSeparatorSx}>
+                  ·
+                </Box>{' '}
+              </>
+            ) : null}
+            <span>{content}</span>
+          </React.Fragment>
+        ))}
       </Typography>
+      <Typography component="p" sx={contextSx}>
+        {t('frontDoor.hero.boardAtAngle', { board: boardLabel, angle: viewedAngle })}
+      </Typography>
+      <Box sx={explanationSx}>
+        <PlaysExplanation id={playsDescriptionId}>{t('plays.explanation')}</PlaysExplanation>
+      </Box>
     </Box>
   );
 }
