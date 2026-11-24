@@ -88,6 +88,19 @@ describe('SEO metadata helper', () => {
       expect(metadata.openGraph).toMatchObject({ locale: 'en_US', url: '/apps/kilter' });
     });
 
+    it('drops the brand suffix only when asked to and only when it would pass 60 characters', () => {
+      const long = 'Climbing App That Works with Kilter, Tension & MoonBoard';
+      expect(createPageMetadata({ title: long, description: 'd', brandSuffix: 'if-fits' }).title).toEqual({
+        absolute: long,
+      });
+      expect(createPageMetadata({ title: long, description: 'd' }).title).toEqual({
+        absolute: `${long} | Boardsesh`,
+      });
+      expect(createPageMetadata({ title: 'Short title', description: 'd', brandSuffix: 'if-fits' }).title).toEqual({
+        absolute: 'Short title | Boardsesh',
+      });
+    });
+
     it('supports pages without a canonical path or social image', () => {
       const metadata = createPageMetadata({
         title: 'Standalone',

@@ -1,10 +1,10 @@
 {
   "metadata": {
     "home": {
-      "title": "Votre session, bien organisée. | Boardsesh",
+      "title": "Appli d’escalade compatible Kilter, Tension et MoonBoard",
       "description": "Choisissez un bloc, allumez-le sur le board et partagez une file avec votre groupe. Gratuit. Compatible avec des boards comme Kilter, Tension et MoonBoard.",
       "ogDescription": "Choisissez un bloc, allumez-le sur le board et partagez une file avec votre groupe.",
-      "ogTitle": "Votre session, bien organisée."
+      "ogTitle": "Changez de board, pas d’appli"
     },
     "about": {
       "title": "Créée par des grimpeurs, ouverte à tous",
@@ -53,7 +53,7 @@
   },
   "home": {
     "hero": {
-      "title": "Votre session, bien organisée.",
+      "title": "Changez de board, pas d’appli",
       "eyebrow": "Gratuit. Compatible avec des boards comme Kilter, Tension et MoonBoard.",
       "subtitle": "Choisissez un bloc, allumez-le sur le board et partagez une file avec votre groupe.",
       "compareApps": "Comparez Boardsesh avec l'appli de votre board\u00a0(en\u00a0anglais)",

@@ -1,10 +1,10 @@
 {
   "metadata": {
     "home": {
-      "title": "Deine Boardsession, gut organisiert. | Boardsesh",
+      "title": "Kletter-App für Kilter, Tension und MoonBoard",
       "description": "Wähle einen Boulder, beleuchte ihn am Board und teile eine Warteschlange mit deiner Crew. Kostenlos. Funktioniert mit Boards wie Kilter, Tension und MoonBoard.",
       "ogDescription": "Wähle einen Boulder, beleuchte ihn am Board und teile eine Warteschlange mit deiner Crew.",
-      "ogTitle": "Deine Boardsession, gut organisiert."
+      "ogTitle": "Wechsle das Board, nicht die App"
     },
     "about": {
       "title": "Von Kletterer*innen, offen für alle",
@@ -53,7 +53,7 @@
   },
   "home": {
     "hero": {
-      "title": "Deine Boardsession, gut organisiert.",
+      "title": "Wechsle das Board, nicht die App",
       "eyebrow": "Kostenlos. Funktioniert mit Boards wie Kilter, Tension und MoonBoard.",
       "subtitle": "Wähle einen Boulder, beleuchte ihn am Board und teile eine Warteschlange mit deiner Crew.",
       "compareApps": "Vergleiche Boardsesh mit der App deines Boards\u00a0(Englisch)",

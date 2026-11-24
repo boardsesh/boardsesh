@@ -32,7 +32,15 @@ type PageMetadataOptions = {
   locale?: Locale;
   /** Locales with a published URL for this page. Defaults to every site locale. */
   availableLocales?: readonly Locale[];
+  /**
+   * `'if-fits'` drops the ` | Boardsesh` suffix when it would push the title past
+   * the 60 characters a search result shows; Google adds the site name itself.
+   */
+  brandSuffix?: 'always' | 'if-fits';
 };
+
+/** About as many characters as a search result shows before cutting a title. */
+const SEARCH_TITLE_LIMIT = 60;
 
 function normalizePath(path?: string): string | undefined {
   if (!path) {
@@ -87,10 +95,12 @@ export function createPageMetadata({
   twitterCard = 'summary_large_image',
   locale = DEFAULT_LOCALE,
   availableLocales = SUPPORTED_LOCALES,
+  brandSuffix = 'always',
 }: PageMetadataOptions): Metadata {
   const basePath = normalizePath(path);
   const canonicalPath = basePath ? localeHref(basePath, locale) : undefined;
-  const fullTitle = withBrandTitle(title);
+  const brandedTitle = withBrandTitle(title);
+  const fullTitle = brandSuffix === 'if-fits' && brandedTitle.length > SEARCH_TITLE_LIMIT ? title : brandedTitle;
   const normalizedImagePath = imagePath ? normalizePath(imagePath) : undefined;
   const alternates: Metadata['alternates'] = basePath
     ? {

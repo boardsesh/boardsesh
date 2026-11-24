@@ -1,10 +1,10 @@
 {
   "metadata": {
     "home": {
-      "title": "Climbing app compatible with Kilter, Tension & MoonBoard | Boardsesh",
+      "title": "Climbing App That Works with Kilter, Tension & MoonBoard",
       "description": "Pick a climb, light it on the wall and share one queue with your crew. Free to use. Works with boards including Kilter, Tension and MoonBoard.",
       "ogDescription": "Pick a climb, light it on the wall and share one queue with your crew.",
-      "ogTitle": "Board night, sorted."
+      "ogTitle": "Switch boards, not apps"
     },
     "about": {
       "title": "Built by climbers, open to everyone",
@@ -53,7 +53,7 @@
   },
   "home": {
     "hero": {
-      "title": "Board night, sorted.",
+      "title": "Switch boards, not apps",
       "eyebrow": "Free to use. Works with boards including Kilter, Tension and MoonBoard.",
       "subtitle": "Pick a climb, light it on the wall and share one queue with your crew.",
       "compareApps": "Compare Boardsesh with your board's app",
