@@ -302,6 +302,20 @@ context. The sitemap still uses the popular group for eligibility, including
 its size and hold-set filters. It then uses each eligible climb's own
 compatibility to build the published URL.
 
+## Translated climb views
+
+Catalogue climb views in both the config-tuple and `/b` route trees, including
+spray climbs, emit `noindex, follow` for every non-default locale. They keep the
+English canonical URL and share-card metadata. Climb names are user content,
+so these translated views remain shareable without adding another indexed page
+for each language. English views keep their existing indexing rules; private,
+unlisted, and hidden content keeps its stricter visibility metadata.
+
+The climb sitemap remains default-locale-only and advertises no translated
+copies. Climb views emit no `hreflang` alternates. After deployment, inspect a
+translated climb URL in Search Console to confirm Google has recrawled the
+`noindex`; a local metadata test cannot establish Google's indexing state.
+
 ## One rule picks the published angle
 
 The angle is a path segment (`/{board}/{layout}/{size}/{sets}/{angle}/view/…`),

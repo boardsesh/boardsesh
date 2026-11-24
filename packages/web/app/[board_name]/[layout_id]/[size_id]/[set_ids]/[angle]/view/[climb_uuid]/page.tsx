@@ -21,6 +21,7 @@ import ClimbFrontDoor from '@/app/components/climb-front-door/climb-front-door';
 import { buildOgBoardRenderUrl, buildOverlayPreloadUrls } from '@/app/components/board-renderer/util';
 import { scheduleOgImageWarming } from '@/app/lib/warm-overlay-cache';
 import { getServerTranslation } from '@/app/lib/i18n/server';
+import { DEFAULT_LOCALE } from '@/app/lib/i18n/config';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import { localeHref } from '@/app/lib/i18n/locale-href';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
@@ -138,7 +139,8 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
       locale,
       imagePath: ogImagePath,
       imageAlt: t('metadata.view.imageAlt', { climbName, grade: climbGrade, boardName: boardDetails.board_name }),
-      robots: isHiddenClimb ? { index: false, follow: true } : undefined,
+      // Translated views stay shareable; only the English climb belongs in search.
+      robots: isHiddenClimb || locale !== DEFAULT_LOCALE ? { index: false, follow: true } : undefined,
     });
   } catch {
     return createBoardContentPageMetadata({

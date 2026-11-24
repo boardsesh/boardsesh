@@ -13,6 +13,7 @@ import { buildCanonicalClimbViewUrl, constructBoardSlugViewUrl, extractUuidFromS
 import { buildOgBoardRenderUrl, buildOverlayPreloadUrls } from '@/app/components/board-renderer/util';
 import { scheduleOgImageWarming } from '@/app/lib/warm-overlay-cache';
 import { getServerTranslation } from '@/app/lib/i18n/server';
+import { DEFAULT_LOCALE } from '@/app/lib/i18n/config';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import { localeHref } from '@/app/lib/i18n/locale-href';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
@@ -158,7 +159,9 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
       // Public catalog aliases keep their canonical and share/handoff URLs,
       // but must not seed another crawl of every climb for every physical wall.
       // Spray walls branch above: their /b URL is the only canonical surface.
-      robots: shouldNoindex ? { index: false, follow: true } : { index: true, follow: false },
+      // Locale noindex keeps the English canonical; privacy still controls path above.
+      robots:
+        shouldNoindex || locale !== DEFAULT_LOCALE ? { index: false, follow: true } : { index: true, follow: false },
     });
   } catch {
     return createBoardContentPageMetadata({

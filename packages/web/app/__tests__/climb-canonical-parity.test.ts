@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { renderToString } from 'react-dom/server';
+import { DEFAULT_LOCALE, SUPPORTED_LOCALES, type Locale } from '@/app/lib/i18n/config';
 import type { ClimbConfigCompatibility } from '@/app/lib/canonical-climb-config';
 
 /**
@@ -47,8 +48,10 @@ import type { ClimbConfigCompatibility } from '@/app/lib/canonical-climb-config'
 vi.mock('server-only', () => ({}));
 vi.mock('next/navigation', () => ({ notFound: vi.fn(), permanentRedirect: vi.fn() }));
 
+let servedLocale: Locale = DEFAULT_LOCALE;
+
 vi.mock('@/app/lib/i18n/server', () => ({
-  getServerTranslation: vi.fn(async () => ({ t: (key: string) => key, locale: 'en-US' })),
+  getServerTranslation: vi.fn(async () => ({ t: (key: string) => key, locale: servedLocale })),
 }));
 
 const CLIMB_UUID = 'abcdef1234567890abcdef1234567890';
@@ -256,6 +259,7 @@ function slugListMetadata(searchParams: Record<string, string> = {}) {
 }
 
 beforeEach(() => {
+  servedLocale = DEFAULT_LOCALE;
   boardConfig.sizeId = 10;
   boardConfig.setIds = [1, 20];
   boardConfig.angle = 40;
@@ -282,6 +286,23 @@ describe('climb-view canonical parity (A1 landed in W-15)', () => {
     // The uuid survives into the canonical either way (embedded in the name slug).
     expect(slugCanonical).toContain(CLIMB_UUID);
   });
+
+  it.each(SUPPORTED_LOCALES.filter((locale) => locale !== DEFAULT_LOCALE))(
+    '%s climb views noindex both trees while preserving the English canonical and cards',
+    async (locale) => {
+      const english = await legacyViewMetadata();
+      servedLocale = locale;
+      const [legacy, slug] = await Promise.all([legacyViewMetadata(), slugViewMetadata()]);
+
+      for (const metadata of [legacy, slug]) {
+        expect(metadata.robots).toEqual({ index: false, follow: true });
+        expect(metadata.alternates).toEqual({ canonical: english.alternates?.canonical });
+        expect(metadata.openGraph?.url).toBe(english.alternates?.canonical);
+        expect(metadata.openGraph?.images).toEqual(english.openGraph?.images);
+        expect(metadata.twitter?.images).toEqual(english.twitter?.images);
+      }
+    },
+  );
 
   it('the config-tuple tree still canonicalizes onto itself', async () => {
     const path = canonicalPath((await legacyViewMetadata()).alternates?.canonical);

@@ -6,6 +6,7 @@ import SprayClimbFrontDoor from '@/app/components/spray-wall/spray-climb-front-d
 import { buildSprayOgImageUrl } from '@/app/components/board-renderer/util';
 import { getClimb } from '@/app/lib/data/queries';
 import { getServerTranslation } from '@/app/lib/i18n/server';
+import { DEFAULT_LOCALE } from '@/app/lib/i18n/config';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
 import {
   fetchSprayWallArtChoice,
@@ -114,7 +115,8 @@ export async function buildSprayViewMetadata({
     locale,
     imagePath: ogImagePath ?? undefined,
     imageAlt: t('spray.photoAlt', { climbName, grade, wallName: board.name }),
-    robots: shouldNoindex ? { index: false, follow: true } : undefined,
+    // Locale noindex keeps the English canonical; privacy still controls path above.
+    robots: shouldNoindex || locale !== DEFAULT_LOCALE ? { index: false, follow: true } : undefined,
   });
 }
 

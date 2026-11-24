@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { DEFAULT_LOCALE, SUPPORTED_LOCALES, type Locale } from '@/app/lib/i18n/config';
 
 /**
  * The three states a wall can be in, from the web page's side.
@@ -19,10 +20,12 @@ vi.mock('next/navigation', () => ({
   }),
 }));
 
+let servedLocale: Locale = DEFAULT_LOCALE;
+
 vi.mock('@/app/lib/i18n/server', () => ({
   getServerTranslation: vi.fn(async () => ({
     t: (key: string) => key,
-    locale: 'en-US',
+    locale: servedLocale,
   })),
 }));
 
@@ -118,6 +121,7 @@ const PARSED_PARAMS = {
 };
 
 beforeEach(() => {
+  servedLocale = DEFAULT_LOCALE;
   vi.clearAllMocks();
   getClimb.mockResolvedValue(CLIMB);
   fetchSprayWallPageData.mockResolvedValue(WALL_DATA);
@@ -235,6 +239,25 @@ describe('the spray climb page metadata', () => {
     expect(metadata.robots).toBeUndefined();
     expect(buildSprayOgImageUrl).toHaveBeenCalledWith(900, CLIMB.frames);
   });
+
+  it.each(SUPPORTED_LOCALES.filter((locale) => locale !== DEFAULT_LOCALE))(
+    '%s public spray climbs noindex while keeping the English canonical and card',
+    async (locale) => {
+      const args = {
+        board: boardFor('public'),
+        parsedParams: PARSED_PARAMS,
+        boardSlugParam: 'garage-wall',
+        wallParam: undefined,
+      };
+      const english = await buildSprayViewMetadata(args);
+      servedLocale = locale;
+      const metadata = await buildSprayViewMetadata(args);
+
+      expect(metadata.robots).toEqual({ index: false, follow: true });
+      expect(metadata.alternates).toEqual({ canonical: english.alternates?.canonical });
+      expect(metadata.openGraph?.images).toEqual(english.openGraph?.images);
+    },
+  );
 
   it('noindexes an unlisted wall, with no canonical and no card', async () => {
     const metadata = await buildSprayViewMetadata({
