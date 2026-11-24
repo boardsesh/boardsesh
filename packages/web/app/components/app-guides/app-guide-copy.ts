@@ -28,6 +28,9 @@ export async function getAppGuideMetadata(guide: AppGuidePage): Promise<Metadata
     locale: DEFAULT_LOCALE,
     availableLocales: APP_GUIDE_LOCALES,
     openGraphType: guide.id === 'spray-wall-apps' ? 'article' : 'website',
+    // The page title itself: the default would be the branded search title, a
+    // second " | Boardsesh" on a card that already names the site.
+    imageAlt: title,
   });
   // Comparison titles already name Boardsesh ("Boardsesh vs the Kilter Board App"),
   // and a long title (the hub's 58) has no room for " | Boardsesh" before the

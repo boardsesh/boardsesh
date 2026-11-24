@@ -295,6 +295,8 @@ describe('app guide pages before hydration', () => {
       // Never two "Boardsesh", and never past the 60-character cut.
       expect(title.match(/Boardsesh/g)?.length ?? 0).toBeLessThanOrEqual(1);
       expect(title.length, path).toBeLessThanOrEqual(60);
+      const images = metadata.openGraph?.images as { alt?: string }[] | undefined;
+      expect(images?.[0]?.alt, path).toBe(title.replace(/ \| Boardsesh$/, ''));
       expect(metadata.description?.length).toBeGreaterThanOrEqual(140);
       expect(metadata.description?.length).toBeLessThanOrEqual(155);
     }
