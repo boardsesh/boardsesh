@@ -119,7 +119,9 @@ Discover  (@ 40° +)                       ((board) (*))
 
 - On the Duo rail every action is a native item: account (`person.crop.circle.badge.ellipsis`, not
   the Profile tab's `person.crop.circle`) and + leading; the angle as a title item (it stays in the
-  bar), history and ⋯ or the board switcher, and the bulb, trailing. A bar item's image is not
+  bar), history and ⋯ or the board switcher, and the bulb, trailing. On Climbs + is the first row of
+  ⋯ on the rail too: UIKit does not keep the rail's bar items clear of the tab bar, and account, +,
+  history and ⋯ ran into it on the closed Duo. A bar item's image is not
   clipped (a photo shows square), react-native-screens loads any image source after it makes the
   item, and a bar item cannot draw initials, so the horizontal bar keeps the glass avatar.
 - On an iPad the trailing group stays native items (history and ⋯, or the board switcher) with the

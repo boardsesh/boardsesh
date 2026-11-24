@@ -20,7 +20,7 @@ vi.mock('../use-root-bar-items', () => {
       };
     },
     useBoardSwitcherBarItem: () => (ctrl.board ? stub('board') : null),
-    useClimbListBarItems: ({ createRow }: { createRow?: { label: string } | null }) => {
+    useClimbListBarItems: ({ createRow }: { createRow?: { label: string; onPress: () => void } | null }) => {
       ctrl.climbListCreateRow = createRow ?? null;
       return [stub('history', 'root.boardHistory'), stub('list-menu')];
     },
@@ -152,7 +152,7 @@ const ctrl = vi.hoisted(() => ({
   nativeLeftItems: null as BarItemStandIn[] | null,
   nativeRightItems: null as BarItemStandIn[] | null,
   nativeRightActions: undefined as ReactNode,
-  climbListCreateRow: null as { label: string } | null,
+  climbListCreateRow: null as { label: string; onPress: () => void } | null,
   // The scroll-edge store the native header was handed.
   nativeScrollEdge: undefined as unknown,
   nativeCenterActionWidths: undefined as { leading: number; trailing: number } | undefined,
@@ -845,8 +845,23 @@ describe('CollapsingTopChrome', () => {
         expect(angleButton(leadingIsland())).not.toBeNull();
         // The sheet closes; only then does the rail take over, with the native title item.
         act(() => ctrl.anglePickerOpenChange?.(false));
-        expect(labels(ctrl.nativeLeftItems)).toEqual(['account', 'create.label']);
+        expect(labels(ctrl.nativeLeftItems)).toEqual(['account']);
         expect(labels(ctrl.nativeRightItems)).toEqual(['40°', 'history', 'list-menu']);
+      });
+
+      it('moves + into ⋯ on Climbs, so the rail items stay clear of the tab bar', () => {
+        ctrl.board = board;
+        const onCreate = vi.fn();
+        render(
+          <CollapsingTopChrome
+            {...makeProps({ canCreate: true, onCreate, hideLight: true, climbListBarActions: climbList })}
+          />,
+        );
+        expect(labels(ctrl.nativeLeftItems)).toEqual(['account']);
+        expect(labels(ctrl.nativeRightItems)).toEqual(['40°', 'history', 'list-menu']);
+        expect(ctrl.climbListCreateRow).toMatchObject({ label: 'create.label' });
+        ctrl.climbListCreateRow?.onPress();
+        expect(onCreate).toHaveBeenCalledTimes(1);
       });
 
       it('keeps the angle on the rail beside the capsule, and logs no history anchor', () => {
