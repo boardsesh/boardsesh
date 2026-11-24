@@ -60,6 +60,7 @@ import {
 import { onGymDetailsEdited, REPORT_FIXING_GYM_FIELDS } from './directory-reports/lifecycle';
 import { afterCommit, transactionWithAfterCommit } from '../../../db/after-commit';
 import { managedGymImageKey, removeManagedGymImage } from '../../../services/gym-image-storage';
+import { getPostgresErrorCode } from '../../../utils/postgres-errors';
 
 // ============================================
 // Helpers
@@ -547,6 +548,14 @@ export function slugPresentFilter(requireSlug: boolean | undefined, slugColumn: 
 
 type GymMemberRole = 'admin' | 'editor' | 'member';
 
+/** Callers locking evidence must already hold the canonical gym row in their transaction. */
+export interface GymAccessOptions {
+  lock?: boolean;
+}
+
+const GYM_EDIT_MEMBER_ROLES = ['admin', 'editor'] as const;
+type GymAccessLevel = 'view' | 'edit' | 'grant' | 'admin';
+
 /**
  * Load a gym and the caller's per-gym role (null if not owner/member). Shared
  * building block for the gym gates below.
@@ -583,18 +592,67 @@ async function loadGymWithMemberRole(
  * global (boardType null) or scoped to one of the gym's board types. Shared by
  * the edit + grant gates and mirrored read-side in enrichGym.
  */
-async function hasGymCommunityAccess(gym: GymRow, userId: string, executor: GymAccessExecutor = db): Promise<boolean> {
-  const [roles, gymBoardTypeRows] = await Promise.all([
-    getUserCommunityRoles(userId, executor),
-    executor
-      .selectDistinct({ boardType: dbSchema.userBoards.boardType })
-      .from(dbSchema.userBoards)
-      .where(and(eq(dbSchema.userBoards.gymId, gym.id), isNull(dbSchema.userBoards.deletedAt))),
-  ]);
-  const gymBoardTypes = gymBoardTypeRows.map((row) => row.boardType);
-  return (
-    rolesGrantAdminOrLeader(roles, null) || gymBoardTypes.some((boardType) => rolesGrantAdminOrLeader(roles, boardType))
-  );
+async function hasGymCommunityAccess(
+  gym: GymRow,
+  userId: string,
+  executor: GymAccessExecutor = db,
+  options: GymAccessOptions = {},
+  knownRoles?: Awaited<ReturnType<typeof getUserCommunityRoles>>,
+): Promise<boolean> {
+  const roles = knownRoles ?? (await getUserCommunityRoles(userId, executor, options));
+  if (rolesGrantAdminOrLeader(roles, null)) return true;
+  const coveredTypes = [
+    ...new Set(
+      roles.flatMap((role) =>
+        role.boardType !== null && rolesGrantAdminOrLeader([role], role.boardType) ? [role.boardType] : [],
+      ),
+    ),
+  ];
+  if (coveredTypes.length === 0) return false;
+  const witness = executor
+    .select({ id: dbSchema.userBoards.id })
+    .from(dbSchema.userBoards)
+    .where(
+      and(
+        eq(dbSchema.userBoards.gymId, gym.id),
+        isNull(dbSchema.userBoards.deletedAt),
+        inArray(dbSchema.userBoards.boardType, coveredTypes),
+      ),
+    )
+    .orderBy(dbSchema.userBoards.id)
+    .limit(1);
+  try {
+    return (options.lock ? await witness.for('share', { noWait: true }) : await witness).length > 0;
+  } catch (error) {
+    if (getPostgresErrorCode(error) !== '55P03') throw error;
+    throw new GraphQLError('This board is changing. Retry the same action in a moment.', {
+      extensions: { code: 'CONFLICT' },
+    });
+  }
+}
+
+/** Website and delegated writes share the verdict; locking changes only the lifetime of its evidence. */
+async function userHasGymAccess(
+  gym: GymRow,
+  userId: string,
+  level: GymAccessLevel,
+  executor: GymAccessExecutor,
+  options: GymAccessOptions,
+): Promise<boolean> {
+  if (!options.lock && (gym.ownerId === userId || (level === 'view' && gym.isPublic))) return true;
+  const members = executor
+    .select({ role: dbSchema.gymMembers.role })
+    .from(dbSchema.gymMembers)
+    .where(and(eq(dbSchema.gymMembers.gymId, gym.id), eq(dbSchema.gymMembers.userId, userId)))
+    .limit(1);
+  const [member] = options.lock ? await members.for('share') : await members;
+  // Child-board actions may use a different role from the gym edit permission.
+  // Pin all existing role rows even when a membership already permits editing.
+  const roles = options.lock ? await getUserCommunityRoles(userId, executor, options) : undefined;
+  if (gym.ownerId === userId || (level === 'view' && gym.isPublic)) return true;
+  if (member?.role === 'admin' || ((level === 'edit' || level === 'view') && member?.role === 'editor')) return true;
+  if (level === 'admin') return false;
+  return hasGymCommunityAccess(gym, userId, executor, options, roles);
 }
 
 /**
@@ -607,16 +665,64 @@ export async function userCanEditGym(
   gym: typeof dbSchema.gyms.$inferSelect,
   userId: string,
   executor: GymAccessExecutor = db,
+  options: GymAccessOptions = {},
 ): Promise<boolean> {
-  if (gym.ownerId === userId) return true;
-  const [member] = await executor
-    .select({ role: dbSchema.gymMembers.role })
+  return userHasGymAccess(gym, userId, 'edit', executor, options);
+}
+
+export async function userCanGrantGymAccess(
+  gym: GymRow,
+  userId: string,
+  executor: GymAccessExecutor = db,
+  options: GymAccessOptions = {},
+): Promise<boolean> {
+  return userHasGymAccess(gym, userId, 'grant', executor, options);
+}
+
+export async function userCanAdminGym(
+  gym: GymRow,
+  userId: string,
+  executor: GymAccessExecutor = db,
+  options: GymAccessOptions = {},
+): Promise<boolean> {
+  return userHasGymAccess(gym, userId, 'admin', executor, options);
+}
+
+/** SQL twin of userCanEditGym, applied before pagination. Keep its parity regression with this rule. */
+export function managedGymPredicate(userId: string, executor: GymAccessExecutor = db) {
+  const staff = executor
+    .select({ gymId: dbSchema.gymMembers.gymId })
     .from(dbSchema.gymMembers)
-    .where(and(eq(dbSchema.gymMembers.gymId, gym.id), eq(dbSchema.gymMembers.userId, userId)))
-    .limit(1);
-  const role = member?.role as GymMemberRole | undefined;
-  if (role === 'admin' || role === 'editor') return true;
-  return hasGymCommunityAccess(gym, userId, executor);
+    .where(and(eq(dbSchema.gymMembers.userId, userId), inArray(dbSchema.gymMembers.role, GYM_EDIT_MEMBER_ROLES)));
+  const coveringRole = executor
+    .select({ userId: dbSchema.communityRoles.userId })
+    .from(dbSchema.communityRoles)
+    .where(
+      and(
+        eq(dbSchema.communityRoles.userId, userId),
+        inArray(dbSchema.communityRoles.role, ['admin', 'community_leader']),
+        or(
+          isNull(dbSchema.communityRoles.boardType),
+          exists(
+            executor
+              .select({ id: dbSchema.userBoards.id })
+              .from(dbSchema.userBoards)
+              .where(
+                and(
+                  eq(dbSchema.userBoards.gymId, dbSchema.gyms.id),
+                  isNull(dbSchema.userBoards.deletedAt),
+                  eq(dbSchema.userBoards.boardType, dbSchema.communityRoles.boardType),
+                ),
+              ),
+          ),
+        ),
+      ),
+    );
+  return and(
+    isNull(dbSchema.gyms.deletedAt),
+    isNull(dbSchema.gyms.mergedIntoGymId),
+    or(eq(dbSchema.gyms.ownerId, userId), inArray(dbSchema.gyms.id, staff), exists(coveringRole)),
+  );
 }
 
 /**
@@ -629,9 +735,11 @@ export async function requireGymOwnerOrAdmin(
   gymUuid: string,
   userId: string,
   executor: GymAccessExecutor = db,
+  options: GymAccessOptions = {},
 ): Promise<GymRow> {
-  const { gym, isOwner, memberRole } = await loadGymWithMemberRole(gymUuid, userId, executor);
-  if (!isOwner && memberRole !== 'admin') {
+  const gym = await resolveCanonicalGymByUuid(gymUuid, executor);
+  if (!gym) throw new GraphQLError('Gym not found', { extensions: { code: 'NOT_FOUND' } });
+  if (!(await userCanAdminGym(gym, userId, executor, options))) {
     throw new GraphQLError('Not authorized: must be gym owner or admin', { extensions: { code: 'FORBIDDEN' } });
   }
   return gym;
@@ -811,16 +919,11 @@ export async function requireGymEditAccess(
   gymUuid: string,
   userId: string,
   executor: GymAccessExecutor = db,
+  options: GymAccessOptions = {},
 ): Promise<GymRow> {
-  const { gym, isOwner, memberRole } = await loadGymWithMemberRole(gymUuid, userId, executor);
-  if (
-    isOwner ||
-    memberRole === 'admin' ||
-    memberRole === 'editor' ||
-    (await hasGymCommunityAccess(gym, userId, executor))
-  ) {
-    return gym;
-  }
+  const gym = await resolveCanonicalGymByUuid(gymUuid, executor);
+  if (!gym) throw new GraphQLError('Gym not found', { extensions: { code: 'NOT_FOUND' } });
+  if (await userCanEditGym(gym, userId, executor, options)) return gym;
   throw new GraphQLError('Not authorized to edit this gym', { extensions: { code: 'FORBIDDEN' } });
 }
 
@@ -832,14 +935,12 @@ export async function requireGymEditAccess(
 export async function requireGymGrantAccess(
   gymUuid: string,
   userId: string,
+  executor: GymAccessExecutor = db,
+  options: GymAccessOptions = {},
 ): Promise<typeof dbSchema.gyms.$inferSelect> {
-  const { gym, isOwner, memberRole } = await loadGymWithMemberRole(gymUuid, userId);
-  if (isOwner || memberRole === 'admin') {
-    return gym;
-  }
-  if (await hasGymCommunityAccess(gym, userId)) {
-    return gym;
-  }
+  const gym = await resolveCanonicalGymByUuid(gymUuid, executor);
+  if (!gym) throw new GraphQLError('Gym not found', { extensions: { code: 'NOT_FOUND' } });
+  if (await userCanGrantGymAccess(gym, userId, executor, options)) return gym;
   throw new Error('Not authorized to grant write access for this gym');
 }
 
@@ -868,17 +969,16 @@ async function withGymStaffLock<T>(
       .limit(1)
       .for('update');
     if (!locked) throw new Error('Gym not found');
-    if (locked.ownerId !== userId) {
-      const [member] = await tx
-        .select({ role: dbSchema.gymMembers.role })
-        .from(dbSchema.gymMembers)
-        .where(and(eq(dbSchema.gymMembers.gymId, gym.id), eq(dbSchema.gymMembers.userId, userId)))
-        .limit(1);
-      const isAdmin = member?.role === 'admin';
-      if (!isAdmin && !(allowCommunityAccess && (await hasGymCommunityAccess(gym, userId, tx)))) {
-        throw new Error(unauthorizedMessage);
-      }
-    }
+    if (
+      !(await userHasGymAccess(
+        { ...gym, ownerId: locked.ownerId },
+        userId,
+        allowCommunityAccess ? 'grant' : 'admin',
+        tx,
+        {},
+      ))
+    )
+      throw new Error(unauthorizedMessage);
     return work(tx);
   });
 }
@@ -899,9 +999,11 @@ async function withGymStaffLock<T>(
 export async function viewerCanSeeGym(
   gym: typeof dbSchema.gyms.$inferSelect,
   viewerId: string | null | undefined,
+  executor: GymAccessExecutor = db,
+  options: GymAccessOptions = {},
 ): Promise<boolean> {
-  if (gym.isPublic) return true;
-  return viewerId ? userCanEditGym(gym, viewerId) : false;
+  if (!viewerId) return gym.isPublic;
+  return userHasGymAccess(gym, viewerId, 'view', executor, options);
 }
 
 /**

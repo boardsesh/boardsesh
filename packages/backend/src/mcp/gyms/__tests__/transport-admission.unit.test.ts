@@ -6,7 +6,15 @@ import { z } from 'zod';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PartnerApiPrincipal, PartnerBearerResult } from '../../../auth/partner/bearer';
 
-const fixtures = vi.hoisted(() => ({ consume: vi.fn(), readBody: vi.fn(), prepare: vi.fn(), runWrite: vi.fn() }));
+const fixtures = vi.hoisted(() => ({
+  consume: vi.fn(),
+  readBody: vi.fn(),
+  prepare: vi.fn(),
+  runWrite: vi.fn(),
+  log: vi.fn(),
+  recordUsage: vi.fn(),
+  recordAddressRefusal: vi.fn(),
+}));
 vi.mock('../media', () => ({ prepareGymMcpImage: fixtures.prepare }));
 vi.mock('../domain', () => ({ resolveGymForTool: vi.fn(), executeGymDocument: vi.fn() }));
 vi.mock('../dispatch', () => ({
@@ -29,8 +37,11 @@ vi.mock('../../../handlers/public-api/workouts', () => ({
   readWorkoutBody: fixtures.readBody,
   WorkoutBodyError: class extends Error {},
 }));
-vi.mock('../../../utils/logger', () => ({ logger: { info: vi.fn(), error: vi.fn() } }));
-vi.mock('../../../services/public-api-usage', () => ({ recordPublicApiRequest: vi.fn() }));
+vi.mock('../../../utils/logger', () => ({ logger: { info: fixtures.log, error: vi.fn(), warn: vi.fn() } }));
+vi.mock('../../../services/public-api-usage', () => ({
+  recordPublicApiRequest: fixtures.recordUsage,
+  recordGymMcpPendingAuthAddressRefusal: fixtures.recordAddressRefusal,
+}));
 
 import { createGymMcpHandler } from '../transport';
 import { registerGymMcpMediaTools } from '../media-tools';
@@ -120,6 +131,50 @@ beforeEach(() => {
 });
 
 describe('gym MCP authentication admission', () => {
+  it('identifies pending-auth address refusals with a fixed event field and existing anonymous usage metrics', async () => {
+    const authentication = deferred<PartnerBearerResult>();
+    const handler = createGymMcpHandler({
+      mode: 'on',
+      partnerMode: 'open',
+      authenticate: () => authentication.promise,
+    });
+    const pending = Array.from({ length: 4 }, () => request(handler, '198.51.100.19', 'private-bearer-marker'));
+    try {
+      const refused = await Promise.all(
+        Array.from({ length: 5 }, () => request(handler, '198.51.100.19', 'private-bearer-marker')),
+      );
+      expect(refused.every((result) => result.status === 429)).toBe(true);
+      expect(fixtures.log).toHaveBeenCalledTimes(5);
+      for (const event of fixtures.log.mock.calls) {
+        expect(event).toEqual([
+          'Gym MCP request',
+          {
+            requestId: expect.any(String),
+            clientId: undefined,
+            connectionId: undefined,
+            tool: undefined,
+            status: 429,
+            completed: false,
+            admissionRefusal: 'pending_auth_address_cap',
+          },
+        ]);
+      }
+      expect(fixtures.recordUsage).toHaveBeenCalledTimes(5);
+      expect(fixtures.recordUsage).toHaveBeenCalledWith(undefined, 'mcp', 429, expect.any(Number));
+      expect(fixtures.recordAddressRefusal.mock.calls).toEqual([[], [], [], [], []]);
+      expect(JSON.stringify([fixtures.log.mock.calls, fixtures.recordUsage.mock.calls])).not.toMatch(
+        /198\.51\.100\.19|private-bearer-marker/,
+      );
+      authentication.resolve({ refusal: 'unknown' });
+      await Promise.all(pending);
+      expect(fixtures.recordAddressRefusal).toHaveBeenCalledTimes(5);
+      expect(fixtures.log.mock.calls.slice(5).every((event) => event[1]?.admissionRefusal === undefined)).toBe(true);
+    } finally {
+      authentication.resolve({ refusal: 'unknown' });
+      await Promise.allSettled(pending);
+    }
+  });
+
   it('bounds one junk address before token lookup and preserves invalid-token charging/challenges', async () => {
     const authentication = deferred<PartnerBearerResult>();
     const authenticate = vi.fn(() => authentication.promise);
@@ -201,6 +256,7 @@ describe('gym MCP authentication admission', () => {
     const handler = createGymMcpHandler({ mode: 'on', partnerMode: 'open', authenticate, createServer: serverFor });
     expect((await request(handler, '198.51.100.13')).status).toBe(503);
     expect((await request(handler, '198.51.100.13', 'valid')).status).toBe(200);
+    expect(fixtures.recordAddressRefusal).not.toHaveBeenCalled();
   });
 
   it('aborts the actual SDK media callback on premature HTTP response close, without attaching the image', async () => {

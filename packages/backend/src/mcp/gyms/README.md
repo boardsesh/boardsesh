@@ -34,6 +34,16 @@ savepoints. Effects such as live events run after the outer commit. Receipt
 payloads expire after seven days; expired keys remain tombstones so a delayed
 retry cannot silently repeat a write.
 
+Gym access uses the website's shared edit, grant, admin and visibility rules in
+`resolvers/social/gyms.ts`, with an optional authorization-evidence lock. That
+module also owns the managed-list SQL predicate and its role-parity tests.
+Writes prepare a closure once, inside the authorized transaction, and reuse its
+canonical arguments and child bindings for the resolver call. Retries prepare
+again under fresh locks. Initial operation permissions belong to the resolver;
+receipt replay uses those same shared guards without repeating the mutation.
+Deleted/unlinked replay exceptions apply only to matching operation/input
+receipts. Web and MCP iframe snippets share `@boardsesh/kiosk` builders.
+
 ## Resolver authoring inside a delegated write
 
 Gym MCP writes use one outer database transaction for authorization, the

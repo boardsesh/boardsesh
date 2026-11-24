@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   resolveGym: vi.fn(),
   canSeeGym: vi.fn(),
   requireGymEdit: vi.fn(),
+  sharedEdit: undefined as typeof import('../../../graphql/resolvers/social/gyms').userCanEditGym | undefined,
   canReadBoard: vi.fn(),
   records: [] as QueryRecord[],
   events: [] as string[],
@@ -28,18 +29,21 @@ const state = vi.hoisted(() => ({
   boardLockFailure: undefined as unknown,
 }));
 vi.mock('../../../db/client', () => ({ db: { select: (...arguments_: unknown[]) => state.select(...arguments_) } }));
-vi.mock('../../../graphql/resolvers/social/gyms', () => ({
-  resolveCanonicalGymByUuid: state.resolveGym,
-  viewerCanSeeGym: state.canSeeGym,
-  requireGymEditAccess: state.requireGymEdit,
-  requireGymGrantAccess: vi.fn(),
-  requireGymOwnerOrAdmin: vi.fn(),
-  enrichGym: vi.fn(),
-}));
+vi.mock('../../../graphql/resolvers/social/gyms', async (importOriginal) => {
+  const shared = await importOriginal<typeof import('../../../graphql/resolvers/social/gyms')>();
+  state.sharedEdit = shared.userCanEditGym;
+  return {
+    ...shared,
+    resolveCanonicalGymByUuid: state.resolveGym,
+    viewerCanSeeGym: state.canSeeGym,
+    userCanEditGym: state.requireGymEdit,
+    enrichGym: vi.fn(),
+  };
+});
 vi.mock('../../../services/privacy', () => ({ canAccessResource: state.canReadBoard }));
 vi.mock('../../../graphql/mask-error', () => ({ isDatabaseLeakError: () => false }));
 
-import { assertBoardInGym, assertGymActionPermission, authorizeGymBoardRemoval, resolveGymForTool } from '../domain';
+import { assertBoardInGym, authorizeGymBoardRemoval, resolveGymForTool } from '../domain';
 
 const GYM_UUID = '00000000-0000-4000-8000-000000000001';
 const BOARD_UUID = '00000000-0000-4000-8000-000000000002';
@@ -124,8 +128,10 @@ describe('gym MCP authorization row locks', () => {
     state.resolveGym.mockResolvedValue({ ...state.lockedGym });
     state.canSeeGym.mockResolvedValue(true);
     state.canReadBoard.mockResolvedValue(true);
-    state.requireGymEdit.mockImplementation(async () => {
-      state.events.push('authorize');
+    state.requireGymEdit.mockImplementation(async (...arguments_: Parameters<NonNullable<typeof state.sharedEdit>>) => {
+      const allowed = await state.sharedEdit!(...arguments_);
+      if (allowed) state.events.push('authorize');
+      return allowed;
     });
   });
 
@@ -193,7 +199,7 @@ describe('gym MCP authorization row locks', () => {
     await expect(resolveGymForTool(GYM_UUID, ACTOR, true, true)).rejects.toMatchObject({
       extensions: { code: 'FORBIDDEN' },
     });
-    expect(state.requireGymEdit).not.toHaveBeenCalled();
+    expect(state.requireGymEdit).toHaveBeenCalledOnce();
   });
 
   it('uses the owner from the locked gym row rather than an earlier ownership snapshot', async () => {
@@ -211,15 +217,9 @@ describe('gym MCP authorization row locks', () => {
     state.roles = [{ role: 'community_leader', boardType: 'kilter' }];
     await resolveGymForTool(GYM_UUID, ACTOR, true, true);
     expect(state.records.some((query) => query.table === 'user_boards')).toBe(false);
-    await expect(
-      assertGymActionPermission(
-        'grant_gym_edit_access',
-        {},
-        { id: 11, uuid: GYM_UUID },
-        { connectionId: 'test', isAuthenticated: true, userId: ACTOR },
-        false,
-      ),
-    ).rejects.toMatchObject({ extensions: { code: 'FORBIDDEN' } });
+    await expect(resolveGymForTool(GYM_UUID, ACTOR, true, true, 'grant')).rejects.toMatchObject({
+      extensions: { code: 'FORBIDDEN' },
+    });
     expect(state.records.some((query) => query.table === 'user_boards')).toBe(true);
   });
 

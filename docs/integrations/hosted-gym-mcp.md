@@ -100,7 +100,9 @@ Pilot client metadata is restricted to the exact HTTPS origins
 OAuth client persistence, including requests without a browser session.
 `GYM_MCP_PILOT_CLIENT_ORIGINS` replaces this list with comma-separated HTTPS
 origins; include the defaults when adding another trusted assistant. An empty
-list refuses every metadata identity; malformed origins fail configuration.
+list refuses every metadata identity. Malformed origins also refuse gym metadata
+and emit `INVALID_PILOT_CLIENT_ORIGINS` at most once per minute; training
+integrations keep loading normally.
 Subdomains and non-default ports require their own explicit entries. This
 restriction applies in `pilot`; `on` admits other validated public HTTPS
 metadata identities. The providers' current published identities are
@@ -124,6 +126,13 @@ most 60 seconds and respects restrictive cache directives such as `no-store`,
 `private`, and `no-cache`. Metadata fetching finishes before OAuth database
 locks are taken. Public clients use S256 PKCE; client secrets and remote key
 fetches are not required.
+
+The per-address authentication cap is shared by users behind a provider's
+egress address. The fixed `pending_auth_address_refusals` field in per-minute
+Public API Usage summaries counts this branch in the anonymous MCP bucket;
+request logs also identify `admissionRefusal=pending_auth_address_cap`.
+Neither records an IP address or bearer token. Review this counter before
+opening `GYM_MCP_MODE=on` so shared-provider bursts can be measured.
 
 Successful mutation receipts retain their result for seven days. The hourly
 sweeper drains expired result payloads in transactions of at most 1,000 rows
@@ -149,3 +158,6 @@ Before opening access, verify a real ChatGPT and Claude browser sign-in, a
 read-only connection, an approved write, a denied role boundary, token refresh,
 and disconnect from Connected apps. A code change alone does not establish that
 the public endpoint is activated or that either provider's live client passed.
+Before enabling `on`, decide the open-registration policy and retention of
+unconnected CIMD clients; the current implementation does not expire those
+client records. The pilot origin restriction remains a pilot-only policy.

@@ -10,7 +10,7 @@ import { readWorkoutBody, WorkoutBodyError } from '../../handlers/public-api/wor
 import { PartnerRateLimited, RateLimitLedger } from '../../handlers/partner-rate-limits';
 import { getPartnerLimitIdentity } from '../../utils/client-ip';
 import { logger } from '../../utils/logger';
-import { recordPublicApiRequest } from '../../services/public-api-usage';
+import { recordGymMcpPendingAuthAddressRefusal, recordPublicApiRequest } from '../../services/public-api-usage';
 import { GYM_MCP_RESOURCE, GYM_MCP_SCOPES, readGymMcpMode, type GymMcpMode } from './configuration';
 import { GymMcpRequestLifetime, runWithGymMcpRequestLifetime } from './request-lifetime';
 
@@ -122,6 +122,7 @@ export function createGymMcpHandler({
     res.setHeader('X-Request-Id', requestId);
     let principal: PartnerApiPrincipal | undefined;
     let selectedTool: string | undefined;
+    let admissionRefusal: 'pending_auth_address_cap' | undefined;
     let reservedConnection: string | undefined;
     let reservedAddress: string | undefined;
     let reservedRequest = false;
@@ -176,6 +177,8 @@ export function createGymMcpHandler({
       // rate budgets remain account/client scoped.
       const pendingAddressCalls = pendingAuthByAddress.get(authenticationAddress) ?? 0;
       if (pendingAddressCalls >= MAX_PENDING_AUTH_PER_ADDRESS) {
+        admissionRefusal = 'pending_auth_address_cap';
+        recordGymMcpPendingAuthAddressRefusal();
         reply(res, 429, { error: 'rate_limited' }, { 'Retry-After': '2' });
         return true;
       }
@@ -284,6 +287,7 @@ export function createGymMcpHandler({
         tool: selectedTool,
         status: res.statusCode,
         completed: responseCompleted,
+        admissionRefusal,
       });
     }
     return true;

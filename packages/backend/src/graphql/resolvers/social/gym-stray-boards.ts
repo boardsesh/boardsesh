@@ -548,6 +548,20 @@ type AttachTarget = Pick<StrayBoardCandidate, 'boardId' | 'currentGymId' | 'curr
 export const SYSTEM_BOARD_REMOVE_MESSAGE = 'This board comes from public board data. Delete it instead, or report it.';
 export const SYSTEM_BOARD_REMOVE_CODE = 'SYSTEM_BOARD_DELETE_INSTEAD';
 
+/** System-owned boards require the same global-admin exception on a write or its receipt replay. */
+export async function requireBoardDetachmentAccess(
+  board: { ownerId: string },
+  userId: string,
+  executor: ModerationExecutor = db,
+): Promise<void> {
+  if (
+    board.ownerId === SYSTEM_BOARD_OWNER_ID &&
+    !rolesGrantAdmin(await getUserCommunityRoles(userId, executor), null)
+  ) {
+    throw new GraphQLError(SYSTEM_BOARD_REMOVE_MESSAGE, { extensions: { code: SYSTEM_BOARD_REMOVE_CODE } });
+  }
+}
+
 /**
  * A board this gym's staff removed and may put back by uuid, though the stray
  * list no longer offers it, whoever owns it: it restores the listing the board
@@ -771,9 +785,7 @@ export const socialGymStrayBoardMutations = {
         extensions: { code: 'BAD_USER_INPUT' },
       });
     }
-    if (board.ownerId === SYSTEM_BOARD_OWNER_ID && !rolesGrantAdmin(await getUserCommunityRoles(userId), null)) {
-      throw new GraphQLError(SYSTEM_BOARD_REMOVE_MESSAGE, { extensions: { code: SYSTEM_BOARD_REMOVE_CODE } });
-    }
+    await requireBoardDetachmentAccess(board, userId);
 
     // The role used, read while the board still counts toward the gym's board
     // types (a covering community role may rest on this very board). A creator

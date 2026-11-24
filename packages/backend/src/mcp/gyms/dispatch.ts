@@ -6,7 +6,7 @@ import { gymMcpWriteReceipts } from '@boardsesh/db/schema/auth';
 import { db } from '../../db/client';
 import { getPostgresErrorCode, isUniqueViolation } from '../../utils/postgres-errors';
 import { withGymMcpWrite, type GymMcpPrincipal, type GymMcpScope } from './auth';
-import { findGymMcpTool } from './registry';
+import { findGymMcpTool, type GymMcpAuthorizedAction } from './registry';
 import type { GymToolResult } from './domain';
 
 class GymMcpReceiptConflict extends Error {}
@@ -82,7 +82,9 @@ export async function executeGymMcpWriteAction(
       eq(gymMcpWriteReceipts.idempotencyKey, idempotencyKey),
     );
     const [receipt] = await db.select().from(gymMcpWriteReceipts).where(receiptKey).limit(1);
-    await authorize?.(receipt !== undefined);
+    const matchedReplay =
+      receipt !== undefined && receipt.operationName === operationName && receipt.inputHash === inputHash;
+    await authorize?.(matchedReplay);
     if (receipt) {
       if (receipt.expiresAt.getTime() <= Date.now() || receipt.result === null) {
         throw new GraphQLError('That retry key has expired. Check the gym before starting a new action.', {
@@ -150,10 +152,15 @@ export async function executeGymMcpTool(
   }
   const parsedArguments = tool.inputSchema.parse(arguments_);
   const context = createGymMcpContext(principal);
-  const work = () => tool.run(parsedArguments, context);
+  let prepared: GymMcpAuthorizedAction | undefined;
+  const work = () => {
+    if (!prepared) throw new Error('The gym action was not prepared in its transaction.');
+    return prepared();
+  };
   return tool.readOnly
-    ? work()
-    : executeGymMcpWriteAction(principal, tool.name, parsedArguments, tool.scope, work, (replay) =>
-        tool.authorize(parsedArguments, context, replay),
-      );
+    ? tool.run(parsedArguments, context)
+    : executeGymMcpWriteAction(principal, tool.name, parsedArguments, tool.scope, work, async (replay) => {
+        prepared = undefined;
+        prepared = await tool.authorize(parsedArguments, context, replay);
+      });
 }

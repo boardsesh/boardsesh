@@ -75,6 +75,32 @@ describe('gym MCP mutation receipts', () => {
     );
   });
 
+  it('runs the prepared action once without repeating the registry authorization pass', async () => {
+    const prepared = vi.fn(async () => result);
+    mocks.authorize.mockResolvedValue(prepared);
+    mocks.findTool.mockReturnValue({
+      name: 'add_gym_comment',
+      scope: 'gyms:write',
+      readOnly: false,
+      inputSchema: z.object({ gymUuid: z.string(), idempotencyKey: z.string(), body: z.string() }),
+      authorize: mocks.authorize,
+      run: mocks.run,
+    });
+    await expect(executeGymMcpTool(principal, 'add_gym_comment', arguments_)).resolves.toEqual(result);
+    expect(mocks.authorize).toHaveBeenCalledOnce();
+    expect(prepared).toHaveBeenCalledOnce();
+    expect(mocks.run).not.toHaveBeenCalled();
+  });
+
+  it('does not allow deleted-resource replay exceptions for a mismatched receipt', async () => {
+    mocks.receipt.mockResolvedValue([receipt({ operationName: 'delete_gym_board' })]);
+    await expect(
+      executeGymMcpWriteAction(principal, 'add_gym_comment', arguments_, 'gyms:write', mocks.run, mocks.authorize),
+    ).rejects.toMatchObject({ extensions: { code: 'IDEMPOTENCY_CONFLICT' } });
+    expect(mocks.authorize).toHaveBeenCalledWith(false);
+    expect(mocks.run).not.toHaveBeenCalled();
+  });
+
   it('rechecks current gym authority before replay and does not repeat the action', async () => {
     mocks.receipt.mockResolvedValue([receipt()]);
     await expect(

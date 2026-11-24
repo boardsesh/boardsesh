@@ -16,6 +16,7 @@ import { logger } from '../../../utils/logger';
 import { encodeOffsetCursor, decodeOffsetCursor } from '../../../utils/feed-cursor';
 import { sprayClimbVisibilityCondition, sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
 import { readableSocialEntityIds } from './entity-read-access';
+import { GraphQLError } from 'graphql';
 import { validateEntityExists } from './entity-validation';
 import { lockReferencedClimb } from '../climbs/spray-climb-lock';
 import { publishSocialEvent } from '../../../events/index';
@@ -44,6 +45,12 @@ type CommentRow = {
   downvotes: number;
   userVote: number | null;
 };
+
+/** Author-only edits and removals, including receipt reauthorization, share this rule. */
+export function requireCommentAuthor(comment: { userId: string }, userId: string, action: 'edit' | 'delete'): void {
+  if (comment.userId !== userId)
+    throw new GraphQLError(`You can only ${action} your own comments`, { extensions: { code: 'FORBIDDEN' } });
+}
 
 function mapCommentRow(row: CommentRow) {
   const isDeleted = row.deletedAt !== null;
@@ -616,9 +623,7 @@ export const socialCommentMutations = {
     if (!comment) {
       throw new Error('Comment not found');
     }
-    if (comment.userId !== userId) {
-      throw new Error('You can only edit your own comments');
-    }
+    requireCommentAuthor(comment, userId, 'edit');
     if (comment.deletedAt) {
       throw new Error('Cannot edit a deleted comment');
     }
@@ -741,9 +746,7 @@ export const socialCommentMutations = {
     if (!comment) {
       throw new Error('Comment not found');
     }
-    if (comment.userId !== userId) {
-      throw new Error('You can only delete your own comments');
-    }
+    requireCommentAuthor(comment, userId, 'delete');
     if (comment.deletedAt) {
       return true; // Already deleted
     }

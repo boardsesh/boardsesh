@@ -312,18 +312,24 @@ async function viewerCanAdminGym(gymId: number, userId: string, executor: BoardE
  *
  * `viewerMayDeleteBoard` is the same rule over pre-loaded authority, for
  * `UserBoard.canDelete`. Change both together.
+ * A matching receipt may skip visibility for an already-deleted row only;
+ * its current actor authority and claim probation still apply.
  */
 export async function requireBoardDeleteAccess(
   userId: string,
-  board: Pick<typeof dbSchema.userBoards.$inferSelect, 'uuid' | 'ownerId' | 'gymId'>,
+  board: Pick<typeof dbSchema.userBoards.$inferSelect, 'uuid' | 'ownerId' | 'gymId'> & { deletedAt?: Date | null },
   executor: BoardEditExecutor = db,
+  options: { deletedReceiptReplay?: boolean } = {},
 ): Promise<BoardModerationActorRole> {
   if (board.ownerId === userId) return 'board_owner';
   const actorRole = await boardDeleteAuthority(userId, board, executor);
   if (!actorRole) {
     throw new Error('Not authorized to delete this board');
   }
-  if (!(await canAccessResource('board', board.uuid, userId, executor))) {
+  if (
+    !(options.deletedReceiptReplay && board.deletedAt != null) &&
+    !(await canAccessResource('board', board.uuid, userId, executor))
+  ) {
     throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
   }
   return actorRole;

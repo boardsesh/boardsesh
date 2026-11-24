@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectionContext, GymGradeComparison } from '@boardsesh/shared-schema';
 import { z } from 'zod';
 import { GraphQLError } from 'graphql';
+import { buildBoardEmbedSnippet, buildLeaderboardEmbedSnippet } from '@boardsesh/kiosk';
 
 const domain = vi.hoisted(() => ({
   resolveGymForTool: vi.fn(),
@@ -12,7 +13,7 @@ const domain = vi.hoisted(() => ({
   executeGymDocument: vi.fn(),
   listManagedGyms: vi.fn(),
   listLinkableBoards: vi.fn(),
-  assertGymActionPermission: vi.fn(),
+  assertGymReplayPermission: vi.fn(),
   authorizeGymBoardRemoval: vi.fn(),
 }));
 vi.mock('../domain', () => domain);
@@ -251,6 +252,62 @@ describe('gym MCP action registry', () => {
     );
   });
 
+  it('prepares a write once and leaves first-execution action rights to its resolver', async () => {
+    const tool = findGymMcpTool('update_gym_board')!;
+    const prepared = await tool.authorize(
+      { gymUuid, boardUuid, idempotencyKey, changes: { name: 'New wall' } },
+      context,
+      false,
+    );
+    expect(domain.executeGymDocument).not.toHaveBeenCalled();
+    await prepared();
+    expect(domain.resolveGymForTool).toHaveBeenCalledOnce();
+    expect(domain.assertBoardInGym).toHaveBeenCalledOnce();
+    expect(domain.assertGymReplayPermission).not.toHaveBeenCalled();
+    expect(domain.executeGymDocument).toHaveBeenCalledOnce();
+  });
+
+  it('rechecks operation rights for a replay without executing its prepared write', async () => {
+    await findGymMcpTool('delete_gym_board')!.authorize(
+      { gymUuid, boardUuid, idempotencyKey, confirm: true },
+      context,
+      true,
+    );
+    expect(domain.assertBoardInGym).toHaveBeenCalledWith(boardUuid, 42, 'actor', true);
+    expect(domain.assertGymReplayPermission).toHaveBeenCalledWith(
+      'delete_gym_board',
+      expect.objectContaining({ gymUuid: canonicalGymUuid }),
+      expect.objectContaining({ id: 42 }),
+      context,
+    );
+    expect(domain.executeGymDocument).not.toHaveBeenCalled();
+  });
+
+  it('selects grant authority before preparing a staff access change', async () => {
+    await findGymMcpTool('grant_gym_edit_access')!.authorize(
+      { gymUuid, userId: 'recipient', idempotencyKey },
+      context,
+      false,
+    );
+    expect(domain.resolveGymForTool).toHaveBeenCalledWith(gymUuid, 'actor', true, true, 'grant');
+  });
+
+  it('chooses the creator unlink once while preparing a board removal', async () => {
+    domain.authorizeGymBoardRemoval.mockResolvedValue({ gym: { uuid: canonicalGymUuid }, ownBoard: true });
+    const prepared = await findGymMcpTool('remove_board_from_gym')!.authorize(
+      { gymUuid, boardUuid, idempotencyKey, confirm: true },
+      context,
+      false,
+    );
+    await prepared();
+    expect(domain.authorizeGymBoardRemoval).toHaveBeenCalledOnce();
+    expect(domain.executeGymDocument).toHaveBeenCalledWith(
+      'linkBoard',
+      { input: { boardUuid, gymUuid: null } },
+      context,
+    );
+  });
+
   it('does not execute a cross-gym child action', async () => {
     domain.assertKioskInGym.mockRejectedValueOnce(new Error('The gym or item is unavailable.'));
     await expect(
@@ -275,6 +332,24 @@ describe('gym MCP action registry', () => {
     );
   });
 
+  it.each([false, true])(
+    'refuses a gym-target or unreadable report before first execution or replay (%s)',
+    async (replay) => {
+      domain.assertReportInGym.mockRejectedValueOnce(
+        new GraphQLError('The gym or item is unavailable.', { extensions: { code: 'NOT_FOUND' } }),
+      );
+      await expect(
+        findGymMcpTool('keep_reported_gym_board')!.authorize(
+          { gymUuid, reportUuid: boardUuid, idempotencyKey },
+          context,
+          replay,
+        ),
+      ).rejects.toMatchObject({ extensions: { code: 'NOT_FOUND' } });
+      expect(domain.assertReportInGym).toHaveBeenCalledWith(boardUuid, 42, 'actor');
+      expect(domain.executeGymDocument).not.toHaveBeenCalled();
+    },
+  );
+
   it('describes post-commit claim email as requested, rather than already delivered', async () => {
     domain.executeGymDocument.mockResolvedValueOnce({
       requestGymClaim: { status: 'email_sent', email: 'staff@gym.example' },
@@ -296,6 +371,16 @@ describe('gym MCP action registry', () => {
     const embeds = result.boardEmbeds as Array<{ snippet: string }>;
     expect(embeds).toHaveLength(1);
     expect(embeds[0]?.snippet).toContain('&quot;&lt;wall&gt;&quot;');
+    expect(embeds[0]?.snippet).toBe(
+      buildBoardEmbedSnippet({
+        siteOrigin: 'https://www.boardsesh.com',
+        boardUuid: canonicalGymUuid,
+        boardName: 'A "<wall>"',
+      }),
+    );
+    expect(result.leaderboardEmbed).toBe(
+      buildLeaderboardEmbedSnippet({ siteOrigin: 'https://www.boardsesh.com', gymUuid, gymName: 'Crew "<gym>"' }),
+    );
     expect(JSON.stringify(result)).not.toContain(boardUuid);
     expect(
       buildGymSharingLinks({ uuid: gymUuid, slug: 'private', name: 'Private', isPublic: false }, [], []),

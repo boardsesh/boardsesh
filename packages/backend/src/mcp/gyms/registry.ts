@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { getBoardSelectorOptions } from '@boardsesh/board-constants/product-sizes';
+import { buildBoardEmbedSnippet, buildLeaderboardEmbedSnippet } from '@boardsesh/kiosk';
 import {
   UpdateGymInputSchema,
   UpdateBoardInputSchema,
@@ -20,7 +21,7 @@ import {
   assertCommentInGym,
   assertKioskInGym,
   assertReportInGym,
-  assertGymActionPermission,
+  assertGymReplayPermission,
   authorizeGymBoardRemoval,
   executeGymDocument,
   listLinkableBoards,
@@ -58,6 +59,8 @@ type GymCategory =
   | 'insights'
   | 'public';
 
+export type GymMcpAuthorizedAction = (execute?: GymToolExecutor) => Promise<GymToolResult>;
+
 export interface GymMcpTool {
   name: string;
   description: string;
@@ -68,7 +71,7 @@ export interface GymMcpTool {
   inputSchema: z.ZodObject<z.ZodRawShape>;
   /** Available for drift checks; never a caller-provided GraphQL document. */
   document?: GymMcpDocumentName;
-  authorize(arguments_: unknown, context: ConnectionContext, replay: boolean): Promise<void>;
+  authorize(arguments_: unknown, context: ConnectionContext, replay: boolean): Promise<GymMcpAuthorizedAction>;
   run(arguments_: unknown, context: ConnectionContext, execute?: GymToolExecutor): Promise<GymToolResult>;
 }
 
@@ -80,13 +83,30 @@ function defineTool<Shape extends z.ZodRawShape>(options: {
   scope?: GymMcpScope;
   write?: boolean;
   destructive?: boolean;
-  authorize?(arguments_: z.output<z.ZodObject<Shape>>, context: ConnectionContext, replay: boolean): Promise<void>;
-  run(
+  authorize?(
+    arguments_: z.output<z.ZodObject<Shape>>,
+    context: ConnectionContext,
+    replay: boolean,
+  ): Promise<void | GymMcpAuthorizedAction>;
+  run?(
+    this: void,
     arguments_: z.output<z.ZodObject<Shape>>,
     context: ConnectionContext,
     execute: GymToolExecutor,
   ): Promise<GymToolResult>;
 }): GymMcpTool {
+  const authorize = async (
+    arguments_: unknown,
+    context: ConnectionContext,
+    replay: boolean,
+  ): Promise<GymMcpAuthorizedAction> => {
+    const parsed = options.schema.parse(arguments_);
+    const prepared = await options.authorize?.(parsed, context, replay);
+    if (prepared) return prepared;
+    const run = options.run;
+    if (!run) throw new Error('Gym tool execution was not prepared.');
+    return (execute = executeGymDocument) => run(parsed, context, execute);
+  };
   return {
     name: options.name,
     description: options.description,
@@ -95,10 +115,8 @@ function defineTool<Shape extends z.ZodRawShape>(options: {
     readOnly: !options.write,
     destructive: options.destructive ?? false,
     inputSchema: options.schema,
-    authorize: (arguments_, context, replay) =>
-      options.authorize?.(options.schema.parse(arguments_), context, replay) ?? Promise.resolve(),
-    run: (arguments_, context, execute = executeGymDocument) =>
-      options.run(options.schema.parse(arguments_), context, execute),
+    authorize,
+    run: async (arguments_, context, execute) => (await authorize(arguments_, context, false))(execute),
   };
 }
 
@@ -112,6 +130,7 @@ function documentTool<Shape extends z.ZodRawShape>(options: {
   write?: boolean;
   destructive?: boolean;
   management?: boolean;
+  authority?: 'edit' | 'grant' | 'admin';
   children?: readonly ChildBinding[];
   mapResult?(result: GymToolResult): GymToolResult;
   variables(arguments_: z.output<z.ZodObject<Shape>> & { gymUuid: string }): GymOperationArguments;
@@ -123,7 +142,15 @@ function documentTool<Shape extends z.ZodRawShape>(options: {
   ) {
     const gymUuid: unknown = (arguments_ as GymOperationArguments).gymUuid;
     if (typeof gymUuid !== 'string' || !context.userId) throw new Error('Authenticated gym identity required.');
-    const gym = await resolveGymForTool(gymUuid, context.userId, options.management ?? true, options.write ?? false);
+    const gym = options.authority
+      ? await resolveGymForTool(
+          gymUuid,
+          context.userId,
+          options.management ?? true,
+          options.write ?? false,
+          options.authority,
+        )
+      : await resolveGymForTool(gymUuid, context.userId, options.management ?? true, options.write ?? false);
     const normalized = { ...arguments_, gymUuid: gym.uuid };
     for (const child of options.children ?? []) {
       const childUuid: unknown = (normalized as GymOperationArguments)[child];
@@ -132,21 +159,20 @@ function documentTool<Shape extends z.ZodRawShape>(options: {
         await assertBoardInGym(childUuid, gym.id, context.userId, replay && options.name === 'delete_gym_board');
       else if (child === 'kioskUuid')
         await assertKioskInGym(childUuid, gym.id, replay && options.name === 'delete_gym_kiosk');
-      else if (child === 'reportUuid') await assertReportInGym(childUuid, gym.id);
+      else if (child === 'reportUuid') await assertReportInGym(childUuid, gym.id, context.userId);
       else await assertCommentInGym(childUuid, gym.uuid, replay && options.name === 'delete_gym_comment');
     }
-    if (options.write) await assertGymActionPermission(options.name, normalized, gym, context, replay);
+    if (replay) await assertGymReplayPermission(options.name, normalized, gym, context);
     return normalized;
   }
   const tool = defineTool({
     ...options,
     authorize: async (arguments_, context, replay) => {
-      await authorizedArguments(arguments_, context, replay);
-    },
-    run: async (arguments_, context, execute) => {
-      const normalized = await authorizedArguments(arguments_, context, false);
-      const result = await execute(options.document, options.variables(normalized), context);
-      return options.mapResult ? options.mapResult(result) : result;
+      const normalized = await authorizedArguments(arguments_, context, replay);
+      return async (execute = executeGymDocument) => {
+        const result = await execute(options.document, options.variables(normalized), context);
+        return options.mapResult ? options.mapResult(result) : result;
+      };
     },
   });
   return { ...tool, document: options.document };
@@ -315,13 +341,11 @@ export const gymMcpTools: readonly GymMcpTool[] = [
       'Take a climber-owned board off this gym listing. The creator keeps the board and logged sends stay. Synced boards require eligible deletion instead.',
     schema: z.object({ ...gymIdentity, ...writeIdentity, ...acknowledgement, boardUuid: UUIDSchema }).strict(),
     authorize: async ({ gymUuid, boardUuid }, context, replay) => {
-      await authorizeGymBoardRemoval(gymUuid, boardUuid, context.userId!, replay);
-    },
-    run: async ({ gymUuid, boardUuid }, context, execute) => {
-      const { gym, ownBoard } = await authorizeGymBoardRemoval(gymUuid, boardUuid, context.userId!, false);
-      return ownBoard
-        ? execute('linkBoard', { input: { boardUuid, gymUuid: null } }, context)
-        : execute('detachBoard', { input: { gymUuid: gym.uuid, boardUuid } }, context);
+      const { gym, ownBoard } = await authorizeGymBoardRemoval(gymUuid, boardUuid, context.userId!, replay);
+      return (execute = executeGymDocument) =>
+        ownBoard
+          ? execute('linkBoard', { input: { boardUuid, gymUuid: null } }, context)
+          : execute('detachBoard', { input: { gymUuid: gym.uuid, boardUuid } }, context);
     },
   }),
   documentTool({
@@ -427,6 +451,7 @@ export const gymMcpTools: readonly GymMcpTool[] = [
   }),
   documentTool({
     name: 'grant_gym_edit_access',
+    authority: 'grant',
     category: 'members',
     document: 'grantAccess',
     write: true,
@@ -438,6 +463,7 @@ export const gymMcpTools: readonly GymMcpTool[] = [
   }),
   documentTool({
     name: 'revoke_gym_edit_access',
+    authority: 'grant',
     category: 'members',
     document: 'revokeAccess',
     write: true,
@@ -452,6 +478,7 @@ export const gymMcpTools: readonly GymMcpTool[] = [
   }),
   documentTool({
     name: 'remove_gym_member',
+    authority: 'admin',
     category: 'members',
     document: 'removeMember',
     write: true,
@@ -703,6 +730,7 @@ export const gymMcpTools: readonly GymMcpTool[] = [
   }),
   documentTool({
     name: 'group_gym_reporting_boards',
+    authority: 'admin',
     category: 'insights',
     document: 'setBoardAlias',
     write: true,
@@ -799,15 +827,6 @@ export const gymMcpTools: readonly GymMcpTool[] = [
   }),
 ];
 
-function htmlAttribute(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
 function records(input: unknown): Record<string, unknown>[] {
   return Array.isArray(input)
     ? input.filter((entry): entry is Record<string, unknown> => entry !== null && typeof entry === 'object')
@@ -827,7 +846,7 @@ export function buildGymSharingLinks(
     gymUrl: path ? `${base}${path}` : null,
     posterUrl: path ? `${base}${path}/poster` : null,
     leaderboardEmbed: gym.isPublic
-      ? `<iframe src="${base}/embed/gym/${gym.uuid}/leaderboard?period=week" width="100%" height="520" style="border:0" loading="lazy" title="${htmlAttribute(gym.name)} — leaderboard"></iframe>`
+      ? buildLeaderboardEmbedSnippet({ siteOrigin: base, gymUuid: gym.uuid, gymName: gym.name })
       : null,
     kioskUrls: gym.slug
       ? records(kiosks)
@@ -843,7 +862,11 @@ export function buildGymSharingLinks(
       .map((board) => ({
         uuid: board.uuid,
         name: board.name,
-        snippet: `<iframe src="${base}/embed/board/${String(board.uuid)}" width="100%" height="640" style="border:0" loading="lazy" title="${htmlAttribute(String(board.name))} — live"></iframe>`,
+        snippet: buildBoardEmbedSnippet({
+          siteOrigin: base,
+          boardUuid: String(board.uuid),
+          boardName: String(board.name),
+        }),
       })),
   };
 }

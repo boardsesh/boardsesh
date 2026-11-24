@@ -1,8 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import { buildBoardEmbedSnippet, buildLeaderboardEmbedSnippet, escapeHtmlAttribute } from '../embed-snippets';
+import {
+  buildBoardEmbedSnippet as buildSharedBoardEmbedSnippet,
+  buildLeaderboardEmbedSnippet as buildSharedLeaderboardEmbedSnippet,
+} from '@boardsesh/kiosk';
 
 const boardUuid = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 const gymUuid = '99999999-8888-4777-8666-555555555555';
+
+describe('shared and web snippet parity', () => {
+  it.each(['Main Kilter', `La Peña 岩馆 & "<Crew>"`, "Marco's Wall"])(
+    'keeps identical UUID paths and titles for %s',
+    (name) => {
+      expect(buildBoardEmbedSnippet({ boardUuid, boardName: name })).toBe(
+        buildSharedBoardEmbedSnippet({ siteOrigin: 'https://www.boardsesh.com', boardUuid, boardName: name }),
+      );
+      expect(buildLeaderboardEmbedSnippet({ gymUuid, gymName: name })).toBe(
+        buildSharedLeaderboardEmbedSnippet({ siteOrigin: 'https://www.boardsesh.com', gymUuid, gymName: name }),
+      );
+    },
+  );
+});
 
 describe('buildBoardEmbedSnippet', () => {
   it('builds the uuid-keyed live board iframe', () => {
@@ -16,6 +34,16 @@ describe('buildBoardEmbedSnippet', () => {
     expect(snippet).toContain('title="12&quot; &lt;Steep&gt; &amp; Co — live"');
     // The raw name must never appear unescaped in the markup.
     expect(snippet).not.toContain('12" <Steep>');
+  });
+
+  it('keeps the trusted canonical origin even when extra runtime fields name another origin or locale', () => {
+    const extraFields = { siteOrigin: 'https://untrusted.example', locale: 'es' };
+    expect(buildBoardEmbedSnippet({ boardUuid, boardName: 'Board', ...extraFields })).toContain(
+      `src="https://www.boardsesh.com/embed/board/${boardUuid}"`,
+    );
+    expect(buildLeaderboardEmbedSnippet({ gymUuid, gymName: 'Gym', ...extraFields })).toContain(
+      `src="https://www.boardsesh.com/embed/gym/${gymUuid}/leaderboard?period=week"`,
+    );
   });
 });
 

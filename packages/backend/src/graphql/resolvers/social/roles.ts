@@ -82,11 +82,13 @@ type RoleExecutor = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 export async function getUserCommunityRoles(
   userId: string,
   executor: RoleExecutor = db,
+  options: { lock?: boolean } = {},
 ): Promise<CommunityRoleScope[]> {
-  return executor
+  const query = executor
     .select({ role: dbSchema.communityRoles.role, boardType: dbSchema.communityRoles.boardType })
     .from(dbSchema.communityRoles)
     .where(eq(dbSchema.communityRoles.userId, userId));
+  return options.lock ? query.orderBy(dbSchema.communityRoles.id).for('share') : query;
 }
 
 /**

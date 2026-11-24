@@ -78,10 +78,23 @@ describe('gym MCP metadata preparation', () => {
     'https://assistant.example/path',
     'https://user:secret@assistant.example',
     'invalid',
-  ])('refuses a malformed pilot origin configuration: %s', (origins) => {
-    expect(() =>
-      readGymMcpConfiguration({ NODE_ENV: 'test', GYM_MCP_MODE: 'pilot', GYM_MCP_PILOT_CLIENT_ORIGINS: origins }),
-    ).toThrow();
+  ])('fails closed only for gym metadata with malformed pilot origins: %s', async (origins) => {
+    const configuration = readGymMcpConfiguration({
+      NODE_ENV: 'test',
+      GYM_MCP_MODE: 'pilot',
+      GYM_MCP_PILOT_CLIENT_ORIGINS: origins,
+    });
+    expect(configuration?.pilotClientOrigins).toEqual([]);
+    const fetchMetadata = vi.fn();
+    const clients = createGymMcpClientDiscovery({} as unknown as PartnerDatabase, { fetchMetadata, configuration });
+    const work = vi.fn(async () => new Response('training'));
+    expect((await clients.withPreparedMetadata(authorize('https://chatgpt.com/oauth/client.json'), work)).status).toBe(
+      400,
+    );
+    expect(fetchMetadata).not.toHaveBeenCalled();
+    expect(work).not.toHaveBeenCalled();
+    expect(await (await clients.withPreparedMetadata(authorize('training_client_id'), work)).text()).toBe('training');
+    expect(work).toHaveBeenCalledOnce();
   });
 
   it('times out the entire preparation when the transport ignores abort', async () => {

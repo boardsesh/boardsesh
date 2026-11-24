@@ -37,6 +37,7 @@ describe('public API operational usage', () => {
         server_errors: 5,
         rate_limited: 0,
         connection_cap_refusals: 0,
+        pending_auth_address_refusals: 0,
         p95_ms: 50,
       },
     });

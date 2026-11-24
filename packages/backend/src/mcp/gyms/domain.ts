@@ -1,15 +1,15 @@
-import { and, count, desc, eq, exists, inArray, isNull, ne, or } from 'drizzle-orm';
+import { and, count, desc, eq, isNull, ne, or } from 'drizzle-orm';
 import { GraphQLError, graphql } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as tables from '@boardsesh/db/schema';
-import { rolesGrantAdminOrLeader } from '@boardsesh/community-roles';
 import { db } from '../../db/client';
 import { isDatabaseLeakError } from '../../graphql/mask-error';
 import {
   enrichGym,
-  requireGymEditAccess,
-  requireGymGrantAccess,
-  requireGymOwnerOrAdmin,
+  userCanEditGym,
+  userCanGrantGymAccess,
+  userCanAdminGym,
+  managedGymPredicate,
   resolveCanonicalGymByUuid,
   viewerCanSeeGym,
 } from '../../graphql/resolvers/social/gyms';
@@ -72,7 +72,7 @@ export async function resolveGymForTool(
   userId: string,
   management = true,
   lock = false,
-  authority: 'edit' | 'grant' = 'edit',
+  authority: 'edit' | 'grant' | 'admin' = 'edit',
 ) {
   let gym = await resolveCanonicalGymByUuid(gymUuid);
   if (gym && lock) {
@@ -85,59 +85,17 @@ export async function resolveGymForTool(
       .for('no key update');
     if (!locked) throw notFound();
     gym = locked;
-    // Gym ownership, a staff membership, and a covering community role are
-    // independent authorities. Hold each live row until the action commits,
-    // including against legacy membership removals that do not lock the gym.
-    const memberships = await db
-      .select({ role: tables.gymMembers.role })
-      .from(tables.gymMembers)
-      .where(and(eq(tables.gymMembers.gymId, gym.id), eq(tables.gymMembers.userId, userId)))
-      .for('share');
-    const roles = await db
-      .select({ role: tables.communityRoles.role, boardType: tables.communityRoles.boardType })
-      .from(tables.communityRoles)
-      .where(eq(tables.communityRoles.userId, userId))
-      .orderBy(tables.communityRoles.id)
-      .for('share');
-    const directGymAccess =
-      gym.ownerId === userId ||
-      memberships.some(({ role }) => role === 'admin' || (authority === 'edit' && role === 'editor'));
-    if ((management || !gym.isPublic) && !directGymAccess && !rolesGrantAdminOrLeader(roles, null)) {
-      const coveredBoardTypes = [
-        ...new Set(
-          roles.flatMap((role) =>
-            role.boardType !== null && rolesGrantAdminOrLeader([role], role.boardType) ? [role.boardType] : [],
-          ),
-        ),
-      ];
-      // One pinned witness is sufficient for the existing "any matching live
-      // board" permission. Lowest ID makes the choice and lock order stable.
-      const [qualifyingBoard] =
-        coveredBoardTypes.length > 0
-          ? await lockBoardWithoutWaiting(() =>
-              db
-                .select({ id: tables.userBoards.id })
-                .from(tables.userBoards)
-                .where(
-                  and(
-                    eq(tables.userBoards.gymId, locked.id),
-                    isNull(tables.userBoards.deletedAt),
-                    inArray(tables.userBoards.boardType, coveredBoardTypes),
-                  ),
-                )
-                .orderBy(tables.userBoards.id)
-                .limit(1)
-                .for('share', { noWait: true }),
-            )
-          : [];
-      if (!qualifyingBoard) {
-        if (!gym.isPublic) throw notFound();
-        throw new GraphQLError('Not authorized to edit this gym', { extensions: { code: 'FORBIDDEN' } });
-      }
-    }
   }
-  if (!gym || !(await viewerCanSeeGym(gym, userId))) throw notFound();
-  if (management) await requireGymEditAccess(gym.uuid, userId);
+  if (!gym) throw notFound();
+  const accessOptions = { lock };
+  if (management) {
+    const canManage =
+      authority === 'grant' ? userCanGrantGymAccess : authority === 'admin' ? userCanAdminGym : userCanEditGym;
+    if (!(await canManage(gym, userId, db, accessOptions))) {
+      if (!(await viewerCanSeeGym(gym, userId, db, accessOptions))) throw notFound();
+      throw new GraphQLError('Not authorized to edit this gym', { extensions: { code: 'FORBIDDEN' } });
+    }
+  } else if (!(await viewerCanSeeGym(gym, userId, db, accessOptions))) throw notFound();
   return gym;
 }
 
@@ -147,7 +105,7 @@ export async function assertBoardInGym(
   userId: string,
   allowDeleted = false,
 ): Promise<void> {
-  const [board] = await lockBoardWithoutWaiting(() =>
+  const query = () =>
     db
       .select({ uuid: tables.userBoards.uuid, deletedAt: tables.userBoards.deletedAt })
       .from(tables.userBoards)
@@ -158,11 +116,15 @@ export async function assertBoardInGym(
           allowDeleted ? undefined : isNull(tables.userBoards.deletedAt),
         ),
       )
-      .limit(1)
-      .for('share', { noWait: true }),
-  );
-  if (!board) throw notFound();
-  if (!(allowDeleted && board.deletedAt !== null) && !(await canAccessResource('board', boardUuid, userId)))
+      .limit(1);
+  const [before] = await query();
+  if (
+    !before ||
+    (!(allowDeleted && before.deletedAt !== null) && !(await canAccessResource('board', boardUuid, userId)))
+  )
+    throw notFound();
+  const [board] = await lockBoardWithoutWaiting(() => query().for('share', { noWait: true }));
+  if (!board || (!(allowDeleted && board.deletedAt !== null) && !(await canAccessResource('board', boardUuid, userId))))
     throw notFound();
 }
 
@@ -193,23 +155,15 @@ export async function assertCommentInGym(commentUuid: string, gymUuid: string, a
   if (!comment || comment.entityType !== 'gym' || comment.entityId !== gymUuid) throw notFound();
 }
 
-/** Replays retain the same current action authority, including after a role change. */
-export async function assertGymActionPermission(
+/** Only receipt replays need these checks; first executions use the resolver's own guard. */
+export async function assertGymReplayPermission(
   name: string,
   arguments_: GymOperationArguments,
   gym: { id: number; uuid: string },
   context: ConnectionContext,
-  replay: boolean,
 ): Promise<void> {
   const userId = context.userId!;
-  if (name === 'grant_gym_edit_access' || name === 'revoke_gym_edit_access') {
-    // An editor's gym-edit permission cannot substitute for the covering
-    // community role that permits this distinct action.
-    await resolveGymForTool(gym.uuid, userId, true, true, 'grant');
-    await requireGymGrantAccess(gym.uuid, userId);
-  } else if (name === 'remove_gym_member' || name === 'group_gym_reporting_boards') {
-    await requireGymOwnerOrAdmin(gym.uuid, userId);
-  } else if (['update_gym_board', 'apply_reported_board_setup', 'delete_gym_board'].includes(name)) {
+  if (['update_gym_board', 'apply_reported_board_setup', 'delete_gym_board'].includes(name)) {
     const [board] = await db
       .select()
       .from(tables.userBoards)
@@ -217,53 +171,31 @@ export async function assertGymActionPermission(
       .limit(1);
     if (!board) throw notFound();
     const { requireBoardDeleteAccess, requireBoardEditAccess } = await import('../../graphql/resolvers/social/boards');
-    if (name !== 'delete_gym_board') await requireBoardEditAccess(context, board);
-    else if (replay && board.deletedAt !== null) {
-      if (board.ownerId === userId) return;
-      const { SYSTEM_BOARD_OWNER_ID } = await import('@boardsesh/shared-schema');
-      if (board.ownerId === SYSTEM_BOARD_OWNER_ID) {
-        try {
-          await requireGymOwnerOrAdmin(gym.uuid, userId);
-        } catch {
-          const { requireAdmin } = await import('../../graphql/resolvers/social/roles');
-          await requireAdmin(context);
-        }
-      } else {
-        const { requireAdmin } = await import('../../graphql/resolvers/social/roles');
-        await requireAdmin(context);
-      }
-    } else await requireBoardDeleteAccess(userId, board);
+    if (name === 'delete_gym_board') await requireBoardDeleteAccess(userId, board, db, { deletedReceiptReplay: true });
+    else await requireBoardEditAccess(context, board);
   } else if (name === 'update_gym_comment' || name === 'delete_gym_comment') {
     const [comment] = await db
       .select({ userId: tables.comments.userId })
       .from(tables.comments)
       .where(eq(tables.comments.uuid, String(arguments_.commentUuid)))
       .limit(1);
-    if (!comment && replay && name === 'delete_gym_comment') return;
-    if (!comment || comment.userId !== userId) {
-      throw new GraphQLError('You can only change your own comments.', { extensions: { code: 'FORBIDDEN' } });
-    }
+    if (!comment && name === 'delete_gym_comment') return;
+    if (!comment) throw notFound();
+    const { requireCommentAuthor } = await import('../../graphql/resolvers/social/comments');
+    requireCommentAuthor(comment, userId, name === 'delete_gym_comment' ? 'delete' : 'edit');
   } else if (name === 'keep_reported_gym_board') {
     const [report] = await db
-      .select({ boardId: tables.directoryReports.boardId })
+      .select()
       .from(tables.directoryReports)
       .where(eq(tables.directoryReports.uuid, String(arguments_.reportUuid)))
       .limit(1);
-    if (!report?.boardId) throw notFound();
-    const [board] = await db
-      .select({ ownerId: tables.userBoards.ownerId, uuid: tables.userBoards.uuid })
-      .from(tables.userBoards)
-      .where(eq(tables.userBoards.id, report.boardId))
-      .limit(1);
-    if (!board || !(await canAccessResource('board', board.uuid, userId))) throw notFound();
-    if (board.ownerId !== userId) {
-      try {
-        await requireGymOwnerOrAdmin(gym.uuid, userId);
-      } catch {
-        const { requireAdmin } = await import('../../graphql/resolvers/social/roles');
-        await requireAdmin(context);
-      }
-    }
+    if (!report) throw notFound();
+    const { loadReportResolutionAuthority, viewerHasReportResolutionAccess } =
+      await import('../../graphql/resolvers/social/directory-reports/read');
+    const authority = await loadReportResolutionAuthority(report, userId);
+    if (!authority) throw notFound();
+    if (!viewerHasReportResolutionAccess(report, authority.role, authority.viewer))
+      throw new GraphQLError('Not authorized to resolve this report', { extensions: { code: 'FORBIDDEN' } });
   }
 }
 
@@ -291,59 +223,43 @@ export async function authorizeGymBoardRemoval(gymUuid: string, boardUuid: strin
     !(await canAccessResource('board', boardUuid, userId))
   )
     throw notFound();
+  if (replay && board.ownerId !== userId) {
+    const { requireBoardDetachmentAccess } = await import('../../graphql/resolvers/social/gym-stray-boards');
+    await requireBoardDetachmentAccess(board, userId);
+  }
   return { gym, ownBoard: board.ownerId === userId };
 }
 
-export async function assertReportInGym(reportUuid: string, gymId: number): Promise<void> {
+export async function assertReportInGym(reportUuid: string, gymId: number, userId: string): Promise<void> {
   const [report] = await db
-    .select({ uuid: tables.directoryReports.uuid })
+    .select({ uuid: tables.directoryReports.uuid, boardId: tables.directoryReports.boardId })
     .from(tables.directoryReports)
     .where(
       and(
         eq(tables.directoryReports.uuid, reportUuid),
+        eq(tables.directoryReports.targetKind, 'board'),
         or(eq(tables.directoryReports.gymId, gymId), eq(tables.directoryReports.gymIdAtReport, gymId)),
       ),
     )
     .limit(1)
     .for('share');
-  if (!report) throw notFound();
-}
-
-/** Membership alone is insufficient: apply every management predicate BEFORE LIMIT/OFFSET. */
-export function managedGymPredicate(userId: string) {
-  const staff = db
-    .select({ gymId: tables.gymMembers.gymId })
-    .from(tables.gymMembers)
-    .where(and(eq(tables.gymMembers.userId, userId), inArray(tables.gymMembers.role, ['admin', 'editor'])));
-  const coveringRole = db
-    .select({ userId: tables.communityRoles.userId })
-    .from(tables.communityRoles)
-    .where(
-      and(
-        eq(tables.communityRoles.userId, userId),
-        inArray(tables.communityRoles.role, ['admin', 'community_leader']),
-        or(
-          isNull(tables.communityRoles.boardType),
-          exists(
-            db
-              .select({ id: tables.userBoards.id })
-              .from(tables.userBoards)
-              .where(
-                and(
-                  eq(tables.userBoards.gymId, tables.gyms.id),
-                  isNull(tables.userBoards.deletedAt),
-                  eq(tables.userBoards.boardType, tables.communityRoles.boardType),
-                ),
-              ),
-          ),
-        ),
-      ),
-    );
-  return and(
-    isNull(tables.gyms.deletedAt),
-    isNull(tables.gyms.mergedIntoGymId),
-    or(eq(tables.gyms.ownerId, userId), inArray(tables.gyms.id, staff), exists(coveringRole)),
+  const boardId = report?.boardId;
+  if (boardId == null) throw notFound();
+  const [before] = await db
+    .select({ uuid: tables.userBoards.uuid })
+    .from(tables.userBoards)
+    .where(and(eq(tables.userBoards.id, boardId), isNull(tables.userBoards.deletedAt)))
+    .limit(1);
+  if (!before || !(await canAccessResource('board', before.uuid, userId))) throw notFound();
+  const [board] = await lockBoardWithoutWaiting(() =>
+    db
+      .select({ uuid: tables.userBoards.uuid })
+      .from(tables.userBoards)
+      .where(and(eq(tables.userBoards.id, boardId), isNull(tables.userBoards.deletedAt)))
+      .limit(1)
+      .for('share', { noWait: true }),
   );
+  if (!board || !(await canAccessResource('board', board.uuid, userId))) throw notFound();
 }
 
 export async function listManagedGyms(userId: string, limit: number, offset: number): Promise<GymToolResult> {

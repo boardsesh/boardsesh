@@ -22,6 +22,7 @@ import {
   type ViewerGymStaffing,
 } from './core';
 import { readSetupSnapshot, toBoardSetup } from './setup-snapshot';
+import { getUserCommunityRoles } from '../roles';
 
 // ============================================
 // Directory reports: who reads them
@@ -88,6 +89,15 @@ export function viewerCanResolve(
   viewer: ReportViewer,
 ): boolean {
   if (!isOpenDirectoryReportStatus(report.status)) return false;
+  return viewerHasReportResolutionAccess(report, role, viewer);
+}
+
+/** Current resolution authority, independent of a completed receipt's lifecycle state. */
+export function viewerHasReportResolutionAccess(
+  report: Pick<DirectoryReportRow, 'targetKind' | 'gymId' | 'gymIdAtReport' | 'status' | 'routedTo'>,
+  role: DirectoryReportViewerRole,
+  viewer: ReportViewer,
+): boolean {
   if (viewer.isAdmin) return true;
   if (isInAdminQueue(report)) return false;
   if (role === 'creator') return true;
@@ -102,6 +112,32 @@ export async function loadReportViewer(
   gymIds?: readonly number[],
 ): Promise<ReportViewer> {
   return { userId, isAdmin: rolesGrantAdmin(roles, null), staffing: await viewerGymStaffing(userId, executor, gymIds) };
+}
+
+/** Both a resolver write and a receipt replay use the same viewer and private-board boundary. */
+export async function loadReportResolutionAuthority(
+  report: DirectoryReportRow,
+  userId: string,
+  executor: DirectoryExecutor = db,
+) {
+  const gymId = reportGymId(report);
+  const viewer = await loadReportViewer(
+    userId,
+    await getUserCommunityRoles(userId, executor),
+    executor,
+    gymId != null ? [gymId] : [],
+  );
+  const board =
+    report.boardId != null ? (await loadBoardFacts([report.boardId], executor)).get(report.boardId) : undefined;
+  const role = viewerRoleFor(report, board, viewer);
+  if (
+    !role ||
+    (role === 'gym_staff' &&
+      report.targetKind === 'board' &&
+      (!board || board.deletedAt !== null || !(await canAccessResource('board', board.uuid, userId, executor))))
+  )
+    return null;
+  return { viewer, board, role };
 }
 
 const recentlyResolvedCutoff = () => new Date(Date.now() - RECENTLY_RESOLVED_DAYS * 24 * 60 * 60 * 1000);

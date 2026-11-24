@@ -6,7 +6,15 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db, runWithDatabaseTransaction } from '../../../db/client';
 import { socialGymMutations } from '../../../graphql/resolvers/social/gyms';
 import { socialBoardMutations } from '../../../graphql/resolvers/social/boards';
-import { assertGymActionPermission, authorizeGymBoardRemoval, resolveGymForTool } from '../domain';
+import {
+  assertBoardInGym,
+  assertReportInGym,
+  authorizeGymBoardRemoval,
+  executeGymDocument,
+  resolveGymForTool,
+} from '../domain';
+import { gymMcpToolFailure } from '../tool-result';
+import { SYSTEM_BOARD_OWNER_ID } from '@boardsesh/shared-schema';
 
 function deferred<Result>() {
   let resolve!: (result: Result) => void;
@@ -73,10 +81,92 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  await db.delete(tables.userBoards).where(eq(tables.userBoards.id, board.id));
   await db.delete(tables.users).where(inArray(tables.users.id, [ownerId, leaderId]));
 });
 
 describe('MCP gym authority against concurrent first-party board writes', () => {
+  it('binds the board-report tool to readable board reports rather than gym-target reports', async () => {
+    const gymReportUuid = randomUUID();
+    const boardReportUuid = randomUUID();
+    await db.insert(tables.directoryReports).values([
+      { uuid: gymReportUuid, targetKind: 'gym', gymId: gymA.id, reason: 'wrong_details', routedTo: ['gym_staff'] },
+      {
+        uuid: boardReportUuid,
+        targetKind: 'board',
+        boardId: board.id,
+        gymIdAtReport: gymA.id,
+        reason: 'wrong_setup',
+        routedTo: ['gym_staff'],
+      },
+    ]);
+    await expect(
+      runWithDatabaseTransaction(() => assertReportInGym(gymReportUuid, gymA.id, ownerId)),
+    ).rejects.toMatchObject({ extensions: { code: 'NOT_FOUND' } });
+    await expect(
+      runWithDatabaseTransaction(() => assertReportInGym(boardReportUuid, gymA.id, ownerId)),
+    ).resolves.toBeUndefined();
+    await db.update(tables.userBoards).set({ isPublic: false }).where(eq(tables.userBoards.id, board.id));
+    const locked = deferred<void>();
+    const release = deferred<void>();
+    const writer = db.transaction(async (transaction) => {
+      await transaction.select().from(tables.userBoards).where(eq(tables.userBoards.id, board.id)).for('update');
+      locked.resolve();
+      await release.promise;
+    });
+    try {
+      await locked.promise;
+      await expect(
+        runWithDatabaseTransaction(() => assertReportInGym(boardReportUuid, gymA.id, leaderId)),
+      ).rejects.toMatchObject({ extensions: { code: 'NOT_FOUND' } });
+      await expect(
+        runWithDatabaseTransaction(() => assertBoardInGym(board.uuid, gymA.id, leaderId)),
+      ).rejects.toMatchObject({ extensions: { code: 'NOT_FOUND' } });
+    } finally {
+      release.resolve();
+      await writer;
+    }
+  });
+
+  it('rechecks the shared system-board restriction after a global admin loses that role', async () => {
+    await db
+      .insert(tables.users)
+      .values({ id: SYSTEM_BOARD_OWNER_ID, email: 'mcp-system@example.test', name: 'System' })
+      .onConflictDoNothing();
+    await db
+      .update(tables.userBoards)
+      .set({ ownerId: SYSTEM_BOARD_OWNER_ID, gymId: null })
+      .where(eq(tables.userBoards.id, board.id));
+    await db.insert(tables.communityRoles).values({ userId: ownerId, role: 'admin', boardType: null });
+    await expect(
+      runWithDatabaseTransaction(() => authorizeGymBoardRemoval(gymA.uuid, board.uuid, ownerId, true)),
+    ).resolves.toMatchObject({ ownBoard: false });
+    await db.delete(tables.communityRoles).where(eq(tables.communityRoles.userId, ownerId));
+    await expect(
+      runWithDatabaseTransaction(() => authorizeGymBoardRemoval(gymA.uuid, board.uuid, ownerId, true)),
+    ).rejects.toMatchObject({ extensions: { code: 'SYSTEM_BOARD_DELETE_INSTEAD' } });
+  });
+
+  it('reports a non-author comment edit as a permanent forbidden tool error', async () => {
+    const commentUuid = randomUUID();
+    await db
+      .insert(tables.comments)
+      .values({ uuid: commentUuid, userId: ownerId, entityType: 'gym', entityId: gymA.uuid, body: 'Owner comment' });
+    let failure: unknown;
+    try {
+      await executeGymDocument(
+        'updateComment',
+        { input: { commentUuid, body: 'Changed by someone else' } },
+        actorContext(leaderId),
+      );
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeDefined();
+    const toolError: unknown = JSON.parse(gymMcpToolFailure(failure).content[0]!.text);
+    expect(toolError).toMatchObject({ error: { code: 'FORBIDDEN' } });
+  });
+
   it('allows a gym foreign-key insert while still serializing changes to the locked gym', async () => {
     const gymLocked = deferred<void>();
     const releaseGym = deferred<void>();
@@ -241,8 +331,7 @@ describe('MCP gym authority against concurrent first-party board writes', () => 
       await boardLocked.promise;
       await expect(
         runWithDatabaseTransaction(async () => {
-          const gym = await resolveGymForTool(gymA.uuid, leaderId, true, true);
-          await assertGymActionPermission('grant_gym_edit_access', {}, gym, actorContext(leaderId), false);
+          await resolveGymForTool(gymA.uuid, leaderId, true, true, 'grant');
         }),
       ).rejects.toMatchObject({ extensions: { code: 'CONFLICT' } });
     } finally {

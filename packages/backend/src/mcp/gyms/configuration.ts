@@ -5,10 +5,13 @@ import {
   type GymMcpMode,
 } from '@boardsesh/auth-protocol/partner-oauth';
 import { readPartnerOAuthMode } from '../../auth/partner/mode';
+import { logger } from '../../utils/logger';
 
 export { GYM_MCP_RESOURCE, GYM_MCP_SCOPES, type GymMcpMode };
 export type GymMcpScope = 'gyms:read' | 'gyms:write' | 'gyms:access:write';
 export const DEFAULT_GYM_MCP_PILOT_CLIENT_ORIGINS = ['https://chatgpt.com', 'https://claude.ai'] as const;
+const INVALID_PILOT_ORIGINS_WARNING_INTERVAL_MS = 60_000;
+let lastInvalidPilotOriginsWarningAt: number | undefined;
 
 export interface GymMcpConfiguration {
   mode: Exclude<GymMcpMode, 'off'>;
@@ -18,28 +21,44 @@ export interface GymMcpConfiguration {
 
 function pilotClientOrigins(rawOrigins: string | undefined): readonly string[] {
   if (rawOrigins === undefined) return DEFAULT_GYM_MCP_PILOT_CLIENT_ORIGINS;
-  return [
-    ...new Set(
-      rawOrigins
-        .split(',')
-        .map((origin) => origin.trim())
-        .filter(Boolean)
-        .map((origin) => {
-          const parsed = new URL(origin);
-          if (
-            parsed.protocol !== 'https:' ||
-            parsed.username ||
-            parsed.password ||
-            parsed.pathname !== '/' ||
-            parsed.search ||
-            parsed.hash
-          ) {
-            throw new Error('GYM_MCP_PILOT_CLIENT_ORIGINS must contain HTTPS origins without paths or credentials.');
-          }
-          return parsed.origin;
-        }),
-    ),
-  ];
+  try {
+    return [
+      ...new Set(
+        rawOrigins
+          .split(',')
+          .map((origin) => origin.trim())
+          .filter(Boolean)
+          .map((origin) => {
+            const parsed = new URL(origin);
+            if (
+              parsed.protocol !== 'https:' ||
+              parsed.username ||
+              parsed.password ||
+              parsed.pathname !== '/' ||
+              parsed.search ||
+              parsed.hash
+            ) {
+              throw new Error('Invalid gym MCP pilot origin');
+            }
+            return parsed.origin;
+          }),
+      ),
+    ];
+  } catch {
+    // Gym discovery must fail closed without taking the training authority
+    // offline. Repeated configuration reads emit at most one safe warning/min.
+    const now = Date.now();
+    if (
+      lastInvalidPilotOriginsWarningAt === undefined ||
+      now - lastInvalidPilotOriginsWarningAt >= INVALID_PILOT_ORIGINS_WARNING_INTERVAL_MS
+    ) {
+      lastInvalidPilotOriginsWarningAt = now;
+      logger.warn('Gym MCP pilot client origins invalid; metadata discovery denied', {
+        code: 'INVALID_PILOT_CLIENT_ORIGINS',
+      });
+    }
+    return [];
+  }
 }
 
 export function readGymMcpMode(rawMode: string | undefined = process.env.GYM_MCP_MODE): GymMcpMode {
