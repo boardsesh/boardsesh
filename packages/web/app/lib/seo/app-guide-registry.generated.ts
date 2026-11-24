@@ -204,9 +204,9 @@ export const APP_GUIDE_REGISTRY = {
       },
       {
         id: 'finding',
-        verdict: 'same',
+        verdict: 'boardsesh',
         winners: [],
-        sourceIds: ['kilter-appstore', 'kilter-support', 'boardsesh-finding'],
+        sourceIds: ['kilter-appstore', 'kilter-support', 'boardsesh-finding', 'kilter-filters'],
         pendingCells: [],
       },
       {
@@ -412,6 +412,11 @@ export const APP_GUIDE_REGISTRY = {
       {
         id: 'bs-export',
         url: 'https://github.com/boardsesh/boardsesh/blob/b3a0285908da0d9e4be984ebe5731ed72b33de10/docs/product/user-data-exports.md',
+        checkedAt: '2026-11-24',
+      },
+      {
+        id: 'kilter-filters',
+        url: 'https://apps.apple.com/us/app/id6755110303',
         checkedAt: '2026-11-24',
       },
     ],
