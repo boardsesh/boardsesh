@@ -313,9 +313,9 @@ export function existingWallsError(blocking: readonly WallCandidate[]): GraphQLE
  *
  * The locks come first in the transaction and before the board-serial lock.
  * With them held, two creates of the same wall at once serialize: the second
- * reads after the first commits and sees its board. After the locks it looks
- * for public listings nearby again, so a gym another create minted and
- * committed while this one waited is searched too.
+ * reads after the first commits and sees its board. After the locks it reads
+ * the nearest public listings again (and locks any new ones), so a gym another
+ * create minted and committed while this one waited is searched too.
  */
 export async function assertNoExistingWalls(opts: {
   scope: WallScope;
@@ -328,19 +328,33 @@ export async function assertNoExistingWalls(opts: {
   const { draft, viewerId, mode, acknowledgedWallUuids, transaction } = opts;
   let { scope } = opts;
   if (transaction) {
-    await lockGymWallWrites(
-      transaction,
-      scope.gyms.filter((scopeGym) => scopeGym.isLive).map((scopeGym) => scopeGym.id),
-    );
+    const lockedGymIds = new Set<number>();
+    const lockLiveGyms = async (gyms: readonly WallScopeGym[]) => {
+      const newGymIds = gyms
+        .filter((scopeGym) => scopeGym.isLive && !lockedGymIds.has(scopeGym.id))
+        .map((scopeGym) => scopeGym.id);
+      await lockGymWallWrites(transaction, newGymIds);
+      for (const gymId of newGymIds) lockedGymIds.add(gymId);
+    };
+    await lockLiveGyms(scope.gyms);
     if (scope.center) {
-      const nearbyCount = scope.gyms.filter((scopeGym) => scopeGym.source === 'NEARBY_LISTING').length;
-      const newlyNearby = await nearbyScopeGyms(
+      // Recompute the nearest public listings now that the locks are held: a
+      // gym another create minted and committed while this one waited may be
+      // nearer than ones in the first read, and has to displace them even when
+      // the first read was already at the cap. Lock any that are new before
+      // reading their walls, so a create still in flight at one of them is
+      // waited for too. These come after the first set, so they can be out of
+      // ascending order; in that rare overlap Postgres detects the deadlock and
+      // fails one create, which the climber retries. Never a silent duplicate.
+      const fixedGyms = scope.gyms.filter((scopeGym) => scopeGym.source !== 'NEARBY_LISTING');
+      const nearby = await nearbyScopeGyms(
         scope.center,
-        new Set(scope.gyms.map((scopeGym) => scopeGym.id)),
-        Math.max(MAX_NEARBY_WALL_GYMS - nearbyCount, 0),
+        new Set(fixedGyms.map((scopeGym) => scopeGym.id)),
+        MAX_NEARBY_WALL_GYMS,
         transaction,
       );
-      if (newlyNearby.length > 0) scope = { ...scope, gyms: [...scope.gyms, ...newlyNearby] };
+      await lockLiveGyms(nearby);
+      scope = { ...scope, gyms: [...fixedGyms, ...nearby] };
     }
   }
   const { candidates } = await readWallCandidates({

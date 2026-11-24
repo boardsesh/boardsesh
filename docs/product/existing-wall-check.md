@@ -85,7 +85,7 @@ A confirmed create next to a wall the climber saw logs `createBoard: existing wa
 
 **The refusal.** `BOARD_EXISTING_WALLS`, with `extensions.candidates: [{ boardUuid, matchKind }]` and nothing else: no names, owners or places. An error's extensions are a read channel. The client refetches `existingWallCandidates` to show the walls, which applies the full read rules. `readExistingWallsError` in `@boardsesh/graphql` reads it.
 
-A refused mint creates no gym: the refusal is rethrown rather than falling back to an unlinked board.
+A refused mint creates no gym. Any failure of the recheck on the mint path, a refusal or equally a lookup or lock query that failed, fails the whole create with no board and no gym. The mint path's fallback (create the board with no gym) skips the check, so it is kept for gym-creation failures only.
 
 The per-gym caps in `requireBoardGymLinkAccess` (`MAX_BOARDS_PER_FOREIGN_GYM`, `MAX_FOREIGN_GYM_LINKS`, the 150 m proximity rule) still apply after the check. Acknowledging a wall gets past the check, not past the caps.
 
@@ -95,11 +95,11 @@ Two climbers adding the same wall at the same moment could both read "no wall ye
 
 The search scope (the merged listings and nearby gyms) is read on the pool BEFORE the transaction opens. Inside the transaction only the locks, one look for nearby listings, and the wall read run, all on the transaction's own connection. A transaction that waited on a second pool connection would hold its own while it waited, and the pool has 5: five concurrent creates would wedge the backend.
 
-After taking the locks the recheck looks again for public, listed gyms nearby, on the transaction. A gym another create minted and committed while this one waited is then searched too, without a lock: it was committed before this read, so its walls are already visible.
+After taking the locks the recheck reads the nearest public, listed gyms again, on the transaction, and replaces the first read's nearby list with it (still at most 10, nearest first). A gym another create minted and committed while this one waited can then displace a farther one even when the first read was already full. Any gym new to the list is locked too before its walls are read, so a create still in flight at it is waited for. Those locks come after the first set and can be out of ascending order; in that rare overlap Postgres detects the deadlock and fails one create with an error the climber can retry. It never lets a duplicate through.
 
 - `lockGymWallWrites` in `packages/db/src/queries/boards/gym-wall-write-lock.ts`, beside the serial lock.
 - Taken first in the transaction, before the board-serial lock (`lockBoardSerialWrite`). The check only runs for boards without a serial, so in practice the serial lock is a no-op there, but the order is fixed.
-- Ascending order means two creates whose searches overlap always take shared locks in the same order and can't deadlock.
+- Ascending order means two creates whose first scopes overlap take their shared locks in the same order. Only the extra locks for a gym found after the wait can deadlock (see above).
 - Gym ids are bigserial and the two-int form takes int4 keys, so the id is folded modulo 2^31 and the keys are sorted after folding. A fold collision only serializes two unrelated gyms.
 - Merged listings are soft-deleted and nobody adds a board to them, so they aren't locked.
 

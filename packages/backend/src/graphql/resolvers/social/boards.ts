@@ -3066,12 +3066,20 @@ export const socialBoardMutations = {
 
     if (mintGymNamed != null) {
       const gymName = mintGymNamed;
+      // Set when the existing-wall recheck inside the mint's transaction throws,
+      // so the catch below can tell it apart from a gym-creation failure.
+      let wallRecheckFailed = false;
       try {
         const gymUuid = uuidv4();
         const gymSlug = await generateUniqueGymSlug(gymName);
         const result = await db.transaction(async (tx) => {
           if (wallCheckScope != null) {
-            await checkExistingWalls(wallCheckScope, tx);
+            try {
+              await checkExistingWalls(wallCheckScope, tx);
+            } catch (error) {
+              wallRecheckFailed = true;
+              throw error;
+            }
           }
           await lockAndAssertBoardSerialAvailable(tx, validatedInput, userId);
 
@@ -3108,14 +3116,13 @@ export const socialBoardMutations = {
         // The serial guard is a product decision, not an auto-gym failure. Never
         // swallow it and retry the insert below — that fallback would create the
         // very cross-owner duplicate the guard just refused.
-        // Likewise the existing-wall refusal: falling back would add the very
-        // copy the climber is being asked about, just without a gym.
-        if (
-          error instanceof GraphQLError &&
-          (error.extensions.code === 'BOARD_SERIAL_EXISTS' || error.extensions.code === 'BOARD_EXISTING_WALLS')
-        ) {
-          throw error;
-        }
+        if (error instanceof GraphQLError && error.extensions.code === 'BOARD_SERIAL_EXISTS') throw error;
+        // Likewise ANY failure of the existing-wall recheck the client asked for:
+        // its refusal, and equally a lookup or lock that failed. The fallback
+        // inserts the board with no gym, so it never runs the check; falling back
+        // would create the board unchecked. The fallback is for gym creation
+        // failing, nothing else.
+        if (wallRecheckFailed) throw error;
         // The gym couldn't be minted; still create the board, unlinked, rather
         // than failing the whole create.
         logger.error('Auto-gym creation failed, creating board without gym:', error);

@@ -462,6 +462,27 @@ describe('createBoard existing-wall recheck', () => {
     expect((await gymsOwnedBy(CLIMBER)) + (await gymsOwnedBy(CREW))).toBe(1);
   });
 
+  it('lets a newly minted nearer gym displace a full ten-gym scope after the lock', async () => {
+    // Ten empty public gyms 33-133 m from the mint point: the first read is
+    // already at the cap, so only the re-read after the lock can find the
+    // gym the other create mints right at the point.
+    for (let gymIndex = 3; gymIndex <= 12; gymIndex++) {
+      await insertGym({ name: `Neighbour ${gymIndex}`, latitude: LAT_60M + gymIndex * 0.0001 });
+    }
+    const publicMint = { audience: 'public', locationAudience: 'public', existingWallCheck: 'REJECT_IF_FOUND' };
+
+    const results = await Promise.allSettled([
+      createBoard({ ...publicMint, locationName: 'Garage One' }, CLIMBER),
+      createBoard({ ...publicMint, locationName: 'Garage Two' }, CREW),
+    ]);
+
+    const rejected = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0].reason as { extensions?: { code?: string } }).extensions?.code).toBe('BOARD_EXISTING_WALLS');
+    expect((await liveBoardsOwnedBy(CLIMBER)) + (await liveBoardsOwnedBy(CREW))).toBe(1);
+  });
+
   it('refuses before the foreign-gym link bucket is charged, and leaves MAX_BOARDS_PER_FOREIGN_GYM in force', async () => {
     const gym = await insertGym({ name: 'Klimmuur' });
     const wallUuid = await insertWall({ gymId: gym.id });
