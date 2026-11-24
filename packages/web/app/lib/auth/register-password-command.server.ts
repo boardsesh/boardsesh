@@ -3,7 +3,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
 import { sendVerificationEmail } from '@boardsesh/email';
 import { AUTH_BACKEND_UNAVAILABLE } from '@boardsesh/auth-protocol/client-errors';
-import { createPasswordCommandClient, registrationMailOrigin } from './password-command-client.server';
+import { webPasswordMode, registrationMailOrigin } from './password-command-client.server';
+import { createRegistrationCommandClient } from './registration-command-client.server';
+import { cloudflareVouchedVisitorAddress } from './trusted-client-ip.server';
 
 export function passwordCommandUnavailableResponse(): NextResponse {
   return NextResponse.json(
@@ -20,8 +22,16 @@ export async function registerWithPasswordCommand(request: NextRequest): Promise
     // Validate mail destination configuration even when backend policy currently
     // disables verification. A flag change must never turn Host into authority.
     const mailOrigin = registrationMailOrigin(request.nextUrl.origin);
-    const client = createPasswordCommandClient();
-    const reply = await client.register(await request.json());
+    const client = createRegistrationCommandClient({ clientAddress: cloudflareVouchedVisitorAddress(request) });
+    let payload: unknown;
+    try {
+      payload = await request.json();
+    } catch {
+      return webPasswordMode() === 'legacy'
+        ? NextResponse.json({ error: 'An error occurred during registration' }, { status: 500 })
+        : passwordCommandUnavailableResponse();
+    }
+    const reply = await client.register(payload);
     if (reply.outcome === 'error') {
       if (reply.code === 'validation_error') return NextResponse.json({ error: reply.message }, { status: 400 });
       if (reply.code === 'exists')

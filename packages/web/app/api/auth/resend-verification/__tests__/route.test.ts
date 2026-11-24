@@ -1,58 +1,36 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-
 vi.mock('server-only', () => ({}));
-
-const mockCheckRateLimit = vi.fn();
-const mockGetClientIp = vi.fn();
-vi.mock('@/app/lib/auth/rate-limiter', () => ({
-  checkRateLimit: (...args: unknown[]) => mockCheckRateLimit(...args),
-  getClientIp: (...args: unknown[]) => mockGetClientIp(...args),
+const mocks = vi.hoisted(() => ({
+  rate: vi.fn(),
+  ip: vi.fn(() => '127.0.0.1'),
+  mail: vi.fn(),
+  telemetry: vi.fn(),
+  transaction: vi.fn(),
+  lookup: vi.fn(),
 }));
-
-const mockSendVerificationEmail = vi.fn();
-vi.mock('@boardsesh/email', () => ({
-  sendVerificationEmail: (...args: unknown[]) => mockSendVerificationEmail(...args),
-}));
-
-const mockCaptureException = vi.fn();
-vi.mock('@sentry/nextjs', () => ({
-  captureException: (...args: unknown[]) => mockCaptureException(...args),
-}));
-
-const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
-const mockValues = vi.fn().mockResolvedValue(undefined);
-const lookup = vi.hoisted(() => ({ stored: [] as StoredAccount[] }));
-vi.mock('@boardsesh/db/queries/account-email', async () => {
-  const { fakeAccountEmailLookup } = await import('@/app/test-utils/account-email-lookup');
-  return fakeAccountEmailLookup(() => lookup.stored);
-});
-const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
-  return await fn({
-    delete: () => ({ where: mockDeleteWhere }),
-    insert: () => ({ values: mockValues }),
-  });
-});
-
+vi.mock('@/app/lib/auth/rate-limiter', () => ({ checkRateLimit: mocks.rate, getClientIp: mocks.ip }));
+vi.mock('@boardsesh/email', () => ({ sendVerificationEmail: mocks.mail }));
+vi.mock('@sentry/nextjs', () => ({ captureException: mocks.telemetry }));
 vi.mock('@/app/lib/db/db', () => ({
-  getDb: () => ({
-    transaction: (fn: (tx: unknown) => Promise<void>) => mockTransaction(fn),
-  }),
+  getDb: () => {
+    mocks.transaction();
+    throw new Error('Web identity SQL is forbidden');
+  },
 }));
-
-vi.mock('@/app/lib/db/schema', () => ({
-  verificationTokens: { identifier: 'verification_tokens.identifier' },
-}));
-
-import type { StoredAccount } from '@/app/test-utils/account-email-lookup';
-import { findAccountsByEmail, lockAccountEmailSnapshot } from '@boardsesh/db/queries/account-email';
+vi.mock('@boardsesh/db/queries/account-email', () => ({ findAccountsByEmail: mocks.lookup }));
+import { findAccountsByEmail } from '@boardsesh/db/queries/account-email';
 import { POST } from '../route';
-
+import { CLOUDFLARE_ORIGIN_PROOF_HEADER } from '@/app/lib/auth/trusted-client-ip.server';
+const mockCheckRateLimit = mocks.rate;
+const mockSendVerificationEmail = mocks.mail;
+const mockCaptureException = mocks.telemetry;
+const mockTransaction = mocks.transaction;
 function createRequest(
   body: Record<string, unknown>,
   origin = 'http://localhost',
   headers: Record<string, string> = {},
-): NextRequest {
+) {
   return new NextRequest(`${origin}/api/auth/resend-verification`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers },
@@ -60,140 +38,18 @@ function createRequest(
   });
 }
 
-const edgeHeaders = {
-  'X-Forwarded-For': '198.51.100.7, 203.0.113.9, 172.70.1.2',
-  'CF-Connecting-IP': '203.0.113.9',
-};
-
-describe('POST /api/auth/resend-verification', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockGetClientIp.mockReturnValue('127.0.0.1');
-    mockCheckRateLimit.mockReturnValue({ limited: false, retryAfterSeconds: 0 });
-    // User exists and is unverified
-    lookup.stored = [{ id: 'user-1', email: 'test@example.com', emailVerified: null }];
-    mockSendVerificationEmail.mockResolvedValue(undefined);
-    // Make consistentDelay a no-op: first Date.now() call returns startTime=0,
-    // subsequent calls return 2000ms so elapsed >= MIN_RESPONSE_TIME_MS and no
-    // setTimeout is scheduled.
-    vi.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValue(2000);
-    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-    vi.unstubAllEnvs();
-  });
-
-  it('does not issue or mail a link after the account address changed', async () => {
-    vi.mocked(lockAccountEmailSnapshot).mockResolvedValueOnce(false);
-    const response = await POST(createRequest({ email: 'test@example.com' }));
-    expect(response.status).toBe(200);
-    expect(mockValues).not.toHaveBeenCalled();
-    expect(mockSendVerificationEmail).not.toHaveBeenCalled();
-  });
-
-  it('keys the staged limiter on the trusted client, not the first forwarded hop', async () => {
-    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'backend-staging');
-    mockCheckRateLimit.mockReturnValueOnce({ limited: true, retryAfterSeconds: 30 });
-    const response = await POST(createRequest({ email: 'test@example.com' }, undefined, edgeHeaders));
-    expect(response.status).toBe(429);
-    expect(mockCheckRateLimit).toHaveBeenCalledWith('resend-verification:203.0.113.9', 5, 60_000);
-    expect(mockGetClientIp).not.toHaveBeenCalled();
-  });
-
-  it('keeps the legacy limiter key when staged auth is off', async () => {
-    mockCheckRateLimit.mockReturnValueOnce({ limited: true, retryAfterSeconds: 30 });
-    const response = await POST(createRequest({ email: 'test@example.com' }, undefined, edgeHeaders));
-    expect(response.status).toBe(429);
-    expect(mockCheckRateLimit).toHaveBeenCalledWith('resend-verification:127.0.0.1', 5, 60_000);
-    expect(mockGetClientIp).toHaveBeenCalledOnce();
-  });
-
-  it('uses BASE_URL env var for verification email link when set', async () => {
-    const savedBaseUrl = process.env.BASE_URL;
-    process.env.BASE_URL = 'https://www.boardsesh.com';
-    try {
-      const response = await POST(createRequest({ email: 'test@example.com' }, 'https://attacker.com'));
-      expect(response.status).toBe(200);
-      const [, , baseUrl] = mockSendVerificationEmail.mock.calls[0] as [string, string, string];
-      expect(baseUrl).toBe('https://www.boardsesh.com');
-    } finally {
-      if (savedBaseUrl === undefined) delete process.env.BASE_URL;
-      else process.env.BASE_URL = savedBaseUrl;
-    }
-  });
-
-  it('falls back to request origin for verification email link when BASE_URL is not set', async () => {
-    const savedBaseUrl = process.env.BASE_URL;
-    delete process.env.BASE_URL;
-    try {
-      const response = await POST(createRequest({ email: 'test@example.com' }, 'https://www.boardsesh.com'));
-      expect(response.status).toBe(200);
-      const [, , baseUrl] = mockSendVerificationEmail.mock.calls[0] as [string, string, string];
-      expect(baseUrl).toBe('https://www.boardsesh.com');
-      expect(baseUrl).not.toBe('http://localhost:3000');
-    } finally {
-      if (savedBaseUrl !== undefined) process.env.BASE_URL = savedBaseUrl;
-    }
-  });
-
-  describe('any capitalisation (BA-02)', () => {
-    const mixedCase: StoredAccount = { id: 'mixed', email: 'Mixed.Case@Example.test', emailVerified: null };
-
-    it.each([
-      ['exactly as stored', 'Mixed.Case@Example.test'],
-      ['in lowercase', 'mixed.case@example.test'],
-    ])('sends the link to the stored address when it is typed %s', async (_case, typed) => {
-      lookup.stored = [mixedCase];
-
-      const response = await POST(createRequest({ email: typed }));
-
-      expect(response.status).toBe(200);
-      expect(mockSendVerificationEmail.mock.calls[0][0]).toBe('Mixed.Case@Example.test');
-      expect(mockValues).toHaveBeenCalledWith(expect.objectContaining({ identifier: 'Mixed.Case@Example.test' }));
-    });
-
-    it('sends nothing for an address several accounts share in other capitals', async () => {
-      lookup.stored = [mixedCase, { id: 'sibling', email: 'mixed.case@example.test', emailVerified: null }];
-
-      const response = await POST(createRequest({ email: 'MIXED.CASE@EXAMPLE.TEST' }));
-
-      expect(response.status).toBe(200);
-      expect(mockSendVerificationEmail).not.toHaveBeenCalled();
-      expect(mockTransaction).not.toHaveBeenCalled();
-    });
-
-    it('sends nothing to an account that is already verified', async () => {
-      lookup.stored = [{ ...mixedCase, emailVerified: new Date('2026-01-01T00:00:00Z') }];
-
-      await POST(createRequest({ email: 'mixed.case@example.test' }));
-
-      expect(mockSendVerificationEmail).not.toHaveBeenCalled();
-    });
-  });
-
-  it('reports a verification-email failure to Sentry', async () => {
-    const smtpError = new Error('smtp failed');
-    mockSendVerificationEmail.mockRejectedValueOnce(smtpError);
-
-    const response = await POST(createRequest({ email: 'test@example.com' }));
-
-    expect(response.status).toBe(500);
-    expect(mockCaptureException).toHaveBeenCalledWith(smtpError, expect.objectContaining({ tags: expect.anything() }));
-  });
-});
-
-describe('UID resend public adapter', () => {
+describe.each(['legacy', 'backend-staging'])('UID resend public adapter, mode=%s', (mode) => {
   const token = `ev1_${'B'.repeat(43)}`;
   const recipient = 'Committed+Tag@example.com';
   const generic = { message: 'If an account exists and needs verification, a verification email will be sent' };
   const mailPlan = { kind: 'uid-email-verification-v1', recipient, token, expiresAt: '2026-11-06T10:00:00.000Z' };
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'backend-staging');
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', mode);
     vi.stubEnv('CURRENT_STORE_AUTH_BACKEND_ORIGIN', 'http://127.0.0.1:54321');
     vi.stubEnv('CURRENT_STORE_AUTH_RPC_SECRET', 'dedicated-resend-fixture-secret-at-least-32');
+    vi.stubEnv('CLOUDFLARE_ORIGIN_PROOF_SECRET', '');
+    vi.stubEnv('CLOUDFLARE_ORIGIN_PROOF_SECRET_NEXT', '');
     vi.stubEnv('BASE_URL', 'https://www.boardsesh.test');
     mockCheckRateLimit.mockReturnValue({ limited: false, retryAfterSeconds: 0 });
     mockSendVerificationEmail.mockResolvedValue(undefined);
@@ -217,6 +73,55 @@ describe('UID resend public adapter', () => {
     vi.stubGlobal('fetch', fetchMock);
     return fetchMock;
   }
+  it('derives service context only from the vouched origin request in default mode', async () => {
+    const proofSecret = 'owned-issuer-origin-proof-secret-at-least-32';
+    vi.stubEnv('CLOUDFLARE_ORIGIN_PROOF_SECRET', proofSecret);
+    const sent = backend({ outcome: 'accepted' }, 200);
+    await POST(
+      createRequest({ email: 'context@example.test', clientAddress: '198.51.100.200' }, undefined, {
+        'X-Forwarded-For': '198.51.100.7, 172.70.1.2',
+        'CF-Connecting-IP': '203.0.113.9',
+        [CLOUDFLARE_ORIGIN_PROOF_HEADER]: proofSecret,
+      }),
+    );
+    const init = sent.mock.calls[0]?.[1];
+    if (typeof init?.body !== 'string') throw new Error('Expected serialized command');
+    const command = JSON.parse(init.body) as Record<string, unknown>;
+    if (mode === 'legacy') expect(command.clientAddress).toBe('203.0.113.9');
+    else expect(command).not.toHaveProperty('clientAddress');
+    expect(mocks.rate).toHaveBeenCalledWith('resend-verification:203.0.113.9', 5, 60_000);
+  });
+  it('ignores forged edge visitor and payload context when the zone proof is absent', async () => {
+    vi.stubEnv('CLOUDFLARE_ORIGIN_PROOF_SECRET', 'owned-issuer-origin-proof-secret-at-least-32');
+    const sent = backend({ outcome: 'accepted' }, 200);
+    await POST(
+      createRequest({ email: 'context@example.test', clientAddress: '198.51.100.200' }, undefined, {
+        'X-Forwarded-For': '198.51.100.7, 172.70.1.2',
+        'CF-Connecting-IP': '203.0.113.9',
+      }),
+    );
+    const init = sent.mock.calls[0]?.[1];
+    if (typeof init?.body !== 'string') throw new Error('Expected serialized command');
+    expect(JSON.parse(init.body)).not.toHaveProperty('clientAddress');
+    expect(mocks.rate).toHaveBeenCalledWith('resend-verification:172.70.1.2', 5, 60_000);
+  });
+  it('keeps the trusted public bucket when caller-controlled first hops change', async () => {
+    const sent = backend({ outcome: 'accepted' }, 200);
+    for (const prefix of ['198.51.100.7', '198.51.100.8']) {
+      await POST(
+        createRequest({ email: 'context@example.test', clientAddress: '198.51.100.200' }, undefined, {
+          'X-Forwarded-For': `${prefix}, 203.0.113.10`,
+          'CF-Connecting-IP': '198.51.100.200',
+        }),
+      );
+    }
+    for (const call of sent.mock.calls) {
+      if (typeof call[1].body !== 'string') throw new Error('Expected serialized command');
+      expect(JSON.parse(call[1].body)).not.toHaveProperty('clientAddress');
+    }
+    expect(mocks.rate).toHaveBeenNthCalledWith(1, 'resend-verification:203.0.113.10', 5, 60_000);
+    expect(mocks.rate).toHaveBeenNthCalledWith(2, 'resend-verification:203.0.113.10', 5, 60_000);
+  });
   it('publishes the same generic response with or without a committed private mail plan', async () => {
     const noMail = backend({ outcome: 'accepted' });
     let response = await POST(createRequest({ email: 'unrelated@example.com' }));
@@ -240,8 +145,8 @@ describe('UID resend public adapter', () => {
     mockSendVerificationEmail.mockRejectedValue(privateError);
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const response = await POST(createRequest({ email: 'unrelated@example.com' }));
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual(generic);
+    expect(response.status).toBe(mode === 'legacy' ? 500 : 200);
+    expect(await response.json()).toEqual(mode === 'legacy' ? { error: 'Failed to send verification email' } : generic);
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(mockTransaction).not.toHaveBeenCalled();
     expect(mockCaptureException).toHaveBeenCalledOnce();
@@ -254,6 +159,8 @@ describe('UID resend public adapter', () => {
   });
   it('validates the canonical mail origin before any command even when no mail would be needed', async () => {
     vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('CLOUDFLARE_ORIGIN_PROOF_SECRET', '');
+    vi.stubEnv('CLOUDFLARE_ORIGIN_PROOF_SECRET_NEXT', '');
     vi.stubEnv('BASE_URL', '');
     vi.stubEnv('NEXTAUTH_URL', '');
     const fetchMock = backend({ outcome: 'accepted' });
@@ -318,5 +225,28 @@ describe('UID resend public adapter', () => {
     await vi.advanceTimersByTimeAsync(1);
     expect((await pending).status).toBe(200);
     expect(settled).toBe(true);
+  });
+  it('preserves the released malformed-JSON status without RPC or SQL', async () => {
+    const send = vi.fn();
+    vi.stubGlobal('fetch', send);
+    const response = await POST(
+      new NextRequest('http://localhost/api/auth/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{',
+      }),
+    );
+    expect(response.status).toBe(mode === 'legacy' ? 500 : 503);
+    expect(send).not.toHaveBeenCalled();
+    expect(mockTransaction).not.toHaveBeenCalled();
+  });
+  it('answers unavailable for an unknown mode before limiter key construction', async () => {
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'unknown-mode');
+    const send = vi.fn();
+    vi.stubGlobal('fetch', send);
+    const response = await POST(createRequest({ email: 'x' }));
+    expect(response.status).toBe(503);
+    expect(send).not.toHaveBeenCalled();
+    expect(mockTransaction).not.toHaveBeenCalled();
   });
 });

@@ -1831,6 +1831,11 @@ jobs:
           mkdir -p packages/web/test-results
           vp run test:registration-web-consumer --reporter=junit --outputFile.junit=./test-results/junit-registration-web-consumer.xml
           test -s packages/web/test-results/junit-registration-web-consumer.xml
+      - name: Run final registration issuer delegation proofs
+        run: |
+          mkdir -p packages/web/test-results
+          vp run test:registration-web-issuer --reporter=junit --outputFile.junit=./test-results/junit-registration-web-issuer.xml
+          test -s packages/web/test-results/junit-registration-web-issuer.xml
       - name: Upload credential proof results
         uses: actions/upload-artifact@v4
         if: always()
@@ -1845,6 +1850,7 @@ jobs:
             packages/backend/test-results/junit-browser-renewal-credential-writer.xml
             packages/backend/test-results/junit-registration-credential-writer.xml
             packages/web/test-results/junit-registration-web-consumer.xml
+            packages/web/test-results/junit-registration-web-issuer.xml
           retention-days: 7
 
   # BA-04 web writer fence (docs/auth/better-auth-writer-fence-proof.md). Its own PG18

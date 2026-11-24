@@ -288,7 +288,7 @@ before or after it and never waits on or blocks a migration's reconcile.
 ### Web connection string
 
 **Setting `WEB_DATABASE_URL` before the web's identity writes move to the
-backend breaks sign-up, password reset and email verification.** The code
+backend breaks password reset, set-password and OAuth identity writes.** The code
 refuses it: `WEB_DATABASE_LOGIN_BLOCKERS` in `packages/db/src/client/config.ts`
 holds `LEGACY_WEB_IDENTITY_WRITERS`, and while that list is non-empty a set
 `WEB_DATABASE_URL` stops the web at boot (`instrumentation.ts` exits 1 with
@@ -296,24 +296,19 @@ holds `LEGACY_WEB_IDENTITY_WRITERS`, and while that list is non-empty a set
 again in `applyWebDatabaseUrl()`. No variable or flag closes the gate; removing
 the entry is a reviewed code change made once every writer below has moved.
 
-The web writes these identity tables today; on `boardsesh_web` each fails with
+The registration/verification family delegates after its three deployment boundaries
+([adoption sequence](better-auth-registration-family.md)); the remaining web writers
+below still prevent the restricted login. On `boardsesh_web` each fails with
 `42501`:
 
 | File (under `packages/web/app/`) | Lines | Write |
 | --- | --- | --- |
-| `api/auth/register/route.ts` | 93, 101, 112 | insert `users`, `user_credentials`, `verificationTokens` |
 | `api/auth/forgot-password/route.ts` | 92, 95 | replace the reset token in `verificationTokens` |
-| `api/auth/resend-verification/route.ts` | 97, 99 | replace the verification token |
 | `api/auth/reset-password/route.ts` | 145, 152, 162, 166 | update or insert `user_credentials`, verify `users`, delete the token |
 | `api/internal/set-password/route.ts` | 111, 120 | insert `user_credentials`, verify `users` |
 | `lib/auth/auth-options.ts` | 146 | the `native-oauth` provider inserts a transfer token's single-use marker into `verificationTokens`; on `boardsesh_web` that sign-in is refused |
 | `lib/auth/auth-options.ts` | 270 | `DrizzleAdapter` creates and updates `users` and `accounts` on OAuth sign-in |
 | `lib/auth/auth-options.ts` | 424 | sign-in callback sets `users.emailVerified`; its failure is swallowed, so it would stop silently |
-
-The verification GET now delegates consumption to the backend. Default sign-up
-and resend still issue their released UUIDs in this consumer-only step; the
-remaining writers above keep the web login gate open. See
-[registration deployment order](better-auth-registration-family.md).
 
 How the URL is chosen. The web builds its shared pool in
 `packages/web/app/lib/db/db.ts`, which calls `applyWebDatabaseUrl()` from

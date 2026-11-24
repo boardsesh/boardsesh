@@ -2,9 +2,9 @@ import 'server-only';
 import { NextResponse, type NextRequest } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
 import { sendVerificationEmail } from '@boardsesh/email';
+import { webPasswordMode, registrationMailOrigin } from './password-command-client.server';
 import { createRegistrationCommandClient } from './registration-command-client.server';
 import { cloudflareVouchedVisitorAddress } from './trusted-client-ip.server';
-import { createPasswordCommandClient, registrationMailOrigin } from './password-command-client.server';
 import { passwordCommandUnavailableResponse } from './register-password-command.server';
 import { emailVerificationRedirect, emailVerificationUnavailableResponse } from './email-verification-response.server';
 
@@ -40,7 +40,16 @@ export const GENERIC_RESEND_VERIFICATION_MESSAGE =
 export async function resendVerificationWithCommand(request: NextRequest): Promise<NextResponse> {
   try {
     const mailOrigin = registrationMailOrigin(request.nextUrl.origin);
-    const reply = await createPasswordCommandClient().resendVerification(await request.json());
+    const client = createRegistrationCommandClient({ clientAddress: cloudflareVouchedVisitorAddress(request) });
+    let payload: unknown;
+    try {
+      payload = await request.json();
+    } catch {
+      return webPasswordMode() === 'legacy'
+        ? NextResponse.json({ error: 'Failed to send verification email' }, { status: 500 })
+        : passwordCommandUnavailableResponse();
+    }
+    const reply = await client.resendVerification(payload);
     if (reply.outcome === 'error') {
       if (reply.code === 'validation_error') return NextResponse.json({ error: reply.message }, { status: 400 });
       if (reply.code === 'rate_limited')
@@ -60,10 +69,12 @@ export async function resendVerificationWithCommand(request: NextRequest): Promi
         Sentry.captureException(new Error('Verification email delivery failed'), {
           tags: { area: 'auth', flow: 'resend-verification', phase: 'send-email' },
         });
+        if (webPasswordMode() === 'legacy')
+          return NextResponse.json({ error: 'Failed to send verification email' }, { status: 500 });
       }
     }
-    // The same public reply covers absent, verified, ambiguous and delivery
-    // failure cases. SMTP is still unbounded; this does not prove equal timing.
+    // Absent, verified and ambiguous accounts share this public reply. Default
+    // SMTP failure retains 500. Delivery has no time bound.
     return NextResponse.json(
       { message: GENERIC_RESEND_VERIFICATION_MESSAGE },
       {

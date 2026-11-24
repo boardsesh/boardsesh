@@ -1,173 +1,26 @@
 import { type NextRequest, NextResponse } from 'next/server';
-import * as Sentry from '@sentry/nextjs';
-import { getDb } from '@/app/lib/db/db';
-import * as schema from '@/app/lib/db/schema';
-import { hash } from 'bcryptjs';
-import { PASSWORD_HASH_COST } from '@boardsesh/auth-protocol/password-hash';
-import { normalizeAccountEmail } from '@boardsesh/auth-protocol/account-email';
-import { findAccountsByEmail } from '@boardsesh/db/queries/account-email';
-import { z } from 'zod';
-import { sendVerificationEmail } from '@boardsesh/email';
-import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
-import { AuthBackendUnavailableError, webPasswordMode } from '@/app/lib/auth/password-command-client.server';
+import { checkRateLimit } from '@/app/lib/auth/rate-limiter';
 import {
   passwordCommandUnavailableResponse,
   registerWithPasswordCommand,
 } from '@/app/lib/auth/register-password-command.server';
-import { stagedPasswordClientKey } from '@/app/lib/auth/trusted-client-ip.server';
-import { LEGACY_EMAIL_VERIFICATION_LIFETIME_MS } from '@/app/lib/auth/legacy-link-account';
-
-const emailVerificationEnabled = process.env.EMAIL_VERIFICATION_ENABLED === 'true';
-
-const registerSchema = z.object({
-  email: z.string().email('Invalid email address'),
-  password: z
-    .string()
-    .min(8, 'Password must be at least 8 characters')
-    .max(128, 'Password must be less than 128 characters'),
-  name: z.string().min(1, 'Name is required').max(100, 'Name must be less than 100 characters').optional(),
-});
+import { trustedClientRateLimitKey } from '@/app/lib/auth/trusted-client-ip.server';
 
 export async function POST(request: NextRequest) {
   try {
-    // Rate limiting - 10 requests per minute per IP for registration. The staged
-    // budget is shared by every caller, so its key must not be forgeable.
-    const clientIp = stagedPasswordClientKey(request) ?? getClientIp(request);
+    const clientIp = trustedClientRateLimitKey(request);
     const rateLimitResult = checkRateLimit(`register:${clientIp}`, 10, 60_000);
-
     if (rateLimitResult.limited) {
       return NextResponse.json(
         { error: 'Too many requests. Please try again later.' },
         {
           status: 429,
-          headers: {
-            'Retry-After': String(rateLimitResult.retryAfterSeconds),
-          },
+          headers: { 'Retry-After': String(rateLimitResult.retryAfterSeconds) },
         },
       );
     }
-
-    if (webPasswordMode() === 'backend-staging') return registerWithPasswordCommand(request);
-
-    const body = await request.json();
-
-    // Validate input
-    const validationResult = registerSchema.safeParse(body);
-    if (!validationResult.success) {
-      return NextResponse.json({ error: validationResult.error.issues[0].message }, { status: 400 });
-    }
-
-    const { password, name } = validationResult.data;
-    const typedEmail = validationResult.data.email;
-    // Stored in the one normalized form, so the planned unique index on
-    // lower(email) holds and any capitalisation signs in.
-    const email = normalizeAccountEmail(typedEmail);
-    const db = getDb();
-
-    // Taken in any capitalisation, including by several accounts at once:
-    // never add another account for the same address.
-    const existingUser = await findAccountsByEmail(db, typedEmail);
-
-    if (existingUser.kind !== 'none') {
-      // An account with this email already exists
-      // Do not allow registering again - user should use their existing authentication method
-      // This prevents account takeover attacks where someone registers with an OAuth user's email
-      return NextResponse.json(
-        {
-          error: 'An account with this email already exists. Please sign in with your existing account.',
-        },
-        { status: 409 },
-      );
-    }
-
-    // Create new user
-    const userId = crypto.randomUUID();
-    const passwordHash = await hash(password, PASSWORD_HASH_COST);
-    const verificationToken = emailVerificationEnabled ? crypto.randomUUID() : null;
-    const tokenExpires = emailVerificationEnabled ? new Date(Date.now() + LEGACY_EMAIL_VERIFICATION_LIFETIME_MS) : null;
-
-    // Use transaction to ensure user, credentials, profile, and token are created atomically
-    // If any insert fails, all changes are rolled back
-    try {
-      await db.transaction(async (tx) => {
-        // Insert user (emailVerified is null if verification enabled, otherwise auto-verified)
-        await tx.insert(schema.users).values({
-          id: userId,
-          email,
-          name: name || typedEmail.split('@')[0],
-          emailVerified: emailVerificationEnabled ? null : new Date(),
-        });
-
-        // Insert credentials
-        await tx.insert(schema.userCredentials).values({
-          userId,
-          passwordHash,
-        });
-
-        // Create empty profile (user can customize later). New accounts start
-        // public (the column defaults); Private is opt-in.
-        await tx.insert(schema.userProfiles).values({ userId });
-
-        // Insert verification token if email verification is enabled
-        if (emailVerificationEnabled && verificationToken && tokenExpires) {
-          await tx.insert(schema.verificationTokens).values({
-            identifier: email,
-            token: verificationToken,
-            expires: tokenExpires,
-          });
-        }
-      });
-    } catch (insertError) {
-      // Handle race condition: another request created this user between our check and insert
-      // PostgreSQL unique constraint violation code is '23505'
-      if (insertError && typeof insertError === 'object' && 'code' in insertError && insertError.code === '23505') {
-        return NextResponse.json({ error: 'An account with this email already exists' }, { status: 409 });
-      }
-      throw insertError;
-    }
-
-    // Send verification email if enabled
-    if (emailVerificationEnabled && verificationToken) {
-      // `?.trim() ||`, not `??`: Dockerfile.web's runner stage declares
-      // `ENV BASE_URL=$BASE_URL`, which is the EMPTY STRING in an image built
-      // without the build arg. `??` keeps an empty string and every link in this
-      // email would lose its origin; falling back to the request origin is right.
-      const baseUrl = process.env.BASE_URL?.trim() || request.nextUrl.origin;
-      let emailSent = false;
-      try {
-        await sendVerificationEmail(email, verificationToken, baseUrl);
-        emailSent = true;
-      } catch (emailError) {
-        console.error('Failed to send verification email:', emailError);
-        Sentry.captureException(emailError, {
-          tags: { area: 'auth', flow: 'register', phase: 'send-email' },
-        });
-        // User is created, they can use resend functionality
-      }
-
-      return NextResponse.json(
-        {
-          message: emailSent
-            ? 'Account created. Please check your email to verify your account.'
-            : 'Account created. Please request a new verification email.',
-          requiresVerification: true,
-          emailSent,
-        },
-        { status: 201 },
-      );
-    }
-
-    // Email verification disabled - user can log in immediately
-    return NextResponse.json(
-      {
-        message: 'Account created. You can now log in.',
-        requiresVerification: false,
-      },
-      { status: 201 },
-    );
-  } catch (error) {
-    if (error instanceof AuthBackendUnavailableError) return passwordCommandUnavailableResponse();
-    console.error('Registration error:', error);
-    return NextResponse.json({ error: 'An error occurred during registration' }, { status: 500 });
+    return await registerWithPasswordCommand(request);
+  } catch {
+    return passwordCommandUnavailableResponse();
   }
 }
