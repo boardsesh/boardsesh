@@ -35,6 +35,7 @@
     },
     "view": {
       "title": "{{climbName}}, {{grade}} auf {{boardName}} bei {{angle}}°",
+      "titleUngraded": "{{climbName}}, Boulder auf {{boardName}} bei {{angle}}°",
       "descriptionLead": "{{climbName}} ist ein {{grade}} auf {{layoutName}} bei {{angle}}°, geschraubt von {{setter}}.",
       "descriptionLeadNoSetter": "{{climbName}} ist ein {{grade}} auf {{layoutName}} bei {{angle}}°.",
       "descriptionLeadUngraded": "{{climbName}} ist ein Boulder auf {{layoutName}} bei {{angle}}°, geschraubt von {{setter}}.",
@@ -46,6 +47,7 @@
       "descriptionRated": "Bewertung {{quality}} von 5.",
       "descriptionCta": "Beleuchte ihn mit Boardsesh an deinem Board.",
       "imageAlt": "{{climbName}} - {{grade}} auf dem {{boardName}} Board",
+      "imageAltUngraded": "{{climbName}} auf dem {{boardName}} Board",
       "fallbackTitle": "Boulder",
       "fallbackDescription": "Boulder-Details und Beta-Videos ansehen"
     }

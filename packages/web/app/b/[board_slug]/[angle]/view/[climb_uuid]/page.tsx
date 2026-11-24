@@ -135,7 +135,7 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
     );
 
     return createBoardContentPageMetadata({
-      title: t('metadata.view.title', {
+      title: t(climbGrade ? 'metadata.view.title' : 'metadata.view.titleUngraded', {
         climbName,
         grade: climbGrade,
         boardName: boardTypeLabel(boardDetails.board_name),
@@ -155,7 +155,11 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
       path: canonicalPath,
       locale,
       imagePath: ogImagePath,
-      imageAlt: t('metadata.view.imageAlt', { climbName, grade: climbGrade, boardName: boardDetails.board_name }),
+      imageAlt: t(climbGrade ? 'metadata.view.imageAlt' : 'metadata.view.imageAltUngraded', {
+        climbName,
+        grade: climbGrade,
+        boardName: boardDetails.board_name,
+      }),
       // Public catalog aliases keep their canonical and share/handoff URLs,
       // but must not seed another crawl of every climb for every physical wall.
       // Spray walls branch above: their /b URL is the only canonical surface.

@@ -35,6 +35,7 @@
     },
     "view": {
       "title": "{{climbName}}, {{grade}} {{boardName}} climb at {{angle}}°",
+      "titleUngraded": "{{climbName}}, {{boardName}} climb at {{angle}}°",
       "descriptionLead": "{{climbName}} is {{grade}} on {{layoutName}} at {{angle}}°, set by {{setter}}.",
       "descriptionLeadNoSetter": "{{climbName}} is {{grade}} on {{layoutName}} at {{angle}}°.",
       "descriptionLeadUngraded": "{{climbName}} is a climb on {{layoutName}} at {{angle}}°, set by {{setter}}.",
@@ -46,6 +47,7 @@
       "descriptionRated": "Rated {{quality}} of 5.",
       "descriptionCta": "Light it on your board with Boardsesh.",
       "imageAlt": "{{climbName}} - {{grade}} on {{boardName}} board",
+      "imageAltUngraded": "{{climbName}} on {{boardName}} board",
       "fallbackTitle": "Climb",
       "fallbackDescription": "View climb details and beta videos"
     }

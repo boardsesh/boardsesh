@@ -1,4 +1,7 @@
 // @vitest-environment node
+import { createInstance } from 'i18next';
+import enClimbs from '@boardsesh/i18n/locales/en-US/climbs.json';
+import { getServerTranslation } from '@/app/lib/i18n/server';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 /**
@@ -95,7 +98,7 @@ vi.mock('@/app/lib/seo/metadata', () => ({
   createBoardContentPageMetadata: vi.fn((input: unknown) => input),
 }));
 
-import { getClimbStatsForAllAngles } from '@/app/lib/data/queries';
+import { getClimb, getClimbStatsForAllAngles } from '@/app/lib/data/queries';
 import { getFrontDoorBetaLinks, getFrontDoorSimilarClimbs } from '@/app/lib/data/front-door-data.server';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
 import ClimbViewPage, { generateMetadata } from '../page';
@@ -195,5 +198,39 @@ describe('the config-tuple climb description', () => {
     expect(describedAs()).toBe(
       'metadata.view.descriptionLead metadata.view.descriptionSends metadata.view.descriptionCta',
     );
+  });
+});
+
+describe('climb titles and image descriptions', () => {
+  it.each([
+    ['', 'Campus crusher 1, Kilter climb at 40° | Boardsesh', 'Campus crusher 1 on kilter board'],
+    [null, 'Campus crusher 1, Kilter climb at 40° | Boardsesh', 'Campus crusher 1 on kilter board'],
+    [undefined, 'Campus crusher 1, Kilter climb at 40° | Boardsesh', 'Campus crusher 1 on kilter board'],
+    ['V5', 'Campus crusher 1, V5 Kilter climb at 40° | Boardsesh', 'Campus crusher 1 - V5 on kilter board'],
+  ])('renders clean page and social metadata for grade %s', async (difficulty, expectedTitle, expectedAlt) => {
+    const instance = createInstance();
+    await instance.init({
+      lng: 'en-US',
+      fallbackLng: false,
+      ns: ['climbs'],
+      defaultNS: 'climbs',
+      resources: { 'en-US': { climbs: enClimbs } },
+      interpolation: { escapeValue: false },
+    });
+    vi.mocked(getServerTranslation).mockResolvedValueOnce({ t: instance.t, i18n: instance, locale: 'en-US' });
+    const currentClimb = await getClimb({} as Parameters<typeof getClimb>[0]);
+    vi.mocked(getClimb).mockResolvedValueOnce({
+      ...currentClimb,
+      name: 'Campus crusher 1',
+      difficulty,
+    } as unknown as Awaited<ReturnType<typeof getClimb>>);
+    const actualMetadata = await vi.importActual<typeof import('@/app/lib/seo/metadata')>('@/app/lib/seo/metadata');
+    vi.mocked(createBoardContentPageMetadata).mockImplementationOnce(actualMetadata.createBoardContentPageMetadata);
+    const metadata = await generateMetadata(props);
+
+    expect(metadata.title).toEqual({ absolute: expectedTitle });
+    expect(metadata.openGraph?.title).toBe(expectedTitle);
+    expect(metadata.twitter?.title).toBe(expectedTitle);
+    expect(metadata.openGraph?.images).toEqual([expect.objectContaining({ alt: expectedAlt })]);
   });
 });

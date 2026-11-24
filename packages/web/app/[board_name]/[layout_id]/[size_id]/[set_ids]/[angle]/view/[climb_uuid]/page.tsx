@@ -118,7 +118,7 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
     );
 
     return createBoardContentPageMetadata({
-      title: t('metadata.view.title', {
+      title: t(climbGrade ? 'metadata.view.title' : 'metadata.view.titleUngraded', {
         climbName,
         grade: climbGrade,
         boardName: boardTypeLabel(boardDetails.board_name),
@@ -138,7 +138,11 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
       path: climbUrl,
       locale,
       imagePath: ogImagePath,
-      imageAlt: t('metadata.view.imageAlt', { climbName, grade: climbGrade, boardName: boardDetails.board_name }),
+      imageAlt: t(climbGrade ? 'metadata.view.imageAlt' : 'metadata.view.imageAltUngraded', {
+        climbName,
+        grade: climbGrade,
+        boardName: boardDetails.board_name,
+      }),
       // Translated views stay shareable; only the English climb belongs in search.
       robots: isHiddenClimb || locale !== DEFAULT_LOCALE ? { index: false, follow: true } : undefined,
     });
