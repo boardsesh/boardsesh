@@ -351,6 +351,12 @@
       "createFailed": "Impossible de créer la borne."
     },
     "editor": {
+      "appearance": {
+        "label": "Apparence",
+        "light": "Clair",
+        "dark": "Sombre",
+        "description": "Choisis l'apparence de cet écran. Les autres bornes gardent leur propre apparence."
+      },
       "back": "Toutes les bornes",
       "save": "Enregistrer la disposition",
       "saved": "Borne enregistrée.",

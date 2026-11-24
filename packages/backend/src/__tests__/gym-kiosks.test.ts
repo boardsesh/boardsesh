@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { eq, sql } from 'drizzle-orm';
-import { resourcePrivacy, userBoards } from '@boardsesh/db/schema';
+import { gymKiosks, resourcePrivacy, userBoards } from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { MAX_KIOSKS_PER_GYM } from '@boardsesh/kiosk';
 import { db } from '../db/client';
@@ -227,6 +227,20 @@ describe('kiosk CRUD gate', () => {
 // ============================================================================
 
 describe('createGymKiosk slug + cap', () => {
+  it('creates dark kiosks by default', async () => {
+    const kiosk = await socialGymKioskMutations.createGymKiosk(
+      null,
+      { input: { gymUuid: publicGym.uuid, name: 'New screen', slug: 'new-screen' } },
+      authCtx(OWNER),
+    );
+    expect(kiosk.layout).toMatchObject({ theme: 'dark' });
+    const [stored] = await db
+      .select({ layout: gymKiosks.layout })
+      .from(gymKiosks)
+      .where(eq(gymKiosks.uuid, kiosk.uuid));
+    expect(stored.layout.theme).toBe('dark');
+  });
+
   it('derives a slug from the name when none is given', async () => {
     const kiosk = await socialGymKioskMutations.createGymKiosk(
       null,
@@ -410,6 +424,63 @@ describe('createGymKiosk slug + cap', () => {
 
 describe('updateGymKiosk layout validation', () => {
   const seedKiosk = () => insertKiosk({ gymId: publicGym.id, slug: 'editable', name: 'Editable' });
+
+  it('persists an appearance edit on only the selected kiosk and reads it publicly', async () => {
+    const selected = await seedKiosk();
+    await insertKiosk({ gymId: publicGym.id, slug: 'other-screen', name: 'Other screen' });
+    const updated = await socialGymKioskMutations.updateGymKiosk(
+      null,
+      {
+        input: {
+          kioskUuid: selected.uuid,
+          layout: {
+            version: 1,
+            boards: [{ boardUuid: boardPub1.uuid }],
+            leaderboard: { boardUuid: null, period: 'session' },
+            showInstallQr: true,
+            theme: 'light',
+          },
+        },
+      },
+      authCtx(OWNER),
+    );
+    expect(updated.layout).toMatchObject({ theme: 'light', showInstallQr: true });
+    const [stored] = await db
+      .select({ layout: gymKiosks.layout })
+      .from(gymKiosks)
+      .where(eq(gymKiosks.uuid, selected.uuid));
+    expect(stored.layout.theme).toBe('light');
+
+    const publicSelected = await socialGymKioskQueries.gymKiosk(
+      null,
+      { gymSlug: publicGym.slug, kioskSlug: 'editable' },
+      anonCtx(),
+    );
+    const publicOther = await socialGymKioskQueries.gymKiosk(
+      null,
+      { gymSlug: publicGym.slug, kioskSlug: 'other-screen' },
+      anonCtx(),
+    );
+    expect(publicSelected?.layout).toMatchObject({ theme: 'light', showInstallQr: true });
+    expect(publicOther?.layout).toMatchObject({ theme: 'dark' });
+  });
+
+  it('rejects an invalid appearance without altering the saved configuration', async () => {
+    const kiosk = await seedKiosk();
+    await expect(
+      socialGymKioskMutations.updateGymKiosk(
+        null,
+        { input: { kioskUuid: kiosk.uuid, layout: { version: 1, boards: [], theme: 'automatic' } } },
+        authCtx(OWNER),
+      ),
+    ).rejects.toThrow();
+    const read = await socialGymKioskQueries.gymKiosk(
+      null,
+      { gymSlug: publicGym.slug, kioskSlug: 'editable' },
+      anonCtx(),
+    );
+    expect(read?.layout).toMatchObject({ theme: 'dark' });
+  });
 
   it('rejects a layout with more than four boards', async () => {
     const kiosk = await seedKiosk();

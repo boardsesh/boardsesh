@@ -1,13 +1,11 @@
 // Pure, server-safe brand-colour resolution for the kiosk surface.
 //
-// The kiosk is ALWAYS dark (a TV in a gym), so gym branding only contributes an
-// ACCENT colour — never the surface. A gym owner can pick any hex in the manage
-// UI, including one that vanishes on a dark screen, so the accent is clamped to
-// a minimum contrast ratio against the kiosk surface by mixing it toward white
-// until it reads. Runs in server components (no DOM, no React).
+// Each kiosk chooses its own light/dark palette. Gym branding contributes the
+// accent; contrast is checked against both the page and panel surfaces.
 
 import { contrastRatio, readableTextColor } from '@boardsesh/board-constants';
-import { materialSurfaces } from '@boardsesh/velvet-tokens';
+import { KIOSK_DEFAULT_THEME, type KioskTheme } from '@boardsesh/kiosk';
+import { brandColors, brandColorsDark, materialSurfaces, withAlpha } from '@boardsesh/velvet-tokens';
 
 /**
  * The kiosk's dark surface. Mirrors the dark-mode `--semantic-background`
@@ -15,6 +13,25 @@ import { materialSurfaces } from '@boardsesh/velvet-tokens';
  * contrast math needs a concrete hex at render time, not a CSS var reference.
  */
 export const KIOSK_DARK_SURFACE: string = materialSurfaces.dark.background;
+export const KIOSK_LIGHT_SURFACE: string = materialSurfaces.light.secondaryBackground;
+
+/** Shared by the server-rendered kiosk and the editor's preview frame. */
+export function resolveKioskPalette(theme: KioskTheme = KIOSK_DEFAULT_THEME) {
+  const surfaces = materialSurfaces[theme];
+  const surface = theme === 'light' ? KIOSK_LIGHT_SURFACE : KIOSK_DARK_SURFACE;
+  const raised = theme === 'light' ? surfaces.background : surfaces.secondaryBackground;
+  const warning = (theme === 'light' ? brandColors : brandColorsDark).warning;
+  return {
+    surface,
+    raised,
+    text: surfaces.label,
+    muted: surfaces.secondaryLabel,
+    border: surfaces.separator,
+    overlay: withAlpha(raised, 0.96),
+    warning,
+    onWarning: readableTextColor(warning),
+  };
+}
 
 /**
  * Accent when the gym set no brand colours (or only invalid ones): the dark
@@ -29,10 +46,13 @@ export const KIOSK_DEFAULT_ACCENT: string = materialSurfaces.dark.label;
  * most saturated brand colours outright).
  */
 export const KIOSK_MIN_ACCENT_CONTRAST = 3;
+export const KIOSK_MIN_TEXT_CONTRAST = 4.5;
 
 export type KioskBrand = {
-  /** Brand accent, clamped to ≥3:1 contrast against the dark kiosk surface. */
+  /** Brand fill, clamped to ≥3:1 against both theme surfaces. */
   accent: string;
+  /** Accent used for ordinary text, clamped to ≥4.5:1 on both surfaces. */
+  accentText: string;
   /** Readable text colour (#000000 or #FFFFFF) for content ON the accent. */
   onAccent: string;
 };
@@ -58,55 +78,56 @@ function toHexColor({ red, green, blue }: RgbColor): string {
   return `#${channelToHex(red)}${channelToHex(green)}${channelToHex(blue)}`;
 }
 
-/** Linear mix of two colours; `whiteAmount` 0 → colour unchanged, 1 → white. */
-function mixTowardWhite(color: RgbColor, whiteAmount: number): RgbColor {
+/** Mix towards the black/white endpoint that contrasts with the surfaces. */
+function mixTowardEndpoint(color: RgbColor, endpoint: number, amount: number): RgbColor {
   return {
-    red: color.red + (255 - color.red) * whiteAmount,
-    green: color.green + (255 - color.green) * whiteAmount,
-    blue: color.blue + (255 - color.blue) * whiteAmount,
+    red: color.red + (endpoint - color.red) * amount,
+    green: color.green + (endpoint - color.green) * amount,
+    blue: color.blue + (endpoint - color.blue) * amount,
   };
 }
 
-/**
- * Lighten `color` (by mixing toward white in 5% steps) until it reaches
- * `minRatio` contrast against `surface`. A colour that already passes is
- * returned unchanged (normalised to `#rrggbb`). White always passes against a
- * dark surface, so the loop terminates. Invalid input returns `null` — the
- * caller decides the fallback.
- */
-export function ensureReadableOnSurface(color: string, surface: string, minRatio: number): string | null {
+function ensureReadableOnSurfaces(color: string, surfaces: string[], minRatio: number): string | null {
   const parsedColor = parseHexColor(color);
   if (parsedColor === null) return null;
 
-  for (let whiteAmount = 0; whiteAmount <= 1; whiteAmount += 0.05) {
-    const candidate = toHexColor(mixTowardWhite(parsedColor, whiteAmount));
-    const ratio = contrastRatio(candidate, surface);
-    if (ratio !== null && ratio >= minRatio) {
+  const minimumContrast = (candidate: string) =>
+    Math.min(...surfaces.map((surface) => contrastRatio(candidate, surface) ?? 0));
+  const endpoint = minimumContrast('#000000') > minimumContrast('#ffffff') ? 0 : 255;
+  for (let step = 0; step <= 20; step += 1) {
+    const candidate = toHexColor(mixTowardEndpoint(parsedColor, endpoint, step / 20));
+    if (minimumContrast(candidate) >= minRatio) {
       return candidate;
     }
   }
-  return '#ffffff';
+  return null;
+}
+
+/** Preserve readable colours; lighten on dark surfaces and darken on light. */
+export function ensureReadableOnSurface(color: string, surface: string, minRatio: number): string | null {
+  return ensureReadableOnSurfaces(color, [surface], minRatio);
 }
 
 /**
  * Resolve the kiosk brand from gym branding fields. Accent preference:
  * `brandAccentColor`, then `brandPrimaryColor`, then the Boardsesh default —
- * each clamped to ≥3:1 against the dark surface. `brandBackgroundColor` is
- * deliberately ignored: the kiosk surface stays dark regardless of branding.
+ * each adjusted against the selected kiosk palette. The gym-level
+ * `brandBackgroundColor` remains separate from this per-kiosk setting.
  */
-export function resolveKioskBrand(gym: {
-  brandAccentColor?: string | null;
-  brandPrimaryColor?: string | null;
-}): KioskBrand {
-  const candidates = [gym.brandAccentColor, gym.brandPrimaryColor, KIOSK_DEFAULT_ACCENT];
+export function resolveKioskBrand(
+  gym: { brandAccentColor?: string | null; brandPrimaryColor?: string | null },
+  theme: KioskTheme = KIOSK_DEFAULT_THEME,
+): KioskBrand {
+  const palette = resolveKioskPalette(theme);
+  const surfaces = [palette.surface, palette.raised];
+  const candidates = [gym.brandAccentColor, gym.brandPrimaryColor, palette.text];
   for (const candidate of candidates) {
     if (!candidate) continue;
-    const accent = ensureReadableOnSurface(candidate, KIOSK_DARK_SURFACE, KIOSK_MIN_ACCENT_CONTRAST);
-    if (accent !== null) {
-      return { accent, onAccent: readableTextColor(accent) };
+    const accent = ensureReadableOnSurfaces(candidate, surfaces, KIOSK_MIN_ACCENT_CONTRAST);
+    const accentText = ensureReadableOnSurfaces(candidate, surfaces, KIOSK_MIN_TEXT_CONTRAST);
+    if (accent !== null && accentText !== null) {
+      return { accent, accentText, onAccent: readableTextColor(accent) };
     }
   }
-  // Unreachable in practice (the default accent always parses), but keeps the
-  // function total without a non-null assertion.
-  return { accent: KIOSK_DEFAULT_ACCENT, onAccent: readableTextColor(KIOSK_DEFAULT_ACCENT) };
+  return { accent: palette.text, accentText: palette.text, onAccent: readableTextColor(palette.text) };
 }

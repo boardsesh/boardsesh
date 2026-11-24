@@ -5,7 +5,7 @@
   z-index: 10;
   font-size: var(--kiosk-font-small);
   color: var(--kiosk-text-muted);
-  background: var(--overlay-dark);
+  background: var(--kiosk-overlay);
   border-radius: var(--border-radius-full);
   padding: var(--spacing-1) var(--spacing-3);
   text-decoration: none;

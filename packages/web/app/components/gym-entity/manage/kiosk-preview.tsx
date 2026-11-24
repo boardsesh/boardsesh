@@ -30,6 +30,7 @@ import LeaderboardRail from '../../kiosk/leaderboard-rail/leaderboard-rail';
 import { buildKioskViewModel } from '../../kiosk/kiosk-view-model';
 import layoutStyles from '../../kiosk/kiosk-layout.module.css';
 import { resolveGymLogoDisplayUrl } from '@/app/lib/gym-logo-display-url';
+import { resolveKioskPalette } from '@/app/lib/kiosk/brand-contrast';
 import { serializeKioskLayout, type KioskEditorState } from './kiosk-editor-state';
 import styles from './kiosk-preview.module.css';
 
@@ -151,10 +152,14 @@ export default function KioskPreview({ gym, kioskName, state, gymBoards }: Kiosk
   const logoDisplayUrl = resolveGymLogoDisplayUrl(gym.logoUrl ?? null, getBackendHttpUrl());
 
   return (
-    <div ref={frameRef} className={styles.frame}>
+    <div
+      ref={frameRef}
+      className={styles.frame}
+      style={{ backgroundColor: resolveKioskPalette(state.theme).surface, colorScheme: state.theme }}
+    >
       {scale > 0 && (
         <div className={styles.stage} style={{ transform: `scale(${scale})` }}>
-          <KioskThemeScope gym={gym}>
+          <KioskThemeScope gym={gym} theme={state.theme}>
             <ViewerKioskPresenceHub
               boardIds={distinctBoardIds}
               boardUuids={Object.fromEntries(viewModel.boards.map((board) => [board.boardId, board.boardUuid]))}

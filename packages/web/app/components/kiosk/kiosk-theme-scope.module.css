@@ -1,20 +1,7 @@
-/* Kiosk theme scope. The surface is ALWAYS dark regardless of the viewer's
- * colour mode — a TV on a gym wall doesn't follow OS theme. The dark literals
- * here mirror the Graphite dark-mode token block in app/components/index.css
- * (the kiosk page can't rely on those because the page may render for a viewer
- * in light mode). --kiosk-accent / --kiosk-on-accent are injected inline by
- * kiosk-theme-scope.tsx from the gym's (contrast-clamped) branding. */
+/* The saved kiosk theme supplies palette variables during server rendering.
+ * It is independent of the OS and does not change the surrounding manage UI. */
 
 .scope {
-  /* Surface + text tokens (Graphite dark values from index.css:
-   * --semantic-background, --semantic-surface, --neutral-900, --neutral-500,
-   * --separator). Literals on purpose: a light-mode viewer must still get dark. */
-  --kiosk-surface: #0e0e0e;
-  --kiosk-surface-raised: #1e1e1e;
-  --kiosk-text: #ededed;
-  --kiosk-text-muted: #b0b0b0;
-  --kiosk-border: rgba(255, 255, 255, 0.12);
-
   /* Type scale — clamp() only; media-query-free so 2015-era TV browsers cope. */
   --kiosk-font-hero: clamp(20px, 2.6vw, 44px);
   --kiosk-font-large: clamp(16px, 1.8vw, 30px);
@@ -27,7 +14,6 @@
   --kiosk-rail-width: clamp(300px, 24vw, 440px);
   --kiosk-rail-height: clamp(200px, 28vh, 360px);
 
-  color-scheme: dark;
   background: var(--kiosk-surface);
   color: var(--kiosk-text);
   font-family: inherit;
