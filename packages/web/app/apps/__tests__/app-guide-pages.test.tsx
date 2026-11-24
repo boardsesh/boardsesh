@@ -390,6 +390,10 @@ describe('page-level claims from the registry', () => {
     expect(strip('hub')).toContain(
       'Chrome and Edge light the board over Web Bluetooth; Safari and Firefox can browse and log',
     );
+    // The queue and workout tiles show real screens, so they say what is on them.
+    const everyBoardShots = Array.from(pages.hub.querySelectorAll('#every-board img'));
+    expect(everyBoardShots.length).toBeGreaterThan(0);
+    for (const image of everyBoardShots) expect(image.getAttribute('alt')?.length).toBeGreaterThan(10);
     expect(pages.hub.querySelector('#every-board .lead, #every-board h2 + p')?.textContent).toMatch(
       /Learn the app once/,
     );

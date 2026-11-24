@@ -262,7 +262,7 @@ export function FeatureTiles({
               {art.kind === 'browser-shot' ? <BrowserShot t={t} sizes="(max-width: 600px) 100vw, 360px" /> : null}
               {art.kind === 'shot' ? (
                 <Box className={styles.tileCrop}>
-                  <TileShot shot={art.shot} />
+                  <TileShot t={t} shot={art.shot} />
                 </Box>
               ) : null}
               {art.kind === 'diagram' ? <TileDiagram t={t} art={art} /> : null}
@@ -320,9 +320,19 @@ export function BrowserShot({ t, sizes, className }: { t: T; sizes: string; clas
   );
 }
 
-function TileShot({ shot }: { shot: GuideShot }) {
+/** A real screen (the queue, the workout builder) carries information: it gets the shot's own alt text. */
+function TileShot({ t, shot }: { t: T; shot: GuideShot }) {
   const image = guideShot(shot);
-  return <Image src={image.src} alt="" width={image.width} height={image.height} sizes="230px" loading="lazy" />;
+  return (
+    <Image
+      src={image.src}
+      alt={shotAlt(t, shot)}
+      width={image.width}
+      height={image.height}
+      sizes="230px"
+      loading="lazy"
+    />
+  );
 }
 
 export function OnlyTray({ guide, t }: { guide: ComparisonGuide; t: T }) {
