@@ -482,7 +482,8 @@ describe('a fellow member of the session', () => {
       identityPolicyVersion: 1,
       seq: 1,
       name: 'Co-members climb',
-      confirmedAt: IN_SESSION,
+      // Keep wall history inside its window while older session ticks stay readable.
+      confirmedAt: new Date().toISOString(),
     });
     // A fellow member, so the session itself names the climber to them…
     expect(await rosterName(MEMBER, sessionId)).toBe(CLIMBER);
