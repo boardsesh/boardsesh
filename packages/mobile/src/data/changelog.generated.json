@@ -1,6 +1,50 @@
 {
-  "generatedAt": "2026-11-24T20:15:09.821Z",
+  "generatedAt": "2026-11-24T22:00:31.533Z",
   "entries": [
+    {
+      "prNumber": 8152,
+      "category": "fixed",
+      "title": "Repair merged gym links and keep your gym profile and photos current through your assistant.",
+      "mergedAt": "2026-11-24T21:47:29Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8152",
+      "body": "Choose MoonBoard setups, including Masters 2019 and screw-on feet."
+    },
+    {
+      "prNumber": 8147,
+      "category": "improved",
+      "title": "Get to your next session faster from the website, and zoom in when you need to.",
+      "mergedAt": "2026-11-24T21:46:51Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8147"
+    },
+    {
+      "prNumber": 8145,
+      "category": "improved",
+      "title": "Gym search previews include saved locations and publicly listed boards.",
+      "mergedAt": "2026-11-24T21:39:29Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8145"
+    },
+    {
+      "prNumber": 8153,
+      "category": "fixed",
+      "title": "MoonBoard black holds and grid letters are now easy to see on boardsesh.com",
+      "mergedAt": "2026-11-24T21:37:20Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8153"
+    },
+    {
+      "prNumber": 8143,
+      "category": "fixed",
+      "title": "Ungraded climbs show clean page titles and share previews.",
+      "mergedAt": "2026-11-24T21:26:33Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8143"
+    },
+    {
+      "prNumber": 7752,
+      "category": "new",
+      "title": "Follow climbs lit through your board's official app in wall history.",
+      "mergedAt": "2026-11-24T20:41:20Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7752",
+      "body": "Browse imported climbs with grades and actions at your selected angle."
+    },
     {
       "prNumber": 8120,
       "category": "new",

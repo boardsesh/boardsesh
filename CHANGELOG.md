@@ -8,6 +8,8 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### New
 
+- Follow climbs lit through your board's official app in wall history. ([#7752](https://github.com/boardsesh/boardsesh/pull/7752))
+  Browse imported climbs with grades and actions at your selected angle.
 - Admins can combine duplicate gym and board listings while keeping your sends. ([#8120](https://github.com/boardsesh/boardsesh/pull/8120))
 - Pilot support for managing your gym, boards and TVs from ChatGPT or Claude. ([#8112](https://github.com/boardsesh/boardsesh/pull/8112))
 - Your gym’s local time is picked from its map location or public address. Staff can still choose a different time zone. ([#8124](https://github.com/boardsesh/boardsesh/pull/8124))
@@ -17,6 +19,8 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### Improved
 
+- Get to your next session faster from the website, and zoom in when you need to. ([#8147](https://github.com/boardsesh/boardsesh/pull/8147))
+- Gym search previews include saved locations and publicly listed boards. ([#8145](https://github.com/boardsesh/boardsesh/pull/8145))
 - See a preview and clear progress when bringing your old Aurora logbook across. File errors stay visible so you can choose another export and try again. ([#8123](https://github.com/boardsesh/boardsesh/pull/8123))
 - Refine Spraywall holds without breaking your climbs. ([#8111](https://github.com/boardsesh/boardsesh/pull/8111))
   Removal warnings count each climb once.
@@ -26,6 +30,10 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### Fixed
 
+- Repair merged gym links and keep your gym profile and photos current through your assistant. ([#8152](https://github.com/boardsesh/boardsesh/pull/8152))
+  Choose MoonBoard setups, including Masters 2019 and screw-on feet.
+- MoonBoard black holds and grid letters are now easy to see on boardsesh.com ([#8153](https://github.com/boardsesh/boardsesh/pull/8153))
+- Ungraded climbs show clean page titles and share previews. ([#8143](https://github.com/boardsesh/boardsesh/pull/8143))
 - Open Gym analytics from your gym page without leaving the app. Find reporting time-zone setup above the charts when it is still needed. ([#8119](https://github.com/boardsesh/boardsesh/pull/8119))
 - Tapping the climb in the bar above your tabs now slides the player up like any other climb, and fast open-and-close no longer freezes the app ([#8127](https://github.com/boardsesh/boardsesh/pull/8127))
 - On iPhone Duo, the Climbs buttons on the side no longer overlap the tab bar. Create a climb lives in the ⋯ menu there. ([#8125](https://github.com/boardsesh/boardsesh/pull/8125))
