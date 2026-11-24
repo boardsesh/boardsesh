@@ -9,7 +9,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import React from 'react';
-import { render, act } from '@testing-library/react';
+import { render, act, waitFor } from '@testing-library/react';
 import { renderHook } from '@testing-library/react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import { AuthModalProvider, useAuthModal } from '@/app/components/providers/auth-modal-provider';
@@ -59,15 +59,15 @@ describe('AuthModal — callbackUrl', () => {
 });
 
 describe('AuthModalProvider — callbackUrl', () => {
-  it('carries callbackUrl from openAuthModal all the way to the OAuth buttons', () => {
+  it('carries callbackUrl from openAuthModal all the way to the OAuth buttons', async () => {
     const { result } = renderHook(() => useAuthModal(), {
       wrapper: ({ children }: { children: React.ReactNode }) => <AuthModalProvider>{children}</AuthModalProvider>,
     });
 
-    act(() => {
+    await act(async () => {
       result.current.openAuthModal({ callbackUrl: '/gym/boulderwelt?claim=1' });
     });
 
-    expect(lastSocialProps()?.callbackUrl).toBe('/gym/boulderwelt?claim=1');
+    await waitFor(() => expect(lastSocialProps()?.callbackUrl).toBe('/gym/boulderwelt?claim=1'));
   });
 });

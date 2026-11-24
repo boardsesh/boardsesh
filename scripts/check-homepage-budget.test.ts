@@ -12,7 +12,7 @@ import {
 } from './check-homepage-budget';
 import type { SmokeResponse } from './production-smoke';
 
-const fixture = createHomepageFixture('known-budget-fixture');
+const fixture = createHomepageFixture();
 const title = 'A fixture homepage';
 const completeHtml = `<main><h1>${title}</h1>${fixture.visibleMarkers.map((marker) => `<p>${marker}</p>`).join('')}</main>`;
 function response(body = completeHtml): SmokeResponse {
@@ -33,13 +33,6 @@ describe('rendered homepage budget assertion', () => {
     expect(createHomepageFixture()).toEqual(createHomepageFixture());
   });
 
-  it('does not confuse the first beta row with the tenth row', () => {
-    const missingFirst = `<main><h1>${title}</h1><p>${fixture.recentBetaLinks[9].betaLink.foreignUsername} ${fixture.visibleMarkers.slice(1).join(' ')}</p></main>`;
-    expect(() => assertHomepageBudget(response(missingFirst), title, fixture.visibleMarkers)).toThrow(
-      'visible SSR fixture content',
-    );
-  });
-
   it('rejects a shell that only carries markers in scripts or attributes', () => {
     const shell = `<main><h1>${title}</h1><p title="${fixture.visibleMarkers.join(' ')}"></p><script>${fixture.visibleMarkers.join(' ')}</script></main>`;
     expect(() => assertHomepageBudget(response(shell), title, fixture.visibleMarkers)).toThrow(
@@ -47,8 +40,8 @@ describe('rendered homepage budget assertion', () => {
     );
   });
 
-  it('requires populated usage proof as well as beta cards', () => {
-    const withoutStats = `<main><h1>${title}</h1>${fixture.visibleMarkers.slice(0, 2).join(' ')}</main>`;
+  it('requires both populated usage proof counts', () => {
+    const withoutStats = `<main><h1>${title}</h1>${fixture.visibleMarkers[1]}</main>`;
     expect(() => assertHomepageBudget(response(withoutStats), title, fixture.visibleMarkers)).toThrow('123,400');
   });
 
@@ -100,10 +93,9 @@ const fs = require('node:fs');
 if (fs.existsSync('.env.local') || fs.existsSync('.next/cache/must-not-copy') || process.env.PRIVATE_FIXTURE_SECRET) throw new Error('isolation failed');
 http.createServer(async (_request, response) => {
   const query = async name => (await (await fetch(process.env.BACKEND_INTERNAL_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({query:'query '+name+' { fixture }'})})).json()).data;
-  const recent = await query('GetRecentBetaLinks');
   const stats = await query('GetCommunityStats');
   response.setHeader('Content-Type', 'text/html');
-  response.end('<main><h1>A fixture homepage</h1>'+recent.recentBetaLinks.map(row=>'<p>'+row.betaLink.foreignUsername+'</p>').join('')+'<p>'+stats.communityStats.climbersLast30Days.toLocaleString('en-US')+' '+stats.communityStats.litLast30Days.toLocaleString('en-US')+'</p></main>');
+  response.end('<main><h1>A fixture homepage</h1>'+'<p>'+stats.communityStats.climbersLast30Days.toLocaleString('en-US')+' '+stats.communityStats.litLast30Days.toLocaleString('en-US')+'</p></main>');
 }).listen(Number(process.env.PORT),process.env.HOSTNAME);`;
 
 describe('isolated artifact runner', () => {
@@ -114,13 +106,29 @@ describe('isolated artifact runner', () => {
       const result = await checkHomepageBudget(artifact.webDirectory);
       expect(result).toMatchObject({
         buildId: 'fixture-build',
-        betaRows: 20,
+        deferredBeta: true,
         expectedHeading: title,
         budgetBytes: 60_000,
       });
       expect(result.gzipBytes).toBeLessThan(60_000);
       expect(await readFile(join(artifact.webDirectory, '.next/standalone/packages/web/.env.local'), 'utf8')).toContain(
         'must-not-copy',
+      );
+    } finally {
+      await rm(artifact.directory, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects server rendering that fetches privacy-sensitive beta rows', async () => {
+    const artifact = await createArtifact(
+      successfulServer.replace(
+        "const stats = await query('GetCommunityStats');",
+        "await query('GetRecentBetaLinks'); const stats = await query('GetCommunityStats');",
+      ),
+    );
+    try {
+      await expect(checkHomepageBudget(artifact.webDirectory)).rejects.toThrow(
+        'Recent beta must load in the browser, never in cacheable homepage HTML',
       );
     } finally {
       await rm(artifact.directory, { recursive: true, force: true });

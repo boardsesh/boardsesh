@@ -119,7 +119,7 @@ publishes `es-mx` and Google `es-419`.
 - **Black, except one case.** Apple allows its white badge only when it is the
   one store badge on the page, and Google Play is black only. So the App Store
   badge is white only when it stands alone on a page rendered per request that
-  shows no other store badge (an iPhone on the home page), at 48px. Every
+  shows no other store badge (an iPhone on a localized, uncached homepage), at 48px. Every
   other badge is black. Pairs, and every `StoreInstallButtons` badge on shared
   HTML (which starts as a pair for everyone), are 44px, so nothing changes
   colour or size at hydration. The phone's hero badge on climb, board-list and

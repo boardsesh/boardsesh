@@ -9,6 +9,7 @@ import Stack from '@mui/material/Stack';
 import Box from '@mui/material/Box';
 import { DatePicker as MuiDatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs from 'dayjs';
+import DatePickerProvider from '@/app/components/form/date-picker-provider';
 import SwipeableDrawer from '@/app/components/swipeable-drawer/swipeable-drawer';
 import {
   type UnifiedTimeframeType,
@@ -97,20 +98,22 @@ export default function StatsFilterDrawer({
         </Box>
 
         {timeframe === 'custom' && (
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-            <MuiDatePicker
-              value={fromDate ? dayjs(fromDate) : null}
-              onChange={(val) => onFromDateChange(val ? val.format('YYYY-MM-DD') : '')}
-              slotProps={{ textField: { size: 'small', fullWidth: true } }}
-              label={t('filter.drawer.from')}
-            />
-            <MuiDatePicker
-              value={toDate ? dayjs(toDate) : null}
-              onChange={(val) => onToDateChange(val ? val.format('YYYY-MM-DD') : '')}
-              slotProps={{ textField: { size: 'small', fullWidth: true } }}
-              label={t('filter.drawer.to')}
-            />
-          </Stack>
+          <DatePickerProvider>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+              <MuiDatePicker
+                value={fromDate ? dayjs(fromDate) : null}
+                onChange={(val) => onFromDateChange(val ? val.format('YYYY-MM-DD') : '')}
+                slotProps={{ textField: { size: 'small', fullWidth: true } }}
+                label={t('filter.drawer.from')}
+              />
+              <MuiDatePicker
+                value={toDate ? dayjs(toDate) : null}
+                onChange={(val) => onToDateChange(val ? val.format('YYYY-MM-DD') : '')}
+                slotProps={{ textField: { size: 'small', fullWidth: true } }}
+                label={t('filter.drawer.to')}
+              />
+            </Stack>
+          </DatePickerProvider>
         )}
       </Box>
     </SwipeableDrawer>

@@ -1,4 +1,4 @@
-import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
+import { resolveMarketingStaticAssetUrl } from '@/app/lib/marketing-static-asset-url';
 import { absoluteUrl } from '@/app/lib/seo/base-url';
 
 /**
@@ -40,9 +40,9 @@ export type ShowcaseVideoSources = { webm: string; mp4: string; poster: string }
 
 export function showcaseVideoSources(): ShowcaseVideoSources {
   return {
-    webm: resolveStaticAssetUrl('/videos/home/showcase-9x16-lite.webm'),
-    mp4: resolveStaticAssetUrl('/videos/home/showcase-9x16-lite.mp4'),
-    poster: resolveStaticAssetUrl('/images/home/showcase-hero-9x16.webp'),
+    webm: resolveMarketingStaticAssetUrl('/videos/home/showcase-9x16-lite.webm'),
+    mp4: resolveMarketingStaticAssetUrl('/videos/home/showcase-9x16-lite.mp4'),
+    poster: resolveMarketingStaticAssetUrl('/images/home/showcase-hero-9x16.webp'),
   };
 }
 

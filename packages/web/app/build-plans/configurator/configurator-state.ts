@@ -42,7 +42,7 @@ export const CNC_KICKER_SET_IDS: readonly number[] = [28, 29];
 export const CNC_ENGRAVE_OPTION_KEYS: readonly string[] = ['engraveHoldIds', 'engraveAngleTicks', 'tb2Engraving'];
 
 /** IndexedDB key the in-progress configuration is parked under across a sign-in round trip. */
-export const CNC_CONFIGURATOR_DRAFT_KEY = 'cnc:configurator-draft';
+export { CNC_CONFIGURATOR_DRAFT_KEY } from './draft-key';
 
 /**
  * How a piece of artwork is cut, in the order the picker offers them.

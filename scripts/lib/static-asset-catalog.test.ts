@@ -8,6 +8,7 @@ import {
   renderStaticAssetJson,
   renderStaticAssetObjectKeyCatalogJson,
   renderStaticAssetShellTypeScript,
+  renderStaticAssetMarketingTypeScript,
 } from './static-asset-catalog';
 
 describe('static asset catalog generation', () => {
@@ -174,5 +175,46 @@ describe('static asset discovery', () => {
     const repoRoot = createFixtureRepo(['packages/web/public/images/help/discover.webp']);
 
     expect(() => discoverStaticAssetSources(repoRoot)).not.toThrow();
+  });
+});
+
+describe('marketing asset catalog generation', () => {
+  const record = (logicalPath: string, contents = logicalPath) =>
+    createStaticAssetRecord(
+      {
+        logicalPath,
+        sourcePath: `packages/web/public${logicalPath}`,
+        nativeBundle: true,
+      },
+      Buffer.from(contents),
+    );
+
+  it('includes marketing captures and media while excluding unrelated board and help assets', () => {
+    const included = [
+      '/images/app/ios/queue.webp',
+      '/images/app/android/es/queue.webp',
+      '/images/home/showcase-hero-9x16.webp',
+      '/videos/home/showcase-9x16-lite.webm',
+      '/videos/home/showcase-9x16-lite.mp4',
+      '/images/help/spray-wall-photo.webp',
+    ];
+    const excluded = ['/images/kilter/wall.webp', '/images/help/logbook.webp', '/videos/help/paint.webm'];
+    const manifest = Object.fromEntries(
+      [...included, ...excluded].map((logicalPath) => [logicalPath, record(logicalPath)]),
+    );
+    const generated = renderStaticAssetMarketingTypeScript(manifest);
+    for (const logicalPath of included)
+      expect(generated).toContain(`'${logicalPath}': '${manifest[logicalPath].objectKey}'`);
+    for (const logicalPath of excluded) expect(generated).not.toContain(logicalPath);
+  });
+  it('stays deterministic and follows changed source bytes without handwritten hashes', () => {
+    const queue = record('/images/app/ios/queue.webp');
+    const poster = record('/images/home/showcase.webp');
+    const first = { [queue.logicalPath]: queue, [poster.logicalPath]: poster };
+    const reversed = { [poster.logicalPath]: poster, [queue.logicalPath]: queue };
+    expect(renderStaticAssetMarketingTypeScript(first)).toBe(renderStaticAssetMarketingTypeScript(reversed));
+    expect(
+      renderStaticAssetMarketingTypeScript({ [queue.logicalPath]: record(queue.logicalPath, 'new capture') }),
+    ).not.toContain(queue.objectKey);
   });
 });

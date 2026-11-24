@@ -1598,3 +1598,45 @@ resolve their SDK behavior locally. The cookie is Secure, SameSite=Lax,
 Path=/, one year, and Domain=.boardsesh.com on production so www and the Expo
 browser app share the choice. Embeds show no banner and send no product
 analytics; kiosks show no banner and use minimal operational telemetry.
+
+
+### Anonymous marketing HTML (#8140)
+
+The `boardsesh:www-marketing-html-edge-cache` rule admits exact,
+unprefixed public documents: `/`, `/apps`, `/apps/kilter`, `/apps/aurora`,
+`/apps/moonboard`, `/apps/woods` and `/compare/spray-wall-apps`. It uses the
+origin's 300-second shared-cache lifetime and a further 300-second stale window.
+Browsers revalidate (`max-age=0`). This is the eighth managed cache rule; it is
+separate because combining it with the board expression exceeds Cloudflare's
+4096-character expression limit.
+
+The marketing branch and middleware both bypass queries, authorization, session
+cookies (legacy, Better Auth login and bridged, including secure/chunked names)
+and Next router requests. Homepage requests carrying `boardsesh-locale` bypass
+so a saved-language redirect still executes. Guide URLs are English-only and
+ignore that language preference. Other locale homepages remain uncached.
+`Vary` includes Cookie, Authorization and the Next router fields for shared
+caches that honor them; Cloudflare's explicit request gates remain essential.
+
+Shared marketing HTML must contain deterministic platform markup and no recent
+beta cards. Fresh beta waits for session resolution, sends a signed-in viewer's
+token, and keys its browser cache by account and login. Its query runs near the
+viewport and preserves the backend's per-response visibility check when a video
+becomes private. Store/platform selection happens after hydration.
+Shared screenshot frames reserve their space, but their image URLs are only
+attached after browser platform detection. A `noscript` image remains available
+without JavaScript. This avoids fetching Android captures and then their iOS
+replacements on Apple browsers.
+
+Next normalizes middleware requests by removing Flight headers and `_rsc`.
+Middleware exclusions alone therefore cannot identify every router request.
+The final response guard requires `text/html` and rechecks the Node request
+before keeping the marketing TTL. It withdraws ordinary and CDN cache
+directives on Flight/non-HTML responses, ineligible requests, redirects, errors
+and responses setting cookies, while preserving intentional board 308s.
+
+After deployment, read each target twice with a normal browser User-Agent and
+no cookies: the repeat should return `cf-cache-status: HIT` and the public cache
+policy. Check a session-cookie request, saved-language homepage and RSC request
+separately: none should reuse that document. Rollback disables the
+marketing rule; existing board caching stays enabled.

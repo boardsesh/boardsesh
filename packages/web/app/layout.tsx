@@ -6,7 +6,8 @@ const displayFont = localFont({
   src: './fonts/GeistVF.woff',
   variable: '--font-display',
   display: 'swap',
-  preload: false,
+  // Every public page uses this face in its heading; discover it with the document.
+  preload: true,
 });
 import { headers } from 'next/headers';
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v15-appRouter';
@@ -29,12 +30,13 @@ import { getDeveloperDocsState } from './lib/developer-apps/docs-access';
 import { getLocale } from './lib/i18n/get-locale';
 import { getServerTranslation } from './lib/i18n/server';
 import { devEditorHostnames } from './lib/i18n/dev-editor';
-import { LOCALE_HTML_LANG, LOCALE_OG, ROOT_NAMESPACES } from './lib/i18n/config';
+import { DEFAULT_LOCALE, LOCALE_HTML_LANG, LOCALE_OG, ROOT_NAMESPACES } from './lib/i18n/config';
 import { PATHNAME_HEADER } from './lib/request-pathname-header';
 import { SITE_URL } from './lib/seo/base-url';
 import { SMART_APP_BANNER_META_NAME, smartAppBannerContent } from './lib/smart-app-banner';
 import { themeTokens } from './theme/theme-config';
 import { classifyMarketingBrowser } from './lib/marketing-platform';
+import { isAppGuidePath } from './lib/i18n/published-locales';
 import { MarketingPreviewProvider } from './components/marketing/marketing-preview-provider';
 import './components/index.css';
 import type { Viewport, Metadata } from 'next';
@@ -86,7 +88,6 @@ export async function generateMetadata(): Promise<Metadata> {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
   viewportFit: 'cover',
   // Match Mobile Safari behavior on Android: keyboard overlays the page
   // without resizing the layout viewport, so 100dvh and position:fixed
@@ -101,7 +102,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const [locale, requestHeaders] = await Promise.all([getLocale(), headers()]);
   const DevTranslationEditor =
     process.env.NODE_ENV === 'development' ? (await import('./components/i18n/dev-translation-editor')).default : null;
-  const initialBrowser = classifyMarketingBrowser(requestHeaders.get('user-agent') ?? '');
+  // Public marketing documents share one HTML copy across browsers. Resolve
+  // the visitor's platform after hydration; never cache the first visitor's UA.
+  const pathname = requestHeaders.get(PATHNAME_HEADER);
+  const sharesMarketingHtml =
+    locale === DEFAULT_LOCALE && (pathname === '/' || (pathname !== null && isAppGuidePath(pathname)));
+  const initialBrowser = classifyMarketingBrowser(sharesMarketingHtml ? '' : (requestHeaders.get('user-agent') ?? ''));
+  const assetOrigin = process.env.NEXT_PUBLIC_NEXT_ASSET_BASE_URL;
   const developerHref = getDeveloperDocsState() === 'unavailable' ? '/docs' : '/developers';
 
   // data-theme="dark" is static: www renders one scheme. Nothing in-repo reads
@@ -114,6 +121,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           (Grammarly, 1Password) stamp attributes onto <html> and <body> at
           runtime. The consent pre-paint script also adds data-consent before hydration. */}
       <head>
+        {assetOrigin ? <link rel="preconnect" href={assetOrigin} crossOrigin="anonymous" /> : null}
         <script dangerouslySetInnerHTML={{ __html: CONSENT_PREPAINT_SCRIPT }} />
       </head>
       <body suppressHydrationWarning>
@@ -148,7 +156,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                       <CapacitorRetirementGate>
                         <AuthModalProvider>
                           <FeatureFlagsProvider flags={EMPTY_FEATURE_FLAGS}>
-                            <MarketingPreviewProvider initialBrowser={initialBrowser}>
+                            <MarketingPreviewProvider initialBrowser={initialBrowser} sharedHtml={sharesMarketingHtml}>
                               <SiteChrome developerHref={developerHref}>{children}</SiteChrome>
                             </MarketingPreviewProvider>
                           </FeatureFlagsProvider>

@@ -80,19 +80,17 @@ describe('HomeShowcaseVideo', () => {
     vi.restoreAllMocks();
   });
 
-  it('preloads the sized hero poster only on desktop and defers the video source', () => {
+  it('loads a responsive hero poster eagerly and defers the video source', () => {
     render(<HomeShowcaseVideo />);
     const poster = document.querySelector('img');
-    expect(poster?.getAttribute('src')).toBe('/images/home/showcase-hero-9x16.webp');
+    expect(poster?.getAttribute('src')).toContain('/_next/image?');
+    expect(poster?.getAttribute('srcset')).toContain('w=');
+    expect(poster?.getAttribute('sizes')).toContain('(max-width: 760px)');
     expect(poster?.getAttribute('width')).toBe('720');
     expect(poster?.getAttribute('height')).toBe('1280');
-    expect(poster?.getAttribute('fetchpriority')).toBe('auto');
-    const desktopPreload = document.querySelector('link[rel="preload"][as="image"]');
-    expect(desktopPreload?.getAttribute('href')).toBe(poster?.getAttribute('src'));
-    expect(desktopPreload?.getAttribute('media')).toBe('(min-width: 761px)');
-    expect(desktopPreload?.getAttribute('fetchpriority')).toBe('high');
-    expect(poster?.getAttribute('loading')).toBe('lazy');
-    expect(poster?.hasAttribute('decoding')).toBe(false);
+    expect(poster?.getAttribute('fetchpriority')).toBe('high');
+    expect(poster?.getAttribute('loading')).toBe('eager');
+    expect(poster?.getAttribute('decoding')).toBe('async');
     expect(getVideo().getAttribute('src')).toBeNull();
     expect(getVideo().getAttribute('preload')).toBe('none');
   });

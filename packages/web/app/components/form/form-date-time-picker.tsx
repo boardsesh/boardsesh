@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { DateTimePicker, type DateTimePickerProps } from '@mui/x-date-pickers/DateTimePicker';
+import DatePickerProvider from './date-picker-provider';
 
 export type FormDateTimePickerProps = DateTimePickerProps & {
   /** Control id, forwarded to the picker's text field. */
@@ -27,15 +28,17 @@ export function FormDateTimePicker({ id, error, describedBy, slotProps, ...rest 
   const callerTextField = slotProps?.textField;
 
   return (
-    <DateTimePicker
-      {...rest}
-      slotProps={{
-        ...slotProps,
-        textField:
-          typeof callerTextField === 'function'
-            ? (ownerState) => ({ ...callerTextField(ownerState), ...injectedTextField })
-            : { ...callerTextField, ...injectedTextField },
-      }}
-    />
+    <DatePickerProvider>
+      <DateTimePicker
+        {...rest}
+        slotProps={{
+          ...slotProps,
+          textField:
+            typeof callerTextField === 'function'
+              ? (ownerState) => ({ ...callerTextField(ownerState), ...injectedTextField })
+              : { ...callerTextField, ...injectedTextField },
+        }}
+      />
+    </DatePickerProvider>
   );
 }

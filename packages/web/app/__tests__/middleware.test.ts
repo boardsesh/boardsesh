@@ -1312,3 +1312,45 @@ describe('middleware cross-subdomain auth CORS', () => {
     expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull();
   });
 });
+
+describe('anonymous marketing HTML caching', () => {
+  it.each(['/', '/apps', '/apps/kilter', '/apps/aurora', '/apps/moonboard', '/apps/woods', '/compare/spray-wall-apps'])(
+    'marks %s cacheable and varies protected request fields',
+    (pathname) => {
+      const response = middleware(new NextRequest(`https://www.boardsesh.com${pathname}`));
+      expect(response.headers.get('cache-control')).toBe('public, max-age=0, s-maxage=300, stale-while-revalidate=300');
+      expect(response.headers.get('cdn-cache-control')).toBe('s-maxage=300, stale-while-revalidate=300');
+      const vary = response.headers.get('vary')?.toLowerCase();
+      expect(vary).toContain('cookie');
+      expect(vary).toContain('authorization');
+      expect(vary).toContain('rsc');
+    },
+  );
+  it.each<Record<string, string>>([
+    { cookie: '__Secure-next-auth.session-token.0=secret' },
+    { cookie: '__Secure-boardsesh.session_token=secret' },
+    { cookie: '__Secure-boardsesh.bridged_session_token=secret' },
+    { authorization: 'Bearer secret' },
+    { rsc: '1' },
+    { 'next-router-prefetch': '1' },
+  ])('bypasses credential and router variants %j', (headers) => {
+    const response = middleware(new NextRequest('https://www.boardsesh.com/apps/kilter', { headers }));
+    expect(response.headers.has('cdn-cache-control')).toBe(false);
+    expect(response.headers.has('cache-control')).toBe(false);
+  });
+  it('does not cache a saved-language redirect or its localized homepage', () => {
+    const redirect = middleware(
+      new NextRequest('https://www.boardsesh.com/', { headers: { cookie: `${LOCALE_COOKIE}=es` } }),
+    );
+    expect(redirect.status).toBe(307);
+    expect(redirect.headers.has('cdn-cache-control')).toBe(false);
+    const localized = middleware(new NextRequest('https://www.boardsesh.com/es/'));
+    expect(localized.headers.has('cdn-cache-control')).toBe(false);
+  });
+  it('keeps guide aliases and unknown guides outside the public cache', () => {
+    for (const pathname of ['/es/apps/kilter', '/apps/no-such-guide', '/apps/kilter?utm_source=test']) {
+      const response = middleware(new NextRequest(`https://www.boardsesh.com${pathname}`));
+      expect(response.headers.has('cdn-cache-control')).toBe(false);
+    }
+  });
+});

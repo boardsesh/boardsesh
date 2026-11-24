@@ -8,6 +8,12 @@ import {
   isSprayWallCapabilityRequest,
 } from './app/lib/list-page-cache';
 import { BOARD_INVITE_PARAM, isBoardInviteRequest, searchCarriesBoardInvite } from './app/lib/board-invite';
+import {
+  isCacheableMarketingRequest,
+  MARKETING_CACHE_CONTROL,
+  MARKETING_CDN_CACHE_CONTROL,
+  MARKETING_CACHE_VARY,
+} from './app/lib/marketing-page-cache';
 import { LIVE_SEARCH_DATA_TTL_SECONDS } from './app/lib/live-search-data-boards';
 import { isCrawlerUserAgent } from './app/lib/is-crawler';
 import { CLIMB_SESSION_COOKIE } from './app/lib/climb-session-cookie';
@@ -339,6 +345,20 @@ function routeRequest(request: NextRequest) {
     if (isBoardInviteRequest(strippedPath, request.nextUrl.searchParams)) {
       response.headers.set('Referrer-Policy', 'no-referrer');
     }
+  } else if (
+    isCacheableMarketingRequest({
+      method: request.method,
+      pathname,
+      search: request.nextUrl.search,
+      headers: request.headers,
+    })
+  ) {
+    // Only anonymous, URL-determined documents get this public policy. The
+    // final-response guard revokes it on errors, redirects and Set-Cookie.
+    response.headers.set('Cache-Control', MARKETING_CACHE_CONTROL);
+    response.headers.set('CDN-Cache-Control', MARKETING_CDN_CACHE_CONTROL);
+    response.headers.set('Vercel-CDN-Cache-Control', MARKETING_CDN_CACHE_CONTROL);
+    response.headers.append('Vary', MARKETING_CACHE_VARY);
   } else if (cacheTTL !== null) {
     // The 15 minute live-data TTL keeps its stale window equal to the TTL: x7
     // would let a quiet page serve a copy up to ~2 h old after expiry. This

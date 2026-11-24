@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Image from 'next/image';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import PauseRounded from '@mui/icons-material/PauseRounded';
@@ -65,8 +66,7 @@ function readsDataSaver(): boolean {
 /**
  * The hero video: a 9:16 demo of the app, silent and looping.
  *
- * The poster is a sized plain `<img>` with a desktop-only high-priority preload
- * for the first desktop paint. Phones load it lazily. The video sits on top of
+ * The responsive poster loads eagerly at high priority for the first paint. The video sits on top of
  * it in the same box, invisible until its first frame plays, and gets no `src`
  * until the page has loaded and gone idle. Readers who save data or ask for
  * reduced motion keep the poster and get a play button.
@@ -197,15 +197,15 @@ export default function HomeShowcaseVideo() {
 
   return (
     <Box component="figure" className={styles.figure}>
-      <link rel="preload" as="image" href={sources.poster} media="(min-width: 761px)" fetchPriority="high" />
-      <img
+      <Image
         className={styles.poster}
         src={sources.poster}
         width={SHOWCASE_POSTER_WIDTH}
         height={SHOWCASE_POSTER_HEIGHT}
         alt=""
-        loading="lazy"
-        fetchPriority="auto"
+        sizes="(max-width: 359px) calc(100vw - 32px), (max-width: 760px) calc(100vw - 48px), (max-width: 1099px) 265px, 338px"
+        loading="eager"
+        fetchPriority="high"
       />
       <video
         ref={videoRef}

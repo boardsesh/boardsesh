@@ -15,13 +15,12 @@ import {
   partnerContactClicked,
 } from '@boardsesh/analytics';
 import { trackWebsiteJourneyEvent } from '@/app/lib/website-journey-analytics';
-import { boardTypeLabel } from '@boardsesh/board-constants';
+import { boardTypeLabel } from '@boardsesh/board-constants/board-type-labels';
 import StoreInstallButtons from '@/app/components/marketing/store-install-buttons';
 import { PageSection, PageCard } from '@/app/components/ui/page-shell';
 import LocaleLink from '@/app/components/i18n/locale-link';
-import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
+import { resolveMarketingStaticAssetUrl } from '@/app/lib/marketing-static-asset-url';
 import { DEFAULT_LOCALE, isSupportedLocale } from '@/app/lib/i18n/config';
-import type { RecentBetaLinkRow } from '@/app/lib/server-recent-beta-links';
 import HomeRecentBetaSection from '@/app/components/beta-videos/home-recent-beta-section';
 import { MarketingScreenshot } from '@/app/components/marketing/marketing-screenshot';
 import { MarketingPreviewSwitch } from '@/app/components/marketing/marketing-preview-switch';
@@ -37,7 +36,6 @@ type HomePageContentProps = {
    * from 1100px; below that the hero shows this visitor's store badge instead.
    */
   desktopInstall?: React.ReactNode;
-  initialRecentBeta?: RecentBetaLinkRow[];
   gymSearch?: React.ReactNode;
   featureStrip?: React.ReactNode;
   supportBlock?: React.ReactNode;
@@ -49,7 +47,6 @@ const LINK_TARGET = { display: 'inline-flex', alignItems: 'center', minHeight: 4
 export default function HomePageContent({
   heroProof,
   desktopInstall,
-  initialRecentBeta = [],
   gymSearch,
   featureStrip,
   supportBlock,
@@ -85,6 +82,7 @@ export default function HomePageContent({
           <Box className={styles.heroActions}>
             <StoreInstallButtons
               placement="hero"
+              sharedHtml={showsHeroVideo}
               align="start"
               qrLanding="home"
               labels={{
@@ -158,7 +156,7 @@ export default function HomePageContent({
         </PageSection>
         {/* The real home wall /spraywalls shows: beside the copy on a laptop, under it on a phone. */}
         <Image
-          src={resolveStaticAssetUrl('/images/help/spray-wall-photo.webp')}
+          src={resolveMarketingStaticAssetUrl('/images/help/spray-wall-photo.webp')}
           alt={website('homeSprayPhotoAlt')}
           width={1752}
           height={2047}
@@ -206,7 +204,7 @@ export default function HomePageContent({
         </PageSection>
       </PageCard>
       {featureStrip}
-      <HomeRecentBetaSection initialRecentBeta={initialRecentBeta} />
+      <HomeRecentBetaSection />
       {heroProof ? (
         <Box component="aside" className={styles.proofStrip}>
           <Typography component="p" variant="h5">

@@ -1,5 +1,12 @@
 /// <reference types="node" />
 
+import {
+  MARKETING_CACHE_PATHS,
+  MARKETING_LOCALE_COOKIE,
+  MARKETING_ROUTER_HEADERS,
+  MARKETING_SESSION_COOKIE_SUBSTRINGS,
+} from '../../packages/web/app/lib/marketing-page-cache';
+
 import { OTA_HOSTING_PROVIDER, type OtaHostingProvider } from '../ota/server';
 
 import { CONSENT_REGION_EDGE_HEADER_NAME } from '../../packages/shared/consent/src/consent-region';
@@ -183,6 +190,10 @@ export const BACKEND_BOARD_RENDER_CACHE_RULE_DESCRIPTION =
 
 /** Marker for the www list/climb-view HTML cache rule. Never rename without migrating the live rule. */
 export const WWW_HTML_CACHE_RULE_DESCRIPTION = 'boardsesh:www-html-edge-cache (managed by scripts/cloudflare-apply.ts)';
+
+/** Marketing has a separate rule so the board prefix expression stays below 4096 bytes. Never rename. */
+export const WWW_MARKETING_HTML_CACHE_RULE_DESCRIPTION =
+  'boardsesh:www-marketing-html-edge-cache (managed by scripts/cloudflare-apply.ts)';
 
 /** Markers for the allow and block WAF custom rules. Same never-rename contract as above. */
 export const CRAWLER_ALLOW_RULE_DESCRIPTION =
@@ -752,6 +763,17 @@ export const WWW_HTML_CACHE_EXPRESSION =
   ` and not (http.request.uri.query contains "${RSC_QUERY_PARAM}")` +
   ` and not (http.request.uri.query contains "${SPRAY_WALL_CAPABILITY_QUERY}")` +
   ` and not (http.request.uri.query contains "${BOARD_INVITE_QUERY}"))`;
+
+/** Exact public documents; no locale aliases, queries, credentials or router requests. */
+export const WWW_MARKETING_HTML_CACHE_EXPRESSION =
+  `(http.host eq "${WWW_HOSTNAME}"` +
+  ` and http.request.method in {"GET" "HEAD"}` +
+  ` and http.request.uri.path in {${MARKETING_CACHE_PATHS.map((pathname) => `"${pathname}"`).join(' ')}}` +
+  ` and http.request.uri.query eq ""` +
+  ` and not (any(http.request.headers["authorization"][*] != ""))` +
+  MARKETING_ROUTER_HEADERS.map((header) => ` and not (any(http.request.headers["${header}"][*] != ""))`).join('') +
+  MARKETING_SESSION_COOKIE_SUBSTRINGS.map((name) => ` and not (http.cookie contains "${name}")`).join('') +
+  ` and not (http.request.uri.path eq "/" and http.cookie contains "${MARKETING_LOCALE_COOKIE}"))`;
 
 /**
  * The allow list lives in crawler-policy.ts beside the block list, so the
@@ -1484,6 +1506,17 @@ export const desiredCloudflareState: CloudflareDesiredState = {
         // xprem uploads `cas/` objects with `Cache-Control: max-age=31556926`,
         // so honouring the origin gives a one-year edge TTL, and a 404 for a
         // key that does not exist yet is never cached.
+        edge_ttl: { mode: 'bypass_by_default' },
+        browser_ttl: { mode: 'respect_origin' },
+      },
+      enabled: true,
+    },
+    {
+      description: WWW_MARKETING_HTML_CACHE_RULE_DESCRIPTION,
+      expression: WWW_MARKETING_HTML_CACHE_EXPRESSION,
+      action: 'set_cache_settings',
+      action_parameters: {
+        cache: true,
         edge_ttl: { mode: 'bypass_by_default' },
         browser_ttl: { mode: 'respect_origin' },
       },

@@ -22,6 +22,43 @@ vi.mock('next/headers', () => ({ headers: async () => requestHeaders.current }))
 
 const rootLayout = await import('../layout');
 
+function findBrowserSeed(node: unknown): unknown {
+  if (typeof node !== 'object' || node === null) return undefined;
+  if (Array.isArray(node)) return node.map(findBrowserSeed).find((seed) => seed !== undefined);
+  const element = node as { props?: { initialBrowser?: unknown; children?: unknown } };
+  return element.props?.initialBrowser ?? findBrowserSeed(element.props?.children);
+}
+
+describe('shared marketing document', () => {
+  it.each(['/', '/apps', '/apps/kilter', '/compare/spray-wall-apps'])(
+    'uses identical initial platform markup for %s across browsers',
+    async (pathname) => {
+      const seeds = [];
+      for (const userAgent of ['iPhone', 'Android', 'Windows NT 10.0']) {
+        requestHeaders.current = new Headers({ [PATHNAME_HEADER]: pathname, 'user-agent': userAgent });
+        seeds.push(findBrowserSeed(await rootLayout.default({ children: null })));
+      }
+      expect(seeds[0]).toBeDefined();
+      expect(seeds[0]).toEqual(seeds[1]);
+      expect(seeds[1]).toEqual(seeds[2]);
+    },
+  );
+
+  it('preserves the requesting platform on uncached localized homepages', async () => {
+    requestHeaders.current = new Headers({
+      [PATHNAME_HEADER]: '/',
+      'x-boardsesh-locale': 'fr',
+      'user-agent': 'iPhone',
+    });
+    expect(findBrowserSeed(await rootLayout.default({ children: null }))).toMatchObject({ platform: 'ios' });
+  });
+
+  it('allows browser zoom beyond the initial scale', () => {
+    expect(rootLayout.viewport.maximumScale).toBeUndefined();
+    expect(rootLayout.viewport.userScalable).not.toBe(false);
+  });
+});
+
 /** The tag's `content` for a request, split into its `key=value` parts; `null` when the page has no tag. */
 async function bannerFor(headerEntries: Record<string, string>): Promise<Map<string, string> | null> {
   requestHeaders.current = new Headers(headerEntries);
