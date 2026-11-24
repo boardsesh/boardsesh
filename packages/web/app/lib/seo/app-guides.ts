@@ -83,16 +83,23 @@ export type AppGuidePage = ComparisonGuide | HubGuide;
 /** A board app page; `id` is one of APP_GUIDE_SLUGS. */
 export type AppGuide = ComparisonGuide & { id: AppGuideSlug; boardType: CatalogBoard };
 
-const CHECKED_AT = '2026-11-23';
-
+/**
+ * Every App Store storefront's public rating for Boardsesh, added up: the sum of
+ * `userRatingCount` and the count-weighted mean of `averageUserRating` from
+ * Apple's public lookup (`itunes.apple.com/lookup?id=6761350784&country=<cc>`),
+ * one call per storefront. Refresh with `vp run app-guides:rating`; anyone can
+ * repeat it. App Store Connect can run a rating ahead of the lookup's cache (it
+ * showed 73 on 2026-11-24). The link goes to the US listing.
+ */
 export const BOARDSESH_APP_STORE_RATING = {
   platform: 'Apple App Store',
-  storefront: 'US',
-  rating: 4.625,
-  count: 32,
+  storefront: 'all',
+  rating: 4.722,
+  count: 72,
+  storefronts: 17,
   source: 'https://apps.apple.com/us/app/boardsesh/id6761350784',
-  lookupUrl: 'https://itunes.apple.com/lookup?id=6761350784&country=us',
-  verifiedAt: CHECKED_AT,
+  method: 'Sum of the public iTunes lookup over every storefront, count-weighted mean (vp run app-guides:rating)',
+  verifiedAt: '2026-11-24',
 } as const;
 
 /**

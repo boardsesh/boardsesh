@@ -198,7 +198,8 @@ describe('app guide pages before hydration', () => {
   it('cites the US rating snapshot and renders English badges for a French request', async () => {
     const markup = await parsePage(await BoardPage(routeProps('kilter')));
     const ratingSource = markup.querySelector('p a[href="https://apps.apple.com/us/app/boardsesh/id6761350784"]');
-    expect(ratingSource?.textContent).toMatch(/\d\.\d out of 5 from \d+ US App Store ratings/i);
+    expect(ratingSource?.textContent).toBe('4.7 out of 5 from 72 App Store ratings in 17 countries');
+    expect(ratingSource?.closest('p')?.textContent).toContain('Checked Nov 24, 2026');
     expect(ratingSource?.closest('p')?.querySelector('time')?.getAttribute('datetime')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(markup.querySelector('a[data-store-badge="ios"] img')?.getAttribute('alt')).toBe(
       'Download on the App Store',

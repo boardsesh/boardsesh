@@ -54,8 +54,13 @@ directory; `/spraywalls` remains the setup page.
   imply a physical board was tested for this article. MoonBoard controller limits
   and one-way imports are explicit. An undocumented competitor feature is not
   described as absent.
-- App Store ratings are an app-wide, storefront-specific snapshot with a count,
-  date and direct source. They do not establish board-specific superiority. The
+- The App Store rating is a public, all-storefront sum: `vp run app-guides:rating`
+  calls Apple's public lookup for every storefront (300 ms apart), adds up the
+  rating counts and takes the count-weighted mean, and its output goes into
+  `BOARDSESH_APP_STORE_RATING` with the date. Anyone can repeat it; App Store
+  Connect may run a rating or two ahead of the lookup's cache, and the page shows
+  the public figure. The line links to the US listing. It is app-wide and does
+  not establish board-specific superiority. The
   JSON-LD is WebPage (with `dateModified` and an Organization publisher),
   BreadcrumbList, a MobileApplication for Boardsesh only, and an ItemList on the
   hub. No `Review`, `AggregateRating` or `FAQPage` markup is emitted. Existing

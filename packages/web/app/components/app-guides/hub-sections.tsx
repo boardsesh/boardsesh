@@ -260,7 +260,10 @@ export async function StatsBand({ t }: { t: T }) {
     {
       id: 'rating',
       value: formatRating(BOARDSESH_APP_STORE_RATING.rating),
-      label: t('appGuides:pages.hub.numbers.ratingLabel'),
+      label: t('appGuides:common.ratingStat', {
+        count: BOARDSESH_APP_STORE_RATING.count,
+        storefronts: BOARDSESH_APP_STORE_RATING.storefronts,
+      }),
     },
     {
       id: 'climbers',

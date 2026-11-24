@@ -653,6 +653,12 @@ export default defineConfig({
         command: 'tsx scripts/app-guides/import-copy.ts',
         cache: false,
       },
+      // The all-storefront App Store rating the app guides show; prints the JSON for
+      // BOARDSESH_APP_STORE_RATING. One public lookup per storefront, 300 ms apart.
+      'app-guides:rating': {
+        command: 'tsx scripts/app-guides/app-store-rating.ts',
+        cache: false,
+      },
       // Render design previews, publish them to dev storage, and update links.
       'design:mockups': {
         command: 'tsx packages/web/scripts/capture-design-mockups.ts',

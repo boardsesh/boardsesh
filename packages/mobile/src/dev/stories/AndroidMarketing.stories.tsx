@@ -19,6 +19,7 @@ import status from '../../components/board-presence/WallStatus.stories';
 import { STORY_BOARDS } from '../fixtures/boards';
 import { StoryBoardFixtureContext, type StoryBoardPresentation } from './story-board-fixture';
 import type { StoryModule } from './types';
+import { PlayerScene } from './PlayerSceneMarketingTmp';
 
 const noop = () => {};
 const NOW = dayjs('2026-10-26T12:00:00.000Z');
@@ -170,6 +171,30 @@ const homewall: StoryBoardPresentation = { ...STORY_BOARDS['kilter-homewall-7x10
 const stories: StoryModule = {
   title: 'TEMP marketing (Android)',
   stories: {
+    kilter: {
+      name: 'Player kilter-homewall-7x10',
+      layout: 'fullscreen',
+      readiness: 'explicit',
+      render: (controls) => <PlayerScene {...controls} fixture={STORY_BOARDS['kilter-homewall-7x10']} />,
+    },
+    tension: {
+      name: 'Player tension',
+      layout: 'fullscreen',
+      readiness: 'explicit',
+      render: (controls) => <PlayerScene {...controls} fixture={STORY_BOARDS['tension']} />,
+    },
+    moonboard: {
+      name: 'Player moonboard',
+      layout: 'fullscreen',
+      readiness: 'explicit',
+      render: (controls) => <PlayerScene {...controls} fixture={STORY_BOARDS['moonboard']} />,
+    },
+    spray: {
+      name: 'Player spray-liz',
+      layout: 'fullscreen',
+      readiness: 'explicit',
+      render: (controls) => <PlayerScene {...controls} fixture={STORY_BOARDS['spray-liz']} />,
+    },
     profile: {
       name: 'Profile across boards',
       layout: 'fullscreen',

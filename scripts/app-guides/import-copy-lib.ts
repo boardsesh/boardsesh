@@ -696,7 +696,9 @@ export function importHubPage(json: Json, options: ImportOptions): ImportResult 
         browser: reader.text(captions.browser, 'devices.captions.browser'),
       },
     },
-    numbers: headingBlock(reader, json, 'numbers', ['ratingLabel', 'climbersLabel', 'climbsLabel', 'freshness']),
+    // The rating stat's label is page chrome (common.ratingStat): it carries the live
+    // count and storefronts, so a writer's ratingLabel is not imported.
+    numbers: headingBlock(reader, json, 'numbers', ['climbersLabel', 'climbsLabel', 'freshness']),
     faq: faq.catalog,
     method: headingBlock(reader, json, 'method', ['heading', 'body']),
     cta: headingBlock(reader, json, 'cta', ['heading', 'body']),

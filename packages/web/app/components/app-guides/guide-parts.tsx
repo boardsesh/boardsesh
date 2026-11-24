@@ -162,7 +162,7 @@ export function CtaRow({
   );
 }
 
-/** The dated App Store rating, then the live 30-day line when the cached stats read works. */
+/** The dated all-storefront App Store rating, then the live 30-day line when the cached stats read works. */
 export function ProofLines({ t, communityLine = true }: { t: T; communityLine?: boolean }) {
   const rating = BOARDSESH_APP_STORE_RATING;
   return (
@@ -170,8 +170,15 @@ export function ProofLines({ t, communityLine = true }: { t: T; communityLine?: 
       <Typography component="p" className={styles.ratingLine}>
         <StarRounded aria-hidden className={styles.ratingIcon} />
         <MuiLink href={rating.source}>
-          {t('appGuides:common.rating', { rating: ratingFormat.format(rating.rating), count: rating.count })}
+          {t('appGuides:common.rating', {
+            rating: ratingFormat.format(rating.rating),
+            count: rating.count,
+            storefronts: rating.storefronts,
+          })}
         </MuiLink>
+        <span aria-hidden="true" className={styles.ratingDate}>
+          ·
+        </span>
         <time dateTime={rating.verifiedAt} className={styles.ratingDate}>
           {t('appGuides:common.ratingCheckedAt', { date: dateFormat.format(new Date(rating.verifiedAt)) })}
         </time>

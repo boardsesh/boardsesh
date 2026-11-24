@@ -17,7 +17,7 @@ for (const width of [390, 1440]) {
       expect(response?.status()).toBe(200);
       await expect(page.locator('main h1')).toHaveCount(1);
       await expect(page.locator('main h1')).toBeVisible();
-      await expect(page.locator('main')).toContainText('US App Store ratings');
+      await expect(page.locator('main')).toContainText('App Store ratings in');
       await expect(page.locator('main')).toContainText('independent');
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
       await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(

@@ -14,7 +14,7 @@
     "publisher": "A guide from Boardsesh. We make Boardsesh; board makers don't endorse it.",
     "updatedAt": "Updated {{date}}",
     "checkedAt": "Checked {{date}}",
-    "rating": "{{rating}} out of 5 from {{count}} US App Store ratings",
+    "rating": "{{rating}} out of 5 from {{count}} App Store ratings in {{storefronts}} countries",
     "ratingCheckedAt": "Checked {{date}}",
     "openWebApp": "Open it in your browser",
     "openWebAppLabel": "Open Boardsesh in your browser",
@@ -146,7 +146,8 @@
       "hero": "The summary at the top"
     },
     "profileCardAlt": "Boardsesh profile: 254 climbs sent across 9 board layouts, including MoonBoard Masters and Kilter Homewall",
-    "atLeast": "{{value}}+"
+    "atLeast": "{{value}}+",
+    "ratingStat": "out of 5 from {{count}} App Store ratings in {{storefronts}} countries"
   },
   "pages": {
     "hub": {
@@ -242,7 +243,6 @@
         }
       },
       "numbers": {
-        "ratingLabel": "App Store rating (US)",
         "climbersLabel": "Climbers in the last 30 days",
         "climbsLabel": "Climbs lit in the last 30 days",
         "freshness": "Counted from the live app and refreshed every 6 hours."
