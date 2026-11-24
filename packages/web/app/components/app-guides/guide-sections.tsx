@@ -136,7 +136,16 @@ function HeroBoardCard({ guide, t }: { guide: ComparisonGuide; t: T }) {
   const art = pageArt(guide, t);
   return (
     <Box component="figure" className={styles.boardCard}>
-      <Image src={art.src} alt={art.alt} width={art.width} height={art.height} sizes="300px" priority />
+      <Image
+        src={art.src}
+        alt={art.alt}
+        width={art.width}
+        height={art.height}
+        sizes="300px"
+        preload
+        fetchPriority="high"
+        loading="eager"
+      />
       <figcaption>{art.caption}</figcaption>
     </Box>
   );

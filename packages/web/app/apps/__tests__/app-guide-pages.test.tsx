@@ -112,11 +112,12 @@ describe('app guide pages before hydration', () => {
     expect(markup.querySelector('a[data-store-badge="ios"]')?.getAttribute('href')).toContain(`compare-${slug}`);
     expect(markup.querySelector('a[data-store-badge="android"]')?.getAttribute('href')).toContain(`compare-${slug}`);
 
-    // The hero capture is the LCP image: never lazy.
+    // The hero capture is the LCP image: eager, and first in the fetch queue.
     const heroImage = Array.from(
       markup.querySelector('#page-title')?.closest('section')?.querySelectorAll('img') ?? [],
     ).find((image) => image.getAttribute('alt') && !image.closest('a'));
-    expect(heroImage?.getAttribute('loading')).not.toBe('lazy');
+    expect(heroImage?.getAttribute('loading')).toBe('eager');
+    expect(heroImage?.getAttribute('fetchpriority')).toBe('high');
     expect(heroImage?.getAttribute('alt')?.length).toBeGreaterThan(20);
 
     // A real table: row headers, a verdict on every row, headers that resolve, sources that resolve.

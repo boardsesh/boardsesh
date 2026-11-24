@@ -251,7 +251,10 @@ export function formatRating(value: number) {
   return ratingFormat.format(value);
 }
 
-/** A capture inside a phone bezel. The LCP image passes `priority`, which also turns lazy loading off. */
+/**
+ * A capture inside a phone bezel. The LCP image passes `priority`: Next's `preload`
+ * (the `priority` prop is deprecated), loaded eagerly at high fetch priority.
+ */
 export function DeviceFrame({
   image,
   alt,
@@ -273,8 +276,9 @@ export function DeviceFrame({
         width={image.width}
         height={image.height}
         sizes={sizes}
-        priority={priority}
-        loading={priority ? undefined : 'lazy'}
+        preload={priority}
+        fetchPriority={priority ? 'high' : undefined}
+        loading={priority ? 'eager' : 'lazy'}
       />
     </Box>
   );
