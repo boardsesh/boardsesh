@@ -8,6 +8,19 @@ import type { RecentBetaLinkRow } from '@/app/lib/server-recent-beta-links';
 import type { BetaLink } from '@/app/lib/api-wrappers/sync-api-types';
 
 const mockRequest = vi.fn();
+const mockClientToken = vi.fn();
+const viewerState = {
+  status: 'unauthenticated' as 'loading' | 'authenticated' | 'unauthenticated',
+  session: null as { user: { id: string }; authSessionId: string } | null,
+  token: null as string | null,
+  isTokenLoading: false,
+};
+vi.mock('next-auth/react', () => ({
+  useSession: () => ({ data: viewerState.session, status: viewerState.status }),
+}));
+vi.mock('@/app/hooks/use-ws-auth-token', () => ({
+  useWsAuthToken: () => ({ token: viewerState.token, isLoading: viewerState.isTokenLoading }),
+}));
 const boardseshBetaListSpy = vi.fn();
 
 vi.mock('react-i18next', () => ({
@@ -18,7 +31,10 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('@/app/lib/graphql/client', () => ({
-  createGraphQLHttpClient: () => ({ request: mockRequest }),
+  createGraphQLHttpClient: (token: string | null) => {
+    mockClientToken(token);
+    return { request: mockRequest };
+  },
 }));
 
 vi.mock('@boardsesh/graphql/operations/beta-links', () => ({
@@ -102,8 +118,7 @@ class FakeIntersectionObserver {
   }
 }
 
-function renderSection() {
-  const client = createTestQueryClient();
+function renderSection(client = createTestQueryClient()) {
   return render(
     <QueryClientProvider client={client}>
       <HomeRecentBetaSection />
@@ -118,6 +133,11 @@ async function approachSection() {
 }
 
 beforeEach(() => {
+  viewerState.status = 'unauthenticated';
+  viewerState.session = null;
+  viewerState.token = null;
+  viewerState.isTokenLoading = false;
+  mockClientToken.mockReset();
   mockRequest.mockReset().mockResolvedValue({ recentBetaLinks: [] });
   boardseshBetaListSpy.mockReset();
   observers.length = 0;
@@ -184,6 +204,91 @@ describe('HomeRecentBetaSection', () => {
     await waitFor(() => expect(mockRequest).toHaveBeenCalledOnce());
     await waitFor(() => expect(screen.queryByTestId('boardsesh-beta-list')).toBeNull());
     expect(screen.getByText('home.recentBeta.lead')).toBeTruthy();
+  });
+
+  it('waits for the signed-in token and sends it with the request', async () => {
+    viewerState.status = 'loading';
+    const client = createTestQueryClient();
+    const { rerender } = renderSection(client);
+    await approachSection();
+    expect(mockRequest).not.toHaveBeenCalled();
+
+    viewerState.status = 'authenticated';
+    viewerState.session = { user: { id: 'viewer-a' }, authSessionId: 'login-a' };
+    viewerState.isTokenLoading = true;
+    rerender(
+      <QueryClientProvider client={client}>
+        <HomeRecentBetaSection />
+      </QueryClientProvider>,
+    );
+    expect(mockRequest).not.toHaveBeenCalled();
+
+    viewerState.token = 'viewer-a-token';
+    viewerState.isTokenLoading = false;
+    rerender(
+      <QueryClientProvider client={client}>
+        <HomeRecentBetaSection />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledOnce());
+    expect(mockClientToken).toHaveBeenLastCalledWith('viewer-a-token');
+  });
+
+  it('keeps signed-out requests anonymous', async () => {
+    renderSection();
+    await approachSection();
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledOnce());
+    expect(mockClientToken).toHaveBeenLastCalledWith(null);
+  });
+
+  it('does not reuse one account or login beta results for another', async () => {
+    viewerState.status = 'authenticated';
+    viewerState.session = { user: { id: 'viewer-a' }, authSessionId: 'login-a' };
+    viewerState.token = 'viewer-a-token';
+    mockRequest.mockResolvedValue({
+      recentBetaLinks: [makeRow({ link: 'https://instagram.com/a', climbName: 'Private A' })],
+    });
+    const client = createTestQueryClient();
+    const { rerender } = renderSection(client);
+    await approachSection();
+    expect(await screen.findByText('https://instagram.com/a::Private A')).toBeTruthy();
+
+    let resolveNext: ((result: { recentBetaLinks: RecentBetaLinkRow[] }) => void) | undefined;
+    mockRequest.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveNext = resolve;
+        }),
+    );
+    viewerState.session = { user: { id: 'viewer-b' }, authSessionId: 'login-b' };
+    viewerState.token = 'viewer-b-token';
+    rerender(
+      <QueryClientProvider client={client}>
+        <HomeRecentBetaSection />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByText('https://instagram.com/a::Private A')).toBeNull();
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(2));
+    expect(mockClientToken).toHaveBeenLastCalledWith('viewer-b-token');
+    await act(async () => {
+      resolveNext?.({ recentBetaLinks: [] });
+    });
+
+    // Token refresh keeps the same viewer cache; a new login must fetch again.
+    viewerState.token = 'viewer-b-refreshed-token';
+    rerender(
+      <QueryClientProvider client={client}>
+        <HomeRecentBetaSection />
+      </QueryClientProvider>,
+    );
+    expect(mockRequest).toHaveBeenCalledTimes(2);
+    viewerState.session = { user: { id: 'viewer-b' }, authSessionId: 'new-login-b' };
+    rerender(
+      <QueryClientProvider client={client}>
+        <HomeRecentBetaSection />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(3));
   });
 
   it('loads after mount when IntersectionObserver is unavailable', async () => {

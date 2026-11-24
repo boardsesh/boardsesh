@@ -156,7 +156,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                       <CapacitorRetirementGate>
                         <AuthModalProvider>
                           <FeatureFlagsProvider flags={EMPTY_FEATURE_FLAGS}>
-                            <MarketingPreviewProvider initialBrowser={initialBrowser}>
+                            <MarketingPreviewProvider initialBrowser={initialBrowser} sharedHtml={sharesMarketingHtml}>
                               <SiteChrome developerHref={developerHref}>{children}</SiteChrome>
                             </MarketingPreviewProvider>
                           </FeatureFlagsProvider>

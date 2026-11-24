@@ -26,6 +26,33 @@ function Gallery({ about = false }: { about?: boolean }) {
 }
 
 describe('platform screenshot rendering', () => {
+  it('keeps shared-HTML image URLs inside noscript until the platform is resolved', () => {
+    const markup = renderToString(
+      <MarketingPreviewProvider initialBrowser={classifyMarketingBrowser('')} sharedHtml>
+        <Gallery />
+      </MarketingPreviewProvider>,
+    );
+    expect(markup).toContain('<noscript>');
+    expect(markup).toContain('/images/app/android/kilter.webp');
+    const scriptedMarkup = markup.replace(/<noscript>[\s\S]*?<\/noscript>/g, '');
+    expect(scriptedMarkup).not.toContain('<img');
+    expect(scriptedMarkup).not.toContain('rel="preload"');
+    expect(markup).toMatch(/<img[^>]*width="\d+"[^>]*height="\d+"/);
+    expect(scriptedMarkup).toContain('data-marketing-shot="kilter"');
+  });
+
+  it('loads only the detected platform after resolving shared HTML', () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('iPhone');
+    const { container } = render(
+      <MarketingPreviewProvider initialBrowser={classifyMarketingBrowser('')} sharedHtml>
+        <MarketingScreenshot shot="queue" alt="Queue" />
+      </MarketingPreviewProvider>,
+    );
+    const image = container.querySelector('img');
+    expect(image?.getAttribute('src')).toContain(encodeURIComponent('/images/app/ios/queue.webp'));
+    expect(container.querySelector('noscript')).toBeNull();
+  });
+
   it.each(['ios', 'android'] as const)('server-renders only %s images and preload sources', (platform) => {
     const initialBrowser = classifyMarketingBrowser(platform === 'ios' ? 'iPhone' : 'Android');
     const markup = renderToString(

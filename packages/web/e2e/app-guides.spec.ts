@@ -76,3 +76,26 @@ test('old Aurora brand guides land on their section of /apps/aurora', async ({ p
     await expect(page.locator(`main li#${brand}`)).toBeVisible();
   }
 });
+
+test('guide router prefetches and navigation do not receive public HTML cache headers', async ({ page }) => {
+  const routerResponses: { pathname: string; headers: Record<string, string> }[] = [];
+  page.on('response', (response) => {
+    const pathname = new URL(response.url()).pathname;
+    const headers = response.headers();
+    if (pathname.startsWith('/apps/') && headers['content-type']?.includes('text/x-component')) {
+      routerResponses.push({ pathname, headers });
+    }
+  });
+  await page.goto('/apps', { waitUntil: 'networkidle' });
+  await page.evaluate(() => Reflect.set(window, '__cacheNavigationDocument', 'retained'));
+  await page.locator('main a[href="/apps/kilter"]').first().click();
+  await expect(page).toHaveURL(/\/apps\/kilter$/);
+  await expect(page.locator('main h1')).toBeVisible();
+  expect(await page.evaluate(() => Reflect.get(window, '__cacheNavigationDocument'))).toBe('retained');
+  expect(routerResponses.some(({ pathname }) => pathname === '/apps/kilter')).toBe(true);
+  for (const { headers } of routerResponses) {
+    expect(headers['cache-control']).toContain('no-store');
+    expect(headers['cache-control']).not.toMatch(/public|s-maxage|stale-while-revalidate/);
+    expect(headers['cdn-cache-control'] ?? 'no-store').toBe('no-store');
+  }
+});

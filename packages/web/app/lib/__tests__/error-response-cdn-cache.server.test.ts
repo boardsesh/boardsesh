@@ -22,25 +22,26 @@ type ResponseWriter = (response: ServerResponse) => void;
 function startServer(writeResponse: ResponseWriter): Promise<Server> {
   class GuardedResponse extends ServerResponse {}
   installErrorResponseCdnCacheGuard(GuardedResponse);
-  const server = createServer({ ServerResponse: GuardedResponse }, (_incoming, response) => writeResponse(response));
+  const server = createServer({ ServerResponse: GuardedResponse }, (_incoming, response) => {
+    response.setHeader('Content-Type', 'text/html; charset=utf-8');
+    writeResponse(response);
+  });
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)));
 }
 
 function fetchResponse(
   server: Server,
   method: 'GET' | 'HEAD' = 'GET',
+  requestOptions: { path?: string; headers?: IncomingHttpHeaders; method?: string } = {},
 ): Promise<{ statusCode: number; headers: IncomingHttpHeaders; body: string }> {
   const { port } = server.address() as AddressInfo;
   return new Promise((resolve, reject) => {
-    request(
-      { host: '127.0.0.1', port, method, path: '/kilter/original/12x12-square/screw_bolt/40/list' },
-      (incoming) => {
-        let body = '';
-        incoming.setEncoding('utf8');
-        incoming.on('data', (chunk: string) => (body += chunk));
-        incoming.on('end', () => resolve({ statusCode: incoming.statusCode ?? 0, headers: incoming.headers, body }));
-      },
-    )
+    request({ host: '127.0.0.1', port, method, path: '/apps/kilter', ...requestOptions }, (incoming) => {
+      let body = '';
+      incoming.setEncoding('utf8');
+      incoming.on('data', (chunk: string) => (body += chunk));
+      incoming.on('end', () => resolve({ statusCode: incoming.statusCode ?? 0, headers: incoming.headers, body }));
+    })
       .on('error', reject)
       .end();
   });
@@ -240,6 +241,58 @@ describe('marketing final-response cache guard', () => {
       response.end();
     });
     const { headers } = await fetchResponse(server);
+    expect(headers['cache-control']).toBe('no-store');
+    expect(headers['cdn-cache-control']).toBe('no-store');
+  });
+});
+
+describe('marketing document eligibility at the final write', () => {
+  it.each(['text/x-component', 'application/json', undefined])(
+    'revokes caching for content type %s',
+    async (contentType) => {
+      server = await startServer((response) => {
+        response.setHeader('Cache-Control', MARKETING_CACHE_CONTROL);
+        response.setHeader('CDN-Cache-Control', MARKETING_CDN_CACHE_CONTROL);
+        if (contentType) response.setHeader('Content-Type', contentType);
+        else response.removeHeader('Content-Type');
+        response.end();
+      });
+      const { headers } = await fetchResponse(server);
+      expect(headers['cache-control']).toBe('no-store');
+      expect(headers['cdn-cache-control']).toBe('no-store');
+    },
+  );
+
+  it.each(['object', 'array'])('uses the final content type supplied to writeHead as %s', async (form) => {
+    server = await startServer((response) => {
+      response.setHeader('Cache-Control', MARKETING_CACHE_CONTROL);
+      response.setHeader('CDN-Cache-Control', MARKETING_CDN_CACHE_CONTROL);
+      if (form === 'object') response.writeHead(200, { 'Content-Type': 'text/x-component' });
+      else response.writeHead(200, ['Content-Type', 'text/x-component']);
+      response.end();
+    });
+    const { headers } = await fetchResponse(server);
+    expect(headers['cache-control']).toBe('no-store');
+    expect(headers['cdn-cache-control']).toBe('no-store');
+  });
+
+  it.each<{ path?: string; headers?: IncomingHttpHeaders; method?: string }>([
+    { headers: { rsc: '1' } },
+    { headers: { 'next-router-prefetch': '1' } },
+    { path: '/apps/kilter?_rsc=flight' },
+    { headers: { authorization: 'Bearer credential' } },
+    { headers: { cookie: '__Secure-boardsesh.session_token=credential' } },
+    { path: '/', headers: { cookie: 'boardsesh-locale=fr' } },
+    { path: '/account' },
+    { path: '//' },
+    { method: 'POST' },
+  ])('revokes caching when the original request is ineligible: %j', async (requestOptions) => {
+    server = await startServer((response) => {
+      response.setHeader('Cache-Control', MARKETING_CACHE_CONTROL);
+      response.setHeader('CDN-Cache-Control', MARKETING_CDN_CACHE_CONTROL);
+      response.end('<html>document</html>');
+    });
+    const { headers } = await fetchResponse(server, 'GET', requestOptions);
     expect(headers['cache-control']).toBe('no-store');
     expect(headers['cdn-cache-control']).toBe('no-store');
   });

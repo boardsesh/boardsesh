@@ -32,7 +32,9 @@ export function MarketingScreenshot({
   // language is read here, and asking for `marketing` would make a page that
   // has no marketing catalog (the climb page) fetch it after hydration.
   const { i18n } = useTranslation();
-  const platform = useMarketingPreview()?.platform ?? 'android';
+  const preview = useMarketingPreview();
+  const platform = preview?.platform ?? 'android';
+  const isWaitingForPlatform = preview?.isPlatformResolved === false;
   const locale = isSupportedLocale(i18n.language) ? i18n.language : 'en-US';
   const capture = marketingScreenshot(platform, locale, shot);
   return (
@@ -40,16 +42,30 @@ export function MarketingScreenshot({
       className={`${styles.frame} ${detail ? styles.detail : ''} ${className ?? ''}`}
       data-marketing-shot={shot}
       data-preview-platform={platform}
+      sx={isWaitingForPlatform && !detail ? { aspectRatio: `${capture.width} / ${capture.height}` } : undefined}
     >
-      <Image
-        src={resolveMarketingStaticAssetUrl(capture.src)}
-        alt={alt}
-        width={capture.width}
-        height={capture.height}
-        sizes={sizes}
-        preload={preload}
-        className={styles.image}
-      />
+      {isWaitingForPlatform ? (
+        <noscript>
+          <img
+            src={resolveMarketingStaticAssetUrl(capture.src)}
+            alt={alt}
+            width={capture.width}
+            height={capture.height}
+            loading="lazy"
+            className={styles.image}
+          />
+        </noscript>
+      ) : (
+        <Image
+          src={resolveMarketingStaticAssetUrl(capture.src)}
+          alt={alt}
+          width={capture.width}
+          height={capture.height}
+          sizes={sizes}
+          preload={preload}
+          className={styles.image}
+        />
+      )}
     </Box>
   );
 }

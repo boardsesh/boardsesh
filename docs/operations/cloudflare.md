@@ -1619,11 +1619,21 @@ ignore that language preference. Other locale homepages remain uncached.
 caches that honor them; Cloudflare's explicit request gates remain essential.
 
 Shared marketing HTML must contain deterministic platform markup and no recent
-beta cards. Fresh beta loads from its live authorized query near the viewport;
-this preserves the backend's per-response visibility check when a video becomes
-private. Store/platform selection happens after hydration. The final response
-guard withdraws ordinary and CDN cache directives on marketing redirects,
-errors and responses setting cookies, while preserving intentional board 308s.
+beta cards. Fresh beta waits for session resolution, sends a signed-in viewer's
+token, and keys its browser cache by account and login. Its query runs near the
+viewport and preserves the backend's per-response visibility check when a video
+becomes private. Store/platform selection happens after hydration.
+Shared screenshot frames reserve their space, but their image URLs are only
+attached after browser platform detection. A `noscript` image remains available
+without JavaScript. This avoids fetching Android captures and then their iOS
+replacements on Apple browsers.
+
+Next normalizes middleware requests by removing Flight headers and `_rsc`.
+Middleware exclusions alone therefore cannot identify every router request.
+The final response guard requires `text/html` and rechecks the Node request
+before keeping the marketing TTL. It withdraws ordinary and CDN cache
+directives on Flight/non-HTML responses, ineligible requests, redirects, errors
+and responses setting cookies, while preserving intentional board 308s.
 
 After deployment, read each target twice with a normal browser User-Agent and
 no cookies: the repeat should return `cf-cache-status: HIT` and the public cache

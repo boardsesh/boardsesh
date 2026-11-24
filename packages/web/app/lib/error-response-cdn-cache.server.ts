@@ -1,6 +1,11 @@
 // Server code (node:http), but without `import 'server-only'`: `instrumentation.ts`
 // installs this at boot, outside the React server layer that package needs.
-import { MARKETING_CACHE_CONTROL, MARKETING_CACHE_VARY, MARKETING_CDN_CACHE_CONTROL } from './marketing-page-cache';
+import {
+  isCacheableMarketingRequest,
+  MARKETING_CACHE_CONTROL,
+  MARKETING_CACHE_VARY,
+  MARKETING_CDN_CACHE_CONTROL,
+} from './marketing-page-cache';
 import { ServerResponse, type OutgoingHttpHeader, type OutgoingHttpHeaders } from 'node:http';
 
 /**
@@ -90,6 +95,46 @@ function headerArgumentContains(headers: HeadersArgument, name: string, expected
   );
 }
 
+function finalHeader(response: ServerResponse, headerArguments: HeadersArgument[], name: string): string {
+  let headerValue = response.getHeader(name);
+  for (const headers of headerArguments) {
+    if (Array.isArray(headers)) {
+      for (let index = 0; index < headers.length; index += 2) {
+        if (String(headers[index]).toLowerCase() === name) headerValue = headers[index + 1];
+      }
+    } else {
+      for (const [headerName, argumentValue] of Object.entries(headers)) {
+        if (headerName.toLowerCase() === name) headerValue = argumentValue;
+      }
+    }
+  }
+  return String(headerValue ?? '');
+}
+
+/** Next removes Flight metadata before middleware; inspect the Node request again. */
+function isMarketingDocumentRequest(response: ServerResponse): boolean {
+  const request = response.req;
+  if (!request.url) return false;
+  let requestUrl: URL;
+  try {
+    requestUrl = new URL(request.url, 'http://localhost');
+  } catch {
+    return false;
+  }
+  return isCacheableMarketingRequest({
+    method: request.method ?? '',
+    pathname: requestUrl.pathname,
+    search: requestUrl.search,
+    headers: {
+      has: (name) => Object.hasOwn(request.headers, name.toLowerCase()),
+      get: (name) => {
+        const headerValue = request.headers[name.toLowerCase()];
+        return Array.isArray(headerValue) ? headerValue.join('; ') : (headerValue ?? null);
+      },
+    },
+  });
+}
+
 /** Next replaces middleware Vary while rendering; merge it at the final write. */
 function marketingVary(response: ServerResponse, headerArguments: HeadersArgument[]): string {
   const fields = new Map<string, string>();
@@ -165,7 +210,8 @@ function isHeadersArgument(argument: unknown): argument is HeadersArgument {
  *
  * Board redirects keep their TTL: the climb-view legacy 308 is cached on purpose.
  * Marketing public Cache-Control is revoked as well on errors, redirects or
- * Set-Cookie, so an unexpected per-browser response cannot enter any cache.
+ * Set-Cookie, non-HTML responses or ineligible original requests, so an
+ * unexpected per-browser or Flight response cannot enter any cache.
  *
  * Returns false when the prototype is already guarded.
  */
@@ -190,7 +236,11 @@ export function installErrorResponseCdnCacheGuard(
       );
     const hasSetCookie =
       this.hasHeader('set-cookie') || headerArguments.some((headers) => headerArgumentContains(headers, 'set-cookie'));
-    const unsafeMarketingResponse = isMarketing && (statusCode < 200 || statusCode >= 300 || hasSetCookie);
+    const isHtml =
+      finalHeader(this, headerArguments, 'content-type').split(';')[0].trim().toLowerCase() === 'text/html';
+    const unsafeMarketingResponse =
+      isMarketing &&
+      (statusCode < 200 || statusCode >= 300 || hasSetCookie || !isHtml || !isMarketingDocumentRequest(this));
     if (!isErrorStatus(Number(statusCode)) && !unsafeMarketingResponse) {
       if (isMarketing) {
         const vary = marketingVary(this, headerArguments);

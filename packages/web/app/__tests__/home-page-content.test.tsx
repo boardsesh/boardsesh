@@ -186,14 +186,16 @@ describe('HomePageContent', () => {
       ).toBe(HERO_PLAY_STORE_URL);
     });
 
-    it("shows the iPhone the App Store's own badge, and puts the laptop's install block beside it", async () => {
+    it('keeps the shared App Store badge on iPhone beside the desktop install slot', async () => {
       setUserAgent(IOS_SAFARI_UA);
       render(<HomePageContent {...defaultProps} desktopInstall={<div data-testid="laptop-install" />} />);
 
       const link = await screen.findByRole('link', { name: enMarketing.home.hero.ctaInstallIos });
       const badge = link.querySelector('img');
 
-      expect(badge?.getAttribute('src')).toBe('/images/store-badges/app-store-white-en-US.svg');
+      // Shared HTML keeps the paired artwork and size after platform detection.
+      expect(badge?.getAttribute('src')).toBe('/images/store-badges/app-store-black-en-US.svg');
+      expect(badge?.getAttribute('height')).toBe('44');
       expect(badge?.getAttribute('alt')).toBe('Download on the App Store');
       expect(link.querySelector('.MuiButton-root')).toBeNull();
       // CSS shows one of the two per screen width; both are in the markup.
