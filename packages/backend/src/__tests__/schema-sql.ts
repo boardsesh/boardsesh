@@ -357,11 +357,11 @@ const sprayExposureSchema = readFileSync(
 );
 
 const gymClimbRankingSchema = readFileSync(
-  new URL('../../../db/drizzle/0345_gym_climb_rankings.sql', import.meta.url),
+  new URL('../../../db/drizzle/0346_gym_climb_rankings.sql', import.meta.url),
   'utf8',
 );
 const gymTickVoteTrigger = readFileSync(
-  new URL('../../../db/drizzle/0346_gym_tick_vote_invalidation.sql', import.meta.url),
+  new URL('../../../db/drizzle/0347_gym_tick_vote_invalidation.sql', import.meta.url),
   'utf8',
 );
 
