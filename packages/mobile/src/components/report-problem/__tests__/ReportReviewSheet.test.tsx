@@ -12,6 +12,8 @@ const showToast = vi.hoisted(() => vi.fn());
 const updateBoardAsync = vi.hoisted(() => vi.fn());
 const applyChangedBoard = vi.hoisted(() => vi.fn());
 const confirm = vi.hoisted(() => vi.fn());
+// What the sheet last told the unsaved guard.
+const guardArgs = vi.hoisted(() => [] as { busy: boolean }[]);
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -60,10 +62,10 @@ vi.mock('../../../providers/sheet-presentation-provider', () => ({
   dismissManagedSheetAndWait: () => Promise.resolve({ status: 'dismissed' }),
 }));
 vi.mock('../../../hooks/use-unsaved-sheet-guard', () => ({
-  useUnsavedSheetGuard: ({ onClose }: { onClose: () => void }) => ({
-    requestClose: onClose,
-    enablePanDownToClose: true,
-  }),
+  useUnsavedSheetGuard: (args: { onClose: () => void; busy: boolean }) => {
+    guardArgs.push(args);
+    return { requestClose: args.onClose, enablePanDownToClose: true };
+  },
 }));
 vi.mock('../../Button', () => ({
   Button: ({
@@ -137,6 +139,7 @@ beforeEach(() => {
   resolveAsync.mockResolvedValue({});
   refreshReads.mockReset();
   showToast.mockReset();
+  guardArgs.length = 0;
 });
 
 describe('ReportReviewSheet', () => {
@@ -356,6 +359,48 @@ describe('ReportReviewSheet with suggested setups', () => {
     });
     expect(screen.getByTestId('report-review-use-setup-error').textContent).toBe('reportReview.keepError');
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('keeps a swipe from dropping a Use this setup save in flight', async () => {
+    let finish: (board: UserBoard) => void = () => undefined;
+    updateBoardAsync.mockImplementation(
+      () =>
+        new Promise<UserBoard>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const screen = render(<ReportReviewSheet board={board} viewerUserId="alex" onClose={vi.fn()} onAction={vi.fn()} />);
+    expect(guardArgs.at(-1)?.busy).toBe(false);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('report-review-use-setup-1:10:20:'));
+    });
+    expect(guardArgs.at(-1)?.busy).toBe(true);
+    await act(async () => {
+      finish(board);
+    });
+    expect(guardArgs.at(-1)?.busy).toBe(false);
+  });
+
+  it('keeps "Fix the setup" when no suggestion is left to use', () => {
+    // Every suggestion is what the board already has.
+    state.reports = [report({ notes: [suggestion(1, 10, '20,1', '2026-11-22T11:00:00.000Z')] })];
+    const screen = render(<ReportReviewSheet board={board} viewerUserId="alex" onClose={vi.fn()} onAction={vi.fn()} />);
+    expect(screen.queryByTestId('report-review-suggestions')).toBeNull();
+    expect(screen.getByTestId('report-review-fix').textContent).toContain('reportReview.fix');
+  });
+
+  it('shows the suggestions without Use this setup to a viewer who cannot edit the board', () => {
+    const screen = render(
+      <ReportReviewSheet
+        board={{ ...board, canEdit: false }}
+        viewerUserId="sam"
+        onClose={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('report-review-suggestions')).toBeTruthy();
+    expect(screen.queryByTestId('report-review-use-setup-1:10:20:')).toBeNull();
+    expect(screen.queryByTestId('report-review-fix')).toBeNull();
   });
 
   it('shows no suggestions while the flag is off', () => {

@@ -415,6 +415,15 @@ describe('ReportDirectorySheet suggesting the setup', () => {
     expect(screen.queryByTestId('report-problem-setup-hint')).toBeNull();
   });
 
+  it('reads "Choose" for holds the catalogue does not list, and opens unchanged', () => {
+    const screen = openWrongSetup({ ...board, setIds: '999' } as UserBoard);
+    expect(value(screen, 'holds')).toBe('mobile.setupSuggestion.choose');
+    expect(send(screen).disabled).toBe(true);
+    fireEvent.click(row(screen, 'holds').getByLabelText('Bolt Ons'));
+    expect(value(screen, 'holds')).toBe('Bolt Ons');
+    expect(send(screen).disabled).toBe(false);
+  });
+
   it('resets the size and holds when the layout changes', () => {
     const screen = openWrongSetup();
     fireEvent.click(row(screen, 'holds').getByLabelText('Screw Ons'));

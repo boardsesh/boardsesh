@@ -162,6 +162,7 @@
   "mobile": {
     "setupSuggestion": {
       "holds": "Griffe",
+      "choose": "Auswählen",
       "unchangedHint": "Wähl, was an der Wand ist, oder schreib in einer Notiz, was nicht stimmt.",
       "previewEveryone": "Ändert es für alle bei {{gym}}. Das lässt sich rückgängig machen.",
       "previewStaff": "Das Team von {{gym}} prüft es zuerst.",

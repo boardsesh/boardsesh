@@ -162,6 +162,7 @@
   "mobile": {
     "setupSuggestion": {
       "holds": "Holds",
+      "choose": "Choose",
       "unchangedHint": "Pick what's on the wall, or say what's wrong in a note.",
       "previewEveryone": "Changes it for everyone at {{gym}}. It can be undone.",
       "previewStaff": "{{gym}}'s staff check it first.",

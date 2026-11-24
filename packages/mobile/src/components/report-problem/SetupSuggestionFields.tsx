@@ -39,6 +39,9 @@ export type SetupSuggestionFieldsProps = {
 
 export function SetupSuggestionFields({ selection, onAction, disabled = false }: SetupSuggestionFieldsProps) {
   const { t } = useTranslation('boards');
+  // A row whose value the catalogue doesn't list (a layout this build lacks, a
+  // size or sets it doesn't list) reads "Choose" rather than blank.
+  const choose = t('mobile.setupSuggestion.choose');
   const wideAnglesEnabled = useFeatureFlag('moonboard-wide-angles') === true;
   const { boardName, layoutId, sizeId, setIds, angle, angleIsFixed } = selection;
 
@@ -142,7 +145,7 @@ export function SetupSuggestionFields({ selection, onAction, disabled = false }:
         <SetupMenuRow
           key="layout"
           label={t('mobile.custom.layout')}
-          value={layoutRow.value}
+          value={layoutRow.value || choose}
           actions={layoutRow.actions}
           onSelectIndex={pickLayout}
           testID="setup-suggestion-layout"
@@ -150,7 +153,7 @@ export function SetupSuggestionFields({ selection, onAction, disabled = false }:
         <SetupMenuRow
           key="size"
           label={t('mobile.custom.size')}
-          value={sizeRow.value}
+          value={sizeRow.value || choose}
           actions={sizeRow.actions}
           onSelectIndex={pickSize}
           testID="setup-suggestion-size"
@@ -158,7 +161,7 @@ export function SetupSuggestionFields({ selection, onAction, disabled = false }:
         <SetupMenuRow
           key="holds"
           label={t('mobile.setupSuggestion.holds')}
-          value={holdsRow.value}
+          value={holdsRow.value || choose}
           actions={holdsRow.actions}
           onSelectIndex={toggleSet}
           testID="setup-suggestion-holds"

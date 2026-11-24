@@ -162,6 +162,7 @@
   "mobile": {
     "setupSuggestion": {
       "holds": "岩点套装",
+      "choose": "选择",
       "unchangedHint": "选出岩壁上的实际设置，或在备注里说明哪里不对。",
       "previewEveryone": "这会为 {{gym}} 的所有人更改设置。之后可以撤销。",
       "previewStaff": "{{gym}} 的工作人员会先检查。",

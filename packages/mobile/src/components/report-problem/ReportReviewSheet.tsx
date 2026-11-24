@@ -149,6 +149,9 @@ export function ReportReviewSheet({
       })),
     [suggestions, boardType, t],
   );
+  // "Use this setup" shows for each group to a viewer who can edit the board,
+  // and only then does the edit route read "Edit it yourself" beside it.
+  const offersUseSetup = board.canEdit === true && suggestionLines.length > 0;
   const footnote = reviewFootnote(waiting);
   const locale = i18n.resolvedLanguage ?? i18n.language;
   const footnoteText =
@@ -161,10 +164,19 @@ export function ReportReviewSheet({
           })()
         : null;
 
+  // "Use this setup": the edit screen's save, with its question when the owner
+  // already has a board with this setup at this place.
+  const { mutateAsync: updateBoardAsync } = useUpdateBoard();
+  const applyChangedBoard = useApplyChangedBoard();
+  const usingSetup = useRef(false);
+  const [usingKey, setUsingKey] = useState<string | null>(null);
+  const [useSetupFailed, setUseSetupFailed] = useState(false);
+
+  // A swipe can't drop a save in flight: "It's right as it is" or "Use this setup".
   const guard = useUnsavedSheetGuard({
     visible: true,
     dirty: step === 'keep' && reply.trim().length > 0,
-    busy: keeping,
+    busy: keeping || usingKey !== null,
     onClose,
   });
 
@@ -184,13 +196,6 @@ export function ReportReviewSheet({
   );
   const changeReply = useCallback((next: string) => setReply(next.slice(0, REPORT_NOTE_MAX_LENGTH)), []);
 
-  // "Use this setup": the edit screen's save, with its question when the owner
-  // already has a board with this setup at this place.
-  const { mutateAsync: updateBoardAsync } = useUpdateBoard();
-  const applyChangedBoard = useApplyChangedBoard();
-  const usingSetup = useRef(false);
-  const [usingKey, setUsingKey] = useState<string | null>(null);
-  const [useSetupFailed, setUseSetupFailed] = useState(false);
   const applySuggestedSetup = useCallback(
     async (group: SuggestedSetupGroup) => {
       if (usingSetup.current) return;
@@ -367,7 +372,7 @@ export function ReportReviewSheet({
                   {suggestionLines.map(({ group, text }) => (
                     <View key={group.key} style={styles.suggestion}>
                       <Text variant="body">{text}</Text>
-                      {board.canEdit ? (
+                      {offersUseSetup ? (
                         <Button
                           title={t('mobile.setupSuggestion.useSetup')}
                           accessibilityLabel={t('mobile.setupSuggestion.useSetupLabel', {
@@ -418,7 +423,7 @@ export function ReportReviewSheet({
               <ReviewActionRow
                 key="fix"
                 icon="edit"
-                label={suggestionLines.length > 0 ? t('mobile.setupSuggestion.editYourself') : t('reportReview.fix')}
+                label={offersUseSetup ? t('mobile.setupSuggestion.editYourself') : t('reportReview.fix')}
                 hint={t('reportReview.fixHint')}
                 color={systemColors.label}
                 onPress={() => void act('fix')}

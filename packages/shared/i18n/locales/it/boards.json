@@ -162,6 +162,7 @@
   "mobile": {
     "setupSuggestion": {
       "holds": "Prese",
+      "choose": "Scegli",
       "unchangedHint": "Scegli cosa c'è sulla parete, oppure spiega in una nota cosa non va.",
       "previewEveryone": "Cambia per tutti a {{gym}}. La modifica si può annullare.",
       "previewStaff": "Lo staff di {{gym}} la controlla prima.",

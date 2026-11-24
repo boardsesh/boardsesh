@@ -162,6 +162,7 @@
   "mobile": {
     "setupSuggestion": {
       "holds": "Presas",
+      "choose": "Elegir",
       "unchangedHint": "Elige lo que hay en el muro o cuenta qué falla en una nota.",
       "previewEveryone": "Lo cambia para todos en {{gym}}. Se puede deshacer.",
       "previewStaff": "El personal de {{gym}} lo revisa primero.",
