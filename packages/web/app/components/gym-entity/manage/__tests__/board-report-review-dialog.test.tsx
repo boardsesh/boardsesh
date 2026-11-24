@@ -252,5 +252,8 @@ describe('BoardReportReviewDialog, suggested setups', () => {
     renderDialog();
     expect(await screen.findByText('The board has this setup now')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Use this setup' })).toBeNull();
+    // No Use this setup to offer, so editing by hand is the fix, not the other way.
+    expect(screen.queryByText('Edit it yourself')).toBeNull();
+    expect(screen.getByText('Fix the setup')).toBeTruthy();
   });
 });

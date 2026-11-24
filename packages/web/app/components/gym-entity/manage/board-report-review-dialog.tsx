@@ -17,7 +17,13 @@ import EditOutlined from '@mui/icons-material/EditOutlined';
 import LinkOffOutlined from '@mui/icons-material/LinkOffOutlined';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
 import CheckOutlined from '@mui/icons-material/CheckOutlined';
-import { REPORT_NOTE_MAX_LENGTH, normalizeReportNote } from '@boardsesh/directory-moderation';
+import {
+  REPORT_NOTE_MAX_LENGTH,
+  normalizeReportNote,
+  setupKey,
+  setupMatches,
+  suggestedSetupUpdateInput,
+} from '@boardsesh/directory-moderation';
 import { boardSetupSummary } from '@boardsesh/board-config';
 import type { BoardSetup, DirectoryReport, UserBoard } from '@boardsesh/shared-schema';
 import {
@@ -46,7 +52,7 @@ import DuplicateBoardConfigDialog, {
   type DuplicateBoardConfig,
 } from '@/app/components/board-entity/duplicate-board-config-dialog';
 import { themeTokens } from '@/app/theme/theme-config';
-import { boardHasSetup, reportsToKeep, reviewRows, setupKey, setupUpdateInput } from './report-review-logic';
+import { offersUseThisSetup, reportsToKeep, reviewRows } from './report-review-logic';
 
 type BoardReportReviewDialogProps = {
   /** The reported board, or null when the dialog is closed. */
@@ -80,7 +86,10 @@ type BoardReportReviewDialogProps = {
  * board: one `updateBoard` with that layout, size, sets and (on a board that
  * doesn't tilt) angle, which closes the board's "Set up wrong" reports as
  * fixed. A save that would copy another board of the same owner asks first,
- * as the edit form does, and Save anyway sends `allowDuplicateConfig`.
+ * as the edit form does, and Save anyway sends `allowDuplicateConfig`. The
+ * grouping, the "board has this setup now" check and the input are
+ * `@boardsesh/directory-moderation`'s, shared with the app. While a Use this
+ * setup button shows, "Fix the setup" reads "Edit it yourself".
  */
 export default function BoardReportReviewDialog({
   board,
@@ -188,11 +197,9 @@ export default function BoardReportReviewDialog({
     applyingRef.current = true;
     setApplyingKey(setupKey(setup));
     try {
-      const input = setupUpdateInput(board.uuid, setup);
-      if (allowDuplicateConfig) input.allowDuplicateConfig = true;
       await createGraphQLHttpClient(token).request<UpdateBoardMutationResponse, UpdateBoardMutationVariables>(
         UPDATE_BOARD,
-        { input },
+        { input: suggestedSetupUpdateInput(board.uuid, setup, { allowDuplicateConfig }) },
       );
       showMessage(t('reportReview.fixedToast'), 'success');
       onResolved();
@@ -306,7 +313,7 @@ export default function BoardReportReviewDialog({
             {row.suggestions.length > 0 && board && (
               <Box component="ul" sx={{ m: 0, mt: 1, p: 0, listStyle: 'none', display: 'grid', gap: 1 }}>
                 {row.suggestions.map((group) => {
-                  const isCurrent = boardHasSetup(board, group.setup);
+                  const isCurrent = setupMatches(group.setup, board);
                   return (
                     <Box
                       component="li"
@@ -358,11 +365,7 @@ export default function BoardReportReviewDialog({
           {board?.canEdit && (
             <ReviewAction
               icon={<EditOutlined />}
-              label={
-                rows.some((row) => row.suggestions.length > 0)
-                  ? t('reportReview.web.editYourself')
-                  : t('reportReview.fix')
-              }
+              label={offersUseThisSetup(rows, board) ? t('reportReview.web.editYourself') : t('reportReview.fix')}
               hint={t('reportReview.fixHint')}
               onClick={() => board && onFix(board)}
             />
