@@ -39,8 +39,8 @@ describe('blocked crawler origin rejection', () => {
 
   it.each([
     'GPTBot/1.4',
-    'Claude-SearchBot/1.0',
-    'AMZN-SEARCHBOT/0.1',
+    'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; ClaudeBot/1.0; +claudebot@anthropic.com)',
+    'Mozilla/5.0 (compatible; Amazonbot/0.1; +https://developer.amazon.com/support/amazonbot)',
     // Blocked on cost, not on what it does with the content: 36% of www
     // requests on 2026-09-10 against 3.6% for real browsers, on the climb-view
     // SSR path. See COST_BLOCKED_CRAWLER_TOKENS in app/lib/crawler-policy.ts.
@@ -72,6 +72,12 @@ describe('blocked crawler origin rejection', () => {
     'facebookexternalhit/1.1',
     'ChatGPT-User/1.0',
     'Claude-User/1.0',
+    // AI search crawlers: they cite pages with a link, so they crawl like a search
+    // engine (2026-11-24). Their training siblings are rejected above.
+    'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; OAI-SearchBot/1.0; +https://openai.com/searchbot',
+    'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Claude-SearchBot/1.0; +searchbot@anthropic.com)',
+    'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)',
+    'Mozilla/5.0 (compatible; Amzn-SearchBot/0.1)',
     'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ChatGPT-User/1.0; +https://openai.com/bot',
     'SentryUptimeBot/1.0 (+http://docs.sentry.io/product/alerts/uptime-monitoring/)',
     'boardsesh-production-smoke/1.0',

@@ -1048,10 +1048,9 @@ describe('www cost-control rules (#4650)', () => {
   it('matches the scrapers it is meant to block', () => {
     const blockedUserAgents = [
       'Mozilla/5.0 (compatible; GPTBot/1.4; +https://openai.com/gptbot)',
-      'Mozilla/5.0 (compatible; Claude-SearchBot/1.0; +searchbot@anthropic.com)',
-      'Mozilla/5.0 (compatible; Amzn-SearchBot/0.1)',
-      'OAI-SearchBot/1.0',
-      'PerplexityBot/1.0',
+      'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; ClaudeBot/1.0; +claudebot@anthropic.com)',
+      'Mozilla/5.0 (compatible; Amazonbot/0.1; +https://developer.amazon.com/support/amazonbot)',
+      'CCBot/2.0 (https://commoncrawl.org/faq/)',
       'Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)',
       'Mozilla/5.0 (compatible; SemrushBot/7~bl; +http://www.semrush.com/bot.html)',
       'Mozilla/5.0 (compatible; DataForSeoBot/1.0; +https://dataforseo.com/dataforseo-bot)',
@@ -1271,6 +1270,17 @@ describe('automation default-deny (allow-list model)', () => {
       'Mozilla/5.0 (Phone; OpenHarmony 5.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36 ArkWeb/4.1.6.1 Mobile HuaweiBrowser/5.0.4.300',
     ],
     ['Samsung Pass', 'SamsungPass (Android; Samsung Electronics)'],
+    // AI search crawlers, allowed since 2026-11-24: they cite pages with a link.
+    [
+      'OAI-SearchBot',
+      'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; OAI-SearchBot/1.0; +https://openai.com/searchbot',
+    ],
+    ['Claude-SearchBot', 'Mozilla/5.0 (compatible; Claude-SearchBot/1.0; +searchbot@anthropic.com)'],
+    [
+      'PerplexityBot',
+      'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)',
+    ],
+    ['Amzn-SearchBot', 'Mozilla/5.0 (compatible; Amzn-SearchBot/0.1)'],
     // In-app and OEM browsers whose UAs carry app or device tokens a bare
     // `bot` or `python` could collide with. None of these do today.
     [

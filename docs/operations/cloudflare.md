@@ -732,11 +732,25 @@ back because GraphQL, WebSockets, and `/og` share that hostname.
      MJ12, DotBot, BLEXBot, Barkrowler, serpstat, Seznam, Zoominfo, Screaming
      Frog). Each was verified reaching our origin on 2026-08-24. They sell
      backlink data and send Boardsesh no traffic. The same rule also blocks
-     automated AI training and search crawlers and **Yandex**, using the shared
-     tokens in `packages/web/app/lib/crawler-policy.ts`. Google, Bing,
-     DuckDuckGo, Apple, Brave, Baidu, Qwant and the share-card unfurlers remain
-     allowed. Human-triggered AI fetchers (ChatGPT-User, Claude-User,
+     AI **training** crawlers (GPTBot, ClaudeBot, Amazonbot, Bytespider, CCBot,
+     meta-externalagent) and **Yandex**, using the shared tokens in
+     `packages/web/app/lib/crawler-policy.ts`. Google, Bing, DuckDuckGo, Apple,
+     Brave, Baidu, Qwant, the share-card unfurlers and the AI search crawlers
+     remain allowed. Human-triggered AI fetchers (ChatGPT-User, Claude-User,
      Perplexity-User) are on the allow list, not this one.
+
+  **AI search crawlers moved from the block list to the allow list on
+  2026-11-24** (owner decision, with the board app comparison pages, #8098).
+  OAI-SearchBot, Claude-SearchBot, PerplexityBot and Amzn-SearchBot fetch a page
+  so an AI answer can cite it with a link back, the same trade a search engine
+  makes, and the comparison pages are written for "best climbing board app"
+  questions that are increasingly asked in those products. Training crawlers
+  give nothing back and stay blocked (`AI_TRAINING_CRAWLER_TOKENS`). The search
+  crawlers are on `CRAWLER_ALLOW_TOKENS` rather than merely off the block list,
+  because each UA carries the `bot` signature and the automation default-deny
+  would refuse it otherwise. robots.txt drops them from the disallow group in
+  the same change. The owner watches crawl load after the merge; to undo, move
+  the four tokens back.
 
   **Yandex moved from the allow list to the block list on 2026-09-11.** It was
   added to the allow list four days earlier, in the AI-crawler commit, with no
@@ -867,6 +881,9 @@ back because GraphQL, WebSockets, and `/og` share that hostname.
   - It never reorders our group relative to **foreign** rules. Cloudflare's own
     AI-crawler block remains in its existing position. Our explicit policy
     also covers these agents so it does not depend on that unmanaged rule.
+    The reverse also holds: if that dashboard setting blocks AI search crawlers,
+    our allow rule cannot override it, so check it whenever the AI search
+    policy changes (it last did on 2026-11-24).
   - It never uses `cf.client.bot` as the allowlist. Ahrefs and Semrush are
     themselves Cloudflare _verified bots_, so that field is true for precisely
     the crawlers we are blocking.
@@ -930,7 +947,7 @@ Cloudflare both read it), with a comment saying who it is and why we want it.
 Add its full UA to the `mustPass` fixture in `scripts/cloudflare-apply.test.ts`.
 The merge deploys both the edge rule and the web middleware. To keep one out
 that carries no signature (as Lightpanda did), add it to
-`COST_BLOCKED_CRAWLER_TOKENS` or `AI_CRAWLER_TOKENS` and to `mustBlock`.
+`COST_BLOCKED_CRAWLER_TOKENS` or `AI_TRAINING_CRAWLER_TOKENS` and to `mustBlock`.
 
 **What this does not catch.** UA blocking only stops crawlers that identify
 themselves honestly. A UA-rotating farm walked ~2,500 climb-view URLs on

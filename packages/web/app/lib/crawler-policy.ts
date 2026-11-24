@@ -1,11 +1,16 @@
-/** Automated AI training/search crawlers. Human-triggered unfurlers are separate. */
-export const AI_CRAWLER_TOKENS = [
+/**
+ * Crawlers that collect pages to train AI models. They give nothing back: no
+ * link, no citation, no visit. Blocked at every layer.
+ *
+ * Their search siblings (OAI-SearchBot, Claude-SearchBot, PerplexityBot,
+ * Amzn-SearchBot) were on this list until 2026-11-24 and are now on
+ * CRAWLER_ALLOW_TOKENS: they fetch a page to cite it, with a link, in an AI
+ * answer, which is how the app comparison pages get found. Human-triggered
+ * fetchers (ChatGPT-User and friends) were already allowed.
+ */
+export const AI_TRAINING_CRAWLER_TOKENS = [
   'gptbot',
-  'oai-searchbot',
   'claudebot',
-  'claude-searchbot',
-  'perplexitybot',
-  'amzn-searchbot',
   'amazonbot',
   'bytespider',
   'ccbot',
@@ -51,7 +56,7 @@ export const COST_BLOCKED_CRAWLER_TOKENS = [
  * and the origin fallback in `middleware.ts` — so a token can never be blocked
  * at one layer and allowed at another.
  */
-export const BLOCKED_CRAWLER_TOKENS = [...AI_CRAWLER_TOKENS, ...COST_BLOCKED_CRAWLER_TOKENS] as const;
+export const BLOCKED_CRAWLER_TOKENS = [...AI_TRAINING_CRAWLER_TOKENS, ...COST_BLOCKED_CRAWLER_TOKENS] as const;
 
 /**
  * Search engines, share unfurlers and the operational agents we depend on.
@@ -160,6 +165,16 @@ export const CRAWLER_ALLOW_TOKENS = [
   'chatgpt-user',
   'claude-user',
   'perplexity-user',
+  // AI search crawlers, moved off the block list on 2026-11-24 (owner
+  // decision). They index pages so an AI answer can cite them with a link back:
+  // the same trade a search engine makes. Their training siblings stay blocked
+  // (AI_TRAINING_CRAWLER_TOKENS). Each carries the `bot` signature, so without
+  // an entry the default-deny would still refuse them. None contains a blocked
+  // token as a substring (`claude-searchbot` is not `claudebot`).
+  'oai-searchbot',
+  'claude-searchbot',
+  'perplexitybot',
+  'amzn-searchbot',
   // Not an agent: Cubot is an Android phone brand, and its model string
   // (`CUBOT P50`) lands in real browser and Dalvik UAs. Without this, the
   // `bot` signature would block climbers on those phones.
