@@ -1,5 +1,6 @@
 import {
   pgTable,
+  check,
   bigserial,
   bigint,
   text,
@@ -153,9 +154,42 @@ export const userBoards = pgTable(
     // boardBySlug's merge-tombstone fallback looks up soft-deleted losers by
     // slug — those rows are excluded from the active-only unique slug index,
     // so give the fallback its own small partial index.
+    mergedBoardIdx: index('user_boards_merged_board_idx')
+      .on(table.mergedIntoBoardUuid)
+      .where(sql`${table.mergedIntoBoardUuid} IS NOT NULL`),
     mergedSlugIdx: index('user_boards_merged_slug_idx')
       .on(table.slug)
       .where(sql`${table.mergedIntoBoardUuid} IS NOT NULL`),
+  }),
+);
+
+/** A staff-attested relationship between configurations of one physical board. */
+export const gymReportingBoardAliases = pgTable(
+  'gym_reporting_board_aliases',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    gymId: bigint('gym_id', { mode: 'number' })
+      .notNull()
+      .references(() => gyms.id, { onDelete: 'cascade' }),
+    boardId: bigint('board_id', { mode: 'number' })
+      .notNull()
+      .references(() => userBoards.id, { onDelete: 'cascade' }),
+    rootBoardId: bigint('root_board_id', { mode: 'number' })
+      .notNull()
+      .references(() => userBoards.id, { onDelete: 'cascade' }),
+    verifiedBy: text('verified_by').references(() => users.id, { onDelete: 'set null' }),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }).defaultNow().notNull(),
+    revokedBy: text('revoked_by').references(() => users.id, { onDelete: 'set null' }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => ({
+    activeBoard: uniqueIndex('gym_reporting_alias_active_board_idx')
+      .on(table.boardId)
+      .where(sql`${table.revokedAt} IS NULL`),
+    activeRoot: index('gym_reporting_alias_active_root_idx')
+      .on(table.rootBoardId)
+      .where(sql`${table.revokedAt} IS NULL`),
+    differentBoards: check('gym_reporting_alias_different_boards', sql`${table.boardId} <> ${table.rootBoardId}`),
   }),
 );
 

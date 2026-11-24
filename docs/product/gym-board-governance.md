@@ -69,7 +69,7 @@ A gym is in one of three states: **Run by the gym** (an approved claim or an adm
 
 - A community vote that hides boards (see decision 2).
 - Moving board ownership to the gym on claim. It would take a climber's board away on someone else's say-so.
-- Kiosks, branding, insights and stray-board attach in the app. They stay on the website, linked from the app's gym page.
+- Kiosks, branding and stray-board attach stay on the website, linked from the app's gym page. Staff can open Analytics from My gyms in the app.
 - Gym delete or merge for owners. Closed gyms and duplicate gyms are report reasons that admins act on.
 
 ## Follow-ups

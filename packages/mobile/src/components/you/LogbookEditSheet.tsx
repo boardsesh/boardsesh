@@ -1,5 +1,5 @@
 import { ContentAudienceControl } from '../privacy/ContentAudienceControl';
-import { type RefObject, useCallback, useEffect, useMemo, useState } from 'react';
+import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { type BottomSheet } from '../sheet-presentation';
 import { useTranslation } from 'react-i18next';
@@ -33,7 +33,12 @@ import {
   TickNoteField,
   shouldShowAngleRow,
 } from '../tick';
-import { clampToNow, toEditableDate, MAXIMUM_CLIMBED_AT_REFRESH_MS } from '../logbook/climbed-at';
+import {
+  clampToNow,
+  selectedTickReportingTime,
+  toEditableDate,
+  MAXIMUM_CLIMBED_AT_REFRESH_MS,
+} from '../logbook/climbed-at';
 import { useGrades } from '../../lib/graphql/hooks';
 import { hapticSuccess, hapticError } from '../../lib/haptics';
 import { spacing } from '../../theme/tokens';
@@ -83,6 +88,7 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
   const [attemptCount, setAttemptCount] = useState(1);
   const [climbedAt, setClimbedAt] = useState(() => new Date());
   const [hasClimbedAtChanged, setHasClimbedAtChanged] = useState(false);
+  const hasPickedTimeRef = useRef(false);
   const [maximumClimbedAtDate, setMaximumClimbedAtDate] = useState(() => new Date());
   const [comment, setComment] = useState('');
   const [angle, setAngle] = useState(0);
@@ -106,6 +112,7 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
     setAttemptCount(Math.max(1, ascent.attemptCount));
     setClimbedAt(toEditableDate(ascent.climbedAt));
     setHasClimbedAtChanged(false);
+    hasPickedTimeRef.current = false;
     setComment(ascent.comment ?? '');
     setAngle(ascent.angle);
     setLastError(null);
@@ -131,7 +138,8 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
     setStatus(nextStatus);
   }, []);
 
-  const handleClimbedAtChange = useCallback((next: Date) => {
+  const handleClimbedAtChange = useCallback((next: Date, editedPart: 'date' | 'time') => {
+    if (editedPart === 'time') hasPickedTimeRef.current = true;
     setHasClimbedAtChanged(true);
     setClimbedAt(next);
   }, []);
@@ -170,7 +178,9 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
     };
     if (selectedBoard !== undefined) input.boardUuid = selectedBoard?.uuid ?? null;
     if (hasClimbedAtChanged) {
-      input.climbedAt = clampToNow(climbedAt).toISOString();
+      const selectedDate = clampToNow(climbedAt);
+      input.climbedAt = selectedDate.toISOString();
+      input.reportingTime = selectedTickReportingTime(selectedDate, hasPickedTimeRef.current);
     }
     updateTick.mutate(
       {

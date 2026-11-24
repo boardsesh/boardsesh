@@ -61,10 +61,17 @@ function makeGym(overrides: Partial<Gym>): Gym {
   } as unknown as Gym;
 }
 
-function renderRow(gym: Gym, currentUserId?: string, onOpenGym = vi.fn(), onManageKiosks = vi.fn()) {
+function renderRow(
+  gym: Gym,
+  currentUserId?: string,
+  onOpenGym = vi.fn(),
+  onManageKiosks = vi.fn(),
+  onOpenAnalytics = vi.fn(),
+) {
   return {
     onOpenGym,
     onManageKiosks,
+    onOpenAnalytics,
     ...render(
       <MyGymRow
         gym={gym}
@@ -72,7 +79,10 @@ function renderRow(gym: Gym, currentUserId?: string, onOpenGym = vi.fn(), onMana
         roleLabels={roleLabels}
         manageLabel="Manage kiosks & TVs"
         manageAccessibilityLabel="Manage kiosks and TVs for Movement"
+        analyticsLabel="Gym analytics"
+        analyticsAccessibilityLabel="Open analytics for Movement"
         noAddressLabel="No address yet"
+        onOpenAnalytics={onOpenAnalytics}
         onOpenGym={onOpenGym}
         onManageKiosks={onManageKiosks}
       />,
@@ -106,7 +116,7 @@ describe('MyGymRow', () => {
     expect(getByText('No address yet')).toBeTruthy();
   });
 
-  it('opens the gym editor when the summary is tapped', () => {
+  it('opens the gym page when the summary is tapped', () => {
     const gym = makeGym({});
     const onOpenGym = vi.fn();
     const { getByRole } = renderRow(gym, 'owner-1', onOpenGym);
@@ -120,6 +130,13 @@ describe('MyGymRow', () => {
     const { getByRole } = renderRow(gym, 'owner-1', vi.fn(), onManageKiosks);
     fireEvent.click(getByRole('button', { name: 'Manage kiosks and TVs for Movement' }));
     expect(onManageKiosks).toHaveBeenCalledWith(gym);
+  });
+
+  it('opens staff analytics for an editor who does not own the gym', () => {
+    const gym = makeGym({ myRole: 'editor' });
+    const { getByRole, onOpenAnalytics } = renderRow(gym, 'someone-else');
+    fireEvent.click(getByRole('button', { name: 'Open analytics for Movement' }));
+    expect(onOpenAnalytics).toHaveBeenCalledWith(gym);
   });
 
   it('renders no pressable affordances when the viewer cannot edit', () => {

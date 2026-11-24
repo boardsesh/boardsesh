@@ -1,4 +1,4 @@
-import { pgTable, text, integer, bigint, bigserial, timestamp, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, boolean, text, integer, bigint, bigserial, timestamp, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { users } from '../auth/users';
 import { boardSessions } from './sessions';
 import { userBoards } from './boards';
@@ -47,6 +47,11 @@ export const boardClimbEvents = pgTable(
     name: text('name'),
     grade: text('grade'),
     setter: text('setter'),
+    // Non-null only for reports that captured the original board and its gym
+    // under the sequence reservation lock. A null gym then means unlinked.
+    reportingBoardId: bigint('reporting_board_id', { mode: 'number' }),
+    reportingGymId: bigint('reporting_gym_id', { mode: 'number' }),
+    reportingMirrored: boolean('reporting_mirrored'),
     confirmedAt: timestamp('confirmed_at', { mode: 'string' }).notNull(),
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
   },

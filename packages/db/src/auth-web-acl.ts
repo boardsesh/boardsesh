@@ -173,6 +173,147 @@ export function fencePlan(catalog: FenceCatalog, options: { readonly ddlOwner?: 
   };
 }
 
+/** The app-facing board update reaches these objects under the reviewed trigger owner's privileges. */
+async function verifyGymReportingAliasClosure(
+  client: postgres.Sql | postgres.TransactionSql,
+  reviewedAttachment: boolean,
+) {
+  const [closure] = await client<
+    { installed: boolean; safe: boolean; sink: { columns: unknown; indexes: unknown; constraints: unknown } }[]
+  >`
+    WITH relations(oid) AS (
+      VALUES (to_regclass('public.user_boards')), (to_regclass('public.gyms')),
+        (to_regclass('public.gym_reporting_board_aliases'))
+    ), source_columns(relation, name, type) AS (
+      VALUES ('public.user_boards', 'id', 'pg_catalog.int8'), ('public.user_boards', 'gym_id', 'pg_catalog.int8'),
+        ('public.gyms', 'id', 'pg_catalog.int8'), ('public.gyms', 'merged_into_gym_id', 'pg_catalog.int8'),
+        ('public.gyms', 'deleted_at', 'pg_catalog.timestamp')
+    ), source_indexes AS (
+      SELECT indexrelid, indclass FROM pg_index WHERE indrelid = to_regclass('public.gyms')
+    ), postgis_members(classid, oid) AS (
+      SELECT dependency.classid, dependency.objid FROM pg_depend dependency
+      JOIN pg_extension extension ON extension.oid = dependency.refobjid
+      WHERE dependency.refclassid = 'pg_extension'::regclass AND dependency.deptype = 'e'
+        AND extension.extname = 'postgis' AND extension.extnamespace = 'public'::regnamespace
+    ), sink_indexes AS (
+      SELECT indexrelid, indclass FROM pg_index WHERE indrelid = to_regclass('public.gym_reporting_board_aliases')
+    ), expressions(classid, oid) AS (
+      SELECT 'pg_attrdef'::regclass, oid FROM pg_attrdef WHERE adrelid = to_regclass('public.gym_reporting_board_aliases')
+      UNION ALL SELECT 'pg_constraint'::regclass, oid FROM pg_constraint WHERE conrelid = to_regclass('public.gym_reporting_board_aliases')
+      UNION ALL SELECT 'pg_class'::regclass, indexrelid FROM sink_indexes
+      UNION ALL SELECT 'pg_class'::regclass, indexrelid FROM source_indexes
+    ), reached_types(oid) AS (
+      VALUES ('pg_catalog.int8'::regtype), ('pg_catalog.int8[]'::regtype), ('pg_catalog.int4'::regtype),
+        ('pg_catalog.timestamp'::regtype), ('pg_catalog.timestamptz'::regtype), ('pg_catalog.text'::regtype)
+    )
+    SELECT to_regprocedure('public.revoke_gym_reporting_aliases_on_board_move()') IS NOT NULL AS installed,
+      (SELECT count(relation.oid) FROM relations JOIN pg_class relation ON relation.oid = relations.oid
+        JOIN pg_am method ON method.oid = relation.relam
+        WHERE relation.relkind = 'r' AND NOT relation.relrowsecurity AND NOT relation.relforcerowsecurity
+          AND NOT relation.relispartition AND method.amname = 'heap') = 3
+      AND NOT EXISTS (SELECT 1 FROM pg_inherits WHERE inhrelid IN (SELECT oid FROM relations)
+        OR inhparent IN (SELECT oid FROM relations))
+      AND NOT EXISTS (SELECT 1 FROM pg_rewrite WHERE ev_class IN (SELECT oid FROM relations) AND rulename <> '_RETURN')
+      AND NOT EXISTS (SELECT 1 FROM source_columns source
+        WHERE NOT EXISTS (SELECT 1 FROM pg_attribute attribute WHERE attribute.attrelid = to_regclass(source.relation)
+          AND attribute.attname = source.name AND attribute.atttypid = to_regtype(source.type)
+          AND attribute.attnum > 0 AND NOT attribute.attisdropped AND attribute.attgenerated = ''))
+      AND NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = to_regclass('public.gym_reporting_board_aliases')
+        AND NOT tgisinternal AND tgenabled <> 'D')
+      AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE confrelid = to_regclass('public.gym_reporting_board_aliases'))
+      AND NOT EXISTS (SELECT 1 FROM pg_depend dependency JOIN expressions expression
+        ON expression.classid = dependency.classid AND expression.oid = dependency.objid
+        LEFT JOIN pg_proc routine ON dependency.refclassid = 'pg_proc'::regclass AND routine.oid = dependency.refobjid
+        LEFT JOIN pg_operator operator ON dependency.refclassid = 'pg_operator'::regclass AND operator.oid = dependency.refobjid
+        WHERE routine.pronamespace <> 'pg_catalog'::regnamespace OR operator.oprnamespace <> 'pg_catalog'::regnamespace)
+      AND NOT EXISTS (SELECT 1 FROM sink_indexes index_row CROSS JOIN LATERAL unnest(index_row.indclass) class_oid
+        JOIN pg_opclass class ON class.oid = class_oid WHERE class.opcnamespace <> 'pg_catalog'::regnamespace)
+      -- Partial index predicates can make an index reachable even when the
+      -- trigger does not read its key. Only this exact PostGIS path is reviewed.
+      AND NOT EXISTS (SELECT 1 FROM source_indexes index_row JOIN pg_class index_relation ON index_relation.oid = index_row.indexrelid
+        JOIN pg_am method ON method.oid = index_relation.relam
+        CROSS JOIN LATERAL unnest(index_row.indclass) class_oid JOIN pg_opclass class ON class.oid = class_oid
+        JOIN pg_opfamily family ON family.oid = class.opcfamily
+        WHERE (
+          (method.amname = 'btree' AND method.amhandler::oid = to_regprocedure('pg_catalog.bthandler(internal)')::oid
+            AND class.opcnamespace = 'pg_catalog'::regnamespace AND family.opfnamespace = 'pg_catalog'::regnamespace)
+          OR (method.amname = 'gist' AND method.amhandler::oid = to_regprocedure('pg_catalog.gisthandler(internal)')::oid
+            AND pg_get_indexdef(index_row.indexrelid) = 'CREATE INDEX gyms_location_idx ON public.gyms USING gist (location) WHERE ((deleted_at IS NULL) AND (is_public = true))'
+            AND class.opcname = 'gist_geography_ops' AND family.opfname = 'gist_geography_ops'
+            AND class.opcnamespace = 'public'::regnamespace AND family.opfnamespace = 'public'::regnamespace
+            AND class.opcintype = to_regtype('public.geography')
+            AND EXISTS (SELECT 1 FROM postgis_members WHERE classid = 'pg_opclass'::regclass AND oid = class.oid)
+            AND EXISTS (SELECT 1 FROM postgis_members WHERE classid = 'pg_opfamily'::regclass AND oid = family.oid)
+            AND EXISTS (SELECT 1 FROM postgis_members WHERE classid = 'pg_type'::regclass AND oid = class.opcintype)
+            AND NOT EXISTS (SELECT 1 FROM pg_amop family_operator
+              WHERE family_operator.amopfamily = family.oid
+                AND NOT EXISTS (SELECT 1 FROM postgis_members
+                  WHERE classid = 'pg_operator'::regclass AND oid = family_operator.amopopr))
+            AND NOT EXISTS (
+              SELECT 1 FROM pg_proc routine JOIN pg_language language ON language.oid = routine.prolang
+              WHERE routine.oid IN (
+                SELECT support.amproc::oid FROM pg_amproc support WHERE support.amprocfamily = family.oid
+                UNION ALL SELECT callback.oid FROM pg_amop family_operator JOIN pg_operator operator ON operator.oid = family_operator.amopopr
+                  CROSS JOIN LATERAL unnest(ARRAY[operator.oprcode::oid, operator.oprrest::oid, operator.oprjoin::oid]) callback(oid)
+                  WHERE family_operator.amopfamily = family.oid
+              ) AND routine.pronamespace <> 'pg_catalog'::regnamespace
+              AND (language.lanname <> 'c' OR routine.probin IS DISTINCT FROM '$libdir/postgis-3'
+                OR NOT EXISTS (SELECT 1 FROM postgis_members WHERE classid = 'pg_proc'::regclass AND oid = routine.oid))
+            ))
+        ) IS NOT TRUE)
+      AND NOT EXISTS (SELECT 1 FROM pg_operator operator WHERE operator.oprnamespace <> 'pg_catalog'::regnamespace
+        AND operator.oprname IN ('=', '<>', '<', '||') AND operator.oprleft IN (SELECT oid FROM reached_types)
+        AND operator.oprright IN (SELECT oid FROM reached_types))
+      AND NOT EXISTS (SELECT 1 FROM pg_cast cast_row JOIN pg_proc routine ON routine.oid = cast_row.castfunc
+        WHERE routine.pronamespace <> 'pg_catalog'::regnamespace AND cast_row.castsource IN (SELECT oid FROM reached_types)
+        AND cast_row.casttarget IN (SELECT oid FROM reached_types)) AS safe,
+      json_build_object(
+        'columns', (SELECT json_agg(json_build_array(attribute.attname, format_type(attribute.atttypid, attribute.atttypmod),
+            attribute.attnotnull, attribute.attidentity, attribute.attgenerated,
+            replace(pg_get_expr(default_row.adbin, default_row.adrelid), 'public.gym_reporting_board_aliases_id_seq', 'gym_reporting_board_aliases_id_seq'))
+          ORDER BY attribute.attnum)
+          FROM pg_attribute attribute LEFT JOIN pg_attrdef default_row ON default_row.adrelid = attribute.attrelid AND default_row.adnum = attribute.attnum
+          WHERE attribute.attrelid = to_regclass('public.gym_reporting_board_aliases') AND attribute.attnum > 0 AND NOT attribute.attisdropped),
+        'indexes', (SELECT json_agg(pg_get_indexdef(indexrelid) ORDER BY indexrelid::regclass::text) FROM sink_indexes),
+        'constraints', (SELECT json_agg(replace(pg_get_constraintdef(oid), 'REFERENCES public.', 'REFERENCES ') ORDER BY conname)
+          FROM pg_constraint WHERE conrelid = to_regclass('public.gym_reporting_board_aliases') AND contype <> 'n')
+      ) AS sink`;
+  if (!closure) throw new Error('FENCE_EVIDENCE_UNAVAILABLE');
+  if (!closure.installed) return;
+  // PostgreSQL omits dependencies on pinned builtins from pg_depend. The
+  // exact sink shape prevents built-in or extension expressions from being
+  // attached to this privileged UPDATE without review.
+  const reviewedSink = {
+    columns: [
+      ['id', 'bigint', true, '', '', "nextval('gym_reporting_board_aliases_id_seq'::regclass)"],
+      ['gym_id', 'bigint', true, '', '', null],
+      ['board_id', 'bigint', true, '', '', null],
+      ['root_board_id', 'bigint', true, '', '', null],
+      ['verified_by', 'text', false, '', '', null],
+      ['verified_at', 'timestamp with time zone', true, '', '', 'now()'],
+      ['revoked_by', 'text', false, '', '', null],
+      ['revoked_at', 'timestamp with time zone', false, '', '', null],
+    ],
+    indexes: [
+      'CREATE UNIQUE INDEX gym_reporting_alias_active_board_idx ON public.gym_reporting_board_aliases USING btree (board_id) WHERE (revoked_at IS NULL)',
+      'CREATE INDEX gym_reporting_alias_active_root_idx ON public.gym_reporting_board_aliases USING btree (root_board_id) WHERE (revoked_at IS NULL)',
+      'CREATE UNIQUE INDEX gym_reporting_board_aliases_pkey ON public.gym_reporting_board_aliases USING btree (id)',
+    ],
+    constraints: [
+      'CHECK ((board_id <> root_board_id))',
+      'FOREIGN KEY (board_id) REFERENCES user_boards(id) ON DELETE CASCADE',
+      'FOREIGN KEY (gym_id) REFERENCES gyms(id) ON DELETE CASCADE',
+      'PRIMARY KEY (id)',
+      'FOREIGN KEY (revoked_by) REFERENCES users(id) ON DELETE SET NULL',
+      'FOREIGN KEY (root_board_id) REFERENCES user_boards(id) ON DELETE CASCADE',
+      'FOREIGN KEY (verified_by) REFERENCES users(id) ON DELETE SET NULL',
+    ],
+  };
+  if (!reviewedAttachment || !closure.safe || JSON.stringify(closure.sink) !== JSON.stringify(reviewedSink)) {
+    throw new Error('UNREVIEWED_GYM_REPORTING_ALIAS_CLOSURE');
+  }
+}
+
 /** Effective ACL checks include PUBLIC, column grants and all memberships (even NOINHERIT SET ROLE). */
 export async function verifyFence(client: postgres.Sql | postgres.TransactionSql) {
   const [role] = await client<{ safe: boolean }[]>`
@@ -235,10 +376,20 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
       source: string;
       configuration: string[];
       language: string;
+      triggerName: string;
+      triggerType: number;
+      enabled: string;
+      deferred: boolean;
+      updateColumns: string[];
     }[]
   >`
     SELECT namespace.nspname AS schema, relation_namespace.nspname AS "relationSchema", relation.relname AS relation, routine.proname AS routine,
-      routine.prosrc AS source, to_json(routine.proconfig) AS configuration, language.lanname AS language
+      routine.prosrc AS source, to_json(routine.proconfig) AS configuration, language.lanname AS language,
+      trigger.tgname AS "triggerName", trigger.tgtype::integer AS "triggerType", trigger.tgenabled AS enabled,
+      trigger.tgdeferrable AND trigger.tginitdeferred AS deferred,
+      to_json(ARRAY(SELECT attribute.attname FROM unnest(trigger.tgattr::smallint[]) WITH ORDINALITY AS update_col(attnum, position)
+        JOIN pg_attribute attribute ON attribute.attrelid = trigger.tgrelid AND attribute.attnum = update_col.attnum
+        ORDER BY update_col.position)) AS "updateColumns"
     FROM pg_trigger trigger JOIN pg_proc routine ON routine.oid = trigger.tgfoid
     JOIN pg_namespace namespace ON namespace.oid = routine.pronamespace
     JOIN pg_class relation ON relation.oid = trigger.tgrelid
@@ -246,9 +397,27 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
     JOIN pg_language language ON language.oid = routine.prolang
     WHERE NOT trigger.tgisinternal AND trigger.tgenabled <> 'D' AND routine.prosecdef
       AND has_table_privilege(${WEB_ROLE},trigger.tgrelid,'INSERT,UPDATE,DELETE')`;
-  // Reviewed 0298 bodies write only logbook_changes and read ticks. No names-only
-  // allowlist: drift in body, language, search_path or attachment fails closed.
-  const reviewedTriggers: Readonly<Record<string, { relation: string | readonly string[]; sha256: string }>> = {
+  // No names-only allowlist. Drift in body, language, search_path or attachment
+  // fails closed. The board move trigger writes only the reporting alias audit
+  // and checks fully qualified gyms. Its catalog-only path resolves built-ins.
+  const reviewedTriggers: Readonly<
+    Record<
+      string,
+      {
+        relation: string | readonly string[];
+        sha256: string;
+        configuration?: readonly string[];
+        attachment?: { name: string; type: number; deferred: boolean; columns: readonly string[] };
+      }
+    >
+  > = {
+    revoke_gym_reporting_aliases_on_board_move: {
+      relation: 'user_boards',
+      sha256: 'f645b67ae38be89b9af89bf000c68336c1d24e85e2335a32ecc79eebfddab243',
+      configuration: ['search_path=pg_catalog'],
+      // PostgreSQL's row (1) and UPDATE (16) flags, with no BEFORE flag.
+      attachment: { name: 'trg_gym_reporting_aliases_board_move', type: 17, deferred: true, columns: ['gym_id'] },
+    },
     log_partner_session_from_session: {
       relation: 'board_sessions',
       sha256: '53477df49c5493dcd817d6a9e39925d9921a4810ef907fd7170e6d89fb5cc2ea',
@@ -286,11 +455,22 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
       trigger.relationSchema !== 'public' ||
       !(typeof reviewed.relation === 'string' ? [reviewed.relation] : reviewed.relation).includes(trigger.relation) ||
       trigger.language !== 'plpgsql' ||
-      JSON.stringify(trigger.configuration) !== JSON.stringify(['search_path=public, pg_catalog']) ||
-      createHash('sha256').update(trigger.source).digest('hex') !== reviewed.sha256
+      JSON.stringify(trigger.configuration) !==
+        JSON.stringify(reviewed.configuration ?? ['search_path=public, pg_catalog']) ||
+      createHash('sha256').update(trigger.source).digest('hex') !== reviewed.sha256 ||
+      (reviewed.attachment &&
+        (trigger.triggerName !== reviewed.attachment.name ||
+          trigger.triggerType !== reviewed.attachment.type ||
+          trigger.enabled !== 'O' ||
+          trigger.deferred !== reviewed.attachment.deferred ||
+          JSON.stringify(trigger.updateColumns) !== JSON.stringify(reviewed.attachment.columns)))
     )
       throw new Error('UNREVIEWED_TRIGGER_PATH');
   }
+  await verifyGymReportingAliasClosure(
+    client,
+    triggerFunctions.some((trigger) => trigger.routine === 'revoke_gym_reporting_aliases_on_board_move'),
+  );
   const enumTypes = await client<{ name: string; labels: string[]; safe: boolean }[]>`
     SELECT type.typname AS name, to_json(ARRAY(SELECT enumlabel FROM pg_enum WHERE enumtypid=type.oid ORDER BY enumsortorder)) AS labels,
       type.typtype='e' AND type.typinput='pg_catalog.enum_in'::regproc AND type.typoutput='pg_catalog.enum_out'::regproc

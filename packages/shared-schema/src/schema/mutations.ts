@@ -595,6 +595,8 @@ export const mutationsTypeDefs = /* GraphQL */ `
     Update a gym's metadata.
     """
     updateGym(input: UpdateGymInput!): Gym!
+    setGymReportingTimeZone(input: SetGymReportingTimeZoneInput!): Boolean!
+    setGymReportingBoardAlias(input: SetGymReportingBoardAliasInput!): Boolean!
 
     """
     Soft-delete a gym.

@@ -393,12 +393,45 @@ export const GET_GYM_STATS = gql`
   query GetGymStats($input: GymStatsInput!) {
     gymStats(input: $input) {
       gymUuid
+      gymName
+      boardUuid
+      boards {
+        uuid
+        name
+        boardType
+        configurations {
+          uuid
+          name
+        }
+      }
+      canManageBoardAliases
+      asOf
+      timeZone
+      timeZoneConfigured
+      coverage {
+        observedSince
+        firstDisplayAt
+        firstTickAt
+        dateOnlyCount
+        boundaryUncertainCount
+        unknownTimeCount
+        includesCurrentBoardHistory
+        isPartial
+      }
       periodDays
       current {
+        startAt
+        endAt
+        displayCount
+        tickCount
         uniqueClimbers
         ascentCount
       }
       previous {
+        startAt
+        endAt
+        displayCount
+        tickCount
         uniqueClimbers
         ascentCount
       }
@@ -427,6 +460,18 @@ export const CREATE_GYM = gql`
     createGym(input: $input) {
       ${GYM_FIELDS}
     }
+  }
+`;
+
+export const SET_GYM_REPORTING_TIME_ZONE = gql`
+  mutation SetGymReportingTimeZone($input: SetGymReportingTimeZoneInput!) {
+    setGymReportingTimeZone(input: $input)
+  }
+`;
+
+export const SET_GYM_REPORTING_BOARD_ALIAS = gql`
+  mutation SetGymReportingBoardAlias($input: SetGymReportingBoardAliasInput!) {
+    setGymReportingBoardAlias(input: $input)
   }
 `;
 

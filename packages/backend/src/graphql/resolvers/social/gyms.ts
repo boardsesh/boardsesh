@@ -1,3 +1,4 @@
+import { GraphQLError } from 'graphql';
 import { v4 as uuidv4 } from 'uuid';
 import {
   eq,
@@ -140,6 +141,7 @@ export function mapRawGymRow(row: Record<string, unknown>): typeof dbSchema.gyms
     // and then hand the proximity path a permanent null "Confirmed" date while
     // the Drizzle text-search path renders it correctly (same class of bug as
     // website_vouched_by_owner above).
+    reportingTimeZone: (row.reporting_time_zone as string | null) ?? null,
     hours: (row.hours as string | null) ?? null,
     hoursUpdatedAt: rawUtcTimestamp(row.hours_updated_at),
     imageUrl: (row.image_url as string | null) ?? null,
@@ -159,6 +161,7 @@ export function mapRawGymRow(row: Record<string, unknown>): typeof dbSchema.gyms
 }
 
 type GymRow = typeof dbSchema.gyms.$inferSelect;
+type GymAccessExecutor = NonNullable<Parameters<typeof getUserCommunityRoles>[1]>;
 
 // A real merge chain is 1–2 hops; the cap is a safety net against a corrupt or
 // cyclic pointer in prod data so the resolver can never spin.
@@ -177,7 +180,7 @@ const MAX_MERGE_HOPS = 10;
  * Bounded to MAX_MERGE_HOPS with a visited-id cycle guard, so a corrupt loop in
  * the data resolves to null instead of hanging.
  */
-export async function resolveCanonicalGym(startGym: GymRow): Promise<GymRow | null> {
+export async function resolveCanonicalGym(startGym: GymRow, executor: GymAccessExecutor = db): Promise<GymRow | null> {
   let current = startGym;
   const visited = new Set<number>([current.id]);
 
@@ -190,7 +193,7 @@ export async function resolveCanonicalGym(startGym: GymRow): Promise<GymRow | nu
       return null;
     }
     visited.add(nextId);
-    const [parent] = await db.select().from(dbSchema.gyms).where(eq(dbSchema.gyms.id, nextId)).limit(1);
+    const [parent] = await executor.select().from(dbSchema.gyms).where(eq(dbSchema.gyms.id, nextId)).limit(1);
     if (!parent) {
       return null;
     }
@@ -204,12 +207,15 @@ export async function resolveCanonicalGym(startGym: GymRow): Promise<GymRow | nu
  * canonical live row. Used by every by-uuid read/write lookup so a deduped gym's
  * old uuid resolves to the survivor instead of 404ing.
  */
-export async function resolveCanonicalGymByUuid(gymUuid: string): Promise<GymRow | null> {
-  const [gym] = await db.select().from(dbSchema.gyms).where(eq(dbSchema.gyms.uuid, gymUuid)).limit(1);
+export async function resolveCanonicalGymByUuid(
+  gymUuid: string,
+  executor: GymAccessExecutor = db,
+): Promise<GymRow | null> {
+  const [gym] = await executor.select().from(dbSchema.gyms).where(eq(dbSchema.gyms.uuid, gymUuid)).limit(1);
   if (!gym) {
     return null;
   }
-  return resolveCanonicalGym(gym);
+  return resolveCanonicalGym(gym, executor);
 }
 
 /**
@@ -547,21 +553,22 @@ type GymMemberRole = 'admin' | 'editor' | 'member';
 async function loadGymWithMemberRole(
   gymUuid: string,
   userId: string,
+  executor: GymAccessExecutor = db,
 ): Promise<{ gym: typeof dbSchema.gyms.$inferSelect; isOwner: boolean; memberRole: GymMemberRole | null }> {
   // Resolve merged twins to the canonical survivor so every write-access gate
   // (edit / grant / owner-or-admin) runs against the live row a stale uuid now
   // points at, never the soft-deleted twin.
-  const gym = await resolveCanonicalGymByUuid(gymUuid);
+  const gym = await resolveCanonicalGymByUuid(gymUuid, executor);
 
   if (!gym) {
-    throw new Error('Gym not found');
+    throw new GraphQLError('Gym not found', { extensions: { code: 'NOT_FOUND' } });
   }
 
   if (gym.ownerId === userId) {
     return { gym, isOwner: true, memberRole: null };
   }
 
-  const [member] = await db
+  const [member] = await executor
     .select({ role: dbSchema.gymMembers.role })
     .from(dbSchema.gymMembers)
     .where(and(eq(dbSchema.gymMembers.gymId, gym.id), eq(dbSchema.gymMembers.userId, userId)))
@@ -575,10 +582,10 @@ async function loadGymWithMemberRole(
  * global (boardType null) or scoped to one of the gym's board types. Shared by
  * the edit + grant gates and mirrored read-side in enrichGym.
  */
-async function hasGymCommunityAccess(gym: typeof dbSchema.gyms.$inferSelect, userId: string): Promise<boolean> {
+async function hasGymCommunityAccess(gym: GymRow, userId: string, executor: GymAccessExecutor = db): Promise<boolean> {
   const [roles, gymBoardTypeRows] = await Promise.all([
-    getUserCommunityRoles(userId),
-    db
+    getUserCommunityRoles(userId, executor),
+    executor
       .selectDistinct({ boardType: dbSchema.userBoards.boardType })
       .from(dbSchema.userBoards)
       .where(and(eq(dbSchema.userBoards.gymId, gym.id), isNull(dbSchema.userBoards.deletedAt))),
@@ -616,10 +623,11 @@ export async function userCanEditGym(gym: typeof dbSchema.gyms.$inferSelect, use
 export async function requireGymOwnerOrAdmin(
   gymUuid: string,
   userId: string,
-): Promise<typeof dbSchema.gyms.$inferSelect> {
-  const { gym, isOwner, memberRole } = await loadGymWithMemberRole(gymUuid, userId);
+  executor: GymAccessExecutor = db,
+): Promise<GymRow> {
+  const { gym, isOwner, memberRole } = await loadGymWithMemberRole(gymUuid, userId, executor);
   if (!isOwner && memberRole !== 'admin') {
-    throw new Error('Not authorized: must be gym owner or admin');
+    throw new GraphQLError('Not authorized: must be gym owner or admin', { extensions: { code: 'FORBIDDEN' } });
   }
   return gym;
 }
@@ -797,15 +805,18 @@ export async function requireBoardGymLinkAccess(opts: {
 export async function requireGymEditAccess(
   gymUuid: string,
   userId: string,
-): Promise<typeof dbSchema.gyms.$inferSelect> {
-  const { gym, isOwner, memberRole } = await loadGymWithMemberRole(gymUuid, userId);
-  if (isOwner || memberRole === 'admin' || memberRole === 'editor') {
+  executor: GymAccessExecutor = db,
+): Promise<GymRow> {
+  const { gym, isOwner, memberRole } = await loadGymWithMemberRole(gymUuid, userId, executor);
+  if (
+    isOwner ||
+    memberRole === 'admin' ||
+    memberRole === 'editor' ||
+    (await hasGymCommunityAccess(gym, userId, executor))
+  ) {
     return gym;
   }
-  if (await hasGymCommunityAccess(gym, userId)) {
-    return gym;
-  }
-  throw new Error('Not authorized to edit this gym');
+  throw new GraphQLError('Not authorized to edit this gym', { extensions: { code: 'FORBIDDEN' } });
 }
 
 /**
@@ -856,7 +867,7 @@ async function withGymStaffLock<T>(
         .where(and(eq(dbSchema.gymMembers.gymId, gym.id), eq(dbSchema.gymMembers.userId, userId)))
         .limit(1);
       const isAdmin = member?.role === 'admin';
-      if (!isAdmin && !(allowCommunityAccess && (await hasGymCommunityAccess(gym, userId)))) {
+      if (!isAdmin && !(allowCommunityAccess && (await hasGymCommunityAccess(gym, userId, tx)))) {
         throw new Error(unauthorizedMessage);
       }
     }
@@ -939,6 +950,7 @@ export const socialGymQueries = {
     const limit = validatedInput.limit ?? 20;
     const offset = validatedInput.offset ?? 0;
     const includeFollowed = validatedInput.includeFollowed ?? false;
+    const includeManaged = validatedInput.includeManaged ?? false;
 
     // Gyms the viewer holds a gym_members row on (admin/editor/member) as a
     // correlated subquery — no extra round trip, no shipping an id array back to
@@ -970,6 +982,33 @@ export const socialGymQueries = {
     const followedCondition = followedGymIds.length > 0 ? inArray(dbSchema.gyms.id, followedGymIds) : undefined;
     const matchConditions: SQL[] = [ownerCondition, memberCondition];
     if (followedCondition) matchConditions.push(followedCondition);
+    if (includeManaged) {
+      const coveringRole = db
+        .select({ userId: dbSchema.communityRoles.userId })
+        .from(dbSchema.communityRoles)
+        .where(
+          and(
+            eq(dbSchema.communityRoles.userId, userId),
+            inArray(dbSchema.communityRoles.role, ['admin', 'community_leader']),
+            or(
+              isNull(dbSchema.communityRoles.boardType),
+              exists(
+                db
+                  .select({ boardId: dbSchema.userBoards.id })
+                  .from(dbSchema.userBoards)
+                  .where(
+                    and(
+                      eq(dbSchema.userBoards.gymId, dbSchema.gyms.id),
+                      isNull(dbSchema.userBoards.deletedAt),
+                      eq(dbSchema.userBoards.boardType, dbSchema.communityRoles.boardType),
+                    ),
+                  ),
+              ),
+            ),
+          ),
+        );
+      matchConditions.push(exists(coveringRole));
+    }
     const matchCondition = or(...matchConditions)!;
     const whereClause = and(matchCondition, isNull(dbSchema.gyms.deletedAt));
 
@@ -982,7 +1021,11 @@ export const socialGymQueries = {
       .from(dbSchema.gyms)
       .where(whereClause)
       // id breaks created_at ties (bulk sync imports share one) so OFFSET pages stay a total order.
-      .orderBy(desc(dbSchema.gyms.createdAt), dbSchema.gyms.id)
+      .orderBy(
+        ...(includeManaged ? [desc(sql<boolean>`${or(ownerCondition, memberCondition)}`)] : []),
+        desc(dbSchema.gyms.createdAt),
+        dbSchema.gyms.id,
+      )
       .limit(limit)
       .offset(offset);
 

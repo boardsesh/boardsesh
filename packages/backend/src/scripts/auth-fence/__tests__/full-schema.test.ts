@@ -85,6 +85,24 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
         readFileSync(new URL('../../../../../db/drizzle/0306_yielding_scrambler.sql', import.meta.url), 'utf8'),
       );
     }
+    const [gymReporting] = await owner<{ sink: boolean; routine: boolean }[]>`SELECT
+      to_regclass('public.gym_reporting_board_aliases') IS NOT NULL AS sink,
+      to_regprocedure('public.revoke_gym_reporting_aliases_on_board_move()') IS NOT NULL AS routine`;
+    // Developers may load a historical schema dump. Exercise the actual new
+    // migration there as well. CI's canonical dump already contains it.
+    if (!gymReporting.sink) {
+      await owner.unsafe(
+        readFileSync(new URL('../../../../../db/drizzle/0338_gym_reporting_foundation.sql', import.meta.url), 'utf8'),
+      );
+    }
+    if (!gymReporting.routine) {
+      await owner.unsafe(
+        readFileSync(
+          new URL('../../../../../db/drizzle/0340_gym_reporting_alias_venue_guard.sql', import.meta.url),
+          'utf8',
+        ),
+      );
+    }
     const plan = await runAuthFence(['plan', '--confirm-host', address.hostname], environment);
     if (plan.mode !== 'plan') throw new Error('PLAN_EXPECTED');
     expect(plan.sql).toContain('CREATE ROLE "boardsesh_web" LOGIN');
@@ -215,6 +233,76 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
         });
     }
   });
+  it('verifies the reviewed alias path and preserves revocation through a restricted board update', async () => {
+    const userId = randomUUID();
+    const gymUuid = randomUUID();
+    const boardUuid = randomUUID();
+    const rootUuid = randomUUID();
+    await owner`INSERT INTO public.users (id, email) VALUES (${userId}, ${`${userId}@example.invalid`})`;
+    const [gym] = await owner<{ id: string }[]>`INSERT INTO public.gyms (uuid, name, owner_id)
+      VALUES (${gymUuid}, 'Fence gym', ${userId}) RETURNING id`;
+    const [board, root] = await owner<{ id: string }[]>`INSERT INTO public.user_boards
+      (uuid, slug, name, owner_id, board_type, layout_id, size_id, set_ids, gym_id)
+      VALUES (${boardUuid}, ${boardUuid}, 'Fence board', ${userId}, 'kilter', 1, 1, '1', ${gym.id}),
+        (${rootUuid}, ${rootUuid}, 'Fence root board', ${userId}, 'kilter', 1, 2, '1', ${gym.id}) RETURNING id`;
+    await owner`INSERT INTO public.gym_reporting_board_aliases (gym_id, board_id, root_board_id, verified_by)
+      VALUES (${gym.id}, ${board.id}, ${root.id}, ${userId})`;
+    const [routine] = await owner<{ executable: boolean }[]>`SELECT
+      has_function_privilege('boardsesh_web','public.revoke_gym_reporting_aliases_on_board_move()','EXECUTE') AS executable`;
+    expect(routine.executable).toBe(false);
+    await expect(verifyFence(owner)).resolves.toMatchObject({ verified: true });
+    await web`UPDATE public.user_boards SET gym_id = NULL WHERE id = ${board.id}`;
+    const [alias] = await owner<{ revoked: boolean }[]>`SELECT revoked_at IS NOT NULL AS revoked
+      FROM public.gym_reporting_board_aliases WHERE board_id = ${board.id}`;
+    expect(alias.revoked).toBe(true);
+  });
+
+  it('refuses unreviewed executable dependencies in the reporting alias sink', async () => {
+    for (const mutation of [
+      `CREATE FUNCTION public.alias_fence_noop() RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path=pg_catalog
+        AS $$ BEGIN RETURN NEW; END; $$;
+        CREATE TRIGGER alias_fence_noop BEFORE UPDATE ON public.gym_reporting_board_aliases
+          FOR EACH ROW EXECUTE FUNCTION public.alias_fence_noop();
+        REVOKE ALL ON FUNCTION public.alias_fence_noop() FROM PUBLIC, boardsesh_web`,
+      `ALTER TABLE public.gym_reporting_board_aliases ADD CONSTRAINT alias_fence_builtin_probe
+        CHECK (pg_catalog.length(verified_by) >= 0) NOT VALID`,
+    ]) {
+      await owner
+        .begin(async (transaction) => {
+          await transaction.unsafe(mutation);
+          await expect(verifyFence(transaction)).rejects.toThrow('UNREVIEWED_GYM_REPORTING_ALIAS_CLOSURE');
+          throw new Error('ROLLBACK_FIXTURE');
+        })
+        .catch((error: unknown) => {
+          if (!(error instanceof Error) || error.message !== 'ROLLBACK_FIXTURE') throw error;
+        });
+    }
+    await expect(verifyFence(owner)).resolves.toMatchObject({ verified: true });
+  });
+
+  it('refuses an unreviewed gym partial index even when its key is not read', async () => {
+    const [spatial] = await owner<{ present: boolean }[]>`SELECT
+      to_regclass('public.gyms_location_idx') IS NOT NULL AS present`;
+    expect(spatial.present).toBe(true);
+    await expect(verifyFence(owner)).resolves.toMatchObject({ verified: true });
+    await owner
+      .begin(async (transaction) => {
+        // A harmless alternate catalog object using only the built-in text
+        // operations. Its unread slug key would not have hit the old check.
+        await transaction.unsafe(`CREATE OPERATOR CLASS public.gym_fence_text_ops FOR TYPE text USING btree AS
+        OPERATOR 1 pg_catalog.< (text, text), OPERATOR 2 pg_catalog.<= (text, text),
+        OPERATOR 3 pg_catalog.= (text, text), OPERATOR 4 pg_catalog.>= (text, text),
+        OPERATOR 5 pg_catalog.> (text, text), FUNCTION 1 pg_catalog.bttextcmp(text, text);
+        CREATE INDEX gym_fence_partial_slug_idx ON public.gyms (slug public.gym_fence_text_ops) WHERE id IS NOT NULL`);
+        await expect(verifyFence(transaction)).rejects.toThrow('UNREVIEWED_GYM_REPORTING_ALIAS_CLOSURE');
+        throw new Error('ROLLBACK_FIXTURE');
+      })
+      .catch((error: unknown) => {
+        if (!(error instanceof Error) || error.message !== 'ROLLBACK_FIXTURE') throw error;
+      });
+    await expect(verifyFence(owner)).resolves.toMatchObject({ verified: true });
+  });
+
   it('keeps new tables denied by default and explicitly reconciles auth versus nonauth', async () => {
     await owner.unsafe('CREATE TABLE auth_future_identity (id text); CREATE TABLE fence_product (id text)');
     const [before] = await owner<

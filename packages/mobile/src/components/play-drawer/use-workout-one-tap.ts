@@ -261,6 +261,7 @@ function useOneTapLogger(
           difficulty: null,
           comment: '',
           climbedAtIso: nowDate().toISOString(),
+          reportingTime: { precision: 'instant' },
           baseAscensionistCount,
           gradeName: null,
           // The climb this row was showing, even when the wall has since moved on.

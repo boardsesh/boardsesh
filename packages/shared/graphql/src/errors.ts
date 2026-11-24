@@ -113,6 +113,10 @@ export function isSprayWallLedSaveRefused(error: unknown): boolean {
   );
 }
 
+export function hasGraphqlErrorCode(error: unknown, ...codes: string[]): boolean {
+  return getGraphqlErrors(error).some((graphqlError) => codes.includes(asString(graphqlError.extensions?.code) ?? ''));
+}
+
 /**
  * A creator linking their board back to a gym whose staff took it off their
  * listing. Not a retry: the staff have to put it back, so the client says that

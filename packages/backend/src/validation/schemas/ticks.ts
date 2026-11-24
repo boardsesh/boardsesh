@@ -46,6 +46,12 @@ export const TickStatusSchema = z.enum(['flash', 'send', 'attempt'], {
 /**
  * Save tick input validation schema
  */
+const TickReportingTimeInputSchema = z.object({
+  precision: z.enum(['instant', 'day']),
+  date: z.string().max(10).nullish(),
+  timeZone: z.string().max(96).nullish(),
+});
+
 export const SaveTickInputSchema = z
   .object({
     privacy: PrivacyPublicationInputSchema.optional(),
@@ -71,6 +77,7 @@ export const SaveTickInputSchema = z
       .string()
       .refine((value) => !Number.isNaN(new Date(value).getTime()), 'Climbed at must be a valid date')
       .refine(hasSupportedPostgresTimestampPrecision, 'Climbed at supports at most six fractional-second digits'),
+    reportingTime: TickReportingTimeInputSchema.nullish(),
     sessionId: z.string().optional(),
     layoutId: z.number().int().positive().optional(),
     sizeId: z.number().int().positive().optional(),
@@ -271,6 +278,7 @@ export const UpdateTickInputSchema = z
         'Climbed at cannot be in the future',
       )
       .optional(),
+    reportingTime: TickReportingTimeInputSchema.nullish(),
     // The board type comes from the stored tick, so the resolver performs the
     // board-aware check after lookup.
     angle: z.number().int().min(-5).max(90).optional(),

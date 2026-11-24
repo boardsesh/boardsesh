@@ -83,6 +83,7 @@ export type TickSaveFields = {
   comment: string;
   /** The exact instant to log. The rest timer anchors on this same value. */
   climbedAtIso: string;
+  reportingTime?: SaveTickOptions['reportingTime'];
   /** The community send count for this angle, when the caller knows it. Local only. */
   baseAscensionistCount?: number;
   /** The picked difficulty's grade name, for analytics only. */
@@ -215,6 +216,7 @@ export function useTickSaver({
           baseAscensionistCount: fields.baseAscensionistCount,
           comment: fields.comment,
           climbedAt: climbedAtIso,
+          reportingTime: fields.reportingTime,
           ...(sessionId ? { sessionId } : {}),
           ...(tickContext.layoutId != null ? { layoutId: tickContext.layoutId } : {}),
           ...('sizeId' in tickContext ? { sizeId: tickContext.sizeId, setIds: tickContext.setIds } : {}),

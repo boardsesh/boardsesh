@@ -1,9 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { render, screen, waitFor, fireEvent, within, act } from '@testing-library/react';
+import { render as renderInDom, screen, waitFor, fireEvent, within, act } from '@testing-library/react';
 import React from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { gymReportingQueryKey } from '@boardsesh/graphql';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import type { Gym, StrayBoard, UserBoard } from '@boardsesh/shared-schema';
 import GymBoardsTab, { GymBoardAssociation, VisibilityChip } from '../gym-boards-tab';
+
+function render(ui: React.ReactElement, queryClient = new QueryClient()) {
+  const wrapper = ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+  return renderInDom(ui, { wrapper });
+}
 
 vi.mock('react-i18next', () => ({
   useTranslation: (ns?: string) => ({
@@ -312,7 +321,12 @@ describe('GymBoardAssociation — Remove from gym', () => {
       myBoards: [],
     });
     mockExecute.mockResolvedValueOnce({ detachBoardFromGym: true });
-    render(<GymBoardAssociation gym={gym} onAssociated={onAssociated} />);
+    const queryClient = new QueryClient();
+    const report = gymReportingQueryKey('user-owner', GYM_UUID, 'board-1', 'week');
+    const otherReport = gymReportingQueryKey('user-owner', 'other-gym', null, 'week');
+    queryClient.setQueryData(report, { boards: ['board-1'] });
+    queryClient.setQueryData(otherReport, { boards: [] });
+    render(<GymBoardAssociation gym={gym} onAssociated={onAssociated} />, queryClient);
 
     fireEvent.click(await screen.findByRole('button', { name: /^remove from gym$/i }));
     const confirmation = await screen.findByRole('dialog');
@@ -327,6 +341,8 @@ describe('GymBoardAssociation — Remove from gym', () => {
     );
     await waitFor(() => expect(screen.queryByText('Garage Board')).toBeNull());
     expect(onAssociated).toHaveBeenCalledTimes(1);
+    expect(queryClient.getQueryData(report)).toBeUndefined();
+    expect(queryClient.getQueryData(otherReport)).toEqual({ boards: [] });
   });
 
   it('runs nothing when the confirm is cancelled', async () => {

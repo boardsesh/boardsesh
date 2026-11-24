@@ -221,27 +221,6 @@
       "profile": "资料",
       "comments": "评论"
     },
-    "insights": {
-      "subtitle": "对比本周和上周的训练板使用情况。",
-      "uniqueClimbers": "攀岩者",
-      "ascents": "完攀",
-      "busiestDay": "最热闹的一天",
-      "byDay": "每日完攀",
-      "byDayAria": "一周内各天的完攀次数",
-      "topClimbs": "大家正在攻克的线路",
-      "noTopClimbs": "本周还没有完攀记录。",
-      "unnamedClimb": "未命名线路",
-      "ascentsCount_one": "{{count}} 次完攀",
-      "ascentsCount_other": "{{count}} 次完攀",
-      "deltaUp": "较上周 +{{count}}",
-      "deltaDown": "较上周 −{{count}}",
-      "deltaFlat": "与上周持平",
-      "loadError": "无法加载本周统计。",
-      "empty": {
-        "title": "本周暂无完攀",
-        "body": "该换线了吗？只要攀岩者在这里记录完攀，你就能看到谁来攀爬、正在攻克什么线路。"
-      }
-    },
     "navGuard": {
       "title": "放弃未保存的修改？",
       "body": "此标签页有未保存的编辑，离开将丢弃这些修改。",

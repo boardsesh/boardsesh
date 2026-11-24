@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+import { gymReportingQueryKey } from '@boardsesh/graphql';
 import { gymBoardsQueryKey } from '../../query-keys';
 
 const request = vi.hoisted(() => vi.fn());
@@ -44,7 +45,7 @@ vi.mock('../use-integrations', () => ({
   useSyncSessionToIntegration: vi.fn(),
 }));
 
-import { useRequestGymClaim, useUpdateBoard, useUpdateSprayWall } from '../index';
+import { useDetachBoardFromGym, useRequestGymClaim, useUpdateBoard, useUpdateSprayWall } from '../index';
 
 function setup() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -56,6 +57,21 @@ function setup() {
 }
 
 describe('board edits refresh the gym roster', () => {
+  it.each([true, false])('clears the old gym report only when detach commits (%s)', async (removed) => {
+    request.mockResolvedValueOnce({ detachBoardFromGym: removed });
+    const { client, wrapper } = setup();
+    const report = gymReportingQueryKey('viewer-1', 'gym-1', 'board-1', 'week');
+    const otherReport = gymReportingQueryKey('viewer-1', 'gym-2', null, 'week');
+    client.setQueryData(report, { boards: ['board-1'] });
+    client.setQueryData(otherReport, { boards: [] });
+    const { result } = renderHook(() => useDetachBoardFromGym(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({ gymUuid: 'gym-1', boardUuid: 'board-1' });
+    });
+    expect(client.getQueryData(report)).toEqual(removed ? undefined : { boards: ['board-1'] });
+    expect(client.getQueryData(otherReport)).toEqual({ boards: [] });
+  });
+
   it('useUpdateBoard invalidates the cached gym roster', async () => {
     request.mockResolvedValueOnce({ updateBoard: { uuid: 'b1' } });
     const { client, wrapper } = setup();

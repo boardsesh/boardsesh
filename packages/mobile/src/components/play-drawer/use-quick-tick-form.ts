@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { createInitialTickState, deriveAscentType, type QuickTickState, type TickStatus } from '@boardsesh/play-view';
 import type { TickClimbIdentity } from '@boardsesh/board-config';
-import { clampToNow, MAXIMUM_CLIMBED_AT_REFRESH_MS } from '../logbook/climbed-at';
+import { clampToNow, MAXIMUM_CLIMBED_AT_REFRESH_MS, selectedTickReportingTime } from '../logbook/climbed-at';
 import { useGrades } from '../../lib/graphql/hooks';
 import { useToast } from '../../providers/toast-provider';
 import { getDifficultyIdForGradeName } from '../../lib/grade-label';
@@ -105,7 +105,7 @@ export type QuickTickForm = {
   onGradeSelect: (difficultyId: number | undefined) => void;
   onTriesSelect: (value: number) => void;
   onCommentChange: (next: string) => void;
-  onClimbedAtChange: (next: Date) => void;
+  onClimbedAtChange: (next: Date, editedPart?: 'date' | 'time') => void;
   onFutureAdjusted: () => void;
   onSave: () => void;
   onAttempt: () => void;
@@ -172,12 +172,14 @@ export function useQuickTickForm({
   // visibility), so a value frozen at mount would otherwise save a stale
   // timestamp minutes/hours in the past.
   const hasEditedClimbedAtRef = useRef(false);
+  const hasPickedTimeRef = useRef(false);
   // The same fact for render. The ref stays because the save path and the
   // refresh interval read it from stable closures; every write goes through
   // markClimbedAtEdited so the two can't disagree.
   const [climbedAtEdited, setClimbedAtEdited] = useState(false);
   const markClimbedAtEdited = useCallback((edited: boolean) => {
     hasEditedClimbedAtRef.current = edited;
+    if (!edited) hasPickedTimeRef.current = false;
     setClimbedAtEdited(edited);
   }, []);
   // Rendered in the action bar's reserved error slot when the last save attempt
@@ -262,7 +264,8 @@ export function useQuickTickForm({
   );
 
   const handleClimbedAtChange = useCallback(
-    (next: Date) => {
+    (next: Date, editedPart: 'date' | 'time' = 'date') => {
+      if (editedPart === 'time') hasPickedTimeRef.current = true;
       markClimbedAtEdited(true);
       setClimbedAt(next);
     },
@@ -295,7 +298,12 @@ export function useQuickTickForm({
       // `hasEditedClimbedAtRef`.
       // Untouched: log a fresh save-time "now". Edited: honour the pick
       // (clamped, in case the sheet sat open past the chosen minute).
-      const climbedAtIso = (hasEditedClimbedAtRef.current ? clampToNow(climbedAt) : new Date()).toISOString();
+      const selectedDate = hasEditedClimbedAtRef.current ? clampToNow(climbedAt) : new Date();
+      const climbedAtIso = selectedDate.toISOString();
+      const reportingTime = selectedTickReportingTime(
+        selectedDate,
+        !hasEditedClimbedAtRef.current || hasPickedTimeRef.current,
+      );
 
       saveTick(
         {
@@ -308,6 +316,7 @@ export function useQuickTickForm({
           difficulty: tickState.difficulty ?? null,
           comment,
           climbedAtIso,
+          reportingTime,
           // The count the sheet opened with is the opening angle's senders. Sent
           // with a tick at another angle, it would floor THAT angle's optimistic
           // count at one above the opening angle's (37 senders at 40° shows 38 at

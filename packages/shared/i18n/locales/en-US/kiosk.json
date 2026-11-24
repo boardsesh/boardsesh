@@ -221,27 +221,6 @@
       "profile": "Profile",
       "comments": "Comments"
     },
-    "insights": {
-      "subtitle": "How your boards did this week compared with last.",
-      "uniqueClimbers": "Climbers",
-      "ascents": "Sends",
-      "busiestDay": "Busiest day",
-      "byDay": "Sends by day",
-      "byDayAria": "Sends per day of the week",
-      "topClimbs": "What everyone's projecting",
-      "noTopClimbs": "No sends logged yet this week.",
-      "unnamedClimb": "Unnamed climb",
-      "ascentsCount_one": "{{count}} send",
-      "ascentsCount_other": "{{count}} sends",
-      "deltaUp": "+{{count}} vs last week",
-      "deltaDown": "−{{count}} vs last week",
-      "deltaFlat": "Same as last week",
-      "loadError": "Couldn't load this week's numbers.",
-      "empty": {
-        "title": "No sends this week",
-        "body": "Time to reset the wall? As soon as climbers log a send here, you'll see who showed up and what they're projecting."
-      }
-    },
     "navGuard": {
       "title": "Discard unsaved changes?",
       "body": "You have edits on this tab that aren't saved yet. Leaving discards them.",

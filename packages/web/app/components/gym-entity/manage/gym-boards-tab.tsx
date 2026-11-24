@@ -24,6 +24,7 @@ import PrintOutlined from '@mui/icons-material/PrintOutlined';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
 import FlagOutlined from '@mui/icons-material/FlagOutlined';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
@@ -55,6 +56,7 @@ import {
   type AttachBoardToGymMutationResponse,
   type AttachBoardToGymMutationVariables,
 } from '@boardsesh/graphql/operations';
+import { retireGymReportingReceiptsForGym } from '@boardsesh/graphql';
 import { boardOriginFor, type StrayBoard, type UserBoard } from '@boardsesh/shared-schema';
 import { isBoardRemovedByGymError, isSystemBoardDeleteInsteadError } from '@boardsesh/graphql/errors';
 import { boardTypeLabel } from '@boardsesh/board-constants';
@@ -186,6 +188,7 @@ export function GymBoardAssociation({
   const { showMessage } = useSnackbar();
   const router = useLocaleRouter();
   const viewerUserId = session?.user?.id ?? null;
+  const queryClient = useQueryClient();
   const [boards, setBoards] = useState<UserBoard[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<UserBoard | null>(null);
@@ -300,7 +303,9 @@ export function GymBoardAssociation({
           ? (await unlinkMutation.execute({ input: { boardUuid: target.uuid, gymUuid: null } }))?.linkBoardToGym
           : (await detachMutation.execute({ input: { gymUuid: gym.uuid, boardUuid: target.uuid } }))
               ?.detachBoardFromGym;
-      if (!isMountedRef.current || !removed) return;
+      if (!removed) return;
+      void retireGymReportingReceiptsForGym(queryClient, gym.uuid);
+      if (!isMountedRef.current) return;
       setBoards((previous) => previous?.filter((board) => board.uuid !== target.uuid) ?? null);
       // The public gym page and kiosks read the listing on the server.
       router.refresh();

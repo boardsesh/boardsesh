@@ -65,6 +65,7 @@ export const gyms = pgTable(
     // Sat–Sun 9–20"), deliberately unstructured: a structured per-day model would
     // need a second copy kept in sync with whatever the gym already publishes, and
     // nothing syncs hours. Length is capped server-side (GymHoursSchema), not here.
+    reportingTimeZone: text('reporting_time_zone'),
     hours: text('hours'),
     // When someone with edit access last wrote `hours`. Rendered publicly as
     // "Confirmed <date>" so a schedule nobody has touched in a year reads as stale

@@ -1,3 +1,5 @@
+import type { TickReportingTimeInput } from '@boardsesh/shared-schema';
+import { getDeviceTimezone } from '../../lib/device-timezone';
 // Pure date helpers for editing a tick's `climbedAt` timestamp, shared by the
 // create flow (QuickTickBar) and the edit flow (LogbookEditSheet). No React or
 // React Native imports — kept pure so the merge/clamp rules are unit-testable.
@@ -47,4 +49,15 @@ export function formatTimeForDisplay(date: Date): string {
   const hours = String(date.getHours()).padStart(2, '0');
   const minutes = String(date.getMinutes()).padStart(2, '0');
   return `${hours}:${minutes}`;
+}
+
+/** The original ISO timestamp still drives the logbook. This records what was actually selected. */
+export function selectedTickReportingTime(date: Date, selectedClock: boolean): TickReportingTimeInput | undefined {
+  if (selectedClock) return { precision: 'instant' };
+  const timeZone = getDeviceTimezone();
+  if (!timeZone) return undefined;
+  const year = String(date.getFullYear()).padStart(4, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return { precision: 'day', date: `${year}-${month}-${day}`, timeZone };
 }

@@ -104,7 +104,7 @@ type DurableBoardClimbEventInput = {
   name: string | null;
   grade: string | null;
   setter: string | null;
-  confirmedAt: string;
+  reportingMirrored?: boolean | null;
 };
 
 class DurableBoardClimbPersistenceError extends Error {
@@ -123,12 +123,25 @@ class DurableBoardClimbPersistenceError extends Error {
 export async function reserveAndPersistBoardClimbEvent(
   input: DurableBoardClimbEventInput,
   candidate: number,
-): Promise<number> {
+): Promise<{ seq: number; confirmedAt: string }> {
   try {
     return await db.transaction(async (tx) => {
       const seq = await reserveBoardPresenceSeq(tx, input.boardId, candidate);
-      await tx.insert(dbSchema.boardClimbEvents).values({ ...input, seq });
-      return seq;
+      // The reservation holds the board row lock. A move or alias merge cannot
+      // change the venue between this confirmation and the durable insert.
+      const [board] = await tx
+        .select({ id: dbSchema.userBoards.id, gymId: dbSchema.userBoards.gymId })
+        .from(dbSchema.userBoards)
+        .where(eq(dbSchema.userBoards.id, input.boardId));
+      const confirmedAt = new Date().toISOString();
+      await tx.insert(dbSchema.boardClimbEvents).values({
+        ...input,
+        seq,
+        confirmedAt,
+        reportingBoardId: board.id,
+        reportingGymId: board.gymId,
+      });
+      return { seq, confirmedAt };
     });
   } catch (error) {
     // Preserve the authoritative tombstone signal so reportBoardClimb fails a
@@ -953,7 +966,7 @@ export const boardPresenceMutations = {
     }
 
     const reportingSessionId = roomManager.getClient(ctx.connectionId)?.sessionId ?? null;
-    const sentAt = new Date().toISOString();
+    let sentAt = new Date().toISOString();
 
     // Logged-in senders with sustained presence get durable history. Reserve
     // the seq through an allocator override that keeps the board-row lock until
@@ -966,8 +979,8 @@ export const boardPresenceMutations = {
     let seq: number;
     if (durableUserId !== null && hasDurableDwell) {
       try {
-        seq = await pubsub.nextBoardSeq(String(boardId), (resolvedBoardId, candidate) =>
-          reserveAndPersistBoardClimbEvent(
+        seq = await pubsub.nextBoardSeq(String(boardId), async (resolvedBoardId, candidate) => {
+          const durable = await reserveAndPersistBoardClimbEvent(
             {
               boardId: resolvedBoardId,
               boardType: board.boardType,
@@ -980,11 +993,13 @@ export const boardPresenceMutations = {
               name: catalogClimb.name ?? null,
               grade: catalogClimb.grade ?? null,
               setter: catalogClimb.setterUsername ?? null,
-              confirmedAt: sentAt,
+              reportingMirrored: reportedMirrored,
             },
             candidate,
-          ),
-        );
+          );
+          sentAt = durable.confirmedAt;
+          return durable.seq;
+        });
       } catch (error) {
         // A merge/delete is authoritative: never publish a fresh event under a
         // tombstoned board id. Other persistence failures retain the existing

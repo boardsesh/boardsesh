@@ -32,6 +32,7 @@ import {
   type UpdateSessionVariables,
   type UpdateSessionResponse,
 } from '@boardsesh/graphql/operations';
+import { retireGymReportingReceiptsForGym } from '@boardsesh/graphql';
 import { GET_FAVORITES, type FavoritesQueryResponse } from '@boardsesh/graphql/operations/favorites';
 import { getGradesForBoard, toBoardName } from '@boardsesh/board-config';
 import { useBoardAdapter } from '@boardsesh/board-react';
@@ -355,6 +356,7 @@ export function useBoard(boardUuid: string | null, options?: { staleTime?: numbe
  * merged-away uuid resolves to the surviving canonical board (a *different*
  * uuid) while a plain-deleted board resolves to `null`.
  */
+export { useManagedMyGyms } from './use-managed-my-gyms';
 export { fetchBoardByUuid } from './fetch-board-by-uuid';
 
 // `fetchAllMyBoards` — the paginated companion to `fetchBoardByUuid` — lives in
@@ -754,7 +756,8 @@ export function useDetachBoardFromGym() {
       });
       return response.detachBoardFromGym;
     },
-    onSuccess: (_result, variables) => {
+    onSuccess: (removed, variables) => {
+      if (removed) void retireGymReportingReceiptsForGym(queryClient, variables.gymUuid);
       void queryClient.invalidateQueries({ queryKey: ['board', variables.boardUuid] });
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });

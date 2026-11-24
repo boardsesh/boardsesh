@@ -1,337 +1,392 @@
 'use client';
 
-import React, { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { useSession } from 'next-auth/react';
+import { useTranslation } from 'react-i18next';
+import { focusManager, onlineManager, useQuery, useQueryClient } from '@tanstack/react-query';
+import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
-import Skeleton from '@mui/material/Skeleton';
+import Button from '@mui/material/Button';
+import Chip from '@mui/material/Chip';
 import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
-import Chip from '@mui/material/Chip';
-import TrendingUpOutlined from '@mui/icons-material/TrendingUpOutlined';
-import TrendingDownOutlined from '@mui/icons-material/TrendingDownOutlined';
-import TrendingFlatOutlined from '@mui/icons-material/TrendingFlatOutlined';
-import BarChartOutlined from '@mui/icons-material/BarChartOutlined';
+import MenuItem from '@mui/material/MenuItem';
+import Skeleton from '@mui/material/Skeleton';
+import TextField from '@mui/material/TextField';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import Typography from '@mui/material/Typography';
 import {
+  formatGymReportingObservationWindow,
+  formatGymReportingTime,
   GET_GYM_STATS,
+  GYM_REPORTING_PERIODS,
+  gymReportingCountDelta,
+  gymReportingHasActivity,
+  gymReportingHasExactObservations,
+  gymReportingQueryKey,
+  gymReportingQueryOptions,
+  gymReportingQueryPrefix,
+  gymReportingReadState,
+  isGymReportingAccessError,
+  retireGymReportingReceipt,
+  scheduleGymReportingReceiptExpiry,
+  SET_GYM_REPORTING_BOARD_ALIAS,
+  SET_GYM_REPORTING_TIME_ZONE,
   type GetGymStatsQueryResponse,
   type GetGymStatsQueryVariables,
-} from '@boardsesh/graphql/operations';
-import type { GymStats } from '@boardsesh/shared-schema';
+} from '@boardsesh/graphql';
+import type { GymStats, GymStatsPeriod } from '@boardsesh/shared-schema';
 import { boardTypeLabel } from '@boardsesh/board-constants';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
-import { CssBarChart, type CssBarChartBar } from '@/app/components/charts/css-bar-chart';
-import { EmptyState } from '@/app/components/ui/empty-state';
+import { CssBarChart } from '@/app/components/charts/css-bar-chart';
+import SelectedCheck from '@/app/components/ui/selected-check';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { GymManageTabProps } from './tab-props';
+import { GymReportingSettings } from './gym-reporting-settings';
 
-// Display weekdays Monday-first; Postgres EXTRACT(DOW) is 0 = Sunday … 6 = Saturday.
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 
-// The dashboard reads the rolling week today. Kept as a constant so it stays in
-// the query key alongside the query input — a future period toggle can flip both
-// without silently serving a cached window under the wrong label.
-const INSIGHTS_PERIOD = 'week' as const;
-
-// Rolling weekly aggregate — no need to refetch on every tab remount.
-const INSIGHTS_STALE_MS = 5 * 60_000;
-
-// 2024-01-07 is a Sunday, so +dow lands on the matching weekday. Labels come from
-// Intl so they follow the viewer's locale without seven hand-kept i18n keys.
-function weekdayLabel(dayOfWeek: number, locale: string): string {
-  const date = new Date(Date.UTC(2024, 0, 7 + dayOfWeek));
-  return new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' }).format(date);
+let reconnectAt = 0;
+function subscribeOnline(onChange: () => void) {
+  return onlineManager.subscribe((online) => {
+    if (online) reconnectAt = Date.now();
+    onChange();
+  });
+}
+function getConnectivity() {
+  return onlineManager.isOnline() ? reconnectAt : -1;
+}
+function subscribeFocus(onChange: () => void) {
+  return focusManager.subscribe(onChange);
 }
 
-export type WowDelta = {
-  diff: number;
-  direction: 'up' | 'down' | 'flat';
-};
+export const computeWowDelta = gymReportingCountDelta;
 
-/** Week-over-week change of a scalar count. Pure so the delta logic is testable. */
-export function computeWowDelta(current: number, previous: number): WowDelta {
-  const diff = current - previous;
-  if (diff > 0) return { diff, direction: 'up' };
-  if (diff < 0) return { diff, direction: 'down' };
-  return { diff: 0, direction: 'flat' };
-}
-
-/** The weekday with the most ascents (Postgres DOW), or null when the window is empty. */
-export function busiestDayOfWeek(busiestDays: GymStats['busiestDays']): number | null {
-  let best: { dayOfWeek: number; ascentCount: number } | null = null;
-  for (const day of busiestDays) {
+export function busiestDayOfWeek(days: GymStats['busiestDays']): number | null {
+  let best: GymStats['busiestDays'][number] | undefined;
+  for (const day of days) {
     if (!best || day.ascentCount > best.ascentCount) best = day;
   }
-  return best ? best.dayOfWeek : null;
+  return best?.dayOfWeek ?? null;
 }
 
-function DeltaLabel({ delta, testId }: { delta: WowDelta; testId: string }) {
-  const { t } = useTranslation('kiosk');
-  const iconSx = { fontSize: 16 };
-  let color: string;
-  let icon: React.ReactNode;
-  let label: string;
-  if (delta.direction === 'up') {
-    color = themeTokens.colors.success;
-    icon = <TrendingUpOutlined sx={iconSx} />;
-    label = t('manage.insights.deltaUp', { count: delta.diff });
-  } else if (delta.direction === 'down') {
-    color = themeTokens.colors.error;
-    icon = <TrendingDownOutlined sx={iconSx} />;
-    label = t('manage.insights.deltaDown', { count: Math.abs(delta.diff) });
-  } else {
-    color = themeTokens.neutral[500];
-    icon = <TrendingFlatOutlined sx={iconSx} />;
-    label = t('manage.insights.deltaFlat');
-  }
-  return (
-    <Box data-testid={testId} sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, color }}>
-      {icon}
-      <Typography variant="caption" sx={{ color: 'inherit', fontWeight: themeTokens.typography.fontWeight.semibold }}>
-        {label}
-      </Typography>
-    </Box>
+function weekdayLabel(day: number, locale: string) {
+  return new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' }).format(
+    new Date(Date.UTC(2024, 0, 7 + day)),
   );
 }
 
-function StatCard({
-  value,
-  label,
-  delta,
-  deltaTestId,
-}: {
-  value: React.ReactNode;
-  label: string;
-  delta?: WowDelta;
-  deltaTestId?: string;
-}) {
+function ReportingResults({ stats }: { stats: GymStats }) {
+  const { t, i18n } = useTranslation('boards');
+  const locale = i18n.language || 'en-US';
+  const number = new Intl.NumberFormat(locale);
+  const observations = formatGymReportingObservationWindow(stats, locale);
+  const time = (at: string) => formatGymReportingTime(at, stats.timeZone, locale);
+  const countByDay = new Map(stats.busiestDays.map((day) => [day.dayOfWeek, day.ascentCount]));
+  const busiestDay = busiestDayOfWeek(stats.busiestDays);
+  const unknownTimes = stats.coverage.boundaryUncertainCount + stats.coverage.unknownTimeCount;
   return (
-    <Box
-      sx={{
-        flex: 1,
-        minWidth: 0,
-        borderRadius: `${themeTokens.borderRadius.md}px`,
-        bgcolor: 'var(--neutral-100)',
-        p: 1.5,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 0.5,
-        textAlign: 'center',
-      }}
-    >
-      <Typography
-        variant="h5"
-        component="span"
-        sx={{ fontWeight: themeTokens.typography.fontWeight.bold, lineHeight: 1 }}
-      >
-        {value}
-      </Typography>
-      <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2 }}>
-        {label}
-      </Typography>
-      {delta && deltaTestId && <DeltaLabel delta={delta} testId={deltaTestId} />}
-    </Box>
-  );
-}
-
-function InsightsSkeleton() {
-  return (
-    <Box data-testid="insights-loading">
-      <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
-        {[0, 1, 2].map((index) => (
-          <Skeleton
-            key={index}
-            variant="rounded"
-            height={96}
-            sx={{ flex: 1, borderRadius: `${themeTokens.borderRadius.md}px` }}
-          />
-        ))}
+    <Box sx={{ display: 'grid', gap: 2 }}>
+      <Box sx={{ display: 'grid', gap: 0.5 }}>
+        <Typography variant="body2">
+          {t('gymReporting.period', { start: time(stats.current.startAt), end: time(stats.current.endAt) })}
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          {t('gymReporting.previousPeriod', { start: time(stats.previous.startAt), end: time(stats.previous.endAt) })}
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          {stats.timeZoneConfigured
+            ? t('gymReporting.zoneValue', { zone: stats.timeZone })
+            : t('gymReporting.utcFallback')}
+        </Typography>
+        {stats.coverage.isPartial && (
+          <Typography variant="body2" color="text.secondary">
+            {t('gymReporting.partial')}
+          </Typography>
+        )}
+        {stats.coverage.includesCurrentBoardHistory && (
+          <Typography variant="body2" color="text.secondary">
+            {t('gymReporting.currentBoardHistory')}
+          </Typography>
+        )}
+        {unknownTimes > 0 && (
+          <Typography variant="body2" color="text.secondary">
+            {t('gymReporting.unknownTiming', { countText: number.format(unknownTimes) })}
+          </Typography>
+        )}
+        {stats.coverage.dateOnlyCount > 0 && (
+          <Typography variant="body2" color="text.secondary">
+            {t('gymReporting.dateOnly', { countText: number.format(stats.coverage.dateOnlyCount) })}
+          </Typography>
+        )}
+        <Typography variant="body2" color="text.secondary">
+          {t('gymReporting.freshness', { date: time(stats.asOf) })}
+        </Typography>
+        <Box>
+          <Typography variant="body2" color="text.secondary">
+            {t('gymReporting.observationWindow', { start: observations.start, end: observations.end })}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {observations.firstDisplay
+              ? t('gymReporting.firstDisplay', { date: observations.firstDisplay })
+              : t('gymReporting.noTimedDisplay')}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {observations.firstTick
+              ? t('gymReporting.firstTick', { date: observations.firstTick })
+              : t('gymReporting.noTimedTick')}
+          </Typography>
+        </Box>
       </Box>
-      <Skeleton variant="text" width={160} sx={{ mb: 1 }} />
-      {[0, 1, 2, 3, 4].map((index) => (
-        <Skeleton key={index} variant="text" height={32} />
-      ))}
-      <Skeleton variant="rounded" height={160} sx={{ mt: 3, borderRadius: `${themeTokens.borderRadius.md}px` }} />
+      {gymReportingHasActivity(stats) ? (
+        <>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+            <Chip label={t('gymReporting.climbers', { countText: number.format(stats.current.uniqueClimbers) })} />
+            <Chip label={t('gymReporting.sends', { countText: number.format(stats.current.ascentCount) })} />
+            {busiestDay !== null && (
+              <Chip label={t('gymReporting.busiestDay', { day: weekdayLabel(busiestDay, locale) })} />
+            )}
+          </Box>
+          {stats.busiestDays.length > 0 && (
+            <Box>
+              <Typography variant="subtitle2">{t('gymReporting.byDay')}</Typography>
+              <CssBarChart
+                bars={WEEK_ORDER.map((day) => ({
+                  key: String(day),
+                  label: weekdayLabel(day, locale),
+                  segments: [{ value: countByDay.get(day) ?? 0, color: themeTokens.colors.primary }],
+                }))}
+                ariaLabel={t('gymReporting.byDay')}
+                height={160}
+                mobileHeight={120}
+                showLegend={false}
+              />
+            </Box>
+          )}
+          {stats.topClimbs.length > 0 && (
+            <Box>
+              <Typography variant="subtitle2">{t('gymReporting.topClimbs')}</Typography>
+              <List dense disablePadding data-testid="insights-top-climbs">
+                {stats.topClimbs.map((climb) => (
+                  <ListItem
+                    key={`${climb.boardType}:${climb.climbUuid}:${climb.angle}`}
+                    disableGutters
+                    sx={{ gap: 1, flexWrap: 'wrap' }}
+                  >
+                    <Typography variant="body2">{climb.name ?? boardTypeLabel(climb.boardType)}</Typography>
+                    {climb.gradeName && <Chip label={climb.gradeName} size="small" />}
+                    <Typography variant="body2" color="text.secondary">
+                      {t('gymReporting.sends', { countText: number.format(climb.ascentCount) })}
+                    </Typography>
+                  </ListItem>
+                ))}
+              </List>
+            </Box>
+          )}
+        </>
+      ) : (
+        <Typography variant="body2" role="status">
+          {gymReportingHasExactObservations(stats) ? t('gymReporting.empty') : t('gymReporting.noHistory')}
+        </Typography>
+      )}
     </Box>
+  );
+}
+
+type ReportingViewer = { viewer: string; gymUuid: string; token: string };
+
+type ReportingFilters = {
+  period: GymStatsPeriod;
+  setPeriod: (period: GymStatsPeriod) => void;
+  boardUuid: string | null;
+  setBoardUuid: (boardUuid: string | null) => void;
+};
+
+function InsightsReport({
+  viewer,
+  gymUuid,
+  token,
+  period,
+  setPeriod,
+  boardUuid,
+  setBoardUuid,
+}: ReportingViewer & ReportingFilters) {
+  const { t, i18n } = useTranslation('boards');
+  const reconnect = useSyncExternalStore(subscribeOnline, getConnectivity, () => 0);
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    ...gymReportingQueryOptions,
+    queryKey: gymReportingQueryKey(viewer, gymUuid, boardUuid, period),
+    queryFn: async ({ signal }) => {
+      const response = await createGraphQLHttpClient(token).request<
+        GetGymStatsQueryResponse,
+        GetGymStatsQueryVariables
+      >({
+        document: GET_GYM_STATS,
+        signal,
+        variables: { input: { gymUuid, boardUuid, period } },
+      });
+      return response.gymStats;
+    },
+  });
+  const state = gymReportingReadState({ ...query, offline: reconnect < 0, verifiedAfter: Math.max(0, reconnect) });
+  const stats = state === 'ready' || state === 'stale' ? query.data : undefined;
+
+  const { dataUpdatedAt } = query;
+  useEffect(
+    () =>
+      scheduleGymReportingReceiptExpiry(
+        queryClient,
+        gymReportingQueryKey(viewer, gymUuid, boardUuid, period),
+        dataUpdatedAt,
+      ),
+    [queryClient, viewer, gymUuid, boardUuid, period, dataUpdatedAt],
+  );
+
+  useEffect(() => {
+    if (state !== 'denied') return;
+    const queryKey = gymReportingQueryKey(viewer, gymUuid, boardUuid, period);
+    queryClient.getQueryCache().find({ queryKey, exact: true })?.setState({ data: undefined, dataUpdatedAt: 0 });
+    queryClient.removeQueries({ queryKey: gymReportingQueryPrefix(viewer, gymUuid), type: 'inactive' });
+  }, [state, queryClient, viewer, gymUuid, boardUuid, period]);
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: gymReportingQueryPrefix(viewer, gymUuid) });
+  const retireReport = () =>
+    retireGymReportingReceipt(queryClient, {
+      queryKey: gymReportingQueryPrefix(viewer, gymUuid),
+    });
+
+  async function saveZone(timeZone: string | null) {
+    try {
+      await createGraphQLHttpClient(token).request(SET_GYM_REPORTING_TIME_ZONE, {
+        input: { gymUuid: stats?.gymUuid ?? gymUuid, timeZone },
+      });
+    } catch (error) {
+      if (isGymReportingAccessError(error)) void retireReport();
+      throw error;
+    }
+    await refresh();
+  }
+
+  async function saveAlias(sourceUuid: string, rootBoardUuid: string | null) {
+    try {
+      await createGraphQLHttpClient(token).request(SET_GYM_REPORTING_BOARD_ALIAS, {
+        input: { gymUuid: stats?.gymUuid ?? gymUuid, boardUuid: sourceUuid, rootBoardUuid },
+      });
+    } catch (error) {
+      if (isGymReportingAccessError(error)) void retireReport();
+      throw error;
+    }
+    setBoardUuid(null);
+    await refresh();
+  }
+
+  return (
+    <Box sx={{ display: 'grid', gap: 2 }}>
+      <Typography component="h2" variant="h6">
+        {stats?.gymName ?? t('gymReporting.title')}
+      </Typography>
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'start' }}>
+        <ToggleButtonGroup
+          value={period}
+          exclusive
+          size="small"
+          aria-label={t('gymReporting.range')}
+          onChange={(_event, next: GymStatsPeriod | null) => {
+            if (next) setPeriod(next);
+          }}
+        >
+          {GYM_REPORTING_PERIODS.map(({ key, days }) => (
+            <ToggleButton key={key} value={key} sx={{ gap: 0.5 }}>
+              {period === key && <SelectedCheck />}
+              {t('gymReporting.rangeDays', { days: new Intl.NumberFormat(i18n.language || 'en-US').format(days) })}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+        {stats && (
+          <TextField
+            select
+            size="small"
+            label={t('gymReporting.boardScope')}
+            value={stats.boardUuid ?? ''}
+            sx={{ minWidth: 180 }}
+            disabled={state === 'stale'}
+            onChange={(event) => setBoardUuid(event.target.value || null)}
+          >
+            <MenuItem value="">{t('gymReporting.allBoards')}</MenuItem>
+            {stats.boards.map((board) => (
+              <MenuItem value={board.uuid} key={board.uuid}>
+                {board.name}
+              </MenuItem>
+            ))}
+          </TextField>
+        )}
+        {state === 'ready' && <Button onClick={() => void query.refetch()}>{t('gymReporting.refresh')}</Button>}
+      </Box>
+      {state === 'loading' && <Skeleton height={120} variant="rounded" data-testid="insights-loading" />}
+      {state === 'offline' && <Alert severity="info">{t('gymReporting.offline')}</Alert>}
+      {state === 'denied' && (
+        <Alert severity="warning">{boardUuid ? t('gymReporting.boardDenied') : t('gymReporting.denied')}</Alert>
+      )}
+      {state === 'error' && <Alert severity="error">{t('gymReporting.loadError')}</Alert>}
+      {(state === 'error' || state === 'denied' || state === 'offline') && (
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button onClick={() => void query.refetch()}>{t('gymReporting.retry')}</Button>
+          {boardUuid && <Button onClick={() => setBoardUuid(null)}>{t('gymReporting.allBoards')}</Button>}
+        </Box>
+      )}
+      {stats && (
+        <>
+          {state === 'stale' && (
+            <Alert severity="info">
+              {t('gymReporting.stale', {
+                date: formatGymReportingTime(stats.asOf, stats.timeZone, i18n.language || 'en-US'),
+              })}
+            </Alert>
+          )}
+          <ReportingResults stats={stats} />
+          {state === 'ready' && <GymReportingSettings stats={stats} saveZone={saveZone} saveAlias={saveAlias} />}
+        </>
+      )}
+    </Box>
+  );
+}
+
+function InsightsViewer({ viewer, gymUuid, token }: ReportingViewer) {
+  const [period, setPeriod] = useState<GymStatsPeriod>('week');
+  const [boardUuid, setBoardUuid] = useState<string | null>(null);
+  const focused = useSyncExternalStore(
+    subscribeFocus,
+    () => focusManager.isFocused(),
+    () => true,
+  );
+  if (!focused) return null;
+  return (
+    <InsightsReport
+      viewer={viewer}
+      gymUuid={gymUuid}
+      token={token}
+      period={period}
+      setPeriod={setPeriod}
+      boardUuid={boardUuid}
+      setBoardUuid={setBoardUuid}
+    />
   );
 }
 
 export default function InsightsTab({ gym }: GymManageTabProps) {
-  const { t, i18n } = useTranslation('kiosk');
-  const { token, isLoading: isTokenLoading } = useWsAuthToken();
-  const { data: session } = useSession();
-  // Editor-scoped read: key on viewer so an in-session login/logout doesn't
-  // serve the previous viewer's cache entry.
-  const viewerUserId = session?.user?.id ?? 'anonymous';
-  const locale = i18n.language || 'en-US';
-
-  const {
-    data: stats,
-    isPending,
-    isError,
-  } = useQuery({
-    queryKey: ['gymStats', gym.uuid, viewerUserId, INSIGHTS_PERIOD],
-    queryFn: async () => {
-      const client = createGraphQLHttpClient(token);
-      const response = await client.request<GetGymStatsQueryResponse, GetGymStatsQueryVariables>(GET_GYM_STATS, {
-        input: { gymUuid: gym.uuid, period: INSIGHTS_PERIOD },
-      });
-      return response.gymStats;
-    },
-    enabled: !!token,
-    staleTime: INSIGHTS_STALE_MS,
-  });
-
-  const dayBars = useMemo<CssBarChartBar[]>(() => {
-    if (!stats) return [];
-    const countByDow = new Map(stats.busiestDays.map((day) => [day.dayOfWeek, day.ascentCount]));
-    return WEEK_ORDER.map((dow) => ({
-      key: String(dow),
-      label: weekdayLabel(dow, locale),
-      segments: [
-        { value: countByDow.get(dow) ?? 0, color: themeTokens.colors.primary, label: t('manage.insights.ascents') },
-      ],
-    }));
-  }, [stats, locale, t]);
-
-  // Token settled with no token: the disabled query stays isPending forever, so
-  // treat it as an error rather than an eternal skeleton (the tab is auth-gated,
-  // so this only trips on a silent auth-token fetch failure).
-  if (!isTokenLoading && !token) {
-    return <EmptyState description={t('manage.insights.loadError')} />;
+  const { t } = useTranslation('boards');
+  const { data: session, status } = useSession();
+  const { token, isLoading } = useWsAuthToken();
+  if (status === 'loading' || isLoading) {
+    return <Skeleton height={120} variant="rounded" data-testid="insights-loading" />;
   }
-
-  if (isTokenLoading || isPending) {
-    return <InsightsSkeleton />;
+  const viewerId = session?.user?.id;
+  if (status !== 'authenticated' || !viewerId || !token) {
+    return <Alert severity="warning">{t('gymReporting.denied')}</Alert>;
   }
-
-  if (isError || !stats) {
-    return <EmptyState description={t('manage.insights.loadError')} />;
-  }
-
-  const uniqueDelta = computeWowDelta(stats.current.uniqueClimbers, stats.previous.uniqueClimbers);
-  const ascentDelta = computeWowDelta(stats.current.ascentCount, stats.previous.ascentCount);
-  const busiestDow = busiestDayOfWeek(stats.busiestDays);
-
-  if (stats.current.ascentCount === 0) {
-    return (
-      <EmptyState
-        icon={<BarChartOutlined fontSize="inherit" />}
-        description={
-          <Box sx={{ textAlign: 'center' }}>
-            <Typography variant="h6" sx={{ fontWeight: themeTokens.typography.fontWeight.bold, mb: 0.5 }}>
-              {t('manage.insights.empty.title')}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {t('manage.insights.empty.body')}
-            </Typography>
-          </Box>
-        }
-      />
-    );
-  }
-
-  return (
-    <Box>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        {t('manage.insights.subtitle')}
-      </Typography>
-
-      <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
-        <StatCard
-          value={stats.current.uniqueClimbers}
-          label={t('manage.insights.uniqueClimbers')}
-          delta={uniqueDelta}
-          deltaTestId="insights-delta-climbers"
-        />
-        <StatCard
-          value={stats.current.ascentCount}
-          label={t('manage.insights.ascents')}
-          delta={ascentDelta}
-          deltaTestId="insights-delta-ascents"
-        />
-        <StatCard
-          value={busiestDow === null ? '—' : weekdayLabel(busiestDow, locale)}
-          label={t('manage.insights.busiestDay')}
-        />
-      </Box>
-
-      <Typography variant="subtitle2" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold, mb: 1 }}>
-        {t('manage.insights.byDay')}
-      </Typography>
-      <CssBarChart
-        bars={dayBars}
-        height={160}
-        mobileHeight={120}
-        showLegend={false}
-        ariaLabel={t('manage.insights.byDayAria')}
-      />
-
-      <Typography variant="subtitle2" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold, mt: 3, mb: 1 }}>
-        {t('manage.insights.topClimbs')}
-      </Typography>
-      {stats.topClimbs.length === 0 ? (
-        <Typography variant="body2" color="text.secondary">
-          {t('manage.insights.noTopClimbs')}
-        </Typography>
-      ) : (
-        <List disablePadding data-testid="insights-top-climbs">
-          {stats.topClimbs.map((climb, index) => (
-            <ListItem
-              key={`${climb.climbUuid}-${climb.angle}`}
-              disableGutters
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-                py: 0.75,
-                borderBottom: index < stats.topClimbs.length - 1 ? `1px solid var(--neutral-200)` : 'none',
-              }}
-            >
-              <Typography
-                variant="body2"
-                sx={{
-                  width: 24,
-                  color: 'text.secondary',
-                  fontWeight: themeTokens.typography.fontWeight.semibold,
-                  flexShrink: 0,
-                }}
-              >
-                {index + 1}
-              </Typography>
-              <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    fontWeight: themeTokens.typography.fontWeight.medium,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {climb.name ?? t('manage.insights.unnamedClimb')}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {boardTypeLabel(climb.boardType)}
-                  {climb.gradeName ? ` · ${climb.gradeName}` : ''}
-                  {` · ${climb.angle}°`}
-                </Typography>
-              </Box>
-              <Chip
-                size="small"
-                variant="outlined"
-                label={t('manage.insights.ascentsCount', { count: climb.ascentCount })}
-                sx={{ flexShrink: 0 }}
-              />
-            </ListItem>
-          ))}
-        </List>
-      )}
-    </Box>
-  );
+  const viewer = JSON.stringify([viewerId, session?.authSessionId ?? null]);
+  return <InsightsViewer key={`${viewer}:${gym.uuid}`} gymUuid={gym.uuid} viewer={viewer} token={token} />;
 }

@@ -5,6 +5,7 @@ import {
   bigint,
   boolean,
   timestamp,
+  date,
   bigserial,
   index,
   uniqueIndex,
@@ -122,6 +123,18 @@ export const boardseshTicks = pgTable(
     boardId: bigint('board_id', { mode: 'number' }).references(() => userBoards.id, {
       onDelete: 'set null',
     }),
+
+    // Board identity and gym at acceptance, captured under the board lock.
+    // A captured board with a null gym was unlinked, unlike a legacy unknown.
+    reportingBoardId: bigint('reporting_board_id', { mode: 'number' }),
+    reportingGymId: bigint('reporting_gym_id', { mode: 'number' }),
+    reportingAttribution: text('reporting_attribution').$type<'uuid' | 'presence' | 'session' | 'edit'>(),
+    reportingTimePrecision: text('reporting_time_precision').$type<'instant' | 'day'>(),
+    // Precision only attests to the exact timestamp accepted by the native
+    // writer. An upstream timestamp rewrite may preserve origin='native'.
+    reportingClimbedAt: timestamp('reporting_climbed_at', { mode: 'string' }),
+    reportingDate: date('reporting_date'),
+    reportingDateTimeZone: text('reporting_date_time_zone'),
 
     // Aurora sync tracking - populated by periodic sync job
     auroraType: auroraTableTypeEnum('aurora_type'), // 'ascents' or 'bids'

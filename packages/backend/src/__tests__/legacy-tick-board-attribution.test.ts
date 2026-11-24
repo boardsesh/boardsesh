@@ -113,12 +113,29 @@ async function insertSession(opts: { boardId: number | null }): Promise<string> 
 }
 
 /** The board_id and session_id the tick actually landed on. */
-async function tickAttribution(tickUuid: string): Promise<{ boardId: number | null; sessionId: string | null }> {
+async function tickAttribution(tickUuid: string) {
   const result = await db.execute(sql`
-    SELECT board_id, session_id FROM boardsesh_ticks WHERE uuid = ${tickUuid}
+    SELECT board_id, session_id, reporting_board_id, reporting_attribution, reporting_time_precision, reporting_date
+    FROM boardsesh_ticks WHERE uuid = ${tickUuid}
   `);
-  const row = Array.from(result as Iterable<{ board_id: number | null; session_id: string | null }>)[0];
-  return { boardId: row.board_id == null ? null : Number(row.board_id), sessionId: row.session_id };
+  const [row] = Array.from(
+    result as Iterable<{
+      board_id: number | null;
+      session_id: string | null;
+      reporting_board_id: number | null;
+      reporting_attribution: string | null;
+      reporting_time_precision: string | null;
+      reporting_date: string | null;
+    }>,
+  );
+  return {
+    boardId: row.board_id == null ? null : Number(row.board_id),
+    sessionId: row.session_id,
+    reportingBoardId: row.reporting_board_id == null ? null : Number(row.reporting_board_id),
+    reportingAttribution: row.reporting_attribution,
+    reportingTimePrecision: row.reporting_time_precision,
+    reportingDate: row.reporting_date,
+  };
 }
 
 async function saveTick(overrides: Record<string, unknown> = {}, userId = USER_ID) {
@@ -169,7 +186,7 @@ describe('legacy tick board attribution', () => {
     // board at all — invisible on the board's leaderboard, forever.
     const boardId = await insertBoard({ setIds: '2,1', name: 'Home wall' });
 
-    expect((await saveTick({ setIds: '1,2' })).boardId).toBe(boardId);
+    expect(await saveTick({ setIds: '1,2' })).toMatchObject({ boardId, reportingBoardId: null });
   });
 
   it('picks the same board every time when the owner has two with this config', async () => {
@@ -195,6 +212,50 @@ describe('legacy tick board attribution', () => {
     const attribution = await saveTick({ sessionId });
     expect(attribution.boardId).toBe(gymBoardId);
     expect(attribution.sessionId).toBe(sessionId);
+    expect(attribution).toMatchObject({ reportingBoardId: gymBoardId, reportingAttribution: 'session' });
+  });
+
+  it('records explicit attribution and time intent without replacing the tick on an idempotent replay', async () => {
+    const boardId = await insertBoard({ name: 'Named wall' });
+    const [board] = await db.execute<{ uuid: string }>(sql`SELECT uuid FROM user_boards WHERE id = ${boardId}`);
+    const uuid = uuidv4();
+    const input = {
+      uuid,
+      ...tickInput({ boardUuid: board.uuid }),
+      climbedAt: '2026-07-01T01:00:00.123456Z',
+      reportingTime: { precision: 'day', date: '2026-06-30', timeZone: 'America/New_York' },
+    };
+    await tickMutations.saveTick(undefined, { input }, authCtx(USER_ID));
+    await tickMutations.saveTick(
+      undefined,
+      { input: { ...input, reportingTime: { precision: 'instant' } } },
+      authCtx(USER_ID),
+    );
+    expect(await tickAttribution(uuid)).toMatchObject({
+      boardId,
+      reportingBoardId: boardId,
+      reportingAttribution: 'uuid',
+      reportingTimePrecision: 'day',
+      reportingDate: '2026-06-30',
+    });
+    await tickMutations.updateTick(
+      undefined,
+      {
+        uuid,
+        input: {
+          climbedAt: input.climbedAt,
+          reportingTime: { precision: 'instant' },
+        },
+      },
+      authCtx(USER_ID),
+    );
+    expect(await tickAttribution(uuid)).toMatchObject({
+      boardId,
+      reportingBoardId: boardId,
+      reportingAttribution: 'uuid',
+      reportingTimePrecision: 'instant',
+      reportingDate: null,
+    });
   });
 
   it("attributes to a session board the climber doesn't own", async () => {

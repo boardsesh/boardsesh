@@ -363,6 +363,7 @@ export type FollowGymInput = {
 
 export type MyGymsInput = {
   includeFollowed?: boolean;
+  includeManaged?: boolean;
   limit?: number;
   offset?: number;
 };
@@ -406,7 +407,7 @@ export type LinkBoardToGymInput = {
 // Gym Insights (owner activity dashboard)
 // ============================================
 
-export type GymStatsPeriod = 'week' | 'month';
+export type GymStatsPeriod = 'week' | 'month' | 'quarter';
 
 export type GymTopClimb = {
   climbUuid: string;
@@ -424,11 +425,41 @@ export type GymDayActivity = {
 };
 
 export type GymStatsWindow = {
+  startAt: string;
+  endAt: string;
+  displayCount: number;
+  tickCount: number;
   uniqueClimbers: number;
   ascentCount: number;
 };
 
+export type GymReportingBoard = {
+  uuid: string;
+  name: string;
+  boardType: string;
+  configurations: { uuid: string; name: string }[];
+};
+
+export type GymReportingCoverage = {
+  observedSince: string;
+  firstDisplayAt: string | null;
+  firstTickAt: string | null;
+  dateOnlyCount: number;
+  boundaryUncertainCount: number;
+  unknownTimeCount: number;
+  includesCurrentBoardHistory: boolean;
+  isPartial: boolean;
+};
+
 export type GymStats = {
+  gymName: string;
+  boardUuid: string | null;
+  boards: GymReportingBoard[];
+  canManageBoardAliases: boolean;
+  asOf: string;
+  timeZone: string;
+  timeZoneConfigured: boolean;
+  coverage: GymReportingCoverage;
   gymUuid: string;
   periodDays: number;
   current: GymStatsWindow;
@@ -441,6 +472,7 @@ export type GymStats = {
 
 export type GymStatsInput = {
   gymUuid: string;
+  boardUuid?: string | null;
   period?: GymStatsPeriod;
 };
 

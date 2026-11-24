@@ -53,6 +53,8 @@ vi.mock('../use-session-detail', () => ({ useSessionDetail: vi.fn(), useSessionP
 vi.mock('../use-delete-account', () => ({ useDeleteAccountInfo: vi.fn(), useDeleteAccount: vi.fn() }));
 // Draft deletion owns native auth/storage dependencies and is covered separately.
 vi.mock('../use-delete-draft-climb', () => ({ useDeleteDraftClimb: vi.fn() }));
+// Managed-gym reporting owns native auth dependencies and is covered separately.
+vi.mock('../use-managed-my-gyms', () => ({ useManagedMyGyms: vi.fn() }));
 vi.mock('../use-integrations', () => ({
   useIntegrationStatuses: vi.fn(),
   useDisconnectIntegration: vi.fn(),

@@ -221,27 +221,6 @@
       "profile": "Profil",
       "comments": "Commentaires"
     },
-    "insights": {
-      "subtitle": "Comment tes boards ont tourné cette semaine par rapport à la dernière.",
-      "uniqueClimbers": "Grimpeurs",
-      "ascents": "Croix",
-      "busiestDay": "Jour le plus actif",
-      "byDay": "Croix par jour",
-      "byDayAria": "Croix par jour de la semaine",
-      "topClimbs": "Ce que tout le monde projette",
-      "noTopClimbs": "Pas encore de croix cette semaine.",
-      "unnamedClimb": "Bloc sans nom",
-      "ascentsCount_one": "{{count}} croix",
-      "ascentsCount_other": "{{count}} croix",
-      "deltaUp": "+{{count}} par rapport à la semaine dernière",
-      "deltaDown": "−{{count}} par rapport à la semaine dernière",
-      "deltaFlat": "Comme la semaine dernière",
-      "loadError": "Impossible de charger les chiffres de cette semaine.",
-      "empty": {
-        "title": "Pas de croix cette semaine",
-        "body": "Il est temps de refaire le mur ? Dès que les grimpeurs enregistrent une croix ici, tu verras qui est passé et ce qu'ils projettent."
-      }
-    },
     "navGuard": {
       "title": "Abandonner les modifications non enregistrées ?",
       "body": "Tu as des modifications non enregistrées sur cet onglet. En partant, elles seront perdues.",

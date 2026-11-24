@@ -1,5 +1,6 @@
 import { gql } from 'graphql-request';
 import type { Tick, SaveTickInput, GetTicksInput, RenderBoardConfig } from '@boardsesh/shared-schema';
+import type { TickReportingTimeInput } from '@boardsesh/shared-schema';
 import type { UpdateTickInput as GeneratedUpdateTickInput } from '../generated/graphql';
 
 export const GET_TICKS = gql`
@@ -632,6 +633,7 @@ export type UpdateTickInput = {
   isBenchmark?: boolean;
   comment?: string;
   climbedAt?: string;
+  reportingTime?: TickReportingTimeInput | null;
   angle?: number;
 };
 

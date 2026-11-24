@@ -1,0 +1,1 @@
+ALTER TABLE "boardsesh_ticks" ADD COLUMN "reporting_climbed_at" timestamp;

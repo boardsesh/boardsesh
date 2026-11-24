@@ -105,6 +105,7 @@ export function useSaveTick(boardName: BoardName | null) {
           isBenchmark: options.isBenchmark,
           comment: options.comment,
           climbedAt: options.climbedAt,
+          reportingTime: options.reportingTime,
           sessionId: options.sessionId,
           layoutId: options.layoutId,
           sizeId: options.sizeId,
