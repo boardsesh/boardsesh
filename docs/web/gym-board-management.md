@@ -92,7 +92,10 @@ dialog's approved state link there ("Check your boards").
   (`duplicate-board-config-dialog.tsx`); Save anyway sends
   `allowDuplicateConfig`. A suggestion the board already has reads "The board
   has this setup now". While a Use this setup button shows, Fix the setup
-  reads **Edit it yourself**.
+  reads **Edit it yourself**. While a setup saves, every other answer (the
+  other Use this setup buttons, Edit it yourself, Remove, Delete, It's right
+  as it is, and the keep step's Send) is disabled and its handler refuses, so
+  a report never closes as kept while its setup changes.
 
 `gym-board-permissions.ts` keeps only `canManageGymBoards` (owner or admin: who
 may link their own boards) and `linkableBoards`.

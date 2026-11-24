@@ -1,6 +1,6 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import {
   boardSetupSummary,
   getBoardLayouts,
@@ -35,7 +35,7 @@ vi.mock('@/app/lib/graphql/client', () => ({
 }));
 
 import BoardReportReviewDialog from '../board-report-review-dialog';
-import { UPDATE_BOARD } from '@boardsesh/graphql/operations';
+import { RESOLVE_DIRECTORY_REPORT, UPDATE_BOARD } from '@boardsesh/graphql/operations';
 
 // Real catalogue rows, so the summary the dialog prints is the shared one.
 const kilterLayout = getBoardLayouts('kilter').find(
@@ -118,19 +118,21 @@ function duplicateError(): Error {
 function renderDialog(overrides: { board?: UserBoard } = {}) {
   const onClose = vi.fn();
   const onResolved = vi.fn();
+  const onFix = vi.fn();
+  const onRemove = vi.fn();
   render(
     <BoardReportReviewDialog
       board={overrides.board ?? board}
       gymName="Crux"
       onClose={onClose}
-      onFix={vi.fn()}
-      onRemove={vi.fn()}
+      onFix={onFix}
+      onRemove={onRemove}
       onDelete={vi.fn()}
       allowDelete={false}
       onResolved={onResolved}
     />,
   );
-  return { onClose, onResolved };
+  return { onClose, onResolved, onFix, onRemove };
 }
 
 beforeEach(() => {
@@ -255,5 +257,81 @@ describe('BoardReportReviewDialog, suggested setups', () => {
     // No Use this setup to offer, so editing by hand is the fix, not the other way.
     expect(screen.queryByText('Edit it yourself')).toBeNull();
     expect(screen.getByText('Fix the setup')).toBeTruthy();
+  });
+});
+
+describe('BoardReportReviewDialog, while a setup is being applied', () => {
+  type Settle = { resolve: (response: unknown) => void; reject: (error: Error) => void };
+
+  /** The reports load; UPDATE_BOARD waits until the test settles it. */
+  function holdTheSetupSave(): () => Settle {
+    let settle: Settle | null = null;
+    mockRequest.mockImplementation((document: string) => {
+      if (document.includes('boardReports')) return Promise.resolve({ boardReports: [report()] });
+      return new Promise((resolve, reject) => {
+        settle = { resolve, reject };
+      });
+    });
+    return () => {
+      if (!settle) throw new Error('No setup save in flight');
+      return settle;
+    };
+  }
+
+  const reviewAction = (label: string) => {
+    const button = screen.getByText(label).closest('button');
+    if (!button) throw new Error(`No button for ${label}`);
+    return button;
+  };
+  const resolveRequests = () => mockRequest.mock.calls.filter(([document]) => document === RESOLVE_DIRECTORY_REPORT);
+
+  it('disables keep, edit and remove, and refuses a click that lands before they re-render', async () => {
+    const settleSave = holdTheSetupSave();
+    const { onFix, onRemove } = renderDialog();
+    const useSetup = await screen.findByRole('button', { name: 'Use this setup' });
+
+    // Every click lands in one batch, before React re-renders the buttons
+    // disabled: the handlers have to refuse on their own.
+    act(() => {
+      useSetup.click();
+      reviewAction("It's right as it is").click();
+      reviewAction('Edit it yourself').click();
+      reviewAction('Remove from Crux').click();
+    });
+
+    expect(reviewAction("It's right as it is")).toHaveProperty('disabled', true);
+    expect(reviewAction('Edit it yourself')).toHaveProperty('disabled', true);
+    expect(reviewAction('Remove from Crux')).toHaveProperty('disabled', true);
+    expect(screen.queryByLabelText('Tell them why (optional)')).toBeNull();
+    expect(onFix).not.toHaveBeenCalled();
+    expect(onRemove).not.toHaveBeenCalled();
+
+    // The save failed: the other answers are back.
+    await act(async () => settleSave().reject(new Error('offline')));
+    expect(reviewAction("It's right as it is")).toHaveProperty('disabled', false);
+    fireEvent.click(reviewAction("It's right as it is"));
+    expect(screen.getByLabelText('Tell them why (optional)')).toBeTruthy();
+  });
+
+  it('sends no keep while the setup saves, even when keep opened in the same instant', async () => {
+    const settleSave = holdTheSetupSave();
+    const { onClose } = renderDialog();
+    const useSetup = await screen.findByRole('button', { name: 'Use this setup' });
+
+    act(() => {
+      reviewAction("It's right as it is").click();
+      useSetup.click();
+    });
+
+    // The keep step opened, but Send waits for the setup save.
+    const send = screen.getByRole('button', { name: 'Send' });
+    expect(send).toHaveProperty('disabled', true);
+    fireEvent.click(send);
+    expect(resolveRequests()).toHaveLength(0);
+
+    await act(async () => settleSave().resolve({ updateBoard: { ...board, sizeId: otherKilterSize.id } }));
+    expect(onClose).toHaveBeenCalled();
+    // One decision reached the server: the new setup, never a keep.
+    expect(resolveRequests()).toHaveLength(0);
   });
 });

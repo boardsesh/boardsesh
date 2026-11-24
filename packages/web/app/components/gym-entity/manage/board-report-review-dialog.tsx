@@ -89,7 +89,9 @@ type BoardReportReviewDialogProps = {
  * as the edit form does, and Save anyway sends `allowDuplicateConfig`. The
  * grouping, the "board has this setup now" check and the input are
  * `@boardsesh/directory-moderation`'s, shared with the app. While a Use this
- * setup button shows, "Fix the setup" reads "Edit it yourself".
+ * setup button shows, "Fix the setup" reads "Edit it yourself". While one
+ * saves, every other answer (fix, remove, delete, keep) is disabled and its
+ * handler refuses: the review ends one way only, never kept and changed.
  */
 export default function BoardReportReviewDialog({
   board,
@@ -112,6 +114,7 @@ export default function BoardReportReviewDialog({
   // Use this setup: the setup being saved, and the one a duplicate prompt waits on.
   const [applyingKey, setApplyingKey] = useState<string | null>(null);
   const applyingRef = useRef(false);
+  const applyingSetup = applyingKey !== null;
   const [duplicate, setDuplicate] = useState<DuplicateBoardConfig | null>(null);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const pendingSetupRef = useRef<BoardSetup | null>(null);
@@ -156,8 +159,19 @@ export default function BoardReportReviewDialog({
   const rows = reports ? reviewRows(reports) : [];
   const keepable = reports ? reportsToKeep(reports) : [];
 
+  // Every other answer waits for a Use this setup save. The ref, not the state,
+  // so a click that lands before the buttons re-render disabled is refused too.
+  const openKeepStep = () => {
+    if (applyingRef.current) return;
+    setStep('keep');
+  };
+  const handBoardTo = (action: (reportedBoard: UserBoard) => void) => {
+    if (!board || applyingRef.current) return;
+    action(board);
+  };
+
   const keep = async () => {
-    if (!token || keepable.length === 0 || keeping) return;
+    if (!token || keepable.length === 0 || keeping || applyingRef.current) return;
     setKeeping(true);
     const client = createGraphQLHttpClient(token);
     const resolutionNote = normalizeReportNote(note);
@@ -337,7 +351,7 @@ export default function BoardReportReviewDialog({
                             size="small"
                             onClick={() => void applySetup(group.setup)}
                             loading={applyingKey === group.key}
-                            disabled={applyingKey !== null || keeping}
+                            disabled={applyingSetup || keeping}
                             sx={{ textTransform: 'none', minHeight: 44 }}
                           >
                             {t('reportReview.web.useSetup')}
@@ -367,7 +381,8 @@ export default function BoardReportReviewDialog({
               icon={<EditOutlined />}
               label={offersUseThisSetup(rows, board) ? t('reportReview.web.editYourself') : t('reportReview.fix')}
               hint={t('reportReview.fixHint')}
-              onClick={() => board && onFix(board)}
+              onClick={() => handBoardTo(onFix)}
+              disabled={applyingSetup}
             />
           )}
           {board?.canRemoveFromGym === true && (
@@ -375,7 +390,8 @@ export default function BoardReportReviewDialog({
               icon={<LinkOffOutlined />}
               label={t('gymBoards.removeFromNamed', { gym: gymName })}
               hint={t('reportReview.removeHint')}
-              onClick={() => board && onRemove(board)}
+              onClick={() => handBoardTo(onRemove)}
+              disabled={applyingSetup}
             />
           )}
           {allowDelete && board?.canDelete === true && (
@@ -384,7 +400,8 @@ export default function BoardReportReviewDialog({
               label={t('reportReview.delete')}
               hint={t('reportReview.deleteHint')}
               color="error"
-              onClick={() => board && onDelete(board)}
+              onClick={() => handBoardTo(onDelete)}
+              disabled={applyingSetup}
             />
           )}
           {keepable.length > 0 && (
@@ -392,7 +409,8 @@ export default function BoardReportReviewDialog({
               icon={<CheckOutlined />}
               label={t('reportReview.keep')}
               hint={t('reportReview.keepHint')}
-              onClick={() => setStep('keep')}
+              onClick={openKeepStep}
+              disabled={applyingSetup}
             />
           )}
         </Box>
@@ -421,7 +439,7 @@ export default function BoardReportReviewDialog({
               variant="contained"
               onClick={() => void keep()}
               loading={keeping}
-              disabled={keepable.length === 0}
+              disabled={keepable.length === 0 || applyingSetup}
               sx={{ textTransform: 'none' }}
             >
               {t('report.send')}
@@ -451,18 +469,21 @@ function ReviewAction({
   hint,
   color = 'primary',
   onClick,
+  disabled = false,
 }: {
   icon: React.ReactNode;
   label: string;
   hint: string;
   color?: 'primary' | 'error';
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <Button
       color={color}
       startIcon={icon}
       onClick={onClick}
+      disabled={disabled}
       sx={{ textTransform: 'none', justifyContent: 'flex-start', textAlign: 'left', minHeight: 44 }}
     >
       <Box component="span" sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
