@@ -21,9 +21,8 @@ export function WallIdleRecoveryView({
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const name = lastLitClimb?.name?.trim() || '';
-  // BoardPresenceClimb carries no Boardsesh grade today, so `resolveGrade` falls
-  // back to the legacy label + colour — lights up once the backend stamps them.
-  const grade = lastLitClimb?.grade ? resolvedGrade.label : null;
+  // Aurora can have a selected-angle Boardsesh estimate without a legacy grade.
+  const grade = lastLitClimb?.grade || lastLitClimb?.source === 'aurora' ? resolvedGrade.label : null;
   const gradeColor = resolvedGrade.color;
   const lastLine = { fontSize: typeScale.metaFontSize, lineHeight: typeScale.metaLineHeight };
   const hintLine = { fontSize: Math.round(typeScale.metaFontSize * 0.85) };

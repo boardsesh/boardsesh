@@ -1,3 +1,4 @@
+import { useAuroraPresenceClimb } from '../../hooks/use-aurora-presence-grades';
 import { memo, useCallback } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -9,7 +10,7 @@ import { useLiveWallClimb } from '../queue-control/use-wall-or-queue-climb';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useTheme } from '../../providers/theme-provider';
-import { useGradeFormat } from '../../hooks/use-grade-format';
+import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { hapticSelection } from '../../lib/haptics';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { WALL_LIVE_DOT_SIZE } from '../../theme/layout';
@@ -32,11 +33,12 @@ const WALL_THUMBNAIL_SIZE = 36;
 function SidebarWallCellComponent() {
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
-  const { formatGrade } = useGradeFormat();
+  const { resolveGrade } = useDisplayGrade();
   const { enabled, boardId } = useBoardPresenceControls();
-  const litClimb = useLiveWallClimb();
+  const sourceClimb = useLiveWallClimb();
   const { openBoardSheet, boardPanelProps } = useDrawerHost();
   const boardConfig = boardPanelProps?.boardConfig ?? null;
+  const { climb: litClimb, grade: auroraGrade } = useAuroraPresenceClimb(sourceClimb, boardConfig);
 
   const handlePress = useCallback(() => {
     hapticSelection();
@@ -46,7 +48,9 @@ function SidebarWallCellComponent() {
   // The wall concept is inactive (no board bound) — leave the rail as-is.
   if (!enabled || boardId === null) return null;
 
-  const grade = litClimb ? formatGrade(litClimb.grade ?? '', boardConfig?.boardName) : null;
+  const grade = litClimb
+    ? resolveGrade(auroraGrade ?? { difficulty: litClimb.grade ?? '' }, boardConfig?.boardName).label
+    : null;
   const accessibilityLabel = litClimb
     ? t('boardPresence.openAriaWithClimb', { name: litClimb.name ?? '' })
     : t('boardPresence.openAria');

@@ -66,6 +66,7 @@ type BoardSheetProps = {
    * interfering with `present()`, so the sheet never appeared.
    */
   boardConfig: BoardConfig | null;
+  getClimbMirror?: (climbUuid: string) => boolean | undefined;
   /** Request an animated close (header chevron) — the host calls `dismiss()`. */
   onClose: () => void;
   /** Optional: fired AFTER the dismiss animation has actually settled. */
@@ -103,6 +104,7 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
     viewerUserId,
     onSelectGymWall,
     onClimbPress,
+    getClimbMirror,
     onPlayNext,
     onOpenPlaylist,
     onOpenActions,
@@ -238,6 +240,7 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
           viewerUserId={viewerUserId}
           onSelectGymWall={onSelectGymWall}
           onClimbPress={onClimbPress}
+          getClimbMirror={getClimbMirror}
           onPlayNext={onPlayNext}
           onOpenPlaylist={onOpenPlaylist}
           onOpenActions={onOpenActions}

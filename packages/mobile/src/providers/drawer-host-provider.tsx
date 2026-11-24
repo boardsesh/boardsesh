@@ -39,6 +39,7 @@ import { formatActiveBoardLabel } from '../lib/boards/active-board-label';
 import { track } from '../lib/analytics';
 import { trackQueueSheetOpened } from '../lib/queue-navigation-analytics';
 import { queueSheetOpenContext } from '../lib/queue-sheet-open-context';
+import { createQueueMirrorReader } from '../lib/queue-mirror-orientation';
 import { addErrorBreadcrumb } from '../lib/error-reporting';
 import { ClimbMenusProvider } from '../components/climb-actions/ClimbActionsMenu';
 import { AddBetaVideoSheet } from '../components/AddBetaVideoSheet';
@@ -196,6 +197,7 @@ export type PlayDrawerPaneProps = {
  *  rendered inline. Mirrors the BoardSheet props passed below; null while no board
  *  is resolved. Consumed by `IpadWallColumn`. */
 export type NowOnTheWallColumnProps = {
+  getClimbMirror?: (climbUuid: string) => boolean | undefined;
   boardLabel: string | null;
   boardConfig: BoardConfig | null;
   onSwitchBoard: () => void;
@@ -1274,6 +1276,8 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     ],
   );
 
+  const getClimbMirror = useMemo(() => createQueueMirrorReader(getQueueSnapshot), [getQueueSnapshot]);
+
   // Props for the iPad "Now on the wall" column — the same handlers passed to the
   // BoardSheet modal below, surfaced via context so the inline column renders the
   // identical wall feed. Mirrors playDrawerPaneProps; null while no board resolved.
@@ -1281,6 +1285,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     () =>
       storedActiveBoardConfig
         ? {
+            getClimbMirror,
             boardLabel: boardSheetLabel,
             boardConfig: storedActiveBoardConfig,
             onSwitchBoard: handleSwitchBoardFromSheet,
@@ -1298,6 +1303,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       handleBoardSheetPlayNext,
       handleBoardSheetOpenPlaylist,
       handleBoardPanelOpenActions,
+      getClimbMirror,
     ],
   );
 
@@ -1462,6 +1468,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
               onShareSprayWall={sprayWallActions.openShare}
               viewerUserId={sprayViewerUserId}
               onSelectGymWall={handleSelectGymWall}
+              getClimbMirror={getClimbMirror}
               onClimbPress={handleBoardSheetClimbPress}
               onPlayNext={handleBoardSheetPlayNext}
               onOpenPlaylist={handleBoardSheetOpenPlaylist}

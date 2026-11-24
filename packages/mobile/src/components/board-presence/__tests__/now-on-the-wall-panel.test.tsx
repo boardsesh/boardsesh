@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+vi.mock('../../../hooks/use-aurora-presence-grades', () => ({ useAuroraPresenceGrades: () => new Map() }));
 vi.mock('../../AccessibleTextInput', async () => {
   const { TextInput } = await import('react-native');
   return { AccessibleTextInput: TextInput };
@@ -639,6 +640,49 @@ describe('NowOnTheWallPanel', () => {
 
     expect(callOrder).toEqual(['track:Board Swap Tapped', 'onSwitchBoard']);
     expect(analytics.track).toHaveBeenCalledWith('Board Swap Tapped', expect.objectContaining({ historyCount: 2 }));
+  });
+
+  it('drops an Aurora action when the physical wall changes with identical geometry', async () => {
+    presence.currentClimb = makeClimb('aurora-climb', 3, { source: 'aurora', angle: null, grade: null });
+    const onPlayNext = vi.fn();
+    const climbRequest = createDeferred<{ climb: Climb | null }>();
+    graphql.request.mockReturnValueOnce(climbRequest.promise);
+    presenceControls.boardId = 123;
+    const { getByLabelText, rerender } = render(panelElement({ onPlayNext }));
+    fireEvent.click(getByLabelText('queue aurora-climb'));
+    presenceControls.boardId = 456;
+    rerender(panelElement({ onPlayNext, boardLabel: 'Other physical wall' }));
+    await act(async () => {
+      climbRequest.resolve({ climb: makeFullClimb('aurora-climb') });
+      await climbRequest.promise;
+    });
+    expect(onPlayNext).not.toHaveBeenCalled();
+    presenceControls.boardId = 123;
+  });
+
+  it('reads the imported climb’s own queue orientation on each action, including cached actions', async () => {
+    const imported = makeClimb('aurora-climb', 3, { source: 'aurora', angle: null, grade: null, mirrored: null });
+    presence.currentClimb = imported;
+    const catalog = makeFullClimb('aurora-climb', { mirrored: false });
+    graphql.request.mockResolvedValue({ climb: catalog });
+    const onPlayNext = vi.fn();
+    const mirroredClimbs = new Set(['aurora-climb', 'different-climb']);
+    const { getByLabelText } = render(panelElement({ onPlayNext, getClimbMirror: (uuid) => mirroredClimbs.has(uuid) }));
+    fireEvent.click(getByLabelText('queue aurora-climb'));
+    await waitFor(() =>
+      expect(onPlayNext).toHaveBeenLastCalledWith(
+        expect.objectContaining({ climb: expect.objectContaining({ mirrored: true }) }),
+      ),
+    );
+    mirroredClimbs.delete('aurora-climb');
+    fireEvent.click(getByLabelText('queue aurora-climb'));
+    await waitFor(() =>
+      expect(onPlayNext).toHaveBeenLastCalledWith(
+        expect.objectContaining({ climb: expect.objectContaining({ mirrored: false }) }),
+      ),
+    );
+    expect(catalog.mirrored).toBe(false);
+    expect(imported).toMatchObject({ angle: null, mirrored: null, grade: null });
   });
 
   it('drops in-flight action results and clears loading when the board config changes', async () => {

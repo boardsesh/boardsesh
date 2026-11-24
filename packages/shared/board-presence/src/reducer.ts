@@ -12,7 +12,13 @@
  */
 
 import type { BoardConnectionHolder, BoardPresenceClimb } from '@boardsesh/shared-schema';
-import { compareBoardDisplayTimes, mergeBoardHistory } from './history';
+import {
+  compareBoardDisplayTimes,
+  isImportedBoardClimb,
+  isNativeBoardClimb,
+  isSupportedBoardClimb,
+  mergeBoardHistory,
+} from './history';
 import type { BoardPresenceState, BoardPresenceAction } from './types';
 
 /** Newest-first history is capped so a long session can't grow unbounded. */
@@ -86,11 +92,13 @@ function updateWallFromHistory(
   lastClearedAt = state.lastClearedAt,
 ): BoardPresenceState {
   const native =
-    history.find((climb) => climb.source !== 'kilter' && climb.seq === lastSeq) ??
-    (state.currentClimb?.source !== 'kilter' && state.currentClimb?.seq === lastSeq ? state.currentClimb : null);
+    history.find((climb) => isNativeBoardClimb(climb) && climb.seq === lastSeq) ??
+    (state.currentClimb && isNativeBoardClimb(state.currentClimb) && state.currentClimb.seq === lastSeq
+      ? state.currentClimb
+      : null);
   const imported = history.find(
     (climb) =>
-      climb.source === 'kilter' &&
+      isImportedBoardClimb(climb) &&
       Number.isFinite(Date.parse(climb.sentAt)) &&
       (lastClearedAt === null ||
         (Number.isFinite(Date.parse(lastClearedAt)) && compareBoardDisplayTimes(climb.sentAt, lastClearedAt) > 0)),
@@ -130,13 +138,17 @@ export function boardPresenceReducer(state: BoardPresenceState, action: BoardPre
     case 'MERGE_HISTORY': {
       const history = mergeHistory(state.history, action.payload);
       const lastSeq = action.payload.reduce(
-        (highest, climb) => (climb.source === 'kilter' ? highest : Math.max(highest, climb.seq)),
+        (highest, climb) => (isNativeBoardClimb(climb) ? Math.max(highest, climb.seq) : highest),
         state.lastSeq,
       );
       return updateWallFromHistory(state, history, lastSeq);
     }
     case 'APPLY_CLIMB_SET': {
       const incomingClimb = action.payload;
+      if (!isSupportedBoardClimb(incomingClimb)) return state;
+      if (isImportedBoardClimb(incomingClimb)) {
+        return updateWallFromHistory(state, mergeHistory(state.history, [incomingClimb]), state.lastSeq);
+      }
 
       // A stale native set can fill history, but cannot regress native wall state.
       if (incomingClimb.seq <= state.lastSeq) {
@@ -160,7 +172,7 @@ export function boardPresenceReducer(state: BoardPresenceState, action: BoardPre
     }
 
     case 'BACKFILL_HISTORY': {
-      const backfill = action.payload.filter((climb) => climb.source !== 'kilter');
+      const backfill = action.payload.filter((climb) => isNativeBoardClimb(climb));
       if (backfill.length === 0) return state;
       const history = mergeHistory(state.history, backfill);
       const lastSeq = backfill.reduce((highest, climb) => Math.max(highest, climb.seq), state.lastSeq);

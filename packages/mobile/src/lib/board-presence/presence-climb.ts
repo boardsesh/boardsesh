@@ -1,14 +1,15 @@
 import type { Climb } from '@boardsesh/queue';
+import { resolveBoardPresenceAngle } from '@boardsesh/board-presence-react/presentation';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 
 /** Minimal Climb shape the queue accessory and board-art thumbnail need. */
-export function boardPresenceClimbToClimb(presenceClimb: BoardPresenceClimb): Climb {
+export function boardPresenceClimbToClimb(presenceClimb: BoardPresenceClimb, selectedAngle = 0): Climb {
   return {
     uuid: presenceClimb.climbUuid,
     name: presenceClimb.name ?? '',
     frames: presenceClimb.frames ?? '',
     setter_username: presenceClimb.setter ?? '',
-    angle: presenceClimb.angle ?? 0,
+    angle: resolveBoardPresenceAngle(presenceClimb, selectedAngle),
     ascensionist_count: 0,
     difficulty: presenceClimb.grade ?? '',
     quality_average: '',

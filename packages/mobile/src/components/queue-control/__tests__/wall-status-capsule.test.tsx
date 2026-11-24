@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+vi.mock('../../../hooks/use-aurora-presence-grades', () => ({ useAuroraPresenceGrades: () => new Map() }));
 vi.mock('../../AccessibleTextInput', async () => {
   const { TextInput } = await import('react-native');
   return { AccessibleTextInput: TextInput };
@@ -21,6 +22,15 @@ const spies = vi.hoisted(() => ({
   panConsumed: false,
   viewerUserId: 'u-me' as string | null,
   isAuthenticated: true,
+  boardId: 42 as number | null,
+  boardConfig: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 } as {
+    boardName: string;
+    layoutId: number;
+    sizeId: number;
+    setIds: string;
+    angle: number;
+  } | null,
+  mirroredClimbUuid: null as string | null,
   // The sends after the grade; null leaves the grade alone, as for an unsent climb.
   sends: null as string | null,
   statsArgs: null as unknown,
@@ -31,7 +41,13 @@ const spies = vi.hoisted(() => ({
 vi.mock('../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => spies.viewerUserId }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: spies.isAuthenticated }) }));
 vi.mock('../../../providers/drawer-host-provider', () => ({
-  useDrawerHost: () => ({ boardConfig: { boardName: 'kilter', layoutId: 1 } }),
+  useDrawerHost: () => ({
+    boardConfig: spies.boardConfig,
+    boardPanelProps: { getClimbMirror: (uuid: string) => uuid === spies.mirroredClimbUuid },
+  }),
+}));
+vi.mock('../../../providers/board-presence-provider', () => ({
+  useBoardPresenceControls: () => ({ boardId: spies.boardId }),
 }));
 vi.mock('../use-climb-byline', () => ({
   useClimbStatsDetail: (climb: unknown, boardConfig: unknown, options: { statsEnabled?: boolean } = {}) => {
@@ -605,7 +621,7 @@ describe('WallStatusCapsule', () => {
     // The live stats read the converted climb on the active board.
     expect(spies.statsArgs).toEqual({
       climb: { uuid: 'wall-1', _converted: true },
-      boardConfig: { boardName: 'kilter', layoutId: 1 },
+      boardConfig: spies.boardConfig,
       statsEnabled: true,
     });
   });
@@ -1073,4 +1089,31 @@ describe('WallStatusCapsule', () => {
       expect(spies.openWallPreview).not.toHaveBeenCalled();
     });
   });
+});
+
+it('disables settled Aurora previews until the same physical wall config is available', () => {
+  spies.variant = 'liquidGlass';
+  spies.boardId = 42;
+  spies.openWallPreview.mockClear();
+  const imported = makeClimb({ source: 'aurora', angle: null, grade: null });
+  const originalConfig = spies.boardConfig;
+  spies.boardConfig = null;
+  const { container, rerender } = render(<WallStatusCapsule boardId={42} boardName="tension" climb={imported} />);
+  expect(container.querySelector('button')).toBeNull();
+  spies.boardConfig = { boardName: 'tension', layoutId: 10, sizeId: 6, setIds: '12,13', angle: 0 };
+  spies.boardId = 43;
+  rerender(<WallStatusCapsule boardId={42} boardName="tension" climb={imported} occurrenceKey="mismatched-wall" />);
+  expect(container.querySelector('button')).toBeNull();
+  spies.boardId = 42;
+  spies.mirroredClimbUuid = 'different-climb';
+  rerender(<WallStatusCapsule boardId={42} boardName="tension" climb={imported} occurrenceKey="matched-wall" />);
+  const button = container.querySelector('button');
+  expect(button).not.toBeNull();
+  fireEvent.click(button!);
+  expect(spies.openWallPreview).toHaveBeenLastCalledWith(expect.objectContaining({ mirrored: false }));
+  spies.mirroredClimbUuid = imported.climbUuid;
+  fireEvent.click(button!);
+  expect(spies.openWallPreview).toHaveBeenLastCalledWith(expect.objectContaining({ mirrored: true }));
+  spies.boardConfig = originalConfig;
+  spies.mirroredClimbUuid = null;
 });

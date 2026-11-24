@@ -46,6 +46,7 @@ function WallKioskScreenComponent({ boardConfig }: { boardConfig: BoardConfig })
         renderData ? (
           <WallHeroStage
             climb={preview.displayedClimb}
+            isPreviewing={preview.isPreviewing}
             boardConfig={boardConfig}
             boardWidth={renderData.boardWidth}
             boardHeight={renderData.boardHeight}
@@ -55,7 +56,13 @@ function WallKioskScreenComponent({ boardConfig }: { boardConfig: BoardConfig })
         ) : null
       }
       renderChrome={(layout) => (
-        <WallChromeRegion {...layout} mode={mode} preview={preview} boardName={boardConfig.boardName} />
+        <WallChromeRegion
+          {...layout}
+          mode={mode}
+          preview={preview}
+          boardName={boardConfig.boardName}
+          boardConfig={boardConfig}
+        />
       )}
     />
   );

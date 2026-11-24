@@ -257,6 +257,7 @@ function ClimbTopChromeComponent({
     }
     return (
       <WallStatusCapsule
+        boardId={headerCapsule.wall.boardId}
         climb={headerCapsule.wall.climb}
         boardName={boardName}
         presentation={headerCapsule.presentation}

@@ -644,6 +644,7 @@
         "headerSwitcherHintClose": "隐藏其他训练板"
       },
       "kilterHistorySource": "通过 Kilter 显示",
+      "auroraHistorySource": "通过 {{board}} 显示",
       "retryHistory": "重新尝试加载历史",
       "wallDisplay": {
         "open": "岩壁展示",

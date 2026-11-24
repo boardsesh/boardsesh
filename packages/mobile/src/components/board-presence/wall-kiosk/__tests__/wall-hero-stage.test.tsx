@@ -8,6 +8,11 @@ type ViewMockProps = { children?: ReactNode };
 // PixelRatio.get() is the display density the overlay is rasterized against; pin
 // it so the render-width assertions are about the component, not the host.
 const pixelRatio = vi.hoisted(() => ({ value: 2 }));
+const queueState = vi.hoisted(() => ({
+  queue: [] as { uuid: string; climb: { uuid: string; mirrored?: boolean } }[],
+  currentClimbQueueItem: null,
+}));
+vi.mock('../../../../providers/queue-provider', () => ({ useQueueData: () => queueState }));
 
 vi.mock('react-native', () => ({
   View: ({ children }: ViewMockProps) => createElement('div', null, children),
@@ -42,11 +47,13 @@ const boardConfig = {
 function renderStage(
   artWidth: number,
   climb: Parameters<typeof WallHeroStage>[0]['climb'] = null,
+  isPreviewing = false,
 ): Record<string, unknown> {
   boardImageProps.calls.length = 0;
   render(
     createElement(WallHeroStage, {
       climb,
+      isPreviewing,
       boardConfig,
       boardWidth: 1080,
       boardHeight: 1170,
@@ -63,6 +70,7 @@ describe('WallHeroStage board-art sizing', () => {
   afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     pixelRatio.value = 2;
+    queueState.queue = [];
   });
 
   it.each(['0', '1'])('renders the supplied climb with capture flag %s', (captureFlag) => {
@@ -101,5 +109,36 @@ describe('WallHeroStage board-art sizing', () => {
     // "native width" — the pre-existing behaviour — so an unmeasured frame renders
     // the board instead of nothing.
     expect(renderStage(0).renderWidth).toBeUndefined();
+  });
+
+  it('previews the target climb orientation that Light this will write', () => {
+    const climb = {
+      climbUuid: 'target',
+      source: 'aurora' as const,
+      angle: null,
+      frames: 'p1r12',
+      sentAt: '2026-11-24T12:00:00Z',
+      seq: 1,
+    };
+    queueState.queue = [{ uuid: 'one', climb: { uuid: 'target', mirrored: true } }];
+    expect(renderStage(600, climb).mirrored).toBe(false);
+    expect(renderStage(600, climb, true).mirrored).toBe(true);
+    expect(renderStage(600, { ...climb, mirrored: false }, true).mirrored).toBe(false);
+    queueState.queue = [...queueState.queue, { uuid: 'two', climb: { uuid: 'target', mirrored: false } }];
+    expect(renderStage(600, climb, true).mirrored).toBe(false);
+    expect(climb).not.toHaveProperty('mirrored');
+  });
+
+  it('renders a native mirrored confirmation using its recorded orientation', () => {
+    const climb = {
+      climbUuid: 'target',
+      source: 'boardsesh' as const,
+      angle: 40,
+      mirrored: true,
+      frames: 'p1r12',
+      sentAt: '2026-11-24T12:00:00Z',
+      seq: 1,
+    };
+    expect(renderStage(600, climb).mirrored).toBe(true);
   });
 });

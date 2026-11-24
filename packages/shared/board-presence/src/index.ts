@@ -3,7 +3,14 @@
 // subscription) lives in a separate `@boardsesh/board-presence-react` package.
 
 export { boardPresenceReducer, initialBoardPresenceState, HISTORY_CAP, selectClearedClimbUuid } from './reducer';
-export { compareBoardHistoryEntries, mergeBoardHistory, boardHistoryEntryKey } from './history';
+export {
+  compareBoardHistoryEntries,
+  mergeBoardHistory,
+  boardHistoryEntryKey,
+  isImportedBoardClimb,
+  isNativeBoardClimb,
+  isSupportedBoardClimb,
+} from './history';
 
 export { mapBoardPresenceEnvelopeToAction } from './map-envelope';
 
@@ -12,3 +19,5 @@ export type { BoardPresenceState, BoardPresenceAction } from './types';
 export { rankSessionClimbers } from './session-ranking';
 
 export type { RankedSessionClimber, SessionRankingOptions } from './session-ranking';
+
+export { presentAuroraClimb, resolveBoardPresenceAngle, withAuroraActionOrientation } from './presentation';

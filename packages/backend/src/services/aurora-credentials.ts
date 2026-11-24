@@ -505,6 +505,8 @@ export async function saveAuroraCredential(input: {
     });
   });
 
+  await notifyAuroraCredentialChange();
+
   return {
     boardType: input.boardType,
     auroraUsername: input.username,
@@ -742,6 +744,7 @@ export async function deleteAuroraCredential(
   // failed revocation is reported, not rolled back.
   const localRevocationSucceeded = await revokeKilterRefreshToken(refreshTokenToRevoke);
   if (boardType === KILTER_BOARD_TYPE) await notifyKilterCredentialChange();
+  else await notifyAuroraCredentialChange();
 
   if (!localRevocationSucceeded) {
     return { success: false, localCleared: true, reason: 'revocation_failed' };
@@ -757,5 +760,15 @@ async function notifyKilterCredentialChange(): Promise<void> {
     await kilterLiveSync.credentialsChanged();
   } catch {
     logger.warn('[KilterLive] Credential change notification failed');
+  }
+}
+
+async function notifyAuroraCredentialChange(): Promise<void> {
+  if (process.env.AURORA_LIVE_SYNC_ENABLED !== '1') return;
+  try {
+    const { auroraLiveSync } = await import('./aurora-live-sync');
+    await auroraLiveSync.credentialsChanged();
+  } catch {
+    logger.warn('[AuroraLive] Credential change notification failed');
   }
 }

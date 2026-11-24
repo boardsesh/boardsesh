@@ -16,11 +16,14 @@ import type { BoardImageDetails } from '@/app/lib/types';
 import { buildBoardRenderUrl, toFlatFrames } from '../../board-renderer/util';
 import { useKioskBoardPresence } from '../presence/use-kiosk-board-presence';
 import BoardIdentity from './board-identity';
+import { useAuroraClimbGrades } from './use-aurora-climb-grades';
 import BoardInstallQr from './board-install-qr';
 import styles from './board-slot.module.css';
 
 export type BoardSlotProps = {
   boardId: number;
+  /** Preserve the same unlisted-wall link proof as the presence subscription. */
+  boardUuid?: string | null;
   /** The kiosk board's display name ("Main Kilter", …). */
   boardName: string;
   /** The board's configured angle — the fallback when a climb carries none. */
@@ -46,6 +49,7 @@ export type BoardSlotProps = {
 
 export default function BoardSlot({
   boardId,
+  boardUuid,
   boardName,
   angle,
   boardDetails,
@@ -65,6 +69,7 @@ export default function BoardSlot({
   const hasLiveData = snapshot !== null && (snapshot.currentClimb !== null || snapshot.history.length > 0);
   const displayClimb = hasLiveData ? snapshot.currentClimb : initialClimb;
   const lastLitClimb = hasLiveData ? (snapshot.history[0] ?? null) : initialClimb;
+  const presented = useAuroraClimbGrades({ boardId, boardUuid, angle, climb: displayClimb, lastLitClimb });
 
   // Collapse a (possibly multi-frame) frames string to its cumulative final lit
   // state — same as what the raster placeholder renders. An empty string is a
@@ -87,7 +92,12 @@ export default function BoardSlot({
         {showInstallQr && slug ? <BoardInstallQr slug={slug} /> : null}
         <img className={styles.raster} src={imageUrl} alt="" />
       </div>
-      <BoardIdentity boardName={boardName} boardAngle={angle} climb={displayClimb} lastLitClimb={lastLitClimb} />
+      <BoardIdentity
+        boardName={boardName}
+        boardAngle={angle}
+        climb={presented.climb}
+        lastLitClimb={presented.lastLitClimb}
+      />
     </section>
   );
 }

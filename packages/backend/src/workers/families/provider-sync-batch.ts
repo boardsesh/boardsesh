@@ -29,6 +29,7 @@ import {
   deferCredentialSyncAttempt,
   ensureProviderSyncControl,
   isSameClaimedCredential,
+  isSyncFenceError,
   markProviderSyncRequesterWaiting,
   readCredentialForShare,
   readProviderSyncControl,
@@ -528,8 +529,8 @@ export async function runRoutineCredentialSync(
     try {
       outcome = await adapter.sync(credential, fenced, AbortSignal.any([context.signal, deadline]));
     } catch (error) {
-      // Only this credential's deadline, not a shutdown or a lost attempt.
-      if (!deadline.aborted || context.signal.aborted) throw error;
+      // A stale credential must still be skipped if its deadline elapsed while waiting for a lock.
+      if (isSyncFenceError(error) || !deadline.aborted || context.signal.aborted) throw error;
       await fenced((transaction) => adapter.recordTransientFailure(credential, transaction, 'CYCLE_DEADLINE'));
       return { result: 'failed', reason: 'CYCLE_DEADLINE' };
     }

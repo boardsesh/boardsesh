@@ -7,7 +7,10 @@ const mocks = vi.hoisted(() => ({
   fetchAuroraPins: vi.fn(),
   upsertPublicBoardLocations: vi.fn(),
   markGymWallsCrawled: vi.fn(),
+  syncAuroraWallSources: vi.fn(),
 }));
+
+vi.mock('./aurora-wall-sources', () => ({ syncAuroraWallSources: mocks.syncAuroraWallSources }));
 
 vi.mock('../api/pins-api', () => ({ fetchAuroraPins: mocks.fetchAuroraPins }));
 vi.mock('@boardsesh/location-sync', async (importOriginal) => ({
@@ -59,6 +62,7 @@ beforeEach(() => {
     skipped: [],
   });
   mocks.markGymWallsCrawled.mockReset().mockResolvedValue(undefined);
+  mocks.syncAuroraWallSources.mockReset().mockResolvedValue(undefined);
 });
 
 /**
@@ -141,6 +145,36 @@ describe('crawlGymWallsForSourceKeys', () => {
 
     expect(read).toBe(1);
     expect(mocks.upsertPublicBoardLocations).not.toHaveBeenCalled();
+    expect(mocks.syncAuroraWallSources).toHaveBeenCalledWith({}, 'tension', [], [], [999999]);
+  });
+
+  it('revokes a vanished gym alongside profiles successfully fetched in the same slice', async () => {
+    await crawlGymWallsForSourceKeys({
+      db: {} as never,
+      board: 'tension',
+      sourceKeys: ['tension:999999', 'tension:269111'],
+      fetchGymUser: () => Promise.resolve(gymUser([wall()])),
+    });
+    expect(mocks.syncAuroraWallSources).toHaveBeenCalledWith(
+      {},
+      'tension',
+      expect.arrayContaining([expect.objectContaining({ pin: pin(269111) })]),
+      expect.any(Array),
+      [999999],
+    );
+  });
+
+  it('retains prior provenance if the public pins request fails', async () => {
+    mocks.fetchAuroraPins.mockRejectedValueOnce(new Error('network unavailable'));
+    await expect(
+      crawlGymWallsForSourceKeys({
+        db: {} as never,
+        board: 'tension',
+        sourceKeys: ['tension:999999'],
+        fetchGymUser: () => Promise.resolve(undefined),
+      }),
+    ).rejects.toThrow('network unavailable');
+    expect(mocks.syncAuroraWallSources).not.toHaveBeenCalled();
   });
 
   it('writes nothing when every gym in the slice failed', async () => {

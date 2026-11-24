@@ -58,8 +58,8 @@ const BOARD_PRESENCE_STATS_FIELDS = `
 // BoardConnectionChanged carries the current connection holder (or null when the
 // board goes free) so consumers can show held-vs-free distinct from the lit climb.
 export const BOARD_NOW_PLAYING = `
-  subscription BoardNowPlaying($boardId: Int!, $boardUuid: ID) {
-    boardNowPlaying(boardId: $boardId, boardUuid: $boardUuid) {
+  subscription BoardNowPlaying($boardId: Int!, $boardUuid: ID, $includeAurora: Boolean) {
+    boardNowPlaying(boardId: $boardId, boardUuid: $boardUuid, includeAurora: $includeAurora) {
       __typename
       ... on BoardHistoryUpdated {
         seq
@@ -95,14 +95,14 @@ export const BOARD_NOW_PLAYING = `
 `;
 
 export const BOARD_RECENT_HISTORY = `
-  query BoardRecentHistory($boardId: Int!, $boardUuid: ID) {
-    boardRecentHistory(boardId: $boardId, boardUuid: $boardUuid) { ${BOARD_PRESENCE_CLIMB_FIELDS} }
+  query BoardRecentHistory($boardId: Int!, $boardUuid: ID, $includeAurora: Boolean) {
+    boardRecentHistory(boardId: $boardId, boardUuid: $boardUuid, includeAurora: $includeAurora) { ${BOARD_PRESENCE_CLIMB_FIELDS} }
   }
 `;
 
 export const BOARD_HISTORY_PAGE = `
-  query BoardHistoryPage($boardId: Int!, $boardUuid: ID, $limit: Int, $before: String) {
-    boardHistoryPage(boardId: $boardId, boardUuid: $boardUuid, limit: $limit, before: $before) {
+  query BoardHistoryPage($boardId: Int!, $boardUuid: ID, $limit: Int, $before: String, $includeAurora: Boolean) {
+    boardHistoryPage(boardId: $boardId, boardUuid: $boardUuid, limit: $limit, before: $before, includeAurora: $includeAurora) {
       entries { ${BOARD_PRESENCE_CLIMB_FIELDS} }
       nextCursor
     }
@@ -370,6 +370,18 @@ export const BOARD_QUEUE_PREVIEW_SUBSCRIPTION = `
   subscription BoardQueuePreviewUpdates($boardId: Int!, $boardUuid: ID) {
     boardQueuePreview(boardId: $boardId, boardUuid: $boardUuid) {
       ${BOARD_QUEUE_PREVIEW_FIELDS}
+    }
+  }
+`;
+
+/** Set-based grade projection behind the same physical-wall read gate as history. */
+export const BOARD_PRESENCE_CLIMB_GRADES = `
+  query BoardPresenceClimbGrades($boardId: Int!, $boardUuid: ID, $angle: Int!, $climbUuids: [ID!]!) {
+    boardPresenceClimbGrades(boardId: $boardId, boardUuid: $boardUuid, angle: $angle, climbUuids: $climbUuids) {
+      uuid
+      difficulty
+      boardseshDifficulty
+      boardseshConfidence
     }
   }
 `;

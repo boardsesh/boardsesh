@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { formatBoardDisplayName } from '@boardsesh/board-config';
 import { View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
@@ -9,6 +10,7 @@ import type { HeroContentProps, HistoryRowContentProps } from './NowOnTheWallPan
 import { styles } from './wall-panel-styles';
 export function WallHeroContentView({
   climb,
+  boardConfig,
   thumbnail,
   labelColor,
   secondaryColor,
@@ -21,6 +23,10 @@ export function WallHeroContentView({
   const { t } = useTranslation('session');
   const litBy = climb.sentByDisplayName?.trim() || null;
   const setter = climb.setter?.trim();
+  const auroraSource =
+    climb.source === 'aurora' && boardConfig
+      ? t('mobile.boardPresence.auroraHistorySource', { board: formatBoardDisplayName(boardConfig.boardName) })
+      : null;
 
   return (
     <>
@@ -49,6 +55,11 @@ export function WallHeroContentView({
             />
           ) : null}
         </View>
+        {auroraSource ? (
+          <Text variant="caption1" color={secondaryColor} numberOfLines={1}>
+            {auroraSource}
+          </Text>
+        ) : null}
         {setter ? (
           <Text variant="caption1" color={secondaryColor} numberOfLines={1}>
             {t('mobile.boardPresence.setByLine', { setter })}
@@ -76,6 +87,7 @@ export function WallHeroContentView({
 
 export function WallHistoryContentView({
   climb,
+  boardConfig,
   thumbnail,
   labelColor,
   secondaryColor,
@@ -87,18 +99,19 @@ export function WallHistoryContentView({
 }: HistoryRowContentProps & { thumbnail: ReactNode; sentAgo: string }) {
   const { t } = useTranslation('session');
   const driver = wallDriverForClimb(climb, t('mobile.boardPresence.unnamedClimber'));
-  const isKilterImport = climb.source === 'kilter';
+  const sourceLabel =
+    climb.source === 'kilter'
+      ? t('mobile.boardPresence.kilterHistorySource')
+      : climb.source === 'aurora' && boardConfig
+        ? t('mobile.boardPresence.auroraHistorySource', { board: formatBoardDisplayName(boardConfig.boardName) })
+        : null;
   // Kilter imports only arrive while someone has the app open, so the history
   // has gaps; the time on each row is what makes them readable (#6012). It
   // rides on the first caption line (the Kilter source line, else the sender
   // row) and gets a line of its own only when the row has neither. Computed
   // at render: the rows are memoized, so it can lag while the sheet stays open.
-  const sourceLine = isKilterImport
-    ? [t('mobile.boardPresence.kilterHistorySource'), sentAgo].filter(Boolean).join(' · ')
-    : driver
-      ? ''
-      : sentAgo;
-  const senderTime = !isKilterImport && driver ? sentAgo : '';
+  const sourceLine = sourceLabel ? [sourceLabel, sentAgo].filter(Boolean).join(' · ') : driver ? '' : sentAgo;
+  const senderTime = !sourceLabel && driver ? sentAgo : '';
 
   return (
     <>

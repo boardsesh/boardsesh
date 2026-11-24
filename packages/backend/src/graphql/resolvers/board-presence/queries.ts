@@ -1,4 +1,6 @@
+import { isNativeBoardClimb } from '@boardsesh/board-presence';
 import { getGradeColor } from '@boardsesh/board-constants';
+import { isAuroraBoardName } from '@boardsesh/aurora-sync/api';
 import { withRecentSenderBoardContext } from '../shared/board-session-privacy';
 import { tickPrivacyCondition } from '../shared/activity-privacy';
 import { redactBoardClimbs, redactBoardStats, redactBoardHolder } from '../../../services/board-session-privacy';
@@ -18,7 +20,8 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { pubsub } from '../../../pubsub/index';
 import { readBoardHistoryPage, readMergedRecentHistory } from '../../../services/board-history';
 import { applyRateLimit, validateInput } from '../shared/helpers';
-import { BoardClimbRecentSendersArgsSchema } from '../../../validation/schemas';
+import { BoardClimbRecentSendersArgsSchema, BoardPresenceClimbGradesArgsSchema } from '../../../validation/schemas';
+import { readBoardPresenceClimbGrades } from '../../../services/board-presence-climb-grades';
 import { RECENT_CLIMB_SENDERS_FETCH_LIMIT, toRecentSenders } from './recent-senders';
 import {
   assertAnonReadableBoard,
@@ -30,9 +33,35 @@ import { assertSprayBoardIsReadable, readViewerIdForBoard } from '../climbs/spra
 import { computeBoardPresenceStats, getCachedBoardPresenceStats, setCachedBoardPresenceStats } from './stats';
 
 export const boardPresenceQueries = {
+  boardPresenceClimbGrades: async (
+    _: unknown,
+    {
+      boardId,
+      boardUuid,
+      angle,
+      climbUuids,
+    }: { boardId: number; boardUuid?: string | null; angle: number; climbUuids: string[] },
+    ctx: ConnectionContext,
+  ) => {
+    await applyRateLimit(ctx, 60, 'boardPresenceClimbGrades');
+    const board = await requireActiveBoardWithVisibilityById(boardId);
+    const readerId = await readViewerIdForBoard(ctx, board);
+    await assertAnonReadableBoard(board, readerId, boardUuid);
+    await assertSprayBoardIsReadable(board, readerId, boardUuid, db);
+    const validated = validateInput(
+      BoardPresenceClimbGradesArgsSchema,
+      { boardType: board.boardType, angle, climbUuids },
+      'boardPresenceClimbGrades',
+    );
+    return readBoardPresenceClimbGrades(board, validated.angle, validated.climbUuids);
+  },
   boardRecentHistory: async (
     _: unknown,
-    { boardId, boardUuid }: { boardId: number; boardUuid?: string | null },
+    {
+      boardId,
+      boardUuid,
+      includeAurora,
+    }: { boardId: number; boardUuid?: string | null; includeAurora?: boolean | null },
     ctx: ConnectionContext,
   ) => {
     await applyRateLimit(ctx, 60, 'boardRecentHistory');
@@ -43,7 +72,16 @@ export const boardPresenceQueries = {
     const readerId = await readViewerIdForBoard(ctx, board);
     await assertAnonReadableBoard(board, readerId, boardUuid);
     await assertSprayBoardIsReadable(board, readerId, boardUuid, db);
-    return redactBoardClimbs(await readMergedRecentHistory(boardId), ctx.userId, boardId, boardUuid, readerId);
+    return redactBoardClimbs(
+      await readMergedRecentHistory(
+        boardId,
+        includeAurora === true && board.boardType !== 'kilter' && isAuroraBoardName(board.boardType),
+      ),
+      ctx.userId,
+      boardId,
+      boardUuid,
+      readerId,
+    );
   },
   boardHistoryPage: async (
     _: unknown,
@@ -52,14 +90,21 @@ export const boardPresenceQueries = {
       boardUuid,
       limit,
       before,
-    }: { boardId: number; boardUuid?: string | null; limit?: number | null; before?: string | null },
+      includeAurora,
+    }: {
+      boardId: number;
+      boardUuid?: string | null;
+      limit?: number | null;
+      before?: string | null;
+      includeAurora?: boolean | null;
+    },
     ctx: ConnectionContext,
   ) => {
     await applyRateLimit(ctx, 60, 'boardHistoryPage');
     const board = await requireActiveBoardWithVisibilityById(boardId);
     await assertAnonReadableBoard(board, ctx.userId, boardUuid);
     await assertSprayBoardIsReadable(board, ctx.userId, boardUuid, db);
-    const page = await readBoardHistoryPage(boardId, limit ?? 50, before);
+    const page = await readBoardHistoryPage(boardId, limit ?? 50, before, includeAurora === true);
     return { ...page, entries: await redactBoardClimbs(page.entries, ctx.userId, boardId, boardUuid) };
   },
   /**
@@ -91,7 +136,7 @@ export const boardPresenceQueries = {
     // somebody's home and needs the wall's own rule. See assertSprayBoardIsReadable.
     await assertSprayBoardIsReadable(visibilityBoard, readerId, boardUuid, db);
     return redactBoardClimbs(
-      await pubsub.getRecentBoardClimbs(String(boardId)),
+      (await pubsub.getRecentBoardClimbs(String(boardId))).filter(isNativeBoardClimb),
       ctx.userId,
       boardId,
       boardUuid,

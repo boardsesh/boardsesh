@@ -7,6 +7,7 @@ import {
   fetchKilterLiveHistory,
   getStoredKilterAccessToken,
   KilterLiveError,
+  KilterApiError,
   type KilterLiveDisplay,
 } from '@boardsesh/kilter-sync/api';
 import { db } from '../db/client';
@@ -192,6 +193,7 @@ describe('Kilter history integration', () => {
       expect(await readMergedRecentHistory(boardId)).toEqual([entry]);
       expect(warn).toHaveBeenCalledWith('[BoardHistory] Invalid imported history cache; reading durable history', {
         boardId,
+        source: 'kilter',
       });
     },
   );
@@ -239,6 +241,7 @@ describe('Kilter history integration', () => {
     expect(await readMergedRecentHistory(boardId)).toEqual([entry]);
     expect(warn).toHaveBeenCalledWith('[BoardHistory] Invalid imported history cache; reading durable history', {
       boardId,
+      source: 'kilter',
     });
   });
 
@@ -384,6 +387,25 @@ describe('Kilter history integration', () => {
     expect((await readBoardHistoryPage(boardId)).entries).toHaveLength(2);
   });
 
+  it('filters Aurora before legacy pagination and preserves opted-in unknown metadata', async () => {
+    const confirmedAt = new Date().toISOString();
+    await db.insert(schema.boardClimbEvents).values([
+      { boardId, boardType: 'kilter', climbUuid, angle: 40, seq: 1, confirmedAt },
+      { boardId, boardType: 'kilter', climbUuid, angle: null, seq: 2, confirmedAt, source: 'aurora' },
+      { boardId, boardType: 'kilter', climbUuid, angle: 40, seq: 3, confirmedAt, source: 'kilter' },
+    ]);
+    const legacy = await readBoardHistoryPage(boardId, 1);
+    expect(legacy.entries.map((climb) => climb.seq)).toEqual([3]);
+    const nextLegacy = await readBoardHistoryPage(boardId, 1, legacy.nextCursor);
+    expect(nextLegacy.entries.map((climb) => climb.seq)).toEqual([1]);
+    expect(nextLegacy.nextCursor).toBeNull();
+    const capable = await readBoardHistoryPage(boardId, 3, undefined, true);
+    expect(capable.entries.map((climb) => climb.source)).toEqual(['kilter', 'aurora', 'boardsesh']);
+    expect(capable.entries[1]).toMatchObject({ angle: null, grade: null, sentByUserId: null });
+    expect((await readMergedRecentHistory(boardId)).map((climb) => climb.source)).toEqual(['kilter']);
+    expect((await readMergedRecentHistory(boardId, true)).map((climb) => climb.source)).toEqual(['kilter', 'aurora']);
+  });
+
   it('pages by display time and sequence, retaining microseconds despite late arrival', async () => {
     for (const [seq, confirmedAt] of [
       [1, '2026-01-01 12:00:00.000002'],
@@ -463,6 +485,41 @@ describe('presence subscription lifetime', () => {
     expect(stopWatching).toHaveBeenCalledTimes(1);
   });
 
+  it.each([false, true])('filters Aurora subscription payloads unless opted in: %s', async (includeAurora) => {
+    let deliver: ((event: import('@boardsesh/shared-schema').BoardPresenceEvent) => void) | undefined;
+    vi.spyOn(pubsub, 'subscribeBoardPresence').mockImplementation(async (_key, callback) => {
+      deliver = callback;
+      return () => {};
+    });
+    vi.spyOn(kilterLiveSync, 'watch').mockReturnValue(vi.fn());
+    const iterator = boardPresenceSubscriptions.boardNowPlaying.subscribe(
+      undefined,
+      { boardId, includeAurora },
+      { connectionId: 'capability-socket', userId: linkedUser, isAuthenticated: true },
+    );
+    const pending = iterator.next();
+    await vi.waitFor(() => expect(deliver).toBeDefined());
+    const climbs: import('@boardsesh/shared-schema').BoardPresenceClimb[] = [
+      { climbUuid, source: 'aurora', seq: 20, angle: null, sentAt: new Date().toISOString() },
+      { climbUuid, source: 'kilter', seq: 19, angle: 40, sentAt: new Date().toISOString() },
+      {
+        climbUuid,
+        source: 'future-provider',
+        seq: 999,
+        sentAt: new Date().toISOString(),
+      } as unknown as import('@boardsesh/shared-schema').BoardPresenceClimb,
+    ];
+    deliver!({ __typename: 'BoardHistoryUpdated', climbs, seq: 21 });
+    const message = await pending;
+    expect(message.done).toBe(false);
+    const event: import('@boardsesh/shared-schema').BoardPresenceEvent | undefined = message.value?.boardNowPlaying;
+    expect(event?.__typename).toBe('BoardHistoryUpdated');
+    if (event?.__typename === 'BoardHistoryUpdated') {
+      expect(event.climbs.map((climb) => climb.source)).toEqual(includeAurora ? ['aurora', 'kilter'] : ['kilter']);
+    }
+    await iterator.return();
+  });
+
   it('never starts a Kilter watcher when unsubscribe precedes Redis setup completion', async () => {
     const unsubscribe = vi.fn();
     let finishSetup!: (cleanup: () => void) => void;
@@ -494,6 +551,82 @@ describe('presence subscription lifetime', () => {
 });
 
 describe('subscription-driven polling', () => {
+  it('benches a revoked Kilter grant across walls and uses a valid alternate viewer', async () => {
+    const alternateUser = 'zz-valid-kilter-viewer';
+    await db.insert(schema.users).values({ id: alternateUser, email: `${alternateUser}@test.invalid` });
+    await db.insert(schema.auroraCredentials).values({
+      userId: alternateUser,
+      boardType: 'kilter',
+      encryptedRefreshToken: 'alternate-ciphertext',
+    });
+    await db.insert(schema.userBoardMappings).values({
+      userId: alternateUser,
+      boardType: 'kilter',
+      boardUserIdText: 'alternate-upstream-user',
+    });
+    const [firstBoard] = await db.select().from(schema.userBoards).where(eq(schema.userBoards.id, boardId));
+    const secondUuid = randomUUID();
+    const [secondBoard] = await db
+      .insert(schema.userBoards)
+      .values({
+        uuid: secondUuid,
+        slug: secondUuid,
+        name: 'Second watched wall',
+        ownerId: linkedUser,
+        boardType: 'kilter',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '1,2',
+        gymId: firstBoard.gymId,
+      })
+      .returning();
+    await db.insert(schema.kilterWallSources).values({
+      sourceKey: `${sourceKey}:second`,
+      sourceBoardUuid: secondUuid,
+      gymUuid: boardUuid,
+      productLayoutUuid: 'layout',
+      wallUuid: 'second-wall',
+      layoutId: 1,
+      sizeId: 10,
+      setIds: '1,2',
+    });
+    vi.mocked(getStoredKilterAccessToken).mockImplementation(async (_database, userId) => {
+      if (userId === linkedUser) throw new KilterApiError('invalid_grant', 'Revoked grant', 400);
+      return 'alternate-token';
+    });
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const sync = poller();
+    try {
+      sync.watch(boardId, linkedUser, 'revoked-first-wall');
+      await vi.waitFor(() =>
+        expect(warn).toHaveBeenCalledWith(
+          '[KilterLive] Poll failed',
+          expect.objectContaining({ kind: 'invalid_grant' }),
+        ),
+      );
+      sync.watch(secondBoard.id, linkedUser, 'revoked-second-wall');
+      sync.watch(secondBoard.id, alternateUser, 'valid-second-wall');
+      await vi.waitFor(() =>
+        expect(fetchKilterLiveHistory).toHaveBeenCalledWith(
+          'alternate-token',
+          expect.any(Object),
+          expect.any(AbortSignal),
+        ),
+      );
+      expect(
+        vi.mocked(getStoredKilterAccessToken).mock.calls.filter(([, userId]) => userId === linkedUser),
+      ).toHaveLength(1);
+    } finally {
+      await sync.shutdown();
+      vi.mocked(getStoredKilterAccessToken).mockImplementation(async () => 'test-access-token');
+      await publisher.del(
+        `kilter-live:${secondBoard.id}:viewers`,
+        `kilter-live:${secondBoard.id}:owner`,
+        `kilter-live:${secondBoard.id}:next`,
+      );
+    }
+  });
+
   it('releases the board lock without importing when the in-transaction Redis read stalls', async () => {
     vi.mocked(fetchKilterLiveHistory).mockResolvedValue([display()]);
     const transactions = vi.spyOn(db, 'transaction');

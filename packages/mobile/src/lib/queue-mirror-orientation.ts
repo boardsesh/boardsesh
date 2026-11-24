@@ -23,17 +23,25 @@ export function resolveTickMirror(
   return occurrence?.climb.uuid === climb.uuid ? occurrence.climb.mirrored === true : climb.mirrored === true;
 }
 
-/** Legacy presence records lack occurrence IDs. Never guess between repeat entries. */
-export function unambiguousQueueMirror(
-  snapshot: QueueMirrorSnapshot,
-  climbUuid: string | undefined,
-): boolean | undefined {
-  const occurrences = new Map<string, ClimbQueueItem>();
-  for (const item of snapshot.queue) {
-    if (item.climb.uuid === climbUuid) occurrences.set(item.uuid, item);
-  }
-  const current = snapshot.currentClimbQueueItem;
-  if (current !== null && current.climb.uuid === climbUuid) occurrences.set(current.uuid, current);
-  if (occurrences.size !== 1) return undefined;
-  return occurrences.values().next().value?.climb.mirrored === true;
+/** Index the immutable queue once per change; repeated occurrences have no unique orientation. */
+export function createQueueMirrorReader(getSnapshot: () => QueueMirrorSnapshot) {
+  let previousSnapshot: QueueMirrorSnapshot | undefined;
+  const mirrorByClimb = new Map<string, boolean | undefined>();
+  return (climbUuid: string) => {
+    const snapshot = getSnapshot();
+    if (
+      previousSnapshot?.queue !== snapshot.queue ||
+      previousSnapshot.currentClimbQueueItem !== snapshot.currentClimbQueueItem
+    ) {
+      const occurrences = new Map(snapshot.queue.map((item) => [item.uuid, item]));
+      const current = snapshot.currentClimbQueueItem;
+      if (current) occurrences.set(current.uuid, current);
+      mirrorByClimb.clear();
+      for (const { climb } of occurrences.values()) {
+        mirrorByClimb.set(climb.uuid, mirrorByClimb.has(climb.uuid) ? undefined : climb.mirrored === true);
+      }
+      previousSnapshot = snapshot;
+    }
+    return mirrorByClimb.get(climbUuid);
+  };
 }

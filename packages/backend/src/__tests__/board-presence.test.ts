@@ -4754,6 +4754,13 @@ describe('board-presence connection holder', () => {
         // numbered after the clear; the clear must name the climb below its own seq.
         vi.spyOn(pubsub, 'getRecentBoardClimbs').mockResolvedValueOnce([
           { ...history[0], climbUuid: OTHER_TEST_CLIMB_UUID, seq: history[0].seq + 1000 },
+          {
+            ...history[0],
+            climbUuid: OTHER_TEST_CLIMB_UUID,
+            source: 'future-provider',
+          } as unknown as BoardPresenceClimb,
+          { ...history[0], climbUuid: OTHER_TEST_CLIMB_UUID, source: 'aurora', angle: null },
+          { ...history[0], climbUuid: OTHER_TEST_CLIMB_UUID, source: 'kilter' },
           ...history,
         ]);
         const { events, unsubscribe } = await collectPresenceEvents(boardId);

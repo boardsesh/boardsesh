@@ -644,6 +644,7 @@
         "headerSwitcherHintClose": "Oculta los otros plafones"
       },
       "kilterHistorySource": "Iluminado desde Kilter",
+      "auroraHistorySource": "Iluminado desde {{board}}",
       "retryHistory": "Volver a cargar el historial",
       "wallDisplay": {
         "open": "Pantalla de muro",

@@ -77,10 +77,13 @@ import { toQueueClimb } from '../../lib/climb-types';
 import { formatRelativeTime } from '../../lib/format-relative-time';
 
 import { spacing } from '../../theme/tokens';
+import { useAuroraPresenceGrades } from '../../hooks/use-aurora-presence-grades';
+import { resolveBoardPresenceAngle, withAuroraActionOrientation } from '@boardsesh/board-presence-react/presentation';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 
 const ACTION_CLIMB_CACHE_LIMIT = 50;
 const MENU_METADATA_HISTORY_LIMIT = 8;
+const AURORA_VISIBLE_HISTORY_LIMIT = 49;
 const MENU_METADATA_CONCURRENCY = 3;
 const MENU_VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 25, minimumViewTime: 100 };
 type HistoryViewabilityChange = Parameters<
@@ -120,7 +123,7 @@ type BoardSheetActionContext = {
 };
 
 function actionBoardConfigForPresenceClimb(boardConfig: BoardConfig, presenceClimb: BoardPresenceClimb): BoardConfig {
-  const angle = presenceClimb.angle ?? boardConfig.angle;
+  const angle = resolveBoardPresenceAngle(presenceClimb, boardConfig.angle);
   return angle === boardConfig.angle ? boardConfig : { ...boardConfig, angle };
 }
 
@@ -194,6 +197,8 @@ export type NowOnTheWallPanelProps = {
    * and doesn't subscribe to that volatile context.
    */
   boardConfig: BoardConfig | null;
+  /** Local orientation for a climb with one unambiguous queue occurrence. */
+  getClimbMirror?: (climbUuid: string) => boolean | undefined;
   /** Sheet only: when set, the header renders a close chevron that calls this. */
   onClose?: () => void;
   /**
@@ -234,6 +239,7 @@ function NowOnTheWallPanelComponent(
     variant,
     boardLabel,
     boardConfig,
+    getClimbMirror,
     onClose,
     dismissAndWait,
     onSwitchBoard,
@@ -276,9 +282,16 @@ function NowOnTheWallPanelComponent(
   // today, so those fall back to the legacy grade until the backend stamps them.
   const { formatGrade } = useGradeFormat();
   const { resolveGrade } = useDisplayGrade();
+  const climbMirrorReaderRef = useRef(getClimbMirror);
+  climbMirrorReaderRef.current = getClimbMirror;
   const boardConfigRef = useRef(boardConfig);
   boardConfigRef.current = boardConfig;
-  const boardConfigSignature = useMemo(() => boardConfigActionSignature(boardConfig), [boardConfig]);
+  const { boardId: boardPresenceBoardId, boardUuid: boardPresenceBoardUuid } = useBoardPresenceControls();
+  const boardConfigSignature = useMemo(
+    () =>
+      `${boardPresenceBoardId ?? 'none'}:${boardPresenceBoardUuid ?? ''}:${boardConfigActionSignature(boardConfig)}`,
+    [boardConfig, boardPresenceBoardId, boardPresenceBoardUuid],
+  );
   const boardConfigSignatureRef = useRef(boardConfigSignature);
   boardConfigSignatureRef.current = boardConfigSignature;
 
@@ -289,7 +302,6 @@ function NowOnTheWallPanelComponent(
   const holderUserId = holder?.userId ?? null;
   const { history, stats } = useBoardPresenceFeed();
   const { refresh } = useBoardPresenceActions();
-  const { boardId: boardPresenceBoardId, boardUuid: boardPresenceBoardUuid } = useBoardPresenceControls();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const durableRefreshRef = useRef<(() => void) | undefined>(undefined);
@@ -431,7 +443,7 @@ function NowOnTheWallPanelComponent(
       const cachedClimb = getActionClimbCacheEntry(actionClimbCacheRef.current, cacheKey);
       if (cachedClimb) {
         return {
-          climb: cachedClimb,
+          climb: withAuroraActionOrientation(cachedClimb, presenceClimb, climbMirrorReaderRef.current),
           queueItemUuid: presenceClimb.queueItemUuid ?? null,
           boardConfig: actionBoardConfig,
         };
@@ -469,7 +481,7 @@ function NowOnTheWallPanelComponent(
       const loadedClimb = await climbRequest;
       if (!loadedClimb) return null;
       return {
-        climb: loadedClimb,
+        climb: withAuroraActionOrientation(loadedClimb, presenceClimb, climbMirrorReaderRef.current),
         queueItemUuid: presenceClimb.queueItemUuid ?? null,
         boardConfig: actionBoardConfig,
       };
@@ -480,7 +492,7 @@ function NowOnTheWallPanelComponent(
   const handleMenuViewableItemsChanged = useCallback(({ viewableItems }: HistoryViewabilityChange) => {
     const historyKeys = viewableItems
       .filter((entry) => entry.isViewable)
-      .slice(0, MENU_METADATA_HISTORY_LIMIT)
+      .slice(0, AURORA_VISIBLE_HISTORY_LIMIT)
       .map((entry) => boardHistoryEntryKey(entry.item));
     const boardSignature = boardConfigSignatureRef.current;
     setVisibleMenuSelection((previous) =>
@@ -491,7 +503,7 @@ function NowOnTheWallPanelComponent(
         : { boardSignature, historyKeys },
     );
   }, []);
-  const menuMetadataClimbs = useMemo(() => {
+  const presentationClimbs = useMemo(() => {
     const historyByKey = new Map(combinedHistory.map((climb) => [boardHistoryEntryKey(climb), climb]));
     const historyClimbs =
       visibleMenuSelection?.boardSignature === boardConfigSignature
@@ -502,6 +514,15 @@ function NowOnTheWallPanelComponent(
         : combinedHistory.slice(0, MENU_METADATA_HISTORY_LIMIT);
     return currentClimb ? [currentClimb, ...historyClimbs] : historyClimbs;
   }, [boardConfigSignature, combinedHistory, currentClimb, visibleMenuSelection]);
+  const menuMetadataClimbs = useMemo(
+    () => presentationClimbs.slice(0, MENU_METADATA_HISTORY_LIMIT + 1),
+    [presentationClimbs],
+  );
+  const auroraGrades = useAuroraPresenceGrades(presentationClimbs, boardConfig, {
+    boardId: boardPresenceBoardId,
+    boardUuid: boardPresenceBoardUuid,
+  });
+
   useEffect(() => {
     if (!onOpenActions) return;
     let cancelled = false;
@@ -576,15 +597,18 @@ function NowOnTheWallPanelComponent(
   // Read through a ref at the tap, so a history page landing doesn't rebuild
   // every row's handler. Rows with no frames have nothing to draw and stay out.
   const wallTrackClimbs = useMemo(() => {
-    const climbs: QueueClimb[] = [];
+    const climbs: Array<{ climb: QueueClimb; occurrence: BoardPresenceClimb }> = [];
     const seenClimbUuids = new Set<string>();
     for (const presenceClimb of currentClimb ? [currentClimb, ...combinedHistory] : combinedHistory) {
       if (!presenceClimb.frames || seenClimbUuids.has(presenceClimb.climbUuid)) continue;
       seenClimbUuids.add(presenceClimb.climbUuid);
-      climbs.push(boardPresenceClimbToClimb(presenceClimb));
+      climbs.push({
+        climb: boardPresenceClimbToClimb(presenceClimb, boardConfig?.angle),
+        occurrence: presenceClimb,
+      });
     }
     return climbs;
-  }, [currentClimb, combinedHistory]);
+  }, [currentClimb, combinedHistory, boardConfig?.angle]);
   const wallTrackClimbsRef = useRef(wallTrackClimbs);
   wallTrackClimbsRef.current = wallTrackClimbs;
   const currentClimbRef = useRef(currentClimb);
@@ -607,7 +631,9 @@ function NowOnTheWallPanelComponent(
             ? createPlaylistSuggestionSource({
                 playlistUuid: `wall-history:${boardConfigSignatureRef.current}`,
                 activatedClimb: toQueueClimb(action.climb),
-                climbs: wallTrackClimbsRef.current,
+                climbs: wallTrackClimbsRef.current.map(({ climb, occurrence }) =>
+                  withAuroraActionOrientation(climb, occurrence, climbMirrorReaderRef.current),
+                ),
                 boardKey: getQueueBoardKey({
                   board_name: panelBoard.boardName,
                   layout_id: panelBoard.layoutId,
@@ -662,7 +688,11 @@ function NowOnTheWallPanelComponent(
       // so a hold always has a menu. Either way a selection fetches the full
       // climb first and runs only a row its menu offers too (ClimbMenusProvider).
       const target = onOpenActions({
-        climb: loadedClimb ?? boardPresenceClimbToClimb(presenceClimb),
+        climb: withAuroraActionOrientation(
+          loadedClimb ?? boardPresenceClimbToClimb(presenceClimb, actionContext.actionBoardConfig.angle),
+          presenceClimb,
+          climbMirrorReaderRef.current,
+        ),
         boardConfig: actionContext.actionBoardConfig,
         queueItemUuid: presenceClimb.queueItemUuid ?? null,
       });
@@ -728,8 +758,10 @@ function NowOnTheWallPanelComponent(
 
   const renderHistoryItem = useCallback(
     ({ item }: { item: BoardPresenceClimb }) => {
-      const resolvedGrade = resolveGrade({ difficulty: item.grade ?? '' }, boardConfig?.boardName);
-      const formattedGrade = item.grade ? resolvedGrade.label : null;
+      const gradeFields = item.source === 'aurora' ? auroraGrades.get(item.climbUuid) : undefined;
+      const resolvedGrade = resolveGrade(gradeFields ?? { difficulty: item.grade ?? '' }, boardConfig?.boardName);
+      const formattedGrade =
+        gradeFields?.difficulty || gradeFields?.boardseshDifficulty != null || item.grade ? resolvedGrade.label : null;
       const gradeColor = resolvedGrade.color;
 
       if (canUseInteractiveRows && rowBoard) {
@@ -765,6 +797,7 @@ function NowOnTheWallPanelComponent(
     },
     [
       boardConfig,
+      auroraGrades,
       canUseInteractiveRows,
       rowBoard,
       systemColors.label,
@@ -799,7 +832,11 @@ function NowOnTheWallPanelComponent(
     // an empty difficulty yields the default colour + empty label, so these are
     // safe to compute even when there's no current climb / hardest send.
     const wallBoardName = boardConfig?.boardName;
-    const heroGrade = resolveGrade({ difficulty: currentClimb?.grade ?? '' }, wallBoardName);
+    const heroGradeFields = currentClimb?.source === 'aurora' ? auroraGrades.get(currentClimb.climbUuid) : undefined;
+    const heroGrade = resolveGrade(heroGradeFields ?? { difficulty: currentClimb?.grade ?? '' }, wallBoardName);
+    const heroHasGrade = Boolean(
+      heroGradeFields?.difficulty || heroGradeFields?.boardseshDifficulty != null || currentClimb?.grade,
+    );
     const hardestSendGrade = resolveGrade({ difficulty: stats?.hardestSend?.grade ?? '' }, wallBoardName);
     return (
       <View testID={activeBoard ? `board-panel-${activeBoard.uuid}` : undefined}>
@@ -828,7 +865,7 @@ function NowOnTheWallPanelComponent(
               secondaryColor={systemColors.secondaryLabel}
               accentColor={brandColors.warning}
               surfaceColor={systemColors.secondaryBackground}
-              formattedGrade={currentClimb.grade ? heroGrade.label : null}
+              formattedGrade={heroHasGrade ? heroGrade.label : null}
               gradeColor={heroGrade.color}
               isActionLoading={heroActionLoading}
               onPress={onClimbPress ? handleInteractiveClimbPress : undefined}
@@ -845,7 +882,7 @@ function NowOnTheWallPanelComponent(
               secondaryColor={systemColors.secondaryLabel}
               accentColor={brandColors.warning}
               surfaceColor={systemColors.secondaryBackground}
-              formattedGrade={currentClimb?.grade ? heroGrade.label : null}
+              formattedGrade={heroHasGrade ? heroGrade.label : null}
               gradeColor={heroGrade.color}
             />
           )}
@@ -928,6 +965,7 @@ function NowOnTheWallPanelComponent(
   }, [
     currentClimb,
     boardConfig,
+    auroraGrades,
     stats,
     visibleHistory.length,
     systemColors,
@@ -1147,7 +1185,7 @@ const InteractiveHeroRow = memo(function InteractiveHeroRowInner({
   onOpenActions,
   menuClimb,
 }: InteractiveHeroRowProps) {
-  const rowClimb = useMemo(() => boardPresenceClimbToClimb(climb), [climb]);
+  const rowClimb = useMemo(() => boardPresenceClimbToClimb(climb, boardConfig?.angle), [climb, boardConfig?.angle]);
   const climbBoardConfig = useMemo(
     () => (boardConfig ? actionBoardConfigForPresenceClimb(boardConfig, climb) : null),
     [boardConfig, climb],
@@ -1221,7 +1259,10 @@ const NowOnTheWallHero = memo(function NowOnTheWallHeroInner({
   formattedGrade,
   gradeColor,
 }: HeroProps) {
-  const renderClimb = useMemo(() => (climb ? boardPresenceClimbToClimb(climb) : null), [climb]);
+  const renderClimb = useMemo(
+    () => (climb ? boardPresenceClimbToClimb(climb, boardConfig?.angle) : null),
+    [climb, boardConfig?.angle],
+  );
   const climbBoardConfig = useMemo(
     () => (boardConfig && climb ? actionBoardConfigForPresenceClimb(boardConfig, climb) : null),
     [boardConfig, climb],
@@ -1291,7 +1332,7 @@ const InteractiveHistoryRow = memo(function InteractiveHistoryRowInner({
   onOpenActions,
   menuClimb,
 }: InteractiveHistoryRowProps) {
-  const rowClimb = useMemo(() => boardPresenceClimbToClimb(climb), [climb]);
+  const rowClimb = useMemo(() => boardPresenceClimbToClimb(climb, boardConfig?.angle), [climb, boardConfig?.angle]);
   const climbBoardConfig = useMemo(
     () => (boardConfig ? actionBoardConfigForPresenceClimb(boardConfig, climb) : null),
     [boardConfig, climb],
@@ -1358,7 +1399,10 @@ const HistoryRow = memo(function HistoryRowInner({
   formattedGrade,
   gradeColor,
 }: HistoryRowProps) {
-  const thumbnailClimb = useMemo(() => boardPresenceClimbToClimb(climb), [climb]);
+  const thumbnailClimb = useMemo(
+    () => boardPresenceClimbToClimb(climb, boardConfig?.angle),
+    [climb, boardConfig?.angle],
+  );
   const climbBoardConfig = useMemo(
     () => (boardConfig ? actionBoardConfigForPresenceClimb(boardConfig, climb) : null),
     [boardConfig, climb],

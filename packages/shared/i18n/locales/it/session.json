@@ -644,6 +644,7 @@
         "headerSwitcherHintClose": "Nasconde gli altri pannelli"
       },
       "kilterHistorySource": "Mostrato tramite Kilter",
+      "auroraHistorySource": "Mostrato tramite {{board}}",
       "retryHistory": "Riprova a caricare la cronologia",
       "wallDisplay": {
         "open": "Schermo parete",
