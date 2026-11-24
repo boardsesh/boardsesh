@@ -18,6 +18,7 @@ import {
   findSharedSyncDonorCredential,
   getCredentialFleetSnapshot,
   isSyncFenceError,
+  StaleLinkGenerationError,
   readSharedSyncCursor,
   SHARED_SYNC_PROVIDER_HOLD_CAP_MS,
   releaseDaemonLease,
@@ -41,6 +42,7 @@ import {
   type AuroraLocationBoardName,
 } from '../sync/locations-sync';
 import { AuroraClimbingClient } from '../api/aurora-client';
+import { MAX_CREDENTIAL_FAILURES } from '../api/credential-policy';
 import { isAuroraRequestError, isTransientAuroraError, isTransientSharedSyncAuroraError } from '../api/errors';
 import { decrypt, encrypt } from '@boardsesh/crypto';
 import type { LocationSyncSummary } from '@boardsesh/location-sync';
@@ -78,7 +80,6 @@ type RunnerDb = ProviderSyncDb;
 // (climbs, climb_stats); tune via SyncRunnerConfig.sharedSyncCooldownMs.
 const DEFAULT_SHARED_SYNC_COOLDOWN_MS = 60 * 60 * 1000;
 const TRANSIENT_SHARED_SYNC_COOLDOWN_MS = 5 * 60 * 1000;
-const MAX_CREDENTIAL_FAILURES = 2;
 
 /**
  * Resolve the cooldown to apply after a failed shared sync. Only the narrow
@@ -467,7 +468,7 @@ export class SyncRunner {
         // command — without this it would advance neither the attempt clock nor
         // consecutive_failures, so an operator run would leave the backoff /
         // attempt-clock invisible for every credential it touched.
-        await this.recordSyncFailure(cred, errorMsg);
+        if (!isSyncFenceError(error)) await this.recordSyncFailure(cred, errorMsg);
         results.errors.push({
           userId: cred.userId,
           boardType: cred.boardType,
@@ -1355,16 +1356,44 @@ export class SyncRunner {
     cred: CredentialRecord,
     errorMessage: string,
   ): Promise<{ storedErrorMessage: string; status: string; quarantined: boolean }> {
-    const credentialFailureCount = (cred.credentialFailureCount ?? 0) + 1;
-    const quarantined = credentialFailureCount >= MAX_CREDENTIAL_FAILURES;
-    const status = quarantined ? 'expired' : 'error';
-    const storedErrorMessage = quarantined
-      ? `${errorMessage} (expired after ${MAX_CREDENTIAL_FAILURES} failed credential attempts; reconnect to resume sync)`
-      : errorMessage;
+    const runTransaction: SyncBatchRunner =
+      this.callOptions?.transaction ?? this.config.transaction ?? ((write) => this.getClient().db.transaction(write));
+    const { credentialFailureCount, storedErrorMessage, status, quarantined } = await runTransaction(async (tx) => {
+      // A live wall can refresh the token or record its own refusal while this login waits.
+      const [current] = await tx
+        .select()
+        .from(auroraCredentials)
+        .where(and(eq(auroraCredentials.userId, cred.userId), eq(auroraCredentials.boardType, cred.boardType)))
+        .for('update')
+        .limit(1);
+      if (
+        !current ||
+        current.syncStatus === 'expired' ||
+        current.auroraUserId !== cred.auroraUserId ||
+        current.auroraToken !== cred.auroraToken ||
+        current.encryptedUsername !== cred.encryptedUsername ||
+        current.encryptedPassword !== cred.encryptedPassword
+      )
+        throw new StaleLinkGenerationError();
 
-    await this.updateCredentialStatus(cred.userId, cred.boardType, status, storedErrorMessage, undefined, {
-      credentialFailureCount,
-      lastCredentialFailureAt: new Date(),
+      const credentialFailureCount = current.credentialFailureCount + 1;
+      const quarantined = credentialFailureCount >= MAX_CREDENTIAL_FAILURES;
+      const status = quarantined ? 'expired' : 'error';
+      const storedErrorMessage = quarantined
+        ? `${errorMessage} (expired after ${MAX_CREDENTIAL_FAILURES} failed credential attempts; reconnect to resume sync)`
+        : errorMessage;
+      const now = new Date();
+      await tx
+        .update(auroraCredentials)
+        .set({
+          credentialFailureCount,
+          syncStatus: status,
+          syncError: storedErrorMessage,
+          lastCredentialFailureAt: now,
+          updatedAt: now,
+        })
+        .where(eq(auroraCredentials.id, current.id));
+      return { credentialFailureCount, storedErrorMessage, status, quarantined };
     });
 
     if (quarantined) {

@@ -9,7 +9,12 @@ import { encrypt } from '@boardsesh/crypto';
 import { createDb } from '@boardsesh/db/client';
 import { BACKGROUND_JOB_QUEUES } from '@boardsesh/db/background-jobs';
 import { auroraCredentials, backgroundJobRuns, providerSyncControls } from '@boardsesh/db/schema';
-import { acquireCredentialSyncLease, claimNextCredentialForSync, rotateLinkGeneration } from '@boardsesh/db/queries';
+import {
+  acquireCredentialSyncLease,
+  claimNextCredentialForSync,
+  rotateLinkGeneration,
+  StaleLinkGenerationError,
+} from '@boardsesh/db/queries';
 import { enqueueBackgroundJob, executeBackgroundJob, handlerForRole, type BackgroundJobPayload } from '../../jobs';
 import { InvalidJobPayloadError, type BackgroundJobContext } from '../types';
 import { providerRoutineCycleFamily } from '../provider-routine-cycle';
@@ -567,6 +572,38 @@ describe('runRoutineCredentialSync binds the run to the credential as it is now'
 
   beforeEach(() => {
     enqueued.length = 0;
+  });
+
+  it('skips a stale token when the credential deadline expires during the same attempt', async () => {
+    const claimed = await claim('routine-a');
+    const context = routineContext();
+    const deadline = new AbortController();
+    const newToken = encrypt('refreshed-session');
+    adapterOverride.sync = async () => {
+      await database
+        .update(auroraCredentials)
+        .set({ auroraToken: newToken })
+        .where(eq(auroraCredentials.id, claimed!.id));
+      deadline.abort();
+      throw new StaleLinkGenerationError();
+    };
+    const adapter = await loadProviderSyncAdapter(context, 'aurora');
+    const recordFailure = vi.spyOn(adapter, 'recordTransientFailure');
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValueOnce(deadline.signal);
+    try {
+      expect(await runRoutineCredentialSync(context, claimed!, adapter)).toEqual({
+        result: 'skipped',
+        reason: 'STALE_LINK_GENERATION',
+      });
+      expect(recordFailure).not.toHaveBeenCalled();
+      expect((await credentials())['routine-a']).toMatchObject({
+        auroraToken: newToken,
+        consecutiveFailures: 0,
+        lastSyncError: null,
+      });
+    } finally {
+      timeout.mockRestore();
+    }
   });
 
   it('skips a credential relinked between the claim and the fence, signing in with nothing', async () => {

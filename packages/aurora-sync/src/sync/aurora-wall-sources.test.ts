@@ -84,6 +84,17 @@ describe('Aurora wall source identity', () => {
     ]);
   });
 
+  it('requires affirmative listing evidence without removing the public map row', () => {
+    const unverifiedWall = wall('first');
+    Reflect.deleteProperty(unverifiedWall, 'is_listed');
+    const pins = [gym([unverifiedWall])];
+    expect(records(pins)).toHaveLength(1);
+    expect(buildAuroraWallSourceMappings('tension', pins, records(pins))).toEqual([]);
+    expect(buildAuroraSerialWitnesses('tension', pins)).toMatchObject([
+      { wallUuid: 'first', serialNumber: '84771', isListed: false },
+    ]);
+  });
+
   it('never mints exact provenance from a fallback or another gym response', () => {
     const pins = [gym([wall('first', { layout_id: 424242 })])];
     expect(buildAuroraWallSourceMappings('tension', pins, records(pins))).toEqual([]);
@@ -161,6 +172,28 @@ describe('Aurora source refresh', () => {
     expect(state.inserted).toEqual([]);
     expect(state.predicates).toHaveLength(1);
     expect(new PgDialect().sqlToQuery(state.predicates[0]).params).toContain(123);
+  });
+
+  it('revokes live mappings when a fetched wall no longer includes a listing flag', async () => {
+    const unverifiedWall = wall('first');
+    Reflect.deleteProperty(unverifiedWall, 'is_listed');
+    const pins = [gym([unverifiedWall])];
+    const state = harness([boardUuidForSource('tension:123')]);
+    await syncAuroraWallSources(state.db, 'tension', pins, records(pins));
+    expect(state.predicates).toHaveLength(1);
+    expect(new PgDialect().sqlToQuery(state.predicates[0]).params).toContain(123);
+    expect(state.inserted).toMatchObject([{ sourceBoardUuid: null, isListed: false }]);
+  });
+
+  it('revokes only vanished gyms while retaining their serial witnesses', async () => {
+    const state = harness([]);
+    await syncAuroraWallSources(state.db, 'tension', [], [], [123]);
+    expect(state.inserted).toEqual([]);
+    expect(state.predicates).toHaveLength(1);
+    const predicate = new PgDialect().sqlToQuery(state.predicates[0]);
+    expect(predicate.sql).toContain('"board_type"');
+    expect(predicate.sql).toContain('"is_listed"');
+    expect(predicate.params).toEqual(['tension', 123, true]);
   });
 
   it('does not write or unlist anything for unavailable profiles or omitted wall snapshots', async () => {

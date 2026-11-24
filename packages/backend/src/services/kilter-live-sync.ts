@@ -95,6 +95,7 @@ export class KilterLiveSync extends LiveHistoryPoller<LiveHistoryAccount> {
       rejectAccount:
         error instanceof KilterApiError &&
         (error.code === 'invalid_grant' || error.httpStatus === 401 || error.httpStatus === 403),
+      rejectAccountGlobally: error instanceof KilterApiError && error.code === 'invalid_grant',
       status: error instanceof KilterApiError ? error.httpStatus : undefined,
       kind: error instanceof KilterApiError ? error.code : 'unavailable',
     };

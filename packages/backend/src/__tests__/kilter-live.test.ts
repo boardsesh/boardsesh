@@ -7,6 +7,7 @@ import {
   fetchKilterLiveHistory,
   getStoredKilterAccessToken,
   KilterLiveError,
+  KilterApiError,
   type KilterLiveDisplay,
 } from '@boardsesh/kilter-sync/api';
 import { db } from '../db/client';
@@ -550,6 +551,82 @@ describe('presence subscription lifetime', () => {
 });
 
 describe('subscription-driven polling', () => {
+  it('benches a revoked Kilter grant across walls and uses a valid alternate viewer', async () => {
+    const alternateUser = 'zz-valid-kilter-viewer';
+    await db.insert(schema.users).values({ id: alternateUser, email: `${alternateUser}@test.invalid` });
+    await db.insert(schema.auroraCredentials).values({
+      userId: alternateUser,
+      boardType: 'kilter',
+      encryptedRefreshToken: 'alternate-ciphertext',
+    });
+    await db.insert(schema.userBoardMappings).values({
+      userId: alternateUser,
+      boardType: 'kilter',
+      boardUserIdText: 'alternate-upstream-user',
+    });
+    const [firstBoard] = await db.select().from(schema.userBoards).where(eq(schema.userBoards.id, boardId));
+    const secondUuid = randomUUID();
+    const [secondBoard] = await db
+      .insert(schema.userBoards)
+      .values({
+        uuid: secondUuid,
+        slug: secondUuid,
+        name: 'Second watched wall',
+        ownerId: linkedUser,
+        boardType: 'kilter',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '1,2',
+        gymId: firstBoard.gymId,
+      })
+      .returning();
+    await db.insert(schema.kilterWallSources).values({
+      sourceKey: `${sourceKey}:second`,
+      sourceBoardUuid: secondUuid,
+      gymUuid: boardUuid,
+      productLayoutUuid: 'layout',
+      wallUuid: 'second-wall',
+      layoutId: 1,
+      sizeId: 10,
+      setIds: '1,2',
+    });
+    vi.mocked(getStoredKilterAccessToken).mockImplementation(async (_database, userId) => {
+      if (userId === linkedUser) throw new KilterApiError('invalid_grant', 'Revoked grant', 400);
+      return 'alternate-token';
+    });
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const sync = poller();
+    try {
+      sync.watch(boardId, linkedUser, 'revoked-first-wall');
+      await vi.waitFor(() =>
+        expect(warn).toHaveBeenCalledWith(
+          '[KilterLive] Poll failed',
+          expect.objectContaining({ kind: 'invalid_grant' }),
+        ),
+      );
+      sync.watch(secondBoard.id, linkedUser, 'revoked-second-wall');
+      sync.watch(secondBoard.id, alternateUser, 'valid-second-wall');
+      await vi.waitFor(() =>
+        expect(fetchKilterLiveHistory).toHaveBeenCalledWith(
+          'alternate-token',
+          expect.any(Object),
+          expect.any(AbortSignal),
+        ),
+      );
+      expect(
+        vi.mocked(getStoredKilterAccessToken).mock.calls.filter(([, userId]) => userId === linkedUser),
+      ).toHaveLength(1);
+    } finally {
+      await sync.shutdown();
+      vi.mocked(getStoredKilterAccessToken).mockImplementation(async () => 'test-access-token');
+      await publisher.del(
+        `kilter-live:${secondBoard.id}:viewers`,
+        `kilter-live:${secondBoard.id}:owner`,
+        `kilter-live:${secondBoard.id}:next`,
+      );
+    }
+  });
+
   it('releases the board lock without importing when the in-transaction Redis read stalls', async () => {
     vi.mocked(fetchKilterLiveHistory).mockResolvedValue([display()]);
     const transactions = vi.spyOn(db, 'transaction');

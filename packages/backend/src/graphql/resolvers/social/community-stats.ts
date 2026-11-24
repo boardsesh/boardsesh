@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { readThroughRedis } from '../../../utils/redis-read-through';
@@ -10,7 +10,7 @@ type CommunityStats = {
 };
 
 /** Bump when the figures' definition changes. */
-export const COMMUNITY_STATS_CACHE_KEY = 'community-stats:v1';
+export const COMMUNITY_STATS_CACHE_KEY = 'community-stats:v2';
 
 /**
  * One hour. These are rounded marketing numbers, and the hour turns ~400
@@ -57,7 +57,12 @@ export const communityStatsQueries = {
             lit: sql<number>`count(*)::int`,
           })
           .from(dbSchema.boardClimbEvents)
-          .where(sql`${dbSchema.boardClimbEvents.createdAt} > now() - interval '30 days'`);
+          .where(
+            and(
+              eq(dbSchema.boardClimbEvents.source, 'boardsesh'),
+              sql`${dbSchema.boardClimbEvents.createdAt} > now() - interval '30 days'`,
+            ),
+          );
 
         return {
           climbersLast30Days: row?.climbers ?? 0,

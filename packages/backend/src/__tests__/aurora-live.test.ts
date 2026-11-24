@@ -9,6 +9,7 @@ import { pubsub } from '../pubsub';
 import { redisClientManager } from '../redis/client';
 import { AuroraLiveSync, auroraLiveSync, isAuroraLiveEnabled } from '../services/aurora-live-sync';
 import { boardPresenceSubscriptions } from '../graphql/resolvers/board-presence/subscription';
+import { boardPresenceQueries } from '../graphql/resolvers/board-presence/queries';
 import { importAuroraDisplays, matchAuroraWall } from '../services/aurora-live-import';
 import { getAuroraLiveToken } from '../services/aurora-live-token';
 import { catchUpAuroraHistory, parseAuroraCheckpoint } from '../services/aurora-live-catchup';
@@ -145,6 +146,32 @@ function poller() {
 }
 
 describe('Aurora display imports', () => {
+  it.each(['kilter', 'moonboard'])('skips unused Aurora history reads on %s walls', async (boardType) => {
+    await db.update(schema.userBoards).set({ boardType }).where(eq(schema.userBoards.id, boardId));
+    const cacheRead = vi.spyOn(publisher, 'get');
+    expect(
+      await boardPresenceQueries.boardRecentHistory(
+        undefined,
+        { boardId, includeAurora: true },
+        { userId, connectionId: 'history-reader', isAuthenticated: true },
+      ),
+    ).toEqual([]);
+    expect(cacheRead).not.toHaveBeenCalledWith(`board:${boardId}:aurora-history`);
+  });
+
+  it('keeps imported Tension history readable after new imports are disabled', async () => {
+    const wall = await matchAuroraWall(boardId);
+    await importAuroraDisplays(wall!, [display()], async () => true);
+    vi.stubEnv('AURORA_LIVE_SYNC_ENABLED', '0');
+    expect(
+      await boardPresenceQueries.boardRecentHistory(
+        undefined,
+        { boardId, includeAurora: true },
+        { userId, connectionId: 'history-reader', isAuthenticated: true },
+      ),
+    ).toMatchObject([{ source: 'aurora', climbUuid }]);
+  });
+
   it('skips row-locking transactions for a duplicate page and locks only new occurrences', async () => {
     const wall = await matchAuroraWall(boardId);
     const first = display();

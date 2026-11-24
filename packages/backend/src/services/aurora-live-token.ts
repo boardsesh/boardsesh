@@ -4,6 +4,7 @@ import { rotateLinkGeneration } from '@boardsesh/db/queries';
 import { decrypt, encrypt } from '@boardsesh/crypto';
 import {
   AuroraClimbingClient,
+  MAX_CREDENTIAL_FAILURES,
   isAuroraBoardName,
   isAuroraRequestError,
   type AuroraBoardName,
@@ -145,16 +146,20 @@ export async function getAuroraLiveToken(
             credential.encryptedPassword !== snapshot.encryptedPassword
           )
             throw new AuroraLiveCredentialChangedError();
-          // A refused password must not be retried per wall or per backend instance.
-          // Rotate the fence so an already-running sync cannot revive this link.
-          await rotateLinkGeneration(transaction, { userId, boardType, linked: true });
+          const credentialFailureCount = credential.credentialFailureCount + 1;
+          const expired = credentialFailureCount >= MAX_CREDENTIAL_FAILURES;
+          // Match routine sync's tolerance for one anomalous login refusal.
+          // At the shared threshold, fence any already-running sync writer.
+          if (expired) await rotateLinkGeneration(transaction, { userId, boardType, linked: true });
           await transaction
             .update(auroraCredentials)
             .set({
-              auroraToken: null,
-              syncStatus: 'expired',
-              syncError: 'Aurora rejected the saved password. Reconnect this account to resume sync.',
-              credentialFailureCount: credential.credentialFailureCount + 1,
+              auroraToken: expired ? null : credential.auroraToken,
+              syncStatus: expired ? 'expired' : 'error',
+              syncError: expired
+                ? 'Aurora rejected the saved password. Reconnect this account to resume sync.'
+                : 'Aurora refused a login attempt. Sync will retry.',
+              credentialFailureCount,
               lastCredentialFailureAt: new Date(),
               updatedAt: new Date(),
             })
@@ -180,7 +185,12 @@ export async function getAuroraLiveToken(
         throw new AuroraLiveCredentialChangedError();
       await transaction
         .update(auroraCredentials)
-        .set({ auroraToken: encrypt(session.token!), updatedAt: new Date() })
+        .set({
+          auroraToken: encrypt(session.token!),
+          credentialFailureCount: 0,
+          lastCredentialFailureAt: null,
+          updatedAt: new Date(),
+        })
         .where(eq(auroraCredentials.id, binding.credentialId));
       return session.token!;
     });

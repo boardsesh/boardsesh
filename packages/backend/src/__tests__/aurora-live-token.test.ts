@@ -144,12 +144,27 @@ describe('Aurora live credential fencing', () => {
     expect(decrypt(stored.auroraToken!)).toBe('winner-session');
   });
 
-  it('persists one refused password across walls and instances until the account is relinked', async () => {
+  it('keeps the first refusal retryable and expires the second until the account is relinked', async () => {
     const login = vi
       .spyOn(AuroraClimbingClient.prototype, 'signIn')
       .mockRejectedValue(
         new AuroraRequestError({ code: 'invalid_credentials', message: 'Refused password', status: 422 }),
       );
+    await expect(getAuroraLiveToken(userId, 'tension', binding, signal(), 'stored-session')).rejects.toMatchObject({
+      code: 'invalid_credentials',
+    });
+    const [firstRefusal] = await db
+      .select()
+      .from(auroraCredentials)
+      .where(eq(auroraCredentials.id, binding.credentialId));
+    const [firstControl] = await db
+      .select()
+      .from(providerSyncControls)
+      .where(and(eq(providerSyncControls.userId, userId), eq(providerSyncControls.boardType, 'tension')));
+    expect(firstRefusal.syncStatus).toBe('error');
+    expect(firstRefusal.credentialFailureCount).toBe(1);
+    expect(decrypt(firstRefusal.auroraToken!)).toBe('stored-session');
+    expect(firstControl.linkGeneration).toBe(binding.linkGeneration);
     await expect(getAuroraLiveToken(userId, 'tension', binding, signal(), 'stored-session')).rejects.toMatchObject({
       code: 'invalid_credentials',
     });
@@ -159,6 +174,7 @@ describe('Aurora live credential fencing', () => {
       .from(providerSyncControls)
       .where(and(eq(providerSyncControls.userId, userId), eq(providerSyncControls.boardType, 'tension')));
     expect(refused.syncStatus).toBe('expired');
+    expect(refused.credentialFailureCount).toBe(2);
     expect(refused.auroraToken).toBeNull();
     expect(control.linked).toBe(true);
     expect(control.linkGeneration).not.toBe(binding.linkGeneration);
@@ -169,7 +185,7 @@ describe('Aurora live credential fencing', () => {
     await expect(
       getAuroraLiveToken(userId, 'tension', { ...binding, linkGeneration: control.linkGeneration }, signal()),
     ).rejects.toBeInstanceOf(AuroraLiveCredentialChangedError);
-    expect(login).toHaveBeenCalledOnce();
+    expect(login).toHaveBeenCalledTimes(2);
     const relinkGeneration = randomUUID();
     await db.transaction(async (transaction) => {
       await transaction
@@ -184,7 +200,7 @@ describe('Aurora live credential fencing', () => {
     expect(
       await getAuroraLiveToken(userId, 'tension', { ...binding, linkGeneration: relinkGeneration }, signal()),
     ).toBe('relinked-session');
-    expect(login).toHaveBeenCalledOnce();
+    expect(login).toHaveBeenCalledTimes(2);
   });
 
   it('does not expire a replacement account when the old login is refused during relink', async () => {
@@ -209,16 +225,23 @@ describe('Aurora live credential fencing', () => {
     expect(decrypt(stored.auroraToken!)).toBe('replacement-session');
   });
 
-  it('establishes a refusal fence for a legacy link that had no control row', async () => {
+  it.each([0, 1])('fences a legacy refusal when the initial failure count was %i', async (initialFailures) => {
     await db
       .delete(providerSyncControls)
       .where(and(eq(providerSyncControls.userId, userId), eq(providerSyncControls.boardType, 'tension')));
     const legacyBinding = { ...binding, linkGeneration: null };
-    const login = vi
-      .spyOn(AuroraClimbingClient.prototype, 'signIn')
-      .mockRejectedValue(
-        new AuroraRequestError({ code: 'invalid_credentials', message: 'Refused legacy password', status: 422 }),
-      );
+    await db
+      .update(auroraCredentials)
+      .set({ credentialFailureCount: initialFailures })
+      .where(eq(auroraCredentials.id, binding.credentialId));
+    const login = vi.spyOn(AuroraClimbingClient.prototype, 'signIn').mockImplementation(async () => {
+      // Another instance can record its refusal while our HTTP login waits.
+      await db
+        .update(auroraCredentials)
+        .set({ credentialFailureCount: 1 })
+        .where(eq(auroraCredentials.id, binding.credentialId));
+      throw new AuroraRequestError({ code: 'invalid_credentials', message: 'Refused legacy password', status: 422 });
+    });
     await expect(
       getAuroraLiveToken(userId, 'tension', legacyBinding, signal(), 'stored-session'),
     ).rejects.toMatchObject({ code: 'invalid_credentials' });
@@ -234,5 +257,26 @@ describe('Aurora live credential fencing', () => {
       AuroraLiveCredentialChangedError,
     );
     expect(login).toHaveBeenCalledOnce();
+  });
+
+  it('resets consecutive refusals after a successful refreshed login', async () => {
+    const refusal = new AuroraRequestError({ code: 'invalid_credentials', message: 'Refused login', status: 422 });
+    const login = vi
+      .spyOn(AuroraClimbingClient.prototype, 'signIn')
+      .mockRejectedValueOnce(refusal)
+      .mockResolvedValueOnce({ token: 'recovered-session', user_id: 42 })
+      .mockRejectedValueOnce(refusal);
+    await expect(getAuroraLiveToken(userId, 'tension', binding, signal(), 'stored-session')).rejects.toThrow(refusal);
+    expect(await getAuroraLiveToken(userId, 'tension', binding, signal(), 'stored-session')).toBe('recovered-session');
+    const [recovered] = await db.select().from(auroraCredentials).where(eq(auroraCredentials.id, binding.credentialId));
+    expect(recovered.credentialFailureCount).toBe(0);
+    expect(recovered.lastCredentialFailureAt).toBeNull();
+    await expect(getAuroraLiveToken(userId, 'tension', binding, signal(), 'recovered-session')).rejects.toThrow(
+      refusal,
+    );
+    const [retryable] = await db.select().from(auroraCredentials).where(eq(auroraCredentials.id, binding.credentialId));
+    expect(retryable.syncStatus).toBe('error');
+    expect(retryable.credentialFailureCount).toBe(1);
+    expect(login).toHaveBeenCalledTimes(3);
   });
 });

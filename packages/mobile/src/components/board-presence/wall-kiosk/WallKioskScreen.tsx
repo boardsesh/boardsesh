@@ -46,6 +46,7 @@ function WallKioskScreenComponent({ boardConfig }: { boardConfig: BoardConfig })
         renderData ? (
           <WallHeroStage
             climb={preview.displayedClimb}
+            isPreviewing={preview.isPreviewing}
             boardConfig={boardConfig}
             boardWidth={renderData.boardWidth}
             boardHeight={renderData.boardHeight}

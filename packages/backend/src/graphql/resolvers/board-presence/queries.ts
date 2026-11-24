@@ -1,5 +1,6 @@
 import { isNativeBoardClimb } from '@boardsesh/board-presence';
 import { getGradeColor } from '@boardsesh/board-constants';
+import { isAuroraBoardName } from '@boardsesh/aurora-sync/api';
 import { withRecentSenderBoardContext } from '../shared/board-session-privacy';
 import { tickPrivacyCondition } from '../shared/activity-privacy';
 import { redactBoardClimbs, redactBoardStats, redactBoardHolder } from '../../../services/board-session-privacy';
@@ -72,7 +73,10 @@ export const boardPresenceQueries = {
     await assertAnonReadableBoard(board, readerId, boardUuid);
     await assertSprayBoardIsReadable(board, readerId, boardUuid, db);
     return redactBoardClimbs(
-      await readMergedRecentHistory(boardId, includeAurora === true),
+      await readMergedRecentHistory(
+        boardId,
+        includeAurora === true && board.boardType !== 'kilter' && isAuroraBoardName(board.boardType),
+      ),
       ctx.userId,
       boardId,
       boardUuid,

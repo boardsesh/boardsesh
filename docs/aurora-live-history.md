@@ -2,7 +2,7 @@
 
 Boardsesh can read recently displayed climbs from the supported Aurora board apps:
 Tension, Decoy, Touchstone, Grasshopper and So iLL. Kilter continues to use its
-[existing integration](kilter-live-history.md), with no second Aurora reader.
+[existing integration](data/kilter-live-history.md), with no second Aurora reader.
 
 The backend reader is disabled by default. Set `AURORA_LIVE_SYNC_ENABLED=1` and
 list verified products in `AURORA_LIVE_SYNC_BOARDS`, separated by commas. An empty
@@ -85,7 +85,7 @@ No account passwords or session tokens belong in source, fixtures or logs.
 
 ## Physical wall identity
 
-Authenticated [Aurora location enrichment](aurora-location-sync.md) records
+Authenticated [Aurora location enrichment](data/aurora-location-sync.md) records
 exact upstream gym/wall/controller provenance in `aurora_wall_sources`.
 Existing deterministic source keys and source-board UUIDs stay stable across
 merges, including the first wall whose older source key omits its wall UUID.
@@ -135,12 +135,15 @@ link generation and saved token before writing. A concurrent refresh winner's
 stored token wins; unlinking or relinking while login waits invalidates its result.
 Concurrent walls on one backend share an in-flight refresh for the same link.
 
-An explicit `invalid_credentials` login refusal clears only the matching
-snapshot's token and marks that credential `expired`. The link generation is
-rotated, including for legacy links, so already-running fenced sync jobs cannot
-revive the refused credential. Pollers and routine sync selection exclude it
-until the climber reconnects the account. A newer stored token or replacement
-link is never expired by an older request's refusal. Redis/owner-lease loss and
+Live reads and routine sync share a two-refusal credential threshold. The first
+`invalid_credentials` response records an error and leaves the link retryable.
+The second clears the matching snapshot's token and marks it `expired`; live
+reads rotate the link generation in that short transaction so running fenced
+background jobs cannot revive it. Standalone CLI success writes retain their
+existing unfenced behavior and must not overlap link changes. Pollers and routine sync selection exclude it until the
+climber reconnects. A successful login resets the consecutive-refusal count.
+A newer stored token or replacement link is never expired by an older request's
+refusal. Redis/owner-lease loss and
 disabled flags cancel stale reads without rejecting an otherwise valid account.
 Credentials never enter the display event.
 
@@ -174,7 +177,7 @@ native-only history endpoints retain their existing contract.
 4. Verify each product's feed, then enable only those products in the allowlist.
 5. At a consenting wall, measure official-app display latency and watcher cleanup.
 
-Use [local board QA](local-board-qa.md) for physical evidence. Confirm imports
+Use [local board QA](qa/local-board-qa.md) for physical evidence. Confirm imports
 leave the queue and LEDs unchanged, angle changes update grades/actions, clears
 survive late imports, reconnects do not duplicate occurrences, and the last
 eligible viewer leaving stops polling. Check an older client alongside the new

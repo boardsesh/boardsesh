@@ -62,6 +62,7 @@ export abstract class LiveHistoryPoller<Account extends LiveHistoryAccount> {
   protected abstract classifyFailure(error: unknown): {
     retryAfterMs?: number;
     rejectAccount?: boolean;
+    rejectAccountGlobally?: boolean;
     status?: number;
     kind?: string;
   };
@@ -195,8 +196,10 @@ export abstract class LiveHistoryPoller<Account extends LiveHistoryAccount> {
     }
     return credentials
       .filter((credential) => {
-        const rejection = this.rejectedAccounts.get(`${boardId}:${credential.userId}`);
-        return !rejection || rejection.linkIdentity !== credential.linkIdentity || rejection.until <= Date.now();
+        return [`${boardId}:${credential.userId}`, `account:${credential.userId}`].every((key) => {
+          const rejection = this.rejectedAccounts.get(key);
+          return !rejection || rejection.linkIdentity !== credential.linkIdentity || rejection.until <= Date.now();
+        });
       })
       .sort((left, right) => left.userId.localeCompare(right.userId));
   }
@@ -319,7 +322,10 @@ export abstract class LiveHistoryPoller<Account extends LiveHistoryAccount> {
         const failure = this.classifyFailure(error);
         delay = Math.max(delay, failure.retryAfterMs ?? 0);
         if (failure.rejectAccount) {
-          this.rejectedAccounts.set(`${boardId}:${account.userId}`, {
+          const rejectionKey = failure.rejectAccountGlobally
+            ? `account:${account.userId}`
+            : `${boardId}:${account.userId}`;
+          this.rejectedAccounts.set(rejectionKey, {
             linkIdentity: account.linkIdentity,
             until: Date.now() + 300_000,
           });

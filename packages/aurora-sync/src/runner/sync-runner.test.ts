@@ -3,7 +3,7 @@ import {
   AMBIGUOUS_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
   FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
 } from '@boardsesh/shared-schema/sync-error-codes';
-import { SHARED_SYNC_COOLDOWN_CURSOR } from '@boardsesh/db/queries';
+import { SHARED_SYNC_COOLDOWN_CURSOR, StaleLinkGenerationError } from '@boardsesh/db/queries';
 import { AuroraRequestError } from '../api/errors';
 import {
   CredentialSyncError,
@@ -134,6 +134,17 @@ vi.mock('../api/aurora-client', () => ({
   },
 }));
 
+function refusalRunner(current: CredentialRecord, onLog?: (message: string) => void) {
+  const lock = vi.fn(() => ({ limit: () => Promise.resolve([{ id: 1n, ...current }]) }));
+  const write = vi.fn(() => ({ where: () => Promise.resolve() }));
+  const tx = {
+    select: () => ({ from: () => ({ where: () => ({ for: lock }) }) }),
+    update: () => ({ set: write }),
+  };
+  const runner = new SyncRunner({ transaction: (callback) => callback(tx as never), onLog });
+  return { runner, lock, write };
+}
+
 describe('SyncRunner login failure handling', () => {
   beforeEach(() => {
     mockDecrypt.mockReset();
@@ -238,9 +249,8 @@ describe('SyncRunner login failure handling', () => {
   });
 
   it('marks the first invalid credential failure as an error', async () => {
-    const runner = new SyncRunner();
+    const { runner, lock, write } = refusalRunner(createCredential());
     const runnerPrivates = runner as unknown as SyncRunnerPrivates;
-    const updateCredentialStatus = vi.spyOn(runnerPrivates, 'updateCredentialStatus').mockResolvedValue(undefined);
 
     mockSignIn.mockRejectedValue(
       new AuroraRequestError({
@@ -256,23 +266,20 @@ describe('SyncRunner login failure handling', () => {
       'Login failed: Invalid username or password',
     );
 
-    expect(updateCredentialStatus).toHaveBeenCalledWith(
-      'user-123',
-      'decoy',
-      'error',
-      'Login failed: Invalid username or password',
-      undefined,
-      {
+    expect(lock).toHaveBeenCalledWith('update');
+    expect(write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        syncStatus: 'error',
+        syncError: 'Login failed: Invalid username or password',
         credentialFailureCount: 1,
         lastCredentialFailureAt: expect.any(Date),
-      },
+      }),
     );
   });
 
-  it('expires credentials after the second invalid credential failure', async () => {
-    const runner = new SyncRunner();
+  it('counts a live refusal committed after the routine snapshot and expires at two', async () => {
+    const { runner, lock, write } = refusalRunner(createCredential({ credentialFailureCount: 1 }));
     const runnerPrivates = runner as unknown as SyncRunnerPrivates;
-    const updateCredentialStatus = vi.spyOn(runnerPrivates, 'updateCredentialStatus').mockResolvedValue(undefined);
 
     mockSignIn.mockRejectedValue(
       new AuroraRequestError({
@@ -284,21 +291,36 @@ describe('SyncRunner login failure handling', () => {
       }),
     );
 
-    await expect(runnerPrivates.syncSingleCredential(createCredential({ credentialFailureCount: 1 }))).rejects.toThrow(
+    await expect(runnerPrivates.syncSingleCredential(createCredential({ credentialFailureCount: 0 }))).rejects.toThrow(
       'Login failed: Invalid username or password (expired after 2 failed credential attempts; reconnect to resume sync)',
     );
 
-    expect(updateCredentialStatus).toHaveBeenCalledWith(
-      'user-123',
-      'decoy',
-      'expired',
-      'Login failed: Invalid username or password (expired after 2 failed credential attempts; reconnect to resume sync)',
-      undefined,
-      {
+    expect(lock).toHaveBeenCalledWith('update');
+    expect(write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        syncStatus: 'expired',
+        syncError:
+          'Login failed: Invalid username or password (expired after 2 failed credential attempts; reconnect to resume sync)',
         credentialFailureCount: 2,
         lastCredentialFailureAt: expect.any(Date),
-      },
+      }),
     );
+  });
+
+  it('discards a refused login after a live refresh without recording a failure on the new token', async () => {
+    const snapshot = createCredential({ auroraToken: 'previous', credentialFailureCount: 1 });
+    const current = { ...snapshot };
+    const { runner, lock, write } = refusalRunner(current);
+    const recordSyncFailure = vi.spyOn(runner as unknown as SyncRunnerPrivates, 'recordSyncFailure');
+    mockSignIn.mockImplementationOnce(() => {
+      current.auroraToken = 'replacement';
+      current.credentialFailureCount = 0;
+      throw new AuroraRequestError({ code: 'invalid_credentials', message: 'Refused login', status: 422 });
+    });
+    await expect(runner.syncCredential(snapshot)).rejects.toBeInstanceOf(StaleLinkGenerationError);
+    expect(lock).toHaveBeenCalledWith('update');
+    expect(write).not.toHaveBeenCalled();
+    expect(recordSyncFailure).not.toHaveBeenCalled();
   });
 
   it('clears credential failure counters after a successful login', async () => {
@@ -1033,9 +1055,10 @@ describe('SyncRunner.recordInvalidCredentialFailure quarantine event', () => {
 
   it('logs a QUARANTINED event only when the credential expires (2nd failure)', async () => {
     const secondFailureLogs: string[] = [];
-    const secondRunner = new SyncRunner({ onLog: (msg) => secondFailureLogs.push(msg) });
+    const { runner: secondRunner } = refusalRunner(createCredential({ credentialFailureCount: 1 }), (msg) =>
+      secondFailureLogs.push(msg),
+    );
     const secondPrivates = secondRunner as unknown as SyncRunnerPrivates;
-    vi.spyOn(secondPrivates, 'updateCredentialStatus').mockResolvedValue(undefined);
 
     const secondResult = await secondPrivates.recordInvalidCredentialFailure(
       createCredential({ credentialFailureCount: 1 }),
@@ -1053,9 +1076,8 @@ describe('SyncRunner.recordInvalidCredentialFailure quarantine event', () => {
 
     // First failure (count 0 → 1): still 'error', no quarantine event.
     const firstFailureLogs: string[] = [];
-    const firstRunner = new SyncRunner({ onLog: (msg) => firstFailureLogs.push(msg) });
+    const { runner: firstRunner } = refusalRunner(createCredential(), (msg) => firstFailureLogs.push(msg));
     const firstPrivates = firstRunner as unknown as SyncRunnerPrivates;
-    vi.spyOn(firstPrivates, 'updateCredentialStatus').mockResolvedValue(undefined);
 
     const firstResult = await firstPrivates.recordInvalidCredentialFailure(
       createCredential({ credentialFailureCount: 0 }),

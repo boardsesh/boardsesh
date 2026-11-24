@@ -1,13 +1,16 @@
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { PixelRatio, StyleSheet, View } from 'react-native';
 import type { BoardName, BoardPresenceClimb } from '@boardsesh/shared-schema';
 import { BoardImageNative } from '../../BoardImageNative';
 import { useTheme } from '../../../providers/theme-provider';
 import type { BoardConfig } from '../../../providers/drawer-host-provider';
+import { useQueueData } from '../../../providers/queue-provider';
+import { createQueueMirrorReader } from '../../../lib/queue-mirror-orientation';
 
 type WallHeroStageProps = {
   /** The lit climb, the previewed climb, or null (idle → background-only render). */
   climb: BoardPresenceClimb | null;
+  isPreviewing?: boolean;
   boardConfig: BoardConfig;
   boardWidth: number;
   boardHeight: number;
@@ -25,6 +28,7 @@ type WallHeroStageProps = {
  */
 function WallHeroStageComponent({
   climb,
+  isPreviewing = false,
   boardConfig,
   boardWidth,
   boardHeight,
@@ -32,6 +36,13 @@ function WallHeroStageComponent({
   artHeight,
 }: WallHeroStageProps) {
   const { systemColors } = useTheme();
+  const { queue, currentClimbQueueItem } = useQueueData();
+  const queueMirrorFor = useMemo(
+    () => createQueueMirrorReader(() => ({ queue, currentClimbQueueItem })),
+    [queue, currentClimbQueueItem],
+  );
+  // Match relight's recorded orientation, unique target occurrence, then unmirrored.
+  const mirrored = climb?.mirrored ?? (isPreviewing && climb ? queueMirrorFor(climb.climbUuid) : undefined) ?? false;
   // Rasterize the holds overlay at the size the kiosk actually draws it instead of
   // the board's native ~1080px. Both LayeredClimbImage layers set
   // `allowDownscaling={false}`, so a native-width overlay decodes at full size
@@ -54,6 +65,7 @@ function WallHeroStageComponent({
     <View style={[styles.root, { width: artWidth, height: artHeight, backgroundColor: systemColors.background }]}>
       <BoardImageNative
         frames={climb?.frames ?? ''}
+        mirrored={mirrored}
         boardName={boardConfig.boardName as BoardName}
         layoutId={boardConfig.layoutId}
         sizeId={boardConfig.sizeId}

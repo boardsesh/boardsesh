@@ -38,7 +38,7 @@ export function buildAuroraWallSourceMappings(
       if (
         !record ||
         !wall.uuid ||
-        wall.is_listed === false ||
+        wall.is_listed !== true ||
         !serialNumber ||
         serialNumber.length > 128 ||
         !Number.isFinite(record.latitude) ||
@@ -130,11 +130,13 @@ export async function syncAuroraWallSources(
   board: AuroraLocationBoardName,
   pins: AuroraPinWithUser[],
   records: PublicBoardLocationInput[],
+  missingGymIds: number[] = [],
 ): Promise<void> {
   const fetchedGymIds = [
-    ...new Set(
-      pins.filter(({ pin, user }) => user?.id === pin.id && Array.isArray(user.walls)).map(({ pin }) => pin.id),
-    ),
+    ...new Set([
+      ...pins.filter(({ pin, user }) => user?.id === pin.id && Array.isArray(user.walls)).map(({ pin }) => pin.id),
+      ...missingGymIds,
+    ]),
   ];
   if (!fetchedGymIds.length) return;
   const candidates = buildAuroraWallSourceMappings(board, pins, records);

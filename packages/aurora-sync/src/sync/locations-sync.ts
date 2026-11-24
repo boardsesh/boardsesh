@@ -431,6 +431,7 @@ export async function crawlGymWallsForSourceKeys(args: {
 
   const wanted = new Set(args.sourceKeys);
   const crawledSourceKeys: string[] = [];
+  const missingGymIds: number[] = [];
   const pinsWithUsers: AuroraPinWithUser[] = [];
   // Set when a rate limit stops the slice early: rethrown AFTER the flush
   // below (same reasoning as syncAuroraBoardLocations), so it costs nothing
@@ -446,6 +447,7 @@ export async function crawlGymWallsForSourceKeys(args: {
       // closed, unlisted itself, or was renumbered. Stamp it so the crawl moves
       // on instead of re-attempting a gym that will never resolve.
       crawledSourceKeys.push(sourceKey);
+      if (Number.isInteger(pinId) && pinId > 0) missingGymIds.push(pinId);
       continue;
     }
 
@@ -463,11 +465,11 @@ export async function crawlGymWallsForSourceKeys(args: {
     crawledSourceKeys.push(sourceKey);
   }
 
+  const { records } = buildAuroraLocationRecords(args.board, pinsWithUsers, wanted);
   if (pinsWithUsers.length > 0) {
     // Every gym here was just read, so no default-config fallback can apply —
     // pass the wanted set so a gym whose walls came back empty keeps whatever
     // it already had rather than reverting to the guess.
-    const { records } = buildAuroraLocationRecords(args.board, pinsWithUsers, wanted);
     if (args.transaction) {
       await upsertPublicBoardLocationsInBatches(args.transaction, records, {
         logger: toLocationSyncLogger(args.log),
@@ -480,11 +482,16 @@ export async function crawlGymWallsForSourceKeys(args: {
         batchWriter: args.batchWriter,
       });
     }
-    if (args.transaction) {
-      await args.transaction((transaction) => syncAuroraWallSources(transaction, args.board, pinsWithUsers, records));
-    } else {
-      await syncAuroraWallSources(args.db, args.board, pinsWithUsers, records);
-    }
+  }
+
+  // A successful pins response also revokes live bindings for gyms that vanished.
+  // Keep this outside the fetched-profile branch for slices of only missing gyms.
+  if (args.transaction) {
+    await args.transaction((transaction) =>
+      syncAuroraWallSources(transaction, args.board, pinsWithUsers, records, missingGymIds),
+    );
+  } else {
+    await syncAuroraWallSources(args.db, args.board, pinsWithUsers, records, missingGymIds);
   }
 
   if (args.transaction) await args.transaction((transaction) => markGymWallsCrawled(transaction, crawledSourceKeys));
