@@ -113,7 +113,11 @@ export const directoryReportsTypeDefs = /* GraphQL */ `
     sizeId: Int!
     "Hold set ids of that layout and size, comma-separated. At least one."
     setIds: String!
-    "Only for a board that doesn't tilt (isAngleAdjustable false). Leave it out to keep the angle."
+    """
+    Only for a board that doesn't tilt (isAngleAdjustable false). Leave it out to
+    keep the angle. An angle other than the board's own must be one the board
+    type's Angle row offers (the MoonBoard wide range included).
+    """
     angle: Int
   }
 
@@ -143,7 +147,7 @@ export const directoryReportsTypeDefs = /* GraphQL */ `
     NO_GYM
     "A climber changed this board's setup in the last 24 hours."
     RECENT_CHANGE
-    "A climber's change to this board was undone in the last 90 days."
+    "A climber's change to this board was undone, or put back by hand, in the last 90 days."
     RECENTLY_UNDONE
     "The reporter already changed 3 boards in the last 24 hours."
     DAILY_LIMIT
@@ -172,10 +176,13 @@ export const directoryReportsTypeDefs = /* GraphQL */ `
     """
     The setup the reporter says is right. Only with wrong_setup, and never on a
     spray wall. It must be a real setup of the board's type (a known layout,
-    size and sets, and a supported angle) and differ from the board's setup now;
-    otherwise the report is refused with BAD_USER_INPUT. At a gym nobody runs
-    (not RUN_BY_GYM) it changes the board for everyone straight away unless a
-    limit sends it to review; see setupOutcome on the result.
+    size and sets, and an angle the board type offers) and differ from the
+    board's setup now; otherwise the report is refused with BAD_USER_INPUT and
+    nothing is filed. The setup the board has now is refused with
+    extensions.reason SETUP_UNCHANGED (isBoardSetupUnchangedError): the board
+    may have been fixed since the client read it, so read it again. At a gym
+    nobody runs (not RUN_BY_GYM) it changes the board for everyone straight away
+    unless a limit sends it to review; see setupOutcome on the result.
     """
     suggestedSetup: BoardSetupInput
   }
@@ -203,7 +210,12 @@ export const directoryReportsTypeDefs = /* GraphQL */ `
     suggestion can apply right now (the directory-setup-suggestions flag is off).
     """
     setupReviewReason: BoardSetupReviewReason
-    "The board with its new setup, for 'Climb it now'. Set only when setupOutcome is APPLIED."
+    """
+    The board with its new setup, for 'Climb it now'. Set only when setupOutcome
+    is APPLIED, and even then it can be null: the change has committed but the
+    board could not be read back. Then refetch the board by its uuid; the
+    change still applied.
+    """
     board: UserBoard
   }
 
@@ -423,10 +435,13 @@ export const directoryReportsTypeDefs = /* GraphQL */ `
     """
     Put back the setup a climber's change replaced. For global admins, the
     board's creator (not for a synced board) and the owner and admins of the
-    board's gym. Only while the board still has the climber's setup: otherwise
-    it is refused with BOARD_SETUP_CHANGED_SINCE (the board changed again, or the
-    change was undone already). Returns the board with its old setup back. The
-    report the change closed stays closed, and for 90 days the board's
+    board's gym. Only while the board still has the climber's setup: a change
+    someone undid first is refused with BOARD_SETUP_ALREADY_UNDONE
+    (isBoardSetupAlreadyUndoneError; the old setup is back already), and one the
+    board changed again since with BOARD_SETUP_CHANGED_SINCE
+    (isBoardSetupChangedSinceError). Returns the board with its old setup back,
+    and the sync freeze the change replaced while nobody edited the board since.
+    The report the change closed stays closed, and for 90 days the board's
     suggestions go to review.
     """
     undoBoardSetupChange(eventId: ID!): UserBoard!
