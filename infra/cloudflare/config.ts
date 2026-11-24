@@ -187,6 +187,9 @@ export const WWW_HTML_CACHE_RULE_DESCRIPTION = 'boardsesh:www-html-edge-cache (m
 /** Markers for the allow and block WAF custom rules. Same never-rename contract as above. */
 export const CRAWLER_ALLOW_RULE_DESCRIPTION =
   'boardsesh:allow-search-crawlers (managed by scripts/cloudflare-apply.ts)';
+/** Marker for the narrow Perplexity public-guide bot exception. Never rename without migrating the live rule. */
+export const PERPLEXITY_PUBLIC_GUIDES_RULE_DESCRIPTION =
+  'boardsesh:perplexity-public-guides (managed by scripts/cloudflare-apply.ts)';
 export const CRAWLER_BLOCK_RULE_DESCRIPTION = 'boardsesh:block-seo-scrapers (managed by scripts/cloudflare-apply.ts)';
 /** Marker for the automation default-deny WAF rule. Same never-rename contract as above. */
 export const AUTOMATION_DEFAULT_DENY_RULE_DESCRIPTION =
@@ -381,9 +384,8 @@ export interface SslDesired {
 }
 
 /**
- * A WAF custom rule. `skip` carries `{ ruleset: 'current' }` — skip every
- * remaining rule in this phase — which is what makes the allow rule a true
- * escape hatch. `block` needs no action parameters.
+ * A WAF custom rule. The crawler allow rule skips the remaining custom rules;
+ * the public-guide exception skips only the bot phase. `block` needs no action parameters.
  */
 export interface WafRuleDesired {
   description: string;
@@ -396,7 +398,7 @@ export interface WafRuleDesired {
    * RateLimitRuleDesired) — custom rules accept it on every plan.
    */
   action: 'block' | 'skip' | 'managed_challenge';
-  action_parameters?: { ruleset: 'current' };
+  action_parameters?: { ruleset: 'current' } | { phases: ['http_request_sbfm'] };
   enabled: boolean;
 }
 
@@ -508,9 +510,9 @@ export interface CloudflareDesiredState {
   /** Order is not significant: cache rules are matched by expression, not precedence. */
   cacheRules: CacheRuleDesired[];
   /**
-   * Order IS significant and is preserved on apply: the allow rule must be
-   * evaluated before the block rule, or a token collision would take out a
-   * search engine. See upsertManagedRules in ./plan.
+   * Order IS significant and is preserved on apply: the bot-phase exception
+   * must precede the allow rule, whose current-ruleset skip would bypass it.
+   * The allow rule must precede the block rule. See upsertManagedRules in ./plan.
    */
   wafRules: WafRuleDesired[];
   /**
@@ -839,6 +841,27 @@ export const CRAWLER_ALLOW_EXPRESSION = `(http.request.method eq "GET" and (${bu
   CRAWLER_ALLOW_TOKENS,
 )}))`;
 export const CRAWLER_BLOCK_EXPRESSION = buildUserAgentExpression(CRAWLER_BLOCK_TOKENS);
+
+/**
+ * Bot Preference Sync's training rule catches PerplexityBot even while Search
+ * is allowed. Exempt only these public rollout documents from the bot phase;
+ * API, auth, climb-view and write traffic retain every existing protection.
+ * This must run before the general crawler allow rule skips the custom phase.
+ */
+export const PERPLEXITY_PUBLIC_GUIDE_PATHS = [
+  '/',
+  '/boards',
+  '/apps',
+  '/apps/kilter',
+  '/apps/aurora',
+  '/apps/moonboard',
+  '/apps/woods',
+  '/compare/spray-wall-apps',
+  '/sitemap.xml',
+  '/sitemaps/app-guides.xml',
+  '/robots.txt',
+] as const;
+export const PERPLEXITY_PUBLIC_GUIDES_EXPRESSION = `(http.request.method eq "GET" and http.host eq "${WWW_HOSTNAME}" and lower(http.user_agent) contains "perplexitybot" and http.request.uri.path in {${PERPLEXITY_PUBLIC_GUIDE_PATHS.map((path) => `"${path}"`).join(' ')}})`;
 
 /**
  * Default-deny for self-identified automation: a GET whose UA carries a
@@ -1468,7 +1491,15 @@ export const desiredCloudflareState: CloudflareDesiredState = {
     },
   ],
   wafRules: [
-    // MUST stay first — see the ordering contract on CloudflareDesiredState.wafRules.
+    // MUST precede the general allow rule, which skips the remaining custom rules.
+    {
+      description: PERPLEXITY_PUBLIC_GUIDES_RULE_DESCRIPTION,
+      expression: PERPLEXITY_PUBLIC_GUIDES_EXPRESSION,
+      action: 'skip',
+      action_parameters: { phases: ['http_request_sbfm'] },
+      enabled: true,
+    },
+    // MUST precede every block rule — see CloudflareDesiredState.wafRules.
     {
       description: CRAWLER_ALLOW_RULE_DESCRIPTION,
       expression: CRAWLER_ALLOW_EXPRESSION,

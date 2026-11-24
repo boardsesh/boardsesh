@@ -949,6 +949,79 @@ The merge deploys both the edge rule and the web middleware. To keep one out
 that carries no signature (as Lightpanda did), add it to
 `COST_BLOCKED_CRAWLER_TOKENS` or `AI_TRAINING_CRAWLER_TOKENS` and to `mustBlock`.
 
+#### App-guide rollout: Perplexity policy conflict (2026-11-24, #8122)
+
+The signed-in dashboard showed **Search: Allow (do not block)**,
+**Training: Disallow**, and **Agents: Block on pages with ads**. AI Crawl
+Control's individual block switches for OAI-SearchBot, Claude-SearchBot and
+PerplexityBot were off. Do not infer access from those switches alone.
+
+A public GET to `/apps/kilter` with `PerplexityBot` still returned 403.
+Security Events for Ray `a5fa94b3ae69fe9e` identified **Managed rules**, action
+**Block**, ruleset **Cloudflare Bot Management rules for all plans**
+(`3e677e63d4e9479382576f3fa66279e7`), rule **Block AI training crawlers for Bot
+Preference Sync disallow** (`6f906b86376f49cea265be5acc45b807`). This is an edge
+policy classification conflict, not a missing repo allowlist entry. Cloudflare
+describes this enforcement for crawlers it considers noncompliant in its
+[Bot Preference Sync explanation](https://blog.cloudflare.com/bot-preference-sync/).
+
+The proposed `boardsesh:perplexity-public-guides` custom rule matches only GET
+requests on www for PerplexityBot and eleven exact public document paths: the
+six guides, homepage, `/boards`, `/robots.txt`, sitemap index and guide shard.
+It must precede `boardsesh:allow-search-crawlers`, whose skip of the remaining
+custom rules would otherwise prevent evaluation. It skips only the bot phase;
+it does not exempt API/auth/write traffic or climb-view pages, and does not
+skip the managed-WAF or rate-limit phases. **Live phase verification is a
+release gate:** `http_request_sbfm` is a hypothesis until a before/after probe
+proves the matched managed rule runs there. A rule accepted by the dashboard
+is not evidence that crawling was fixed. Keep Training Disallow and the
+explicit training-crawler block rule intact.
+
+Production state at handoff: **not deployed**. Automatic approval review
+rejected the persistent exception deployment pending the owner's explicit
+approval of its scope and impact. The prepared dashboard form and proposed
+source configuration are not a production receipt. Keep the PR draft until
+approval and live phase verification are complete.
+
+For day-zero load, a capped Railway HTTP sample contained 501 www requests
+from 18:38:02 through 18:40:08 UTC, with none of the four newly allowed search
+UA tokens. It is a two-minute origin sample, not a complete post-release or
+edge denominator; it cannot establish a bot's daily request share or p95.
+The AI Crawl Control screen's default seven-day totals also include the old
+policy period and all zone hostnames. Do not combine those denominators.
+
+Two complete, bounded origin windows were retrieved by recursively splitting
+Railway reads until every response was below the 500-entry cap:
+
+| UTC window | www requests | Climb-view requests | Climb-view p95 |
+| --- | ---: | ---: | ---: |
+| 17:50–17:55 | 934 | 792 | 668 ms |
+| 17:55–18:00 | 1,157 | 956 | 706 ms |
+
+The earlier window included one OAI-SearchBot and one Claude-SearchBot request
+to `/apps/kilter` (54 ms each, 0.107% each of that origin window); the later
+window included none of the four new search tokens. PerplexityBot and
+Amzn-SearchBot had no requests in either window. No per-bot p95 can be estimated
+meaningfully from zero or one request. The adjacent windows are an initial
+observation, not a causal latency comparison or a daily load verdict.
+
+Cloudflare AI Metrics, filtered to `www.boardsesh.com` and
+`[17:55,19:00 UTC)`, displayed one OAI-SearchBot and one Claude-SearchBot
+request. These may include our synthetic UA probes. That screen's total is
+AI-crawler traffic, not all www requests; it cannot supply the requested all-www
+share. UA probes demonstrate policy behavior, not bot identity or a real
+Perplexity crawl. Preserve these distinctions in later checks.
+Capture matching www windows at the edge and origin on the dated checkpoints
+in `docs/web/seo-app-guides/README.md`; report sampled/truncated windows and
+unavailable quantiles explicitly. AI referral sessions in PostHog measure a
+different population from crawler HTTP requests.
+
+If a search crawler exceeds about 10% of www requests or materially raises
+climb-view p95, remove its allow token and add it to
+`COST_BLOCKED_CRAWLER_TOKENS` (or restrict its paths), update the match fixtures,
+and deploy. `AI_CRAWLER_TOKENS` is an obsolete name; search load is not a reason
+to label a bot as a training crawler.
+
 **What this does not catch.** UA blocking only stops crawlers that identify
 themselves honestly. A UA-rotating farm walked ~2,500 climb-view URLs on
 2026-08-22 behind ordinary Chrome/Firefox UAs (PostHog: 2,031 distinct persons,
