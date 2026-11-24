@@ -1,5 +1,6 @@
 import { gql } from 'graphql-request';
 import type {
+  BoardSetupChangeConnection,
   DirectoryReport,
   DirectoryReportConnection,
   DirectoryReportStatus,
@@ -8,7 +9,9 @@ import type {
   ReportBoardInput,
   ReportGymInput,
   ResolveDirectoryReportInput,
+  UserBoard,
 } from '@boardsesh/shared-schema';
+import { BOARD_FIELDS } from './boards';
 
 // Report a problem with a board or a gym listing (docs/product/directory-reports.md).
 // The mobile app sends these (PR 4 of #8043) and www selects them (the report
@@ -16,6 +19,18 @@ import type {
 // feed selects DIRECTORY_NOTICE_FIELDS, so a client that selects them ships
 // only once the backend that serves them is in production: an unknown field
 // fails the whole query.
+//
+// Suggested setups (docs/product/directory-reports.md, "Suggested setup"):
+// REPORT_BOARD's result, a note's `suggestedSetup`, the climber-change notice
+// fields, UNDO_BOARD_SETUP_CHANGE and GET_ADMIN_BOARD_SETUP_CHANGES.
+
+/** Every `BoardSetup` field. */
+export const BOARD_SETUP_FIELDS = `
+  layoutId
+  sizeId
+  setIds
+  angle
+`;
 
 /** Every `DirectoryReport` field. Interpolated, not a fragment, like the other shared field sets. */
 export const DIRECTORY_REPORT_FIELDS = `
@@ -41,6 +56,9 @@ export const DIRECTORY_REPORT_FIELDS = `
       userId
       displayName
       avatarUrl
+    }
+    suggestedSetup {
+      ${BOARD_SETUP_FIELDS}
     }
   }
   createdAt
@@ -76,6 +94,14 @@ export const DIRECTORY_NOTICE_FIELDS = `
     actorRole
     isReminder
     recipientIsCreator
+    setupChangeEventId
+    setupBefore {
+      ${BOARD_SETUP_FIELDS}
+    }
+    setupAfter {
+      ${BOARD_SETUP_FIELDS}
+    }
+    setupChangeState
   }
 `;
 
@@ -86,6 +112,11 @@ export const REPORT_BOARD = gql`
       reportUuid
       routedTo
       otherReporterCount
+      setupOutcome
+      setupReviewReason
+      board {
+        ${BOARD_FIELDS}
+      }
     }
   }
 `;
@@ -141,6 +172,51 @@ export const GET_ADMIN_DIRECTORY_REPORTS = gql`
   }
 `;
 
+/**
+ * Put back the setup a climber's change replaced. Refused with
+ * `BOARD_SETUP_CHANGED_SINCE` (`isBoardSetupChangedSinceError`) once the board
+ * has changed again or the change was undone already.
+ */
+export const UNDO_BOARD_SETUP_CHANGE = gql`
+  mutation UndoBoardSetupChange($eventId: ID!) {
+    undoBoardSetupChange(eventId: $eventId) {
+      ${BOARD_FIELDS}
+    }
+  }
+`;
+
+/** The admin list of climbers' setup changes, newest first. */
+export const GET_ADMIN_BOARD_SETUP_CHANGES = gql`
+  query GetAdminBoardSetupChanges($first: Int, $after: String) {
+    adminBoardSetupChanges(first: $first, after: $after) {
+      changes {
+        eventId
+        board {
+          uuid
+          name
+          slug
+          boardType
+        }
+        gym {
+          uuid
+          name
+          slug
+        }
+        before {
+          ${BOARD_SETUP_FIELDS}
+        }
+        after {
+          ${BOARD_SETUP_FIELDS}
+        }
+        climberDisplayName
+        createdAt
+        state
+      }
+      nextCursor
+    }
+  }
+`;
+
 export type ReportBoardMutationVariables = { input: ReportBoardInput };
 export type ReportBoardMutationResponse = { reportBoard: DirectoryReportSubmitResult };
 
@@ -163,3 +239,9 @@ export type GetAdminDirectoryReportsQueryVariables = {
   after?: string;
 };
 export type GetAdminDirectoryReportsQueryResponse = { adminDirectoryReports: DirectoryReportConnection };
+
+export type UndoBoardSetupChangeMutationVariables = { eventId: string };
+export type UndoBoardSetupChangeMutationResponse = { undoBoardSetupChange: UserBoard };
+
+export type GetAdminBoardSetupChangesQueryVariables = { first?: number; after?: string };
+export type GetAdminBoardSetupChangesQueryResponse = { adminBoardSetupChanges: BoardSetupChangeConnection };

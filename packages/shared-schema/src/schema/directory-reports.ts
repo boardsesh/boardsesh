@@ -72,12 +72,17 @@ export const directoryReportsTypeDefs = /* GraphQL */ `
     admin
   }
 
-  "Who closed a report. auto is the system (the merge tool, or a sweep that found the board or gym gone)."
+  """
+  Who closed a report. auto is the system (the merge tool, or a sweep that found
+  the board or gym gone). climber is a climber whose suggested setup changed the
+  board at a gym nobody runs.
+  """
   enum DirectoryReportResolverRole {
     creator
     gym_staff
     admin
     auto
+    climber
   }
 
   """
@@ -97,6 +102,66 @@ export const directoryReportsTypeDefs = /* GraphQL */ `
     admin
   }
 
+  """
+  A board's setup within its own board type: what a "Set up wrong" report can
+  suggest. There is no board type: it is always the board's own.
+  """
+  input BoardSetupInput {
+    "A layout of the board's type."
+    layoutId: Int!
+    "A size of that layout."
+    sizeId: Int!
+    "Hold set ids of that layout and size, comma-separated. At least one."
+    setIds: String!
+    "Only for a board that doesn't tilt (isAngleAdjustable false). Leave it out to keep the angle."
+    angle: Int
+  }
+
+  "A board's setup, as a suggestion or a recorded change carries it."
+  type BoardSetup {
+    layoutId: Int!
+    sizeId: Int!
+    "Hold set ids, comma-separated, in ascending order."
+    setIds: String!
+    "Set only when the angle is part of the setup (a board that doesn't tilt)."
+    angle: Int
+  }
+
+  "What a suggested setup did."
+  enum BoardSetupOutcome {
+    "The board changed for everyone straight away."
+    APPLIED
+    "The suggestion waits on the report for someone who can change the board."
+    SENT_FOR_REVIEW
+  }
+
+  "Why a suggested setup went to review instead of changing the board."
+  enum BoardSetupReviewReason {
+    "The gym is run by the gym. Its staff check suggestions first."
+    CLAIMED_GYM
+    "The board has no gym. Whoever added it checks suggestions first."
+    NO_GYM
+    "A climber changed this board's setup in the last 24 hours."
+    RECENT_CHANGE
+    "A climber's change to this board was undone in the last 90 days."
+    RECENTLY_UNDONE
+    "The reporter already changed 3 boards in the last 24 hours."
+    DAILY_LIMIT
+    "The change would make this board a copy of another board with the same owner, or clash with a serial number."
+    CLASHES
+  }
+
+  """
+  Where a climber's setup change stands. LIVE: the board still has it.
+  UNDONE: someone put the old setup back. CHANGED_SINCE: the board changed
+  again since, so it can't be undone.
+  """
+  enum BoardSetupChangeState {
+    LIVE
+    UNDONE
+    CHANGED_SINCE
+  }
+
   input ReportBoardInput {
     boardUuid: ID!
     reason: BoardReportReason!
@@ -104,6 +169,15 @@ export const directoryReportsTypeDefs = /* GraphQL */ `
     duplicateOfBoardUuid: ID
     "Optional, trimmed, at most 500 characters. Required (10 or more characters) for other."
     note: String
+    """
+    The setup the reporter says is right. Only with wrong_setup, and never on a
+    spray wall. It must be a real setup of the board's type (a known layout,
+    size and sets, and a supported angle) and differ from the board's setup now;
+    otherwise the report is refused with BAD_USER_INPUT. At a gym nobody runs
+    (not RUN_BY_GYM) it changes the board for everyone straight away unless a
+    limit sends it to review; see setupOutcome on the result.
+    """
+    suggestedSetup: BoardSetupInput
   }
 
   input ReportGymInput {
@@ -122,6 +196,12 @@ export const directoryReportsTypeDefs = /* GraphQL */ `
     routedTo: [DirectoryReportRecipient!]!
     "How many other climbers are on the same report, for 'N other climbers flagged this too'."
     otherReporterCount: Int!
+    "What the suggested setup did. Null when the report carried none (and always for reportGym)."
+    setupOutcome: BoardSetupOutcome
+    "Why the suggested setup went to review. Set only when setupOutcome is SENT_FOR_REVIEW."
+    setupReviewReason: BoardSetupReviewReason
+    "The board with its new setup, for 'Climb it now'. Set only when setupOutcome is APPLIED."
+    board: UserBoard
   }
 
   input ResolveDirectoryReportInput {
@@ -146,9 +226,12 @@ export const directoryReportsTypeDefs = /* GraphQL */ `
 
   "One reporter's note. reporter is null for everyone but global admins: reporters stay anonymous."
   type DirectoryReportNote {
+    "What the reporter wrote. Empty when they suggested a setup and wrote nothing."
     note: String!
     createdAt: String!
     reporter: DirectoryReportReporter
+    "The setup this reporter suggested on a wrong_setup report, if any."
+    suggestedSetup: BoardSetup
   }
 
   type DirectoryReport {
@@ -172,7 +255,7 @@ export const directoryReportsTypeDefs = /* GraphQL */ `
     duplicateOfGymName: String
     "How many climbers are on the report."
     reporterCount: Int!
-    "What reporters said, oldest first. Reporters without a note are counted but not listed."
+    "What reporters said, oldest first. Reporters with neither a note nor a suggested setup are counted but not listed."
     notes: [DirectoryReportNote!]!
     createdAt: String!
     remindedAt: String
@@ -204,8 +287,8 @@ export const directoryReportsTypeDefs = /* GraphQL */ `
 
   """
   What a directory notification is about. Set on the board_report_*,
-  gym_report_*, board_removed_from_gym, board_deleted_by_staff and
-  board_edited_by_staff types.
+  gym_report_*, board_removed_from_gym, board_deleted_by_staff,
+  board_edited_by_staff and board_setup_changed_by_climber types.
   """
   type DirectoryNotice {
     targetKind: DirectoryReportTargetKind!
@@ -229,6 +312,52 @@ export const directoryReportsTypeDefs = /* GraphQL */ `
     isReminder: Boolean!
     "The recipient created the board (wording: 'your board' rather than '{{board}} at {{gym}}')."
     recipientIsCreator: Boolean!
+    "board_setup_changed_by_climber: the change, to pass to undoBoardSetupChange."
+    setupChangeEventId: ID
+    "board_setup_changed_by_climber: the setup before the change."
+    setupBefore: BoardSetup
+    "board_setup_changed_by_climber: the setup the climber changed it to."
+    setupAfter: BoardSetup
+    "board_setup_changed_by_climber: where the change stands now. Offer Undo only while it is LIVE."
+    setupChangeState: BoardSetupChangeState
+  }
+
+  "The board a climber changed, in the admin list of setup changes."
+  type BoardSetupChangeBoard {
+    uuid: ID!
+    name: String!
+    slug: String!
+    boardType: String!
+  }
+
+  "The gym a board was at when a climber changed it."
+  type BoardSetupChangeGym {
+    uuid: ID!
+    name: String!
+    slug: String
+  }
+
+  "One climber's change to a board's setup, made by a suggestion on a report."
+  type BoardSetupChange {
+    "Pass to undoBoardSetupChange."
+    eventId: ID!
+    board: BoardSetupChangeBoard!
+    "Null when the gym has been deleted since."
+    gym: BoardSetupChangeGym
+    before: BoardSetup!
+    after: BoardSetup!
+    "The climber who suggested it. Null once their account is deleted."
+    climberDisplayName: String
+    "When the change was made."
+    createdAt: String!
+    state: BoardSetupChangeState!
+  }
+
+  type BoardSetupChangeConnection {
+    "Newest first."
+    changes: [BoardSetupChange!]!
+    "Pass as after for the next page; null on the last page."
+    nextCursor: String
   }
 
   extend type Notification {
@@ -270,6 +399,11 @@ export const directoryReportsTypeDefs = /* GraphQL */ `
       first: Int
       after: String
     ): DirectoryReportConnection!
+    """
+    Every change a climber's suggested setup made to a board, newest first, with
+    where each one stands. Global admins only. first defaults to 50 (at most 100).
+    """
+    adminBoardSetupChanges(first: Int, after: String): BoardSetupChangeConnection!
   }
 
   extend type Mutation {
@@ -283,5 +417,15 @@ export const directoryReportsTypeDefs = /* GraphQL */ `
     reportGym(input: ReportGymInput!): DirectoryReportSubmitResult!
     "Close a report. See ResolveDirectoryReportInput.outcome for who may close it how."
     resolveDirectoryReport(input: ResolveDirectoryReportInput!): DirectoryReport!
+    """
+    Put back the setup a climber's change replaced. For global admins, the
+    board's creator (not for a synced board) and the owner and admins of the
+    board's gym. Only while the board still has the climber's setup: otherwise
+    it is refused with BOARD_SETUP_CHANGED_SINCE (the board changed again, or the
+    change was undone already). Returns the board with its old setup back. The
+    report the change closed stays closed, and for 90 days the board's
+    suggestions go to review.
+    """
+    undoBoardSetupChange(eventId: ID!): UserBoard!
   }
 `;

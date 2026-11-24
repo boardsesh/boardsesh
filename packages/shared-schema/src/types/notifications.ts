@@ -35,7 +35,8 @@ export type NotificationType =
   | 'gym_report_opened'
   | 'gym_report_resolved'
   | 'gym_claimed_with_your_board'
-  | 'gym_claim_denied';
+  | 'gym_claim_denied'
+  | 'board_setup_changed_by_climber';
 
 export type Notification = {
   uuid: string;

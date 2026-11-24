@@ -146,6 +146,16 @@ export function isDirectoryReportClosedError(error: unknown): boolean {
   return getGraphqlErrors(error).some((graphqlError) => graphqlError.extensions?.code === 'REPORT_CLOSED');
 }
 
+/**
+ * `undoBoardSetupChange` on a change that can't be undone any more: the board's
+ * setup changed again since (an edit, another climber's change), or someone
+ * undid it first. Not a retry: the client says the board changed since and
+ * reads the board again.
+ */
+export function isBoardSetupChangedSinceError(error: unknown): boolean {
+  return getGraphqlErrors(error).some((graphqlError) => graphqlError.extensions?.code === 'BOARD_SETUP_CHANGED_SINCE');
+}
+
 /** The exact message `detachBoardFromGym` throws (with `BAD_USER_INPUT`) when the board isn't at the gym. */
 const BOARD_NOT_AT_GYM_MESSAGE = 'This board is not listed at this gym.';
 
