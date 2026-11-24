@@ -2,7 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useSession } from 'next-auth/react';
+import { useBrowserSession } from '@/app/components/providers/session-provider';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { GET_RECENT_BETA_LINKS } from '@boardsesh/graphql/operations/beta-links';
@@ -21,7 +21,7 @@ type RecentBetaResponse = {
 };
 
 export default function HomeRecentBetaContent() {
-  const { data: session, status } = useSession();
+  const { data: session, status } = useBrowserSession();
   const { token, isLoading: isTokenLoading } = useWsAuthToken(status === 'authenticated');
   const sessionUserId = session?.user?.id ?? null;
   const authSessionId = session?.authSessionId ?? null;

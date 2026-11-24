@@ -15,8 +15,8 @@ const viewerState = {
   token: null as string | null,
   isTokenLoading: false,
 };
-vi.mock('next-auth/react', () => ({
-  useSession: () => ({ data: viewerState.session, status: viewerState.status }),
+vi.mock('@/app/components/providers/session-provider', () => ({
+  useBrowserSession: () => ({ data: viewerState.session, status: viewerState.status }),
 }));
 vi.mock('@/app/hooks/use-ws-auth-token', () => ({
   useWsAuthToken: () => ({ token: viewerState.token, isLoading: viewerState.isTokenLoading }),
