@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-24T19:33:02.922Z",
+  "generatedAt": "2026-11-24T20:15:09.821Z",
   "entries": [
+    {
+      "prNumber": 8120,
+      "category": "new",
+      "title": "Admins can combine duplicate gym and board listings while keeping your sends.",
+      "mergedAt": "2026-11-24T20:07:59Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8120"
+    },
     {
       "prNumber": 8112,
       "category": "new",

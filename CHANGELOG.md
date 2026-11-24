@@ -8,6 +8,7 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### New
 
+- Admins can combine duplicate gym and board listings while keeping your sends. ([#8120](https://github.com/boardsesh/boardsesh/pull/8120))
 - Pilot support for managing your gym, boards and TVs from ChatGPT or Claude. ([#8112](https://github.com/boardsesh/boardsesh/pull/8112))
 - Your gym’s local time is picked from its map location or public address. Staff can still choose a different time zone. ([#8124](https://github.com/boardsesh/boardsesh/pull/8124))
 - See how Boardsesh compares with the Kilter, Aurora, MoonBoard, Woods and spray wall apps, row by row with sources, before your first session. ([#8098](https://github.com/boardsesh/boardsesh/pull/8098))
