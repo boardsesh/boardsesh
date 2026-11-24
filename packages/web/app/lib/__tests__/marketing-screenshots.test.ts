@@ -44,7 +44,7 @@ describe('marketing capture selection', () => {
 });
 
 describe('the workouts capture', () => {
-  it('is the one Play Store crop on both platforms, sized to the file it names', async () => {
+  it('is the one Android Session-tab capture on both platforms, sized to the file it names', async () => {
     for (const platform of ['ios', 'android'] as const) {
       const capture = marketingScreenshot(platform, 'en-US', 'workouts');
       expect(capture.src).toBe('/images/app/android/workouts.webp');

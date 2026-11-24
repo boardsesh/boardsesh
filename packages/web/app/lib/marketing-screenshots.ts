@@ -17,12 +17,11 @@ type LocalizedCaptureSets = { 'en-US': MarketingCaptureSet } & Partial<
 >;
 
 /**
- * The workout generator exists only in the Play Store set
- * (`app-stores/google/screenshots/pixel-2/06-workout-generator.png`), so both
- * platforms show the same Android capture: the phone's screen cropped out of
- * that frame at its full resolution, without the store headline.
+ * The workout builder, captured directly from today's Session tab on Android
+ * (739 x 1600, like the rest of the Android set). There is no iOS capture of it,
+ * so both platforms show this one.
  */
-const WORKOUTS_CAPTURE: MarketingCapture = { src: '/images/app/android/workouts.webp', width: 804, height: 1429 };
+const WORKOUTS_CAPTURE: MarketingCapture = { src: '/images/app/android/workouts.webp', width: 739, height: 1600 };
 
 function englishCaptures(platform: MarketingPlatform, defaultWidth: number): MarketingCaptureSet {
   const capture = (shot: Exclude<MarketingShot, 'workouts'>, width = defaultWidth): MarketingCapture => ({
@@ -37,7 +36,7 @@ function englishCaptures(platform: MarketingPlatform, defaultWidth: number): Mar
     queue: capture('queue'),
     'wall-status': capture('wall-status'),
     profile: capture('profile'),
-    'spray-wall': capture('spray-wall', platform === 'android' ? 713 : defaultWidth),
+    'spray-wall': capture('spray-wall'),
     workouts: WORKOUTS_CAPTURE,
   };
 }
@@ -45,7 +44,7 @@ function englishCaptures(platform: MarketingPlatform, defaultWidth: number): Mar
 /** Add a locale only when a complete, reviewed native capture set exists. */
 const CAPTURES: Record<MarketingPlatform, LocalizedCaptureSets> = {
   ios: { 'en-US': englishCaptures('ios', 736) },
-  android: { 'en-US': englishCaptures('android', 900) },
+  android: { 'en-US': englishCaptures('android', 739) },
 };
 
 export function marketingScreenshot(
