@@ -33,6 +33,8 @@ import {
   scheduleGymReportingReceiptExpiry,
   SET_GYM_REPORTING_BOARD_ALIAS,
   SET_GYM_REPORTING_TIME_ZONE,
+  type GymTrendMetric,
+  type GymTrendSelection,
   type GetGymStatsQueryResponse,
   type GetGymStatsQueryVariables,
 } from '@boardsesh/graphql';
@@ -45,6 +47,7 @@ import SelectedCheck from '@/app/components/ui/selected-check';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { GymManageTabProps } from './tab-props';
 import { GymReportingSettings } from './gym-reporting-settings';
+import { GymReachReport } from './gym-reach-overview';
 
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 
@@ -78,7 +81,7 @@ function weekdayLabel(day: number, locale: string) {
   );
 }
 
-function ReportingResults({ stats }: { stats: GymStats }) {
+function ReportingResults({ stats, trend }: { stats: GymStats; trend: GymTrendSelection }) {
   const { t, i18n } = useTranslation('boards');
   const locale = i18n.language || 'en-US';
   const number = new Intl.NumberFormat(locale);
@@ -140,11 +143,16 @@ function ReportingResults({ stats }: { stats: GymStats }) {
           </Typography>
         </Box>
       </Box>
+      {stats.reachOverview && <GymReachReport stats={stats} overview={stats.reachOverview} selection={trend} />}
       {gymReportingHasActivity(stats) ? (
         <>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-            <Chip label={t('gymReporting.climbers', { countText: number.format(stats.current.uniqueClimbers) })} />
-            <Chip label={t('gymReporting.sends', { countText: number.format(stats.current.ascentCount) })} />
+            {!stats.reachOverview && (
+              <>
+                <Chip label={t('gymReporting.climbers', { countText: number.format(stats.current.uniqueClimbers) })} />
+                <Chip label={t('gymReporting.sends', { countText: number.format(stats.current.ascentCount) })} />
+              </>
+            )}
             {busiestDay !== null && (
               <Chip label={t('gymReporting.busiestDay', { day: weekdayLabel(busiestDay, locale) })} />
             )}
@@ -202,6 +210,7 @@ type ReportingFilters = {
   setPeriod: (period: GymStatsPeriod) => void;
   boardUuid: string | null;
   setBoardUuid: (boardUuid: string | null) => void;
+  trend: GymTrendSelection;
 };
 
 function InsightsReport({
@@ -212,6 +221,7 @@ function InsightsReport({
   setPeriod,
   boardUuid,
   setBoardUuid,
+  trend,
 }: ReportingViewer & ReportingFilters) {
   const { t, i18n } = useTranslation('boards');
   const reconnect = useSyncExternalStore(subscribeOnline, getConnectivity, () => 0);
@@ -346,7 +356,7 @@ function InsightsReport({
               })}
             </Alert>
           )}
-          <ReportingResults stats={stats} />
+          <ReportingResults stats={stats} trend={trend} />
           {state === 'ready' && <GymReportingSettings stats={stats} saveZone={saveZone} saveAlias={saveAlias} />}
         </>
       )}
@@ -357,6 +367,12 @@ function InsightsReport({
 function InsightsViewer({ viewer, gymUuid, token }: ReportingViewer) {
   const [period, setPeriod] = useState<GymStatsPeriod>('week');
   const [boardUuid, setBoardUuid] = useState<string | null>(null);
+  const [week, setWeek] = useState<string | null>(null);
+  const [metric, setMetric] = useState<GymTrendMetric>('climbers');
+  const chooseBoard = (next: string | null) => {
+    if (next !== boardUuid) setWeek(null);
+    setBoardUuid(next);
+  };
   const focused = useSyncExternalStore(
     subscribeFocus,
     () => focusManager.isFocused(),
@@ -371,7 +387,8 @@ function InsightsViewer({ viewer, gymUuid, token }: ReportingViewer) {
       period={period}
       setPeriod={setPeriod}
       boardUuid={boardUuid}
-      setBoardUuid={setBoardUuid}
+      setBoardUuid={chooseBoard}
+      trend={{ metric, setMetric, week, setWeek }}
     />
   );
 }

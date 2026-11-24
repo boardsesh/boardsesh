@@ -779,6 +779,59 @@ export const gymsTypeDefs = /* GraphQL */ `
     isPartial: Boolean!
   }
 
+  enum GymReachCoverage {
+    complete
+    partial
+    unavailable
+  }
+
+  type GymReachCount {
+    "Count of available eligible records or people. Consult coverage before displaying zero."
+    count: Int!
+    coverage: GymReachCoverage!
+  }
+
+  type GymReachWindow {
+    climbers: GymReachCount!
+    "First recorded here in available eligible records. It may change when older history arrives."
+    firstRecorded: GymReachCount!
+    uncertainFirstRecorded: Int!
+    sends: GymReachCount!
+    sendLoggers: Int!
+    "Distinct identified climber and gym-local date with a send."
+    sessions: GymReachCount!
+  }
+
+  type GymReachReturn {
+    returning: Int!
+    previousClimbers: Int!
+    "A return rate can be displayed only with complete coverage and a positive denominator."
+    coverage: GymReachCoverage!
+  }
+
+  type GymReachWeek {
+    "Gym-local Monday date in YYYY-MM-DD format."
+    startDate: String!
+    "Gym-local Sunday date in YYYY-MM-DD format."
+    endDate: String!
+    inProgress: Boolean!
+    climbers: GymReachCount!
+    sends: GymReachCount!
+  }
+
+  type GymReachOverview {
+    "UTC start of the forward observation contract for every accepted gym."
+    observationStartedAt: String
+    "UTC start of the interval immediately before the previous period."
+    baselineStartAt: String!
+    current: GymReachWindow!
+    previous: GymReachWindow!
+    cameBack: GymReachReturn!
+    previousCameBack: GymReachReturn!
+    "Twelve gym-local Monday-start weeks, including the week in progress."
+    weeklyTrend: [GymReachWeek!]!
+  }
+
   type GymStats {
     gymName: String!
     boardUuid: ID
@@ -788,6 +841,7 @@ export const gymsTypeDefs = /* GraphQL */ `
     timeZone: String!
     timeZoneConfigured: Boolean!
     coverage: GymReportingCoverage!
+    reachOverview: GymReachOverview
     "The gym these stats are for."
     gymUuid: ID!
     "Window length in days (7 for the default week)."

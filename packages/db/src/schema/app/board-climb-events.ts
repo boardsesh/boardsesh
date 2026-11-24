@@ -1,4 +1,5 @@
 import { pgTable, boolean, text, integer, bigint, bigserial, timestamp, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { users } from '../auth/users';
 import { boardSessions } from './sessions';
 import { userBoards } from './boards';
@@ -65,6 +66,10 @@ export const boardClimbEvents = pgTable(
     // "Recent sends for a board" / "what's on board X now" (LIMIT 1) and the
     // (confirmed_at, seq) keyset history page. Serves either DESC scan.
     chronologicalIdx: index('board_climb_events_chronological_idx').on(table.boardId, table.confirmedAt, table.seq),
+    // Candidate-scoped first-recorded lookups short-circuit on one prior display.
+    reportingActorTimeIdx: index('board_climb_events_reporting_actor_time_idx')
+      .on(table.boardId, table.userId, table.confirmedAt)
+      .where(sql`${table.source} = 'boardsesh' AND ${table.userId} IS NOT NULL`),
     // Session recap: every climb on the wall during a session.
     sessionIdx: index('board_climb_events_session_idx').on(table.sessionId),
   }),

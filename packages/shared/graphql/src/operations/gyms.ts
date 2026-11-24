@@ -418,6 +418,73 @@ export const GET_GYM_STATS = gql`
         includesCurrentBoardHistory
         isPartial
       }
+      reachOverview {
+        observationStartedAt
+        baselineStartAt
+        current {
+          climbers {
+            count
+            coverage
+          }
+          firstRecorded {
+            count
+            coverage
+          }
+          uncertainFirstRecorded
+          sends {
+            count
+            coverage
+          }
+          sendLoggers
+          sessions {
+            count
+            coverage
+          }
+        }
+        previous {
+          climbers {
+            count
+            coverage
+          }
+          firstRecorded {
+            count
+            coverage
+          }
+          uncertainFirstRecorded
+          sends {
+            count
+            coverage
+          }
+          sendLoggers
+          sessions {
+            count
+            coverage
+          }
+        }
+        cameBack {
+          returning
+          previousClimbers
+          coverage
+        }
+        previousCameBack {
+          returning
+          previousClimbers
+          coverage
+        }
+        weeklyTrend {
+          startDate
+          endDate
+          inProgress
+          climbers {
+            count
+            coverage
+          }
+          sends {
+            count
+            coverage
+          }
+        }
+      }
       periodDays
       current {
         startAt

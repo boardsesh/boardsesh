@@ -7,6 +7,8 @@ import {
   timestamp,
   doublePrecision,
   index,
+  integer,
+  primaryKey,
   uniqueIndex,
   pgEnum,
   type AnyPgColumn,
@@ -118,6 +120,21 @@ export const gyms = pgTable(
       .on(table.mergedIntoGymId)
       .where(sql`${table.mergedIntoGymId} IS NOT NULL`),
   }),
+);
+
+/** Immutable forward observation start for the stored-record reporting contract. */
+export const gymReportingObservations = pgTable(
+  'gym_reporting_observations',
+  {
+    gymId: bigint('gym_id', { mode: 'number' })
+      .notNull()
+      .references(() => gyms.id, { onDelete: 'cascade' }),
+    contractVersion: integer('contract_version').notNull(),
+    startedAt: timestamp('started_at', { mode: 'string', withTimezone: true })
+      .notNull()
+      .default(sql`clock_timestamp()`),
+  },
+  (table) => [primaryKey({ columns: [table.gymId, table.contractVersion] })],
 );
 
 /**

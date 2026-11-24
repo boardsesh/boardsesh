@@ -182,6 +182,14 @@ export const boardseshTicks = pgTable(
     // Index for board-scoped queries
     boardClimbedAtIdx: index('boardsesh_ticks_board_climbed_at_idx').on(table.boardId, table.climbedAt),
     boardUserIdx: index('boardsesh_ticks_board_user_idx').on(table.boardId, table.userId),
+    // The unbounded coverage query considers native, physically attributed
+    // ticks without exact certified timing. All day-only rows remain in the
+    // superset because their certification also depends on the IANA date.
+    reportingUnboundedIdx: index('boardsesh_ticks_reporting_unbounded_idx').on(table.boardId, table.userId)
+      .where(sql`${table.origin} = 'native'
+        AND ${table.reportingAttribution} IN ('uuid', 'presence', 'session', 'edit')
+        AND (${table.reportingTimePrecision} IS DISTINCT FROM 'instant'
+          OR ${table.reportingClimbedAt} IS DISTINCT FROM ${table.climbedAt})`),
     // Covering index for climb search user tick lookups (ascents/attempts per climb)
     userClimbLookupIdx: index('boardsesh_ticks_user_climb_lookup_idx').on(
       table.userId,
