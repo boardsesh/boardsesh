@@ -92,7 +92,8 @@ export function boardPlaceLabel(board: BoardLabelSource, options?: BoardLabelOpt
 // Mirrors the builder's cleanLayoutName
 // (packages/mobile/src/components/board-discovery/board-builder-labels.ts);
 // that file keeps its own copy until the rest of the builder labels move here.
-function cleanLayoutName(rawName: string, boardName: string): string {
+// Exported for the setup labels (`setup-labels.ts`).
+export function cleanLayoutName(rawName: string, boardName: string): string {
   const brand = formatBoardDisplayName(boardName);
   const cleaned = rawName
     .replace(new RegExp(`\\b${brand}\\b`, 'gi'), '')
@@ -105,7 +106,7 @@ function cleanLayoutName(rawName: string, boardName: string): string {
 }
 
 /** "12 x 14" → "12×14". Same cleanup the builder's formatSizeDimensions does. */
-function formatSizeDimensions(size: { name: string }): string {
+export function formatSizeDimensions(size: { name: string }): string {
   return size.name
     .replace(/\s*high\s*/gi, '')
     .replace(/\s*wide\s*/gi, '')
