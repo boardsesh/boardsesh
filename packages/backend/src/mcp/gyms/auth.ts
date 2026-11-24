@@ -4,7 +4,7 @@ import { loadPartnerAuthority } from '../../auth/partner/load-authority';
 import { findPartnerApiPrincipal, type PartnerApiPrincipal, type PartnerBearerResult } from '../../auth/partner/bearer';
 import { lockPartnerConnection } from '../../auth/partner/locks';
 import type { PartnerDatabase } from '../../auth/partner/tables';
-import { runWithDatabaseTransaction } from '../../db/client';
+import { runWithDatabaseTransaction, type DatabaseTransactionOptions } from '../../db/client';
 import { GYM_MCP_RESOURCE, gymMcpAllowsUser, gymMcpIsServing, type GymMcpScope } from './configuration';
 
 export type GymMcpPrincipal = PartnerApiPrincipal;
@@ -39,6 +39,7 @@ export async function withGymMcpWrite<Result>(
   principal: GymMcpPrincipal,
   requiredScope: GymMcpScope,
   work: () => Promise<Result>,
+  transactionOptions?: DatabaseTransactionOptions,
 ): Promise<Result> {
   if (!gymMcpIsServing()) denied('UNAUTHENTICATED');
   const runtime = await loadPartnerAuthority();
@@ -69,5 +70,5 @@ export async function withGymMcpWrite<Result>(
       denied('UNAUTHENTICATED');
     if (!current.principal.scopes.includes(requiredScope)) denied('FORBIDDEN');
     return work();
-  });
+  }, transactionOptions);
 }

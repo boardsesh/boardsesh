@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
+import { GraphQLError } from 'graphql';
 import type { GymMcpPrincipal } from '../auth';
 
 const mocks = vi.hoisted(() => ({
@@ -87,6 +88,57 @@ describe('gym MCP mutation receipts', () => {
     await expect(
       executeGymMcpWriteAction(principal, 'add_gym_comment', arguments_, 'gyms:write', mocks.run, mocks.authorize),
     ).rejects.toThrow('revoked');
+  });
+
+  it('requests the grade collection snapshot at the outer write boundary', async () => {
+    await executeGymMcpWriteAction(
+      principal,
+      'set_gym_grade_collection',
+      arguments_,
+      'gyms:write',
+      mocks.run,
+      mocks.authorize,
+    );
+    expect(mocks.write).toHaveBeenCalledWith(principal, 'gyms:write', expect.any(Function), {
+      isolationLevel: 'repeatable read',
+    });
+  });
+
+  it('restarts a stale grade receipt snapshot and reauthorizes before returning the committed result', async () => {
+    const gradeReceipt = receipt({ operationName: 'set_gym_grade_collection' });
+    mocks.receipt.mockResolvedValueOnce([]).mockResolvedValueOnce([gradeReceipt]);
+    mocks.insert.mockRejectedValueOnce({ cause: { code: '23505' } });
+    await expect(
+      executeGymMcpWriteAction(
+        principal,
+        'set_gym_grade_collection',
+        arguments_,
+        'gyms:write',
+        mocks.run,
+        mocks.authorize,
+      ),
+    ).resolves.toEqual(result);
+    expect(mocks.write).toHaveBeenCalledTimes(2);
+    expect(mocks.authorize.mock.calls).toEqual([[false], [true]]);
+    expect(mocks.run).toHaveBeenCalledOnce();
+  });
+
+  it('retries grade serialization refusals once and keeps authorization failures final', async () => {
+    const unavailable = new GraphQLError('Grade comparison is temporarily unavailable', {
+      extensions: { code: 'TEMPORARILY_UNAVAILABLE' },
+    });
+    mocks.write.mockRejectedValueOnce(unavailable).mockRejectedValueOnce(unavailable);
+    await expect(
+      executeGymMcpWriteAction(principal, 'set_gym_grade_collection', arguments_, 'gyms:write', mocks.run),
+    ).rejects.toBe(unavailable);
+    expect(mocks.write).toHaveBeenCalledTimes(2);
+    mocks.write.mockClear();
+    const forbidden = new GraphQLError('Access revoked', { extensions: { code: 'FORBIDDEN' } });
+    mocks.write.mockRejectedValueOnce(forbidden);
+    await expect(
+      executeGymMcpWriteAction(principal, 'set_gym_grade_collection', arguments_, 'gyms:write', mocks.run),
+    ).rejects.toBe(forbidden);
+    expect(mocks.write).toHaveBeenCalledOnce();
   });
 
   it('refuses changed input, changed operations, and expired keys without executing', async () => {

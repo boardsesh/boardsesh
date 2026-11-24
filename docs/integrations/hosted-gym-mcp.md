@@ -74,6 +74,12 @@ Activity results retain the website's reporting timezone, attribution and
 coverage caveats. An assistant should not treat missing reporting coverage as
 proof that no one climbed. See [Gym Insights reporting](../analytics/gym-reporting.md).
 
+Grade comparison is a separate report: `get_gym_grade_comparison` compares the
+current available climbs with sends during the chosen period. The collection
+picker and `set_gym_grade_collection` use the website's board compatibility and
+collection visibility checks. Selecting a collection retains the resolver's
+repeatable-read snapshot across the OAuth check, mutation and retry receipt.
+
 ## Availability and launch
 
 The backend owns rollout state. `GYM_MCP_MODE` defaults to `off`; `pilot` and

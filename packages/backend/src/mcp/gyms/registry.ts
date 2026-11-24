@@ -638,6 +638,60 @@ export const gymMcpTools: readonly GymMcpTool[] = [
     variables: ({ gymUuid, boardUuid, period }) => ({ input: { gymUuid, boardUuid, period } }),
   }),
   documentTool({
+    name: 'get_gym_grade_comparison',
+    category: 'insights',
+    document: 'getGradeComparison',
+    children: ['boardUuid'],
+    description:
+      'Compare available climbs by grade with logged sends over 7/30/90 days for this gym or one readable board. Preserve the report timezone, board inclusion/status, and ungraded counts when summarizing.',
+    schema: z
+      .object({
+        ...gymIdentity,
+        boardUuid: UUIDSchema.optional(),
+        period: z.enum(['week', 'month', 'quarter']).default('week'),
+      })
+      .strict(),
+    variables: ({ gymUuid, boardUuid, period }) => ({ input: { gymUuid, boardUuid, period } }),
+  }),
+  documentTool({
+    name: 'list_gym_grade_collections',
+    category: 'insights',
+    document: 'getGradeCollectionOptions',
+    children: ['boardUuid'],
+    description:
+      'Find grade-comparison collections available to your account for one gym board. Search names with at most 100 characters. Each backend page has at most 20 choices; pass its nextCursor unchanged to request another page. Private collections remain subject to existing access checks.',
+    schema: z
+      .object({
+        ...gymIdentity,
+        boardUuid: UUIDSchema,
+        search: z.string().trim().max(100).nullish(),
+        cursor: z
+          .string()
+          .regex(/^[1-9][0-9]{0,17}$/)
+          .nullish(),
+      })
+      .strict(),
+    variables: ({ gymUuid, boardUuid, search, cursor }) => ({ input: { gymUuid, boardUuid, search, cursor } }),
+  }),
+  documentTool({
+    name: 'set_gym_grade_collection',
+    category: 'insights',
+    document: 'setGradeCollection',
+    write: true,
+    children: ['boardUuid'],
+    description:
+      'Choose the comparison collection for one gym board using a UUID returned by list_gym_grade_collections. Pass null to clear the selection. Existing collection privacy, board compatibility, and inventory limits apply; this does not change the collection itself.',
+    schema: z
+      .object({
+        ...gymIdentity,
+        ...writeIdentity,
+        boardUuid: UUIDSchema,
+        playlistUuid: z.string().trim().min(1).max(128).nullable(),
+      })
+      .strict(),
+    variables: ({ gymUuid, boardUuid, playlistUuid }) => ({ input: { gymUuid, boardUuid, playlistUuid } }),
+  }),
+  documentTool({
     name: 'set_gym_reporting_timezone',
     category: 'insights',
     document: 'setTimeZone',

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import {
   gymMcpWriteReceipts,
@@ -8,12 +8,13 @@ import {
   oauthClientResource,
   oauthMcpClientPolicy,
 } from '@boardsesh/db/schema/auth';
-import { db } from '../../../db/client';
+import { db, deferDatabaseEffect } from '../../../db/client';
 import { createPartnerAuthorityRuntime, type PartnerAuthorityRuntime } from '../authority';
 import { createGymMcpClientDiscovery } from '../gym-mcp-clients';
 import { createPartnerDatabaseHandle } from '../transaction';
 import { disconnectPartnerConnection } from '../connection';
 import * as runtimeLoader from '../load-authority';
+import * as connectionLocks from '../locks';
 import { sweepGymMcpReceiptPayloads } from '../../../services/gym-mcp-receipt-retention';
 import { withGymMcpWrite } from '../../../mcp/gyms/auth';
 import {
@@ -281,6 +282,97 @@ describe('hosted gym OAuth boundaries', () => {
         extensions: { code: 'UNAUTHENTICATED' },
       });
     } finally {
+      runtimeMock.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  }, 30_000);
+
+  it('preserves repeatable read for grade selection through the authorized outer transaction and savepoint', async () => {
+    const { issued } = await issueGymTokens();
+    const principal = (await runtime.gymMcpApi!.authenticate(issued.access_token!)).principal!;
+    const runtimeMock = vi.spyOn(runtimeLoader, 'loadPartnerAuthority').mockResolvedValue(runtime);
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'open');
+    vi.stubEnv('GYM_MCP_MODE', 'on');
+    try {
+      const { executeGymMcpWriteAction } = await import('../../../mcp/gyms/dispatch');
+      const readIsolation = async () => {
+        const rows = await db.execute<{ level: string }>(sql`SELECT current_setting('transaction_isolation') AS level`);
+        return Array.from(rows)[0]!.level;
+      };
+      await expect(
+        executeGymMcpWriteAction(
+          principal,
+          'set_gym_grade_collection',
+          { idempotencyKey: randomUUID(), gymUuid: randomUUID() },
+          'gyms:write',
+          async () => ({
+            outer: await readIsolation(),
+            resolver: await db.transaction(readIsolation, { isolationLevel: 'repeatable read' }),
+          }),
+        ),
+      ).resolves.toEqual({ outer: 'repeatable read', resolver: 'repeatable read' });
+    } finally {
+      runtimeMock.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  }, 30_000);
+
+  it('replays simultaneous same-key grade writes from a fresh snapshot with one committed receipt and effect', async () => {
+    const { issued } = await issueGymTokens();
+    const principal = (await runtime.gymMcpApi!.authenticate(issued.access_token!)).principal!;
+    const runtimeMock = vi.spyOn(runtimeLoader, 'loadPartnerAuthority').mockResolvedValue(runtime);
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'open');
+    vi.stubEnv('GYM_MCP_MODE', 'on');
+    let releaseFirst!: () => void;
+    let noteFirstWork!: () => void;
+    let noteSecondSnapshot!: () => void;
+    const firstMayCommit = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const firstWorkStarted = new Promise<void>((resolve) => {
+      noteFirstWork = resolve;
+    });
+    const secondSnapshotStarted = new Promise<void>((resolve) => {
+      noteSecondSnapshot = resolve;
+    });
+    const originalLock = connectionLocks.lockPartnerConnection;
+    let lockAttempts = 0;
+    const lockMock = vi.spyOn(connectionLocks, 'lockPartnerConnection').mockImplementation(async (...arguments_) => {
+      lockAttempts += 1;
+      // The initial set_config SELECT has already established this snapshot.
+      if (lockAttempts === 2) noteSecondSnapshot();
+      return originalLock(...arguments_);
+    });
+    const committedEffect = vi.fn();
+    const inFlight: Array<Promise<unknown>> = [];
+    try {
+      const { executeGymMcpWriteAction } = await import('../../../mcp/gyms/dispatch');
+      const arguments_ = { idempotencyKey: randomUUID(), gymUuid: randomUUID() };
+      const work = async () => {
+        noteFirstWork();
+        await firstMayCommit;
+        await deferDatabaseEffect(committedEffect);
+        return { accepted: true };
+      };
+      const first = executeGymMcpWriteAction(principal, 'set_gym_grade_collection', arguments_, 'gyms:write', work);
+      inFlight.push(first);
+      await firstWorkStarted;
+      const second = executeGymMcpWriteAction(principal, 'set_gym_grade_collection', arguments_, 'gyms:write', work);
+      inFlight.push(second);
+      await secondSnapshotStarted;
+      releaseFirst();
+      await expect(Promise.all([first, second])).resolves.toEqual([{ accepted: true }, { accepted: true }]);
+      expect(committedEffect).toHaveBeenCalledOnce();
+      const receipts = await db
+        .select()
+        .from(gymMcpWriteReceipts)
+        .where(eq(gymMcpWriteReceipts.idempotencyKey, arguments_.idempotencyKey));
+      expect(receipts).toHaveLength(1);
+      expect(lockAttempts).toBe(3);
+    } finally {
+      releaseFirst();
+      await Promise.allSettled(inFlight);
+      lockMock.mockRestore();
       runtimeMock.mockRestore();
       vi.unstubAllEnvs();
     }

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import type { ConnectionContext, GymGradeComparison } from '@boardsesh/shared-schema';
 import { z } from 'zod';
+import { GraphQLError } from 'graphql';
 
 const domain = vi.hoisted(() => ({
   resolveGymForTool: vi.fn(),
@@ -57,6 +58,154 @@ describe('gym MCP action registry', () => {
     for (const name of ['grant_gym_edit_access', 'revoke_gym_edit_access', 'remove_gym_member']) {
       expect(findGymMcpTool(name)?.scope).toBe('gyms:access:write');
     }
+  });
+
+  it('exposes grade comparison and collection controls with read/write scopes', () => {
+    for (const name of ['get_gym_grade_comparison', 'list_gym_grade_collections']) {
+      expect(findGymMcpTool(name)).toMatchObject({ category: 'insights', scope: 'gyms:read', readOnly: true });
+    }
+    expect(findGymMcpTool('set_gym_grade_collection')).toMatchObject({
+      category: 'insights',
+      scope: 'gyms:write',
+      readOnly: false,
+      destructive: false,
+    });
+    const setter = findGymMcpTool('set_gym_grade_collection')!.inputSchema;
+    expect(setter.safeParse({ gymUuid, boardUuid, playlistUuid: null }).success).toBe(false);
+    expect(setter.safeParse({ gymUuid, boardUuid, idempotencyKey }).success).toBe(false);
+    expect(setter.safeParse({ gymUuid, boardUuid, playlistUuid: null, idempotencyKey }).success).toBe(true);
+    expect(setter.safeParse({ gymUuid, boardUuid, playlistUuid: 'x'.repeat(129), idempotencyKey }).success).toBe(false);
+    expect(setter.safeParse({ gymUuid, boardUuid, playlistUuid: ' ', idempotencyKey }).success).toBe(false);
+  });
+
+  it('bounds grade collection search/cursors without exposing a caller-controlled page size', () => {
+    const schema = findGymMcpTool('list_gym_grade_collections')!.inputSchema;
+    expect(schema.parse({ gymUuid, boardUuid, search: '  crimp  ', cursor: '123' })).toMatchObject({
+      search: 'crimp',
+      cursor: '123',
+    });
+    expect(schema.safeParse({ gymUuid, boardUuid, search: 'x'.repeat(100), cursor: null }).success).toBe(true);
+    expect(schema.safeParse({ gymUuid, boardUuid, search: 'x'.repeat(101) }).success).toBe(false);
+    for (const cursor of ['0', '01', '-1', '1.2', '1e3', '1'.repeat(19)]) {
+      expect(schema.safeParse({ gymUuid, boardUuid, cursor }).success).toBe(false);
+    }
+    expect(schema.safeParse({ gymUuid, boardUuid, limit: 1000 }).success).toBe(false);
+  });
+
+  it.each([
+    {
+      name: 'get_gym_grade_comparison',
+      document: 'getGradeComparison',
+      arguments_: { gymUuid, boardUuid, period: 'month' },
+      input: { gymUuid: canonicalGymUuid, boardUuid, period: 'month' },
+      write: false,
+    },
+    {
+      name: 'list_gym_grade_collections',
+      document: 'getGradeCollectionOptions',
+      arguments_: { gymUuid, boardUuid, search: 'crimp', cursor: '123' },
+      input: { gymUuid: canonicalGymUuid, boardUuid, search: 'crimp', cursor: '123' },
+      write: false,
+    },
+    {
+      name: 'set_gym_grade_collection',
+      document: 'setGradeCollection',
+      arguments_: { gymUuid, boardUuid, playlistUuid: null, idempotencyKey },
+      input: { gymUuid: canonicalGymUuid, boardUuid, playlistUuid: null },
+      write: true,
+    },
+  ])('canonicalizes the gym and binds the board for $name', async ({ name, document, arguments_, input, write }) => {
+    await findGymMcpTool(name)!.run(arguments_, context);
+    expect(domain.resolveGymForTool).toHaveBeenCalledWith(gymUuid, 'actor', true, write);
+    expect(domain.assertBoardInGym).toHaveBeenCalledWith(boardUuid, 42, 'actor', false);
+    expect(domain.executeGymDocument).toHaveBeenCalledWith(document, { input }, context);
+  });
+
+  it.each(['get_gym_grade_comparison', 'list_gym_grade_collections', 'set_gym_grade_collection'])(
+    'refuses an out-of-gym board before executing %s',
+    async (name) => {
+      domain.assertBoardInGym.mockRejectedValueOnce(
+        new GraphQLError('The gym or item is unavailable.', { extensions: { code: 'NOT_FOUND' } }),
+      );
+      const arguments_ =
+        name === 'set_gym_grade_collection'
+          ? { gymUuid, boardUuid, playlistUuid: null, idempotencyKey }
+          : { gymUuid, boardUuid };
+      await expect(findGymMcpTool(name)!.run(arguments_, context)).rejects.toMatchObject({
+        extensions: { code: 'NOT_FOUND' },
+      });
+      expect(domain.executeGymDocument).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps grade comparison inclusion states and ungraded counts, including all-board reads', async () => {
+    const comparison: GymGradeComparison = {
+      gymUuid: canonicalGymUuid,
+      asOf: '2026-11-24T10:00:00Z',
+      startAt: '2026-11-17T10:00:00Z',
+      timeZone: 'Europe/Amsterdam',
+      availableCount: 2,
+      sendCount: 1,
+      grades: [{ boardType: 'kilter', difficultyId: null, availableCount: 2, sendCount: 1 }],
+      boards: [
+        {
+          boardUuid,
+          physicalBoardUuid: boardUuid,
+          boardName: 'Wall',
+          kind: 'LED_COLLECTION',
+          status: 'COLLECTION_UNAVAILABLE',
+          included: false,
+          variantCount: 0,
+          collectionName: null,
+        },
+      ],
+    };
+    domain.executeGymDocument.mockResolvedValueOnce({ gymGradeComparison: comparison });
+    await expect(findGymMcpTool('get_gym_grade_comparison')!.run({ gymUuid }, context)).resolves.toEqual({
+      gymGradeComparison: comparison,
+    });
+    expect(domain.assertBoardInGym).not.toHaveBeenCalled();
+    expect(domain.executeGymDocument).toHaveBeenCalledWith(
+      'getGradeComparison',
+      {
+        input: { gymUuid: canonicalGymUuid, boardUuid: undefined, period: 'week' },
+      },
+      context,
+    );
+  });
+
+  it('delegates private collection visibility and selection rejection to the existing backend', async () => {
+    const options = {
+      gymGradeCollectionOptions: {
+        collections: [{ uuid: 'visible-private-collection', name: 'My private comparison' }],
+        nextCursor: '24',
+      },
+    };
+    domain.executeGymDocument.mockResolvedValueOnce(options);
+    await expect(findGymMcpTool('list_gym_grade_collections')!.run({ gymUuid, boardUuid }, context)).resolves.toEqual(
+      options,
+    );
+    domain.executeGymDocument.mockRejectedValueOnce(
+      new GraphQLError('Comparison collection is unavailable', { extensions: { code: 'COLLECTION_UNAVAILABLE' } }),
+    );
+    await expect(
+      findGymMcpTool('set_gym_grade_collection')!.run(
+        {
+          gymUuid,
+          boardUuid,
+          playlistUuid: 'another-persons-private-collection',
+          idempotencyKey,
+        },
+        context,
+      ),
+    ).rejects.toMatchObject({ extensions: { code: 'COLLECTION_UNAVAILABLE' } });
+    expect(domain.executeGymDocument).toHaveBeenLastCalledWith(
+      'setGradeCollection',
+      {
+        input: { gymUuid: canonicalGymUuid, boardUuid, playlistUuid: 'another-persons-private-collection' },
+      },
+      context,
+    );
   });
 
   it('can advertise every typed input schema to an MCP client', () => {

@@ -4,9 +4,12 @@ import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { gymMcpWriteReceipts } from '@boardsesh/db/schema/auth';
 import { db } from '../../db/client';
+import { getPostgresErrorCode, isUniqueViolation } from '../../utils/postgres-errors';
 import { withGymMcpWrite, type GymMcpPrincipal, type GymMcpScope } from './auth';
 import { findGymMcpTool } from './registry';
 import type { GymToolResult } from './domain';
+
+class GymMcpReceiptConflict extends Error {}
 
 /** Stable JSON ignores object-key order but preserves array order and actual values. */
 export function gymMcpInputHash(input: unknown): string {
@@ -71,7 +74,7 @@ export async function executeGymMcpWriteAction(
     });
   }
   const inputHash = gymMcpInputHash(parsedArguments);
-  return withGymMcpWrite(principal, requiredScope, async () => {
+  const executeWrite = async () => {
     const receiptKey = and(
       eq(gymMcpWriteReceipts.userId, principal.userId),
       eq(gymMcpWriteReceipts.clientId, principal.clientId),
@@ -96,17 +99,43 @@ export async function executeGymMcpWriteAction(
       return receipt.result as GymToolResult;
     }
     const result = await work();
-    await db.insert(gymMcpWriteReceipts).values({
-      userId: principal.userId,
-      clientId: principal.clientId,
-      connectionGeneration: principal.connectionGeneration,
-      idempotencyKey,
-      operationName,
-      inputHash,
-      result,
-    });
+    try {
+      await db.insert(gymMcpWriteReceipts).values({
+        userId: principal.userId,
+        clientId: principal.clientId,
+        connectionGeneration: principal.connectionGeneration,
+        idempotencyKey,
+        operationName,
+        inputHash,
+        result,
+      });
+    } catch (error) {
+      // This insert has only the receipt identity's unique constraint. A
+      // concurrent commit may be invisible to a repeatable-read snapshot.
+      if (isUniqueViolation(error)) throw new GymMcpReceiptConflict('A concurrent retry committed this action.');
+      throw error;
+    }
     return result;
-  });
+  };
+  // PostgreSQL savepoints cannot change isolation. Select the grade collection
+  // resolver's snapshot level before the outer OAuth and receipt reads begin.
+  if (operationName !== 'set_gym_grade_collection') return withGymMcpWrite(principal, requiredScope, executeWrite);
+  const executeSnapshotWrite = () =>
+    withGymMcpWrite(principal, requiredScope, executeWrite, { isolationLevel: 'repeatable read' });
+  try {
+    return await executeSnapshotWrite();
+  } catch (error) {
+    // The failed outer transaction rolled back its mutation and queued effects.
+    // A fresh snapshot can now replay the winning receipt after reauthorization.
+    // The grade resolver translates serialization/lock failures into its public
+    // TEMPORARILY_UNAVAILABLE error before GraphQL returns them.
+    const retryable =
+      error instanceof GymMcpReceiptConflict ||
+      getPostgresErrorCode(error) === '40001' ||
+      (error instanceof GraphQLError && error.extensions.code === 'TEMPORARILY_UNAVAILABLE');
+    if (!retryable) throw error;
+    return executeSnapshotWrite();
+  }
 }
 
 export async function executeGymMcpTool(

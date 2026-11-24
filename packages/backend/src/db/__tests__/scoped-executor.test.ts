@@ -63,6 +63,25 @@ describe('delegated transaction scope', () => {
     expect(await delegated).toBe('transaction');
   });
 
+  it('starts the requested snapshot before work and refuses a nested isolation change', async () => {
+    const incompatibleWork = vi.fn();
+    await runWithDatabaseTransaction(
+      async () => {
+        await runWithDatabaseTransaction(async () => expect(db.select()).toBe('transaction'), {
+          isolationLevel: 'repeatable read',
+        });
+        await expect(
+          runWithDatabaseTransaction(incompatibleWork, { isolationLevel: 'read committed' }),
+        ).rejects.toThrow('existing isolation level');
+      },
+      { isolationLevel: 'repeatable read' },
+    );
+    expect(incompatibleWork).not.toHaveBeenCalled();
+    expect(fixtures.primary.transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: 'repeatable read',
+    });
+  });
+
   it('routes deeper resolver transactions to their own savepoint handle', async () => {
     await runWithDatabaseTransaction(async () => {
       await db.transaction(async () => {

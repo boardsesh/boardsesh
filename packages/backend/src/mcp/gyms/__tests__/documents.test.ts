@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { buildSchema, parse, validate, visit } from 'graphql';
 import { typeDefs } from '@boardsesh/shared-schema';
+import {
+  GET_GYM_GRADE_COMPARISON,
+  GET_GYM_GRADE_COLLECTION_OPTIONS,
+  SET_GYM_GRADE_COLLECTION,
+} from '@boardsesh/graphql/operations/gyms';
 import { gymMcpDocuments } from '../documents';
 
 describe('fixed gym MCP documents', () => {
@@ -24,5 +29,11 @@ describe('fixed gym MCP documents', () => {
       expect(fields).not.toContain('reporter');
       expect(fields).not.toContain('claimantIds');
     }
+  });
+
+  it('uses the same fixed grade documents as the regular gym insights page', () => {
+    expect(gymMcpDocuments.getGradeComparison).toBe(GET_GYM_GRADE_COMPARISON);
+    expect(gymMcpDocuments.getGradeCollectionOptions).toBe(GET_GYM_GRADE_COLLECTION_OPTIONS);
+    expect(gymMcpDocuments.setGradeCollection).toBe(SET_GYM_GRADE_COLLECTION);
   });
 });

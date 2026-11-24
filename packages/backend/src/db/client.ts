@@ -12,11 +12,13 @@ const readDb = createReadDb();
 
 export type Database = typeof primaryDb;
 export type DatabaseEffect = () => void | Promise<void>;
+export type DatabaseTransactionOptions = Pick<NonNullable<Parameters<Database['transaction']>[1]>, 'isolationLevel'>;
 
 interface DatabaseScope {
   executor: Database;
   effects: DatabaseEffect[];
   active: boolean;
+  isolationLevel: NonNullable<DatabaseTransactionOptions['isolationLevel']>;
 }
 
 const databaseScope = new AsyncLocalStorage<DatabaseScope>();
@@ -36,6 +38,7 @@ function scopedDatabase(fallback: Database): Database {
                 executor: nestedTransaction as unknown as Database,
                 effects: scope.effects,
                 active: true,
+                isolationLevel: scope.isolationLevel,
               };
               try {
                 return await databaseScope.run(nestedScope, () => work(nestedTransaction));
@@ -79,19 +82,30 @@ export async function deferDatabaseEffect(effect: DatabaseEffect): Promise<void>
  */
 export async function runWithDatabaseTransaction<Result>(
   work: (executor: Database) => Promise<Result>,
+  options?: DatabaseTransactionOptions,
 ): Promise<Result> {
   const parent = databaseScope.getStore();
-  if (parent?.active) return work(parent.executor);
+  if (parent?.active) {
+    if (options?.isolationLevel && options.isolationLevel !== parent.isolationLevel) {
+      throw new Error('A delegated transaction cannot change its existing isolation level.');
+    }
+    return work(parent.executor);
+  }
   const effects: DatabaseEffect[] = [];
   const result = await primaryDb.transaction(async (transaction) => {
     const executor = transaction as unknown as Database;
-    const scope: DatabaseScope = { executor, effects, active: true };
+    const scope: DatabaseScope = {
+      executor,
+      effects,
+      active: true,
+      isolationLevel: options?.isolationLevel ?? 'read committed',
+    };
     try {
       return await databaseScope.run(scope, () => work(executor));
     } finally {
       scope.active = false;
     }
-  });
+  }, options);
   for (const effect of effects) {
     try {
       await effect();
