@@ -27,7 +27,6 @@ import {
   SYSTEM_BOARD_OWNER_ID,
   type BoardSetupReviewReason,
   type DirectoryReportSubmitResult,
-  type UserBoard,
 } from '@boardsesh/shared-schema';
 
 /** The reasons a climber picks from, in sheet order. */
@@ -152,8 +151,10 @@ export function canSendSetupReport({ setupChanged, note }: { setupChanged: boole
 /**
  * The line under Send while a changed setup is picked: what happens to it,
  * worded from the gym's listing state, the half of the server's rule a client
- * can see. Null while the board's gym is still loading, so the line never
- * says "whoever added it" about a board that has a gym.
+ * can see. Null while the board's gym state is unknown (still loading, or its
+ * read failed), and the sheet then shows no line at all: never "whoever added
+ * it" about a board that has a gym, nor the report's routing line, which says
+ * who reads a report rather than what happens to the setup.
  */
 export function setupSuggestionLine({
   boardGymUuid,
@@ -168,17 +169,20 @@ export function setupSuggestionLine({
 
 /**
  * The done step for a report that carried a suggested setup:
- * - `applied`: it changed the board for everyone; the sheet offers "Climb it now" with `board`.
+ * - `applied`: it changed the board for everyone; the sheet offers "Climb it
+ *   now". The result's `board` is null when the change committed but the
+ *   server couldn't read the board back; the sheet reads it by uuid, and the
+ *   change still stands.
  * - `review`: it waits for someone, and `reason` says why.
  * - null: no suggestion, or the `directory-setup-suggestions` flag is off on
  *   the server (`SENT_FOR_REVIEW` with no reason): the plain done line.
  */
-export type SetupDoneCopy = { kind: 'applied'; board: UserBoard } | { kind: 'review'; reason: BoardSetupReviewReason };
+export type SetupDoneCopy = { kind: 'applied' } | { kind: 'review'; reason: BoardSetupReviewReason };
 
 export function setupDoneCopy(
-  result: Pick<DirectoryReportSubmitResult, 'setupOutcome' | 'setupReviewReason' | 'board'>,
+  result: Pick<DirectoryReportSubmitResult, 'setupOutcome' | 'setupReviewReason'>,
 ): SetupDoneCopy | null {
-  if (result.setupOutcome === 'APPLIED' && result.board) return { kind: 'applied', board: result.board };
+  if (result.setupOutcome === 'APPLIED') return { kind: 'applied' };
   if (result.setupOutcome === 'SENT_FOR_REVIEW' && result.setupReviewReason) {
     return { kind: 'review', reason: result.setupReviewReason };
   }

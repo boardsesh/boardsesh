@@ -23,6 +23,8 @@ const boardMutate = vi.hoisted(() => vi.fn());
 const gymMutate = vi.hoisted(() => vi.fn());
 const track = vi.hoisted(() => vi.fn());
 const gymBoardsArgs = vi.hoisted(() => [] as (string | null)[]);
+const fetchBoard = vi.hoisted(() => vi.fn());
+const activateOptions = vi.hoisted(() => [] as unknown[]);
 // The report sheet's own dismissal, which the claim handoff waits for.
 const dismissal = vi.hoisted(() => ({
   calls: 0,
@@ -71,8 +73,24 @@ vi.mock('../../InsetGroupedList', () => ({
   insetGroupedRowStyles: { row: {}, leading: {}, text: {} },
 }));
 vi.mock('../../Button', () => ({
-  Button: ({ title, onPress, testID }: { title: string; onPress: () => void; testID?: string }) =>
-    createElement('button', { type: 'button', onClick: onPress, 'data-testid': testID }, title),
+  Button: ({
+    title,
+    onPress,
+    testID,
+    disabled,
+    loading,
+  }: {
+    title: string;
+    onPress: () => void;
+    testID?: string;
+    disabled?: boolean;
+    loading?: boolean;
+  }) =>
+    createElement(
+      'button',
+      { type: 'button', onClick: onPress, 'data-testid': testID, disabled, 'aria-busy': loading === true },
+      title,
+    ),
 }));
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useDirectorySetupSuggestionsEnabled: () => state.setupSuggestions,
@@ -81,7 +99,12 @@ vi.mock('../../../providers/feature-flags-provider', () => ({
 vi.mock('../../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: state.activeBoard }),
 }));
-vi.mock('../../../lib/boards/use-activate-board', () => ({ useActivateBoard: () => activate }));
+vi.mock('../../../lib/boards/use-activate-board', () => ({
+  useActivateBoard: (options: unknown) => {
+    activateOptions.push(options);
+    return activate;
+  },
+}));
 vi.mock('../../../lib/boards/use-apply-changed-board', () => ({
   useApplyChangedBoard: () => applyChangedBoard,
   boardKeepingLocalAngle: (board: UserBoard, active: UserBoard | null) =>
@@ -153,7 +176,8 @@ vi.mock('../../../lib/connectivity/use-connectivity', () => ({
 vi.mock('../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => 'alex' }));
 vi.mock('../../../lib/analytics', () => ({ track }));
 vi.mock('../../../lib/graphql/hooks', () => ({
-  useGym: (gymUuid: string | null) => ({ data: gymUuid ? state.gym : undefined }),
+  fetchBoardByUuid: fetchBoard,
+  useGym: (gymUuid: string | null) => ({ data: gymUuid ? (state.gym ?? undefined) : undefined }),
   useGymBoards: (gymUuid: string | null) => {
     gymBoardsArgs.push(gymUuid);
     return { data: gymUuid ? state.gymBoards : undefined };
@@ -215,6 +239,8 @@ beforeEach(() => {
   gymMutate.mockReset();
   track.mockReset();
   gymBoardsArgs.length = 0;
+  fetchBoard.mockReset();
+  activateOptions.length = 0;
   dismissal.calls = 0;
   dismissal.resolve = null;
 });
@@ -457,6 +483,15 @@ describe('ReportDirectorySheet suggesting the setup', () => {
     );
   });
 
+  it("shows no line under Send for a changed setup while the board's gym is unknown", () => {
+    state.gym = null;
+    const screen = openWrongSetup();
+    // Unchanged, the report's routing line still says who reads it.
+    expect(screen.getByTestId('report-problem-audience')).toBeTruthy();
+    fireEvent.click(row(screen, 'holds').getByLabelText('Screw Ons'));
+    expect(screen.queryByTestId('report-problem-audience')).toBeNull();
+  });
+
   const applied = { ...board, layoutId: 8, sizeId: 17, setIds: '26,27', angle: 30 } as UserBoard;
 
   function sendHomewall() {
@@ -513,10 +548,13 @@ describe('ReportDirectorySheet suggesting the setup', () => {
     await act(async () => {
       dismissal.resolve?.({ status: 'dismissed' });
     });
-    expect(calls).toEqual(['apply', 'activate']);
-    expect(applyChangedBoard).toHaveBeenCalledWith(applied);
+    // The board's reads took the new setup when it arrived: the bind is the only write.
+    expect(calls).toEqual(['activate']);
+    expect(applyChangedBoard).not.toHaveBeenCalled();
     expect(activate).toHaveBeenCalledTimes(1);
     expect(activate).toHaveBeenCalledWith(applied);
+    // A board picked from a report names no box the In range slot holds.
+    expect(activateOptions.at(-1)).toEqual({ returnTo: '/(tabs)/climbs', recognizesHeldBox: false });
   });
 
   it("keeps the climber's own angle when the board is the one they are on", async () => {
@@ -538,6 +576,113 @@ describe('ReportDirectorySheet suggesting the setup', () => {
       dismissal.resolve?.({ status: 'dismissed' });
     });
     expect(activate).toHaveBeenCalledWith({ ...applied, angle: 50 });
+  });
+
+  it('reads the board again when the change committed without it, and waits to offer Climb it now', async () => {
+    let resolveFetch: (fresh: UserBoard | null) => void = () => undefined;
+    fetchBoard.mockImplementation(
+      () =>
+        new Promise<UserBoard | null>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+    const screen = sendHomewall();
+    act(() => {
+      boardMutate.mock.calls[0][1].onSuccess({
+        status: 'created',
+        reportUuid: 'r1',
+        routedTo: ['creator'],
+        otherReporterCount: 0,
+        setupOutcome: 'APPLIED',
+        setupReviewReason: null,
+        board: null,
+      });
+    });
+    expect(fetchBoard).toHaveBeenCalledWith('board-1');
+    // Still the applied step, worded from what was sent until the board arrives.
+    expect(screen.getByTestId('report-problem-done-title').textContent).toBe('mobile.setupSuggestion.appliedTitle');
+    expect(screen.getByTestId('report-problem-done').textContent).toBe(
+      'mobile.setupSuggestion.appliedBody{"gym":"Crux","setup":"Homewall · 7×10 · Full Ride · Mainline, Auxiliary"}',
+    );
+    const waiting = screen.getByTestId('report-problem-climb-now') as HTMLButtonElement;
+    expect(waiting.disabled).toBe(true);
+    expect(waiting.getAttribute('aria-busy')).toBe('true');
+    fireEvent.click(waiting);
+    expect(dismissal.calls).toBe(0);
+
+    await act(async () => {
+      resolveFetch(applied);
+    });
+    expect(applyChangedBoard).toHaveBeenCalledWith(applied);
+    const ready = screen.getByTestId('report-problem-climb-now') as HTMLButtonElement;
+    expect(ready.disabled).toBe(false);
+    fireEvent.click(ready);
+    await act(async () => {
+      dismissal.resolve?.({ status: 'dismissed' });
+    });
+    expect(activate).toHaveBeenCalledWith(applied);
+  });
+
+  it.each([
+    ['the read fails', () => fetchBoard.mockRejectedValue(new Error('offline'))],
+    ['the board is gone', () => fetchBoard.mockResolvedValue(null)],
+  ])('keeps the applied line and drops Climb it now when %s', async (_case, arrange) => {
+    arrange();
+    const screen = sendHomewall();
+    await act(async () => {
+      boardMutate.mock.calls[0][1].onSuccess({
+        status: 'created',
+        reportUuid: 'r1',
+        routedTo: ['creator'],
+        otherReporterCount: 0,
+        setupOutcome: 'APPLIED',
+        setupReviewReason: null,
+        board: null,
+      });
+    });
+    expect(screen.getByTestId('report-problem-done-title').textContent).toBe('mobile.setupSuggestion.appliedTitle');
+    expect(screen.queryByTestId('report-problem-climb-now')).toBeNull();
+    expect(applyChangedBoard).not.toHaveBeenCalled();
+  });
+
+  it('says the board is already set up that way when someone fixed it first, and offers it to climb', async () => {
+    const fixed = { ...board, layoutId: 8, sizeId: 17, setIds: '26,27' } as UserBoard;
+    fetchBoard.mockResolvedValue(fixed);
+    const screen = sendHomewall();
+    state.boardError = true;
+    await act(async () => {
+      boardMutate.mock.calls[0][1].onError({
+        response: {
+          errors: [{ message: 'Already set up', extensions: { code: 'BAD_USER_INPUT', reason: 'SETUP_UNCHANGED' } }],
+        },
+      });
+      boardMutate.mock.calls[0][1].onSettled();
+    });
+    expect(fetchBoard).toHaveBeenCalledWith('board-1');
+    expect(applyChangedBoard).toHaveBeenCalledWith(fixed);
+    expect(screen.getByTestId('report-problem-done').textContent).toBe('mobile.setupSuggestion.alreadySetUp');
+    expect(screen.queryByText('report.error')).toBeNull();
+    fireEvent.click(screen.getByTestId('report-problem-climb-now'));
+    await act(async () => {
+      dismissal.resolve?.({ status: 'dismissed' });
+    });
+    expect(activate).toHaveBeenCalledWith(fixed);
+  });
+
+  it('keeps the form and the error line for any other refusal', async () => {
+    const screen = sendHomewall();
+    state.boardError = true;
+    await act(async () => {
+      boardMutate.mock.calls[0][1].onError({
+        response: { errors: [{ message: 'Unknown layout', extensions: { code: 'BAD_USER_INPUT' } }] },
+      });
+      boardMutate.mock.calls[0][1].onSettled();
+    });
+    // The mutation's own error state re-renders the sheet.
+    screen.rerender(<ReportDirectorySheet target={{ kind: 'board', board }} onClose={vi.fn()} onClaim={vi.fn()} />);
+    expect(fetchBoard).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('report-problem-done')).toBeNull();
+    expect(screen.getByText('report.error')).toBeTruthy();
   });
 
   it.each<[BoardSetupReviewReason | null, string]>([

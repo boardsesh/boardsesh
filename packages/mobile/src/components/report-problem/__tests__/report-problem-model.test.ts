@@ -148,19 +148,14 @@ describe('suggesting the setup', () => {
   });
 
   it('picks the done step from the outcome', () => {
-    const board = { uuid: 'board-1' } as never;
-    expect(setupDoneCopy({ setupOutcome: 'APPLIED', setupReviewReason: null, board })).toEqual({
-      kind: 'applied',
-      board,
-    });
-    expect(setupDoneCopy({ setupOutcome: 'SENT_FOR_REVIEW', setupReviewReason: 'CLAIMED_GYM', board: null })).toEqual({
+    // Applied whether or not the answer carried the board: the change committed.
+    expect(setupDoneCopy({ setupOutcome: 'APPLIED', setupReviewReason: null })).toEqual({ kind: 'applied' });
+    expect(setupDoneCopy({ setupOutcome: 'SENT_FOR_REVIEW', setupReviewReason: 'CLAIMED_GYM' })).toEqual({
       kind: 'review',
       reason: 'CLAIMED_GYM',
     });
     // The server's flag is off: no reason, so the plain done line.
-    expect(setupDoneCopy({ setupOutcome: 'SENT_FOR_REVIEW', setupReviewReason: null, board: null })).toBeNull();
-    expect(setupDoneCopy({ setupOutcome: null, setupReviewReason: null, board: null })).toBeNull();
-    // Applied without the board to climb: nothing to offer.
-    expect(setupDoneCopy({ setupOutcome: 'APPLIED', setupReviewReason: null, board: null })).toBeNull();
+    expect(setupDoneCopy({ setupOutcome: 'SENT_FOR_REVIEW', setupReviewReason: null })).toBeNull();
+    expect(setupDoneCopy({ setupOutcome: null, setupReviewReason: null })).toBeNull();
   });
 });
