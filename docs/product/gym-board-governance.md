@@ -116,6 +116,14 @@ Calls made building the contract (PR 1):
 - **`DirectoryReportNote.note` stays non-null.** A reporter who only suggested a setup has an empty note, so app builds from before the setup fields still render the row.
 - **With the `directory-setup-suggestions` flag off**, a suggestion is still stored and goes to review with no reason, so turning the flag on never strands one.
 
+Calls made building the resolvers (PR 1):
+
+- **A reporter already on the waiting report replaces their suggestion**, and it is decided again. It only touches their own row and reaches nobody new, and it lets a climber whose suggestion waited on a limit try again later.
+- **"Staff" who may undo are the gym's owner and admins** (`viewerGymManagerRole`), the same people who may edit the gym's boards, so an undo never reaches further than a hand edit would. Editors may not.
+- **A clash is checked before the board is written**, with reads only, so `CLASHES` sends the suggestion to review inside the same transaction instead of failing the report.
+- **A report a change closes at once sends no "report opened" notice.** The creator hears about the change instead, which offers Undo.
+- **An undo is an edit:** it closes the board's waiting "Set up wrong" reports as fixed, and keeps `updateBoard`'s serial guard. It skips the owner-duplicate prompt, since it restores the board's own earlier setup.
+
 ### PR 1: backend power model
 
 - A staff removal blocks the creator from re-linking the board to that gym. The block lifts when staff put it back, which writes a `relinked` event. A staff attach that lifts no block writes no event.
