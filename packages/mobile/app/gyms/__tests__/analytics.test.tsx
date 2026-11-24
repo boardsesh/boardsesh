@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { createElement, type ChangeEvent, type ReactNode } from 'react';
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { createElement, useState, type ChangeEvent, type ReactNode, type UIEvent } from 'react';
+import type { ListRenderItem } from '@shopify/flash-list';
+import { render, screen, fireEvent, act, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
 import { GYM_REPORTING_RECEIPT_MS, gymReportingQueryKey } from '@boardsesh/graphql';
 import type {
@@ -12,7 +13,6 @@ import type {
   GymReachOverview,
   GymStats,
 } from '@boardsesh/shared-schema';
-import type { GymAnalyticsListRow } from '../analytics';
 
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
@@ -24,6 +24,8 @@ const mocks = vi.hoisted(() => ({
   focused: true,
   selectionCheckmark: '#007f66',
   selectionSeparator: '#999999',
+  pressableRenders: new Map<string, number>(),
+  translate: (key: string, variables?: Record<string, string>) => [key, ...Object.values(variables ?? {})].join(' '),
 }));
 
 type Children = { children?: ReactNode };
@@ -32,15 +34,16 @@ type PressProps = Children & {
   accessibilityState?: { expanded?: boolean };
   onPress?: () => void;
 };
-type FlashListProps = {
-  data: GymAnalyticsListRow[];
-  renderItem: (entry: { item: GymAnalyticsListRow }) => ReactNode;
-  keyExtractor: (item: GymAnalyticsListRow) => string;
+type FlashListProps<Item> = {
+  data: Item[];
+  renderItem: ListRenderItem<Item>;
+  keyExtractor: (item: Item) => string;
   ListHeaderComponent?: ReactNode;
   ListFooterComponent?: ReactNode;
+  horizontal?: boolean;
+  extraData?: unknown;
+  testID?: string;
 };
-type LayoutProps = Children & { style?: { flexDirection?: string } };
-type ScrollProps = Children & { horizontal?: boolean; contentContainerStyle?: LayoutProps['style'] };
 type MenuProps = { actions: { label: string }[]; onSelectIndex: (index: number) => void };
 type SegmentedProps = { options: { key: string; label: string }[]; onSelect: (key: string) => void };
 vi.mock('react-native', () => ({
@@ -56,28 +59,45 @@ vi.mock('react-native', () => ({
       },
       children,
     ),
-  ScrollView: ({ children, horizontal, contentContainerStyle }: ScrollProps) =>
-    createElement(
-      'div',
-      horizontal
-        ? { 'data-testid': 'horizontal-native-scroll', 'data-content-direction': contentContainerStyle?.flexDirection }
-        : null,
-      children,
-    ),
-  View: ({ children, style }: LayoutProps) =>
-    createElement('div', { 'data-layout-direction': style?.flexDirection }, children),
+  ScrollView: ({ children }: Children) => createElement('div', null, children),
+  View: ({ children }: Children) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
   useWindowDimensions: () => ({ width: 320, fontScale: 1 }),
 }));
 vi.mock('@shopify/flash-list', () => ({
-  FlashList: ({ data, renderItem, keyExtractor, ListHeaderComponent, ListFooterComponent }: FlashListProps) =>
-    createElement(
+  FlashList: function FlashList<Item>({
+    data,
+    renderItem,
+    keyExtractor,
+    ListHeaderComponent,
+    ListFooterComponent,
+    horizontal,
+    extraData,
+    testID,
+  }: FlashListProps<Item>) {
+    const [firstItem, setFirstItem] = useState(0);
+    const visibleItems = horizontal ? data.slice(firstItem, firstItem + 2) : data;
+    return createElement(
       'div',
-      null,
+      {
+        'data-testid': testID,
+        // The window double receives a logical item index in place of native pixels.
+        onScroll: horizontal
+          ? (event: UIEvent<HTMLDivElement>) => setFirstItem(event.currentTarget.scrollLeft)
+          : undefined,
+      },
       ListHeaderComponent,
-      data.map((item) => createElement('div', { key: keyExtractor(item) }, renderItem({ item }))),
+      // Keep the horizontal slots mounted as their items change, like a recycler.
+      visibleItems.map((item, slot) =>
+        createElement(
+          'div',
+          { key: horizontal ? slot : keyExtractor(item) },
+          renderItem({ item, index: (horizontal ? firstItem : 0) + slot, target: 'Cell', extraData }),
+        ),
+      ),
       ListFooterComponent,
-    ),
+    );
+  },
 }));
 vi.mock('expo-router', () => ({
   Stack: { Screen: () => null },
@@ -87,7 +107,7 @@ vi.mock('expo-router', () => ({
 }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, variables?: Record<string, string>) => [key, ...Object.values(variables ?? {})].join(' '),
+    t: mocks.translate,
     i18n: { language: 'en-US' },
   }),
 }));
@@ -99,6 +119,7 @@ vi.mock('../../../src/providers/theme-provider', () => ({
     systemColors: { separator: mocks.selectionSeparator },
     brandColors: { primary: '#8b5cf6' },
     selection: { checkmark: mocks.selectionCheckmark },
+    textStyles: { caption1: { lineHeight: 16 } },
   }),
 }));
 vi.mock('../../../src/hooks/use-stack-screen-options', () => ({
@@ -208,28 +229,38 @@ vi.mock('../../../src/components/PressableSurface', () => {
   const Pressable = ({
     children,
     onPress,
+    onFocus,
     accessibilityLabel,
     accessibilityState,
     style,
   }: {
     children?: ReactNode;
     onPress?: () => void;
+    onFocus?: () => void;
     accessibilityLabel?: string;
     accessibilityState?: { selected?: boolean };
-    style?: { borderColor?: string }[];
-  }) =>
-    createElement(
+    style?: { borderColor?: string; borderStyle?: string }[];
+  }) => {
+    if (accessibilityLabel?.startsWith('gymBusyTimes.')) {
+      mocks.pressableRenders.set(accessibilityLabel, (mocks.pressableRenders.get(accessibilityLabel) ?? 0) + 1);
+    }
+    return createElement(
       'button',
       {
         onClick: onPress,
+        onFocus,
         'aria-label': accessibilityLabel,
-        'aria-pressed': accessibilityState?.selected,
+        'data-native-selected': accessibilityState?.selected,
         'data-border-color': Array.isArray(style)
           ? style.findLast((entry) => entry?.borderColor)?.borderColor
+          : undefined,
+        'data-border-style': Array.isArray(style)
+          ? style.findLast((entry) => entry?.borderStyle)?.borderStyle
           : undefined,
       },
       children,
     );
+  };
   return { PressableSurface: Pressable, StaticPressableSurface: Pressable };
 });
 vi.mock('../../../src/components/Text', () => ({
@@ -401,6 +432,7 @@ beforeEach(() => {
       },
     }),
   );
+  mocks.pressableRenders.clear();
   mocks.gradeRequest.mockReset().mockResolvedValue({ gymGradeComparison: emptyGrades });
   mocks.viewer = 'viewer-one';
   mocks.generation = 1;
@@ -411,6 +443,12 @@ afterEach(() => {
   focusManager.setFocused(undefined);
   onlineManager.setOnline(true);
 });
+
+function renderedBusyControlsSince(previous: Map<string, number>) {
+  return Array.from(mocks.pressableRenders)
+    .filter(([label, count]) => count !== previous.get(label))
+    .map(([label]) => label);
+}
 
 describe('GymAnalyticsScreen', () => {
   it('keeps the ranking mode and period when the player returns focus to Analytics', async () => {
@@ -440,39 +478,84 @@ describe('GymAnalyticsScreen', () => {
     );
   });
 
-  it('renders the full 90-day chart and exact numeric view with no overview activity', async () => {
-    mocks.request.mockResolvedValue({
-      gymStats: { ...report, busyTimes, current: { ...activeWindow, displayCount: 0, tickCount: 0 } },
-    });
+  it('keeps all 90-day hours reachable and shows exact numbers with no overview activity', async () => {
+    const stats = { ...report, busyTimes, current: { ...activeWindow, displayCount: 0, tickCount: 0 } };
+    mocks.request.mockResolvedValue({ gymStats: stats });
     renderScreen();
     expect(await screen.findByText('gymBusyTimes.title')).toBeTruthy();
-    const heatmap = screen.getByTestId('horizontal-native-scroll');
-    expect(heatmap.getAttribute('data-content-direction')).toBe('column');
-    expect(heatmap.children).toHaveLength(8);
-    expect(Array.from(heatmap.children, (row) => row.getAttribute('data-layout-direction'))).toEqual(
-      Array(8).fill('row'),
-    );
-    const chartButtons = screen.getAllByRole('button', { name: /gymBusyTimes\.(dayDetail|hourDetail|noDates)/ });
-    expect(chartButtons).toHaveLength(175);
+    const heatmap = screen.getByTestId('gym-busy-times-heatmap');
+    const firstHour = /gymBusyTimes\.hourDetail.*Tuesday.*hourSpan 12:00 AM 1:00 AM 0 0 12/;
+    const secondHour = /gymBusyTimes\.hourDetail.*Tuesday.*hourSpan 1:00 AM 2:00 AM 0 0 12/;
+    const lastHour = /gymBusyTimes\.hourDetail.*Sunday.*hourSpan 11:00 PM 12:00 AM 0 0 12/;
+    const hourControl = /gymBusyTimes\.(hourDetail|noDates).*gymBusyTimes\.hourSpan/;
+    expect(within(heatmap).queryByRole('button', { name: lastHour })).toBeNull();
+    expect(within(heatmap).getByRole('button', { name: /hourDetail.*Monday.*12:00 AM 1:00 AM/ }).textContent).toBe('•');
+    expect(
+      within(heatmap).getByRole('button', { name: /noDates.*Wednesday.*12:00 AM 1:00 AM/ }).dataset.borderStyle,
+    ).toBe('dashed');
     const weekday = screen.getByRole('button', { name: /gymBusyTimes\.dayDetail.*Tuesday/ });
     expect(weekday.dataset.borderColor).toBe(mocks.selectionSeparator);
+    const beforeWeekday = new Map(mocks.pressableRenders);
     fireEvent.click(weekday);
     expect(weekday.dataset.borderColor).toBe(mocks.selectionCheckmark);
-    const zero = screen.getByRole('button', {
-      name: /gymBusyTimes\.hourDetail.*Tuesday.*hourSpan 12:00 AM 1:00 AM 0 0 12/,
-    });
+    expect(renderedBusyControlsSince(beforeWeekday)).toEqual([weekday.getAttribute('aria-label')]);
+
+    const zero = within(heatmap).getByRole('button', { name: firstHour });
+    const next = within(heatmap).getByRole('button', { name: secondHour });
+    expect(zero.textContent).toBe('0');
     expect(zero.dataset.borderColor).toBe(mocks.selectionSeparator);
     fireEvent.click(zero);
-    expect(zero.getAttribute('aria-pressed')).toBe('true');
+    expect(zero.getAttribute('data-native-selected')).toBe('true');
     expect(zero.dataset.borderColor).toBe(mocks.selectionCheckmark);
-    expect(screen.getByText(/gymBusyTimes\.hourDetail.*Tuesday.*hourSpan 12:00 AM 1:00 AM 0 0 12/)).toBeTruthy();
+    expect(screen.getByText(firstHour)).toBeTruthy();
+    const beforeNextHour = new Map(mocks.pressableRenders);
+    fireEvent.focus(next);
+    expect(zero.getAttribute('data-native-selected')).toBe('false');
+    expect(next.getAttribute('data-native-selected')).toBe('true');
+    expect(screen.getByText(secondHour)).toBeTruthy();
+    expect(weekday.getAttribute('data-native-selected')).toBe('true');
+    expect(renderedBusyControlsSince(beforeNextHour)).toEqual([
+      zero.getAttribute('aria-label'),
+      next.getAttribute('aria-label'),
+    ]);
+    const beforeRepeatedSelection = new Map(mocks.pressableRenders);
+    fireEvent.click(next);
+    expect(renderedBusyControlsSince(beforeRepeatedSelection)).toEqual([]);
+
+    const seenHours = new Set<string | null>();
+    for (let firstVisibleHour = 0; firstVisibleHour < 24; firstVisibleHour += 2) {
+      fireEvent.scroll(heatmap, { target: { scrollLeft: firstVisibleHour } });
+      for (const hour of within(heatmap).getAllByRole('button', { name: hourControl })) {
+        seenHours.add(hour.getAttribute('aria-label'));
+      }
+    }
+    expect(seenHours.size).toBe(168);
+    expect(screen.getByText(secondHour)).toBeTruthy();
+    const late = within(heatmap).getByRole('button', { name: lastHour });
+    fireEvent.click(late);
+    expect(late.getAttribute('data-native-selected')).toBe('true');
+    expect(screen.getByText(lastHour)).toBeTruthy();
+
+    fireEvent.scroll(heatmap, { target: { scrollLeft: 0 } });
+    expect(within(heatmap).getByRole('button', { name: firstHour }).getAttribute('data-native-selected')).toBe('false');
+    expect(screen.getByText(lastHour)).toBeTruthy();
+    fireEvent.click(within(heatmap).getByRole('button', { name: firstHour }));
     fireEvent.click(screen.getByRole('button', { name: 'gymBusyTimes.numbers' }));
     const wednesday = screen.getByRole('button', { name: 'Wednesday' });
     expect(wednesday.dataset.borderColor).toBe(mocks.selectionSeparator);
     fireEvent.click(wednesday);
     expect(wednesday.dataset.borderColor).toBe(mocks.selectionCheckmark);
     expect(screen.getAllByText(/gymBusyTimes.noDates.*Wednesday.*gymBusyTimes.hourSpan/)).toHaveLength(24);
+    fireEvent.click(screen.getByRole('button', { name: 'gymBusyTimes.charts' }));
+    expect(screen.getByRole('button', { name: firstHour }).getAttribute('data-native-selected')).toBe('true');
     expect(mocks.request).toHaveBeenCalledTimes(1);
+
+    mocks.request.mockResolvedValueOnce({ gymStats: { ...stats, boardUuid: 'board-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Wall One' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: firstHour }).getAttribute('data-native-selected')).toBe('false'),
+    );
+    expect(screen.queryByText(firstHour)).toBeNull();
   });
 
   it('opens display-only data with zero sends and applies a physical board, range and zone', async () => {
@@ -528,10 +611,10 @@ describe('GymAnalyticsScreen', () => {
     expect(screen.getByText('gymReach.returnedDefinition 4 8')).toBeTruthy();
     const missing = screen.getByRole('button', { name: /Aug 17, 2026.*gymReach.missing/ });
     fireEvent.click(missing);
-    expect(missing.getAttribute('aria-pressed')).toBe('true');
+    expect(missing.getAttribute('data-native-selected')).toBe('true');
     fireEvent.click(screen.getByRole('button', { name: 'gymReach.trendSends' }));
     expect(
-      screen.getByRole('button', { name: /Aug 17, 2026.*gymReach.weekSends 0/ }).getAttribute('aria-pressed'),
+      screen.getByRole('button', { name: /Aug 17, 2026.*gymReach.weekSends 0/ }).getAttribute('data-native-selected'),
     ).toBe('true');
     expect(
       screen.getByRole('button', { name: /Nov 2, 2026.*gymReach.weekSends 13.*gymReach.inProgress/ }),
