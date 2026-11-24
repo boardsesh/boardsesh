@@ -10,7 +10,7 @@ import { ClimbModerationStatus } from './ClimbModerationStatus';
 import { buildAngleGradeBars } from './community-utils';
 import { useClimbStatsHistory } from '../../lib/graphql/hooks';
 import { useGradeFormat } from '../../hooks/use-grade-format';
-import { formatQuality } from '../../lib/format-climb-stats';
+import { formatPlays, formatQuality } from '../../lib/format-climb-stats';
 import { useTheme } from '../../providers/theme-provider';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
@@ -22,6 +22,7 @@ type CommunitySectionProps = {
   angle: number;
   qualityAverage: string;
   ascensionistCount: number;
+  playCount?: number | null;
   /** `climb.is_hidden` — drives the "Hidden by the community" banner above the
    *  stats, before the proposal read lands. */
   isHidden?: boolean;
@@ -34,9 +35,11 @@ export const CommunitySection = memo(function CommunitySection({
   angle,
   qualityAverage,
   ascensionistCount,
+  playCount = null,
   isHidden = false,
 }: CommunitySectionProps) {
   const { t } = useTranslation('session');
+  const { t: tClimbs, i18n } = useTranslation('climbs');
   const { systemColors } = useTheme();
   const { gradeFormat } = useGradeFormat();
   const { data: history } = useClimbStatsHistory(boardName, climbUuid);
@@ -76,23 +79,18 @@ export const CommunitySection = memo(function CommunitySection({
     <ClimbModerationStatus climbUuid={climbUuid} boardName={boardName} angle={angle} isHidden={isHidden} />
   );
 
-  if (!hasQuality && !hasAscensionists && angleBars.length === 0) {
-    return (
-      <View style={styles.container}>
-        {moderationStatus}
+  return (
+    <View style={styles.container}>
+      {moderationStatus}
+
+      {!hasQuality && !hasAscensionists && angleBars.length === 0 && playCount === null && (
         <View style={styles.emptyContainer}>
           <Icon name="people" size={20} color={systemColors.secondaryLabel} />
           <Text variant="subheadline" color={systemColors.secondaryLabel}>
             {t('mobile.community.empty')}
           </Text>
         </View>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.container}>
-      {moderationStatus}
+      )}
 
       {hasQuality && (
         <View style={styles.statRow}>
@@ -111,6 +109,17 @@ export const CommunitySection = memo(function CommunitySection({
           </Text>
         </View>
       )}
+
+      <View style={styles.plays}>
+        <Text variant="subheadline" accessibilityLabel={playCount === null ? tClimbs('plays.unavailable') : undefined}>
+          {playCount === null
+            ? `${tClimbs('plays.label')} · ${tClimbs('plays.valueUnavailable')}`
+            : formatPlays(playCount, tClimbs, i18n?.language)}
+        </Text>
+        <Text variant="footnote" color={systemColors.secondaryLabel}>
+          {tClimbs('plays.explanation')}
+        </Text>
+      </View>
 
       {angleBars.length > 0 && (
         <View style={styles.histogram}>
@@ -145,6 +154,9 @@ const styles = StyleSheet.create({
   starsRow: {
     flexDirection: 'row',
     gap: 2,
+  },
+  plays: {
+    gap: spacing[1],
   },
   histogram: {
     gap: spacing[2],

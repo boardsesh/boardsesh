@@ -474,6 +474,10 @@ vi.mock('../../../../src/lib/graphql/hooks/use-infinite-search-climbs', () => ({
     fetchNextPage: vi.fn(),
   }),
 }));
+// This route/action harness has no offline database; exact Plays reads are tested separately.
+vi.mock('../../../../src/lib/playlists/use-playlist-local-plays', () => ({
+  usePlaylistLocalPlays: () => new Map(),
+}));
 vi.mock('../../../../src/lib/graphql/hooks', () => ({ useSearchClimbsCount: () => ({ data: ctrl.empty ? 0 : 1 }) }));
 vi.mock('../../../../src/lib/graphql/offline-request', () => ({ offlineAwareRequest: vi.fn() }));
 // The player's list count reads the query cache, and these screens render

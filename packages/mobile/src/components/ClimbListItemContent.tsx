@@ -6,7 +6,9 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import { Text } from './Text';
 import { ClimbListThumbnail } from './ClimbListThumbnail';
 import { useClimbListThumbnailSize } from './climb-list-thumbnail-metrics';
-import { formatSends, formatQuality } from '../lib/format-climb-stats';
+import { formatPlays, formatSends, formatQuality } from '../lib/format-climb-stats';
+import { selectClimbPlays, type ClimbPlaysProjection } from '../lib/climb-play-count';
+import { usePrivacyCredentialScope } from '../hooks/use-privacy-scoped-state';
 import { boardSupportsMirroring } from '@boardsesh/board-config';
 import { useEffectiveClimbStats } from '@boardsesh/board-react';
 import { useAscentStatus } from '../hooks/use-ascent-status';
@@ -129,6 +131,8 @@ export type ClimbRowSubtitleLeafProps = {
   layoutId: number;
   climbUuid: string;
   angle: number;
+  showPlays?: boolean;
+  catalogPlays?: ClimbPlaysProjection;
   isDraft: boolean;
   ascensionistCount: number;
   qualityAverage: string;
@@ -236,6 +240,8 @@ type ClimbListItemContentProps = {
   sizeId: number;
   setIds: string;
   angle: number;
+  showPlays?: boolean;
+  catalogPlays?: ClimbPlaysProjection;
   subtitleDetailParts?: readonly string[];
   /**
    * Whether to render the trailing ascent-status glyph. Defaults to true. Set
@@ -544,12 +550,13 @@ export const ClimbAscentStatusView = React.memo(function ClimbAscentStatusView({
  *
  * - The stats store is read for the sends, the rating, and the community's
  *   live difficulty while a token is worked out from it. A line that shows the
- *   setter alone mounts no stats subscriber.
+ *   setter alone mounts no stats subscriber unless the surface opts into Plays.
  * - The logbook is read only where the climber's own grade can be in the
  *   column, which is where it can change the token or move the set-angle marker.
  */
 const LiveClimbSubtitle = React.memo(function LiveClimbSubtitle(props: ClimbRowSubtitleLeafProps) {
   const { place, showSends, showRating, showCommunityGrade, setAtAngle } = props;
+  const showLiveStats = showSends || showRating || props.showPlays;
   // Two setting reads pick the leaf. A token needs a grade in the column that
   // is not the community's: the climber's own (personal grades) or a Boardsesh
   // grade. With neither active there is nothing to work out.
@@ -563,7 +570,7 @@ const LiveClimbSubtitle = React.memo(function LiveClimbSubtitle(props: ClimbRowS
   if (personalGradesActive && (showCommunityGrade || setAtAngle !== null)) {
     // The marker's place follows the climber's grade alone. With the token and
     // both numbers off, nothing on the line comes from the stats store.
-    return showCommunityGrade || showSends || showRating ? (
+    return showCommunityGrade || showLiveStats ? (
       <LiveMyGradeSubtitle {...props} />
     ) : (
       <MyGradeMarkerSubtitle {...props} />
@@ -579,13 +586,13 @@ const LiveClimbSubtitle = React.memo(function LiveClimbSubtitle(props: ClimbRowS
   // name line, where the leaf is there for the token alone, that leaves nothing
   // to draw and nothing to subscribe to.
   if (place === 'nameLine') return null;
-  if (showSends || showRating) return <LiveStatsSubtitle {...props} />;
+  if (showLiveStats) return <LiveStatsSubtitle {...props} />;
   // The setter alone, which the row already has: no store is read.
   return subtitleView(props, props, null, null);
 });
 
 /** The community's numbers as a leaf below hands them to the view: live, or the row's own. */
-type SubtitleNumbers = { ascensionistCount: number; qualityAverage: string | null };
+type SubtitleNumbers = { ascensionistCount: number; qualityAverage: string | null; playCount?: number | null };
 
 /** The view, from the leaf's props, the numbers to show and the two answers a grade reader gives. */
 function subtitleView(
@@ -600,6 +607,8 @@ function subtitleView(
       isDraft={props.isDraft}
       ascensionistCount={numbers.ascensionistCount}
       qualityAverage={numbers.qualityAverage}
+      playCount={numbers.playCount}
+      playAngle={props.showPlays ? props.angle : undefined}
       setterUsername={props.setterUsername}
       showSends={props.showSends}
       showRating={props.showRating}
@@ -610,13 +619,18 @@ function subtitleView(
   );
 }
 
-/** The detail leaf's one stats subscription. The token reads its difficulty from here, so switching it on adds none. */
+/** Keep the credential subscription in the same leaf that reads live stats. */
 function useSubtitleStats(props: ClimbRowSubtitleLeafProps) {
-  return useEffectiveClimbStats(props.boardName, props.layoutId, props.climbUuid, props.angle, {
+  const credentialScope = usePrivacyCredentialScope();
+  const stats = useEffectiveClimbStats(props.boardName, props.layoutId, props.climbUuid, props.angle, {
     ascensionistCount: props.ascensionistCount,
     qualityAverage: props.qualityAverage,
     difficulty: props.difficulty,
   });
+  return {
+    ...stats,
+    playCount: props.showPlays ? selectClimbPlays(stats.playCount, props.catalogPlays, credentialScope) : undefined,
+  };
 }
 
 /**
@@ -694,6 +708,8 @@ export type ClimbSubtitleViewProps = {
   isDraft: boolean;
   ascensionistCount: number;
   qualityAverage: string | null;
+  playCount?: number | null;
+  playAngle?: number;
   setterUsername: string;
   // The climber's switches for the line's three own tokens.
   showSends: boolean;
@@ -723,6 +739,8 @@ export const ClimbSubtitleView = React.memo(function ClimbSubtitleView({
   isDraft,
   ascensionistCount,
   qualityAverage,
+  playCount,
+  playAngle,
   setterUsername,
   showSends,
   showRating,
@@ -730,7 +748,7 @@ export const ClimbSubtitleView = React.memo(function ClimbSubtitleView({
   communityGrade,
   setAtAngle,
 }: ClimbSubtitleViewProps) {
-  const { t } = useTranslation('climbs');
+  const { t, i18n } = useTranslation('climbs');
 
   // The same token as in the detail line, in the same grey, after the name and
   // its glyphs. It is not a line: a climb without one draws nothing here.
@@ -760,14 +778,6 @@ export const ClimbSubtitleView = React.memo(function ClimbSubtitleView({
   // read "Project" on every climb. It stands in for the send count, so it goes
   // when the climber switches sends off.
   const nothingKnown = sends === null && rating === null && setter === null && !communityGrade && setAtAngle === null;
-  if (showSends && nothingKnown) {
-    return (
-      <Text tone="secondary" variant="footnote" numberOfLines={1}>
-        {t('mobile.climbRow.projectFallback')}
-      </Text>
-    );
-  }
-
   // Each token as drawn, and as spoken where the two differ. All of it is plain
   // text in the line's own grey: in this row colour means the big grade and
   // nothing else.
@@ -787,8 +797,16 @@ export const ClimbSubtitleView = React.memo(function ClimbSubtitleView({
   if (communityGrade) {
     tokens.push({ drawn: communityGrade, spoken: t('mobile.climbRow.communityGradeAria', { grade: communityGrade }) });
   }
-  const stats = [showSends ? sends : null, showRating ? rating : null, showSetter ? setter : null];
-  for (const stat of stats) if (stat !== null) tokens.push({ drawn: stat });
+  if (showSends && nothingKnown) tokens.push({ drawn: t('mobile.climbRow.projectFallback') });
+  if (showSends && sends !== null) tokens.push({ drawn: sends });
+  if (showRating && rating !== null) tokens.push({ drawn: rating });
+  if (playCount != null && playAngle !== undefined) {
+    tokens.push({
+      drawn: formatPlays(playCount, t, i18n?.language, { angle: setAtAngle === null ? undefined : playAngle }),
+      spoken: formatPlays(playCount, t, i18n?.language, { angle: playAngle }),
+    });
+  }
+  if (showSetter && setter !== null) tokens.push({ drawn: setter });
 
   // Every token this climb has is switched off, or it has none of the ones
   // that are on. The line is part of the row's shape, not of this climb's data,
@@ -976,6 +994,8 @@ export const ClimbListItemContentView = React.memo(function ClimbListItemContent
   sizeId,
   setIds,
   angle,
+  catalogPlays,
+  showPlays = false,
   subtitleDetailParts,
   showAscentStatus = true,
   primarySubtitleOverride,
@@ -1127,6 +1147,8 @@ export const ClimbListItemContentView = React.memo(function ClimbListItemContent
         layoutId={layoutId}
         climbUuid={climb.uuid}
         angle={angle}
+        showPlays={subtitlePlace === 'detailLine' && showPlays}
+        catalogPlays={catalogPlays}
         isDraft={climb.is_draft ?? false}
         ascensionistCount={climb.ascensionist_count ?? 0}
         qualityAverage={climb.quality_average}

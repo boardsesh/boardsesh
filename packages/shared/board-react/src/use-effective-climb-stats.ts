@@ -9,6 +9,7 @@ import {
   getClimbStatsSnapshot,
   getRetainedClimbStatsKeys,
   isClimbStatsReadRetained,
+  markClimbPlaysUnavailable,
   retireAcknowledgedOptimisticAscents,
   setClimbStatsAuthEpoch,
   settleOfflineTickAscent,
@@ -61,6 +62,7 @@ const RECONCILIATION_INTERVAL_MS = 120_000;
 let activeBatch: ActiveBatch | null = null;
 let drainScheduled = false;
 let coordinatorGeneration = 0;
+let lastBatchDispatchOrder = 0;
 
 function readKey(boardType: string, climbUuid: string): string {
   return `${boardType}\u0000${climbUuid}`;
@@ -389,33 +391,44 @@ function pauseRateLimitedLane(batch: ActiveBatch, retryAfterSeconds: number | nu
 function applyBatchRows(
   batch: ActiveBatch,
   rows: Awaited<ReturnType<NonNullable<BoardAdapter['fetchClimbStatsForClimbs']>>>,
+  dispatchOrder: number,
 ): void {
-  const rowsByClimbUuid = new Map<string, typeof rows>();
+  const rowsByClimbUuid = new Map<string, Map<number, (typeof rows)[number]>>();
   for (const row of rows) {
-    const climbRows = rowsByClimbUuid.get(row.climbUuid) ?? [];
-    climbRows.push(row);
-    rowsByClimbUuid.set(row.climbUuid, climbRows);
+    let climbRows = rowsByClimbUuid.get(row.climbUuid);
+    if (!climbRows) {
+      climbRows = new Map();
+      rowsByClimbUuid.set(row.climbUuid, climbRows);
+    }
+    climbRows.set(row.angle, row);
   }
-
+  const currentReads = new Map<string, QueuedRead>();
   const now = Date.now();
   for (const read of batch.reads) {
     if (!readIsCurrent(read)) {
       completeRead(read);
       continue;
     }
+    currentReads.set(read.key.climbUuid, read);
     recordReadAt(readKey(batch.boardType, read.key.climbUuid), now);
-    for (const row of rowsByClimbUuid.get(read.key.climbUuid) ?? []) {
+    for (const { playCount, ...row } of rowsByClimbUuid.get(read.key.climbUuid)?.values() ?? []) {
       for (const layoutId of read.layoutIds) {
-        applyCanonicalClimbStats({
-          boardType: batch.boardType,
-          layoutId,
-          ...row,
-          ascensionistCount: row.ascensionistCount ?? 0,
-        });
+        applyCanonicalClimbStats(
+          { boardType: batch.boardType, layoutId, ...row, ascensionistCount: row.ascensionistCount ?? 0 },
+          playCount === undefined ? undefined : { playCount, dispatchOrder, authEpoch: read.authEpoch },
+        );
       }
     }
     retireAcknowledgedOptimisticAscents(read.acknowledgedTokens, read.authEpoch);
     completeRead(read);
+  }
+
+  // One all-angle request covers angles retained while it was in flight as
+  // well. A successful omission includes rows the viewer can no longer read.
+  for (const key of getRetainedClimbStatsKeys(batch.boardType)) {
+    const read = currentReads.get(key.climbUuid);
+    if (!read?.layoutIds.has(key.layoutId) || rowsByClimbUuid.get(key.climbUuid)?.has(key.angle)) continue;
+    markClimbPlaysUnavailable(key, { dispatchOrder, authEpoch: read.authEpoch });
   }
 }
 
@@ -454,6 +467,7 @@ function drainReadQueue(): void {
 
   activeBatch = batch;
   const generation = coordinatorGeneration;
+  const dispatchOrder = ++lastBatchDispatchOrder;
   void fetchClimbStatsForClimbs(
     batch.boardType,
     batch.reads.map((read) => read.key.climbUuid),
@@ -461,7 +475,7 @@ function drainReadQueue(): void {
     .then((rows) => {
       if (generation !== coordinatorGeneration) return;
       if (batch.isRateLimitRetry) clearRateLimitPause(batch.group);
-      applyBatchRows(batch, rows);
+      applyBatchRows(batch, rows, dispatchOrder);
     })
     .catch((error: unknown) => {
       if (generation !== coordinatorGeneration) return;
@@ -540,6 +554,8 @@ export type EffectiveClimbStats = {
   ascensionistCount: number;
   qualityAverage: string | null;
   difficulty: string | null;
+  /** Undefined until observed; null suppresses stale projections. */
+  playCount?: number | null;
 };
 
 export type EffectiveClimbStatsBase = {
@@ -590,7 +606,11 @@ export function useEffectiveClimbStats(
   const canonical = snapshot.canonical;
   const canonicalCount = canonical?.ascensionistCount ?? 0;
   const baseCount = base.ascensionistCount ?? 0;
+  const plays = snapshot.plays;
+  const playCount =
+    enabled && plays && plays.authEpoch === (adapter.captureAuthEpoch?.() ?? 0) ? plays.playCount : undefined;
   return {
+    ...(playCount !== undefined && { playCount }),
     // The list/search base is only bootstrap data. Once a revision-gated
     // canonical row exists it is authoritative even when the count decreased
     // to zero; only an outstanding mutation floor may temporarily exceed it.

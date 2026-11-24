@@ -1,3 +1,4 @@
+import type { CatalogPlaysScope } from '../../lib/climb-play-count';
 import type { Climb, QueueAddPlacement } from '@boardsesh/queue';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -106,6 +107,7 @@ export type PlaylistDetailFilterAction = {
 };
 
 export type PlaylistDetailViewProps = {
+  catalogPlaysScope?: CatalogPlaysScope;
   hero: PlaylistDetailHero;
   climbs: Climb[];
   /** Preferred active board for climb rows. Compatible rows render against it;

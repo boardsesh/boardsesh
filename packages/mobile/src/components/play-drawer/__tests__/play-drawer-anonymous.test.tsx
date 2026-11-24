@@ -519,6 +519,10 @@ vi.mock('../use-wall-climb', () => ({
 }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => auth }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
+// The selected Plays read has its own query/provider integration suite.
+vi.mock('../../../lib/graphql/hooks/use-climb', () => ({
+  useSelectedClimbPlays: () => ({ climbAtAngle: undefined, catalogPlays: undefined }),
+}));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useGymBoards: () => ({ data: gymBoards.current }),
   useProfile: () => ({ data: undefined }),

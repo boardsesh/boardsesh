@@ -146,6 +146,7 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
     ['holdHeatmap'],
     ['localClimbArt'],
     ['localTicks', 'activity'],
+    ['playlistLocalPlays'],
   ],
   // The setter picker reads stats too, on Woods only: a climb set at another angle
   // counts toward its setter at the browsed angle once it has a stats row there
@@ -163,6 +164,7 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
     ['setterStats'],
     ['holdHeatmap'],
     ['climbStatsHistory'],
+    ['playlistLocalPlays'],
   ],
   // The stats keys plus the two grade-specific keys the play-drawer grade
   // section and the by-angle chart read.
@@ -180,16 +182,14 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   // through this map after a chunk changed rows, so it lives here with the rest.
   board_climb_hold_sets: [['similarClimbs'], ['holdHeatmap']],
 
-  // Deliberately empty — not a placeholder.
-  //
   // A wall's holds and photo are read back through the spray wall registry
   // (`packages/mobile/src/lib/spray/spray-wall-registry.ts`, SW-07 / #5440),
   // which is a plain map the render path reads synchronously and which carries
   // its own subscription — there is no query key to bust. The climb-facing half
   // of a hold edit (a published climb that lost a hold gets its badge) rides
   // on `board_climbs.missing_hold_count` and is already covered by that table's
-  // keys above. Give this real keys if a wall ever grows a React Query surface.
-  spray_walls: [],
+  // keys above. Playlist Plays also checks whether the local wall is readable.
+  spray_walls: [['playlistLocalPlays']],
 };
 
 /**
@@ -221,6 +221,7 @@ const BOARD_SCOPED_KEY_HEADS: ReadonlySet<string> = new Set([
   'searchClimbs',
   'infiniteSearchClimbs',
   'searchClimbsCount',
+  'playlistLocalPlays',
 ]);
 
 export type BoardScopeKey = { boardType: string; layoutId: number };

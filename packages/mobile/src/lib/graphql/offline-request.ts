@@ -1,5 +1,6 @@
 import { getCredentialGeneration } from '../privacy/privacy-cache';
 import { getSprayWall } from '../spray/spray-wall-registry';
+import { stampCatalogPlaysScope } from '../climb-play-count';
 import { onlineManager } from '@tanstack/react-query';
 import type { Variables } from 'graphql-request';
 import type { SQLiteDatabase } from 'expo-sqlite';
@@ -533,7 +534,7 @@ function offlineReadLane(): OfflineReadLane {
 export async function offlineAwareRequest<TResponse>(
   document: string,
   variables?: Variables,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; stampSearchPlaysScope?: boolean },
 ): Promise<TResponse> {
   const suppliedVariables = variables as Record<string, unknown> | undefined;
   if (document === GET_CLIMB && suppliedVariables?.boardName === 'spray') {
@@ -549,6 +550,15 @@ export async function offlineAwareRequest<TResponse>(
   const signal = options?.signal;
   const credentialGeneration = getCredentialGeneration();
   const localAllowed = () => getCredentialGeneration() === credentialGeneration;
+  const searchInput = (variables as SearchClimbsQueryVariables | undefined)?.input;
+  const withSearchPlaysScope = (response: TResponse, fromLocal: boolean): TResponse =>
+    options?.stampSearchPlaysScope
+      ? stampCatalogPlaysScope(response, 'searchClimbs', {
+          credentialScope: credentialGeneration,
+          authority:
+            searchInput?.boardName === 'spray' && (fromLocal || searchInput.sprayWallUuid) ? 'wall' : 'reference',
+        })
+      : response;
   const assertNotCancelled = () => {
     if (signal?.aborted) throw createAbortError('Request cancelled');
   };
@@ -571,7 +581,7 @@ export async function offlineAwareRequest<TResponse>(
         recordLocalUserRead(operation.userDataFamily, operation.boardNameOf(variables as never));
       }
     }
-    return response;
+    return withSearchPlaysScope(response, true);
   }
 
   let localDb: SQLiteDatabase | null = null;
@@ -633,7 +643,7 @@ export async function offlineAwareRequest<TResponse>(
       : networkResponse;
     assertNotCancelled();
     if (operation && !localAllowed()) throw createAbortError('Privacy changed during climb request');
-    return response;
+    return withSearchPlaysScope(response, false);
   } catch (networkError) {
     assertNotCancelled();
     if (

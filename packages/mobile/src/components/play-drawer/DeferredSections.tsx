@@ -56,6 +56,7 @@ type DeferredSectionsProps = {
   sizeId: number;
   setIds: string;
   angle: number;
+  playCount?: number | null;
   enabled: boolean;
   contentEnabled: boolean;
   sections?: PlayDrawerSectionsVisibility;
@@ -174,6 +175,7 @@ export const DeferredSections = memo(function DeferredSections({
   sizeId,
   setIds,
   angle,
+  playCount = null,
   enabled,
   contentEnabled,
   sections = DEFAULT_PLAY_DRAWER_SECTIONS,
@@ -589,6 +591,7 @@ export const DeferredSections = memo(function DeferredSections({
                   angle={angle}
                   qualityAverage={climb.quality_average}
                   ascensionistCount={climb.ascensionist_count}
+                  playCount={playCount}
                   isHidden={climb.is_hidden === true}
                 />
               )}
@@ -645,6 +648,7 @@ export const DeferredSections = memo(function DeferredSections({
       sizeId,
       setIds,
       angle,
+      playCount,
       logbookSummary,
       climberLogsSummary,
       betaVideosSummary,

@@ -183,7 +183,9 @@ import {
   useWallSwipeToDriveEnabled,
 } from '../../providers/feature-flags-provider';
 import { useToast } from '../../providers/toast-provider';
-import { useClimb, useGymBoards, useProfile } from '../../lib/graphql/hooks';
+import { useGymBoards, useProfile } from '../../lib/graphql/hooks';
+import { useSelectedClimbPlays } from '../../lib/graphql/hooks/use-climb';
+import { isClimbResolved } from '../../lib/queue-climb-resolution';
 import { useBluetoothWriteInProgress } from '../../providers/bluetooth-write-activity';
 import {
   PlayCoreEnhancements,
@@ -1877,19 +1879,23 @@ export function PlayCore({
   // preview's baked-in grade actually belongs to a different angle, and the patch
   // preserves the item's uuid — that uuid is the drawer's navigation anchor, so
   // minting a fresh one would break prev/next and the remaining count.
-  const previewClimbUuid = drawerPreviewItem?.climb?.uuid ?? null;
-  const { data: previewClimbAtAngle } = useClimb(
-    previewClimbUuid && previewNeedsAngleReanchor(drawerPreviewItem, angle)
-      ? { boardName, layoutId, sizeId, setIds, angle, climbUuid: previewClimbUuid }
+  const needsAngleReanchor = previewNeedsAngleReanchor(drawerPreviewItem, angle);
+  // Queue regrades can change the item's angle without replacing every
+  // unknown field it carries. Only this exact detail read can seed Plays.
+  const readsSelectedPlays = isSheetOpen && !showBoardMismatch && isClimbResolved(displayedClimb);
+  const { climbAtAngle: selectedClimbAtAngle, catalogPlays: selectedPlays } = useSelectedClimbPlays(
+    displayedClimbUuid && (needsAngleReanchor || readsSelectedPlays)
+      ? { boardName, layoutId, sizeId, setIds, angle, climbUuid: displayedClimbUuid }
       : null,
+    readsSelectedPlays,
   );
   useEffect(() => {
-    if (!previewClimbAtAngle) return;
+    if (!needsAngleReanchor || !selectedClimbAtAngle) return;
     // `reanchorPreviewAtAngle` returns the same reference for a stale response
     // (one that landed after the climber swiped on) or an item already at this
     // angle, so this never churns the preview.
-    setDrawerPreviewItem((current) => reanchorPreviewAtAngle(current, angle, previewClimbAtAngle));
-  }, [previewClimbAtAngle, angle, setDrawerPreviewItem]);
+    setDrawerPreviewItem((current) => reanchorPreviewAtAngle(current, angle, selectedClimbAtAngle));
+  }, [needsAngleReanchor, selectedClimbAtAngle, angle, setDrawerPreviewItem]);
 
   // Tracked as an intent, with a toast when the share sheet throws (shared with the MiniPlayer's).
   const handleShare = useShareClimbAction({
@@ -2768,6 +2774,7 @@ export function PlayCore({
     boardName: boardName as BoardName,
     layoutId,
     angle,
+    catalogPlays: selectedPlays,
     leading: headerLeading,
     onLongPressName: handleCopyName,
     onPressSetter: openSetterPlaylist,
@@ -3651,6 +3658,7 @@ export function PlayCore({
                               sizeId={sizeId}
                               setIds={setIds}
                               angle={angle}
+                              playCount={currentHeaderModel?.headerProps.playCount ?? null}
                               enabled={isSheetOpen}
                               contentEnabled={belowFoldContentRequested}
                               sections={sections}

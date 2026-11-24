@@ -516,6 +516,10 @@ vi.mock('../../../providers/bluetooth-provider', () => ({
 }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
+// The selected Plays read has its own query/provider integration suite.
+vi.mock('../../../lib/graphql/hooks/use-climb', () => ({
+  useSelectedClimbPlays: () => ({ climbAtAngle: undefined, catalogPlays: undefined }),
+}));
 vi.mock('../../../lib/graphql/hooks', () => ({
   // The preview angle re-anchor asks for the climb at the live angle; nothing
   // here pins a preview at another angle, so it never resolves.

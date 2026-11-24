@@ -23,6 +23,14 @@
   },
   "sends_one": "{{formattedCount}} ripetizione",
   "sends_other": "{{formattedCount}} ripetizioni",
+  "plays": {
+    "label": "Selezioni",
+    "count_one": "{{formattedCount}} selezione",
+    "count_other": "{{formattedCount}} selezioni",
+    "unavailable": "Selezioni non disponibili",
+    "valueUnavailable": "Non disponibile",
+    "explanation": "Le selezioni stimano quante volte un blocco è rimasto selezionato su un pannello per almeno 30 secondi. Il conteggio viene ricalcolato ogni ora e può comparire qui più tardi. Le ripetizioni si contano a parte. Una selezione può essere registrata anche se nessuna presa si illumina."
+  },
   "metadata": {
     "list": {
       "title": "Blocchi su {{boardName}} a {{angle}}°",
@@ -619,6 +627,9 @@
       "anyAngleAria": "Qualsiasi inclinazione selezionata",
       "clearFilterAria": "Cancella il filtro dell'inclinazione",
       "rangeHoldHint": "Tieni premuto per creare un intervallo con l'inclinazione selezionata"
+    },
+    "plays": {
+      "countAtAngle": "{{plays}} a {{angle}}°"
     },
     "climbRow": {
       "toggleFavorite": "Attiva o disattiva il preferito",

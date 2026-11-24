@@ -1,7 +1,15 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, act } from '@testing-library/react';
+import { render, act, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
+import type { ClimbStatsForClimbEntry } from '@boardsesh/graphql/operations';
+import { getCredentialGeneration, invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
+import { BoardAdapterProvider, type BoardAdapter } from '../../../../shared/board-react/src/adapter';
+import { setClimbStatsAuthEpoch } from '../../../../shared/board-react/src/climb-stats-store';
+import {
+  scheduleAcknowledgedClimbStatsRead,
+  useEffectiveClimbStats as realUseEffectiveClimbStats,
+} from '../../../../shared/board-react/src/use-effective-climb-stats';
 
 // The one dependency under test: the row renders exactly the label + colour that
 // `resolveGrade` returns (the app-wide "Show Boardsesh grades" swap), instead of
@@ -9,10 +17,12 @@ import { createElement, type ReactNode } from 'react';
 // wiring without the flag/preference plumbing (covered by use-display-grade's tests).
 const resolveGrade = vi.fn();
 const liveStatsOverride = vi.hoisted(() => ({
+  real: undefined as typeof realUseEffectiveClimbStats | undefined,
   current: null as null | {
     ascensionistCount: number;
     qualityAverage: string | null;
     difficulty: string | null;
+    playCount?: number | null;
   },
 }));
 
@@ -51,18 +61,17 @@ vi.mock('@boardsesh/board-react', async () => {
         () => statusLogbook.current,
       ),
     logbookClimbAngleKey: (climbUuid: string, angle: number) => `${climbUuid}:${angle}`,
-    useEffectiveClimbStats: (
-      _boardName: string,
-      _layoutId: number,
-      _climbUuid: string,
-      _angle: number,
-      base: { ascensionistCount?: number; qualityAverage?: string; difficulty?: string },
-    ) =>
-      liveStatsOverride.current ?? {
-        ascensionistCount: base.ascensionistCount ?? 0,
-        qualityAverage: base.qualityAverage ?? null,
-        difficulty: base.difficulty ?? null,
-      },
+    useEffectiveClimbStats: (...args: Parameters<typeof realUseEffectiveClimbStats>) => {
+      if (liveStatsOverride.real) return liveStatsOverride.real(...args);
+      const base = args[4];
+      return (
+        liveStatsOverride.current ?? {
+          ascensionistCount: base.ascensionistCount ?? 0,
+          qualityAverage: base.qualityAverage ?? null,
+          difficulty: base.difficulty ?? null,
+        }
+      );
+    },
   };
 });
 
@@ -96,7 +105,20 @@ vi.mock('react-native', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { direction?: string; status?: string; grade?: string }) => {
+    i18n: { language: 'en-US' },
+    t: (
+      key: string,
+      options?: {
+        direction?: string;
+        status?: string;
+        grade?: string;
+        angle?: number;
+        plays?: string;
+        formattedCount?: string;
+      },
+    ) => {
+      if (key === 'plays.count') return `${options?.formattedCount} plays`;
+      if (key === 'mobile.plays.countAtAngle') return `${options?.plays} at ${options?.angle}°`;
       if (key === 'mobile.climbRow.directionStatus' && options) return `${options.direction}: ${options.status}`;
       if (key === 'mobile.climbRow.communityGradeAria' && options) return `Community grade ${options.grade}`;
       return key;
@@ -148,7 +170,8 @@ vi.mock('../../providers/theme-provider', () => ({
   }),
 }));
 
-vi.mock('../../lib/format-climb-stats', () => ({
+vi.mock('../../lib/format-climb-stats', async (load) => ({
+  ...(await load<typeof import('../../lib/format-climb-stats')>()),
   formatSends: () => 'sends',
   formatQuality: () => '4.5',
 }));
@@ -225,6 +248,69 @@ const iconNames = (container: HTMLElement) =>
 
 const renderRow = () =>
   render(<ClimbListItemContent climb={baseClimb} boardName="kilter" layoutId={1} sizeId={1} setIds="1" angle={40} />);
+
+describe('catalog row Plays', () => {
+  beforeEach(() => {
+    resolveGrade.mockReturnValue({ label: 'V4', color: '#aaa', isBoardsesh: false });
+  });
+
+  it('renders stored zero and grouped spoken values in the existing sends line', () => {
+    const { container, rerender } = render(
+      <ClimbListItemContent
+        climb={baseClimb}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+        showPlays
+        catalogPlays={{ playCount: 0, credentialScope: 0, authority: 'reference' }}
+      />,
+    );
+    expect(detailLine(container)?.textContent).toContain('sends · 4.5★ · 0 plays');
+    expect(detailLine(container)?.getAttribute('aria-label')).toContain('0 plays at 40°');
+    rerender(
+      <ClimbListItemContent
+        climb={baseClimb}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={30}
+        showPlays
+        catalogPlays={{ playCount: 12_304, credentialScope: 0, authority: 'reference' }}
+      />,
+    );
+    expect(detailLine(container)?.getAttribute('aria-label')).toContain('12,304 plays at 30°');
+  });
+
+  it('suppresses a stale catalog value after an authoritative missing result', () => {
+    liveStatsOverride.current = {
+      ascensionistCount: 10,
+      difficulty: baseClimb.difficulty,
+      qualityAverage: '4.5',
+      playCount: null,
+    };
+    try {
+      const { container } = render(
+        <ClimbListItemContent
+          climb={baseClimb}
+          boardName="kilter"
+          layoutId={1}
+          sizeId={1}
+          setIds="1"
+          angle={40}
+          showPlays
+          catalogPlays={{ playCount: 28, credentialScope: 0, authority: 'reference' }}
+        />,
+      );
+      expect(detailLine(container)?.textContent).toContain('sends');
+      expect(detailLine(container)?.textContent).not.toContain('plays');
+    } finally {
+      liveStatsOverride.current = null;
+    }
+  });
+});
 
 describe('ClimbListItemContent grade', () => {
   beforeEach(() => {
@@ -358,6 +444,25 @@ describe('ClimbListItemContent set-angle marker', () => {
       'mobile.climbRow.setAngleMarkerAria · Community grade V4 · sends · 4.5★',
     );
     expect(container.textContent?.split('mobile.climbRow.setAngleMarker')).toHaveLength(2);
+  });
+
+  it('names the selected angle when Plays appear beside another angle’s send and grade stats', () => {
+    myGradeOverride.current = MY_V10;
+    const { container } = render(
+      <ClimbListItemContent
+        climb={{ ...baseClimb, statsAngle: 45 }}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+        showPlays
+        catalogPlays={{ playCount: 55, credentialScope: 0, authority: 'reference' }}
+      />,
+    );
+    expect(detailLine(container)?.textContent).toBe(
+      'mobile.climbRow.setAngleMarker · V4 · sends · 4.5★ · 55 plays at 40°',
+    );
   });
 
   it('moves to the detail line with the community grade switched off too', () => {
@@ -1635,5 +1740,97 @@ describe('ClimbListItemContentView', () => {
     expect(rendered.getByText('Injected grade')).toBeTruthy();
     expect(resolveGrade).not.toHaveBeenCalled();
     expect(thumbnailRender).not.toHaveBeenCalled();
+  });
+});
+
+describe('catalog Plays and retained credentials', () => {
+  it.each([6, null])('keeps an old projection hidden when a former live result was %s', async (formerCount) => {
+    const oldEpoch = getCredentialGeneration();
+    setClimbStatsAuthEpoch(oldEpoch);
+    liveStatsOverride.real = realUseEffectiveClimbStats;
+    resolveGrade.mockReturnValue({ label: 'V4', color: '#aaa', isBoardsesh: false });
+    const key = {
+      boardType: 'spray' as const,
+      layoutId: 99,
+      climbUuid: `private-epoch-climb-${formerCount ?? 'omitted'}`,
+      angle: 40,
+    };
+    const gradeRow: ClimbStatsForClimbEntry = {
+      climbUuid: key.climbUuid,
+      angle: key.angle,
+      syncSeq: '3',
+      playCount: formerCount,
+      ascensionistCount: 10,
+      qualityAverage: 4.5,
+      difficultyAverage: null,
+      displayDifficulty: null,
+      difficulty: baseClimb.difficulty,
+      faUsername: null,
+      faAt: null,
+    };
+    let finishOldRequest: ((rows: ClimbStatsForClimbEntry[]) => void) | undefined;
+    const fetchClimbStatsForClimbs = vi
+      .fn()
+      .mockResolvedValueOnce(formerCount === null ? [] : [gradeRow])
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishOldRequest = resolve;
+          }),
+      );
+    const adapter: BoardAdapter = {
+      isAuthenticated: true,
+      isAuthLoading: false,
+      executeHttp: async () => {
+        throw new Error('HTTP not configured');
+      },
+      executeWs: async () => {
+        throw new Error('WS not configured');
+      },
+      resolveActiveSessionId: () => null,
+      fetchClimbStatsForClimbs,
+      captureAuthEpoch: getCredentialGeneration,
+      isAuthEpochCurrent: (epoch) => epoch === getCredentialGeneration(),
+    };
+    const row = (credentialScope: number, playCount: number) => (
+      <BoardAdapterProvider value={adapter}>
+        <ClimbListItemContent
+          climb={{ ...baseClimb, uuid: key.climbUuid }}
+          boardName="spray"
+          layoutId={key.layoutId}
+          sizeId={1}
+          setIds="1"
+          angle={key.angle}
+          showPlays
+          catalogPlays={{ credentialScope, playCount, authority: 'reference' }}
+        />
+      </BoardAdapterProvider>
+    );
+    try {
+      const { container, rerender, unmount } = render(row(oldEpoch, 28));
+      const text = () => detailLine(container)?.textContent;
+      await waitFor(() => {
+        expect(fetchClimbStatsForClimbs).toHaveBeenCalledTimes(1);
+        expect(text()).not.toContain('28 plays');
+        if (formerCount !== null) expect(text()).toContain('6 plays');
+      });
+      act(() => {
+        scheduleAcknowledgedClimbStatsRead(adapter, key);
+      });
+      await waitFor(() => expect(finishOldRequest).toBeTypeOf('function'));
+
+      act(() => invalidateCredentialSnapshots());
+      expect(text()).not.toContain('plays');
+      act(() => setClimbStatsAuthEpoch(getCredentialGeneration()));
+      expect(text()).not.toContain('plays');
+      await act(async () => finishOldRequest?.([{ ...gradeRow, playCount: 42, syncSeq: '4' }]));
+      expect(text()).not.toContain('plays');
+
+      rerender(row(getCredentialGeneration(), 12));
+      expect(text()).toContain('12 plays');
+      unmount();
+    } finally {
+      liveStatsOverride.real = undefined;
+    }
   });
 });

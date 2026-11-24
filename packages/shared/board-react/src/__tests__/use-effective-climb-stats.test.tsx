@@ -12,6 +12,7 @@ import {
   isClimbStatsReadRetained,
   markOptimisticAscentQueued,
   resetClimbStatsStoreForTests,
+  setClimbStatsAuthEpoch,
   subscribeClimbStats,
   type ClimbStatsKey,
 } from '../climb-stats-store';
@@ -283,6 +284,66 @@ describe('useEffectiveClimbStats', () => {
 
     await waitFor(() => expect(fetchClimbStatsForClimbs).toHaveBeenCalledTimes(1));
     expect(fetchClimbStatsForClimbs).toHaveBeenCalledWith('kilter', ['climb-1']);
+  });
+
+  it('clears positive and zero Plays on successful exact-angle omission and restores them on recovery', async () => {
+    const climbUuid = 'spray-climb';
+    const key = { boardType: 'spray', layoutId: 3, climbUuid, angle: 40 };
+    const atForty = { ...batchRow(climbUuid, 0, '8'), playCount: 21 };
+    const atThirty = { ...batchRow(climbUuid, 0, '7'), angle: 30, playCount: 0 };
+    const fetchClimbStatsForClimbs = vi
+      .fn()
+      .mockResolvedValueOnce([atForty, atThirty])
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce([{ ...atThirty, playCount: undefined }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([atForty, atThirty]);
+    const { adapter, wrapper } = createWrapper({ fetchClimbStatsForClimbs });
+    const { result } = renderHook(
+      () => ({
+        forty: useEffectiveClimbStats('spray', 3, climbUuid, 40, { ascensionistCount: 0 }).playCount,
+        thirty: useEffectiveClimbStats('spray', 3, climbUuid, 30, { ascensionistCount: 0 }).playCount,
+      }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current).toEqual({ forty: 21, thirty: 0 }));
+    async function reconcile() {
+      const expectedReads = fetchClimbStatsForClimbs.mock.calls.length + 1;
+      act(() => {
+        scheduleAcknowledgedClimbStatsRead(adapter, key);
+      });
+      await waitFor(() => {
+        expect(fetchClimbStatsForClimbs).toHaveBeenCalledTimes(expectedReads);
+        expect(getClimbStatsReadCoordinatorStateForTests().active).toBe(0);
+      });
+    }
+
+    await reconcile();
+    expect(result.current).toEqual({ forty: 21, thirty: 0 });
+    await reconcile(); // The legacy 30° field is missing; the 40° row is absent.
+    expect(result.current).toEqual({ forty: null, thirty: 0 });
+    await reconcile(); // The resolver now returns no readable rows.
+    expect(result.current).toEqual({ forty: null, thirty: null });
+    await reconcile(); // A visibility change did not change the row revisions.
+    expect(result.current).toEqual({ forty: 21, thirty: 0 });
+  });
+
+  it('masks a prior credential epoch before the effect clears the store', async () => {
+    let authEpoch = 0;
+    const fetchClimbStatsForClimbs = vi
+      .fn()
+      .mockResolvedValue([{ ...batchRow('private-climb', 0, '7'), playCount: 6 }]);
+    const { wrapper } = createWrapper({ fetchClimbStatsForClimbs, captureAuthEpoch: () => authEpoch });
+    const { result, rerender } = renderHook(() => useEffectiveClimbStats('spray', 3, 'private-climb', 40, {}), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.playCount).toBe(6));
+
+    authEpoch = 1;
+    rerender();
+    expect(result.current.playCount).toBeUndefined();
+    act(() => setClimbStatsAuthEpoch(1));
+    expect(result.current.playCount).toBeUndefined();
   });
 
   it('routes flat rows by UUID and cooldowns requested UUIDs with no rows', async () => {
