@@ -29,11 +29,17 @@
       "intro": "Boardsesh keeps sends from different boards in one logbook. In a solo 4x4, it counts logged reps and moves to the next climb after the set rest. Whether it’s worth switching depends on how you climb and which controller is on your wall. Choose your board for a comparison with its official app.",
       "compatibility": "Each guide covers the supported layouts, LED controllers and logbook imports for that board. For a wall with your own hold placement, start with the spray wall comparison.",
       "tradeoffs": "You can try Boardsesh in a browser before installing. Browser LED control needs Web Bluetooth and a compatible controller. On iPhone, use the native app to light the holds.",
+      "platformDesign": {
+        "title": "Designed for iPhone and Android",
+        "body": "Apple’s Human Interface Guidelines shape the default iOS experience, from system tabs to text that follows your Dynamic Type setting. Liquid Glass is available on iOS 26, with a blur fallback on earlier supported versions. Android’s default Material Design 3 layout uses bottom tabs on phones and moves navigation to a side rail when a tablet window has room."
+      },
       "screenshotAlt": "Boardsesh shared climb queue with problems and grades from a group session",
       "sources": {
         "boardseshStore": "Boardsesh App Store listing and workout features",
         "boardseshWorkoutGuide": "Boardsesh workout builder and timed blocks",
-        "boardseshWorkoutTimer": "How timed workout blocks drive the Boardsesh timer"
+        "boardseshWorkoutTimer": "How timed workout blocks drive the Boardsesh timer",
+        "boardseshMobileDesign": "Boardsesh design guidelines for iOS and Android",
+        "boardseshAdaptiveLayout": "How Boardsesh adapts to Android tablet window sizes"
       },
       "related": {
         "boards": "See supported board layouts",
@@ -56,7 +62,7 @@
         },
         "preview": {
           "title": "Climb controls within thumb reach",
-          "body": "In the phone layout, Put on board, the queue and logging sit below the board image by default. The queue and log open in sheets over the climb. The log sheet keeps Attempt and the save controls within thumb reach at the bottom. When you’re scrolled to the top of the climb view, a swipe down closes it."
+          "body": "In the default phone layout, Put on board, the queue and logging sit below the board image. Open the queue or log in a sheet over the climb. By default, the sheets use the system appearance on iPhone and Material 3 on Android. The log sheet keeps Attempt and the save controls within thumb reach at the bottom. When you’re scrolled to the top of the climb view, a swipe down closes it."
         },
         "training": {
           "title": "A new problem on each interval",
@@ -82,7 +88,7 @@
         },
         "climbControls": {
           "label": "Climb view and controls",
-          "boardsesh": "The default phone layout puts lighting, logging and queue controls below the board image. The queue and log open in sheets.",
+          "boardsesh": "The default phone layout puts lighting, logging and queue controls below the board image. Queue and log sheets follow iOS conventions or Android Material 3.",
           "official": "Kilter’s published screenshot shows Back at the top left and logging controls at the bottom."
         },
         "session": {
@@ -123,7 +129,8 @@
         "boardseshWorkoutGuide": "Boardsesh workout builder and timed blocks",
         "boardseshWorkoutTimer": "How timed workout blocks drive the Boardsesh timer",
         "boardseshSessions": "Boardsesh shared session and queue guide",
-        "boardseshMigration": "Boardsesh Kilter logbook import guide"
+        "boardseshMigration": "Boardsesh Kilter logbook import guide",
+        "boardseshPlatformSheets": "Boardsesh design notes on iOS and Android bottom sheets"
       },
       "related": {
         "bluetooth": "Connect to your Kilter LEDs",

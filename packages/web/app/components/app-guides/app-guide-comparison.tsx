@@ -33,8 +33,17 @@ export default function AppGuideComparison({ guide, t }: { guide: AppGuidePage; 
                 {t('appGuides:common.comparisonFeature')}
               </TableCell>
               {columns.map((column) => (
-                <TableCell key={column.id} id={`app-comparison-${column.id}`} scope="col" role="columnheader">
-                  {column.name}
+                <TableCell
+                  key={column.id}
+                  id={`app-comparison-${column.id}`}
+                  scope="col"
+                  role="columnheader"
+                  data-product={column.id}
+                  className={styles.comparisonProduct}
+                >
+                  <Box component="span" className={styles.productName}>
+                    {column.name}
+                  </Box>
                 </TableCell>
               ))}
             </TableRow>
@@ -52,7 +61,7 @@ export default function AppGuideComparison({ guide, t }: { guide: AppGuidePage; 
                     aria-label={featureLabel}
                     className={styles.comparisonFeature}
                   >
-                    {featureLabel}
+                    <Box component="span">{featureLabel}</Box>
                     <Box component="sup" className={styles.comparisonSources}>
                       {guide.sources.map((source, index) =>
                         row.sourceIds.includes(source.id) ? (
@@ -72,6 +81,7 @@ export default function AppGuideComparison({ guide, t }: { guide: AppGuidePage; 
                       key={column.id}
                       role="cell"
                       headers={`app-comparison-feature-${row.id} app-comparison-${column.id}`}
+                      data-product={column.id}
                       className={styles.comparisonDetail}
                     >
                       <Box component="span" aria-hidden="true" className={styles.mobileColumn}>

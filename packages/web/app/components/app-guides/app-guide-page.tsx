@@ -241,7 +241,12 @@ export default function AppGuidePage({ guide, t, storeLabels }: AppGuidePageProp
         </time>
       </Typography>
       {isHub ? (
-        <AppGuidePicker t={t} />
+        <>
+          <AppGuidePicker t={t} />
+          <PageSection id="phone-design" title={t('appGuides:pages.hub.platformDesign.title')}>
+            <Prose>{t('appGuides:pages.hub.platformDesign.body')}</Prose>
+          </PageSection>
+        </>
       ) : (
         <>
           <PageSection id="recommendation" title={t(`appGuides:pages.${guide.id}.verdictTitle`)}>

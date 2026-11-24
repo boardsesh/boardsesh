@@ -49,6 +49,7 @@ const CHECKED_AT = '2026-11-23';
 const WORKOUT_UPDATE_DATE = '2026-11-24';
 const EDITORIAL_UPDATE_DATE = '2026-11-24';
 const SPRAY_PRICES_CHECKED_AT = '2026-11-24';
+const MOBILE_DESIGN_CHECKED_AT = '2026-11-24';
 
 const help = {
   bluetooth: { id: 'bluetooth', href: '/help/board-and-bluetooth' },
@@ -100,6 +101,16 @@ const boardseshWorkoutTimer = source(
   'https://github.com/boardsesh/boardsesh/blob/6d1b696a162ed7f74f3fbdad6259e6bbcd3f8dcb/docs/product/rest-timer.md#effective-pacing',
   WORKOUT_UPDATE_DATE,
 );
+const boardseshMobileDesign = source(
+  'boardseshMobileDesign',
+  'https://github.com/boardsesh/boardsesh/blob/b3a0285908da0d9e4be984ebe5731ed72b33de10/docs/design/ai-design-guidelines.md#design-philosophy',
+  MOBILE_DESIGN_CHECKED_AT,
+);
+const boardseshAdaptiveLayout = source(
+  'boardseshAdaptiveLayout',
+  'https://github.com/boardsesh/boardsesh/blob/b3a0285908da0d9e4be984ebe5731ed72b33de10/docs/design/mobile-large-screen-layout.md#js-tablet-shell',
+  MOBILE_DESIGN_CHECKED_AT,
+);
 
 const guides = {
   kilter: {
@@ -116,7 +127,13 @@ const guides = {
       },
       {
         id: 'climbControls',
-        sourceIds: ['boardseshPlayer', 'boardseshPlayerButtons', 'boardseshTickControls', 'officialScreenshots'],
+        sourceIds: [
+          'boardseshPlayer',
+          'boardseshPlayerButtons',
+          'boardseshTickControls',
+          'officialScreenshots',
+          'boardseshPlatformSheets',
+        ],
       },
       { id: 'session', sourceIds: ['boardseshSessions', 'official', 'support'] },
       { id: 'training', sourceIds: ['boardseshWorkoutGuide', 'boardseshWorkoutTimer', 'official'] },
@@ -160,6 +177,11 @@ const guides = {
       boardseshWorkoutTimer,
       boardseshSessions,
       boardseshMigration,
+      source(
+        'boardseshPlatformSheets',
+        'https://github.com/boardsesh/boardsesh/blob/b3a0285908da0d9e4be984ebe5731ed72b33de10/docs/mobile/mobile-sheets-vs-routes.md#sheet-surfaces-app-owned-facade',
+        MOBILE_DESIGN_CHECKED_AT,
+      ),
     ],
     related: [help.bluetooth, help.migration, help.sessions],
   },
@@ -362,7 +384,13 @@ export const APP_GUIDE_HUB = {
   workflow: [],
   comparisonRows: [],
   competitors: [],
-  sources: [boardseshWorkoutStore, boardseshWorkoutGuide, boardseshWorkoutTimer],
+  sources: [
+    boardseshWorkoutStore,
+    boardseshWorkoutGuide,
+    boardseshWorkoutTimer,
+    boardseshMobileDesign,
+    boardseshAdaptiveLayout,
+  ],
   related: [help.boards, help.bluetooth, help.sessions],
 } as const satisfies AppGuidePage;
 

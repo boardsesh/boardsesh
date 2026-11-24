@@ -54,22 +54,63 @@
 }
 
 .comparisonFrame {
-  border: 1px solid var(--separator);
-  border-radius: var(--border-radius-lg);
-  background: var(--semantic-surface);
+  padding: clamp(var(--spacing-2), 1.8vw, var(--spacing-5));
+  border: 1px solid color-mix(in srgb, var(--color-primary) 32%, var(--semantic-surface));
+  border-radius: calc(var(--border-radius-xl) + var(--spacing-2));
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--color-primary) 28%, var(--semantic-surface)),
+    var(--semantic-surface-elevated) 85%
+  );
 }
 
-.comparison {
+.comparisonFrame .comparison {
   table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: var(--border-radius-xl);
+  background: var(--semantic-surface);
+  overflow: hidden;
+}
+
+.comparison th,
+.comparison td {
+  padding: var(--spacing-5) clamp(var(--spacing-3), 1.6vw, var(--spacing-6));
+  border-bottom: 1px solid var(--separator);
+  font-size: var(--font-size-base);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
 }
 
 .comparisonHead th:first-child {
-  width: 19%;
+  width: 22%;
+  color: var(--neutral-500);
+  font-weight: 650;
 }
 
-.comparisonHead th,
-.comparisonBody .comparisonFeature {
-  font-weight: 600;
+.comparisonHead .comparisonProduct {
+  padding: var(--spacing-3) var(--spacing-2);
+}
+
+.comparisonHead .comparisonProduct:last-child {
+  padding-inline-end: var(--spacing-3);
+}
+
+.productName {
+  display: flex;
+  align-items: center;
+  min-height: var(--spacing-12);
+  padding: var(--spacing-3) clamp(var(--spacing-2), 1vw, var(--spacing-4));
+  border-radius: var(--border-radius-md);
+  background: var(--semantic-surface-elevated);
+  font-family: var(--font-display), sans-serif;
+  font-size: var(--font-size-lg);
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.comparisonProduct[data-product='boardsesh'] .productName {
+  background: color-mix(in srgb, var(--color-primary) 17%, var(--semantic-surface-elevated));
 }
 
 .comparisonRow th,
@@ -77,16 +118,26 @@
   vertical-align: top;
 }
 
-.comparisonRow:last-child th,
-.comparisonRow:last-child td {
+.comparisonBody .comparisonFeature {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.comparisonDetail[data-product='boardsesh'] {
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--semantic-surface));
+}
+
+.comparisonRow:last-child > :where(th, td) {
   border-bottom: 0;
 }
 
 .comparisonSources {
-  display: inline-flex;
+  display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-1);
-  margin-inline-start: var(--spacing-2);
+  margin-top: var(--spacing-1);
+  font-size: var(--font-size-xs);
 }
 
 .comparisonSources a {
@@ -94,6 +145,7 @@
   min-width: var(--spacing-6);
   min-height: var(--spacing-6);
   place-items: center;
+  border-radius: var(--border-radius-sm);
 }
 
 .source {
@@ -115,6 +167,12 @@
     justify-self: start;
   }
 
+  .comparisonFrame .comparison {
+    display: block;
+    overflow: visible;
+    background: transparent;
+  }
+
   .comparison .comparisonHead {
     position: absolute;
     width: 1px;
@@ -124,9 +182,16 @@
     white-space: nowrap;
   }
 
-  .comparison .comparisonBody,
+  .comparison .comparisonBody {
+    display: grid;
+    gap: var(--spacing-2);
+  }
+
   .comparisonBody .comparisonRow {
     display: block;
+    overflow: hidden;
+    border-radius: var(--border-radius-lg);
+    background: var(--semantic-surface);
   }
 
   .comparisonRow .comparisonFeature,
@@ -137,17 +202,33 @@
   }
 
   .comparisonRow .comparisonFeature {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    column-gap: var(--spacing-2);
+    padding-block: var(--spacing-2);
     background: var(--semantic-surface-elevated);
-    border-block: 1px solid var(--separator);
+    border-bottom: 1px solid var(--separator);
   }
 
-  .comparisonRow:first-child .comparisonFeature {
-    border-top: 0;
+  .comparisonRow .comparisonDetail + .comparisonDetail {
+    border-top: 1px solid var(--separator);
+  }
+
+  .comparisonSources {
+    gap: 0;
+    margin-top: 0;
+  }
+
+  .comparisonSources a {
+    min-width: calc(var(--spacing-10) + var(--spacing-1));
+    min-height: calc(var(--spacing-10) + var(--spacing-1));
   }
 
   .mobileColumn {
     display: block;
-    font-weight: 600;
     margin-bottom: var(--spacing-1);
+    font-weight: 650;
   }
 }
