@@ -11,7 +11,9 @@ import {
   reportingActivityInWindowSql,
   reportingActivitySql,
   withGymReportingScope,
+  type GymReportingScope,
 } from './gym-reporting';
+import { assembleGymAngleUsage, gymAngleUsageCtes, scopedGymAngleBoards, type GymAngleBucket } from './gym-angle-usage';
 
 type Snapshot = {
   currentUnique: number;
@@ -24,7 +26,69 @@ type Snapshot = {
   previousDisplays: number;
   topClimbs: GymTopClimb[];
   busiestDays: GymDayActivity[];
+  angleBuckets: GymAngleBucket[];
 };
+
+export function gymStatsSnapshotSql(scope: GymReportingScope, angleBoards = scopedGymAngleBoards(scope)) {
+  return sql`
+    WITH activity AS (${reportingActivitySql(scope, { start: scope.previous.startAt, end: scope.asOf })}),
+    exact AS (
+      SELECT *, ${reportingActivityInWindowSql(scope.current)} AS in_current
+      FROM activity
+      WHERE ${reportingActivityInWindowSql(scope.current)} OR ${reportingActivityInWindowSql(scope.previous)}
+    ),
+    counts AS (
+      SELECT count(DISTINCT actor_id) FILTER (WHERE in_current)::int AS "currentUnique",
+        count(*) FILTER (WHERE in_current AND source = 'tick' AND status IN ('flash', 'send'))::int AS "currentAscents",
+        count(*) FILTER (WHERE in_current AND source = 'tick')::int AS "currentTicks",
+        count(*) FILTER (WHERE in_current AND source = 'display')::int AS "currentDisplays",
+        count(DISTINCT actor_id) FILTER (WHERE NOT in_current)::int AS "previousUnique",
+        count(*) FILTER (WHERE NOT in_current AND source = 'tick' AND status IN ('flash', 'send'))::int AS "previousAscents",
+        count(*) FILTER (WHERE NOT in_current AND source = 'tick')::int AS "previousTicks",
+        count(*) FILTER (WHERE NOT in_current AND source = 'display')::int AS "previousDisplays"
+      FROM exact
+    ),
+    current_sends AS (
+      SELECT * FROM exact WHERE in_current AND source = 'tick' AND status IN ('flash', 'send')
+    ),
+    top_counts AS (
+      SELECT send.climb_uuid, send.board_type, send.angle, climb.name, count(*)::int AS ascent_count
+      FROM current_sends send
+      JOIN board_climbs climb ON climb.uuid = send.climb_uuid AND climb.board_type = send.board_type
+      WHERE ${ownedOrPublicClimbCondition(
+        {
+          isDraft: sql`climb.is_draft`,
+          isListed: sql`climb.is_listed`,
+          userId: sql`climb.user_id`,
+        },
+        scope.viewerId,
+      )}
+      GROUP BY send.climb_uuid, send.board_type, send.angle, climb.name
+      ORDER BY ascent_count DESC, send.climb_uuid, send.board_type, send.angle
+      LIMIT 10
+    ),
+    top_climbs AS (
+      SELECT top.climb_uuid AS "climbUuid", top.board_type AS "boardType", top.angle, top.name,
+        grade.boulder_name AS "gradeName", top.ascent_count AS "ascentCount"
+      FROM top_counts top
+      LEFT JOIN board_climb_stats stats ON stats.climb_uuid = top.climb_uuid AND stats.board_type = top.board_type
+        AND stats.angle = top.angle
+      LEFT JOIN board_difficulty_grades grade ON grade.board_type = top.board_type
+        AND grade.difficulty = ROUND(stats.display_difficulty)
+    ),
+    weekdays AS (
+      SELECT EXTRACT(DOW FROM local_date)::int AS "dayOfWeek", count(*)::int AS "ascentCount"
+      FROM current_sends WHERE local_date IS NOT NULL GROUP BY 1
+    ),
+    ${gymAngleUsageCtes(angleBoards.logicalBoards)}
+    SELECT counts.*,
+      COALESCE((SELECT json_agg(top_climbs ORDER BY "ascentCount" DESC, "climbUuid", "boardType", angle)
+        FROM top_climbs), '[]'::json) AS "topClimbs",
+      COALESCE((SELECT json_agg(weekdays ORDER BY "dayOfWeek") FROM weekdays), '[]'::json) AS "busiestDays",
+      COALESCE((SELECT json_agg(angle_buckets ORDER BY angle) FROM angle_buckets), '[]'::json) AS "angleBuckets"
+    FROM counts
+  `;
+}
 
 export const socialGymInsightsQueries = {
   gymStats: async (
@@ -35,64 +99,8 @@ export const socialGymInsightsQueries = {
   ): Promise<GymStats> => {
     const includeReach = selectedFieldNames(info)?.has('reachOverview') ?? false;
     const result = await withGymReportingScope(input, ctx, async (tx, scope) => {
-      const [snapshot] = rowsFromResult<Snapshot>(
-        await tx.execute(sql`
-        WITH activity AS (${reportingActivitySql(scope, { start: scope.previous.startAt, end: scope.asOf })}),
-        exact AS (
-          SELECT *, ${reportingActivityInWindowSql(scope.current)} AS in_current
-          FROM activity
-          WHERE ${reportingActivityInWindowSql(scope.current)} OR ${reportingActivityInWindowSql(scope.previous)}
-        ),
-        counts AS (
-          SELECT count(DISTINCT actor_id) FILTER (WHERE in_current)::int AS "currentUnique",
-            count(*) FILTER (WHERE in_current AND source = 'tick' AND status IN ('flash', 'send'))::int AS "currentAscents",
-            count(*) FILTER (WHERE in_current AND source = 'tick')::int AS "currentTicks",
-            count(*) FILTER (WHERE in_current AND source = 'display')::int AS "currentDisplays",
-            count(DISTINCT actor_id) FILTER (WHERE NOT in_current)::int AS "previousUnique",
-            count(*) FILTER (WHERE NOT in_current AND source = 'tick' AND status IN ('flash', 'send'))::int AS "previousAscents",
-            count(*) FILTER (WHERE NOT in_current AND source = 'tick')::int AS "previousTicks",
-            count(*) FILTER (WHERE NOT in_current AND source = 'display')::int AS "previousDisplays"
-          FROM exact
-        ),
-        current_sends AS (
-          SELECT * FROM exact WHERE in_current AND source = 'tick' AND status IN ('flash', 'send')
-        ),
-        top_counts AS (
-          SELECT send.climb_uuid, send.board_type, send.angle, climb.name, count(*)::int AS ascent_count
-          FROM current_sends send
-          JOIN board_climbs climb ON climb.uuid = send.climb_uuid AND climb.board_type = send.board_type
-          WHERE ${ownedOrPublicClimbCondition(
-            {
-              isDraft: sql`climb.is_draft`,
-              isListed: sql`climb.is_listed`,
-              userId: sql`climb.user_id`,
-            },
-            scope.viewerId,
-          )}
-          GROUP BY send.climb_uuid, send.board_type, send.angle, climb.name
-          ORDER BY ascent_count DESC, send.climb_uuid, send.board_type, send.angle
-          LIMIT 10
-        ),
-        top_climbs AS (
-          SELECT top.climb_uuid AS "climbUuid", top.board_type AS "boardType", top.angle, top.name,
-            grade.boulder_name AS "gradeName", top.ascent_count AS "ascentCount"
-          FROM top_counts top
-          LEFT JOIN board_climb_stats stats ON stats.climb_uuid = top.climb_uuid AND stats.board_type = top.board_type
-            AND stats.angle = top.angle
-          LEFT JOIN board_difficulty_grades grade ON grade.board_type = top.board_type
-            AND grade.difficulty = ROUND(stats.display_difficulty)
-        ),
-        weekdays AS (
-          SELECT EXTRACT(DOW FROM local_date)::int AS "dayOfWeek", count(*)::int AS "ascentCount"
-          FROM current_sends WHERE local_date IS NOT NULL GROUP BY 1
-        )
-        SELECT counts.*,
-          COALESCE((SELECT json_agg(top_climbs ORDER BY "ascentCount" DESC, "climbUuid", "boardType", angle)
-            FROM top_climbs), '[]'::json) AS "topClimbs",
-          COALESCE((SELECT json_agg(weekdays ORDER BY "dayOfWeek") FROM weekdays), '[]'::json) AS "busiestDays"
-        FROM counts
-      `),
-      );
+      const angleBoards = scopedGymAngleBoards(scope);
+      const [snapshot] = rowsFromResult<Snapshot>(await tx.execute(gymStatsSnapshotSql(scope, angleBoards)));
       const coverage = await readGymReportingCoverage(tx, scope);
       const observation = includeReach ? await readGymReachObservation(tx, scope) : null;
       const reachOverview = observation ? await readGymReachOverview(tx, scope, observation.startedAt) : null;
@@ -124,6 +132,7 @@ export const socialGymInsightsQueries = {
         },
         topClimbs: snapshot.topClimbs,
         busiestDays: snapshot.busiestDays,
+        angleUsage: assembleGymAngleUsage(angleBoards.physicalBoardUuids, snapshot.angleBuckets),
       };
       return { stats, activate: observation?.needsActivation ? scope : null };
     });

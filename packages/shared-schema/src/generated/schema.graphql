@@ -4839,6 +4839,38 @@ type GymReachOverview {
   weeklyTrend: [GymReachWeek!]!
 }
 
+type GymAngleActivityCounts {
+  "Qualifying native ticks, including attempts."
+  tickCount: Int!
+  "Canonical native flashes and sends."
+  sendCount: Int!
+  "Confirmed Boardsesh displays."
+  displayCount: Int!
+}
+
+type GymAngleUsageRow {
+  angle: Int!
+  distinctClimberCount: Int!
+  "Distinct identified climber and definitely known gym-local date pairs."
+  climberDayCount: Int!
+  "Identified ticks in the period without a provable gym-local date."
+  unresolvedLocalDateTickCount: Int!
+  tickCount: Int!
+  sendCount: Int!
+  displayCount: Int!
+}
+
+type GymBoardAngleUsage {
+  "An independently authorized physical LED board in the selected scope."
+  boardUuid: ID!
+  "Distinct identified climbers across all known angles on this physical board."
+  knownAngleClimberCount: Int!
+  "Recorded compatible angles, ordered by degrees."
+  angles: [GymAngleUsageRow!]!
+  "Activity with missing or unsupported recorded angles, excluded from ranking."
+  unknownAngle: GymAngleActivityCounts!
+}
+
 type GymStats {
   gymName: String!
   boardUuid: ID
@@ -4861,6 +4893,8 @@ type GymStats {
   topClimbs: [GymTopClimb!]!
   "Ascents per day of week in the current window (only non-empty days)."
   busiestDays: [GymDayActivity!]!
+  "Recorded angle usage on eligible physical LED boards in the current window."
+  angleUsage: [GymBoardAngleUsage!]!
 }
 
 """

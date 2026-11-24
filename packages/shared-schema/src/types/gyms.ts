@@ -491,6 +491,26 @@ export type GymReachOverview = {
   weeklyTrend: GymReachWeek[];
 };
 
+export type GymAngleActivityCounts = {
+  tickCount: number;
+  sendCount: number;
+  displayCount: number;
+};
+
+export type GymAngleUsageRow = GymAngleActivityCounts & {
+  angle: number;
+  distinctClimberCount: number;
+  climberDayCount: number;
+  unresolvedLocalDateTickCount: number;
+};
+
+export type GymBoardAngleUsage = {
+  boardUuid: string;
+  knownAngleClimberCount: number;
+  angles: GymAngleUsageRow[];
+  unknownAngle: GymAngleActivityCounts;
+};
+
 export type GymStats = {
   gymName: string;
   boardUuid: string | null;
@@ -509,6 +529,7 @@ export type GymStats = {
   topClimbs: GymTopClimb[];
   /** Ascents per day of week in the current window (non-empty days only). */
   busiestDays: GymDayActivity[];
+  angleUsage: GymBoardAngleUsage[];
 };
 
 export type GymStatsInput = {

@@ -191,7 +191,26 @@
     "confirmGroup": "Confirm that {{source}} and {{target}} control the same physical board.",
     "confirmUngroup": "Report {{source}} as an independent board?",
     "confirmGrouping": "Confirm change",
-    "groupError": "Couldn’t change the board grouping. Check the choices and try again."
+    "groupError": "Couldn’t change the board grouping. Check the choices and try again.",
+    "angleUsage": {
+      "title": "Angle usage",
+      "mostUsed": "Most used: {{angle}} · {{countText}} recorded climbers",
+      "tied": "Most used (tie): {{angles}} · {{countText}} recorded climbers each",
+      "single": "Recorded at {{angle}} · {{countText}} recorded climbers",
+      "sample": "Known-angle sample · {{countText}} recorded climbers",
+      "overlap": "A climber can count at several angles, so the percentages can add up to more than 100%.",
+      "leading": "Leading angle",
+      "rowShare": "{{climbers}} · {{percentage}}",
+      "belowShare": "less than {{percentage}}",
+      "climberDays": "{{countText}} climber-days (one per climber per gym-local day)",
+      "ticks": "{{countText}} climb logs, including attempts",
+      "displays": "{{countText}} confirmed LED displays",
+      "unresolvedDates": "{{countText}} climb logs couldn’t be placed on a gym-local day.",
+      "unknown": "Unknown angle",
+      "unknownOnly": "Activity was recorded, but none had a usable angle.",
+      "unidentified": "No identified climbers were recorded at a known angle.",
+      "empty": "No qualifying angle activity was recorded in this period."
+    }
   },
   "mobile": {
     "edit": {

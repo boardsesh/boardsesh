@@ -5,6 +5,7 @@ import { MOONBOARD_ENABLED, MOONBOARD_ANGLES, MOONBOARD_WIDE_ANGLES } from './mo
 import { WOODS_DIFFICULTY_IDS } from '@boardsesh/board-constants/woods';
 import { WOODS_ANGLES } from './woods-config';
 import { SPRAY_ANGLES } from './spray-config';
+import { toBoardName } from './board-name';
 
 // The boards a generic picker may LIST. Deliberately narrower than the schema's
 // `SUPPORTED_BOARDS`, which answers "is this a board?" — this one answers "may a
@@ -70,6 +71,16 @@ const GRASSHOPPER_ROUTABLE_ANGLES: Angle[] = [ANGLES.grasshopper[0], ...NON_NEGA
  */
 export function getRoutableBoardAngles(boardName: BoardName): Angle[] {
   return boardName === 'grasshopper' ? GRASSHOPPER_ROUTABLE_ANGLES : NON_NEGATIVE_ROUTABLE_ANGLES;
+}
+
+/**
+ * Angles supported by the retained recording contract for an LED model.
+ * Picker steps, catalogue grades and current board settings do not establish
+ * what was possible at a historical installation.
+ */
+export function getRecordedLedBoardAngles(boardType: string): readonly Angle[] | null {
+  const boardName = toBoardName(boardType);
+  return boardName && boardName !== 'spray' ? getRoutableBoardAngles(boardName) : null;
 }
 
 /**

@@ -191,7 +191,26 @@
     "confirmGroup": "Confirma que {{source}} y {{target}} controlan el mismo plafón físico.",
     "confirmUngroup": "¿Mostrar {{source}} como plafón independiente en el informe?",
     "confirmGrouping": "Confirmar el cambio",
-    "groupError": "No se pudo cambiar la agrupación. Revisa las opciones y reinténtalo."
+    "groupError": "No se pudo cambiar la agrupación. Revisa las opciones y reinténtalo.",
+    "angleUsage": {
+      "title": "Uso por ángulo",
+      "mostUsed": "Más usado: {{angle}} · {{countText}} escaladores registrados",
+      "tied": "Más usados (empate): {{angles}} · {{countText}} escaladores registrados por ángulo",
+      "single": "Registros a {{angle}} · {{countText}} escaladores registrados",
+      "sample": "Muestra con ángulo conocido · {{countText}} escaladores registrados",
+      "overlap": "Una persona puede contar en varios ángulos, así que los porcentajes pueden sumar más del 100 %.",
+      "leading": "Ángulo más usado",
+      "rowShare": "{{climbers}} · {{percentage}}",
+      "belowShare": "menos del {{percentage}}",
+      "climberDays": "{{countText}} días de escalada (uno por persona y día local del rocódromo)",
+      "ticks": "{{countText}} registros de escalada, incluidos los intentos",
+      "displays": "{{countText}} iluminaciones LED confirmadas",
+      "unresolvedDates": "No se pudo asignar un día local del rocódromo a {{countText}} registros de escalada.",
+      "unknown": "Ángulo desconocido",
+      "unknownOnly": "Hubo actividad registrada, pero sin un ángulo válido.",
+      "unidentified": "No hubo escaladores identificados en ángulos conocidos.",
+      "empty": "No se registró actividad válida por ángulo en este periodo."
+    }
   },
   "mobile": {
     "edit": {

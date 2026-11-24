@@ -4,7 +4,14 @@ import { createElement, type ChangeEvent, type ReactNode } from 'react';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
 import { GYM_REPORTING_RECEIPT_MS, gymReportingQueryKey } from '@boardsesh/graphql';
-import type { GymGradeCollectionPage, GymGradeComparison, GymReachOverview, GymStats } from '@boardsesh/shared-schema';
+import type {
+  GymAngleUsageRow,
+  GymGradeCollectionPage,
+  GymGradeComparison,
+  GymReachOverview,
+  GymStats,
+} from '@boardsesh/shared-schema';
+import type { GymAngleUsageListRow } from '../../../src/components/gym-directory/GymAngleUsage';
 
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
@@ -15,13 +22,46 @@ const mocks = vi.hoisted(() => ({
 }));
 
 type Children = { children?: ReactNode };
+type PressProps = Children & {
+  accessibilityLabel?: string;
+  accessibilityState?: { expanded?: boolean };
+  onPress?: () => void;
+};
+type FlashListProps = {
+  data: GymAngleUsageListRow[];
+  renderItem: (entry: { item: GymAngleUsageListRow }) => ReactNode;
+  keyExtractor: (item: GymAngleUsageListRow) => string;
+  ListHeaderComponent?: ReactNode;
+  ListFooterComponent?: ReactNode;
+};
 type MenuProps = { actions: { label: string }[]; onSelectIndex: (index: number) => void };
 type SegmentedProps = { options: { key: string; label: string }[]; onSelect: (key: string) => void };
 vi.mock('react-native', () => ({
   Platform: { OS: 'android', select: (options: Record<string, unknown>) => options.android ?? options.default },
+  Pressable: ({ children, onPress, accessibilityLabel, accessibilityState }: PressProps) =>
+    createElement(
+      'button',
+      {
+        type: 'button',
+        onClick: onPress,
+        'aria-label': accessibilityLabel,
+        'aria-expanded': accessibilityState?.expanded,
+      },
+      children,
+    ),
   ScrollView: ({ children }: Children) => createElement('div', null, children),
   View: ({ children }: Children) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles },
+}));
+vi.mock('@shopify/flash-list', () => ({
+  FlashList: ({ data, renderItem, keyExtractor, ListHeaderComponent, ListFooterComponent }: FlashListProps) =>
+    createElement(
+      'div',
+      null,
+      ListHeaderComponent,
+      data.map((item) => createElement('div', { key: keyExtractor(item) }, renderItem({ item }))),
+      ListFooterComponent,
+    ),
 }));
 vi.mock('expo-router', () => ({
   Stack: { Screen: () => null },
@@ -178,6 +218,18 @@ const activeWindow = {
   uniqueClimbers: 2,
   ascentCount: 0,
 };
+const unknownAngle = { tickCount: 0, sendCount: 0, displayCount: 0 };
+const angle = (degrees: number): GymAngleUsageRow => ({
+  angle: degrees,
+  distinctClimberCount: 2,
+  climberDayCount: 3,
+  tickCount: 4,
+  sendCount: 1,
+  displayCount: 2,
+  unresolvedLocalDateTickCount: 1,
+});
+const tiedLabel = 'gymReporting.angleUsage.tied 40°, 45° 2';
+
 const report: GymStats = {
   gymName: 'Test Gym',
   gymUuid: 'gym-1',
@@ -189,6 +241,12 @@ const report: GymStats = {
       name: 'Wall One',
       boardType: 'kilter',
       configurations: [{ uuid: 'board-1', name: 'Wall One' }],
+    },
+    {
+      uuid: 'board-2',
+      name: 'Wall Two',
+      boardType: 'kilter',
+      configurations: [{ uuid: 'board-2', name: 'Wall Two' }],
     },
   ],
   asOf: activeWindow.endAt,
@@ -209,6 +267,10 @@ const report: GymStats = {
   previous: { ...activeWindow, startAt: '2026-10-24T00:00:00Z', endAt: activeWindow.startAt },
   topClimbs: [],
   busiestDays: [],
+  angleUsage: [
+    { boardUuid: 'board-1', knownAngleClimberCount: 3, angles: [angle(45), angle(40)], unknownAngle },
+    { boardUuid: 'board-2', knownAngleClimberCount: 2, angles: [angle(35)], unknownAngle },
+  ],
 };
 
 const count = (value: number) => ({ count: value, coverage: 'complete' as const });
@@ -328,6 +390,48 @@ describe('GymAnalyticsScreen', () => {
     expect(mocks.request).toHaveBeenCalledTimes(1);
   });
 
+  it('opens accessible angle details and replaces them when the verified physical scope changes', async () => {
+    mocks.request
+      .mockResolvedValueOnce({ gymStats: report })
+      .mockResolvedValueOnce({
+        gymStats: { ...report, boardUuid: 'board-2', angleUsage: [report.angleUsage[1]] },
+      })
+      .mockResolvedValueOnce({
+        gymStats: {
+          ...report,
+          boardUuid: 'board-2',
+          periodDays: 90,
+          angleUsage: [
+            {
+              boardUuid: 'board-2',
+              knownAngleClimberCount: 0,
+              angles: [],
+              unknownAngle: { ...unknownAngle, displayCount: 1 },
+            },
+          ],
+        },
+      });
+    renderScreen();
+    expect(await screen.findByText(tiedLabel)).toBeTruthy();
+    expect(screen.getByText('gymReporting.angleUsage.single 35° 2')).toBeTruthy();
+    const row = screen.getByRole('button', { name: /^40°.*66.67%.*climberDays 3/ });
+    expect(row.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(row);
+    expect(screen.getByText('gymReporting.angleUsage.climberDays 3')).toBeTruthy();
+    expect(screen.getByText('gymReporting.angleUsage.unresolvedDates 1')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Wall Two' }));
+    await waitFor(() => expect(screen.queryByText(tiedLabel)).toBeNull());
+    const nextAngle = await screen.findByRole('button', { name: /^35°/ });
+    expect(nextAngle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText('gymReporting.angleUsage.climberDays 3')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'gymReporting.rangeDays 90' }));
+    expect(await screen.findByText('gymReporting.angleUsage.unknown')).toBeTruthy();
+    expect(screen.getByText('gymReporting.angleUsage.displays 1')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^35°/ })).toBeNull();
+  });
+
   it('shows null exact observations independently from date-only reporting activity', async () => {
     mocks.request.mockResolvedValue({
       gymStats: {
@@ -358,6 +462,7 @@ describe('GymAnalyticsScreen', () => {
     rerender(tree());
     await screen.findByText('gymReporting.denied');
     expect(screen.queryByText('gymReporting.climbers 2')).toBeNull();
+    expect(screen.queryByText(tiedLabel)).toBeNull();
     expect(mocks.request).toHaveBeenLastCalledWith(
       expect.objectContaining({
         variables: { input: { gymUuid: 'gym-1', boardUuid: null, period: 'month' } },
@@ -424,8 +529,10 @@ describe('GymAnalyticsScreen', () => {
     expect(receivedAt).toBeTruthy();
     await advance((receivedAt ?? 0) + GYM_REPORTING_RECEIPT_MS - Date.now() - 1);
     expect(screen.getByText('gymReporting.climbers 2')).toBeTruthy();
+    expect(screen.getByText(tiedLabel)).toBeTruthy();
     await advance(2);
     expect(screen.queryByText('gymReporting.climbers 2')).toBeNull();
+    expect(screen.queryByText(tiedLabel)).toBeNull();
     expect(screen.queryByText(/gymReporting.stale/)).toBeNull();
     expect(screen.getByText('gymReporting.offline')).toBeTruthy();
     expect(queryClient.getQueryData(queryKey)).toBeUndefined();
@@ -446,7 +553,9 @@ describe('GymAnalyticsScreen', () => {
             completePrevious = resolve;
           }),
       )
-      .mockResolvedValueOnce({ gymStats: { ...report, current: { ...activeWindow, uniqueClimbers: 1 } } });
+      .mockResolvedValueOnce({
+        gymStats: { ...report, angleUsage: [], current: { ...activeWindow, uniqueClimbers: 1 } },
+      });
     const { rerender, tree } = renderScreen();
     await waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(1));
     const firstSignal: AbortSignal = mocks.request.mock.calls[0][0].signal;
@@ -457,6 +566,7 @@ describe('GymAnalyticsScreen', () => {
     expect(firstSignal.aborted).toBe(true);
     await act(async () => completePrevious({ gymStats: report }));
     expect(screen.queryByText('gymReporting.climbers 2')).toBeNull();
+    expect(screen.queryByText(tiedLabel)).toBeNull();
   });
   it('keeps the playlist picker open while a denied choice and its private names are retired', async () => {
     mocks.request.mockResolvedValue({ gymStats: report });

@@ -191,7 +191,26 @@
     "confirmGroup": "Confirme que {{source}} et {{target}} contrôlent le même board physique.",
     "confirmUngroup": "Afficher {{source}} comme board indépendant dans le rapport ?",
     "confirmGrouping": "Confirmer la modification",
-    "groupError": "Impossible de modifier le groupe. Vérifie la sélection et réessaie."
+    "groupError": "Impossible de modifier le groupe. Vérifie la sélection et réessaie.",
+    "angleUsage": {
+      "title": "Utilisation par inclinaison",
+      "mostUsed": "La plus utilisée : {{angle}} · {{countText}} grimpeurs et grimpeuses enregistrés",
+      "tied": "À égalité : {{angles}} · {{countText}} grimpeurs et grimpeuses enregistrés par inclinaison",
+      "single": "Activité à {{angle}} · {{countText}} grimpeurs et grimpeuses enregistrés",
+      "sample": "Échantillon aux inclinaisons connues · {{countText}} grimpeurs et grimpeuses enregistrés",
+      "overlap": "Une même personne peut compter à plusieurs inclinaisons. Le total peut donc dépasser 100 %.",
+      "leading": "Inclinaison en tête",
+      "rowShare": "{{climbers}} · {{percentage}}",
+      "belowShare": "moins de {{percentage}}",
+      "climberDays": "{{countText}} jours de grimpe (un par personne et par jour dans le fuseau de la salle)",
+      "ticks": "{{countText}} entrées dans les carnets, essais compris",
+      "displays": "{{countText}} allumages LED confirmés",
+      "unresolvedDates": "{{countText}} entrées n’ont pas pu être rattachées à un jour dans le fuseau de la salle.",
+      "unknown": "Inclinaison inconnue",
+      "unknownOnly": "De l’activité a été enregistrée sans inclinaison exploitable.",
+      "unidentified": "Aucune personne identifiée n’a été enregistrée à une inclinaison connue.",
+      "empty": "Aucune activité admissible par inclinaison pendant cette période."
+    }
   },
   "mobile": {
     "edit": {

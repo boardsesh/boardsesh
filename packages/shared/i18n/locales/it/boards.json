@@ -191,7 +191,26 @@
     "confirmGroup": "Conferma che {{source}} e {{target}} controllano lo stesso pannello fisico.",
     "confirmUngroup": "Mostrare {{source}} come pannello indipendente nel report?",
     "confirmGrouping": "Conferma modifica",
-    "groupError": "Impossibile cambiare il raggruppamento. Controlla le opzioni e riprova."
+    "groupError": "Impossibile cambiare il raggruppamento. Controlla le opzioni e riprova.",
+    "angleUsage": {
+      "title": "Uso per inclinazione",
+      "mostUsed": "Più usata: {{angle}} · {{countText}} arrampicatori registrati",
+      "tied": "Più usate a pari merito: {{angles}} · {{countText}} arrampicatori registrati per inclinazione",
+      "single": "Attività a {{angle}} · {{countText}} arrampicatori registrati",
+      "sample": "Campione con inclinazione nota · {{countText}} arrampicatori registrati",
+      "overlap": "Una persona può contare a più inclinazioni, quindi il totale può superare il 100%.",
+      "leading": "Inclinazione più usata",
+      "rowShare": "{{climbers}} · {{percentage}}",
+      "belowShare": "meno del {{percentage}}",
+      "climberDays": "{{countText}} giorni di arrampicata (uno per persona e giorno nel fuso della palestra)",
+      "ticks": "{{countText}} salite registrate, tentativi inclusi",
+      "displays": "{{countText}} illuminazioni LED confermate",
+      "unresolvedDates": "Impossibile assegnare {{countText}} salite registrate a un giorno nel fuso della palestra.",
+      "unknown": "Inclinazione sconosciuta",
+      "unknownOnly": "È stata registrata attività senza un’inclinazione valida.",
+      "unidentified": "Nessun arrampicatore identificato è stato registrato a un’inclinazione nota.",
+      "empty": "Nessuna attività valida per inclinazione in questo periodo."
+    }
   },
   "mobile": {
     "edit": {

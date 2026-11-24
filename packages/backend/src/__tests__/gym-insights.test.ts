@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, afterAll } from 'vite-plus/test';
+import { describe, it, expect, beforeEach, afterAll, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
-import { socialGymInsightsQueries } from '../graphql/resolvers/social/gym-insights';
+import { gymStatsSnapshotSql, socialGymInsightsQueries } from '../graphql/resolvers/social/gym-insights';
 import {
   readGymReportingCoverage,
   readReportingBoundaries,
@@ -130,6 +130,7 @@ const insertTick = (options: {
   climbUuid: string;
   climbedAt: string;
   status?: 'flash' | 'send' | 'attempt';
+  attemptCount?: number;
   angle?: number;
   origin?: 'native' | 'aurora_pull';
   attributed?: boolean;
@@ -141,8 +142,8 @@ const insertTick = (options: {
   INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status, attempt_count,
     climbed_at, board_id, origin, reporting_board_id, reporting_gym_id, reporting_attribution,
     reporting_time_precision, reporting_date, reporting_date_time_zone, reporting_climbed_at)
-  SELECT ${options.uuid ?? uuidv4()}, ${options.userId}, ${BOARD_TYPE}, ${options.climbUuid}, ${options.angle ?? 40},
-    ${options.status ?? 'send'}::tick_status, 1, ${options.climbedAt}::timestamptz AT TIME ZONE 'UTC', board.id,
+  SELECT ${options.uuid ?? uuidv4()}, ${options.userId}, board.board_type, ${options.climbUuid}, ${options.angle ?? 40},
+    ${options.status ?? 'send'}::tick_status, ${options.attemptCount ?? 1}, ${options.climbedAt}::timestamptz AT TIME ZONE 'UTC', board.id,
     ${options.origin ?? 'native'}::tick_origin, CASE WHEN ${options.attributed !== false} THEN board.id END,
     CASE WHEN ${options.attributed !== false} THEN board.gym_id END,
     CASE WHEN ${options.attributed !== false} THEN 'uuid' END,
@@ -150,6 +151,7 @@ const insertTick = (options: {
     ${options.reportingTimeZone ?? null},
     CASE WHEN ${options.precision !== null} THEN ${options.climbedAt}::timestamptz AT TIME ZONE 'UTC' END
   FROM user_boards board WHERE board.id = ${options.boardId}
+  ON CONFLICT (uuid) DO NOTHING
 `);
 
 const insertDisplay = (options: {
@@ -157,12 +159,13 @@ const insertDisplay = (options: {
   userId: string | null;
   source?: 'boardsesh' | 'kilter';
   captured?: boolean;
+  angle?: number;
   confirmedAt?: string;
 }) =>
   db.execute(sql`
   INSERT INTO board_climb_events (board_id, board_type, climb_uuid, angle, source, user_id, seq, confirmed_at,
     identity_policy_version, reporting_board_id, reporting_gym_id)
-  SELECT board.id, board.board_type, ${CLIMB_X}, 40, ${options.source ?? 'boardsesh'}, ${options.userId},
+  SELECT board.id, board.board_type, ${CLIMB_X}, ${options.angle ?? 40}, ${options.source ?? 'boardsesh'}, ${options.userId},
     COALESCE((SELECT MAX(seq) FROM board_climb_events WHERE board_id = board.id), 0) + 1,
     ${options.confirmedAt ?? daysAgoIso(1)}::timestamptz AT TIME ZONE 'UTC', 1,
     CASE WHEN ${options.captured !== false} THEN board.id END,
@@ -433,6 +436,7 @@ describe('qualified reporting scope and sources', () => {
     const editorStats = await readStats(EDITOR, boardA.uuid);
     expect(editorStats.boards[0].configurations).toEqual([{ uuid: boardA.uuid, name: 'A Wall' }]);
     expect(editorStats.current.ascentCount).toBe(2);
+    expect(editorStats.angleUsage).toMatchObject([{ boardUuid: boardA.uuid, knownAngleClimberCount: 2 }]);
     await expect(readStats(EDITOR, boardB.uuid)).rejects.toMatchObject({ extensions: { code: 'NOT_FOUND' } });
     await expect(readStats(OWNER, otherGymBoard.uuid)).rejects.toMatchObject({ extensions: { code: 'NOT_FOUND' } });
     await expect(
@@ -642,7 +646,10 @@ describe('qualified reporting scope and sources', () => {
     await insertDisplay({ boardId: homeWall.id, userId: MEMBER });
     expect((await readStats(EDITOR)).current.displayCount).toBe(0);
     await db.execute(sql`UPDATE user_boards SET is_public = true WHERE id = ${homeWall.id}`);
-    expect((await readStats(EDITOR)).current.displayCount).toBe(1);
+    const withReadableSpray = await readStats(EDITOR);
+    expect(withReadableSpray.current.displayCount).toBe(1);
+    expect(withReadableSpray.angleUsage.map(({ boardUuid }) => boardUuid)).not.toContain(homeWall.uuid);
+    expect((await readStats(EDITOR, homeWall.uuid)).angleUsage).toEqual([]);
     await db.execute(sql`INSERT INTO resource_grants (kind, resource_id, user_id, status)
       VALUES ('board', ${homeWall.uuid}, ${EDITOR}, 'revoked')`);
     expect((await readStats(EDITOR)).current.displayCount).toBe(0);
@@ -687,7 +694,10 @@ describe('qualified reporting scope and sources', () => {
     );
     expect(moved.periodDays).toBe(90);
     expect(moved.current).toMatchObject({ displayCount: 0, tickCount: 0 });
-    expect((await readStats()).current).toMatchObject({ displayCount: 0, tickCount: 1 });
+    expect(moved.angleUsage).toMatchObject([{ boardUuid: boardA.uuid, angles: [], knownAngleClimberCount: 0 }]);
+    const original = await readStats();
+    expect(original.current).toMatchObject({ displayCount: 0, tickCount: 1 });
+    expect(original.angleUsage.map(({ boardUuid }) => boardUuid)).toEqual([boardB.uuid]);
   });
 
   it('follows a canonical gym merge without creating a new physical venue', async () => {
@@ -700,6 +710,186 @@ describe('qualified reporting scope and sources', () => {
     const merged = await readStats(OWNER, boardA.uuid);
     expect(merged.gymUuid).toBe(survivor.uuid);
     expect(merged.current).toMatchObject({ displayCount: 1, tickCount: 3 });
+  });
+});
+
+describe('LED angle usage', () => {
+  it('uses a distinct person denominator per physical board and preserves sends, efforts and displays', async () => {
+    const currentDate = daysAgoIso(1);
+    const replay = {
+      uuid: uuidv4(),
+      userId: OWNER,
+      boardId: boardA.id,
+      climbUuid: CLIMB_X,
+      climbedAt: currentDate,
+      attemptCount: 7,
+    };
+    await insertTick(replay);
+    await insertTick(replay);
+    await insertTick({ ...replay, uuid: undefined, angle: 45 });
+    await insertTick({ ...replay, uuid: undefined, userId: MEMBER, angle: 45, status: 'attempt' });
+    await insertTick({ ...replay, uuid: undefined, userId: RANDOM, angle: 45, origin: 'aurora_pull' });
+    await insertDisplay({ boardId: boardA.id, userId: OWNER, confirmedAt: currentDate });
+    await insertDisplay({ boardId: boardB.id, userId: OWNER, angle: 55, confirmedAt: currentDate });
+    await insertDisplay({ boardId: boardB.id, userId: null, angle: 55, confirmedAt: currentDate });
+    await insertDisplay({ boardId: boardB.id, userId: MEMBER, angle: 55, source: 'kilter', confirmedAt: currentDate });
+    const noLeds = await insertBoard({ gymId: publicGym.id, ownerId: OWNER, name: 'Board without LEDs' });
+    await db.execute(sql`UPDATE user_boards SET has_leds = false WHERE id = ${noLeds.id}`);
+    await insertTick({ ...replay, uuid: undefined, boardId: noLeds.id, angle: 35 });
+
+    const stats = await readStats();
+    expect(stats.angleUsage).toEqual([
+      {
+        boardUuid: boardA.uuid,
+        knownAngleClimberCount: 3,
+        angles: [
+          {
+            angle: 40,
+            distinctClimberCount: 2,
+            climberDayCount: 2,
+            tickCount: 4,
+            sendCount: 3,
+            displayCount: 1,
+            unresolvedLocalDateTickCount: 0,
+          },
+          {
+            angle: 45,
+            distinctClimberCount: 2,
+            climberDayCount: 2,
+            tickCount: 2,
+            sendCount: 1,
+            displayCount: 0,
+            unresolvedLocalDateTickCount: 0,
+          },
+        ],
+        unknownAngle: { tickCount: 0, sendCount: 0, displayCount: 0 },
+      },
+      {
+        boardUuid: boardB.uuid,
+        knownAngleClimberCount: 2,
+        angles: [
+          {
+            angle: 40,
+            distinctClimberCount: 1,
+            climberDayCount: 1,
+            tickCount: 1,
+            sendCount: 1,
+            displayCount: 0,
+            unresolvedLocalDateTickCount: 0,
+          },
+          {
+            angle: 55,
+            distinctClimberCount: 1,
+            climberDayCount: 1,
+            tickCount: 0,
+            sendCount: 0,
+            displayCount: 2,
+            unresolvedLocalDateTickCount: 0,
+          },
+        ],
+        unknownAngle: { tickCount: 0, sendCount: 0, displayCount: 0 },
+      },
+    ]);
+    expect((await readStats(OWNER, noLeds.uuid)).angleUsage).toEqual([]);
+
+    await gymReportingSettingsMutations.setGymReportingBoardAlias(
+      {},
+      { input: { gymUuid: publicGym.uuid, boardUuid: boardB.uuid, rootBoardUuid: boardA.uuid } },
+      authCtx(OWNER),
+    );
+    expect((await readStats(OWNER, boardB.uuid)).angleUsage).toMatchObject([
+      {
+        boardUuid: boardA.uuid,
+        knownAngleClimberCount: 4,
+        angles: [
+          { angle: 40, distinctClimberCount: 3 },
+          { angle: 45, distinctClimberCount: 2 },
+          { angle: 55, distinctClimberCount: 1 },
+        ],
+      },
+    ]);
+    await db.execute(sql`UPDATE user_boards SET has_leds = false WHERE id = ${boardB.id}`);
+    expect((await readStats(OWNER, boardB.uuid)).angleUsage).toEqual([stats.angleUsage[0]]);
+  });
+
+  it('keeps Woods 41° after a fixed setting edit and excludes unsupported Woods -5° from the denominator', async () => {
+    const woods = await insertBoard({ gymId: publicGym.id, ownerId: OWNER, name: 'Fixed Woods' });
+    await db.execute(sql`UPDATE user_boards SET board_type = 'woods', size_id = 1, set_ids = '1',
+      is_angle_adjustable = false, angle = 41 WHERE id = ${woods.id}`);
+    const woodsClimb = `${CLIMB_PREFIX}woods`;
+    await db.execute(sql`INSERT INTO board_climbs (uuid, board_type, layout_id, name, is_listed, is_draft)
+      VALUES (${woodsClimb}, 'woods', 1, 'Woods angle fixture', true, false)`);
+    const tick = { boardId: woods.id, climbUuid: woodsClimb, climbedAt: daysAgoIso(1), status: 'attempt' } as const;
+    await insertTick({ ...tick, userId: OWNER, angle: 41 });
+    await insertTick({ ...tick, userId: MEMBER, angle: -5 });
+    await insertDisplay({ boardId: woods.id, userId: null, angle: 91 });
+    const before = await readStats(OWNER, woods.uuid);
+    expect(before.angleUsage).toEqual([
+      {
+        boardUuid: woods.uuid,
+        knownAngleClimberCount: 1,
+        angles: [
+          {
+            angle: 41,
+            distinctClimberCount: 1,
+            climberDayCount: 1,
+            tickCount: 1,
+            sendCount: 0,
+            displayCount: 0,
+            unresolvedLocalDateTickCount: 0,
+          },
+        ],
+        unknownAngle: { tickCount: 1, sendCount: 0, displayCount: 1 },
+      },
+    ]);
+    await db.execute(sql`UPDATE user_boards SET angle = 35 WHERE id = ${woods.id}`);
+    expect((await readStats(OWNER, woods.uuid)).angleUsage).toEqual(before.angleUsage);
+  });
+
+  it('admits the exact DST window and counts author dates only when their gym-local date is proved', async () => {
+    const dateBoard = await insertBoard({ gymId: publicGym.id, ownerId: OWNER, name: 'Calendar wall' });
+    await db.execute(sql`UPDATE gyms SET reporting_time_zone = 'America/New_York' WHERE id = ${publicGym.id}`);
+    const tick = { boardId: dateBoard.id, climbUuid: CLIMB_X, status: 'attempt', angle: 35 } as const;
+    const start = '2026-11-01T04:00:00.000Z';
+    const end = '2026-11-08T05:00:00.000Z';
+    await insertTick({ ...tick, userId: OWNER, climbedAt: start });
+    await insertDisplay({ boardId: dateBoard.id, userId: OWNER, angle: 35, confirmedAt: start });
+    await insertTick({ ...tick, userId: OWNER, climbedAt: '2026-11-02T05:00:00.000Z' });
+    await insertTick({ ...tick, userId: MEMBER, climbedAt: '2026-11-01T03:59:59.999999Z' });
+    await insertTick({ ...tick, userId: MEMBER, climbedAt: end });
+    const authorDay = {
+      ...tick,
+      reportingDate: '2026-11-03',
+      climbedAt: '2026-11-03T12:00:00.000Z',
+      precision: 'day',
+    } as const;
+    await insertTick({ ...authorDay, userId: OWNER, reportingTimeZone: 'America/New_York' });
+    await insertTick({ ...authorDay, userId: EDITOR, reportingTimeZone: 'UTC' });
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(end));
+    try {
+      const stats = await readStats(OWNER, dateBoard.uuid);
+      expect(stats.current.startAt).toBe(start);
+      expect(stats.angleUsage).toMatchObject([
+        {
+          boardUuid: dateBoard.uuid,
+          knownAngleClimberCount: 2,
+          angles: [
+            {
+              angle: 35,
+              distinctClimberCount: 2,
+              climberDayCount: 3,
+              unresolvedLocalDateTickCount: 1,
+              tickCount: 4,
+              displayCount: 1,
+            },
+          ],
+        },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -933,21 +1123,29 @@ describe('reporting time', () => {
           firstObservedOnly: true,
         })}
       `);
-        return sqlRows.map((row) => row['QUERY PLAN']);
+        const overviewRows = await tx.execute<{ 'QUERY PLAN': string }>(sql`
+          EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) ${gymStatsSnapshotSql(scope)}
+        `);
+        return {
+          firstObserved: sqlRows.map((row) => row['QUERY PLAN']),
+          overview: overviewRows.map((row) => row['QUERY PLAN']),
+        };
       },
     );
-    expect(plan.join('\n')).toContain('boardsesh_ticks_board_climbed_at_idx');
-    expect(plan.join('\n')).toContain('board_climb_events_chronological_idx');
-    for (const column of ['climbed_at', 'confirmed_at']) {
-      expect(
-        plan.some(
-          (line) =>
-            line.includes('Index Cond:') &&
-            line.includes('board_id') &&
-            line.includes(`${column} >=`) &&
-            line.includes(`${column} <`),
-        ),
-      ).toBe(true);
+    for (const queryPlan of [plan.firstObserved, plan.overview]) {
+      expect(queryPlan.join('\n')).toContain('boardsesh_ticks_board_climbed_at_idx');
+      expect(queryPlan.join('\n')).toContain('board_climb_events_chronological_idx');
+      for (const column of ['climbed_at', 'confirmed_at']) {
+        expect(
+          queryPlan.filter(
+            (line) =>
+              line.includes('Index Cond:') &&
+              line.includes('board_id') &&
+              line.includes(`${column} >=`) &&
+              line.includes(`${column} <`),
+          ),
+        ).toHaveLength(1);
+      }
     }
   });
 
