@@ -11,19 +11,36 @@ export const SEO_OBSERVATION_WINDOW: SeoObservationWindow = {
   to: '{filters.dateRange.to}',
 };
 
-/** Keep this list aligned with the published English guide routes. */
+import { APP_GUIDE_SLUGS, AURORA_BRAND_SLUGS } from '../../packages/web/app/lib/seo/app-guide-model';
+
+/** The published English guide routes, derived from the same slugs the pages are built from. */
 export const APP_GUIDE_PATHS = [
   '/apps',
-  '/apps/kilter',
-  '/apps/tension',
-  '/apps/moonboard',
-  '/apps/decoy',
-  '/apps/touchstone',
-  '/apps/grasshopper',
-  '/apps/so-ill',
-  '/apps/woods',
+  ...APP_GUIDE_SLUGS.map((slug) => `/apps/${slug}` as const),
   '/compare/spray-wall-apps',
 ] as const;
+
+/**
+ * Retired guide URLs and the live page they 308 to. The five Aurora brand guides
+ * merged into /apps/aurora; a landing recorded on an old URL (pre-merge history,
+ * or a client that captured before following the redirect) counts as the page
+ * that replaced it.
+ */
+export const RETIRED_APP_GUIDE_PATHS: Readonly<Record<string, (typeof APP_GUIDE_PATHS)[number]>> = Object.fromEntries(
+  AURORA_BRAND_SLUGS.map((brand) => [`/apps/${brand}`, '/apps/aurora']),
+);
+
+const sqlString = (text: string) => `'${text.replaceAll("'", "''")}'`;
+
+/** entry_path -> its live guide, or 'existing site'. */
+function landingGroup(): string {
+  const retired = Object.entries(RETIRED_APP_GUIDE_PATHS).flatMap(([from, to]) => [
+    `entry_path = ${sqlString(from)}`,
+    sqlString(to),
+  ]);
+  const live = `entry_path IN (${APP_GUIDE_PATHS.map(sqlString).join(', ')})`;
+  return `multiIf(${[...retired, live, 'entry_path', "'existing site'"].join(', ')})`;
+}
 
 /** Select only fields needed by the session calculation, with a bounded entry lookback. */
 function capturedEvents(window: SeoObservationWindow): string {
@@ -98,7 +115,7 @@ export function seoAppGuideSessionsQuery(
       AND NOT match(entry_url, '(?i)[?&](gclid|dclid|gbraid|wbraid|msclkid|fbclid|rdt_cid)=')
       AND NOT match(entry_url, '(?i)[?&]utm_medium=(cpc|ppc|paid[^&#]*|display|social|email)(&|#|$)')
   )
-SELECT if(entry_path IN (${APP_GUIDE_PATHS.map((path) => `'${path}'`).join(', ')}), entry_path, 'existing site') AS landing_group,
+SELECT ${landingGroup()} AS landing_group,
   if(entry_country = 'US', 'US', 'outside US or unknown') AS geography,
   countIf(crawler_class IN ('kept', 'unverified Windows automation')) AS landing_sessions,
   countIf(crawler_class IN ('kept', 'unverified Windows automation') AND store_clicks > 0 AND last_store_click >= landed_at) AS store_clicking_sessions,

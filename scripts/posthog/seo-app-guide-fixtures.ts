@@ -63,6 +63,10 @@ const fixtures: FixtureEvent[] = [
   },
   { person: 'win-web', session: 'windows-web', event: '$pageview', time: '10:00:00', ua: 'Windows NT Chrome/150' },
   { person: 'win-web', session: 'windows-web', event: 'Web App Opened', time: '10:01:00', ua: 'Windows NT Chrome/150' },
+  // The merged Aurora page, landed on directly and through a retired brand URL.
+  { person: 'merged', session: 'merged-page', event: '$pageview', time: '10:00:00', path: '/apps/aurora' },
+  { person: 'retired', session: 'retired-alias', event: '$pageview', time: '10:00:00', path: '/apps/tension' },
+  { person: 'retired', session: 'retired-alias', event: 'App Install Click', time: '10:01:00', path: '/apps/tension' },
 ];
 
 const literal = (text: string) => `'${text.replaceAll("'", "''")}'`;
@@ -79,6 +83,7 @@ const fixtureSource = fixtures
 
 export const seoAppGuideFixtureQuery = seoAppGuideSessionsQuery(window, fixtureSource);
 export const seoAppGuideFixtureExpected = [
+  ['/apps/aurora', 'US', 2, 1, 0, 1, 0, 0],
   ['/apps/kilter', 'US', 7, 2, 2, 3, 2, 3],
   ['existing site', 'US', 1, 1, 0, 1, 0, 0],
 ];

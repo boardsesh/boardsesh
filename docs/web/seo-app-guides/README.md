@@ -102,10 +102,10 @@ date requires actual inspection, not presence in a sitemap.
 ## Observed website outcomes
 
 `scripts/posthog/seo-app-guide-queries.ts` contains the reproducible HogQL builder
-for PostHog project 412845. Its `APP_GUIDE_PATHS` still lists the five pre-merge
-Aurora brand pages: replacing them with `/apps/aurora` changes the fixture query
-whose hash `seo-app-guide-validation.json` pins, so that swap waits for a fresh
-PostHog fixture run. It reuses the existing `$pageview`, `App Install Click`
+for PostHog project 412845. `APP_GUIDE_PATHS` is derived from the guide slugs in
+`app-guide-model.ts`, so it always lists the six live pages, and
+`RETIRED_APP_GUIDE_PATHS` counts a landing on one of the five retired Aurora brand
+URLs as `/apps/aurora`. It reuses the existing `$pageview`, `App Install Click`
 and `Web App Opened` events. New finite `compare-*` placements also go into store
 campaign links. Capture still uses the existing consent, host and bot guards.
 No new identifier, consent counter or native attribution join is introduced.
@@ -133,8 +133,12 @@ heuristics can still remove real visitors. Only primary Google search hosts coun
 Google product referrals such as Gmail and Docs do not. The fixture validates repeated events, cross-session and
 before-landing actions, paid/direct/spoofed referrers, bots, missing session IDs
 and retained existing-site traffic, including identical Windows visitors taking
-each of the three actions. `seo-app-guide-validation.json` records the
-exact executed fixture hash plus a bounded production syntax/field probe.
+each of the three actions, plus a direct `/apps/aurora` landing and one on a
+retired brand URL. `seo-app-guide-validation.json` records the
+exact executed fixture hash plus a bounded production syntax/field probe. When
+the query changes, print `seoAppGuideFixtureQuery` and its SHA-256, run it with
+PostHog SQL in project 412845, and record the hash and the returned rows; run the
+production query over one day as the probe and record its rows and dates.
 
 The result keeps each new page and `existing site` separate. US and outside-US-or-
 unknown rows are disjoint; their sum is the observed worldwide total. Inspect
