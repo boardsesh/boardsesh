@@ -22,13 +22,15 @@ import {
   useRef,
   useState,
   type ReactElement,
+  type RefObject,
 } from 'react';
-import { StyleSheet, View, type PointerEvent } from 'react-native';
+import { StyleSheet, View, type LayoutChangeEvent, type PointerEvent, type ViewInstance } from 'react-native';
 import { Divider, Menu } from 'react-native-paper';
 import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
 import { anchorGlyphForIcon, isMenuActionSelectable, resolveMenuActions } from './AppMenu.logic';
 import type { AppMenuProps } from './AppMenu.types';
+import type { WindowAnchorPoint } from './navigation/AnchoredPopover.types';
 
 // Down-caret glyph — Paper's Menu anchor is arbitrary content, so a muted glyph
 // stands in (mirrors the Compose `▾` in AppMenu.android.tsx). The icon anchor's
@@ -39,20 +41,24 @@ const CARET = '▾';
 // its touch target and its round silhouette in the browser build. A caller in a
 // narrower toolbar slot passes `anchorSize`, as on iOS.
 const ICON_ANCHOR_SIZE = 44;
+const MENU_SCREEN_INSET = 8;
 
 const longPressStyles = StyleSheet.create({
   host: { minWidth: 0 },
-  menu: { flex: 1, minWidth: 0 },
+  anchor: { flex: 1, minWidth: 0 },
+  popup: { position: 'absolute', top: 0, left: 0 },
 });
 
 function LongPressMenuAnchor({
   children,
   enabled,
   onOpen,
+  anchorRef,
 }: {
   children: ReactElement;
   enabled: boolean;
-  onOpen: () => void;
+  onOpen: (anchor?: WindowAnchorPoint) => void;
+  anchorRef: RefObject<ViewInstance | null>;
 }) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -68,29 +74,32 @@ function LongPressMenuAnchor({
     cancelLongPress();
     consumedHoldRef.current = false;
     if (!enabled || event.nativeEvent.button !== 0) return;
-    pointerStartRef.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY };
+    const pointer = { x: event.nativeEvent.clientX, y: event.nativeEvent.clientY };
+    pointerStartRef.current = pointer;
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
       pointerStartRef.current = null;
       consumedHoldRef.current = true;
-      onOpen();
+      onOpen(pointer);
     }, 400);
   };
   const movePointer = (event: PointerEvent) => {
     const start = pointerStartRef.current;
-    if (start && Math.hypot(event.nativeEvent.pageX - start.x, event.nativeEvent.pageY - start.y) > 15) {
+    if (start && Math.hypot(event.nativeEvent.clientX - start.x, event.nativeEvent.clientY - start.y) > 15) {
       cancelLongPress();
     }
   };
   // React Native Web forwards this DOM handler, although the native View type
   // intentionally omits the browser-only contextmenu event.
   const browserHandlers = {
-    onContextMenu: (event: { preventDefault: () => void }) => {
+    onContextMenu: (event: { preventDefault: () => void; clientX: number; clientY: number }) => {
       if (!enabled) return;
       event.preventDefault();
       cancelLongPress();
       consumedHoldRef.current = true;
-      onOpen();
+      // Keyboard context-menu events have no pointer location. Measure the
+      // row for those; pointer menus use viewport coordinates, even after scroll.
+      onOpen(event.clientX === 0 && event.clientY === 0 ? undefined : { x: event.clientX, y: event.clientY });
     },
     onClickCapture: (event: { preventDefault: () => void; stopPropagation: () => void }) => {
       if (!consumedHoldRef.current) return;
@@ -103,6 +112,8 @@ function LongPressMenuAnchor({
   return (
     <View
       {...browserHandlers}
+      ref={anchorRef}
+      style={longPressStyles.anchor}
       accessible={false}
       onPointerDown={startLongPress}
       onPointerMove={movePointer}
@@ -120,23 +131,88 @@ export function AppMenu(props: AppMenuProps) {
   const { actions, onSelectIndex, maxWidth, accessibilityLabel, accessibilityHint, style } = props;
   const { m3, systemColors } = useTheme();
   const [visible, setVisible] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState<WindowAnchorPoint>({ x: 0, y: 0 });
+  const [menuWidth, setMenuWidth] = useState(0);
+  const [menuEpoch, setMenuEpoch] = useState(0);
+  const anchorRef = useRef<ViewInstance | null>(null);
+  const openingFocusRef = useRef<HTMLElement | null>(null);
+  const openRequestRef = useRef(0);
   const resolved = useMemo(() => resolveMenuActions(actions), [actions]);
   const longPressMenuKey = props.trigger === 'longPress' ? props.menuKey : undefined;
   const hasRows = resolved.length > 0;
+  const currentMenuRef = useRef({ key: longPressMenuKey, hasRows });
+  currentMenuRef.current = { key: longPressMenuKey, hasRows };
+  const openedMenuRef = useRef<{ key: string | undefined; anchor: WindowAnchorPoint } | null>(null);
+  const openMenu = useCallback(
+    (point?: WindowAnchorPoint) => {
+      if (!hasRows) return;
+      const request = ++openRequestRef.current;
+      const menuKey = currentMenuRef.current.key;
+      const focusedElement = typeof document === 'undefined' ? null : document.activeElement;
+      const showMenu = (anchor: WindowAnchorPoint) => {
+        if (
+          request !== openRequestRef.current ||
+          menuKey !== currentMenuRef.current.key ||
+          !currentMenuRef.current.hasRows
+        )
+          return;
+        const openedMenu = openedMenuRef.current;
+        if (
+          openedMenu &&
+          openedMenu.key === menuKey &&
+          openedMenu.anchor.x === anchor.x &&
+          openedMenu.anchor.y === anchor.y
+        )
+          return;
+        openedMenuRef.current = { key: menuKey, anchor };
+        openingFocusRef.current = focusedElement instanceof HTMLElement ? focusedElement : null;
+        // Only the detached popup resets. Paper otherwise retains its scale
+        // across opens, which can stretch a narrower menu outside the viewport.
+        setMenuEpoch((epoch) => epoch + 1);
+        setMenuWidth(0);
+        setMenuAnchor(anchor);
+        setVisible(true);
+      };
+      if (point) showMenu(point);
+      else anchorRef.current?.measureInWindow((left, top, _width, height) => showMenu({ x: left, y: top + height }));
+    },
+    [hasRows],
+  );
+  const closeMenu = useCallback(() => {
+    openRequestRef.current++;
+    openedMenuRef.current = null;
+    setVisible(false);
+    if (openingFocusRef.current?.isConnected) openingFocusRef.current.focus({ preventScroll: true });
+    openingFocusRef.current = null;
+  }, []);
+  const onMenuLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      if (props.trigger === 'longPress') setMenuWidth(event.nativeEvent.layout.width);
+      props.onPresented?.();
+    },
+    [props.trigger, props.onPresented],
+  );
   useImperativeHandle(
     props.trigger === 'longPress' ? props.menuRef : undefined,
     () => ({
-      open: () => {
-        if (hasRows) setVisible(true);
-      },
+      open: openMenu,
     }),
-    [hasRows],
+    [openMenu],
   );
   // The rows now act on something else: close the open menu rather than let a
   // click land on a row drawn for the old target.
   useEffect(() => {
+    openRequestRef.current++;
+    openedMenuRef.current = null;
+    openingFocusRef.current = null;
     setVisible(false);
   }, [longPressMenuKey]);
+  useEffect(
+    () => () => {
+      openRequestRef.current++;
+    },
+    [],
+  );
 
   const labelColor = systemColors.label as string;
   const caretColor = systemColors.secondaryLabel as string;
@@ -147,7 +223,7 @@ export function AppMenu(props: AppMenuProps) {
 
   const anchor =
     props.trigger === 'longPress' ? (
-      <LongPressMenuAnchor enabled={resolved.length > 0} onOpen={() => setVisible(true)}>
+      <LongPressMenuAnchor enabled={hasRows} onOpen={openMenu} anchorRef={anchorRef}>
         {props.children}
       </LongPressMenuAnchor>
     ) : (
@@ -200,10 +276,31 @@ export function AppMenu(props: AppMenuProps) {
 
   // React Native Web supports dataSet; the native View type omits it.
   const menuBrowserProps = { dataSet: visible ? { boardseshPlayerShortcutBlock: 'true' } : undefined };
+  const viewportWidth =
+    typeof window === 'undefined' ? 0 : window.document.documentElement.clientWidth || window.innerWidth;
+  // Paper flips a coordinate menu left when it cannot fit on the right, but
+  // does not clamp that branch's left edge. A wide menu near a phone's centre
+  // can otherwise hide actions outside the viewport.
+  const menuLeft =
+    props.trigger === 'longPress' && menuWidth > 0
+      ? Math.max(
+          MENU_SCREEN_INSET,
+          Math.min(
+            viewportWidth - menuWidth - MENU_SCREEN_INSET,
+            menuAnchor.x + menuWidth <= viewportWidth - MENU_SCREEN_INSET ? menuAnchor.x : menuAnchor.x - menuWidth,
+          ),
+        )
+      : undefined;
 
   const menu = (
-    <Menu visible={visible} onDismiss={() => setVisible(false)} anchor={anchor}>
-      <View onLayout={visible ? props.onPresented : undefined} {...menuBrowserProps}>
+    <Menu
+      key={props.trigger === 'longPress' ? menuEpoch : undefined}
+      visible={visible}
+      onDismiss={closeMenu}
+      anchor={props.trigger === 'longPress' ? menuAnchor : anchor}
+      style={menuLeft === undefined ? undefined : { left: menuLeft }}
+    >
+      <View onLayout={visible ? onMenuLayout : undefined} {...menuBrowserProps}>
         {resolved.map((action, index) => (
           // Composite key: scope entries can share a display name (two gyms named
           // the same), so the label alone isn't unique — pair it with the position.
@@ -219,7 +316,7 @@ export function AppMenu(props: AppMenuProps) {
               }}
               onPress={() => {
                 if (!isMenuActionSelectable(resolved, index)) return;
-                setVisible(false);
+                closeMenu();
                 onSelectIndex(index);
               }}
             />
@@ -229,13 +326,15 @@ export function AppMenu(props: AppMenuProps) {
     </Menu>
   );
 
-  // Paper puts the anchor inside an unstyled View; its `style` prop styles
-  // the popup. Keep caller sizing on the outer host so flex rows fill their
-  // cell, then use a column to stretch Paper's wrapper even in a row host.
+  // Keep the row mounted independently of Paper's coordinate anchor. Its empty
+  // holder is out of flow, so opening a menu cannot change the row's flex width.
   if (props.trigger === 'longPress') {
     return (
       <View style={[longPressStyles.host, maxWidth != null ? { maxWidth } : null, style]}>
-        <View style={longPressStyles.menu}>{menu}</View>
+        {anchor}
+        <View style={longPressStyles.popup} pointerEvents="box-none">
+          {menu}
+        </View>
       </View>
     );
   }
