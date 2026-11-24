@@ -515,6 +515,7 @@
     "disconnect": {
       "title": "Detén el acceso del asistente",
       "body": "Abre Ajustes, busca el asistente en Aplicaciones conectadas y elige Desconectar. Las siguientes solicitudes dejarán de funcionar. La información ya compartida permanece en el asistente."
-    }
+    },
+    "pilotAvailability": "Este conector está en una prueba piloto solo por invitación. Solo pueden conectarse las cuentas de Boardsesh invitadas. Espera tu invitación antes de seguir los pasos de inicio de sesión que aparecen abajo."
   }
 }

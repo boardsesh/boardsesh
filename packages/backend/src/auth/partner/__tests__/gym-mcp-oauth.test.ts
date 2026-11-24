@@ -98,6 +98,41 @@ describe('hosted gym OAuth boundaries', () => {
     expect((await runtime.api.authenticate(issued.access_token!)).refusal).toBe('wrong_audience');
   });
 
+  it('does not fetch or persist an untrusted pilot client before browser sign-in', async () => {
+    const untrustedClientId = `https://untrusted.example/${randomUUID()}/client.json`;
+    const fetchMetadata = vi.fn();
+    const pilotConfiguration = { ...TEST_CONFIGURATION, gymMcp: { mode: 'pilot' as const, pilotUserIds: [] } };
+    const pilotClients = createGymMcpClientDiscovery(environment.database, {
+      configuration: pilotConfiguration.gymMcp,
+      fetchMetadata,
+    });
+    const pilotRuntime = await createPartnerAuthorityRuntime(environment.database, pilotConfiguration, {
+      close: async () => {},
+      logbook: { feed: db, snapshots: db },
+      gymMcpClients: pilotClients,
+      plugins: [testSessionBridge(createPartnerDatabaseHandle(environment.database))],
+    });
+    const query = new URLSearchParams({
+      client_id: untrustedClientId,
+      redirect_uri: 'https://untrusted.example/callback',
+      response_type: 'code',
+      scope: 'gyms:read',
+      resource: GYM_MCP_RESOURCE,
+      code_challenge: 'a'.repeat(43),
+      code_challenge_method: 'S256',
+    });
+    const response = await pilotRuntime.handleRequest(
+      new Request(`${TEST_CONFIGURATION.issuer}/oauth2/authorize?${query}`),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: 'invalid_client' });
+    expect(fetchMetadata).not.toHaveBeenCalled();
+    expect(await db.select().from(oauthClient).where(eq(oauthClient.clientId, untrustedClientId))).toHaveLength(0);
+    expect(
+      await db.select().from(oauthMcpClientPolicy).where(eq(oauthMcpClientPolicy.clientId, untrustedClientId)),
+    ).toHaveLength(0);
+  });
+
   it('leaves managed training registrations and their token audience unchanged', async () => {
     const owner = await environment.createClimber();
     const registration = await runtime.authority.api.adminCreateOAuthClient({
@@ -173,23 +208,21 @@ describe('hosted gym OAuth boundaries', () => {
         }),
       }),
     );
+    const pilotConfiguration = {
+      ...TEST_CONFIGURATION,
+      gymMcp: { mode: 'pilot' as const, pilotUserIds: [], pilotClientOrigins: ['https://assistant.example'] },
+    };
     const pilotClients = createGymMcpClientDiscovery(environment.database, {
+      configuration: pilotConfiguration.gymMcp,
       fetchMetadata: async () =>
         Response.json({ client_id: CLIENT_ID, client_name: 'Gym assistant', redirect_uris: [REDIRECT_URI] }),
     });
-    const pilotRuntime = await createPartnerAuthorityRuntime(
-      environment.database,
-      {
-        ...TEST_CONFIGURATION,
-        gymMcp: { mode: 'pilot', pilotUserIds: [] },
-      },
-      {
-        close: async () => {},
-        logbook: { feed: db, snapshots: db },
-        gymMcpClients: pilotClients,
-        plugins: [testSessionBridge(createPartnerDatabaseHandle(environment.database))],
-      },
-    );
+    const pilotRuntime = await createPartnerAuthorityRuntime(environment.database, pilotConfiguration, {
+      close: async () => {},
+      logbook: { feed: db, snapshots: db },
+      gymMcpClients: pilotClients,
+      plugins: [testSessionBridge(createPartnerDatabaseHandle(environment.database))],
+    });
     const refused = await environment.authorize(
       client,
       { resource: GYM_MCP_RESOURCE, scopes: ['gyms:read'] },

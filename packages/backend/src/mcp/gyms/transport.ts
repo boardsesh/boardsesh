@@ -12,6 +12,7 @@ import { getPartnerLimitIdentity } from '../../utils/client-ip';
 import { logger } from '../../utils/logger';
 import { recordPublicApiRequest } from '../../services/public-api-usage';
 import { GYM_MCP_RESOURCE, GYM_MCP_SCOPES, readGymMcpMode, type GymMcpMode } from './configuration';
+import { GymMcpRequestLifetime, runWithGymMcpRequestLifetime } from './request-lifetime';
 
 export const GYM_MCP_PATH = '/mcp/gyms';
 export const GYM_MCP_METADATA_PATH = '/.well-known/oauth-protected-resource/mcp/gyms';
@@ -19,6 +20,7 @@ export const GYM_MCP_STATUS_PATH = '/mcp/gyms/status';
 const ALLOWED_ORIGINS = new Set(['https://chatgpt.com', 'https://claude.ai', 'https://www.boardsesh.com']);
 const MAX_ACTIVE_REQUESTS = 32;
 const MAX_ACTIVE_PER_CONNECTION = 4;
+const MAX_PENDING_AUTH_PER_ADDRESS = 4;
 
 export interface GymMcpHandlerOptions {
   mode?: GymMcpMode;
@@ -61,12 +63,13 @@ export function createGymMcpHandler({
   const held = mode !== 'off' && partnerMode === 'hold';
   let activeRequests = 0;
   const activeByConnection = new Map<string, number>();
+  const pendingAuthByAddress = new Map<string, number>();
 
   return async (req, res) => {
     if (!isApiHost(req.headers.host)) return false;
     const pathname = (req.url ?? '').split('?')[0];
     if (pathname === GYM_MCP_STATUS_PATH && (req.method === 'GET' || req.method === 'HEAD')) {
-      reply(res, 200, req.method === 'HEAD' ? undefined : { enabled });
+      reply(res, 200, req.method === 'HEAD' ? undefined : { enabled, invitationRequired: enabled && mode === 'pilot' });
       return true;
     }
     if (pathname !== GYM_MCP_PATH && pathname !== GYM_MCP_METADATA_PATH) return false;
@@ -120,16 +123,43 @@ export function createGymMcpHandler({
     let principal: PartnerApiPrincipal | undefined;
     let selectedTool: string | undefined;
     let reservedConnection: string | undefined;
+    let reservedAddress: string | undefined;
+    let reservedRequest = false;
     let server: McpServer | undefined;
     let responseCompleted = false;
-    const identity = getPartnerLimitIdentity(req);
-    const ledger = new RateLimitLedger();
-    // Bound unauthenticated database work too; a remote cloud address may host many valid users.
-    if (activeRequests >= MAX_ACTIVE_REQUESTS) {
-      reply(res, 503, { error: 'temporarily_unavailable' }, { 'Retry-After': '2' });
-      return true;
+    const lifetime = new GymMcpRequestLifetime();
+    const requestAbort = new AbortController();
+    let rejectCancellation: (error: unknown) => void = () => {};
+    const cancelled = new Promise<never>((_resolve, reject) => {
+      rejectCancellation = reject;
+    });
+    // Token lookup keeps its capacity reservation until it settles. If the
+    // client leaves during that lookup, the cancellation is observed afterward.
+    void cancelled.catch(() => undefined);
+    function cancelRequest(): void {
+      if (requestAbort.signal.aborted) return;
+      requestAbort.abort();
+      rejectCancellation(requestAbort.signal.reason);
+      // SDK 2.4's direct legacy HTTP transport does not forward Request.signal
+      // to ctx.mcpReq.signal. Closing this request's server aborts its callbacks.
+      void server?.close().catch(() => undefined);
     }
-    activeRequests += 1;
+    function onResponseClose(): void {
+      if (!responseCompleted && !res.writableEnded) cancelRequest();
+    }
+    req.once('aborted', cancelRequest);
+    res.once?.('close', onResponseClose);
+    if (req.aborted || (res.destroyed && !res.writableEnded)) cancelRequest();
+    const identity = getPartnerLimitIdentity(req);
+    const authenticationAddress = identity.sharedEgress ?? identity.key;
+    const ledger = new RateLimitLedger();
+    function releaseAddress(): void {
+      if (reservedAddress === undefined) return;
+      const remaining = (pendingAuthByAddress.get(reservedAddress) ?? 1) - 1;
+      if (remaining > 0) pendingAuthByAddress.set(reservedAddress, remaining);
+      else pendingAuthByAddress.delete(reservedAddress);
+      reservedAddress = undefined;
+    }
     try {
       const bearer = parseBearerAuthorization(req.headers.authorization);
       if (bearer.problem !== undefined) {
@@ -141,13 +171,31 @@ export function createGymMcpHandler({
         );
         return true;
       }
+      // One address cannot occupy all token lookups. Valid cloud users release
+      // this permit as soon as their actor is known; their tool concurrency and
+      // rate budgets remain account/client scoped.
+      const pendingAddressCalls = pendingAuthByAddress.get(authenticationAddress) ?? 0;
+      if (pendingAddressCalls >= MAX_PENDING_AUTH_PER_ADDRESS) {
+        reply(res, 429, { error: 'rate_limited' }, { 'Retry-After': '2' });
+        return true;
+      }
+      pendingAuthByAddress.set(authenticationAddress, pendingAddressCalls + 1);
+      reservedAddress = authenticationAddress;
+      if (activeRequests >= MAX_ACTIVE_REQUESTS) {
+        reply(res, 503, { error: 'temporarily_unavailable' }, { 'Retry-After': '2' });
+        return true;
+      }
+      activeRequests += 1;
+      reservedRequest = true;
       const authentication = await authenticate(bearer.token);
+      requestAbort.signal.throwIfAborted();
       if (!authentication.principal) {
         await ledger.consume(identity.key, 'gymMcpInvalidToken', 600);
         reply(res, 401, { error: 'invalid_token' }, { 'WWW-Authenticate': challenge('invalid_token') });
         return true;
       }
       principal = authentication.principal;
+      releaseAddress();
       if (!principal.scopes.includes('gyms:read')) {
         reply(res, 403, { error: 'insufficient_scope' }, { 'WWW-Authenticate': challenge('insufficient_scope') });
         return true;
@@ -166,6 +214,7 @@ export function createGymMcpHandler({
         return true;
       }
       const body = await readWorkoutBody(req, identity.key);
+      requestAbort.signal.throwIfAborted();
       selectedTool = toolName(body);
       const headers = new Headers();
       for (const headerName of ['accept', 'content-type', 'mcp-protocol-version', 'mcp-session-id']) {
@@ -177,11 +226,23 @@ export function createGymMcpHandler({
         enableJsonResponse: true,
       });
       server = await createServer(principal);
+      requestAbort.signal.throwIfAborted();
       await server.connect(transport);
-      const response = await transport.handleRequest(
-        new Request(GYM_MCP_RESOURCE, { method: 'POST', headers, body: JSON.stringify(body) }),
-        { parsedBody: body },
-      );
+      requestAbort.signal.throwIfAborted();
+      const response = await Promise.race([
+        runWithGymMcpRequestLifetime(lifetime, () =>
+          transport.handleRequest(
+            new Request(GYM_MCP_RESOURCE, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(body),
+              signal: requestAbort.signal,
+            }),
+            { parsedBody: body },
+          ),
+        ),
+        cancelled,
+      ]);
       for (const [headerName, header] of response.headers) res.setHeader(headerName, header);
       for (const [headerName, header] of Object.entries(ledger.headers())) res.setHeader(headerName, header);
       res.setHeader('Cache-Control', 'no-store');
@@ -189,7 +250,10 @@ export function createGymMcpHandler({
       res.end(Buffer.from(await response.arrayBuffer()));
       responseCompleted = true;
     } catch (error) {
-      if (error instanceof PartnerRateLimited) {
+      if (requestAbort.signal.aborted) {
+        // The peer is already gone; retain a cancellation outcome for metrics.
+        res.statusCode = 499;
+      } else if (error instanceof PartnerRateLimited) {
         reply(res, 429, { error: 'rate_limited' }, { 'Retry-After': String(error.retryAfterSeconds) });
       } else if (error instanceof WorkoutBodyError) {
         reply(res, error.status, { error: 'invalid_request', message: error.message });
@@ -201,7 +265,11 @@ export function createGymMcpHandler({
         if (!res.headersSent) reply(res, 503, { error: 'temporarily_unavailable' }, { 'Retry-After': '2' });
       }
     } finally {
-      activeRequests -= 1;
+      req.off('aborted', cancelRequest);
+      res.off?.('close', onResponseClose);
+      await lifetime.finish();
+      releaseAddress();
+      if (reservedRequest) activeRequests -= 1;
       if (reservedConnection) {
         const remaining = (activeByConnection.get(reservedConnection) ?? 1) - 1;
         if (remaining > 0) activeByConnection.set(reservedConnection, remaining);

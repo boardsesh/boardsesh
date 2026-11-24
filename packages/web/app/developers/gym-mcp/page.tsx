@@ -5,6 +5,7 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageSection, PageShell, Prose, ProseList } from '@/app/components/ui/page-shell';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
+import { getGymMcpAvailability } from '@/app/lib/gym-mcp/availability.server';
 import EndpointCopy from './endpoint-copy';
 
 /** Setup utility: useful server-rendered copy, self canonical, excluded from the sitemap. */
@@ -20,10 +21,11 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function GymMcpGuidePage() {
   const { t } = await getServerTranslation('developers');
+  const availability = await getGymMcpAvailability();
   return (
     <PageShell title={t('gymMcp.title')} lead={t('gymMcp.lead')}>
       <PageSection>
-        <Prose>{t('gymMcp.availability')}</Prose>
+        <Prose>{availability.invitationRequired ? t('gymMcp.pilotAvailability') : t('gymMcp.availability')}</Prose>
         <Prose>
           <MuiLink component={LocaleLink} href="/gyms">
             {t('gymMcp.links.gyms')}

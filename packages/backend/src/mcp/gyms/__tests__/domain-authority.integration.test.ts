@@ -77,6 +77,45 @@ afterEach(async () => {
 });
 
 describe('MCP gym authority against concurrent first-party board writes', () => {
+  it('allows a gym foreign-key insert while still serializing changes to the locked gym', async () => {
+    const gymLocked = deferred<void>();
+    const releaseGym = deferred<void>();
+    const competingWriteStarted = deferred<number>();
+    let competingWriteCommitted = false;
+    const gymAction = runWithDatabaseTransaction(async () => {
+      await resolveGymForTool(gymA.uuid, ownerId, true, true);
+      gymLocked.resolve();
+      await releaseGym.promise;
+    });
+    await gymLocked.promise;
+    const competingWrite = db
+      .transaction(async (transaction) => {
+        const pidRows = await transaction.execute<{ pid: number }>(sql`SELECT pg_backend_pid() AS pid`);
+        competingWriteStarted.resolve(Array.from(pidRows)[0]!.pid);
+        await transaction
+          .update(tables.gyms)
+          .set({ description: 'Concurrent edit' })
+          .where(eq(tables.gyms.id, gymA.id));
+      })
+      .then(() => {
+        competingWriteCommitted = true;
+      });
+    try {
+      expect(await waitForLock(await competingWriteStarted.promise, () => competingWriteCommitted)).toBe(true);
+      await db.transaction(async (transaction) => {
+        await transaction.execute(sql`select set_config('lock_timeout', '500ms', true)`);
+        await transaction.insert(tables.gymMembers).values({ gymId: gymA.id, userId: leaderId, role: 'member' });
+      });
+      expect(competingWriteCommitted).toBe(false);
+      releaseGym.resolve();
+      await Promise.all([gymAction, competingWrite]);
+      expect(competingWriteCommitted).toBe(true);
+    } finally {
+      releaseGym.resolve();
+      await Promise.allSettled([gymAction, competingWrite]);
+    }
+  });
+
   it('conflicts with an owner move in flight, then refuses the old gym after the move commits', async () => {
     const boardLocked = deferred<void>();
     const allowMove = deferred<void>();

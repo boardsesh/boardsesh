@@ -28,10 +28,10 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-function renderCard() {
+function renderCard(invitationRequired = false) {
   return render(
     <QueryClientProvider client={createTestQueryClient()}>
-      <GymAiAssistantsCard />
+      <GymAiAssistantsCard invitationRequired={invitationRequired} />
     </QueryClientProvider>,
   );
 }
@@ -49,6 +49,17 @@ describe('gym assistant connections', () => {
     request.mockResolvedValue({ myConnectedApps: { apps: [{ scopes: ['gyms:read'], suspended: false }] } });
     renderCard();
     expect(await screen.findByText('An assistant is connected')).toBeTruthy();
+  });
+
+  it('tells managers to wait for an invitation before starting pilot sign-in', async () => {
+    request.mockResolvedValue({ myConnectedApps: { apps: [] } });
+    renderCard(true);
+    expect(screen.getByText(/Wait for a Boardsesh invitation before starting sign-in/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Read pilot access details' }).getAttribute('href')).toBe(
+      '/developers/gym-mcp',
+    );
+    expect(screen.queryByRole('link', { name: 'Connect an assistant' })).toBeNull();
+    expect(await screen.findByText('No assistant connected yet')).toBeTruthy();
   });
 
   it('shows suspended gym connections as paused', async () => {

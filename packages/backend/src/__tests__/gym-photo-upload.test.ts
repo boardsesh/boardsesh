@@ -273,6 +273,26 @@ describe('POST /api/gym-photos', () => {
 });
 
 describe('DELETE /api/gym-photos', () => {
+  it.each(['legacy', 'versioned'])(
+    'preserves the current %s photo across cache-version updates',
+    async (storageKind) => {
+      const originalUrl =
+        storageKind === 'legacy'
+          ? `/static/gym-photos/${gymUuid}.jpg?v=a`
+          : await storeVersionedGymImage(gymUuid, 'photo', JPEG_BYTES, 'image/jpeg');
+      const storedPath = photoFilePath(originalUrl);
+      await mkdir(getGymPhotosDir(), { recursive: true });
+      await writeFile(storedPath, JPEG_BYTES);
+      await socialGymMutations.updateGym(null, { input: { gymUuid, imageUrl: originalUrl } }, authCtx(OWNER));
+      const restampedUrl = `/static/${storedPath}?v=b`;
+      await socialGymMutations.updateGym(null, { input: { gymUuid, imageUrl: restampedUrl } }, authCtx(OWNER));
+      expect((await socialGymQueries.gym(null, { gymUuid }, authCtx(OWNER)))!.imageUrl).toBe(restampedUrl);
+      expect(await readFile(storedPath)).toEqual(JPEG_BYTES);
+      await socialGymMutations.updateGym(null, { input: { gymUuid, imageUrl: null } }, authCtx(OWNER));
+      await expect(access(storedPath)).rejects.toThrow();
+    },
+  );
+
   it('removes a legacy web photo only after the delegated clear commits', async () => {
     validateTokenMock.mockResolvedValue({ userId: OWNER });
     const { server } = await startPhotoServer();

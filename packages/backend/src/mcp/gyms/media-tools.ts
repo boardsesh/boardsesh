@@ -4,7 +4,8 @@ import type { GymMcpPrincipal } from './auth';
 import { createGymMcpContext, executeGymMcpWriteAction, hasGymMcpWriteReceipt } from './dispatch';
 import { executeGymDocument, resolveGymForTool } from './domain';
 import { prepareGymMcpImage, type PreparedGymImage } from './media';
-import { gymMcpToolFailure } from './tool-result';
+import { gymMcpToolFailure, recordGymMcpToolResult } from './tool-result';
+import { trackGymMcpToolWork } from './request-lifetime';
 
 const imageIdentity = {
   gymUuid: z.uuid().describe('The gym UUID returned by the gym tools.'),
@@ -22,46 +23,61 @@ export function registerGymMcpMediaTools(server: McpServer, principal: GymMcpPri
       inputSchema: z.object({ ...imageIdentity, imageUrl: z.url().max(2048), confirm: z.literal(true) }),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
     },
-    async (arguments_) => {
-      let prepared: PreparedGymImage | undefined;
-      try {
-        if (!(await hasGymMcpWriteReceipt(principal, arguments_.idempotencyKey))) {
-          prepared = await prepareGymMcpImage(principal, arguments_.gymUuid, arguments_.kind, arguments_.imageUrl);
-        }
-        const uploadedImage = prepared;
-        const result = await executeGymMcpWriteAction(
-          principal,
-          'set_gym_image',
-          arguments_,
-          'gyms:write',
-          async () => {
-            if (!uploadedImage) throw new Error('The previous upload is unavailable. Start a new image change.');
-            const storedUrl = uploadedImage.storedUrl;
-            const gym = await resolveGymForTool(arguments_.gymUuid, principal.userId, true, true);
-            await executeGymDocument(
-              'updateGym',
-              {
-                input: {
-                  gymUuid: gym.uuid,
-                  [arguments_.kind === 'photo' ? 'imageUrl' : 'logoUrl']: storedUrl,
-                },
-              },
-              createGymMcpContext(principal),
+    (arguments_, requestContext) =>
+      trackGymMcpToolWork(async () => {
+        const startedAt = performance.now();
+        let prepared: PreparedGymImage | undefined;
+        try {
+          requestContext.mcpReq.signal.throwIfAborted();
+          if (!(await hasGymMcpWriteReceipt(principal, arguments_.idempotencyKey))) {
+            prepared = await prepareGymMcpImage(
+              principal,
+              arguments_.gymUuid,
+              arguments_.kind,
+              arguments_.imageUrl,
+              requestContext.mcpReq.signal,
             );
-            return { gymUuid: gym.uuid, kind: arguments_.kind, storedUrl };
-          },
-          async () => {
-            await resolveGymForTool(arguments_.gymUuid, principal.userId, true, true);
-          },
-        );
-        if (prepared && result.storedUrl !== prepared.storedUrl) await prepared.discard();
-        prepared = undefined;
-        return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], structuredContent: result };
-      } catch (error) {
-        await prepared?.discard();
-        return gymMcpToolFailure(error);
-      }
-    },
+          }
+          requestContext.mcpReq.signal.throwIfAborted();
+          const uploadedImage = prepared;
+          const result = await executeGymMcpWriteAction(
+            principal,
+            'set_gym_image',
+            arguments_,
+            'gyms:write',
+            async () => {
+              if (!uploadedImage) throw new Error('The previous upload is unavailable. Start a new image change.');
+              const storedUrl = uploadedImage.storedUrl;
+              const gym = await resolveGymForTool(arguments_.gymUuid, principal.userId, true, true);
+              await executeGymDocument(
+                'updateGym',
+                {
+                  input: {
+                    gymUuid: gym.uuid,
+                    [arguments_.kind === 'photo' ? 'imageUrl' : 'logoUrl']: storedUrl,
+                  },
+                },
+                createGymMcpContext(principal),
+              );
+              return { gymUuid: gym.uuid, kind: arguments_.kind, storedUrl };
+            },
+            async () => {
+              await resolveGymForTool(arguments_.gymUuid, principal.userId, true, true);
+            },
+          );
+          if (prepared && result.storedUrl !== prepared.storedUrl) await prepared.discard();
+          prepared = undefined;
+          recordGymMcpToolResult('set_gym_image', 'success', startedAt);
+          return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], structuredContent: result };
+        } catch (error) {
+          try {
+            await prepared?.discard();
+          } catch {
+            // Staged cleanup must not hide the action failure or its outcome event.
+          }
+          return gymMcpToolFailure(error, 'set_gym_image', startedAt);
+        }
+      }),
   );
   server.registerTool(
     'remove_gym_image',
@@ -71,35 +87,39 @@ export function registerGymMcpMediaTools(server: McpServer, principal: GymMcpPri
       inputSchema: z.object({ ...imageIdentity, confirm: z.literal(true) }),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
-    async (arguments_) => {
-      try {
-        const result = await executeGymMcpWriteAction(
-          principal,
-          'remove_gym_image',
-          arguments_,
-          'gyms:write',
-          async () => {
-            const gym = await resolveGymForTool(arguments_.gymUuid, principal.userId, true, true);
-            await executeGymDocument(
-              'updateGym',
-              {
-                input: {
-                  gymUuid: gym.uuid,
-                  [arguments_.kind === 'photo' ? 'imageUrl' : 'logoUrl']: null,
+    (arguments_, requestContext) =>
+      trackGymMcpToolWork(async () => {
+        const startedAt = performance.now();
+        try {
+          requestContext.mcpReq.signal.throwIfAborted();
+          const result = await executeGymMcpWriteAction(
+            principal,
+            'remove_gym_image',
+            arguments_,
+            'gyms:write',
+            async () => {
+              const gym = await resolveGymForTool(arguments_.gymUuid, principal.userId, true, true);
+              await executeGymDocument(
+                'updateGym',
+                {
+                  input: {
+                    gymUuid: gym.uuid,
+                    [arguments_.kind === 'photo' ? 'imageUrl' : 'logoUrl']: null,
+                  },
                 },
-              },
-              createGymMcpContext(principal),
-            );
-            return { gymUuid: gym.uuid, kind: arguments_.kind, storedUrl: null };
-          },
-          async () => {
-            await resolveGymForTool(arguments_.gymUuid, principal.userId, true, true);
-          },
-        );
-        return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], structuredContent: result };
-      } catch (error) {
-        return gymMcpToolFailure(error);
-      }
-    },
+                createGymMcpContext(principal),
+              );
+              return { gymUuid: gym.uuid, kind: arguments_.kind, storedUrl: null };
+            },
+            async () => {
+              await resolveGymForTool(arguments_.gymUuid, principal.userId, true, true);
+            },
+          );
+          recordGymMcpToolResult('remove_gym_image', 'success', startedAt);
+          return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], structuredContent: result };
+        } catch (error) {
+          return gymMcpToolFailure(error, 'remove_gym_image', startedAt);
+        }
+      }),
   );
 }

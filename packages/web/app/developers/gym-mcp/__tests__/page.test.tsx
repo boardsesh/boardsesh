@@ -1,9 +1,11 @@
 import React from 'react';
-import { describe, expect, it, vi } from 'vite-plus/test';
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { render, screen } from '@testing-library/react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
 vi.mock('server-only', () => ({}));
+const availability = vi.hoisted(() => vi.fn());
+vi.mock('@/app/lib/gym-mcp/availability.server', () => ({ getGymMcpAvailability: availability }));
 vi.mock('@/app/lib/i18n/server', () => ({
   getServerTranslation: async (namespace: string) => ({
     t: (key: string) => tFromCatalog(namespace, key),
@@ -18,6 +20,10 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
   ),
 }));
 const { default: GymMcpGuidePage, generateMetadata } = await import('../page');
+
+beforeEach(() => {
+  availability.mockResolvedValue({ enabled: true, invitationRequired: false });
+});
 
 describe('hosted gym MCP setup guide', () => {
   it('renders useful setup copy and account links without a developer registration requirement', async () => {
@@ -38,5 +44,14 @@ describe('hosted gym MCP setup guide', () => {
     expect(metadata.alternates?.canonical).toBe('/developers/gym-mcp');
     expect(metadata.openGraph?.title).toBeTruthy();
     expect(metadata.twitter?.title).toBeTruthy();
+  });
+
+  it('explains invitation-only pilot access before the sign-in instructions', async () => {
+    availability.mockResolvedValue({ enabled: true, invitationRequired: true });
+    render(await GymMcpGuidePage());
+    const invitationNotice = screen.getByText(/Only invited Boardsesh accounts can connect/);
+    const signInInstruction = screen.getByText(/Sign in to Boardsesh and review the gym permissions/);
+    expect(invitationNotice.textContent).toContain('Wait for your invitation');
+    expect(invitationNotice.compareDocumentPosition(signInInstruction) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

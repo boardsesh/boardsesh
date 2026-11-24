@@ -515,6 +515,7 @@
     "disconnect": {
       "title": "Interrompi l’accesso dell’assistente",
       "body": "Apri le impostazioni, trova l’assistente nelle App collegate e scegli Scollega. Le richieste successive non funzioneranno più. Le informazioni già condivise rimangono all’assistente."
-    }
+    },
+    "pilotAvailability": "Questo connettore è in fase pilota solo su invito. Possono collegarsi solo gli account Boardsesh invitati. Aspetta il tuo invito prima di seguire i passaggi di accesso qui sotto."
   }
 }

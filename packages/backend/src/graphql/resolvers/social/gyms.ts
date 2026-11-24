@@ -59,7 +59,7 @@ import {
 } from './board-moderation-events';
 import { onGymDetailsEdited, REPORT_FIXING_GYM_FIELDS } from './directory-reports/lifecycle';
 import { afterCommit, transactionWithAfterCommit } from '../../../db/after-commit';
-import { removeManagedGymImage } from '../../../services/gym-image-storage';
+import { managedGymImageKey, removeManagedGymImage } from '../../../services/gym-image-storage';
 
 // ============================================
 // Helpers
@@ -1521,10 +1521,14 @@ export const socialGymMutations = {
         const changedFields = [...REPORT_FIXING_GYM_FIELDS].filter((field) => previous[field] !== next[field]);
         const actorRole = changedFields.length > 0 ? await resolveGymEditActorRole(gym, userId, tx) : null;
         if (actorRole) await onGymDetailsEdited(tx, { gymId: gym.id, actorUserId: userId, actorRole, changedFields });
-        if (before.imageUrl !== row.imageUrl) {
+        if (
+          managedGymImageKey(gym.uuid, 'photo', before.imageUrl) !== managedGymImageKey(gym.uuid, 'photo', row.imageUrl)
+        ) {
           afterCommit(tx, () => removeManagedGymImage(gym.uuid, 'photo', before.imageUrl));
         }
-        if (before.logoUrl !== row.logoUrl) {
+        if (
+          managedGymImageKey(gym.uuid, 'logo', before.logoUrl) !== managedGymImageKey(gym.uuid, 'logo', row.logoUrl)
+        ) {
           afterCommit(tx, () => removeManagedGymImage(gym.uuid, 'logo', before.logoUrl));
         }
       }

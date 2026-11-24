@@ -515,6 +515,7 @@
     "disconnect": {
       "title": "Arrêter l’accès de l’assistant",
       "body": "Ouvre les paramètres, trouve l’assistant dans Applications connectées et choisis Déconnecter. Les prochaines demandes ne fonctionneront plus. Les informations déjà partagées restent chez l’assistant."
-    }
+    },
+    "pilotAvailability": "Ce connecteur est en phase pilote sur invitation. Seuls les comptes Boardsesh invités peuvent se connecter. Attends ton invitation avant de suivre les étapes de connexion ci-dessous."
   }
 }

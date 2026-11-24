@@ -147,7 +147,7 @@ describe('gym MCP authorization row locks', () => {
   it('holds a board lock before allowing an unlink and permits an already-unlinked exact replay', async () => {
     expect(await authorizeGymBoardRemoval(GYM_UUID, BOARD_UUID, ACTOR, false)).toMatchObject({ ownBoard: true });
     expect(state.events).toEqual([
-      'gyms:update',
+      'gyms:no key update',
       'gym_members:share',
       'community_roles:share',
       'authorize',
@@ -171,7 +171,7 @@ describe('gym MCP authorization row locks', () => {
     state.qualifyingBoards = [{ id: 20 }];
     await resolveGymForTool(GYM_UUID, ACTOR, true, true);
     expect(state.events).toEqual([
-      'gyms:update',
+      'gyms:no key update',
       'gym_members:share',
       'community_roles:share',
       'user_boards:share',

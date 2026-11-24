@@ -471,7 +471,9 @@
       "connected": "已连接 AI 助手",
       "paused": "助手访问已暂停",
       "notConnected": "还没有连接助手",
-      "statusUnavailable": "请在设置中检查连接"
+      "statusUnavailable": "请在设置中检查连接",
+      "pilotBody": "助手连接目前处于邀请制试用阶段。请等待 Boardsesh 邀请，再开始登录连接。",
+      "pilotDetails": "了解试用邀请要求"
     }
   },
   "branding": {

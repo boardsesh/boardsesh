@@ -79,12 +79,33 @@ describe('hosted gym MCP transport', () => {
     const handler = createGymMcpHandler({ mode: 'off', partnerMode: 'open', authenticate, createServer });
     expect(await request(handler, { path: GYM_MCP_STATUS_PATH, method: 'GET' })).toMatchObject({
       status: 200,
-      body: { enabled: false },
+      body: { enabled: false, invitationRequired: false },
     });
     expect((await request(handler)).handled).toBe(false);
     expect(authenticate).not.toHaveBeenCalled();
     expect(createServer).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['pilot', 'open', true, true],
+    ['pilot', 'allowlist', true, true],
+    ['on', 'open', true, false],
+    ['pilot', 'hold', false, false],
+    ['pilot', 'off', false, false],
+  ] as const)(
+    'publishes invitation requirements without user details: %s/%s',
+    async (mode, partnerMode, enabled, invitationRequired) => {
+      const authenticate = vi.fn();
+      const createServer = vi.fn();
+      const handler = createGymMcpHandler({ mode, partnerMode, authenticate, createServer });
+      const result = await request(handler, { path: GYM_MCP_STATUS_PATH, method: 'GET' });
+      expect(result.body).toEqual({ enabled, invitationRequired });
+      expect(result.headers.get('cache-control')).toBe('no-store');
+      expect((await request(handler, { path: GYM_MCP_STATUS_PATH, method: 'HEAD' })).body).toBeUndefined();
+      expect(authenticate).not.toHaveBeenCalled();
+      expect(createServer).not.toHaveBeenCalled();
+    },
+  );
 
   it('keeps the parent OAuth off and hold controls authoritative', async () => {
     const disabled = createGymMcpHandler({ mode: 'on', partnerMode: 'off' });

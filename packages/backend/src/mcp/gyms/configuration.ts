@@ -8,10 +8,38 @@ import { readPartnerOAuthMode } from '../../auth/partner/mode';
 
 export { GYM_MCP_RESOURCE, GYM_MCP_SCOPES, type GymMcpMode };
 export type GymMcpScope = 'gyms:read' | 'gyms:write' | 'gyms:access:write';
+export const DEFAULT_GYM_MCP_PILOT_CLIENT_ORIGINS = ['https://chatgpt.com', 'https://claude.ai'] as const;
 
 export interface GymMcpConfiguration {
   mode: Exclude<GymMcpMode, 'off'>;
   pilotUserIds: readonly string[];
+  pilotClientOrigins?: readonly string[];
+}
+
+function pilotClientOrigins(rawOrigins: string | undefined): readonly string[] {
+  if (rawOrigins === undefined) return DEFAULT_GYM_MCP_PILOT_CLIENT_ORIGINS;
+  return [
+    ...new Set(
+      rawOrigins
+        .split(',')
+        .map((origin) => origin.trim())
+        .filter(Boolean)
+        .map((origin) => {
+          const parsed = new URL(origin);
+          if (
+            parsed.protocol !== 'https:' ||
+            parsed.username ||
+            parsed.password ||
+            parsed.pathname !== '/' ||
+            parsed.search ||
+            parsed.hash
+          ) {
+            throw new Error('GYM_MCP_PILOT_CLIENT_ORIGINS must contain HTTPS origins without paths or credentials.');
+          }
+          return parsed.origin;
+        }),
+    ),
+  ];
 }
 
 export function readGymMcpMode(rawMode: string | undefined = process.env.GYM_MCP_MODE): GymMcpMode {
@@ -27,7 +55,19 @@ export function readGymMcpConfiguration(environment: NodeJS.ProcessEnv = process
       .split(',')
       .map((userId) => userId.trim())
       .filter(Boolean),
+    ...(mode === 'pilot' ? { pilotClientOrigins: pilotClientOrigins(environment.GYM_MCP_PILOT_CLIENT_ORIGINS) } : {}),
   };
+}
+
+/** Pilot identity policy applies before sign-in, fetching, caching or client persistence. */
+export function gymMcpAllowsClientMetadata(configuration: GymMcpConfiguration | undefined, clientId: string): boolean {
+  if (configuration?.mode !== 'pilot') return true;
+  try {
+    const origin = new URL(clientId).origin;
+    return (configuration.pilotClientOrigins ?? DEFAULT_GYM_MCP_PILOT_CLIENT_ORIGINS).includes(origin);
+  } catch {
+    return false;
+  }
 }
 
 export function gymMcpAllowsUser(configuration: GymMcpConfiguration | undefined, userId: string): boolean {

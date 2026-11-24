@@ -51,9 +51,11 @@ type QuickLinkTab = 'kiosks' | 'branding' | 'boards' | 'members' | 'insights' | 
 export default function OverviewTab({
   gym,
   aiAssistantsAvailable = false,
+  aiAssistantsInvitationRequired = false,
 }: {
   gym: Gym;
   aiAssistantsAvailable?: boolean;
+  aiAssistantsInvitationRequired?: boolean;
 }) {
   const { t } = useTranslation('kiosk');
   const { token } = useWsAuthToken();
@@ -137,7 +139,7 @@ export default function OverviewTab({
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
       <GymWelcomeCard gym={gym} />
 
-      {aiAssistantsAvailable && <GymAiAssistantsCard />}
+      {aiAssistantsAvailable && <GymAiAssistantsCard invitationRequired={aiAssistantsInvitationRequired} />}
 
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
         {logoDisplayUrl && (

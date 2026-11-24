@@ -471,7 +471,9 @@
       "connected": "Ein Assistent ist verbunden",
       "paused": "Der Zugriff des Assistenten ist pausiert",
       "notConnected": "Noch kein Assistent verbunden",
-      "statusUnavailable": "Prüfe deine Verbindungen in den Einstellungen"
+      "statusUnavailable": "Prüfe deine Verbindungen in den Einstellungen",
+      "pilotBody": "Der Zugang ist aktuell nur auf Einladung möglich. Warte auf eine Einladung von Boardsesh, bevor du dich zum Verbinden anmeldest.",
+      "pilotDetails": "Infos zum Pilotzugang lesen"
     }
   },
   "branding": {

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vite-plus/test';
 import { createGymMcpClientDiscovery } from '../gym-mcp-clients';
 import type { PartnerDatabase } from '../tables';
 import type { ClientMetadataResourceFetch } from '@better-auth/oauth-provider';
+import { readGymMcpConfiguration } from '../../../mcp/gyms/configuration';
 
 const CLIENT_ID = 'https://assistant.example/oauth/client.json';
 const document = {
@@ -21,6 +22,68 @@ function createDiscovery(fetchMetadata: ClientMetadataResourceFetch) {
 }
 
 describe('gym MCP metadata preparation', () => {
+  it.each([
+    CLIENT_ID,
+    'https://chatgpt.com.attacker.example/oauth/client.json',
+    'https://sub.claude.ai/client.json',
+    'https://chatgpt.com:8443/oauth/client.json',
+  ])('refuses untrusted pilot identities before fetching or entering OAuth: %s', async (clientId) => {
+    const fetchMetadata = vi.fn();
+    const clients = createGymMcpClientDiscovery({} as unknown as PartnerDatabase, {
+      fetchMetadata,
+      configuration: { mode: 'pilot', pilotUserIds: [] },
+    });
+    const work = vi.fn();
+    expect((await clients.withPreparedMetadata(authorize(clientId), work)).status).toBe(400);
+    expect(fetchMetadata).not.toHaveBeenCalled();
+    expect(work).not.toHaveBeenCalled();
+  });
+
+  it.each(['https://chatgpt.com/oauth/client.json', 'https://claude.ai/oauth/mcp-oauth-client-metadata'])(
+    'prepares a default pilot identity without requiring a session: %s',
+    async (clientId) => {
+      const metadata = { ...document, client_id: clientId, redirect_uris: [new URL('/callback', clientId).href] };
+      const fetchMetadata = vi.fn<ClientMetadataResourceFetch>(async () => Response.json(metadata));
+      const clients = createGymMcpClientDiscovery({} as unknown as PartnerDatabase, {
+        fetchMetadata,
+        configuration: { mode: 'pilot', pilotUserIds: [] },
+      });
+      const work = vi.fn(async () => new Response());
+      expect((await clients.withPreparedMetadata(authorize(clientId), work)).status).toBe(200);
+      expect(fetchMetadata).toHaveBeenCalledOnce();
+      expect(work).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('uses the configured pilot origins and fails closed for an empty list', async () => {
+    const fetchMetadata = vi.fn<ClientMetadataResourceFetch>(async () => Response.json(document));
+    for (const origins of ['https://assistant.example,https://chatgpt.com', '']) {
+      const clients = createGymMcpClientDiscovery({} as unknown as PartnerDatabase, {
+        fetchMetadata,
+        configuration: readGymMcpConfiguration({
+          NODE_ENV: 'test',
+          GYM_MCP_MODE: 'pilot',
+          GYM_MCP_PILOT_CLIENT_ORIGINS: origins,
+        }),
+      });
+      const work = vi.fn(async () => new Response());
+      expect((await clients.withPreparedMetadata(authorize(), work)).status).toBe(origins ? 200 : 400);
+      expect(work).toHaveBeenCalledTimes(origins ? 1 : 0);
+    }
+    expect(fetchMetadata).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    'http://assistant.example',
+    'https://assistant.example/path',
+    'https://user:secret@assistant.example',
+    'invalid',
+  ])('refuses a malformed pilot origin configuration: %s', (origins) => {
+    expect(() =>
+      readGymMcpConfiguration({ NODE_ENV: 'test', GYM_MCP_MODE: 'pilot', GYM_MCP_PILOT_CLIENT_ORIGINS: origins }),
+    ).toThrow();
+  });
+
   it('times out the entire preparation when the transport ignores abort', async () => {
     vi.useFakeTimers();
     try {

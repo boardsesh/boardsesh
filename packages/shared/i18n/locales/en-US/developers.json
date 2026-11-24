@@ -515,6 +515,7 @@
     "disconnect": {
       "title": "Stop assistant access",
       "body": "Open Settings, find the assistant in Connected apps, and choose Disconnect. Future requests stop working. Information already shared remains with the assistant."
-    }
+    },
+    "pilotAvailability": "This connector is in an invitation-only pilot. Only invited Boardsesh accounts can connect. Wait for your invitation before following the sign-in steps below."
   }
 }

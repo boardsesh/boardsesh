@@ -16,7 +16,7 @@ import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { themeTokens } from '@/app/theme/theme-config';
 
 /** Uses the same account-scoped cache as Settings, including disconnect invalidation. */
-export default function GymAiAssistantsCard() {
+export default function GymAiAssistantsCard({ invitationRequired = false }: { invitationRequired?: boolean }) {
   const { t } = useTranslation('kiosk');
   const { data: session } = useBrowserSession();
   const { token } = useWsAuthToken();
@@ -56,14 +56,14 @@ export default function GymAiAssistantsCard() {
           {t('manage.aiAssistants.title')}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          {t('manage.aiAssistants.body')}
+          {invitationRequired ? t('manage.aiAssistants.pilotBody') : t('manage.aiAssistants.body')}
         </Typography>
         <Typography variant="body2" color="text.secondary" role="status" sx={{ mt: 1 }}>
           {connectionStatus}
         </Typography>
         <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', mt: 1.5 }}>
           <Button component={LocaleLink} href="/developers/gym-mcp" variant="outlined" size="small">
-            {t('manage.aiAssistants.connect')}
+            {invitationRequired ? t('manage.aiAssistants.pilotDetails') : t('manage.aiAssistants.connect')}
           </Button>
           <Button component={LocaleLink} href="/settings" size="small">
             {t('manage.aiAssistants.connections')}

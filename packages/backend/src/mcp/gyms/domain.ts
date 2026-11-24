@@ -80,7 +80,9 @@ export async function resolveGymForTool(
       .select()
       .from(tables.gyms)
       .where(and(eq(tables.gyms.id, gym.id), isNull(tables.gyms.deletedAt), isNull(tables.gyms.mergedIntoGymId)))
-      .for('update');
+      // Serialize gym changes without blocking foreign-key checks for follows,
+      // reports or new boards that reference this gym.
+      .for('no key update');
     if (!locked) throw notFound();
     gym = locked;
     // Gym ownership, a staff membership, and a covering community role are

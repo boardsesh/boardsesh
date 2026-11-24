@@ -10,7 +10,12 @@ import type { ClientDiscovery, ClientMetadataResourceFetch } from '@better-auth/
 import { APIError } from 'better-auth/api';
 import { eq } from 'drizzle-orm';
 import { oauthClient, oauthMcpClientPolicy } from '@boardsesh/db/schema/auth';
-import { GYM_MCP_RESOURCE, GYM_MCP_SCOPES } from '../../mcp/gyms/configuration';
+import {
+  GYM_MCP_RESOURCE,
+  GYM_MCP_SCOPES,
+  gymMcpAllowsClientMetadata,
+  type GymMcpConfiguration,
+} from '../../mcp/gyms/configuration';
 import { createPartnerDatabaseHandle } from './transaction';
 import type { PartnerDatabase } from './tables';
 
@@ -145,7 +150,10 @@ async function readMetadataBody(response: Response): Promise<string> {
  */
 export function createGymMcpClientDiscovery(
   database: PartnerDatabase,
-  { fetchMetadata = fetchClientMetadataResource }: { fetchMetadata?: ClientMetadataResourceFetch } = {},
+  {
+    fetchMetadata = fetchClientMetadataResource,
+    configuration,
+  }: { fetchMetadata?: ClientMetadataResourceFetch; configuration?: GymMcpConfiguration } = {},
 ): GymMcpClientDiscovery {
   const databaseHandle = createPartnerDatabaseHandle(database);
   const prepared = new AsyncLocalStorage<{ clientId: string; document: string }>();
@@ -167,6 +175,7 @@ export function createGymMcpClientDiscovery(
   };
   const cimd = createCimdClientDiscovery({
     fetchClientMetadataResource: validatedFetch,
+    isMetadataDocumentUrlAllowed: (clientId) => gymMcpAllowsClientMetadata(configuration, clientId),
     metadataProfile: 'mcp-2026-07-28',
     originBoundFields: ['post_logout_redirect_uris'],
     metadataRevalidationInterval: 0,
@@ -182,7 +191,7 @@ export function createGymMcpClientDiscovery(
     ...cimd,
     async resolve(context, clientId, existing) {
       const snapshot = prepared.getStore();
-      if (!snapshot || snapshot.clientId !== clientId) {
+      if (!gymMcpAllowsClientMetadata(configuration, clientId) || !snapshot || snapshot.clientId !== clientId) {
         throw new APIError('BAD_REQUEST', {
           error: 'invalid_client',
           error_description: 'Client metadata was not verified.',
@@ -236,7 +245,12 @@ export function createGymMcpClientDiscovery(
         return invalidClient();
       }
       if (!clientId || !isCimdClientIdUrlCandidate(clientId)) return work();
-      if (clientId.length > 2048 || validateClientIdUrl(clientId)) return invalidClient();
+      if (
+        clientId.length > 2048 ||
+        validateClientIdUrl(clientId) ||
+        !gymMcpAllowsClientMetadata(configuration, clientId)
+      )
+        return invalidClient();
       const origin = new URL(clientId).origin;
       const now = Date.now();
       const cached = documents.get(clientId);

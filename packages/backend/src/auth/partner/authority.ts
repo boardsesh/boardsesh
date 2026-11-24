@@ -260,7 +260,7 @@ export async function createPartnerAuthorityRuntime(
   },
 ): Promise<PartnerAuthorityRuntime> {
   const gymMcpClients = configuration.gymMcp
-    ? (buildOptions.gymMcpClients ?? createGymMcpClientDiscovery(database))
+    ? (buildOptions.gymMcpClients ?? createGymMcpClientDiscovery(database, { configuration: configuration.gymMcp }))
     : undefined;
   const authority = createPartnerAuthority(database, configuration, { ...buildOptions, gymMcpClients });
   await authority.$context;

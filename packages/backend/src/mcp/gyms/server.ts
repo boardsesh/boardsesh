@@ -4,6 +4,7 @@ import { executeGymMcpTool } from './dispatch';
 import { gymMcpTools } from './registry';
 import { registerGymMcpMediaTools } from './media-tools';
 import { gymMcpToolFailure, recordGymMcpToolResult } from './tool-result';
+import { trackGymMcpToolWork } from './request-lifetime';
 
 /** One server per HTTP request; no authenticated state can cross users or replicas. */
 export function createGymMcpServer(principal: GymMcpPrincipal): McpServer {
@@ -28,16 +29,17 @@ export function createGymMcpServer(principal: GymMcpPrincipal): McpServer {
           openWorldHint: tool.category === 'public',
         },
       },
-      async (arguments_: Record<string, unknown>) => {
-        const startedAt = performance.now();
-        try {
-          const result = await executeGymMcpTool(principal, tool.name, arguments_);
-          recordGymMcpToolResult(tool.name, 'success', startedAt);
-          return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], structuredContent: result };
-        } catch (error) {
-          return gymMcpToolFailure(error, tool.name, startedAt);
-        }
-      },
+      (arguments_: Record<string, unknown>) =>
+        trackGymMcpToolWork(async () => {
+          const startedAt = performance.now();
+          try {
+            const result = await executeGymMcpTool(principal, tool.name, arguments_);
+            recordGymMcpToolResult(tool.name, 'success', startedAt);
+            return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], structuredContent: result };
+          } catch (error) {
+            return gymMcpToolFailure(error, tool.name, startedAt);
+          }
+        }),
     );
   }
   registerGymMcpMediaTools(server, principal);

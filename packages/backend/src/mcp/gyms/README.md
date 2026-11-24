@@ -34,6 +34,27 @@ savepoints. Effects such as live events run after the outer commit. Receipt
 payloads expire after seven days; expired keys remain tombstones so a delayed
 retry cannot silently repeat a write.
 
+## Resolver authoring inside a delegated write
+
+Gym MCP writes use one outer database transaction for authorization, the
+resolver mutation and its retry receipt. The shared `db` and `dbRead` handles
+bind to that transaction inside its asynchronous scope; outside it, they use
+their normal primary/replica clients. This binding applies to existing resolvers
+even though the MCP endpoint defaults to off.
+
+If a resolver must recover from a SQL error and continue querying, put the
+fallible work inside `db.transaction(...)` and catch outside that callback.
+Inside a delegated write this creates a savepoint; catching a SQL error directly
+leaves the outer PostgreSQL transaction aborted. Otherwise rethrow the error so
+the action and receipt roll back. Queue external effects with the after-commit
+helpers rather than running them before the outer transaction commits.
+
+The MCP write's two-second lock timeout and ten-second statement timeout apply
+to individual database statements. They do not cap total transaction duration;
+keep network work outside the transaction and avoid unbounded resolver loops.
+See [hosted gym MCP](../../../../../docs/integrations/hosted-gym-mcp.md) for rollout and
+deployment order.
+
 ## Deliberate boundaries
 
 These tools cover the gym page, rather than every resolver containing the word

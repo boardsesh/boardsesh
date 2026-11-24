@@ -67,7 +67,10 @@ files can still be uploaded from the gym's Profile or Branding tab. The upload
 path retains image type, size and decoding checks. Web uploads save the gym's
 image in the same request. Every new upload gets a distinct filename; replacing
 or clearing an image removes its previous original and variants after commit,
-including older web uploads. A generated image is not a
+including older web uploads. Changing only the URL's cache version preserves
+the same stored object. Deploy the backend before the web uploader: the new
+web client requires the saved `gym` in the upload response. Older web clients
+remain compatible with the new backend. A generated image is not a
 substitute for the real gym photo required by the existing gym UI.
 
 Activity results retain the website's reporting timezone, attribution and
@@ -92,6 +95,19 @@ account IDs on the backend. A pilot with an empty list admits no users. Switch
 to `on` only after the checks below pass; changing the gym mode never overrides
 the parent OAuth `off` or `hold` switch.
 
+Pilot client metadata is restricted to the exact HTTPS origins
+`https://chatgpt.com` and `https://claude.ai`, before any metadata fetch or
+OAuth client persistence, including requests without a browser session.
+`GYM_MCP_PILOT_CLIENT_ORIGINS` replaces this list with comma-separated HTTPS
+origins; include the defaults when adding another trusted assistant. An empty
+list refuses every metadata identity; malformed origins fail configuration.
+Subdomains and non-default ports require their own explicit entries. This
+restriction applies in `pilot`; `on` admits other validated public HTTPS
+metadata identities. The providers' current published identities are
+[ChatGPT](https://chatgpt.com/oauth/client.json) and
+[Claude](https://claude.ai/oauth/mcp-oauth-client-metadata); the origin policy
+also accepts their other validated metadata paths.
+
 CIMD identities use server-owned `oauth_mcp_client_policy` rows. Their defaults
 are 10,000 active connections and 1,000 new connections per rolling 24 hours,
 per client identity. They do not inherit developer-owned partner applications'
@@ -110,15 +126,23 @@ locks are taken. Public clients use S256 PKCE; client secrets and remote key
 fetches are not required.
 
 Successful mutation receipts retain their result for seven days. The hourly
-sweeper clears at most 1,000 expired result payloads per run while retaining
-retry identities, so an old retry cannot accidentally execute the change again.
+sweeper drains expired result payloads in transactions of at most 1,000 rows
+until it reaches a short batch. Concurrent processes skip locked receipts;
+overlapping calls within one process share the current sweep. Retry identities
+remain indefinitely, including old connection generations, so an old retry
+cannot accidentally execute the change again. These metadata tombstones grow
+with successful writes until their user or client is deleted; the pilot
+intentionally accepts this cost rather than permitting delayed duplicate writes.
 Claim requests return `email_requested` rather than claiming email delivery;
 an explicit resend is a new action with a fresh retry key.
 
-The public `GET /mcp/gyms/status` probe returns only `{ "enabled": boolean }`.
+The public `GET /mcp/gyms/status` probe returns `enabled` and
+`invitationRequired` booleans, without user or invitation details.
 The web server calls it with a short timeout and no shared cache. A failure hides
 the overview entry while ordinary gym management continues to work. The setup
-guide remains available and explains staged access. No matching web environment
+guide remains available and explains staged access. During a pilot, the card
+and guide tell managers to wait for an invitation before starting OAuth.
+No matching web environment
 toggle is required.
 
 Before opening access, verify a real ChatGPT and Claude browser sign-in, a

@@ -515,6 +515,7 @@
     "disconnect": {
       "title": "Assistentenzugriff beenden",
       "body": "Öffne die Einstellungen, finde den Assistenten unter Verbundene Apps und wähle Trennen. Spätere Anfragen funktionieren dann nicht mehr. Bereits geteilte Informationen bleiben beim Assistenten."
-    }
+    },
+    "pilotAvailability": "Dieser Connector ist in einer Pilotphase nur auf Einladung verfügbar. Nur eingeladene Boardsesh-Konten können sich verbinden. Warte auf deine Einladung, bevor du die folgenden Anmeldeschritte ausführst."
   }
 }

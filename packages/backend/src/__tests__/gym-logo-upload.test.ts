@@ -568,6 +568,30 @@ describe('POST /api/gym-logos', () => {
     }
   });
 
+  it.each(['legacy', 'versioned'])(
+    'preserves the current %s logo across cache-version updates',
+    async (storageKind) => {
+      const originalUrl =
+        storageKind === 'legacy'
+          ? `/static/gym-logos/${gymUuid}.jpg?v=a`
+          : await imageStorage.storeVersionedGymImage(gymUuid, 'logo', STORED_JPEG_BYTES, 'image/jpeg');
+      const storedPath = logoDiskPath(originalUrl);
+      await mkdir(getGymLogosDir(), { recursive: true });
+      await writeFile(storedPath, STORED_JPEG_BYTES);
+      await socialGymMutations.updateGym(null, { input: { gymUuid, logoUrl: originalUrl } }, authCtx(OWNER));
+      const restampedUrl = `${originalUrl.split('?')[0]}?v=b`;
+      await socialGymMutations.updateGym(null, { input: { gymUuid, logoUrl: restampedUrl } }, authCtx(OWNER));
+      expect((await socialGymQueries.gym(null, { gymUuid }, authCtx(OWNER)))!.logoUrl).toBe(restampedUrl);
+      expect(await readFile(storedPath)).toEqual(STORED_JPEG_BYTES);
+      const absoluteUrl = `https://api.boardsesh.com${originalUrl.split('?')[0]}?v=c`;
+      await socialGymMutations.updateGym(null, { input: { gymUuid, logoUrl: absoluteUrl } }, authCtx(OWNER));
+      expect(await readFile(storedPath)).toEqual(STORED_JPEG_BYTES);
+      expect((await socialGymQueries.gym(null, { gymUuid }, authCtx(OWNER)))!.logoUrl).toBe(absoluteUrl);
+      await socialGymMutations.updateGym(null, { input: { gymUuid, logoUrl: null } }, authCtx(OWNER));
+      await expect(access(storedPath)).rejects.toThrow();
+    },
+  );
+
   it('keeps the unique replacement when an assistant clears the previous legacy logo before attachment', async () => {
     validateTokenMock.mockResolvedValue({ userId: OWNER });
     const { baseUrl, server } = await startLogoServer();

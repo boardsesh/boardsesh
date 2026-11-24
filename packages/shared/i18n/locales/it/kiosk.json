@@ -471,7 +471,9 @@
       "connected": "Un assistente è collegato",
       "paused": "L’accesso dell’assistente è in pausa",
       "notConnected": "Nessun assistente ancora collegato",
-      "statusUnavailable": "Controlla i collegamenti nelle impostazioni"
+      "statusUnavailable": "Controlla i collegamenti nelle impostazioni",
+      "pilotBody": "Le connessioni agli assistenti sono in fase pilota solo su invito. Aspetta un invito di Boardsesh prima di accedere per collegarti.",
+      "pilotDetails": "Leggi come accedere alla prova"
     }
   },
   "branding": {

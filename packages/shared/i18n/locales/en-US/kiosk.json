@@ -471,7 +471,9 @@
       "connected": "An assistant is connected",
       "paused": "Assistant access is paused",
       "notConnected": "No assistant connected yet",
-      "statusUnavailable": "Check your connections in Settings"
+      "statusUnavailable": "Check your connections in Settings",
+      "pilotBody": "Assistant connections are in an invitation-only pilot. Wait for a Boardsesh invitation before starting sign-in.",
+      "pilotDetails": "Read pilot access details"
     }
   },
   "branding": {
