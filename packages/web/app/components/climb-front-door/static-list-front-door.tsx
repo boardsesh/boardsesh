@@ -8,6 +8,7 @@ import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import { visuallyHidden } from '@mui/utils';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import BoardAppGuideLink from '@/app/components/marketing/board-app-guide-link';
 import StaticClimbList from '@/app/components/climb-list/static-climb-list';
 import { buildBoardArtLayers } from '@/app/components/board-renderer/util';
 import { listQrUrl } from '@/app/lib/gym-attribution';
@@ -300,6 +301,10 @@ export default async function StaticListFrontDoor({
 
         <Box className={styles.details}>
           <CommunityProofLine />
+
+          {/* Searches like "kilter board app not working" land on board lists: point them at the
+              comparison for this board, the same link the climb page carries. */}
+          <BoardAppGuideLink board={boardDetails.board_name} />
 
           <ListAngleRail
             boardDetails={boardDetails}

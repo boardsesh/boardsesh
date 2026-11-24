@@ -482,7 +482,8 @@
         "fix5": "Wird auf Android nichts gefunden, tipp unten im Sheet auf Standort erlauben oder Standort einschalten.",
         "twoBoards": "Zwei Boards in Reichweite? Deins steht zuerst. Lies die Seriennummer, bevor du tippst. Der Hinweis Board-Konfiguration passt nicht heißt, dass der Controller ein anderes Setup hat. Wähl Abbrechen, Trotzdem verbinden oder Board-Setup wechseln.",
         "duplicate": "Dasselbe Board doppelt in der Liste? Zwei Seriennummern sind zwei Controller. Eine Zeile, die nur Kilter Board zeigt, ist eine neuere LED-Box, und mehr Signalbalken heißen meist, dass es deine Wand ist. Leuchtet die falsche Wand, tipp in der Board-Steuerung auf Board trennen.",
-        "duplicateYourBoards": "Ein Board doppelt unter Deine Boards ist etwas anderes. Tipp auf Bearbeiten, dann auf Löschen oder Nicht mehr folgen."
+        "duplicateYourBoards": "Ein Board doppelt unter Deine Boards ist etwas anderes. Tipp auf Bearbeiten, dann auf Löschen oder Nicht mehr folgen.",
+        "compareApps": "Kilter- oder MoonBoard-App funktioniert nicht? Vergleiche die Apps für <kilter>Kilter</kilter> und <moonboard>MoonBoard</moonboard> (Englisch)."
       },
       "next": {
         "title": "Weiter geht's",

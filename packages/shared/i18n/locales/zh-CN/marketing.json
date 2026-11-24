@@ -482,7 +482,8 @@
         "fix5": "Android 找不到设备时，点击面板底部的允许位置或开启定位。",
         "twoBoards": "附近有两块板？你的训练板会排在前面，点击前请核对序列号。训练板配置不匹配提示表示控制器设置不同，可选择取消、仍然连接或切换训练板配置。",
         "duplicate": "同一训练板出现两次？两个序列号代表两个控制器。仅显示 Kilter Board 的条目是新版 LED 控制盒；通常信号格数更多的是你面前的墙。如果点亮错墙，在训练板控制中点击断开训练板。",
-        "duplicateYourBoards": "你的训练板中出现重复项是另一回事。请点击编辑，再选择删除或取消关注。"
+        "duplicateYourBoards": "你的训练板中出现重复项是另一回事。请点击编辑，再选择删除或取消关注。",
+        "compareApps": "Kilter 或 MoonBoard 应用用不了？对比 <kilter>Kilter</kilter> 和 <moonboard>MoonBoard</moonboard> 的应用（英语）。"
       },
       "next": {
         "title": "继续了解",

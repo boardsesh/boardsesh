@@ -249,6 +249,11 @@ describe('front door breadcrumb', () => {
     expect(html).toContain('aria-current="page"');
   });
 
+  it('links this board\'s app comparison, for searches like "kilter board app not working"', async () => {
+    const document = parseHtml(await renderFrontDoor(1, false));
+    expect(document.querySelector('a[href="/apps/kilter"]')?.textContent).toBe('boardAppGuideLink');
+  });
+
   it('emits BreadcrumbList on page 1 of an indexed board', async () => {
     const html = await renderFrontDoor(1, false);
 

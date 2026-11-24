@@ -482,7 +482,8 @@
         "fix5": "En Android, si no aparece nada, toca Permitir ubicación o Activar ubicación al final de la hoja.",
         "twoBoards": "¿Dos plafones al alcance? El tuyo sale primero. Lee el número de serie antes de tocar. Una alerta de configuración del plafón que no coincide significa que el controlador tiene otro montaje. Elige Cancelar, Conectar igualmente o Cambiar de plafón.",
         "duplicate": "¿El mismo plafón dos veces? Dos números de serie son dos controladores. Una fila que solo dice Kilter Board es una caja LED más nueva, y más barras de señal suelen indicar que es tu muro. Si se enciende el muro equivocado, toca Desconectar plafón en Controles del plafón.",
-        "duplicateYourBoards": "Un plafón repetido en Tus plafones es otra cosa. Toca Editar y luego Eliminar o Dejar de seguir."
+        "duplicateYourBoards": "Un plafón repetido en Tus plafones es otra cosa. Toca Editar y luego Eliminar o Dejar de seguir.",
+        "compareApps": "¿La app de Kilter o MoonBoard no funciona? Compara las apps de <kilter>Kilter</kilter> y <moonboard>MoonBoard</moonboard> (en inglés)."
       },
       "next": {
         "title": "Sigue",

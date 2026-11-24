@@ -482,7 +482,8 @@
         "fix5": "Sur Android, si rien n'apparaît, touche Autoriser la localisation ou Activer la localisation en bas de la feuille.",
         "twoBoards": "Deux boards à portée ? La tienne est en premier. Lis le numéro de série avant de toucher. Une alerte La configuration de la board ne correspond pas veut dire que le contrôleur a une autre configuration. Choisis Annuler, Connecter quand même ou Changer de board.",
         "duplicate": "La même board en double ? Deux numéros de série, ce sont deux contrôleurs. Une ligne qui affiche seulement Kilter Board est un boîtier LED plus récent, et plus de barres de signal veut en général dire que c'est ton mur. Si le mauvais mur s'allume, touche Déconnecter la board dans les Commandes de la board.",
-        "duplicateYourBoards": "Une board en double sous Tes boards, c'est autre chose. Touche Modifier, puis Supprimer ou Se désabonner."
+        "duplicateYourBoards": "Une board en double sous Tes boards, c'est autre chose. Touche Modifier, puis Supprimer ou Se désabonner.",
+        "compareApps": "L’appli Kilter ou MoonBoard ne marche pas ? Compare les applis pour <kilter>Kilter</kilter> et <moonboard>MoonBoard</moonboard> (en anglais)."
       },
       "next": {
         "title": "Et ensuite",

@@ -482,7 +482,8 @@
         "fix5": "Su Android, se non trovi nulla, tocca Consenti posizione o Attiva posizione in fondo al foglio.",
         "twoBoards": "Due pannelli nel raggio? Il tuo è in cima. Leggi il numero di serie prima di toccare. Un avviso di configurazione del pannello non corrispondente vuol dire che il controller ha un'altra configurazione. Scegli Annulla, Connetti comunque o Cambia configurazione del pannello.",
         "duplicate": "Lo stesso pannello due volte? Due numeri di serie sono due controller. Una riga con solo Kilter Board è una scatola LED più recente, e più tacche di segnale di solito indicano il tuo pannello. Se si accende il pannello sbagliato, tocca Disconnetti il pannello in Controlli del pannello.",
-        "duplicateYourBoards": "Un pannello doppio sotto I tuoi pannelli è un'altra cosa. Tocca Modifica, poi Elimina o Smetti di seguire."
+        "duplicateYourBoards": "Un pannello doppio sotto I tuoi pannelli è un'altra cosa. Tocca Modifica, poi Elimina o Smetti di seguire.",
+        "compareApps": "L’app Kilter o MoonBoard non funziona? Confronta le app per <kilter>Kilter</kilter> e <moonboard>MoonBoard</moonboard> (in inglese)."
       },
       "next": {
         "title": "Continua",
