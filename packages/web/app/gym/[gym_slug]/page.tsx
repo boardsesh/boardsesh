@@ -64,6 +64,7 @@ import GymOwnerPrompts from './gym-owner-prompts';
 import GymReportDuplicateCta from './gym-report-duplicate-cta';
 import { GymReportProblemHost, ReportBoardButton, ReportGymButton, type GymReportBoard } from './gym-report-problem';
 import { isDirectoryReportsEnabled } from '@/app/lib/directory-reports/directory-reports-flag';
+import { isDirectorySetupSuggestionsEnabled } from '@/app/lib/directory-reports/directory-setup-suggestions-flag';
 import { formatHoursConfirmedDate } from './gym-hours-display';
 import GymPageCtaLink from './gym-page-cta-link';
 import GymInstallCta from './gym-install-cta';
@@ -340,13 +341,16 @@ export default async function GymPage(props: GymRouteProps) {
   const { t } = await getServerTranslation('kiosk');
   const { t: tBoards } = await getServerTranslation('boards');
   const storeLabels = await getStoreButtonLabels();
-  const [kiosk, allBoards, gymSprayWalls, discoveryBoards, reportsEnabled] = await Promise.all([
-    fetchDefaultKiosk(gym_slug, token),
-    fetchGymBoards(gym.uuid, token),
-    fetchGymSprayWalls(gym.uuid, token),
-    getBoardDiscovery({ gymUuid: gym.uuid, limit: 12 }),
-    isDirectoryReportsEnabled(),
-  ]);
+  const [kiosk, allBoards, gymSprayWalls, discoveryBoards, reportsEnabled, setupSuggestionsEnabled] = await Promise.all(
+    [
+      fetchDefaultKiosk(gym_slug, token),
+      fetchGymBoards(gym.uuid, token),
+      fetchGymSprayWalls(gym.uuid, token),
+      getBoardDiscovery({ gymUuid: gym.uuid, limit: 12 }),
+      isDirectoryReportsEnabled(),
+      isDirectorySetupSuggestionsEnabled(),
+    ],
+  );
   const sprayWalls = gymSprayWalls ?? [];
   const previewBoard = (discoveryBoards as GymPopularPreviewBoard[]).find(
     (board) =>
@@ -443,6 +447,18 @@ export default async function GymPage(props: GymRouteProps) {
       name,
       label: `${name} · ${boardRowSubtitle(boardIndex)}`,
       ownerId: board.ownerId ?? null,
+      // The listing already carries the setup, so "Set up wrong"'s fields cost no extra read.
+      setup:
+        board.boardType === 'spray'
+          ? null
+          : {
+              boardType: board.boardType,
+              layoutId: board.layoutId,
+              sizeId: board.sizeId,
+              setIds: board.setIds,
+              angle: board.angle,
+              isAngleAdjustable: board.isAngleAdjustable,
+            },
     };
   });
 
@@ -485,6 +501,8 @@ export default async function GymPage(props: GymRouteProps) {
             longitude: gym.longitude,
           }}
           boards={reportBoards}
+          setupSuggestionsEnabled={setupSuggestionsEnabled}
+          storeLabels={storeLabels}
         />
       )}
       {/* PageShell owns the fixed-header clearance and the page measure, so the

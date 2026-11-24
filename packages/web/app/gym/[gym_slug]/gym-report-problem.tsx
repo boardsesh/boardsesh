@@ -9,10 +9,16 @@ import Tooltip from '@mui/material/Tooltip';
 import FlagOutlined from '@mui/icons-material/FlagOutlined';
 import { gymPageCtaClicked } from '@boardsesh/analytics';
 import ReportProblemDialog from '@/app/components/directory-reports/report-problem-dialog';
-import type { ReportGymSubject, ReportProblemTarget } from '@/app/components/directory-reports/report-problem-logic';
+import type {
+  ReportBoardSetup,
+  ReportGymSubject,
+  ReportProblemTarget,
+} from '@/app/components/directory-reports/report-problem-logic';
+import type { StoreButtonLabels } from '@/app/components/marketing/store-install-buttons';
 import { GYM_REPORT_KEY } from '@/app/components/directory-reports/report-return-param';
 import { useReportRequest } from '@/app/components/directory-reports/use-report-request';
 import { trackGymFunnelEvent } from '@/app/lib/gym-funnel-analytics';
+import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 
 /** One board row as the report dialog needs it. Built on the server from the listing it renders. */
 export type GymReportBoard = {
@@ -22,6 +28,8 @@ export type GymReportBoard = {
   /** Name plus the row's subtitle, so two boards that share a name can be told apart in the duplicate picker. */
   label: string;
   ownerId: string | null;
+  /** The setup the listing shows, for "Set up wrong"'s setup fields; null for a spray wall. */
+  setup: ReportBoardSetup | null;
 };
 
 /**
@@ -50,13 +58,20 @@ export function GymReportProblemHost({
   gym,
   boards,
   countAsGymPageCta = true,
+  setupSuggestionsEnabled = false,
+  storeLabels = null,
 }: {
   gym: ReportGymSubject;
   boards: GymReportBoard[];
   /** Count taps as `Gym Page CTA Clicked`. Off outside the public gym page (the manage lock state). */
   countAsGymPageCta?: boolean;
+  /** The `directory-setup-suggestions` flag: "Set up wrong" offers the setup fields. */
+  setupSuggestionsEnabled?: boolean;
+  /** The store badges' words, for the app link after a suggestion changed a board. */
+  storeLabels?: StoreButtonLabels | null;
 }) {
   const [open, setOpen] = useState(false);
+  const router = useLocaleRouter();
   // Kept after close so the dialog doesn't empty itself while it fades out.
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const boardsByUuid = useMemo(() => new Map(boards.map((board) => [board.uuid, board])), [boards]);
@@ -90,7 +105,13 @@ export function GymReportProblemHost({
       // The public listing carries no creator name (the anonymous leaderboard
       // embed shares its fields), so the routing line says "the climber who
       // added this board".
-      board: { uuid: board.uuid, name: board.name, ownerId: board.ownerId, ownerDisplayName: null },
+      board: {
+        uuid: board.uuid,
+        name: board.name,
+        ownerId: board.ownerId,
+        ownerDisplayName: null,
+        setup: board.setup,
+      },
       gym,
       otherBoards: boards
         .filter((other) => other.uuid !== board.uuid)
@@ -98,7 +119,17 @@ export function GymReportProblemHost({
     };
   }, [activeKey, boards, boardsByUuid, gym]);
 
-  return <ReportProblemDialog open={open && target !== null} onClose={() => setOpen(false)} target={target} />;
+  return (
+    <ReportProblemDialog
+      open={open && target !== null}
+      onClose={() => setOpen(false)}
+      target={target}
+      setupSuggestionsEnabled={setupSuggestionsEnabled}
+      storeLabels={storeLabels}
+      // The page renders per request, so a refresh puts the new setup on the board's row.
+      onSetupApplied={router.refresh}
+    />
+  );
 }
 
 /** The 44px flag at the end of a board row. */

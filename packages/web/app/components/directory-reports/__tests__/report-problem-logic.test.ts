@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { SYSTEM_BOARD_OWNER_ID } from '@boardsesh/shared-schema';
 import {
+  getBoardLayouts,
+  getBoardSetsForLayoutAndSize,
+  getBoardSizesForLayoutId,
+  setupSelectionReducer,
+} from '@boardsesh/board-config';
+import {
   EMPTY_REPORT_DRAFT,
   NOT_SURE_DUPLICATE,
   buildReportBoardInput,
@@ -8,11 +14,16 @@ import {
   canSendReport,
   chooseReason,
   claimNudgeGym,
+  draftSetupSelection,
   reportAudienceFor,
   reportErrorKind,
   reportReasonsFor,
   sentMessageFor,
+  setupFieldsBoard,
+  setupPreviewFor,
   shouldResetReportDialog,
+  type ReportBoardSetup,
+  type ReportDraft,
   type ReportGymSubject,
   type ReportProblemTarget,
 } from '../report-problem-logic';
@@ -26,8 +37,30 @@ const unclaimedGym: ReportGymSubject = {
 };
 const runGym: ReportGymSubject = { ...unclaimedGym, listingState: 'RUN_BY_GYM', canClaim: false };
 
+// A real Kilter layout with two sizes, found in the bundled catalogue.
+const kilterLayout = getBoardLayouts('kilter').find(
+  (layout) => getBoardSizesForLayoutId('kilter', layout.id).length >= 2,
+);
+if (!kilterLayout) throw new Error('Expected a Kilter layout with two sizes');
+const [kilterSize, otherKilterSize] = getBoardSizesForLayoutId('kilter', kilterLayout.id);
+const kilterSetIds = getBoardSetsForLayoutAndSize('kilter', kilterLayout.id, kilterSize.id).map((set) => set.id);
+
+const kilterSetup: ReportBoardSetup = {
+  boardType: 'kilter',
+  layoutId: kilterLayout.id,
+  sizeId: kilterSize.id,
+  setIds: kilterSetIds.join(','),
+  angle: 40,
+  isAngleAdjustable: true,
+};
+
 function boardTarget(
-  overrides: { ownerId?: string | null; ownerDisplayName?: string | null; gym?: ReportGymSubject | null } = {},
+  overrides: {
+    ownerId?: string | null;
+    ownerDisplayName?: string | null;
+    gym?: ReportGymSubject | null;
+    setup?: ReportBoardSetup | null;
+  } = {},
 ): ReportProblemTarget {
   return {
     kind: 'board',
@@ -36,6 +69,7 @@ function boardTarget(
       name: 'Kilter',
       ownerId: overrides.ownerId === undefined ? 'sam' : overrides.ownerId,
       ownerDisplayName: overrides.ownerDisplayName === undefined ? 'Sam' : overrides.ownerDisplayName,
+      setup: overrides.setup === undefined ? kilterSetup : overrides.setup,
     },
     gym: overrides.gym === undefined ? unclaimedGym : overrides.gym,
     otherBoards: [{ uuid: 'board-2', label: 'Kilter · 40°' }],
@@ -75,7 +109,13 @@ describe('changing the reason', () => {
   it('drops the duplicate pick but keeps the note', () => {
     const picked = { ...chooseReason(EMPTY_REPORT_DRAFT, 'duplicate'), duplicateBoardPick: 'board-2', note: 'hi' };
     const switched = chooseReason(picked, 'gone');
-    expect(switched).toEqual({ reason: 'gone', duplicateBoardPick: null, duplicateGymUuid: null, note: 'hi' });
+    expect(switched).toEqual({
+      reason: 'gone',
+      duplicateBoardPick: null,
+      duplicateGymUuid: null,
+      note: 'hi',
+      setup: null,
+    });
   });
 
   it('is a no-op for the same reason', () => {
@@ -216,5 +256,124 @@ describe('shouldResetReportDialog', () => {
     expect(shouldResetReportDialog({ open: true, targetKey: 'board:a' }, { open: false, targetKey: 'board:a' })).toBe(
       false,
     );
+  });
+});
+
+describe('the setup fields', () => {
+  const wrongSetup = chooseReason(EMPTY_REPORT_DRAFT, 'wrong_setup');
+
+  it('show only for "Set up wrong" with the flag on, on a board with a known setup', () => {
+    expect(setupFieldsBoard(boardTarget(), 'wrong_setup', true)).toBe(kilterSetup);
+    expect(setupFieldsBoard(boardTarget(), 'wrong_setup', false)).toBeNull();
+    expect(setupFieldsBoard(boardTarget(), 'gone', true)).toBeNull();
+    expect(setupFieldsBoard(boardTarget(), null, true)).toBeNull();
+    expect(setupFieldsBoard(boardTarget({ setup: null }), 'wrong_setup', true)).toBeNull();
+    expect(setupFieldsBoard(boardTarget({ setup: { ...kilterSetup, boardType: 'spray' } }), 'wrong_setup', true)).toBe(
+      null,
+    );
+    expect(
+      setupFieldsBoard(boardTarget({ setup: { ...kilterSetup, boardType: 'not-a-board' } }), 'wrong_setup', true),
+    ).toBeNull();
+    expect(setupFieldsBoard({ kind: 'gym', gym: unclaimedGym }, 'other', true)).toBeNull();
+  });
+
+  it("start on the board's current setup", () => {
+    expect(draftSetupSelection(wrongSetup, kilterSetup)).toMatchObject({
+      layoutId: kilterLayout.id,
+      sizeId: kilterSize.id,
+      setIds: kilterSetIds,
+      angleIsFixed: false,
+    });
+  });
+
+  it('keep Send off until the setup differs', () => {
+    expect(canSendReport(wrongSetup)).toBe(true);
+    expect(canSendReport(wrongSetup, kilterSetup)).toBe(false);
+    const selection = draftSetupSelection(wrongSetup, kilterSetup);
+    if (!selection) throw new Error('Expected a selection');
+    const changed: ReportDraft = {
+      ...wrongSetup,
+      setup: setupSelectionReducer(selection, { type: 'selectSize', sizeId: otherKilterSize.id }),
+    };
+    expect(canSendReport(changed, kilterSetup)).toBe(true);
+    // Picked back to what the board has: nothing to suggest.
+    const back: ReportDraft = {
+      ...changed,
+      setup: setupSelectionReducer(changed.setup ?? selection, { type: 'selectSize', sizeId: kilterSize.id }),
+    };
+    expect(canSendReport(back, kilterSetup)).toBe(false);
+  });
+
+  it('send the picked setup, sets in canonical order, no angle on a board that tilts', () => {
+    const selection = draftSetupSelection(wrongSetup, kilterSetup);
+    if (!selection) throw new Error('Expected a selection');
+    const setup = setupSelectionReducer(selection, { type: 'selectSize', sizeId: otherKilterSize.id });
+    const input = buildReportBoardInput('board-1', { ...wrongSetup, setup, note: ' 7x10 now ' }, kilterSetup);
+    expect(input).toEqual({
+      boardUuid: 'board-1',
+      reason: 'wrong_setup',
+      duplicateOfBoardUuid: null,
+      note: '7x10 now',
+      suggestedSetup: {
+        layoutId: kilterLayout.id,
+        sizeId: otherKilterSize.id,
+        setIds: [...setup.setIds].sort((first, second) => first - second).join(','),
+        angle: null,
+      },
+    });
+    // Without the fields the input carries no suggestion, as before.
+    expect(buildReportBoardInput('board-1', { ...wrongSetup, setup })).not.toHaveProperty('suggestedSetup');
+  });
+
+  it('send the angle of a board that does not tilt', () => {
+    const fixed: ReportBoardSetup = { ...kilterSetup, isAngleAdjustable: false };
+    const selection = draftSetupSelection(wrongSetup, fixed);
+    if (!selection) throw new Error('Expected a selection');
+    const setup = setupSelectionReducer(selection, { type: 'selectAngle', angle: 45 });
+    expect(buildReportBoardInput('board-1', { ...wrongSetup, setup }, fixed)?.suggestedSetup?.angle).toBe(45);
+  });
+
+  it('word the line above Send from the gym', () => {
+    expect(setupPreviewFor(boardTarget())).toBe('applies_for_everyone');
+    expect(setupPreviewFor(boardTarget({ gym: { ...unclaimedGym, listingState: 'CLIMBER_LISTED' } }))).toBe(
+      'applies_for_everyone',
+    );
+    expect(setupPreviewFor(boardTarget({ gym: runGym }))).toBe('staff_review');
+    expect(setupPreviewFor(boardTarget({ gym: null }))).toBe('creator_review');
+  });
+});
+
+describe('the done state after a suggested setup', () => {
+  it('says the board changed, or why it waits', () => {
+    expect(
+      sentMessageFor({ status: 'created', otherReporterCount: 0, setupOutcome: 'APPLIED', setupReviewReason: null }),
+    ).toEqual({ kind: 'setup_applied' });
+    expect(
+      sentMessageFor({
+        status: 'added',
+        otherReporterCount: 2,
+        setupOutcome: 'SENT_FOR_REVIEW',
+        setupReviewReason: 'CLAIMED_GYM',
+      }),
+    ).toEqual({ kind: 'setup_review', reason: 'CLAIMED_GYM' });
+  });
+
+  it("keeps today's words when the server gives no reason (the flag off)", () => {
+    expect(
+      sentMessageFor({
+        status: 'created',
+        otherReporterCount: 0,
+        setupOutcome: 'SENT_FOR_REVIEW',
+        setupReviewReason: null,
+      }),
+    ).toEqual({ kind: 'sent' });
+    expect(
+      sentMessageFor({
+        status: 'added',
+        otherReporterCount: 3,
+        setupOutcome: 'SENT_FOR_REVIEW',
+        setupReviewReason: null,
+      }),
+    ).toEqual({ kind: 'joined', count: 3 });
   });
 });

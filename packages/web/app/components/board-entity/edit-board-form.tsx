@@ -3,12 +3,6 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSession } from 'next-auth/react';
-import Dialog from '@mui/material/Dialog';
-import DialogTitle from '@mui/material/DialogTitle';
-import DialogContent from '@mui/material/DialogContent';
-import DialogContentText from '@mui/material/DialogContentText';
-import DialogActions from '@mui/material/DialogActions';
-import Button from '@mui/material/Button';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { useEntityMutation } from '@/app/hooks/use-entity-mutation';
 import {
@@ -26,6 +20,7 @@ import type { BoardName } from '@/app/lib/types';
 import { ANGLES } from '@/app/lib/board-data';
 import { getBoardSelectorOptions } from '@/app/lib/board-constants';
 import BoardForm, { type BoardFormFieldValues, type BoardFormSubmitState } from './board-form';
+import DuplicateBoardConfigDialog, { type DuplicateBoardConfig } from './duplicate-board-config-dialog';
 import { boardEditPermissions, buildBoardUpdateInput } from './board-edit-input';
 
 type EditBoardFormProps = {
@@ -66,7 +61,7 @@ export default function EditBoardForm(props: EditBoardFormProps) {
   // once the exit animation actually finishes. Clearing both at once (the
   // original approach) let MUI re-render the closing dialog's body against
   // `duplicate === null` mid-fade, flashing the generic fallback copy.
-  const [duplicate, setDuplicate] = useState<{ name: string | null; locationName: string | null } | null>(null);
+  const [duplicate, setDuplicate] = useState<DuplicateBoardConfig | null>(null);
   const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false);
   const lastValuesRef = useRef<BoardFormFieldValues | null>(null);
   // `runUpdate` fires from two places — the drawer's Save button and the
@@ -211,37 +206,14 @@ export default function EditBoardForm(props: EditBoardFormProps) {
       {/* A dialog, not a snackbar: this is a choice, and the snackbar's single
           action slot can't carry one. Before this the guard was a flat
           "Failed to update board" with no way past it. */}
-      <Dialog
+      <DuplicateBoardConfigDialog
         open={duplicateDialogOpen}
-        onClose={() => {
-          if (!isSaving) setDuplicateDialogOpen(false);
-        }}
-        TransitionProps={{ onExited: () => setDuplicate(null) }}
-        maxWidth="xs"
-        fullWidth
-      >
-        <DialogTitle>{t('boardForm.edit.duplicateTitle')}</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            {duplicate?.name && duplicate.locationName
-              ? t('boardForm.edit.duplicateBodyWithLocation', {
-                  name: duplicate.name,
-                  location: duplicate.locationName,
-                })
-              : duplicate?.name
-                ? t('boardForm.edit.duplicateBody', { name: duplicate.name })
-                : t('boardForm.edit.duplicateBodyGeneric')}
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button disabled={isSaving} onClick={() => setDuplicateDialogOpen(false)}>
-            {t('boardForm.edit.cancel')}
-          </Button>
-          <Button disabled={isSaving} onClick={() => void handleSaveAnyway()} variant="contained">
-            {t('boardForm.edit.saveAnyway')}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        duplicate={duplicate}
+        saving={isSaving}
+        onClose={() => setDuplicateDialogOpen(false)}
+        onSaveAnyway={() => void handleSaveAnyway()}
+        onExited={() => setDuplicate(null)}
+      />
     </>
   );
 }

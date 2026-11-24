@@ -62,8 +62,24 @@ export const DIRECTORY_REPORTS_FLAG = 'directory-reports';
 /** The fixed id PostHog evaluates `directory-reports` for, on the backend and here. Not a person. */
 export const DIRECTORY_REPORTS_FLAG_DISTINCT_ID = 'system:directory-reports';
 
+// The setup fields on "Set up wrong" (docs/product/directory-reports.md, "The
+// `directory-setup-suggestions` flag"). The backend's switch for a suggestion
+// changing a board at a gym nobody runs; www reads the same answer, for the same
+// fixed id, to decide whether the report dialog shows the fields. Off, the
+// dialog is the note-only one. Fails closed like every server flag. See
+// `isDirectorySetupSuggestionsEnabled`.
+export const DIRECTORY_SETUP_SUGGESTIONS_FLAG = 'directory-setup-suggestions';
+
+/** The fixed id PostHog evaluates `directory-setup-suggestions` for, on the backend and here. Not a person. */
+export const DIRECTORY_SETUP_SUGGESTIONS_FLAG_DISTINCT_ID = 'system:directory-setup-suggestions';
+
 // Keys resolved server-side by `getServerFeatureFlag`, which gate whether a
 // route renders at all — a different gate from the client keys above (see
 // docs/operations/feature-flags.md). Deliberately kept out of FEATURE_FLAG_KEYS: the
 // browser provider would fetch a flag no client component reads.
-export const SERVER_FEATURE_FLAG_KEYS = [DEVELOPER_CONSOLE_FLAG, CNC_PACKS_FLAG, DIRECTORY_REPORTS_FLAG] as const;
+export const SERVER_FEATURE_FLAG_KEYS = [
+  DEVELOPER_CONSOLE_FLAG,
+  CNC_PACKS_FLAG,
+  DIRECTORY_REPORTS_FLAG,
+  DIRECTORY_SETUP_SUGGESTIONS_FLAG,
+] as const;

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vite-plus/test';
 import type { DirectoryReport } from '@boardsesh/shared-schema';
-import { hasOpenReports, reportsToKeep, reviewRows, sortBoardsReportedFirst } from '../report-review-logic';
+import {
+  boardHasSetup,
+  groupSuggestedSetups,
+  hasOpenReports,
+  reportsToKeep,
+  reviewRows,
+  setupUpdateInput,
+  sortBoardsReportedFirst,
+} from '../report-review-logic';
 
 function report(overrides: Partial<DirectoryReport>): DirectoryReport {
   return {
@@ -81,5 +89,67 @@ describe('It’s right as it is', () => {
         report({ uuid: 'closed', status: 'fixed' }),
       ]),
     ).toEqual(['mine']);
+  });
+});
+
+describe('suggested setups', () => {
+  const note = (
+    suggestedSetup: { layoutId: number; sizeId: number; setIds: string; angle?: number | null } | null,
+  ) => ({
+    note: '',
+    createdAt: '2026-11-20T10:00:00.000Z',
+    suggestedSetup,
+  });
+
+  it('groups equal setups, sets in any order, the most suggested first', () => {
+    const groups = groupSuggestedSetups([
+      note({ layoutId: 1, sizeId: 7, setIds: '1,20', angle: null }),
+      note({ layoutId: 1, sizeId: 10, setIds: '20,1' }),
+      note(null),
+      note({ layoutId: 1, sizeId: 10, setIds: '1,20', angle: null }),
+    ]);
+    expect(groups.map((group) => [group.setup, group.count])).toEqual([
+      [{ layoutId: 1, sizeId: 10, setIds: '1,20', angle: null }, 2],
+      [{ layoutId: 1, sizeId: 7, setIds: '1,20', angle: null }, 1],
+    ]);
+  });
+
+  it('keeps setups that differ only by angle apart', () => {
+    expect(
+      groupSuggestedSetups([
+        note({ layoutId: 1, sizeId: 7, setIds: '1', angle: 40 }),
+        note({ layoutId: 1, sizeId: 7, setIds: '1', angle: 45 }),
+      ]),
+    ).toHaveLength(2);
+  });
+
+  it('knows when the board already has the setup', () => {
+    const board = { layoutId: 1, sizeId: 7, setIds: '20,1', angle: 40 };
+    expect(boardHasSetup(board, { layoutId: 1, sizeId: 7, setIds: '1,20', angle: null })).toBe(true);
+    expect(boardHasSetup(board, { layoutId: 1, sizeId: 7, setIds: '1,20', angle: 45 })).toBe(false);
+    expect(boardHasSetup(board, { layoutId: 1, sizeId: 10, setIds: '1,20', angle: null })).toBe(false);
+  });
+
+  it('builds the updateBoard input, with an angle only for a board that does not tilt', () => {
+    expect(setupUpdateInput('board-1', { layoutId: 1, sizeId: 10, setIds: '20,1', angle: null })).toEqual({
+      boardUuid: 'board-1',
+      layoutId: 1,
+      sizeId: 10,
+      setIds: '1,20',
+    });
+    expect(setupUpdateInput('board-1', { layoutId: 1, sizeId: 10, setIds: '1', angle: 45 }).angle).toBe(45);
+  });
+
+  it('puts the suggestions on the review row, and drops notes with no words', () => {
+    const [row] = reviewRows([
+      report({
+        notes: [
+          { note: '', createdAt: '2026-11-20T10:00:00.000Z', suggestedSetup: { layoutId: 1, sizeId: 10, setIds: '1' } },
+          { note: 'Wrong size', createdAt: '2026-11-21T10:00:00.000Z' },
+        ],
+      }),
+    ]);
+    expect(row.notes.map((entry) => entry.text)).toEqual(['Wrong size']);
+    expect(row.suggestions).toHaveLength(1);
   });
 });
