@@ -1,12 +1,16 @@
 import { randomInt, randomUUID } from 'node:crypto';
 import { appendFile } from 'node:fs/promises';
 import { sql } from 'drizzle-orm';
-import { describe, expect, it } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { rowsFromResult } from '@boardsesh/db/client';
+import { recomputeMissingHoldCounts } from '@boardsesh/db/queries';
 import type { ConnectionContext, GymClimbRankingMode } from '@boardsesh/shared-schema';
 import { applyAuroraAscents, applyAuroraBids } from '@boardsesh/aurora-sync/apply-user-logbook';
 import { applyClimbRatings, applyLogs } from '@boardsesh/kilter-sync';
 import { db } from '../db/client';
+import { transactionWithAfterCommit } from '../db/after-commit';
+import { followPublishedSprayRefinements } from '../graphql/resolvers/board/spray-hold-refinements';
+import { lockWallForWrite } from '../services/spray-wall-lock';
 import {
   gymClimbRankingQueries,
   prepareRankingRowsStatement,
@@ -24,6 +28,8 @@ import { gymReportingSettingsMutations } from '../graphql/resolvers/social/gym-r
 import { socialCommentMutations } from '../graphql/resolvers/social/comments';
 import { tickMutations } from '../graphql/resolvers/ticks/mutations';
 import { deleteClimbMutations } from '../graphql/resolvers/climbs/delete-climb';
+
+vi.mock('../lib/web-revalidate', () => ({ notifyClimbRevalidated: vi.fn() }));
 
 const ctx = (userId: string): ConnectionContext =>
   ({ userId, isAuthenticated: true, connectionId: randomUUID() }) as ConnectionContext;
@@ -1070,7 +1076,7 @@ describe('local climb ranking reports', () => {
     for (const climbUuid of [quiet, popular, immature, unmeasured]) {
       await db.execute(sql`
         INSERT INTO board_climbs (uuid, board_type, layout_id, angle, frames, name, is_listed, is_draft)
-        VALUES (${climbUuid}, 'spray', ${layout.id}, 40, 'p1r12', ${climbUuid}, true, false)
+        VALUES (${climbUuid}, 'spray', ${layout.id}, 40, 'p1r1', ${climbUuid}, true, false)
       `);
       if (climbUuid === unmeasured) continue;
       await db.execute(sql`
@@ -1124,6 +1130,93 @@ describe('local climb ranking reports', () => {
     expect(result.rows[1]).toMatchObject({ sendCount: 1, lastSendEndAt: null });
     expect(result.rows[1].sendsPerDay).toBeCloseTo(1 / 6);
     expect((await query(fixture, 'QUIET_CLIMBS', fixture.board.uuid)).quietAvailable).toBe(false);
+
+    const [opening] = rowsFromResult<{ seq: string }>(
+      await db.execute(
+        sql`SELECT seq FROM spray_exposure_observations WHERE climb_uuid = ${quiet} AND version_id = ${version.id}`,
+      ),
+    );
+    const [refinedVersion] = rowsFromResult<{ id: string }>(
+      await db.execute(
+        sql`INSERT INTO spray_wall_versions (wall_id, version_number) VALUES (${wall.id}, 2) RETURNING id`,
+      ),
+    );
+    const tickUuid = randomUUID();
+    await db.execute(sql`
+      INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status, climbed_at, board_id)
+      VALUES (${tickUuid}, ${fixture.owner}, 'spray', ${quiet}, 40, 'send', now() - interval '10 days', ${wallBoard.id})
+    `);
+    await db.execute(sql`
+      INSERT INTO board_climb_stats (board_type, climb_uuid, angle, play_count) VALUES ('spray', ${quiet}, 40, 7)
+    `);
+    await transactionWithAfterCommit(async (tx) => {
+      await lockWallForWrite(tx, Number(wall.id));
+      await tx.execute(sql`
+        INSERT INTO spray_wall_holds (wall_id, hold_id, cx, cy, r, installed_version_id, removed_version_id, moved_from_hold_id, is_refinement)
+        VALUES (${wall.id}, 1, 100, 100, 10, ${version.id}, ${refinedVersion.id}, NULL, false),
+               (${wall.id}, 2, 105, 100, 10, ${refinedVersion.id}, NULL, 1, true)
+      `);
+      await tx.execute(sql`
+        INSERT INTO board_climb_holds (board_type, climb_uuid, hold_id, frame_number, hold_state)
+        VALUES ('spray', ${quiet}, 1, 0, 'STARTING')
+      `);
+      await tx.execute(sql`UPDATE spray_wall_versions SET status = 'superseded' WHERE id = ${version.id}`);
+      await tx.execute(sql`UPDATE spray_wall_versions SET status = 'published' WHERE id = ${refinedVersion.id}`);
+      await tx.execute(sql`UPDATE spray_walls SET current_version_id = ${refinedVersion.id} WHERE id = ${wall.id}`);
+      expect(
+        await followPublishedSprayRefinements(
+          tx,
+          { id: Number(wall.id), layoutId: layout.id },
+          Number(refinedVersion.id),
+        ),
+      ).toBe(1);
+      await recomputeMissingHoldCounts(tx, Number(wall.id));
+    });
+    // Simulate three days without a new observation, using the invalidation raised by the real version trigger.
+    const closed = rowsFromResult<{ seq: string }>(
+      await db.execute(sql`
+      UPDATE spray_exposure_invalidations SET observed_at = now() - interval '3 days'
+      WHERE kind = 'version' AND key = ${version.id} AND seq > ${opening.seq} RETURNING seq
+    `),
+    );
+    expect(closed).toHaveLength(1);
+    const refined = await query(fixture, 'QUIET_CLIMBS', wallUuid);
+    expect(refined.status).toBe('READY');
+    const quietRow = refined.rows.find(({ target }) => target.climbUuid === quiet);
+    expect(quietRow).toMatchObject({ sendCount: 0, target: { climbUuid: quiet, angle: 40 } });
+    expect(quietRow?.knownLifetimeDays).toBeCloseTo(18);
+    expect(quietRow?.knownWindowDays).toBeCloseTo(4);
+    const stored = rowsFromResult(
+      await db.execute(sql`
+      SELECT climb.uuid, climb.frames, climb.missing_hold_count AS missing, stats.play_count::int AS plays, tick.uuid AS tick,
+        hold.hold_id AS "holdId", hold.hold_state AS "holdState", hold.frame_number AS "frameNumber"
+      FROM board_climbs climb JOIN board_climb_stats stats ON stats.climb_uuid = climb.uuid AND stats.board_type = 'spray' AND stats.angle = 40
+      JOIN boardsesh_ticks tick ON tick.climb_uuid = climb.uuid AND tick.uuid = ${tickUuid}
+      JOIN board_climb_holds hold ON hold.climb_uuid = climb.uuid AND hold.board_type = climb.board_type
+      WHERE climb.uuid = ${quiet} AND climb.board_type = 'spray'
+    `),
+    );
+    expect(stored).toEqual([
+      {
+        uuid: quiet,
+        frames: 'p2r1',
+        missing: 0,
+        plays: 7,
+        tick: tickUuid,
+        holdId: 2,
+        holdState: 'STARTING',
+        frameNumber: 0,
+      },
+    ]);
+    const observations = rowsFromResult<{ version: string }>(
+      await db.execute(sql`
+      SELECT version_id::text AS version FROM spray_exposure_observations WHERE climb_uuid = ${quiet} ORDER BY seq
+    `),
+    );
+    expect(observations.map(({ version: observedVersion }) => observedVersion)).toEqual([
+      version.id,
+      refinedVersion.id,
+    ]);
 
     const explainFile = process.env.BOARDSESH_GYM_RANKING_EXPLAIN_FILE;
     if (!explainFile) return;

@@ -15,12 +15,7 @@ import { mapCanonicalHoldsToPhoto } from '../../lib/spray/spray-hold-geometry';
 import { photoDimensions, toCanonicalHolds } from '../../lib/spray/spray-wall-loader';
 import type { RankedSprayArt } from '../play-drawer/play-drawer-types';
 
-async function readRankedSprayArt(
-  viewerId: string,
-  target: GymClimbRankingTarget,
-  frames: string,
-  signal: AbortSignal,
-): Promise<RankedSprayArt> {
+async function readRankedSprayWall(viewerId: string, target: GymClimbRankingTarget, signal: AbortSignal) {
   const { sprayWallByLayout: wall } = await requestForGymViewer(viewerId, () =>
     getHttpClient().request<{ sprayWallByLayout: SprayWall | null }>({
       document: GET_SPRAY_WALL_BY_LAYOUT,
@@ -35,11 +30,20 @@ async function readRankedSprayArt(
     wall.board.angle !== target.angle
   )
     throw new Error('Ranking wall is unavailable');
+  return { uuid: wall.uuid, version: wall.currentVersion.number };
+}
 
+async function readRankedSprayArt(
+  viewerId: string,
+  target: GymClimbRankingTarget,
+  wall: Awaited<ReturnType<typeof readRankedSprayWall>>,
+  frames: string,
+  signal: AbortSignal,
+): Promise<RankedSprayArt> {
   const { sprayWallRenderData: render } = await requestForGymViewer(viewerId, () =>
     getHttpClient().request<{ sprayWallRenderData: SprayWallRenderData | null }>({
       document: GET_SPRAY_WALL_RENDER_DATA,
-      variables: { uuid: wall.uuid, version: wall.currentVersion?.number },
+      variables: { uuid: wall.uuid, version: wall.version },
       signal,
     }),
   );
@@ -49,7 +53,7 @@ async function readRankedSprayArt(
     render.wall.board.angle !== target.angle ||
     render.wall.uuid !== wall.uuid ||
     render.wall.currentVersion?.number !== render.versionNumber ||
-    render.versionNumber !== wall.currentVersion.number
+    render.versionNumber !== wall.version
   )
     throw new Error('Ranking wall is unavailable');
 
@@ -82,6 +86,8 @@ export async function readGymClimbPreview(viewerId: string, target: GymClimbRank
     setIds: target.setIds,
     angle: target.angle,
   };
+  // Pin the wall version before reading frames: publication can remap their hold IDs.
+  const wall = config.boardName === 'spray' ? await readRankedSprayWall(viewerId, target, signal) : null;
   const { climb } = await requestForGymViewer(viewerId, () =>
     getHttpClient().request<{ climb: Climb | null }>({
       document: config.boardName === 'spray' ? GET_SPRAY_CLIMB : GET_CLIMB,
@@ -92,8 +98,7 @@ export async function readGymClimbPreview(viewerId: string, target: GymClimbRank
   if (!climb?.frames || climb.uuid !== target.climbUuid || climb.angle !== config.angle || climb.is_draft) {
     throw new Error('Ranking climb is unavailable');
   }
-  const sprayArt =
-    config.boardName === 'spray' ? await readRankedSprayArt(viewerId, target, climb.frames, signal) : undefined;
+  const sprayArt = wall ? await readRankedSprayArt(viewerId, target, wall, climb.frames, signal) : undefined;
   return {
     config,
     climb: { ...climb, mirrored: target.isMirror },

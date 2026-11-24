@@ -30,6 +30,29 @@ export type GymClimbRankingPreview =
     }
   | { kind: 'catalogue'; board: BoardDetails; frames: string; mirrored: boolean };
 
+async function readRankingSprayWall(
+  client: ReturnType<typeof createGraphQLHttpClient>,
+  target: GymClimbRankingTarget,
+  signal: AbortSignal,
+) {
+  // The by-layout read uses the signed-in viewer's independent access. Never
+  // resolve or construct the share-link capability for a ranked wall.
+  const { sprayWallByLayout: wall } = await client.request<{ sprayWallByLayout: SprayWall | null }>({
+    document: GET_SPRAY_WALL_BY_LAYOUT,
+    variables: { layoutId: target.layoutId },
+    signal,
+  });
+  if (
+    !wall?.currentVersion ||
+    wall.hiddenAt ||
+    wall.uuid !== target.logicalBoardUuid ||
+    wall.board.angle !== target.angle
+  ) {
+    throw new Error('Ranking wall is unavailable');
+  }
+  return { uuid: wall.uuid, version: wall.currentVersion.number };
+}
+
 export async function readGymClimbRankingPreview(
   token: string,
   target: GymClimbRankingTarget,
@@ -47,6 +70,8 @@ export async function readGymClimbRankingPreview(
   const client = createGraphQLHttpClient(token);
   const boardName = SUPPORTED_BOARDS.find((name) => name === target.boardType);
   if (!boardName) throw new Error('Ranking board is unavailable');
+  // Pin the wall version before reading frames: publication can remap their hold IDs.
+  const wall = boardName === 'spray' ? await readRankingSprayWall(client, target, signal) : null;
   const { climb } = await client.request<{ climb: Climb | null }>({
     document: boardName === 'spray' ? GET_SPRAY_CLIMB : GET_CLIMB,
     variables: {
@@ -62,7 +87,7 @@ export async function readGymClimbRankingPreview(
   if (!climb?.frames || climb.uuid !== target.climbUuid || climb.angle !== target.angle || climb.is_draft) {
     throw new Error('Ranking climb is unavailable');
   }
-  if (boardName !== 'spray') {
+  if (!wall) {
     const board = getBoardDetailsForBoard({
       board_name: boardName,
       layout_id: target.layoutId,
@@ -72,24 +97,9 @@ export async function readGymClimbRankingPreview(
     return { kind: 'catalogue', board, frames: climb.frames, mirrored: target.isMirror };
   }
 
-  // The by-layout read uses the signed-in viewer's independent access. Never
-  // resolve or construct the share-link capability for a ranked wall.
-  const { sprayWallByLayout: wall } = await client.request<{ sprayWallByLayout: SprayWall | null }>({
-    document: GET_SPRAY_WALL_BY_LAYOUT,
-    variables: { layoutId: target.layoutId },
-    signal,
-  });
-  if (
-    !wall?.currentVersion ||
-    wall.hiddenAt ||
-    wall.uuid !== target.logicalBoardUuid ||
-    wall.board.angle !== target.angle
-  ) {
-    throw new Error('Ranking wall is unavailable');
-  }
   const { sprayWallRenderData: render } = await client.request<{ sprayWallRenderData: SprayWallRenderData | null }>({
     document: GET_SPRAY_WALL_RENDER_DATA,
-    variables: { uuid: wall.uuid, version: wall.currentVersion.number },
+    variables: { uuid: wall.uuid, version: wall.version },
     signal,
   });
   if (
@@ -98,7 +108,7 @@ export async function readGymClimbRankingPreview(
     render.wall.board.angle !== target.angle ||
     render.wall.uuid !== wall.uuid ||
     render.wall.currentVersion?.number !== render.versionNumber ||
-    render.versionNumber !== wall.currentVersion.number
+    render.versionNumber !== wall.version
   ) {
     throw new Error('Ranking wall is unavailable');
   }

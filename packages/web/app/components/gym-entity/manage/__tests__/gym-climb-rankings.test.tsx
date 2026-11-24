@@ -15,6 +15,7 @@ import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import { createTestQueryClient } from '@/app/test-utils/test-providers';
 import { revokeWebPrivacySnapshots } from '@/app/lib/privacy-client';
 import { GymClimbRankingsPanel } from '../gym-climb-rankings';
+import { readGymClimbRankingPreview } from '../gym-climb-ranking-preview';
 
 const mocks = vi.hoisted(() => ({ request: vi.fn(), client: vi.fn() }));
 vi.mock('react-i18next', () => ({
@@ -217,6 +218,52 @@ describe('staff climb ranking drill-through', () => {
     });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(screen.queryByText('Private finish')).toBeNull();
+  });
+
+  it.each([1, 2])('rejects a refinement published after preview read %s', async (publishAfter) => {
+    const signal = new AbortController().signal;
+    let reads = 0;
+    mocks.request.mockImplementation(({ document, variables }) => {
+      const currentVersion = reads++ < publishAfter ? 4 : 5;
+      const wall = {
+        uuid: row.target.logicalBoardUuid,
+        currentVersion: { number: currentVersion },
+        board: { angle: 50 },
+      };
+      if (document === GET_SPRAY_WALL_BY_LAYOUT) return Promise.resolve({ sprayWallByLayout: wall });
+      if (document === GET_SPRAY_CLIMB) {
+        return Promise.resolve({
+          climb: { uuid: row.target.climbUuid, angle: 50, frames: currentVersion === 4 ? 'p1r1' : 'p2r1' },
+        });
+      }
+      if (document === GET_SPRAY_WALL_RENDER_DATA) {
+        return Promise.resolve({
+          sprayWallRenderData: {
+            wall,
+            versionNumber: variables.version,
+            boardWidth: 400,
+            boardHeight: 300,
+            homography: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+            photo: { url: 'https://private.invalid/fresh', width: 400, height: 300 },
+            holds: [{ id: variables.version === 4 ? 1 : 2, cx: 70, cy: 80, r: 5 }],
+          },
+        });
+      }
+      return Promise.reject(new Error('Unexpected preview operation'));
+    });
+    await expect(readGymClimbRankingPreview('staff-token', row.target, signal)).rejects.toThrow(
+      'Ranking wall is unavailable',
+    );
+    expect(mocks.request.mock.calls.map(([request]) => request.document)).toEqual([
+      GET_SPRAY_WALL_BY_LAYOUT,
+      GET_SPRAY_CLIMB,
+      GET_SPRAY_WALL_RENDER_DATA,
+    ]);
+    expect(mocks.request).toHaveBeenLastCalledWith({
+      document: GET_SPRAY_WALL_RENDER_DATA,
+      variables: { uuid: row.target.logicalBoardUuid, version: 4 },
+      signal,
+    });
   });
 
   it('uses only the freshly verified named LED route and mirror fragment for a shareable variant', async () => {

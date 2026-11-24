@@ -109,31 +109,66 @@ describe('native private spray inspection assets', () => {
     holds: [{ id: 1, cx: 70, cy: 80, r: 5 }],
     photo: { url: 'https://private.invalid/fresh', width: 400, height: 300 },
   };
-  const climb = { frames: 'p1r12', angle: 40, uuid: target.climbUuid };
+  const climb = { frames: 'p1r1', angle: 40, uuid: target.climbUuid };
 
   it('uses fresh independent wall access, exact current render geometry and no link capability', async () => {
     mocks.request
-      .mockResolvedValueOnce({ climb })
       .mockResolvedValueOnce({ sprayWallByLayout: wall })
+      .mockResolvedValueOnce({ climb })
       .mockResolvedValueOnce({ sprayWallRenderData: render });
     const signal = new AbortController().signal;
     const resolved = await readGymClimbPreview('staff', target, signal);
     expect(resolved.config).toEqual({ boardName: 'spray', layoutId: 540, sizeId: 540, setIds: '541', angle: 40 });
-    expect(resolved.sprayArt).toMatchObject({ uri: render.photo.url, width: 400, height: 300 });
+    expect(resolved.sprayArt).toMatchObject({ uri: render.photo.url, width: 400, height: 300, holds: [{ id: 1 }] });
     expect(mocks.request.mock.calls.map(([request]) => [request.document, request.variables])).toEqual([
-      [GET_SPRAY_CLIMB, { ...resolved.config, climbUuid: 'verified-climb' }],
       [GET_SPRAY_WALL_BY_LAYOUT, { layoutId: 540 }],
+      [GET_SPRAY_CLIMB, { ...resolved.config, climbUuid: 'verified-climb' }],
       [GET_SPRAY_WALL_RENDER_DATA, { uuid: 'verified-wall', version: 4 }],
     ]);
   });
 
   it('rejects render data superseded between the authenticated wall and photo reads', async () => {
     mocks.request
-      .mockResolvedValueOnce({ climb })
       .mockResolvedValueOnce({ sprayWallByLayout: wall })
+      .mockResolvedValueOnce({ climb })
       .mockResolvedValueOnce({
         sprayWallRenderData: { ...render, wall: { ...wall, currentVersion: { number: 5 } } },
       });
     await expect(readGymClimbPreview('staff', target, new AbortController().signal)).rejects.toThrow();
+  });
+
+  it.each([1, 2])('rejects a refinement published after preview read %s', async (publishAfter) => {
+    const signal = new AbortController().signal;
+    let reads = 0;
+    mocks.request.mockImplementation(({ document, variables }) => {
+      const currentVersion = reads++ < publishAfter ? 4 : 5;
+      const currentWall = { ...wall, currentVersion: { number: currentVersion } };
+      if (document === GET_SPRAY_WALL_BY_LAYOUT) return Promise.resolve({ sprayWallByLayout: currentWall });
+      if (document === GET_SPRAY_CLIMB) {
+        return Promise.resolve({ climb: { ...climb, frames: currentVersion === 4 ? 'p1r1' : 'p2r1' } });
+      }
+      if (document === GET_SPRAY_WALL_RENDER_DATA) {
+        return Promise.resolve({
+          sprayWallRenderData: {
+            ...render,
+            wall: currentWall,
+            versionNumber: variables.version,
+            holds: [{ ...render.holds[0], id: variables.version === 4 ? 1 : 2 }],
+          },
+        });
+      }
+      return Promise.reject(new Error('Unexpected preview operation'));
+    });
+    await expect(readGymClimbPreview('staff', target, signal)).rejects.toThrow('Ranking wall is unavailable');
+    expect(mocks.request.mock.calls.map(([request]) => request.document)).toEqual([
+      GET_SPRAY_WALL_BY_LAYOUT,
+      GET_SPRAY_CLIMB,
+      GET_SPRAY_WALL_RENDER_DATA,
+    ]);
+    expect(mocks.request).toHaveBeenLastCalledWith({
+      document: GET_SPRAY_WALL_RENDER_DATA,
+      variables: { uuid: wall.uuid, version: 4 },
+      signal,
+    });
   });
 });
