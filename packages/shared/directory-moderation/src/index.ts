@@ -4,3 +4,4 @@ export * from './audience';
 export * from './notes';
 export * from './timing';
 export * from './setup-suggestion';
+export * from './suggested-setups';

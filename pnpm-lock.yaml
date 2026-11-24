@@ -1428,6 +1428,10 @@ importers:
         version: 7.0.2
 
   packages/shared/directory-moderation:
+    dependencies:
+      '@boardsesh/board-config':
+        specifier: workspace:*
+        version: link:../board-config
     devDependencies:
       typescript:
         specifier: ~7.0.2
