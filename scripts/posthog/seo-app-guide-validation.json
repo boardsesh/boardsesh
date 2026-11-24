@@ -1,0 +1,23 @@
+{
+  "verifiedAt": "2026-11-24",
+  "projectId": 412845,
+  "fixtureQuerySha256": "f433474b4c13498339003ea7d5aaa0eacd603f065a079165c32b5f3ec6ba9c6d",
+  "fixtureRows": [
+    ["/apps/aurora", "US", 2, 1, 0, 1, 0, 0],
+    ["/apps/kilter", "US", 7, 2, 2, 3, 2, 3],
+    ["existing site", "US", 1, 1, 0, 1, 0, 0]
+  ],
+  "productionProbe": {
+    "from": "2026-11-23",
+    "to": "2026-11-24",
+    "rows": [["existing site", "outside US or unknown", 5, 1, 0, 1, 0, 0]],
+    "sessionIdProbe": {
+      "from": "2026-11-21",
+      "to": "2026-11-22",
+      "pageviews": 66,
+      "storeClicks": 3,
+      "webOpens": 3,
+      "allHadSessionId": true
+    }
+  }
+}

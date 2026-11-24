@@ -4,7 +4,6 @@ import React from 'react';
 import enMarketing from '@boardsesh/i18n/locales/en-US/marketing.json';
 import { buildStoreUrl } from '@/app/lib/store-links';
 import { __resetSessionInboundCampaignForTests } from '@/app/lib/inbound-campaign';
-import { APP_URL } from '@/app/lib/app-origin';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
 // Every hero store link names the hero as its placement (#6027).
@@ -343,11 +342,15 @@ describe('HomePageContent', () => {
       expect(mockTrack).toHaveBeenCalledWith('Compatibility Board Selected', { board: 'woods', source: 'home-chip' });
     });
 
-    it('keeps the browser handoff as a real app anchor', () => {
+    it.each(['en-US', 'es', 'de'])('links the English-only board app guides from the %s hero', (language) => {
+      mockLanguage = language;
       render(<HomePageContent />);
-      expect(screen.getByLabelText(resolveMarketingKey('home.hero.startClimbingAria')).getAttribute('href')).toBe(
-        APP_URL,
-      );
+      const hero = screen.getByRole('heading', { level: 1 }).closest('section');
+      const guides = screen.getByRole('link', { name: resolveMarketingKey('home.hero.compareApps') });
+      // The unprefixed path on every homepage: /apps has no localized copy, so /es/apps would only redirect.
+      expect(guides.getAttribute('href')).toBe('/apps');
+      expect(guides.getAttribute('hreflang')).toBe('en');
+      expect(hero?.contains(guides)).toBe(true);
     });
   });
 

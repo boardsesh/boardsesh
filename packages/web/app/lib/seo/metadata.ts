@@ -30,7 +30,17 @@ type PageMetadataOptions = {
   openGraphType?: 'website' | 'article' | 'profile';
   twitterCard?: 'summary' | 'summary_large_image' | 'app' | 'player';
   locale?: Locale;
+  /** Locales with a published URL for this page. Defaults to every site locale. */
+  availableLocales?: readonly Locale[];
+  /**
+   * `'if-fits'` drops the ` | Boardsesh` suffix when it would push the title past
+   * the 60 characters a search result shows; Google adds the site name itself.
+   */
+  brandSuffix?: 'always' | 'if-fits';
 };
+
+/** About as many characters as a search result shows before cutting a title. */
+const SEARCH_TITLE_LIMIT = 60;
 
 function normalizePath(path?: string): string | undefined {
   if (!path) {
@@ -58,12 +68,14 @@ export function withBrandTitle(title: string): string {
   return `${title} | ${SITE_NAME}`;
 }
 
-function buildLanguageAlternates(basePath: string): Record<string, string> {
+function buildLanguageAlternates(basePath: string, availableLocales: readonly Locale[]): Record<string, string> {
   const languages: Record<string, string> = {};
-  for (const locale of SUPPORTED_LOCALES) {
+  for (const locale of availableLocales) {
     languages[locale] = localeHref(basePath, locale);
   }
-  languages['x-default'] = localeHref(basePath, DEFAULT_LOCALE);
+  if (availableLocales.includes(DEFAULT_LOCALE)) {
+    languages['x-default'] = localeHref(basePath, DEFAULT_LOCALE);
+  }
   return languages;
 }
 
@@ -82,15 +94,18 @@ export function createPageMetadata({
   openGraphType = 'website',
   twitterCard = 'summary_large_image',
   locale = DEFAULT_LOCALE,
+  availableLocales = SUPPORTED_LOCALES,
+  brandSuffix = 'always',
 }: PageMetadataOptions): Metadata {
   const basePath = normalizePath(path);
   const canonicalPath = basePath ? localeHref(basePath, locale) : undefined;
-  const fullTitle = withBrandTitle(title);
+  const brandedTitle = withBrandTitle(title);
+  const fullTitle = brandSuffix === 'if-fits' && brandedTitle.length > SEARCH_TITLE_LIMIT ? title : brandedTitle;
   const normalizedImagePath = imagePath ? normalizePath(imagePath) : undefined;
   const alternates: Metadata['alternates'] = basePath
     ? {
         canonical: canonicalPath,
-        languages: buildLanguageAlternates(basePath),
+        languages: buildLanguageAlternates(basePath, availableLocales),
       }
     : undefined;
 

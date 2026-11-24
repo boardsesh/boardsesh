@@ -313,7 +313,10 @@ export default async function ClimbFrontDoor({
       {/* Below the climb: what the app adds. Streamed, so the hero never waits
           on it; nothing in it depends on who is asking. */}
       <Suspense fallback={null}>
-        <ClimbAppShowcase betaLinks={betaLinks.status === 'loaded' ? betaLinks.items : []} />
+        <ClimbAppShowcase
+          board={boardDetails.board_name}
+          betaLinks={betaLinks.status === 'loaded' ? betaLinks.items : []}
+        />
       </Suspense>
 
       <Box component="section" sx={sectionSx} aria-labelledby="climb-similar-heading">

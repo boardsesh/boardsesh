@@ -6,6 +6,7 @@
   "sprayLabel": "Spraywall",
   "sprayTitle": "Votre Spraywall, ses blocs et son carnet.",
   "sprayLead": "Prenez une photo. Boardsesh détecte les prises, vous corrigez les oublis, puis votre crew ouvre et consigne ses blocs. Gratuit pour les Spraywalls à domicile comme en salle.",
+  "homeSprayPhotoAlt": "Un Spraywall maison photographié pour Boardsesh, prêt pour ouvrir des blocs",
   "sprayStep1": "Prenez une photo nette",
   "sprayStep2": "Vérifiez les prises",
   "sprayStep3": "Ouvrez un bloc avec votre groupe",
@@ -86,5 +87,8 @@
     "nearbyCount_other": "{{count}} Spraywalls dans un rayon de {{radius}} km",
     "nearbyCapped": "Les {{shown}} plus proches parmi {{total}} Spraywalls",
     "selectedArea": "Spraywalls dans un rayon de {{radius}} km autour de {{place}}"
-  }
+  },
+  "appGuidesLink": "Guides des applis de board (en anglais)",
+  "boardAppGuideLink": "Compatibilité de l’appli avec {{board}} (en anglais)",
+  "sprayComparisonLink": "Comparer les applis de Spraywall (en anglais)"
 }

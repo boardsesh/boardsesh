@@ -113,6 +113,17 @@ export const APP_ORIGIN = process.env.NEXT_PUBLIC_APP_URL ?? DEFAULT_CONFIG_APP_
  * has to come before the `/:board/…` catch-all that would otherwise swallow it.
  */
 const BASE_REDIRECTS = [
+  // The five Aurora-built board apps are one app, so their guides merged into
+  // /apps/aurora. Each old page lands on its brand's section; browsers keep the
+  // destination's `#` through the redirect.
+  ...['tension', 'decoy', 'touchstone', 'grasshopper', 'so-ill'].map((brand) => ({
+    source: `/apps/${brand}`,
+    destination: `/apps/aurora#${brand}`,
+    permanent: true,
+  })),
+  // Only /compare/spray-wall-apps lives under /compare; a reader who trims the
+  // URL gets the guides hub instead of a 404.
+  { source: '/compare', destination: '/apps', permanent: true },
   {
     source: '/aurora-migration',
     destination: '/bring-your-logbook#old-kilter-app',

@@ -37,6 +37,19 @@
   /* Help/guide accent — the Graphite secondary label */
   --color-info: #b0b0b0;
 
+  /* Lit holds: the marketing pages' only extra colours, the four LED hold roles as
+     Boardsesh draws them (start green, hand cyan, finish magenta, foot amber). Mirror of
+     `themeTokens.marketing.lit`, which reads them from @boardsesh/board-constants; the
+     parity test pins both. Decorative glyphs only (rings, step markers, legend dots):
+     never a text colour, never a fill behind text, never the edge of a control, and
+     always next to a word that says the same thing. The parity test fails any
+     `.module.css` that sets `color:` from one of these. Worst non-text contrast is
+     finish on #262626, 4.83:1. */
+  --lit-start: #00ff00;
+  --lit-hand: #4df5fd;
+  --lit-finish: #ff00ff;
+  --lit-foot: #ffaa00;
+
   /* Neutral palette — Graphite greys, darkest-first. 50-300 are surfaces; the text
      steps collapse onto the app's three label tiers: 400 tertiary, 500-600 secondary,
      700-900 label. */
@@ -172,6 +185,9 @@
   --border-radius-lg: 12px;
   --border-radius-xl: 16px;
   --border-radius-full: 9999px;
+  /* Marketing trays (feature and CTA bands on www comparison pages): one step above the
+     16px card. Buttons stay 10px, cards 12/16px. */
+  --radius-tray: 24px;
 
   /* Input field tokens — the source of truth for input surface/text/border. The MUI
      theme (mui-theme.ts) and ~150 module.css files read these. The field is the

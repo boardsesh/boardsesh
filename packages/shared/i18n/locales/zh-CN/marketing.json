@@ -1,10 +1,10 @@
 {
   "metadata": {
     "home": {
-      "title": "和岩友一起爬训练板 | Boardsesh",
+      "title": "兼容 Kilter、Tension 和 MoonBoard 的攀岩应用",
       "description": "选条线路，在训练板上点亮，和岩友共用一个队列。免费使用，兼容 Kilter、Tension 和 MoonBoard 等训练板。",
       "ogDescription": "选条线路，在训练板上点亮，和岩友共用一个队列。",
-      "ogTitle": "和岩友一起爬训练板"
+      "ogTitle": "换训练板，不换应用"
     },
     "about": {
       "title": "攀岩者打造，向所有人开放",
@@ -53,11 +53,10 @@
   },
   "home": {
     "hero": {
-      "title": "今晚，和岩友一起爬训练板",
+      "title": "换训练板，不换应用",
       "eyebrow": "免费使用，兼容 Kilter、Tension 和 MoonBoard 等训练板。",
       "subtitle": "选条线路，在训练板上点亮，和岩友共用一个队列。",
-      "startClimbingAria": "在应用中开始攀爬",
-      "startClimbingWeb": "在浏览器中打开",
+      "compareApps": "对比 Boardsesh 与你的训练板应用（英语）",
       "ctaInstallIos": "App Store 下载",
       "ctaInstallAndroid": "去商店下载 Google Play",
       "ctaUpdate": "更新应用",
@@ -483,7 +482,8 @@
         "fix5": "Android 找不到设备时，点击面板底部的允许位置或开启定位。",
         "twoBoards": "附近有两块板？你的训练板会排在前面，点击前请核对序列号。训练板配置不匹配提示表示控制器设置不同，可选择取消、仍然连接或切换训练板配置。",
         "duplicate": "同一训练板出现两次？两个序列号代表两个控制器。仅显示 Kilter Board 的条目是新版 LED 控制盒；通常信号格数更多的是你面前的墙。如果点亮错墙，在训练板控制中点击断开训练板。",
-        "duplicateYourBoards": "你的训练板中出现重复项是另一回事。请点击编辑，再选择删除或取消关注。"
+        "duplicateYourBoards": "你的训练板中出现重复项是另一回事。请点击编辑，再选择删除或取消关注。",
+        "compareApps": "Kilter 或 MoonBoard 应用用不了？对比 <kilter>Kilter</kilter> 和 <moonboard>MoonBoard</moonboard> 的应用（英语）。"
       },
       "next": {
         "title": "继续了解",

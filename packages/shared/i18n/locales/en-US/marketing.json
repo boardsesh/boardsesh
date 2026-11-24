@@ -1,10 +1,10 @@
 {
   "metadata": {
     "home": {
-      "title": "Board night, sorted. | Boardsesh",
+      "title": "Climbing App That Works with Kilter, Tension & MoonBoard",
       "description": "Pick a climb, light it on the wall and share one queue with your crew. Free to use. Works with boards including Kilter, Tension and MoonBoard.",
       "ogDescription": "Pick a climb, light it on the wall and share one queue with your crew.",
-      "ogTitle": "Board night, sorted."
+      "ogTitle": "Switch boards, not apps"
     },
     "about": {
       "title": "Built by climbers, open to everyone",
@@ -53,11 +53,10 @@
   },
   "home": {
     "hero": {
-      "title": "Board night, sorted.",
+      "title": "Switch boards, not apps",
       "eyebrow": "Free to use. Works with boards including Kilter, Tension and MoonBoard.",
       "subtitle": "Pick a climb, light it on the wall and share one queue with your crew.",
-      "startClimbingAria": "Start climbing in the app",
-      "startClimbingWeb": "Open it in your browser",
+      "compareApps": "Compare Boardsesh with your board's app",
       "ctaInstallIos": "Download on the App Store",
       "ctaInstallAndroid": "Get it on Google Play",
       "ctaUpdate": "Update the app",
@@ -483,7 +482,8 @@
         "fix5": "On Android, if nothing is found, tap Allow Location or Turn on Location at the bottom of the sheet.",
         "twoBoards": "Two boards in range? Yours is listed first. Read the serial before you tap. A Board configuration doesn't match alert means the controller has a different setup. Pick Cancel, Connect anyway or Switch board setup.",
         "duplicate": "Same board listed twice? Two serials are two controllers. A row reading only Kilter Board is a newer LED box, and more signal bars usually means your wall. If the wrong wall lights, tap Disconnect board in Board controls.",
-        "duplicateYourBoards": "A board twice under Your boards is different. Tap Edit, then Delete or Unfollow."
+        "duplicateYourBoards": "A board twice under Your boards is different. Tap Edit, then Delete or Unfollow.",
+        "compareApps": "Kilter or MoonBoard app not working? Compare the apps for <kilter>Kilter</kilter> and <moonboard>MoonBoard</moonboard>."
       },
       "next": {
         "title": "Keep going",

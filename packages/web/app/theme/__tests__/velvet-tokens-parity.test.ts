@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
@@ -9,6 +9,7 @@ import {
   materialSurfaces,
   materialTonalContainers,
 } from '@boardsesh/velvet-tokens';
+import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
 import { themeTokens } from '../theme-config';
 import { darkTheme } from '../mui-theme';
 // Read the literal index.css text from disk. A bundler import (?raw / glob) gets
@@ -604,5 +605,71 @@ describe('the web surface ladder is the Graphite ladder the app uses', () => {
     // MUI paints it under every default filled Chip, a selected PaginationItem and the
     // highlighted Autocomplete option; a violet value would tint all of them.
     expect(themeTokens.semantic.selectedRow).toBe(materialSurfaces.dark.fill);
+  });
+});
+
+// The marketing layer: four lit hold roles and the tray radius, read only by www
+// marketing pages. The colours come from the board catalogue, so a page ring always
+// matches the hold the app draws; index.css has to follow.
+describe('the marketing lit-hold layer', () => {
+  const litRows: Array<[string, string]> = [
+    ['--lit-start', themeTokens.marketing.lit.start],
+    ['--lit-hand', themeTokens.marketing.lit.hand],
+    ['--lit-finish', themeTokens.marketing.lit.finish],
+    ['--lit-foot', themeTokens.marketing.lit.foot],
+  ];
+
+  it.each(litRows)('%s matches the board-constants role colour', (cssVar, value) => {
+    expect(rootVars[cssVar], `${cssVar} missing from :root`).toBeDefined();
+    expect(norm(rootVars[cssVar])).toBe(norm(value));
+  });
+
+  it('reads the roles from HOLD_STATE_MAP, with Boardsesh’s own hand cyan', () => {
+    const kilter = HOLD_STATE_MAP.kilter;
+    expect(themeTokens.marketing.lit).toEqual({
+      start: kilter[12].color,
+      hand: kilter[13].boardseshDisplayColor,
+      finish: kilter[14].color,
+      foot: kilter[15].color,
+    });
+  });
+
+  it('--radius-tray matches theme-config', () => {
+    expect(rootVars['--radius-tray']).toBe(`${themeTokens.marketing.radiusTray}px`);
+  });
+
+  it('every role clears 3:1 as a decorative glyph on every Graphite surface', () => {
+    const surfaces = [
+      themeTokens.semantic.background,
+      themeTokens.neutral[50],
+      themeTokens.semantic.surface,
+      themeTokens.semantic.surfaceElevated,
+    ];
+    for (const role of Object.values(themeTokens.marketing.lit)) {
+      for (const surface of surfaces) expect(contrast(role, surface)).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  // Lit colours are glyphs, never ink: a magenta word on #262626 is 4.83:1 as a ring and
+  // unreadable as body copy beside it. No stylesheet may set `color:` from one.
+  it('no .module.css sets a text colour from a --lit-* token', () => {
+    const appRoot = resolve(
+      process.cwd(),
+      existsSync(resolve(process.cwd(), 'packages/web/app')) ? 'packages/web/app' : 'app',
+    );
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name === 'node_modules' || entry.name === '.next') continue;
+        const full = resolve(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.name.endsWith('.module.css')) {
+          const css = readFileSync(full, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+          if (/(?:^|[\s;{])(?:color|-webkit-text-fill-color)\s*:[^;]*var\(\s*--lit-/m.test(css)) offenders.push(full);
+        }
+      }
+    };
+    walk(appRoot);
+    expect(offenders).toEqual([]);
   });
 });

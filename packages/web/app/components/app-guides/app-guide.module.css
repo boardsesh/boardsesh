@@ -1,0 +1,2116 @@
+/* Board app comparison pages (/apps, /apps/<board>, /compare/spray-wall-apps).
+ *
+ * "Lit like a board": a dark wall, a few bright holds, everything else quiet.
+ * Graphite surfaces, violet only for taps, and the four --lit-* hold roles as
+ * decoration. DOM order is the phone order; the desktop layout is CSS.
+ * Colours are CSS vars from app/components/index.css, never literals. */
+
+.page {
+  /* Clears the fixed MarketingHeader, as PageShell does. */
+  padding-top: calc(var(--global-header-height) + var(--spacing-2));
+  padding-bottom: var(--spacing-16);
+  background: var(--semantic-background);
+  overflow-x: clip;
+}
+
+.inner {
+  width: 100%;
+  max-width: var(--page-wide);
+  margin: 0 auto;
+  padding: 0 var(--page-gutter);
+  min-width: 0;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------- Breadcrumb ---------- */
+.crumbs {
+  font-size: var(--font-size-sm);
+}
+
+.crumbs a,
+.crumbs [aria-current] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* ---------- Shared type ---------- */
+.title {
+  margin: 0;
+  font-family: var(--font-display), sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+/* Beats the global `main h1.MuiTypography-root` 44/32 ramp: this is the Display step. */
+.hero .title,
+.hubHero .title {
+  font-size: 64px;
+  line-height: 1.04;
+}
+
+.page .h3 {
+  margin: 0;
+  color: var(--neutral-900);
+  font-family: var(--font-display), sans-serif;
+  font-size: var(--font-size-xl);
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.page .eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin: 0 0 var(--spacing-3);
+}
+
+.section {
+  margin-top: 112px;
+  scroll-margin-top: calc(var(--global-header-height) + var(--spacing-4));
+}
+
+.sectionHead {
+  max-width: 720px;
+  margin-bottom: var(--spacing-10);
+}
+
+.page .lead {
+  max-width: 60ch;
+  margin: var(--spacing-4) 0 0;
+}
+
+@media (max-width: 600px) {
+  .hero .title,
+  .hubHero .title {
+    font-size: 40px;
+    line-height: 1.08;
+  }
+
+  .page .h3 {
+    font-size: var(--font-size-lg);
+  }
+
+  .section {
+    margin-top: 72px;
+  }
+
+  .sectionHead {
+    margin-bottom: 28px;
+  }
+}
+
+/* ---------- Source pending (dev previews only; the importer refuses it for release) ---------- */
+.pending {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-start: var(--spacing-1);
+  padding: 1px var(--spacing-2);
+  border: 1px dashed var(--color-amber);
+  border-radius: var(--border-radius-full);
+  color: var(--neutral-900);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  vertical-align: 0.1em;
+}
+
+/* ---------- Hero ---------- */
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 440px);
+  gap: 56px;
+  align-items: center;
+  padding-top: var(--spacing-6);
+}
+
+.heroCopy {
+  min-width: 0;
+}
+
+.page .worksWith {
+  display: inline-block;
+  margin: 0 0 var(--spacing-5);
+  padding: 6px 14px 6px 10px;
+  border: 1px solid var(--separator);
+  border-radius: 20px;
+  color: var(--neutral-900);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.worksWithDots {
+  display: inline-flex;
+  gap: var(--spacing-1);
+  margin-inline-end: var(--spacing-2);
+  vertical-align: -1px;
+}
+
+.page .byline {
+  margin: var(--spacing-4) 0 0;
+}
+
+.runsOn {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 28px 0 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-lg);
+  background: var(--semantic-surface);
+}
+
+.runsOn li {
+  display: flex;
+  gap: var(--spacing-3);
+  align-items: flex-start;
+  padding: 14px var(--spacing-4);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+}
+
+.runsOn li + li {
+  border-inline-start: 1px solid var(--separator);
+}
+
+.runsOn strong {
+  display: block;
+  color: var(--neutral-900);
+  font-size: 15px;
+}
+
+.runsOnBody {
+  display: block;
+  color: var(--neutral-500);
+}
+
+.runsOnIcon {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-top: 1px;
+  color: var(--neutral-900);
+}
+
+.ctaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+  align-items: center;
+  margin-top: 28px;
+}
+
+.proof {
+  display: grid;
+  gap: 6px;
+  margin-top: var(--spacing-6);
+}
+
+/* Two lines of the community sentence (16px at 1.5) on a laptop, three on a phone. */
+.proofCommunity {
+  min-height: calc(2 * 1.5 * var(--font-size-base));
+}
+
+@media (max-width: 600px) {
+  .proofCommunity {
+    min-height: calc(3 * 1.5 * var(--font-size-base));
+  }
+}
+
+/* A sentence, not a row of chips: it wraps like text, so the star stays with the
+ * first figure instead of being stranded on its own line on a phone. */
+.page .ratingLine {
+  display: block;
+  margin: 0;
+  color: var(--neutral-900);
+}
+
+/* The rating link is a tap target like any other: 44px tall, however short its line. */
+.ratingLine a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.ratingIcon {
+  width: 20px;
+  height: 20px;
+  margin-inline-end: 6px;
+  vertical-align: -4px;
+  color: var(--color-amber);
+}
+
+.ratingDate {
+  color: var(--neutral-500);
+}
+
+/* Phones (or the board drawing) in the hero, on a faded board hole grid. */
+.heroArt {
+  position: relative;
+  min-height: 600px;
+  margin: 0;
+  isolation: isolate;
+}
+
+.heroArt::before {
+  content: '';
+  position: absolute;
+  inset: 4% -6% 4% -2%;
+  z-index: -1;
+  border-radius: 32px;
+  background-color: var(--neutral-50);
+  background-image: radial-gradient(circle, var(--semantic-fill-strong) 1.6px, transparent 2px);
+  background-size: 26px 26px;
+  background-position: 13px 13px;
+  mask-image: radial-gradient(ellipse at center, #000 55%, transparent 80%);
+}
+
+/* Device frame: black bezel, 42px outer radius, 7px padding, capture-frame edge. */
+.device {
+  position: absolute;
+  width: 272px;
+  padding: 7px;
+  border-radius: 42px;
+  background: var(--semantic-background);
+  box-shadow:
+    0 0 0 1px var(--capture-frame),
+    0 24px 60px var(--overlay-dark);
+}
+
+.device img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 35px;
+}
+
+.deviceBack {
+  top: 30px;
+  left: 0;
+  transform: rotate(-6deg);
+}
+
+.deviceFront {
+  top: 4px;
+  right: 6px;
+  transform: rotate(4deg);
+}
+
+/* A board drawing in place of a capture: a card, not a phone, so it never poses as a screen. */
+.boardCard {
+  position: absolute;
+  top: 24px;
+  right: 6px;
+  width: 300px;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--capture-frame);
+  border-radius: var(--border-radius-xl);
+  background: var(--semantic-surface);
+  box-shadow: 0 24px 60px var(--overlay-dark);
+  transform: rotate(3deg);
+}
+
+.boardCard img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+@media (max-width: 1080px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 380px);
+    gap: var(--spacing-8);
+  }
+
+  .device {
+    width: 236px;
+  }
+
+  .boardCard {
+    width: 260px;
+  }
+
+  .heroArt {
+    min-height: 540px;
+  }
+}
+
+@media (max-width: 899px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-10);
+  }
+
+  .heroArt {
+    width: 100%;
+    max-width: 440px;
+    min-height: 0;
+    height: 440px;
+    margin-inline: auto;
+    overflow: hidden;
+    mask-image: linear-gradient(#000 72%, transparent);
+  }
+
+  .device {
+    width: 210px;
+    padding: 6px;
+    border-radius: 34px;
+  }
+
+  .device img {
+    border-radius: 28px;
+  }
+
+  .deviceBack {
+    top: 40px;
+    left: 4%;
+  }
+
+  .deviceFront {
+    top: 18px;
+    right: 4%;
+  }
+
+  .boardCard {
+    top: 24px;
+    right: 4%;
+    width: 220px;
+  }
+}
+
+@media (max-width: 600px) {
+  .runsOn {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .runsOn li {
+    padding: 10px 14px;
+  }
+
+  .runsOn li + li {
+    border-inline-start: 0;
+    border-top: 1px solid var(--separator);
+  }
+
+  .heroArt {
+    height: 380px;
+  }
+
+  .device {
+    width: 176px;
+    padding: 5px;
+    border-radius: 30px;
+  }
+
+  .device img {
+    border-radius: 25px;
+  }
+
+  .deviceBack {
+    left: 0;
+  }
+
+  .deviceFront {
+    right: 0;
+  }
+
+  .boardCard {
+    right: 0;
+    width: 190px;
+  }
+
+  /* The one filled action spans the row; the badges wrap under it. */
+  .ctaRow > a:first-child {
+    width: 100%;
+  }
+}
+
+/* ---------- Verdict ---------- */
+.verdict {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: var(--spacing-5);
+}
+
+.verdictCard {
+  padding: 28px;
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-xl);
+  background: var(--semantic-surface);
+}
+
+.verdictCardOurs {
+  background: var(--semantic-surface-elevated);
+}
+
+.verdictHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  margin-bottom: var(--spacing-5);
+}
+
+.verdictMark {
+  flex: none;
+  width: 40px;
+  height: 40px;
+}
+
+.checks {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.checks li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: var(--spacing-3);
+  align-items: start;
+  color: var(--neutral-900);
+  font-size: 17px;
+  line-height: 1.45;
+}
+
+.checks li > span:first-child {
+  margin-top: 4px;
+}
+
+.verdictSide {
+  display: grid;
+  gap: var(--spacing-5);
+  align-content: start;
+}
+
+.bottomLine {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--spacing-4);
+  align-items: start;
+  padding: var(--spacing-6) 28px;
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-xl);
+}
+
+.bottomLine > span:first-child {
+  margin-top: 4px;
+}
+
+.bottomLine p {
+  margin: 0;
+  color: var(--neutral-900);
+  font-family: var(--font-display), sans-serif;
+  font-size: 22px;
+  font-weight: 550;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+}
+
+@media (max-width: 899px) {
+  .verdict {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .verdictCard {
+    padding: var(--spacing-5);
+  }
+
+  .checks li {
+    font-size: var(--font-size-base);
+  }
+
+  .bottomLine {
+    padding: var(--spacing-5);
+  }
+
+  .bottomLine p {
+    font-size: 19px;
+  }
+}
+
+/* ---------- Tray: the board's bolt-hole grid as texture ---------- */
+.tray {
+  position: relative;
+  padding: 56px;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-tray);
+  background-color: var(--neutral-50);
+  background-image: radial-gradient(circle, var(--semantic-fill-subtle) 1.6px, transparent 2px);
+  background-size: 28px 28px;
+  background-position: 14px 14px;
+}
+
+@media (max-width: 899px) {
+  .tray {
+    padding: var(--spacing-10) var(--spacing-6);
+  }
+}
+
+/* On a phone the tray bleeds to the screen edge with square corners. */
+@media (max-width: 600px) {
+  .tray {
+    margin-inline: calc(-1 * var(--page-gutter));
+    padding: var(--spacing-10) var(--page-gutter);
+    border-inline: 0;
+    border-radius: 0;
+  }
+}
+
+/* ---------- Feature tiles ---------- */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(var(--tile-columns, 3), minmax(0, 1fr));
+  gap: var(--spacing-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tilesFour {
+  --tile-columns: 4;
+}
+
+.tilesTwo {
+  --tile-columns: 2;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-xl);
+  background: var(--semantic-surface-elevated);
+}
+
+.tileArt {
+  position: relative;
+  flex: none;
+  height: 232px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--separator);
+  background: var(--semantic-surface);
+}
+
+.tileBody {
+  display: grid;
+  align-content: start;
+  gap: var(--spacing-2);
+  padding: var(--spacing-5) 22px var(--spacing-6);
+}
+
+.tileBody p {
+  margin: 0;
+}
+
+.tileCrop {
+  position: absolute;
+  top: var(--spacing-6);
+  left: 50%;
+  width: 230px;
+  overflow: hidden;
+  border: 1px solid var(--capture-frame);
+  border-bottom: 0;
+  border-radius: 28px 28px 0 0;
+  transform: translateX(-50%);
+}
+
+/* The browser capture is a whole browser window with its own frame (2034 x 1881),
+ * so its tile drops the art panel's background and rule and lets the window sit on
+ * the card with a soft shadow. Never a phone crop. */
+.tile .tileArt.tileArtBrowser {
+  align-self: start;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  padding: var(--spacing-5) var(--spacing-5) 0;
+  overflow: visible;
+  border-bottom: 0;
+  background: none;
+}
+
+.browserShot {
+  display: block;
+  width: 100%;
+  height: auto;
+  filter: drop-shadow(0 12px 28px var(--overlay-dark));
+}
+
+/* The profile card window (y 340 to 1070 of the 736 x 1600 capture). The box takes
+ * the window's own shape; object-position puts its top edge at 340 / 1600: the
+ * scaled image overflows the box by 1600/736 - 730/736 widths, and 340/736 of a
+ * width is 39% of that overflow. Pinned to the top of its grid cell so a taller
+ * text column can never stretch it into a different crop. */
+.tile .tileArt.tileArtCard {
+  align-self: start;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  aspect-ratio: 736 / 730;
+}
+
+.profileCard {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 39%;
+}
+
+.tileCrop img,
+.stepShot img,
+.platformShot img,
+.importArt img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Two-up horizontal tiles (hub "On every board"). */
+.tilesTwo .tile {
+  display: grid;
+  grid-template-columns: minmax(0, 230px) minmax(0, 1fr);
+}
+
+.tilesTwo .tileArt {
+  height: auto;
+  min-height: 250px;
+  border-bottom: 0;
+  border-inline-end: 1px solid var(--separator);
+}
+
+.tilesTwo .tileCrop {
+  width: 186px;
+}
+
+.tilesTwo .tileBody {
+  align-content: center;
+}
+
+@media (max-width: 1080px) {
+  .tilesFour {
+    --tile-columns: 2;
+  }
+}
+
+@media (max-width: 899px) {
+  .tiles {
+    --tile-columns: 1;
+  }
+
+  .tile,
+  .tilesTwo .tile {
+    display: grid;
+    grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  }
+
+  .tileArt,
+  .tilesTwo .tileArt {
+    height: auto;
+    min-height: 200px;
+    border-bottom: 0;
+    border-inline-end: 1px solid var(--separator);
+  }
+
+  .tileCrop,
+  .tilesTwo .tileCrop {
+    width: 170px;
+  }
+}
+
+@media (max-width: 600px) {
+  .tile,
+  .tilesTwo .tile {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tileArt,
+  .tilesTwo .tileArt {
+    height: 200px;
+    min-height: 0;
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--separator);
+  }
+
+  .tileBody {
+    padding: 18px 18px var(--spacing-5);
+  }
+
+  .tileCrop,
+  .tilesTwo .tileCrop {
+    width: 200px;
+  }
+}
+
+/* ---------- Diagrams (drawn, never presented as captures) ---------- */
+.diagram {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.browser {
+  width: 270px;
+  max-width: calc(100% - 32px);
+  overflow: hidden;
+  border: 2px solid var(--neutral-400);
+  border-radius: var(--border-radius-lg);
+  background: var(--semantic-background);
+}
+
+.browserBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--spacing-2) 10px;
+  border-bottom: 2px solid var(--neutral-400);
+}
+
+.browserDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--neutral-400);
+}
+
+.browserUrl {
+  margin-inline-start: var(--spacing-2);
+  padding: 2px 10px;
+  overflow: hidden;
+  border-radius: var(--border-radius-full);
+  background: var(--semantic-fill);
+  color: var(--neutral-900);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.miniBoard {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 9px;
+  padding: var(--spacing-4) 22px 18px;
+}
+
+.miniHole {
+  width: 7px;
+  height: 7px;
+  margin: auto;
+  border-radius: 50%;
+  background: var(--semantic-fill-strong);
+}
+
+.miniLit {
+  margin: auto;
+}
+
+.phonesDiagram {
+  display: flex;
+  gap: 18px;
+  align-items: flex-end;
+}
+
+.phonesDiagram figure {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  margin: 0;
+  color: var(--neutral-900);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.outline {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 118px;
+  border: 2px solid var(--neutral-400);
+  border-radius: 14px;
+}
+
+.outlineLaptop {
+  width: 104px;
+  height: 72px;
+  border-radius: var(--border-radius-md);
+}
+
+.outlineTablet {
+  width: 96px;
+  height: 124px;
+  border-radius: var(--border-radius-lg);
+}
+
+.tilesTwo .phonesDiagram {
+  gap: 10px;
+}
+
+.tilesTwo .outline {
+  width: 44px;
+  height: 82px;
+  border-radius: 10px;
+}
+
+.tilesTwo .outlineLaptop {
+  width: 76px;
+  height: 54px;
+  border-radius: 6px;
+}
+
+.tilesTwo .outlineTablet {
+  width: 64px;
+  height: 84px;
+}
+
+.tilesTwo .phonesDiagram figure {
+  font-size: var(--font-size-xs);
+}
+
+@media (max-width: 899px) {
+  .browser {
+    width: 190px;
+  }
+
+  .miniBoard {
+    gap: 6px;
+    padding: var(--spacing-3) 14px;
+  }
+
+  .phonesDiagram {
+    gap: 10px;
+  }
+
+  .outline {
+    width: 48px;
+    height: 88px;
+  }
+
+  .outlineLaptop {
+    width: 76px;
+    height: 54px;
+  }
+
+  .outlineTablet {
+    width: 64px;
+    height: 84px;
+  }
+}
+
+@media (max-width: 600px) {
+  .browser {
+    width: 240px;
+  }
+}
+
+/* ---------- Aurora brands ---------- */
+.brands {
+  display: grid;
+  gap: var(--spacing-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.brand {
+  display: grid;
+  grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-xl);
+  background: var(--semantic-surface);
+  scroll-margin-top: calc(var(--global-header-height) + var(--spacing-4));
+}
+
+/* Arriving from an old /apps/<brand> link lands here; the card says so with an edge. */
+.brand:target {
+  border-color: var(--control-border);
+}
+
+.brandArt {
+  min-height: 180px;
+  overflow: hidden;
+  border-inline-end: 1px solid var(--separator);
+  background: var(--neutral-50);
+}
+
+.brandArt img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.brandBody {
+  display: grid;
+  align-content: start;
+  gap: var(--spacing-2);
+  padding: var(--spacing-5) var(--spacing-6);
+}
+
+.brandBody p {
+  margin: 0;
+}
+
+.brandFacts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+  gap: var(--spacing-2) var(--spacing-5);
+  margin: var(--spacing-2) 0 0;
+}
+
+.brandFacts div {
+  min-width: 0;
+}
+
+/* The official app's line is a sentence, not a value: give it the full width. */
+.brandFacts div:last-child {
+  grid-column: 1 / -1;
+}
+
+.brandFacts dt {
+  color: var(--neutral-500);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.brandFacts dd {
+  margin: 0;
+  color: var(--neutral-900);
+  font-size: 15px;
+}
+
+@media (max-width: 600px) {
+  .brand {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .brandArt {
+    height: 160px;
+    min-height: 0;
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--separator);
+  }
+
+  .brandBody {
+    padding: 18px;
+  }
+}
+
+/* ---------- Session steps ---------- */
+.steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--spacing-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: var(--spacing-3);
+  min-width: 0;
+}
+
+.stepShot {
+  height: 300px;
+  overflow: hidden;
+  border: 1px solid var(--capture-frame);
+  border-radius: var(--border-radius-xl);
+  background: var(--semantic-background);
+}
+
+/* A board drawing or wall photo fills the frame instead of hanging off its top. */
+.stepShotDrawing img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* No capture fits: the bare wall, the same hole grid the trays use. */
+.stepShotEmpty {
+  background-color: var(--neutral-50);
+  background-image: radial-gradient(circle, var(--semantic-fill-strong) 1.6px, transparent 2px);
+  background-size: 28px 28px;
+  background-position: 14px 14px;
+}
+
+.page .stepTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  margin-top: var(--spacing-2);
+}
+
+.step p {
+  margin: 0;
+}
+
+@media (max-width: 1080px) {
+  .steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--spacing-8) var(--spacing-5);
+  }
+}
+
+@media (max-width: 600px) {
+  .steps {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-5);
+  }
+
+  .step {
+    grid-template-columns: 112px minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+    column-gap: var(--spacing-4);
+    row-gap: 6px;
+  }
+
+  .stepShot {
+    grid-row: 1 / span 2;
+    height: 168px;
+    border-radius: var(--border-radius-lg);
+  }
+
+  .page .stepTitle {
+    margin-top: 0;
+  }
+}
+
+/* ---------- Logbook import ---------- */
+.importGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: var(--spacing-10);
+  align-items: start;
+}
+
+.paths {
+  display: grid;
+  gap: var(--spacing-4);
+}
+
+.path {
+  padding: var(--spacing-6);
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-xl);
+  background: var(--semantic-surface-elevated);
+}
+
+.page .pathWhen {
+  margin: var(--spacing-1) 0 0;
+  font-size: 15px;
+}
+
+.pathSteps {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: path-step;
+}
+
+.pathSteps li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  color: var(--neutral-900);
+  counter-increment: path-step;
+}
+
+.pathSteps li::before {
+  content: counter(path-step);
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--neutral-400);
+  border-radius: 50%;
+  color: var(--neutral-900);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.importArt {
+  max-width: 300px;
+  height: 320px;
+  margin-top: 28px;
+  overflow: hidden;
+  border: 1px solid var(--capture-frame);
+  border-radius: var(--border-radius-xl);
+}
+
+@media (max-width: 899px) {
+  .importGrid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 28px;
+  }
+
+  .importArt {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .path {
+    padding: 18px;
+  }
+}
+
+/* ---------- Board drawing captions ---------- */
+.boardCard figcaption {
+  padding: 10px 14px;
+  border-top: 1px solid var(--separator);
+  color: var(--neutral-500);
+  font-size: var(--font-size-sm);
+}
+
+/* ---------- Other apps (spray) ---------- */
+.otherApps {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
+  gap: var(--spacing-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.otherApps li {
+  display: grid;
+  align-content: start;
+  gap: var(--spacing-1);
+  padding: var(--spacing-4);
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-lg);
+  background: var(--semantic-surface);
+}
+
+.otherApps p {
+  margin: 0;
+}
+
+/* ---------- What climbers say: verbatim store reviews, no stars ---------- */
+.quotes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: var(--spacing-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.quote {
+  display: grid;
+  align-content: space-between;
+  gap: var(--spacing-4);
+  height: 100%;
+  margin: 0;
+  padding: var(--spacing-6);
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-xl);
+  background: var(--semantic-surface);
+}
+
+.quote blockquote {
+  margin: 0;
+}
+
+.quote blockquote p {
+  margin: 0;
+  color: var(--neutral-900);
+  font-family: var(--font-display), sans-serif;
+  font-size: var(--font-size-lg);
+  font-weight: 550;
+  line-height: 1.45;
+}
+
+.quote figcaption {
+  display: grid;
+  gap: 2px;
+  font-size: var(--font-size-sm);
+}
+
+.quoteAuthor {
+  color: var(--neutral-900);
+  font-weight: 650;
+}
+
+.quoteMeta {
+  color: var(--neutral-500);
+}
+
+.quoteMeta a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+/* On a phone the hub opens with these quotes, so they sit tight: the board tiles
+ * stay as close to the first screens as the hero allows. */
+@media (max-width: 600px) {
+  .page .quotesSection {
+    margin-top: var(--spacing-10);
+  }
+
+  .quotesSection .sectionHead {
+    margin-bottom: var(--spacing-4);
+  }
+
+  /* One swipeable row: each card about 85% wide, the next one peeking in. The row
+   * bleeds to the screen edges and scrolls inside itself; the page never does. */
+  .quotes {
+    display: flex;
+    gap: var(--spacing-2);
+    margin-inline: calc(-1 * var(--page-gutter));
+    padding: 0 var(--page-gutter) var(--spacing-2);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: var(--page-gutter);
+  }
+
+  .quotes > li {
+    flex: 0 0 85%;
+    scroll-snap-align: start;
+  }
+
+  .quote {
+    gap: var(--spacing-2);
+    padding: var(--spacing-4);
+  }
+
+  .quote blockquote p {
+    font-size: var(--font-size-base);
+    line-height: 1.4;
+  }
+
+  .quote figcaption {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: var(--spacing-2);
+  }
+}
+
+/* ---------- FAQ ---------- */
+.faq {
+  max-width: 820px;
+  border-top: 1px solid var(--separator);
+}
+
+.faq details {
+  border-bottom: 1px solid var(--separator);
+}
+
+.faq summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-4);
+  min-height: 64px;
+  padding-block: var(--spacing-3);
+  color: var(--neutral-900);
+  font-family: var(--font-display), sans-serif;
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.35;
+  list-style: none;
+  cursor: pointer;
+}
+
+.page .faqQuestion {
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+}
+
+.faq summary::-webkit-details-marker {
+  display: none;
+}
+
+.faq summary::after {
+  content: '';
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin-inline-end: 6px;
+  border-right: 2px solid var(--neutral-500);
+  border-bottom: 2px solid var(--neutral-500);
+  transform: rotate(45deg) translateY(-3px);
+  transition: transform var(--motion-fast) var(--ease-standard);
+}
+
+.faq details[open] summary::after {
+  transform: rotate(-135deg) translateY(-3px);
+}
+
+.faq details p {
+  max-width: 68ch;
+  margin: 0 0 var(--spacing-5);
+}
+
+@media (max-width: 600px) {
+  .faq summary {
+    font-size: 17px;
+  }
+}
+
+/* ---------- How we compared ---------- */
+.method {
+  max-width: 820px;
+}
+
+.method p {
+  margin: var(--spacing-3) 0 0;
+}
+
+/* ---------- CTA band ---------- */
+.ctaBand {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 340px);
+  gap: var(--spacing-10);
+  align-items: center;
+  overflow: hidden;
+}
+
+.ctaBand .ctaRow {
+  margin-top: var(--spacing-6);
+}
+
+.ctaBand .ratingLine {
+  margin-top: var(--spacing-4);
+}
+
+.ctaBoard {
+  position: relative;
+  height: 380px;
+  margin: -56px -56px -56px 0;
+  overflow: hidden;
+  mask-image: linear-gradient(to right, transparent, #000 35%);
+}
+
+.ctaBoard img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.55;
+}
+
+@media (max-width: 899px) {
+  .ctaBand {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ctaBoard {
+    display: none;
+  }
+}
+
+/* ---------- Other boards + help ---------- */
+.boardLinks {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--spacing-3);
+  margin: var(--spacing-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.boardLink {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  height: 100%;
+  min-height: 64px;
+  padding: 10px 14px 10px 10px;
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-lg);
+  background: var(--semantic-surface);
+  color: var(--neutral-900);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.boardLink:hover {
+  background: var(--semantic-surface-elevated);
+}
+
+.boardLink > span {
+  text-decoration: underline;
+  text-decoration-color: var(--color-primary);
+  text-underline-offset: 3px;
+}
+
+.boardLink img {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--border-radius-md);
+  object-fit: cover;
+}
+
+.related {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 28px;
+  margin: var(--spacing-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.related a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+@media (max-width: 899px) {
+  .boardLinks {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .boardLink {
+    font-size: 15px;
+  }
+}
+
+/* ---------- Sources: one quiet disclosure ---------- */
+.sources {
+  max-width: 820px;
+  margin-top: var(--spacing-16);
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-lg);
+  scroll-margin-top: calc(var(--global-header-height) + var(--spacing-4));
+}
+
+.sources summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-1) var(--spacing-3);
+  min-height: 56px;
+  padding: var(--spacing-3) 18px;
+  color: var(--neutral-900);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.sourcesMeta {
+  color: var(--neutral-500);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+}
+
+.sourcesBody {
+  padding: 0 18px 18px;
+  font-size: var(--font-size-sm);
+}
+
+.sourcesBody p {
+  margin: 0 0 var(--spacing-2);
+}
+
+.page .sourceGroup {
+  margin: var(--spacing-4) 0 var(--spacing-1);
+  color: var(--neutral-900);
+  font-size: var(--font-size-sm);
+  font-weight: 650;
+  scroll-margin-top: calc(var(--global-header-height) + var(--spacing-4));
+}
+
+.sourceList {
+  margin: 0;
+  padding-inline-start: 22px;
+  color: var(--neutral-500);
+}
+
+.sourceList a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+/* ---------- Hub ---------- */
+.hubHero {
+  display: grid;
+  justify-items: center;
+  padding-top: var(--spacing-8);
+  text-align: center;
+}
+
+.hubHero .lead {
+  margin-inline: auto;
+}
+
+.hubHero .runsOn {
+  width: 100%;
+  max-width: 760px;
+  text-align: start;
+}
+
+.hubHero .ctaRow {
+  justify-content: center;
+}
+
+.hubHero .proof {
+  justify-items: center;
+}
+
+.fan {
+  position: relative;
+  width: 100%;
+  max-width: 900px;
+  height: 470px;
+  margin: var(--spacing-12) 0 0;
+  overflow: hidden;
+  isolation: isolate;
+  mask-image: linear-gradient(#000 70%, transparent);
+}
+
+.fan::before {
+  content: '';
+  position: absolute;
+  inset: 40px 0 0;
+  z-index: -1;
+  border-radius: 32px 32px 0 0;
+  background-color: var(--neutral-50);
+  background-image: radial-gradient(circle, var(--semantic-fill-strong) 1.6px, transparent 2px);
+  background-size: 26px 26px;
+  background-position: 13px 13px;
+  mask-image: radial-gradient(ellipse at 50% 30%, #000 45%, transparent 75%);
+}
+
+.fan .device {
+  width: 248px;
+}
+
+.fanLeft {
+  top: 64px;
+  left: calc(50% - 124px - 210px);
+  transform: rotate(-8deg);
+}
+
+.fanCenter {
+  top: 30px;
+  left: calc(50% - 124px);
+  z-index: 2;
+}
+
+.fanRight {
+  top: 64px;
+  left: calc(50% - 124px + 210px);
+  transform: rotate(8deg);
+}
+
+.fanCaption {
+  position: absolute;
+  display: inline-flex;
+  gap: var(--spacing-2);
+  align-items: center;
+  padding: var(--spacing-1) var(--spacing-3) var(--spacing-1) var(--spacing-2);
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-full);
+  background: var(--semantic-surface-elevated);
+  color: var(--neutral-900);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.fanCaptionLeft {
+  top: 18px;
+  left: calc(50% - 124px - 210px + 40px);
+}
+
+.fanCaptionCenter {
+  top: -2px;
+  left: calc(50% - 50px);
+  z-index: 3;
+}
+
+.fanCaptionRight {
+  top: 18px;
+  left: calc(50% - 124px + 210px + 90px);
+}
+
+@media (max-width: 600px) {
+  .hubHero {
+    justify-items: start;
+    text-align: start;
+  }
+
+  .hubHero .ctaRow {
+    justify-content: flex-start;
+  }
+
+  .hubHero .proof {
+    justify-items: start;
+  }
+
+  /* Phones: the actions come straight after the lead, so the h1, lead and the
+   * browser button share the first screen; the platform strip and a smaller fan
+   * follow. Visual order only: the DOM keeps the desktop reading order. */
+  .hubHero .ctaRow {
+    order: 1;
+  }
+
+  .hubHero .proof {
+    order: 2;
+  }
+
+  .hubHero .runsOn {
+    order: 3;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .hubHero .runsOn li {
+    flex-direction: column;
+    gap: var(--spacing-1);
+    padding: 10px var(--spacing-2);
+    font-size: 13px;
+  }
+
+  .hubHero .runsOn li + li {
+    border-top: 0;
+    border-inline-start: 1px solid var(--separator);
+  }
+
+  .hubHero .runsOn strong {
+    font-size: var(--font-size-sm);
+  }
+
+  .hubHero .runsOnIcon {
+    width: 20px;
+    height: 20px;
+  }
+
+  .fan {
+    order: 4;
+    height: 230px;
+    margin-top: var(--spacing-6);
+  }
+
+  .fan .device {
+    width: 120px;
+    padding: 4px;
+    border-radius: 22px;
+  }
+
+  .fan .device img {
+    border-radius: 18px;
+  }
+
+  .fanLeft {
+    top: 40px;
+    left: calc(50% - 60px - 96px);
+  }
+
+  .fanCenter {
+    top: 16px;
+    left: calc(50% - 60px);
+  }
+
+  .fanRight {
+    top: 40px;
+    left: calc(50% - 60px + 96px);
+  }
+
+  .fanCaption {
+    display: none;
+  }
+}
+
+.boardGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--spacing-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.boardTile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-xl);
+  background: var(--semantic-surface);
+  color: var(--neutral-900);
+  text-decoration: none;
+  transition:
+    transform var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard);
+}
+
+@media (hover: hover) {
+  .boardTile:hover,
+  .sprayBanner:hover {
+    background: var(--semantic-surface-elevated);
+    color: var(--neutral-900);
+  }
+
+  .boardTile:hover {
+    transform: translateY(-2px);
+  }
+}
+
+.boardTileArt {
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  background: var(--neutral-50);
+}
+
+.boardTileArt img,
+.sprayBannerArt img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.boardTileBody {
+  display: grid;
+  gap: var(--spacing-1);
+  padding: var(--spacing-4) 18px 18px;
+}
+
+.boardTileMeta {
+  color: var(--neutral-500);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+}
+
+/* The tile is the link; this is its text action, so it carries the tap violet. */
+.goText {
+  margin-top: 6px;
+  color: var(--color-primary);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* The spray wall banner and the makers card: one row of two from 900px,
+ * stacked on narrower screens. Grid rows stretch, so both cards share a height. */
+.boardExtras {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-4);
+  margin-top: var(--spacing-4);
+}
+
+@media (min-width: 900px) {
+  .boardExtras {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.extraCard {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-xl);
+  background: var(--semantic-surface);
+  color: var(--neutral-900);
+  text-decoration: none;
+}
+
+.extraArt {
+  flex: none;
+  height: 240px;
+  overflow: hidden;
+  background: var(--neutral-50);
+}
+
+.sprayBannerArt img {
+  object-position: 50% 35%;
+}
+
+.extraBody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-2);
+  padding: var(--spacing-5) var(--spacing-6) var(--spacing-6);
+}
+
+.extraBody p {
+  margin: 0;
+}
+
+/* The card's way out sits on its last line, level across the two cards. The
+ * extra classes outrank MUI's own margin on the makers' Button. */
+.page .extraBody .extraAction {
+  margin-top: auto;
+}
+
+/* The mystery board: a drawn board (mystery-board-art.tsx) filling the art box. */
+.mysteryArt {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.mysteryBoard {
+  fill: var(--neutral-200);
+  stroke: var(--separator);
+  stroke-width: 2;
+}
+
+.mysteryHole {
+  fill: var(--neutral-50);
+  opacity: 0.8;
+}
+
+.mysteryHold {
+  fill: var(--neutral-400);
+  stroke: var(--neutral-300);
+  stroke-width: 1.5;
+}
+
+.mysteryLitStart,
+.mysteryLitHand,
+.mysteryLitFoot,
+.mysteryLitFinish {
+  stroke-width: 3.5;
+}
+
+.mysteryLitStart {
+  stroke: var(--lit-start);
+}
+
+.mysteryLitHand {
+  stroke: var(--lit-hand);
+}
+
+.mysteryLitFoot {
+  stroke: var(--lit-foot);
+}
+
+.mysteryLitFinish {
+  stroke: var(--lit-finish);
+}
+
+.mysteryMark {
+  fill: var(--neutral-900);
+  font-family: var(--font-display), sans-serif;
+  font-size: 150px;
+  font-weight: 700;
+  filter: drop-shadow(0 4px 18px var(--overlay-dark)) drop-shadow(0 0 3px var(--overlay-dark));
+  transform-box: fill-box;
+  transform-origin: 50% 80%;
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .makersCard:hover .mysteryMark {
+    animation: mystery-wiggle 700ms var(--ease-standard);
+  }
+}
+
+@keyframes mystery-wiggle {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+
+  25% {
+    transform: rotate(-7deg);
+  }
+
+  60% {
+    transform: rotate(5deg);
+  }
+}
+
+@media (max-width: 1080px) {
+  .boardGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .boardGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--spacing-3);
+  }
+
+  .boardTileBody {
+    padding: var(--spacing-3) var(--spacing-3) 14px;
+  }
+
+  .boardTileMeta {
+    font-size: 13px;
+  }
+
+  .extraArt {
+    height: 180px;
+  }
+
+  .extraBody {
+    padding: var(--spacing-5);
+  }
+}
+
+.platformTrio {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: var(--spacing-5);
+  align-items: end;
+}
+
+.platformTrio figure {
+  min-width: 0;
+  margin: 0;
+}
+
+.platformShot {
+  position: relative;
+  height: 360px;
+  overflow: hidden;
+  border: 1px solid var(--capture-frame);
+  border-radius: var(--border-radius-xl);
+  background: var(--semantic-background);
+}
+
+.platformTrio .platformShotBrowser {
+  height: auto;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.platformCaption {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-3);
+  color: var(--neutral-900);
+  line-height: 1.45;
+}
+
+.platformCaption svg {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+}
+
+@media (max-width: 760px) {
+  .platformTrio {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--spacing-3);
+  }
+
+  .platformShot {
+    height: 260px;
+  }
+
+  .platformTrio figure:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .platformTrio figure:last-child .platformShot {
+    height: auto;
+  }
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-block: 1px solid var(--separator);
+}
+
+.stats li {
+  display: grid;
+  gap: var(--spacing-1);
+  padding: var(--spacing-8) var(--spacing-6);
+}
+
+.stats li + li {
+  border-inline-start: 1px solid var(--separator);
+}
+
+.statNumber {
+  color: var(--neutral-900);
+  font-family: var(--font-display), sans-serif;
+  font-size: 52px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.page .statsNote {
+  margin: var(--spacing-3) 0 0;
+  font-size: 13px;
+}
+
+@media (max-width: 760px) {
+  .stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .stats li {
+    padding: var(--spacing-5) 0;
+  }
+
+  .stats li + li {
+    border-inline-start: 0;
+    border-top: 1px solid var(--separator);
+  }
+
+  .statNumber {
+    font-size: 40px;
+  }
+}
+
+/* ---------- Motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .boardTile,
+  .faq summary::after {
+    transition: none;
+  }
+
+  .boardTile:hover {
+    transform: none;
+  }
+}

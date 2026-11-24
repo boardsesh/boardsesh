@@ -238,6 +238,9 @@ describe('Organization / WebSite JSON-LD', () => {
     expect(graph[0].url).toBe('https://www.boardsesh.com');
     expect(graph[0].logo).toBe('https://www.boardsesh.com/brand/boardsesh-mark.webp');
     expect(graph[0].sameAs).toEqual(['https://github.com/marcodejongh/boardsesh', 'https://discord.gg/YXA8GsXfQK']);
+    // The app guides point at these same ids.
+    expect(graph[0]['@id']).toBe('https://www.boardsesh.com/#organization');
+    expect(graph[1]['@id']).toBe('https://www.boardsesh.com/#website');
     expect(graph[1].inLanguage).toBe('en-US');
   });
 

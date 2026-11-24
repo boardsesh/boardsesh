@@ -30,6 +30,9 @@ export async function generateMetadata() {
     ogDescription: t('metadata.home.ogDescription'),
     path: '/',
     locale,
+    // "Climbing App That Works with Kilter, Tension & MoonBoard" is 56 characters:
+    // the suffix would only cut the board names off the result.
+    brandSuffix: 'if-fits',
   });
 }
 
@@ -60,11 +63,13 @@ export default async function Home() {
         website: [
           'trust',
           'boardChoices',
+          'appGuidesLink',
           'importTitle',
           'importBody',
           'importLink',
           'sprayTitle',
           'sprayLead',
+          'homeSprayPhotoAlt',
           'sprayRoute',
           'photoGuide',
           'proofNote',

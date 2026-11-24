@@ -1,10 +1,10 @@
 {
   "metadata": {
     "home": {
-      "title": "Tu sesión, bien organizada. | Boardsesh",
+      "title": "App de escalada que funciona con Kilter, Tension y MoonBoard",
       "description": "Elige un bloque, ilumínalo en el plafón y comparte la cola con tu grupo. Gratis. Compatible con plafones como Kilter, Tension y MoonBoard.",
       "ogDescription": "Elige un bloque, ilumínalo en el plafón y comparte la cola con tu grupo.",
-      "ogTitle": "Tu sesión, bien organizada."
+      "ogTitle": "Cambia de plafón, no de app"
     },
     "about": {
       "title": "Creada por escaladores, abierta a todo el mundo",
@@ -53,11 +53,10 @@
   },
   "home": {
     "hero": {
-      "title": "Tu sesión, bien organizada.",
+      "title": "Cambia de plafón, no de app",
       "eyebrow": "Gratis. Compatible con plafones como Kilter, Tension y MoonBoard.",
       "subtitle": "Elige un bloque, ilumínalo en el plafón y comparte la cola con tu grupo.",
-      "startClimbingAria": "Empieza a escalar en la app",
-      "startClimbingWeb": "Ábrelo en el navegador",
+      "compareApps": "Compara Boardsesh con la app de tu plafón\u00a0(en\u00a0inglés)",
       "ctaInstallIos": "Consíguelo en el App Store",
       "ctaInstallAndroid": "Descargar en Google Play",
       "ctaUpdate": "Actualiza la app",
@@ -483,7 +482,8 @@
         "fix5": "En Android, si no aparece nada, toca Permitir ubicación o Activar ubicación al final de la hoja.",
         "twoBoards": "¿Dos plafones al alcance? El tuyo sale primero. Lee el número de serie antes de tocar. Una alerta de configuración del plafón que no coincide significa que el controlador tiene otro montaje. Elige Cancelar, Conectar igualmente o Cambiar de plafón.",
         "duplicate": "¿El mismo plafón dos veces? Dos números de serie son dos controladores. Una fila que solo dice Kilter Board es una caja LED más nueva, y más barras de señal suelen indicar que es tu muro. Si se enciende el muro equivocado, toca Desconectar plafón en Controles del plafón.",
-        "duplicateYourBoards": "Un plafón repetido en Tus plafones es otra cosa. Toca Editar y luego Eliminar o Dejar de seguir."
+        "duplicateYourBoards": "Un plafón repetido en Tus plafones es otra cosa. Toca Editar y luego Eliminar o Dejar de seguir.",
+        "compareApps": "¿La app de Kilter o MoonBoard no funciona? Compara las apps de <kilter>Kilter</kilter> y <moonboard>MoonBoard</moonboard> (en inglés)."
       },
       "next": {
         "title": "Sigue",

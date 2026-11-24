@@ -21,6 +21,7 @@ a production rollout or a physical-device result.
 
 | Document | Path |
 | --- | --- |
+| [Board app search pages and measurement](seo-app-guides/README.md) | `seo-app-guides/README.md` |
 | [Manage gym boards](gym-board-management.md) | `gym-board-management.md` |
 | [Gym directory indexing](gym-directory-indexing.md) | `gym-directory-indexing.md` |
 | [Gym duplicate audit, 22 November 2026](gym-dedup-audit-2026-11-22.md) | `gym-dedup-audit-2026-11-22.md` |

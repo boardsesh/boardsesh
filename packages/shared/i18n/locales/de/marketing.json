@@ -1,10 +1,10 @@
 {
   "metadata": {
     "home": {
-      "title": "Deine Boardsession, gut organisiert. | Boardsesh",
+      "title": "Kletter-App für Kilter, Tension und MoonBoard",
       "description": "Wähle einen Boulder, beleuchte ihn am Board und teile eine Warteschlange mit deiner Crew. Kostenlos. Funktioniert mit Boards wie Kilter, Tension und MoonBoard.",
       "ogDescription": "Wähle einen Boulder, beleuchte ihn am Board und teile eine Warteschlange mit deiner Crew.",
-      "ogTitle": "Deine Boardsession, gut organisiert."
+      "ogTitle": "Wechsle das Board, nicht die App"
     },
     "about": {
       "title": "Von Kletterer*innen, offen für alle",
@@ -53,11 +53,10 @@
   },
   "home": {
     "hero": {
-      "title": "Deine Boardsession, gut organisiert.",
+      "title": "Wechsle das Board, nicht die App",
       "eyebrow": "Kostenlos. Funktioniert mit Boards wie Kilter, Tension und MoonBoard.",
       "subtitle": "Wähle einen Boulder, beleuchte ihn am Board und teile eine Warteschlange mit deiner Crew.",
-      "startClimbingAria": "In der App losklettern",
-      "startClimbingWeb": "Im Browser öffnen",
+      "compareApps": "Vergleiche Boardsesh mit der App deines Boards\u00a0(Englisch)",
       "ctaInstallIos": "Laden im App Store",
       "ctaInstallAndroid": "Jetzt bei Google Play",
       "ctaUpdate": "App aktualisieren",
@@ -483,7 +482,8 @@
         "fix5": "Wird auf Android nichts gefunden, tipp unten im Sheet auf Standort erlauben oder Standort einschalten.",
         "twoBoards": "Zwei Boards in Reichweite? Deins steht zuerst. Lies die Seriennummer, bevor du tippst. Der Hinweis Board-Konfiguration passt nicht heißt, dass der Controller ein anderes Setup hat. Wähl Abbrechen, Trotzdem verbinden oder Board-Setup wechseln.",
         "duplicate": "Dasselbe Board doppelt in der Liste? Zwei Seriennummern sind zwei Controller. Eine Zeile, die nur Kilter Board zeigt, ist eine neuere LED-Box, und mehr Signalbalken heißen meist, dass es deine Wand ist. Leuchtet die falsche Wand, tipp in der Board-Steuerung auf Board trennen.",
-        "duplicateYourBoards": "Ein Board doppelt unter Deine Boards ist etwas anderes. Tipp auf Bearbeiten, dann auf Löschen oder Nicht mehr folgen."
+        "duplicateYourBoards": "Ein Board doppelt unter Deine Boards ist etwas anderes. Tipp auf Bearbeiten, dann auf Löschen oder Nicht mehr folgen.",
+        "compareApps": "Kilter- oder MoonBoard-App funktioniert nicht? Vergleiche die Apps für <kilter>Kilter</kilter> und <moonboard>MoonBoard</moonboard> (Englisch)."
       },
       "next": {
         "title": "Weiter geht's",

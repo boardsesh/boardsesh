@@ -112,6 +112,12 @@ export const APP_INSTALL_PLACEMENTS = [
   'playlist-qr-card',
   'home-qr-card',
   'setup-report',
+  'compare-hub',
+  'compare-kilter',
+  'compare-aurora',
+  'compare-moonboard',
+  'compare-woods',
+  'compare-spray',
 ] as const;
 
 /**

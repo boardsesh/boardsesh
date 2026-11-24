@@ -1,0 +1,339 @@
+/* The verdict table. A real <table> with explicit roles, so screen readers and
+ * crawlers get a table at every width; below 900px CSS turns each row into a card
+ * over the same DOM. Never a horizontal scroller. */
+
+.frame {
+  overflow: hidden;
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-xl);
+  background: var(--semantic-surface);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+/* Two classes so these beat MUI's own TableCell rules. */
+.table .cell {
+  padding: var(--spacing-5) var(--spacing-6);
+  border-bottom: 1px solid var(--separator);
+  color: var(--neutral-900);
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+  text-align: start;
+  vertical-align: top;
+  overflow-wrap: break-word;
+}
+
+.table .head {
+  padding-block: 18px;
+  background: var(--semantic-surface);
+  font-family: var(--font-display), sans-serif;
+  font-size: var(--font-size-lg);
+  font-weight: 650;
+  vertical-align: middle;
+}
+
+.table .featureHead {
+  width: 30%;
+  color: var(--neutral-500);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.product {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.product img {
+  flex: none;
+  width: 28px;
+  height: 28px;
+}
+
+/* The Boardsesh column, and a competitor cell that shares a Boardsesh win, read as winners. */
+.table [data-product='boardsesh'],
+.table [data-shared-win] {
+  background: var(--semantic-fill-subtle);
+}
+
+/* "Doesn't list it" is not a win: the Boardsesh cell stays plain on those rows. */
+.table [data-verdict='unlisted'] [data-product='boardsesh'] {
+  background: none;
+}
+
+.table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.table .rowHead {
+  font-weight: 400;
+}
+
+.featureName {
+  display: block;
+  font-family: var(--font-display), sans-serif;
+  font-size: var(--font-size-lg);
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.rowMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-1) var(--spacing-3);
+  margin-top: 10px;
+}
+
+/* A Box span, not MUI Chip: Chip paints action.selected and turns focusable when clickable. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  max-width: 100%;
+  padding: var(--spacing-1) var(--spacing-3) var(--spacing-1) var(--spacing-2);
+  border-radius: var(--border-radius-full);
+  background: var(--semantic-fill);
+  color: var(--neutral-900);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+/* The chip is the link to the row's sources. The <a> is the 44px target; the chip
+ * inside keeps its look. Hover and focus mark the chip itself: violet is for taps. */
+.chipLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  max-width: 100%;
+  border-radius: var(--border-radius-full);
+  color: inherit;
+  text-decoration: none;
+}
+
+.chipLink .chip {
+  transition: box-shadow var(--motion-fast) var(--ease-standard);
+}
+
+.chipLink:hover .chip {
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+
+.chipLink:focus-visible {
+  outline: none;
+}
+
+.chipLink:focus-visible .chip {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chipLink .chip {
+    transition: none;
+  }
+}
+
+.cellLabel {
+  display: none;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2) var(--spacing-5);
+  margin: var(--spacing-4) 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--neutral-500);
+  font-size: var(--font-size-sm);
+}
+
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+/* Spray page: Boardsesh and three other apps. A narrower feature column and
+ * smaller cell type keep five columns readable at 1024 without scrolling. */
+.wide .featureHead {
+  width: 19%;
+}
+
+.wide .cell {
+  padding: var(--spacing-4);
+  font-size: 15px;
+}
+
+.wide .head {
+  font-size: var(--font-size-base);
+}
+
+.wide .featureName {
+  font-size: var(--font-size-base);
+}
+
+/* Cards over the same DOM: three-column tables at 760px and below, and the
+ * five-column spray table from 899px (below that its columns get too narrow). */
+@media (max-width: 760px) {
+  .frame {
+    overflow: visible;
+    border: 0;
+    background: none;
+  }
+
+  .table,
+  .table tbody {
+    display: block;
+  }
+
+  .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .table tbody {
+    display: grid;
+    gap: var(--spacing-3);
+  }
+
+  .table tbody tr {
+    display: block;
+    overflow: hidden;
+    border: 1px solid var(--separator);
+    border-radius: var(--border-radius-lg);
+    background: var(--semantic-surface);
+  }
+
+  .table .cell,
+  .wide .cell {
+    display: block;
+    width: auto;
+    padding: 14px var(--spacing-4);
+    border-bottom: 0;
+    font-size: var(--font-size-base);
+  }
+
+  .table .rowHead {
+    padding-bottom: 6px;
+  }
+
+  .wide .featureName {
+    font-size: var(--font-size-lg);
+  }
+
+  /* The verdict comes first in each card, so the chips alone give the gist. */
+  .rowMeta {
+    justify-content: space-between;
+    margin-top: 6px;
+  }
+
+  .table td + td {
+    border-top: 1px solid var(--separator);
+  }
+
+  .cellLabel {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    margin-bottom: 2px;
+    color: var(--neutral-500);
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .cellLabel img {
+    flex: none;
+    width: 18px;
+    height: 18px;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 899px) {
+  .frameWide {
+    overflow: visible;
+    border: 0;
+    background: none;
+  }
+
+  .table.wide,
+  .table.wide tbody {
+    display: block;
+  }
+
+  .table.wide thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .table.wide tbody {
+    display: grid;
+    gap: var(--spacing-3);
+  }
+
+  .table.wide tbody tr {
+    display: block;
+    overflow: hidden;
+    border: 1px solid var(--separator);
+    border-radius: var(--border-radius-lg);
+    background: var(--semantic-surface);
+  }
+
+  .table.wide .cell {
+    display: block;
+    width: auto;
+    padding: 14px var(--spacing-4);
+    border-bottom: 0;
+    font-size: var(--font-size-base);
+  }
+
+  .table.wide .rowHead {
+    padding-bottom: 6px;
+  }
+
+  .table.wide .featureName {
+    font-size: var(--font-size-lg);
+  }
+
+  /* The verdict comes first in each card, so the chips alone give the gist. */
+  .wide .rowMeta {
+    justify-content: space-between;
+    margin-top: 6px;
+  }
+
+  .table.wide td + td {
+    border-top: 1px solid var(--separator);
+  }
+
+  .wide .cellLabel {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    margin-bottom: 2px;
+    color: var(--neutral-500);
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .wide .cellLabel img {
+    flex: none;
+    width: 18px;
+    height: 18px;
+  }
+}

@@ -62,6 +62,18 @@ export default function BoardAndBluetoothContent() {
         <Prose>{t('help.board.failed.twoBoards')}</Prose>
         <Prose>{t('help.board.failed.duplicate')}</Prose>
         <Prose>{t('help.board.failed.duplicateYourBoards')}</Prose>
+        {/* "kilter board app not working" already lands on this page: the comparisons
+            answer it. English-only pages, so the links skip the locale prefix. */}
+        <Prose>
+          <Trans
+            t={t}
+            i18nKey="help.board.failed.compareApps"
+            components={{
+              kilter: <MuiLink component={LocaleLink} href="/apps/kilter" locale="en-US" hrefLang="en" />,
+              moonboard: <MuiLink component={LocaleLink} href="/apps/moonboard" locale="en-US" hrefLang="en" />,
+            }}
+          />
+        </Prose>
       </HelpBand>
 
       <HelpBand

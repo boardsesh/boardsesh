@@ -109,6 +109,7 @@
     "record-mobile-smoke-projects.ts",
     "__tests__/record-mobile-smoke-projects.test.ts",
     "posthog/**/*.ts",
+    "app-guides/**/*.ts",
     "__tests__/expo-sqlite-native-finalize.test.ts",
     "r2-frozen-reader.ts",
     "r2-frozen-reader.test.ts",

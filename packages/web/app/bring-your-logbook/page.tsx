@@ -1,3 +1,4 @@
+import BoardAppGuideLink from '@/app/components/marketing/board-app-guide-link';
 import React from 'react';
 import { importPathChosen } from '@boardsesh/analytics';
 import { WebsiteJourneyButton, WebsiteJourneyLink } from '@/app/components/marketing/website-journey-link';
@@ -85,6 +86,10 @@ export default async function BringYourLogbookPage() {
 
       <PageSection id="get-the-app" title={t('migration.install')}>
         <StoreInstallButtons placement="bring-your-logbook" align="start" labels={storeLabels} />
+        <Stack sx={{ alignItems: 'start', mt: 2 }}>
+          <BoardAppGuideLink board="kilter" />
+          <BoardAppGuideLink board="tension" />
+        </Stack>
       </PageSection>
     </PageShell>
   );

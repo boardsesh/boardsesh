@@ -39,6 +39,7 @@ export const ALL_NAMESPACES = [
   'common',
   'consent',
   'marketing',
+  'appGuides',
   'website',
   'auth',
   'settings',
@@ -63,8 +64,8 @@ export const ALL_NAMESPACES = [
 export type Namespace = (typeof ALL_NAMESPACES)[number];
 
 /**
- * Namespaces available in the mobile app. Web-only namespaces (`marketing`,
- * `admin`, `gyms`, `oauth`, `developers`, `cnc`) are excluded so Metro never bundles them.
+ * Namespaces available in the mobile app. Web-only catalogs are excluded so
+ * Metro never bundles them.
  */
 export const MOBILE_NAMESPACES = [
   'common',

@@ -10,15 +10,9 @@ import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
-import {
-  DEFAULT_LOCALE,
-  LOCALE_COOKIE,
-  LOCALE_LABELS,
-  SUPPORTED_LOCALES,
-  isSupportedLocale,
-  type Locale,
-} from '@/app/lib/i18n/config';
+import { DEFAULT_LOCALE, LOCALE_COOKIE, LOCALE_LABELS, isSupportedLocale, type Locale } from '@/app/lib/i18n/config';
 import { localeHref, stripLocalePrefix } from '@/app/lib/i18n/locale-href';
+import { getPublishedLocales } from '@/app/lib/i18n/published-locales';
 import SelectedCheck from '@/app/components/ui/selected-check';
 
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
@@ -34,8 +28,15 @@ type LabelProps = {
   label: string;
 };
 
-function CompactLanguageSwitcherInner({ ariaLabelTemplate }: { ariaLabelTemplate: (label: string) => string }) {
-  const pathname = usePathname() ?? '/';
+function CompactLanguageSwitcherInner({
+  pathname,
+  publishedLocales,
+  ariaLabelTemplate,
+}: {
+  pathname: string;
+  publishedLocales: readonly Locale[];
+  ariaLabelTemplate: (label: string) => string;
+}) {
   const searchParams = useSearchParams();
   const { i18n } = useTranslation('common');
   const current: Locale = isSupportedLocale(i18n.language) ? i18n.language : DEFAULT_LOCALE;
@@ -82,7 +83,7 @@ function CompactLanguageSwitcherInner({ ariaLabelTemplate }: { ariaLabelTemplate
         {/* The current locale is announced with aria-current and shown on the
             tonal container with a leading check; the others inset their label
             so every name lines up. */}
-        {SUPPORTED_LOCALES.map((locale) => (
+        {publishedLocales.map((locale) => (
           <MenuItem
             key={locale}
             selected={locale === current}
@@ -118,7 +119,11 @@ function CompactLanguageSwitcherFallback({ ariaLabel, label }: LabelProps) {
 }
 
 export default function CompactLanguageSwitcher() {
+  const pathname = usePathname() ?? '/';
   const { i18n, t } = useTranslation('common');
+  const publishedLocales = getPublishedLocales(pathname);
+  if (publishedLocales.length < 2) return null;
+
   const fallbackLocale: Locale = isSupportedLocale(i18n.language) ? i18n.language : DEFAULT_LOCALE;
   const ariaLabelTemplate = (label: string) => t('languageSwitcher.ariaLabelWithCurrent', { language: label });
 
@@ -131,7 +136,11 @@ export default function CompactLanguageSwitcher() {
         />
       }
     >
-      <CompactLanguageSwitcherInner ariaLabelTemplate={ariaLabelTemplate} />
+      <CompactLanguageSwitcherInner
+        pathname={pathname}
+        publishedLocales={publishedLocales}
+        ariaLabelTemplate={ariaLabelTemplate}
+      />
     </Suspense>
   );
 }

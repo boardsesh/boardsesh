@@ -77,13 +77,6 @@
   }
 }
 
-.heroSecondary {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--spacing-2) var(--spacing-5);
-}
-
 .previewGroup {
   display: flex;
   flex-direction: column;
@@ -177,6 +170,20 @@
   grid-row: 1 / 4;
 }
 
+.sprayCard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 320px);
+  gap: var(--spacing-8);
+  align-items: center;
+}
+
+.sprayPhoto {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--border-radius-lg);
+}
+
 .wallGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -227,12 +234,17 @@
     gap: var(--spacing-2);
   }
 
-  .heroSecondary {
-    gap: var(--spacing-2) var(--spacing-4);
-  }
-
   .importBand {
     display: block;
+  }
+
+  .sprayCard {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-5);
+  }
+
+  .sprayPhoto {
+    max-width: 360px;
   }
 
   .wallGrid {

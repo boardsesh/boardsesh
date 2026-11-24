@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Image from 'next/image';
 import Box from '@mui/material/Box';
 import MuiLink from '@mui/material/Link';
 import Chip from '@mui/material/Chip';
@@ -18,10 +19,10 @@ import { boardTypeLabel } from '@boardsesh/board-constants';
 import StoreInstallButtons from '@/app/components/marketing/store-install-buttons';
 import { PageSection, PageCard } from '@/app/components/ui/page-shell';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
 import { DEFAULT_LOCALE, isSupportedLocale } from '@/app/lib/i18n/config';
 import type { RecentBetaLinkRow } from '@/app/lib/server-recent-beta-links';
 import HomeRecentBetaSection from '@/app/components/beta-videos/home-recent-beta-section';
-import StartClimbingButton from '@/app/components/start-climbing-button';
 import { MarketingScreenshot } from '@/app/components/marketing/marketing-screenshot';
 import { MarketingPreviewSwitch } from '@/app/components/marketing/marketing-preview-switch';
 import HomeShowcaseVideo from '@/app/components/home/home-showcase-video';
@@ -95,17 +96,19 @@ export default function HomePageContent({
             />
           </Box>
           {desktopInstall ? <Box className={styles.heroDesktopInstall}>{desktopInstall}</Box> : null}
-          <Box className={styles.heroSecondary}>
-            <StartClimbingButton
-              label={t('home.hero.startClimbingWeb')}
-              ariaLabel={t('home.hero.startClimbingAria')}
-              variant="text"
-              sx={{ p: 0, minHeight: 44 }}
-            />
-            <MuiLink component={LocaleLink} href="/bring-your-logbook" sx={LINK_TARGET}>
-              {website('importLink')}
-            </MuiLink>
-          </Box>
+          {/* Under whichever install block this width shows: the board app guides.
+              `/apps` is English-only, so every homepage links the unprefixed path
+              (no locale redirect) and the non-English labels say "(in English)". */}
+          <MuiLink
+            component={LocaleLink}
+            href="/apps"
+            locale={DEFAULT_LOCALE}
+            hrefLang="en"
+            underline="always"
+            sx={LINK_TARGET}
+          >
+            {t('home.hero.compareApps')}
+          </MuiLink>
         </Box>
         <Box className={styles.previewGroup}>
           {showsHeroVideo ? (
@@ -139,7 +142,7 @@ export default function HomePageContent({
           )}
         </Box>
       </Box>
-      <PageCard>
+      <PageCard className={styles.sprayCard}>
         <PageSection title={website('sprayTitle')} lead={website('sprayLead')}>
           <MuiLink
             component={LocaleLink}
@@ -153,6 +156,16 @@ export default function HomePageContent({
             {website('photoGuide')}
           </MuiLink>
         </PageSection>
+        {/* The real home wall /spraywalls shows: beside the copy on a laptop, under it on a phone. */}
+        <Image
+          src={resolveStaticAssetUrl('/images/help/spray-wall-photo.webp')}
+          alt={website('homeSprayPhotoAlt')}
+          width={1752}
+          height={2047}
+          sizes="(max-width: 760px) 90vw, 320px"
+          loading="lazy"
+          className={styles.sprayPhoto}
+        />
       </PageCard>
       <PageSection title={website('boardChoices')}>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
@@ -178,6 +191,9 @@ export default function HomePageContent({
             sx={{ minHeight: 44, borderColor: 'var(--control-border)' }}
           />
         </Box>
+        <MuiLink component={LocaleLink} href="/apps" locale="en-US" sx={{ ...LINK_TARGET, mt: 2 }}>
+          {website('appGuidesLink')}
+        </MuiLink>
       </PageSection>
       <PageCard>
         <PageSection title={website('importTitle')} lead={website('importBody')} className={styles.importBand}>

@@ -23,6 +23,10 @@ const VIOLET_TEXT = /(?:^|[\s;{])(?:color|fill|-webkit-text-fill-color):\s*var\(
 
 const ALLOWLIST: Record<string, { count: number; why: string }> = {
   'app/boards/boards-gallery.module.css': { count: 1, why: 'rail scroll buttons are tappable controls' },
+  'app/components/app-guides/app-guide.module.css': {
+    count: 1,
+    why: 'the "Compare … apps" text action inside a whole-tile board link (hub tiles and spray banner)',
+  },
   'app/build-plans/build-plans.module.css': { count: 1, why: 'table-of-contents link hover colour' },
   'app/components/beta-videos/boardsesh-beta.module.css': {
     count: 2,

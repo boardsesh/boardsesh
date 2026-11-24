@@ -6,6 +6,7 @@
   "sprayLabel": "Spray wall",
   "sprayTitle": "Your spray wall, set and logged.",
   "sprayLead": "Take one photo. Boardsesh finds the holds, you fix any it missed, and your crew sets and logs climbs on it. Free for home and gym walls.",
+  "homeSprayPhotoAlt": "A home spray wall photographed for Boardsesh, ready to set climbs on",
   "sprayStep1": "Take a clear photo",
   "sprayStep2": "Check the holds",
   "sprayStep3": "Set a climb with your crew",
@@ -86,5 +87,8 @@
     "nearbyCount_other": "{{count}} spray walls within {{radius}} km",
     "nearbyCapped": "Showing the {{shown}} closest of {{total}} spray walls",
     "selectedArea": "Spray walls within {{radius}} km of {{place}}"
-  }
+  },
+  "appGuidesLink": "Board app comparisons",
+  "boardAppGuideLink": "Compare {{board}} apps",
+  "sprayComparisonLink": "Compare spray wall apps"
 }

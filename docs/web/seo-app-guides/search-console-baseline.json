@@ -1,0 +1,353 @@
+{
+  "observedAt": "2026-11-23",
+  "projectId": "25c20785-59ba-472b-89c9-3f2b1cfc136b",
+  "period": {
+    "start": "2026-08-20",
+    "end": "2026-11-20"
+  },
+  "dataState": "final",
+  "headQueries": [
+    {
+      "query": "kilter app",
+      "dimensions": ["query", "page", "country"],
+      "rows": [],
+      "resultId": "15ad0afb-d807-4e51-a069-5aad79d444ff",
+      "hasMore": false
+    },
+    {
+      "query": "kilter board app",
+      "dimensions": ["query", "page", "country"],
+      "rows": [],
+      "resultId": "c0451f72-861a-4d80-a23a-2e5eef0d292e",
+      "hasMore": false
+    },
+    {
+      "query": "moonboard app",
+      "dimensions": ["query", "page", "country"],
+      "rows": [
+        {
+          "keys": ["moonboard app", "https://boardsesh.com/", "gbr"],
+          "clicks": 0,
+          "impressions": 2,
+          "ctr": 0,
+          "position": 4
+        }
+      ],
+      "resultId": "cc2c369b-ea80-48ba-ab10-a848948694a3",
+      "hasMore": false
+    },
+    {
+      "query": "tension board app",
+      "dimensions": ["query", "page", "country"],
+      "rows": [
+        {
+          "keys": ["tension board app", "https://www.boardsesh.com/", "rus"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 4
+        }
+      ],
+      "resultId": "3c673172-0723-43a6-b30e-b9881c250f5c",
+      "hasMore": false
+    }
+  ],
+  "limitations": [
+    "Absent reportable rows do not prove zero impressions or zero search demand.",
+    "Tiny position samples are not a reliable ranking baseline.",
+    "No launch or first-index date exists before deployment; record those after release."
+  ],
+  "appFamilyBaselines": [
+    {
+      "scope": "worldwide",
+      "dimensions": ["query"],
+      "resultId": "03623e77-1cea-420f-897f-ace66b1e3cad",
+      "fetchedRowCount": 32,
+      "hasMore": false,
+      "rows": [
+        {
+          "keys": ["explosive tension app"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 93
+        },
+        {
+          "keys": ["kilter board app not working"],
+          "clicks": 0,
+          "impressions": 4,
+          "ctr": 0,
+          "position": 1
+        },
+        {
+          "keys": ["kilter board app reddit"],
+          "clicks": 0,
+          "impressions": 3,
+          "ctr": 0,
+          "position": 1.7
+        },
+        {
+          "keys": ["moon board app not loading"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 1
+        },
+        {
+          "keys": ["moon board app not working"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 3
+        },
+        {
+          "keys": ["moonboard app"],
+          "clicks": 0,
+          "impressions": 2,
+          "ctr": 0,
+          "position": 4
+        },
+        {
+          "keys": ["moonboard app not loading"],
+          "clicks": 0,
+          "impressions": 3,
+          "ctr": 0,
+          "position": 1
+        },
+        {
+          "keys": ["moonboard app reddit"],
+          "clicks": 0,
+          "impressions": 2,
+          "ctr": 0,
+          "position": 2
+        },
+        {
+          "keys": ["moonboard app wont open"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 1
+        },
+        {
+          "keys": ["tension board app"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 4
+        }
+      ]
+    },
+    {
+      "scope": "worldwide",
+      "dimensions": ["query", "page"],
+      "resultId": "bd3339e0-399f-496f-b939-41131340ff7d",
+      "fetchedRowCount": 57,
+      "hasMore": false,
+      "rows": [
+        {
+          "keys": [
+            "explosive tension app",
+            "https://www.boardsesh.com/tension/original/full-wall-rows-kb1-kb2-1-18-columns-a-k/set-c_set-b_set-a_foot-set/25/view/explosives-05428a1103f327edc308d18172dfc268"
+          ],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 93
+        },
+        {
+          "keys": ["kilter board app not working", "https://www.boardsesh.com/"],
+          "clicks": 0,
+          "impressions": 4,
+          "ctr": 0,
+          "position": 1
+        },
+        {
+          "keys": ["kilter board app reddit", "https://www.boardsesh.com/"],
+          "clicks": 0,
+          "impressions": 2,
+          "ctr": 0,
+          "position": 2
+        },
+        {
+          "keys": ["kilter board app reddit", "https://www.boardsesh.com/aurora-migration"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 1
+        },
+        {
+          "keys": ["moon board app not loading", "https://boardsesh.com/"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 1
+        },
+        {
+          "keys": ["moon board app not working", "https://boardsesh.com/"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 3
+        },
+        {
+          "keys": ["moonboard app", "https://boardsesh.com/"],
+          "clicks": 0,
+          "impressions": 2,
+          "ctr": 0,
+          "position": 4
+        },
+        {
+          "keys": ["moonboard app not loading", "https://app.boardsesh.com/"],
+          "clicks": 0,
+          "impressions": 2,
+          "ctr": 0,
+          "position": 1
+        },
+        {
+          "keys": ["moonboard app not loading", "https://boardsesh.com/"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 1
+        },
+        {
+          "keys": ["moonboard app reddit", "https://boardsesh.com/"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 3
+        },
+        {
+          "keys": ["moonboard app reddit", "https://www.boardsesh.com/"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 1
+        },
+        {
+          "keys": ["moonboard app wont open", "https://boardsesh.com/"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 1
+        },
+        {
+          "keys": ["tension board app", "https://www.boardsesh.com/"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 4
+        }
+      ]
+    },
+    {
+      "scope": "US",
+      "dimensions": ["query"],
+      "resultId": "a8db58c0-91b4-44ce-a88a-936495a4cf87",
+      "fetchedRowCount": 15,
+      "hasMore": false,
+      "rows": [
+        {
+          "keys": ["kilter board app not working"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 1
+        },
+        {
+          "keys": ["kilter board app reddit"],
+          "clicks": 0,
+          "impressions": 2,
+          "ctr": 0,
+          "position": 1
+        },
+        {
+          "keys": ["moon board app not working"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 3
+        },
+        {
+          "keys": ["moonboard app not loading"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 1
+        },
+        {
+          "keys": ["moonboard app reddit"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 3
+        },
+        {
+          "keys": ["moonboard app wont open"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 1
+        }
+      ]
+    },
+    {
+      "scope": "US",
+      "dimensions": ["query", "page"],
+      "resultId": "cc3c661d-2b9e-4088-92d0-936f97eef600",
+      "fetchedRowCount": 27,
+      "hasMore": false,
+      "rows": [
+        {
+          "keys": ["kilter board app not working", "https://www.boardsesh.com/"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 1
+        },
+        {
+          "keys": ["kilter board app reddit", "https://www.boardsesh.com/"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 1
+        },
+        {
+          "keys": ["kilter board app reddit", "https://www.boardsesh.com/aurora-migration"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 1
+        },
+        {
+          "keys": ["moon board app not working", "https://boardsesh.com/"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 3
+        },
+        {
+          "keys": ["moonboard app not loading", "https://boardsesh.com/"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 1
+        },
+        {
+          "keys": ["moonboard app reddit", "https://boardsesh.com/"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 3
+        },
+        {
+          "keys": ["moonboard app wont open", "https://boardsesh.com/"],
+          "clicks": 0,
+          "impressions": 1,
+          "ctr": 0,
+          "position": 1
+        }
+      ]
+    }
+  ]
+}

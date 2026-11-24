@@ -40,7 +40,14 @@ describe('robots', () => {
     const blockedRule = allRules.find((rule) => toList(rule.userAgent).includes('gptbot'));
     expect(blockedRule?.disallow).toBe('/');
     expect(blockedRule?.allow).toBeUndefined();
-    expect(toList(blockedRule?.userAgent)).toEqual(expect.arrayContaining(['claude-searchbot', 'Google-Extended']));
+    expect(toList(blockedRule?.userAgent)).toEqual(
+      expect.arrayContaining(['gptbot', 'claudebot', 'amazonbot', 'ccbot', 'Google-Extended']),
+    );
+    // AI search crawlers cite pages with a link back, so they crawl like any
+    // search engine (owner decision, 2026-11-24).
+    for (const searchBot of ['oai-searchbot', 'claude-searchbot', 'perplexitybot', 'amzn-searchbot']) {
+      expect(toList(blockedRule?.userAgent)).not.toContain(searchBot);
+    }
     expect(toList(blockedRule?.userAgent)).not.toContain('googlebot');
     expect(toList(blockedRule?.userAgent)).not.toContain('facebookexternalhit');
   });

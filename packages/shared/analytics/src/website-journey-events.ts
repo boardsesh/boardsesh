@@ -36,6 +36,12 @@ export const WEBSITE_JOURNEY_PLACEMENTS = [
   'gyms-directory',
   'help',
   'run-a-wall',
+  'compare-hub',
+  'compare-kilter',
+  'compare-aurora',
+  'compare-moonboard',
+  'compare-woods',
+  'compare-spray',
 ] as const;
 
 export type WebsiteJourneyPlacement = (typeof WEBSITE_JOURNEY_PLACEMENTS)[number];
@@ -45,6 +51,7 @@ export type WebsiteNavArea = 'header' | 'header-menu' | 'footer';
 export type WebsiteNavTarget =
   | '/'
   | '/boards'
+  | '/apps'
   | '/spraywalls'
   | '/run-a-wall'
   | '/for-gyms'

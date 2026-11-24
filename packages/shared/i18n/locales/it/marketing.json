@@ -1,10 +1,10 @@
 {
   "metadata": {
     "home": {
-      "title": "La tua sessione, ben organizzata. | Boardsesh",
+      "title": "App di arrampicata per Kilter, Tension e MoonBoard",
       "description": "Scegli un blocco, illuminalo in parete e condividi la coda con il gruppo. Gratis. Compatibile con pannelli come Kilter, Tension e MoonBoard.",
       "ogDescription": "Scegli un blocco, illuminalo in parete e condividi la coda con il gruppo.",
-      "ogTitle": "La tua sessione, ben organizzata."
+      "ogTitle": "Cambia pannello, non app"
     },
     "about": {
       "title": "Fatta da climber, aperta a tutti",
@@ -53,11 +53,10 @@
   },
   "home": {
     "hero": {
-      "title": "La tua sessione, ben organizzata.",
+      "title": "Cambia pannello, non app",
       "eyebrow": "Gratis. Compatibile con pannelli come Kilter, Tension e MoonBoard.",
       "subtitle": "Scegli un blocco, illuminalo in parete e condividi la coda con il gruppo.",
-      "startClimbingAria": "Inizia ad arrampicare nell'app",
-      "startClimbingWeb": "Aprilo nel browser",
+      "compareApps": "Confronta Boardsesh con l'app del tuo pannello\u00a0(in\u00a0inglese)",
       "ctaInstallIos": "Scarica su App Store",
       "ctaInstallAndroid": "Disponibile su Google Play",
       "ctaUpdate": "Aggiorna l'app",
@@ -483,7 +482,8 @@
         "fix5": "Su Android, se non trovi nulla, tocca Consenti posizione o Attiva posizione in fondo al foglio.",
         "twoBoards": "Due pannelli nel raggio? Il tuo è in cima. Leggi il numero di serie prima di toccare. Un avviso di configurazione del pannello non corrispondente vuol dire che il controller ha un'altra configurazione. Scegli Annulla, Connetti comunque o Cambia configurazione del pannello.",
         "duplicate": "Lo stesso pannello due volte? Due numeri di serie sono due controller. Una riga con solo Kilter Board è una scatola LED più recente, e più tacche di segnale di solito indicano il tuo pannello. Se si accende il pannello sbagliato, tocca Disconnetti il pannello in Controlli del pannello.",
-        "duplicateYourBoards": "Un pannello doppio sotto I tuoi pannelli è un'altra cosa. Tocca Modifica, poi Elimina o Smetti di seguire."
+        "duplicateYourBoards": "Un pannello doppio sotto I tuoi pannelli è un'altra cosa. Tocca Modifica, poi Elimina o Smetti di seguire.",
+        "compareApps": "L’app Kilter o MoonBoard non funziona? Confronta le app per <kilter>Kilter</kilter> e <moonboard>MoonBoard</moonboard> (in inglese)."
       },
       "next": {
         "title": "Continua",

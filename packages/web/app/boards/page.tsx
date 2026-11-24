@@ -1,3 +1,4 @@
+import BoardAppGuideLink from '@/app/components/marketing/board-app-guide-link';
 import React from 'react';
 import Box from '@mui/material/Box';
 import MuiLink from '@mui/material/Link';
@@ -112,6 +113,9 @@ export default async function SupportedBoardsPage() {
                   {figures}
                 </Box>
               )}
+              <Box>
+                <BoardAppGuideLink board={board} />
+              </Box>
               {board === 'spray' && (
                 <Box>
                   <WebsiteJourneyLink

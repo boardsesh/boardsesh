@@ -35,7 +35,7 @@ const LINK_SX = {
 // "Open it in your browser": the shared grey outlined pill, the same secondary
 // action as the hero's second store button.
 const OPEN_BROWSER_SX = brandCtaOutlinedSx({ size: 'medium' });
-type FooterLink = { href: string; label: string; target: WebsiteNavTarget; external?: boolean };
+type FooterLink = { href: string; label: string; target: WebsiteNavTarget; external?: boolean; locale?: 'en-US' };
 
 export default function SiteFooter({ developerHref = '/developers' }: { developerHref?: '/developers' | '/docs' }) {
   const { t } = useTranslation('common');
@@ -49,6 +49,7 @@ export default function SiteFooter({ developerHref = '/developers' }: { develope
       heading: t('footer.journeys.climb'),
       links: [
         { href: '/boards', label: t('footer.journeys.supportedBoards'), target: '/boards' },
+        { href: '/apps', label: t('footer.journeys.appGuides'), target: '/apps', locale: 'en-US' },
         { href: '/gyms', label: t('footer.links.gyms'), target: '/gyms' },
         { href: '/playlists', label: t('footer.links.playlists'), target: '/playlists' },
         { href: '/bring-your-logbook', label: t('footer.links.auroraMigration'), target: '/bring-your-logbook' },
@@ -148,6 +149,7 @@ export default function SiteFooter({ developerHref = '/developers' }: { develope
                   key={link.href}
                   component={link.external ? 'a' : LocaleLink}
                   href={link.href}
+                  locale={link.locale}
                   target={link.external ? '_blank' : undefined}
                   rel={link.external ? 'noopener noreferrer' : undefined}
                   sx={LINK_SX}

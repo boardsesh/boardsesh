@@ -39,8 +39,8 @@ describe('blocked crawler origin rejection', () => {
 
   it.each([
     'GPTBot/1.4',
-    'Claude-SearchBot/1.0',
-    'AMZN-SEARCHBOT/0.1',
+    'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; ClaudeBot/1.0; +claudebot@anthropic.com)',
+    'Mozilla/5.0 (compatible; Amazonbot/0.1; +https://developer.amazon.com/support/amazonbot)',
     // Blocked on cost, not on what it does with the content: 36% of www
     // requests on 2026-09-10 against 3.6% for real browsers, on the climb-view
     // SSR path. See COST_BLOCKED_CRAWLER_TOKENS in app/lib/crawler-policy.ts.
@@ -72,6 +72,12 @@ describe('blocked crawler origin rejection', () => {
     'facebookexternalhit/1.1',
     'ChatGPT-User/1.0',
     'Claude-User/1.0',
+    // AI search crawlers: they cite pages with a link, so they crawl like a search
+    // engine (2026-11-24). Their training siblings are rejected above.
+    'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; OAI-SearchBot/1.0; +https://openai.com/searchbot',
+    'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Claude-SearchBot/1.0; +searchbot@anthropic.com)',
+    'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)',
+    'Mozilla/5.0 (compatible; Amzn-SearchBot/0.1)',
     'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ChatGPT-User/1.0; +https://openai.com/bot',
     'SentryUptimeBot/1.0 (+http://docs.sentry.io/product/alerts/uptime-monitoring/)',
     'boardsesh-production-smoke/1.0',
@@ -1088,6 +1094,75 @@ describe('middleware forwards the routing pathname header', () => {
     request.headers.set(PATHNAME_HEADER, '/list');
     const response = middleware(request);
     expect(response.headers.get(requestHeader)).toBe(SLUG_VIEW);
+  });
+});
+
+describe('English-only app guide routing', () => {
+  it('keeps a French language preference through an English guide visit and return', () => {
+    const frenchBoards = middleware(makeRequest('/fr/boards'));
+    const frenchPreference = frenchBoards.cookies.get(LOCALE_COOKIE);
+    expect(frenchPreference?.value).toBe('fr');
+
+    const guideAlias = makeRequest('/es/apps/kilter?ref=test&tag=one&tag=two');
+    guideAlias.cookies.set(LOCALE_COOKIE, frenchPreference!.value);
+    const redirect = middleware(guideAlias);
+    expect(redirect.status).toBe(307);
+    expect(redirect.headers.get('location')).toBe('http://localhost:3000/apps/kilter?ref=test&tag=one&tag=two');
+    expect(redirect.headers.has('set-cookie')).toBe(false);
+
+    const englishGuide = makeRequest(redirect.headers.get('location')!);
+    englishGuide.cookies.set(LOCALE_COOKIE, frenchPreference!.value);
+    englishGuide.headers.set(LOCALE_HEADER, 'es');
+    const guide = middleware(englishGuide);
+    expect(guide.status).toBe(200);
+    expect(guide.headers.has('location')).toBe(false);
+    expect(guide.headers.has('x-middleware-rewrite')).toBe(false);
+    expect(guide.headers.has('set-cookie')).toBe(false);
+    expect(guide.headers.get(`x-middleware-request-${LOCALE_HEADER}`)).toBe(DEFAULT_LOCALE);
+    expect(guide.headers.get(`x-middleware-request-${PATHNAME_HEADER}`)).toBe('/apps/kilter');
+
+    const returnToBoards = makeRequest('/boards');
+    returnToBoards.cookies.set(LOCALE_COOKIE, frenchPreference!.value);
+    const localizedReturn = middleware(returnToBoards);
+    expect(localizedReturn.status).toBe(307);
+    expect(localizedReturn.headers.get('location')).toBe('http://localhost:3000/fr/boards');
+    expect(frenchBoards.headers.get(`x-middleware-request-${LOCALE_HEADER}`)).toBe('fr');
+  });
+
+  it.each(['/apps', '/apps/unknown', '/compare/spray-wall-apps'])(
+    'takes /fr%s to its unprefixed route in one redirect, preserving the query',
+    (path) => {
+      const query = '?ref=a%26b&session=unchanged';
+      const alias = makeRequest(`/fr${path}${query}`);
+      alias.cookies.set(LOCALE_COOKIE, 'fr');
+      const redirect = middleware(alias);
+      expect(redirect.status).toBe(307);
+      expect(redirect.headers.get('location')).toBe(`http://localhost:3000${path}${query}`);
+      expect(redirect.headers.has('set-cookie')).toBe(false);
+
+      const canonical = makeRequest(redirect.headers.get('location')!);
+      canonical.cookies.set(LOCALE_COOKIE, 'fr');
+      const response = middleware(canonical);
+      expect(response.headers.has('location')).toBe(false);
+      expect(response.headers.has('set-cookie')).toBe(false);
+      expect(response.headers.get(`x-middleware-request-${PATHNAME_HEADER}`)).toBe(path);
+    },
+  );
+
+  it.each(['/app', '/apps-plus', '/developers/apps', '/compare/spray-wall-apps-other'])(
+    'keeps the normal locale rewrite for /fr%s',
+    (path) => {
+      const response = middleware(makeRequest(`/fr${path}`));
+      expect(response.headers.get('x-middleware-rewrite')).toBe(`http://localhost:3000${path}`);
+      expect(response.cookies.get(LOCALE_COOKIE)?.value).toBe('fr');
+    },
+  );
+
+  it('applies capability privacy headers to a guide alias redirect', () => {
+    const response = middleware(makeRequest('/fr/apps?invite=private'));
+    expect(response.status).toBe(307);
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(response.headers.get('cdn-cache-control')).toBe('no-store');
   });
 });
 

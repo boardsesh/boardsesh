@@ -11,7 +11,15 @@ import { resolveShellStaticAssetUrl } from '@/app/lib/shell-static-asset-url';
  * and `/help`. `sameAs` is a claim of identity, so nothing goes in here that a
  * reader cannot already find on the site.
  */
-const SAME_AS = ['https://github.com/marcodejongh/boardsesh', 'https://discord.gg/YXA8GsXfQK'];
+export const SAME_AS = ['https://github.com/marcodejongh/boardsesh', 'https://discord.gg/YXA8GsXfQK'];
+
+/**
+ * One Organization and one WebSite for the whole site: the homepage defines
+ * them and every other graph (the app guides) points at the same `@id`s, so
+ * Google reads one entity instead of a new one per page.
+ */
+export const ORGANIZATION_ID = absoluteUrl('/#organization');
+export const WEBSITE_ID = absoluteUrl('/#website');
 
 /**
  * `Organization` + `WebSite` for the homepage, as one `@graph`.
@@ -34,6 +42,7 @@ export default async function SiteJsonLd() {
         '@graph': [
           {
             '@type': 'Organization',
+            '@id': ORGANIZATION_ID,
             // Brand name — not translated, per the trademark rules.
             name: SITE_NAME,
             url: siteUrl,
@@ -45,6 +54,7 @@ export default async function SiteJsonLd() {
           },
           {
             '@type': 'WebSite',
+            '@id': WEBSITE_ID,
             name: SITE_NAME,
             url: siteUrl,
             inLanguage: locale,

@@ -6,6 +6,7 @@
   "sprayLabel": "Spraywall",
   "sprayTitle": "La tua Spraywall, con blocchi e diario.",
   "sprayLead": "Scatta una foto. Boardsesh trova le prese, correggi quelle mancanti e il gruppo traccia e registra i blocchi. Gratis per le Spraywall domestiche e in palestra.",
+  "homeSprayPhotoAlt": "Una Spraywall di casa fotografata per Boardsesh, pronta per tracciare blocchi",
   "sprayStep1": "Scatta una foto nitida",
   "sprayStep2": "Controlla le prese",
   "sprayStep3": "Traccia un blocco con il gruppo",
@@ -86,5 +87,8 @@
     "nearbyCount_other": "{{count}} Spraywall entro {{radius}} km",
     "nearbyCapped": "Le {{shown}} più vicine su {{total}} Spraywall",
     "selectedArea": "Spraywall entro {{radius}} km da {{place}}"
-  }
+  },
+  "appGuidesLink": "Guide alle app per pannelli (in inglese)",
+  "boardAppGuideLink": "Compatibilità dell’app con {{board}} (in inglese)",
+  "sprayComparisonLink": "Confronta le app per Spraywall (in inglese)"
 }

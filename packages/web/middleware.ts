@@ -22,6 +22,7 @@ import {
   isSupportedLocale,
 } from './app/lib/i18n/config';
 import { detectLocale } from './app/lib/i18n/detect-locale';
+import { isAppGuidePath } from './app/lib/i18n/published-locales';
 import { isBlockedCrawler, isOriginAutomationDefaultDenyEnabled } from './app/lib/crawler-policy';
 
 // The /api/v1 route families whose first segment is not a board name, so the
@@ -203,9 +204,23 @@ function routeRequest(request: NextRequest) {
     }
   }
 
+  // API routes don't carry a locale prefix. The English-only app guides use
+  // one URL per page and leave the visitor's saved language alone.
+  const isApi = pathname.startsWith('/api/');
+  const { locale, strippedPath, needsRewrite } = isApi
+    ? { locale: DEFAULT_LOCALE, strippedPath: pathname, needsRewrite: false }
+    : detectLocale(pathname);
+  const isAppGuide = isAppGuidePath(strippedPath);
+  if (isAppGuide && needsRewrite) {
+    const target = request.nextUrl.clone();
+    target.pathname = strippedPath;
+    return NextResponse.redirect(target, 307);
+  }
+
   // Backward compat: redirect old ?session= URLs to clean URLs with cookie.
   // The redirect cost (~150ms) is far less than a CDN cache miss (1.3-1.6s).
-  const sessionParam = request.nextUrl.searchParams.get('session');
+  // App guides never host a session. Keep their query intact across the alias.
+  const sessionParam = isAppGuide ? null : request.nextUrl.searchParams.get('session');
   if (sessionParam) {
     const cleanUrl = request.nextUrl.clone();
     cleanUrl.searchParams.delete('session');
@@ -220,13 +235,6 @@ function routeRequest(request: NextRequest) {
     });
     return response;
   }
-
-  // Detect locale from URL prefix. API routes don't carry a locale prefix —
-  // skip them so we don't mangle their paths.
-  const isApi = pathname.startsWith('/api/');
-  const { locale, strippedPath, needsRewrite } = isApi
-    ? { locale: DEFAULT_LOCALE, strippedPath: pathname, needsRewrite: false }
-    : detectLocale(pathname);
 
   // Classify once for the two sticky-locale gates below. Skipped outright for
   // /api/*: the `/api/v1/:path*` and `/api/auth/:path*` matcher entries do
@@ -248,7 +256,7 @@ function routeRequest(request: NextRequest) {
   // names no scraper newer than ~2023, and AhrefsBot, SemrushBot, DataForSeoBot
   // and MJ12bot were all still taking this 307 in production on 2026-08-24. See
   // `app/lib/is-crawler.ts` for the token list and the probe behind it.
-  if (!isApi && locale === DEFAULT_LOCALE && !isCrawler) {
+  if (!isApi && !isAppGuide && locale === DEFAULT_LOCALE && !isCrawler) {
     const cookieLocale = request.cookies.get(LOCALE_COOKIE)?.value;
     if (isSupportedLocale(cookieLocale) && cookieLocale !== DEFAULT_LOCALE) {
       const target = new URL(`/${cookieLocale}${pathname}`, request.url);
