@@ -746,15 +746,16 @@ describe('reads through the executable schema', () => {
     const climbUuid = await saveClimbOn(wall, 'Moved under it', [holdIds[0]]);
     const editId = await openHoldEditDraft(wall);
 
-    // A correction to an inherited hold is the supersede path: the old row is
-    // stamped removed at this draft and a successor gets a new id.
+    // A physical move removes the old position and adds a new one. The lineage
+    // links them without treating the new position as the same climb hold.
+    await removeHold(wall, editId, holdIds[0]);
     const [successor] = (await sprayWallMutations.upsertSprayWallHolds(
       {},
       {
         input: {
           wallUuid: wall.uuid,
           versionId: editId,
-          holds: [{ id: holdIds[0], cx: BASE_HOLDS[0].cx + 30, cy: BASE_HOLDS[0].cy, r: BASE_HOLDS[0].r }],
+          holds: [{ movedFromHoldId: holdIds[0], cx: BASE_HOLDS[0].cx + 30, cy: BASE_HOLDS[0].cy, r: BASE_HOLDS[0].r }],
         },
       },
       ctxFor(OWNER),
@@ -782,6 +783,53 @@ describe('reads through the executable schema', () => {
       [successor.id, BASE_HOLDS[0].cx + 30, holdIds[0]],
     ]);
     expect(successor.movedFromHoldId).toBe(holdIds[0]);
+  });
+
+  it('keeps an existing-ID geometry correction intact through the executable schema', async () => {
+    const { wall, holdIds } = await createPublishedWall(OWNER, { isPublic: true });
+    const climbUuid = await saveClimbOn(wall, 'Refined drawing', [holdIds[0], holdIds[1]]);
+    const editId = await openHoldEditDraft(wall);
+    const [refined] = (await sprayWallMutations.upsertSprayWallHolds(
+      {},
+      {
+        input: {
+          wallUuid: wall.uuid,
+          versionId: editId,
+          holds: [{ id: holdIds[0], cx: BASE_HOLDS[0].cx + 30, cy: BASE_HOLDS[0].cy, r: BASE_HOLDS[0].r }],
+        },
+      },
+      ctxFor(OWNER),
+    )) as Array<{ id: number }>;
+    expect(refined.id).not.toBe(holdIds[0]);
+    const readClimb = () =>
+      run(
+        `query ($layoutId: Int!, $sizeId: Int!, $climbUuid: ID!) {
+        climb(boardName: "spray", layoutId: $layoutId, sizeId: $sizeId, setIds: "1", angle: 40, climbUuid: $climbUuid) {
+          uuid
+          frames
+          missingHoldCount
+          lostHolds { id }
+        }
+      }`,
+        { layoutId: wall.layoutId, sizeId: wall.sizeId, climbUuid },
+      );
+    expect(await readClimb()).toEqual({
+      climb: {
+        uuid: climbUuid,
+        frames: framesFor([holdIds[0], holdIds[1]]),
+        missingHoldCount: 0,
+        lostHolds: [],
+      },
+    });
+    await publishVersion(editId);
+    expect(await readClimb()).toEqual({
+      climb: {
+        uuid: climbUuid,
+        frames: framesFor([refined.id, holdIds[1]]),
+        missingHoldCount: 0,
+        lostHolds: [],
+      },
+    });
   });
 
   it('draws the hold a published hold edit took off, for the remix ghost', async () => {
