@@ -13,6 +13,7 @@ export const quoteIdentifier = (identifier: string) => `"${identifier.replaceAll
 export const BACKEND_ONLY_PARTNER_TABLES: readonly string[] = Object.freeze([
   'partner_developer_emails',
   'partner_connection_notices',
+  'gym_mcp_write_receipts',
   'partner_app_cap_audit',
   'app_workouts',
   'app_workout_requests',

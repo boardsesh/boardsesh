@@ -36,6 +36,7 @@ const READ_ONLY_SCOPES: ReadonlySet<string> = new Set([
   'logbook:read',
   'sessions:read',
   'workouts:read',
+  'gyms:read',
   'offline_access',
 ]);
 
@@ -76,6 +77,12 @@ function ScopeLine({ scope, includesOnlyMeTicks }: ConsentDetails['scopes'][numb
         return t('consent.scopes.workoutsRead');
       case 'workouts:write':
         return t('consent.scopes.workoutsWrite');
+      case 'gyms:read':
+        return t('consent.scopes.gymsRead');
+      case 'gyms:write':
+        return t('consent.scopes.gymsWrite');
+      case 'gyms:access:write':
+        return t('consent.scopes.gymsAccessWrite');
       default:
         return t('consent.scopes.other', { scope });
     }
@@ -170,6 +177,7 @@ function ConsentForm({ view, details, sending, focusTitle, onAnswer }: ConsentFo
   const appName = appDisplayName(details, t('consent.unnamedApp'));
   const publisher = publisherDisplayName(details);
   const readOnly = details.scopes.length > 0 && details.scopes.every(({ scope }) => READ_ONLY_SCOPES.has(scope));
+  const gymAccess = details.scopes.some(({ scope }) => scope.startsWith('gyms:'));
   const headingId = useId();
 
   return (
@@ -184,6 +192,11 @@ function ConsentForm({ view, details, sending, focusTitle, onAnswer }: ConsentFo
             sx={{ overflowWrap: 'anywhere', fontWeight: themeTokens.typography.fontWeight.medium }}
           >
             {t('consent.publisher', { publisher })}
+          </Typography>
+        ) : null}
+        {details.client.identifierHost ? (
+          <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+            {t('consent.clientIdentity', { host: details.client.identifierHost })}
           </Typography>
         ) : null}
         {view.account ? (
@@ -211,6 +224,11 @@ function ConsentForm({ view, details, sending, focusTitle, onAnswer }: ConsentFo
             <ScopeLine key={scope.scope} {...scope} />
           ))}
         </Stack>
+        {gymAccess ? (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+            {t('consent.gymAccess')}
+          </Typography>
+        ) : null}
         {readOnly ? (
           <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
             {t('consent.cannot')}

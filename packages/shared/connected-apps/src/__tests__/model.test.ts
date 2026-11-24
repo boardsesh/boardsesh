@@ -77,6 +77,20 @@ describe('the section', () => {
 });
 
 describe('a row', () => {
+  it('separates gym reads, writes and staff access and explains future gym access', () => {
+    const row = buildConnectedAppRow(
+      app({ scopes: ['gyms:access:write', 'gyms:write', 'gyms:read', 'offline_access'] }),
+      echo,
+      formatters,
+    );
+    expect(row.scopes.map((scope) => scope.label)).toEqual([
+      'settings:integrations.partnerApps.scopes.gymsRead',
+      'settings:integrations.partnerApps.scopes.gymsWrite',
+      'settings:integrations.partnerApps.scopes.gymsAccessWrite',
+      'settings:integrations.partnerApps.scopes.offlineAccess',
+    ]);
+    expect(row.scopes[0].notes).toEqual(['settings:integrations.partnerApps.scopes.gymAccess']);
+  });
   it('describes session access separately from tick and app-owned workout access', () => {
     const row = buildConnectedAppRow(
       app({ scopes: ['offline_access', 'sessions:read', 'logbook:read'] }),

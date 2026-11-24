@@ -602,7 +602,7 @@
     "partnerApps": {
       "title": "有访问权限的应用",
       "empty": "还没有已连接应用。与你的 Boardsesh 账户连接的应用会显示在这里。",
-      "footer": "断开应用后，它将无法读取新内容。此前已复制的内容仍由该应用保留。",
+      "footer": "断开连接会停止应用访问。它已经复制的信息仍会保留在应用中。",
       "gone": "此应用已断开连接。",
       "loadFailed": "无法加载此应用，请检查网络后重试。",
       "retry": "重试",
@@ -613,7 +613,7 @@
       "lastUsed": "上次使用于 {{time}}",
       "lastUsedRecently": "最近一小时内使用过",
       "notUsedYet": "尚未使用",
-      "suspended": "Boardsesh 已暂停此应用，它目前无法读取任何内容。",
+      "suspended": "Boardsesh 已暂停此应用。它目前无法访问你的账号。",
       "suspendedShort": "已被 Boardsesh 暂停",
       "scopes": {
         "logbookRead": "查看你在所有训练板上的每条攀爬记录",
@@ -625,7 +625,11 @@
         "other": "其他权限：{{scope}}",
         "workoutsRead": "读取此应用制定的训练的结果",
         "workoutsWrite": "为你制定和取消训练",
-        "sessionsRead": "可读取你已完成的攀爬活动、私密总结笔记和完整训练内容，包括来自其他应用的训练"
+        "sessionsRead": "可读取你已完成的攀爬活动、私密总结笔记和完整训练内容，包括来自其他应用的训练",
+        "gymsRead": "读取你能管理的岩馆，包括训练板、成员和活动报告",
+        "gymsWrite": "在你当前权限范围内更新岩馆、训练板、屏幕和讨论",
+        "gymsAccessWrite": "在当前角色允许的范围内更改工作人员访问权限",
+        "gymAccess": "访问范围包括你现在能管理的所有岩馆，以及以后获得管理权限的岩馆。失去岩馆角色后，相应访问权限也会终止。"
       },
       "disconnect": "断开连接",
       "disconnectA11y": "断开 {{app}}",

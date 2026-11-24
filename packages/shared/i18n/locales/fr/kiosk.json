@@ -461,6 +461,17 @@
     "comments": {
       "intro": "Réponds au fil de commentaires de ta salle sans quitter la console.",
       "heading": "Ce que dit ton crew"
+    },
+    "aiAssistants": {
+      "title": "Assistants IA",
+      "body": "Gère tes salles avec ChatGPT ou Claude. Connecte ton compte Boardsesh une seule fois.",
+      "connect": "Connecter un assistant",
+      "connections": "Gérer les connexions",
+      "checking": "Vérification des connexions…",
+      "connected": "Un assistant est connecté",
+      "paused": "L’accès de l’assistant est en pause",
+      "notConnected": "Aucun assistant connecté pour le moment",
+      "statusUnavailable": "Vérifie tes connexions dans les paramètres"
     }
   },
   "branding": {

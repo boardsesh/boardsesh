@@ -27,6 +27,7 @@ vi.mock('next-auth/react', () => ({
 // test can prove the checklist was relocated INTO the Overview surface without
 // dragging in that machinery.
 vi.mock('../gym-welcome-card', () => ({ default: () => <div data-testid="welcome-card" /> }));
+vi.mock('../gym-ai-assistants-card', () => ({ default: () => <div data-testid="ai-assistants-card" /> }));
 
 // EmbedCodeDialog's Copy button uses the snackbar; stub the provider so opening
 // the dialog doesn't need a real one.
@@ -54,10 +55,10 @@ function makeGym(overrides: Partial<Gym> = {}): Gym {
   } as unknown as Gym;
 }
 
-function renderTab(gym: Gym) {
+function renderTab(gym: Gym, aiAssistantsAvailable = false) {
   return render(
     <QueryClientProvider client={createTestQueryClient()}>
-      <OverviewTab gym={gym} />
+      <OverviewTab gym={gym} aiAssistantsAvailable={aiAssistantsAvailable} />
     </QueryClientProvider>,
   );
 }
@@ -68,6 +69,15 @@ beforeEach(() => {
 });
 
 describe('OverviewTab', () => {
+  it('keeps assistant setup hidden until the backend enables it', () => {
+    renderTab(makeGym());
+    expect(screen.queryByTestId('ai-assistants-card')).toBeNull();
+  });
+
+  it('shows assistant setup once the backend enables it', () => {
+    renderTab(makeGym(), true);
+    expect(screen.getByTestId('ai-assistants-card')).toBeTruthy();
+  });
   it('deep-links each quick link to its manage tab', async () => {
     renderTab(makeGym());
 

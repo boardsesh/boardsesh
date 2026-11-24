@@ -62,7 +62,13 @@ function roleChipLabel(t: TFunction, role: GymRoleKind): string {
   }
 }
 
-export default function ManageGymContent({ initialGym }: { initialGym: Gym }) {
+export default function ManageGymContent({
+  initialGym,
+  aiAssistantsAvailable = false,
+}: {
+  initialGym: Gym;
+  aiAssistantsAvailable?: boolean;
+}) {
   const { t } = useTranslation('kiosk');
   const [gym, setGym] = useState<Gym>(initialGym);
   const searchParams = useSearchParams();
@@ -207,7 +213,7 @@ export default function ManageGymContent({ initialGym }: { initialGym: Gym }) {
         <Tab value="comments" label={t('manage.tabs.comments')} sx={{ textTransform: 'none' }} />
       </Tabs>
 
-      {activeTab === 'overview' && <OverviewTab gym={gym} />}
+      {activeTab === 'overview' && <OverviewTab gym={gym} aiAssistantsAvailable={aiAssistantsAvailable} />}
       {activeTab === 'kiosks' && <KiosksTab gym={gym} onGymChange={setGym} onDirtyChange={setIsActiveTabDirty} />}
       {activeTab === 'insights' && <InsightsTab gym={gym} onGymChange={setGym} />}
       {activeTab === 'branding' && <BrandingTab gym={gym} onGymChange={setGym} onDirtyChange={setIsActiveTabDirty} />}

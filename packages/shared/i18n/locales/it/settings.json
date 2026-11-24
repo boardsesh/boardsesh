@@ -602,7 +602,7 @@
     "partnerApps": {
       "title": "App con accesso",
       "empty": "Ancora nessuna app collegata. Le app che colleghi al tuo account Boardsesh compaiono qui.",
-      "footer": "Un’app scollegata non legge più niente di nuovo. Quello che ha già copiato resta nell’app.",
+      "footer": "Scollegare un’app interrompe il suo accesso. Ciò che ha già copiato rimane nell’app.",
       "gone": "Questa app non è più collegata.",
       "loadFailed": "Impossibile caricare questa app. Controlla la connessione e riprova.",
       "retry": "Riprova",
@@ -613,7 +613,7 @@
       "lastUsed": "Ultimo uso {{time}}",
       "lastUsedRecently": "Usata nell’ultima ora",
       "notUsedYet": "Non ancora usata",
-      "suspended": "Boardsesh ha messo in pausa questa app. Per ora non può leggere niente.",
+      "suspended": "Boardsesh ha messo in pausa questa app. Al momento non può accedere al tuo account.",
       "suspendedShort": "Messa in pausa da Boardsesh",
       "scopes": {
         "logbookRead": "Vede ogni salita del tuo diario, su ogni pannello",
@@ -625,7 +625,11 @@
         "other": "Altro accesso: {{scope}}",
         "workoutsRead": "Leggere i risultati degli allenamenti di questa app",
         "workoutsWrite": "Pianificare e annullare i tuoi allenamenti",
-        "sessionsRead": "Legge le tue sessioni completate, le note private del riepilogo e gli allenamenti completi, inclusi quelli di altre app"
+        "sessionsRead": "Legge le tue sessioni completate, le note private del riepilogo e gli allenamenti completi, inclusi quelli di altre app",
+        "gymsRead": "Leggere le palestre che puoi gestire, inclusi pannelli, membri e rapporti di attività",
+        "gymsWrite": "Aggiornare palestre, pannelli, schermi e discussioni secondo i tuoi permessi attuali",
+        "gymsAccessWrite": "Modificare gli accessi dello staff dove il tuo ruolo attuale lo consente",
+        "gymAccess": "L’accesso comprende tutte le palestre che puoi gestire ora e quelle che gestirai in futuro. Se perdi un ruolo, perdi quell’accesso."
       },
       "disconnect": "Scollega",
       "disconnectA11y": "Scollega {{app}}",

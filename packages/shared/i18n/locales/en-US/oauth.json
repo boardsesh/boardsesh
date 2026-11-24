@@ -69,7 +69,10 @@
       "other": "Other access: {{scope}}",
       "workoutsRead": "Read the results of workouts this app planned",
       "workoutsWrite": "Plan and cancel workouts for you",
-      "sessionsRead": "Read your completed sessions, private recap notes and full workouts, including workouts from other apps"
+      "sessionsRead": "Read your completed sessions, private recap notes and full workouts, including workouts from other apps",
+      "gymsRead": "Read the gyms you can manage, including their boards, members and activity reports",
+      "gymsWrite": "Update your gyms, boards, TVs and discussions within your current permissions",
+      "gymsAccessWrite": "Change staff access where your current role allows it"
     },
     "cannot": "It can't change anything in your account, and it never sees your password.",
     "notReviewed": "Boardsesh hasn't reviewed this app. Only connect apps you trust.",
@@ -122,6 +125,8 @@
       "title": "That didn't work",
       "body": "Nothing was shared. Try again, or go back to the app and connect again."
     },
-    "tryAgain": "Try again"
+    "tryAgain": "Try again",
+    "gymAccess": "Access covers every gym you can manage now and any you manage later. Losing a gym role removes that access.",
+    "clientIdentity": "Client identity: {{host}}"
   }
 }

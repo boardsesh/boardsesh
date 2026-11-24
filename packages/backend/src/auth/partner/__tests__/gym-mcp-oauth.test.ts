@@ -1,0 +1,288 @@
+import { randomUUID } from 'node:crypto';
+import { and, eq } from 'drizzle-orm';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
+import {
+  gymMcpWriteReceipts,
+  oauthAppPolicy,
+  oauthClient,
+  oauthClientResource,
+  oauthMcpClientPolicy,
+} from '@boardsesh/db/schema/auth';
+import { db } from '../../../db/client';
+import { createPartnerAuthorityRuntime, type PartnerAuthorityRuntime } from '../authority';
+import { createGymMcpClientDiscovery } from '../gym-mcp-clients';
+import { createPartnerDatabaseHandle } from '../transaction';
+import { disconnectPartnerConnection } from '../connection';
+import * as runtimeLoader from '../load-authority';
+import { sweepGymMcpReceiptPayloads } from '../../../services/gym-mcp-receipt-retention';
+import { withGymMcpWrite } from '../../../mcp/gyms/auth';
+import {
+  createPartnerTestEnvironment,
+  testSessionBridge,
+  TEST_CONFIGURATION,
+  TEST_RESOURCE,
+  TEST_SESSION_HEADER,
+  type PartnerTestEnvironment,
+  type TestClient,
+} from './partner-fixture';
+import { GYM_MCP_RESOURCE, GYM_MCP_SCOPES } from '../../../mcp/gyms/configuration';
+
+const CLIENT_ID = 'https://assistant.example/oauth/gym-client.json';
+const REDIRECT_URI = 'https://assistant.example/callback';
+
+describe('hosted gym OAuth boundaries', () => {
+  let environment: PartnerTestEnvironment;
+  let runtime: PartnerAuthorityRuntime;
+  beforeAll(async () => {
+    environment = await createPartnerTestEnvironment();
+    const clients = createGymMcpClientDiscovery(environment.database, {
+      fetchMetadata: async () =>
+        Response.json({
+          client_id: CLIENT_ID,
+          client_name: 'Gym assistant',
+          redirect_uris: [REDIRECT_URI],
+          token_endpoint_auth_method: 'none',
+          grant_types: ['authorization_code', 'refresh_token'],
+          response_types: ['code'],
+        }),
+    });
+    runtime = await createPartnerAuthorityRuntime(
+      environment.database,
+      {
+        ...TEST_CONFIGURATION,
+        gymMcp: { mode: 'on', pilotUserIds: [] },
+      },
+      {
+        close: async () => {},
+        logbook: { feed: db, snapshots: db },
+        gymMcpClients: clients,
+        plugins: [testSessionBridge(createPartnerDatabaseHandle(environment.database))],
+      },
+    );
+  });
+  afterAll(async () => {
+    await environment?.close();
+  });
+  const target = { handler: (request: Request) => runtime.handleRequest(request) };
+
+  async function issueGymTokens() {
+    const owner = await environment.createClimber();
+    const client: TestClient = { clientId: CLIENT_ID, redirectUri: REDIRECT_URI, owner, answersConsentScreen: true };
+    const authorization = await environment.authorize(
+      client,
+      { resource: GYM_MCP_RESOURCE, scopes: [...GYM_MCP_SCOPES] },
+      target,
+    );
+    const issued = await environment.exchange(client, authorization, target, { resource: GYM_MCP_RESOURCE });
+    expect(issued.response.status, JSON.stringify(issued.body)).toBe(200);
+    expect(issued.body.access_token).toEqual(expect.any(String));
+    return { client, issued: issued.body, owner };
+  }
+
+  it('discovers public clients with server-owned policy and only the gym audience', async () => {
+    const { issued } = await issueGymTokens();
+    const [client] = await db.select().from(oauthClient).where(eq(oauthClient.clientId, CLIENT_ID));
+    expect(client.userId).toBeNull();
+    expect(client.clientDiscoveryId).toBe('cimd');
+    expect(client.scopes?.sort()).toEqual([...GYM_MCP_SCOPES].sort());
+    expect(client.tokenEndpointAuthMethod).toBe('none');
+    expect(client.requirePKCE).toBe(true);
+    const links = await db.select().from(oauthClientResource).where(eq(oauthClientResource.clientId, CLIENT_ID));
+    expect(links.map((link) => link.resourceId)).toEqual([GYM_MCP_RESOURCE]);
+    expect(
+      await db.select().from(oauthMcpClientPolicy).where(eq(oauthMcpClientPolicy.clientId, CLIENT_ID)),
+    ).toHaveLength(1);
+    expect(await db.select().from(oauthAppPolicy).where(eq(oauthAppPolicy.clientId, CLIENT_ID))).toHaveLength(0);
+    expect((await runtime.gymMcpApi!.authenticate(issued.access_token!)).principal).toBeDefined();
+    expect((await runtime.api.authenticate(issued.access_token!)).refusal).toBe('wrong_audience');
+  });
+
+  it('leaves managed training registrations and their token audience unchanged', async () => {
+    const owner = await environment.createClimber();
+    const registration = await runtime.authority.api.adminCreateOAuthClient({
+      headers: new Headers({ [TEST_SESSION_HEADER]: owner.sessionToken }),
+      body: {
+        client_name: 'Training app',
+        redirect_uris: [`https://training.example/callback/${randomUUID()}`],
+        token_endpoint_auth_method: 'none',
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+        scope: 'profile:read logbook:read offline_access',
+        resources: [TEST_RESOURCE],
+        require_pkce: true,
+      },
+    });
+    const [client] = await db.select().from(oauthClient).where(eq(oauthClient.clientId, registration.client_id));
+    expect(client.scopes).toEqual(['profile:read', 'logbook:read', 'offline_access']);
+    const links = await db
+      .select()
+      .from(oauthClientResource)
+      .where(eq(oauthClientResource.clientId, registration.client_id));
+    expect(links.map((link) => link.resourceId)).toEqual([TEST_RESOURCE]);
+    const trainingClient = await environment.createClient({ publicClient: true });
+    const trainingTokens = await environment.issueTokens(trainingClient);
+    expect((await runtime.gymMcpApi!.authenticate(trainingTokens.access_token)).refusal).toBe('wrong_audience');
+  });
+
+  it('refuses a gym client asking for training scopes or another resource', async () => {
+    const owner = await environment.createClimber();
+    const client: TestClient = { clientId: CLIENT_ID, redirectUri: REDIRECT_URI, owner };
+    const wrongScope = await environment.authorize(
+      client,
+      { resource: GYM_MCP_RESOURCE, scopes: ['logbook:read'] },
+      target,
+    );
+    expect(wrongScope.response.status).toBe(403);
+    const wrongAudience = await environment.authorize(
+      client,
+      { resource: TEST_RESOURCE, scopes: ['gyms:read'] },
+      target,
+    );
+    expect(wrongAudience.response.status).toBe(403);
+  });
+
+  it('shows the verified client hostname on consent and refuses users outside the pilot', async () => {
+    const owner = await environment.createClimber();
+    const client: TestClient = { clientId: CLIENT_ID, redirectUri: REDIRECT_URI, owner };
+    const authorization = await environment.authorize(
+      client,
+      { resource: GYM_MCP_RESOURCE, scopes: [...GYM_MCP_SCOPES] },
+      target,
+    );
+    expect(authorization.location).toEqual(expect.stringContaining('/oauth/consent?'));
+    const detailsResponse = await runtime.handleRequest(
+      new Request(`${TEST_CONFIGURATION.issuer}/oauth2/consent-details`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: TEST_CONFIGURATION.webOrigin,
+          [TEST_SESSION_HEADER]: owner.sessionToken,
+        },
+        body: JSON.stringify({ oauth_query: new URL(authorization.location!).searchParams.toString() }),
+      }),
+    );
+    expect(detailsResponse.status).toBe(200);
+    const details: unknown = await detailsResponse.json();
+    expect(details).toEqual(
+      expect.objectContaining({
+        client: expect.objectContaining({
+          identifierHost: 'assistant.example',
+          serverManaged: true,
+          publisherName: null,
+        }),
+      }),
+    );
+    const pilotClients = createGymMcpClientDiscovery(environment.database, {
+      fetchMetadata: async () =>
+        Response.json({ client_id: CLIENT_ID, client_name: 'Gym assistant', redirect_uris: [REDIRECT_URI] }),
+    });
+    const pilotRuntime = await createPartnerAuthorityRuntime(
+      environment.database,
+      {
+        ...TEST_CONFIGURATION,
+        gymMcp: { mode: 'pilot', pilotUserIds: [] },
+      },
+      {
+        close: async () => {},
+        logbook: { feed: db, snapshots: db },
+        gymMcpClients: pilotClients,
+        plugins: [testSessionBridge(createPartnerDatabaseHandle(environment.database))],
+      },
+    );
+    const refused = await environment.authorize(
+      client,
+      { resource: GYM_MCP_RESOURCE, scopes: ['gyms:read'] },
+      { handler: (request) => pilotRuntime.handleRequest(request) },
+    );
+    expect(refused.response.status).toBe(403);
+  });
+
+  it('keeps refresh rotation and immediate disconnect for discovered clients', async () => {
+    const { client, issued, owner } = await issueGymTokens();
+    const refreshed = await environment.refresh(client, issued.refresh_token!, target);
+    expect(refreshed.response.status, JSON.stringify(refreshed.body)).toBe(200);
+    expect(refreshed.body.refresh_token).not.toBe(issued.refresh_token);
+    const accessToken = refreshed.body.access_token!;
+    expect((await runtime.gymMcpApi!.authenticate(accessToken)).principal).toBeDefined();
+    await disconnectPartnerConnection(environment.database, {
+      userId: owner.userId,
+      clientId: CLIENT_ID,
+      reason: 'climber_disconnect',
+    });
+    expect((await runtime.gymMcpApi!.authenticate(accessToken)).principal).toBeUndefined();
+    const afterDisconnect = await environment.refresh(client, refreshed.body.refresh_token!, target);
+    expect(afterDisconnect.body.error).toBe('invalid_grant');
+    expect(
+      await db
+        .select()
+        .from(oauthClient)
+        .where(and(eq(oauthClient.clientId, CLIENT_ID), eq(oauthClient.disabled, false))),
+    ).toHaveLength(1);
+  });
+
+  it('blocks already issued credentials when the server-owned client policy is suspended', async () => {
+    const { issued } = await issueGymTokens();
+    await db
+      .update(oauthMcpClientPolicy)
+      .set({ suspendedAt: new Date() })
+      .where(eq(oauthMcpClientPolicy.clientId, CLIENT_ID));
+    try {
+      expect((await runtime.gymMcpApi!.authenticate(issued.access_token!)).refusal).toBe('client_disabled');
+    } finally {
+      await db
+        .update(oauthMcpClientPolicy)
+        .set({ suspendedAt: null })
+        .where(eq(oauthMcpClientPolicy.clientId, CLIENT_ID));
+    }
+  });
+
+  it('commits retry receipts once, rejects revoked writes, and retains expired-key tombstones', async () => {
+    const { issued, owner } = await issueGymTokens();
+    const principal = (await runtime.gymMcpApi!.authenticate(issued.access_token!)).principal!;
+    const runtimeMock = vi.spyOn(runtimeLoader, 'loadPartnerAuthority').mockResolvedValue(runtime);
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'open');
+    vi.stubEnv('GYM_MCP_MODE', 'on');
+    try {
+      const { executeGymMcpWriteAction } = await import('../../../mcp/gyms/dispatch');
+      const arguments_ = { idempotencyKey: randomUUID(), gymUuid: randomUUID() };
+      const work = vi.fn(async () => ({ accepted: true }));
+      expect(await executeGymMcpWriteAction(principal, 'test_action', arguments_, 'gyms:write', work)).toEqual({
+        accepted: true,
+      });
+      expect(await executeGymMcpWriteAction(principal, 'test_action', arguments_, 'gyms:write', work)).toEqual({
+        accepted: true,
+      });
+      expect(work).toHaveBeenCalledTimes(1);
+      await expect(
+        executeGymMcpWriteAction(principal, 'different_action', arguments_, 'gyms:write', work),
+      ).rejects.toMatchObject({ extensions: { code: 'IDEMPOTENCY_CONFLICT' } });
+      await db
+        .update(gymMcpWriteReceipts)
+        .set({ expiresAt: new Date(Date.now() - 1000) })
+        .where(eq(gymMcpWriteReceipts.idempotencyKey, arguments_.idempotencyKey));
+      expect(await sweepGymMcpReceiptPayloads()).toBe(1);
+      const [tombstone] = await db
+        .select()
+        .from(gymMcpWriteReceipts)
+        .where(eq(gymMcpWriteReceipts.idempotencyKey, arguments_.idempotencyKey));
+      expect(tombstone.result).toBeNull();
+      expect(tombstone.operationName).toBe('test_action');
+      expect(tombstone.inputHash).toEqual(expect.any(String));
+      await expect(
+        executeGymMcpWriteAction(principal, 'test_action', arguments_, 'gyms:write', work),
+      ).rejects.toMatchObject({ extensions: { code: 'IDEMPOTENCY_EXPIRED' } });
+      expect(work).toHaveBeenCalledTimes(1);
+      await disconnectPartnerConnection(environment.database, {
+        userId: owner.userId,
+        clientId: CLIENT_ID,
+        reason: 'climber_disconnect',
+      });
+      await expect(withGymMcpWrite(principal, 'gyms:write', async () => 'unreachable')).rejects.toMatchObject({
+        extensions: { code: 'UNAUTHENTICATED' },
+      });
+    } finally {
+      runtimeMock.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  }, 30_000);
+});

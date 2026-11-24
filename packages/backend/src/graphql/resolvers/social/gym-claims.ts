@@ -3,7 +3,7 @@ import { eq, ne, gt, gte, or, and, isNull, desc, asc, count, sql, inArray, lte }
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { isClaimableDomain, emailDomainMatchesWebsite, GYM_RUN_BY_STAFF_CODE } from '@boardsesh/gym-claim';
-import { db } from '../../../db/client';
+import { db, deferDatabaseEffect } from '../../../db/client';
 import { afterCommit, transactionWithAfterCommit, type DbTransaction } from '../../../db/after-commit';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
@@ -1153,23 +1153,27 @@ export const socialGymClaimMutations = {
         expiresAt: new Date(Date.now() + CLAIM_TOKEN_TTL_MS),
       });
 
-      try {
-        await sendGymClaimVerificationEmail(validatedInput.claimEmail, token, gym.name, claimantName);
-      } catch (error) {
-        // The token row is already committed; if the send fails (SMTP down),
-        // drop it so a retry isn't blocked by the dedup check for 24h.
-        await db
-          .delete(dbSchema.gymClaims)
-          .where(
-            and(
-              eq(dbSchema.gymClaims.gymId, gym.id),
-              eq(dbSchema.gymClaims.claimantUserId, userId),
-              eq(dbSchema.gymClaims.status, 'pending'),
-              eq(dbSchema.gymClaims.method, 'domain'),
-            ),
-          );
-        throw error;
-      }
+      await deferDatabaseEffect(async () => {
+        try {
+          await sendGymClaimVerificationEmail(validatedInput.claimEmail!, token, gym.name, claimantName);
+        } catch (error) {
+          // A delegated mutation may still roll back after this resolver
+          // returns. Send only after its commit and remove only this token on
+          // delivery failure, never a newer retry's replacement claim.
+          await db
+            .delete(dbSchema.gymClaims)
+            .where(
+              and(
+                eq(dbSchema.gymClaims.gymId, gym.id),
+                eq(dbSchema.gymClaims.claimantUserId, userId),
+                eq(dbSchema.gymClaims.status, 'pending'),
+                eq(dbSchema.gymClaims.method, 'domain'),
+                eq(dbSchema.gymClaims.tokenHash, hashClaimToken(token)),
+              ),
+            );
+          throw error;
+        }
+      });
       return { status: 'email_sent', email: validatedInput.claimEmail };
     }
 
@@ -1205,13 +1209,15 @@ export const socialGymClaimMutations = {
       return { status: 'approved' };
     }
 
-    await notifyAdminOfQueuedClaim({
-      gymName: gym.name,
-      gymUuid: gym.uuid,
-      claimantName,
-      message: validatedInput.message ?? null,
-      pendingClaimCount: otherPendingClaims + 1,
-    });
+    await deferDatabaseEffect(() =>
+      notifyAdminOfQueuedClaim({
+        gymName: gym.name,
+        gymUuid: gym.uuid,
+        claimantName,
+        message: validatedInput.message ?? null,
+        pendingClaimCount: otherPendingClaims + 1,
+      }),
+    );
 
     return { status: 'admin_review' };
   },

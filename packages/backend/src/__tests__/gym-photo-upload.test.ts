@@ -5,7 +5,8 @@ import { once } from 'node:events';
 import { access, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { v4 as uuidv4 } from 'uuid';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
+import { gymMembers, gyms } from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 
 const validateTokenMock = vi.hoisted(() => vi.fn());
@@ -18,6 +19,8 @@ const { db } = await import('../db/client');
 const { handleGymPhotoUpload, handleGymPhotoDelete, getGymPhotosDir } = await import('../handlers/gym-photos');
 const { socialGymQueries, socialGymMutations } = await import('../graphql/resolvers/social/gyms');
 const { reencodeUploadedImage } = await import('../lib/image-resize');
+const { storeVersionedGymImage, removeVersionedGymImage } = await import('../services/gym-image-storage');
+const { runWithDatabaseTransaction } = await import('../db/client');
 const { APPENDED_PAYLOAD_MARKER, overPixelCapPng, smallJpeg, withAppendedPayload } =
   await import('./helpers/upload-images');
 
@@ -30,8 +33,9 @@ const { APPENDED_PAYLOAD_MARKER, overPixelCapPng, smallJpeg, withAppendedPayload
  */
 
 const OWNER = 'gp-owner';
+const EDITOR = 'gp-editor';
 const RANDOM = 'gp-random';
-const ALL_USERS = [OWNER, RANDOM];
+const ALL_USERS = [OWNER, EDITOR, RANDOM];
 
 // A real JPEG: the handler stores sharp's re-encode, so bytes sharp cannot
 // read are refused.
@@ -253,6 +257,61 @@ describe('POST /api/gym-photos', () => {
 });
 
 describe('DELETE /api/gym-photos', () => {
+  it('allows concurrent editor removals without requiring extra pool connections', async () => {
+    validateTokenMock.mockResolvedValue({ userId: EDITOR });
+    const [gym] = await db.select({ id: gyms.id }).from(gyms).where(eq(gyms.uuid, gymUuid)).limit(1);
+    await db.insert(gymMembers).values({ gymId: gym!.id, userId: EDITOR, role: 'editor' });
+    const { baseUrl, server } = await startPhotoServer();
+    try {
+      const responses = await Promise.all(
+        Array.from({ length: 5 }, () => deletePhoto(baseUrl, { token: 'editor', gymUuid })),
+      );
+      expect(responses.map((response) => response.status)).toEqual([200, 200, 200, 200, 200]);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('removes an immutable MCP photo through the regular gym delete endpoint', async () => {
+    validateTokenMock.mockResolvedValue({ userId: OWNER });
+    const storedUrl = await storeVersionedGymImage(gymUuid, 'photo', JPEG_BYTES, 'image/jpeg');
+    const storedPath = storedUrl.slice('/static/'.length);
+    const { baseUrl, server } = await startPhotoServer();
+    try {
+      await socialGymMutations.updateGym(null, { input: { gymUuid, imageUrl: storedUrl } }, authCtx(OWNER));
+      expect((await deletePhoto(baseUrl, { token: 'owner', gymUuid })).status).toBe(200);
+      expect((await socialGymQueries.gym(null, { gymUuid }, authCtx(OWNER)))!.imageUrl).toBeNull();
+      await expect(access(storedPath)).rejects.toThrow();
+    } finally {
+      await closeServer(server);
+      await removeVersionedGymImage(gymUuid, 'photo', storedUrl);
+    }
+  });
+
+  it('preserves a live photo when a delegated outer transaction rolls back', async () => {
+    const originalUrl = await storeVersionedGymImage(gymUuid, 'photo', JPEG_BYTES, 'image/jpeg');
+    const replacementUrl = await storeVersionedGymImage(gymUuid, 'photo', JPEG_BYTES, 'image/jpeg');
+    try {
+      await socialGymMutations.updateGym(null, { input: { gymUuid, imageUrl: originalUrl } }, authCtx(OWNER));
+      await expect(
+        runWithDatabaseTransaction(async () => {
+          await socialGymMutations.updateGym(null, { input: { gymUuid, imageUrl: replacementUrl } }, authCtx(OWNER));
+          throw new Error('The mutation receipt could not commit');
+        }),
+      ).rejects.toThrow('mutation receipt');
+      expect((await socialGymQueries.gym(null, { gymUuid }, authCtx(OWNER)))!.imageUrl).toBe(originalUrl);
+      await access(originalUrl.slice('/static/'.length));
+      await runWithDatabaseTransaction(async () => {
+        await socialGymMutations.updateGym(null, { input: { gymUuid, imageUrl: replacementUrl } }, authCtx(OWNER));
+      });
+      await expect(access(originalUrl.slice('/static/'.length))).rejects.toThrow();
+      await access(replacementUrl.slice('/static/'.length));
+    } finally {
+      await removeVersionedGymImage(gymUuid, 'photo', originalUrl);
+      await removeVersionedGymImage(gymUuid, 'photo', replacementUrl);
+    }
+  });
+
   it('reads its query string when the Host header is empty', async () => {
     validateTokenMock.mockResolvedValue({ userId: OWNER });
     const response = { setHeader: vi.fn(), writeHead: vi.fn(), end: vi.fn() };

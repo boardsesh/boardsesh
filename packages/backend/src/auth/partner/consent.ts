@@ -4,7 +4,13 @@ import { APIError, createAuthEndpoint, createAuthMiddleware } from 'better-auth/
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { PARTNER_CONSENT_ERRORS } from '@boardsesh/auth-protocol/partner-oauth';
-import { oauthAppPolicy, oauthClient, oauthConnections, oauthConsentInteractions } from '@boardsesh/db/schema/auth';
+import {
+  oauthAppPolicy,
+  oauthClient,
+  oauthConnections,
+  oauthConsentInteractions,
+  oauthMcpClientPolicy,
+} from '@boardsesh/db/schema/auth';
 import type { PartnerAuthorityConfiguration } from './configuration';
 import { authorizeRedirectTarget } from './fence';
 import {
@@ -48,6 +54,9 @@ export interface PartnerConsentDetails {
     publisherName: string | null;
     /** Where the browser goes after Allow: a host, or a native app's scheme. */
     redirectHost: string | null;
+    /** Metadata origin is verified independently of the assistant's self-asserted name. */
+    identifierHost?: string;
+    serverManaged?: boolean;
   };
   scopes: PartnerConsentScope[];
   /** The climber disconnected this app before; approving connects it again. */
@@ -96,10 +105,11 @@ function signedClientId(oauthQuery: unknown): string | null {
 /** Whether nobody may connect this app now: suspended (`disabled`), or gone. */
 async function appSuspended(transaction: PartnerDatabase, clientId: string): Promise<boolean> {
   const [client] = await transaction
-    .select({ disabled: oauthClient.disabled })
+    .select({ disabled: oauthClient.disabled, mcpSuspendedAt: oauthMcpClientPolicy.suspendedAt })
     .from(oauthClient)
+    .leftJoin(oauthMcpClientPolicy, eq(oauthMcpClientPolicy.clientId, oauthClient.clientId))
     .where(eq(oauthClient.clientId, clientId));
-  return !client || client.disabled === true;
+  return !client || client.disabled === true || Boolean(client.mcpSuspendedAt);
 }
 
 type InteractionCheck =
@@ -292,6 +302,7 @@ export function partnerConsentGuard(
               policy: oauthClient.policy,
               tos: oauthClient.tos,
               disabled: oauthClient.disabled,
+              clientDiscoveryId: oauthClient.clientDiscoveryId,
               publisherName: oauthAppPolicy.publisherName,
             })
             .from(oauthClient)
@@ -307,6 +318,12 @@ export function partnerConsentGuard(
               termsUrl: client.tos,
               publisherName: client.publisherName,
               redirectHost: redirectHost(interaction.query.get('redirect_uri')),
+              ...(client.clientDiscoveryId === 'cimd' && URL.canParse(client.clientId)
+                ? {
+                    identifierHost: new URL(client.clientId).hostname,
+                    serverManaged: true,
+                  }
+                : {}),
             },
             scopes: describeConsentScopes(promptTokens(interaction.query.get('scope') ?? '')),
             reconnect: interaction.reconnect,

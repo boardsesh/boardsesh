@@ -602,7 +602,7 @@
     "partnerApps": {
       "title": "Apps con acceso",
       "empty": "Aún no hay apps conectadas. Las apps que conectes a tu cuenta de Boardsesh aparecen aquí.",
-      "footer": "Una app desconectada deja de leer nada nuevo. Lo que ya copió se queda en esa app.",
+      "footer": "Desconectar una aplicación detiene su acceso. Lo que ya haya copiado permanece en la aplicación.",
       "gone": "Esta app ya no está conectada.",
       "loadFailed": "No se pudo cargar esta app. Revisa tu conexión e inténtalo de nuevo.",
       "retry": "Reintentar",
@@ -613,7 +613,7 @@
       "lastUsed": "Último uso {{time}}",
       "lastUsedRecently": "Usada en la última hora",
       "notUsedYet": "Aún sin usar",
-      "suspended": "Boardsesh pausó esta app. Ahora mismo no puede leer nada.",
+      "suspended": "Boardsesh ha pausado esta aplicación. Ahora no puede acceder a tu cuenta.",
       "suspendedShort": "Pausada por Boardsesh",
       "scopes": {
         "logbookRead": "Ve todos los registros de tu logbook, en todos los plafones",
@@ -625,7 +625,11 @@
         "other": "Otro acceso: {{scope}}",
         "workoutsRead": "Leer los resultados de los entrenamientos de esta app",
         "workoutsWrite": "Planificar y cancelar tus entrenamientos",
-        "sessionsRead": "Lee tus sesiones completadas, notas privadas del resumen y entrenamientos completos, incluidos los de otras aplicaciones"
+        "sessionsRead": "Lee tus sesiones completadas, notas privadas del resumen y entrenamientos completos, incluidos los de otras aplicaciones",
+        "gymsRead": "Leer los rocódromos que puedes gestionar, incluidos sus plafones, miembros e informes de actividad",
+        "gymsWrite": "Actualizar tus rocódromos, plafones, pantallas y conversaciones según tus permisos actuales",
+        "gymsAccessWrite": "Cambiar el acceso del personal donde tu rol actual lo permita",
+        "gymAccess": "El acceso incluye todos los rocódromos que puedes gestionar ahora y los que gestiones más adelante. Si pierdes un rol, pierdes ese acceso."
       },
       "disconnect": "Desconectar",
       "disconnectA11y": "Desconectar {{app}}",

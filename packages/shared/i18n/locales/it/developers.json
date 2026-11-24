@@ -472,5 +472,49 @@
       "pending": "In attesa"
     },
     "rotationAvailableAfter": "Puoi ruotare di nuovo il segreto dopo {{time}}."
+  },
+  "gymMcp": {
+    "title": "Gestisci le tue palestre con un assistente IA",
+    "lead": "Collega ChatGPT o Claude a Boardsesh per consultare l’attività e gestire la palestra da una conversazione.",
+    "availability": "L’accesso viene attivato per fasi. Se il tuo account non può ancora collegarsi, continua con Gestisci palestra e riprova quando avrai accesso.",
+    "links": {
+      "gyms": "Trova la tua palestra",
+      "connections": "Gestisci le app collegate",
+      "support": "Ricevi aiuto per collegarti"
+    },
+    "setup": {
+      "title": "Collega il tuo assistente",
+      "endpoint": "URL del server MCP ospitato",
+      "copy": "Copia l’URL del server",
+      "copied": "URL del server copiato",
+      "copyFailed": "Copia non riuscita. Seleziona l’URL qui sopra e copialo.",
+      "steps": {
+        "add": "Aggiungi un server MCP remoto personalizzato nei plugin di ChatGPT o nei connettori di Claude.",
+        "paste": "Incolla l’URL. Scegli OAuth e l’opzione dell’identità pubblicata del client.",
+        "signIn": "Accedi a Boardsesh e controlla i permessi prima di consentire l’accesso.",
+        "try": "Apri una conversazione con il connettore e chiedi quali palestre puoi gestire."
+      },
+      "requirements": "Non devi installare nulla o registrare un’app sviluppatore. Il tuo account e spazio di lavoro devono consentire connessioni MCP personalizzate. Impostazioni e piani disponibili dipendono dal fornitore.",
+      "chatgptGuide": "Guida al collegamento di ChatGPT",
+      "claudeGuide": "Guida al collegamento di Claude"
+    },
+    "access": {
+      "title": "Cosa può fare il tuo assistente",
+      "gyms": "Un collegamento comprende tutte le palestre che il tuo account Boardsesh può gestire, incluse quelle a cui accederai in futuro. Il tuo ruolo attuale limita ogni azione.",
+      "actions": "Leggere rapporti di attività, modificare profilo e immagine della palestra, gestire pannelli e schermi, rispondere ai commenti e gestire gli accessi consentiti dello staff.",
+      "approvals": "Controlla le richieste di modifica prima di approvarle nell’assistente. È l’assistente a decidere quando chiedere l’approvazione; Boardsesh verifica i tuoi permessi attuali per ogni operazione.",
+      "privacy": "I risultati degli strumenti vengono condivisi con l’assistente che scegli. Inserisci la password di Boardsesh solo nella pagina di accesso di Boardsesh."
+    },
+    "examples": {
+      "title": "Prova una richiesta",
+      "activity": "«Mostrami l’attività degli ultimi 30 giorni della mia palestra, inclusi i limiti di copertura».",
+      "tv": "«Crea uno schermo TV con i nostri pannelli Kilter e Tension».",
+      "profile": "«Aggiorna la descrizione della palestra: il sabato apriamo alle 8».",
+      "photos": "Per una foto o un logo, fornisci un URL HTTPS pubblico dell’immagine. Puoi anche caricare un file dalla scheda del profilo o dell’immagine della palestra."
+    },
+    "disconnect": {
+      "title": "Interrompi l’accesso dell’assistente",
+      "body": "Apri le impostazioni, trova l’assistente nelle App collegate e scegli Scollega. Le richieste successive non funzioneranno più. Le informazioni già condivise rimangono all’assistente."
+    }
   }
 }

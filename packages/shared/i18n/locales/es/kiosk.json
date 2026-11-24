@@ -461,6 +461,17 @@
     "comments": {
       "intro": "Responde al hilo de comentarios de tu rocódromo sin salir de la consola.",
       "heading": "Lo que dice tu equipo"
+    },
+    "aiAssistants": {
+      "title": "Asistentes de IA",
+      "body": "Gestiona tus rocódromos con ChatGPT o Claude. Conecta tu cuenta de Boardsesh una sola vez.",
+      "connect": "Conecta un asistente",
+      "connections": "Gestiona las conexiones",
+      "checking": "Comprobando las conexiones…",
+      "connected": "Hay un asistente conectado",
+      "paused": "El acceso del asistente está en pausa",
+      "notConnected": "Aún no hay ningún asistente conectado",
+      "statusUnavailable": "Comprueba tus conexiones en Ajustes"
     }
   },
   "branding": {

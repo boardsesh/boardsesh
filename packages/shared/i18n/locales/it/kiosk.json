@@ -461,6 +461,17 @@
     "comments": {
       "intro": "Rispondi al thread dei commenti della tua palestra senza uscire dalla console.",
       "heading": "Cosa dice la tua crew"
+    },
+    "aiAssistants": {
+      "title": "Assistenti IA",
+      "body": "Gestisci le tue palestre con ChatGPT o Claude. Collega il tuo account Boardsesh una sola volta.",
+      "connect": "Collega un assistente",
+      "connections": "Gestisci i collegamenti",
+      "checking": "Controllo dei collegamenti…",
+      "connected": "Un assistente è collegato",
+      "paused": "L’accesso dell’assistente è in pausa",
+      "notConnected": "Nessun assistente ancora collegato",
+      "statusUnavailable": "Controlla i collegamenti nelle impostazioni"
     }
   },
   "branding": {

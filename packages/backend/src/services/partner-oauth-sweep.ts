@@ -14,6 +14,7 @@
 import type { PgBoss } from 'pg-boss';
 import { PARTNER_OAUTH_SWEEP_QUEUE } from '@boardsesh/db/job-queue-schema';
 import { sweepPartnerOAuth } from '../auth/partner/retention';
+import { sweepGymMcpReceiptPayloads } from './gym-mcp-receipt-retention';
 import { db } from '../db/client';
 import { logger } from '../utils/logger';
 
@@ -23,6 +24,9 @@ export const PARTNER_OAUTH_SWEEP_CRON = '34 * * * *';
 /** The body of the sweep job. Throws on an unexpected database error so pg-boss retries. */
 export async function runPartnerOAuthSweep(): Promise<void> {
   const result = await sweepPartnerOAuth(db);
+  const clearedGymPayloads = await sweepGymMcpReceiptPayloads(db);
+  if (clearedGymPayloads > 0)
+    logger.info('[GymMcpSweep] Cleared expired retry payloads', { count: clearedGymPayloads });
   const deletedRows = Object.values(result.counts).reduce((total, count) => total + count, 0);
   // Counts only: never ids, hashes or anything else from a row.
   if (result.busySteps.length > 0) {

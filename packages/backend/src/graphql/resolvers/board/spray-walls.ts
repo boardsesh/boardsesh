@@ -41,7 +41,7 @@ import {
 } from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
 import { rowsFromResult } from '@boardsesh/db/client';
-import { db } from '../../../db/client';
+import { db, queueDatabaseEffect } from '../../../db/client';
 import { transactionWithAfterCommit } from '../../../db/after-commit';
 import { logger } from '../../../utils/logger';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
@@ -1091,6 +1091,7 @@ async function copyWallPhotoToPublicBucket(boardUuid: string, photoKey: string |
  */
 async function deletePublicWallPhoto(key: string | null | undefined): Promise<void> {
   if (!key || !isS3Configured('media')) return;
+  if (queueDatabaseEffect(() => deletePublicWallPhoto(key))) return;
   try {
     await deleteFromS3('media', key);
   } catch (error) {

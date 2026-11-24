@@ -26,6 +26,7 @@ import {
 } from './handlers/request-guard';
 import { createPartnerAuthHandler } from './handlers/partner-auth';
 import { createPublicApiHandler } from './handlers/public-api/router';
+import { createGymMcpHandler } from './mcp/gyms/transport';
 import { handleDatabaseHealthCheck, handleHealthCheck } from './handlers/health';
 import { recordDbConnectRetry } from './services/db-health';
 import { handleSessionJoin } from './handlers/join';
@@ -398,6 +399,7 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
   // Both read PARTNER_OAUTH_MODE once. A request can never change it.
   const handlePartnerAuth = createPartnerAuthHandler();
   const handlePublicApi = createPublicApiHandler();
+  const handleGymMcp = createGymMcpHandler();
 
   /**
    * Custom request handler that routes requests to appropriate handlers
@@ -417,6 +419,7 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       // for everything.
       if (await handlePartnerAuth(req, res)) return;
       if (await handlePublicApi(req, res)) return;
+      if (await handleGymMcp(req, res)) return;
 
       // api.boardsesh.com answers only its own route list, so this stays ahead
       // of every route below.

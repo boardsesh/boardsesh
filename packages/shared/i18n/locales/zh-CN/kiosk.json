@@ -461,6 +461,17 @@
     "comments": {
       "intro": "无需离开管理台，即可回复岩馆的评论。",
       "heading": "伙伴们在说什么"
+    },
+    "aiAssistants": {
+      "title": "AI 助手",
+      "body": "用 ChatGPT 或 Claude 管理岩馆。只需连接一次 Boardsesh 账号。",
+      "connect": "连接助手",
+      "connections": "管理连接",
+      "checking": "正在检查助手连接…",
+      "connected": "已连接 AI 助手",
+      "paused": "助手访问已暂停",
+      "notConnected": "还没有连接助手",
+      "statusUnavailable": "请在设置中检查连接"
     }
   },
   "branding": {

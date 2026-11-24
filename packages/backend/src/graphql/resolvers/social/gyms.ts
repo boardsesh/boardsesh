@@ -58,7 +58,8 @@ import {
   viewerGymManagerRole,
 } from './board-moderation-events';
 import { onGymDetailsEdited, REPORT_FIXING_GYM_FIELDS } from './directory-reports/lifecycle';
-import { transactionWithAfterCommit } from '../../../db/after-commit';
+import { afterCommit, transactionWithAfterCommit } from '../../../db/after-commit';
+import { removeVersionedGymImage } from '../../../services/gym-image-storage';
 
 // ============================================
 // Helpers
@@ -602,16 +603,20 @@ async function hasGymCommunityAccess(gym: GymRow, userId: string, executor: GymA
  * refuse the self-service domain path to anyone who can already edit the gym's
  * `website` — otherwise they could rewrite it and self-verify into ownership.
  */
-export async function userCanEditGym(gym: typeof dbSchema.gyms.$inferSelect, userId: string): Promise<boolean> {
+export async function userCanEditGym(
+  gym: typeof dbSchema.gyms.$inferSelect,
+  userId: string,
+  executor: GymAccessExecutor = db,
+): Promise<boolean> {
   if (gym.ownerId === userId) return true;
-  const [member] = await db
+  const [member] = await executor
     .select({ role: dbSchema.gymMembers.role })
     .from(dbSchema.gymMembers)
     .where(and(eq(dbSchema.gymMembers.gymId, gym.id), eq(dbSchema.gymMembers.userId, userId)))
     .limit(1);
   const role = member?.role as GymMemberRole | undefined;
   if (role === 'admin' || role === 'editor') return true;
-  return hasGymCommunityAccess(gym, userId);
+  return hasGymCommunityAccess(gym, userId, executor);
 }
 
 /**
@@ -824,7 +829,10 @@ export async function requireGymEditAccess(
  * gym admin member, or a community admin/leader covering the gym. Editors are
  * intentionally NOT grantors — write access can't spread itself.
  */
-async function requireGymGrantAccess(gymUuid: string, userId: string): Promise<typeof dbSchema.gyms.$inferSelect> {
+export async function requireGymGrantAccess(
+  gymUuid: string,
+  userId: string,
+): Promise<typeof dbSchema.gyms.$inferSelect> {
   const { gym, isOwner, memberRole } = await loadGymWithMemberRole(gymUuid, userId);
   if (isOwner || memberRole === 'admin') {
     return gym;
@@ -888,7 +896,7 @@ async function withGymStaffLock<T>(
  * votes and feeds; change both together. Unlike the board reads this masks
  * AUTHENTICATED non-editors too.
  */
-async function viewerCanSeeGym(
+export async function viewerCanSeeGym(
   gym: typeof dbSchema.gyms.$inferSelect,
   viewerId: string | null | undefined,
 ): Promise<boolean> {
@@ -1500,10 +1508,12 @@ export const socialGymMutations = {
     const touchesReportedDetails = [...REPORT_FIXING_GYM_FIELDS].some(
       (field) => validatedInput[field as keyof typeof validatedInput] !== undefined,
     );
+    const touchesMedia = validatedInput.imageUrl !== undefined || validatedInput.logoUrl !== undefined;
     const updated = await transactionWithAfterCommit(async (tx) => {
-      const [before] = touchesReportedDetails
-        ? await tx.select().from(dbSchema.gyms).where(eq(dbSchema.gyms.id, gym.id)).limit(1).for('update')
-        : [];
+      const [before] =
+        touchesReportedDetails || touchesMedia
+          ? await tx.select().from(dbSchema.gyms).where(eq(dbSchema.gyms.id, gym.id)).limit(1).for('update')
+          : [];
       const [row] = await tx.update(dbSchema.gyms).set(updateValues).where(eq(dbSchema.gyms.id, gym.id)).returning();
       if (before && row) {
         const previous: Record<string, unknown> = before;
@@ -1511,6 +1521,12 @@ export const socialGymMutations = {
         const changedFields = [...REPORT_FIXING_GYM_FIELDS].filter((field) => previous[field] !== next[field]);
         const actorRole = changedFields.length > 0 ? await resolveGymEditActorRole(gym, userId, tx) : null;
         if (actorRole) await onGymDetailsEdited(tx, { gymId: gym.id, actorUserId: userId, actorRole, changedFields });
+        if (before.imageUrl !== row.imageUrl) {
+          afterCommit(tx, () => removeVersionedGymImage(gym.uuid, 'photo', before.imageUrl));
+        }
+        if (before.logoUrl !== row.logoUrl) {
+          afterCommit(tx, () => removeVersionedGymImage(gym.uuid, 'logo', before.logoUrl));
+        }
       }
       return row;
     });

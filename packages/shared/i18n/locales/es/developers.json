@@ -472,5 +472,49 @@
       "pending": "Pendiente"
     },
     "rotationAvailableAfter": "Puedes volver a rotar el secreto después de {{time}}."
+  },
+  "gymMcp": {
+    "title": "Gestiona tus rocódromos con un asistente de IA",
+    "lead": "Conecta ChatGPT o Claude a Boardsesh para consultar la actividad y gestionar tu rocódromo desde una conversación.",
+    "availability": "El acceso se está habilitando por etapas. Si tu cuenta aún no puede conectarse, sigue usando Gestionar rocódromo y vuelve a intentarlo cuando tengas acceso.",
+    "links": {
+      "gyms": "Encuentra tu rocódromo",
+      "connections": "Gestiona las aplicaciones conectadas",
+      "support": "Obtén ayuda para conectarte"
+    },
+    "setup": {
+      "title": "Conecta tu asistente",
+      "endpoint": "URL del servidor MCP alojado",
+      "copy": "Copia la URL del servidor",
+      "copied": "URL del servidor copiada",
+      "copyFailed": "No se pudo copiar. Selecciona la URL de arriba y cópiala.",
+      "steps": {
+        "add": "Añade un servidor MCP remoto personalizado en los plugins de ChatGPT o los conectores de Claude.",
+        "paste": "Pega la URL. Elige OAuth y la opción de identidad publicada del cliente.",
+        "signIn": "Inicia sesión en Boardsesh y revisa los permisos antes de permitir el acceso.",
+        "try": "Abre una conversación con el conector y pregunta qué rocódromos puedes gestionar."
+      },
+      "requirements": "No necesitas instalar nada ni registrar una aplicación de desarrollador. Tu cuenta y tu espacio de trabajo deben permitir conexiones MCP personalizadas. Los ajustes y planes disponibles dependen del proveedor.",
+      "chatgptGuide": "Guía de conexión de ChatGPT",
+      "claudeGuide": "Guía de conexión de Claude"
+    },
+    "access": {
+      "title": "Qué puede hacer tu asistente",
+      "gyms": "Una conexión incluye todos los rocódromos que tu cuenta de Boardsesh puede gestionar, también los que se añadan después. Tu rol actual limita cada acción.",
+      "actions": "Leer informes de actividad, editar el perfil y la imagen del rocódromo, gestionar plafones y pantallas, responder a comentarios y cambiar los accesos del personal que te correspondan.",
+      "approvals": "Revisa las solicitudes de cambio antes de aprobarlas en el asistente. El asistente decide cuándo pide aprobación; Boardsesh comprueba tus permisos actuales en cada operación.",
+      "privacy": "Los resultados de las herramientas se comparten con el asistente que elijas. Introduce tu contraseña de Boardsesh solo en la página de inicio de sesión de Boardsesh."
+    },
+    "examples": {
+      "title": "Prueba una petición",
+      "activity": "«Muéstrame la actividad de los últimos 30 días de mi rocódromo, incluidos los límites de cobertura».",
+      "tv": "«Crea una pantalla con nuestros plafones Kilter y Tension».",
+      "profile": "«Actualiza la descripción del rocódromo para indicar que abrimos a las 8 los sábados».",
+      "photos": "Para una foto o un logotipo, proporciona una URL de imagen HTTPS pública. También puedes subir un archivo desde la pestaña de perfil o de imagen del rocódromo."
+    },
+    "disconnect": {
+      "title": "Detén el acceso del asistente",
+      "body": "Abre Ajustes, busca el asistente en Aplicaciones conectadas y elige Desconectar. Las siguientes solicitudes dejarán de funcionar. La información ya compartida permanece en el asistente."
+    }
   }
 }

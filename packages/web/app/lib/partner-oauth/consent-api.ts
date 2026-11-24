@@ -32,6 +32,9 @@ const consentDetailsSchema = z.object({
       .nullish()
       .transform((publisherName) => publisherName ?? null),
     redirectHost: z.string().nullable(),
+    /** Server-validated CIMD identifier origin, distinct from the self-asserted name. */
+    identifierHost: z.string().optional(),
+    serverManaged: z.boolean().optional(),
   }),
   scopes: z.array(z.object({ scope: z.string(), includesOnlyMeTicks: z.boolean() })),
   reconnect: z.boolean(),

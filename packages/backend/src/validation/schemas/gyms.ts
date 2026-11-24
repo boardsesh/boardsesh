@@ -40,7 +40,8 @@ export const HexColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Colour must
  * Rejecting other schemes (javascript:, data:, http:) matters because the logo
  * renders as an `<img src>` on the kiosk/embed surfaces.
  */
-const STATIC_GYM_LOGO_PATH_REGEX = /^\/static\/gym-logos\/[0-9a-f-]{36}\.(jpg|jpeg|png|gif|webp)(\?v=[\w-]+)?$/i;
+const STATIC_GYM_LOGO_PATH_REGEX =
+  /^\/static\/gym-logos\/[0-9a-f-]{36}(?:\.[0-9a-f-]{36})?\.(jpg|jpeg|png|gif|webp)(\?v=[\w-]+)?$/i;
 
 function isValidHttpsUrl(value: string): boolean {
   try {
@@ -78,7 +79,8 @@ export const GymLogoUrlSchema = z
  * upload would have 400'd on the follow-up updateGym and orphaned the object it
  * had just stored.
  */
-const STATIC_GYM_PHOTO_PATH_REGEX = /^\/static\/gym-photos\/[0-9a-f-]{36}\.(jpg|jpeg|png|gif|webp)(\?v=[\w-]+)?$/i;
+const STATIC_GYM_PHOTO_PATH_REGEX =
+  /^\/static\/gym-photos\/[0-9a-f-]{36}(?:\.[0-9a-f-]{36})?\.(jpg|jpeg|png|gif|webp)(\?v=[\w-]+)?$/i;
 
 export const GymPhotoUrlSchema = z
   .string()

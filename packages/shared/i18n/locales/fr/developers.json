@@ -472,5 +472,49 @@
       "pending": "En attente"
     },
     "rotationAvailableAfter": "Tu pourras renouveler le secret après {{time}}."
+  },
+  "gymMcp": {
+    "title": "Gère tes salles avec un assistant IA",
+    "lead": "Connecte ChatGPT ou Claude à Boardsesh pour consulter l’activité et gérer ta salle depuis une conversation.",
+    "availability": "L’accès est ouvert par étapes. Si ton compte ne peut pas encore se connecter, continue avec Gérer la salle et réessaie quand tu auras accès.",
+    "links": {
+      "gyms": "Trouver ta salle",
+      "connections": "Gérer les applications connectées",
+      "support": "Obtenir de l’aide pour la connexion"
+    },
+    "setup": {
+      "title": "Connecte ton assistant",
+      "endpoint": "URL du serveur MCP hébergé",
+      "copy": "Copier l’URL du serveur",
+      "copied": "URL du serveur copiée",
+      "copyFailed": "La copie a échoué. Sélectionne l’URL ci-dessus et copie-la.",
+      "steps": {
+        "add": "Ajoute un serveur MCP distant personnalisé dans les plugins ChatGPT ou les connecteurs Claude.",
+        "paste": "Colle l’URL. Choisis OAuth et l’option d’identité publiée du client.",
+        "signIn": "Connecte-toi à Boardsesh et vérifie les autorisations avant d’accepter l’accès.",
+        "try": "Ouvre une conversation avec le connecteur et demande quelles salles tu peux gérer."
+      },
+      "requirements": "Tu n’installes rien et tu n’enregistres pas d’application développeur. Ton compte et ton espace de travail doivent autoriser les connexions MCP personnalisées. Les réglages et offres disponibles varient selon le fournisseur.",
+      "chatgptGuide": "Guide de connexion ChatGPT",
+      "claudeGuide": "Guide de connexion Claude"
+    },
+    "access": {
+      "title": "Ce que ton assistant peut faire",
+      "gyms": "Une connexion couvre toutes les salles que ton compte Boardsesh peut gérer, y compris celles auxquelles tu accéderas plus tard. Ton rôle actuel limite chaque action.",
+      "actions": "Lire les rapports d’activité, modifier le profil et l’identité visuelle de la salle, gérer les boards et écrans, répondre aux commentaires et gérer les accès autorisés de l’équipe.",
+      "approvals": "Vérifie les demandes de modification avant de les approuver dans ton assistant. L’assistant décide quand demander une approbation ; Boardsesh vérifie tes autorisations actuelles pour chaque opération.",
+      "privacy": "Les résultats des outils sont partagés avec l’assistant que tu choisis. Saisis ton mot de passe Boardsesh uniquement sur la page de connexion Boardsesh."
+    },
+    "examples": {
+      "title": "Essaie une demande",
+      "activity": "« Montre l’activité de ma salle sur les 30 derniers jours, avec les limites de couverture. »",
+      "tv": "« Crée un affichage TV avec nos boards Kilter et Tension. »",
+      "profile": "« Mets à jour la description de la salle : nous ouvrons à 8 h le samedi. »",
+      "photos": "Pour une photo ou un logo, fournis une URL d’image HTTPS publique. Tu peux aussi importer un fichier depuis l’onglet profil ou identité visuelle de la salle."
+    },
+    "disconnect": {
+      "title": "Arrêter l’accès de l’assistant",
+      "body": "Ouvre les paramètres, trouve l’assistant dans Applications connectées et choisis Déconnecter. Les prochaines demandes ne fonctionneront plus. Les informations déjà partagées restent chez l’assistant."
+    }
   }
 }

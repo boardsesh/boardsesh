@@ -472,5 +472,49 @@
       "pending": "等待中"
     },
     "rotationAvailableAfter": "你可在 {{time}} 后再次轮换。"
+  },
+  "gymMcp": {
+    "title": "用 AI 助手管理岩馆",
+    "lead": "将 ChatGPT 或 Claude 连接到 Boardsesh，在对话中查看活动并管理岩馆。",
+    "availability": "访问权限正在分阶段开放。如果你的账号暂时无法连接，请继续使用“管理岩馆”，获得权限后再试。",
+    "links": {
+      "gyms": "找到你的岩馆",
+      "connections": "管理已连接应用",
+      "support": "获取连接帮助"
+    },
+    "setup": {
+      "title": "连接助手",
+      "endpoint": "托管 MCP 服务器网址",
+      "copy": "复制服务器网址",
+      "copied": "服务器网址已复制",
+      "copyFailed": "无法复制。请选中上方网址并手动复制。",
+      "steps": {
+        "add": "在 ChatGPT 插件或 Claude 连接器中添加自定义远程 MCP 服务器。",
+        "paste": "粘贴服务器网址，选择 OAuth 和客户端公开身份选项。",
+        "signIn": "登录 Boardsesh，查看岩馆权限后再允许访问。",
+        "try": "使用连接器开启对话，询问你能管理哪些岩馆。"
+      },
+      "requirements": "无需安装软件或注册开发者应用。你的助手账号和工作区必须允许自定义 MCP 连接。可用设置和套餐因服务商而异。",
+      "chatgptGuide": "ChatGPT 连接指南",
+      "claudeGuide": "Claude 连接指南"
+    },
+    "access": {
+      "title": "助手能做什么",
+      "gyms": "一次连接涵盖 Boardsesh 账号能管理的所有岩馆，包括以后获得管理权限的岩馆。每项操作仍受当前角色限制。",
+      "actions": "读取活动报告、修改岩馆资料和品牌样式、管理训练板和屏幕、回复评论，以及在权限允许时管理工作人员访问权限。",
+      "approvals": "在助手中批准修改请求前，请先查看内容。助手决定何时要求批准；Boardsesh 会为每项操作检查你当前的权限。",
+      "privacy": "工具结果会分享给你选择的助手。Boardsesh 密码只在 Boardsesh 登录页面输入。"
+    },
+    "examples": {
+      "title": "试着提出请求",
+      "activity": "“显示我岩馆过去 30 天的活动，并说明数据覆盖范围的限制。”",
+      "tv": "“用我们的 Kilter 和 Tension 训练板创建一个电视展示画面。”",
+      "profile": "“更新岩馆简介，说明我们周六早上 8 点开门。”",
+      "photos": "更换照片或标志时，请提供公开的 HTTPS 图片网址。你也可以在岩馆的资料或品牌样式标签页上传文件。"
+    },
+    "disconnect": {
+      "title": "停止助手访问",
+      "body": "打开设置，在“已连接应用”中找到助手并选择“断开连接”。后续请求将停止工作。已分享的信息仍会保留在助手处。"
+    }
   }
 }

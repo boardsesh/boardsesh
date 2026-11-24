@@ -10,6 +10,7 @@ The partner developer contract, internal integration architecture, local trainin
 - [Integration platform: how third-party apps connect to Boardsesh](integration-platform.md)
 - [Workouts over the API: implementation and launch gates](partner-workouts-internal.md)
 - [Local training MCP](local-training-mcp.md)
+- [Hosted gym-management MCP](hosted-gym-mcp.md)
 
 ## Guides and supporting records
 
@@ -27,5 +28,6 @@ a production rollout or a physical-device result.
 | [Integration platform: how third-party apps connect to Boardsesh](integration-platform.md) | `integration-platform.md` |
 | [External platform and board account integrations](integrations.md) | `integrations.md` |
 | [Local training MCP](local-training-mcp.md) | `local-training-mcp.md` |
+| [Hosted gym-management MCP](hosted-gym-mcp.md) | `hosted-gym-mcp.md` |
 | [Boardsesh API for apps](partner-api.md) | `partner-api.md` |
 | [Workouts over the API: implementation and launch gates](partner-workouts-internal.md) | `partner-workouts-internal.md` |

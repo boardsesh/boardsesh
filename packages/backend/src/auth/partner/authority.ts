@@ -38,6 +38,9 @@ import {
   type PartnerRegistration,
 } from './registration';
 import { PARTNER_DISABLED_PATHS } from './routes';
+import { createGymMcpClientDiscovery, type GymMcpClientDiscovery } from './gym-mcp-clients';
+import { GYM_MCP_RESOURCE, GYM_MCP_SCOPES } from '../../mcp/gyms/configuration';
+import { gymMcpConsentGuard } from './gym-mcp-guard';
 import { partnerAdapterSchema, type PartnerDatabase } from './tables';
 import {
   createPartnerDatabaseHandle,
@@ -78,6 +81,8 @@ export interface PartnerAuthorityRuntime {
   findRefreshConnection(refreshToken: string): Promise<PartnerRefreshConnection | null>;
   /** The `/v1` resource server: bearer check, `/v1/me` and `DELETE /v1/connection`. */
   api: PartnerApiAccess;
+  /** Distinct resource access; existing training tokens cannot authenticate here. */
+  gymMcpApi?: PartnerApiAccess;
   /** The logbook routes' databases, snapshot admission and cursor secrets. */
   logbook: PartnerLogbookAccess;
   close(): Promise<void>;
@@ -117,6 +122,7 @@ const PUBLISHED_METADATA_FIELDS = [
   'grant_types_supported',
   'code_challenge_methods_supported',
   'authorization_response_iss_parameter_supported',
+  'client_id_metadata_document_supported',
 ] as const;
 
 /** `docs/integrations/partner-api.md` section 2: confidential apps use Basic or POST, public apps `none`. */
@@ -143,8 +149,8 @@ export function partnerOAuthOptions(configuration: PartnerAuthorityConfiguration
     allowDynamicClientRegistration: false,
     allowUnauthenticatedClientRegistration: false,
     grantTypes: ['authorization_code', 'refresh_token'],
-    scopes: PARTNER_SCOPES,
-    resources: [configuration.resource],
+    scopes: configuration.gymMcp ? [...new Set([...PARTNER_SCOPES, ...GYM_MCP_SCOPES])] : PARTNER_SCOPES,
+    resources: configuration.gymMcp ? [configuration.resource, GYM_MCP_RESOURCE] : [configuration.resource],
     enforcePerClientResources: true,
     accessTokenExpiresIn: 3600,
     refreshTokenExpiresIn: 90 * 24 * 60 * 60,
@@ -173,10 +179,13 @@ export function partnerOAuthOptions(configuration: PartnerAuthorityConfiguration
 export function createPartnerAuthority(
   database: PartnerDatabase,
   configuration: PartnerAuthorityConfiguration,
-  { plugins = [], disabledPaths = PARTNER_DISABLED_PATHS }: PartnerAuthorityBuildOptions = {},
+  { plugins = [], disabledPaths = PARTNER_DISABLED_PATHS, gymMcpClients }: PartnerAuthorityBuildOptions = {},
 ): PartnerAuthority {
   assertPartnerTelemetryOff();
-  const oauthOptions = partnerOAuthOptions(configuration);
+  const oauthOptions = {
+    ...partnerOAuthOptions(configuration),
+    ...(gymMcpClients ? { extensions: [{ clientDiscovery: gymMcpClients.discovery }] } : {}),
+  };
   const authorityOptions: PartnerAuthorityOptions = {
     appName: 'Boardsesh partner OAuth',
     baseURL: configuration.issuer,
@@ -217,6 +226,7 @@ export function createPartnerAuthority(
       partnerSessionBridge(configuration),
       partnerRegistrationActorPlugin(),
       ...plugins,
+      ...(configuration.gymMcp ? [gymMcpConsentGuard(configuration)] : []),
       partnerConsentGuard(configuration, oauthOptions),
       partnerFencePlugin(oauthOptions),
     ],
@@ -227,6 +237,7 @@ export function createPartnerAuthority(
 interface PartnerAuthorityBuildOptions {
   plugins?: BetterAuthPlugin[];
   disabledPaths?: readonly string[];
+  gymMcpClients?: GymMcpClientDiscovery;
 }
 
 /**
@@ -248,7 +259,10 @@ export async function createPartnerAuthorityRuntime(
     notifyDeveloper?: PartnerAppChangeNotifier;
   },
 ): Promise<PartnerAuthorityRuntime> {
-  const authority = createPartnerAuthority(database, configuration, buildOptions);
+  const gymMcpClients = configuration.gymMcp
+    ? (buildOptions.gymMcpClients ?? createGymMcpClientDiscovery(database))
+    : undefined;
+  const authority = createPartnerAuthority(database, configuration, { ...buildOptions, gymMcpClients });
   await authority.$context;
   const oauthOptions = partnerOAuthOptions(configuration);
   // hashToken never reads the endpoint context; only client authentication does.
@@ -264,7 +278,10 @@ export async function createPartnerAuthorityRuntime(
     admission: createPartnerAdmissionGate(PARTNER_ADMISSION_LIMITS),
     registeredOrigins,
     registration: createPartnerRegistration({ authority, configuration, registeredOrigins, notifyDeveloper }),
-    handleRequest: (request, options) => handlePartnerRequest(database, request, authority.handler, options),
+    handleRequest: (request, options) => {
+      const serve = () => handlePartnerRequest(database, request, authority.handler, options);
+      return gymMcpClients ? gymMcpClients.withPreparedMetadata(request, serve) : serve();
+    },
     discoveryResponse: (logContext) =>
       handlePartnerRequest(
         database,
@@ -302,6 +319,15 @@ export async function createPartnerAuthorityRuntime(
       resource: configuration.resource,
       hashAccessToken: async (accessToken) => tokenHasher.hashToken(accessToken, 'access_token'),
     }),
+    ...(gymMcpClients
+      ? {
+          gymMcpApi: createPartnerApiAccess({
+            database,
+            resource: GYM_MCP_RESOURCE,
+            hashAccessToken: async (accessToken) => tokenHasher.hashToken(accessToken, 'access_token'),
+          }),
+        }
+      : {}),
     logbook: createPartnerLogbookAccess(logbook, configuration.secrets),
     close,
   };

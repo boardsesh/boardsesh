@@ -472,5 +472,49 @@
       "pending": "Ausstehend"
     },
     "rotationAvailableAfter": "Du kannst das Geheimnis nach {{time}} erneut wechseln."
+  },
+  "gymMcp": {
+    "title": "Verwalte deine Hallen mit einem KI-Assistenten",
+    "lead": "Verbinde ChatGPT oder Claude mit Boardsesh, um Hallenaktivität abzurufen und deine Halle im Gespräch zu verwalten.",
+    "availability": "Der Zugriff wird schrittweise freigeschaltet. Falls dein Konto noch keine Verbindung herstellen kann, nutze weiter die Hallenverwaltung und versuche es nach der Freischaltung erneut.",
+    "links": {
+      "gyms": "Deine Halle finden",
+      "connections": "Verbundene Apps verwalten",
+      "support": "Hilfe beim Verbinden"
+    },
+    "setup": {
+      "title": "Verbinde deinen Assistenten",
+      "endpoint": "URL des gehosteten MCP-Servers",
+      "copy": "Server-URL kopieren",
+      "copied": "Server-URL kopiert",
+      "copyFailed": "Kopieren hat nicht geklappt. Markiere die URL oben und kopiere sie.",
+      "steps": {
+        "add": "Füge in ChatGPT-Plugins oder Claude-Konnektoren einen eigenen entfernten MCP-Server hinzu.",
+        "paste": "Füge die URL ein. Wähle OAuth und die veröffentlichte Client-Identität.",
+        "signIn": "Melde dich bei Boardsesh an und prüfe die Rechte, bevor du den Zugriff erlaubst.",
+        "try": "Öffne ein Gespräch mit dem Konnektor und frage, welche Hallen du verwalten kannst."
+      },
+      "requirements": "Du installierst nichts und registrierst keine Entwickler-App. Dein Konto und Arbeitsbereich müssen eigene MCP-Verbindungen erlauben. Verfügbare Einstellungen und Tarife hängen vom Anbieter ab.",
+      "chatgptGuide": "ChatGPT-Verbindungsanleitung",
+      "claudeGuide": "Claude-Verbindungsanleitung"
+    },
+    "access": {
+      "title": "Was dein Assistent tun kann",
+      "gyms": "Eine Verbindung umfasst alle Hallen, die dein Boardsesh-Konto verwalten kann, auch später hinzugekommene. Deine aktuelle Rolle begrenzt jede Aktion.",
+      "actions": "Aktivitätsberichte lesen, Hallenprofil und Gestaltung ändern, Boards und Bildschirme verwalten, Kommentare beantworten und berechtigte Teamzugriffe verwalten.",
+      "approvals": "Prüfe Änderungsanfragen, bevor du sie im Assistenten bestätigst. Der Assistent entscheidet, wann er um Bestätigung bittet; Boardsesh prüft bei jedem Vorgang deine aktuellen Rechte.",
+      "privacy": "Werkzeugergebnisse werden mit deinem gewählten Assistenten geteilt. Gib dein Boardsesh-Passwort nur auf der Boardsesh-Anmeldeseite ein."
+    },
+    "examples": {
+      "title": "Probiere eine Anfrage",
+      "activity": "„Zeige die Aktivität meiner Halle der letzten 30 Tage samt Abdeckungsgrenzen.“",
+      "tv": "„Erstelle eine TV-Anzeige mit unseren Kilter- und Tension-Boards.“",
+      "profile": "„Ändere unsere Hallenbeschreibung: Samstags öffnen wir um 8 Uhr.“",
+      "photos": "Gib für ein Foto oder Logo eine öffentliche HTTPS-Bild-URL an. Du kannst auch im Profil- oder Gestaltungsreiter der Halle eine Datei hochladen."
+    },
+    "disconnect": {
+      "title": "Assistentenzugriff beenden",
+      "body": "Öffne die Einstellungen, finde den Assistenten unter Verbundene Apps und wähle Trennen. Spätere Anfragen funktionieren dann nicht mehr. Bereits geteilte Informationen bleiben beim Assistenten."
+    }
   }
 }

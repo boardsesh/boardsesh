@@ -602,7 +602,7 @@
     "partnerApps": {
       "title": "Apps with access",
       "empty": "No apps connected yet. Apps you connect to your Boardsesh account show up here.",
-      "footer": "Disconnecting an app stops it reading anything new. What it already copied stays with the app.",
+      "footer": "Disconnecting an app stops its access. What it already copied stays with the app.",
       "gone": "This app isn't connected any more.",
       "loadFailed": "Couldn't load this app. Check your connection and try again.",
       "retry": "Try again",
@@ -613,7 +613,7 @@
       "lastUsed": "Last used {{time}}",
       "lastUsedRecently": "Used in the last hour",
       "notUsedYet": "Not used yet",
-      "suspended": "Boardsesh paused this app. It can't read anything right now.",
+      "suspended": "Boardsesh paused this app. It cannot access your account right now.",
       "suspendedShort": "Paused by Boardsesh",
       "scopes": {
         "logbookRead": "Sees every tick in your logbook, on every board",
@@ -625,7 +625,11 @@
         "other": "Other access: {{scope}}",
         "workoutsRead": "Read the results of workouts this app planned",
         "workoutsWrite": "Plan and cancel workouts for you",
-        "sessionsRead": "Reads your completed sessions, private recap notes and full workouts, including workouts from other apps"
+        "sessionsRead": "Reads your completed sessions, private recap notes and full workouts, including workouts from other apps",
+        "gymsRead": "Read the gyms you can manage, including their boards, members and activity reports",
+        "gymsWrite": "Update your gyms, boards, TVs and discussions within your current permissions",
+        "gymsAccessWrite": "Change staff access where your current role allows it",
+        "gymAccess": "Access covers every gym you can manage now and any you manage later. Losing a gym role removes that access."
       },
       "disconnect": "Disconnect",
       "disconnectA11y": "Disconnect {{app}}",

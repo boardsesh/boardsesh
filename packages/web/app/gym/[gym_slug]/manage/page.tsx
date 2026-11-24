@@ -22,6 +22,7 @@ import ManageGymContent from './manage-gym-content';
 import ManageNoAccess from './manage-no-access';
 import { gymClaimOpenToViewer } from './manage-no-access-logic';
 import { isDirectoryReportsEnabled } from '@/app/lib/directory-reports/directory-reports-flag';
+import { isGymMcpAvailable } from '@/app/lib/gym-mcp/availability.server';
 
 // Per-user, cookie-gated management surface — never static, never indexed.
 export const dynamic = 'force-dynamic';
@@ -146,7 +147,7 @@ export default async function ManageGymPage(props: ManageGymRouteProps) {
 
   return (
     <I18nProvider locale={locale} namespaces={['common', 'boards', 'kiosk', 'gyms']}>
-      <ManageGymContent initialGym={gym} />
+      <ManageGymContent initialGym={gym} aiAssistantsAvailable={await isGymMcpAvailable()} />
     </I18nProvider>
   );
 }

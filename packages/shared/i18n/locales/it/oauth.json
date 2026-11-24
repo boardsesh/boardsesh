@@ -69,7 +69,10 @@
       "other": "Altro accesso: {{scope}}",
       "workoutsRead": "Leggere i risultati degli allenamenti di questa app",
       "workoutsWrite": "Pianificare e annullare i tuoi allenamenti",
-      "sessionsRead": "Leggere le tue sessioni completate, le note private del riepilogo e gli allenamenti completi, inclusi quelli di altre app"
+      "sessionsRead": "Leggere le tue sessioni completate, le note private del riepilogo e gli allenamenti completi, inclusi quelli di altre app",
+      "gymsRead": "Leggere le palestre che puoi gestire, inclusi pannelli, membri e rapporti di attività",
+      "gymsWrite": "Aggiornare palestre, pannelli, schermi e discussioni secondo i tuoi permessi attuali",
+      "gymsAccessWrite": "Modificare gli accessi dello staff dove il tuo ruolo attuale lo consente"
     },
     "cannot": "Non può modificare nulla del tuo account e non vede mai la tua password.",
     "notReviewed": "Boardsesh non ha verificato questa app. Collega solo app di cui ti fidi.",
@@ -122,6 +125,8 @@
       "title": "Qualcosa non ha funzionato",
       "body": "Non è stato condiviso nulla. Riprova, oppure torna all'app e collegala di nuovo."
     },
-    "tryAgain": "Riprova"
+    "tryAgain": "Riprova",
+    "gymAccess": "L’accesso comprende tutte le palestre che puoi gestire ora e quelle che gestirai in futuro. Se perdi un ruolo, perdi quell’accesso.",
+    "clientIdentity": "Identità del client: {{host}}"
   }
 }

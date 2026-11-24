@@ -9,7 +9,7 @@ const LATENCY_BOUNDS_MS = [10, 25, 50, 100, 250, 500, 1000, 2000, 5000, 10_000, 
 
 interface UsageBucket {
   clientId: string;
-  surface: 'api' | 'oauth';
+  surface: 'api' | 'oauth' | 'mcp';
   requests: number;
   clientErrors: number;
   serverErrors: number;

@@ -1,5 +1,5 @@
 import { and, count, eq, gt, isNotNull, isNull, ne } from 'drizzle-orm';
-import { oauthAppPolicy, oauthConnections } from '@boardsesh/db/schema/auth';
+import { oauthAppPolicy, oauthConnections, oauthMcpClientPolicy } from '@boardsesh/db/schema/auth';
 import type { PartnerDatabase } from './tables';
 import { recordPartnerConnectionCapRefusal } from '../../services/public-api-usage';
 
@@ -27,7 +27,7 @@ export async function checkConnectionCaps(
   connection: { id: string; clientId: string },
   connectingAt: Date,
 ): Promise<ConnectionCapRefusal | null> {
-  const [policy] = await transaction
+  const [appPolicy] = await transaction
     .select({
       maxActiveConnections: oauthAppPolicy.maxActiveConnections,
       maxNewConnectionsPerDay: oauthAppPolicy.maxNewConnectionsPerDay,
@@ -35,6 +35,14 @@ export async function checkConnectionCaps(
     .from(oauthAppPolicy)
     .where(eq(oauthAppPolicy.clientId, connection.clientId))
     .for('no key update');
+  const [mcpPolicy] = appPolicy
+    ? []
+    : await transaction
+        .select()
+        .from(oauthMcpClientPolicy)
+        .where(eq(oauthMcpClientPolicy.clientId, connection.clientId))
+        .for('no key update');
+  const policy = appPolicy ?? (mcpPolicy?.suspendedAt ? undefined : mcpPolicy);
   if (!policy) return 'no_policy';
 
   const otherApprovedConnections = and(

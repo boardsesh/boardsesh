@@ -4,6 +4,11 @@
  */
 
 import { readFileSync } from 'node:fs';
+const gymMcpSchema = readFileSync(new URL('../../../db/drizzle/0342_hosted_gym_mcp.sql', import.meta.url), 'utf8');
+const gymMcpReceiptRetentionSchema = readFileSync(
+  new URL('../../../db/drizzle/0343_gym_mcp_receipt_retention.sql', import.meta.url),
+  'utf8',
+);
 const sitemapSummarySchema = readFileSync(
   new URL('../../../db/drizzle/0203_bouncy_ken_ellis.sql', import.meta.url),
   'utf8',
@@ -2667,8 +2672,10 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${authAuthoritySchema}
   ${authNativeRevocationSchema}
   ${authDenialIndexSchema}
-  DROP TABLE IF EXISTS oauth_consent_interactions, oauth_refresh_ancestors, oauth_grants, oauth_subjects, oauth_connections, oauth_app_policy, oauth_consent, oauth_access_token, oauth_refresh_token, oauth_client_assertion, oauth_client_resource, oauth_resource, oauth_client, oauth_verification, oauth_session CASCADE;
+  DROP TABLE IF EXISTS gym_mcp_write_receipts, oauth_mcp_client_policy, oauth_consent_interactions, oauth_refresh_ancestors, oauth_grants, oauth_subjects, oauth_connections, oauth_app_policy, oauth_consent, oauth_access_token, oauth_refresh_token, oauth_client_assertion, oauth_client_resource, oauth_resource, oauth_client, oauth_verification, oauth_session CASCADE;
   ${partnerOAuthSchema}
+  ${gymMcpSchema}
+  ${gymMcpReceiptRetentionSchema}
   DROP TABLE IF EXISTS logbook_changes;
   DROP TABLE IF EXISTS logbook_change_watermark;
   ${logbookChangesSchema};

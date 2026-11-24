@@ -1,7 +1,7 @@
 import type { SocialEvent, NotificationType } from '@boardsesh/shared-schema';
 import { EventBroker } from './event-broker';
 import { pubsub } from '../pubsub/index';
-import { db } from '../db/client';
+import { db, queueDatabaseEffect } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { eq, and, isNull, or, sql } from 'drizzle-orm';
 import {
@@ -32,6 +32,7 @@ export const eventBroker = new EventBroker();
  * publishes to Redis Streams. Otherwise falls back to inline notification creation.
  */
 export async function publishSocialEvent(event: SocialEvent): Promise<void> {
+  if (queueDatabaseEffect(() => publishSocialEvent(event))) return;
   if (eventBroker.isInitialized()) {
     await eventBroker.publish(event);
   } else {
