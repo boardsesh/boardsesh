@@ -256,7 +256,7 @@ export const APP_GUIDE_REGISTRY = {
     steps: [
       {
         id: 'pick',
-        screenshot: 'kilter',
+        screenshot: 'wall-status',
       },
       {
         id: 'queue',
@@ -264,7 +264,7 @@ export const APP_GUIDE_REGISTRY = {
       },
       {
         id: 'climb',
-        screenshot: 'live-sessions',
+        screenshot: 'kilter',
       },
       {
         id: 'log',
@@ -548,7 +548,7 @@ export const APP_GUIDE_REGISTRY = {
     steps: [
       {
         id: 'brand',
-        screenshot: 'tension',
+        screenshot: 'board',
       },
       {
         id: 'angle',
@@ -875,7 +875,7 @@ export const APP_GUIDE_REGISTRY = {
     steps: [
       {
         id: 'setup',
-        screenshot: 'moonboard',
+        screenshot: 'board',
       },
       {
         id: 'connect',
@@ -883,7 +883,7 @@ export const APP_GUIDE_REGISTRY = {
       },
       {
         id: 'warmup',
-        screenshot: 'queue',
+        screenshot: 'workouts',
       },
       {
         id: 'log',
@@ -1155,15 +1155,15 @@ export const APP_GUIDE_REGISTRY = {
     steps: [
       {
         id: 'size',
-        screenshot: 'queue',
+        screenshot: 'board',
       },
       {
         id: 'angle',
-        screenshot: 'kilter',
+        screenshot: null,
       },
       {
         id: 'rules',
-        screenshot: 'live-sessions',
+        screenshot: null,
       },
       {
         id: 'log',
@@ -1407,15 +1407,15 @@ export const APP_GUIDE_REGISTRY = {
     steps: [
       {
         id: 'photo',
-        screenshot: 'queue',
+        screenshot: 'spray-photo',
       },
       {
         id: 'fix',
-        screenshot: 'queue',
+        screenshot: null,
       },
       {
         id: 'set',
-        screenshot: 'queue',
+        screenshot: 'spray-wall',
       },
       {
         id: 'send',

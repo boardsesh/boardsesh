@@ -80,8 +80,31 @@ export const GUIDE_SHOTS = [
   'workouts',
   'logbook',
   'live-sessions',
+  'spray-photo',
 ] as const;
 export type GuideShot = (typeof GUIDE_SHOTS)[number];
+
+/**
+ * What a session step shows: a capture, the page's own board drawing, or nothing.
+ * A board's climb, or the Kilter-filled queue, only ever appears on that board's
+ * page (`STEP_SHOTS`); every page may use the board-neutral screens.
+ */
+export type StepArt = GuideShot | 'board' | null;
+
+export const NEUTRAL_STEP_SHOTS = [
+  'profile',
+  'workouts',
+  'logbook',
+  'live-sessions',
+] as const satisfies readonly GuideShot[];
+
+export const STEP_SHOTS = {
+  kilter: ['kilter', 'queue', 'wall-status'],
+  aurora: ['tension'],
+  moonboard: ['moonboard'],
+  woods: [],
+  'spray-wall-apps': ['spray-wall', 'spray-photo'],
+} as const satisfies Record<ComparisonPageId, readonly GuideShot[]>;
 
 export type GuideSource = { id: string; url: `https://${string}`; checkedAt: VerificationDate };
 
@@ -121,7 +144,7 @@ export type ComparisonPageRegistry = GuidePageBase & {
   competitors: readonly string[];
   rows: readonly GuideRow[];
   otherApps: readonly GuideItem[];
-  steps: readonly { id: string; screenshot: GuideShot }[];
+  steps: readonly { id: string; screenshot: StepArt }[];
   paths: readonly { id: string; steps: readonly string[] }[];
   /** Aurora page only: one card per brand, `id` is its `AuroraBrandSlug`. */
   brands: readonly GuideItem[];

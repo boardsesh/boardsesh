@@ -61,7 +61,7 @@ function boardPage(overrides: (page: Record<string, unknown>) => void = () => {}
         id,
         title: id,
         body: 'One sentence.',
-        screenshot: 'queue',
+        screenshot: 'logbook',
       })),
     },
     logbook: {
@@ -215,6 +215,28 @@ describe('import-copy', () => {
       'comparison.rows.lighting.sharedWith is only allowed on a "boardsesh" row',
       'comparison.rows.history.sharedWith "strava" is not a competitor on this page',
     ]);
+  });
+
+  it("never lets a step borrow another board's screen", () => {
+    const steps = (page: Record<string, unknown>) => (page.session as { steps: Record<string, unknown>[] }).steps;
+    const woods = boardPage((page) => {
+      page.page = 'woods';
+      steps(page)[0].screenshot = 'board';
+      steps(page)[1].screenshot = null;
+      steps(page)[2].screenshot = 'logbook';
+      steps(page)[3].screenshot = 'kilter';
+    });
+    expect(errors(importComparisonPage('woods', woods, { allowPending: false }))).toEqual([
+      expect.stringMatching(/session\.steps\.log\.screenshot "kilter" shows another board or screen/),
+    ]);
+    steps(woods)[3].screenshot = 'queue';
+    expect(errors(importComparisonPage('woods', woods, { allowPending: false }))).toHaveLength(1);
+    steps(woods)[3].screenshot = 'profile';
+    const result = importComparisonPage('woods', woods, { allowPending: false });
+    expect(errors(result)).toEqual([]);
+    expect(
+      (result.registry as unknown as { steps: { screenshot: string | null }[] }).steps.map((step) => step.screenshot),
+    ).toEqual(['board', null, 'logbook', 'profile']);
   });
 
   it('tags the Google-certified contrast wherever the copy makes it', () => {

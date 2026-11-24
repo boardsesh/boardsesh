@@ -14,6 +14,8 @@ export type GuideImage = { src: string; width: number; height: number };
 const HELP_CAPTURES: Record<Exclude<GuideShot, MarketingShot>, GuideImage> = {
   logbook: { src: '/images/help/logbook.webp', width: 736, height: 1600 },
   'live-sessions': { src: '/images/help/live-sessions.webp', width: 736, height: 1600 },
+  // A real home spray wall, photographed: what "Photograph the wall" starts from.
+  'spray-photo': { src: '/images/help/spray-wall-photo.webp', width: 1752, height: 2047 },
 };
 
 function resolved(image: GuideImage): GuideImage {
@@ -22,7 +24,7 @@ function resolved(image: GuideImage): GuideImage {
 
 /** A real Boardsesh capture. iPhone by default; the Android set for the platform comparison. */
 export function guideShot(shot: GuideShot, platform: 'ios' | 'android' = 'ios'): GuideImage {
-  if (shot === 'logbook' || shot === 'live-sessions') return resolved(HELP_CAPTURES[shot]);
+  if (shot === 'logbook' || shot === 'live-sessions' || shot === 'spray-photo') return resolved(HELP_CAPTURES[shot]);
   return resolved(marketingScreenshot(platform, DEFAULT_LOCALE, shot));
 }
 

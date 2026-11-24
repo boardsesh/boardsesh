@@ -254,6 +254,24 @@ describe('app guide pages before hydration', () => {
   });
 });
 
+describe('session steps', () => {
+  it("shows only this page's own board or a board-neutral screen, and reads cleanly as text", async () => {
+    for (const { id, markup } of await renderAll()) {
+      const steps = Array.from(markup.querySelectorAll('#session ol > li'));
+      if (id === 'hub') continue;
+      expect(steps, id).toHaveLength(4);
+      for (const step of steps) {
+        const src = decodeURIComponent(step.querySelector('img')?.getAttribute('src') ?? '');
+        if (id !== 'kilter') expect(src, id).not.toMatch(/\/app\/ios\/(kilter|queue|wall-status)\.webp/);
+        if (id !== 'aurora') expect(src, id).not.toContain('/app/ios/tension.webp');
+        if (id !== 'moonboard') expect(src, id).not.toContain('/app/ios/moonboard.webp');
+        // The step number is decoration: the heading text is the title alone.
+        expect(step.querySelector('h3')?.textContent).not.toMatch(/^\d/);
+      }
+    }
+  });
+});
+
 describe('verdict chips as source links', () => {
   it('points every chip at a source group that exists in the server HTML', async () => {
     for (const { id, markup } of await renderAll()) {

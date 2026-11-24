@@ -16,6 +16,8 @@ import {
   GATED_CLAIM_PATTERNS,
   GUIDE_SHOTS,
   HUB_BOARD_SLUGS,
+  NEUTRAL_STEP_SHOTS,
+  STEP_SHOTS,
   hubBoardHref,
   type AppGuidePageId,
   type ComparisonPageId,
@@ -23,7 +25,7 @@ import {
   type GatedClaimId,
   type GuideItem,
   type GuideRow,
-  type GuideShot,
+  type StepArt,
   type GuideSource,
   type GuideVerdict,
   type HubBoardSlug,
@@ -479,18 +481,32 @@ export function importComparisonPage(page: ComparisonPageId, json: Json, options
   // Session
   const session = reader.object(json.session, 'session');
   const stepEntries = reader.array(session.steps, 'session.steps', COUNTS.steps);
-  const steps: { id: string; screenshot: GuideShot }[] = [];
+  const steps: { id: string; screenshot: StepArt }[] = [];
+  const allowedShots: readonly string[] = [
+    ...NEUTRAL_STEP_SHOTS,
+    ...STEP_SHOTS[page],
+    ...(page === 'spray-wall-apps' ? [] : ['board']),
+  ];
   const stepText: CatalogPage = {};
   for (const [id, { entry, path }] of reader.keyed(stepEntries, 'session.steps', (entry, path) => ({ entry, path }))) {
     const body = reader.text(entry.body, `${path}.body`);
     if (body && countSentences(body) > CAPS.stepSentences)
       reader.error(`${path}.body`, `has ${countSentences(body)} sentences (cap 1)`);
-    const screenshot = typeof entry.screenshot === 'string' ? entry.screenshot : '';
-    if (!(GUIDE_SHOTS as readonly string[]).includes(screenshot)) {
-      reader.error(`${path}.screenshot`, `"${screenshot}" is not one of ${GUIDE_SHOTS.join(', ')}`);
+    // null: no capture fits this step, and none is borrowed.
+    const screenshot = entry.screenshot === null ? null : typeof entry.screenshot === 'string' ? entry.screenshot : '';
+    if (screenshot !== null && ![...GUIDE_SHOTS, 'board'].includes(screenshot)) {
+      reader.error(
+        `${path}.screenshot`,
+        `"${screenshot}" is not one of ${[...GUIDE_SHOTS, 'board'].join(', ')} or null`,
+      );
+    } else if (screenshot !== null && !allowedShots.includes(screenshot)) {
+      reader.error(
+        `${path}.screenshot`,
+        `"${screenshot}" shows another board or screen; this page may use ${allowedShots.join(', ')} or null`,
+      );
     }
     stepText[id] = { title: reader.text(entry.title, `${path}.title`), body };
-    steps.push({ id, screenshot: screenshot as GuideShot });
+    steps.push({ id, screenshot: screenshot as StepArt });
   }
 
   // Logbook

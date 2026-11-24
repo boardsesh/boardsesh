@@ -1012,6 +1012,21 @@
   background: var(--semantic-background);
 }
 
+/* A board drawing or wall photo fills the frame instead of hanging off its top. */
+.stepShotDrawing img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* No capture fits: the bare wall, the same hole grid the trays use. */
+.stepShotEmpty {
+  background-color: var(--neutral-50);
+  background-image: radial-gradient(circle, var(--semantic-fill-strong) 1.6px, transparent 2px);
+  background-size: 28px 28px;
+  background-position: 14px 14px;
+}
+
 .page .stepTitle {
   display: flex;
   align-items: center;

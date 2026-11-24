@@ -19,7 +19,7 @@ import {
   type GuideLink,
   type GuidePlacement,
 } from '@/app/lib/seo/app-guides';
-import { HUB_BOARD_SLUGS, type GuideShot, type HubBoardSlug } from '@/app/lib/seo/app-guide-model';
+import { HUB_BOARD_SLUGS, type GuideShot, type HubBoardSlug, type StepArt } from '@/app/lib/seo/app-guide-model';
 import { boardDrawing, boardseshMark, guideShot, sprayWallPhoto, type GuideImage } from './app-guide-assets';
 import { TileDiagram } from './diagrams';
 import {
@@ -389,6 +389,16 @@ export function OtherApps({ guide, t }: { guide: ComparisonGuide; t: T }) {
 
 // ---------- A session, step by step ----------
 
+function stepImage(
+  guide: ComparisonGuide,
+  t: T,
+  art: StepArt,
+): (GuideImage & { alt: string; drawing: boolean }) | null {
+  if (art === null) return null;
+  if (art === 'board') return guide.boardType ? { ...pageArt(guide, t), drawing: true } : null;
+  return { ...guideShot(art), alt: shotAlt(t, art), drawing: art === 'spray-photo' };
+}
+
 export function SessionSteps({ guide, t }: { guide: ComparisonGuide; t: T }) {
   return (
     <Box component="section" id="session" className={styles.section} aria-labelledby="session-title">
@@ -400,25 +410,32 @@ export function SessionSteps({ guide, t }: { guide: ComparisonGuide; t: T }) {
       />
       <Box component="ol" className={styles.steps}>
         {guide.steps.map((step, index) => {
-          const image = guideShot(step.screenshot);
+          const image = stepImage(guide, t, step.screenshot);
           return (
             <li key={step.id} className={styles.step}>
-              <Box className={styles.stepShot}>
-                <Image
-                  src={image.src}
-                  alt={shotAlt(t, step.screenshot)}
-                  width={image.width}
-                  height={image.height}
-                  sizes="(max-width: 600px) 112px, 300px"
-                  loading="lazy"
-                />
-              </Box>
-              <Typography component="h3" className={`${styles.h3} ${styles.stepTitle}`}>
+              {image ? (
+                <Box className={`${styles.stepShot} ${image.drawing ? styles.stepShotDrawing : ''}`}>
+                  <Image
+                    src={image.src}
+                    alt={image.alt}
+                    width={image.width}
+                    height={image.height}
+                    sizes="(max-width: 600px) 112px, 300px"
+                    loading="lazy"
+                  />
+                </Box>
+              ) : (
+                // No capture fits this step: an empty wall, never a screen from another board.
+                <Box className={`${styles.stepShot} ${styles.stepShotEmpty}`} aria-hidden="true" />
+              )}
+              <Box className={styles.stepTitle}>
                 <HoldRing role={STEP_RINGS[index % STEP_RINGS.length]} size="number">
                   {index + 1}
                 </HoldRing>
-                {t(`appGuides:pages.${guide.id}.session.steps.${step.id}.title`)}
-              </Typography>
+                <Typography component="h3" className={styles.h3}>
+                  {t(`appGuides:pages.${guide.id}.session.steps.${step.id}.title`)}
+                </Typography>
+              </Box>
               <Typography component="p" color="text.secondary">
                 {t(`appGuides:pages.${guide.id}.session.steps.${step.id}.body`)}
               </Typography>

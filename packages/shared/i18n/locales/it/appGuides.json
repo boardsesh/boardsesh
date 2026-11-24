@@ -112,7 +112,8 @@
       "spray-wall": "A spray wall climb in Boardsesh, drawn over the photo of the wall",
       "workouts": "Building a timed workout in Boardsesh with a target grade",
       "logbook": "A Boardsesh logbook with sends from several boards",
-      "live-sessions": "A live Boardsesh session showing the crew's shared queue"
+      "live-sessions": "A live Boardsesh session showing the crew's shared queue",
+      "spray-photo": "A home spray wall covered in holds, photographed straight on"
     },
     "platformAlt": {
       "ios": "A Kilter climb in Boardsesh on an iPhone",
