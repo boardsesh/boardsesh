@@ -80,6 +80,58 @@ those claims. Pages never depend on an App Store request at render time.
 
 ## Search Console comparison
 
+### Release and indexing receipts (#8122)
+
+The six guides went live on **2026-11-24** (production deploy `b228496c5`).
+Release dates below refer to this guide rollout; the homepage and `/boards`
+already existed. A blank first-index date means indexing has not been confirmed,
+not that Google has rejected the page.
+
+| URL path | Guide rollout date | First confirmed indexed after rollout | Day-zero observation |
+| --- | --- | --- | --- |
+| `/apps/kilter` | 2026-11-24 | — | Discovered, currently not indexed; indexing requested |
+| `/apps/moonboard` | 2026-11-24 | — | Unknown to Google; indexing requested |
+| `/apps/aurora` | 2026-11-24 | — | Unknown to Google; indexing requested |
+| `/compare/spray-wall-apps` | 2026-11-24 | — | Unknown to Google; indexing requested |
+| `/apps` | 2026-11-24 | — | Discovered, currently not indexed; indexing requested |
+| `/apps/woods` | 2026-11-24 | — | Unknown to Google; indexing requested |
+| `/` | 2026-11-24 | — | Already indexed; last crawl 14:21:47 UTC predates rollout; recrawl requested |
+| `/boards` | 2026-11-24 | — | Unknown to Google; indexing requested |
+
+On November 24, Search Console accepted both
+`https://www.boardsesh.com/sitemap.xml` and
+`https://www.boardsesh.com/sitemaps/app-guides.xml`. The index initially showed
+"Couldn't fetch", then changed to **Success**; Kilter's inspection subsequently
+listed both submitted sitemaps as discovery sources. Submission and discovery
+do not establish indexing. Both public XML endpoints returned 200 as Googlebot;
+the shard listed exactly the six canonical guides.
+
+All eight ordered URL Inspection requests returned **Indexing requested**.
+The dated checks are scheduled in the Codex chat automation
+`app-guide-indexing-and-crawler-checks`, evaluated at 09:00 Europe/Amsterdam;
+it also handles monthly upkeep and reports only meaningful changes.
+
+The 18:46 UTC public HTML probe returned 200 for all six guides, each with its
+own www canonical, an H1, a `BreadcrumbList`, and no `noindex` or `X-Robots-Tag`.
+This checks the deployed markup, not Google's Rich Results Test verdict.
+
+Use these dated checkpoints, based on the release date (Europe/Amsterdam):
+
+| Date | Work due |
+| --- | --- |
+| 2026-11-25 | Day 1 crawler load |
+| 2026-11-26 | Day 2 URL inspection and canonical comparison |
+| 2026-11-27 | Day 3 crawler load |
+| 2026-12-01 | Day 7 indexing, canonicals and crawler load |
+| 2026-12-08 | Day 14 link/indexing recovery and crawler load |
+| 2026-12-15 | Day 21 crawler load |
+| 2026-12-22 | Day 28 complete-window search/outcome comparison and crawler load |
+| 2027-01-19 | Day 56 complete-window search/outcome comparison |
+
+Allow Search Console reporting lag before comparing a complete window. Monthly
+source/rating upkeep starts December 24. Nice-to-have content/design changes
+in #8122 are separate from the day-zero release gates.
+
 The prelaunch exact-query and app-family extracts are in `search-console-baseline.json`. They cover
 August 20 through November 20, 2026, final data. Missing reportable rows do not
 prove zero impressions. Do not compare its tiny average positions as a stable
@@ -115,6 +167,27 @@ accounting for first-index dates, reporting lag and small samples. A first-index
 date requires actual inspection, not presence in a sitemap.
 
 ## Observed website outcomes
+
+### AI-search referrals
+
+`seoAppGuideAiReferralsQuery` in the same query module measures first observed
+www session landings on the six guides (including the spray comparison) from
+the exact referral hosts `chatgpt.com`, `perplexity.ai`, and `claude.ai`. Retired
+Aurora guide paths map to `/apps/aurora`. A later guide visit from an internal
+link is not an AI landing. Paid click identifiers/media, missing session IDs,
+internal cohort 295337 and the existing bot classes are excluded; short
+Windows/Chrome visits remain counted with a separate automation flag.
+
+The Google query and its executed fixture hash are unchanged. The separate
+`seo-app-guide-ai-fixtures.ts` fixture covers session deduplication, returning
+people, internal navigation, lookback boundaries, timestamp ties, spoofed
+referral domains, bots and paid traffic. Its actual PostHog execution and the
+bounded production probe are recorded in
+`scripts/posthog/seo-app-guide-ai-validation.json`. The day-zero probe
+`[2026-11-24 17:55, 18:45 UTC)` returned no rows. This is a partial window over
+captured, consented sessions, not evidence of zero AI referrals, citations,
+installs or crawler requests. Missing referrers and unknown consent coverage
+remain limitations. Use the query's bounded date window for later comparisons.
 
 `scripts/posthog/seo-app-guide-queries.ts` contains the reproducible HogQL builder
 for PostHog project 412845. `APP_GUIDE_PATHS` is derived from the guide slugs in

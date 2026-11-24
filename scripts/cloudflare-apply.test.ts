@@ -31,6 +31,7 @@ import {
   AUTOMATION_DEFAULT_DENY_RULE_DESCRIPTION,
   CACHE_RULE_DESCRIPTION,
   CRAWLER_ALLOW_RULE_DESCRIPTION,
+  PERPLEXITY_PUBLIC_GUIDES_RULE_DESCRIPTION,
   CRAWLER_ALLOW_TOKENS,
   CRAWLER_BLOCK_RULE_DESCRIPTION,
   CRAWLER_BLOCK_TOKENS,
@@ -1487,6 +1488,70 @@ describe('automation default-deny (allow-list model)', () => {
   });
 });
 
+describe('Perplexity public-guide bot exception (#8122)', () => {
+  const exception = desired.wafRules.find((rule) => rule.description === PERPLEXITY_PUBLIC_GUIDES_RULE_DESCRIPTION)!;
+  // Parse only the shipped expression's deliberately small grammar, rather than
+  // trusting a second copy of the config's path list to decide what matches.
+  const expressionParts = exception.expression.match(
+    /^\(http\.request\.method eq "([^"]+)" and http\.host eq "([^"]+)" and lower\(http\.user_agent\) contains "([^"]+)" and http\.request\.uri\.path in \{((?:"[^"]+" ?)+)\}\)$/,
+  );
+  if (!expressionParts) throw new Error('Unexpected public-guide exception grammar');
+  const [, allowedMethod, allowedHost, agentToken, pathSet] = expressionParts;
+  const allowedPaths = [...pathSet.matchAll(/"([^"]+)"/g)].map(([, path]) => path);
+  const matches = (path: string, method = 'GET', host = 'www.boardsesh.com', agent = 'PerplexityBot') =>
+    method === allowedMethod &&
+    host === allowedHost &&
+    agent.toLowerCase().includes(agentToken) &&
+    allowedPaths.includes(path);
+
+  it.each([
+    '/',
+    '/boards',
+    '/apps',
+    '/apps/kilter',
+    '/apps/aurora',
+    '/apps/moonboard',
+    '/apps/woods',
+    '/compare/spray-wall-apps',
+    '/sitemap.xml',
+    '/sitemaps/app-guides.xml',
+    '/robots.txt',
+  ])('exempts the public rollout document %s', (path) => {
+    expect(matches(path)).toBe(true);
+    expect(matches(path, 'GET', 'www.boardsesh.com', 'Mozilla/5.0 (compatible; perplexitybot/1.0)')).toBe(true);
+  });
+
+  it.each([
+    '/api/auth/session',
+    '/auth/login',
+    '/settings',
+    '/apps/kilter/private',
+    '/apps/other',
+    '/sitemaps/climbs/1.xml.gz',
+    '/b/kilter/40/view/climb-id',
+  ])('retains bot protection outside the rollout document %s', (path) => {
+    expect(matches(path)).toBe(false);
+  });
+
+  it('does not exempt writes, backend hosts, other crawlers or ordinary browsers', () => {
+    expect(matches('/apps/kilter', 'POST')).toBe(false);
+    expect(matches('/apps/kilter', 'HEAD')).toBe(false);
+    expect(matches('/apps/kilter', 'GET', 'ws.boardsesh.com')).toBe(false);
+    for (const agent of ['GPTBot', 'ClaudeBot', 'Amzn-SearchBot', 'Mozilla/5.0']) {
+      expect(matches('/apps/kilter', 'GET', 'www.boardsesh.com', agent)).toBe(false);
+    }
+  });
+
+  it('skips only bot protections before the general allow rule can bypass it', () => {
+    expect(exception.action).toBe('skip');
+    expect(exception.action_parameters).toEqual({ phases: ['http_request_sbfm'] });
+    expect(exception.enabled).toBe(true);
+    const allowIndex = desired.wafRules.findIndex((rule) => rule.description === CRAWLER_ALLOW_RULE_DESCRIPTION);
+    expect(desired.wafRules.indexOf(exception)).toBeLessThan(allowIndex);
+    expect(desired.wafRules.length).toBeLessThanOrEqual(5);
+  });
+});
+
 describe('managed rule ordering and foreign-rule safety', () => {
   const liveRule = (description: string, extra: Partial<RulesetRule> = {}): RulesetRule => ({
     id: `${description}-id`,
@@ -1507,6 +1572,7 @@ describe('managed rule ordering and foreign-rule safety', () => {
 
     expect(changed).toBe(true);
     expect(rules.map((rule) => rule.description)).toEqual([
+      PERPLEXITY_PUBLIC_GUIDES_RULE_DESCRIPTION,
       CRAWLER_ALLOW_RULE_DESCRIPTION,
       CRAWLER_BLOCK_RULE_DESCRIPTION,
       AUTOMATION_DEFAULT_DENY_RULE_DESCRIPTION,
@@ -1516,7 +1582,7 @@ describe('managed rule ordering and foreign-rule safety', () => {
     ]);
     // The pre-existing rule keeps its Cloudflare-assigned id rather than being
     // recreated, so its analytics and history survive.
-    expect(rules[1].id).toBe(`${CRAWLER_BLOCK_RULE_DESCRIPTION}-id`);
+    expect(rules[2].id).toBe(`${CRAWLER_BLOCK_RULE_DESCRIPTION}-id`);
   });
 
   it('reports an out-of-order group as drift even when each rule matches', () => {

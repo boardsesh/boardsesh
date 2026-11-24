@@ -1,0 +1,25 @@
+{
+  "projectId": 412845,
+  "fixtureQuerySha256": "e859a55f318e5045c0cd55d483c76741198d3e2501e4873705dc4f9e9a2443a2",
+  "fixtureColumns": [
+    "referral_host",
+    "landing_group",
+    "landing_sessions",
+    "excluded_crawler_sessions",
+    "possible_automation_sessions"
+  ],
+  "fixtureRows": [
+    ["chatgpt.com", "/apps/kilter", 3, 3, 1],
+    ["claude.ai", "/apps", 1, 0, 0],
+    ["claude.ai", "/apps/aurora", 1, 0, 0],
+    ["perplexity.ai", "/compare/spray-wall-apps", 1, 0, 0]
+  ],
+  "verifiedAt": "2026-11-24T18:47:00Z",
+  "productionProbe": {
+    "from": "2026-11-24T17:55:00Z",
+    "to": "2026-11-24T18:45:00Z",
+    "window": "inclusive from, exclusive to; partial day",
+    "rows": [],
+    "interpretation": "No reportable rows in captured, consented www sessions for this partial window; not evidence of zero AI referrals or crawler requests."
+  }
+}
