@@ -189,7 +189,9 @@ export function createLedStripes(
     return { x, y };
   };
   let result = finish(
-    layout,
+    // A full rebuild replaces every physical LED. Empty per-hold/nut overrides
+    // would suppress automatic mapping rather than clear the old assignments.
+    { ...layout, holdLeds: [], holdAboveLeds: [], tnutLeds: [] },
     {
       orientation,
       nextStripeId: layout.ledStripes?.nextStripeId ?? 0,

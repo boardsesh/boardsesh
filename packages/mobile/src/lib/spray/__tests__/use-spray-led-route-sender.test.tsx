@@ -307,6 +307,148 @@ describe('spray route transport', () => {
     expect(mocks.show.mock.lastCall?.[0]).toEqual([2, 5]);
   });
 
+  it('applies a deferred upper-light change to the acknowledged route when its replacement fails', async () => {
+    upperMapping();
+    mocks.layout.mockResolvedValue({ ...layout, ledPlacement: 'below' });
+    const { result, rerender } = renderHook(({ enabled }) => useUpperSender(enabled), {
+      initialProps: { enabled: false },
+    });
+    expect(await result.current.send('p7r1')).toBe(true);
+    let complete!: (geometry: typeof payload) => void;
+    mocks.payload.mockReturnValueOnce(
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+    );
+    const replacement = result.current.send('p8r1');
+    await vi.waitFor(() => expect(mocks.payload).toHaveBeenCalledTimes(2));
+    rerender({ enabled: true });
+    complete(payload);
+    expect(await replacement).toBe(false);
+    await vi.waitFor(() => expect(mocks.show).toHaveBeenCalledTimes(2));
+    expect(mocks.show.mock.lastCall).toEqual([
+      [2, 5],
+      [
+        { index: 2, color: [128, 64, 32] },
+        { index: 5, color: [64, 64, 64] },
+      ],
+    ]);
+    expect(mocks.invalidate).not.toHaveBeenCalledWith(true);
+    expect(mocks.close).not.toHaveBeenCalled();
+  });
+
+  it.each(['preview', 'release', 'abort', 'credentials', 'returned-option', 'background'])(
+    'does not replay a deferred option after %s',
+    async (change) => {
+      upperMapping();
+      mocks.layout.mockResolvedValue({ ...layout, ledPlacement: 'below' });
+      const { result, rerender } = renderHook(({ enabled }) => useUpperSender(enabled), {
+        initialProps: { enabled: false },
+      });
+      expect(await result.current.send('p7r1')).toBe(true);
+      let complete!: (geometry: typeof payload) => void;
+      mocks.payload.mockReturnValueOnce(
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+      );
+      const controller = new AbortController();
+      const replacement = result.current.send('p8r1', false, controller.signal);
+      await vi.waitFor(() => expect(mocks.payload).toHaveBeenCalledTimes(2));
+      rerender({ enabled: true });
+      act(() => {
+        if (change === 'preview') mocks.ownsLane = false;
+        if (change === 'release') result.current.release();
+        if (change === 'abort') controller.abort();
+        if (change === 'credentials') {
+          mocks.credential++;
+          mocks.credentialChanged?.();
+        }
+        if (change === 'background') mocks.background?.('background');
+      });
+      if (change === 'returned-option') rerender({ enabled: false });
+      complete(payload);
+      expect(await replacement).toBe(false);
+      await act(async () => undefined);
+      expect(mocks.show).toHaveBeenCalledTimes(1);
+      expect(mocks.payload).toHaveBeenCalledTimes(2);
+      if (change === 'background') {
+        act(() => mocks.background?.('active'));
+        expect(mocks.invalidate).toHaveBeenCalledWith(true);
+      }
+    },
+  );
+
+  it.each([false, true])(
+    'waits for a newer pending route before repairing the option (accepted=%s)',
+    async (accepted) => {
+      mocks.mapping.mockReturnValue({
+        holes: [],
+        holds: [
+          { holdId: 7, holeIndices: [0], ledIds: ['a'], indices: [2], aboveLedIds: ['b'], aboveIndices: [5] },
+          { holdId: 8, holeIndices: [1], ledIds: ['c'], indices: [3], aboveLedIds: ['d'], aboveIndices: [6] },
+        ],
+      });
+      mocks.layout.mockResolvedValue({ ...layout, ledPlacement: 'below' });
+      const { result, rerender } = renderHook(({ enabled }) => useUpperSender(enabled), {
+        initialProps: { enabled: false },
+      });
+      expect(await result.current.send('p7r1')).toBe(true);
+      let finishReplacement!: (geometry: typeof payload) => void;
+      let finishNewest!: (geometry: typeof payload) => void;
+      mocks.payload.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishReplacement = resolve;
+        }),
+      );
+      const replacement = result.current.send('p9r1');
+      await vi.waitFor(() => expect(mocks.payload).toHaveBeenCalledTimes(2));
+      rerender({ enabled: true });
+      mocks.payload.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishNewest = resolve;
+        }),
+      );
+      const newest = result.current.send(accepted ? 'p8r1' : 'p10r1');
+      await vi.waitFor(() => expect(mocks.payload).toHaveBeenCalledTimes(3));
+      finishReplacement(payload);
+      expect(await replacement).toBe(false);
+      expect(mocks.show).toHaveBeenCalledTimes(1);
+      expect(mocks.payload).toHaveBeenCalledTimes(3);
+      finishNewest(payload);
+      expect(await newest).toBe(accepted);
+      await vi.waitFor(() => expect(mocks.show).toHaveBeenCalledTimes(2));
+      expect(mocks.show.mock.lastCall?.[0]).toEqual(accepted ? [3, 6] : [2, 5]);
+      expect(mocks.payload).toHaveBeenCalledTimes(accepted ? 3 : 4);
+    },
+  );
+
+  it('does not retry a failed deferred refresh indefinitely', async () => {
+    upperMapping();
+    mocks.layout.mockResolvedValue({ ...layout, ledPlacement: 'below' });
+    const { result, rerender } = renderHook(({ enabled }) => useUpperSender(enabled), {
+      initialProps: { enabled: false },
+    });
+    expect(await result.current.send('p7r1')).toBe(true);
+    let complete!: (geometry: typeof payload) => void;
+    mocks.payload.mockReturnValueOnce(
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+    );
+    const replacement = result.current.send('p8r1');
+    await vi.waitFor(() => expect(mocks.payload).toHaveBeenCalledTimes(2));
+    rerender({ enabled: true });
+    mocks.payload.mockResolvedValueOnce(null);
+    complete(payload);
+    expect(await replacement).toBe(false);
+    await vi.waitFor(() => expect(mocks.payload).toHaveBeenCalledTimes(3));
+    await act(async () => undefined);
+    expect(mocks.show).toHaveBeenCalledTimes(1);
+    expect(mocks.payload).toHaveBeenCalledTimes(3);
+    expect(mocks.failure).toHaveBeenCalledTimes(1);
+  });
+
   it('finishes a changed option during an in-flight controller write before acknowledging the route', async () => {
     upperMapping();
     mocks.layout.mockResolvedValue({ ...layout, ledPlacement: 'below' });

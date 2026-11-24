@@ -362,6 +362,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   const initialSkip = Number(initialSkipText);
   const validInitialSkip = /^\d+$/.test(initialSkipText) && initialSkip <= skipLimit;
   const generatedSignature = useRef(matchingSaved ? gridSignature(matchingSaved) : null);
+  const pendingPattern = useRef<{ layout: TnutLayout; gridSignature: string | null } | null>(null);
   const parsedRows = Number(rowsText);
   const parsedColumns = Number(columnsText);
   const maxColumns = layout.pattern === 'offset' ? 99 : 50;
@@ -397,6 +398,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
 
   /** Next stays instant: the store queues each wall's writes, so the newest always lands last. */
   function saveWork(draft: TnutLayout) {
+    pendingPattern.current = null;
     if (persisted.current === draft) return;
     persisted.current = draft;
     setSaveFailed(false);
@@ -531,6 +533,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       const nextLayout = { ...layout, rows: parsedRows, columns: parsedColumns };
       const signature = gridSignature(nextLayout);
       if (generatedSignature.current !== signature) {
+        pendingPattern.current = null;
         changeLayout({ ...nextLayout, holes: generateTnutGrid({ ...nextLayout, pattern: layout.pattern }) });
         generatedSignature.current = signature;
         setHistory([]);
@@ -750,6 +753,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
 
   function updateHoles(holes: TnutPoint[], draft: TnutLayout = layout) {
     if (busy.current) return;
+    pendingPattern.current = null;
     const snapshot = { layout, ledSignature: generatedLeds.current, ledBasis: ledBasis.current };
     setHistory((previous) => [...previous.slice(-29), snapshot]);
     changeLayout(pruneTnutLedLinks({ ...draft, holes }));
@@ -877,7 +881,13 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
                   selected={layout.pattern === pattern}
                   onPress={() => {
                     if (pattern !== layout.pattern) {
-                      changeLayout({
+                      const basis = pendingPattern.current ?? { layout, gridSignature: generatedSignature.current };
+                      const restored = pattern === basis.layout.pattern ? basis : null;
+                      pendingPattern.current = restored ? null : basis;
+                      // Browsing a pattern is reversible until its holes or LEDs
+                      // are committed. Restore manual holes and links together.
+                      const draft = restored?.layout ?? {
+                        ...layout,
                         pattern,
                         columns: Math.min(pattern === 'offset' ? 99 : 50, layout.columns),
                         holes: [],
@@ -886,10 +896,12 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
                           (pattern === 'custom' && layout.ledPlacement === 'stripe')
                             ? undefined
                             : layout.ledPlacement,
-                      });
-                      setColumnsText(String(Math.min(pattern === 'offset' ? 99 : 50, layout.columns)));
+                      };
+                      changeLayout(draft);
+                      setRowsText(String(draft.rows));
+                      setColumnsText(String(draft.columns));
                       setHistory([]);
-                      generatedSignature.current = null;
+                      generatedSignature.current = restored?.gridSignature ?? null;
                     }
                   }}
                 />

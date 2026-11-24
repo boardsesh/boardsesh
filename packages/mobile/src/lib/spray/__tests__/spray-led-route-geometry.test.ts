@@ -11,8 +11,15 @@ const fixture = vi.hoisted(() => ({
   database: {} as object | null,
   registered: null as { wallUuid: string; version: number; versionId: number | string } | null,
   fetch: vi.fn(),
+  request: vi.fn(),
   read: vi.fn(),
   readOwner: vi.fn(),
+  preferences: new Map<string, unknown>(),
+  readPreference: vi.fn(),
+  writePreference: vi.fn(),
+  removePreference: vi.fn(),
+  settleMiss: vi.fn(),
+  recheckAccess: vi.fn(),
 }));
 
 vi.mock('../../connectivity/connectivity-store', () => ({
@@ -20,6 +27,7 @@ vi.mock('../../connectivity/connectivity-store', () => ({
 }));
 vi.mock('../spray-wall-loader', () => ({
   fetchSprayWallRenderData: fixture.fetch,
+  requestSprayWallRenderData: fixture.request,
   sprayWallPublishedRenderDataQueryKey: (wallUuid: string, viewerGeneration: number) =>
     ['sprayWallRenderData', wallUuid, fixture.privacyGeneration, { viewerGeneration }] as const,
 }));
@@ -27,14 +35,23 @@ vi.mock('../spray-wall-registry', () => ({
   getSprayWall: () => fixture.registered,
   sprayWallViewerGeneration: () => fixture.viewerGeneration,
   sprayWallRemovalGeneration: () => fixture.removalGeneration,
+  settleSprayWallRenderMiss: fixture.settleMiss,
 }));
+vi.mock('../../preference-store', () => ({
+  getPreference: fixture.readPreference,
+  setPreference: fixture.writePreference,
+  removePreference: fixture.removePreference,
+  removePreferencesMatching: vi.fn(),
+}));
+vi.mock('../spray-wall-led-sync', () => ({ recheckSprayWallLedAccess: fixture.recheckAccess }));
 vi.mock('../spray-privacy-generation', () => ({ sprayPrivacyGeneration: () => fixture.privacyGeneration }));
 vi.mock('../../../db', () => ({ getDatabaseHandle: () => fixture.database }));
 vi.mock('../../../db/queries/get-spray-wall-local', () => ({ getSprayWallLocal: fixture.read }));
 vi.mock('../../local-user-id', () => ({ readLocalUserId: fixture.readOwner }));
 
-import { loadSprayLedRouteGeometry } from '../spray-led-route-geometry';
 import { sprayWallPublishedRenderDataQueryKey } from '../spray-wall-loader';
+
+let loadSprayLedRouteGeometry: typeof import('../spray-led-route-geometry').loadSprayLedRouteGeometry;
 
 const WALL_UUID = 'wall-uuid';
 const LAYOUT_ID = 42;
@@ -71,7 +88,8 @@ function localWall(): LocalSprayWall {
 const expectedGeometry = { frame: { width: 800, height: 600 }, homography: HOMOGRAPHY, holds: HOLDS };
 let queryClient: QueryClient;
 
-beforeEach(() => {
+beforeEach(async () => {
+  vi.resetModules();
   vi.resetAllMocks();
   fixture.offline = true;
   fixture.viewerGeneration = 1;
@@ -79,11 +97,21 @@ beforeEach(() => {
   fixture.privacyGeneration = 'current';
   fixture.userId = 'viewer';
   fixture.database = {};
+  fixture.preferences.clear();
+  fixture.readPreference.mockImplementation(async (key: string) => fixture.preferences.get(key) ?? null);
+  fixture.writePreference.mockImplementation(async (key: string, stored: unknown) => {
+    fixture.preferences.set(key, stored);
+  });
+  fixture.removePreference.mockImplementation(async (key: string) => {
+    fixture.preferences.delete(key);
+  });
   fixture.registered = null;
   fixture.fetch.mockResolvedValue(renderPayload());
+  fixture.request.mockResolvedValue(renderPayload());
   fixture.read.mockImplementation(async () => localWall());
   fixture.readOwner.mockImplementation(async () => fixture.userId);
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+  ({ loadSprayLedRouteGeometry } = await import('../spray-led-route-geometry'));
 });
 
 afterEach(() => queryClient.clear());
@@ -155,6 +183,242 @@ describe('spray route geometry without internet', () => {
     cachePayload();
     fixture.fetch.mockResolvedValue(null);
     expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+    expect(fixture.read).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    'persists a denied published wall through a cold offline restart (registered=%s)',
+    async (registered) => {
+      if (registered) fixture.registered = { wallUuid: WALL_UUID, version: 2, versionId: '21' };
+      fixture.offline = false;
+      fixture.fetch.mockResolvedValue(null);
+      expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+      expect(fixture.settleMiss).toHaveBeenCalledWith(LAYOUT_ID, WALL_UUID);
+      expect(fixture.recheckAccess).toHaveBeenCalledWith(WALL_UUID);
+      expect([...fixture.preferences.values()]).toEqual([true]);
+
+      queryClient.clear();
+      fixture.registered = null;
+      fixture.offline = true;
+      vi.resetModules();
+      const restarted = await import('../spray-led-route-geometry');
+      expect(await restarted.loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+      cachePayload();
+      expect(await restarted.loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+      expect(fixture.read).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not apply one account’s denial to another account’s owned mirror', async () => {
+    fixture.offline = false;
+    fixture.fetch.mockResolvedValue(null);
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+    fixture.viewerGeneration++;
+    fixture.userId = 'another-viewer';
+    fixture.offline = true;
+    queryClient.clear();
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toEqual(expectedGeometry);
+  });
+
+  it('requires fresh valid server evidence to recover a denied wall', async () => {
+    fixture.offline = false;
+    fixture.fetch.mockResolvedValueOnce(null);
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+    cachePayload();
+    const key = sprayWallPublishedRenderDataQueryKey(WALL_UUID, fixture.viewerGeneration);
+    fixture.request.mockImplementationOnce(async () => {
+      expect(queryClient.getQueryState(key)?.isInvalidated).toBe(false);
+      return renderPayload();
+    });
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toEqual(expectedGeometry);
+    expect(fixture.preferences.size).toBe(0);
+    queryClient.clear();
+    fixture.offline = true;
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toEqual(expectedGeometry);
+  });
+
+  it('keeps a denial after a transport failure or malformed positive answer', async () => {
+    fixture.offline = false;
+    fixture.fetch.mockResolvedValueOnce(null);
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+    fixture.request.mockRejectedValueOnce(new TypeError('Network request failed'));
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+    fixture.request.mockResolvedValueOnce({ ...renderPayload(), boardWidth: 0 });
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+    fixture.offline = true;
+    queryClient.clear();
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+    expect(fixture.read).not.toHaveBeenCalled();
+  });
+
+  it.each(['success', 'failure'] as const)(
+    'recovers without cancelling a shared %s read and fences its later cached answer',
+    async (outcome) => {
+      fixture.offline = false;
+      fixture.fetch.mockResolvedValueOnce(null);
+      expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+      const queryKey = sprayWallPublishedRenderDataQueryKey(WALL_UUID, fixture.viewerGeneration);
+      const stalePayload = { ...renderPayload(), boardWidth: 400 };
+      let finishStale!: () => void;
+      const stale = queryClient
+        .fetchQuery({
+          queryKey,
+          queryFn: () =>
+            new Promise((resolve, reject) => {
+              finishStale = () =>
+                outcome === 'success' ? resolve(stalePayload) : reject(new TypeError('Network request failed'));
+            }),
+        })
+        .catch((error: unknown) => error);
+      await vi.waitFor(() => expect(finishStale).toBeTypeOf('function'));
+      expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toEqual(expectedGeometry);
+      expect(fixture.request).toHaveBeenCalledOnce();
+      expect(fixture.fetch).toHaveBeenCalledOnce();
+      expect(queryClient.getQueryState(queryKey)?.fetchStatus).toBe('fetching');
+      expect([...fixture.preferences.values()]).toEqual([true]);
+      finishStale();
+      if (outcome === 'success') expect(await stale).toEqual(stalePayload);
+      else expect(await stale).toBeInstanceOf(TypeError);
+      expect(fixture.settleMiss).toHaveBeenCalledTimes(1);
+      fixture.offline = true;
+      expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+      fixture.offline = false;
+      expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toEqual(expectedGeometry);
+      expect(fixture.preferences.size).toBe(0);
+      fixture.offline = true;
+      expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toEqual(expectedGeometry);
+    },
+  );
+
+  it('allows concurrent independent recoveries without cancelling either authority read', async () => {
+    fixture.offline = false;
+    fixture.fetch.mockResolvedValueOnce(null);
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+    expect(
+      await Promise.all([
+        loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID),
+        loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID),
+      ]),
+    ).toEqual([expectedGeometry, expectedGeometry]);
+    expect(fixture.request).toHaveBeenCalledTimes(2);
+    expect(fixture.preferences.size).toBe(0);
+  });
+
+  it('keeps the denial until a paused shared query can no longer resume an older read', async () => {
+    fixture.offline = false;
+    fixture.fetch.mockResolvedValueOnce(null);
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+    const shared = queryClient.getQueryCache().build(queryClient, {
+      queryKey: sprayWallPublishedRenderDataQueryKey(WALL_UUID, fixture.viewerGeneration),
+    });
+    shared.setState({ fetchStatus: 'paused' });
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toEqual(expectedGeometry);
+    expect([...fixture.preferences.values()]).toEqual([true]);
+    shared.setState({ fetchStatus: 'idle' });
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toEqual(expectedGeometry);
+    expect(fixture.preferences.size).toBe(0);
+  });
+
+  it('does not let an earlier recovery success remove a newer direct denial', async () => {
+    fixture.offline = false;
+    fixture.fetch.mockResolvedValueOnce(null);
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+    let finishRead!: (payload: ReturnType<typeof renderPayload>) => void;
+    fixture.request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    const older = loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID);
+    await vi.waitFor(() => expect(finishRead).toBeTypeOf('function'));
+    fixture.request.mockResolvedValueOnce(null);
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+    finishRead(renderPayload());
+    expect(await older).toBeNull();
+    fixture.offline = true;
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+  });
+
+  it('retains the offline fence when a shared read starts and settles during native marker removal', async () => {
+    fixture.offline = false;
+    fixture.fetch.mockResolvedValueOnce(null);
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+    fixture.removePreference.mockImplementationOnce(async (key: string) => {
+      fixture.preferences.delete(key);
+      await queryClient.fetchQuery({
+        queryKey: sprayWallPublishedRenderDataQueryKey(WALL_UUID, fixture.viewerGeneration),
+        queryFn: async () => null,
+      });
+    });
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toEqual(expectedGeometry);
+    expect([...fixture.preferences.values()]).toEqual([true]);
+    queryClient.clear();
+    fixture.offline = true;
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+  });
+
+  it('does not let an earlier positive response remove a newer cold-wall denial', async () => {
+    fixture.offline = false;
+    let finishRead!: (payload: ReturnType<typeof renderPayload>) => void;
+    fixture.fetch.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    const older = loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID);
+    await vi.waitFor(() => expect(finishRead).toBeTypeOf('function'));
+    fixture.fetch.mockResolvedValueOnce(null);
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+    finishRead(renderPayload());
+    expect(await older).toBeNull();
+    fixture.offline = true;
+    queryClient.clear();
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+    expect(fixture.read).not.toHaveBeenCalled();
+  });
+
+  it('discards a late null from the previous account without withdrawing the current wall', async () => {
+    fixture.offline = false;
+    let finishRead!: (payload: null) => void;
+    fixture.fetch.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    const loading = loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID);
+    await vi.waitFor(() => expect(finishRead).toBeTypeOf('function'));
+    fixture.viewerGeneration++;
+    fixture.userId = 'another-viewer';
+    finishRead(null);
+    expect(await loading).toBeNull();
+    expect(fixture.preferences.size).toBe(0);
+    expect(fixture.settleMiss).not.toHaveBeenCalled();
+    expect(fixture.recheckAccess).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the persisted denial record cannot be read offline', async () => {
+    fixture.readPreference.mockRejectedValueOnce(new Error('Storage unavailable'));
+    cachePayload();
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+    expect(fixture.read).not.toHaveBeenCalled();
+  });
+
+  it('keeps a denied wall ineligible after a failed denial write and retries persisting it', async () => {
+    // Use a distinct identity: module-level evidence deliberately survives cache loss.
+    fixture.userId = 'denial-write-failure';
+    fixture.offline = false;
+    fixture.fetch.mockResolvedValueOnce(null);
+    fixture.writePreference.mockRejectedValueOnce(new Error('Storage full'));
+    await expect(loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).rejects.toThrow('Storage full');
+    expect(fixture.preferences.size).toBe(0);
+    queryClient.clear();
+    fixture.offline = true;
+    expect(await loadSprayLedRouteGeometry(queryClient, WALL_UUID, LAYOUT_ID)).toBeNull();
+    expect([...fixture.preferences.values()]).toEqual([true]);
+    expect(fixture.writePreference).toHaveBeenCalledTimes(2);
     expect(fixture.read).not.toHaveBeenCalled();
   });
 

@@ -5,6 +5,7 @@ import {
   buildSprayLedMapping,
   createLedStripes,
   DEFAULT_TNUT_CORNERS,
+  generateLedPositions,
   generateTnutGrid,
   MAX_TNUT_LAYOUT_BYTES,
   MAX_LED_STRIPES,
@@ -58,6 +59,25 @@ function wire(layout: TnutLayout): TnutLayout {
 }
 
 describe('editable ordered LED stripes', () => {
+  it.each(['tnut', 'legacy'] as const)('clears %s manual overrides when rebuilding all stripes', (linkType) => {
+    const grid = { ...base(), ledPlacement: 'center' as const };
+    const previous: TnutLayout = { ...grid, ledPositions: generateLedPositions(grid) };
+    const center = previous.holes[4];
+    const ledId = previous.ledPositions![4].id;
+    if (linkType === 'tnut') previous.tnutLeds = [{ hole: center, ledIds: [ledId], aboveLedIds: [ledId] }];
+    else {
+      previous.holdLeds = [{ holdId: 17, ledIds: [ledId] }];
+      previous.holdAboveLeds = [{ holdId: 17, ledIds: [ledId] }];
+    }
+    const rebuilt = createLedStripes(previous, 'vertical', 9);
+    if (rebuilt === 'capacity') throw new Error('Expected valid stripe rebuild');
+    expect(rebuilt).toMatchObject({ holdLeds: [], holdAboveLeds: [], tnutLeds: [] });
+    const mapping = buildSprayLedMapping(rebuilt, frame, [
+      { id: 17, cx: center.x * frame.width, cy: center.y * frame.height, r: 10 },
+    ]);
+    expect(mapping.holds[0].ledIds).toHaveLength(3);
+  });
+
   it.each(['vertical', 'horizontal'] as const)(
     'defaults to one %s stripe per calibrated grid axis with wall-edge endpoints',
     (orientation) => {

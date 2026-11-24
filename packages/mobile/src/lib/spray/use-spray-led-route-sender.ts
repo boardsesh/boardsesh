@@ -15,6 +15,7 @@ import { sprayPrivacyGeneration } from './spray-privacy-generation';
 
 type RouteRuntime = { wallUuid: string; url: string; session: LedPreviewSession };
 type RouteRequest = { frames: string; mirrored?: boolean; signal?: AbortSignal; pending: boolean };
+type AcknowledgedRoute = { request: RouteRequest; session: LedPreviewSession; upperLighting: boolean };
 type RouteWrite = (
   frames: string,
   mirrored?: boolean,
@@ -69,7 +70,8 @@ export function useSprayLedRouteSender({
   const upperLighting = useRef(lightAboveHolds);
   upperLighting.current = lightAboveHolds;
   const latestRoute = useRef<RouteRequest | null>(null);
-  const acknowledgedRoute = useRef<RouteRequest | null>(null);
+  const acknowledgedRoute = useRef<AcknowledgedRoute | null>(null);
+  const deferredUpperLighting = useRef<AcknowledgedRoute | null>(null);
   const writeRoute = useRef<RouteWrite | null>(null);
 
   const stop = useCallback((lights: 'off' | 'leave' = 'off') => {
@@ -79,6 +81,7 @@ export function useSprayLedRouteSender({
     runtime.current = null;
     latestRoute.current = null;
     acknowledgedRoute.current = null;
+    deferredUpperLighting.current = null;
     if (previous) {
       void (lights === 'off' ? previous.session.close() : previous.session.detach()).catch(() => undefined);
     }
@@ -91,12 +94,18 @@ export function useSprayLedRouteSender({
     if (previousUpperLighting.current === lightAboveHolds) return;
     previousUpperLighting.current = lightAboveHolds;
     if (boardName !== 'spray') return;
-    const requested = latestRoute.current?.pending ? latestRoute.current : acknowledgedRoute.current;
-    const session = runtime.current?.session;
+    const acknowledged = acknowledgedRoute.current;
+    if (!acknowledged) return;
+    const { request, session } = acknowledged;
+    if (!request.frames || request.signal?.aborted || runtime.current?.session !== session || !session.isOwner())
+      return;
     // A pending send reads the latest option itself and keeps its original acknowledgement.
     // A settled send may refresh only the same route while this session still owns the lights.
-    if (!requested?.frames || requested.pending || requested.signal?.aborted || !session?.isOwner()) return;
-    void writeRoute.current?.(requested.frames, requested.mirrored, requested.signal, session);
+    if (latestRoute.current?.pending) {
+      deferredUpperLighting.current = acknowledged;
+      return;
+    }
+    void writeRoute.current?.(request.frames, request.mirrored, request.signal, session);
   }, [boardName, lightAboveHolds]);
 
   useEffect(() => {
@@ -169,9 +178,10 @@ export function useSprayLedRouteSender({
         }
         return false;
       };
-      const settled = (acknowledged: boolean) => {
+      const settled = (acknowledged: boolean, session: LedPreviewSession, appliedUpperLighting: boolean) => {
         if (!acknowledged || !isCurrent()) return false;
-        acknowledgedRoute.current = requested;
+        acknowledgedRoute.current = { request: requested, session, upperLighting: appliedUpperLighting };
+        deferredUpperLighting.current = null;
         missedWhileAway.current = false;
         failureShown.current = false;
         return true;
@@ -232,7 +242,7 @@ export function useSprayLedRouteSender({
           runtime.current = current;
         }
         if (!isCurrent()) return false;
-        if (!frames) return settled(await current.session.clear());
+        if (!frames) return settled(await current.session.clear(), current.session, upperLighting.current);
         const [geometry, layout] = await Promise.all([
           loadSprayLedRouteGeometry(queryClient, wallUuid, layoutId),
           loadSprayWallTnutLayout(wallUuid),
@@ -279,7 +289,8 @@ export function useSprayLedRouteSender({
             : await current.session.clear();
           if (!acknowledged || !isCurrent()) return false;
           wrote = true;
-          if (upperLighting.current === upperLightingForWrite) return settled(true);
+          if (upperLighting.current === upperLightingForWrite)
+            return settled(true, current.session, upperLightingForWrite);
         }
         return false;
       } catch {
@@ -292,6 +303,23 @@ export function useSprayLedRouteSender({
       } finally {
         requested.pending = false;
         signal?.removeEventListener('abort', abort);
+        const deferred = deferredUpperLighting.current;
+        if (deferred && isCurrent() && latestRoute.current === requested) {
+          deferredUpperLighting.current = null;
+          const { request, session } = deferred;
+          // A failed replacement leaves the last acknowledged route in charge.
+          // Do not revive it after a takeover, or consume the foreground retry.
+          if (
+            !away.current &&
+            deferred.upperLighting !== upperLighting.current &&
+            acknowledgedRoute.current === deferred &&
+            !request.signal?.aborted &&
+            runtime.current?.session === session &&
+            session.isOwner()
+          ) {
+            void writeRoute.current?.(request.frames, request.mirrored, request.signal, session);
+          }
+        }
       }
     },
     [boardName, layoutId, queryClient, stop],

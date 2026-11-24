@@ -1110,6 +1110,30 @@ describe('SprayWallLedSetupScreen', () => {
   });
 
   describe('continuous LED strips', () => {
+    it('clears manual roles only after confirming a full strip replacement', async () => {
+      const saved = savedWithLeds();
+      const ledId = saved.ledPositions![0].id;
+      saved.tnutLeds = [{ hole: saved.holes[0], ledIds: [ledId], aboveLedIds: [ledId] }];
+      saved.holdLeds = [{ holdId: 17, ledIds: [ledId] }];
+      saved.holdAboveLeds = [{ holdId: 17, ledIds: [ledId] }];
+      saved.wiring = createWiring(saved.ledPositions!, 'horizontal', 'tl', saved);
+      storage.load.mockResolvedValue(saved);
+      await openOnLedStep();
+      const savesBefore = storage.save.mock.calls.length;
+      fireEvent.click(radio('ledStripe'));
+      next();
+      next();
+      expect(controls.confirm).toHaveBeenCalledOnce();
+      await respondToConfirm(false);
+      expect(storage.save).toHaveBeenCalledTimes(savesBefore);
+      expect(saved.tnutLeds[0].ledIds).toEqual([ledId]);
+      next();
+      await respondToConfirm(true);
+      expect(lastSaved()).toMatchObject({ holdLeds: [], holdAboveLeds: [], tnutLeds: [] });
+      expect(lastSaved().wiring).toBeUndefined();
+      expect(lastSaved().ledStripes?.stripes).toHaveLength(saved.columns);
+    });
+
     it.each(['horizontal', 'vertical'] as const)(
       'opens %s configuration before the inactive, editable photo and one hold-link step',
       async (orientation) => {
@@ -1545,6 +1569,81 @@ describe('SprayWallLedSetupScreen', () => {
       await screen.findByText('sprayLedSetup.ledHint');
       expect(storage.save).not.toHaveBeenCalled();
     }
+
+    it.each([false, true])(
+      'preserves nut links after reverting a tentative pattern (corrected=%s)',
+      async (corrected) => {
+        const saved = wiredGrid(3, 3);
+        if (corrected) {
+          saved.holes = saved.holes.slice(1);
+          saved.holes[0] = { x: saved.holes[0].x + 0.02, y: saved.holes[0].y + 0.01 };
+          saved.ledPositions = generateLedPositions(saved);
+          saved.wiring = createWiring(saved.ledPositions, 'horizontal', 'tl', saved);
+        }
+        saved.tnutLeds = [{ hole: saved.holes[0], ledIds: [saved.ledPositions![0].id], aboveLedIds: [] }];
+        storage.load.mockResolvedValue(saved);
+        await open();
+        fireEvent.click(radio('custom'));
+        fireEvent.click(radio('grid'));
+        next();
+        next();
+        expect(controls.editor?.holes).toEqual(saved.holes);
+        next();
+        await screen.findByText('sprayLedSetup.ledHint');
+        next();
+        expect(controls.confirm).not.toHaveBeenCalled();
+        expect(lastSaved().tnutLeds).toEqual(saved.tnutLeds);
+        expect(lastSaved().wiring).toEqual(saved.wiring);
+      },
+    );
+
+    it('keeps a deliberately removed nut removed after a tentative pattern round-trip', async () => {
+      const saved = wiredGrid(3, 3);
+      const hole = saved.holes[0];
+      saved.tnutLeds = [{ hole, ledIds: [saved.ledPositions![0].id], aboveLedIds: [] }];
+      storage.load.mockResolvedValue(saved);
+      await open();
+      next();
+      next();
+      fireEvent.click(button('remove'));
+      tap(hole);
+      back();
+      back();
+      fireEvent.click(radio('custom'));
+      fireEvent.click(radio('grid'));
+      next();
+      next();
+      expect(controls.editor?.holes).toEqual(saved.holes.slice(1));
+      next();
+      await screen.findByText('sprayLedSetup.ledHint');
+      next();
+      if (resolveConfirm) await respondToConfirm(true);
+      expect(lastSaved().tnutLeds).toEqual([]);
+    });
+
+    it('restores the original grid after inspecting custom holes without editing', async () => {
+      const saved = wiredGrid(3, 3);
+      saved.holes = saved.holes.slice(1);
+      saved.ledPositions = generateLedPositions(saved);
+      saved.wiring = createWiring(saved.ledPositions, 'horizontal', 'tl', saved);
+      saved.tnutLeds = [{ hole: saved.holes[0], ledIds: [saved.ledPositions![0].id] }];
+      storage.load.mockResolvedValue(saved);
+      await open();
+      fireEvent.click(radio('custom'));
+      next();
+      expectHoles(0);
+      back();
+      fireEvent.click(radio('grid'));
+      next();
+      next();
+      expect(controls.editor?.holes).toEqual(saved.holes);
+      next();
+      await screen.findByText('sprayLedSetup.ledHint');
+      next();
+      expect(controls.confirm).not.toHaveBeenCalled();
+      expect(lastSaved().tnutLeds).toEqual(saved.tnutLeds);
+      expect(lastSaved().wiring).toEqual(saved.wiring);
+    });
 
     it('keeps marker-only nut moves, cable and both link roles through save and reopen', async () => {
       const saved = wiredGrid(3, 3);

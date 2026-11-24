@@ -97,6 +97,9 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    and 6000 LEDs in total. Removing the last LED removes its strip. Changing
    membership/count asks before resetting an existing cable; endpoint moves
    preserve LED identities and the cable. Undo restores the complete layout.
+   Confirming a full strip rebuild clears manual hold and T-nut assignments so
+   the new strips use automatic mapping. Individual strip edits still prune
+   only references that no longer exist.
 8. Next opens **Holds and LEDs**. Switch between **Holds** and **T-nuts** to
    choose what to link, then tap LEDs to add or remove them from that selection.
    Several LEDs can belong to the same hold or T-nut. Dashed lines join the LEDs
@@ -261,6 +264,8 @@ Neither field is the durable identity for a mounted hold. The common reader
 rejects malformed links and removes references to missing LEDs or nuts. Marker
 removal prunes references immediately before a new position can reuse an ID;
 moving a nut carries its manual links, and undo restores the whole assignment.
+Browsing another wall pattern and returning before committing a change restores
+the original holes, manual assignments and cable together.
 Photo identity and calibration checks still apply: the later re-photographing
 flow must carry the physical nut layout into its new canonical frame.
 Confirming an assignment step promotes existing manual hold links to their
@@ -333,6 +338,9 @@ always keeps its full role color, even if another hold also uses it as an upper
 reference. A missing or unwired upper LED does not prevent lighting the primary
 LEDs. Changing the option refreshes only the actual owned route; it leaves an
 explicitly cleared wall and another setup preview alone.
+If a replacement route fails while the option changes, the last acknowledged
+route receives that change only while its original session still owns the lights.
+Background failures retain the normal retry on return.
 
 Spray LEDs follow the Bluetooth boards: locking the phone or backgrounding the
 app leaves the climb lit, and a write that fails while away is retried on
@@ -449,6 +457,8 @@ Route lighting also uses the current viewer's cached published geometry, or the
 owner-gated offline wall mirror, when the backend is unreachable. The mirror's
 holds stay in canonical coordinates; the photo-coordinate registry is not used
 for LED matching. A server access denial never falls back to an older copy.
+The denial is retained for that account and wall across cache eviction and
+offline restarts; only a valid fresh server response can restore access.
 The saved calibration must still match the wall's frame and homography.
 
 Opening LED setup refreshes the saved layout before the editor takes its first
