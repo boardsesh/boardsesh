@@ -31,7 +31,7 @@
         "title": "Any web browser",
         "body": "Chrome and Edge light the board too",
         "bodyNoLighting": "Browse, queue and log at app.boardsesh.com",
-        "bodyFamilies": "Chrome and Edge light Kilter, Tension, MoonBoard and Aurora boards"
+        "bodyFamilies": "Connect using any browser that supports Web Bluetooth"
       }
     },
     "eyebrows": {
