@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { suppressTracing, withIsolationScope } from '@sentry/node';
 import type { gyms } from '@boardsesh/db/schema';
@@ -13,6 +13,7 @@ type AddressGym = Pick<
 const DEFAULT_ENDPOINT = 'https://nominatim.openstreetmap.org/search';
 const CACHE_PREFIX = 'gym-address-location:v1:';
 const REQUEST_BUDGET_KEY = 'gym-address-location:request-budget';
+const RELEASE_ADDRESS_LEASE = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`;
 const MATCH_TTL_SECONDS = 30 * 24 * 60 * 60;
 const NO_MATCH_TTL_SECONDS = 24 * 60 * 60;
 const FAILURE_TTL_SECONDS = 5 * 60;
@@ -75,11 +76,16 @@ export async function lookupAddressCoordinates(addressInput: string): Promise<z.
     }
     // One lookup for this address at a time; a slower failure must not overwrite
     // a newer successful result after the global start budget becomes available.
-    const addressLease = await publisher.set(cacheKey + ':in-flight', '1', 'PX', 15_000, 'NX');
+    const addressLeaseKey = cacheKey + ':in-flight';
+    const addressLeaseOwner = randomUUID();
+    const addressLease = await publisher.set(addressLeaseKey, addressLeaseOwner, 'PX', 15_000, 'NX');
     if (addressLease !== 'OK') return null;
     // Do not queue a reporting request behind another address lookup.
     const admitted = await publisher.set(REQUEST_BUDGET_KEY, '1', 'PX', 1_100, 'NX');
-    if (admitted !== 'OK') return null;
+    if (admitted !== 'OK') {
+      await publisher.eval(RELEASE_ADDRESS_LEASE, 1, addressLeaseKey, addressLeaseOwner);
+      return null;
+    }
 
     let result: z.infer<typeof coordinate> | null = null;
     let ttl = FAILURE_TTL_SECONDS;

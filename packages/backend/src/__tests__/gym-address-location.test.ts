@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { randomUUID } from 'node:crypto';
+import { Redis } from 'ioredis';
 import { lookupAddressCoordinates, resolveGymAddressLocation } from '../services/gym-address-location';
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), set: vi.fn(), clients: vi.fn(), fetch: vi.fn() }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), set: vi.fn(), eval: vi.fn(), clients: vi.fn(), fetch: vi.fn() }));
 vi.mock('../redis/client', () => ({ redisClientManager: { getClients: mocks.clients } }));
 const gym = {
   address: 'Damrak 1, Amsterdam, Netherlands',
@@ -17,6 +19,7 @@ beforeEach(() => {
   vi.unstubAllEnvs();
   mocks.get.mockReset().mockResolvedValue(null);
   mocks.set.mockReset().mockResolvedValue('OK');
+  mocks.eval.mockReset().mockResolvedValue(1);
   mocks.clients.mockReset().mockReturnValue({ publisher: mocks });
   mocks.fetch.mockReset().mockResolvedValue({ ok: true, json: async () => [{ lat: '52.37', lon: '4.89' }] });
   vi.stubGlobal('fetch', mocks.fetch);
@@ -69,12 +72,64 @@ describe('gym address location', () => {
     expect(await lookupAddressCoordinates(gym.address)).toBeNull();
     expect(mocks.fetch).not.toHaveBeenCalled();
     expect(mocks.set).toHaveBeenCalledTimes(2);
+    const [addressLeaseKey, addressLeaseOwner] = mocks.set.mock.calls[0];
+    expect(mocks.eval).toHaveBeenCalledWith(expect.any(String), 1, addressLeaseKey, addressLeaseOwner);
+  });
+
+  it('lets the same address retry as soon as the shared request budget becomes available', async () => {
+    const budgetKey = 'gym-address-location:request-budget';
+    const cache = new Map<string, string>([[budgetKey, 'another-address']]);
+    mocks.get.mockImplementation(async (key: string) => cache.get(key) ?? null);
+    mocks.set.mockImplementation(async (key: string, contents: string, ...options: (string | number)[]) => {
+      if (options.includes('NX') && cache.has(key)) return null;
+      cache.set(key, contents);
+      return 'OK';
+    });
+    mocks.eval.mockImplementation(async (_script: string, _keys: number, key: string, owner: string) => {
+      if (cache.get(key) !== owner) return 0;
+      cache.delete(key);
+      return 1;
+    });
+
+    expect(await lookupAddressCoordinates(gym.address)).toBeNull();
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    const addressLeaseKey = String(mocks.set.mock.calls[0][0]);
+    expect(cache.has(addressLeaseKey)).toBe(false);
+
+    cache.delete(budgetKey);
+    expect(await lookupAddressCoordinates(gym.address)).toEqual(coordinates);
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases only its own address lease using the actual Redis comparison script', async () => {
+    mocks.set.mockResolvedValueOnce('OK').mockResolvedValueOnce(null);
+    await lookupAddressCoordinates(gym.address);
+    const [releaseScript, , , previousOwner] = mocks.eval.mock.calls[0] as [string, number, string, string];
+    const publisher = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6380');
+    const leaseKey = 'gym-address-lease-test:' + randomUUID();
+    const successorOwner = randomUUID();
+    try {
+      await publisher.set(leaseKey, successorOwner, 'PX', 15_000);
+      expect(await publisher.eval(releaseScript, 1, leaseKey, previousOwner)).toBe(0);
+      expect(await publisher.get(leaseKey)).toBe(successorOwner);
+      expect(await publisher.eval(releaseScript, 1, leaseKey, successorOwner)).toBe(1);
+      expect(await publisher.get(leaseKey)).toBeNull();
+    } finally {
+      await publisher.del(leaseKey);
+      await publisher.quit();
+    }
   });
 
   it('holds an address lease longer than the HTTP deadline', async () => {
     mocks.set.mockResolvedValueOnce(null);
     expect(await lookupAddressCoordinates(gym.address)).toBeNull();
-    expect(mocks.set).toHaveBeenCalledWith(expect.stringContaining(':in-flight'), '1', 'PX', 15_000, 'NX');
+    expect(mocks.set).toHaveBeenCalledWith(
+      expect.stringContaining(':in-flight'),
+      expect.any(String),
+      'PX',
+      15_000,
+      'NX',
+    );
     expect(mocks.fetch).not.toHaveBeenCalled();
   });
 
