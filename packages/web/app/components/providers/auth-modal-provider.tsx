@@ -1,7 +1,10 @@
 'use client';
 
 import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
-import AuthModal from '@/app/components/auth/auth-modal';
+import dynamic from 'next/dynamic';
+
+// Sign-in code is needed only after the visitor opens the dialog.
+const AuthModal = dynamic(() => import('@/app/components/auth/auth-modal'), { ssr: false });
 
 type AuthModalConfig = {
   title?: string;

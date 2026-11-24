@@ -57,15 +57,15 @@ describe('AuthModalProvider', () => {
     vi.clearAllMocks();
   });
 
-  it('returns openAuthModal function', () => {
+  it('returns openAuthModal function', async () => {
     const { result } = renderHook(() => useAuthModal(), { wrapper });
     expect(result.current.openAuthModal).toEqual(expect.any(Function));
   });
 
-  it('opens AuthModal with provided config', () => {
+  it('opens AuthModal with provided config', async () => {
     const { result } = renderHook(() => useAuthModal(), { wrapper });
 
-    act(() => {
+    await act(async () => {
       result.current.openAuthModal({
         title: 'Test Title',
         description: 'Test description',
@@ -78,40 +78,40 @@ describe('AuthModalProvider', () => {
     expect(props.description).toBe('Test description');
   });
 
-  it('opens AuthModal with default config when no args provided', () => {
+  it('opens AuthModal with default config when no args provided', async () => {
     const { result } = renderHook(() => useAuthModal(), { wrapper });
 
-    act(() => {
+    await act(async () => {
       result.current.openAuthModal();
     });
 
     expect(lastAuthModalProps().open).toBe(true);
   });
 
-  it('closes AuthModal on close callback', () => {
+  it('closes AuthModal on close callback', async () => {
     const { result } = renderHook(() => useAuthModal(), { wrapper });
 
-    act(() => {
+    await act(async () => {
       result.current.openAuthModal({ title: 'Test' });
     });
     expect(lastAuthModalProps().open).toBe(true);
 
-    act(() => {
+    await act(async () => {
       lastAuthModalProps().onClose();
     });
     expect(lastAuthModalProps().open).toBe(false);
   });
 
-  it('calls onSuccess callback and closes modal on success', () => {
+  it('calls onSuccess callback and closes modal on success', async () => {
     const onSuccess = vi.fn();
     const { result } = renderHook(() => useAuthModal(), { wrapper });
 
-    act(() => {
+    await act(async () => {
       result.current.openAuthModal({ title: 'Test', onSuccess });
     });
     expect(lastAuthModalProps().open).toBe(true);
 
-    act(() => {
+    await act(async () => {
       lastAuthModalProps().onSuccess();
     });
 
@@ -119,29 +119,29 @@ describe('AuthModalProvider', () => {
     expect(lastAuthModalProps().open).toBe(false);
   });
 
-  it('onSuccess still fires even if onClose is called first (AuthModal calls onClose before onSuccess)', () => {
+  it('onSuccess still fires even if onClose is called first (AuthModal calls onClose before onSuccess)', async () => {
     const onSuccess = vi.fn();
     const { result } = renderHook(() => useAuthModal(), { wrapper });
 
-    act(() => {
+    await act(async () => {
       result.current.openAuthModal({ title: 'Test', onSuccess });
     });
 
     // AuthModal internally calls onClose() then onSuccess?.() on successful login
-    act(() => {
+    await act(async () => {
       lastAuthModalProps().onClose();
     });
-    act(() => {
+    await act(async () => {
       lastAuthModalProps().onSuccess();
     });
 
     expect(onSuccess).toHaveBeenCalledTimes(1);
   });
 
-  it('latest openAuthModal call wins when called multiple times', () => {
+  it('latest openAuthModal call wins when called multiple times', async () => {
     const { result } = renderHook(() => useAuthModal(), { wrapper });
 
-    act(() => {
+    await act(async () => {
       result.current.openAuthModal({ title: 'First' });
       result.current.openAuthModal({ title: 'Second' });
     });
@@ -151,12 +151,12 @@ describe('AuthModalProvider', () => {
     expect(props.title).toBe('Second');
   });
 
-  it('does not mount AuthModal until first open', () => {
+  it('does not mount AuthModal until first open', async () => {
     const { result } = renderHook(() => useAuthModal(), { wrapper });
 
     expect(mockAuthModal).not.toHaveBeenCalled();
 
-    act(() => {
+    await act(async () => {
       result.current.openAuthModal();
     });
 
@@ -164,13 +164,13 @@ describe('AuthModalProvider', () => {
 
     // After closing, the modal stays mounted with open=false so the close
     // animation can play and form state survives.
-    act(() => {
+    await act(async () => {
       lastAuthModalProps().onClose();
     });
     expect(lastAuthModalProps().open).toBe(false);
   });
 
-  it('works with default context outside provider (noop)', () => {
+  it('works with default context outside provider (noop)', async () => {
     const { result } = renderHook(() => useAuthModal());
     // Should not throw — the default-context implementation is a no-op.
     expect(() => result.current.openAuthModal()).not.toThrow();

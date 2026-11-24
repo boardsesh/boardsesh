@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { MARKETING_CACHE_CONTROL, MARKETING_CDN_CACHE_CONTROL } from '../marketing-page-cache';
 import { createServer, request, ServerResponse, type IncomingHttpHeaders, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vite-plus/test';
@@ -186,5 +187,108 @@ describe('isErrorStatus', () => {
     [599, true],
   ])('%i is an error: %s', (statusCode, expected) => {
     expect(isErrorStatus(statusCode)).toBe(expected);
+  });
+});
+
+describe('marketing final-response cache guard', () => {
+  it.each([200, 307, 308, 404, 500])(
+    'only caches successful cookie-free marketing responses: %i',
+    async (statusCode) => {
+      server = await startServer((response) => {
+        response.setHeader('Cache-Control', MARKETING_CACHE_CONTROL);
+        response.setHeader('CDN-Cache-Control', MARKETING_CDN_CACHE_CONTROL);
+        response.statusCode = statusCode;
+        response.end();
+      });
+      const { headers } = await fetchResponse(server);
+      expect(headers['cache-control']).toBe(statusCode === 200 ? MARKETING_CACHE_CONTROL : 'no-store');
+      expect(headers['cdn-cache-control']).toBe(statusCode === 200 ? MARKETING_CDN_CACHE_CONTROL : 'no-store');
+    },
+  );
+  it('revokes a marketing response that sets a cookie', async () => {
+    server = await startServer((response) => {
+      response.setHeader('Cache-Control', MARKETING_CACHE_CONTROL);
+      response.setHeader('CDN-Cache-Control', MARKETING_CDN_CACHE_CONTROL);
+      response.setHeader('Set-Cookie', 'session=private; HttpOnly');
+      response.end();
+    });
+    const { headers } = await fetchResponse(server);
+    expect(headers['cache-control']).toBe('no-store');
+    expect(headers['cdn-cache-control']).toBe('no-store');
+    expect(headers['set-cookie']).toEqual(['session=private; HttpOnly']);
+  });
+  it('still revokes CDN caching after Next overwrites ordinary Cache-Control', async () => {
+    server = await startServer((response) => {
+      response.setHeader('Cache-Control', NEXT_ERROR_CACHE_CONTROL);
+      response.setHeader('CDN-Cache-Control', MARKETING_CDN_CACHE_CONTROL);
+      response.setHeader('Set-Cookie', 'private=yes');
+      response.end();
+    });
+    const { headers } = await fetchResponse(server);
+    expect(headers['cache-control']).toBe('no-store');
+    expect(headers['cdn-cache-control']).toBe('no-store');
+  });
+  it.each(['object', 'array'])('guards marketing headers passed directly to writeHead as %s', async (form) => {
+    server = await startServer((response) => {
+      const headers = {
+        'Cache-Control': MARKETING_CACHE_CONTROL,
+        'CDN-Cache-Control': MARKETING_CDN_CACHE_CONTROL,
+        'Set-Cookie': 'private=yes',
+      };
+      if (form === 'object') response.writeHead(200, headers);
+      else response.writeHead(200, Object.entries(headers).flat());
+      response.end();
+    });
+    const { headers } = await fetchResponse(server);
+    expect(headers['cache-control']).toBe('no-store');
+    expect(headers['cdn-cache-control']).toBe('no-store');
+  });
+});
+
+describe('marketing final Vary preservation', () => {
+  it.each(['implicit', 'object', 'array'])(
+    'merges protections with final Next fields through %s headers',
+    async (form) => {
+      server = await startServer((response) => {
+        response.setHeader('CDN-Cache-Control', MARKETING_CDN_CACHE_CONTROL);
+        response.setHeader('Vary', 'rsc, Accept-Encoding');
+        if (form === 'object') response.writeHead(200, { Vary: 'Next-Router-State-Tree, X-Custom' });
+        else if (form === 'array') response.writeHead(200, ['vArY', 'Next-Router-State-Tree, X-Custom']);
+        response.end();
+      });
+      const { headers } = await fetchResponse(server);
+      const fields = new Set(
+        headers.vary
+          ?.toLowerCase()
+          .split(',')
+          .map((field) => field.trim()),
+      );
+      expect(fields).toContain('cookie');
+      expect(fields).toContain('authorization');
+      expect(fields).toContain('rsc');
+      expect(fields).toContain('accept-encoding');
+      expect(fields).toContain('next-router-state-tree');
+      expect(fields).toContain('next-router-prefetch');
+      expect(fields).toContain('next-router-segment-prefetch');
+      if (form !== 'implicit') expect(fields).toContain('x-custom');
+    },
+  );
+  it('preserves Vary wildcard semantics', async () => {
+    server = await startServer((response) => {
+      response.setHeader('CDN-Cache-Control', MARKETING_CDN_CACHE_CONTROL);
+      response.setHeader('Vary', '*');
+      response.end();
+    });
+    const { headers } = await fetchResponse(server);
+    expect(headers.vary).toBe('*');
+  });
+  it('leaves the Vary of existing board responses unchanged', async () => {
+    server = await startServer((response) => {
+      response.setHeader('CDN-Cache-Control', LIST_PAGE_CDN_CACHE);
+      response.setHeader('Vary', 'Accept-Encoding');
+      response.end();
+    });
+    const { headers } = await fetchResponse(server);
+    expect(headers.vary).toBe('Accept-Encoding');
   });
 });

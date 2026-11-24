@@ -5,7 +5,6 @@ import { getLocale } from '@/app/lib/i18n/get-locale';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import SiteJsonLd from '@/app/components/seo/site-json-ld';
 import ShowcaseVideoJsonLd from '@/app/components/seo/showcase-video-json-ld';
-import { getRecentBetaLinks } from './lib/server-recent-beta-links';
 import HomePageContent from './home-page-content';
 import TrustFaq from '@/app/components/marketing/trust-faq';
 import HomeGymSearch from './components/home/home-gym-search';
@@ -37,8 +36,7 @@ export async function generateMetadata() {
 }
 
 export default async function Home() {
-  const [recentBeta, locale, communityStats, storeLabels] = await Promise.all([
-    getRecentBetaLinks(),
+  const [locale, communityStats, storeLabels] = await Promise.all([
     getLocale(),
     cachedCommunityStats(),
     getStoreButtonLabels(),
@@ -112,7 +110,6 @@ export default async function Home() {
             qrLanding="home"
           />
         }
-        initialRecentBeta={recentBeta}
         gymSearch={<HomeGymSearch />}
         featureStrip={<HomeFeatureStrip />}
         supportBlock={<HomeSupportBlock />}

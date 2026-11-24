@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vite-plus/test';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
+import { renderToString } from 'react-dom/server';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { createTestQueryClient } from '@/app/test-utils/test-providers';
 import type { RecentBetaLinkRow } from '@/app/lib/server-recent-beta-links';
@@ -83,59 +84,111 @@ function makeRow(overrides: {
   };
 }
 
-function renderSection(initialRecentBeta: RecentBetaLinkRow[]) {
+type ObserverRecord = {
+  callback: IntersectionObserverCallback;
+  options?: IntersectionObserverInit;
+  disconnect: () => void;
+};
+const observers: ObserverRecord[] = [];
+class FakeIntersectionObserver {
+  private readonly record: ObserverRecord;
+  constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+    this.record = { callback, options, disconnect: vi.fn() };
+    observers.push(this.record);
+  }
+  observe() {}
+  disconnect() {
+    this.record.disconnect();
+  }
+}
+
+function renderSection() {
   const client = createTestQueryClient();
   return render(
     <QueryClientProvider client={client}>
-      <HomeRecentBetaSection initialRecentBeta={initialRecentBeta} />
+      <HomeRecentBetaSection />
     </QueryClientProvider>,
   );
 }
 
+async function approachSection() {
+  await act(async () => {
+    observers[0].callback([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+  });
+}
+
 beforeEach(() => {
-  mockRequest.mockReset();
+  mockRequest.mockReset().mockResolvedValue({ recentBetaLinks: [] });
   boardseshBetaListSpy.mockReset();
+  observers.length = 0;
+  vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
 });
 
 describe('HomeRecentBetaSection', () => {
-  it('renders nothing when there are no beta rows', () => {
-    const { container } = renderSection([]);
-    expect(container.firstChild).toBeNull();
+  it('server-renders the heading and lead without beta rows or a query', () => {
+    const html = renderToString(<HomeRecentBetaSection />);
+    expect(html).toContain('home.recentBeta.title');
+    expect(html).toContain('home.recentBeta.lead');
+    expect(html).not.toContain('boardsesh-beta-list');
+    expect(mockRequest).not.toHaveBeenCalled();
+  });
+
+  it('does not fetch or mount cards until the section is within 400px', async () => {
+    renderSection();
+    expect(observers[0].options?.rootMargin).toBe('400px 0px');
+    expect(screen.getByRole('heading', { name: 'home.recentBeta.title' })).toBeTruthy();
+    expect(mockRequest).not.toHaveBeenCalled();
     expect(boardseshBetaListSpy).not.toHaveBeenCalled();
-  });
-
-  it('maps rows into BetaLink shapes and passes climbName via getClimbName', () => {
-    const rows = [
-      makeRow({ link: 'https://instagram.com/p/aaa', climbUuid: 'c1', climbName: 'Cut to the Chase' }),
-      makeRow({ link: 'https://www.tiktok.com/@u/video/123', climbUuid: 'c2', climbName: null }),
-    ];
-
-    renderSection(rows);
-
-    expect(boardseshBetaListSpy).toHaveBeenCalledTimes(1);
-    const props = boardseshBetaListSpy.mock.calls[0][0] as {
-      links: BetaLink[];
-      isLoading: boolean;
-      source: string;
-      getClimbName?: (link: BetaLink) => string | null | undefined;
-    };
-    expect(props.links).toHaveLength(2);
-    expect(props.links[0].link).toBe('https://instagram.com/p/aaa');
-    expect(props.links[1].link).toBe('https://www.tiktok.com/@u/video/123');
-    expect(props.isLoading).toBe(false);
-    expect(props.source).toBe('home');
-    expect(props.getClimbName?.(props.links[0])).toBe('Cut to the Chase');
-    expect(props.getClimbName?.(props.links[1])).toBeNull();
-    expect(props.getClimbName?.({ ...props.links[0], link: 'https://nope.example/x' })).toBeUndefined();
-  });
-
-  it('uses initialData without firing a GraphQL request on first render', async () => {
-    renderSection([makeRow({ link: 'https://instagram.com/p/aaa', climbName: 'Boulder X' })]);
-
-    // Wait one tick to make sure no background fetch sneaks in.
-    await waitFor(() => {
-      expect(screen.getByTestId('boardsesh-beta-list')).toBeTruthy();
+    await act(async () => {
+      observers[0].callback([{ isIntersecting: false } as IntersectionObserverEntry], {} as IntersectionObserver);
     });
     expect(mockRequest).not.toHaveBeenCalled();
+    await approachSection();
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledOnce());
+    expect(mockRequest).toHaveBeenCalledWith('GET_RECENT_BETA_LINKS', { limit: 20 });
+    expect(observers[0].disconnect).toHaveBeenCalled();
+  });
+
+  it('fetches fresh rows without empty initialData and maps their climb labels', async () => {
+    mockRequest.mockResolvedValue({
+      recentBetaLinks: [
+        makeRow({ link: 'https://instagram.com/p/aaa', climbUuid: 'c1', climbName: 'Cut to the Chase' }),
+        makeRow({ link: 'https://www.tiktok.com/@u/video/123', climbUuid: 'c2', climbName: null }),
+      ],
+    });
+    renderSection();
+    await approachSection();
+    expect(await screen.findByText('https://instagram.com/p/aaa::Cut to the Chase')).toBeTruthy();
+    expect(screen.getByText('https://www.tiktok.com/@u/video/123::no-name')).toBeTruthy();
+    expect(mockRequest).toHaveBeenCalledOnce();
+    expect(boardseshBetaListSpy.mock.lastCall?.[0]).toMatchObject({ source: 'home', isLoading: false });
+  });
+
+  it('keeps the public heading and reserved space when the query returns no videos', async () => {
+    renderSection();
+    await approachSection();
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.queryByTestId('boardsesh-beta-list')).toBeNull());
+    expect(screen.getByRole('heading', { name: 'home.recentBeta.title' })).toBeTruthy();
+  });
+
+  it('keeps the page usable when the beta query fails', async () => {
+    mockRequest.mockRejectedValue(new Error('beta unavailable'));
+    renderSection();
+    await approachSection();
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.queryByTestId('boardsesh-beta-list')).toBeNull());
+    expect(screen.getByText('home.recentBeta.lead')).toBeTruthy();
+  });
+
+  it('loads after mount when IntersectionObserver is unavailable', async () => {
+    vi.stubGlobal('IntersectionObserver', undefined);
+    renderSection();
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledOnce());
   });
 });

@@ -1,86 +1,58 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
-import { GET_RECENT_BETA_LINKS } from '@boardsesh/graphql/operations/beta-links';
-import { mapBetaLinkRow } from '@/app/lib/beta-video-url';
-import { getDefaultClimbViewPath } from '@/app/lib/default-board-configs';
-import type { BoardName } from '@/app/lib/types';
-import type { BetaLink } from '@/app/lib/api-wrappers/sync-api-types';
-import type { RecentBetaLinkRow } from '@/app/lib/server-recent-beta-links';
-import BoardseshBetaList from './boardsesh-beta-list';
-import { sectionHeadingTypeClassName } from '@/app/components/ui/page-shell';
+import { sectionHeadingTypeClassName } from '@/app/components/ui/page-shell/page-section';
 
-type HomeRecentBetaSectionProps = {
-  initialRecentBeta: RecentBetaLinkRow[];
-};
+// Keep the query, board configuration and video cards out of the first paint.
+const HomeRecentBetaContent = dynamic(() => import('./home-recent-beta-content'), { ssr: false });
 
-const RECENT_BETA_LIMIT = 20;
-const RECENT_BETA_STALE_TIME_MS = 5 * 60 * 1000;
-
-type RecentBetaResponse = {
-  recentBetaLinks: RecentBetaLinkRow[];
-};
-
-export default function HomeRecentBetaSection({ initialRecentBeta }: HomeRecentBetaSectionProps) {
+/** Cached homepage HTML contains only this section's public copy, never beta rows. */
+export default function HomeRecentBetaSection() {
   const { t } = useTranslation('marketing');
+  const sectionRef = useRef<HTMLElement>(null);
+  const [nearViewport, setNearViewport] = useState(false);
 
-  const { data: rows } = useQuery<RecentBetaLinkRow[]>({
-    queryKey: ['recentBetaLinks'],
-    queryFn: async () => {
-      const client = createGraphQLHttpClient();
-      const result = await client.request<RecentBetaResponse>(GET_RECENT_BETA_LINKS, { limit: RECENT_BETA_LIMIT });
-      return result.recentBetaLinks;
-    },
-    initialData: initialRecentBeta,
-    staleTime: RECENT_BETA_STALE_TIME_MS,
-  });
-
-  const { links, climbNameByLink, climbHrefByLink } = useMemo(() => {
-    const mapped: BetaLink[] = [];
-    const nameByLink = new Map<string, string | null>();
-    const hrefByLink = new Map<string, string | null>();
-    for (const row of rows) {
-      const link = mapBetaLinkRow(row.betaLink);
-      if (!link.thumbnail) continue;
-      mapped.push(link);
-      nameByLink.set(link.link, row.climbName);
-      const href =
-        row.layoutId != null && link.angle != null
-          ? getDefaultClimbViewPath(
-              row.boardType as BoardName,
-              row.layoutId,
-              link.angle,
-              link.climb_uuid,
-              row.climbName ?? undefined,
-            )
-          : null;
-      hrefByLink.set(link.link, href);
+  useEffect(() => {
+    const section = sectionRef.current;
+    if (!section) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setNearViewport(true);
+      return;
     }
-    return { links: mapped, climbNameByLink: nameByLink, climbHrefByLink: hrefByLink };
-  }, [rows]);
-
-  if (links.length === 0) return null;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          observer.disconnect();
+          setNearViewport(true);
+        }
+      },
+      { rootMargin: '400px 0px' },
+    );
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, []);
 
   return (
-    <Box component="section" sx={{ display: 'flex', flexDirection: 'column', gap: 3, width: '100%' }}>
-      <Typography variant="h3" component="h2" className={sectionHeadingTypeClassName}>
+    <Box
+      component="section"
+      ref={sectionRef}
+      aria-labelledby="home-recent-beta-heading"
+      sx={{ display: 'flex', flexDirection: 'column', gap: 3, width: '100%' }}
+    >
+      <Typography variant="h3" component="h2" id="home-recent-beta-heading" className={sectionHeadingTypeClassName}>
         {t('home.recentBeta.title')}
       </Typography>
       <Typography component="p" variant="body1" color="text.secondary">
         {t('home.recentBeta.lead')}
       </Typography>
-      <BoardseshBetaList
-        links={links}
-        isLoading={false}
-        source="home"
-        getClimbName={(link) => climbNameByLink.get(link.link)}
-        getClimbHref={(link) => climbHrefByLink.get(link.link)}
-      />
+      {/* The rail is about 270px tall. Reserve it through loading/empty/error states. */}
+      <Box sx={{ minHeight: 'calc(var(--spacing-16) * 4 + var(--spacing-4))' }}>
+        {nearViewport ? <HomeRecentBetaContent /> : null}
+      </Box>
     </Box>
   );
 }

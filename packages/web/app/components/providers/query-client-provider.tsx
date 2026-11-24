@@ -5,7 +5,7 @@ import { hydrate, QueryClient, type Query, useQueryClient } from '@tanstack/reac
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { useSession } from 'next-auth/react';
 import { revokeWebPrivacySnapshots } from '@/app/lib/privacy-client';
-import { CNC_CONFIGURATOR_DRAFT_KEY } from '@/app/build-plans/configurator/configurator-state';
+import { CNC_CONFIGURATOR_DRAFT_KEY } from '@/app/build-plans/configurator/draft-key';
 import { createIdbPersister, PERSIST_MAX_AGE_MS } from '@/app/lib/react-query-idb-persister';
 import { removePreference } from '@/app/lib/user-preferences-db';
 import { browserSessionGuard, shouldRetryQuery } from '@/app/lib/auth/session-guard';

@@ -59,6 +59,8 @@ import {
   WWW_HTML_CACHE_LOCALE_PREFIXES,
   WWW_HTML_CACHE_ROOT_SEGMENTS,
   WWW_HTML_CACHE_RULE_DESCRIPTION,
+  WWW_MARKETING_HTML_CACHE_RULE_DESCRIPTION,
+  WWW_MARKETING_HTML_CACHE_EXPRESSION,
   WWW_RAILWAY_CNAME_TARGET,
   WS_HOSTNAME,
   UPDATES_HOSTNAME,
@@ -2955,5 +2957,57 @@ describe('isAuthorizationError', () => {
     expect(isAuthorizationError(new FakeCfError(403))).toBe(false);
     expect(isAuthorizationError(new Error('403'))).toBe(false);
     expect(isAuthorizationError(null)).toBe(false);
+  });
+});
+
+describe('anonymous marketing HTML cache rule (#8140)', () => {
+  const rule = desired.cacheRules.find(
+    (candidate) => candidate.description === WWW_MARKETING_HTML_CACHE_RULE_DESCRIPTION,
+  );
+  const expression = WWW_MARKETING_HTML_CACHE_EXPRESSION;
+
+  it('uses a separate bounded rule and honors origin cache headers', () => {
+    expect(rule?.enabled).toBe(true);
+    expect(rule?.expression).toBe(expression);
+    expect(rule?.action_parameters).toEqual({
+      cache: true,
+      edge_ttl: { mode: 'bypass_by_default' },
+      browser_ttl: { mode: 'respect_origin' },
+    });
+    expect(expression.length).toBeLessThan(3584);
+    expect(desired.cacheRules.length).toBeLessThanOrEqual(10);
+  });
+  it('admits only the exact published unprefixed documents', () => {
+    const paths = [...expression.matchAll(/http.request.uri.path in \{([^}]+)\}/g)].flatMap((match) =>
+      [...match[1].matchAll(/"([^"]+)"/g)].map((quoted) => quoted[1]),
+    );
+    expect(paths).toEqual([
+      '/',
+      '/apps',
+      '/apps/kilter',
+      '/apps/aurora',
+      '/apps/moonboard',
+      '/apps/woods',
+      '/compare/spray-wall-apps',
+    ]);
+    expect(expression).toContain('http.host eq "www.boardsesh.com"');
+    expect(expression).toContain('http.request.method in {"GET" "HEAD"}');
+    expect(expression).toContain('http.request.uri.query eq ""');
+    expect(expression).not.toContain('starts_with');
+  });
+  it('bypasses credentials and router variants before looking up the document cache', () => {
+    for (const cookie of [SESSION_COOKIE_NAME_SUBSTRING, ...FIRST_PARTY_SESSION_COOKIE_NAME_SUBSTRINGS]) {
+      expect(expression).toContain(`not (http.cookie contains "${cookie}")`);
+    }
+    for (const header of [
+      'authorization',
+      'rsc',
+      'next-router-state-tree',
+      'next-router-prefetch',
+      'next-router-segment-prefetch',
+    ]) {
+      expect(expression).toContain(`not (any(http.request.headers["${header}"][*] != ""))`);
+    }
+    expect(expression).toContain('not (http.request.uri.path eq "/" and http.cookie contains "boardsesh-locale")');
   });
 });

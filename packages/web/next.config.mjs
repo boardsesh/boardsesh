@@ -437,6 +437,8 @@ const nextConfig = {
   // Empty turbopack config to silence warning about webpack config
   turbopack: {},
   experimental: {
+    // Reduce unrelated route CSS shipped to small marketing pages.
+    cssChunking: { type: 'graph', requestCost: 20000, weightDistribution: 0.1 },
     // Size the page-data workers from availableParallelism, not Next's
     // default. Next derives its worker count from `os.cpus().length`, which
     // reports every CPU on the machine and ignores cgroup/cpuset limits --

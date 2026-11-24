@@ -6,7 +6,7 @@ import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
 import { useTranslation } from 'react-i18next';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
-import { boardTypeLabel } from '@boardsesh/board-constants';
+import { boardTypeLabel } from '@boardsesh/board-constants/board-type-labels';
 import { navLinkClicked, type WebsiteNavTarget } from '@boardsesh/analytics';
 import { trackWebsiteJourneyEvent } from '@/app/lib/website-journey-analytics';
 import { useConsent } from '../consent/consent-provider';

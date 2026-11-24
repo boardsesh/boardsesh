@@ -6,7 +6,6 @@ import { createConnection } from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { HOMEPAGE_GZIP_BUDGET_BYTES, WWW_CHECKS, type SmokeResponse } from './production-smoke';
 
@@ -26,38 +25,10 @@ const HTML_ENTITIES: Readonly<Record<string, string>> = {
 };
 const NORMAL_USER_AGENT =
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
-export const HOMEPAGE_FIXTURE_ROWS = 20;
-
-export function createHomepageFixture(token = 'homepage-budget-fixture-v1') {
-  const recentBetaLinks = Array.from({ length: HOMEPAGE_FIXTURE_ROWS }, (_, index) => {
-    const digest = createHash('sha256').update(`${token}:${index}`).digest('hex');
-    const climbUuid = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-8${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
-    return {
-      climbName: `Budget fixture climb ${index + 1}`,
-      boardType: 'kilter',
-      layoutId: 1,
-      betaLink: {
-        climbUuid,
-        link: `https://www.instagram.com/reel/${digest.slice(0, 12)}/`,
-        foreignUsername: `budget_${token.slice(0, 8)}_row${String(index + 1).padStart(2, '0')}_end`,
-        angle: 40,
-        thumbnail: `http://127.0.0.1/budget-fixture/${climbUuid}.jpg`,
-        isListed: true,
-        createdAt: '2026-01-01T00:00:00.000Z',
-        tickUuid: null,
-        boardId: null,
-      },
-    };
-  });
+export function createHomepageFixture() {
   return {
-    recentBetaLinks,
     communityStats: { climbersLast30Days: 123_400, litLast30Days: 5_678_000, computedAt: '2026-01-01T00:00:00.000Z' },
-    visibleMarkers: [
-      recentBetaLinks[0].betaLink.foreignUsername,
-      recentBetaLinks.at(-1)!.betaLink.foreignUsername,
-      '123,400',
-      '5,678,000',
-    ],
+    visibleMarkers: ['123,400', '5,678,000'],
   };
 }
 
@@ -205,8 +176,9 @@ export async function checkHomepageBudget(webDirectory: string) {
       const operation = /\bquery\s+(\w+)/.exec(payload.query)?.[1];
       operations.add(operation ?? '<missing>');
       let result: unknown;
-      if (operation === 'GetRecentBetaLinks') result = { recentBetaLinks: fixture.recentBetaLinks };
-      else if (operation === 'GetCommunityStats') result = { communityStats: fixture.communityStats };
+      if (operation === 'GetRecentBetaLinks')
+        throw new Error('Recent beta must load in the browser, never in cacheable homepage HTML');
+      if (operation === 'GetCommunityStats') result = { communityStats: fixture.communityStats };
       else if (operation === 'SearchGymsDirectory')
         result = { searchGyms: { gyms: [], totalCount: 1234, hasMore: false } };
       else throw new Error(`Unexpected fixture operation: ${operation ?? '<missing>'}`);
@@ -303,7 +275,7 @@ export async function checkHomepageBudget(webDirectory: string) {
       expectedHeading,
       fixture.visibleMarkers,
     );
-    for (const operation of ['GetRecentBetaLinks', 'GetCommunityStats']) {
+    for (const operation of ['GetCommunityStats']) {
       if (!operations.has(operation))
         throw new Error(`Required live fixture operation was not requested: ${operation}`);
     }
@@ -314,7 +286,7 @@ export async function checkHomepageBudget(webDirectory: string) {
       rawBytes: Buffer.byteLength(html),
       gzipBytes,
       budgetBytes: HOMEPAGE_GZIP_BUDGET_BYTES,
-      betaRows: HOMEPAGE_FIXTURE_ROWS,
+      deferredBeta: true,
       expectedHeading,
     };
   } catch (error) {
