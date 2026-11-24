@@ -191,7 +191,26 @@
     "confirmGroup": "请确认 {{source}} 和 {{target}} 控制的是同一块实体岩板。",
     "confirmUngroup": "在报告中将 {{source}} 列为独立岩板吗？",
     "confirmGrouping": "确认变更",
-    "groupError": "无法更改岩板分组。请检查选项后重试。"
+    "groupError": "无法更改岩板分组。请检查选项后重试。",
+    "angleUsage": {
+      "title": "各角度使用情况",
+      "mostUsed": "最多人使用：{{angle}} · {{countText}} 位有记录的攀爬者",
+      "tied": "并列最多：{{angles}} · 每个角度各有 {{countText}} 位有记录的攀爬者",
+      "single": "{{angle}} 的活动记录 · {{countText}} 位有记录的攀爬者",
+      "sample": "已知角度样本 · {{countText}} 位有记录的攀爬者",
+      "overlap": "同一人可计入多个角度，因此各角度的占比之和可能超过 100%。",
+      "leading": "使用人数最多的角度",
+      "rowShare": "{{climbers}} · {{percentage}}",
+      "belowShare": "低于 {{percentage}}",
+      "climberDays": "{{countText}} 个攀爬人日（每人每个场馆当地日期计一次）",
+      "ticks": "{{countText}} 条攀爬记录（含尝试）",
+      "displays": "{{countText}} 次已确认的 LED 点亮",
+      "unresolvedDates": "{{countText}} 条攀爬记录无法归入场馆当地的具体日期。",
+      "unknown": "角度未知",
+      "unknownOnly": "有活动记录，但没有可用的角度。",
+      "unidentified": "已知角度的记录中没有身份明确的攀爬者。",
+      "empty": "此时段内没有符合条件的角度活动记录。"
+    }
   },
   "mobile": {
     "setupSuggestion": {

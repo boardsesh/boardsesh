@@ -191,7 +191,26 @@
     "confirmGroup": "Bestätige, dass {{source}} und {{target}} dasselbe physische Board steuern.",
     "confirmUngroup": "{{source}} im Bericht als eigenständiges Board behandeln?",
     "confirmGrouping": "Änderung bestätigen",
-    "groupError": "Die Gruppierung konnte nicht geändert werden. Prüfe die Auswahl und versuch es erneut."
+    "groupError": "Die Gruppierung konnte nicht geändert werden. Prüfe die Auswahl und versuch es erneut.",
+    "angleUsage": {
+      "title": "Nutzung nach Winkel",
+      "mostUsed": "Am häufigsten genutzt: {{angle}} · {{countText}} erfasste Kletternde",
+      "tied": "Gleichauf: {{angles}} · je {{countText}} erfasste Kletternde",
+      "single": "Bei {{angle}} erfasst · {{countText}} Kletternde",
+      "sample": "Stichprobe bei bekannten Winkeln · {{countText}} erfasste Kletternde",
+      "overlap": "Eine Person kann bei mehreren Winkeln zählen. Die Anteile können zusammen über 100 % ergeben.",
+      "leading": "Meistgenutzter Winkel",
+      "rowShare": "{{climbers}} · {{percentage}}",
+      "belowShare": "weniger als {{percentage}}",
+      "climberDays": "{{countText}} Klettertage (einmal pro Person und Kalendertag in der Halle)",
+      "ticks": "{{countText}} Routenbucheinträge, einschließlich Versuche",
+      "displays": "{{countText}} bestätigte LED-Anzeigen",
+      "unresolvedDates": "{{countText}} Routenbucheinträge ließen sich keinem Kalendertag in der Halle zuordnen.",
+      "unknown": "Unbekannter Winkel",
+      "unknownOnly": "Es gab erfasste Aktivität ohne verwendbaren Winkel.",
+      "unidentified": "Bei bekannten Winkeln wurden keine identifizierten Kletternden erfasst.",
+      "empty": "Für diesen Zeitraum wurde keine geeignete Aktivität nach Winkel erfasst."
+    }
   },
   "mobile": {
     "setupSuggestion": {

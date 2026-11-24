@@ -4329,6 +4329,41 @@ export type GymActivityStatsRefreshResult = {
   writeDurationMs: Scalars['Float']['output'];
 };
 
+export type GymAngleActivityCounts = {
+  __typename?: 'GymAngleActivityCounts';
+  /** Confirmed Boardsesh displays. */
+  displayCount: Scalars['Int']['output'];
+  /** Canonical native flashes and sends. */
+  sendCount: Scalars['Int']['output'];
+  /** Qualifying native ticks, including attempts. */
+  tickCount: Scalars['Int']['output'];
+};
+
+export type GymAngleUsageRow = {
+  __typename?: 'GymAngleUsageRow';
+  angle: Scalars['Int']['output'];
+  /** Distinct identified climber and definitely known gym-local date pairs. */
+  climberDayCount: Scalars['Int']['output'];
+  displayCount: Scalars['Int']['output'];
+  distinctClimberCount: Scalars['Int']['output'];
+  sendCount: Scalars['Int']['output'];
+  tickCount: Scalars['Int']['output'];
+  /** Identified ticks in the period without a provable gym-local date. */
+  unresolvedLocalDateTickCount: Scalars['Int']['output'];
+};
+
+export type GymBoardAngleUsage = {
+  __typename?: 'GymBoardAngleUsage';
+  /** Recorded compatible angles, ordered by degrees. */
+  angles: Array<GymAngleUsageRow>;
+  /** An independently authorized physical LED board in the selected scope. */
+  boardUuid: Scalars['ID']['output'];
+  /** Distinct identified climbers across all known angles on this physical board. */
+  knownAngleClimberCount: Scalars['Int']['output'];
+  /** Activity with missing or unsupported recorded angles, excluded from ranking. */
+  unknownAngle: GymAngleActivityCounts;
+};
+
 /**
  * One board-type + angle pair present at a gym, for the directory's board chips.
  * Deliberately minimal: a card renders "Kilter 40°", nothing else. Distinct pairs
@@ -4828,6 +4863,8 @@ export type GymSitemapEntry = {
 
 export type GymStats = {
   __typename?: 'GymStats';
+  /** Recorded angle usage on eligible physical LED boards in the current window. */
+  angleUsage: Array<GymBoardAngleUsage>;
   asOf: Scalars['String']['output'];
   boardUuid?: Maybe<Scalars['ID']['output']>;
   boards: Array<GymReportingBoard>;
@@ -14960,6 +14997,9 @@ export type ResolversTypes = ResolversObject<{
   GroupedNotificationConnection: ResolverTypeWrapper<GroupedNotificationConnection>;
   Gym: ResolverTypeWrapper<Gym>;
   GymActivityStatsRefreshResult: ResolverTypeWrapper<GymActivityStatsRefreshResult>;
+  GymAngleActivityCounts: ResolverTypeWrapper<GymAngleActivityCounts>;
+  GymAngleUsageRow: ResolverTypeWrapper<GymAngleUsageRow>;
+  GymBoardAngleUsage: ResolverTypeWrapper<GymBoardAngleUsage>;
   GymBoardSummary: ResolverTypeWrapper<GymBoardSummary>;
   GymClaim: ResolverTypeWrapper<GymClaim>;
   GymClaimConnection: ResolverTypeWrapper<GymClaimConnection>;
@@ -15622,6 +15662,9 @@ export type ResolversParentTypes = ResolversObject<{
   GroupedNotificationConnection: GroupedNotificationConnection;
   Gym: Gym;
   GymActivityStatsRefreshResult: GymActivityStatsRefreshResult;
+  GymAngleActivityCounts: GymAngleActivityCounts;
+  GymAngleUsageRow: GymAngleUsageRow;
+  GymBoardAngleUsage: GymBoardAngleUsage;
   GymBoardSummary: GymBoardSummary;
   GymClaim: GymClaim;
   GymClaimConnection: GymClaimConnection;
@@ -18185,6 +18228,41 @@ export type GymActivityStatsRefreshResultResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type GymAngleActivityCountsResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymAngleActivityCounts'] = ResolversParentTypes['GymAngleActivityCounts'],
+> = ResolversObject<{
+  displayCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  sendCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  tickCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type GymAngleUsageRowResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymAngleUsageRow'] = ResolversParentTypes['GymAngleUsageRow'],
+> = ResolversObject<{
+  angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  climberDayCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  displayCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  distinctClimberCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  sendCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  tickCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  unresolvedLocalDateTickCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type GymBoardAngleUsageResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymBoardAngleUsage'] = ResolversParentTypes['GymBoardAngleUsage'],
+> = ResolversObject<{
+  angles?: Resolver<Array<ResolversTypes['GymAngleUsageRow']>, ParentType, ContextType>;
+  boardUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  knownAngleClimberCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  unknownAngle?: Resolver<ResolversTypes['GymAngleActivityCounts'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type GymBoardSummaryResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['GymBoardSummary'] = ResolversParentTypes['GymBoardSummary'],
@@ -18525,6 +18603,7 @@ export type GymStatsResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['GymStats'] = ResolversParentTypes['GymStats'],
 > = ResolversObject<{
+  angleUsage?: Resolver<Array<ResolversTypes['GymBoardAngleUsage']>, ParentType, ContextType>;
   asOf?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   boardUuid?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   boards?: Resolver<Array<ResolversTypes['GymReportingBoard']>, ParentType, ContextType>;
@@ -23747,6 +23826,9 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   GroupedNotificationConnection?: GroupedNotificationConnectionResolvers<ContextType>;
   Gym?: GymResolvers<ContextType>;
   GymActivityStatsRefreshResult?: GymActivityStatsRefreshResultResolvers<ContextType>;
+  GymAngleActivityCounts?: GymAngleActivityCountsResolvers<ContextType>;
+  GymAngleUsageRow?: GymAngleUsageRowResolvers<ContextType>;
+  GymBoardAngleUsage?: GymBoardAngleUsageResolvers<ContextType>;
   GymBoardSummary?: GymBoardSummaryResolvers<ContextType>;
   GymClaim?: GymClaimResolvers<ContextType>;
   GymClaimConnection?: GymClaimConnectionResolvers<ContextType>;

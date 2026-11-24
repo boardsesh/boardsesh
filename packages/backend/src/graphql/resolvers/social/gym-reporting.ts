@@ -38,7 +38,10 @@ const FIRST_OBSERVED_LOOKBACK_MS = 365 * 24 * 60 * 60 * 1000;
 export type ReportingWindow = { startAt: string; endAt: string };
 export type GymReportingTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-type AuthorizedBoard = Pick<typeof userBoards.$inferSelect, 'id' | 'uuid' | 'name' | 'boardType' | 'ownerId' | 'slug'>;
+type AuthorizedBoard = Pick<
+  typeof userBoards.$inferSelect,
+  'id' | 'uuid' | 'name' | 'boardType' | 'ownerId' | 'slug' | 'hasLeds'
+>;
 type ActivityBoard = AuthorizedBoard & { physicalBoardUuid: string };
 
 export type GymReportingScope = {
@@ -159,6 +162,7 @@ const reportingBoardColumns = {
   boardType: userBoards.boardType,
   slug: userBoards.slug,
   ownerId: userBoards.ownerId,
+  hasLeds: userBoards.hasLeds,
 };
 
 type BoundedReportingOptions = { maxBoards: number; operation: string; readsPerMinute: number; chargeRate?: boolean };

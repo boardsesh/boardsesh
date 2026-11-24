@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { ANGLES, getBoardAngleOptions, getRoutableBoardAngles, parseBoardAngleSegment } from '../board-data';
+import {
+  ANGLES,
+  getBoardAngleOptions,
+  getRecordedLedBoardAngles,
+  getRoutableBoardAngles,
+  parseBoardAngleSegment,
+} from '../board-data';
 
 describe('board angles', () => {
   it('adds -5 only to the Grasshopper picker angles', () => {
@@ -14,6 +20,16 @@ describe('board angles', () => {
     expect(getRoutableBoardAngles('moonboard')).toContain(35);
     expect(getRoutableBoardAngles('moonboard')).toContain(41);
     expect(getRoutableBoardAngles('kilter')).toEqual(expect.arrayContaining([0, 41, 90]));
+  });
+
+  it('preserves valid recorded LED angles outside the picker rail', () => {
+    expect(getRecordedLedBoardAngles('woods')).toContain(41);
+    expect(getRecordedLedBoardAngles('woods')).not.toContain(-5);
+    expect(getRecordedLedBoardAngles('kilter')).not.toContain(91);
+    expect(getRecordedLedBoardAngles('grasshopper')).toContain(-5);
+    expect(getRecordedLedBoardAngles('moonboard')).toContain(45);
+    expect(getRecordedLedBoardAngles('spray')).toBeNull();
+    expect(getRecordedLedBoardAngles('unknown')).toBeNull();
   });
 
   it('parses only exact canonical route segments supported by that board', () => {

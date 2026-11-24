@@ -4,6 +4,7 @@ import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/reac
 import { GYM_REPORTING_RECEIPT_MS, gymReportingQueryKey } from '@boardsesh/graphql';
 import type {
   Gym,
+  GymAngleUsageRow,
   GymGradeCollectionPage,
   GymGradeComparison,
   GymReachOverview,
@@ -57,6 +58,18 @@ const activeWindow = {
   uniqueClimbers: 12,
   ascentCount: 3,
 };
+const unknownAngle = { tickCount: 0, sendCount: 0, displayCount: 0 };
+const angle = (degrees: number): GymAngleUsageRow => ({
+  angle: degrees,
+  distinctClimberCount: 2,
+  climberDayCount: 6,
+  tickCount: 12,
+  sendCount: 2,
+  displayCount: 7,
+  unresolvedLocalDateTickCount: 1,
+});
+const tiedLabel = 'Most used (tie): 40°, 45° · 2 recorded climbers each';
+
 const report: GymStats = {
   gymName: 'Movement',
   gymUuid: gym.uuid,
@@ -93,6 +106,15 @@ const report: GymStats = {
     },
   ],
   busiestDays: [{ dayOfWeek: 2, ascentCount: 3 }],
+  angleUsage: [
+    { boardUuid: 'a', knownAngleClimberCount: 3, angles: [angle(45), angle(40)], unknownAngle },
+    {
+      boardUuid: 'b',
+      knownAngleClimberCount: 2,
+      angles: [angle(35)],
+      unknownAngle,
+    },
+  ],
 };
 
 const count = (value: number) => ({ count: value, coverage: 'complete' as const });
@@ -207,6 +229,50 @@ describe('InsightsTab', () => {
     expect(mocks.request).toHaveBeenCalledTimes(1);
   });
 
+  it('shows each physical LED board and exact accessible details only for the verified selection', async () => {
+    const selectedBoard = { ...report, boardUuid: 'a', angleUsage: [report.angleUsage[0]] };
+    mocks.request
+      .mockResolvedValueOnce({ gymStats: report })
+      .mockResolvedValueOnce({ gymStats: selectedBoard })
+      .mockResolvedValueOnce({
+        gymStats: {
+          ...selectedBoard,
+          periodDays: 30,
+          angleUsage: [
+            {
+              boardUuid: 'a',
+              knownAngleClimberCount: 0,
+              angles: [],
+              unknownAngle: { ...unknownAngle, displayCount: 1 },
+            },
+          ],
+        },
+      });
+    renderTab();
+    expect(await screen.findByText(tiedLabel)).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Wall A' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Wall B' })).toBeTruthy();
+    expect(screen.getByText('Recorded at 35° · 2 recorded climbers')).toBeTruthy();
+    const [lower, upper] = screen.getAllByRole('button', { name: /4[05]°.*Leading angle.*66.67%/ });
+    expect(lower.textContent).toContain('40°');
+    expect(upper.textContent).toContain('45°');
+    const detailsId = lower.getAttribute('aria-describedby');
+    expect(document.getElementById(detailsId ?? '')?.textContent).toContain('6 climber-days');
+    expect(lower.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(lower);
+    expect(lower.getAttribute('aria-expanded')).toBe('true');
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Board scope' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Wall A' }));
+    await screen.findByText(tiedLabel);
+    expect(screen.queryByRole('heading', { name: 'Wall B' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '30 days' }));
+    expect(await screen.findByText('Unknown angle')).toBeTruthy();
+    expect(screen.getByText('1 confirmed LED displays')).toBeTruthy();
+    expect(screen.queryByText(tiedLabel)).toBeNull();
+  });
+
   it.each(['displayCount', 'tickCount'] as const)('keeps the report visible with %s and zero sends', async (source) => {
     mocks.request.mockResolvedValue({
       gymStats: {
@@ -301,9 +367,11 @@ describe('InsightsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
     await screen.findByTestId('insights-loading');
     expect(screen.queryByText('12 climbers recorded')).toBeNull();
+    expect(screen.queryByText(tiedLabel)).toBeNull();
     await act(async () => rejectRefresh(graphError('NOT_FOUND')));
     expect(await screen.findByText(/This board is unavailable/)).toBeTruthy();
     expect(screen.queryByText('Crimpy Traverse')).toBeNull();
+    expect(screen.queryByText(tiedLabel)).toBeNull();
     expect(screen.getByRole('button', { name: 'All boards' })).toBeTruthy();
   });
 
@@ -316,7 +384,9 @@ describe('InsightsTab', () => {
             completePrevious = resolve;
           }),
       )
-      .mockResolvedValueOnce({ gymStats: { ...report, current: { ...activeWindow, uniqueClimbers: 4 } } });
+      .mockResolvedValueOnce({
+        gymStats: { ...report, angleUsage: [], current: { ...activeWindow, uniqueClimbers: 4 } },
+      });
     const { rerender, tree } = renderTab();
     await waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(1));
     const firstSignal: AbortSignal = mocks.request.mock.calls[0][0].signal;
@@ -326,6 +396,7 @@ describe('InsightsTab', () => {
     expect(firstSignal.aborted).toBe(true);
     await act(async () => completePrevious({ gymStats: report }));
     expect(screen.queryByText('12 climbers recorded')).toBeNull();
+    expect(screen.queryByText(tiedLabel)).toBeNull();
   });
 
   it('revalidates on reconnect before rendering the old data again', async () => {
@@ -409,8 +480,10 @@ describe('InsightsTab', () => {
     expect(receivedAt).toBeTruthy();
     await advance((receivedAt ?? 0) + GYM_REPORTING_RECEIPT_MS - Date.now() - 1);
     expect(screen.getByText('Crimpy Traverse')).toBeTruthy();
+    expect(screen.getByText(tiedLabel)).toBeTruthy();
     await advance(2);
     expect(screen.queryByText('Crimpy Traverse')).toBeNull();
+    expect(screen.queryByText(tiedLabel)).toBeNull();
     expect(screen.queryByText('12 climbers recorded')).toBeNull();
     expect(screen.getByText(/Go online to check access/)).toBeTruthy();
     expect(queryClient.getQueryData(key)).toBeUndefined();

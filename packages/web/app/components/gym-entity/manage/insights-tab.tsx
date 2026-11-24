@@ -49,6 +49,7 @@ import type { GymManageTabProps } from './tab-props';
 import { GymReportingSettings } from './gym-reporting-settings';
 import { GymReachReport } from './gym-reach-overview';
 import { GymGradeComparisonPanel } from './gym-grade-comparison';
+import { GymAngleUsage } from './gym-angle-usage';
 
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 
@@ -200,6 +201,7 @@ function ReportingResults({ stats, trend }: { stats: GymStats; trend: GymTrendSe
           {gymReportingHasExactObservations(stats) ? t('gymReporting.empty') : t('gymReporting.noHistory')}
         </Typography>
       )}
+      <GymAngleUsage key={`${stats.boardUuid ?? 'all'}:${stats.periodDays}:${stats.asOf}`} stats={stats} />
     </Box>
   );
 }

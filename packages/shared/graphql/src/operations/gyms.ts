@@ -514,6 +514,24 @@ export const GET_GYM_STATS = gql`
         dayOfWeek
         ascentCount
       }
+      angleUsage {
+        boardUuid
+        knownAngleClimberCount
+        angles {
+          angle
+          distinctClimberCount
+          climberDayCount
+          unresolvedLocalDateTickCount
+          tickCount
+          sendCount
+          displayCount
+        }
+        unknownAngle {
+          tickCount
+          sendCount
+          displayCount
+        }
+      }
     }
   }
 `;
