@@ -169,6 +169,24 @@ A change's state, on the creator's notice and in the admin list: `UNDONE` once a
 
 `adminBoardSetupChanges(first, after)` lists every change, newest first, for the admin's Setup changes by climbers tab: the board, its gym (null once that gym is deleted), before and after, the climber's name, when, and `state`. It pages by event id (`nextCursor` is the page's last id): ids follow the order the changes were made, since each takes its board's row lock first.
 
+### In the app
+
+The report sheet (`ReportDirectorySheet`, `packages/mobile/src/components/report-problem/`):
+
+- **Fields.** "Set up wrong" shows `SetupSuggestionFields`: Layout, Size, Holds and, on a board that doesn't tilt, Angle. Each row is a label and a native menu (`AppMenu`), opening on the board's setup. Holds ticks the picked sets; a tap toggles one, and the last one can't be removed. Labels are the board builder's (`cleanLayoutName`, `formatSizeLabel`). A board type the build doesn't know keeps the note field.
+- **Send.** Works once the setup differs. A climber who leaves it as it is can still send with a note of at least 10 characters (the "Something else" minimum). Only a changed setup is sent as `suggestedSetup`.
+- **The line under Send.** Once the setup differs, it reads `setupSuggestionPreview`: "Changes it for everyone at {gym}. Admins can undo it.", "{gym}'s staff check it first." or "Whoever added it checks it first." It waits for the board's gym to load, so it never says the creator checks a board that has a gym. Until then, and for an unchanged setup, the usual "who will see this" line shows.
+- **`APPLIED`.** The same sheet becomes "Setup updated" / "Everyone at {gym} now climbs {setup}." with **Climb it now**. The returned board goes into the board reads straight away, and into the active board when it is the one in use, so the climb list re-keys even if the climber taps Done. Climb it now waits for the sheet to slide away (`dismissManagedSheetAndWait`), writes the board again, then binds it with `useActivateBoard` and lands on Climbs. On a board that tilts, the climber's own angle stays (`boardKeepingLocalAngle`).
+- **`SENT_FOR_REVIEW`.** One line per `setupReviewReason`, e.g. `CLAIMED_GYM`: "Sent to {gym}'s staff. We'll tell you when it's fixed." No reason (the server flag is off) keeps the plain "Sent" line.
+
+The review sheet (`ReportReviewSheet`) groups the waiting suggestions by setup (`suggestedSetupGroups`), most suggested first: "2 climbers suggested Original · 12×12 · Bolt Ons". A setup the board already has is left out. **Use this setup** sends `updateBoard` with the layout, size and sets, and the angle when the suggestion has one. A duplicate of the owner's other board asks the edit screen's question before saving with `allowDuplicateConfig`. "Fix the setup" reads "Edit it yourself" beside them.
+
+The creator's `board_setup_changed_by_climber` row says what the board climbs now and offers **Undo** while `setupChangeState` is `LIVE`. Undo asks first, then writes the restored board where the app reads it. `BOARD_SETUP_CHANGED_SINCE` reads "It changed again since. Open the board to check it." The inbox cache moves the row to `CHANGED_SINCE` or `UNDONE`, so the line stays.
+
+The "fixed after your report" notice opens the board's detail sheet. Its **Set active** binds the board and returns to Climbs, so it is that notice's Climb it now.
+
+All of this is behind the app's copy of `directory-setup-suggestions` (`useDirectorySetupSuggestionsEnabled`, positive and fail-closed). Off, the sheet is the note field, and the review sheet and the notice show no suggestion actions. `Report Problem Sent` carries `hadSuggestion` and `setupOutcome`, and **Climb it now** sends `Board Setup Climbed Now` {boardType, gymListingState}.
+
 ### The `directory-setup-suggestions` flag
 
 A server flag with the same rules as [`directory-reports`](#the-directory-reports-flag): one switch for the whole service, evaluated for the fixed id `system:directory-setup-suggestions`, cached 60 s, decided by `FEATURE_FLAG_OVERRIDES` when that names it, and off when PostHog can't answer. Turn it on with a plain 100% condition.
