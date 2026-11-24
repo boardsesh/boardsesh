@@ -56,8 +56,8 @@ const ROOT_DIR = path.resolve(import.meta.dirname, '..');
 const IMAGES_DIR = path.join(ROOT_DIR, 'packages/web/public/images');
 
 /**
- * Suffix that marks a dark-mode sibling. Must match `DARK_VARIANT_SUFFIX` in
- * bundled-board-art.ts and `DARK_SUFFIX` in scripts/generate-dark-board-art.ts. Copied
+ * Suffix that marks a dark-mode sibling. Must match `DARK_ART_SUFFIX` in
+ * packages/shared/board-render/src/background.ts and `DARK_SUFFIX` in scripts/generate-dark-board-art.ts. Copied
  * rather than imported because that module runs its own generator on load.
  */
 const DARK_SUFFIX = '.dark.webp';

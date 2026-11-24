@@ -8,8 +8,11 @@ import {
   getImageUrl,
   toDarkArtUrl,
   hasDarkBoardArt,
+  hasSplitDarkBoardArt,
+  boardArtColorScheme,
   buildOverlayPreloadUrls,
   BOARDS_WITH_DARK_ART,
+  BOARDS_WITH_SPLIT_DARK_ART,
   buildBoardArtLayers,
   buildBoardRenderUrl,
   buildOverlayUrl,
@@ -113,6 +116,14 @@ describe('getImageUrl', () => {
       expect(urls).toContain('/images/woods/woods-8x10-bg.dark.webp');
     });
 
+    it('asks the server for dark art on a board whose layers only partly have it', () => {
+      // MoonBoard: one composite, dark per layer on the server, no static files that could 404.
+      const urls = buildOverlayPreloadUrls(boardDetails('moonboard'), 'p1r42');
+
+      expect(urls).toHaveLength(1);
+      expect(new URL(urls[0], 'https://www.boardsesh.com').searchParams.get('color_scheme')).toBe('dark');
+    });
+
     it('preloads nothing when the climb has no frames', () => {
       expect(buildOverlayPreloadUrls(boardDetails('woods'), null)).toEqual([]);
       expect(buildOverlayPreloadUrls(boardDetails('woods'), '')).toEqual([]);
@@ -120,13 +131,22 @@ describe('getImageUrl', () => {
   });
 
   describe('hasDarkBoardArt', () => {
-    it('is Woods only', () => {
-      // The gate that keeps the theme swap from doubling requests and server renders for
-      // boards whose art has no dark sibling — they would render identical bytes twice.
+    it('is MoonBoard and Woods', () => {
+      // The gate that keeps every other board on its existing render URL — asking for
+      // `color_scheme=dark` there would re-render identical bytes under a new cache key.
+      expect(hasDarkBoardArt('moonboard')).toBe(true);
       expect(hasDarkBoardArt('woods')).toBe(true);
-      for (const board of ['kilter', 'tension', 'moonboard'] as const) {
+      for (const board of ['kilter', 'tension', 'decoy'] as const) {
         expect(hasDarkBoardArt(board as never)).toBe(false);
+        expect(boardArtColorScheme(board as never)).toBeUndefined();
       }
+      expect(boardArtColorScheme('moonboard')).toBe('dark');
+    });
+
+    it('splits only Woods into static light/dark files', () => {
+      // MoonBoard only has dark copies of some layers; asking the CDN for the rest 404s.
+      expect(hasSplitDarkBoardArt('woods')).toBe(true);
+      expect(hasSplitDarkBoardArt('moonboard')).toBe(false);
     });
 
     // Web resolves these paths by URL, so unlike mobile — which falls back when a key is
@@ -142,7 +162,23 @@ describe('getImageUrl', () => {
         return [entryPath];
       });
 
-    for (const board of BOARDS_WITH_DARK_ART) {
+    it('lists every board whose image directory ships dark art', () => {
+      // A board the generators add `.dark.webp` files for stays light on www until it is in
+      // the gate. The app needs no list (it reads its bundle), so this is what keeps the two
+      // from drifting apart again.
+      const hasDarkFile = (dir: string): boolean =>
+        readdirSync(dir, { withFileTypes: true }).some((entry) =>
+          entry.isDirectory() ? hasDarkFile(path.join(dir, entry.name)) : entry.name.endsWith('.dark.webp'),
+        );
+      const boardsWithDarkFiles = readdirSync(IMAGES_DIR, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && hasDarkFile(path.join(IMAGES_DIR, entry.name)))
+        .map((entry) => entry.name)
+        .sort();
+
+      expect(boardsWithDarkFiles).toEqual([...BOARDS_WITH_DARK_ART].sort());
+    });
+
+    for (const board of BOARDS_WITH_SPLIT_DARK_ART) {
       it(`${board} has a committed dark sibling for every one of its light images`, () => {
         const boardDir = path.join(IMAGES_DIR, board);
         expect(existsSync(boardDir)).toBe(true);
@@ -346,6 +382,53 @@ describe('buildOverlayUrl', () => {
     vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://vibetunnel-dev-1.example.ts.net:8081/graphql');
 
     expect(buildOverlayUrl(boardDetails, 'p1r12')).toContain('/api/internal/board-render');
+  });
+});
+
+describe('buildBoardArtLayers dark art', () => {
+  const details = (board_name: string, images: string[]) =>
+    ({
+      board_name,
+      layout_id: 2,
+      size_id: 1,
+      set_ids: [2, 3],
+      images_to_holds: Object.fromEntries(images.map((image) => [image, []])),
+      boardWidth: 650,
+      boardHeight: 1000,
+    }) as never;
+  const moonboard = details('moonboard', [
+    '/images/moonboard/moonboard-bg.png',
+    '/images/moonboard/moonboardmasters2019/holdseta.png',
+    '/images/moonboard/moonboardmasters2019/holdsetb.png',
+  ]);
+  const colorSchemeOf = (url: string | null) =>
+    url === null ? null : new URL(url, 'https://www.boardsesh.com').searchParams.get('color_scheme');
+
+  it('draws a MoonBoard climb as one composite with the dark art resolved by the server', () => {
+    // The black set B holds and the A-K / 1-18 labels vanish on the dark field otherwise. The
+    // server swaps in the `.dark.webp` layers that exist and keeps set A light, the same rule
+    // the app applies to its bundle.
+    const { backgroundUrls, overlayUrl } = buildBoardArtLayers(moonboard, 'p1r12', true);
+
+    expect(backgroundUrls).toEqual([]);
+    expect(overlayUrl).toContain('include_background=1');
+    expect(colorSchemeOf(overlayUrl)).toBe('dark');
+  });
+
+  it('draws a bare MoonBoard through the same composite instead of the light files', () => {
+    for (const frames of [null, undefined, '']) {
+      const { backgroundUrls, overlayUrl } = buildBoardArtLayers(moonboard, frames, true);
+
+      expect(backgroundUrls).toEqual([]);
+      expect(colorSchemeOf(overlayUrl)).toBe('dark');
+    }
+  });
+
+  it('leaves boards with no dark art on the URL they always had', () => {
+    const kilter = details('kilter', ['product_sizes_layouts_sets/36-1.png']);
+
+    expect(colorSchemeOf(buildBoardArtLayers(kilter, 'p1r12', true).overlayUrl)).toBeNull();
+    expect(buildBoardArtLayers(kilter, null, true).overlayUrl).toBeNull();
   });
 });
 

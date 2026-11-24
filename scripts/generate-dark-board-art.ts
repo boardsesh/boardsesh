@@ -58,8 +58,9 @@ const ROOT_DIR = path.resolve(import.meta.dirname, '..');
 const IMAGES_DIR = path.join(ROOT_DIR, 'packages/web/public/images');
 
 /**
- * Suffix that marks a dark-mode sibling. Must match `DARK_VARIANT_SUFFIX` in
- * packages/mobile/src/lib/bundled-board-art.ts, and `DARK_SUFFIX` in scripts/generate-woods-dark-art.ts, which
+ * Suffix that marks a dark-mode sibling. Must match `DARK_ART_SUFFIX` in
+ * packages/shared/board-render/src/background.ts (which the app, www and the server renderer
+ * all read it from), and `DARK_SUFFIX` in scripts/generate-woods-dark-art.ts, which
  * writes the same kind of sibling through a different transform. Deliberately not shared by
  * import: this module runs its generator on load, so importing it from the Woods script
  * would regenerate the MoonBoard art as a side effect.

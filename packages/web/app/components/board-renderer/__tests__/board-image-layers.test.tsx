@@ -32,7 +32,7 @@ vi.mock('../util', () => ({
   ),
   // Woods is the real member of this set; the fixtures below are Kilter, which
   // deliberately renders one image per layer so no other board pays for the swap.
-  hasDarkBoardArt: (board: string) => board === 'woods',
+  hasSplitDarkBoardArt: (board: string) => board === 'woods',
   toDarkArtUrl: (url: string) => url.replace(/\.webp$/, '.dark.webp'),
 }));
 
