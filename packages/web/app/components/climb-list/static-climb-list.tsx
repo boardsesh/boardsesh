@@ -99,6 +99,8 @@ export type StaticClimbListProps = {
   showSetter?: boolean;
   /** Add each row's angle to its byline. */
   showAngle?: boolean;
+  showPlays?: boolean;
+  playsAngle?: number;
   /**
    * `2` lays card rows out two to a line from the md breakpoint up. Only the
    * non-virtualized path reads it: the virtualizer measures one row per line.
@@ -159,6 +161,8 @@ type SharedRowProps = {
   rowVariant: StaticClimbRowVariant;
   showSetter: boolean;
   showAngle: boolean;
+  showPlays: boolean;
+  playsAngle?: number;
   prioritizeFirstRow: boolean;
 };
 
@@ -184,6 +188,8 @@ export default function StaticClimbList({
   rowVariant = 'list',
   showSetter = true,
   showAngle = false,
+  showPlays = false,
+  playsAngle,
   columns = 1,
   prioritizeFirstRow = true,
 }: StaticClimbListProps) {
@@ -210,6 +216,8 @@ export default function StaticClimbList({
     rowVariant,
     showSetter,
     showAngle,
+    showPlays,
+    playsAngle,
     prioritizeFirstRow,
   };
 
@@ -270,6 +278,8 @@ function PlainRows({
   rowVariant,
   showSetter,
   showAngle,
+  showPlays,
+  playsAngle,
   prioritizeFirstRow,
   columns,
 }: SharedRowProps & { columns: 1 | 2 }) {
@@ -299,6 +309,8 @@ function PlainRows({
               variant={rowVariant}
               showSetter={showSetter}
               showAngle={showAngle}
+              showPlays={showPlays}
+              playsAngle={playsAngle}
             />
             {renderItemExtra?.(climb, rowKey)}
           </div>
@@ -345,6 +357,8 @@ function VirtualizedRows({
   rowVariant,
   showSetter,
   showAngle,
+  showPlays,
+  playsAngle,
   prioritizeFirstRow,
   hasMore,
   isFetching,
@@ -435,6 +449,8 @@ function VirtualizedRows({
               variant={rowVariant}
               showSetter={showSetter}
               showAngle={showAngle}
+              showPlays={showPlays}
+              playsAngle={playsAngle}
             />
             {renderItemExtra?.(climb, rowKey)}
           </div>

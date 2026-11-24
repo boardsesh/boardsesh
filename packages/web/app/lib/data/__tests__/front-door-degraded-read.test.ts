@@ -18,8 +18,9 @@ const { queryImpl, captureMessageMock } = vi.hoisted(() => ({
 vi.mock('server-only', () => ({}));
 
 vi.mock('@/app/lib/graphql/server-cached-client', () => ({
-  createCachedGraphQLQuery: (_document: unknown, tag: string) => (variables: unknown) =>
-    queryImpl.current(tag, variables),
+  createCachedGraphQLQuery: vi.fn(
+    (_document: unknown, tag: string) => (variables: unknown) => queryImpl.current(tag, variables),
+  ),
 }));
 
 vi.mock('@sentry/nextjs', () => ({
@@ -28,6 +29,7 @@ vi.mock('@sentry/nextjs', () => ({
     callback({ setFingerprint: () => {}, setTag: () => {}, setExtra: () => {} }),
 }));
 
+import { createCachedGraphQLQuery } from '@/app/lib/graphql/server-cached-client';
 import {
   __resetFrontDoorReportingForTests,
   getFrontDoorBetaLinks,
@@ -53,6 +55,7 @@ describe('front-door reads distinguish "timed out" from "empty"', () => {
     // Reset the report-interval latch so it cannot carry state in from
     // another test file in this worker.
     __resetFrontDoorReportingForTests();
+    vi.mocked(createCachedGraphQLQuery).mockClear();
     queryImpl.current = async () => ({ similarClimbs: [], betaLinks: [] });
   });
 
@@ -117,8 +120,17 @@ describe('front-door reads distinguish "timed out" from "empty"', () => {
       compatibleSizeIds: [23],
       ascensionist_count: 20,
       quality_average: '4.1',
+      angle: 40,
     };
-    const candidates = Array.from({ length: 6 }, (_, index) => ({ ...searchRow, uuid: `eligible-${index}` }));
+    const counts = [
+      { play_count: 1204 },
+      { play_count: 0 },
+      {},
+      { play_count: -1 },
+      { play_count: Number.MAX_SAFE_INTEGER + 1 },
+      { angle: 30, play_count: 9876 },
+    ];
+    const candidates = counts.map((stats, index) => ({ ...searchRow, uuid: `eligible-${index}`, ...stats }));
     const query = vi.fn(async (tag: string) =>
       tag === 'similar-climbs'
         ? { similarClimbs: [] }
@@ -132,6 +144,13 @@ describe('front-door reads distinguish "timed out" from "empty"', () => {
 
     const section = await getFrontDoorSimilarClimbs(nearbyParams);
 
+    expect(createCachedGraphQLQuery).toHaveBeenNthCalledWith(
+      2,
+      expect.stringMatching(/query FrontDoorNearbyClimbs[\s\S]*\bangle\s+play_count\b/),
+      'nearby-climbs',
+      300,
+      expect.any(Number),
+    );
     expect(query).toHaveBeenNthCalledWith(2, 'nearby-climbs', {
       input: {
         boardName: 'kilter',
@@ -154,7 +173,14 @@ describe('front-door reads distinguish "timed out" from "empty"', () => {
       nearby: {
         status: 'loaded',
         grade: '7a+/V7',
-        items: candidates.map(({ uuid }) => ({ uuid, angle: 40, layoutId: 8, difficultyName: '7a/V6' })),
+        items: [
+          { uuid: 'eligible-0', angle: 40, layoutId: 8, difficultyName: '7a/V6', playCount: 1204 },
+          { uuid: 'eligible-1', angle: 40, playCount: 0 },
+          { uuid: 'eligible-2', angle: 40, playCount: null },
+          { uuid: 'eligible-3', angle: 40, playCount: null },
+          { uuid: 'eligible-4', angle: 40, playCount: null },
+          { uuid: 'eligible-5', angle: 40, playCount: null },
+        ],
       },
     });
   });
@@ -166,6 +192,8 @@ describe('front-door reads distinguish "timed out" from "empty"', () => {
     // On the 2024 layout cell 1 uses Hold Set D (5) and cell 2 needs Wooden Holds (8).
     const candidate = {
       uuid: 'fits-hold-set',
+      angle: 40,
+      play_count: 0,
       name: 'Hold Set D climb',
       setter_username: 'setter',
       frames: 'p1r42',
@@ -195,7 +223,7 @@ describe('front-door reads distinguish "timed out" from "empty"', () => {
       fallback: { sizeId: 1, setIds: [5], difficulty: '7a/V6' },
     });
 
-    expect(section).toMatchObject({ nearby: { status: 'loaded', items: [{ uuid: 'fits-hold-set' }] } });
+    expect(section).toMatchObject({ nearby: { status: 'loaded', items: [{ uuid: 'fits-hold-set', playCount: 0 }] } });
     expect(query).toHaveBeenCalledTimes(firstPageHasMatch ? 2 : 3);
     if (!firstPageHasMatch) {
       expect(query).toHaveBeenLastCalledWith('nearby-climbs', { input: expect.objectContaining({ page: 1 }) });

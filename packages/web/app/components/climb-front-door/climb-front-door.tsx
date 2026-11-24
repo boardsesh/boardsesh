@@ -5,6 +5,7 @@ import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import { getDisplayDescription } from '@boardsesh/shared-schema';
 import { boardTypeProperty } from '@boardsesh/analytics';
+import { playCountAtAngle } from '@/app/lib/format-climb-stats';
 import ClimbViewSeoFragment from '@/app/components/climb-detail/climb-view-seo-fragment';
 import SimilarClimbsList, { ClimbPreviewRows } from '@/app/components/similar-climbs/similar-climbs-list';
 import LocaleLink from '@/app/components/i18n/locale-link';
@@ -171,7 +172,13 @@ export default async function ClimbFrontDoor({
   // the synthesised catalogue string. Empty when the setter wrote nothing, or
   // only Aurora's "No match" marker.
   const setterNotes = getDisplayDescription(climb.description);
+  const playsDescriptionId = 'climb-plays-explanation';
   const currentAngleStats = angleStats.find((stats) => stats.angle === angle);
+  // The detail and table caches can refresh independently. An explicit detail
+  // number or null wins. Only a legacy omitted field can use the exact table row.
+  const selectedClimb =
+    climb.play_count === undefined ? { ...climb, play_count: currentAngleStats?.play_count } : climb;
+  const currentPlays = playCountAtAngle(selectedClimb, boardDetails.board_name, angle);
   const layoutName = boardDetails.layout_name ?? '';
   const nearbyClimbs = similarClimbs.status === 'loaded' && similarClimbs.items.length === 0 && similarClimbs.nearby;
   const showNearbyClimbs = nearbyClimbs && (nearbyClimbs.status === 'unavailable' || nearbyClimbs.items.length > 0);
@@ -220,6 +227,8 @@ export default async function ClimbFrontDoor({
             boardDetails={boardDetails}
             angle={angle}
             currentAngleStats={currentAngleStats}
+            currentPlays={currentPlays}
+            playsDescriptionId={playsDescriptionId}
           />
         </Box>
 
@@ -264,6 +273,8 @@ export default async function ClimbFrontDoor({
             climbName={climbName}
             currentAngle={angle}
             angleStats={angleStats}
+            currentPlays={currentPlays}
+            playsDescriptionId={playsDescriptionId}
           />
 
           <AboutClimb

@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
+import { GET_WEB_PLAYLIST_CLIMBS } from '@boardsesh/graphql/operations/playlists';
 
 vi.mock('server-only', () => ({}));
 
@@ -92,12 +93,15 @@ describe('server-graphql helpers', () => {
 
   describe('serverPlaylistClimbs', () => {
     it('returns the playlistClimbs payload on success', async () => {
-      const payload = { climbs: [], totalCount: 0, hasMore: false };
+      const payload = { climbs: [{ uuid: 'climb', publicPlayCount: 0 }], totalCount: 1, hasMore: false };
       requestMock.mockResolvedValueOnce({ playlistClimbs: payload });
 
       const result = await serverPlaylistClimbs('auth-token', { playlistId: 'pl-1', page: 0, pageSize: 20 });
 
       expect(result).toEqual(payload);
+      expect(requestMock).toHaveBeenCalledWith(GET_WEB_PLAYLIST_CLIMBS, {
+        input: { playlistId: 'pl-1', page: 0, pageSize: 20 },
+      });
     });
 
     it('returns null and logs when the GraphQL request throws', async () => {

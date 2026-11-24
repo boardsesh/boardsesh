@@ -76,6 +76,7 @@ export {
   CLIMB_NEIGHBOR_MIN_JACCARD,
   ClimbNeighborIndex,
   getMaterializedSimilarClimbs,
+  similarClimbPlayCountSql,
   type ComputedNeighbor,
   type MaterializedSimilarClimb,
   type MaterializedSimilarClimbsArgs,

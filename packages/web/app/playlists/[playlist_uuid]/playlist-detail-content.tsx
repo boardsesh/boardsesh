@@ -33,6 +33,7 @@ import {
   type DeletePlaylistMutationVariables,
   type DeletePlaylistMutationResponse,
   GET_PLAYLIST,
+  GET_WEB_PLAYLIST_CLIMBS,
   DELETE_PLAYLIST,
   UPDATE_PLAYLIST_LAST_ACCESSED,
   FOLLOW_PLAYLIST,
@@ -63,6 +64,7 @@ import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import type { PlaylistGradeBandSummary } from '@/app/lib/playlist-grade-band';
 import BackButton from '@/app/components/back-button';
 import CommentSection from '@/app/components/social/comment-section';
+import PlaysExplanation from '@/app/components/climb-front-door/plays-explanation';
 import MultiboardClimbList from '@/app/components/climb-list/multiboard-climb-list';
 import { usePlaylistClimbs, type PlaylistClimbsBoardInput } from '@boardsesh/playlists-react';
 import { useMyBoards } from '@/app/hooks/use-my-boards';
@@ -156,6 +158,7 @@ export default function PlaylistDetailContent({
   const router = useLocaleRouter();
   const { showMessage } = useSnackbar();
   const { t } = useTranslation('playlists');
+  const { t: tClimbs } = useTranslation('climbs');
   const { t: tMarketing, i18n: marketingI18n } = useTranslation('marketing');
   const [playlist, setPlaylist] = useState<Playlist | null>(initialPlaylist ?? null);
   const [loading, setLoading] = useState(!initialPlaylist);
@@ -293,11 +296,10 @@ export default function PlaylistDetailContent({
     };
   }, [selectedBoard]);
 
-  // Web injects its token-aware transport explicitly so token semantics match
-  // the previous inline query. Public playlists are readable without a token,
-  // so the shared hook only gates on token resolution (tokenLoading), not auth.
+  // Match the SSR document on every page and board filter. It selects the
+  // public Plays projection without changing the native hook's operation.
   const executePlaylistClimbsGraphQL = useMemo<Parameters<typeof usePlaylistClimbs>[0]['executeGraphQL']>(
-    () => (query, variables) => createGraphQLHttpClient(token).request(query, variables),
+    () => (_query, variables) => createGraphQLHttpClient(token).request(GET_WEB_PLAYLIST_CLIMBS, variables),
     [token],
   );
 
@@ -322,10 +324,16 @@ export default function PlaylistDetailContent({
     isLoading: isClimbsLoading,
   } = playlistClimbsQuery;
 
-  // TYPE SEAM: the shared hook returns the structurally-wider queue `Climb`;
-  // this screen uses web `Climb`. Runtime objects are the same flattened GraphQL
-  // climbs, so cast once here.
-  const allClimbs = sharedAllClimbs as unknown as Climb[];
+  // The hook flattens the GraphQL rows through its compatible queue Climb type.
+  // Keep the public proof separate from any older cached viewer-scoped count.
+  const allClimbs = useMemo(
+    () =>
+      (sharedAllClimbs as unknown as Climb[]).map((climb) => ({
+        ...climb,
+        play_count: climb.publicPlayCount,
+      })),
+    [sharedAllClimbs],
+  );
   const usableThumbnailCrops = useMemo(() => {
     const initialByUuid = new Map(initialClimbs?.climbs.map((climb) => [climb.uuid, climb]));
     return Object.fromEntries(
@@ -468,6 +476,7 @@ export default function PlaylistDetailContent({
       hasMore={hasNextPage ?? false}
       onLoadMore={handleLoadMore}
       selectedBoard={selectedBoard}
+      showPlays={playlist.isPublic}
       fallbackBoardTypes={[playlist.boardType]}
       boards={myBoards}
       // www has no bottom tab bar to clear; the spacer left an empty band
@@ -648,6 +657,9 @@ export default function PlaylistDetailContent({
         <div className={styles.contentWrapper}>
           {/* Climbs List with multi-board support */}
           <div className={styles.climbsSection}>
+            {playlist.isPublic && allClimbs.length > 0 ? (
+              <PlaysExplanation>{tClimbs('plays.explanation')}</PlaysExplanation>
+            ) : null}
             {allClimbs.length === 0 && !isFetchingClimbs && !isClimbsLoading ? (
               <EmptyState description={t('detail.empty')} />
             ) : (

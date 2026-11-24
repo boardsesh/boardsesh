@@ -4,9 +4,9 @@ import * as Sentry from '@sentry/nextjs';
 import { gql } from 'graphql-request';
 import { getBoulderGradesForBoard } from '@boardsesh/board-constants/boulder-grade-mapping';
 import { canAddClimbToBoard } from '@boardsesh/board-config';
-import type { Climb, SimilarClimb } from '@boardsesh/shared-schema';
+import { toPlayCount, type Climb, type SimilarClimb } from '@boardsesh/shared-schema';
 import type { ClimbSearchInputVariables } from '@boardsesh/graphql/operations/climb-search';
-import { SIMILAR_CLIMBS_QUERY, type SimilarClimbsResponse } from '@boardsesh/graphql/operations/new-climb-feed';
+import { PUBLIC_SIMILAR_CLIMBS_QUERY, type SimilarClimbsResponse } from '@boardsesh/graphql/operations/new-climb-feed';
 import { GET_BETA_LINKS, type GetBetaLinksQueryResponse } from '@boardsesh/graphql/operations/beta-links';
 import { createCachedGraphQLQuery } from '@/app/lib/graphql/server-cached-client';
 import { compactErrorMessage } from '@/app/lib/observability/compact-error';
@@ -46,6 +46,7 @@ export type ClimbPreview = Pick<
   | 'difficultyName'
   | 'qualityAverage'
   | 'ascensionistCount'
+  | 'playCount'
   | 'compatibleSizeIds'
 >;
 
@@ -191,6 +192,8 @@ type NearbyClimbRow = Pick<
   | 'difficulty'
   | 'quality_average'
   | 'ascensionist_count'
+  | 'angle'
+  | 'play_count'
   | 'compatibleSizeIds'
 >;
 
@@ -205,6 +208,8 @@ const NEARBY_CLIMBS_QUERY = gql`
         difficulty
         quality_average
         ascensionist_count
+        angle
+        play_count
         compatibleSizeIds
       }
     }
@@ -289,6 +294,9 @@ async function getNearbyClimbs({
       difficultyName: row.difficulty,
       qualityAverage: Number(row.quality_average),
       ascensionistCount: row.ascensionist_count,
+      // The search is scoped to one board, and Plays belongs to its returned
+      // Climb.angle. The link stays at the requested angle.
+      playCount: row.angle === angle ? toPlayCount(row.play_count) : null,
       layoutId,
       angle,
       compatibleSizeIds: row.compatibleSizeIds ?? [],
@@ -302,7 +310,7 @@ async function getNearbyClimbs({
 
 export async function getFrontDoorSimilarClimbs(params: FrontDoorSimilarClimbsParams): Promise<FrontDoorSimilarClimbs> {
   const query = createCachedGraphQLQuery<SimilarClimbsResponse, SimilarClimbsQueryVariables>(
-    SIMILAR_CLIMBS_QUERY,
+    PUBLIC_SIMILAR_CLIMBS_QUERY,
     'similar-climbs',
     SIMILAR_CLIMBS_REVALIDATE_SECONDS,
     FRONT_DOOR_BACKEND_TIMEOUT_MS,

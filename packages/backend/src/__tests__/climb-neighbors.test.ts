@@ -16,6 +16,7 @@ import {
 } from '@boardsesh/db/queries';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
+import { findSimilarClimbs } from '../graphql/resolvers/climbs/climb-similarity';
 import { climbMutations } from '../graphql/resolvers/climbs/mutations';
 import { hasCatalogQueryAccess } from '../graphql/resolvers/social/roles';
 
@@ -43,6 +44,7 @@ type ClimbSeed = {
   uuid: string;
   layoutId: number;
   holds: number[];
+  angle?: number | null;
   isDraft?: boolean;
   isHidden?: boolean;
   isListed?: boolean | null;
@@ -54,6 +56,7 @@ async function insertClimb({
   uuid,
   layoutId,
   holds,
+  angle = 40,
   isDraft = false,
   isHidden = false,
   isListed = null,
@@ -65,7 +68,7 @@ async function insertClimb({
     boardType: BOARD,
     layoutId,
     name: uuid,
-    angle: 40,
+    angle,
     frames: framesFor(holds),
     framesCount: 1,
     isDraft,
@@ -690,6 +693,7 @@ describe('getMaterializedSimilarClimbs', () => {
       difficultyName: '6c/V5',
       qualityAverage: 2.5,
       ascensionistCount: 7,
+      playCount: 0,
       compatibleSizeIds: [],
       requiredSetIds: null,
       characteristics: null,
@@ -716,6 +720,101 @@ describe('getMaterializedSimilarClimbs', () => {
       .set({ isListed: false })
       .where(eq(dbSchema.boardClimbs.uuid, PREFIX + 'far'));
     expect((await read()).map(({ uuid }) => uuid)).toEqual([PREFIX + 'near']);
+  });
+});
+
+describe('linked-angle Plays in both similar-climb reads', () => {
+  const targetHolds = range(1, 10);
+  const fixtures: ClimbSeed[] = [
+    { uuid: 'plays-target', layoutId: 1, holds: targetHolds },
+    { uuid: 'positive', layoutId: 1, angle: 30, holds: [...targetHolds, 11] },
+    { uuid: 'zero', layoutId: 1, angle: 30, holds: range(1, 9) },
+    { uuid: 'no-exact-row', layoutId: 1, angle: 30, holds: range(1, 8) },
+    { uuid: 'no-saved-angle', layoutId: 1, angle: null, holds: range(1, 7) },
+    { uuid: 'legacy-alias', layoutId: 1, angle: 30, holds: range(1, 6) },
+    { uuid: 'listed-match', layoutId: 1, angle: 30, isListed: true, holds: range(1, 6) },
+    { uuid: 'hidden-target', layoutId: 1, isHidden: true, holds: range(1, 10) },
+    { uuid: 'hidden-target-alias', layoutId: 1, angle: 30, holds: range(1, 5) },
+    { uuid: 'canonical-target', layoutId: 1, angle: 40, holds: [30, 31] },
+  ];
+
+  beforeAll(async () => {
+    await reset();
+    for (const fixture of fixtures) {
+      await insertClimb(fixture);
+      await db.insert(dbSchema.boardClimbHolds).values(
+        fixture.holds.map((holdId) => ({
+          boardType: BOARD,
+          climbUuid: PREFIX + fixture.uuid,
+          holdId,
+          frameNumber: 1,
+          holdState: 'HAND',
+        })),
+      );
+    }
+    const stats = [
+      { climbUuid: 'positive', angle: 30, playCount: 1204 },
+      { climbUuid: 'positive', angle: 40, playCount: 999, ascensionistCount: 17.0, qualityAverage: 3.5 },
+      { climbUuid: 'zero', angle: 30, playCount: 0 },
+      { climbUuid: 'zero', angle: 40, playCount: 900, ascensionistCount: 28 },
+      { climbUuid: 'no-exact-row', angle: 40, playCount: 888 },
+      { climbUuid: 'no-saved-angle', angle: 0, playCount: 777 },
+      { climbUuid: 'legacy-alias', angle: 30, playCount: 333 },
+      { climbUuid: 'listed-match', angle: 30, playCount: 444 },
+      { climbUuid: 'hidden-target', angle: 30, playCount: 555 },
+      { climbUuid: 'canonical-target', angle: 30, playCount: 666 },
+    ];
+    await db
+      .insert(dbSchema.boardClimbStats)
+      .values(stats.map((row) => ({ ...row, boardType: BOARD, climbUuid: PREFIX + row.climbUuid })));
+    await db.insert(dbSchema.boardClimbAliases).values(
+      [
+        ['legacy-alias', 'canonical-target'],
+        ['listed-match', 'canonical-target'],
+        ['hidden-target-alias', 'hidden-target'],
+      ].map(([aliasUuid, canonicalUuid]) => ({
+        boardType: BOARD,
+        aliasUuid: PREFIX + aliasUuid,
+        canonicalUuid: PREFIX + canonicalUuid,
+        source: 'test',
+      })),
+    );
+    await refreshClimbNeighborsForBoard(db, { boardType: BOARD, full: true });
+  });
+
+  afterAll(reset);
+
+  it.each(['materialized', 'live'] as const)('reads Plays independently of ranking in the %s query', async (path) => {
+    const results =
+      path === 'materialized'
+        ? await getMaterializedSimilarClimbs(db, {
+            boardType: BOARD,
+            layoutId: 1,
+            climbUuid: PREFIX + 'plays-target',
+            threshold: 0.5,
+            limit: 10,
+            statsAngle: 40,
+          })
+        : await findSimilarClimbs({
+            boardType: BOARD,
+            layoutId: 1,
+            excludeUuid: PREFIX + 'plays-target',
+            threshold: 0.5,
+            limit: 10,
+            statsAngle: 40,
+            holds: targetHolds.map((holdId) => ({ holdId, holdState: 'HAND' })),
+          });
+    expect(results.map(({ uuid, angle, playCount }) => [uuid.slice(PREFIX.length), angle, playCount])).toEqual([
+      ['positive', 30, 1204],
+      ['zero', 30, 0],
+      ['no-exact-row', 30, null],
+      ['no-saved-angle', null, null],
+      ['legacy-alias', 30, 666],
+      ['listed-match', 30, 444],
+      ['hidden-target-alias', 30, null],
+    ]);
+    expect(results[0]).toMatchObject({ ascensionistCount: 17, qualityAverage: 3.5 });
+    expect(results[1]).toMatchObject({ ascensionistCount: 28 });
   });
 });
 

@@ -1,9 +1,14 @@
-import { toPlayCount } from '@boardsesh/shared-schema';
-import { climbDraftVisibilityCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import { toPlayCount, type Climb, type BoardName } from '@boardsesh/shared-schema';
+import {
+  climbDraftVisibilityCondition,
+  getClimbStars,
+  getGradeLabel,
+  listedClimbDestinationUuidSql,
+  sprayClimbVisibilityCondition,
+  toConfidenceTier,
+} from '@boardsesh/db/queries';
 import { eq, and, inArray, sql, type SQL } from 'drizzle-orm';
-import { type Climb, type BoardName } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
-import { getClimbStars, getGradeLabel, toConfidenceTier } from '@boardsesh/db/queries';
 import { boardClimbGrades } from '@boardsesh/db/schema';
 import { UNIFIED_TABLES } from '../../../../db/queries/util/table-select';
 
@@ -184,6 +189,11 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
   // always was here.
   const gradeAngleExpr = resolvedEntries.length > 0 ? resolvedAngleSql('grade_angle') : sql`${tables.climbStats.angle}`;
 
+  const publicDestinationUuid = listedClimbDestinationUuidSql(tables.climbs);
+  const publicWall = sprayClimbVisibilityCondition(
+    { boardType: tables.climbs.boardType, layoutId: tables.climbs.layoutId },
+    null,
+  );
   const rows = await db
     .select({
       climbUuid: tables.climbs.uuid,
@@ -216,6 +226,15 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       statsAngle: tables.climbStats.angle,
       ascensionist_count: tables.climbStats.ascensionistCount,
       play_count: sql<string | null>`${tables.climbStats.playCount}::text`,
+      // Playlists retain the stored UUID and may contain rows visible only to
+      // the viewer. Expose a separate public count only for the linked climb.
+      publicPlayEligible: sql<boolean>`(
+        ${tables.climbs.isDraft} IS NOT TRUE
+        AND ${tables.climbs.isHidden} IS FALSE
+        AND ${tables.climbs.isListed} IS NOT FALSE
+        AND ${publicDestinationUuid} = ${tables.climbs.uuid}
+        AND ${publicWall}
+      )`,
       difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
       quality_average: sql<number>`ROUND(${tables.climbStats.qualityAverage}::numeric, 2)`,
       difficulty_error: sql<number>`ROUND(${tables.climbStats.difficultyAverage}::numeric - ${tables.climbStats.displayDifficulty}::numeric, 2)`,
@@ -297,6 +316,7 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
     // for the displayed grade. Otherwise prefer the angle the stats row was
     // actually joined at, so `angle` matches the difficulty shown.
     const angle = wallAngle ?? row.statsAngle ?? override ?? DEFAULT_ANGLE;
+    const playCount = row.statsAngle === angle ? toPlayCount(row.play_count) : null;
     const boardName = (row.boardType || ref.boardType) as BoardName;
     climbs.push({
       uuid: row.climbUuid,
@@ -318,7 +338,8 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       // which a caller-supplied wall angle overrides with the live board angle.
       statsAngle: row.statsAngle ?? null,
       ascensionist_count: Number(row.ascensionist_count || 0),
-      play_count: row.statsAngle === angle ? toPlayCount(row.play_count) : null,
+      play_count: playCount,
+      publicPlayCount: row.publicPlayEligible ? playCount : null,
       difficulty: getGradeLabel(row.difficulty_id, boardName),
       quality_average: row.quality_average?.toString() || '0',
       stars: getClimbStars(row.quality_average),

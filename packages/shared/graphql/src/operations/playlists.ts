@@ -190,6 +190,41 @@ export const GET_PLAYLIST_CLIMBS = gql`
   }
 `;
 
+// The public web row uses only the count scoped to its public link.
+export const GET_WEB_PLAYLIST_CLIMBS = gql`
+  query GetWebPlaylistClimbs($input: GetPlaylistClimbsInput!) {
+    playlistClimbs(input: $input) {
+      climbs {
+        uuid
+        layoutId
+        boardType
+        setter_username
+        name
+        description
+        frames
+        framesCount
+        framesPace
+        angle
+        ascensionist_count
+        publicPlayCount
+        difficulty
+        quality_average
+        stars
+        difficulty_error
+        benchmark_difficulty
+        boardseshDifficulty
+        boardseshConfidence
+        compatibleSizeIds
+        characteristics
+        is_no_match
+      }
+      totalCount
+      unfilteredCount
+      hasMore
+    }
+  }
+`;
+
 // TypeScript types for operations
 
 export type Playlist = {
@@ -458,6 +493,7 @@ export type PlaylistClimbsResult = {
     angle: number;
     ascensionist_count: number;
     play_count?: number | null;
+    publicPlayCount?: number | null;
     difficulty: string;
     quality_average: string;
     stars: number;

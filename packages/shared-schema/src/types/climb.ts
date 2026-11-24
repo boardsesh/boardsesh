@@ -35,6 +35,8 @@ export type Climb = {
   ascensionist_count: number;
   /** Approximate recorded board selections lasting at least 30 seconds at `angle`. */
   play_count?: number | null;
+  /** Playlist hydration's public, link-identity-checked Plays count. */
+  publicPlayCount?: number | null;
   difficulty: string;
   quality_average: string;
   stars: number;

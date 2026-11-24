@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql, type SQLWrapper } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { boardClimbAliases } from '../schema/boards/unified';
 
@@ -9,6 +9,24 @@ import { boardClimbAliases } from '../schema/boards/unified';
 // query chain instead of the stub-friendly `(...args: unknown[]) => …`
 // shape this file used to carry.
 type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
+
+/**
+ * Canonical UUID of an existing row as a public climb link resolves it. A
+ * listed row wins even when a legacy alias still points elsewhere.
+ */
+export function listedClimbDestinationUuidSql(climb: {
+  boardType: SQLWrapper;
+  uuid: SQLWrapper;
+  isListed: SQLWrapper;
+}) {
+  return sql<string>`CASE WHEN ${climb.isListed} IS TRUE THEN ${climb.uuid}
+    ELSE COALESCE(
+      (SELECT ${boardClimbAliases.canonicalUuid} FROM ${boardClimbAliases}
+        WHERE ${boardClimbAliases.boardType} = ${climb.boardType}
+          AND ${boardClimbAliases.aliasUuid} = ${climb.uuid}),
+      ${climb.uuid}
+    ) END`;
+}
 
 // Resolves a (possibly duplicate) climb UUID to its canonical UUID. Hit path
 // is a primary-key lookup on (board_type, alias_uuid). Misses return the

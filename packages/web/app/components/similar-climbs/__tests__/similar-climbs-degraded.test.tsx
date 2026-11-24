@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vite-plus/test';
 import { renderToString } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { SimilarClimb } from '@boardsesh/shared-schema';
+import { PUBLIC_SIMILAR_CLIMBS_QUERY } from '@boardsesh/graphql/operations/new-climb-feed';
 import type { BoardImageDetails } from '@/app/lib/types';
 import SimilarClimbsList from '../similar-climbs-list';
 
@@ -22,7 +23,14 @@ import SimilarClimbsList from '../similar-climbs-list';
  */
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, options?: { angle?: number; formattedCount?: string }) => {
+      if (key === 'plays.count') return `${options?.formattedCount} plays`;
+      if (key === 'frontDoor.facts.angleValue') return `${options?.angle}°`;
+      return key;
+    },
+    i18n: { language: 'en-US' },
+  }),
 }));
 
 vi.mock('@/app/components/i18n/locale-link', () => ({
@@ -67,7 +75,8 @@ function makeSimilarClimb(): SimilarClimb {
     uuid: 'RECOVERED0',
     name: 'Recovered Boulder',
     layoutId: 1,
-    angle: 40,
+    angle: 30,
+    playCount: 0,
     frames: 'p1r14',
     difficultyName: 'V4',
     setterUsername: 'setter',
@@ -120,6 +129,12 @@ describe('SimilarClimbsList with no seed and a pending message', () => {
     // One fetch, from the reader's own browser: the section the server could
     // not resolve recovers without the reader doing anything.
     expect(graphqlRequest).toHaveBeenCalledTimes(1);
+    expect(graphqlRequest).toHaveBeenCalledWith(PUBLIC_SIMILAR_CLIMBS_QUERY, {
+      input: expect.objectContaining({ angle: 40 }),
+    });
+    const link = screen.getByRole('link', { name: /Recovered Boulder/ });
+    expect(link.getAttribute('href')).toContain('/30/view/');
+    expect(link.textContent).toContain('30° · 0 plays');
     expect(screen.queryByText(PENDING_MESSAGE)).toBeNull();
     cleanup();
   });

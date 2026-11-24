@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -35,6 +35,7 @@ type MultiboardClimbListProps = {
   header?: React.ReactNode;
   hideEndMessage?: boolean;
   showBottomSpacer?: boolean;
+  showPlays?: boolean;
   /** Fallback board types for default board details resolution */
   fallbackBoardTypes?: string[];
   /** SSR-fetched user boards, forwarded to useMyBoards so board art resolves without a flash. */
@@ -62,6 +63,7 @@ export default function MultiboardClimbList({
   header,
   hideEndMessage = true,
   showBottomSpacer = true,
+  showPlays = false,
   fallbackBoardTypes,
   initialBoards,
   boards: externalBoards,
@@ -154,6 +156,7 @@ export default function MultiboardClimbList({
         }
         hideEndMessage={hideEndMessage}
         showBottomSpacer={showBottomSpacer}
+        showPlays={showPlays}
       />
     );
   } else {

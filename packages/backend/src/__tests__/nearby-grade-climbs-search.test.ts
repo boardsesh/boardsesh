@@ -32,8 +32,22 @@ describe('anonymous nearby-grade climb search', () => {
 
     const statsDefaults = { boardType: 'kilter', angle: 40, displayDifficulty: 23, ascensionistCount: 100 };
     await db.insert(boardClimbStats).values([
-      { ...statsDefaults, climbUuid: 'nearby-most-repeats', ascensionistCount: 10, displayDifficulty: 22 },
-      { ...statsDefaults, climbUuid: 'nearby-fewer-repeats', ascensionistCount: 7, displayDifficulty: 25 },
+      {
+        ...statsDefaults,
+        climbUuid: 'nearby-most-repeats',
+        ascensionistCount: 10,
+        displayDifficulty: 22,
+        playCount: 1204,
+      },
+      { ...statsDefaults, climbUuid: 'nearby-most-repeats', angle: 45, playCount: 9001 },
+      {
+        ...statsDefaults,
+        climbUuid: 'nearby-fewer-repeats',
+        ascensionistCount: 7,
+        displayDifficulty: 25,
+        playCount: 0,
+      },
+      { ...statsDefaults, climbUuid: 'nearby-fewer-repeats', angle: 45, playCount: 9002 },
       { ...statsDefaults, climbUuid: 'nearby-unlisted' },
       { ...statsDefaults, climbUuid: 'nearby-draft' },
       { ...statsDefaults, climbUuid: 'nearby-hidden' },
@@ -65,9 +79,9 @@ describe('anonymous nearby-grade climb search', () => {
     );
 
     const climbs = await climbFieldResolvers.climbs(context);
-    expect(climbs.map(({ uuid, statsAngle }) => ({ uuid, statsAngle }))).toEqual([
-      { uuid: 'nearby-most-repeats', statsAngle: 40 },
-      { uuid: 'nearby-fewer-repeats', statsAngle: 40 },
+    expect(climbs.map(({ uuid, angle, statsAngle, play_count }) => ({ uuid, angle, statsAngle, play_count }))).toEqual([
+      { uuid: 'nearby-most-repeats', angle: 40, statsAngle: 40, play_count: 1204 },
+      { uuid: 'nearby-fewer-repeats', angle: 40, statsAngle: 40, play_count: 0 },
     ]);
   });
 });

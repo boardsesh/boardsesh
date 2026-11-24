@@ -1,6 +1,7 @@
 import 'server-only';
 import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
+import { toPlayCount } from '@boardsesh/shared-schema';
 import { getClimbStars, getGradeLabel, withSerialPlan, type SerialPlanDb } from '@boardsesh/db/queries';
 import { dbz, executeRows } from '@/app/lib/db/db';
 import { withReadDeadline } from '@/app/lib/db/read-deadline';
@@ -165,6 +166,7 @@ export function buildSetterClimbsQuery(db: SerialPlanDb, username: string, offse
       createdAt: boardClimbs.createdAt,
       statsAngle: boardClimbStats.angle,
       ascensionistCount: boardClimbStats.ascensionistCount,
+      playCount: sql<string | null>`${boardClimbStats.playCount}::text`,
       difficultyId: sql<number | null>`ROUND(${boardClimbStats.displayDifficulty}::numeric, 0)`,
       qualityAverage: sql<number | null>`ROUND(${boardClimbStats.qualityAverage}::numeric, 2)`,
       difficultyError: sql<
@@ -251,6 +253,7 @@ function toClimbRow(row: Awaited<ReturnType<typeof buildSetterClimbsQuery>>[numb
     framesPace: row.framesPace ?? null,
     angle: row.statsAngle ?? DEFAULT_SETTER_CLIMB_ANGLE,
     ascensionist_count: Number(row.ascensionistCount ?? 0),
+    play_count: toPlayCount(row.playCount),
     difficulty: getGradeLabel(row.difficultyId ?? null),
     quality_average: row.qualityAverage?.toString() ?? '0',
     stars: getClimbStars(row.qualityAverage),

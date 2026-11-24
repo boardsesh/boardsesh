@@ -23,6 +23,14 @@
   },
   "sends_one": "{{formattedCount}} 次完攀",
   "sends_other": "{{formattedCount}} 次完攀",
+  "plays": {
+    "label": "选用次数",
+    "count_one": "{{formattedCount}} 次选用",
+    "count_other": "{{formattedCount}} 次选用",
+    "unavailable": "选用次数暂不可用",
+    "valueUnavailable": "暂不可用",
+    "explanation": "选用次数估算的是一条线路在训练板上保持选中至少 30 秒的次数。数据每小时重新计算，可能会更晚显示在这里。完攀次数单独统计。即使岩点没有亮起，选用记录也可能被计入。"
+  },
   "metadata": {
     "list": {
       "title": "{{angle}}° 下的 {{boardName}} 线路",

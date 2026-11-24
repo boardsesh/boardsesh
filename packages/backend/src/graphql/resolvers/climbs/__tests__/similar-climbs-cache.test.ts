@@ -36,7 +36,7 @@ vi.mock('../../../../redis/client', () => ({
 import { findSimilarClimbsCached, SIMILAR_CLIMBS_CACHE_TTL_SECONDS } from '../similar-climbs-cache';
 import { resetSingleFlightForTests } from '../../../../utils/single-flight';
 
-const ROWS = [{ uuid: 'NEIGHBOUR-1', similarity: 0.8, requiredSetIds: [1, 20] }];
+const ROWS = [{ uuid: 'NEIGHBOUR-1', similarity: 0.8, requiredSetIds: [1, 20], playCount: 0 }];
 
 function argsFor(overrides: Record<string, unknown> = {}) {
   return {
@@ -92,6 +92,16 @@ describe('findSimilarClimbsCached', () => {
     );
     expect(await findSimilarClimbsCached(argsFor())).toEqual(ROWS);
     expect(findSimilarClimbsMock).toHaveBeenCalledOnce();
+  });
+
+  it('bypasses legacy entries without Plays and caches a measured zero', async () => {
+    getMock.mockImplementation(async (cacheKey: string) =>
+      cacheKey.startsWith('boardsesh:similar-climbs:v2:') ? JSON.stringify([{ uuid: 'NEIGHBOUR-1' }]) : null,
+    );
+    expect(await findSimilarClimbsCached(argsFor())).toEqual(ROWS);
+    expect(findSimilarClimbsMock).toHaveBeenCalledOnce();
+    expect(setMock.mock.calls[0]?.[0]).toMatch(/^boardsesh:similar-climbs:v3:/);
+    expect(setMock.mock.calls[0]?.[1]).toContain('"playCount":0');
   });
 
   it('keys on the hold SET, not the row order Postgres happens to return', async () => {

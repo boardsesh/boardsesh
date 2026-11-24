@@ -29,6 +29,7 @@ import FrontDoorBreadcrumb from './front-door-breadcrumb';
 import FrontDoorHeroCta from './front-door-hero-cta';
 import GradeTile from './grade-tile';
 import ListAngleRail from './list-angle-rail';
+import PlaysExplanation from './plays-explanation';
 import QrLandingTracker from './qr-landing-tracker';
 import { frontDoorSectionHeadingSx, frontDoorTitleSx } from './front-door-heading-sx';
 import styles from './static-list-front-door.module.css';
@@ -317,7 +318,10 @@ export default async function StaticListFrontDoor({
             <Typography component="h2" variant="h5" sx={climbsHeadingSx}>
               {t('list.frontDoor.climbsHeading', { angle })}
             </Typography>
+            {climbs.length > 0 ? <PlaysExplanation>{t('plays.explanation')}</PlaysExplanation> : null}
             <StaticClimbList
+              showPlays
+              playsAngle={angle}
               climbs={climbs}
               thumbnailCropsByClimb={buildClimbThumbnailCrops(climbs, () => boardDetails)}
               boardSlug={boardSlug}

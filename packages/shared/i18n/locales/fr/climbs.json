@@ -23,6 +23,14 @@
   },
   "sends_one": "{{formattedCount}} croix",
   "sends_other": "{{formattedCount}} croix",
+  "plays": {
+    "label": "Sélections",
+    "count_one": "{{formattedCount}} sélection",
+    "count_other": "{{formattedCount}} sélections",
+    "unavailable": "Sélections indisponibles",
+    "valueUnavailable": "Indisponible",
+    "explanation": "Les sélections estiment combien de fois un bloc est resté sélectionné sur une board pendant au moins 30 secondes. Le compteur est recalculé toutes les heures, mais la mise à jour peut mettre plus de temps à apparaître ici. Les croix sont comptées séparément. Une sélection peut être enregistrée même si aucune prise ne s’est allumée."
+  },
   "metadata": {
     "list": {
       "title": "Blocs sur {{boardName}} à {{angle}}°",

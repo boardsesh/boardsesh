@@ -37,7 +37,8 @@ query uses the page's layout, size, hold sets and angle, and ranks the published
 listed, visible matches within one V grade by ascents at that angle. Its cache
 is shared across pages for the same configuration and grade band. The page
 removes the current climb after reading that cache and keeps the requested board
-configuration on each link. On MoonBoard, checking the hold sets against climb
+configuration and angle on each link. The rows show Plays at that angle when an
+exact count is available. On MoonBoard, checking the hold sets against climb
 frames can rule out every row of a full page. The fallback checks one more page
 within the same three-second backend-request budget in that case. A failed
 similarity read keeps its existing retry state. A failed nearby-grade read shows
@@ -61,8 +62,11 @@ columns reference `board_climbs.uuid` with `ON DELETE CASCADE`.
 The read path joins each neighbour back to `board_climbs` with the live
 predicate (`is_draft = FALSE`, `is_listed IS NOT FALSE`, `is_hidden = FALSE`), so
 a climb hidden or unlisted during the day drops out immediately rather than at
-the next run. Stats and the grade name are joined at the viewer's angle, as the
-live path does. Similarity is recomputed from the integer counts in double
+the next run. Grade, quality and sends use the viewer's angle, falling back to the
+candidate's saved angle when the request omits it. Plays uses the candidate's
+saved angle, which names the public link. Both reads look up Plays after ranking
+and limiting the candidates. A missing saved angle or stats row yields an
+unavailable count. Similarity is recomputed from the integer counts in double
 precision, so 7 of 10 holds still passes a 0.7 threshold.
 
 ## The nightly job
