@@ -2,7 +2,7 @@
 
 Boardsesh can read recently displayed climbs from the supported Aurora board apps:
 Tension, Decoy, Touchstone, Grasshopper and So iLL. Kilter continues to use its
-[existing integration](data/kilter-live-history.md), with no second Aurora reader.
+[existing integration](kilter-live-history.md), with no second Aurora reader.
 
 The backend reader is disabled by default. Set `AURORA_LIVE_SYNC_ENABLED=1` and
 list verified products in `AURORA_LIVE_SYNC_BOARDS`, separated by commas. An empty
@@ -85,7 +85,7 @@ No account passwords or session tokens belong in source, fixtures or logs.
 
 ## Physical wall identity
 
-Authenticated [Aurora location enrichment](data/aurora-location-sync.md) records
+Authenticated [Aurora location enrichment](aurora-location-sync.md) records
 exact upstream gym/wall/controller provenance in `aurora_wall_sources`.
 Existing deterministic source keys and source-board UUIDs stay stable across
 merges, including the first wall whose older source key omits its wall UUID.
@@ -177,7 +177,7 @@ native-only history endpoints retain their existing contract.
 4. Verify each product's feed, then enable only those products in the allowlist.
 5. At a consenting wall, measure official-app display latency and watcher cleanup.
 
-Use [local board QA](qa/local-board-qa.md) for physical evidence. Confirm imports
+Use [local board QA](../qa/local-board-qa.md) for physical evidence. Confirm imports
 leave the queue and LEDs unchanged, angle changes update grades/actions, clears
 survive late imports, reconnects do not duplicate occurrences, and the last
 eligible viewer leaving stops polling. Check an older client alongside the new
