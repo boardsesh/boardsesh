@@ -157,6 +157,9 @@ function setNoticeSetupChangeState(
 export function useUndoBoardSetupChange() {
   const queryClient = useQueryClient();
   const { mutateAsync } = useMutation({
+    // Fail at once offline, like a follow request's answer, so the row says
+    // to try again instead of spinning on a paused mutation.
+    networkMode: 'always',
     mutationFn: async ({ eventId }: { eventId: string; notification: Pick<GroupedNotification, 'uuid'> }) =>
       (
         await getHttpClient().request<UndoBoardSetupChangeMutationResponse, UndoBoardSetupChangeMutationVariables>(

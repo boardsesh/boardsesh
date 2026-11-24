@@ -17,6 +17,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import {
   initialSetupSelection,
   isSetupChanged,
+  isSetupSelectionComplete,
   setupSelectionReducer,
   toSuggestedSetup,
   type SetupSelection,
@@ -227,7 +228,13 @@ export function ReportDirectorySheet({
     selection !== null &&
     reason !== null &&
     isSetupSuggestionAllowed(reason, board.boardType);
-  const setupChanged = showSetupFields && board !== null && selection !== null && isSetupChanged(selection, board);
+  // Changed, and whole: a layout the catalogue lists no sets for can't be sent.
+  const setupChanged =
+    showSetupFields &&
+    board !== null &&
+    selection !== null &&
+    isSetupSelectionComplete(selection) &&
+    isSetupChanged(selection, board);
 
   // Two native sheets can't overlap a present with a dismiss (the coordinator
   // rule in docs/mobile/mobile-sheets-vs-routes.md): this sheet goes and

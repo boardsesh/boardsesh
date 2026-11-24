@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { GroupedNotification } from '@boardsesh/shared-schema';
@@ -49,7 +49,12 @@ export function SetupChangeNotificationRow({ notification, onPress, onUndo }: Se
   const copy = notificationCopy(notification, t('actorSummary.fallback'));
   const body = t(copy.textI18nKey, copy.params);
   const notice = notification.directoryNotice;
-  const after = notice?.setupAfter && notice.boardType ? formatSetupSummary(notice.boardType, notice.setupAfter) : null;
+  const setupAfter = notice?.setupAfter ?? null;
+  const boardType = notice?.boardType ?? null;
+  const after = useMemo(
+    () => (setupAfter && boardType ? formatSetupSummary(boardType, setupAfter) : null),
+    [setupAfter, boardType],
+  );
   const state = notice?.setupChangeState ?? null;
   const undoable = canUndoSetupChange(notification);
 
