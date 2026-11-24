@@ -27,6 +27,7 @@ const EXPECTED_SCHEDULES: Record<string, Array<{ key: string; cron: string; tz: 
   'aurora-shared-sync': [{ key: 'hourly', cron: '7 * * * *', tz: 'UTC', roles: ['routine-provider'] }],
   'kilter-catalog-sync': [{ key: 'every-6h', cron: '23 */6 * * *', tz: 'UTC', roles: ['routine-provider'] }],
   'moonboard-locations-sync': [{ key: 'daily', cron: '41 3 * * *', tz: 'UTC', roles: ['routine-provider'] }],
+  'refresh-climb-plays': [{ key: 'hourly', cron: '23 * * * *', tz: 'UTC', roles: ['batch'] }],
   'climb-stats-self-heal': [{ key: 'hourly', cron: '13 * * * *', tz: 'UTC', roles: ['maintenance-delivery'] }],
   'reclaim-logbook-snapshots': [
     { key: 'quarter-hourly', cron: '2,17,32,47 * * * *', tz: 'UTC', roles: ['maintenance-delivery'] },
