@@ -637,20 +637,25 @@
   transform: translateX(-50%);
 }
 
-/* The browser capture keeps its own landscape shape (1994 x 1681), never a phone crop. */
+/* The browser capture is a whole browser window with its own frame (2034 x 1881),
+ * so its tile drops the art panel's background and rule and lets the window sit on
+ * the card with a soft shadow. Never a phone crop. */
 .tile .tileArt.tileArtBrowser {
   align-self: start;
   width: 100%;
   height: auto;
   min-height: 0;
-  aspect-ratio: 1994 / 1681;
+  padding: var(--spacing-5) var(--spacing-5) 0;
+  overflow: visible;
+  border-bottom: 0;
+  background: none;
 }
 
 .browserShot {
   display: block;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  height: auto;
+  filter: drop-shadow(0 12px 28px var(--overlay-dark));
 }
 
 /* The profile card window (y 340 to 1070 of the 736 x 1600 capture). The box takes
@@ -1899,7 +1904,10 @@
 
 .platformTrio .platformShotBrowser {
   height: auto;
-  aspect-ratio: 1994 / 1681;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: none;
 }
 
 .platformCaption {

@@ -291,7 +291,8 @@ describe('app guide pages before hydration', () => {
 });
 
 describe('the browser app', () => {
-  const alt = 'Boardsesh in a web browser: the Kilter climb list next to Blue Jeans, a V4, ready to put on the board';
+  const alt =
+    'Boardsesh open in a desktop browser at app.boardsesh.com: the Kilter climb list next to Blue Jeans, a V4, ready to put on the board';
   const isBrowserShot = (image: Element) =>
     decodeURIComponent(image.getAttribute('src') ?? '').includes('/images/app/web/kilter.webp');
 
