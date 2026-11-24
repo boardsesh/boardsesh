@@ -13,7 +13,6 @@ import { buildCanonicalClimbViewUrl, constructBoardSlugViewUrl, extractUuidFromS
 import { buildOgBoardRenderUrl, buildOverlayPreloadUrls } from '@/app/components/board-renderer/util';
 import { scheduleOgImageWarming } from '@/app/lib/warm-overlay-cache';
 import { getServerTranslation } from '@/app/lib/i18n/server';
-import { DEFAULT_LOCALE } from '@/app/lib/i18n/config';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import { localeHref } from '@/app/lib/i18n/locale-href';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
@@ -102,7 +101,7 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
     // A climb hidden by an approved report joins them: the page still resolves,
     // because links and logbook entries pointing at it must not start 404ing,
     // but the crew voted it off the wall and it has no business ranking.
-    const shouldNoindex =
+    const shouldOmitCanonical =
       board.isUnlisted || !board.isPublic || board.gymIsListed === false || currentClimb.is_hidden === true;
 
     // A1: this page canonicalises INTO the config-tuple tree rather than
@@ -110,17 +109,15 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
     // names a board a user owns, not a climb config, so most climbs have no
     // `/b` URL and popular configs have many. One climb, one canonical.
     //
-    // A noindex page gets NO `path` at all, so `createBoardContentPageMetadata`
-    // returns early and emits no `alternates`. A canonical pointing from a noindex URL at an indexable
-    // twin is a conflicting signal Google can resolve by propagating the
-    // noindex — deindexing a public config-tuple climb page because one private
-    // board happens to share its configuration.
+    // Private, unlisted and hidden content omits the catalogue canonical.
+    // Public aliases retain it while noindex keeps each physical wall's copy
+    // out of search results.
     const canonicalAngle = selectCanonicalClimbAngle({
       boardName: parsedParams.board_name,
       catalogAngle: currentClimb.catalogAngle,
       angleStats,
     });
-    const canonicalPath = shouldNoindex
+    const canonicalPath = shouldOmitCanonical
       ? undefined
       : buildCanonicalClimbViewUrl(boardDetails, canonicalAngle, currentClimb.uuid, climbName, currentClimb);
 
@@ -160,12 +157,10 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
         grade: climbGrade,
         boardName: boardDetails.board_name,
       }),
-      // Public catalog aliases keep their canonical and share/handoff URLs,
-      // but must not seed another crawl of every climb for every physical wall.
+      // Catalogue aliases stay usable for sharing and app handoff, but search
+      // results belong to the catalogue page. Follow its links for discovery.
       // Spray walls branch above: their /b URL is the only canonical surface.
-      // Locale noindex keeps the English canonical; privacy still controls path above.
-      robots:
-        shouldNoindex || locale !== DEFAULT_LOCALE ? { index: false, follow: true } : { index: true, follow: false },
+      robots: { index: false, follow: true },
     });
   } catch {
     return createBoardContentPageMetadata({

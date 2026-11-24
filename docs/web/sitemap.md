@@ -237,6 +237,21 @@ recomputed from the rows it actually holds. A board type that must NOT move the
 existing ordinals needs an explicit rank in that sort — `boardCount` and
 `isBetterConfig` cannot deliver it, since neither is consulted across groups.
 
+## Catalogue board aliases
+
+Catalogue `/b/{slug}/{angle}/view/...` and `/list` aliases emit `noindex, follow`.
+Public aliases keep the catalogue canonical; private, unlisted and hidden content
+keeps its existing canonical exclusions. Share links and app handoff still work.
+Spray climb views keep their own visibility and indexation policy because their
+`/b/` URL is their only canonical surface.
+
+No current sitemap builder publishes catalogue climb aliases. The climb source
+sets `boardSlug` only for spray groups; catalogue groups build config-tuple URLs,
+and the boards shard does the same for list pages. Search Console's historical
+“Submitted” status does not identify a current shard. After deployment, inspect a
+known catalogue alias again after Google recrawls it to confirm exclusion by
+`noindex`; the code change alone cannot confirm recrawl or index removal.
+
 ## Public spray walls
 
 A spray wall is a climber's own wall, so SW-03 kept the whole board type out of

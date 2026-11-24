@@ -217,9 +217,8 @@ describe('board slug climb metadata', () => {
       params: Promise.resolve({ board_slug: 'my-board', angle: '40', climb_uuid: 'alias-climb' }),
     });
 
-    // Not the noindex fallback: a throw inside generateMetadata would land
-    // there and could leave the stats call unmade for the wrong reason.
-    expect(metadata.robots).toEqual({ index: true, follow: false });
+    // The canonical below distinguishes real metadata from the noindex fallback.
+    expect(metadata.robots).toEqual({ index: false, follow: true });
     expect(vi.mocked(getClimbStatsForAllAngles)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(getClimbStatsForAllAngles)).toHaveBeenCalledWith('kilter', 'canonical-climb');
     const expectedCanonical = '/kilter/kilter-board-original/12x12/bolt-ons/40/view/canonical-climb';
@@ -317,7 +316,7 @@ describe('board slug climb metadata', () => {
 
     expect(metadata.robots).toEqual({ index: false, follow: true });
     expect(metadata.description).toContain('Test Climb');
-    // No canonical at all on a noindex page — see the A1 case below.
+    // Private boards omit the canonical; public aliases retain it below.
     expect(metadata.alternates).toBeUndefined();
   });
 
@@ -346,7 +345,7 @@ describe('board slug climb metadata', () => {
     expect(metadata.alternates).toBeUndefined();
   });
 
-  it('canonicalises a public, listed board INTO the config-tuple tree (A1)', async () => {
+  it('noindexes a public catalogue climb alias while keeping its catalogue canonical', async () => {
     const metadata = await pageModule.generateMetadata({
       searchParams: Promise.resolve({}),
       params: Promise.resolve({
@@ -361,7 +360,7 @@ describe('board slug climb metadata', () => {
       typeof canonical === 'object' && canonical && 'url' in canonical ? String(canonical.url) : String(canonical);
     expect(canonicalUrl).not.toContain('/b/my-board');
     expect(canonicalUrl).toContain('/40/view/test-climb');
-    expect(metadata.robots).toEqual({ index: true, follow: false });
+    expect(metadata.robots).toEqual({ index: false, follow: true });
   });
 
   it('advertises no locale alternates, so the twins are not four indexable pages', async () => {
