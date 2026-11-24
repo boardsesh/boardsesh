@@ -977,6 +977,12 @@ proves the matched managed rule runs there. A rule accepted by the dashboard
 is not evidence that crawling was fixed. Keep Training Disallow and the
 explicit training-crawler block rule intact.
 
+Production state at handoff: **not deployed**. Automatic approval review
+rejected the persistent exception deployment pending the owner's explicit
+approval of its scope and impact. The prepared dashboard form and proposed
+source configuration are not a production receipt. Keep the PR draft until
+approval and live phase verification are complete.
+
 For day-zero load, a capped Railway HTTP sample contained 501 www requests
 from 18:38:02 through 18:40:08 UTC, with none of the four newly allowed search
 UA tokens. It is a two-minute origin sample, not a complete post-release or

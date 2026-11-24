@@ -104,7 +104,9 @@ On November 24, Search Console accepted both
 "Couldn't fetch", then changed to **Success**; Kilter's inspection subsequently
 listed both submitted sitemaps as discovery sources. Submission and discovery
 do not establish indexing. Both public XML endpoints returned 200 as Googlebot;
-the shard listed exactly the six canonical guides.
+the shard listed exactly the six canonical guides. A final Search Console
+recheck showed **Success** for both submissions, with **6 discovered pages**
+on the guide shard.
 
 All eight ordered URL Inspection requests returned **Indexing requested**.
 The dated checks are scheduled in the Codex chat automation
@@ -114,6 +116,27 @@ it also handles monthly upkeep and reports only meaningful changes.
 The 18:46 UTC public HTML probe returned 200 for all six guides, each with its
 own www canonical, an H1, a `BreadcrumbList`, and no `noindex` or `X-Robots-Tag`.
 This checks the deployed markup, not Google's Rich Results Test verdict.
+
+All six live guides passed Google's Rich Results Test on November 24:
+
+| Path | Result receipt | Detected valid items |
+| --- | --- | --- |
+| `/apps/kilter` | [19:57 CET test](https://search.google.com/test/rich-results/result?id=CitA-TrYLHVHuW4pURl1jA) | Breadcrumbs, Software apps |
+| `/apps/moonboard` | [19:58 CET test](https://search.google.com/test/rich-results/result?id=6WiEYjgTTAjIygVfzRWV2Q) | Breadcrumbs, Software apps |
+| `/apps/aurora` | [19:59 CET test](https://search.google.com/test/rich-results/result?id=D-3Wolk2opwELjO48mMYaA) | Breadcrumbs, Software apps |
+| `/compare/spray-wall-apps` | [20:01 CET test](https://search.google.com/test/rich-results/result?id=h0U1GA1vpJgyfWuBzw7KeA) | Breadcrumbs, Software apps |
+| `/apps` | [20:03 CET test](https://search.google.com/test/rich-results/result?id=08g64bBLN27Rm6Q5KdII3Q) | Breadcrumbs, Carousels, Software apps |
+| `/apps/woods` | [20:04 CET test](https://search.google.com/test/rich-results/result?id=QUc4MYuQKxVoNPTFAdbn1g) | Breadcrumbs, Software apps |
+
+Google reported Software apps as valid with non-critical issues, rather than
+the ineligible verdict anticipated in #8122. This is the observed validator
+result, not a guarantee of rich-result display. No ratings were added to
+structured data to change eligibility.
+
+Bing's Google sign-in currently has no verified sites. Its sitemap submission
+is pending the owner's choice of importing the Search Console site (with the
+required Google permission) or signing in with the existing Microsoft account.
+Do not count this as a completed Bing submission.
 
 Use these dated checkpoints, based on the release date (Europe/Amsterdam):
 
