@@ -71,7 +71,7 @@ export interface BoardPresenceClient {
   /**
    * Durable, keyset-paged history of what was lit on the board, from the
    * `board_climb_events` log — beyond the ~50 / 24h window `fetchRecentClimbs`
-   * covers. Newest-first; pass `before` (the `seq` of the previous page's last
+   * covers, within the last seven days. Newest-first; pass `before` (the `seq` of the previous page's last
    * row) to page back, and `limit` (server-capped 1–100, default 50) for page
    * size. Optional so read-only / web clients that only need the live feed plus
    * recent backfill still satisfy the interface.

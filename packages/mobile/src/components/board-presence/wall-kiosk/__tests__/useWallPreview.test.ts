@@ -87,6 +87,29 @@ describe('useWallPreview', () => {
     expect(result.current.stepsBack).toBe(0);
   });
 
+  it('keeps an older live hero while allowing the first retained history entry', () => {
+    h.liveHistory = [h.mk('recent', 4)];
+    const { result } = renderHook(() => useWallPreview());
+    expect(result.current.displayedClimb?.climbUuid).toBe('c3');
+    act(() => result.current.step('older'));
+    expect(result.current.previewClimb?.climbUuid).toBe('recent');
+    act(() => result.current.step('newer'));
+    expect(result.current.displayedClimb?.climbUuid).toBe('c3');
+  });
+
+  it('returns to the live hero when every preview entry expires', () => {
+    const { result, rerender } = renderHook(() => useWallPreview());
+    act(() => result.current.step('older'));
+    expect(result.current.previewClimb?.climbUuid).toBe('c2');
+    h.liveHistory = [];
+    rerender();
+    expect(result.current.isPreviewing).toBe(false);
+    expect(result.current.displayedClimb?.climbUuid).toBe('c3');
+    h.liveHistory = [h.mk('c2', 2)];
+    rerender();
+    expect(result.current.isPreviewing).toBe(false);
+  });
+
   it('steps back into a preview of the previous entry', () => {
     const { result } = renderHook(() => useWallPreview());
     act(() => result.current.step('older'));

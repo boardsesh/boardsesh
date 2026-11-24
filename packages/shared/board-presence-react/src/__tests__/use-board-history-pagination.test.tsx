@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render } from '@testing-library/react';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import {
@@ -8,11 +8,14 @@ import {
 } from '../use-board-history-pagination';
 import { BoardPresenceClientContext, BoardPresenceFeedContext } from '../board-presence-provider';
 import type { BoardPresenceClient } from '../types';
+import { BOARD_HISTORY_WINDOW_MS } from '@boardsesh/board-presence';
+
+const TEST_NOW = Date.parse('2026-11-24T12:00:00.000Z');
 
 const climb = (climbUuid: string, seq: number, overrides: Partial<BoardPresenceClimb> = {}): BoardPresenceClimb => ({
   climbUuid,
   seq,
-  sentAt: new Date(seq * 1000).toISOString(),
+  sentAt: new Date(TEST_NOW - 1_000_000 + seq * 1000).toISOString(),
   name: `Climb ${climbUuid}`,
   angle: 40,
   ...overrides,
@@ -98,9 +101,76 @@ function TestHarness({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.spyOn(Date, 'now').mockReturnValue(TEST_NOW);
 });
 
+afterEach(() => vi.restoreAllMocks());
+
 describe('useBoardHistoryPagination', () => {
+  it('refreshes legacy pagination from the current window after retained rows expire', async () => {
+    const { client, fetchHistory } = makeClient();
+    const retainedEntry = climb('retained', 1);
+    const refreshedEntry = climb('refreshed', 2, {
+      sentAt: new Date(TEST_NOW + BOARD_HISTORY_WINDOW_MS + 1).toISOString(),
+    });
+    fetchHistory.mockResolvedValueOnce([retainedEntry]).mockResolvedValueOnce([refreshedEntry]);
+    const resultBox: ResultBox = { current: null };
+    render(<TestHarness boardId={1} client={client} history={[]} resultBox={resultBox} />);
+    await act(async () => resultBox.current?.loadOlder());
+    expect(resultBox.current?.olderHistory).toEqual([retainedEntry]);
+    vi.mocked(Date.now).mockReturnValue(TEST_NOW + BOARD_HISTORY_WINDOW_MS + 1);
+    await act(async () => resultBox.current?.refreshHistory());
+    expect(fetchHistory).toHaveBeenLastCalledWith(1, { limit: 50, before: undefined });
+    expect(resultBox.current?.olderHistory).toEqual([refreshedEntry]);
+  });
+
+  it('drops expired retained pages on reconnect before a stalled refresh completes', async () => {
+    let reconnect: (() => void) | undefined;
+    const recentEntry = climb('recent', 1, { sentAt: new Date(TEST_NOW).toISOString() });
+    const fetchHistoryPage = vi
+      .fn()
+      .mockResolvedValueOnce({ entries: [recentEntry], nextCursor: 'older-page' })
+      .mockReturnValueOnce(new Promise(() => {}));
+    const { client } = makeClient({
+      fetchHistoryPage,
+      onReconnect: (callback) => {
+        reconnect = callback;
+        return () => {};
+      },
+    });
+    const resultBox: ResultBox = { current: null };
+    await act(async () => {
+      render(<TestHarness boardId={1} client={client} history={[]} resultBox={resultBox} />);
+    });
+    expect(resultBox.current?.olderHistory).toEqual([recentEntry]);
+    vi.mocked(Date.now).mockReturnValue(TEST_NOW + BOARD_HISTORY_WINDOW_MS + 1);
+    act(() => reconnect?.());
+    expect(resultBox.current?.olderHistory).toEqual([]);
+    expect(resultBox.current?.isLoadingOlder).toBe(true);
+    expect(fetchHistoryPage).toHaveBeenLastCalledWith(1, { limit: 50, before: undefined });
+  });
+
+  it('keeps a failed boundary page retryable without advancing its cursor', async () => {
+    const fetchHistoryPage = vi
+      .fn()
+      .mockResolvedValueOnce({ entries: [climb('first', 2)], nextCursor: 'boundary' })
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ entries: [], nextCursor: null });
+    const { client } = makeClient({ fetchHistoryPage });
+    const resultBox: ResultBox = { current: null };
+    await act(async () => {
+      render(<TestHarness boardId={1} client={client} history={[]} resultBox={resultBox} />);
+    });
+    await act(async () => resultBox.current?.loadOlder());
+    expect(resultBox.current?.loadError).toBe(true);
+    expect(resultBox.current?.hasMore).toBe(true);
+    await act(async () => resultBox.current?.loadOlder());
+    expect(fetchHistoryPage).toHaveBeenNthCalledWith(2, 1, { limit: 50, before: 'boundary' });
+    expect(fetchHistoryPage).toHaveBeenNthCalledWith(3, 1, { limit: 50, before: 'boundary' });
+    expect(resultBox.current?.loadError).toBe(false);
+    expect(resultBox.current?.hasMore).toBe(false);
+  });
+
   it('pages append newest-first and the cursor is the lowest seq across the live window', async () => {
     const { client, fetchHistory } = makeClient();
     const page = deferred<BoardPresenceClimb[]>();

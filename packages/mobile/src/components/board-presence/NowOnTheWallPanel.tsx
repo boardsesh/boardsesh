@@ -953,10 +953,12 @@ function NowOnTheWallPanelComponent(
             ) : null}
           </View>
         ) : null}
-        {visibleHistory.length > 0 ? (
+        {combinedHistory.length > 0 ? (
           <ShowcaseAnchorView name="wall-history" enabled={variant === 'sheet'}>
             <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.sectionHeader}>
               {t('mobile.boardPresence.historyHeader')}
+              {' · '}
+              {t('mobile.boardPresence.historyWindow')}
             </Text>
           </ShowcaseAnchorView>
         ) : null}
@@ -967,7 +969,7 @@ function NowOnTheWallPanelComponent(
     boardConfig,
     auroraGrades,
     stats,
-    visibleHistory.length,
+    combinedHistory.length,
     systemColors,
     brandColors.warning,
     formatGrade,
@@ -1000,6 +1002,9 @@ function NowOnTheWallPanelComponent(
   const listEmpty = useMemo(
     () => (
       <View>
+        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.sectionHeader}>
+          {t('mobile.boardPresence.historyWindow')}
+        </Text>
         {currentClimb ? null : (
           <View style={styles.empty}>
             {/* secondaryLabel, not tertiary: on a glass sheet this sits over the

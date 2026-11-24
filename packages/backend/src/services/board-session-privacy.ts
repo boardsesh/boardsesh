@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import { filterRecentBoardHistory } from '@boardsesh/board-presence';
 import { and, desc, eq, exists, inArray, isNotNull, isNull, ne, notExists, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { parseNamedBoardPath } from '@boardsesh/board-config';
@@ -810,7 +811,16 @@ export async function redactBoardEvent(
         climb: (await redactBoardClimbs([event.climb], viewerId, boardId, wallUuid, contentViewerId))[0],
       };
     case 'BoardHistoryUpdated':
-      return { ...event, climbs: await redactBoardClimbs(event.climbs, viewerId, boardId, wallUuid, contentViewerId) };
+      return {
+        ...event,
+        climbs: await redactBoardClimbs(
+          filterRecentBoardHistory(event.climbs, Date.now()),
+          viewerId,
+          boardId,
+          wallUuid,
+          contentViewerId,
+        ),
+      };
     case 'BoardStatsUpdated':
       return { ...event, stats: await redactBoardStats(event.stats, viewerId, boardId, wallUuid, contentViewerId) };
     case 'BoardConnectionChanged': {

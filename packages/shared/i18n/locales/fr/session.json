@@ -575,6 +575,7 @@
       "emptyTitle": "Personne sur ce mur pour l'instant",
       "emptyBody": "Connecte-toi et allume un bloc pour lancer l'historique.",
       "historyHeader": "Allumés sur ce mur",
+      "historyWindow": "7 derniers jours",
       "statsHeader": "Ce mur",
       "statSent_one": "croix",
       "statSent_other": "croix",

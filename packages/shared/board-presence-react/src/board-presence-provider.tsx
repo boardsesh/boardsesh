@@ -2,7 +2,7 @@
 // "now playing" state anywhere in the tree without prop-drilling. Renderer-
 // agnostic — `react` only, no host components.
 
-import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, useReducer, type ReactNode } from 'react';
 import {
   useBoardPresence,
   type BoardPresenceActions,
@@ -12,6 +12,7 @@ import {
 } from './use-board-presence';
 import type { BoardPresenceClient } from './types';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
+import { BoardHistoryRefreshContext, useRecentBoardHistory } from './use-recent-board-history';
 
 const BoardPresenceActionsContext = createContext<BoardPresenceActions | undefined>(undefined);
 const BoardPresenceCurrentContext = createContext<BoardPresenceCurrentState | undefined>(undefined);
@@ -69,7 +70,9 @@ export function BoardPresenceProvider({
   onCatchUp?: (info: BoardPresenceCatchUpInfo) => void;
   children: ReactNode;
 }) {
-  const value = useBoardPresence(boardId, client, onCatchUp, boardUuid);
+  const [historyRefreshVersion, recheckHistory] = useReducer((revision: number) => revision + 1, 0);
+  const value = useBoardPresence(boardId, client, onCatchUp, boardUuid, recheckHistory);
+  const { history } = useRecentBoardHistory(value.history, historyRefreshVersion);
   const actions = useMemo<BoardPresenceActions>(
     () => ({
       reportClimb: value.reportClimb,
@@ -112,10 +115,10 @@ export function BoardPresenceProvider({
   );
   const feed = useMemo<BoardPresenceFeedState>(
     () => ({
-      history: value.history,
+      history,
       stats: value.stats,
     }),
-    [value.history, value.stats],
+    [history, value.stats],
   );
   // Bare primitive on purpose — no useMemo. A boolean is compared by value, so
   // the context only re-renders consumers when it actually flips (not on every
@@ -142,7 +145,9 @@ export function BoardPresenceProvider({
             <BoardPresenceClearedClimbContext.Provider value={clearedClimbUuid}>
               <BoardPresenceFeedContext.Provider value={feed}>
                 <BoardPresenceClientContext.Provider value={clientValue}>
-                  {children}
+                  <BoardHistoryRefreshContext.Provider value={historyRefreshVersion}>
+                    {children}
+                  </BoardHistoryRefreshContext.Provider>
                 </BoardPresenceClientContext.Provider>
               </BoardPresenceFeedContext.Provider>
             </BoardPresenceClearedClimbContext.Provider>

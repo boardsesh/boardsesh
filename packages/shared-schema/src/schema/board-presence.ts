@@ -142,7 +142,9 @@ export const boardPresenceTypeDefs = /* GraphQL */ `
   }
 
   type BoardHistoryPage {
+    "Displays within the rolling seven-day window, newest display time first."
     entries: [BoardPresenceClimb!]!
+    "Null when no more entries remain within the window."
     nextCursor: String
   }
 

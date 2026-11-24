@@ -1,12 +1,20 @@
 import { describe, it, expect } from 'vite-plus/test';
-import { readFileSync } from 'fs';
-import { buildSchema, parse, validate, visit, type DocumentNode, type GraphQLSchema } from 'graphql';
+import { readFileSync, readdirSync } from 'fs';
+import { buildSchema, parse, visit, type DocumentNode, type GraphQLSchema } from 'graphql';
+import { validateOperation as validate } from '../graphql/query-validation';
 import { typeDefs } from '@boardsesh/shared-schema';
 import * as publicOperations from '@boardsesh/graphql/operations';
 import * as accountOperations from '@boardsesh/graphql/operations/account';
 import * as analyticsConsentOperations from '@boardsesh/graphql/operations/analytics-consent';
 import * as proposalOperations from '@boardsesh/graphql/operations/proposals';
 import * as queueSessionOperations from '@boardsesh/graphql/operations/queue-session';
+import * as appWorkoutOperations from '@boardsesh/graphql/operations/app-workouts';
+import * as connectedAppOperations from '@boardsesh/graphql/operations/connected-apps';
+import * as partnerSessionHistoryOperations from '@boardsesh/graphql/operations/partner-session-history';
+import * as privacyOperations from '@boardsesh/graphql/operations/privacy';
+import * as sprayDetectionOperations from '@boardsesh/graphql/operations/spray-detection';
+import * as userDataExportOperations from '@boardsesh/graphql/operations/user-data-export';
+import * as generatedOperations from '@boardsesh/graphql/generated/graphql';
 
 // Build a fresh schema from the raw typeDefs inside this test's `graphql`
 // instance. Importing the backend's `schema` object crosses the boundary
@@ -118,6 +126,12 @@ describe('shared-schema operations validate against the executable schema', () =
     ['operations/analytics-consent', analyticsConsentOperations],
     ['operations/proposals', proposalOperations],
     ['operations/queue-session', queueSessionOperations],
+    ['operations/app-workouts', appWorkoutOperations],
+    ['operations/connected-apps', connectedAppOperations],
+    ['operations/partner-session-history', partnerSessionHistoryOperations],
+    ['operations/privacy', privacyOperations],
+    ['operations/spray-detection', sprayDetectionOperations],
+    ['operations/user-data-export', userDataExportOperations],
   ] as const;
 
   for (const [moduleName, moduleOperations] of operationModules) {
@@ -146,6 +160,125 @@ describe('shared-schema operations validate against the executable schema', () =
         const detail = errors.map((e, i) => `  ${i + 1}. ${e.message}`).join('\n');
         throw new Error(`Operation ${name} has GraphQL validation errors:\n${detail}`);
       }
+    });
+  }
+});
+
+describe('generated web documents satisfy the shared transport limits', () => {
+  for (const [name, document] of Object.entries(generatedOperations)) {
+    if (!document.definitions.some((definition) => definition.kind === 'OperationDefinition')) continue;
+    it(`${name} validates with depth and cost limits`, () => {
+      expect(validate(schema, document).map((error) => error.message)).toEqual([]);
+    });
+  }
+});
+
+describe('all mobile operation strings satisfy the shared transport limits', () => {
+  const source = readMobileOperationsSource();
+  const templates = new Map(
+    [...source.matchAll(/(?:export\s+)?const\s+(\w+)\s*=\s*(?:gql)?`([\s\S]*?)`/g)].map((match) => [
+      match[1],
+      match[2],
+    ]),
+  );
+  templates.set('BOARD_FIELDS', publicOperations.BOARD_FIELDS);
+
+  function resolveTemplate(template: string, resolving: Set<string> = new Set()): string {
+    return template.replace(/\$\{(\w+)\}/g, (_placeholder, name: string) => {
+      const replacement = templates.get(name);
+      if (!replacement || resolving.has(name)) throw new Error(`Unresolved mobile operation template: ${name}`);
+      return resolveTemplate(replacement, new Set([...resolving, name]));
+    });
+  }
+
+  const operations = [...templates].filter(([, template]) => /^\s*(query|mutation|subscription)\b/.test(template));
+  it('finds the complete mobile operations file', () => {
+    expect(operations.length).toBeGreaterThan(50);
+  });
+  for (const [name, template] of operations) {
+    it(`${name} validates with depth and cost limits`, () => {
+      expect(validate(schema, parse(resolveTemplate(template))).map((error) => error.message)).toEqual([]);
+    });
+  }
+});
+
+describe('raw web and mobile fetch documents satisfy the shared transport limits', () => {
+  function readOperationStrings(directory: URL): Array<[string, string]> {
+    return readdirSync(directory, { withFileTypes: true }).flatMap((entry): Array<[string, string]> => {
+      if (entry.name === '__tests__' || entry.name.includes('.test.')) return [];
+      const sourceUrl = new URL(entry.name, directory);
+      if (entry.isDirectory()) return readOperationStrings(new URL(`${entry.name}/`, directory));
+      if (!/\.tsx?$/.test(entry.name)) return [];
+      const source = readFileSync(sourceUrl, 'utf-8');
+      return [...source.matchAll(/(['`])\s*((?:query|mutation|subscription)\s+[A-Z][\s\S]*?)\1/g)].map((match) => {
+        const operation = match[2].replace(/\$\{(\w+)\}/g, (_placeholder, name: string) =>
+          extractTemplateConst(source, name),
+        );
+        return [sourceUrl.pathname, operation];
+      });
+    });
+  }
+  // Codegen does not collect plain fetch documents. Include the SSR readers and
+  // native device registration as well as the generated web documents above.
+  const documents = [
+    ...readOperationStrings(new URL('../../../../packages/web/app/', import.meta.url)),
+    ...readOperationStrings(new URL('../../../../packages/mobile/src/notifications/', import.meta.url)),
+  ];
+  it('finds the raw fetch operation corpus', () => {
+    expect(documents.length).toBeGreaterThanOrEqual(19);
+  });
+  for (const [sourcePath, source] of documents) {
+    const document = parse(source);
+    const name = document.definitions.find((definition) => definition.kind === 'OperationDefinition')?.name?.value;
+    it(`${name} in ${sourcePath} validates with depth and cost limits`, () => {
+      expect(validate(schema, document).map((error) => error.message)).toEqual([]);
+    });
+  }
+});
+
+describe('controller operation strings satisfy the shared transport limits', () => {
+  const sourcePaths = [
+    '../../../../embedded/projects/board-controller/src/main.cpp',
+    '../../../../embedded/projects/board-controller/src/gym/client.h',
+    '../../../../embedded/libs/graphql-ws-client/src/graphql_ws_client.cpp',
+  ];
+  const documents = sourcePaths.flatMap((sourcePath) => {
+    const source = readFileSync(new URL(sourcePath, import.meta.url), 'utf-8');
+    // C++ concatenates adjacent string literals. Read the actual firmware
+    // documents so expanding a controller selection cannot silently break it.
+    return [...source.matchAll(/"(?:query|mutation|subscription) [A-Z][^"\n]*(?:"\s*"[^"\n]*)*"/g)].map(([literal]) =>
+      literal.replace(/"\s*"/g, '').slice(1, -1),
+    );
+  });
+  it('finds every current controller operation', () => {
+    expect(documents).toHaveLength(4);
+  });
+  for (const source of documents) {
+    const document = parse(source);
+    const name = document.definitions.find((definition) => definition.kind === 'OperationDefinition')?.name?.value;
+    it(`${name} validates with depth and cost limits`, () => {
+      expect(validate(schema, document).map((error) => error.message)).toEqual([]);
+    });
+  }
+});
+
+describe('native iOS operations satisfy the shared transport limits', () => {
+  const sourcePaths = [
+    '../../../../packages/mobile/modules/live-activity/ios/SessionWebSocketManager.swift',
+    '../../../../packages/mobile/modules/live-activity/ios/LiveActivityModule.swift',
+  ];
+  const documents = sourcePaths.flatMap((sourcePath) => {
+    const source = readFileSync(new URL(sourcePath, import.meta.url), 'utf-8');
+    return [...source.matchAll(/"""\s*((?:query|mutation|subscription) [\s\S]*?)"""/g)].map((match) => match[1]);
+  });
+  it('finds every current native iOS operation', () => {
+    expect(documents).toHaveLength(5);
+  });
+  for (const source of documents) {
+    const document = parse(source);
+    const name = document.definitions.find((definition) => definition.kind === 'OperationDefinition')?.name?.value;
+    it(`${name} validates with depth and cost limits`, () => {
+      expect(validate(schema, document).map((error) => error.message)).toEqual([]);
     });
   }
 });

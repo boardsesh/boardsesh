@@ -83,6 +83,7 @@ vi.mock('../graphql/context', async (importOriginal) => {
 });
 
 import { setupWebSocketServer } from '../websocket/setup';
+import { createYogaInstance } from '../graphql/yoga';
 import { getClientUsageSnapshotForTests, stopClientUsageReporter } from '../services/client-usage';
 import { logger } from '../utils/logger';
 
@@ -385,6 +386,40 @@ describe('WebSocket connection context client IP', () => {
     expect(response).toContain('"path":["redeemBoardShareLink"]');
     expect(response).not.toContain('Board share link request could not be processed');
     expect(response).not.toContain(token);
+  });
+
+  it.each([
+    [
+      'deep named fragment',
+      `{ __type(name: "Query") { ...Deep } }
+      fragment Deep on __Type { ${'ofType { '.repeat(9)}name${' }'.repeat(9)} }`,
+      'Query depth limit of 10',
+    ],
+    [
+      'expensive aliases',
+      `{ ${Array.from({ length: 5001 }, (_, index) => `field${index}: __typename`).join(' ')} }`,
+      'Query Cost limit of 5000',
+    ],
+    [
+      'fragment cycle',
+      '{ __type(name: "Query") { ...Cycle } } fragment Cycle on __Type { ofType { ...Cycle } }',
+      'Cannot spread fragment "Cycle" within itself',
+    ],
+  ])('rejects %s equally on real HTTP and WebSocket transports', async (_label, query, expectedError) => {
+    const httpResponse = await createYogaInstance().fetch('http://localhost/graphql', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    });
+    const httpResult = (await httpResponse.json()) as { errors: { message: string }[] };
+    const socketResult = JSON.parse(await sendBoardShareOperation({ query })) as {
+      type: string;
+      payload: { message: string }[];
+    };
+    expect(socketResult.type).toBe('error');
+    const socketErrors = socketResult.payload.map((error) => error.message);
+    expect(socketErrors).toEqual(httpResult.errors.map((error) => error.message));
+    expect(socketErrors).toEqual(expect.arrayContaining([expect.stringContaining(expectedError)]));
   });
 
   /** Subscribe once on a fresh signed-out socket and resolve the first error or result frame. */

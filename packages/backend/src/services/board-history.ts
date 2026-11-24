@@ -7,10 +7,16 @@ import { db } from '../db/client';
 import { pubsub } from '../pubsub';
 import { redisClientManager } from '../redis/client';
 import { parsePostgresUtcTimestamp } from '../utils/postgres-timestamps';
-import { isSupportedBoardClimb, mergeBoardHistory } from '@boardsesh/board-presence';
+import {
+  BOARD_HISTORY_WINDOW_MS,
+  boardHistoryExpiresAt,
+  filterRecentBoardHistory,
+  isSupportedBoardClimb,
+  mergeBoardHistory,
+} from '@boardsesh/board-presence';
 import { logger } from '../utils/logger';
 
-export const HISTORY_TTL_SECONDS = 604_800;
+export const HISTORY_TTL_SECONDS = BOARD_HISTORY_WINDOW_MS / 1000;
 const selectedHistory = {
   climbUuid: boardClimbEvents.climbUuid,
   name: boardClimbEvents.name,
@@ -108,6 +114,7 @@ export async function readBoardHistoryPage(
       and(
         eq(boardClimbEvents.boardId, boardId),
         inArray(boardClimbEvents.source, includeAurora ? ['boardsesh', 'kilter', 'aurora'] : ['boardsesh', 'kilter']),
+        gte(boardClimbEvents.confirmedAt, new Date(Date.now() - BOARD_HISTORY_WINDOW_MS).toISOString()),
         cursor
           ? or(
               lt(boardClimbEvents.confirmedAt, cursor.timestamp),
@@ -203,21 +210,13 @@ export async function readMergedRecentHistory(boardId: number, includeAurora = f
     includeAurora ? readImportedHistoryCache(boardId, 'aurora') : Promise.resolve([]),
   ]);
   const imported = [...kilter, ...aurora];
-  const cutoff = Date.now() - HISTORY_TTL_SECONDS * 1000;
-  let invalidTimestampCount = 0;
-  const recent = mergeBoardHistory(
+  const merged = mergeBoardHistory(
     native.filter((climb) => isSupportedBoardClimb(climb) && (includeAurora || climb.source !== 'aurora')),
     imported,
-  ).filter((climb) => {
-    const timestamp = Date.parse(climb.sentAt);
-    if (!Number.isFinite(timestamp)) {
-      invalidTimestampCount++;
-      return false;
-    }
-    return timestamp >= cutoff;
-  });
+  );
+  const invalidTimestampCount = merged.filter((climb) => boardHistoryExpiresAt(climb.sentAt) === null).length;
   if (invalidTimestampCount) {
     logger.warn('[BoardHistory] Skipped history with invalid timestamps', { boardId, invalidTimestampCount });
   }
-  return recent.slice(0, 50);
+  return filterRecentBoardHistory(merged, Date.now()).slice(0, 50);
 }

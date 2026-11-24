@@ -160,9 +160,10 @@ export function useWallPreview(): WallPreviewState {
   // step('older') from idle then lands on the newest history entry (index 0 — the
   // just-cleared climb, which the old combinedHistory[0] fallback made unreachable
   // and lit the wrong, one-too-old climb), and step('newer') from index 0 returns
-  // to the dark live wall.
+  // to the dark live wall. An older live climb can also be absent from the
+  // seven-day history: keep its hero and allow browsing from index 0.
   const liveIndex = headKey ? combinedHistory.findIndex((climb) => boardHistoryEntryKey(climb) === headKey) : -1;
-  const headIndex = liveClimb ? (liveIndex < 0 ? 0 : liveIndex) : -1;
+  const headIndex = liveIndex;
 
   const previewIndex = previewKey
     ? combinedHistory.findIndex((climb) => boardHistoryEntryKey(climb) === previewKey)
@@ -211,10 +212,10 @@ export function useWallPreview(): WallPreviewState {
   // Clear a stale preview key that no longer resolves (its entry aged out) rather
   // than silently showing live while `previewKey` lingers.
   useEffect(() => {
-    if (previewKey !== null && previewIndex < 0 && combinedHistory.length > 0) {
+    if (previewKey !== null && previewIndex < 0) {
       setPreviewKey(null);
     }
-  }, [previewKey, previewIndex, combinedHistory.length]);
+  }, [previewKey, previewIndex]);
 
   // Record the live head seq the moment preview begins, so Light-this can tell if
   // the wall advanced underneath.
