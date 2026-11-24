@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-24T13:33:20.573Z",
+  "generatedAt": "2026-11-24T13:50:03.891Z",
   "entries": [
+    {
+      "prNumber": 8117,
+      "category": "fixed",
+      "title": "Climb actions open beside the three-dot button or your pointer in the browser.",
+      "mergedAt": "2026-11-24T13:45:47Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8117"
+    },
     {
       "prNumber": 8114,
       "category": "fixed",
