@@ -181,10 +181,7 @@
         "pageFetchState": "SUCCESSFUL",
         "googleCanonical": "https://www.boardsesh.com/apps/kilter",
         "userCanonical": "https://www.boardsesh.com/apps/kilter",
-        "sitemap": [
-          "https://www.boardsesh.com/sitemap.xml",
-          "https://www.boardsesh.com/sitemaps/app-guides.xml"
-        ],
+        "sitemap": ["https://www.boardsesh.com/sitemap.xml", "https://www.boardsesh.com/sitemaps/app-guides.xml"],
         "crawledAs": "MOBILE"
       },
       {
@@ -197,10 +194,7 @@
         "pageFetchState": "SUCCESSFUL",
         "googleCanonical": "https://www.boardsesh.com/apps/moonboard",
         "userCanonical": "https://www.boardsesh.com/apps/moonboard",
-        "sitemap": [
-          "https://www.boardsesh.com/sitemap.xml",
-          "https://www.boardsesh.com/sitemaps/app-guides.xml"
-        ],
+        "sitemap": ["https://www.boardsesh.com/sitemap.xml", "https://www.boardsesh.com/sitemaps/app-guides.xml"],
         "crawledAs": "MOBILE"
       },
       {
@@ -213,10 +207,7 @@
         "pageFetchState": "SUCCESSFUL",
         "googleCanonical": "https://www.boardsesh.com/apps/aurora",
         "userCanonical": "https://www.boardsesh.com/apps/aurora",
-        "sitemap": [
-          "https://www.boardsesh.com/sitemap.xml",
-          "https://www.boardsesh.com/sitemaps/app-guides.xml"
-        ],
+        "sitemap": ["https://www.boardsesh.com/sitemap.xml", "https://www.boardsesh.com/sitemaps/app-guides.xml"],
         "crawledAs": "MOBILE"
       },
       {
@@ -241,10 +232,7 @@
         "pageFetchState": "SUCCESSFUL",
         "googleCanonical": "https://www.boardsesh.com/apps",
         "userCanonical": "https://www.boardsesh.com/apps",
-        "sitemap": [
-          "https://www.boardsesh.com/sitemap.xml",
-          "https://www.boardsesh.com/sitemaps/app-guides.xml"
-        ],
+        "sitemap": ["https://www.boardsesh.com/sitemap.xml", "https://www.boardsesh.com/sitemaps/app-guides.xml"],
         "crawledAs": "MOBILE"
       },
       {
