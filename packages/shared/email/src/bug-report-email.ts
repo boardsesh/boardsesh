@@ -54,7 +54,6 @@ export function buildBugReportIssueEmail(args: { issueUrl: string; issueNumber: 
  * Email a reporter the GitHub issue we opened from their bug report. Safe to
  * call without `await` from a fire-and-forget side effect:
  *  - no-ops (no send) when SMTP credentials are unset (e.g. local dev),
- *  - skips Apple private relay recipients until sender registration is verified,
  *  - never throws — transport/validation failures are logged and swallowed.
  */
 export async function sendBugReportIssueEmail(args: {
@@ -62,11 +61,6 @@ export async function sendBugReportIssueEmail(args: {
   issueUrl: string;
   issueNumber: number;
 }): Promise<void> {
-  // Fastmail can accept the SMTP submission and receive Apple's rejection
-  // later. Catching send errors cannot prevent those bounce messages.
-  const recipientDomain = args.to.trim().toLowerCase().split('@')[1];
-  if (recipientDomain === 'privaterelay.appleid.com') return;
-
   if (!process.env.SMTP_USER || !process.env.SMTP_PASSWORD) return;
 
   try {
