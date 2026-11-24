@@ -744,6 +744,28 @@
     "empty": "Nothing here.",
     "error": "Couldn't load reports. Try again.",
     "retry": "Retry",
-    "loadMore": "Load more"
+    "loadMore": "Load more",
+    "tabs": {
+      "reports": "Reports",
+      "setupChanges": "Setup changes by climbers"
+    },
+    "setupChanges": {
+      "description": "Changes climbers' suggested setups made to boards at gyms nobody runs, newest first. Undo puts the old setup back while the board still has the climber's.",
+      "before": "Before",
+      "after": "After",
+      "byLine": "Changed by {{name}} {{when}}",
+      "state": {
+        "live": "Live",
+        "undone": "Undone",
+        "changedSince": "Changed since"
+      },
+      "undo": "Undo",
+      "confirmTitle": "Undo the change to {{board}}?",
+      "confirmBody": "It goes back to {{setup}} for everyone. Climbers' suggestions for this board get checked first for the next {{days}} days.",
+      "undone": "Setup put back.",
+      "changedSinceError": "Changed since: the board has another setup now, so this can't be undone.",
+      "empty": "No climber has changed a board yet.",
+      "error": "Couldn't load setup changes. Try again."
+    }
   }
 }

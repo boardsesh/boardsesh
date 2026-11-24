@@ -744,6 +744,28 @@
     "empty": "Rien ici.",
     "error": "Impossible de charger les signalements. Réessaie.",
     "retry": "Réessayer",
-    "loadMore": "Charger plus"
+    "loadMore": "Charger plus",
+    "tabs": {
+      "reports": "Signalements",
+      "setupChanges": "Configurations changées par des grimpeurs"
+    },
+    "setupChanges": {
+      "description": "Les changements que les propositions de grimpeurs ont faits sur des boards de salles que personne ne gère, les plus récents d'abord. Annuler remet l'ancienne configuration tant que la board a encore celle du grimpeur.",
+      "before": "Avant",
+      "after": "Après",
+      "byLine": "Changée par {{name}} {{when}}",
+      "state": {
+        "live": "En place",
+        "undone": "Annulée",
+        "changedSince": "Changée depuis"
+      },
+      "undo": "Annuler",
+      "confirmTitle": "Annuler le changement sur {{board}} ?",
+      "confirmBody": "Elle repasse en {{setup}} pour tout le monde. Les propositions pour cette board sont vérifiées d'abord pendant les {{days}} prochains jours.",
+      "undone": "Configuration remise.",
+      "changedSinceError": "Changée depuis : la board a une autre configuration maintenant, donc ce changement ne peut plus être annulé.",
+      "empty": "Aucun grimpeur n'a encore changé de board.",
+      "error": "Impossible de charger les changements de configuration. Réessaie."
+    }
   }
 }

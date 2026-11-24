@@ -744,6 +744,28 @@
     "empty": "No hay nada aquí.",
     "error": "No se pudieron cargar los reportes. Inténtalo de nuevo.",
     "retry": "Reintentar",
-    "loadMore": "Cargar más"
+    "loadMore": "Cargar más",
+    "tabs": {
+      "reports": "Reportes",
+      "setupChanges": "Cambios de configuración de escaladores"
+    },
+    "setupChanges": {
+      "description": "Cambios que las sugerencias de escaladores hicieron en plafones de rocódromos que nadie gestiona, los más nuevos primero. Deshacer recupera la configuración anterior mientras el plafón siga con la del escalador.",
+      "before": "Antes",
+      "after": "Después",
+      "byLine": "Cambiado por {{name}} {{when}}",
+      "state": {
+        "live": "Activo",
+        "undone": "Deshecho",
+        "changedSince": "Cambiado después"
+      },
+      "undo": "Deshacer",
+      "confirmTitle": "¿Deshacer el cambio en {{board}}?",
+      "confirmBody": "Vuelve a {{setup}} para todos. Las sugerencias para este plafón se revisan primero durante los próximos {{days}} días.",
+      "undone": "Configuración recuperada.",
+      "changedSinceError": "Cambiado después: el plafón tiene ahora otra configuración, así que esto no se puede deshacer.",
+      "empty": "Ningún escalador ha cambiado un plafón todavía.",
+      "error": "No se pudieron cargar los cambios de configuración. Inténtalo de nuevo."
+    }
   }
 }

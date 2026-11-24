@@ -18,6 +18,8 @@ import DialogContentText from '@mui/material/DialogContentText';
 import DialogActions from '@mui/material/DialogActions';
 import MuiLink from '@mui/material/Link';
 import Stack from '@mui/material/Stack';
+import Tab from '@mui/material/Tab';
+import Tabs from '@mui/material/Tabs';
 import { REPORT_NOTE_MAX_LENGTH, normalizeReportNote } from '@boardsesh/directory-moderation';
 import type {
   DirectoryReport,
@@ -53,6 +55,7 @@ import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { reportReasonLabel } from '@/app/components/directory-reports/report-copy';
 import { themeTokens } from '@/app/theme/theme-config';
+import BoardSetupChangesPanel from './board-setup-changes-panel';
 import {
   adminActionsFor,
   orderAdminReports,
@@ -78,6 +81,49 @@ type KindFilter = 'all' | DirectoryReportTargetKind;
 
 type PendingConfirm = { report: DirectoryReport; action: AdminReportAction };
 
+/** The page's two tabs: the report queue, and climbers' setup changes. */
+export type BoardReportsTab = 'reports' | 'setup-changes';
+
+/**
+ * `/admin/board-reports`: the report queue, and "Setup changes by climbers",
+ * the changes climbers' suggested setups made to boards at gyms nobody runs,
+ * each one an admin can undo (docs/product/directory-reports.md).
+ */
+export default function BoardReportsPanel({
+  highlightReportUuid,
+  initialTab = 'reports',
+}: {
+  highlightReportUuid: string | null;
+  /** `?tab=setup-changes` opens on the setup changes. */
+  initialTab?: BoardReportsTab;
+}) {
+  const { t } = useTranslation('admin');
+  const [tab, setTab] = useState<BoardReportsTab>(initialTab);
+  return (
+    <Box>
+      <Tabs
+        value={tab}
+        onChange={(_event, value: BoardReportsTab) => setTab(value)}
+        variant="scrollable"
+        allowScrollButtonsMobile
+        sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
+      >
+        <Tab value="reports" label={t('boardReports.tabs.reports')} sx={{ textTransform: 'none', minHeight: 44 }} />
+        <Tab
+          value="setup-changes"
+          label={t('boardReports.tabs.setupChanges')}
+          sx={{ textTransform: 'none', minHeight: 44 }}
+        />
+      </Tabs>
+      {tab === 'reports' ? (
+        <DirectoryReportsQueue highlightReportUuid={highlightReportUuid} />
+      ) : (
+        <BoardSetupChangesPanel />
+      )}
+    </Box>
+  );
+}
+
 /**
  * The Boardsesh admin queue for board and gym reports
  * (docs/product/directory-reports.md): reports nobody else can act on (a synced
@@ -85,7 +131,7 @@ type PendingConfirm = { report: DirectoryReport; action: AdminReportAction };
  * still open after 14 days. Admins see who reported, which creators and staff
  * never do.
  */
-export default function BoardReportsPanel({ highlightReportUuid }: { highlightReportUuid: string | null }) {
+function DirectoryReportsQueue({ highlightReportUuid }: { highlightReportUuid: string | null }) {
   const { t, i18n } = useTranslation('admin');
   const { t: tBoards } = useTranslation('boards');
   const { token } = useWsAuthToken();
