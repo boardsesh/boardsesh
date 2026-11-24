@@ -489,7 +489,34 @@
         "body": "Use the one your crew climbs on, so your sends land together. Only keep setting up yours if it's a separate wall.",
         "useBoard": "Use this board",
         "keepMine": "Keep setting up mine",
-        "loadFailed": "Couldn't load all of those boards. Try again to see them before you keep setting up yours."
+        "loadFailed": "Couldn't load all of those boards. Try again to see them before you keep setting up yours.",
+        "setupMismatch": "Possible setup mismatch",
+        "layoutDiffers": "{{wall}} layout. Yours: {{yours}}",
+        "sizeDiffers": "{{wall}} size. Yours: {{yours}}",
+        "missingSets": "Missing {{sets}}",
+        "extraSets": "Also has {{sets}}",
+        "choiceTitle": "Is this your wall?",
+        "choiceBody": "Its setup doesn't match yours. If it's the wall you climb on, use it so your sends land with the crew's.",
+        "choiceUseAsIs": "Use it as it is",
+        "choiceFixSetup": "Use it and fix its setup",
+        "choiceDifferent": "No, it's a different wall"
+      },
+      "holdsSummary_one": "Holds: {{selected}} of {{count}} set",
+      "holdsSummary_other": "Holds: {{selected}} of {{count}} sets",
+      "holdsChange": "Change",
+      "holdsChangeLabel": "Change hold sets",
+      "holdsDone": "Done",
+      "omissionHint": "Missing {{set}}?",
+      "omissionAdd": "Add {{set}}",
+      "configError": {
+        "boardType": "We can't save this board type. Pick another.",
+        "layoutId": "This layout isn't one we know. Pick another.",
+        "sizeId": "This size doesn't fit this layout. Pick another.",
+        "setIds_one": "One hold set here isn't made for this size. Remove it or pick your sets again.",
+        "setIds_other": "{{count}} hold sets here aren't made for this size. Remove them or pick your sets again.",
+        "removeSets_one": "Remove it",
+        "removeSets_other": "Remove them",
+        "noField": "We don't know this setup. Check the board, layout, size and holds."
       }
     },
     "custom": {
@@ -2023,7 +2050,8 @@
         "reviewClashes": "That setup clashes with another board, so it gets checked first. We'll tell you when it's fixed.",
         "alreadySetUp": "It's already set up that way."
       }
-    }
+    },
+    "setupNote": "The wall is set up as: {{setup}}"
   },
   "reportReview": {
     "title": "Climbers flagged this board",

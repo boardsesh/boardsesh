@@ -489,7 +489,34 @@
         "body": "使用伙伴们已经在爬的那块，完攀记录就会在一起。只有当你的是另一面墙时才继续设置。",
         "useBoard": "使用这块训练板",
         "keepMine": "继续设置我的",
-        "loadFailed": "无法加载全部训练板。请重试，看到它们后再继续设置你的。"
+        "loadFailed": "无法加载全部训练板。请重试，看到它们后再继续设置你的。",
+        "setupMismatch": "可能配置有误",
+        "layoutDiffers": "{{wall}} 布局。你的：{{yours}}",
+        "sizeDiffers": "{{wall}} 尺寸。你的：{{yours}}",
+        "missingSets": "缺少{{sets}}",
+        "extraSets": "还有{{sets}}",
+        "choiceTitle": "这是你的墙吗？",
+        "choiceBody": "它的配置和你的不一致。如果你就在这面墙上攀爬，请使用它，这样你的完攀会和伙伴们的记录在一起。",
+        "choiceUseAsIs": "按原样使用",
+        "choiceFixSetup": "使用并修正它的配置",
+        "choiceDifferent": "不，这是另一面墙"
+      },
+      "holdsSummary_one": "岩点：{{count}} 套中选了 {{selected}} 套",
+      "holdsSummary_other": "岩点：{{count}} 套中选了 {{selected}} 套",
+      "holdsChange": "更改",
+      "holdsChangeLabel": "更改岩点套装",
+      "holdsDone": "完成",
+      "omissionHint": "缺少{{set}}？",
+      "omissionAdd": "添加{{set}}",
+      "configError": {
+        "boardType": "无法保存这种训练板类型。请换一种。",
+        "layoutId": "我们不认识这个布局。请换一个。",
+        "sizeId": "这个尺寸与该布局不匹配。请换一个。",
+        "setIds_one": "有一套岩点套装不适用于这个尺寸。移除它，或重新选择套装。",
+        "setIds_other": "有 {{count}} 套岩点套装不适用于这个尺寸。移除它们，或重新选择套装。",
+        "removeSets_one": "移除",
+        "removeSets_other": "全部移除",
+        "noField": "我们不认识这个配置。请检查训练板、布局、尺寸和岩点。"
       }
     },
     "custom": {
@@ -2023,7 +2050,8 @@
         "reviewClashes": "这个设置与另一块训练板冲突，所以会先经过审核。修正后我们会通知你。",
         "alreadySetUp": "它已经是这个设置了。"
       }
-    }
+    },
+    "setupNote": "岩壁上的配置是：{{setup}}"
   },
   "reportReview": {
     "title": "攀岩者举报了这块训练板",

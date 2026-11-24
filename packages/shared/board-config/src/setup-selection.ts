@@ -234,3 +234,36 @@ export function toSuggestedSetup(selection: SetupSelection): BoardSetupInput | n
     angle: selection.angleIsFixed ? selection.angle : null,
   };
 }
+
+/** The setup field the bundled catalogue doesn't list, in cascade order. */
+export type UnknownSetupField = 'layoutId' | 'sizeId' | 'setIds';
+
+/**
+ * The first part of a setup the bundled catalogue doesn't list, checked in
+ * cascade order (layout, then the size on that layout, then the sets on that
+ * size), or null when it lists all of it. The same order the server's
+ * `UNKNOWN_BOARD_CONFIG` refusal names its `field` in, so the app can mark the
+ * same input before the save goes out (#8151). `invalidSetIds` are the set ids
+ * the layout and size don't have, ascending and without repeats.
+ *
+ * An incomplete setup (no layout or size yet) is not an unknown one: it
+ * returns null, and the builder's Save stays off until it is complete.
+ */
+export function findUnknownSetupField(
+  boardName: BoardName,
+  setup: { layoutId: number | null; sizeId: number | null; setIds: readonly number[] },
+): { field: UnknownSetupField; invalidSetIds: number[] } | null {
+  const { layoutId, sizeId } = setup;
+  if (layoutId == null || sizeId == null) return null;
+  if (!getBoardLayouts(boardName).some((layout) => layout.id === layoutId)) {
+    return { field: 'layoutId', invalidSetIds: [] };
+  }
+  if (!getBoardSizesForLayoutId(boardName, layoutId).some((size) => size.id === sizeId)) {
+    return { field: 'sizeId', invalidSetIds: [] };
+  }
+  const listed = new Set(getBoardSetsForLayoutAndSize(boardName, layoutId, sizeId).map((set) => set.id));
+  const invalidSetIds = [...new Set(setup.setIds)]
+    .filter((setId) => !listed.has(setId))
+    .sort((first, second) => first - second);
+  return invalidSetIds.length > 0 ? { field: 'setIds', invalidSetIds } : null;
+}

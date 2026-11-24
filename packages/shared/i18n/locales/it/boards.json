@@ -489,7 +489,34 @@
         "body": "Usa quello su cui arrampica già la tua crew, così le ripetizioni finiscono insieme. Continua a configurare il tuo solo se è una parete diversa.",
         "useBoard": "Usa questo pannello",
         "keepMine": "Continua con il mio",
-        "loadFailed": "Impossibile caricare tutti quei pannelli. Riprova per vederli prima di continuare con il tuo."
+        "loadFailed": "Impossibile caricare tutti quei pannelli. Riprova per vederli prima di continuare con il tuo.",
+        "setupMismatch": "Forse configurato male",
+        "layoutDiffers": "Layout {{wall}}. Il tuo: {{yours}}",
+        "sizeDiffers": "Dimensione {{wall}}. Il tuo: {{yours}}",
+        "missingSets": "Senza {{sets}}",
+        "extraSets": "Ha anche {{sets}}",
+        "choiceTitle": "È la tua parete?",
+        "choiceBody": "La sua configurazione non corrisponde alla tua. Se è la parete dove arrampichi, usala così le tue ripetizioni finiscono con quelle della tua crew.",
+        "choiceUseAsIs": "Usala così com'è",
+        "choiceFixSetup": "Usala e correggi la configurazione",
+        "choiceDifferent": "No, è un'altra parete"
+      },
+      "holdsSummary_one": "Prese: {{selected}} di {{count}} set",
+      "holdsSummary_other": "Prese: {{selected}} di {{count}} set",
+      "holdsChange": "Modifica",
+      "holdsChangeLabel": "Modifica i set di prese",
+      "holdsDone": "Fatto",
+      "omissionHint": "Manca {{set}}?",
+      "omissionAdd": "Aggiungi {{set}}",
+      "configError": {
+        "boardType": "Non possiamo salvare questo tipo di pannello. Scegline un altro.",
+        "layoutId": "Non conosciamo questo layout. Scegline un altro.",
+        "sizeId": "Questa dimensione non va con questo layout. Scegline un'altra.",
+        "setIds_one": "Un set di prese non esiste per questa dimensione. Toglilo o scegli di nuovo i tuoi set.",
+        "setIds_other": "{{count}} set di prese non esistono per questa dimensione. Toglili o scegli di nuovo i tuoi set.",
+        "removeSets_one": "Toglilo",
+        "removeSets_other": "Toglili",
+        "noField": "Non conosciamo questa configurazione. Controlla pannello, layout, dimensione e prese."
       }
     },
     "custom": {
@@ -2023,7 +2050,8 @@
         "reviewClashes": "Questa configurazione si scontra con un altro pannello, quindi viene controllata prima. Ti avvisiamo appena è sistemata.",
         "alreadySetUp": "È già configurato così."
       }
-    }
+    },
+    "setupNote": "In parete è configurato così: {{setup}}"
   },
   "reportReview": {
     "title": "I climber hanno segnalato questo pannello",

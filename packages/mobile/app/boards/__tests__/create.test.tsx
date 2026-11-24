@@ -33,6 +33,9 @@ const refetchGymMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
 const confirmMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const refetchPrivacySettingsMock = vi.hoisted(() => vi.fn());
+const fetchExistingWallCandidatesMock = vi.hoisted(() => vi.fn());
+const openReportMock = vi.hoisted(() => vi.fn());
+const dismissSheetMock = vi.hoisted(() => vi.fn());
 
 const state = vi.hoisted(() => ({
   params: {} as Record<string, string | undefined>,
@@ -47,6 +50,9 @@ const state = vi.hoisted(() => ({
   gymError: false,
   selectedGym: null as { uuid: string; name: string } | null,
   gymUuid: undefined as string | undefined,
+  directoryReports: true,
+  /** The setup Save sends, over the builder's MoonBoard 2024 default. */
+  setup: {} as { layoutId?: number; sizeId?: number; setIds?: string },
 }));
 const popularConfigs = vi.hoisted(() => ({ configs: [{ boardType: 'moonboard', layoutId: 3 }] }));
 const presetBoardConfigMock = vi.hoisted(() => vi.fn());
@@ -105,7 +111,9 @@ vi.mock('expo-router', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, values?: Record<string, unknown>) => (values ? `${key} ${JSON.stringify(values)}` : key),
+  }),
 }));
 
 vi.mock('../../../src/lib/graphql/hooks', () => ({
@@ -115,6 +123,7 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
   usePopularBoardConfigs: () => ({ data: popularConfigs }),
   fetchBoardByUuid: fetchBoardByUuidMock,
   fetchBoardsBySerialNumbers: fetchBoardsBySerialNumbersMock,
+  fetchExistingWallCandidates: fetchExistingWallCandidatesMock,
   useGym: (gymUuid: string | null) => ({
     data: gymUuid ? state.gym : undefined,
     // The server answers a gone gym with null: settled, no error.
@@ -126,28 +135,47 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
 
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
   useCreateBoardGymFirstEnabled: () => state.gymFirst,
+  useDirectoryReportsEnabled: () => state.directoryReports,
+}));
+// The report host: openReport is recorded, and its `onClosed` is what lets the
+// builder leave after "Use it and fix its setup".
+vi.mock('../../../src/components/report-problem/use-report-problem', () => ({
+  useReportProblemHost: () => ({ openReport: openReportMock, sheet: null, isOpen: false }),
+}));
+vi.mock('../../../src/providers/sheet-presentation-provider', () => ({
+  dismissManagedSheetAndWait: dismissSheetMock,
 }));
 vi.mock('../../../src/components/board-discovery/DiscoveryBoardArt', () => ({ DiscoveryBoardArt: () => null }));
 
-// The "already has" sheet (#8151), as buttons: each wall, then Keep setting up mine.
-type SheetItem = { key: string; title: string };
+// The "already has" sheet (#8151), as buttons: each wall on its shelf (with its
+// first detail line, the near-miss line), then Keep setting up mine. A near-miss
+// wall gets "as is" and "fix" buttons standing in for the "Is this your wall?" step.
+type SheetItem = { key: string; title: string; detailLines?: string[] };
+type SheetShelf = { key: string; items: SheetItem[] };
+type SheetPick = (item: SheetItem, position: number, shelf: string) => void;
 vi.mock('../../../src/components/board-discovery/ExistingWallsSheet', () => ({
   ExistingWallsSheet: ({
     gymName,
     wallCount,
-    items,
+    shelves,
+    fixableKeys,
+    canKeepMine,
     loading,
     loadFailed,
     onUse,
+    onFixSetup,
     onKeepMine,
     onRetry,
   }: {
     gymName: string | null;
     wallCount: number;
-    items: SheetItem[];
+    shelves: SheetShelf[];
+    fixableKeys: ReadonlySet<string>;
+    canKeepMine: boolean;
     loading: boolean;
     loadFailed: boolean;
-    onUse: (item: SheetItem, position: number) => void;
+    onUse: SheetPick;
+    onFixSetup: SheetPick;
     onKeepMine: () => void;
     onRetry: () => void;
   }) =>
@@ -155,16 +183,26 @@ vi.mock('../../../src/components/board-discovery/ExistingWallsSheet', () => ({
       createElement('span', { key: 'title' }, `${gymName ?? 'no gym'} has ${wallCount}`),
       loading ? createElement('span', { key: 'loading' }, 'loading walls') : null,
       loadFailed ? createElement('span', { key: 'failed' }, 'walls failed') : null,
-      ...items.map((item, index) =>
-        createElement(
-          'button',
-          { key: item.key, type: 'button', onClick: () => onUse(item, index) },
-          `use ${item.title}`,
+      ...shelves.flatMap((shelf) =>
+        shelf.items.map((item, index) =>
+          createElement('div', { key: item.key, 'data-shelf': shelf.key, 'data-wall': item.key }, [
+            createElement('span', { key: 'line' }, item.detailLines?.[0] ?? ''),
+            createElement(
+              'button',
+              { key: 'use', type: 'button', onClick: () => onUse(item, index, shelf.key) },
+              `use ${item.title}`,
+            ),
+            fixableKeys.has(item.key)
+              ? createElement(
+                  'button',
+                  { key: 'fix', type: 'button', onClick: () => onFixSetup(item, index, shelf.key) },
+                  `fix ${item.title}`,
+                )
+              : null,
+          ]),
         ),
       ),
-      items.length > 0
-        ? createElement('button', { key: 'keep', type: 'button', onClick: onKeepMine }, 'keep mine')
-        : null,
+      canKeepMine ? createElement('button', { key: 'keep', type: 'button', onClick: onKeepMine }, 'keep mine') : null,
       loadFailed ? createElement('button', { key: 'retry', type: 'button', onClick: onRetry }, 'retry walls') : null,
     ]),
 }));
@@ -210,6 +248,7 @@ const builderState = vi.hoisted(() => ({
   layoutId: 3,
   sizes: [],
   sizeId: 1,
+  setIds: [5, 6, 7, 8, 9, 10],
   rawLayoutName: 'Standard',
   coords: null,
   get selectedGym() {
@@ -218,9 +257,9 @@ const builderState = vi.hoisted(() => ({
   setSelectedGym: setSelectedGymMock,
   buildCreateInput: () => ({
     boardType: 'moonboard',
-    layoutId: 3,
-    sizeId: 1,
-    setIds: '5,6,7,8,9,10',
+    layoutId: state.setup.layoutId ?? 3,
+    sizeId: state.setup.sizeId ?? 1,
+    setIds: state.setup.setIds ?? '5,6,7,8,9,10',
     name: 'Klimmuur MoonBoard',
     angle: 25,
     locationName: 'Klimmuur',
@@ -253,6 +292,7 @@ vi.mock('../../../src/components/board-discovery/BoardForm', () => ({
     focusLocationOnOpen,
     submitBlocked,
     errorAction,
+    configError,
   }: {
     onSubmit: () => void;
     errorMessage?: string | null;
@@ -260,13 +300,16 @@ vi.mock('../../../src/components/board-discovery/BoardForm', () => ({
     focusLocationOnOpen?: boolean;
     submitBlocked?: boolean;
     errorAction?: { label: string; onPress: () => void };
+    configError?: { field: string; invalidSetIds: readonly number[] } | null;
   }) =>
     createElement(
       'div',
       {
+        'data-testid': 'board-form',
         'data-default-name': defaultName,
         'data-focus-location': String(!!focusLocationOnOpen),
         'data-submit-blocked': String(!!submitBlocked),
+        'data-config-error': configError ? `${configError.field}:${configError.invalidSetIds.join(',')}` : '',
       },
       [
         // Drawn enabled whatever `submitBlocked` says, so a test can prove the
@@ -315,9 +358,11 @@ vi.mock('../../../src/components/board-discovery/SerialReuseConfirmSheet', () =>
       : null,
 }));
 
-vi.mock('@boardsesh/board-config', () => ({
+// The real catalogue, so the near-miss lines and the setup check are the
+// shipped rules; only the board-type parse passes anything through.
+vi.mock('@boardsesh/board-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/board-config')>()),
   toBoardName: (value: string | undefined) => value ?? null,
-  boardSetupLabelParts: () => ({ layout: null, size: null, sets: [], angle: null }),
 }));
 
 vi.mock('react-native', () => ({
@@ -342,6 +387,14 @@ beforeEach(() => {
   state.gymError = false;
   state.selectedGym = null;
   state.gymUuid = undefined;
+  state.directoryReports = true;
+  state.setup = {};
+  builderState.boardName = 'moonboard';
+  builderState.layoutId = 3;
+  builderState.sizeId = 1;
+  builderState.setIds = [5, 6, 7, 8, 9, 10];
+  fetchExistingWallCandidatesMock.mockResolvedValue({ candidates: [], truncated: false });
+  dismissSheetMock.mockResolvedValue({ status: 'dismissed' });
   confirmMock.mockResolvedValue(true);
   builderCalls.options = [];
   builderState.presetKept = false;
@@ -925,6 +978,181 @@ describe('CreateBoard existing-wall recheck (#8151)', () => {
     await waitFor(() => expect(screen.getByTestId('error')).toBeTruthy());
     expect(screen.queryByTestId('existing-walls')).toBeNull();
     expect(createBoardMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('CreateBoard near-miss walls (#8151)', () => {
+  // The climber's Masters 2019, with its Screw-on Feet (set 20).
+  const masters2019 = { layoutId: 5, sizeId: 1, setIds: '17,18,19,20,21,22,23' };
+  const noFeet = {
+    ...gymWall,
+    uuid: 'no-feet',
+    name: 'Wall no-feet',
+    layoutId: 5,
+    setIds: '17,18,19,21,22,23',
+  } as unknown as UserBoard;
+  const seeded2016 = {
+    ...gymWall,
+    uuid: 'seeded-2016',
+    name: 'Wall seeded-2016',
+    layoutId: 2,
+    setIds: '2,3,4',
+  } as unknown as UserBoard;
+
+  function refuseWithNearMiss() {
+    state.setup = masters2019;
+    state.selectedGym = { uuid: 'gym-1', name: 'Boulder Space' };
+    state.gymUuid = 'gym-1';
+    createBoardMock.mockRejectedValueOnce(existingWallsError([{ boardUuid: 'no-feet', matchKind: 'SETS_DIFFER' }]));
+    fetchBoardByUuidMock.mockResolvedValue(noFeet);
+    fetchExistingWallCandidatesMock.mockResolvedValue({
+      candidates: [
+        { board: noFeet, matchKind: 'SETS_DIFFER' },
+        { board: seeded2016, matchKind: 'LAYOUT_OR_SIZE_DIFFERS' },
+      ],
+      truncated: false,
+    });
+  }
+  const shelvesShown = () =>
+    [...screen.getByTestId('existing-walls').querySelectorAll('[data-wall]')].map((wall) => [
+      wall.getAttribute('data-shelf'),
+      wall.getAttribute('data-wall'),
+      wall.querySelector('span')?.textContent,
+    ]);
+
+  it('adds the walls on another layout as a lower shelf, each saying what differs', async () => {
+    refuseWithNearMiss();
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(screen.getByText('use Wall seeded-2016')).toBeTruthy());
+    expect(fetchExistingWallCandidatesMock).toHaveBeenCalledWith({
+      boardType: 'moonboard',
+      gymUuid: 'gym-1',
+      ...masters2019,
+    });
+    expect(shelvesShown()).toEqual([
+      ['set_up_differently', 'no-feet', 'mobile.create.existingWalls.missingSets {"sets":"Screw-on Feet"}'],
+      [
+        'setup_mismatch',
+        'seeded-2016',
+        'mobile.create.existingWalls.layoutDiffers {"wall":"2016","yours":"Masters 2019"}',
+      ],
+    ]);
+    // Only the wall the refusal named is acknowledged: the 2016 record never blocks.
+    fireEvent.click(screen.getByText('keep mine'));
+    await waitFor(() => expect(createBoardMock).toHaveBeenCalledTimes(2));
+    expect(createBoardMock.mock.calls[1][0].acknowledgedWallUuids).toEqual(['no-feet']);
+  });
+
+  it('keeps the named walls when the lower shelf cannot load', async () => {
+    refuseWithNearMiss();
+    fetchExistingWallCandidatesMock.mockRejectedValue(new Error('rate limited'));
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(fetchExistingWallCandidatesMock).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText('use Wall no-feet')).toBeTruthy());
+    expect(screen.queryByText('use Wall seeded-2016')).toBeNull();
+    expect(screen.queryByText('walls failed')).toBeNull();
+  });
+
+  it('uses a near miss as it is, saying so', async () => {
+    refuseWithNearMiss();
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(screen.getByText('use Wall seeded-2016')).toBeTruthy());
+    fireEvent.click(screen.getByText('use Wall seeded-2016'));
+
+    await waitFor(() => expect(setActiveBoardMock).toHaveBeenCalledWith(seeded2016));
+    expect(followBoardMock).toHaveBeenCalledWith(seeded2016);
+    expect(openReportMock).not.toHaveBeenCalled();
+    const used = trackMock.mock.calls.find(([name]) => name === 'Board Wall Candidate Used');
+    expect(used?.[1]).toMatchObject({ match: 'near_miss', position: 0, fixSetupStarted: false, trigger: 'pre_submit' });
+    await waitFor(() => expect(dismissToMock).toHaveBeenCalled());
+  });
+
+  it('uses it and opens Set up wrong on the climber setup, leaving only once the report closes', async () => {
+    refuseWithNearMiss();
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(screen.getByText('fix Wall no-feet')).toBeTruthy());
+    fireEvent.click(screen.getByText('fix Wall no-feet'));
+
+    await waitFor(() => expect(openReportMock).toHaveBeenCalledTimes(1));
+    // Followed and bound first; the walls sheet went and settled before the report.
+    expect(followBoardMock).toHaveBeenCalledWith(noFeet);
+    expect(dismissSheetMock).toHaveBeenCalledTimes(1);
+    expect(setActiveBoardMock).toHaveBeenCalledWith(noFeet);
+    const [target, options] = openReportMock.mock.calls[0];
+    expect(target).toEqual({ kind: 'board', board: noFeet });
+    expect(options).toMatchObject({
+      initialReason: 'wrong_setup',
+      initialSetup: masters2019,
+      climbNowOffered: false,
+    });
+    expect(createBoardMock).toHaveBeenCalledTimes(1);
+    const used = trackMock.mock.calls.find(([name]) => name === 'Board Wall Candidate Used');
+    expect(used?.[1]).toMatchObject({ match: 'near_miss', fixSetupStarted: true });
+    expect(dismissToMock).not.toHaveBeenCalled();
+
+    // Sent or not, the climber's board is bound: closing the report leaves.
+    options.onClosed();
+    await waitFor(() => expect(dismissToMock).toHaveBeenCalled());
+  });
+
+  it('offers no fix when Report a problem is off', async () => {
+    refuseWithNearMiss();
+    state.directoryReports = false;
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(screen.getByText('use Wall no-feet')).toBeTruthy());
+    expect(screen.queryByText('fix Wall no-feet')).toBeNull();
+  });
+});
+
+describe('CreateBoard catalogue errors (#8151)', () => {
+  function unknownConfigError(extensions: Record<string, unknown>) {
+    return {
+      response: {
+        errors: [
+          { message: 'Unknown board configuration', extensions: { code: 'UNKNOWN_BOARD_CONFIG', ...extensions } },
+        ],
+      },
+    };
+  }
+  const configError = () => screen.getByTestId('board-form').getAttribute('data-config-error');
+
+  it('marks a layout the bundled catalogue lacks before Save goes out', () => {
+    state.setup = { layoutId: 999 };
+    builderState.layoutId = 999;
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+    expect(createBoardMock).not.toHaveBeenCalled();
+    expect(configError()).toBe('layoutId:');
+    expect(screen.queryByTestId('error')).toBeNull();
+    const failed = trackMock.mock.calls.find(([name]) => name === 'Board Create Failed');
+    expect(failed?.[1]).toMatchObject({ error_reason: 'unknown_config' });
+  });
+
+  it("puts the server's refused sets on the holds row, keeps the form, and clears once the sets change", async () => {
+    createBoardMock.mockRejectedValueOnce(unknownConfigError({ field: 'setIds', invalidSetIds: [10] }));
+    const { rerender } = render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(configError()).toBe('setIds:10'));
+    expect(screen.queryByTestId('error')).toBeNull();
+    expect(screen.getByText('submit')).toBeTruthy();
+
+    builderState.setIds = [5, 6, 7, 8, 9];
+    rerender(createElement(CreateBoard));
+    expect(configError()).toBe('');
+  });
+
+  it('says so in its own words when an older server names no field', async () => {
+    createBoardMock.mockRejectedValueOnce(unknownConfigError({}));
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(screen.getByTestId('error').textContent).toBe('mobile.create.configError.noField'));
+    expect(configError()).toBe('');
   });
 });
 

@@ -721,3 +721,87 @@ describe('ReportDirectorySheet suggesting the setup', () => {
     expect(applyChangedBoard).not.toHaveBeenCalled();
   });
 });
+
+// The builder's near-miss "Use it and fix its setup" (#8151): the sheet opens on
+// "Set up wrong" with the climber's own setup in it. Nothing goes until Send.
+describe('ReportDirectorySheet opened from the builder with a setup', () => {
+  // A Masters 2019 entered without its Screw-on Feet (set 20); the climber's has them.
+  const noFeet = {
+    ...board,
+    boardType: 'moonboard',
+    layoutId: 5,
+    sizeId: 1,
+    setIds: '17,18,19,21',
+    angle: 40,
+    isAngleAdjustable: true,
+  } as UserBoard;
+  const climbersSetup = { layoutId: 5, sizeId: 1, setIds: '17,18,19,20,21' };
+
+  function renderPrefilled(climbNowOffered = true) {
+    return render(
+      <ReportDirectorySheet
+        target={{ kind: 'board', board: noFeet }}
+        onClose={vi.fn()}
+        onClaim={vi.fn()}
+        initialReason="wrong_setup"
+        initialSetup={climbersSetup}
+        climbNowOffered={climbNowOffered}
+      />,
+    );
+  }
+  const send = (screen: ReturnType<typeof render>) => screen.getByTestId('sheet-top-bar-trailing') as HTMLButtonElement;
+
+  it('opens the setup fields on the climber setup, ready to send, and sends only on Send', () => {
+    state.setupSuggestions = true;
+    state.gym = { uuid: 'gym-1', name: 'Crux', listingState: 'UNCLAIMED', canClaim: false };
+    const screen = renderPrefilled();
+    expect(screen.getByLabelText('report.boardReasons.wrongSetup').getAttribute('aria-pressed')).toBe('true');
+    expect(
+      screen.getByTestId('setup-suggestion-holds').querySelector('[data-value]')?.getAttribute('data-value'),
+    ).toContain('Screw-on Feet');
+    expect(boardMutate).not.toHaveBeenCalled();
+    expect(send(screen).disabled).toBe(false);
+    fireEvent.click(send(screen));
+    expect(boardMutate.mock.calls[0][0]).toEqual({
+      boardUuid: 'board-1',
+      reason: 'wrong_setup',
+      duplicateOfBoardUuid: null,
+      note: null,
+      suggestedSetup: { layoutId: 5, sizeId: 1, setIds: '17,18,19,20,21', angle: null },
+    });
+  });
+
+  it('writes the climber setup into the note while the setup fields are off', () => {
+    state.setupSuggestions = false;
+    const screen = renderPrefilled();
+    expect(screen.queryByTestId('setup-suggestion-fields')).toBeNull();
+    const note = screen.getByLabelText('report.noteLabel') as HTMLTextAreaElement;
+    expect(note.value).toBe(
+      'report.setupNote{"setup":"Masters 2019 · Standard · 11x18 Grid · Hold Set A, Hold Set B, Original School Holds, Screw-on Feet, Wooden Holds"}',
+    );
+    expect(boardMutate).not.toHaveBeenCalled();
+    fireEvent.click(send(screen));
+    expect(boardMutate.mock.calls[0][0]).toMatchObject({ reason: 'wrong_setup', note: note.value });
+    expect(boardMutate.mock.calls[0][0].suggestedSetup).toBeUndefined();
+  });
+
+  it('leaves out Climb it now when the host has bound the board already', () => {
+    state.setupSuggestions = true;
+    state.gym = { uuid: 'gym-1', name: 'Crux', listingState: 'UNCLAIMED', canClaim: false };
+    const screen = renderPrefilled(false);
+    fireEvent.click(send(screen));
+    act(() => {
+      boardMutate.mock.calls[0][1].onSuccess({
+        status: 'created',
+        reportUuid: 'r1',
+        routedTo: ['creator'],
+        otherReporterCount: 0,
+        setupOutcome: 'APPLIED',
+        setupReviewReason: null,
+        board: { ...noFeet, setIds: climbersSetup.setIds },
+      });
+    });
+    expect(screen.getByTestId('report-problem-done-title')).toBeTruthy();
+    expect(screen.queryByTestId('report-problem-climb-now')).toBeNull();
+  });
+});

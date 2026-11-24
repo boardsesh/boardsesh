@@ -489,7 +489,34 @@
         "body": "Usa el que ya escala tu gente, para que tus encadenes queden juntos. Sigue configurando el tuyo solo si es un muro distinto.",
         "useBoard": "Usar este plafón",
         "keepMine": "Seguir configurando el mío",
-        "loadFailed": "No se pudieron cargar todos esos plafones. Inténtalo de nuevo para verlos antes de seguir con el tuyo."
+        "loadFailed": "No se pudieron cargar todos esos plafones. Inténtalo de nuevo para verlos antes de seguir con el tuyo.",
+        "setupMismatch": "Puede que esté mal configurado",
+        "layoutDiffers": "Layout {{wall}}. El tuyo: {{yours}}",
+        "sizeDiffers": "Tamaño {{wall}}. El tuyo: {{yours}}",
+        "missingSets": "Le falta {{sets}}",
+        "extraSets": "También tiene {{sets}}",
+        "choiceTitle": "¿Es tu muro?",
+        "choiceBody": "Su configuración no coincide con la tuya. Si es el muro donde escalas, úsalo para que tus encadenes queden con los de tu gente.",
+        "choiceUseAsIs": "Usarlo tal cual",
+        "choiceFixSetup": "Usarlo y corregir su configuración",
+        "choiceDifferent": "No, es otro muro"
+      },
+      "holdsSummary_one": "Presas: {{selected}} de {{count}} set",
+      "holdsSummary_other": "Presas: {{selected}} de {{count}} sets",
+      "holdsChange": "Cambiar",
+      "holdsChangeLabel": "Cambiar los sets de presas",
+      "holdsDone": "Listo",
+      "omissionHint": "¿Falta {{set}}?",
+      "omissionAdd": "Añadir {{set}}",
+      "configError": {
+        "boardType": "No podemos guardar este tipo de plafón. Elige otro.",
+        "layoutId": "No conocemos este layout. Elige otro.",
+        "sizeId": "Este tamaño no encaja con este layout. Elige otro.",
+        "setIds_one": "Un set de presas no es de este tamaño. Quítalo o vuelve a elegir tus sets.",
+        "setIds_other": "{{count}} sets de presas no son de este tamaño. Quítalos o vuelve a elegir tus sets.",
+        "removeSets_one": "Quitarlo",
+        "removeSets_other": "Quitarlos",
+        "noField": "No conocemos esta configuración. Revisa el plafón, el layout, el tamaño y las presas."
       }
     },
     "custom": {
@@ -2023,7 +2050,8 @@
         "reviewClashes": "Esa configuración choca con otro plafón, así que se revisa primero. Te avisaremos cuando esté arreglado.",
         "alreadySetUp": "Ya está configurado así."
       }
-    }
+    },
+    "setupNote": "En el muro está configurado así: {{setup}}"
   },
   "reportReview": {
     "title": "Escaladores marcaron este plafón",

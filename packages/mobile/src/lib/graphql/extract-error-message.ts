@@ -274,9 +274,11 @@ export {
   isDuplicateBoardError,
   readDuplicateBoardError,
   readExistingWallsError,
+  readUnknownBoardConfigError,
   isBoardLimitError,
   isBoardRemovedByGymError,
   isSystemBoardDeleteInsteadError,
   type DuplicateBoardError,
   type ExistingWallErrorCandidate,
+  type UnknownBoardConfigField,
 } from '@boardsesh/graphql/errors';

@@ -10,7 +10,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useRouter } from 'expo-router';
 import type { Gym } from '@boardsesh/shared-schema';
 import { ClaimGymSheet } from '../gym-directory/ClaimGymSheet';
-import { ReportDirectorySheet, type ReportProblemTarget } from './ReportDirectorySheet';
+import { ReportDirectorySheet, type ReportInitialSetup, type ReportProblemTarget } from './ReportDirectorySheet';
+import type { BoardReportReason } from '@boardsesh/directory-moderation';
 import { canReportBoard, canReportGym } from './report-problem-model';
 import { useAuth } from '../../providers/auth-provider';
 import { useDirectoryReportsEnabled } from '../../providers/feature-flags-provider';
@@ -19,9 +20,27 @@ import type { ManagedSheetHandle } from '../../providers/sheet-presentation-prov
 
 export type { ReportProblemTarget } from './ReportDirectorySheet';
 
+/**
+ * How a report opens, for a caller that already knows what's wrong: the
+ * builder's near-miss "Use it and fix its setup" (#8151).
+ */
+export type OpenReportOptions = {
+  /** The reason already picked. */
+  initialReason?: BoardReportReason;
+  /** The setup the climber says the board has ("Set up wrong"). */
+  initialSetup?: ReportInitialSetup;
+  /** Off hides the done step's "Climb it now": the caller has bound the board already. */
+  climbNowOffered?: boolean;
+  /**
+   * Called once the report is done with: its sheet closed, or the claim sheet
+   * it handed over to closed. Not called when a later `openReport` replaces it.
+   */
+  onClosed?: () => void;
+};
+
 export type ReportProblemHost = {
   /** Opens the report sheet for this board or gym. Signed out, it opens login instead. */
-  openReport: (target: ReportProblemTarget) => void;
+  openReport: (target: ReportProblemTarget, options?: OpenReportOptions) => void;
   /** Mount this in the route that offers the report. */
   sheet: ReactNode;
   /** The report sheet or the claim sheet it handed over to is up. */
@@ -44,28 +63,44 @@ function targetKey(target: ReportProblemTarget): string {
 export function useReportProblemHost(): ReportProblemHost {
   const { isAuthenticated } = useAuth();
   const router = useRouter();
-  const [target, setTarget] = useState<ReportProblemTarget | null>(null);
+  const [opened, setOpened] = useState<{ target: ReportProblemTarget; options: OpenReportOptions } | null>(null);
+  const target = opened?.target ?? null;
   const [claimGym, setClaimGym] = useState<Gym | null>(null);
   const claimSheetRef = useRef<ManagedSheetHandle>(null);
+  // The open report's `onClosed`, held until the report or the claim it handed
+  // over to has gone.
+  const onClosedRef = useRef<(() => void) | null>(null);
+  const settleClosed = useCallback(() => {
+    const onClosed = onClosedRef.current;
+    onClosedRef.current = null;
+    onClosed?.();
+  }, []);
 
   const openReport = useCallback(
-    (next: ReportProblemTarget) => {
+    (next: ReportProblemTarget, options: OpenReportOptions = {}) => {
       if (!isAuthenticated) {
         router.push('/auth/login');
         return;
       }
-      setTarget(next);
+      onClosedRef.current = options.onClosed ?? null;
+      setOpened({ target: next, options });
     },
     [isAuthenticated, router],
   );
-  const closeReport = useCallback(() => setTarget(null), []);
+  const closeReport = useCallback(() => {
+    setOpened(null);
+    settleClosed();
+  }, [settleClosed]);
   // The two can't stack. The report sheet has already dismissed itself and
   // waited for it to settle (ReportDirectorySheet), so this only swaps them.
   const openClaim = useCallback((gym: Gym) => {
-    setTarget(null);
+    setOpened(null);
     setClaimGym(gym);
   }, []);
-  const onClaimClosed = useCallback(() => setClaimGym(null), []);
+  const onClaimClosed = useCallback(() => {
+    setClaimGym(null);
+    settleClosed();
+  }, [settleClosed]);
   useEffect(() => {
     if (claimGym) claimSheetRef.current?.present();
   }, [claimGym]);
@@ -73,15 +108,23 @@ export function useReportProblemHost(): ReportProblemHost {
   const sheet = useMemo(
     () => (
       <>
-        {target ? (
-          <ReportDirectorySheet key={targetKey(target)} target={target} onClose={closeReport} onClaim={openClaim} />
+        {opened ? (
+          <ReportDirectorySheet
+            key={targetKey(opened.target)}
+            target={opened.target}
+            onClose={closeReport}
+            onClaim={openClaim}
+            initialReason={opened.options.initialReason ?? null}
+            initialSetup={opened.options.initialSetup ?? null}
+            climbNowOffered={opened.options.climbNowOffered ?? true}
+          />
         ) : null}
         {claimGym ? (
           <ClaimGymSheet key={claimGym.uuid} sheetRef={claimSheetRef} gym={claimGym} onClosed={onClaimClosed} />
         ) : null}
       </>
     ),
-    [target, claimGym, closeReport, openClaim, onClaimClosed],
+    [opened, claimGym, closeReport, openClaim, onClaimClosed],
   );
 
   const isOpen = target !== null || claimGym !== null;
