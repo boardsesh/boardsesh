@@ -1,5 +1,5 @@
 import { useCallback, useRef, useImperativeHandle } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View, type ViewInstance } from 'react-native';
 import { useTheme } from '../../providers/theme-provider';
 import type { AppMenuHandle } from '../AppMenu.types';
 import { Icon } from '../Icon';
@@ -15,7 +15,20 @@ import type { ClimbListRowMenuProps } from './ClimbListRowMenu.types';
 export function FallbackClimbListRowMenu(props: ClimbListRowMenuProps) {
   const { systemColors } = useTheme();
   const menuRef = useRef<AppMenuHandle | null>(null);
+  const moreButtonRef = useRef<ViewInstance | null>(null);
+  const currentMenuKeyRef = useRef(props.menuKey);
+  currentMenuKeyRef.current = props.menuKey;
   const openMenu = useCallback(() => menuRef.current?.open(), []);
+  const openFromMoreButton = useCallback(() => {
+    if (Platform.OS !== 'web') {
+      openMenu();
+      return;
+    }
+    const menuKey = currentMenuKeyRef.current;
+    moreButtonRef.current?.measureInWindow((left, top, _width, height) => {
+      if (menuKey === currentMenuKeyRef.current) menuRef.current?.open({ x: left, y: top + height });
+    });
+  }, [openMenu]);
   useImperativeHandle(props.ref, () => ({ open: openMenu }), [openMenu]);
   return (
     <>
@@ -31,9 +44,9 @@ export function FallbackClimbListRowMenu(props: ClimbListRowMenuProps) {
         {props.children}
       </ClimbMenu>
       {props.showMoreButton && props.rows.length > 0 ? (
-        <View testID="climb-row-more-button" style={props.moreButtonStyle}>
+        <View ref={moreButtonRef} testID="climb-row-more-button" style={props.moreButtonStyle}>
           <StaticPressableSurface
-            onPress={openMenu}
+            onPress={openFromMoreButton}
             accessibilityRole="button"
             accessibilityLabel={props.accessibilityLabel}
             style={styles.moreButton}

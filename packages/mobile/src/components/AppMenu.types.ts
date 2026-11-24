@@ -1,6 +1,7 @@
 import type { ReactElement, RefObject } from 'react';
 import type { ColorValue, StyleProp, ViewStyle } from 'react-native';
 import type { IconName } from './icon-map';
+import type { WindowAnchorPoint } from './navigation/AnchoredPopover.types';
 
 /** A single menu row, neutral across the native iOS `Menu` / Android `DropdownMenu` impls. */
 export type AppMenuAction = {
@@ -94,9 +95,9 @@ type AppMenuIconAnchorProps = AppMenuSharedProps & {
 
 /** Opens a long-press menu from a separate control, such as a row's ⋮ button. */
 export type AppMenuHandle = {
-  /** Android and web open the menu under the row. A SwiftUI context menu only
-   *  opens from its hold, so on iOS this does nothing. */
-  open: () => void;
+  /** Web can anchor to a measured trigger in window coordinates. Android
+   * opens under the row; iOS context menus open from their native hold. */
+  open: (anchor?: WindowAnchorPoint) => void;
 };
 
 /** A row body keeps its own tap/accessibility behavior while a hold opens its menu. */
