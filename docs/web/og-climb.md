@@ -194,7 +194,14 @@ every hold glowing a ring at its placement radius.
 | `render_mode`  | `aura`    | `aura` (veil + glow on traced silhouettes — the app's own drawing) or `classic` (the marker-only overlay).                                  |
 | `glow_falloff` | `soft`    | `aura` mode only: glow edge treatment, `soft` or `plateau`.                                                                                 |
 | `glyphs`       | off       | `aura` mode only: `0`\|`1`\|`true`\|`false` — role glyphs inside the glow.                                                                   |
-| `field_color`  | unset     | `#rrggbb`: the play field the veil washes the unlit wall toward. Unset means the light field, on which every board's wall is darker than the field, so `veilOpacityFor` turns the veil off. www and the share cards send `#181225`, the dark field the app's play view composites over. |
+| `field_color`  | unset     | `#rrggbb`: the play field the veil washes the unlit wall toward. Unset means the light field, on which every board's wall is darker than the field, so `veilOpacityFor` turns the veil off. Ordinary www callers and share cards send `#181225`, the dark field the app's play view composites over. Light kiosks and their previews explicitly send `#FFFFFF`, matching the app's light field and avoiding a dark veil over lit board photographs. |
+
+`buildBoardRenderUrl` accepts an optional `fieldColor` for Aura renders. The default remains
+`BOARD_FIELD_COLORS.dark`, preserving existing image and share-card URLs. Kiosks pass
+`boardFieldColorForScheme(theme)` for the saved display theme, including live climb changes.
+This field is separate from `colorScheme`, which selects board-art siblings; changing the
+field does not select another photograph. The encoded `field_color` gives light and dark
+renders distinct immutable cache URLs. Classic renders do not send this Aura-only field.
 
 ## How a render works
 
