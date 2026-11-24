@@ -12,11 +12,21 @@ import { PlaylistsAdapterProvider, type PlaylistsAdapter } from '@boardsesh/play
 import { isBackendUnavailableError } from '../lib/connectivity/backend-unavailable-error';
 import { offlineAwareRequest } from '../lib/graphql/offline-request';
 import { mobileRecentsAdapter } from '../lib/playlists/recents-store';
+import { GET_PLAYLIST_CLIMBS, GET_SMART_PLAYLIST } from '@boardsesh/graphql/operations';
+import { stampCatalogPlaysScope } from '../lib/climb-play-count';
+import { getCredentialGeneration } from '../lib/privacy/privacy-cache';
 
 export function PlaylistsAdapterWrapper({ children }: { children: ReactNode }) {
   const adapter = useMemo<PlaylistsAdapter>(
     () => ({
-      executeGraphQL: (query, variables) => offlineAwareRequest(query, variables),
+      async executeGraphQL<TData, TVars extends object>(query: string, variables?: TVars): Promise<TData> {
+        const credentialScope = getCredentialGeneration();
+        const response = await offlineAwareRequest<TData>(query, variables);
+        const scope = { credentialScope, authority: 'reference' } as const;
+        if (query === GET_PLAYLIST_CLIMBS) return stampCatalogPlaysScope(response, 'playlistClimbs', scope);
+        if (query === GET_SMART_PLAYLIST) return stampCatalogPlaysScope(response, 'smartPlaylist', scope);
+        return response;
+      },
       isExpectedRequestError: isBackendUnavailableError,
       recents: mobileRecentsAdapter,
     }),

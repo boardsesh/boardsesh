@@ -1,4 +1,4 @@
-import type { ClimbStatsEvent } from '@boardsesh/shared-schema';
+import { toPlayCount, type ClimbStatsEvent } from '@boardsesh/shared-schema';
 
 export type ClimbStatsKey = {
   boardType: string;
@@ -12,6 +12,15 @@ export type CanonicalClimbStats = ClimbStatsEvent;
 export type ClimbStatsSnapshot = {
   canonical: CanonicalClimbStats | null;
   optimisticFloor: number | null;
+  plays?: { playCount: number | null; authEpoch: number };
+};
+
+type PlaysRead = { dispatchOrder: number; authEpoch: number };
+type PlaysRow = { playCount: number | null; syncSeq: string };
+
+type PlaysObservation = PlaysRead & {
+  playCount: number | null;
+  lastRowRevision: string | undefined;
 };
 
 export type SettledOfflineTickAscent = {
@@ -31,6 +40,7 @@ type OptimisticAscent = {
 type StoreEntry = {
   key: ClimbStatsKey;
   canonical: CanonicalClimbStats | null;
+  plays?: PlaysObservation;
   optimistic: Map<string, OptimisticAscent>;
   listeners: Set<() => void>;
   refCount: number;
@@ -84,8 +94,18 @@ function publish(entry: StoreEntry): void {
   for (const mutation of entry.optimistic.values()) {
     optimisticFloor = Math.max(optimisticFloor ?? mutation.floor, mutation.floor);
   }
-  const next: ClimbStatsSnapshot = { canonical: entry.canonical, optimisticFloor };
-  if (entry.snapshot.canonical === next.canonical && entry.snapshot.optimisticFloor === next.optimisticFloor) {
+  const plays = entry.plays;
+  const next: ClimbStatsSnapshot = {
+    canonical: entry.canonical,
+    optimisticFloor,
+    ...(plays && { plays: { playCount: plays.playCount, authEpoch: plays.authEpoch } }),
+  };
+  if (
+    entry.snapshot.canonical === next.canonical &&
+    entry.snapshot.optimisticFloor === next.optimisticFloor &&
+    entry.snapshot.plays?.playCount === next.plays?.playCount &&
+    entry.snapshot.plays?.authEpoch === next.plays?.authEpoch
+  ) {
     return;
   }
   entry.snapshot = next;
@@ -126,10 +146,14 @@ export function getClimbStatsSnapshot(key: ClimbStatsKey): ClimbStatsSnapshot {
   return entries.get(climbStatsKeyString(key))?.snapshot ?? EMPTY_SNAPSHOT;
 }
 
-export function getRetainedClimbStatsKeys(boardType: string, layoutId: number): ClimbStatsKey[] {
+export function getRetainedClimbStatsKeys(boardType: string, layoutId?: number): ClimbStatsKey[] {
   const retained: ClimbStatsKey[] = [];
   for (const entry of entries.values()) {
-    if (entry.refCount > 0 && entry.key.boardType === boardType && entry.key.layoutId === layoutId) {
+    if (
+      entry.refCount > 0 &&
+      entry.key.boardType === boardType &&
+      (layoutId === undefined || entry.key.layoutId === layoutId)
+    ) {
       retained.push(entry.key);
     }
   }
@@ -172,7 +196,34 @@ export function getAcknowledgedClimbStatsTokens(boardType: string, climbUuid: st
   return acknowledgedTokens;
 }
 
-export function applyCanonicalClimbStats(payload: CanonicalClimbStats): boolean {
+/** Missing rows have a dispatch order but no database revision. */
+function recordPlays(entry: StoreEntry, read: PlaysRead, row: PlaysRow | null): boolean {
+  if (entry.refCount === 0 || read.authEpoch !== activeAuthEpoch) return false;
+  const previous = entry.plays;
+  if (previous && read.dispatchOrder <= previous.dispatchOrder) return false;
+  if (row) {
+    if (!validRevision(row.syncSeq)) return false;
+    if (previous?.lastRowRevision && revisionIsNewer(previous.lastRowRevision, row.syncSeq)) return false;
+  }
+  entry.plays = {
+    ...read,
+    playCount: row ? toPlayCount(row.playCount) : null,
+    // A climb may be readable again with the same row revision.
+    lastRowRevision: row?.syncSeq ?? previous?.lastRowRevision,
+  };
+  return true;
+}
+
+/** Only a successful batch that requested this key can record its absence. */
+export function markClimbPlaysUnavailable(key: ClimbStatsKey, read: PlaysRead): void {
+  const entry = entries.get(climbStatsKeyString(key));
+  if (entry && recordPlays(entry, read, null)) publish(entry);
+}
+
+export function applyCanonicalClimbStats(
+  payload: CanonicalClimbStats,
+  playsRead?: PlaysRead & { playCount: number | null },
+): boolean {
   if (!validRevision(payload.syncSeq)) return false;
   const serialized = climbStatsKeyString(payload);
   const entry = entries.get(serialized);
@@ -180,7 +231,18 @@ export function applyCanonicalClimbStats(payload: CanonicalClimbStats): boolean 
   // lifetime. Cache only exact keys a mounted selector or optimistic mutation
   // retained; otherwise the layout stream would become an unbounded map.
   if (!entry) return false;
-  if (entry.canonical && !revisionIsNewer(payload.syncSeq, entry.canonical.syncSeq)) return false;
+  // Tick events and the primary batch share grade revisions, but only the
+  // batch observes Plays. A grade update may already have this revision.
+  const playsRecorded =
+    playsRead &&
+    recordPlays(entry, playsRead, {
+      playCount: playsRead.playCount,
+      syncSeq: payload.syncSeq,
+    });
+  if (entry.canonical && !revisionIsNewer(payload.syncSeq, entry.canonical.syncSeq)) {
+    if (playsRecorded) publish(entry);
+    return false;
+  }
   entry.canonical = payload;
   retireSatisfiedAcknowledged(entry);
   publish(entry);
@@ -311,8 +373,9 @@ export function setClimbStatsAuthEpoch(authEpoch: number): void {
   offlineTickTokens.clear();
   unmatchedOfflineSettlements.clear();
   for (const [serialized, entry] of entries) {
-    if (entry.optimistic.size > 0) {
+    if (entry.optimistic.size > 0 || entry.plays) {
       entry.optimistic.clear();
+      entry.plays = undefined;
       publish(entry);
     }
     deleteIfUnused(serialized, entry);

@@ -10,6 +10,7 @@ const reads = vi.hoisted(() => ({
   difficulty: 'V6',
   count: 12,
   quality: '3.5',
+  playCount: undefined as number | null | undefined,
   resolved: 'V6',
   format: 'v',
   personal: false,
@@ -17,11 +18,22 @@ const reads = vi.hoisted(() => ({
   boldText: false,
 }));
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  Platform: { OS: 'web' },
+  View: (props: { children?: ReactNode; accessibilityLabel?: string; testID?: string }) =>
+    createElement('div', { 'aria-label': props.accessibilityLabel, 'data-testid': props.testID }, props.children),
   StyleSheet: { create: (styles: unknown) => styles },
   useWindowDimensions: () => ({ fontScale: 1 }),
 }));
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    i18n: { language: 'de' },
+    t: (key: string, options?: { formattedCount?: string; plays?: string; angle?: number }) => {
+      if (key === 'plays.count') return `${options?.formattedCount} Plays`;
+      if (key === 'mobile.plays.countAtAngle') return `${options?.plays} bei ${options?.angle}°`;
+      return key;
+    },
+  }),
+}));
 vi.mock('../../PressableSurface', () => ({
   PressableSurface: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
@@ -61,11 +73,23 @@ vi.mock('../../../lib/boardsesh-grade-display', () => ({
 vi.mock('@boardsesh/board-react', () => ({
   useEffectiveClimbStats: (...args: unknown[]) => {
     reads.stats(...args);
-    return { difficulty: reads.difficulty, ascensionistCount: reads.count, qualityAverage: reads.quality };
+    return {
+      difficulty: reads.difficulty,
+      ascensionistCount: reads.count,
+      qualityAverage: reads.quality,
+      playCount: reads.playCount,
+    };
   },
 }));
 
 import { LivePlayDrawerHeader, PreparedPlayDrawerHeader, useLivePlayDrawerHeaderModel } from '../PlayDrawerHeader';
+import { PlayDrawerHeaderAccessibility } from '../PlayDrawerHeaderAccessibility';
+import { CommunitySection } from '../CommunitySection';
+
+vi.mock('../../../lib/graphql/hooks', () => ({ useClimbStatsHistory: () => ({ data: [] }) }));
+vi.mock('../DifficultyByAngleChart', () => ({ DifficultyByAngleChart: () => null }));
+vi.mock('../ClimbModerationStatus', () => ({ ClimbModerationStatus: () => null }));
+vi.mock('../WallStatePill', () => ({ useWallStatePillAccessibility: () => null }));
 const climb = {
   uuid: 'climb-1',
   name: 'Original',
@@ -86,6 +110,7 @@ describe('prepared live header geometry identity', () => {
     reads.difficulty = 'V6';
     reads.count = 12;
     reads.quality = '3.5';
+    reads.playCount = undefined;
     reads.resolved = 'V6';
     reads.format = 'v';
     reads.personal = false;
@@ -174,6 +199,38 @@ describe('prepared live header geometry identity', () => {
     expect(result.current).not.toBeNull();
     expect(reads.stats).toHaveBeenLastCalledWith('kilter', 1, climb.uuid, 40, expect.any(Object), { enabled: true });
   });
+  it('keeps the fixed spoken header on the live angle and ignores a stale queue Plays projection', () => {
+    function Header({ angle, detailPlayCount }: { angle: number; detailPlayCount?: number }) {
+      const model = useLivePlayDrawerHeaderModel({
+        ...args,
+        angle,
+        climb: { ...climb, angle, play_count: 99_999 },
+        catalogPlays: { playCount: detailPlayCount ?? null, credentialScope: 0, authority: 'reference' },
+      });
+      return model ? (
+        <>
+          <PreparedPlayDrawerHeader model={model} />
+          <PlayDrawerHeaderAccessibility model={model} pillState={null} pillBackTarget={null} pillLatched={false} />
+        </>
+      ) : null;
+    }
+    const { getByTestId, getByText, rerender, queryByText } = render(<Header angle={40} detailPlayCount={12_345} />);
+    const spoken = () => getByTestId('play-drawer-header-accessibility').getAttribute('aria-label');
+    expect(spoken()).toContain('12.345 Plays bei 40°');
+    expect(queryByText(/99.999/)).toBeNull();
+
+    rerender(<Header angle={30} />);
+    expect(spoken()).not.toContain('Plays');
+    rerender(<Header angle={30} detailPlayCount={0} />);
+    expect(spoken()).toContain('0 Plays bei 30°');
+    expect(getByText(/0 Plays/)).toBeTruthy();
+
+    reads.playCount = null;
+    rerender(<Header angle={30} detailPlayCount={0} />);
+    expect(spoken()).not.toContain('Plays');
+    expect(queryByText(/0 Plays/)).toBeNull();
+  });
+
   it('renders prepared output without adding a second set of live observers', () => {
     function CurrentHeader() {
       const model = useLivePlayDrawerHeaderModel(args);
@@ -183,6 +240,28 @@ describe('prepared live header geometry identity', () => {
     expect(rendered.getByText('V6')).toBeTruthy();
     expect(reads.stats).toHaveBeenCalledTimes(1);
     expect(reads.myGrade).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('selected climb Community Plays', () => {
+  it('explains Plays when the climb has no sends or grade history', () => {
+    reads.count = 0;
+    reads.quality = '0';
+    const props = {
+      climbUuid: climb.uuid,
+      boardName: 'kilter',
+      layoutId: 1,
+      angle: 40,
+      ascensionistCount: 0,
+      qualityAverage: '0',
+    };
+    const { getByText, queryByText, rerender } = render(<CommunitySection {...props} playCount={0} />);
+    expect(getByText('0 Plays')).toBeTruthy();
+    expect(getByText('plays.explanation')).toBeTruthy();
+    expect(queryByText('mobile.community.empty')).toBeNull();
+    rerender(<CommunitySection {...props} playCount={null} />);
+    expect(getByText('plays.label · plays.valueUnavailable')).toBeTruthy();
+    expect(getByText('plays.explanation')).toBeTruthy();
   });
 });
 

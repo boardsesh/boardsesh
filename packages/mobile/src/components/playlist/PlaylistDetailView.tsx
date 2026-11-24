@@ -8,6 +8,8 @@ import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useTypographyStyles } from '../../hooks/use-typography-styles';
 import { useClimbRowDisplay, useClimbRowField } from '../../lib/climb-row-display-preference';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
+import { climbPlayCountKey, projectClimbPlays } from '../../lib/climb-play-count';
+import { usePlaylistLocalPlays, type PlaylistLocalPlaysTarget } from '../../lib/playlists/use-playlist-local-plays';
 import { toQueueClimb, toSchemaClimb } from '../../lib/climb-types';
 import {
   getPlaylistRenderBoardTarget,
@@ -59,7 +61,16 @@ type ResolvedPlaylistClimbRow =
     };
 
 export function PlaylistDetailView(props: PlaylistDetailViewProps) {
-  const { climbs, renderBoard, onActivateClimb, editMode = false, onReorderClimb, onRemoveClimb, hero } = props;
+  const {
+    climbs,
+    renderBoard,
+    onActivateClimb,
+    editMode = false,
+    onReorderClimb,
+    onRemoveClimb,
+    hero,
+    catalogPlaysScope,
+  } = props;
   const { fontScale } = useWindowDimensions();
   const { textStyles } = useTheme();
   const rowDisplay = useClimbRowDisplay();
@@ -115,6 +126,19 @@ export function PlaylistDetailView(props: PlaylistDetailViewProps) {
     }
     return resolvedRows;
   }, [climbs, renderBoard]);
+
+  const localPlaysTargets = useMemo(() => {
+    const targets: PlaylistLocalPlaysTarget[] = [];
+    if (!rowDisplay.sends && !rowDisplay.rating && !rowDisplay.setter) return targets;
+    for (const climb of climbs) {
+      const resolved = resolvedRowsByClimbUuid.get(climb.uuid);
+      if (resolved?.kind !== 'renderable') continue;
+      const { boardName, layoutId, angle } = resolved.renderBoard;
+      if (climb.angle !== angle) targets.push({ boardName, layoutId, climbUuid: climb.uuid, angle });
+    }
+    return targets;
+  }, [climbs, resolvedRowsByClimbUuid, rowDisplay.sends, rowDisplay.rating, rowDisplay.setter]);
+  const localPlays = usePlaylistLocalPlays(localPlaysTargets);
 
   const editRowHeight = useMemo(() => {
     if (!editMode) return undefined;
@@ -185,10 +209,17 @@ export function PlaylistDetailView(props: PlaylistDetailViewProps) {
         );
       }
 
+      const { boardName, layoutId, angle } = resolvedRow.renderBoard;
+      const catalogPlays = localPlays.get(climbPlayCountKey(boardName, layoutId, item.uuid, angle));
       if (editMode) {
         return (
           <PlaylistEditClimbRow
             climb={item}
+            catalogPlays={
+              catalogPlays ??
+              (catalogPlaysScope &&
+                projectClimbPlays(toSchemaClimb(item), boardName, layoutId, angle, catalogPlaysScope))
+            }
             board={resolvedRow.editBoard}
             rowIndex={index}
             drag={dragControls}
@@ -203,6 +234,8 @@ export function PlaylistDetailView(props: PlaylistDetailViewProps) {
       return (
         <ActiveAwareClimbListRow
           climb={toSchemaClimb(item)}
+          catalogPlays={catalogPlays}
+          catalogPlaysScope={catalogPlaysScope}
           boardName={resolvedRow.renderBoard.boardName as BoardName}
           layoutId={resolvedRow.renderBoard.layoutId}
           sizeId={resolvedRow.renderBoard.sizeId}
@@ -219,6 +252,8 @@ export function PlaylistDetailView(props: PlaylistDetailViewProps) {
     },
     [
       resolvedRowsByClimbUuid,
+      localPlays,
+      catalogPlaysScope,
       editMode,
       editRowHeight,
       dragControls,

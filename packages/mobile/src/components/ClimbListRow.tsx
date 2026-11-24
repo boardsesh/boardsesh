@@ -47,6 +47,7 @@ import { CLIMB_ROW_GUTTER, climbListRowStyles, climbRowSeparatorInsetStyle } fro
 import { useClimbListThumbnailSize } from './climb-list-thumbnail-metrics';
 import { CLIMB_ROW_VERTICAL_PADDING } from './climb-row-layout';
 import { hapticLight, hapticMedium, hapticSuccess } from '../lib/haptics';
+import { projectClimbPlays, type CatalogPlaysScope, type ClimbPlaysProjection } from '../lib/climb-play-count';
 import { useClimbRowField } from '../lib/climb-row-display-preference';
 import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
@@ -252,6 +253,9 @@ export type ClimbListRowProps = {
   sizeId: number;
   setIds: string;
   angle: number;
+  catalogPlaysScope?: CatalogPlaysScope;
+  /** Downloaded exact-angle projection when the catalog item came at another angle. */
+  catalogPlays?: ClimbPlaysProjection;
   onPress?: (climb: Climb, readyBoardArt?: ReadyBoardArtSnapshot) => void;
   /** Right swipe: put the climb at the top of Up next (the menu's Play next). */
   onPlayNext?: (climb: Climb) => void;
@@ -319,16 +323,24 @@ const ClimbListRow = React.memo(function ClimbListRow(props: ClimbListRowProps) 
   );
   const menu = useClimbMenu(menuTarget);
   const { showPlaylistChips, showProgress, showFavorite } = props;
+  const { catalogPlaysScope, catalogPlays: downloadedPlays } = props;
+  const catalogPlays = useMemo(
+    () =>
+      downloadedPlays ?? (catalogPlaysScope && projectClimbPlays(climb, boardName, layoutId, angle, catalogPlaysScope)),
+    [downloadedPlays, catalogPlaysScope, climb, boardName, layoutId, angle],
+  );
   const renderLiveContent = useCallback(
     (args: ClimbListRowRenderContentArgs) => (
       <ClimbListItemContent
         {...args}
+        catalogPlays={catalogPlays}
+        showPlays
         showPlaylistChips={showPlaylistChips}
         showProgress={showProgress}
         showFavorite={showFavorite}
       />
     ),
-    [showPlaylistChips, showProgress, showFavorite],
+    [catalogPlays, showPlaylistChips, showProgress, showFavorite],
   );
   return (
     <ClimbListRowView

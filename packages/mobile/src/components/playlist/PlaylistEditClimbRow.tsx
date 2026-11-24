@@ -12,6 +12,7 @@ import { GestureDetector } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
 import type { Climb } from '@boardsesh/queue';
+import type { ClimbPlaysProjection } from '../../lib/climb-play-count';
 import { Icon } from '../Icon';
 import { ClimbListItemContent } from '../ClimbListItemContent';
 import { CLIMB_ROW_VERTICAL_PADDING, climbRowSeparatorInset } from '../climb-row-layout';
@@ -44,6 +45,7 @@ export type PlaylistEditRowBoard = {
 
 type PlaylistEditClimbRowProps = {
   climb: Climb;
+  catalogPlays?: ClimbPlaysProjection;
   board: PlaylistEditRowBoard;
   /** This row's index within the editable list (drag coordinate). */
   rowIndex: number;
@@ -57,6 +59,7 @@ type PlaylistEditClimbRowProps = {
 
 function PlaylistEditClimbRowComponent({
   climb,
+  catalogPlays,
   board,
   rowIndex,
   drag,
@@ -146,6 +149,8 @@ function PlaylistEditClimbRowComponent({
         <ClimbListItemContent
           allowNameWrapping={false}
           climb={climb}
+          catalogPlays={catalogPlays}
+          showPlays
           boardName={board.boardName}
           layoutId={board.layoutId}
           sizeId={board.sizeId}

@@ -9,6 +9,8 @@ export type { PreparedHeaderProps } from './PlayDrawerHeaderView';
 import { memo, useMemo, type ReactNode } from 'react';
 import { type BoardName, type Climb } from '@boardsesh/shared-schema';
 import { useEffectiveClimbStats } from '@boardsesh/board-react';
+import { selectClimbPlays, type ClimbPlaysProjection } from '../../lib/climb-play-count';
+import { usePrivacyCredentialScope } from '../../hooks/use-privacy-scoped-state';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useMyGrade } from '../../hooks/use-my-grade';
@@ -23,6 +25,8 @@ export type LivePlayDrawerHeaderProps = {
   boardName: BoardName;
   layoutId: number;
   angle: number;
+  /** Projection from the selected climb's exact detail read. */
+  catalogPlays?: ClimbPlaysProjection;
   leading?: ReactNode;
   onLongPressName?: () => void;
   onPressSetter?: () => void;
@@ -40,6 +44,7 @@ export function useLivePlayDrawerHeaderModel({
   boardName,
   layoutId,
   angle,
+  catalogPlays,
   leading,
   onLongPressName,
   onPressSetter,
@@ -58,6 +63,8 @@ export function useLivePlayDrawerHeaderModel({
     },
     { enabled: climb !== null },
   );
+  const credentialScope = usePrivacyCredentialScope();
+  const effectivePlayCount = selectClimbPlays(liveStats.playCount, catalogPlays, credentialScope);
   const displayedGrade = resolveGrade(
     {
       ...climb,
@@ -98,6 +105,7 @@ export function useLivePlayDrawerHeaderModel({
       secondaryGrade,
       qualityAverage: liveStats.qualityAverage,
       ascensionistCount: liveStats.ascensionistCount,
+      playCount: effectivePlayCount,
       setterUsername: climb.setter_username,
       benchmarkDifficulty: climb.benchmark_difficulty,
       characteristics: climb.characteristics,
@@ -131,6 +139,7 @@ export function useLivePlayDrawerHeaderModel({
     secondaryGrade,
     liveStats.qualityAverage,
     liveStats.ascensionistCount,
+    effectivePlayCount,
     climb?.setter_username,
     climb?.benchmark_difficulty,
     characteristicsFingerprint,

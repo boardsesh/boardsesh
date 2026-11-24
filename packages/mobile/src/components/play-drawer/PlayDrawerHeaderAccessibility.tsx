@@ -45,7 +45,7 @@ export const PlayDrawerHeaderAccessibility = memo(function PlayDrawerHeaderAcces
   onLongPressName,
   onPressSetter,
 }: PlayDrawerHeaderAccessibilityProps) {
-  const { t } = useTranslation('climbs');
+  const { t, i18n } = useTranslation('climbs');
   const pillAccessibility = useWallStatePillAccessibility({
     state: pillState,
     backTarget: pillBackTarget,
@@ -55,7 +55,7 @@ export const PlayDrawerHeaderAccessibility = memo(function PlayDrawerHeaderAcces
   const { headerProps } = model;
   // The back chip's words are an instruction ("Back to your climb"), not a
   // state, so they stay on the action and out of what this view reads.
-  const label = describePlayDrawerHeader(headerProps, t);
+  const label = describePlayDrawerHeader(headerProps, t, i18n?.language);
   const setterUsername = headerProps.setterUsername;
   const canOpenSetter = Boolean(setterUsername) && onPressSetter !== undefined;
   const pillActionLabel = onPillPress ? pillAccessibility?.label : undefined;

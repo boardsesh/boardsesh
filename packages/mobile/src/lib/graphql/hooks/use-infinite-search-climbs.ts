@@ -105,9 +105,11 @@ export function useInfiniteSearchClimbs(
     queryKey: [...getSearchClimbsQueryKey(searchInput), ...(input.onlyFollowedAuthors ? [userId] : [])],
     initialPageParam: 0,
     queryFn: ({ pageParam }) =>
-      offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, {
-        input: { ...searchInput, page: pageParam },
-      }),
+      offlineAwareRequest<SearchClimbsQueryResponse>(
+        SEARCH_CLIMBS,
+        { input: { ...searchInput, page: pageParam } },
+        { stampSearchPlaysScope: true },
+      ),
     // getNextPageParam receives RAW pre-select pages in React Query v5.
     getNextPageParam: (lastPage, allPages) => (lastPage.searchClimbs.hasMore ? allPages.length : undefined),
     select: selectSearchClimbPages,

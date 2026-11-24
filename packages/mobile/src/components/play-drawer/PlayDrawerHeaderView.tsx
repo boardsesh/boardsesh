@@ -6,7 +6,7 @@ import type { TFunction } from 'i18next';
 import { CLIMB_CHARACTERISTICS, type BoardName } from '@boardsesh/shared-schema';
 import { getBoardCapabilities } from '@boardsesh/board-config';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
-import { formatSends, formatQuality } from '../../lib/format-climb-stats';
+import { formatPlays, formatSends, formatQuality } from '../../lib/format-climb-stats';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { MarqueeText } from '../MarqueeText';
@@ -42,6 +42,7 @@ export type PlayDrawerHeaderProps = {
   gradeColor?: string;
   qualityAverage: string | null;
   ascensionistCount: number;
+  playCount?: number | null;
   setterUsername: string;
   /** Intrinsic attributes shown as grey glyphs after the name. */
   benchmarkDifficulty?: string | null;
@@ -191,8 +192,12 @@ export function describePlayDrawerGrade(headerProps: PreparedHeaderProps, t: TFu
  * drawer reads the header from one fixed stand-in (see `SwipeableHeader`), so
  * this is the only way the name, grade and stats reach VoiceOver or TalkBack.
  */
-export function describePlayDrawerHeader(headerProps: PreparedHeaderProps, t: TFunction<'climbs'>): string {
-  const { name, secondaryGrade, setterUsername, isHidden, isDraft, statsAngle } = headerProps;
+export function describePlayDrawerHeader(
+  headerProps: PreparedHeaderProps,
+  t: TFunction<'climbs'>,
+  locale?: string,
+): string {
+  const { name, secondaryGrade, setterUsername, isHidden, isDraft, statsAngle, playCount, angle } = headerProps;
   const { statsParts, ruleLabels, attributes, showsSetAngleMarker } = deriveHeaderFacts(headerProps, t);
   return [
     name,
@@ -202,6 +207,7 @@ export function describePlayDrawerHeader(headerProps: PreparedHeaderProps, t: TF
     describePlayDrawerGrade(headerProps, t),
     secondaryGrade,
     ...statsParts,
+    playCount == null ? null : formatPlays(playCount, t, locale, { angle }),
     setterUsername,
     isHidden ? t('mobile.hidden.banner') : null,
     ruleLabels?.accessibilityLabel,
@@ -218,6 +224,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   gradeColor,
   qualityAverage,
   ascensionistCount,
+  playCount,
   setterUsername,
   benchmarkDifficulty,
   characteristics,
@@ -234,7 +241,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   angle,
   peek = false,
 }: PlayDrawerHeaderProps) {
-  const { t } = useTranslation('climbs');
+  const { t, i18n } = useTranslation('climbs');
   const { systemColors } = useTheme();
   // The header's height is pinned (see `minRowHeight` below) and the headline's
   // line height alone eats that floor once type is scaled up, so the second line
@@ -265,6 +272,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   // A peek draws the setter as the link it becomes on commit, so the swap
   // changes nothing on screen.
   const setterAsLink = Boolean(setterUsername) && (onPressSetter !== undefined || peek);
+  if (playCount != null) statsParts.push(formatPlays(playCount, t, i18n?.language, { compact: true }));
   const subtitleParts = setterUsername && !setterAsLink ? [...statsParts, setterUsername] : statsParts;
 
   return (

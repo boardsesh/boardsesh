@@ -17,6 +17,7 @@ import { act, render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/queue';
 import type { Climb as SchemaClimb } from '@boardsesh/shared-schema';
+import type { ClimbPlaysProjection } from '../../../lib/climb-play-count';
 
 const ctrl = vi.hoisted(() => ({
   // The queue's current climb and a view-only preview's, for the row highlight.
@@ -30,6 +31,7 @@ const ctrl = vi.hoisted(() => ({
   playNext: vi.fn(),
   openAddToPlaylist: vi.fn(),
   getClimbActions: vi.fn(),
+  localPlays: new Map<string, ClimbPlaysProjection>(),
   // The scroll-stage reaction (0 hero in view, 1 hero gone, 2 filter bar gone),
   // so a test can scroll the header away.
   scrollStageReaction: null as null | ((stage: number, previousStage: number | null) => void),
@@ -44,6 +46,7 @@ type CapturedClimbListRowProps = {
   sizeId: number;
   setIds: string;
   angle: number;
+  catalogPlays?: ClimbPlaysProjection;
   unsupported?: boolean;
   showProgress?: boolean;
   onPress?: (climb: { uuid: string; name: string }) => void;
@@ -54,6 +57,7 @@ type CapturedClimbListRowProps = {
 
 type CapturedPlaylistEditClimbRowProps = {
   climb: Climb;
+  catalogPlays?: ClimbPlaysProjection;
   minimumHeight?: number;
   board: {
     boardName: string;
@@ -281,6 +285,10 @@ vi.mock('../../Icon', () => ({
 
 vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: ({ size }: { size?: string }) => createElement('div', { 'data-spinner': size ?? 'default' }),
+}));
+
+vi.mock('../../../lib/playlists/use-playlist-local-plays', () => ({
+  usePlaylistLocalPlays: () => ctrl.localPlays,
 }));
 
 vi.mock('../../ClimbListRow', () => ({
@@ -812,6 +820,30 @@ describe('PlaylistDetailView', () => {
   });
 
   // The playlist being played marks the climb you're on, as the Climbs list does (#6671 QA).
+  it('uses a downloaded count only for the resolved playlist board and angle', () => {
+    const renderBoard = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 30 };
+    const climbs = [{ ...KILTER_CLIMB, angle: 40, play_count: 90 }, TENSION_CLIMB];
+    ctrl.localPlays = new Map<string, ClimbPlaysProjection>([
+      [
+        JSON.stringify(['kilter', 1, KILTER_CLIMB.uuid, 30]),
+        { playCount: 0, credentialScope: 0, authority: 'reference' },
+      ],
+      [
+        JSON.stringify(['tension', 9, TENSION_CLIMB.uuid, 30]),
+        { playCount: 6, credentialScope: 0, authority: 'reference' },
+      ],
+    ]);
+    try {
+      render(<PlaylistDetailView {...makeProps({ climbs, renderBoard })} />);
+      const kilter = capturedClimbRows.find(({ climb }) => climb.uuid === KILTER_CLIMB.uuid);
+      const tension = capturedClimbRows.find(({ climb }) => climb.uuid === TENSION_CLIMB.uuid);
+      expect(kilter).toMatchObject({ angle: 30, catalogPlays: { playCount: 0 } });
+      expect(tension).toMatchObject({ angle: 35, catalogPlays: undefined });
+    } finally {
+      ctrl.localPlays = new Map();
+    }
+  });
+
   it('highlights the climb you last had up, the previewed one first', () => {
     const props = makeProps({ climbs: [KILTER_CLIMB, TENSION_CLIMB] });
     ctrl.activeClimbUuid = TENSION_CLIMB.uuid;
@@ -914,6 +946,23 @@ describe('PlaylistDetailView', () => {
     expect(capturedEditRows).toHaveLength(1);
     expect(ctrl.playNext).not.toHaveBeenCalled();
     expect(ctrl.openAddToPlaylist).not.toHaveBeenCalled();
+  });
+
+  it('keeps exact downloaded zero and positive Plays in the playlist editor without a live read', () => {
+    const catalogPlaysScope = { credentialScope: 3, authority: 'reference' } as const;
+    const renderBoard = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
+    const climbs = [
+      { ...KILTER_CLIMB, play_count: 0 },
+      { ...KILTER_CLIMB, uuid: 'positive', play_count: 12 },
+      { ...KILTER_CLIMB, uuid: 'other-angle', angle: 30, play_count: 75 },
+    ];
+    render(<PlaylistDetailView {...makeProps({ climbs, renderBoard, editMode: true, catalogPlaysScope })} />);
+
+    expect(capturedEditRows.map(({ catalogPlays }) => catalogPlays)).toEqual([
+      { ...catalogPlaysScope, playCount: 0 },
+      { ...catalogPlaysScope, playCount: 12 },
+      undefined,
+    ]);
   });
 
   // 1.353 is React Native's iOS fontScale at xxxLarge. The unavailable row is the

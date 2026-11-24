@@ -23,6 +23,14 @@
   },
   "sends_one": "{{formattedCount}} send",
   "sends_other": "{{formattedCount}} sends",
+  "plays": {
+    "label": "Plays",
+    "count_one": "{{formattedCount}} play",
+    "count_other": "{{formattedCount}} plays",
+    "unavailable": "Plays unavailable",
+    "valueUnavailable": "Unavailable",
+    "explanation": "Plays estimates how often a climb stayed selected on a board for at least 30 seconds. Counts are recalculated hourly and may take longer to appear here. Sends are counted separately. A selection may be recorded even when no holds lit up."
+  },
   "metadata": {
     "list": {
       "title": "{{boardName}} climbs at {{angle}}°",
@@ -619,6 +627,9 @@
       "anyAngleAria": "Any angle selected",
       "clearFilterAria": "Clear angle filter",
       "rangeHoldHint": "Touch and hold to make a range with the selected angle"
+    },
+    "plays": {
+      "countAtAngle": "{{plays}} at {{angle}}°"
     },
     "climbRow": {
       "toggleFavorite": "Toggle favorite",

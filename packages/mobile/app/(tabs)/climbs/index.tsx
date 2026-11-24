@@ -54,6 +54,7 @@ import { useDeviceLayout } from '../../../src/hooks/use-device-layout';
 import { useClimbListPlaylistMemberships } from '../../../src/hooks/use-climb-list-playlist-memberships';
 import { useClimbListFavorites } from '../../../src/hooks/use-climb-list-favorites';
 import { useInfiniteSearchClimbs } from '../../../src/lib/graphql/hooks/use-infinite-search-climbs';
+import { catalogPlaysScope } from '../../../src/lib/climb-play-count';
 import { climbSearchScrollKey, useSearchGradeSourceActive } from '../../../src/lib/graphql/hooks/search-grade-source';
 import { isOfflineSearchSupported } from '../../../src/db/queries/search-climbs-local';
 import { useIsOffline } from '../../../src/hooks/use-is-offline';
@@ -475,10 +476,12 @@ function ClimbListInner() {
     [nativeRootHeader, tCommon],
   );
 
+  const playsScope = useMemo(() => catalogPlaysScope(searchPages?.pages), [searchPages]);
   const renderClimbItem = useCallback(
     ({ item: climb }: { item: Climb }) => (
       <ActiveAwareClimbListRow
         climb={climb}
+        catalogPlaysScope={playsScope}
         boardName={boardName as BoardName}
         layoutId={layoutId}
         sizeId={sizeId}
@@ -500,6 +503,7 @@ function ClimbListInner() {
     ),
     [
       listColumns,
+      playsScope,
       boardName,
       layoutId,
       sizeId,

@@ -1,3 +1,6 @@
+import type { TFunction } from 'i18next';
+import { getCachedNumberFormat } from './intl-formatter-cache';
+
 /** Format a count compactly: <1000 as-is, 1k–999k compact, ≥1m with decimal + m */
 export function formatCount(count: number): string {
   if (count >= 1_000_000) {
@@ -22,6 +25,24 @@ export type TranslateSends = (key: string, options: { count: number; formattedCo
  *  Passes the true `count` for plural selection and `formattedCount` for display. */
 export function formatSends(count: number, t: TranslateSends): string {
   return t('sends', { count, formattedCount: formatCount(count) });
+}
+
+/**
+ * Draw compact counts in existing one-line bylines. Spoken and expanded stats
+ * give the exact, grouped number, with the same plural selection in both forms.
+ */
+export function formatPlays(
+  count: number,
+  t: TFunction<'climbs'>,
+  locale?: string,
+  options?: { compact?: boolean; angle?: number },
+): string {
+  const formatter = getCachedNumberFormat(
+    locale,
+    options?.compact ? { notation: 'compact', maximumFractionDigits: 1 } : undefined,
+  );
+  const plays = t('plays.count', { count, formattedCount: formatter.format(count) });
+  return options?.angle === undefined ? plays : t('mobile.plays.countAtAngle', { plays, angle: options.angle });
 }
 
 /** Round quality_average to 1 decimal place */

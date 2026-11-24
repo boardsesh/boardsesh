@@ -7,6 +7,7 @@ import {
   getAcknowledgedClimbStatsTokens,
   getClimbStatsRefCount,
   getClimbStatsSnapshot,
+  markClimbPlaysUnavailable,
   markOptimisticAscentQueued,
   rejectOptimisticAscent,
   resetClimbStatsStoreForTests,
@@ -49,6 +50,56 @@ describe('climb stats external store', () => {
     expect(applyCanonicalClimbStats(canonical('1e20', 12))).toBe(false);
     expect(getClimbStatsSnapshot(key).canonical?.ascensionistCount).toBe(10);
     unsubscribe();
+  });
+
+  it('orders missing and present Plays observations independently from the grade stream', () => {
+    const release = subscribeClimbStats(key, vi.fn());
+    const row = canonical('12', 3);
+    const count = () => getClimbStatsSnapshot(key).plays?.playCount;
+    const received = (dispatchOrder: number, playCount: number | null, stats = row) =>
+      applyCanonicalClimbStats(stats, { dispatchOrder, playCount, authEpoch: 0 });
+    const omitted = (dispatchOrder: number) => markClimbPlaysUnavailable(key, { dispatchOrder, authEpoch: 0 });
+
+    applyCanonicalClimbStats(canonical('13', 4)); // A tick event overtook the read.
+    received(2, 25);
+    expect(count()).toBe(25);
+    omitted(1);
+    expect(count()).toBe(25);
+    applyCanonicalClimbStats(canonical('14', 5));
+    expect(count()).toBe(25);
+
+    omitted(4); // The same viewer lost resource visibility.
+    expect(count()).toBeNull();
+    received(3, 50, canonical('15', 6));
+    expect(count()).toBeNull();
+    received(5, 18, canonical('11', 0));
+    expect(count()).toBeNull();
+    received(6, 0);
+    expect(count()).toBe(0);
+    omitted(7);
+    expect(count()).toBeNull();
+    received(8, 0);
+    expect(count()).toBe(0);
+    received(9, null, canonical('16', 5));
+    expect(count()).toBeNull();
+    expect(getClimbStatsSnapshot(key).canonical?.ascensionistCount).toBe(5);
+    release();
+  });
+
+  it('wipes retained Plays across credential changes and rejects an old-epoch read', () => {
+    const release = subscribeClimbStats(key, vi.fn());
+    const sameClimbOtherLayout = { ...key, layoutId: 2, angle: 30 };
+    const releaseOther = subscribeClimbStats(sameClimbOtherLayout, vi.fn());
+    applyCanonicalClimbStats(canonical('10', 1), { dispatchOrder: 1, playCount: 25, authEpoch: 0 });
+    expect(getClimbStatsSnapshot(sameClimbOtherLayout).plays).toBeUndefined();
+    setClimbStatsAuthEpoch(1);
+    applyCanonicalClimbStats(canonical('11', 2), { dispatchOrder: 2, playCount: 100, authEpoch: 0 });
+    markClimbPlaysUnavailable(key, { dispatchOrder: 3, authEpoch: 0 });
+    expect(getClimbStatsSnapshot(key).plays).toBeUndefined();
+    applyCanonicalClimbStats(canonical('11', 2), { dispatchOrder: 4, playCount: 0, authEpoch: 1 });
+    expect(getClimbStatsSnapshot(key).plays).toEqual({ playCount: 0, authEpoch: 1 });
+    release();
+    releaseOther();
   });
 
   it('does not cache or notify an unrelated exact-key event', () => {

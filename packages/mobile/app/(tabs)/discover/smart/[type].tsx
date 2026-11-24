@@ -1,3 +1,4 @@
+import { catalogPlaysScope } from '../../../../src/lib/climb-play-count';
 import type { Climb } from '@boardsesh/queue';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
@@ -505,6 +506,7 @@ function SmartPlaylistBody({
     <>
       <PlaylistDetailView
         hero={hero}
+        catalogPlaysScope={catalogPlaysScope(query.data?.pages)}
         climbs={allClimbs}
         renderBoard={renderBoard}
         isLoading={query.isLoading}

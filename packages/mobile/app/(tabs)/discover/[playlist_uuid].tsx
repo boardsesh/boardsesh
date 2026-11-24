@@ -1,3 +1,4 @@
+import { catalogPlaysScope, type CatalogPlaysScope } from '../../../src/lib/climb-play-count';
 import { PressableSurface } from '../../../src/components/PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { usePrivacyScopedState } from '../../../src/hooks/use-privacy-scoped-state';
@@ -399,6 +400,8 @@ export default function PlaylistDetail() {
   // editor always shows the playlist's own order (a reorder index means a place
   // in that order), so entering it pauses any sort or filter first.
   const [editSnapshot, setEditClimbs] = usePrivacyScopedState<Climb[]>(null);
+  const [editPlaysScope, setEditPlaysScope] = usePrivacyScopedState<CatalogPlaysScope>(null);
+  const listPlaysScope = useMemo(() => catalogPlaysScope(query.data?.pages), [query.data]);
   const editClimbs = editSnapshot ?? EMPTY_CLIMBS;
   const editClimbsRef = useRef<Climb[]>([]);
   const climbGenerations = useRef(new WeakMap<Climb, number>());
@@ -508,6 +511,9 @@ export default function PlaylistDetail() {
       return;
     }
     setEditList(allClimbsRef.current);
+    // Freeze the read scope together with the rows. A later refetch cannot
+    // relabel the editor's snapshot with another credential generation.
+    setEditPlaysScope(listPlaysScope ?? null);
     setEditMode(true);
     setPendingEdit(false);
   }, [
@@ -518,9 +524,11 @@ export default function PlaylistDetail() {
     hasNextPage,
     isFetchNextPageError,
     loadedRowCount,
+    listPlaysScope,
     fetchNextPage,
     cancelPendingEdit,
     setEditList,
+    setEditPlaysScope,
     showToast,
     t,
   ]);
@@ -1088,6 +1096,7 @@ export default function PlaylistDetail() {
     <>
       <PlaylistDetailView
         hero={hero}
+        catalogPlaysScope={editMode ? (editPlaysScope ?? undefined) : listPlaysScope}
         climbs={editMode ? editClimbs : visibleAllClimbs}
         renderBoard={renderBoard}
         boardBanner={boardBanner}
