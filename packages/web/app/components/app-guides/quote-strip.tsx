@@ -32,7 +32,8 @@ export default function QuoteStrip({ pageId, t }: { pageId: AppGuidePageId; t: T
         ring="start"
         title={t('appGuides:common.quotes.heading')}
       />
-      <Box component="ul" className={styles.quotes}>
+      {/* A swipeable row on phones: focusable so the keyboard can scroll it too. */}
+      <Box component="ul" className={styles.quotes} tabIndex={0} aria-label={t('appGuides:common.quotes.listLabel')}>
         {quotes.map((quote) => (
           <li key={quote.id}>
             <figure className={styles.quote}>

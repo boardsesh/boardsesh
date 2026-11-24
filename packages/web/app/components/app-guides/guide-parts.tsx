@@ -183,13 +183,13 @@ export function RatingLine({ t }: { t: T }) {
         })}
       </MuiLink>
       <span aria-hidden="true" className={styles.ratingDate}>
-        ·
+        {' · '}
       </span>
       <MuiLink href={play.source}>
         {t('appGuides:common.ratingPlay', { rating: ratingFormat.format(play.rating), count: play.count })}
       </MuiLink>
       <span aria-hidden="true" className={styles.ratingDate}>
-        ·
+        {' · '}
       </span>
       <time dateTime={checkedAt} className={styles.ratingDate}>
         {t('appGuides:common.ratingCheckedAt', { date: dateFormat.format(new Date(checkedAt)) })}

@@ -309,6 +309,10 @@ describe('what climbers say', () => {
         expect(caption).toMatch(/[A-Z][a-z]{2} 2026/);
       });
       expect(markup.querySelector('#quotes')?.textContent).not.toMatch(/[★☆]/);
+      // On phones the row scrolls sideways: it must be reachable and named for the keyboard.
+      const row = markup.querySelector('#quotes ul');
+      expect(row?.getAttribute('tabindex')).toBe('0');
+      expect(row?.getAttribute('aria-label')).toBe('Store reviews from climbers');
       const json = markup.querySelector('script[type="application/ld+json"]')?.textContent ?? '';
       expect(json, id).not.toMatch(/"Review"|AggregateRating|aggregateRating|reviewRating/);
     }

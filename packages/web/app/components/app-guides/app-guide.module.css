@@ -222,11 +222,10 @@
   margin-top: var(--spacing-6);
 }
 
+/* A sentence, not a row of chips: it wraps like text, so the star stays with the
+ * first figure instead of being stranded on its own line on a phone. */
 .page .ratingLine {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 10px;
-  align-items: center;
+  display: block;
   margin: 0;
   color: var(--neutral-900);
 }
@@ -239,9 +238,10 @@
 }
 
 .ratingIcon {
-  flex: none;
   width: 20px;
   height: 20px;
+  margin-inline-end: 6px;
+  vertical-align: -4px;
   color: var(--color-amber);
 }
 
@@ -1267,8 +1267,22 @@
     margin-bottom: var(--spacing-4);
   }
 
+  /* One swipeable row: each card about 85% wide, the next one peeking in. The row
+   * bleeds to the screen edges and scrolls inside itself; the page never does. */
   .quotes {
+    display: flex;
     gap: var(--spacing-2);
+    margin-inline: calc(-1 * var(--page-gutter));
+    padding: 0 var(--page-gutter) var(--spacing-2);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: var(--page-gutter);
+  }
+
+  .quotes > li {
+    flex: 0 0 85%;
+    scroll-snap-align: start;
   }
 
   .quote {
@@ -1639,31 +1653,72 @@
     justify-items: start;
   }
 
+  /* Phones: the actions come straight after the lead, so the h1, lead and the
+   * browser button share the first screen; the platform strip and a smaller fan
+   * follow. Visual order only: the DOM keeps the desktop reading order. */
+  .hubHero .ctaRow {
+    order: 1;
+  }
+
+  .hubHero .proof {
+    order: 2;
+  }
+
+  .hubHero .runsOn {
+    order: 3;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .hubHero .runsOn li {
+    flex-direction: column;
+    gap: var(--spacing-1);
+    padding: 10px var(--spacing-2);
+    font-size: 13px;
+  }
+
+  .hubHero .runsOn li + li {
+    border-top: 0;
+    border-inline-start: 1px solid var(--separator);
+  }
+
+  .hubHero .runsOn strong {
+    font-size: var(--font-size-sm);
+  }
+
+  .hubHero .runsOnIcon {
+    width: 20px;
+    height: 20px;
+  }
+
   .fan {
-    height: 330px;
-    margin-top: var(--spacing-8);
+    order: 4;
+    height: 230px;
+    margin-top: var(--spacing-6);
   }
 
   .fan .device {
-    width: 150px;
-    padding: 5px;
-    border-radius: 26px;
+    width: 120px;
+    padding: 4px;
+    border-radius: 22px;
   }
 
   .fan .device img {
-    border-radius: 21px;
+    border-radius: 18px;
   }
 
   .fanLeft {
-    left: calc(50% - 75px - 112px);
+    top: 40px;
+    left: calc(50% - 60px - 96px);
   }
 
   .fanCenter {
-    left: calc(50% - 75px);
+    top: 16px;
+    left: calc(50% - 60px);
   }
 
   .fanRight {
-    left: calc(50% - 75px + 112px);
+    top: 40px;
+    left: calc(50% - 60px + 96px);
   }
 
   .fanCaption {
