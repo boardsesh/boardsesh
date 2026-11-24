@@ -9,14 +9,19 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: <T,>(styles: T): T => styles },
   View: ({
     children,
-    style: _style,
+    style,
     accessible: _accessible,
     ...props
   }: {
     children?: ReactNode;
     style?: unknown;
     accessible?: boolean;
-  }) => createElement('div', props, children),
+  }) =>
+    createElement(
+      'div',
+      { ...props, 'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))) },
+      children,
+    ),
 }));
 vi.mock('react-native-paper', () => ({
   Menu: Object.assign(
@@ -93,6 +98,30 @@ describe('AppMenu (web) long-press anchor', () => {
     const row = result.getByText('Climb row');
     return { ...result, row, anchor: row.parentElement!, onRowPress, onSelectIndex };
   };
+
+  it('positions the complete menu host in its parent flex row and honors caller width limits', () => {
+    const { container, getByText } = render(
+      createElement(AppMenu, {
+        trigger: 'longPress',
+        children: createElement('button', null, 'Constrained climb'),
+        actions: [{ label: 'Share' }],
+        onSelectIndex: vi.fn(),
+        maxWidth: 320,
+        style: [{ flex: 1, flexDirection: 'row' }, { maxWidth: 240 }],
+      }),
+    );
+    const host = container.firstElementChild;
+    expect(JSON.parse(host?.getAttribute('data-style') ?? '{}')).toMatchObject({
+      flex: 1,
+      flexDirection: 'row',
+      minWidth: 0,
+      maxWidth: 240,
+    });
+    // The sizing belongs outside Paper's extra anchor wrapper. Putting it on
+    // this inner pointer target leaves the actual flex item at intrinsic width.
+    expect(host?.contains(container.querySelector('[data-menu-visible]'))).toBe(true);
+    expect(getByText('Constrained climb').parentElement).not.toBe(host);
+  });
 
   it('opens on right click and prevents the browser menu without activating the row', () => {
     const { container, anchor, onRowPress, getByText, onSelectIndex } = renderRowMenu();

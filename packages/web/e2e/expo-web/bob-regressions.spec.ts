@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { CONSENT_VERSION } from '@boardsesh/consent';
-import type { Gym, PlaceSuggestion, UserBoard } from '@boardsesh/shared-schema';
+import type { Climb, Gym, PlaceSuggestion, UserBoard } from '@boardsesh/shared-schema';
 
 test.describe.configure({ mode: 'default' });
 
@@ -193,6 +193,89 @@ test('gym-name search shows a pinless gym, activates its board, and explains Blu
   await expect(page.getByText('Bluetooth in your browser', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'WebBT setup', exact: true })).toBeVisible();
   await expect(page.getByText(/You can still browse climbs and grades\./)).toBeVisible();
+});
+
+test('climb grades and overflow buttons stay at the trailing edge at every browser width', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 915 });
+  await prepareBrowser(page);
+  await signIn(page);
+
+  const climbNames = [
+    'Pebble',
+    'A much longer climb name that must truncate in a narrow browser row',
+    'Pip',
+    'Another long climb name for the second column of the browser list',
+  ];
+  let fixture: Climb[] = [];
+  await page.route('**/graphql', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    const { query = '' } = route.request().postDataJSON() as GraphQLRequest;
+    if (!/\bquery\s+SearchClimbs\b/.test(query)) return route.fallback();
+    if (fixture.length === 0) {
+      const response = await route.fetch();
+      const { data } = (await response.json()) as { data: { searchClimbs: { climbs: Climb[] } } };
+      // Keep real UUIDs and board frames so the browser renders ordinary rows.
+      // Only the names change, making width pressure deterministic.
+      fixture = data.searchClimbs.climbs
+        .filter((climb) => climb.frames && climb.difficulty)
+        .slice(0, climbNames.length)
+        .map((climb, index) => ({ ...climb, name: climbNames[index] }));
+    }
+    await route.fulfill({ json: { data: { searchClimbs: { climbs: fixture, hasMore: false } } } });
+  });
+
+  await page.goto('/app/gyms', { timeout: COLD_LOAD_TIMEOUT_MS });
+  const search = page.getByRole('combobox', { name: 'Search a city, gym, or board' });
+  await search.fill('atlanta bouldering');
+  await search.press('Enter');
+  await page.getByText(GYM_NAME, { exact: true }).click();
+  await page.getByText(BOARD_NAME, { exact: true }).click();
+  const list = page.getByTestId('climb-list');
+  await expect(list.getByText(climbNames[0], { exact: true })).toBeVisible({ timeout: WARM_TIMEOUT_MS });
+  expect(fixture, 'four graded climbs on the seeded Kilter board').toHaveLength(climbNames.length);
+
+  for (const width of [375, 768, 1366]) {
+    await test.step(`${width}px rows keep a common grade rail inside each cell`, async () => {
+      await page.setViewportSize({ width, height: 915 });
+      await expect(async () => {
+        const gradeInsets: number[] = [];
+        for (const climbName of climbNames) {
+          const row = list.getByTestId('climb-row').filter({ hasText: climbName });
+          const grade = row.getByText(/^V\d{1,2}[+-]?$/).last();
+          await expect(grade).toBeVisible();
+          // Find the row's own cell through its overflow control, independent
+          // of menu wrappers and the list's one- or two-column layout.
+          const cell = row.locator('xpath=ancestor::div[./div[@data-testid="climb-row-more-button"]][1]');
+          const moreButton = cell.getByTestId('climb-row-more-button');
+          const [cellBox, gradeBox, moreBox] = await Promise.all([
+            cell.boundingBox(),
+            grade.boundingBox(),
+            moreButton.boundingBox(),
+          ]);
+          if (!cellBox || !gradeBox || !moreBox) throw new Error(`Missing row geometry for ${climbName}`);
+          const cellRight = cellBox.x + cellBox.width;
+          const gradeRight = gradeBox.x + gradeBox.width;
+          const moreRight = moreBox.x + moreBox.width;
+          expect(moreRight, `${climbName}: overflow stays inside its cell`).toBeLessThanOrEqual(cellRight + 1);
+          expect(cellRight - moreRight, `${climbName}: overflow reaches the trailing gutter`).toBeLessThanOrEqual(16);
+          expect(moreBox.x - gradeRight, `${climbName}: grade stays beside overflow`).toBeGreaterThanOrEqual(0);
+          expect(moreBox.x - gradeRight, `${climbName}: grade stays beside overflow`).toBeLessThanOrEqual(24);
+          gradeInsets.push(cellRight - gradeRight);
+        }
+        // Normalize to each cell's edge so desktop grid columns compare fairly.
+        expect(Math.max(...gradeInsets) - Math.min(...gradeInsets)).toBeLessThanOrEqual(1);
+      }).toPass({ timeout: WARM_TIMEOUT_MS });
+    });
+  }
+
+  const firstRow = list.getByTestId('climb-row').filter({ hasText: climbNames[0] });
+  const firstCell = firstRow.locator('xpath=ancestor::div[./div[@data-testid="climb-row-more-button"]][1]');
+  await firstCell.getByRole('button', { name: 'More actions', exact: true }).click({ force: true });
+  await expect(page.getByRole('menuitem').first()).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menuitem').first()).toBeHidden();
+  await firstRow.click({ force: true });
+  await expect(firstRow).toHaveAttribute('aria-selected', 'true');
 });
 
 test('Sign out is near account details, cancellation keeps login, and confirmation survives reload', async ({

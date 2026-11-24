@@ -23,7 +23,7 @@ import {
   useState,
   type ReactElement,
 } from 'react';
-import { StyleSheet, View, type PointerEvent, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type PointerEvent } from 'react-native';
 import { Divider, Menu } from 'react-native-paper';
 import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
@@ -40,16 +40,19 @@ const CARET = '▾';
 // narrower toolbar slot passes `anchorSize`, as on iOS.
 const ICON_ANCHOR_SIZE = 44;
 
+const longPressStyles = StyleSheet.create({
+  host: { minWidth: 0 },
+  menu: { flex: 1, minWidth: 0 },
+});
+
 function LongPressMenuAnchor({
   children,
   enabled,
   onOpen,
-  style,
 }: {
   children: ReactElement;
   enabled: boolean;
   onOpen: () => void;
-  style?: StyleProp<ViewStyle>;
 }) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -100,7 +103,6 @@ function LongPressMenuAnchor({
   return (
     <View
       {...browserHandlers}
-      style={style}
       accessible={false}
       onPointerDown={startLongPress}
       onPointerMove={movePointer}
@@ -145,11 +147,7 @@ export function AppMenu(props: AppMenuProps) {
 
   const anchor =
     props.trigger === 'longPress' ? (
-      <LongPressMenuAnchor
-        enabled={resolved.length > 0}
-        onOpen={() => setVisible(true)}
-        style={[maxWidth != null ? { maxWidth } : null, style]}
-      >
+      <LongPressMenuAnchor enabled={resolved.length > 0} onOpen={() => setVisible(true)}>
         {props.children}
       </LongPressMenuAnchor>
     ) : (
@@ -203,7 +201,7 @@ export function AppMenu(props: AppMenuProps) {
   // React Native Web supports dataSet; the native View type omits it.
   const menuBrowserProps = { dataSet: visible ? { boardseshPlayerShortcutBlock: 'true' } : undefined };
 
-  return (
+  const menu = (
     <Menu visible={visible} onDismiss={() => setVisible(false)} anchor={anchor}>
       <View onLayout={visible ? props.onPresented : undefined} {...menuBrowserProps}>
         {resolved.map((action, index) => (
@@ -230,6 +228,19 @@ export function AppMenu(props: AppMenuProps) {
       </View>
     </Menu>
   );
+
+  // Paper puts the anchor inside an unstyled View; its `style` prop styles
+  // the popup. Keep caller sizing on the outer host so flex rows fill their
+  // cell, then use a column to stretch Paper's wrapper even in a row host.
+  if (props.trigger === 'longPress') {
+    return (
+      <View style={[longPressStyles.host, maxWidth != null ? { maxWidth } : null, style]}>
+        <View style={longPressStyles.menu}>{menu}</View>
+      </View>
+    );
+  }
+
+  return menu;
 }
 
 const createStyles = (textStyles: TypographyScale) =>
