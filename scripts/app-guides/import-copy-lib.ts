@@ -659,6 +659,7 @@ export function importHubPage(json: Json, options: ImportOptions): ImportResult 
   const spray = reader.object(boards.spray, 'boards.spray');
 
   const everyBoard = reader.object(json.everyBoard, 'everyBoard');
+  const everyBoardLead = reader.text(everyBoard.lead, 'everyBoard.lead', { optional: true });
   const everyEntries = reader.array(everyBoard.tiles, 'everyBoard.tiles', COUNTS.hubTiles);
   const everyTiles: GuideItem[] = [];
   const everyText: CatalogPage = {};
@@ -691,7 +692,11 @@ export function importHubPage(json: Json, options: ImportOptions): ImportResult 
         linkText: reader.text(spray.linkText, 'boards.spray.linkText'),
       },
     },
-    everyBoard: { heading: reader.text(everyBoard.heading, 'everyBoard.heading'), tiles: everyText },
+    everyBoard: {
+      heading: reader.text(everyBoard.heading, 'everyBoard.heading'),
+      ...(everyBoardLead ? { lead: everyBoardLead } : {}),
+      tiles: everyText,
+    },
     devices: {
       heading: reader.text(devices.heading, 'devices.heading'),
       lead: reader.text(devices.lead, 'devices.lead'),
@@ -720,6 +725,7 @@ export function importHubPage(json: Json, options: ImportOptions): ImportResult 
       heroSourceIds: hero.sourceIds,
       boards: boardOrder as HubPageRegistry['boards'],
       everyBoard: everyTiles,
+      everyBoardLead: everyBoardLead !== '',
       faq: faq.registry,
       sources,
       claims,

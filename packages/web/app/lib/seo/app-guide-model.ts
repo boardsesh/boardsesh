@@ -156,6 +156,8 @@ export type HubPageRegistry = GuidePageBase & {
   id: 'hub';
   boards: readonly HubBoardSlug[];
   everyBoard: readonly GuideItem[];
+  /** Whether the catalog carries `everyBoard.lead` (optional in the copy). */
+  everyBoardLead: boolean;
 };
 
 export type AppGuideRegistry = { hub: HubPageRegistry } & { [Id in ComparisonPageId]: ComparisonPageRegistry };

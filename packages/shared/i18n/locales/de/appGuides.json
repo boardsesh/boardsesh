@@ -233,6 +233,7 @@
       },
       "everyBoard": {
         "heading": "What you get on every board",
+        "lead": "Kilter, Tension, MoonBoard or a spray wall: search, the player, the queue and your logbook work the same way on every one. Learn the app once, then just climb.",
         "tiles": {
           "queue": {
             "title": "One queue for the whole crew",

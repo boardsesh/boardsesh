@@ -26,6 +26,7 @@ export const APP_GUIDE_REGISTRY = {
         sourceIds: ['boardsesh-store', 'boardsesh-app-web', 'boardsesh-tablet', 'boardsesh-offline'],
       },
     ],
+    everyBoardLead: true,
     faq: [
       {
         id: 'which-app',

@@ -312,6 +312,14 @@ describe('import-copy', () => {
       sources: [source('boardsesh')],
     };
     expect(errors(importHubPage(hub, { allowPending: false }))).toEqual([]);
+    // The "On every board" lead is optional; when present it reaches the catalog and the registry says so.
+    expect(importHubPage(hub, { allowPending: false }).registry).toMatchObject({ everyBoardLead: false });
+    const withLead = importHubPage(
+      { ...hub, everyBoard: { ...hub.everyBoard, lead: 'Learn it once.' } },
+      { allowPending: false },
+    );
+    expect(withLead.registry).toMatchObject({ everyBoardLead: true });
+    expect(withLead.catalog.everyBoard).toMatchObject({ lead: 'Learn it once.' });
     const tiles = hub.boards.tiles as Record<string, string>[];
     tiles[0].linkText = 'Compare the apps';
     tiles[1].href = '/apps/tension';

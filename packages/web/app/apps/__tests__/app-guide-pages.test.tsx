@@ -368,7 +368,10 @@ describe('page-level claims from the registry', () => {
   it('says how each page lights the wall, and where its filled button goes', async () => {
     const pages = Object.fromEntries((await renderAll()).map(({ id, markup }) => [id, markup]));
     const strip = (id: string) => pages[id].querySelector('ul[aria-label="Where Boardsesh runs"]')?.textContent ?? '';
-    expect(strip('hub')).toContain('Chrome and Edge light Kilter, Tension, MoonBoard and Aurora boards');
+    expect(strip('hub')).toContain('Connect using any browser that supports Web Bluetooth');
+    expect(pages.hub.querySelector('#every-board .lead, #every-board h2 + p')?.textContent).toMatch(
+      /Learn the app once/,
+    );
     expect(strip('spray-wall-apps')).toContain('Lights your wall through WLED over Wi-Fi');
     expect(strip('spray-wall-apps')).not.toMatch(/Bluetooth|Chrome and Edge light/);
     expect(strip('woods')).not.toContain('Chrome and Edge light');

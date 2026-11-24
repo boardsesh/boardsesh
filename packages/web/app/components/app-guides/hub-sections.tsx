@@ -193,6 +193,7 @@ export function EveryBoardTray({ guide, t }: { guide: HubGuide; t: T }) {
         eyebrow={t('appGuides:common.eyebrows.everyBoard')}
         ring="hand"
         title={t('appGuides:pages.hub.everyBoard.heading')}
+        lead={guide.everyBoardLead ? t('appGuides:pages.hub.everyBoard.lead') : undefined}
       />
       <FeatureTiles t={t} tiles={tiles} layout="rows" />
     </Box>
