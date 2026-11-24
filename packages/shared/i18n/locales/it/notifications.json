@@ -124,6 +124,18 @@
     "boardRelistTitle": "Rimettere {{board}} in {{gym}}?",
     "boardRelistBody": "Chi l'ha aggiunto ha chiesto di rimetterlo in elenco."
   },
+  "setupChange": {
+    "now": "Ora {{setup}}",
+    "undo": "Annulla",
+    "undoLabel": "Annulla la modifica a {{board}}",
+    "undoTitle": "Rimettere la configurazione di prima?",
+    "undoBody": "{{board}} torna a {{setup}} per tutti.",
+    "undoBodyGeneric": "Il pannello torna alla configurazione di prima per tutti.",
+    "undoConfirm": "Annulla la modifica",
+    "undone": "La configurazione di prima è tornata.",
+    "changedSince": "Da allora è cambiato di nuovo. Apri il pannello per controllare.",
+    "failed": "Impossibile annullare. Riprova quando hai connessione."
+  },
   "explain": {
     "boardDeletedTitle": "{{board}} è stato eliminato",
     "boardDeletedBody": "È sparito per tutti i climber che l'avevano salvato. Le tue chiusure registrate restano nel tuo logbook.",

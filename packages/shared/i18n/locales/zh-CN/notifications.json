@@ -124,6 +124,18 @@
     "boardRelistTitle": "把 {{board}} 放回 {{gym}}？",
     "boardRelistBody": "添加它的攀岩者请求重新列出。"
   },
+  "setupChange": {
+    "now": "现在为 {{setup}}",
+    "undo": "撤销",
+    "undoLabel": "撤销对 {{board}} 的更改",
+    "undoTitle": "恢复原来的设置？",
+    "undoBody": "{{board}} 将为所有人恢复为 {{setup}}。",
+    "undoBodyGeneric": "这块训练板将为所有人恢复原来的设置。",
+    "undoConfirm": "撤销",
+    "undone": "原来的设置已恢复。",
+    "changedSince": "之后又被改过了。打开训练板查看。",
+    "failed": "未能撤销。联网后再试。"
+  },
   "explain": {
     "boardDeletedTitle": "{{board}} 已被删除",
     "boardDeletedBody": "所有保存过它的攀岩者都不再有它。你已记录的完攀仍保留在攀爬记录中。",

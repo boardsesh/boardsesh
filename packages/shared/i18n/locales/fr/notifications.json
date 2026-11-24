@@ -124,6 +124,18 @@
     "boardRelistTitle": "Remettre {{board}} dans {{gym}} ?",
     "boardRelistBody": "Le grimpeur qui l'a ajoutée a demandé à la remettre dans la liste."
   },
+  "setupChange": {
+    "now": "Maintenant {{setup}}",
+    "undo": "Annuler",
+    "undoLabel": "Annuler le changement sur {{board}}",
+    "undoTitle": "Remettre l'ancienne configuration ?",
+    "undoBody": "{{board}} repasse sur {{setup}} pour tout le monde.",
+    "undoBodyGeneric": "La board repasse sur son ancienne configuration pour tout le monde.",
+    "undoConfirm": "Annuler le changement",
+    "undone": "L'ancienne configuration est revenue.",
+    "changedSince": "Elle a encore changé depuis. Ouvre la board pour vérifier.",
+    "failed": "Impossible d'annuler. Réessaie une fois connecté."
+  },
   "explain": {
     "boardDeletedTitle": "{{board}} a été supprimée",
     "boardDeletedBody": "Elle a disparu pour tous les grimpeurs qui l'avaient enregistrée. Tes croix enregistrées restent dans ton carnet.",

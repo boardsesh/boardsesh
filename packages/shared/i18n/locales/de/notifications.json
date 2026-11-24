@@ -124,6 +124,18 @@
     "boardRelistTitle": "{{board}} wieder in {{gym}} aufnehmen?",
     "boardRelistBody": "Wer es hinzugefügt hat, bittet um erneute Aufnahme."
   },
+  "setupChange": {
+    "now": "Jetzt {{setup}}",
+    "undo": "Rückgängig",
+    "undoLabel": "Änderung an {{board}} rückgängig machen",
+    "undoTitle": "Alte Einrichtung zurückholen?",
+    "undoBody": "{{board}} bekommt für alle wieder {{setup}}.",
+    "undoBodyGeneric": "Das Board bekommt für alle wieder seine alte Einrichtung.",
+    "undoConfirm": "Rückgängig machen",
+    "undone": "Die alte Einrichtung ist zurück.",
+    "changedSince": "Es wurde seitdem wieder geändert. Öffne das Board, um es zu prüfen.",
+    "failed": "Rückgängig machen hat nicht geklappt. Versuch es mit Verbindung erneut."
+  },
   "explain": {
     "boardDeletedTitle": "{{board}} wurde gelöscht",
     "boardDeletedBody": "Es ist für alle Kletterer*innen weg, die es gespeichert hatten. Deine geloggten Begehungen bleiben in deinem Logbuch.",

@@ -22,6 +22,7 @@ const refetch = vi.hoisted(() => vi.fn());
 const markGroupMutate = vi.hoisted(() => vi.fn());
 const markAllMutate = vi.hoisted(() => vi.fn());
 const answerFollowRequest = vi.hoisted(() => vi.fn());
+const undoSetupChange = vi.hoisted(() => vi.fn());
 const openPlayDrawer = vi.hoisted(() => vi.fn());
 const openClimbInPlayDrawer = vi.hoisted(() => vi.fn());
 
@@ -31,6 +32,7 @@ const state = vi.hoisted(() => ({
   focused: true,
   unreadCount: 0,
   offline: { isOffline: false, isBlocked: false, reason: null as null | 'offline' | 'error' },
+  setupSuggestions: false,
 }));
 
 // The FlashList props the screen last handed down, so the perf test can compare
@@ -145,7 +147,10 @@ vi.mock('../../../lib/open-climb-in-play-drawer', () => ({ openClimbInPlayDrawer
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useClimbModerationEnabled: () => true,
   useDirectoryReportsEnabled: () => true,
+  useDirectorySetupSuggestionsEnabled: () => state.setupSuggestions,
 }));
+// Its confirm and mutation have their own suite; the screen only hands it on.
+vi.mock('../use-undo-setup-change', () => ({ useUndoSetupChange: () => undoSetupChange }));
 
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
@@ -181,10 +186,12 @@ vi.mock('../NotificationRow', () => ({
     notification,
     onPress,
     onAnswerFollowRequest,
+    onUndoSetupChange,
   }: {
     notification: GroupedNotification;
     onPress: (notification: GroupedNotification) => void;
     onAnswerFollowRequest?: (input: { notification: GroupedNotification; answer: 'approve' | 'decline' }) => void;
+    onUndoSetupChange?: (notification: GroupedNotification) => void;
   }) =>
     createElement(
       'div',
@@ -195,6 +202,9 @@ vi.mock('../NotificationRow', () => ({
             'data-approve': notification.uuid,
             onClick: () => onAnswerFollowRequest({ notification, answer: 'approve' }),
           })
+        : null,
+      onUndoSetupChange
+        ? createElement('button', { 'data-undo': notification.uuid, onClick: () => onUndoSetupChange(notification) })
         : null,
     ),
 }));
@@ -250,6 +260,7 @@ beforeEach(() => {
   state.focused = true;
   state.unreadCount = 0;
   state.offline = { isOffline: false, isBlocked: false, reason: null };
+  state.setupSuggestions = false;
   list.renderItem = null;
   list.keyExtractor = null;
   list.getItemType = null;
@@ -736,6 +747,39 @@ describe('NotificationsScreen follow request rows', () => {
 
     expect(list.getItemType!(requestRow)).toBe('followRequest');
     expect(list.getItemType!(requestRow)).not.toBe(list.getItemType!(plainRow));
+  });
+});
+
+describe("NotificationsScreen climbers' setup changes", () => {
+  const change = () =>
+    makeNotification({
+      uuid: 'change-1',
+      type: 'board_setup_changed_by_climber',
+      entityType: 'board',
+      entityId: 'board-1',
+      actors: [],
+    });
+
+  it('hands the row Undo while the setup flag is on', () => {
+    state.setupSuggestions = true;
+    const notification = change();
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 1 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-undo="change-1"]')!);
+
+    expect(undoSetupChange).toHaveBeenCalledWith(notification);
+    expect(list.getItemType!(notification)).toBe('setupChange');
+  });
+
+  it('keeps Undo off the row while the flag is off, and the row still opens the board', () => {
+    state.query = makeQuery({ data: { pages: [{ groups: [change()], hasMore: false, unreadCount: 1 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    expect(container.querySelector('[data-undo="change-1"]')).toBeNull();
+    fireEvent.click(container.querySelector('[data-row="change-1"]')!);
+
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/boards', params: { board: 'board-1', details: '1' } });
   });
 });
 

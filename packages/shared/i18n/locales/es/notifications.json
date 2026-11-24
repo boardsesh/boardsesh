@@ -124,6 +124,18 @@
     "boardRelistTitle": "¿Volver a poner {{board}} en {{gym}}?",
     "boardRelistBody": "El escalador que lo añadió pidió que se vuelva a listar."
   },
+  "setupChange": {
+    "now": "Ahora {{setup}}",
+    "undo": "Deshacer",
+    "undoLabel": "Deshacer el cambio en {{board}}",
+    "undoTitle": "¿Volver a la configuración anterior?",
+    "undoBody": "{{board}} vuelve a {{setup}} para todos.",
+    "undoBodyGeneric": "El plafón vuelve a su configuración anterior para todos.",
+    "undoConfirm": "Deshacer",
+    "undone": "La configuración anterior ha vuelto.",
+    "changedSince": "Ha vuelto a cambiar desde entonces. Abre el plafón para comprobarlo.",
+    "failed": "No se pudo deshacer. Inténtalo de nuevo con conexión."
+  },
   "explain": {
     "boardDeletedTitle": "Se eliminó {{board}}",
     "boardDeletedBody": "Ya no está para ningún escalador que lo guardó. Tus encadenes registrados siguen en tu registro.",

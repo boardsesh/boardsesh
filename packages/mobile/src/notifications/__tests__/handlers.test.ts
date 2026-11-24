@@ -57,6 +57,16 @@ describe('native import notification handlers', () => {
     });
   });
 
+  it("opens the board's detail sheet for a climber's setup change, and drops a malformed board", async () => {
+    const { resolveNotificationRoute } = await import('../handlers');
+    expect(
+      resolveNotificationRoute(notification({ type: 'board_setup_changed_by_climber', boardUuid: wallUuid })),
+    ).toEqual({ path: '/boards', params: { board: wallUuid, details: '1' } });
+    expect(
+      resolveNotificationRoute(notification({ type: 'board_setup_changed_by_climber', boardUuid: '../x' })),
+    ).toBeNull();
+  });
+
   it('opens bug report replies and rejects malformed or missing report ids', async () => {
     const { resolveNotificationRoute } = await import('../handlers');
     expect(resolveNotificationRoute(notification({ type: 'app_feedback_reply', reportId: '42' }))).toEqual({
