@@ -31,6 +31,7 @@ import {
 } from './guide-parts';
 import { BrowserShot, FeatureTiles, hubBoardType } from './guide-sections';
 import HoldRing, { type HoldRole } from './hold-ring';
+import MysteryBoardArt from './mystery-board-art';
 import styles from './app-guide.module.css';
 
 const FAN: readonly {
@@ -99,7 +100,9 @@ const MAKERS_LINK_SX = brandCtaOutlinedSx();
 
 /**
  * Eight whole-tile links (the Aurora brands land on their section of /apps/aurora),
- * the spray wall banner, then a quiet text card asking makers to get in touch.
+ * then two cards side by side from 900px (stacked below): the spray wall banner
+ * and "Want your board here?" for makers. Both are art on top, text under it,
+ * and the same height.
  */
 export function BoardTileGrid({ guide, t }: { guide: HubGuide; t: T }) {
   const photo = sprayWallPhoto();
@@ -145,57 +148,65 @@ export function BoardTileGrid({ guide, t }: { guide: HubGuide; t: T }) {
           );
         })}
       </Box>
-      <Box
-        component={LocaleLink}
-        href="/compare/spray-wall-apps"
-        locale={DEFAULT_LOCALE}
-        className={styles.sprayBanner}
-      >
-        <Box className={styles.sprayBannerArt}>
-          <Image
-            src={photo.src}
-            alt=""
-            width={photo.width}
-            height={photo.height}
-            sizes="(max-width: 760px) 100vw, 420px"
-            loading="lazy"
-          />
-        </Box>
-        <Box className={styles.sprayBannerBody}>
-          <Typography variant="eyebrow" component="p" className={styles.eyebrow}>
-            <HoldRing role="foot" />
-            {t('appGuides:common.eyebrows.spray')}
-          </Typography>
-          <Typography component="h3" className={styles.h3}>
-            {t('appGuides:pages.hub.boards.spray.title')}
-          </Typography>
-          <Typography component="p" color="text.secondary">
-            {t('appGuides:pages.hub.boards.spray.body')}
-          </Typography>
-          <span className={styles.goText}>{t('appGuides:pages.hub.boards.spray.linkText')}</span>
-        </Box>
-      </Box>
-      {guide.makers ? (
-        <Box className={styles.makersCard}>
-          <Box className={styles.makersBody}>
+      <Box className={styles.boardExtras}>
+        <Box
+          component={LocaleLink}
+          href="/compare/spray-wall-apps"
+          locale={DEFAULT_LOCALE}
+          className={`${styles.extraCard} ${styles.sprayBanner}`}
+        >
+          <Box className={`${styles.extraArt} ${styles.sprayBannerArt}`}>
+            <Image
+              src={photo.src}
+              alt=""
+              width={photo.width}
+              height={photo.height}
+              sizes="(max-width: 900px) 100vw, 600px"
+              loading="lazy"
+            />
+          </Box>
+          <Box className={styles.extraBody}>
+            <Typography variant="eyebrow" component="p" className={styles.eyebrow}>
+              <HoldRing role="foot" />
+              {t('appGuides:common.eyebrows.spray')}
+            </Typography>
             <Typography component="h3" className={styles.h3}>
-              {t('appGuides:pages.hub.boards.makers.title')}
+              {t('appGuides:pages.hub.boards.spray.title')}
             </Typography>
             <Typography component="p" color="text.secondary">
-              {t('appGuides:pages.hub.boards.makers.body')}
+              {t('appGuides:pages.hub.boards.spray.body')}
             </Typography>
+            <span className={`${styles.goText} ${styles.extraAction}`}>
+              {t('appGuides:pages.hub.boards.spray.linkText')}
+            </span>
           </Box>
-          <Button
-            component={LocaleLink}
-            href={guide.makers.href}
-            locale={DEFAULT_LOCALE}
-            variant="outlined"
-            sx={MAKERS_LINK_SX}
-          >
-            {t('appGuides:pages.hub.boards.makers.linkText')}
-          </Button>
         </Box>
-      ) : null}
+        {guide.makers ? (
+          <Box className={`${styles.extraCard} ${styles.makersCard}`}>
+            <Box className={styles.extraArt}>
+              <MysteryBoardArt />
+            </Box>
+            <Box className={styles.extraBody}>
+              <Typography component="h3" className={styles.h3}>
+                {t('appGuides:pages.hub.boards.makers.title')}
+              </Typography>
+              <Typography component="p" color="text.secondary">
+                {t('appGuides:pages.hub.boards.makers.body')}
+              </Typography>
+              <Button
+                component={LocaleLink}
+                href={guide.makers.href}
+                locale={DEFAULT_LOCALE}
+                variant="outlined"
+                className={styles.extraAction}
+                sx={MAKERS_LINK_SX}
+              >
+                {t('appGuides:pages.hub.boards.makers.linkText')}
+              </Button>
+            </Box>
+          </Box>
+        ) : null}
+      </Box>
     </Box>
   );
 }

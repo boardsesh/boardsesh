@@ -413,6 +413,12 @@ describe('page-level claims from the registry', () => {
     const makers = pages.hub.querySelector('#choose-board a[href="/for-gyms#partners"]');
     expect(makers?.textContent).toBe('Talk to us about your board');
     expect(makers?.closest('ul')).toBeNull();
+    // Its art is a drawn mystery board: decorative, the "?" its only text, the same on every render.
+    const mystery = pages.hub.querySelector('#choose-board svg[aria-hidden="true"]');
+    expect(mystery?.querySelectorAll('path').length).toBeGreaterThanOrEqual(12);
+    expect(mystery?.textContent?.trim()).toBe('?');
+    const again = (await renderAll()).find(({ id }) => id === 'hub')?.markup;
+    expect(again?.querySelector('#choose-board svg[aria-hidden="true"]')?.innerHTML).toBe(mystery?.innerHTML);
     // Setting up a spray wall needs an account anyway, so its button opens the app's new-wall flow.
     expect(button('spray-wall-apps', 'Set up your spray wall')).toBe(`${APP_URL}/boards/spray/new`);
   });

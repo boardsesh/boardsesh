@@ -1822,36 +1822,25 @@
   text-underline-offset: 3px;
 }
 
-/* "Want your board here?": a bordered text card with no fill, so it reads as an
- * aside after the tiles and the spray banner rather than a ninth tile. */
-.makersCard {
+/* The spray wall banner and the makers card: one row of two from 900px,
+ * stacked on narrower screens. Grid rows stretch, so both cards share a height. */
+.boardExtras {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-4);
+  margin-top: var(--spacing-4);
+}
+
+@media (min-width: 900px) {
+  .boardExtras {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.extraCard {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-4) var(--spacing-6);
-  margin-top: var(--spacing-4);
-  padding: var(--spacing-5) var(--spacing-6);
-  border: 1px solid var(--separator);
-  border-radius: var(--border-radius-xl);
-}
-
-.makersBody {
-  display: grid;
-  gap: var(--spacing-2);
-  flex: 1 1 32rem;
+  flex-direction: column;
   min-width: 0;
-}
-
-.makersBody p {
-  margin: 0;
-  max-width: 64ch;
-}
-
-.sprayBanner {
-  display: grid;
-  grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
-  margin-top: var(--spacing-4);
   overflow: hidden;
   border: 1px solid var(--separator);
   border-radius: var(--border-radius-xl);
@@ -1860,24 +1849,112 @@
   text-decoration: none;
 }
 
-.sprayBannerArt {
+.extraArt {
+  flex: none;
   height: 240px;
   overflow: hidden;
+  background: var(--neutral-50);
 }
 
 .sprayBannerArt img {
   object-position: 50% 35%;
 }
 
-.sprayBannerBody {
-  display: grid;
-  align-content: center;
+.extraBody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
   gap: var(--spacing-2);
-  padding: 28px var(--spacing-8);
+  padding: var(--spacing-5) var(--spacing-6) var(--spacing-6);
 }
 
-.sprayBannerBody p {
+.extraBody p {
   margin: 0;
+}
+
+/* The card's way out sits on its last line, level across the two cards. The
+ * extra classes outrank MUI's own margin on the makers' Button. */
+.page .extraBody .extraAction {
+  margin-top: auto;
+}
+
+/* The mystery board: a drawn board (mystery-board-art.tsx) filling the art box. */
+.mysteryArt {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.mysteryBoard {
+  fill: var(--neutral-200);
+  stroke: var(--separator);
+  stroke-width: 2;
+}
+
+.mysteryHole {
+  fill: var(--neutral-50);
+  opacity: 0.8;
+}
+
+.mysteryHold {
+  fill: var(--neutral-400);
+  stroke: var(--neutral-300);
+  stroke-width: 1.5;
+}
+
+.mysteryLitStart,
+.mysteryLitHand,
+.mysteryLitFoot,
+.mysteryLitFinish {
+  stroke-width: 3.5;
+}
+
+.mysteryLitStart {
+  stroke: var(--lit-start);
+}
+
+.mysteryLitHand {
+  stroke: var(--lit-hand);
+}
+
+.mysteryLitFoot {
+  stroke: var(--lit-foot);
+}
+
+.mysteryLitFinish {
+  stroke: var(--lit-finish);
+}
+
+.mysteryMark {
+  fill: var(--neutral-900);
+  font-family: var(--font-display), sans-serif;
+  font-size: 150px;
+  font-weight: 700;
+  filter: drop-shadow(0 4px 18px var(--overlay-dark)) drop-shadow(0 0 3px var(--overlay-dark));
+  transform-box: fill-box;
+  transform-origin: 50% 80%;
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .makersCard:hover .mysteryMark {
+    animation: mystery-wiggle 700ms var(--ease-standard);
+  }
+}
+
+@keyframes mystery-wiggle {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+
+  25% {
+    transform: rotate(-7deg);
+  }
+
+  60% {
+    transform: rotate(5deg);
+  }
 }
 
 @media (max-width: 1080px) {
@@ -1900,15 +1977,11 @@
     font-size: 13px;
   }
 
-  .sprayBanner {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .sprayBannerArt {
+  .extraArt {
     height: 180px;
   }
 
-  .sprayBannerBody {
+  .extraBody {
     padding: var(--spacing-5);
   }
 }
