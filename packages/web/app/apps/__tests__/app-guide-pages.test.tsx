@@ -108,10 +108,11 @@ describe('app guide pages before hydration', () => {
         expect(ids).toHaveLength(2);
         expect(ids.every((id) => markup.querySelector(`#${id}`))).toBe(true);
       }
-      for (const link of row.querySelectorAll('a[href^="#sources-"]')) {
-        const group = markup.querySelector(`details#sources ${link.getAttribute('href')}`);
-        expect(group?.nextElementSibling?.querySelector('a[href^="https://"]')).toBeTruthy();
-      }
+      // The verdict chip is the link to the row's sources.
+      const chip = row.querySelector('th a[href^="#sources-"]');
+      expect(chip?.textContent).toMatch(/does it better|do it best|Only in Boardsesh|Same in both/);
+      expect(chip?.getAttribute('aria-label')).toMatch(/^.+\. See sources for .+$/);
+      expect(chip?.getAttribute('aria-label')).not.toContain('—');
     }
     // At least one row the official app wins or ties: the honesty rule.
     expect(markup.querySelector('table')?.textContent).toMatch(/Same in both|app(s)? do(es)? it better/);
@@ -133,6 +134,9 @@ describe('app guide pages before hydration', () => {
     expect(markup.textContent).not.toContain('appGuides:');
     expect(markup.textContent).not.toMatch(/\[PENDING|Source pending/);
     expect(markup.querySelector('#check-board')).toBeNull();
+    // Sources are one disclosure at the bottom, reached through the verdict chips; no inline "Sources" links.
+    expect(Array.from(markup.querySelectorAll('main a'), (link) => link.textContent?.trim())).not.toContain('Sources');
+    expect(markup.querySelector('#comparison')?.textContent).toContain('Tap a verdict to see its sources');
   });
 
   it('gives each Aurora brand an anchored card with its own board drawing', async () => {
@@ -247,6 +251,21 @@ describe('app guide pages before hydration', () => {
     }
     expect(new Set(routes.map(({ metadata }) => JSON.stringify(metadata.title))).size).toBe(routes.length);
     expect(new Set(routes.map(({ metadata }) => metadata.description)).size).toBe(routes.length);
+  });
+});
+
+describe('verdict chips as source links', () => {
+  it('points every chip at a source group that exists in the server HTML', async () => {
+    for (const { id, markup } of await renderAll()) {
+      const chips = Array.from(markup.querySelectorAll<HTMLAnchorElement>('table a[href^="#"]'));
+      if (id !== 'hub') expect(chips.length, id).toBeGreaterThanOrEqual(7);
+      for (const chip of chips) {
+        const target = markup.querySelector(chip.getAttribute('href') ?? '#missing');
+        expect(target, `${id} ${chip.getAttribute('href')}`).toBeTruthy();
+        expect(target?.closest('details#sources'), `${id} ${chip.getAttribute('href')}`).toBeTruthy();
+        expect(target?.nextElementSibling?.querySelectorAll('a[href^="https://"]').length).toBeGreaterThan(0);
+      }
+    }
   });
 });
 

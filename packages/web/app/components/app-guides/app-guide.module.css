@@ -674,14 +674,6 @@
   align-content: center;
 }
 
-.smallLink {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  justify-self: start;
-  font-size: var(--font-size-sm);
-}
-
 @media (max-width: 1080px) {
   .tilesFour {
     --tile-columns: 2;

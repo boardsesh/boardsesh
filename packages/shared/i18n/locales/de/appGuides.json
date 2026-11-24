@@ -54,11 +54,11 @@
     },
     "comparison": {
       "feature": "What you need",
-      "sources": "Sources",
-      "sourcesFor": "Sources for {{feature}}",
+      "chipSources": "{{verdict}}. See sources for {{feature}}",
       "claimHidden": "Not checked yet",
       "anotherApp": "Another app",
       "legend": "What the row labels mean",
+      "legendTap": "Tap a verdict to see its sources",
       "verdicts": {
         "boardsesh": "Boardsesh does it better",
         "boardseshShared": "{{apps}} do it best",

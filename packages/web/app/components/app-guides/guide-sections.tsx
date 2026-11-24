@@ -19,7 +19,7 @@ import {
   type GuideLink,
   type GuidePlacement,
 } from '@/app/lib/seo/app-guides';
-import { HUB_BOARD_SLUGS, type GuideItem, type GuideShot, type HubBoardSlug } from '@/app/lib/seo/app-guide-model';
+import { HUB_BOARD_SLUGS, type GuideShot, type HubBoardSlug } from '@/app/lib/seo/app-guide-model';
 import { boardDrawing, boardseshMark, guideShot, sprayWallPhoto, type GuideImage } from './app-guide-assets';
 import { TileDiagram } from './diagrams';
 import {
@@ -200,7 +200,7 @@ export function VerdictCards({ guide, t }: { guide: ComparisonGuide; t: T }) {
 
 // ---------- Feature tiles ----------
 
-export type ResolvedTile = { id: string; title: string; body: string; pending?: boolean; sourcesHref?: string };
+export type ResolvedTile = { id: string; title: string; body: string; pending?: boolean };
 
 export function FeatureTiles({
   t,
@@ -236,15 +236,6 @@ export function FeatureTiles({
                 {tile.body}
                 {tile.pending ? <SourcePending t={t} /> : null}
               </Typography>
-              {tile.sourcesHref ? (
-                <MuiLink
-                  href={tile.sourcesHref}
-                  className={styles.smallLink}
-                  aria-label={t('appGuides:common.comparison.sourcesFor', { feature: tile.title })}
-                >
-                  {t('appGuides:common.comparison.sources')}
-                </MuiLink>
-              ) : null}
             </Box>
           </li>
         );
@@ -279,10 +270,6 @@ function TileShot({ shot }: { shot: GuideShot }) {
   return <Image src={image.src} alt="" width={image.width} height={image.height} sizes="230px" loading="lazy" />;
 }
 
-function tileSourcesHref(prefix: string, item: GuideItem) {
-  return item.sourceIds.length > 0 ? `#sources-${prefix}-${item.id}` : undefined;
-}
-
 export function OnlyTray({ guide, t }: { guide: ComparisonGuide; t: T }) {
   const tiles = guide.tiles
     .filter((tile) => isClaimVisible(guide, `only.tiles.${tile.id}`))
@@ -291,7 +278,6 @@ export function OnlyTray({ guide, t }: { guide: ComparisonGuide; t: T }) {
       title: t(`appGuides:pages.${guide.id}.only.tiles.${tile.id}.title`),
       body: t(`appGuides:pages.${guide.id}.only.tiles.${tile.id}.body`),
       pending: tile.pending,
-      sourcesHref: tileSourcesHref('tile', tile),
     }));
   return (
     <Box
@@ -359,15 +345,6 @@ export function BrandCards({ guide, t }: { guide: ComparisonGuide; t: T }) {
                     </div>
                   ))}
                 </Box>
-                {brand.sourceIds.length > 0 ? (
-                  <MuiLink
-                    href={`#sources-brand-${brand.id}`}
-                    className={styles.smallLink}
-                    aria-label={t('appGuides:common.comparison.sourcesFor', { feature: name })}
-                  >
-                    {t('appGuides:common.comparison.sources')}
-                  </MuiLink>
-                ) : null}
               </Box>
             </li>
           );
@@ -402,15 +379,6 @@ export function OtherApps({ guide, t }: { guide: ComparisonGuide; t: T }) {
                 {t(`appGuides:pages.${guide.id}.otherApps.items.${app.id}.summary`)}
                 {app.pending ? <SourcePending t={t} /> : null}
               </Typography>
-              {app.sourceIds.length > 0 ? (
-                <MuiLink
-                  href={`#sources-app-${app.id}`}
-                  className={styles.smallLink}
-                  aria-label={t('appGuides:common.comparison.sourcesFor', { feature: name })}
-                >
-                  {t('appGuides:common.comparison.sources')}
-                </MuiLink>
-              ) : null}
             </li>
           );
         })}

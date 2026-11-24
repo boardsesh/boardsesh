@@ -1,7 +1,6 @@
 import React from 'react';
 import Image from 'next/image';
 import Box from '@mui/material/Box';
-import MuiLink from '@mui/material/Link';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
@@ -73,12 +72,38 @@ export function verdictLabel(
   }
 }
 
-export function VerdictChip({ t, guide, row }: { t: T; guide: ComparisonGuide; row: ResolvedRow }) {
-  return (
+/**
+ * The verdict chip. When the row cites sources it is the link to them: a 44px
+ * tall `<a>` around the unchanged chip, pointing at the row's group in the
+ * Sources disclosure (SourcesAutoOpen opens it on arrival).
+ */
+export function VerdictChip({
+  t,
+  guide,
+  row,
+  feature,
+}: {
+  t: T;
+  guide: ComparisonGuide;
+  row: ResolvedRow;
+  feature: string;
+}) {
+  const label = verdictLabel(t, guide, row);
+  const chip = (
     <Box component="span" className={styles.chip}>
       <HoldRing role={VERDICT_RING[row.verdict]} size="xs" />
-      {verdictLabel(t, guide, row)}
+      {label}
     </Box>
+  );
+  if (row.sourceIds.length === 0) return chip;
+  return (
+    <a
+      href={`#sources-${row.id}`}
+      className={styles.chipLink}
+      aria-label={t('appGuides:common.comparison.chipSources', { verdict: label, feature })}
+    >
+      {chip}
+    </a>
   );
 }
 
@@ -160,16 +185,7 @@ export default function ComparisonTable({ guide, t }: { guide: ComparisonGuide; 
                       {feature}
                     </Box>
                     <Box component="span" className={styles.rowMeta}>
-                      <VerdictChip t={t} guide={guide} row={row} />
-                      {row.sourceIds.length > 0 ? (
-                        <MuiLink
-                          href={`#sources-${row.id}`}
-                          className={styles.sourcesLink}
-                          aria-label={t('appGuides:common.comparison.sourcesFor', { feature })}
-                        >
-                          {t('appGuides:common.comparison.sources')}
-                        </MuiLink>
-                      ) : null}
+                      <VerdictChip t={t} guide={guide} row={row} feature={feature} />
                       {row.pending ? <SourcePending t={t} /> : null}
                     </Box>
                   </TableCell>
@@ -215,6 +231,7 @@ export default function ComparisonTable({ guide, t }: { guide: ComparisonGuide; 
                 : t(`appGuides:common.comparison.legendItems.${verdict}`)}
             </li>
           ))}
+        <li>{t('appGuides:common.comparison.legendTap')}</li>
       </Box>
     </Box>
   );

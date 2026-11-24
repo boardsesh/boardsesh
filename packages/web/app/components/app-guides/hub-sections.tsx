@@ -175,7 +175,6 @@ export function EveryBoardTray({ guide, t }: { guide: HubGuide; t: T }) {
       title: t(`appGuides:pages.hub.everyBoard.tiles.${tile.id}.title`),
       body: t(`appGuides:pages.hub.everyBoard.tiles.${tile.id}.body`),
       pending: tile.pending,
-      sourcesHref: tile.sourceIds.length > 0 ? `#sources-tile-${tile.id}` : undefined,
     }));
   return (
     <Box

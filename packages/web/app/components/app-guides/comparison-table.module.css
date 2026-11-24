@@ -101,11 +101,39 @@
   line-height: 1.4;
 }
 
-.sourcesLink {
+/* The chip is the link to the row's sources. The <a> is the 44px target; the chip
+ * inside keeps its look. Hover and focus mark the chip itself: violet is for taps. */
+.chipLink {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  font-size: 13px;
+  max-width: 100%;
+  border-radius: var(--border-radius-full);
+  color: inherit;
+  text-decoration: none;
+}
+
+.chipLink .chip {
+  transition: box-shadow var(--motion-fast) var(--ease-standard);
+}
+
+.chipLink:hover .chip {
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+
+.chipLink:focus-visible {
+  outline: none;
+}
+
+.chipLink:focus-visible .chip {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chipLink .chip {
+    transition: none;
+  }
 }
 
 .cellLabel {
