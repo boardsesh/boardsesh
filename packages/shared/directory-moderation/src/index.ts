@@ -3,3 +3,4 @@ export * from './routing';
 export * from './audience';
 export * from './notes';
 export * from './timing';
+export * from './setup-suggestion';
