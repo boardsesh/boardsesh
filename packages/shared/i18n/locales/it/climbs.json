@@ -35,6 +35,7 @@
     },
     "view": {
       "title": "{{climbName}}, {{grade}} su {{boardName}} a {{angle}}°",
+      "titleUngraded": "{{climbName}}, blocco su {{boardName}} a {{angle}}°",
       "descriptionLead": "{{climbName}} è un {{grade}} su {{layoutName}} a {{angle}}°, tracciato da {{setter}}.",
       "descriptionLeadNoSetter": "{{climbName}} è un {{grade}} su {{layoutName}} a {{angle}}°.",
       "descriptionLeadUngraded": "{{climbName}} è un blocco su {{layoutName}} a {{angle}}°, tracciato da {{setter}}.",
@@ -46,6 +47,7 @@
       "descriptionRated": "Valutazione {{quality}} su 5.",
       "descriptionCta": "Illuminalo in parete con Boardsesh.",
       "imageAlt": "{{climbName}} - {{grade}} sul pannello {{boardName}}",
+      "imageAltUngraded": "{{climbName}} sul pannello {{boardName}}",
       "fallbackTitle": "Blocco",
       "fallbackDescription": "Guarda i dettagli del blocco e i video della beta"
     }

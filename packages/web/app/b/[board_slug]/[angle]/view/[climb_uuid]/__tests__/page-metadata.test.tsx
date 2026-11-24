@@ -1,4 +1,8 @@
+import { createInstance } from 'i18next';
+import enClimbs from '@boardsesh/i18n/locales/en-US/climbs.json';
+import { getServerTranslation } from '@/app/lib/i18n/server';
 import { describe, expect, it, vi } from 'vite-plus/test';
+import { getClimb } from '@/app/lib/data/queries';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 
 vi.mock('next/navigation', () => ({
@@ -506,5 +510,40 @@ describe('alias metadata visibility boundaries', () => {
         wallParam: 'wall-capability',
       }),
     );
+  });
+});
+
+describe('climb titles and image descriptions', () => {
+  it.each([
+    ['', 'Campus crusher 1, Kilter climb at 40° | Boardsesh', 'Campus crusher 1 on kilter board'],
+    [null, 'Campus crusher 1, Kilter climb at 40° | Boardsesh', 'Campus crusher 1 on kilter board'],
+    [undefined, 'Campus crusher 1, Kilter climb at 40° | Boardsesh', 'Campus crusher 1 on kilter board'],
+    ['V5', 'Campus crusher 1, V5 Kilter climb at 40° | Boardsesh', 'Campus crusher 1 - V5 on kilter board'],
+  ])('renders clean page and social metadata for grade %s', async (difficulty, expectedTitle, expectedAlt) => {
+    const instance = createInstance();
+    await instance.init({
+      lng: 'en-US',
+      fallbackLng: false,
+      ns: ['climbs'],
+      defaultNS: 'climbs',
+      resources: { 'en-US': { climbs: enClimbs } },
+      interpolation: { escapeValue: false },
+    });
+    vi.mocked(getServerTranslation).mockResolvedValueOnce({ t: instance.t, i18n: instance, locale: 'en-US' });
+    const currentClimb = await getClimb({} as Parameters<typeof getClimb>[0]);
+    vi.mocked(getClimb).mockResolvedValueOnce({
+      ...currentClimb,
+      name: 'Campus crusher 1',
+      difficulty,
+    } as unknown as Awaited<ReturnType<typeof getClimb>>);
+    const metadata = await pageModule.generateMetadata({
+      searchParams: Promise.resolve({}),
+      params: Promise.resolve({ board_slug: 'my-board', angle: '40', climb_uuid: 'test-climb' }),
+    });
+
+    expect(metadata.title).toEqual({ absolute: expectedTitle });
+    expect(metadata.openGraph?.title).toBe(expectedTitle);
+    expect(metadata.twitter?.title).toBe(expectedTitle);
+    expect(metadata.openGraph?.images).toEqual([expect.objectContaining({ alt: expectedAlt })]);
   });
 });

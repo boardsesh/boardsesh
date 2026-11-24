@@ -35,6 +35,7 @@
     },
     "view": {
       "title": "{{climbName}}，{{angle}}° 下的 {{grade}} {{boardName}} 线路",
+      "titleUngraded": "{{climbName}}，{{angle}}° 下的 {{boardName}} 线路",
       "descriptionLead": "{{climbName}} 是 {{layoutName}} 上 {{angle}}° 的 {{grade}} 线路，由 {{setter}} 设定。",
       "descriptionLeadNoSetter": "{{climbName}} 是 {{layoutName}} 上 {{angle}}° 的 {{grade}} 线路。",
       "descriptionLeadUngraded": "{{climbName}} 是 {{layoutName}} 上 {{angle}}° 的线路，由 {{setter}} 设定。",
@@ -46,6 +47,7 @@
       "descriptionRated": "评分 {{quality}}/5。",
       "descriptionCta": "使用 Boardsesh 在训练板上点亮。",
       "imageAlt": "{{climbName}}，{{boardName}} 训练板上的 {{grade}} 线路",
+      "imageAltUngraded": "{{climbName}}，{{boardName}} 训练板上的线路",
       "fallbackTitle": "线路",
       "fallbackDescription": "查看线路详情与攀爬方法视频"
     }
