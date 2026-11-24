@@ -95,6 +95,19 @@ export default function HomePageContent({
             />
           </Box>
           {desktopInstall ? <Box className={styles.heroDesktopInstall}>{desktopInstall}</Box> : null}
+          {/* Under whichever install block this width shows: the board app guides.
+              `/apps` is English-only, so every homepage links the unprefixed path
+              (no locale redirect) and the non-English labels say "(in English)". */}
+          <MuiLink
+            component={LocaleLink}
+            href="/apps"
+            locale={DEFAULT_LOCALE}
+            hrefLang="en"
+            underline="always"
+            sx={LINK_TARGET}
+          >
+            {t('home.hero.compareApps')}
+          </MuiLink>
           <Box className={styles.heroSecondary}>
             <StartClimbingButton
               label={t('home.hero.startClimbingWeb')}
