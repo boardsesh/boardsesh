@@ -288,6 +288,7 @@ describe('owned credential writer CI boundary', () => {
       'packages/backend/test-results/junit-first-password-credential-writer.xml',
       'packages/backend/test-results/junit-native-handoff-credential-writer.xml',
       'packages/backend/test-results/junit-browser-renewal-credential-writer.xml',
+      'packages/backend/test-results/junit-registration-credential-writer.xml',
     ]);
   });
 

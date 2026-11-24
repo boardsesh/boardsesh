@@ -5,9 +5,9 @@ import {
   REGISTRATION_COMMAND_PATHS,
   authCommandReplySchema,
   authCommandReplyStatus,
-  registerCommandSchema,
-  resendVerificationCommandSchema,
-  verifyEmailCommandSchema,
+  registrationFamilyRegisterCommandSchema,
+  registrationFamilyResendCommandSchema,
+  registrationFamilyVerifyCommandSchema,
 } from '@boardsesh/auth-protocol';
 import { getCredentialDatabase } from '../auth/credential-database';
 import { currentStoreRpcSecret } from '../auth/current-store/authority-configuration';
@@ -17,7 +17,16 @@ import {
   resendBeforeEnforcement,
   verifyBeforeEnforcement,
 } from '../auth/current-store/registration-family';
-import { checkRateLimit, RateLimitError } from '../utils/rate-limiter';
+import { RateLimitError } from '../utils/rate-limiter';
+import {
+  registrationCommandGuards,
+  type RegistrationCommandGuards,
+} from '../auth/current-store/registration-command-limits';
+import {
+  PasswordCompareAbortedError,
+  PasswordComparesSaturatedError,
+  PASSWORD_COMPARES_RETRY_AFTER_SECONDS,
+} from '../auth/current-store/password-compare-gate';
 import { logger } from '../utils/logger';
 import { authenticatesPrivateAuth, readPrivateAuthCommand } from './current-store-private-transport';
 import { sendJson } from './http-utils';
@@ -31,6 +40,7 @@ export async function handleCurrentStoreRegistration(
   request: IncomingMessage,
   response: ServerResponse,
   database?: DbInstance,
+  guards: RegistrationCommandGuards = registrationCommandGuards,
 ): Promise<void> {
   let secret: string;
   try {
@@ -63,10 +73,10 @@ export async function handleCurrentStoreRegistration(
   }
   const schema =
     operation === 'register'
-      ? registerCommandSchema
+      ? registrationFamilyRegisterCommandSchema
       : operation === 'verify-email'
-        ? verifyEmailCommandSchema
-        : resendVerificationCommandSchema;
+        ? registrationFamilyVerifyCommandSchema
+        : registrationFamilyResendCommandSchema;
   let parsed;
   try {
     parsed = schema.safeParse(await readPrivateAuthCommand(request));
@@ -83,19 +93,31 @@ export async function handleCurrentStoreRegistration(
     sendJson(response, 400, { error: 'expired_request' });
     return;
   }
+  const callerGone = new AbortController();
+  response.once('close', () => {
+    if (!response.writableFinished) callerGone.abort();
+  });
+  if (response.destroyed) callerGone.abort();
   try {
-    checkRateLimit(`current-store-registration:${operation}`, operation === 'register' ? 60 : 180, 60_000);
-    const credentialDatabase = database ?? (await getCredentialDatabase('private-registration-v1'));
-    const policy = { emailVerificationEnabled: process.env.EMAIL_VERIFICATION_ENABLED === 'true' };
-    const reply = authCommandReplySchema.parse(
-      command.operation === 'register'
-        ? await registerBeforeEnforcement(credentialDatabase, policy, command)
-        : command.operation === 'resend-verification'
-          ? await resendBeforeEnforcement(credentialDatabase, command)
-          : await verifyBeforeEnforcement(credentialDatabase, command),
-    );
+    // Only the authenticated web facade supplies this context. Registration
+    // charges each admitted command; a negative token is not a password guess.
+    const admission = await guards.limits[operation].admit({ clientAddress: command.clientAddress });
+    const work = guards.work(operation, admission.source);
+    if (work.isFull()) throw new PasswordComparesSaturatedError();
+    const reply = await work.run(async () => {
+      const credentialDatabase = database ?? (await getCredentialDatabase('private-registration-v1'));
+      const policy = { emailVerificationEnabled: process.env.EMAIL_VERIFICATION_ENABLED === 'true' };
+      return authCommandReplySchema.parse(
+        command.operation === 'register'
+          ? await registerBeforeEnforcement(credentialDatabase, policy, command)
+          : command.operation === 'resend-verification'
+            ? await resendBeforeEnforcement(credentialDatabase, command)
+            : await verifyBeforeEnforcement(credentialDatabase, command),
+      );
+    }, callerGone.signal);
     sendJson(response, authCommandReplyStatus(reply), reply);
   } catch (error) {
+    if (error instanceof PasswordCompareAbortedError) return;
     if (error instanceof WebPasswordCommandError) {
       sendJson(response, 400, { error: 'expired_request' });
       return;
@@ -106,6 +128,15 @@ export async function handleCurrentStoreRegistration(
       requestId: command.requestId,
       outcome: 'error',
     } as const;
+    if (error instanceof PasswordComparesSaturatedError) {
+      sendJson(
+        response,
+        503,
+        { ...base, code: 'unavailable' },
+        { 'Retry-After': String(PASSWORD_COMPARES_RETRY_AFTER_SECONDS) },
+      );
+      return;
+    }
     if (error instanceof RateLimitError) {
       const retryAfterSeconds = Math.max(1, error.retryAfterSeconds);
       sendJson(

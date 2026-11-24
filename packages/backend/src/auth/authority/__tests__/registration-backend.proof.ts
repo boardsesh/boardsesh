@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import postgres from 'postgres';
+import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
   AUTH_PROTOCOL_VERSION,
@@ -18,6 +19,11 @@ import {
 } from '@boardsesh/db/schema/auth';
 import { qualifyCredentialWriter } from '@boardsesh/db/credential-writer-acl';
 import { createCredentialWriterEnvironment, ownedCredentialProofUrl } from './fixtures/credential-writer-environment';
+import {
+  createRegistrationCommandGuards,
+  type RegistrationCommandGuards,
+} from '../../current-store/registration-command-limits';
+import { resetAllRateLimits } from '../../../utils/rate-limiter';
 import { closeCredentialDatabase } from '../../credential-database';
 import { prepareProjectionUnderUsersTableLock } from '../../current-store/email-reservations';
 import { handleCurrentStoreRegistration } from '../../../handlers/current-store-registration';
@@ -40,6 +46,7 @@ let admin: postgres.Sql;
 let environment: Awaited<ReturnType<typeof createCredentialWriterEnvironment>>;
 let server: Server;
 let origin = '';
+let guards: RegistrationCommandGuards;
 
 async function post(payload: unknown, options: { path?: string; authorization?: string | null; origin?: string } = {}) {
   const response = await fetch(`${origin}${options.path ?? REGISTRATION_COMMAND_PATHS.register}`, {
@@ -73,7 +80,7 @@ describe('backend-first registration commands without future web adapters', () =
         request.url === '/auth/native/register'
           ? handleNativeAuthRegister(request, response, environment.ownerDatabase)
           : request.url?.includes('/registration/v1/')
-            ? handleCurrentStoreRegistration(request, response)
+            ? handleCurrentStoreRegistration(request, response, undefined, guards)
             : handleCurrentStoreWebAuth(request, response);
       void pending.catch(() => {
         if (!response.headersSent) response.writeHead(500);
@@ -101,10 +108,12 @@ describe('backend-first registration commands without future web adapters', () =
       EMAIL_VERIFICATION_ENABLED: 'true',
       NEXTAUTH_SECRET: 'owned-backend-registration-jwt-secret',
       DEBUG_SQL: 'false',
-      AUTH_IDENTITY_MIRROR_MODE: 'off',
+      AUTH_IDENTITY_MIRROR: 'off',
     }))
       vi.stubEnv(name, content);
     __resetNativeAuthStateForTests();
+    resetAllRateLimits();
+    guards = createRegistrationCommandGuards({ redis: () => null });
   });
   afterEach(async () => {
     await closeCredentialDatabase();
@@ -212,5 +221,140 @@ describe('backend-first registration commands without future web adapters', () =
     expect(await environment.ownerDatabase.select().from(users)).toHaveLength(0);
     expect(await environment.ownerDatabase.select().from(verificationTokens)).toHaveLength(0);
     expect(await environment.ownerDatabase.select().from(authEmailVerificationTokens)).toHaveLength(0);
+  });
+  it('does not let180 unvouched misses deny an unrelated vouched UID proof', async () => {
+    const created = registerReplySchema.parse((await post(command())).body);
+    if (created.outcome !== 'created' || !created.requiresVerification) throw new Error('Owned proof missing');
+    const path = REGISTRATION_COMMAND_PATHS['verify-email'];
+    const missing = `ev1_${'A'.repeat(43)}`;
+    for (let index = 0; index < 180; index++)
+      expect((await post(command('verify-email', { token: missing }), { path })).status).toBe(200);
+    expect((await post(command('verify-email', { token: missing }), { path })).status).toBe(429);
+    const valid = { ...command('verify-email', { token: created.mailPlan.token }), clientAddress: '8.8.8.8' };
+    const response = await post(valid, { path });
+    expect(response.status).toBe(200);
+    expect(response.body.outcome).toBe('verified');
+  });
+  it('keeps more than180 other vouched client windows separate from a valid proof', async () => {
+    const created = registerReplySchema.parse((await post(command())).body);
+    if (created.outcome !== 'created' || !created.requiresVerification) throw new Error('Owned proof missing');
+    const path = REGISTRATION_COMMAND_PATHS['verify-email'];
+    for (let index = 1; index <= 181; index++) {
+      const response = await post(
+        {
+          ...command('verify-email', { token: `ev1_${'A'.repeat(43)}` }),
+          clientAddress: `8.8.${Math.floor(index / 250)}.${(index % 250) + 1}`,
+        },
+        { path },
+      );
+      expect(response.status).toBe(200);
+    }
+    expect(
+      (
+        await post(
+          { ...command('verify-email', { token: created.mailPlan.token }), clientAddress: '1.1.1.1' },
+          { path },
+        )
+      ).body.outcome,
+    ).toBe('verified');
+  });
+  it('does not treat payload-selected client metadata as authenticated context', async () => {
+    const response = await post(command('verify-email', { token: `ev1_${'A'.repeat(43)}`, clientAddress: '8.8.8.8' }), {
+      path: REGISTRATION_COMMAND_PATHS['verify-email'],
+    });
+    expect(response.status).toBe(400);
+    expect(await environment.ownerDatabase.select().from(verificationTokens)).toHaveLength(0);
+  });
+
+  it('retains the active work slot after HTTP loss until its real transaction settles', async () => {
+    const created = registerReplySchema.parse((await post(command())).body);
+    if (created.outcome !== 'created' || !created.requiresVerification) throw new Error('Owned receipt missing');
+    guards = createRegistrationCommandGuards({ redis: () => null, concurrency: 1, maxWaiting: 0 });
+    let release = () => {};
+    let reached = () => {};
+    const held = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const continueWriting = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const holder = environment.ownerDatabase.transaction(async (transaction) => {
+      await transaction.select().from(users).where(eq(users.id, created.userId)).for('update');
+      reached();
+      await continueWriting;
+    });
+    await held;
+    const controller = new AbortController();
+    const pending = fetch(`${origin}${REGISTRATION_COMMAND_PATHS['verify-email']}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...command('verify-email', { token: created.mailPlan.token }), clientAddress: '8.8.8.8' }),
+      signal: controller.signal,
+    }).then(
+      () => undefined,
+      () => undefined,
+    );
+    try {
+      let waiting = false;
+      for (let attempt = 0; attempt < 150; attempt++) {
+        const [record] = await admin<
+          { waiting: boolean }[]
+        >`SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=${copyName} AND application_name='boardsesh-credential-writer' AND wait_event_type='Lock') AS waiting`;
+        if (record?.waiting) {
+          waiting = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(waiting).toBe(true);
+      controller.abort();
+      await pending;
+      expect(guards.work('verify-email', 'client').isFull()).toBe(true);
+      expect(
+        (
+          await post(
+            { ...command('verify-email', { token: `ev1_${'A'.repeat(43)}` }), clientAddress: '1.1.1.1' },
+            { path: REGISTRATION_COMMAND_PATHS['verify-email'] },
+          )
+        ).status,
+      ).toBe(503);
+    } finally {
+      release();
+      await holder;
+    }
+    for (let attempt = 0; attempt < 150 && guards.work('verify-email', 'client').isFull(); attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(guards.work('verify-email', 'client').isFull()).toBe(false);
+    const [user] = await environment.ownerDatabase.select().from(users).where(eq(users.id, created.userId));
+    expect(user.emailVerified).not.toBeNull();
+    expect(
+      (
+        await post(
+          { ...command('verify-email', { token: created.mailPlan.token }), clientAddress: '8.8.8.8' },
+          { path: REGISTRATION_COMMAND_PATHS['verify-email'] },
+        )
+      ).body.outcome,
+    ).toBe('invalid_token');
+  });
+  it('routes a table-full client to free fallback work even when client work is full', async () => {
+    guards = createRegistrationCommandGuards({ redis: () => null, maxLocalClients: 1, concurrency: 1, maxWaiting: 0 });
+    await guards.limits['verify-email'].admit({ clientAddress: '1.1.1.1' });
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const occupying = guards.work('verify-email', 'client').run(async () => held);
+    try {
+      expect(guards.work('verify-email', 'client').isFull()).toBe(true);
+      const response = await post(
+        { ...command('verify-email', { token: `ev1_${'A'.repeat(43)}` }), clientAddress: '8.8.8.8' },
+        { path: REGISTRATION_COMMAND_PATHS['verify-email'] },
+      );
+      expect(response.status).toBe(200);
+      expect(response.body.outcome).toBe('invalid_token');
+    } finally {
+      release();
+      await occupying;
+    }
   });
 });

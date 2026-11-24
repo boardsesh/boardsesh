@@ -63,6 +63,37 @@ still write around it. The proof contains a real counterexample, followed by a
 restricted-LOGIN refusal. Global single-writer and collision-prevention claims
 still require adoption of the remaining writers and the actual role/pool fence.
 
+## Bounded admission before public adoption
+
+The separate family envelopes accept optional top-level `clientAddress` only
+from the authenticated web service. Historical staged DTOs remain unchanged.
+The web must derive that address from `cloudflareVouchedVisitorAddress`, never
+from a caller's JSON payload or the first forwarded hop. Public attempt guards
+use the existing trusted ingress-key derivation in every mode. Configure the
+existing Cloudflare origin-proof secret and independently verify the real web
+last-hop/zone transformation before relying on vouched protection; the existing
+ingress gate remains open until evidenced. Missing proof is intentionally
+unvouched, not a source of invented client identity.
+
+Registration, verification and resend have independent client windows of 10, 20
+and 5 attempts per minute. Redis uses the existing atomic attempt-field/TTL
+engine with a 100 ms caller deadline. Each operation can retain at most four real
+Redis commands; a deadline does not release that capacity until the underlying
+promise settles. Further admissions use bounded local fallback without starting
+more Redis work. Each local operation tracks at most 50,000 current-minute client
+keys and never evicts an existing client to admit another. Fallback recomputes
+the current minute after an asynchronous wait and never rewinds newer quotas.
+Only unvouched traffic or a full local table spends the shared 60/180/180 process
+budgets; that intentionally shared fallback can still be saturated.
+
+Work selection follows the actual admission source, including table-full
+fallback. Vouched and unattributed work have separate fixed concurrency slots,
+queues capped at 8, and 2500 ms waits. Overload sheds as retryable 503; it does not
+spend a shared minute-long allowance for vouched visitors. An HTTP disconnect
+does not release an active hash/transaction slot before its real promise
+settles. Password login retains its original keys, limits, metrics and exact
+refund behavior on the extracted common engine.
+
 ## Receipt and compatibility behavior
 
 New mailbox proofs use the existing UID/purpose/deadline tables and the same
@@ -102,12 +133,12 @@ mail recipients or SMTP causes.
 qualified current-profile, native creation and transport-admission proofs. It
 imports no future web adapter and can run on the first PR tree.
 
-`vp run test:registration-web-consumer` runs the consumer-only boundary against
+The second PR introduces `vp run test:registration-web-consumer`, which runs the consumer-only boundary against
 frozen released issuer/reader sources. It demonstrates existing UUID delivery
 and consumption, an old reader's retryable refusal of a retained UID receipt,
 and the capable reader consuming that same receipt before new web issuance.
 
-`vp run test:registration-web-issuer` runs the complete route-export → strict
+The third PR introduces `vp run test:registration-web-issuer`, which runs the complete route-export → strict
 client → real private HTTP → authenticated restricted LOGIN → PostgreSQL graph.
 The final matrix covers absent/prepared web/native races; live whitespace holders
 after stale preparation; both authority interleavings; resend/consume ordering;
