@@ -1581,7 +1581,7 @@
     "body_other": "{{count}} blocchi pubblicati usano queste prese. Verranno segnati come privi di una presa finché qualcuno non li remixa.",
     "bodyUnknown": "Alcuni blocchi potrebbero usare queste prese. Verranno segnati come privi di una presa finché qualcuno non li remixa.",
     "removeAnyway": "Rimuovi comunque",
-    "keep": "Tieni le prese"
+    "keep": "Continua a modificare"
   },
   "sprayCaps": {
     "holds": "Una Spraywall può avere fino a {{max}} prese. Togline qualcuna e salva di nuovo.",

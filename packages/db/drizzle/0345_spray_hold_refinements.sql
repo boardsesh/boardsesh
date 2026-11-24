@@ -1,0 +1,1 @@
+ALTER TABLE "spray_wall_holds" ADD COLUMN "is_refinement" boolean DEFAULT false NOT NULL;

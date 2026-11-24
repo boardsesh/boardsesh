@@ -270,8 +270,27 @@ test('climb grades and overflow buttons stay at the trailing edge at every brows
 
   const firstRow = list.getByTestId('climb-row').filter({ hasText: climbNames[0] });
   const firstCell = firstRow.locator('xpath=ancestor::div[./div[@data-testid="climb-row-more-button"]][1]');
-  await firstCell.getByRole('button', { name: 'More actions', exact: true }).click({ force: true });
+  const moreButton = firstCell.getByRole('button', { name: 'More actions', exact: true });
+  await moreButton.click({ force: true });
   await expect(page.getByRole('menuitem').first()).toBeVisible();
+  await expect(async () => {
+    const [buttonBox, menuBox] = await Promise.all([
+      moreButton.boundingBox(),
+      page.getByTestId('menu-view').boundingBox(),
+    ]);
+    const viewport = page.viewportSize();
+    if (!buttonBox || !menuBox || !viewport) throw new Error('Missing overflow menu geometry');
+    expect(menuBox.x, 'menu stays inside the left edge').toBeGreaterThanOrEqual(8);
+    expect(menuBox.x + menuBox.width, 'menu stays inside the right edge').toBeLessThanOrEqual(viewport.width - 8);
+    const anchorDistance = Math.min(
+      Math.abs(menuBox.x - buttonBox.x),
+      Math.abs(menuBox.x + menuBox.width - buttonBox.x),
+    );
+    expect(anchorDistance, 'menu opens from the button, on either side').toBeLessThanOrEqual(2);
+    expect(Math.abs(menuBox.y - buttonBox.y - buttonBox.height), 'menu starts below its trigger').toBeLessThanOrEqual(
+      2,
+    );
+  }).toPass({ timeout: WARM_TIMEOUT_MS });
   await page.keyboard.press('Escape');
   await expect(page.getByRole('menuitem').first()).toBeHidden();
   await firstRow.click({ force: true });

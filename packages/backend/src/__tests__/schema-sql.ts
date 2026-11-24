@@ -2376,6 +2376,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "installed_version_id" bigint NOT NULL REFERENCES "spray_wall_versions"("id") ON DELETE CASCADE,
     "removed_version_id" bigint REFERENCES "spray_wall_versions"("id") ON DELETE RESTRICT,
     "moved_from_hold_id" integer,
+    "is_refinement" boolean DEFAULT false NOT NULL,
     "source" spray_hold_source DEFAULT 'manual' NOT NULL,
     "confidence" real,
     "created_at" timestamp DEFAULT now() NOT NULL,

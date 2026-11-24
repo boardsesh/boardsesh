@@ -1,5 +1,6 @@
 import type { SprayWallVersion } from '@boardsesh/graphql/generated/graphql';
 import { sprayDraftPurpose } from './spray-draft-purpose';
+import { normalizeSprayHoldWriteError } from './spray-hold-write-error';
 
 type MaintenanceVersion = Pick<SprayWallVersion, 'id' | 'number' | 'status' | 'photo' | 'anchors' | 'homography'>;
 
@@ -24,7 +25,7 @@ export type PreparedSprayHoldDraft = {
 export type SprayHoldMaintenanceTransport = {
   fetchWall: (wallUuid: string) => Promise<SprayHoldMaintenanceWall | null>;
   createDraft: (input: { wallUuid: string; sourceVersionId: string }) => Promise<MaintenanceVersion>;
-  publishDraft: (versionId: string) => Promise<MaintenanceVersion>;
+  publishDraft: (input: { versionId: string; preserveClimbLinks: true }) => Promise<MaintenanceVersion>;
 };
 
 /**
@@ -129,8 +130,11 @@ export async function publishSprayHoldDraft(
   }
 
   try {
-    await transport.publishDraft(draft.versionId);
-  } catch (publishError) {
+    // Required even for a resumed draft with no new edits: it may already carry
+    // refinements saved against a newer backend before that backend rolled back.
+    await transport.publishDraft({ versionId: draft.versionId, preserveClimbLinks: true });
+  } catch (error) {
+    const publishError = normalizeSprayHoldWriteError(error);
     let latestWallSnapshot: SprayHoldMaintenanceWall | null;
     try {
       latestWallSnapshot = await transport.fetchWall(draft.wallUuid);

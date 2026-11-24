@@ -34,6 +34,7 @@ import type {
 } from '@boardsesh/graphql/generated/graphql';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../graphql/client';
+import { normalizeSprayHoldWriteError } from './spray-hold-write-error';
 import type { BoardRenderDefault } from '../board-render-settings';
 import { clearSprayWallPrivateCaches } from './spray-privacy-cleanup';
 import { primeSprayWallLook } from './spray-wall-loader';
@@ -319,10 +320,14 @@ export function usePublishSprayWallVersion() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (versionId: string): Promise<SprayWallVersion> => {
-      const response = await getHttpClient().request<PublishResponse>(PUBLISH_SPRAY_WALL_VERSION, {
-        input: { versionId },
-      });
-      return response.publishSprayWallVersion;
+      try {
+        const response = await getHttpClient().request<PublishResponse>(PUBLISH_SPRAY_WALL_VERSION, {
+          input: { versionId, preserveClimbLinks: true },
+        });
+        return response.publishSprayWallVersion;
+      } catch (error) {
+        throw normalizeSprayHoldWriteError(error);
+      }
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });

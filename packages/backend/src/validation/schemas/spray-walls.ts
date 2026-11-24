@@ -175,6 +175,11 @@ export const SprayWallHoldUsageArgsSchema = z.object({
   holdIds: z.array(z.number().int().positive()).max(MAX_HOLD_USAGE_HOLD_IDS),
 });
 
+/** Count the whole save together so a climb spanning multiple holds counts once. */
+export const SprayWallHoldUsageSummaryArgsSchema = SprayWallHoldUsageArgsSchema.extend({
+  holdIds: z.array(z.number().int().positive()).max(MAX_HOLDS_PER_WALL),
+});
+
 /** `resetSprayWall`: the wall to clone. Everything else is copied from it server-side. */
 export const ResetSprayWallInputSchema = z.object({
   wallUuid: UUIDSchema,
@@ -217,6 +222,8 @@ export const SprayWallHoldInputSchema = z.object({
 });
 
 export const UpsertSprayWallHoldsInputSchema = z.object({
+  // An old GraphQL schema rejects this capability requirement before writing.
+  preserveClimbLinks: z.literal(true).optional(),
   wallUuid: UUIDSchema,
   versionId: BigIntIdSchema,
   // The batch cap is the per-wall cap: a client may legitimately send a whole
@@ -239,6 +246,8 @@ export const UpsertSprayWallHoldsInputSchema = z.object({
 });
 
 export const RemoveSprayWallHoldsInputSchema = z.object({
+  // An old GraphQL schema rejects this capability requirement before writing.
+  preserveClimbLinks: z.literal(true).optional(),
   wallUuid: UUIDSchema,
   versionId: BigIntIdSchema,
   holdIds: z
@@ -252,6 +261,8 @@ export const RemoveSprayWallHoldsInputSchema = z.object({
 });
 
 export const PublishSprayWallVersionInputSchema = z.object({
+  // An old GraphQL schema rejects this capability requirement before writing.
+  preserveClimbLinks: z.literal(true).optional(),
   versionId: BigIntIdSchema,
 });
 

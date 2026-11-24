@@ -8440,6 +8440,8 @@ export type PublicUserProfile = {
 };
 
 export type PublishSprayWallVersionInput = {
+  /** Require a writer that preserves climb links when existing holds are refined. Omit for older clients; when supplied, must be true. */
+  preserveClimbLinks?: InputMaybe<Scalars['Boolean']['input']>;
   versionId: Scalars['ID']['input'];
 };
 
@@ -9356,6 +9358,12 @@ export type Query = {
    * wall's holds; refused on an archived wall. At most 500 holds per call.
    */
   sprayWallHoldUsage: Array<SprayWallHoldUsage>;
+  /**
+   * Distinct published and draft climbs that use any of the given holds. A climb
+   * using several requested holds counts once. Same editing and archive gates
+   * as sprayWallHoldUsage. Accepts up to the wall's 1500 holds in one call.
+   */
+  sprayWallHoldUsageSummary: SprayWallHoldUsageSummary;
   sprayWallImportProgress: Array<SprayWallImportProgress>;
   /**
    * A spray wall's LED setup, for lighting it from this phone. Anyone who can read
@@ -10350,6 +10358,12 @@ export type QuerySprayWallHoldUsageArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QuerySprayWallHoldUsageSummaryArgs = {
+  holdIds: Array<Scalars['Int']['input']>;
+  wallUuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
 export type QuerySprayWallImportProgressArgs = {
   wallUuids: Array<Scalars['ID']['input']>;
 };
@@ -10841,6 +10855,8 @@ export type RemoveGymMemberInput = {
 
 export type RemoveSprayWallHoldsInput = {
   holdIds: Array<Scalars['Int']['input']>;
+  /** Require a writer that preserves climb links when existing holds are refined. Omit for older clients; when supplied, must be true. */
+  preserveClimbLinks?: InputMaybe<Scalars['Boolean']['input']>;
   versionId: Scalars['ID']['input'];
   wallUuid: Scalars['ID']['input'];
 };
@@ -13155,6 +13171,13 @@ export type SprayWallHoldUsage = {
   publishedClimbCount: Scalars['Int']['output'];
 };
 
+/** Distinct climbs on a wall that use any of the requested holds. */
+export type SprayWallHoldUsageSummary = {
+  __typename?: 'SprayWallHoldUsageSummary';
+  draftClimbCount: Scalars['Int']['output'];
+  publishedClimbCount: Scalars['Int']['output'];
+};
+
 export type SprayWallImportProgress = {
   __typename?: 'SprayWallImportProgress';
   detectionId?: Maybe<Scalars['ID']['output']>;
@@ -14302,6 +14325,8 @@ export type UpsertHoldOutlineOverrideInput = {
 
 export type UpsertSprayWallHoldsInput = {
   holds: Array<SprayWallHoldInput>;
+  /** Require a writer that preserves climb links when existing holds are refined. Omit for older clients; when supplied, must be true. */
+  preserveClimbLinks?: InputMaybe<Scalars['Boolean']['input']>;
   /** The DRAFT version being edited. Published versions are immutable. */
   versionId: Scalars['ID']['input'];
   wallUuid: Scalars['ID']['input'];

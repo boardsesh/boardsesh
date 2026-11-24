@@ -13,7 +13,14 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### Improved
 
+- See the board clearly on light gym screens, including when the lit climb changes. ([#8115](https://github.com/boardsesh/boardsesh/pull/8115))
 - Choose light or dark for each gym screen, with readable logos, climb details and leaderboards. ([#8110](https://github.com/boardsesh/boardsesh/pull/8110))
+
+### Fixed
+
+- Climb actions open beside the three-dot button or your pointer in the browser. ([#8117](https://github.com/boardsesh/boardsesh/pull/8117))
+- Climb grades line up at the right edge in your browser. ([#8114](https://github.com/boardsesh/boardsesh/pull/8114))
+- Get an email link to your bug report when using Hide My Email. ([#8113](https://github.com/boardsesh/boardsesh/pull/8113))
 
 ## 2026-11-23
 

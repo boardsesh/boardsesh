@@ -87,7 +87,8 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetSprayClimb',
   'GetSprayWallDraftRenderData',
   'GetSprayWallForLink',
-  'GetSprayWallHoldUsage',
+  // Only saving hold removals asks; capture flows never save changes to a live wall.
+  'GetSprayWallHoldUsageSummary',
   'GetSprayWallLedSetup',
   'GetSprayWallReports',
   // Recorded picker/summary boards are catalogue boards. Feed spray thumbnails use the climb renderer.
