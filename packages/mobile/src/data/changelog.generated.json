@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-24T08:49:12.359Z",
+  "generatedAt": "2026-11-24T11:08:51.459Z",
   "entries": [
+    {
+      "prNumber": 8110,
+      "category": "improved",
+      "title": "Choose light or dark for each gym screen, with readable logos, climb details and leaderboards.",
+      "mergedAt": "2026-11-24T11:03:34Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8110"
+    },
     {
       "prNumber": 8084,
       "category": "new",

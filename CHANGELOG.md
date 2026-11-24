@@ -10,6 +10,10 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 - See recorded board activity at your gym, with local dates and verified wall groups. ([#8084](https://github.com/boardsesh/boardsesh/pull/8084))
 
+### Improved
+
+- Choose light or dark for each gym screen, with readable logos, climb details and leaderboards. ([#8110](https://github.com/boardsesh/boardsesh/pull/8110))
+
 ## 2026-11-23
 
 ### New
