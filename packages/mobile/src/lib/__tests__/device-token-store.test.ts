@@ -252,6 +252,28 @@ describe('createDeviceTokenStore', () => {
     await expect(store.forgetAccount('user-1')).resolves.toBeUndefined();
   });
 
+  it.each(['read', 'write', 'remove'] as const)(
+    'keeps a deleted account forgotten after a temporary keychain %s failure',
+    async (failedOperation) => {
+      const storage = memoryStorage();
+      const store = createDeviceTokenStore(storage);
+      await store.rememberFromReply({ userId: 'user-1', deviceToken: tokenFor('a') }, { email: 'a@example.com' });
+      if (failedOperation === 'write')
+        await store.rememberFromReply({ userId: 'user-2', deviceToken: tokenFor('b') }, { email: 'b@example.com' });
+      storage[failedOperation].mockRejectedValueOnce(new Error('keychain temporarily unavailable'));
+
+      await store.forgetAccount('user-1');
+
+      expect(storage.values.get(DEVICE_TOKEN_LEDGER_KEY)).toContain('user-1');
+      expect(await store.headersForCredentialsSignIn('a@example.com')).toEqual({});
+      await store.rememberFromReply({ userId: 'user-2', deviceToken: tokenFor('b') }, { email: 'b@example.com' });
+      expect(storage.values.get(DEVICE_TOKEN_LEDGER_KEY)).not.toContain('user-1');
+      expect(await store.headersForCredentialsSignIn('b@example.com')).toEqual({
+        [NATIVE_DEVICE_TOKEN_HEADER]: tokenFor('b'),
+      });
+    },
+  );
+
   it('gives up on a keychain that does not answer and sends no header', async () => {
     const storage = memoryStorage();
     storage.read.mockReturnValue(new Promise<string | null>(() => {}));

@@ -138,20 +138,23 @@ export function scrubPasswordRecoveryEvent<TEvent>(event: TEvent): TEvent {
       return REDACTED;
     }
     if (typeof input === 'string') {
-      let next = redactPasswordRecoveryUrls(input);
+      let next = input;
       // Some SDKs retain a serialized request body or flags payload.
-      if (/^\s*[[{]/.test(next)) {
+      // Parse before free-text replacement: replacing an unquoted null, number
+      // or compound deviceToken would otherwise invalidate the JSON and skip
+      // redaction of sibling credentials.
+      if (/^\s*[[{]/.test(input)) {
         try {
-          const parsed: unknown = JSON.parse(next);
+          const parsed: unknown = JSON.parse(input);
           mark(parsed, recoveryContext);
-          const before = changed;
           const scrubbed = scrub(parsed, recoveryContext);
-          if (changed !== before || JSON.stringify(scrubbed) !== JSON.stringify(parsed))
-            next = JSON.stringify(scrubbed);
+          const serialized = JSON.stringify(scrubbed);
+          if (serialized !== JSON.stringify(parsed)) next = serialized;
         } catch {
           // Non-JSON messages still receive whole recovery-URL scrubbing.
+          next = redactPasswordRecoveryUrls(input);
         }
-      }
+      } else next = redactPasswordRecoveryUrls(input);
       if (next !== input) changed = true;
       return next;
     }
@@ -184,8 +187,9 @@ export function scrubPasswordRecoveryEvent<TEvent>(event: TEvent): TEvent {
         secretField && item !== null && item !== undefined
           ? REDACTED
           : scrub(item, context, context && QUERY_FIELDS.has(key));
-      if (next !== item && secretField) changed = true;
-      Object.defineProperty(result, key, { value: next, enumerable: true, writable: true, configurable: true });
+      const scrubbedKey = redactPasswordRecoveryUrls(key);
+      if ((next !== item && secretField) || scrubbedKey !== key) changed = true;
+      Object.defineProperty(result, scrubbedKey, { value: next, enumerable: true, writable: true, configurable: true });
     }
     return result;
   }

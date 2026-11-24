@@ -7,7 +7,7 @@
 //
 // One SecureStore key holds every account's token as a small JSON ledger
 // (at most MAX_DEVICE_TOKEN_ACCOUNTS entries). It goes through secure-store-io
-// like every other key, so it follows docs/keychain-namespaces.md: v2 first on
+// like every other key, so it follows docs/auth/keychain-namespaces.md: v2 first on
 // read, written to v2 with a best-effort legacy mirror and a freshness stamp,
 // deleted from both namespaces with a read-back and a tombstone. It is not in
 // PREFERENCE_SECURE_KEYS: no build before this one ever wrote it, so there is
@@ -104,10 +104,12 @@ export function createDeviceTokenStore(
   }
 
   async function writeLedger(ledger: DeviceTokenLedger): Promise<void> {
+    // A failed deletion must not survive the next successful ledger write.
+    const retained = ledger.filter((account) => !deletedUserIds.has(account.userId));
     // Any write may move an email between accounts; re-check after it.
     confirmedEmails.clear();
-    if (ledger.length === 0) await storage.remove(DEVICE_TOKEN_LEDGER_KEY);
-    else await storage.write(DEVICE_TOKEN_LEDGER_KEY, serializeDeviceTokenLedger(ledger));
+    if (retained.length === 0) await storage.remove(DEVICE_TOKEN_LEDGER_KEY);
+    else await storage.write(DEVICE_TOKEN_LEDGER_KEY, serializeDeviceTokenLedger(retained));
   }
 
   return {
@@ -167,7 +169,15 @@ export function createDeviceTokenStore(
     },
 
     headersForCredentialsSignIn(email) {
-      const lookup = enqueue(async () => chooseDeviceTokenForEmail(await readLedger(), email)).catch(() => null);
+      const lookup = enqueue(async () => {
+        const ledger = await readLedger();
+        // Keychain cleanup can fail temporarily; the in-memory deletion still
+        // wins when storage becomes readable again in this app run.
+        return chooseDeviceTokenForEmail(
+          ledger.filter((account) => !deletedUserIds.has(account.userId)),
+          email,
+        );
+      }).catch(() => null);
       let timer: unknown;
       const deadline = new Promise<null>((resolve) => {
         timer = setTimer(() => resolve(null), HEADER_READ_DEADLINE_MS);
