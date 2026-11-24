@@ -8,6 +8,7 @@ import {
 import { getBoardAngleOptions } from '../board-data';
 import {
   initialSetupSelection,
+  isOfferedSetupAngle,
   isSetupChanged,
   isSetupSelectionComplete,
   selectSetupAngle,
@@ -74,6 +75,49 @@ describe('initialSetupSelection', () => {
   it('returns null for a board type this build does not know', () => {
     expect(initialSetupSelection(kilterBoard({ boardType: 'not-a-board' }))).toBeNull();
     expect(initialSetupSelection(kilterBoard({ boardType: '' }))).toBeNull();
+  });
+
+  it("drops a set the catalogue doesn't list for the layout and size, so every selected set can be toggled", () => {
+    const hiddenSetId = Math.max(...firstSizeSetIds) + 1_000;
+    const selection = initial({ setIds: [hiddenSetId, ...firstSizeSetIds].join(',') });
+    expect(selection.setIds).toEqual(firstSizeSetIds);
+    // Unticking a listed set removes that one, not the hidden id.
+    expect(toggleSetupSet(selection, firstSizeSetIds[0]).setIds).toEqual(firstSizeSetIds.slice(1));
+  });
+
+  it('opens a board carrying an unlisted set as unchanged; toggling a real set changes it', () => {
+    const hiddenSetId = Math.max(...firstSizeSetIds) + 1_000;
+    const current = {
+      layoutId: multiSizeLayout.id,
+      sizeId: firstSize.id,
+      setIds: [hiddenSetId, ...firstSizeSetIds].join(','),
+    };
+    const selection = initial({ setIds: current.setIds });
+    expect(isSetupChanged(selection, current)).toBe(false);
+    const toggled = toggleSetupSet(selection, firstSizeSetIds[0]);
+    expect(isSetupChanged(toggled, current)).toBe(true);
+    // Back on: unchanged again.
+    expect(isSetupChanged(toggleSetupSet(toggled, firstSizeSetIds[0]), current)).toBe(false);
+  });
+
+  it('keeps no sets for a layout and size the catalogue does not know', () => {
+    expect(initial({ layoutId: 987_654 }).setIds).toEqual([]);
+  });
+});
+
+describe('isOfferedSetupAngle', () => {
+  it('accepts the angles some client offers, the MoonBoard wide range included', () => {
+    expect(isOfferedSetupAngle('kilter', 40)).toBe(true);
+    expect(isOfferedSetupAngle('moonboard', 25)).toBe(true);
+    expect(isOfferedSetupAngle('moonboard', 30)).toBe(true);
+    expect(isOfferedSetupAngle('grasshopper', -5)).toBe(true);
+  });
+
+  it('refuses an angle no Angle row offers, even one the write contracts route', () => {
+    expect(isOfferedSetupAngle('kilter', 33)).toBe(false);
+    expect(isOfferedSetupAngle('moonboard', 72)).toBe(false);
+    expect(isOfferedSetupAngle('kilter', -5)).toBe(false);
+    expect(isOfferedSetupAngle('not-a-board', 40)).toBe(false);
   });
 });
 

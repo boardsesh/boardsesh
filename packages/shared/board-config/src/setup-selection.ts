@@ -61,7 +61,16 @@ export type CurrentBoardSetup = {
   angle?: number | null;
 };
 
-/** The selection a board starts on: its current setup. Null for a board type this build doesn't know. */
+/**
+ * The selection a board starts on: its current setup. Null for a board type
+ * this build doesn't know.
+ *
+ * Only the sets the catalogue lists for the board's layout and size are kept,
+ * so every selected set is one the Holds row shows and can toggle off. A board
+ * carrying a set the catalogue doesn't list for its size starts without it,
+ * and {@link isSetupChanged} leaves it out of the comparison too, so the
+ * fields open unchanged.
+ */
 export function initialSetupSelection(board: SetupSelectionBoard): SetupSelection | null {
   const boardName = toBoardName(board.boardType);
   if (!boardName) return null;
@@ -69,10 +78,16 @@ export function initialSetupSelection(board: SetupSelectionBoard): SetupSelectio
     boardName,
     layoutId: board.layoutId,
     sizeId: board.sizeId,
-    setIds: parseSetIds(board.setIds),
+    setIds: listedSetIds(boardName, board),
     angle: board.angle,
     angleIsFixed: !board.isAngleAdjustable,
   };
+}
+
+/** The setup's sets the catalogue lists for its layout and size, in the setup's order. */
+function listedSetIds(boardName: BoardName, setup: { layoutId: number; sizeId: number; setIds: string }): number[] {
+  const listed = new Set(getBoardSetsForLayoutAndSize(boardName, setup.layoutId, setup.sizeId).map((set) => set.id));
+  return parseSetIds(setup.setIds).filter((setId) => listed.has(setId));
 }
 
 /** Pick a layout: its default size and every set of that size come with it. */
@@ -170,19 +185,39 @@ export function setupSelectionOptions(
   };
 }
 
+/**
+ * Whether some client may offer this angle in the Angle row for this board
+ * type: `getBoardAngleOptions` with the `moonboard-wide-angles` flag off or
+ * on. The flag is a per-viewer UI rollout, so the server, which can't see the
+ * viewer's flag, accepts the angles either answer offers. Stricter than the
+ * write contracts' "any routable angle": a suggested setup's angle is picked
+ * from the Angle row, never typed.
+ */
+export function isOfferedSetupAngle(boardType: string, angle: number): boolean {
+  const boardName = toBoardName(boardType);
+  if (!boardName) return false;
+  return (
+    getBoardAngleOptions(boardName, false).includes(angle) || getBoardAngleOptions(boardName, true).includes(angle)
+  );
+}
+
 /** A layout, a size and at least one set are picked. */
 export function isSetupSelectionComplete(selection: SetupCascade): boolean {
   return selection.layoutId != null && selection.sizeId != null && selection.setIds.length > 0;
 }
 
 /**
- * Whether the selection differs from the board's current setup. Set order and
- * repeats don't count (`normaliseSetIds`). The angle counts only on a board
- * that doesn't tilt.
+ * Whether the climber changed something: the selection differs from the
+ * board's current setup as {@link initialSetupSelection} read it. Set order
+ * and repeats don't count (`normaliseSetIds`), and neither does a set the
+ * catalogue doesn't list for the current layout and size, which the selection
+ * never holds: a board carrying one opens unchanged. The angle counts only on
+ * a board that doesn't tilt.
  */
 export function isSetupChanged(selection: SetupSelection, current: CurrentBoardSetup): boolean {
   if (selection.layoutId !== current.layoutId || selection.sizeId !== current.sizeId) return true;
-  if (normaliseSetIds(selection.setIds.join(',')) !== normaliseSetIds(current.setIds)) return true;
+  const currentSetIds = listedSetIds(selection.boardName, current).join(',');
+  if (normaliseSetIds(selection.setIds.join(',')) !== normaliseSetIds(currentSetIds)) return true;
   return selection.angleIsFixed && selection.angle !== current.angle;
 }
 
