@@ -374,6 +374,10 @@ export function importComparisonPage(page: ComparisonPageId, json: Json, options
       const cellPath = page === 'spray-wall-apps' ? `${path}.competitors.${competitor}` : `${path}.official`;
       const value = reader.text(cells[competitor], cellPath, { cap: CAPS.cell });
       if (isPendingAny(value)) pendingCells.push(competitor);
+      // A tie whose competitor cell says the feature is missing contradicts its own chip.
+      if (rowVerdict === 'same' && /^no\b|not documented|isn't documented|not found/i.test(value)) {
+        reader.warn(cellPath, `reads "${value}" on a tie row; is this a Boardsesh win (with sharedWith)?`);
+      }
       text[competitor] = value;
     }
     const cited = reader.sourceIds(entry.sourceIds, `${path}.sourceIds`, known);

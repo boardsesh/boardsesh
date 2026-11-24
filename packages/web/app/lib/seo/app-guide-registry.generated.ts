@@ -1328,8 +1328,9 @@ export const APP_GUIDE_REGISTRY = {
       },
       {
         id: 'leds',
-        verdict: 'same',
+        verdict: 'boardsesh',
         winners: [],
+        sharedWith: ['stokt'],
         sourceIds: ['bs-spray-led', 'stokt-features', 'retro-appstore', 'crux-scan', 'wled', 'stokt-pro'],
         pendingCells: [],
       },
@@ -1342,8 +1343,9 @@ export const APP_GUIDE_REGISTRY = {
       },
       {
         id: 'devices',
-        verdict: 'same',
+        verdict: 'boardsesh',
         winners: [],
+        sharedWith: ['crux'],
         sourceIds: [
           'bs-appstore',
           'stokt-appstore',
