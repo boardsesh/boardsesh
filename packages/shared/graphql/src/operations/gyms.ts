@@ -1,6 +1,7 @@
 import { gql } from 'graphql-request';
 import type {
   Gym,
+  GymAddressCoordinates,
   GymBoardSummary,
   GymConnection,
   MyGymClaim,
@@ -46,6 +47,18 @@ import type {
 // ============================================
 // Gym Queries
 // ============================================
+
+export const LOOKUP_GYM_ADDRESS_COORDINATES = gql`
+  query LookupGymAddressCoordinates($address: String!) {
+    lookupGymAddressCoordinates(address: $address) {
+      latitude
+      longitude
+    }
+  }
+`;
+
+export type LookupGymAddressCoordinatesVariables = { address: string };
+export type LookupGymAddressCoordinatesResponse = { lookupGymAddressCoordinates: GymAddressCoordinates | null };
 
 /**
  * Shared by GET_GYM, GET_GYM_BY_SLUG, GET_MY_GYMS and SEARCH_GYMS, all typed

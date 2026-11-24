@@ -72,6 +72,7 @@ import { boardDiscoveryQueries } from './social/board-discovery';
 import { communityStatsQueries } from './social/community-stats';
 import { socialGymQueries, socialGymMutations } from './social/gyms';
 import { placeQueries } from './social/places';
+import { gymAddressLookupQueries } from './social/gym-address-lookup';
 import { gymActivityStatsMutations } from './social/gym-activity-stats';
 import { setterSitemapMutations } from './social/setter-sitemap';
 import { socialGymMatchQueries } from './social/gym-matching';
@@ -166,6 +167,7 @@ export const resolvers = {
     ...communityStatsQueries,
     ...socialGymQueries,
     ...placeQueries,
+    ...gymAddressLookupQueries,
     ...socialGymMatchQueries,
     ...socialGymStrayBoardQueries,
     ...socialGymKioskQueries,

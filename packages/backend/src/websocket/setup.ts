@@ -1,3 +1,8 @@
+import {
+  isAddressLookupDocument,
+  sanitizeAddressLookupError,
+  sanitizeAddressLookupResult,
+} from '../graphql/address-lookup-privacy';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { Server as HttpServer, IncomingMessage } from 'http';
 import { useServer, type Extra as WsExtra } from 'graphql-ws/use/ws';
@@ -642,6 +647,9 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           } catch (error: unknown) {
             // A thrown parse error escapes into graphql-ws' generic server
             // logger. Return a safe error before its token-bearing source does.
+            if (error instanceof GraphQLError && isAddressLookupDocument(payload.query)) {
+              return [sanitizeAddressLookupError(error, payload.query)];
+            }
             if (error instanceof GraphQLError && isBoardShareTokenDocument(payload.query)) {
               return [sanitizeBoardShareGraphqlError(error, payload.query)];
             }
@@ -660,10 +668,13 @@ export function setupWebSocketServer(httpServer: HttpServer): {
       // within a second, and a read here would make every live update wait on the
       // primary.
       onNext: (_ctx: ServerContext, _id: string, payload, _executionArgs, result) =>
-        sanitizeBoardShareResult(result, payload.query),
+        sanitizeAddressLookupResult(sanitizeBoardShareResult(result, payload.query), payload.query),
       onError: (_ctx: ServerContext, _id: string, payload, errors) => {
         const safeErrors = errors.map((error) =>
-          sanitizeBoardShareGraphqlError(sanitizeAppleAdsGraphqlError(error), payload.query),
+          sanitizeAddressLookupError(
+            sanitizeBoardShareGraphqlError(sanitizeAppleAdsGraphqlError(error), payload.query),
+            payload.query,
+          ),
         );
         logger.error('GraphQL error:', safeErrors.map(clipGraphqlErrorForLog));
         // Only report errors that wrap an internal exception. GraphQLError

@@ -4329,6 +4329,13 @@ export type GymActivityStatsRefreshResult = {
   writeDurationMs: Scalars['Float']['output'];
 };
 
+/** Coordinates from an explicit authenticated address search; null when no unambiguous match is available. */
+export type GymAddressCoordinates = {
+  __typename?: 'GymAddressCoordinates';
+  latitude: Scalars['Float']['output'];
+  longitude: Scalars['Float']['output'];
+};
+
 export type GymAngleActivityCounts = {
   __typename?: 'GymAngleActivityCounts';
   /** Confirmed Boardsesh displays. */
@@ -9017,6 +9024,8 @@ export type Query = {
    * Requires authentication.
    */
   isFollowing: Scalars['Boolean']['output'];
+  /** Explicit address search for a map pin. Authentication required; 5–500 characters; no autocomplete. */
+  lookupGymAddressCoordinates?: Maybe<GymAddressCoordinates>;
   /** Current release context. Available without signing in. */
   mobileReleaseStatus: ReleaseContext;
   /** The signed-in climber's current analytics consent, or null when they have never answered. */
@@ -10024,6 +10033,11 @@ export type QueryInstagramBetaScanArgs = {
 /** Root query type for all read operations. */
 export type QueryIsFollowingArgs = {
   userId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryLookupGymAddressCoordinatesArgs = {
+  address: Scalars['String']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -15074,6 +15088,7 @@ export type ResolversTypes = ResolversObject<{
   GroupedNotificationConnection: ResolverTypeWrapper<GroupedNotificationConnection>;
   Gym: ResolverTypeWrapper<Gym>;
   GymActivityStatsRefreshResult: ResolverTypeWrapper<GymActivityStatsRefreshResult>;
+  GymAddressCoordinates: ResolverTypeWrapper<GymAddressCoordinates>;
   GymAngleActivityCounts: ResolverTypeWrapper<GymAngleActivityCounts>;
   GymAngleUsageRow: ResolverTypeWrapper<GymAngleUsageRow>;
   GymBoardAngleUsage: ResolverTypeWrapper<GymBoardAngleUsage>;
@@ -15744,6 +15759,7 @@ export type ResolversParentTypes = ResolversObject<{
   GroupedNotificationConnection: GroupedNotificationConnection;
   Gym: Gym;
   GymActivityStatsRefreshResult: GymActivityStatsRefreshResult;
+  GymAddressCoordinates: GymAddressCoordinates;
   GymAngleActivityCounts: GymAngleActivityCounts;
   GymAngleUsageRow: GymAngleUsageRow;
   GymBoardAngleUsage: GymBoardAngleUsage;
@@ -18311,6 +18327,15 @@ export type GymActivityStatsRefreshResultResolvers<
   scanDurationMs?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
   timestamp?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   writeDurationMs?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type GymAddressCoordinatesResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymAddressCoordinates'] = ResolversParentTypes['GymAddressCoordinates'],
+> = ResolversObject<{
+  latitude?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  longitude?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -21361,6 +21386,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryIsFollowingArgs, 'userId'>
   >;
+  lookupGymAddressCoordinates?: Resolver<
+    Maybe<ResolversTypes['GymAddressCoordinates']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryLookupGymAddressCoordinatesArgs, 'address'>
+  >;
   mobileReleaseStatus?: Resolver<
     ResolversTypes['ReleaseContext'],
     ParentType,
@@ -23970,6 +24001,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   GroupedNotificationConnection?: GroupedNotificationConnectionResolvers<ContextType>;
   Gym?: GymResolvers<ContextType>;
   GymActivityStatsRefreshResult?: GymActivityStatsRefreshResultResolvers<ContextType>;
+  GymAddressCoordinates?: GymAddressCoordinatesResolvers<ContextType>;
   GymAngleActivityCounts?: GymAngleActivityCountsResolvers<ContextType>;
   GymAngleUsageRow?: GymAngleUsageRowResolvers<ContextType>;
   GymBoardAngleUsage?: GymBoardAngleUsageResolvers<ContextType>;

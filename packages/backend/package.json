@@ -77,6 +77,7 @@
     "cnc-xmldom": "npm:@xmldom/xmldom@^0.9.12",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
+    "geo-tz": "8.1.11",
     "graphql": "^16.14.2",
     "graphql-type-json": "^0.3.2",
     "graphql-ws": "^6.2.0",

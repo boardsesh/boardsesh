@@ -7,9 +7,10 @@ const namedTimeZone = /^(?:UTC|[A-Za-z_]+(?:\/[A-Za-z\d_+-]+)+)$/;
 const instantShape = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/i;
 const dayShape = /^\d{4}-\d{2}-\d{2}$/;
 let postgresTimeZones: Promise<Map<string, string>> | undefined;
+export type ReportingTimeZoneExecutor = Pick<typeof db, 'execute'>;
 
-function getPostgresTimeZones(): Promise<Map<string, string>> {
-  postgresTimeZones ??= db
+function getPostgresTimeZones(executor: ReportingTimeZoneExecutor): Promise<Map<string, string>> {
+  postgresTimeZones ??= executor
     .execute(sql`SELECT name FROM pg_timezone_names`)
     .then((result) => {
       const rows = rowsFromResult<{ name: string }>(result);
@@ -22,11 +23,14 @@ function getPostgresTimeZones(): Promise<Map<string, string>> {
   return postgresTimeZones;
 }
 
-export async function validatedReportingTimeZone(timeZone: string): Promise<string | null> {
+export async function validatedReportingTimeZone(
+  timeZone: string,
+  executor: ReportingTimeZoneExecutor = db,
+): Promise<string | null> {
   if (!namedTimeZone.test(timeZone)) return null;
   try {
     const canonical = new Intl.DateTimeFormat('en', { timeZone }).resolvedOptions().timeZone;
-    const names = await getPostgresTimeZones();
+    const names = await getPostgresTimeZones(executor);
     return names.get(canonical.toLowerCase()) ?? names.get(timeZone.toLowerCase()) ?? null;
   } catch (error) {
     if (error instanceof RangeError) return null;

@@ -1,4 +1,10 @@
 export const gymsTypeDefs = /* GraphQL */ `
+  "Coordinates from an explicit authenticated address search; null when no unambiguous match is available."
+  type GymAddressCoordinates {
+    latitude: Float!
+    longitude: Float!
+  }
+
   "A city or town from the locally hosted GeoNames gazetteer."
   type PlaceSuggestion {
     id: Int!

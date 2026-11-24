@@ -1,5 +1,10 @@
 // Gym entity types
 
+export type GymAddressCoordinates = {
+  latitude: number;
+  longitude: number;
+};
+
 export type PlaceSuggestion = {
   id: number;
   name: string;

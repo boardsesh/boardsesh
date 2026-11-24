@@ -763,6 +763,8 @@ export const queriesTypeDefs = /* GraphQL */ `
     publicGymSitemap: [GymSitemapEntry!]!
     "City/town suggestions; query must contain 3–80 characters. At most five results."
     searchPlaces(query: String!): [PlaceSuggestion!]!
+    "Explicit address search for a map pin. Authentication required; 5–500 characters; no autocomplete."
+    lookupGymAddressCoordinates(address: String!): GymAddressCoordinates
 
     """
     Live gyms that resemble one the user is about to create, so they can view or
