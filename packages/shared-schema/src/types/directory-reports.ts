@@ -88,7 +88,7 @@ export type DirectoryReportSubmitResult = {
   otherReporterCount: number;
   /** Set when the report carried a suggested setup; null otherwise. */
   setupOutcome?: BoardSetupOutcome | null;
-  /** Set when `setupOutcome` is `SENT_FOR_REVIEW`. */
+  /** Why it went to review. Null when it applied, and while the `directory-setup-suggestions` flag is off. */
   setupReviewReason?: BoardSetupReviewReason | null;
   /** The board with its new setup, when `setupOutcome` is `APPLIED`. */
   board?: UserBoard | null;

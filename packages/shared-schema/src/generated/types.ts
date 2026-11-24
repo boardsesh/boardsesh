@@ -3247,7 +3247,10 @@ export type DirectoryReportSubmitResult = {
   routedTo: Array<DirectoryReportRecipient>;
   /** What the suggested setup did. Null when the report carried none (and always for reportGym). */
   setupOutcome?: Maybe<BoardSetupOutcome>;
-  /** Why the suggested setup went to review. Set only when setupOutcome is SENT_FOR_REVIEW. */
+  /**
+   * Why the suggested setup went to review. Null when it applied, and when no
+   * suggestion can apply right now (the directory-setup-suggestions flag is off).
+   */
   setupReviewReason?: Maybe<BoardSetupReviewReason>;
   status: DirectoryReportSubmitStatus;
 };

@@ -198,7 +198,10 @@ export const directoryReportsTypeDefs = /* GraphQL */ `
     otherReporterCount: Int!
     "What the suggested setup did. Null when the report carried none (and always for reportGym)."
     setupOutcome: BoardSetupOutcome
-    "Why the suggested setup went to review. Set only when setupOutcome is SENT_FOR_REVIEW."
+    """
+    Why the suggested setup went to review. Null when it applied, and when no
+    suggestion can apply right now (the directory-setup-suggestions flag is off).
+    """
     setupReviewReason: BoardSetupReviewReason
     "The board with its new setup, for 'Climb it now'. Set only when setupOutcome is APPLIED."
     board: UserBoard
