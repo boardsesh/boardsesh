@@ -128,6 +128,13 @@ All six live guides passed Google's Rich Results Test on November 24:
 | `/apps` | [20:03 CET test](https://search.google.com/test/rich-results/result?id=08g64bBLN27Rm6Q5KdII3Q) | Breadcrumbs, Carousels, Software apps |
 | `/apps/woods` | [20:04 CET test](https://search.google.com/test/rich-results/result?id=QUc4MYuQKxVoNPTFAdbn1g) | Breadcrumbs, Software apps |
 
+The [homepage test](https://search.google.com/test/rich-results/result?id=eWMVjwQUAX8Y55G2SzqXPA)
+detected one valid Video item. The
+[`/boards` test](https://search.google.com/test/rich-results/result?id=DGCAGxKElgtIUus9mNlNmg)
+crawled successfully with no rich-result items detected. Its first attempt had
+a server connection error; the retry succeeded. No breadcrumb enhancement is
+claimed for that existing directory page.
+
 Google reported Software apps as valid with non-critical issues, rather than
 the ineligible verdict anticipated in #8122. This is the observed validator
 result, not a guarantee of rich-result display. No ratings were added to
