@@ -30,6 +30,8 @@ export const boardConfigTypeDefs = /* GraphQL */ `
     angle: Int!
     "Number of people who have completed this climb at this angle"
     ascensionistCount: Int
+    "Approximate recorded board selections lasting at least 30 seconds at this angle. Refreshed hourly. Null when unavailable."
+    playCount: Float
     "Average quality rating"
     qualityAverage: Float
     "Average difficulty rating"
@@ -42,13 +44,15 @@ export const boardConfigTypeDefs = /* GraphQL */ `
 
   """
   Current statistics for a climb at one angle, read from the live stats table.
-  One entry per angle the climb has been logged at.
+  One entry per angle with a stored statistics row.
   """
   type ClimbStatsForAngle {
     "Board angle in degrees"
     angle: Int!
     "Number of people who have completed this climb at this angle"
     ascensionistCount: Int
+    "Approximate recorded board selections lasting at least 30 seconds at this angle. Refreshed hourly. Null when unavailable."
+    playCount: Float
     "Average quality rating"
     qualityAverage: Float
     "Average difficulty rating"
@@ -77,6 +81,8 @@ export const boardConfigTypeDefs = /* GraphQL */ `
     angle: Int!
     "Number of people who have completed this climb at this angle"
     ascensionistCount: Int
+    "Approximate recorded board selections lasting at least 30 seconds at this angle. Refreshed hourly. Null when unavailable."
+    playCount: Float
     "Average quality rating"
     qualityAverage: Float
     "Average difficulty rating"

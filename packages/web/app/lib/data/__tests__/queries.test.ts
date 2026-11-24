@@ -46,6 +46,7 @@ const canonicalRow9 = {
   framesPace: 0,
   angle: 40,
   ascensionist_count: 5,
+  play_count: '23',
   difficulty_id: 20,
   quality_average: '3.50',
   difficulty_error: '0.00',
@@ -76,6 +77,7 @@ describe('getClimb', () => {
         framesPace: 0,
         angle: 40,
         ascensionist_count: 12,
+        play_count: '0',
         difficulty_id: 20,
         quality_average: '2.50',
         difficulty_error: '0.10',
@@ -105,6 +107,7 @@ describe('getClimb', () => {
     expect(climb.difficulty).toBe('6c/V5');
     expect(climb.is_no_match).toBe(true);
     expect(climb.ascensionist_count).toBe(12);
+    expect(climb.play_count).toBe(0);
   });
 
   it('derives is_no_match from the description prefix when characteristics is null', async () => {
@@ -345,6 +348,24 @@ describe('getClimbStatsForAllAngles', () => {
     expect(params).toEqual(expect.arrayContaining(['kilter', 'some-climb-uuid']));
     return queryText.replace(/\s+/g, ' ');
   }
+
+  it('reads Plays for each returned angle of the canonical climb', async () => {
+    mockSqlTag.unsafe.mockResolvedValueOnce([
+      { angle: 30, play_count: '0' },
+      { angle: 40, play_count: '2147483648' },
+      { angle: 45, play_count: '9007199254740993' },
+    ]);
+    const stats = await getClimbStatsForAllAngles('kilter', 'canonical');
+    expect(stats.map(({ angle, play_count }) => [angle, play_count])).toEqual([
+      [30, 0],
+      [40, 2_147_483_648],
+      [45, null],
+    ]);
+    const [query, params] = mockSqlTag.unsafe.mock.calls[0];
+    expect(query).toContain('climb_stats.play_count::text');
+    expect(query).not.toContain('board_climb_aliases');
+    expect(params).toEqual(expect.arrayContaining(['kilter', 'canonical']));
+  });
 
   it('returns no stats for a draft climb, and still returns a stats row that has no climb row', async () => {
     // NOT EXISTS rather than a join: only a climb row that IS a draft removes

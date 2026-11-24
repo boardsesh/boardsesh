@@ -275,7 +275,13 @@ AND bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the stats table h
   except when the climb is a non-spray draft with an owner: the trigger looks the climb up (it still exists, since
   `deleteClimbDependentRows` runs first) and sets `user_id` to the setter, as `board_climbs` does (0280, #6150).
 - Columns: `board_type`, `climb_uuid`, `angle`, `display_difficulty`, `benchmark_difficulty`, `ascensionist_count`,
-  `difficulty_average`, `quality_average`, `fa_username`, `fa_at`, `updated_at`, `sync_seq`.
+  `play_count`, `difficulty_average`, `quality_average`, `fa_username`, `fa_at`, `updated_at`, `sync_seq`.
+- `play_count` is a bigint sent as decimal text in the ordinary and saved-climb documents. SQLite v16 stores it
+  as a nullable INTEGER. Existing rows remain unknown until the server sends the value, including zero. The
+  required column and revision 2 replay every downloaded stats scope, including spray scopes already at revision 1.
+  A changed stored count advances the cursor through the existing trigger. The batch login needs USAGE on its
+  sequence. Deploy the schema and reconcile its grants before enabling the hourly writer. Deploy GraphQL fields
+  before shipping app operations that select them.
 - Server-only (NOT pulled to devices): the provenance columns `upstream_synced_at` and `tick_graded_at` (#4798),
   the upstream/Boardsesh count and quality-blend splits. Devices read the materialized results
   (`ascensionist_count`, `quality_average`, `display_difficulty`); provenance only ever decides which server-side

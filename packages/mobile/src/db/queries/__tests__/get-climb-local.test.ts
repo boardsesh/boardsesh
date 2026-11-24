@@ -72,6 +72,25 @@ describe('getClimbLocal — Boardsesh grade join', () => {
     expect(climb?.mirrored).toBe(false);
   });
 
+  it('keeps zero, treats an unsafe count as unavailable, and reads only the requested angle', async () => {
+    await insertClimb(db, 'plays');
+    await db.execAsync(`INSERT INTO board_climb_stats (board_type, climb_uuid, angle, play_count)
+      VALUES ('kilter', 'plays', 30, 0), ('kilter', 'plays', 40, 2147483648),
+        ('kilter', 'plays', 45, 9007199254740993), ('tension', 'plays', 50, 27);`);
+    const detail = (angle: number) =>
+      getClimbLocal(db, {
+        boardName: 'kilter',
+        layoutId: 1,
+        angle,
+        climbUuid: 'plays',
+        viewerId: null,
+      });
+    expect((await detail(30))?.play_count).toBe(0);
+    expect((await detail(40))?.play_count).toBe(2147483648);
+    expect((await detail(45))?.play_count).toBeNull();
+    expect((await detail(50))?.play_count).toBeNull();
+  });
+
   it('reads null grade when the only grade row is at a different angle', async () => {
     await insertClimb(db, 'c2');
     await insertGrade(db, { climbUuid: 'c2', angle: 25, universalGrade: 15.0 });

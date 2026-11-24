@@ -482,7 +482,8 @@ export async function getPlaylistClimbsLocal(
       ? [filters.globalInput.boardName, filters.globalInput.angle, viewerId]
       : [];
     const rows = await db.getAllAsync<PlaylistClimbRow>(
-      `${base.sql} SELECT c.*, s.ascensionist_count, s.display_difficulty, s.difficulty_average, s.quality_average,
+      `${base.sql} SELECT c.*, s.ascensionist_count, CAST(s.play_count AS TEXT) AS play_count,
+        s.display_difficulty, s.difficulty_average, s.quality_average,
         s.benchmark_difficulty, s.angle AS stats_angle, COALESCE(g.universal_grade, g.local_grade) AS boardsesh_difficulty,
         g.confidence AS boardsesh_confidence, 0 AS user_ascents, 0 AS user_attempts,
         ${filters.personalGrades ? MY_GRADE_SUBQUERY : 'NULL'} AS my_difficulty
@@ -492,14 +493,13 @@ export async function getPlaylistClimbsLocal(
     return {
       playlistClimbs: {
         climbs: rows.slice(0, pageSize).map((row) => {
-          const climb = mapRowToClimb(
-            row,
-            row.board_type,
-            row.layout_id,
-            (input.boardName ? input.angle : undefined) ?? row.stats_angle ?? row.preferred_angle ?? 40,
-            filters.personalGrades,
-          );
-          return { ...climb, description: climb.description ?? '' };
+          const angle = (input.boardName ? input.angle : undefined) ?? row.stats_angle ?? row.preferred_angle ?? 40;
+          const climb = mapRowToClimb(row, row.board_type, row.layout_id, angle, filters.personalGrades);
+          return {
+            ...climb,
+            description: climb.description ?? '',
+            play_count: row.stats_angle === angle ? climb.play_count : null,
+          };
         }),
         totalCount: Number(count?.total ?? 0),
         unfilteredCount: unfiltered ? Number(unfiltered.total) : null,

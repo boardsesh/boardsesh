@@ -1497,6 +1497,16 @@ describe('cross-angle stats resolution', () => {
     expect(browsedAngleClimb.angle).toBe(30);
   });
 
+  it('keeps the requested-angle Plays separate from fallback stats', async () => {
+    await db.execAsync(`UPDATE board_climb_stats SET play_count = CASE WHEN angle = 30 THEN 0 ELSE 42 END
+      WHERE board_type = 'woods'`);
+    const { climbs } = await searchClimbsLocal(db, woodsAt30());
+    expect(climbs[0]).toMatchObject({ angle: 30, statsAngle: 40, ascensionist_count: 500, play_count: null });
+    expect(climbs[1]).toMatchObject({ angle: 30, statsAngle: 30, play_count: 0 });
+    const { climbs: steepClimbs } = await searchClimbsLocal(db, woodsAt30({ angle: 40 }));
+    expect(steepClimbs[0]).toMatchObject({ angle: 40, statsAngle: 40, play_count: 42 });
+  });
+
   it('counts the same universe the list shows', async () => {
     expect(await countClimbsLocal(db, woodsAt30())).toBe(2);
   });

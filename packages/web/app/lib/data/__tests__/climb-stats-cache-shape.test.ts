@@ -51,7 +51,7 @@ describe('climb stats cache boundary', () => {
 
     for (let request = 0; request < 2; request++) {
       const angleStats = await getClimbStatsForAllAngles('kilter', 'sparse-climb');
-      expect(angleStats).toEqual([{ ...validStats, difficulty: '6c/V5' }]);
+      expect(angleStats).toEqual([{ ...validStats, play_count: null, difficulty: '6c/V5' }]);
       const canonicalAngle = selectCanonicalClimbAngle({ boardName: 'kilter', angleStats });
       expect(canonicalAngle).toBe(40);
       expect(buildOgClimbCardIdentity({ name: 'A climb' }, 'kilter', canonicalAngle, angleStats).grade).toBe('6c/V5');

@@ -2451,6 +2451,13 @@
       "when": 1795548668788,
       "tag": "0349_gym_tick_vote_invalidation",
       "breakpoints": true
+    },
+    {
+      "idx": 350,
+      "version": "7",
+      "when": 1795549787423,
+      "tag": "0350_sync_climb_play_count",
+      "breakpoints": true
     }
   ]
 }

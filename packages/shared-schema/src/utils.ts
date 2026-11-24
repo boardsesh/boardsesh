@@ -1,6 +1,13 @@
 import type { UserBoard } from './types/board-entities';
 import { isNoMatch, usesAuroraNoMatchDescription } from './characteristics';
 
+/** Convert a per-angle stored count without rounding bigint values or inventing zero. */
+export function toPlayCount(count: number | string | null | undefined): number | null {
+  if (count == null || (typeof count === 'string' && !/^\d+$/.test(count))) return null;
+  const normalized = Number(count);
+  return Number.isSafeInteger(normalized) && normalized >= 0 ? normalized : null;
+}
+
 /** The board config tuple needed to prefer a same-config serial match. */
 export type SerialBoardConfig = {
   boardType: string;

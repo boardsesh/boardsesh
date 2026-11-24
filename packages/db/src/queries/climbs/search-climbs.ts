@@ -1,3 +1,4 @@
+import { toPlayCount } from '@boardsesh/shared-schema';
 import { type SQL, desc, sql, and, eq } from 'drizzle-orm';
 import { alias, type SubqueryWithSelection } from 'drizzle-orm/pg-core';
 import type { DbInstance } from '../../client/postgres';
@@ -48,6 +49,7 @@ type RawSelectResult = {
   angle: number | null;
   stats_angle: number | null;
   ascensionist_count: string | null;
+  play_count: string | null;
   difficulty_id: number | string | null;
   quality_average: number | string | null;
   difficulty_error: number | string | null;
@@ -112,6 +114,7 @@ function mapResultToClimbRow(result: RawSelectResult, params: BoardRouteParams, 
     // row whose `angle` moved would re-anchor and refetch on every render.
     statsAngle: result.stats_angle ?? null,
     ascensionist_count: Number(result.ascensionist_count || 0),
+    play_count: toPlayCount(result.play_count),
     difficulty: getGradeLabel(toIntegerOrNull(result.difficulty_id), params.board_name),
     quality_average: result.quality_average?.toString() || '0',
     stars: getClimbStars(result.quality_average),
@@ -561,6 +564,14 @@ async function joinGradesToRankedPage(
       angle: rankedPage.angle,
       stats_angle: rankedPage.stats_angle,
       ascensionist_count: rankedPage.ascensionist_count,
+      // Enrich only the selected page. A correlated lookup avoids adding a
+      // second quality_average column beside the ranked page's SQL alias.
+      play_count: sql<string | null>`(
+        SELECT play_stats.play_count::text FROM board_climb_stats play_stats
+        WHERE play_stats.board_type = ${params.board_name}
+          AND play_stats.climb_uuid = ${rankedPage.uuid}
+          AND play_stats.angle = ${params.angle}
+      )`,
       difficulty_id: rankedPage.difficulty_id,
       quality_average: rankedPage.quality_average,
       difficulty_error: rankedPage.difficulty_error,
@@ -613,6 +624,14 @@ async function selectPageWithGradesJoined(
 ): Promise<RawSelectResult[]> {
   const selectFields = {
     ...statsDrivenClimbFields(),
+    // Kept out of the covered columns read by the rank walk. This scalar
+    // projection is evaluated only for rows that survive ORDER BY and LIMIT.
+    play_count: sql<string | null>`(
+      SELECT play_stats.play_count::text FROM board_climb_stats play_stats
+      WHERE play_stats.board_type = ${params.board_name}
+        AND play_stats.climb_uuid = ${boardClimbStats.climbUuid}
+        AND play_stats.angle = ${params.angle}
+    )`,
     // Boardsesh grade at the searched angle (params.angle). Surfaced flattened so
     // list rows carry it without a per-climb boardseshGrade round-trip.
     boardsesh_difficulty: sql<
@@ -992,6 +1011,7 @@ async function runStandardSearch(
     // The angle the stats below were actually read from — see ./effective-stats.
     stats_angle: resolvedStatsAngleSql(crossAngle),
     ascensionist_count: sql<string | null>`${statsCol('ascensionistCount')}`,
+    play_count: sql<string | null>`${boardClimbStats.playCount}::text`,
     // ROUND(::numeric) returns text over the wire (see RawSelectResult).
     difficulty_id: sql<number | string | null>`ROUND(${statsCol('displayDifficulty')}::numeric, 0)`,
     quality_average: sql<number | string | null>`ROUND(${statsCol('qualityAverage')}::numeric, 2)`,

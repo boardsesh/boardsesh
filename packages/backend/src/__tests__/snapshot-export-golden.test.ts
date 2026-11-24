@@ -160,6 +160,7 @@ async function insertStat(values: {
   angle: number;
   displayDifficulty?: number | null;
   ascensionistCount?: number | null;
+  playCount?: number;
   qualityAverage?: number | null;
   faUsername?: string | null;
   faAt?: string | null;
@@ -168,10 +169,10 @@ async function insertStat(values: {
   await db.execute(sql`
     INSERT INTO board_climb_stats
       (board_type, climb_uuid, angle, display_difficulty, ascensionist_count,
-       quality_average, fa_username, fa_at, updated_at)
+       play_count, quality_average, fa_username, fa_at, updated_at)
     VALUES
       (${BOARD_TYPE}, ${values.climbUuid}, ${values.angle}, ${values.displayDifficulty ?? null},
-       ${values.ascensionistCount ?? null}, ${values.qualityAverage ?? null},
+       ${values.ascensionistCount ?? null}, ${values.playCount ?? 0}, ${values.qualityAverage ?? null},
        ${values.faUsername ?? null}, ${values.faAt ?? null}, ${values.updatedAt}::timestamp)
   `);
 }
@@ -531,6 +532,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
       angle: 40,
       displayDifficulty: 21.5,
       ascensionistCount: 1234,
+      playCount: 79,
       qualityAverage: 4.6,
       faUsername: 'setterfa',
       faAt: '2023-01-01T00:00:00Z',
@@ -586,6 +588,10 @@ describe('board-snapshot export ↔ live pull parity', () => {
     // Sanity: they actually carry the seeded data (not both empty).
     expect(artifactClimbs.map((row) => row.uuid)).toEqual(['c1', 'c2', 'c3']);
     expect(artifactStats).toHaveLength(3);
+    expect(artifactStats.filter((row) => row.climb_uuid === 'c1').map((row) => [row.angle, row.play_count])).toEqual([
+      [40, 79],
+      [50, 0],
+    ]);
     // Spot-check the tricky coercions landed as the manifest dictates.
     const c1 = artifactClimbs.find((row) => row.uuid === 'c1')!;
     expect(c1.is_draft).toBe(0);

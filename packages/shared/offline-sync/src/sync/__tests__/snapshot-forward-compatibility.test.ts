@@ -4,11 +4,11 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// Reproduce the shipped v4 client contract against a v5 producer, without adding
+// Reproduce a v15 client against a v16 producer, without adding
 // a production option that could bypass schema verification.
 vi.mock('../../db/migrations', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../db/migrations')>();
-  return { ...original, LATEST_SCHEMA_VERSION: 4, ARTIFACT_SCHEMA_VERSION: 4 };
+  return { ...original, LATEST_SCHEMA_VERSION: 15, ARTIFACT_SCHEMA_VERSION: 12 };
 });
 vi.mock('../table-config', async (importOriginal) => {
   const original = await importOriginal<typeof import('../table-config')>();
@@ -16,10 +16,11 @@ vi.mock('../table-config', async (importOriginal) => {
     ...original,
     TABLE_CONFIGS: {
       ...original.TABLE_CONFIGS,
-      board_climbs: {
-        ...original.TABLE_CONFIGS.board_climbs,
+      board_climb_stats: {
+        ...original.TABLE_CONFIGS.board_climb_stats,
         refreshRevision: undefined,
-        localColumns: original.TABLE_CONFIGS.board_climbs.localColumns.filter((column) => column !== 'is_hidden'),
+        refreshColumns: undefined,
+        localColumns: original.TABLE_CONFIGS.board_climb_stats.localColumns.filter((column) => column !== 'play_count'),
       },
     },
   };
@@ -39,7 +40,7 @@ beforeEach(async () => {
   directory = mkdtempSync(join(tmpdir(), 'snapshot-forward-compat-'));
   db = createTestDatabase(join(directory, 'main.db'));
   await runMigrations(db);
-  await db.execAsync('ALTER TABLE board_climbs DROP COLUMN is_hidden; UPDATE schema_version SET version = 4');
+  await db.execAsync('ALTER TABLE board_climb_stats DROP COLUMN play_count; UPDATE schema_version SET version = 15');
   filePath = join(directory, 'artifact.db');
   const artifact = new DatabaseSync(filePath);
   try {
@@ -48,11 +49,13 @@ beforeEach(async () => {
       ALTER TABLE board_climbs ADD COLUMN future_column TEXT;
       INSERT INTO board_climbs (uuid, board_type, layout_id, compatible_size_ids, is_hidden, updated_at, sync_seq)
         VALUES ('hidden', 'tension', 10, '[8]', 1, '2026-09-07T22:00:00.000Z', 10);
+      INSERT INTO board_climb_stats (board_type, climb_uuid, angle, play_count, updated_at, sync_seq)
+        VALUES ('tension', 'hidden', 40, 23, '2026-09-07T22:00:00.000Z', 10);
       CREATE TABLE snapshot_meta (table_name TEXT PRIMARY KEY, watermark_updated_at TEXT,
         watermark_sync_seq TEXT, row_count INTEGER, built_at TEXT, schema_version INTEGER, format_version INTEGER);
       INSERT INTO snapshot_meta VALUES
-        ('board_climbs', '2026-09-07T22:00:00.000Z', '10', 1, '2026-09-07T22:30:00.000Z', 5, 2),
-        ('board_climb_stats', '1970-01-01T00:00:00.000Z', '0', 0, '2026-09-07T22:30:00.000Z', 5, 2);
+        ('board_climbs', '2026-09-07T22:00:00.000Z', '10', 1, '2026-09-07T22:30:00.000Z', 16, 2),
+        ('board_climb_stats', '2026-09-07T22:00:00.000Z', '10', 1, '2026-09-07T22:30:00.000Z', 16, 2);
     `);
   } finally {
     artifact.close();
@@ -80,13 +83,17 @@ it('imports a newer Tension artifact, reports additions once, and survives a thr
     uuid: 'hidden',
   });
   expect(await getCheckpoint(db, 'checkpoint:board_climbs:tension:10:8')).toMatchObject({ syncSeq: '10' });
+  expect(await db.getFirstAsync('SELECT climb_uuid, angle FROM board_climb_stats')).toEqual({
+    climb_uuid: 'hidden',
+    angle: 40,
+  });
   expect(reporter).toHaveBeenCalledTimes(2);
   expect(reporter).toHaveBeenCalledWith({
-    tableName: 'board_climbs',
-    column: 'is_hidden',
+    tableName: 'board_climb_stats',
+    column: 'play_count',
     origin: 'snapshot',
     direction: 'extra-source-column',
-    clientSchemaVersion: 4,
-    artifactSchemaVersion: 5,
+    clientSchemaVersion: 15,
+    artifactSchemaVersion: 16,
   });
 });

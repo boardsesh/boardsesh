@@ -47,8 +47,6 @@ type SqlCall = { sql: string; params: unknown[] };
  * counts below add them explicitly rather than hiding them.
  */
 const EMPTY_CYCLE_MARKER_TRANSACTIONS = 2;
-/** A board downloading for the first time adds three: its start stamp, its Started marker, its completion. */
-const PENDING_SCOPE_MARKER_TRANSACTIONS = 3;
 const EMPTY_CYCLE_MARKER_KEYS = new Set(['deletions-coverage', USER_DATA_COMPLETE_KEY]);
 const isMarkerWrite = ([sql, params]: unknown[]): boolean =>
   String(sql).includes('sync_meta') &&
@@ -688,6 +686,14 @@ describe('pullSync', () => {
   });
 
   it('splits a page into multiple multi-row statements when it exceeds the bind-variable chunk size', async () => {
+    const transactionWrites: SqlCall[][] = [];
+    const runTransaction = vi.mocked(db.withExclusiveTransactionAsync).getMockImplementation();
+    if (!runTransaction) throw new Error('Expected the database transaction fixture');
+    vi.mocked(db.withExclusiveTransactionAsync).mockImplementation(async (callback) => {
+      const firstWrite = sqlCalls.length;
+      await runTransaction(callback);
+      transactionWrites.push(sqlCalls.slice(firstWrite));
+    });
     // board_climbs' real allowlist is 27 columns → chunkSize = floor(999/27) =
     // 37 rows/statement. Supplying all 27 keys on every document makes the
     // page-wide column union every synced column, so 100 rows must split into
@@ -740,10 +746,16 @@ describe('pullSync', () => {
     );
     expect(totalRowsInserted).toBe(100);
 
-    // Still one exclusive transaction for the whole page, batching or not.
-    expect((db.withExclusiveTransactionAsync as ReturnType<typeof vi.fn>).mock.calls.length).toBe(
-      1 + EMPTY_CYCLE_MARKER_TRANSACTIONS + PENDING_SCOPE_MARKER_TRANSACTIONS,
-    );
+    // Assert page atomicity directly. Empty stats now has its own schema-refresh
+    // receipt transaction; metadata writes do not split the climb page.
+    const climbPageTransactions = transactionWrites
+      .map((writes) => writes.filter((call) => call.sql.includes('INSERT OR REPLACE INTO board_climbs')))
+      .filter((writes) => writes.length > 0);
+    expect(climbPageTransactions).toEqual([insertCalls]);
+    expect(sqlCalls).toContainEqual({
+      sql: expect.stringContaining('sync_meta'),
+      params: expect.arrayContaining(['schema-refresh:board_climb_stats:kilter:1:5']),
+    });
   });
 
   it('updates checkpoint after each page', async () => {

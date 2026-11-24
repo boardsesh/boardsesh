@@ -228,6 +228,22 @@ const BOARD_STAFF_ACTION_SELECTION = ' canDelete canRemoveFromGym';
  */
 const BOARD_REPORT_FLAG_SELECTION = ' openReportCount viewerHasOpenReport';
 
+/** Exact response paths whose documents gained nullable Plays in #8020. */
+const PLAYS_REPLAY_OPERATIONS: Record<string, { root: string; shape: 'climb' | 'page' | 'stats' }> = {
+  SearchClimbs: { root: 'searchClimbs', shape: 'page' },
+  SearchDraftClimbs: { root: 'searchClimbs', shape: 'page' },
+  GetClimb: { root: 'climb', shape: 'climb' },
+  GetSprayClimb: { root: 'climb', shape: 'climb' },
+  GetPlaylistClimbs: { root: 'playlistClimbs', shape: 'page' },
+  GetSmartPlaylist: { root: 'smartPlaylist', shape: 'page' },
+  GetUserFavoriteClimbs: { root: 'userFavoriteClimbs', shape: 'page' },
+  GetUserClimbs: { root: 'userClimbs', shape: 'page' },
+  GetSetterClimbsFull: { root: 'setterClimbsFull', shape: 'page' },
+  ClimbStatsForAngles: { root: 'climbStatsForAngles', shape: 'stats' },
+  ClimbStatsForClimbs: { root: 'climbStatsForClimbs', shape: 'stats' },
+  ClimbStatsHistory: { root: 'climbStatsHistory', shape: 'stats' },
+};
+
 /** Exact optional capability-argument change; selections and fixture variable keys stay unchanged. */
 const PRESENCE_CAPABILITY_OPERATIONS = new Set([
   'BoardNowPlaying',
@@ -271,6 +287,7 @@ const PRESENCE_CAPABILITY_OPERATIONS = new Set([
  *   (`replayBoardsWithoutReportFlags`). It composes with every board adapter
  *   above.
  * - GetSessionWorkoutHeadlines: each headline's `mainTargetBoardType`.
+ * - Exact-angle climb and stats reads: nullable Plays, unavailable in old captures.
  */
 export function replayCompatibleFixtureResponse(
   requestQuery: string,
@@ -279,6 +296,10 @@ export function replayCompatibleFixtureResponse(
 ): { response: unknown } | null {
   const operationName = resolveOperationName({ query: requestQuery });
   if (operationName !== fixture.operationName) return null;
+  if (operationName && Object.hasOwn(PLAYS_REPLAY_OPERATIONS, operationName)) {
+    const adapted = replayWithoutPlays(requestQuery, fixture, evidence, PLAYS_REPLAY_OPERATIONS[operationName]);
+    if (adapted) return adapted;
+  }
   if (operationName === 'GetSession') return replayGetSessionWithPermanence(requestQuery, fixture, evidence);
   if (BOARD_WALL_DEVICE_OPERATIONS.has(operationName ?? '')) {
     // The newest board fields first: each adapter strips its own selection and
@@ -338,6 +359,53 @@ export function replayCompatibleFixtureResponse(
       },
     },
   };
+}
+
+/**
+ * Old captures cannot supply measured Plays. Add null only at the operation's
+ * known exact-angle response path, leaving pinned bytes and hashes untouched.
+ * Removing this one additive selection must expose either the recorded document
+ * or another explicitly approved adapter (the smart-playlist count).
+ */
+function replayWithoutPlays(
+  requestQuery: string,
+  fixture: GraphqlFixtureFile,
+  evidence: ReplayCompatibilityEvidence,
+  operation: { root: string; shape: 'climb' | 'page' | 'stats' },
+): { response: unknown } | null {
+  const normalized = normalizeDocument(requestQuery);
+  const countField = operation.shape === 'stats' ? 'ascensionistCount' : 'ascensionist_count';
+  const playsField = operation.shape === 'stats' ? 'playCount' : 'play_count';
+  // Whitespace on each side excludes aliases and tokens embedded in field names.
+  const selection = ` ${countField} ${playsField} `;
+  if (normalized.split(selection).length !== 2) return null;
+  const withoutPlays = normalized.replace(selection, ` ${countField} `);
+  if (/\b(?:play_count|playCount)\b/.test(withoutPlays)) return null;
+  const base =
+    withoutPlays === normalizeDocument(fixture.query)
+      ? { response: fixture.response }
+      : replayCompatibleFixtureResponse(withoutPlays, fixture, evidence);
+  if (!base || !isRecord(base.response)) return null;
+  const response = base.response;
+  if (response.data === null) return { response };
+  if (!isRecord(response.data) || !Object.hasOwn(response.data, operation.root)) return null;
+  const data = response.data;
+  const result = data[operation.root];
+  if (result === null) return { response };
+  const compatibleRow = (row: unknown): row is Record<string, unknown> =>
+    isRecord(row) && Object.hasOwn(row, countField) && !Object.hasOwn(row, playsField);
+  let adapted: unknown;
+  if (operation.shape === 'climb') {
+    if (!compatibleRow(result)) return null;
+    adapted = { ...result, [playsField]: null };
+  } else if (operation.shape === 'stats') {
+    if (!Array.isArray(result) || !result.every(compatibleRow)) return null;
+    adapted = result.map((row) => ({ ...row, [playsField]: null }));
+  } else {
+    if (!isRecord(result) || !Array.isArray(result.climbs) || !result.climbs.every(compatibleRow)) return null;
+    adapted = { ...result, climbs: result.climbs.map((row) => ({ ...row, [playsField]: null })) };
+  }
+  return { response: { ...response, data: { ...data, [operation.root]: adapted } } };
 }
 
 /** The request is the recorded document plus exactly one copy of `selection`, and nothing else. */

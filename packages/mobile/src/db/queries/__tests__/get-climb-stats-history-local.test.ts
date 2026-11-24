@@ -36,11 +36,15 @@ describe('getClimbStatsHistoryLocal', () => {
     await insertStats(db, { climbUuid: 'c2', angle: 40, ascents: 5 });
     await insertStats(db, { climbUuid: 'c1', angle: 40, ascents: 9, boardType: 'tension' });
 
+    await db.execAsync(
+      "UPDATE board_climb_stats SET play_count = 0 WHERE board_type = 'kilter' AND climb_uuid = 'c1' AND angle = 40",
+    );
     const entries = await getClimbStatsHistoryLocal(db, { boardName: 'kilter', climbUuid: 'c1', viewerId: null });
     expect(entries).toEqual([
       {
         angle: 40,
         ascensionistCount: 12,
+        playCount: 0,
         qualityAverage: 2.7,
         difficultyAverage: 20.1,
         displayDifficulty: 20.4,
@@ -49,6 +53,7 @@ describe('getClimbStatsHistoryLocal', () => {
       {
         angle: 45,
         ascensionistCount: 3,
+        playCount: null,
         qualityAverage: 2.7,
         difficultyAverage: 20.1,
         displayDifficulty: 20.4,
