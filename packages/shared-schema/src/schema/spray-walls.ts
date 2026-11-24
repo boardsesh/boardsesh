@@ -375,6 +375,12 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     draftClimbCount: Int!
   }
 
+  "Distinct climbs on a wall that use any of the requested holds."
+  type SprayWallHoldUsageSummary {
+    publishedClimbCount: Int!
+    draftClimbCount: Int!
+  }
+
   input ResetSprayWallInput {
     "The published, live wall to replace."
     wallUuid: ID!

@@ -1581,7 +1581,7 @@
     "body_other": "{{count}} published climbs use these holds. They'll be marked as missing a hold until someone remixes them.",
     "bodyUnknown": "Some climbs may use these holds. They'll be marked as missing a hold until someone remixes them.",
     "removeAnyway": "Remove anyway",
-    "keep": "Keep holds"
+    "keep": "Keep editing"
   },
   "sprayCaps": {
     "holds": "A Spraywall carries up to {{max}} holds. Drop a few and save again.",

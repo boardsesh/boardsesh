@@ -9356,6 +9356,12 @@ export type Query = {
    * wall's holds; refused on an archived wall. At most 500 holds per call.
    */
   sprayWallHoldUsage: Array<SprayWallHoldUsage>;
+  /**
+   * Distinct published and draft climbs that use any of the given holds. A climb
+   * using several requested holds counts once. Same editing and archive gates
+   * as sprayWallHoldUsage. Accepts up to the wall's 1500 holds in one call.
+   */
+  sprayWallHoldUsageSummary: SprayWallHoldUsageSummary;
   sprayWallImportProgress: Array<SprayWallImportProgress>;
   /**
    * A spray wall's LED setup, for lighting it from this phone. Anyone who can read
@@ -10345,6 +10351,12 @@ export type QuerySprayWallDetectionForVersionArgs = {
 
 /** Root query type for all read operations. */
 export type QuerySprayWallHoldUsageArgs = {
+  holdIds: Array<Scalars['Int']['input']>;
+  wallUuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySprayWallHoldUsageSummaryArgs = {
   holdIds: Array<Scalars['Int']['input']>;
   wallUuid: Scalars['ID']['input'];
 };
@@ -13152,6 +13164,13 @@ export type SprayWallHoldUsage = {
   draftClimbCount: Scalars['Int']['output'];
   holdId: Scalars['Int']['output'];
   /** Published climbs that use the hold. Removing it gives each of them a lost hold. */
+  publishedClimbCount: Scalars['Int']['output'];
+};
+
+/** Distinct climbs on a wall that use any of the requested holds. */
+export type SprayWallHoldUsageSummary = {
+  __typename?: 'SprayWallHoldUsageSummary';
+  draftClimbCount: Scalars['Int']['output'];
   publishedClimbCount: Scalars['Int']['output'];
 };
 

@@ -20,7 +20,7 @@ vi.mock('react-native', () => ({
     },
   },
 }));
-vi.mock('@boardsesh/graphql/operations/spray-walls', () => ({ GET_SPRAY_WALL_HOLD_USAGE: 'holdUsage' }));
+vi.mock('@boardsesh/graphql/operations/spray-walls', () => ({ GET_SPRAY_WALL_HOLD_USAGE_SUMMARY: 'holdUsageSummary' }));
 vi.mock('../../graphql/client', () => ({ getHttpClient: () => ({ request }) }));
 vi.mock('../spray-telemetry', () => ({ trackSprayEvent: track }));
 
@@ -35,16 +35,6 @@ function press(label: string) {
   button.onPress?.();
 }
 
-function usageRows(rows: [number, number, number][]) {
-  return {
-    sprayWallHoldUsage: rows.map(([holdId, publishedClimbCount, draftClimbCount]) => ({
-      holdId,
-      publishedClimbCount,
-      draftClimbCount,
-    })),
-  };
-}
-
 beforeEach(() => {
   alert.calls.length = 0;
   request.mockReset();
@@ -52,32 +42,48 @@ beforeEach(() => {
 });
 
 describe('fetchSprayHoldUsage', () => {
-  it('sums the counts over the holds', async () => {
-    request.mockResolvedValueOnce(
-      usageRows([
-        [4, 2, 1],
-        [7, 1, 0],
-      ]),
-    );
-    await expect(fetchSprayHoldUsage('wall-1', [4, 7, 4])).resolves.toEqual({
-      publishedClimbCount: 3,
+  it('uses the distinct server count instead of adding per-hold usages', async () => {
+    request.mockResolvedValueOnce({
+      sprayWallHoldUsageSummary: { publishedClimbCount: 2, draftClimbCount: 1 },
+    });
+    await expect(fetchSprayHoldUsage('wall-1', [4, 7, 9, 11, 4])).resolves.toEqual({
+      publishedClimbCount: 2,
       draftClimbCount: 1,
     });
-    expect(request).toHaveBeenCalledExactlyOnceWith('holdUsage', { wallUuid: 'wall-1', holdIds: [4, 7] });
+    expect(request).toHaveBeenCalledExactlyOnceWith('holdUsageSummary', {
+      wallUuid: 'wall-1',
+      holdIds: [4, 7, 9, 11],
+    });
   });
 
-  it('asks in batches of 500, the server cap', async () => {
-    request.mockResolvedValue(usageRows([]));
-    const ids = Array.from({ length: 501 }, (_, index) => index + 1);
-    await fetchSprayHoldUsage('wall-1', ids);
-    expect(request).toHaveBeenCalledTimes(2);
-    expect((request.mock.calls[1][1] as { holdIds: number[] }).holdIds).toEqual([501]);
+  it('counts saves above the old 500-hold batch boundary in one request', async () => {
+    request.mockResolvedValueOnce({
+      sprayWallHoldUsageSummary: { publishedClimbCount: 1, draftClimbCount: 0 },
+    });
+    const ids = Array.from({ length: 1500 }, (_, index) => index + 1);
+    await expect(fetchSprayHoldUsage('wall-1', ids)).resolves.toEqual({
+      publishedClimbCount: 1,
+      draftClimbCount: 0,
+    });
+    expect(request).toHaveBeenCalledExactlyOnceWith('holdUsageSummary', { wallUuid: 'wall-1', holdIds: ids });
   });
 
-  it('answers null when the read fails', async () => {
-    request.mockRejectedValueOnce(new Error('offline'));
-    await expect(fetchSprayHoldUsage('wall-1', [4])).resolves.toBeNull();
+  it('returns zero without requesting an empty removal', async () => {
+    await expect(fetchSprayHoldUsage('wall-1', [])).resolves.toEqual({
+      publishedClimbCount: 0,
+      draftClimbCount: 0,
+    });
+    expect(request).not.toHaveBeenCalled();
   });
+
+  it.each(['offline', 'Cannot query field "sprayWallHoldUsageSummary" on type "Query".'])(
+    'answers null when the read fails: %s',
+    async (message) => {
+      request.mockRejectedValueOnce(new Error(message));
+      await expect(fetchSprayHoldUsage('wall-1', [4])).resolves.toBeNull();
+      expect(request).toHaveBeenCalledTimes(1);
+    },
+  );
 });
 
 describe('confirmRemovingUsedHolds', () => {

@@ -1581,7 +1581,7 @@
     "body_other": "{{count}} bloques publicados usan estas presas. Quedarán marcados como que les falta una presa hasta que alguien los remezcle.",
     "bodyUnknown": "Puede que algunos bloques usen estas presas. Quedarán marcados como que les falta una presa hasta que alguien los remezcle.",
     "removeAnyway": "Quitar igualmente",
-    "keep": "Mantener las presas"
+    "keep": "Seguir editando"
   },
   "sprayCaps": {
     "holds": "En un Spraywall caben hasta {{max}} presas. Descarta algunas y vuelve a guardar.",

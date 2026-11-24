@@ -419,6 +419,16 @@ export const GET_SPRAY_WALL_HOLD_USAGE = gql`
   }
 `;
 
+/** Distinct climbs affected by the whole removal, including saves above 500 holds. */
+export const GET_SPRAY_WALL_HOLD_USAGE_SUMMARY = gql`
+  query GetSprayWallHoldUsageSummary($wallUuid: ID!, $holdIds: [Int!]!) {
+    sprayWallHoldUsageSummary(wallUuid: $wallUuid, holdIds: $holdIds) {
+      publishedClimbCount
+      draftClimbCount
+    }
+  }
+`;
+
 /**
  * Start a reset: clone the wall's settings into a new, unfinished wall. The owner
  * photographs and marks it in the add-wall wizard, and its first publish archives

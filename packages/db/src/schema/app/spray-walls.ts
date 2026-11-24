@@ -621,6 +621,12 @@ export const sprayWallHolds = pgTable(
     }),
     /** The hold this one replaced, when the reset review linked a move. */
     movedFromHoldId: integer('moved_from_hold_id'),
+    /**
+     * This successor corrects the drawing of the same physical hold. Published
+     * climbs follow it when its version publishes. Explicit remove/add moves
+     * keep false: a physically moved hold changes the climb.
+     */
+    isRefinement: boolean('is_refinement').default(false).notNull(),
     source: sprayHoldSourceEnum('source').default('manual').notNull(),
     /** Detector confidence 0-1 for `source = 'auto'`; NULL when a human drew it. */
     confidence: real('confidence'),

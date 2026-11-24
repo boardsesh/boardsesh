@@ -21,12 +21,17 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { REMOVE_SPRAY_WALL_HOLDS, UPSERT_SPRAY_WALL_HOLDS } from '@boardsesh/graphql/operations/spray-walls';
+import {
+  GET_SPRAY_WALL_HOLD_USAGE_SUMMARY,
+  REMOVE_SPRAY_WALL_HOLDS,
+  UPSERT_SPRAY_WALL_HOLDS,
+} from '@boardsesh/graphql/operations/spray-walls';
 
 const requestMock = vi.hoisted(() => vi.fn());
 vi.mock('../../graphql/client', () => ({ getHttpClient: () => ({ request: requestMock }) }));
 
 import { useSaveSprayHolds } from '../use-spray-hold-writes';
+import { extractGraphqlMessage } from '../../graphql/extract-error-message';
 import type { SprayHoldWritePlan } from '../../../components/outline-editor/spray-hold-writes';
 
 const PLAN: SprayHoldWritePlan = {
@@ -66,7 +71,12 @@ function deferredInvalidationWrapper() {
 
 /** Which document each call carried, in the order the hook sent them. */
 function sentDocuments(): string[] {
-  return requestMock.mock.calls.map(([document]) => (document === REMOVE_SPRAY_WALL_HOLDS ? 'remove' : 'upsert'));
+  return requestMock.mock.calls.map(([document]) => {
+    if (document === GET_SPRAY_WALL_HOLD_USAGE_SUMMARY) return 'capability';
+    if (document === REMOVE_SPRAY_WALL_HOLDS) return 'remove';
+    if (document === UPSERT_SPRAY_WALL_HOLDS) return 'upsert';
+    throw new Error('Unexpected GraphQL document');
+  });
 }
 
 beforeEach(() => {
@@ -82,11 +92,14 @@ describe('useSaveSprayHolds', () => {
           finishCheckpoint = resolve;
         }),
     );
-    requestMock.mockImplementation((document: unknown) =>
-      document === REMOVE_SPRAY_WALL_HOLDS
-        ? Promise.resolve({ removeSprayWallHolds: 2 })
-        : Promise.reject(new Error('upsert failed')),
-    );
+    requestMock.mockImplementation((document: unknown) => {
+      if (document === GET_SPRAY_WALL_HOLD_USAGE_SUMMARY)
+        return Promise.resolve({
+          sprayWallHoldUsageSummary: { publishedClimbCount: 0, draftClimbCount: 0 },
+        });
+      if (document === REMOVE_SPRAY_WALL_HOLDS) return Promise.resolve({ removeSprayWallHolds: 2 });
+      return Promise.reject(new Error('upsert failed'));
+    });
     const { result } = renderHook(() => useSaveSprayHolds(), { wrapper });
     let saving: Promise<unknown> | undefined;
     act(() => {
@@ -99,23 +112,27 @@ describe('useSaveSprayHolds', () => {
       });
     });
     await waitFor(() => expect(onRemoved).toHaveBeenCalled());
-    expect(sentDocuments()).toEqual(['remove']);
+    expect(sentDocuments()).toEqual(['capability', 'remove']);
     await act(async () => {
       finishCheckpoint?.();
       await expect(saving).rejects.toThrow('upsert failed');
     });
-    expect(sentDocuments()).toEqual(['remove', 'upsert']);
+    expect(sentDocuments()).toEqual(['capability', 'remove', 'upsert']);
   });
 
   it('fires onRemoved after the remove resolves and before the upsert is sent', async () => {
     // Recorded at the moment `onRemoved` runs: if the hook fired it after both
-    // calls (or never), this snapshot would not be `['remove']`.
+    // calls (or never), this snapshot would not end at the removal.
     let documentsWhenRemovedFired: string[] | null = null;
     const onRemoved = vi.fn(() => {
       documentsWhenRemovedFired = sentDocuments();
     });
 
     requestMock.mockImplementation((document: unknown) => {
+      if (document === GET_SPRAY_WALL_HOLD_USAGE_SUMMARY)
+        return Promise.resolve({
+          sprayWallHoldUsageSummary: { publishedClimbCount: 0, draftClimbCount: 0 },
+        });
       if (document === REMOVE_SPRAY_WALL_HOLDS) return Promise.resolve({ removeSprayWallHolds: 2 });
       return Promise.resolve({ upsertSprayWallHolds: [{ id: 7 }] });
     });
@@ -134,8 +151,8 @@ describe('useSaveSprayHolds', () => {
 
     expect(onRemoved).toHaveBeenCalledTimes(1);
     expect(onRemoved).toHaveBeenCalledWith(PLAN.removeIds);
-    expect(documentsWhenRemovedFired).toEqual(['remove']);
-    expect(sentDocuments()).toEqual(['remove', 'upsert']);
+    expect(documentsWhenRemovedFired).toEqual(['capability', 'remove']);
+    expect(sentDocuments()).toEqual(['capability', 'remove', 'upsert']);
     expect(saved).toEqual({ written: 1, removed: 2 });
   });
 
@@ -143,6 +160,10 @@ describe('useSaveSprayHolds', () => {
     // The whole point. The removals landed; the retry must not name them again.
     const onRemoved = vi.fn();
     requestMock.mockImplementation((document: unknown) => {
+      if (document === GET_SPRAY_WALL_HOLD_USAGE_SUMMARY)
+        return Promise.resolve({
+          sprayWallHoldUsageSummary: { publishedClimbCount: 0, draftClimbCount: 0 },
+        });
       if (document === REMOVE_SPRAY_WALL_HOLDS) return Promise.resolve({ removeSprayWallHolds: 2 });
       return Promise.reject(new Error('rate limited'));
     });
@@ -166,7 +187,13 @@ describe('useSaveSprayHolds', () => {
 
   it('does not fire onRemoved when there is nothing to remove', async () => {
     const onRemoved = vi.fn();
-    requestMock.mockResolvedValue({ upsertSprayWallHolds: [{ id: 7 }] });
+    requestMock.mockImplementation((document: unknown) => {
+      if (document === GET_SPRAY_WALL_HOLD_USAGE_SUMMARY)
+        return Promise.resolve({
+          sprayWallHoldUsageSummary: { publishedClimbCount: 0, draftClimbCount: 0 },
+        });
+      return Promise.resolve({ upsertSprayWallHolds: [{ id: 7 }] });
+    });
 
     const { result } = renderHook(() => useSaveSprayHolds(), { wrapper });
     await act(async () => {
@@ -180,7 +207,7 @@ describe('useSaveSprayHolds', () => {
     });
 
     expect(onRemoved).not.toHaveBeenCalled();
-    expect(sentDocuments()).toEqual(['upsert']);
+    expect(sentDocuments()).toEqual(['capability', 'upsert']);
   });
 
   it('never sends an upsert the remove call did not survive', async () => {
@@ -189,6 +216,10 @@ describe('useSaveSprayHolds', () => {
     // the wall.
     const onRemoved = vi.fn();
     requestMock.mockImplementation((document: unknown) => {
+      if (document === GET_SPRAY_WALL_HOLD_USAGE_SUMMARY)
+        return Promise.resolve({
+          sprayWallHoldUsageSummary: { publishedClimbCount: 0, draftClimbCount: 0 },
+        });
       if (document === REMOVE_SPRAY_WALL_HOLDS) return Promise.reject(new Error('nope'));
       return Promise.resolve({ upsertSprayWallHolds: [{ id: 7 }] });
     });
@@ -207,8 +238,7 @@ describe('useSaveSprayHolds', () => {
     });
 
     expect(onRemoved).not.toHaveBeenCalled();
-    expect(requestMock).toHaveBeenCalledTimes(1);
-    expect(requestMock.mock.calls[0][0]).toBe(REMOVE_SPRAY_WALL_HOLDS);
+    expect(sentDocuments()).toEqual(['capability', 'remove']);
   });
 
   it("awaits the draft refetch before the caller's onSuccess runs", async () => {
@@ -217,6 +247,10 @@ describe('useSaveSprayHolds', () => {
     // every other test green while re-introducing the race where the editor
     // re-seeds from the payload that predates its own save.
     requestMock.mockImplementation((document: unknown) => {
+      if (document === GET_SPRAY_WALL_HOLD_USAGE_SUMMARY)
+        return Promise.resolve({
+          sprayWallHoldUsageSummary: { publishedClimbCount: 0, draftClimbCount: 0 },
+        });
       if (document === REMOVE_SPRAY_WALL_HOLDS) return Promise.resolve({ removeSprayWallHolds: 2 });
       return Promise.resolve({ upsertSprayWallHolds: [{ id: 7 }] });
     });
@@ -244,6 +278,10 @@ describe('useSaveSprayHolds', () => {
 
   it('sends each half exactly what the plan carried', async () => {
     requestMock.mockImplementation((document: unknown) => {
+      if (document === GET_SPRAY_WALL_HOLD_USAGE_SUMMARY)
+        return Promise.resolve({
+          sprayWallHoldUsageSummary: { publishedClimbCount: 0, draftClimbCount: 0 },
+        });
       if (document === REMOVE_SPRAY_WALL_HOLDS) return Promise.resolve({ removeSprayWallHolds: 2 });
       return Promise.resolve({ upsertSprayWallHolds: [{ id: 7 }] });
     });
@@ -253,11 +291,137 @@ describe('useSaveSprayHolds', () => {
       await result.current.mutateAsync({ wallUuid: 'wall-1', versionNumber: 3, versionId: '77', plan: PLAN });
     });
 
-    expect(requestMock).toHaveBeenNthCalledWith(1, REMOVE_SPRAY_WALL_HOLDS, {
+    expect(requestMock).toHaveBeenNthCalledWith(1, GET_SPRAY_WALL_HOLD_USAGE_SUMMARY, {
+      wallUuid: 'wall-1',
+      holdIds: [],
+    });
+    expect(requestMock).toHaveBeenNthCalledWith(2, REMOVE_SPRAY_WALL_HOLDS, {
       input: { wallUuid: 'wall-1', versionId: '77', holdIds: [8, 9] },
     });
-    expect(requestMock).toHaveBeenNthCalledWith(2, UPSERT_SPRAY_WALL_HOLDS, {
+    expect(requestMock).toHaveBeenNthCalledWith(3, UPSERT_SPRAY_WALL_HOLDS, {
       input: { wallUuid: 'wall-1', versionId: '77', holds: PLAN.upsert },
     });
   });
+
+  it.each([
+    ['refinement only', { ...PLAN, removeIds: [] }],
+    ['a removal and refinement together', PLAN],
+  ])('rejects %s on an older backend before any writes', async (_scenario, plan) => {
+    const message = 'Cannot query field "sprayWallHoldUsageSummary" on type "Query".';
+    const unsupported = Object.assign(new Error(message), {
+      response: { errors: [{ message, extensions: { code: 'GRAPHQL_VALIDATION_FAILED' } }] },
+    });
+    requestMock.mockRejectedValueOnce(unsupported);
+    const onRemoved = vi.fn();
+    const { Wrapper, invalidateSpy } = deferredInvalidationWrapper();
+    const { result } = renderHook(() => useSaveSprayHolds(), { wrapper: Wrapper });
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({
+          wallUuid: 'wall-1',
+          versionNumber: 3,
+          versionId: '77',
+          plan,
+          onRemoved,
+        }),
+      ).rejects.toMatchObject({ cause: unsupported });
+    });
+    expect(sentDocuments()).toEqual(['capability']);
+    expect(requestMock).toHaveBeenCalledExactlyOnceWith(GET_SPRAY_WALL_HOLD_USAGE_SUMMARY, {
+      wallUuid: 'wall-1',
+      holdIds: [],
+    });
+    expect(onRemoved).not.toHaveBeenCalled();
+    expect(invalidateSpy).not.toHaveBeenCalled();
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(extractGraphqlMessage(result.current.error)).toBeNull();
+  });
+
+  it('does not probe support when the save only adds new holds', async () => {
+    requestMock.mockImplementation((document: unknown) => {
+      if (document !== UPSERT_SPRAY_WALL_HOLDS) return Promise.reject(new Error('Unexpected capability probe'));
+      return Promise.resolve({ upsertSprayWallHolds: [{ id: 90 }] });
+    });
+    const { result } = renderHook(() => useSaveSprayHolds(), { wrapper });
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({
+          wallUuid: 'wall-1',
+          versionNumber: 3,
+          versionId: '77',
+          plan: {
+            ...PLAN,
+            upsert: [{ cx: 10, cy: 20, r: 5, outline: null, source: 'MANUAL' }],
+            writtenIds: [-1],
+            removeIds: [],
+          },
+        }),
+      ).resolves.toEqual({ written: 1, removed: 0 });
+    });
+    expect(sentDocuments()).toEqual(['upsert']);
+  });
+
+  it('does not probe support when the save only removes holds', async () => {
+    requestMock.mockImplementation((document: unknown) => {
+      if (document !== REMOVE_SPRAY_WALL_HOLDS) return Promise.reject(new Error('Unexpected capability probe'));
+      return Promise.resolve({ removeSprayWallHolds: 2 });
+    });
+    const onRemoved = vi.fn();
+    const { result } = renderHook(() => useSaveSprayHolds(), { wrapper });
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({
+          wallUuid: 'wall-1',
+          versionNumber: 3,
+          versionId: '77',
+          plan: { ...PLAN, upsert: [], writtenIds: [] },
+          onRemoved,
+        }),
+      ).resolves.toEqual({ written: 0, removed: 2 });
+    });
+    expect(sentDocuments()).toEqual(['remove']);
+    expect(onRemoved).toHaveBeenCalledExactlyOnceWith(PLAN.removeIds);
+  });
+
+  it('checks support again on the next save after a backend rollback', async () => {
+    requestMock.mockImplementation((document: unknown) => {
+      if (document === GET_SPRAY_WALL_HOLD_USAGE_SUMMARY)
+        return Promise.resolve({
+          sprayWallHoldUsageSummary: { publishedClimbCount: 0, draftClimbCount: 0 },
+        });
+      return Promise.resolve({ upsertSprayWallHolds: [{ id: 7 }] });
+    });
+    const { result } = renderHook(() => useSaveSprayHolds(), { wrapper });
+    const variables = { wallUuid: 'wall-1', versionNumber: 3, versionId: '77', plan: { ...PLAN, removeIds: [] } };
+    await act(async () => {
+      await result.current.mutateAsync(variables);
+    });
+    requestMock.mockRejectedValueOnce(new Error('backend rolled back'));
+    await act(async () => {
+      await expect(result.current.mutateAsync(variables)).rejects.toThrow('backend rolled back');
+    });
+    expect(sentDocuments()).toEqual(['capability', 'upsert', 'capability']);
+  });
+
+  it.each(['SPRAY_WALL_ARCHIVED', 'RATE_LIMITED'])(
+    'preserves structured %s probe refusals for the editor',
+    async (code) => {
+      const refusal = Object.assign(new Error('Server guidance'), {
+        response: { errors: [{ message: 'Server guidance', extensions: { code } }] },
+      });
+      requestMock.mockRejectedValueOnce(refusal);
+      const { result } = renderHook(() => useSaveSprayHolds(), { wrapper });
+      await act(async () => {
+        await expect(
+          result.current.mutateAsync({
+            wallUuid: 'wall-1',
+            versionNumber: 3,
+            versionId: '77',
+            plan: PLAN,
+          }),
+        ).rejects.toBe(refusal);
+      });
+      expect(sentDocuments()).toEqual(['capability']);
+    },
+  );
 });

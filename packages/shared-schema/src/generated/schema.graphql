@@ -7582,6 +7582,12 @@ type SprayWallHoldUsage {
   draftClimbCount: Int!
 }
 
+"Distinct climbs on a wall that use any of the requested holds."
+type SprayWallHoldUsageSummary {
+  publishedClimbCount: Int!
+  draftClimbCount: Int!
+}
+
 input ResetSprayWallInput {
   "The published, live wall to replace."
   wallUuid: ID!
@@ -9838,6 +9844,13 @@ type Query {
   wall's holds; refused on an archived wall. At most 500 holds per call.
   """
   sprayWallHoldUsage(wallUuid: ID!, holdIds: [Int!]!): [SprayWallHoldUsage!]!
+
+  """
+  Distinct published and draft climbs that use any of the given holds. A climb
+  using several requested holds counts once. Same editing and archive gates
+  as sprayWallHoldUsage. Accepts up to the wall's 1500 holds in one call.
+  """
+  sprayWallHoldUsageSummary(wallUuid: ID!, holdIds: [Int!]!): SprayWallHoldUsageSummary!
 
   "Every wall the caller owns, newest first. Includes walls with no published version."
   mySprayWalls: [SprayWall!]!

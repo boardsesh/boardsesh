@@ -195,20 +195,12 @@ export function buildSprayHoldWritePlan(state: SprayEditorState, homography: rea
 }
 
 /**
- * The stored holds this save takes off the wall as they stand: every removal,
- * and every stored hold whose geometry goes out again. The server records a move
- * as a removal plus a new hold, so a climb that used a moved hold loses it just
- * as it would a removed one. A hold this draft drew and saved before is in here
- * too; no published climb can use it, so the usage read counts it as zero.
- *
- * Distinct and in plan order. Empty for a save that only adds holds.
+ * Actual removals, distinct and in plan order. Geometry corrections keep the
+ * physical hold in the climb: publication moves climb references to the
+ * refined successor. Only taking a hold off needs removal confirmation.
  */
 export function holdIdsLeavingTheWall(plan: SprayHoldWritePlan): number[] {
-  const ids = new Set<number>(plan.removeIds);
-  for (const hold of plan.upsert) {
-    if (hold.id != null && hold.id > 0) ids.add(hold.id);
-  }
-  return [...ids];
+  return [...new Set(plan.removeIds)];
 }
 
 /**

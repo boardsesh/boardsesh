@@ -94,6 +94,8 @@ import {
   presignGetObject,
 } from '../../../storage/s3';
 import { sprayWallIsListable } from './spray-wall-listing';
+import { followPublishedSprayRefinements } from './spray-hold-refinements';
+import { expandSprayHoldUsageIds, sprayHoldUsageAncestors } from './spray-hold-refinements';
 import { resizedVariantKey } from '../../../lib/image-resize';
 import { sprayVersionQuality, sprayWallArtState } from '../../../lib/spray-wall-art';
 import {
@@ -111,6 +113,7 @@ import {
   RemoveSprayWallHoldsInputSchema,
   ResetSprayWallInputSchema,
   SprayWallHoldUsageArgsSchema,
+  SprayWallHoldUsageSummaryArgsSchema,
   SetSprayWallRenderSettingsInputSchema,
   UpdateSprayWallInputSchema,
   SPRAY_HOLD_AUTO_REVIEW_WIRE_NAME,
@@ -1761,6 +1764,7 @@ async function publishDraftUnderLock(
   // `sprayWallHoldUsage`). AFTER the status flip, because the recompute only counts
   // removals by generations that have landed, and until that update this version
   // is a draft.
+  await followPublishedSprayRefinements(tx, wall, Number(draft.id));
   const climbsChanged = await recomputeMissingHoldCounts(tx, wall.id);
 
   // The generated wall looks for the new generation, queued with the publish so
@@ -1925,33 +1929,86 @@ export const sprayWallQueries = {
     const requested = [...new Set(validated.holdIds)];
     if (requested.length === 0) return [];
 
-    const isPublished = and(eq(dbSchema.boardClimbs.isDraft, false), eq(dbSchema.boardClimbs.isListed, true));
+    const ancestorsByHold = await sprayHoldUsageAncestors(db, wall.id, requested);
+    const usageIds = [...new Set([...ancestorsByHold.values()].flat())];
     const rows = await db
       .select({
         holdId: dbSchema.boardClimbHolds.holdId,
-        publishedClimbCount: sql<number>`count(*) FILTER (WHERE ${isPublished})::int`,
-        draftClimbCount: sql<number>`count(*) FILTER (WHERE ${eq(dbSchema.boardClimbs.isDraft, true)})::int`,
+        climbUuid: dbSchema.boardClimbs.uuid,
+        isDraft: dbSchema.boardClimbs.isDraft,
+        isListed: dbSchema.boardClimbs.isListed,
       })
       .from(dbSchema.boardClimbHolds)
       .innerJoin(dbSchema.boardClimbs, eq(dbSchema.boardClimbs.uuid, dbSchema.boardClimbHolds.climbUuid))
       .where(
         and(
           eq(dbSchema.boardClimbHolds.boardType, 'spray'),
-          inArray(dbSchema.boardClimbHolds.holdId, requested),
+          inArray(dbSchema.boardClimbHolds.holdId, usageIds),
           eq(dbSchema.boardClimbs.boardType, 'spray'),
           eq(dbSchema.boardClimbs.layoutId, wall.layoutId),
           eq(dbSchema.boardClimbs.isHidden, false),
           sql`COALESCE(${dbSchema.boardClimbs.retiredByReset}, false) = false`,
         ),
-      )
-      .groupBy(dbSchema.boardClimbHolds.holdId);
+      );
 
-    const usageByHold = new Map(rows.map((row) => [row.holdId, row]));
-    return requested.map((holdId) => ({
-      holdId,
-      publishedClimbCount: usageByHold.get(holdId)?.publishedClimbCount ?? 0,
-      draftClimbCount: usageByHold.get(holdId)?.draftClimbCount ?? 0,
-    }));
+    const usageByHold = new Map<number, { published: Set<string>; drafts: Set<string> }>();
+    for (const row of rows) {
+      let usage = usageByHold.get(row.holdId);
+      if (!usage) {
+        usage = { published: new Set(), drafts: new Set() };
+        usageByHold.set(row.holdId, usage);
+      }
+      if (row.isDraft === true) usage.drafts.add(row.climbUuid);
+      else if (row.isDraft === false && row.isListed === true) usage.published.add(row.climbUuid);
+    }
+    return requested.map((holdId) => {
+      const published = new Set<string>();
+      const drafts = new Set<string>();
+      for (const ancestorId of ancestorsByHold.get(holdId) ?? [holdId]) {
+        const usage = usageByHold.get(ancestorId);
+        if (!usage) continue;
+        for (const climbUuid of usage.published) published.add(climbUuid);
+        for (const climbUuid of usage.drafts) drafts.add(climbUuid);
+      }
+      return { holdId, publishedClimbCount: published.size, draftClimbCount: drafts.size };
+    });
+  },
+
+  /** One count for the whole save, rather than one count per affected hold. */
+  sprayWallHoldUsageSummary: async (
+    _: unknown,
+    { wallUuid, holdIds }: { wallUuid: unknown; holdIds: unknown },
+    ctx: ConnectionContext,
+  ) => {
+    requireAuthenticated(ctx);
+    await applyRateLimit(ctx, WALL_QUERY_RATE_LIMIT, 'sprayWallHoldUsageSummary');
+    const validated = validateInput(SprayWallHoldUsageSummaryArgsSchema, { wallUuid, holdIds }, 'input');
+    const { wall } = await loadEditableWall(ctx, validated.wallUuid);
+    if (wall.archivedAt != null) throw sprayWallArchivedError();
+
+    const requested = [...new Set(validated.holdIds)];
+    if (requested.length === 0) return { publishedClimbCount: 0, draftClimbCount: 0 };
+
+    const usageIds = await expandSprayHoldUsageIds(db, wall.id, requested);
+    const isPublished = and(eq(dbSchema.boardClimbs.isDraft, false), eq(dbSchema.boardClimbs.isListed, true));
+    const [summary] = await db
+      .select({
+        publishedClimbCount: sql<number>`count(DISTINCT ${dbSchema.boardClimbs.uuid}) FILTER (WHERE ${isPublished})::int`,
+        draftClimbCount: sql<number>`count(DISTINCT ${dbSchema.boardClimbs.uuid}) FILTER (WHERE ${eq(dbSchema.boardClimbs.isDraft, true)})::int`,
+      })
+      .from(dbSchema.boardClimbHolds)
+      .innerJoin(dbSchema.boardClimbs, eq(dbSchema.boardClimbs.uuid, dbSchema.boardClimbHolds.climbUuid))
+      .where(
+        and(
+          eq(dbSchema.boardClimbHolds.boardType, 'spray'),
+          inArray(dbSchema.boardClimbHolds.holdId, usageIds),
+          eq(dbSchema.boardClimbs.boardType, 'spray'),
+          eq(dbSchema.boardClimbs.layoutId, wall.layoutId),
+          eq(dbSchema.boardClimbs.isHidden, false),
+          sql`COALESCE(${dbSchema.boardClimbs.retiredByReset}, false) = false`,
+        ),
+      );
+    return summary;
   },
 
   /**
@@ -3130,9 +3187,10 @@ export const sprayWallMutations = {
       // Correcting an inherited hold is therefore a REMOVAL plus an ADDITION, the
       // same shape a moved hold takes elsewhere in this table: the old row is
       // stamped `removed_version_id` at this draft, a new row gets a new catalogue
-      // id, and `moved_from_hold_id` links the two so remix can suggest the
-      // successor. The published generation keeps the geometry it was published
-      // with, and the climbs on it stay exactly where they were.
+      // id, and `moved_from_hold_id` links the two. `is_refinement` distinguishes
+      // these drawing corrections from physical remove/add moves. Climbs keep
+      // their old references until publish, then follow the corrected drawing.
+      // The published generation keeps its geometry throughout draft editing.
       const inPlaceEdits = corrections.filter(
         (hold) => Number(aliveById.get(hold.id!)!.installedVersionId) === Number(version.id),
       );
@@ -3224,6 +3282,7 @@ export const sprayWallMutations = {
             outline: hold.outline ?? null,
             installedVersionId: version.id,
             movedFromHoldId: predecessorId,
+            isRefinement: hold.id != null,
             source: hold.source,
             confidence: hold.confidence ?? null,
             ...newRowProvenance[index],
@@ -3264,7 +3323,11 @@ export const sprayWallMutations = {
             cy: hold.cy,
             r: hold.r,
             outline: hold.outline ?? null,
-            movedFromHoldId: hold.movedFromHoldId ?? null,
+            // A draft correction keeps its established lineage even if an older
+            // client omits it on the next save. It is server-owned identity.
+            movedFromHoldId: aliveById.get(hold.id!)!.isRefinement
+              ? aliveById.get(hold.id!)!.movedFromHoldId
+              : (hold.movedFromHoldId ?? null),
             source: hold.source,
             confidence: hold.confidence ?? null,
             ...resolveHoldProvenance(hold, aliveById.get(hold.id!), validOrigins, wall.id),

@@ -175,6 +175,11 @@ export const SprayWallHoldUsageArgsSchema = z.object({
   holdIds: z.array(z.number().int().positive()).max(MAX_HOLD_USAGE_HOLD_IDS),
 });
 
+/** Count the whole save together so a climb spanning multiple holds counts once. */
+export const SprayWallHoldUsageSummaryArgsSchema = SprayWallHoldUsageArgsSchema.extend({
+  holdIds: z.array(z.number().int().positive()).max(MAX_HOLDS_PER_WALL),
+});
+
 /** `resetSprayWall`: the wall to clone. Everything else is copied from it server-side. */
 export const ResetSprayWallInputSchema = z.object({
   wallUuid: UUIDSchema,

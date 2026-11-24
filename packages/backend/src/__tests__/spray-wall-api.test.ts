@@ -3,6 +3,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { and, eq, sql } from 'drizzle-orm';
 import {
   boardModerationEvents,
+  boardClimbs,
+  boardClimbHolds,
   esp32Controllers,
   feedItems,
   communityRoles,
@@ -7082,5 +7084,357 @@ describe('generated wall looks (sprayWallArt and the background setting)', () =>
   it('refuses a background name it does not know', async () => {
     const { wall } = await straightWall();
     await expect(setLook(wall.uuid, { ...AURA, background: 'blurred' })).rejects.toThrow(/background/);
+  });
+});
+
+describe('distinct spray hold usage summary (#8108)', () => {
+  async function insertUsageClimb(
+    layoutId: number,
+    holdIds: number[],
+    overrides: Partial<typeof boardClimbs.$inferInsert> = {},
+  ): Promise<string> {
+    const climbUuid = uuidv4();
+    await db.insert(boardClimbs).values({
+      uuid: climbUuid,
+      boardType: 'spray',
+      layoutId,
+      name: 'Hold usage fixture',
+      isDraft: false,
+      isListed: true,
+      ...overrides,
+    });
+    await db.insert(boardClimbHolds).values(
+      holdIds.map((holdId) => ({
+        boardType: 'spray',
+        climbUuid,
+        holdId,
+        frameNumber: 0,
+        holdState: 'HAND',
+      })),
+    );
+    return climbUuid;
+  }
+
+  it('counts the original three affected holds and remix four as two climbs', async () => {
+    const { wall, versionId, holdIds } = await createPublishedWall(OWNER);
+    const draft = await openHoldEditDraft(wall.uuid, versionId);
+    const [fourth] = (await sprayWallMutations.upsertSprayWallHolds(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: draft.id, holds: [{ cx: 620, cy: 460, r: 18 }] } },
+      ctxFor(OWNER),
+    )) as Array<{ id: number }>;
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: draft.id } }, ctxFor(OWNER));
+
+    const affectedIds = [...holdIds, fourth.id];
+    await insertUsageClimb(wall.layoutId, holdIds, { name: 'Original' });
+    await insertUsageClimb(wall.layoutId, affectedIds, { name: 'Remix' });
+    await insertUsageClimb(wall.layoutId, affectedIds, { isDraft: true, isListed: false });
+    await insertUsageClimb(wall.layoutId, affectedIds, { isHidden: true });
+    await insertUsageClimb(wall.layoutId, affectedIds, { isListed: false });
+    await insertUsageClimb(wall.layoutId, affectedIds, { retiredByReset: true });
+
+    const { wall: anotherWall, holdIds: anotherHoldIds } = await createPublishedWall(OWNER);
+    await insertUsageClimb(anotherWall.layoutId, anotherHoldIds);
+
+    const summary = await sprayWallQueries.sprayWallHoldUsageSummary(
+      {},
+      { wallUuid: wall.uuid, holdIds: [...affectedIds, ...anotherHoldIds, ...affectedIds] },
+      ctxFor(OWNER),
+    );
+    expect(summary).toEqual({ publishedClimbCount: 2, draftClimbCount: 1 });
+
+    const perHold = await sprayWallQueries.sprayWallHoldUsage(
+      {},
+      { wallUuid: wall.uuid, holdIds: affectedIds },
+      ctxFor(OWNER),
+    );
+    expect(perHold.reduce((total, hold) => total + hold.publishedClimbCount, 0)).toBe(7);
+  });
+
+  it('counts one climb once when its holds span the former 500-hold boundary', async () => {
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    await insertUsageClimb(wall.layoutId, holdIds);
+    const unusedIds = Array.from({ length: 1497 }, (_, index) => 100_000 + index);
+    const requestedIds = [holdIds[0], ...unusedIds.slice(0, 499), holdIds[1], ...unusedIds.slice(499), holdIds[2]];
+    expect(
+      await sprayWallQueries.sprayWallHoldUsageSummary(
+        {},
+        { wallUuid: wall.uuid, holdIds: requestedIds },
+        ctxFor(OWNER),
+      ),
+    ).toEqual({ publishedClimbCount: 1, draftClimbCount: 0 });
+    await expect(
+      sprayWallQueries.sprayWallHoldUsageSummary(
+        {},
+        { wallUuid: wall.uuid, holdIds: [...requestedIds, 200_000] },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('returns zero for no requested holds, after checking edit access', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    expect(
+      await sprayWallQueries.sprayWallHoldUsageSummary({}, { wallUuid: wall.uuid, holdIds: [] }, ctxFor(OWNER)),
+    ).toEqual({ publishedClimbCount: 0, draftClimbCount: 0 });
+    for (const viewer of [null, STRANGER]) {
+      await expect(
+        sprayWallQueries.sprayWallHoldUsageSummary({}, { wallUuid: wall.uuid, holdIds: [] }, ctxFor(viewer)),
+      ).rejects.toThrow();
+    }
+    await db.update(sprayWalls).set({ archivedAt: new Date() }).where(eq(sprayWalls.layoutId, wall.layoutId));
+    await expect(
+      sprayWallQueries.sprayWallHoldUsageSummary({}, { wallUuid: wall.uuid, holdIds: [] }, ctxFor(OWNER)),
+    ).rejects.toMatchObject({ extensions: { code: 'SPRAY_WALL_ARCHIVED' } });
+  });
+});
+
+describe('published climbs follow hold refinements (#8108)', () => {
+  const save = async (layoutId: number, name: string, frames: string, isDraft = false) =>
+    (await climbMutations.saveClimb(
+      {},
+      {
+        input: { boardType: 'spray', layoutId, name, frames, isDraft, angle: 40 },
+      },
+      ctxFor(OWNER),
+    )) as { uuid: string };
+
+  const readClimb = async (uuid: string) => {
+    const [climb] = await db.select().from(boardClimbs).where(eq(boardClimbs.uuid, uuid));
+    return climb;
+  };
+
+  const refine = async (wallUuid: string, versionId: string, holdId: number, cx = 125) => {
+    const [successor] = (await sprayWallMutations.upsertSprayWallHolds(
+      {},
+      {
+        input: { wallUuid, versionId, holds: [{ id: holdId, cx, cy: 130, r: 22 }] },
+      },
+      ctxFor(OWNER),
+    )) as Array<{ id: number }>;
+    return successor.id;
+  };
+
+  it('keeps draft changes isolated, then updates both climbs without losing ticks or grades', async () => {
+    const { wall, versionId, holdIds } = await createPublishedWall(OWNER);
+    const original = await save(wall.layoutId, 'Original', framesFor(holdIds));
+    const remixFrames = `p${holdIds[0]}r1p${holdIds[1]}r4p${holdIds[2]}r3`;
+    const remix = await save(wall.layoutId, 'Remix', remixFrames);
+    const draftClimb = await save(wall.layoutId, 'Unpublished draft', framesFor(holdIds.slice(0, 2)), true);
+    await tickMutations.saveTick(
+      {},
+      {
+        input: {
+          climbUuid: original.uuid,
+          boardType: 'spray',
+          angle: 40,
+          status: 'send',
+          attemptCount: 2,
+          isMirror: false,
+          isBenchmark: false,
+          comment: 'Still the same climb',
+          climbedAt: new Date().toISOString(),
+          userGrade: '6b/V4',
+        },
+      },
+      ctxFor(OWNER),
+    );
+    await resetClimbStatsPublisherForTests();
+    const ticksBefore = await db.execute(sql`SELECT * FROM boardsesh_ticks WHERE climb_uuid = ${original.uuid}`);
+    const statsBefore = await db.execute(sql`SELECT * FROM board_climb_stats WHERE climb_uuid = ${original.uuid}`);
+    const originalBefore = await readClimb(original.uuid);
+    const edit = await openHoldEditDraft(wall.uuid, versionId);
+    const successor = await refine(wall.uuid, edit.id, holdIds[0]);
+    const [storedSuccessor] = await db.select().from(sprayWallHolds).where(eq(sprayWallHolds.holdId, successor));
+    expect(storedSuccessor.isRefinement).toBe(true);
+    expect((await readClimb(original.uuid)).frames).toBe(originalBefore.frames);
+    const published = (await sprayWallQueries.sprayWallRenderData({}, { uuid: wall.uuid }, ctxFor(OWNER))) as {
+      holds: Array<{ id: number; cx: number }>;
+    };
+    expect(published.holds.find(({ id }) => id === holdIds[0])?.cx).toBe(100);
+    expect(published.holds.some(({ id }) => id === successor)).toBe(false);
+
+    // A repeated save of this draft's successor keeps its refinement lineage.
+    expect(await refine(wall.uuid, edit.id, successor, 135)).toBe(successor);
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: edit.id } }, ctxFor(OWNER));
+    const { fingerprintFromHolds } = await import('@boardsesh/kilter-sync/sync');
+    const { parseFramesToHoldEntries } = await import('@boardsesh/db/queries');
+    for (const climb of [original, remix, draftClimb]) {
+      const after = await readClimb(climb.uuid);
+      const previous =
+        climb.uuid === remix.uuid
+          ? remixFrames
+          : climb.uuid === draftClimb.uuid
+            ? framesFor(holdIds.slice(0, 2))
+            : framesFor(holdIds);
+      expect(after.frames).toBe(previous.replace(`p${holdIds[0]}r`, `p${successor}r`));
+      expect(after.missingHoldCount).toBe(0);
+      expect(after.holdFingerprint).toBe(fingerprintFromHolds(parseFramesToHoldEntries('spray', after.frames)));
+      expect(after.compatibleSizeIds).toEqual([wall.layoutId]);
+      expect(after.requiredSetIds).toEqual([1]);
+      expect(after.edgeLeft).toBe(135);
+      const membership = await db.select().from(boardClimbHolds).where(eq(boardClimbHolds.climbUuid, climb.uuid));
+      expect(membership.map(({ holdId }) => holdId)).toContain(successor);
+      expect(membership.map(({ holdId }) => holdId)).not.toContain(holdIds[0]);
+      expect(membership.find(({ holdId }) => holdId === successor)?.holdState).toBe('STARTING');
+    }
+    expect((await readClimb(original.uuid)).syncSeq).toBeGreaterThan(originalBefore.syncSeq);
+    expect(await db.execute(sql`SELECT * FROM boardsesh_ticks WHERE climb_uuid = ${original.uuid}`)).toEqual(
+      ticksBefore,
+    );
+    expect(await db.execute(sql`SELECT * FROM board_climb_stats WHERE climb_uuid = ${original.uuid}`)).toEqual(
+      statsBefore,
+    );
+    const historical = (await sprayWallQueries.sprayWallRenderData(
+      {},
+      { uuid: wall.uuid, version: 1 },
+      ctxFor(OWNER),
+    )) as {
+      holds: Array<{ id: number; cx: number }>;
+    };
+    expect(historical.holds.find(({ id }) => id === holdIds[0])?.cx).toBe(100);
+  });
+
+  it('does not change a climb when its refinement draft is discarded', async () => {
+    const { wall, versionId, holdIds } = await createPublishedWall(OWNER);
+    const climb = await save(wall.layoutId, 'Keep the original', framesFor(holdIds));
+    const before = await readClimb(climb.uuid);
+    const edit = await openHoldEditDraft(wall.uuid, versionId);
+    await refine(wall.uuid, edit.id, holdIds[0]);
+    await sprayWallMutations.discardSprayWallVersion({}, { input: { versionId: edit.id } }, ctxFor(OWNER));
+    expect(await readClimb(climb.uuid)).toEqual(before);
+  });
+
+  it('warns about deleting a saved refinement and leaves its climb missing after publish', async () => {
+    const { wall, versionId, holdIds } = await createPublishedWall(OWNER);
+    const climb = await save(wall.layoutId, 'Actually removed', framesFor(holdIds));
+    const edit = await openHoldEditDraft(wall.uuid, versionId);
+    const successor = await refine(wall.uuid, edit.id, holdIds[0]);
+    expect(
+      await sprayWallQueries.sprayWallHoldUsage({}, { wallUuid: wall.uuid, holdIds: [successor] }, ctxFor(OWNER)),
+    ).toEqual([{ holdId: successor, publishedClimbCount: 1, draftClimbCount: 0 }]);
+    expect(
+      await sprayWallQueries.sprayWallHoldUsageSummary(
+        {},
+        { wallUuid: wall.uuid, holdIds: [successor] },
+        ctxFor(OWNER),
+      ),
+    ).toEqual({ publishedClimbCount: 1, draftClimbCount: 0 });
+    await sprayWallMutations.removeSprayWallHolds(
+      {},
+      {
+        input: { wallUuid: wall.uuid, versionId: edit.id, holdIds: [successor] },
+      },
+      ctxFor(OWNER),
+    );
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: edit.id } }, ctxFor(OWNER));
+    expect((await readClimb(climb.uuid)).frames).toBe(framesFor(holdIds));
+    expect((await readClimb(climb.uuid)).missingHoldCount).toBe(1);
+  });
+
+  it('keeps explicit physical remove/add moves distinct from a drawing refinement', async () => {
+    const { wall, versionId, holdIds } = await createPublishedWall(OWNER);
+    const climb = await save(wall.layoutId, 'Physical move', framesFor(holdIds));
+    const edit = await openHoldEditDraft(wall.uuid, versionId);
+    await sprayWallMutations.removeSprayWallHolds(
+      {},
+      {
+        input: { wallUuid: wall.uuid, versionId: edit.id, holdIds: [holdIds[0]] },
+      },
+      ctxFor(OWNER),
+    );
+    const [moved] = (await sprayWallMutations.upsertSprayWallHolds(
+      {},
+      {
+        input: {
+          wallUuid: wall.uuid,
+          versionId: edit.id,
+          holds: [{ cx: 170, cy: 200, r: 22, movedFromHoldId: holdIds[0] }],
+        },
+      },
+      ctxFor(OWNER),
+    )) as Array<{ id: number }>;
+    const [stored] = await db.select().from(sprayWallHolds).where(eq(sprayWallHolds.holdId, moved.id));
+    expect(stored.isRefinement).toBe(false);
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: edit.id } }, ctxFor(OWNER));
+    expect((await readClimb(climb.uuid)).frames).toBe(framesFor(holdIds));
+    expect((await readClimb(climb.uuid)).missingHoldCount).toBe(1);
+  });
+
+  it('follows refinements across publications and refuses stale offline frames without changing climbs', async () => {
+    const { wall, versionId, holdIds } = await createPublishedWall(OWNER);
+    const climb = await save(wall.layoutId, 'Repeated refinement', framesFor(holdIds));
+    const firstDraft = await openHoldEditDraft(wall.uuid, versionId);
+    const firstSuccessor = await refine(wall.uuid, firstDraft.id, holdIds[0]);
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: firstDraft.id } }, ctxFor(OWNER));
+    const secondDraft = await openHoldEditDraft(wall.uuid, firstDraft.id);
+    const secondSuccessor = await refine(wall.uuid, secondDraft.id, firstSuccessor, 145);
+    expect(
+      await sprayWallQueries.sprayWallHoldUsageSummary(
+        {},
+        {
+          wallUuid: wall.uuid,
+          holdIds: [secondSuccessor],
+        },
+        ctxFor(OWNER),
+      ),
+    ).toEqual({ publishedClimbCount: 1, draftClimbCount: 0 });
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: secondDraft.id } }, ctxFor(OWNER));
+    const current = await readClimb(climb.uuid);
+    expect(current.frames).toBe(framesFor([secondSuccessor, ...holdIds.slice(1)]));
+    expect(current.missingHoldCount).toBe(0);
+    await expect(
+      climbMutations.updateClimb(
+        {},
+        {
+          input: {
+            uuid: climb.uuid,
+            boardType: 'spray',
+            frames: framesFor(holdIds),
+          },
+        },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/not on this wall/i);
+    expect(await readClimb(climb.uuid)).toEqual(current);
+    await expect(save(wall.layoutId, 'Stale offline create', framesFor(holdIds))).rejects.toThrow(/not on this wall/i);
+    expect(await readClimb(climb.uuid)).toEqual(current);
+  });
+
+  it('publishes safely when a draft climb is deleted after the affected-climb read', async () => {
+    const { wall, versionId, holdIds } = await createPublishedWall(OWNER);
+    const doomed = await save(wall.layoutId, 'Delete this draft', framesFor(holdIds), true);
+    const edit = await openHoldEditDraft(wall.uuid, versionId);
+    await refine(wall.uuid, edit.id, holdIds[0]);
+    const locked = createBarrier();
+    const deleteNow = createBarrier();
+    const deletion = db.transaction(async (tx) => {
+      await tx.select().from(boardClimbs).where(eq(boardClimbs.uuid, doomed.uuid)).for('update');
+      locked.release();
+      await deleteNow.promise;
+      await tx.delete(boardClimbs).where(eq(boardClimbs.uuid, doomed.uuid));
+    });
+    handleLater(deletion);
+    await locked.promise;
+    const publish = sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: edit.id } }, ctxFor(OWNER));
+    handleLater(publish);
+    try {
+      // The publish read the draft, then waits to UPDATE its locked row. Deleting
+      // it now makes UPDATE return no row; no orphan membership may be inserted.
+      await vi.waitFor(
+        async () => {
+          const waiting = await db.execute(sql`SELECT pid FROM pg_stat_activity
+          WHERE datname = current_database() AND pid <> pg_backend_pid()
+            AND wait_event_type = 'Lock' AND query LIKE 'update "board_climbs"%'`);
+          expect(waiting.length).toBeGreaterThan(0);
+        },
+        { timeout: 3000, interval: 20 },
+      );
+    } finally {
+      deleteNow.release();
+    }
+    await deletion;
+    await expect(publish).resolves.toMatchObject({ status: 'PUBLISHED' });
+    expect(await readClimb(doomed.uuid)).toBeUndefined();
   });
 });

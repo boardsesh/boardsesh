@@ -9359,6 +9359,12 @@ export type Query = {
    * wall's holds; refused on an archived wall. At most 500 holds per call.
    */
   sprayWallHoldUsage: Array<SprayWallHoldUsage>;
+  /**
+   * Distinct published and draft climbs that use any of the given holds. A climb
+   * using several requested holds counts once. Same editing and archive gates
+   * as sprayWallHoldUsage. Accepts up to the wall's 1500 holds in one call.
+   */
+  sprayWallHoldUsageSummary: SprayWallHoldUsageSummary;
   sprayWallImportProgress: Array<SprayWallImportProgress>;
   /**
    * A spray wall's LED setup, for lighting it from this phone. Anyone who can read
@@ -10348,6 +10354,12 @@ export type QuerySprayWallDetectionForVersionArgs = {
 
 /** Root query type for all read operations. */
 export type QuerySprayWallHoldUsageArgs = {
+  holdIds: Array<Scalars['Int']['input']>;
+  wallUuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySprayWallHoldUsageSummaryArgs = {
   holdIds: Array<Scalars['Int']['input']>;
   wallUuid: Scalars['ID']['input'];
 };
@@ -13158,6 +13170,13 @@ export type SprayWallHoldUsage = {
   publishedClimbCount: Scalars['Int']['output'];
 };
 
+/** Distinct climbs on a wall that use any of the requested holds. */
+export type SprayWallHoldUsageSummary = {
+  __typename?: 'SprayWallHoldUsageSummary';
+  draftClimbCount: Scalars['Int']['output'];
+  publishedClimbCount: Scalars['Int']['output'];
+};
+
 export type SprayWallImportProgress = {
   __typename?: 'SprayWallImportProgress';
   detectionId?: Maybe<Scalars['ID']['output']>;
@@ -15389,6 +15408,7 @@ export type ResolversTypes = ResolversObject<{
   SprayWallHold: ResolverTypeWrapper<SprayWallHold>;
   SprayWallHoldInput: SprayWallHoldInput;
   SprayWallHoldUsage: ResolverTypeWrapper<SprayWallHoldUsage>;
+  SprayWallHoldUsageSummary: ResolverTypeWrapper<SprayWallHoldUsageSummary>;
   SprayWallImportProgress: ResolverTypeWrapper<SprayWallImportProgress>;
   SprayWallKeptDecisionInput: SprayWallKeptDecisionInput;
   SprayWallLedSetup: ResolverTypeWrapper<SprayWallLedSetup>;
@@ -16004,6 +16024,7 @@ export type ResolversParentTypes = ResolversObject<{
   SprayWallHold: SprayWallHold;
   SprayWallHoldInput: SprayWallHoldInput;
   SprayWallHoldUsage: SprayWallHoldUsage;
+  SprayWallHoldUsageSummary: SprayWallHoldUsageSummary;
   SprayWallImportProgress: SprayWallImportProgress;
   SprayWallKeptDecisionInput: SprayWallKeptDecisionInput;
   SprayWallLedSetup: SprayWallLedSetup;
@@ -21712,6 +21733,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QuerySprayWallHoldUsageArgs, 'holdIds' | 'wallUuid'>
   >;
+  sprayWallHoldUsageSummary?: Resolver<
+    ResolversTypes['SprayWallHoldUsageSummary'],
+    ParentType,
+    ContextType,
+    RequireFields<QuerySprayWallHoldUsageSummaryArgs, 'holdIds' | 'wallUuid'>
+  >;
   sprayWallImportProgress?: Resolver<
     Array<ResolversTypes['SprayWallImportProgress']>,
     ParentType,
@@ -23101,6 +23128,16 @@ export type SprayWallHoldUsageResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type SprayWallHoldUsageSummaryResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayWallHoldUsageSummary'] =
+    ResolversParentTypes['SprayWallHoldUsageSummary'],
+> = ResolversObject<{
+  draftClimbCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  publishedClimbCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type SprayWallImportProgressResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['SprayWallImportProgress'] = ResolversParentTypes['SprayWallImportProgress'],
@@ -24115,6 +24152,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   SprayWallDetection?: SprayWallDetectionResolvers<ContextType>;
   SprayWallHold?: SprayWallHoldResolvers<ContextType>;
   SprayWallHoldUsage?: SprayWallHoldUsageResolvers<ContextType>;
+  SprayWallHoldUsageSummary?: SprayWallHoldUsageSummaryResolvers<ContextType>;
   SprayWallImportProgress?: SprayWallImportProgressResolvers<ContextType>;
   SprayWallLedSetup?: SprayWallLedSetupResolvers<ContextType>;
   SprayWallLedSetupView?: SprayWallLedSetupViewResolvers<ContextType>;

@@ -110,7 +110,8 @@ BOTH the hole id and the placement id).
 ### Why a side table, not columns on `board_placements`
 
 The catalogue rows are immutable identity. A climb's frames string
-(`p<placementId>r<code>`) points at a placement id forever, and every climb ever
+(`p<placementId>r<code>`) references those identities; publication follows explicit
+refinement successors for the same physical hold, and every climb ever
 set on the wall keeps pointing at the same `(board_type, layout_id)` partition.
 Wall state is the opposite — it changes on every hold edit:
 
@@ -128,7 +129,9 @@ frames depend on. Keying side tables by the same ids — the
 frozen and the wall's history append-only. A hold edit therefore stamps a removal
 and appends rows; it never updates published geometry in place and never deletes.
 A correction to an inherited hold is a removal plus an addition, and
-`moved_from_hold_id` links the two.
+`moved_from_hold_id` links the two. New automatic corrections also carry
+`is_refinement`, allowing publication to keep climb references on the refined
+geometry without treating an actual removal as a correction.
 
 ### Every per-wall catalogue row is `is_listed = false`
 
@@ -2402,12 +2405,33 @@ hold-edit draft on the published photo (`createSprayWallVersion` with
 
 Removing a hold that climbs use is the owner's call, confirmed in the app first:
 
-1. Before it removes (or moves) holds, the hold editor asks
-   `sprayWallHoldUsage(wallUuid, holdIds)` how many published and draft climbs use
-   each one (see [The `SprayWall` fields](#the-spraywall-fields)).
+1. Before it removes holds, the hold editor asks
+   `sprayWallHoldUsageSummary(wallUuid, holdIds)` how many distinct published
+   and draft climbs use them (see [The `SprayWall` fields](#the-spraywall-fields)).
 2. When published climbs use one, the app asks the climber to confirm.
 3. On yes, the publish stamps the removal, and the recompute in
    `publishDraftUnderLock` raises those climbs' `missing_hold_count`.
+
+Refining an existing hold's outline, centre or radius corrects the marked shape
+of the same physical hold. It does not remove the hold from its climbs. Draft
+saves still create immutable successor geometry, tagged `is_refinement`; at
+publication the wall lock protects an atomic update of affected climbs to the
+alive successors. Roles, frame numbers, climb UUIDs, ticks and grades stay the
+same. Frames, fingerprints, hold memberships and derived bounds are refreshed
+for sync. A discarded draft changes no climbs. An explicit new hold with a
+`movedFromHoldId` is lineage only and does not opt into refinement remapping.
+Actual physical removal still uses removal; a physical reset uses Reset wall.
+
+The new flag defaults to false for existing rows: historical replacements are
+not guessed to be refinements, and this change does not repair climbs already
+marked missing by earlier edits. An older offline authoring request still naming
+a replaced placement is refused as a stale hold; reload the climb before editing
+it again. It never silently restores old placement references. Deploy the
+database migration and backend
+before the mobile update. The app probes refinement support before any save
+containing existing-hold corrections; an older or rolled-back backend refuses
+that save before any removals or upserts. The probe runs again on every save.
+Geometry-only edits do not show a removal confirmation.
 
 The usage check is advisory: a climb published between the check and the publish
 is marked lost without a warning. The authoritative after-the-fact count is
@@ -2755,22 +2779,22 @@ costs is said when it applies. Before a save in the hold route takes stored
 holds off the wall, the editor asks the route (`confirmHoldRemoval`), and the
 route asks the server:
 
-- **Which holds count.** Every removal, and every stored hold whose geometry goes
-  out again (`holdIdsLeavingTheWall` in `spray-hold-writes.ts`): the server
-  records a move as a removal plus a new hold, so a climb that used a moved hold
-  loses it just as it would a removed one. A save that only adds holds asks
-  nothing.
-- **The read.** `sprayWallHoldUsage(wallUuid, holdIds)` (`GET_SPRAY_WALL_HOLD_USAGE`),
-  at most 500 ids a call, summed per hold (`fetchSprayHoldUsage` in
-  `spray-hold-usage.ts`). A climb using two of the holds counts twice, so the
-  number can overstate and never understates.
+- **Which holds count.** Actual removals (`holdIdsLeavingTheWall` in
+  `spray-hold-writes.ts`). Refining, resizing or repositioning a marked shape
+  preserves its climb references at publication. A save that only refines or
+  adds holds asks nothing.
+- **The read.** `sprayWallHoldUsageSummary(wallUuid, holdIds)`
+  (`GET_SPRAY_WALL_HOLD_USAGE_SUMMARY`), at most 1500 ids in one call. The server
+  counts distinct climb UUIDs across all requested holds, so two climbs sharing
+  several removed holds still count as two. A saved draft refinement includes
+  its predecessor's usages, so deleting its successor still warns correctly.
 - **The confirm.** Published climbs use the holds: a system alert, "Remove a hold
   that climbs use?", "{{count}} published climbs use these holds. They'll be
   marked as missing a hold until someone remixes them." (and the singular),
-  with "Remove anyway" and "Keep holds". The read failed: the same alert with
-  "Some climbs may use these holds…": it fails toward asking, never toward a
-  silent removal. Only drafts use them, or nothing does: no alert. "Keep holds",
-  or dismissing the alert, leaves every edit where it was and saves nothing.
+  with "Remove anyway" and "Keep editing". The read failed: the same alert with
+  "Some climbs may use these holds…". Only drafts use them, or nothing does:
+  no alert. "Keep editing", or dismissing the alert, leaves every edit and the
+  undo history where they were and saves nothing.
 - **While it is up**, the usage read included, the press owns the screen: Save
   shows its spinner, editing waits and so does the leave guard. The plan is read
   again after each answer, so a confirmed hold is never asked about twice
@@ -3036,7 +3060,14 @@ hold (at most 500 per call): `publishedClimbCount` (listed, non-draft) and
 `draftClimbCount`, from `board_climb_holds` joined to this wall's climbs.
 Hidden climbs and climbs a full reset retired are not counted. It takes the
 same gate as editing the holds and refuses an archived wall with
-`SPRAY_WALL_ARCHIVED`.
+`SPRAY_WALL_ARCHIVED`. This per-hold API remains available to older clients;
+its counts must not be summed to describe a number of climbs.
+
+`sprayWallHoldUsageSummary(wallUuid, holdIds)` accepts up to 1500 ids and
+returns `publishedClimbCount` and `draftClimbCount`, each deduplicated by climb
+UUID over the whole selection. It applies the same wall access, archive and
+visibility rules. Both usage APIs include predecessors of saved refinement
+successors, so a later deletion sees climbs still referencing the predecessor.
 
 The shared `SPRAY_WALL_FIELDS` selection does NOT ask for them: a backend
 without them would fail every wall read. The app asks with
