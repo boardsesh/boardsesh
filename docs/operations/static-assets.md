@@ -24,6 +24,11 @@ native-bundle flags: the publisher derives that rich metadata directly from the 
 only what URL resolution needs. Board art is exactly the `/images/**/*.webp` portion of the map, so native packaging
 can derive its inputs without a separate flag. A tiny generated shell catalog duplicates only the seven logo and app
 icon keys so global chrome does not pull the complete board-image map into every browser route.
+A separate generated marketing catalog contains app captures, homepage images/videos and the
+spray-wall photograph. Marketing client islands import it through
+`@boardsesh/static-assets/marketing`; board artwork stays out of their initial JavaScript.
+Both subsets derive object keys from the same source manifest and participate in the existing
+generation/freshness check.
 
 Changing bytes in place creates a new URL; old objects remain valid for old deployments. Objects use their real image content type and
 `Cache-Control: public, max-age=31536000, immutable`.
@@ -35,8 +40,8 @@ vp run generate:static-assets
 vp run check:static-assets
 ```
 
-Commit both generated catalog files. CI regenerates the compact map and shell keys and fails when an input or either
-generated artifact is stale.
+Commit all generated catalog files. CI regenerates the full map, shell keys and marketing keys, and fails
+when an input or any generated artifact is stale.
 Checked-in Expo public files retain their existing URLs for local and PR exports. The Expo export patcher switches
 its shell and PWA manifest icons to cataloged CDN URLs only when `EXPO_PUBLIC_STATIC_ASSET_BASE_URL` is set, as it
 is in the production workflow.

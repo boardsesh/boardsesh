@@ -4,7 +4,7 @@ import React from 'react';
 import Image from 'next/image';
 import Box from '@mui/material/Box';
 import { useTranslation } from 'react-i18next';
-import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
+import { resolveMarketingStaticAssetUrl } from '@/app/lib/marketing-static-asset-url';
 import { isSupportedLocale } from '@/app/lib/i18n/config';
 import { marketingScreenshot, type MarketingShot } from '@/app/lib/marketing-screenshots';
 import { useMarketingPreview } from './marketing-preview-provider';
@@ -42,7 +42,7 @@ export function MarketingScreenshot({
       data-preview-platform={platform}
     >
       <Image
-        src={resolveStaticAssetUrl(capture.src)}
+        src={resolveMarketingStaticAssetUrl(capture.src)}
         alt={alt}
         width={capture.width}
         height={capture.height}

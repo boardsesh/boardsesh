@@ -1,13 +1,11 @@
 import { describe, it, expect } from 'vite-plus/test';
 import React from 'react';
 import { render } from '@testing-library/react';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs from 'dayjs';
 import { FormDateTimePicker } from '../form-date-time-picker';
 
 function renderPicker(element: React.ReactElement) {
-  return render(<LocalizationProvider dateAdapter={AdapterDayjs}>{element}</LocalizationProvider>);
+  return render(element);
 }
 
 // MUI X v8's accessible field DOM splits the wiring: `id` lands on the hidden

@@ -19,7 +19,7 @@ import { boardTypeLabel } from '@boardsesh/board-constants/board-type-labels';
 import StoreInstallButtons from '@/app/components/marketing/store-install-buttons';
 import { PageSection, PageCard } from '@/app/components/ui/page-shell';
 import LocaleLink from '@/app/components/i18n/locale-link';
-import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
+import { resolveMarketingStaticAssetUrl } from '@/app/lib/marketing-static-asset-url';
 import { DEFAULT_LOCALE, isSupportedLocale } from '@/app/lib/i18n/config';
 import HomeRecentBetaSection from '@/app/components/beta-videos/home-recent-beta-section';
 import { MarketingScreenshot } from '@/app/components/marketing/marketing-screenshot';
@@ -156,7 +156,7 @@ export default function HomePageContent({
         </PageSection>
         {/* The real home wall /spraywalls shows: beside the copy on a laptop, under it on a phone. */}
         <Image
-          src={resolveStaticAssetUrl('/images/help/spray-wall-photo.webp')}
+          src={resolveMarketingStaticAssetUrl('/images/help/spray-wall-photo.webp')}
           alt={website('homeSprayPhotoAlt')}
           width={1752}
           height={2047}

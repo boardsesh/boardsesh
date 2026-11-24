@@ -16,6 +16,11 @@
       "import": "./src/generated/shell.ts",
       "default": "./src/generated/shell.ts"
     },
+    "./marketing": {
+      "types": "./src/generated/marketing.ts",
+      "import": "./src/generated/marketing.ts",
+      "default": "./src/generated/marketing.ts"
+    },
     "./catalog.json": "./src/generated/catalog.json"
   },
   "scripts": {

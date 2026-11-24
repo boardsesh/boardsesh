@@ -31,7 +31,7 @@ vi.mock('react-i18next', () => ({
 vi.mock('@/app/hooks/use-install-platform', () => ({
   useInstallPlatform: () => ({ platform: 'desktop-web', nativeStore: 'ios' }),
 }));
-vi.mock('@/app/lib/static-asset-url', () => ({ resolveStaticAssetUrl: (path: string) => path }));
+vi.mock('@/app/lib/marketing-static-asset-url', () => ({ resolveMarketingStaticAssetUrl: (path: string) => path }));
 
 let mockLocale = 'en-US';
 vi.mock('@/app/lib/i18n/server', () => ({

@@ -12,7 +12,7 @@ import { MarketingPreviewSwitch } from '../marketing-preview-switch';
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => tFromCatalog('marketing', key), i18n: { language: 'de' } }),
 }));
-vi.mock('@/app/lib/static-asset-url', () => ({ resolveStaticAssetUrl: (path: string) => path }));
+vi.mock('@/app/lib/marketing-static-asset-url', () => ({ resolveMarketingStaticAssetUrl: (path: string) => path }));
 
 afterEach(() => vi.restoreAllMocks());
 
