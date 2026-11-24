@@ -108,6 +108,7 @@ describe('buildAppInstallClickProperties', () => {
       'setter-qr-card',
       'playlist-qr-card',
       'home-qr-card',
+      'setup-report',
     ]);
     expect(new Set(APP_INSTALL_PLACEMENTS).size).toBe(APP_INSTALL_PLACEMENTS.length);
   });

@@ -29,7 +29,7 @@ const gymReportingAliasVenueGuard = readFileSync(
   'utf8',
 );
 const gymReachObservationsSchema = readFileSync(
-  new URL('../../../db/drizzle/0341_gym_reach_observations.sql', import.meta.url),
+  new URL('../../../db/drizzle/0342_gym_reach_observations.sql', import.meta.url),
   'utf8',
 );
 const offlineWriteDeliverySchema = readFileSync(
@@ -47,6 +47,16 @@ const directoryReportsSchema = readFileSync(
 )
   .split('--> statement-breakpoint')
   .filter((statement) => !statement.trim().startsWith('ALTER TYPE'))
+  .join('\n');
+// Suggested setups on "Set up wrong" reports (migration 0341). Notification
+// types are text in this fixture, so only that enum addition is skipped; the
+// board moderation and resolver role enums are real types here.
+const boardSetupSuggestionsSchema = readFileSync(
+  new URL('../../../db/drizzle/0341_board_setup_suggestions.sql', import.meta.url),
+  'utf8',
+)
+  .split('--> statement-breakpoint')
+  .filter((statement) => !statement.trim().startsWith('ALTER TYPE "public"."notification_type"'))
   .join('\n');
 
 const partnerSessionHintPrivacySchema = readFileSync(
@@ -333,11 +343,11 @@ const sessionWorkoutsSchema = readFileSync(
 );
 
 const gymInventorySchema = readFileSync(
-  new URL('../../../db/drizzle/0342_gym_grade_inventory.sql', import.meta.url),
+  new URL('../../../db/drizzle/0343_gym_grade_inventory.sql', import.meta.url),
   'utf8',
 );
 const sprayExposureSchema = readFileSync(
-  new URL('../../../db/drizzle/0343_observe_spray_inventory.sql', import.meta.url),
+  new URL('../../../db/drizzle/0344_observe_spray_inventory.sql', import.meta.url),
   'utf8',
 );
 
@@ -1891,6 +1901,12 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   DROP TYPE IF EXISTS directory_report_status;
   DROP TYPE IF EXISTS directory_report_target_kind;
   ${directoryReportsSchema}
+
+  -- Suggested setups (migration 0341): enum values, the reporter's suggestion,
+  -- the notice's link to the setup change and the per-climber index on
+  -- board_moderation_events. The tables and types above are dropped and made
+  -- again first, so a reapplied fixture adds them once.
+  ${boardSetupSuggestionsSchema}
 
   -- Board followers (enrichBoard counts these per board).
   DROP TABLE IF EXISTS "board_follows" CASCADE;

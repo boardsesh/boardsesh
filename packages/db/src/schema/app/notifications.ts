@@ -39,6 +39,9 @@ export const notificationTypeEnum = pgEnum('notification_type', [
   // Claim notices; the claim guardrails PR sends them.
   'gym_claimed_with_your_board',
   'gym_claim_denied',
+  // A climber's suggested setup changed a board at an unclaimed gym; sent to
+  // the board's creator, who can undo it (docs/product/directory-reports.md).
+  'board_setup_changed_by_climber',
 ]);
 
 export const notifications = pgTable(
@@ -106,4 +109,5 @@ export type NotificationType =
   | 'gym_report_opened'
   | 'gym_report_resolved'
   | 'gym_claimed_with_your_board'
-  | 'gym_claim_denied';
+  | 'gym_claim_denied'
+  | 'board_setup_changed_by_climber';

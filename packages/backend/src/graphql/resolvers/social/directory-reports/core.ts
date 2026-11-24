@@ -103,17 +103,24 @@ export async function loadBoardFacts(
 }
 
 /**
- * One board's facts under a share lock, in the caller's transaction: a write to
+ * One board's facts under a row lock, in the caller's transaction: a write to
  * the board in flight (a delete, a removal, a move) commits first, and the next
- * one waits for the caller to finish.
+ * one waits for the caller to finish. A share lock by default; `no key update`
+ * when the caller may write the board itself (a suggested setup), so it never
+ * has to upgrade the lock and two such callers on one board take turns. It
+ * changes no key, so inserts that only reference the board don't wait on it.
  */
-export async function lockBoardFacts(boardId: number, executor: DirectoryExecutor): Promise<BoardFacts | undefined> {
+export async function lockBoardFacts(
+  boardId: number,
+  executor: DirectoryExecutor,
+  strength: 'share' | 'no key update' = 'share',
+): Promise<BoardFacts | undefined> {
   const [row] = await executor
     .select(BOARD_FACT_COLUMNS)
     .from(dbSchema.userBoards)
     .where(eq(dbSchema.userBoards.id, boardId))
     .limit(1)
-    .for('share');
+    .for(strength);
   return row;
 }
 
@@ -199,6 +206,8 @@ export async function viewerGymStaffing(
 /** How a staff action's role reads to the person who closed a report with it. */
 export function resolverRoleForActor(actorRole: BoardModerationActorRole): DirectoryReportResolverRole {
   if (actorRole === 'board_owner') return 'creator';
+  // A climber's suggested setup closed it: not an admin's call.
+  if (actorRole === 'climber') return 'climber';
   if (actorRole === 'gym_owner' || actorRole === 'gym_admin' || actorRole === 'gym_editor') return 'gym_staff';
   return 'admin';
 }

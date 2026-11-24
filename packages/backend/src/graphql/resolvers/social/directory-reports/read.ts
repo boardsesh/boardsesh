@@ -21,6 +21,7 @@ import {
   type DirectoryExecutor,
   type ViewerGymStaffing,
 } from './core';
+import { readSetupSnapshot, toBoardSetup } from './setup-snapshot';
 
 // ============================================
 // Directory reports: who reads them
@@ -137,6 +138,7 @@ export async function presentReports(
         reportId: dbSchema.directoryReportReporters.reportId,
         reporterId: dbSchema.directoryReportReporters.reporterId,
         note: dbSchema.directoryReportReporters.note,
+        suggestedSetup: dbSchema.directoryReportReporters.suggestedSetup,
         createdAt: dbSchema.directoryReportReporters.createdAt,
         displayName: dbSchema.userProfiles.displayName,
         avatarUrl: dbSchema.userProfiles.avatarUrl,
@@ -209,24 +211,28 @@ export async function presentReports(
       duplicateOfGymUuid: duplicateGym?.uuid ?? null,
       duplicateOfGymName: duplicateGym?.name ?? null,
       reporterCount: reportReporters.length,
-      notes: reportReporters.flatMap((row) =>
-        row.note
-          ? [
-              {
-                note: row.note,
-                createdAt: row.createdAt.toISOString(),
-                reporter:
-                  viewer.isAdmin && row.reporterId
-                    ? {
-                        userId: row.reporterId,
-                        displayName: row.displayName ?? row.name ?? null,
-                        avatarUrl: row.avatarUrl ?? row.image ?? null,
-                      }
-                    : null,
-              },
-            ]
-          : [],
-      ),
+      // A reporter with a note, a suggested setup or both. One who only
+      // suggested a setup has an empty note, so builds that read notes alone
+      // still render the row.
+      notes: reportReporters.flatMap((row) => {
+        const suggestedSetup = readSetupSnapshot(row.suggestedSetup);
+        if (!row.note && !suggestedSetup) return [];
+        return [
+          {
+            note: row.note ?? '',
+            createdAt: row.createdAt.toISOString(),
+            reporter:
+              viewer.isAdmin && row.reporterId
+                ? {
+                    userId: row.reporterId,
+                    displayName: row.displayName ?? row.name ?? null,
+                    avatarUrl: row.avatarUrl ?? row.image ?? null,
+                  }
+                : null,
+            suggestedSetup: suggestedSetup ? toBoardSetup(suggestedSetup) : null,
+          },
+        ];
+      }),
       createdAt: report.createdAt.toISOString(),
       remindedAt: report.remindedAt?.toISOString() ?? null,
       escalatedAt: report.escalatedAt?.toISOString() ?? null,

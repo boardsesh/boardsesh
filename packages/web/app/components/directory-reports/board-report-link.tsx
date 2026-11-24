@@ -23,6 +23,7 @@ import {
 } from '@boardsesh/graphql/operations';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
+import type { StoreButtonLabels } from '@/app/components/marketing/store-install-buttons';
 import ReportProblemDialog from './report-problem-dialog';
 import type { ReportProblemTarget } from './report-problem-logic';
 import { useReportRequest } from './use-report-request';
@@ -34,9 +35,21 @@ import { useReportRequest } from './use-report-request';
  * That page sits in a shared CDN cache for a day, so this renders the same
  * plain markup for every reader and knows nothing about them. Who is signed
  * in, who added the board and whether its gym is run by the gym are read in the
- * browser once the climber opens the dialog, with their own session.
+ * browser once the climber opens the dialog, with their own session. So is the
+ * board's setup, which "Set up wrong"'s setup fields start on: `GET_BOARD`
+ * already returns it.
  */
-export default function BoardReportLink({ boardUuid }: { boardUuid: string }) {
+export default function BoardReportLink({
+  boardUuid,
+  setupSuggestionsEnabled = false,
+  storeLabels = null,
+}: {
+  boardUuid: string;
+  /** The `directory-setup-suggestions` flag, one answer for every reader like the page's own. */
+  setupSuggestionsEnabled?: boolean;
+  /** The store badges' words, for the app link after a suggestion changed the board. */
+  storeLabels?: StoreButtonLabels | null;
+}) {
   const { t } = useTranslation('boards');
   const { token, error: tokenError } = useWsAuthToken();
   const session = useOptionalBrowserSession()?.data;
@@ -93,7 +106,8 @@ export default function BoardReportLink({ boardUuid }: { boardUuid: string }) {
   });
 
   // The gym's own reads are a nicety: without them the routing line assumes
-  // nobody runs the gym and the duplicate picker offers only "Not sure".
+  // nobody runs the gym, the setup fields show no line above Send (the
+  // listing state stays null), and the duplicate picker offers only "Not sure".
   const gymSettled = gymUuid === null || (!gymQuery.isPending && !gymBoardsQuery.isPending);
   const target = useMemo((): ReportProblemTarget | null => {
     const board = boardQuery.data;
@@ -107,6 +121,17 @@ export default function BoardReportLink({ boardUuid }: { boardUuid: string }) {
         name: stripGymNamePrefix(board.name, gymName),
         ownerId: board.ownerId ?? null,
         ownerDisplayName: board.ownerDisplayName ?? null,
+        setup:
+          board.boardType === 'spray'
+            ? null
+            : {
+                boardType: board.boardType,
+                layoutId: board.layoutId,
+                sizeId: board.sizeId,
+                setIds: board.setIds,
+                angle: board.angle,
+                isAngleAdjustable: board.isAngleAdjustable,
+              },
       },
       gym:
         gymUuid !== null && gymName !== null
@@ -151,6 +176,10 @@ export default function BoardReportLink({ boardUuid }: { boardUuid: string }) {
         target={target}
         loadFailed={loadFailed}
         onRetryLoad={() => void boardQuery.refetch()}
+        setupSuggestionsEnabled={setupSuggestionsEnabled}
+        storeLabels={storeLabels}
+        // The list's HTML is cached for everyone; read the board again so a reopened dialog starts on its new setup.
+        onSetupApplied={() => void boardQuery.refetch()}
       />
     </Box>
   );

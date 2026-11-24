@@ -290,7 +290,8 @@ export type AdminDigestRow = {
 
 /**
  * One section of the admin daily digest. The reports sweep adds "Reports in
- * the admin queue"; the claim guardrails add "Claims that approved themselves".
+ * the admin queue" and "Setups climbers changed"; the claim guardrails add
+ * "Claims that approved themselves".
  * `rows` holds at most the first {@link ADMIN_DIGEST_MAX_ROWS}; `total` is the
  * full count, and `moreUrl` is where the rest are.
  */
@@ -308,8 +309,9 @@ export const ADMIN_DIGEST_MAX_ROWS = 20;
 
 /**
  * The once-a-day email to the Boardsesh team: what reached the admin queue
- * since the last one, and every claim that approved itself, with a link to
- * revert it. The caller skips the email when
+ * since the last one, every claim that approved itself, with a link to
+ * revert it, and every setup a climber's suggestion changed, with a link to
+ * undo it. The caller skips the email when
  * every section is empty (docs/product/directory-reports.md, "Daily digest").
  */
 export async function sendAdminDailyDigestEmail(details: {

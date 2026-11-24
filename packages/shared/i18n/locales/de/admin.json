@@ -744,6 +744,29 @@
     "empty": "Hier ist nichts.",
     "error": "Meldungen konnten nicht geladen werden. Versuch es erneut.",
     "retry": "Nochmal versuchen",
-    "loadMore": "Mehr laden"
+    "loadMore": "Mehr laden",
+    "tabs": {
+      "reports": "Meldungen",
+      "setupChanges": "Einrichtungen, die Kletterer*innen geändert haben"
+    },
+    "setupChanges": {
+      "description": "Jede Board-Einrichtung, die ein Vorschlag von Kletterer*innen geändert hat, die neuesten zuerst. Das passiert nur in Hallen, die niemand leitet. Rückgängig stellt die alte Einrichtung wieder her, solange das Board noch die vorgeschlagene hat.",
+      "before": "Vorher",
+      "after": "Nachher",
+      "byLine": "Geändert von {{name}} {{when}}",
+      "state": {
+        "live": "Aktiv",
+        "undone": "Rückgängig gemacht",
+        "changedSince": "Seitdem geändert"
+      },
+      "undo": "Rückgängig",
+      "confirmTitle": "Änderung an {{board}} rückgängig machen?",
+      "confirmBody": "Es bekommt für alle wieder {{setup}}. Vorschläge für dieses Board werden die nächsten {{days}} Tage zuerst geprüft.",
+      "undone": "Einrichtung wiederhergestellt.",
+      "changedSinceError": "Seitdem geändert: Das Board hat jetzt eine andere Einrichtung, deshalb lässt sich das nicht rückgängig machen.",
+      "alreadyUndone": "Jemand hat die alte Einrichtung schon wiederhergestellt.",
+      "empty": "Noch hat niemand ein Board geändert.",
+      "error": "Die Änderungen konnten nicht geladen werden. Versuch es erneut."
+    }
   }
 }

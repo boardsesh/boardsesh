@@ -17,23 +17,42 @@ import EditOutlined from '@mui/icons-material/EditOutlined';
 import LinkOffOutlined from '@mui/icons-material/LinkOffOutlined';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
 import CheckOutlined from '@mui/icons-material/CheckOutlined';
-import { REPORT_NOTE_MAX_LENGTH, normalizeReportNote } from '@boardsesh/directory-moderation';
-import type { DirectoryReport, UserBoard } from '@boardsesh/shared-schema';
+import {
+  REPORT_NOTE_MAX_LENGTH,
+  normalizeReportNote,
+  setupKey,
+  setupMatches,
+  suggestedSetupUpdateInput,
+} from '@boardsesh/directory-moderation';
+import { boardSetupSummary } from '@boardsesh/board-config';
+import type { BoardSetup, DirectoryReport, UserBoard } from '@boardsesh/shared-schema';
 import {
   GET_BOARD_REPORTS,
   RESOLVE_DIRECTORY_REPORT,
+  UPDATE_BOARD,
   type GetBoardReportsQueryResponse,
   type GetBoardReportsQueryVariables,
   type ResolveDirectoryReportMutationResponse,
   type ResolveDirectoryReportMutationVariables,
+  type UpdateBoardMutationResponse,
+  type UpdateBoardMutationVariables,
 } from '@boardsesh/graphql/operations';
-import { isDirectoryReportClosedError } from '@boardsesh/graphql/errors';
+import {
+  isDirectoryReportClosedError,
+  isDuplicateBoardError,
+  readDuplicateBoardError,
+} from '@boardsesh/graphql/errors';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { track } from '@/app/lib/analytics';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { reportReasonLabel } from '@/app/components/directory-reports/report-copy';
+import DuplicateBoardConfigDialog, {
+  type DuplicateBoardConfig,
+} from '@/app/components/board-entity/duplicate-board-config-dialog';
 import { themeTokens } from '@/app/theme/theme-config';
-import { reportsToKeep, reviewRows } from './report-review-logic';
+import { offersUseThisSetup, reportsToKeep, reviewRows } from './report-review-logic';
 
 type BoardReportReviewDialogProps = {
   /** The reported board, or null when the dialog is closed. */
@@ -61,6 +80,18 @@ type BoardReportReviewDialogProps = {
  *
  * A report in the admin queue (routed to the team, or open 14 days) is shown
  * but can't be kept here: it closes when the team does.
+ *
+ * Setups reporters suggested sit under their report, grouped ("2 climbers
+ * suggested …"), each with **Use this setup** for a viewer who may edit the
+ * board: one `updateBoard` with that layout, size, sets and (on a board that
+ * doesn't tilt) angle, which closes the board's "Set up wrong" reports as
+ * fixed. A save that would copy another board of the same owner asks first,
+ * as the edit form does, and Save anyway sends `allowDuplicateConfig`. The
+ * grouping, the "board has this setup now" check and the input are
+ * `@boardsesh/directory-moderation`'s, shared with the app. While a Use this
+ * setup button shows, "Fix the setup" reads "Edit it yourself". While one
+ * saves, every other answer (fix, remove, delete, keep) is disabled and its
+ * handler refuses: the review ends one way only, never kept and changed.
  */
 export default function BoardReportReviewDialog({
   board,
@@ -80,6 +111,13 @@ export default function BoardReportReviewDialog({
   const [step, setStep] = useState<'review' | 'keep'>('review');
   const [note, setNote] = useState('');
   const [keeping, setKeeping] = useState(false);
+  // Use this setup: the setup being saved, and the one a duplicate prompt waits on.
+  const [applyingKey, setApplyingKey] = useState<string | null>(null);
+  const applyingRef = useRef(false);
+  const applyingSetup = applyingKey !== null;
+  const [duplicate, setDuplicate] = useState<DuplicateBoardConfig | null>(null);
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
+  const pendingSetupRef = useRef<BoardSetup | null>(null);
   const requestRef = useRef(0);
   const boardUuid = board?.uuid ?? null;
 
@@ -121,8 +159,19 @@ export default function BoardReportReviewDialog({
   const rows = reports ? reviewRows(reports) : [];
   const keepable = reports ? reportsToKeep(reports) : [];
 
+  // Every other answer waits for a Use this setup save. The ref, not the state,
+  // so a click that lands before the buttons re-render disabled is refused too.
+  const openKeepStep = () => {
+    if (applyingRef.current) return;
+    setStep('keep');
+  };
+  const handBoardTo = (action: (reportedBoard: UserBoard) => void) => {
+    if (!board || applyingRef.current) return;
+    action(board);
+  };
+
   const keep = async () => {
-    if (!token || keepable.length === 0 || keeping) return;
+    if (!token || keepable.length === 0 || keeping || applyingRef.current) return;
     setKeeping(true);
     const client = createGraphQLHttpClient(token);
     const resolutionNote = normalizeReportNote(note);
@@ -155,6 +204,49 @@ export default function BoardReportReviewDialog({
       onResolved();
       setKeeping(false);
     }
+  };
+
+  const applySetup = async (setup: BoardSetup, allowDuplicateConfig = false) => {
+    if (!board || !token || applyingRef.current) return;
+    applyingRef.current = true;
+    setApplyingKey(setupKey(setup));
+    try {
+      await createGraphQLHttpClient(token).request<UpdateBoardMutationResponse, UpdateBoardMutationVariables>(
+        UPDATE_BOARD,
+        { input: suggestedSetupUpdateInput(board.uuid, setup, { allowDuplicateConfig }) },
+      );
+      showMessage(t('reportReview.fixedToast'), 'success');
+      onResolved();
+      onClose();
+    } catch (error) {
+      // The same wall can exist twice (home and gym): a question, as in the edit form.
+      if (isDuplicateBoardError(error)) {
+        const duplicateError = readDuplicateBoardError(error);
+        pendingSetupRef.current = setup;
+        setDuplicate({
+          name: duplicateError?.boardName || null,
+          locationName: duplicateError?.locationName || null,
+        });
+        setDuplicateOpen(true);
+        track(SHARED_EVENTS.BoardDuplicatePrompted, {
+          boardType: board.boardType,
+          source: 'web_report_review',
+          hasLocation: Boolean(board.locationName),
+        });
+        return;
+      }
+      console.error('Failed to use the suggested setup:', error);
+      showMessage(t('reportReview.web.useSetupFailed'), 'error');
+    } finally {
+      applyingRef.current = false;
+      setApplyingKey(null);
+    }
+  };
+
+  const saveAnyway = () => {
+    const setup = pendingSetupRef.current;
+    setDuplicateOpen(false);
+    if (setup) void applySetup(setup, true);
   };
 
   const formatDate = (iso: string) =>
@@ -232,6 +324,45 @@ export default function BoardReportReviewDialog({
                 </Box>
               </Box>
             )}
+            {row.suggestions.length > 0 && board && (
+              <Box component="ul" sx={{ m: 0, mt: 1, p: 0, listStyle: 'none', display: 'grid', gap: 1 }}>
+                {row.suggestions.map((group) => {
+                  const isCurrent = setupMatches(group.setup, board);
+                  return (
+                    <Box
+                      component="li"
+                      key={group.key}
+                      sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 1.5, rowGap: 0.5 }}
+                    >
+                      <Typography variant="body2" sx={{ flex: '1 1 16rem', overflowWrap: 'anywhere' }}>
+                        {t('reportReview.web.suggested', {
+                          count: group.count,
+                          setup: boardSetupSummary(board.boardType, group.setup),
+                        })}
+                      </Typography>
+                      {isCurrent ? (
+                        <Typography variant="caption" color="text.secondary">
+                          {t('reportReview.web.suggestedIsCurrent')}
+                        </Typography>
+                      ) : (
+                        board.canEdit && (
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={() => void applySetup(group.setup)}
+                            loading={applyingKey === group.key}
+                            disabled={applyingSetup || keeping}
+                            sx={{ textTransform: 'none', minHeight: 44 }}
+                          >
+                            {t('reportReview.web.useSetup')}
+                          </Button>
+                        )
+                      )}
+                    </Box>
+                  );
+                })}
+              </Box>
+            )}
             {row.footnote && (
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
                 {row.footnote === 'team_queue'
@@ -248,9 +379,10 @@ export default function BoardReportReviewDialog({
           {board?.canEdit && (
             <ReviewAction
               icon={<EditOutlined />}
-              label={t('reportReview.fix')}
+              label={offersUseThisSetup(rows, board) ? t('reportReview.web.editYourself') : t('reportReview.fix')}
               hint={t('reportReview.fixHint')}
-              onClick={() => board && onFix(board)}
+              onClick={() => handBoardTo(onFix)}
+              disabled={applyingSetup}
             />
           )}
           {board?.canRemoveFromGym === true && (
@@ -258,7 +390,8 @@ export default function BoardReportReviewDialog({
               icon={<LinkOffOutlined />}
               label={t('gymBoards.removeFromNamed', { gym: gymName })}
               hint={t('reportReview.removeHint')}
-              onClick={() => board && onRemove(board)}
+              onClick={() => handBoardTo(onRemove)}
+              disabled={applyingSetup}
             />
           )}
           {allowDelete && board?.canDelete === true && (
@@ -267,7 +400,8 @@ export default function BoardReportReviewDialog({
               label={t('reportReview.delete')}
               hint={t('reportReview.deleteHint')}
               color="error"
-              onClick={() => board && onDelete(board)}
+              onClick={() => handBoardTo(onDelete)}
+              disabled={applyingSetup}
             />
           )}
           {keepable.length > 0 && (
@@ -275,7 +409,8 @@ export default function BoardReportReviewDialog({
               icon={<CheckOutlined />}
               label={t('reportReview.keep')}
               hint={t('reportReview.keepHint')}
-              onClick={() => setStep('keep')}
+              onClick={openKeepStep}
+              disabled={applyingSetup}
             />
           )}
         </Box>
@@ -304,7 +439,7 @@ export default function BoardReportReviewDialog({
               variant="contained"
               onClick={() => void keep()}
               loading={keeping}
-              disabled={keepable.length === 0}
+              disabled={keepable.length === 0 || applyingSetup}
               sx={{ textTransform: 'none' }}
             >
               {t('report.send')}
@@ -316,6 +451,14 @@ export default function BoardReportReviewDialog({
           </Button>
         )}
       </DialogActions>
+      <DuplicateBoardConfigDialog
+        open={duplicateOpen}
+        duplicate={duplicate}
+        saving={applyingKey !== null}
+        onClose={() => setDuplicateOpen(false)}
+        onSaveAnyway={saveAnyway}
+        onExited={() => setDuplicate(null)}
+      />
     </Dialog>
   );
 }
@@ -326,18 +469,21 @@ function ReviewAction({
   hint,
   color = 'primary',
   onClick,
+  disabled = false,
 }: {
   icon: React.ReactNode;
   label: string;
   hint: string;
   color?: 'primary' | 'error';
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <Button
       color={color}
       startIcon={icon}
       onClick={onClick}
+      disabled={disabled}
       sx={{ textTransform: 'none', justifyContent: 'flex-start', textAlign: 'left', minHeight: 44 }}
     >
       <Box component="span" sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>

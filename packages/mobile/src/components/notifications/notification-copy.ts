@@ -208,6 +208,7 @@ export function notificationCopy(notification: GroupedNotification, actor: strin
     case 'gym_report_resolved':
     case 'gym_claimed_with_your_board':
     case 'gym_claim_denied':
+    case 'board_setup_changed_by_climber':
       return directoryNoticeCopy(notification.type, notification.directoryNotice ?? null, gymName ?? null);
     // The backend can add a notification type without a client release, so an
     // unrecognised one still renders a row rather than a blank line.
@@ -227,6 +228,7 @@ type DirectoryNoticeType = Extract<
   | 'gym_report_resolved'
   | 'gym_claimed_with_your_board'
   | 'gym_claim_denied'
+  | 'board_setup_changed_by_climber'
 >;
 
 /**
@@ -254,6 +256,8 @@ function genericDirectoryCopy(type: DirectoryNoticeType): CopyDescriptor {
       return { textI18nKey: 'items.gymClaimedWithYourBoardGeneric', params: {} };
     case 'gym_claim_denied':
       return { textI18nKey: 'items.gymClaimDeniedGeneric', params: {} };
+    case 'board_setup_changed_by_climber':
+      return { textI18nKey: 'items.boardSetupChangedByClimberGeneric', params: {} };
   }
 }
 
@@ -370,6 +374,17 @@ export function directoryNoticeCopy(
       return board && gym ? { textI18nKey: 'items.gymClaimedWithYourBoard', params: { board, gym } } : generic;
     case 'gym_claim_denied':
       return gym ? { textI18nKey: 'items.gymClaimDenied', params: { gym } } : generic;
+    // A climber's suggested setup changed a board at a gym nobody runs
+    // (docs/product/directory-reports.md, "Suggested setup"). Its creator reads
+    // "your board"; the gym's owner and admins, told too so they can undo it,
+    // read the board and the gym.
+    case 'board_setup_changed_by_climber':
+      if (notice.recipientIsCreator) {
+        return board ? { textI18nKey: 'items.boardSetupChangedByClimber', params: { board } } : generic;
+      }
+      return board && gym
+        ? { textI18nKey: 'items.boardSetupChangedByClimberAtGym', params: { board, gym } }
+        : { textI18nKey: 'items.boardSetupChangedByClimberStaffGeneric', params: {} };
   }
 }
 
@@ -417,6 +432,7 @@ export function notificationIconName(type: NotificationType): IconName {
       return 'checkmark.circle.fill';
     case 'board_removed_from_gym':
     case 'board_edited_by_staff':
+    case 'board_setup_changed_by_climber':
       return 'boards';
     case 'board_deleted_by_staff':
       return 'delete';

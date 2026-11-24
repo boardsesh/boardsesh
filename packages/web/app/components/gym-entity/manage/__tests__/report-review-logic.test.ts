@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vite-plus/test';
 import type { DirectoryReport } from '@boardsesh/shared-schema';
-import { hasOpenReports, reportsToKeep, reviewRows, sortBoardsReportedFirst } from '../report-review-logic';
+import {
+  hasOpenReports,
+  offersUseThisSetup,
+  reportsToKeep,
+  reviewRows,
+  sortBoardsReportedFirst,
+} from '../report-review-logic';
 
 function report(overrides: Partial<DirectoryReport>): DirectoryReport {
   return {
@@ -81,5 +87,66 @@ describe('It’s right as it is', () => {
         report({ uuid: 'closed', status: 'fixed' }),
       ]),
     ).toEqual(['mine']);
+  });
+});
+
+describe('suggested setups', () => {
+  // Grouping, matching and the updateBoard input are @boardsesh/directory-moderation's,
+  // tested there (suggested-setups.test.ts); these check how the dialog's rows use them.
+  const note = (
+    suggestedSetup: { layoutId: number; sizeId: number; setIds: string; angle?: number | null } | null,
+    createdAt = '2026-11-20T10:00:00.000Z',
+  ) => ({ note: '', createdAt, suggestedSetup });
+
+  it('puts the suggestions on the review row, and drops notes with no words', () => {
+    const [row] = reviewRows([
+      report({
+        notes: [
+          { note: '', createdAt: '2026-11-20T10:00:00.000Z', suggestedSetup: { layoutId: 1, sizeId: 10, setIds: '1' } },
+          { note: 'Wrong size', createdAt: '2026-11-21T10:00:00.000Z' },
+        ],
+      }),
+    ]);
+    expect(row.notes.map((entry) => entry.text)).toEqual(['Wrong size']);
+    expect(row.suggestions).toHaveLength(1);
+  });
+
+  it('groups equal setups on the row, the most suggested first, then the most recent', () => {
+    const [row] = reviewRows([
+      report({
+        notes: [
+          note({ layoutId: 1, sizeId: 7, setIds: '1,20' }, '2026-11-20T10:00:00.000Z'),
+          note({ layoutId: 1, sizeId: 12, setIds: '1' }, '2026-11-22T10:00:00.000Z'),
+          note({ layoutId: 1, sizeId: 10, setIds: '20,1' }, '2026-11-19T10:00:00.000Z'),
+          note({ layoutId: 1, sizeId: 10, setIds: '1,20', angle: null }, '2026-11-19T11:00:00.000Z'),
+        ],
+      }),
+    ]);
+    expect(row.suggestions.map((group) => [group.setup.sizeId, group.count])).toEqual([
+      [10, 2],
+      [12, 1],
+      [7, 1],
+    ]);
+  });
+
+  describe('Use this setup, and "Edit it yourself"', () => {
+    const board = { layoutId: 1, sizeId: 7, setIds: '20,1', angle: 40, canEdit: true };
+    const rowsSuggesting = (...setups: { layoutId: number; sizeId: number; setIds: string; angle?: number | null }[]) =>
+      reviewRows([report({ notes: setups.map((setup) => note(setup)) })]);
+
+    it('shows when a suggestion differs from the setup the board has now', () => {
+      expect(offersUseThisSetup(rowsSuggesting({ layoutId: 1, sizeId: 10, setIds: '1,20' }), board)).toBe(true);
+    });
+
+    it('stays hidden when every suggestion is the setup the board has now', () => {
+      expect(offersUseThisSetup(rowsSuggesting({ layoutId: 1, sizeId: 7, setIds: '1,20' }), board)).toBe(false);
+    });
+
+    it('stays hidden without suggestions, for a viewer who can not edit, or without a board', () => {
+      expect(offersUseThisSetup(reviewRows([report({})]), board)).toBe(false);
+      const differs = rowsSuggesting({ layoutId: 1, sizeId: 10, setIds: '1,20' });
+      expect(offersUseThisSetup(differs, { ...board, canEdit: false })).toBe(false);
+      expect(offersUseThisSetup(differs, null)).toBe(false);
+    });
   });
 });

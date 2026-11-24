@@ -1,18 +1,31 @@
 import {
   BOARD_REPORT_REASONS_FOR_REPORTERS,
   GYM_REPORT_REASONS,
+  isSetupSuggestionAllowed,
   normalizeReportNote,
   pickReportAudience,
   reportNoteProblem,
   routeBoardReport,
   routeGymReport,
+  setupSuggestionPreview,
   type BoardReportReason,
   type GymListingState,
   type GymReportReason,
   type ReportAudience,
+  type SetupSuggestionPreview,
 } from '@boardsesh/directory-moderation';
 import {
+  initialSetupSelection,
+  isSetupChanged,
+  isSetupSelectionComplete,
+  toSuggestedSetup,
+  type SetupSelection,
+  type SetupSelectionBoard,
+} from '@boardsesh/board-config';
+import { isBoardSetupUnchangedError } from '@boardsesh/graphql/errors';
+import {
   SYSTEM_BOARD_OWNER_ID,
+  type BoardSetupReviewReason,
   type DirectoryReportSubmitResult,
   type ReportBoardInput,
   type ReportGymInput,
@@ -39,6 +52,12 @@ export type ReportGymSubject = {
   longitude?: number | null;
 };
 
+/**
+ * A board's setup as the page read it: its type, layout, size, hold sets,
+ * angle and whether it tilts. What the "Set up wrong" fields start on.
+ */
+export type ReportBoardSetup = SetupSelectionBoard;
+
 export type ReportBoardSubject = {
   uuid: string;
   name: string;
@@ -46,6 +65,11 @@ export type ReportBoardSubject = {
   ownerId: string | null;
   /** Shown in the routing line when the server names the creator. */
   ownerDisplayName: string | null;
+  /**
+   * The board's current setup, for the "Set up wrong" fields. Null when the
+   * page has none to hand: the dialog then offers the note only.
+   */
+  setup: ReportBoardSetup | null;
 };
 
 /** Another board at the same gym, for "Which board is the same wall?". */
@@ -73,6 +97,12 @@ export type ReportDraft = {
   /** The other gym listing's uuid, or null. */
   duplicateGymUuid: string | null;
   note: string;
+  /**
+   * The setup picked in the "Set up wrong" fields, or null before the climber
+   * touches one: the fields then show the board's current setup
+   * ({@link draftSetupSelection}).
+   */
+  setup: SetupSelection | null;
 };
 
 export const EMPTY_REPORT_DRAFT: ReportDraft = {
@@ -80,6 +110,7 @@ export const EMPTY_REPORT_DRAFT: ReportDraft = {
   duplicateBoardPick: null,
   duplicateGymUuid: null,
   note: '',
+  setup: null,
 };
 
 /** The reasons the dialog lists, in the order the design lists them. */
@@ -92,9 +123,43 @@ export function noteIsRequired(reason: ReportReason | null): boolean {
   return reason === 'other';
 }
 
-/** Send is enabled once a reason is picked and its note passes the same check the server runs. */
-export function canSendReport(draft: ReportDraft): boolean {
-  return draft.reason !== null && reportNoteProblem(draft.reason, draft.note) === null;
+/**
+ * The board whose setup the "Set up wrong" fields edit, or null when the dialog
+ * shows no fields: the `directory-setup-suggestions` flag is off, the reason is
+ * not "Set up wrong", the board is a spray wall (`isSetupSuggestionAllowed`),
+ * the page has no setup for it, or its board type is one this build doesn't know.
+ */
+export function setupFieldsBoard(
+  target: ReportProblemTarget,
+  reason: ReportReason | null,
+  setupSuggestionsEnabled: boolean,
+): ReportBoardSetup | null {
+  if (!setupSuggestionsEnabled || target.kind !== 'board' || reason === null) return null;
+  const setup = target.board.setup;
+  if (!setup || !isSetupSuggestionAllowed(reason, setup.boardType)) return null;
+  return initialSetupSelection(setup) === null ? null : setup;
+}
+
+/** What the fields show: the climber's pick, or the board's current setup before they pick. */
+export function draftSetupSelection(draft: ReportDraft, setupBoard: ReportBoardSetup): SetupSelection | null {
+  return draft.setup ?? initialSetupSelection(setupBoard);
+}
+
+/** The climber picked a whole setup (a layout, a size, at least one hold set) that differs from the board's. */
+function hasSetupChange(draft: ReportDraft, setupBoard: ReportBoardSetup): boolean {
+  const selection = draftSetupSelection(draft, setupBoard);
+  return selection !== null && isSetupSelectionComplete(selection) && isSetupChanged(selection, setupBoard);
+}
+
+/**
+ * Send is enabled once a reason is picked and its note passes the same check
+ * the server runs. With the setup fields showing (`setupBoard`), the setup must
+ * also differ from the board's: the server refuses a suggestion of the setup it
+ * has now.
+ */
+export function canSendReport(draft: ReportDraft, setupBoard: ReportBoardSetup | null = null): boolean {
+  if (draft.reason === null || reportNoteProblem(draft.reason, draft.note) !== null) return false;
+  return setupBoard === null || hasSetupChange(draft, setupBoard);
 }
 
 /** A new reason clears what belonged to the old one, but keeps the note the climber typed. */
@@ -103,16 +168,24 @@ export function chooseReason(draft: ReportDraft, reason: ReportReason): ReportDr
   return { ...draft, reason, duplicateBoardPick: null, duplicateGymUuid: null };
 }
 
-export function buildReportBoardInput(boardUuid: string, draft: ReportDraft): ReportBoardInput | null {
-  if (!canSendReport(draft) || draft.reason === null) return null;
+/** `setupBoard` is {@link setupFieldsBoard}'s answer: with it, the input carries the picked setup. */
+export function buildReportBoardInput(
+  boardUuid: string,
+  draft: ReportDraft,
+  setupBoard: ReportBoardSetup | null = null,
+): ReportBoardInput | null {
+  if (!canSendReport(draft, setupBoard) || draft.reason === null) return null;
   const reason = draft.reason as BoardReportReason;
   const pick = draft.duplicateBoardPick;
+  const selection = setupBoard ? draftSetupSelection(draft, setupBoard) : null;
+  const suggestedSetup = selection ? toSuggestedSetup(selection) : null;
   return {
     boardUuid,
     reason,
     duplicateOfBoardUuid:
       reason === 'duplicate' && pick !== null && pick !== NOT_SURE_DUPLICATE && pick !== boardUuid ? pick : null,
     note: normalizeReportNote(draft.note),
+    ...(suggestedSetup ? { suggestedSetup } : {}),
   };
 }
 
@@ -175,17 +248,59 @@ export function claimNudgeGym(target: ReportProblemTarget): ReportGymSubject | n
   return gym;
 }
 
-/** What the done state says. */
-export type ReportSentMessage = { kind: 'sent' } | { kind: 'joined'; count: number } | { kind: 'already' };
+/**
+ * The line where the routing line was, once the setup fields show: what Send
+ * will do with the suggestion, from the gym half of the server's rule
+ * (`setupSuggestionPreview`). A limit the page can't see can still send it to
+ * review; the done state says so.
+ *
+ * Null, for no line at all, when the board is at a gym whose listing state the
+ * page couldn't read (the gym read failed): the rule would read that as no gym
+ * and say the creator checks it first, while the server may apply it.
+ */
+export function setupPreviewFor(target: ReportProblemTarget): SetupSuggestionPreview | null {
+  if (target.gym !== null && target.gym.listingState === null) return null;
+  return setupSuggestionPreview({ hasGym: target.gym !== null, gymListingState: target.gym?.listingState ?? null });
+}
+
+/**
+ * What the done state says. `setup_applied`: the suggestion changed the board
+ * for everyone. `setup_review`: it waits for review, and why. A suggestion that
+ * went to review with no reason (the server flag off) reads as any report.
+ * `setup_unchanged`: the server refused the suggestion because the board
+ * already has that setup ({@link sentMessageForError}).
+ */
+export type ReportSentMessage =
+  | { kind: 'sent' }
+  | { kind: 'joined'; count: number }
+  | { kind: 'already' }
+  | { kind: 'setup_applied' }
+  | { kind: 'setup_review'; reason: BoardSetupReviewReason }
+  | { kind: 'setup_unchanged' };
 
 export function sentMessageFor(
-  result: Pick<DirectoryReportSubmitResult, 'status' | 'otherReporterCount'>,
+  result: Pick<DirectoryReportSubmitResult, 'status' | 'otherReporterCount' | 'setupOutcome' | 'setupReviewReason'>,
 ): ReportSentMessage {
+  if (result.setupOutcome === 'APPLIED') return { kind: 'setup_applied' };
+  if (result.setupOutcome === 'SENT_FOR_REVIEW' && result.setupReviewReason) {
+    return { kind: 'setup_review', reason: result.setupReviewReason };
+  }
   if (result.status === 'already_reported') return { kind: 'already' };
   if (result.status === 'added' && result.otherReporterCount > 0) {
     return { kind: 'joined', count: result.otherReporterCount };
   }
   return { kind: 'sent' };
+}
+
+/**
+ * A failed send that still ends in the done state, or null for a real failure.
+ * The server refuses a suggestion of the setup the board has now
+ * (`isBoardSetupUnchangedError`): the page read the board before someone fixed
+ * it. The board is already right, so the dialog says so instead of an error
+ * the climber can't get past.
+ */
+export function sentMessageForError(error: unknown): ReportSentMessage | null {
+  return isBoardSetupUnchangedError(error) ? { kind: 'setup_unchanged' } : null;
 }
 
 /** A failed send: no connection, or anything else. Never the server's English. */
