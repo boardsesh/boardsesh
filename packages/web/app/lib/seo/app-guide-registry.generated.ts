@@ -634,6 +634,10 @@ export const APP_GUIDE_REGISTRY = {
         id: 'import',
         sourceIds: [],
       },
+      {
+        id: 'not-working',
+        sourceIds: [],
+      },
     ],
     sources: [
       {

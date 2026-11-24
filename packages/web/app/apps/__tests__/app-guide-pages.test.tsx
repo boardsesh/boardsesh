@@ -29,10 +29,11 @@ vi.mock('@/app/lib/i18n/get-locale', () => ({ getLocale: async () => 'fr' }));
 vi.mock('@/app/lib/i18n/missing-key-reporter', () => ({ reportMissingI18nKey: vi.fn() }));
 
 const boards = [
-  { slug: 'kilter', name: 'Kilter Board app' },
-  { slug: 'aurora', name: 'Aurora board apps' },
-  { slug: 'moonboard', name: 'MoonBoard app' },
-  { slug: 'woods', name: 'Woods Board app' },
+  { slug: 'kilter', name: 'Kilter Board app', h1: 'Boardsesh vs the Kilter Board app' },
+  // Climbers search for Tension, not the vendor, so the Aurora H1 leads with it.
+  { slug: 'aurora', name: 'Aurora board apps', h1: 'Boardsesh vs the Tension Board app and other Aurora apps' },
+  { slug: 'moonboard', name: 'MoonBoard app', h1: 'Boardsesh vs the MoonBoard app' },
+  { slug: 'woods', name: 'Woods Board app', h1: 'Boardsesh vs the Woods Board app' },
 ] as const;
 
 const routeProps = (slug: string) => ({ params: Promise.resolve({ slug }) });
@@ -89,10 +90,10 @@ describe('app guide pages before hydration', () => {
     expect(generateStaticParams()).toEqual(boards.map(({ slug }) => ({ slug })));
   });
 
-  it.each(boards)('serves the $slug comparison in the server HTML, verdict first', async ({ slug, name }) => {
+  it.each(boards)('serves the $slug comparison in the server HTML, verdict first', async ({ slug, name, h1 }) => {
     const markup = await parsePage(await BoardPage(routeProps(slug)));
     expect(markup.querySelectorAll('h1')).toHaveLength(1);
-    expect(markup.querySelector('h1')?.textContent).toBe(`Boardsesh vs the ${name}`);
+    expect(markup.querySelector('h1')?.textContent).toBe(h1);
     expect(markup.querySelector('#verdict h3')?.textContent).toBe('Pick Boardsesh if');
     expect(markup.querySelector('#verdict')?.textContent).toContain(`Keep the ${name} if`);
     expect(markup.querySelectorAll('#verdict ul')[0]?.querySelectorAll('li')).toHaveLength(5);

@@ -5,7 +5,7 @@
     "breadcrumbLabel": "Breadcrumb",
     "crumbs": {
       "kilter": "Kilter Board",
-      "aurora": "Aurora boards",
+      "aurora": "Tension and Aurora boards",
       "moonboard": "MoonBoard",
       "woods": "Woods Board",
       "spray-wall-apps": "Spray wall apps"
@@ -552,7 +552,7 @@
       },
       "hero": {
         "pill": "Works with Tension, Decoy, Grasshopper, Touchstone and So iLL boards",
-        "h1": "Boardsesh vs the Aurora board apps",
+        "h1": "Boardsesh vs the Tension Board app and other Aurora apps",
         "lead": "Bring the crew to a Tension, Decoy, Grasshopper, Touchstone or So iLL board and train together: Boardsesh runs seven workout types on one shared rest timer, while Tension's Workout AI plans a session from your own history. Boardsesh lights all five brands and keeps their sends in one logbook with Kilter, MoonBoard, Woods and your spray wall. It's free, open source and has no ads.",
         "byline": "A guide from Boardsesh. We make Boardsesh; board makers don't endorse it."
       },
@@ -778,6 +778,10 @@
           "import": {
             "q": "Can I bring my Aurora logbook into Boardsesh?",
             "a": "Yes. Sign in with your account on any of the five brands' cards under Connected apps and the logbook copies one way into Boardsesh; an Aurora JSON file is the fallback for an account you can't sign in to."
+          },
+          "not-working": {
+            "q": "Why is the Tension Board app not working?",
+            "a": "Update the app, sign out and back in, then forget and re-pair the board in your phone's Bluetooth settings. If it still won't load, Boardsesh can light the same Tension board while you wait for a fix."
           }
         }
       },
