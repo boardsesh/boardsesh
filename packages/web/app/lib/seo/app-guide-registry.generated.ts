@@ -166,16 +166,16 @@ export const APP_GUIDE_REGISTRY = {
     keepIf: ['k1', 'k2', 'k3'],
     tiles: [
       {
-        id: 'one-logbook',
-        sourceIds: ['kilter-appstore', 'boardsesh-boards', 'boardsesh-bring-logbook'],
-      },
-      {
         id: 'crew',
         sourceIds: ['boardsesh-sessions', 'boardsesh-queue-limit', 'boardsesh-boards'],
       },
       {
         id: 'browser',
-        sourceIds: ['kilter-appstore', 'kilter-site', 'kilter-support', 'boardsesh-app-web'],
+        sourceIds: ['boardsesh-app-web'],
+      },
+      {
+        id: 'one-logbook',
+        sourceIds: ['kilter-appstore', 'boardsesh-boards', 'boardsesh-bring-logbook'],
       },
     ],
     competitors: ['official'],
@@ -227,13 +227,6 @@ export const APP_GUIDE_REGISTRY = {
         verdict: 'boardsesh',
         winners: [],
         sourceIds: ['kilter-appstore', 'kilter-site', 'kilter-support', 'boardsesh-app-web'],
-        pendingCells: [],
-      },
-      {
-        id: 'native',
-        verdict: 'boardsesh',
-        winners: [],
-        sourceIds: ['bs-design-guidelines', 'kilter-flutter'],
         pendingCells: [],
       },
       {
@@ -437,16 +430,6 @@ export const APP_GUIDE_REGISTRY = {
         url: 'https://www.climbing.com/news/why-the-kilter-board-app-suddenly-disappeared/',
         checkedAt: '2026-11-24',
       },
-      {
-        id: 'bs-design-guidelines',
-        url: 'https://github.com/boardsesh/boardsesh/blob/b3a0285908da0d9e4be984ebe5731ed72b33de10/docs/design/ai-design-guidelines.md',
-        checkedAt: '2026-11-24',
-      },
-      {
-        id: 'kilter-flutter',
-        url: 'https://play.google.com/store/apps/details?id=com.kiltergrips.kilter_board_app',
-        checkedAt: '2026-11-24',
-      },
     ],
     claims: [],
     updatedAt: '2026-11-24',
@@ -459,16 +442,16 @@ export const APP_GUIDE_REGISTRY = {
     keepIf: ['k1', 'k2', 'k3'],
     tiles: [
       {
-        id: 'one-app',
-        sourceIds: ['aurora-home', 'bs-aurora-sync', 'bs-logbook'],
+        id: 'workouts',
+        sourceIds: ['bs-workouts'],
       },
       {
         id: 'crew-queue',
         sourceIds: ['bs-sessions'],
       },
       {
-        id: 'workouts',
-        sourceIds: ['bs-workouts'],
+        id: 'one-app',
+        sourceIds: ['aurora-home', 'bs-aurora-sync', 'bs-logbook'],
       },
     ],
     competitors: ['official'],
@@ -807,16 +790,16 @@ export const APP_GUIDE_REGISTRY = {
     keepIf: ['k1', 'k2'],
     tiles: [
       {
-        id: 'android',
-        sourceIds: ['grapheneos'],
-      },
-      {
         id: 'browser',
         sourceIds: ['moon-help', 'boardsesh-app-web'],
       },
       {
-        id: 'one-logbook',
-        sourceIds: ['boardsesh-moon-import', 'boardsesh-boards'],
+        id: 'android',
+        sourceIds: ['grapheneos', 'moon-reddit-data'],
+      },
+      {
+        id: 'workouts',
+        sourceIds: ['boardsesh-workouts'],
       },
     ],
     competitors: ['official'],
@@ -885,13 +868,6 @@ export const APP_GUIDE_REGISTRY = {
         pendingCells: [],
       },
       {
-        id: 'native',
-        verdict: 'boardsesh',
-        winners: [],
-        sourceIds: ['bs-design-guidelines', 'moon-flutter'],
-        pendingCells: [],
-      },
-      {
         id: 'tablet',
         verdict: 'boardsesh',
         winners: [],
@@ -936,7 +912,7 @@ export const APP_GUIDE_REGISTRY = {
       },
       {
         id: 'android',
-        sourceIds: ['grapheneos', 'moon-play'],
+        sourceIds: ['grapheneos', 'moon-reddit-data', 'moon-play'],
       },
       {
         id: 'leds',
@@ -1057,16 +1033,6 @@ export const APP_GUIDE_REGISTRY = {
         url: 'https://www.reddit.com/r/Moonboard/comments/1vx7imt/comment/p9rrpnm/',
         checkedAt: '2026-11-24',
       },
-      {
-        id: 'bs-design-guidelines',
-        url: 'https://github.com/boardsesh/boardsesh/blob/b3a0285908da0d9e4be984ebe5731ed72b33de10/docs/design/ai-design-guidelines.md',
-        checkedAt: '2026-11-24',
-      },
-      {
-        id: 'moon-flutter',
-        url: 'https://play.google.com/store/apps/details?id=com.trainingboard.moon&hl=en_US&gl=US',
-        checkedAt: '2026-11-24',
-      },
     ],
     claims: [
       {
@@ -1092,16 +1058,16 @@ export const APP_GUIDE_REGISTRY = {
     keepIf: ['k1', 'k2', 'k3'],
     tiles: [
       {
-        id: 'rules',
-        sourceIds: ['bs-woods'],
+        id: 'crew',
+        sourceIds: ['bs-sessions'],
       },
       {
         id: 'create',
         sourceIds: ['bs-woods'],
       },
       {
-        id: 'crew',
-        sourceIds: ['bs-sessions'],
+        id: 'one-logbook',
+        sourceIds: ['woods-appstore'],
       },
     ],
     competitors: ['official'],

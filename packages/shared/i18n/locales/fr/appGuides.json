@@ -254,8 +254,8 @@
         }
       },
       "devices": {
-        "heading": "At home on your phone, iPad or laptop",
-        "lead": "On iPhone, Boardsesh follows Apple's design rules and on Android it follows Google's, so it feels like the rest of your phone. The same Kilter climb on iPhone, on Android and in a browser. The app is free, has no ads, doesn't sell your data, and its code is open source.",
+        "heading": "Feels familiar from your first session",
+        "lead": "Boardsesh follows Apple's design conventions on iPhone and Google's on Android, with familiar navigation, gestures and controls. Move between boards with the same search, player and logbook. It's free, has no ads, doesn't sell your data, and its code is open source.",
         "captions": {
           "ios": "iPhone: the Kilter climb view with the wall lit.",
           "android": "Android: the same climb, on any Android 7+ phone.",
@@ -341,33 +341,33 @@
         "heading": "Which app fits your session?",
         "pickIf": {
           "p1": "You want your Kilter, Tension, MoonBoard and spray wall sends in one logbook.",
-          "p2": "Your crew wants one shared queue from four different phones.",
-          "p3": "You train with pyramids, ladders and 4x4s on a rest timer.",
-          "p4": "You want to export your whole logbook yourself, any time.",
-          "p5": "You run sessions from a laptop in Chrome or from an iPad."
+          "p2": "You train with pyramids, ladders and 4x4s on a rest timer.",
+          "p3": "You want to export your whole logbook yourself, any time.",
+          "p4": "You want an iPad layout with a sidebar and a landscape player.",
+          "p5": "You want Next on your iPhone Lock Screen while you climb."
         },
         "keepIf": {
           "k1": "You want Verified climbs and curated playlists picked by Kilter.",
           "k2": "You set climbs and want Kilter's own setter credit and claims.",
           "k3": "You want Kilter's Live at your Board view."
         },
-        "bottomLine": "Keep both if you like: they light the same board, one phone at a time. Use Kilter's app for its curated climbs, and Boardsesh for one logbook across boards, your crew and training, free and with no ads."
+        "bottomLine": "Keep both if you like: they light the same board, one phone at a time. To try a session, pick your Kilter layout in Boardsesh, connect and climb; every send goes into your Boardsesh logbook."
       },
       "only": {
         "heading": "Where Boardsesh goes further",
         "lead": "Three things Kilter's app doesn't document today. Each has a source below.",
         "tiles": {
-          "one-logbook": {
-            "title": "One logbook for every board",
-            "body": "Link your current Kilter account and its sends sit next to your Tension, MoonBoard and spray wall sends in one profile. Kilter's app covers Kilter boards; Boardsesh covers 8 brands plus spray walls."
-          },
           "crew": {
             "title": "One queue for the whole crew",
             "body": "Everyone adds climbs from their own phone to one queue of up to 500, joined by invite link. At a gym with several boards, switch walls without leaving the queue or changing apps."
           },
           "browser": {
             "title": "Light the board from a browser",
-            "body": "Kilter's app runs on phones and iPads, and its website covers claims and support. Boardsesh also runs at app.boardsesh.com and lights the wall from Chrome or Edge."
+            "body": "Open app.boardsesh.com in Chrome or Edge on a laptop, connect to the board and run the session from there, with nothing to install."
+          },
+          "one-logbook": {
+            "title": "One logbook for every board",
+            "body": "Link your Kilter account and your Kilter sends sit next to your Tension, MoonBoard and spray wall sends in one profile, with stats across all of them."
           }
         }
       },
@@ -409,11 +409,6 @@
             "feature": "In a browser",
             "boardsesh": "Runs at app.boardsesh.com; Chrome or Edge on a laptop lights the wall.",
             "official": "Apps for phones and iPad; the website covers claims and support."
-          },
-          "native": {
-            "feature": "Feels like your phone",
-            "boardsesh": "Follows Apple's design rules on iPhone and Google's on Android",
-            "official": "One Flutter design on both iPhone and Android (app files checked)"
           },
           "tablet": {
             "feature": "Tablet layout",
@@ -459,7 +454,7 @@
         }
       },
       "logbook": {
-        "heading": "Bring all your logbooks into one",
+        "heading": "Bring your climbing history",
         "lead": "Link your current Kilter account and your Kilter sends join everything else you climb. Imports go into Boardsesh, and sends you log here stay here, because Kilter and Aurora give other apps no way to write back. Export your logbook as JSON any time.",
         "paths": {
           "current-account": {
@@ -483,7 +478,7 @@
         }
       },
       "faq": {
-        "heading": "What climbers ask before switching",
+        "heading": "What climbers ask before their first session",
         "items": {
           "free": {
             "q": "Is the Kilter Board app free?",
@@ -542,9 +537,7 @@
         "bs-hold-colours": "Boardsesh accessibility hold colours sent to Aurora controllers",
         "bs-export": "Boardsesh self-service data export (Settings, Account, Export climbing data)",
         "kilter-filters": "Kilter Board app filter screen, checked in the iPhone app",
-        "climbing-kilter-2026": "Climbing magazine: The Kilter Board App Disappeared Overnight. It Wasn't an Accident. (31 Mar 2026)",
-        "bs-design-guidelines": "Boardsesh design rules: Apple's Human Interface Guidelines on iPhone, Material Design on Android",
-        "kilter-flutter": "Kilter Board app 2.12.1 for Android: its app files include the Flutter engine"
+        "climbing-kilter-2026": "Climbing magazine: The Kilter Board App Disappeared Overnight. It Wasn't an Accident. (31 Mar 2026)"
       }
     },
     "aurora": {
@@ -555,40 +548,40 @@
       "hero": {
         "pill": "Works with Tension, Decoy, Grasshopper, Touchstone and So iLL boards",
         "h1": "Boardsesh vs the Aurora board apps",
-        "lead": "Tension, Decoy, Grasshopper, Touchstone and So iLL each have their own app from Aurora Climbing, with near-identical store listings. Boardsesh lights all five, keeps every brand's sends in one logbook with Kilter, MoonBoard, Woods and your spray wall, and adds a crew queue, seven workout types and a browser version. It's free, open source and has no ads.",
+        "lead": "Bring the crew to a Tension, Decoy, Grasshopper, Touchstone or So iLL board and train together: Boardsesh runs seven workout types on one shared rest timer, while Tension's Workout AI plans a session from your own history. Boardsesh lights all five brands and keeps their sends in one logbook with Kilter, MoonBoard, Woods and your spray wall. It's free, open source and has no ads.",
         "byline": "A guide from Boardsesh. We make Boardsesh; board makers don't endorse it."
       },
       "verdict": {
         "heading": "Pick the app for your Aurora board",
         "pickIf": {
-          "p1": "You climb two Aurora brands, or Kilter as well, and want one logbook",
-          "p2": "Your crew wants one queue, each climber adding picks from their own phone",
-          "p3": "You want pyramids, ladders, 4x4s or limit sessions on any Aurora brand",
-          "p4": "You climb in a garage with no signal and still want to search and log",
-          "p5": "You want an iPad layout or a laptop browser beside the wall"
+          "p1": "You climb in a garage with no signal and still want to search and log",
+          "p2": "You want an iPad layout or a laptop browser beside the wall",
+          "p3": "You want to pick your own hold colours on any Aurora brand",
+          "p4": "You want beta videos on a climb the moment you attach the link",
+          "p5": "You want to export your logbook yourself, any time, as Aurora JSON"
         },
         "keepIf": {
           "k1": "You use Tension's Workout AI to plan sessions from your logbook",
           "k2": "You chase leaderboards, badges, Decoy Selects or the side-climb filter",
           "k3": "You set problems for climbers who use your brand's own app"
         },
-        "bottomLine": "Every Aurora app is free and lights its own brand well. Boardsesh is the pick when a crew shares the wall, when you train to a plan, or when you climb more than one board."
+        "bottomLine": "Every Aurora app is free and lights its own brand well. To try Boardsesh, pick your brand and size, start a session and invite your crew; every send goes into your Boardsesh logbook."
       },
       "only": {
         "heading": "What Boardsesh adds to an Aurora board",
         "lead": "Aurora's apps each cover one brand. Boardsesh is built for the crew at the wall and the training week around it.",
         "tiles": {
-          "one-app": {
-            "title": "Five brands, one app",
-            "body": "Aurora publishes a separate app and logbook for each brand. Boardsesh runs all five, plus Kilter, MoonBoard, Woods and spray walls; sign in to each Aurora account once and your history lands in one logbook."
+          "workouts": {
+            "title": "Seven ways to train",
+            "body": "Volume, pyramid, ladder, grade focus, On the Minute, 4x4 and limit bouldering, with warm-up and cool-down stages. In our October 2026 count, every tested plan shape filled at every core grade on Tension, Decoy and Grasshopper."
           },
           "crew-queue": {
             "title": "A queue the whole crew fills",
             "body": "Up to 500 climbs, added from everyone's phone, with undo and a shared rest timer. The crew can see whose phone holds the wall's Bluetooth link."
           },
-          "workouts": {
-            "title": "Seven ways to train",
-            "body": "Volume, pyramid, ladder, grade focus, On the Minute, 4x4 and limit bouldering, with warm-up and cool-down stages. In our October 2026 count, every tested plan shape filled at every core grade on Tension, Decoy and Grasshopper."
+          "one-app": {
+            "title": "Five brands, one app",
+            "body": "Aurora publishes a separate app and logbook for each brand. Boardsesh runs all five, plus Kilter, MoonBoard, Woods and spray walls; sign in to each Aurora account once and your history lands in one logbook."
           }
         }
       },
@@ -721,8 +714,8 @@
             "body": "Dial in your angle, from -5° on a Grasshopper up to 70°, and filter by grade, setter or a zone you draw."
           },
           "queue": {
-            "title": "Fill the queue together",
-            "body": "Friends add picks from their own phones while the connected phone lights each climb in turn."
+            "title": "Climb in turn",
+            "body": "Take turns on the wall while the connected phone lights each climb."
           },
           "log": {
             "title": "Log the burn",
@@ -731,7 +724,7 @@
         }
       },
       "logbook": {
-        "heading": "Bring your Aurora logbook",
+        "heading": "Bring your climbing history",
         "lead": "Sign in with your Aurora account for each brand and Boardsesh pulls that logbook into yours. Imports go into Boardsesh, and sends you log here stay here, because Aurora gives other apps no way to write back.",
         "paths": {
           "link": {
@@ -755,7 +748,7 @@
         }
       },
       "faq": {
-        "heading": "What climbers ask about the Aurora apps",
+        "heading": "What climbers ask before their first Aurora session",
         "items": {
           "free": {
             "q": "Is the Tension Board app free?",
@@ -826,7 +819,7 @@
     "moonboard": {
       "meta": {
         "title": "MoonBoard App Alternative: Boardsesh vs the MoonBoard App",
-        "description": "MoonBoard app stuck on Please Wait? Compare Boardsesh with Moon's app: 7 layouts, Benchmarks, which LEDs work, CSV import and Android without Google."
+        "description": "Boardsesh vs the MoonBoard app: queue MoonBoard problems with your crew, keep Moon and Kilter sends in one logbook, and see where Moon's app still wins."
       },
       "hero": {
         "pill": "Works with 7 MoonBoard layouts, from 2010 to Mini 2025",
@@ -837,33 +830,33 @@
       "verdict": {
         "heading": "Which app fits your MoonBoard night?",
         "pickIf": {
-          "p1": "You get 'Please Wait' on Moon's app and want to climb tonight.",
-          "p2": "You'd rather not give your age, gender and height to log a send.",
-          "p3": "Your Android phone lacks Google certification; Boardsesh doesn't check.",
-          "p4": "You climb MoonBoard and other boards and want one logbook.",
-          "p5": "Your crew shares one queue, or you light the board from a browser."
+          "p1": "Your crew wants to queue MoonBoard problems from separate phones.",
+          "p2": "You want your MoonBoard and Kilter sends in one logbook.",
+          "p3": "You want favourites that survive a reinstall; Moon's didn't (July 2026).",
+          "p4": "You want to export your logbook yourself, any time.",
+          "p5": "You'd rather not share age, gender and height (Moon asks, Sept 2026)."
         },
         "keepIf": {
           "k1": "You publish problems or follow official MoonBoard rankings.",
           "k2": "You run a custom wall with Moon's hold recognition and LED mapping."
         },
-        "bottomLine": "Keep Moon's app for publishing and rankings. Add Boardsesh for the nights Moon's app won't load, and for crew sessions, workouts and a logbook that reaches past MoonBoard."
+        "bottomLine": "Keep Moon's app for publishing and rankings. To try Boardsesh, pick your MoonBoard setup, connect and queue a few problems with your crew; every send goes into your Boardsesh logbook."
       },
       "only": {
         "heading": "Where Boardsesh goes further",
         "lead": "Three things you get from Boardsesh on a MoonBoard. Each has a source below.",
         "tiles": {
-          "android": {
-            "title": "Android without Google certification",
-            "body": "MoonBoard's Android app needs a Google-certified phone, and Moon's support told a GrapheneOS user in January 2026 there is 'no plan for the app to be changed'. Boardsesh doesn't check, and email sign-in works."
-          },
           "browser": {
             "title": "Light the board from a browser",
             "body": "Moon's website lets you log in to your account. Boardsesh's browser app at app.boardsesh.com lights the board from Chrome or Edge and runs the whole session."
           },
-          "one-logbook": {
-            "title": "One logbook for every board",
-            "body": "Bring a Moon CSV in once and your sends sit next to your Kilter, Tension and Woods sessions, with stats across all of them. Switch to the gym's Kilter or Tension in the same session, even within one queue."
+          "android": {
+            "title": "Android without Google certification",
+            "body": "As of Sept 2026, MoonBoard's Android app supports only Google-certified phones; in January 2026 Moon's support said there is 'no plan for the app to be changed'. Boardsesh doesn't check, and email sign-in works."
+          },
+          "workouts": {
+            "title": "Seven ways to train",
+            "body": "Volume, pyramid, ladder, grade focus, On the Minute, 4x4 and limit bouldering, with warm-up and cool-down stages and a rest timer the whole crew sees."
           }
         }
       },
@@ -894,12 +887,12 @@
           "logbook": {
             "feature": "Bring your logbook",
             "boardsesh": "Imports Moon's CSV; favourites live in your account and export as JSON.",
-            "official": "Logbook and lists sync to Moon; favourites saved on the phone go on reinstall."
+            "official": "As of July 2026, logbook and lists sync to Moon; phone-saved favourites go on reinstall."
           },
           "export": {
             "feature": "Export your data",
             "boardsesh": "Export your logbook yourself, any time, as JSON",
-            "official": "No in-app export; you email Moon for a CSV. Climbers report waiting weeks"
+            "official": "No in-app export; you email Moon for a CSV. A climber waited weeks (Sept 2026)."
           },
           "crew": {
             "feature": "Climb with a crew",
@@ -914,12 +907,7 @@
           "android": {
             "feature": "Phones without Google services",
             "boardsesh": "Runs on Android 7+ with no Google certification check; email sign-in works.",
-            "official": "Runs on Google-certified phones; one user's login failed with a 403 on GrapheneOS."
-          },
-          "native": {
-            "feature": "Feels like your phone",
-            "boardsesh": "Follows Apple's design rules on iPhone and Google's on Android",
-            "official": "One Flutter design on both iPhone and Android (app files checked)"
+            "official": "As of Sept 2026, Moon supports only Google-certified phones, not custom Android ROMs."
           },
           "tablet": {
             "feature": "Tablet layout",
@@ -940,8 +928,8 @@
             "body": "Find your board in the picker, or open the browser app in Chrome or Edge and connect there."
           },
           "warmup": {
-            "title": "Queue a warm-up",
-            "body": "Add a few easy Benchmarks to the queue and let the rest timer pace you between climbs."
+            "title": "Warm up on Benchmarks",
+            "body": "Pick a few easy Benchmarks to warm up on before you move to your projects."
           },
           "log": {
             "title": "Log what you sent",
@@ -950,7 +938,7 @@
         }
       },
       "logbook": {
-        "heading": "Bring your MoonBoard logbook",
+        "heading": "Bring your climbing history",
         "lead": "You ask Moon for a CSV by email, then import it. Imports go into Boardsesh, and sends you log here stay here, because Moon gives other apps no way to write back.",
         "paths": {
           "csv": {
@@ -965,7 +953,7 @@
         }
       },
       "faq": {
-        "heading": "What MoonBoard climbers ask before switching",
+        "heading": "What MoonBoard climbers ask before their first session",
         "items": {
           "not-working": {
             "q": "Why is the MoonBoard app not working or stuck on Please Wait?",
@@ -977,7 +965,7 @@
           },
           "android": {
             "q": "Is there a MoonBoard app for Android?",
-            "a": "Yes, Moon's own, but it needs a Google-certified phone. Boardsesh runs on Android 7 and up without that check."
+            "a": "Yes, Moon's own, but as of Sept 2026 Moon supports only Google-certified phones, not custom Android ROMs. Boardsesh runs on Android 7 and up without that check."
           },
           "leds": {
             "q": "Will Boardsesh light my MoonBoard LEDs?",
@@ -995,7 +983,7 @@
       },
       "method": {
         "heading": "How we compared",
-        "body": "We read Moon's help pages, store listings and July 2026 notice, checked its reviews on 2026-11-24, and read the Android build's strings without running it. Controller support comes from a Boardsesh code audit dated 2026-11-20, not from a test on every box. Boardsesh has no tie to Moon Climbing."
+        "body": "We read Moon's help pages, store listings and July 2026 notice, checked its reviews on 2026-11-24. Controller support comes from a Boardsesh code audit dated 2026-11-20, not from a test on every box. Boardsesh has no tie to Moon Climbing."
       },
       "cta": {
         "heading": "Light your next MoonBoard problem with Boardsesh",
@@ -1022,53 +1010,51 @@
         "bs-board-look": "Boardsesh board look: glowing holds, the default since 2.4",
         "bs-export": "Boardsesh self-service data export (Settings, Account, Export climbing data)",
         "moon-reddit-data": "r/Moonboard, 14 Sep 2026: a climber still waiting weeks for a CSV; Moon apologises and says custom Android ROMs are not supported",
-        "moon-reddit-weight": "Ben Moon on r/Moonboard: age, gender and height for upcoming rankings, weight optional (14 Sept 2026)",
-        "bs-design-guidelines": "Boardsesh design rules: Apple's Human Interface Guidelines on iPhone, Material Design on Android",
-        "moon-flutter": "Moon Board app 1.3.77 for Android: its app files include the Flutter engine"
+        "moon-reddit-weight": "Ben Moon on r/Moonboard: age, gender and height for upcoming rankings, weight optional (14 Sept 2026)"
       }
     },
     "woods": {
       "meta": {
         "title": "Woods Board App: Boardsesh vs the Official Woods App",
-        "description": "Boardsesh vs the official Woods Board app on 8x10 and 12x12 walls: matching and feet rules, a crew queue, setting climbs, and what stays in the Woods app."
+        "description": "Boardsesh vs the Woods Board app on 8x10 and 12x12 walls: a crew queue from every phone, setting on real holds, one logbook, and what stays in Woods."
       },
       "hero": {
         "pill": "Works with the Woods Board 8x10 and 12x12",
         "h1": "Boardsesh vs the Woods Board app",
-        "lead": "Woods isn't an Aurora board: it has its own control box, its own Bluetooth format and its own app, and Boardsesh supports it on its own terms. Boardsesh lights both sizes, shows every climb's matching and feet rules, gives the crew one queue and logs Woods sends with seven other board brands and your spray wall. Your Woods account, the leaderboards and the official database stay in the Woods app.",
+        "lead": "Bring friends to your Woods wall and everyone adds problems to one queue from their own phone, while one phone lights each climb. Your Woods sends share a logbook with seven other board brands and your spray wall, but your history starts fresh: Boardsesh can't import a Woods account. Your account, the leaderboards and the official database stay in the Woods app.",
         "byline": "A guide from Boardsesh. We make Boardsesh; board makers don't endorse it."
       },
       "verdict": {
         "heading": "Your Woods account, or one logbook for every board",
         "pickIf": {
-          "p1": "You want matching and feet rules on every Woods climb before you pull on",
-          "p2": "You set problems on a phone and want only real holds offered",
-          "p3": "Your crew wants one queue on the 12x12, each adding from their own phone",
-          "p4": "You also log Kilter, Tension or MoonBoard and want one set of stats",
-          "p5": "You want the Woods catalogue on your phone for a garage with no signal"
+          "p1": "You want the Woods catalogue on your phone for a garage with no signal",
+          "p2": "You want to browse, queue and log from a laptop browser",
+          "p3": "You want an iPad layout with a sidebar and a landscape player",
+          "p4": "You want to export your logbook yourself, any time",
+          "p5": "You're happy to start a fresh logbook for your Woods sends"
         },
         "keepIf": {
           "k1": "You climb for the weekly and all-time Woods leaderboards",
           "k2": "You publish problems to the official Woods database",
           "k3": "You want the full Woods catalogue behind your Woods account"
         },
-        "bottomLine": "The Woods app is where your account, the leaderboards and published climbs live. Boardsesh is a second way onto the same walls, built for crews and climbers with more than one board, with no Woods import and nothing written back."
+        "bottomLine": "The Woods app is where your account, the leaderboards and published climbs live. To try Boardsesh, pick your Woods size and angle, start a session and let friends add problems; new sends go into a fresh Boardsesh logbook, and nothing is written back."
       },
       "only": {
         "heading": "What Boardsesh adds to a Woods wall",
-        "lead": "Boardsesh treats Woods as its own board, with its own geometry, Bluetooth format and climb rules.",
+        "lead": "Three things Boardsesh adds at a Woods wall.",
         "tiles": {
-          "rules": {
-            "title": "Matching and feet, shown separately",
-            "body": "Every Woods climb carries two rules: can you match, and can you use any feet. Boardsesh shows both on the climb and asks for both when you set one."
+          "crew": {
+            "title": "One queue at the Woods wall",
+            "body": "Friends add Woods problems from their own phones while one phone drives the control box, up to 500 climbs deep with undo."
           },
           "create": {
             "title": "Set on the real hold map",
             "body": "Of the 12x12's 894 bolt slots, 725 carry a hold, and the editor offers only those 725. On the 8x10 it's 379 of 485."
           },
-          "crew": {
-            "title": "One queue at the Woods wall",
-            "body": "Friends add Woods problems from their own phones while one phone drives the control box, up to 500 climbs deep with undo."
+          "one-logbook": {
+            "title": "One logbook for every board",
+            "body": "Your Woods sends share a logbook with Kilter, Tension, MoonBoard and your spray wall, so one set of stats covers every wall you climb."
           }
         }
       },
@@ -1155,7 +1141,7 @@
         }
       },
       "logbook": {
-        "heading": "Start your Woods logbook in Boardsesh",
+        "heading": "Start your Woods climbing history",
         "lead": "Boardsesh can't import a Woods account or its history, so your Woods logbook starts fresh here. Keep the Woods app for anything tied to its database.",
         "paths": {
           "start": {
@@ -1179,7 +1165,7 @@
         }
       },
       "faq": {
-        "heading": "What climbers ask about the Woods app",
+        "heading": "What climbers ask before their first Woods session",
         "items": {
           "import": {
             "q": "Can I import my Woods Board account into Boardsesh?",
@@ -1234,24 +1220,24 @@
       "hero": {
         "pill": "Works with any spray wall or home wall",
         "h1": "Spray wall climbing apps: Boardsesh vs Stōkt, Crux and Retro Flash",
-        "lead": "Boardsesh and Crux both keep home walls free, and Stōkt sells hold mapping per wall but also offers a free self-scan. Boardsesh puts your home-wall sends beside your gym-board sends, from Kilter, Tension, MoonBoard, Woods and the Aurora boards, in one logbook. Below is how it compares with Stōkt, Crux and Retro Flash, including where they win.",
+        "lead": "Boardsesh puts your home-wall sends beside your gym-board sends, from Kilter, Tension, MoonBoard, Woods and the Aurora boards, in one logbook. Boardsesh and Crux both keep home walls free, and Stōkt sells hold mapping per wall but also offers a free self-scan. Below is how it compares with Stōkt, Crux and Retro Flash, including where they win.",
         "byline": "A guide from Boardsesh. We make Boardsesh and compete with the apps compared here."
       },
       "verdict": {
         "heading": "Which spray wall app fits your wall",
         "pickIf": {
-          "p1": "You own a home wall and don't want to pay per setup or per reset",
-          "p2": "You also climb a Kilter, Tension or MoonBoard and want one logbook",
-          "p3": "You climb in a garage or basement with no signal",
-          "p4": "Your crew wants one queue on the wall, from phones, an iPad or a laptop",
-          "p5": "You want LEDs on your wall on a budget, with a WLED controller"
+          "p1": "Your crew wants one queue on the wall, from phones, an iPad or a laptop",
+          "p2": "You want LEDs on your wall on a budget, with a WLED controller",
+          "p3": "You share your wall with friends by a link or a QR code",
+          "p4": "You map holds on an iPad and want to use an Apple Pencil",
+          "p5": "You run a gym wall and don't want a fee per wall or per reset"
         },
         "keepIf": {
           "k1": "You want to climb in Stōkt's network of more than 2,000 walls",
           "k2": "You will pay for a ready-made LED kit, sold by Stōkt in the EU and UK",
           "k3": "You need mirrored climbs on a symmetric wall, as Stōkt and Retro Flash offer"
         },
-        "bottomLine": "For a wall of your own, Boardsesh and Crux cost nothing, and Stōkt maps every hold for a fee or lets you self-scan free. Pick Boardsesh if you also climb gym boards: your spray wall shares one logbook with them, and it works offline."
+        "bottomLine": "For a wall of your own, Boardsesh and Crux cost nothing, and Stōkt maps every hold for a fee or offers a free self-scan. To try Boardsesh, photograph your wall, fix the holds and set a first problem; your sends go into the same logbook as your gym boards."
       },
       "only": {
         "heading": "What you get on your own wall",
@@ -1278,7 +1264,7 @@
           "price": {
             "feature": "Cost for a home wall",
             "boardsesh": "Free: no wall fee, no yearly pass, no ads",
-            "stokt": "Usually paid: $40 to $300 per setup or reset; a free self-scan since Aug 2026",
+            "stokt": "Free self-scan since Aug 2026 (terms not published); paid setup and resets $40 to $300",
             "crux": "Free for home walls, no cap on climbs; Patreon extras",
             "retroFlash": "Yearly Home Wall pass since July 2026, from $4.99; ads on Android"
           },
@@ -1388,24 +1374,24 @@
         "steps": {
           "photo": {
             "title": "Photograph the wall",
-            "body": "Take one straight-on photo and Boardsesh finds the holds, or you mark them yourself."
+            "body": "Take one straight-on photo of your wall and Boardsesh finds the holds."
           },
           "fix": {
             "title": "Fix the holds",
-            "body": "Move, add or delete holds by hand until the map matches your wall, with an Apple Pencil on iPad if you like."
+            "body": "Move, add or delete holds until the map matches your wall."
           },
           "set": {
-            "title": "Set a problem",
-            "body": "Tap holds as start, hand, finish or foot, name it and save, and the first sends set its grade."
+            "title": "Set the first problem",
+            "body": "Tap its start, hand, finish and foot holds, name it and save."
           },
           "send": {
-            "title": "Climb it and log the send",
-            "body": "Add it to the queue, send it, and the tick lands in the logbook that holds your board sends too."
+            "title": "Log the send",
+            "body": "Climb it, tap Send, and the tick lands in your logbook."
           }
         }
       },
       "logbook": {
-        "heading": "Your sends, in one place",
+        "heading": "Your climbing history, in one place",
         "lead": "A spray wall problem is logged like any board climb, so your weekly streak, grade charts and activity heatmap include it.",
         "paths": {
           "your-wall": {
@@ -1429,7 +1415,7 @@
         }
       },
       "faq": {
-        "heading": "What climbers ask about spray wall apps",
+        "heading": "What climbers ask before their first spray wall session",
         "items": {
           "best": {
             "q": "What is the best spray wall app?",
