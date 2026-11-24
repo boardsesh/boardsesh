@@ -27,6 +27,8 @@ import { feedbackReplyCopy, feedbackReplyTarget } from './feedback-notifications
 import {
   directoryReportPushCopy,
   directoryReportPushTarget,
+  directorySetupChangePushCopy,
+  directorySetupChangePushTarget,
 } from '../graphql/resolvers/social/directory-reports/notices';
 import { NOTIFICATION_PUSH_QUEUE, NOTIFICATION_PUSH_RETRIES as RETRIES } from './notification-push-options';
 import english from '@boardsesh/i18n/locales/en-US/notifications.json';
@@ -192,8 +194,8 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
       .where(eq(notificationDeliveries.id, deliveryId))
       .limit(1);
     if (!delivery || delivery.status === 'done' || delivery.status === 'skipped') return;
-    // Shared delivery driver for spray completion, private support replies and
-    // directory report notices.
+    // Shared delivery driver for spray completion, private support replies,
+    // directory report notices and climbers' setup changes.
     // Recheck the target in its own short transaction. The wall lock orders this
     // read after any wall write in flight (revoke, hide, discard) and is released
     // before the Expo call below, so a slow push never stalls wall edits. Only
@@ -243,6 +245,22 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
                 notificationUuid: delivery.notificationUuid,
                 boardUuid: report.boardUuid,
                 reportUuid: report.reportUuid,
+              },
+            }
+          : null;
+      }
+      if (notice?.type === 'board_setup_changed_by_climber') {
+        // Rechecked on every attempt too: the flag, the change still on the
+        // board (nothing to undo once it isn't), the recipient able to read it.
+        const change = await directorySetupChangePushTarget(delivery.notificationUuid, validation);
+        return change?.recipientId === delivery.recipientId
+          ? {
+              copy: directorySetupChangePushCopy(delivery.locale, change),
+              data: {
+                type: 'board_setup_changed_by_climber',
+                notificationUuid: delivery.notificationUuid,
+                boardUuid: change.boardUuid,
+                setupChangeEventId: change.setupChangeEventId,
               },
             }
           : null;

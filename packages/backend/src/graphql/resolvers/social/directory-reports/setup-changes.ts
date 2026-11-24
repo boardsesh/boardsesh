@@ -38,6 +38,35 @@ function setupChangedSince(): GraphQLError {
   });
 }
 
+function setupAlreadyUndone(): GraphQLError {
+  return new GraphQLError('This change has been undone already.', {
+    extensions: { code: 'BOARD_SETUP_ALREADY_UNDONE' },
+  });
+}
+
+/** A stored ISO time as a Date, or null for none (or not a time). */
+function readStoredTime(value: unknown): Date | null {
+  if (typeof value !== 'string') return null;
+  const time = new Date(value);
+  return Number.isNaN(time.getTime()) ? null : time;
+}
+
+/**
+ * The `sync_frozen_at` an undo leaves the board with, or undefined to leave it
+ * as it is. The change froze the board against the location sync; the undo
+ * puts back the freeze it replaced (often none) only while the board still has
+ * the change's own freeze. A freeze written since (an edit) stays, and so
+ * does the freeze of a change recorded without it.
+ */
+function freezeAfterUndo(
+  board: Pick<UserBoardRow, 'syncFrozenAt'>,
+  details: { syncFrozenAtBefore?: string | null; syncFrozenAtSet?: string } | null,
+): Date | null | undefined {
+  const setByChange = readStoredTime(details?.syncFrozenAtSet);
+  if (!setByChange || board.syncFrozenAt?.getTime() !== setByChange.getTime()) return undefined;
+  return readStoredTime(details?.syncFrozenAtBefore);
+}
+
 /**
  * The role this person may undo a climber's change to this board in, or null:
  * its creator (a synced board has none), the owner or an admin of the gym the
@@ -63,10 +92,12 @@ async function undoActorRole(
 
 /**
  * `undoBoardSetupChange`: put back the setup a climber's change replaced. Under
- * the board's row lock, the change must still be LIVE (the board has its
- * `after`, and nobody undid it); otherwise `BOARD_SETUP_CHANGED_SINCE`. The
- * board keeps its sync freeze. Anyone who may not undo it reads "not found", so
- * the call is never an oracle for which changes exist.
+ * the board's row lock (`FOR NO KEY UPDATE`), the change must still be LIVE:
+ * `BOARD_SETUP_ALREADY_UNDONE` once someone undid it, `BOARD_SETUP_CHANGED_SINCE`
+ * once the board's setup changed again. The sync freeze the change replaced
+ * comes back while the board still has the change's own freeze
+ * (`freezeAfterUndo`); one written since stays. Anyone who may not undo it
+ * reads "not found", so the call is never an oracle for which changes exist.
  *
  * Like any setup edit, the undo closes the board's waiting "Set up wrong"
  * reports as fixed (`onBoardEdited`); the report the change closed stays closed.
@@ -96,13 +127,15 @@ export async function undoClimberSetupChange(userId: string, eventId: number): P
       .from(dbSchema.userBoards)
       .where(eq(dbSchema.userBoards.id, event.boardId))
       .limit(1)
-      .for('update');
+      .for('no key update');
     if (!board || board.deletedAt !== null || board.mergedIntoBoardUuid !== null) throw setupChangeNotFound();
     const actorRole = await undoActorRole(tx, userId, board);
     if (!actorRole) throw setupChangeNotFound();
 
     const states = await setupChangeStates([{ id: event.id, boardId: board.id, after: climberSetup }], tx);
-    if (states.get(event.id) !== 'LIVE') throw setupChangedSince();
+    const state = states.get(event.id);
+    if (state === 'UNDONE') throw setupAlreadyUndone();
+    if (state !== 'LIVE') throw setupChangedSince();
 
     if (board.serialNumber) {
       await lockAndAssertBoardSerialAvailable(
@@ -119,7 +152,7 @@ export async function undoClimberSetupChange(userId: string, eventId: number): P
         userId,
       );
     }
-    const now = new Date();
+    const freeze = freezeAfterUndo(board, event.details);
     const [restored] = await tx
       .update(dbSchema.userBoards)
       .set({
@@ -127,8 +160,8 @@ export async function undoClimberSetupChange(userId: string, eventId: number): P
         sizeId: earlierSetup.sizeId,
         setIds: earlierSetup.setIds,
         ...(earlierSetup.angle !== null ? { angle: earlierSetup.angle } : {}),
-        updatedAt: now,
-        syncFrozenAt: now,
+        updatedAt: new Date(),
+        ...(freeze !== undefined ? { syncFrozenAt: freeze } : {}),
       })
       .where(eq(dbSchema.userBoards.id, board.id))
       .returning();

@@ -25,6 +25,7 @@ const unclaimedGym = (overrides: Partial<SetupSuggestionDecisionInput> = {}): Se
   gymListingState: 'UNCLAIMED',
   lastClimberChangeAt: null,
   lastUndoAt: null,
+  lastClimberChangeOverriddenAt: null,
   climberChangesInWindow: 0,
   now: NOW,
   ...overrides,
@@ -112,6 +113,23 @@ describe('setupSuggestionDecision: the limits at an unclaimed gym', () => {
     });
   });
 
+  it('counts a climber change the board no longer has as an undo, for 90 days from the change', () => {
+    expect(setupSuggestionDecision(unclaimedGym({ lastClimberChangeOverriddenAt: daysAgo(89) }))).toEqual({
+      outcome: 'review',
+      reason: 'RECENTLY_UNDONE',
+    });
+    // Overridden within the day: still RECENTLY_UNDONE, not RECENT_CHANGE.
+    const overriddenToday = unclaimedGym({
+      lastClimberChangeAt: hoursAgo(2),
+      lastClimberChangeOverriddenAt: hoursAgo(2),
+    });
+    expect(setupSuggestionDecision(overriddenToday).reason).toBe('RECENTLY_UNDONE');
+    expect(setupSuggestionDecision(unclaimedGym({ lastClimberChangeOverriddenAt: daysAgo(90) }))).toEqual({
+      outcome: 'apply',
+      reason: null,
+    });
+  });
+
   it('stops a climber at 3 changes in 24 hours', () => {
     expect(setupSuggestionDecision(unclaimedGym({ climberChangesInWindow: 2 })).outcome).toBe('apply');
     expect(setupSuggestionDecision(unclaimedGym({ climberChangesInWindow: 3 }))).toEqual({
@@ -134,7 +152,12 @@ describe('setupSuggestionDecision: the limits at an unclaimed gym', () => {
   });
 
   it('names the gym before any limit', () => {
-    const limitsHit = { lastUndoAt: hoursAgo(1), lastClimberChangeAt: hoursAgo(1), climberChangesInWindow: 9 };
+    const limitsHit = {
+      lastUndoAt: hoursAgo(1),
+      lastClimberChangeAt: hoursAgo(1),
+      lastClimberChangeOverriddenAt: hoursAgo(1),
+      climberChangesInWindow: 9,
+    };
     expect(setupSuggestionDecision(unclaimedGym({ ...limitsHit, gymListingState: 'RUN_BY_GYM' })).reason).toBe(
       'CLAIMED_GYM',
     );

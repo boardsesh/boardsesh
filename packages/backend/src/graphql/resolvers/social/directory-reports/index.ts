@@ -4,6 +4,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { normalizeReportNote, resolutionNoteProblem } from '@boardsesh/directory-moderation';
 import { db } from '../../../../db/client';
+import { logger } from '../../../../utils/logger';
 import { isDirectoryReportsEnabled } from '../../../../services/directory-reports-flag';
 import { canAccessResource } from '../../../../services/privacy';
 import {
@@ -66,7 +67,10 @@ async function requireReportsEnabled(): Promise<void> {
 /**
  * The `DirectoryReportSubmitResult`. A suggested setup that applied returns the
  * board with its new setup, read once the change has committed, for "Climb it
- * now"; the reporter could read the board when they filed.
+ * now"; the reporter could read the board when they filed. The change is
+ * committed by then, so a failure to read the board back is logged and the
+ * result still says APPLIED, with `board` null: the client refetches the board
+ * by uuid rather than telling the climber their change failed.
  */
 async function submitResult(filed: FiledReport, viewerId: string) {
   const { setup } = filed;
@@ -77,8 +81,21 @@ async function submitResult(filed: FiledReport, viewerId: string) {
     otherReporterCount: filed.otherReporterCount,
     setupOutcome: setup?.outcome ?? null,
     setupReviewReason: setup?.reviewReason ?? null,
-    board: setup?.outcome === 'APPLIED' ? await enrichBoard(setup.board, viewerId) : null,
+    board: setup?.outcome === 'APPLIED' ? await appliedBoard(setup.board, viewerId) : null,
   };
+}
+
+/** The changed board as `UserBoard`, or null when it can't be read back after the commit. */
+async function appliedBoard(board: Parameters<typeof enrichBoard>[0], viewerId: string) {
+  try {
+    return await enrichBoard(board, viewerId);
+  } catch (error) {
+    logger.error('[DirectoryReports] A suggested setup applied, but the board could not be read back', {
+      boardUuid: board.uuid,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 function reportNotFound(): GraphQLError {

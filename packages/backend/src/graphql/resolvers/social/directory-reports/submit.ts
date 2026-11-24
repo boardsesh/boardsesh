@@ -21,7 +21,7 @@ import { db } from '../../../../db/client';
 import { transactionWithAfterCommit } from '../../../../db/after-commit';
 import { captureBackendEvent } from '../../../../services/analytics/posthog';
 import { isDirectorySetupSuggestionsEnabled } from '../../../../services/directory-setup-suggestions-flag';
-import { canAccessBoard } from '../../../../services/privacy';
+import { canAccessBoard, canAccessResource } from '../../../../services/privacy';
 import { gymVisibleCondition } from '../gym-visibility';
 import { isBoardHeldOffGym } from '../board-moderation-events';
 import {
@@ -39,6 +39,8 @@ import {
   assertSuggestionDiffersNow,
   checkedSuggestedSetup,
   settleSetupSuggestion,
+  suggestionMayChangeBoard,
+  SuggestionNeedsChangeLock,
   type SettledSuggestion,
 } from './setup-suggestion';
 
@@ -77,8 +79,10 @@ type FileReportInput = {
    * A "Set up wrong" report's suggested setup (docs/product/directory-reports.md,
    * "Suggested setup"). `mayApply` is the `directory-setup-suggestions` flag,
    * read before the transaction: off, the suggestion is stored and waits.
+   * `lockForChange` is the pre-check (`suggestionMayChangeBoard`): the filing
+   * transaction locks the board row `FOR NO KEY UPDATE` instead of `FOR SHARE`.
    */
-  suggestion?: { setup: BoardSetupSnapshot; mayApply: boolean } | null;
+  suggestion?: { setup: BoardSetupSnapshot; mayApply: boolean; lockForChange: boolean } | null;
 };
 
 function badInput(message: string): GraphQLError {
@@ -237,12 +241,12 @@ export async function prepareBoardReport(
   const board = await loadReadableBoard(input.boardUuid, reporterId);
   if (!board) throw boardNotFound();
   const note = checkedReportNote(input.reason, input.note);
-  const suggestion = input.suggestedSetup
-    ? {
-        setup: await checkedSuggestedSetup(board, input.reason, input.suggestedSetup),
-        mayApply: await isDirectorySetupSuggestionsEnabled(),
-      }
-    : null;
+  let suggestion: FileReportInput['suggestion'] = null;
+  if (input.suggestedSetup) {
+    const setup = await checkedSuggestedSetup(board, input.reason, input.suggestedSetup);
+    const mayApply = await isDirectorySetupSuggestionsEnabled();
+    suggestion = { setup, mayApply, lockForChange: await suggestionMayChangeBoard(board, mayApply) };
+  }
 
   let duplicateOfBoardId: number | null = null;
   if (input.reason !== 'relist_request' && input.duplicateOfBoardUuid) {
@@ -272,16 +276,27 @@ export async function prepareBoardReport(
  * one waits. A board deleted or merged since is not found, as it would be now;
  * one whose gym or owner changed is routed again.
  *
- * A report with a suggested setup may change the board, so it takes the row
- * `FOR UPDATE` instead: it never upgrades a share lock, and two climbers'
- * suggestions on one board take turns, the second reading the first's change.
- * Under that lock the suggestion must still differ from the board's setup.
+ * A suggested setup that may change the board (`lockForChange`) takes the row
+ * `FOR NO KEY UPDATE` instead: it never upgrades a share lock, two climbers'
+ * suggestions on one board take turns, the second reading the first's change,
+ * and inserts that only reference the board (a tick, an event) don't wait on
+ * it. Under that lock the reporter must still be able to read the board, as
+ * `updateBoard` asks of an editor. Any suggestion must still differ from the
+ * board's setup.
  */
 async function boardReportUnderLock(input: FileReportInput, executor: DirectoryExecutor): Promise<FileReportInput> {
   if (input.target.kind !== 'board') return input;
   const prepared = input.target.board;
-  const board = await lockBoardFacts(prepared.id, executor, input.suggestion ? 'update' : 'share');
+  const lockForChange = input.suggestion?.lockForChange === true;
+  const board = await lockBoardFacts(prepared.id, executor, lockForChange ? 'no key update' : 'share');
   if (!board || board.deletedAt !== null || board.mergedIntoBoardUuid !== null) throw boardNotFound();
+  if (
+    lockForChange &&
+    board.ownerId !== input.reporterId &&
+    !(await canAccessResource('board', board.uuid, input.reporterId, executor))
+  ) {
+    throw boardNotFound();
+  }
   if (input.suggestion) await assertSuggestionDiffersNow(executor, board.id, input.suggestion.setup);
   if (board.gymId === prepared.gymId && board.ownerId === prepared.ownerId) return input;
   if (!isBoardReportReason(input.reason)) return input;
@@ -300,10 +315,15 @@ async function boardReportUnderLock(input: FileReportInput, executor: DirectoryE
  * an outcome can't push the creator again and again. A report someone else has
  * opened since is joined as usual (null here).
  *
- * A "Set up wrong" report is the exception once a climber's setup change to
- * the board has been undone since it closed: the setup it was closed over is
- * gone, so the reporter may file again straight away (a suggestion then goes
- * to review for 90 days, `RECENTLY_UNDONE`).
+ * A "Set up wrong" report has two exceptions, where the setup it was closed
+ * over may not be the one on the wall:
+ * - A climber's suggested setup closed it (resolver role `climber`). Anyone on
+ *   it may file again straight away, the climber who made the change
+ *   included; the board's 24-hour limit sends a repeat suggestion to review
+ *   (`RECENT_CHANGE`).
+ * - A climber's setup change to the board was undone after it closed. The
+ *   reporter may file again, and for 90 days a suggestion goes to review
+ *   (`RECENTLY_UNDONE`).
  */
 async function refusedRefile(
   executor: DirectoryExecutor,
@@ -336,6 +356,7 @@ async function refusedRefile(
     .orderBy(desc(dbSchema.directoryReports.resolvedAt))
     .limit(1);
   if (!closed) return null;
+  if (closed.reason === 'wrong_setup' && closed.resolvedByRole === 'climber') return null;
   if (await setupChangeUndoneSince(executor, closed)) return null;
   const [waiting] = await executor
     .select({ id: dbSchema.directoryReports.id })
@@ -454,6 +475,7 @@ async function settleFiledSuggestion(
     board: input.target.board,
     suggestion: input.suggestion.setup,
     mayApply: input.suggestion.mayApply,
+    holdsChangeLock: input.suggestion.lockForChange,
     report,
   });
 }
@@ -483,8 +505,42 @@ async function reloadReport(executor: DirectoryExecutor, report: DirectoryReport
  * on a limit try again once the limit has passed.
  */
 export async function fileReport(prepared: FileReportInput): Promise<FiledReport> {
+  let filed: FiledReport;
+  try {
+    filed = await fileReportOnce(prepared);
+  } catch (error) {
+    // The pre-check said the suggestion couldn't change the board, and under
+    // the lock it can: file again, with the row locked to change it. Nothing
+    // was written; the first transaction rolled back.
+    if (!(error instanceof SuggestionNeedsChangeLock) || !prepared.suggestion) throw error;
+    filed = await fileReportOnce({ ...prepared, suggestion: { ...prepared.suggestion, lockForChange: true } });
+  }
+
+  captureBackendEvent('Board Report Submitted', {
+    properties: {
+      targetKind: filed.report.targetKind,
+      reason: filed.report.reason,
+      status: filed.status,
+      routedTo: filed.report.routedTo.join(','),
+    },
+  });
+  if (filed.setup && prepared.target.kind === 'board') {
+    captureBackendEvent('Board Setup Suggested', {
+      properties: {
+        outcome: filed.setup.outcome,
+        reason: filed.setup.reviewReason,
+        boardType: prepared.target.board.boardType,
+        gymState: filed.setup.gymState,
+      },
+    });
+  }
+  return filed;
+}
+
+/** One filing transaction (`fileReport`). */
+async function fileReportOnce(prepared: FileReportInput): Promise<FiledReport> {
   const suggestedSetup = prepared.suggestion?.setup ?? null;
-  const filed = await transactionWithAfterCommit(async (tx): Promise<FiledReport> => {
+  return transactionWithAfterCommit(async (tx): Promise<FiledReport> => {
     const input = await boardReportUnderLock(prepared, tx);
     const targetColumns =
       input.target.kind === 'board'
@@ -603,26 +659,6 @@ export async function fileReport(prepared: FileReportInput): Promise<FiledReport
       extensions: { code: 'INTERNAL_SERVER_ERROR' },
     });
   });
-
-  captureBackendEvent('Board Report Submitted', {
-    properties: {
-      targetKind: filed.report.targetKind,
-      reason: filed.report.reason,
-      status: filed.status,
-      routedTo: filed.report.routedTo.join(','),
-    },
-  });
-  if (filed.setup && prepared.target.kind === 'board') {
-    captureBackendEvent('Board Setup Suggested', {
-      properties: {
-        outcome: filed.setup.outcome,
-        reason: filed.setup.reviewReason,
-        boardType: prepared.target.board.boardType,
-        gymState: filed.setup.gymState,
-      },
-    });
-  }
-  return filed;
 }
 
 /**

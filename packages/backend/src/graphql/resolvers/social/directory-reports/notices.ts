@@ -34,7 +34,7 @@ export { DIRECTORY_NOTICE_TYPES, isDirectoryNoticeType, type DirectoryNoticeType
 //
 // - `board_report_opened` / `gym_report_opened`: to the creator and the gym
 //   staff a report went to, once when it opens and once more at seven days
-//   (`is_reminder`). Only `board_report_opened` also goes out as a push.
+//   (`is_reminder`). `board_report_opened` also goes out as a push.
 // - `board_report_resolved` / `gym_report_resolved`: to the reporters, with
 //   the outcome.
 // - `board_removed_from_gym`, `board_deleted_by_staff`, `board_edited_by_staff`:
@@ -43,9 +43,10 @@ export { DIRECTORY_NOTICE_TYPES, isDirectoryNoticeType, type DirectoryNoticeType
 //   that was just claimed, naming the board (gym-claims.ts).
 // - `gym_claim_denied`: to a claimant whose claim was denied, expired or
 //   reverted (gym-claims.ts, gym-claim-revert.ts).
-// - `board_setup_changed_by_climber`: to a board's creator (not SYSTEM) when a
-//   climber's suggested setup changed it (setup-suggestion.ts). Its context
-//   names the change, so the notice can show before and after and offer Undo.
+// - `board_setup_changed_by_climber`: to the people who can undo a climber's
+//   change to a board (setup-suggestion.ts): its creator (not SYSTEM) and the
+//   owner and admins of its gym, never the climber. Its context names the
+//   change, so the notice can show before and after and offer Undo. Also a push.
 //
 // The rules every one of them follows:
 //
@@ -58,8 +59,8 @@ export { DIRECTORY_NOTICE_TYPES, isDirectoryNoticeType, type DirectoryNoticeType
 //   who could read it when they reported it.
 // - Written in the caller's transaction, so a change that rolls back sends
 //   nothing. The live feed publish happens once the rows are committed.
-// - At most `DIRECTORY_REPORT_PUSHES_PER_DAY` report pushes per person per 24
-//   hours; past that the notice is in-app only.
+// - At most `DIRECTORY_REPORT_PUSHES_PER_DAY` pushes per person per 24 hours,
+//   report and setup change pushes together; past that the notice is in-app only.
 //
 // The feed words a row from `directory_notification_context` (see
 // `enrichDirectoryNotices`). Its copy keys live in the `notifications`
@@ -100,6 +101,7 @@ export { DIRECTORY_NOTICE_TYPES, isDirectoryNoticeType, type DirectoryNoticeType
 // i18n-keep notifications.items.gymClaimedWithYourBoard
 // i18n-keep notifications.items.gymClaimDenied
 // i18n-keep notifications.items.boardSetupChangedByClimber
+// i18n-keep notifications.items.boardSetupChangedByClimberAtGym
 
 export type DirectoryNoticeTarget =
   | { kind: 'board'; boardId: number; boardUuid: string; ownerId: string }
@@ -212,15 +214,18 @@ export async function sendDirectoryNotices(
 }
 
 /**
- * At most this many report pushes reach one person in 24 hours. Past it, the
- * notices still land in the inbox; only the push is left out. Two reports
- * filed at the same moment can both see one below the cap, so it can be
- * passed by one or two.
+ * At most this many directory pushes (a report opened, or a climber's setup
+ * change) reach one person in 24 hours. Past it, the notices still land in the
+ * inbox; only the push is left out. Two reports filed at the same moment can
+ * both see one below the cap, so it can be passed by one or two.
  */
 export const DIRECTORY_REPORT_PUSHES_PER_DAY = 10;
 
-/** `board_report_opened` notices pushed to this person in the last 24 hours (to any device). */
-async function reportPushesInLastDay(executor: DirectoryExecutor, recipientId: string): Promise<number> {
+/** The directory notices that may go out as a push. */
+const PUSHED_DIRECTORY_NOTICE_TYPES = ['board_report_opened', 'board_setup_changed_by_climber'] as const;
+
+/** Directory notices pushed to this person in the last 24 hours (to any device). */
+async function directoryPushesInLastDay(executor: DirectoryExecutor, recipientId: string): Promise<number> {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const [row] = await executor
     .select({ count: sql<number>`count(*)::int` })
@@ -228,7 +233,7 @@ async function reportPushesInLastDay(executor: DirectoryExecutor, recipientId: s
     .where(
       and(
         eq(dbSchema.notifications.recipientId, recipientId),
-        eq(dbSchema.notifications.type, 'board_report_opened'),
+        inArray(dbSchema.notifications.type, [...PUSHED_DIRECTORY_NOTICE_TYPES]),
         gt(dbSchema.notifications.createdAt, since),
         exists(
           db
@@ -251,7 +256,7 @@ async function reportPushesInLastDay(executor: DirectoryExecutor, recipientId: s
 async function enqueuePush(executor: DirectoryExecutor, notificationUuid: string, recipientId: string): Promise<void> {
   const boss = getJobQueue();
   if (!boss) return;
-  if ((await reportPushesInLastDay(executor, recipientId)) >= DIRECTORY_REPORT_PUSHES_PER_DAY) return;
+  if ((await directoryPushesInLastDay(executor, recipientId)) >= DIRECTORY_REPORT_PUSHES_PER_DAY) return;
   const devices = await executor
     .select()
     .from(dbSchema.notificationDevices)
@@ -543,6 +548,8 @@ const pushCopySchema = z.object({
     boardReportReminderBody: z.string(),
     boardRelistTitle: z.string(),
     boardRelistBody: z.string(),
+    boardSetupChangedTitle: z.string(),
+    boardSetupChangedBody: z.string(),
   }),
 });
 
@@ -647,5 +654,78 @@ export async function directoryReportPushTarget(
     reportUuid: row.reportUuid,
     isReminder: row.isReminder,
     isRelistRequest: row.reason === 'relist_request',
+  };
+}
+
+// i18n-keep notifications.push.boardSetupChangedTitle
+// i18n-keep notifications.push.boardSetupChangedBody
+export function directorySetupChangePushCopy(
+  locale: string,
+  input: { boardName: string },
+): {
+  title: string;
+  body: string;
+} {
+  const { push } = pushCopySchema.parse(PUSH_CATALOGS[locale] ?? english);
+  return {
+    title: push.boardSetupChangedTitle.replaceAll('{{board}}', input.boardName),
+    body: push.boardSetupChangedBody,
+  };
+}
+
+/**
+ * Recheck a queued `board_setup_changed_by_climber` push before every attempt,
+ * receipt retries included: the flag is still on, the board is live, the
+ * recipient can still read it, and the change is still LIVE (nothing to undo
+ * once it was undone or the board changed again). Null means skip.
+ */
+export async function directorySetupChangePushTarget(
+  notificationUuid: string,
+  executor: DirectoryExecutor = db,
+): Promise<{ recipientId: string; boardUuid: string; boardName: string; setupChangeEventId: string } | null> {
+  // Awaited, not read from the cache, as for the report push.
+  if (!(await isDirectoryReportsEnabled())) return null;
+  const [row] = await executor
+    .select({
+      recipientId: dbSchema.notifications.recipientId,
+      type: dbSchema.notifications.type,
+      eventId: dbSchema.boardModerationEvents.id,
+      action: dbSchema.boardModerationEvents.action,
+      details: dbSchema.boardModerationEvents.details,
+      boardId: dbSchema.userBoards.id,
+      boardUuid: dbSchema.userBoards.uuid,
+      boardName: dbSchema.userBoards.name,
+      ownerId: dbSchema.userBoards.ownerId,
+      boardDeletedAt: dbSchema.userBoards.deletedAt,
+    })
+    .from(dbSchema.notifications)
+    .innerJoin(
+      dbSchema.directoryNotificationContext,
+      eq(dbSchema.directoryNotificationContext.notificationUuid, dbSchema.notifications.uuid),
+    )
+    .innerJoin(
+      dbSchema.boardModerationEvents,
+      eq(dbSchema.boardModerationEvents.id, dbSchema.directoryNotificationContext.boardModerationEventId),
+    )
+    .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.id, dbSchema.boardModerationEvents.boardId))
+    .where(eq(dbSchema.notifications.uuid, notificationUuid))
+    .limit(1);
+  if (!row || row.type !== 'board_setup_changed_by_climber' || row.action !== 'setup_changed_by_climber') return null;
+  if (row.boardDeletedAt) return null;
+  const after = readSetupSnapshot(row.details?.after);
+  if (!after) return null;
+  const states = await setupChangeStates([{ id: row.eventId, boardId: row.boardId, after }], executor);
+  if (states.get(row.eventId) !== 'LIVE') return null;
+  if (
+    row.ownerId !== row.recipientId &&
+    !(await canAccessResource('board', row.boardUuid, row.recipientId, executor))
+  ) {
+    return null;
+  }
+  return {
+    recipientId: row.recipientId,
+    boardUuid: row.boardUuid,
+    boardName: row.boardName,
+    setupChangeEventId: String(row.eventId),
   };
 }

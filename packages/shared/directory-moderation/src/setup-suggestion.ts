@@ -14,6 +14,8 @@ import type { GymListingState } from './reasons';
  *
  * The limits, checked in this order after the gym:
  * - an undo on this board in the last {@link SETUP_CHANGE_REVIEW_DAYS_AFTER_UNDO} days,
+ *   or a climber change from that long ago that the board no longer has
+ *   (someone put it back by hand, which counts as an undo),
  * - a climber change on this board in the last {@link SETUP_CHANGE_BOARD_COOLDOWN_HOURS} hours,
  * - {@link SETUP_CHANGES_PER_CLIMBER_PER_DAY} changes by this climber, on any
  *   board, in the last {@link SETUP_CHANGE_CLIMBER_WINDOW_HOURS} hours.
@@ -47,7 +49,9 @@ export const SETUP_SUGGESTION_REPORT_REASON = 'wrong_setup';
  * - `CLAIMED_GYM`: the gym is run by the gym; its staff review it.
  * - `NO_GYM`: the board has no gym (a home wall); its creator reviews it.
  * - `RECENT_CHANGE`: a climber changed this board in the last 24 hours.
- * - `RECENTLY_UNDONE`: a climber change to this board was undone in the last 90 days.
+ * - `RECENTLY_UNDONE`: a climber change to this board was undone in the last 90
+ *   days, or a climber change from the last 90 days was overridden since (the
+ *   board no longer has it).
  * - `DAILY_LIMIT`: this climber applied 3 changes in the last 24 hours.
  * - `CLASHES`: the change would duplicate another board of the same owner, or
  *   clash with a serial number. Only the backend can see this one.
@@ -75,6 +79,13 @@ export type SetupSuggestionDecisionInput = {
   lastClimberChangeAt: Date | null;
   /** When a climber change to this board was last undone (`setup_change_undone`), or null. */
   lastUndoAt: Date | null;
+  /**
+   * When the board's latest climber change was made, if the board no longer
+   * has that change's setup (someone edited it back by hand, or undid it);
+   * null when the board still has it, or has no climber change. A change
+   * overridden by hand counts as an undo, from the time the change was made.
+   */
+  lastClimberChangeOverriddenAt: Date | null;
   /** Climber changes this climber made on any board in the last {@link SETUP_CHANGE_CLIMBER_WINDOW_HOURS} hours. */
   climberChangesInWindow: number;
   now: Date;
@@ -125,7 +136,9 @@ export function setupSuggestionDecision(input: SetupSuggestionDecisionInput): Se
   if (gymReason) return { outcome: 'review', reason: gymReason };
 
   const windows = setupSuggestionWindowStarts(input.now);
-  if (isSince(input.lastUndoAt, windows.undoSince)) return { outcome: 'review', reason: 'RECENTLY_UNDONE' };
+  if (isSince(input.lastUndoAt, windows.undoSince) || isSince(input.lastClimberChangeOverriddenAt, windows.undoSince)) {
+    return { outcome: 'review', reason: 'RECENTLY_UNDONE' };
+  }
   if (isSince(input.lastClimberChangeAt, windows.boardChangeSince)) {
     return { outcome: 'review', reason: 'RECENT_CHANGE' };
   }

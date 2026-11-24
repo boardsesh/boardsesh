@@ -105,14 +105,15 @@ export async function loadBoardFacts(
 /**
  * One board's facts under a row lock, in the caller's transaction: a write to
  * the board in flight (a delete, a removal, a move) commits first, and the next
- * one waits for the caller to finish. A share lock by default; `update` when the
- * caller may write the board itself (a suggested setup), so it never has to
- * upgrade the lock and two such callers on one board take turns.
+ * one waits for the caller to finish. A share lock by default; `no key update`
+ * when the caller may write the board itself (a suggested setup), so it never
+ * has to upgrade the lock and two such callers on one board take turns. It
+ * changes no key, so inserts that only reference the board don't wait on it.
  */
 export async function lockBoardFacts(
   boardId: number,
   executor: DirectoryExecutor,
-  strength: 'share' | 'update' = 'share',
+  strength: 'share' | 'no key update' = 'share',
 ): Promise<BoardFacts | undefined> {
   const [row] = await executor
     .select(BOARD_FACT_COLUMNS)
