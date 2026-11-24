@@ -29,10 +29,9 @@ vi.mock('@boardsesh/db/queries/account-email', async () => {
   const { fakeAccountEmailLookup } = await import('@/app/test-utils/account-email-lookup');
   return fakeAccountEmailLookup(() => lookup.stored);
 });
-import type { SQL } from 'drizzle-orm';
-import { PgDialect } from 'drizzle-orm/pg-core';
 import type { StoredAccount } from '@/app/test-utils/account-email-lookup';
 import { GET } from '../route';
+import { CLOUDFLARE_ORIGIN_PROOF_HEADER } from '@/app/lib/auth/trusted-client-ip.server';
 
 const token = `ev1_${'A'.repeat(43)}`;
 const legacyToken = 'a363934b-b7ba-41ba-a279-52185daa100e';
@@ -67,6 +66,10 @@ function backend(
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
 }
+function commandBody(request?: RequestInit): Record<string, unknown> {
+  if (typeof request?.body !== 'string') throw new Error('Expected serialized command');
+  return JSON.parse(request.body) as Record<string, unknown>;
+}
 function privacy(response: Response) {
   expect(response.headers.get('Cache-Control')).toBe('private, no-store');
   expect(response.headers.get('CDN-Cache-Control')).toBe('no-store');
@@ -97,6 +100,8 @@ beforeEach(() => {
   vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'backend-staging');
   vi.stubEnv('CURRENT_STORE_AUTH_BACKEND_ORIGIN', 'http://127.0.0.1:54321');
   vi.stubEnv('CURRENT_STORE_AUTH_RPC_SECRET', 'dedicated-verification-fixture-secret-32bytes');
+  vi.stubEnv('CLOUDFLARE_ORIGIN_PROOF_SECRET', '');
+  vi.stubEnv('CLOUDFLARE_ORIGIN_PROOF_SECRET_NEXT', '');
   vi.stubEnv('NEXTAUTH_URL', '');
   vi.stubEnv('BASE_URL', '');
   mocks.rate.mockReturnValue({ limited: false, retryAfterSeconds: 0 });
@@ -125,12 +130,54 @@ describe('verification limiter key', () => {
     expect(response.headers.get('Location')).toContain('error=TooManyAttempts');
     expect(mocks.rate).toHaveBeenCalledWith('verify-email:203.0.113.9', 20, 60_000);
   });
-  it('keeps the legacy limiter key when staged auth is off', async () => {
+  it('uses the trusted limiter key when staged auth is off', async () => {
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
     mocks.rate.mockReturnValue({ limited: true, retryAfterSeconds: 30 });
     const response = await GET(edgeRequest());
     expect(response.headers.get('Location')).toContain('error=TooManyAttempts');
-    expect(mocks.rate).toHaveBeenCalledWith('verify-email:127.0.0.1', 20, 60_000);
+    expect(mocks.rate).toHaveBeenCalledWith('verify-email:203.0.113.9', 20, 60_000);
+  });
+});
+
+describe('default reader service context', () => {
+  const proofSecret = 'owned-consumer-origin-proof-secret-at-least-32';
+  const forwarded = (headers: Record<string, string> = {}) =>
+    new NextRequest(`${origin}/api/auth/verify-email?token=${token}&clientAddress=198.51.100.99`, {
+      headers: { 'X-Forwarded-For': '198.51.100.7, 172.70.1.2', 'CF-Connecting-IP': '203.0.113.9', ...headers },
+    });
+  beforeEach(() => {
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
+    vi.stubEnv('CLOUDFLARE_ORIGIN_PROOF_SECRET', proofSecret);
+  });
+  it('carries only an origin-vouched visitor as authenticated service context', async () => {
+    const sent = backend('verified');
+    await GET(forwarded({ [CLOUDFLARE_ORIGIN_PROOF_HEADER]: proofSecret }));
+    expect(commandBody(sent.mock.calls[0]?.[1])).toMatchObject({
+      clientAddress: '203.0.113.9',
+      payload: { token },
+    });
+    expect(mocks.rate).toHaveBeenCalledWith('verify-email:203.0.113.9', 20, 60_000);
+  });
+  it.each([undefined, 'wrong-proof'])(
+    'keeps forged edge visitors and query metadata out of service context: %j',
+    async (presentedProof) => {
+      const sent = backend('verified');
+      await GET(forwarded(presentedProof === undefined ? {} : { [CLOUDFLARE_ORIGIN_PROOF_HEADER]: presentedProof }));
+      expect(commandBody(sent.mock.calls[0]?.[1])).not.toHaveProperty('clientAddress');
+      expect(mocks.rate).toHaveBeenCalledWith('verify-email:172.70.1.2', 20, 60_000);
+    },
+  );
+  it('uses the last non-edge hop independently of caller-controlled prefixes', async () => {
+    const sent = backend('verified');
+    await GET(
+      forwarded({ 'X-Forwarded-For': '198.51.100.7, 203.0.113.10', [CLOUDFLARE_ORIGIN_PROOF_HEADER]: proofSecret }),
+    );
+    await GET(
+      forwarded({ 'X-Forwarded-For': '198.51.100.8, 203.0.113.10', [CLOUDFLARE_ORIGIN_PROOF_HEADER]: proofSecret }),
+    );
+    for (const call of sent.mock.calls) expect(commandBody(call[1])).not.toHaveProperty('clientAddress');
+    expect(mocks.rate).toHaveBeenNthCalledWith(1, 'verify-email:203.0.113.10', 20, 60_000);
+    expect(mocks.rate).toHaveBeenNthCalledWith(2, 'verify-email:203.0.113.10', 20, 60_000);
   });
 });
 
@@ -163,7 +210,7 @@ describe('UID verification public reader', () => {
     await unavailable(await GET(request()));
     expect(fetchMock).not.toHaveBeenCalled();
   });
-  it.each(['ev2_future', 'EV1_future', 'ev9999_future', 'ev1_malformed'])(
+  it.each(['ev2_future', 'EV1_future', 'ev9999_future'])(
     'recognizes reserved namespace %s before disabled dispatch',
     async (presentedToken) => {
       vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
@@ -263,7 +310,7 @@ describe('UID verification public reader', () => {
     it('sends a legacy verification to the configured site', async () => {
       vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
       vi.stubEnv('NEXTAUTH_URL', configuredSite);
-      mocks.limit.mockResolvedValueOnce([{ expires: new Date(Date.now() + 60_000) }]);
+      backend('verified');
       const response = await GET(request(legacyToken, email, 'en-US', bindOrigin));
       expect(response.status).toBe(307);
       privacy(response);
@@ -276,123 +323,22 @@ describe('UID verification public reader', () => {
       expect(response.headers.get('Location')).toBe('http://localhost:3095/auth/login?verified=true');
     });
   });
-  it('keeps the exact unversioned legacy reader in default-off mode', async () => {
-    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
-    mocks.limit.mockResolvedValueOnce([{ expires: new Date(Date.now() + 60_000) }]);
+  it.each(['legacy', ''])('delegates existing unversioned links in default mode %j without local SQL', async (mode) => {
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', mode);
+    const sent = backend('verified');
     const response = await GET(request(legacyToken));
-    expect(response.status).toBe(307);
-    privacy(response);
-    expect(response.headers.get('Location')).toBe(`${origin}/auth/login?verified=true`);
-    expect(mocks.transaction).toHaveBeenCalledOnce();
-    expect(mocks.updateWhere).toHaveBeenCalledOnce();
-    expect(mocks.deleteWhere).toHaveBeenCalledOnce();
+    expect(response.headers.get('Location')).toContain('/auth/login?verified=true');
+    expect(sent).toHaveBeenCalledOnce();
+    expect(sent.mock.calls[0]?.[0]).toContain('/registration/v1/verify-email');
+    expect(mocks.getDb).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
   });
-  describe('legacy links in any capitalisation (BA-02)', () => {
-    const verifiedUserIds = () =>
-      mocks.updateWhere.mock.calls.map(([condition]) => new PgDialect().sqlToQuery(condition as SQL).params);
-    const live = () => mocks.limit.mockResolvedValueOnce([{ expires: new Date(Date.now() + 60_000) }]);
-
-    beforeEach(() => {
-      vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
-    });
-
-    it('verifies only the mixed-case account when the link carries its address exactly as stored', async () => {
-      lookup.stored = [{ id: 'mixed', email: 'Mixed.Case@Example.test' }];
-      live();
-      const response = await GET(request(legacyToken, 'Mixed.Case@Example.test'));
-      expect(response.headers.get('Location')).toBe(`${origin}/auth/login?verified=true`);
-      expect(verifiedUserIds()).toEqual([['mixed']]);
-    });
-
-    // Every issuer writes the account's stored address into the link, so a link
-    // in other capitals was issued for another row.
-    it('refuses a link whose address no account stores exactly, even when one account has it in other capitals', async () => {
-      lookup.stored = [{ id: 'mixed', email: 'Mixed.Case@Example.test' }];
-      live();
-      const response = await GET(request(legacyToken, 'mixed.case@example.test'));
-      expect(response.headers.get('Location')).toBe(`${origin}/auth/verify-request?error=InvalidToken`);
-      expect(mocks.transaction).not.toHaveBeenCalled();
-      expect(mocks.updateWhere).not.toHaveBeenCalled();
-    });
-
-    it("never verifies B with A's link once A is gone, though their addresses differ only in capitals", async () => {
-      const accountA = { id: 'account-a', email: 'Shared@Example.test' };
-      const accountB = { id: 'account-b', email: 'shared@example.test' };
-
-      lookup.stored = [accountA, accountB];
-      live();
-      await GET(request(legacyToken, accountA.email));
-      expect(verifiedUserIds()).toEqual([['account-a']]);
-
-      vi.clearAllMocks();
-      lookup.stored = [accountB];
-      live();
-      const response = await GET(request(legacyToken, accountA.email));
-      expect(response.headers.get('Location')).toBe(`${origin}/auth/verify-request?error=InvalidToken`);
-      expect(mocks.updateWhere).not.toHaveBeenCalled();
-    });
-
-    it('refuses an account created after the link was issued, even at the exact address', async () => {
-      // A 24-hour link with an hour left was issued 23 hours ago.
-      mocks.limit.mockResolvedValueOnce([{ expires: new Date(Date.now() + 60 * 60_000) }]);
-      lookup.stored = [
-        { id: 'new-holder', email: 'reused@example.test', createdAt: new Date(Date.now() - 60 * 60_000) },
-      ];
-      const response = await GET(request(legacyToken, 'reused@example.test'));
-      expect(response.headers.get('Location')).toBe(`${origin}/auth/verify-request?error=InvalidToken`);
-      expect(mocks.updateWhere).not.toHaveBeenCalled();
-      expect(mocks.deleteWhere).not.toHaveBeenCalled();
-    });
-
-    it('verifies an account whose creation the database stamped just after the link, as registration does', async () => {
-      mocks.limit.mockResolvedValueOnce([{ expires: new Date(Date.now() + 24 * 60 * 60_000) }]);
-      lookup.stored = [{ id: 'just-registered', email: 'fresh@example.test', createdAt: new Date(Date.now() + 2_000) }];
-      const response = await GET(request(legacyToken, 'fresh@example.test'));
-      expect(response.headers.get('Location')).toBe(`${origin}/auth/login?verified=true`);
-      expect(verifiedUserIds()).toEqual([['just-registered']]);
-    });
-
-    it('verifies the group member the link names exactly, never its sibling', async () => {
-      lookup.stored = [
-        { id: 'mixed', email: 'Mixed.Case@Example.test' },
-        { id: 'sibling', email: 'mixed.case@example.test' },
-      ];
-      live();
-      await GET(request(legacyToken, 'Mixed.Case@Example.test'));
-      expect(verifiedUserIds()).toEqual([['mixed']]);
-    });
-
-    it('refuses an address several accounts share in other capitals and keeps the link', async () => {
-      lookup.stored = [
-        { id: 'mixed', email: 'Mixed.Case@Example.test' },
-        { id: 'sibling', email: 'mixed.case@example.test' },
-      ];
-      live();
-      const response = await GET(request(legacyToken, 'MIXED.CASE@EXAMPLE.TEST'));
-      expect(response.headers.get('Location')).toBe(`${origin}/auth/verify-request?error=InvalidToken`);
-      expect(mocks.transaction).not.toHaveBeenCalled();
-      expect(mocks.deleteWhere).not.toHaveBeenCalled();
-    });
-
-    it('refuses two accounts storing the same text instead of verifying both', async () => {
-      lookup.stored = [
-        { id: 'twin-a', email: 'twin@example.test' },
-        { id: 'twin-b', email: 'twin@example.test' },
-      ];
-      live();
-      const response = await GET(request(legacyToken, 'twin@example.test'));
-      expect(response.headers.get('Location')).toBe(`${origin}/auth/verify-request?error=InvalidToken`);
-      expect(mocks.updateWhere).not.toHaveBeenCalled();
-    });
-
-    it('still cleans up a link whose address no account has', async () => {
-      lookup.stored = [];
-      live();
-      const response = await GET(request(legacyToken, 'gone@example.test'));
-      expect(response.headers.get('Location')).toBe(`${origin}/auth/verify-request?error=InvalidToken`);
-      expect(mocks.deleteWhere).toHaveBeenCalledOnce();
-      expect(mocks.transaction).not.toHaveBeenCalled();
-    });
+  it.each(['legacy', ''])('accepts supported UID proofs before enforcement in mode %j', async (mode) => {
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', mode);
+    const sent = backend('verified');
+    expect((await GET(request(token))).headers.get('Location')).toContain('verified=true');
+    expect(sent).toHaveBeenCalledOnce();
+    expect(mocks.getDb).not.toHaveBeenCalled();
   });
   it('rejects a malformed supported token before RPC and applies the existing local attempt limit', async () => {
     const fetchMock = vi.fn();

@@ -305,11 +305,15 @@ The web writes these identity tables today; on `boardsesh_web` each fails with
 | `api/auth/forgot-password/route.ts` | 92, 95 | replace the reset token in `verificationTokens` |
 | `api/auth/resend-verification/route.ts` | 97, 99 | replace the verification token |
 | `api/auth/reset-password/route.ts` | 145, 152, 162, 166 | update or insert `user_credentials`, verify `users`, delete the token |
-| `api/auth/verify-email/route.ts` | 86–115 | delete tokens, set `users.emailVerified` |
 | `api/internal/set-password/route.ts` | 111, 120 | insert `user_credentials`, verify `users` |
 | `lib/auth/auth-options.ts` | 146 | the `native-oauth` provider inserts a transfer token's single-use marker into `verificationTokens`; on `boardsesh_web` that sign-in is refused |
 | `lib/auth/auth-options.ts` | 270 | `DrizzleAdapter` creates and updates `users` and `accounts` on OAuth sign-in |
 | `lib/auth/auth-options.ts` | 424 | sign-in callback sets `users.emailVerified`; its failure is swallowed, so it would stop silently |
+
+The verification GET now delegates consumption to the backend. Default sign-up
+and resend still issue their released UUIDs in this consumer-only step; the
+remaining writers above keep the web login gate open. See
+[registration deployment order](better-auth-registration-family.md).
 
 How the URL is chosen. The web builds its shared pool in
 `packages/web/app/lib/db/db.ts`, which calls `applyWebDatabaseUrl()` from

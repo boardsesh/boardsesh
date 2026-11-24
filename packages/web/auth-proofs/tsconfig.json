@@ -28,7 +28,11 @@
     "web-session-harness.ts",
     "route-harness.ts",
     "credential-proof.vite.config.ts",
-    "../app/lib/auth/types.ts"
+    "../app/lib/auth/types.ts",
+    "fixtures/registration-old-reader.ts",
+    "registration-consumer.integration.proof.ts",
+    "registration-consumer.vite.config.ts",
+    "fixtures/registration-old-issuer.ts"
   ],
   "exclude": []
 }

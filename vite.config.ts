@@ -1320,6 +1320,12 @@ export default defineConfig({
           'vp test run --config packages/backend/vite.registration-proof.config.ts --maxWorkers=1 --reporter=agent',
         cache: false,
       },
+      'test:registration-web-consumer': {
+        command:
+          'vp test run --config packages/web/auth-proofs/registration-consumer.vite.config.ts --maxWorkers=1 --reporter=agent',
+        dependsOn: ['typecheck:auth-proofs'],
+        cache: false,
+      },
       'test:auth-web-credential-proof': {
         command:
           'vp test run --config packages/web/auth-proofs/credential-proof.vite.config.ts --maxWorkers=1 --reporter=agent',

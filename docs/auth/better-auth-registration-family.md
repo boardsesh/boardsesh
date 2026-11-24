@@ -146,7 +146,10 @@ imports no future web adapter and can run on the first PR tree.
 The second PR introduces `vp run test:registration-web-consumer`, which runs the consumer-only boundary against
 frozen released issuer/reader sources. It demonstrates existing UUID delivery
 and consumption, an old reader's retryable refusal of a retained UID receipt,
-and the capable reader consuming that same receipt before new web issuance.
+and the capable reader consuming that same receipt. Its public ingress proof fills
+the unvouched fallback, confirms forged context cannot consume a receipt, then
+consumes that receipt with an origin-vouched visitor. Deployment of all capable
+readers before delivered UID issuance remains a separate release prerequisite.
 
 The third PR introduces `vp run test:registration-web-issuer`, which runs the complete route-export → strict
 client → real private HTTP → authenticated restricted LOGIN → PostgreSQL graph.
