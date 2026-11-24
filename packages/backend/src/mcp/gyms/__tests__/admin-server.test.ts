@@ -34,6 +34,8 @@ vi.mock('../admin-domain', () => ({
   correctBoardSetup: vi.fn(),
   inspectGymDuplicates: vi.fn(),
   mergeAdminGyms: vi.fn(),
+  repairGymCanonicalSlug: vi.fn(),
+  authorizeCanonicalSlugReplay: vi.fn(),
 }));
 vi.mock('../../../services/merge-duplicate-boards', () => ({ mergeDuplicateBoards: vi.fn() }));
 
@@ -50,6 +52,7 @@ const principal: GymMcpPrincipal = {
   connectionLastUsedAt: null,
 };
 const inspectionName = 'inspect_gym_duplicates';
+const capabilityName = 'get_gym_mcp_capabilities';
 const writeNames = gymMcpAdminTools.filter((tool) => !tool.readOnly).map((tool) => tool.name);
 
 function advertisedNames(): string[] {
@@ -82,24 +85,39 @@ beforeEach(() => {
 describe('hosted gym administrative tool advertisement', () => {
   it('never advertises admin actions on an ordinary connection, even for an admin account', async () => {
     await createGymMcpServer(principal);
-    expect(advertisedNames()).toEqual(['list_managed_gyms']);
+    expect(advertisedNames()).toEqual([capabilityName, 'list_managed_gyms']);
     expect(mocks.hasAdmin).not.toHaveBeenCalled();
     expect(mocks.media).toHaveBeenCalledWith(expect.any(Object), principal);
   });
 
+  it('returns identical ordinary capabilities for admin and non-admin accounts without reading their role', async () => {
+    const responses: unknown[] = [];
+    for (const accountHasAdmin of [true, false]) {
+      mocks.hasAdmin.mockResolvedValue(accountHasAdmin);
+      mocks.registerTool.mockClear();
+      await createGymMcpServer({ ...principal, userId: `account-${accountHasAdmin}` });
+      const registration = mocks.registerTool.mock.calls.find(([name]) => name === capabilityName);
+      const handler = registration?.[2] as () => Promise<{ structuredContent: Record<string, unknown> }>;
+      responses.push((await handler()).structuredContent);
+    }
+    expect(responses[0]).toEqual(responses[1]);
+    expect(responses[0]).toMatchObject({ isGlobalAdmin: null });
+    expect(mocks.hasAdmin).not.toHaveBeenCalled();
+  });
+
   it('advertises only the explicitly granted admin category', async () => {
     await createGymMcpServer({ ...principal, scopes: ['gyms:read', 'gyms:admin:read'] });
-    expect(advertisedNames()).toEqual(['list_managed_gyms', inspectionName]);
+    expect(advertisedNames()).toEqual([capabilityName, 'list_managed_gyms', inspectionName]);
     expect(mocks.hasAdmin).toHaveBeenCalledWith(principal.userId);
     mocks.registerTool.mockClear();
     await createGymMcpServer({ ...principal, scopes: ['gyms:read', 'gyms:admin:write'] });
-    expect(advertisedNames()).toEqual(['list_managed_gyms', ...writeNames]);
+    expect(advertisedNames()).toEqual([capabilityName, 'list_managed_gyms', ...writeNames]);
   });
 
   it('hides administrative tools immediately when global authority is revoked', async () => {
     mocks.hasAdmin.mockResolvedValue(false);
     await createGymMcpServer({ ...principal, scopes: ['gyms:read', 'gyms:admin:read', 'gyms:admin:write'] });
-    expect(advertisedNames()).toEqual(['list_managed_gyms']);
+    expect(advertisedNames()).toEqual([capabilityName, 'list_managed_gyms']);
     expect(mocks.execute).not.toHaveBeenCalled();
   });
 
@@ -108,13 +126,32 @@ describe('hosted gym administrative tool advertisement', () => {
     for (const [name, options] of mocks.registerTool.mock.calls) {
       expect(options).toMatchObject({
         annotations: {
-          readOnlyHint: name === inspectionName,
-          destructiveHint: name !== inspectionName,
+          readOnlyHint: name === inspectionName || name === capabilityName,
+          destructiveHint: name !== inspectionName && name !== capabilityName,
           idempotentHint: true,
           openWorldHint: false,
         },
       });
     }
+  });
+
+  it('explains hidden writes on ordinary and admin-only connections', async () => {
+    await createGymMcpServer({ ...principal, scopes: ['gyms:admin:read'] });
+    const registration = mocks.registerTool.mock.calls.find(([name]) => name === capabilityName);
+    const handler = registration?.[2] as () => Promise<{ structuredContent: Record<string, unknown> }>;
+    expect((await handler()).structuredContent).toMatchObject({
+      grantedScopes: ['gyms:admin:read'],
+      isGlobalAdmin: true,
+      actions: expect.arrayContaining([
+        expect.objectContaining({ name: 'set_gym_image', requiredScope: 'gyms:write', available: false }),
+        expect.objectContaining({
+          name: 'repair_gym_canonical_slug',
+          requiredScope: 'gyms:admin:write',
+          available: false,
+        }),
+      ]),
+    });
+    expect(mocks.execute).not.toHaveBeenCalled();
   });
 
   it('routes calls through the authenticated dispatcher rather than a caller-selected actor', async () => {

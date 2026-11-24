@@ -1,7 +1,7 @@
 # Gym MCP action parity
 
-`registry.ts` is the explicit action catalogue. `media-tools.ts` registers the two
-image actions. Every action uses the caller's live Boardsesh identity, existing
+`registry.ts` is the explicit action catalogue. `media-tools.ts` registers image
+actions and source readback. Every action uses the caller's live Boardsesh identity, existing
 gym/board permissions and existing resolver validation. Clients cannot submit a
 GraphQL document or choose another actor. Explicit admin scopes expose the
 separately gated directory-repair tools in `admin-tools.ts`.
@@ -9,7 +9,7 @@ separately gated directory-repair tools in `admin-tools.ts`.
 | Existing gym surface | MCP actions | Important permission boundary |
 | --- | --- | --- |
 | Overview | `list_managed_gyms`, `search_gyms`, `get_gym` | Management predicates run before pagination; ordinary membership alone never qualifies. |
-| Profile | `update_gym_profile`, `get_gym_upload_links`, `set_gym_image`, `remove_gym_image` | Gym edit rights; private/unlisted visibility and owner-vouched website rules remain backend-owned. Local files use the existing signed-in upload page. |
+| Profile | `update_gym_profile`, `get_gym_upload_links`, `set_gym_image`, `remove_gym_image`, `get_gym_image_source` | Gym edit rights; private/unlisted visibility and owner-vouched website rules remain backend-owned. Local files use the existing signed-in upload page. Imports retain their source and optional credit in the directory audit. |
 | Branding | `update_gym_branding`, `reset_gym_branding`, image actions for `kind=logo` | Logo and visible primary/accent colours; unused background colour is only cleared when resetting, matching the UI. |
 | Boards | `list_gym_boards`, `get_gym_board`, `get_board_setup_options`, `list_linkable_gym_boards`, `link_owned_board_to_gym`, `list_nearby_gym_boards`, `attach_nearby_board_to_gym`, `remove_board_from_gym`, `update_gym_board`, `delete_gym_board` | Gym editors can detach but cannot edit wall setups. A climber keeps their own board; staff may delete SYSTEM boards only. The creator's removal is an unlink, matching the gym page. |
 | Board report review | `list_gym_board_reports`, `apply_reported_board_setup`, `keep_reported_gym_board` | Notes and setup suggestions omit reporter identities, including for globally privileged callers. Existing escalation, resolution and automatic closure rules apply. |
@@ -75,7 +75,7 @@ refreshes remain outside this server.
 current web Manage page, so they are not automatically exposed.
 
 `gyms:admin:read` adds explicit-ID duplicate inspection. `gyms:admin:write` adds
-reasoned setup corrections, explicit location publication/hiding, audited gym
+reasoned setup corrections, explicit location publication/hiding, canonical-slug repair, audited gym
 merges, and serial-independent public catalogue board merges. The normal consent
 defaults never include these scopes. Both the OAuth grant and a live global admin
 role are required, including tool discovery and receipt replay; a gym admin or a
@@ -94,6 +94,18 @@ MCP board projections omit pairing serials and numeric internal IDs. Existing
 field-level privacy determines creator names, locations and readable board
 content. The owner may supply a serial when editing their own board, as on the
 gym page, but the MCP response does not repeat it.
+
+`get_gym_mcp_capabilities` is available to every admitted connection. It explains
+hidden tools by naming their required scope and global role without returning
+gym content or granting access. Profile/photo writes require `gyms:write`, even
+on a connection approved for `gyms:admin:write`. Board setup options use the
+shared catalogue cascade so MoonBoard (including screw-on feet) and Woods are
+available alongside Aurora boards; an incomplete catalogue is an explicit error.
+
+Ordinary scopes never read or disclose the account's global-admin role;
+capabilities report that status as `null` until an admin scope is explicitly
+consented. Media registration, capability discovery and hidden-call denials share
+one name/scope catalogue in `media-tool-metadata.ts`.
 
 ## Validation
 

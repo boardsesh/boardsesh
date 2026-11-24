@@ -1,0 +1,2 @@
+ALTER TABLE "gym_directory_repair_audit" ALTER COLUMN "actor_user_id" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "gym_directory_repair_audit" ADD CONSTRAINT "gym_directory_repair_audit_actor_user_id_users_id_fk" FOREIGN KEY ("actor_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;

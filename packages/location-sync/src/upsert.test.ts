@@ -316,6 +316,7 @@ class FakeUpdateBuilder {
 class FakeSelectBuilder {
   private usedInnerJoin = false;
   private whereFiltersLiveRows = false;
+  private checksSlugReservation = false;
 
   constructor(private readonly fakeDb: FakeLocationSyncDb) {}
 
@@ -329,11 +330,15 @@ class FakeSelectBuilder {
   }
 
   where(condition: unknown): this {
-    this.whereFiltersLiveRows = inspectCondition(condition).columns.has('deleted_at');
+    const { columns } = inspectCondition(condition);
+    this.whereFiltersLiveRows = columns.has('deleted_at');
+    this.checksSlugReservation = columns.has('slug') && columns.has('uuid') && columns.has('merged_into_gym_id');
     return this;
   }
 
   limit(_limit: number): AliasedGymRow[] | Array<{ id: number }> {
+    if (this.checksSlugReservation)
+      return this.fakeDb.reservedGymSlugId === null ? [] : [{ id: this.fakeDb.reservedGymSlugId }];
     // The alias lookup (findAliasedGym) joins the alias table to gyms; the
     // createOrUpdateSourceGym fallback selects gyms by uuid with no join.
     if (this.usedInnerJoin) {
@@ -377,6 +382,7 @@ class FakeLocationSyncDb {
   // Whether the by-uuid fallback's target gym is soft-deleted. When true, the
   // `isNull(gyms.deletedAt)` filter excludes it, so the fallback resolves nothing.
   readonly fallbackGymDeleted: boolean;
+  readonly reservedGymSlugId: number | null;
 
   constructor(options: {
     aliasedGym?: AliasedGymRow | null;
@@ -388,6 +394,7 @@ class FakeLocationSyncDb {
     frozenGymIds?: Iterable<number>;
     frozenBoardUuids?: Iterable<string>;
     fallbackGymDeleted?: boolean;
+    reservedGymSlugId?: number;
   }) {
     this.aliasedGym = options.aliasedGym ?? null;
     this.physicalCandidates = options.physicalCandidates ?? [];
@@ -398,6 +405,7 @@ class FakeLocationSyncDb {
     this.frozenGymIds = new Set(options.frozenGymIds ?? []);
     this.frozenBoardUuids = new Set(options.frozenBoardUuids ?? []);
     this.fallbackGymDeleted = options.fallbackGymDeleted ?? false;
+    this.reservedGymSlugId = options.reservedGymSlugId ?? null;
   }
 
   insert(table: unknown): FakeInsertBuilder {
@@ -441,6 +449,14 @@ describe('inspectCondition sanity check', () => {
 });
 
 describe('location upsert planning', () => {
+  it('leaves a merged gym URL reserved instead of creating a shadowing source gym', async () => {
+    const fakeDb = new FakeLocationSyncDb({ reservedGymSlugId: 42 });
+    const summary = await upsertPublicBoardLocations(fakeDb as unknown as UpsertDb, [locationRecord({})]);
+    expect(summary.gymsUpserted).toBe(0);
+    expect(fakeDb.createdGymWrites).toEqual([]);
+    expect(fakeDb.sourceAliasWrites).toEqual([]);
+    expect(fakeDb.boardWrites[0]?.gymId).toBeNull();
+  });
   it('filters records with invalid coordinates before writing', () => {
     const { validRecords, skipped } = collectValidLocationRecords([
       locationRecord({ sourceKey: 'tension:valid-board' }),

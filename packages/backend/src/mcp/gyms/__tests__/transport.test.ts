@@ -185,6 +185,8 @@ describe('hosted gym MCP transport', () => {
     expect(called.status).toBe(200);
     expect(called.body).toMatchObject({ id: 2, result: { content: [{ type: 'text', text: 'gym-owner' }] } });
     expect(createServer).toHaveBeenCalledTimes(2);
+    expect(createServer).toHaveBeenNthCalledWith(1, principal, undefined);
+    expect(createServer).toHaveBeenNthCalledWith(2, principal, 'get_gym_actor');
     expect(called.headers.get('cache-control')).toBe('no-store');
   });
 

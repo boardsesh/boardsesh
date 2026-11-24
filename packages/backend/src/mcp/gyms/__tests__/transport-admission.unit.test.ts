@@ -208,7 +208,12 @@ describe('gym MCP authentication admission', () => {
         ? invalidAuthentication.promise
         : Promise.resolve({ principal: { ...principal, connectionId: token } }),
     );
-    const handler = createGymMcpHandler({ mode: 'on', partnerMode: 'open', authenticate, createServer: serverFor });
+    const handler = createGymMcpHandler({
+      mode: 'on',
+      partnerMode: 'open',
+      authenticate,
+      createServer: (actor) => serverFor(actor),
+    });
     const junk = Array.from({ length: 4 }, () => request(handler, '198.51.100.11'));
     try {
       await vi.waitFor(() => expect(authenticate).toHaveBeenCalledTimes(4));
@@ -253,7 +258,12 @@ describe('gym MCP authentication admission', () => {
       .fn()
       .mockRejectedValueOnce(new Error('Lookup unavailable'))
       .mockResolvedValue({ principal });
-    const handler = createGymMcpHandler({ mode: 'on', partnerMode: 'open', authenticate, createServer: serverFor });
+    const handler = createGymMcpHandler({
+      mode: 'on',
+      partnerMode: 'open',
+      authenticate,
+      createServer: (actor) => serverFor(actor),
+    });
     expect((await request(handler, '198.51.100.13')).status).toBe(503);
     expect((await request(handler, '198.51.100.13', 'valid')).status).toBe(200);
     expect(fixtures.recordAddressRefusal).not.toHaveBeenCalled();

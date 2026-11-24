@@ -2444,6 +2444,20 @@
       "when": 1795548792025,
       "tag": "0348_aurora_live_history",
       "breakpoints": true
+    },
+    {
+      "idx": 349,
+      "version": "7",
+      "when": 1795553779208,
+      "tag": "0349_gym_directory_repair_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 350,
+      "version": "7",
+      "when": 1795556070734,
+      "tag": "0350_gym_repair_actor_retention",
+      "breakpoints": true
     }
   ]
 }

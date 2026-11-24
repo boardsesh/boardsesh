@@ -3,6 +3,7 @@ export * from './places';
 export * from './gym-activity-stats';
 export * from './gym-kiosks';
 export * from './gym-merge-audit';
+export * from './gym-directory-repair-audit';
 export * from './gym-owner-reassignments';
 export * from './boards';
 export * from './board-moderation-events';

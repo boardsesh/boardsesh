@@ -5,7 +5,13 @@ import * as tables from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db, runWithDatabaseTransaction } from '../../../db/client';
 import { boardRepairStateHash } from '../../../services/board-repair-state';
-import { resolveCanonicalGymByUuid } from '../../../graphql/resolvers/social/gyms';
+import {
+  generateUniqueGymSlug,
+  resolveCanonicalGymBySlug,
+  resolveCanonicalGymByUuid,
+  socialGymMutations,
+} from '../../../graphql/resolvers/social/gyms';
+import * as transactions from '../../../db/after-commit';
 import { socialBoardMutations } from '../../../graphql/resolvers/social/boards';
 import { gymMcpAdminTools } from '../admin-tools';
 import { mergeDuplicateBoards } from '../../../services/merge-duplicate-boards';
@@ -17,6 +23,8 @@ import {
   correctBoardSetup,
   inspectGymDuplicates,
   mergeAdminGyms,
+  repairGymCanonicalSlug,
+  authorizeCanonicalSlugReplay,
 } from '../admin-domain';
 
 const effects = vi.hoisted(() => ({ privacyChanged: vi.fn().mockResolvedValue(undefined) }));
@@ -90,7 +98,316 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  await db.delete(tables.gymDirectoryRepairAudit).where(eq(tables.gymDirectoryRepairAudit.actorUserId, adminId));
   await db.delete(tables.users).where(inArray(tables.users.id, [adminId, ownerId, scopedAdminId]));
+});
+
+async function canonicalRepairInput() {
+  const inspection = await inspectGymDuplicates([gym.uuid, duplicateGym.uuid], context(adminId));
+  return {
+    gymUuid: gym.uuid,
+    aliasGymUuid: duplicateGym.uuid,
+    slug: duplicateGym.slug!,
+    expectedStateHash: inspection.gyms.find((entry) => entry.gymUuid === gym.uuid)!.stateHash,
+    expectedAliasStateHash: inspection.gyms.find((entry) => entry.gymUuid === duplicateGym.uuid)!.stateHash,
+    reason: 'The gym approved its original public URL after the duplicate merge.',
+  };
+}
+
+async function makeMergedAlias() {
+  await db
+    .update(tables.gyms)
+    .set({ deletedAt: new Date(), mergedIntoGymId: gym.id })
+    .where(eq(tables.gyms.id, duplicateGym.id));
+}
+
+describe('canonical URL repair after a gym merge', () => {
+  it('reserves the survivor’s previous URL from generated and explicit slug allocation', async () => {
+    await makeMergedAlias();
+    await repairGymCanonicalSlug(await canonicalRepairInput(), context(adminId));
+    expect(await generateUniqueGymSlug(gym.slug!)).toBe(`${gym.slug}-2`);
+    const created = await socialGymMutations.createGym({}, { input: { name: gym.slug! } }, context(scopedAdminId));
+    expect(created.slug).toBe(`${gym.slug}-2`);
+    await expect(
+      socialGymMutations.updateGym({}, { input: { gymUuid: created.uuid, slug: gym.slug! } }, context(scopedAdminId)),
+    ).rejects.toThrow('Slug is already taken');
+    expect((await resolveCanonicalGymBySlug(gym.slug!))?.uuid).toBe(gym.uuid);
+  });
+
+  it('permits unchanged current slugs even when the same merge graph shares the slug', async () => {
+    await makeMergedAlias();
+    await db.update(tables.gyms).set({ slug: gym.slug }).where(eq(tables.gyms.id, duplicateGym.id));
+    const result = await socialGymMutations.updateGym(
+      {},
+      { input: { gymUuid: gym.uuid, slug: gym.slug!, description: 'The current gym description' } },
+      context(ownerId),
+    );
+    expect(result).toMatchObject({ slug: gym.slug, description: 'The current gym description' });
+  });
+
+  it('does not let an initially unchanged form slug undo a concurrent URL repair', async () => {
+    await makeMergedAlias();
+    const repairInput = await canonicalRepairInput();
+    const originalTransaction = transactions.transactionWithAfterCommit;
+    const intercepted = vi
+      .spyOn(transactions, 'transactionWithAfterCommit')
+      .mockImplementationOnce(async (work, config) => {
+        await repairGymCanonicalSlug(repairInput, context(adminId));
+        return originalTransaction(work, config);
+      });
+    try {
+      await expect(
+        socialGymMutations.updateGym(
+          {},
+          { input: { gymUuid: gym.uuid, slug: gym.slug!, description: 'Stale form description' } },
+          context(ownerId),
+        ),
+      ).rejects.toThrow('Slug is already taken');
+      expect(intercepted).toHaveBeenCalledOnce();
+      expect((await resolveCanonicalGymByUuid(gym.uuid))?.slug).toBe(duplicateGym.slug);
+      expect((await resolveCanonicalGymBySlug(gym.slug!))?.uuid).toBe(gym.uuid);
+    } finally {
+      intercepted.mockRestore();
+    }
+  });
+
+  it('does not rename a gym merged after the initial permission check', async () => {
+    const originalTransaction = transactions.transactionWithAfterCommit;
+    const intercepted = vi
+      .spyOn(transactions, 'transactionWithAfterCommit')
+      .mockImplementationOnce(async (work, config) => {
+        await makeMergedAlias();
+        return originalTransaction(work, config);
+      });
+    try {
+      await expect(
+        socialGymMutations.updateGym(
+          {},
+          { input: { gymUuid: duplicateGym.uuid, slug: `unused-${randomUUID()}` } },
+          context(ownerId),
+        ),
+      ).rejects.toMatchObject({ extensions: { code: 'CONFLICT' } });
+      expect(intercepted).toHaveBeenCalledOnce();
+      const [alias] = await db.select().from(tables.gyms).where(eq(tables.gyms.id, duplicateGym.id));
+      expect(alias).toMatchObject({ slug: duplicateGym.slug, mergedIntoGymId: gym.id });
+      expect((await resolveCanonicalGymBySlug(duplicateGym.slug!))?.uuid).toBe(gym.uuid);
+    } finally {
+      intercepted.mockRestore();
+    }
+  });
+  it('exchanges aliases while retaining owner, social records, boards and both UUIDs', async () => {
+    await makeMergedAlias();
+    await db.insert(tables.gymMembers).values({ gymId: gym.id, userId: scopedAdminId, role: 'editor' });
+    await db.insert(tables.gymFollows).values({ gymId: gym.id, userId: scopedAdminId });
+    const input = await canonicalRepairInput();
+    const result = await repairGymCanonicalSlug(input, context(adminId));
+    expect(result).toMatchObject({
+      gymUuid: gym.uuid,
+      slug: duplicateGym.slug,
+      previousSlug: gym.slug,
+      url: `https://www.boardsesh.com/gym/${duplicateGym.slug}`,
+    });
+    const [survivor] = await db.select().from(tables.gyms).where(eq(tables.gyms.id, gym.id));
+    const [alias] = await db.select().from(tables.gyms).where(eq(tables.gyms.id, duplicateGym.id));
+    expect(survivor).toMatchObject({
+      ownerId,
+      slug: duplicateGym.slug,
+      deletedAt: null,
+      mergedIntoGymId: null,
+      isPublic: gym.isPublic,
+      isListed: gym.isListed,
+      name: gym.name,
+    });
+    expect(alias).toMatchObject({ ownerId, slug: gym.slug, mergedIntoGymId: gym.id });
+    expect(alias!.deletedAt).toBeInstanceOf(Date);
+    for (const slug of [gym.slug!, duplicateGym.slug!])
+      expect((await resolveCanonicalGymBySlug(slug))?.uuid).toBe(gym.uuid);
+    for (const gymUuid of [gym.uuid, duplicateGym.uuid])
+      expect((await resolveCanonicalGymByUuid(gymUuid))?.uuid).toBe(gym.uuid);
+    expect((await currentBoardState()).current).toMatchObject({ gymId: gym.id, ownerId });
+    expect(await db.select().from(tables.gymMembers).where(eq(tables.gymMembers.gymId, gym.id))).toMatchObject([
+      { userId: scopedAdminId, role: 'editor' },
+    ]);
+    expect(await db.select().from(tables.gymFollows).where(eq(tables.gymFollows.gymId, gym.id))).toMatchObject([
+      { userId: scopedAdminId },
+    ]);
+    const [audit] = await db
+      .select()
+      .from(tables.gymDirectoryRepairAudit)
+      .where(eq(tables.gymDirectoryRepairAudit.gymUuid, gym.uuid));
+    expect(audit).toMatchObject({
+      operation: 'repair_gym_canonical_slug',
+      actorUserId: adminId,
+      reason: input.reason,
+      before: { slug: gym.slug, aliasSlug: duplicateGym.slug, ownerId },
+      after: { slug: duplicateGym.slug, aliasSlug: gym.slug, ownerId },
+    });
+    await expect(authorizeCanonicalSlugReplay(input, context(adminId))).resolves.toBeUndefined();
+  });
+
+  it.each(['survivor', 'alias'])('rejects stale %s state before updating either slug', async (changed) => {
+    await makeMergedAlias();
+    const input = await canonicalRepairInput();
+    await db
+      .update(tables.gyms)
+      .set({ description: 'Changed after inspection' })
+      .where(eq(tables.gyms.id, changed === 'survivor' ? gym.id : duplicateGym.id));
+    await expect(repairGymCanonicalSlug(input, context(adminId))).rejects.toMatchObject({
+      extensions: { code: 'CONFLICT' },
+    });
+    expect((await resolveCanonicalGymBySlug(gym.slug!))?.slug).toBe(gym.slug);
+    expect(
+      await db
+        .select()
+        .from(tables.gymDirectoryRepairAudit)
+        .where(eq(tables.gymDirectoryRepairAudit.gymUuid, gym.uuid)),
+    ).toHaveLength(0);
+  });
+
+  it('refuses an alias URL claimed by another live gym', async () => {
+    await makeMergedAlias();
+    await db
+      .insert(tables.gyms)
+      .values({ uuid: randomUUID(), slug: duplicateGym.slug, name: 'Unrelated venue', ownerId });
+    await expect(repairGymCanonicalSlug(await canonicalRepairInput(), context(adminId))).rejects.toMatchObject({
+      extensions: { code: 'CONFLICT' },
+    });
+  });
+
+  it.each(['previous', 'requested'])('ignores an ordinary deleted gym sharing the %s URL', async (slugKind) => {
+    await makeMergedAlias();
+    const [deletedGym] = await db
+      .insert(tables.gyms)
+      .values({
+        uuid: randomUUID(),
+        slug: slugKind === 'previous' ? gym.slug : duplicateGym.slug,
+        name: 'Ordinary deleted listing',
+        ownerId,
+        deletedAt: new Date(),
+      })
+      .returning();
+    await expect(repairGymCanonicalSlug(await canonicalRepairInput(), context(adminId))).resolves.toMatchObject({
+      slug: duplicateGym.slug,
+    });
+    for (const slug of [gym.slug!, duplicateGym.slug!])
+      expect((await resolveCanonicalGymBySlug(slug))?.uuid).toBe(gym.uuid);
+    const [unchanged] = await db.select().from(tables.gyms).where(eq(tables.gyms.id, deletedGym!.id));
+    expect(unchanged).toEqual(deletedGym);
+  });
+
+  it('excludes ordinary deleted listings before applying the collider limit', async () => {
+    await makeMergedAlias();
+    await db.insert(tables.gyms).values(
+      Array.from({ length: 101 }, () => ({
+        uuid: randomUUID(),
+        slug: duplicateGym.slug,
+        name: 'Ordinary deleted listing',
+        ownerId,
+        deletedAt: new Date(),
+      })),
+    );
+    await expect(repairGymCanonicalSlug(await canonicalRepairInput(), context(adminId))).resolves.toMatchObject({
+      slug: duplicateGym.slug,
+    });
+    expect((await resolveCanonicalGymBySlug(gym.slug!))?.uuid).toBe(gym.uuid);
+  });
+
+  it.each(['previous', 'requested'])(
+    'still refuses an unrelated merged tombstone sharing the %s URL',
+    async (slugKind) => {
+      await makeMergedAlias();
+      const [unrelated] = await db
+        .insert(tables.gyms)
+        .values({ uuid: randomUUID(), name: 'Unrelated survivor', ownerId })
+        .returning();
+      await db.insert(tables.gyms).values({
+        uuid: randomUUID(),
+        slug: slugKind === 'previous' ? gym.slug : duplicateGym.slug,
+        name: 'Unrelated merged listing',
+        ownerId,
+        deletedAt: new Date(),
+        mergedIntoGymId: unrelated!.id,
+      });
+      await expect(repairGymCanonicalSlug(await canonicalRepairInput(), context(adminId))).rejects.toMatchObject({
+        extensions: { code: 'CONFLICT' },
+      });
+      expect((await resolveCanonicalGymByUuid(gym.uuid))?.slug).toBe(gym.slug);
+    },
+  );
+
+  it('refuses a merged alias that belongs to another survivor', async () => {
+    const [unrelated] = await db
+      .insert(tables.gyms)
+      .values({ uuid: randomUUID(), name: 'Unrelated venue', ownerId })
+      .returning();
+    await db
+      .update(tables.gyms)
+      .set({ deletedAt: new Date(), mergedIntoGymId: unrelated!.id })
+      .where(eq(tables.gyms.id, duplicateGym.id));
+    await expect(repairGymCanonicalSlug(await canonicalRepairInput(), context(adminId))).rejects.toMatchObject({
+      extensions: { code: 'CONFLICT' },
+    });
+  });
+
+  it('refuses redirect cycles without changing the merge graph', async () => {
+    await db
+      .update(tables.gyms)
+      .set({ deletedAt: new Date(), mergedIntoGymId: duplicateGym.id })
+      .where(eq(tables.gyms.id, duplicateGym.id));
+    await expect(repairGymCanonicalSlug(await canonicalRepairInput(), context(adminId))).rejects.toMatchObject({
+      extensions: { code: 'CONFLICT' },
+    });
+    const [alias] = await db.select().from(tables.gyms).where(eq(tables.gyms.id, duplicateGym.id));
+    expect(alias).toMatchObject({ slug: duplicateGym.slug, mergedIntoGymId: duplicateGym.id });
+  });
+
+  it('preserves a valid multi-hop alias chain and authorizes its retry', async () => {
+    const [middle] = await db
+      .insert(tables.gyms)
+      .values({ uuid: randomUUID(), name: 'Earlier merge', ownerId, deletedAt: new Date(), mergedIntoGymId: gym.id })
+      .returning();
+    await db
+      .update(tables.gyms)
+      .set({ deletedAt: new Date(), mergedIntoGymId: middle!.id })
+      .where(eq(tables.gyms.id, duplicateGym.id));
+    const input = await canonicalRepairInput();
+    await repairGymCanonicalSlug(input, context(adminId));
+    expect((await resolveCanonicalGymBySlug(gym.slug!))?.uuid).toBe(gym.uuid);
+    await expect(authorizeCanonicalSlugReplay(input, context(adminId))).resolves.toBeUndefined();
+    const [alias] = await db.select().from(tables.gyms).where(eq(tables.gyms.id, duplicateGym.id));
+    expect(alias!.mergedIntoGymId).toBe(middle!.id);
+  });
+
+  it('rolls back the slug exchange and audit when the outer receipt transaction fails', async () => {
+    await makeMergedAlias();
+    const input = await canonicalRepairInput();
+    await expect(
+      runWithDatabaseTransaction(async () => {
+        await repairGymCanonicalSlug(input, context(adminId));
+        throw new Error('receipt failed');
+      }),
+    ).rejects.toThrow('receipt failed');
+    expect((await resolveCanonicalGymByUuid(gym.uuid))?.slug).toBe(gym.slug);
+    expect(
+      await db
+        .select()
+        .from(tables.gymDirectoryRepairAudit)
+        .where(eq(tables.gymDirectoryRepairAudit.gymUuid, gym.uuid)),
+    ).toHaveLength(0);
+  });
+
+  it('requires current global administrator authority for writes and retries', async () => {
+    await makeMergedAlias();
+    const input = await canonicalRepairInput();
+    for (const userId of [ownerId, scopedAdminId]) {
+      await expect(repairGymCanonicalSlug(input, context(userId))).rejects.toMatchObject({
+        extensions: { code: 'FORBIDDEN' },
+      });
+      await expect(authorizeCanonicalSlugReplay(input, context(userId))).rejects.toMatchObject({
+        extensions: { code: 'FORBIDDEN' },
+      });
+    }
+  });
 });
 
 async function currentBoardState() {

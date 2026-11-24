@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { UUIDSchema } from '../../validation/schemas/primitives';
+import { SlugSchema, UUIDSchema } from '../../validation/schemas/primitives';
 import { UpdateBoardInputSchema } from '../../validation/schemas';
 import { mergeDuplicateBoards } from '../../services/merge-duplicate-boards';
 import type { GymMcpAuthorizedAction, GymMcpTool } from './registry';
@@ -11,6 +11,8 @@ import {
   correctBoardSetup,
   inspectGymDuplicates,
   mergeAdminGyms,
+  repairGymCanonicalSlug,
+  authorizeCanonicalSlugReplay,
 } from './admin-domain';
 
 const reason = z
@@ -88,6 +90,24 @@ export const gymMcpAdminTools: readonly GymMcpTool[] = [
       .object({ gymUuids: z.array(UUIDSchema).min(1).max(10).refine(distinctUuids, 'Choose each gym once.') })
       .strict(),
     run: ({ gymUuids }, context) => inspectGymDuplicates(gymUuids, context),
+  }),
+  adminTool({
+    name: 'repair_gym_canonical_slug',
+    description:
+      'Global admin only: promote an existing merged alias URL to the active survivor’s canonical URL. Inspect the survivor and alias first. Retains ownership, every old slug and UUID, and the deleted duplicate. Requires both current state hashes, the approved alias slug, a reason and confirmation.',
+    write: true,
+    schema: z
+      .object({
+        ...writeIdentity,
+        gymUuid: UUIDSchema,
+        aliasGymUuid: UUIDSchema,
+        slug: SlugSchema.max(120),
+        expectedStateHash: stateHash,
+        expectedAliasStateHash: stateHash,
+      })
+      .strict(),
+    authorizeReplay: authorizeCanonicalSlugReplay,
+    run: repairGymCanonicalSlug,
   }),
   adminTool({
     name: 'correct_gym_board_setup',

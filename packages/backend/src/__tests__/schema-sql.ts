@@ -4,6 +4,14 @@
  */
 
 import { readFileSync } from 'node:fs';
+const gymDirectoryRepairAuditSchema = readFileSync(
+  new URL('../../../db/drizzle/0349_gym_directory_repair_audit.sql', import.meta.url),
+  'utf8',
+);
+const gymDirectoryRepairActorRetentionSchema = readFileSync(
+  new URL('../../../db/drizzle/0350_gym_repair_actor_retention.sql', import.meta.url),
+  'utf8',
+);
 const gymMcpSchema = readFileSync(new URL('../../../db/drizzle/0346_hosted_gym_mcp.sql', import.meta.url), 'utf8');
 const gymMcpReceiptRetentionSchema = readFileSync(
   new URL('../../../db/drizzle/0347_gym_mcp_receipt_retention.sql', import.meta.url),
@@ -2747,4 +2755,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   DROP SEQUENCE IF EXISTS spray_exposure_event_seq;
   ${gymInventorySchema};
   ${sprayExposureSchema};
+  DROP TABLE IF EXISTS gym_directory_repair_audit;
+  ${gymDirectoryRepairAuditSchema};
+  ${gymDirectoryRepairActorRetentionSchema};
 `;

@@ -148,7 +148,9 @@ export async function executeGymMcpTool(
   const tool = findGymMcpTool(name);
   if (!tool) throw new GraphQLError('Unknown gym tool.', { extensions: { code: 'BAD_USER_INPUT' } });
   if (!principal.scopes.includes(tool.scope)) {
-    throw new GraphQLError('Reconnect and allow this category of gym actions.', { extensions: { code: 'FORBIDDEN' } });
+    throw new GraphQLError(`Reconnect to Boardsesh and request ${tool.scope} to use ${tool.name}.`, {
+      extensions: { code: 'FORBIDDEN', requiredScope: tool.scope },
+    });
   }
   const parsedArguments = tool.inputSchema.parse(arguments_);
   const context = createGymMcpContext(principal);

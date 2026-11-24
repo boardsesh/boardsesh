@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as tables from '@boardsesh/db/schema';
@@ -14,7 +14,7 @@ import { notifyResourcePrivacyChanged } from '../../services/board-session-priva
 import { logger } from '../../utils/logger';
 import { boardRepairStateHash } from '../../services/board-repair-state';
 import { normaliseSetIds } from '@boardsesh/board-config';
-import { getPostgresErrorCode } from '../../utils/postgres-errors';
+import { getPostgresErrorCode, isUniqueViolation } from '../../utils/postgres-errors';
 
 type GymRow = typeof tables.gyms.$inferSelect;
 const SYSTEM_OWNER = '00000000-0000-0000-0000-000000000000';
@@ -54,6 +54,151 @@ function fingerprint(state: unknown): string {
 
 function gymRepairStateHash(gym: GymRow): string {
   return fingerprint(gym);
+}
+
+interface CanonicalSlugRepairInput {
+  gymUuid: string;
+  aliasGymUuid: string;
+  slug: string;
+  expectedStateHash: string;
+  expectedAliasStateHash: string;
+  reason: string;
+}
+
+/** Collect the same bounded merge chain used by public reads without following a cycle. */
+async function gymAliasChain(start: GymRow): Promise<GymRow[]> {
+  const chain = [start];
+  let current = start;
+  for (let hop = 0; hop < 9 && current.deletedAt && current.mergedIntoGymId !== null; hop++) {
+    if (chain.some((gym) => gym.id === current.mergedIntoGymId)) break;
+    const [next] = await db.select().from(tables.gyms).where(eq(tables.gyms.id, current.mergedIntoGymId)).limit(1);
+    if (!next) break;
+    chain.push(next);
+    current = next;
+  }
+  return chain;
+}
+
+/** Only the approved alias's slug moves. Merge pointers and both identities remain intact. */
+export async function repairGymCanonicalSlug(input: CanonicalSlugRepairInput, context: ConnectionContext) {
+  return runWithDatabaseTransaction(async () => {
+    await assertGymMcpGlobalAdmin(context);
+    const selected = await db
+      .select()
+      .from(tables.gyms)
+      .where(inArray(tables.gyms.uuid, [input.gymUuid, input.aliasGymUuid]));
+    const candidate = selected.find((gym) => gym.uuid === input.gymUuid);
+    const aliasCandidate = selected.find((gym) => gym.uuid === input.aliasGymUuid);
+    if (!candidate || !aliasCandidate || candidate.id === aliasCandidate.id)
+      refusal('Select an active survivor and a distinct merged alias gym.', 'BAD_USER_INPUT');
+    const colliders = await db
+      .select()
+      .from(tables.gyms)
+      .where(
+        and(
+          or(eq(tables.gyms.slug, input.slug), candidate.slug ? eq(tables.gyms.slug, candidate.slug) : sql`false`),
+          // Public reads ignore ordinary deletions; only live URLs and merge
+          // tombstones reserve a slug or count toward the bounded review set.
+          or(isNull(tables.gyms.deletedAt), isNotNull(tables.gyms.mergedIntoGymId)),
+        ),
+      )
+      .limit(101);
+    if (colliders.length > 100) refusal('Too many records reserve these URLs. Review the directory first.');
+    const chains = await Promise.all([aliasCandidate, ...colliders].map(gymAliasChain));
+    const lockIds = [...new Set([candidate.id, ...chains.flatMap((chain) => chain.map((gym) => gym.id))])];
+    const locked = await db
+      .select()
+      .from(tables.gyms)
+      .where(inArray(tables.gyms.id, lockIds))
+      .orderBy(asc(tables.gyms.id))
+      .for('update', { noWait: true });
+    const gym = locked.find((row) => row.uuid === input.gymUuid)!;
+    const alias = locked.find((row) => row.uuid === input.aliasGymUuid)!;
+    if (
+      !gym ||
+      !alias ||
+      gym.deletedAt ||
+      gym.mergedIntoGymId !== null ||
+      !alias.deletedAt ||
+      alias.mergedIntoGymId === null ||
+      alias.slug !== input.slug ||
+      gymRepairStateHash(gym) !== input.expectedStateHash ||
+      gymRepairStateHash(alias) !== input.expectedAliasStateHash
+    )
+      refusal('The survivor or alias changed. Inspect both gyms again before repairing the URL.');
+    const resolvesToSurvivor = (start: GymRow): boolean => {
+      let current = start;
+      const visited = new Set<number>();
+      for (let hop = 0; hop < 10; hop++) {
+        if (visited.has(current.id)) return false;
+        visited.add(current.id);
+        if (!current.deletedAt) return current.id === gym.id && current.mergedIntoGymId === null;
+        const next = locked.find((row) => row.id === current.mergedIntoGymId);
+        if (!next) return false;
+        current = next;
+      }
+      return false;
+    };
+    if (!resolvesToSurvivor(alias))
+      refusal('That alias does not resolve to the selected survivor. Repair the merge first.');
+    for (const collider of locked.filter(
+      (row) =>
+        (row.deletedAt === null || row.mergedIntoGymId !== null) &&
+        (row.slug === input.slug || (gym.slug && row.slug === gym.slug)),
+    )) {
+      if (!resolvesToSurvivor(collider))
+        refusal('A requested URL belongs to another gym or an invalid redirect chain.');
+    }
+    const now = new Date();
+    // The alias stays deleted. Exchanging its slug keeps the survivor's old URL
+    // resolving through the exact same merge graph, without manufacturing a gym.
+    await db
+      .update(tables.gyms)
+      .set({ slug: gym.slug, updatedAt: now, syncFrozenAt: now })
+      .where(eq(tables.gyms.id, alias.id));
+    const [updated] = await db
+      .update(tables.gyms)
+      .set({ slug: input.slug, updatedAt: now, syncFrozenAt: now })
+      .where(eq(tables.gyms.id, gym.id))
+      .returning();
+    await db.insert(tables.gymDirectoryRepairAudit).values({
+      operation: 'repair_gym_canonical_slug',
+      gymId: gym.id,
+      gymUuid: gym.uuid,
+      actorUserId: context.userId!,
+      reason: input.reason,
+      before: { slug: gym.slug, ownerId: gym.ownerId, aliasGymUuid: alias.uuid, aliasSlug: alias.slug },
+      after: { slug: input.slug, ownerId: gym.ownerId, aliasGymUuid: alias.uuid, aliasSlug: gym.slug },
+      details: { expectedStateHash: input.expectedStateHash, expectedAliasStateHash: input.expectedAliasStateHash },
+    });
+    return {
+      gymUuid: gym.uuid,
+      slug: input.slug,
+      previousSlug: gym.slug,
+      aliasGymUuid: alias.uuid,
+      stateHash: gymRepairStateHash(updated!),
+      url: `https://www.boardsesh.com/gym/${input.slug}`,
+    };
+  }).catch((error: unknown) => {
+    if (isUniqueViolation(error, 'gyms_unique_slug')) refusal('That URL is now taken. Inspect both gyms again.');
+    if (getPostgresErrorCode(error) === '55P03') refusal('These gyms are changing. Retry the same repair in a moment.');
+    throw error;
+  });
+}
+
+export async function authorizeCanonicalSlugReplay(input: CanonicalSlugRepairInput, context: ConnectionContext) {
+  await assertGymMcpGlobalAdmin(context);
+  const selected = await db
+    .select()
+    .from(tables.gyms)
+    .where(inArray(tables.gyms.uuid, [input.gymUuid, input.aliasGymUuid]));
+  const gym = selected.find((row) => row.uuid === input.gymUuid);
+  const alias = selected.find((row) => row.uuid === input.aliasGymUuid);
+  if (!gym || !alias || gym.deletedAt || gym.mergedIntoGymId !== null || !alias.deletedAt)
+    refusal('The repaired gym identities changed. Inspect the directory again.');
+  const chain = await gymAliasChain(alias);
+  if (chain.at(-1)?.id !== gym.id)
+    refusal('The repaired alias no longer resolves to the survivor. Inspect the directory again.');
 }
 
 /** Explicit IDs find differently named duplicates; the automatic queue requires matching names. */

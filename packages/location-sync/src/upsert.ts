@@ -1,6 +1,6 @@
 import { currentStoreLocationSyncMode } from '@boardsesh/auth-protocol';
-import { and, eq, isNotNull, isNull, or, sql } from 'drizzle-orm';
-import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
+import { and, eq, isNotNull, isNull, ne, notExists, or, sql } from 'drizzle-orm';
+import { alias, type PgDatabase, type PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { gymClaims, gyms, locationSyncGymSources, userBoards, users } from '@boardsesh/db/schema';
 import {
@@ -184,6 +184,23 @@ async function upsertSourceAlias(
   );
 }
 
+/** A deleted gym may only return if its retained URL still belongs to it. */
+function gymSlugAvailableForResurrection(db: DrizzleDb) {
+  const reservations = alias(gyms, 'gym_slug_reservations');
+  return notExists(
+    db
+      .select({ id: reservations.id })
+      .from(reservations)
+      .where(
+        and(
+          eq(reservations.slug, gyms.slug),
+          ne(reservations.id, gyms.id),
+          or(isNull(reservations.deletedAt), isNotNull(reservations.mergedIntoGymId)),
+        ),
+      ),
+  );
+}
+
 async function refreshSyncedGymMetadata(
   db: DrizzleDb,
   gymId: number,
@@ -205,7 +222,7 @@ async function refreshSyncedGymMetadata(
       // Never overwrite a gym a human has curated (edited, claimed, or deleted).
       // The source alias / physical match still resolved the gym id, so boards
       // keep linking — only the metadata refresh is skipped for a frozen row.
-      .where(and(eq(gyms.id, gymId), isNull(gyms.syncFrozenAt))),
+      .where(and(eq(gyms.id, gymId), isNull(gyms.syncFrozenAt), isNull(gyms.deletedAt), isNull(gyms.mergedIntoGymId))),
   );
 }
 
@@ -234,6 +251,7 @@ async function resurrectAliasedSystemGym(
           isNull(gyms.syncFrozenAt),
           isNotNull(gyms.deletedAt),
           isNull(gyms.mergedIntoGymId),
+          gymSlugAvailableForResurrection(db),
           sql`NOT EXISTS (
           SELECT 1 FROM ${gymClaims} claim
           WHERE claim.gym_id = ${gyms.id} AND claim.status = 'approved'
@@ -617,12 +635,45 @@ async function createOrUpdateSourceGym(
   assertActive?: LocationSyncAssertActive,
 ): Promise<number | null> {
   const gymIdentifiers = buildGymWriteIdentifiers(sourceKey, record);
+  let proposedSlug: string | null = gymIdentifiers.slug;
+  // Deterministic imported URLs must not shadow another gym's live page or
+  // merge redirect. Deleted merge sources retain their URLs after a repair.
+  // This also protects the COALESCE slug fill on existing slugless UUIDs.
+  const [reservedSlug] = await checkedSql(assertActive, () =>
+    db
+      .select({ id: gyms.id })
+      .from(gyms)
+      .where(
+        and(
+          eq(gyms.slug, gymIdentifiers.slug),
+          ne(gyms.uuid, gymIdentifiers.uuid),
+          or(isNull(gyms.deletedAt), isNotNull(gyms.mergedIntoGymId)),
+        ),
+      )
+      .limit(1),
+  );
+  if (reservedSlug) {
+    const [existingGym] = await checkedSql(assertActive, () =>
+      db
+        .select({ slug: gyms.slug })
+        .from(gyms)
+        .where(and(eq(gyms.uuid, gymIdentifiers.uuid), isNull(gyms.deletedAt), isNull(gyms.mergedIntoGymId)))
+        .limit(1),
+    );
+    if (!existingGym?.slug) return null;
+    // A live deterministic identity already owns its current URL, including
+    // legacy cases where a merge tombstone also carries that same slug.
+    // Do not propose its reserved old URL even for the INSERT half of the
+    // upsert. COALESCE retains the current URL; freeze/fallback behavior below
+    // still owns metadata refresh and source-alias binding.
+    proposedSlug = null;
+  }
   const [upsertedGym] = await checkedSql(assertActive, () =>
     db
       .insert(gyms)
       .values({
         uuid: gymIdentifiers.uuid,
-        slug: gymIdentifiers.slug,
+        slug: proposedSlug,
         ownerId: SYSTEM_USER_ID,
         name: record.gymName,
         address: record.gymAddress,
@@ -635,7 +686,11 @@ async function createOrUpdateSourceGym(
         // Never overwrite a gym a human has curated. A brand-new INSERT is
         // unaffected (it has no syncFrozenAt); an existing frozen row keeps its
         // human edits — the fallback below still resolves its id so boards link.
-        setWhere: isNull(gyms.syncFrozenAt),
+        setWhere: and(
+          isNull(gyms.syncFrozenAt),
+          isNull(gyms.mergedIntoGymId),
+          or(isNull(gyms.deletedAt), gymSlugAvailableForResurrection(db)),
+        ),
         set: {
           slug: sql`COALESCE(${gyms.slug}, excluded.slug)`,
           name: sql`excluded.name`,
