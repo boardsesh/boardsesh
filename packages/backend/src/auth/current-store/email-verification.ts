@@ -6,8 +6,7 @@ import {
   revalidateIdentityAuthority,
   type IdentityAuthorityReceipt,
 } from '../authority/router';
-import { createHash, randomBytes } from 'node:crypto';
-import { executeFirstRow, type DbInstance } from '@boardsesh/db/client';
+import type { DbInstance } from '@boardsesh/db/client';
 import {
   AUTH_COMMAND_FUTURE_SKEW_MS,
   AUTH_PROTOCOL_VERSION,
@@ -23,13 +22,11 @@ import {
 import {
   authEmailReservationMembers,
   authEmailReservations,
-  authEmailVerificationState,
-  authEmailVerificationTokens,
   authSubjectCutoffs,
   users,
   verificationTokens,
 } from '@boardsesh/db/schema/auth';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { normalizeAccountEmail } from '../normalize-email';
 import {
@@ -45,21 +42,16 @@ import { lockKeyReservation } from './email-reservations';
 import { lockEnforcedProjection, lockSubjectRow, type CurrentStoreTransaction } from './foundation-context';
 import { accountsHoldingAddress, isEmailUniquenessEnforced, issuedBeforeRevocation } from './legacy-link-binding';
 
+import {
+  issueUidEmailVerification,
+  readUidEmailVerification,
+  consumeUidEmailVerification,
+  verificationClock as clock,
+} from './verification-receipts';
+
 const purpose = 'email-verification' as const;
 const lifetimeMs = 24 * 60 * 60 * 1000;
 const resendSchema = z.object({ email: z.string().email('Invalid email address') });
-const tokenHash = (token: string) => createHash('sha256').update(`email-verification-v1\0${token}`).digest('hex');
-
-async function clock(transaction: CurrentStoreTransaction): Promise<number> {
-  const instant = await executeFirstRow<{ milliseconds: string | number }>(
-    transaction,
-    sql`SELECT floor(extract(epoch from clock_timestamp()) * 1000) AS milliseconds`,
-  );
-  const milliseconds = Number(instant?.milliseconds);
-  if (!Number.isSafeInteger(milliseconds)) throw new Error('Verification clock unavailable');
-  return milliseconds;
-}
-
 /**
  * Who owns the key, read without a lock. Only a hint for which climber to lock
  * first: the caller locks that climber's row, then re-reads the owner locked.
@@ -122,55 +114,12 @@ async function issueCapturedEmailVerification(
   if (!user || user.emailVerified) return null;
   const key = normalizeAccountEmail(user.email);
   if ((await reservationOwner(transaction, authority, key)) !== userId) return null;
-  const recipient = user.email.trim();
-  if (!z.email().safeParse(recipient).success) return null;
   const [cutoff] = await transaction
     .select()
     .from(authSubjectCutoffs)
     .where(eq(authSubjectCutoffs.userId, userId))
     .for('update');
-  if (cutoff?.deletedAt) return null;
-  await transaction.insert(authEmailVerificationState).values({ userId, purpose, generation: 0 }).onConflictDoNothing();
-  const [state] = await transaction
-    .select()
-    .from(authEmailVerificationState)
-    .where(and(eq(authEmailVerificationState.userId, userId), eq(authEmailVerificationState.purpose, purpose)))
-    .for('update');
-  if (!state) throw new Error('Verification state unavailable');
-  // One DB clock value defines BOTH original issuance and original expiry.
-  const issuedAt = new Date(await clock(transaction));
-  const expiresAt = new Date(issuedAt.getTime() + lifetimeMs);
-  const [next] = await transaction
-    .update(authEmailVerificationState)
-    .set({ generation: sql`${authEmailVerificationState.generation} + 1`, updatedAt: issuedAt })
-    .where(and(eq(authEmailVerificationState.userId, userId), eq(authEmailVerificationState.purpose, purpose)))
-    .returning();
-  if (!next) throw new Error('Verification generation unavailable');
-  // Includes expired active rows; volatile time never appears in the index.
-  await transaction
-    .update(authEmailVerificationTokens)
-    .set({ supersededAt: issuedAt })
-    .where(
-      and(
-        eq(authEmailVerificationTokens.userId, userId),
-        eq(authEmailVerificationTokens.purpose, purpose),
-        isNull(authEmailVerificationTokens.consumedAt),
-        isNull(authEmailVerificationTokens.supersededAt),
-      ),
-    );
-  const token = `ev1_${randomBytes(32).toString('base64url')}`;
-  await transaction.insert(authEmailVerificationTokens).values({
-    tokenHash: tokenHash(token),
-    userId,
-    purpose,
-    deliveredEmail: recipient,
-    normalizedEmail: key,
-    subjectGeneration: cutoff?.generation ?? 0,
-    issuanceGeneration: next.generation,
-    issuedAt,
-    expiresAt,
-  });
-  return { kind: 'uid-email-verification-v1', recipient, token, expiresAt: expiresAt.toISOString() };
+  return issueUidEmailVerification(transaction, user, cutoff);
 }
 
 export async function resendEmailVerification(
@@ -227,21 +176,6 @@ async function verifySelectedIdentityEmail(
   if (receipt.authority === 'better-auth') await mirrorAuthorityToCurrentStore(transaction, user.id);
   else await mirrorIdentityIfEnabled(transaction, user.id);
   await revalidateIdentityAuthority(transaction, receipt);
-}
-
-type Receipt = typeof authEmailVerificationTokens.$inferSelect;
-function sameBinding(first: Receipt, locked: Receipt) {
-  return (
-    first.tokenHash === locked.tokenHash &&
-    first.userId === locked.userId &&
-    first.purpose === locked.purpose &&
-    first.deliveredEmail === locked.deliveredEmail &&
-    first.normalizedEmail === locked.normalizedEmail &&
-    first.subjectGeneration === locked.subjectGeneration &&
-    first.issuanceGeneration === locked.issuanceGeneration &&
-    first.issuedAt.getTime() === locked.issuedAt.getTime() &&
-    first.expiresAt.getTime() === locked.expiresAt.getTime()
-  );
 }
 
 /**
@@ -309,15 +243,7 @@ export async function consumeEmailVerification(
   const supported = emailVerificationTokenSchema.safeParse(token).success;
   // Snapshot immutable owner BEFORE an asynchronous gate. Recheck the locked
   // receipt later; never follow a changed owner to another user's row.
-  const [found] = supported
-    ? await database
-        .select()
-        .from(authEmailVerificationTokens)
-        .where(eq(authEmailVerificationTokens.tokenHash, tokenHash(token)))
-    : [];
-  const initial = found
-    ? { ...found, issuedAt: new Date(found.issuedAt.getTime()), expiresAt: new Date(found.expiresAt.getTime()) }
-    : undefined;
+  const initial = supported ? await readUidEmailVerification(database, token) : undefined;
   return database.transaction(async (transaction): Promise<VerifyEmailReply> => {
     await transactionSettings(transaction);
     const identityReceipt = await captureIdentityAuthority(transaction, configuredAuthority);
@@ -363,68 +289,11 @@ export async function consumeEmailVerification(
         .from(authSubjectCutoffs)
         .where(eq(authSubjectCutoffs.userId, initial.userId))
         .for('update');
-      const [state] = await transaction
-        .select()
-        .from(authEmailVerificationState)
-        .where(
-          and(eq(authEmailVerificationState.userId, initial.userId), eq(authEmailVerificationState.purpose, purpose)),
-        )
-        .for('update');
-      const [receipt] = await transaction
-        .select()
-        .from(authEmailVerificationTokens)
-        .where(eq(authEmailVerificationTokens.tokenHash, initial.tokenHash))
-        .for('update');
-      const now = await clock(transaction);
-      assertFresh(issuedAt);
-      if (
-        !receipt ||
-        !sameBinding(initial, receipt) ||
-        receipt.consumedAt ||
-        receipt.supersededAt ||
-        !user ||
-        owner !== initial.userId ||
-        !state ||
-        state.generation !== receipt.issuanceGeneration ||
-        cutoff?.deletedAt ||
-        (cutoff?.generation ?? 0) !== receipt.subjectGeneration ||
-        normalizeAccountEmail(receipt.deliveredEmail) !== receipt.normalizedEmail ||
-        normalizeAccountEmail(user.email) !== receipt.normalizedEmail
-      )
-        return { ...base, outcome: 'invalid_token' };
-      if (receipt.expiresAt.getTime() <= now) return { ...base, outcome: 'expired' };
-      // The conditional DB clock is the redemption linearization point. All
-      // owner/state rows are already locked, so no pre-wait clock grants access.
-      const [consumed] = await transaction
-        .update(authEmailVerificationTokens)
-        .set({ consumedAt: sql`clock_timestamp()` })
-        .where(
-          and(
-            eq(authEmailVerificationTokens.tokenHash, receipt.tokenHash),
-            isNull(authEmailVerificationTokens.consumedAt),
-            isNull(authEmailVerificationTokens.supersededAt),
-            sql`${authEmailVerificationTokens.expiresAt} > clock_timestamp()`,
-          ),
-        )
-        .returning({ consumedAt: authEmailVerificationTokens.consumedAt });
-      if (!consumed?.consumedAt) return { ...base, outcome: 'expired' };
-      // Keep a durable terminal generation even after receipt cleanup. Replaying
-      // an old unconsumed snapshot cannot revive this already-used capability.
-      await transaction
-        .update(authEmailVerificationState)
-        .set({ generation: sql`${authEmailVerificationState.generation} + 1`, updatedAt: consumed.consumedAt })
-        .where(
-          and(eq(authEmailVerificationState.userId, receipt.userId), eq(authEmailVerificationState.purpose, purpose)),
-        );
-      await verifySelectedIdentityEmail(
-        transaction,
-        identityReceipt,
-        user,
-        receipt.subjectGeneration,
-        consumed.consumedAt,
+      if (!user || owner !== initial.userId) return { ...base, outcome: 'invalid_token' };
+      const outcome = await consumeUidEmailVerification(transaction, initial, user, cutoff, issuedAt, (verifiedAt) =>
+        verifySelectedIdentityEmail(transaction, identityReceipt, user, initial.subjectGeneration, verifiedAt),
       );
-      assertFresh(issuedAt);
-      return { ...base, outcome: 'verified' };
+      return { ...base, outcome };
     };
     const result = await execute();
     await revalidateIdentityAuthority(transaction, identityReceipt);

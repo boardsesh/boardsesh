@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { webCredentialProofSchema, WEB_CREDENTIAL_PROOF_VERSION } from './web-credential-proof';
 import { issuedWebSessionSchema, presentedWebSessionSchema, webSessionRequestSchema } from './web-session';
 export * from './web-credential-proof';
+export * from './legacy-email-link';
 
 export { AUTH_BACKEND_UNAVAILABLE, isAuthBackendUnavailable } from './client-errors';
 export * from './web-oauth-v1';
@@ -22,6 +23,12 @@ export const AUTH_COMMAND_PATHS = {
   'reset-password': '/api/internal/auth/current-store/reset-password',
   'set-password': '/api/internal/auth/current-store/set-password',
   signout: '/api/internal/auth/current-store/signout',
+} as const;
+/** Default registration-family commands work before projection enforcement. */
+export const REGISTRATION_COMMAND_PATHS = {
+  register: '/api/internal/auth/current-store/registration/v1/register',
+  'verify-email': '/api/internal/auth/current-store/registration/v1/verify-email',
+  'resend-verification': '/api/internal/auth/current-store/registration/v1/resend-verification',
 } as const;
 export const AUTH_COMMAND_ENV = {
   mode: 'CURRENT_STORE_WEB_AUTH_MODE',

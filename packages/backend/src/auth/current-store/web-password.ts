@@ -27,7 +27,7 @@ import {
 
 // Preserve the legacy WEB schema. Native retains its separate parser; password
 // login deliberately does not inherit these registration bounds or trimming.
-const registrationSchema = z.object({
+export const webRegistrationSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z
     .string()
@@ -57,7 +57,7 @@ import { bindIdentityAuthority } from '../authority/identity-authority';
 import { verifyAuthorityPassword } from '../authority/authority';
 import { issueWebSession, lockWebSessionAccounts, readPresentedWebSession } from '../authority/web-session';
 
-function validationMessage(message: string): (typeof REGISTRATION_VALIDATION_MESSAGES)[number] {
+export function registrationValidationMessage(message: string): (typeof REGISTRATION_VALIDATION_MESSAGES)[number] {
   return (
     REGISTRATION_VALIDATION_MESSAGES.find((allowed) => allowed === message) ??
     'Invalid input: expected object, received undefined'
@@ -72,12 +72,14 @@ export async function registerWebPassword(
 ): Promise<RegisterReply> {
   const configuredAuthority = captureAuthority(authorityInput);
   const { requestId, issuedAt } = input;
-  const validation = registrationSchema.safeParse(input.payload);
+  const validation = webRegistrationSchema.safeParse(input.payload);
   // Stored in the one normalized form (BA-02), as native registration stores it.
   const registration = validation.success
     ? { ...validation.data, email: normalizeAccountEmail(validation.data.email) }
     : undefined;
-  const invalidMessage = validation.success ? undefined : validationMessage(validation.error.issues[0].message);
+  const invalidMessage = validation.success
+    ? undefined
+    : registrationValidationMessage(validation.error.issues[0].message);
   const receipt = await database.transaction(async (transaction) => {
     await transactionSettings(transaction);
     return captureIdentityAuthority(transaction, configuredAuthority);

@@ -7,9 +7,11 @@ import reviewedProviderRelationShapes from './credential-writer-private-provider
 import reviewedFirstPasswordRelationShapes from './credential-writer-private-first-password-v1';
 import reviewedBrowserRenewalRelationShapes from './credential-writer-private-browser-renewal-v1';
 import reviewedSessionSyncRelationShapes from './credential-writer-partner-session-sync';
+import reviewedRegistrationUsersShape from './credential-writer-registration-users';
 
 export const CREDENTIAL_WRITER_ROLE = 'boardsesh_identity_writer';
 export type CredentialWriterContract =
+  | 'private-registration-v1'
   | 'private-web-v1'
   | 'private-browser-v1'
   | 'private-provider-v1'
@@ -189,6 +191,7 @@ export async function qualifyCredentialWriter(
   if (
     requested.expectedRole !== CREDENTIAL_WRITER_ROLE ||
     ![
+      'private-registration-v1',
       'private-web-v1',
       'private-browser-v1',
       'private-provider-v1',
@@ -203,6 +206,10 @@ export async function qualifyCredentialWriter(
   const nativeHandoff = requested.contract === 'private-native-handoff-v1' || browserRenewal;
   const firstPassword = requested.contract === 'private-first-password-v1' || nativeHandoff;
   const directPartnerRevocation = requested.contract === 'private-provider-v1' || firstPassword;
+  const registration = requested.contract === 'private-registration-v1';
+  // Current trigger closure can be qualified without granting the LOGIN direct
+  // partner revocation. Historical web/browser profiles retain their snapshots.
+  const currentClosure = directPartnerRevocation || registration;
   const capabilities = browserRenewal
     ? PRIVATE_BROWSER_RENEWAL_CREDENTIAL_CAPABILITIES
     : nativeHandoff
@@ -222,11 +229,11 @@ export async function qualifyCredentialWriter(
   // Historical web/browser receipts pin the pre-0313 schema. The current
   // provider profiles also follow the two lifecycle triggers into their sinks;
   // those tables belong to the closure without granting the LOGIN access.
-  const lifecycleRelations = directPartnerRevocation ? reviewedPartnerLifecycleShapes.map(({ name }) => name) : [];
-  const sessionSyncRelations = directPartnerRevocation ? reviewedSessionSyncRelationShapes.map(({ name }) => name) : [];
+  const lifecycleRelations = currentClosure ? reviewedPartnerLifecycleShapes.map(({ name }) => name) : [];
+  const sessionSyncRelations = currentClosure ? reviewedSessionSyncRelationShapes.map(({ name }) => name) : [];
   // The revocation logger SELECTs sessions but cannot mutate them. Triggers on
   // this read source are not executable paths of the credential writer.
-  const readOnlyClosureRelations = directPartnerRevocation ? ['board_sessions'] : [];
+  const readOnlyClosureRelations = currentClosure ? ['board_sessions'] : [];
   const closureRelations = [
     ...new Set([
       ...Object.keys(capabilities),
@@ -250,13 +257,19 @@ export async function qualifyCredentialWriter(
       .filter(([, columns]) => Object.values(columns).some((privileges) => privileges.includes('UPDATE')))
       .map(([table]) => table),
     'oauth_connections',
-    ...(directPartnerRevocation ? ['app_workouts'] : []),
+    ...(currentClosure ? ['app_workouts'] : []),
   ];
-  const reviewedRelationShapes = directPartnerRevocation
+  const reviewedRelationShapes = currentClosure
     ? [
-        ...reviewedPrivateWebRelationShapes.filter((relation) => relation.name !== 'auth_security_mutation_events'),
-        ...reviewedBrowserRelationShapes,
-        ...reviewedProviderRelationShapes,
+        ...reviewedPrivateWebRelationShapes.filter(
+          (relation) =>
+            relation.name !== 'auth_security_mutation_events' && (!registration || relation.name !== 'users'),
+        ),
+        ...(registration ? reviewedRegistrationUsersShape : []),
+        ...(registration ? [] : reviewedBrowserRelationShapes),
+        ...reviewedProviderRelationShapes.filter(
+          (relation) => !registration || relation.name === 'auth_security_mutation_events',
+        ),
         ...reviewedPartnerLifecycleShapes,
         ...reviewedSessionSyncRelationShapes,
         ...(firstPassword ? reviewedFirstPasswordRelationShapes : []),
@@ -442,7 +455,7 @@ export async function qualifyCredentialWriter(
         OR EXISTS (SELECT 1 FROM pg_attribute attribute JOIN pg_type type ON type.oid=attribute.atttypid
           WHERE attribute.attrelid=relation.oid AND attribute.attnum>0 AND NOT attribute.attisdropped
           AND ((type.typnamespace<>'pg_catalog'::regnamespace AND NOT (
-            ${directPartnerRevocation} AND relation.relname='board_sessions' AND attribute.attname='origin'
+            ${currentClosure} AND relation.relname='board_sessions' AND attribute.attname='origin'
             AND type.typnamespace='public'::regnamespace AND type.typname='session_origin' AND type.typtype='e'
             AND type.typinput='pg_catalog.enum_in'::regproc AND type.typoutput='pg_catalog.enum_out'::regproc
             AND type.typreceive='pg_catalog.enum_recv'::regproc AND type.typsend='pg_catalog.enum_send'::regproc
@@ -483,7 +496,7 @@ export async function qualifyCredentialWriter(
   if (JSON.stringify([...relationShapes]) !== JSON.stringify(reviewedRelationShapes))
     refuse('CREDENTIAL_WRITER_UNREVIEWED_RELATION_SHAPE');
 
-  const sessionSyncSequence = directPartnerRevocation
+  const sessionSyncSequence = currentClosure
     ? (
         await client<{ reviewed: boolean }[]>`
     SELECT sequence_relation.relkind='S' AND sequence_relation.relnamespace='public'::regnamespace
@@ -499,8 +512,7 @@ export async function qualifyCredentialWriter(
     WHERE sequence_relation.oid=to_regclass('public.logbook_changes_seq_seq')`
       )[0]
     : undefined;
-  if (directPartnerRevocation && !sessionSyncSequence?.reviewed)
-    refuse('CREDENTIAL_WRITER_UNREVIEWED_SESSION_SYNC_SEQUENCE');
+  if (currentClosure && !sessionSyncSequence?.reviewed) refuse('CREDENTIAL_WRITER_UNREVIEWED_SESSION_SYNC_SEQUENCE');
 
   const routines = await client<
     {
@@ -522,11 +534,11 @@ export async function qualifyCredentialWriter(
     FROM pg_proc routine JOIN pg_language language ON language.oid=routine.prolang
     WHERE routine.pronamespace='public'::regnamespace AND routine.oid IN
       (to_regprocedure('public.partner_revoke_on_credential_change()'),to_regprocedure('public.partner_revoke_user(text)'),
-       CASE WHEN ${directPartnerRevocation} THEN to_regprocedure('public.log_partner_session_from_workout()') END,
-       CASE WHEN ${directPartnerRevocation} THEN to_regprocedure('public.partner_account_deletion_events()') END,
-       CASE WHEN ${directPartnerRevocation} THEN to_regprocedure('public.partner_connection_lifecycle_events()') END) ORDER BY 1`;
+       CASE WHEN ${currentClosure} THEN to_regprocedure('public.log_partner_session_from_workout()') END,
+       CASE WHEN ${currentClosure} THEN to_regprocedure('public.partner_account_deletion_events()') END,
+       CASE WHEN ${currentClosure} THEN to_regprocedure('public.partner_connection_lifecycle_events()') END) ORDER BY 1`;
   const expectedRoutines = [
-    ...(directPartnerRevocation
+    ...(currentClosure
       ? [
           {
             name: 'log_partner_session_from_workout',
@@ -536,7 +548,7 @@ export async function qualifyCredentialWriter(
           },
         ]
       : []),
-    ...(directPartnerRevocation
+    ...(currentClosure
       ? [
           {
             name: 'partner_account_deletion_events',
@@ -587,7 +599,7 @@ export async function qualifyCredentialWriter(
     WHERE NOT trigger.tgisinternal AND trigger.tgrelid IN (SELECT relation.oid FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid=relation.relnamespace
       WHERE namespace.nspname='public' AND relation.relname IN (SELECT jsonb_array_elements_text(${JSON.stringify(triggerRelations)}::text::jsonb))) ORDER BY trigger.tgname`;
   const expectedTriggers = [
-    ...(directPartnerRevocation
+    ...(currentClosure
       ? [
           {
             definition:

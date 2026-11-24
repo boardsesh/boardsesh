@@ -52,6 +52,7 @@ export async function grantOwnedCredentialWriterCapabilities(
 ) {
   if (
     ![
+      'private-registration-v1',
       'private-web-v1',
       'private-browser-v1',
       'private-provider-v1',
@@ -171,6 +172,7 @@ export async function createCredentialWriterEnvironment(
 ) {
   if (
     ![
+      'private-registration-v1',
       'private-web-v1',
       'private-browser-v1',
       'private-provider-v1',
@@ -184,7 +186,8 @@ export async function createCredentialWriterEnvironment(
   if (
     target.port === '5432' &&
     target.pathname !==
-      (contract === 'private-provider-v1' ||
+      (contract === 'private-registration-v1' ||
+      contract === 'private-provider-v1' ||
       contract === 'private-first-password-v1' ||
       contract === 'private-native-handoff-v1' ||
       contract === 'private-browser-renewal-v1'
@@ -218,6 +221,7 @@ export async function createCredentialWriterEnvironment(
       })),
     );
     const expected =
+      contract === 'private-registration-v1' ||
       contract === 'private-provider-v1' ||
       contract === 'private-first-password-v1' ||
       contract === 'private-native-handoff-v1' ||

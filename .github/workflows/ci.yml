@@ -1742,7 +1742,7 @@ jobs:
   # backend role cluster. Apply the real journal to this fresh PG18/PostGIS DB.
   test-credential-writer:
     needs: [changes]
-    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.rootCi == 'true'
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.authCompatibility == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -1820,12 +1820,19 @@ jobs:
           mkdir -p packages/backend/test-results
           vp run test:browser-renewal-credential-writer --reporter=junit --outputFile.junit=./test-results/junit-browser-renewal-credential-writer.xml
           test -s packages/backend/test-results/junit-browser-renewal-credential-writer.xml
+      # Uses a suite-owned copy and leaves the canonical fixture for the fence job.
+      - name: Run pre-enforcement backend registration proofs
+        run: |
+          mkdir -p packages/backend/test-results
+          vp run test:registration-credential-writer --reporter=junit --outputFile.junit=./test-results/junit-registration-credential-writer.xml
+          test -s packages/backend/test-results/junit-registration-credential-writer.xml
       - name: Upload credential proof results
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: test-results-credential-writer
           path: |
+            packages/backend/test-results/junit-registration-credential-writer.xml
             packages/backend/test-results/junit-credential-writer.xml
             packages/backend/test-results/junit-identity-import-proof.xml
             packages/backend/test-results/junit-provider-credential-writer.xml

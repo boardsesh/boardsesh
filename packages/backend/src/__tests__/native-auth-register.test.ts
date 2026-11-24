@@ -115,6 +115,18 @@ vi.mock('../redis/client', () => ({
   },
 }));
 
+// This handler unit suite isolates receipt I/O. The owned-PG registration
+// proofs exercise real UID receipt persistence and refresh-failure rollback.
+const verificationIssue = vi.hoisted(() =>
+  vi.fn(async () => ({
+    kind: 'uid-email-verification-v1',
+    recipient: 'verify@example.com',
+    token: `ev1_${'A'.repeat(43)}`,
+    expiresAt: '2026-11-25T00:00:00.000Z',
+  })),
+);
+vi.mock('../auth/current-store/registration-family', () => ({ issuePreEnforcementVerification: verificationIssue }));
+
 const { handleNativeAuthRegister, __resetNativeAuthStateForTests, __fillRateLimitMapForTests } =
   await import('../handlers/native-auth');
 
@@ -317,6 +329,11 @@ describe('handleNativeAuthRegister', () => {
       expect(res.statusCode).toBe(201);
       const userValues = insertsFor(users)[0].values as Record<string, unknown>;
       expect(userValues.emailVerified).toBeNull();
+      expect(verificationIssue).toHaveBeenCalledWith(
+        expect.anything(),
+        { projectionId: null, writerEpoch: null },
+        userValues.id,
+      );
     } finally {
       delete process.env.EMAIL_VERIFICATION_ENABLED;
     }
@@ -339,6 +356,7 @@ describe('handleNativeAuthRegister', () => {
 
   it('returns 409 when an account already exists for that email', async () => {
     queueSelect([{ id: 'existing-user', email: 'taken@example.com' }]);
+    queueSelect([{ id: 'existing-user', email: 'taken@example.com' }]); // locked live-group recheck
 
     const req = makeRequest({
       method: 'POST',

@@ -1315,6 +1315,11 @@ export default defineConfig({
         command: 'vp test run --config packages/backend/vite.auth-fence.config.ts --maxWorkers=1 --reporter=agent',
         cache: false,
       },
+      'test:registration-credential-writer': {
+        command:
+          'vp test run --config packages/backend/vite.registration-proof.config.ts --maxWorkers=1 --reporter=agent',
+        cache: false,
+      },
       'test:auth-web-credential-proof': {
         command:
           'vp test run --config packages/web/auth-proofs/credential-proof.vite.config.ts --maxWorkers=1 --reporter=agent',
