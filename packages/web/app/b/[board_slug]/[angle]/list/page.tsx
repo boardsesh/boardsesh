@@ -132,7 +132,7 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
     // Unlisted is link-only by design, and a private board is readable to a
     // slug holder until #4087 masks it — neither belongs in the index. This is
     // indexation only; it is not the access control, which #4087 owns.
-    const { path, robots } = resolveListPageIndexation({
+    const { path } = resolveListPageIndexation({
       cleanPath: buildCanonicalClimbListUrl(boardDetails, angle),
       page,
       searchParams: searchParams as unknown as ListPageSearchParams,
@@ -151,10 +151,10 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
       ogDescription: t('metadata.list.ogDescription'),
       path,
       locale,
-      // Keep noindex/private variants' policy intact. Indexable public catalog
-      // aliases do not seed a separate crawl graph for each physical board.
+      // Catalogue list aliases stay out of search results and let crawlers
+      // follow links to the catalogue. Keep the canonical policy above.
       // The spray-wall branch above owns its independent visibility policy.
-      robots: robots ?? { index: true, follow: false },
+      robots: { index: false, follow: true },
       ...(imageUrl ? { imagePath: imageUrl } : {}),
     });
   } catch {
@@ -236,7 +236,7 @@ export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
         basePath={`/b/${params.board_slug}/${params.angle}/list`}
         tree="slug"
         // Same hidden-board test `generateMetadata` feeds `resolveListPageIndexation`.
-        // A noindex page must not emit a BreadcrumbList naming the public
+        // A private or unlisted board must not emit a BreadcrumbList naming the public
         // config-tuple twin it canonicalises nowhere near.
         noindex={board.isUnlisted || !board.isPublic}
         // One answer for every reader (the flag is not per person), so the

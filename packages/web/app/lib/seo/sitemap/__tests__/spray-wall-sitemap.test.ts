@@ -113,12 +113,21 @@ describe('the climbs shard', () => {
     expect(resolveClimbSitemapGroups([sprayConfig(900), sprayConfig(901)])).toEqual([]);
   });
 
-  it('keeps the other boards alongside a wall', () => {
-    // A real Kilter configuration — `resolveClimbSitemapGroups` also drops any
-    // group whose segments have no readable URL, so an invented one would pass
-    // this test for the wrong reason.
-    const groups = resolveClimbSitemapGroups([KILTER_CONFIG, sprayConfig(900, 'marcos-garage')]);
+  it('publishes /b climb URLs only for spray walls, even if a catalogue config carries a slug', () => {
+    const groups = resolveClimbSitemapGroups([
+      { ...KILTER_CONFIG, sprayWallSlug: 'physical-kilter' },
+      sprayConfig(900, 'marcos-garage'),
+    ]);
     expect(groups.map((group) => group.boardType).sort()).toEqual(['kilter', 'spray']);
+
+    for (const group of groups) {
+      const { items, dropped } = climbRowsToItems(SPRAY_ROWS, group);
+      expect(dropped).toBe(0);
+      expect(items).toHaveLength(SPRAY_ROWS.length);
+      for (const item of items) {
+        expect(item.path.startsWith('/b/')).toBe(group.boardType === 'spray');
+      }
+    }
   });
 });
 
