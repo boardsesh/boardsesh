@@ -14,19 +14,30 @@ import { userBoards } from './boards';
  * - `relinked`: gym staff put a board they had removed back on their listing,
  *   which lifts the hold a staff removal places on the creator's own re-link.
  *   By `board_owner`, the creator linked it to a gym themselves.
+ * - `setup_changed_by_climber`: a climber's suggested setup on a "Set up wrong"
+ *   report changed the board's layout, size, sets or angle, straight away,
+ *   because nobody runs its gym (docs/product/directory-reports.md, "Suggested
+ *   setup"). By `climber`. `details` holds `before`, `after` and `reportUuid`.
+ * - `setup_change_undone`: the creator, the gym's staff or an admin put a
+ *   climber's setup change back. `details` holds `before` (the climber's setup),
+ *   `after` (the restored one) and `undoesEventId`.
  */
 export const boardModerationActionEnum = pgEnum('board_moderation_action', [
   'removed_from_gym',
   'deleted',
   'edited_by_staff',
   'relinked',
+  'setup_changed_by_climber',
+  'setup_change_undone',
 ]);
 
 /**
  * The authority the actor used. `board_owner` marks the creator acting on their
- * own board (a gym editor taking their own wall off the gym, say); every other
- * value is staff. Snapshotted, so a later role change or account deletion does
- * not rewrite who did it in what capacity.
+ * own board (a gym editor taking their own wall off the gym, say); `climber`
+ * marks any signed-in climber whose suggested setup changed a board at a gym
+ * nobody runs, with no other authority over it; every other value is staff.
+ * Snapshotted, so a later role change or account deletion does not rewrite who
+ * did it in what capacity.
  */
 export const boardModerationActorRoleEnum = pgEnum('board_moderation_actor_role', [
   'board_owner',
@@ -36,18 +47,44 @@ export const boardModerationActorRoleEnum = pgEnum('board_moderation_actor_role'
   'community_leader',
   'community_admin',
   'global_admin',
+  'climber',
 ]);
 
-/** Structured context for an event: which fields an edit changed, which mutation wrote it. */
+/**
+ * A board's setup within its board type, as a setup change records it and a
+ * report's suggestion stores it. `setIds` is in canonical order
+ * (`normaliseSetIds`). `angle` is null when the angle is not part of the setup
+ * (a board that tilts).
+ */
+export type BoardSetupSnapshot = {
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+  angle: number | null;
+};
+
+/**
+ * Structured context for an event: which fields an edit changed, which mutation
+ * wrote it, and for the two setup-change actions the setups on either side.
+ */
 export type BoardModerationEventDetails = {
   fields?: string[];
   mutation?: string;
+  /** Setup changes: the setup before this event. */
+  before?: BoardSetupSnapshot;
+  /** Setup changes: the setup this event left the board with. */
+  after?: BoardSetupSnapshot;
+  /** `setup_changed_by_climber`: the "Set up wrong" report that carried the suggestion. */
+  reportUuid?: string;
+  /** `setup_change_undone`: the `setup_changed_by_climber` event it undid. */
+  undoesEventId?: number;
 };
 
 /**
  * Append-only record of staff and admin actions on boards
- * (docs/product/gym-board-governance.md, decision 1), and of the creator's own
- * gym link changes (`board_owner`).
+ * (docs/product/gym-board-governance.md, decision 1), of the creator's own
+ * gym link changes (`board_owner`), and of climbers' setup changes and their
+ * undos (docs/product/directory-reports.md, "Suggested setup").
  *
  * Read by these rules:
  * - A creator may not self-link a board back to a gym whose staff removed it.
@@ -59,6 +96,13 @@ export type BoardModerationEventDetails = {
  *   no `removed_from_gym` / `relinked` row for it since.
  * - An admin may not clear the sync freeze on a board whose latest such row is a
  *   staff removal.
+ * - A climber's suggested setup goes to review instead of applying while the
+ *   board has a `setup_changed_by_climber` row from the last 24 hours or a
+ *   `setup_change_undone` row from the last 90 days, or the climber has 3
+ *   `setup_changed_by_climber` rows from the last 24 hours
+ *   (`@boardsesh/directory-moderation`'s `setupSuggestionDecision`).
+ * - An undo is a compare-and-set: it restores `before` only while the board
+ *   still has the change's `after`.
  *
  * Rows are written in the same transaction as the change they describe and are
  * never updated. Account deletion soft-deletes a user's boards and hands them to

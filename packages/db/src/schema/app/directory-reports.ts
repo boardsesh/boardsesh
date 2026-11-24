@@ -17,7 +17,11 @@ import { users } from '../auth/users';
 import { userBoards } from './boards';
 import { gyms } from './gyms';
 import { notifications } from './notifications';
-import { boardModerationActorRoleEnum } from './board-moderation-events';
+import {
+  boardModerationActorRoleEnum,
+  boardModerationEvents,
+  type BoardSetupSnapshot,
+} from './board-moderation-events';
 
 // The values below are `@boardsesh/directory-moderation`'s lists, written out:
 // this package builds to plain JS for drizzle-kit and cannot import a TS-source
@@ -52,11 +56,14 @@ export const directoryReportStatusEnum = pgEnum('directory_report_status', [
 
 export const directoryReportRecipientEnum = pgEnum('directory_report_recipient', ['creator', 'gym_staff', 'admin']);
 
+// `climber`: a climber's suggested setup changed the board and closed its
+// "Set up wrong" reports (docs/product/directory-reports.md, "Suggested setup").
 export const directoryReportResolverRoleEnum = pgEnum('directory_report_resolver_role', [
   'creator',
   'gym_staff',
   'admin',
   'auto',
+  'climber',
 ]);
 
 /**
@@ -153,8 +160,9 @@ export const directoryReports = pgTable(
 );
 
 /**
- * Who reported a directory report, and what they said. One row per reporter
- * per report; a second report from the same climber is `already_reported`.
+ * Who reported a directory report, and what they said: a note, and on "Set up
+ * wrong" the setup they suggest. One row per reporter per report; a second
+ * report from the same climber is `already_reported`.
  *
  * Reporters stay anonymous to the creator and to gym staff: only global admins
  * read `reporter_id`. Partial on `reporter_id IS NOT NULL` for the reason
@@ -170,6 +178,10 @@ export const directoryReportReporters = pgTable(
       .references(() => directoryReports.id, { onDelete: 'cascade' }),
     reporterId: text('reporter_id').references(() => users.id, { onDelete: 'set null' }),
     note: text('note'),
+    // "Set up wrong" on a board that isn't a spray wall: the layout, size, sets
+    // and (for a board that doesn't tilt) angle this reporter says are right.
+    // Shown to the people the report reached; the reporter stays anonymous.
+    suggestedSetup: jsonb('suggested_setup').$type<BoardSetupSnapshot>(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => [
@@ -204,6 +216,12 @@ export const directoryNotificationContext = pgTable(
     // A staff action notice (removed, deleted, edited): the authority the actor
     // used, so the feed can say "{{gym}} staff" or "a Boardsesh moderator".
     actorRole: boardModerationActorRoleEnum('actor_role'),
+    // `board_setup_changed_by_climber`: the change, so the creator's notice can
+    // show before and after and offer its undo.
+    boardModerationEventId: bigint('board_moderation_event_id', { mode: 'number' }).references(
+      () => boardModerationEvents.id,
+      { onDelete: 'set null' },
+    ),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => [index('directory_notification_context_report_idx').on(table.reportId)],
