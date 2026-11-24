@@ -3,15 +3,13 @@
     "home": "Home",
     "breadcrumbLabel": "Breadcrumb",
     "hubLink": "Climbing board app guides",
-    "sprayGuideLink": "Compare spray wall apps",
-    "compatibility": "What works with Boardsesh",
-    "workflow": "How to get started",
+    "compatibility": "Check your board",
+    "workflow": "In a session",
     "comparison": "Compare the apps",
-    "tradeoffs": "Which app is best for your session?",
     "sources": "Sources",
     "related": "Related help",
     "checkedAt": "Checked {{date}}",
-    "updatedAt": "Last checked {{date}}",
+    "updatedAt": "Guide updated {{date}}",
     "rating": "The Boardsesh app has {{rating}} out of 5 from {{count}} US App Store ratings",
     "ratingCheckedAt": "Rating checked {{date}}",
     "boardsesh": "Boardsesh",
@@ -19,16 +17,18 @@
     "chooseBoard": "Choose your board",
     "openWebApp": "Open the web app",
     "downloadHeading": "Get Boardsesh",
-    "independence": "Boardsesh is an independent app. Board manufacturers do not endorse it."
+    "independence": "Boardsesh is an independent app. Board manufacturers do not endorse it.",
+    "publisher": "A guide from Boardsesh",
+    "navigation": "In this guide"
   },
   "pages": {
     "hub": {
       "title": "Climbing Board Apps | Boardsesh",
       "description": "Find a climbing board app for Kilter, Tension, MoonBoard, Woods and more. Check compatible layouts, LED control and logbook imports before installing.",
       "heading": "One climbing app for your boards",
-      "intro": "Get Boardsesh free for iPhone or Android to find climbs, light compatible boards and keep one logbook across your walls. Build a workout at your grade and preview the climbs. Once you start it, the timer follows the rests or intervals you set for each timed block. In a shared session, your crew can add problems to the same queue from their own phones.",
-      "compatibility": "Choose your board below to check the exact layout, how to connect to the LEDs, and whether you can bring your logbook. If you set on your own holds, start with the spray wall comparison.",
-      "tradeoffs": "You can explore the browser app before your session. Browser LED control requires Web Bluetooth and a compatible controller. On iPhone, use the native app for Bluetooth lighting.",
+      "intro": "Boardsesh keeps sends from different boards in one logbook. In a solo 4x4, it counts logged reps and moves to the next climb after the set rest. Whether it’s worth switching depends on how you climb and which controller is on your wall. Choose your board for a comparison with its official app.",
+      "compatibility": "Each guide covers the supported layouts, LED controllers and logbook imports for that board. For a wall with your own hold placement, start with the spray wall comparison.",
+      "tradeoffs": "You can try Boardsesh in a browser before installing. Browser LED control needs Web Bluetooth and a compatible controller. On iPhone, use the native app to light the holds.",
       "screenshotAlt": "Boardsesh shared climb queue with problems and grades from a group session",
       "sources": {
         "boardseshStore": "Boardsesh App Store listing and workout features",
@@ -45,30 +45,30 @@
       "title": "Kilter Board App Guide | Boardsesh",
       "description": "Use Boardsesh on Kilter Board Original or Homewall. Preview climbs from hold thumbnails, share a queue, and import your Kilter or Aurora logbook.",
       "heading": "Boardsesh for Kilter Board",
-      "intro": "Boardsesh is an independent alternative to the official Kilter Board app. Its modern interface shows hold thumbnails as you browse and lets you swipe between climb previews. Download it for iPhone or Android to light climbs and share a queue. If you need your old JSON export, request it from Aurora first. Once you have the file, you can start importing your history right away.",
-      "compatibility": "Boardsesh supports Kilter Board Original and Homewall. Match the wall size, installed hold sets and angle before you pick a climb. LED control requires a compatible Bluetooth controller.",
-      "tradeoffs": "Use Boardsesh if you want a shared queue and a logbook across board brands. Use Kilter’s app to manage your Kilter profile, recover old setter credit or keep new activity in your Kilter account. Imports into Boardsesh run one way.",
+      "intro": "Boardsesh puts the holds right in the climb list. On a Kilter Board Original or Homewall, you can scan those thumbnails, swipe through previews and light a problem from your iPhone or Android phone.",
+      "compatibility": "Boardsesh supports Kilter Board Original and Homewall. Match the wall size, installed hold sets and angle to get the right climb list. Lighting the holds requires a compatible Bluetooth controller.",
+      "tradeoffs": "If your crew wants to add problems from their own phones, use Boardsesh. It also starts importing an old Aurora logbook as soon as you confirm the file. Keep Kilter’s app for managing your Kilter profile, reclaiming setter credit or logging new activity in that account.",
       "screenshotAlt": "Boardsesh displaying a Kilter climb with the starting, middle and finishing holds marked",
       "workflow": {
         "layout": {
-          "title": "Match the wall",
-          "body": "Pick Original or Homewall, then match the size, hold sets and angle at your gym or home wall. Filter by grade or try Kilter’s Verified climbs."
+          "title": "Original and Homewall",
+          "body": "The layout at your gym or home determines which problems you’ll see. Start with Original or Homewall, then set the size, hold sets and angle. Once the app has the right wall, you can browse by grade or filter for Kilter’s Verified climbs."
         },
         "preview": {
-          "title": "See the holds before you light a climb",
-          "body": "Scan the hold thumbnails and swipe through previews. Connect near the board and tap Put on board to light your pick. Start a shared session so each climber can queue their next problem."
+          "title": "Climb controls within thumb reach",
+          "body": "In the phone layout, Put on board, the queue and logging sit below the board image by default. The queue and log open in sheets over the climb. The log sheet keeps Attempt and the save controls within thumb reach at the bottom. When you’re scrolled to the top of the climb view, a swipe down closes it."
         },
         "training": {
-          "title": "Let the workout set the timer",
-          "body": "Add an On the Minute block at your target grade. Set your interval and review the climbs. Start a session, then tap Start workout to begin the countdown."
+          "title": "A new problem on each interval",
+          "body": "An On the Minute block is useful when you want the next Kilter problem ready on a schedule. Set the target grade and interval, then review the climbs before creating the session. Tap Start workout when you’re ready for the first countdown. In a solo session, the timer brings up the next queued problem as each interval ends."
         },
         "import": {
-          "title": "Link your current Kilter account",
-          "body": "Open Settings → Connected apps. Link the current Kilter account to bring in sends, attempts, ratings and circuits. Boardsesh encrypts the account token it stores. For social-only sign-in or two-factor authentication, use Import on the Kilter (new) card."
+          "title": "Your current Kilter account",
+          "body": "Link your current account in Settings → Connected apps to copy sends, attempts, ratings and circuits. Boardsesh encrypts the token it stores. If you use social-only sign-in or two-factor authentication, tap Import on the Kilter (new) card instead. New ticks you log in Boardsesh stay here."
         },
         "auroraImport": {
-          "title": "Bring your old Aurora export",
-          "body": "If you need the file, request it from Aurora. Once you have the JSON, open Settings → Connected apps, tap Import on the Kilter (Aurora) card and confirm the preview."
+          "title": "The file from the old Kilter app",
+          "body": "History from the old Kilter app comes from Aurora. If you haven’t received your JSON export, request it from Aurora first. With the file in hand, tap Import on the Kilter (Aurora) card in Settings → Connected apps and confirm the preview. The import starts right away and shows progress on your phone."
         }
       },
       "competitors": {
@@ -77,33 +77,33 @@
       "comparison": {
         "discovery": {
           "label": "Find climbs",
-          "boardsesh": "Scan thumbnails that show the holds, tap to preview and swipe through the list. Filter by grade or look for Kilter’s Verified climbs.",
-          "official": "Browse Kilter problems by grade and other filters, with Verified climbs selected by Kilter."
+          "boardsesh": "See the holds in the list thumbnails and swipe between climb previews. Filter by grade or for Kilter’s Verified climbs.",
+          "official": "Browse by grade and other filters, including Verified climbs selected by Kilter."
         },
         "climbControls": {
           "label": "Climb view and controls",
-          "boardsesh": "In the phone layout, lighting, logging and queue controls sit below the board image by default. The queue and logging open in sheets. The logging sheet keeps Attempt and save controls at the bottom, within thumb reach. Swipe down to close the climb view when you’re scrolled to the top.",
-          "official": "Kilter’s published climb screenshot shows a Back button at the top left and logging controls at the bottom."
+          "boardsesh": "The default phone layout puts lighting, logging and queue controls below the board image. The queue and log open in sheets.",
+          "official": "Kilter’s published screenshot shows Back at the top left and logging controls at the bottom."
         },
         "session": {
           "label": "Climb with others",
-          "boardsesh": "Connect to the LEDs and build a live queue together from separate phones.",
-          "official": "Bluetooth lighting, a board map and shareable climbs."
+          "boardsesh": "Light the holds over Bluetooth and build a live queue together from separate phones.",
+          "official": "Connect to the LEDs over Bluetooth, view the board map and share climbs."
         },
         "training": {
           "label": "Build and run a workout",
-          "boardsesh": "Build a workout from blocks at your chosen grade. Once you start it, the active timed block sets the timer. In a solo On the Minute block, the running timer brings up the next queued climb at each interval.",
-          "official": "Kilter documents playlists for organizing climbs and creating training circuits."
+          "boardsesh": "Build blocks at your chosen grades. After Start workout, timed blocks set the pace. In a solo On the Minute block, the running timer advances the queue at each interval.",
+          "official": "Kilter documents playlists for organizing climbs and putting together training circuits."
         },
         "history": {
           "label": "Current Kilter account",
-          "boardsesh": "Link your current Kilter account to copy your history. New entries stay in Boardsesh.",
-          "official": "Log attempts and sends in your Kilter account."
+          "boardsesh": "Copy your current Kilter history into a logbook across board brands. New ticks stay in Boardsesh.",
+          "official": "Log attempts and sends directly in your Kilter account."
         },
         "auroraImportTiming": {
           "label": "Old Aurora import timing",
-          "boardsesh": "Once you have the Aurora JSON file, the import starts as soon as you confirm and shows live progress. There’s no claim approval step.",
-          "official": "Kilter’s Claim Data page says it processes files within 5–7 business days after upload. Climbers in an April 2026 Reddit thread reported waiting weeks."
+          "boardsesh": "With the Aurora JSON in hand, confirm the preview to import it directly into Boardsesh. The import starts right away and shows progress in the app.",
+          "official": "Kilter’s Claim Data page estimates 5–7 business days after upload. Some climbers in an April 2026 Reddit thread reported waiting weeks."
         }
       },
       "sources": {
@@ -129,28 +129,31 @@
         "bluetooth": "Connect to your Kilter LEDs",
         "migration": "Bring your Kilter logbook",
         "sessions": "Set up a shared queue"
-      }
+      },
+      "verdictTitle": "Boardsesh for a shared queue",
+      "comparisonIntro": "The differences show up in how you find and light climbs, share a session, run a workout and move your history.",
+      "workflowTitle": "At the Kilter Board"
     },
     "tension": {
       "title": "Tension Board App Guide for TB1 and TB2 | Boardsesh",
       "description": "Climb on Tension Board 1 or TB2 Mirror and Spray with Boardsesh. Find problems, run a workout and import your Tension logbook.",
       "heading": "Boardsesh for Tension Board",
-      "intro": "Boardsesh is an independent alternative to the official Tension Board app for TB1 and TB2. Use it on iPhone or Android to find climbs at your wall angle, light them and keep your sends from every board in one logbook.",
-      "compatibility": "Boardsesh supports Tension Board 1 and Tension Board 2 in both Mirror and Spray layouts. TB2 Spray is the manufactured Tension hold layout. For a wall with your own hold placement, use the photo-based spray wall setup.",
-      "tradeoffs": "Choose Boardsesh to track reps in a 4x4 and let the workout change the timer for you. Share a queue with your crew and keep one logbook across boards. Tension’s Workout AI picks climbs using your logbook and workout type. Imports run one way into Boardsesh.",
+      "intro": "Boardsesh brings TB1, TB2 Mirror and TB2 Spray into the same app on iPhone and Android. Find climbs at your wall angle, light the holds and log sends alongside your climbs on other boards.",
+      "compatibility": "Boardsesh supports Tension Board 1 and both Tension Board 2 layouts. TB2 Spray uses Tension’s factory hold layout. For a wall where you placed the holds yourself, use the photo-based spray wall setup.",
+      "tradeoffs": "Use Boardsesh for a solo 4x4 if you want the timer and queue to follow the reps you log. It’s also a fit for crews who want to add problems from separate phones. Tension’s Workout AI can build a climb list from your logbook and workout type.",
       "screenshotAlt": "Boardsesh displaying a Tension Board climb and its marked holds",
       "workflow": {
         "layout": {
-          "title": "Choose TB1, TB2 Mirror or TB2 Spray",
-          "body": "Match your wall’s hold layout, dimensions and angle. Check the layout first if the LEDs seem to mark a different problem from the diagram."
+          "title": "Mirror and Spray are different layouts",
+          "body": "The board profile should match the holds in front of you, along with the wall’s dimensions and angle. On a TB2, the difference between Mirror and Spray matters as soon as you light a climb. If the LEDs show a different problem from the diagram, check the selected layout first."
         },
         "training": {
-          "title": "Run a 4x4 with rep and set rests",
-          "body": "Choose your wall angle and target grade, then add a 4x4. The default is four climbs, each done four times in a row. Start your session, tap Start workout and log each go as a rep."
+          "title": "The app counts your reps",
+          "body": "A default Boardsesh 4x4 is four climbs, each done four times in a row. Set your target grade and the rests between reps and sets. Once the session is set up, tap Start workout and log each go as an attempt or send. The rep count tells you where you are in the set, and the countdown tells you when to pull on again."
         },
         "import": {
-          "title": "Bring in older sessions",
-          "body": "Link the Tension account in Settings → Connected apps, or upload your Aurora JSON export. Any new ticks you log in Boardsesh stay here."
+          "title": "Your Tension history comes with you",
+          "body": "Link your Tension account in Settings → Connected apps to copy its logbook into Boardsesh. If your history is in an Aurora JSON export, you can upload that file there too. The import is one way. New ticks you log in Boardsesh stay here."
         }
       },
       "competitors": {
@@ -159,17 +162,17 @@
       "comparison": {
         "layout": {
           "label": "Walls",
-          "boardsesh": "TB1 plus TB2 Mirror and Spray, with other board brands in the same app.",
-          "official": "Aurora lists the Tension app alongside Tension Board 1 and 2. Tension documents Mirror and Spray for TB2."
+          "boardsesh": "TB1 and both TB2 layouts, Mirror and Spray, alongside other board brands in the same app.",
+          "official": "Aurora lists the Tension app for TB1 and TB2. Tension documents both Mirror and Spray for TB2."
         },
         "training": {
           "label": "Build and run a workout",
-          "boardsesh": "In a solo 4x4, log each attempt or send. Boardsesh keeps the same climb up between reps and switches to the set rest after the last rep. When that rest ends, the running timer automatically brings up the next queued climb.",
-          "official": "Workout AI builds a personalized climb list from your workout type and logbook. Tension also documents circuits and a timer."
+          "boardsesh": "In a solo 4x4, each logged go counts toward the set. The app keeps the current climb up during rep rests and advances the queue when the set rest ends.",
+          "official": "Workout AI builds a personalized climb list from your workout type and logbook. Tension also offers circuits and a timer."
         },
         "history": {
           "label": "Log sends",
-          "boardsesh": "Bring in Tension history and log across your supported boards.",
+          "boardsesh": "Copy your Tension history in and keep a single logbook across the boards you climb.",
           "official": "Log ascents and see your history in the Tension app."
         }
       },
@@ -190,32 +193,35 @@
         "migration": "Bring your Tension logbook",
         "bluetooth": "Connect to your Tension LEDs",
         "sprayComparison": "Compare apps for a custom spray wall"
-      }
+      },
+      "verdictTitle": "Boardsesh for running a 4x4",
+      "comparisonIntro": "For TB1 and TB2, the choice comes down to how each app handles your wall, your workout and your climbing history.",
+      "workflowTitle": "From wall setup to the last rep"
     },
     "moonboard": {
       "title": "MoonBoard App Guide | Boardsesh",
       "description": "Browse MoonBoard Benchmarks and Mini MoonBoard climbs in Boardsesh. Check your hold setup, supported legacy LED controllers and CSV import.",
       "heading": "Boardsesh for MoonBoard",
-      "intro": "Boardsesh is an independent alternative to the official MoonBoard app. Download it for iPhone or Android to find Benchmarks, share a warm-up queue and keep MoonBoard attempts and sends in the same logbook as your other boards.",
-      "compatibility": "Browse the 2010, 2016, Masters 2017, Masters 2019 and 2024 setups, plus Mini MoonBoard 2020 and 2025. LED support is a separate check. Boardsesh has code support for the legacy Nordic UART and RedBear profiles. The third legacy profile and the Pro controller are unsupported.",
-      "tradeoffs": "Choose Boardsesh to browse and log across boards or to light holds with a supported legacy controller. For Moon’s Pro controller or official problem publishing, use Moon’s app. The controller list comes from a code audit, and support can vary by the hardware on your wall.",
+      "intro": "Getting on a MoonBoard starts with the holds on your wall. Boardsesh for iPhone and Android lets you find Benchmarks for that setup, follow the numbered grid and share a warm-up queue.",
+      "compatibility": "Boardsesh covers the 2010, 2016, Masters 2017, Masters 2019 and 2024 setups, plus Mini MoonBoard 2020 and 2025. The LED compatibility list is shorter. A Boardsesh code audit found support for the legacy Nordic UART and RedBear profiles. The third legacy profile and the Pro controller are unsupported.",
+      "tradeoffs": "Boardsesh keeps your MoonBoard logbook together with your climbs on other boards. Our compatibility findings for the legacy Nordic UART and RedBear profiles come from a code audit. Try one climb on your hardware to confirm the LEDs work. Use Moon’s app for the Pro controller or to publish problems to MoonBoard.",
       "screenshotAlt": "Boardsesh displaying a MoonBoard climb on its numbered hold grid",
       "workflow": {
         "setup": {
-          "title": "Pick the installed hold setup",
-          "body": "Match the setup year and wall angle before filtering for Benchmarks. The Mini setups have their own climb lists and grid."
+          "title": "Benchmarks for the holds you have",
+          "body": "The year in the app names the hold setup. Match it to the holds installed on your board, then set the wall angle to find Benchmarks you can climb there. Mini MoonBoard has its own grid and climb lists, so look under the Mini setup for your wall."
         },
         "controller": {
-          "title": "Check the LED controller",
-          "body": "If your board uses a supported legacy profile, connect in the app and try one climb. You can still follow the on-screen grid and log the session with the LEDs off."
+          "title": "Climbing with or without LEDs",
+          "body": "The supported legacy controller profiles come from a code audit. If yours matches, connect and try lighting one problem before the session. The on-screen grid and logbook still work with the LEDs off."
         },
         "training": {
-          "title": "Pace your limit bouldering tries",
-          "body": "Add a Limit Bouldering block at your target grade and set a rest between tries. Preview the climbs for your setup and angle, then tap Start workout when you’re ready."
+          "title": "Rest, then try the same problem again",
+          "body": "Build a Limit Bouldering block at the grade you want to work, set a rest and review the problems for your wall. After you tap Start workout in a solo session, logging a fall starts the rest and keeps the problem up for your next try. Log a flash or send and the next problem comes up after that rest."
         },
         "import": {
-          "title": "Copy your MoonBoard logbook",
-          "body": "If you have a MoonBoard CSV export, open the MoonBoard card in Settings → Connected apps and import the file. It copies matching logbook entries into Boardsesh."
+          "title": "What comes over from a MoonBoard CSV",
+          "body": "The MoonBoard card in Settings → Connected apps takes a CSV export. Boardsesh copies the logbook entries it can match to climbs, so those attempts and sends can sit alongside your other board sessions. New ticks you log in Boardsesh stay here."
         }
       },
       "competitors": {
@@ -225,21 +231,21 @@
         "benchmarks": {
           "label": "Find problems",
           "boardsesh": "Browse by setup and angle and filter for Benchmarks.",
-          "official": "Browse problems for your hold setup, including Benchmarks curated by MoonBoard moderators."
+          "official": "Browse by hold setup, including Benchmarks curated by MoonBoard moderators."
         },
         "lighting": {
           "label": "LED control",
-          "boardsesh": "Legacy Nordic UART and RedBear profiles. Check your controller before relying on LEDs.",
+          "boardsesh": "The code supports legacy Nordic UART and RedBear profiles. Check your controller before relying on the LEDs.",
           "official": "Moon supports its LED system in the official app and publishes hardware and setup instructions."
         },
         "training": {
           "label": "Build and run a workout",
-          "boardsesh": "Build a workout for your setup and angle. With a rest set in Limit Bouldering, logging a fall starts that rest so you can retry the same climb. A logged flash or send lets the timer advance after the rest.",
-          "official": "Moon’s app lets you save problem lists for warm-ups, projects and training circuits."
+          "boardsesh": "With a rest set for solo Limit Bouldering, logging a fall starts the countdown and keeps the same climb up. Log a flash or send to advance after the rest.",
+          "official": "Save problem lists for warm-ups, projects and training circuits in the MoonBoard app."
         },
         "history": {
           "label": "Log a session",
-          "boardsesh": "Copy a CSV into a logbook shared across supported boards. Future ticks stay in Boardsesh.",
+          "boardsesh": "Copy matching entries from a CSV into one logbook across supported boards. Future ticks stay in Boardsesh.",
           "official": "Log sessions and save problem lists to your MoonBoard account."
         }
       },
@@ -258,32 +264,35 @@
         "bluetooth": "Connect to a compatible LED controller",
         "findingClimbs": "Filter for the climbs you want",
         "logbook": "Log and edit attempts and sends"
-      }
+      },
+      "verdictTitle": "Keep Moon’s app for Pro LEDs",
+      "comparisonIntro": "Compare Benchmark browsing, LED compatibility, workout pacing and where your MoonBoard logbook lives.",
+      "workflowTitle": "A session on your MoonBoard setup"
     },
     "decoy": {
       "title": "Decoy Board App Guide | Boardsesh",
       "description": "Use Boardsesh on the Decoy Dungeon Trainer. Choose your wall size, light climbs, share turns with your crew and bring over your Aurora logbook.",
       "heading": "Boardsesh for Decoy Board",
-      "intro": "Use Boardsesh as an independent alternative to the official Decoy Board app on your Dungeon Trainer. Download it for iPhone or Android to share a queue, light problems and keep your Decoy ticks alongside your other board sends.",
-      "compatibility": "Choose Dungeon Trainer and match the 8 × 10, 8 × 12 or 12 × 12 wall. Pick the actual size before browsing so you see problems that fit the installed holds.",
-      "tradeoffs": "Boardsesh is a fit when your crew takes turns or your training spans multiple boards. The official Decoy app documents a side-climb filter for the edges of the 12 × 12 and has its own Selects and leaderboards.",
+      "intro": "The widest Dungeon Trainer gives setters room to work out near the sides. If you climb on an eight-foot Decoy, check that the problem actually fits your wall before you line up a session.",
+      "compatibility": "In Boardsesh, choose Dungeon Trainer and match your wall to the 8 × 10, 8 × 12 or 12 × 12 layout before pairing with a compatible Decoy LED kit.",
+      "tradeoffs": "Keep the official Decoy Board app for Selects and leaderboards, or when you want to find problems that run along the edges. Boardsesh makes sense if your crew wants to add problems to one queue from their own phones, or if you want to keep Decoy sends in the same logbook as your other boards.",
       "screenshotAlt": "Decoy Board Dungeon Trainer layout with rows of coloured holds and dense footholds",
       "workflow": {
         "size": {
-          "title": "Find climbs that fit your Dungeon Trainer",
-          "body": "Set the size and angle before filtering. A problem on the wider 12 × 12 can use holds beyond the edges of an 8-foot wall."
+          "title": "The edges are part of the climb",
+          "body": "Set the wall size first to see problems you can climb on the holds in front of you. Then set the angle and search by grade. On a 12 × 12, the official Decoy app’s side-climb filter is handy if you want to look along the edges."
         },
         "turns": {
-          "title": "Give everyone a turn",
-          "body": "Connect to the LED kit, start a shared session and have your crew add problems to the queue while the current climber is on the wall."
+          "title": "Pick something while your friend climbs",
+          "body": "Once a phone is connected to the LEDs, a shared session gives everyone access to the same queue. The next climber can add their pick during a burn, and the connected phone can light it when the wall is free."
         },
         "training": {
-          "title": "Build a volume block",
-          "body": "Choose Volume and a target grade for your Dungeon Trainer. Review the generated climbs for your wall size and angle before starting."
+          "title": "A volume day on Decoy",
+          "body": "For a volume day, pick a target grade and let a Volume block suggest problems. The preview shows what’s available at the angle you’ll actually climb."
         },
         "history": {
-          "title": "Bring over Decoy ticks",
-          "body": "Use the Decoy card in Settings → Connected apps to link your Aurora account or upload a JSON export. The import copies your history into Boardsesh."
+          "title": "The sends you already logged",
+          "body": "The Decoy card in Settings → Connected apps can link your Aurora account or take an Aurora JSON export. Either option copies existing history into Boardsesh. Ticks you log after the move stay in Boardsesh."
         }
       },
       "competitors": {
@@ -291,14 +300,14 @@
       },
       "comparison": {
         "search": {
-          "label": "Find problems",
-          "boardsesh": "Browse for the Dungeon Trainer size and angle you climb.",
-          "official": "Browse Decoy climbs, including Selects and a documented filter for climbs near the sides."
+          "label": "Choose a problem",
+          "boardsesh": "Browse the Dungeon Trainer by wall size and angle, then narrow the list by grade.",
+          "official": "Find Selects or use the side-climb filter to look for problems near the left or right edge."
         },
         "session": {
-          "label": "At the wall",
-          "boardsesh": "Light climbs from a shared queue and log with your other boards.",
-          "official": "Control the Decoy LED kit, log ascents and attempts, and find beta videos."
+          "label": "Climb and log",
+          "boardsesh": "Light problems on a compatible Decoy kit from a shared queue and log sends alongside your other boards.",
+          "official": "Light a problem with the Decoy LED kit, look for beta videos and log ascents or attempts in the app."
         }
       },
       "sources": {
@@ -313,32 +322,35 @@
         "boards": "See the Dungeon Trainer layout",
         "sessions": "Start a session for your crew",
         "bluetooth": "Connect to your Decoy LED kit"
-      }
+      },
+      "verdictTitle": "Decoy Selects or a queue for your crew?",
+      "comparisonIntro": "Here’s how the apps handle finding Dungeon Trainer problems and taking a turn at the wall.",
+      "workflowTitle": "A session on the Dungeon Trainer"
     },
     "touchstone": {
       "title": "Touchstone Board App Guide | Boardsesh",
       "description": "Climb on the Touchstone Winter 2020 board with Boardsesh. Find problems, light compatible LEDs and bring over your Aurora history.",
       "heading": "Boardsesh for Touchstone Board",
-      "intro": "For the Winter 2020 layout, Boardsesh is an independent alternative to the official Touchstone Board app. Download it for iPhone or Android to browse problems for that wall and log attempts alongside the rest of your board climbing.",
-      "compatibility": "Select Touchstone, Winter 2020 and Full Size for that installed layout. This guide covers the LED training board. For gym membership, check-in or classes, use Touchstone Climbing’s gym services.",
-      "tradeoffs": "Boardsesh keeps your Touchstone projects and your other board sessions together. Aurora’s Touchstone Board app serves the board’s own climbing community, including its beta videos and climber profiles.",
+      "intro": "A Winter 2020 project can stay on your list after you leave the gym. Save it in Boardsesh and next time you’re at the Touchstone Board, you can pull up the problem and see your last attempts.",
+      "compatibility": "The Boardsesh layout is Touchstone → Winter 2020 → Full Size. For gym membership, check-ins or classes, use Touchstone Climbing’s gym services.",
+      "tradeoffs": "Use Boardsesh if you split your time between the Winter 2020 wall and other training boards and want to keep your attempts together. The official Touchstone Board app is where to go for its beta videos and climber profiles.",
       "screenshotAlt": "Touchstone Board Winter 2020 layout with blue and pink holds",
       "workflow": {
         "wall": {
-          "title": "Confirm the board in front of you",
-          "body": "Check that your gym has the Touchstone Winter 2020 training board. Choose its Full Size layout and the angle you’re climbing."
+          "title": "The layout at your gym",
+          "body": "The Full Size hold map is for the Winter 2020 board. Once you’ve matched that layout and set the angle, you can follow the diagram on your phone or light the holds with a compatible kit."
         },
         "project": {
-          "title": "Build a shortlist for the next visit",
-          "body": "Find a few problems with the grade filter. Log attempts on projects or save them to a playlist so you can find them next time."
+          "title": "A shortlist worth keeping",
+          "body": "If a problem needs another day, save it to a playlist with the other climbs you want to revisit. Log the attempts you put in today so you can pull up the problem and see your history next time."
         },
         "training": {
-          "title": "Train around a target grade",
-          "body": "Choose Grade Focus for the Winter 2020 wall. Set your target grade and review the workout preview to see which climbs are available at your angle."
+          "title": "What’s available at your grade",
+          "body": "Grade Focus can build a workout around a target grade on the Winter 2020 layout. The preview shows what it found at your angle. That’s the place to check how many problems you’ll have before the session."
         },
         "history": {
-          "title": "Copy your Aurora history",
-          "body": "Open the Touchstone card in Connected apps to link the board account or bring in an Aurora JSON export. New logs stay in Boardsesh."
+          "title": "An existing Touchstone logbook",
+          "body": "If your attempts and sends are already in an Aurora account, you can bring them with you using the Touchstone card in Connected apps. It accepts an account link or an Aurora JSON export. New entries stay in Boardsesh."
         }
       },
       "competitors": {
@@ -346,14 +358,14 @@
       },
       "comparison": {
         "session": {
-          "label": "Climb at the gym",
-          "boardsesh": "Browse and light Winter 2020 climbs and build a shared session queue.",
-          "official": "Search and create Touchstone climbs, connect to the LED kit and find beta."
+          "label": "Find and light problems",
+          "boardsesh": "Search the Winter 2020 catalogue, choose a problem to light or add it to a shared queue.",
+          "official": "Search for Touchstone problems, watch available beta, create climbs and connect to the board’s LED kit."
         },
         "history": {
-          "label": "Track projects",
-          "boardsesh": "Log Touchstone attempts and sends alongside your other board sessions.",
-          "official": "Log attempts and ascents and see your history on individual Touchstone climbs."
+          "label": "Revisit a project",
+          "boardsesh": "Open your Touchstone attempts and sends in the same logbook you use for other supported boards.",
+          "official": "Log attempts or ascents and look up your history on individual problems in the Touchstone app."
         }
       },
       "sources": {
@@ -369,32 +381,35 @@
         "boards": "See the Touchstone Winter 2020 layout",
         "logbook": "Track your projects in the logbook",
         "findingClimbs": "Find climbs for your next session"
-      }
+      },
+      "verdictTitle": "Where do you keep your projects?",
+      "comparisonIntro": "For the Full Size Winter 2020 wall, compare how the two apps find and light problems and where they keep your attempts.",
+      "workflowTitle": "Coming back to a Winter 2020 project"
     },
     "grasshopper": {
       "title": "Grasshopper Board App Guide | Boardsesh",
       "description": "Use Boardsesh on Grasshopper 2020 Ninja, Master and GrandMaster walls. Match your size, light problems and import your Aurora logbook.",
       "heading": "Boardsesh for Grasshopper Board",
-      "intro": "On Grasshopper 2020 walls, Boardsesh is an independent alternative to the official Grasshopper Board app. Download it for iPhone or Android to find climbs at your angle, connect to the wall and log sessions alongside your other boards.",
-      "compatibility": "Choose Grasshopper 2020 and match Ninja (8 × 10), Master (8 × 12) or GrandMaster (12 × 12). Check the holds installed on the wall, including the Tweener options shown for your board.",
-      "tradeoffs": "Boardsesh gives a crew one queue and gives each climber a logbook across boards. The official Grasshopper app documents its own climb creation, beta sharing and LED integration.",
+      "intro": "On an adjustable Grasshopper, you might work the same problem at two angles in one session. In Boardsesh, each attempt goes in your logbook with the angle you climbed.",
+      "compatibility": "Match Grasshopper 2020 to Ninja (8 × 10), Master (8 × 12) or GrandMaster (12 × 12). Pick the installed hold set, including the Tweener option where it applies, before connecting to a compatible kit.",
+      "tradeoffs": "Use Boardsesh if you want to keep track of attempts at different angles alongside your sessions on other boards, or if a group wants one queue. Use the official Grasshopper Board app if you want to set in its catalogue and look up or share beta there.",
       "screenshotAlt": "Grasshopper 2020 GrandMaster layout with dark holds and blue accents",
       "workflow": {
         "kit": {
-          "title": "Match your Grasshopper kit",
-          "body": "Check the size and hold setup before pairing. Ninja, Master and GrandMaster cover different areas of the wall."
+          "title": "The hold set matters as much as the size",
+          "body": "Ninja, Master and GrandMaster span different areas of the wall. The dimensions tell you which layout to open. Check the installed holds too, since the available climbs depend on the hold set you choose."
         },
         "angle": {
-          "title": "Set the angle for your training",
-          "body": "Choose the angle shown on your wall, then browse by grade. The angle you pick is the one recorded with your attempt or send."
+          "title": "One problem at two angles",
+          "body": "If you come back to a problem after changing the angle, set the new angle in the app before you log it. Boardsesh records the angle with the attempt or send, so you can see how steep the wall was for each entry."
         },
         "training": {
-          "title": "Plan a grade pyramid",
-          "body": "Choose Pyramid and a target grade. Preview the climbs on the way up and down for your Grasshopper size and angle."
+          "title": "Working up to a harder grade",
+          "body": "A pyramid starts below your target grade, works up to it and comes back down. Boardsesh can suggest the problems for that workout. Check the preview for the holds and angle you’ll be climbing."
         },
         "history": {
-          "title": "Bring sends from the Grasshopper app",
-          "body": "In Connected apps, link the Grasshopper Aurora account or import its JSON export. This copies history into Boardsesh."
+          "title": "Sends from the Grasshopper app",
+          "body": "If you’ve been keeping track in the official app, Grasshopper’s Connected apps card can copy the logbook from your Aurora account or take its JSON export. Your new Boardsesh ticks stay here."
         }
       },
       "competitors": {
@@ -402,14 +417,14 @@
       },
       "comparison": {
         "search": {
-          "label": "Find a climb",
-          "boardsesh": "Match a Grasshopper 2020 board size and search at your wall’s angle.",
-          "official": "Search and create Grasshopper problems and find or share beta videos."
+          "label": "Find a wall and problem",
+          "boardsesh": "Start from the Grasshopper 2020 layout and installed holds, then search for problems at your training angle.",
+          "official": "Find problems in the Grasshopper catalogue, create new ones and look up or share beta videos."
         },
         "session": {
-          "label": "Train and log",
-          "boardsesh": "Light climbs, build a group queue and use the same logbook on other boards.",
-          "official": "Light climbs with the Grasshopper LED kit and log ascents in the Grasshopper app."
+          "label": "Light climbs and track sends",
+          "boardsesh": "Light problems on a compatible kit, share the queue with friends and log alongside your other boards.",
+          "official": "Connect to the Grasshopper LED kit to light the chosen problem and log ascents in the app."
         }
       },
       "sources": {
@@ -425,32 +440,35 @@
         "boards": "See the Grasshopper 2020 layout",
         "bluetooth": "Pair with the Grasshopper LED kit",
         "findingClimbs": "Find climbs at your training angle"
-      }
+      },
+      "verdictTitle": "A logbook for training at different angles",
+      "comparisonIntro": "Check the installed hold set first; a shared queue and a logbook across boards may matter more once you know which climbs fit.",
+      "workflowTitle": "Training on an adjustable Grasshopper"
     },
     "so-ill": {
       "title": "So iLL Connect Board App Guide | Boardsesh",
       "description": "Use Boardsesh on 8 × 12 and 12 × 12 So iLL Connect Boards. Find Summer 2024 climbs, light the wall and share a queue.",
       "heading": "Boardsesh for So iLL Connect Board",
-      "intro": "Boardsesh is an independent alternative to the official So iLL Board app for the Summer 2024 Connect Board. Download it for iPhone or Android to browse climbs, take turns from a shared queue and log your sends.",
-      "compatibility": "Choose So iLL’s Summer 2024 layout and match the 8 × 12 or 12 × 12 Connect Board. Choose the correct width before lighting a problem from the catalogue.",
-      "tradeoffs": "Use Boardsesh when a crew wants to line up turns on the Connect Board or keep a single logbook across walls. The official So iLL app describes following climbers and sharing beta within its board community.",
+      "intro": "When friends show up at the So iLL Connect Board with different projects in mind, they can put them in the same Boardsesh queue. Each climber adds their pick from their own phone.",
+      "compatibility": "Choose So iLL Summer 2024, then match the 8 × 12 or 12 × 12 wall. The wider board has more hold columns. Use the matching layout before sending a problem to a compatible Connect Board LED kit.",
+      "tradeoffs": "Try Boardsesh if you want people to add their own problems to the queue and keep their ticks alongside other board sends. The official So iLL Board app is the choice if you want to follow climbers and share beta in its community.",
       "screenshotAlt": "So iLL Connect Board Summer 2024 layout with rows of round holds",
       "workflow": {
         "layout": {
-          "title": "Check the Connect Board width",
-          "body": "Choose the Summer 2024 layout and the wall’s dimensions. The two sizes cover different numbers of hold columns."
+          "title": "Check the width before you pick a problem",
+          "body": "Both widths use the Summer 2024 layout. If you’re visiting a gym and aren’t sure which one you’re looking at, check the wall dimensions before choosing. The 12 × 12 has more hold columns available to setters."
         },
         "crew": {
-          "title": "Line up the next problems",
-          "body": "Connect to the LEDs and start a shared session. While someone climbs, the other climbers can add their picks from their own phones."
+          "title": "Everyone gets to add a pick",
+          "body": "The crew can share a queue even though one phone is connected to the LED kit. If a friend has a project in mind while someone else is climbing, they can pull it up and add it from their own phone."
         },
         "training": {
-          "title": "Build a short training block",
-          "body": "Add a Volume block for your Connect Board. Preview the climbs for your target grade and angle, then adjust the block if the list comes up short."
+          "title": "When the list runs short",
+          "body": "A Volume block can pull together problems at a target grade for your size and angle. Check the workout preview before you start. If it finds fewer problems than you planned, you can adjust the block."
         },
         "history": {
-          "title": "Copy your So iLL logbook",
-          "body": "Link the So iLL Aurora account or upload its JSON export in Settings → Connected apps. New Boardsesh ticks stay in Boardsesh."
+          "title": "The logbook you bring with you",
+          "body": "Open Settings → Connected apps for the So iLL import. Link the Aurora account or use its JSON export to copy your history into Boardsesh. Ticks you add in Boardsesh stay there."
         }
       },
       "competitors": {
@@ -458,14 +476,14 @@
       },
       "comparison": {
         "search": {
-          "label": "Find problems",
-          "boardsesh": "Browse Summer 2024 climbs for the 8 × 12 or 12 × 12 Connect Board.",
-          "official": "Search and create So iLL problems and share beta videos."
+          "label": "Browse and set",
+          "boardsesh": "Choose the 8 × 12 or 12 × 12 Connect Board and browse problems for the Summer 2024 layout.",
+          "official": "Search and create So iLL problems, then share beta videos or follow other climbers in the app."
         },
         "session": {
           "label": "Light and log",
-          "boardsesh": "Light climbs from a live queue and keep a cross-board logbook.",
-          "official": "Connect to the So iLL LED kit and log ascents in the So iLL app."
+          "boardsesh": "Light a climb from the crew’s queue with compatible hardware, then log your attempts and sends across boards.",
+          "official": "Connect to the So iLL LED kit and record ascents in the official app’s logbook."
         }
       },
       "sources": {
@@ -481,32 +499,35 @@
         "boards": "See the So iLL Summer 2024 layout",
         "sessions": "Build a shared queue",
         "logbook": "Log Connect Board attempts and sends"
-      }
+      },
+      "verdictTitle": "One queue at the wall or the So iLL community?",
+      "comparisonIntro": "Compare how the apps handle finding a Summer 2024 problem, lighting it and recording the send.",
+      "workflowTitle": "An evening on the Connect Board"
     },
     "woods": {
       "title": "Woods Board App Guide | Boardsesh",
       "description": "Browse Woods Board climbs in Boardsesh with matching and feet rules. Check your 8 × 10 or 12 × 12 layout before lighting a problem.",
       "heading": "Boardsesh for Woods Board",
-      "intro": "Boardsesh is an independent alternative to the official Woods Board app. Download it for iPhone or Android, select your wall size and check the matching and feet rules. Light compatible LEDs or follow the hold diagram.",
-      "compatibility": "Boardsesh supports the 8 × 10 and 12 × 12 Woods Board. Each size uses its own hold and LED map. The climb shows whether matching is allowed and whether you can use any feet.",
-      "tradeoffs": "Pick Boardsesh to log new Woods climbs alongside your other boards. For your existing Woods account, official database publishing and the Woods leaderboards, use the Woods Board app. Boardsesh has no Woods account import.",
+      "intro": "Two Woods Board problems can share the same handholds and climb differently if one rules out matching or limits the feet. Boardsesh puts both rules in the climb details.",
+      "compatibility": "Boardsesh supports the 8 × 10 and 12 × 12 Woods Board. Each size has its own hold and LED map. Use a compatible Woods controller to light the problem, or read the hold diagram on your phone.",
+      "tradeoffs": "Use the Woods Board app to keep using your existing Woods account, climb for its leaderboards or publish to its official database. Boardsesh has no Woods account import. It’s a fit if you want to log new Woods sends in the same place as the other boards you climb.",
       "screenshotAlt": "Woods Board Original 12 × 12 layout with wooden handholds and footholds",
       "workflow": {
         "size": {
-          "title": "Choose 8 × 10 or 12 × 12",
-          "body": "Use the size installed on your wall, even if the other version looks familiar. The hold grid for the problem needs to match the actual wall."
+          "title": "Two sizes, two hold maps",
+          "body": "Pick the layout installed on your wall before selecting a problem. The name and shape of the board can look familiar across sizes, but the map drives both the on-screen diagram and which holds light up on a compatible controller."
         },
         "rules": {
-          "title": "Check matching and feet before you pull on",
-          "body": "Open the climb details and read both rules. A climb can allow matching and still tell you to use designated feet."
+          "title": "Matching and feet are separate rules",
+          "body": "Read both in the climb details before you pull on. A problem can allow you to match a handhold and still limit you to designated feet. When you create a problem, you can set those two rules yourself."
         },
         "session": {
-          "title": "Log today’s climbing",
-          "body": "Light the climb on a compatible Woods LED controller or follow the diagram on screen. Log the send or attempt from the climb."
+          "title": "Where your new problems and ticks go",
+          "body": "If you set and publish a problem in Boardsesh, it goes into the Boardsesh catalogue. Your attempts and sends go into your Boardsesh logbook. For publishing to the official database, set the problem in the Woods Board app."
         },
         "training": {
-          "title": "Check which climbs fill your workout",
-          "body": "Build a Grade Focus block for your Woods size and angle. If the preview runs short, shorten the block or loosen the climb filters."
+          "title": "A workout built from the climbs you have",
+          "body": "Grade Focus draws from problems for your Woods size and angle. If the preview comes back short, trim the block or open up the filters. The preview gives you a chance to change the plan before you get on the wall."
         }
       },
       "competitors": {
@@ -514,19 +535,19 @@
       },
       "comparison": {
         "rules": {
-          "label": "Set and climb by the rules",
-          "boardsesh": "See and set matching and feet rules on the selected size’s hold map.",
-          "official": "The Woods app lets setters specify rules for problems they publish."
+          "label": "Set matching and feet rules",
+          "boardsesh": "View or set separate matching and feet rules for problems on the hold map for your wall size.",
+          "official": "When a setter publishes a problem, the official app lets them specify the rules for climbing it."
         },
         "history": {
           "label": "Track sends",
-          "boardsesh": "Log future Woods sends alongside sessions on other boards.",
-          "official": "Log Woods sends on your Woods account and compete on the leaderboards."
+          "boardsesh": "Start logging Woods sends alongside sends on your other boards. Woods accounts and history can’t be imported.",
+          "official": "Keep logging on your existing Woods account and take part in the official Woods leaderboards."
         },
         "publishing": {
-          "label": "Publish problems",
-          "boardsesh": "New problems you publish go into the Boardsesh catalogue.",
-          "official": "Submit your climbs to the official Woods Board database."
+          "label": "Publish new problems",
+          "boardsesh": "Problems you publish in Boardsesh go into the Boardsesh catalogue for the Woods layout you chose.",
+          "official": "Submit new problems to the official Woods Board database, where other users of the Woods app can find them."
         }
       },
       "sources": {
@@ -541,28 +562,31 @@
         "boards": "See both Woods Board layouts",
         "bluetooth": "Pair with a compatible controller",
         "logbook": "Log a Woods Board climb"
-      }
+      },
+      "verdictTitle": "Keep the official app for your Woods account",
+      "comparisonIntro": "Woods-specific climb rules matter in either app. Your existing logbook and where you want to publish new problems may decide which one you use.",
+      "workflowTitle": "How Woods problems work in Boardsesh"
     },
     "spray-wall-apps": {
       "title": "Spray Wall Apps Compared: Stōkt and Retro Flash | Boardsesh",
       "description": "Compare Boardsesh, Stōkt and Retro Flash for a home or gym spray wall. See photo setup, sharing, circuits, optional LED control and pricing.",
       "heading": "Compare spray wall climbing apps",
-      "intro": "With Boardsesh, take a photo of your spray wall, set problems on it, and keep those sessions in the same logbook as your catalogue boards. Stōkt and Retro Flash also offer tools for home walls and gyms. The right fit depends on how you set, share and reset your wall.",
-      "compatibility": "Boardsesh can detect holds in a wall photo and lets you correct the results before publishing. Climb using the on-screen holds, or map the wall to compatible WLED hardware for lighting. Download Boardsesh on iPhone or Android to set up the wall.",
-      "tradeoffs": "Choose Boardsesh if you want photo setting and the same group queue and logbook across walls. Look at Stōkt if your gym needs managed setup, official gym lists or organized competitions. Retro Flash is worth a look for custom grading systems, partly symmetrical walls and competition boulders.",
+      "intro": "A spray wall app starts with the wall you have. A home wall might just need a photo and a way to save problems. A gym might also want a setter to manage lists or run a comp. Here’s what Boardsesh, Stōkt and Retro Flash offer for those setups.",
+      "compatibility": "Boardsesh on iPhone and Android can detect holds from a photo and lets you edit the result. You can climb from the marked-up photo alone. Lighting requires mapped, compatible hardware, such as WLED over Wi-Fi.",
+      "tradeoffs": "Try Boardsesh if your spray wall sessions belong in the same logbook as your other boards, or if you want to share a live queue. Stōkt is worth a look if your gym wants paid setup help or tools for running competitions. Retro Flash is a fit if you set circuits, use your own grades or have a partly symmetrical wall.",
       "screenshotAlt": "Boardsesh spray wall photo with selected holds marked for a boulder problem",
       "workflow": {
         "photo": {
-          "title": "Start with a front-on photo",
-          "body": "Let Boardsesh find the holds, then add any it missed or fix outlines before you start setting. If you have compatible WLED lights, map the holds to the LEDs."
+          "title": "From wall photo to the first problem",
+          "body": "Take a straight-on photo so you have a clear view of the holds. In Boardsesh, you can add any the app misses or fix their outlines before setting. If you’d rather hand that work off, Stōkt offers a paid service that prepares the photo and maps the holds."
         },
         "sharing": {
-          "title": "Set for yourself or share with a crew",
-          "body": "Choose Private, Link only or Public. Private walls attached to a gym are also visible to members of that gym. Set a few problems and save them to a playlist for a circuit."
+          "title": "Who can get to your problems?",
+          "body": "In Boardsesh, a home wall can stay private or be shared by link. You can also publish the wall or attach a private wall to a gym so its members can see it. A playlist can hold a circuit you want to repeat. Retro Flash supports circuits too, along with custom grades for walls that use their own scale."
         },
         "reset": {
-          "title": "Reset an existing spray wall",
-          "body": "Tap your existing wall’s name on the Climbs tab, then choose Reset this Spraywall. Add a new photo and review the holds. When you publish the reset, Boardsesh archives the previous wall with its climbs so your old sends keep their original problems."
+          "title": "When the holds move",
+          "body": "Open the wall from the Climbs tab and choose Reset this Spraywall to replace the photo and review the new hold map. Publishing the reset archives the old wall with its problems. The sends in your logbook keep their original climbs."
         }
       },
       "competitors": {
@@ -572,27 +596,27 @@
       "comparison": {
         "setup": {
           "label": "Set up a wall",
-          "boardsesh": "Photo-based hold detection and a hold editor. Choose Private, Link only or Public.",
-          "stokt": "Automatic hold mapping from a photo, a desktop editor and an optional managed setup.",
-          "retroFlash": "Supports private, adjustable, symmetrical and partly symmetrical walls."
+          "boardsesh": "Start from a photo with hold detection and edit the marked holds. A wall can be Private, Link only or Public.",
+          "stokt": "Scan a wall from a phone and tidy the hold map in a desktop editor, or pay for managed setup.",
+          "retroFlash": "The developer lists support for adjustable and private walls, plus symmetrical and partly symmetrical hold layouts."
         },
         "features": {
-          "label": "Set and share",
-          "boardsesh": "Set problems, save circuits as playlists and share a live queue.",
-          "stokt": "Pro documents official gym lists, custom competitions and adjustable angles.",
-          "retroFlash": "Set circuits and competition boulders, with built-in and custom grading systems."
+          "label": "Set and share problems",
+          "boardsesh": "Set on the wall photo, collect circuits in playlists and let a group add problems to a live queue.",
+          "stokt": "Stōkt Pro lets a gym publish official climb lists, run competitions and set problems at different wall angles.",
+          "retroFlash": "Set circuits or competition boulders and choose a built-in grading system or define one of your own."
         },
         "lighting": {
-          "label": "LED lighting",
-          "boardsesh": "Optional mapped WLED over Wi-Fi. Bluetooth requires compatible hardware with Boardsesh support.",
-          "stokt": "Stōkt Pro documents LED walls, including an option to connect your own LEDs.",
-          "retroFlash": "LED compatibility wasn’t specified in the developer’s store listings."
+          "label": "Light the holds",
+          "boardsesh": "WLED is optional and uses Wi-Fi once the holds are mapped. Bluetooth lighting requires hardware that Boardsesh supports.",
+          "stokt": "Stōkt Pro lists LED support, with lighting kits and an option to connect your own LEDs.",
+          "retroFlash": "LED compatibility is unspecified in the developer’s App Store and Google Play listings."
         },
         "price": {
-          "label": "Pricing",
-          "boardsesh": "Free app download. Lighting hardware is separate.",
-          "stokt": "Free home starting plan, paid gym and home options. The Pro page lists $20 per month.",
-          "retroFlash": "Free download and in-app purchases. The US App Store lists a $4.99 Home Wall Year Pass."
+          "label": "Price (checked Nov 24, 2026)",
+          "boardsesh": "Boardsesh is free to download. If you want to light your wall, the compatible hardware is separate.",
+          "stokt": "Start on a free home plan or choose a paid home or gym plan. Stōkt lists Pro at $20 per month.",
+          "retroFlash": "Free download with in-app purchases. The US App Store lists the Home Wall Year Pass at $4.99."
         }
       },
       "sources": {
@@ -611,7 +635,10 @@
         "spray": "Set up and edit a spray wall",
         "sessions": "Share the queue with your crew",
         "logbook": "Log your spray wall sessions"
-      }
+      },
+      "verdictTitle": "Pick the app around who sets and who climbs",
+      "comparisonIntro": "Start with the wall you want to share and who already climbs there. Then check the cost of adding or resetting it; LED control is optional.",
+      "workflowTitle": "From the first photo to the next reset"
     }
   }
 }

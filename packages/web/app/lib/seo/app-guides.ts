@@ -47,6 +47,8 @@ export type AppGuidePage =
 
 const CHECKED_AT = '2026-11-23';
 const WORKOUT_UPDATE_DATE = '2026-11-24';
+const EDITORIAL_UPDATE_DATE = '2026-11-24';
+const SPRAY_PRICES_CHECKED_AT = '2026-11-24';
 
 const help = {
   bluetooth: { id: 'bluetooth', href: '/help/board-and-bluetooth' },
@@ -105,7 +107,7 @@ const guides = {
     path: '/apps/kilter',
     boardType: 'kilter',
     screenshot: 'kilter',
-    updatedAt: WORKOUT_UPDATE_DATE,
+    updatedAt: EDITORIAL_UPDATE_DATE,
     workflow: [{ id: 'layout' }, { id: 'preview' }, { id: 'training' }, { id: 'import' }, { id: 'auroraImport' }],
     comparisonRows: [
       {
@@ -166,7 +168,7 @@ const guides = {
     path: '/apps/tension',
     boardType: 'tension',
     screenshot: 'tension',
-    updatedAt: WORKOUT_UPDATE_DATE,
+    updatedAt: EDITORIAL_UPDATE_DATE,
     workflow: [{ id: 'layout' }, { id: 'training' }, { id: 'import' }],
     comparisonRows: [
       { id: 'layout', sourceIds: ['boardseshGallery', 'aurora', 'layouts'] },
@@ -199,7 +201,7 @@ const guides = {
     path: '/apps/moonboard',
     boardType: 'moonboard',
     screenshot: 'moonboard',
-    updatedAt: WORKOUT_UPDATE_DATE,
+    updatedAt: EDITORIAL_UPDATE_DATE,
     workflow: [{ id: 'setup' }, { id: 'controller' }, { id: 'training' }, { id: 'import' }],
     comparisonRows: [
       { id: 'benchmarks', sourceIds: ['boardseshGallery', 'boardseshClimbs', 'benchmarks'] },
@@ -232,7 +234,7 @@ const guides = {
     path: '/apps/decoy',
     boardType: 'decoy',
     screenshot: null,
-    updatedAt: WORKOUT_UPDATE_DATE,
+    updatedAt: EDITORIAL_UPDATE_DATE,
     workflow: [{ id: 'size' }, { id: 'turns' }, { id: 'training' }, { id: 'history' }],
     comparisonRows: [
       { id: 'search', sourceIds: ['boardseshGallery', 'official'] },
@@ -254,7 +256,7 @@ const guides = {
     path: '/apps/touchstone',
     boardType: 'touchstone',
     screenshot: null,
-    updatedAt: WORKOUT_UPDATE_DATE,
+    updatedAt: EDITORIAL_UPDATE_DATE,
     workflow: [{ id: 'wall' }, { id: 'project' }, { id: 'training' }, { id: 'history' }],
     comparisonRows: [
       { id: 'session', sourceIds: ['boardseshGallery', 'boardseshSessions', 'official'] },
@@ -277,7 +279,7 @@ const guides = {
     path: '/apps/grasshopper',
     boardType: 'grasshopper',
     screenshot: null,
-    updatedAt: WORKOUT_UPDATE_DATE,
+    updatedAt: EDITORIAL_UPDATE_DATE,
     workflow: [{ id: 'kit' }, { id: 'angle' }, { id: 'training' }, { id: 'history' }],
     comparisonRows: [
       { id: 'search', sourceIds: ['boardseshGallery', 'kits', 'official'] },
@@ -300,7 +302,7 @@ const guides = {
     path: '/apps/so-ill',
     boardType: 'soill',
     screenshot: null,
-    updatedAt: WORKOUT_UPDATE_DATE,
+    updatedAt: EDITORIAL_UPDATE_DATE,
     workflow: [{ id: 'layout' }, { id: 'crew' }, { id: 'training' }, { id: 'history' }],
     comparisonRows: [
       { id: 'search', sourceIds: ['boardseshGallery', 'connect', 'official'] },
@@ -323,7 +325,7 @@ const guides = {
     path: '/apps/woods',
     boardType: 'woods',
     screenshot: null,
-    updatedAt: WORKOUT_UPDATE_DATE,
+    updatedAt: EDITORIAL_UPDATE_DATE,
     workflow: [{ id: 'size' }, { id: 'rules' }, { id: 'session' }, { id: 'training' }],
     comparisonRows: [
       { id: 'rules', sourceIds: ['boardseshWoods', 'sizes', 'official'] },
@@ -356,7 +358,7 @@ export const APP_GUIDE_HUB = {
   id: 'hub',
   path: '/apps',
   screenshot: 'queue',
-  updatedAt: WORKOUT_UPDATE_DATE,
+  updatedAt: EDITORIAL_UPDATE_DATE,
   workflow: [],
   comparisonRows: [],
   competitors: [],
@@ -368,7 +370,7 @@ export const APP_GUIDE_COMPARISON = {
   id: 'spray-wall-apps',
   path: '/compare/spray-wall-apps',
   screenshot: 'spray-wall',
-  updatedAt: CHECKED_AT,
+  updatedAt: EDITORIAL_UPDATE_DATE,
   workflow: [{ id: 'photo' }, { id: 'sharing' }, { id: 'reset' }],
   comparisonRows: [
     { id: 'setup', sourceIds: ['boardseshSpray', 'boardseshSetup', 'stokt', 'stoktPricing', 'retroFlashGoogle'] },
@@ -379,14 +381,18 @@ export const APP_GUIDE_COMPARISON = {
   competitors: ['stokt', 'retroFlash'],
   sources: [
     source('stokt', 'https://www.getstokt.com/'),
-    source('stoktPricing', 'https://www.getstokt.com/pricing'),
-    source('stoktPro', 'https://www.getstokt.com/stokt-pro'),
-    source('retroFlashApple', 'https://apps.apple.com/us/app/retro-flash-climbing/id1519582483'),
+    source('stoktPricing', 'https://www.getstokt.com/pricing', SPRAY_PRICES_CHECKED_AT),
+    source('stoktPro', 'https://www.getstokt.com/stokt-pro', SPRAY_PRICES_CHECKED_AT),
+    source(
+      'retroFlashApple',
+      'https://apps.apple.com/us/app/retro-flash-climbing/id1519582483',
+      SPRAY_PRICES_CHECKED_AT,
+    ),
     source(
       'retroFlashGoogle',
       'https://play.google.com/store/apps/details?hl=en_US&id=com.arcadebouldering.system_wall',
     ),
-    source('boardseshSpray', 'https://www.boardsesh.com/spraywalls'),
+    source('boardseshSpray', 'https://www.boardsesh.com/spraywalls', SPRAY_PRICES_CHECKED_AT),
     source('boardseshSetup', 'https://www.boardsesh.com/help/spray-walls'),
     source('boardseshPlaylists', 'https://www.boardsesh.com/help/finding-climbs#playlists'),
     boardseshSessions,

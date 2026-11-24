@@ -547,9 +547,9 @@ describe('locale expansion is observable in the rendered shard', () => {
     expect(locations).toHaveLength(10);
     expect(locations.sort()).toEqual(paths.map((path) => `https://www.boardsesh.com${path}`).sort());
     expect(xml).not.toContain('xhtml:link');
-    expect(xml.match(/<lastmod>2026-11-24T00:00:00.000Z<\/lastmod>/g)).toHaveLength(9);
+    expect(xml.match(/<lastmod>2026-11-24T00:00:00.000Z<\/lastmod>/g)).toHaveLength(10);
     expect(xml).toContain(
-      '<loc>https://www.boardsesh.com/compare/spray-wall-apps</loc>\n    <lastmod>2026-11-23T00:00:00.000Z</lastmod>',
+      '<loc>https://www.boardsesh.com/compare/spray-wall-apps</loc>\n    <lastmod>2026-11-24T00:00:00.000Z</lastmod>',
     );
   });
 

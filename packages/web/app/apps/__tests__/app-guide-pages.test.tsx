@@ -69,7 +69,22 @@ describe('app guide pages before hydration', () => {
       expect(markup.querySelector('a[data-store-badge="ios"]')?.getAttribute('href')).toContain(`compare-${slug}`);
       expect(markup.querySelector('a[data-store-badge="android"]')?.getAttribute('href')).toContain(`compare-${slug}`);
       expect(markup.querySelector(`a[href="${APP_URL}"]`)?.textContent).toMatch(/web app/i);
-      expect(markup.querySelector('ol li strong')?.textContent).toBeTruthy();
+      expect(markup.querySelector('#in-session h3')?.textContent).toBeTruthy();
+      expect(markup.querySelector('#in-session section p')?.textContent).toBeTruthy();
+      const recommendation = markup.querySelector('#recommendation');
+      const comparison = markup.querySelector('#comparison');
+      expect(recommendation?.querySelector('p')?.textContent).toBeTruthy();
+      expect(comparison).toBeTruthy();
+      expect(
+        recommendation &&
+          comparison &&
+          recommendation.compareDocumentPosition(comparison) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      const sectionLinks = markup.querySelectorAll('nav a[href^="#"]');
+      expect(sectionLinks).toHaveLength(5);
+      for (const link of sectionLinks) {
+        expect(markup.querySelector(link.getAttribute('href') ?? '')).toBeTruthy();
+      }
       expect(markup.querySelectorAll('table tbody th[scope="row"]').length).toBeGreaterThanOrEqual(2);
       expect(markup.querySelectorAll('a[href^="/help/"]').length).toBeGreaterThanOrEqual(2);
       expect(markup.querySelector('nav a[href="/apps"]')).toBeTruthy();

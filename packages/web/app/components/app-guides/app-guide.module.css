@@ -1,8 +1,13 @@
+.guideHeader > p {
+  max-width: 68ch;
+}
+
 .hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 210px);
   align-items: start;
   gap: var(--spacing-8);
+  margin-top: var(--spacing-8);
   margin-bottom: var(--spacing-8);
 }
 
@@ -26,6 +31,17 @@
   flex-wrap: wrap;
   gap: var(--spacing-3);
   align-items: center;
+}
+
+.guideNavigation {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--spacing-6);
+  row-gap: var(--spacing-1);
+  margin-top: var(--spacing-3);
+  margin-bottom: var(--spacing-8);
+  padding-block: var(--spacing-3);
+  border-block: 1px solid var(--separator);
 }
 
 .guidePicker {

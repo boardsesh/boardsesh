@@ -2,14 +2,17 @@
 
 These are indexable marketing pages: `/apps`, eight `/apps/<board>` pages, and
 `/compare/spray-wall-apps`. They answer broad app/download/compatibility searches
-first, with factual comparisons and switching limits below. One canonical URL
+with a recommendation, factual comparison and switching limits. One canonical URL
 per board also serves alternative and "best app" searches. `/boards` remains the
 layout directory; `/spraywalls` remains the setup page.
 
 ## Publication contract
 
 - The main content, links, ratings and comparison are in server-rendered HTML.
-  Each smaller brand has its own setup workflow and meaningful tradeoff.
+  Each guide starts with a board-specific recommendation, then a concise comparison
+  and sections about using the app during a session. Jump links lead to the comparison,
+  session details, compatibility, downloads and sources. The hub links to the board
+  guides before asking readers to install. The publisher is identified near the lead.
 - Only English is published. The other five catalogs contain the same English
   keys for catalog completeness, not translated pages. Metadata and the new
   sitemap shard advertise only English. Localized aliases redirect temporarily
@@ -25,8 +28,9 @@ layout directory; `/spraywalls` remains the setup page.
   cached community activity figures retain their own scope and fallback.
 
 The PR author owns initial verification. Boardsesh maintainers check the sources
-and App Store snapshot monthly and after relevant app/controller releases. Update
-the checked dates only after actually checking the claims. Pages never depend on
+and App Store snapshot monthly and after relevant app/controller releases. Editorial
+changes update the guide date; source and rating dates change only after checking
+those claims. Pages never depend on
 an App Store request at render time. The registry and catalogs hold the evidence;
 `app-guide-pages.test.tsx` verifies the server output and metadata.
 

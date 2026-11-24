@@ -24,7 +24,7 @@ export default function AppGuideComparison({ guide, t }: { guide: AppGuidePage; 
 
   // Explicit roles preserve native table semantics when CSS stacks the cells on phones.
   return (
-    <PageSection title={title}>
+    <PageSection id="comparison" title={title} lead={t(`appGuides:pages.${guide.id}.comparisonIntro`)}>
       <TableContainer className={styles.comparisonFrame}>
         <Table aria-label={title} className={styles.comparison} role="table">
           <TableHead className={styles.comparisonHead} role="rowgroup">

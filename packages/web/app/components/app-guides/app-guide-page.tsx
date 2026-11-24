@@ -76,20 +76,39 @@ function AppGuideDetails({ guide, t }: GuideSectionProps) {
   return (
     <>
       <AppGuideComparison guide={guide} t={t} />
-      <PageSection title={t('appGuides:common.workflow')}>
-        <ProseList ordered>
-          {guide.workflow.map((step) => (
-            <li key={step.id}>
-              <strong>{t(`appGuides:pages.${guide.id}.workflow.${step.id}.title`)}</strong>{' '}
-              {t(`appGuides:pages.${guide.id}.workflow.${step.id}.body`)}
-            </li>
-          ))}
-        </ProseList>
-      </PageSection>
-      <PageSection title={t('appGuides:common.tradeoffs')}>
-        <Prose>{t(`appGuides:pages.${guide.id}.tradeoffs`)}</Prose>
+      <PageSection id="in-session" title={t(`appGuides:pages.${guide.id}.workflowTitle`)}>
+        {guide.workflow.map((section) => (
+          <PageSection key={section.id} id={`guide-${section.id}`}>
+            <Typography component="h3" variant="h6" sx={{ mb: 1 }}>
+              {t(`appGuides:pages.${guide.id}.workflow.${section.id}.title`)}
+            </Typography>
+            <Prose>{t(`appGuides:pages.${guide.id}.workflow.${section.id}.body`)}</Prose>
+          </PageSection>
+        ))}
       </PageSection>
     </>
+  );
+}
+
+function AppGuideNavigation({ t }: Pick<AppGuideCopy, 't'>) {
+  return (
+    <Box component="nav" aria-label={t('appGuides:common.navigation')} className={styles.guideNavigation}>
+      <MuiLink href="#comparison" sx={SUPPORTING_LINK_SX}>
+        {t('appGuides:common.comparison')}
+      </MuiLink>
+      <MuiLink href="#in-session" sx={SUPPORTING_LINK_SX}>
+        {t('appGuides:common.workflow')}
+      </MuiLink>
+      <MuiLink href="#compatibility" sx={SUPPORTING_LINK_SX}>
+        {t('appGuides:common.compatibility')}
+      </MuiLink>
+      <MuiLink href="#download" sx={SUPPORTING_LINK_SX}>
+        {t('appGuides:common.downloadHeading')}
+      </MuiLink>
+      <MuiLink href="#sources" sx={SUPPORTING_LINK_SX}>
+        {t('appGuides:common.sources')}
+      </MuiLink>
+    </Box>
   );
 }
 
@@ -97,12 +116,8 @@ function AppGuideReferences({ guide, t }: GuideSectionProps) {
   return (
     <>
       {guide.sources.length > 0 && (
-        <PageSection title={t('appGuides:common.sources')}>
-          <Prose>
-            <time dateTime={guide.updatedAt}>
-              {t('appGuides:common.updatedAt', { date: dateFormat.format(new Date(guide.updatedAt)) })}
-            </time>
-          </Prose>
+        <PageSection id="sources" title={t('appGuides:common.sources')}>
+          <Prose>{t('appGuides:common.independence')}</Prose>
           <ProseList ordered>
             {guide.sources.map((source) => (
               <li key={source.id} id={`app-guide-source-${source.id}`} className={styles.source}>
@@ -194,6 +209,7 @@ export default function AppGuidePage({ guide, t, storeLabels }: AppGuidePageProp
       width="wide"
       title={heading}
       lead={intro}
+      headerClassName={styles.guideHeader}
       breadcrumb={
         <Breadcrumbs aria-label={t('appGuides:common.breadcrumbLabel')}>
           {breadcrumbs.map((crumb, index) =>
@@ -217,14 +233,32 @@ export default function AppGuidePage({ guide, t, storeLabels }: AppGuidePageProp
       }
     >
       <JsonLd data={structuredData} />
+      <Typography component="p" variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+        {t('appGuides:common.publisher')}
+        {' · '}
+        <time dateTime={guide.updatedAt}>
+          {t('appGuides:common.updatedAt', { date: dateFormat.format(new Date(guide.updatedAt)) })}
+        </time>
+      </Typography>
+      {isHub ? (
+        <AppGuidePicker t={t} />
+      ) : (
+        <>
+          <PageSection id="recommendation" title={t(`appGuides:pages.${guide.id}.verdictTitle`)}>
+            <Prose>{t(`appGuides:pages.${guide.id}.tradeoffs`)}</Prose>
+            <AppGuideRating t={t} />
+          </PageSection>
+          <AppGuideNavigation t={t} />
+          <AppGuideDetails guide={guide} t={t} />
+        </>
+      )}
       <Box className={styles.hero}>
         <Box>
-          <PageSection title={t('appGuides:common.compatibility')}>
+          <PageSection id="compatibility" title={t('appGuides:common.compatibility')}>
             <Prose>{t(`appGuides:pages.${guide.id}.compatibility`)}</Prose>
-            <Prose>{t('appGuides:common.independence')}</Prose>
             {isHub && <Prose>{t('appGuides:pages.hub.tradeoffs')}</Prose>}
           </PageSection>
-          <PageSection title={t('appGuides:common.downloadHeading')}>
+          <PageSection id="download" title={t('appGuides:common.downloadHeading')}>
             <Box className={styles.downloadActions}>
               <StoreInstallButtons placement={placement} labels={storeLabels} align="start" sharedHtml />
               <StartClimbingButton
@@ -236,27 +270,12 @@ export default function AppGuidePage({ guide, t, storeLabels }: AppGuidePageProp
               />
             </Box>
             <Box sx={{ display: 'grid', gap: 1.5, mt: 2 }}>
-              <AppGuideRating t={t} />
+              {isHub && <AppGuideRating t={t} />}
               <Suspense fallback={null}>
                 <CommunityProofLine locale={DEFAULT_LOCALE} />
               </Suspense>
             </Box>
           </PageSection>
-          {isHub && (
-            <Box className={styles.downloadActions} sx={{ mt: 2 }}>
-              <MuiLink href="#choose-board" sx={SUPPORTING_LINK_SX}>
-                {t('appGuides:common.chooseBoard')}
-              </MuiLink>
-              <MuiLink
-                component={LocaleLink}
-                locale={DEFAULT_LOCALE}
-                href={APP_GUIDE_COMPARISON.path}
-                sx={SUPPORTING_LINK_SX}
-              >
-                {t('appGuides:common.sprayGuideLink')}
-              </MuiLink>
-            </Box>
-          )}
         </Box>
         <Box className={styles.heroImage}>
           <Image
@@ -269,7 +288,6 @@ export default function AppGuidePage({ guide, t, storeLabels }: AppGuidePageProp
           />
         </Box>
       </Box>
-      {isHub ? <AppGuidePicker t={t} /> : <AppGuideDetails guide={guide} t={t} />}
       <AppGuideReferences guide={guide} t={t} />
     </PageShell>
   );
