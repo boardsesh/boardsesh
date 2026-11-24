@@ -44,7 +44,7 @@ import {
   BOARD_ANGLE_VALIDATION_MESSAGE,
   isBoardAngleSupported,
 } from '../../../validation/schemas';
-import { generateUniqueGymSlug, requireBoardGymLinkAccess, userCanEditGym } from './gyms';
+import { generateUniqueGymSlug, requireBoardGymLinkAccess, resolveCanonicalGymByUuid, userCanEditGym } from './gyms';
 import { resolveAutoGymForBoard } from './gym-matching';
 import {
   loadProjectionGym,
@@ -52,6 +52,7 @@ import {
   projectBoardLocation,
 } from '../../../services/board-location-projection';
 import { findBlockingDuplicate, type BoardLocation } from './board-duplicates';
+import { assertNoExistingWalls, collectWallScope, type WallScope } from './existing-wall-check';
 import { assertBoardCapNotReached } from './board-limits';
 import { syncLocationGeography } from './location-geography';
 import { getUserCommunityRoles, rolesGrantAdminOrLeader, requireAdmin, type CommunityRoleScope } from './roles';
@@ -2877,13 +2878,61 @@ export const socialBoardMutations = {
     const uuid = uuidv4();
     const slug = await generateUniqueSlug(validatedInput.name);
 
+    // The existing-wall recheck (#8151, docs/product/existing-wall-check.md).
+    // Opt-in: a client that doesn't send `existingWallCheck` gets exactly the
+    // behaviour from before it existed. It only runs for a board without a
+    // serial (the serial guard already settles those) and only once the board
+    // lands on a gym. Spray walls have their own setup and never run it.
+    const wallCheckMode =
+      validatedInput.existingWallCheck != null &&
+      !validatedInput.serialNumber &&
+      !isSprayBoardType(validatedInput.boardType)
+        ? validatedInput.existingWallCheck
+        : null;
+    const wallCheckDraft = {
+      boardType: validatedInput.boardType,
+      layoutId: validatedInput.layoutId,
+      sizeId: validatedInput.sizeId,
+      setIds: validatedInput.setIds,
+    };
+    // The scope (which gyms' walls count) is read on the pool, always BEFORE the
+    // insert's transaction opens. Inside the transaction only the lock and the
+    // wall read run, on the transaction itself, so a create never holds its
+    // transaction's connection while it waits for a second one.
+    const checkExistingWalls = (scope: WallScope, transaction?: DbTransaction) =>
+      wallCheckMode == null
+        ? Promise.resolve()
+        : assertNoExistingWalls({
+            scope,
+            draft: wallCheckDraft,
+            viewerId: userId,
+            mode: wallCheckMode,
+            acknowledgedWallUuids: validatedInput.acknowledgedWallUuids ?? [],
+            transaction,
+          });
+
     // Resolve the gym this board belongs to. An explicit gymUuid goes through the
     // shared link gate (owner/admin, or a nearby public gym the caller is adding
     // their own board to); otherwise infer one from the location.
     let gymId: number | null = null;
+    // The gyms whose walls the recheck reads, once a gym is known. Null when the
+    // recheck is off or the board lands on no gym.
+    let wallCheckScope: WallScope | null = null;
     let mintGymNamed: string | null = null;
 
     if (validatedInput.gymUuid) {
+      if (wallCheckMode != null) {
+        // Before the link gate, so a create refused over an existing wall never
+        // spends the climber's 5/min foreign-gym link bucket. Only for a gym the
+        // caller may see: a missing or hidden private gym goes on to the gate,
+        // which refuses it as "Gym not found" exactly as before, rather than
+        // this check answering differently for it.
+        const requestedGym = await resolveCanonicalGymByUuid(validatedInput.gymUuid);
+        if (requestedGym && (requestedGym.isPublic || (await userCanEditGym(requestedGym, userId)))) {
+          wallCheckScope = await collectWallScope({ kind: 'gym', gym: requestedGym });
+          await checkExistingWalls(wallCheckScope);
+        }
+      }
       const gym = await requireBoardGymLinkAccess({
         ctx,
         gymUuid: validatedInput.gymUuid,
@@ -2893,6 +2942,12 @@ export const socialBoardMutations = {
         boardLongitude: incomingLocation.longitude,
       });
       gymId = gym.id;
+      // The gate resolves the same canonical gym, so the early scope is reused.
+      // It is only missing when the early run was skipped for a gym the caller
+      // can't see, which the gate has just let through for its owner or admin.
+      if (wallCheckMode != null && (wallCheckScope == null || wallCheckScope.selectedGymId !== gym.id)) {
+        wallCheckScope = await collectWallScope({ kind: 'gym', gym });
+      }
     } else {
       const resolution = await resolveAutoGymForBoard({
         userId,
@@ -2902,8 +2957,30 @@ export const socialBoardMutations = {
       });
       if (resolution.action === 'attach') {
         gymId = resolution.gymId;
+        if (wallCheckMode != null) {
+          const [attachedGym] = await db
+            .select()
+            .from(dbSchema.gyms)
+            .where(and(eq(dbSchema.gyms.id, resolution.gymId), isNull(dbSchema.gyms.deletedAt)))
+            .limit(1);
+          // The resolver just picked this gym as live. Gone a moment later means
+          // it was deleted or merged in between; fail rather than create without
+          // the check the client asked for.
+          if (!attachedGym) throw new Error('The gym for this board changed while it was being added. Try again.');
+          wallCheckScope = await collectWallScope({ kind: 'gym', gym: attachedGym });
+        }
       } else if (resolution.action === 'mint') {
         mintGymNamed = resolution.name;
+        // Minting a new gym: the walls that count are on public, listed gyms
+        // within 150 m of the typed location. Without coordinates there is no
+        // "nearby" to search.
+        if (wallCheckMode != null && incomingLocation.latitude != null && incomingLocation.longitude != null) {
+          wallCheckScope = await collectWallScope({
+            kind: 'point',
+            latitude: incomingLocation.latitude,
+            longitude: incomingLocation.longitude,
+          });
+        }
       }
     }
 
@@ -2967,6 +3044,12 @@ export const socialBoardMutations = {
     const insertGuardedBoard = async (linkedGymId: number | null) => {
       try {
         return await db.transaction(async (tx) => {
+          // The authoritative existing-wall check: under the gym-wall locks, so a
+          // concurrent create of the same wall is seen. Gym locks before the
+          // serial lock. A no-op without `existingWallCheck`.
+          if (linkedGymId != null && wallCheckScope != null) {
+            await checkExistingWalls(wallCheckScope, tx);
+          }
           await lockAndAssertBoardSerialAvailable(tx, validatedInput, userId);
           const [insertedBoard] = await tx
             .insert(dbSchema.userBoards)
@@ -2983,10 +3066,21 @@ export const socialBoardMutations = {
 
     if (mintGymNamed != null) {
       const gymName = mintGymNamed;
+      // Set when the existing-wall recheck inside the mint's transaction throws,
+      // so the catch below can tell it apart from a gym-creation failure.
+      let wallRecheckFailed = false;
       try {
         const gymUuid = uuidv4();
         const gymSlug = await generateUniqueGymSlug(gymName);
         const result = await db.transaction(async (tx) => {
+          if (wallCheckScope != null) {
+            try {
+              await checkExistingWalls(wallCheckScope, tx);
+            } catch (error) {
+              wallRecheckFailed = true;
+              throw error;
+            }
+          }
           await lockAndAssertBoardSerialAvailable(tx, validatedInput, userId);
 
           const [newGym] = await tx
@@ -3023,6 +3117,12 @@ export const socialBoardMutations = {
         // swallow it and retry the insert below — that fallback would create the
         // very cross-owner duplicate the guard just refused.
         if (error instanceof GraphQLError && error.extensions.code === 'BOARD_SERIAL_EXISTS') throw error;
+        // Likewise ANY failure of the existing-wall recheck the client asked for:
+        // its refusal, and equally a lookup or lock that failed. The fallback
+        // inserts the board with no gym, so it never runs the check; falling back
+        // would create the board unchecked. The fallback is for gym creation
+        // failing, nothing else.
+        if (wallRecheckFailed) throw error;
         // The gym couldn't be minted; still create the board, unlinked, rather
         // than failing the whole create.
         logger.error('Auto-gym creation failed, creating board without gym:', error);

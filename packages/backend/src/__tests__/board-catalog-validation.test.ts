@@ -353,6 +353,52 @@ describe('assertKnownBoardConfig', () => {
   });
 });
 
+describe('UNKNOWN_BOARD_CONFIG detail', () => {
+  /** The refusal's extensions; fails the test when the promise resolves. */
+  async function refusalExtensions(promise: Promise<unknown>): Promise<Record<string, unknown>> {
+    try {
+      await promise;
+    } catch (error) {
+      expect(error).toBeInstanceOf(GraphQLError);
+      return (error as GraphQLError).extensions;
+    }
+    throw new Error('expected UNKNOWN_BOARD_CONFIG');
+  }
+
+  it('names the Aurora field the catalogue lacks, and the unknown sets when sets are the problem', async () => {
+    expect(
+      await refusalExtensions(assertKnownBoardConfig('kilter', LAYOUT_ID, SIZE_ID, `${SET_A_ID},${UNKNOWN_SET_ID}`)),
+    ).toEqual({ code: 'UNKNOWN_BOARD_CONFIG', field: 'setIds', invalidSetIds: [UNKNOWN_SET_ID] });
+    expect(
+      await refusalExtensions(assertKnownBoardConfig('kilter', UNKNOWN_LAYOUT_ID, SIZE_ID, String(SET_A_ID))),
+    ).toEqual({ code: 'UNKNOWN_BOARD_CONFIG', field: 'layoutId' });
+    expect(
+      await refusalExtensions(assertKnownBoardConfig('kilter', LAYOUT_ID, UNKNOWN_SIZE_ID, String(SET_A_ID))),
+    ).toEqual({ code: 'UNKNOWN_BOARD_CONFIG', field: 'sizeId' });
+    expect(
+      await refusalExtensions(assertKnownBoardConfig('not-a-board', LAYOUT_ID, SIZE_ID, String(SET_A_ID))),
+    ).toEqual({ code: 'UNKNOWN_BOARD_CONFIG', field: 'boardType' });
+  });
+
+  it('names the MoonBoard field and its unknown sets without a catalogue query', async () => {
+    const selectSpy = vi.spyOn(db, 'select');
+    const masters2019 = MOONBOARD_LAYOUTS['moonboard-masters-2019'].id;
+
+    expect(
+      await refusalExtensions(assertKnownBoardConfig('moonboard', masters2019, MOONBOARD_SIZE.id, '17,2,20')),
+    ).toEqual({ code: 'UNKNOWN_BOARD_CONFIG', field: 'setIds', invalidSetIds: [2] });
+    expect(await refusalExtensions(assertKnownBoardConfig('moonboard', 99_999, MOONBOARD_SIZE.id, '17'))).toMatchObject(
+      {
+        field: 'layoutId',
+      },
+    );
+    expect(
+      await refusalExtensions(assertKnownBoardConfig('moonboard', masters2019, MOONBOARD_SIZE.id + 1, '17')),
+    ).toMatchObject({ field: 'sizeId' });
+    expect(selectSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe('board-presence catalog gates', () => {
   it('keeps an anonymous shared miss as NOT_FOUND without creating a system board', async () => {
     const before = await sideEffectCounts(AUTO_GYM_USER_ID);

@@ -232,17 +232,34 @@ async function findOwnGymsByExactName(opts: {
     .sort((first, second) => first.id - second.id);
 }
 
-/** Live gyms of any owner within `radiusMeters`, regardless of name. Nearest-first. */
-async function findGymsWithin(opts: {
+/**
+ * Live gyms of any owner within `radiusMeters`, regardless of name. Nearest-first.
+ *
+ * `publicListedOnly` narrows to gyms anyone can find (public AND listed), the
+ * same visibility `findSimilarGymCandidates` applies to other owners' gyms. The
+ * existing-wall check sets it, because a private gym's walls must never shape
+ * what a stranger is told. The auto-gym resolver leaves it off: it only ever
+ * reuses a SYSTEM gym or the caller's own, and filters for that itself.
+ */
+export async function findGymsWithin(opts: {
   latitude: number;
   longitude: number;
   radiusMeters: number;
+  publicListedOnly?: boolean;
+  /** Read on this connection instead of the pool, e.g. the transaction the caller already holds. */
+  executor?: Pick<typeof db, 'select'>;
 }): Promise<GymNameMatch[]> {
-  const { latitude, longitude, radiusMeters } = opts;
-  const rows = await db
+  const { latitude, longitude, radiusMeters, publicListedOnly = false, executor = db } = opts;
+  const rows = await executor
     .select(gymColumns)
     .from(dbSchema.gyms)
-    .where(and(isNull(dbSchema.gyms.deletedAt), withinBoundingBox(latitude, longitude, radiusMeters)));
+    .where(
+      and(
+        isNull(dbSchema.gyms.deletedAt),
+        withinBoundingBox(latitude, longitude, radiusMeters),
+        publicListedOnly ? and(eq(dbSchema.gyms.isPublic, true), eq(dbSchema.gyms.isListed, true)) : undefined,
+      ),
+    );
 
   return rows
     .filter(

@@ -680,6 +680,8 @@ const NOT_APPLICABLE: Record<string, string> = {
   'Query.gymBySlug': 'the same gym row by slug',
   'Query.gymMembers': 'the gym roster',
   'Query.strayBoardsForGym': 'boards NEAR a gym and not linked to it; the seeded wall is linked',
+  'Query.existingWallCandidates':
+    'refuses boardType spray at validation, so it never reads a spray wall; it answers with board rows, never a climb',
   'Query.gymKiosk': 'kiosk configuration, and the seed creates none',
   'Query.gymKiosks': 'kiosk configuration, and the seed creates none',
   'Query.gymGradeCollectionOptions':

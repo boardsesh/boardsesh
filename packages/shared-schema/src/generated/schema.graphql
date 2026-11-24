@@ -3788,6 +3788,103 @@ input CreateBoardInput {
   allowDuplicateConfig: Boolean
   "Create even when the serial is already registered to another user's board with the same configuration (default false — such creates fail with BOARD_SERIAL_EXISTS so clients can route the user to the existing board)"
   allowDuplicateSerial: Boolean
+  """
+  Opt in to the existing-wall recheck (#8151). Absent: no check, exactly the
+  behaviour before it existed. Set: when the board has no serial and lands on a
+  gym (named, auto-attached or minted), the server looks for walls the caller
+  can see at that gym, its merged listings and public listings within 150 m,
+  and refuses with BOARD_EXISTING_WALLS per the mode.
+  """
+  existingWallCheck: ExistingWallCheck
+  """
+  With CONFIRMED_SEPARATE: the walls the climber was shown and said are
+  different from theirs. At most 40.
+  """
+  acknowledgedWallUuids: [ID!]
+}
+
+"""
+How createBoard treats walls that already exist where the new board lands.
+"""
+enum ExistingWallCheck {
+  "Refuse when a wall with the same layout and size exists (same sets or not)."
+  REJECT_IF_FOUND
+  """
+  The climber confirmed theirs is a separate wall. Refuse only for a
+  same-setup wall missing from acknowledgedWallUuids. With an empty list, only
+  honoured when the server finds no same-layout wall at all.
+  """
+  CONFIRMED_SEPARATE
+}
+
+"""
+How an existing wall compares with the setup the climber is entering. Angle is
+never compared.
+"""
+enum WallMatchKind {
+  "Same layout, size and hold sets."
+  EXACT
+  "Same layout and size, different hold sets."
+  SETS_DIFFER
+  "Same board type, another layout or size. Advisory only; never blocks a create."
+  LAYOUT_OR_SIZE_DIFFERS
+}
+
+"""
+Where an existing wall was found relative to the chosen gym.
+"""
+enum WallCandidateSource {
+  "Linked to the chosen gym."
+  SELECTED_GYM
+  "Linked to a listing an admin merged into the chosen gym."
+  MERGED_LISTING
+  "Linked to another public, listed gym within 150 m."
+  NEARBY_LISTING
+}
+
+"""
+Input for existingWallCandidates.
+"""
+input ExistingWallCandidatesInput {
+  "Board type. Spray walls are not supported."
+  boardType: String!
+  "The chosen gym. A merged listing's uuid resolves to the gym it merged into."
+  gymUuid: ID!
+  "The draft's layout. Send layoutId, sizeId and setIds together, or none of them."
+  layoutId: Int
+  "The draft's size."
+  sizeId: Int
+  "The draft's comma-separated hold sets."
+  setIds: String
+  "Most candidates to return (default 20, max 40)."
+  limit: Int
+}
+
+"""
+A wall the climber can see that may be the one they are about to add.
+"""
+type ExistingWallCandidate {
+  board: UserBoard!
+  "How it compares with the draft; null when no draft setup was sent."
+  matchKind: WallMatchKind
+  "Hold sets the draft has and the wall lacks (SETS_DIFFER only)."
+  missingSetIds: [Int!]!
+  "Hold sets the wall has and the draft lacks (SETS_DIFFER only)."
+  extraSetIds: [Int!]!
+  source: WallCandidateSource!
+  "Name of the gym the wall is linked to."
+  gymName: String!
+  "Metres from the chosen gym to a nearby listing; null for the chosen gym and merged listings."
+  gymDistanceMeters: Float
+}
+
+"""
+Existing walls at a gym, best match first.
+"""
+type ExistingWallCandidates {
+  candidates: [ExistingWallCandidate!]!
+  "True when more walls matched than were returned."
+  truncated: Boolean!
 }
 
 """
@@ -9715,6 +9812,16 @@ type Query {
   Rate-limited.
   """
   gymBoards(gymUuid: ID!): [UserBoard!]!
+
+  """
+  Walls that may already be the one a climber is about to add at a gym (#8151):
+  boards of the given type on the gym, on listings merged into it, and on
+  public, listed gyms within 150 m (at most 10). Only walls the caller can see
+  are returned or counted: their own, and public listed boards. A private gym
+  the caller can't edit throws NOT_FOUND. Auth-optional and rate-limited. A
+  failed lookup throws; it never answers with an empty list.
+  """
+  existingWallCandidates(input: ExistingWallCandidatesInput!): ExistingWallCandidates!
 
   """
   Boards that probably belong to a gym but aren't linked to it yet, for the

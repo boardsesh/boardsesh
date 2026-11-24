@@ -2767,6 +2767,11 @@ export type ControllerRegistration = {
 /** Input for creating a board. */
 export type CreateBoardInput = {
   /**
+   * With CONFIRMED_SEPARATE: the walls the climber was shown and said are
+   * different from theirs. At most 40.
+   */
+  acknowledgedWallUuids?: InputMaybe<Array<Scalars['ID']['input']>>;
+  /**
    * Create this board even though the caller already owns one with the same
    * configuration at the same place. Set only after the user has confirmed it is
    * a physically different wall (another gym, another room) — never by default.
@@ -2781,6 +2786,14 @@ export type CreateBoardInput = {
   boardType: Scalars['String']['input'];
   /** Optional description */
   description?: InputMaybe<Scalars['String']['input']>;
+  /**
+   * Opt in to the existing-wall recheck (#8151). Absent: no check, exactly the
+   * behaviour before it existed. Set: when the board has no serial and lands on a
+   * gym (named, auto-attached or minted), the server looks for walls the caller
+   * can see at that gym, its merged listings and public listings within 150 m,
+   * and refuses with BOARD_EXISTING_WALLS per the mode.
+   */
+  existingWallCheck?: InputMaybe<ExistingWallCheck>;
   /** Optional gym UUID to link board to */
   gymUuid?: InputMaybe<Scalars['String']['input']>;
   /** Whether this wall has an LED light kit (default true) */
@@ -3540,6 +3553,58 @@ export type EventsReplayResponse = {
   /** List of events since the requested sequence */
   events: Array<QueueEvent>;
 };
+
+/** A wall the climber can see that may be the one they are about to add. */
+export type ExistingWallCandidate = {
+  __typename?: 'ExistingWallCandidate';
+  board: UserBoard;
+  /** Hold sets the wall has and the draft lacks (SETS_DIFFER only). */
+  extraSetIds: Array<Scalars['Int']['output']>;
+  /** Metres from the chosen gym to a nearby listing; null for the chosen gym and merged listings. */
+  gymDistanceMeters?: Maybe<Scalars['Float']['output']>;
+  /** Name of the gym the wall is linked to. */
+  gymName: Scalars['String']['output'];
+  /** How it compares with the draft; null when no draft setup was sent. */
+  matchKind?: Maybe<WallMatchKind>;
+  /** Hold sets the draft has and the wall lacks (SETS_DIFFER only). */
+  missingSetIds: Array<Scalars['Int']['output']>;
+  source: WallCandidateSource;
+};
+
+/** Existing walls at a gym, best match first. */
+export type ExistingWallCandidates = {
+  __typename?: 'ExistingWallCandidates';
+  candidates: Array<ExistingWallCandidate>;
+  /** True when more walls matched than were returned. */
+  truncated: Scalars['Boolean']['output'];
+};
+
+/** Input for existingWallCandidates. */
+export type ExistingWallCandidatesInput = {
+  /** Board type. Spray walls are not supported. */
+  boardType: Scalars['String']['input'];
+  /** The chosen gym. A merged listing's uuid resolves to the gym it merged into. */
+  gymUuid: Scalars['ID']['input'];
+  /** The draft's layout. Send layoutId, sizeId and setIds together, or none of them. */
+  layoutId?: InputMaybe<Scalars['Int']['input']>;
+  /** Most candidates to return (default 20, max 40). */
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  /** The draft's comma-separated hold sets. */
+  setIds?: InputMaybe<Scalars['String']['input']>;
+  /** The draft's size. */
+  sizeId?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** How createBoard treats walls that already exist where the new board lands. */
+export type ExistingWallCheck =
+  /**
+   * The climber confirmed theirs is a separate wall. Refuse only for a
+   * same-setup wall missing from acknowledgedWallUuids. With an empty list, only
+   * honoured when the server finds no same-layout wall at all.
+   */
+  | 'CONFIRMED_SEPARATE'
+  /** Refuse when a wall with the same layout and size exists (same sets or not). */
+  | 'REJECT_IF_FOUND';
 
 /** Count of favorited climbs per board. */
 export type FavoritesCount = {
@@ -8881,6 +8946,15 @@ export type Query = {
    */
   eventsReplay: EventsReplayResponse;
   /**
+   * Walls that may already be the one a climber is about to add at a gym (#8151):
+   * boards of the given type on the gym, on listings merged into it, and on
+   * public, listed gyms within 150 m (at most 10). Only walls the caller can see
+   * are returned or counted: their own, and public listed boards. A private gym
+   * the caller can't edit throws NOT_FOUND. Auth-optional and rate-limited. A
+   * failed lookup throws; it never answers with an empty list.
+   */
+  existingWallCandidates: ExistingWallCandidates;
+  /**
    * Check which climbs from a list are favorited by the current user.
    * Returns array of favorited climb UUIDs.
    */
@@ -9915,6 +9989,11 @@ export type QueryDuplicateGymClustersArgs = {
 export type QueryEventsReplayArgs = {
   sessionId: Scalars['ID']['input'];
   sinceSequence: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryExistingWallCandidatesArgs = {
+  input: ExistingWallCandidatesInput;
 };
 
 /** Root query type for all read operations. */
@@ -14675,6 +14754,15 @@ export type VoteSummary = {
   voteScore: Scalars['Int']['output'];
 };
 
+/** Where an existing wall was found relative to the chosen gym. */
+export type WallCandidateSource =
+  /** Linked to a listing an admin merged into the chosen gym. */
+  | 'MERGED_LISTING'
+  /** Linked to another public, listed gym within 150 m. */
+  | 'NEARBY_LISTING'
+  /** Linked to the chosen gym. */
+  | 'SELECTED_GYM';
+
 /**
  * Event broadcast when a participant's phone successfully relays a climb to the
  * wall over BLE. Other clients use this confirmation to flip the queue-control-bar
@@ -14707,6 +14795,18 @@ export type WallDisconnected = {
   /** Stable participant id of the member whose connection was relaying the climb, or null for a system/crash backstop (WebSocket close) */
   disconnectedByParticipantId?: Maybe<Scalars['ID']['output']>;
 };
+
+/**
+ * How an existing wall compares with the setup the climber is entering. Angle is
+ * never compared.
+ */
+export type WallMatchKind =
+  /** Same layout, size and hold sets. */
+  | 'EXACT'
+  /** Same board type, another layout or size. Advisory only; never blocks a create. */
+  | 'LAYOUT_OR_SIZE_DIFFERS'
+  /** Same layout and size, different hold sets. */
+  | 'SETS_DIFFER';
 
 /**
  * Bounding box defining a board region for filtering climbs.
@@ -15062,6 +15162,10 @@ export type ResolversTypes = ResolversObject<{
   EventsReplayResponse: ResolverTypeWrapper<
     Omit<EventsReplayResponse, 'events'> & { events: Array<ResolversTypes['QueueEvent']> }
   >;
+  ExistingWallCandidate: ResolverTypeWrapper<ExistingWallCandidate>;
+  ExistingWallCandidates: ResolverTypeWrapper<ExistingWallCandidates>;
+  ExistingWallCandidatesInput: ExistingWallCandidatesInput;
+  ExistingWallCheck: ExistingWallCheck;
   FavoritesCount: ResolverTypeWrapper<FavoritesCount>;
   FeedbackContextInput: FeedbackContextInput;
   FinaliseCncOrderInput: FinaliseCncOrderInput;
@@ -15539,8 +15643,10 @@ export type ResolversTypes = ResolversObject<{
   VoteInput: VoteInput;
   VoteOnProposalInput: VoteOnProposalInput;
   VoteSummary: ResolverTypeWrapper<VoteSummary>;
+  WallCandidateSource: WallCandidateSource;
   WallConfirmedClimb: ResolverTypeWrapper<WallConfirmedClimb>;
   WallDisconnected: ResolverTypeWrapper<WallDisconnected>;
+  WallMatchKind: WallMatchKind;
   ZoneBoxInput: ZoneBoxInput;
   ZoneMatchMode: ZoneMatchMode;
 }>;
@@ -15734,6 +15840,9 @@ export type ResolversParentTypes = ResolversObject<{
   DuplicateGymClustersInput: DuplicateGymClustersInput;
   DuplicateGymMember: DuplicateGymMember;
   EventsReplayResponse: Omit<EventsReplayResponse, 'events'> & { events: Array<ResolversParentTypes['QueueEvent']> };
+  ExistingWallCandidate: ExistingWallCandidate;
+  ExistingWallCandidates: ExistingWallCandidates;
+  ExistingWallCandidatesInput: ExistingWallCandidatesInput;
   FavoritesCount: FavoritesCount;
   FeedbackContextInput: FeedbackContextInput;
   FinaliseCncOrderInput: FinaliseCncOrderInput;
@@ -18024,6 +18133,29 @@ export type EventsReplayResponseResolvers<
 > = ResolversObject<{
   currentSequence?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   events?: Resolver<Array<ResolversTypes['QueueEvent']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type ExistingWallCandidateResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ExistingWallCandidate'] = ResolversParentTypes['ExistingWallCandidate'],
+> = ResolversObject<{
+  board?: Resolver<ResolversTypes['UserBoard'], ParentType, ContextType>;
+  extraSetIds?: Resolver<Array<ResolversTypes['Int']>, ParentType, ContextType>;
+  gymDistanceMeters?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  gymName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  matchKind?: Resolver<Maybe<ResolversTypes['WallMatchKind']>, ParentType, ContextType>;
+  missingSetIds?: Resolver<Array<ResolversTypes['Int']>, ParentType, ContextType>;
+  source?: Resolver<ResolversTypes['WallCandidateSource'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type ExistingWallCandidatesResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ExistingWallCandidates'] = ResolversParentTypes['ExistingWallCandidates'],
+> = ResolversObject<{
+  candidates?: Resolver<Array<ResolversTypes['ExistingWallCandidate']>, ParentType, ContextType>;
+  truncated?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -21273,6 +21405,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryEventsReplayArgs, 'sessionId' | 'sinceSequence'>
   >;
+  existingWallCandidates?: Resolver<
+    ResolversTypes['ExistingWallCandidates'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryExistingWallCandidatesArgs, 'input'>
+  >;
   favorites?: Resolver<
     Array<ResolversTypes['String']>,
     ParentType,
@@ -24022,6 +24160,8 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   DuplicateGymClusterConnection?: DuplicateGymClusterConnectionResolvers<ContextType>;
   DuplicateGymMember?: DuplicateGymMemberResolvers<ContextType>;
   EventsReplayResponse?: EventsReplayResponseResolvers<ContextType>;
+  ExistingWallCandidate?: ExistingWallCandidateResolvers<ContextType>;
+  ExistingWallCandidates?: ExistingWallCandidatesResolvers<ContextType>;
   FavoritesCount?: FavoritesCountResolvers<ContextType>;
   FollowConnection?: FollowConnectionResolvers<ContextType>;
   FollowedAuthorUser?: FollowedAuthorUserResolvers<ContextType>;

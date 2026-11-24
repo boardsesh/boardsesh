@@ -150,6 +150,50 @@ export type CreateBoardInput = {
   // Opt-in for creating a board whose serial is already registered to another
   // user's same-config board; without it such creates fail BOARD_SERIAL_EXISTS.
   allowDuplicateSerial?: boolean;
+  /**
+   * Opt in to the existing-wall recheck (#8151). Absent keeps the old
+   * behaviour; see `ExistingWallCheck`.
+   */
+  existingWallCheck?: ExistingWallCheck;
+  /** With CONFIRMED_SEPARATE: the walls the climber saw and said are different. At most 40. */
+  acknowledgedWallUuids?: string[];
+};
+
+/**
+ * How createBoard treats walls that already exist where the new board lands.
+ * REJECT_IF_FOUND refuses on a same-layout wall; CONFIRMED_SEPARATE refuses only
+ * on a same-setup wall the climber didn't acknowledge.
+ */
+export type ExistingWallCheck = 'REJECT_IF_FOUND' | 'CONFIRMED_SEPARATE';
+
+/** How an existing wall compares with a draft setup. `classifyWallMatch` in @boardsesh/board-config computes it. */
+export type WallMatchKind = 'EXACT' | 'SETS_DIFFER' | 'LAYOUT_OR_SIZE_DIFFERS';
+
+/** Where an existing wall was found relative to the chosen gym. */
+export type WallCandidateSource = 'SELECTED_GYM' | 'MERGED_LISTING' | 'NEARBY_LISTING';
+
+export type ExistingWallCandidatesInput = {
+  boardType: string;
+  gymUuid: string;
+  layoutId?: number;
+  sizeId?: number;
+  setIds?: string;
+  limit?: number;
+};
+
+export type ExistingWallCandidate = {
+  board: UserBoard;
+  matchKind: WallMatchKind | null;
+  missingSetIds: number[];
+  extraSetIds: number[];
+  source: WallCandidateSource;
+  gymName: string;
+  gymDistanceMeters: number | null;
+};
+
+export type ExistingWallCandidates = {
+  candidates: ExistingWallCandidate[];
+  truncated: boolean;
 };
 
 export type UpdateBoardInput = {

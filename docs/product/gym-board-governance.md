@@ -210,3 +210,4 @@ The mechanics are in [gym-claims.md](gym-claims.md).
 - Who runs a gym on www: the run-by line and the claim call-outs in `packages/web/app/gym/[gym_slug]/` (`gym-run-by-line.tsx`, `gym-claim-cta.tsx`, `gym-claim-callout.tsx`, `gym-claim-cta-logic.ts`), the directory's chips and claim mode in `packages/web/app/gyms/gym-directory-card.tsx`.
 - Staff board actions on www: `docs/web/gym-board-management.md`.
 - Climb reports, for comparison: `docs/product/climb-moderation.md`.
+- Stopping a second copy of a wall before it is created (the gym's existing walls, the `createBoard` recheck): `docs/product/existing-wall-check.md`.
