@@ -86,6 +86,11 @@
       "types": "./src/device-token.ts",
       "import": "./src/device-token.ts",
       "default": "./src/device-token.ts"
+    },
+    "./native-oauth-transfer": {
+      "types": "./src/native-oauth-transfer.ts",
+      "import": "./src/native-oauth-transfer.ts",
+      "default": "./src/native-oauth-transfer.ts"
     }
   },
   "scripts": {

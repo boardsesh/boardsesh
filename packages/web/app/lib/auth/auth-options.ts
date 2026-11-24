@@ -21,6 +21,8 @@ import { isAllowedAppOrigin } from '@/app/lib/auth/app-origin-allowlist';
 import { applyCanonicalAuthUrl } from '@/app/lib/auth/canonical-auth-url';
 import { partnerLinkGuardActive } from '@/app/lib/auth/partner-link-guard-mode';
 import { admitLegacyWebPasswordGuess } from './guess-limit-client.server';
+import { webPasswordMode, AuthBackendUnavailableError } from './password-command-client.server';
+import { createNativeTransferCommandClient } from './native-transfer-command-client.server';
 import { parseAccountCreationReceipt } from '@boardsesh/analytics';
 
 // Must run before anything below reads NEXTAUTH_URL (the cookie block does, via
@@ -160,6 +162,25 @@ providers.push(
       const decoded = verifyNativeOAuthTransferToken(credentials.transferToken);
       if (!decoded) {
         return null;
+      }
+
+      // Explicit staging delegates the write. An unavailable backend never falls
+      // back to the web login, which is being fenced away from identity tables.
+      if (webPasswordMode() === 'backend-staging') {
+        const reply = await createNativeTransferCommandClient().claim(credentials.transferToken);
+        if (reply.outcome === 'denied') return null;
+        // The service may confirm the claim, never restamp the signed source.
+        if (
+          reply.user.id !== decoded.userId ||
+          reply.sourceGeneration !== decoded.generation ||
+          JSON.stringify(reply.credentialProof) !== JSON.stringify(decoded.credentialProof)
+        )
+          throw new AuthBackendUnavailableError();
+        return {
+          ...reply.user,
+          nativeOAuthSourceGeneration: reply.sourceGeneration,
+          ...(reply.credentialProof ? { webCredentialProof: reply.credentialProof } : {}),
+        };
       }
 
       const db = getDb();
