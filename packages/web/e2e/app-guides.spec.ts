@@ -53,7 +53,9 @@ for (const width of [390, 1440]) {
 
 test('homepage guide link has visible copy and English guide navigation preserves the document', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('main a[href="/apps"]')).toHaveText('Board app guides (English)');
+  const heroGuideLink = page.getByRole('link', { name: "Compare Boardsesh with your board's app" });
+  await expect(heroGuideLink).toBeVisible();
+  await expect(heroGuideLink).toHaveAttribute('href', '/apps');
   await page.goto('/boards?utm_source=partner&utm_medium=referral');
   await page.locator('footer button[aria-haspopup="menu"]').click();
   await page.keyboard.press('Escape');
