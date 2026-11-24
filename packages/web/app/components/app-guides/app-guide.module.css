@@ -1256,6 +1256,39 @@
   min-height: 44px;
 }
 
+/* On a phone the hub opens with these quotes, so they sit tight: the board tiles
+ * stay as close to the first screens as the hero allows. */
+@media (max-width: 600px) {
+  .page .quotesSection {
+    margin-top: var(--spacing-10);
+  }
+
+  .quotesSection .sectionHead {
+    margin-bottom: var(--spacing-4);
+  }
+
+  .quotes {
+    gap: var(--spacing-2);
+  }
+
+  .quote {
+    gap: var(--spacing-2);
+    padding: var(--spacing-4);
+  }
+
+  .quote blockquote p {
+    font-size: var(--font-size-base);
+    line-height: 1.4;
+  }
+
+  .quote figcaption {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: var(--spacing-2);
+  }
+}
+
 /* ---------- FAQ ---------- */
 .faq {
   max-width: 820px;

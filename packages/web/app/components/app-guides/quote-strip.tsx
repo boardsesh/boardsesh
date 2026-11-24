@@ -20,7 +20,12 @@ export default function QuoteStrip({ pageId, t }: { pageId: AppGuidePageId; t: T
   if (quotes.length === 0) return null;
   const listing = { appStore: BOARDSESH_APP_STORE_RATING.source, googlePlay: BOARDSESH_PLAY_RATING.source };
   return (
-    <Box component="section" id="quotes" className={styles.section} aria-labelledby="quotes-title">
+    <Box
+      component="section"
+      id="quotes"
+      className={`${styles.section} ${styles.quotesSection}`}
+      aria-labelledby="quotes-title"
+    >
       <SectionHead
         id="quotes-title"
         eyebrow={t('appGuides:common.quotes.eyebrow')}

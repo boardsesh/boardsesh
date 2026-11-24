@@ -179,8 +179,8 @@ function HubGuidePage({ guide, t, storeLabels }: AppGuideCopy & { guide: HubGuid
       <SourcesAutoOpen />
       <GuideBreadcrumb t={t} crumbs={crumbs} />
       <HubHero guide={guide} t={t} storeLabels={storeLabels} byline={<Byline guide={guide} t={t} />} />
-      <BoardTileGrid guide={guide} t={t} />
       <QuoteStrip pageId={guide.id} t={t} />
+      <BoardTileGrid guide={guide} t={t} />
       <EveryBoardTray guide={guide} t={t} />
       <PlatformTrio t={t} />
       <Suspense fallback={null}>

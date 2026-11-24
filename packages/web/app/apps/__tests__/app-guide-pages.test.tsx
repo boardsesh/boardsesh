@@ -316,12 +316,13 @@ describe('what climbers say', () => {
     expect(quotesFor('hub').some((quote) => quote.text.includes('I’m'))).toBe(true);
   });
 
-  it('follows the comparison table on board pages and "Pick your board" on the hub', async () => {
+  it('follows the comparison table on board pages and opens the hub, right after the hero', async () => {
     const kilter = await parsePage(await BoardPage(routeProps('kilter')));
     const comparison = kilter.querySelector('#comparison');
     expect(comparison?.nextElementSibling?.id).toBe('quotes');
     const hub = await parsePage(await HubPage());
-    expect(hub.querySelector('#choose-board')?.nextElementSibling?.id).toBe('quotes');
+    expect(hub.querySelector('#quotes')?.nextElementSibling?.id).toBe('choose-board');
+    expect(hub.querySelector('#quotes')?.previousElementSibling?.querySelector('h1')).toBeTruthy();
   });
 });
 
