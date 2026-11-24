@@ -320,6 +320,25 @@ describe('import-copy', () => {
     );
     expect(withLead.registry).toMatchObject({ everyBoardLead: true });
     expect(withLead.catalog.everyBoard).toMatchObject({ lead: 'Learn it once.' });
+    // The makers' card is optional too: text to the catalog, the link to the registry, a www path only.
+    expect(importHubPage(hub, { allowPending: false }).registry).toMatchObject({ makers: null });
+    const makers = {
+      title: 'Want your board here?',
+      body: 'Talk to us.',
+      linkText: 'Talk to us',
+      href: '/for-gyms#partners',
+    };
+    const withMakers = importHubPage({ ...hub, boards: { ...hub.boards, makers } }, { allowPending: false });
+    expect(errors(withMakers)).toEqual([]);
+    expect(withMakers.registry).toMatchObject({ makers: { href: '/for-gyms#partners' } });
+    expect(withMakers.catalog.boards).toMatchObject({
+      makers: { title: 'Want your board here?', body: 'Talk to us.', linkText: 'Talk to us' },
+    });
+    const offSite = importHubPage(
+      { ...hub, boards: { ...hub.boards, makers: { ...makers, href: 'https://example.com' } } },
+      { allowPending: false },
+    );
+    expect(errors(offSite)).toEqual([expect.stringMatching(/boards\.makers\.href is "https:\/\/example\.com"/)]);
     const tiles = hub.boards.tiles as Record<string, string>[];
     tiles[0].linkText = 'Compare the apps';
     tiles[1].href = '/apps/tension';

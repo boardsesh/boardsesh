@@ -100,13 +100,14 @@ describe('app guide pages before hydration', () => {
     // The one filled action opens the browser app; both store badges carry this page's placement.
     // The filled button says what it opens, and lands on this family's section of www's board
     // gallery, where the climber picks their own wall with no account: never one preselected
-    // layout, size or angle. The browser app stays one quiet link away in the hero.
+    // layout, size or angle. The header's "Start climbing" covers the browser app, so the hero
+    // carries no second app link.
     const browse = Array.from(markup.querySelectorAll<HTMLAnchorElement>('a')).find(
       (link) => link.textContent === CTA_LABELS[slug],
     );
     expect(browse?.getAttribute('href'), slug).toBe(`/boards#${CTA_SECTIONS[slug]}`);
     const hero = markup.querySelector('section[aria-labelledby="page-title"]');
-    expect(hero?.querySelector(`a[href="${APP_URL}"]`)?.textContent, slug).toBe('or open the browser app');
+    expect(hero?.querySelector(`a[href="${APP_URL}"]`), slug).toBeNull();
     expect(markup.querySelector('a[data-store-badge="ios"]')?.getAttribute('href')).toContain(`compare-${slug}`);
     expect(markup.querySelector('a[data-store-badge="android"]')?.getAttribute('href')).toContain(`compare-${slug}`);
 
@@ -386,9 +387,12 @@ describe('page-level claims from the registry', () => {
         .find((link) => link.textContent === label)
         ?.getAttribute('href');
     expect(button('hub', 'Find climbs for your board')).toBe('/boards');
-    expect(button('hub', 'or open the browser app')).toBe(APP_URL);
-    // Setting up a spray wall needs an account anyway, so it opens the app with no second link.
-    expect(button('spray-wall-apps', 'or open the browser app')).toBeUndefined();
+    expect(pages.hub.querySelector(`section[aria-labelledby="page-title"] a[href="${APP_URL}"]`)).toBeNull();
+    // Hold and LED makers get one quiet card after the board tiles, linking the partners section.
+    const makers = pages.hub.querySelector('#choose-board a[href="/for-gyms#partners"]');
+    expect(makers?.textContent).toBe('Talk to us about your board');
+    expect(makers?.closest('ul')).toBeNull();
+    // Setting up a spray wall needs an account anyway, so its button opens the app's new-wall flow.
     expect(button('spray-wall-apps', 'Set up your spray wall')).toBe(`${APP_URL}/boards/spray/new`);
   });
 });

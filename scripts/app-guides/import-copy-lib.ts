@@ -657,6 +657,14 @@ export function importHubPage(json: Json, options: ImportOptions): ImportResult 
     if (!boardOrder.includes(slug)) reader.error('boards.tiles', `is missing ${slug}`);
   }
   const spray = reader.object(boards.spray, 'boards.spray');
+  // Optional: the makers' call to action under the tiles. Its link is a path on www.
+  const makers = boards.makers === undefined ? null : reader.object(boards.makers, 'boards.makers');
+  let makersHref: `/${string}` | null = null;
+  if (makers) {
+    const href = reader.text(makers.href, 'boards.makers.href');
+    if (/^\/(?!\/)[^\s?]*$/.test(href)) makersHref = href as `/${string}`;
+    else if (href) reader.error('boards.makers.href', `is ${JSON.stringify(href)}; use a path on boardsesh.com`);
+  }
 
   const everyBoard = reader.object(json.everyBoard, 'everyBoard');
   const everyBoardLead = reader.text(everyBoard.lead, 'everyBoard.lead', { optional: true });
@@ -691,6 +699,15 @@ export function importHubPage(json: Json, options: ImportOptions): ImportResult 
         body: reader.text(spray.body, 'boards.spray.body'),
         linkText: reader.text(spray.linkText, 'boards.spray.linkText'),
       },
+      ...(makers
+        ? {
+            makers: {
+              title: reader.text(makers.title, 'boards.makers.title'),
+              body: reader.text(makers.body, 'boards.makers.body'),
+              linkText: reader.text(makers.linkText, 'boards.makers.linkText'),
+            },
+          }
+        : {}),
     },
     everyBoard: {
       heading: reader.text(everyBoard.heading, 'everyBoard.heading'),
@@ -726,6 +743,7 @@ export function importHubPage(json: Json, options: ImportOptions): ImportResult 
       boards: boardOrder as HubPageRegistry['boards'],
       everyBoard: everyTiles,
       everyBoardLead: everyBoardLead !== '',
+      makers: makersHref ? { href: makersHref } : null,
       faq: faq.registry,
       sources,
       claims,

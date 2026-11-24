@@ -1,11 +1,13 @@
 import React from 'react';
 import Image from 'next/image';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import LaptopOutlined from '@mui/icons-material/LaptopOutlined';
 import PhoneAndroidOutlined from '@mui/icons-material/PhoneAndroidOutlined';
 import PhoneIphoneOutlined from '@mui/icons-material/PhoneIphoneOutlined';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { brandCtaOutlinedSx } from '@/app/components/ui/brand-cta';
 import type { StoreButtonLabels } from '@/app/components/marketing/store-install-buttons';
 import { cachedCommunityStats } from '@/app/lib/graphql/server-cached-client';
 import { DEFAULT_LOCALE } from '@/app/lib/i18n/config';
@@ -93,7 +95,12 @@ export function HubHero({
   );
 }
 
-/** Eight whole-tile links (the Aurora brands land on their section of /apps/aurora), then the spray wall banner. */
+const MAKERS_LINK_SX = brandCtaOutlinedSx();
+
+/**
+ * Eight whole-tile links (the Aurora brands land on their section of /apps/aurora),
+ * the spray wall banner, then a quiet text card asking makers to get in touch.
+ */
 export function BoardTileGrid({ guide, t }: { guide: HubGuide; t: T }) {
   const photo = sprayWallPhoto();
   return (
@@ -168,6 +175,27 @@ export function BoardTileGrid({ guide, t }: { guide: HubGuide; t: T }) {
           <span className={styles.goText}>{t('appGuides:pages.hub.boards.spray.linkText')}</span>
         </Box>
       </Box>
+      {guide.makers ? (
+        <Box className={styles.makersCard}>
+          <Box className={styles.makersBody}>
+            <Typography component="h3" className={styles.h3}>
+              {t('appGuides:pages.hub.boards.makers.title')}
+            </Typography>
+            <Typography component="p" color="text.secondary">
+              {t('appGuides:pages.hub.boards.makers.body')}
+            </Typography>
+          </Box>
+          <Button
+            component={LocaleLink}
+            href={guide.makers.href}
+            locale={DEFAULT_LOCALE}
+            variant="outlined"
+            sx={MAKERS_LINK_SX}
+          >
+            {t('appGuides:pages.hub.boards.makers.linkText')}
+          </Button>
+        </Box>
+      ) : null}
     </Box>
   );
 }

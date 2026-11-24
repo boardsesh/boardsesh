@@ -27,6 +27,9 @@ export const APP_GUIDE_REGISTRY = {
       },
     ],
     everyBoardLead: true,
+    makers: {
+      href: '/for-gyms#partners',
+    },
     faq: [
       {
         id: 'which-app',

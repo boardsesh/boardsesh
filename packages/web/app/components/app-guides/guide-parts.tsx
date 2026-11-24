@@ -12,14 +12,11 @@ import StarRounded from '@mui/icons-material/StarRounded';
 import CommunityProofLine from '@/app/components/climb-front-door/community-proof-line';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import StoreInstallButtons, { type StoreButtonLabels } from '@/app/components/marketing/store-install-buttons';
-import { WebsiteJourneyLink } from '@/app/components/marketing/website-journey-link';
 import StartClimbingButton from '@/app/components/start-climbing-button';
 import { brandCtaSx } from '@/app/components/ui/brand-cta';
 import { quietLinkSx } from '@/app/components/ui/quiet-link';
 import { DEFAULT_LOCALE } from '@/app/lib/i18n/config';
-import { APP_URL } from '@/app/lib/app-origin';
 import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
-import { webAppOpened } from '@boardsesh/analytics';
 import {
   BOARDSESH_APP_STORE_RATING,
   BOARDSESH_PLAY_RATING,
@@ -154,8 +151,8 @@ export function RunsOnStrip({ t, runsOn }: { t: T; runsOn: RunsOn }) {
  * The page's one filled action, saying what it opens ("Browse Kilter climbs"),
  * then both store badges. A desktop visitor can't install a phone app, so the
  * browse action comes first. A board page's button stays on www (the board
- * gallery needs no account), so a quiet "or open the browser app" line keeps the
- * app one tap away. Spray setup opens the app itself and needs no such line.
+ * gallery needs no account); the header's "Start climbing" already opens the
+ * browser app. Spray setup opens the app's new-wall flow itself.
  */
 export function CtaRow({
   t,
@@ -196,18 +193,6 @@ export function CtaRow({
         />
       )}
       <StoreInstallButtons placement={placement} labels={storeLabels} align="start" sharedHtml />
-      {action.kind === 'boards' && (
-        <Box component="p" className={styles.ctaAppLine}>
-          <WebsiteJourneyLink
-            href={APP_URL}
-            event={webAppOpened(placement)}
-            className={styles.ctaAppLink}
-            sx={quietLinkSx}
-          >
-            {t('appGuides:common.ctaBrowserApp')}
-          </WebsiteJourneyLink>
-        </Box>
-      )}
     </Box>
   );
 }

@@ -158,6 +158,12 @@ export type HubPageRegistry = GuidePageBase & {
   everyBoard: readonly GuideItem[];
   /** Whether the catalog carries `everyBoard.lead` (optional in the copy). */
   everyBoardLead: boolean;
+  /**
+   * The quiet "Want your board here?" card under the board tiles, for hold and LED
+   * makers: its text lives in the catalog (`boards.makers`), its link here. Null
+   * when the copy has no `boards.makers`.
+   */
+  makers: { href: `/${string}` } | null;
 };
 
 export type AppGuideRegistry = { hub: HubPageRegistry } & { [Id in ComparisonPageId]: ComparisonPageRegistry };

@@ -166,8 +166,7 @@
       "woods": "Browse Woods climbs",
       "spray-wall-apps": "Set up your spray wall"
     },
-    "ctaAria": "{{label}} in the Boardsesh browser app",
-    "ctaBrowserApp": "or open the browser app"
+    "ctaAria": "{{label}} in the Boardsesh browser app"
   },
   "pages": {
     "hub": {
@@ -230,6 +229,11 @@
           "title": "Your own spray wall",
           "body": "Photograph the wall, fix the holds the app finds, then set and log climbs. Compare Boardsesh with Stōkt, Retro Flash and Crux.",
           "linkText": "Compare spray wall apps"
+        },
+        "makers": {
+          "title": "Want your board here?",
+          "body": "Make LED boards or holds? Tell us about your layout and we will work on adding it to Boardsesh, so climbers get a connected wall without you building an app.",
+          "linkText": "Talk to us about your board"
         }
       },
       "everyBoard": {
