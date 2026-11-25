@@ -4,8 +4,8 @@
 // Live, not launch-fixed. An iPad window that narrows (Split View, Slide Over,
 // the iPadOS 26 resizable windows) drops below the regular width and gets the
 // phone layout, and widens back out the same way. Android tablets keep the
-// phone layout: the spray flows only cover the screen on iPad
-// (`isIpadSprayFlow`), and the tablet layout is built for that cover.
+// phone layout: the tablet layout is built for the iPad's spray screens
+// (`isIpadSprayFlow`) and its Boards sheet, which is the size they draw in.
 
 import { useMemo } from 'react';
 import { useWindowDimensions } from 'react-native';

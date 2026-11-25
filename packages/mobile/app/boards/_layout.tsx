@@ -1,4 +1,4 @@
-import { Stack, router, type NativeStackNavigationOptions } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import { SprayWizardExitButton } from '../../src/components/spray-wall/SprayWizardExitButton';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
 import { useTranslation } from 'react-i18next';
@@ -7,24 +7,7 @@ import { useStackScreenOptions } from '../../src/hooks/use-stack-screen-options'
 import { isFirstBoardMode, isNoBoardEntry } from '../../src/lib/boards/first-board-mode';
 import { noteFirstBoardCloseTapped } from '../../src/lib/onboarding/first-board-picker-analytics';
 import { holdUntilLaunchReady } from '../../src/components/launch-update/hold-until-launch-ready';
-import { isIpadSprayFlow, sprayFlowScreenOptions } from '../../src/lib/spray/spray-flow-presentation';
-
-/**
- * The holds screen on iPad: full screen, so it also needs an X, as it has
- * neither a back chevron (a modal shows none) nor a swipe down to leave by. The
- * X goes back the way the screen's own Back button does, so its
- * `usePreventRemove` guard still asks before unsaved edits are thrown away.
- * Elsewhere this adds nothing: on a phone the card's swipe and the chevron are
- * already the way out. The reset screen needs no such helper: it carries the
- * #5960 X on every platform already, and only adds the iPad presentation.
- */
-function sprayMaintenanceOptions(): NativeStackNavigationOptions {
-  if (!isIpadSprayFlow()) return {};
-  return {
-    ...sprayFlowScreenOptions(),
-    headerLeft: () => <SprayWizardExitButton returnTo={resolveBoardReturnTo(undefined)} />,
-  };
-}
+import { sprayFlowScreenOptions } from '../../src/lib/spray/spray-flow-presentation';
 
 /**
  * How the picker was opened, from its params, read defensively: `route.params`
@@ -151,11 +134,12 @@ function BoardsLayout() {
           full-screen pan-and-pinch surfaces, which `docs/mobile/mobile-sheets-vs-routes.md`
           rule 3 keeps off a sheet's own drag.
 
-          On iPad the two spray screens cover the whole screen
-          (`sprayFlowScreenOptions`) when pushed over the picker. Opened straight
-          from the live board sheet, one is this stack's FIRST screen, which
-          ignores its own presentation; app/_layout.tsx covers that case on the
-          root `boards` screen. */}
+          On iPad too they are plain pushes inside this sheet, with the back
+          chevron and the same leave guard as on a phone
+          (`sprayFlowScreenOptions` only fades the home indicator). A `modal`
+          here was a card on the Boards card, a sheet on a sheet. Opened
+          straight from the live board sheet, one is this stack's first screen:
+          the Boards sheet itself. */}
       <Stack.Screen
         name="spray/new"
         options={({ route }) => ({
@@ -181,7 +165,7 @@ function BoardsLayout() {
         options={{
           title: tBoards('sprayMaintenance.screenTitle'),
           headerBackButtonMenuEnabled: false,
-          ...sprayMaintenanceOptions(),
+          ...sprayFlowScreenOptions(),
         }}
       />
     </Stack>
