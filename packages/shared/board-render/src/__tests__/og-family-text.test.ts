@@ -271,8 +271,11 @@ describe('family text survives real-world names', () => {
       rows: [],
     });
 
-    // Wider than "Join" alone: the name was drawn and not truncated away.
-    expect(hebrew.hero.width).toBeGreaterThan(prefixOnly.hero.width);
+    // Taller than "Join" alone: the name was drawn on its own line. A name is only
+    // truncated once the hero reaches its 44pt floor, so 70pt means none of it was cut.
+    // (Not width: beside a whole board the hero is 325px, and a short Hebrew name can
+    // be no wider than "Join" above it.)
+    expect(hebrew.hero.height).toBeGreaterThan(prefixOnly.hero.height * 1.5);
     expect(hebrew.hero.pt).toBeGreaterThanOrEqual(70);
   });
 
