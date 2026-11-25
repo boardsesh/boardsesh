@@ -121,6 +121,8 @@ export type RegistrationFamilyCommand =
   | z.infer<typeof registrationFamilyResendCommandSchema>
   | z.infer<typeof registrationFamilyVerifyCommandSchema>;
 
+export const PRE_ENFORCEMENT_PASSWORD_PATH = '/api/internal/auth/current-store/password/v1/authenticate';
+
 export const passwordCommandSchema = z
   .object({
     ...commandMetadata,
@@ -150,6 +152,13 @@ export const passwordCommandSchema = z
     payload: z.object({ email: z.string().min(1), password: z.string().min(1) }).strict(),
   })
   .strict();
+/** Default web login always asks for a proof; canonical session issuance stays separate. */
+export const preEnforcementPasswordCommandSchema = passwordCommandSchema
+  .omit({ webSession: true })
+  .extend({ credentialProofVersion: z.literal(WEB_CREDENTIAL_PROOF_VERSION) })
+  .strict();
+export type PreEnforcementPasswordCommand = z.infer<typeof preEnforcementPasswordCommandSchema>;
+
 export const verifyEmailCommandSchema = z
   .object({
     ...commandMetadata,
@@ -352,6 +361,17 @@ export const passwordReplySchema = z.union([
     ),
   transportErrorReplySchema('password'),
 ]);
+
+export const preEnforcementPasswordReplySchema = passwordReplySchema.refine(
+  (reply) =>
+    reply.outcome !== 'authenticated' ||
+    (reply.credentialProof !== undefined &&
+      reply.credentialProof.authenticatedAt !== null &&
+      reply.credentialProof.linkGuarded &&
+      reply.credentialProof.requiresAccountCutoff === undefined &&
+      reply.webSession === undefined),
+  { message: 'Password credential proof required' },
+);
 
 export const verifyEmailReplySchema = z.union([
   z

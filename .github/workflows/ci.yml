@@ -1826,6 +1826,8 @@ jobs:
           mkdir -p packages/backend/test-results
           vp run test:registration-credential-writer --reporter=junit --outputFile.junit=./test-results/junit-registration-credential-writer.xml
           test -s packages/backend/test-results/junit-registration-credential-writer.xml
+          vp run test:password-login-backend --reporter=junit --outputFile.junit=./test-results/junit-password-login-backend.xml
+          test -s packages/backend/test-results/junit-password-login-backend.xml
       - name: Upload credential proof results
         uses: actions/upload-artifact@v4
         if: always()
@@ -1839,6 +1841,7 @@ jobs:
             packages/backend/test-results/junit-native-handoff-credential-writer.xml
             packages/backend/test-results/junit-browser-renewal-credential-writer.xml
             packages/backend/test-results/junit-registration-credential-writer.xml
+            packages/backend/test-results/junit-password-login-backend.xml
           retention-days: 7
 
   # BA-04 web writer fence (docs/auth/better-auth-writer-fence-proof.md). Its own PG18

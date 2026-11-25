@@ -28,6 +28,27 @@ export async function issueWebCredentialProof(
     return undefined;
   }
   if (mode === 'off') throw new Error('Web credential proofs are disabled');
+  return captureVerifiedWebCredentialProof(transaction, userId, provedGeneration, authSessionId);
+}
+
+/** Private password/provider callers must first verify their actual proof under the subject lock.
+ * This mandatory core never enables a staged mode or creates a session. */
+export async function issueVerifiedWebCredentialProof(
+  transaction: CurrentStoreTransaction,
+  userId: string,
+  provedGeneration: number,
+  authSessionId: string = randomUUID(),
+): Promise<WebCredentialProof> {
+  if (!Number.isSafeInteger(provedGeneration) || provedGeneration < 0) throw new Error('Web credential proof is stale');
+  return captureVerifiedWebCredentialProof(transaction, userId, provedGeneration, authSessionId);
+}
+
+async function captureVerifiedWebCredentialProof(
+  transaction: CurrentStoreTransaction,
+  userId: string,
+  provedGeneration: number | undefined,
+  authSessionId: string,
+): Promise<WebCredentialProof> {
   const [cutoff] = await transaction.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, userId));
   if (cutoff?.deletedAt || (provedGeneration !== undefined && (cutoff?.generation ?? 0) !== provedGeneration))
     throw new Error('Web credential proof is stale');
