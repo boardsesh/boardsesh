@@ -728,7 +728,6 @@ export default function GymDiscovery() {
         data={rows}
         mapAvailable={mapAvailable && (Platform.OS !== 'web' || center !== null)}
         availableHeight={panelBoxHeight(windowHeight, keyboardOverlap)}
-        keyboardOpen={keyboardOverlap > 0}
         onPressGym={onPressGym}
         onActivateBoard={activate}
         onEditGym={onEditGym}

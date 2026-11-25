@@ -13,15 +13,12 @@ type PressProps = { children?: ReactNode; onPress?: () => void };
 const ensureVisible = vi.fn();
 const snapTo = vi.fn();
 const scrollToIndex = vi.fn();
-const gestureOptions = vi.hoisted(() => ({ last: null as Record<string, unknown> | null }));
 vi.mock('../use-gym-panel-gesture', () => ({
-  useGymPanelGesture: (options: Record<string, unknown>) => {
-    gestureOptions.last = options;
+  useGymPanelGesture: () => {
     return {
       gesture: {},
       nativeGesture: {},
       panelAnimatedStyle: {},
-      visibleBottomAnimatedStyle: {},
       panelHeight: 600,
       scrollEnabled: false,
       settledDetent: 'medium',
@@ -146,32 +143,6 @@ vi.mock('../../../providers/theme-provider', () => ({
 vi.mock('@boardsesh/board-config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@boardsesh/board-config')>()),
   formatBoardDisplayName: (boardType: string) => boardType.charAt(0).toUpperCase() + boardType.slice(1),
-}));
-
-// Pick mode's rows: an inset-grouped slice around an ArtRow. Both are drawn
-// plainly here; the panel's job is which row it builds and what a tap calls.
-vi.mock('../../gym-page/InsetGroupedCell', () => ({
-  InsetGroupedCell: ({ children, position }: Children & { position: string }) =>
-    createElement('div', { 'data-position': position }, children),
-}));
-vi.mock('../../ArtRow', () => ({
-  ArtRow: ({
-    title,
-    subtitle,
-    onPress,
-    selected,
-    testID,
-  }: {
-    title: string;
-    subtitle?: ReactNode;
-    onPress?: () => void;
-    selected?: boolean;
-    testID?: string;
-  }) =>
-    createElement('button', { type: 'button', onClick: onPress, 'data-testid': testID, 'data-selected': selected }, [
-      createElement('span', { key: 'title' }, title),
-      createElement('span', { key: 'subtitle' }, subtitle),
-    ]),
 }));
 
 import { GymListPanel } from '../GymListPanel';
@@ -556,125 +527,5 @@ describe('GymListPanel board rows', () => {
       />,
     );
     expect(container.querySelector('[data-a11y-actions]')).toBeNull();
-  });
-});
-
-describe('GymListPanel pick mode', () => {
-  const runByGym = {
-    uuid: 'g3',
-    name: 'Boulderhal Luchthaven',
-    address: 'Fokkerweg 75',
-    boardCount: 3,
-    boardTypes: ['kilter'],
-    listingState: 'RUN_BY_GYM',
-  } as unknown as Gym;
-  const climberListed = { ...runByGym, uuid: 'g4', name: 'Home Board', listingState: 'CLIMBER_LISTED' } as Gym;
-
-  function pickRows(): GymListRow[] {
-    return [
-      { kind: 'sectionHeader', key: 'sh:gyms', label: 'Gyms near you' },
-      {
-        kind: 'pickGym',
-        key: 'gym:g3',
-        gym: runByGym,
-        subtitle: '1.2 km · Fokkerweg 75',
-        boardsLabel: '3 boards',
-        position: 'first',
-        selected: false,
-      },
-      {
-        kind: 'pickGym',
-        key: 'gym:g4',
-        gym: climberListed,
-        subtitle: null,
-        boardsLabel: 'No boards yet',
-        position: 'last',
-        selected: true,
-      },
-    ];
-  }
-
-  function renderPick({
-    data = pickRows(),
-    onPickGym = vi.fn(),
-    onAddGym = vi.fn(),
-    onRetry,
-    locationPrompt,
-  }: {
-    data?: GymListRow[];
-    onPickGym?: (gym: Gym) => void;
-    onAddGym?: () => void;
-    onRetry?: () => void;
-    locationPrompt?: ReactNode;
-  } = {}) {
-    return render(
-      <GymListPanel
-        mode="pick"
-        data={data}
-        mapAvailable
-        availableHeight={500}
-        mediumFraction={0.65}
-        allowLowDetent={false}
-        onPickGym={onPickGym}
-        addGym={{ title: 'Add my gym', subtitle: 'Not listed? Add it with your board' }}
-        onAddGym={onAddGym}
-        onRetry={onRetry}
-        searchSlot={null}
-        locationPrompt={locationPrompt}
-      />,
-    );
-  }
-
-  it('draws each gym with its distance line, its boards pill, and the run-by-gym pill only where staff run it', () => {
-    const view = renderPick();
-    expect(view.getByText('1.2 km · Fokkerweg 75')).toBeTruthy();
-    // No distance and no address: the line is left out, not filled with filler.
-    expect(view.getByTestId('gym-pick-g4').textContent).toBe('Home BoardNo boards yet');
-    expect(view.getAllByTestId('gym-pick-boards').map((pill) => pill.textContent)).toEqual([
-      '3 boards',
-      'No boards yet',
-    ]);
-    expect(view.getAllByTestId('gym-pick-listing')).toHaveLength(1);
-    expect(view.getByTestId('gym-pick-g4').getAttribute('data-selected')).toBe('true');
-    expect(view.getByTestId('gym-pick-g3').closest('[data-position]')?.getAttribute('data-position')).toBe('first');
-  });
-
-  it('picks a gym with one tap, and pins Add my gym after the list', () => {
-    const onPickGym = vi.fn();
-    const onAddGym = vi.fn();
-    const view = renderPick({ onPickGym, onAddGym });
-    fireEvent.click(view.getByTestId('gym-pick-g3'));
-    expect(onPickGym).toHaveBeenCalledWith(runByGym);
-    const buttons = view.getAllByRole('button');
-    expect(buttons[buttons.length - 1]).toBe(view.getByTestId('gym-pick-add-gym'));
-    fireEvent.click(view.getByTestId('gym-pick-add-gym'));
-    expect(onAddGym).toHaveBeenCalledOnce();
-  });
-
-  it('keeps Add my gym while the location prompt stands in for the list', () => {
-    const view = renderPick({ locationPrompt: <div data-testid="prompt" /> });
-    expect(view.getByTestId('prompt')).toBeTruthy();
-    expect(view.getByTestId('gym-pick-add-gym')).toBeTruthy();
-  });
-
-  it('offers Try again under a failed lookup', () => {
-    const onRetry = vi.fn();
-    const view = renderPick({
-      data: [{ kind: 'empty', key: 'failed', label: "Couldn't search gyms", retryLabel: 'Try again' }],
-      onRetry,
-    });
-    expect(view.getByText("Couldn't search gyms")).toBeTruthy();
-    fireEvent.click(view.getByTestId('gym-pick-retry'));
-    expect(onRetry).toHaveBeenCalledOnce();
-  });
-
-  it('lays the panel out in the measured box without the Low detent', () => {
-    renderPick();
-    expect(gestureOptions.last).toEqual({
-      mapAvailable: true,
-      availableHeight: 500,
-      mediumFraction: 0.65,
-      allowLow: false,
-    });
   });
 });

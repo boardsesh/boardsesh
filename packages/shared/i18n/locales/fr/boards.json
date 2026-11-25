@@ -624,12 +624,14 @@
       "confirmKeepLooking": "Continuer à chercher"
     },
     "gymStep": {
+      "title": "Quelle salle ?",
       "searchPlaceholder": "Rechercher une ville ou une salle",
       "anyBoard": "Toutes les boards",
       "inThisArea": "Salles dans cette zone",
       "noNameMatch": "Aucune salle ne porte ce nom",
       "addGym": "Ajouter ma salle",
-      "addGymHint": "Pas dans la liste ? Ajoute-la avec ta board"
+      "addGymHint": "Pas dans la liste ? Ajoute-la avec ta board",
+      "places": "Lieux"
     },
     "boardDetail": {
       "setActive": "Utiliser cette board",

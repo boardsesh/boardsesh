@@ -1,25 +1,35 @@
 // @vitest-environment jsdom
 //
-// "Which gym?" (the add-a-board gym step): nothing is asked on open, the map
-// starts on the world, a town flies it there and lists the gyms around it, and
-// a row picks with the board type in force.
+// "Which gym?" (the add-a-board gym step): one page under the bar, never a
+// second sheet. Nothing is asked on open, the map starts on the world, a town
+// flies it there and lists the gyms around it, and a row picks with the board
+// type in force.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { createElement, forwardRef, useEffect, useImperativeHandle, type ReactNode, type Ref } from 'react';
+import { createElement, forwardRef, useImperativeHandle, type ReactElement, type ReactNode, type Ref } from 'react';
 import type { Gym, PlaceSuggestion } from '@boardsesh/shared-schema';
-import type { GymListRow } from '../../../gym-directory/gym-list-rows';
+import type { GymPickRow } from '../../../gym-directory/gym-pick-rows';
 
 type Children = { children?: ReactNode; testID?: string };
 type Coords = { latitude: number; longitude: number };
+type StyleValue = Record<string, unknown> | false | null | undefined | StyleValue[];
+
+function flatten(style: StyleValue): Record<string, unknown> {
+  if (!style) return {};
+  if (Array.isArray(style)) return Object.assign({}, ...style.map(flatten));
+  return style;
+}
 
 const trackMock = vi.hoisted(() => vi.fn());
 const requestMock = vi.hoisted(() => vi.fn());
 const requestIfAllowedMock = vi.hoisted(() => vi.fn());
 const setCenterMock = vi.hoisted(() => vi.fn());
 const showWorldMock = vi.hoisted(() => vi.fn());
-const snapToMock = vi.hoisted(() => vi.fn());
+const scrollToItemKeyMock = vi.hoisted(() => vi.fn());
+const scrollToTopMock = vi.hoisted(() => vi.fn());
 const dismissKeyboardMock = vi.hoisted(() => vi.fn());
 const refetchMock = vi.hoisted(() => vi.fn());
+const openSettingsMock = vi.hoisted(() => vi.fn());
 const state = vi.hoisted(() => ({
   location: {
     status: 'idle',
@@ -32,21 +42,15 @@ const state = vi.hoisted(() => ({
   gymsArgs: [] as unknown[],
   mapCenter: undefined as Coords | null | undefined,
   onRegionChange: undefined as ((coords: Coords, zoom?: number) => void) | undefined,
-  keyboardOverlap: 0,
-  panelBox: { availableHeight: undefined as number | undefined, keyboardOpen: undefined as boolean | undefined },
+  onMarkerPress: undefined as ((id: string) => void) | undefined,
+  onSuggestionsChange: undefined as ((places: readonly PlaceSuggestion[]) => void) | undefined,
+  headerInset: 0,
+  list: null as { mapHidden?: boolean; mapAvailable?: boolean; locateLabel?: string } | null,
 }));
 
 vi.mock('react-native', () => ({
-  View: ({
-    children,
-    testID,
-    onLayout,
-  }: Children & { onLayout?: (event: { nativeEvent: { layout: { height: number } } }) => void }) => {
-    useEffect(() => {
-      onLayout?.({ nativeEvent: { layout: { height: 600 } } });
-    }, [onLayout]);
-    return createElement('div', { 'data-testid': testID }, children);
-  },
+  View: ({ children, testID, style }: Children & { style?: StyleValue }) =>
+    createElement('div', { 'data-testid': testID, 'data-style': JSON.stringify(flatten(style ?? null)) }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {} },
   Keyboard: { dismiss: dismissKeyboardMock },
   Platform: { OS: 'ios' },
@@ -76,16 +80,28 @@ vi.mock('../../../../lib/connectivity/use-connectivity', () => ({
   selectEffectiveOffline: () => false,
   useConnectivityField: () => false,
 }));
+vi.mock('../../../../lib/open-app-settings', () => ({
+  canOpenAppSettings: () => true,
+  openAppSettings: openSettingsMock,
+}));
 vi.mock('../../../../lib/analytics', () => ({ track: trackMock }));
+vi.mock('../../../../hooks/use-transparent-header-inset', () => ({
+  useTransparentHeaderInset: () => state.headerInset,
+}));
 vi.mock('../../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../../../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: {}, brandColors: { primary: '#639' } }),
+  useTheme: () => ({ systemColors: { groupedBackground: '#f2f2f7' }, brandColors: { primary: '#639' } }),
 }));
 vi.mock('../../../../theme/tokens', () => ({
-  spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
-  borderRadius: { xl: 20, full: 999 },
+  spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24 },
+  borderRadius: { full: 999 },
 }));
-vi.mock('../../../Text', () => ({ Text: ({ children }: Children) => createElement('span', null, children) }));
+vi.mock('../../../Text', () => ({
+  Text: ({ children, accessibilityRole }: Children & { accessibilityRole?: string }) =>
+    createElement(accessibilityRole === 'header' ? 'h2' : 'span', null, children),
+}));
+vi.mock('../../../ActivityIndicator', () => ({ ActivityIndicator: () => createElement('div', null, 'loading') }));
+vi.mock('../../../ReadableColumn', () => ({ READABLE_CONTENT_WIDTH: 672 }));
 vi.mock('../../../PressableSurface', () => ({
   PressableSurface: ({ children, onPress }: Children & { onPress?: () => void }) =>
     createElement('button', { type: 'button', onClick: onPress }, children),
@@ -122,78 +138,112 @@ vi.mock('../../../filter-capsules/CapsuleRow', () => ({
 vi.mock('../../../gym-directory/GymMap', () => ({
   GymMap: forwardRef(
     (
-      { center, onRegionChange }: { center: Coords | null; onRegionChange: (coords: Coords, zoom?: number) => void },
+      {
+        center,
+        onRegionChange,
+        onMarkerPress,
+      }: {
+        center: Coords | null;
+        onRegionChange: (coords: Coords, zoom?: number) => void;
+        onMarkerPress: (id: string) => void;
+      },
       ref: Ref<unknown>,
     ) => {
       state.mapCenter = center;
       state.onRegionChange = onRegionChange;
+      state.onMarkerPress = onMarkerPress;
       useImperativeHandle(ref, () => ({ setCenter: setCenterMock, showWorld: showWorldMock }), []);
       return createElement('div', { 'data-testid': 'gym-map' });
     },
   ),
 }));
+// The step is one page inside the Boards sheet: the old draggable panel must
+// never come back. Rendering it fails the test.
 vi.mock('../../../gym-directory/GymListPanel', () => ({
-  GymListPanel: forwardRef(
-    (
-      {
-        data,
-        onPickGym,
-        addGym,
-        onAddGym,
-        onRetry,
-        filterSlot,
-        placeCaption,
-        locationPrompt,
-        availableHeight,
-        keyboardOpen,
-      }: {
-        data: GymListRow[];
-        onPickGym: (gym: Gym) => void;
-        addGym: { title: string };
-        onAddGym: () => void;
-        onRetry?: () => void;
-        filterSlot?: ReactNode;
-        placeCaption?: ReactNode;
-        locationPrompt?: ReactNode;
-        availableHeight: number;
-        keyboardOpen: boolean;
-      },
-      ref: Ref<unknown>,
-    ) => {
-      state.panelBox = { availableHeight, keyboardOpen };
-      useImperativeHandle(ref, () => ({ snapTo: snapToMock, ensureVisible: vi.fn(), scrollToRowKey: vi.fn() }), []);
-      return createElement('section', { 'data-testid': 'panel' }, [
-        createElement('div', { key: 'filters' }, filterSlot),
-        createElement('div', { key: 'caption', 'data-testid': 'caption' }, placeCaption),
-        createElement(
-          'button',
-          { key: 'add', type: 'button', 'data-testid': 'add-gym', onClick: onAddGym },
-          addGym.title,
-        ),
-        locationPrompt
-          ? createElement('div', { key: 'prompt' }, locationPrompt)
-          : data.map((row) =>
-              row.kind === 'pickGym'
-                ? createElement(
-                    'button',
-                    { key: row.key, type: 'button', 'data-testid': row.key, onClick: () => onPickGym(row.gym) },
-                    `${row.gym.name} | ${row.subtitle} | ${row.boardsLabel}`,
-                  )
-                : row.kind === 'empty' && row.retryLabel
-                  ? createElement(
-                      'button',
-                      { key: row.key, type: 'button', 'data-testid': 'retry', onClick: onRetry },
-                      row.label,
-                    )
-                  : createElement('div', { key: row.key, 'data-testid': `row-${row.kind}` }),
-            ),
-      ]);
-    },
-  ),
+  GymListPanel: () => {
+    throw new Error('GymStep must not draw a draggable panel inside the Boards sheet');
+  },
 }));
-// The keyboard height comes from keyboard events; the overlap maths stays real.
-vi.mock('../../../../hooks/use-keyboard-height', () => ({ useKeyboardHeight: () => state.keyboardOverlap }));
-vi.mock('../../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 34 }));
+// The page itself: header (map), sticky (capsules), rows, footer, in order.
+vi.mock('../../../gym-directory/MapCardList', () => ({
+  MapCardList: ({
+    ref,
+    data,
+    renderItem,
+    keyExtractor,
+    map,
+    stickyHeader,
+    footer,
+    mapHidden,
+    mapAvailable,
+    onLocate,
+    locateLabel,
+  }: {
+    ref?: Ref<unknown>;
+    data: GymPickRow[];
+    renderItem: (info: { item: GymPickRow }) => ReactElement | null;
+    keyExtractor: (row: GymPickRow) => string;
+    map?: ReactNode;
+    stickyHeader?: ReactNode;
+    footer?: ReactNode;
+    mapHidden?: boolean;
+    mapAvailable?: boolean;
+    onLocate?: () => void;
+    locateLabel?: string;
+  }) => {
+    state.list = { mapHidden, mapAvailable, locateLabel };
+    useImperativeHandle(ref, () => ({ scrollToItemKey: scrollToItemKeyMock, scrollToTop: scrollToTopMock }), []);
+    return createElement('section', { 'data-testid': 'map-card-list' }, [
+      createElement('div', { key: 'map' }, map),
+      createElement('button', { key: 'locate', type: 'button', 'data-testid': 'locate', onClick: onLocate }),
+      createElement('div', { key: 'sticky' }, stickyHeader),
+      ...data.map((row) => createElement('div', { key: keyExtractor(row) }, renderItem({ item: row }))),
+      createElement('div', { key: 'footer' }, footer),
+    ]);
+  },
+}));
+vi.mock('../../../gym-directory/GymListTextRows', () => ({
+  GymListSectionHeader: ({ label }: { label: string }) => createElement('h3', null, label),
+  GymListEmptyRow: ({ label }: { label: string }) => createElement('p', null, label),
+}));
+vi.mock('../../../gym-directory/PickGymRow', () => ({
+  PickGymRow: ({
+    gym,
+    subtitle,
+    boardsLabel,
+    selected,
+    onPickGym,
+  }: {
+    gym: Gym;
+    subtitle: string | null;
+    boardsLabel: string;
+    selected: boolean;
+    onPickGym: (gym: Gym) => void;
+  }) =>
+    createElement(
+      'button',
+      { type: 'button', 'data-testid': `gym:${gym.uuid}`, 'data-selected': selected, onClick: () => onPickGym(gym) },
+      `${gym.name} | ${subtitle} | ${boardsLabel}`,
+    ),
+  PickPlaceRow: ({
+    place,
+    label,
+    onSelectPlace,
+  }: {
+    place: PlaceSuggestion;
+    label: string;
+    onSelectPlace: (place: PlaceSuggestion) => void;
+  }) =>
+    createElement(
+      'button',
+      { type: 'button', 'data-testid': `place:${place.id}`, onClick: () => onSelectPlace(place) },
+      label,
+    ),
+  PickRetryAction: ({ label, onPress }: { label: string; onPress: () => void }) =>
+    createElement('button', { type: 'button', 'data-testid': 'retry', onClick: onPress }, label),
+  AddGymRow: ({ title, onAddGym }: { title: string; onAddGym: () => void }) =>
+    createElement('button', { type: 'button', 'data-testid': 'add-gym', onClick: onAddGym }, title),
+}));
 vi.mock('../../../gym-directory/GymLocationPrompt', () => ({
   GymLocationPrompt: ({
     status,
@@ -237,13 +287,18 @@ vi.mock('../../../gym-directory/GymSearchField', () => ({
     onChangeText,
     onSelectPlace,
     onFocusChange,
+    onSuggestionsChange,
+    suggestionsPlacement,
   }: {
     text: string;
     onChangeText: (text: string) => void;
     onSelectPlace: (place: PlaceSuggestion) => void;
     onFocusChange: (focused: boolean) => void;
-  }) =>
-    createElement('div', null, [
+    onSuggestionsChange?: (places: readonly PlaceSuggestion[]) => void;
+    suggestionsPlacement?: string;
+  }) => {
+    state.onSuggestionsChange = onSuggestionsChange;
+    return createElement('div', { 'data-placement': suggestionsPlacement, 'data-testid': 'search-field' }, [
       createElement('button', {
         key: 'focus',
         type: 'button',
@@ -261,7 +316,8 @@ vi.mock('../../../gym-directory/GymSearchField', () => ({
         { key: 'place', type: 'button', 'data-testid': 'pick-amsterdam', onClick: () => onSelectPlace(AMSTERDAM) },
         'Amsterdam',
       ),
-    ]),
+    ]);
+  },
 }));
 
 const { GymStep } = await import('../GymStep');
@@ -283,6 +339,8 @@ async function settle() {
   });
 }
 
+const tracked = (name: string) => trackMock.mock.calls.filter(([event]) => event === name).map(([, props]) => props);
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
@@ -291,8 +349,11 @@ beforeEach(() => {
   state.gymsFailed = false;
   state.gymsArgs = [];
   state.onRegionChange = undefined;
-  state.keyboardOverlap = 0;
+  state.onMarkerPress = undefined;
+  state.onSuggestionsChange = undefined;
+  state.headerInset = 0;
   state.mapCenter = undefined;
+  state.list = null;
   requestIfAllowedMock.mockResolvedValue(undefined);
 });
 afterEach(() => {
@@ -301,6 +362,21 @@ afterEach(() => {
 });
 
 describe('GymStep', () => {
+  it('is one page: the step counter, "Which gym?" and the search pinned under the bar, then the list', () => {
+    state.headerInset = 98;
+    render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn(), stepLabel: 'Step 2 of 4' }));
+    // On iOS the bar is transparent glass: the page starts below it, so the
+    // back chevron covers neither the counter nor the field.
+    expect(JSON.parse(screen.getByTestId('gym-step').getAttribute('data-style') ?? '{}').paddingTop).toBe(98);
+    const header = screen.getByTestId('gym-step-header');
+    expect(header.querySelector('[data-testid="step-counter"]')?.textContent).toBe('Step 2 of 4');
+    expect(header.querySelector('h2')?.textContent).toBe('mobile.gymStep.title');
+    expect(header.contains(screen.getByTestId('search-field'))).toBe(true);
+    expect(header.contains(screen.getByTestId('map-card-list'))).toBe(false);
+    expect(screen.getByTestId('search-field').getAttribute('data-placement')).toBe('inline');
+    expect(state.list?.locateLabel).toBe('mobile.gyms.grantLocation');
+  });
+
   it('asks for nothing on open: it reads the permission, shows the world, and hands the prompt the hook', async () => {
     render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
     expect(requestIfAllowedMock).toHaveBeenCalledOnce();
@@ -330,6 +406,7 @@ describe('GymStep', () => {
     render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
     await settle();
 
+    fireEvent.click(screen.getByTestId('focus-search'));
     fireEvent.click(screen.getByTestId('pick-amsterdam'));
     await settle();
     const amsterdam = { latitude: AMSTERDAM.latitude, longitude: AMSTERDAM.longitude };
@@ -342,9 +419,24 @@ describe('GymStep', () => {
     // No distance from a town: the row says where the gym is, not how far from it.
     expect(screen.getByTestId('gym:gym-1').textContent).toBe('Boulderhal | Fokkerweg 75 | 3mobile.gyms.boardCount');
     expect(trackMock).toHaveBeenCalledWith('Board Wall Search Started', expect.objectContaining({ method: 'place' }));
+    expect(tracked('Gym Finder Search Used')).toEqual([{ surface: 'wizard_gym_step', kind: 'town' }]);
     expect(dismissKeyboardMock).toHaveBeenCalled();
-    // Back to the middle detent, so the fly-to is in view.
-    expect(snapToMock).toHaveBeenLastCalledWith('medium');
+    // The map card comes back, scrolled into view, so the fly-to shows.
+    expect(state.list?.mapHidden).toBe(false);
+    expect(scrollToTopMock).toHaveBeenCalled();
+  });
+
+  it('lists the suggested towns as a Places section, and a tap there picks the town', async () => {
+    render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
+    await settle();
+    act(() => state.onSuggestionsChange?.([AMSTERDAM]));
+    expect(screen.getByText('mobile.gymStep.places')).toBeTruthy();
+    expect(screen.getByText('mobile.gyms.placesAttribution')).toBeTruthy();
+    fireEvent.click(screen.getByTestId(`place:${AMSTERDAM.id}`));
+    await settle();
+    expect(setCenterMock).toHaveBeenLastCalledWith({ latitude: AMSTERDAM.latitude, longitude: AMSTERDAM.longitude });
+    act(() => state.onSuggestionsChange?.([]));
+    expect(screen.queryByText('mobile.gymStep.places')).toBeNull();
   });
 
   it('keeps a picked town when a location fix arrives after it', async () => {
@@ -375,19 +467,11 @@ describe('GymStep', () => {
     expect(showWorldMock).toHaveBeenCalled();
   });
 
-  it('ends the panel at the keyboard top while the keyboard is up', () => {
-    const view = render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
-    // The mocked body measures 600pt.
-    expect(state.panelBox).toEqual({ availableHeight: 600, keyboardOpen: false });
-    state.keyboardOverlap = 336;
-    view.rerender(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
-    expect(state.panelBox).toEqual({ availableHeight: 264, keyboardOpen: true });
-  });
-
-  it('raises the list over the map while the search field has focus', () => {
+  it('folds the map card away while the search field has focus', () => {
     render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
+    expect(state.list?.mapHidden).toBe(false);
     fireEvent.click(screen.getByTestId('focus-search'));
-    expect(snapToMock).toHaveBeenCalledWith('high');
+    expect(state.list?.mapHidden).toBe(true);
   });
 
   it('searches the world view only once it is zoomed in to a region', async () => {
@@ -417,7 +501,7 @@ describe('GymStep', () => {
     await settle();
     fireEvent.click(screen.getByTestId('retry'));
     expect(refetchMock).toHaveBeenCalledOnce();
-    expect(screen.getByTestId('caption').textContent).toContain('mobile.gyms.refreshFailed');
+    expect(screen.getByTestId('gym-step-caption').textContent).toContain('mobile.gyms.refreshFailed');
   });
 
   it('flies from the world to the climber when a fix arrives, and measures rows from them', async () => {
@@ -455,6 +539,7 @@ describe('GymStep', () => {
       'Board Wall Search Started',
       expect.objectContaining({ method: 'text', queryLength: 4 }),
     );
+    expect(tracked('Gym Finder Search Used')).toEqual([{ surface: 'wizard_gym_step', kind: 'name' }]);
   });
 
   it('picks a gym, and adds one, with the board type chosen in the capsule', async () => {
@@ -475,10 +560,64 @@ describe('GymStep', () => {
     expect(state.gymsArgs[3]).toEqual(['kilter']);
     fireEvent.click(screen.getByTestId('gym:gym-1'));
     expect(onPickGym).toHaveBeenCalledWith(BOULDERHAL, 'kilter');
+    expect(tracked('Gym Finder Gym Picked')).toEqual([{ surface: 'wizard_gym_step', section: 'list' }]);
 
     fireEvent.click(screen.getByTestId('type-any'));
     fireEvent.click(screen.getByTestId('add-gym'));
     expect(onAddGym).toHaveBeenCalledWith(null);
+    expect(tracked('Gym Finder Add My Gym Tapped')).toEqual([{ surface: 'wizard_gym_step' }]);
+  });
+
+  it('selects and scrolls to the row of a tapped pin; picking that row counts as a pin pick', async () => {
+    state.location = {
+      status: 'granted',
+      permission: 'granted',
+      permissionChecked: true,
+      coords: { latitude: 52.37, longitude: 4.9 },
+    };
+    state.gyms = { gyms: [BOULDERHAL] };
+    const onPickGym = vi.fn();
+    render(createElement(GymStep, { onPickGym, onAddGym: vi.fn() }));
+    await settle();
+
+    act(() => state.onMarkerPress?.('gym-1'));
+    expect(scrollToItemKeyMock).toHaveBeenCalledWith('gym:gym-1');
+    expect(screen.getByTestId('gym:gym-1').getAttribute('data-selected')).toBe('true');
+    // A pin only selects: nothing is picked until the row is tapped.
+    expect(onPickGym).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('gym:gym-1'));
+    expect(tracked('Gym Finder Gym Picked')).toEqual([{ surface: 'wizard_gym_step', section: 'map_pin' }]);
+  });
+
+  it('locates: back to the climber with a fix, a request without one, Settings once refused for good', async () => {
+    const climber = { latitude: 52.3791, longitude: 4.9003 };
+    state.location = { status: 'granted', permission: 'granted', permissionChecked: true, coords: climber };
+    const view = render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
+    await settle();
+    fireEvent.click(screen.getByTestId('pick-amsterdam'));
+    await settle();
+    setCenterMock.mockClear();
+
+    fireEvent.click(screen.getByTestId('locate'));
+    await settle();
+    expect(setCenterMock).toHaveBeenLastCalledWith(climber);
+    expect(state.gymsArgs[0]).toEqual(climber);
+    // The town's label goes with it.
+    expect((screen.getByTestId('search') as HTMLInputElement).value).toBe('');
+    expect(tracked('Gym Finder Locate Tapped')).toEqual([{ surface: 'wizard_gym_step' }]);
+    view.unmount();
+
+    state.location = { status: 'idle', permission: 'ask', permissionChecked: true, coords: null };
+    render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
+    fireEvent.click(screen.getByTestId('locate'));
+    expect(requestMock).toHaveBeenCalledOnce();
+    cleanup();
+
+    state.location = { status: 'denied', permission: 'blocked', permissionChecked: true, coords: null };
+    render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
+    fireEvent.click(screen.getByTestId('locate'));
+    expect(openSettingsMock).toHaveBeenCalledOnce();
+    expect(requestMock).toHaveBeenCalledOnce();
   });
 
   it('shows the step counter only when the flow counts its steps', () => {

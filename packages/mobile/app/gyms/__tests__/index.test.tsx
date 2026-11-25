@@ -62,7 +62,7 @@ const captured = vi.hoisted(() => ({
   onRegionChange: null as ((center: Coords, zoom?: number) => void) | null,
   mapCenter: undefined as Coords | null | undefined,
   keyboardOverlap: 0,
-  panelBox: { availableHeight: undefined as number | undefined, keyboardOpen: undefined as boolean | undefined },
+  panelBox: { availableHeight: undefined as number | undefined },
   locationStatus: 'idle',
   onMapUnavailable: null as (() => void) | null,
   onMapReady: null as (() => void) | null,
@@ -237,7 +237,6 @@ vi.mock('../../../src/components/gym-directory/GymListPanel', () => ({
   GymListPanel: (props: {
     ref?: Ref<unknown>;
     availableHeight?: number;
-    keyboardOpen?: boolean;
     onActivateBoard: (board: UserBoard) => void;
     onPressGym: (gym: Gym) => void;
     mapAvailable: boolean;
@@ -251,7 +250,7 @@ vi.mock('../../../src/components/gym-directory/GymListPanel', () => ({
       () => ({ snapTo: panelSnapTo, ensureVisible: vi.fn(), scrollToRowKey: vi.fn() }),
       [],
     );
-    captured.panelBox = { availableHeight: props.availableHeight, keyboardOpen: props.keyboardOpen };
+    captured.panelBox = { availableHeight: props.availableHeight };
     captured.onActivateBoard = props.onActivateBoard;
     captured.onPressGym = props.onPressGym;
     captured.mapAvailable = props.mapAvailable;
@@ -686,10 +685,10 @@ describe('discovery search integration', () => {
 
   it('ends the panel at the keyboard top while the keyboard is up', () => {
     const screen = render(createElement(GymDiscovery));
-    expect(captured.panelBox).toEqual({ availableHeight: 852, keyboardOpen: false });
+    expect(captured.panelBox).toEqual({ availableHeight: 852 });
     captured.keyboardOverlap = 336;
     screen.rerender(createElement(GymDiscovery));
-    expect(captured.panelBox).toEqual({ availableHeight: 516, keyboardOpen: true });
+    expect(captured.panelBox).toEqual({ availableHeight: 516 });
   });
 
   it('raises the panel while the search field has focus', () => {
