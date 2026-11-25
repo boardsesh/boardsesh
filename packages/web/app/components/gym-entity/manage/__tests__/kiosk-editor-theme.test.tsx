@@ -66,7 +66,7 @@ describe('kiosk editor appearance', () => {
         layout: { version: 1, boards: [], leaderboard: null, showInstallQr: false, theme: 'light' },
       },
     });
-    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
 
     editor.unmount();
     render(<KioskEditor {...props} kiosk={savedKiosk} />);

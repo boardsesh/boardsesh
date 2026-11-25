@@ -2,45 +2,20 @@ import { users } from '@boardsesh/db/schema/auth';
 import { normalizeAccountEmail } from '../normalize-email';
 import {
   CurrentStoreFoundationError,
-  CURRENT_EMAIL_NORMALIZER_VERSION,
   lockEmailKeyForCreation,
-  lockIdentityManifest,
   type CurrentStoreTransaction,
 } from './foundation-context';
 import { insertCurrentStorePasswordIdentity, type PreparedPasswordRegistration } from './password-identity';
 
-/** This receipt permits only the existing store before authority enforcement. */
-export type RegistrationContext = Readonly<{
-  projectionId: string | null;
-  writerEpoch: number | null;
-}>;
-
-/**
- * Preparation is only a snapshot, never identity authority. Keep its identity
- * stable under the shared gate, without treating its reservations as current.
- * An enforced store must use the qualified authority commands instead.
- */
-export async function captureRegistrationContext(transaction: CurrentStoreTransaction): Promise<RegistrationContext> {
-  const manifest = await lockIdentityManifest(transaction);
-  if (
-    manifest &&
-    (manifest.phase !== 'prepared' ||
-      manifest.writerAuthority !== 'current-store' ||
-      manifest.normalizerVersion !== CURRENT_EMAIL_NORMALIZER_VERSION)
-  )
-    throw new CurrentStoreFoundationError('STALE_AUTHORITY');
-  return Object.freeze({ projectionId: manifest?.projectionId ?? null, writerEpoch: manifest?.writerEpoch ?? null });
-}
-
-export async function revalidateRegistrationContext(
-  transaction: CurrentStoreTransaction,
-  expected: RegistrationContext,
-): Promise<void> {
-  const { projectionId, writerEpoch } = expected;
-  const current = await captureRegistrationContext(transaction);
-  if (current.projectionId !== projectionId || current.writerEpoch !== writerEpoch)
-    throw new CurrentStoreFoundationError('STALE_AUTHORITY');
-}
+export {
+  capturePreEnforcementContext as captureRegistrationContext,
+  revalidatePreEnforcementContext as revalidateRegistrationContext,
+  type PreEnforcementContext as RegistrationContext,
+} from './pre-enforcement-context';
+import {
+  revalidatePreEnforcementContext as revalidateRegistrationContext,
+  type PreEnforcementContext as RegistrationContext,
+} from './pre-enforcement-context';
 
 /**
  * Web and installed native registration share this write boundary. The precheck

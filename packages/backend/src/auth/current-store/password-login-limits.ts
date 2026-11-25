@@ -89,6 +89,7 @@ export function createPasswordLoginLimiter(options: {
   readonly redis: () => PasswordLoginRedis | null;
   readonly now?: () => number;
   readonly maxLocalClients?: number;
+  readonly maxPendingRedisCommands?: number;
 }): PasswordLoginLimiter {
   const limiter = createClientCommandLimiter({
     ...options,
@@ -108,6 +109,21 @@ export function createPasswordLoginLimiter(options: {
     },
   };
 }
+
+function sharedPasswordLoginRedis(): PasswordLoginRedis | null {
+  if (!redisClientManager.isRedisConnected()) return null;
+  const { publisher } = redisClientManager.getClients();
+  return {
+    eval: (script, numberOfKeys, ...args) => publisher.eval(script, numberOfKeys, ...args),
+    hdel: (key, field) => publisher.hdel(key, field),
+  };
+}
+
+/** Default proof traffic caps actual Redis promises, including late refund work. */
+export const preEnforcementPasswordLoginLimiter = createPasswordLoginLimiter({
+  redis: sharedPasswordLoginRedis,
+  maxPendingRedisCommands: 4,
+});
 
 /** The limiter the staged web sign-in route uses, on the backend's shared Redis. */
 export const passwordLoginLimiter = createPasswordLoginLimiter({

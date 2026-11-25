@@ -65,6 +65,24 @@ describe('owned credential writer CI boundary', () => {
     expect(workflow.jobs['ci-status'].needs).toContain('test-credential-writer');
   });
 
+  it('runs the pre-enforcement password proof unconditionally on the current fixture', () => {
+    const step = proof.steps.find((entry) => entry.run?.includes('vp run test:password-login-backend'));
+    expect(step).toBeDefined();
+    expect(step?.if).toBeUndefined();
+    expect(step?.env).toBeUndefined();
+    expect(step?.['continue-on-error']).toBeUndefined();
+    expect(step?.run).toContain('--reporter=junit --outputFile.junit=./test-results/junit-password-login-backend.xml');
+    expect(step?.run).toContain('test -s packages/backend/test-results/junit-password-login-backend.xml');
+    const configuration = readFileSync('packages/backend/vite.password-login-proof.config.ts', 'utf8');
+    expect(configuration).toContain('password-login-backend.proof.ts');
+    expect(configuration).toContain('pre-enforcement-password-limits.test.ts');
+    expect(configuration).toContain('maxWorkers: 1');
+    expect(configuration).toContain('fileParallelism: false');
+    expect(rootSource).toContain(
+      'vp test run --config packages/backend/vite.password-login-proof.config.ts --maxWorkers=1 --reporter=agent',
+    );
+  });
+
   it('owns a fresh database on the existing pinned PG18/PostGIS image', () => {
     expect(Object.keys(proof.services ?? {})).toEqual(['postgres']);
     expect(proof.services?.postgres.image).toBe(workflow.jobs['test-backend'].services?.postgres.image);
@@ -289,6 +307,7 @@ describe('owned credential writer CI boundary', () => {
       'packages/backend/test-results/junit-native-handoff-credential-writer.xml',
       'packages/backend/test-results/junit-browser-renewal-credential-writer.xml',
       'packages/backend/test-results/junit-registration-credential-writer.xml',
+      'packages/backend/test-results/junit-password-login-backend.xml',
     ]);
   });
 
