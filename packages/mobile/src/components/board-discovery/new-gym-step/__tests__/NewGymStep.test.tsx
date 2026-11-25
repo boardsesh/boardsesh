@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 //
-// "Add your gym": Save waits for a name and a pin, the listed gyms that look
-// like it are asked about, a server refusal brings its gyms into the same list
-// and "No, add a new gym" saves again naming every gym dismissed, the gym cap
-// says so, and a gym is never created twice.
+// "Add your gym": Save (the ✓ in the bar) waits for a name and a pin, the
+// listed gyms that look like it are asked about, a server refusal brings its
+// gyms into the same list and "No, add a new gym" saves again naming every gym
+// dismissed, the gym cap says so, a gym is never created twice, and the map
+// stays on screen while any field is in use.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, forwardRef, useImperativeHandle, type ReactElement, type ReactNode, type Ref } from 'react';
@@ -27,7 +28,25 @@ const state = vi.hoisted(() => ({
   similarInputs: [] as unknown[],
   onRegionChange: undefined as ((coords: Coords, zoom?: number) => void) | undefined,
   onMapUnavailable: undefined as (() => void) | undefined,
-  list: null as { mapHidden?: boolean; mapAvailable?: boolean } | null,
+  list: null as {
+    mapHidden?: boolean;
+    mapAvailable?: boolean;
+    cardPinned?: boolean;
+    cardCompact?: boolean;
+    hasFooter: boolean;
+  } | null,
+}));
+type HeaderTrailing = {
+  kind?: string;
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+  prominent?: boolean;
+};
+const header = vi.hoisted(() => ({
+  trailing: null as HeaderTrailing | null,
+  clearOnUnmount: undefined as boolean | undefined,
 }));
 
 vi.mock('react-native', () => ({
@@ -60,6 +79,12 @@ vi.mock('../../../../lib/connectivity/use-connectivity', () => ({
 }));
 vi.mock('../../../../lib/open-app-settings', () => ({ canOpenAppSettings: () => true, openAppSettings: vi.fn() }));
 vi.mock('../../../../lib/analytics', () => ({ track: trackMock }));
+vi.mock('../../../../hooks/use-header-actions', () => ({
+  useHeaderActions: ({ trailing, clearOnUnmount }: { trailing?: HeaderTrailing | null; clearOnUnmount?: boolean }) => {
+    header.trailing = trailing ?? null;
+    header.clearOnUnmount = clearOnUnmount;
+  },
+}));
 vi.mock('../../../../hooks/use-transparent-header-inset', () => ({ useTransparentHeaderInset: () => 0 }));
 vi.mock('../../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: state.signedIn }) }));
 vi.mock('../../../../providers/theme-provider', () => ({
@@ -154,6 +179,8 @@ vi.mock('../../../gym-directory/MapCardList', () => ({
     footer,
     mapHidden,
     mapAvailable,
+    cardPinned,
+    cardCompact,
     onLocate,
   }: {
     ref?: Ref<unknown>;
@@ -164,9 +191,17 @@ vi.mock('../../../gym-directory/MapCardList', () => ({
     footer?: ReactNode;
     mapHidden?: boolean;
     mapAvailable?: boolean;
+    cardPinned?: boolean;
+    cardCompact?: boolean;
     onLocate?: () => void;
   }) => {
-    state.list = { mapHidden, mapAvailable };
+    state.list = {
+      mapHidden,
+      mapAvailable,
+      cardPinned,
+      cardCompact,
+      hasFooter: footer !== undefined && footer !== null,
+    };
     useImperativeHandle(ref, () => ({ scrollToItemKey: scrollToItemKeyMock, scrollToTop: vi.fn() }), []);
     return createElement('section', null, [
       createElement('div', { key: 'map' }, map),
@@ -210,12 +245,14 @@ vi.mock('../../../gym-directory/GymSearchField', () => ({
     onSubmit,
     onSelectPlace,
     onSuggestionsChange,
+    onFocusChange,
   }: {
     text: string;
     onChangeText: (text: string) => void;
     onSubmit: () => void;
     onSelectPlace: (place: PlaceSuggestion) => void;
     onSuggestionsChange?: (places: readonly PlaceSuggestion[]) => void;
+    onFocusChange?: (focused: boolean) => void;
   }) =>
     createElement('div', null, [
       createElement('input', {
@@ -223,6 +260,8 @@ vi.mock('../../../gym-directory/GymSearchField', () => ({
         'data-testid': 'search',
         value: text,
         onChange: (event: { target: { value: string } }) => onChangeText(event.target.value),
+        onFocus: () => onFocusChange?.(true),
+        onBlur: () => onFocusChange?.(false),
       }),
       createElement('button', { key: 'submit', type: 'button', 'data-testid': 'search-submit', onClick: onSubmit }),
       createElement('button', {
@@ -280,8 +319,17 @@ function typeName(name: string) {
   fireEvent.change(screen.getByTestId('new-gym-name'), { target: { value: name } });
 }
 
-function saveButton(): HTMLButtonElement {
-  return screen.getByText('mobile.newGym.save') as HTMLButtonElement;
+/** The ✓ in the bar, as the last render set it. */
+function saveAction(): HeaderTrailing {
+  if (!header.trailing) throw new Error('no trailing header action');
+  return header.trailing;
+}
+
+/** Tap the ✓ in the bar and let the save settle. */
+async function tapSave() {
+  await act(async () => {
+    saveAction().onPress();
+  });
 }
 
 /** Let the name and pin settle long enough for the "is it one of these?" lookup. */
@@ -303,6 +351,8 @@ beforeEach(() => {
   state.similar = undefined;
   state.similarInputs = [];
   state.list = null;
+  header.trailing = null;
+  header.clearOnUnmount = undefined;
   createGymMock.mockResolvedValue(CREATED);
 });
 
@@ -311,21 +361,95 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe('Save is the ✓ in the bar', () => {
+  it('is a confirm labelled "Add gym", with no button at the bottom of the page', () => {
+    renderStep();
+    expect(saveAction()).toMatchObject({ kind: 'confirm', label: 'mobile.newGym.save', prominent: true });
+    expect(header.clearOnUnmount).toBe(true);
+    expect(state.list?.hasFooter).toBe(false);
+    expect(screen.queryByText('mobile.newGym.save')).toBeNull();
+  });
+
+  it('says why it is held under the map, until there is a name and a pin', () => {
+    state.location = { ...state.location, status: 'granted', permission: 'granted', coords: DEVICE };
+    renderStep();
+    expect(saveAction().disabled).toBe(true);
+    expect(screen.getByTestId('new-gym-save-hint').textContent).toBe('mobile.newGym.saveHint');
+    typeName('Boulder Space');
+    expect(saveAction().disabled).toBe(false);
+    expect(screen.queryByTestId('new-gym-save-hint')).toBeNull();
+  });
+
+  it('saves the gym from the ✓', async () => {
+    state.location = { ...state.location, status: 'granted', permission: 'granted', coords: DEVICE };
+    renderStep();
+    typeName('Boulder Space');
+    await tapSave();
+    expect(createGymMock).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ name: 'Boulder Space', latitude: 52.37, longitude: 4.89 }),
+    );
+    expect(props.onCreated).toHaveBeenCalledExactlyOnceWith(CREATED);
+  });
+});
+
+describe('the map stays while a field is in use', () => {
+  it('pins the card, and never hides it for a field: the name keeps the whole card, search and address go compact', () => {
+    state.location = { ...state.location, status: 'granted', permission: 'granted', coords: DEVICE };
+    renderStep();
+    expect(state.list).toMatchObject({ cardPinned: true, mapAvailable: true, cardCompact: false });
+    expect(state.list?.mapHidden).toBeFalsy();
+    setCenterMock.mockClear();
+    const caption = screen.getByTestId('new-gym-pin-caption').textContent;
+    for (const [field, compact] of [
+      ['new-gym-name', false],
+      ['search', true],
+      ['new-gym-address', true],
+    ] as const) {
+      fireEvent.focus(screen.getByTestId(field));
+      fireEvent.change(screen.getByTestId(field), { target: { value: 'Boulder' } });
+      expect(state.list?.mapHidden, field).toBeFalsy();
+      expect(state.list?.cardPinned, field).toBe(true);
+      expect(state.list?.cardCompact, field).toBe(compact);
+      expect(screen.getByTestId('gym-map'), field).toBeTruthy();
+      expect(screen.getByTestId('new-gym-pin'), field).toBeTruthy();
+      fireEvent.blur(screen.getByTestId(field));
+      expect(state.list?.cardCompact, field).toBe(false);
+      expect(state.list?.mapHidden, field).toBeFalsy();
+    }
+    // None of it moved the camera or the pin.
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(setCenterMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId('new-gym-pin-caption').textContent).toBe(caption);
+  });
+
+  it('keeps the map after a search is typed and left without a pick', () => {
+    renderStep();
+    fireEvent.focus(screen.getByTestId('search'));
+    fireEvent.change(screen.getByTestId('search'), { target: { value: 'Amster' } });
+    fireEvent.blur(screen.getByTestId('search'));
+    expect(state.list?.mapHidden).toBeFalsy();
+    expect(state.list?.cardCompact).toBe(false);
+    expect(screen.getByTestId('gym-map')).toBeTruthy();
+  });
+});
+
 describe('what Save needs', () => {
   it('waits for a name and a pin, and never asks for location on open', () => {
     renderStep();
     expect(requestIfAllowedMock).toHaveBeenCalled();
     expect(requestMock).not.toHaveBeenCalled();
-    expect(saveButton().disabled).toBe(true);
+    expect(saveAction().disabled).toBe(true);
     expect(screen.getByTestId('new-gym-pin-caption').textContent).toBe('mobile.newGym.pinNeeded');
 
     typeName('Boulder Space');
-    expect(saveButton().disabled).toBe(true);
+    expect(saveAction().disabled).toBe(true);
 
     // A town is where to start looking, not the gym: Save waits for a move.
     fireEvent.click(screen.getByTestId('pick-amsterdam'));
     expect(setCenterMock).toHaveBeenLastCalledWith({ latitude: 52.374, longitude: 4.8897 }, 13);
-    expect(saveButton().disabled).toBe(true);
+    expect(saveAction().disabled).toBe(true);
     expect(screen.getByText('mobile.newGym.pinMoveHint')).toBeTruthy();
     // A town label is no street address.
     expect((screen.getByTestId('new-gym-address') as HTMLInputElement).value).toBe('');
@@ -335,16 +459,16 @@ describe('what Save needs', () => {
       state.onRegionChange?.({ latitude: 52.374, longitude: 4.8897 }, 13);
       vi.advanceTimersByTime(300);
     });
-    expect(saveButton().disabled).toBe(true);
+    expect(saveAction().disabled).toBe(true);
     // The climber moves the map under the dot.
     act(() => {
       state.onRegionChange?.({ latitude: 52.36, longitude: 4.9 }, 16);
       vi.advanceTimersByTime(300);
     });
-    expect(saveButton().disabled).toBe(false);
+    expect(saveAction().disabled).toBe(false);
 
     typeName('   ');
-    expect(saveButton().disabled).toBe(true);
+    expect(saveAction().disabled).toBe(true);
   });
 
   it('lists towns only where the map can draw', () => {
@@ -361,7 +485,7 @@ describe('what Save needs', () => {
     expect(setCenterMock).toHaveBeenCalledWith(DEVICE, 16);
     expect(screen.getByTestId('new-gym-pin-caption').textContent).toBe('mobile.newGym.pinAtYou');
     typeName('Boulder Space');
-    expect(saveButton().disabled).toBe(false);
+    expect(saveAction().disabled).toBe(false);
   });
 
   it('asks for location only from Use my location', () => {
@@ -389,7 +513,7 @@ describe('what Save needs', () => {
       vi.advanceTimersByTime(300);
     });
     expect(screen.getByTestId('new-gym-pin-caption').textContent).toBe('mobile.newGym.pinZoomIn');
-    expect(saveButton().disabled).toBe(true);
+    expect(saveAction().disabled).toBe(true);
   });
 
   it('falls back to an address where the map cannot draw, and says where the gym goes', async () => {
@@ -409,9 +533,7 @@ describe('what Save needs', () => {
     );
     // The address is seeded from the search.
     expect((screen.getByTestId('new-gym-address') as HTMLInputElement).value).toBe('Fokkerweg 75, Amsterdam');
-    await act(async () => {
-      fireEvent.click(saveButton());
-    });
+    await tapSave();
     expect(createGymMock).toHaveBeenCalledWith(
       expect.objectContaining({ latitude: 52.36, longitude: 4.88, address: 'Fokkerweg 75, Amsterdam' }),
     );
@@ -452,9 +574,7 @@ describe('"is it one of these?"', () => {
     expect(screen.queryByTestId('similar:listed-1')).toBeNull();
     expect(createGymMock).not.toHaveBeenCalled();
 
-    await act(async () => {
-      fireEvent.click(saveButton());
-    });
+    await tapSave();
     expect(createGymMock).toHaveBeenCalledExactlyOnceWith({
       name: 'Boulder Space',
       latitude: 52.37,
@@ -479,15 +599,15 @@ describe('"is it one of these?"', () => {
     settle();
     fireEvent.click(screen.getByText('similarGyms.refusal.addNew'));
 
-    await act(async () => {
-      fireEvent.click(saveButton());
-    });
+    await tapSave();
     expect(createGymMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
         duplicateCheck: { mode: 'CONFIRMED_SEPARATE', acknowledgedGymUuids: ['listed-1'] },
       }),
     );
     expect(props.onCreated).not.toHaveBeenCalled();
+    // Refused: the ✓ is free again.
+    expect(saveAction()).toMatchObject({ disabled: false, loading: false });
     expect(screen.getByTestId('similar:server-1')).toBeTruthy();
     expect(screen.getByText('mobile.newGym.similarRefusedBody')).toBeTruthy();
     expect(scrollToItemKeyMock).toHaveBeenCalledWith('similar:header');
@@ -508,9 +628,7 @@ describe('"is it one of these?"', () => {
   it('refuses first with REJECT_IF_FOUND when nothing was dismissed', async () => {
     renderStep();
     typeName('Boulder Space');
-    await act(async () => {
-      fireEvent.click(saveButton());
-    });
+    await tapSave();
     expect(createGymMock).toHaveBeenCalledWith(
       expect.objectContaining({ duplicateCheck: { mode: 'REJECT_IF_FOUND' } }),
     );
@@ -528,9 +646,7 @@ describe('when the save does not go through', () => {
     });
     renderStep();
     typeName('Boulder Space');
-    await act(async () => {
-      fireEvent.click(saveButton());
-    });
+    await tapSave();
     expect(screen.getByTestId('notice').textContent).toBe('mobile.newGym.limitReached');
     expect(props.onCreated).not.toHaveBeenCalled();
     expect(createdEvents()).toEqual([]);
@@ -540,13 +656,11 @@ describe('when the save does not go through', () => {
     createGymMock.mockRejectedValueOnce(new Error('network'));
     renderStep();
     typeName('Boulder Space');
-    await act(async () => {
-      fireEvent.click(saveButton());
-    });
+    await tapSave();
     expect(screen.getByTestId('notice').textContent).toBe('mobile.newGym.saveFailed');
-    await act(async () => {
-      fireEvent.click(saveButton());
-    });
+    // The ✓ is free again for another try.
+    expect(saveAction()).toMatchObject({ disabled: false, loading: false });
+    await tapSave();
     expect(createGymMock).toHaveBeenCalledTimes(2);
     expect(props.onCreated).toHaveBeenCalledOnce();
   });
@@ -555,9 +669,7 @@ describe('when the save does not go through', () => {
     state.signedIn = false;
     renderStep();
     typeName('Boulder Space');
-    await act(async () => {
-      fireEvent.click(saveButton());
-    });
+    await tapSave();
     expect(props.onSignInNeeded).toHaveBeenCalledOnce();
     expect(createGymMock).not.toHaveBeenCalled();
   });
@@ -574,13 +686,21 @@ describe('never two gyms', () => {
     );
     renderStep();
     typeName('Boulder Space');
-    const button = saveButton();
-    fireEvent.click(button);
-    fireEvent.click(button);
+    // Two taps on the same ✓ before the bar redraws: the second is refused.
+    const tick = saveAction();
+    act(() => {
+      tick.onPress();
+      tick.onPress();
+    });
+    expect(createGymMock).toHaveBeenCalledOnce();
+    // While it is out the ✓ spins and can't be pressed.
+    expect(saveAction()).toMatchObject({ disabled: true, loading: true });
     await act(async () => {
       resolveCreate(CREATED);
     });
-    fireEvent.click(saveButton());
+    // It went through: the ✓ stays held while the caller moves on.
+    expect(saveAction()).toMatchObject({ disabled: true, loading: true });
+    await tapSave();
     expect(createGymMock).toHaveBeenCalledOnce();
     expect(props.onCreated).toHaveBeenCalledOnce();
     expect(createdEvents()).toHaveLength(1);
@@ -601,14 +721,12 @@ describe('every camera report counts', () => {
       vi.advanceTimersByTime(300);
     });
     // Held: it may be a frame of our own flight.
-    expect(saveButton().disabled).toBe(true);
+    expect(saveAction().disabled).toBe(true);
     act(() => {
       vi.advanceTimersByTime(1000);
     });
-    expect(saveButton().disabled).toBe(false);
-    await act(async () => {
-      fireEvent.click(saveButton());
-    });
+    expect(saveAction().disabled).toBe(false);
+    await tapSave();
     expect(createGymMock).toHaveBeenCalledWith(expect.objectContaining(PANNED));
     expect(createdEvents()).toEqual([expect.objectContaining({ locationSource: 'map' })]);
   });
@@ -626,15 +744,13 @@ describe('every camera report counts', () => {
       }
     });
     // Mid-flight, zoomed out: the pin stands.
-    expect(saveButton().disabled).toBe(false);
+    expect(saveAction().disabled).toBe(false);
     act(() => {
       state.onRegionChange?.(DEVICE, 16);
       vi.advanceTimersByTime(300);
     });
     expect(screen.getByTestId('new-gym-pin-caption').textContent).toBe('mobile.newGym.pinAtYou');
-    await act(async () => {
-      fireEvent.click(saveButton());
-    });
+    await tapSave();
     expect(createGymMock).toHaveBeenCalledWith(expect.objectContaining(DEVICE));
     expect(createdEvents()).toEqual([expect.objectContaining({ locationSource: 'device' })]);
   });
@@ -660,9 +776,7 @@ describe('every camera report counts', () => {
       vi.advanceTimersByTime(2000);
       state.onRegionChange?.(PANNED, 16);
     });
-    await act(async () => {
-      fireEvent.click(saveButton());
-    });
+    await tapSave();
     expect(createGymMock).toHaveBeenCalledWith(expect.objectContaining(PANNED));
   });
 
@@ -706,9 +820,7 @@ describe('a "not my gym" answers one question', () => {
     });
     settle();
     expect(screen.getByTestId('similar:far')).toBeTruthy();
-    await act(async () => {
-      fireEvent.click(saveButton());
-    });
+    await tapSave();
     expect(createGymMock).toHaveBeenCalledWith(
       expect.objectContaining({ duplicateCheck: { mode: 'REJECT_IF_FOUND' } }),
     );
@@ -736,9 +848,7 @@ describe('a "not my gym" answers one question', () => {
     typeName('Boulder Space Annex');
     settle();
     expect(screen.getByTestId('similar:near')).toBeTruthy();
-    await act(async () => {
-      fireEvent.click(saveButton());
-    });
+    await tapSave();
     expect(createGymMock).toHaveBeenCalledWith(
       expect.objectContaining({ duplicateCheck: { mode: 'REJECT_IF_FOUND' } }),
     );
