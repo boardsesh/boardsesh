@@ -283,3 +283,68 @@ revived request still counts toward that climber's own limit for the next hour.
 | `superseded` | A later request exists for the same draft and photo: a retry, or this script's earlier run. |
 | `manual-edits` | The climber placed or took off holds by hand on the draft while waiting. |
 | `no-edit-access` | The requester can no longer edit the wall (`canEditBoard`, the API's rule). |
+
+## Push-delivery diagnosis and recovery
+
+Expo push credentials are separate from the backend's Live Activity APNs
+variables. A working Live Activity does not prove Expo can send phone alerts.
+On 2026-11-25, `eas credentials --platform ios` for the production profile showed
+no credentials for `@boardsesh/boardsesh`, bundle `com.boardsesh.app`. The
+read-only standby had 14 pending deliveries (11 spray completions, two support
+replies, one board report), 13 skipped spray completions and zero `done` rows.
+This supports a missing Expo APNs credential; the historical rows do not retain
+Expo's actual rejection code or the reason they were skipped.
+
+Use the existing APNs key from the Boardsesh 1Password item **APNs Auth Key —
+Live Activity**, after verifying its key ID and the production Apple team. Attach
+it to Expo's production app through EAS credentials; do not revoke or rotate a
+working key just to attach it. The stored item's team field may be blank; verify
+against the production backend's `APNS_TEAM_ID`. Never paste the private key,
+Expo token, device tokens or signed payloads into logs, issues or PRs. If Expo
+push security is enabled, supply the matching backend `EXPO_ACCESS_TOKEN` before
+sending; that variable was absent during this inspection.
+
+The delivery driver emits `notification.push.delivery` after a committed
+transition, with ticket/receipt/validation stage, status, allowlisted Expo error
+code and a canonical safe message. Raw upstream messages are deliberately
+withheld because they can echo device tokens and notification text. Skips
+separate unavailable devices, unavailable targets, `DeviceNotRegistered` and
+`MessageTooBig`. HTTP rejections emit `notification.push.http_error` with the
+status and stage. A successful send ticket is only queued, not delivered.
+
+The minute detection-maintenance job also checks push health, at most hourly
+per backend process. `notification.push.health` contains current status counts
+for rows updated in the past 24 hours, all outstanding pending/receipt rows,
+and the oldest outstanding update age. These are snapshots, not counts of
+attempts: retrying changes `updated_at`. If any outstanding delivery was last updated
+over an hour ago and no delivery completed in 24 hours,
+`notification.push.stalled` raises `PUSH_DELIVERY_STALLED` through the existing
+production Sentry logger transport. Health-query failures do not fail detection
+reconciliation. A backend restart resets the reporting throttle.
+
+After attaching credentials, validate one real recognition completion on a
+consenting tester's iPhone. Check the receipt and visible background alert,
+then its tap destination. Expo receipt `ok` means APNs accepted the message;
+it does not prove the phone displayed it. Recover pending work only after this
+check; retain skipped/done rows and let the normal driver revalidate device,
+account, source draft and editor access. Android still requires its separate
+FCM configuration and a compatible native binary.
+
+To replay exhausted delivery jobs after the phone check, open a production
+backend shell using the explicit Railway project, environment and service IDs
+in the import-revival procedure above. From `/app/packages/backend`, run:
+
+```sh
+node --import tsx src/scripts/replay-notification-push.ts --limit 25
+node --import tsx src/scripts/replay-notification-push.ts --limit 25 --apply
+```
+
+The first command is read-only. The second refuses a standby/read-only database
+and attempts each selected pending/receipt delivery once through the normal
+driver, oldest updated first. The limit is 1–200 (default 25); use `--limit 1`
+for the first controlled recovery. No done/skipped delivery is selected. Output
+contains aggregate counts only, including deferred receipts and retryable
+failures. A fresh accepted ticket schedules its receipt check atomically; wait
+at least 15 minutes for that check. A failing attempt stays pending; do not
+repeatedly replay it while credentials are still broken. Old drafts that are
+no longer reviewable safely become skipped rather than alerting the climber.

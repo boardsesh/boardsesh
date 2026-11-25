@@ -31,6 +31,8 @@ import {
   directorySetupChangePushTarget,
 } from '../graphql/resolvers/social/directory-reports/notices';
 import { NOTIFICATION_PUSH_QUEUE, NOTIFICATION_PUSH_RETRIES as RETRIES } from './notification-push-options';
+import { safeExpoPushError, type PushDeliveryDiagnostic } from './notification-push-diagnostics';
+import { logger } from '../utils/logger';
 import english from '@boardsesh/i18n/locales/en-US/notifications.json';
 import spanish from '@boardsesh/i18n/locales/es/notifications.json';
 import french from '@boardsesh/i18n/locales/fr/notifications.json';
@@ -178,12 +180,20 @@ async function expoPost(path: 'send' | 'getReceipts', payload: unknown): Promise
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(15_000),
   });
-  if (!response.ok) throw new Error('EXPO_PUSH_HTTP_FAILED');
+  if (!response.ok) {
+    logger.warn('Expo push HTTP request failed', {
+      event: 'notification.push.http_error',
+      stage: path === 'send' ? 'ticket' : 'receipt',
+      httpStatus: response.status,
+    });
+    throw new Error('EXPO_PUSH_HTTP_FAILED');
+  }
   return responseSchema.parse(await response.json()).data;
 }
 
 export async function deliverSprayNotification(boss: PgBoss, deliveryId: string): Promise<void> {
   let retry = false;
+  let diagnostic: PushDeliveryDiagnostic | undefined;
   await db.transaction(async (transaction) => {
     await transaction.execute(
       sql`SELECT pg_advisory_xact_lock(hashtextextended(${deliveryId}, ${NOTIFICATION_DELIVERY_LOCK_SEED}))`,
@@ -200,6 +210,7 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
     // read after any wall write in flight (revoke, hide, discard) and is released
     // before the Expo call below, so a slow push never stalls wall edits. Only
     // this delivery's lock is held across the HTTP request.
+    let skipReason: 'device_unavailable' | 'target_unavailable' = 'target_unavailable';
     const target = await db.transaction(async (validation) => {
       const [device] = await validation
         .select({ installationId: notificationDevices.installationId })
@@ -214,7 +225,10 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
           ),
         )
         .limit(1);
-      if (!device) return null;
+      if (!device) {
+        skipReason = 'device_unavailable';
+        return null;
+      }
       const [notice] = await validation
         .select({ type: notifications.type })
         .from(notifications)
@@ -292,6 +306,7 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
         .where(eq(notificationDeliveries.id, delivery.id));
     if (!target) {
       await setStatus('skipped');
+      diagnostic = { stage: 'validation', status: 'skipped', reason: skipReason };
       return;
     }
     if (delivery.ticketId && Date.now() - delivery.updatedAt.getTime() < 15 * 60_000)
@@ -310,6 +325,11 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
       ? ticketSchema.parse(z.record(z.string(), z.unknown()).parse(payload)[delivery.ticketId])
       : ticketSchema.parse(Array.isArray(payload) ? payload[0] : payload);
     if (ticket.status === 'error') {
+      diagnostic = {
+        stage: delivery.ticketId ? 'receipt' : 'ticket',
+        status: 'pending',
+        ...safeExpoPushError(ticket.details?.error),
+      };
       if (ticket.details?.error === 'DeviceNotRegistered') {
         await transaction
           .update(notificationDevices)
@@ -321,6 +341,7 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
             ),
           );
         await setStatus('skipped');
+        diagnostic = { ...diagnostic, status: 'skipped', reason: 'DeviceNotRegistered' };
         return;
       }
       // Only a payload problem is permanent. InvalidCredentials (APNs/FCM keys
@@ -328,6 +349,7 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
       // delivery lands once operators upload working credentials.
       if (ticket.details?.error === 'MessageTooBig') {
         await setStatus('skipped');
+        diagnostic = { ...diagnostic, status: 'skipped', reason: 'MessageTooBig' };
         return;
       }
       await setStatus('pending', null);
@@ -336,6 +358,7 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
     }
     if (delivery.ticketId) {
       await setStatus('done');
+      diagnostic = { stage: 'receipt', status: 'done' };
       return;
     }
     if (!ticket.id) throw new Error('EXPO_PUSH_INVALID_TICKET');
@@ -351,8 +374,15 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
         { ...RETRIES, startAfter: 15 * 60, db: enqueueOn(transaction) },
       );
       if (!queued) throw new Error('RECEIPT_ENQUEUE_FAILED');
+      diagnostic = { stage: 'ticket', status: 'receipt' };
     }
   });
+  // Emit committed transitions only. No delivery/account ids, tokens, or notification copy.
+  if (diagnostic) {
+    const fields = { event: 'notification.push.delivery', ...diagnostic };
+    if (diagnostic.errorCode) logger.warn('Expo push delivery result', fields);
+    else logger.info('Expo push delivery result', fields);
+  }
   // Commit the cleared ticket before pg-boss retries; throwing inside would restore the stale ticket.
   if (retry) throw new Error('EXPO_PUSH_RETRY');
 }
