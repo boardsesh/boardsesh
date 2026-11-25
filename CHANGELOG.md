@@ -10,6 +10,10 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 - Adding a board at your gym? Find the one your crew already climbs on, so your sends land in the same place. ([#8157](https://github.com/boardsesh/boardsesh/pull/8157))
 
+### Fixed
+
+- Shared session and join links show the whole climb in chat previews. ([#8156](https://github.com/boardsesh/boardsesh/pull/8156))
+
 ## 2026-11-24
 
 ### New

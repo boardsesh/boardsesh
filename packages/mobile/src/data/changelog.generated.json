@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-25T07:15:15.648Z",
+  "generatedAt": "2026-11-25T09:48:09.038Z",
   "entries": [
+    {
+      "prNumber": 8156,
+      "category": "fixed",
+      "title": "Shared session and join links show the whole climb in chat previews.",
+      "mergedAt": "2026-11-25T09:43:07Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8156"
+    },
     {
       "prNumber": 8157,
       "category": "new",
