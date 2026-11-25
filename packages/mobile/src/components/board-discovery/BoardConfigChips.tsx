@@ -50,8 +50,9 @@ function BoardConfigChipsInner<T>({ groupLabel, options, onSelect, disabled = fa
             styles.chip,
             disabled && styles.chipDisabled,
             {
-              borderWidth: option.selected ? 2 : undefined,
               // Selected is a state: the brand wash behind a label-colour title.
+              // The border is 1 pt in both states, so a chip never changes size
+              // (and the label never jumps) when it is picked.
               borderColor: option.selected ? selection.checkmark : systemColors.separator,
               backgroundColor: option.selected ? selection.fill : 'transparent',
             },
@@ -82,7 +83,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[3],
     paddingVertical: spacing[2],
     borderRadius: borderRadius.full,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
