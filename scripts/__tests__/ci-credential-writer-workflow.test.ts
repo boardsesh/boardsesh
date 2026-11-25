@@ -57,12 +57,47 @@ const historicalFixturePath =
 describe('owned credential writer CI boundary', () => {
   it('runs unsharded on an independent required backend dependency gate', () => {
     expect(proof.needs).toEqual(['changes']);
-    expect(proof.if).toBe(workflow.jobs['test-backend'].if);
+    expect(proof.if).toBe(workflow.jobs['test-auth-compatibility'].if);
     expect(proof['runs-on']).toBe('ubuntu-latest');
     expect(proof['timeout-minutes']).toBe(15);
     expect(proof.strategy).toBeUndefined();
     expect(proof['continue-on-error']).toBeUndefined();
     expect(workflow.jobs['ci-status'].needs).toContain('test-credential-writer');
+  });
+
+  it('runs the pre-enforcement password proof unconditionally on the current fixture', () => {
+    const step = proof.steps.find((entry) => entry.run?.includes('vp run test:password-login-backend'));
+    expect(step).toBeDefined();
+    expect(step?.if).toBeUndefined();
+    expect(step?.env).toBeUndefined();
+    expect(step?.['continue-on-error']).toBeUndefined();
+    expect(step?.run).toContain('--reporter=junit --outputFile.junit=./test-results/junit-password-login-backend.xml');
+    expect(step?.run).toContain('test -s packages/backend/test-results/junit-password-login-backend.xml');
+    const configuration = readFileSync('packages/backend/vite.password-login-proof.config.ts', 'utf8');
+    expect(configuration).toContain('password-login-backend.proof.ts');
+    expect(configuration).toContain('pre-enforcement-password-limits.test.ts');
+    expect(configuration).toContain('maxWorkers: 1');
+    expect(configuration).toContain('fileParallelism: false');
+    expect(rootSource).toContain(
+      'vp test run --config packages/backend/vite.password-login-proof.config.ts --maxWorkers=1 --reporter=agent',
+    );
+  });
+
+  it('runs default password through the real framework and mounted admission on the current fixture', () => {
+    const step = proof.steps.find((entry) => entry.run?.includes('vp run test:password-login-web'));
+    expect(step).toBeDefined();
+    expect(step?.if).toBeUndefined();
+    expect(step?.env).toBeUndefined();
+    expect(step?.['continue-on-error']).toBeUndefined();
+    expect(step?.run).toContain('--reporter=junit --outputFile.junit=./test-results/junit-password-login-web.xml');
+    expect(step?.run).toContain('test -s packages/web/test-results/junit-password-login-web.xml');
+    const configuration = readFileSync('packages/web/auth-proofs/password-login.vite.config.ts', 'utf8');
+    expect(configuration).toContain('pre-enforcement-password.integration.proof.ts');
+    expect(configuration).toContain('maxWorkers: 1');
+    expect(configuration).toContain('fileParallelism: false');
+    expect(rootSource).toContain(
+      'vp test run --config packages/web/auth-proofs/password-login.vite.config.ts --maxWorkers=1 --reporter=agent',
+    );
   });
 
   it('owns a fresh database on the existing pinned PG18/PostGIS image', () => {
@@ -288,6 +323,9 @@ describe('owned credential writer CI boundary', () => {
       'packages/backend/test-results/junit-first-password-credential-writer.xml',
       'packages/backend/test-results/junit-native-handoff-credential-writer.xml',
       'packages/backend/test-results/junit-browser-renewal-credential-writer.xml',
+      'packages/backend/test-results/junit-registration-credential-writer.xml',
+      'packages/backend/test-results/junit-password-login-backend.xml',
+      'packages/web/test-results/junit-password-login-web.xml',
     ]);
   });
 

@@ -1742,7 +1742,7 @@ jobs:
   # backend role cluster. Apply the real journal to this fresh PG18/PostGIS DB.
   test-credential-writer:
     needs: [changes]
-    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.rootCi == 'true'
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.authCompatibility == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -1820,6 +1820,19 @@ jobs:
           mkdir -p packages/backend/test-results
           vp run test:browser-renewal-credential-writer --reporter=junit --outputFile.junit=./test-results/junit-browser-renewal-credential-writer.xml
           test -s packages/backend/test-results/junit-browser-renewal-credential-writer.xml
+      # Uses a suite-owned copy and leaves the canonical fixture for the fence job.
+      - name: Run pre-enforcement backend registration proofs
+        run: |
+          mkdir -p packages/backend/test-results
+          vp run test:registration-credential-writer --reporter=junit --outputFile.junit=./test-results/junit-registration-credential-writer.xml
+          test -s packages/backend/test-results/junit-registration-credential-writer.xml
+          vp run test:password-login-backend --reporter=junit --outputFile.junit=./test-results/junit-password-login-backend.xml
+          test -s packages/backend/test-results/junit-password-login-backend.xml
+      - name: Run default password proof through real NextAuth and GraphQL admission
+        run: |
+          mkdir -p packages/web/test-results
+          vp run test:password-login-web --reporter=junit --outputFile.junit=./test-results/junit-password-login-web.xml
+          test -s packages/web/test-results/junit-password-login-web.xml
       - name: Upload credential proof results
         uses: actions/upload-artifact@v4
         if: always()
@@ -1832,6 +1845,9 @@ jobs:
             packages/backend/test-results/junit-first-password-credential-writer.xml
             packages/backend/test-results/junit-native-handoff-credential-writer.xml
             packages/backend/test-results/junit-browser-renewal-credential-writer.xml
+            packages/backend/test-results/junit-registration-credential-writer.xml
+            packages/backend/test-results/junit-password-login-backend.xml
+            packages/web/test-results/junit-password-login-web.xml
           retention-days: 7
 
   # BA-04 web writer fence (docs/auth/better-auth-writer-fence-proof.md). Its own PG18

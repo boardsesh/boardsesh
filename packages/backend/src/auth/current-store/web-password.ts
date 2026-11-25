@@ -1,3 +1,8 @@
+import {
+  currentStoreWebPasswordSnapshot,
+  sameCredentialMembers,
+  type WebPasswordCandidate,
+} from './web-password-snapshot';
 import { issueWebCredentialProof } from './web-credential-proof';
 import type { DbInstance } from '@boardsesh/db/client';
 import {
@@ -14,20 +19,19 @@ import {
   resolveAccountEmail,
 } from '@boardsesh/auth-protocol/account-email';
 import { accountEmailCandidates } from '@boardsesh/db/queries/account-email';
-import { authSubjectCutoffs, userCredentials, users } from '@boardsesh/db/schema/auth';
+import { authSubjectCutoffs, users } from '@boardsesh/db/schema/auth';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { CurrentStoreFoundationError } from './foundation-context';
 import {
   compareStoredPassword,
   matchCurrentStorePasswordCandidate,
-  MAX_CURRENT_STORE_PASSWORD_CANDIDATES,
   prepareCurrentStorePasswordRegistration,
 } from './password-identity';
 
 // Preserve the legacy WEB schema. Native retains its separate parser; password
 // login deliberately does not inherit these registration bounds or trimming.
-const registrationSchema = z.object({
+export const webRegistrationSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z
     .string()
@@ -57,7 +61,7 @@ import { bindIdentityAuthority } from '../authority/identity-authority';
 import { verifyAuthorityPassword } from '../authority/authority';
 import { issueWebSession, lockWebSessionAccounts, readPresentedWebSession } from '../authority/web-session';
 
-function validationMessage(message: string): (typeof REGISTRATION_VALIDATION_MESSAGES)[number] {
+export function registrationValidationMessage(message: string): (typeof REGISTRATION_VALIDATION_MESSAGES)[number] {
   return (
     REGISTRATION_VALIDATION_MESSAGES.find((allowed) => allowed === message) ??
     'Invalid input: expected object, received undefined'
@@ -72,12 +76,14 @@ export async function registerWebPassword(
 ): Promise<RegisterReply> {
   const configuredAuthority = captureAuthority(authorityInput);
   const { requestId, issuedAt } = input;
-  const validation = registrationSchema.safeParse(input.payload);
+  const validation = webRegistrationSchema.safeParse(input.payload);
   // Stored in the one normalized form (BA-02), as native registration stores it.
   const registration = validation.success
     ? { ...validation.data, email: normalizeAccountEmail(validation.data.email) }
     : undefined;
-  const invalidMessage = validation.success ? undefined : validationMessage(validation.error.issues[0].message);
+  const invalidMessage = validation.success
+    ? undefined
+    : registrationValidationMessage(validation.error.issues[0].message);
   const receipt = await database.transaction(async (transaction) => {
     await transactionSettings(transaction);
     return captureIdentityAuthority(transaction, configuredAuthority);
@@ -160,18 +166,6 @@ export async function registerWebPassword(
   });
 }
 
-interface WebPasswordCandidate {
-  readonly userId: string;
-  readonly email: string;
-  readonly name: string | null;
-  readonly image: string | null;
-  readonly createdAt: Date;
-  readonly emailVerified: Date | null;
-  readonly passwordHash: string | null;
-  readonly generation: number;
-  readonly deleted: boolean;
-}
-
 /**
  * The accounts a typed address names: rows storing it exactly, else the one
  * row storing it in other capitals. Several such rows name nobody.
@@ -182,6 +176,7 @@ async function addressSnapshot(
   receipt: IdentityAuthorityReceipt,
   lockedIds?: readonly string[],
 ): Promise<WebPasswordCandidate[]> {
+  if (receipt.authority === 'current-store') return currentStoreWebPasswordSnapshot(transaction, email, lockedIds);
   const fields = {
     userId: users.id,
     email: users.email,
@@ -197,59 +192,31 @@ async function addressSnapshot(
     : accountEmailCandidates(email);
   // Legacy takes hash+generation in one SELECT. Canonical takes both from the
   // actual adapter account SELECT below; the legacy table is never its source.
-  const rows =
-    receipt.authority === 'current-store'
-      ? await transaction
-          .select({ ...fields, passwordHash: userCredentials.passwordHash })
-          .from(users)
-          .leftJoin(userCredentials, eq(userCredentials.userId, users.id))
-          .leftJoin(authSubjectCutoffs, eq(authSubjectCutoffs.userId, users.id))
-          .where(predicate)
-          .orderBy(users.id)
-          .limit(ACCOUNT_EMAIL_CANDIDATE_LIMIT + 1)
-      : await transaction
-          .select({ ...fields, passwordHash: sql<string | null>`NULL` })
-          .from(users)
-          .leftJoin(authSubjectCutoffs, eq(authSubjectCutoffs.userId, users.id))
-          .where(predicate)
-          .orderBy(users.id)
-          .limit(ACCOUNT_EMAIL_CANDIDATE_LIMIT + 1);
-  if (
-    receipt.authority === 'better-auth' &&
-    rows.some((candidate) => candidate.email !== normalizeAccountEmail(candidate.email))
-  )
+  const rows = await transaction
+    .select({ ...fields, passwordHash: sql<string | null>`NULL` })
+    .from(users)
+    .leftJoin(authSubjectCutoffs, eq(authSubjectCutoffs.userId, users.id))
+    .where(predicate)
+    .orderBy(users.id)
+    .limit(ACCOUNT_EMAIL_CANDIDATE_LIMIT + 1);
+  if (rows.some((candidate) => candidate.email !== normalizeAccountEmail(candidate.email)))
     throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
   const resolved = resolveAccountEmail(email, rows).rows;
   const snapshot: WebPasswordCandidate[] = [];
   const identity = bindIdentityAuthority(transaction, receipt);
   for (const candidate of resolved) {
-    const credential = receipt.authority === 'better-auth' ? await identity.readPassword(candidate.userId) : undefined;
+    const credential = await identity.readPassword(candidate.userId);
     if (credential && credential.generation !== (candidate.generation ?? 0))
       throw new CurrentStoreFoundationError('STALE_GENERATION');
     snapshot.push({
       ...candidate,
       createdAt: new Date(candidate.createdAt.getTime()),
-      passwordHash: receipt.authority === 'better-auth' ? (credential?.passwordHash ?? null) : candidate.passwordHash,
+      passwordHash: credential?.passwordHash ?? null,
       generation: credential?.generation ?? candidate.generation ?? 0,
       deleted: candidate.deletedAt !== null,
     });
   }
   return snapshot;
-}
-
-function sameCredentialMembers(before: readonly WebPasswordCandidate[], after: readonly WebPasswordCandidate[]) {
-  if (before.length !== after.length || before.length > MAX_CURRENT_STORE_PASSWORD_CANDIDATES) return false;
-  const previousById = new Map(before.map((candidate) => [candidate.userId, candidate]));
-  return after.every((candidate) => {
-    const previous = previousById.get(candidate.userId);
-    return (
-      previous &&
-      previous.email === candidate.email &&
-      previous.passwordHash === candidate.passwordHash &&
-      previous.generation === candidate.generation &&
-      previous.deleted === candidate.deleted
-    );
-  });
 }
 
 /** Private verifier state; never serialize the candidate hashes or password. */

@@ -50,6 +50,7 @@ a production rollout or a physical-device result.
 | [Staged normalized reservations for native registration](better-auth-native-registration.md) | `better-auth-native-registration.md` |
 | [Native transfer and watch capability ancestry](better-auth-native-transfer-ancestry.md) | `better-auth-native-transfer-ancestry.md` |
 | [Public NextAuth4 callback and compound backend identity proof](better-auth-nextauth-public-handler-proof.md) | `better-auth-nextauth-public-handler-proof.md` |
+| [Default web password proofs before authority enforcement](better-auth-password-login-family.md) | `better-auth-password-login-family.md` |
 | [Backend-owned UID-bound password recovery](better-auth-password-recovery.md) | `better-auth-password-recovery.md` |
 | [Provider identity planning](better-auth-provider-identity-planning.md) | `better-auth-provider-identity-planning.md` |
 | [BA-04 selected-authority provider security](better-auth-provider-security-adoption.md) | `better-auth-provider-security-adoption.md` |

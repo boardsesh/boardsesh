@@ -14,8 +14,8 @@ const controls = vi.hoisted(() => ({
   deleteDuringJwt: false,
   deleteDuringSignOut: false,
   presented: [] as string[],
-  // auth_subject_cutoffs.generation per climber, and what a sign-in stamps (a
-  // failed read in auth-options stamps 0).
+  // Primary cutoff generation and the generation already proved by the backend.
+  passwordUnavailable: false,
   generations: new Map<string, number>(),
   signInStamp: 0,
 }));
@@ -33,10 +33,17 @@ vi.mock('@/app/lib/auth/auth-options', async () => {
         }),
       ],
       callbacks: {
-        jwt: async ({ token, user }: { token: JWT; user?: { id: string } }) => {
+        jwt: async ({
+          token,
+          user,
+        }: {
+          token: JWT;
+          user?: { id: string; webCredentialProof?: { authSessionId: string; generation: number } };
+        }) => {
           if (user) {
-            token.authSessionId = `login-${user.id}`;
-            token.gen = controls.signInStamp;
+            if (!user.webCredentialProof) throw new Error('Owned fixture requires backend proof');
+            token.authSessionId = user.webCredentialProof.authSessionId;
+            token.gen = user.webCredentialProof.generation;
           }
           if (controls.deleteDuringJwt && token.sub) controls.deleted.add(token.sub);
           return token;
@@ -56,6 +63,31 @@ vi.mock('@/app/lib/auth/auth-options', async () => {
     },
   };
 });
+// These publication cases replace password RPC I/O with a UID-bound backend
+// proof; the public NextAuth route and emitted-cookie guard still execute.
+vi.mock('@/app/lib/auth/pre-enforcement-password-client.server', () => ({
+  createPreEnforcementPasswordCommandClient: () => ({
+    password: async () => {
+      if (controls.passwordUnavailable) throw new Error('Owned password service unavailable');
+      return {
+        protocolVersion: 2,
+        operation: 'password',
+        requestId: 'deletion-password-fixture',
+        outcome: 'authenticated',
+        user: { id: controls.userId, email: `${controls.userId}@example.invalid`, name: null, image: null },
+        verification: { userId: controls.userId, required: false, verified: true },
+        credentialProof: {
+          version: 1,
+          userId: controls.userId,
+          authSessionId: `login-${controls.userId}`,
+          generation: controls.signInStamp,
+          authenticatedAt: new Date().toISOString(),
+          linkGuarded: true,
+        },
+      };
+    },
+  }),
+}));
 vi.mock('@/app/lib/auth/credential-admission.server', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/app/lib/auth/credential-admission.server')>();
   const { decode: publicDecode } = await import('next-auth/jwt');
@@ -135,6 +167,7 @@ beforeEach(async () => {
   controls.presented = [];
   controls.generations.clear();
   controls.signInStamp = 0;
+  controls.passwordUnavailable = false;
   cookies = new Map();
   const response = await invoke('csrf');
   remember(response);
@@ -193,13 +226,14 @@ describe('actual public NextAuth deletion publication', () => {
     expect((await decode({ token: cookies.get('next-auth.session-token'), secret }))?.sub).toBe('owner-b');
   });
 
-  it('answers 401 with no cookie when a failed generation read stamped 0 after a reset', async () => {
+  it('answers 503 without cookies when the password backend is unavailable after a reset', async () => {
     controls.generations.set('owner-a', 1);
-    controls.signInStamp = 0;
+    controls.passwordUnavailable = true;
     const refused = await login();
-    expect(refused.status).toBe(401);
+    expect(refused.status).toBe(503);
     expect(refused.headers.getSetCookie()).toEqual([]);
-    // The next attempt reads the generation and signs in.
+    // A later actual backend proof names generation1 and can sign in.
+    controls.passwordUnavailable = false;
     controls.signInStamp = 1;
     const admitted = await login();
     expect(admitted.status).toBe(200);

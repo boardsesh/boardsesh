@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { hash } from 'bcryptjs';
-import { and, eq, like } from 'drizzle-orm';
+import { and, eq, like, sql } from 'drizzle-orm';
 import { decodeJwt, exportJWK, generateKeyPair, jwtVerify, SignJWT, type JWK } from 'jose';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import {
@@ -8,10 +8,15 @@ import {
   authAccount,
   authEmailProjection,
   authEmailReservations,
+  authEmailReservationMembers,
+  authEmailVerificationTokens,
+  authEmailVerificationState,
   authSession,
   authSubjectCutoffs,
   mobileRefreshTokens,
   userCredentials,
+  userProfiles,
+  verificationTokens,
   users,
 } from '@boardsesh/db/schema';
 import { NATIVE_V1_PATHS } from '@boardsesh/auth-protocol/native-v1';
@@ -219,6 +224,31 @@ async function expectWatchRefreshes(watches: Omit<Carried, 'phone'>, owner: stri
   expect((await validateToken(watches.preG2.accessJwt() ?? ''))?.userId, step).toBe(owner);
 }
 
+/** Fingerprint selected registration tables without disclosing synthetic credentials. */
+async function registrationState() {
+  return Promise.all(
+    [
+      users,
+      userCredentials,
+      authAccount,
+      userProfiles,
+      mobileRefreshTokens,
+      authEmailReservations,
+      authEmailReservationMembers,
+      authEmailVerificationTokens,
+      authEmailVerificationState,
+      verificationTokens,
+    ].map(async (table) => {
+      const [record] = await fixture.db
+        .select({
+          digest: sql<string>`md5(coalesce(string_agg(to_jsonb(${table})::text, ',' order by to_jsonb(${table})::text), ''))`,
+        })
+        .from(table);
+      return record.digest;
+    }),
+  );
+}
+
 /** Every flow a released client has, against one server mode. */
 async function runCell(mode: ServerMode, release: ReleasedClient) {
   const observed = observedNetwork();
@@ -333,7 +363,33 @@ async function runCell(mode: ServerMode, release: ReleasedClient) {
     expect(googleReturning, cell).toMatchObject({ success: true });
   }
 
-  // 5. Email registration, then the duplicate refused through the released parser.
+  // 5. An enforced manifest requires explicit reserved registration. The released
+  // client keeps its signed-in pair when an old/default server selector refuses;
+  // then every original success/token assertion runs with the qualified writer.
+  if (mode.manifest !== 'none') {
+    const pairBefore = await storedPair(passwordPhone);
+    const stateBefore = await registrationState();
+    vi.stubEnv('CURRENT_STORE_NATIVE_REGISTRATION_MODE', '');
+    try {
+      reset();
+      expect(
+        await callRecorded(
+          passwordPhone.auth,
+          'registerWithCredentials',
+          `unqualified-${randomUUID()}@example.test`,
+          password,
+        ),
+        `${cell}: omitted registration prerequisite`,
+      ).toMatchObject({ success: false, status: 503 });
+      expect(await storedPair(passwordPhone), `${cell}: refused registration preserves keychain`).toEqual(pairBefore);
+      expect(await registrationState(), `${cell}: refused registration commits no mutation`).toEqual(stateBefore);
+      await assertPair(pairBefore, ownerId, `${cell}: preserved credentials remain usable`);
+    } finally {
+      vi.stubEnv('CURRENT_STORE_NATIVE_REGISTRATION_MODE', mode.selectors.CURRENT_STORE_NATIVE_REGISTRATION_MODE ?? '');
+    }
+  }
+
+  // Email registration, then the duplicate refused through the released parser.
   reset();
   const registeredEmail = `registration-${randomUUID()}@example.test`;
   const registrationPhone = await releasedClient(release, observed.network);

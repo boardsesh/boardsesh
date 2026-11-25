@@ -2,7 +2,7 @@
 
 This is a dark prerequisite for #6975. It does not activate either identity authority or establish that every deployed writer has been retired. Track those rollout decisions and receipts in #7430.
 
-`@boardsesh/db/credential-writer-acl` exports the read-only `qualifyCredentialWriter(connection, { expectedRole: 'boardsesh_identity_writer', expectedDatabase, contract })` and the literal `CredentialWriterContract` type. The known contracts are `private-web-v1`, `private-browser-v1`, `private-provider-v1`, `private-first-password-v1`, `private-native-handoff-v1` and `private-browser-renewal-v1`; an unknown name is refused before catalog access. The authenticated connection must have both `current_user` and `session_user` equal to the dedicated LOGIN. A privileged connection followed by `SET ROLE` is refused. The receipt records the selected contract, authenticated/session role, database name/OID, server version and a digest of the observed grants and reviewed routine/trigger evidence. The digest is not a complete schema fingerprint, a physical-cluster identity, a migration epoch, or permission to activate.
+`@boardsesh/db/credential-writer-acl` exports the read-only `qualifyCredentialWriter(connection, { expectedRole: 'boardsesh_identity_writer', expectedDatabase, contract })` and the literal `CredentialWriterContract` type. The known contracts are `private-registration-v1`, `private-web-v1`, `private-browser-v1`, `private-provider-v1`, `private-first-password-v1`, `private-native-handoff-v1` and `private-browser-renewal-v1`; an unknown name is refused before catalog access. The authenticated connection must have both `current_user` and `session_user` equal to the dedicated LOGIN. A privileged connection followed by `SET ROLE` is refused. The receipt records the selected contract, authenticated/session role, database name/OID, server version and a digest of the observed grants and reviewed routine/trigger evidence. The digest is not a complete schema fingerprint, a physical-cluster identity, a migration epoch, or permission to activate.
 
 ## Exact capability boundary
 
@@ -24,6 +24,23 @@ The manifest remains read-only. Normal commands use the shared advisory gate and
 Member verification uses `SELECT FOR UPDATE`. PostgreSQL requires UPDATE on at least one column for that row lock, so the separate static column contract permits only `UPDATE(observed_at)`, with effective SELECT required too. It does not permit whole-table UPDATE or UPDATE of the member's `user_id`, `normalized_email`, or any other column. Those identity keys remain immutable to this LOGIN. The test-only grant helper applies exactly the observation-column grant; no production role provisioning changes here.
 
 The private commands still need their existing transport authentication, command validation, freshness, actor, admission, generation, purpose, replay and transactional checks. A database capability does not replace those checks.
+
+## Pre-enforcement registration profile
+
+`private-registration-v1` uses the private-web table/column grants above, with
+no direct partner OAuth DML or `partner_revoke_user` EXECUTE. It independently
+reviews the current lifecycle/session trigger closure, including sinks the LOGIN
+cannot access. Its exact current `users` shape lives in
+`packages/db/src/credential-writer-registration-users.ts`; a reviewed BA-02 schema
+upgrade must update that current receipt rather than weakening historical
+private-web/browser receipts or accepting both shapes. A native refresh INSERT
+is still outside this credential profile: default native registration retains
+its existing backend transaction while sharing the registration insertion seam.
+
+The new registration-family private paths require this profile explicitly. They
+work before enforcement under an absent/prepared context, never manufacture an
+enforced authority receipt, and return unavailable once enforcement requires a
+qualified staged command. See [the three deployment boundaries](better-auth-registration-family.md).
 
 ## Browser profile through canonical0312
 
