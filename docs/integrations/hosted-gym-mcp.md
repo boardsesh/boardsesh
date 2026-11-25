@@ -98,6 +98,8 @@ editing retains its owner-only privacy rules.
 
 | Admin tool | Operation |
 | --- | --- |
+| `inspect_spray_wall_gym_links` | Inspect up to ten explicit spray-wall UUIDs and an active destination gym, including private or unlocated walls. Returns owner identities, privacy/configuration fields and state hashes; excludes photos, private coordinates, pairing secrets and individual activity. |
+| `attach_unlinked_spray_wall_to_gym` | Link an explicitly inspected, active, unlinked spray wall to a gym. Requires both the wall and gym state hashes. The board owner, visibility, location privacy, photos, climbs and history stay unchanged. The gym relationship can grant its owner/staff management access under existing rules. Already-linked, archived, deleted or held-off walls are refused; no gym or board merge occurs. |
 | `inspect_gym_duplicates` | Compare explicit gym UUIDs, board configurations, owner account IDs and display names, privacy, history counts and distances; return current state hashes. Pairing credentials, emails and individual climber activity are omitted. |
 | `correct_gym_board_setup` | Correct layout, size, hold sets, angle or adjustability through the existing board writer. Use `allowDuplicateConfig=true` explicitly when a confirmed duplicate already has that setup. Existing logged climbs keep their original problem identities. |
 | `correct_gym_board_location_visibility` | Set location visibility explicitly, synchronizing `hideLocation` and the location policy without changing owner, board audience or access grants. Record the reason and previous state. |

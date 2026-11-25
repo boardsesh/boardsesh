@@ -3,6 +3,11 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { SlugSchema, UUIDSchema } from '../../validation/schemas/primitives';
 import { UpdateBoardInputSchema } from '../../validation/schemas';
 import { mergeDuplicateBoards } from '../../services/merge-duplicate-boards';
+import {
+  inspectSprayWallGymLinks,
+  attachUnlinkedSprayWallToGym,
+  authorizeSprayWallGymLinkReplay,
+} from './admin-spray-wall-links';
 import type { GymMcpAuthorizedAction, GymMcpTool } from './registry';
 import {
   assertGymMcpGlobalAdmin,
@@ -24,7 +29,7 @@ const reason = z
 const stateHash = z
   .string()
   .regex(/^[a-f0-9]{64}$/)
-  .describe('The current stateHash returned by inspect_gym_duplicates. Inspect again after each correction.');
+  .describe('The current stateHash returned by the matching inspection tool. Inspect again after each correction.');
 const writeIdentity = {
   idempotencyKey: UUIDSchema.describe('A fresh UUID for this action; reuse unchanged only for a retry.'),
   confirm: z
@@ -82,6 +87,35 @@ function distinctUuids(uuids: string[]): boolean {
 }
 
 export const gymMcpAdminTools: readonly GymMcpTool[] = [
+  adminTool({
+    name: 'inspect_spray_wall_gym_links',
+    description:
+      'Global admin only: inspect explicit spray-wall UUIDs and a destination gym before linking an unlinked wall. Includes private or unlocated walls, owner identities, privacy flags and state hashes. Does not return photos, pairing credentials, private coordinates or individual climber activity.',
+    schema: z
+      .object({
+        gymUuid: UUIDSchema,
+        boardUuids: z.array(UUIDSchema).min(1).max(10).refine(distinctUuids, 'Choose each wall once.'),
+      })
+      .strict(),
+    run: inspectSprayWallGymLinks,
+  }),
+  adminTool({
+    name: 'attach_unlinked_spray_wall_to_gym',
+    description:
+      'Global admin only: attach one explicitly inspected unlinked spray wall to a gym, including a private wall or one without coordinates. The creator keeps ownership, visibility, location privacy, photos, climbs and history. Linking may grant the gym owner or staff management access under existing rules. Never moves an already-linked wall or merges records. Requires both current state hashes, a reason and confirmation.',
+    write: true,
+    schema: z
+      .object({
+        ...writeIdentity,
+        gymUuid: UUIDSchema,
+        boardUuid: UUIDSchema,
+        expectedStateHash: stateHash,
+        expectedGymStateHash: stateHash,
+      })
+      .strict(),
+    authorizeReplay: authorizeSprayWallGymLinkReplay,
+    run: attachUnlinkedSprayWallToGym,
+  }),
   adminTool({
     name: 'inspect_gym_duplicates',
     description:
