@@ -2,37 +2,39 @@
 
 Status: **proposal**. Nothing in this document is built or agreed unless a
 section says so. It describes how Boardsesh would like to exchange climbs,
-stats and logbooks with the service a board manufacturer runs for its own app.
-The first partner is Walltopia's Quantum Board; the Quantum specifics and the
-questions for Walltopia are in [quantum-ewalls.md](quantum-ewalls.md).
+totals and logbooks with the service a board manufacturer runs for its own
+app. The first manufacturer is Walltopia, for the Quantum Board; the details
+and our questions for Walltopia are in [quantum-ewalls.md](quantum-ewalls.md).
 
-In short: public climbs and their totals appear in both apps for everyone; a
-climber who links their two accounts gets one logbook in both. The first step
-needs only a test environment and a read-only credential for the public
-catalogue.
-
-It is written for the engineers on the manufacturer's side. Where it changes a
-decision recorded elsewhere in these docs, the section
-[What this changes on the Boardsesh side](#what-this-changes-on-the-boardsesh-side)
-says which one.
+Boardsesh does the syncing. It reads the manufacturer's API on a
+schedule to learn what changed there, and it sends its own changes to the
+manufacturer's API. Public climbs and their totals appear in both apps for
+everyone. A climber who links their two accounts gets one logbook, one set of
+favourites and one set of playlists in both apps, and can edit in either. The
+manufacturer builds no sync client.
 
 ## Contents
 
 1. [Terms](#terms)
 2. [What "share everything" means](#what-share-everything-means)
 3. [Principles](#principles)
-4. [The three tiers](#the-three-tiers)
-5. [Catalogue sync](#catalogue-sync)
-6. [Climb identity and ownership](#climb-identity-and-ownership)
-7. [Combining stats from two services](#combining-stats-from-two-services)
-8. [Linking an account](#linking-an-account)
-9. [Logbook sync for linked climbers](#logbook-sync-for-linked-climbers)
-10. [The public snapshot](#the-public-snapshot)
-11. [Sharing one wall](#sharing-one-wall)
-12. [Privacy and data roles](#privacy-and-data-roles)
-13. [Phases and who builds what](#phases-and-who-builds-what)
-14. [What this changes on the Boardsesh side](#what-this-changes-on-the-boardsesh-side)
-15. [Open questions](#open-questions)
+4. [The two tiers](#the-two-tiers)
+5. [How data moves](#how-data-moves)
+6. [Climbs](#climbs)
+7. [Linking an account](#linking-an-account)
+8. [Linked climbers: logbook, favourites, playlists](#linked-climbers-logbook-favourites-playlists)
+9. [Edits from both apps](#edits-from-both-apps)
+10. [Climbers who have not linked](#climbers-who-have-not-linked)
+11. [Totals](#totals)
+12. [The public snapshot](#the-public-snapshot)
+13. [Sharing one wall](#sharing-one-wall)
+14. [Operations](#operations)
+15. [Names and trademarks](#names-and-trademarks)
+16. [Privacy and data roles](#privacy-and-data-roles)
+17. [Phases and who builds what](#phases-and-who-builds-what)
+18. [If a manufacturer prefers to pull](#if-a-manufacturer-prefers-to-pull)
+19. [What this changes on the Boardsesh side](#what-this-changes-on-the-boardsesh-side)
+20. [Open questions](#open-questions)
 
 ## Terms
 
@@ -40,401 +42,444 @@ says which one.
 | --- | --- |
 | Ascent | One logged climb in a logbook. A **send** is an ascent that was completed |
 | Totals | The numbers shown on a climb: how many people sent it, its star rating, its grade votes |
-| Origin | The service where a climb or an ascent was first created |
-| Native | Logged in that service's own app, as opposed to received from the other service |
-| Tier | A level of sharing: 0 is public data for everyone, 1 is a linked account |
-| System credential | A key issued to a company, not to a climber |
-| Cursor | A bookmark string that only the server that issued it understands |
-| Tombstone | A record in a feed that says a climb is no longer shown publicly, for example after moderation. The climb itself is not deleted |
-| Diode | One LED on the board |
+| Linked climber | A climber who linked their Boardsesh account to their account with the manufacturer |
+| Pull | Boardsesh reads data from the manufacturer's API: everything that changed since the last read |
+| Push | Boardsesh writes data to the manufacturer's API: it creates or changes a record |
+| Catalogue | All public climbs of a board |
+| Setter | The person who created a climb. Their **public name** is the name shown on the climb |
+| Playlist | A climber's own named list of climbs |
+| Cursor | A bookmark the manufacturer's API returns, so the next pull continues where the last one stopped |
+| External id | The id the manufacturer gave a record. Boardsesh stores it next to its own id |
+| Partner credential | A key issued to Boardsesh as a company, not to a climber |
 
 ## What "share everything" means
 
-The goal both sides stated is that the two apps share climbs, logbooks and
-lists: set a climb in one app and it shows up in the other.
+Both sides want the two apps to share climbs, logbooks and playlists: set a
+climb in one app and it shows up in the other.
 
-Boardsesh proposes to get there in two layers, because not every Boardsesh
-climber has, or wants, an account with the manufacturer:
+Not every Boardsesh climber has an account with the manufacturer, so the
+proposal has two layers:
 
-- **For everyone, with no account link:** every public climb and its stats
+- **For everyone, with no account link:** every public climb and its totals
   appear in both apps. A climb set in Boardsesh shows in the manufacturer's
   app with the setter's public Boardsesh name, and the other way round.
-- **For a climber who links their two accounts:** their whole logbook, and
-  later their favourites, projects and lists, stay the same in both apps.
+- **For a linked climber:** their logbook, favourites, projects and playlists
+  are the same in both apps.
 
-What does not cross is the individual logbook of a climber who has not linked.
-Their sends still count in the totals each climb shows. Their name, dates and
-comments stay in the app they logged them in.
+The individual logbook of a climber who has not linked does not cross. Their
+sends still count in the totals each climb shows. Their name, dates and
+comments stay in Boardsesh.
 
-Linking is the way to full sharing, so Boardsesh will make it one tap from the
-place it matters: when a climber connects to the manufacturer's board. That
-prompt offers "link your account" and "create an account" side by side. It is
-an offer, not a gate. A climber can skip it and still climb, set and log.
+Boardsesh wants climbers to link. When a climber first uses the
+manufacturer's board in Boardsesh, Boardsesh asks them to link their account or create
+one. Two-way sync is one of the features our users ask for most, so we expect
+most of them to link. Linking stays optional: the prompt can be dismissed and returns only
+occasionally, and a climber who never links keeps every feature.
 
 ## Principles
 
-1. **The catalogue comes with the board.** A climber or gym that buys a board
-   expects the climbs set on it to stay available. Boardsesh treats the public
-   catalogue as open data and publishes it as a file anyone can download (see
-   [The public snapshot](#the-public-snapshot)), so it outlives any one app,
-   ours included.
-2. **Open means public climbs and totals only.** No logbooks, no accounts, no
-   drafts, no private walls.
-3. **A logbook belongs to the climber.** It moves between services when that
-   climber says so, and only then.
+1. **The catalogue is factual data that gives the board its value.** The
+   climbs set on a board are a large part of what its owner paid for, so they
+   should stay available to that owner. Boardsesh publishes the public
+   catalogue as a file anyone can download (see
+   [The public snapshot](#the-public-snapshot)). The Boardsesh app uses the
+   same file to work offline, and serving a file from a CDN costs far less
+   than syncing a database to every phone.
+2. **Only public climbs and totals are open.** Logbooks, accounts, drafts and
+   private walls are not.
+3. **A logbook belongs to the climber.** The climber decides whether it moves
+   between services. Boardsesh also lets every climber export their own data.
 4. **No required third account.** Using a board through Boardsesh never
-   requires an account with the manufacturer. Linking adds things; not linking
-   takes nothing away.
-5. **Each record has one home.** Every climb and every ascent originates in
-   one service. That service owns it; the other holds a copy. This one rule is
-   what stops duplicates, double counting and edit conflicts.
+   requires an account with the manufacturer. Boardsesh encourages linking and
+   does not enforce it.
+5. **Both apps can edit.** A climber should not have to remember which app an
+   ascent or a playlist was first made in.
+6. **Climbs are not deleted.** A published climb is a fact about a board.
+   Moderation can hide it and its setter's name can be removed, and the climb
+   itself remains.
 
-## The three tiers
+## The two tiers
 
 | Tier | Who | What crosses | Direction |
 | --- | --- | --- | --- |
-| 0. Catalogue | Everyone. No account link, no consent screen | Public climbs with the setter's display name; totals per climb | Both ways |
-| 1. Linked | A climber who connected their two accounts | That climber's ascents and attempts; later favourites, projects, lists; climbs they set appear under their own identity in both apps | Both ways |
-| Not shared | Nobody | Logbook rows of climbers who have not linked, in any form, including anonymised; drafts; private walls; account details | Neither |
+| 0. Catalogue | Everyone. No account link | Public climbs with the setter's public name; totals per climb and angle | Both ways |
+| 1. Linked | A linked climber | That climber's ascents and attempts, favourites, projects and playlists; climbs they set appear under their own identity in both apps | Both ways |
+
+Not shared, for anyone: logbook rows of climbers who have not linked, in any
+form, including anonymised; drafts; private walls; account details.
 
 We considered sending unlinked climbers' logbooks with the names removed, and
-rejected it. A row with a timestamp, a climb and a board at a known gym points
-at a person even without a name, so it is still personal data, and it needs
-the same consent and deletion handling as a named row. The totals in tier 0
-give both apps what they need from those climbers: how often a climb is sent,
-how it is graded and how it is rated.
+rejected it. A row with a timestamp, a climb and a board at a known gym can
+identify a person even without a name. It is still personal data and needs the same
+consent and deletion handling as a named row. The totals in tier 0 give both
+apps what they need from those climbers.
 
 We also considered requiring an account with the manufacturer before a climber
 can use the board in Boardsesh. That contradicts principle 4.
 
-## Catalogue sync
+## How data moves
 
-Both directions use the same shape: a complete first read, then a feed of
-changes since a cursor, with withdrawn climbs sent as explicit tombstones.
+| Direction | Whose data | How | When |
+| --- | --- | --- | --- |
+| Manufacturer to Boardsesh | Public catalogue | Boardsesh pulls with the partner credential (a test account at first) | On a schedule (we suggest every six hours) |
+| Manufacturer to Boardsesh | A linked climber's logbook, favourites, playlists | Boardsesh pulls with that climber's token | When the climber opens Boardsesh, and on the schedule |
+| Boardsesh to manufacturer | A linked climber's changes | Boardsesh pushes with that climber's token | At once |
+| Boardsesh to manufacturer | Public climbs and totals of climbers who have not linked | Boardsesh pushes with the partner credential | On the schedule |
 
 ```mermaid
 flowchart LR
-  subgraph M[Manufacturer service]
-    MC[Public climbs and native totals]
-  end
   subgraph B[Boardsesh]
-    BC[Public climbs and native totals]
+    BA[Boardsesh apps] --> BB[Boardsesh backend]
+    BB --- J[Scheduled job]
   end
-  MC -->|Boardsesh pulls: snapshot, then changes| B
-  BC -->|Manufacturer pulls: snapshot, then changes| M
-  B --> CDN[Public snapshot file on a CDN]
+  subgraph M[Manufacturer service]
+    MA[Manufacturer API]
+  end
+  BB -->|push a linked climber's change, at once| MA
+  J -->|pull what changed| MA
+  J -->|push what is still waiting| MA
+  BB --> CDN[Public snapshot file on a CDN]
 ```
 
-### Manufacturer to Boardsesh
+### Pushing
 
-Boardsesh pulls. We need:
+1. A record made in Boardsesh is saved with no external id.
+2. Boardsesh pushes it. On success the manufacturer returns its own id, and
+   Boardsesh stores it as the external id.
+3. If the manufacturer could not be reached, the record stays saved and the
+   scheduled job pushes it later.
+4. Before the job repeats a push, it pulls first and looks for the record. A
+   push can succeed and its answer be lost on the way back; pulling first
+   means that record is recognised and not created a second time.
+5. If the manufacturer rejects the record as invalid, Boardsesh shows the
+   climber the reason and asks them to fix it. See
+   [Publishing a climb](#publishing-a-climb).
 
-- **A system credential**, not a climber's login. It reads the public
-  catalogue and nothing else.
-- **A stated public view.** The manufacturer says which climbs that
-  credential may see and Boardsesh may show and republish. Climbs outside it
-  (drafts, gym-only climbs, private walls, if those exist) are not returned.
-- **A complete first read**, paginated, with a total so we can tell it is
-  complete before we publish anything from it.
-- **A change feed** from an opaque cursor the server issues, carrying changed
-  climbs and tombstones for removed ones.
-- **A stated retention** for the feed, and a clear signal when a cursor is too
-  old and we must start over.
+The manufacturer stores no Boardsesh ids. Boardsesh keeps the only table that
+pairs a Boardsesh id with the manufacturer's id.
 
-Boardsesh refreshes on a schedule (we suggest every six hours) and
-stages a full read before replacing anything, so a half-finished download
-never reaches climbers.
+### Pulling
 
-### Boardsesh to manufacturer
+Boardsesh reads what changed since its last cursor. A record whose external
+id Boardsesh already holds is an update to something it knows. Anything else
+is new and is matched as described under [Climbs](#climbs) and
+[Linked climbers](#linked-climbers-logbook-favourites-playlists).
 
-We suggest the manufacturer pulls, from two endpoints Boardsesh would build on
-`api.boardsesh.com`. If pushing suits the manufacturer better, that works too
-(see the end of this section). The endpoints follow the cursor rules of the logbook feed that is
-already built ([partner-api.md](partner-api.md), "Syncing").
+An edit made in the manufacturer's app reaches Boardsesh at the next pull.
+Pulling when a climber opens Boardsesh covers the case they would notice.
 
-| Endpoint | Returns |
-| --- | --- |
-| `GET /v1/catalog/changes?cursor=&limit=` | Public climbs set in Boardsesh on this manufacturer's boards, and tombstones |
-| `GET /v1/catalog/stats/changes?cursor=&limit=` | Boardsesh-native totals per climb and angle, for every public climb on those boards |
+### Does the manufacturer need to push to Boardsesh?
 
-- No cursor means "start from the beginning": the response walks the whole
-  set and runs into the live feed. The caller is caught up when it sees
-  `hasMore: false`.
-- Cursors are opaque strings. An expired one returns `410 cursor_expired` and
-  the caller starts again.
-- Authentication is a system credential issued to the manufacturer, limited to
-  its own board types.
+No. The scheduled pull is enough. If the manufacturer would like its changes
+to arrive in Boardsesh sooner, Boardsesh is happy to accept pushes, or a short
+"something changed for this climber" message that makes Boardsesh pull at
+once. Neither is needed to start.
 
-A climb in the feed:
+### Why Boardsesh pushes, and the manufacturer does not pull from us
 
-```json
-{
-  "type": "climb",
-  "climb": {
-    "id": "5A0C1F2B9D7E4C3A8B6F0E1D2C3B4A59",
-    "origin": "boardsesh",
-    "externalId": null,
-    "revision": 3,
-    "board": { "type": "quantum", "layout": 9101, "compatibleSizes": [9201, 9202] },
-    "name": "Left Hand Path",
-    "description": "No matching on the finish.",
-    "angle": 40,
-    "grade": { "system": "font", "value": "6C+" },
-    "rules": ["no-matching"],
-    "holds": [
-      { "diodeId": "0c1d…", "role": "start" },
-      { "diodeId": "77ab…", "role": "middle" },
-      { "diodeId": "91fe…", "role": "finish" }
-    ],
-    "setter": { "displayName": "sam_climbs" },
-    "publishedAt": "2026-11-20T18:04:11Z",
-    "updatedAt": "2026-11-22T09:15:40Z"
-  }
-}
-```
+- A push gets an answer straight away, so a problem with a climb reaches the
+  climber while they are still looking at it.
+- Only one side keeps the table of paired ids.
+- A push can check what the other side holds before changing it, which makes
+  edits from both apps safe.
+- The manufacturer builds no sync client and runs no scheduled job.
 
-A tombstone is `{ "type": "climb.withdrawn", "id": "…" }`. Boardsesh sends it
-when moderation hides a climb. Boardsesh never deletes a published climb: a
-climb is a fact about a board, so it stays in the catalogue.
+This model needs write access to the manufacturer's API. A manufacturer that
+would rather read from Boardsesh can do that:
+see [If a manufacturer prefers to pull](#if-a-manufacturer-prefers-to-pull).
 
-Holds are identified with the manufacturer's own diode ids, so no geometry
-has to be translated on their side. The setter is the name shown on
-the climb in Boardsesh and nothing else: no Boardsesh account id, no email, no
-profile link. A setter who has linked an account with the manufacturer also
-carries `partnerAccountId`, the id the manufacturer gave that account.
+## Climbs
 
-**Fallback if pulling does not suit the manufacturer:** Boardsesh pushes the
-same payloads to two endpoints the manufacturer provides (create or update a
-climb by its Boardsesh id; replace the totals for a climb). The payloads and
-the rules in the next two sections stay the same. Pull is our first choice
-because it can be replayed from any point and neither side writes into the
-other's database.
+### What makes two climbs the same climb
 
-## Climb identity and ownership
+Two published climbs on the same board layout are the same climb when they
+use the same holds, each in the same role (start, hand, foot, finish), under
+the same rules (for example "no matching"). The angle is not part of it: these boards
+are adjustable and one climb is climbed at several angles. The name is not
+part of it either.
 
-Without these rules, a climb Boardsesh sends to the manufacturer would return
-in the manufacturer's feed as a new climb, and the catalogue would fill with
-copies.
+Boardsesh already applies this rule to its own catalogue: it refuses a new
+climb that matches a published one on the same layout, at any angle.
 
-1. **Every climb has an origin and keeps its origin id.** The service that
-   receives a copy stores the origin id next to its own and returns it
-   whenever it mentions that climb. In the payload above, `origin` and `id`
-   are the origin pair; `externalId` is the id the other service gives its copy.
-   It is null until we know it.
-2. **Each feed carries only climbs that originated there.** Boardsesh's feed
-   never contains climbs it imported from the manufacturer, and we ask the
-   same of the manufacturer's feed, or at least a field that lets us skip
-   them.
-3. **The origin service owns edits.** A setter edits a climb in the app they
-   set it in; the change reaches the other side through the feed with a higher
-   `revision`. The other app shows the climb as read-only for editing.
-4. **Either service may remove any climb from its own app.** A manufacturer
-   has to be able to moderate its own product. A removal there is a tombstone
-   to Boardsesh in the manufacturer's feed when the climb originated there.
-   A service that removes its copy of the other's climb sends nothing back;
-   the origin keeps the climb. Each side tells the other about such removals
-   only if both want that.
-5. **A published climb stays published.** In Boardsesh a climb has no
+When a pull delivers a climb that is the same as one Boardsesh already has,
+Boardsesh merges them:
+
+- **The climb that was published first keeps its name, setter and grade.**
+  This applies whichever app it came from.
+- The later one becomes an alias of it. Boardsesh remembers both external ids.
+- Ascents and totals logged against either are shown on the one climb.
+- A linked climber's ascent is pushed to the manufacturer's climb at the
+  angle they climbed, or to the earliest one when no angle matches.
+- Boardsesh's totals for an angle go to the same manufacturer climb that
+  ascents at that angle go to.
+- If either climb's holds are edited later so that they differ, Boardsesh
+  separates them again.
+
+One Boardsesh climb can therefore match several of the manufacturer's climbs:
+the same holds set once at 25 degrees and once at 40, or set twice by two
+people. The manufacturer does not have to merge anything on its side.
+
+### Publishing a climb
+
+Publishing a climb cannot be undone, so Boardsesh checks first:
+
+1. Publishing needs a connection. A climb made offline is kept as a draft
+   until the phone is online.
+2. Boardsesh checks the manufacturer's rules itself before saving (hold
+   count, start and finish holds, name length, allowed angles), so most
+   problems are caught on the screen.
+3. Boardsesh saves the climb and pushes it.
+4. If the manufacturer still rejects it, Boardsesh shows the climber the
+   reason and asks them to fix it. Until they do, the climb is marked "not
+   synced" in Boardsesh.
+
+### Other rules
+
+1. **A published climb stays published.** In Boardsesh a climb has no
    audience setting: once published and listed it is public to everyone,
-   whoever set it ([privacy.md](../product/privacy.md)). A setter cannot
-   withdraw it from the shared catalogue later. If the setter deletes their
-   Boardsesh account, the climb stays and loses its link to the account. Its
-   If the climber chooses to remove their name when deleting, the setter
-   becomes "Unknown", and the feed sends an ordinary update with that name.
-   The climb is never removed for this reason.
-6. **Setter credit follows the account when one is linked.** If a Boardsesh
-   setter later links an account with the manufacturer, the feed sends an
-   update with `setter.partnerAccountId`, so the manufacturer can attach the
-   climb to that account. The climb id does not change.
-7. **Geometry changes are not edits.** A climb's holds refer to physical
-   diodes. If the manufacturer changes what a diode id means, that is a new
-   board layout, announced ahead of time, never a silent change under existing
-   climbs.
-
-What this needs on the manufacturer's side: a place to store an external id
-and an origin on a climb, both returned in their feed; and a setter name field
-that accepts plain text for climbs whose setter has no account with them.
-
-## Combining stats from two services
-
-Every climb shows totals: how many people sent it, how they graded it, how
-they rated it. With two apps logging on the same board, the totals have to add
-up without counting anyone's send twice.
-
-### The rule
-
-**An ascent counts once, in the service where it was first logged.**
-
-Each service publishes totals of its *native* ascents only: the ones logged in
-its own app. Ascents it received from the other service, through a linked
-account, are left out. Each app then shows the sum of the two.
-
-### What is published
-
-Per climb and angle, once a day:
-
-| Field | Meaning |
-| --- | --- |
-| `senders` | Distinct climbers with at least one native send |
-| `qualitySum`, `qualityCount` | Sum and number of native star ratings, on a stated scale ("quality" is Boardsesh's name for the star rating). One rating per climber, their latest |
-| `gradeVotes` | Number of native grade votes per grade; omitted below a minimum number of votes |
-
-Sums and counts are used instead of averages because they add exactly:
-`(sumA + sumB) / (countA + countB)` is the true combined average, and an
-average of two averages is not.
-
-### Worked example
-
-| | Manufacturer app | Boardsesh | Shown in both apps |
-| --- | ---: | ---: | ---: |
-| Native senders | 40 | 12 | 52 |
-| Star rating sum / count | 152 / 38 | 50 / 11 | 202 / 49 = 4.1 stars |
-| Votes for 6C+ | 21 | 7 | 28 |
-
-An example climber, Ana, has linked her accounts and logged her send in
-Boardsesh. Her ascent is copied to the manufacturer's app so her logbook
-matches. It is native to Boardsesh, so she is one of the 12 and not one of the 40. She counts once.
-
-### What this needs on the manufacturer's side
-
-An origin stored on each ascent ("logged here" or "received from Boardsesh"),
-and totals that can be filtered by it.
-
-**If that is not possible at first:** Boardsesh takes the manufacturer's
-totals as they are and removes the overlap on its own side. Boardsesh already
-does this for the boards it syncs one way: a Boardsesh climber who also has a
-received ascent on that climb is not added again. This is less exact. It also
-means Boardsesh must not send linked climbers' ascents to the manufacturer
-until the manufacturer can tell them apart, or they are counted twice. So the
-origin field is needed before phase 3, not before phase 2.
-
-### Details and limits
-
-- **People, not ascents.** Boardsesh counts distinct senders, so repeats by
-  one climber do not inflate a climb. We propose the same unit for the shared
-  number and need to know what the manufacturer's count means today.
-- **One person in both apps, unlinked, is counted twice.** Neither side can
-  know they are the same person. Linking fixes it for that climber.
-- **Angle.** Boardsesh keeps totals per angle. We need to know whether the
-  manufacturer's totals are per angle or per climb, and what angle an ascent
-  is recorded at.
-- **Displayed grade.** The origin service decides the grade a climb displays.
-  The other service contributes its votes and shows the same result.
-- **Grade scale.** Each side sends grades in a named system with the value it
-  uses, and Boardsesh keeps the original next to its own scale. Where one
-  label covers a range of internal values we need the mapping, not a guess.
-- **Small numbers.** A daily total that moves from 0 to 1 describes one
-  person's day. So the stats feed is daily, not live, carries no first-ascent
-  name or time, and leaves out the grade-vote breakdown until a climb has a
-  minimum number of votes (we propose 5).
+   whoever set it ([privacy.md](../product/privacy.md)).
+2. **Deleting a Boardsesh account does not delete climbs.** If the climber
+   chooses to remove their name, the setter becomes "Unknown", and Boardsesh
+   pushes that change.
+3. **If the manufacturer removes a climb,** Boardsesh stops listing it and
+   keeps the ascents already logged on it. Boardsesh does not create it
+   again.
+4. **Hold ids never change meaning.** A climb's holds refer to physical LEDs.
+   A change to what an id means is a new board layout, announced ahead of
+   time.
 
 ## Linking an account
 
-Linking is what turns tier 0 into tier 1 for one climber.
+Climbers sign in on the manufacturer's own page. Boardsesh stores the
+resulting token and makes every call, so the manufacturer does not need to
+call Boardsesh.
 
-### Preferred: the manufacturer runs a standard OAuth 2.0 sign-in
+### Preferred: a standard OAuth 2.0 sign-in
 
 - Authorization code flow with PKCE. Boardsesh opens the manufacturer's
-  sign-in page in the system browser; the climber never types their
+  sign-in page in the system browser. The climber never types their
   manufacturer password into Boardsesh.
-- **The same page offers "create an account".** That is the sign-up wizard
-  inside Boardsesh: we open the page, the climber signs up with the
-  manufacturer, and returns linked. The manufacturer keeps full control of its
-  own sign-up, terms and consent.
-- Scopes that name what Boardsesh may do: read the logbook, write the
-  logbook, read and write favourites and lists, set climbs.
-- A refresh token so sync continues while the app is closed, and a way to
+- **The same page offers "create an account".** That is how a climber creates
+  a manufacturer account from inside Boardsesh: we open the page, they sign
+  up with the manufacturer and return linked. The manufacturer controls its
+  own sign-up page.
+- Scopes that name what Boardsesh may do: read and write the logbook, read
+  and write favourites and playlists, set and edit climbs.
+- A refresh token, so sync continues while the app is closed, and a way to
   revoke it from either side.
 
-With this in place Boardsesh does the work in both directions using the
-climber's token: it reads their ascents from the manufacturer and writes their
-Boardsesh ascents to the manufacturer. The manufacturer builds no sync client
-for personal data.
+### To start sooner: the manufacturer's existing login
 
-### If an OAuth server is too much to start with
-
-Either of these gets a first version working sooner.
-
-- **The manufacturer's existing login.** The climber enters their manufacturer
-  email and password in Boardsesh once; Boardsesh exchanges them for a token
-  and stores the credential encrypted on its backend. This is how Boardsesh
-  links other board accounts today. It needs the manufacturer's permission to
-  use that login, a token lifetime and a way to renew it. It cannot offer
-  sign-up.
-- **The other direction.** Boardsesh already runs an OAuth server for partner
-  apps ([partner-api.md](partner-api.md)). The manufacturer registers its app,
-  the climber approves it, and the manufacturer pulls that climber's Boardsesh
-  logbook from the feed that exists today. This gives Boardsesh-to-manufacturer
-  logbook sync with small changes on our side: each ascent carries the
-  manufacturer's own climb id, the manufacturer may register under its brand
-  name, and the early-access limit of 25 connected climbers is raised. The
-  return direction still needs one of the options above.
+The climber enters their manufacturer email and password in Boardsesh once.
+Boardsesh exchanges them for a token and stores the credential encrypted on
+its backend. Boardsesh links Tension accounts this way today. It needs the
+manufacturer's permission, a known token lifetime and a way to renew the
+token. We see this as a temporary step, because it means Boardsesh holds the
+climber's password.
 
 ### What the climber is told when linking
 
 One screen, before anything moves:
 
-- Their ascents, attempts, grades, ratings and comments will be copied in both
-  directions, including ascents they marked "Only me" in Boardsesh.
-- Past ascents are included or not (see phase 4).
+- Their ascents, attempts, grades, ratings, comments, favourites, projects
+  and playlists will be copied in both directions, including past ones.
+- Ascents they marked "Only me" in Boardsesh are copied too, and the screen
+  says who can see an ascent in the manufacturer's app.
+- Boardsesh will keep reading their manufacturer account in the background.
 - After copying, each service keeps its copy under its own privacy policy.
-- They can unlink at any time from either app.
+- They can unlink at any time.
 
 ### Unlinking
 
-Sync stops both ways at once and pending uploads are dropped. Copies already
-made stay where they are, as the link screen said they would. A climber who
-wants a copy gone deletes it in that app, or deletes that account.
+Boardsesh revokes and deletes the token. Pulls and pushes stop. Copies already
+made stay where they are, as the link screen said. A climber who wants a copy
+gone deletes it in that app.
 
-## Logbook sync for linked climbers
+If a token expires and cannot be renewed, sync pauses and Boardsesh asks the
+climber to link again.
 
-What a write to the manufacturer needs, so that a retry never creates a second
-ascent:
+## Linked climbers: logbook, favourites, playlists
+
+All of this is one piece of work on the Boardsesh side and ships together.
+
+| Record | Boardsesh pushes | Boardsesh pulls |
+| --- | --- | --- |
+| Ascents and attempts | Create, edit, delete | The climber's ascents, with deletions |
+| Favourites and projects | Add, remove | Added and removed |
+| Playlists | Create, rename, delete, add and remove climbs, reorder | The same |
+| Climbs they set | Create, edit | Their climbs, like any public climb |
+
+### Matching ascents
+
+- An ascent Boardsesh pushed is known by the id the manufacturer returned.
+- An ascent that arrives in a pull with no known id is matched by its data:
+  the climber, the climb, the angle and the time it was climbed. This is
+  mainly for the first sync after linking, when both apps hold some of the
+  same climbing, logged twice by hand.
+- That only works if an ascent keeps the time it was climbed and its angle.
+  An ascent pushed days later must still carry the day it happened.
+- Ascents of other climbers that arrive in a linked climber's pull are
+  discarded.
+- A pulled ascent gets the default audience of the climber's Boardsesh
+  account: Public on a public account, Followers on a private one.
+
+### Deletions
+
+When a climber deletes an ascent or a playlist in Boardsesh, Boardsesh pushes
+the deletion. It also remembers it, so that if the manufacturer cannot delete
+the record, the next pull does not bring it back.
+
+### What the manufacturer's API needs for this
 
 | Need | Why |
 | --- | --- |
-| An idempotency key on every write, kept by the server | A request can time out after it succeeded. Repeating it with the same key must return the first result, not a new ascent |
-| The permanent id of the created ascent in the response | Boardsesh stores it and recognises the ascent when it comes back in a read |
-| An origin field on the ascent | The manufacturer can leave it out of its native totals; Boardsesh can skip it when reading |
-| The original date and time of the climb, with timezone | A send logged offline on Tuesday and uploaded on Thursday is a Tuesday send |
-| The angle | Totals are per angle |
-| Edit and delete for an ascent | A climber fixes a mistake in one app and expects it fixed in the other |
-| A rate limit and a retry rule | Boardsesh follows the stated rule instead of guessing |
+| The permanent id of a created record in the response | Boardsesh stores it as the external id |
+| The time of the climb, with timezone, accepted on an ascent and returned unchanged | History, and sends logged offline |
+| The angle on an ascent | Totals are per angle |
+| A read of one climber's whole logbook | The first sync after linking |
+| An "updated at" time on each record | To tell which edit is newer |
+| Delete for an ascent | A climber removes a mistake in one app and expects it gone in the other |
+| A rate limit and a retry rule | Boardsesh follows the stated rule |
 
-Rules Boardsesh follows:
+## Edits from both apps
 
-- An ascent is matched by ids only. Two ascents by the same climber on the
-  same climb on the same day are both real, so user, climb and date are never
-  used to decide that two records are the same.
-- **Sends logged in both apps before linking.** When a climber links, both
-  services already hold some of the same climbing, logged twice by hand.
-  Boardsesh shows the climber the likely pairs once and lets them confirm.
-  A confirmed pair is marked as one ascent, with the earlier record as its
-  origin. Nothing is merged automatically.
-- **Until edit and delete exist on the manufacturer's side**, a change made in
-  the non-origin app is kept there as a local correction and the totals follow
-  the origin record.
-- Attempts that did not end in a send cross only if the manufacturer's logbook
-  has a place for them.
+A climber can edit an ascent or a playlist in either app.
+
+**Preferred.** When Boardsesh pushes an edit, it states what it believes the
+manufacturer holds (a version number, or the "updated at" it last saw). If the
+record changed in the meantime, the manufacturer refuses the push. Boardsesh
+then pulls the current record and keeps the newer of the two edits.
+
+**If the API cannot refuse a push that way,** the latest edit wins. Boardsesh
+compares the manufacturer's "updated at" with the time the climber made the
+edit in Boardsesh, not the time the edit reached a server, so an edit made
+offline on Monday does not beat one made on Wednesday.
+
+**Favourites, projects and the climbs in a playlist are sets.** They are
+merged one add or remove at a time. A favourite added in one app and a
+different one added in the other both survive.
+
+## Climbers who have not linked
+
+Their public climbs and their share of the totals still cross. This part
+needs new features in the manufacturer's API.
+
+- Boardsesh pushes each of their published climbs with its partner
+  credential. The setter shown is the climber's public Boardsesh name, sent
+  as text. No manufacturer account is created for them, and nothing else
+  about them is sent.
+- The scheduled job does this, so a rejected climb is reported to the setter
+  after the job's next run, not at the moment they publish.
+- When that climber links later, their climbs move to their manufacturer
+  account and they can edit them in both apps.
+- Before their first publish on a synced board, Boardsesh tells the climber
+  that the climb and their name will also appear in the manufacturer's app.
+
+What this needs on the manufacturer's side:
+
+1. A partner credential that may create and edit climbs.
+2. A setter name stored as text on a climb, for a setter with no account.
+3. A way to move a climb to its setter's account when they link.
+4. Somewhere to receive Boardsesh's totals (next section).
+
+## Totals
+
+Every climb shows totals: how many people sent it, how they graded it, how
+they rated it. Both apps should show the same numbers, and nobody's send
+should be counted twice.
+
+Totals are kept per climb **and angle**. A new climb has no totals at any
+angle. Once it is sent at 40 degrees it has totals for 40 degrees and still
+none for 45.
+
+### The rule
+
+**Boardsesh counts an ascent until it sees that ascent in a pull from the
+manufacturer. From then on the manufacturer counts it.**
+
+- A linked climber's ascent is pushed. Boardsesh keeps counting it until a
+  later pull returns it, which is also when the manufacturer's totals in that
+  pull include it. So there is no moment when it is missing from both, or
+  counted in both.
+- An unlinked climber's ascents are never pushed, so Boardsesh counts them.
+- An ascent whose push is still waiting is counted by Boardsesh.
+- After a climber unlinks, ascents already pushed stay counted by the
+  manufacturer only.
+
+Each app shows the manufacturer's totals plus Boardsesh's totals.
+
+### What Boardsesh pushes
+
+Per climb and angle, once a day, as the full current values. Each push
+replaces the previous values, so a missed day corrects itself:
+
+| Field | Meaning |
+| --- | --- |
+| `senders` | Distinct Boardsesh climbers with at least one counted send |
+| `ratingSum`, `ratingCount` | Sum and number of star ratings on counted ascents, on a stated scale. Each climber counts once, with their latest rating |
+| `gradeVotes` | Number of their grade votes per grade; left out below a minimum number of votes |
+
+Sums and counts are sent because they can be added exactly:
+`(sumA + sumB) / (countA + countB)` is the true combined average.
+
+### Worked example
+
+One climb at 40 degrees:
+
+| | Manufacturer | Boardsesh | Shown in both apps |
+| --- | ---: | ---: | ---: |
+| Senders | 41 | 11 | 52 |
+| Rating sum / count | 156 / 39 | 46 / 10 | 202 / 49 = 4.1 stars |
+| Votes for 6C+ | 22 | 6 | 28 |
+
+An example climber, Ana, has linked her accounts and logged her send in
+Boardsesh. Her ascent was pushed to the manufacturer, so she is one of the 41
+and not one of the 11.
+
+### What this needs on the manufacturer's side
+
+- An endpoint that accepts Boardsesh's totals for a climb and angle.
+- **Boardsesh's totals kept apart from the manufacturer's own.** The
+  manufacturer's API keeps returning its own totals unchanged, and its app
+  shows the two added together. If the two were stored as one number,
+  Boardsesh would read back its own contribution at the next pull and add it
+  again.
+
+### Limits
+
+- People or ascents. Boardsesh counts distinct people, so repeats by one
+  climber do not inflate a climb. If the manufacturer counts logged ascents,
+  the two numbers are different things and should not be added until one side
+  changes. We propose counting people.
+- One person in both apps, unlinked, is counted twice. Neither side can
+  know they are the same person. Linking fixes it for that climber.
+- A day's delay. After a climber links, their sends move from one total
+  to the other at the next daily push.
+- Displayed grade. We propose both apps show the grade from the combined
+  votes, and the setter's grade until there are enough votes.
+- Small numbers. A total that goes from 0 to 1 shows what one person did
+  that day. So totals are pushed daily, carry no first-ascent name or time, and
+  leave out the grade-vote breakdown until a climb has a minimum number of
+  votes (we propose 5).
 
 ## The public snapshot
 
 Boardsesh publishes each board's public catalogue as a SQLite file on a CDN,
 rebuilt nightly, free to download with no account
 ([board-snapshots-dataset.md](../data/board-snapshots-dataset.md)). It holds
-climbs, their holds, grades and totals, the setter's name and the name and
-date of the first ascent where the source catalogue has one. It holds no
-accounts and no logbooks. Today it covers imported catalogues only; climbs set
-in Boardsesh are due to join it.
+climbs, their holds, grades and totals, the setter's name, and the name and
+date of the first ascent where the catalogue has one. It holds no accounts and
+no logbooks. Today it covers the published climbs of imported catalogues;
+climbs set in Boardsesh are due to join it.
 
-This is how principle 1 is kept in practice. If Boardsesh shuts down, or a
-manufacturer retires an app, the climbs people set on a board they bought are
-still there for whatever comes next.
+The Boardsesh app loads the same file to work offline. It is also what makes
+principle 1 true in practice: if Boardsesh shuts down, or a manufacturer
+retires an app, the climbs on a board someone bought are still available.
 
-**The ask.** We would like the public catalogue of the manufacturer's board,
-climbs from both apps included, to be part of that snapshot. This is a
-decision for the manufacturer and we are asking for it explicitly, because a
-published file cannot be recalled once someone has downloaded it.
+**Our request.** We would like the public catalogue of the manufacturer's board,
+with climbs from both apps and with setter and first-ascent names, to be part
+of that snapshot. This is the manufacturer's decision, because a published
+file cannot be recalled once someone has downloaded it.
 
 The options, in the order we prefer them:
 
@@ -443,16 +488,17 @@ The options, in the order we prefer them:
    apps through the sync and are not republished.
 3. Not now. The board is left out of the snapshot and we revisit it later.
 
-Phases 1 to 3 below work the same under all three.
+The sync works the same under all three. Under 2 and 3 the Boardsesh app
+needs another way to hold the board's catalogue offline.
 
 **Terms.** Boardsesh's position ([LEGAL.md](../../LEGAL.md)) is that climbs
 and grades are facts and that no manufacturer owns the community's climb
-data. That position is argued under U.S. law, and we know EU database law may
-read differently. We therefore do not propose a copyright
-licence. The snapshot asks two things of anyone who uses it: credit setters
-where a climb is shown, and do not present the data as an official
-manufacturer source. If the manufacturer wants more than that written down, a
-short agreement between the two companies is the place for it.
+data. That position is argued under U.S. law, and EU database law may read
+differently. We therefore do not propose a copyright licence. The snapshot
+asks two things of anyone who uses it: credit setters where a climb is shown,
+and do not present the data as an official manufacturer source. If the
+manufacturer wants more than that written down, a short agreement between the
+two companies would be the right document.
 
 ## Sharing one wall
 
@@ -466,73 +512,125 @@ Boardsesh follows four rules so that it does not disturb other players:
 - It never clears the wall to make room.
 - A phone that reconnects does not assume it still owns its old layer.
 
-What has to be agreed per board is in the manufacturer's annex: how a climber
-is identified on the controller, what a climber with no manufacturer account
-presents, how many layers there are, and whether each app should show what
-the other app's climbers have lit.
+A Boardsesh session, where a group shares a queue and takes turns, is one
+player on the wall. The session lights one climb at a time, whoever in the
+group is climbing.
+
+Boardsesh has a board presence feature that shows who is on a board and what
+is lit. For a manufacturer with a live feed of board activity, the Boardsesh
+backend can subscribe to that feed and show the manufacturer's climbers in the
+same place.
+
+What has to be agreed per board is in the manufacturer's annex.
+
+## Operations
+
+- Moderation. Each company moderates its own app. The manufacturer may
+  hide or remove any climb Boardsesh wrote, and Boardsesh will not write it
+  again. Boardsesh removes abuse on its side and answers the manufacturer's
+  reports about climbs that came from Boardsesh.
+- Limits. Boardsesh keeps to the rate limits the manufacturer states, and
+  limits how many climbs one setter can publish in a day.
+- Access. The manufacturer can revoke the partner credential or a
+  climber's token at any time. Boardsesh then stops and keeps what it has.
+- Outages. When the manufacturer's API is down, Boardsesh keeps working
+  and holds its pushes until it is back. When Boardsesh is down, the
+  manufacturer's app is not affected.
+
+## Names and trademarks
+
+These are proposed terms, for the manufacturer to confirm in writing. Until
+then Boardsesh describes the board as it describes every other: a board it
+works with, with no claim of a relationship.
+
+- Boardsesh may name the manufacturer and its board in the app and on the
+  website to describe the integration, for example "Works with Quantum
+  Board" and "Syncs with eWalls", and may show the manufacturer's logo next to that
+  statement if the manufacturer supplies one.
+- The manufacturer may do the same with the Boardsesh name and logo.
+- Boardsesh stays an independent app and does not present itself as the
+  manufacturer's app.
+- **The permission covers the Boardsesh apps and website that Boardsesh
+  publishes. It does not pass to forks.** Boardsesh's code is open source and
+  anyone may run their own copy. A copy gets neither the manufacturer's names
+  nor the partner credential.
 
 ## Privacy and data roles
 
-- **Two independent services.** Each company decides for itself why and how it
-  processes the data it holds. Neither processes data on the other's behalf.
-  For linked climbers, each receives a copy at the climber's request.
-- **Tier 0 carries one piece of personal data:** a setter's public display
-  name on a climb they chose to publish. In Boardsesh that name is already
-  public on the climb.
-- **Tier 0 totals are counts**, published daily, with the limits listed under
-  [Details and limits](#details-and-limits).
+- **Two independent services.** Each company decides for itself why and how
+  it processes the data it holds. Neither processes data on the other's
+  behalf. For linked climbers, each receives a copy at the climber's request.
+- **Tier 0 carries one piece of personal data:** a setter's public name on a
+  climb they chose to publish. In Boardsesh that name is already public on
+  the climb. The manufacturer's app is a new place for it to appear, so
+  Boardsesh tells the setter before their first publish and says so in its
+  privacy policy.
+- **Tier 0 totals are counts,** with the limits under [Limits](#limits).
 - **A private Boardsesh account** hides that climber's activity. It does not
-  hide climbs they published, and their sends still count in totals. Tier 0
-  sends nothing else about them.
-- **Deleting a Boardsesh account** removes the account's link to its climbs,
+  hide climbs they published, and their sends still count in totals.
+- **Deleting a Boardsesh account** removes the account's link to its climbs
   and sets the setter name to "Unknown" if the climber chooses that. The
-  climbs stay. The feed says so. Ascents already copied to a linked account stay with the
-  other service until the climber removes them there.
-- **Tokens** for linked accounts are stored encrypted on the Boardsesh
-  backend and never reach a phone.
+  climbs stay. Snapshot files downloaded earlier keep the old name.
+- **Deleting an account with the manufacturer.** Boardsesh needs to learn of
+  it, to stop syncing and to apply the same rule to that climber's climbs.
+- **Tokens** are stored encrypted on the Boardsesh backend and never reach a
+  phone.
 - **Age.** Each service applies its own minimum age to its own accounts.
-  Whether linking needs a further rule is an open question.
 
 ## Phases and who builds what
 
-Each phase is useful on its own and none commits either side to the next.
-
-| Phase | Climbers get | Manufacturer builds | Boardsesh builds |
+| Phase | Climbers get | Manufacturer provides | Boardsesh builds |
 | --- | --- | --- | --- |
-| 1. Catalogue in | The manufacturer's public climbs and totals in Boardsesh | A test environment; a system credential with a stated public view; confirmation of the snapshot-and-changes read | The importer and board support |
-| 2. Catalogue out | Climbs set in Boardsesh, and Boardsesh totals, in the manufacturer's app | External id, origin and a plain-text setter name on climbs; a job that reads two Boardsesh feeds; adding Boardsesh totals to its own | The two feed endpoints and the system credential |
-| 3. Linked logbooks | One logbook in both apps for new ascents | Sign-in for linking (OAuth, or permission to use the existing login); idempotency key, permanent id, origin, date and angle on ascent writes; totals filtered by origin | Link and sign-up flow; two-way logbook sync; the duplicate review at link time |
-| 4. The rest | Past ascents, corrections, favourites, projects, lists | Edit and delete for ascents; change feeds for lists | The same on our side |
+| 1. Read | The manufacturer's public climbs and totals in Boardsesh | Test user accounts; permission to read the catalogue | The importer and board support |
+| 2. Linked accounts | One logbook, favourites, projects and playlists in both apps, with edits from both; climbs a linked climber sets appear in both | Sign-in for linking; the API needs listed under [Linked climbers](#what-the-manufacturers-api-needs-for-this) | Link and sign-up prompt; pull and push; matching; the review of likely duplicates at first sync |
+| 3. Everyone else | Climbs set by unlinked climbers, and their share of the totals, in the manufacturer's app | The four items under [Climbers who have not linked](#climbers-who-have-not-linked) | The scheduled push of climbs and totals |
 
-Phase 1 needs only a credential and a test environment. Everything after it can be scheduled around the manufacturer's
-own roadmap.
+Phase 1 needs only test accounts and permission to read the catalogue. Phase
+2 builds on what the manufacturer's own app already calls and may need a few
+new fields or endpoints. Phase 3 is the only one that needs a credential that
+acts for no climber, which is why it comes last.
+
+## If a manufacturer prefers to pull
+
+Some manufacturers will not want another company writing to their API.
+Boardsesh expects to support that as well. It would offer two read-only feeds
+on `api.boardsesh.com`, with the cursor rules of the logbook feed that already
+exists ([partner-api.md](partner-api.md), "Syncing"): public climbs set in
+Boardsesh on that manufacturer's boards, and Boardsesh's totals. The
+manufacturer runs the job that reads them and stores Boardsesh's id on each
+climb it copies. Linked logbooks would use the Boardsesh OAuth API for partner
+apps, which reads a logbook today and would need write, favourites and
+playlist scopes added.
+
+Pulling costs the manufacturer more work and makes edits from both apps
+harder, which is why this proposal leads with push.
 
 ## What this changes on the Boardsesh side
 
-These are recorded decisions that this proposal would change. None has
-changed yet.
+These are recorded decisions and behaviours this proposal would change. None
+has changed yet.
 
 | Today | Under this proposal |
 | --- | --- |
-| Every app gets the same API, scopes and limits ([partner-api.md](partner-api.md)), through one self-service registration path ([integration-platform.md](integration-platform.md), D7) | A manufacturer gets catalogue endpoints for its own boards, by agreement with that manufacturer. This is not a standing offer to every app |
-| No tokens without a climber: client-credentials grants are disabled | A system credential for the manufacturer, catalogue scopes only |
-| Catalogues and community stats are not in the API, by design | They are, for the board's own manufacturer |
-| No API query whose cost grows with the catalogue | The catalogue feed needs its own change log and cost budget before it ships |
-| Boardsesh is the OAuth server and partners do not run one (D1) | For linking, the manufacturer is the server, as Kilter's sign-in service is for Kilter accounts |
-| The snapshot holds imported climbs only, never one a Boardsesh account set ([board-snapshots-dataset.md](../data/board-snapshots-dataset.md)) | Decided 2026-11-25: published climbs set in Boardsesh go into the snapshot, and stay. Not built yet |
-| Boardsesh ascents are not sent upstream today, so native and imported totals simply add | Ascents of linked climbers are sent, so each ascent needs an origin on both sides |
-| A climb set in Boardsesh takes its totals from Boardsesh ascents alone | A synced climb also takes the partner's native totals |
+| Boardsesh ascents are not sent to a manufacturer, so its own totals and the manufacturer's add up. An ascent pulled from a manufacturer counts only in that manufacturer's totals | A linked climber's ascents are pushed, and Boardsesh counts one until a pull returns it |
+| A climb set in Boardsesh takes its totals from Boardsesh ascents alone | A synced climb also takes the manufacturer's totals |
+| A new climb that duplicates a published one is refused | A duplicate that arrives from a manufacturer is merged, earliest published first |
+| Publishing a climb needs a connection on every board except spray walls, where it can be done offline | Publishing a climb as public needs a connection on every board (decided 2026-11-25, not built) |
+| The snapshot holds imported climbs only, never one a Boardsesh account set ([board-snapshots-dataset.md](../data/board-snapshots-dataset.md)) | Published climbs set in Boardsesh go into the snapshot, and stay (decided 2026-11-25, not built) |
+| Removing the setter name on account deletion clears it | It becomes "Unknown" (decided 2026-11-25, not built) |
+| Every manufacturer is described as unaffiliated ([LEGAL.md](../../LEGAL.md)) | A manufacturer that confirms the terms under [Names and trademarks](#names-and-trademarks) is named as an integration partner |
+| Only if a manufacturer pulls: the partner API has no catalogue endpoints and no tokens without a climber ([integration-platform.md](integration-platform.md)) | Two catalogue feeds and a system credential, for that manufacturer's boards only |
 
 ## Open questions
 
 For Boardsesh:
 
-1. The minimum vote count before grade votes are published. Proposed: 5.
-2. Whether attempts without a send cross for linked climbers.
-3. Whether linking needs a minimum age beyond each service's own.
-4. Wording in LEGAL.md: it offers to remove a climb at its creator's request,
-   and rule 5 above says a published climb stays published. One of the two
-   needs rewording.
+1. The minimum vote count before grade votes are pushed. Proposed: 5.
+2. How often the link prompt returns for a climber who dismissed it.
+3. LEGAL.md says Boardsesh is not affiliated with any board manufacturer, and
+   offers to remove a climb at its creator's request. Both need new wording
+   once a manufacturer confirms: a paragraph on integration partners, and the
+   rule that a published climb stays.
 
-For each manufacturer, the list is in its annex. For Quantum:
+For each manufacturer, the list is in its annex. For the Quantum Board:
 [quantum-ewalls.md](quantum-ewalls.md).
