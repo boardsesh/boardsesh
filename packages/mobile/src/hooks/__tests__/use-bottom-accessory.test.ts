@@ -31,7 +31,7 @@ vi.mock('expo-glass-effect', () => ({
   isGlassEffectAPIAvailable: () => cfg.glassEffectApiAvailable,
 }));
 
-vi.mock('expo-router/unstable-native-tabs', () => ({
+vi.mock('expo-router/native-tabs', () => ({
   get NativeTabs() {
     if (cfg.nativeTabs == null) {
       return cfg.nativeTabs;

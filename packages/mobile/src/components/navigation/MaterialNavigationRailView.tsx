@@ -1,4 +1,4 @@
-import MaterialCommunityIcons from '../MaterialCommunityIcon';
+import { MaterialDesignIcons } from '@react-native-vector-icons/material-design-icons';
 import { memo, useCallback, useMemo, type ComponentProps } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
@@ -26,7 +26,7 @@ import { Text } from '../Text';
  * Material tab bar there, so the phone UI is unchanged.
  */
 
-type MaterialIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
+type MaterialIconName = ComponentProps<typeof MaterialDesignIcons>['name'];
 
 type RailDestination = {
   /** Tab route segment under `(tabs)` — also the active-state key. */
@@ -76,7 +76,7 @@ const RailItem = memo(function RailItem({
       style={styles.item}
     >
       <View style={[styles.indicator, focused ? { backgroundColor: m3.secondaryContainer } : null]}>
-        <MaterialCommunityIcons name={glyph} size={RAIL_ICON_SIZE} color={iconColor} />
+        <MaterialDesignIcons name={glyph} size={RAIL_ICON_SIZE} color={iconColor} />
       </View>
       <Text variant="caption2" color={labelColor} numberOfLines={2} style={styles.label}>
         {destination.label}
@@ -122,7 +122,7 @@ export function MaterialNavigationRailView({
       },
       // Climbs (search) is the last primary row, as it is the rightmost phone tab. It
       // deliberately uses the same glyph for both states — matching MaterialTabBar's
-      // `materialTabIcon('magnify', 'magnify')`; MaterialCommunityIcons has no filled
+      // `materialTabIcon('magnify', 'magnify')`; MaterialDesignIcons has no filled
       // `magnify` that reads as "search selected". The active pill carries the focus
       // state instead.
       { segment: 'climbs', href: '/climbs', icon: 'magnify', iconInactive: 'magnify', label: t('mobile.nav.climbs') },

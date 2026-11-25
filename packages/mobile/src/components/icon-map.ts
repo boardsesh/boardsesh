@@ -1,11 +1,11 @@
 import type { SymbolViewProps } from 'expo-symbols';
-import type { MaterialIconName } from './MaterialCommunityIcon.types';
+import type { MaterialDesignIconsIconName } from '@react-native-vector-icons/material-design-icons';
 
 export type IconMapping = {
   // SFSymbol union (from sf-symbols-typescript via expo-symbols) — every name is
   // validated at compile time, so a typo fails `vp run typecheck:mobile`.
-  ios: SymbolViewProps['name'];
-  android: MaterialIconName;
+  ios: Extract<SymbolViewProps['name'], string>;
+  android: MaterialDesignIconsIconName;
   /**
    * Downward nudge applied to the SF Symbol, as a fraction of its point size, so
    * the glyph's *ink* lands on the centre line rather than its bounding box.

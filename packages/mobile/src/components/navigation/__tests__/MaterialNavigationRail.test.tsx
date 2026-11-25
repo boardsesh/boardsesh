@@ -59,8 +59,8 @@ vi.mock('../SidebarWallCell', () => ({
   SidebarWallCell: () => createElement('aside', { 'data-wall-cell': 'true' }),
 }));
 
-vi.mock('@expo/vector-icons/MaterialCommunityIcons', () => ({
-  default: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }),
+vi.mock('@react-native-vector-icons/material-design-icons', () => ({
+  MaterialDesignIcons: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }),
 }));
 
 vi.mock('../../../providers/theme-provider', () => ({

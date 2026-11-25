@@ -103,17 +103,6 @@ describe('Metro browser/native resolution boundary', () => {
     );
   }
 
-  it('routes Android font icons, including Paper internal controls, to bundled SVG paths', () => {
-    const iconModule = '@expo/vector-icons/MaterialCommunityIcons';
-    expect(resolveCommonJs('android', iconModule)).toBe(
-      join(mobileRoot, 'src/components/MaterialCommunityIcon.android.tsx'),
-    );
-    for (const platform of ['ios', 'web']) {
-      expect(resolveCommonJs(platform, iconModule)).toBe(iconModule);
-    }
-    expect(resolveCommonJs('android', '@expo/vector-icons/MaterialIcons')).toBe('@expo/vector-icons/MaterialIcons');
-  });
-
   it('redirects Sentry’s optional CommonJS native import to the isolated browser API', () => {
     expect(resolveCommonJs('web')).toBe(join(mobileRoot, 'web-runtime/node_modules/react-native-web'));
     expect(resolveCommonJs('web', 'react-native/package.json')).toBe('react-native/package.json');

@@ -1,17 +1,17 @@
 import { useMemo, type ReactNode } from 'react';
-import MaterialCommunityIcons from '../components/MaterialCommunityIcon';
+import { MaterialDesignIcons } from '@react-native-vector-icons/material-design-icons';
 import { PaperProvider } from 'react-native-paper';
 import { useTheme } from './theme-provider';
 import { buildPaperTheme } from '../theme/paper-theme';
 
 type PaperIconProps = { name: string; color?: string; size: number };
 
-// Paper uses MDI names. Share the app renderer: bundled SVG paths on Android,
-// and the existing MaterialCommunityIcons font on iOS and web.
+// Paper and the app share Expo's recommended scoped icon pack and font family.
+// Its internal controls also resolve this package directly, without a Metro alias.
 function paperIcon({ name, color, size }: PaperIconProps) {
   return (
-    <MaterialCommunityIcons
-      name={name as React.ComponentProps<typeof MaterialCommunityIcons>['name']}
+    <MaterialDesignIcons
+      name={name as React.ComponentProps<typeof MaterialDesignIcons>['name']}
       color={color}
       size={size}
     />

@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Platform } from 'react-native';
 import { isLiquidGlassAvailable } from 'expo-glass-effect';
-import { NativeTabs } from 'expo-router/unstable-native-tabs';
+import { NativeTabs } from 'expo-router/native-tabs';
 import { useTheme } from '../providers/theme-provider';
 import { useGlassCapability } from './use-glass-capability';
 import { resolveTabChrome, type TabChrome } from './tab-chrome';

@@ -321,10 +321,12 @@ function RootLayout() {
     markStartup('fonts.start');
     let cancelled = false;
     let fontOutcome: 'ready' | 'error' = 'ready';
-    void loadRequiredFonts()
+    void loadRequiredFonts((error, fontFamily) => {
+      reportError(error, { tags: { source: 'icon-font', fontFamily, phase: 'mount' } });
+    })
       .catch((error: unknown) => {
         fontOutcome = 'error';
-        reportError(error);
+        reportError(error, { tags: { source: 'icon-font', phase: 'preload' } });
       })
       .finally(() => {
         if (!cancelled) {
