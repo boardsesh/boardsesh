@@ -89,6 +89,12 @@ export const privacyTypeDefs = /* GraphQL */ `
     audience: PrivacyResourceAudience!
     locationAudience: PrivacyLocationAudience!
     inheritFollowers: Boolean!
+    """
+    "Show to people I follow": an Unlisted or Invite-only board is listed in the
+    owner's followers' friendsBoards. It grants no access: an Invite-only board
+    still needs an approved grant to climb on. No effect on other audiences.
+    """
+    listedToFollowers: Boolean!
     revision: Int!
   }
   input UpdateResourcePrivacyInput {
@@ -97,6 +103,8 @@ export const privacyTypeDefs = /* GraphQL */ `
     audience: PrivacyResourceAudience!
     locationAudience: PrivacyLocationAudience
     inheritFollowers: Boolean
+    "Omit to keep the stored value. See ResourcePrivacySettings.listedToFollowers."
+    listedToFollowers: Boolean
   }
   type PrivacyResourceGrant {
     displayName: String

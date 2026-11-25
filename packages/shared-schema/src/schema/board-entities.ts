@@ -185,6 +185,76 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
   }
 
   """
+  What the viewer may do on a friend's board (friendsBoards).
+  """
+  enum FriendBoardAccess {
+    "The viewer can open and climb on it: FriendBoard.board is set."
+    CAN_CLIMB
+    "An Invite-only board the owner lists to followers. The viewer may ask to climb (requestResourceAccess)."
+    CAN_REQUEST
+    "The viewer asked to climb and the owner has not answered yet."
+    REQUESTED
+  }
+
+  """
+  The person who owns a friend's board. Always someone the viewer follows.
+  """
+  type FriendBoardOwner {
+    userId: ID!
+    "Profile display name, falling back to the account name"
+    displayName: String
+    "Profile avatar, falling back to the account image"
+    avatarUrl: String
+  }
+
+  """
+  The part of a friend's board every listed row may show, whatever the viewer's
+  access. Never carries the slug, serial number, location, presence ids or counts.
+  """
+  type FriendBoardPreview {
+    "The board's uuid: the resourceId for requestResourceAccess. Opens nothing by itself on an Invite-only board."
+    uuid: ID!
+    name: String!
+    boardType: String!
+    layoutId: Int!
+    sizeId: Int!
+    setIds: String!
+    angle: Int!
+  }
+
+  """
+  One board owned by someone the viewer follows.
+  """
+  type FriendBoard {
+    viewerAccess: FriendBoardAccess!
+    owner: FriendBoardOwner!
+    preview: FriendBoardPreview!
+    "The full board, for CAN_CLIMB only. Null for CAN_REQUEST and REQUESTED."
+    board: UserBoard
+  }
+
+  """
+  A page of friends' boards.
+  """
+  type FriendBoardConnection {
+    items: [FriendBoard!]!
+    totalCount: Int!
+    hasMore: Boolean!
+  }
+
+  """
+  Input for friendsBoards.
+  """
+  input FriendsBoardsInput {
+    "Filter on the board name or the owner's display name (case-insensitive, up to 100 characters)."
+    query: String
+    "Max boards to return (1-50, default 20)"
+    limit: Int
+    "Offset for pagination"
+    offset: Int
+  }
+
+  """
   Auto-recorded board configuration that the current user was on the last time
   they connected to a controller with the given serial. Acts as a fallback for
   serial→board lookups when no deliberately-saved \`UserBoard\` matches.

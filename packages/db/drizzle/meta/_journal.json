@@ -2458,6 +2458,13 @@
       "when": 1795556070734,
       "tag": "0350_gym_repair_actor_retention",
       "breakpoints": true
+    },
+    {
+      "idx": 351,
+      "version": "7",
+      "when": 1795642962189,
+      "tag": "0351_resource_privacy_listed_to_followers",
+      "breakpoints": true
     }
   ]
 }

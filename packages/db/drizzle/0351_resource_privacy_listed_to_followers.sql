@@ -1,0 +1,1 @@
+ALTER TABLE "resource_privacy" ADD COLUMN "listed_to_followers" boolean DEFAULT false NOT NULL;

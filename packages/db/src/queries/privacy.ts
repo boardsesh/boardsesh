@@ -229,6 +229,41 @@ export function resourceAccessCondition(
 }
 
 /**
+ * Whether a board is listed in a follower's Friends' boards. The caller joins
+ * `user_follows` on the board's owner, so "the viewer follows the owner" holds
+ * already; this decides the audience part:
+ *
+ * - Public and Followers boards are listed.
+ * - Unlisted and Invite-only boards are listed when the owner turned on "Show
+ *   to people I follow" (`listed_to_followers`), or when the viewer already
+ *   holds the board (approved grant, follower inheritance).
+ * - Only me is never listed, and a revoked grant hides the board from that viewer.
+ *
+ * An opted-in Invite-only board is listed to a follower without a grant, so the
+ * follower can ask to climb on it; listing it opens nothing (`resourceAccessCondition`
+ * still says no). `honourListedToFollowers: false` reads every switch as off,
+ * for when the privacy controls are disabled and the owner cannot reach it.
+ */
+export function followerBoardListingCondition(
+  boardUuidColumn: SQLWrapper,
+  viewerId: ViewerId,
+  options: { honourListedToFollowers: boolean },
+): SQL {
+  if (!viewerId) return sql`false`;
+  const readable = resourceAccessCondition('board', boardUuidColumn, viewerId, {
+    allowUnlistedLink: false,
+    unlistedWhen: options.honourListedToFollowers ? sql`privacy_override.listed_to_followers` : undefined,
+  });
+  if (!options.honourListedToFollowers) return readable;
+  return sql`(${readable} OR EXISTS (SELECT 1 FROM resource_privacy listed_policy
+    WHERE listed_policy.kind = 'board' AND listed_policy.resource_id = ${boardUuidColumn}
+      AND listed_policy.audience = 'invite_only' AND listed_policy.listed_to_followers
+      AND NOT EXISTS (SELECT 1 FROM resource_grants listed_revoked
+        WHERE listed_revoked.kind = 'board' AND listed_revoked.resource_id = ${boardUuidColumn}
+          AND listed_revoked.user_id = ${viewerId} AND listed_revoked.status = 'revoked')))`;
+}
+
+/**
  * Whether an item (a tick, a session card) may name the board it happened on:
  * its name, place, gym or distance. The item's own visibility follows its
  * author; this decides only the board fields on it. A log is not a link, so an

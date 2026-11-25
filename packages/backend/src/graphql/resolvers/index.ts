@@ -68,6 +68,7 @@ import { sessionWorkoutMutations, sessionWorkoutQueries } from './sessions/sessi
 import { socialCommentQueries, socialCommentMutations } from './social/comments';
 import { socialVoteQueries, socialVoteMutations } from './social/votes';
 import { socialBoardQueries, socialBoardMutations } from './social/boards';
+import { friendsBoardsQueries } from './social/friends-boards';
 import { boardDiscoveryQueries } from './social/board-discovery';
 import { communityStatsQueries } from './social/community-stats';
 import { socialGymQueries, socialGymMutations } from './social/gyms';
@@ -163,6 +164,7 @@ export const resolvers = {
     ...socialCommentQueries,
     ...socialVoteQueries,
     ...socialBoardQueries,
+    ...friendsBoardsQueries,
     ...adminBoardQueries,
     ...boardDiscoveryQueries,
     ...communityStatsQueries,

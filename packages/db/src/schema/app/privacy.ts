@@ -56,6 +56,13 @@ export const resourcePrivacy = pgTable(
       .default('only_me')
       .notNull(),
     inheritFollowers: boolean('inherit_followers').default(false).notNull(),
+    /**
+     * "Show to people I follow" for an Unlisted or Invite-only board: lists it in
+     * the followed climbers' Friends' boards (`friendsBoards`). It grants nothing:
+     * an Invite-only board still needs an approved grant to climb on. Public and
+     * Followers boards are listed to followers without it; Only me never is.
+     */
+    listedToFollowers: boolean('listed_to_followers').default(false).notNull(),
     revision: integer('revision').default(0).notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },

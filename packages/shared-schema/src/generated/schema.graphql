@@ -272,6 +272,12 @@ type ResourcePrivacySettings {
   audience: PrivacyResourceAudience!
   locationAudience: PrivacyLocationAudience!
   inheritFollowers: Boolean!
+  """
+  "Show to people I follow": an Unlisted or Invite-only board is listed in the
+  owner's followers' friendsBoards. It grants no access: an Invite-only board
+  still needs an approved grant to climb on. No effect on other audiences.
+  """
+  listedToFollowers: Boolean!
   revision: Int!
 }
 input UpdateResourcePrivacyInput {
@@ -280,6 +286,8 @@ input UpdateResourcePrivacyInput {
   audience: PrivacyResourceAudience!
   locationAudience: PrivacyLocationAudience
   inheritFollowers: Boolean
+  "Omit to keep the stored value. See ResourcePrivacySettings.listedToFollowers."
+  listedToFollowers: Boolean
 }
 type PrivacyResourceGrant {
   displayName: String
@@ -3666,6 +3674,76 @@ type UserBoardConnection {
   totalCount: Int!
   "Whether more boards are available"
   hasMore: Boolean!
+}
+
+"""
+What the viewer may do on a friend's board (friendsBoards).
+"""
+enum FriendBoardAccess {
+  "The viewer can open and climb on it: FriendBoard.board is set."
+  CAN_CLIMB
+  "An Invite-only board the owner lists to followers. The viewer may ask to climb (requestResourceAccess)."
+  CAN_REQUEST
+  "The viewer asked to climb and the owner has not answered yet."
+  REQUESTED
+}
+
+"""
+The person who owns a friend's board. Always someone the viewer follows.
+"""
+type FriendBoardOwner {
+  userId: ID!
+  "Profile display name, falling back to the account name"
+  displayName: String
+  "Profile avatar, falling back to the account image"
+  avatarUrl: String
+}
+
+"""
+The part of a friend's board every listed row may show, whatever the viewer's
+access. Never carries the slug, serial number, location, presence ids or counts.
+"""
+type FriendBoardPreview {
+  "The board's uuid: the resourceId for requestResourceAccess. Opens nothing by itself on an Invite-only board."
+  uuid: ID!
+  name: String!
+  boardType: String!
+  layoutId: Int!
+  sizeId: Int!
+  setIds: String!
+  angle: Int!
+}
+
+"""
+One board owned by someone the viewer follows.
+"""
+type FriendBoard {
+  viewerAccess: FriendBoardAccess!
+  owner: FriendBoardOwner!
+  preview: FriendBoardPreview!
+  "The full board, for CAN_CLIMB only. Null for CAN_REQUEST and REQUESTED."
+  board: UserBoard
+}
+
+"""
+A page of friends' boards.
+"""
+type FriendBoardConnection {
+  items: [FriendBoard!]!
+  totalCount: Int!
+  hasMore: Boolean!
+}
+
+"""
+Input for friendsBoards.
+"""
+input FriendsBoardsInput {
+  "Filter on the board name or the owner's display name (case-insensitive, up to 100 characters)."
+  query: String
+  "Max boards to return (1-50, default 20)"
+  limit: Int
+  "Offset for pagination"
+  offset: Int
 }
 
 """
@@ -9743,6 +9821,18 @@ type Query {
   Requires authentication.
   """
   myBoards(input: MyBoardsInput): UserBoardConnection!
+
+  """
+  Home boards owned by people the viewer follows, for "A friend's board".
+  Public and Followers boards are listed; Unlisted and Invite-only boards
+  only when their owner turned on "Show to people I follow"
+  (listedToFollowers) or the viewer already holds them. Only-me boards, gym
+  boards, spray walls, the viewer's own boards and boards already in their
+  Your boards are left out. Boards the viewer has logged on come first, most
+  recent first, then by the owner's latest log, then by owner name.
+  Requires authentication. 30 requests per minute.
+  """
+  friendsBoards(input: FriendsBoardsInput): FriendBoardConnection!
 
   """
   Search public boards.

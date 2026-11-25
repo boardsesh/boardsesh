@@ -18,7 +18,7 @@ import {
   setContentPrivacy,
 } from '../../../services/privacy';
 import { publishSocialEvent } from '../../../events';
-import { isShareLinkAudience, revokeBoardShareLinks } from '../../../services/board-share-links';
+import { isShareLinkAudience, revokeBoardShareLinks, saveToYourBoards } from '../../../services/board-share-links';
 import { deleteFollowRequestNotifications, lockFollowRequestPair } from '../../../events/follow-request-notifications';
 import { logger } from '../../../utils/logger';
 
@@ -54,6 +54,10 @@ const resourceSchema = z
     audience: resourceAudience,
     locationAudience: locationAudience.optional(),
     inheritFollowers: z.boolean().optional(),
+    // Only listing: lists an Unlisted or Invite-only board in followers'
+    // Friends' boards. Stored for any audience so a round trip through Public
+    // keeps the owner's choice; it grants no access.
+    listedToFollowers: z.boolean().optional(),
   })
   .strict();
 /**
@@ -671,6 +675,7 @@ export const privacyMutations = {
         audience: update.audience,
         locationAudience: update.locationAudience ?? lockedOverride?.locationAudience ?? current.locationAudience,
         inheritFollowers: update.inheritFollowers ?? lockedOverride?.inheritFollowers ?? current.inheritFollowers,
+        listedToFollowers: update.listedToFollowers ?? lockedOverride?.listedToFollowers ?? current.listedToFollowers,
         updatedAt: new Date(),
       };
       await transaction
@@ -758,7 +763,7 @@ export const privacyMutations = {
     await requireResourceOwner(input.kind, input.resourceId, ownerId);
     await db.transaction(async (transaction) => {
       await lockOwnedResource(transaction, input.kind, input.resourceId, ownerId);
-      await transaction
+      const approved = await transaction
         .update(schema.resourceGrants)
         .set({ status: 'approved', invitedBy: ownerId, updatedAt: new Date() })
         .where(
@@ -768,7 +773,13 @@ export const privacyMutations = {
             eq(schema.resourceGrants.userId, input.userId),
             eq(schema.resourceGrants.status, 'pending'),
           ),
-        );
+        )
+        .returning({ userId: schema.resourceGrants.userId });
+      // The climber asked to climb here: an approval puts the board in their
+      // Your boards. An owner's name invite (inviteResourceMember) does not,
+      // so a stranger cannot push a board into someone's picker.
+      if (input.kind === 'board' && approved.length > 0)
+        await saveToYourBoards(transaction, input.userId, input.resourceId);
     });
     await notifyResourceChanged(input.kind, input.resourceId);
     return true;

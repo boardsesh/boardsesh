@@ -159,6 +159,15 @@ export const MyBoardsInputSchema = z.object({
 });
 
 /**
+ * friendsBoards input validation schema
+ */
+export const FriendsBoardsInputSchema = z.object({
+  query: z.string().trim().max(100).nullish(),
+  limit: z.number().int().min(1).max(50).nullish(),
+  offset: z.number().int().min(0).max(10_000).nullish(),
+});
+
+/**
  * Follow board input validation schema
  */
 export const FollowBoardInputSchema = z.object({
