@@ -1,12 +1,18 @@
-import { describe, it, expect, beforeEach } from 'vite-plus/test';
+import { describe, it, expect, beforeEach, afterEach } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { and, count, eq, isNull, sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../db/client';
+import type { DbTransaction } from '../db/after-commit';
 import { socialGymMutations } from '../graphql/resolvers/social/gyms';
 import { MAX_AUTO_MINTED_GYMS_PER_OWNER, type SimilarGymResult } from '../graphql/resolvers/social/gym-matching';
-import { blockingSimilarGyms } from '../graphql/resolvers/social/gym-create-guards';
+import {
+  blockingSimilarGyms,
+  GYM_CREATE_NAME_LOCK_NAMESPACE,
+  GYM_CREATE_OWNER_LOCK_NAMESPACE,
+} from '../graphql/resolvers/social/gym-create-guards';
+import { MAX_ACKNOWLEDGED_GYM_UUIDS } from '../validation/schemas';
 import { resetAllRateLimits } from '../utils/rate-limiter';
 
 /**
@@ -89,14 +95,96 @@ async function captureSimilarGyms(promise: Promise<unknown>): Promise<SimilarGym
 
 const candidateUuids = (refusal: SimilarGymsRefusal | null) => refusal?.candidates.map((gym) => gym.uuid) ?? null;
 
+const insertCappedGyms = async (ownerId: string, howMany: number) => {
+  for (let index = 0; index < howMany; index++) {
+    await insertGym({ ownerId, name: `Capped Gym ${index}` });
+  }
+};
+
+// ---- Forcing an interleaving ----
+//
+// A held transaction takes a lock (and writes a competing row) and stays open.
+// The create under test then queues behind it, which `waitUntilQueued` sees in
+// pg_locks, and only then does the holder commit. Without the lock under test
+// the create never queues, so `waitUntilQueued` fails with "finished before it
+// queued", and its read would miss the uncommitted competitor anyway.
+
+const openHolders: Array<() => Promise<void>> = [];
+
+/** Runs `work` in a transaction left open until the returned commit runs. */
+async function holdTransaction(work: (transaction: DbTransaction) => Promise<void>): Promise<() => Promise<void>> {
+  let releaseHolder: () => void = () => {};
+  const released = new Promise<void>((resolve) => {
+    releaseHolder = resolve;
+  });
+  let markReady: () => void = () => {};
+  const ready = new Promise<void>((resolve) => {
+    markReady = resolve;
+  });
+  const finished = db.transaction(async (transaction) => {
+    await work(transaction);
+    markReady();
+    await released;
+  });
+  await Promise.race([ready, finished]);
+  const commit = async () => {
+    releaseHolder();
+    await finished;
+  };
+  openHolders.push(commit);
+  return commit;
+}
+
+/** Resolves once `waiters` sessions in this database wait on a lock of `lockType`; throws if `operation` settles first. */
+async function waitUntilQueued(operation: Promise<unknown>, lockType: 'advisory' | 'transactionid', waiters = 1) {
+  let settled = false;
+  operation.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    if (settled) throw new Error('The create finished before it queued behind the held lock');
+    const result = await db.execute(sql`
+      SELECT count(*)::int AS waiting FROM pg_locks
+      WHERE locktype = ${lockType} AND NOT granted
+        AND pid IN (SELECT pid FROM pg_stat_activity WHERE datname = current_database())
+    `);
+    const [{ waiting }] = Array.from(result as Iterable<{ waiting: number }>);
+    if (waiting >= waiters) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error('The create never queued behind the held lock');
+}
+
+const takeNameLock = (transaction: DbTransaction, normalizedName: string) =>
+  transaction.execute(
+    sql`SELECT pg_advisory_xact_lock(${GYM_CREATE_NAME_LOCK_NAMESPACE}::int, hashtext(${normalizedName}))`,
+  );
+
+const takeOwnerLock = (transaction: DbTransaction, ownerId: string) =>
+  transaction.execute(sql`SELECT pg_advisory_xact_lock(${GYM_CREATE_OWNER_LOCK_NAMESPACE}::int, hashtext(${ownerId}))`);
+
+const errorCode = (reason: unknown) => (reason as { extensions?: { code?: string } }).extensions?.code;
+
 beforeEach(async () => {
   resetAllRateLimits();
   await db.execute(sql`
     TRUNCATE TABLE
-      "community_roles", "gym_members", "gym_follows", "location_sync_gym_sources", "user_boards", "gyms"
+      "community_roles", "gym_members", "gym_follows", "gym_claims", "gym_owner_reassignments",
+      "location_sync_gym_sources", "user_boards", "gyms"
     RESTART IDENTITY CASCADE
   `);
   await Promise.all(ALL_USERS.map(insertUser));
+});
+
+afterEach(async () => {
+  // A test that failed mid-way must not leave a transaction holding locks.
+  await Promise.allSettled(openHolders.splice(0).map((commit) => commit()));
 });
 
 describe('createGym duplicate refusal', () => {
@@ -275,16 +363,52 @@ describe('createGym duplicate refusal', () => {
     expect(await liveGymsOwnedBy(CLIMBER)).toBe(1);
   });
 
-  it('lets only one of two climbers adding the same gym by name at once through', async () => {
-    const results = await Promise.allSettled([
-      createGym({ name: 'Bahnhof Bloc', latitude: BASE.latitude, longitude: BASE.longitude }, CLIMBER),
-      createGym({ name: '  bahnhof   bloc ', latitude: LAT_60M, longitude: BASE.longitude }, OTHER),
-    ]);
+  it('waits on the name lock, so a climber adding the same name just after another is refused', async () => {
+    const competitorUuid = uuidv4();
+    const commitCompetitor = await holdTransaction(async (transaction) => {
+      await takeNameLock(transaction, 'bahnhof bloc');
+      await transaction.insert(dbSchema.gyms).values({
+        uuid: competitorUuid,
+        slug: competitorUuid,
+        name: 'Bahnhof Bloc',
+        ownerId: OTHER,
+        latitude: BASE.latitude,
+        longitude: BASE.longitude,
+      });
+    });
 
-    const rejected = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
-    expect(rejected).toHaveLength(1);
-    expect((rejected[0].reason as { extensions?: { code?: string } }).extensions?.code).toBe('GYM_SIMILAR_EXISTS');
-    expect((await liveGymsOwnedBy(CLIMBER)) + (await liveGymsOwnedBy(OTHER))).toBe(1);
+    // Another owner, so only the name lock can make this create wait.
+    const creating = createGym({ name: '  bahnhof   bloc ', latitude: LAT_60M, longitude: BASE.longitude });
+    await waitUntilQueued(creating, 'advisory');
+    await commitCompetitor();
+
+    expect(candidateUuids(await captureSimilarGyms(creating))).toEqual([competitorUuid]);
+    expect(await liveGymsOwnedBy(CLIMBER)).toBe(0);
+  });
+
+  it('retries once with the next slug when a concurrent create takes it first', async () => {
+    // A different name with the same slug, private and another owner's, so
+    // neither create lock nor the similar-gym check is shared: only the
+    // unique slug index meets the two.
+    const commitCompetitor = await holdTransaction(async (transaction) => {
+      await transaction.insert(dbSchema.gyms).values({
+        uuid: uuidv4(),
+        slug: 'rock-hall',
+        name: 'Rock-Hall!',
+        ownerId: OTHER,
+        isPublic: false,
+      });
+    });
+
+    // Reads "rock-hall" as free (the competitor is uncommitted), then its
+    // insert waits on the competitor's unique-index entry.
+    const creating = createGym({ name: 'Rock Hall' });
+    await waitUntilQueued(creating, 'transactionid');
+    await commitCompetitor();
+
+    const created = await creating;
+    expect(created.slug).toBe('rock-hall-2');
+    expect(await liveGymsOwnedBy(CLIMBER)).toBe(1);
   });
 });
 
@@ -302,9 +426,7 @@ describe('createGym name and cap', () => {
   });
 
   it('refuses with GYM_LIMIT_REACHED once the caller owns the cap, before any duplicate check', async () => {
-    for (let index = 0; index < MAX_AUTO_MINTED_GYMS_PER_OWNER; index++) {
-      await insertGym({ ownerId: CLIMBER, name: `Capped Gym ${index}` });
-    }
+    await insertCappedGyms(CLIMBER, MAX_AUTO_MINTED_GYMS_PER_OWNER);
 
     await expect(createGym({ name: 'Kletterhalle Nord' })).rejects.toMatchObject({
       extensions: { code: 'GYM_LIMIT_REACHED', maxGyms: MAX_AUTO_MINTED_GYMS_PER_OWNER },
@@ -313,14 +435,120 @@ describe('createGym name and cap', () => {
   });
 
   it('does not count deleted gyms against the cap', async () => {
-    for (let index = 0; index < MAX_AUTO_MINTED_GYMS_PER_OWNER; index++) {
-      await insertGym({ ownerId: CLIMBER, name: `Capped Gym ${index}` });
-    }
+    await insertCappedGyms(CLIMBER, MAX_AUTO_MINTED_GYMS_PER_OWNER);
     await db.update(dbSchema.gyms).set({ deletedAt: new Date() }).where(eq(dbSchema.gyms.name, 'Capped Gym 0'));
 
     const created = await createGym({ name: 'Kletterhalle Nord' });
 
     expect(created.name).toBe('Kletterhalle Nord');
+  });
+
+  it('counts only gyms the owner listed, not ones they run through a claim or a handover', async () => {
+    await insertCappedGyms(CLIMBER, MAX_AUTO_MINTED_GYMS_PER_OWNER - 1);
+    const claimed = await insertGym({ ownerId: CLIMBER, name: 'Claimed Gym' });
+    await db
+      .insert(dbSchema.gymClaims)
+      .values({ gymId: claimed.id, claimantUserId: CLIMBER, method: 'admin', status: 'approved' });
+    const handedOver = await insertGym({ ownerId: CLIMBER, name: 'Handed Over Gym' });
+    await db.insert(dbSchema.gymOwnerReassignments).values({
+      gymUuid: handedOver.uuid,
+      previousOwnerId: SYSTEM_OWNER,
+      newOwnerId: CLIMBER,
+      reason: 'Gym staff asked for it',
+      performedBy: OTHER,
+    });
+
+    // 24 listed: the 25th listing goes through, the 26th does not.
+    await createGym({ name: 'Kletterhalle Nord' });
+    await expect(createGym({ name: 'Boulderwerk' })).rejects.toMatchObject({
+      extensions: { code: 'GYM_LIMIT_REACHED' },
+    });
+  });
+
+  it('counts a gym whose claim is still pending', async () => {
+    await insertCappedGyms(CLIMBER, MAX_AUTO_MINTED_GYMS_PER_OWNER - 1);
+    const pending = await insertGym({ ownerId: CLIMBER, name: 'Pending Gym' });
+    await db
+      .insert(dbSchema.gymClaims)
+      .values({ gymId: pending.id, claimantUserId: CLIMBER, method: 'admin', status: 'pending' });
+
+    await expect(createGym({ name: 'Kletterhalle Nord' })).rejects.toMatchObject({
+      extensions: { code: 'GYM_LIMIT_REACHED' },
+    });
+  });
+
+  it('exempts global admins, not admins scoped to one board type', async () => {
+    await insertCappedGyms(CLIMBER, MAX_AUTO_MINTED_GYMS_PER_OWNER);
+    await insertCappedGyms(OTHER, MAX_AUTO_MINTED_GYMS_PER_OWNER);
+    await db.insert(dbSchema.communityRoles).values([
+      { userId: CLIMBER, role: 'admin', boardType: null },
+      { userId: OTHER, role: 'admin', boardType: 'kilter' },
+    ]);
+
+    expect((await createGym({ name: 'Kletterhalle Nord' })).name).toBe('Kletterhalle Nord');
+    await expect(createGym({ name: 'Boulderwerk' }, OTHER)).rejects.toMatchObject({
+      extensions: { code: 'GYM_LIMIT_REACHED' },
+    });
+  });
+
+  it('waits on the owner lock, so a create racing the 25th listing is refused at the cap', async () => {
+    await insertCappedGyms(CLIMBER, MAX_AUTO_MINTED_GYMS_PER_OWNER - 1);
+    // The 25th listing, mid-flight under the owner lock, under another name so
+    // only the owner lock can make the create below wait.
+    const commitTwentyFifth = await holdTransaction(async (transaction) => {
+      await takeOwnerLock(transaction, CLIMBER);
+      const twentyFifthUuid = uuidv4();
+      await transaction
+        .insert(dbSchema.gyms)
+        .values({ uuid: twentyFifthUuid, slug: twentyFifthUuid, name: 'Alpha Gym', ownerId: CLIMBER });
+    });
+
+    const creating = createGym({ name: 'Beta Gym' });
+    await waitUntilQueued(creating, 'advisory');
+    await commitTwentyFifth();
+
+    await expect(creating).rejects.toMatchObject({ extensions: { code: 'GYM_LIMIT_REACHED' } });
+    expect(await liveGymsOwnedBy(CLIMBER)).toBe(MAX_AUTO_MINTED_GYMS_PER_OWNER);
+  });
+
+  it('lets one of two concurrent creates by an owner at 24 listings through, under different names', async () => {
+    await insertCappedGyms(CLIMBER, MAX_AUTO_MINTED_GYMS_PER_OWNER - 1);
+
+    const results = await Promise.allSettled([createGym({ name: 'Alpha Gym' }), createGym({ name: 'Beta Gym' })]);
+
+    const rejected = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+    expect(rejected.map((result) => errorCode(result.reason))).toEqual(['GYM_LIMIT_REACHED']);
+    expect(await liveGymsOwnedBy(CLIMBER)).toBe(MAX_AUTO_MINTED_GYMS_PER_OWNER);
+  });
+});
+
+describe('createGym acknowledgement limits', () => {
+  it(`accepts ${MAX_ACKNOWLEDGED_GYM_UUIDS} acknowledged gyms and refuses one more`, async () => {
+    const acknowledged = Array.from({ length: MAX_ACKNOWLEDGED_GYM_UUIDS }, () => uuidv4());
+
+    await createGym({
+      name: 'Kletterhalle Nord',
+      duplicateCheck: { mode: 'CONFIRMED_SEPARATE', acknowledgedGymUuids: acknowledged },
+    });
+    await expect(
+      createGym({
+        name: 'Boulderwerk',
+        duplicateCheck: { mode: 'CONFIRMED_SEPARATE', acknowledgedGymUuids: [...acknowledged, uuidv4()] },
+      }),
+    ).rejects.toThrow(`At most ${MAX_ACKNOWLEDGED_GYM_UUIDS} acknowledged gyms`);
+  });
+
+  it('finds an exact name even when more than 50 listings match by substring and sort ahead of it', async () => {
+    // Inserted first, and alphabetically before the exact name, so only an
+    // exact-first ORDER BY keeps the exact listing inside the 50 rows read.
+    for (let index = 0; index < 55; index++) {
+      await insertGym({ name: `A Bahnhof Bloc ${String(index).padStart(2, '0')}` });
+    }
+    const exact = await insertGym({ name: 'Bahnhof Bloc' });
+
+    const refusal = await captureSimilarGyms(createGym({ name: 'Bahnhof Bloc' }));
+
+    expect(refusal?.candidates[0]?.uuid).toBe(exact.uuid);
   });
 });
 
