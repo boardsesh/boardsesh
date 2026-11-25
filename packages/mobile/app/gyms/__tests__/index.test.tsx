@@ -93,6 +93,17 @@ const captured = vi.hoisted(() => ({
     isError: boolean;
   },
   rosterGymUuids: [] as (string | null)[],
+  segments: ['gyms'] as string[],
+  panelOpeners: null as { onOpenGym?: (gym: Gym) => void; onEditGym: (gym: Gym) => void } | null,
+  cardList: null as {
+    data: readonly { kind: string; key: string }[];
+    renderItem: (info: { item: unknown }) => ReactNode;
+    map?: ReactNode;
+    mapAvailable?: boolean;
+    mapHidden?: boolean;
+    stickyHeader?: ReactNode;
+  } | null,
+  browseRow: null as { onOpenGym?: (gym: Gym) => void; onEditGym: (gym: Gym) => void } | null,
 }));
 
 vi.mock('react-native', () => ({
@@ -136,6 +147,21 @@ vi.mock('expo-router', () => ({
   Stack: { Screen: () => null },
   useRouter: () => routerMock,
   useLocalSearchParams: () => captured.params,
+  useSegments: () => captured.segments,
+}));
+vi.mock('../../../src/hooks/use-transparent-header-inset', () => ({ useTransparentHeaderInset: () => 0 }));
+// The board picker's copy draws MapCardList; its own suite covers the layout.
+vi.mock('../../../src/components/gym-directory/MapCardList', () => ({
+  MapCardList: (props: NonNullable<typeof captured.cardList>) => {
+    captured.cardList = props;
+    return createElement('div', { 'data-testid': 'map-card-list' }, props.stickyHeader, props.map);
+  },
+}));
+vi.mock('../../../src/components/gym-directory/GymBrowseRow', () => ({
+  GymBrowseRow: (props: NonNullable<typeof captured.browseRow>) => {
+    captured.browseRow = props;
+    return null;
+  },
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('react-native-safe-area-context', () => ({
@@ -244,6 +270,8 @@ vi.mock('../../../src/components/gym-directory/GymListPanel', () => ({
     availableHeight?: number;
     onActivateBoard: (board: UserBoard) => void;
     onPressGym: (gym: Gym) => void;
+    onOpenGym?: (gym: Gym) => void;
+    onEditGym: (gym: Gym) => void;
     mapAvailable: boolean;
     filterSlot?: ReactNode;
     placeCaption?: ReactNode;
@@ -256,6 +284,7 @@ vi.mock('../../../src/components/gym-directory/GymListPanel', () => ({
       [],
     );
     captured.panelBox = { availableHeight: props.availableHeight };
+    captured.panelOpeners = { onOpenGym: props.onOpenGym, onEditGym: props.onEditGym };
     captured.onActivateBoard = props.onActivateBoard;
     captured.onPressGym = props.onPressGym;
     captured.mapAvailable = props.mapAvailable;
@@ -343,6 +372,10 @@ beforeEach(() => {
   captured.rowArgs = null;
   captured.rosterQuery = { data: undefined, isPending: false, isError: false };
   captured.rosterGymUuids = [];
+  captured.segments = ['gyms'];
+  captured.panelOpeners = null;
+  captured.cardList = null;
+  captured.browseRow = null;
   captured.gymsQuery = idleQuery();
   captured.boardsQuery = idleQuery();
 });
@@ -888,5 +921,76 @@ describe('gym finder analytics', () => {
     act(() => captured.onPressGym?.(gym));
     const picks = trackMock.mock.calls.filter(([name]) => name === 'Gym Finder Gym Picked');
     expect(picks).toEqual([['Gym Finder Gym Picked', { surface: 'gyms_map', section: 'list' }]]);
+  });
+});
+
+// The same screen is registered twice (gym-page-route.ts). Inside the board
+// picker's sheet it must not draw the draggable panel (a sheet on a sheet), and
+// everything it opens has to stay in the picker's stack: a root route pushed
+// from in there is presented as a second sheet.
+describe('the board picker copy of the gym map', () => {
+  const madrid: Coords = { latitude: 40.47, longitude: -3.86 };
+  const crux = { uuid: 'gym-1', name: 'Crux' } as unknown as Gym;
+  const gymRow = { kind: 'gym', key: 'gym:gym-1', gym: crux };
+
+  it('keeps the full-screen map and its panel on the root stack', () => {
+    const { queryByTestId } = render(createElement(GymDiscovery));
+    expect(captured.panelOpeners).not.toBeNull();
+    expect(queryByTestId('map-card-list')).toBeNull();
+  });
+
+  it('opens the gym page and the gym editor in the root stack from the root map', () => {
+    render(createElement(GymDiscovery));
+    act(() => captured.panelOpeners?.onOpenGym?.(crux));
+    act(() => captured.panelOpeners?.onEditGym(crux));
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/gyms/[gym]', params: { gym: 'gym-1' } });
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/gyms/edit', params: { gymUuid: 'gym-1' } });
+  });
+
+  it('draws a map card over the list, with no draggable panel and no floating close', () => {
+    captured.segments = ['boards', 'gyms'];
+    captured.coords = madrid;
+    const { getByTestId, queryByLabelText } = render(createElement(GymDiscovery));
+    expect(getByTestId('map-card-list')).toBeTruthy();
+    expect(captured.panelOpeners).toBeNull();
+    expect(captured.cardList?.map).toBeTruthy();
+    expect(queryByLabelText('mobile.gyms.closeMap')).toBeNull();
+    // The filter chips ride in the card list's sticky slot.
+    expect(captured.chips).not.toBeNull();
+  });
+
+  it('shows the location prompt as the only row while there is nowhere to look', () => {
+    captured.segments = ['boards', 'gyms'];
+    render(createElement(GymDiscovery));
+    expect(captured.cardList?.data.map((row) => row.kind)).toEqual(['locationPrompt']);
+  });
+
+  it('folds the map card while the search field has focus', () => {
+    captured.segments = ['boards', 'gyms'];
+    captured.coords = madrid;
+    const { container } = render(createElement(GymDiscovery));
+    expect(captured.cardList?.mapHidden).toBe(false);
+    const field = container.querySelector('input');
+    if (!field) throw new Error('no search field');
+    act(() => {
+      fireEvent.focus(field);
+    });
+    expect(captured.cardList?.mapHidden).toBe(true);
+  });
+
+  it('opens the gym page and the gym editor inside the picker stack', () => {
+    captured.segments = ['boards', 'gyms'];
+    captured.coords = madrid;
+    captured.params = { returnTo: '/(tabs)/climbs' };
+    render(createElement(GymDiscovery));
+    const rowElement = captured.cardList?.renderItem({ item: gymRow });
+    render(createElement('div', null, rowElement));
+    act(() => captured.browseRow?.onOpenGym?.(crux));
+    act(() => captured.browseRow?.onEditGym(crux));
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/boards/gym/[gym]',
+      params: { gym: 'gym-1', returnTo: '/(tabs)/climbs' },
+    });
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/boards/gyms/edit', params: { gymUuid: 'gym-1' } });
   });
 });

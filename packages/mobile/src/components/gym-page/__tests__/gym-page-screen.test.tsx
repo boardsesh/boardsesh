@@ -20,7 +20,7 @@ type Actions = {
   onSetUpBoard: () => void;
 };
 
-const routerMock = vi.hoisted(() => ({ push: vi.fn(), back: vi.fn(), setParams: vi.fn() }));
+const routerMock = vi.hoisted(() => ({ push: vi.fn(), back: vi.fn(), setParams: vi.fn(), dismissTo: vi.fn() }));
 const trackMock = vi.hoisted(() => vi.fn());
 const openUrlMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const scrollToIndex = vi.hoisted(() => vi.fn());
@@ -29,6 +29,7 @@ const screenOptions = vi.hoisted(() => ({ title: undefined as string | undefined
 
 const state = vi.hoisted(() => ({
   params: { gym: 'gym-uuid-1' } as Record<string, string | undefined>,
+  segments: ['gyms', '[gym]'] as string[],
   isAuthenticated: true,
   authLoading: false,
   profileId: 'climber-1' as string | undefined,
@@ -68,6 +69,7 @@ vi.mock('expo-router', () => ({
   },
   useRouter: () => routerMock,
   useLocalSearchParams: () => state.params,
+  useSegments: () => state.segments,
 }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -248,6 +250,7 @@ function kinds(): string[] {
 beforeEach(() => {
   vi.clearAllMocks();
   state.params = { gym: 'gym-uuid-1' };
+  state.segments = ['gyms', '[gym]'];
   state.isAuthenticated = true;
   state.authLoading = false;
   state.profileId = 'climber-1';
@@ -470,6 +473,30 @@ describe('GymPageScreen', () => {
       kind: 'gym',
       surface: 'gym_page',
       preAnswered: true,
+    });
+  });
+});
+
+// The page is also the board picker's own copy (app/boards/gym/[gym].tsx). From
+// there a root route would stack a second sheet on the picker, so what the page
+// opens stays in the picker's stack.
+describe('GymPageScreen inside the board picker', () => {
+  beforeEach(() => {
+    state.segments = ['boards', 'gym', '[gym]'];
+  });
+
+  it("opens the staff's editor and insights in the picker's stack", () => {
+    state.gymQuery = {
+      ...state.gymQuery,
+      data: makeGym({ myRole: 'admin', canEdit: true, canClaim: false, listingState: 'RUN_BY_GYM' }),
+    };
+    render(<GymPageScreen />);
+    fireEvent.click(screen.getByText('tool-editDetails'));
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/boards/gyms/edit', params: { gymUuid: 'gym-uuid-1' } });
+    fireEvent.click(screen.getByText('tool-insights'));
+    expect(routerMock.push).toHaveBeenLastCalledWith({
+      pathname: '/boards/gyms/analytics',
+      params: { gymUuid: 'gym-uuid-1' },
     });
   });
 });

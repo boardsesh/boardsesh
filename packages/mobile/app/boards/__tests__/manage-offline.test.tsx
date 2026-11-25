@@ -1249,7 +1249,7 @@ describe('My Boards with no usable network list', () => {
     // The gym map from here counts its own opening: no `from: 'picker'`.
     fireEvent.click(screen.getByRole('button', { name: 'add gym_map' }));
     expect(trackAddSelectedMock).toHaveBeenCalledWith({ kind: 'gym_map', surface: 'manage' });
-    expect(routerMock.push).toHaveBeenLastCalledWith({ pathname: '/gyms', params: {} });
+    expect(routerMock.push).toHaveBeenLastCalledWith({ pathname: '/boards/gyms', params: {} });
   });
 
   // With the add-a-board wizard on, the + is one button to its step 1.

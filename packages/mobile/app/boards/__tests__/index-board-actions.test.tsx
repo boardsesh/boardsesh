@@ -1595,7 +1595,7 @@ describe('where a pick came from', () => {
     fireEvent.click(screen.getByRole('button', { name: 'add gym_map' }));
 
     expect(routerMock.push).toHaveBeenCalledWith({
-      pathname: '/gyms',
+      pathname: '/boards/gyms',
       params: { returnTo: '/(tabs)/climbs', source: 'onboarding', from: 'picker' },
     });
     expect(trackMock).toHaveBeenCalledWith('Board Picker Add Selected', { kind: 'gym_map', surface: 'picker' });

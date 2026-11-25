@@ -126,6 +126,18 @@ function BoardsLayout() {
           unfollowing live on the picker's cards (#4623). */}
       <Stack.Screen name="manage" options={{ title: t('myBoards.title') }} />
       <Stack.Screen name="edit" options={{ title: tBoards('mobile.edit.screenTitle') }} />
+      {/* The builder's gym row: the gym step in pick mode, pushed rather than
+          a searchable sheet on this sheet. It hands the gym back to the form
+          that pushed it (gym-pick-handoff.ts). Its body carries the title. */}
+      <Stack.Screen name="gym-picker" options={{ title: '' }} />
+      {/* The gym screens' copies in this stack (gym-page-route.ts). A root
+          route pushed from in here is presented as another sheet, because a
+          modal sits under it (docs/mobile/mobile-sheets-vs-routes.md,
+          "Same-navigator modal inheritance"). The gym page is gym/[gym]. Each
+          screen sets its own title. */}
+      <Stack.Screen name="gyms" />
+      <Stack.Screen name="gyms/edit" />
+      <Stack.Screen name="gyms/analytics" />
       <Stack.Screen
         name="spray/led-setup"
         options={{

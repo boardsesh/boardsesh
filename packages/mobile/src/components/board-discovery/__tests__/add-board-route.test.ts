@@ -28,13 +28,13 @@ describe('addBoardRoute', () => {
       name: 'the gym map from the picker, which already counted the opening',
       kind: 'gym_map',
       context: { returnTo: '/(tabs)/discover', fromPicker: true },
-      expected: { pathname: '/gyms', params: { returnTo: '/(tabs)/discover', from: 'picker' } },
+      expected: { pathname: '/boards/gyms', params: { returnTo: '/(tabs)/discover', from: 'picker' } },
     },
     {
       name: 'the gym map from Manage boards, which counts its own opening',
       kind: 'gym_map',
       context: {},
-      expected: { pathname: '/gyms', params: {} },
+      expected: { pathname: '/boards/gyms', params: {} },
     },
     {
       name: 'the builder ignores fromPicker',
@@ -79,7 +79,7 @@ describe('addBoardRoute', () => {
       name: 'the gym map ignores a wizard entry',
       kind: 'gym_map',
       context: { wizardEntry: 'picker' },
-      expected: { pathname: '/gyms', params: {} },
+      expected: { pathname: '/boards/gyms', params: {} },
     },
     {
       name: 'Manage boards, with no return or source',

@@ -49,13 +49,15 @@ beforeEach(() => {
 });
 
 describe('OwnPublicGymWarning', () => {
-  it("warns the owner that their own public gym shows its location, and opens the gym's settings", () => {
+  // The builder is in the board picker's stack: a root `/gyms/edit` pushed from
+  // there would be presented as a second sheet on the picker.
+  it("warns the owner that their own public gym shows its location, and opens the gym's settings in the picker", () => {
     gymState.gym = gym({});
     const view = render(<OwnPublicGymWarning gymUuid="gym-uuid" />);
 
     expect(view.getByText('mobile.publicGymWarning.message:My Garage')).toBeTruthy();
     fireEvent.click(view.getByText('mobile.publicGymWarning.openSettings'));
-    expect(push).toHaveBeenCalledWith({ pathname: '/gyms/edit', params: { gymUuid: 'gym-uuid' } });
+    expect(push).toHaveBeenCalledWith({ pathname: '/boards/gyms/edit', params: { gymUuid: 'gym-uuid' } });
   });
 
   it.each([
