@@ -52,6 +52,7 @@ manufacturer builds no sync client.
 | Playlist | A climber's own named list of climbs |
 | Cursor | A bookmark the manufacturer's API returns, so the next pull continues where the last one stopped |
 | External id | The id the manufacturer gave a record. Boardsesh stores it next to its own id |
+| Boardsesh id | Boardsesh's own id for a record. Sent with every push; storing it is optional for the manufacturer |
 | Partner credential | A key issued to Boardsesh as a company, not to a climber |
 
 ## What "share everything" means
@@ -132,27 +133,42 @@ can use the board in Boardsesh. That contradicts principle 4.
 
 ### Pushing
 
-![A record saved in Boardsesh with no external id is pushed to the manufacturer, and each answer leads to a different state: success stores the external id, an unreachable manufacturer leaves it for the scheduled job, a rejection marks it not synced until the climber fixes it, and no answer leaves it waiting until a later pull shows it or the timeout passes](diagrams/push-lifecycle.svg)
+![A record saved in Boardsesh with no external id is pushed to the manufacturer, and each answer leads to a different state: success stores the external id, an unreachable manufacturer leaves it for the scheduled job, a rejection marks it not synced until the climber fixes it, and no answer is repeated at once if the manufacturer stores the Boardsesh id, or else waits until a later pull shows it or the timeout passes](diagrams/push-lifecycle.svg)
 
 1. A record made in Boardsesh is saved with no external id.
-2. Boardsesh pushes it. On success the manufacturer returns its own id, and
-   Boardsesh stores it as the external id.
+2. Boardsesh pushes it. The push carries Boardsesh's own id for the record.
+   On success the manufacturer returns its id, and Boardsesh stores it as the
+   external id.
 3. If the manufacturer could not be reached, the record stays saved and the
    scheduled job pushes it later.
-4. A create can succeed and its answer be lost on the way back. To repeat it
-   safely Boardsesh sends the same request key every time, and asks the
-   manufacturer to refuse a second create with a key it has already seen (or
-   to offer a lookup of what happened to a key). Where the API has neither,
-   a create with no answer is not repeated automatically: it stays "waiting"
-   until a later pull shows the record, or shows after the manufacturer's
-   stated timeout that it was never made. In that case Boardsesh pushes it
-   again.
+4. A create can succeed and its answer be lost on the way back. What Boardsesh
+   does next depends on whether the manufacturer stores the Boardsesh id (see
+   below).
 5. If the manufacturer rejects the record as invalid, Boardsesh shows the
-   climber the reason and asks them to fix it, then pushes the fixed record. See
-   [Publishing a climb](#publishing-a-climb).
+   climber the reason and asks them to fix it, then pushes the fixed record.
+   See [Publishing a climb](#publishing-a-climb).
 
-The manufacturer stores no Boardsesh ids. Boardsesh keeps the only table that
-pairs a Boardsesh id with the manufacturer's id.
+#### The Boardsesh id on a push (optional for the manufacturer)
+
+Every push carries Boardsesh's id for the record. We ask the manufacturer to
+store it, refuse a second create that carries an id it already has, and return
+it with the record in its changes. This is optional. With it:
+
+- A create with no answer can be repeated at once and cannot make a second
+  record.
+- A record that comes back in a pull carrying a Boardsesh id is matched
+  exactly, with no comparing of holds or dates.
+- The manufacturer can tell which records came from Boardsesh.
+
+Without it the sync still works. A create with no answer is then not repeated
+automatically. It stays "waiting" until a later pull shows the record, or
+shows after the manufacturer's stated timeout that it was never made, and only
+then is it pushed again. Records are matched by their content, as described
+under [Climbs](#climbs) and
+[Linked climbers](#linked-climbers-logbook-favourites-playlists).
+
+Either way Boardsesh keeps the table that pairs its id with the manufacturer's
+id, so the manufacturer never needs to look one up.
 
 ### Pulling
 
@@ -175,7 +191,7 @@ once. Neither is needed to start.
 
 - A push gets an answer straight away, so a problem with a climb reaches the
   climber while they are still looking at it.
-- Only one side keeps the table of paired ids.
+- Only one side has to keep the table of paired ids.
 - A push can check what the other side holds before changing it, which makes
   edits from both apps safe.
 - The manufacturer builds no sync client and runs no scheduled job.
@@ -590,7 +606,7 @@ What has to be agreed per board is in the manufacturer's annex.
 
 | Record | Identity | Who may edit | Both sides changed it | Delete | Privacy |
 | --- | --- | --- | --- | --- | --- |
-| Climb | Boardsesh id plus the manufacturer's id. Same-climb matches are shown as one and stored separately | Its setter, in either app once linked. Before that, in the app it was set in | Field by field against the last agreed copy | Never deleted. Either app can hide it from its own users | Public. Setter's public name only |
+| Climb | Boardsesh id plus the manufacturer's id (the manufacturer may store the Boardsesh id too). Same-climb matches are shown as one and stored separately | Its setter, in either app once linked. Before that, in the app it was set in | Field by field against the last agreed copy | Never deleted. Either app can hide it from its own users | Public. Setter's public name only |
 | Ascent | Boardsesh id plus the manufacturer's id; matched by its data when it has no id yet | The climber, in either app | Field by field; same field asks the climber; an edit beats a delete | Pushed, and remembered so it does not come back | Linked climbers only. "Only me" ascents by the climber's choice |
 | Favourite, project | Climber plus climb | The climber | Merged one add or remove at a time | Remove is pushed | Linked climbers only |
 | Playlist | Boardsesh id plus the manufacturer's id | The climber | Name: field by field. Climbs in it: merged one at a time. Order: last reorder | Pushed, and remembered | Linked climbers only |

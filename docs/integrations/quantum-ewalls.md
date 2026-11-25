@@ -77,11 +77,14 @@ Android app, not from a contract. Our notes are in
 - **A5.** Would eWalls offer a standard OAuth 2.0 sign-in for linking, with
   sign-up on the same page? See
   [Linking an account](board-manufacturer-sync.md#linking-an-account).
-- **A6.** When Boardsesh creates a record (a climb, an ascent, a playlist) and
-  gets no answer, how can it repeat the request safely? We would send the
-  same request key each time. Can the server refuse a second create with a
-  key it has seen, or tell us what happened to a key? The app sends a client
-  id with an ascent, and we do not know whether the server uses it.
+- **A6.** Optional. Every record Boardsesh creates (a climb, an ascent, a
+  playlist) can carry Boardsesh's own id for it. Can eWalls store that id,
+  refuse a second create with an id it already has, and return it with the
+  record in the changes? That makes a repeated request safe and lets
+  Boardsesh match the record exactly. The app sends a client id with an
+  ascent, and we do not know whether the server uses it. Without this the
+  sync still works; see
+  [The Boardsesh id on a push](board-manufacturer-sync.md#the-boardsesh-id-on-a-push-optional-for-the-manufacturer).
 
 ### B. The catalogue, eWalls to Boardsesh
 
@@ -152,7 +155,7 @@ These need something eWalls does not have today.
 - **D3.** When that setter later links an eWalls account, can their climbs be
   moved to it?
 - **D4.** Should these climbs be marked in the eWalls app, for example "set in
-  Boardsesh"?
+  Boardsesh"? A stored Boardsesh id (A6) would be enough to tell.
 - **D5.** When eWalls hides or removes one of these climbs, will it appear as
   a removal in the changes, so Boardsesh does not create it again?
 
