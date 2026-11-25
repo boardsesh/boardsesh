@@ -764,6 +764,26 @@ describe('deployed preview HTTPS smoke', () => {
     await expect(client(previewSite()).smokePreview(42, SHA)).resolves.toBe('https://pr-42.boardsesh.com');
   });
 
+  it.each(['MaterialCommunityIcons', 'MaterialDesignIcons'])('accepts the %s icon pack asset', async (fontName) => {
+    const fontPath = `/assets/icons/${fontName}.hash.ttf`;
+    const site = previewSite((path) => {
+      if (path === '/_expo/main.js') {
+        return javascriptResponse(`module.exports="${fontPath}";module.exports="${ICON_FONT_PATHS[1]}";`);
+      }
+      if (path === fontPath)
+        return new Response(new Uint8Array([0, 1, 0, 0]), { headers: { 'content-type': 'font/ttf' } });
+      return undefined;
+    });
+    await expect(client(site).smokePreview(42, SHA)).resolves.toBe('https://pr-42.boardsesh.com');
+  });
+
+  it('requires an MDI family even when the Material Symbols font is present', async () => {
+    const site = previewSite((path) =>
+      path === '/_expo/main.js' ? javascriptResponse(`module.exports="${ICON_FONT_PATHS[1]}";`) : undefined,
+    );
+    await expect(client(site).smokePreview(42, SHA)).rejects.toThrow('Material Design icon font reference');
+  });
+
   it('reads font signatures across network chunks and deduplicates repeated references', async () => {
     const requestedFonts: string[] = [];
     const site = previewSite((path) => {
@@ -867,7 +887,7 @@ describe('deployed preview HTTPS smoke', () => {
     [
       '/_expo/main.js',
       () => javascriptResponse('module.exports="https://example.com/MaterialCommunityIcons.ttf";'),
-      'MaterialCommunityIcons icon font reference',
+      'Material Design icon font reference',
     ],
     [
       '/_expo/main.js',
