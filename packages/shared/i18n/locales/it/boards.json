@@ -624,12 +624,14 @@
       "confirmKeepLooking": "Continua a cercare"
     },
     "gymStep": {
+      "title": "Quale palestra?",
       "searchPlaceholder": "Cerca una città o una palestra",
       "anyBoard": "Qualsiasi pannello",
       "inThisArea": "Palestre in questa zona",
       "noNameMatch": "Nessuna palestra con questo nome",
       "addGym": "Aggiungi la mia palestra",
-      "addGymHint": "Non c’è? Aggiungila con il tuo pannello"
+      "addGymHint": "Non c’è? Aggiungila con il tuo pannello",
+      "places": "Luoghi"
     },
     "boardDetail": {
       "setActive": "Imposta come pannello attivo",

@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { Gym } from '@boardsesh/shared-schema';
-import { buildGymPickRows, distanceBetweenMeters, gymPickSubtitle, type GymPickLabels } from '../gym-pick-rows';
-import type { GymListRow } from '../gym-list-rows';
+import type { Gym, PlaceSuggestion } from '@boardsesh/shared-schema';
+import {
+  buildGymPickRows,
+  distanceBetweenMeters,
+  gymPickSubtitle,
+  type GymPickLabels,
+  type GymPickRow,
+} from '../gym-pick-rows';
 
 const labels: GymPickLabels = {
   section: 'Gyms near you',
@@ -38,7 +43,7 @@ const nearby = makeGym({
   boardCount: 3,
 });
 
-const kinds = (rows: GymListRow[]) => rows.map((row) => row.kind);
+const kinds = (rows: GymPickRow[]) => rows.map((row) => row.kind);
 
 describe('gymPickSubtitle', () => {
   it('leads with the distance from the climber when their position is known', () => {
@@ -105,5 +110,40 @@ describe('buildGymPickRows', () => {
       expect(notice).toEqual({ kind: 'empty', key: 'failed', label: labels.failed, retryLabel: 'Try again' });
     if (lookup === 'offline') expect(notice).toEqual({ kind: 'empty', key: 'offline', label: labels.offline });
     if (lookup === 'empty') expect(notice).toEqual({ kind: 'empty', key: 'empty', label: labels.empty });
+  });
+
+  const amsterdam: PlaceSuggestion = {
+    id: 2759794,
+    name: 'Amsterdam',
+    region: 'North Holland',
+    country: 'Netherlands',
+    countryCode: 'NL',
+    latitude: 52.374,
+    longitude: 4.8897,
+  };
+  const places = { suggestions: [amsterdam], label: 'Places', attribution: 'City data: GeoNames' };
+
+  it('lists the suggested towns first, as their own card with the credit under it', () => {
+    const rows = buildGymPickRows({ gyms: [nearby], lookup: 'listed', origin: null, selectedId: null, labels, places });
+    expect(kinds(rows)).toEqual(['sectionHeader', 'place', 'placesAttribution', 'sectionHeader', 'pickGym']);
+    expect(rows[0]).toEqual({ kind: 'sectionHeader', key: 'sh:places', label: 'Places' });
+    expect(rows[1]).toMatchObject({
+      key: 'place:2759794',
+      label: 'Amsterdam, North Holland, Netherlands',
+      position: 'only',
+    });
+  });
+
+  it('draws no Places section without towns, and the prompt in place of the gyms', () => {
+    const rows = buildGymPickRows({
+      gyms: [nearby],
+      lookup: 'idle',
+      origin: null,
+      selectedId: null,
+      labels,
+      places: { ...places, suggestions: [] },
+      locationPrompt: true,
+    });
+    expect(rows).toEqual([{ kind: 'locationPrompt', key: 'location-prompt' }]);
   });
 });

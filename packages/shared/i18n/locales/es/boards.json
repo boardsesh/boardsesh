@@ -624,12 +624,14 @@
       "confirmKeepLooking": "Seguir buscando"
     },
     "gymStep": {
+      "title": "¿Qué rocódromo?",
       "searchPlaceholder": "Busca una ciudad o un rocódromo",
       "anyBoard": "Cualquier plafón",
       "inThisArea": "Rocódromos en esta zona",
       "noNameMatch": "Ningún rocódromo tiene ese nombre",
       "addGym": "Añadir mi rocódromo",
-      "addGymHint": "¿No aparece? Añádelo con tu plafón"
+      "addGymHint": "¿No aparece? Añádelo con tu plafón",
+      "places": "Lugares"
     },
     "boardDetail": {
       "setActive": "Usar este plafón",

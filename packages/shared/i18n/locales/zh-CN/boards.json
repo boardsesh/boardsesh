@@ -624,12 +624,14 @@
       "confirmKeepLooking": "继续查找"
     },
     "gymStep": {
+      "title": "哪个岩馆？",
       "searchPlaceholder": "搜索城市或岩馆",
       "anyBoard": "任意训练板",
       "inThisArea": "这一带的岩馆",
       "noNameMatch": "没有叫这个名字的岩馆",
       "addGym": "添加我的岩馆",
-      "addGymHint": "列表里没有？连同你的训练板一起添加"
+      "addGymHint": "列表里没有？连同你的训练板一起添加",
+      "places": "地点"
     },
     "boardDetail": {
       "setActive": "设为当前训练板",

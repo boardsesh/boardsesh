@@ -50,18 +50,11 @@ type UseGymPanelGestureOptions = {
   mapAvailable: boolean;
   /**
    * The height of the box the panel is laid out in. Defaults to the window: the
-   * panel over a full-screen map (/gyms). A screen that keeps its header bar and
-   * a pinned search field above the map passes the measured height of what is
-   * left, and the panel re-snaps to its detent whenever that height changes.
+   * panel over a full-screen map (/gyms). While the keyboard is up the screen
+   * passes the height above it, and the panel re-snaps to its detent whenever
+   * that height changes.
    */
   availableHeight?: number;
-  /** Fraction of the box the panel covers at the Medium (default) detent. */
-  mediumFraction?: number;
-  /**
-   * Offer the Low ("reveal the map") detent. Off for a map that is only as tall
-   * as the space above the Medium panel: dragging lower would reveal nothing.
-   */
-  allowLow?: boolean;
 };
 
 type UseGymPanelGestureReturn = {
@@ -71,12 +64,6 @@ type UseGymPanelGestureReturn = {
   nativeGesture: GestureType;
   /** Apply to the panel's animated wrapper (drives translateY on the UI thread). */
   panelAnimatedStyle: ReturnType<typeof useAnimatedStyle>;
-  /**
-   * For a view pinned to the panel's bottom edge: lifts it to the bottom of the
-   * box, so it stays on screen at every detent (the panel is the High height,
-   * and hangs below the box when lower).
-   */
-  visibleBottomAnimatedStyle: ReturnType<typeof useAnimatedStyle>;
   /** Fixed panel height (the tallest visible height) — the View is translated down from here. */
   panelHeight: number;
   /** The list scrolls only at the High detent; below it the whole panel drags instead.
@@ -97,20 +84,18 @@ type UseGymPanelGestureReturn = {
 export function useGymPanelGesture({
   mapAvailable,
   availableHeight,
-  mediumFraction = MEDIUM_FRACTION,
-  allowLow = true,
 }: UseGymPanelGestureOptions): UseGymPanelGestureReturn {
   const { height: screenHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [headerHeight, setHeaderHeight] = useState(DEFAULT_HEADER_HEIGHT);
   const boxHeight = availableHeight ?? screenHeight;
-  const hasLow = mapAvailable && allowLow;
+  const hasLow = mapAvailable;
 
   // Detent positions as the panel's top-edge Y (px from the box's top). Lower Y =
   // taller panel. The panel View is `panelHeight` tall and translated DOWN from the
   // High position, so translateY == one of these top-Y values.
   const highTopY = boxHeight * (1 - HIGH_FRACTION);
-  const mediumTopY = boxHeight * (1 - mediumFraction);
+  const mediumTopY = boxHeight * (1 - MEDIUM_FRACTION);
   const lowVisible = headerHeight + insets.bottom + spacing[2];
   const lowTopY = boxHeight - lowVisible;
   const panelHeight = boxHeight - highTopY;
@@ -286,15 +271,11 @@ export function useGymPanelGesture({
   const panelAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
   }));
-  const visibleBottomAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: highTopYSV.value - translateY.value }],
-  }));
 
   return {
     gesture: composedGesture,
     nativeGesture,
     panelAnimatedStyle,
-    visibleBottomAnimatedStyle,
     panelHeight,
     scrollEnabled,
     settledDetent,

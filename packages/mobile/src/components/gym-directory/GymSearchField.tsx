@@ -1,4 +1,4 @@
-import { memo, useCallback, useState } from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { PlaceSuggestion } from '@boardsesh/shared-schema';
@@ -14,6 +14,9 @@ import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typog
 import { borderRadius, shadows, spacing } from '../../theme/tokens';
 import type { GymSearchFieldProps } from './GymSearchField.types';
 
+/** No towns to hand over: one array, so `onSuggestionsChange` only fires on a change. */
+const NO_PLACES: readonly PlaceSuggestion[] = [];
+
 /**
  * The native gym search: a text field whose text the screen applies (a gym
  * name, or a place to geocode on submit), with up to five town suggestions from
@@ -25,6 +28,10 @@ import type { GymSearchFieldProps } from './GymSearchField.types';
  * list don't jump on every lookup. They show only while the field is focused,
  * and close on submit or a pick until the text changes again. A picked town's
  * label is selected when the field is focused, so typing replaces it.
+ *
+ * `suggestionsPlacement="inline"` floats nothing: the towns go to
+ * `onSuggestionsChange` for the screen to list as rows, and stay through a
+ * blur (a drag of that list closes the keyboard; the towns stay listed).
  */
 export function GymSearchField({
   text,
@@ -36,6 +43,8 @@ export function GymSearchField({
   onSelectPlace,
   onClear,
   onFocusChange,
+  suggestionsPlacement = 'overlay',
+  onSuggestionsChange,
 }: GymSearchFieldProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
@@ -45,7 +54,12 @@ export function GymSearchField({
   const [focused, setFocused] = useState(false);
   // Closed by a submit or a pick, until the climber types again.
   const [closed, setClosed] = useState(false);
-  const showSuggestions = focused && !closed && suggestions.length > 0;
+  const inline = suggestionsPlacement === 'inline';
+  const showSuggestions = (inline || focused) && !closed && suggestions.length > 0;
+  const inlineSuggestions = inline && showSuggestions ? suggestions : NO_PLACES;
+  useEffect(() => {
+    if (inline) onSuggestionsChange?.(inlineSuggestions);
+  }, [inline, inlineSuggestions, onSuggestionsChange]);
 
   const handleFocus = useCallback(() => {
     setFocused(true);
@@ -101,7 +115,7 @@ export function GymSearchField({
           </PressableSurface>
         ) : null}
       </View>
-      {showSuggestions ? (
+      {showSuggestions && !inline ? (
         <View
           style={[
             styles.suggestions,

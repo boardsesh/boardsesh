@@ -624,12 +624,14 @@
       "confirmKeepLooking": "Keep looking"
     },
     "gymStep": {
+      "title": "Which gym?",
       "searchPlaceholder": "Search a town or gym",
       "anyBoard": "Any board",
       "inThisArea": "Gyms in this area",
       "noNameMatch": "No gyms match that name",
       "addGym": "Add my gym",
-      "addGymHint": "Not listed? Add it with your board"
+      "addGymHint": "Not listed? Add it with your board",
+      "places": "Places"
     },
     "boardDetail": {
       "setActive": "Set as active board",

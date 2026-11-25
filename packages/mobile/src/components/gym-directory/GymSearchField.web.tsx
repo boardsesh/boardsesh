@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { PlaceSuggestion } from '@boardsesh/shared-schema';
 import { placeSuggestionLabel } from '@boardsesh/gym-filters';
@@ -7,7 +7,15 @@ import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
 import type { GymSearchFieldProps } from './GymSearchField.types';
 
-/** Browser city search uses our gazetteer, independently of GPS permission. */
+/** No towns to hand over: one array, so `onSuggestionsChange` only fires on a change. */
+const NO_PLACES: readonly PlaceSuggestion[] = [];
+
+/**
+ * Browser city search uses our gazetteer, independently of GPS permission.
+ * `suggestionsPlacement="inline"` draws no listbox: the towns go to
+ * `onSuggestionsChange` for the screen to list as rows, and stay open when
+ * focus leaves the field (a click on one of those rows blurs it first).
+ */
 export function GymSearchField({
   text,
   hasSelectedPlace,
@@ -16,6 +24,8 @@ export function GymSearchField({
   onSubmit,
   onSelectPlace,
   onClear,
+  suggestionsPlacement = 'overlay',
+  onSuggestionsChange,
 }: GymSearchFieldProps) {
   const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
@@ -25,8 +35,15 @@ export function GymSearchField({
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const { canSearch, lookup: currentLookup, suggestions } = usePlaceSuggestions(text, hasSelectedPlace);
+  const inline = suggestionsPlacement === 'inline';
   const showSuggestions = isOpen && suggestions.length > 0;
-  const activePlace = showSuggestions ? suggestions[activeIndex] : undefined;
+  // Inline towns are the screen's rows: no listbox here to move through.
+  const showListbox = showSuggestions && !inline;
+  const activePlace = showListbox ? suggestions[activeIndex] : undefined;
+  const inlineSuggestions = inline && showSuggestions ? suggestions : NO_PLACES;
+  useEffect(() => {
+    if (inline) onSuggestionsChange?.(inlineSuggestions);
+  }, [inline, inlineSuggestions, onSuggestionsChange]);
   const fieldLabel = placeholder ?? t('mobile.gyms.searchPlaceholder');
 
   const selectPlace = (place: PlaceSuggestion) => {
@@ -40,7 +57,7 @@ export function GymSearchField({
       event.preventDefault();
       setIsOpen(false);
       setActiveIndex(-1);
-    } else if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && suggestions.length > 0) {
+    } else if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && suggestions.length > 0 && !inline) {
       event.preventDefault();
       setIsOpen(true);
       setActiveIndex((previous) =>
@@ -87,7 +104,7 @@ export function GymSearchField({
         }
       }}
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setIsOpen(false);
+        if (!inline && !event.currentTarget.contains(event.relatedTarget)) setIsOpen(false);
       }}
       style={{ width: '100%' }}
     >
@@ -95,13 +112,13 @@ export function GymSearchField({
         <input
           ref={inputRef}
           type="search"
-          role="combobox"
+          role={inline ? undefined : 'combobox'}
           value={text}
           aria-label={fieldLabel}
           placeholder={fieldLabel}
-          aria-autocomplete="list"
-          aria-expanded={showSuggestions}
-          aria-controls={showSuggestions ? listId : undefined}
+          aria-autocomplete={inline ? undefined : 'list'}
+          aria-expanded={inline ? undefined : showListbox}
+          aria-controls={showListbox ? listId : undefined}
           aria-activedescendant={activePlace ? `${listId}-${activePlace.id}` : undefined}
           aria-describedby={statusId}
           autoComplete="off"
@@ -141,7 +158,7 @@ export function GymSearchField({
           {t('mobile.gyms.searchSubmit')}
         </button>
       </div>
-      {showSuggestions ? (
+      {showListbox ? (
         <ul
           id={listId}
           role="listbox"

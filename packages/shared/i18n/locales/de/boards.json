@@ -624,12 +624,14 @@
       "confirmKeepLooking": "Weiter suchen"
     },
     "gymStep": {
+      "title": "Welche Halle?",
       "searchPlaceholder": "Stadt oder Halle suchen",
       "anyBoard": "Jedes Board",
       "inThisArea": "Hallen in dieser Gegend",
       "noNameMatch": "Keine Halle heißt so",
       "addGym": "Meine Halle hinzufügen",
-      "addGymHint": "Nicht dabei? Füg sie mit deinem Board hinzu"
+      "addGymHint": "Nicht dabei? Füg sie mit deinem Board hinzu",
+      "places": "Orte"
     },
     "boardDetail": {
       "setActive": "Als aktives Board setzen",

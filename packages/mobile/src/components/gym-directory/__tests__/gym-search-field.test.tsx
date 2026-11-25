@@ -176,3 +176,49 @@ describe('native gym search', () => {
     expect(screen.queryByTestId('gym-search-places')).toBeNull();
   });
 });
+
+describe('native gym search, towns listed by the screen', () => {
+  function InlineHarness({ onSuggestions }: { onSuggestions: (places: readonly PlaceSuggestion[]) => void }) {
+    const [text, setText] = useState('');
+    const [hasSelectedPlace, setHasSelectedPlace] = useState(false);
+    return (
+      <GymSearchField
+        text={text}
+        hasSelectedPlace={hasSelectedPlace}
+        isGeocoding={false}
+        onChangeText={(next) => {
+          setHasSelectedPlace(false);
+          setText(next);
+        }}
+        onSelectPlace={(place) => {
+          onSelect(place);
+          setText(placeSuggestionLabel(place));
+          setHasSelectedPlace(true);
+        }}
+        onSubmit={vi.fn()}
+        onClear={vi.fn()}
+        suggestionsPlacement="inline"
+        onSuggestionsChange={onSuggestions}
+      />
+    );
+  }
+
+  it('floats nothing and hands the towns over, keeping them through a blur', async () => {
+    const onSuggestions = vi.fn();
+    const screen = render(<InlineHarness onSuggestions={onSuggestions} />);
+    await typeTown(screen);
+    expect(screen.queryByTestId('gym-search-places')).toBeNull();
+    expect(onSuggestions).toHaveBeenLastCalledWith([AMSTERDAM]);
+    // A drag of the list closes the keyboard; the towns stay listed so the tap lands.
+    fireEvent.blur(screen.getByTestId('gym-search-input'));
+    expect(onSuggestions).toHaveBeenLastCalledWith([AMSTERDAM]);
+  });
+
+  it('hands over none once the search is submitted', async () => {
+    const onSuggestions = vi.fn();
+    const screen = render(<InlineHarness onSuggestions={onSuggestions} />);
+    await typeTown(screen);
+    fireEvent.keyDown(screen.getByTestId('gym-search-input'), { key: 'Enter' });
+    expect(onSuggestions).toHaveBeenLastCalledWith([]);
+  });
+});

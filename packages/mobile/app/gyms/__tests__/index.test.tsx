@@ -54,6 +54,11 @@ const locationMocks = vi.hoisted(() => ({
 const platform = vi.hoisted(() => ({ OS: 'ios' }));
 const cameraMocks = vi.hoisted(() => ({ setCenter: vi.fn(), showWorld: vi.fn() }));
 const panelSnapTo = vi.hoisted(() => vi.fn());
+const trackMock = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/lib/analytics', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/lib/analytics')>()),
+  track: trackMock,
+}));
 const captured = vi.hoisted(() => ({
   params: {} as Record<string, string | undefined>,
   activateOptions: null as ActivateOptions | null,
@@ -62,7 +67,7 @@ const captured = vi.hoisted(() => ({
   onRegionChange: null as ((center: Coords, zoom?: number) => void) | null,
   mapCenter: undefined as Coords | null | undefined,
   keyboardOverlap: 0,
-  panelBox: { availableHeight: undefined as number | undefined, keyboardOpen: undefined as boolean | undefined },
+  panelBox: { availableHeight: undefined as number | undefined },
   locationStatus: 'idle',
   onMapUnavailable: null as (() => void) | null,
   onMapReady: null as (() => void) | null,
@@ -237,7 +242,6 @@ vi.mock('../../../src/components/gym-directory/GymListPanel', () => ({
   GymListPanel: (props: {
     ref?: Ref<unknown>;
     availableHeight?: number;
-    keyboardOpen?: boolean;
     onActivateBoard: (board: UserBoard) => void;
     onPressGym: (gym: Gym) => void;
     mapAvailable: boolean;
@@ -251,7 +255,7 @@ vi.mock('../../../src/components/gym-directory/GymListPanel', () => ({
       () => ({ snapTo: panelSnapTo, ensureVisible: vi.fn(), scrollToRowKey: vi.fn() }),
       [],
     );
-    captured.panelBox = { availableHeight: props.availableHeight, keyboardOpen: props.keyboardOpen };
+    captured.panelBox = { availableHeight: props.availableHeight };
     captured.onActivateBoard = props.onActivateBoard;
     captured.onPressGym = props.onPressGym;
     captured.mapAvailable = props.mapAvailable;
@@ -686,10 +690,10 @@ describe('discovery search integration', () => {
 
   it('ends the panel at the keyboard top while the keyboard is up', () => {
     const screen = render(createElement(GymDiscovery));
-    expect(captured.panelBox).toEqual({ availableHeight: 852, keyboardOpen: false });
+    expect(captured.panelBox).toEqual({ availableHeight: 852 });
     captured.keyboardOverlap = 336;
     screen.rerender(createElement(GymDiscovery));
-    expect(captured.panelBox).toEqual({ availableHeight: 516, keyboardOpen: true });
+    expect(captured.panelBox).toEqual({ availableHeight: 516 });
   });
 
   it('raises the panel while the search field has focus', () => {
@@ -850,5 +854,39 @@ describe('discovery search integration', () => {
     captured.rosterQuery = { data: [], isPending: false, isError: false };
     act(() => captured.onPressGym?.({ uuid: 'gym-3', name: 'Third' } as unknown as Gym));
     expect(captured.rowArgs?.expandedGymRosterPending).toBe(false);
+  });
+});
+
+describe('gym finder analytics', () => {
+  const madrid: Coords = { latitude: 40.47, longitude: -3.86 };
+  const atlanta: PlaceSuggestion = {
+    id: 4180439,
+    name: 'Atlanta',
+    region: 'Georgia',
+    country: 'United States',
+    countryCode: 'US',
+    latitude: 33.749,
+    longitude: -84.388,
+  };
+
+  beforeEach(() => {
+    captured.coords = madrid;
+  });
+
+  it('reports a town search once per visit, tagged with the map surface', () => {
+    render(createElement(GymDiscovery));
+    act(() => captured.onSelectPlace?.(atlanta));
+    act(() => captured.onSelectPlace?.(atlanta));
+    const searches = trackMock.mock.calls.filter(([name]) => name === 'Gym Finder Search Used');
+    expect(searches).toEqual([['Gym Finder Search Used', { surface: 'gyms_map', kind: 'town' }]]);
+  });
+
+  it('reports a gym opened from the list, and not its fold', () => {
+    render(createElement(GymDiscovery));
+    const gym = { uuid: 'gym-1', name: 'Crux' } as unknown as Gym;
+    act(() => captured.onPressGym?.(gym));
+    act(() => captured.onPressGym?.(gym));
+    const picks = trackMock.mock.calls.filter(([name]) => name === 'Gym Finder Gym Picked');
+    expect(picks).toEqual([['Gym Finder Gym Picked', { surface: 'gyms_map', section: 'list' }]]);
   });
 });

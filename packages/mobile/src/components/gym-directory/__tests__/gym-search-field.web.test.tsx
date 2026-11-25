@@ -181,3 +181,51 @@ describe('browser gym search', () => {
     expect(signal.aborted).toBe(true);
   });
 });
+
+describe('browser gym search, towns listed by the screen', () => {
+  function InlineHarness({ onSuggestions }: { onSuggestions: (places: readonly PlaceSuggestion[]) => void }) {
+    const [text, setText] = useState('');
+    const [hasSelectedPlace, setHasSelectedPlace] = useState(false);
+    return (
+      <GymSearchField
+        text={text}
+        hasSelectedPlace={hasSelectedPlace}
+        isGeocoding={false}
+        onChangeText={(next) => {
+          setHasSelectedPlace(false);
+          setText(next);
+        }}
+        onSelectPlace={(place) => {
+          onSelect(place);
+          setText(placeSuggestionLabel(place));
+          setHasSelectedPlace(true);
+        }}
+        onSubmit={onSubmit}
+        onClear={vi.fn()}
+        suggestionsPlacement="inline"
+        onSuggestionsChange={onSuggestions}
+      />
+    );
+  }
+
+  it('draws no listbox, hands the towns over, and keeps them when focus leaves for a row', async () => {
+    const onSuggestions = vi.fn();
+    const screen = render(<InlineHarness onSuggestions={onSuggestions} />);
+    const input = screen.getByRole('searchbox');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'atlanta' } });
+    await lookupCity();
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(onSuggestions).toHaveBeenLastCalledWith([ATLANTA]);
+    // A click on a town in the list blurs the field before it lands.
+    fireEvent.blur(input);
+    expect(onSuggestions).toHaveBeenLastCalledWith([ATLANTA]);
+    // Enter is a gym-name search, never a hidden town pick.
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.submit(input.closest('form') as HTMLFormElement);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onSubmit).toHaveBeenCalledOnce();
+    expect(onSuggestions).toHaveBeenLastCalledWith([]);
+  });
+});

@@ -1,5 +1,5 @@
-import { forwardRef, memo, useCallback, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
-import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { forwardRef, memo, useCallback, useImperativeHandle, useMemo, useRef, type ReactNode } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import Animated from 'react-native-reanimated';
 import { GestureDetector } from 'react-native-gesture-handler';
@@ -14,17 +14,12 @@ import { PressableSurface } from '../PressableSurface';
 import { namedAccessibilityActions, onNamedAccessibilityAction } from '../../lib/named-accessibility-action';
 import { boardTypeLabel } from '../board-discovery/board-builder-labels';
 import { useTheme } from '../../providers/theme-provider';
-import { applySectionCaption } from '../../theme/variants/variant-tokens';
-import { sectionHeaderText } from '../section-header-text';
 import { spacing, borderRadius, shadows } from '../../theme/tokens';
 import { useGymPanelGesture, type GymPanelDetent } from './use-gym-panel-gesture';
 import { findRowIndex, type GymListRow } from './gym-list-rows';
 import { GymShareButton } from './GymShareButton';
 import { GymListingPill } from '../gym-page/GymListingPill';
-import { InsetGroupedCell } from '../gym-page/InsetGroupedCell';
-import type { GroupedCellPosition } from '../gym-page/gym-page-view-model';
-import { ArtRow } from '../ArtRow';
-import { StatusPill } from '../StatusPill';
+import { GymListEmptyRow, GymListSectionHeader } from './GymListTextRows';
 
 export type GymListPanelHandle = {
   /** Scroll the row carrying this key into view (for a marker tap). */
@@ -35,12 +30,12 @@ export type GymListPanelHandle = {
   ensureVisible: () => void;
 };
 
-type GymListPanelSharedProps = {
+/** /gyms: tap a gym to expand its boards, tap a board to make it active. */
+export type GymListPanelProps = {
   data: GymListRow[];
   /** Drives the default detent + whether the Low ("reveal the map") detent exists. */
   mapAvailable: boolean;
-  /** The pinned search field (lives in the panel header so it survives a blank map).
-   *  Null when the screen pins its search above the map instead. */
+  /** The pinned search field (lives in the panel header so it survives a blank map). */
   searchSlot: ReactNode;
   /** The "Showing <place>" caption row, when a place is searched. */
   placeCaption?: ReactNode;
@@ -51,24 +46,9 @@ type GymListPanelSharedProps = {
   locationPrompt?: ReactNode;
   /**
    * The measured height of the box the panel sits in, when it isn't the whole
-   * window (a screen that keeps its header bar and a search field above the
-   * map). See `useGymPanelGesture`.
+   * window (above the keyboard while it is up). See `useGymPanelGesture`.
    */
   availableHeight?: number;
-  /** Fraction of the box the panel covers at its Medium (default) detent. */
-  mediumFraction?: number;
-  /** Offer the Low ("reveal the map") detent. Default true. */
-  allowLowDetent?: boolean;
-  /**
-   * The keyboard is up and `availableHeight` already ends at its top: the
-   * pinned footer owes no safe-area inset, which the keyboard covers.
-   */
-  keyboardOpen?: boolean;
-};
-
-/** /gyms: tap a gym to expand its boards, tap a board to make it active. */
-type GymListPanelBrowseProps = GymListPanelSharedProps & {
-  mode?: 'browse';
   /** Tap/expand a gym row — the screen toggles expansion, selects it, recenters the map. */
   onPressGym: (gym: Gym) => void;
   /** Tap a board (under a gym, or a standalone) — makes it active. */
@@ -87,22 +67,6 @@ type GymListPanelBrowseProps = GymListPanelSharedProps & {
   noBoardsLabel: string;
 };
 
-/**
- * The add-a-board gym step: the rows are gyms to choose (`buildGymPickRows`),
- * one tap each, ending in "Add my gym". Nothing expands, activates or edits.
- */
-type GymListPanelPickProps = GymListPanelSharedProps & {
-  mode: 'pick';
-  onPickGym: (gym: Gym) => void;
-  /** "Add my gym": pinned at the bottom of what is visible, at every detent. */
-  addGym: { title: string; subtitle: string };
-  onAddGym: () => void;
-  /** "Try again" under a failed lookup's notice. */
-  onRetry?: () => void;
-};
-
-export type GymListPanelProps = GymListPanelBrowseProps | GymListPanelPickProps;
-
 const keyExtractor = (row: GymListRow) => row.key;
 const getItemType = (row: GymListRow) => row.kind;
 
@@ -113,12 +77,13 @@ const getItemType = (row: GymListRow) => row.kind;
  * (handle + search + filter slot) travels with the sheet; the body is one
  * virtualized FlashList. The drag/scroll handoff lives in {@link useGymPanelGesture}.
  *
- * Two modes: `browse` (/gyms, the default) expands a gym to its boards and
- * activates a board; `pick` (the add-a-board gym step) lists gyms to choose,
- * one tap each, and ends in "Add my gym".
+ * A gym row expands to its boards; a board row makes that board active. The
+ * add-a-board gym step lists gyms to choose in a plain page instead
+ * (`MapCardList`): a wizard step inside the Boards sheet never draws a second
+ * draggable panel.
  */
-export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(function GymListPanel(props, ref) {
-  const {
+export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(function GymListPanel(
+  {
     data,
     mapAvailable,
     searchSlot,
@@ -126,25 +91,16 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
     filterSlot,
     locationPrompt,
     availableHeight,
-    mediumFraction,
-    allowLowDetent,
-    keyboardOpen = false,
-  } = props;
-  const pickMode = props.mode === 'pick';
-  // One set of handlers per mode. The other mode's rows never reach renderItem,
-  // so its slots are no-ops rather than optional props on every row.
-  const onPressGym = props.mode === 'pick' ? noopGym : props.onPressGym;
-  const onActivateBoard = props.mode === 'pick' ? noopBoard : props.onActivateBoard;
-  const onEditGym = props.mode === 'pick' ? noopGym : props.onEditGym;
-  const onEditBoard = props.mode === 'pick' ? noopBoard : props.onEditBoard;
-  const onClaimGym = props.mode === 'pick' ? undefined : props.onClaimGym;
-  const onOpenGym = props.mode === 'pick' ? undefined : props.onOpenGym;
-  const noBoardsLabel = props.mode === 'pick' ? '' : props.noBoardsLabel;
-  const onPickGym = props.mode === 'pick' ? props.onPickGym : noopGym;
-  const addGym = props.mode === 'pick' ? props.addGym : null;
-  const onAddGym = props.mode === 'pick' ? props.onAddGym : noop;
-  const onRetry = props.mode === 'pick' ? props.onRetry : undefined;
-
+    onPressGym,
+    onActivateBoard,
+    onEditGym,
+    onEditBoard,
+    onClaimGym,
+    onOpenGym,
+    noBoardsLabel,
+  },
+  ref,
+) {
   const theme = useTheme();
   const { systemColors } = theme;
   const insets = useSafeAreaInsets();
@@ -156,14 +112,13 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
     gesture,
     nativeGesture,
     panelAnimatedStyle,
-    visibleBottomAnimatedStyle,
     panelHeight,
     scrollEnabled,
     onListScroll,
     onHeaderLayout,
     snapTo,
     ensureVisible,
-  } = useGymPanelGesture({ mapAvailable, availableHeight, mediumFraction, allowLow: allowLowDetent });
+  } = useGymPanelGesture({ mapAvailable, availableHeight });
 
   useImperativeHandle(
     ref,
@@ -182,24 +137,11 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
     ({ item }: { item: GymListRow }) => {
       switch (item.kind) {
         case 'sectionHeader':
-          return pickMode ? (
-            <View style={styles.pickGutter}>
-              <SectionHeaderRow label={item.label} />
-            </View>
-          ) : (
-            <SectionHeaderRow label={item.label} />
-          );
+          return <GymListSectionHeader label={item.label} />;
         case 'loading':
           return <ActivityIndicator style={styles.listSpinner} />;
         case 'empty':
-          return pickMode ? (
-            <View style={styles.pickGutter}>
-              <EmptyRow label={item.label} />
-              {item.retryLabel && onRetry ? <RetryAction label={item.retryLabel} onPress={onRetry} /> : null}
-            </View>
-          ) : (
-            <EmptyRow label={item.label} />
-          );
+          return <GymListEmptyRow label={item.label} />;
         case 'gym':
           return (
             <GymRow
@@ -228,61 +170,15 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
               onEditBoard={onEditBoard}
             />
           );
-        case 'pickGym':
-          return (
-            <PickGymRow
-              gym={item.gym}
-              subtitle={item.subtitle}
-              boardsLabel={item.boardsLabel}
-              position={item.position}
-              selected={item.selected}
-              onPickGym={onPickGym}
-            />
-          );
       }
     },
-    [
-      pickMode,
-      onRetry,
-      noBoardsLabel,
-      onPressGym,
-      onActivateBoard,
-      onEditGym,
-      onEditBoard,
-      onClaimGym,
-      onOpenGym,
-      onPickGym,
-    ],
+    [noBoardsLabel, onPressGym, onActivateBoard, onEditGym, onEditBoard, onClaimGym, onOpenGym],
   );
 
-  // Pick mode pins "Add my gym" over the list's foot; measured so the last gym
-  // can scroll clear of it.
-  const [footerHeight, setFooterHeight] = useState(0);
-  const onFooterLayout = useCallback((event: LayoutChangeEvent) => {
-    const measured = Math.round(event.nativeEvent.layout.height);
-    setFooterHeight((previous) => (previous === measured ? previous : measured));
-  }, []);
-
-  // Pick rows are inset-grouped cells that carry their own 16pt gutter.
   const listContentStyle = useMemo(
-    () => ({
-      paddingHorizontal: pickMode ? 0 : spacing[4],
-      paddingBottom: pickMode ? footerHeight + spacing[4] : insets.bottom + spacing[6],
-    }),
-    [insets.bottom, pickMode, footerHeight],
+    () => ({ paddingHorizontal: spacing[4], paddingBottom: insets.bottom + spacing[6] }),
+    [insets.bottom],
   );
-  // Pick mode tops the prompt: centred, it would sit under the pinned footer at
-  // the Medium detent, where the panel hangs below the screen.
-  const promptAreaStyle = useMemo(
-    () =>
-      pickMode
-        ? [styles.promptArea, styles.pickPromptArea, { paddingBottom: footerHeight + spacing[6] }]
-        : styles.promptArea,
-    [pickMode, footerHeight],
-  );
-  // Pick rows are grouped cards: they sit on the grouped background, so a
-  // card's fill reads against it.
-  const panelBackground = pickMode ? systemColors.groupedBackground : systemColors.secondaryBackground;
 
   const cornerStyle = theme.sheet.corners ?? styles.defaultCorners;
 
@@ -293,7 +189,7 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
           styles.surface,
           cornerStyle,
           shadows.lg,
-          { backgroundColor: panelBackground, borderTopColor: systemColors.separator },
+          { backgroundColor: systemColors.secondaryBackground, borderTopColor: systemColors.separator },
         ]}
       >
         <GestureDetector gesture={gesture}>
@@ -305,7 +201,7 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
               {filterSlot}
             </View>
             {locationPrompt ? (
-              <View style={promptAreaStyle}>{locationPrompt}</View>
+              <View style={styles.promptArea}>{locationPrompt}</View>
             ) : (
               <GestureDetector gesture={nativeGesture}>
                 <FlashList
@@ -320,29 +216,10 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
                   bounces={false}
                   overScrollMode="never"
                   showsVerticalScrollIndicator={false}
-                  // Pick mode's search sits above the panel: a row tap while the
-                  // keyboard is up should pick the gym, not just close the keyboard.
-                  keyboardShouldPersistTaps={pickMode ? 'handled' : undefined}
-                  keyboardDismissMode={pickMode ? 'on-drag' : undefined}
                   contentContainerStyle={listContentStyle}
                 />
               </GestureDetector>
             )}
-            {addGym ? (
-              <Animated.View
-                style={[
-                  styles.pickFooter,
-                  {
-                    backgroundColor: panelBackground,
-                    paddingBottom: (keyboardOpen ? 0 : insets.bottom) + spacing[2],
-                  },
-                  visibleBottomAnimatedStyle,
-                ]}
-                onLayout={onFooterLayout}
-              >
-                <AddGymRow title={addGym.title} subtitle={addGym.subtitle} onAddGym={onAddGym} />
-              </Animated.View>
-            ) : null}
           </View>
         </GestureDetector>
       </View>
@@ -351,155 +228,6 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
 });
 
 // --- rows (memoized; each reads its own colours so renderItem deps stay clean) ---
-
-const SectionHeaderRow = memo(function SectionHeaderRow({ label }: { label: string }) {
-  const { systemColors, m3, variant, sectionCaption } = useTheme();
-  const caption = applySectionCaption(label, sectionCaption);
-  // Same type as SectionHeader: footnote semibold / secondaryLabel on Liquid
-  // Glass, titleSmall / onSurfaceVariant on Material.
-  const headerText = sectionHeaderText(variant, {
-    secondaryLabel: systemColors.secondaryLabel,
-    onSurfaceVariant: m3.onSurfaceVariant,
-  });
-  return (
-    <Text
-      variant={headerText.textVariant}
-      color={headerText.color}
-      style={[styles.sectionLabel, caption.style, { fontWeight: headerText.fontWeight }]}
-    >
-      {caption.text}
-    </Text>
-  );
-});
-
-const EmptyRow = memo(function EmptyRow({ label }: { label: string }) {
-  const { systemColors } = useTheme();
-  return (
-    <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.empty}>
-      {label}
-    </Text>
-  );
-});
-
-const noop = () => {};
-const noopGym = (_gym: Gym) => {};
-const noopBoard = (_board: UserBoard) => {};
-
-/** The art at the head of a pick row: a gym glyph on a quiet 36pt circle. */
-const GymGlyph = memo(function GymGlyph({ icon }: { icon: 'gym' | 'plus' }) {
-  const { systemColors } = useTheme();
-  return (
-    <View style={[styles.glyphCircle, { backgroundColor: systemColors.tertiaryFill }]}>
-      <Icon name={icon} size={18} color={systemColors.secondaryLabel} />
-    </View>
-  );
-});
-
-const GYM_GLYPH = <GymGlyph icon="gym" />;
-const ADD_GLYPH = <GymGlyph icon="plus" />;
-
-/**
- * A gym to choose in pick mode: its name, "1.2 km · street" (left out when
- * there is neither), then how many boards it has and, when its staff run it, "Run by the gym". One slice of an
- * inset-grouped card; the whole row picks.
- */
-const PickGymRow = memo(function PickGymRow({
-  gym,
-  subtitle,
-  boardsLabel,
-  position,
-  selected,
-  onPickGym,
-}: {
-  gym: Gym;
-  subtitle: string | null;
-  boardsLabel: string;
-  position: GroupedCellPosition;
-  selected: boolean;
-  onPickGym: (gym: Gym) => void;
-}) {
-  const handlePress = useCallback(() => onPickGym(gym), [onPickGym, gym]);
-  const details = useMemo(
-    () => (
-      <View style={styles.pickDetails}>
-        {subtitle ? (
-          <Text variant="subheadline" tone="secondary">
-            {subtitle}
-          </Text>
-        ) : null}
-        <View style={styles.pickPills}>
-          <StatusPill label={boardsLabel} testID="gym-pick-boards" />
-          {gym.listingState === 'RUN_BY_GYM' ? (
-            <GymListingPill listingState={gym.listingState} testID="gym-pick-listing" />
-          ) : null}
-        </View>
-      </View>
-    ),
-    [subtitle, boardsLabel, gym.listingState],
-  );
-  return (
-    <InsetGroupedCell position={position} separatorInset="compact">
-      <ArtRow
-        art={GYM_GLYPH}
-        artSize="compact"
-        title={gym.name}
-        titleVariant="body"
-        subtitle={details}
-        accessory="chevron"
-        selected={selected}
-        onPress={handlePress}
-        testID={`gym-pick-${gym.uuid}`}
-      />
-    </InsetGroupedCell>
-  );
-});
-
-/** "Try again" under a failed lookup's notice in pick mode. */
-const RetryAction = memo(function RetryAction({ label, onPress }: { label: string; onPress: () => void }) {
-  const { systemColors } = useTheme();
-  return (
-    <PressableSurface
-      onPress={onPress}
-      feedback="opacity"
-      accessibilityRole="button"
-      hitSlop={8}
-      style={styles.retry}
-      testID="gym-pick-retry"
-    >
-      <Text variant="subheadline" color={systemColors.accent}>
-        {label}
-      </Text>
-    </PressableSurface>
-  );
-});
-
-/** Pick mode's pinned footer, its own card: the gym isn't listed, add it. */
-const AddGymRow = memo(function AddGymRow({
-  title,
-  subtitle,
-  onAddGym,
-}: {
-  title: string;
-  subtitle: string;
-  onAddGym: () => void;
-}) {
-  return (
-    <View style={styles.addGymCard}>
-      <InsetGroupedCell position="only" separatorInset="compact">
-        <ArtRow
-          art={ADD_GLYPH}
-          artSize="compact"
-          title={title}
-          titleVariant="body"
-          subtitle={subtitle}
-          accessory="chevron"
-          onPress={onAddGym}
-          testID="gym-pick-add-gym"
-        />
-      </InsetGroupedCell>
-    </View>
-  );
-});
 
 type GymRowProps = {
   gym: Gym;
@@ -811,14 +539,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: spacing[2],
   },
-  sectionLabel: {
-    marginBottom: spacing[1],
-    marginTop: spacing[2],
-  },
-  empty: {
-    marginTop: spacing[4],
-    textAlign: 'center',
-  },
   listSpinner: {
     marginTop: spacing[4],
   },
@@ -896,42 +616,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing[3],
     padding: spacing[3],
-  },
-  pickPromptArea: {
-    justifyContent: 'flex-start',
-    paddingTop: spacing[4],
-  },
-  pickGutter: {
-    paddingHorizontal: spacing[4],
-  },
-  glyphCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pickDetails: {
-    gap: spacing[1],
-  },
-  pickPills: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing[1],
-  },
-  addGymCard: {
-    paddingTop: spacing[2],
-  },
-  pickFooter: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  retry: {
-    alignSelf: 'center',
-    marginTop: spacing[2],
-    paddingVertical: spacing[1],
   },
   editButton: {
     padding: spacing[1],

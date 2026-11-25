@@ -1,0 +1,55 @@
+// Gym finder telemetry (mobile, from 2026-11): the add-a-board wizard's
+// "Which gym?" step and the gym map. The names and what each one means live in
+// `SHARED_EVENTS` (events.ts); this file types the PROPERTIES and pairs each
+// with its own name, so a call site cannot invent a field or send one event's
+// props under another's name.
+//
+// Nothing here identifies a gym, a place or a climber: every field is a member
+// of a closed string union. The question these answer is how climbers find a
+// gym (list or pin, town or name, locate) and how often the gym isn't there.
+
+import { SHARED_EVENTS } from './events';
+
+/** Where the event fired: the wizard's "Which gym?" step, or the gym map. */
+export type GymFinderSurface = 'wizard_gym_step' | 'gyms_map';
+
+/** How the chosen gym was reached: its row in the list, or its pin on the map. */
+export type GymFinderPickSection = 'list' | 'map_pin';
+
+/** What the search field was used for: a town to look around, or a gym's name. */
+export type GymFinderSearchKind = 'town' | 'name';
+
+type GymFinderPayload<TName extends string, TProperties extends Record<string, string>> = {
+  name: TName;
+  properties: TProperties;
+};
+
+export type GymFinderGymPickedProps = { surface: GymFinderSurface; section: GymFinderPickSection };
+
+export function gymFinderGymPicked(
+  properties: GymFinderGymPickedProps,
+): GymFinderPayload<typeof SHARED_EVENTS.GymFinderGymPicked, GymFinderGymPickedProps> {
+  return { name: SHARED_EVENTS.GymFinderGymPicked, properties };
+}
+
+export type GymFinderSurfaceProps = { surface: GymFinderSurface };
+
+export function gymFinderAddMyGymTapped(
+  surface: GymFinderSurface,
+): GymFinderPayload<typeof SHARED_EVENTS.GymFinderAddMyGymTapped, GymFinderSurfaceProps> {
+  return { name: SHARED_EVENTS.GymFinderAddMyGymTapped, properties: { surface } };
+}
+
+export type GymFinderSearchUsedProps = { surface: GymFinderSurface; kind: GymFinderSearchKind };
+
+export function gymFinderSearchUsed(
+  properties: GymFinderSearchUsedProps,
+): GymFinderPayload<typeof SHARED_EVENTS.GymFinderSearchUsed, GymFinderSearchUsedProps> {
+  return { name: SHARED_EVENTS.GymFinderSearchUsed, properties };
+}
+
+export function gymFinderLocateTapped(
+  surface: GymFinderSurface,
+): GymFinderPayload<typeof SHARED_EVENTS.GymFinderLocateTapped, GymFinderSurfaceProps> {
+  return { name: SHARED_EVENTS.GymFinderLocateTapped, properties: { surface } };
+}
