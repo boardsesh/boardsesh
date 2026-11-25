@@ -1,23 +1,17 @@
-import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { useId, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { PlaceSuggestion } from '@boardsesh/shared-schema';
-import { SEARCH_PLACES, type SearchPlacesQueryResponse } from '@boardsesh/graphql/operations';
-import { isPlaceSearchQuery, PLACE_SEARCH_DEBOUNCE_MS, placeSuggestionLabel } from '@boardsesh/gym-filters';
-import { getHttpClient } from '../../lib/graphql/client';
+import { placeSuggestionLabel } from '@boardsesh/gym-filters';
+import { usePlaceSuggestions } from '../../lib/use-place-suggestions';
 import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
 import type { GymSearchFieldProps } from './GymSearchField.types';
-
-type PlaceLookup = {
-  query: string;
-  status: 'ready' | 'error';
-  suggestions: PlaceSuggestion[];
-};
 
 /** Browser city search uses our gazetteer, independently of GPS permission. */
 export function GymSearchField({
   text,
   hasSelectedPlace,
+  placeholder,
   onChangeText,
   onSubmit,
   onSelectPlace,
@@ -28,37 +22,12 @@ export function GymSearchField({
   const listId = useId();
   const statusId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [lookup, setLookup] = useState<PlaceLookup | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
-  const query = text.trim();
-  const canSearch = !hasSelectedPlace && isPlaceSearchQuery(query);
-  const currentLookup = canSearch && lookup?.query === query ? lookup : null;
-  const suggestions = currentLookup?.suggestions ?? [];
+  const { canSearch, lookup: currentLookup, suggestions } = usePlaceSuggestions(text, hasSelectedPlace);
   const showSuggestions = isOpen && suggestions.length > 0;
   const activePlace = showSuggestions ? suggestions[activeIndex] : undefined;
-
-  useEffect(() => {
-    if (!canSearch) return;
-    const controller = new AbortController();
-    const timer = setTimeout(async () => {
-      try {
-        const response = await getHttpClient().request<SearchPlacesQueryResponse>({
-          document: SEARCH_PLACES,
-          variables: { query },
-          signal: controller.signal,
-        });
-        if (!controller.signal.aborted)
-          setLookup({ query, status: 'ready', suggestions: response.searchPlaces.slice(0, 5) });
-      } catch {
-        if (!controller.signal.aborted) setLookup({ query, status: 'error', suggestions: [] });
-      }
-    }, PLACE_SEARCH_DEBOUNCE_MS);
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [canSearch, query]);
+  const fieldLabel = placeholder ?? t('mobile.gyms.searchPlaceholder');
 
   const selectPlace = (place: PlaceSuggestion) => {
     setIsOpen(false);
@@ -128,8 +97,8 @@ export function GymSearchField({
           type="search"
           role="combobox"
           value={text}
-          aria-label={t('mobile.gyms.searchPlaceholder')}
-          placeholder={t('mobile.gyms.searchPlaceholder')}
+          aria-label={fieldLabel}
+          placeholder={fieldLabel}
           aria-autocomplete="list"
           aria-expanded={showSuggestions}
           aria-controls={showSuggestions ? listId : undefined}

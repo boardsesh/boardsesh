@@ -126,7 +126,9 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'SearchBoards',
   'SearchClimbsCount',
   'SearchGyms',
-  'SearchPlaces', // Browser-only city suggestions; native Maestro captures keep the native geocoder.
+  // Town suggestions under a gym search field (/gyms, the add-a-board gym step): only sent
+  // once 3+ characters are typed there, and no capture flow types into a gym search.
+  'SearchPlaces',
   'SearchUsers',
   'SimilarClimbs',
   'SprayDetection',

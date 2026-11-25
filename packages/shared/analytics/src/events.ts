@@ -1282,9 +1282,10 @@ export const SHARED_EVENTS = {
   // range's It's my own board, a gym page) }.
   BoardKindChosen: 'Board Kind Chosen',
   // The climber began looking for their gym's wall. Props: { method: location
-  // (a fix came back) | text (the first search typed; length only) | gym_page
-  // (opened straight on a gym's walls), boardType (the chip chosen, or null),
-  // queryLength }. Once per method per screen.
+  // (a fix came back) | text (the first search typed; length only) | place (a
+  // town picked from the search's suggestions) | gym_page (opened straight on
+  // a gym's walls), boardType (the type chosen, or null), queryLength }. Once
+  // per method per screen.
   BoardWallSearchStarted: 'Board Wall Search Started',
   // A gym's existing walls came back. Props: { boardType, exactCount,
   // nearMissCount (SETS_DIFFER + LAYOUT_OR_SIZE_DIFFERS), nearbyCount (walls on

@@ -2,31 +2,28 @@ import { describe, expect, it } from 'vitest';
 import {
   isPickableBoardType,
   likelyBoardType,
-  locationRowState,
+  locationPromptStatus,
   lookupState,
   notListedRowState,
 } from '../find-wall-state';
 
-describe('locationRowState', () => {
+describe('locationPromptStatus', () => {
   it.each([
-    // Never asked: the button and its reason, never a prompt on open.
-    { status: 'idle', permission: 'unknown', platform: 'ios', state: 'not_asked' },
-    { status: 'idle', permission: 'ask', platform: 'android', state: 'not_asked' },
-    { status: 'loading', permission: 'ask', platform: 'ios', state: 'loading' },
-    { status: 'granted', permission: 'granted', platform: 'ios', state: 'granted' },
-    // Refused, or Location Services off for the whole phone.
-    { status: 'denied', permission: 'blocked', platform: 'ios', state: 'denied' },
-    { status: 'denied', permission: 'ask', platform: 'android', state: 'denied' },
-    { status: 'unavailable', permission: 'granted', platform: 'ios', state: 'denied' },
-    // Read as blocked on open, before anything was asked.
-    { status: 'idle', permission: 'blocked', platform: 'ios', state: 'denied' },
-    // A browser refusal is final: only the site's settings undo it.
-    { status: 'denied', permission: 'blocked', platform: 'web', state: 'blocked_web' },
-    { status: 'idle', permission: 'blocked', platform: 'web', state: 'blocked_web' },
-    // A browser fix that failed with permission still allowed is not a block.
-    { status: 'unavailable', permission: 'granted', platform: 'web', state: 'denied' },
-  ] as const)('$status / $permission on $platform reads $state', ({ status, permission, platform, state }) => {
-    expect(locationRowState({ status, permission, platform })).toBe(state);
+    // Still reading the permission on open: a spinner, not a button that flashes.
+    { checked: false, status: 'idle', permission: 'unknown', drawn: 'idle' },
+    // Never asked, or Android after one no: the button asks.
+    { checked: true, status: 'idle', permission: 'unknown', drawn: 'unavailable' },
+    { checked: true, status: 'idle', permission: 'ask', drawn: 'unavailable' },
+    { checked: true, status: 'denied', permission: 'ask', drawn: 'unavailable' },
+    // A fix that failed with permission allowed: try again, not Settings.
+    { checked: true, status: 'unavailable', permission: 'granted', drawn: 'unavailable' },
+    // Refused for good: Settings (or, in a browser, search a town).
+    { checked: true, status: 'idle', permission: 'blocked', drawn: 'denied' },
+    { checked: true, status: 'denied', permission: 'blocked', drawn: 'denied' },
+    { checked: false, status: 'loading', permission: 'granted', drawn: 'loading' },
+    { checked: true, status: 'granted', permission: 'granted', drawn: 'granted' },
+  ] as const)('$status / $permission (read: $checked) draws $drawn', ({ checked, status, permission, drawn }) => {
+    expect(locationPromptStatus({ checked, status, permission })).toBe(drawn);
   });
 });
 

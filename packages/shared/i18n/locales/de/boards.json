@@ -574,21 +574,11 @@
     },
     "findWall": {
       "screenTitle": "Finde das Board deiner Halle",
-      "searchPlaceholder": "Hallen oder Boards suchen",
       "boardType": "Board-Typ",
-      "useMyLocation": "Meinen Standort nutzen",
-      "useMyLocationHint": "Sieh Boards in deiner Nähe, ohne zu tippen.",
-      "locationDenied": "Standort ist aus. Such stattdessen nach Namen.",
-      "locationBlockedWeb": "Erlaube den Standort für diese Seite in deinem Browser oder such nach Namen.",
       "offline": "Du bist offline. Um das Board deiner Halle zu finden, brauchst du Empfang.",
       "retry": "Nochmal versuchen",
       "gyms": "Hallen",
-      "boards": "Boards",
       "gymsFailed": "Hallen konnten nicht gesucht werden",
-      "boardsFailed": "Boards konnten nicht gesucht werden",
-      "noMatches": "Keine Halle und kein Board passt dazu",
-      "searchPrompt": "Tipp den Namen deiner Halle ein oder nutz deinen Standort.",
-      "gymNotListed": "Meine Halle fehlt in der Liste",
       "signInToAdd": "Melde dich an, um ein Board hinzuzufügen",
       "pickBoardType": "Welches Board ist es?",
       "gymFailed": "Diese Halle konnte nicht geladen werden",
@@ -618,6 +608,15 @@
       "confirmBodyLookupFailed": "Wir konnten die Boards von {{gym}} nicht prüfen. Deins trotzdem hinzufügen?",
       "confirmDifferent": "Es ist eine andere Wand",
       "confirmKeepLooking": "Weiter suchen"
+    },
+    "gymStep": {
+      "searchPlaceholder": "Stadt oder Halle suchen",
+      "anyBoard": "Jedes Board",
+      "inThisArea": "Hallen in dieser Gegend",
+      "noNameMatch": "Keine Halle heißt so",
+      "noAddress": "Noch keine Adresse",
+      "addGym": "Meine Halle hinzufügen",
+      "addGymHint": "Nicht dabei? Füg sie mit deinem Board hinzu"
     },
     "boardDetail": {
       "setActive": "Als aktives Board setzen",

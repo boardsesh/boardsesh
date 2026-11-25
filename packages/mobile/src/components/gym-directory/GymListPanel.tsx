@@ -21,6 +21,10 @@ import { useGymPanelGesture, type GymPanelDetent } from './use-gym-panel-gesture
 import { findRowIndex, type GymListRow } from './gym-list-rows';
 import { GymShareButton } from './GymShareButton';
 import { GymListingPill } from '../gym-page/GymListingPill';
+import { InsetGroupedCell } from '../gym-page/InsetGroupedCell';
+import type { GroupedCellPosition } from '../gym-page/gym-page-view-model';
+import { ArtRow } from '../ArtRow';
+import { StatusPill } from '../StatusPill';
 
 export type GymListPanelHandle = {
   /** Scroll the row carrying this key into view (for a marker tap). */
@@ -31,10 +35,35 @@ export type GymListPanelHandle = {
   ensureVisible: () => void;
 };
 
-type GymListPanelProps = {
+type GymListPanelSharedProps = {
   data: GymListRow[];
   /** Drives the default detent + whether the Low ("reveal the map") detent exists. */
   mapAvailable: boolean;
+  /** The pinned search field (lives in the panel header so it survives a blank map).
+   *  Null when the screen pins its search above the map instead. */
+  searchSlot: ReactNode;
+  /** The "Showing <place>" caption row, when a place is searched. */
+  placeCaption?: ReactNode;
+  /** Filter chips slot — null until the board-type filter ships. */
+  filterSlot?: ReactNode;
+  /** Shown in place of the list before a location/place resolves (the search header
+   *  stays usable so the user can geocode a place without granting location). */
+  locationPrompt?: ReactNode;
+  /**
+   * The measured height of the box the panel sits in, when it isn't the whole
+   * window (a screen that keeps its header bar and a search field above the
+   * map). See `useGymPanelGesture`.
+   */
+  availableHeight?: number;
+  /** Fraction of the box the panel covers at its Medium (default) detent. */
+  mediumFraction?: number;
+  /** Offer the Low ("reveal the map") detent. Default true. */
+  allowLowDetent?: boolean;
+};
+
+/** /gyms: tap a gym to expand its boards, tap a board to make it active. */
+type GymListPanelBrowseProps = GymListPanelSharedProps & {
+  mode?: 'browse';
   /** Tap/expand a gym row — the screen toggles expansion, selects it, recenters the map. */
   onPressGym: (gym: Gym) => void;
   /** Tap a board (under a gym, or a standalone) — makes it active. */
@@ -51,16 +80,19 @@ type GymListPanelProps = {
   onOpenGym?: (gym: Gym) => void;
   /** Caption shown under an expanded gym that has no boards yet. */
   noBoardsLabel: string;
-  /** The pinned search field (lives in the panel header so it survives a blank map). */
-  searchSlot: ReactNode;
-  /** The "Showing <place>" caption row, when a place is searched. */
-  placeCaption?: ReactNode;
-  /** Filter chips slot — null until the board-type filter ships. */
-  filterSlot?: ReactNode;
-  /** Shown in place of the list before a location/place resolves (the search header
-   *  stays usable so the user can geocode a place without granting location). */
-  locationPrompt?: ReactNode;
 };
+
+/**
+ * The add-a-board gym step: the rows are gyms to choose (`buildGymPickRows`),
+ * one tap each, ending in "Add my gym". Nothing expands, activates or edits.
+ */
+type GymListPanelPickProps = GymListPanelSharedProps & {
+  mode: 'pick';
+  onPickGym: (gym: Gym) => void;
+  onAddGym: () => void;
+};
+
+export type GymListPanelProps = GymListPanelBrowseProps | GymListPanelPickProps;
 
 const keyExtractor = (row: GymListRow) => row.key;
 const getItemType = (row: GymListRow) => row.kind;
@@ -71,25 +103,36 @@ const getItemType = (row: GymListRow) => row.kind;
  * touch-catcher — so the uncovered map above it stays pannable. A pinned header
  * (handle + search + filter slot) travels with the sheet; the body is one
  * virtualized FlashList. The drag/scroll handoff lives in {@link useGymPanelGesture}.
+ *
+ * Two modes: `browse` (/gyms, the default) expands a gym to its boards and
+ * activates a board; `pick` (the add-a-board gym step) lists gyms to choose,
+ * one tap each, and ends in "Add my gym".
  */
-export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(function GymListPanel(
-  {
+export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(function GymListPanel(props, ref) {
+  const {
     data,
     mapAvailable,
-    onPressGym,
-    onActivateBoard,
-    onEditGym,
-    onEditBoard,
-    onClaimGym,
-    onOpenGym,
-    noBoardsLabel,
     searchSlot,
     placeCaption,
     filterSlot,
     locationPrompt,
-  },
-  ref,
-) {
+    availableHeight,
+    mediumFraction,
+    allowLowDetent,
+  } = props;
+  const pickMode = props.mode === 'pick';
+  // One set of handlers per mode. The other mode's rows never reach renderItem,
+  // so its slots are no-ops rather than optional props on every row.
+  const onPressGym = props.mode === 'pick' ? noopGym : props.onPressGym;
+  const onActivateBoard = props.mode === 'pick' ? noopBoard : props.onActivateBoard;
+  const onEditGym = props.mode === 'pick' ? noopGym : props.onEditGym;
+  const onEditBoard = props.mode === 'pick' ? noopBoard : props.onEditBoard;
+  const onClaimGym = props.mode === 'pick' ? undefined : props.onClaimGym;
+  const onOpenGym = props.mode === 'pick' ? undefined : props.onOpenGym;
+  const noBoardsLabel = props.mode === 'pick' ? '' : props.noBoardsLabel;
+  const onPickGym = props.mode === 'pick' ? props.onPickGym : noopGym;
+  const onAddGym = props.mode === 'pick' ? props.onAddGym : noop;
+
   const theme = useTheme();
   const { systemColors } = theme;
   const insets = useSafeAreaInsets();
@@ -107,7 +150,7 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
     onHeaderLayout,
     snapTo,
     ensureVisible,
-  } = useGymPanelGesture({ mapAvailable });
+  } = useGymPanelGesture({ mapAvailable, availableHeight, mediumFraction, allowLow: allowLowDetent });
 
   useImperativeHandle(
     ref,
@@ -126,11 +169,23 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
     ({ item }: { item: GymListRow }) => {
       switch (item.kind) {
         case 'sectionHeader':
-          return <SectionHeaderRow label={item.label} />;
+          return pickMode ? (
+            <View style={styles.pickGutter}>
+              <SectionHeaderRow label={item.label} />
+            </View>
+          ) : (
+            <SectionHeaderRow label={item.label} />
+          );
         case 'loading':
           return <ActivityIndicator style={styles.listSpinner} />;
         case 'empty':
-          return <EmptyRow label={item.label} />;
+          return pickMode ? (
+            <View style={styles.pickGutter}>
+              <EmptyRow label={item.label} />
+            </View>
+          ) : (
+            <EmptyRow label={item.label} />
+          );
         case 'gym':
           return (
             <GymRow
@@ -159,14 +214,39 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
               onEditBoard={onEditBoard}
             />
           );
+        case 'pickGym':
+          return (
+            <PickGymRow
+              gym={item.gym}
+              subtitle={item.subtitle}
+              boardsLabel={item.boardsLabel}
+              position={item.position}
+              selected={item.selected}
+              onPickGym={onPickGym}
+            />
+          );
+        case 'addGym':
+          return <AddGymRow title={item.title} subtitle={item.subtitle} onAddGym={onAddGym} />;
       }
     },
-    [noBoardsLabel, onPressGym, onActivateBoard, onEditGym, onEditBoard, onClaimGym, onOpenGym],
+    [
+      pickMode,
+      noBoardsLabel,
+      onPressGym,
+      onActivateBoard,
+      onEditGym,
+      onEditBoard,
+      onClaimGym,
+      onOpenGym,
+      onPickGym,
+      onAddGym,
+    ],
   );
 
+  // Pick rows are inset-grouped cells that carry their own 16pt gutter.
   const listContentStyle = useMemo(
-    () => ({ paddingHorizontal: spacing[4], paddingBottom: insets.bottom + spacing[6] }),
-    [insets.bottom],
+    () => ({ paddingHorizontal: pickMode ? 0 : spacing[4], paddingBottom: insets.bottom + spacing[6] }),
+    [insets.bottom, pickMode],
   );
 
   const cornerStyle = theme.sheet.corners ?? styles.defaultCorners;
@@ -205,6 +285,9 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
                   bounces={false}
                   overScrollMode="never"
                   showsVerticalScrollIndicator={false}
+                  // Pick mode's search sits above the panel: a row tap while the
+                  // keyboard is up should pick the gym, not just close the keyboard.
+                  keyboardShouldPersistTaps={pickMode ? 'handled' : undefined}
                   contentContainerStyle={listContentStyle}
                 />
               </GestureDetector>
@@ -244,6 +327,105 @@ const EmptyRow = memo(function EmptyRow({ label }: { label: string }) {
     <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.empty}>
       {label}
     </Text>
+  );
+});
+
+const noop = () => {};
+const noopGym = (_gym: Gym) => {};
+const noopBoard = (_board: UserBoard) => {};
+
+/** The art at the head of a pick row: a gym glyph on a quiet 36pt circle. */
+const GymGlyph = memo(function GymGlyph({ icon }: { icon: 'gym' | 'plus' }) {
+  const { systemColors } = useTheme();
+  return (
+    <View style={[styles.glyphCircle, { backgroundColor: systemColors.tertiaryFill }]}>
+      <Icon name={icon} size={18} color={systemColors.secondaryLabel} />
+    </View>
+  );
+});
+
+const GYM_GLYPH = <GymGlyph icon="gym" />;
+const ADD_GLYPH = <GymGlyph icon="plus" />;
+
+/**
+ * A gym to choose in pick mode: its name, "1.2 km · street", then how many
+ * boards it has and, when its staff run it, "Run by the gym". One slice of an
+ * inset-grouped card; the whole row picks.
+ */
+const PickGymRow = memo(function PickGymRow({
+  gym,
+  subtitle,
+  boardsLabel,
+  position,
+  selected,
+  onPickGym,
+}: {
+  gym: Gym;
+  subtitle: string;
+  boardsLabel: string;
+  position: GroupedCellPosition;
+  selected: boolean;
+  onPickGym: (gym: Gym) => void;
+}) {
+  const handlePress = useCallback(() => onPickGym(gym), [onPickGym, gym]);
+  const details = useMemo(
+    () => (
+      <View style={styles.pickDetails}>
+        <Text variant="subheadline" tone="secondary">
+          {subtitle}
+        </Text>
+        <View style={styles.pickPills}>
+          <StatusPill label={boardsLabel} testID="gym-pick-boards" />
+          {gym.listingState === 'RUN_BY_GYM' ? (
+            <GymListingPill listingState={gym.listingState} testID="gym-pick-listing" />
+          ) : null}
+        </View>
+      </View>
+    ),
+    [subtitle, boardsLabel, gym.listingState],
+  );
+  return (
+    <InsetGroupedCell position={position} separatorInset="compact">
+      <ArtRow
+        art={GYM_GLYPH}
+        artSize="compact"
+        title={gym.name}
+        titleVariant="body"
+        subtitle={details}
+        accessory="chevron"
+        selected={selected}
+        onPress={handlePress}
+        testID={`gym-pick-${gym.uuid}`}
+      />
+    </InsetGroupedCell>
+  );
+});
+
+/** The last row in pick mode, its own card: the gym isn't listed, add it. */
+const AddGymRow = memo(function AddGymRow({
+  title,
+  subtitle,
+  onAddGym,
+}: {
+  title: string;
+  subtitle: string;
+  onAddGym: () => void;
+}) {
+  return (
+    <View style={styles.addGymCard}>
+      <InsetGroupedCell position="only" separatorInset="compact">
+        <ArtRow
+          art={ADD_GLYPH}
+          artSize="compact"
+          title={title}
+          titleVariant="body"
+          subtitle={subtitle}
+          accessory="chevron"
+          onPress={onAddGym}
+          testID="gym-pick-add-gym"
+        />
+      </InsetGroupedCell>
+    </View>
   );
 });
 
@@ -640,6 +822,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing[3],
     padding: spacing[3],
+  },
+  pickGutter: {
+    paddingHorizontal: spacing[4],
+  },
+  glyphCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pickDetails: {
+    gap: spacing[1],
+  },
+  pickPills: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing[1],
+  },
+  addGymCard: {
+    marginTop: spacing[4],
   },
   editButton: {
     padding: spacing[1],

@@ -155,6 +155,11 @@ vi.mock('../../../src/lib/use-device-location', () => ({
     requestIfAllowed: locationMocks.requestIfAllowed,
   }),
 }));
+// The native field's town suggestions talk to the API; this screen's tests drive
+// a place through `onSelectPlace` instead.
+vi.mock('../../../src/lib/use-place-suggestions', () => ({
+  usePlaceSuggestions: () => ({ canSearch: false, lookup: null, suggestions: [] }),
+}));
 vi.mock('../../../src/lib/use-place-search', () => ({
   useGeocodePlace: () => ({ geocode: geocodeMock, isGeocoding: false }),
 }));
