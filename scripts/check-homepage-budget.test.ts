@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
@@ -70,7 +70,7 @@ describe('rendered homepage budget assertion', () => {
   });
 });
 
-async function createArtifact(serverSource: string) {
+async function createArtifact(serverSource: string, prerender?: { html: string; revalidate: number | false }) {
   const directory = await mkdtemp(join(tmpdir(), 'homepage-budget-test-'));
   const webDirectory = join(directory, 'packages/web');
   const standaloneWeb = join(webDirectory, '.next/standalone/packages/web');
@@ -80,6 +80,18 @@ async function createArtifact(serverSource: string) {
   await writeFile(join(standaloneWeb, '.next/cache/must-not-copy'), 'old cache');
   await writeFile(join(standaloneWeb, '.env.local'), 'PRIVATE_FIXTURE_SECRET=must-not-copy');
   await writeFile(join(standaloneWeb, 'server.js'), serverSource);
+  if (prerender) {
+    await mkdir(join(standaloneWeb, '.next/server/app'), { recursive: true });
+    await writeFile(join(standaloneWeb, '.next/server/app/index.html'), prerender.html);
+    await writeFile(
+      join(standaloneWeb, '.next/prerender-manifest.json'),
+      JSON.stringify({
+        routes: {
+          '/': { initialRevalidateSeconds: prerender.revalidate },
+        },
+      }),
+    );
+  }
   await mkdir(join(directory, 'packages/shared/i18n/locales/en-US'), { recursive: true });
   await writeFile(
     join(directory, 'packages/shared/i18n/locales/en-US/marketing.json'),
@@ -98,7 +110,69 @@ http.createServer(async (_request, response) => {
   response.end('<main><h1>A fixture homepage</h1>'+'<p>'+stats.communityStats.climbersLast30Days.toLocaleString('en-US')+' '+stats.communityStats.litLast30Days.toLocaleString('en-US')+'</p></main>');
 }).listen(Number(process.env.PORT),process.env.HOSTNAME);`;
 
+const isrServer = `const http = require('node:http');
+const fs = require('node:fs');
+const homepage = '.next/server/app/index.html';
+if (fs.existsSync('.next/cache/must-not-copy')) throw new Error('data cache was copied');
+let regenerating;
+http.createServer((_request,response) => {
+  const html = fs.readFileSync(homepage,'utf8');
+  if (Date.now() - fs.statSync(homepage).mtimeMs > 900000 && !regenerating) {
+    regenerating = (async () => {
+      const result = await fetch(process.env.BACKEND_INTERNAL_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:'query GetCommunityStats { fixture }'})});
+      const stats = (await result.json()).data.communityStats;
+      fs.writeFileSync(homepage,'<main><h1>A fixture homepage</h1><p>'+stats.climbersLast30Days.toLocaleString('en-US')+' '+stats.litLast30Days.toLocaleString('en-US')+'</p></main>');
+    })();
+  }
+  response.setHeader('Content-Type','text/html');
+  response.end(html);
+}).listen(Number(process.env.PORT),process.env.HOSTNAME);`;
+
 describe('isolated artifact runner', () => {
+  it('checks build fallback HTML and populated ISR recovery without changing the original artifact', async () => {
+    const fallbackHtml = `<main><h1>${title}</h1><p>Climb with your crew</p></main>`;
+    const artifact = await createArtifact(isrServer, { html: fallbackHtml, revalidate: 900 });
+    const originalPath = join(artifact.webDirectory, '.next/standalone/packages/web/.next/server/app/index.html');
+    const originalStat = await stat(originalPath);
+    try {
+      const result = await checkHomepageBudget(artifact.webDirectory);
+      expect(result.renderMode).toBe('isr-recovered');
+      expect(result.prerenderGzipBytes).toBe(assertHomepageBudget(response(fallbackHtml), title, []));
+      const populatedHtml = `<main><h1>${title}</h1><p>${fixture.visibleMarkers.join(' ')}</p></main>`;
+      expect(result.gzipBytes).toBe(assertHomepageBudget(response(populatedHtml), title, fixture.visibleMarkers));
+      expect(await readFile(originalPath, 'utf8')).toBe(fallbackHtml);
+      expect((await stat(originalPath)).mtimeMs).toBe(originalStat.mtimeMs);
+    } finally {
+      await rm(artifact.directory, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects an oversized prerender even when regeneration could produce a smaller page', async () => {
+    const payload = Array.from({ length: 6000 }, (_, index) =>
+      createHash('sha256').update(String(index)).digest('hex'),
+    ).join('');
+    const artifact = await createArtifact(successfulServer, {
+      html: `${completeHtml}<script>${payload}</script>`,
+      revalidate: 900,
+    });
+    try {
+      await expect(checkHomepageBudget(artifact.webDirectory)).rejects.toThrow(
+        'homepage gzip HTML exceeds 60000 bytes',
+      );
+    } finally {
+      await rm(artifact.directory, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed when a prerendered homepage cannot regenerate', async () => {
+    const artifact = await createArtifact(successfulServer, { html: completeHtml, revalidate: false });
+    try {
+      await expect(checkHomepageBudget(artifact.webDirectory)).rejects.toThrow('finite positive ISR interval');
+    } finally {
+      await rm(artifact.directory, { recursive: true, force: true });
+    }
+  });
+
   it('renders populated fixtures, excludes credentials/cache, and cleans its child', async () => {
     const artifact = await createArtifact(successfulServer);
     vi.stubEnv('PRIVATE_FIXTURE_SECRET', 'must-not-inherit');
