@@ -663,7 +663,8 @@
       "cancel": "暂时不用"
     },
     "locationAsk": {
-      "title": "查看附近的岩馆",
+      "titleBoards": "查看附近的训练板",
+      "titleGyms": "查看附近的岩馆",
       "body": "按距离排序。不开启也能搜索。",
       "browserBody": "请在浏览器中允许此网站使用位置。不开启也能搜索。",
       "allow": "允许",

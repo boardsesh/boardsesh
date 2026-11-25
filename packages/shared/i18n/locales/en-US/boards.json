@@ -663,7 +663,8 @@
       "cancel": "Not now"
     },
     "locationAsk": {
-      "title": "See gyms near you",
+      "titleBoards": "See boards near you",
+      "titleGyms": "See gyms near you",
       "body": "Sorts by distance. Search works without it.",
       "browserBody": "Allow location for this site in your browser. Search works without it.",
       "allow": "Allow",

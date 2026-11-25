@@ -663,8 +663,9 @@
       "cancel": "Non ora"
     },
     "locationAsk": {
-      "title": "Vedi le palestre vicino a te",
-      "body": "Le ordina per distanza. La ricerca funziona anche senza.",
+      "titleBoards": "Vedi i pannelli vicino a te",
+      "titleGyms": "Vedi le palestre vicino a te",
+      "body": "In ordine di distanza. La ricerca funziona anche senza.",
       "browserBody": "Consenti la posizione per questo sito nel tuo browser. La ricerca funziona anche senza.",
       "allow": "Consenti",
       "openSettings": "Apri Impostazioni",

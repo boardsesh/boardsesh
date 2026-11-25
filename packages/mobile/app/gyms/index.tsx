@@ -75,8 +75,10 @@ export default function GymDiscovery() {
   const { systemColors, brandColors } = useTheme();
   const insets = useSafeAreaInsets();
   // A climber who says no to the prompt may ask again from the card: Android's
-  // second ask, or Settings once only Settings can turn it on.
-  const location = useDeviceLocation({ retryAfterDenial: true });
+  // second ask, or Settings once only Settings can turn it on. Coming back
+  // from Settings (the card's, or the quiet Use my location's) reads the
+  // permission again, so a grant there centres the map with no second tap.
+  const location = useDeviceLocation({ retryAfterDenial: true, rereadWhenActive: true });
   const { geocode, isGeocoding } = useGeocodePlace();
   const { returnTo, source, from, boardType } = useLocalSearchParams<{
     returnTo?: string;

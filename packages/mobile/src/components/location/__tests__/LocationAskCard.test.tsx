@@ -50,8 +50,17 @@ vi.mock('react-i18next', () => ({
 vi.mock('../../Text', () => ({ Text: ({ children }: Children) => createElement('span', null, children) }));
 vi.mock('../../Card', () => ({ Card: ({ children }: Children) => createElement('section', null, children) }));
 vi.mock('../../Button', () => ({
-  Button: ({ title, onPress, variant }: { title: string; onPress: () => void; variant?: string }) =>
-    createElement('button', { type: 'button', onClick: onPress, 'data-variant': variant }, title),
+  Button: ({
+    title,
+    onPress,
+    variant,
+    disabled,
+  }: {
+    title: string;
+    onPress: () => void;
+    variant?: string;
+    disabled?: boolean;
+  }) => createElement('button', { type: 'button', onClick: onPress, 'data-variant': variant, disabled }, title),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { secondaryLabel: '#666' } }),
@@ -68,15 +77,21 @@ vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 } 
 
 import { resetAllSettings } from '../../../settings/hooks';
 import { LocationAskCard } from '../LocationAskCard';
-import type { LocationPermission } from '../../../lib/use-device-location';
+import type { LocationPermission, LocationRequest, LocationRequestOptions } from '../../../lib/use-device-location';
 
 const TITLE = 'See gyms near you';
 const BODY = 'Sorts by distance. Search works without it.';
 
 const handlers = {
-  onAllow: vi.fn<() => Promise<LocationPermission>>(),
+  onAllow: vi.fn<LocationRequest>(),
   onRecheck: vi.fn<() => Promise<LocationPermission>>(),
 };
+
+/** A prompt answered at once, with a fix that follows straight after. */
+async function answeredRequest(options?: LocationRequestOptions): Promise<LocationPermission> {
+  options?.onAnswer?.('granted');
+  return 'granted';
+}
 
 function renderCard(permission: LocationPermission, surface: 'board_picker' | 'gym_finder' = 'gym_finder') {
   return render(<LocationAskCard surface={surface} permission={permission} {...handlers} />);
@@ -92,12 +107,50 @@ beforeEach(() => {
   settingsCtrl.opened.mockClear();
   appState.listeners.clear();
   trackMock.mockClear();
-  handlers.onAllow.mockReset().mockResolvedValue('granted');
+  handlers.onAllow.mockReset().mockImplementation(answeredRequest);
   handlers.onRecheck.mockReset().mockResolvedValue('granted');
 });
 afterEach(cleanup);
 
 describe('LocationAskCard', () => {
+  // The picker's Near you lists boards; the gym map lists gyms.
+  it('names what location finds on each surface', () => {
+    renderCard('ask', 'board_picker');
+    expect(screen.getByText('See boards near you')).toBeTruthy();
+    expect(screen.queryByText(TITLE)).toBeNull();
+  });
+
+  // The answer is reported when the prompt closes, not seconds later when the
+  // fix lands, and a second tap while the prompt is up sends nothing.
+  it('reports the answer before the fix, and takes one tap while the prompt is up', () => {
+    let answerPrompt: ((permission: LocationPermission) => void) | undefined;
+    handlers.onAllow.mockImplementation(
+      (options) =>
+        new Promise<LocationPermission>(() => {
+          // The fix never lands in this test.
+          answerPrompt = options?.onAnswer;
+        }),
+    );
+    renderCard('ask');
+    const allow = screen.getByRole('button', { name: 'Allow' });
+
+    fireEvent.click(allow);
+    expect(allow.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(allow);
+    expect(handlers.onAllow).toHaveBeenCalledOnce();
+    expect(trackMock).not.toHaveBeenCalledWith('Location Ask Answered', expect.anything());
+
+    act(() => answerPrompt?.('blocked'));
+
+    expect(trackMock.mock.calls.filter(([event]) => event === 'Location Ask Answered')).toHaveLength(1);
+    expect(trackMock).toHaveBeenLastCalledWith('Location Ask Answered', {
+      surface: 'gym_finder',
+      answer: 'allow',
+      permission: 'blocked',
+    });
+    expect(screen.getByRole('button', { name: 'Allow' }).hasAttribute('disabled')).toBe(false);
+  });
+
   it('asks with the system prompt while it can still ask, and reports the answer', async () => {
     renderCard('ask');
     expect(screen.getByText(TITLE)).toBeTruthy();

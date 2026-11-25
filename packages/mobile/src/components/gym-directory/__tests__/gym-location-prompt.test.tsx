@@ -46,15 +46,36 @@ vi.mock('../../../lib/location-ask', () => ({
   shouldOfferLocationAsk: (permission: string, snoozed: boolean) =>
     (permission === 'ask' || permission === 'blocked') && !snoozed,
 }));
-// The card's buttons, snooze and Settings trip are its own suite's
-// (components/location/__tests__/LocationAskCard.test.tsx).
-vi.mock('../../location/LocationAskCard', () => ({
-  LocationAskCard: ({ permission, surface }: { permission: string; surface: string }) =>
-    createElement('div', {
-      'data-testid': 'location-ask-card',
-      'data-permission': permission,
-      'data-surface': surface,
-    }),
+// The card's buttons, snooze, Settings trip and its once-per-mount Shown event
+// are its own suite's (components/location/__tests__/LocationAskCard.test.tsx);
+// here, whether it shows and whether it stays the same card.
+const cardMounts = vi.hoisted(() => ({ count: 0 }));
+vi.mock('../../location/LocationAskCard', async () => {
+  const { useEffect } = await import('react');
+  return {
+    LocationAskCard: function MockLocationAskCard({ permission, surface }: { permission: string; surface: string }) {
+      useEffect(() => {
+        cardMounts.count += 1;
+      }, []);
+      return createElement('div', {
+        'data-testid': 'location-ask-card',
+        'data-permission': permission,
+        'data-surface': surface,
+      });
+    },
+  };
+});
+vi.mock('../../TextAction', () => ({
+  TextAction: ({ label, onPress, testID }: { label: string; onPress: () => void; testID?: string }) =>
+    createElement('button', { type: 'button', onClick: onPress, 'data-testid': testID }, label),
+}));
+const settingsCtrl = vi.hoisted(() => ({ canOpen: true, opened: vi.fn() }));
+vi.mock('../../../lib/open-app-settings', () => ({
+  canOpenAppSettings: () => settingsCtrl.canOpen,
+  openAppSettings: async () => {
+    settingsCtrl.opened();
+    return true;
+  },
 }));
 
 import { GymLocationPrompt, type GymLocationPromptProps } from '../GymLocationPrompt';
@@ -62,8 +83,8 @@ import { GymLocationPrompt, type GymLocationPromptProps } from '../GymLocationPr
 const onRequest = vi.fn(async () => 'granted' as const);
 const onRecheck = vi.fn(async () => 'granted' as const);
 
-function renderPrompt(overrides: Partial<GymLocationPromptProps>) {
-  return render(
+function promptElement(overrides: Partial<GymLocationPromptProps>) {
+  return (
     <GymLocationPrompt
       status="idle"
       permission="ask"
@@ -71,13 +92,20 @@ function renderPrompt(overrides: Partial<GymLocationPromptProps>) {
       onRequest={onRequest}
       onRecheck={onRecheck}
       {...overrides}
-    />,
+    />
   );
+}
+
+function renderPrompt(overrides: Partial<GymLocationPromptProps>) {
+  return render(promptElement(overrides));
 }
 
 beforeEach(() => {
   platform.OS = 'ios';
   snooze.snoozed = false;
+  cardMounts.count = 0;
+  settingsCtrl.canOpen = true;
+  settingsCtrl.opened.mockClear();
   onRequest.mockClear();
   onRecheck.mockClear();
 });
@@ -107,12 +135,44 @@ describe('GymLocationPrompt', () => {
     expect(onRequest).not.toHaveBeenCalled();
   });
 
-  it('points at search instead once a "Not now" holds', () => {
-    snooze.snoozed = true;
-    const { queryByTestId, getByText, queryByRole } = renderPrompt({ permission: 'blocked' });
-    expect(queryByTestId('location-ask-card')).toBeNull();
-    expect(getByText('mobile.locationAsk.searchHint')).toBeTruthy();
-    expect(queryByRole('button')).toBeNull();
+  // Allow, then no: the card must not give way to the spinner while the prompt
+  // is up, or it comes back as a new card and reports itself shown twice.
+  it('keeps the same card through Allow and a no', () => {
+    const { rerender, getByTestId, queryByTestId } = renderPrompt({ permission: 'ask' });
+    rerender(promptElement({ permission: 'ask', status: 'loading' }));
+    expect(queryByTestId('spinner')).toBeNull();
+    rerender(promptElement({ permission: 'blocked', status: 'denied' }));
+    expect(getByTestId('location-ask-card').getAttribute('data-permission')).toBe('blocked');
+    expect(cardMounts.count).toBe(1);
+  });
+
+  describe('after a "Not now"', () => {
+    beforeEach(() => {
+      snooze.snoozed = true;
+    });
+
+    it('points at search, with a quiet Use my location that asks', () => {
+      const { queryByTestId, getByText, getByTestId } = renderPrompt({ permission: 'ask' });
+      expect(queryByTestId('location-ask-card')).toBeNull();
+      expect(getByText('mobile.locationAsk.searchHint')).toBeTruthy();
+      fireEvent.click(getByTestId('gym-use-my-location'));
+      expect(onRequest).toHaveBeenCalledOnce();
+      expect(settingsCtrl.opened).not.toHaveBeenCalled();
+    });
+
+    it('opens Settings from Use my location once only Settings can turn it on', () => {
+      const { getByTestId } = renderPrompt({ permission: 'blocked' });
+      fireEvent.click(getByTestId('gym-use-my-location'));
+      expect(settingsCtrl.opened).toHaveBeenCalledOnce();
+      expect(onRequest).not.toHaveBeenCalled();
+    });
+
+    it('leaves Use my location out where nothing can open Settings', () => {
+      settingsCtrl.canOpen = false;
+      const { queryByTestId, getByText } = renderPrompt({ permission: 'blocked' });
+      expect(getByText('mobile.locationAsk.searchHint')).toBeTruthy();
+      expect(queryByTestId('gym-use-my-location')).toBeNull();
+    });
   });
 
   it('retries a failed fix from Use my location', () => {

@@ -127,6 +127,46 @@ describe('useDeviceLocation', () => {
     expect(expoLocation.requestForegroundPermissionsAsync).toHaveBeenCalledOnce();
   });
 
+  // The ask card reports the answer as the prompt closes, not seconds later
+  // when the fix lands.
+  it('hands the answer to onAnswer before the fix, and once', async () => {
+    let landFix: ((position: { coords: { latitude: number; longitude: number } }) => void) | undefined;
+    expoLocation.getCurrentPositionAsync.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          landFix = resolve;
+        }),
+    );
+    const onAnswer = vi.fn();
+    const { result } = renderHook(() => useDeviceLocation());
+
+    let done: Promise<LocationPermission> = Promise.resolve('unknown');
+    act(() => {
+      done = result.current.request({ onAnswer });
+    });
+    await waitFor(() => expect(onAnswer).toHaveBeenCalledExactlyOnceWith('granted'));
+    expect(result.current.status).toBe('loading');
+
+    await act(async () => {
+      landFix?.({ coords: { latitude: 1, longitude: 2 } });
+      await done;
+    });
+    expect(onAnswer).toHaveBeenCalledOnce();
+    expect(result.current.status).toBe('granted');
+  });
+
+  it('answers at once with where it stands when the call is a no-op', async () => {
+    const { result } = renderHook(() => useDeviceLocation());
+    await act(async () => {
+      await result.current.request();
+    });
+    const onAnswer = vi.fn();
+    await act(async () => {
+      await result.current.request({ onAnswer });
+    });
+    expect(onAnswer).toHaveBeenCalledExactlyOnceWith('granted');
+  });
+
   it('takes the permission from the answer to the prompt', async () => {
     expoLocation.requestForegroundPermissionsAsync.mockResolvedValue({ status: 'denied', canAskAgain: false });
     const { result } = renderHook(() => useDeviceLocation({ retryAfterDenial: true }));

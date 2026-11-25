@@ -205,26 +205,36 @@ or was never asked, still gets a clear second ask, without being nagged.
   picker sheet call `requestIfAllowed`: they use an earlier yes and read the
   permission, and the system prompt only follows a tap. The gym map used to
   show the prompt on every open, and the onboarding handoff to the picker
-  showed it on arrival.
-- **One card, "See gyms near you"** (`src/components/location/LocationAskCard.tsx`):
-  "Sorts by distance. Search works without it.", with Allow and Not now. Allow
-  shows the system prompt while it can still ask. Once only Settings can turn
-  location on (`blocked`: iOS after one no, Android "Don't ask again"), the
-  button reads Open Settings, and the permission is read again when the app
-  comes back to the foreground, so a grant there fills Near you or centres the
-  map with no second tap. In a browser nothing can open the site's settings,
-  so the line says where to turn it on and only Not now shows.
+  showed it on arrival. The gym map and the gym picker sheet read the
+  permission again when the app comes back, so a grant made in Settings from
+  their buttons takes effect with no second tap.
+- **One card** (`src/components/location/LocationAskCard.tsx`): "See boards
+  near you" in the picker (its Near you lists boards), "See gyms near you" on
+  the gym map, then "Sorts by distance. Search works without it.", with Allow
+  and Not now. Allow shows the system prompt while it can still ask, and is
+  disabled until the prompt answers. Once only Settings can turn location on
+  (`blocked`: iOS after one no, Android "Don't ask again"), the button reads
+  Open Settings, and the permission is read again when the app comes back to
+  the foreground, so a grant there fills Near you or centres the map with no
+  second tap. In a browser nothing can open the site's settings, so the line
+  says where to turn it on and only Not now shows.
 - **One snooze.** Not now on any surface hides the card on every surface for
   14 days (`lib/location-ask.ts`, the `locationAskSnoozedUntil` setting, per
   device). A stored time further out than 14 days means the clock went back,
-  and reads as expired. The gym map's panel then says to search a town.
+  and reads as expired. The gym map's panel then says to search a town, with a
+  quiet Use my location under it: the climber opened the map on purpose, so
+  that tap asks (or opens Settings) whatever the snooze says. In a browser that
+  has said no it is left out, as it could do nothing.
 - **Never while allowed**, and never before the permission is read, so it
   never flashes.
 - **Events:** `Location Ask Shown` `{ surface: board_picker | gym_finder,
-  permission: ask | blocked }`, once per card on screen, and `Location Ask
-  Answered` `{ surface, answer: allow | open_settings | not_now, permission }`,
-  the permission after the answer. `open_settings` is sent when the app comes
-  back to the foreground, so a climber who never comes back sends nothing.
+  permission: ask | blocked }`, once per card per screen visit (on the gym
+  map the card stays up while its own prompt is out, so a no does not show it
+  twice), and `Location Ask Answered` `{ surface, answer: allow |
+  open_settings | not_now, permission }`, the permission after the answer.
+  `allow` is sent as the prompt closes, not after the fix. `open_settings` is
+  sent when the app comes back to the foreground, so a climber who never comes
+  back sends nothing. The gym map's quiet Use my location sends neither.
 
 A pick follows the board unless the climber built it (`ownerId` matches them) or
 already follows it. `UserBoard.isOwned` plays no part: it is the creator's "a

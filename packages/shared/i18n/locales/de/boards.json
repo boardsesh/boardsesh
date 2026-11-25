@@ -663,7 +663,8 @@
       "cancel": "Jetzt nicht"
     },
     "locationAsk": {
-      "title": "Hallen in deiner Nähe sehen",
+      "titleBoards": "Boards in deiner Nähe sehen",
+      "titleGyms": "Hallen in deiner Nähe sehen",
       "body": "Sortiert nach Entfernung. Suchen geht auch ohne Standort.",
       "browserBody": "Erlaube den Standort für diese Seite in deinem Browser. Suchen geht auch ohne.",
       "allow": "Erlauben",

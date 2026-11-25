@@ -1242,7 +1242,9 @@ export const SHARED_EVENTS = {
   // foreground, so a climber who never comes back sends nothing) | not_now
   // (snoozed every surface for 14 days), permission: unknown | ask | blocked
   // | granted, the permission after the answer (for allow, what the prompt
-  // left; for open_settings, what Settings left; for not_now, unchanged) }.
+  // left, sent as it closes, before the fix; for open_settings, what Settings
+  // left; for not_now, unchanged) }. The gym map's quiet "Use my location"
+  // under its search line (shown after a Not now) sends neither event.
   LocationAskAnswered: 'Location Ask Answered',
   // Mobile only. A row picked from a board card's menu in the picker. Props:
   // { action: climb_here | pin | unpin | download | details | edit | unfollow

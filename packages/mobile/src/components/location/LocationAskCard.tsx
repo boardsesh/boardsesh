@@ -15,15 +15,19 @@ import {
   useLocationAskSnoozed,
   type LocationAskSurface,
 } from '../../lib/location-ask';
-import type { LocationPermission } from '../../lib/use-device-location';
+import type { LocationPermission, LocationRequest } from '../../lib/use-device-location';
 
 export type LocationAskCardProps = {
   /** Which screen it sits on, for the events. */
   surface: LocationAskSurface;
   /** The permission as the screen's `useDeviceLocation` last read it. */
   permission: LocationPermission;
-  /** Shows the system prompt: the location hook's `request`. */
-  onAllow: () => Promise<LocationPermission>;
+  /**
+   * Shows the system prompt: the location hook's `request`. The card reports
+   * the answer from its `onAnswer`, as soon as the prompt closes, not after
+   * the fix.
+   */
+  onAllow: LocationRequest;
   /**
    * Reads the permission again without asking: the location hook's
    * `requestIfAllowed`. Runs when the climber comes back from Settings, so a
@@ -38,8 +42,10 @@ export type LocationAskCardProps = {
 };
 
 /**
- * "See gyms near you": the one way any screen asks for location again. It
- * says what location gets the climber, and that search works without it.
+ * "See boards near you" in the picker (whose Near you lists boards), "See
+ * gyms near you" on the gym map: the one way any screen asks for location
+ * again. It says what location gets the climber, and that search works
+ * without it.
  *
  * - Allow shows the system prompt while it can still ask. Once only Settings
  *   can turn location on (iOS after one no, Android "Don't ask again"), Allow
@@ -68,6 +74,8 @@ export function LocationAskCard({ surface, permission, onAllow, onRecheck, style
   // Set by Allow while blocked: the climber is in Settings. The next return to
   // the foreground reads the permission again and reports what they chose.
   const [awaitingSettings, setAwaitingSettings] = useState(false);
+  // The system prompt is up: a second tap would send a second, stale answer.
+  const [asking, setAsking] = useState(false);
   useEffect(() => {
     if (!awaitingSettings) return undefined;
     const subscription = AppState.addEventListener('change', (nextState) => {
@@ -86,13 +94,18 @@ export function LocationAskCard({ surface, permission, onAllow, onRecheck, style
   const canAllow = !settingsOnly || canOpenAppSettings();
 
   const onPressAllow = () => {
+    if (asking) return;
     if (settingsOnly) {
       setAwaitingSettings(true);
       void openAppSettings();
       return;
     }
-    void onAllow().then((permissionAfter) => {
-      trackLocationAskAnswered(surface, 'allow', permissionAfter);
+    setAsking(true);
+    void onAllow({
+      onAnswer: (permissionAfter) => {
+        setAsking(false);
+        trackLocationAskAnswered(surface, 'allow', permissionAfter);
+      },
     });
   };
 
@@ -106,7 +119,9 @@ export function LocationAskCard({ surface, permission, onAllow, onRecheck, style
       <Card>
         <View style={styles.stack}>
           <View style={styles.copy}>
-            <Text variant="headline">{t('mobile.locationAsk.title')}</Text>
+            <Text variant="headline">
+              {surface === 'board_picker' ? t('mobile.locationAsk.titleBoards') : t('mobile.locationAsk.titleGyms')}
+            </Text>
             <Text variant="subheadline" color={systemColors.secondaryLabel}>
               {canAllow ? t('mobile.locationAsk.body') : t('mobile.locationAsk.browserBody')}
             </Text>
@@ -118,6 +133,7 @@ export function LocationAskCard({ surface, permission, onAllow, onRecheck, style
                 size="small"
                 variant="tonal"
                 icon="location"
+                disabled={asking}
                 onPress={onPressAllow}
               />
             ) : null}

@@ -41,6 +41,18 @@ export function locationPermissionFrom(
   return platform === 'web' || answer.canAskAgain === false ? 'blocked' : 'ask';
 }
 
+export type LocationRequestOptions = {
+  /**
+   * Called once, as soon as the permission answer is known: right after the
+   * system prompt closes, before the fix (which can take seconds), or at once
+   * when the call is a no-op. A screen reporting the answer reads it here.
+   */
+  onAnswer?: (permission: LocationPermission) => void;
+};
+
+/** `DeviceLocation['request']`: the system prompt plus a one-shot fix. */
+export type LocationRequest = (options?: LocationRequestOptions) => Promise<LocationPermission>;
+
 export type DeviceLocation = {
   status: LocationStatus;
   /**
@@ -61,7 +73,7 @@ export type DeviceLocation = {
    * Resolves to the permission as the prompt left it (or as last read, when
    * the call was a no-op), so the caller can report the answer.
    */
-  request: () => Promise<LocationPermission>;
+  request: LocationRequest;
   /**
    * `request`, but only when location is already allowed, so it never shows the
    * permission prompt: a screen can search on open for a climber who said yes
@@ -124,38 +136,56 @@ export function useDeviceLocation({
   const coordsRef = useRef<Coords | null>(null);
   coordsRef.current = coords;
 
-  const request = useCallback(async (): Promise<LocationPermission> => {
-    if (settledRef.current) return permissionRef.current;
-    settledRef.current = true;
-    setStatus('loading');
-
-    try {
-      const Location = await import('expo-location');
-      const answer = await Location.requestForegroundPermissionsAsync();
-      setPermission(locationPermissionFrom(answer));
-      setPermissionChecked(true);
-      if (answer.status !== 'granted') {
-        if (retryAfterDenial) settledRef.current = false;
-        setStatus('denied');
+  const request = useCallback<LocationRequest>(
+    async (options) => {
+      // Read off an options object, never a positional callback: a request
+      // wired straight to an onPress gets the press event here, which has no
+      // `onAnswer`.
+      const onAnswer = options?.onAnswer;
+      let answered = false;
+      const answerOnce = (permissionNow: LocationPermission) => {
+        if (answered) return;
+        answered = true;
+        onAnswer?.(permissionNow);
+      };
+      if (settledRef.current) {
+        answerOnce(permissionRef.current);
         return permissionRef.current;
       }
+      settledRef.current = true;
+      setStatus('loading');
 
-      const position = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      setCoords({ latitude: position.coords.latitude, longitude: position.coords.longitude });
-      setStatus('granted');
-    } catch {
-      setPermissionChecked(true);
-      // Module missing (pre-expo-location build) or a location error — either
-      // way there's nothing to show; surface it as unavailable, not a crash.
-      // This can be transient (a one-off GPS error), so re-open the gate to
-      // allow a later retry — unlike a permission denial, which is sticky.
-      settledRef.current = false;
-      setStatus('unavailable');
-    }
-    return permissionRef.current;
-  }, [retryAfterDenial, setPermission]);
+      try {
+        const Location = await import('expo-location');
+        const answer = await Location.requestForegroundPermissionsAsync();
+        setPermission(locationPermissionFrom(answer));
+        setPermissionChecked(true);
+        answerOnce(permissionRef.current);
+        if (answer.status !== 'granted') {
+          if (retryAfterDenial) settledRef.current = false;
+          setStatus('denied');
+          return permissionRef.current;
+        }
+
+        const position = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        setCoords({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+        setStatus('granted');
+      } catch {
+        setPermissionChecked(true);
+        // Module missing (pre-expo-location build) or a location error — either
+        // way there's nothing to show; surface it as unavailable, not a crash.
+        // This can be transient (a one-off GPS error), so re-open the gate to
+        // allow a later retry — unlike a permission denial, which is sticky.
+        settledRef.current = false;
+        setStatus('unavailable');
+      }
+      answerOnce(permissionRef.current);
+      return permissionRef.current;
+    },
+    [retryAfterDenial, setPermission],
+  );
 
   const requestIfAllowed = useCallback(async (): Promise<LocationPermission> => {
     if (settledRef.current) return permissionRef.current;

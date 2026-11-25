@@ -663,7 +663,8 @@
       "cancel": "Pas maintenant"
     },
     "locationAsk": {
-      "title": "Voir les salles près de toi",
+      "titleBoards": "Voir les boards près de toi",
+      "titleGyms": "Voir les salles près de toi",
       "body": "Tri par distance. La recherche marche sans ta position.",
       "browserBody": "Autorise la localisation pour ce site dans ton navigateur. La recherche marche sans.",
       "allow": "Autoriser",

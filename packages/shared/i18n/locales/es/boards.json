@@ -663,7 +663,8 @@
       "cancel": "Ahora no"
     },
     "locationAsk": {
-      "title": "Ve rocódromos cerca de ti",
+      "titleBoards": "Ve plafones cerca de ti",
+      "titleGyms": "Ve rocódromos cerca de ti",
       "body": "Los ordena por distancia. Buscar funciona sin tu ubicación.",
       "browserBody": "Permite la ubicación para este sitio en tu navegador. Buscar funciona sin ella.",
       "allow": "Permitir",

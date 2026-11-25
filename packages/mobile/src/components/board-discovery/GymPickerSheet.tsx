@@ -70,8 +70,11 @@ export function GymPickerSheet({
   const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
   const [search, setSearch] = useState('');
-  // Re-asks after a denial: Use my location is the way back in.
-  const deviceLocation = useDeviceLocation({ retryAfterDenial: true });
+  // Re-asks after a denial: Use my location is the way back in. Once only
+  // Settings can turn location on, that button opens Settings, so coming back
+  // to the app reads the permission again: a grant there loads the nearby
+  // gyms, instead of the next tap sending the climber back to Settings.
+  const deviceLocation = useDeviceLocation({ retryAfterDenial: true, rereadWhenActive: boardCoords == null });
 
   // Prefer coordinates the board already carries; otherwise use the device's,
   // but only if the climber already allowed location: opening the sheet never
