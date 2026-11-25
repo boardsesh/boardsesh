@@ -34,6 +34,7 @@ import {
   sessionCookieNamesIn,
   startWebSessionBackend,
   stubBetterAuthEnvironment,
+  stubQualifiedPasswordEnvironment,
   type WebSessionBackend,
 } from './web-session-harness';
 
@@ -165,7 +166,16 @@ const NORMALIZED = (claims: Record<string, unknown> | null) =>
 async function unsetModeAnswer() {
   const climber = await createClimber(environment.database);
   const jar = new CookieJar();
-  await login(jar, climber.email);
+  // Password sign-in always needs a genuine backend proof. Transfer policy is
+  // a separate selector, restored before exercising its frozen public answer.
+  const transferProofMode = process.env.CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE;
+  vi.stubEnv('CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE', 'required');
+  try {
+    await login(jar, climber.email);
+    expect(jar.get(LEGACY, DOMAIN)).toEqual(expect.any(String));
+  } finally {
+    vi.stubEnv('CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE', transferProofMode);
+  }
   const response = await nativeCallback(jar.header());
   const { url, claims } = await deepLink(response.clone());
   return {
@@ -180,6 +190,12 @@ async function unsetModeAnswer() {
 }
 
 describe('the native callback with the mode unset (live today)', () => {
+  beforeEach(() => {
+    stubQualifiedPasswordEnvironment(backend.origin);
+    // The frozen default transfer answer predates transfer-proof enforcement.
+    vi.stubEnv('CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE', 'off');
+  });
+
   it('answers and mints exactly as on main', async () => {
     expect(await unsetModeAnswer()).toMatchInlineSnapshot(`
       {

@@ -29,6 +29,7 @@ import {
   randomClientAddress,
   startWebSessionBackend,
   stubBetterAuthEnvironment,
+  stubQualifiedPasswordEnvironment,
   type WebSessionBackend,
 } from './web-session-harness';
 
@@ -154,11 +155,16 @@ async function legacyLogin(claims: Partial<JWT> = {}) {
 }
 
 describe('ws-auth with the mode unset or legacy', () => {
+  beforeEach(() => {
+    stubQualifiedPasswordEnvironment(backend.origin);
+  });
+
   it.each([undefined, '', 'legacy'])('answers as on main (mode %j)', async (mode) => {
     if (mode !== undefined) vi.stubEnv('AUTH_BROWSER_SESSION_MODE', mode);
     const climber = await createClimber(environment.database);
     const jar = new CookieJar();
     await login(jar, climber.email);
+    expect(jar.get(LEGACY, DOMAIN)).toEqual(expect.any(String));
     const signedIn = await wsAuth(jar.header());
     const body = (await signedIn.clone().json()) as WsAuthBody;
     // The raw NextAuth JWE, as on main.
