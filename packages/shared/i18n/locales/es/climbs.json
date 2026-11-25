@@ -263,8 +263,6 @@
     }
   },
   "similarClimbs": {
-    "loadError": "No se pudieron cargar los bloques similares.",
-    "emptyDefault": "Aún no hay bloques similares.",
     "emptyOnLayout": "No hay bloques similares en este layout.",
     "untitledClimb": "Bloque sin título"
   },
@@ -1064,11 +1062,6 @@
         "body": "4×4 y sesiones de volumen a tu grado, con temporizador incluido.",
         "alt": "Preparando un entrenamiento de volumen en V2 en Boardsesh"
       }
-    },
-    "community": {
-      "heading": "Comentarios y votos de grado",
-      "signIn": "Inicia sesión para participar",
-      "show": "Ver comentarios"
     },
     "similar": {
       "nearbyHeading": "Más bloques de {{layout}} de grado cercano a {{grade}} a {{angle}}°",

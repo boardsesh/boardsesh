@@ -7,7 +7,7 @@
     "build": "node scripts/copy-maplibre-worker.mjs && tsx scripts/generate-openapi.ts && next build",
     "build:ci": "node scripts/copy-maplibre-worker.mjs && tsx scripts/generate-openapi.ts && next build",
     "generate:openapi": "tsx scripts/generate-openapi.ts",
-    "start": "next start",
+    "start": "node --require ./scripts/public-page-load-guard-preload.cjs ./node_modules/next/dist/bin/next start",
     "lint": "vp lint",
     "lint-fix": "vp lint --fix",
     "typecheck": "tsc --noEmit",

@@ -246,6 +246,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/packages/web/.next/standalone/ ./
 # Copy static assets
 COPY --from=builder --chown=nextjs:nodejs /app/packages/web/.next/static ./packages/web/.next/static
 
+# Install admission before Next creates its standalone HTTP server.
+COPY --from=builder --chown=nextjs:nodejs /app/packages/web/scripts/public-page-load-guard*.cjs ./packages/web/scripts/
+
 USER nextjs
 
 EXPOSE 3000
@@ -261,4 +264,4 @@ ENV PORT=3000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
   CMD node -e "require('http').get({host:'127.0.0.1',port:3000,path:'/robots.txt'},(r)=>{r.resume();process.exit(r.statusCode<500?0:1)}).on('error',()=>process.exit(1))"
 
-CMD ["node", "packages/web/server.js"]
+CMD ["node", "--require", "./packages/web/scripts/public-page-load-guard-preload.cjs", "packages/web/server.js"]

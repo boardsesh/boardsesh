@@ -137,11 +137,12 @@ vi.mock('@/app/lib/data/queries', () => ({
 }));
 
 vi.mock('@/app/lib/data/front-door-data.server', () => ({
-  getFrontDoorSimilarClimbs: vi.fn(async () => ({ status: 'loaded', items: [] })),
-  getFrontDoorBetaLinks: vi.fn(async () => ({ status: 'loaded', items: [] })),
+  getFrontDoorRelatedContent: vi.fn(async () => ({
+    similarClimbs: { status: 'loaded', items: [] },
+    betaLinks: { status: 'loaded', items: [] },
+  })),
 }));
 
-vi.mock('@/app/lib/warm-overlay-cache', () => ({ scheduleOgImageWarming: vi.fn() }));
 vi.mock('@/app/components/board-renderer/util', () => ({
   // The fixtures here are Kilter, which has no dark art — one composite, no photo layers, so
   // the assertions below keep counting a single board image.
@@ -171,7 +172,6 @@ vi.mock('@/app/components/similar-climbs/similar-climbs-list', () => ({ default:
 vi.mock('@/app/components/consent/consent-state-provider', () => ({
   useConsent: () => ({ granted: false, snapshot: { record: null }, dialogOpen: false }),
 }));
-vi.mock('@/app/components/social/climb-social-section', () => ({ default: () => null }));
 vi.mock('@/app/components/beta-videos/boardsesh-beta-list', () => ({ default: () => null }));
 
 function requireRedirectError(outcome: unknown) {
@@ -556,7 +556,7 @@ describe('an alias URL', () => {
 
   it('renders the canonical landing once and reads its stats, similar climbs and beta', async () => {
     const { getClimb } = await import('@/app/lib/data/queries');
-    const { getFrontDoorSimilarClimbs, getFrontDoorBetaLinks } = await import('@/app/lib/data/front-door-data.server');
+    const { getFrontDoorRelatedContent } = await import('@/app/lib/data/front-door-data.server');
     vi.mocked(getClimb)
       .mockResolvedValueOnce(canonicalRow as never)
       .mockResolvedValueOnce(canonicalRow as never);
@@ -566,15 +566,11 @@ describe('an alias URL', () => {
     const landingSegment = target.split('/').at(-1)!;
     expect(extractUuidFromSlug(landingSegment)).toBe(canonicalUuid);
     vi.mocked(getClimbStatsForAllAngles).mockClear();
-    vi.mocked(getFrontDoorSimilarClimbs).mockClear();
-    vi.mocked(getFrontDoorBetaLinks).mockClear();
+    vi.mocked(getFrontDoorRelatedContent).mockClear();
     const html = await renderFrontDoor({ ...PARAMS, climb_uuid: landingSegment });
     expect(html).toContain('<h1');
     expect(vi.mocked(getClimbStatsForAllAngles)).toHaveBeenCalledWith('kilter', canonicalUuid);
-    expect(vi.mocked(getFrontDoorSimilarClimbs)).toHaveBeenCalledWith(
-      expect.objectContaining({ climbUuid: canonicalUuid }),
-    );
-    expect(vi.mocked(getFrontDoorBetaLinks)).toHaveBeenCalledWith(
+    expect(vi.mocked(getFrontDoorRelatedContent)).toHaveBeenCalledWith(
       expect.objectContaining({ climbUuid: canonicalUuid }),
     );
     expect(html).toContain(`https://app.boardsesh.com${target}`);

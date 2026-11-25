@@ -29,19 +29,70 @@ Supporters are meant to join the admin row. That is one change in
 
 The live path accepts 30 requests per minute and the materialised path accepts 600.
 
+## Cached public climb previews
+
+Public marketing pages use `publicClimbRelatedContent` to read related climbs,
+nearby-grade suggestions and stored beta links together. The existing app query
+and nightly neighbour job keep their behaviour.
+
+Recommendation snapshots contain only candidate IDs and similarity counts. Redis
+keeps them for seven days by default; `PUBLIC_CLIMB_RECOMMENDATION_CACHE_DAYS=30`
+selects thirty days. The shared namespace is capped at 20,000 entries, each at
+most 4 KiB. Cache keys include the target revision, grade, angle and board
+configuration. Every response rechecks the target and candidate visibility and
+board compatibility while joining current names, frames and statistics. Hidden,
+unlisted, deleted and private climbs do not survive through a cached snapshot.
+
+Each backend process admits at most eight real reads and four distinct cache
+misses. Identical misses share work. The response deadline is three seconds, and
+a timed-out operation retains its slot until its underlying work finishes.
+Unavailable sections are distinguished from genuinely empty results.
+
+The public beta read returns stored rows and thumbnails, without external
+thumbnail enrichment or database writes. It returns at most fifty visible beta
+links and `betaHasMore` when the app has more. The website renders related links
+on the server without browser refetching, and no longer warms OG images during
+climb-page rendering. Share cards render on demand through the existing image
+endpoint.
+
 ## Nearby grades on public climb pages
 
-When a graded public page loads an empty shared-hold list, it uses an anonymous
-`searchClimbs` query to render up to six links under a nearby-grade heading. The
-query uses the page's layout, size, hold sets and angle, and ranks the published,
-listed, visible matches within one V grade by ascents at that angle. Its cache
-is shared across pages for the same configuration and grade band. The page
-removes the current climb after reading that cache and keeps the requested board
-configuration on each link. On MoonBoard, checking the hold sets against climb
-frames can rule out every row of a full page. The fallback checks one more page
-within the same three-second backend-request budget in that case. A failed
-similarity read keeps its existing retry state. A failed nearby-grade read shows
-that the suggestions could not load.
+Public marketing pages use `publicClimbRelatedContent` for related climbs and
+stored beta metadata. The existing `similarClimbs` app/admin contract and nightly
+neighbour job stay unchanged. The public query never runs the live Jaccard query
+or fetches Instagram/TikTok metadata.
+
+Recommendation IDs and scores are shared in Redis for seven days; set
+`PUBLIC_CLIMB_RECOMMENDATION_CACHE_DAYS=30` for monthly freshness. Any other value
+uses seven days. The cache key includes the source climb's sync revision and
+current grade, board configuration, angle and nearby-section choice. Canonical
+UUIDs are supplied by the page after alias resolution. Names, frames, media and
+visibility decisions are never stored in this long-lived cache.
+
+Every read checks source access and hydrates candidate IDs from current rows,
+excluding draft, hidden, unlisted, deleted and incompatible candidates. Nearby
+links keep the requested angle. Redis entries are limited to 4 KiB and an atomic
+insertion/eviction script caps the namespace at 20,000 entries. Capacity eviction
+can refresh an entry before its normal TTL.
+
+At most eight public reads and four distinct cache misses may remain active per
+backend process. Duplicate misses join the same work. The three-second response
+deadline does not release admission while the real operation is still running.
+Redis failure or saturation marks recommendations unavailable instead of
+starting an uncached refresh. Stored beta is independently available, privacy
+filtered and limited to 50 links, with `betaHasMore` directing readers to the app
+for the remainder. Missing thumbnails remain missing instead of triggering
+external metadata fetches or writes during SSR. The read logs aggregate cache
+hits, misses, pending work and rejections at most once per minute.
+
+When a graded public page has an empty shared-hold list, the backend uses the
+catalogue search to select up to six nearby-grade IDs. It uses the page's layout,
+size, hold sets and angle, ranking eligible climbs within one V grade by ascents
+at that angle. On MoonBoard, frame/set compatibility may reject a whole search
+page; the bounded fallback checks one more page. Those IDs share the weekly
+recommendation cache. Visibility, current grade-band eligibility and board
+compatibility are checked again during hydration. A failed nearby read reports
+an unavailable section and is never cached as an empty result for a week.
 
 ## What is stored
 

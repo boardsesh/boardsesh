@@ -229,6 +229,59 @@ Production-environment config this needs:
 
 ### Web response retention and out-of-memory recovery
 
+Public catalogue requests pass through a small Node HTTP preload before Next's
+standalone handler. It limits active renders across IPs and user agents, including
+HTML and RSC requests in every locale. The default is 16 concurrent renders with
+no waiting queue. `WEB_PUBLIC_RENDER_MAX_CONCURRENCY` accepts 1–256; invalid values
+use 16. `WEB_PUBLIC_RENDER_TIMEOUT_MS` accepts 1–60000 and defaults to 10000 ms.
+Climb views/lists, setter/profile pages, playlists and gym pages share that budget.
+Health, authentication, APIs, app traffic and static assets are exempt.
+
+A full budget answers `503`, `Retry-After: 5` and `no-store`, without entering
+Next or setting cookies. A render deadline does the same before headers; after
+streaming starts it closes the response, which reaches Next's cancellation hook.
+A slot is released only after both the response terminates and the original
+handler settles. A hung backend cannot return a slot by merely closing a socket.
+The normal Next standalone bootstrap and its SIGTERM draining remain in charge.
+
+On 2026-11-25 UTC, Railway MCP read-back verified
+`boardsesh-web` / `production` has `deploy.drainingSeconds: 10`; it was previously
+absent. This configuration applies on the next deployment. No redeployment was
+triggered for that setting change, so the read-back is not evidence that the
+currently running deployment has activated the new drain window.
+
+The guard also stops admission at 70% of V8's actual heap limit and resumes at
+60%, independent of the larger container memory ceiling. Every 30 seconds of
+activity it emits one `[PublicPageLoadGuard]` aggregate with counters, active and
+peak renders, heap usage/limit, pressure duration and event-loop p99. It never
+records request paths or identities. Pressure that does not recover remains
+visible in `pressureMs`; there is no automatic restart concealing retained
+objects. Investigate that condition before declaring the memory issue fixed.
+
+The isolated production soak uses an already-built standalone artifact and the
+seeded local database/backend. Build the artifact with the CI Docker web context;
+do not run `vp run build` against a developer's active Next cache. Export at least
+800 real public climb paths to a JSON array, then run:
+
+```sh
+vp exec node packages/web/scripts/public-page-soak.mjs \
+  --standalone-dir <standalone/packages/web> --paths-file <climb-paths.json> \
+  --minutes 60 --requests-per-minute 800 --output <soak-report.json>
+```
+
+`DATABASE_URL` and `BACKEND_INTERNAL_URL` must point to loopback fixtures; the
+harness refuses configured production database/backend hosts and non-loopback
+HTTP fetches. An isolated Docker run may opt into the Docker host alias with
+`--allow-docker-host`. The test-only sampler records natural heap usage every
+minute and requests full GC only at minutes 30 and 60, to measure retained growth
+without a forced collection masking pressure recovery each minute. Both the
+pre-GC and post-GC values are recorded. Passing requires 60 minutes, no heap exhaustion or
+transport/500/502 failures, at least half of requests successfully rendering real
+climb bodies, no more than 16 active renders, and less than 64 MiB retained-heap growth
+over the final 30 minutes. A shorter diagnostic run intentionally cannot pass.
+The ordinary HTTP tests separately exercise overload, deadlines and cancellation;
+a synthetic HTTP handler alone does not prove production Next retention.
+
 The web-local [Next 16.3.5 patch](../../packages/web/patches/next@16.3.5.patch)
 releases request state from closed responses. Next's response adapter registers
 close callbacks with `once`, including its CJS, ESM and bundled production
