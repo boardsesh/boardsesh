@@ -4631,7 +4631,8 @@ export type GymDayActivity = {
 export type GymDuplicateCheckInput = {
   /**
    * With CONFIRMED_SEPARATE: the gyms the climber was shown and said are not
-   * theirs. At most 20.
+   * theirs. At most 50 (the server refuses more); a client that showed more
+   * keeps the most recent 50.
    */
   acknowledgedGymUuids?: InputMaybe<Array<Scalars['ID']['input']>>;
   /** What to do when similar gyms exist. */

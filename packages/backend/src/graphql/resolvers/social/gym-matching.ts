@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { distanceMeters, isGenericGymName, normalizeGymName } from '@boardsesh/db/queries';
 import { computeCanClaimByDomain } from '@boardsesh/gym-claim';
@@ -37,6 +37,9 @@ export const AUTO_GYM_MATCH_RADIUS_METERS = 150;
 
 /** Most gyms findSimilarGyms returns, and the most a GYM_SIMILAR_EXISTS refusal names. */
 export const MAX_SIMILAR_GYMS = 5;
+
+/** Rows the name-only search reads before its JS refine; at least createGym's read of 50. */
+const NAME_ONLY_ROW_WINDOW = 50;
 
 // Pads the lat/lng bounding box so it fully contains the target circle despite
 // metres-per-degree varying with latitude (111_320 is only an average; a degree
@@ -453,11 +456,15 @@ export async function findSimilarGymCandidates(opts: {
 
   // No coordinates: name-only matching (exact + substring), no distance to sort by.
   const nameCond = similarNameCond ? or(exactNameCond, similarNameCond)! : exactNameCond;
+  // Exact names first in SQL, before the row window: a common short name can
+  // match hundreds of listings by substring, and an exact duplicate must never
+  // fall outside the 50 rows read. Then name and id, so the window is stable.
   const rows = await executor
     .select(gymColumns)
     .from(dbSchema.gyms)
     .where(and(isNull(dbSchema.gyms.deletedAt), visibleCond, nameCond))
-    .limit(50);
+    .orderBy(desc(exactNameCond), asc(dbSchema.gyms.name), asc(dbSchema.gyms.id))
+    .limit(NAME_ONLY_ROW_WINDOW);
 
   return (
     rows

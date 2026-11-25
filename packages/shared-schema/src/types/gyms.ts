@@ -254,7 +254,7 @@ export type GymDuplicateCheckMode = 'REJECT_IF_FOUND' | 'CONFIRMED_SEPARATE';
 
 export type GymDuplicateCheckInput = {
   mode: GymDuplicateCheckMode;
-  /** With CONFIRMED_SEPARATE: the similar gyms the climber saw and said are not theirs. At most 20. */
+  /** With CONFIRMED_SEPARATE: the similar gyms the climber saw and said are not theirs. At most 50. */
   acknowledgedGymUuids?: string[] | null;
 };
 

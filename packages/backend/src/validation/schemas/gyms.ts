@@ -102,9 +102,10 @@ export const GymHoursSchema = z.string().max(GYM_HOURS_MAX_LENGTH, 'Opening hour
 /**
  * Cap on `CreateGymInput.duplicateCheck.acknowledgedGymUuids`. createGym's
  * duplicate check reads this many similar gyms, so a climber who acknowledges
- * them round by round (five a refusal) can always name every one.
+ * them round by round (five a refusal) can always name every one. The web
+ * client keeps the most recent this-many it was shown.
  */
-export const MAX_ACKNOWLEDGED_GYM_UUIDS = 20;
+export const MAX_ACKNOWLEDGED_GYM_UUIDS = 50;
 
 /**
  * createGym's duplicate check. Absent (or null) means REJECT_IF_FOUND: unlike
