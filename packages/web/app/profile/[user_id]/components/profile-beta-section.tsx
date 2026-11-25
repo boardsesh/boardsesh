@@ -54,6 +54,8 @@ export default function ProfileBetaSection({ userId, initialBeta }: ProfileBetaS
     for (const row of rows) {
       const link = mapBetaLinkRow(row.betaLink);
       mapped.push(link);
+      // Keep the newest row's climb metadata when legacy rows repeat a URL.
+      if (nameByLink.has(link.link)) continue;
       nameByLink.set(link.link, row.climbName);
       const href =
         row.layoutId != null && link.angle != null

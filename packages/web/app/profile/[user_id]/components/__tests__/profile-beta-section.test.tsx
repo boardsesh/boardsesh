@@ -5,6 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { createTestQueryClient } from '@/app/test-utils/test-providers';
 import type { RecentBetaLinkRow } from '@/app/lib/server-recent-beta-links';
 import type { BetaLink } from '@/app/lib/api-wrappers/sync-api-types';
+import { dedupeBetaLinks } from '@boardsesh/shared-schema';
 
 const mockRequest = vi.fn();
 const boardseshBetaListSpy = vi.fn();
@@ -27,12 +28,12 @@ vi.mock('@boardsesh/graphql/operations/beta-links', () => ({
 }));
 
 vi.mock('@/app/lib/beta-video-url', () => ({
-  mapBetaLinkRow: (row: { link: string; climbUuid: string }) =>
+  mapBetaLinkRow: (row: { link: string; climbUuid: string; angle: number | null; foreignUsername: string | null }) =>
     ({
       link: row.link,
       climb_uuid: row.climbUuid,
-      foreign_username: null,
-      angle: null,
+      foreign_username: row.foreignUsername,
+      angle: row.angle,
       thumbnail: null,
       is_listed: false,
       created_at: '',
@@ -49,7 +50,7 @@ vi.mock('@/app/components/beta-videos/boardsesh-beta-list', () => ({
     boardseshBetaListSpy(props);
     return (
       <div data-testid="boardsesh-beta-list">
-        {props.links.map((link) => (
+        {dedupeBetaLinks(props.links).map((link) => (
           <div key={link.link} data-testid="beta-list-item">
             {link.link}::{props.getClimbName?.(link) ?? 'no-name'}
           </div>
@@ -66,6 +67,8 @@ function makeRow(overrides: {
   climbUuid?: string;
   climbName?: string | null;
   layoutId?: number | null;
+  angle?: number | null;
+  foreignUsername?: string | null;
 }): RecentBetaLinkRow {
   return {
     climbName: overrides.climbName ?? null,
@@ -74,8 +77,8 @@ function makeRow(overrides: {
     betaLink: {
       climbUuid: overrides.climbUuid ?? 'climb-uuid-1',
       link: overrides.link,
-      foreignUsername: null,
-      angle: null,
+      foreignUsername: overrides.foreignUsername ?? null,
+      angle: overrides.angle ?? null,
       thumbnail: null,
       isListed: true,
       createdAt: null,
@@ -138,6 +141,36 @@ describe('ProfileBetaSection', () => {
       expect(screen.getByTestId('boardsesh-beta-list')).toBeTruthy();
     });
     expect(mockRequest).not.toHaveBeenCalled();
+  });
+
+  it('keeps the first climb label and destination when legacy rows repeat a post', () => {
+    renderSection([
+      makeRow({
+        link: 'https://www.instagram.com/p/Dcr9yaNoG6z/',
+        climbUuid: 'climb-newest',
+        climbName: 'Newest climb',
+        layoutId: 1,
+        angle: 40,
+      }),
+      makeRow({
+        link: 'https://www.instagram.com/p/Dcr9yaNoG6z/',
+        climbUuid: 'climb-older',
+        climbName: 'Older climb',
+        layoutId: 1,
+        angle: 30,
+        foreignUsername: 'filmer',
+      }),
+    ]);
+    const props = boardseshBetaListSpy.mock.lastCall?.[0] as {
+      links: BetaLink[];
+      getClimbName: (link: BetaLink) => string | null;
+      getClimbHref: (link: BetaLink) => string | null;
+    };
+    const visibleLinks = dedupeBetaLinks(props.links);
+    expect(visibleLinks).toHaveLength(1);
+    expect(visibleLinks[0].foreign_username).toBe('filmer');
+    expect(props.getClimbName(visibleLinks[0])).toBe('Newest climb');
+    expect(props.getClimbHref(visibleLinks[0])).toContain('climb-newest');
   });
 
   it('keys the query by userId so different profiles do not share cache state', async () => {
