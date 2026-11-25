@@ -329,14 +329,17 @@ call Boardsesh.
 - A refresh token, so sync continues while the app is closed, and a way to
   revoke it from either side.
 
-### To start sooner: the manufacturer's existing login
+### Not for climbers: the manufacturer's existing login
 
-The climber enters their manufacturer email and password in Boardsesh once.
-Boardsesh exchanges them for a token and stores the credential encrypted on
-its backend. Boardsesh links Tension accounts this way today. It needs the
-manufacturer's permission, a known token lifetime and a way to renew the
-token. We see this as a temporary step, because it means Boardsesh holds the
-climber's password.
+Typing a manufacturer password into Boardsesh would let Boardsesh do anything
+that password allows, with no way to limit it or to take back Boardsesh's
+access alone. Boardsesh will not link climbers' accounts that way. Linked
+accounts are switched on only once there is a sign-in that gives Boardsesh a
+token limited to the scopes above, which the climber or the manufacturer can
+revoke on its own: authorization code with PKCE (S256).
+
+The existing login is used for one thing only: the test accounts in phase 1,
+which hold no real climber's data.
 
 ### What the climber is told when linking
 
@@ -346,29 +349,34 @@ One screen, before anything moves:
   favourites, projects and playlists, in both directions, including past
   ones.
 - What is not: drafts, sessions, followers, anything about other climbers.
-- Who can see an ascent in the manufacturer's app. The climber chooses on
-  this screen whether ascents they marked "Only me" in Boardsesh are synced
-  too.
+- Who can see a record in each app after syncing, in both directions. The
+  climber chooses on this screen whether records they marked "Only me" in
+  Boardsesh are synced too. Records that are private in the manufacturer's
+  app arrive in Boardsesh as "Only me".
 - Boardsesh will keep reading their manufacturer account in the background.
 - After copying, each service keeps its copy under its own privacy policy.
 - They can unlink at any time.
 
-### Who can see a synced ascent
+### Who can see a synced record
 
-The two apps may not have the same privacy settings for a logbook. Boardsesh
-has public and private accounts, and each ascent can be Public, Followers or
-Only me. The rule for the sync:
+The two apps may not have the same privacy settings. Boardsesh has public and
+private accounts, and each ascent or playlist can be Public, Followers or
+Only me. The rule for the sync, in both directions and for ascents and
+playlists alike:
 
-**An ascent is never more visible in the other app than the climber made it
-in the app they logged it in.**
+**A record is never more visible in the other app than the climber made it in
+the app they made it in.**
 
-- Where the other app has a matching or stricter setting, the ascent gets
+- Where the other app has a matching or stricter setting, the record gets
   that setting.
 - Where it has none (for example every logbook there is public), the link
-  screen says so, and ascents that are not public are synced only if the
+  screen says so, and records that are not public are synced only if the
   climber agrees.
-- An ascent that arrives from the manufacturer as private becomes "Only me"
-  in Boardsesh.
+- A record that arrives from the manufacturer as private becomes "Only me"
+  in Boardsesh. So does one whose visibility Boardsesh cannot tell.
+- Boardsesh never widens an imported record on its own. A public Boardsesh
+  account does not make an imported private ascent public. The climber can
+  change it afterwards, one record at a time or for the whole import.
 - Visibility is separate from totals. In Boardsesh a private account and an
   "Only me" ascent still count in a climb's totals, as numbers with no name.
   We need to know whether the manufacturer's private ascents count in its
@@ -410,16 +418,25 @@ logbook.
 - Ascents of other climbers that arrive in a linked climber's pull are
   discarded.
 - A pulled ascent that matches one already in Boardsesh keeps the audience
-  the climber gave it. A new one gets the default audience of the climber's
-  Boardsesh account: Public on a public account, Followers on a private one.
+  the climber gave it. A new one is never more visible in Boardsesh than it
+  was in the manufacturer's app; see
+  [Who can see a synced record](#who-can-see-a-synced-record).
 
 ### Deletions
 
 When a climber deletes an ascent or a playlist in Boardsesh, Boardsesh pushes
 the deletion. It also remembers it, so that if the manufacturer cannot delete
-the record, the next pull does not bring it back. This applies when the
-other app has not edited the record since; if it has, the edit is kept (see
+the record, the next pull does not bring it back. A deletion always wins over
+an edit made in the other app (see
 [Edits from both apps](#edits-from-both-apps)).
+
+Three things a climber can do, and what each means:
+
+| The climber | In Boardsesh | In the manufacturer's app |
+| --- | --- | --- |
+| Unlinks | Records stay | Records stay. Sync stops |
+| Deletes a record in one app while linked | Deleted | Deleted, through the sync |
+| Deletes their account in one service | Handled by that service | Not touched; the climber deletes there too if they want |
 
 ### What the manufacturer's API needs for this
 
@@ -437,7 +454,7 @@ other app has not edited the record since; if it has, the edit is kept (see
 
 A climber can edit an ascent or a playlist in either app.
 
-![One ascent as three copies (last agreed, Boardsesh now, manufacturer now) in three cases: different fields changed, so both changes are kept; the same field changed, so Boardsesh keeps both values and asks the climber; an edit against a delete, so the edit is kept; below, a pushed edit names the version it changes and the manufacturer refuses it if the record changed since](diagrams/edits-from-both-apps.svg)
+![One ascent as three copies (last agreed, Boardsesh now, manufacturer now) in three cases: different fields changed, so both changes are kept; the same field changed, so Boardsesh keeps both values and asks the climber; an edit against a delete, so the delete stays until the climber restores it; below, a pushed edit names the version it changes and the manufacturer refuses it if the record changed since](diagrams/edits-from-both-apps.svg)
 
 Boardsesh keeps, for every synced record, the copy both sides last agreed
 on. When the two apps have both changed a record, it compares each side with
@@ -448,9 +465,11 @@ that copy:
 - Changes to the same field cannot both be kept. Boardsesh keeps both values
   and asks the climber which one is right. It does not pick by clock time,
   because a phone with a wrong clock would let an old edit replace a new one.
-- An edit in one app and a delete in the other: the edit is kept, so nothing
-  the climber wrote is lost. Boardsesh restores the record in the app that
-  deleted it.
+- An edit in one app and a delete in the other: the delete stays. A climber
+  who deletes an ascent, perhaps because of what its comment says, must not
+  see it come back because of an unrelated edit elsewhere. Boardsesh pushes
+  the deletion, drops any push still waiting for that record, and deletes
+  its own kept copies of it. The climber can log the ascent again.
 - Until the climber has chosen between two values, each app keeps showing
   its own and nothing is pushed for that field.
 - Favourites, projects and the climbs in a playlist are merged one add or
@@ -526,8 +545,8 @@ replaces the previous values, so a missed day corrects itself:
 | Field | Meaning |
 | --- | --- |
 | `senders` | Distinct Boardsesh climbers with at least one counted send |
-| `ratingSum`, `ratingCount` | Sum and number of star ratings on counted ascents, on a stated scale. Each climber counts once, with their latest rating |
-| `gradeVotes` | Number of their grade votes per grade; left out below a minimum number of votes |
+| `ratingSum`, `ratingCount` | Sum and number of star ratings on counted ascents, on a stated scale. Each climber counts once, with their latest rating. Left out below 5 ratings |
+| `gradeVotes` | Number of their grade votes per grade. Left out below 5 votes |
 
 Sums and counts are sent because they can be added exactly:
 `(sumA + sumB) / (countA + countB)` is the true combined average.
@@ -578,10 +597,18 @@ and not one of the 11.
 - Grades. The grade a setter or the manufacturer gave a climb stays as it is.
   The grade from the combined votes is shown as the community's grade, next
   to it. Each app decides which of the two it shows first.
-- Small numbers. A total that goes from 0 to 1 shows what one person did
-  that day. So totals are pushed daily, carry no first-ascent name or time, and
-  leave out the grade-vote breakdown until a climb has a minimum number of
-  votes (we propose 5).
+- Small numbers. Pushing once a day does not make a number anonymous. A
+  rating count of 1 is one person's rating, and comparing two days can show
+  one new rating even on a popular climb. So:
+  - Ratings and grade votes for a climb and angle are left out until at
+    least 5 climbers have given one, and are then sent in steps of 5, so a
+    single new rating does not show.
+  - The sender count is sent as it is. Boardsesh already shows it publicly
+    on every climb, with no name.
+  - Totals carry no first-ascent name or time.
+  - Before this is switched on, the two sides look at everything that is
+    shared together (totals, who is on the wall, public climbs), because
+    numbers that are harmless alone can identify someone in combination.
 
 ## The public snapshot
 
@@ -642,6 +669,20 @@ is lit. For a manufacturer with a live feed of board activity, the Boardsesh
 backend can subscribe to that feed and show the manufacturer's climbers in the
 same place.
 
+Presence says where a person is right now, so it is handled apart from the
+sync and has its own rules:
+
+- To share the wall, the two apps need only an anonymous player id that lasts
+  as long as the layer does. That is the default.
+- A climber's name goes to the other app only if their own privacy settings
+  allow it. Boardsesh already has these settings (a private account, and
+  "anonymous on boards I don't own"), and they apply to what Boardsesh sends
+  as well as to what it shows.
+- The holds of a climb that is not published are not sent to the other
+  service. Everyone at the wall can see them lit; nobody else needs them.
+- Presence is not stored by the receiving side beyond the time the climber
+  is on the wall.
+
 What has to be agreed per board is in the manufacturer's annex.
 
 ## Summary per record
@@ -649,9 +690,9 @@ What has to be agreed per board is in the manufacturer's annex.
 | Record | Identity | Who may edit | Both sides changed it | Delete | Privacy |
 | --- | --- | --- | --- | --- | --- |
 | Climb | Boardsesh id plus the manufacturer's id (the manufacturer may store the Boardsesh id too). Same-climb matches are shown as one and stored separately | Its setter, in either app once linked. Before that, in the app it was set in | Field by field against the last agreed copy | Never deleted. Either app can hide it from its own users | Public. Setter's public name only |
-| Ascent | Boardsesh id plus the manufacturer's id; matched by its data when it has no id yet | The climber, in either app | Field by field; same field asks the climber; an edit beats a delete | Pushed, and remembered so it does not come back | Linked climbers only. "Only me" ascents by the climber's choice |
+| Ascent | Boardsesh id plus the manufacturer's id; matched by its data when it has no id yet | The climber, in either app | Field by field; same field asks the climber; a delete beats an edit | Pushed, and remembered so it does not come back | Linked climbers only. "Only me" ascents by the climber's choice |
 | Favourite, project | Climber plus climb | The climber | Merged one add or remove at a time | Remove is pushed | Linked climbers only |
-| Playlist | Boardsesh id plus the manufacturer's id | The climber | Name: field by field. Climbs in it: merged one at a time. Order: last reorder | Pushed, and remembered | Linked climbers only |
+| Playlist | Boardsesh id plus the manufacturer's id | The climber | Name: field by field. Climbs in it: merged one at a time. Order: last reorder | Pushed, and remembered | Linked climbers only. Never more visible than the climber made it |
 | Totals | Climb plus angle | Nobody; each side computes its own | Not applicable; Boardsesh's are replaced daily | Not applicable | Counts only, with the limits above |
 | Board, gym | The manufacturer's id, matched to Boardsesh's directory | The manufacturer | The manufacturer's value | Follows the manufacturer | Public venues only |
 
@@ -729,13 +770,19 @@ works with, with no claim of a relationship.
 - **Tokens** are stored encrypted on the Boardsesh backend and never reach a
   phone.
 - **Age.** Each service applies its own minimum age to its own accounts.
+- **A written agreement before real climbers' data moves.** Permission to use
+  an API is not the same as an agreement about personal data. Before phase 2
+  the two companies sign a short data-sharing agreement: the purposes, the
+  list of fields, how long each side keeps them, who handles deletion
+  requests, incident contacts, and whether setter and first-ascent names may
+  be published in the snapshot.
 
 ## Phases and who builds what
 
 | Phase | Climbers get | Manufacturer provides | Boardsesh builds |
 | --- | --- | --- | --- |
 | 1. Read | The manufacturer's public climbs and totals in Boardsesh, on the right board in the right gym | Test user accounts; permission to read the catalogue and the list of boards and gyms | The importer and board support |
-| 2. Linked accounts | One logbook, favourites, projects and playlists in both apps, with edits from both; climbs a linked climber sets appear in both | Sign-in for linking; the API needs listed under [Linked climbers](#what-the-manufacturers-api-needs-for-this) | Link and sign-up prompt; pull and push; matching; merging edits |
+| 2. Linked accounts | One logbook, favourites, projects and playlists in both apps, with edits from both; climbs a linked climber sets appear in both | A scoped, revocable sign-in for linking (OAuth with PKCE); a data-sharing agreement; the API needs listed under [Linked climbers](#what-the-manufacturers-api-needs-for-this) | Link and sign-up prompt; pull and push; matching; merging edits |
 | 3. Everyone else | Climbs set by unlinked climbers, and their share of the totals, in the manufacturer's app | The four items under [Climbers who have not linked](#climbers-who-have-not-linked) | The scheduled push of climbs and totals |
 
 Phase 1 needs only test accounts and permission to read the catalogue. Phase

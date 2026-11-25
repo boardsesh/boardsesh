@@ -53,7 +53,7 @@ eWalls.
 | Phase | Result | Needs from eWalls |
 | --- | --- | --- |
 | 1. Read | Quantum Board in Boardsesh: browse, light, log in Boardsesh | The first ask; sections A, B, F and I; E1 and E4 |
-| 2. Linked accounts | One logbook, favourites, projects and playlists in both apps; climbs a linked climber sets appear in both | Section C |
+| 2. Linked accounts | One logbook, favourites, projects and playlists in both apps; climbs a linked climber sets appear in both | Section C; the sign-in in A5; the agreement in J0 |
 | 3. Everyone else | Climbs from climbers without an eWalls account, and their share of the totals, in eWalls | Sections D and E. This phase needs new endpoints and a credential that acts for no climber |
 
 ## Questions for eWalls
@@ -67,15 +67,17 @@ Android app, not from a contract. Our notes are in
 
 ### A. Access
 
-- **A1.** May Boardsesh use the email login the app uses, for test accounts
-  now and for linked climbers until there is another sign-in?
+- **A1.** May Boardsesh use the email login the app uses, for the test
+  accounts only? We will not ask climbers for their eWalls password.
 - **A2.** How long does a token live and how is it renewed? We have not seen
   a refresh step. Boardsesh pulls in the background, so it needs a token that
   can be renewed without the climber.
 - **A3.** Which headers should Boardsesh send to identify itself?
 - **A4.** What rate limits apply, and how should we back off?
-- **A5.** Would eWalls offer a standard OAuth 2.0 sign-in for linking, with
-  sign-up on the same page? See
+- **A5.** Would eWalls offer a standard OAuth 2.0 sign-in for linking
+  (authorization code with PKCE), with sign-up on the same page? Linked
+  accounts wait for this: Boardsesh needs a token that is limited to agreed
+  scopes and can be revoked on its own. See
   [Linking an account](board-manufacturer-sync.md#linking-an-account).
 - **A6.** Optional. Every record Boardsesh creates (a climb, an ascent, a
   playlist) can carry Boardsesh's own id for it. Can eWalls store that id,
@@ -128,7 +130,7 @@ Android app, not from a contract. Our notes are in
   Boardsesh has public and private accounts, and each ascent can be Public,
   Followers or Only me. We propose that an ascent is never more visible in
   the other app than the climber made it; see
-  [Who can see a synced ascent](board-manufacturer-sync.md#who-can-see-a-synced-ascent).
+  [Who can see a synced record](board-manufacturer-sync.md#who-can-see-a-synced-record).
 - **C2b.** Does a private ascent in eWalls still count in a climb's totals? In
   Boardsesh it does, as a number with no name.
 - **C3.** When Boardsesh logs an ascent, does the response give its permanent
@@ -207,12 +209,22 @@ A climber outside any session is one player.
 is on a board and what is lit. For Quantum we propose the Boardsesh
 backend subscribes to the eWalls board socket, so eWalls climbers appear in
 Boardsesh, and we would like Boardsesh climbers to appear in eWalls the same
-way.
+way. Presence shows where a person is right now, so it follows its own rules
+and not the sync's:
+
+- By default a player from the other app is shown as an anonymous player in
+  their layer's colour. The controller needs no more than that.
+- A name is shown only if that climber's privacy settings allow it. Boardsesh
+  already has these settings and applies them to what it sends. We need to
+  know what eWalls has (F11).
+- Neither service keeps the other's presence data after the climber has left
+  the wall.
 
 **Climbs the other app does not know.** A climber can light a climb that is
 not saved yet. eWalls may have the same case with its own unsaved climbs. We
-propose that each app shows the lit holds and the climber's name, with no
-link to a climb, when it does not know the climb.
+propose that the holds of an unpublished climb are not sent to the other
+service. The other app shows that the player's layer is in use, with no
+climb.
 
 What we need to know:
 
@@ -242,6 +254,8 @@ What we need to know:
   board type names are XL, L, M and S; how a diode id maps to an LED address
   on each; whether pairing is needed; the largest write size and the pause
   the controller needs between commands.
+- **F11.** Can an eWalls climber choose not to be named to other people on
+  the wall? Does the board socket carry names, or ids only?
 
 Section F is probably easiest to settle in a call. We would be glad to have
 one with whoever works on the controller firmware, if that helps.
@@ -294,6 +308,11 @@ companies. To avoid assuming, please fill in who decides each of these:
 
 Agreeing to one row does not mean agreeing to another.
 
+- **J0.** Before real climbers' data moves (phase 2) we propose a short
+  data-sharing agreement between the two companies: purposes, the list of
+  fields, retention, who handles deletion requests, incident contacts, and
+  whether setter and first-ascent names may be published. Who at Walltopia
+  would we write it with?
 - **J1.** Who should Boardsesh contact about an incident, an invalid write or
   a moderation report, and who should eWalls contact at Boardsesh?
 - **J2.** How much notice does eWalls give before an API change?
