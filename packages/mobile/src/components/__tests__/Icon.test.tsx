@@ -39,8 +39,8 @@ vi.mock('expo-symbols', () => ({
     }),
 }));
 
-vi.mock('@expo/vector-icons/MaterialCommunityIcons', () => ({
-  default: ({
+vi.mock('@react-native-vector-icons/material-design-icons', () => ({
+  MaterialDesignIcons: ({
     name,
     color,
     size,
@@ -80,7 +80,7 @@ describe('Icon platform rendering', () => {
     expect(symbol?.getAttribute('data-tint')).toBe('#FF0000');
   });
 
-  it('renders MaterialCommunityIcons with the android glyph on Android', () => {
+  it('renders MaterialDesignIcons with the android glyph on Android', () => {
     ctrl.os = 'android';
     const { queryByTestId } = render(<Icon name="skip.next" color="#00FF00" />);
     const mci = queryByTestId('mci');

@@ -223,11 +223,11 @@ vi.mock('../../../src/components/navigation/MaterialTabBar', () => ({
   MaterialTabBar: () => createElement('nav', { 'data-material-tab-bar': 'true' }),
 }));
 
-vi.mock('@expo/vector-icons/MaterialCommunityIcons', () => ({
-  default: () => createElement('span', { 'data-icon': 'mci' }),
+vi.mock('@react-native-vector-icons/material-design-icons', () => ({
+  MaterialDesignIcons: () => createElement('span', { 'data-icon': 'mci' }),
 }));
 
-vi.mock('expo-router/unstable-native-tabs', () => {
+vi.mock('expo-router/native-tabs', () => {
   const Trigger = Object.assign(
     ({
       name,
