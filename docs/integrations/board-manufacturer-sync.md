@@ -45,7 +45,7 @@ says which one.
 | Tier | A level of sharing: 0 is public data for everyone, 1 is a linked account |
 | System credential | A key issued to a company, not to a climber |
 | Cursor | A bookmark string that only the server that issued it understands |
-| Tombstone | A record in a feed that says a climb was removed |
+| Tombstone | A record in a feed that says a climb is no longer shown publicly, for example after moderation. The climb itself is not deleted |
 | Diode | One LED on the board |
 
 ## What "share everything" means
@@ -110,7 +110,7 @@ can use the board in Boardsesh. That contradicts principle 4.
 ## Catalogue sync
 
 Both directions use the same shape: a complete first read, then a feed of
-changes since a cursor, with deletions sent as explicit tombstones.
+changes since a cursor, with withdrawn climbs sent as explicit tombstones.
 
 ```mermaid
 flowchart LR
@@ -193,7 +193,9 @@ A climb in the feed:
 }
 ```
 
-A removal is `{ "type": "climb.deleted", "id": "…" }`.
+A tombstone is `{ "type": "climb.withdrawn", "id": "…" }`. Boardsesh sends it
+when moderation hides a climb. Boardsesh never deletes a published climb: a
+climb is a fact about a board, so it stays in the catalogue.
 
 Holds are identified with the manufacturer's own diode ids, so no geometry
 has to be translated on their side. The setter is the name shown on
@@ -237,8 +239,9 @@ copies.
    whoever set it ([privacy.md](../product/privacy.md)). A setter cannot
    withdraw it from the shared catalogue later. If the setter deletes their
    Boardsesh account, the climb stays and loses its link to the account. Its
-   setter name is cleared if the climber chooses that when deleting, and the
-   feed then sends an ordinary update with `setter: null`.
+   If the climber chooses to remove their name when deleting, the setter
+   becomes "Unknown", and the feed sends an ordinary update with that name.
+   The climb is never removed for this reason.
 6. **Setter credit follows the account when one is linked.** If a Boardsesh
    setter later links an account with the manufacturer, the feed sends an
    update with `setter.partnerAccountId`, so the manufacturer can attach the
@@ -482,7 +485,8 @@ the other app's climbers have lit.
   hide climbs they published, and their sends still count in totals. Tier 0
   sends nothing else about them.
 - **Deleting a Boardsesh account** removes the account's link to its climbs,
-  and clears the setter name if the climber chooses that. The feed says so. Ascents already copied to a linked account stay with the
+  and sets the setter name to "Unknown" if the climber chooses that. The
+  climbs stay. The feed says so. Ascents already copied to a linked account stay with the
   other service until the climber removes them there.
 - **Tokens** for linked accounts are stored encrypted on the Boardsesh
   backend and never reach a phone.
