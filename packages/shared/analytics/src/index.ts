@@ -99,6 +99,20 @@ export {
   type SprayRemixSurface,
   type ClimbRemixedFromBrokenProps,
 } from './spray-wall-events';
+// The gym finders (the wizard's "Which gym?" and the gym map). Mobile only,
+// and like the spray events they name no gym, place or climber.
+export {
+  gymFinderGymPicked,
+  gymFinderAddMyGymTapped,
+  gymFinderSearchUsed,
+  gymFinderLocateTapped,
+  type GymFinderSurface,
+  type GymFinderPickSection,
+  type GymFinderSearchKind,
+  type GymFinderGymPickedProps,
+  type GymFinderSurfaceProps,
+  type GymFinderSearchUsedProps,
+} from './gym-finder-events';
 // Board QR scans (#4415). A cross-platform name, www-only call site today; the
 // `app` surface is for the app's own landing. Names no board, like the spray
 // events above.

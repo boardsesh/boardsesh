@@ -1345,6 +1345,27 @@ export const SHARED_EVENTS = {
   // boards"). Props: { stage: gyms | gym_boards, error_reason:
   // offline | rate_limited | exception }.
   BoardWallLookupFailed: 'Board Wall Lookup Failed',
+  // The gym finders (mobile only, from 2026-11): the add-a-board wizard's
+  // "Which gym?" step and the gym map. Each carries `surface`:
+  // wizard_gym_step | gyms_map. Built by gym-finder-events.ts; none of them
+  // carries a gym, coordinates or anything typed.
+  //
+  // A gym was chosen. Props: { surface, section: list (a row tapped without
+  // its pin) | map_pin (the row a pin tap had selected, or on the gym map the
+  // pin itself) }. On the wizard it fires on the row tap that opens Boards at
+  // {gym}; on the gym map when a gym is opened to show its boards (a board
+  // picked there is still Board Picker Selection Completed).
+  GymFinderGymPicked: 'Gym Finder Gym Picked',
+  // "Add my gym" tapped (the gym isn't listed). Props: { surface }. Fires
+  // signed out too, before sign-in is asked for.
+  GymFinderAddMyGymTapped: 'Gym Finder Add My Gym Tapped',
+  // The search field was used. Props: { surface, kind: town (a town picked
+  // from the suggestions, or on the gym map a typed place that geocoded) |
+  // name (a gym-name search ran) }. Once per kind per screen visit.
+  GymFinderSearchUsed: 'Gym Finder Search Used',
+  // The map card's locate button was tapped (fly back to the climber, or ask
+  // for location when there is no fix). Props: { surface }.
+  GymFinderLocateTapped: 'Gym Finder Locate Tapped',
   // A gym's page opened, once per gym per visit, after the gym loaded and the
   // viewer's identity resolved. Props: { surface: app (the app's gym page,
   // from 2026-11) | web (reserved for www's /gym/{slug}), listingState:
