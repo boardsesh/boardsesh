@@ -585,7 +585,8 @@
       "gymBoardsLoading": "Boards de cette salle",
       "stepCounter": "Étape {{current}} sur {{total}}",
       "gymLockedHint": "Choisie à l'étape précédente. Reviens en arrière pour choisir une autre salle.",
-      "gymLockedHintGymPage": "Tu la configures depuis la page de cette salle. Ouvre la page d'une autre salle pour y ajouter une board."
+      "gymLockedHintGymPage": "Tu la configures depuis la page de cette salle. Ouvre la page d'une autre salle pour y ajouter une board.",
+      "gymLockedHintNewGym": "Tu viens d'ajouter cette salle. Reviens en arrière pour en choisir une autre."
     },
     "findWall": {
       "boardType": "Type de board",
@@ -630,8 +631,36 @@
       "inThisArea": "Salles dans cette zone",
       "noNameMatch": "Aucune salle ne porte ce nom",
       "addGym": "Ajouter ma salle",
-      "addGymHint": "Pas dans la liste ? Ajoute-la avec ta board",
+      "addGymHint": "Pas dans la liste ? Ajoute-la, puis sa board",
       "places": "Lieux"
+    },
+    "newGym": {
+      "title": "Ajoute ta salle",
+      "nameLabel": "Nom de la salle",
+      "namePlaceholder": "Le nom de ta salle",
+      "searchPlaceholder": "Rechercher une ville ou une adresse",
+      "pinNeeded": "Cherche une ville ou utilise ta position, puis déplace la carte pour que le point soit sur ta salle.",
+      "pinZoomIn": "Zoome jusqu'à ce que le point soit sur ta salle.",
+      "pinAtYou": "Le point est là où tu te trouves.",
+      "pinFromYou": "Le point est à {{distance}} de toi.",
+      "pinNearPlace": "Le point est près de {{place}}.",
+      "pinSet": "Le point marque ta salle.",
+      "pinMoveHint": "Déplace la carte pour que le point soit sur ta salle.",
+      "fallbackNeeded": "La carte ne peut pas se charger ici. Cherche l'adresse de ta salle ou utilise ta position.",
+      "fallbackYou": "On placera ta salle là où tu te trouves.",
+      "fallbackPlace": "On placera ta salle à {{place}}.",
+      "placeNotFound": "Lieu introuvable. Choisis une ville dans la liste ou essaie une autre adresse.",
+      "addressLabel": "Adresse (facultatif)",
+      "addressPlaceholder": "Rue et numéro",
+      "similarTitle": "Déjà référencées à proximité",
+      "similarBody": "Est-ce l'une de celles-ci ? Touche la tienne pour ajouter sa board.",
+      "similarRefusedBody": "Ces salles sont déjà référencées. Touche la tienne pour ajouter sa board, ou dis-nous que c'est une autre salle.",
+      "claim": "Revendiquer",
+      "claimAria": "Revendiquer {{gym}}",
+      "save": "Ajouter la salle",
+      "saveHint": "Donne-lui un nom et place le point sur ta salle.",
+      "limitReached": "Tu possèdes déjà le nombre maximal de salles pour un compte. Supprimes-en une que tu ne gères plus pour en ajouter une autre.",
+      "saveFailed": "Impossible d'ajouter ta salle. Réessaie."
     },
     "boardDetail": {
       "setActive": "Utiliser cette board",

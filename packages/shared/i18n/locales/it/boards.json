@@ -585,7 +585,8 @@
       "gymBoardsLoading": "Pannelli in questa palestra",
       "stepCounter": "Passo {{current}} di {{total}}",
       "gymLockedHint": "Scelta al passo precedente. Torna indietro per sceglierne un'altra.",
-      "gymLockedHintGymPage": "Lo stai configurando dalla pagina di questa palestra. Apri la pagina di un'altra palestra per aggiungere lì un pannello."
+      "gymLockedHintGymPage": "Lo stai configurando dalla pagina di questa palestra. Apri la pagina di un'altra palestra per aggiungere lì un pannello.",
+      "gymLockedHintNewGym": "Hai appena aggiunto questa palestra. Torna indietro per sceglierne un'altra."
     },
     "findWall": {
       "boardType": "Tipo di pannello",
@@ -630,8 +631,36 @@
       "inThisArea": "Palestre in questa zona",
       "noNameMatch": "Nessuna palestra con questo nome",
       "addGym": "Aggiungi la mia palestra",
-      "addGymHint": "Non c’è? Aggiungila con il tuo pannello",
+      "addGymHint": "Non c’è? Aggiungila, poi il suo pannello",
       "places": "Luoghi"
+    },
+    "newGym": {
+      "title": "Aggiungi la tua palestra",
+      "nameLabel": "Nome della palestra",
+      "namePlaceholder": "Il nome della tua palestra",
+      "searchPlaceholder": "Cerca una città o un indirizzo",
+      "pinNeeded": "Cerca una città o usa la tua posizione, poi sposta la mappa finché il punto non è sulla tua palestra.",
+      "pinZoomIn": "Ingrandisci finché il punto non è sulla tua palestra.",
+      "pinAtYou": "Il punto è dove ti trovi.",
+      "pinFromYou": "Il punto è a {{distance}} da te.",
+      "pinNearPlace": "Il punto è vicino a {{place}}.",
+      "pinSet": "Il punto segna la tua palestra.",
+      "pinMoveHint": "Sposta la mappa finché il punto non è sulla tua palestra.",
+      "fallbackNeeded": "Qui la mappa non si carica. Cerca l'indirizzo della tua palestra o usa la tua posizione.",
+      "fallbackYou": "Metteremo la tua palestra dove ti trovi ora.",
+      "fallbackPlace": "Metteremo la tua palestra a {{place}}.",
+      "placeNotFound": "Non abbiamo trovato quel luogo. Scegli una città dalla lista o prova un altro indirizzo.",
+      "addressLabel": "Indirizzo (facoltativo)",
+      "addressPlaceholder": "Via e numero civico",
+      "similarTitle": "Già in elenco qui vicino",
+      "similarBody": "È una di queste? Tocca la tua per aggiungere il suo pannello.",
+      "similarRefusedBody": "Queste palestre sono già in elenco. Tocca la tua per aggiungere il suo pannello, oppure dicci che la tua è un'altra palestra.",
+      "claim": "Rivendica",
+      "claimAria": "Rivendica {{gym}}",
+      "save": "Aggiungi palestra",
+      "saveHint": "Dalle un nome e porta il punto sulla tua palestra.",
+      "limitReached": "Hai già il numero massimo di palestre per un account. Eliminane una che non gestisci più per aggiungerne un'altra.",
+      "saveFailed": "Impossibile aggiungere la tua palestra. Riprova."
     },
     "boardDetail": {
       "setActive": "Imposta come pannello attivo",

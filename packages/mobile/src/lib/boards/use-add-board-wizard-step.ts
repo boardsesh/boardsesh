@@ -51,6 +51,7 @@ export function useAddBoardWizardStep({
   path,
   abandonStep,
   abandonKind,
+  boardTypeKnown = false,
 }: {
   step: AddBoardWizardStep;
   /** The branch this screen is on, or null for step 1. */
@@ -58,13 +59,15 @@ export function useAddBoardWizardStep({
   abandonStep: WizardAbandonStep;
   /** `Board Builder Abandoned`'s `kind`: home, gym, or null before it is answered. */
   abandonKind: 'home' | 'gym' | null;
+  /** The board type is already chosen, so Which board? is skipped (Add your gym counts on it). */
+  boardTypeKnown?: boolean;
 }): AddBoardWizardStepState {
   const params = useLocalSearchParams<WizardRouteParams>();
   const { t } = useTranslation('boards');
   const entry = parseWizardEntry(params.entry);
   const trailParam = params.trail;
   const trail = useMemo(() => parseWizardTrail(trailParam), [trailParam]);
-  const position = wizardStepPosition(step, trail);
+  const position = wizardStepPosition(step, trail, { boardTypeKnown });
   const stepLabel = position ? t('mobile.addWizard.stepCounter', position) : null;
   const { returnTo, source } = params;
   const nextContext = useMemo<WizardRouteContext>(

@@ -585,7 +585,8 @@
       "gymBoardsLoading": "Plafones en este rocódromo",
       "stepCounter": "Paso {{current}} de {{total}}",
       "gymLockedHint": "Elegido en el paso anterior. Vuelve atrás para elegir otro rocódromo.",
-      "gymLockedHintGymPage": "Lo estás configurando desde la página de este rocódromo. Abre la página de otro rocódromo para añadir un plafón allí."
+      "gymLockedHintGymPage": "Lo estás configurando desde la página de este rocódromo. Abre la página de otro rocódromo para añadir un plafón allí.",
+      "gymLockedHintNewGym": "Acabas de añadir este rocódromo. Vuelve atrás para elegir otro."
     },
     "findWall": {
       "boardType": "Tipo de plafón",
@@ -630,8 +631,36 @@
       "inThisArea": "Rocódromos en esta zona",
       "noNameMatch": "Ningún rocódromo tiene ese nombre",
       "addGym": "Añadir mi rocódromo",
-      "addGymHint": "¿No aparece? Añádelo con tu plafón",
+      "addGymHint": "¿No aparece? Añádelo y luego su plafón",
       "places": "Lugares"
+    },
+    "newGym": {
+      "title": "Añade tu rocódromo",
+      "nameLabel": "Nombre del rocódromo",
+      "namePlaceholder": "El nombre de tu rocódromo",
+      "searchPlaceholder": "Busca una ciudad o una dirección",
+      "pinNeeded": "Busca una ciudad o usa tu ubicación, y mueve el mapa hasta que el punto quede sobre tu rocódromo.",
+      "pinZoomIn": "Acerca el mapa hasta que el punto quede sobre tu rocódromo.",
+      "pinAtYou": "El punto está donde estás tú.",
+      "pinFromYou": "El punto está a {{distance}} de ti.",
+      "pinNearPlace": "El punto está cerca de {{place}}.",
+      "pinSet": "El punto marca tu rocódromo.",
+      "pinMoveHint": "Mueve el mapa hasta que el punto quede sobre tu rocódromo.",
+      "fallbackNeeded": "El mapa no puede cargarse aquí. Busca la dirección de tu rocódromo o usa tu ubicación.",
+      "fallbackYou": "Pondremos tu rocódromo donde estás ahora.",
+      "fallbackPlace": "Pondremos tu rocódromo en {{place}}.",
+      "placeNotFound": "No hemos encontrado ese lugar. Elige una ciudad de la lista o prueba otra dirección.",
+      "addressLabel": "Dirección (opcional)",
+      "addressPlaceholder": "Calle y número",
+      "similarTitle": "Ya están en la lista cerca de aquí",
+      "similarBody": "¿Es alguno de estos? Toca el tuyo para añadir su plafón.",
+      "similarRefusedBody": "Estos rocódromos ya están en la lista. Toca el tuyo para añadir su plafón, o dinos que el tuyo es otro rocódromo.",
+      "claim": "Reclamar",
+      "claimAria": "Reclamar {{gym}}",
+      "save": "Añadir rocódromo",
+      "saveHint": "Ponle un nombre y lleva el punto hasta tu rocódromo.",
+      "limitReached": "Ya tienes el máximo de rocódromos que permite una cuenta. Elimina uno que ya no gestiones para añadir otro.",
+      "saveFailed": "No se ha podido añadir tu rocódromo. Inténtalo de nuevo."
     },
     "boardDetail": {
       "setActive": "Usar este plafón",

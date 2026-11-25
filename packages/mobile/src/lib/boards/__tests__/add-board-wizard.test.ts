@@ -10,6 +10,7 @@ const {
   wizardBoardHref,
   wizardGymBoardsHref,
   wizardGymHref,
+  wizardNewGymHref,
   wizardSetupHref,
   wizardStepPosition,
   wizardWhereHref,
@@ -28,11 +29,39 @@ describe('wizardStepPosition', () => {
       trail: ['where', 'gym', 'gym_boards'],
       expected: { current: 4, total: 4 },
     },
+    // A gym that isn't listed: Add your gym, then Set up (the type was chosen
+    // on the map) or Which board? and Set up. Every screen from Add your gym
+    // on agrees on the total.
     {
-      name: '+ gym, gym not listed, no type: Which board?',
-      step: 'board',
+      name: '+ gym, not listed, type known: Add your gym',
+      step: 'new_gym',
       trail: ['where', 'gym'],
+      known: true,
       expected: { current: 3, total: 4 },
+    },
+    {
+      name: '+ gym, not listed, type known: Set up',
+      step: 'setup',
+      trail: ['where', 'gym', 'new_gym'],
+      expected: { current: 4, total: 4 },
+    },
+    {
+      name: '+ gym, not listed, no type: Add your gym',
+      step: 'new_gym',
+      trail: ['where', 'gym'],
+      expected: { current: 3, total: 5 },
+    },
+    {
+      name: '+ gym, not listed, no type: Which board?',
+      step: 'board',
+      trail: ['where', 'gym', 'new_gym'],
+      expected: { current: 4, total: 5 },
+    },
+    {
+      name: '+ gym, not listed, no type: Set up',
+      step: 'setup',
+      trail: ['where', 'gym', 'new_gym', 'board'],
+      expected: { current: 5, total: 5 },
     },
     { name: '+ home: Which board?', step: 'board', trail: ['where'], expected: { current: 2, total: 3 } },
     { name: '+ home: Set up', step: 'setup', trail: ['where', 'board'], expected: { current: 3, total: 3 } },
@@ -46,8 +75,9 @@ describe('wizardStepPosition', () => {
     // Step 1's total depends on the answer, so it shows none.
     { name: 'step 1', step: 'where', trail: [], expected: null },
     { name: 'the spray hand-off', step: 'spray', trail: ['where'], expected: null },
-  ] as const)('$name', ({ step, trail, expected }) => {
-    expect(wizardStepPosition(step, trail)).toEqual(expected);
+  ] as const)('$name', (row) => {
+    const boardTypeKnown = 'known' in row ? row.known : false;
+    expect(wizardStepPosition(row.step, row.trail, { boardTypeKnown })).toEqual(row.expected);
   });
 });
 
@@ -75,6 +105,7 @@ describe('route params', () => {
 
   it('reads a trail in order, dropping steps it does not know and the spray hand-off', () => {
     expect(parseWizardTrail('where,gym,gym_boards')).toEqual(['where', 'gym', 'gym_boards']);
+    expect(parseWizardTrail('where,gym,new_gym,board')).toEqual(['where', 'gym', 'new_gym', 'board']);
     expect(parseWizardTrail('where,bogus,board')).toEqual(['where', 'board']);
     expect(parseWizardTrail('spray')).toEqual([]);
     expect(parseWizardTrail('')).toEqual([]);
@@ -109,11 +140,20 @@ describe('wizard hrefs', () => {
     });
   });
 
-  it('opens Which board? on its path, focusing the location for an unlisted gym', () => {
-    expect(wizardBoardHref({ ...context, trail: ['where', 'gym'] }, 'gym', { focusLocation: true })).toEqual({
-      pathname: '/boards/add/board',
-      params: { ...context, trail: 'where,gym', path: 'gym', focusLocation: '1' },
+  it('opens Add your gym carrying the type chosen on the map', () => {
+    expect(wizardNewGymHref({ ...context, trail: ['where', 'gym'] }, 'kilter')).toEqual({
+      pathname: '/boards/add/new-gym',
+      params: { ...context, trail: 'where,gym', boardType: 'kilter' },
     });
+    expect(wizardNewGymHref({ ...context, trail: ['where', 'gym'] }, null).params).not.toHaveProperty('boardType');
+  });
+
+  it('opens Which board? on its path, carrying a gym just added on to Set up', () => {
+    expect(wizardBoardHref({ ...context, trail: ['where', 'gym', 'new_gym'] }, 'gym', { gymUuid: 'gym-new' })).toEqual({
+      pathname: '/boards/add/board',
+      params: { ...context, trail: 'where,gym,new_gym', path: 'gym', gymUuid: 'gym-new' },
+    });
+    expect(wizardBoardHref({ ...context, trail: ['where'] }, 'home').params).not.toHaveProperty('gymUuid');
   });
 
   it("opens Set up on the type's most used setup, with the gym when the path has one", () => {

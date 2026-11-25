@@ -4,13 +4,14 @@
 // and what it reports. The step components (GymStep, BoardTypeStep) are stubs
 // that hand back their callbacks; their own suites cover what they draw.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 type Children = { children?: ReactNode };
 
 const pushMock = vi.hoisted(() => vi.fn());
 const dismissToMock = vi.hoisted(() => vi.fn());
+const replaceMock = vi.hoisted(() => vi.fn());
 const backMock = vi.hoisted(() => vi.fn());
 const headerActions = vi.hoisted(() => ({
   leading: undefined as null | undefined | { kind: string; onPress: () => void },
@@ -34,6 +35,22 @@ const gymStep = vi.hoisted(() => ({
     onAddGym: (boardType: string | null) => void;
   },
 }));
+const newGymStep = vi.hoisted(() => ({
+  last: null as null | {
+    stepLabel: string | null;
+    onPickExistingGym: (gymUuid: string) => void;
+    onClaimGym: (gymUuid: string) => void;
+    onCreated: (gym: { uuid: string }) => void;
+    onSignInNeeded: () => void;
+    onSubmittingChange: (submitting: boolean) => void;
+  },
+}));
+const navigationState = vi.hoisted(() => ({
+  preventRemove: [] as boolean[],
+  options: [] as Array<Record<string, unknown>>,
+  focused: true,
+  disablePrevention: vi.fn(),
+}));
 const typeStep = vi.hoisted(() => ({
   last: null as null | { stepLabel: string | null; onPick: (boardName: string) => void },
 }));
@@ -44,8 +61,16 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
 vi.mock('expo-router', () => ({
-  useRouter: () => ({ push: pushMock, back: backMock, dismissTo: dismissToMock }),
-  useNavigation: () => ({ getState: () => ({ index: state.stackIndex }) }),
+  useRouter: () => ({ push: pushMock, back: backMock, dismissTo: dismissToMock, replace: replaceMock }),
+  useNavigation: () => ({
+    getState: () => ({ index: state.stackIndex }),
+    setOptions: (options: Record<string, unknown>) => navigationState.options.push(options),
+  }),
+  useIsFocused: () => navigationState.focused,
+  usePreventRemove: (prevent: boolean) => {
+    navigationState.preventRemove.push(prevent);
+    return navigationState.disablePrevention;
+  },
   Redirect: ({ href }: { href: { pathname: string; params: Record<string, string> } }) =>
     createElement('a', { 'data-testid': 'redirect', 'data-href': JSON.stringify(href) }),
   useLocalSearchParams: () => state.params,
@@ -72,6 +97,12 @@ vi.mock('../../../src/components/board-discovery/add-board-wizard/WizardStepHead
 vi.mock('../../../src/components/board-discovery/gym-step/GymStep', () => ({
   GymStep: (props: NonNullable<(typeof gymStep)['last']>) => {
     gymStep.last = props;
+    return null;
+  },
+}));
+vi.mock('../../../src/components/board-discovery/new-gym-step/NewGymStep', () => ({
+  NewGymStep: (props: NonNullable<(typeof newGymStep)['last']>) => {
+    newGymStep.last = props;
     return null;
   },
 }));
@@ -109,6 +140,7 @@ const { default: AddBoardWhere } = await import('../add/index');
 const { default: AddBoardGym } = await import('../add/gym');
 const { default: AddBoardType } = await import('../add/board');
 const { default: AddBoardGymBoards } = await import('../add/gym-boards');
+const { default: AddBoardNewGym } = await import('../add/new-gym');
 
 function events(name: string) {
   return trackMock.mock.calls.filter(([eventName]) => eventName === name).map(([, props]) => props);
@@ -120,6 +152,10 @@ beforeEach(() => {
   state.signedIn = true;
   state.focusEffects = [];
   gymStep.last = null;
+  newGymStep.last = null;
+  navigationState.focused = true;
+  navigationState.preventRemove = [];
+  navigationState.options = [];
   typeStep.last = null;
   wallList.last = null;
   headerActions.leading = undefined;
@@ -218,27 +254,24 @@ describe('Which gym?', () => {
     });
   });
 
-  it('asks Which board? for an unlisted gym with no type, and opens Set up when the type is known', () => {
+  it('sends Add my gym to Add your gym, carrying the type chosen on the map', () => {
     render(createElement(AddBoardGym));
-    gymStep.last?.onAddGym(null);
-    expect(pushMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        pathname: '/boards/add/board',
-        params: expect.objectContaining({ path: 'gym', focusLocation: '1', trail: 'where,gym' }),
-      }),
-    );
-    // The type picked on the map stands for Which board?: Set up stays step 4
-    // of 4, and a gym board opens on its type only, never a guessed setup.
     gymStep.last?.onAddGym('moonboard');
-    const [route] = pushMock.mock.calls.at(-1) as [{ pathname: string; params: Record<string, string> }];
-    expect(route.pathname).toBe('/boards/create');
-    expect(route.params).toMatchObject({
-      path: 'gym',
-      boardType: 'moonboard',
-      focusLocation: '1',
-      trail: 'where,gym,board',
+    expect(pushMock).toHaveBeenLastCalledWith({
+      pathname: '/boards/add/new-gym',
+      params: {
+        returnTo: '/(tabs)/climbs',
+        source: 'onboarding',
+        entry: 'picker',
+        trail: 'where,gym',
+        boardType: 'moonboard',
+      },
     });
-    expect(route.params).not.toHaveProperty('preset');
+    gymStep.last?.onAddGym(null);
+    const [route] = pushMock.mock.calls.at(-1) as [{ pathname: string; params: Record<string, string> }];
+    expect(route.pathname).toBe('/boards/add/new-gym');
+    expect(route.params).not.toHaveProperty('boardType');
+    expect(route.params).not.toHaveProperty('focusLocation');
   });
 
   // In place of the picker: pushed from in here it stacked a second sheet.
@@ -273,16 +306,33 @@ describe('Which board?', () => {
     expect(events('Add Board Wizard Step Viewed')).toEqual([{ step: 'board', path: 'home', entry: 'picker' }]);
   });
 
-  it('carries an unlisted gym on to Set up with the location focused', () => {
-    state.params = { ...state.params, trail: 'where,gym', path: 'gym', focusLocation: '1' };
+  it('carries a gym just added on to Set up, where it is locked', () => {
+    state.params = { ...state.params, trail: 'where,gym,new_gym', path: 'gym', gymUuid: 'gym-new' };
     render(createElement(AddBoardType));
-    expect(typeStep.last?.stepLabel).toBe('mobile.addWizard.stepCounter {"current":3,"total":4}');
+    expect(typeStep.last?.stepLabel).toBe('mobile.addWizard.stepCounter {"current":4,"total":5}');
     typeStep.last?.onPick('kilter');
-    expect(pushMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        params: expect.objectContaining({ path: 'gym', kind: 'gym', focusLocation: '1', trail: 'where,gym,board' }),
-      }),
-    );
+    const [route] = pushMock.mock.calls.at(-1) as [{ pathname: string; params: Record<string, string> }];
+    expect(route).toEqual({
+      pathname: '/boards/create',
+      params: {
+        returnTo: '/(tabs)/climbs',
+        source: 'onboarding',
+        entry: 'picker',
+        trail: 'where,gym,new_gym,board',
+        path: 'gym',
+        kind: 'gym',
+        boardType: 'kilter',
+        gymUuid: 'gym-new',
+      },
+    });
+  });
+
+  it('ignores a gym on the home path', () => {
+    state.params = { ...state.params, trail: 'where', path: 'home', gymUuid: 'gym-new' };
+    render(createElement(AddBoardType));
+    typeStep.last?.onPick('kilter');
+    const [route] = pushMock.mock.calls.at(-1) as [{ pathname: string; params: Record<string, string> }];
+    expect(route.params).not.toHaveProperty('gymUuid');
   });
 });
 
@@ -348,5 +398,164 @@ describe('Boards at {gym}', () => {
     expect(wallList.last).toBeNull();
     unmount();
     expect(trackMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('Add your gym', () => {
+  const created = { uuid: 'gym-new' };
+
+  it('counts itself step 3 of 4 with the type known, and opens Set up with the new gym locked', () => {
+    state.params = { ...state.params, trail: 'where,gym', boardType: 'kilter' };
+    const { unmount } = render(createElement(AddBoardNewGym));
+    expect(newGymStep.last?.stepLabel).toBe('mobile.addWizard.stepCounter {"current":3,"total":4}');
+    expect(events('Add Board Wizard Step Viewed')).toEqual([{ step: 'new_gym', path: 'gym', entry: 'picker' }]);
+    newGymStep.last?.onCreated(created);
+    // Replaced, not pushed: Back from Set up never lands on the filled-in form.
+    expect(pushMock).not.toHaveBeenCalled();
+    expect(replaceMock).toHaveBeenCalledExactlyOnceWith({
+      pathname: '/boards/create',
+      params: {
+        returnTo: '/(tabs)/climbs',
+        source: 'onboarding',
+        entry: 'picker',
+        trail: 'where,gym,new_gym',
+        path: 'gym',
+        kind: 'gym',
+        boardType: 'kilter',
+        gymUuid: 'gym-new',
+      },
+    });
+    // Set up takes the flow over: this screen going is not the climber leaving.
+    unmount();
+    expect(events('Board Builder Abandoned')).toEqual([]);
+  });
+
+  it('counts itself step 3 of 5 with no type, and goes on to Which board? carrying the gym', () => {
+    state.params = { ...state.params, trail: 'where,gym' };
+    render(createElement(AddBoardNewGym));
+    expect(newGymStep.last?.stepLabel).toBe('mobile.addWizard.stepCounter {"current":3,"total":5}');
+    newGymStep.last?.onCreated(created);
+    expect(replaceMock).toHaveBeenCalledExactlyOnceWith({
+      pathname: '/boards/add/board',
+      params: {
+        returnTo: '/(tabs)/climbs',
+        source: 'onboarding',
+        entry: 'picker',
+        trail: 'where,gym,new_gym',
+        path: 'gym',
+        gymUuid: 'gym-new',
+      },
+    });
+  });
+
+  it("opens a gym that is already listed on its boards, as Which gym?'s pick would", () => {
+    state.params = { ...state.params, trail: 'where,gym', boardType: 'moonboard' };
+    render(createElement(AddBoardNewGym));
+    newGymStep.last?.onPickExistingGym('gym-listed');
+    expect(pushMock).toHaveBeenCalledExactlyOnceWith({
+      pathname: '/boards/add/gym-boards',
+      params: {
+        returnTo: '/(tabs)/climbs',
+        source: 'onboarding',
+        entry: 'picker',
+        trail: 'where,gym,new_gym',
+        gymUuid: 'gym-listed',
+        boardType: 'moonboard',
+      },
+    });
+  });
+
+  it("opens a listed gym's page in the Boards stack to claim it", () => {
+    state.params = { ...state.params, trail: 'where,gym' };
+    render(createElement(AddBoardNewGym));
+    newGymStep.last?.onClaimGym('gym-listed');
+    expect(pushMock).toHaveBeenCalledExactlyOnceWith({
+      pathname: '/boards/gym/[gym]',
+      params: { gym: 'gym-listed', returnTo: '/(tabs)/climbs' },
+    });
+  });
+
+  it('sends a signed-out Save to sign in in place of the picker, not stacked on it', () => {
+    state.params = { ...state.params, trail: 'where,gym' };
+    render(createElement(AddBoardNewGym));
+    newGymStep.last?.onSignInNeeded();
+    expect(dismissToMock).toHaveBeenCalledExactlyOnceWith('/auth/login');
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it('holds the screen while a save is out, and lets it go for the hand-off', () => {
+    state.params = { ...state.params, trail: 'where,gym', boardType: 'kilter' };
+    navigationState.preventRemove = [];
+    navigationState.options = [];
+    render(createElement(AddBoardNewGym));
+    expect(navigationState.preventRemove.at(-1)).toBe(false);
+    act(() => newGymStep.last?.onSubmittingChange(true));
+    expect(navigationState.preventRemove.at(-1)).toBe(true);
+    expect(navigationState.options.at(-1)).toEqual({ gestureEnabled: false });
+    act(() => newGymStep.last?.onCreated(created));
+    expect(navigationState.disablePrevention).toHaveBeenCalled();
+    expect(replaceMock).toHaveBeenCalledOnce();
+    expect(navigationState.preventRemove.at(-1)).toBe(false);
+  });
+
+  it('frees the screen again when the save comes back refused', () => {
+    state.params = { ...state.params, trail: 'where,gym' };
+    navigationState.preventRemove = [];
+    render(createElement(AddBoardNewGym));
+    act(() => newGymStep.last?.onSubmittingChange(true));
+    act(() => newGymStep.last?.onSubmittingChange(false));
+    expect(navigationState.preventRemove.at(-1)).toBe(false);
+    expect(navigationState.options.at(-1)).toEqual({ gestureEnabled: true });
+  });
+
+  it('moves nothing for a save that lands after the screen went, and reports the flow once', () => {
+    state.params = { ...state.params, trail: 'where,gym', boardType: 'kilter' };
+    const { unmount } = render(createElement(AddBoardNewGym));
+    const step = newGymStep.last;
+    act(() => step?.onSubmittingChange(true));
+    unmount();
+    step?.onCreated(created);
+    expect(replaceMock).not.toHaveBeenCalled();
+    // The gym is on its way: leaving mid-save is not abandoning (Gym Created reports it).
+    expect(events('Board Builder Abandoned')).toEqual([]);
+  });
+
+  it('finishes a save that landed while another screen was in front once it is back in front', () => {
+    state.params = { ...state.params, trail: 'where,gym' };
+    navigationState.focused = false;
+    const { rerender } = render(createElement(AddBoardNewGym));
+    act(() => newGymStep.last?.onSubmittingChange(true));
+    act(() => newGymStep.last?.onCreated(created));
+    expect(replaceMock).not.toHaveBeenCalled();
+    navigationState.focused = true;
+    rerender(createElement(AddBoardNewGym));
+    expect(replaceMock).toHaveBeenCalledTimes(1);
+    // Not left holding the screen on "saving".
+    expect(navigationState.preventRemove.at(-1)).toBe(false);
+  });
+
+  it('ignores a listed gym or its Claim while a save is out', () => {
+    state.params = { ...state.params, trail: 'where,gym', boardType: 'kilter' };
+    render(createElement(AddBoardNewGym));
+    act(() => newGymStep.last?.onSubmittingChange(true));
+    newGymStep.last?.onPickExistingGym('gym-listed');
+    newGymStep.last?.onClaimGym('gym-listed');
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it('reports leaving after a refused save as leaving', () => {
+    state.params = { ...state.params, trail: 'where,gym' };
+    const { unmount } = render(createElement(AddBoardNewGym));
+    act(() => newGymStep.last?.onSubmittingChange(true));
+    act(() => newGymStep.last?.onSubmittingChange(false));
+    unmount();
+    expect(events('Board Builder Abandoned')).toEqual([expect.objectContaining({ step: 'find', kind: 'gym' })]);
+  });
+
+  it('reports leaving with nothing added as the find step on the gym path', () => {
+    state.params = { ...state.params, trail: 'where,gym' };
+    const { unmount } = render(createElement(AddBoardNewGym));
+    unmount();
+    expect(events('Board Builder Abandoned')).toEqual([expect.objectContaining({ step: 'find', kind: 'gym' })]);
   });
 });

@@ -1296,14 +1296,16 @@ export const SHARED_EVENTS = {
   BoardKindChosen: 'Board Kind Chosen',
   // Mobile only, flag add-board-wizard. A screen of the add-a-board wizard
   // opened. Props: { step: where (Where's the board?) | gym (Which gym?, the
-  // map) | gym_boards (Boards at {gym}) | board (Which board?, the type tiles)
+  // map) | gym_boards (Boards at {gym}) | new_gym (Add your gym, from 2026-11:
+  // the gym isn't listed) | board (Which board?, the type tiles)
   // | setup (the builder) | spray (handed off to the add-a-wall wizard, whose
   // own Spray Wall events take over), path: gym | home | spray (null on step
   // 1, before it is answered), entry: picker | manage (the + on either) |
   // empty_state | first_run | gym_page | in_range | link (an old
   // /boards/where, /boards/find-wall or bare /boards/create link redirected
   // in) }. Once per screen mount, so Back then forward counts twice. Funnel:
-  // where -> gym -> gym_boards -> setup, or where -> board -> setup; then Board
+  // where -> gym -> gym_boards -> setup, where -> gym -> new_gym -> (board ->)
+  // setup, or where -> board -> setup; then Board
   // Created, which carries the same entry and path.
   AddBoardWizardStepViewed: 'Add Board Wizard Step Viewed',
   // The climber began looking for their gym's wall. Props: { method: location
@@ -1369,6 +1371,19 @@ export const SHARED_EVENTS = {
   // The map card's locate button was tapped (fly back to the climber, or ask
   // for location when there is no fix). Props: { surface }.
   GymFinderLocateTapped: 'Gym Finder Locate Tapped',
+  // A climber added a gym (mobile, from 2026-11: the add-a-board wizard's "Add
+  // your gym", after "Add my gym" on Which gym?). Built by gymCreated in
+  // gym-finder-events.ts. Props: { surface: wizard, similarShown (how many
+  // different listed gyms were shown as already listed nearby, from the
+  // lookup as the name and pin settled or from a GYM_SIMILAR_EXISTS refusal),
+  // confirmedSeparate (the save said some of them were not this gym),
+  // hasAddress, locationSource: device (the device fix, the map not moved
+  // since) | map (the map moved under the dot) | address (a typed address
+  // geocoded and the map not moved since, on native or where the map can't
+  // draw) }. town is in the type but never sent: a picked town only moves the
+  // map, and Save waits until the climber moves it under the dot (map). Once
+  // per created gym; a refusal is not sent. Names no gym, place or text typed.
+  GymCreated: 'Gym Created',
   // A gym's page opened, once per gym per visit, after the gym loaded and the
   // viewer's identity resolved. Props: { surface: app (the app's gym page,
   // from 2026-11) | web (reserved for www's /gym/{slug}), listingState:

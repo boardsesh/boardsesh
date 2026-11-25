@@ -57,3 +57,33 @@ export function gymFinderLocateTapped(
 ): GymFinderPayload<typeof SHARED_EVENTS.GymFinderLocateTapped, GymFinderSurfaceProps> {
   return { name: SHARED_EVENTS.GymFinderLocateTapped, properties: { surface } };
 }
+
+/** Where a gym was created from. Only the add-a-board wizard's "Add your gym" today. */
+export type GymCreatedSurface = 'wizard';
+
+/**
+ * Where the new gym's location came from: the device fix, the map moved under
+ * the dot, or a typed address geocoded. `town` (a picked town, the map not
+ * moved yet) is a pin the app holds but never saves, so `Gym Created` never
+ * carries it.
+ */
+export type GymLocationSource = 'device' | 'map' | 'town' | 'address';
+
+export type GymCreatedProps = {
+  surface: GymCreatedSurface;
+  /** How many different listed gyms were shown as "already listed nearby" before the save went through. */
+  similarShown: number;
+  /** The save named gyms the climber said were not theirs (`CONFIRMED_SEPARATE`). */
+  confirmedSeparate: boolean;
+  /** An address was given. Never the address itself. */
+  hasAddress: boolean;
+  locationSource: GymLocationSource;
+};
+
+/** `Gym Created`: a climber added a gym. Counts and flags only, no gym, name or place. */
+export function gymCreated(properties: GymCreatedProps): {
+  name: typeof SHARED_EVENTS.GymCreated;
+  properties: GymCreatedProps;
+} {
+  return { name: SHARED_EVENTS.GymCreated, properties };
+}
