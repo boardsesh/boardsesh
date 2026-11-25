@@ -14,7 +14,7 @@ import {
 import { detectorConfig } from './config';
 import { InferenceRunner } from './inference';
 import { detectionProposal } from './result';
-import { WORK_LOOP_STALL_SECONDS, detectorJobQueueOptions, workLoopAgeSeconds } from './queue';
+import { WORK_LOOP_STALL_SECONDS, detectorJobQueueOptions, probeHasHung, workLoopAgeSeconds } from './queue';
 
 async function main(): Promise<void> {
   const config = detectorConfig();
@@ -39,17 +39,14 @@ async function main(): Promise<void> {
   let pendingCount = 0;
   let oldestPendingAt: Date | null = null;
   let workLoopAge: number | null = null;
+  let probeStartedAt: number | null = null;
   const processStartedAt = Date.now() / 1000;
   boss.on('error', () => {
     ready = false;
     console.error(JSON.stringify({ event: 'queue_connection_failed' }));
   });
   const health = createServer((request, response) => {
-    const healthy =
-      ready &&
-      inference.ready &&
-      Date.now() - lastQueueContact < 60_000 &&
-      (workLoopAge === null || workLoopAge < WORK_LOOP_STALL_SECONDS);
+    const healthy = ready && inference.ready && Date.now() - lastQueueContact < 60_000;
     if (request.url === '/metrics') {
       response.setHeader('Content-Type', 'text/plain; version=0.0.4');
       response.end(
@@ -134,6 +131,17 @@ async function main(): Promise<void> {
       console.error(JSON.stringify({ event: 'work_loop_stalled', ageSeconds: Math.round(workLoopAge) }));
       process.exit(1);
     }
+    if (probeStartedAt !== null) {
+      // The previous probe is still waiting. A failing database rejects within
+      // the queue's 30 s deadline, so only a hung socket keeps it this long, and
+      // the Drizzle pool has no read deadline to free it.
+      if (!stopping && probeHasHung(probeStartedAt, Date.now())) {
+        console.error(JSON.stringify({ event: 'probe_stalled' }));
+        process.exit(1);
+      }
+      return;
+    }
+    probeStartedAt = Date.now();
     try {
       // Both queues must exist: a missing completion queue means the backend
       // migrator has not run for this release yet.
@@ -149,13 +157,16 @@ async function main(): Promise<void> {
       ready = !stopping;
     } catch {
       ready = false;
+    } finally {
+      probeStartedAt = null;
     }
   };
-  await probe();
+  // Start the heartbeat first, so a first probe that hangs is still caught.
   const heartbeat = setInterval(() => {
     void probe();
   }, 15_000);
   heartbeat.unref();
+  await probe();
   const shutdown = async () => {
     if (stopping) return;
     stopping = true;

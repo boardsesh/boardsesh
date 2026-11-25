@@ -1011,6 +1011,12 @@ attempt with its own claim if the family has retries left; that uses one. A
 family with `retryLimit: 0` loses that run outright. `provider-routine-cycle` is
 one; its next cycle, five minutes later, covers it.
 
+The hold detector is the exception: its pg-boss pool also runs `complete`,
+`fail`, `touch` and `getQueue`. Only the completion `send` goes through Drizzle.
+A `complete` the deadline cancels costs one retry: the heartbeat expires, pg-boss
+retries the job, and the claim returns null because the detection is already
+`done`.
+
 **The hold detector takes both deadlines too.** `packages/hold-detector` builds
 its own pg-boss client (`detectorJobQueueOptions`) and reaches the primary
 through the same proxy. It shipped without them: from about 07:04 UTC on

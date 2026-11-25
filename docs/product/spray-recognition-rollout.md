@@ -45,10 +45,16 @@ The detector's pg-boss pool uses the workers' read deadlines: 30 s client-side,
 25 s server-side (`docs/operations/db-connectivity.md`, "Worker job-queue read
 deadline"). As a backstop, a probe every 15 s reads pg-boss's worker state. If
 the detection loop has not fetched, finished a job or reported an error for
-300 s, `/health` turns 503, the detector logs `work_loop_stalled` and exits, and
-Docker's `restart: unless-stopped` starts a fresh process. A failing fetch still
-counts as a live loop, since a restart cannot fix a database outage.
-`boardsesh_detector_work_loop_age_seconds` exposes the same age on `/metrics`.
+300 s, the detector logs `work_loop_stalled` and exits, and Docker's
+`restart: unless-stopped` starts a fresh process. A failing fetch still counts as
+a live loop, since a restart cannot fix a database outage.
+`boardsesh_detector_work_loop_age_seconds` exposes the age on `/metrics`.
+
+The probe guards the Drizzle pool too, which claims and finishes jobs and has no
+read deadline. A probe that fails is a database outage: `/health` turns 503 and
+the detector keeps running. A probe still waiting after 180 s means a hung
+socket: the detector logs `probe_stalled` and exits the same way. Docker never
+restarts a container just for being unhealthy, so the exit is what recovers it.
 
 Mobile polls in the foreground and resumes by draft version. New-wall owners
 can choose manual placement while waiting. A reset has no empty-result fallback

@@ -125,7 +125,8 @@ export const BACKGROUND_JOB_RECONCILE_QUEUE = 'background-job-reconcile';
 
 /**
  * How long a worker's pg-boss pool waits for a query's answer before giving up
- * on the connection (#6683). A worker's pool holds one connection, and pg-pool
+ * on the connection (#6683). A worker's pool holds one connection (the hold
+ * detector's holds three), and pg-pool
  * never takes back a connection that is checked out. A query that never gets
  * an answer, such as a fetch sent down a socket the network silently dropped
  * after acknowledging it, used to hold that one slot forever: every later
