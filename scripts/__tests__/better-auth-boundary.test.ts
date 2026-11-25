@@ -606,6 +606,8 @@ describe('identity writer catalog', () => {
     expect(callers).toEqual([
       ['packages/backend/src/auth/authority/identity-authority.ts', 3],
       ['packages/backend/src/auth/current-store/password-identity.ts', 1],
+      // Default reset owns the shared absent/prepared gate and users row; capture follows its real conditional write in the same transaction.
+      ['packages/backend/src/auth/current-store/password-recovery-family.ts', 1],
     ]);
   });
 

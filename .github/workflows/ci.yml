@@ -1838,6 +1838,11 @@ jobs:
           mkdir -p packages/backend/test-results
           vp run test:password-evidence-proof --reporter=junit --outputFile.junit=./test-results/junit-password-evidence-proof.xml
           test -s packages/backend/test-results/junit-password-evidence-proof.xml
+      - name: Run pre-enforcement recovery backend proofs
+        run: |
+          mkdir -p packages/backend/test-results
+          vp run test:recovery-backend --reporter=junit --outputFile.junit=./test-results/junit-recovery-backend.xml
+          test -s packages/backend/test-results/junit-recovery-backend.xml
       - name: Upload credential proof results
         uses: actions/upload-artifact@v4
         if: always()
@@ -1854,6 +1859,7 @@ jobs:
             packages/backend/test-results/junit-password-login-backend.xml
             packages/web/test-results/junit-password-login-web.xml
             packages/backend/test-results/junit-password-evidence-proof.xml
+            packages/backend/test-results/junit-recovery-backend.xml
           retention-days: 7
 
   # BA-04 web writer fence (docs/auth/better-auth-writer-fence-proof.md). Its own PG18

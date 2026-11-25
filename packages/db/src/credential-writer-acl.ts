@@ -9,11 +9,13 @@ import reviewedBrowserRenewalRelationShapes from './credential-writer-private-br
 import reviewedSessionSyncRelationShapes from './credential-writer-partner-session-sync';
 import reviewedRegistrationUsersShape from './credential-writer-registration-users';
 import reviewedPasswordEvidenceRelationShapes from './credential-writer-password-evidence-v1';
+import reviewedRecoveryRelationShapes from './credential-writer-recovery-v1';
 
 export const CREDENTIAL_WRITER_ROLE = 'boardsesh_identity_writer';
 export type CredentialWriterContract =
   | 'private-registration-v1'
   | 'private-registration-evidence-v1'
+  | 'private-recovery-v1'
   | 'private-web-v1'
   | 'private-browser-v1'
   | 'private-provider-v1'
@@ -177,6 +179,15 @@ export const PRIVATE_REGISTRATION_EVIDENCE_CREDENTIAL_COLUMN_CAPABILITIES: Reado
   auth_password_change_evidence: Object.freeze({ password_fingerprint: updateOnly, changed_at: updateOnly }),
 });
 
+/** Reset-only ledger extension; existing registration/evidence privileges stay exact. */
+export const PRIVATE_RECOVERY_CREDENTIAL_CAPABILITIES: Readonly<Record<string, readonly CredentialPrivilege[]>> =
+  Object.freeze({
+    ...PRIVATE_REGISTRATION_EVIDENCE_CREDENTIAL_CAPABILITIES,
+    auth_pre_enforcement_password_reset_events: Object.freeze(['SELECT', 'INSERT'] as const),
+  });
+export const PRIVATE_RECOVERY_CREDENTIAL_COLUMN_CAPABILITIES =
+  PRIVATE_REGISTRATION_EVIDENCE_CREDENTIAL_COLUMN_CAPABILITIES;
+
 // All profiles review the existing password-trigger closure. The provider
 // profile and its explicit supersets permit the pinned invoker and narrow grants.
 const partnerRevocationRelations = [
@@ -228,6 +239,7 @@ export async function qualifyCredentialWriter(
     ![
       'private-registration-v1',
       'private-registration-evidence-v1',
+      'private-recovery-v1',
       'private-web-v1',
       'private-browser-v1',
       'private-provider-v1',
@@ -244,35 +256,40 @@ export async function qualifyCredentialWriter(
   const nativeHandoff = requested.contract === 'private-native-handoff-v1' || browserRenewal;
   const firstPassword = requested.contract === 'private-first-password-v1' || nativeHandoff;
   const directPartnerRevocation = requested.contract === 'private-provider-v1' || firstPassword;
-  const registrationEvidence = requested.contract === 'private-registration-evidence-v1';
+  const recovery = requested.contract === 'private-recovery-v1';
+  const registrationEvidence = requested.contract === 'private-registration-evidence-v1' || recovery;
   const registration = requested.contract === 'private-registration-v1' || registrationEvidence;
   // Current trigger closure can be qualified without granting the LOGIN direct
   // partner revocation. Historical web/browser profiles retain their snapshots.
   const currentClosure = directPartnerRevocation || registration;
-  const capabilities = registrationEvidence
-    ? PRIVATE_REGISTRATION_EVIDENCE_CREDENTIAL_CAPABILITIES
-    : passwordEvidence
-      ? PRIVATE_PASSWORD_EVIDENCE_CREDENTIAL_CAPABILITIES
-      : browserRenewal
-        ? PRIVATE_BROWSER_RENEWAL_CREDENTIAL_CAPABILITIES
-        : nativeHandoff
-          ? PRIVATE_NATIVE_HANDOFF_CREDENTIAL_CAPABILITIES
-          : firstPassword
-            ? PRIVATE_FIRST_PASSWORD_CREDENTIAL_CAPABILITIES
-            : directPartnerRevocation
-              ? PRIVATE_PROVIDER_CREDENTIAL_CAPABILITIES
-              : requested.contract === 'private-browser-v1'
-                ? PRIVATE_BROWSER_CREDENTIAL_CAPABILITIES
-                : PRIVATE_WEB_CREDENTIAL_CAPABILITIES;
-  const columnCapabilities = registrationEvidence
-    ? PRIVATE_REGISTRATION_EVIDENCE_CREDENTIAL_COLUMN_CAPABILITIES
-    : passwordEvidence
-      ? PRIVATE_PASSWORD_EVIDENCE_CREDENTIAL_COLUMN_CAPABILITIES
-      : browserRenewal
-        ? PRIVATE_BROWSER_RENEWAL_CREDENTIAL_COLUMN_CAPABILITIES
-        : directPartnerRevocation
-          ? PRIVATE_PROVIDER_CREDENTIAL_COLUMN_CAPABILITIES
-          : PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES;
+  const capabilities = recovery
+    ? PRIVATE_RECOVERY_CREDENTIAL_CAPABILITIES
+    : registrationEvidence
+      ? PRIVATE_REGISTRATION_EVIDENCE_CREDENTIAL_CAPABILITIES
+      : passwordEvidence
+        ? PRIVATE_PASSWORD_EVIDENCE_CREDENTIAL_CAPABILITIES
+        : browserRenewal
+          ? PRIVATE_BROWSER_RENEWAL_CREDENTIAL_CAPABILITIES
+          : nativeHandoff
+            ? PRIVATE_NATIVE_HANDOFF_CREDENTIAL_CAPABILITIES
+            : firstPassword
+              ? PRIVATE_FIRST_PASSWORD_CREDENTIAL_CAPABILITIES
+              : directPartnerRevocation
+                ? PRIVATE_PROVIDER_CREDENTIAL_CAPABILITIES
+                : requested.contract === 'private-browser-v1'
+                  ? PRIVATE_BROWSER_CREDENTIAL_CAPABILITIES
+                  : PRIVATE_WEB_CREDENTIAL_CAPABILITIES;
+  const columnCapabilities = recovery
+    ? PRIVATE_RECOVERY_CREDENTIAL_COLUMN_CAPABILITIES
+    : registrationEvidence
+      ? PRIVATE_REGISTRATION_EVIDENCE_CREDENTIAL_COLUMN_CAPABILITIES
+      : passwordEvidence
+        ? PRIVATE_PASSWORD_EVIDENCE_CREDENTIAL_COLUMN_CAPABILITIES
+        : browserRenewal
+          ? PRIVATE_BROWSER_RENEWAL_CREDENTIAL_COLUMN_CAPABILITIES
+          : directPartnerRevocation
+            ? PRIVATE_PROVIDER_CREDENTIAL_COLUMN_CAPABILITIES
+            : PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES;
   // Historical web/browser receipts pin the pre-0313 schema. The current
   // provider profiles also follow the two lifecycle triggers into their sinks;
   // those tables belong to the closure without granting the LOGIN access.
@@ -326,6 +343,7 @@ export async function qualifyCredentialWriter(
         ...(registrationEvidence
           ? reviewedPasswordEvidenceRelationShapes.filter((relation) => relation.name !== 'users')
           : []),
+        ...(recovery ? reviewedRecoveryRelationShapes : []),
       ].sort((left, right) => left.name.localeCompare(right.name))
     : requested.contract === 'private-browser-v1'
       ? [...reviewedPrivateWebRelationShapes, ...reviewedBrowserRelationShapes].sort((left, right) =>

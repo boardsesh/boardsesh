@@ -38,6 +38,7 @@ export function credentialWriterContract(environment: CredentialDatabaseEnvironm
   if (
     contract !== 'private-registration-v1' &&
     contract !== 'private-registration-evidence-v1' &&
+    contract !== 'private-recovery-v1' &&
     contract !== 'private-web-v1' &&
     contract !== 'private-browser-v1' &&
     contract !== 'private-provider-v1' &&
@@ -50,7 +51,8 @@ export function credentialWriterContract(environment: CredentialDatabaseEnvironm
   if (
     passwordChangeEvidenceEnabled(environment) &&
     contract !== 'private-password-evidence-v1' &&
-    contract !== 'private-registration-evidence-v1'
+    contract !== 'private-registration-evidence-v1' &&
+    contract !== 'private-recovery-v1'
   )
     throw new Error('PASSWORD_CHANGE_EVIDENCE_CREDENTIAL_PROFILE_REQUIRED');
   return contract;

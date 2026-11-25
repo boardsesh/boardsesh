@@ -55,6 +55,7 @@ a production rollout or a physical-device result.
 | [Provider identity planning](better-auth-provider-identity-planning.md) | `better-auth-provider-identity-planning.md` |
 | [BA-04 selected-authority provider security](better-auth-provider-security-adoption.md) | `better-auth-provider-security-adoption.md` |
 | [Selected-authority provider sign-in writers](better-auth-provider-writer-adoption.md) | `better-auth-provider-writer-adoption.md` |
+| [Recovery before authority enforcement](better-auth-recovery-family.md) | `better-auth-recovery-family.md` |
 | [Released native and Garmin source contracts](better-auth-released-client-contracts.md) | `better-auth-released-client-contracts.md` |
 | [Renewed historical web login ancestry](better-auth-renewed-web-lineage.md) | `better-auth-renewed-web-lineage.md` |
 | [Better Auth implementation review guide](better-auth-review-guide.md) | `better-auth-review-guide.md` |
