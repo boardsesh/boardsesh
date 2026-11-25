@@ -22,6 +22,7 @@ import { clientUsagePlugin, resolveClientIdentity } from '../services/client-usa
 import { appleAdsTokenPrivacyPlugin, sanitizeAppleAdsLogArgument } from './apple-ads-token-privacy';
 import { resolveEdgeRegionCode, resolveFlagCountry } from '../utils/flag-country';
 import { getTrustedClientIp } from '../utils/client-ip';
+import { CATALOG_PROOF_HEADER, verifyCatalogRequest } from '@boardsesh/crypto/catalog-request-proof';
 import { boardShareTokenPrivacyPlugin, sanitizeBoardShareLogArgument } from './board-share-token-privacy';
 import { addressLookupPrivacyPlugin, sanitizeAddressLookupLogArgument } from './address-lookup-privacy';
 import { OFFLINE_WRITE_DELIVERY_HEADER, OFFLINE_WRITE_RELEASE_HEADER } from '@boardsesh/shared-schema';
@@ -75,24 +76,11 @@ type NodeServerContext = { req?: IncomingMessage; res?: ServerResponse };
  * stateless and are not tracked in the connections Map; only WebSocket
  * connections are stored there (they have onDisconnect cleanup).
  *
- * The anonymous rate-limit identity comes from `resolveWebSocketClientIp`, the
- * same trusted-hop resolver the WebSocket transport uses (issue #4034):
- * `cf-connecting-ip` -> LAST `x-forwarded-for` hop -> `req.socket.remoteAddress`
- * -> undefined. Two bypasses this closes, both live before it:
- *
- *  - the FIRST forwarded hop is client-authored (Cloudflare appends rather than
- *    strips), so a scripted client could send `x-forwarded-for: <random>` per
- *    request and mint a fresh `applyRateLimit` bucket every time — or pin a
- *    victim's IP to exhaust theirs.
- *  - a direct-to-origin client sending no proxy headers at all resolved to
- *    `undefined` and fell through to the per-request `http-<uuid>` bucket, which
- *    is no limit at all. The socket fallback keys it on the real peer.
- *
- * `x-real-ip` is deliberately no longer consulted: nothing in our chain sets it,
- * so it was pure spoof surface.
- *
- * When no IP resolves (the `yoga.fetch` path) `clientIp` stays undefined and
- * `applyRateLimit` falls back to the connectionId branch, exactly as before.
+ * Rate limits use trustedClientIp from the verified transport resolver. The
+ * legacy clientIp is retained for attribution, never as a quota identity.
+ * Without a Node request, anonymous callers share an unresolved-identity bucket.
+ * A signed server proof can attribute catalog work to the original web visitor;
+ * it does not authenticate an account or exempt the request from limits.
  */
 export async function buildHttpConnectionContext({
   request,
@@ -100,6 +88,11 @@ export async function buildHttpConnectionContext({
 }: { request: Request } & NodeServerContext): Promise<ConnectionContext> {
   const authHeader = request.headers.get('authorization');
   const clientIp = resolveWebSocketClientIp(req);
+  const catalogAttribution = verifyCatalogRequest(
+    request.headers.get(CATALOG_PROOF_HEADER),
+    { purpose: 'graphql', method: request.method, pathname: new URL(request.url).pathname },
+    process.env.NEXTAUTH_SECRET,
+  );
   const { clientIdentity, clientIdentityRaw } = resolveClientIdentity(request.headers.get(CLIENT_IDENTITY_HEADER));
 
   const isCronAuthenticated = authenticateCronBearer(authHeader);
@@ -127,6 +120,7 @@ export async function buildHttpConnectionContext({
     socketPeerIp: resolveWebSocketSocketPeerIp(req),
     // Unlike clientIp, believes cf-connecting-ip only from a verified edge.
     trustedClientIp: req ? getTrustedClientIp(req) : undefined,
+    catalogClientIp: catalogAttribution?.clientIp,
     // The trusted-edge country decides whether the analytics prompt is shown
     // (consentRegion). Without the Node request there is no peer to trust.
     edgeCountry: req ? resolveFlagCountry(req) : undefined,

@@ -12,6 +12,13 @@ import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 const getClimbStatsForAllAngles = vi.fn(async () => [{ angle: 40, ascensionist_count: 3 }]);
 
 vi.mock('server-only', () => ({}));
+vi.mock('@/app/lib/api/catalog-admission.server', () => ({
+  withCatalogAdmission: (
+    _request: Request,
+    _operation: string,
+    work: (recordRows: (count: number) => void) => Promise<unknown>,
+  ) => work(() => {}),
+}));
 vi.mock('@/app/lib/data/queries', () => ({ getClimbStatsForAllAngles }));
 vi.mock('@/app/lib/observability/request-logger', () => ({
   createRequestLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),

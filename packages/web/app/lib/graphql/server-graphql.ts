@@ -1,6 +1,7 @@
 import 'server-only';
 import { type RequestDocument, type Variables, GraphQLClient } from 'graphql-request';
 import { getGraphQLHttpUrl } from './client';
+import { catalogGraphQLProofHeaders, catalogRequestIdentity } from './catalog-attribution.server';
 import { SSR_AUTHENTICATED_FETCH_TIMEOUT_MS } from '@/app/lib/ssr-fetch-deadline';
 import { webClientIdentityHeaders } from '@/app/lib/client-identity';
 import type { UserBoard } from '@boardsesh/shared-schema';
@@ -33,6 +34,7 @@ export async function executeAuthenticatedGraphQL<T = unknown, V extends Variabl
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...webClientIdentityHeaders(),
+    ...catalogGraphQLProofHeaders(url, await catalogRequestIdentity()),
   };
   if (authToken) {
     headers['Authorization'] = `Bearer ${authToken}`;

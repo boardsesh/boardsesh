@@ -2,26 +2,30 @@ import { type SetterStat, getSetterStats } from '@boardsesh/db/queries';
 import { dbzRead } from '@/app/lib/db/db';
 import type { BoardRouteParameters, ErrorResponse } from '@/app/lib/types';
 import { parseBoardRouteParamsWithSlugs } from '@/app/lib/url-utils.server';
+import { withCatalogAdmission } from '@/app/lib/api/catalog-admission.server';
 import { NextResponse } from 'next/server';
 
 export async function GET(
   req: Request,
   props: { params: Promise<BoardRouteParameters> },
 ): Promise<NextResponse<SetterStat[] | ErrorResponse>> {
-  const params = await props.params;
+  return withCatalogAdmission<SetterStat[] | ErrorResponse>(req, 'restsetters', async (recordRows) => {
+    const params = await props.params;
 
-  try {
-    const parsedParams = await parseBoardRouteParamsWithSlugs(params);
+    try {
+      const parsedParams = await parseBoardRouteParamsWithSlugs(params);
 
-    // Extract search query parameter
-    const url = new URL(req.url);
-    const searchQuery = url.searchParams.get('search') || undefined;
+      // Extract search query parameter
+      const url = new URL(req.url);
+      const searchQuery = url.searchParams.get('search') || undefined;
 
-    const setterStats = await getSetterStats(dbzRead, parsedParams, searchQuery);
+      const setterStats = await getSetterStats(dbzRead, parsedParams, searchQuery);
+      recordRows(setterStats.length);
 
-    return NextResponse.json(setterStats);
-  } catch (error) {
-    console.error('Error fetching setter stats:', error);
-    return NextResponse.json({ error: 'Failed to fetch setter stats' }, { status: 500 });
-  }
+      return NextResponse.json(setterStats);
+    } catch (error) {
+      console.error('Error fetching setter stats:', error);
+      return NextResponse.json({ error: 'Failed to fetch setter stats' }, { status: 500 });
+    }
+  });
 }
