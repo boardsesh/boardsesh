@@ -16,6 +16,10 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 - Boardsesh no longer asks for your location just because you opened a screen. Say "Not now" once and it stays quiet for two weeks, and you can still turn it on any time. ([#8173](https://github.com/boardsesh/boardsesh/pull/8173))
 - Adding a board at your gym? Find the one your crew already climbs on, so your sends land in the same place. ([#8157](https://github.com/boardsesh/boardsesh/pull/8157))
 
+### Improved
+
+- Open the homepage and board guides with less to download. ([#8193](https://github.com/boardsesh/boardsesh/pull/8193))
+
 ### Fixed
 
 - Sign out from website Settings before the next climber uses your computer. ([#8177](https://github.com/boardsesh/boardsesh/pull/8177))

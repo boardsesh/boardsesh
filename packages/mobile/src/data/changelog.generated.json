@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-25T12:58:26.256Z",
+  "generatedAt": "2026-11-25T18:12:36.448Z",
   "entries": [
+    {
+      "prNumber": 8193,
+      "category": "improved",
+      "title": "Open the homepage and board guides with less to download.",
+      "mergedAt": "2026-11-25T18:08:11Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8193"
+    },
     {
       "prNumber": 8182,
       "category": "new",
