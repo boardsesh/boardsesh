@@ -13,10 +13,11 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { OfflineState } from '../OfflineState';
 import { CommentSheet } from '../you/CommentSheet';
 import { notificationClimbRender } from './notification-climb-render';
-import { NotificationRow } from './NotificationRow';
+import { NotificationRow, isAnswerableBoardAccessRequest } from './NotificationRow';
 import { useNotificationNavigation, type OpenCommentThread } from './use-notification-navigation';
 import { useUndoSetupChange } from './use-undo-setup-change';
 import {
+  useAnswerBoardAccessRequest,
   useAnswerFollowRequest,
   useGroupedNotifications,
   useMarkAllAsRead,
@@ -43,7 +44,7 @@ const keyExtractor = (group: GroupedNotification) => group.uuid;
  * thing GymListPanel and LogbookTab do. Hoisted so the prop identity is stable.
  */
 const getItemType = (group: GroupedNotification) =>
-  group.type === 'follow_request'
+  group.type === 'follow_request' || isAnswerableBoardAccessRequest(group)
     ? 'followRequest'
     : group.type === 'board_setup_changed_by_climber'
       ? 'setupChange'
@@ -91,6 +92,7 @@ export default function NotificationsScreen() {
   const { mutate: markAllAsRead } = useMarkAllAsRead();
   // Stable (React Query's mutateAsync), so it can ride into every memoized row.
   const answerFollowRequest = useAnswerFollowRequest();
+  const answerBoardAccessRequest = useAnswerBoardAccessRequest();
   // Undo on a climber's setup change, behind the same flag as the setup fields.
   const undoSetupChange = useUndoSetupChange();
   const setupSuggestionsEnabled = useDirectorySetupSuggestionsEnabled();
@@ -152,10 +154,11 @@ export default function NotificationsScreen() {
         notification={item}
         onPress={handlePress}
         onAnswerFollowRequest={answerFollowRequest}
+        onAnswerBoardAccessRequest={answerBoardAccessRequest}
         onUndoSetupChange={onUndoSetupChange}
       />
     ),
-    [handlePress, answerFollowRequest, onUndoSetupChange],
+    [handlePress, answerFollowRequest, answerBoardAccessRequest, onUndoSetupChange],
   );
 
   return (

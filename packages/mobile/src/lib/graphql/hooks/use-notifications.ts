@@ -19,7 +19,12 @@ import type {
   NotificationType,
   SocialEntityType,
 } from '@boardsesh/shared-schema';
-import { APPROVE_FOLLOW_REQUEST, DECLINE_FOLLOW_REQUEST } from '@boardsesh/graphql/operations/privacy';
+import {
+  APPROVE_FOLLOW_REQUEST,
+  APPROVE_RESOURCE_ACCESS,
+  DECLINE_FOLLOW_REQUEST,
+  DECLINE_RESOURCE_ACCESS,
+} from '@boardsesh/graphql/operations/privacy';
 import { getHttpClient } from '../client';
 // The stored-token read, NOT `useAuth`: this module is re-exported from the
 // hooks barrel, and `auth-provider` drags react-native's Flow source into the
@@ -282,6 +287,73 @@ export function useAnswerFollowRequest() {
         void queryClient.invalidateQueries({ queryKey: ['publicProfile'] });
         void queryClient.invalidateQueries({ queryKey: ['privacyRelationship'] });
       }
+    },
+  });
+
+  return mutateAsync;
+}
+
+/**
+ * The variables for answering a `board_access_requested` row, or null when the
+ * row can't be answered from the inbox. The group is one board (the entity);
+ * only a row with exactly one climber asking names whom to let in. A row with
+ * several opens the board's Manage access instead.
+ */
+export function boardAccessAnswerVariables(
+  notification: GroupedNotification,
+): { kind: 'board'; resourceId: string; userId: string } | null {
+  if (notification.type !== 'board_access_requested') return null;
+  const requesterId = notification.actors[0]?.id;
+  if (notification.actorCount !== 1 || !requesterId || !notification.entityId) return null;
+  return { kind: 'board', resourceId: notification.entityId, userId: requesterId };
+}
+
+/**
+ * Let a climber climb on the owner's board, or say no, from their
+ * `board_access_requested` row. Approve and decline both delete the row on the
+ * server, so on success it leaves the loaded pages straight away; the access
+ * list on Manage access shows the same request and is read again.
+ *
+ * Returns `mutateAsync`, stable, like `useAnswerFollowRequest`.
+ */
+export function useAnswerBoardAccessRequest() {
+  const queryClient = useQueryClient();
+
+  const { mutateAsync } = useMutation({
+    networkMode: 'always',
+    mutationFn: async ({
+      notification,
+      answer,
+    }: {
+      notification: GroupedNotification;
+      answer: FollowRequestAnswer;
+    }) => {
+      const variables = boardAccessAnswerVariables(notification);
+      if (!variables) throw new Error('A board access row names no single climber.');
+      await getHttpClient().request(
+        answer === 'approve' ? APPROVE_RESOURCE_ACCESS : DECLINE_RESOURCE_ACCESS,
+        variables,
+      );
+    },
+    onSuccess: (_result, { notification }) => {
+      queryClient.setQueriesData<GroupedNotificationPages>({ queryKey: GROUPED_NOTIFICATIONS_QUERY_KEY }, (previous) =>
+        previous
+          ? {
+              ...previous,
+              pages: previous.pages.map((page) => ({
+                ...page,
+                groups: page.groups.filter((group) => group.uuid !== notification.uuid),
+              })),
+            }
+          : previous,
+      );
+      if (!notification.isRead) {
+        queryClient.setQueryData<number>(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, (previousCount) =>
+          Math.max(0, (previousCount ?? 0) - 1),
+        );
+      }
+      void queryClient.invalidateQueries({ queryKey: ['resourceAccessRequests'] });
+      void queryClient.invalidateQueries({ queryKey: ['resourceGrantStatuses'] });
     },
   });
 

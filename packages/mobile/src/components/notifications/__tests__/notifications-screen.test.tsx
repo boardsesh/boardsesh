@@ -119,7 +119,11 @@ vi.mock('../../../lib/graphql/hooks/use-notifications', () => ({
   useMarkGroupAsRead: () => ({ mutate: markGroupMutate }),
   useMarkAllAsRead: () => ({ mutate: markAllMutate }),
   useAnswerFollowRequest: () => answerFollowRequest,
+  useAnswerBoardAccessRequest: () => answerFollowRequest,
 }));
+// The approved-board row binds the board; the bind's own graph is native.
+vi.mock('../../../lib/boards/use-activate-board', () => ({ useActivateBoard: () => vi.fn() }));
+vi.mock('../../../lib/graphql/hooks/fetch-board-by-uuid', () => ({ fetchBoardByUuid: vi.fn() }));
 
 vi.mock('../../../hooks/use-offline-query-state', () => ({ useOfflineQueryState: () => state.offline }));
 vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
@@ -182,6 +186,7 @@ vi.mock('../../you/CommentSheet', () => ({
 }));
 
 vi.mock('../NotificationRow', () => ({
+  isAnswerableBoardAccessRequest: () => false,
   NotificationRow: ({
     notification,
     onPress,
