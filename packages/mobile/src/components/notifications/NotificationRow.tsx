@@ -17,6 +17,16 @@ import { SetupChangeNotificationRow } from './SetupChangeNotificationRow';
 import type { UndoSetupChange } from './setup-change-notice';
 
 const AVATAR_SIZE = 40;
+
+/** A `board_access_requested` row the owner can answer in place: one climber asking. */
+export function isAnswerableBoardAccessRequest(notification: GroupedNotification): boolean {
+  return (
+    notification.type === 'board_access_requested' &&
+    notification.actorCount === 1 &&
+    notification.actors.length > 0 &&
+    !!notification.entityId
+  );
+}
 const GROUP_AVATAR_SIZE = 28;
 /** Matches `Badge`'s `size="small"` dot, which this row used to render. */
 const UNREAD_DOT_SIZE = 8;
@@ -31,6 +41,13 @@ type NotificationRowProps = {
    * the plain layout, which still opens the requester's profile.
    */
   onAnswerFollowRequest?: AnswerFollowRequest;
+  /**
+   * Stable handler from the screen that lets a climber onto the owner's board,
+   * or says no. Only a `board_access_requested` row with one climber asking
+   * reads it (`isAnswerableBoardAccessRequest`); one with several keeps the
+   * plain layout, whose tap opens the board's Manage access.
+   */
+  onAnswerBoardAccessRequest?: AnswerFollowRequest;
   /**
    * Stable handler from the screen that puts back the setup a climber's
    * suggestion replaced. Only a `board_setup_changed_by_climber` row reads it;
@@ -59,6 +76,7 @@ export const NotificationRow = memo(function NotificationRow({
   notification,
   onPress,
   onAnswerFollowRequest,
+  onAnswerBoardAccessRequest,
   onUndoSetupChange,
 }: NotificationRowProps) {
   // A follow request carries its own Approve / Decline buttons, so it cannot be
@@ -66,6 +84,17 @@ export const NotificationRow = memo(function NotificationRow({
   if (notification.type === 'follow_request' && onAnswerFollowRequest) {
     return (
       <FollowRequestNotificationRow notification={notification} onPress={onPress} onAnswer={onAnswerFollowRequest} />
+    );
+  }
+  // So does one climber asking to climb on the owner's board: the same
+  // Approve / Decline, answered for that board.
+  if (isAnswerableBoardAccessRequest(notification) && onAnswerBoardAccessRequest) {
+    return (
+      <FollowRequestNotificationRow
+        notification={notification}
+        onPress={onPress}
+        onAnswer={onAnswerBoardAccessRequest}
+      />
     );
   }
   // So does a climber's setup change, for its Undo.
@@ -78,7 +107,7 @@ export const NotificationRow = memo(function NotificationRow({
 function ActivityNotificationRow({
   notification,
   onPress,
-}: Omit<NotificationRowProps, 'onAnswerFollowRequest' | 'onUndoSetupChange'>) {
+}: Omit<NotificationRowProps, 'onAnswerFollowRequest' | 'onAnswerBoardAccessRequest' | 'onUndoSetupChange'>) {
   const { t } = useTranslation('notifications');
   const { systemColors, brandColors } = useTheme();
 

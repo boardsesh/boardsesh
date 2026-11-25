@@ -33,13 +33,20 @@ vi.mock('../../use-auth-token', () => ({ useAuthToken: () => ({ data: 'token' })
 import {
   GROUPED_NOTIFICATIONS_QUERY_KEY,
   NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY,
+  boardAccessAnswerVariables,
+  useAnswerBoardAccessRequest,
   useAnswerFollowRequest,
   useGroupedNotifications,
   nextActorsOffset,
   useMarkAllAsRead,
   useMarkGroupAsRead,
 } from '../use-notifications';
-import { APPROVE_FOLLOW_REQUEST, DECLINE_FOLLOW_REQUEST } from '@boardsesh/graphql/operations/privacy';
+import {
+  APPROVE_FOLLOW_REQUEST,
+  APPROVE_RESOURCE_ACCESS,
+  DECLINE_FOLLOW_REQUEST,
+  DECLINE_RESOURCE_ACCESS,
+} from '@boardsesh/graphql/operations/privacy';
 
 function makeWrapper() {
   const queryClient = new QueryClient({
@@ -349,6 +356,84 @@ describe('useAnswerFollowRequest', () => {
       GROUPED_NOTIFICATIONS_QUERY_KEY,
     );
     expect(cached?.pages[0].groups.map((group) => group.uuid)).toEqual(['a']);
+  });
+});
+
+// The owner's "Kim wants to climb on your board" row: one board per group,
+// answered for the one climber it names.
+describe('useAnswerBoardAccessRequest', () => {
+  const asked = (uuid: string, overrides: Partial<GroupedNotification> = {}) =>
+    makeGroup(uuid, {
+      type: 'board_access_requested',
+      entityType: 'board',
+      entityId: `board-${uuid}`,
+      actorCount: 1,
+      actors: [{ id: 'climber-1', displayName: 'Kim', avatarUrl: null }],
+      ...overrides,
+    } as Partial<GroupedNotification>);
+
+  it('answers only a row naming one climber on one board', () => {
+    expect(boardAccessAnswerVariables(asked('a'))).toEqual({
+      kind: 'board',
+      resourceId: 'board-a',
+      userId: 'climber-1',
+    });
+    expect(boardAccessAnswerVariables(asked('a', { actorCount: 3 }))).toBeNull();
+    expect(boardAccessAnswerVariables(asked('a', { entityId: null }))).toBeNull();
+    expect(boardAccessAnswerVariables(makeGroup('a', { type: 'follow_request' }))).toBeNull();
+  });
+
+  it('approves the climber for the board and drops the row and its unread mark', async () => {
+    requestMock.mockResolvedValue({ approveResourceAccess: true });
+    const { queryClient, Wrapper } = makeWrapper();
+    queryClient.setQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, 2);
+    queryClient.setQueryData(GROUPED_NOTIFICATIONS_QUERY_KEY, {
+      pages: [{ groups: [asked('a'), makeGroup('b')], totalCount: 2, unreadCount: 2, hasMore: false }],
+      pageParams: [0],
+    });
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useAnswerBoardAccessRequest(), { wrapper: Wrapper });
+    await act(async () => {
+      await result.current({ notification: asked('a'), answer: 'approve' });
+    });
+
+    expect(requestMock).toHaveBeenCalledWith(APPROVE_RESOURCE_ACCESS, {
+      kind: 'board',
+      resourceId: 'board-a',
+      userId: 'climber-1',
+    });
+    const cached = queryClient.getQueryData<{ pages: GroupedNotificationConnection[] }>(
+      GROUPED_NOTIFICATIONS_QUERY_KEY,
+    );
+    expect(cached?.pages[0].groups.map((group) => group.uuid)).toEqual(['b']);
+    expect(queryClient.getQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY)).toBe(1);
+    expect(invalidate.mock.calls.map(([filters]) => filters?.queryKey?.[0])).toContain('resourceAccessRequests');
+  });
+
+  it('declines with the same climber and board', async () => {
+    requestMock.mockResolvedValue({ declineResourceAccess: true });
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useAnswerBoardAccessRequest(), { wrapper: Wrapper });
+    await act(async () => {
+      await result.current({ notification: asked('a'), answer: 'decline' });
+    });
+    expect(requestMock).toHaveBeenCalledWith(DECLINE_RESOURCE_ACCESS, {
+      kind: 'board',
+      resourceId: 'board-a',
+      userId: 'climber-1',
+    });
+  });
+
+  it('refuses a grouped row without asking the server', async () => {
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useAnswerBoardAccessRequest(), { wrapper: Wrapper });
+    await act(async () => {
+      await expect(
+        result.current({ notification: asked('a', { actorCount: 2 }), answer: 'approve' }),
+      ).rejects.toThrow();
+    });
+    expect(requestMock).not.toHaveBeenCalled();
   });
 });
 

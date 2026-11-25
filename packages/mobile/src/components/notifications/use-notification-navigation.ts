@@ -16,6 +16,9 @@ import { notificationToClimb } from './notification-to-climb';
 import { directoryNoticeRoute, isDirectoryNoticeType } from './directory-notice-route';
 import { explainDirectoryNotice } from './explain-directory-notice';
 import { aboutBoardHref, reviewBoardReportsHref } from '../../lib/boards/about-board-href';
+import { useActivateBoard } from '../../lib/boards/use-activate-board';
+import { fetchBoardByUuid } from '../../lib/graphql/hooks/fetch-board-by-uuid';
+import { reportError } from '../../lib/error-reporting';
 
 /** Opens the comment thread for an entity. Supplied by the screen, which hosts the sheet. */
 export type OpenCommentThread = (entityType: SocialEntityType, entityId: string) => void;
@@ -48,6 +51,11 @@ const THREAD_TYPES: ReadonlySet<GroupedNotification['type']> = new Set([
  *   three actors, so the list screen re-fetches all of them by group key.
  * - `follow_request` opens the requester's profile. Its group key is the
  *   requester, so the row always names exactly one person.
+ * - `board_access_requested` (to a board's owner) opens the board's Manage
+ *   access, where every waiting request can be answered; a row with one
+ *   climber also answers in place (Approve / Decline).
+ * - `board_access_approved` (to the climber who asked) puts them on the board,
+ *   as a pick in the board picker would, and lands on Climbs.
  * - `comment_*` and `vote_*` open the thread the row is about, via the
  *   `threadEntityType`/`threadEntityId` pair the resolver fills for exactly
  *   these types.
@@ -106,9 +114,46 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
     translateRef.current = t;
   }, [t]);
 
+  // The owner said yes: bind the board and land on Climbs. Read through a ref
+  // so the bind's own dependencies never churn this callback.
+  const activateBoard = useActivateBoard({ returnTo: '/(tabs)/climbs', recognizesHeldBox: false });
+  const activateBoardRef = useRef(activateBoard);
+  useEffect(() => {
+    activateBoardRef.current = activateBoard;
+  }, [activateBoard]);
+
   return useCallback(
     (notification: GroupedNotification) => {
       if (!notification.isRead) markGroupAsRead(notification);
+
+      if (notification.type === 'board_access_requested') {
+        if (notification.entityId) {
+          router.push({
+            pathname: '/settings/privacy-access',
+            params: { kind: 'board', resourceId: notification.entityId },
+          });
+        }
+        return;
+      }
+
+      if (notification.type === 'board_access_approved') {
+        const boardUuid = notification.entityId;
+        if (!boardUuid) return;
+        fetchBoardByUuid(boardUuid)
+          .then(async (board) => {
+            if (board) {
+              await activateBoardRef.current(board);
+              return;
+            }
+            // Gone or taken back since: the board sheet says what is left.
+            router.push(aboutBoardHref(boardUuid));
+          })
+          .catch((error: unknown) => {
+            reportError(error);
+            router.push(aboutBoardHref(boardUuid));
+          });
+        return;
+      }
 
       if (notification.type === 'app_feedback_reply') {
         if (notification.entityId && /^\d+$/.test(notification.entityId)) {
