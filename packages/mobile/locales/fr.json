@@ -7,7 +7,7 @@
     "NSLocalNetworkUsageDescription": "Boardsesh se connecte au contrôleur LED de ton réseau pour allumer les prises de ton Spraywall.",
     "NSLocationWhenInUseUsageDescription": "Boardsesh utilise ta position pour te montrer les boards et les salles près de toi, et pour placer sur la carte la board que tu ajoutes.",
     "NSLocationAlwaysAndWhenInUseUsageDescription": "Boardsesh utilise ta position pour te montrer les boards et les salles près de toi, et pour placer sur la carte la board que tu ajoutes.",
-    "NSCameraUsageDescription": "Boardsesh utilise ton appareil photo pour que tu puisses photographier un mur et y créer des blocs.",
+    "NSCameraUsageDescription": "Boardsesh utilise ton appareil photo pour scanner le code d'une board et pour que tu puisses photographier un mur et y créer des blocs.",
     "NSPhotoLibraryUsageDescription": "Boardsesh utilise ta photothèque pour que tu puisses choisir une photo de profil, une photo de ton mur ou une capture d'écran à joindre à ton retour."
   }
 }

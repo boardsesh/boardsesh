@@ -1047,6 +1047,21 @@
       "undo": "Deshacer",
       "undoAria": "Quitar {{name}} de Tus plafones",
       "undoError": "No se pudo quitar {{name}} de Tus plafones"
+    },
+    "scanCode": {
+      "button": "Escanear el código de un plafón",
+      "title": "Escanear código",
+      "hint": "Apunta la cámara al código en el móvil de tu amigo o al póster del rocódromo.",
+      "viewfinderLabel": "Cámara buscando el código de un plafón",
+      "notBoardsesh": "Ese código no es de un plafón de Boardsesh.",
+      "permissionTitle": "Escanea con la cámara",
+      "permissionBody": "Boardsesh solo lee el código. No se hacen ni se guardan fotos.",
+      "allowCamera": "Permitir cámara",
+      "deniedTitle": "La cámara está desactivada para Boardsesh",
+      "deniedBody": "Actívala en Ajustes para escanear el código de un plafón. O abre el enlace de tu amigo en este móvil.",
+      "openSettings": "Abrir Ajustes",
+      "unavailableTitle": "Actualiza Boardsesh para escanear códigos",
+      "unavailableBody": "Esta versión no puede escanear. Apunta la cámara del móvil al código."
     }
   },
   "boardEntity": {

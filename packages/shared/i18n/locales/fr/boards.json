@@ -1047,6 +1047,21 @@
       "undo": "Annuler",
       "undoAria": "Retirer {{name}} de Tes boards",
       "undoError": "Impossible de retirer {{name}} de Tes boards"
+    },
+    "scanCode": {
+      "button": "Scanner le code d'une board",
+      "title": "Scanner un code",
+      "hint": "Vise le code sur le téléphone de ton ami ou sur l'affiche de la salle.",
+      "viewfinderLabel": "Appareil photo, à la recherche du code d'une board",
+      "notBoardsesh": "Ce code n'est pas celui d'une board Boardsesh.",
+      "permissionTitle": "Scanne avec l'appareil photo",
+      "permissionBody": "Boardsesh lit le code, rien d'autre. Aucune photo n'est prise ni enregistrée.",
+      "allowCamera": "Autoriser l'appareil photo",
+      "deniedTitle": "L'appareil photo est désactivé pour Boardsesh",
+      "deniedBody": "Active-le dans Réglages pour scanner le code d'une board. Ou ouvre le lien de ton ami sur ce téléphone.",
+      "openSettings": "Ouvrir Réglages",
+      "unavailableTitle": "Mets Boardsesh à jour pour scanner",
+      "unavailableBody": "Cette version ne peut pas scanner. Vise le code avec l'appareil photo du téléphone."
     }
   },
   "boardEntity": {

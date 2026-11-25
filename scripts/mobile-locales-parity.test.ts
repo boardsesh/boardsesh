@@ -132,6 +132,23 @@ describe('mobile locale parity', () => {
     expect(readLocaleStrings('en').NSPhotoLibraryUsageDescription).toBe(imagePicker?.[1].photosPermission);
   });
 
+  it('gives expo-image-picker and expo-camera the same base camera prompt as locales/en.json', () => {
+    // Both plugins write NSCameraUsageDescription, and whichever Info.plist mod
+    // runs last wins. Two different strings would make the prompt depend on
+    // plugin order.
+    vi.stubEnv('TAILSCALE_HOSTS', '');
+    const config = buildExpoConfig({ config: {}, projectRoot: MOBILE_ROOT } as Parameters<typeof buildExpoConfig>[0]);
+    const cameraPrompt = (pluginName: string) =>
+      (
+        (config.plugins ?? []).find((plugin) => Array.isArray(plugin) && plugin[0] === pluginName) as
+          | [string, { cameraPermission?: string }]
+          | undefined
+      )?.[1].cameraPermission;
+    expect(cameraPrompt('expo-image-picker')).toBeTruthy();
+    expect(cameraPrompt('expo-camera')).toBe(cameraPrompt('expo-image-picker'));
+    expect(readLocaleStrings('en').NSCameraUsageDescription).toBe(cameraPrompt('expo-image-picker'));
+  });
+
   // Load-bearing beyond the leak it names: Expo's iOS Locales plugin bails with an
   // early `return` (not `continue`) on the first language whose map is empty, so a
   // single empty `ios` block would silently drop InfoPlist.strings for every

@@ -1047,6 +1047,21 @@
       "undo": "Annulla",
       "undoAria": "Togli {{name}} da I tuoi pannelli",
       "undoError": "Impossibile togliere {{name}} da I tuoi pannelli"
+    },
+    "scanCode": {
+      "button": "Scansiona il codice di un pannello",
+      "title": "Scansiona un codice",
+      "hint": "Inquadra il codice sul telefono del tuo amico o sul poster della palestra.",
+      "viewfinderLabel": "Fotocamera in cerca del codice di un pannello",
+      "notBoardsesh": "Quel codice non è di un pannello Boardsesh.",
+      "permissionTitle": "Scansiona con la fotocamera",
+      "permissionBody": "Boardsesh legge solo il codice. Nessuna foto viene scattata o salvata.",
+      "allowCamera": "Consenti fotocamera",
+      "deniedTitle": "La fotocamera è disattivata per Boardsesh",
+      "deniedBody": "Attivala in Impostazioni per scansionare il codice di un pannello. Oppure apri il link del tuo amico su questo telefono.",
+      "openSettings": "Apri Impostazioni",
+      "unavailableTitle": "Aggiorna Boardsesh per scansionare",
+      "unavailableBody": "Questa versione non può scansionare. Inquadra il codice con la fotocamera del telefono."
     }
   },
   "boardEntity": {

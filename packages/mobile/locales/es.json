@@ -7,7 +7,7 @@
     "NSLocalNetworkUsageDescription": "Boardsesh se conecta al controlador LED de tu red para iluminar las presas de tu Spraywall.",
     "NSLocationWhenInUseUsageDescription": "Boardsesh usa tu ubicación para mostrarte plafones y rocódromos cerca de ti, y para situar en el mapa el plafón que añadas.",
     "NSLocationAlwaysAndWhenInUseUsageDescription": "Boardsesh usa tu ubicación para mostrarte plafones y rocódromos cerca de ti, y para situar en el mapa el plafón que añadas.",
-    "NSCameraUsageDescription": "Boardsesh usa tu cámara para que puedas fotografiar un plafón y crear bloques en él.",
+    "NSCameraUsageDescription": "Boardsesh usa tu cámara para escanear el código de un plafón y para que puedas fotografiar un plafón y crear bloques en él.",
     "NSPhotoLibraryUsageDescription": "Boardsesh usa tu fototeca para que puedas elegir una foto de perfil, una foto de tu muro o una captura de pantalla para enviar con tu reporte."
   }
 }

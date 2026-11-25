@@ -93,7 +93,21 @@ pushes one wizard under `app/boards/add/` instead of opening a menu:
   Find people" (`app/boards/users/search.tsx`, the climber search inside the
   picker's stack) and the share-link hint. A tap works as on Friends' boards
   above. Empty states: follows nobody, nothing shared yet, no match, offline;
-  signed out it asks for sign-in.
+  signed out it asks for sign-in. Under the search, "Scan a board code" pushes
+  `scan.tsx`, the in-app camera (`BoardCodeScannerScreen`, expo-camera). It
+  reads QR codes only and follows a code only when it is a board or climb link
+  on www or apex boardsesh.com or the app's scheme (`parseBoardLinkPath`, the
+  deep-link parser) or a crew `/join/{id}` link
+  (`src/lib/routing/scanned-board-code.ts`); it replaces the boards modal with
+  that link's route, as a tapped link would open it. Any other code shows
+  "That code isn't a Boardsesh board" and the camera keeps looking; the same
+  code held in view is refused once, not every frame. Camera permission is
+  asked from the screen, and a refusal offers Open Settings. expo-camera first
+  ships in a store build, so the JS reaches it only through
+  `src/lib/board-code-scanner/camera-module.ts`, which asks
+  `requireOptionalNativeModule('ExpoCamera')` before requiring it: on an older
+  binary running a newer OTA, and in the browser app (`camera-module.web.ts`),
+  the button is hidden and the route says the app needs updating.
 - `gym.tsx`, "Which gym?": `GymStep`, the map and search.
 - `gym-boards.tsx`, "Boards at {gym}": `GymWallList`, where an existing wall is
   taken before a copy is added.

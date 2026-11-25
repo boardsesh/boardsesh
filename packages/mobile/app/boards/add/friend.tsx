@@ -8,6 +8,10 @@
 // as a slice of an inset-grouped card. The step header and the search sit in
 // the list header; Find people and the share-link hint in its footer. One page
 // per end-reach.
+//
+// "Scan a board code" under the search opens the in-app camera
+// (boards/add/scan.tsx). It is hidden on a binary without the camera module
+// and in the browser app (camera-module.ts).
 
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -30,6 +34,7 @@ import { InsetGroupedCell } from '../../../src/components/gym-page/InsetGroupedC
 import type { GroupedCellPosition } from '../../../src/components/gym-page/gym-page-view-model';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
 import { useOfflineQueryState } from '../../../src/hooks/use-offline-query-state';
+import { isBoardCodeScannerAvailable } from '../../../src/lib/board-code-scanner/camera-module';
 import { noteBoardFlowSecured } from '../../../src/lib/boards/board-create-flow';
 import { resolveBoardReturnTo } from '../../../src/lib/boards/board-return-to';
 import {
@@ -138,6 +143,9 @@ export default function AddBoardFriend() {
   const retry = useCallback(() => void refetch(), [refetch]);
   const findPeople = useCallback(() => router.push('/boards/users/search'), [router]);
   const signIn = useCallback(() => openSignIn(router, 'boards'), [router]);
+  // Asked once per app run: the binary either links the camera module or not.
+  const [canScan] = useState(isBoardCodeScannerAvailable);
+  const scanCode = useCallback(() => router.push('/boards/add/scan'), [router]);
 
   const renderItem = useCallback(
     ({ item: cell }: { item: FriendBoardListCell }) =>
@@ -224,6 +232,17 @@ export default function AddBoardFriend() {
           clearAccessibilityLabel={t('mobile.friendBoards.clearSearch')}
         />
       </View>
+      {canScan ? (
+        <View style={styles.scan}>
+          <Button
+            title={t('mobile.scanCode.button')}
+            icon="camera"
+            variant="tonal"
+            onPress={scanCode}
+            testID="friend-boards-scan-code"
+          />
+        </View>
+      ) : null}
     </View>
   );
 
@@ -305,6 +324,11 @@ const styles = StyleSheet.create({
     paddingBottom: spacing[4],
   },
   search: {
+    paddingHorizontal: spacing[4],
+    paddingBottom: spacing[4],
+  },
+  scan: {
+    alignItems: 'flex-start',
     paddingHorizontal: spacing[4],
     paddingBottom: spacing[4],
   },
