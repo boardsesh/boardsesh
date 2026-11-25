@@ -1,6 +1,35 @@
 {
-  "generatedAt": "2026-11-25T18:12:36.448Z",
+  "generatedAt": "2026-11-25T21:15:20.668Z",
   "entries": [
+    {
+      "prNumber": 8195,
+      "category": "fixed",
+      "title": "Adding your gym: save with the tick up top, and the map stays put while you type.",
+      "mergedAt": "2026-11-25T20:54:06Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8195"
+    },
+    {
+      "prNumber": 8199,
+      "category": "fixed",
+      "title": "Gym assistants can save gym names and profile changes again.",
+      "mergedAt": "2026-11-25T20:53:22Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8199"
+    },
+    {
+      "prNumber": 8198,
+      "category": "improved",
+      "title": "Get to your next session faster from the website.",
+      "mergedAt": "2026-11-25T20:32:16Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8198",
+      "body": "Your language and privacy choices stay usable while menus load."
+    },
+    {
+      "prNumber": 8196,
+      "category": "fixed",
+      "title": "See each beta video once, with its climb and filmer intact.",
+      "mergedAt": "2026-11-25T19:18:25Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8196"
+    },
     {
       "prNumber": 8193,
       "category": "improved",

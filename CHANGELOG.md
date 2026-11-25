@@ -18,10 +18,15 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### Improved
 
+- Get to your next session faster from the website. ([#8198](https://github.com/boardsesh/boardsesh/pull/8198))
+  Your language and privacy choices stay usable while menus load.
 - Open the homepage and board guides with less to download. ([#8193](https://github.com/boardsesh/boardsesh/pull/8193))
 
 ### Fixed
 
+- Adding your gym: save with the tick up top, and the map stays put while you type. ([#8195](https://github.com/boardsesh/boardsesh/pull/8195))
+- Gym assistants can save gym names and profile changes again. ([#8199](https://github.com/boardsesh/boardsesh/pull/8199))
+- See each beta video once, with its climb and filmer intact. ([#8196](https://github.com/boardsesh/boardsesh/pull/8196))
 - Sign out from website Settings before the next climber uses your computer. ([#8177](https://github.com/boardsesh/boardsesh/pull/8177))
 - Spray wall imports no longer get stuck waiting in the queue ([#8178](https://github.com/boardsesh/boardsesh/pull/8178))
 - Shared session and join links show the whole climb in chat previews. ([#8156](https://github.com/boardsesh/boardsesh/pull/8156))
