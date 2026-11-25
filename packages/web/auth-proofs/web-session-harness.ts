@@ -107,6 +107,23 @@ export async function startWebSessionBackend(database: Database): Promise<WebSes
   };
 }
 
+/** Qualified password RPC for an enforced fixture, independent of the browser-cookie mode. */
+export function stubQualifiedPasswordEnvironment(backendOrigin: string): void {
+  for (const [name, content] of Object.entries({
+    CURRENT_STORE_AUTH_BACKEND_ORIGIN: backendOrigin,
+    CURRENT_STORE_AUTH_RPC_SECRET: rpcSecret,
+    CURRENT_STORE_WEB_AUTH_MODE: 'backend-staging',
+    CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE: 'required',
+    CURRENT_STORE_AUTH_PROJECTION_ID: projectionId,
+    CURRENT_STORE_AUTH_WRITER_EPOCH: '1',
+    CURRENT_STORE_DELETED_EMAIL_KEY: 'web-session-proof-retired-mailbox-key',
+    AUTH_CUTOFF_ENFORCEMENT: 'enforce',
+    EMAIL_VERIFICATION_ENABLED: 'false',
+    DEBUG_SQL: 'false',
+  }))
+    vi.stubEnv(name, content);
+}
+
 /** Both sides' variables for `better-auth`, on www and on the backend in this one process. */
 export function stubBetterAuthEnvironment(backendOrigin: string): void {
   for (const [name, content] of Object.entries({
