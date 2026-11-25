@@ -81,6 +81,7 @@ describe('auth compatibility CI has an independent complete budget', () => {
         'packages/web/app/lib/partner-oauth/**',
         'packages/web/app/api/auth/**',
         'packages/web/app/api/internal/ws-auth/**',
+        'packages/web/app/api/internal/set-password/**',
         'packages/web/app/lib/seo/base-url.ts',
         'packages/web/vite.config.ts',
         'packages/web/tsconfig.json',

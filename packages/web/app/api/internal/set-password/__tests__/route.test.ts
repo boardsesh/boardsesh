@@ -1,272 +1,219 @@
-import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { NextRequest } from 'next/server';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { NextRequest, NextResponse } from 'next/server';
 import { POST } from '../route';
 
-// Mock server-only
+const controls = vi.hoisted(() => ({
+  snapshot: vi.fn(),
+  createClient: vi.fn(),
+  command: vi.fn(),
+  delegate: vi.fn(),
+  rate: vi.fn(),
+  address: vi.fn(),
+  vouched: vi.fn(),
+  database: vi.fn(),
+  hash: vi.fn(),
+}));
 vi.mock('server-only', () => ({}));
-
-// Mock getServerSession
-const mockGetServerSession = vi.fn();
-vi.mock('@/app/lib/auth/admitted-session.server', () => ({
-  getAdmittedServerSession: (...args: unknown[]) => mockGetServerSession(...args),
+vi.mock('@/app/lib/auth/admitted-session.server', () => ({ getAdmittedServerSessionSnapshot: controls.snapshot }));
+vi.mock('@/app/lib/auth/pre-enforcement-set-password-client.server', () => ({
+  createPreEnforcementSetPasswordCommandClient: controls.createClient,
 }));
+vi.mock('@/app/lib/auth/set-password-command.server', () => ({ delegateSetPassword: controls.delegate }));
+vi.mock('@/app/lib/auth/rate-limiter', () => ({ checkRateLimit: controls.rate, getClientIp: controls.address }));
+vi.mock('@/app/lib/auth/trusted-client-ip.server', () => ({ cloudflareVouchedVisitorAddress: controls.vouched }));
+vi.mock('@/app/lib/db/db', () => ({ getDb: controls.database }));
+vi.mock('bcryptjs', () => ({ hash: controls.hash }));
 
-// Mock auth options
-vi.mock('@/app/lib/auth/auth-options', () => ({
-  authOptions: {},
-}));
-
-// Mock bcrypt
-const mockBcryptHash = vi.fn();
-vi.mock('bcryptjs', () => ({
-  default: {
-    hash: (...args: unknown[]) => mockBcryptHash(...args),
-  },
-  hash: (...args: unknown[]) => mockBcryptHash(...args),
-}));
-
-// Mock rate limiter
-const mockCheckRateLimit = vi.fn();
-const mockGetClientIp = vi.fn();
-vi.mock('@/app/lib/auth/rate-limiter', () => ({
-  checkRateLimit: (...args: unknown[]) => mockCheckRateLimit(...args),
-  getClientIp: (...args: unknown[]) => mockGetClientIp(...args),
-}));
-
-// Mock database
-const mockSelect = vi.fn();
-const mockFrom = vi.fn();
-const mockWhere = vi.fn();
-const mockLimit = vi.fn();
-const mockInsert = vi.fn();
-const mockUpdate = vi.fn();
-const mockTransaction = vi.fn();
-
-vi.mock('@/app/lib/db/db', () => ({
-  getDb: () => ({
-    select: (...args: unknown[]) => mockSelect(...args),
-    insert: (...args: unknown[]) => mockInsert(...args),
-    update: (...args: unknown[]) => mockUpdate(...args),
-    transaction: (...args: unknown[]) => mockTransaction(...args),
-  }),
-}));
-
-vi.mock('@/app/lib/db/schema', () => ({
-  userCredentials: { userId: 'userCredentials.userId' },
-  users: { id: 'users.id', emailVerified: 'users.emailVerified' },
-}));
-
-// What the www guard sends for the mocked `{ user: { id: 'user-1' } }` session.
-const USER_1_VIEWER = 'user-1:pending-login-identity';
-
-function createRequest(body: Record<string, unknown>, expectedViewer: string | null = USER_1_VIEWER): NextRequest {
-  return new NextRequest('http://localhost/api/internal/set-password', {
+const password = 'testpass123';
+const viewer = 'user-1:pending-login-identity';
+const source = Object.freeze({ credential: 'the-held-jwe', cookieName: '__Secure-next-auth.session-token' });
+function request(body: unknown = { password, confirmPassword: password }, expected: string | null = viewer) {
+  return new NextRequest('https://www.boardsesh.com/api/internal/set-password', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(expectedViewer === null ? {} : { 'X-Boardsesh-Expected-Viewer': expectedViewer }),
+      ...(expected === null ? {} : { 'X-Boardsesh-Expected-Viewer': expected }),
     },
     body: JSON.stringify(body),
   });
 }
-
-describe('POST /api/internal/set-password', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockGetClientIp.mockReturnValue('127.0.0.1');
-    mockCheckRateLimit.mockReturnValue({ limited: false, retryAfterSeconds: 0 });
-    mockBcryptHash.mockResolvedValue('$2a$12$hashedpassword');
-
-    // Default: chain select().from().where().limit()
-    mockSelect.mockReturnValue({ from: mockFrom });
-    mockFrom.mockReturnValue({ where: mockWhere });
-    mockWhere.mockReturnValue({ limit: mockLimit });
+function signedIn(authSessionId?: string) {
+  return {
+    session: { user: { id: 'user-1' }, ...(authSessionId === undefined ? {} : { authSessionId }) },
+    legacyCredential: source,
+  };
+}
+function noWrites(response: Response) {
+  expect(response.headers.getSetCookie()).toEqual([]);
+  expect(controls.database).not.toHaveBeenCalled();
+  expect(controls.hash).not.toHaveBeenCalled();
+}
+beforeEach(() => {
+  vi.resetAllMocks();
+  vi.stubEnv('CURRENT_STORE_SET_PASSWORD_MODE', 'legacy');
+  vi.stubEnv('AUTH_IDENTITY_MIRROR', 'off');
+  controls.snapshot.mockResolvedValue(signedIn());
+  controls.createClient.mockReturnValue({ setPassword: controls.command });
+  controls.command.mockResolvedValue({ outcome: 'set' });
+  controls.delegate.mockResolvedValue(null);
+  controls.rate.mockReturnValue({ limited: false, retryAfterSeconds: 0 });
+  controls.address.mockReturnValue('127.0.0.1');
+  controls.vouched.mockReturnValue(null);
+  controls.database.mockImplementation(() => {
+    throw new Error('WEB_PASSWORD_SQL_FORBIDDEN');
   });
-
-  it('returns 401 when not authenticated', async () => {
-    mockGetServerSession.mockResolvedValue(null);
-
-    const response = await POST(createRequest({ password: 'testpass123', confirmPassword: 'testpass123' }, null));
-    expect(response.status).toBe(401);
-
-    const data = await response.json();
-    expect(data.error).toBe('Unauthorized');
+  controls.hash.mockImplementation(() => {
+    throw new Error('WEB_PASSWORD_HASH_FORBIDDEN');
   });
+});
+afterEach(() => vi.unstubAllEnvs());
 
-  it('returns 429 when IP rate limited', async () => {
-    mockGetServerSession.mockResolvedValue({ user: { id: 'user-1' } });
-    mockCheckRateLimit.mockReturnValueOnce({ limited: true, retryAfterSeconds: 30 });
+describe('default set-password facade and source custody', () => {
+  it('sends the held source and actual absent SID, independently of optional body identity', async () => {
+    const response = await POST(
+      request({ password, confirmPassword: password, expectedUserId: 'spoof', expectedAuthSessionId: 'spoof-sid' }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      message: 'Password set successfully. You can now log in with your email and password.',
+    });
+    expect(controls.snapshot).toHaveBeenCalledExactlyOnceWith({ method: 'POST' });
+    expect(controls.command).toHaveBeenCalledExactlyOnceWith(
+      {
+        credential: source.credential,
+        password,
+        confirmPassword: password,
+        viewer: { userId: 'user-1', authSessionId: null },
+      },
+      undefined,
+    );
+    expect(controls.rate.mock.calls).toEqual([
+      ['set-password:127.0.0.1', 5, 60_000],
+      ['set-password:user:user-1', 5, 60_000],
+    ]);
+    noWrites(response);
+  });
+  it('keeps a server-resolved SID beyond the optional public body limit and only forwards vouched client context', async () => {
+    const sid = 's'.repeat(1025);
+    controls.snapshot.mockResolvedValue(signedIn(sid));
+    controls.vouched.mockReturnValue('8.8.8.8');
+    const response = await POST(request(undefined, `user-1:${sid}`));
+    expect(response.status).toBe(200);
+    expect(controls.command).toHaveBeenCalledWith(
+      expect.objectContaining({ viewer: { userId: 'user-1', authSessionId: sid } }),
+      '8.8.8.8',
+    );
+    noWrites(response);
+  });
+  it('retains an existing staged/canonical delegate response without creating the new client', async () => {
+    const staged = NextResponse.json({ outcome: 'set' });
+    controls.delegate.mockResolvedValue(staged);
+    controls.snapshot.mockResolvedValue({ ...signedIn(), legacyCredential: null });
+    expect(await POST(request())).toBe(staged);
+    expect(controls.createClient).not.toHaveBeenCalled();
+    noWrites(staged);
+  });
+  it('refuses a missing paired source after the same public guards, never reselecting or writing', async () => {
+    controls.snapshot.mockResolvedValue({ ...signedIn(), legacyCredential: null });
+    const response = await POST(request());
+    expect(response.status).toBe(503);
+    expect(controls.createClient).not.toHaveBeenCalled();
+    noWrites(response);
+  });
+  it.each([
+    [{ outcome: 'already_set' }, 409, { error: 'Password already set.' }],
+    [{ outcome: 'unauthenticated' }, 401, { error: 'Unauthorized' }],
+    [{ outcome: 'identity_changed' }, 409, { code: 'viewer_changed', error: 'Reload this page.' }],
+    [
+      { outcome: 'error', code: 'rate_limited', retryAfterSeconds: 23 },
+      429,
+      { error: 'Too many requests. Please try again later.' },
+    ],
+    [{ outcome: 'error', code: 'replayed' }, 503, { error: 'Service temporarily unavailable' }],
+    [{ outcome: 'error', code: 'unavailable' }, 503, { error: 'Service temporarily unavailable' }],
+    [{ outcome: 'error', code: 'rolled_back' }, 500, { error: 'An error occurred while setting the password' }],
+  ])('maps acknowledged %j to public %s without cookie or local work', async (reply, status, body) => {
+    controls.command.mockResolvedValue(reply);
+    const response = await POST(request());
+    expect(response.status).toBe(status);
+    expect(await response.json()).toEqual(body);
+    if (reply.outcome === 'identity_changed') expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    if (status === 503) expect(response.headers.get('Retry-After')).toBe('1');
+    if (status === 429) expect(response.headers.get('Retry-After')).toBe('23');
+    noWrites(response);
+  });
+  it('answers unknown acknowledgement unavailable, with exactly one send', async () => {
+    controls.command.mockRejectedValue(new Error('lost committed acknowledgement'));
+    // The strict client sanitizes transport errors before they reach this facade.
+    const { AuthBackendUnavailableError } = await import('@/app/lib/auth/password-command-client.server');
+    controls.command.mockRejectedValue(new AuthBackendUnavailableError());
+    const response = await POST(request());
+    expect(response.status).toBe(503);
+    expect(controls.command).toHaveBeenCalledOnce();
+    noWrites(response);
+  });
+});
 
-    const response = await POST(createRequest({ password: 'testpass123', confirmPassword: 'testpass123' }));
+describe('unchanged public precedence', () => {
+  it('refuses invalid mode before session resolution', async () => {
+    vi.stubEnv('CURRENT_STORE_SET_PASSWORD_MODE', 'invalid');
+    expect((await POST(request())).status).toBe(503);
+    expect(controls.snapshot).not.toHaveBeenCalled();
+  });
+  it('returns401 for anonymous without a viewer, before rates/body/client', async () => {
+    controls.snapshot.mockResolvedValue({ session: null, legacyCredential: null });
+    expect((await POST(request(undefined, null))).status).toBe(401);
+    expect(controls.rate).not.toHaveBeenCalled();
+    expect(controls.createClient).not.toHaveBeenCalled();
+  });
+  it.each(['user-2:other', 'user-1:old', 'anonymous', null])(
+    'refuses stale/missing viewer %s before rates/body/client',
+    async (expected) => {
+      const response = await POST(request({ password: 'short' }, expected));
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({ code: 'viewer_changed', error: 'Reload this page.' });
+      expect(controls.rate).not.toHaveBeenCalled();
+      expect(controls.createClient).not.toHaveBeenCalled();
+      noWrites(response);
+    },
+  );
+  it('answers viewer_changed for a signed-out cookie and signed-in viewer', async () => {
+    controls.snapshot.mockResolvedValue({ session: null, legacyCredential: null });
+    expect((await POST(request())).status).toBe(409);
+    expect(controls.rate).not.toHaveBeenCalled();
+  });
+  it.each([1, 2])('keeps independent rate limit%s before body/client', async (limitedCall) => {
+    if (limitedCall === 2) controls.rate.mockReturnValueOnce({ limited: false, retryAfterSeconds: 0 });
+    controls.rate.mockReturnValueOnce({ limited: true, retryAfterSeconds: 30 });
+    const response = await POST(request({ password: 'short' }));
     expect(response.status).toBe(429);
     expect(response.headers.get('Retry-After')).toBe('30');
+    expect(controls.rate).toHaveBeenCalledTimes(limitedCall);
+    expect(controls.createClient).not.toHaveBeenCalled();
   });
-
-  it('returns 429 when user rate limited', async () => {
-    mockGetServerSession.mockResolvedValue({ user: { id: 'user-1' } });
-    // First call (IP) passes, second call (user) fails
-    mockCheckRateLimit
-      .mockReturnValueOnce({ limited: false, retryAfterSeconds: 0 })
-      .mockReturnValueOnce({ limited: true, retryAfterSeconds: 45 });
-
-    const response = await POST(createRequest({ password: 'testpass123', confirmPassword: 'testpass123' }));
-    expect(response.status).toBe(429);
-    expect(response.headers.get('Retry-After')).toBe('45');
+  it.each([
+    { password: 'short', confirmPassword: 'short' },
+    { password: 'a'.repeat(129), confirmPassword: 'a'.repeat(129) },
+    { confirmPassword: password },
+    { password, confirmPassword: 'different' },
+    { password, confirmPassword: password, expectedAuthSessionId: 's'.repeat(1025) },
+  ])('validates public input%j before any private operation', async (body) => {
+    expect((await POST(request(body))).status).toBe(400);
+    expect(controls.delegate).not.toHaveBeenCalled();
+    expect(controls.createClient).not.toHaveBeenCalled();
   });
-
-  it('returns 400 when password is too short', async () => {
-    mockGetServerSession.mockResolvedValue({ user: { id: 'user-1' } });
-
-    const response = await POST(createRequest({ password: 'short', confirmPassword: 'short' }));
+  it('retains malformed JSON400 after rates and before delegate/client', async () => {
+    const response = await POST(
+      new NextRequest('https://www.boardsesh.com/api/internal/set-password', {
+        method: 'POST',
+        headers: { 'X-Boardsesh-Expected-Viewer': viewer },
+        body: 'invalid{{',
+      }),
+    );
     expect(response.status).toBe(400);
-
-    const data = await response.json();
-    expect(data.error).toContain('at least 8 characters');
-  });
-
-  it('returns 400 when passwords do not match', async () => {
-    mockGetServerSession.mockResolvedValue({ user: { id: 'user-1' } });
-
-    const response = await POST(createRequest({ password: 'testpass123', confirmPassword: 'different123' }));
-    expect(response.status).toBe(400);
-
-    const data = await response.json();
-    expect(data.error).toContain('do not match');
-  });
-
-  it('returns 400 when password is missing', async () => {
-    mockGetServerSession.mockResolvedValue({ user: { id: 'user-1' } });
-
-    const response = await POST(createRequest({ confirmPassword: 'testpass123' }));
-    expect(response.status).toBe(400);
-  });
-
-  it('returns 409 when password is already set', async () => {
-    mockGetServerSession.mockResolvedValue({ user: { id: 'user-1' } });
-    mockLimit.mockResolvedValue([{ userId: 'user-1' }]);
-
-    const response = await POST(createRequest({ password: 'testpass123', confirmPassword: 'testpass123' }));
-    expect(response.status).toBe(409);
-
-    const data = await response.json();
-    expect(data.error).toBe('Password already set.');
-  });
-
-  it('sets password successfully for OAuth-only user', async () => {
-    mockGetServerSession.mockResolvedValue({ user: { id: 'user-1' } });
-    // No existing credentials
-    mockLimit.mockResolvedValue([]);
-    // Transaction succeeds
-    mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<void>) => {
-      const tx = {
-        insert: () => ({ values: vi.fn().mockResolvedValue(undefined) }),
-        update: () => ({
-          set: () => ({
-            where: vi.fn().mockResolvedValue(undefined),
-          }),
-        }),
-      };
-      await fn(tx);
-    });
-
-    const response = await POST(createRequest({ password: 'testpass123', confirmPassword: 'testpass123' }));
-    expect(response.status).toBe(200);
-
-    const data = await response.json();
-    expect(data.message).toContain('Password set successfully');
-    expect(mockBcryptHash).toHaveBeenCalledWith('testpass123', 12);
-    expect(mockTransaction).toHaveBeenCalled();
-  });
-
-  it('handles race condition with 409', async () => {
-    mockGetServerSession.mockResolvedValue({ user: { id: 'user-1' } });
-    mockLimit.mockResolvedValue([]);
-    // Transaction fails with unique constraint
-    mockTransaction.mockRejectedValue({ code: '23505' });
-
-    const response = await POST(createRequest({ password: 'testpass123', confirmPassword: 'testpass123' }));
-    expect(response.status).toBe(409);
-
-    const data = await response.json();
-    expect(data.error).toBe('Password already set.');
-  });
-
-  it('returns 500 on unexpected error', async () => {
-    mockGetServerSession.mockResolvedValue({ user: { id: 'user-1' } });
-    mockLimit.mockResolvedValue([]);
-    mockTransaction.mockRejectedValue(new Error('DB connection failed'));
-
-    const response = await POST(createRequest({ password: 'testpass123', confirmPassword: 'testpass123' }));
-    expect(response.status).toBe(500);
-  });
-
-  it('returns 400 when request body is malformed JSON', async () => {
-    mockGetServerSession.mockResolvedValue({ user: { id: 'user-1' } });
-
-    const request = new NextRequest('http://localhost/api/internal/set-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Boardsesh-Expected-Viewer': USER_1_VIEWER },
-      body: 'not valid json{{{',
-    });
-
-    const response = await POST(request);
-    expect(response.status).toBe(400);
-
-    const data = await response.json();
-    expect(data.error).toBe('Invalid request body');
-  });
-
-  it('returns 400 when password exceeds max length', async () => {
-    mockGetServerSession.mockResolvedValue({ user: { id: 'user-1' } });
-
-    const longPassword = 'a'.repeat(129);
-    const response = await POST(createRequest({ password: longPassword, confirmPassword: longPassword }));
-    expect(response.status).toBe(400);
-
-    const data = await response.json();
-    expect(data.error).toContain('less than 128 characters');
-  });
-
-  describe('expected viewer', () => {
-    const body = { password: 'testpass123', confirmPassword: 'testpass123' };
-    function expectNothingTouched() {
-      expect(mockCheckRateLimit).not.toHaveBeenCalled();
-      expect(mockSelect).not.toHaveBeenCalled();
-      expect(mockBcryptHash).not.toHaveBeenCalled();
-      expect(mockTransaction).not.toHaveBeenCalled();
-    }
-
-    it.each([
-      ['another account', 'user-2:login-2'],
-      ['another login of the same account', 'user-1:login-older'],
-      ['a signed-out tab', 'anonymous'],
-    ])('answers 409 viewer_changed and writes nothing when the tab shows %s', async (_label, expected) => {
-      mockGetServerSession.mockResolvedValue({ user: { id: 'user-1' } });
-
-      const response = await POST(createRequest(body, expected));
-
-      expect(response.status).toBe(409);
-      expect(await response.json()).toEqual({ code: 'viewer_changed', error: 'Reload this page.' });
-      expectNothingTouched();
-    });
-
-    it('refuses a signed-in cookie whose request names no viewer, since the guard always names one', async () => {
-      mockGetServerSession.mockResolvedValue({ user: { id: 'user-1' } });
-
-      const response = await POST(createRequest(body, null));
-
-      expect(response.status).toBe(409);
-      expect(await response.json()).toEqual({ code: 'viewer_changed', error: 'Reload this page.' });
-      expectNothingTouched();
-    });
-
-    it('answers 409 when the tab names an account and the cookie is signed out', async () => {
-      mockGetServerSession.mockResolvedValue(null);
-
-      const response = await POST(createRequest(body));
-
-      expect(response.status).toBe(409);
-      expectNothingTouched();
-    });
+    expect(await response.json()).toEqual({ error: 'Invalid request body' });
+    expect(controls.rate).toHaveBeenCalledTimes(2);
+    expect(controls.delegate).not.toHaveBeenCalled();
+    expect(controls.createClient).not.toHaveBeenCalled();
   });
 });

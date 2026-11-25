@@ -27,7 +27,6 @@ import {
   randomClientAddress,
   startWebSessionBackend,
   stubBetterAuthEnvironment,
-  stubQualifiedPasswordEnvironment,
   type WebSessionBackend,
 } from './web-session-harness';
 
@@ -174,27 +173,8 @@ async function graphqlViewer(bearer: string) {
 const hasPassword = async (userId: string) =>
   (await environment.database.select().from(userCredentials).where(eq(userCredentials.userId, userId))).length > 0;
 
-describe('set-password with the mode unset (as on main)', () => {
-  beforeEach(() => {
-    stubQualifiedPasswordEnvironment(backend.origin);
-  });
-
-  it('answers as before', async () => {
-    const { climber, jar, authSessionId } = await signedInWithoutPassword();
-    const { response, status, body } = await setPassword(jar.header(), { userId: climber.id, authSessionId });
-    expect({ status, body, setCookie: response.headers.getSetCookie() }).toMatchInlineSnapshot(`
-      {
-        "body": {
-          "message": "Password set successfully. You can now log in with your email and password.",
-        },
-        "setCookie": [],
-        "status": 200,
-      }
-    `);
-    expect(await hasPassword(climber.id)).toBe(true);
-  });
-});
-
+// The unchanged legacy/default golden now runs on the owned current-profile
+// absent/prepared fixture in set-password-compatibility.integration.proof.ts.
 describe('set-password under better-auth', () => {
   beforeEach(betterAuth);
 

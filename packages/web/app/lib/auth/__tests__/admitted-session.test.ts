@@ -21,6 +21,7 @@ import {
   capturePresentedWebCredential,
   getAdmittedRawServerToken,
   getAdmittedServerSession,
+  getAdmittedServerSessionSnapshot,
 } from '../admitted-session.server';
 import { CredentialAuthorityUnavailable } from '../credential-admission.server';
 
@@ -61,6 +62,68 @@ function useChunkedFallback() {
 }
 
 describe('public session cookie admission', () => {
+  it('exposes the same held credential and session while preserving static competing-cookie selection', async () => {
+    const alternate = await encode({
+      secret: fixtureSecret,
+      token: { sub: 'fixture-owner', authSessionId: 'alternate' },
+      maxAge: 60,
+    });
+    controls.cookies = [
+      { name: '__Secure-next-auth.session-token', value: credential },
+      { name: 'next-auth.session-token', value: alternate },
+    ];
+    const session = {
+      user: { id: 'fixture-owner' },
+      authSessionId: 'resolved-viewer',
+      expires: '2099-01-01T00:00:00.000Z',
+    };
+    controls.session.mockResolvedValue(session);
+    const snapshot = await getAdmittedServerSessionSnapshot({ method: 'POST' });
+    expect(snapshot.session).toBe(session);
+    expect(snapshot.legacyCredential).toEqual({ credential, cookieName: '__Secure-next-auth.session-token' });
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Object.isFrozen(snapshot.legacyCredential)).toBe(true);
+    expect(controls.session).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cookies: {
+          sessionToken: { name: '__Secure-next-auth.session-token', options: { httpOnly: true, sameSite: 'lax' } },
+        },
+      }),
+    );
+    expect(fetchMock.mock.calls.map(([, options]) => new Headers(options?.headers).get('Authorization'))).toEqual([
+      `Bearer ${credential}`,
+      `Bearer ${credential}`,
+    ]);
+  });
+
+  it('retains the held bytes while the local callback waits, without a second cookie selection', async () => {
+    useChunkedFallback();
+    let release!: () => void;
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    controls.session.mockImplementation(async () => {
+      entered();
+      await waiting;
+      return { user: { id: 'fixture-owner' } };
+    });
+    const pending = getAdmittedServerSessionSnapshot();
+    await started;
+    controls.cookies = [{ name: '__Secure-next-auth.session-token', value: 'a-later-source' }];
+    release();
+    const snapshot = await pending;
+    expect(snapshot.legacyCredential?.credential).toBe(credential);
+    expect(snapshot.legacyCredential?.cookieName).toBe('next-auth.session-token');
+    expect(fetchMock.mock.calls.map(([, options]) => new Headers(options?.headers).get('Authorization'))).toEqual([
+      `Bearer ${credential}`,
+      `Bearer ${credential}`,
+    ]);
+  });
+
   it('reconstructs out-of-order fallback chunks through the public cookie codec', async () => {
     useChunkedFallback();
     const header = controls.cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ');

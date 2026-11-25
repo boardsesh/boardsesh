@@ -1330,6 +1330,11 @@ export default defineConfig({
           'vp test run --config packages/web/auth-proofs/recovery.vite.config.ts --maxWorkers=1 --reporter=agent',
         cache: false,
       },
+      'test:set-password-compatibility-web': {
+        command:
+          'vp test run --config packages/web/auth-proofs/set-password-compatibility.vite.config.ts --maxWorkers=1 --reporter=agent',
+        cache: false,
+      },
       'test:set-password-compatibility-backend': {
         command:
           'vp test run --config packages/backend/vite.set-password-compatibility-proof.config.ts --maxWorkers=1 --reporter=agent',

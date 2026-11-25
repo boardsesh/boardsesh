@@ -162,6 +162,7 @@ jobs:
               - 'packages/web/app/lib/partner-oauth/**'
               - 'packages/web/app/api/auth/**'
               - 'packages/web/app/api/internal/ws-auth/**'
+              - 'packages/web/app/api/internal/set-password/**'
               - 'packages/web/app/lib/seo/base-url.ts'
               - 'packages/web/vite.config.ts'
               - 'packages/web/tsconfig.json'
@@ -1853,6 +1854,11 @@ jobs:
           mkdir -p packages/backend/test-results
           vp run test:set-password-compatibility-backend --reporter=junit --outputFile.junit=./test-results/junit-set-password-compatibility-backend.xml
           test -s packages/backend/test-results/junit-set-password-compatibility-backend.xml
+      - name: Run default set-password through the public web facade
+        run: |
+          mkdir -p packages/web/test-results
+          vp run test:set-password-compatibility-web --reporter=junit --outputFile.junit=./test-results/junit-set-password-compatibility-web.xml
+          test -s packages/web/test-results/junit-set-password-compatibility-web.xml
       - name: Upload credential proof results
         uses: actions/upload-artifact@v4
         if: always()
@@ -1872,6 +1878,7 @@ jobs:
             packages/backend/test-results/junit-recovery-backend.xml
             packages/web/test-results/junit-recovery-web.xml
             packages/backend/test-results/junit-set-password-compatibility-backend.xml
+            packages/web/test-results/junit-set-password-compatibility-web.xml
           retention-days: 7
 
   # BA-04 web writer fence (docs/auth/better-auth-writer-fence-proof.md). Its own PG18

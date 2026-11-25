@@ -80,6 +80,20 @@ vi.mock('@/app/lib/auth/credential-admission.server', async (original) => ({
   },
 }));
 
+// This viewer-agreement fixture already replaces primary admission. Its new
+// compatibility I/O seam verifies held source/metadata; real writer evidence is
+// owned by set-password-compatibility.integration.proof.ts.
+vi.mock('@/app/lib/auth/pre-enforcement-set-password-client.server', () => ({
+  createPreEnforcementSetPasswordCommandClient: () => ({
+    setPassword: async (payload: { credential: string; viewer: { userId: string; authSessionId: string | null } }) => {
+      const token = await decode({ token: payload.credential, secret: process.env.NEXTAUTH_SECRET ?? '' });
+      expect(token?.sub).toBe(payload.viewer.userId);
+      expect(payload.viewer.authSessionId).toBe(token?.authSessionId || token?.jti);
+      return { protocolVersion: 2, operation: 'set-password', requestId: randomUUID(), outcome: 'set' };
+    },
+  }),
+}));
+
 import { authOptions } from '@/app/lib/auth/auth-options';
 import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
 import { admittedViewerKey } from '@/app/lib/auth/expected-viewer.server';

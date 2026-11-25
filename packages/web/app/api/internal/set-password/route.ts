@@ -3,14 +3,12 @@ import { delegateSetPassword } from '@/app/lib/auth/set-password-command.server'
 import { AuthBackendUnavailableError } from '@/app/lib/auth/password-command-client.server';
 import { CredentialAuthorityUnavailable } from '@/app/lib/auth/credential-admission.server';
 import { unavailableCredentialResponse } from '@/app/lib/auth/credential-admission-response.server';
-import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
+import { getAdmittedServerSessionSnapshot } from '@/app/lib/auth/admitted-session.server';
 import { requireExpectedViewer } from '@/app/lib/auth/expected-viewer.server';
 import { type NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/app/lib/db/db';
-import * as schema from '@/app/lib/db/schema';
-import { hash } from 'bcryptjs';
-import { PASSWORD_HASH_COST } from '@boardsesh/auth-protocol/password-hash';
-import { eq, and, isNull } from 'drizzle-orm';
+import { createPreEnforcementSetPasswordCommandClient } from '@/app/lib/auth/pre-enforcement-set-password-client.server';
+import { cloudflareVouchedVisitorAddress } from '@/app/lib/auth/trusted-client-ip.server';
+import { VIEWER_CHANGED_CODE, VIEWER_CHANGED_ERROR } from '@/app/lib/auth/expected-viewer';
 import { z } from 'zod';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
 
@@ -37,7 +35,7 @@ export async function POST(request: NextRequest) {
     } catch {
       throw new AuthBackendUnavailableError();
     }
-    const session = await getAdmittedServerSession({ method: request.method });
+    const { session, legacyCredential } = await getAdmittedServerSessionSnapshot({ method: request.method });
     // In `legacy` mode nothing below compares the body's expected identity with
     // the cookie, so this is the only thing that stops a stale tab writing a
     // password to the account the cookie names now. The settings card, through
@@ -100,48 +98,40 @@ export async function POST(request: NextRequest) {
         : undefined,
     );
     if (delegated) return delegated;
-    const db = getDb();
-
-    // Check if credentials already exist
-    const existing = await db
-      .select({ userId: schema.userCredentials.userId })
-      .from(schema.userCredentials)
-      .where(eq(schema.userCredentials.userId, session.user.id))
-      .limit(1);
-
-    if (existing.length > 0) {
-      return NextResponse.json({ error: 'Password already set.' }, { status: 409 });
-    }
-
-    // Hash password and insert
-    const passwordHash = await hash(password, PASSWORD_HASH_COST);
-
-    try {
-      await db.transaction(async (tx) => {
-        await tx.insert(schema.userCredentials).values({
+    if (!legacyCredential) throw new AuthBackendUnavailableError();
+    const reply = await createPreEnforcementSetPasswordCommandClient().setPassword(
+      {
+        credential: legacyCredential.credential,
+        password,
+        confirmPassword,
+        viewer: {
           userId: session.user.id,
-          passwordHash,
-        });
-
-        // OAuth providers verify the email before allowing sign-in, so if this
-        // user authenticated via OAuth and is now adding a password, their email
-        // is already verified. Set emailVerified only if currently null.
-        await tx
-          .update(schema.users)
-          .set({ emailVerified: new Date(), updatedAt: new Date() })
-          .where(and(eq(schema.users.id, session.user.id), isNull(schema.users.emailVerified)));
+          authSessionId:
+            typeof session.authSessionId === 'string' && session.authSessionId ? session.authSessionId : null,
+        },
+      },
+      cloudflareVouchedVisitorAddress(request) ?? undefined,
+    );
+    if (reply.outcome === 'set')
+      return NextResponse.json({
+        message: 'Password set successfully. You can now log in with your email and password.',
       });
-    } catch (insertError) {
-      // Handle race condition: another request inserted credentials between our check and insert
-      if (insertError && typeof insertError === 'object' && 'code' in insertError && insertError.code === '23505') {
-        return NextResponse.json({ error: 'Password already set.' }, { status: 409 });
-      }
-      throw insertError;
-    }
-
-    return NextResponse.json({
-      message: 'Password set successfully. You can now log in with your email and password.',
-    });
+    if (reply.outcome === 'already_set') return NextResponse.json({ error: 'Password already set.' }, { status: 409 });
+    if (reply.outcome === 'unauthenticated') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (reply.outcome === 'identity_changed')
+      return NextResponse.json(
+        { code: VIEWER_CHANGED_CODE, error: VIEWER_CHANGED_ERROR },
+        { status: 409, headers: { 'Cache-Control': 'private, no-store' } },
+      );
+    if (reply.outcome !== 'error') throw new AuthBackendUnavailableError();
+    if (reply.code === 'rate_limited')
+      return NextResponse.json(
+        { error: 'Too many requests. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': String(reply.retryAfterSeconds) } },
+      );
+    if (reply.code === 'rolled_back')
+      return NextResponse.json({ error: 'An error occurred while setting the password' }, { status: 500 });
+    throw new AuthBackendUnavailableError();
   } catch (error) {
     if (error instanceof AuthBackendUnavailableError)
       return NextResponse.json(
