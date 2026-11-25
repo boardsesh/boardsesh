@@ -246,6 +246,16 @@ export type CreateGymInput = {
   isListed?: boolean;
   imageUrl?: string;
   boardUuid?: string;
+  /** Absent means REJECT_IF_FOUND: a similar listed gym refuses the create with GYM_SIMILAR_EXISTS. */
+  duplicateCheck?: GymDuplicateCheckInput | null;
+};
+
+export type GymDuplicateCheckMode = 'REJECT_IF_FOUND' | 'CONFIRMED_SEPARATE';
+
+export type GymDuplicateCheckInput = {
+  mode: GymDuplicateCheckMode;
+  /** With CONFIRMED_SEPARATE: the similar gyms the climber saw and said are not theirs. At most 20. */
+  acknowledgedGymUuids?: string[] | null;
 };
 
 export type UpdateGymInput = {

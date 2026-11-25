@@ -2842,6 +2842,12 @@ export type CreateGymInput = {
   contactPhone?: InputMaybe<Scalars['String']['input']>;
   /** Optional description */
   description?: InputMaybe<Scalars['String']['input']>;
+  /**
+   * How createGym treats similar gyms that are already listed (the same ones
+   * findSimilarGyms returns). Absent means REJECT_IF_FOUND: the create is refused
+   * with GYM_SIMILAR_EXISTS, whose extensions.candidates are SimilarGym objects.
+   */
+  duplicateCheck?: InputMaybe<GymDuplicateCheckInput>;
   /** Opening hours; nonblank hours receive a confirmation timestamp. */
   hours?: InputMaybe<Scalars['String']['input']>;
   /** Image URL */
@@ -4620,6 +4626,27 @@ export type GymDayActivity = {
   /** Day of week (UTC), 0 = Sunday … 6 = Saturday. */
   dayOfWeek: Scalars['Int']['output'];
 };
+
+/** createGym's duplicate check. */
+export type GymDuplicateCheckInput = {
+  /**
+   * With CONFIRMED_SEPARATE: the gyms the climber was shown and said are not
+   * theirs. At most 20.
+   */
+  acknowledgedGymUuids?: InputMaybe<Array<Scalars['ID']['input']>>;
+  /** What to do when similar gyms exist. */
+  mode: GymDuplicateCheckMode;
+};
+
+/** How createGym treats similar gyms that already exist. */
+export type GymDuplicateCheckMode =
+  /**
+   * The climber saw the similar gyms and said theirs is a different one. Refuse
+   * only for a similar gym missing from acknowledgedGymUuids.
+   */
+  | 'CONFIRMED_SEPARATE'
+  /** Refuse when any similar gym is listed. */
+  | 'REJECT_IF_FOUND';
 
 export type GymGradeCollectionOption = {
   __typename?: 'GymGradeCollectionOption';

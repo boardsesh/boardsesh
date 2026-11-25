@@ -4442,6 +4442,38 @@ input CreateGymInput {
   imageUrl: String
   "Optional board UUID to link on creation"
   boardUuid: String
+  """
+  How createGym treats similar gyms that are already listed (the same ones
+  findSimilarGyms returns). Absent means REJECT_IF_FOUND: the create is refused
+  with GYM_SIMILAR_EXISTS, whose extensions.candidates are SimilarGym objects.
+  """
+  duplicateCheck: GymDuplicateCheckInput
+}
+
+"""
+How createGym treats similar gyms that already exist.
+"""
+enum GymDuplicateCheckMode {
+  "Refuse when any similar gym is listed."
+  REJECT_IF_FOUND
+  """
+  The climber saw the similar gyms and said theirs is a different one. Refuse
+  only for a similar gym missing from acknowledgedGymUuids.
+  """
+  CONFIRMED_SEPARATE
+}
+
+"""
+createGym's duplicate check.
+"""
+input GymDuplicateCheckInput {
+  "What to do when similar gyms exist."
+  mode: GymDuplicateCheckMode!
+  """
+  With CONFIRMED_SEPARATE: the gyms the climber was shown and said are not
+  theirs. At most 20.
+  """
+  acknowledgedGymUuids: [ID!]
 }
 
 """

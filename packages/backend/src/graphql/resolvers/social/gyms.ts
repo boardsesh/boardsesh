@@ -37,12 +37,19 @@ import {
   GrantGymWriteAccessInputSchema,
   RevokeGymWriteAccessInputSchema,
   UUIDSchema,
+  MAX_ACKNOWLEDGED_GYM_UUIDS,
 } from '../../../validation/schemas';
 import { distanceMeters } from '@boardsesh/db/queries';
 import { computeCanClaimByDomain } from '@boardsesh/gym-claim';
 import { logger } from '../../../utils/logger';
 import { parsePostgresUtcTimestamp } from '../../../utils/postgres-timestamps';
-import { PROXIMITY_MATCH_RADIUS_METERS } from './gym-matching';
+import {
+  findSimilarGymCandidates,
+  MAX_SIMILAR_GYMS,
+  PROXIMITY_MATCH_RADIUS_METERS,
+  toSimilarGymResults,
+} from './gym-matching';
+import { assertGymCapNotReached, blockingSimilarGyms, lockGymCreate, similarGymsExistError } from './gym-create-guards';
 import { syncLocationGeography } from './location-geography';
 import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
 import { boardIsNotArchivedSprayWall } from '../board/spray-wall-listing';
@@ -1425,37 +1432,80 @@ export const socialGymMutations = {
 
     const validatedInput = validateInput(CreateGymInputSchema, input, 'input');
     const userId = ctx.userId!;
+    // Absent means REJECT_IF_FOUND: every create is checked, old clients too.
+    const duplicateCheckMode = validatedInput.duplicateCheck?.mode ?? 'REJECT_IF_FOUND';
+    const acknowledgedGymUuids = validatedInput.duplicateCheck?.acknowledgedGymUuids ?? [];
 
     const uuid = uuidv4();
+    // On the pool, before the transaction: a transaction that waited on a second
+    // pool connection would hold its own while it waited.
     const slug = await generateUniqueGymSlug(validatedInput.name);
     const hours = validatedInput.hours?.trim() || null;
 
-    const [gym] = await db
-      .insert(dbSchema.gyms)
-      .values({
-        uuid,
-        slug,
-        ownerId: userId,
+    // The cap, the similar-gym read and the insert share one transaction under
+    // the create locks (owner, then normalized name), so a double-tapped Save or
+    // two climbers adding one gym by name can't both pass. Every read in here
+    // runs on the transaction's own connection.
+    const outcome = await transactionWithAfterCommit(async (tx) => {
+      await lockGymCreate(tx, userId, validatedInput.name);
+      await assertGymCapNotReached(tx, userId);
+
+      // Reads past the five the form shows, so gyms after the first five a
+      // climber acknowledged get their turn in the next refusal.
+      const similarGyms = await findSimilarGymCandidates({
         name: validatedInput.name,
-        description: validatedInput.description ?? null,
-        hours,
-        hoursUpdatedAt: hours === null ? null : new Date(),
-        address: validatedInput.address ?? null,
-        website: validatedInput.website ?? null,
-        // The creator IS the owner, so a website supplied at creation is
-        // owner-vouched and may drive the self-service domain claim (#3431).
-        // Written explicitly rather than leaning on the DB default so the intent
-        // reads here, next to the website it describes.
-        websiteVouchedByOwner: validatedInput.website != null,
-        contactEmail: validatedInput.contactEmail ?? null,
-        contactPhone: validatedInput.contactPhone ?? null,
-        latitude: validatedInput.latitude ?? null,
-        longitude: validatedInput.longitude ?? null,
-        isPublic: validatedInput.isPublic ?? true,
-        isListed: validatedInput.isListed ?? true,
-        imageUrl: validatedInput.imageUrl ?? null,
-      })
-      .returning();
+        latitude: validatedInput.latitude,
+        longitude: validatedInput.longitude,
+        viewerUserId: userId,
+        limit: MAX_ACKNOWLEDGED_GYM_UUIDS,
+        executor: tx,
+      });
+      const blocking = blockingSimilarGyms(similarGyms, duplicateCheckMode, acknowledgedGymUuids);
+      if (blocking.length > 0) return { kind: 'refused' as const, blocking };
+
+      if (similarGyms.length > 0) {
+        // The one path that lists a gym beside ones the climber saw. Leave a
+        // trail, as the board checks do, so a script confirming every call shows.
+        logger.info('createGym: similar gyms acknowledged as separate', {
+          userId,
+          similarCount: similarGyms.length,
+          acknowledgedCount: acknowledgedGymUuids.length,
+        });
+      }
+
+      const [createdGym] = await tx
+        .insert(dbSchema.gyms)
+        .values({
+          uuid,
+          slug,
+          ownerId: userId,
+          name: validatedInput.name,
+          description: validatedInput.description ?? null,
+          hours,
+          hoursUpdatedAt: hours === null ? null : new Date(),
+          address: validatedInput.address ?? null,
+          website: validatedInput.website ?? null,
+          // The creator IS the owner, so a website supplied at creation is
+          // owner-vouched and may drive the self-service domain claim (#3431).
+          // Written explicitly rather than leaning on the DB default so the intent
+          // reads here, next to the website it describes.
+          websiteVouchedByOwner: validatedInput.website != null,
+          contactEmail: validatedInput.contactEmail ?? null,
+          contactPhone: validatedInput.contactPhone ?? null,
+          latitude: validatedInput.latitude ?? null,
+          longitude: validatedInput.longitude ?? null,
+          isPublic: validatedInput.isPublic ?? true,
+          isListed: validatedInput.isListed ?? true,
+          imageUrl: validatedInput.imageUrl ?? null,
+        })
+        .returning();
+      return { kind: 'created' as const, gym: createdGym };
+    });
+
+    if (outcome.kind === 'refused') {
+      throw similarGymsExistError(await toSimilarGymResults(outcome.blocking.slice(0, MAX_SIMILAR_GYMS), userId));
+    }
+    const { gym } = outcome;
 
     // Populate PostGIS location column if lat/lon provided (guarded — see syncLocationGeography)
     if (validatedInput.latitude != null && validatedInput.longitude != null) {
