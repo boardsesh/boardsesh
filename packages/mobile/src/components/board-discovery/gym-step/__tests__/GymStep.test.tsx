@@ -21,7 +21,12 @@ const snapToMock = vi.hoisted(() => vi.fn());
 const dismissKeyboardMock = vi.hoisted(() => vi.fn());
 const refetchMock = vi.hoisted(() => vi.fn());
 const state = vi.hoisted(() => ({
-  location: { status: 'idle', permission: 'unknown', coords: null as Coords | null },
+  location: {
+    status: 'idle',
+    permission: 'unknown',
+    permissionChecked: false,
+    coords: null as Coords | null,
+  },
   gyms: undefined as { gyms: unknown[] } | undefined,
   gymsFailed: false,
   gymsArgs: [] as unknown[],
@@ -190,8 +195,32 @@ vi.mock('../../../gym-directory/GymListPanel', () => ({
 vi.mock('../../../../hooks/use-keyboard-height', () => ({ useKeyboardHeight: () => state.keyboardOverlap }));
 vi.mock('../../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 34 }));
 vi.mock('../../../gym-directory/GymLocationPrompt', () => ({
-  GymLocationPrompt: ({ status, onRequest }: { status: string; onRequest: () => void }) =>
-    createElement('button', { type: 'button', 'data-testid': 'location-prompt', onClick: onRequest }, status),
+  GymLocationPrompt: ({
+    status,
+    permission,
+    permissionChecked,
+    onRequest,
+    onRecheck,
+  }: {
+    status: string;
+    permission: string;
+    permissionChecked: boolean;
+    onRequest: () => void;
+    onRecheck: () => void;
+  }) =>
+    createElement('div', null, [
+      createElement(
+        'button',
+        { key: 'ask', type: 'button', 'data-testid': 'location-prompt', onClick: () => onRequest() },
+        `${status}|${permission}|${permissionChecked ? 'checked' : 'reading'}`,
+      ),
+      createElement('button', {
+        key: 'recheck',
+        type: 'button',
+        'data-testid': 'location-recheck',
+        onClick: () => onRecheck(),
+      }),
+    ]),
 }));
 const AMSTERDAM: PlaceSuggestion = {
   id: 2759794,
@@ -257,7 +286,7 @@ async function settle() {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
-  state.location = { status: 'idle', permission: 'unknown', coords: null };
+  state.location = { status: 'idle', permission: 'unknown', permissionChecked: false, coords: null };
   state.gyms = undefined;
   state.gymsFailed = false;
   state.gymsArgs = [];
@@ -272,26 +301,28 @@ afterEach(() => {
 });
 
 describe('GymStep', () => {
-  it('asks for nothing on open: it reads the permission, shows the world, and offers the prompt', async () => {
+  it('asks for nothing on open: it reads the permission, shows the world, and hands the prompt the hook', async () => {
     render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
     expect(requestIfAllowedMock).toHaveBeenCalledOnce();
     expect(requestMock).not.toHaveBeenCalled();
     expect(state.mapCenter).toBeNull();
-    // A spinner while the permission is read, then the button that asks.
-    expect(screen.getByTestId('location-prompt').textContent).toBe('idle');
+    // The prompt gets the hook's own state: a spinner until the read is back.
+    expect(screen.getByTestId('location-prompt').textContent).toBe('idle|unknown|reading');
     await settle();
-    expect(screen.getByTestId('location-prompt').textContent).toBe('unavailable');
     expect(requestMock).not.toHaveBeenCalled();
 
+    // Its Allow is the hook's request; its re-read after Settings is requestIfAllowed.
     fireEvent.click(screen.getByTestId('location-prompt'));
     expect(requestMock).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByTestId('location-recheck'));
+    expect(requestIfAllowedMock).toHaveBeenCalledTimes(2);
   });
 
-  it('offers Settings once location is refused for good', async () => {
-    state.location = { status: 'idle', permission: 'blocked', coords: null };
+  it('passes a permission refused for good through to the prompt', async () => {
+    state.location = { status: 'idle', permission: 'blocked', permissionChecked: true, coords: null };
     render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
     await settle();
-    expect(screen.getByTestId('location-prompt').textContent).toBe('denied');
+    expect(screen.getByTestId('location-prompt').textContent).toBe('idle|blocked|checked');
   });
 
   it('flies to a picked town and lists the gyms within 50 km of it, without location', async () => {
@@ -324,7 +355,7 @@ describe('GymStep', () => {
     setCenterMock.mockClear();
 
     const climber = { latitude: 51.5, longitude: -0.12 };
-    state.location = { status: 'granted', permission: 'granted', coords: climber };
+    state.location = { status: 'granted', permission: 'granted', permissionChecked: true, coords: climber };
     view.rerender(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
     await settle();
     expect(setCenterMock).not.toHaveBeenCalledWith(climber);
@@ -396,7 +427,7 @@ describe('GymStep', () => {
     expect(setCenterMock).not.toHaveBeenCalled();
 
     const climber = { latitude: 52.3791, longitude: 4.9003 };
-    state.location = { status: 'granted', permission: 'granted', coords: climber };
+    state.location = { status: 'granted', permission: 'granted', permissionChecked: true, coords: climber };
     view.rerender(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
     await settle();
     expect(setCenterMock).toHaveBeenCalledWith(climber);
@@ -427,7 +458,12 @@ describe('GymStep', () => {
   });
 
   it('picks a gym, and adds one, with the board type chosen in the capsule', async () => {
-    state.location = { status: 'granted', permission: 'granted', coords: { latitude: 52.37, longitude: 4.9 } };
+    state.location = {
+      status: 'granted',
+      permission: 'granted',
+      permissionChecked: true,
+      coords: { latitude: 52.37, longitude: 4.9 },
+    };
     state.gyms = { gyms: [BOULDERHAL] };
     const onPickGym = vi.fn();
     const onAddGym = vi.fn();
