@@ -66,18 +66,27 @@ export default function AddBoardNewGym() {
     [markHandedOff, clearHandedOff],
   );
 
+  // While a save is out, the listed gyms can't push another screen over this
+  // one: that push isn't a removal, so the hold above wouldn't stop it, and the
+  // save would then land on a screen that isn't in front.
+  const savingRef = useRef(saving);
+  savingRef.current = saving;
   const onPickExistingGym = useCallback(
-    (gymUuid: string) => router.push(wizardGymBoardsHref(nextContext, gymUuid, boardType)),
+    (gymUuid: string) => {
+      if (savingRef.current) return;
+      router.push(wizardGymBoardsHref(nextContext, gymUuid, boardType));
+    },
     [router, nextContext, boardType],
   );
   const onClaimGym = useCallback(
-    (gymUuid: string) => router.push(gymPageHref(gymUuid, 'boards', nextContext.returnTo)),
+    (gymUuid: string) => {
+      if (savingRef.current) return;
+      router.push(gymPageHref(gymUuid, 'boards', nextContext.returnTo));
+    },
     [router, nextContext.returnTo],
   );
-  const onCreated = useCallback(
-    (gym: Gym) => {
-      // Gone, or not in front any more: the save landed late. Move nothing.
-      if (!mountedRef.current || !isFocusedRef.current) return;
+  const handOff = useCallback(
+    (gymUuid: string) => {
       // The next step takes the flow over (and its abandonment): this screen's
       // unmount is not the climber leaving.
       markHandedOff();
@@ -85,12 +94,34 @@ export default function AddBoardNewGym() {
       disablePrevention();
       router.replace(
         boardType
-          ? wizardSetupHref(nextContext, { path: 'gym', boardType, gymUuid: gym.uuid })
-          : wizardBoardHref(nextContext, 'gym', { gymUuid: gym.uuid }),
+          ? wizardSetupHref(nextContext, { path: 'gym', boardType, gymUuid })
+          : wizardBoardHref(nextContext, 'gym', { gymUuid }),
       );
     },
     [markHandedOff, disablePrevention, router, nextContext, boardType],
   );
+  // A save that landed while another screen was in front: the gym exists, so
+  // finish the hand-off when this screen is back in front instead of leaving a
+  // form stuck on "saving".
+  const createdWhileCoveredRef = useRef<string | null>(null);
+  const onCreated = useCallback(
+    (gym: Gym) => {
+      // Gone: the save landed after the climber left. Move nothing.
+      if (!mountedRef.current) return;
+      if (!isFocusedRef.current) {
+        createdWhileCoveredRef.current = gym.uuid;
+        return;
+      }
+      handOff(gym.uuid);
+    },
+    [handOff],
+  );
+  useEffect(() => {
+    const createdGymUuid = createdWhileCoveredRef.current;
+    if (!isFocused || createdGymUuid === null) return;
+    createdWhileCoveredRef.current = null;
+    handOff(createdGymUuid);
+  }, [isFocused, handOff]);
   const onSignInNeeded = useCallback(() => openSignIn(router, 'boards'), [router]);
 
   return (

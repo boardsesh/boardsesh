@@ -520,13 +520,27 @@ describe('Add your gym', () => {
     expect(events('Board Builder Abandoned')).toEqual([]);
   });
 
-  it('moves nothing for a save that lands while another screen is in front', () => {
+  it('finishes a save that landed while another screen was in front once it is back in front', () => {
     state.params = { ...state.params, trail: 'where,gym' };
-    render(createElement(AddBoardNewGym));
     navigationState.focused = false;
-    render(createElement(AddBoardNewGym));
-    newGymStep.last?.onCreated(created);
+    const { rerender } = render(createElement(AddBoardNewGym));
+    act(() => newGymStep.last?.onSubmittingChange(true));
+    act(() => newGymStep.last?.onCreated(created));
     expect(replaceMock).not.toHaveBeenCalled();
+    navigationState.focused = true;
+    rerender(createElement(AddBoardNewGym));
+    expect(replaceMock).toHaveBeenCalledTimes(1);
+    // Not left holding the screen on "saving".
+    expect(navigationState.preventRemove.at(-1)).toBe(false);
+  });
+
+  it('ignores a listed gym or its Claim while a save is out', () => {
+    state.params = { ...state.params, trail: 'where,gym', boardType: 'kilter' };
+    render(createElement(AddBoardNewGym));
+    act(() => newGymStep.last?.onSubmittingChange(true));
+    newGymStep.last?.onPickExistingGym('gym-listed');
+    newGymStep.last?.onClaimGym('gym-listed');
+    expect(pushMock).not.toHaveBeenCalled();
   });
 
   it('reports leaving after a refused save as leaving', () => {
