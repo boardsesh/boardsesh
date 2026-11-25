@@ -5,7 +5,8 @@ import Button from '@mui/material/Button';
 import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import GitHub from '@mui/icons-material/GitHub';
-import { getServerTranslation } from '@/app/lib/i18n/server';
+import { getServerTranslation, getServerTranslationForLocale } from '@/app/lib/i18n/server';
+import type { Locale } from '@/app/lib/i18n/config';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageSection, PageCard, Prose } from '@/app/components/ui/page-shell';
 import { brandCtaSx, brandCtaOutlinedSx } from '@/app/components/ui/brand-cta';
@@ -37,8 +38,10 @@ const GITHUB_ISSUES_URL = 'https://github.com/boardsesh/boardsesh/issues';
 const LOCALE_CATALOGS_URL = 'https://github.com/boardsesh/boardsesh/tree/main/packages/shared/i18n/locales';
 const DISCORD_URL = 'https://discord.gg/YXA8GsXfQK';
 
-export default async function HomeSupportBlock() {
-  const { t } = await getServerTranslation('marketing');
+export default async function HomeSupportBlock({ locale: explicitLocale }: { locale?: Locale } = {}) {
+  const { t } = explicitLocale
+    ? await getServerTranslationForLocale(explicitLocale, 'marketing')
+    : await getServerTranslation('marketing');
 
   const otherWays = [
     { id: 'bug', href: GITHUB_ISSUES_URL, label: t('support.otherWays.bug.title') },

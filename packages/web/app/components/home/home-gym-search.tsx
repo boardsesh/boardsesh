@@ -4,7 +4,8 @@ import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
 import Chip from '@mui/material/Chip';
 import MuiLink from '@mui/material/Link';
-import { getServerTranslation } from '@/app/lib/i18n/server';
+import { getServerTranslation, getServerTranslationForLocale } from '@/app/lib/i18n/server';
+import type { Locale, SeedNamespace } from '@/app/lib/i18n/config';
 import { localeHref } from '@/app/lib/i18n/locale-href';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageSection } from '@/app/components/ui/page-shell';
@@ -18,10 +19,25 @@ import { facetChipLabel } from '@/app/gyms/directory-copy';
 // violet text respectively. 48px to sit level with the text field beside it.
 const SEARCH_SX = { ...brandCtaSx({ size: 'medium' }), minHeight: 48 };
 
-export default async function HomeGymSearch() {
-  const [{ t, locale }, countsResult] = await Promise.all([getServerTranslation('marketing'), fetchFacetCounts()]);
-  const { t: website } = await getServerTranslation('website');
-  const { t: gyms } = await getServerTranslation('gyms');
+export default async function HomeGymSearch({ locale: explicitLocale }: { locale?: Locale } = {}) {
+  const translate = (namespace: SeedNamespace) =>
+    explicitLocale ? getServerTranslationForLocale(explicitLocale, namespace) : getServerTranslation(namespace);
+  const loadDirectoryCopy = async () => {
+    const { t: website } = await (explicitLocale
+      ? getServerTranslationForLocale(explicitLocale, 'website')
+      : getServerTranslation('website'));
+    return {
+      searchLabel: website('directorySearchLabel'),
+      search: website('directorySearch'),
+      browse: website('browseDirectory'),
+    };
+  };
+  const [{ t, locale }, countsResult, { t: gyms }, directoryCopy] = await Promise.all([
+    translate('marketing'),
+    fetchFacetCounts(),
+    translate('gyms'),
+    loadDirectoryCopy(),
+  ]);
   const format = new Intl.NumberFormat(locale);
   const counts = countsResult.ok ? countsResult.counts : null;
   return (
@@ -43,12 +59,12 @@ export default async function HomeGymSearch() {
       >
         <TextField
           name="q"
-          label={website('directorySearchLabel')}
-          placeholder={website('directorySearch')}
+          label={directoryCopy.searchLabel}
+          placeholder={directoryCopy.search}
           sx={{ flex: '1 1 240px' }}
         />
         <Button type="submit" variant="contained" sx={SEARCH_SX}>
-          {website('directorySearch')}
+          {directoryCopy.search}
         </Button>
       </Box>
       {counts ? (
@@ -72,7 +88,7 @@ export default async function HomeGymSearch() {
         underline="hover"
         sx={{ display: 'inline-flex', alignItems: 'center', minHeight: 44 }}
       >
-        {website('browseDirectory')}
+        {directoryCopy.browse}
       </MuiLink>
     </PageSection>
   );

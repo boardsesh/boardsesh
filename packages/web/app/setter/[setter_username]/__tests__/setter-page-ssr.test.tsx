@@ -141,7 +141,7 @@ vi.mock('react-i18next', () => ({
 }));
 vi.mock('@/app/components/board-renderer/board-image-layers', () => ({ default: () => null }));
 // What the root layout's provider gives a cold server render: no answer yet.
-vi.mock('@/app/components/consent/consent-provider', () => ({
+vi.mock('@/app/components/consent/consent-state-provider', () => ({
   useConsent: () => ({ granted: false, snapshot: { record: null }, dialogOpen: false }),
 }));
 // The real code is a wall of `<path>`; the URL it encodes is what is under test.

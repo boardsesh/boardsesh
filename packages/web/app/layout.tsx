@@ -1,45 +1,15 @@
-// app/layout.tsx
-import React, { Suspense } from 'react';
-import localFont from 'next/font/local';
-
-const displayFont = localFont({
-  src: './fonts/GeistVF.woff',
-  variable: '--font-display',
-  display: 'swap',
-  // Every public page uses this face in its heading; discover it with the document.
-  preload: true,
-});
+import type React from 'react';
 import { headers } from 'next/headers';
-import { AppRouterCacheProvider } from '@mui/material-nextjs/v15-appRouter';
-import AppThemeProvider from './components/providers/app-theme-provider';
-import AnalyticsClient from './components/analytics-client';
-import AdPixelsClient from './components/ad-pixels-client';
-import { ConsentProvider } from './components/consent/consent-provider';
-import { CONSENT_PREPAINT_SCRIPT } from './lib/consent';
-import AnalyticsIdentity from './components/providers/analytics-identity';
-import SessionProviderWrapper from './components/providers/session-provider';
-import QueryClientProvider from './components/providers/query-client-provider';
-import SiteChrome from './components/providers/site-chrome';
-import { SnackbarProvider } from './components/providers/snackbar-provider';
-import { AuthModalProvider } from './components/providers/auth-modal-provider';
-import I18nProvider from './components/providers/i18n-provider';
-import { EMPTY_FEATURE_FLAGS } from './flags';
-import { FeatureFlagsProvider } from './components/providers/feature-flags-provider';
-import CapacitorRetirementGate from './components/capacitor-retirement/capacitor-retirement-gate';
-import { getDeveloperDocsState } from './lib/developer-apps/docs-access';
+import type { Viewport, Metadata } from 'next';
 import { getLocale } from './lib/i18n/get-locale';
 import { getServerTranslation } from './lib/i18n/server';
-import { devEditorHostnames } from './lib/i18n/dev-editor';
-import { DEFAULT_LOCALE, LOCALE_HTML_LANG, LOCALE_OG, ROOT_NAMESPACES } from './lib/i18n/config';
+import { DEFAULT_LOCALE, LOCALE_OG } from './lib/i18n/config';
+import { classifyMarketingBrowser } from './lib/marketing-platform';
 import { PATHNAME_HEADER } from './lib/request-pathname-header';
 import { SITE_URL } from './lib/seo/base-url';
 import { SMART_APP_BANNER_META_NAME, smartAppBannerContent } from './lib/smart-app-banner';
 import { themeTokens } from './theme/theme-config';
-import { classifyMarketingBrowser } from './lib/marketing-platform';
 import { isAppGuidePath } from './lib/i18n/published-locales';
-import { MarketingPreviewProvider } from './components/marketing/marketing-preview-provider';
-import './components/index.css';
-import type { Viewport, Metadata } from 'next';
 
 export async function generateMetadata(): Promise<Metadata> {
   const [{ t, locale }, requestHeaders] = await Promise.all([getServerTranslation('marketing'), headers()]);
@@ -100,76 +70,25 @@ export const viewport: Viewport = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const [locale, requestHeaders] = await Promise.all([getLocale(), headers()]);
-  const DevTranslationEditor =
-    process.env.NODE_ENV === 'development' ? (await import('./components/i18n/dev-translation-editor')).default : null;
-  // Public marketing documents share one HTML copy across browsers. Resolve
-  // the visitor's platform after hydration; never cache the first visitor's UA.
   const pathname = requestHeaders.get(PATHNAME_HEADER);
-  const sharesMarketingHtml =
-    locale === DEFAULT_LOCALE && (pathname === '/' || (pathname !== null && isAppGuidePath(pathname)));
-  const initialBrowser = classifyMarketingBrowser(sharesMarketingHtml ? '' : (requestHeaders.get('user-agent') ?? ''));
-  const assetOrigin = process.env.NEXT_PUBLIC_NEXT_ASSET_BASE_URL;
-  const developerHref = getDeveloperDocsState() === 'unavailable' ? '/docs' : '/developers';
-
-  // data-theme="dark" is static: www renders one scheme. Nothing in-repo reads
-  // the attribute any more (the CSS vars live on :root), but it is kept as the
-  // documented contract for anything embedding a Boardsesh page, and as an
-  // e2e/debug affordance.
+  if (pathname === '/' || (pathname !== null && isAppGuidePath(pathname))) {
+    const { default: MarketingDocument } = await import('./components/marketing/marketing-document');
+    return (
+      <MarketingDocument
+        locale={locale}
+        initialBrowser={
+          locale === DEFAULT_LOCALE ? undefined : classifyMarketingBrowser(requestHeaders.get('user-agent') ?? '')
+        }
+        sharedHtml={locale === DEFAULT_LOCALE}
+      >
+        {children}
+      </MarketingDocument>
+    );
+  }
+  const { default: ApplicationDocument } = await import('./components/providers/application-document');
   return (
-    <html className={displayFont.variable} lang={LOCALE_HTML_LANG[locale]} data-theme="dark" suppressHydrationWarning>
-      {/* suppressHydrationWarning on both elements: browser extensions
-          (Grammarly, 1Password) stamp attributes onto <html> and <body> at
-          runtime. The consent pre-paint script also adds data-consent before hydration. */}
-      <head>
-        {assetOrigin ? <link rel="preconnect" href={assetOrigin} crossOrigin="anonymous" /> : null}
-        <script dangerouslySetInnerHTML={{ __html: CONSENT_PREPAINT_SCRIPT }} />
-      </head>
-      <body suppressHydrationWarning>
-        {/* QueryClientProvider sits inside SessionProviderWrapper so its
-            PersistQueryClientProvider can read useSession() — do not reorder. */}
-        <SessionProviderWrapper enableExpoAuthBridge={process.env.BOARDSESH_WEB === '1'}>
-          <QueryClientProvider>
-            <AppRouterCacheProvider>
-              <AppThemeProvider>
-                <I18nProvider
-                  locale={locale}
-                  namespaces={
-                    process.env.NODE_ENV === 'development' ? [...ROOT_NAMESPACES, 'devTools'] : ROOT_NAMESPACES
-                  }
-                >
-                  <ConsentProvider>
-                    {DevTranslationEditor && (
-                      <DevTranslationEditor
-                        key={locale}
-                        locale={locale}
-                        allowedHostnames={devEditorHostnames(process.env.DEV_ALLOWED_ORIGINS)}
-                      />
-                    )}
-                    <Suspense fallback={null}>
-                      <AnalyticsIdentity />
-                      <AnalyticsClient />
-                      <AdPixelsClient />
-                    </Suspense>
-                    <SnackbarProvider>
-                      {/* Everything below is torn down inside the retired
-                        Capacitor app, which gets a dead-end update screen. */}
-                      <CapacitorRetirementGate>
-                        <AuthModalProvider>
-                          <FeatureFlagsProvider flags={EMPTY_FEATURE_FLAGS}>
-                            <MarketingPreviewProvider initialBrowser={initialBrowser} sharedHtml={sharesMarketingHtml}>
-                              <SiteChrome developerHref={developerHref}>{children}</SiteChrome>
-                            </MarketingPreviewProvider>
-                          </FeatureFlagsProvider>
-                        </AuthModalProvider>
-                      </CapacitorRetirementGate>
-                    </SnackbarProvider>
-                  </ConsentProvider>
-                </I18nProvider>
-              </AppThemeProvider>
-            </AppRouterCacheProvider>
-          </QueryClientProvider>
-        </SessionProviderWrapper>
-      </body>
-    </html>
+    <ApplicationDocument locale={locale} requestHeaders={requestHeaders}>
+      {children}
+    </ApplicationDocument>
   );
 }

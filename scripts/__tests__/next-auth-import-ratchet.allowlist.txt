@@ -64,8 +64,6 @@ packages/web/app/components/gym-entity/manage/gym-welcome-card.tsx
 packages/web/app/components/gym-entity/manage/insights-tab.tsx
 packages/web/app/components/gym-entity/manage/kiosks-tab.tsx
 packages/web/app/components/gym-entity/manage/overview-tab.tsx
-packages/web/app/components/home-gym-card/__tests__/home-gym-card.test.tsx
-packages/web/app/components/home-gym-card/home-gym-card.tsx
 packages/web/app/components/kiosk/presence/viewer-kiosk-presence-hub.tsx
 packages/web/app/components/providers/__tests__/analytics-identity.test.tsx
 packages/web/app/components/providers/__tests__/session-provider-guard.test.tsx
@@ -97,12 +95,10 @@ packages/web/app/gym/[gym_slug]/manage/__tests__/manage-gym-tab-analytics.test.t
 packages/web/app/gym/[gym_slug]/manage/manage-gym-content.tsx
 packages/web/app/hooks/__tests__/use-delete-tick.test.ts
 packages/web/app/hooks/__tests__/use-logbook.test.ts
-packages/web/app/hooks/__tests__/use-my-gyms.test.ts
 packages/web/app/hooks/__tests__/use-save-climb.test.ts
 packages/web/app/hooks/__tests__/use-save-tick.test.ts
 packages/web/app/hooks/__tests__/use-ws-auth-token.test.ts
 packages/web/app/hooks/use-delete-tick.ts
-packages/web/app/hooks/use-my-gyms.ts
 packages/web/app/hooks/use-ws-auth-token.ts
 packages/web/app/lib/auth/__tests__/admitted-session-render.test.ts
 packages/web/app/lib/auth/__tests__/admitted-session.test.ts

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useConsent } from '../consent/consent-provider';
+import { useConsent } from '../consent/consent-state-provider';
 import { useSession } from 'next-auth/react';
 import { usePathname } from 'next/navigation';
 import * as Sentry from '@sentry/nextjs';

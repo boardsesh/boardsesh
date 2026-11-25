@@ -7,7 +7,7 @@ vi.mock('@/app/lib/gym-funnel-analytics', () => ({ trackGymFunnelEvent }));
 
 // The real provider settles after hydration; each test says where consent stands.
 const consentState = vi.hoisted(() => ({ granted: true }));
-vi.mock('@/app/components/consent/consent-provider', () => ({
+vi.mock('@/app/components/consent/consent-state-provider', () => ({
   useConsent: () => ({ granted: consentState.granted }),
 }));
 

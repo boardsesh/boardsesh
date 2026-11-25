@@ -1,0 +1,36 @@
+.menu {
+  position: relative;
+}
+
+.menuTrigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.menuTrigger::-webkit-details-marker {
+  display: none;
+}
+
+.menuLinks {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  padding: var(--spacing-4);
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-lg);
+  background: var(--semantic-background);
+  box-shadow: var(--shadow-md);
+}
+
+.menuLinks a {
+  display: inline-flex;
+  align-items: center;
+}

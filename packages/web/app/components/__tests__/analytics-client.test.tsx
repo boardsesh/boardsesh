@@ -168,7 +168,7 @@ describe('AnalyticsClient', () => {
   });
 });
 
-vi.mock('@/app/components/consent/consent-provider', () => ({
+vi.mock('@/app/components/consent/consent-state-provider', () => ({
   useConsent: () => ({ granted: mocks.granted, openChoices: vi.fn() }),
 }));
 

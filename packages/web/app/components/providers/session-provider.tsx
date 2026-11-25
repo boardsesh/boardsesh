@@ -20,6 +20,8 @@ import {
 
 export { useSession as useBrowserSession } from 'next-auth/react';
 export type { Session as BrowserSession } from 'next-auth';
+export { SessionContext as BrowserSessionContext } from 'next-auth/react';
+export type { SessionContextValue as BrowserSessionContextValue } from 'next-auth/react';
 
 /** Reads an existing browser session without requiring a provider or starting a session request. */
 export function useOptionalBrowserSession(): SessionContextValue | undefined {

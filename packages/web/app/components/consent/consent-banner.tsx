@@ -14,7 +14,7 @@ import DialogActions from '@mui/material/DialogActions';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
 import { isChromeLessPath } from '@/app/lib/chrome-less-routes';
-import { useConsent } from './consent-provider';
+import { useConsent } from './consent-state-provider';
 import { useConsentRegionPromptState, type ConsentRegionPromptState } from './use-consent-region-prompt';
 
 export default function ConsentBanner({ children }: { children?: (region: ConsentRegionPromptState) => ReactNode }) {

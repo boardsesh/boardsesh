@@ -12,6 +12,7 @@ import type { BoardName } from '@/app/lib/types';
 import type { BetaLink } from '@/app/lib/api-wrappers/sync-api-types';
 import type { RecentBetaLinkRow } from '@/app/lib/server-recent-beta-links';
 import BoardseshBetaList from './boardsesh-beta-list';
+import MarketingQueryProvider from '../marketing/marketing-query-provider';
 
 const RECENT_BETA_LIMIT = 20;
 const RECENT_BETA_STALE_TIME_MS = 5 * 60 * 1000;
@@ -21,6 +22,14 @@ type RecentBetaResponse = {
 };
 
 export default function HomeRecentBetaContent() {
+  return (
+    <MarketingQueryProvider>
+      <RecentBetaContent />
+    </MarketingQueryProvider>
+  );
+}
+
+function RecentBetaContent() {
   const { data: session, status } = useBrowserSession();
   const { token, isLoading: isTokenLoading } = useWsAuthToken(status === 'authenticated');
   const sessionUserId = session?.user?.id ?? null;

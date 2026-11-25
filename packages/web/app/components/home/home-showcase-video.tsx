@@ -1,9 +1,9 @@
 'use client';
 
 import React from 'react';
-import Image from 'next/image';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
+import { styled } from '@mui/material/styles';
 import PauseRounded from '@mui/icons-material/PauseRounded';
 import PlayArrowRounded from '@mui/icons-material/PlayArrowRounded';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +16,7 @@ import {
   SHOWCASE_QUARTILE_THRESHOLDS,
   SHOWCASE_VIDEO_PROGRESS_EVENT,
   showcaseVideoSources,
+  showcasePosterSources,
   type ShowcaseQuartile,
   type ShowcaseVideoProgressProperties,
 } from '@/app/lib/showcase-video';
@@ -25,6 +26,10 @@ import styles from './home-showcase-video.module.css';
 const IDLE_TIMEOUT_MS = 3000;
 /** Fallback delay where `requestIdleCallback` does not exist (Safari). */
 const IDLE_FALLBACK_MS = 200;
+
+// Box treats width/height as system styles. Forward intrinsic dimensions to the
+// image instead, leaving the responsive sizing in the existing stylesheet.
+const PosterImage = styled('img')({});
 
 /**
  * Runs `start` once the window has fired `load` and the main thread has gone
@@ -77,6 +82,7 @@ function readsDataSaver(): boolean {
 export default function HomeShowcaseVideo() {
   const { t } = useTranslation('marketing');
   const sources = React.useMemo(() => showcaseVideoSources(), []);
+  const posterSources = React.useMemo(() => showcasePosterSources(), []);
 
   const [dataSaver, setDataSaver] = React.useState<boolean | null>(null);
   const [sourceReady, setSourceReady] = React.useState(false);
@@ -197,15 +203,15 @@ export default function HomeShowcaseVideo() {
 
   return (
     <Box component="figure" className={styles.figure}>
-      <Image
+      <PosterImage
         className={styles.poster}
-        src={sources.poster}
+        {...posterSources}
         width={SHOWCASE_POSTER_WIDTH}
         height={SHOWCASE_POSTER_HEIGHT}
         alt=""
-        sizes="(max-width: 359px) calc(100vw - 32px), (max-width: 760px) calc(100vw - 48px), (max-width: 1099px) 265px, 338px"
         loading="eager"
         fetchPriority="high"
+        decoding="async"
       />
       <video
         ref={videoRef}

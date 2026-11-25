@@ -2,15 +2,18 @@ import 'server-only';
 import React from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import { getServerTranslation } from '@/app/lib/i18n/server';
+import { getServerTranslation, getServerTranslationForLocale } from '@/app/lib/i18n/server';
+import type { Locale } from '@/app/lib/i18n/config';
 import { PageCard, PageSection } from '@/app/components/ui/page-shell';
 import { MarketingScreenshot, type MarketingShot } from '@/app/components/marketing/marketing-screenshot';
 import { MarketingPreviewSwitch } from '@/app/components/marketing/marketing-preview-switch';
 import styles from './home-feature-strip.module.css';
 
 /** The benefits stay server-rendered; only each image reads the shared preview choice. */
-export default async function HomeFeatureStrip() {
-  const { t, locale } = await getServerTranslation('marketing');
+export default async function HomeFeatureStrip({ locale: explicitLocale }: { locale?: Locale } = {}) {
+  const { t, locale } = explicitLocale
+    ? await getServerTranslationForLocale(explicitLocale, 'marketing')
+    : await getServerTranslation('marketing');
   const features: { id: MarketingShot; title: string; body: string; alt: string; wide?: boolean }[] = [
     {
       id: 'queue',

@@ -21,6 +21,13 @@ const requestHeaders = vi.hoisted(() => ({ current: new Headers() }));
 vi.mock('next/headers', () => ({ headers: async () => requestHeaders.current }));
 
 const rootLayout = await import('../layout');
+const { default: MarketingDocument } = await import('../components/marketing/marketing-document');
+
+async function marketingDocumentForRequest() {
+  const document = await rootLayout.default({ children: null });
+  expect(document.type).toBe(MarketingDocument);
+  return MarketingDocument(document.props);
+}
 
 function findBrowserSeed(node: unknown): unknown {
   if (typeof node !== 'object' || node === null) return undefined;
@@ -36,7 +43,7 @@ describe('shared marketing document', () => {
       const seeds = [];
       for (const userAgent of ['iPhone', 'Android', 'Windows NT 10.0']) {
         requestHeaders.current = new Headers({ [PATHNAME_HEADER]: pathname, 'user-agent': userAgent });
-        seeds.push(findBrowserSeed(await rootLayout.default({ children: null })));
+        seeds.push(findBrowserSeed(await marketingDocumentForRequest()));
       }
       expect(seeds[0]).toBeDefined();
       expect(seeds[0]).toEqual(seeds[1]);
@@ -50,7 +57,9 @@ describe('shared marketing document', () => {
       'x-boardsesh-locale': 'fr',
       'user-agent': 'iPhone',
     });
-    expect(findBrowserSeed(await rootLayout.default({ children: null }))).toMatchObject({ platform: 'ios' });
+    const frenchDocument = await marketingDocumentForRequest();
+    expect(frenchDocument.props.lang).toBe('fr');
+    expect(findBrowserSeed(frenchDocument)).toMatchObject({ platform: 'ios' });
   });
 
   it('allows browser zoom beyond the initial scale', () => {
@@ -197,13 +206,18 @@ describe('nothing below the root layout replaces metadata.other', () => {
     expect(metadataFiles.length).toBeGreaterThan(20);
   });
 
-  it('leaves `other` to the root layout', () => {
+  it('preserves the banner when a page supplies its own metadata.other', () => {
     const offenders = metadataFiles
-      .filter(({ file, source }) => file !== ROOT_LAYOUT_FILE && SETS_OTHER.test(source))
+      .filter(
+        ({ file, source }) =>
+          file !== ROOT_LAYOUT_FILE &&
+          SETS_OTHER.test(source) &&
+          !(source.includes('SMART_APP_BANNER_META_NAME') && source.includes('smartAppBannerContent')),
+      )
       .map(({ file }) => file);
 
-    // A file listed here drops the Smart App Banner from its pages. Spread the
-    // root's entry into its `other`, or move the banner out of `metadata.other`.
+    // Static marketing pages supply an explicit route/locale banner. Other
+    // metadata builders must continue inheriting it from the dynamic root.
     expect(offenders).toEqual([]);
   });
 });

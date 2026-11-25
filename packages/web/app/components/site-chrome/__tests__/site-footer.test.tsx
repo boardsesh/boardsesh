@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
-import { trackWebsiteJourneyEvent, trackWebsiteJourneyLinkClick } from '@/app/lib/website-journey-analytics';
+import { trackWebsiteJourneyLinkClick } from '@/app/lib/website-journey-analytics';
 
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import SiteFooter from '../site-footer';
@@ -95,7 +95,7 @@ describe('SiteFooter', () => {
     expect(brandLink.querySelector('img')?.getAttribute('src')).toContain('boardsesh-mark');
     expect(brandLink.querySelector('img')?.getAttribute('alt')).toBe('');
     fireEvent.click(brandLink);
-    expect(trackWebsiteJourneyEvent).toHaveBeenCalledWith({
+    expect(trackWebsiteJourneyLinkClick).toHaveBeenCalledWith(expect.anything(), {
       name: 'Nav Link Clicked',
       properties: { area: 'footer', target: '/' },
     });
@@ -146,7 +146,7 @@ describe('SiteFooter', () => {
     const helpLink = container.querySelector<HTMLAnchorElement>('nav a[href="/help"]');
     expect(helpLink).toBeTruthy();
     fireEvent.click(helpLink!);
-    expect(trackWebsiteJourneyEvent).toHaveBeenCalledWith({
+    expect(trackWebsiteJourneyLinkClick).toHaveBeenCalledWith(expect.anything(), {
       name: 'Nav Link Clicked',
       properties: { area: 'footer', target: '/help' },
     });
@@ -188,6 +188,6 @@ describe('SiteFooter', () => {
   });
 });
 
-vi.mock('@/app/components/consent/consent-provider', () => ({
+vi.mock('@/app/components/consent/consent-state-provider', () => ({
   useConsent: () => ({ granted: true, openChoices: vi.fn() }),
 }));

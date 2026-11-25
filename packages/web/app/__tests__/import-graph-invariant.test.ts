@@ -235,7 +235,6 @@ const KEPT_COMPONENT_DIRS = [
   'similar-climbs',
   'beta-videos',
   'charts',
-  'home-gym-card',
   'board-renderer',
   'ui',
   'form',

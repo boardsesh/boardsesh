@@ -69,11 +69,6 @@
       "playShotAlt": "Un blocco aperto in Boardsesh con le prese illuminate sul pannello"
     },
     "cards": {},
-    "gymCard": {
-      "ownerSubtitle": "La palestra della tua crew, a un tocco",
-      "manage": "Gestisci",
-      "viewPage": "Vedi la pagina"
-    },
     "gymSearch": {
       "title": "Trova un pannello vicino a te",
       "lead_one": "L’elenco dei pannelli comprende {{formattedCount}} palestre, club e pareti domestiche.",

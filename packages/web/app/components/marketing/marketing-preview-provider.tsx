@@ -2,6 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { classifyMarketingBrowser, type MarketingBrowser, type MarketingPlatform } from '@/app/lib/marketing-platform';
+import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
 
 type MarketingPreviewState = {
   browser: MarketingBrowser;
@@ -33,13 +34,28 @@ export function MarketingPreviewProvider({
   const selectPlatform = useCallback((selectedPlatform: MarketingPlatform) => {
     hasSelection.current = true;
     setPlatform(selectedPlatform);
+    void setPreference('marketingPreviewPlatform', selectedPlatform);
   }, []);
 
   useEffect(() => {
+    let mounted = true;
+    // A blocked IndexedDB open must not leave public screenshots empty.
+    const preferenceDeadline = setTimeout(() => {
+      if (mounted) setIsPlatformResolved(true);
+    }, 100);
     const detectedBrowser = classifyMarketingBrowser(navigator.userAgent, navigator.maxTouchPoints);
     setBrowser(detectedBrowser);
     if (!hasSelection.current) setPlatform(detectedBrowser.platform);
-    setIsPlatformResolved(true);
+    void getPreference('marketingPreviewPlatform').then((savedPlatform) => {
+      if (!mounted) return;
+      clearTimeout(preferenceDeadline);
+      if (!hasSelection.current && (savedPlatform === 'ios' || savedPlatform === 'android')) setPlatform(savedPlatform);
+      setIsPlatformResolved(true);
+    });
+    return () => {
+      mounted = false;
+      clearTimeout(preferenceDeadline);
+    };
   }, []);
 
   const preview = useMemo(

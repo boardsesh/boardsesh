@@ -9,6 +9,7 @@ const { push, requestPermission, useGeolocation } = vi.hoisted(() => ({
   useGeolocation: vi.fn(),
 }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }));
+vi.mock('@/app/lib/i18n/marketing-document-navigation', () => ({ navigateAcrossMarketingDocument: () => false }));
 vi.mock('@/app/hooks/use-geolocation', () => ({ useGeolocation }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => tFromCatalog('gyms', key) }) }));
 import HomeGymSearchNearMe from '../home-gym-search-near-me';

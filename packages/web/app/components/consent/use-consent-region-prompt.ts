@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { createRegionDefaultConsent, isRegionDefaultConsent, needsPrompt } from '@boardsesh/consent';
 import { getWebConsentRecord, setConsentRegionConfirmed, writeWebConsent } from '@/app/lib/consent';
 import { expireConsentRegionLookup, isConsentRegionLookupCurrent, lookUpConsentRegion } from '@/app/lib/consent-region';
-import { useConsent } from './consent-provider';
+import { useConsent } from './consent-state-provider';
 
 /**
  * Whether the consent banner may show on this page load: only in the prompt

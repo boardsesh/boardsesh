@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect, vi, beforeEach } from 'vite-plus/test';
+import { afterEach, describe, it, expect, vi, beforeEach, beforeAll } from 'vite-plus/test';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
@@ -15,6 +15,9 @@ const viewerState = {
   token: null as string | null,
   isTokenLoading: false,
 };
+vi.mock('@/app/components/marketing/marketing-query-provider', () => ({
+  default: ({ children }: { children: React.ReactNode }) => children,
+}));
 vi.mock('@/app/components/providers/session-provider', () => ({
   useBrowserSession: () => ({ data: viewerState.session, status: viewerState.status }),
 }));
@@ -75,6 +78,12 @@ vi.mock('../boardsesh-beta-list', () => ({
 }));
 
 import HomeRecentBetaSection from '../home-recent-beta-section';
+
+// Transform the deferred module before timing viewport behavior. Its component
+// remains unmounted until intersection; parallel test compilation is unrelated.
+beforeAll(async () => {
+  await import('../home-recent-beta-content');
+});
 
 function makeRow(overrides: {
   link: string;

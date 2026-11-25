@@ -7,7 +7,7 @@ import {
   type PlaylistClimbsResult,
 } from '@boardsesh/graphql/operations/playlists';
 import type { Climb } from '@boardsesh/queue';
-import { usePlaylistsAdapter, type ExecutePlaylistsGraphQL } from './adapter';
+import { useOptionalPlaylistsAdapter, type ExecutePlaylistsGraphQL } from './adapter';
 
 /** Board-scoping fields merged into the per-page query input. Omit for the
  *  all-boards view; supply when a specific board is selected. `playlistId`,
@@ -198,8 +198,11 @@ export function usePlaylistClimbs({
   initialDataUpdatedAt = 0,
   executeGraphQL: executeGraphQLOverride,
 }: UsePlaylistClimbsOptions): UsePlaylistClimbsResult {
-  const adapter = usePlaylistsAdapter();
-  const executeGraphQL = executeGraphQLOverride ?? adapter.executeGraphQL;
+  const adapter = useOptionalPlaylistsAdapter();
+  const executeGraphQL = executeGraphQLOverride ?? adapter?.executeGraphQL;
+  if (!executeGraphQL) {
+    throw new Error('usePlaylistClimbs requires an executeGraphQL transport or a PlaylistsAdapterProvider.');
+  }
 
   // The selected angle parameterises the response (grades resolve at it), but a
   // board's UUID is angle-agnostic — so the angle must be its own key segment.

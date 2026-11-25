@@ -69,11 +69,6 @@
       "playShotAlt": "Boardsesh 中打开的线路，岩点已在训练板上点亮"
     },
     "cards": {},
-    "gymCard": {
-      "ownerSubtitle": "轻点即可打开伙伴们的岩馆",
-      "manage": "管理",
-      "viewPage": "查看页面"
-    },
     "gymSearch": {
       "title": "查找附近训练板",
       "lead_one": "训练板名录已收录 {{formattedCount}} 处岩馆、俱乐部岩壁和家庭岩壁。",

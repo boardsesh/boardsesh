@@ -31,6 +31,8 @@
     "__tests__/offline-bulk-validation.test.ts",
     "check-homepage-budget.ts",
     "check-homepage-budget.test.ts",
+    "warm-marketing-pages.ts",
+    "warm-marketing-pages.test.ts",
     "duo-startup-diagnostics.ts",
     "__tests__/duo-startup-diagnostics.test.ts",
     "wled-simulator.ts",

@@ -8,8 +8,8 @@ import { useTranslation } from 'react-i18next';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import { boardTypeLabel } from '@boardsesh/board-constants/board-type-labels';
 import { navLinkClicked, type WebsiteNavTarget } from '@boardsesh/analytics';
-import { trackWebsiteJourneyEvent } from '@/app/lib/website-journey-analytics';
-import { useConsent } from '../consent/consent-provider';
+import { trackWebsiteJourneyEvent, trackWebsiteJourneyLinkClick } from '@/app/lib/website-journey-analytics';
+import { useConsent } from '../consent/consent-state-provider';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import CompactLanguageSwitcher from '@/app/components/i18n/compact-language-switcher';
 import StartClimbingButton from '@/app/components/start-climbing-button';
@@ -118,7 +118,7 @@ export default function SiteFooter({ developerHref = '/developers' }: { develope
           <MuiLink
             component={LocaleLink}
             href="/"
-            onClick={() => trackWebsiteJourneyEvent(navLinkClicked('footer', '/'))}
+            onClick={(click) => trackWebsiteJourneyLinkClick(click, navLinkClicked('footer', '/'))}
             aria-label={t('ariaLabels.home')}
             underline="none"
             sx={{ display: 'inline-flex', alignItems: 'center', minWidth: 44, minHeight: 44 }}
@@ -153,7 +153,7 @@ export default function SiteFooter({ developerHref = '/developers' }: { develope
                   target={link.external ? '_blank' : undefined}
                   rel={link.external ? 'noopener noreferrer' : undefined}
                   sx={LINK_SX}
-                  onClick={() => trackWebsiteJourneyEvent(navLinkClicked('footer', link.target))}
+                  onClick={(click) => trackWebsiteJourneyLinkClick(click, navLinkClicked('footer', link.target))}
                 >
                   {link.label}
                 </MuiLink>

@@ -293,6 +293,6 @@ describe('AnalyticsIdentity', () => {
   });
 });
 
-vi.mock('@/app/components/consent/consent-provider', () => ({
+vi.mock('@/app/components/consent/consent-state-provider', () => ({
   useConsent: () => ({ granted: true, openChoices: vi.fn() }),
 }));

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
-import { useConsent } from './consent/consent-provider';
+import { useConsent } from './consent/consent-state-provider';
 import { subscribeWebConsent } from '@/app/lib/consent';
 import { syncAdPixels } from '@/app/lib/ad-pixels-browser';
 

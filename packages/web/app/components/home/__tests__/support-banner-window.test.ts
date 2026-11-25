@@ -52,6 +52,6 @@ describe('where the banner can render', () => {
     const importers = sourceFiles(appDir)
       .filter((path) => /from ['"][^'"]*home-support-banner['"]/.test(readFileSync(path, 'utf8')))
       .map((path) => relative(appDir, path));
-    expect(importers).toEqual(['page.tsx']);
+    expect(importers).toEqual(['components/home/home-page.tsx']);
   });
 });

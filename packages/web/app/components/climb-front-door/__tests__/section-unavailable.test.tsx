@@ -48,7 +48,7 @@ vi.mock('../front-door-breadcrumb', () => ({ default: () => null }));
 vi.mock('../climb-creative-work-json-ld', () => ({ default: () => null }));
 vi.mock('../climb-hero-cta', () => ({ default: () => null }));
 // The root layout's provider, as a cold server render sees it: no answer yet.
-vi.mock('@/app/components/consent/consent-provider', () => ({
+vi.mock('@/app/components/consent/consent-state-provider', () => ({
   useConsent: () => ({ granted: false, snapshot: { record: null }, dialogOpen: false }),
 }));
 vi.mock('../angle-table', () => ({ default: () => null }));

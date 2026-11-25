@@ -1,9 +1,9 @@
 // @vitest-environment node
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import ShowcaseVideoJsonLd from '@/app/components/seo/showcase-video-json-ld';
-import { showcaseVideoJsonLd, showcaseVideoSources } from '../showcase-video';
+import { showcasePosterSources, showcaseVideoJsonLd, showcaseVideoSources } from '../showcase-video';
 
 describe('showcase video', () => {
   it('serves one 9:16 lite cut everywhere', () => {
@@ -12,6 +12,24 @@ describe('showcase video', () => {
       mp4: '/videos/home/showcase-9x16-lite.mp4',
       poster: '/images/home/showcase-hero-9x16.webp',
     });
+  });
+
+  it('resolves every responsive poster candidate directly to the immutable CDN', () => {
+    vi.stubEnv('NEXT_PUBLIC_STATIC_ASSET_BASE_URL', 'https://assets.boardsesh.com/');
+    try {
+      const poster = showcasePosterSources();
+      expect(poster.src).toMatch(/^https:\/\/assets\.boardsesh\.com\/static\/v1\/[a-f\d]{64}\.webp$/);
+      const candidates = poster.srcSet.split(', ');
+      expect(candidates).toHaveLength(4);
+      for (const candidate of candidates) {
+        expect(candidate).toMatch(
+          /^https:\/\/assets\.boardsesh\.com\/static\/v1\/[a-f\d]{64}\.webp (360|540|640|720)w$/,
+        );
+      }
+      expect(poster.srcSet).not.toContain('/_next/image');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('describes the video as a VideoObject with absolute URLs', () => {

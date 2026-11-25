@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import { onCLS, onFCP, onINP, onLCP, type Metric } from 'web-vitals';
-import { useConsent } from './consent/consent-provider';
+import { useConsent } from './consent/consent-state-provider';
 import { hasAnalyticsConsent } from '@/app/lib/consent';
 import { capturePosthog, pageview } from '@/app/lib/analytics';
 import { getSessionInboundCampaign } from '@/app/lib/inbound-campaign';

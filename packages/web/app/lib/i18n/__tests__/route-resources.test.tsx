@@ -30,7 +30,7 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
     </a>
   ),
 }));
-vi.mock('@/app/components/consent/consent-provider', () => ({
+vi.mock('@/app/components/consent/consent-state-provider', () => ({
   useConsent: () => ({ granted: true, openChoices: () => {} }),
 }));
 

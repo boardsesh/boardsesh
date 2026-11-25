@@ -82,6 +82,21 @@ function namespaceOrphans(
 }
 
 describe('static t() calls', () => {
+  it('resolves aliases when both locale translation branches load the same namespace', () => {
+    const analysis = analyze(`
+      export async function Search({ locale }) {
+        const { t } = await getServerTranslationForLocale(locale, 'marketing');
+        const { t: website } = await (locale
+          ? getServerTranslationForLocale(locale, 'website')
+          : getServerTranslation('website'));
+        return <section>{t('home.hero.title')}{website('directorySearch')}</section>;
+      }
+    `);
+    expect(analysis.usedKeys.get('website')?.has('directorySearch')).toBe(true);
+    expect(analysis.usedKeys.get('marketing')?.has('directorySearch')).not.toBe(true);
+    expect(analysis.usedKeys.get('marketing')?.has('home.hero.title')).toBe(true);
+  });
+
   it('records the key against the namespace from useTranslation', () => {
     const analysis = analyze(`
       import { useTranslation } from 'react-i18next';

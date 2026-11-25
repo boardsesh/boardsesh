@@ -69,11 +69,6 @@
       "playShotAlt": "Un bloque abierto en Boardsesh con sus presas iluminadas en el plafón"
     },
     "cards": {},
-    "gymCard": {
-      "ownerSubtitle": "El rocódromo de tu equipo, a un toque",
-      "manage": "Gestionar",
-      "viewPage": "Ver página"
-    },
     "gymSearch": {
       "title": "Encuentra un plafón cerca de ti",
       "lead_one": "El directorio de plafones incluye {{formattedCount}} salas, clubes y paredes domésticas.",

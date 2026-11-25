@@ -55,6 +55,38 @@ function renderWithAdapter(execute: ReturnType<typeof vi.fn>) {
 }
 
 describe('usePlaylistClimbs', () => {
+  it('loads playlist climbs using an explicit transport without a platform provider', async () => {
+    const execute = vi.fn(async () => climbPage(['public-climb']));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const { result, unmount } = renderHook(
+      () =>
+        usePlaylistClimbs({
+          playlistUuid: 'public-playlist',
+          executeGraphQL: execute as unknown as ExecutePlaylistsGraphQL,
+        }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.query.isSuccess).toBe(true));
+    expect(result.current.allClimbs.map((climb) => climb.uuid)).toEqual(['public-climb']);
+    expect(sentInput(execute, 0)?.playlistId).toBe('public-playlist');
+    unmount();
+    client.clear();
+  });
+
+  it('requires a transport when no platform provider exists', () => {
+    const client = new QueryClient();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    expect(() => renderHook(() => usePlaylistClimbs({ playlistUuid: 'p-1' }), { wrapper })).toThrow(
+      /executeGraphQL transport or a PlaylistsAdapterProvider/,
+    );
+    client.clear();
+  });
+
   it('sends no view field for the default view, so the request is the one sent before views', async () => {
     const execute = vi.fn(async () => climbPage(['a']));
     const { client, wrapper } = renderWithAdapter(execute);

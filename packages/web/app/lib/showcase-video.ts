@@ -46,6 +46,18 @@ export function showcaseVideoSources(): ShowcaseVideoSources {
   };
 }
 
+/** Browser-selected, immutable poster sizes; no runtime image-optimizer hop. */
+export function showcasePosterSources(): { src: string; srcSet: string; sizes: string } {
+  const widths = [360, 540, 640, 720] as const;
+  const posterUrl = (width: number) => resolveMarketingStaticAssetUrl(`/images/home/showcase-hero-9x16-${width}w.webp`);
+  return {
+    src: posterUrl(640),
+    srcSet: widths.map((width) => `${posterUrl(width)} ${width}w`).join(', '),
+    sizes:
+      '(max-width: 359px) calc(100vw - 32px), (max-width: 760px) calc(100vw - 48px), (max-width: 1099px) 265px, 338px',
+  };
+}
+
 function toAbsolute(url: string): string {
   return url.startsWith('http') ? url : absoluteUrl(url);
 }

@@ -31,11 +31,16 @@ export function PlaylistsAdapterProvider({ value, children }: { value: Playlists
 }
 
 export function usePlaylistsAdapter(): PlaylistsAdapter {
-  const adapter = useContext(PlaylistsAdapterContext);
+  const adapter = useOptionalPlaylistsAdapter();
   if (adapter === undefined) {
     throw new Error(
       'usePlaylistsAdapter must be used within a PlaylistsAdapterProvider. Mount the provider near the root of your app with platform-specific GraphQL + recents wiring.',
     );
   }
   return adapter;
+}
+
+/** Hooks with an explicit transport can run without the platform adapter. */
+export function useOptionalPlaylistsAdapter(): PlaylistsAdapter | undefined {
+  return useContext(PlaylistsAdapterContext);
 }

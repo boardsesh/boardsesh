@@ -28,7 +28,9 @@ function linkClick(modifiers: Partial<MouseEvent<HTMLAnchorElement>> = {}, targe
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.stubGlobal('window', { location: { origin: 'https://www.boardsesh.com', assign: navigate } });
+  vi.stubGlobal('window', {
+    location: { origin: 'https://www.boardsesh.com', pathname: '/help', search: '', assign: navigate },
+  });
   vi.mocked(trackBeforeNavigation).mockResolvedValue(undefined);
 });
 afterEach(() => vi.unstubAllGlobals());

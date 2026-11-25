@@ -200,8 +200,8 @@ function getTAliasName(name: ts.BindingName): string | undefined {
   return undefined;
 }
 
-function extractNsArg(callNode: ts.CallExpression): NsContext | undefined {
-  const arg = callNode.arguments[0];
+function extractNsArg(callNode: ts.CallExpression, argumentIndex = 0): NsContext | undefined {
+  const arg = callNode.arguments[argumentIndex];
   if (!arg) {
     return { primary: DEFAULT_NAMESPACE, bound: [DEFAULT_NAMESPACE] };
   }
@@ -225,6 +225,17 @@ function extractNsArg(callNode: ts.CallExpression): NsContext | undefined {
 
 function isI18nDestructureCall(initializer: ts.Expression): NsContext | undefined {
   const inner = ts.isAwaitExpression(initializer) ? initializer.expression : initializer;
+  if (ts.isParenthesizedExpression(inner)) return isI18nDestructureCall(inner.expression);
+  if (ts.isConditionalExpression(inner)) {
+    const explicitContext = isI18nDestructureCall(inner.whenTrue);
+    const fallbackContext = isI18nDestructureCall(inner.whenFalse);
+    return explicitContext &&
+      fallbackContext &&
+      explicitContext.primary === fallbackContext.primary &&
+      explicitContext.bound.join(',') === fallbackContext.bound.join(',')
+      ? explicitContext
+      : undefined;
+  }
   if (!ts.isCallExpression(inner)) return undefined;
   const callee = inner.expression;
   let fnName: string | undefined;
@@ -233,6 +244,7 @@ function isI18nDestructureCall(initializer: ts.Expression): NsContext | undefine
   } else if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.name)) {
     fnName = callee.name.text;
   }
+  if (fnName === 'getServerTranslationForLocale') return extractNsArg(inner, 1);
   if (fnName !== 'useTranslation' && fnName !== 'getServerTranslation') return undefined;
   return extractNsArg(inner);
 }

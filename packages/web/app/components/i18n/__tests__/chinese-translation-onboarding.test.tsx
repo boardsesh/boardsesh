@@ -16,7 +16,7 @@ vi.mock('@/app/lib/user-preferences-db', () => ({
   setPreference: mocks.setPreference,
 }));
 vi.mock('@/app/lib/i18n/use-locale-router', () => ({ usePathnameWithoutLocale: () => mocks.state.pathname }));
-vi.mock('../../consent/consent-provider', () => ({ useConsent: () => ({ dialogOpen: mocks.state.dialogOpen }) }));
+vi.mock('../../consent/consent-state-provider', () => ({ useConsent: () => ({ dialogOpen: mocks.state.dialogOpen }) }));
 
 import ChineseTranslationOnboarding from '../chinese-translation-onboarding';
 

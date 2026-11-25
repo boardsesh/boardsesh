@@ -275,7 +275,7 @@ export default function MarketingHeader() {
     <Button
       component={LocaleLink}
       href="/"
-      onClick={() => trackWebsiteJourneyEvent(navLinkClicked('header', '/'))}
+      onClick={(click) => trackWebsiteJourneyLinkClick(click, navLinkClicked('header', '/'))}
       aria-label={t('ariaLabels.home')}
       sx={BRAND_SX}
       disableRipple
