@@ -614,7 +614,6 @@
       "anyBoard": "Toutes les boards",
       "inThisArea": "Salles dans cette zone",
       "noNameMatch": "Aucune salle ne porte ce nom",
-      "noAddress": "Pas encore d'adresse",
       "addGym": "Ajouter ma salle",
       "addGymHint": "Pas dans la liste ? Ajoute-la avec ta board"
     },

@@ -17,11 +17,16 @@ const requestMock = vi.hoisted(() => vi.fn());
 const requestIfAllowedMock = vi.hoisted(() => vi.fn());
 const setCenterMock = vi.hoisted(() => vi.fn());
 const showWorldMock = vi.hoisted(() => vi.fn());
+const snapToMock = vi.hoisted(() => vi.fn());
+const dismissKeyboardMock = vi.hoisted(() => vi.fn());
+const refetchMock = vi.hoisted(() => vi.fn());
 const state = vi.hoisted(() => ({
   location: { status: 'idle', permission: 'unknown', coords: null as Coords | null },
   gyms: undefined as { gyms: unknown[] } | undefined,
+  gymsFailed: false,
   gymsArgs: [] as unknown[],
   mapCenter: undefined as Coords | null | undefined,
+  onRegionChange: undefined as ((coords: Coords, zoom?: number) => void) | undefined,
 }));
 
 vi.mock('react-native', () => ({
@@ -36,6 +41,7 @@ vi.mock('react-native', () => ({
     return createElement('div', { 'data-testid': testID }, children);
   },
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {} },
+  Keyboard: { dismiss: dismissKeyboardMock },
 }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, options?: { count?: number }) => (options?.count ?? '') + key }),
@@ -45,12 +51,12 @@ vi.mock('../../../../lib/graphql/hooks', () => ({
     state.gymsArgs = args;
     const enabled = args[0] !== null || typeof args[2] === 'string';
     return {
-      data: enabled ? state.gyms : undefined,
-      isLoading: enabled && !state.gyms,
-      isError: false,
+      data: enabled && !state.gymsFailed ? state.gyms : undefined,
+      isLoading: enabled && !state.gyms && !state.gymsFailed,
+      isError: enabled && state.gymsFailed,
       isFetching: false,
       error: null,
-      refetch: vi.fn(),
+      refetch: refetchMock,
     };
   },
 }));
@@ -106,11 +112,17 @@ vi.mock('../../../filter-capsules/CapsuleRow', () => ({
     ),
 }));
 vi.mock('../../../gym-directory/GymMap', () => ({
-  GymMap: forwardRef(({ center }: { center: Coords | null }, ref: Ref<unknown>) => {
-    state.mapCenter = center;
-    useImperativeHandle(ref, () => ({ setCenter: setCenterMock, showWorld: showWorldMock }), []);
-    return createElement('div', { 'data-testid': 'gym-map' });
-  }),
+  GymMap: forwardRef(
+    (
+      { center, onRegionChange }: { center: Coords | null; onRegionChange: (coords: Coords, zoom?: number) => void },
+      ref: Ref<unknown>,
+    ) => {
+      state.mapCenter = center;
+      state.onRegionChange = onRegionChange;
+      useImperativeHandle(ref, () => ({ setCenter: setCenterMock, showWorld: showWorldMock }), []);
+      return createElement('div', { 'data-testid': 'gym-map' });
+    },
+  ),
 }));
 vi.mock('../../../gym-directory/GymListPanel', () => ({
   GymListPanel: forwardRef(
@@ -118,21 +130,33 @@ vi.mock('../../../gym-directory/GymListPanel', () => ({
       {
         data,
         onPickGym,
+        addGym,
         onAddGym,
+        onRetry,
         filterSlot,
+        placeCaption,
         locationPrompt,
       }: {
         data: GymListRow[];
         onPickGym: (gym: Gym) => void;
+        addGym: { title: string };
         onAddGym: () => void;
+        onRetry?: () => void;
         filterSlot?: ReactNode;
+        placeCaption?: ReactNode;
         locationPrompt?: ReactNode;
       },
       ref: Ref<unknown>,
     ) => {
-      useImperativeHandle(ref, () => ({ snapTo: vi.fn(), ensureVisible: vi.fn(), scrollToRowKey: vi.fn() }), []);
+      useImperativeHandle(ref, () => ({ snapTo: snapToMock, ensureVisible: vi.fn(), scrollToRowKey: vi.fn() }), []);
       return createElement('section', { 'data-testid': 'panel' }, [
         createElement('div', { key: 'filters' }, filterSlot),
+        createElement('div', { key: 'caption', 'data-testid': 'caption' }, placeCaption),
+        createElement(
+          'button',
+          { key: 'add', type: 'button', 'data-testid': 'add-gym', onClick: onAddGym },
+          addGym.title,
+        ),
         locationPrompt
           ? createElement('div', { key: 'prompt' }, locationPrompt)
           : data.map((row) =>
@@ -142,11 +166,11 @@ vi.mock('../../../gym-directory/GymListPanel', () => ({
                     { key: row.key, type: 'button', 'data-testid': row.key, onClick: () => onPickGym(row.gym) },
                     `${row.gym.name} | ${row.subtitle} | ${row.boardsLabel}`,
                   )
-                : row.kind === 'addGym'
+                : row.kind === 'empty' && row.retryLabel
                   ? createElement(
                       'button',
-                      { key: row.key, type: 'button', 'data-testid': 'add-gym', onClick: onAddGym },
-                      row.title,
+                      { key: row.key, type: 'button', 'data-testid': 'retry', onClick: onRetry },
+                      row.label,
                     )
                   : createElement('div', { key: row.key, 'data-testid': `row-${row.kind}` }),
             ),
@@ -172,12 +196,20 @@ vi.mock('../../../gym-directory/GymSearchField', () => ({
     text,
     onChangeText,
     onSelectPlace,
+    onFocusChange,
   }: {
     text: string;
     onChangeText: (text: string) => void;
     onSelectPlace: (place: PlaceSuggestion) => void;
+    onFocusChange: (focused: boolean) => void;
   }) =>
     createElement('div', null, [
+      createElement('button', {
+        key: 'focus',
+        type: 'button',
+        'data-testid': 'focus-search',
+        onClick: () => onFocusChange(true),
+      }),
       createElement('input', {
         key: 'input',
         value: text,
@@ -216,7 +248,9 @@ beforeEach(() => {
   vi.useFakeTimers();
   state.location = { status: 'idle', permission: 'unknown', coords: null };
   state.gyms = undefined;
+  state.gymsFailed = false;
   state.gymsArgs = [];
+  state.onRegionChange = undefined;
   state.mapCenter = undefined;
   requestIfAllowedMock.mockResolvedValue(undefined);
 });
@@ -265,6 +299,66 @@ describe('GymStep', () => {
     // No distance from a town: the row says where the gym is, not how far from it.
     expect(screen.getByTestId('gym:gym-1').textContent).toBe('Boulderhal | Fokkerweg 75 | 3mobile.gyms.boardCount');
     expect(trackMock).toHaveBeenCalledWith('Board Wall Search Started', expect.objectContaining({ method: 'place' }));
+    expect(dismissKeyboardMock).toHaveBeenCalled();
+  });
+
+  it('keeps a picked town when a location fix arrives after it', async () => {
+    const view = render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
+    await settle();
+    fireEvent.click(screen.getByTestId('pick-amsterdam'));
+    await settle();
+    setCenterMock.mockClear();
+
+    const climber = { latitude: 51.5, longitude: -0.12 };
+    state.location = { status: 'granted', permission: 'granted', coords: climber };
+    view.rerender(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
+    await settle();
+    expect(setCenterMock).not.toHaveBeenCalledWith(climber);
+    expect(state.gymsArgs[0]).toEqual({ latitude: AMSTERDAM.latitude, longitude: AMSTERDAM.longitude });
+  });
+
+  it("clears a picked town once its label is edited, instead of searching gyms by the town's name", async () => {
+    render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
+    await settle();
+    fireEvent.click(screen.getByTestId('pick-amsterdam'));
+    await settle();
+
+    fireEvent.change(screen.getByTestId('search'), { target: { value: 'Ut' } });
+    await settle();
+    expect(state.gymsArgs[0]).toBeNull();
+    expect(state.gymsArgs[2]).toBe('Ut');
+    expect(showWorldMock).toHaveBeenCalled();
+  });
+
+  it('raises the list over the map while the search field has focus', () => {
+    render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
+    fireEvent.click(screen.getByTestId('focus-search'));
+    expect(snapToMock).toHaveBeenCalledWith('high');
+  });
+
+  it('searches the world view only once it is zoomed in to a region', async () => {
+    render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
+    await settle();
+    const utrecht = { latitude: 52.09, longitude: 5.12 };
+    act(() => state.onRegionChange?.(utrecht, 4));
+    await settle();
+    expect(state.gymsArgs[0]).toBeNull();
+    expect(screen.getByTestId('location-prompt')).toBeTruthy();
+
+    act(() => state.onRegionChange?.(utrecht, 11));
+    await settle();
+    expect(state.gymsArgs[0]).toEqual(utrecht);
+    expect(screen.queryByTestId('location-prompt')).toBeNull();
+  });
+
+  it('offers Try again when the first gym lookup fails, under the notice and in the caption', async () => {
+    state.gymsFailed = true;
+    render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
+    fireEvent.click(screen.getByTestId('pick-amsterdam'));
+    await settle();
+    fireEvent.click(screen.getByTestId('retry'));
+    expect(refetchMock).toHaveBeenCalledOnce();
+    expect(screen.getByTestId('caption').textContent).toContain('mobile.gyms.refreshFailed');
   });
 
   it('flies from the world to the climber when a fix arrives, and measures rows from them', async () => {
@@ -282,10 +376,19 @@ describe('GymStep', () => {
     expect(screen.getByTestId('gym:gym-1').textContent).toContain('1.2 km · Fokkerweg 75');
   });
 
-  it('filters gyms by the name typed', async () => {
+  it('filters gyms by the name typed: two characters or more, once the text is still', async () => {
     render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
     await settle();
+    fireEvent.change(screen.getByTestId('search'), { target: { value: 'M' } });
+    await settle();
+    expect(state.gymsArgs[2]).toBeUndefined();
+
     fireEvent.change(screen.getByTestId('search'), { target: { value: 'Monk' } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    // Even the first search waits for the text to be still.
+    expect(state.gymsArgs[2]).toBeUndefined();
     await settle();
     expect(state.gymsArgs[0]).toBeNull();
     expect(state.gymsArgs[2]).toBe('Monk');

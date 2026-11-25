@@ -50,8 +50,8 @@ type GymMapProps = {
   zoom?: number;
   markers: GymMapMarker[];
   // Fired (already debounced upstream) when the user pans/zooms the map, so the
-  // screen can re-query gyms for the new viewport.
-  onRegionChange?: (center: LatLng) => void;
+  // screen can re-query gyms for the new viewport. `zoom` when the platform says.
+  onRegionChange?: (center: LatLng, zoom?: number) => void;
   // Fired with the marker id when a pin is tapped. Selection lives in the list, so
   // this is a map→list convenience (scroll to + expand the row), never a hard
   // dependency — the screen works the same when the map can't surface taps.
@@ -122,19 +122,21 @@ const NativeGymMap = forwardRef<GymMapHandle, GymMapProps>(function NativeGymMap
   const [initialCamera] = useState(() => (center ? { coordinates: center, zoom } : WORLD_VIEW));
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
+  // The last camera move the screen asked for. Google Maps can drop a move sent
+  // before it has loaded, so the load replays it.
+  const requestedCameraRef = useRef<{ coordinates: LatLng; zoom?: number } | null>(null);
 
-  useImperativeHandle(
-    ref,
-    () => ({
-      setCenter: (coords: LatLng, targetZoom?: number) => {
-        nativeRef.current?.setCameraPosition?.({ coordinates: coords, zoom: targetZoom ?? zoomRef.current });
-      },
-      showWorld: () => {
-        nativeRef.current?.setCameraPosition?.(WORLD_VIEW);
-      },
-    }),
-    [],
-  );
+  useImperativeHandle(ref, () => {
+    const moveCamera = (camera: { coordinates: LatLng; zoom?: number }) => {
+      requestedCameraRef.current = camera;
+      nativeRef.current?.setCameraPosition?.(camera);
+    };
+    return {
+      setCenter: (coords: LatLng, targetZoom?: number) =>
+        moveCamera({ coordinates: coords, zoom: targetZoom ?? zoomRef.current }),
+      showWorld: () => moveCamera(WORLD_VIEW),
+    };
+  }, []);
 
   // A callback ref typed against `unknown` is assignable to either platform
   // view's ref slot (params are contravariant) without an explicit cast.
@@ -180,6 +182,8 @@ const NativeGymMap = forwardRef<GymMapHandle, GymMapProps>(function NativeGymMap
     if (mapLoadedRef.current) return;
     mapLoadedRef.current = true;
     clearLoadTimeout();
+    const requestedCamera = requestedCameraRef.current;
+    if (requestedCamera) nativeRef.current?.setCameraPosition?.(requestedCamera);
     onMapReadyRef.current?.();
   }, [clearLoadTimeout]);
 
@@ -203,9 +207,9 @@ const NativeGymMap = forwardRef<GymMapHandle, GymMapProps>(function NativeGymMap
   // expo-maps types the camera coordinates as optional; only forward a complete
   // pair so the screen never re-queries around a half-defined center.
   const handleCameraMove = onRegionChange
-    ? (event: { coordinates: { latitude?: number; longitude?: number } }) => {
+    ? (event: { coordinates: { latitude?: number; longitude?: number }; zoom?: number }) => {
         const { latitude, longitude } = event.coordinates;
-        if (latitude != null && longitude != null) onRegionChange({ latitude, longitude });
+        if (latitude != null && longitude != null) onRegionChange({ latitude, longitude }, event.zoom);
       }
     : undefined;
 

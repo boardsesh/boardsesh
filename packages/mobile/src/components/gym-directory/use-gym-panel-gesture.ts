@@ -71,6 +71,12 @@ type UseGymPanelGestureReturn = {
   nativeGesture: GestureType;
   /** Apply to the panel's animated wrapper (drives translateY on the UI thread). */
   panelAnimatedStyle: ReturnType<typeof useAnimatedStyle>;
+  /**
+   * For a view pinned to the panel's bottom edge: lifts it to the bottom of the
+   * box, so it stays on screen at every detent (the panel is the High height,
+   * and hangs below the box when lower).
+   */
+  visibleBottomAnimatedStyle: ReturnType<typeof useAnimatedStyle>;
   /** Fixed panel height (the tallest visible height) — the View is translated down from here. */
   panelHeight: number;
   /** The list scrolls only at the High detent; below it the whole panel drags instead.
@@ -280,11 +286,15 @@ export function useGymPanelGesture({
   const panelAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
   }));
+  const visibleBottomAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: highTopYSV.value - translateY.value }],
+  }));
 
   return {
     gesture: composedGesture,
     nativeGesture,
     panelAnimatedStyle,
+    visibleBottomAnimatedStyle,
     panelHeight,
     scrollEnabled,
     settledDetent,

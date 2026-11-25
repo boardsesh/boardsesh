@@ -1,6 +1,8 @@
 // The rows of the gym list in pick mode: the add-a-board flow's "Which gym?"
 // step (`GymStep`). Gyms to choose from, not boards to activate, so a row is
 // one tap with nothing to expand. Pure, so every lookup state is a table test.
+// "Add my gym" is not a row: the panel pins it at the bottom of what is
+// visible, so it is there at every detent.
 //
 // Duplicate listings are not folded: each row shows its street so two listings
 // of the same name can be told apart, and the data is cleaned at the source.
@@ -19,12 +21,10 @@ export type GymPickLabels = {
   empty: string;
   offline: string;
   failed: string;
+  /** The action under a failed lookup. */
+  retry: string;
   boardCount: (count: number) => string;
   noBoards: string;
-  /** The line a gym with neither a distance nor an address gets. */
-  noAddress: string;
-  addGymTitle: string;
-  addGymSubtitle: string;
 };
 
 type BuildGymPickRowsArgs = {
@@ -40,8 +40,6 @@ type BuildGymPickRowsArgs = {
   selectedId: string | null;
   labels: GymPickLabels;
 };
-
-export const ADD_GYM_ROW_KEY = 'addGym';
 
 const EARTH_RADIUS_METERS = 6_371_000;
 
@@ -59,8 +57,11 @@ export function distanceBetweenMeters(from: Coords, to: Coords): number {
   return 2 * EARTH_RADIUS_METERS * Math.asin(Math.min(1, Math.sqrt(halfChord)));
 }
 
-/** "1.2 km · Fokkerweg 75": the distance when the climber's position is known, then the address. */
-export function gymPickSubtitle(gym: Gym, origin: Coords | null, noAddress: string): string {
+/**
+ * "1.2 km · Fokkerweg 75": the distance when the climber's position is known,
+ * then the address. Null with neither: the row leaves the line out.
+ */
+export function gymPickSubtitle(gym: Gym, origin: Coords | null): string | null {
   const hasCoordinates = Number.isFinite(gym.latitude) && Number.isFinite(gym.longitude);
   const distance =
     origin && hasCoordinates
@@ -70,16 +71,14 @@ export function gymPickSubtitle(gym: Gym, origin: Coords | null, noAddress: stri
       : null;
   const address = gym.address?.trim() || null;
   const parts = [distance, address].filter((part): part is string => part !== null);
-  return parts.length > 0 ? parts.join(' · ') : noAddress;
+  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 export function buildGymPickRows({ gyms, lookup, origin, selectedId, labels }: BuildGymPickRowsArgs): GymListRow[] {
-  const rows: GymListRow[] = [];
-  if (lookup !== 'idle') rows.push({ kind: 'sectionHeader', key: 'sh:gyms', label: labels.section });
+  if (lookup === 'idle') return [];
+  const rows: GymListRow[] = [{ kind: 'sectionHeader', key: 'sh:gyms', label: labels.section }];
 
   switch (lookup) {
-    case 'idle':
-      break;
     case 'loading':
       rows.push({ kind: 'loading', key: 'loading' });
       break;
@@ -87,7 +86,7 @@ export function buildGymPickRows({ gyms, lookup, origin, selectedId, labels }: B
       rows.push({ kind: 'empty', key: 'offline', label: labels.offline });
       break;
     case 'failed':
-      rows.push({ kind: 'empty', key: 'failed', label: labels.failed });
+      rows.push({ kind: 'empty', key: 'failed', label: labels.failed, retryLabel: labels.retry });
       break;
     case 'empty':
       rows.push({ kind: 'empty', key: 'empty', label: labels.empty });
@@ -98,7 +97,7 @@ export function buildGymPickRows({ gyms, lookup, origin, selectedId, labels }: B
           kind: 'pickGym',
           key: `gym:${gym.uuid}`,
           gym,
-          subtitle: gymPickSubtitle(gym, origin, labels.noAddress),
+          subtitle: gymPickSubtitle(gym, origin),
           boardsLabel: gym.boardCount > 0 ? labels.boardCount(gym.boardCount) : labels.noBoards,
           position: groupedCellPosition(index, gyms.length),
           selected: selectedId === gym.uuid,
@@ -106,7 +105,5 @@ export function buildGymPickRows({ gyms, lookup, origin, selectedId, labels }: B
       });
       break;
   }
-
-  rows.push({ kind: 'addGym', key: ADD_GYM_ROW_KEY, title: labels.addGymTitle, subtitle: labels.addGymSubtitle });
   return rows;
 }

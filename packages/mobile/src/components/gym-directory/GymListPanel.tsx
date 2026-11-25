@@ -1,5 +1,5 @@
-import { forwardRef, memo, useCallback, useImperativeHandle, useMemo, useRef, type ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { forwardRef, memo, useCallback, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
+import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import Animated from 'react-native-reanimated';
 import { GestureDetector } from 'react-native-gesture-handler';
@@ -89,7 +89,11 @@ type GymListPanelBrowseProps = GymListPanelSharedProps & {
 type GymListPanelPickProps = GymListPanelSharedProps & {
   mode: 'pick';
   onPickGym: (gym: Gym) => void;
+  /** "Add my gym": pinned at the bottom of what is visible, at every detent. */
+  addGym: { title: string; subtitle: string };
   onAddGym: () => void;
+  /** "Try again" under a failed lookup's notice. */
+  onRetry?: () => void;
 };
 
 export type GymListPanelProps = GymListPanelBrowseProps | GymListPanelPickProps;
@@ -131,7 +135,9 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
   const onOpenGym = props.mode === 'pick' ? undefined : props.onOpenGym;
   const noBoardsLabel = props.mode === 'pick' ? '' : props.noBoardsLabel;
   const onPickGym = props.mode === 'pick' ? props.onPickGym : noopGym;
+  const addGym = props.mode === 'pick' ? props.addGym : null;
   const onAddGym = props.mode === 'pick' ? props.onAddGym : noop;
+  const onRetry = props.mode === 'pick' ? props.onRetry : undefined;
 
   const theme = useTheme();
   const { systemColors } = theme;
@@ -144,6 +150,7 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
     gesture,
     nativeGesture,
     panelAnimatedStyle,
+    visibleBottomAnimatedStyle,
     panelHeight,
     scrollEnabled,
     onListScroll,
@@ -182,6 +189,7 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
           return pickMode ? (
             <View style={styles.pickGutter}>
               <EmptyRow label={item.label} />
+              {item.retryLabel && onRetry ? <RetryAction label={item.retryLabel} onPress={onRetry} /> : null}
             </View>
           ) : (
             <EmptyRow label={item.label} />
@@ -225,12 +233,11 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
               onPickGym={onPickGym}
             />
           );
-        case 'addGym':
-          return <AddGymRow title={item.title} subtitle={item.subtitle} onAddGym={onAddGym} />;
       }
     },
     [
       pickMode,
+      onRetry,
       noBoardsLabel,
       onPressGym,
       onActivateBoard,
@@ -239,15 +246,32 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
       onClaimGym,
       onOpenGym,
       onPickGym,
-      onAddGym,
     ],
   );
 
+  // Pick mode pins "Add my gym" over the list's foot; measured so the last gym
+  // can scroll clear of it.
+  const [footerHeight, setFooterHeight] = useState(0);
+  const onFooterLayout = useCallback((event: LayoutChangeEvent) => {
+    const measured = Math.round(event.nativeEvent.layout.height);
+    setFooterHeight((previous) => (previous === measured ? previous : measured));
+  }, []);
+
   // Pick rows are inset-grouped cells that carry their own 16pt gutter.
   const listContentStyle = useMemo(
-    () => ({ paddingHorizontal: pickMode ? 0 : spacing[4], paddingBottom: insets.bottom + spacing[6] }),
-    [insets.bottom, pickMode],
+    () => ({
+      paddingHorizontal: pickMode ? 0 : spacing[4],
+      paddingBottom: pickMode ? footerHeight + spacing[4] : insets.bottom + spacing[6],
+    }),
+    [insets.bottom, pickMode, footerHeight],
   );
+  const promptAreaStyle = useMemo(
+    () => (pickMode ? [styles.promptArea, { paddingBottom: footerHeight + spacing[6] }] : styles.promptArea),
+    [pickMode, footerHeight],
+  );
+  // Pick rows are grouped cards: they sit on the grouped background, so a
+  // card's fill reads against it.
+  const panelBackground = pickMode ? systemColors.groupedBackground : systemColors.secondaryBackground;
 
   const cornerStyle = theme.sheet.corners ?? styles.defaultCorners;
 
@@ -258,7 +282,7 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
           styles.surface,
           cornerStyle,
           shadows.lg,
-          { backgroundColor: systemColors.secondaryBackground, borderTopColor: systemColors.separator },
+          { backgroundColor: panelBackground, borderTopColor: systemColors.separator },
         ]}
       >
         <GestureDetector gesture={gesture}>
@@ -270,7 +294,7 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
               {filterSlot}
             </View>
             {locationPrompt ? (
-              <View style={styles.promptArea}>{locationPrompt}</View>
+              <View style={promptAreaStyle}>{locationPrompt}</View>
             ) : (
               <GestureDetector gesture={nativeGesture}>
                 <FlashList
@@ -288,10 +312,23 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
                   // Pick mode's search sits above the panel: a row tap while the
                   // keyboard is up should pick the gym, not just close the keyboard.
                   keyboardShouldPersistTaps={pickMode ? 'handled' : undefined}
+                  keyboardDismissMode={pickMode ? 'on-drag' : undefined}
                   contentContainerStyle={listContentStyle}
                 />
               </GestureDetector>
             )}
+            {addGym ? (
+              <Animated.View
+                style={[
+                  styles.pickFooter,
+                  { backgroundColor: panelBackground, paddingBottom: insets.bottom + spacing[2] },
+                  visibleBottomAnimatedStyle,
+                ]}
+                onLayout={onFooterLayout}
+              >
+                <AddGymRow title={addGym.title} subtitle={addGym.subtitle} onAddGym={onAddGym} />
+              </Animated.View>
+            ) : null}
           </View>
         </GestureDetector>
       </View>
@@ -348,8 +385,8 @@ const GYM_GLYPH = <GymGlyph icon="gym" />;
 const ADD_GLYPH = <GymGlyph icon="plus" />;
 
 /**
- * A gym to choose in pick mode: its name, "1.2 km · street", then how many
- * boards it has and, when its staff run it, "Run by the gym". One slice of an
+ * A gym to choose in pick mode: its name, "1.2 km · street" (left out when
+ * there is neither), then how many boards it has and, when its staff run it, "Run by the gym". One slice of an
  * inset-grouped card; the whole row picks.
  */
 const PickGymRow = memo(function PickGymRow({
@@ -361,7 +398,7 @@ const PickGymRow = memo(function PickGymRow({
   onPickGym,
 }: {
   gym: Gym;
-  subtitle: string;
+  subtitle: string | null;
   boardsLabel: string;
   position: GroupedCellPosition;
   selected: boolean;
@@ -371,9 +408,11 @@ const PickGymRow = memo(function PickGymRow({
   const details = useMemo(
     () => (
       <View style={styles.pickDetails}>
-        <Text variant="subheadline" tone="secondary">
-          {subtitle}
-        </Text>
+        {subtitle ? (
+          <Text variant="subheadline" tone="secondary">
+            {subtitle}
+          </Text>
+        ) : null}
         <View style={styles.pickPills}>
           <StatusPill label={boardsLabel} testID="gym-pick-boards" />
           {gym.listingState === 'RUN_BY_GYM' ? (
@@ -401,7 +440,26 @@ const PickGymRow = memo(function PickGymRow({
   );
 });
 
-/** The last row in pick mode, its own card: the gym isn't listed, add it. */
+/** "Try again" under a failed lookup's notice in pick mode. */
+const RetryAction = memo(function RetryAction({ label, onPress }: { label: string; onPress: () => void }) {
+  const { systemColors } = useTheme();
+  return (
+    <PressableSurface
+      onPress={onPress}
+      feedback="opacity"
+      accessibilityRole="button"
+      hitSlop={8}
+      style={styles.retry}
+      testID="gym-pick-retry"
+    >
+      <Text variant="subheadline" color={systemColors.accent}>
+        {label}
+      </Text>
+    </PressableSurface>
+  );
+});
+
+/** Pick mode's pinned footer, its own card: the gym isn't listed, add it. */
 const AddGymRow = memo(function AddGymRow({
   title,
   subtitle,
@@ -732,6 +790,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     paddingTop: spacing[2],
     gap: spacing[2],
+    // Above the list, so the search field's floating town suggestions draw over it.
+    zIndex: 1,
   },
   handle: {
     alignSelf: 'center',
@@ -842,7 +902,18 @@ const styles = StyleSheet.create({
     gap: spacing[1],
   },
   addGymCard: {
-    marginTop: spacing[4],
+    paddingTop: spacing[2],
+  },
+  pickFooter: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  retry: {
+    alignSelf: 'center',
+    marginTop: spacing[2],
+    paddingVertical: spacing[1],
   },
   editButton: {
     padding: spacing[1],

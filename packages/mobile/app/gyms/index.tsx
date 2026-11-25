@@ -353,8 +353,8 @@ export default function GymDiscovery() {
       searchGenerationRef.current += 1;
       setInputText(text);
       // Editing a selected city must not leave its invisible geographic filter
-      // attached to a later gym-name search.
-      if (Platform.OS === 'web' && searchLabel !== null) {
+      // attached to a later gym-name search (native gets town suggestions too).
+      if (searchLabel !== null) {
         setSearchLabel(null);
         setViewCenter(null);
       }
@@ -477,7 +477,7 @@ export default function GymDiscovery() {
       });
       return;
     }
-    if (Platform.OS === 'web' && searchLabel !== null) {
+    if (searchLabel !== null) {
       // The chosen city is already applied. Submitting its display label must
       // not reinterpret it as a gym name.
       return;

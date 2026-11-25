@@ -558,6 +558,32 @@ describe('discovery search integration', () => {
     expect(captured.standaloneBoards).toEqual([]);
   });
 
+  it('clears a town picked from the native suggestions once its label is edited', () => {
+    captured.coords = undefined;
+    const screen = render(createElement(GymDiscovery));
+    act(() =>
+      captured.onSelectPlace?.({
+        id: 4180439,
+        name: 'Atlanta',
+        region: 'Georgia',
+        country: 'United States',
+        countryCode: 'US',
+        latitude: 33.749,
+        longitude: -84.388,
+      }),
+    );
+    expect(queryMocks.gyms.mock.lastCall?.[0]).toEqual({ latitude: 33.749, longitude: -84.388 });
+    // Submitting the picked label again is not a gym-name search.
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    expect(queryMocks.gyms.mock.lastCall?.[2]).toBeUndefined();
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Atlant' } });
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(queryMocks.gyms.mock.lastCall?.[0]).toBeNull();
+  });
+
   it('keeps chip changes made while native geocoding is pending', async () => {
     let finishGeocode!: (coords: Coords) => void;
     geocodeMock.mockReturnValueOnce(

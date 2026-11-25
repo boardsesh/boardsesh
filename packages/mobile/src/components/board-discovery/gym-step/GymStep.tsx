@@ -2,20 +2,23 @@
 // like the website's gym directory, built from the /gyms parts (`GymMap`,
 // `GymListPanel` in pick mode, `GymSearchField`, `GymLocationPrompt`).
 //
-// - The search field is pinned under the bar. Typing filters gyms by name and
-//   suggests towns (`searchPlaces`); a town flies the map there and lists the
-//   gyms within 50 km. Neither needs location.
+// - The search field is pinned under the bar. Typing filters gyms by name (2+
+//   characters, once the text is still) and suggests towns (`searchPlaces`); a
+//   town flies the map there and lists the gyms within 50 km. Neither needs
+//   location. Focusing the field raises the list over the map, so the keyboard
+//   never hides the results.
 // - Location is never asked on open. The step only reads a permission the
 //   climber already gave (`requestIfAllowed`); otherwise, until a town or a name
 //   is searched, the list shows the location prompt and the map the world.
 // - The map is the top 35%, the gym list a panel under it. A pin tap selects its
 //   row; only a row tap picks, so a mis-tapped pin never moves the flow on.
+//   Zooming the world view in to a town searches there, as the website does.
 //
 // A pick hands the gym to the caller (today `/boards/find-wall`, whose next
 // screen is the gym's wall list); so does "Add my gym", the list's last row.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { Keyboard, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { SUPPORTED_BOARDS } from '@boardsesh/board-config';
@@ -61,6 +64,14 @@ const SEARCH_RADIUS_KM = 50;
 const MAP_FRACTION = 0.35;
 /** How far a pan must move the camera (degrees) before the list follows it. */
 const MIN_MOVE_DEG = 0.04;
+/**
+ * How far in the world view must be zoomed before its centre is a place to
+ * search around: about a region, where a 50 km radius covers what is shown.
+ */
+const SEARCH_ZOOM_THRESHOLD = 8;
+/** Gym-name search: the shortest name looked up, and how long the text must be still. */
+const MIN_NAME_LENGTH = 2;
+const NAME_DEBOUNCE_MS = 300;
 /** The capsule menu's value for "any board type". */
 const ANY_BOARD = 'any';
 
@@ -111,11 +122,20 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
   const [boardType, setBoardType] = useState<BoardName | null>(initialBoardType);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  // The name the gyms are searched by: 2+ characters, once the text has been
+  // still for a moment (the first keystroke too).
+  const [searchedName, setSearchedName] = useState('');
+  useEffect(() => {
+    const trimmed = nameQuery.trim();
+    const next = trimmed.length >= MIN_NAME_LENGTH ? trimmed : '';
+    const timer = setTimeout(() => setSearchedName(next), NAME_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [nameQuery]);
+
   const center = viewCenter ?? deviceCoords ?? null;
-  const filter = useMemo<WallFinderFilter>(
-    () => ({ name: nameQuery.trim() || undefined, boardTypes: boardType ? [boardType] : undefined }),
-    [nameQuery, boardType],
-  );
+  // The name has its own debounce above; the discovery search debounces the
+  // camera and the board type.
+  const filter = useMemo<WallFinderFilter>(() => ({ boardTypes: boardType ? [boardType] : undefined }), [boardType]);
   const filterRef = useRef(filter);
   filterRef.current = filter;
   const viewCenterRef = useRef(viewCenter);
@@ -125,14 +145,21 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
 
   // The target of the last camera move we made: its settle is not a pan.
   const programmaticTargetRef = useRef<Coords | null>(null);
+  const cameraZoomRef = useRef<number | undefined>(undefined);
   const resolveCameraCenter = useCallback((next: Coords, current: Coords | null) => {
-    // The world view isn't a place to search around: only a pan from a real
-    // centre (the climber's, or a town's) moves the list.
-    if (current === null) return null;
     const target = programmaticTargetRef.current;
     if (target && !movedEnough(next, target)) {
       programmaticTargetRef.current = null;
       return current;
+    }
+    if (current === null) {
+      // The world view itself is no place to search around; zoomed in to a
+      // town (location off, nothing typed), its centre is.
+      const zoom = cameraZoomRef.current;
+      if (zoom === undefined || zoom < SEARCH_ZOOM_THRESHOLD) return null;
+      programmaticTargetRef.current = null;
+      setViewCenter(next);
+      return next;
     }
     if (!movedEnough(next, current)) return current;
     programmaticTargetRef.current = null;
@@ -140,6 +167,13 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
     return next;
   }, []);
   const { search, cameraMoved, resetSearch } = useDiscoverySearch(center, filter, { resolveCameraCenter });
+  const onRegionChange = useCallback(
+    (coords: Coords, zoom?: number) => {
+      cameraZoomRef.current = zoom;
+      cameraMoved(coords);
+    },
+    [cameraMoved],
+  );
 
   const moveCameraTo = useCallback((coords: Coords) => {
     programmaticTargetRef.current = coords;
@@ -164,29 +198,53 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
   useEffect(() => {
     if (deviceCoords) reportSearchStarted('location', 0);
   }, [deviceCoords, reportSearchStarted]);
-  const committedName = search.filter.name ?? '';
   useEffect(() => {
-    if (committedName.length > 0) reportSearchStarted('text', committedName.length);
-  }, [committedName, reportSearchStarted]);
+    if (searchedName.length > 0) reportSearchStarted('text', searchedName.length);
+  }, [searchedName, reportSearchStarted]);
+
+  // Back to the climber, or out to the world: no town, nothing panned.
+  const leaveTown = useCallback(() => {
+    setViewCenter(null);
+    setSelectedId(null);
+    const coords = deviceCoordsRef.current;
+    resetSearch({ center: coords, filter: filterRef.current });
+    if (coords) {
+      moveCameraTo(coords);
+    } else {
+      programmaticTargetRef.current = null;
+      mapRef.current?.showWorld();
+    }
+  }, [moveCameraTo, resetSearch]);
 
   // --- the search field ---
-  const onChangeText = useCallback((text: string) => {
-    setInputText(text);
-    setNameQuery(text);
-    // Editing a picked town makes the text a search again; the map stays where it is.
-    setPickedPlace(null);
-  }, []);
+  const pickedPlaceRef = useRef(pickedPlace);
+  pickedPlaceRef.current = pickedPlace;
+  const onChangeText = useCallback(
+    (text: string) => {
+      setInputText(text);
+      setNameQuery(text);
+      // Editing a picked town clears it, as on the website: the text is a new
+      // search (a focus selects the label, so typing replaces it).
+      if (pickedPlaceRef.current !== null) {
+        setPickedPlace(null);
+        leaveTown();
+      }
+    },
+    [leaveTown],
+  );
 
   const onSelectPlace = useCallback(
     (place: PlaceSuggestion) => {
       const coords = { latitude: place.latitude, longitude: place.longitude };
       const label = placeSuggestionLabel(place);
+      Keyboard.dismiss();
       setInputText(label);
       setNameQuery('');
+      setSearchedName('');
       setPickedPlace(label);
       setViewCenter(coords);
       setSelectedId(null);
-      resetSearch({ center: coords, filter: { ...filterRef.current, name: undefined } });
+      resetSearch({ center: coords, filter: filterRef.current });
       moveCameraTo(coords);
       reportSearchStarted('place', 0);
     },
@@ -199,18 +257,15 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
   const onClear = useCallback(() => {
     setInputText('');
     setNameQuery('');
+    setSearchedName('');
     setPickedPlace(null);
-    setViewCenter(null);
-    setSelectedId(null);
-    const coords = deviceCoordsRef.current;
-    resetSearch({ center: coords, filter: { ...filterRef.current, name: undefined } });
-    if (coords) {
-      moveCameraTo(coords);
-    } else {
-      programmaticTargetRef.current = null;
-      mapRef.current?.showWorld();
-    }
-  }, [moveCameraTo, resetSearch]);
+    leaveTown();
+  }, [leaveTown]);
+
+  // Typing raises the list over the map, so the keyboard never covers it.
+  const onFocusChange = useCallback((focused: boolean) => {
+    if (focused) panelRef.current?.snapTo('high');
+  }, []);
 
   // --- the board type: one capsule menu, not a wall of chips ---
   const capsules = useMemo<Capsule[]>(() => {
@@ -235,14 +290,14 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
   const gymsQuery = useNearbyGyms(
     search.center,
     SEARCH_RADIUS_KM,
-    search.filter.name,
+    searchedName || undefined,
     search.filter.boardTypes,
     undefined,
     undefined,
     undefined,
     { enabled: !offline },
   );
-  const searchEnabled = search.center !== null || committedName.length > 0;
+  const searchEnabled = search.center !== null || searchedName.length > 0;
   // A cleared search keeps the last answer as placeholder data: draw none of it.
   const gyms = useMemo<readonly Gym[]>(
     () => (searchEnabled ? (gymsQuery.data?.gyms ?? []) : []),
@@ -255,8 +310,8 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
     isError: gymsQuery.isError,
     count: gymsQuery.data ? gyms.length : null,
   });
-  // Rows still on screen after a failed refetch: say so above them.
-  const refreshFailed = gymsQuery.isError && !gymsQuery.isFetching && lookup === 'listed';
+  // A failed lookup, or rows still on screen after a failed refetch: say so above them.
+  const refreshFailed = lookup === 'failed' || (gymsQuery.isError && !gymsQuery.isFetching && lookup === 'listed');
   const { refetch: refetchGyms } = gymsQuery;
   const retryGyms = useCallback(() => void refetchGyms(), [refetchGyms]);
 
@@ -286,17 +341,22 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
         selectedId,
         labels: {
           section: sectionLabel,
-          empty: committedName.length > 0 ? t('mobile.gymStep.noNameMatch') : t('mobile.gyms.empty'),
+          empty: searchedName.length > 0 ? t('mobile.gymStep.noNameMatch') : t('mobile.gyms.empty'),
           offline: t('mobile.findWall.offline'),
           failed: t('mobile.findWall.gymsFailed'),
+          retry: t('mobile.findWall.retry'),
           boardCount: (count: number) => t('mobile.gyms.boardCount', { count }),
           noBoards: t('mobile.gyms.noBoards'),
-          noAddress: t('mobile.gymStep.noAddress'),
-          addGymTitle: t('mobile.gymStep.addGym'),
-          addGymSubtitle: isAuthenticated ? t('mobile.gymStep.addGymHint') : t('mobile.findWall.signInToAdd'),
         },
       }),
-    [gyms, lookup, deviceCoords, selectedId, sectionLabel, committedName.length, isAuthenticated, t],
+    [gyms, lookup, deviceCoords, selectedId, sectionLabel, searchedName.length, t],
+  );
+  const addGym = useMemo(
+    () => ({
+      title: t('mobile.gymStep.addGym'),
+      subtitle: isAuthenticated ? t('mobile.gymStep.addGymHint') : t('mobile.findWall.signInToAdd'),
+    }),
+    [isAuthenticated, t],
   );
 
   const markers = useMemo<GymMapMarker[]>(
@@ -382,7 +442,7 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
   // Nowhere to look yet: the location prompt in place of the list. A town or a
   // gym name typed above works without it.
   const locationPrompt =
-    center === null && nameQuery.trim().length === 0 ? (
+    center === null && nameQuery.trim().length < MIN_NAME_LENGTH ? (
       <GymLocationPrompt
         status={locationPromptStatus({
           checked: permissionChecked,
@@ -406,6 +466,7 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
           onSubmit={onSubmit}
           onSelectPlace={onSelectPlace}
           onClear={onClear}
+          onFocusChange={onFocusChange}
         />
       </View>
       <View style={styles.body} onLayout={onBodyLayout}>
@@ -415,7 +476,7 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
             ref={mapRef}
             center={center}
             markers={markers}
-            onRegionChange={cameraMoved}
+            onRegionChange={onRegionChange}
             onMarkerPress={onMarkerPress}
             onMapUnavailable={handleMapUnavailable}
             onMapReady={handleMapReady}
@@ -434,7 +495,9 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
             mediumFraction={1 - MAP_FRACTION}
             allowLowDetent={false}
             onPickGym={handlePickGym}
+            addGym={addGym}
             onAddGym={handleAddGym}
+            onRetry={retryGyms}
             searchSlot={null}
             placeCaption={placeCaption}
             filterSlot={<CapsuleRow capsules={capsules} />}
@@ -455,6 +518,8 @@ const styles = StyleSheet.create({
     paddingTop: spacing[2],
     paddingBottom: spacing[2],
     gap: spacing[1],
+    // The field's town suggestions float over the map and the list below.
+    zIndex: 1,
   },
   body: {
     flex: 1,

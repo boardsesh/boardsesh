@@ -1,4 +1,4 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { PlaceSuggestion } from '@boardsesh/shared-schema';
@@ -11,7 +11,7 @@ import { Text } from '../Text';
 import { usePlaceSuggestions } from '../../lib/use-place-suggestions';
 import { useTheme } from '../../providers/theme-provider';
 import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
-import { borderRadius, spacing } from '../../theme/tokens';
+import { borderRadius, shadows, spacing } from '../../theme/tokens';
 import type { GymSearchFieldProps } from './GymSearchField.types';
 
 /**
@@ -20,6 +20,11 @@ import type { GymSearchFieldProps } from './GymSearchField.types';
  * our gazetteer under it as the climber types, like the browser's. A town works
  * without location permission: picking one hands it to `onSelectPlace`, which
  * moves the map there.
+ *
+ * The suggestions float over whatever is under the field, so the map and the
+ * list don't jump on every lookup. They show only while the field is focused,
+ * and close on submit or a pick until the text changes again. A picked town's
+ * label is selected when the field is focused, so typing replaces it.
  */
 export function GymSearchField({
   text,
@@ -30,20 +35,57 @@ export function GymSearchField({
   onSubmit,
   onSelectPlace,
   onClear,
+  onFocusChange,
 }: GymSearchFieldProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const styles = useTypographyStyles(createStyles);
   const { suggestions } = usePlaceSuggestions(text, hasSelectedPlace);
   const fieldLabel = placeholder ?? t('mobile.gyms.searchPlaceholder');
+  const [focused, setFocused] = useState(false);
+  // Closed by a submit or a pick, until the climber types again.
+  const [closed, setClosed] = useState(false);
+  const showSuggestions = focused && !closed && suggestions.length > 0;
+
+  const handleFocus = useCallback(() => {
+    setFocused(true);
+    setClosed(false);
+    onFocusChange?.(true);
+  }, [onFocusChange]);
+  const handleBlur = useCallback(() => {
+    setFocused(false);
+    onFocusChange?.(false);
+  }, [onFocusChange]);
+  const handleChangeText = useCallback(
+    (next: string) => {
+      setClosed(false);
+      onChangeText(next);
+    },
+    [onChangeText],
+  );
+  const handleSubmit = useCallback(() => {
+    setClosed(true);
+    onSubmit();
+  }, [onSubmit]);
+  const handleSelectPlace = useCallback(
+    (place: PlaceSuggestion) => {
+      setClosed(true);
+      onSelectPlace(place);
+    },
+    [onSelectPlace],
+  );
+
   return (
     <View style={styles.column}>
       <View style={[styles.field, { backgroundColor: systemColors.background, borderColor: systemColors.separator }]}>
         <Icon name="search" size={18} color={systemColors.secondaryLabel} />
         <AccessibleTextInput
           value={text}
-          onChangeText={onChangeText}
-          onSubmitEditing={onSubmit}
+          onChangeText={handleChangeText}
+          onSubmitEditing={handleSubmit}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          selectTextOnFocus={hasSelectedPlace}
           placeholder={fieldLabel}
           accessibilityLabel={fieldLabel}
           placeholderTextColor={systemColors.tertiaryLabel}
@@ -59,7 +101,7 @@ export function GymSearchField({
           </PressableSurface>
         ) : null}
       </View>
-      {suggestions.length > 0 ? (
+      {showSuggestions ? (
         <View
           style={[
             styles.suggestions,
@@ -69,7 +111,7 @@ export function GymSearchField({
           testID="gym-search-places"
         >
           {suggestions.map((place) => (
-            <PlaceRow key={place.id} place={place} onSelectPlace={onSelectPlace} />
+            <PlaceRow key={place.id} place={place} onSelectPlace={handleSelectPlace} />
           ))}
           <Text variant="caption2" tone="secondary" style={styles.attribution}>
             {t('mobile.gyms.placesAttribution')}
@@ -121,7 +163,8 @@ const placeRowStyles = StyleSheet.create({
 
 const createStyles = (textStyles: TypographyScale) =>
   StyleSheet.create({
-    column: { gap: spacing[1] },
+    // Above its later siblings, so the floating suggestions draw over them.
+    column: { zIndex: 1 },
     field: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -133,9 +176,16 @@ const createStyles = (textStyles: TypographyScale) =>
     },
     input: { flex: 1, fontSize: textStyles.callout.fontSize },
     suggestions: {
+      position: 'absolute',
+      top: '100%',
+      left: 0,
+      right: 0,
+      marginTop: spacing[1],
       borderRadius: borderRadius.lg,
       borderWidth: StyleSheet.hairlineWidth,
       overflow: 'hidden',
+      zIndex: 10,
+      ...shadows.md,
     },
     attribution: {
       paddingHorizontal: spacing[3],

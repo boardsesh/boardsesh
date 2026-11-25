@@ -11,4 +11,6 @@ export type GymSearchFieldProps = {
   /** A town picked from the suggestions under the field. */
   onSelectPlace: (place: PlaceSuggestion) => void;
   onClear: () => void;
+  /** The field gained or lost focus (a screen can raise its list while typing). */
+  onFocusChange?: (focused: boolean) => void;
 };

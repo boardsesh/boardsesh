@@ -1301,8 +1301,8 @@ export const SHARED_EVENTS = {
   BoardWallCandidatesShown: 'Board Wall Candidates Shown',
   // The climber took an existing wall instead of adding one: followed (when it
   // wasn't theirs yet) and made active. Props: { match: exact | near_miss |
-  // nearby | at_gym (no draft to compare) | other_type | search (a board found
-  // by name on the find step), position (0-based, as drawn in its shelf),
+  // nearby | at_gym (no draft to compare) | other_type, position (0-based, as
+  // drawn in its shelf),
   // alreadyFollowed, fixSetupStarted (true when the climber picked "Use it and
   // fix its setup" on the builder's near-miss "Is this your wall?" step, which
   // opens Report a problem on "Set up wrong" after the bind; whether a report
@@ -1317,7 +1317,7 @@ export const SHARED_EVENTS = {
   // gym had no walls: there was nothing to confirm.
   BoardWallNotListedConfirmed: 'Board Wall Not Listed Confirmed',
   // A lookup on the gym-first screens failed (shown as Try again, never as "no
-  // boards"). Props: { stage: gyms | gym_boards | nearby_boards, error_reason:
+  // boards"). Props: { stage: gyms | gym_boards, error_reason:
   // offline | rate_limited | exception }.
   BoardWallLookupFailed: 'Board Wall Lookup Failed',
   // A gym's page opened, once per gym per visit, after the gym loaded and the

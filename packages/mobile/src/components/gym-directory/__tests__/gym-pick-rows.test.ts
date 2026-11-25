@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Gym } from '@boardsesh/shared-schema';
-import {
-  ADD_GYM_ROW_KEY,
-  buildGymPickRows,
-  distanceBetweenMeters,
-  gymPickSubtitle,
-  type GymPickLabels,
-} from '../gym-pick-rows';
+import { buildGymPickRows, distanceBetweenMeters, gymPickSubtitle, type GymPickLabels } from '../gym-pick-rows';
 import type { GymListRow } from '../gym-list-rows';
 
 const labels: GymPickLabels = {
@@ -14,11 +8,9 @@ const labels: GymPickLabels = {
   empty: 'No gyms nearby yet',
   offline: 'Offline',
   failed: "Couldn't search gyms",
+  retry: 'Try again',
   boardCount: (count) => `${count} boards`,
   noBoards: 'No boards yet',
-  noAddress: 'No address yet',
-  addGymTitle: 'Add my gym',
-  addGymSubtitle: 'Not listed? Add it with your board',
 };
 
 function makeGym(overrides: Partial<Gym>): Gym {
@@ -50,17 +42,17 @@ const kinds = (rows: GymListRow[]) => rows.map((row) => row.kind);
 
 describe('gymPickSubtitle', () => {
   it('leads with the distance from the climber when their position is known', () => {
-    expect(gymPickSubtitle(nearby, climber, labels.noAddress)).toBe('1.2 km · Fokkerweg 75');
+    expect(gymPickSubtitle(nearby, climber)).toBe('1.2 km · Fokkerweg 75');
   });
 
   it('shows only the address without the climber position, even near a searched town', () => {
-    expect(gymPickSubtitle(nearby, null, labels.noAddress)).toBe('Fokkerweg 75');
+    expect(gymPickSubtitle(nearby, null)).toBe('Fokkerweg 75');
   });
 
-  it('shows the distance alone for a gym with no address, and says so when there is neither', () => {
-    expect(gymPickSubtitle({ ...nearby, address: '  ' }, climber, labels.noAddress)).toBe('1.2 km');
-    expect(gymPickSubtitle({ ...nearby, latitude: null }, null, labels.noAddress)).toBe('Fokkerweg 75');
-    expect(gymPickSubtitle(makeGym({}), climber, labels.noAddress)).toBe('No address yet');
+  it('shows the distance alone for a gym with no address, and leaves the line out with neither', () => {
+    expect(gymPickSubtitle({ ...nearby, address: '  ' }, climber)).toBe('1.2 km');
+    expect(gymPickSubtitle({ ...nearby, latitude: null }, null)).toBe('Fokkerweg 75');
+    expect(gymPickSubtitle(makeGym({}), climber)).toBeNull();
   });
 
   it('measures great-circle distance', () => {
@@ -71,7 +63,7 @@ describe('gymPickSubtitle', () => {
 });
 
 describe('buildGymPickRows', () => {
-  it('lists gyms as one card with their board pills, the tapped pin selected, and Add my gym last', () => {
+  it('lists gyms as one card with their board pills and the tapped pin selected', () => {
     const empty = makeGym({ uuid: 'empty', name: 'Home Board' });
     const rows = buildGymPickRows({
       gyms: [nearby, empty],
@@ -80,11 +72,16 @@ describe('buildGymPickRows', () => {
       selectedId: 'empty',
       labels,
     });
-    expect(kinds(rows)).toEqual(['sectionHeader', 'pickGym', 'pickGym', 'addGym']);
-    const [, first, second, last] = rows;
+    expect(kinds(rows)).toEqual(['sectionHeader', 'pickGym', 'pickGym']);
+    const [, first, second] = rows;
     expect(first).toMatchObject({ key: 'gym:near', boardsLabel: '3 boards', position: 'first', selected: false });
-    expect(second).toMatchObject({ key: 'gym:empty', boardsLabel: 'No boards yet', position: 'last', selected: true });
-    expect(last).toMatchObject({ key: ADD_GYM_ROW_KEY, title: 'Add my gym' });
+    expect(second).toMatchObject({
+      key: 'gym:empty',
+      subtitle: null,
+      boardsLabel: 'No boards yet',
+      position: 'last',
+      selected: true,
+    });
   });
 
   it('keeps every listing that shares a name: nothing is folded', () => {
@@ -94,17 +91,19 @@ describe('buildGymPickRows', () => {
   });
 
   it.each([
-    { lookup: 'loading', expected: ['sectionHeader', 'loading', 'addGym'] },
-    { lookup: 'empty', expected: ['sectionHeader', 'empty', 'addGym'] },
-    { lookup: 'failed', expected: ['sectionHeader', 'empty', 'addGym'] },
-    { lookup: 'offline', expected: ['sectionHeader', 'empty', 'addGym'] },
-    { lookup: 'idle', expected: ['addGym'] },
+    { lookup: 'loading', expected: ['sectionHeader', 'loading'] },
+    { lookup: 'empty', expected: ['sectionHeader', 'empty'] },
+    { lookup: 'failed', expected: ['sectionHeader', 'empty'] },
+    { lookup: 'offline', expected: ['sectionHeader', 'empty'] },
+    { lookup: 'idle', expected: [] },
   ] as const)('$lookup: never draws a failure as an empty list', ({ lookup, expected }) => {
     const rows = buildGymPickRows({ gyms: [], lookup, origin: null, selectedId: null, labels });
     expect(kinds(rows)).toEqual(expected);
     const notice = rows.find((row) => row.kind === 'empty');
-    if (lookup === 'failed') expect(notice).toMatchObject({ label: labels.failed });
-    if (lookup === 'offline') expect(notice).toMatchObject({ label: labels.offline });
-    if (lookup === 'empty') expect(notice).toMatchObject({ label: labels.empty });
+    // Only a failure offers Try again.
+    if (lookup === 'failed')
+      expect(notice).toEqual({ kind: 'empty', key: 'failed', label: labels.failed, retryLabel: 'Try again' });
+    if (lookup === 'offline') expect(notice).toEqual({ kind: 'empty', key: 'offline', label: labels.offline });
+    if (lookup === 'empty') expect(notice).toEqual({ kind: 'empty', key: 'empty', label: labels.empty });
   });
 });

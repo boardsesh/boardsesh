@@ -26,7 +26,7 @@ export const WALL_SHELF_ORDER: readonly WallShelfKey[] = [
 ];
 
 /** `Board Wall Candidate Used`'s `match`. */
-export type WallCandidateMatch = 'exact' | 'near_miss' | 'nearby' | 'at_gym' | 'other_type' | 'search';
+export type WallCandidateMatch = 'exact' | 'near_miss' | 'nearby' | 'at_gym' | 'other_type';
 
 export function wallShelfFor(candidate: Pick<ExistingWallCandidate, 'matchKind' | 'source'>): WallShelfKey {
   if (candidate.source === 'NEARBY_LISTING') return 'listed_nearby';

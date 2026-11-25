@@ -21,6 +21,7 @@ vi.mock('../use-gym-panel-gesture', () => ({
       gesture: {},
       nativeGesture: {},
       panelAnimatedStyle: {},
+      visibleBottomAnimatedStyle: {},
       panelHeight: 600,
       scrollEnabled: false,
       settledDetent: 'medium',
@@ -90,15 +91,18 @@ vi.mock('../../PressableSurface', () => ({
     onPress,
     accessibilityActions,
     onAccessibilityAction,
+    testID,
   }: PressProps & {
     accessibilityActions?: { name: string; label: string }[];
     onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
+    testID?: string;
   }) =>
     createElement(
       'button',
       {
         onClick: onPress,
         type: 'button',
+        'data-testid': testID,
         // Screen-reader custom actions, surfaced as a clickable marker the test can drive.
         'data-a11y-actions': accessibilityActions?.map((action) => action.label).join('|'),
         onDoubleClick: () =>
@@ -582,27 +586,41 @@ describe('GymListPanel pick mode', () => {
         kind: 'pickGym',
         key: 'gym:g4',
         gym: climberListed,
-        subtitle: 'No address yet',
+        subtitle: null,
         boardsLabel: 'No boards yet',
         position: 'last',
         selected: true,
       },
-      { kind: 'addGym', key: 'addGym', title: 'Add my gym', subtitle: 'Not listed? Add it with your board' },
     ];
   }
 
-  function renderPick(onPickGym = vi.fn(), onAddGym = vi.fn()) {
+  function renderPick({
+    data = pickRows(),
+    onPickGym = vi.fn(),
+    onAddGym = vi.fn(),
+    onRetry,
+    locationPrompt,
+  }: {
+    data?: GymListRow[];
+    onPickGym?: (gym: Gym) => void;
+    onAddGym?: () => void;
+    onRetry?: () => void;
+    locationPrompt?: ReactNode;
+  } = {}) {
     return render(
       <GymListPanel
         mode="pick"
-        data={pickRows()}
+        data={data}
         mapAvailable
         availableHeight={500}
         mediumFraction={0.65}
         allowLowDetent={false}
         onPickGym={onPickGym}
+        addGym={{ title: 'Add my gym', subtitle: 'Not listed? Add it with your board' }}
         onAddGym={onAddGym}
+        onRetry={onRetry}
         searchSlot={null}
+        locationPrompt={locationPrompt}
       />,
     );
   }
@@ -610,7 +628,8 @@ describe('GymListPanel pick mode', () => {
   it('draws each gym with its distance line, its boards pill, and the run-by-gym pill only where staff run it', () => {
     const view = renderPick();
     expect(view.getByText('1.2 km · Fokkerweg 75')).toBeTruthy();
-    expect(view.getByText('No address yet')).toBeTruthy();
+    // No distance and no address: the line is left out, not filled with filler.
+    expect(view.getByTestId('gym-pick-g4').textContent).toBe('Home BoardNo boards yet');
     expect(view.getAllByTestId('gym-pick-boards').map((pill) => pill.textContent)).toEqual([
       '3 boards',
       'No boards yet',
@@ -620,16 +639,33 @@ describe('GymListPanel pick mode', () => {
     expect(view.getByTestId('gym-pick-g3').closest('[data-position]')?.getAttribute('data-position')).toBe('first');
   });
 
-  it('picks a gym with one tap and ends in Add my gym', () => {
+  it('picks a gym with one tap, and pins Add my gym after the list', () => {
     const onPickGym = vi.fn();
     const onAddGym = vi.fn();
-    const view = renderPick(onPickGym, onAddGym);
+    const view = renderPick({ onPickGym, onAddGym });
     fireEvent.click(view.getByTestId('gym-pick-g3'));
     expect(onPickGym).toHaveBeenCalledWith(runByGym);
     const buttons = view.getAllByRole('button');
     expect(buttons[buttons.length - 1]).toBe(view.getByTestId('gym-pick-add-gym'));
     fireEvent.click(view.getByTestId('gym-pick-add-gym'));
     expect(onAddGym).toHaveBeenCalledOnce();
+  });
+
+  it('keeps Add my gym while the location prompt stands in for the list', () => {
+    const view = renderPick({ locationPrompt: <div data-testid="prompt" /> });
+    expect(view.getByTestId('prompt')).toBeTruthy();
+    expect(view.getByTestId('gym-pick-add-gym')).toBeTruthy();
+  });
+
+  it('offers Try again under a failed lookup', () => {
+    const onRetry = vi.fn();
+    const view = renderPick({
+      data: [{ kind: 'empty', key: 'failed', label: "Couldn't search gyms", retryLabel: 'Try again' }],
+      onRetry,
+    });
+    expect(view.getByText("Couldn't search gyms")).toBeTruthy();
+    fireEvent.click(view.getByTestId('gym-pick-retry'));
+    expect(onRetry).toHaveBeenCalledOnce();
   });
 
   it('lays the panel out in the measured box without the Low detent', () => {
