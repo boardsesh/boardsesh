@@ -1,16 +1,18 @@
 // The add-a-board wizard (flag `add-board-wizard`): one flow behind the +.
 //
-//   /boards/add             "Where's the board?"  at a gym | at home | a spray wall
+//   /boards/add             "Where's the board?"  at a gym | at home | a friend's | a spray wall
 //   /boards/add/gym         "Which gym?"          the map and search (GymStep)
 //   /boards/add/gym-boards  "Boards at {gym}"     the gym's walls (GymWallList)
 //   /boards/add/new-gym     "Add your gym"        a gym that isn't listed (NewGymStep)
 //   /boards/add/board       "Which board?"        the board type tiles
+//   /boards/add/friend      "Whose board?"        boards owned by people you follow
 //   /boards/create          Set up                the builder, restyled
 //
 // Gym path: Where → Which gym? → Boards at {gym} → Set up, or, for a gym that
 // isn't listed, Where → Which gym? → Add your gym → (Which board?, when no type
 // was chosen on the map) → Set up, with the new gym locked. Home path: Where →
-// Which board? → Set up. A spray wall hands off to /boards/spray/new, which has
+// Which board? → Set up. Friend path: Where → Whose board?, where a tap climbs
+// the board (or asks to). A spray wall hands off to /boards/spray/new, which has
 // its own steps. An entry that already knows the answer skips ahead: a gym
 // page opens on its boards, the In range slot's "It's my own board" on Set up
 // (the type was heard), first run's inline "At home" on Which board?.
@@ -23,10 +25,13 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../analytics';
 
 /** One screen of the wizard. `spray` is the hand-off to the add-a-wall wizard. */
-export type AddBoardWizardStep = 'where' | 'gym' | 'gym_boards' | 'new_gym' | 'board' | 'setup' | 'spray';
+export type AddBoardWizardStep = 'where' | 'gym' | 'gym_boards' | 'new_gym' | 'board' | 'setup' | 'spray' | 'friend';
 
-/** Which branch of the wizard: the gym's boards, the climber's own board, or a spray wall. */
-export type AddBoardWizardPath = 'gym' | 'home' | 'spray';
+/**
+ * Which branch of the wizard: the gym's boards, the climber's own board, a
+ * spray wall, or a board someone they follow owns.
+ */
+export type AddBoardWizardPath = 'gym' | 'home' | 'spray' | 'friend';
 
 /**
  * How the climber reached the wizard: the + in the picker or on Manage boards,
@@ -53,6 +58,7 @@ const COUNTED_STEPS: ReadonlySet<string> = new Set<AddBoardWizardStep>([
   'new_gym',
   'board',
   'setup',
+  'friend',
 ]);
 
 /** Read an `entry` route param defensively: anything else is an old link. */
@@ -62,7 +68,7 @@ export function parseWizardEntry(value: unknown): AddBoardWizardEntry {
 
 /** Read a `path` route param defensively: null when the builder wasn't opened from the wizard. */
 export function parseWizardPath(value: unknown): AddBoardWizardPath | null {
-  return value === 'gym' || value === 'home' || value === 'spray' ? value : null;
+  return value === 'gym' || value === 'home' || value === 'spray' || value === 'friend' ? value : null;
 }
 
 /** Read a `trail` route param: the counted steps before this one, in order. Unknown names are dropped. */
@@ -93,6 +99,8 @@ function stepsAfter(step: AddBoardWizardStep, boardTypeKnown: boolean): number {
       return 1;
     case 'setup':
     case 'spray':
+    // Whose board? is the last screen: a tap climbs the board or asks to.
+    case 'friend':
       return 0;
   }
 }
@@ -161,6 +169,17 @@ export function wizardGymBoardsHref(
   params.gymUuid = gymUuid;
   if (boardType) params.boardType = boardType;
   return { pathname: '/boards/add/gym-boards', params };
+}
+
+/**
+ * "Whose board?": the boards of people the climber follows. Step 2 of 2 from
+ * step 1. The picker's Friends' boards "See all" opens it too (`fromShelf`):
+ * uncounted, and browsing rather than a flow to abandon.
+ */
+export function wizardFriendHref(context: WizardRouteContext, options: { fromShelf?: boolean } = {}): WizardHref {
+  const params = baseParams(context);
+  if (options.fromShelf) params.shelf = '1';
+  return { pathname: '/boards/add/friend', params };
 }
 
 /**

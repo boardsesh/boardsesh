@@ -8,6 +8,7 @@ const {
   parseWizardTrail,
   trailThrough,
   wizardBoardHref,
+  wizardFriendHref,
   wizardGymBoardsHref,
   wizardGymHref,
   wizardNewGymHref,
@@ -97,6 +98,7 @@ describe('route params', () => {
     { value: 'gym', expected: 'gym' },
     { value: 'home', expected: 'home' },
     { value: 'spray', expected: 'spray' },
+    { value: 'friend', expected: 'friend' },
     { value: 'garage', expected: null },
     { value: undefined, expected: null },
   ])('reads path $value as $expected', ({ value, expected }) => {
@@ -138,6 +140,19 @@ describe('wizard hrefs', () => {
       pathname: '/boards/add/gym-boards',
       params: { ...context, trail: 'where,gym', gymUuid: 'gym-1' },
     });
+  });
+
+  // A friend's board: Whose board? is the last screen, step 2 of 2 from step 1.
+  it('opens Whose board? from step 1 as step 2 of 2', () => {
+    const href = wizardFriendHref({ ...context, trail: ['where'] });
+    expect(href).toEqual({ pathname: '/boards/add/friend', params: { ...context, trail: 'where' } });
+    expect(wizardStepPosition('friend', parseWizardTrail(href.params.trail))).toEqual({ current: 2, total: 2 });
+  });
+
+  it("opens Whose board? from the picker's See all, uncounted and marked as the shelf's", () => {
+    const href = wizardFriendHref({ ...context, trail: [] }, { fromShelf: true });
+    expect(href).toEqual({ pathname: '/boards/add/friend', params: { ...context, shelf: '1' } });
+    expect(wizardStepPosition('friend', [])).toBeNull();
   });
 
   it('opens Add your gym carrying the type chosen on the map', () => {

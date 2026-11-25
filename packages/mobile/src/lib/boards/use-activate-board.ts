@@ -32,7 +32,14 @@ import { consumePendingBoardRecognition } from './pending-board-recognition';
  * from the board you're on ('gym_walls') or the gym finder can be told apart
  * from a switch between boards they already have.
  */
-export type BoardPickSource = 'your_boards' | 'nearby' | 'offline' | 'bluetooth' | 'gym_walls' | 'gym_finder';
+export type BoardPickSource =
+  | 'your_boards'
+  | 'nearby'
+  | 'offline'
+  | 'bluetooth'
+  | 'gym_walls'
+  | 'gym_finder'
+  | 'friends';
 
 /**
  * The picker section the board sat in, as drawn: At {gym}, the one board
@@ -40,7 +47,15 @@ export type BoardPickSource = 'your_boards' | 'nearby' | 'offline' | 'bluetooth'
  * the gym map. Analytics only, beside `pickSource`, which names the list the
  * board came from rather than where it was drawn.
  */
-export type BoardPickSection = 'at_gym' | 'hero' | 'your_boards' | 'near_you' | 'offline' | 'map';
+export type BoardPickSection =
+  | 'at_gym'
+  | 'hero'
+  | 'your_boards'
+  | 'near_you'
+  | 'offline'
+  | 'map'
+  | 'friends_boards'
+  | 'friend_step';
 
 /** What the caller knows about the tap, passed per bind. */
 export type ActivateBoardPick = {
@@ -127,6 +142,12 @@ export type ActivateBoardOptions = {
    * says nothing about the box the climber stood at.
    */
   recognizesHeldBox?: boolean;
+  /**
+   * Whether the bind adopts the board (follows it, offers its download). Off
+   * where the caller follows it itself: a friend's board, which may be private,
+   * and adoption never follows a private board (`shouldFollowBoard`).
+   */
+  adopt?: boolean;
 };
 
 /**
@@ -143,6 +164,7 @@ export function useActivateBoard({
   writeFailure = 'toast',
   haptic = true,
   recognizesHeldBox = true,
+  adopt = true,
 }: ActivateBoardOptions) {
   const router = useRouter();
   const { t } = useTranslation('boards');
@@ -202,7 +224,7 @@ export function useActivateBoard({
             // this board landed in Your boards. Both callbacks come from the
             // render that built this bind, so a viewer id that loads mid-bind
             // reaches the next pick, never just one half of this one.
-            followed: !isLocalOnly && willFollowFoundBoard(board),
+            followed: adopt && !isLocalOnly && willFollowFoundBoard(board),
           });
         } catch (error: unknown) {
           reportError(error);
@@ -233,7 +255,7 @@ export function useActivateBoard({
       // download. Re-selecting a board already in My Boards is a no-op for follow.
       // Fire-and-forget: its own errors are handled inside and intentionally
       // don't reach the catch above, which only guards the bind.
-      if (!isLocalOnly) void adoptFoundBoard(board);
+      if (adopt && !isLocalOnly) void adoptFoundBoard(board);
     },
     [
       setActiveBoard,
@@ -251,6 +273,7 @@ export function useActivateBoard({
       writeFailure,
       haptic,
       recognizesHeldBox,
+      adopt,
     ],
   );
 }

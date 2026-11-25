@@ -1,5 +1,5 @@
 // The add-a-board wizard's step 1, "Where's the board?" (flag `add-board-wizard`):
-// at a gym, at home, or a spray wall. Every + opens it; an entry that already
+// at a gym, at home, a friend's board, or a spray wall. Every + opens it; an entry that already
 // knows the answer skips it (src/lib/boards/add-board-wizard.ts). The bar has an
 // X and the title; the steps after it have a back chevron and no title.
 
@@ -10,7 +10,12 @@ import { useTranslation } from 'react-i18next';
 import { ChoiceCard } from '../../../src/components/board-discovery/FirstBoardChoice';
 import { WizardStepHeader } from '../../../src/components/board-discovery/add-board-wizard/WizardStepHeader';
 import { trackBoardKindChosen } from '../../../src/lib/boards/board-picker-add-analytics';
-import { trackWizardStepViewed, wizardBoardHref, wizardGymHref } from '../../../src/lib/boards/add-board-wizard';
+import {
+  trackWizardStepViewed,
+  wizardBoardHref,
+  wizardFriendHref,
+  wizardGymHref,
+} from '../../../src/lib/boards/add-board-wizard';
 import { useAddBoardWizardStep } from '../../../src/lib/boards/use-add-board-wizard-step';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
 import { spacing } from '../../../src/theme/tokens';
@@ -35,6 +40,11 @@ export default function AddBoardWhere() {
   const onHome = useCallback(() => {
     trackBoardKindChosen({ kind: 'home', surface: 'where', preAnswered: false });
     router.push(wizardBoardHref(nextContext, 'home'));
+  }, [router, nextContext]);
+  // A board someone the climber follows owns: Whose board?, the last step.
+  const onFriend = useCallback(() => {
+    trackBoardKindChosen({ kind: 'friend', surface: 'where', preAnswered: false });
+    router.push(wizardFriendHref(nextContext));
   }, [router, nextContext]);
   // The add-a-wall wizard, unchanged: it counts its own steps and reports its
   // own funnel, so this screen stays quiet if the climber finishes there.
@@ -63,6 +73,12 @@ export default function AddBoardWhere() {
           title={t('mobile.addWizard.home')}
           hint={t('mobile.addWizard.homeHint')}
           onPress={onHome}
+        />
+        <ChoiceCard
+          icon="people"
+          title={t('mobile.addWizard.friend')}
+          hint={t('mobile.addWizard.friendHint')}
+          onPress={onFriend}
         />
         <ChoiceCard
           icon="camera"
