@@ -1,10 +1,13 @@
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, not, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
+import { rolesGrantAdmin } from '@boardsesh/community-roles';
 import { normalizeGymName } from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { DbTransaction } from '../../../db/after-commit';
 import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
 import { MAX_AUTO_MINTED_GYMS_PER_OWNER, type GymNameMatch, type SimilarGymResult } from './gym-matching';
+import { ownerHoldsClaimOrHandoverColumn } from './gym-run-by-staff';
+import { getUserCommunityRoles } from './roles';
 
 // ============================================
 // createGym guards: duplicate refusal, owner cap, create lock
@@ -25,8 +28,8 @@ export type GymDuplicateCheckMode = 'REJECT_IF_FOUND' | 'CONFIRMED_SEPARATE';
 // Two-int advisory-lock namespaces, ASCII "GYMO" (gym create, per owner) and
 // "GYMN" (gym create, per normalized name). Distinct from every other namespace
 // in the repo; the list is in docs/product/existing-wall-check.md.
-const GYM_CREATE_OWNER_LOCK_NAMESPACE = 0x47594d4f;
-const GYM_CREATE_NAME_LOCK_NAMESPACE = 0x47594d4e;
+export const GYM_CREATE_OWNER_LOCK_NAMESPACE = 0x47594d4f;
+export const GYM_CREATE_NAME_LOCK_NAMESPACE = 0x47594d4e;
 
 /**
  * Serialize gym creates that could collide, for the rest of `transaction`:
@@ -51,32 +54,45 @@ export async function lockGymCreate(transaction: DbTransaction, ownerId: string,
 
 export function gymLimitReachedError(): GraphQLError {
   return new GraphQLError(
-    `You've reached the limit of ${MAX_AUTO_MINTED_GYMS_PER_OWNER} gyms on one account. ` +
-      `Delete a gym you no longer run to add another.`,
+    `You've added ${MAX_AUTO_MINTED_GYMS_PER_OWNER} gyms, the most one account can list. ` +
+      `Delete one you no longer need to add another.`,
     { extensions: { code: GYM_LIMIT_REACHED_CODE, maxGyms: MAX_AUTO_MINTED_GYMS_PER_OWNER } },
   );
 }
 
 /**
- * Refuse a create once the owner holds the cap of live gyms. The same 25 that
- * stops createBoard's auto-mint, and it counts the gyms that minted too.
+ * Refuse a create once the owner has listed the cap of gyms themselves: the
+ * same 25 that stops createBoard's auto-mint, and the gyms that minted count.
+ *
+ * Only gyms in the CLIMBER_LISTED state count (`gymListingState`): live, not
+ * merged away, and not held through an approved claim or an admin handover. A
+ * gym's staff who claimed their listings run them, they didn't add them, so a
+ * chain that claims thirty gyms can still list a new one. The RUN_BY_GYM test
+ * is the same SQL the listing state reads (`ownerHoldsClaimOrHandoverColumn`).
  *
  * Read inside the create's transaction after `lockGymCreate`, so for createGym
  * it is exact: two creates by one owner can't both see 24. createBoard's mint
- * path still reads it without a lock (gym-matching.ts), which is approximate by
- * design. No exemption for admins, as the board cap has none: an admin who
- * sets gyms up for others hands them over with the owner reassignment, which
- * frees the slot. Only the system catalogue owner is exempt.
+ * path still counts every owned gym without a lock (gym-matching.ts), which is
+ * approximate by design. Exempt: the system catalogue owner, and global admins
+ * (an `admin` community role with no board type), who set gyms up for others.
  */
 export async function assertGymCapNotReached(transaction: DbTransaction, ownerId: string): Promise<void> {
   if (ownerId === SYSTEM_BOARD_OWNER_ID) return;
+  if (rolesGrantAdmin(await getUserCommunityRoles(ownerId, transaction), null)) return;
 
-  const [{ count: ownedGymCount }] = await transaction
+  const [{ count: listedGymCount }] = await transaction
     .select({ count: sql<number>`count(*)::int` })
     .from(dbSchema.gyms)
-    .where(and(eq(dbSchema.gyms.ownerId, ownerId), isNull(dbSchema.gyms.deletedAt)));
+    .where(
+      and(
+        eq(dbSchema.gyms.ownerId, ownerId),
+        isNull(dbSchema.gyms.deletedAt),
+        isNull(dbSchema.gyms.mergedIntoGymId),
+        not(ownerHoldsClaimOrHandoverColumn()),
+      ),
+    );
 
-  if (ownedGymCount >= MAX_AUTO_MINTED_GYMS_PER_OWNER) {
+  if (listedGymCount >= MAX_AUTO_MINTED_GYMS_PER_OWNER) {
     throw gymLimitReachedError();
   }
 }
