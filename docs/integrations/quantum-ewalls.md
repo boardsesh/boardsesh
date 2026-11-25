@@ -174,6 +174,8 @@ These need something eWalls does not have today.
 The controller holds several coloured layers at once, one per active player
 (a player is one lit layer on the wall), and eWalls shows who is on the wall.
 
+![A Quantum Board controller holding one coloured layer per player (an eWalls climber, a Boardsesh climber, and a Boardsesh session whose climbers share one queue and count as one player), with Boardsesh's shared-wall rules, the proposed presence link from the Boardsesh backend to the eWalls board socket, and open questions F2, F3, F5, F6 and F7 marked to agree](diagrams/shared-wall.svg)
+
 How Boardsesh intends to behave:
 
 - Light one layer per player.

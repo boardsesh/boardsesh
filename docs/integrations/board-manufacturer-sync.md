@@ -126,24 +126,13 @@ can use the board in Boardsesh. That contradicts principle 4.
 | Manufacturer to Boardsesh | Public catalogue; boards and gyms | Boardsesh pulls with the partner credential (a test account at first) | On a schedule (we suggest every six hours) |
 | Manufacturer to Boardsesh | A linked climber's logbook, favourites, playlists | Boardsesh pulls with that climber's token | When the climber opens Boardsesh, and on the schedule |
 | Boardsesh to manufacturer | A linked climber's changes | Boardsesh pushes with that climber's token | At once |
-| Boardsesh to manufacturer | Public climbs and totals of climbers who have not linked | Boardsesh pushes with the partner credential | On the schedule |
+| Boardsesh to manufacturer | Public climbs of climbers who have not linked; Boardsesh's totals | Boardsesh pushes with the partner credential | Climbs on the schedule, totals once a day |
 
-```mermaid
-flowchart LR
-  subgraph B[Boardsesh]
-    BA[Boardsesh apps] --> BB[Boardsesh backend]
-    BB --- J[Scheduled job]
-  end
-  subgraph M[Manufacturer service]
-    MA[Manufacturer API]
-  end
-  BB -->|push a linked climber's change, at once| MA
-  J -->|pull what changed| MA
-  J -->|push what is still waiting| MA
-  BB --> CDN[Public snapshot file on a CDN]
-```
+![Boardsesh's backend and scheduled job make every call to the manufacturer's API: they pull the public catalogue and linked climbers' logbooks, push a linked climber's changes at once and the public climbs and totals of climbers who have not linked on the schedule, and publish the public snapshot file to a CDN](diagrams/sync-overview.svg)
 
 ### Pushing
+
+![A record saved in Boardsesh with no external id is pushed to the manufacturer, and each answer leads to a different state: success stores the external id, an unreachable manufacturer leaves it for the scheduled job, a rejection marks it not synced until the climber fixes it, and no answer leaves it waiting until a later pull shows it or the timeout passes](diagrams/push-lifecycle.svg)
 
 1. A record made in Boardsesh is saved with no external id.
 2. Boardsesh pushes it. On success the manufacturer returns its own id, and
@@ -156,9 +145,10 @@ flowchart LR
    to offer a lookup of what happened to a key). Where the API has neither,
    a create with no answer is not repeated automatically: it stays "waiting"
    until a later pull shows the record, or shows after the manufacturer's
-   stated timeout that it was never made.
+   stated timeout that it was never made. In that case Boardsesh pushes it
+   again.
 5. If the manufacturer rejects the record as invalid, Boardsesh shows the
-   climber the reason and asks them to fix it. See
+   climber the reason and asks them to fix it, then pushes the fixed record. See
    [Publishing a climb](#publishing-a-climb).
 
 The manufacturer stores no Boardsesh ids. Boardsesh keeps the only table that
@@ -210,12 +200,18 @@ climb that matches a published one on the same layout, at any angle.
 When a pull delivers a climb that is the same as one Boardsesh already has,
 Boardsesh merges them:
 
-- Climbers browsing Boardsesh see one climb. It shows the name, setter and
-  grade of the one that was published first, whichever app it came from.
+![Three climbs with the same lit holds, two set in the manufacturer's app at 25 and 40 degrees and one set in Boardsesh, are stored in Boardsesh as three source climbs with their own ids, setters and ascents, and shown as one climb named after the one published first, while the manufacturer keeps its two climbs separate](diagrams/same-climb-merge.svg)
+
+- Climbers browsing Boardsesh see one climb. It shows the name and setter of
+  the one that was published first, whichever app it came from, and that
+  setter's grade until there are enough grade votes (see
+  [Limits](#limits)).
 - This is a display rule only. Underneath, Boardsesh keeps every source
   climb with its own id, setter, publication date and editing rights. A
   setter editing their climb never changes another setter's climb.
-- Each ascent remembers which source climb it was logged on.
+- Each ascent remembers which source climb it was logged on. An ascent
+  logged in Boardsesh goes to the source climb set at the angle climbed, or
+  to the earliest one when no angle matches.
 - Ascents and totals logged against any of them are shown on the one climb.
 - A linked climber's ascent is pushed to the manufacturer's climb at the
   angle they climbed, or to the earliest one when no angle matches.
@@ -364,7 +360,9 @@ logbook.
 
 When a climber deletes an ascent or a playlist in Boardsesh, Boardsesh pushes
 the deletion. It also remembers it, so that if the manufacturer cannot delete
-the record, the next pull does not bring it back.
+the record, the next pull does not bring it back. This applies when the
+other app has not edited the record since; if it has, the edit is kept (see
+[Edits from both apps](#edits-from-both-apps)).
 
 ### What the manufacturer's API needs for this
 
@@ -382,6 +380,8 @@ the record, the next pull does not bring it back.
 
 A climber can edit an ascent or a playlist in either app.
 
+![One ascent as three copies (last agreed, Boardsesh now, manufacturer now) in three cases: different fields changed, so both changes are kept; the same field changed, so Boardsesh keeps both values and asks the climber; an edit against a delete, so the edit is kept; below, a pushed edit names the version it changes and the manufacturer refuses it if the record changed since](diagrams/edits-from-both-apps.svg)
+
 Boardsesh keeps, for every synced record, the copy both sides last agreed
 on. When the two apps have both changed a record, it compares each side with
 that copy:
@@ -392,7 +392,10 @@ that copy:
   and asks the climber which one is right. It does not pick by clock time,
   because a phone with a wrong clock would let an old edit replace a new one.
 - An edit in one app and a delete in the other: the edit is kept, so nothing
-  the climber wrote is lost.
+  the climber wrote is lost. Boardsesh restores the record in the app that
+  deleted it.
+- Until the climber has chosen between two values, each app keeps showing
+  its own and nothing is pushed for that field.
 - Favourites, projects and the climbs in a playlist are merged one add or
   remove at a time. A favourite added in one app and a different one added
   in the other both survive.
@@ -485,6 +488,8 @@ One climb at 40 degrees:
 An example climber, Ana, has linked her accounts and logged her send in
 Boardsesh. Her ascent was pushed to the manufacturer, so she is one of the 41
 and not one of the 11.
+
+![Two climbers send one climb at 40 degrees: Ana is linked, so her send is pushed at once, stays in Boardsesh's count until a later pull returns it, and then moves to the manufacturer's count, while the send of a climber who has not linked is never pushed and stays in Boardsesh's count; 41 manufacturer senders plus 11 Boardsesh senders give the 52 that both apps show](diagrams/totals-counting.svg)
 
 ### What this needs on the manufacturer's side
 
@@ -703,3 +708,9 @@ For Boardsesh:
 
 For each manufacturer, the list is in its annex. For the Quantum Board:
 [quantum-ewalls.md](quantum-ewalls.md).
+
+## Editing the diagrams
+
+The `.excalidraw` files in `docs/integrations/diagrams/` are the sources. Open
+one at [excalidraw.com](https://excalidraw.com), edit it, then export an SVG
+with the same base name, replacing the old one.
