@@ -8,12 +8,15 @@ import {
 import { RateLimitError, resetAllRateLimits } from '../utils/rate-limiter';
 
 // Use vi.hoisted() so mock variables are available when vi.mock factories run
-const { mockEval, mockGet, mockIsRedisConnected, mockCheckRateLimit } = vi.hoisted(() => ({
-  mockEval: vi.fn(),
-  mockGet: vi.fn(),
-  mockIsRedisConnected: vi.fn(),
-  mockCheckRateLimit: vi.fn(),
-}));
+const { mockEval, mockGet, mockIsRedisConnected, mockCheckRateLimit, mockCheckFixedWindowRateLimit } = vi.hoisted(
+  () => ({
+    mockEval: vi.fn(),
+    mockGet: vi.fn(),
+    mockIsRedisConnected: vi.fn(),
+    mockCheckRateLimit: vi.fn(),
+    mockCheckFixedWindowRateLimit: vi.fn(),
+  }),
+);
 
 vi.mock('../redis/client', () => ({
   redisClientManager: {
@@ -35,6 +38,7 @@ vi.mock('../utils/rate-limiter', async (importOriginal) => {
   return {
     ...actual,
     checkRateLimit: mockCheckRateLimit,
+    checkFixedWindowRateLimit: mockCheckFixedWindowRateLimit,
   };
 });
 
@@ -170,6 +174,17 @@ describe('checkRateLimitRedis', () => {
       });
 
       await expect(checkRateLimitRedis('user-1', 'vote', 30, 60_000)).rejects.toThrow('Rate limit exceeded');
+    });
+
+    it('falls back to the fixed-bucket memory limiter when asked, so both tiers share bucket edges', async () => {
+      const dayMs = 24 * 60 * 60 * 1000;
+      await checkRateLimitRedis('socket-peer:10.0.0.8', 'daily:86400000ms', 600, dayMs, {
+        fallbackToMemory: true,
+        fixedWindowFallback: true,
+      });
+
+      expect(mockCheckRateLimit).not.toHaveBeenCalled();
+      expect(mockCheckFixedWindowRateLimit).toHaveBeenCalledWith('socket-peer:10.0.0.8:daily:86400000ms', 600, dayMs);
     });
 
     it('does not double-count when the caller already applied an in-memory tier', async () => {

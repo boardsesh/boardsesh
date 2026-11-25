@@ -15,6 +15,7 @@ import {
   getResourcePrivacy,
   isApprovedFollower,
   requirePrivacyControls,
+  resourceAccess,
   setContentPrivacy,
 } from '../../../services/privacy';
 import { publishSocialEvent } from '../../../events';
@@ -78,7 +79,8 @@ const accessListArgsSchema = z.object({
 /**
  * Asking to climb on someone's board tells its owner, so it is capped per
  * climber per day on top of the per-minute privacy mutation limit. Asking
- * again while a request waits counts too: it is still a call.
+ * again while a request waits counts too: it is still a call. Only board asks
+ * count: asking to join a session keeps the per-minute limit alone.
  */
 export const RESOURCE_ACCESS_REQUESTS_PER_DAY = 5;
 const RESOURCE_ACCESS_REQUEST_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -756,9 +758,10 @@ export const privacyMutations = {
     ctx: ConnectionContext,
   ) => {
     const userId = await privacyActor(ctx);
-    await applyRateLimit(ctx, RESOURCE_ACCESS_REQUESTS_PER_DAY, 'requestResourceAccessDaily', {
-      windowMs: RESOURCE_ACCESS_REQUEST_WINDOW_MS,
-    });
+    if (kind === 'board')
+      await applyRateLimit(ctx, RESOURCE_ACCESS_REQUESTS_PER_DAY, 'requestResourceAccessDaily', {
+        windowMs: RESOURCE_ACCESS_REQUEST_WINDOW_MS,
+      });
     const ownerToNotify = await db.transaction(async (transaction) => {
       // The grant's user FK must not acquire a user lock after the board lock:
       // owner privacy writers lock users before resources too.
@@ -790,6 +793,12 @@ export const privacyMutations = {
       // lock must not leave a pending grant on its now-dead original identity.
       const resource = await getResourcePrivacy(kind, resourceId, transaction);
       if (!resource || !resource.ownerId || resource.audience === 'only_me') notFound();
+      // A board the climber can already open (Public, Unlisted, Followers for a
+      // follower, a member, the owner) has nothing to ask for: answer the same
+      // way, write nothing and tell nobody. This is the reading the board's
+      // own uuid gets (`canAccessBoard` with the uuid presented), which is the
+      // key this mutation is called with.
+      if (kind === 'board' && (await resourceAccess(kind, resourceId, userId, transaction)).withLink) return null;
       // Any existing row wins: a waiting request stays one request, a member
       // stays a member, and someone the owner removed stays removed without
       // the owner hearing about it.
@@ -896,6 +905,9 @@ export const privacyMutations = {
           target: [schema.resourceGrants.kind, schema.resourceGrants.resourceId, schema.resourceGrants.userId],
           set: { status: 'revoked', invitedBy: ownerId, updatedAt: new Date() },
         });
+      // Removing someone answers their waiting request too.
+      if (input.kind === 'board')
+        await deleteBoardAccessRequestNotifications(transaction, input.userId, input.resourceId);
     });
     await notifyResourceChanged(input.kind, input.resourceId);
     return true;
@@ -922,6 +934,9 @@ export const privacyMutations = {
           target: [schema.resourceGrants.kind, schema.resourceGrants.resourceId, schema.resourceGrants.userId],
           set: { status: 'approved', invitedBy: ownerId, updatedAt: new Date() },
         });
+      // Inviting someone who was waiting answers their request too.
+      if (input.kind === 'board')
+        await deleteBoardAccessRequestNotifications(transaction, input.userId, input.resourceId);
     });
     await notifyResourceChanged(input.kind, input.resourceId);
     return true;

@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
-import { checkRateLimit, cleanupRateLimit, getRateLimitStatus, RateLimitError } from '../utils/rate-limiter';
+import {
+  checkFixedWindowRateLimit,
+  checkRateLimit,
+  cleanupRateLimit,
+  getRateLimitStatus,
+  RateLimitError,
+} from '../utils/rate-limiter';
 
 describe('In-memory rate limiter', () => {
   beforeEach(() => {
@@ -144,6 +150,38 @@ describe('In-memory rate limiter', () => {
       expect(status).not.toBeNull();
       expect(status!.remaining).toBe(60); // DEFAULT_MAX_REQUESTS
       expect(status!.resetAt).toBeNull();
+    });
+  });
+
+  describe('checkFixedWindowRateLimit', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    it('counts in the same UTC-day bucket Redis uses and reports the time left in it', () => {
+      // 10:00 UTC: two asks left in the day, then capped until midnight.
+      checkFixedWindowRateLimit('conn-1', 2, DAY_MS);
+      checkFixedWindowRateLimit('conn-1', 2, DAY_MS);
+      let error: unknown;
+      try {
+        checkFixedWindowRateLimit('conn-1', 2, DAY_MS);
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error).toBeInstanceOf(RateLimitError);
+      // Redis reports Math.ceil((windowMs - now % windowMs) / 1000): 14 hours here.
+      expect((error as RateLimitError).retryAfterSeconds).toBe(Math.ceil((DAY_MS - (Date.now() % DAY_MS)) / 1000));
+      expect((error as RateLimitError).retryAfterSeconds).toBe(14 * 60 * 60);
+
+      // A rolling window would hold until 10:00 tomorrow; the fixed one opens at midnight UTC.
+      vi.setSystemTime(new Date('2024-01-16T00:00:00.000Z'));
+      expect(() => checkFixedWindowRateLimit('conn-1', 2, DAY_MS)).not.toThrow();
+    });
+
+    it('starts a new bucket at the boundary even right after a first call', () => {
+      vi.setSystemTime(new Date('2024-01-15T23:59:59.000Z'));
+      checkFixedWindowRateLimit('conn-2', 1, DAY_MS);
+      expect(() => checkFixedWindowRateLimit('conn-2', 1, DAY_MS)).toThrow(RateLimitError);
+      vi.setSystemTime(new Date('2024-01-16T00:00:00.000Z'));
+      expect(() => checkFixedWindowRateLimit('conn-2', 1, DAY_MS)).not.toThrow();
     });
   });
 });
