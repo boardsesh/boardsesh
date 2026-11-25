@@ -3,6 +3,11 @@ import { readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { NextRequest } from 'next/server';
+import {
+  CATALOG_SCRAPER_BLOCK_START_MS,
+  CATALOG_SCRAPER_REFUSAL,
+  CATALOG_SCRAPER_USER_AGENT,
+} from '@boardsesh/shared-schema/catalog-scraper-policy';
 import { CLIMB_SESSION_COOKIE } from '@/app/lib/climb-session-cookie';
 import { DEFAULT_LOCALE, LOCALE_COOKIE, LOCALE_HEADER } from '@/app/lib/i18n/config';
 import { PATHNAME_HEADER } from '@/app/lib/request-pathname-header';
@@ -15,6 +20,53 @@ const {
   isSprayWallCapabilityRequest,
 } = await import('@/app/lib/list-page-cache');
 const { middleware, config } = await import('@/middleware');
+
+describe('catalog scraper notice at the REST origin', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('allows the scraper until the announced cutoff', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(CATALOG_SCRAPER_BLOCK_START_MS - 1);
+    expect(
+      middleware(
+        new NextRequest('https://www.boardsesh.com/api/v1/grades', {
+          headers: { 'User-Agent': CATALOG_SCRAPER_USER_AGENT },
+        }),
+      ).status,
+    ).not.toBe(403);
+  });
+
+  it('returns an uncacheable snapshot migration response at the cutoff', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(CATALOG_SCRAPER_BLOCK_START_MS);
+    const response = middleware(
+      new NextRequest('https://direct-origin.example/api/v1/grades', {
+        headers: { 'User-Agent': CATALOG_SCRAPER_USER_AGENT },
+      }),
+    );
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual(CATALOG_SCRAPER_REFUSAL);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(response.headers.get('CDN-Cache-Control')).toBe('no-store');
+  });
+
+  it('keeps browser catalog reads and partner auth available', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(CATALOG_SCRAPER_BLOCK_START_MS + 1);
+    expect(
+      middleware(
+        new NextRequest('https://www.boardsesh.com/api/v1/grades', {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+        }),
+      ).status,
+    ).not.toBe(403);
+    expect(
+      middleware(
+        new NextRequest('https://www.boardsesh.com/api/auth/oauth2/token', {
+          method: 'POST',
+          headers: { 'User-Agent': CATALOG_SCRAPER_USER_AGENT },
+        }),
+      ).status,
+    ).not.toBe(403);
+  });
+});
 
 function sp(params: Record<string, string> = {}): URLSearchParams {
   return new URLSearchParams(params);

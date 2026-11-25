@@ -6,6 +6,11 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
+    "./catalog-scraper-policy": {
+      "types": "./src/catalog-scraper-policy.ts",
+      "import": "./src/catalog-scraper-policy.ts",
+      "default": "./src/catalog-scraper-policy.ts"
+    },
     "./apple-ads-attribution": {
       "types": "./src/apple-ads-attribution.ts",
       "import": "./src/apple-ads-attribution.ts",

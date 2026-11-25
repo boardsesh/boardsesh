@@ -10,6 +10,10 @@ import {
 import { OTA_HOSTING_PROVIDER, type OtaHostingProvider } from '../ota/server';
 
 import { CONSENT_REGION_EDGE_HEADER_NAME } from '../../packages/shared/consent/src/consent-region';
+import {
+  CATALOG_SCRAPER_BLOCK_START_MS,
+  CATALOG_SCRAPER_USER_AGENT,
+} from '../../packages/shared-schema/src/catalog-scraper-policy';
 
 import {
   AUTOMATION_DEFAULT_DENY_EXEMPT_PATH_PREFIXES,
@@ -839,6 +843,15 @@ export function buildUserAgentExpression(tokens: readonly string[]): string {
   return tokens.map((token) => `lower(http.user_agent) contains "${token}"`).join(' or ');
 }
 
+/** Evaluated per request at the edge, never against the deploy machine's clock. */
+export const CATALOG_SCRAPER_BLOCK_EXPRESSION =
+  `((http.host eq "${WWW_HOSTNAME}" or http.host eq "${WS_HOSTNAME}")` +
+  ` and http.request.timestamp.sec ge ${CATALOG_SCRAPER_BLOCK_START_MS / 1000}` +
+  ` and lower(http.user_agent) eq "${CATALOG_SCRAPER_USER_AGENT}"` +
+  ` and (lower(http.request.uri.path) eq "/graphql"` +
+  ` or lower(http.request.uri.path) eq "/api/v1"` +
+  ` or starts_with(lower(http.request.uri.path), "/api/v1/")))`;
+
 /**
  * Scoped to GET on purpose.
  *
@@ -859,10 +872,11 @@ export function buildUserAgentExpression(tokens: readonly string[]): string {
  * read, but nothing in this ruleset blocks them today, so widening the skip
  * would buy nothing.
  */
-export const CRAWLER_ALLOW_EXPRESSION = `(http.request.method eq "GET" and (${buildUserAgentExpression(
+export const CRAWLER_ALLOW_EXPRESSION = `(http.request.method eq "GET" and not ${CATALOG_SCRAPER_BLOCK_EXPRESSION} and (${buildUserAgentExpression(
   CRAWLER_ALLOW_TOKENS,
 )}))`;
-export const CRAWLER_BLOCK_EXPRESSION = buildUserAgentExpression(CRAWLER_BLOCK_TOKENS);
+// Reuse the existing block rule: all five Free-plan custom-rule slots are used.
+export const CRAWLER_BLOCK_EXPRESSION = `(${buildUserAgentExpression(CRAWLER_BLOCK_TOKENS)}) or ${CATALOG_SCRAPER_BLOCK_EXPRESSION}`;
 
 /**
  * Bot Preference Sync's training rule catches PerplexityBot even while Search

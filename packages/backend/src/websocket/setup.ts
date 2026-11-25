@@ -12,6 +12,8 @@ import * as Sentry from '@sentry/node';
 import { schema } from '../graphql/index';
 import { createContext, removeContext, getContext } from '../graphql/context';
 import { validateOperation } from '../graphql/query-validation';
+import { CATALOG_SCRAPER_REFUSAL, isBlockedCatalogScraper } from '@boardsesh/shared-schema/catalog-scraper-policy';
+import { CATALOG_SCRAPER_REFUSAL_HEADERS } from '../handlers/catalog-scraper';
 import { roomManager } from '../services/room-manager';
 import { kilterLiveSync } from '../services/kilter-live-sync';
 import { auroraLiveSync } from '../services/aurora-live-sync';
@@ -145,12 +147,19 @@ export function setupWebSocketServer(httpServer: HttpServer): {
     path: '/graphql',
     verifyClient: (
       info: { origin: string; req: IncomingMessage },
-      callback: (res: boolean, code?: number, message?: string) => void,
+      callback: (res: boolean, code?: number, message?: string, headers?: Record<string, string>) => void,
     ) => {
       // An upgrade skips the HTTP dispatcher, so the API host's route list has
       // to be enforced here as well. GraphQL subscriptions stay on ws.boardsesh.com.
       if (isApiHost(info.req.headers.host)) {
         callback(false, 404, 'Not Found');
+        return;
+      }
+
+      // Upgrades skip the HTTP dispatcher. Check before the no-Origin branch
+      // so a direct client receives the same dated refusal on both transports.
+      if (isBlockedCatalogScraper(info.req.headers['user-agent'], '/graphql')) {
+        callback(false, 403, JSON.stringify(CATALOG_SCRAPER_REFUSAL), CATALOG_SCRAPER_REFUSAL_HEADERS);
         return;
       }
 
@@ -625,6 +634,12 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         }
       },
       onSubscribe: async (ctx: ServerContext, _id: string, payload) => {
+        // A connection admitted during the notice window can remain open past
+        // the deadline. Recheck every operation before executing any query.
+        if (isBlockedCatalogScraper(ctx.extra.request?.headers['user-agent'], '/graphql')) {
+          const { message, ...extensions } = CATALOG_SCRAPER_REFUSAL;
+          return [new GraphQLError(message, { extensions })];
+        }
         const admission = await checkHumanConnection(ctx);
         if (admission !== 'admitted')
           return [

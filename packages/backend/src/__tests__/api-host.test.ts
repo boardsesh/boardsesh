@@ -1,7 +1,12 @@
 import { once } from 'node:events';
 import { request, type IncomingMessage, type ServerResponse } from 'node:http';
-import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { WebSocket } from 'ws';
+import {
+  CATALOG_SCRAPER_BLOCK_START_MS,
+  CATALOG_SCRAPER_REFUSAL,
+  CATALOG_SCRAPER_USER_AGENT,
+} from '@boardsesh/shared-schema/catalog-scraper-policy';
 
 import { API_HOSTNAME, isApiHost, rejectApiHostRequest } from '../handlers/api-host';
 import { startServer } from '../server';
@@ -181,9 +186,11 @@ describe('the running server on the API host', () => {
   let server: Awaited<ReturnType<typeof startServer>>;
   let port = 0;
 
+  afterEach(() => vi.restoreAllMocks());
+
   beforeAll(async () => {
     process.env.PORT = '0';
-    server = await startServer();
+    server = await startServer({ host: '127.0.0.1' });
     if (!server.httpServer.listening) await once(server.httpServer, 'listening');
     const address = server.httpServer.address();
     if (!address || typeof address === 'string') throw new Error('Expected a TCP test server address');
@@ -196,10 +203,17 @@ describe('the running server on the API host', () => {
     await new Promise<void>((resolve) => server.httpServer.close(() => resolve()));
   });
 
-  function send(method: string, path: string, host: string, body?: string) {
+  function send(method: string, path: string, host: string, body?: string, userAgent = 'boardsesh-test/1.0') {
     return new Promise<{ status: number | undefined; body: string }>((resolve, reject) => {
       const outgoing = request(
-        { port, path, method, agent: false, headers: { Host: host, 'Content-Type': 'application/json' } },
+        {
+          hostname: '127.0.0.1',
+          port,
+          path,
+          method,
+          agent: false,
+          headers: { Host: host, 'Content-Type': 'application/json', 'User-Agent': userAgent },
+        },
         (incoming) => {
           let received = '';
           incoming.setEncoding('utf8');
@@ -214,10 +228,10 @@ describe('the running server on the API host', () => {
     });
   }
 
-  function openWebSocket(host: string) {
+  function openWebSocket(host: string, userAgent = 'boardsesh-test/1.0') {
     return new Promise<'open' | number>((resolve, reject) => {
       const socket = new WebSocket(`ws://127.0.0.1:${port}/graphql`, 'graphql-transport-ws', {
-        headers: { Host: host },
+        headers: { Host: host, 'User-Agent': userAgent },
       });
       socket.once('open', () => {
         socket.terminate();
@@ -277,6 +291,74 @@ describe('the running server on the API host', () => {
   it('refuses a WebSocket upgrade that ws.boardsesh.com accepts', async () => {
     await expect(openWebSocket(API_HOSTNAME)).resolves.toBe(404);
     await expect(openWebSocket('ws.boardsesh.com')).resolves.toBe('open');
+  });
+
+  it('allows the announced scraper over HTTP and WebSocket before its deadline', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(CATALOG_SCRAPER_BLOCK_START_MS - 1);
+    const query = JSON.stringify({ query: '{ __typename }' });
+    expect((await send('POST', '/graphql', 'ws.boardsesh.com', query, CATALOG_SCRAPER_USER_AGENT)).status).toBe(200);
+    await expect(openWebSocket('ws.boardsesh.com', CATALOG_SCRAPER_USER_AGENT)).resolves.toBe('open');
+  });
+
+  it('refuses the scraper at the deadline on the public and direct-origin hosts', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(CATALOG_SCRAPER_BLOCK_START_MS);
+    const query = JSON.stringify({ query: '{ __typename }' });
+    for (const host of ['ws.boardsesh.com', 'backend-origin.example']) {
+      expect(await send('POST', '/graphql', host, query, CATALOG_SCRAPER_USER_AGENT)).toEqual({
+        status: 403,
+        body: JSON.stringify(CATALOG_SCRAPER_REFUSAL),
+      });
+      await expect(openWebSocket(host, CATALOG_SCRAPER_USER_AGENT)).resolves.toBe(403);
+    }
+  });
+
+  it('refuses new operations on a scraper WebSocket opened before the deadline', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(CATALOG_SCRAPER_BLOCK_START_MS - 1);
+    const socket = new WebSocket(`ws://127.0.0.1:${port}/graphql`, 'graphql-transport-ws', {
+      headers: { Host: 'ws.boardsesh.com', 'User-Agent': CATALOG_SCRAPER_USER_AGENT },
+    });
+    try {
+      const result = await new Promise<{ before: unknown; after: unknown }>((resolve, reject) => {
+        let before: unknown;
+        socket.once('open', () => socket.send(JSON.stringify({ type: 'connection_init' })));
+        socket.once('error', reject);
+        socket.once('close', () => reject(new Error('Socket closed before the cutoff assertion')));
+        socket.on('message', (message) => {
+          const encodedResponse = Array.isArray(message)
+            ? Buffer.concat(message)
+            : message instanceof ArrayBuffer
+              ? Buffer.from(message)
+              : message;
+          const responseText = encodedResponse.toString('utf8');
+          const response = JSON.parse(responseText) as { type: string; id?: string; payload?: unknown };
+          if (response.type === 'connection_ack') {
+            socket.send(JSON.stringify({ id: 'before', type: 'subscribe', payload: { query: '{ __typename }' } }));
+          } else if (response.type === 'next' && response.id === 'before') {
+            before = response.payload;
+          } else if (response.type === 'complete' && response.id === 'before') {
+            clock.mockReturnValue(CATALOG_SCRAPER_BLOCK_START_MS);
+            socket.send(JSON.stringify({ id: 'after', type: 'subscribe', payload: { query: '{ __typename }' } }));
+          } else if (response.type === 'error' && response.id === 'after') {
+            resolve({ before, after: response.payload });
+          } else {
+            reject(new Error(`Unexpected WebSocket response: ${responseText}`));
+          }
+        });
+      });
+      const { message, ...extensions } = CATALOG_SCRAPER_REFUSAL;
+      expect(result.before).toEqual({ data: { __typename: 'Query' } });
+      expect(result.after).toEqual([{ message, extensions }]);
+    } finally {
+      socket.terminate();
+    }
+  });
+
+  it('preserves other GraphQL clients and non-catalog routes after the deadline', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(CATALOG_SCRAPER_BLOCK_START_MS + 1);
+    const query = JSON.stringify({ query: '{ __typename }' });
+    expect((await send('POST', '/graphql', 'ws.boardsesh.com', query, 'Mozilla/5.0')).status).toBe(200);
+    await expect(openWebSocket('ws.boardsesh.com', 'Boardsesh/1.0')).resolves.toBe('open');
+    expect((await send('GET', '/health', 'ws.boardsesh.com', undefined, CATALOG_SCRAPER_USER_AGENT)).status).toBe(200);
   });
 
   it.each([`${API_HOSTNAME}@`, `${API_HOSTNAME}@@`])(

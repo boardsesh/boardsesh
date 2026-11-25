@@ -950,6 +950,40 @@ The merge deploys both the edge rule and the web middleware. To keep one out
 that carries no signature (as Lightpanda did), add it to
 `COST_BLOCKED_CRAWLER_TOKENS` or `AI_TRAINING_CRAWLER_TOKENS` and to `mustBlock`.
 
+### Catalog scraper migration notice (2026-11-25)
+
+[Boardhang was given notice](https://github.com/boardhang/boardhang-app/issues/215)
+to replace its live catalog extraction with the public board snapshots. The
+published scraper's complete user agent, `moonboard-led-catalog/1.0`, is refused
+on `/graphql` and `/api/v1` (including descendants) from **December 2, 2026 at
+12:00 UTC**. Requests before that instant keep their existing treatment. This
+is containment for the known script, not proof of which app a request belongs to;
+changing its user agent evades this particular rule.
+
+`packages/shared-schema/src/catalog-scraper-policy.ts` owns the cutoff, identity,
+and migration response. Backend HTTP, WebSocket upgrades, and every WebSocket
+operation enforce it even on a direct origin; a socket opened before the cutoff
+cannot keep starting queries afterward. Next middleware enforces it on the legacy catalog REST
+routes. HTTP and upgrade refusals are `403` with `Cache-Control: no-store`;
+operations on already-open sockets return a GraphQL error. Both include code
+`CATALOG_SNAPSHOT_REQUIRED`, the dataset documentation, and the stable manifest URL:
+`https://snapshots.boardsesh.com/board-snapshots/v1-gzip/manifest.json`.
+The [dataset guide](../data/board-snapshots-dataset.md) explains the SQLite schema,
+hardware catalog, and artifact discovery. Snapshot and asset hosts, auth routes,
+partner `/v1` routes, and ordinary browser/native clients are outside this block.
+
+The edge predicate uses Cloudflare's request-time `http.request.timestamp.sec`,
+so deploying before the deadline cannot start the block early and no second
+deploy is required to activate it. It is folded into `boardsesh:block-seo-scrapers`
+to stay within the five custom-rule slots already used. The preceding crawler
+allow rule explicitly excludes the dated predicate. Cloudflare may return its
+standard WAF refusal; the JSON migration response is the origin fallback.
+
+Rollback or extending the notice means changing the shared cutoff to a later
+date and deploying backend, web, and Cloudflare config together. Rolling back
+only the edge leaves origin enforcement in place. This change does not block
+all scraping: shared catalog quotas are a separate control.
+
 #### App-guide rollout: Perplexity policy conflict (2026-11-24, #8122)
 
 The signed-in dashboard showed **Search: Allow (do not block)**,

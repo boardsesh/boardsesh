@@ -7,7 +7,12 @@ import { diffR2Bucket, r2CorsHasUnmanagedRules } from '../infra/cloudflare/plan'
 import { API_HOSTNAME as BACKEND_API_HOSTNAME } from '../packages/backend/src/handlers/api-host';
 import { CloudflareApiRequestError, isAuthorizationError } from './cloudflare-apply';
 import {
+  CATALOG_SCRAPER_BLOCK_START_MS,
+  CATALOG_SCRAPER_USER_AGENT,
+} from '../packages/shared-schema/src/catalog-scraper-policy';
+import {
   API_HOSTNAME,
+  CATALOG_SCRAPER_BLOCK_EXPRESSION,
   API_RAILWAY_CNAME_TARGET,
   API_RAILWAY_VERIFY_HOSTNAME,
   API_RAILWAY_VERIFY_VALUE,
@@ -1002,7 +1007,7 @@ describe('www cost-control rules (#4650)', () => {
     // invariant is narrower than "every rule names an agent": every READ of the
     // header must be a lowered one.
     for (const rule of desired.wafRules) {
-      const comparisons = [...rule.expression.matchAll(/lower\(http\.user_agent\) contains "([^"]*)"/g)];
+      const comparisons = [...rule.expression.matchAll(/lower\(http\.user_agent\) (?:contains|eq) "([^"]*)"/g)];
       for (const [, token] of comparisons) {
         expect(token).toBe(token.toLowerCase());
       }
@@ -1084,7 +1089,7 @@ describe('www cost-control rules (#4650)', () => {
     // reads while leaving writes reachable — Applebot executes our JavaScript
     // and was measured POSTing 190 of its 253 www requests to the Sentry
     // tunnel on 2026-09-10.
-    expect(allowRule?.expression.startsWith('(http.request.method eq "GET" and (')).toBe(true);
+    expect(allowRule?.expression.startsWith('(http.request.method eq "GET" and ')).toBe(true);
     expect(allowRule?.expression.endsWith('))')).toBe(true);
     for (const token of CRAWLER_ALLOW_TOKENS) {
       expect(allowRule?.expression).toContain(`lower(http.user_agent) contains "${token}"`);
@@ -1224,6 +1229,21 @@ describe('www cost-control rules (#4650)', () => {
     expect(allowRule?.action).toBe('skip');
     expect(allowRule?.action_parameters).toEqual({ ruleset: 'current' });
     expect(blockRule?.action).toBe('block');
+  });
+
+  it('arms the catalog scraper block for the announced date without spending a sixth WAF slot', () => {
+    expect(CATALOG_SCRAPER_BLOCK_EXPRESSION).toBe(
+      `((http.host eq "${WWW_HOSTNAME}" or http.host eq "${WS_HOSTNAME}")` +
+        ` and http.request.timestamp.sec ge ${CATALOG_SCRAPER_BLOCK_START_MS / 1000}` +
+        ` and lower(http.user_agent) eq "${CATALOG_SCRAPER_USER_AGENT}"` +
+        ` and (lower(http.request.uri.path) eq "/graphql"` +
+        ` or lower(http.request.uri.path) eq "/api/v1"` +
+        ` or starts_with(lower(http.request.uri.path), "/api/v1/")))`,
+    );
+    expect(blockRule?.expression).toContain(`or ${CATALOG_SCRAPER_BLOCK_EXPRESSION}`);
+    expect(allowRule?.expression).toContain(`and not ${CATALOG_SCRAPER_BLOCK_EXPRESSION}`);
+    expect(desired.wafRules).toHaveLength(5);
+    expect(blockRule?.enabled).toBe(true);
   });
 });
 

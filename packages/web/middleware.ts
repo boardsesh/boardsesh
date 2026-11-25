@@ -1,5 +1,6 @@
 // middleware.ts
 import { NextResponse, type NextRequest } from 'next/server';
+import { CATALOG_SCRAPER_REFUSAL, isBlockedCatalogScraper } from '@boardsesh/shared-schema/catalog-scraper-policy';
 import { SUPPORTED_BOARDS } from './app/lib/board-data';
 import {
   getClimbViewPageCacheTTL,
@@ -77,6 +78,13 @@ export function middleware(request: NextRequest) {
 
 function routeRequest(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  if (isBlockedCatalogScraper(request.headers.get('user-agent'), pathname)) {
+    return NextResponse.json(CATALOG_SCRAPER_REFUSAL, {
+      status: 403,
+      headers: { 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store' },
+    });
+  }
 
   // Cheap origin fallback for crawlers that bypass Cloudflare's public hostname.
   // Named crawlers are refused everywhere; the automation default-deny only in
