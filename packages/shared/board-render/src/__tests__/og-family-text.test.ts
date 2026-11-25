@@ -66,7 +66,7 @@ describe('place card text', () => {
   });
 
   it('draws the app icon left of the wordmark, centred on its letters, on every slot', async () => {
-    for (const slot of ['full', 'narrow', 'none'] as const) {
+    for (const slot of ['full', 'none'] as const) {
       const { layers, brand } = await renderOgFamilyTextLayers({
         slot,
         fontFamily: 'Noto Sans',
@@ -225,7 +225,7 @@ describe('family text survives real-world names', () => {
 
   it('keeps a long hero name inside the crop and well above the size of the line under it', async () => {
     const { hero: heroRect } = await renderOgFamilyTextLayers({
-      slot: 'narrow',
+      slot: 'full',
       fontFamily: 'Noto Sans',
       hero: {
         runs: [
@@ -243,7 +243,7 @@ describe('family text survives real-world names', () => {
 
     // The "J" of Join may hang left of the column, but stays inside the crop.
     expect(heroRect.left).toBeGreaterThanOrEqual(285);
-    expect(heroRect.left).toBeLessThanOrEqual(322);
+    expect(heroRect.left).toBeLessThanOrEqual(590);
     expect(heroRect.left + heroRect.width).toBeLessThanOrEqual(915);
     expect(heroRect.height).toBeLessThanOrEqual(340);
     expect(heroRect.pt).toBeGreaterThanOrEqual(44);
@@ -251,7 +251,7 @@ describe('family text survives real-world names', () => {
 
   it('keeps a right-to-left name whole and on the stack edge under an English prefix', async () => {
     const hebrew = await renderOgFamilyTextLayers({
-      slot: 'narrow',
+      slot: 'full',
       fontFamily: 'Noto Sans',
       hero: {
         runs: [
@@ -265,20 +265,23 @@ describe('family text survives real-world names', () => {
       rows: [],
     });
     const prefixOnly = await renderOgFamilyTextLayers({
-      slot: 'narrow',
+      slot: 'full',
       fontFamily: 'Noto Sans',
       hero: { runs: [{ text: 'Join', color: OG_FAMILY_WHITE }], maxPt: hebrew.hero.pt, wrap: false },
       rows: [],
     });
 
-    // Wider than "Join" alone: the name was drawn and not truncated away.
-    expect(hebrew.hero.width).toBeGreaterThan(prefixOnly.hero.width);
+    // Taller than "Join" alone: the name was drawn on its own line. A name is only
+    // truncated once the hero reaches its 44pt floor, so 70pt means none of it was cut.
+    // (Not width: beside a whole board the hero is 325px, and a short Hebrew name can
+    // be no wider than "Join" above it.)
+    expect(hebrew.hero.height).toBeGreaterThan(prefixOnly.hero.height * 1.5);
     expect(hebrew.hero.pt).toBeGreaterThanOrEqual(70);
   });
 
   it('keeps every line of an unbroken name above the floor by truncating it', async () => {
     const { hero: heroRect } = await renderOgFamilyTextLayers({
-      slot: 'narrow',
+      slot: 'full',
       fontFamily: 'Noto Sans',
       hero: { runs: [{ text: `Join\n${'W'.repeat(60)}`, color: OG_FAMILY_WHITE }], maxPt: 100, minPt: 44, wrap: true },
       rows: [],
@@ -290,13 +293,15 @@ describe('family text survives real-world names', () => {
 
   it('keeps two lines for a name that fits, instead of a fat three', async () => {
     const twoLine = await renderOgFamilyTextLayers({
-      slot: 'narrow',
+      slot: 'full',
       fontFamily: 'Noto Sans',
       hero: { runs: [{ text: 'Join\nHuy Dang', color: OG_FAMILY_WHITE }], maxPt: 100, minPt: 44, wrap: true },
       rows: [],
     });
 
-    expect(twoLine.hero.pt).toBeGreaterThanOrEqual(70);
+    // At 60pt or more, three lines would not fit under the 340px hero cap, so
+    // this is two lines, still twice the 30pt board line under it.
+    expect(twoLine.hero.pt).toBeGreaterThanOrEqual(60);
     expect(twoLine.hero.height).toBeLessThanOrEqual(340);
   });
 
@@ -342,7 +347,7 @@ describe('family text survives real-world names', () => {
   });
 
   it('draws the wordmark in the same place on every slot', async () => {
-    for (const slot of ['full', 'narrow', 'none'] as const) {
+    for (const slot of ['full', 'none'] as const) {
       const { layers } = await renderOgFamilyTextLayers({
         slot,
         fontFamily: 'Noto Sans',
@@ -440,7 +445,7 @@ describe('family people cards survive real-world names', () => {
       blocks,
       hero: heroRect,
     } = await renderOgFamilyTextLayers({
-      slot: 'narrow',
+      slot: 'full',
       fontFamily: 'Noto Sans',
       identity: { name: text, avatar: { kind: 'monogram', letter: text.slice(0, 1), color: '#FFD400' }, sizePt: 34 },
       hero: { runs: [{ text: '7c+/V10', color: OG_FAMILY_WHITE }], maxPt: 170, wrap: false, tight: true },

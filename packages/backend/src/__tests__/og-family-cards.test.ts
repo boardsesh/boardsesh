@@ -180,7 +180,7 @@ describe('invite card content', () => {
     ).toBe('Morgan');
   });
 
-  it('takes the narrow slot with art and the centred one without', () => {
+  it('shows the whole board with art and the centred stack without', () => {
     const board = { config: { boardName: 'kilter' as const, layoutId: 1, sizeId: 10, setIds: '1,20' }, angle: 40 };
     const withArt = buildJoinCardContent({
       name: 'Alex',
@@ -190,7 +190,7 @@ describe('invite card content', () => {
     });
     const withoutArt = buildJoinCardContent({ name: 'Alex', board: null, art: null, fontFamily: 'Noto Sans' });
 
-    expect(withArt.slot).toBe('narrow');
+    expect(withArt.slot).toBe('full');
     expect(withoutArt.slot).toBe('none');
   });
 

@@ -278,6 +278,14 @@ datacenters and still land cold.
   backdrop-only (no board photo) rather than failing.
 - Quick prod check:
   `curl -o /dev/null -s -w 'code=%{http_code} ttfb=%{time_starttransfer}s\n' 'https://ws.boardsesh.com/og/climb?board_name=kilter&layout_id=1&size_id=10&set_ids=1,20&frames=p1080r15p1202r12'`
+- Look at every card while changing a layout, with no database:
+  `cd packages/backend && vp exec tsx scripts/og-card-gallery.ts` renders each card
+  kind from fixed samples through the real builders and renderer into
+  `tmp/og-gallery/`, with an `index.html` that also shows each card's square search
+  crop. The sample climbs touch both side walls, so a card that crops its board shows it.
+- Fetch the real cards from a running dev stack: `sh scripts/fetch-og-samples.sh`
+  (`BACKEND_URL`, default `http://127.0.0.1:8080`; pin any id with its env var, e.g.
+  `SESSION_ID=`). It uses psql when installed and the dev compose Postgres otherwise.
 
 ## Cloudflare edge layer
 
@@ -395,9 +403,12 @@ climb card URL with it. `og-family-blocks.ts` (avatar, pill, dots, bars) is not.
 (`OG_CARD_BOARD_BOX`, `OG_CARD_COLUMN_LEFT`, `placeOgBoard`) so the browser's render
 worker can size a board without importing sharp.
 
-Slots are `full` (board in x 16-560, text column at x 590), `narrow` (a 290px slice
-around the lit holds, text at x 322, used by the join and recap cards so the hero can be huge)
-and `none` (no art, the stack centred across the crop). The hero (`V5–V9`,
+Slots are `full` (the whole board in x 16-560, text column at x 590) and `none` (no
+art, the stack centred across the crop). There is deliberately no slot that crops a
+board: the join and recap cards once drew a 290px slice of it so the hero could be
+huge, and a wide climb lost half its holds. The recap's hardest-send credit (the
+`aside`) sits under the dots in the same column, which lifts the grade above centre,
+and is the first block dropped when the column runs out of room. The hero (`V5–V9`,
 `Join Huy Dang`) always ends inside x 285-915 so a square search crop keeps it. Fit
 is measured through Pango, never estimated from character counts. A grade shrinks to
 fit and is never cut or wrapped; a name wraps and, only below its size floor,

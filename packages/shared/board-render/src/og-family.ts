@@ -91,7 +91,7 @@ const COLUMN_RIGHT = OG_IMAGE_WIDTH - 24;
 /**
  * Where the wordmark sits on every family card, whichever slot it uses: its right
  * edge is fixed at the bottom right, the one spot that clears the text on the
- * left-aligned column, the wide narrow-slot hero and the centred no-art card. The
+ * left-aligned column and the centred no-art card. The
  * app icon sits left of it, so the pair grows leftward from that fixed edge.
  */
 export const OG_FAMILY_WORDMARK_RIGHT = 1160;
@@ -163,11 +163,14 @@ async function measureInk(raster: Buffer): Promise<{ left: number; top: number; 
   return bottom < 0 ? { left: 0, top: 0, bottom: height - 1 } : { left, top, bottom };
 }
 
-const BOARD_TOP_INSET = OG_CARD_BOARD_BOX.top;
 const ART_HEIGHT = OG_CARD_BOARD_BOX.height;
 
-/** The art slots. `none` draws no art and gives the text the width instead. */
-export type OgFamilySlot = 'full' | 'narrow' | 'none';
+/**
+ * The art slots. `full` draws the whole board left of the column; `none` draws no
+ * art and gives the text the width instead. There is no slot that crops a board:
+ * a slice of a wall cuts holds off the climb it is meant to show.
+ */
+export type OgFamilySlot = 'full' | 'none';
 
 type SlotGeometry = {
   /** Horizontal limits of the art on the canvas, or null for a card with no art. */
@@ -177,7 +180,6 @@ type SlotGeometry = {
 
 const SLOTS: Record<OgFamilySlot, SlotGeometry> = {
   full: { art: { left: OG_CARD_ART_LEFT, right: OG_CARD_ART_RIGHT }, columnLeft: OG_CARD_COLUMN_LEFT },
-  narrow: { art: { left: 0, right: 290 }, columnLeft: 322 },
   // No art: the text is centred across the whole crop rather than left-aligned on
   // an empty field, so `columnLeft` is the crop's own left edge.
   none: { art: null, columnLeft: OG_FAMILY_CROP_LEFT },
@@ -198,14 +200,8 @@ export function ogFamilyArtBounds(slot: OgFamilySlot): { left: number; right: nu
   return SLOTS[slot].art;
 }
 
-/**
- * The box a board is fitted into for a slot, for `buildRenderConfig`'s `ogBox`.
- *
- * `narrow` only cares about height: the board is drawn at full card height and a
- * 290px slice of it is taken, so the width has to be big enough not to bind.
- */
-export function ogFamilyBoardBox(slot: Exclude<OgFamilySlot, 'none'>): { width: number; height: number } {
-  if (slot === 'narrow') return { width: OG_IMAGE_WIDTH, height: ART_HEIGHT };
+/** The box a board is fitted into, for `buildRenderConfig`'s `ogBox`. The whole board always fits. */
+export function ogFamilyBoardBox(): { width: number; height: number } {
   const art = SLOTS.full.art!;
   return { width: art.right - art.left, height: ART_HEIGHT };
 }
@@ -224,49 +220,24 @@ export type OgFamilyBoardPlacement = {
 /**
  * Where a rendered board of this size lands, and the part of it that shows.
  *
- * `full` right-aligns the board against the column (the climb card's rule: it
- * pulls a portrait board into the crop) and never draws past the art slot.
- * `narrow` takes a 290px slice centred on the lit holds, clamped to the board, so
- * a climb that lives on one side of the wall is not cropped out of its own card.
- *
- * @param litCentroidX Centroid of the lit holds in board-pixel coordinates; the
- * board's centre is used when nothing is lit.
+ * The board is right-aligned against the column (the climb card's rule: it pulls
+ * a portrait board into the crop) and never drawn past the art slot. It was
+ * fitted into `ogFamilyBoardBox()`, so the visible part is the whole board; the
+ * clamp only absorbs a pixel of rounding.
  */
-export function placeOgFamilyBoard(
-  slot: Exclude<OgFamilySlot, 'none'>,
-  boardWidth: number,
-  boardHeight: number,
-  litCentroidX?: number,
-): OgFamilyBoardPlacement {
-  const art = SLOTS[slot].art!;
+export function placeOgFamilyBoard(boardWidth: number, boardHeight: number): OgFamilyBoardPlacement {
+  const art = SLOTS.full.art!;
   const slotWidth = art.right - art.left;
-  const visibleWidth = Math.min(boardWidth, slotWidth);
-  const visibleHeight = Math.min(boardHeight, ART_HEIGHT);
-  const canvasTop = Math.max(0, BOARD_TOP_INSET + Math.round((ART_HEIGHT - boardHeight) / 2));
-
-  if (slot === 'full') {
-    // The climb card's own placement, so a family board and a climb board sit in
-    // exactly the same spot.
-    const placed = placeOgBoard(boardWidth, boardHeight);
-    return {
-      canvasLeft: placed.left,
-      canvasTop: placed.top,
-      sourceLeft: boardWidth > slotWidth ? boardWidth - slotWidth : 0,
-      sourceTop: 0,
-      visibleWidth,
-      visibleHeight,
-    };
-  }
-
-  const centroid = litCentroidX ?? boardWidth / 2;
-  const sourceLeft = Math.min(Math.max(0, Math.round(centroid - visibleWidth / 2)), boardWidth - visibleWidth);
+  // The climb card's own placement, so a family board and a climb board sit in
+  // exactly the same spot.
+  const placed = placeOgBoard(boardWidth, boardHeight);
   return {
-    canvasLeft: art.left + Math.round((slotWidth - visibleWidth) / 2),
-    canvasTop,
-    sourceLeft,
+    canvasLeft: placed.left,
+    canvasTop: placed.top,
+    sourceLeft: boardWidth > slotWidth ? boardWidth - slotWidth : 0,
     sourceTop: 0,
-    visibleWidth,
-    visibleHeight,
+    visibleWidth: Math.min(boardWidth, slotWidth),
+    visibleHeight: Math.min(boardHeight, ART_HEIGHT),
   };
 }
 
@@ -426,7 +397,11 @@ export type OgFamilyDots = {
   label?: string;
 };
 
-/** The credit on the right of a narrow card. Never part of the hero, so it may sit outside the crop. */
+/**
+ * A credit under the stack: the climb behind a recap's grade. Never part of the
+ * hero, so it may run past the crop. `lines` are drawn as one muted row, joined
+ * with a middle dot, and the whole block is dropped when it would pass the floor.
+ */
 export type OgFamilyAside = { eyebrow: string; title: string; lines: readonly string[] };
 
 export type OgFamilyCardContent = {
@@ -452,9 +427,9 @@ const MIN_HERO_PT = 20;
 const HERO_MAX_HEIGHT = 340;
 const WRAP_HERO_STEP_PT = 4;
 const TRUNCATION_ATTEMPTS = 6;
-const ASIDE_LEFT = 930;
-const ASIDE_TOP = 72;
-const ASIDE_WIDTH = 230;
+/** Space between the dots (or the last row) and the aside under them. */
+const ASIDE_GAP = 22;
+const ASIDE_LINE_SEPARATOR = ' · ';
 
 const LEFT_TO_RIGHT_MARK = '\u200E';
 const CJK_WORD = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
@@ -766,9 +741,8 @@ export async function renderOgFamilyTextLayers(content: OgFamilyCardContent): Pr
     if (direction === 'right') return bounds.right - width;
     return Math.round((bounds.left + bounds.right - width) / 2);
   };
-  // Only a left-aligned stack can use the rest of the column past the crop, and
-  // never when an aside already claims that side of the card.
-  const rowWidth = direction === 'left' && !aside ? columnWidth : heroWidth;
+  // Only a left-aligned stack can use the rest of the column past the crop.
+  const rowWidth = direction === 'left' ? columnWidth : heroWidth;
 
   const fitted = await fitHero(hero, { width: heroWidth }, fontFamily, direction);
   const heroRaster =
@@ -776,7 +750,7 @@ export async function renderOgFamilyTextLayers(content: OgFamilyCardContent): Pr
 
   const stacked: { input: Buffer; left: number; offset: number }[] = [];
   const blocks: OgFamilyBlockRects = {};
-  const blockOffsets: { identity?: number; dots?: number; eyebrow?: number } = {};
+  const blockOffsets: { identity?: number; dots?: number; eyebrow?: number; aside?: number } = {};
   let cursor = 0;
 
   if (identity) {
@@ -895,6 +869,56 @@ export async function renderOgFamilyTextLayers(content: OgFamilyCardContent): Pr
     }
   }
 
+  if (aside) {
+    const asideRows = [
+      await renderRaster(
+        `<span size="13pt" weight="700" letter_spacing="1200" foreground="${OG_FAMILY_MUTED}">${escapePangoMarkup(aside.eyebrow)}</span>`,
+        { fontFamily, ...(direction === 'left' ? {} : { width: rowWidth, align: direction }) },
+      ),
+      await renderRow(
+        { runs: [{ text: aside.title, color: OG_FAMILY_WHITE }], sizePt: 22, weight: 700, maxLines: 2 },
+        rowWidth,
+        fontFamily,
+        direction,
+      ),
+      ...(aside.lines.length > 0
+        ? [
+            await renderRow(
+              {
+                runs: [{ text: aside.lines.join(ASIDE_LINE_SEPARATOR), color: OG_FAMILY_MUTED }],
+                sizePt: 17,
+                weight: 500,
+                maxLines: 2,
+              },
+              rowWidth,
+              fontFamily,
+              direction,
+            ),
+          ]
+        : []),
+    ];
+    const gaps = [4, 6];
+    const asideHeight = asideRows.reduce(
+      (sum, raster, index) => sum + raster.height + (index < asideRows.length - 1 ? gaps[index] : 0),
+      0,
+    );
+    // The credit is the first thing to go when the stack runs out of room.
+    if (cursor + ASIDE_GAP + asideHeight <= COLUMN_FLOOR - COLUMN_TOP) {
+      cursor += ASIDE_GAP;
+      blockOffsets.aside = cursor;
+      let asideLeft = Number.POSITIVE_INFINITY;
+      let asideRight = Number.NEGATIVE_INFINITY;
+      asideRows.forEach((raster, index) => {
+        const left = anchor(raster.width);
+        stacked.push({ input: raster.buffer, left, offset: cursor });
+        asideLeft = Math.min(asideLeft, left);
+        asideRight = Math.max(asideRight, left + raster.width);
+        cursor += raster.height + (index < asideRows.length - 1 ? gaps[index] : 0);
+      });
+      blocks.aside = { left: asideLeft, top: 0, width: asideRight - asideLeft, height: asideHeight };
+    }
+  }
+
   // Bars go in only when the text is genuinely clear of them; the words always win.
   const drawBars = !!bars && bars.length >= BARS_MIN_COUNT && cursor <= BARS_TOP - BARS_CLEARANCE - COLUMN_TOP;
   const blockFloor = drawBars ? BARS_TOP - BARS_CLEARANCE : COLUMN_FLOOR;
@@ -908,49 +932,12 @@ export async function renderOgFamilyTextLayers(content: OgFamilyCardContent): Pr
   if (blocks.identity) blocks.identity.top = blockTop + (blockOffsets.identity ?? 0);
   if (blocks.eyebrow) blocks.eyebrow.top = blockTop + (blockOffsets.eyebrow ?? 0);
   if (blocks.dots) blocks.dots.top = blockTop + (blockOffsets.dots ?? 0);
+  if (blocks.aside) blocks.aside.top = blockTop + (blockOffsets.aside ?? 0);
 
   if (drawBars && bars) {
     const { svg, width, height } = renderBarsSvg(bars, columnWidth);
     layers.push({ input: svg, left: bounds.left, top: BARS_TOP });
     blocks.bars = { left: bounds.left, top: BARS_TOP, width, height };
-  }
-
-  if (aside) {
-    const asideRows = [
-      await renderRaster(
-        `<span size="13pt" weight="700" letter_spacing="1200" foreground="${OG_FAMILY_MUTED}">${escapePangoMarkup(aside.eyebrow)}</span>`,
-        { fontFamily },
-      ),
-      await renderRow(
-        { runs: [{ text: aside.title, color: OG_FAMILY_WHITE }], sizePt: 21, weight: 700, maxLines: 3 },
-        ASIDE_WIDTH,
-        fontFamily,
-        'left',
-      ),
-      ...(await Promise.all(
-        aside.lines.map((line) =>
-          renderRow(
-            { runs: [{ text: line, color: OG_FAMILY_MUTED }], sizePt: 16, weight: 500, maxLines: 2 },
-            ASIDE_WIDTH,
-            fontFamily,
-            'left',
-          ),
-        ),
-      )),
-    ];
-    let asideCursor = ASIDE_TOP;
-    let asideRight = ASIDE_LEFT;
-    for (const raster of asideRows) {
-      layers.push({ input: raster.buffer, left: ASIDE_LEFT, top: asideCursor });
-      asideRight = Math.max(asideRight, ASIDE_LEFT + raster.width);
-      asideCursor += raster.height + 8;
-    }
-    blocks.aside = {
-      left: ASIDE_LEFT,
-      top: ASIDE_TOP,
-      width: asideRight - ASIDE_LEFT,
-      height: asideCursor - ASIDE_TOP,
-    };
   }
 
   // The icon goes in before the wordmark, so the wordmark stays the last layer.
@@ -1034,7 +1021,7 @@ export type OgFamilyArtLayers = {
   width: number;
   height: number;
   placement: OgFamilyBoardPlacement;
-  /** Draw the rounded frame around the board. Off for the bleeding `narrow` slice. */
+  /** Draw the rounded frame around the board. Off for a photo, which carries its own border. */
   frame: boolean;
 };
 
@@ -1043,7 +1030,7 @@ const PHOTO_CORNER_RADIUS = 16;
 /**
  * A photograph as art-slot layers: rounded and hairline-bordered like the board
  * frame, right against the column like a board, sized by the caller to fit
- * `ogFamilyBoardBox('full')`. A public photo carries no overlay of its own: a
+ * `ogFamilyBoardBox()`. A public photo carries no overlay of its own: a
  * spray wall's climb is drawn into `image` before it gets here.
  */
 export async function renderOgFamilyPhotoLayers(photo: {
@@ -1073,7 +1060,7 @@ export async function renderOgFamilyPhotoLayers(photo: {
     overlay: null,
     width,
     height,
-    placement: placeOgFamilyBoard('full', width, height),
+    placement: placeOgFamilyBoard(width, height),
     frame: false,
   };
 }

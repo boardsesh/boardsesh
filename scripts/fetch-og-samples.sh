@@ -1,9 +1,23 @@
 #!/bin/sh
+#
+# Fetch one real share card (`/og/*`) of every kind from a running dev stack.
+#
+#   vp run dev                      # db + backend + web
+#   sh scripts/fetch-og-samples.sh  # writes tmp/og-samples/<run>/
+#
+# The cards are drawn by the backend (BACKEND_URL); www only serves the site's
+# default card (BASE_URL/opengraph-image). Sample rows come from DATABASE_URL,
+# through psql when it is installed and the dev compose Postgres when it is not.
+# Every id can be pinned with its env var (CLIMB_SAMPLE, SESSION_ID, ...).
+#
+# For layout work with no database at all, render the gallery instead:
+#   cd packages/backend && vp exec tsx scripts/og-card-gallery.ts
 
 set -u
 
 REPO_ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 BASE_URL=${BASE_URL:-http://127.0.0.1:3000}
+BACKEND_URL=${BACKEND_URL:-http://127.0.0.1:8080}
 DATABASE_URL=${DATABASE_URL:-postgresql://postgres:password@localhost:5432/main}
 OUTPUT_ROOT=${OUTPUT_ROOT:-"$REPO_ROOT/tmp/og-samples"}
 RUN_ID=${RUN_ID:-$(date +%Y%m%d-%H%M%S)}
@@ -20,7 +34,12 @@ require_command() {
 }
 
 query_value() {
-  psql "$DATABASE_URL" -At -F '|' -c "$1"
+  if command -v psql >/dev/null 2>&1; then
+    psql "$DATABASE_URL" -At -F '|' -c "$1"
+  else
+    docker compose -f "$REPO_ROOT/docker-compose.yml" exec -T postgres \
+      psql -U postgres -d main -At -F '|' -c "$1"
+  fi
 }
 
 write_readme_header() {
@@ -28,6 +47,7 @@ write_readme_header() {
 Boardsesh local OG sample capture
 
 Base URL: $BASE_URL
+Backend URL: $BACKEND_URL
 Database URL: $DATABASE_URL
 Run directory: $RUN_DIR
 
@@ -75,13 +95,13 @@ capture_failure() {
   [ -f "$headers_file" ] || : > "$headers_file"
 }
 
+# fetch_sample <label> <full url> [key=value ...]
 fetch_sample() {
   label=$1
-  path=$2
-  expected_ext=$3
-  shift 3
+  url=$2
+  shift 2
 
-  body_file="$RUN_DIR/$label.$expected_ext"
+  body_file="$RUN_DIR/$label.body"
   headers_file="$RUN_DIR/$label.headers.txt"
   stderr_file="$RUN_DIR/$label.curl.stderr.txt"
   error_file="$RUN_DIR/$label-error.txt"
@@ -98,7 +118,7 @@ fetch_sample() {
     set -- "$@" --data-urlencode "$pair"
   done < "$pair_file"
   rm -f "$pair_file"
-  set -- "$@" "$BASE_URL$path"
+  set -- "$@" "$url"
 
   curl_status=0
   metadata=$(curl "$@" 2>"$stderr_file") || curl_status=$?
@@ -108,7 +128,7 @@ fetch_sample() {
   effective_url=$(printf '%s' "$metadata" | sed -n '3p')
 
   if [ -z "$effective_url" ]; then
-    effective_url="$BASE_URL$path"
+    effective_url="$url"
   fi
 
   if [ "$curl_status" -ne 0 ]; then
@@ -117,10 +137,20 @@ fetch_sample() {
     return
   fi
 
+  # Cards are JPEG by default; `/og/climb` also honours `format`.
+  case "$content_type" in
+    image/jpeg*) ext=jpg ;;
+    image/png*) ext=png ;;
+    image/webp*) ext=webp ;;
+    *) ext= ;;
+  esac
+
   case "$status" in
     2??)
-      if [ "$expected_ext" = "png" ] && printf '%s' "$content_type" | grep -qi '^image/png' && [ -s "$body_file" ]; then
-        append_readme_entry "$label" "$effective_url" "$status" "$content_type" "$body_file"
+      if [ -n "$ext" ] && [ -s "$body_file" ]; then
+        mv "$body_file" "$RUN_DIR/$label.$ext"
+        rm -f "$stderr_file"
+        append_readme_entry "$label" "$effective_url" "$status" "$content_type" "$RUN_DIR/$label.$ext"
         printf 'OK %s (%s)\n' "$label" "$status"
       else
         capture_failure "$label" "$body_file" "$stderr_file" "$error_file" "$headers_file" "$effective_url" "$status" "$content_type"
@@ -135,7 +165,7 @@ fetch_sample() {
 }
 
 require_command curl
-require_command psql
+command -v psql >/dev/null 2>&1 || require_command docker
 
 mkdir -p "$RUN_DIR"
 write_readme_header
@@ -203,6 +233,22 @@ PLAYLIST_UUID=${PLAYLIST_UUID:-$(query_value "
   LIMIT 1;
 ")}
 
+GYM_SLUG=${GYM_SLUG:-$(query_value "
+  SELECT slug
+  FROM gyms
+  WHERE is_public = TRUE AND deleted_at IS NULL AND slug IS NOT NULL
+  ORDER BY updated_at DESC NULLS LAST
+  LIMIT 1;
+")}
+
+BOARD_SLUG=${BOARD_SLUG:-$(query_value "
+  SELECT slug
+  FROM user_boards
+  WHERE is_public = TRUE AND board_type <> 'spray'
+  ORDER BY created_at DESC NULLS LAST
+  LIMIT 1;
+")}
+
 cat >> "$README_FILE" <<EOF
 Samples
 Profile user: $PROFILE_USER_ID
@@ -215,6 +261,8 @@ Climb uuid: $CLIMB_UUID
 Setter username: $SETTER_USERNAME
 Session id: $SESSION_ID
 Playlist uuid: $PLAYLIST_UUID
+Gym slug: $GYM_SLUG
+Board slug: $BOARD_SLUG
 
 EOF
 
@@ -223,7 +271,7 @@ if [ -z "$PROFILE_USER_ID" ] || [ -z "$CLIMB_BOARD_NAME" ] || [ -z "$CLIMB_LAYOU
   exit 1
 fi
 
-fetch_sample "climb" "/api/og/climb" "png" \
+fetch_sample "climb" "$BACKEND_URL/og/climb" \
   "board_name=$CLIMB_BOARD_NAME" \
   "layout_id=$CLIMB_LAYOUT_ID" \
   "size_id=$CLIMB_SIZE_ID" \
@@ -231,23 +279,35 @@ fetch_sample "climb" "/api/og/climb" "png" \
   "angle=$CLIMB_ANGLE" \
   "climb_uuid=$CLIMB_UUID"
 
-fetch_sample "profile" "/api/og/profile" "png" \
+fetch_sample "profile" "$BACKEND_URL/og/profile" \
   "user_id=$PROFILE_USER_ID"
 
-fetch_sample "setter" "/api/og/setter" "png" \
+fetch_sample "setter" "$BACKEND_URL/og/setter" \
   "username=$SETTER_USERNAME"
 
-fetch_sample "session" "/api/og/session" "png" \
+fetch_sample "session" "$BACKEND_URL/og/session" \
   "sessionId=$SESSION_ID"
 
-fetch_sample "session-join" "/api/og/session" "png" \
+fetch_sample "session-join" "$BACKEND_URL/og/session" \
   "sessionId=$SESSION_ID" \
   "variant=join"
 
-fetch_sample "playlist" "/api/og/playlist" "png" \
+fetch_sample "playlist" "$BACKEND_URL/og/playlist" \
   "uuid=$PLAYLIST_UUID"
 
-fetch_sample "default-site" "/opengraph-image" "png"
+if [ -n "$GYM_SLUG" ]; then
+  fetch_sample "place-gym" "$BACKEND_URL/og/place" "kind=gym" "slug=$GYM_SLUG"
+else
+  printf 'SKIPPED place-gym (no public gym with a slug)\n'
+fi
+
+if [ -n "$BOARD_SLUG" ]; then
+  fetch_sample "place-board" "$BACKEND_URL/og/place" "kind=board" "slug=$BOARD_SLUG"
+else
+  printf 'SKIPPED place-board (no public board)\n'
+fi
+
+fetch_sample "default-site" "$BASE_URL/opengraph-image"
 
 printf 'Artifacts saved in %s\n' "$RUN_DIR"
 
