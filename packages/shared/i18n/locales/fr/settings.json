@@ -58,6 +58,7 @@
     }
   },
   "title": "Paramètres",
+  "signOut": "Se déconnecter",
   "loading": {
     "profileError": "Impossible de charger le profil"
   },

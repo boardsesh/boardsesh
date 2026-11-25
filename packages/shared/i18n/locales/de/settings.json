@@ -58,6 +58,7 @@
     }
   },
   "title": "Einstellungen",
+  "signOut": "Abmelden",
   "loading": {
     "profileError": "Profil konnte nicht geladen werden"
   },

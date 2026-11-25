@@ -58,6 +58,7 @@
     }
   },
   "title": "Settings",
+  "signOut": "Sign out",
   "loading": {
     "profileError": "Failed to load profile"
   },

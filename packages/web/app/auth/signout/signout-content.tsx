@@ -6,6 +6,7 @@ import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import CircularProgress from '@mui/material/CircularProgress';
 import MuiAlert from '@mui/material/Alert';
+import Button from '@mui/material/Button';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { useSearchParams } from 'next/navigation';
@@ -60,7 +61,12 @@ export default function SignOutContent() {
           <Stack spacing={3} sx={{ width: '100%', alignItems: 'center' }}>
             <Logo size="sm" showText={false} />
             {failed ? (
-              <MuiAlert severity="error">{t('signOut.error')}</MuiAlert>
+              <>
+                <MuiAlert severity="error">{t('signOut.error')}</MuiAlert>
+                <Button variant="contained" onClick={() => window.location.reload()}>
+                  {t('signOut.retry')}
+                </Button>
+              </>
             ) : (
               <>
                 <CircularProgress aria-hidden />

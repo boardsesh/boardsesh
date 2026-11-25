@@ -24,6 +24,7 @@ import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
 import { guardedActionFetch, isReloadRequired, isSessionSuperseded } from '@/app/lib/auth/session-guard';
 import ReloadPageAlert from '@/app/components/account/reload-page-alert';
+import LocaleLink from '@/app/components/i18n/locale-link';
 
 /**
  * Web settings keeps only what the app can't do: register an ESP32 controller
@@ -175,6 +176,9 @@ export default function SettingsPageContent({ signInMethods = false }: SettingsP
         }}
       >
         {reloadRequired && <ReloadPageAlert />}
+        <Button component={LocaleLink} href="/auth/signout" variant="outlined" fullWidth sx={{ mb: 2 }}>
+          {t('signOut')}
+        </Button>
         <ConsentSettingsCard />
         <MuiDivider sx={{ my: 2 }} />
         <Box id="password">

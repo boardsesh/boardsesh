@@ -58,6 +58,7 @@
     }
   },
   "title": "Impostazioni",
+  "signOut": "Esci",
   "loading": {
     "profileError": "Impossibile caricare il profilo"
   },

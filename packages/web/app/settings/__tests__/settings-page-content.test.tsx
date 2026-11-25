@@ -115,6 +115,14 @@ describe('SettingsPageContent', () => {
     expect(screen.getByText(tFromCatalog('settings', 'title'))).toBeTruthy();
   });
 
+  it('offers a visible sign-out link to the guarded sign-out flow', async () => {
+    await renderSettings();
+
+    expect(screen.getByRole('link', { name: tFromCatalog('settings', 'signOut') }).getAttribute('href')).toBe(
+      '/auth/signout',
+    );
+  });
+
   it('renders no profile form fields', async () => {
     // The display-name / Instagram / email inputs moved to the app's edit-profile
     // screen. The stubs render no fields, so any input here is a regression.
@@ -169,7 +177,7 @@ describe('SettingsPageContent', () => {
     },
   );
 
-  it('links to the app profile screen, and links nowhere else', async () => {
+  it('links to the sign-out flow and app profile screen, and links nowhere else', async () => {
     // The destination is named explicitly rather than mirrored from this
     // pathname: the SPA has no /settings route, so the same-path form would be
     // a 404.
@@ -182,7 +190,7 @@ describe('SettingsPageContent', () => {
     const { container } = await renderSettings();
 
     const hrefs = Array.from(container.querySelectorAll('main a')).map((anchor) => anchor.getAttribute('href'));
-    expect(hrefs).toEqual([EXPECTED_HANDOFF_HREF]);
+    expect(hrefs).toEqual(['/auth/signout', EXPECTED_HANDOFF_HREF]);
     expect(screen.getByText(tFromCatalog('settings', 'appHandoff.cta'))).toBeTruthy();
   });
 
