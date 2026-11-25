@@ -43,6 +43,7 @@ import type { Capsule } from '../../filter-capsules/CapsuleRow.types';
 import { GymMap, type GymMapHandle, type GymMapMarker } from '../../gym-directory/GymMap';
 import { GymListPanel, type GymListPanelHandle } from '../../gym-directory/GymListPanel';
 import { zoomedInToSearch } from '../../gym-directory/map-search-zoom';
+import { panelBoxHeight, useKeyboardOverlap } from '../../gym-directory/panel-keyboard';
 import { GymLocationPrompt } from '../../gym-directory/GymLocationPrompt';
 import { GymSearchField } from '../../gym-directory/GymSearchField';
 import { buildGymPickRows } from '../../gym-directory/gym-pick-rows';
@@ -388,8 +389,10 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
     if (!mapAvailable) panelRef.current?.snapTo('high');
   }, [mapAvailable]);
 
-  // The panel lays out in what is left under the search field.
+  // The panel lays out in what is left under the search field, and above the
+  // keyboard while it is up (nothing resizes this screen for it).
   const [bodyHeight, setBodyHeight] = useState(0);
+  const keyboardOverlap = useKeyboardOverlap();
   const onBodyLayout = useCallback((event: LayoutChangeEvent) => {
     const measured = Math.round(event.nativeEvent.layout.height);
     setBodyHeight((previous) => (previous === measured ? previous : measured));
@@ -483,7 +486,8 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
             mode="pick"
             data={rows}
             mapAvailable={mapAvailable}
-            availableHeight={bodyHeight}
+            availableHeight={panelBoxHeight(bodyHeight, keyboardOverlap)}
+            keyboardOpen={keyboardOverlap > 0}
             mediumFraction={1 - MAP_FRACTION}
             allowLowDetent={false}
             onPickGym={handlePickGym}

@@ -59,6 +59,11 @@ type GymListPanelSharedProps = {
   mediumFraction?: number;
   /** Offer the Low ("reveal the map") detent. Default true. */
   allowLowDetent?: boolean;
+  /**
+   * The keyboard is up and `availableHeight` already ends at its top: the
+   * pinned footer owes no safe-area inset, which the keyboard covers.
+   */
+  keyboardOpen?: boolean;
 };
 
 /** /gyms: tap a gym to expand its boards, tap a board to make it active. */
@@ -123,6 +128,7 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
     availableHeight,
     mediumFraction,
     allowLowDetent,
+    keyboardOpen = false,
   } = props;
   const pickMode = props.mode === 'pick';
   // One set of handlers per mode. The other mode's rows never reach renderItem,
@@ -326,7 +332,10 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
               <Animated.View
                 style={[
                   styles.pickFooter,
-                  { backgroundColor: panelBackground, paddingBottom: insets.bottom + spacing[2] },
+                  {
+                    backgroundColor: panelBackground,
+                    paddingBottom: (keyboardOpen ? 0 : insets.bottom) + spacing[2],
+                  },
                   visibleBottomAnimatedStyle,
                 ]}
                 onLayout={onFooterLayout}

@@ -61,6 +61,8 @@ const captured = vi.hoisted(() => ({
   onActivateBoard: null as ((board: UserBoard) => void) | null,
   onRegionChange: null as ((center: Coords, zoom?: number) => void) | null,
   mapCenter: undefined as Coords | null | undefined,
+  keyboardOverlap: 0,
+  panelBox: { availableHeight: undefined as number | undefined, keyboardOpen: undefined as boolean | undefined },
   locationStatus: 'idle',
   onMapUnavailable: null as (() => void) | null,
   onMapReady: null as (() => void) | null,
@@ -117,6 +119,7 @@ vi.mock('react-native', () => ({
         if (event.key === 'Enter') onSubmitEditing();
       },
     }),
+  useWindowDimensions: () => ({ width: 393, height: 852 }),
   StyleSheet: {
     flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
     create: (styles: Record<string, unknown>) => styles,
@@ -226,9 +229,15 @@ vi.mock('../../../src/components/gym-directory/GymMap', () => ({
     return null;
   },
 }));
+vi.mock('../../../src/components/gym-directory/panel-keyboard', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/components/gym-directory/panel-keyboard')>()),
+  useKeyboardOverlap: () => captured.keyboardOverlap,
+}));
 vi.mock('../../../src/components/gym-directory/GymListPanel', () => ({
   GymListPanel: (props: {
     ref?: Ref<unknown>;
+    availableHeight?: number;
+    keyboardOpen?: boolean;
     onActivateBoard: (board: UserBoard) => void;
     onPressGym: (gym: Gym) => void;
     mapAvailable: boolean;
@@ -242,6 +251,7 @@ vi.mock('../../../src/components/gym-directory/GymListPanel', () => ({
       () => ({ snapTo: panelSnapTo, ensureVisible: vi.fn(), scrollToRowKey: vi.fn() }),
       [],
     );
+    captured.panelBox = { availableHeight: props.availableHeight, keyboardOpen: props.keyboardOpen };
     captured.onActivateBoard = props.onActivateBoard;
     captured.onPressGym = props.onPressGym;
     captured.mapAvailable = props.mapAvailable;
@@ -310,6 +320,7 @@ beforeEach(() => {
   captured.onActivateBoard = null;
   captured.onRegionChange = null;
   captured.mapCenter = undefined;
+  captured.keyboardOverlap = 0;
   captured.locationStatus = 'idle';
   cameraMocks.setCenter.mockClear();
   cameraMocks.showWorld.mockClear();
@@ -671,6 +682,14 @@ describe('discovery search integration', () => {
       vi.advanceTimersByTime(500);
     });
     expect(queryMocks.gyms.mock.lastCall?.[0]).toEqual(utrecht);
+  });
+
+  it('ends the panel at the keyboard top while the keyboard is up', () => {
+    const screen = render(createElement(GymDiscovery));
+    expect(captured.panelBox).toEqual({ availableHeight: 852, keyboardOpen: false });
+    captured.keyboardOverlap = 336;
+    screen.rerender(createElement(GymDiscovery));
+    expect(captured.panelBox).toEqual({ availableHeight: 516, keyboardOpen: true });
   });
 
   it('raises the panel while the search field has focus', () => {

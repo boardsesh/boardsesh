@@ -27,6 +27,8 @@ const state = vi.hoisted(() => ({
   gymsArgs: [] as unknown[],
   mapCenter: undefined as Coords | null | undefined,
   onRegionChange: undefined as ((coords: Coords, zoom?: number) => void) | undefined,
+  keyboardOverlap: 0,
+  panelBox: { availableHeight: undefined as number | undefined, keyboardOpen: undefined as boolean | undefined },
 }));
 
 vi.mock('react-native', () => ({
@@ -42,6 +44,7 @@ vi.mock('react-native', () => ({
   },
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {} },
   Keyboard: { dismiss: dismissKeyboardMock },
+  Platform: { OS: 'ios' },
 }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, options?: { count?: number }) => (options?.count ?? '') + key }),
@@ -136,6 +139,8 @@ vi.mock('../../../gym-directory/GymListPanel', () => ({
         filterSlot,
         placeCaption,
         locationPrompt,
+        availableHeight,
+        keyboardOpen,
       }: {
         data: GymListRow[];
         onPickGym: (gym: Gym) => void;
@@ -145,9 +150,12 @@ vi.mock('../../../gym-directory/GymListPanel', () => ({
         filterSlot?: ReactNode;
         placeCaption?: ReactNode;
         locationPrompt?: ReactNode;
+        availableHeight: number;
+        keyboardOpen: boolean;
       },
       ref: Ref<unknown>,
     ) => {
+      state.panelBox = { availableHeight, keyboardOpen };
       useImperativeHandle(ref, () => ({ snapTo: snapToMock, ensureVisible: vi.fn(), scrollToRowKey: vi.fn() }), []);
       return createElement('section', { 'data-testid': 'panel' }, [
         createElement('div', { key: 'filters' }, filterSlot),
@@ -178,6 +186,9 @@ vi.mock('../../../gym-directory/GymListPanel', () => ({
     },
   ),
 }));
+// The keyboard height comes from keyboard events; the overlap maths stays real.
+vi.mock('../../../../hooks/use-keyboard-height', () => ({ useKeyboardHeight: () => state.keyboardOverlap }));
+vi.mock('../../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 34 }));
 vi.mock('../../../gym-directory/GymLocationPrompt', () => ({
   GymLocationPrompt: ({ status, onRequest }: { status: string; onRequest: () => void }) =>
     createElement('button', { type: 'button', 'data-testid': 'location-prompt', onClick: onRequest }, status),
@@ -251,6 +262,7 @@ beforeEach(() => {
   state.gymsFailed = false;
   state.gymsArgs = [];
   state.onRegionChange = undefined;
+  state.keyboardOverlap = 0;
   state.mapCenter = undefined;
   requestIfAllowedMock.mockResolvedValue(undefined);
 });
@@ -330,6 +342,15 @@ describe('GymStep', () => {
     expect(state.gymsArgs[0]).toBeNull();
     expect(state.gymsArgs[2]).toBe('Ut');
     expect(showWorldMock).toHaveBeenCalled();
+  });
+
+  it('ends the panel at the keyboard top while the keyboard is up', () => {
+    const view = render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
+    // The mocked body measures 600pt.
+    expect(state.panelBox).toEqual({ availableHeight: 600, keyboardOpen: false });
+    state.keyboardOverlap = 336;
+    view.rerender(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
+    expect(state.panelBox).toEqual({ availableHeight: 264, keyboardOpen: true });
   });
 
   it('raises the list over the map while the search field has focus', () => {

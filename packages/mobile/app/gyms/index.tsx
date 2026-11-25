@@ -1,6 +1,6 @@
 import { PressableSurface } from '../../src/components/PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,6 +29,7 @@ import { GymListPanel, type GymListPanelHandle } from '../../src/components/gym-
 import { GymLocationPrompt } from '../../src/components/gym-directory/GymLocationPrompt';
 import { GymSearchField } from '../../src/components/gym-directory/GymSearchField';
 import { zoomedInToSearch } from '../../src/components/gym-directory/map-search-zoom';
+import { panelBoxHeight, useKeyboardOverlap } from '../../src/components/gym-directory/panel-keyboard';
 import { ClaimGymSheet } from '../../src/components/gym-directory/ClaimGymSheet';
 import { gymPageHref } from '../../src/components/gym-page/gym-page-route';
 import { WallFinderFilterChips } from '../../src/components/gym-directory/WallFinderFilterChips';
@@ -75,6 +76,11 @@ export default function GymDiscovery() {
   const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
   const insets = useSafeAreaInsets();
+  // The panel spans the window; while the keyboard is up it ends at the
+  // keyboard's top, so its last rows are never under it (nothing resizes this
+  // screen for the keyboard).
+  const { height: windowHeight } = useWindowDimensions();
+  const keyboardOverlap = useKeyboardOverlap();
   // A climber who says no to the prompt may ask again from the card: Android's
   // second ask, or Settings once only Settings can turn it on. Coming back
   // from Settings (the card's, or the quiet Use my location's) reads the
@@ -721,6 +727,8 @@ export default function GymDiscovery() {
         ref={panelRef}
         data={rows}
         mapAvailable={mapAvailable && (Platform.OS !== 'web' || center !== null)}
+        availableHeight={panelBoxHeight(windowHeight, keyboardOverlap)}
+        keyboardOpen={keyboardOverlap > 0}
         onPressGym={onPressGym}
         onActivateBoard={activate}
         onEditGym={onEditGym}
