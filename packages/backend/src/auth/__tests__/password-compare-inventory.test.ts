@@ -13,7 +13,9 @@ const BACKEND_SOURCE = fileURLToPath(new URL('../../', import.meta.url));
 
 /** Files that run bcrypt's compare themselves. */
 const REVIEWED_COMPARES: Readonly<Record<string, string>> = {
-  'auth/current-store/password-identity.ts': 'Helper behind the two sign-in entry points below.',
+  'auth/current-store/password-identity.ts': 'Shared helper behind native and staged/default web password sign-in.',
+  'auth/current-store/password-login-family.ts':
+    'Default password sign-in: sequential candidate comparisons under its handler whole-command work slot and account guess admission; the slot stays held until actual command settlement.',
   'auth/authority/authority.ts':
     'verifyAuthorityPassword: helper behind the two entry points, and the Better Auth identity authority, which serves no email sign-in route.',
   'auth/authority/first-password-finalizer.ts':
@@ -26,14 +28,24 @@ const REVIEWED_COMPARES: Readonly<Record<string, string>> = {
 const REVIEWED_HELPER_CALLERS: Readonly<Record<string, string>> = {
   'auth/authority/password-verification.ts': 'authenticateIdentityPassword: called only by native credentials sign-in.',
   'auth/current-store/web-password.ts': 'authenticateWebPassword: called only by the staged password command.',
+  'auth/current-store/password-login-family.ts':
+    'authenticatePasswordBeforeEnforcement: the default password handler admits account guesses before the family; its whole-command work slot encloses the matcher and sequential bcrypt callback.',
   'auth/current-store/password-identity.ts': 'Defines the helpers; authenticateCurrentStorePassword has no route.',
   'auth/authority/authority.ts': 'Defines verifyAuthorityPassword.',
   'auth/authority/provider-security-reauthentication.ts': 'Signed-in re-authentication, see above.',
 };
 
 /** The entry points, and the guard each caller must run before calling them. */
-const GUARDED_ENTRY_POINTS = ['authenticateIdentityPassword(', 'authenticateWebPassword('];
-const GUARDED_CALLERS = ['handlers/native-auth.ts', 'handlers/current-store-web-auth.ts'];
+const GUARDED_ENTRY_POINTS = [
+  'authenticateIdentityPassword(',
+  'authenticateWebPassword(',
+  'authenticatePasswordBeforeEnforcement(',
+];
+const GUARDED_CALLERS = [
+  'handlers/native-auth.ts',
+  'handlers/current-store-web-auth.ts',
+  'handlers/current-store-password-login.ts',
+];
 const GUARD = 'passwordGuessLimiter().admit(';
 
 function productionSources(directory: string): string[] {
@@ -90,13 +102,31 @@ describe('password compare inventory (#7656)', () => {
     );
   });
 
+  it('counts the default password sites and orders admission inside its whole-command work slot', () => {
+    const family = sources.find(({ path }) => path === 'auth/current-store/password-login-family.ts')?.text ?? '';
+    const handler = sources.find(({ path }) => path === 'handlers/current-store-password-login.ts')?.text ?? '';
+    expect(family.match(/\bcompare\s*\(/g)).toHaveLength(1);
+    expect(family.match(/\bmatchCurrentStorePasswordCandidate\s*\(/g)).toHaveLength(1);
+    expect(handler.match(/\bauthenticatePasswordBeforeEnforcement\s*\(/g)).toHaveLength(1);
+    const clientAdmissionAt = handler.indexOf('await guards.limits.admit(');
+    const commandSlotAt = handler.indexOf('await guards.gate.run(');
+    const guessAdmissionAt = handler.indexOf(GUARD);
+    const familyAt = handler.indexOf('await authenticatePasswordBeforeEnforcement(');
+    expect(clientAdmissionAt).toBeGreaterThan(0);
+    expect(clientAdmissionAt).toBeLessThan(commandSlotAt);
+    expect(commandSlotAt).toBeLessThan(guessAdmissionAt);
+    expect(guessAdmissionAt).toBeLessThan(familyAt);
+    expect(familyAt).toBeLessThan(handler.indexOf('}, callerGone.signal)'));
+  });
+
   it('runs the guess limit before each sign-in entry point', () => {
     const callers = sources
       .filter(
         ({ path, text }) =>
           GUARDED_ENTRY_POINTS.some((entry) => text.includes(entry)) &&
           !path.endsWith('password-verification.ts') &&
-          !path.endsWith('web-password.ts'),
+          !path.endsWith('web-password.ts') &&
+          path !== 'auth/current-store/password-login-family.ts',
       )
       .map(({ path }) => path)
       .sort();

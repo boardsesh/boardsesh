@@ -27,6 +27,7 @@ import {
   randomClientAddress,
   startWebSessionBackend,
   stubBetterAuthEnvironment,
+  stubQualifiedPasswordEnvironment,
   type WebSessionBackend,
 } from './web-session-harness';
 
@@ -122,6 +123,7 @@ async function signedInWithoutPassword() {
   const climber = await createClimber(environment.database);
   const jar = new CookieJar();
   await login(jar, climber.email);
+  expect(jar.get(LEGACY, DOMAIN)).toEqual(expect.any(String));
   await environment.database.delete(userCredentials).where(eq(userCredentials.userId, climber.id));
   // The legacy twin names the same session in every mode, and reading it writes nothing.
   const twin = await decode({ token: jar.get(LEGACY, DOMAIN) ?? '', secret });
@@ -173,6 +175,10 @@ const hasPassword = async (userId: string) =>
   (await environment.database.select().from(userCredentials).where(eq(userCredentials.userId, userId))).length > 0;
 
 describe('set-password with the mode unset (as on main)', () => {
+  beforeEach(() => {
+    stubQualifiedPasswordEnvironment(backend.origin);
+  });
+
   it('answers as before', async () => {
     const { climber, jar, authSessionId } = await signedInWithoutPassword();
     const { response, status, body } = await setPassword(jar.header(), { userId: climber.id, authSessionId });

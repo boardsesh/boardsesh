@@ -1,11 +1,10 @@
-import './legacy-credential-fixture';
+import { getToken } from './legacy-credential-fixture';
 import { randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import postgres from 'postgres';
 import { compare, hash } from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { NextRequest } from 'next/server';
-import { getToken } from 'next-auth/jwt';
 import { beforeAll, beforeEach, afterAll, afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { AUTH_COMMAND_PATHS, PRE_ENFORCEMENT_PASSWORD_PATH } from '@boardsesh/auth-protocol';
 import { users, userCredentials, authEmailProjection, authSubjectCutoffs } from '@boardsesh/db/schema/auth';
