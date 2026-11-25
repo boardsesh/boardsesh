@@ -287,9 +287,11 @@ vi.mock('../../../gym-directory/GymSearchField', () => ({
     onChangeText,
     onSelectPlace,
     onFocusChange,
+    onClear,
     onSuggestionsChange,
     suggestionsPlacement,
   }: {
+    onClear: () => void;
     text: string;
     onChangeText: (text: string) => void;
     onSelectPlace: (place: PlaceSuggestion) => void;
@@ -305,6 +307,13 @@ vi.mock('../../../gym-directory/GymSearchField', () => ({
         'data-testid': 'focus-search',
         onClick: () => onFocusChange(true),
       }),
+      createElement('button', {
+        key: 'blur',
+        type: 'button',
+        'data-testid': 'blur-search',
+        onClick: () => onFocusChange(false),
+      }),
+      createElement('button', { key: 'clear', type: 'button', 'data-testid': 'clear-search', onClick: onClear }),
       createElement('input', {
         key: 'input',
         value: text,
@@ -467,11 +476,37 @@ describe('GymStep', () => {
     expect(showWorldMock).toHaveBeenCalled();
   });
 
-  it('folds the map card away while the search field has focus', () => {
+  it('folds the map card on focus and keeps it folded while a search is typed, so a drag never regrows it', () => {
     render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
     expect(state.list?.mapHidden).toBe(false);
     fireEvent.click(screen.getByTestId('focus-search'));
     expect(state.list?.mapHidden).toBe(true);
+    // Back to the top, so the results start under the field.
+    expect(scrollToTopMock).toHaveBeenCalled();
+
+    fireEvent.change(screen.getByTestId('search'), { target: { value: 'Monk' } });
+    // A drag of the results closes the keyboard: the card stays folded.
+    fireEvent.click(screen.getByTestId('blur-search'));
+    expect(state.list?.mapHidden).toBe(true);
+    // Clear brings it back.
+    fireEvent.click(screen.getByTestId('clear-search'));
+    expect(state.list?.mapHidden).toBe(false);
+
+    // A focus that typed nothing gives the card back when it ends.
+    fireEvent.click(screen.getByTestId('focus-search'));
+    fireEvent.click(screen.getByTestId('blur-search'));
+    expect(state.list?.mapHidden).toBe(false);
+  });
+
+  it('starts new results from the top: a name looked up, towns suggested', async () => {
+    render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
+    await settle();
+    expect(scrollToTopMock).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByTestId('search'), { target: { value: 'Monk' } });
+    await settle();
+    expect(scrollToTopMock).toHaveBeenCalledTimes(1);
+    act(() => state.onSuggestionsChange?.([AMSTERDAM]));
+    expect(scrollToTopMock).toHaveBeenCalledTimes(2);
   });
 
   it('searches the world view only once it is zoomed in to a region', async () => {
@@ -539,7 +574,30 @@ describe('GymStep', () => {
       'Board Wall Search Started',
       expect.objectContaining({ method: 'text', queryLength: 4 }),
     );
+    // Typing alone reports no search: letting go of the field does.
+    expect(tracked('Gym Finder Search Used')).toEqual([]);
+    fireEvent.click(screen.getByTestId('blur-search'));
+    fireEvent.click(screen.getByTestId('blur-search'));
     expect(tracked('Gym Finder Search Used')).toEqual([{ surface: 'wizard_gym_step', kind: 'name' }]);
+  });
+
+  it('reports a name search when a gym is picked from it, and never for a town typed then picked', async () => {
+    state.gyms = { gyms: [BOULDERHAL] };
+    render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
+    await settle();
+    fireEvent.change(screen.getByTestId('search'), { target: { value: 'Amster' } });
+    await settle();
+    fireEvent.click(screen.getByTestId('pick-amsterdam'));
+    fireEvent.click(screen.getByTestId('blur-search'));
+    expect(tracked('Gym Finder Search Used')).toEqual([{ surface: 'wizard_gym_step', kind: 'town' }]);
+
+    fireEvent.change(screen.getByTestId('search'), { target: { value: 'Boulder' } });
+    await settle();
+    fireEvent.click(screen.getByTestId('gym:gym-1'));
+    expect(tracked('Gym Finder Search Used')).toEqual([
+      { surface: 'wizard_gym_step', kind: 'town' },
+      { surface: 'wizard_gym_step', kind: 'name' },
+    ]);
   });
 
   it('picks a gym, and adds one, with the board type chosen in the capsule', async () => {
@@ -618,6 +676,44 @@ describe('GymStep', () => {
     fireEvent.click(screen.getByTestId('locate'));
     expect(openSettingsMock).toHaveBeenCalledOnce();
     expect(requestMock).toHaveBeenCalledOnce();
+  });
+
+  it('flies to a fix that arrives after a locate tap, dropping a picked town', async () => {
+    state.location = { status: 'idle', permission: 'ask', permissionChecked: true, coords: null };
+    const view = render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
+    await settle();
+    fireEvent.click(screen.getByTestId('pick-amsterdam'));
+    await settle();
+    fireEvent.click(screen.getByTestId('locate'));
+    expect(requestMock).toHaveBeenCalledOnce();
+
+    const climber = { latitude: 52.3791, longitude: 4.9003 };
+    state.location = { status: 'granted', permission: 'granted', permissionChecked: true, coords: climber };
+    view.rerender(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
+    await settle();
+    expect(setCenterMock).toHaveBeenLastCalledWith(climber);
+    expect(state.gymsArgs[0]).toEqual(climber);
+    expect((screen.getByTestId('search') as HTMLInputElement).value).toBe('');
+  });
+
+  it('forgets a locate tap that ended without a fix, so a later fix keeps the picked town', async () => {
+    state.location = { status: 'idle', permission: 'ask', permissionChecked: true, coords: null };
+    const view = render(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
+    await settle();
+    fireEvent.click(screen.getByTestId('pick-amsterdam'));
+    await settle();
+    fireEvent.click(screen.getByTestId('locate'));
+    state.location = { status: 'denied', permission: 'ask', permissionChecked: true, coords: null };
+    view.rerender(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
+    await settle();
+
+    // Later, Settings turns location on: the town stays.
+    const climber = { latitude: 52.3791, longitude: 4.9003 };
+    state.location = { status: 'granted', permission: 'granted', permissionChecked: true, coords: climber };
+    view.rerender(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn() }));
+    await settle();
+    expect(setCenterMock).not.toHaveBeenCalledWith(climber);
+    expect((screen.getByTestId('search') as HTMLInputElement).value).toBe('Amsterdam, North Holland, Netherlands');
   });
 
   it('shows the step counter only when the flow counts its steps', () => {

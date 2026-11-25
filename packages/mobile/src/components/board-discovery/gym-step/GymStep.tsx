@@ -9,8 +9,9 @@
 // - Typing filters gyms by name (2+ characters, once the text is still) and
 //   suggests towns (`searchPlaces`) as a "Places" section at the top of the
 //   list; a town flies the map there and lists the gyms within 50 km. Neither
-//   needs location. Focusing the field folds the map card away, so the
-//   keyboard never hides the results.
+//   needs location. Focusing the field folds the map card away until a town
+//   is picked or the search cleared, so the keyboard never hides the results
+//   and they never jump while dragged; new results start from the top.
 // - Location is never asked on open. The step only reads a permission the
 //   climber already gave (`requestIfAllowed`); otherwise, until a town or a name
 //   is searched, the list shows the location prompt and the map the world.
@@ -134,7 +135,12 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
   const [viewCenter, setViewCenter] = useState<Coords | null>(null);
   const [boardType, setBoardType] = useState<BoardName | null>(initialBoardType);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [searchFocused, setSearchFocused] = useState(false);
+  // The map card folds when the field gains focus and stays folded while a
+  // search is in progress: a drag of the results closes the keyboard, and a
+  // card regrowing under the finger would throw the rows down mid-drag. It
+  // comes back on a town pick, Clear, the locate button, or a blur that left
+  // nothing typed.
+  const [mapFolded, setMapFolded] = useState(false);
   const [placeSuggestions, setPlaceSuggestions] = useState<readonly PlaceSuggestion[]>(NO_PLACES);
 
   // The name the gyms are searched by: 2+ characters, once the text has been
@@ -198,6 +204,8 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
     searchStartedRef.current.add(method);
     track(SHARED_EVENTS.BoardWallSearchStarted, { method, boardType: boardTypeRef.current, queryLength });
   }, []);
+  const pickedPlaceRef = useRef(pickedPlace);
+  pickedPlaceRef.current = pickedPlace;
   const searchUsedRef = useRef(new Set<GymFinderSearchKind>());
   const reportSearchUsed = useCallback((kind: GymFinderSearchKind) => {
     if (searchUsedRef.current.has(kind)) return;
@@ -209,10 +217,19 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
     if (deviceCoords) reportSearchStarted('location', 0);
   }, [deviceCoords, reportSearchStarted]);
   useEffect(() => {
-    if (searchedName.length === 0) return;
-    reportSearchStarted('text', searchedName.length);
-    reportSearchUsed('name');
-  }, [searchedName, reportSearchStarted, reportSearchUsed]);
+    if (searchedName.length > 0) reportSearchStarted('text', searchedName.length);
+  }, [searchedName, reportSearchStarted]);
+  // Gym Finder Search Used, kind name: the climber looked a gym up by name and
+  // acted on it (picked a gym, or let go of the field), not every pause while
+  // typing a town. Read through refs: the blur that follows a town pick lands
+  // before the next render.
+  const nameQueryRef = useRef(nameQuery);
+  nameQueryRef.current = nameQuery;
+  const reportNameSearchIfActive = useCallback(() => {
+    if (pickedPlaceRef.current === null && nameQueryRef.current.trim().length >= MIN_NAME_LENGTH) {
+      reportSearchUsed('name');
+    }
+  }, [reportSearchUsed]);
 
   // Back to the climber, or out to the world: no town, nothing panned.
   const leaveTown = useCallback(() => {
@@ -229,8 +246,6 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
   }, [moveCameraTo, resetSearch]);
 
   // --- the search field ---
-  const pickedPlaceRef = useRef(pickedPlace);
-  pickedPlaceRef.current = pickedPlace;
   const onChangeText = useCallback(
     (text: string) => {
       setInputText(text);
@@ -251,8 +266,10 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
       const label = placeSuggestionLabel(place);
       // The keyboard goes, the map card comes back, and the climber sees the
       // map fly there above the town's gyms.
+      pickedPlaceRef.current = label;
+      nameQueryRef.current = '';
       Keyboard.dismiss();
-      setSearchFocused(false);
+      setMapFolded(false);
       listRef.current?.scrollToTop();
       setInputText(label);
       setNameQuery('');
@@ -279,11 +296,38 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
   }, []);
   const onClear = useCallback(() => {
     clearSearchText();
+    setMapFolded(false);
     leaveTown();
   }, [clearSearchText, leaveTown]);
 
-  // Typing folds the map card away, so the keyboard never covers the results.
-  const onFocusChange = useCallback((focused: boolean) => setSearchFocused(focused), []);
+  // Focusing the field folds the map card away and goes back to the top, so
+  // the keyboard never covers the results. Letting go keeps it folded while
+  // anything is typed (see `mapFolded`).
+  const inputTextRef = useRef(inputText);
+  inputTextRef.current = inputText;
+  const onFocusChange = useCallback(
+    (focused: boolean) => {
+      if (focused) {
+        setMapFolded(true);
+        listRef.current?.scrollToTop();
+        return;
+      }
+      reportNameSearchIfActive();
+      if (inputTextRef.current.trim().length === 0) setMapFolded(false);
+    },
+    [reportNameSearchIfActive],
+  );
+
+  // New results (a name looked up, towns suggested) start from the top, so
+  // none of them lands above the viewport. Not on open: nothing to move yet.
+  const resultsShownRef = useRef(false);
+  useEffect(() => {
+    if (!resultsShownRef.current) {
+      resultsShownRef.current = true;
+      return;
+    }
+    listRef.current?.scrollToTop();
+  }, [searchedName, placeSuggestions]);
 
   // --- the locate button ---
   // Back to the climber: a picked town goes, as Clear does, and the camera
@@ -293,6 +337,7 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
   const locateRequestedRef = useRef(false);
   const goToClimber = useCallback(() => {
     if (pickedPlaceRef.current !== null) clearSearchText();
+    setMapFolded(false);
     leaveTown();
   }, [clearSearchText, leaveTown]);
   const goToClimberRef = useRef(goToClimber);
@@ -325,6 +370,11 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
     }
     if (viewCenterRef.current === null) moveCameraTo(deviceCoords);
   }, [deviceCoords, moveCameraTo]);
+  // A locate request that ended without a fix (refused, no GPS) is over: a fix
+  // that turns up later, from Settings say, must not throw a picked town away.
+  useEffect(() => {
+    if (location.status === 'denied' || location.status === 'unavailable') locateRequestedRef.current = false;
+  }, [location.status]);
 
   // --- the board type: one capsule menu, not a wall of chips ---
   const capsules = useMemo<Capsule[]>(() => {
@@ -455,6 +505,7 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
   selectedIdRef.current = selectedId;
   const handlePickGym = useCallback(
     (gym: Gym) => {
+      reportNameSearchIfActive();
       const event = gymFinderGymPicked({
         surface: SURFACE,
         section: gym.uuid === selectedIdRef.current ? 'map_pin' : 'list',
@@ -462,7 +513,7 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
       track(event.name, event.properties);
       onPickGym(gym, boardTypeRef.current);
     },
-    [onPickGym],
+    [onPickGym, reportNameSearchIfActive],
   );
   const handleAddGym = useCallback(() => {
     const event = gymFinderAddMyGymTapped(SURFACE);
@@ -475,10 +526,17 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
   // folded there, so no empty card flashes before the list.
   const [mapAvailable, setMapAvailable] = useState(Platform.OS !== 'web');
   const [mapAttempt, setMapAttempt] = useState(0);
+  // The map reads its centre only when it mounts (the camera moves through its
+  // handle after that), so it gets the centre of its own mount: the element
+  // stays the same through every pan instead of being rebuilt on each one.
+  const [mapOpeningCenter, setMapOpeningCenter] = useState<Coords | null>(center);
+  const centerRef = useRef(center);
+  centerRef.current = center;
   const handleMapUnavailable = useCallback(() => setMapAvailable(false), []);
   const handleMapReady = useCallback(() => setMapAvailable(true), []);
   const retryMap = useCallback(() => {
     setMapAvailable(true);
+    setMapOpeningCenter(centerRef.current);
     setMapAttempt((attempt) => attempt + 1);
   }, []);
 
@@ -487,7 +545,7 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
       <GymMap
         key={mapAttempt}
         ref={mapRef}
-        center={center}
+        center={mapOpeningCenter}
         markers={markers}
         onRegionChange={onRegionChange}
         onMarkerPress={onMarkerPress}
@@ -500,7 +558,7 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
     ),
     [
       mapAttempt,
-      center,
+      mapOpeningCenter,
       markers,
       onRegionChange,
       onMarkerPress,
@@ -673,7 +731,7 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
         getItemType={pickRowType}
         map={mapElement}
         mapAvailable={mapAvailable}
-        mapHidden={searchFocused}
+        mapHidden={mapFolded}
         onLocate={onLocate}
         locateLabel={t('mobile.gyms.grantLocation')}
         stickyHeader={stickyHeader}
