@@ -841,7 +841,10 @@ rounded top and a shadow under a map, inside a pageSheet, is a sheet on a sheet:
 drag that fights the sheet's own swipe down. Put the map in a card at the top of the step's list
 instead (`MapCardList`, `src/components/gym-directory/`): the list is the one vertical gesture, the
 card's frame ends where the rows begin so Apple's Maps / Legal link stays visible, and the step's
-pinned controls start below a transparent bar. "Which gym?" (`GymStep`) is the example. The
+pinned controls start below a transparent bar. The card is not inside the scroll view: on Android
+a ScrollView takes every vertical pan and pinch that starts on a child, and Google Maps never asks it
+not to, so the list keeps an empty spacer and the card floats over it, moved by the scroll offset on
+the UI thread. "Which gym?" (`GymStep`) is the example. The
 full-bleed map with one draggable panel stays the shape for a full-screen route such as `/gyms`.
 
 ## Pushing a route from INSIDE a modal route (the cross-navigator trap)

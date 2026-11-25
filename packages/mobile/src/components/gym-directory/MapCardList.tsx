@@ -4,18 +4,27 @@
 // sheet (docs/mobile/mobile-sheets-vs-routes.md, "A map inside a sheet").
 //
 // One FlashList is the page's one vertical gesture:
-//  - its header is the map, an inset card whose frame ends where the rows
+//  - the map sits in an inset card at the top, whose frame ends where the rows
 //    begin, so Apple's "Maps / Legal" in its bottom-left corner is never
 //    covered (expo-maps 58's AppleMaps has no content-inset prop, so the
 //    layout is the only fix). The card scrolls away with the rows, and folds
-//    to nothing while the screen says so (its search field has focus) or when
-//    the map can't draw (the map stays mounted, so a late load can recover).
+//    to nothing while the screen says so (a search in progress) or when the
+//    map can't draw (the map stays mounted, so a late load can recover).
 //  - a sticky slot (a filter capsule row) sits under the card and sticks once
 //    the card has scrolled away.
 //  - the rows are the caller's, drawn by its `renderItem`.
 //  - a footer slot ("Add my gym") is pinned over the bottom of the page above
 //    the home indicator. While the keyboard is up it joins the end of the
 //    list instead, so it never rides on the keyboard.
+//
+// The card is NOT inside the scroll view. On Android a ScrollView intercepts
+// every vertical move and pinch that starts on a child, and Google Maps never
+// asks it not to (no requestDisallowInterceptTouchEvent), so a map in a list
+// header can only be panned sideways. Instead the list's header is an empty
+// spacer of the card's height, and the card floats over it, a sibling drawn
+// above the list, moved up with the scroll offset on the UI thread
+// (`useScrollOffset`). A touch on the card reaches the map directly; the
+// list never sees it. The page clips the card once it has scrolled away.
 //
 // Neither platform resizes these screens for the keyboard (panel-keyboard.ts),
 // so the page ends at the keyboard's top on its own. No grabber, no rounded
@@ -31,7 +40,8 @@ import {
   type ReactNode,
   type Ref,
 } from 'react';
-import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { Platform, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import Animated, { useAnimatedRef, useAnimatedStyle, useScrollOffset } from 'react-native-reanimated';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChromeIconButton } from '../ChromeIconButton';
@@ -44,14 +54,49 @@ import { useKeyboardOverlap } from './panel-keyboard';
 const MAP_CARD_FRACTION = 0.3;
 const MAP_CARD_MIN_HEIGHT = 150;
 const MAP_CARD_MAX_HEIGHT = 240;
+/** The card's gap above and below, inside the space the list leaves for it. */
+const MAP_CARD_INSET = spacing[2];
 
 /** The map card's height for a page `pageHeight` tall: 30% of it, 150 to 240 pt. */
 export function mapCardHeight(pageHeight: number): number {
   return Math.min(MAP_CARD_MAX_HEIGHT, Math.max(MAP_CARD_MIN_HEIGHT, Math.round(pageHeight * MAP_CARD_FRACTION)));
 }
 
+/**
+ * Where to scroll so a row is fully in view, or null when it already is. The
+ * card and the stuck capsule row cover the list's top, the pinned footer its
+ * bottom. The scroll is the smallest that clears them, so as much of the map
+ * as possible stays on screen (a pin tap should not scroll the map away).
+ * Positions are in list content coordinates; `headerHeight` is the card's
+ * space at the top (`getFirstItemOffset`).
+ */
+export function rowScrollTarget({
+  rowTop,
+  rowHeight,
+  scrollOffset,
+  windowHeight,
+  headerHeight,
+  stickyHeight,
+  footerHeight,
+}: {
+  rowTop: number;
+  rowHeight: number;
+  scrollOffset: number;
+  windowHeight: number;
+  headerHeight: number;
+  stickyHeight: number;
+  footerHeight: number;
+}): number | null {
+  const visibleTop = Math.max(scrollOffset, headerHeight) + stickyHeight;
+  const visibleBottom = scrollOffset + windowHeight - footerHeight;
+  const rowBottom = rowTop + rowHeight;
+  if (rowTop < visibleTop) return Math.max(0, rowTop - stickyHeight);
+  if (rowBottom > visibleBottom) return rowBottom - (windowHeight - footerHeight);
+  return null;
+}
+
 export type MapCardListHandle = {
-  /** Scroll the row whose key is `key` into view (a pin tap). No-op for an unknown key. */
+  /** Bring the row whose key is `key` into view with the least scroll (a pin tap). No-op for an unknown key. */
   scrollToItemKey: (key: string) => void;
   /** Back to the top, map card and all. */
   scrollToTop: () => void;
@@ -70,7 +115,7 @@ export type MapCardListProps<Item> = {
   map?: ReactNode;
   /** False folds the card away while keeping the map mounted, so a late load can bring it back. Default true. */
   mapAvailable?: boolean;
-  /** Fold the card away, e.g. while the search field has focus. */
+  /** Fold the card away, e.g. while a search is in progress. */
   mapHidden?: boolean;
   /** The locate button in the card's top-right corner; none without it. */
   onLocate?: () => void;
@@ -89,6 +134,12 @@ type MapCardListRow<Item> = { kind: 'sticky' } | { kind: 'item'; item: Item };
 const STICKY_ROW = { kind: 'sticky' } as const;
 const STICKY_KEY = '__map-card-list-sticky';
 const STICKY_HEADER_INDICES = [0];
+// The stuck copy of the capsule row is the one on screen: hide the row it
+// stands for, so a screen reader doesn't meet the capsules twice.
+const STICKY_HEADER_CONFIG = { hideRelatedCell: true };
+// Android draws Google Maps on a SurfaceView, which a rounded parent can't
+// clip: square the card there rather than show corners the map pokes out of.
+const CARD_CORNERS = Platform.OS === 'android' ? null : cardCorners;
 
 export function MapCardList<Item>({
   data,
@@ -109,13 +160,23 @@ export function MapCardList<Item>({
   const insets = useSafeAreaInsets();
   const keyboardOverlap = useKeyboardOverlap();
   const keyboardUp = keyboardOverlap > 0;
-  const listRef = useRef<FlashListRef<MapCardListRow<Item>>>(null);
+  const listRef = useAnimatedRef<FlashListRef<MapCardListRow<Item>>>();
+  const scrollOffset = useScrollOffset(listRef);
 
   const hasSticky = stickyHeader !== undefined && stickyHeader !== null;
   const rows = useMemo<MapCardListRow<Item>[]>(() => {
     const items = data.map((item): MapCardListRow<Item> => ({ kind: 'item', item }));
     return hasSticky ? [STICKY_ROW, ...items] : items;
   }, [data, hasSticky]);
+
+  // The pinned footer is measured so the last row can scroll clear of it.
+  const [footerHeight, setFooterHeight] = useState(0);
+  const onFooterLayout = useCallback((event: LayoutChangeEvent) => {
+    const measured = Math.round(event.nativeEvent.layout.height);
+    setFooterHeight((previous) => (previous === measured ? previous : measured));
+  }, []);
+  const footerPinned = footer !== undefined && footer !== null && !keyboardUp;
+  const footerAtTail = footer !== undefined && footer !== null && keyboardUp;
 
   // Read through refs, so the handle never goes stale and never rebuilds.
   const dataRef = useRef(data);
@@ -124,23 +185,38 @@ export function MapCardList<Item>({
   keyExtractorRef.current = keyExtractor;
   const hasStickyRef = useRef(hasSticky);
   hasStickyRef.current = hasSticky;
+  const coveredBottomRef = useRef(0);
+  coveredBottomRef.current = footerPinned ? footerHeight : 0;
   useImperativeHandle(
     ref,
     () => ({
       scrollToItemKey: (key: string) => {
-        const index = dataRef.current.findIndex((item) => keyExtractorRef.current(item) === key);
-        if (index < 0) return;
-        void listRef.current?.scrollToIndex({
-          index: index + (hasStickyRef.current ? 1 : 0),
-          animated: true,
-          viewPosition: 0.3,
+        const list = listRef.current;
+        const itemIndex = dataRef.current.findIndex((item) => keyExtractorRef.current(item) === key);
+        if (!list || itemIndex < 0) return;
+        const index = itemIndex + (hasStickyRef.current ? 1 : 0);
+        const layout = list.getLayout(index);
+        if (!layout) {
+          void list.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+          return;
+        }
+        const headerHeight = list.getFirstItemOffset();
+        const target = rowScrollTarget({
+          rowTop: headerHeight + layout.y,
+          rowHeight: layout.height,
+          scrollOffset: list.getAbsoluteLastScrollOffset(),
+          windowHeight: list.getWindowSize().height,
+          headerHeight,
+          stickyHeight: hasStickyRef.current ? (list.getLayout(0)?.height ?? 0) : 0,
+          footerHeight: coveredBottomRef.current,
         });
+        if (target !== null) list.scrollToOffset({ offset: target, animated: true });
       },
       scrollToTop: () => {
         listRef.current?.scrollToOffset({ offset: 0, animated: true });
       },
     }),
-    [],
+    [listRef],
   );
 
   const rowKey = useCallback(
@@ -169,46 +245,25 @@ export function MapCardList<Item>({
     setPageHeight((previous) => (previous === measured ? previous : measured));
   }, []);
 
+  const hasMap = map !== undefined && map !== null;
   const cardFolded = mapHidden || !mapAvailable;
   const cardHeight = mapCardHeight(pageHeight);
-  const mapCard = useMemo(
-    () =>
-      map === undefined || map === null ? null : (
-        <View
-          style={[
-            styles.card,
-            cardFolded
-              ? styles.cardFolded
-              : { height: cardHeight, backgroundColor: systemColors.tertiaryFill, marginBottom: spacing[2] },
-          ]}
-          accessibilityElementsHidden={cardFolded}
-          importantForAccessibility={cardFolded ? 'no-hide-descendants' : 'auto'}
-          testID="map-card"
-        >
-          {map}
-          {onLocate && locateLabel ? (
-            <ChromeIconButton
-              icon="location"
-              role="action"
-              onPress={onLocate}
-              accessibilityLabel={locateLabel}
-              style={[styles.locate, shadows.sm, { backgroundColor: systemColors.secondaryBackground }]}
-              testID="map-card-locate"
-            />
-          ) : null}
-        </View>
-      ),
-    [map, cardFolded, cardHeight, onLocate, locateLabel, systemColors.tertiaryFill, systemColors.secondaryBackground],
-  );
+  // The space the card takes at the top of the list: nothing once folded.
+  const cardBoxHeight = hasMap && !cardFolded ? cardHeight + MAP_CARD_INSET * 2 : 0;
 
-  // The pinned footer is measured so the last row can scroll clear of it.
-  const [footerHeight, setFooterHeight] = useState(0);
-  const onFooterLayout = useCallback((event: LayoutChangeEvent) => {
-    const measured = Math.round(event.nativeEvent.layout.height);
-    setFooterHeight((previous) => (previous === measured ? previous : measured));
-  }, []);
-  const footerPinned = footer !== undefined && footer !== null && !keyboardUp;
-  const footerAtTail = footer !== undefined && footer !== null && keyboardUp;
+  // The list's header is an empty spacer the card floats over.
+  const cardSpacer = useMemo(
+    () => (hasMap ? <View style={{ height: cardBoxHeight }} testID="map-card-spacer" /> : null),
+    [hasMap, cardBoxHeight],
+  );
+  // The card follows the rows up, 1:1, on the UI thread; past its own height
+  // it is clipped away, so it stops there. A pull past the top (iOS bounce)
+  // moves it down with the rows.
+  const cardFollowStyle = useAnimatedStyle(() => {
+    const offset = scrollOffset.value;
+    return { transform: [{ translateY: offset > cardBoxHeight ? -cardBoxHeight : -offset }] };
+  }, [cardBoxHeight]);
+
   const tailFooter = useMemo(
     () => (footerAtTail ? <View style={styles.tailFooter}>{footer}</View> : null),
     [footerAtTail, footer],
@@ -235,7 +290,8 @@ export function MapCardList<Item>({
           keyExtractor={rowKey}
           getItemType={rowType}
           stickyHeaderIndices={hasSticky ? STICKY_HEADER_INDICES : undefined}
-          ListHeaderComponent={mapCard}
+          stickyHeaderConfig={STICKY_HEADER_CONFIG}
+          ListHeaderComponent={cardSpacer}
           ListFooterComponent={tailFooter}
           contentContainerStyle={contentStyle}
           // The header block above clears the bar; nothing here is inset by iOS.
@@ -243,8 +299,37 @@ export function MapCardList<Item>({
           // A row tap while the keyboard is up picks the row, not just closes the keyboard.
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
+          scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
         />
+        {hasMap ? (
+          // Folded, not unmounted: the outer box shrinks to nothing and clips,
+          // while the map keeps its full size inside (a 0×0 Google Map may never
+          // load), its camera, and a late load's report.
+          <Animated.View
+            style={[styles.cardBox, { height: cardBoxHeight }, cardFollowStyle]}
+            accessibilityElementsHidden={cardFolded}
+            importantForAccessibility={cardFolded ? 'no-hide-descendants' : 'auto'}
+            testID="map-card-box"
+          >
+            <View
+              style={[styles.card, CARD_CORNERS, { height: cardHeight, backgroundColor: systemColors.tertiaryFill }]}
+              testID="map-card"
+            >
+              {map}
+              {onLocate && locateLabel ? (
+                <ChromeIconButton
+                  icon="location"
+                  role="action"
+                  onPress={onLocate}
+                  accessibilityLabel={locateLabel}
+                  style={[styles.locate, shadows.sm, { backgroundColor: systemColors.secondaryBackground }]}
+                  testID="map-card-locate"
+                />
+              ) : null}
+            </View>
+          </Animated.View>
+        ) : null}
         {footerPinned ? (
           <View
             style={[
@@ -270,24 +355,26 @@ const styles = StyleSheet.create({
   page: {
     flex: 1,
   },
-  // Wide windows (iPad, a browser) keep the readable 672 pt column.
+  // Wide windows (iPad, a browser) keep the readable 672 pt column. It clips
+  // the card once the rows have carried it up past the top.
   column: {
     flex: 1,
     width: '100%',
     maxWidth: READABLE_CONTENT_WIDTH,
     alignSelf: 'center',
-  },
-  card: {
-    ...cardCorners,
-    marginHorizontal: spacing[4],
-    marginTop: spacing[2],
     overflow: 'hidden',
   },
-  // Folded, not unmounted: the map keeps its camera and can report a late load.
-  cardFolded: {
-    height: 0,
-    marginTop: 0,
-    marginBottom: 0,
+  cardBox: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    overflow: 'hidden',
+    paddingHorizontal: spacing[4],
+    paddingTop: MAP_CARD_INSET,
+  },
+  card: {
+    overflow: 'hidden',
   },
   locate: {
     position: 'absolute',
