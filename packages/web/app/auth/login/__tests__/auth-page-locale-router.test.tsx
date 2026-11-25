@@ -68,7 +68,14 @@ describe('AuthPageContent — through the real locale router', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     i18nState.language = 'en-US';
-    vi.stubGlobal('window', { ...browserWindow, document: browserWindow.document, location: documentLocation });
+    vi.stubGlobal(
+      'window',
+      new Proxy(browserWindow, {
+        get(target, property) {
+          return property === 'location' ? documentLocation : Reflect.get(target, property, target);
+        },
+      }),
+    );
   });
   afterEach(() => vi.unstubAllGlobals());
 

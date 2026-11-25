@@ -4,6 +4,8 @@ import React from 'react';
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vite-plus/test';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
+import RuntimeHomeSupportBanner from '../runtime-home-support-banner';
+import { MarketingCapabilitiesContext } from '../../marketing/marketing-capabilities-context';
 
 const preferences = vi.hoisted(() => ({
   getPreference: vi.fn(async (_key: string): Promise<unknown> => null),
@@ -117,5 +119,20 @@ describe('HomeSupportBanner', () => {
 
     expect(screen.queryByTestId('home-support-banner')).toBeNull();
     expect(preferences.getPreference).not.toHaveBeenCalled();
+  });
+
+  it('rechecks supporter preferences when returning from the support thank-you page', async () => {
+    render(
+      <MarketingCapabilitiesContext.Provider
+        value={{ enableExpoAuthBridge: true, developerHref: '/docs', hasMonthlySupport: true }}
+      >
+        <RuntimeHomeSupportBanner />
+      </MarketingCapabilitiesContext.Provider>,
+    );
+    expect(await screen.findByTestId('home-support-banner')).toBeTruthy();
+    storedPreferences({ [SUPPORTER_KEY]: true });
+    await act(async () => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+    expect(screen.queryByTestId('home-support-banner')).toBeNull();
+    expect(preferences.getPreference).toHaveBeenCalledWith(SUPPORTER_KEY);
   });
 });

@@ -26,7 +26,7 @@ vi.mock('@/app/lib/i18n/server', () => ({
   }),
 }));
 
-const { default: DeveloperTermsPage, generateMetadata } = await import('../page');
+const { default: DeveloperTermsPage, generateMetadata } = await import('@/app/(site)/developers/terms/page');
 
 beforeEach(() => {
   mocks.locale.current = 'en-US';

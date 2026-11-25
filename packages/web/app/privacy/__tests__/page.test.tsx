@@ -9,7 +9,7 @@ vi.mock('@/app/lib/i18n/server', () => ({
   }),
 }));
 
-const { default: PrivacyPolicyPage } = await import('../page');
+const { default: PrivacyPolicyPage } = await import('@/app/(site)/privacy/page');
 
 beforeEach(() => {
   for (const name of [

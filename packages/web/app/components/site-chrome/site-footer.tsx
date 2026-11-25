@@ -18,6 +18,7 @@ import { isChromeLessPath } from '@/app/lib/chrome-less-routes';
 import { usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
 import BrandLockup from './brand-lockup';
 import styles from './site-footer.module.css';
+import { useMarketingCapabilities } from '../marketing/marketing-capabilities-context';
 
 // Column links are grey (#B0B0B0), lifting to the label ink with an underline on
 // hover or focus. The violet stays with inline links and the page's one CTA.
@@ -37,7 +38,12 @@ const LINK_SX = {
 const OPEN_BROWSER_SX = brandCtaOutlinedSx({ size: 'medium' });
 type FooterLink = { href: string; label: string; target: WebsiteNavTarget; external?: boolean; locale?: 'en-US' };
 
-export default function SiteFooter({ developerHref = '/developers' }: { developerHref?: '/developers' | '/docs' }) {
+export default function SiteFooter({
+  developerHref: initialDeveloperHref = '/developers',
+}: {
+  developerHref?: '/developers' | '/docs';
+}) {
+  const developerHref = useMarketingCapabilities()?.developerHref ?? initialDeveloperHref;
   const { t } = useTranslation('common');
   const { t: consentTranslation } = useTranslation('consent');
   const { openChoices } = useConsent();

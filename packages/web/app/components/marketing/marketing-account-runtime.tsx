@@ -46,7 +46,7 @@ function SessionBridge() {
 }
 
 export default function MarketingAccountRuntime({
-  enableExpoAuthBridge = false,
+  enableExpoAuthBridge,
   session,
 }: {
   enableExpoAuthBridge?: boolean;
@@ -54,7 +54,10 @@ export default function MarketingAccountRuntime({
 }) {
   useEffect(() => () => clearMarketingSession(), []);
   return (
-    <SessionProviderWrapper enableExpoAuthBridge={enableExpoAuthBridge}>
+    <SessionProviderWrapper
+      enableExpoAuthBridge={enableExpoAuthBridge}
+      awaitExpoAuthBridge={enableExpoAuthBridge === undefined}
+    >
       <SessionBridge />
       {/* Consent and analytics use the same mirrored session render. The inner
           authority may already know a new account before the public tree does. */}

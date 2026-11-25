@@ -19,7 +19,7 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
     },
   ),
 }));
-const { default: GymMcpGuidePage, generateMetadata } = await import('../page');
+const { default: GymMcpGuidePage, generateMetadata } = await import('@/app/(site)/developers/gym-mcp/page');
 
 beforeEach(() => {
   availability.mockResolvedValue({ enabled: true, invitationRequired: false });

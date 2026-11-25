@@ -7,6 +7,7 @@ import { trackWebsiteJourneyLinkClick } from '@/app/lib/website-journey-analytic
 
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import SiteFooter from '../site-footer';
+import { MarketingCapabilitiesContext } from '../../marketing/marketing-capabilities-context';
 
 /**
  * The footer carries two obligations the deleted chrome used to cover:
@@ -78,6 +79,20 @@ describe('SiteFooter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPathname = '/';
+  });
+
+  it('reconciles the static marketing docs fallback with runtime public availability', () => {
+    const view = render(<SiteFooter developerHref="/docs" />);
+    expect(view.container.querySelector('a[href="/docs"]')).toBeTruthy();
+    view.rerender(
+      <MarketingCapabilitiesContext.Provider
+        value={{ enableExpoAuthBridge: true, developerHref: '/developers', hasMonthlySupport: false }}
+      >
+        <SiteFooter developerHref="/docs" />
+      </MarketingCapabilitiesContext.Provider>,
+    );
+    expect(view.container.querySelector('a[href="/developers"]')).toBeTruthy();
+    expect(view.container.querySelector('a[href="/docs"]')).toBeNull();
   });
 
   // Pinned here because `e2e/site-chrome.spec.ts` selects on it and e2e is

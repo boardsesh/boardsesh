@@ -56,7 +56,7 @@ vi.mock('@/app/components/providers/i18n-provider', () => ({
   default: ({ children }: { children: unknown }) => children,
 }));
 
-const pageModule = await import('../page');
+const pageModule = await import('@/app/(site)/profile/[user_id]/page');
 
 const BASE_SUMMARY = {
   displayName: 'Marco' as string | null,

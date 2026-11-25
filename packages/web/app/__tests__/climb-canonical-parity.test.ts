@@ -187,10 +187,10 @@ const { climbRowsToItems } = await import('@/app/lib/seo/sitemap/climb-entries')
 const { expandDefaultLocaleOnly } = await import('@/app/lib/seo/sitemap/entries');
 
 const legacyViewPage =
-  await import('@/app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]/page');
-const slugViewPage = await import('@/app/b/[board_slug]/[angle]/view/[climb_uuid]/page');
-const legacyListPage = await import('@/app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/page');
-const slugListPage = await import('@/app/b/[board_slug]/[angle]/list/page');
+  await import('@/app/(site)/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]/page');
+const slugViewPage = await import('@/app/(site)/b/[board_slug]/[angle]/view/[climb_uuid]/page');
+const legacyListPage = await import('@/app/(site)/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/page');
+const slugListPage = await import('@/app/(site)/b/[board_slug]/[angle]/list/page');
 const { getClimbStatsForAllAngles } = await import('@/app/lib/data/queries');
 
 function canonicalPath(canonical: string | URL | { url: string | URL } | null | undefined): string {

@@ -20,11 +20,17 @@ vi.mock('next/font/local', () => ({
 const requestHeaders = vi.hoisted(() => ({ current: new Headers() }));
 vi.mock('next/headers', () => ({ headers: async () => requestHeaders.current }));
 
-const rootLayout = await import('../layout');
+const rootLayout = await import('@/app/(site)/layout');
+const marketingLayout = await import('@/app/(marketing)/layout');
+const localizedHomeLayout = await import('@/app/(localized-home)/[board_name]/layout');
 const { default: MarketingDocument } = await import('../components/marketing/marketing-document');
 
 async function marketingDocumentForRequest() {
-  const document = await rootLayout.default({ children: null });
+  const locale = requestHeaders.current.get('x-boardsesh-locale');
+  const document =
+    locale && locale !== 'en-US'
+      ? await localizedHomeLayout.default({ children: null, params: Promise.resolve({ board_name: locale }) })
+      : marketingLayout.default({ children: null });
   expect(document.type).toBe(MarketingDocument);
   return MarketingDocument(document.props);
 }
@@ -51,7 +57,7 @@ describe('shared marketing document', () => {
     },
   );
 
-  it('preserves the requesting platform on uncached localized homepages', async () => {
+  it('prerenders localized homepages without request-dependent platform markup', async () => {
     requestHeaders.current = new Headers({
       [PATHNAME_HEADER]: '/',
       'x-boardsesh-locale': 'fr',
@@ -59,12 +65,13 @@ describe('shared marketing document', () => {
     });
     const frenchDocument = await marketingDocumentForRequest();
     expect(frenchDocument.props.lang).toBe('fr');
-    expect(findBrowserSeed(frenchDocument)).toMatchObject({ platform: 'ios' });
+    requestHeaders.current.set('user-agent', 'Android');
+    expect(findBrowserSeed(frenchDocument)).toEqual(findBrowserSeed(await marketingDocumentForRequest()));
   });
 
   it('allows browser zoom beyond the initial scale', () => {
-    expect(rootLayout.viewport.maximumScale).toBeUndefined();
-    expect(rootLayout.viewport.userScalable).not.toBe(false);
+    expect(marketingLayout.viewport.maximumScale).toBeUndefined();
+    expect(marketingLayout.viewport.userScalable).not.toBe(false);
   });
 });
 
@@ -176,7 +183,7 @@ describe('root layout Smart App Banner', () => {
  */
 describe('nothing below the root layout replaces metadata.other', () => {
   const APP_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-  const ROOT_LAYOUT_FILE = 'layout.tsx';
+  const ROOT_LAYOUT_FILE = '(site)/layout.tsx';
   const SOURCE_FILE = /\.tsx?$/;
   const TEST_FILE = /\.test\.tsx?$/;
   /** A file that builds or types Next metadata. */

@@ -38,7 +38,7 @@ vi.mock('@/app/lib/spray/spray-wall-render-data.server', () => ({}));
 vi.mock('@/app/components/climb-front-door/static-list-front-door', () => ({ default: () => null }));
 vi.mock('@/app/components/spray-wall/spray-wall-front-door', () => ({ default: () => null }));
 
-const { default: BoardSlugListPage } = await import('../page');
+const { default: BoardSlugListPage } = await import('@/app/(site)/b/[board_slug]/[angle]/list/page');
 
 const TOKEN = 'Ab3_dE-fGhIjKlMnOpQrSt';
 

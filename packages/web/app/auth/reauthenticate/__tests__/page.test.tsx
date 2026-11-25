@@ -21,7 +21,7 @@ vi.mock('@/app/components/providers/i18n-provider', () => ({
 }));
 vi.mock('../reauthenticate-content', () => ({ default: mocks.content }));
 
-const { default: ReauthenticatePage, generateMetadata } = await import('../page');
+const { default: ReauthenticatePage, generateMetadata } = await import('@/app/(site)/auth/reauthenticate/page');
 
 const searchParams = (params: Record<string, string>) => ({ searchParams: Promise.resolve(params) });
 

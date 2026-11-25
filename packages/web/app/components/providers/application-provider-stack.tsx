@@ -31,7 +31,7 @@ export type ApplicationProviderStackProps = {
   enableExpoAuthBridge: boolean;
 };
 
-/** This complete application stack is an actual client dynamic import boundary. */
+/** Application root only: marketing routes have a separate document and client graph. */
 export default function ApplicationProviderStack({
   children,
   locale,

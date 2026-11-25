@@ -86,7 +86,8 @@ vi.mock('@/app/lib/data/front-door-data.server', () => ({
 }));
 vi.mock('@/app/components/climb-front-door/climb-front-door', () => ({ default: () => null }));
 
-const pageModule = await import('../page');
+const pageModule =
+  await import('@/app/(site)/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]/page');
 const { getBoardImageDetailsForBoard } = await import('@/app/lib/board-image-details');
 
 const renderPage = () =>

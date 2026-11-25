@@ -21,7 +21,7 @@ vi.mock('@/app/components/providers/i18n-provider', () => ({
 }));
 vi.mock('../first-password-content', () => ({ default: () => null }));
 
-const { default: FirstPasswordPage, generateMetadata } = await import('../page');
+const { default: FirstPasswordPage, generateMetadata } = await import('@/app/(site)/settings/first-password/page');
 
 beforeEach(() => {
   mocks.mode.mockReset().mockReturnValue({ kind: 'better-auth' });

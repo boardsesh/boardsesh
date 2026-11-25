@@ -28,7 +28,7 @@ vi.mock('@/app/components/ui/page-shell', () => ({
   ),
   PageSection: ({ children }: { children: React.ReactNode }) => <section>{children}</section>,
 }));
-import WorkoutLaunchPage, { generateMetadata } from '../page';
+import WorkoutLaunchPage, { generateMetadata } from '@/app/(site)/w/[workoutId]/page';
 
 async function renderLanding(sourceName?: string) {
   const client = new QueryClient();

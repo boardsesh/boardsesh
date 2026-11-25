@@ -37,7 +37,7 @@ vi.mock('@/app/lib/backend-url', () => ({
   getPublicBackendHttpUrl: () => 'https://ws.boardsesh.com',
 }));
 
-const { generateMetadata } = await import('../page');
+const { generateMetadata } = await import('@/app/(site)/gym/[gym_slug]/page');
 
 // The base fixture is a GEOCODED commercial gym, because that is the only kind
 // of gym this page still offers to the index. A pin-less row is a climber's home

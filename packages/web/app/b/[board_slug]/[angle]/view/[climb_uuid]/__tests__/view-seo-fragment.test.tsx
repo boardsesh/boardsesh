@@ -180,7 +180,7 @@ function requireRedirectError(outcome: unknown) {
   return outcome;
 }
 
-const pageModule = await import('../page');
+const pageModule = await import('@/app/(site)/b/[board_slug]/[angle]/view/[climb_uuid]/page');
 
 const PARAMS = { board_slug: 'my-board', angle: '40', climb_uuid: 'test-climb' };
 

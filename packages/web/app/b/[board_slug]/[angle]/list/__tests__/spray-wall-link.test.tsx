@@ -115,7 +115,7 @@ vi.mock('@/app/lib/spray/spray-wall-render-data.server', () => ({
 vi.mock('@/app/components/climb-front-door/static-list-front-door', () => ({ default: () => null }));
 vi.mock('@/app/components/spray-wall/spray-wall-front-door', () => ({ default: () => null }));
 
-const { default: BoardSlugListPage, generateMetadata } = await import('../page');
+const { default: BoardSlugListPage, generateMetadata } = await import('@/app/(site)/b/[board_slug]/[angle]/list/page');
 const { default: SprayWallListPage } = await import('../spray-wall-view');
 const { default: QrLandingTracker } = await import('@/app/components/climb-front-door/qr-landing-tracker');
 const { default: StaticListFrontDoor } = await import('@/app/components/climb-front-door/static-list-front-door');

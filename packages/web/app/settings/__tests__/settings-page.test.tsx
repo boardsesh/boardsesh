@@ -13,7 +13,7 @@ vi.mock('@/app/components/providers/i18n-provider', () => ({
 }));
 vi.mock('../settings-page-content', () => ({ default: () => null }));
 
-const { default: SettingsPage } = await import('../page');
+const { default: SettingsPage } = await import('@/app/(site)/settings/page');
 
 type Rendered = { props: { children: { props: Record<string, unknown> } } };
 

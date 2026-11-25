@@ -27,7 +27,7 @@ vi.mock('next/navigation', () => ({ notFound }));
 vi.mock('../licence-content', () => ({ default: () => null }));
 vi.mock('@/app/components/providers/i18n-provider', () => ({ default: () => null }));
 
-const route = await import('../page');
+const route = await import('@/app/(site)/build-plans/licence/page');
 
 function translate(key: string): string {
   const value = key.split('.').reduce<unknown>((node, segment) => {

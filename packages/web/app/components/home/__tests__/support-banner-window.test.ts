@@ -35,7 +35,7 @@ describe('the banner link', () => {
 
 // The banner belongs on `/` only. Pages the app opens (`/b/`, `/gym/`, `/help/`,
 // `/join/`, climb pages) must never carry an ask, so the one way in is the
-// homepage's page.tsx. A new import anywhere else fails here.
+// homepage's server helper. A new import anywhere else fails here.
 describe('where the banner can render', () => {
   const appDir = join(__dirname, '..', '..', '..');
 
@@ -50,7 +50,7 @@ describe('where the banner can render', () => {
 
   it('is imported by the homepage alone', () => {
     const importers = sourceFiles(appDir)
-      .filter((path) => /from ['"][^'"]*home-support-banner['"]/.test(readFileSync(path, 'utf8')))
+      .filter((path) => /from ['"][^'"]*runtime-home-support-banner['"]/.test(readFileSync(path, 'utf8')))
       .map((path) => relative(appDir, path));
     expect(importers).toEqual(['components/home/home-page.tsx']);
   });

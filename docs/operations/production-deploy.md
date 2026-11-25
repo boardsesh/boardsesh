@@ -808,13 +808,14 @@ They never go in the repo, the i18n catalogs, an issue or an analytics event.
 
 `/` (and only `/`) shows a closable banner asking visitors to go monthly on
 days 1 to 7 of every month, in UTC: from 00:00 on the 1st up to but not
-including 00:00 on the 8th. UTC keeps the server and the browser in agreement
-without knowing where the visitor is; in Sydney it runs from 10 or 11 am on the
-1st. It also waits for a monthly Payment Link: with neither
-`SUPPORT_MONTHLY_LINKS_AUD` nor `SUPPORT_MONTHLY_LINKS_USD` set, the server
-renders nothing for it. Outside the window the server renders nothing and the
-browser checks its own clock again. It is a strip fixed to the bottom of the
-viewport, so it never moves the hero.
+including 00:00 on the 8th. UTC gives every visitor the same window; in Sydney
+it runs from 10 or 11 am on the 1st. The static homepage HTML never includes the
+banner. After hydration, the browser reads monthly-link availability from the
+uncached public health response, checks the UTC date and remembered preferences,
+then loads the banner. With neither `SUPPORT_MONTHLY_LINKS_AUD` nor
+`SUPPORT_MONTHLY_LINKS_USD` configured, it stays hidden. Browser back navigation
+and returning to the tab refresh those checks. It is a strip fixed to the
+bottom of the viewport, so it never moves the hero.
 
 It shows on every visit in the window until closed. A close hides it for the
 rest of that month (`supportBanner:closedMonth` in IndexedDB,

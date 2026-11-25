@@ -23,9 +23,9 @@ vi.mock('../sessions/sessions-content', () => ({ default: () => null }));
 vi.mock('../profile-json-ld', () => ({ default: () => null }));
 vi.mock('@/app/components/providers/i18n-provider', () => ({ default: () => null }));
 
-import ProfilePage from '../page';
-import ProfileStatisticsPage from '../statistics/page';
-import ProfileSessionsPage from '../sessions/page';
+import ProfilePage from '@/app/(site)/profile/[user_id]/page';
+import ProfileStatisticsPage from '@/app/(site)/profile/[user_id]/statistics/page';
+import ProfileSessionsPage from '@/app/(site)/profile/[user_id]/sessions/page';
 
 const ownerProfile = {
   id: 'profile-owner',

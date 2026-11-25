@@ -210,7 +210,8 @@ Deeply nested dynamic routes: `/[board_name]/[layout_id]/[size_id]/[set_ids]/[an
 The climbing UI (board provider, queue provider, play view, BLE control) moved to
 the Expo app in W-16 (#4435) — www keeps marketing, account and gym surfaces only.
 
-- **SiteChrome** (`packages/web/app/components/providers/site-chrome.tsx`) — the root chrome: `MarketingHeader` + `SiteFooter`, wrapped in the three bridges the surviving pages need (`StatsFilterBridgeProvider`, `ProfileHeaderShareProvider`, `PlaylistsAdapterProvider`).
+- **MarketingDocument** (`packages/web/app/components/marketing/marketing-document.tsx`) — static marketing roots render public chrome and load account controls asynchronously. English guides and locale homepages have separate roots from request-dependent application pages.
+- **ApplicationDocument** (`packages/web/app/components/providers/application-document.tsx`) — application roots mount their provider stack and `SiteChrome`. Profile header bridges mount only on profile routes; playlist pages supply their own transport.
 
 ### Data flow
 

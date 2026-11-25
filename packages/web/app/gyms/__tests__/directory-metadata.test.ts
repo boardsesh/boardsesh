@@ -19,10 +19,10 @@ vi.mock('@/app/lib/gym-funnel-analytics', () => ({
   viewerStateFrom: (isAuthenticated: boolean) => (isAuthenticated ? 'signed-in' : 'signed-out'),
 }));
 
-const allRoute = await import('../page');
-const kilterRoute = await import('../kilter/page');
-const moonboardRoute = await import('../moonboard/page');
-const tensionRoute = await import('../tension/page');
+const allRoute = await import('@/app/(site)/gyms/page');
+const kilterRoute = await import('@/app/(site)/gyms/kilter/page');
+const moonboardRoute = await import('@/app/(site)/gyms/moonboard/page');
+const tensionRoute = await import('@/app/(site)/gyms/tension/page');
 
 const ROUTES = [
   { name: '/gyms', generateMetadata: allRoute.generateMetadata, base: '/gyms' },

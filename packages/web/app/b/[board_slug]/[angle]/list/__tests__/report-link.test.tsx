@@ -59,7 +59,7 @@ vi.mock('@/app/components/providers/i18n-provider', () => ({
   default: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-const BoardSlugListPage = (await import('../page')).default;
+const BoardSlugListPage = (await import('@/app/(site)/b/[board_slug]/[angle]/list/page')).default;
 const StaticListFrontDoor = (await import('@/app/components/climb-front-door/static-list-front-door')).default;
 const BoardReportLink = (await import('@/app/components/directory-reports/board-report-link')).default;
 

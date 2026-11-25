@@ -40,9 +40,9 @@ vi.mock('@/app/lib/auth/admitted-session.server', () => ({
 }));
 vi.mock('@/app/lib/auth/server-auth', () => ({ getServerAuthToken }));
 
-const buildPlansRoute = await import('../page');
-const ordersRoute = await import('../orders/page');
-const orderRoute = await import('../orders/[licenceId]/page');
+const buildPlansRoute = await import('@/app/(site)/build-plans/page');
+const ordersRoute = await import('@/app/(site)/build-plans/orders/page');
+const orderRoute = await import('@/app/(site)/build-plans/orders/[licenceId]/page');
 
 const ROUTES = [
   { name: '/build-plans', generateMetadata: buildPlansRoute.generateMetadata, base: '/build-plans' },

@@ -4,14 +4,27 @@ The homepage and English app guides use `MarketingDocument`. It renders the
 public header, page content, footer and consent controls without the application
 playlist, profile bridge, snackbar or persisted React Query providers.
 `ApplicationDocument` retains the providers needed by settings, profiles, gym
-management and other interactive routes. The root imports these server documents
-only in their respective branches.
+management and other interactive routes. Separate App Router root layouts keep
+request-dependent application metadata and providers out of the marketing render.
+The route groups preserve the public URLs.
+
+The English homepage and translated homepages are pre-rendered with a fifteen
+minute regeneration interval. English app guides and the comparison page are
+pre-rendered from their public catalogs. Translated homepages use real locale
+paths, so the HTML language, metadata and cache key agree without reading request
+headers during rendering. Application pages retain request-based locale handling.
 
 ## Account and consent
 
 Marketing loads one guarded browser session owner asynchronously. The first
 HTML includes a working sign-in link in a reserved account slot. Account state
 never becomes an input to shared marketing HTML.
+
+Runtime configuration comes from the dependency-free, uncached health endpoint.
+It enables the Expo browser auth bridge, updates the developer documentation
+link and controls monthly support banner eligibility without freezing service
+settings into the static document. The account lookup does not wait for this
+request.
 
 The device consent coordinator is available immediately. Signed-in preference
 synchronization loads separately, after the session is accepted. Analytics stays
@@ -64,8 +77,6 @@ navigation and zoom. Existing consented web-vitals events provide field p75;
 report sample counts and avoid attributing mixed-release observations to one
 change.
 
-The current root still reads request headers for locale and route metadata.
-These pages remain dynamically rendered at origin even though anonymous English
-documents are cached at the edge. Build-time pre-rendering requires isolating
-their route entries from that request-dependent root; adding
-`generateStaticParams` to a child alone is insufficient.
+Pre-rendering removes request-time rendering work at origin. It does not remove
+the CSS, fonts, images or JavaScript needed by the browser. Measure both origin
+responses and CDN hits before attributing an LCP change to static rendering.

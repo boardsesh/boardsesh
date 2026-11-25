@@ -1,0 +1,286 @@
+import { climbBoardForSearch, climbGradeForSearch } from '@/app/lib/seo/climb-display';
+import { buildClimbSearchDescription } from '@/app/lib/seo/search-description';
+import { boardTypeLabel } from '@boardsesh/board-constants';
+import React from 'react';
+import { notFound, permanentRedirect } from 'next/navigation';
+import type { Metadata } from 'next';
+import { resolveBoardBySlug, boardToRouteParamsFromAngleSegment } from '@/app/lib/board-slug-utils';
+import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
+import { getClimb, getClimbStatsForAllAngles } from '@/app/lib/data/queries';
+import { getFrontDoorBetaLinks, getFrontDoorSimilarClimbs } from '@/app/lib/data/front-door-data.server';
+import ClimbFrontDoor from '@/app/components/climb-front-door/climb-front-door';
+import { buildCanonicalClimbViewUrl, constructBoardSlugViewUrl, extractUuidFromSlug } from '@/app/lib/url-utils';
+import { buildOgBoardRenderUrl, buildOverlayPreloadUrls } from '@/app/components/board-renderer/util';
+import { scheduleOgImageWarming } from '@/app/lib/warm-overlay-cache';
+import { getServerTranslation } from '@/app/lib/i18n/server';
+import { getLocale } from '@/app/lib/i18n/get-locale';
+import { localeHref } from '@/app/lib/i18n/locale-href';
+import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
+import { resolveClimbDisplayName } from '@/app/lib/string-utils';
+import { selectCanonicalClimbAngle } from '@/app/lib/seo/canonical-climb-angle';
+import { buildOgClimbCardIdentity } from '@/app/lib/seo/og-climb-identity';
+import { WALL_CAPABILITY_PARAM, readWallCapability } from '@/app/lib/spray/spray-visibility';
+import SprayViewPage, { buildSprayViewMetadata } from '@/app/b/[board_slug]/[angle]/view/[climb_uuid]/spray-view';
+
+/**
+ * A spray wall is the ninth board type and there is no catalogue behind it — no
+ * bundled board art, no product size, no readable config tuple. So it takes its
+ * own branch out of both exports below rather than a set of holes punched
+ * through the catalogue path, and `./spray-view` owns the visibility rules that
+ * decide whether this URL renders at all.
+ */
+const SPRAY_BOARD_TYPE = 'spray';
+
+type BoardSlugViewRouteParams = { board_slug: string; angle: string; climb_uuid: string };
+
+type BoardSlugViewPageProps = {
+  params: Promise<BoardSlugViewRouteParams>;
+  // Only `?wall=`, a spray wall's share-link capability, is read here. See
+  // `./spray-view` for what it opens.
+  searchParams: Promise<{ [WALL_CAPABILITY_PARAM]?: string | string[] }>;
+};
+
+export async function generateMetadata(props: BoardSlugViewPageProps): Promise<Metadata> {
+  const [params, searchParams] = await Promise.all([props.params, props.searchParams]);
+  const { t, locale } = await getServerTranslation('climbs');
+  const wallParam = searchParams[WALL_CAPABILITY_PARAM];
+
+  try {
+    const board = await resolveBoardBySlug(params.board_slug, readWallCapability(wallParam));
+    if (!board) {
+      return createBoardContentPageMetadata({
+        title: t('metadata.view.fallbackTitle'),
+        description: t('metadata.view.fallbackDescription'),
+        locale,
+        robots: { index: false, follow: true },
+      });
+    }
+
+    const parsedBoardParams = boardToRouteParamsFromAngleSegment(board, params.angle);
+    if (!parsedBoardParams) {
+      return createBoardContentPageMetadata({
+        title: t('metadata.view.fallbackTitle'),
+        description: t('metadata.view.fallbackDescription'),
+        locale,
+        robots: { index: false, follow: true },
+      });
+    }
+    const parsedParams = { ...parsedBoardParams, climb_uuid: extractUuidFromSlug(params.climb_uuid) };
+
+    if (board.boardType === SPRAY_BOARD_TYPE) {
+      return await buildSprayViewMetadata({
+        board,
+        parsedParams,
+        boardSlugParam: params.board_slug,
+        wallParam,
+      });
+    }
+
+    const boardDetails = getBoardImageDetailsForBoard(parsedParams);
+    // Sequential on purpose: the angle table is keyed on the uuid the climb
+    // resolved to, not the URL's (an alias URL names a husk). It costs no page
+    // latency, because the body renders concurrently and already waits on the
+    // same two React-cached reads in this order.
+    const currentClimb = await getClimb(parsedParams);
+    if (!currentClimb) {
+      return createBoardContentPageMetadata({
+        title: t('metadata.view.fallbackTitle'),
+        description: t('metadata.view.fallbackDescription'),
+        locale,
+        robots: { index: false, follow: true },
+      });
+    }
+    const angleStats = await getClimbStatsForAllAngles(parsedParams.board_name, currentClimb.uuid);
+
+    const climbName = resolveClimbDisplayName(currentClimb.name, boardDetails.board_name);
+    const climbGrade = climbGradeForSearch(currentClimb.difficulty || '');
+    // Unlisted is link-only by design, and a private board is readable to a
+    // slug holder until #4087 masks it — neither belongs in the index. This is
+    // indexation only; it is not the access control, which #4087 owns.
+    //
+    // A climb hidden by an approved report joins them: the page still resolves,
+    // because links and logbook entries pointing at it must not start 404ing,
+    // but the crew voted it off the wall and it has no business ranking.
+    const shouldOmitCanonical =
+      board.isUnlisted || !board.isPublic || board.gymIsListed === false || currentClimb.is_hidden === true;
+
+    // A1: this page canonicalises INTO the config-tuple tree rather than
+    // self-canonicalising, via the same builder that tree uses — `/b/{slug}`
+    // names a board a user owns, not a climb config, so most climbs have no
+    // `/b` URL and popular configs have many. One climb, one canonical.
+    //
+    // Private, unlisted and hidden content omits the catalogue canonical.
+    // Public aliases retain it while noindex keeps each physical wall's copy
+    // out of search results.
+    const canonicalAngle = selectCanonicalClimbAngle({
+      boardName: parsedParams.board_name,
+      catalogAngle: currentClimb.catalogAngle,
+      angleStats,
+    });
+    const canonicalPath = shouldOmitCanonical
+      ? undefined
+      : buildCanonicalClimbViewUrl(boardDetails, canonicalAngle, currentClimb.uuid, climbName, currentClimb);
+
+    // The same name, grade and setter the title and description already use, so
+    // the card and the snippet can never disagree about the climb they describe.
+    // The canonical angle, not the requested one: the card is cached for a year
+    // under its own URL, and every angle of a climb should share one card.
+    const ogImagePath = buildOgBoardRenderUrl(
+      boardDetails,
+      currentClimb.frames,
+      buildOgClimbCardIdentity(currentClimb, boardDetails.board_name, canonicalAngle, angleStats),
+    );
+
+    return createBoardContentPageMetadata({
+      title: t(climbGrade ? 'metadata.view.title' : 'metadata.view.titleUngraded', {
+        climbName,
+        grade: climbGrade,
+        boardName: boardTypeLabel(boardDetails.board_name),
+        angle: parsedParams.angle,
+      }),
+      description: buildClimbSearchDescription({
+        t,
+        locale,
+        climbName,
+        grade: climbGrade,
+        layoutName: climbBoardForSearch(boardDetails.board_name, boardDetails.layout_name),
+        angle: parsedParams.angle,
+        setter: currentClimb.setter_username,
+        ascents: currentClimb.ascensionist_count,
+        angleStats: angleStats.find((stats) => stats.angle === parsedParams.angle),
+      }),
+      path: canonicalPath,
+      locale,
+      imagePath: ogImagePath,
+      imageAlt: t(climbGrade ? 'metadata.view.imageAlt' : 'metadata.view.imageAltUngraded', {
+        climbName,
+        grade: climbGrade,
+        boardName: boardDetails.board_name,
+      }),
+      // Catalogue aliases stay usable for sharing and app handoff, but search
+      // results belong to the catalogue page. Follow its links for discovery.
+      // Spray walls branch above: their /b URL is the only canonical surface.
+      robots: { index: false, follow: true },
+    });
+  } catch {
+    return createBoardContentPageMetadata({
+      title: t('metadata.view.fallbackTitle'),
+      description: t('metadata.view.fallbackDescription'),
+      locale,
+      robots: { index: false, follow: true },
+    });
+  }
+}
+
+export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
+  const [params, searchParams] = await Promise.all([props.params, props.searchParams]);
+  const wallParam = searchParams[WALL_CAPABILITY_PARAM];
+
+  // The capability has to reach the backend: without it an anonymous caller gets
+  // no row at all for an unlisted wall, because a slug alone is a guess.
+  const board = await resolveBoardBySlug(params.board_slug, readWallCapability(wallParam));
+  if (!board) {
+    return notFound();
+  }
+
+  const parsedBoardParams = boardToRouteParamsFromAngleSegment(board, params.angle);
+  if (!parsedBoardParams) return notFound();
+  const parsedParams = { ...parsedBoardParams, climb_uuid: extractUuidFromSlug(params.climb_uuid) };
+
+  if (board.boardType === SPRAY_BOARD_TYPE) {
+    // Deliberately outside the try/catch below: that block exists to keep a
+    // failed read from being reported as a 404 on an indexed URL, and the spray
+    // branch already makes the same split itself — `notFound()` for a wall
+    // nobody may see or a climb that is not there, a throw for anything else.
+    return <SprayViewPage board={board} parsedParams={parsedParams} wallParam={wallParam} />;
+  }
+
+  try {
+    const currentClimb = await getClimb(parsedParams);
+    if (!currentClimb) notFound();
+
+    if (currentClimb.uuid !== parsedParams.climb_uuid) {
+      // Keep the saved-board context and requested angle while retiring the
+      // alias identity. The resolved row, not a separate alias lookup, wins.
+      const targetUrl = constructBoardSlugViewUrl(
+        params.board_slug,
+        parsedParams.angle,
+        currentClimb.uuid,
+        resolveClimbDisplayName(currentClimb.name, parsedParams.board_name),
+      );
+      permanentRedirect(localeHref(targetUrl, await getLocale()));
+    }
+
+    const boardDetails = getBoardImageDetailsForBoard(parsedParams);
+    const noindex = board.isUnlisted || !board.isPublic || board.gymIsListed === false;
+
+    const [angleStats, similarClimbs, betaLinks] = await Promise.all([
+      // Keyed on the climb the URL resolved to: for an alias URL the requested
+      // uuid names a husk with no stats, similar climbs or beta of its own.
+      getClimbStatsForAllAngles(parsedParams.board_name, currentClimb.uuid),
+      getFrontDoorSimilarClimbs({
+        boardType: parsedParams.board_name,
+        layoutId: parsedParams.layout_id,
+        climbUuid: currentClimb.uuid,
+        angle: parsedParams.angle,
+        fallback:
+          noindex || currentClimb.is_hidden
+            ? undefined
+            : { sizeId: parsedParams.size_id, setIds: parsedParams.set_ids, difficulty: currentClimb.difficulty },
+      }),
+      getFrontDoorBetaLinks({ boardType: parsedParams.board_name, climbUuid: currentClimb.uuid }),
+    ]);
+    const canonicalAngle = selectCanonicalClimbAngle({
+      boardName: parsedParams.board_name,
+      catalogAngle: currentClimb.catalogAngle,
+      angleStats,
+    });
+
+    scheduleOgImageWarming({
+      boardDetails,
+      climb: currentClimb,
+      identity: buildOgClimbCardIdentity(currentClimb, boardDetails.board_name, canonicalAngle, angleStats),
+    });
+    const preloadUrls = buildOverlayPreloadUrls(boardDetails, currentClimb.frames, false);
+
+    return (
+      <>
+        {preloadUrls.map((preloadUrl) => (
+          <link key={preloadUrl} rel="preload" as="image" href={preloadUrl} fetchPriority="high" />
+        ))}
+        <ClimbFrontDoor
+          climb={currentClimb}
+          boardSlug={board.slug}
+          boardDetails={boardDetails}
+          angle={parsedParams.angle}
+          canonicalAngle={canonicalAngle}
+          angleStats={angleStats}
+          similarClimbs={similarClimbs}
+          betaLinks={betaLinks}
+          // The CTA hands off the `/b` pathname the reader is actually on: the
+          // app serves both URL shapes (post-#3823), and rewriting it to the
+          // config-tuple twin would drop the board context they arrived with.
+          // Not the canonical — `generateMetadata` above points that into the
+          // config-tuple tree (A1).
+          handoffPath={`/b/${params.board_slug}/${params.angle}/view/${params.climb_uuid}`}
+          tree="slug"
+          // Same condition `generateMetadata` uses to withhold the canonical, for
+          // the same reason: on a noindex page a `CreativeWork.url` naming the
+          // indexable config-tuple twin re-introduces exactly the conflicting
+          // signal the missing `alternates` block avoids.
+          noindex={noindex}
+        />
+      </>
+    );
+  } catch (error) {
+    // Same contract as the config-tuple twin: a missing climb is the
+    // `notFound()` above, a failed read is a 500. Swallowing a brownout into a
+    // 404 on an indexed URL reads as "delete this page". A digest is Next.js
+    // control flow (the `notFound()` above), not a failure — logging it would
+    // bury the brownout signal under routine 404s.
+    if (!(error !== null && typeof error === 'object' && 'digest' in error)) {
+      console.error('Error fetching climb view:', error);
+    }
+    throw error;
+  }
+}

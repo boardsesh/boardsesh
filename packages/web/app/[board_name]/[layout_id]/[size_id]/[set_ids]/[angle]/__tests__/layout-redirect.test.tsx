@@ -46,7 +46,7 @@ vi.mock('@/app/lib/board-image-details', async () => ({
 // layout function only constructs the element tree — but both must load.
 vi.mock('@/app/components/providers/i18n-provider', () => ({ default: () => null }));
 
-import BoardLayout from '../layout';
+import BoardLayout from '@/app/(site)/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/layout';
 
 const layoutProps = {
   params: Promise.resolve({

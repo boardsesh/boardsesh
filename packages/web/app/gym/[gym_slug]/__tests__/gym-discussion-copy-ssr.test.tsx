@@ -26,7 +26,7 @@ vi.mock('../gym-owner-prompts', () => ({ default: () => null }));
 vi.mock('../gym-report-duplicate-cta', () => ({ default: () => null }));
 vi.mock('../gym-claim-cta', () => ({ default: () => null }));
 vi.mock('../gym-claim-param-cleanup', () => ({ default: () => null }));
-const GymPage = (await import('../page')).default;
+const GymPage = (await import('@/app/(site)/gym/[gym_slug]/page')).default;
 
 function discussionCopy(catalog: unknown): string | undefined {
   if (!catalog || typeof catalog !== 'object') return;

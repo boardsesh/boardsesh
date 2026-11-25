@@ -1,6 +1,6 @@
 import React from 'react';
 import localFont from 'next/font/local';
-import ApplicationProviderBoundary from './application-provider-boundary';
+import ApplicationProviderStack from './application-provider-stack';
 import { CONSENT_PREPAINT_SCRIPT } from '@/app/lib/consent';
 import { getDeveloperDocsState } from '@/app/lib/developer-apps/docs-access';
 import { devEditorHostnames } from '@/app/lib/i18n/dev-editor';
@@ -42,7 +42,7 @@ export default async function ApplicationDocument({
         <script dangerouslySetInnerHTML={{ __html: CONSENT_PREPAINT_SCRIPT }} />
       </head>
       <body suppressHydrationWarning>
-        <ApplicationProviderBoundary
+        <ApplicationProviderStack
           locale={locale}
           enableExpoAuthBridge={process.env.BOARDSESH_WEB === '1'}
           resources={resources}
@@ -60,7 +60,7 @@ export default async function ApplicationDocument({
           }
         >
           {children}
-        </ApplicationProviderBoundary>
+        </ApplicationProviderStack>
       </body>
     </html>
   );

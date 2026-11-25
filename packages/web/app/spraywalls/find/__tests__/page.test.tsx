@@ -41,7 +41,7 @@ vi.mock('../spray-directory-explorer', () => ({
     </>
   ),
 }));
-const { default: Page, generateMetadata } = await import('../page');
+const { default: Page, generateMetadata } = await import('@/app/(site)/spraywalls/find/page');
 const wall = {
   uuid: 'wall-1',
   slug: 'crew-wall',

@@ -17,9 +17,12 @@ import {
 } from '@/app/lib/seo/app-guides';
 import { AURORA_BRAND_SLUGS, HUB_BOARD_SLUGS, hubBoardHref } from '@/app/lib/seo/app-guide-model';
 import { verdictLabel } from '@/app/components/app-guides/comparison-table';
-import HubPage, { generateMetadata as getHubMetadata } from '../page';
-import BoardPage, { generateMetadata as getBoardMetadata, generateStaticParams } from '../[slug]/page';
-import SprayPage, { generateMetadata as getSprayMetadata } from '../../compare/spray-wall-apps/page';
+import HubPage, { generateMetadata as getHubMetadata } from '@/app/(marketing)/apps/page';
+import BoardPage, {
+  generateMetadata as getBoardMetadata,
+  generateStaticParams,
+} from '@/app/(marketing)/apps/[slug]/page';
+import SprayPage, { generateMetadata as getSprayMetadata } from '@/app/(marketing)/compare/spray-wall-apps/page';
 
 const { cachedCommunityStats } = vi.hoisted(() => ({ cachedCommunityStats: vi.fn().mockResolvedValue(null) }));
 

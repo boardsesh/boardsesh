@@ -12,9 +12,7 @@ import { cachedCommunityStats } from '@/app/lib/graphql/server-cached-client';
 import { formatCommunityProof } from '@/app/lib/community-proof';
 import HomeFeatureStrip from '@/app/components/home/home-feature-strip';
 import HomeSupportBlock from '@/app/components/home/home-support-block';
-import HomeSupportBanner from '@/app/components/home/home-support-banner';
-import { isSupportBannerWindow } from '@/app/components/home/support-banner-window';
-import { hasMonthlyLinks, readSupportLinksConfig } from '@/app/support/support-links';
+import RuntimeHomeSupportBanner from '@/app/components/home/runtime-home-support-banner';
 import PhoneQrCard from '@/app/components/climb-front-door/phone-qr-card';
 import QrLandingTracker from '@/app/components/climb-front-door/qr-landing-tracker';
 import { homeQrUrl } from '@/app/lib/gym-attribution';
@@ -47,10 +45,6 @@ export default async function HomePage({ locale }: { locale: Locale }) {
   // rendering as 132341 in English or 132.341 in German by accident.
   const { t } = await getServerTranslationForLocale(locale, 'marketing');
   const heroProof = communityStats ? formatCommunityProof(communityStats, t, locale) : undefined;
-
-  // The banner asks people to go monthly, so it waits for a monthly Payment Link
-  // to exist. Regeneration refreshes the date window; the browser checks it again.
-  const showSupportBanner = isSupportBannerWindow(new Date()) && hasMonthlyLinks(readSupportLinksConfig());
 
   return (
     <I18nProvider
@@ -118,7 +112,7 @@ export default async function HomePage({ locale }: { locale: Locale }) {
             <TrustFaq limit={6} />
           </I18nProvider>
         }
-        supportBanner={showSupportBanner ? <HomeSupportBanner /> : null}
+        supportBanner={<RuntimeHomeSupportBanner />}
       />
     </I18nProvider>
   );

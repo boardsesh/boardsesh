@@ -73,7 +73,7 @@ vi.mock('@/app/components/climb-front-door/static-list-front-door', () => ({
   default: () => null,
 }));
 
-const pageModule = await import('../page');
+const pageModule = await import('@/app/(site)/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/page');
 const { buildCanonicalClimbListUrl } = await import('@/app/lib/url-utils');
 const { getBoardImageDetailsForBoard } = await import('@/app/lib/board-image-details');
 const { FRONT_DOOR_MAX_PAGE } = await import('@/app/lib/seo/list-page-robots');

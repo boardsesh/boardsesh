@@ -8,7 +8,7 @@ vi.mock('next/headers', () => ({
   headers: async () => new Headers(),
 }));
 
-const rootLayout = await import('../layout');
+const rootLayout = await import('@/app/(site)/layout');
 const metadata = await rootLayout.generateMetadata();
 
 type IconEntry = { url: string | URL; sizes?: string; type?: string };

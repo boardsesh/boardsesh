@@ -275,15 +275,19 @@ const KEPT_COMPONENT_DIRS = [
  * in W-16.
  */
 const KEPT_ENTRY_FILES = [
-  'app/page.tsx',
-  'app/layout.tsx',
+  'app/(marketing)/page.tsx',
+  'app/(marketing)/layout.tsx',
+  'app/(site)/layout.tsx',
+  'app/(localized-home)/[board_name]/layout.tsx',
+  'app/(localized-home)/[board_name]/page.tsx',
+  'app/global-not-found.tsx',
   'app/robots.ts',
   'app/manifest.ts',
   'middleware.ts',
-  'app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/layout.tsx',
-  'app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]/page.tsx',
-  'app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/page.tsx',
-  'app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/layout.tsx',
+  'app/(site)/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/layout.tsx',
+  'app/(site)/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]/page.tsx',
+  'app/(site)/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/page.tsx',
+  'app/(site)/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/layout.tsx',
 ];
 
 // ---------------------------------------------------------------------------
@@ -316,9 +320,16 @@ function collectKeepRoots(): string[] {
   const roots: string[] = [];
 
   for (const routeDir of KEPT_ROUTE_DIRS) {
-    const absoluteDir = join(WEB_ROOT, 'app', routeDir);
-    if (!existsSync(absoluteDir)) throw new Error(`Keep root app/${routeDir} does not exist — update KEPT_ROUTE_DIRS.`);
-    roots.push(...listSourceFiles(absoluteDir));
+    // Routing entrypoints moved into document groups; their colocated helpers
+    // deliberately stay at the original paths and remain keep roots as well.
+    const candidates = [
+      join(WEB_ROOT, 'app', routeDir),
+      ...['(site)', '(marketing)'].map((group) => join(WEB_ROOT, 'app', group, routeDir)),
+    ];
+    const existingDirectories = candidates.filter((directory) => existsSync(directory));
+    if (existingDirectories.length === 0)
+      throw new Error(`Keep root app/${routeDir} does not exist — update KEPT_ROUTE_DIRS.`);
+    for (const directory of existingDirectories) roots.push(...listSourceFiles(directory));
   }
 
   for (const componentDir of KEPT_COMPONENT_DIRS) {

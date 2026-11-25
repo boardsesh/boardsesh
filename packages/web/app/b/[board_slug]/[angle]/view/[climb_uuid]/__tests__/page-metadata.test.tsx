@@ -135,7 +135,7 @@ vi.mock('@/app/components/climb-front-door/climb-front-door', () => ({
   default: () => null,
 }));
 
-const pageModule = await import('../page');
+const pageModule = await import('@/app/(site)/b/[board_slug]/[angle]/view/[climb_uuid]/page');
 
 function getOpenGraphImageUrl(image: string | URL | { url: string | URL } | undefined) {
   if (!image) {

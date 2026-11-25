@@ -151,7 +151,7 @@ vi.mock('qrcode.react', () => ({
   ),
 }));
 
-const pageModule = await import('../page');
+const pageModule = await import('@/app/(site)/setter/[setter_username]/page');
 const SetterProfilePage = pageModule.default;
 const { generateMetadata } = pageModule;
 const { absoluteUrl } = await import('@/app/lib/seo/base-url');

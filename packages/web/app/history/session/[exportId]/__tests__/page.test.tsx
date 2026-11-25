@@ -18,7 +18,7 @@ vi.mock('next/navigation', () => ({
   },
 }));
 
-import PartnerSessionHistoryPage, { generateMetadata } from '../page';
+import PartnerSessionHistoryPage, { generateMetadata } from '@/app/(site)/history/session/[exportId]/page';
 
 const EXPORT_ID = '3c2d56f7-1f63-4c63-9c48-3c239b14727d';
 const props = { params: Promise.resolve({ exportId: EXPORT_ID }) };

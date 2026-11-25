@@ -31,6 +31,7 @@ a production rollout or a physical-device result.
 | [Expo web PR previews](expo-web-previews.md) | `expo-web-previews.md` |
 | [Feature flags](feature-flags.md) | `feature-flags.md` |
 | [Homelab worker deploys](homelab-deploys.md) | `homelab-deploys.md` |
+| [Marketing page loading and performance verification](marketing-page-performance.md) | `marketing-page-performance.md` |
 | [Mobile OTA updates (production: self-hosted expo-open-ota V3)](mobile-ota-updates.md) | `mobile-ota-updates.md` |
 | [Mobile store release runbook](mobile-store-release.md) | `mobile-store-release.md` |
 | [Giving the production primary a real TLS certificate](pg-primary-tls-rollout.md) | `pg-primary-tls-rollout.md` |

@@ -21,7 +21,7 @@ vi.mock('@/app/lib/i18n/server', () => ({
 }));
 vi.mock('../developer-apps-content', () => ({ default: () => null }));
 
-const { default: DeveloperAppsPage, generateMetadata } = await import('../page');
+const { default: DeveloperAppsPage, generateMetadata } = await import('@/app/(site)/developers/apps/page');
 
 beforeEach(() => {
   mocks.locale.current = 'en-US';

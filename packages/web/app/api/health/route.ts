@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 import { BUILD_RELEASE } from './build-release';
+import { getDeveloperDocsState } from '@/app/lib/developer-apps/docs-access';
+import type { MarketingRuntimeCapabilities } from '@/app/lib/marketing-runtime-capabilities';
+import { hasMonthlyLinks, readSupportLinksConfig } from '@/app/support/support-links';
 
 // Railway's healthcheck (see railway.web.toml) hits this on every deploy and
 // periodically thereafter. It MUST stay dependency-free: no database, no
@@ -12,6 +15,7 @@ export type HealthResponse = {
   status: 'ok';
   deploymentId: string;
   release: string;
+  marketing: MarketingRuntimeCapabilities;
 };
 
 export async function GET() {
@@ -23,6 +27,11 @@ export async function GET() {
     status: 'ok',
     deploymentId: process.env.RAILWAY_DEPLOYMENT_ID?.trim() || 'unknown',
     release: BUILD_RELEASE,
+    marketing: {
+      enableExpoAuthBridge: process.env.BOARDSESH_WEB === '1',
+      developerHref: getDeveloperDocsState() === 'unavailable' ? '/docs' : '/developers',
+      hasMonthlySupport: hasMonthlyLinks(readSupportLinksConfig()),
+    },
   };
 
   return NextResponse.json(response, {

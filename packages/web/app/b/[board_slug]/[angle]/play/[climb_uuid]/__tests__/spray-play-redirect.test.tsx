@@ -70,7 +70,8 @@ vi.mock('@/app/lib/data/queries', () => ({
 
 const CLIMB_UUID = 'c0ffee00000000000000000000000001';
 
-const { default: BoardSlugPlayRedirectPage } = await import('../page');
+const { default: BoardSlugPlayRedirectPage } =
+  await import('@/app/(site)/b/[board_slug]/[angle]/play/[climb_uuid]/page');
 
 beforeEach(() => {
   vi.clearAllMocks();
