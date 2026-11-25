@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import {
   createElement,
+  useState,
   useImperativeHandle,
   useEffect,
   type ComponentProps,
@@ -399,23 +400,30 @@ afterEach(cleanup);
 describe('Light and tap controller acknowledgement', () => {
   function openCable(initialSkip = 0) {
     const onChange = vi.fn();
-    const layout = {
+    const initial: TnutLayout = {
       ...savedLayout(),
       ledPositions: [{ id: 'a', x: 0.2, y: 0.3 }],
       wiring: { direction: 'custom' as const, startCorner: 'tl' as const, paths: [], skips: [], initialSkip },
     };
-    render(
-      <SprayLedMapEditor
-        kind="wiring"
-        layout={layout}
-        onChange={onChange}
-        wallUuid="wall-1"
-        source={photoSource}
-        photoUri="/cache/wall.jpg"
-        width={400}
-        onInteractionChange={vi.fn()}
-      />,
-    );
+    function ControlledCable() {
+      const [layout, setLayout] = useState(initial);
+      return (
+        <SprayLedMapEditor
+          kind="wiring"
+          layout={layout}
+          onChange={(update) => {
+            onChange(update);
+            setLayout((previous) => ({ ...previous, ...update }));
+          }}
+          wallUuid="wall-1"
+          source={photoSource}
+          photoUri="/cache/wall.jpg"
+          width={400}
+          onInteractionChange={vi.fn()}
+        />
+      );
+    }
+    render(<ControlledCable />);
     fireEvent.click(button('lightAndTap'));
     return onChange;
   }
@@ -464,6 +472,8 @@ describe('Light and tap controller acknowledgement', () => {
       );
     const onChange = openCable();
     fireEvent.click(button('lightAndTapSkip'));
+    expect(onChange).toHaveBeenCalledWith({ wiring: expect.objectContaining({ initialSkip: 1, paths: [] }) });
+    onChange.mockClear();
     await act(async () => acknowledgeFirst(true));
     tap({ x: 0.2, y: 0.3 });
     expect(onChange).not.toHaveBeenCalled();
@@ -716,6 +726,8 @@ describe('SprayWallLedSetupScreen', () => {
     expect(wired()).toBe('2');
     fireEvent.click(button('undo'));
     expect(wired()).toBe('1');
+    await waitFor(() => expect(preview.show).toHaveBeenLastCalledWith([2]));
+    fireEvent.click(button('undo'));
     await waitFor(() => expect(preview.show).toHaveBeenLastCalledWith([1]));
     fireEvent.click(button('lightAndTap'));
     expect(preview.stop).toHaveBeenCalled();
@@ -777,7 +789,7 @@ describe('SprayWallLedSetupScreen', () => {
     },
   );
 
-  it('restores the initial skip field after undoing the first Light and tap assignment', async () => {
+  it('undoes a leading skip separately from the first Light and tap assignment', async () => {
     storage.load.mockResolvedValue(savedLayout());
     await openOnLedStep();
     fireEvent.click(radio('ledCenter'));
@@ -794,10 +806,101 @@ describe('SprayWallLedSetupScreen', () => {
     tap({ x: 0.3, y: 0.4 });
     fireEvent.click(button('undo'));
     back();
+    expect(field('initialSkipLabel').value).toBe('3');
+    next();
+    fireEvent.click(button('undo'));
+    back();
     expect(field('initialSkipLabel').value).toBe('2');
     next();
     expect(lastSaved().wiring?.initialSkip).toBe(2);
     expect(lastSaved().wiring?.paths).toEqual([]);
+  });
+
+  it.each(['skips', 'lighting', 'edited-skips'])(
+    'keeps cable Undo through the %s screen and can remove the first LED',
+    async (destination) => {
+      const holes = [
+        { x: 0.2, y: 0.3 },
+        { x: 0.5, y: 0.3 },
+        { x: 0.8, y: 0.3 },
+      ];
+      storage.load.mockResolvedValue({ ...savedLayout(), rows: 2, columns: 3, holes });
+      await openOnLedStep();
+      fireEvent.click(radio('ledCenter'));
+      next();
+      next();
+      next();
+      fireEvent.click(radio('customCable'));
+      next();
+      next();
+      fireEvent.click(button('drawCable'));
+      tap(holes[0]);
+      tap(holes[1]);
+      const wired = () => screen.getByTestId('hole-editor').getAttribute('data-wired');
+      expect(wired()).toBe('2');
+      next();
+      expect(screen.getByText('sprayLedSetup.skipsTitle')).toBeTruthy();
+      if (destination === 'lighting') {
+        next();
+        expect(screen.getByText('sprayLedSetup.lightingTitle')).toBeTruthy();
+        back();
+      }
+      if (destination === 'edited-skips') {
+        tap({ x: 0.35, y: 0.3 });
+        fireEvent.click(button('insertSkips'));
+        fireEvent.change(field('skipCount'), { target: { value: '2' } });
+        fireEvent.click(screen.getByRole('button', { name: 'sprayLed.confirm' }));
+        expect(screen.getByText('sprayLedSetup.gapLabel:2')).toBeTruthy();
+      }
+      back();
+      expect(wired()).toBe('2');
+      expect((button('undo') as HTMLButtonElement).disabled).toBe(false);
+      if (destination === 'edited-skips') {
+        fireEvent.click(button('undo'));
+        expect(wired()).toBe('2');
+        next();
+        tap({ x: 0.35, y: 0.3 });
+        expect(screen.getByText('sprayLedSetup.skipsNone')).toBeTruthy();
+        back();
+      }
+      fireEvent.click(button('undo'));
+      expect(wired()).toBe('1');
+      fireEvent.click(button('undo'));
+      expect(wired()).toBe('0');
+      expect((button('undo') as HTMLButtonElement).disabled).toBe(true);
+    },
+  );
+
+  it('keeps an unassigned Light and tap skip through Next and Back, with chronological Undo', async () => {
+    const holes = [
+      { x: 0.2, y: 0.3 },
+      { x: 0.5, y: 0.3 },
+      { x: 0.8, y: 0.3 },
+    ];
+    storage.load.mockResolvedValue({ ...savedLayout(), rows: 2, columns: 3, holes });
+    await openOnLedStep();
+    fireEvent.click(radio('ledCenter'));
+    next();
+    next();
+    next();
+    fireEvent.click(radio('customCable'));
+    next();
+    next();
+    fireEvent.click(button('lightAndTap'));
+    await waitFor(() => expect(preview.show).toHaveBeenLastCalledWith([0]));
+    tap(holes[0]);
+    await waitFor(() => expect(preview.show).toHaveBeenLastCalledWith([1]));
+    fireEvent.click(button('lightAndTapSkip'));
+    await waitFor(() => expect(preview.show).toHaveBeenLastCalledWith([2]));
+    next();
+    back();
+    fireEvent.click(button('lightAndTap'));
+    await waitFor(() => expect(preview.show).toHaveBeenLastCalledWith([2]));
+    fireEvent.click(button('undo'));
+    await waitFor(() => expect(preview.show).toHaveBeenLastCalledWith([1]));
+    fireEvent.click(button('undo'));
+    expect(screen.getByTestId('hole-editor').getAttribute('data-wired')).toBe('0');
+    await waitFor(() => expect(preview.show).toHaveBeenLastCalledWith([0]));
   });
 
   it('keeps Lay cable available after Light and tap wires the last LED', async () => {

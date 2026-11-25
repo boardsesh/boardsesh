@@ -149,6 +149,12 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    count before the first added LED and respect the gap and total limits.
    If the controller cannot light both LEDs of an unwired pair, the current
    number stays available. Undo removes the entire addition together.
+   **Not on the spraywall** counts as its own Undo step, even before the first
+   position is assigned. Leading skips update **Skip the first LEDs** immediately
+   without drawing a cable segment. Between positions, the pending count stays
+   available until the next assignment; the resulting gap is red in **Light and
+   tap**, as on **Skipped LEDs**, including after the cable is complete. Undoing
+   the assignment restores its pending count; another Undo reverses the skip.
    A cut keeps every LED on a section. Purple dots mark LEDs and faint orange
    rings mark holes. Turquoise lines show the cable and arrows show its direction.
    When both members of a pair follow one another on the cable without a skip
@@ -162,6 +168,9 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    is listed below the photo by cable position (for example 3 → 4). Undo
    restores edits, keeping both LEDs of a pair together when laying cable.
    A drag across several pairs can be undone one pair at a time.
+   Cable and skip Undo share their history throughout this setup session, so
+   Next and Back keep earlier edits reversible, including the first position.
+   Rebuilding the cable or changing LED membership starts a new history.
    Open the cable editor fullscreen in portrait or landscape.
    In landscape, the controls sit to the right of the photo.
 11. Next opens **Skipped LEDs**, with the cable drawn over the photo. Tap a

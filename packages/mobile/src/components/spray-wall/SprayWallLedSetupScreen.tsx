@@ -69,6 +69,7 @@ import { LedPlacementThumbnail } from './LedPlacementThumbnail';
 import { SprayPhotoStage } from './SprayPhotoStage';
 import { SpraySetupOverlay } from './SpraySetupOverlay';
 import { SprayLedMapEditor } from './SprayLedMapEditor';
+import { useSprayCableHistory } from './use-spray-cable-history';
 import { SprayLedLightingStep } from './SprayLedLightingStep';
 import { SprayHoldLedStep } from './SprayHoldLedStep';
 import { SprayLedStripeEditor } from './SprayLedStripeEditor';
@@ -270,6 +271,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       : initial;
   });
   const [step, setStep] = useState<Step>('pattern');
+  const cableHistory = useSprayCableHistory(layout, changeLayout);
   const hasUpperLayer = layout.ledPlacement === 'below' || layout.ledPlacement === 'alternating';
   const [ledCardContentHeights, setLedCardContentHeights] = useState<Partial<Record<SprayLedPlacement, number>>>({});
   const ledPlacements: SprayLedPlacement[] =
@@ -1156,6 +1158,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
           <SprayLedMapEditor
             key={step}
             kind={step === 'ledPositions' ? 'positions' : step}
+            cableHistory={cableHistory}
             layout={layout}
             wallUuid={wallUuid}
             onChange={changeLayout}

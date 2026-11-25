@@ -8,6 +8,7 @@ import {
   ledPairs,
   readTnutLayout,
   type TnutLayout,
+  type TnutWiring,
 } from '@boardsesh/spray-wall-geometry';
 import type { SprayPhotoCanvasProps } from '../SprayPhotoCanvas';
 import type { SprayLookPreviewSource } from '../../../lib/spray/spray-look-preview';
@@ -137,6 +138,17 @@ function Editor({
       onInteractionChange={() => undefined}
     />
   );
+}
+
+function cableOverlay() {
+  return controls.canvas?.renderOverlay?.(
+    400,
+    400,
+    { value: 1 } as never,
+    { value: 0 } as never,
+    { value: 0 } as never,
+    { value: null } as never,
+  ) as ReactElement<{ wiring?: TnutWiring; showSkips?: boolean; distinguishSkips?: boolean }>;
 }
 
 afterEach(cleanup);
@@ -484,9 +496,11 @@ describe('paired cable actions', () => {
     expect(controls.preview.showPair).toHaveBeenCalledExactlyOnceWith(4);
     expect(controls.layout?.wiring?.initialSkip).toBe(4);
     expect(controls.preview.show).toHaveBeenLastCalledWith([6]);
-    expect(controls.changed).toHaveBeenCalledTimes(1);
+    expect(controls.changed).toHaveBeenCalledTimes(2);
     fireEvent.click(screen.getByText('overlay undo'));
     expect(controls.layout?.wiring?.paths).toEqual([]);
+    expect(controls.layout?.wiring?.initialSkip).toBe(4);
+    fireEvent.click(screen.getByText('overlay undo'));
     expect(controls.layout?.wiring?.initialSkip).toBe(3);
   });
 
@@ -509,6 +523,33 @@ describe('paired cable actions', () => {
     expect(controls.changed).not.toHaveBeenCalled();
   });
 
+  it('discards a delayed pair acknowledgement after Undo removes its preceding skip', async () => {
+    controls.preview.available = true;
+    let acknowledge!: (result: string) => void;
+    controls.preview.showPair.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
+    render(
+      <Editor initial={{ ...grouped, wiring: { ...original.wiring!, paths: [['e']], skips: [] } }} kind="wiring" />,
+    );
+    fireEvent.click(screen.getByText('sprayLedSetup.lightAndTap'));
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([4]));
+    fireEvent.click(screen.getByText('sprayLedSetup.lightAndTapSkip'));
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([5]));
+    tap(0.2, 0.2);
+    expect(controls.preview.showPair).toHaveBeenCalledWith(5);
+    const undo = screen.getByText('overlay undo') as HTMLButtonElement;
+    expect(undo.disabled).toBe(false);
+    fireEvent.click(undo);
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([4]));
+    await act(async () => acknowledge('pair'));
+    expect(controls.layout?.wiring?.paths).toEqual([['e']]);
+    expect(controls.layout?.wiring?.skips).toEqual([]);
+  });
+
   it('keeps the cable after a rejected pair and accepts a valid single assignment', async () => {
     controls.preview.available = true;
     controls.preview.showPair.mockResolvedValueOnce('single');
@@ -520,6 +561,99 @@ describe('paired cable actions', () => {
     expect(controls.changed).not.toHaveBeenCalled();
     tap(0.8, 0.8);
     expect(controls.layout?.wiring?.paths).toEqual([['e']]);
+  });
+});
+
+describe('Light and tap skip history', () => {
+  const tap = (x: number, y: number) => act(() => controls.canvas?.onTap?.({ x, y }, 400, 400));
+
+  it('updates leading skips immediately and undoes each one before the first LED is assigned', async () => {
+    controls.preview.available = true;
+    render(<Editor initial={{ ...original, wiring: { ...original.wiring!, paths: [], skips: [] } }} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.lightAndTap'));
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([3]));
+    fireEvent.click(screen.getByText('sprayLedSetup.lightAndTapSkip'));
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([4]));
+    expect(controls.layout?.wiring?.initialSkip).toBe(4);
+    fireEvent.click(screen.getByText('sprayLedSetup.lightAndTapSkip'));
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([5]));
+    expect(controls.layout?.wiring?.initialSkip).toBe(5);
+    expect(cableOverlay().props.wiring?.paths).toEqual([]);
+    expect(cableOverlay().props.wiring?.skips).toEqual([]);
+
+    const undo = screen.getByText('overlay undo') as HTMLButtonElement;
+    expect(undo.disabled).toBe(false);
+    fireEvent.click(undo);
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([4]));
+    expect(controls.layout?.wiring?.initialSkip).toBe(4);
+    fireEvent.click(undo);
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([3]));
+    expect(controls.layout?.wiring?.initialSkip).toBe(3);
+    expect(undo.disabled).toBe(true);
+  });
+
+  it('marks skipped cable slots and undoes the assignment and skip taps in reverse order', async () => {
+    controls.preview.available = true;
+    render(
+      <Editor
+        initial={{
+          ...original,
+          ledPositions: [...original.ledPositions!, { id: 'c', x: 0.5, y: 0.8 }],
+          wiring: { ...original.wiring!, initialSkip: 0, paths: [], skips: [] },
+        }}
+        kind="wiring"
+      />,
+    );
+    fireEvent.click(screen.getByText('sprayLedSetup.lightAndTap'));
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([0]));
+    tap(0.2, 0.2);
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([1]));
+    fireEvent.click(screen.getByText('sprayLedSetup.lightAndTapSkip'));
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([2]));
+    fireEvent.click(screen.getByText('sprayLedSetup.lightAndTapSkip'));
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([3]));
+    tap(0.8, 0.8);
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([4]));
+    expect(controls.layout?.wiring?.paths).toEqual([['a', 'b']]);
+    expect(cableOverlay().props.wiring?.skips).toEqual([{ from: 'a', to: 'b', count: 2 }]);
+    expect(cableOverlay().props.showSkips).not.toBe(false);
+    expect(cableOverlay().props.distinguishSkips).toBe(true);
+
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring?.paths).toEqual([['a']]);
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([3]));
+    fireEvent.click(screen.getByText('overlay undo'));
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([2]));
+    fireEvent.click(screen.getByText('overlay undo'));
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([1]));
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring?.paths).toEqual([]);
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([0]));
+    expect((screen.getByText('overlay undo') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('keeps skipped slots marked after the last Light and tap assignment, but hides them in Lay cable', async () => {
+    controls.preview.available = true;
+    render(
+      <Editor
+        initial={{ ...original, wiring: { ...original.wiring!, initialSkip: 0, paths: [], skips: [] } }}
+        kind="wiring"
+      />,
+    );
+    fireEvent.click(screen.getByText('sprayLedSetup.lightAndTap'));
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([0]));
+    tap(0.2, 0.2);
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([1]));
+    fireEvent.click(screen.getByText('sprayLedSetup.lightAndTapSkip'));
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([2]));
+    tap(0.8, 0.8);
+    await waitFor(() => expect(controls.preview.stop).toHaveBeenCalled());
+    expect(controls.layout?.wiring?.paths).toEqual([['a', 'b']]);
+    expect(cableOverlay().props.showSkips).not.toBe(false);
+    expect(cableOverlay().props.distinguishSkips).toBe(true);
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    expect(cableOverlay().props.showSkips).toBe(false);
+    expect(controls.layout?.wiring?.skips).toEqual([{ from: 'a', to: 'b', count: 1 }]);
   });
 });
 
@@ -666,6 +800,34 @@ describe('indivisible stripe cable actions', () => {
     await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([6]));
     fireEvent.click(screen.getByText('overlay undo'));
     expect(controls.layout?.wiring?.paths).toEqual([]);
+  });
+
+  it('undoes a completed stripe as one unit before undoing the skipped slot ahead of it', async () => {
+    controls.preview.available = true;
+    const layout = striped();
+    const [first, second] = layout.ledStripes!.stripes.map((stripe) => stripe.ledIds);
+    render(<Editor initial={layout} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.lightAndTap'));
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([3]));
+    tap(0.1, 0.5);
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([6]));
+    fireEvent.click(screen.getByText('sprayLedSetup.lightAndTapSkip'));
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([7]));
+    tap(0.9, 0.5);
+    await waitFor(() => expect(controls.layout?.wiring?.paths).toEqual([[...first, ...second]]));
+    expect(controls.preview.showUnit).toHaveBeenLastCalledWith(7, 3);
+    expect(cableOverlay().props.wiring?.skips).toEqual([{ from: first[2], to: second[0], count: 1 }]);
+    expect(cableOverlay().props.distinguishSkips).toBe(true);
+
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring?.paths).toEqual([first]);
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([7]));
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring?.paths).toEqual([first]);
+    await waitFor(() => expect(controls.preview.show).toHaveBeenLastCalledWith([6]));
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring?.paths).toEqual([]);
+    expect(readTnutLayout(controls.layout)).not.toBeNull();
   });
 
   it('never saves a partial stripe when its last physical LED exceeds the controller', async () => {

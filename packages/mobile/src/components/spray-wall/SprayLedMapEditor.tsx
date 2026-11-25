@@ -36,6 +36,7 @@ import { sprayCableDisplayGeometry } from './spray-cable-display';
 import { planCableUnitEdits } from './spray-cable-unit-edits';
 import { expandCableUnits, mapCableUnitsById } from './spray-led-units';
 import { nearestPhotoPointIndex } from './tnut-corner-viewport';
+import { useSprayCableHistory, type SprayCableHistory } from './use-spray-cable-history';
 
 const NO_LEDS: LedPosition[] = [];
 type MapEditorProps = {
@@ -47,12 +48,29 @@ type MapEditorProps = {
   photoUri: string;
   width: number;
   onInteractionChange: (active: boolean) => void;
+  cableHistory?: SprayCableHistory;
 };
 
 export function SprayLedMapEditor(props: MapEditorProps) {
   if (props.kind === 'positions') return <LedPositionsEditor {...props} />;
-  return props.kind === 'skips' ? <SkipsEditor {...props} /> : <CableEditor {...props} />;
+  if (!props.cableHistory) return <LocalCableEditor {...props} />;
+  return props.kind === 'skips' ? (
+    <SkipsEditor {...props} cableHistory={props.cableHistory} />
+  ) : (
+    <CableEditor {...props} cableHistory={props.cableHistory} />
+  );
 }
+
+function LocalCableEditor(props: MapEditorProps) {
+  const cableHistory = useSprayCableHistory(props.layout, props.onChange);
+  return props.kind === 'skips' ? (
+    <SkipsEditor {...props} cableHistory={cableHistory} />
+  ) : (
+    <CableEditor {...props} cableHistory={cableHistory} />
+  );
+}
+
+type CableEditorProps = MapEditorProps & { cableHistory: SprayCableHistory };
 
 // Enough for one Undo per LED on a long cable run.
 const HISTORY_LIMIT = 300;
@@ -63,14 +81,6 @@ function useEditorHistory(layout: TnutLayout, onChange: MapEditorProps['onChange
     change: (update: Partial<TnutLayout>) => {
       setHistory((previous) => [...previous, layout].slice(-HISTORY_LIMIT));
       onChange(update);
-    },
-    /** Apply several updates at once, but let Undo step back through each one. */
-    changeSteps: (updates: Partial<TnutLayout>[]) => {
-      if (!updates.length) return;
-      const states = [layout];
-      for (const update of updates.slice(0, -1)) states.push({ ...states[states.length - 1], ...update });
-      setHistory((previous) => [...previous, ...states].slice(-HISTORY_LIMIT));
-      onChange(updates[updates.length - 1]);
     },
     undo: () => {
       const previous = history.at(-1);
@@ -293,14 +303,20 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
   );
 }
 
-function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onInteractionChange }: MapEditorProps) {
+function CableEditor({
+  layout,
+  cableHistory,
+  wallUuid,
+  source,
+  photoUri,
+  width,
+  onInteractionChange,
+}: CableEditorProps) {
   const { t } = useTranslation('boards');
   const { spacing, brandColors } = useTheme();
   const [chosenMode, setMode] = useState<'draw' | 'select' | 'light' | null>(null);
-  // "Light and tap": physical LEDs counted as not on the photo since the last tap.
-  const [pendingSkip, setPendingSkip] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
-  const { change, changeSteps, undo, canUndo } = useEditorHistory(layout, onChange);
+  const { pendingSkip, change, changeSteps, undo, canUndo } = cableHistory;
   const pairs = useMemo(() => ledPairs(layout), [layout]);
   const unitsById = useMemo(() => mapCableUnitsById(layout), [layout]);
   const indivisibleMembers = useMemo(() => new Set(stripeCableUnits(layout).flat()), [layout]);
@@ -357,17 +373,22 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
     validatingPair.current = null;
     acknowledgedIndex.current = null;
     if (mode === 'light' && next !== 'light') void stop();
-    setPendingSkip(0);
     setMode(next);
   }
 
   function changePendingSkip(delta: number) {
-    const next = Math.max(0, Math.min(skipBudget, pendingSkip + delta));
-    if (next === pendingSkip) return;
+    if (!wiring) return;
+    const current = lastWired ? pendingSkip : (wiring.initialSkip ?? 0);
+    const maximum = lastWired ? skipBudget : current + skipBudget;
+    const next = Math.max(0, Math.min(maximum, current + delta));
+    if (next === current) return;
     validatingPair.current = null;
     acknowledgedIndex.current = null;
-    setPendingSkip(next);
+    if (lastWired) change(wiring, next);
+    else change(setWiringInitialSkip(wiring, next));
   }
+
+  const canUnskip = lastWired ? pendingSkip > 0 : (wiring?.initialSkip ?? 0) > 0;
 
   /** Assign the next physical index to the tapped LED and keep a pair in one Undo step. */
   function assignLit(id: string) {
@@ -394,8 +415,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
     if (appended.length !== additions.length || appended.some(({ index }, offset) => index !== litIndex + offset))
       return;
     const commit = () => {
-      change({ wiring: next });
-      setPendingSkip(0);
+      change(next);
     };
     acknowledgedIndex.current = null;
     if (additions.length === 1) {
@@ -443,7 +463,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
     setPreviewWiring(null);
     if (mode !== 'draw' || !wiring) return;
     // One history step per stop: Undo keeps pairs whole, including along a drag.
-    const steps: Partial<TnutLayout>[] = [];
+    const steps: TnutWiring[] = [];
     const wiredIds = new Set(indices.keys());
     let current = wiring;
     for (const id of ids) {
@@ -451,7 +471,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
       if (!members.length) continue;
       const next = extendWiring(current, members);
       if (next === current) continue;
-      steps.push({ wiring: next });
+      steps.push(next);
       for (const member of members) wiredIds.add(member);
       current = next;
     }
@@ -530,7 +550,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
             <Button
               title={t('sprayLedSetup.lightAndTapUnskip')}
               variant="text"
-              disabled={!pendingSkip}
+              disabled={!canUnskip}
               onPress={() => changePendingSkip(-1)}
             />
           </View>
@@ -567,14 +587,14 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
                   title={t('sprayLedSetup.cutCable')}
                   disabled={!edge}
                   onPress={() => {
-                    if (cut && edge) change({ wiring: cut });
+                    if (cut && edge) change(cut);
                   }}
                 />
                 <Button
                   title={t('sprayLedSetup.connectCable')}
                   disabled={joined === wiring}
                   onPress={() => {
-                    if (joined && joined !== wiring) change({ wiring: joined });
+                    if (joined && joined !== wiring) change(joined);
                   }}
                 />
               </View>
@@ -631,7 +651,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
           <SprayPhotoToolButton
             icon="minus"
             label={t('sprayLedSetup.lightAndTapUnskip')}
-            disabled={!pendingSkip}
+            disabled={!canUnskip}
             onPress={() => changePendingSkip(-1)}
           />
         </>
@@ -643,7 +663,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
             label={t('sprayLedSetup.cutCable')}
             disabled={!edge}
             onPress={() => {
-              if (cut && edge) change({ wiring: cut });
+              if (cut && edge) change(cut);
             }}
           />
           <SprayPhotoToolButton
@@ -651,7 +671,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
             label={t('sprayLedSetup.connectCable')}
             disabled={joined === wiring}
             onPress={() => {
-              if (joined && joined !== wiring) change({ wiring: joined });
+              if (joined && joined !== wiring) change(joined);
             }}
           />
         </>
@@ -675,7 +695,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
               acknowledgedIndex.current = null;
               undo();
               setSelected([]);
-              setPendingSkip(0);
+              setPreviewWiring(null);
             }}
           />
         }
@@ -698,7 +718,8 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
               holes={layout.holes}
               leds={leds}
               wiring={previewWiring ?? wiring}
-              showSkips={false}
+              showSkips={chosenMode === 'light'}
+              distinguishSkips
               ledPairs={pairs}
               selected={mode === 'select' ? selectedUnits.flat() : undefined}
               width={renderWidth}
@@ -737,11 +758,19 @@ type Connection = { from: string; to: string };
  * and say how many LEDs the strip has there that are not on the wall. The wall
  * lights the wired LEDs or LED pairs at the ends of the connection to check the count.
  */
-function SkipsEditor({ layout, onChange, wallUuid, source, photoUri, width, onInteractionChange }: MapEditorProps) {
+function SkipsEditor({
+  layout,
+  cableHistory,
+  wallUuid,
+  source,
+  photoUri,
+  width,
+  onInteractionChange,
+}: CableEditorProps) {
   const { t } = useTranslation('boards');
   const isFocused = useIsFocused();
   const { spacing, brandColors } = useTheme();
-  const { change, undo, canUndo } = useEditorHistory(layout, onChange);
+  const { change, undo, canUndo } = cableHistory;
   const [connection, setConnection] = useState<Connection | null>(null);
   const [skipText, setSkipText] = useState<string | null>(null);
   const [endsLit, setEndsLit] = useState(true);
@@ -805,7 +834,7 @@ function SkipsEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
         canApply={canApplySkip}
         onApply={() => {
           if (!canApplySkip) return;
-          if (skipped && newSkip !== gapCount) change({ wiring: skipped });
+          if (skipped && newSkip !== gapCount) change(skipped);
           setSkipText(null);
         }}
       />
