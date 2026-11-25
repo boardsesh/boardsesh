@@ -227,6 +227,31 @@ describe('BoardRow', () => {
     expect(screen.queryByTestId('status-pill')).toBeNull();
   });
 
+  // A gym's wall list (#8151) has to tell walls apart: every set, the counts,
+  // who added it, and a neutral pill for the climber's own or followed wall.
+  it('draws detail lines under the subtitle and a neutral badge, and reads both aloud', () => {
+    renderRow({
+      ...GARAGE,
+      isPinned: false,
+      offlineState: undefined,
+      badge: 'Following',
+      detailLines: ['Hold Set A, Hold Set B', '12 climbers · 340 sends'],
+    });
+    expect(screen.getByText('Hold Set A, Hold Set B')).toBeTruthy();
+    expect(screen.getByText('12 climbers · 340 sends')).toBeTruthy();
+    const pill = screen.getByTestId('status-pill');
+    expect(pill.textContent).toBe('Following');
+    expect(pill.getAttribute('data-tone')).toBeNull();
+    const label = screen.getByTestId('row-target').getAttribute('aria-label') ?? '';
+    expect(label).toContain('Following');
+    expect(label).toContain('12 climbers · 340 sends');
+  });
+
+  it('keeps the Reported pill over a badge', () => {
+    renderRow({ ...GARAGE, openReportCount: 1, badge: 'Your board' });
+    expect(screen.getByTestId('status-pill').textContent).toBe('reportReview.statusPill');
+  });
+
   it('draws the art in the regular slot', () => {
     const { container } = renderRow(GARAGE);
     expect(container.querySelector('[data-art="garage"]')).not.toBeNull();

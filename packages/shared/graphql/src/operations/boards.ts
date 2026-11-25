@@ -13,6 +13,8 @@ import type {
   PopularBoardConfigsInput,
   BoardDiscoveryBoard,
   BoardDiscoveryInput,
+  ExistingWallCandidates,
+  ExistingWallCandidatesInput,
 } from '@boardsesh/shared-schema';
 
 // ============================================
@@ -228,6 +230,32 @@ export const GET_BOARD_LEADERBOARD = gql`
       totalCount
       hasMore
       periodLabel
+    }
+  }
+`;
+
+/**
+ * The walls a gym already has, of one board type, that a climber may be about
+ * to add again (#8151): the gym, listings merged into it and public listings
+ * within 150 m. Send the draft's layout, size and sets to get a `matchKind` per
+ * wall; without them the list is just the gym's walls. A failed lookup throws,
+ * it never answers with an empty list. See docs/product/existing-wall-check.md.
+ */
+export const EXISTING_WALL_CANDIDATES = gql`
+  query ExistingWallCandidates($input: ExistingWallCandidatesInput!) {
+    existingWallCandidates(input: $input) {
+      candidates {
+        board {
+          ${BOARD_FIELDS}
+        }
+        matchKind
+        missingSetIds
+        extraSetIds
+        source
+        gymName
+        gymDistanceMeters
+      }
+      truncated
     }
   }
 `;
@@ -514,6 +542,14 @@ export type GetPopularBoardConfigsQueryVariables = {
 
 export type GetPopularBoardConfigsQueryResponse = {
   popularBoardConfigs: PopularBoardConfigConnection;
+};
+
+export type ExistingWallCandidatesQueryVariables = {
+  input: ExistingWallCandidatesInput;
+};
+
+export type ExistingWallCandidatesQueryResponse = {
+  existingWallCandidates: ExistingWallCandidates;
 };
 
 export type GetBoardsBySerialNumbersQueryVariables = {

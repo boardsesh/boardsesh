@@ -65,3 +65,15 @@ export function formatDefaultBoardName(params: {
   const owner = userName?.trim();
   return owner ? `${owner}'s ${config}` : config;
 }
+
+/**
+ * The default name for a board set up at a gym (#8151): "Boulder Space
+ * MoonBoard 2019". The gym leads, so the board reads right in the gym's wall
+ * list and on the map, where the climber's own name would mean nothing.
+ */
+export function formatGymBoardName(params: { gymName: string; boardName: string; layoutName: string }): string {
+  const { gymName, boardName, layoutName } = params;
+  return [gymName.trim(), boardTypeLabel(boardName), cleanLayoutName(layoutName, boardName)]
+    .filter((part) => part.length > 0)
+    .join(' ');
+}

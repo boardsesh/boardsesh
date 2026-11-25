@@ -25,7 +25,11 @@ import { BoardCarousel } from '../../src/components/board-discovery/BoardCarouse
 import { BoardDetailSheet, type RelistGym } from '../../src/components/board-discovery/BoardDetailSheet';
 import { useReportProblemHost } from '../../src/components/report-problem/use-report-problem';
 import { ReportReviewSheet, type ReportReviewAction } from '../../src/components/report-problem/ReportReviewSheet';
-import { useDirectoryReportsEnabled, useFeatureFlagsResolved } from '../../src/providers/feature-flags-provider';
+import {
+  useCreateBoardGymFirstEnabled,
+  useDirectoryReportsEnabled,
+  useFeatureFlagsResolved,
+} from '../../src/providers/feature-flags-provider';
 import type { DiscoveryBoardItem } from '../../src/components/board-discovery/BoardDiscoveryCard';
 import { BoardRowList } from '../../src/components/board-discovery/BoardRowList';
 import { BoardSelectorView } from '../../src/components/board-discovery/BoardSelectorView';
@@ -70,6 +74,8 @@ import { useStoredUserId } from '../../src/hooks/use-current-user-id';
 import { trackBoardCardAction } from '../../src/lib/boards/board-card-action-analytics';
 import {
   trackBoardPickerAddSelected,
+  trackBoardKindChosen,
+  type BoardKind,
   type BoardPickerAddKind,
   type BoardPickerAddSurface,
 } from '../../src/lib/boards/board-picker-add-analytics';
@@ -1352,14 +1358,26 @@ export default function BoardSelection() {
   // climb?". `source` rides along so a board made on the route closes out
   // onboarding exactly like a pick here: creating a board is how a home-wall
   // owner binds their first one, and the wall wizard binds a Spraywall.
+  //
+  // With the gym-first flow on (#8151), the builder is reached by saying whose
+  // board it is: the + menu's two rows say it, the empty state asks on
+  // "Where's this board?".
+  const gymFirstEnabled = useCreateBoardGymFirstEnabled();
   const openAddRoute = useCallback(
-    (kind: BoardPickerAddKind, surface: BoardPickerAddSurface) => {
-      trackBoardPickerAddSelected({ kind, surface });
-      router.push(addBoardRoute(kind, { returnTo: boardReturnTo, source, fromPicker: true }));
+    (kind: BoardPickerAddKind, surface: BoardPickerAddSurface, boardKind?: BoardKind) => {
+      trackBoardPickerAddSelected({ kind, surface, boardKind });
+      if (kind === 'board' && boardKind && surface === 'picker') {
+        trackBoardKindChosen({ kind: boardKind, surface: 'picker', preAnswered: false });
+      }
+      const askKind = kind === 'board' && gymFirstEnabled && !boardKind ? 'ask' : boardKind;
+      router.push(addBoardRoute(kind, { returnTo: boardReturnTo, source, fromPicker: true, boardKind: askKind }));
     },
-    [router, boardReturnTo, source],
+    [router, boardReturnTo, source, gymFirstEnabled],
   );
-  const onAddFromMenu = useCallback((kind: BoardPickerAddKind) => openAddRoute(kind, 'picker'), [openAddRoute]);
+  const onAddFromMenu = useCallback(
+    (kind: BoardPickerAddKind, boardKind?: BoardKind) => openAddRoute(kind, 'picker', boardKind),
+    [openAddRoute],
+  );
   const onEmptySetUpBoard = useCallback(() => openAddRoute('board', 'empty_state'), [openAddRoute]);
   const onEmptyAddSprayWall = useCallback(() => openAddRoute('spraywall', 'empty_state'), [openAddRoute]);
 
@@ -1370,9 +1388,11 @@ export default function BoardSelection() {
   const canAddBoards = isAuthenticated && !isLocalOnly && !isError && !showFirstBoardChoice;
   useLayoutEffect(() => {
     navigation.setOptions({
-      headerRight: canAddBoards ? () => <AddBoardMenu onSelect={onAddFromMenu} /> : undefined,
+      headerRight: canAddBoards
+        ? () => <AddBoardMenu onSelect={onAddFromMenu} gymFirst={gymFirstEnabled} />
+        : undefined,
     });
-  }, [navigation, canAddBoards, onAddFromMenu]);
+  }, [navigation, canAddBoards, onAddFromMenu, gymFirstEnabled]);
 
   // First-board mode's answers. Each one is the existing flow behind it, plus
   // the choice event; see FirstBoardChoice.
@@ -1387,9 +1407,14 @@ export default function BoardSelection() {
   // Save works from the first frame instead of after finding the layout chip.
   const onFirstBoardOwn = useCallback(() => {
     chooseFirstBoardPath('own');
-    trackBoardPickerAddSelected({ kind: 'board', surface: 'first_run' });
-    router.push(addBoardRoute('board', { returnTo: boardReturnTo, source, preset: BUILDER_PRESET_PARAM_VALUE }));
-  }, [chooseFirstBoardPath, router, boardReturnTo, source]);
+    // "My own board" already says whose it is: no question on the way.
+    const boardKind = gymFirstEnabled ? 'home' : undefined;
+    trackBoardPickerAddSelected({ kind: 'board', surface: 'first_run', boardKind });
+    if (boardKind) trackBoardKindChosen({ kind: boardKind, surface: 'first_run', preAnswered: true });
+    router.push(
+      addBoardRoute('board', { returnTo: boardReturnTo, source, preset: BUILDER_PRESET_PARAM_VALUE, boardKind }),
+    );
+  }, [chooseFirstBoardPath, router, boardReturnTo, source, gymFirstEnabled]);
   // The wall wizard binds with the onboarding `source` too, so a wall closes out
   // first-run like any other first board.
   const onFirstBoardSprayWall = useCallback(() => {
@@ -1494,10 +1519,17 @@ export default function BoardSelection() {
   const onInRangeOwnBoard = useCallback(
     (row: UnnamedInRangeRow) => {
       startUnnamedRowAction(row);
-      const builder = addBoardRoute('board', { returnTo: boardReturnTo, source, preset: BUILDER_PRESET_PARAM_VALUE });
+      const boardKind = gymFirstEnabled ? 'home' : undefined;
+      if (boardKind) trackBoardKindChosen({ kind: boardKind, surface: 'in_range', preAnswered: true });
+      const builder = addBoardRoute('board', {
+        returnTo: boardReturnTo,
+        source,
+        preset: BUILDER_PRESET_PARAM_VALUE,
+        boardKind,
+      });
       router.push({ pathname: builder.pathname, params: { ...builder.params, presetBoardType: row.boardType } });
     },
-    [startUnnamedRowAction, router, boardReturnTo, source],
+    [startUnnamedRowAction, router, boardReturnTo, source, gymFirstEnabled],
   );
   const onOpenBluetoothSettings = useCallback(() => {
     chooseFirstBoardPath('scan');

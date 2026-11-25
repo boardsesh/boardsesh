@@ -115,7 +115,12 @@ export function FirstBoardChoice({
   );
 }
 
-function ChoiceCard({
+/**
+ * One answer card: an icon, a title and a hint, a chevron (or a spinner while
+ * `busy`). Exported for "Where's this board?" (#8151), which asks the same
+ * kind of question and should read the same.
+ */
+export function ChoiceCard({
   icon,
   title,
   hint,

@@ -38,7 +38,7 @@ vi.mock('react-i18next', () => ({
 const theme = vi.hoisted(() => ({ variant: 'liquidGlass' as 'liquidGlass' | 'material' }));
 vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ variant: theme.variant }) }));
 
-const { ADD_BOARD_MENU_KINDS, AddBoardMenu } = await import('../AddBoardMenu');
+const { ADD_BOARD_MENU_KINDS, GYM_FIRST_ADD_BOARD_MENU_ROWS, AddBoardMenu } = await import('../AddBoardMenu');
 
 function renderedMenu(): MenuProps {
   if (!menu.last) throw new Error('AddBoardMenu drew no AppMenu');
@@ -83,6 +83,40 @@ describe('AddBoardMenu', () => {
     render(<AddBoardMenu onSelect={onSelect} />);
     renderedMenu().onSelectIndex(3);
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  // #8151: with the gym-first flag, the builder row splits so a gym wall
+  // somebody already added is found before it is added again.
+  describe('gym-first', () => {
+    it('splits Set up a board into My own board and A board at my gym', () => {
+      render(<AddBoardMenu onSelect={vi.fn()} gymFirst />);
+      const { actions } = renderedMenu();
+      expect(actions.map((action) => action.label)).toEqual([
+        'My own board',
+        'A board at my gym',
+        'Add a Spraywall',
+        'Find a gym',
+      ]);
+      expect(actions.map((action) => action.dividerBefore === true)).toEqual([false, false, false, true]);
+      expect(actions).toHaveLength(GYM_FIRST_ADD_BOARD_MENU_ROWS.length);
+    });
+
+    it.each([
+      { index: 0, args: ['board', 'home'] },
+      { index: 1, args: ['board', 'gym'] },
+      { index: 2, args: ['spraywall'] },
+      { index: 3, args: ['gym_map'] },
+    ])('hands row $index on as $args', ({ index, args }) => {
+      const onSelect = vi.fn();
+      render(<AddBoardMenu onSelect={onSelect} gymFirst />);
+      renderedMenu().onSelectIndex(index);
+      expect(onSelect).toHaveBeenCalledExactlyOnceWith(...args);
+    });
+
+    it('keeps the single row when the flag is off', () => {
+      render(<AddBoardMenu onSelect={vi.fn()} gymFirst={false} />);
+      expect(renderedMenu().actions[0]?.label).toBe('Set up a board');
+    });
   });
 
   // The native bar's own frame: UIKit draws the glass around it on Liquid

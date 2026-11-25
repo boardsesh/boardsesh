@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { toBoardName } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import type { BoardName, CreateBoardInput, UserBoard } from '@boardsesh/shared-schema';
+import type { BoardName, CreateBoardInput, ExistingWallCheck, UserBoard } from '@boardsesh/shared-schema';
 import {
   useCreateBoard,
   useFollowBoard,
+  useGym,
   useProfile,
   usePopularBoardConfigs,
   fetchBoardByUuid,
@@ -19,7 +20,9 @@ import {
   isExpectedAuthError,
   isBoardLimitError,
   readDuplicateBoardError,
+  readExistingWallsError,
   type DuplicateBoardError,
+  type ExistingWallErrorCandidate,
 } from '../../src/lib/graphql/extract-error-message';
 import { track } from '../../src/lib/analytics';
 import { useAuth } from '../../src/providers/auth-provider';
@@ -39,7 +42,28 @@ import { usePrivacySettings } from '../../src/lib/graphql/hooks/use-privacy';
 import { BoardForm } from '../../src/components/board-discovery/BoardForm';
 import { BoardDuplicatePromptSheet } from '../../src/components/board-discovery/BoardDuplicatePromptSheet';
 import { SerialReuseConfirmSheet } from '../../src/components/board-discovery/SerialReuseConfirmSheet';
-import { formatDefaultBoardName } from '../../src/components/board-discovery/board-builder-labels';
+import {
+  boardTypeLabel,
+  formatDefaultBoardName,
+  formatGymBoardName,
+} from '../../src/components/board-discovery/board-builder-labels';
+import { ExistingWallsSheet } from '../../src/components/board-discovery/ExistingWallsSheet';
+import { DiscoveryBoardArt } from '../../src/components/board-discovery/DiscoveryBoardArt';
+import type { DiscoveryBoardItem } from '../../src/components/board-discovery/BoardDiscoveryCardView';
+import { useCreateBoardGymFirstEnabled } from '../../src/providers/feature-flags-provider';
+import { parseBoardKind } from '../../src/lib/boards/board-picker-add-analytics';
+import {
+  boardFlowTicket,
+  claimBoardFlowAbandonment,
+  noteBoardFlowSecured,
+} from '../../src/lib/boards/board-create-flow';
+import {
+  acknowledgedWallUuids,
+  MAX_ACKNOWLEDGED_WALLS,
+  wallCandidateItem,
+  wallRelation,
+  type WallRowCopy,
+} from '../../src/lib/boards/wall-candidates';
 
 /**
  * The overrides the climber has explicitly granted so far.
@@ -54,7 +78,58 @@ import { formatDefaultBoardName } from '../../src/components/board-discovery/boa
 type CreateOverrides = {
   allowDuplicateSerial?: boolean;
   allowDuplicateConfig?: boolean;
+  /**
+   * Walls the climber was shown, against their actual setup, and said are not
+   * theirs (#8151): only from the "already has" sheet here ("Keep setting up
+   * mine"). Non-empty sends CONFIRMED_SEPARATE. The gym's wall list never
+   * acknowledges anything: it has no setup to compare, and acknowledging there
+   * would weaken the server's check, which blocks a different-sets copy only
+   * under REJECT_IF_FOUND.
+   */
+  acknowledgedWallUuids?: string[];
 };
+
+/**
+ * The existing-wall recheck the create asks for (#8151). Always sent, whatever
+ * the gym-first flag says: the server only checks a create that opts in, and a
+ * copy of a gym's wall is just as much a copy from the old flow. With walls
+ * acknowledged it's CONFIRMED_SEPARATE, which the server honours only for those
+ * walls; otherwise REJECT_IF_FOUND.
+ */
+function existingWallCheckFor(acknowledged: readonly string[]): {
+  existingWallCheck: ExistingWallCheck;
+  acknowledgedWallUuids?: string[];
+} {
+  return acknowledged.length > 0
+    ? { existingWallCheck: 'CONFIRMED_SEPARATE', acknowledgedWallUuids: [...acknowledged] }
+    : { existingWallCheck: 'REJECT_IF_FOUND' };
+}
+
+/**
+ * How many named walls the "already has" sheet looks up by uuid: as many as can
+ * be acknowledged, so nothing is acknowledged that the climber wasn't shown.
+ */
+const EXISTING_WALLS_LOOKUP_LIMIT = MAX_ACKNOWLEDGED_WALLS;
+
+/** What the "already has" sheet holds while it's up. */
+type ExistingWallsPrompt = {
+  /** Every wall the refusal named. */
+  named: ExistingWallErrorCandidate[];
+  /**
+   * The ones looked up and shown, by uuid; null while loading. Only these are
+   * acknowledged on "Keep setting up mine": a wall the climber never saw stays
+   * unacknowledged, so the server names it again.
+   */
+  boards: UserBoard[] | null;
+  /** Some named wall couldn't be shown: say so and offer Try again. */
+  loadFailed: boolean;
+  granted: CreateOverrides;
+};
+
+function usedWallMatch(matchKind: ExistingWallErrorCandidate['matchKind']): 'exact' | 'near_miss' | 'at_gym' {
+  if (matchKind === 'EXACT') return 'exact';
+  return matchKind === null ? 'at_gym' : 'near_miss';
+}
 
 /** Which picker path opened the builder, on `Board Builder Abandoned`. */
 type BuilderOpenedFrom = 'onboarding' | 'no_board' | 'board_picker';
@@ -107,7 +182,18 @@ export default function CreateBoard() {
      * it couldn't name and the climber said it's their own.
      */
     presetBoardType?: string;
+    /** `home` or `gym` from the gym-first flow (#8151): analytics, and whether a bare open asks first. */
+    kind?: string;
+    /** The gym the climber picked on the wall list: prefilled, coordinates and all. */
+    gymUuid?: string;
+    /** The board type chosen on the wall list. */
+    boardType?: string;
+    /** `'1'` from "My gym isn't listed": open with the location field focused. */
+    focusLocation?: string;
   }>();
+  const router = useRouter();
+  const gymFirstEnabled = useCreateBoardGymFirstEnabled();
+  const kind = parseBoardKind(params.kind);
   const boardReturnTo = resolveBoardReturnTo(params.returnTo);
   // Threaded through the picker from the first-run flow. Creating a board is one
   // of the ways a climber binds their first one, so it has to close out
@@ -121,6 +207,7 @@ export default function CreateBoard() {
   const createBoard = useCreateBoard();
   const followBoard = useFollowBoard();
   const { data: profile } = useProfile({ enabled: isAuthenticated });
+  const viewerId = profile?.id ?? null;
 
   // Every create here starts from scratch: the picker's Popular setups cards,
   // which opened the builder seeded with a config ('popular_seed'), went with
@@ -141,8 +228,11 @@ export default function CreateBoard() {
     [popularConfigList],
   );
   const { data: privacySettings, refetch: refetchPrivacySettings } = usePrivacySettings();
-  // Only a preset open names a board type to start on.
-  const initialBoardName = presetRequested ? (toBoardName(params.presetBoardType) ?? undefined) : undefined;
+  // A preset open names its board type with `presetBoardType`; the gym-first
+  // wall list with `boardType`. Nothing else names one.
+  const initialBoardName = presetRequested
+    ? (toBoardName(params.presetBoardType) ?? undefined)
+    : (toBoardName(params.boardType) ?? undefined);
   const builder = useBoardBuilder(null, {
     preset: presetRequested ? presetForBoard : undefined,
     initialBoardName,
@@ -156,16 +246,80 @@ export default function CreateBoard() {
     () => builder.sizes.find((size) => size.id === builder.sizeId) ?? null,
     [builder.sizes, builder.sizeId],
   );
+  // A board added at a gym from the gym-first flow is named for the gym, not
+  // the climber: "Boulder Space MoonBoard 2019".
+  const gymForName = kind === 'gym' ? (builder.selectedGym?.name ?? null) : null;
   const defaultName = useMemo(
     () =>
-      formatDefaultBoardName({
-        userName: profile?.displayName,
-        boardName: builder.boardName,
-        layoutName: builder.rawLayoutName,
-        size: selectedSize,
-      }),
-    [profile?.displayName, builder.boardName, builder.rawLayoutName, selectedSize],
+      gymForName
+        ? formatGymBoardName({ gymName: gymForName, boardName: builder.boardName, layoutName: builder.rawLayoutName })
+        : formatDefaultBoardName({
+            userName: profile?.displayName,
+            boardName: builder.boardName,
+            layoutName: builder.rawLayoutName,
+            size: selectedSize,
+          }),
+    [gymForName, profile?.displayName, builder.boardName, builder.rawLayoutName, selectedSize],
   );
+
+  // The gym the wall list was opened on, prefilled once it loads.
+  // `setSelectedGym` copies its coordinates, which the server's 150 m link
+  // check needs. Once only: a gym the climber changes in the form stays changed.
+  const prefillGymUuid = typeof params.gymUuid === 'string' && params.gymUuid.length > 0 ? params.gymUuid : null;
+  const prefillGymQuery = useGym(prefillGymUuid);
+  const prefillGym = prefillGymQuery.data;
+  const [gymPrefilled, setGymPrefilled] = useState(false);
+  // The climber set the gym aside ("Choose another gym") after it turned out
+  // to be gone.
+  const [prefillCleared, setPrefillCleared] = useState(false);
+  // A gym the climber picks in the form wins: it unblocks Save, and a prefill
+  // that lands later never overwrites it.
+  const gymChosenInForm = builder.selectedGym != null && !gymPrefilled;
+  // The server answers a deleted or no-longer-visible gym with null, not an
+  // error: a settled null is a gym that isn't there any more.
+  const prefillUnavailable =
+    prefillGymUuid !== null && !gymPrefilled && prefillGymQuery.isSuccess && prefillGym == null;
+  // Until the gym lands, a Save would create a board with no gym at all, so it
+  // waits. A failed read says so, with Try again, rather than saving unlinked.
+  const prefillPending = prefillGymUuid !== null && !gymPrefilled && !prefillCleared && !gymChosenInForm;
+  const prefillFailed = prefillPending && prefillGymQuery.isError;
+  const prefillGone = prefillPending && prefillUnavailable;
+  const refetchPrefillGym = prefillGymQuery.refetch;
+  const retryPrefillGym = useCallback(() => void refetchPrefillGym(), [refetchPrefillGym]);
+  const clearPrefillGym = useCallback(() => setPrefillCleared(true), []);
+  const { setSelectedGym } = builder;
+  useEffect(() => {
+    if (!prefillGym || gymPrefilled || prefillCleared || gymChosenInForm) return;
+    setGymPrefilled(true);
+    setSelectedGym({
+      uuid: prefillGym.uuid,
+      name: prefillGym.name,
+      latitude: prefillGym.latitude,
+      longitude: prefillGym.longitude,
+    });
+  }, [prefillGym, gymPrefilled, prefillCleared, gymChosenInForm, setSelectedGym]);
+
+  // A bare open of the builder (a deep link, an old entry) asks home or gym
+  // first while the gym-first flow is on. Decided at mount only: a flag that
+  // resolves later must never yank a form out from under the climber.
+  const [redirectToWhere] = useState(
+    () =>
+      gymFirstEnabled &&
+      kind === null &&
+      !presetRequested &&
+      prefillGymUuid === null &&
+      params.presetBoardType === undefined &&
+      params.boardType === undefined,
+  );
+  useEffect(() => {
+    if (!redirectToWhere) return;
+    const whereParams: Record<string, string> = {};
+    if (params.returnTo !== undefined) whereParams.returnTo = params.returnTo;
+    if (params.source !== undefined) whereParams.source = params.source;
+    router.replace({ pathname: '/boards/where', params: whereParams });
+    // Once, at mount: see above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [submitting, setSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -182,6 +336,9 @@ export default function CreateBoard() {
     input: CreateBoardInput;
     granted: CreateOverrides;
   } | null>(null);
+  // The "already has" sheet (#8151): the gym the board lands on already has
+  // this wall. One refusal's sheet at a time, like the two above.
+  const [existingWalls, setExistingWalls] = useState<ExistingWallsPrompt | null>(null);
   // `submitting` is only accurate on the NEXT render, so it can't guard a call
   // that fires in the same tick as the state update — which is exactly what
   // "add a new board here" does (dismiss the sheet, then create). This ref is
@@ -197,6 +354,18 @@ export default function CreateBoard() {
   // never reads as a quit. The snapshot is refreshed after every render so the
   // unmount reports what was on screen at the end, not at the start.
   const boardSecuredRef = useRef(false);
+  const undoSecuredRef = useRef<(() => void) | null>(null);
+  const markBoardSecured = useCallback(() => {
+    boardSecuredRef.current = true;
+    undoSecuredRef.current = noteBoardFlowSecured();
+  }, []);
+  // A bind that failed after `markBoardSecured`: the climber is still here,
+  // and leaving now is an abandonment like any other.
+  const unmarkBoardSecured = useCallback(() => {
+    boardSecuredRef.current = false;
+    undoSecuredRef.current?.();
+    undoSecuredRef.current = null;
+  }, []);
   const submitAttemptedRef = useRef(false);
   const builderSnapshotRef = useRef({ boardType: builder.boardName, hadLayout: false, hadSize: false });
   useEffect(() => {
@@ -209,8 +378,13 @@ export default function CreateBoard() {
   const openedFrom = builderOpenedFrom(params.source);
   useEffect(() => {
     const openedAtMs = Date.now();
+    const ticket = boardFlowTicket();
     return () => {
+      // Handed straight on to "Where's this board?": that screen is the one
+      // the climber sees, and reports for itself.
+      if (redirectToWhere) return;
       if (boardSecuredRef.current) return;
+      if (!claimBoardFlowAbandonment(ticket)) return;
       track(SHARED_EVENTS.BoardBuilderAbandoned, {
         ...builderSnapshotRef.current,
         source,
@@ -218,6 +392,8 @@ export default function CreateBoard() {
         openedFrom,
         submitAttempted: submitAttemptedRef.current,
         secondsOpen: Math.round((Date.now() - openedAtMs) / 1000),
+        kind,
+        step: 'form',
       });
     };
     // Once per screen: the route's params cannot change while it is mounted.
@@ -240,6 +416,36 @@ export default function CreateBoard() {
   });
 
   /**
+   * Look up the walls a BOARD_EXISTING_WALLS refusal named, for its sheet. By
+   * uuid, because the gym may be one the server attached from a typed location,
+   * which the app never learned; each lookup applies the board read rules. A
+   * wall the climber can't see is left out, and a failure leaves only the
+   * count, never "no walls": Keep setting up mine still works either way.
+   */
+  const loadExistingWalls = useCallback(async (named: ExistingWallErrorCandidate[], boardType: string) => {
+    const lookups = await Promise.allSettled(
+      named.slice(0, EXISTING_WALLS_LOOKUP_LIMIT).map((wall) => fetchBoardByUuid(wall.boardUuid)),
+    );
+    const boards = lookups.flatMap((lookup) => (lookup.status === 'fulfilled' && lookup.value ? [lookup.value] : []));
+    // Any wall named and not shown is a failure, not "fewer walls": a partial
+    // answer must never read as the whole one.
+    const loadFailed = boards.length < named.length;
+    setExistingWalls((current) => (current && current.named === named ? { ...current, boards, loadFailed } : current));
+    track(SHARED_EVENTS.BoardWallCandidatesShown, {
+      boardType,
+      exactCount: named.filter((wall) => wall.matchKind === 'EXACT').length,
+      nearMissCount: named.filter(
+        (wall) => wall.matchKind === 'SETS_DIFFER' || wall.matchKind === 'LAYOUT_OR_SIZE_DIFFERS',
+      ).length,
+      nearbyCount: 0,
+      otherTypeCount: 0,
+      atGymCount: named.filter((wall) => wall.matchKind === null).length,
+      lookup: boards.length === 0 && named.length > 0 ? 'failed' : 'ok',
+      trigger: 'pre_submit',
+    });
+  }, []);
+
+  /**
    * Always calls the server. The old short-circuit — activate an owned board
    * whose config matched and skip the mutation — is what made #4166 look like a
    * success while silently discarding the form, so there is deliberately no
@@ -249,13 +455,18 @@ export default function CreateBoard() {
    */
   const handleCreate = useCallback(
     async (overrides?: CreateOverrides) => {
-      if (inFlightRef.current) return;
+      if (inFlightRef.current || prefillPending) return;
       const input = builder.buildCreateInput(defaultName);
       if (!input) return;
+      // The first Save is always REJECT_IF_FOUND against the real setup; only
+      // the "already has" sheet below acknowledges walls.
+      const acknowledged = overrides?.acknowledgedWallUuids ?? [];
       const granted: CreateOverrides = {
         allowDuplicateSerial: overrides?.allowDuplicateSerial || undefined,
         allowDuplicateConfig: overrides?.allowDuplicateConfig || undefined,
+        acknowledgedWallUuids: acknowledged.length > 0 ? acknowledged : undefined,
       };
+      const wallCheck = existingWallCheckFor(acknowledged);
       inFlightRef.current = true;
       submitAttemptedRef.current = true;
       setSubmitting(true);
@@ -315,14 +526,22 @@ export default function CreateBoard() {
           }
         }
 
-        const board = await createBoard.mutateAsync({ ...input, ...granted });
-        boardSecuredRef.current = true;
+        const board = await createBoard.mutateAsync({
+          ...input,
+          allowDuplicateSerial: granted.allowDuplicateSerial,
+          allowDuplicateConfig: granted.allowDuplicateConfig,
+          ...wallCheck,
+        });
+        markBoardSecured();
         track(SHARED_EVENTS.BoardCreated, {
           ...describeInput(input, source),
           allowedDuplicate: !!granted.allowDuplicateConfig,
           allowedDuplicateSerial: !!granted.allowDuplicateSerial,
           preset: presetRequested,
           presetKept: builder.presetKept,
+          kind,
+          candidateCount: acknowledged.length,
+          confirmedDistinct: wallCheck.existingWallCheck === 'CONFIRMED_SEPARATE',
         });
         await finish(board);
         // Navigated away on success — no need to clear `submitting` (unmounting).
@@ -341,6 +560,19 @@ export default function CreateBoard() {
           setSerialReuse({ board: disclosure?.kind === 'public' ? disclosure.board : null, input, granted });
           inFlightRef.current = false;
           setSubmitting(false);
+          return;
+        }
+        // The gym the board lands on already has this wall (#8151). The
+        // refusal names walls by uuid only; look them up so the sheet can show
+        // what the climber is allowed to see of them. The form stays as it is.
+        // An empty list names nothing to show or acknowledge: resending would
+        // only be refused again, so it falls through to the plain failure.
+        const namedWalls = readExistingWallsError(error);
+        if (namedWalls && namedWalls.length > 0) {
+          setExistingWalls({ named: namedWalls, boards: null, loadFailed: false, granted });
+          inFlightRef.current = false;
+          setSubmitting(false);
+          void loadExistingWalls(namedWalls, input.boardType);
           return;
         }
         const duplicateError = readDuplicateBoardError(error);
@@ -386,6 +618,10 @@ export default function CreateBoard() {
       confirm,
       privacySettings,
       refetchPrivacySettings,
+      prefillPending,
+      kind,
+      markBoardSecured,
+      loadExistingWalls,
     ],
   );
 
@@ -402,7 +638,7 @@ export default function CreateBoard() {
         preset: presetRequested,
         presetKept: builder.presetKept,
       });
-      boardSecuredRef.current = true;
+      markBoardSecured();
       setDuplicate(null);
       await finish(board);
     } catch {
@@ -411,7 +647,7 @@ export default function CreateBoard() {
       inFlightRef.current = false;
       setSubmitting(false);
     }
-  }, [duplicate, builder.boardName, builder.presetKept, source, presetRequested, finish, t]);
+  }, [duplicate, builder.boardName, builder.presetKept, source, presetRequested, finish, t, markBoardSecured]);
 
   const handleAddAnother = useCallback(() => {
     const granted = duplicate?.granted;
@@ -440,14 +676,14 @@ export default function CreateBoard() {
     setSubmitting(true);
     try {
       await followBoard.mutateAsync(board);
-      boardSecuredRef.current = true;
+      markBoardSecured();
       await finish(board);
     } catch {
       setCreateError(t('mobile.create.createError'));
       inFlightRef.current = false;
       setSubmitting(false);
     }
-  }, [serialReuse, followBoard, finish, t]);
+  }, [serialReuse, followBoard, finish, t, markBoardSecured]);
 
   const handleCreateAnyway = useCallback(() => {
     if (!serialReuse) return;
@@ -462,16 +698,144 @@ export default function CreateBoard() {
     setSubmitting(false);
   }, []);
 
+  const wallRowCopy = useMemo<WallRowCopy>(
+    () => ({
+      adjustable: t('mobile.findWall.adjustable'),
+      stats: ({ climbers, sends }) => t('mobile.findWall.stats', { climbers, sends }),
+      addedBy: (name) => t('mobile.findWall.addedBy', { name }),
+      nearbyGym: (gym, distance) => t('mobile.findWall.nearbyGym', { gym, distance }),
+      yourBoard: t('mobile.findWall.yourBoard'),
+      following: t('mobile.findWall.following'),
+    }),
+    [t],
+  );
+  const existingWallItems = useMemo(
+    () =>
+      (existingWalls?.boards ?? []).flatMap((board) => {
+        const item = wallCandidateItem(board, { copy: wallRowCopy, viewerId });
+        return item ? [item] : [];
+      }),
+    [existingWalls?.boards, wallRowCopy, viewerId],
+  );
+
+  /**
+   * "Use this board" on the "already has" sheet: follow the wall unless it's
+   * already the climber's, then make it active and leave. Nothing is created.
+   * A failed follow must not activate a wall the climber can't reach later.
+   */
+  const handleUseExistingWall = useCallback(
+    async (item: DiscoveryBoardItem, position: number) => {
+      if (!existingWalls || inFlightRef.current) return;
+      const board = existingWalls.boards?.find((candidate) => candidate.uuid === item.key);
+      if (!board) return;
+      const named = existingWalls.named.find((wall) => wall.boardUuid === board.uuid);
+      inFlightRef.current = true;
+      setSubmitting(true);
+      try {
+        const relation = wallRelation(board, viewerId);
+        if (relation === null) await followBoard.mutateAsync(board);
+        track(SHARED_EVENTS.BoardWallCandidateUsed, {
+          match: usedWallMatch(named?.matchKind ?? null),
+          position,
+          alreadyFollowed: relation !== null,
+          fixSetupStarted: false,
+          trigger: 'pre_submit',
+        });
+        // Abandonment is judged on unmount, which the bind's navigation
+        // triggers: mark the board secured just before it, after the follow,
+        // and undo that if the bind itself fails so the quit is still counted.
+        markBoardSecured();
+        setExistingWalls(null);
+        try {
+          await finish(board);
+        } catch (bindError) {
+          unmarkBoardSecured();
+          throw bindError;
+        }
+      } catch {
+        setExistingWalls(null);
+        setCreateError(t('mobile.findWall.useError'));
+        inFlightRef.current = false;
+        setSubmitting(false);
+      }
+    },
+    [existingWalls, viewerId, followBoard, markBoardSecured, unmarkBoardSecured, finish, t],
+  );
+
+  /** "Keep setting up mine": resend, acknowledging every wall the refusal named. */
+  const handleKeepMine = useCallback(() => {
+    if (!existingWalls) return;
+    const { granted, boards } = existingWalls;
+    if (!boards || boards.length === 0) return;
+    setExistingWalls(null);
+    // The walls just shown go first, so the server's 40-wall cap drops older
+    // acknowledgements rather than these: otherwise a gym with more than 40
+    // could refuse the same walls forever.
+    void handleCreate({
+      ...granted,
+      acknowledgedWallUuids: acknowledgedWallUuids([
+        ...boards.map((board) => board.uuid),
+        ...(granted.acknowledgedWallUuids ?? []),
+      ]),
+    });
+  }, [existingWalls, handleCreate]);
+
+  /** Try again on the sheet: look the named walls up afresh. */
+  const handleRetryExistingWalls = useCallback(() => {
+    if (!existingWalls) return;
+    const { named } = existingWalls;
+    setExistingWalls({ ...existingWalls, boards: null, loadFailed: false });
+    void loadExistingWalls(named, builder.boardName);
+  }, [existingWalls, loadExistingWalls, builder.boardName]);
+
+  const handleDismissExistingWalls = useCallback(() => {
+    if (inFlightRef.current) return;
+    setExistingWalls(null);
+  }, []);
+
+  // Handing straight on to "Where's this board?": draw nothing in between.
+  if (redirectToWhere) return null;
+
   return (
     <>
       <BoardForm
         builder={builder}
         defaultName={defaultName}
         submitting={submitting}
-        errorMessage={createError}
+        errorMessage={
+          createError ??
+          (prefillGone ? t('mobile.create.gymUnavailable') : prefillFailed ? t('mobile.findWall.gymFailed') : null)
+        }
         onSubmit={() => void handleCreate()}
         submitLabel={t('mobile.create.save')}
+        focusLocationOnOpen={params.focusLocation === '1'}
+        submitBlocked={prefillPending}
+        errorAction={
+          createError
+            ? undefined
+            : prefillGone
+              ? { label: t('mobile.create.chooseAnotherGym'), onPress: clearPrefillGym, opensGymPicker: true }
+              : prefillFailed
+                ? { label: t('mobile.findWall.retry'), onPress: retryPrefillGym }
+                : undefined
+        }
       />
+      {existingWalls && (
+        <ExistingWallsSheet
+          gymName={builder.selectedGym?.name ?? existingWalls.boards?.[0]?.gymName ?? null}
+          boardLabel={boardTypeLabel(builder.boardName)}
+          wallCount={existingWalls.named.length}
+          items={existingWallItems}
+          loading={existingWalls.boards === null}
+          loadFailed={existingWalls.loadFailed}
+          busy={submitting}
+          onUse={(item, position) => void handleUseExistingWall(item, position)}
+          onKeepMine={handleKeepMine}
+          onRetry={handleRetryExistingWalls}
+          onDismiss={handleDismissExistingWalls}
+          BoardArt={DiscoveryBoardArt}
+        />
+      )}
       {duplicate && (
         <BoardDuplicatePromptSheet
           duplicate={duplicate.error}

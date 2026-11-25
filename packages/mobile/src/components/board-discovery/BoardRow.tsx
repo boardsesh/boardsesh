@@ -50,8 +50,9 @@ function BoardRowSubtitle({ item, copy }: { item: DiscoveryBoardItem; copy: Boar
   const showGlyphs = !selected && copy.importLabel === null;
   const pinGlyph = showGlyphs && item.isPinned === true;
   const offlineGlyph = showGlyphs ? copy.offlineGlyph : null;
-  if (!text && !pinGlyph && offlineGlyph === null) return null;
-  return (
+  const detailLines = item.detailLines ?? EMPTY_LINES;
+  if (!text && !pinGlyph && offlineGlyph === null && detailLines.length === 0) return null;
+  const line = (
     <View style={styles.subtitleLine}>
       {copy.importLabel !== null ? (
         <View style={[styles.importDot, { backgroundColor: systemColors.secondaryLabel }]} />
@@ -67,7 +68,22 @@ function BoardRowSubtitle({ item, copy }: { item: DiscoveryBoardItem; copy: Boar
       ) : null}
     </View>
   );
+  if (detailLines.length === 0) return line;
+  return (
+    <View style={styles.subtitleBlock}>
+      {line}
+      {detailLines.map((detail, index) => (
+        // Lines of one row, fixed for its lifetime: the index is their identity.
+        // oxlint-disable-next-line react/no-array-index-key
+        <Text key={index} variant="footnote" tone="secondary" numberOfLines={2}>
+          {detail}
+        </Text>
+      ))}
+    </View>
+  );
 }
+
+const EMPTY_LINES: readonly string[] = [];
 
 /**
  * One board in an inset-grouped list: the picker's At {gym} and Your boards.
@@ -122,6 +138,12 @@ export const BoardRow = memo(function BoardRow({ item, onPress, menu, BoardArt }
   );
 
   const actionsLabel = t('mobile.discovery.cardActionsAria', { name: item.title });
+  // VoiceOver reads the row as one element, so the badge and the detail lines
+  // a wall list draws go into its label too.
+  const rowAccessibilityLabel = useMemo(
+    () => [boardItemAccessibilityLabel(item, copy), item.badge, ...(item.detailLines ?? [])].filter(Boolean).join(', '),
+    [item, copy],
+  );
   const wrapTarget = useCallback(
     (target: ReactElement) => (
       <AppMenu
@@ -174,6 +196,8 @@ export const BoardRow = memo(function BoardRow({ item, onPress, menu, BoardArt }
       status={
         (item.openReportCount ?? 0) > 0 ? (
           <StatusPill label={t('reportReview.statusPill')} tone="warning" testID="board-row-reported" />
+        ) : item.badge ? (
+          <StatusPill label={item.badge} testID="board-row-badge" />
         ) : undefined
       }
       accessory={accessory}
@@ -182,7 +206,7 @@ export const BoardRow = memo(function BoardRow({ item, onPress, menu, BoardArt }
       onLongPress={onLongPress}
       delayLongPress={BOARD_MENU_LONG_PRESS_DELAY_MS}
       longPressAccessibilityLabel={hasMenuRows ? actionsLabel : undefined}
-      accessibilityLabel={boardItemAccessibilityLabel(item, copy)}
+      accessibilityLabel={rowAccessibilityLabel}
       accessibilityActions={accessibilityActions}
       onAccessibilityAction={handleAccessibilityAction}
       wrapTarget={hasMenuRows ? wrapTarget : undefined}
@@ -198,6 +222,9 @@ const styles = StyleSheet.create({
   },
   subtitleText: {
     flexShrink: 1,
+  },
+  subtitleBlock: {
+    gap: 2,
   },
   importDot: {
     width: 6,

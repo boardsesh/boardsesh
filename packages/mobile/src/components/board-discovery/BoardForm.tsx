@@ -97,6 +97,18 @@ type BoardFormProps = {
    * audience control once the privacy rollout has replaced it. Owner only.
    */
   sprayTrainingSection?: ReactNode;
+  /**
+   * Open More options with the location field focused: the gym-first flow's
+   * "My gym isn't listed" (#8151), whose next step is typing where the board is.
+   */
+  focusLocationOnOpen?: boolean;
+  /** Hold Save off without a spinner: something the board needs is still loading (the prefilled gym). */
+  submitBlocked?: boolean;
+  /**
+   * A way out of `errorMessage`, drawn under it (Try again). `opensGymPicker`
+   * also opens the gym picker, for a prefilled gym that turned out to be gone.
+   */
+  errorAction?: { label: string; onPress: () => void; opensGymPicker?: boolean };
 };
 
 /**
@@ -119,6 +131,9 @@ export function BoardForm({
   sprayBackgroundSection,
   sprayLedSection,
   sprayTrainingSection,
+  focusLocationOnOpen = false,
+  submitBlocked = false,
+  errorAction,
 }: BoardFormProps) {
   const headerHeight = useHeaderHeight();
   const { t } = useTranslation('boards');
@@ -147,7 +162,7 @@ export function BoardForm({
   // them. Keep the lower fields scrollable above it, as on the profile form.
   const keyboardHeight = useKeyboardHeight(Platform.OS === 'android');
   const { width: windowWidth } = useWindowDimensions();
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(focusLocationOnOpen);
   const [timerPairingOpen, setTimerPairingOpen] = useState(false);
   const [gymPickerOpen, setGymPickerOpen] = useState(false);
 
@@ -232,7 +247,7 @@ export function BoardForm({
       kind: 'confirm',
       label: submitLabel,
       onPress: submit,
-      disabled: !builder.canCreate || submitting,
+      disabled: !builder.canCreate || submitting || submitBlocked,
       loading: submitting,
       prominent: true,
     },
@@ -282,6 +297,16 @@ export function BoardForm({
           >
             {errorMessage}
           </Text>
+        ) : null}
+        {errorMessage && errorAction ? (
+          <Button
+            title={errorAction.label}
+            variant="text"
+            onPress={() => {
+              errorAction.onPress();
+              if (errorAction.opensGymPicker) setGymPickerOpen(true);
+            }}
+          />
         ) : null}
         {/* Live board art — turns layout/size/set IDs into a recognizable wall. */}
         <View style={[styles.preview, { backgroundColor: systemColors.secondaryBackground }]}>
@@ -481,7 +506,11 @@ export function BoardForm({
 
             <SwitchRow label={t('mobile.create.ownBoard')} value={builder.isOwned} onValueChange={builder.setIsOwned} />
             {!privacySettings?.enabled ? (
-              <BoardVisibilityFields builder={builder} hideVisibilitySwitches={isSprayWall} />
+              <BoardVisibilityFields
+                builder={builder}
+                hideVisibilitySwitches={isSprayWall}
+                autoFocusLocation={focusLocationOnOpen}
+              />
             ) : null}
 
             {/* Lights heads the group the serial belongs to — both describe the

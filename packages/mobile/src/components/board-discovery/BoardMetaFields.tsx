@@ -322,8 +322,11 @@ export function locationRequestFeedback(status: LocationStatus): 'denied' | 'una
 export function BoardVisibilityFields({
   builder,
   hideVisibilitySwitches = false,
+  autoFocusLocation = false,
 }: {
   builder: BoardVisibilityBuilder;
+  /** Focus the location field when it first renders (the gym-first flow's "My gym isn't listed"). */
+  autoFocusLocation?: boolean;
   /**
    * Drop the public / unlisted switches, leaving only the location rows.
    *
@@ -384,6 +387,7 @@ export function BoardVisibilityFields({
         placeholder={t('mobile.create.locationPlaceholder')}
         accessibilityLabel={t('mobile.create.location')}
         maxLength={120}
+        autoFocus={autoFocusLocation}
       />
       {/* Stamping coordinates used to be one-way — the button simply went
           disabled, leaving no way to undo a wrong location. */}

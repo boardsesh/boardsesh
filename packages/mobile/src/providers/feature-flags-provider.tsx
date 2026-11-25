@@ -226,6 +226,13 @@ export const FEATURE_FLAG_DEFINITIONS = [
     defaultEnabled: false,
   },
   {
+    key: 'create-board-gym-first',
+    label: 'Ask home or gym before setting up a board',
+    description:
+      'Splits "Set up a board" into "My own board" and "A board at my gym", and opens the gym-first screens: Where\'s this board?, Find your gym\'s board and the gym\'s wall list (#8151). The builder sends the server\'s existing-wall check whatever this flag says. A POSITIVE rollout flag: unresolved or off keeps the single Set up a board row.',
+    defaultEnabled: false,
+  },
+  {
     key: 'climb-moderation-kill',
     label: 'Disable climb reporting + moderation',
     description:
@@ -599,6 +606,16 @@ export function useDirectoryReportsEnabled(): boolean {
  */
 export function useDirectorySetupSuggestionsEnabled(): boolean {
   return useFeatureFlag('directory-setup-suggestions') === true;
+}
+
+/**
+ * The gym-first create-board flow (#8151): the + menu's home and gym rows and
+ * the screens behind them. Positive and fail-closed: off, missing or unresolved
+ * keeps today's single "Set up a board" row. Only the screens hang on it; the
+ * builder's existing-wall check is sent either way.
+ */
+export function useCreateBoardGymFirstEnabled(): boolean {
+  return useFeatureFlag('create-board-gym-first') === true;
 }
 
 /** Kill switch for the Android lock screen card (#7327). Missing or unresolved reads as enabled. */

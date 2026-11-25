@@ -122,6 +122,8 @@ const state = vi.hoisted(() => ({
   /** Null reads it from the status: granted, refused for good after a denial, else askable. */
   locationPermission: null as LocationPermission | null,
   autoScanEnabled: true,
+  /** `create-board-gym-first` (#8151). */
+  gymFirst: false,
   // False while a route pushed over the picker (the builder, the gym map) is on top.
   focused: true,
 }));
@@ -293,6 +295,7 @@ vi.mock('../../../src/providers/feature-flags-provider', () => ({
   useFeatureFlagsResolved: () => true,
   useOfflineDownloadsEnabled: () => true,
   usePickerAutoScanEnabled: () => state.autoScanEnabled,
+  useCreateBoardGymFirstEnabled: () => state.gymFirst,
 }));
 vi.mock('../../../src/offline/use-downloaded-scope-keys', () => ({ useDownloadedScopeKeys: () => ({ data: [] }) }));
 vi.mock('../../../src/offline/use-offline-catalog-state', () => ({ useOfflineCatalogState: () => null }));
@@ -487,6 +490,7 @@ beforeEach(() => {
   state.locationStatus = 'idle';
   state.locationPermission = null;
   state.autoScanEnabled = true;
+  state.gymFirst = false;
   state.focused = true;
   recognitionHold.held = null;
   recognitionHold.remembered = [];
@@ -610,6 +614,29 @@ describe('the picker in first-board mode', () => {
       params: { returnTo: '/(tabs)/climbs', source: 'onboarding', preset: '1' },
     });
     expect(trackMock).toHaveBeenCalledWith('Board Picker Add Selected', { kind: 'board', surface: 'first_run' });
+  });
+
+  // #8151: "My own board" already says whose it is, so it skips "Where's this
+  // board?" and tells the builder it's a home board.
+  it('opens the builder as a home board with the gym-first flag on', () => {
+    state.gymFirst = true;
+    render(createElement(BoardSelection));
+    choice().onOwn();
+
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/boards/create',
+      params: { returnTo: '/(tabs)/climbs', source: 'onboarding', kind: 'home', preset: '1' },
+    });
+    expect(trackMock).toHaveBeenCalledWith('Board Picker Add Selected', {
+      kind: 'board',
+      surface: 'first_run',
+      boardKind: 'home',
+    });
+    expect(trackMock).toHaveBeenCalledWith('Board Kind Chosen', {
+      kind: 'home',
+      surface: 'first_run',
+      preAnswered: true,
+    });
   });
 
   // My Spraywall is always offered now: the wall wizard binds with the

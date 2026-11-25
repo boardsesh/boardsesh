@@ -19,6 +19,7 @@ import { useAuth } from '../../src/providers/auth-provider';
 import { useConfirm } from '../../src/providers/dialog-provider';
 import { useTheme } from '../../src/providers/theme-provider';
 import {
+  useCreateBoardGymFirstEnabled,
   useOfflineDownloadProgressEnabled,
   useOfflineDownloadsEnabled,
 } from '../../src/providers/feature-flags-provider';
@@ -86,7 +87,12 @@ import type { ArchivedSprayWallSummary } from '../../src/components/board-discov
 import { useOpenSprayWall } from '../../src/lib/spray/use-open-spray-wall';
 import { useActivateBoard } from '../../src/lib/boards/use-activate-board';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
-import { trackBoardPickerAddSelected, type BoardPickerAddKind } from '../../src/lib/boards/board-picker-add-analytics';
+import {
+  trackBoardKindChosen,
+  trackBoardPickerAddSelected,
+  type BoardKind,
+  type BoardPickerAddKind,
+} from '../../src/lib/boards/board-picker-add-analytics';
 import { addBoardRoute } from '../../src/components/board-discovery/add-board-route';
 import { AddBoardMenu } from '../../src/components/board-discovery/AddBoardMenu';
 import { offlineBoardRows } from '../../src/components/board-discovery/offline-board-items';
@@ -595,28 +601,36 @@ export default function ManageBoards() {
   );
   useRememberDownloadedBoards(boardConnection, archivedWallUuids);
 
+  // With the gym-first flow on (#8151), Create board asks whose board it is
+  // first ("Where's this board?"), and the + menu's two rows already say.
+  const gymFirstEnabled = useCreateBoardGymFirstEnabled();
   const onCreate = useCallback(() => {
     trackBoardPickerAddSelected({ kind: 'board', surface: 'manage' });
-    router.push(addBoardRoute('board', {}));
-  }, [router]);
+    router.push(addBoardRoute('board', { boardKind: gymFirstEnabled ? 'ask' : undefined }));
+  }, [router, gymFirstEnabled]);
 
   // The same + as the picker's top bar, in place of the outlined Create board
   // button that sat over the list. Online and signed in only: every way behind
   // it needs a connection and an account.
   const onAddFromMenu = useCallback(
-    (kind: BoardPickerAddKind) => {
-      trackBoardPickerAddSelected({ kind, surface: 'manage' });
-      router.push(addBoardRoute(kind, {}));
+    (kind: BoardPickerAddKind, boardKind?: BoardKind) => {
+      trackBoardPickerAddSelected({ kind, surface: 'manage', boardKind });
+      if (kind === 'board' && boardKind)
+        trackBoardKindChosen({ kind: boardKind, surface: 'manage', preAnswered: false });
+      const askKind = kind === 'board' && gymFirstEnabled && !boardKind ? 'ask' : boardKind;
+      router.push(addBoardRoute(kind, { boardKind: askKind }));
     },
-    [router],
+    [router, gymFirstEnabled],
   );
   const navigation = useNavigation();
   const canAddBoards = isAuthenticated && !shouldUseOfflineList;
   useLayoutEffect(() => {
     navigation.setOptions({
-      headerRight: canAddBoards ? () => <AddBoardMenu onSelect={onAddFromMenu} /> : undefined,
+      headerRight: canAddBoards
+        ? () => <AddBoardMenu onSelect={onAddFromMenu} gymFirst={gymFirstEnabled} />
+        : undefined,
     });
-  }, [navigation, canAddBoards, onAddFromMenu]);
+  }, [navigation, canAddBoards, onAddFromMenu, gymFirstEnabled]);
 
   const renderItem = useCallback(
     ({ item }: { item: ManageItem }) => {
