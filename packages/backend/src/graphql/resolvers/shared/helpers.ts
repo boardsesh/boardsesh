@@ -2,7 +2,7 @@ import { canAccessResource, requireResourceAccess } from '../../../services/priv
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { UNKNOWN_CLIENT } from '@boardsesh/shared-schema/client-identity';
 import { GraphQLError } from 'graphql';
-import { checkRateLimit, RateLimitError } from '../../../utils/rate-limiter';
+import { checkFixedWindowRateLimit, checkRateLimit, RateLimitError } from '../../../utils/rate-limiter';
 import { checkRateLimitRedis } from '../../../utils/redis-rate-limiter';
 import { getContext } from '../../context';
 import { getDistributedState } from '../../../services/distributed-state';
@@ -494,7 +494,11 @@ export async function isSessionMember(ctx: ConnectionContext, sessionId: string)
  * @param operation - Operation name for Redis key namespacing (default: 'default')
  * @param options.windowMs - Window length (default: one minute). A longer window,
  *   such as a daily cap, counts in its own buckets on both tiers, so it never
- *   shares a count with a per-minute limit on the same operation name.
+ *   shares a count with a per-minute limit on the same operation name. Both
+ *   tiers count it in the same fixed buckets, aligned to multiples of the
+ *   window since the epoch (a day runs midnight to midnight UTC), and report
+ *   the same `retryAfterSeconds`. The default one-minute window keeps its
+ *   rolling in-memory tier.
  */
 export async function applyRateLimit(
   ctx: ConnectionContext,
@@ -530,7 +534,7 @@ export async function applyRateLimit(
   // is preserved for older clients. See #2763.
   try {
     // Tier 1: Synchronous in-memory rate limiting (fast path, per-instance)
-    if (customWindow) checkRateLimit(key, maxRequests, windowMs);
+    if (customWindow) checkFixedWindowRateLimit(key, maxRequests, windowMs);
     else checkRateLimit(key, maxRequests);
 
     // Tier 2: Distributed Redis rate limiting. Tier 1 already ran, so Redis
@@ -554,9 +558,13 @@ export async function applyRateLimit(
         ANONYMOUS_SOCKET_PEER_RATE_LIMIT_FLOOR,
         maxRequests * ANONYMOUS_SOCKET_PEER_RATE_LIMIT_MULTIPLIER,
       );
-      await checkRateLimitRedis(`socket-peer:${ctx.socketPeerIp}`, bucketOperation, socketPeerLimit, windowMs, {
-        fallbackToMemory: true,
-      });
+      await checkRateLimitRedis(
+        `socket-peer:${ctx.socketPeerIp}`,
+        bucketOperation,
+        socketPeerLimit,
+        windowMs,
+        customWindow ? { fallbackToMemory: true, fixedWindowFallback: true } : { fallbackToMemory: true },
+      );
     }
   } catch (error) {
     if (error instanceof RateLimitError) {

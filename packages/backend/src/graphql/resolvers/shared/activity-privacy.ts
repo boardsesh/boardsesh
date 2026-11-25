@@ -644,6 +644,7 @@ export function notificationPrivacyCondition(
           and(
             eq(accessBoard.uuid, notification.entityId),
             isNull(accessBoard.deletedAt),
+            isNull(accessBoard.mergedIntoBoardUuid),
             ownerId === undefined ? undefined : eq(accessBoard.ownerId, ownerId),
           ),
         ),

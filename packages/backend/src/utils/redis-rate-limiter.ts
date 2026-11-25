@@ -1,5 +1,11 @@
 import { redisClientManager } from '../redis/client';
-import { checkRateLimit, incrementRateLimit, peekRateLimit, RateLimitError } from './rate-limiter';
+import {
+  checkFixedWindowRateLimit,
+  checkRateLimit,
+  incrementRateLimit,
+  peekRateLimit,
+  RateLimitError,
+} from './rate-limiter';
 import { logger } from './logger';
 
 /**
@@ -29,21 +35,27 @@ return count
  *
  * By default Redis failures use the local limiter. Callers that already ran a
  * local tier pass `fallbackToMemory: false` to avoid counting one request twice.
+ * `fixedWindowFallback` makes that local limiter count in the same fixed
+ * buckets as Redis (`checkFixedWindowRateLimit`) instead of a rolling window.
  */
 export async function checkRateLimitRedis(
   identity: string,
   operation: string,
   maxRequests: number,
   windowMs: number,
-  options: { fallbackToMemory?: boolean } = {},
+  options: { fallbackToMemory?: boolean; fixedWindowFallback?: boolean } = {},
 ): Promise<void> {
   const fallbackToMemory = options.fallbackToMemory ?? true;
+  const checkMemory = () =>
+    options.fixedWindowFallback
+      ? checkFixedWindowRateLimit(`${identity}:${operation}`, maxRequests, windowMs)
+      : checkRateLimit(`${identity}:${operation}`, maxRequests, windowMs);
 
   // If Redis is not connected, use the optional in-memory fallback.
   if (!redisClientManager.isRedisConnected()) {
     // Some callers already applied their own in-memory tier. They disable this
     // fallback so one request is not counted twice against the same bucket.
-    if (fallbackToMemory) checkRateLimit(`${identity}:${operation}`, maxRequests, windowMs);
+    if (fallbackToMemory) checkMemory();
     return;
   }
 
@@ -72,7 +84,7 @@ export async function checkRateLimitRedis(
         : '[RateLimit] Redis unavailable; caller in-memory tier remains active:',
       (err as Error).message,
     );
-    if (fallbackToMemory) checkRateLimit(`${identity}:${operation}`, maxRequests, windowMs);
+    if (fallbackToMemory) checkMemory();
   }
 }
 
