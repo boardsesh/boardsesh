@@ -38,7 +38,7 @@ vi.mock('@/app/lib/directory-reports/directory-setup-suggestions-flag', () => ({
 const executeAuthenticatedGraphQL = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/graphql/server-graphql', () => ({ executeAuthenticatedGraphQL }));
 
-const GymPage = (await import('../page')).default;
+const GymPage = (await import('@/app/(site)/gym/[gym_slug]/page')).default;
 const { ReportBoardButton, ReportGymButton, GymReportProblemHost } = await import('../gym-report-problem');
 const GymReportDuplicateCta = (await import('../gym-report-duplicate-cta')).default;
 

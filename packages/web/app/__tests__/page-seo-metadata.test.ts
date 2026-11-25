@@ -5,10 +5,10 @@ vi.mock('next/headers', () => ({
   headers: async () => new Headers(),
 }));
 
-const aboutPage = await import('../about/page');
-const loginPage = await import('../auth/login/page');
-const playlistsPage = await import('../playlists/page');
-const settingsPage = await import('../settings/page');
+const aboutPage = await import('@/app/(site)/about/page');
+const loginPage = await import('@/app/(site)/auth/login/page');
+const playlistsPage = await import('@/app/(site)/playlists/page');
+const settingsPage = await import('@/app/(site)/settings/page');
 
 const aboutMetadata = await aboutPage.generateMetadata();
 const loginMetadata = await loginPage.generateMetadata();

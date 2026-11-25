@@ -32,7 +32,7 @@ vi.mock('@/app/lib/directory-reports/directory-reports-flag', () => ({
 const executeAuthenticatedGraphQL = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/graphql/server-graphql', () => ({ executeAuthenticatedGraphQL }));
 
-const GymPage = (await import('../page')).default;
+const GymPage = (await import('@/app/(site)/gym/[gym_slug]/page')).default;
 const GymRunByLine = (await import('../gym-run-by-line')).default;
 const GymClaimCta = (await import('../gym-claim-cta')).default;
 const GymClaimCalloutMirror = (await import('../gym-claim-callout')).default;

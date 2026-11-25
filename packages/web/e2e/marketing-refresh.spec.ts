@@ -134,11 +134,8 @@ test('desktop preview switching persists when navigating to About', async ({ bro
     await page.goto('/');
     await page.getByRole('button', { name: 'iOS', exact: true }).click();
     await expect(page.locator('[data-preview-platform="ios"]')).toHaveCount(3);
-    await page.getByTestId('marketing-header').getByRole('link', { name: 'About', exact: true }).click();
+    await page.getByTestId('site-footer').getByRole('link', { name: 'About', exact: true }).click();
     await expect(page).toHaveURL(/\/about$/);
-    await expect(
-      page.getByTestId('marketing-header').getByRole('link', { name: 'About', exact: true }),
-    ).toHaveAttribute('aria-current', 'page');
     await expect(page.locator('[data-marketing-shot="profile"]')).toHaveAttribute('data-preview-platform', 'ios');
     await expect(page.getByRole('button', { name: 'iOS', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await page.getByRole('button', { name: 'Android', exact: true }).click();
@@ -219,11 +216,16 @@ test('the compact mobile header keeps the app and account reachable', async ({ p
   await page.setViewportSize({ width: 320, height: 844 });
   await page.goto('/');
   const header = page.getByTestId('marketing-header');
-  await expect(header.getByRole('link', { name: 'Sign in', exact: true })).toBeVisible();
-  await header.getByRole('button', { name: 'Open menu', exact: true }).click();
-  const appLink = page.getByRole('menuitem', { name: 'Start climbing', exact: true });
+  const disclosure = header.locator('details');
+  await expect(disclosure).not.toHaveAttribute('open');
+  await disclosure.locator('summary').click();
+  await expect(disclosure.getByRole('link', { name: 'Sign in', exact: true })).toBeVisible();
+  const appLink = disclosure.getByRole('link', { name: 'Start climbing', exact: true });
   await expect(appLink).toBeVisible();
   await expect(appLink).toHaveAttribute('href', /^(https?:\/\/|\/app)/);
+  await disclosure.locator('summary').press('Escape');
+  await expect(disclosure).not.toHaveAttribute('open');
+  await expect(disclosure.locator('summary')).toBeFocused();
 });
 
 for (const width of [320, 390]) {

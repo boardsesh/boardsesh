@@ -52,7 +52,7 @@ vi.mock('@/app/lib/spray/spray-wall-render-data.server', async (importOriginal) 
   fetchSprayWallPageData,
 }));
 
-const posterModule = await import('../page');
+const posterModule = await import('@/app/(site)/poster/b/[board_slug]/page');
 const BoardPosterPage = posterModule.default;
 const { generateMetadata } = posterModule;
 

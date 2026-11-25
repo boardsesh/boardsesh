@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { navigateAcrossMarketingDocument } from '@/app/lib/i18n/marketing-document-navigation';
 import { useTranslation } from 'react-i18next';
 import Alert from '@mui/material/Alert';
 import Button from '@mui/material/Button';
@@ -75,7 +76,8 @@ export default function HomeGymSearchNearMe({ locale }: HomeGymSearchNearMeProps
         },
         1,
       );
-      router.push(localeHref(href, locale));
+      const target = localeHref(href, locale);
+      if (!navigateAcrossMarketingDocument(target)) router.push(target);
     },
     [locale, router],
   );

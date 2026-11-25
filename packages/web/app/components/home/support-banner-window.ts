@@ -8,8 +8,8 @@
  * same time on the 8th; in New York, 7 or 8 pm on the last day of the month
  * before to the same time on the 7th.
  *
- * The server renders nothing outside the window, and the browser checks again
- * with its own clock, so a page held in any cache past the 7th shows nothing.
+ * The static server HTML never carries the banner. The browser checks its own
+ * clock and runtime configuration, so a page cached past the 7th shows nothing.
  */
 export const SUPPORT_BANNER_LAST_DAY = 7;
 

@@ -13,7 +13,7 @@ const navigationMocks = vi.hoisted(() => ({
 
 vi.mock('next/navigation', () => navigationMocks);
 
-const pageModule = await import('../page');
+const pageModule = await import('@/app/(site)/preview/[channel]/page');
 
 describe('legacy OTA preview page', () => {
   beforeEach(() => {

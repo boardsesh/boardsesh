@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { render, screen } from '@testing-library/react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
-import GymClaimErrorPage from '../page';
+import GymClaimErrorPage from '@/app/(site)/gym-claim/error/page';
 
 vi.mock('@/app/lib/i18n/server', () => ({
   getServerTranslation: async () => ({

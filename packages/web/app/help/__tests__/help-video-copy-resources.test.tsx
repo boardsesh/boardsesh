@@ -11,10 +11,10 @@ import itMarketing from '@boardsesh/i18n/locales/it/marketing.json';
 import zhMarketing from '@boardsesh/i18n/locales/zh-CN/marketing.json';
 import { SUPPORTED_LOCALES, type Locale } from '@/app/lib/i18n/config';
 import ServerI18nProvider from '@/app/components/providers/i18n-provider';
-import BoardPage from '../board-and-bluetooth/page';
-import FindingPage from '../finding-climbs/page';
-import LogbookPage from '../logbook/page';
-import SprayPage from '../spray-walls/page';
+import BoardPage from '@/app/(site)/help/board-and-bluetooth/page';
+import FindingPage from '@/app/(site)/help/finding-climbs/page';
+import LogbookPage from '@/app/(site)/help/logbook/page';
+import SprayPage from '@/app/(site)/help/spray-walls/page';
 import SprayWallsContent from '../spray-walls/spray-walls-content';
 import { HelpClip, HelpWalkthrough } from '../help-clip';
 

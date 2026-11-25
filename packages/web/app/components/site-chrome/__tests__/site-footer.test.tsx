@@ -3,10 +3,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
-import { trackWebsiteJourneyEvent, trackWebsiteJourneyLinkClick } from '@/app/lib/website-journey-analytics';
+import { trackWebsiteJourneyLinkClick } from '@/app/lib/website-journey-analytics';
 
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import SiteFooter from '../site-footer';
+import { MarketingCapabilitiesContext } from '../../marketing/marketing-capabilities-context';
 
 /**
  * The footer carries two obligations the deleted chrome used to cover:
@@ -80,6 +81,20 @@ describe('SiteFooter', () => {
     mockPathname = '/';
   });
 
+  it('reconciles the static marketing docs fallback with runtime public availability', () => {
+    const view = render(<SiteFooter developerHref="/docs" />);
+    expect(view.container.querySelector('a[href="/docs"]')).toBeTruthy();
+    view.rerender(
+      <MarketingCapabilitiesContext.Provider
+        value={{ enableExpoAuthBridge: true, developerHref: '/developers', hasMonthlySupport: false }}
+      >
+        <SiteFooter developerHref="/docs" />
+      </MarketingCapabilitiesContext.Provider>,
+    );
+    expect(view.container.querySelector('a[href="/developers"]')).toBeTruthy();
+    expect(view.container.querySelector('a[href="/docs"]')).toBeNull();
+  });
+
   // Pinned here because `e2e/site-chrome.spec.ts` selects on it and e2e is
   // workflow_dispatch-only — a rename would otherwise go unnoticed.
   it('carries the site-footer testid the e2e spec selects', () => {
@@ -95,7 +110,7 @@ describe('SiteFooter', () => {
     expect(brandLink.querySelector('img')?.getAttribute('src')).toContain('boardsesh-mark');
     expect(brandLink.querySelector('img')?.getAttribute('alt')).toBe('');
     fireEvent.click(brandLink);
-    expect(trackWebsiteJourneyEvent).toHaveBeenCalledWith({
+    expect(trackWebsiteJourneyLinkClick).toHaveBeenCalledWith(expect.anything(), {
       name: 'Nav Link Clicked',
       properties: { area: 'footer', target: '/' },
     });
@@ -146,7 +161,7 @@ describe('SiteFooter', () => {
     const helpLink = container.querySelector<HTMLAnchorElement>('nav a[href="/help"]');
     expect(helpLink).toBeTruthy();
     fireEvent.click(helpLink!);
-    expect(trackWebsiteJourneyEvent).toHaveBeenCalledWith({
+    expect(trackWebsiteJourneyLinkClick).toHaveBeenCalledWith(expect.anything(), {
       name: 'Nav Link Clicked',
       properties: { area: 'footer', target: '/help' },
     });
@@ -188,6 +203,6 @@ describe('SiteFooter', () => {
   });
 });
 
-vi.mock('@/app/components/consent/consent-provider', () => ({
+vi.mock('@/app/components/consent/consent-state-provider', () => ({
   useConsent: () => ({ granted: true, openChoices: vi.fn() }),
 }));

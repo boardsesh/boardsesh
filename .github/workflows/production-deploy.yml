@@ -1293,6 +1293,14 @@ jobs:
         # script imports only node: builtins, so no workspace install is needed.
         run: node scripts/production-smoke.ts --base "$RAILWAY_WEB_ORIGIN"
 
+      - name: Warm anonymous marketing documents at the public edge
+        if: steps.railway-smoke.outcome == 'success'
+        # A cold edge is slower but healthy. Warming must never cause rollback.
+        continue-on-error: true
+        env:
+          SMOKE_EXPECTED_RELEASE: ${{ github.sha }}
+        run: node scripts/warm-marketing-pages.ts
+
       # Unconditional since the Vercel scrub. While Vercel still served www a
       # Railway smoke failure was a shadow signal and rolling back would have
       # been noise; now it is the live origin, so a failed smoke must restore

@@ -39,7 +39,7 @@ vi.mock('../join-redirect', () => ({
   default: (props: { sessionId: string }) => ({ type: 'JoinRedirect', props }),
 }));
 
-const pageModule = await import('../page');
+const pageModule = await import('@/app/(site)/join/[sessionId]/page');
 const { getSessionOgSummary } = await import('@/app/lib/seo/dynamic-og-data');
 const getSessionOgSummaryMock = vi.mocked(getSessionOgSummary);
 

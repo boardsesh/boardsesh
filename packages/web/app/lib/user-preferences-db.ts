@@ -5,6 +5,8 @@ import type { GradeDisplayFormat } from './grade-colors';
 const STORE_NAME = 'preferences';
 
 export type UserPreferenceKeyMap = {
+  /** The visitor's deliberate marketing screenshot preview choice, across document navigation. */
+  marketingPreviewPlatform: 'ios' | 'android';
   libraryTab: 'playlists' | 'logbook';
   logbookPreferences: LogbookPreferences;
   'swipeHint:climbListSeen': boolean;

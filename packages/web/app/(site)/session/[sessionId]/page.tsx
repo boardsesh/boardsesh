@@ -1,0 +1,136 @@
+import React from 'react';
+import type { Metadata } from 'next';
+import { GraphQLClient } from 'graphql-request';
+import { getGraphQLHttpUrl } from '@/app/lib/graphql/client';
+import { GET_SESSION_DETAIL, type GetSessionDetailQueryResponse } from '@boardsesh/graphql/operations/activity-feed';
+import {
+  GET_SESSION_WORKOUTS,
+  type GetSessionWorkoutsQueryResponse,
+  type SessionWorkoutResult,
+} from '@boardsesh/graphql/operations/session-workouts';
+import SessionDetailContent from '@/app/session/[sessionId]/session-detail-content';
+import { createNoIndexMetadata, createPageMetadata } from '@/app/lib/seo/metadata';
+import { getSessionOgSummary } from '@/app/lib/seo/dynamic-og-data';
+import { buildSessionOgImageUrl, buildSessionRecapShareCopy } from '@/app/lib/seo/session-share-copy';
+import { getServerTranslation } from '@/app/lib/i18n/server';
+import { getLocale } from '@/app/lib/i18n/get-locale';
+import I18nProvider from '@/app/components/providers/i18n-provider';
+import { SSR_AUTHENTICATED_FETCH_TIMEOUT_MS, isDeadlineError } from '@/app/lib/ssr-fetch-deadline';
+import { webClientIdentityHeaders } from '@/app/lib/client-identity';
+
+type Props = {
+  params: Promise<{ sessionId: string }>;
+};
+
+const fetchSessionDetail = React.cache(async (sessionId: string) => {
+  const url = getGraphQLHttpUrl();
+  const client = new GraphQLClient(url, {
+    headers: webClientIdentityHeaders(),
+    signal: AbortSignal.timeout(SSR_AUTHENTICATED_FETCH_TIMEOUT_MS),
+  });
+  try {
+    const data = await client.request<GetSessionDetailQueryResponse>(GET_SESSION_DETAIL, {
+      sessionId,
+    });
+    return data.sessionDetail;
+  } catch (err) {
+    // A slow backend must not render the indexable share page as "not found".
+    if (isDeadlineError(err)) throw err;
+    console.error('[SessionDetailPage] Failed to fetch session:', sessionId, err);
+    return null;
+  }
+});
+
+/**
+ * The workouts followed in the session (#6903), signed out like the detail
+ * fetch: the resolver applies the session's access rules. Best effort: a
+ * failure renders the page without the workout, never as "not found".
+ */
+const fetchSessionWorkouts = React.cache(async (sessionId: string): Promise<SessionWorkoutResult[]> => {
+  if (sessionId.startsWith('daily:')) return [];
+  const client = new GraphQLClient(getGraphQLHttpUrl(), {
+    headers: webClientIdentityHeaders(),
+    signal: AbortSignal.timeout(SSR_AUTHENTICATED_FETCH_TIMEOUT_MS),
+  });
+  try {
+    const data = await client.request<GetSessionWorkoutsQueryResponse>(GET_SESSION_WORKOUTS, { sessionId });
+    return data.sessionWorkouts;
+  } catch (err) {
+    console.error('[SessionDetailPage] Failed to fetch session workouts:', sessionId, err);
+    return [];
+  }
+});
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { sessionId: rawSessionId } = await params;
+  const sessionId = decodeURIComponent(rawSessionId);
+  const summary = await getSessionOgSummary(sessionId).catch((err: unknown) => {
+    // Metadata is best effort: a slow summary read falls back to the not-found
+    // metadata instead of failing the whole render.
+    console.error('[SessionDetailPage] Failed to build metadata:', sessionId, err);
+    return null;
+  });
+  const { t, locale } = await getServerTranslation('session');
+  const path = `/session/${encodeURIComponent(sessionId)}`;
+
+  if (!summary?.found) {
+    return createNoIndexMetadata({
+      title: t('metadata.detail.notFoundTitle'),
+      description: t('metadata.detail.notFoundDescription'),
+      path,
+      locale,
+      imagePath: null,
+    });
+  }
+
+  const participantNames = summary.participantNames.join(', ');
+  const sessionName = summary.sessionName;
+
+  let description: string;
+  if (summary.totalSends > 0) {
+    const stats = t('detail.subtitleSends', { count: summary.totalSends });
+    description = participantNames ? `${participantNames} — ${stats}` : stats;
+  } else {
+    description = participantNames
+      ? t('detail.participantsClimbing', { names: participantNames })
+      : t('detail.sessionNameOnBoardsesh', { name: sessionName });
+  }
+
+  const { ogTitle, ogDescription } = buildSessionRecapShareCopy(summary, locale, t);
+  // Null when there is no recap card to draw: no image beats a broken one.
+  const imageUrl = buildSessionOgImageUrl(sessionId, summary, 'recap');
+
+  // Indexability is deliberately unchanged: this is the kept public share
+  // surface, so flipping it to noindex is a product decision, not a hreflang
+  // fix. All that changes here is that the canonical now carries its locale and
+  // the full alternates set.
+  return createPageMetadata({
+    title: sessionName,
+    description,
+    ogTitle,
+    ogDescription,
+    path,
+    locale,
+    imagePath: imageUrl,
+    imageAlt: sessionName,
+  });
+}
+
+export default async function SessionDetailPage({ params }: Props) {
+  const { sessionId: rawSessionId } = await params;
+  const sessionId = decodeURIComponent(rawSessionId);
+  const [session, workouts, locale] = await Promise.all([
+    fetchSessionDetail(sessionId),
+    fetchSessionWorkouts(sessionId),
+    getLocale(),
+  ]);
+
+  // `climbs` is seeded alongside `session` because StaticClimbRow's ClimbTitle
+  // reads that namespace on the server. Without it the share page's first HTML
+  // carries raw `card.title.*` keys until the lazy catalog fetch lands.
+  return (
+    <I18nProvider locale={locale} namespaces={['session', 'climbs']}>
+      <SessionDetailContent session={session} sessionId={sessionId} workouts={workouts} />
+    </I18nProvider>
+  );
+}

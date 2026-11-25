@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import type { AdminCheck } from '@/app/lib/admin/check-admin';
-import AdminPartnerAppsPage, { generateMetadata } from '../page';
+import AdminPartnerAppsPage, { generateMetadata } from '@/app/(site)/admin/partner-apps/page';
 
 const accessHolder = vi.hoisted(() => ({ access: { authenticated: false } as AdminCheck }));
 vi.mock('@/app/lib/admin/check-admin', () => ({ checkAdmin: async () => accessHolder.access }));

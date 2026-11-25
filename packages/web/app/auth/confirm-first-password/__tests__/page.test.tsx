@@ -17,7 +17,8 @@ vi.mock('@/app/components/providers/i18n-provider', () => ({
 }));
 vi.mock('../confirm-first-password-content', () => ({ default: () => null }));
 
-const { default: ConfirmFirstPasswordPage, generateMetadata } = await import('../page');
+const { default: ConfirmFirstPasswordPage, generateMetadata } =
+  await import('@/app/(site)/auth/confirm-first-password/page');
 
 describe('the first-password confirmation page (#7596 B5e2)', () => {
   it.each(['legacy', 'unavailable'])('is a 404 with the browser session mode %s', async (kind) => {

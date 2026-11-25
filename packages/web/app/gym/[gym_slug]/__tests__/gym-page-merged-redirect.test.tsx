@@ -39,7 +39,7 @@ const executeAuthenticatedGraphQL = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/graphql/server-graphql', () => ({ executeAuthenticatedGraphQL }));
 
 const { getLocale } = await import('@/app/lib/i18n/get-locale');
-const GymPage = (await import('../page')).default;
+const GymPage = (await import('@/app/(site)/gym/[gym_slug]/page')).default;
 
 function mergedGym(canonicalSlug: string): Gym {
   return {

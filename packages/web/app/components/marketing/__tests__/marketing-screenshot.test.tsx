@@ -1,13 +1,20 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { renderToString } from 'react-dom/server';
-import { fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import { classifyMarketingBrowser } from '@/app/lib/marketing-platform';
 import { MarketingPreviewProvider } from '../marketing-preview-provider';
 import { MarketingScreenshot } from '../marketing-screenshot';
 import { MarketingPreviewSwitch } from '../marketing-preview-switch';
+import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
+
+vi.mock('@/app/lib/user-preferences-db', () => ({ getPreference: vi.fn(), setPreference: vi.fn() }));
+beforeEach(() => {
+  vi.mocked(getPreference).mockResolvedValue(undefined);
+  vi.mocked(setPreference).mockResolvedValue(undefined);
+});
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => tFromCatalog('marketing', key), i18n: { language: 'de' } }),
@@ -41,16 +48,32 @@ describe('platform screenshot rendering', () => {
     expect(scriptedMarkup).toContain('data-marketing-shot="kilter"');
   });
 
-  it('loads only the detected platform after resolving shared HTML', () => {
+  it('loads only the detected platform after resolving shared HTML', async () => {
     vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('iPhone');
     const { container } = render(
       <MarketingPreviewProvider initialBrowser={classifyMarketingBrowser('')} sharedHtml>
         <MarketingScreenshot shot="queue" alt="Queue" />
       </MarketingPreviewProvider>,
     );
-    const image = container.querySelector('img');
-    expect(image?.getAttribute('src')).toContain(encodeURIComponent('/images/app/ios/queue.webp'));
+    await waitFor(() =>
+      expect(container.querySelector('img')?.getAttribute('src')).toContain(
+        encodeURIComponent('/images/app/ios/queue.webp'),
+      ),
+    );
     expect(container.querySelector('noscript')).toBeNull();
+  });
+
+  it('restores a deliberate preview choice after a document navigation', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Windows NT 10.0');
+    vi.mocked(getPreference).mockResolvedValue('ios');
+    const { container } = render(
+      <MarketingPreviewProvider initialBrowser={classifyMarketingBrowser('')} sharedHtml>
+        <Gallery />
+      </MarketingPreviewProvider>,
+    );
+    await waitFor(() => expect(container.querySelector('[data-preview-platform="ios"]')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Android' }));
+    expect(setPreference).toHaveBeenCalledWith('marketingPreviewPlatform', 'android');
   });
 
   it.each(['ios', 'android'] as const)('server-renders only %s images and preload sources', (platform) => {

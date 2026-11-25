@@ -81,7 +81,7 @@ vi.mock('@/app/lib/seo/metadata', () => ({
 import { notFound } from 'next/navigation';
 import { getClimb } from '@/app/lib/data/queries';
 import { resolveBoardBySlug } from '@/app/lib/board-slug-utils';
-import BoardSlugViewPage from '../page';
+import BoardSlugViewPage from '@/app/(site)/b/[board_slug]/[angle]/view/[climb_uuid]/page';
 import { DbReadTimeoutError } from '@/app/lib/db/read-deadline';
 
 const props = {

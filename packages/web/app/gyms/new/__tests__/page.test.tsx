@@ -22,7 +22,7 @@ vi.mock('@/app/lib/i18n/server', () => ({
 }));
 vi.mock('../gym-setup', () => ({ default: () => null }));
 
-const { default: NewGymPage, generateMetadata } = await import('../page');
+const { default: NewGymPage, generateMetadata } = await import('@/app/(site)/gyms/new/page');
 const gymUuid = '87f2c9c4-bbd9-4510-8ed5-f9aad68095dd';
 const gym = { uuid: gymUuid, name: 'Private Gym', isPublic: false, canEdit: true } as Gym;
 

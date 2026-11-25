@@ -69,11 +69,6 @@
       "playShotAlt": "A climb open in Boardsesh with its holds lit on the board"
     },
     "cards": {},
-    "gymCard": {
-      "ownerSubtitle": "Your crew's gym, one tap away",
-      "manage": "Manage",
-      "viewPage": "View page"
-    },
     "gymSearch": {
       "title": "Find a board near you",
       "lead_one": "{{formattedCount}} gyms, club walls and home walls are listed in the board directory.",

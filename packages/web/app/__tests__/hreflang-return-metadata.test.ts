@@ -73,8 +73,8 @@ vi.mock('@/app/components/providers/i18n-provider', () => ({
 }));
 vi.mock('../session/[sessionId]/session-detail-content', () => ({ default: () => null }));
 
-const setterPage = await import('../setter/[setter_username]/page');
-const sessionPage = await import('../session/[sessionId]/page');
+const setterPage = await import('@/app/(site)/setter/[setter_username]/page');
+const sessionPage = await import('@/app/(site)/session/[sessionId]/page');
 const { generatePlaylistMetadata } = await import('../lib/seo/playlist-metadata');
 
 type MetadataCase = {

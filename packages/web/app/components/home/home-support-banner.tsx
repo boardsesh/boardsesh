@@ -26,9 +26,9 @@ const CTA_SX = brandCtaSx({ size: 'medium' });
 const STRIP_SX = { zIndex: (theme: { zIndex: { snackbar: number } }) => theme.zIndex.snackbar } as const;
 
 /**
- * The support ask on `/`, and only there: `app/page.tsx` is its one caller,
- * and it renders this only inside the window (days 1 to 7 of each month) and
- * only once a monthly Payment Link is configured. Nothing the app opens (`/b/`,
+ * The support ask on `/`, and only there: the homepage's runtime wrapper loads
+ * this only inside the window (days 1 to 7 of each month) and only once a monthly
+ * Payment Link is configured. Nothing the app opens (`/b/`,
  * `/gym/`, `/help/`, `/join/`, climb pages) shows it.
  *
  * It is a strip fixed to the bottom of the viewport that slides in, not a block

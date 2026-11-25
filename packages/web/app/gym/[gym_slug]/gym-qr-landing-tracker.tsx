@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { gymQrScanned, stripGymQrParams, type GymQrMedium } from '@boardsesh/analytics';
-import { useConsent } from '@/app/components/consent/consent-provider';
+import { useConsent } from '@/app/components/consent/consent-state-provider';
 import { trackGymFunnelEvent } from '@/app/lib/gym-funnel-analytics';
 
 type GymQrLandingTrackerProps = {

@@ -19,18 +19,22 @@
  * old logbook link a two-hop.
  */
 import { describe, expect, it } from 'vite-plus/test';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const WEB_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
+function routeGroupRoots(relativeRoot: string): string[] {
+  const groups = readdirSync(join(WEB_ROOT, relativeRoot), { withFileTypes: true }).filter(
+    (entry) => entry.isDirectory() && entry.name.startsWith('(') && entry.name.endsWith(')'),
+  );
+  return [relativeRoot, ...groups.flatMap((group) => routeGroupRoots(join(relativeRoot, group.name)))];
+}
+
+const DELETED_ROUTE_TREES = ['you', 'feed', 'import-beta', 'development', 'discover', 'notifications'];
 const DELETED_PATHS = [
-  'app/you',
-  'app/feed',
-  'app/import-beta',
-  'app/development',
-  'app/discover',
+  ...routeGroupRoots('app').flatMap((root) => DELETED_ROUTE_TREES.map((route) => join(root, route))),
   'app/api/internal/favorites',
   'app/api/internal/hold-classifications',
   'app/api/internal/user-board-mapping',
@@ -44,7 +48,6 @@ const DELETED_PATHS = [
   // `import-graph-invariant` only sees a resurrected file once a kept surface
   // imports it, which is true of the subscription manager and of nothing else
   // here. `climb-redirect` is a live HTTP endpoint if it comes back.
-  'app/notifications',
   'app/components/notifications',
   'app/components/providers/notification-subscription-manager.tsx',
   'app/hooks/use-grouped-notifications.ts',
@@ -57,15 +60,15 @@ const DELETED_PATHS = [
 
 /**
  * Concrete entry points, not bare directories: `existsSync` is true for an empty
- * directory, so a sweep that emptied `app/join/` while leaving the folder would
+ * directory, so a sweep that emptied the join route while leaving its folder would
  * pass a directory-only assertion and 404 every session share link the mobile
  * app has ever emitted.
  */
 const KEPT_PATHS = [
-  'app/session',
-  'app/session/[sessionId]/page.tsx',
-  'app/join',
-  'app/join/[sessionId]/page.tsx',
+  'app/(site)/session',
+  'app/(site)/session/[sessionId]/page.tsx',
+  'app/(site)/join',
+  'app/(site)/join/[sessionId]/page.tsx',
   'app/api/internal/climb-search-cache/revalidate/route.ts',
   'app/lib/climb-search-cache.ts',
   'app/api/internal/profile/route.ts',

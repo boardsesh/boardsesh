@@ -16,7 +16,7 @@ import {
 import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
 import { usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
 import { isChromeLessPath } from '@/app/lib/chrome-less-routes';
-import { useConsent } from '../consent/consent-provider';
+import { useConsent } from '../consent/consent-state-provider';
 import type { ConsentRegionPromptState } from '../consent/use-consent-region-prompt';
 
 export default function ChineseTranslationOnboarding({ consentRegion }: { consentRegion: ConsentRegionPromptState }) {

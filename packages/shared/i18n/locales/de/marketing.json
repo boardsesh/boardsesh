@@ -69,11 +69,6 @@
       "playShotAlt": "Ein geöffneter Boulder in Boardsesh mit beleuchteten Griffen am Board"
     },
     "cards": {},
-    "gymCard": {
-      "ownerSubtitle": "Die Halle deiner Crew, nur einen Fingertipp entfernt",
-      "manage": "Verwalten",
-      "viewPage": "Seite ansehen"
-    },
     "gymSearch": {
       "title": "Finde ein Board in deiner Nähe",
       "lead_one": "Im Boardverzeichnis stehen {{formattedCount}} Hallen, Vereinswände und Wände zu Hause.",

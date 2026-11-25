@@ -141,7 +141,7 @@ vi.mock('react-i18next', () => ({
 }));
 vi.mock('@/app/components/board-renderer/board-image-layers', () => ({ default: () => null }));
 // What the root layout's provider gives a cold server render: no answer yet.
-vi.mock('@/app/components/consent/consent-provider', () => ({
+vi.mock('@/app/components/consent/consent-state-provider', () => ({
   useConsent: () => ({ granted: false, snapshot: { record: null }, dialogOpen: false }),
 }));
 // The real code is a wall of `<path>`; the URL it encodes is what is under test.
@@ -151,7 +151,7 @@ vi.mock('qrcode.react', () => ({
   ),
 }));
 
-const pageModule = await import('../page');
+const pageModule = await import('@/app/(site)/setter/[setter_username]/page');
 const SetterProfilePage = pageModule.default;
 const { generateMetadata } = pageModule;
 const { absoluteUrl } = await import('@/app/lib/seo/base-url');

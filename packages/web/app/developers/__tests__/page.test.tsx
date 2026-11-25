@@ -22,7 +22,7 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
   ),
 }));
 
-const { default: DevelopersPage, generateMetadata } = await import('../page');
+const { default: DevelopersPage, generateMetadata } = await import('@/app/(site)/developers/page');
 
 const originalMode = process.env.PARTNER_OAUTH_MODE;
 

@@ -7,6 +7,7 @@ import { getServerTranslationForLocale } from '@/app/lib/i18n/server';
 import type { AppGuidePage } from '@/app/lib/seo/app-guides';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
 import { getStoreButtonLabels } from '@/app/lib/store-button-labels.server';
+import { SMART_APP_BANNER_META_NAME, smartAppBannerContent } from '@/app/lib/smart-app-banner';
 
 export type AppGuideCopy = { t: TFunction; storeLabels: StoreButtonLabels };
 
@@ -32,6 +33,7 @@ export async function getAppGuideMetadata(guide: AppGuidePage): Promise<Metadata
     // second " | Boardsesh" on a card that already names the site.
     imageAlt: title,
   });
+  metadata.other = { [SMART_APP_BANNER_META_NAME]: smartAppBannerContent(guide.path, DEFAULT_LOCALE)! };
   // Comparison titles already name Boardsesh ("Boardsesh vs the Kilter Board App"),
   // and a long title (the hub's 58) has no room for " | Boardsesh" before the
   // 60-character cut: either way the suffix only pushes search words off the end.

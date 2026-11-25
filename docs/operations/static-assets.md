@@ -30,6 +30,14 @@ spray-wall photograph. Marketing client islands import it through
 Both subsets derive object keys from the same source manifest and participate in the existing
 generation/freshness check.
 
+The homepage film poster also has 360, 540, 640 and 720-pixel responsive WebP copies.
+`generate:static-assets` derives them from `images/home/showcase-hero-9x16.webp` at
+quality 75 before generating the catalog. `check:static-assets` verifies both the
+derivative bytes and their catalog entries. The hero emits direct immutable URLs
+in its `srcset`, so its first frame needs no runtime Next.js image-optimizer request.
+Local development uses the corresponding public-file paths. Publish these images
+before releasing HTML that references their hashes, as for all cataloged assets.
+
 Changing bytes in place creates a new URL; old objects remain valid for old deployments. Objects use their real image content type and
 `Cache-Control: public, max-age=31536000, immutable`.
 

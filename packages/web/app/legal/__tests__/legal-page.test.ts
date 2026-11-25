@@ -20,7 +20,7 @@ vi.mock('../legal-content', () => ({ default: LegalContent }));
 const I18nProvider = vi.hoisted(() => vi.fn(() => null));
 vi.mock('@/app/components/providers/i18n-provider', () => ({ default: I18nProvider }));
 
-const route = await import('../page');
+const route = await import('@/app/(site)/legal/page');
 
 beforeEach(() => {
   getServerFeatureFlag.mockReset();

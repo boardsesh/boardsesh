@@ -101,7 +101,9 @@ vi.mock('@/app/lib/seo/metadata', () => ({
 import { getClimb, getClimbStatsForAllAngles } from '@/app/lib/data/queries';
 import { getFrontDoorBetaLinks, getFrontDoorSimilarClimbs } from '@/app/lib/data/front-door-data.server';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
-import ClimbViewPage, { generateMetadata } from '../page';
+import ClimbViewPage, {
+  generateMetadata,
+} from '@/app/(site)/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]/page';
 
 const props = {
   params: Promise.resolve({

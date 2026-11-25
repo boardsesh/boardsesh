@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { constants } from 'node:fs';
-import { cp, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import { createConnection } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -11,6 +11,7 @@ import { HOMEPAGE_GZIP_BUDGET_BYTES, WWW_CHECKS, type SmokeResponse } from './pr
 
 const DEADLINE_MS = 60_000;
 const STARTUP_MS = 20_000;
+const REGENERATION_MS = 30_000;
 const MAX_HTML_BYTES = 5 * 1024 * 1024;
 const BLOCKED_CONNECTION = 'HOMEPAGE_BUDGET_BLOCKED_CONNECTION';
 const HTML_ENTITIES: Readonly<Record<string, string>> = {
@@ -61,6 +62,53 @@ export function assertHomepageBudget(
     if (!rendered.includes(marker)) throw new Error(`Homepage is missing visible SSR fixture content: ${marker}`);
   }
   return gzipSync(response.body).byteLength;
+}
+
+async function homepagePrerender(runtimeWebDirectory: string) {
+  let manifestSource: string;
+  try {
+    manifestSource = await readFile(join(runtimeWebDirectory, '.next/prerender-manifest.json'), 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+  const manifest = JSON.parse(manifestSource) as {
+    routes: Record<string, { initialRevalidateSeconds?: number | false }>;
+  };
+  const homepage = manifest.routes['/'];
+  if (!homepage) return null;
+  if (
+    typeof homepage.initialRevalidateSeconds !== 'number' ||
+    !Number.isFinite(homepage.initialRevalidateSeconds) ||
+    homepage.initialRevalidateSeconds <= 0
+  ) {
+    throw new Error('Prerendered homepage needs a finite positive ISR interval for the populated budget check');
+  }
+  const htmlPath = join(runtimeWebDirectory, '.next/server/app/index.html');
+  return { htmlPath, html: await readFile(htmlPath, 'utf8'), revalidateSeconds: homepage.initialRevalidateSeconds };
+}
+
+async function readHomepageResponse(webOrigin: string, signal: AbortSignal): Promise<SmokeResponse> {
+  const response = await fetch(`${webOrigin}/`, {
+    redirect: 'manual',
+    headers: { 'User-Agent': NORMAL_USER_AGENT, 'Accept-Language': 'en-US', Accept: 'text/html' },
+    signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
+  });
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  if (!response.body) throw new Error('Homepage response has no body');
+  for await (const chunk of response.body) {
+    bytes += chunk.byteLength;
+    if (bytes > MAX_HTML_BYTES) throw new Error('Homepage HTML exceeds the 5 MiB read limit');
+    chunks.push(chunk);
+  }
+  return {
+    status: response.status,
+    contentType: response.headers.get('content-type') ?? '',
+    body: Buffer.concat(chunks).toString('utf8'),
+    headers: Object.fromEntries(response.headers),
+    url: response.url,
+  };
 }
 
 async function listen(server: Server): Promise<number> {
@@ -221,6 +269,27 @@ export async function checkHomepageBudget(webDirectory: string) {
     const fence = join(temporaryDirectory, 'network-fence.cjs');
     await writeFile(fence, networkFenceSource(fixturePort));
     const webOrigin = `http://127.0.0.1:${webPort}`;
+    const prerender = await homepagePrerender(join(runtimeDirectory, 'packages/web'));
+    const prerenderGzipBytes = prerender
+      ? assertHomepageBudget(
+          {
+            status: 200,
+            contentType: 'text/html',
+            body: prerender.html,
+            headers: {},
+            url: `${webOrigin}/`,
+          },
+          expectedHeading,
+          [],
+        )
+      : null;
+    if (prerender) {
+      // Next's filesystem ISR cache uses the HTML mtime. Age ONLY this isolated
+      // copy so ordinary GETs exercise recovery from build-time fallback data.
+      // Keep the HTML bytes, revalidation policy and original build untouched.
+      const expired = new Date(Date.now() - (prerender.revalidateSeconds + 1) * 1_000);
+      await utimes(prerender.htmlPath, expired, expired);
+    }
     child = spawn(process.execPath, ['--require', fence, join(runtimeDirectory, relativeEntry)], {
       cwd: join(runtimeDirectory, 'packages/web'),
       env: {
@@ -250,41 +319,40 @@ export async function checkHomepageBudget(webDirectory: string) {
     child.stdout?.on('data', recordLogs);
     child.stderr?.on('data', recordLogs);
     await waitForServer(webPort, child, timeout.signal);
-    const response = await fetch(`${webOrigin}/`, {
-      redirect: 'manual',
-      headers: { 'User-Agent': NORMAL_USER_AGENT, 'Accept-Language': 'en-US', Accept: 'text/html' },
-      signal: AbortSignal.any([timeout.signal, AbortSignal.timeout(30_000)]),
-    });
-    const chunks: Uint8Array[] = [];
-    let bytes = 0;
-    if (!response.body) throw new Error('Homepage response has no body');
-    for await (const chunk of response.body) {
-      bytes += chunk.byteLength;
-      if (bytes > MAX_HTML_BYTES) throw new Error('Homepage HTML exceeds the 5 MiB read limit');
-      chunks.push(chunk);
-    }
-    const html = Buffer.concat(chunks).toString('utf8');
-    const gzipBytes = assertHomepageBudget(
-      {
-        status: response.status,
-        contentType: response.headers.get('content-type') ?? '',
-        body: html,
-        headers: Object.fromEntries(response.headers),
-        url: response.url,
-      },
-      expectedHeading,
-      fixture.visibleMarkers,
-    );
-    for (const operation of ['GetCommunityStats']) {
-      if (!operations.has(operation))
-        throw new Error(`Required live fixture operation was not requested: ${operation}`);
+    const regenerationDeadline = Date.now() + REGENERATION_MS;
+    let response: SmokeResponse;
+    let gzipBytes: number;
+    while (true) {
+      timeout.signal.throwIfAborted();
+      response = await readHomepageResponse(webOrigin, timeout.signal);
+      // Both stale build HTML and populated recovery must retain the real H1
+      // and full payload budget. Never accept numbers hidden in the RSC payload.
+      assertHomepageBudget(response, expectedHeading, []);
+      if (unexpected.length > 0) throw new Error(unexpected.join('; '));
+      if (blockedConnection) throw new Error('Application attempted a database or non-fixture network connection');
+      let missingMarkers: string | undefined;
+      try {
+        gzipBytes = assertHomepageBudget(response, expectedHeading, fixture.visibleMarkers);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!message.startsWith('Homepage is missing visible SSR fixture content:')) throw error;
+        if (!prerender) throw error;
+        missingMarkers = message;
+      }
+      if (!missingMarkers && operations.has('GetCommunityStats')) break;
+      if (!prerender || Date.now() >= regenerationDeadline) {
+        throw new Error(missingMarkers ?? 'Required live fixture operation was not requested: GetCommunityStats');
+      }
+      await new Promise((resolveWait) => setTimeout(resolveWait, 100));
     }
     if (unexpected.length > 0) throw new Error(unexpected.join('; '));
     if (blockedConnection) throw new Error('Application attempted a database or non-fixture network connection');
     return {
       buildId,
-      rawBytes: Buffer.byteLength(html),
-      gzipBytes,
+      rawBytes: Buffer.byteLength(response.body),
+      gzipBytes: gzipBytes!,
+      prerenderGzipBytes,
+      renderMode: prerender ? 'isr-recovered' : 'dynamic',
       budgetBytes: HOMEPAGE_GZIP_BUDGET_BYTES,
       deferredBeta: true,
       expectedHeading,

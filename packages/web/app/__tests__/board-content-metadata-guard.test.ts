@@ -29,11 +29,11 @@ const WEB_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** The surfaces that cross-canonicalise. Both route trees, plus setter. */
 const BOARD_CONTENT_ROUTE_FILES = [
-  'app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]/page.tsx',
-  'app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/page.tsx',
-  'app/b/[board_slug]/[angle]/view/[climb_uuid]/page.tsx',
-  'app/b/[board_slug]/[angle]/list/page.tsx',
-  'app/setter/[setter_username]/page.tsx',
+  'app/(site)/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]/page.tsx',
+  'app/(site)/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/page.tsx',
+  'app/(site)/b/[board_slug]/[angle]/view/[climb_uuid]/page.tsx',
+  'app/(site)/b/[board_slug]/[angle]/list/page.tsx',
+  'app/(site)/setter/[setter_username]/page.tsx',
 ] as const;
 
 /** Shards whose pages cross-canonicalise, so they must not fan out to locales. */

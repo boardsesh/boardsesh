@@ -13,7 +13,7 @@ import { SUPPORTED_LOCALES, type Locale } from '@/app/lib/i18n/config';
 import ServerI18nProvider from '@/app/components/providers/i18n-provider';
 import { MarketingPreviewProvider } from '@/app/components/marketing/marketing-preview-provider';
 import { classifyMarketingBrowser } from '@/app/lib/marketing-platform';
-import AboutPage from '../page';
+import AboutPage from '@/app/(site)/about/page';
 import AboutContent from '../about-content';
 
 const { getLocale, loadServerResources } = vi.hoisted(() => ({

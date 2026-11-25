@@ -21,7 +21,7 @@ const consentState = vi.hoisted(() => ({
   promptShowing: false,
   dialogOpen: false,
 }));
-vi.mock('@/app/components/consent/consent-provider', () => ({
+vi.mock('@/app/components/consent/consent-state-provider', () => ({
   useConsent: () => ({ promptShowing: consentState.promptShowing, dialogOpen: consentState.dialogOpen }),
 }));
 

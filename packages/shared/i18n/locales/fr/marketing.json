@@ -69,11 +69,6 @@
       "playShotAlt": "Un bloc ouvert dans Boardsesh avec ses prises allumées sur la board"
     },
     "cards": {},
-    "gymCard": {
-      "ownerSubtitle": "La salle de votre crew, à portée de main",
-      "manage": "Gérer",
-      "viewPage": "Voir la page"
-    },
     "gymSearch": {
       "title": "Trouve une board près de chez toi",
       "lead_one": "L’annuaire des boards répertorie {{formattedCount}} salles, clubs et murs à domicile.",

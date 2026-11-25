@@ -34,7 +34,7 @@ vi.mock('@/app/lib/auth/server-auth', () => ({ getServerAuthToken }));
 const executeAuthenticatedGraphQL = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/graphql/server-graphql', () => ({ executeAuthenticatedGraphQL }));
 
-const posterModule = await import('../page');
+const posterModule = await import('@/app/(site)/gym/[gym_slug]/poster/page');
 const GymPosterPage = posterModule.default;
 const { generateMetadata } = posterModule;
 

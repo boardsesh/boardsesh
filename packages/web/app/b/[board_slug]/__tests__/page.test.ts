@@ -37,7 +37,7 @@ vi.mock('@/app/lib/i18n/server', () => ({
 const getLocale = vi.hoisted(() => vi.fn(async () => 'en-US'));
 vi.mock('@/app/lib/i18n/get-locale', () => ({ getLocale }));
 
-const pageModule = await import('../page');
+const pageModule = await import('@/app/(site)/b/[board_slug]/page');
 const BoardSlugPage = pageModule.default;
 
 async function redirectTargetFor(

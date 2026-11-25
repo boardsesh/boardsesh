@@ -5,7 +5,7 @@ import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { useTranslation } from 'react-i18next';
 import { loadCatalog } from '@boardsesh/i18n/catalog-loader';
-import BoardSlugLayout from '@/app/b/[board_slug]/[angle]/layout';
+import BoardSlugLayout from '@/app/(site)/b/[board_slug]/[angle]/layout';
 import ServerI18nProvider from '@/app/components/providers/i18n-provider';
 import SiteFooter from '@/app/components/site-chrome/site-footer';
 import { resolveServerTree } from '@/app/lib/__tests__/helpers/resolve-server-tree';
@@ -30,7 +30,7 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
     </a>
   ),
 }));
-vi.mock('@/app/components/consent/consent-provider', () => ({
+vi.mock('@/app/components/consent/consent-state-provider', () => ({
   useConsent: () => ({ granted: true, openChoices: () => {} }),
 }));
 

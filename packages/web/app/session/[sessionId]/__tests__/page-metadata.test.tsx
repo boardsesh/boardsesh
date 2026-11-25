@@ -50,7 +50,7 @@ vi.mock('@/app/lib/seo/dynamic-og-data', () => ({
 }));
 
 const { GraphQLClient } = await import('graphql-request');
-const pageModule = await import('../page');
+const pageModule = await import('@/app/(site)/session/[sessionId]/page');
 const { getSessionOgSummary } = await import('@/app/lib/seo/dynamic-og-data');
 const getSessionOgSummaryMock = vi.mocked(getSessionOgSummary);
 

@@ -448,6 +448,71 @@ async function renderSettledSession(expectedState: string) {
 }
 
 describe('SessionProviderWrapper auth bridge', () => {
+  it.each([false, true])(
+    'revalidates an Expo sign-out before runtime configuration resolves (eventual enabled: %s)',
+    async (enabled) => {
+      let finishInitialSession!: (response: Response) => void;
+      fetchMock.mockReturnValueOnce(new Promise<Response>((resolve) => (finishInitialSession = resolve)));
+      const view = render(
+        <SessionProviderWrapper awaitExpoAuthBridge>
+          <SessionState />
+        </SessionProviderWrapper>,
+      );
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+      const requestSignal = fetchMock.mock.calls[0]?.[1]?.signal as AbortSignal;
+      const initialChannel = MockBroadcastChannel.instances[0];
+      act(() => initialChannel?.emit({ type: 'auth-token-cleared', sourceId: 'expo-tab-signout' }));
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(requestSignal.aborted).toBe(true);
+      // The cookie lock waits for the pre-hint transport to settle. Its stale
+      // signed-in body must never publish, even while health remains unknown.
+      await act(async () => finishInitialSession(Response.json(session('previous-user', 'previous-login'))));
+      await waitFor(() => expect(screen.getByText('unauthenticated:none:none')).toBeTruthy());
+      view.rerender(
+        <SessionProviderWrapper enableExpoAuthBridge={enabled}>
+          <SessionState />
+        </SessionProviderWrapper>,
+      );
+      if (enabled) {
+        expect(initialChannel?.close).not.toHaveBeenCalled();
+        expect(MockBroadcastChannel.instances).toHaveLength(1);
+      } else {
+        expect(initialChannel?.close).toHaveBeenCalledOnce();
+      }
+      expect(screen.getByText('unauthenticated:none:none')).toBeTruthy();
+    },
+  );
+
+  it('changes the runtime bridge subscription without restarting a pending session read', async () => {
+    let finishSessionRead!: (response: Response) => void;
+    fetchMock.mockReturnValueOnce(new Promise<Response>((resolve) => (finishSessionRead = resolve)));
+    const view = render(
+      <SessionProviderWrapper>
+        <SessionState />
+      </SessionProviderWrapper>,
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const requestSignal = fetchMock.mock.calls[0]?.[1]?.signal as AbortSignal;
+    view.rerender(
+      <SessionProviderWrapper enableExpoAuthBridge>
+        <SessionState />
+      </SessionProviderWrapper>,
+    );
+    expect(MockBroadcastChannel.instances).toHaveLength(1);
+    expect(requestSignal.aborted).toBe(false);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    view.rerender(
+      <SessionProviderWrapper>
+        <SessionState />
+      </SessionProviderWrapper>,
+    );
+    expect(MockBroadcastChannel.instances[0]?.close).toHaveBeenCalledOnce();
+    expect(requestSignal.aborted).toBe(false);
+    await act(async () => finishSessionRead(Response.json(session('user-a', 'login-a'))));
+    expect(screen.getByText('authenticated:user-a:login-a')).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it('does not mount the Expo bridge when the rollout flag is disabled', async () => {
     serverSession = session('user-a', 'login-a');
 

@@ -152,16 +152,17 @@ vi.mock('@/app/components/climb-detail/climb-view-seo-fragment', () => ({ defaul
 vi.mock('@/app/components/providers/i18n-provider', () => ({ default: () => null }));
 
 const { middleware } = await import('@/middleware');
-const BoardAngleLayout = (await import('@/app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/layout')).default;
-const BoardListLayout = (await import('@/app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/layout'))
+const BoardAngleLayout = (await import('@/app/(site)/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/layout'))
+  .default;
+const BoardListLayout = (await import('@/app/(site)/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/list/layout'))
   .default;
 const ClimbViewPage = (
-  await import('@/app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]/page')
+  await import('@/app/(site)/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]/page')
 ).default;
 const LegacyPlayPage = (
-  await import('@/app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/play/[climb_uuid]/page')
+  await import('@/app/(site)/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/play/[climb_uuid]/page')
 ).default;
-const SlugPlayPage = (await import('@/app/b/[board_slug]/[angle]/play/[climb_uuid]/page')).default;
+const SlugPlayPage = (await import('@/app/(site)/b/[board_slug]/[angle]/play/[climb_uuid]/page')).default;
 const { getClimb } = await import('@/app/lib/data/queries');
 
 const PROD_HOST = 'www.boardsesh.com';

@@ -20,6 +20,8 @@ import {
 
 export { useSession as useBrowserSession } from 'next-auth/react';
 export type { Session as BrowserSession } from 'next-auth';
+export { SessionContext as BrowserSessionContext } from 'next-auth/react';
+export type { SessionContextValue as BrowserSessionContextValue } from 'next-auth/react';
 
 /** Reads an existing browser session without requiring a provider or starting a session request. */
 export function useOptionalBrowserSession(): SessionContextValue | undefined {
@@ -82,6 +84,7 @@ async function readSessionJson(response: Response, signal: AbortSignal): Promise
 type SessionProviderWrapperProps = {
   children: ReactNode;
   enableExpoAuthBridge?: boolean;
+  awaitExpoAuthBridge?: boolean;
 };
 
 const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
@@ -93,6 +96,7 @@ const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : us
 export default function SessionProviderWrapper({
   children,
   enableExpoAuthBridge = false,
+  awaitExpoAuthBridge = false,
 }: SessionProviderWrapperProps) {
   const [acceptedView, setAcceptedView] = useState<{ session: Session | null; retired: boolean }>({
     session: null,
@@ -319,18 +323,6 @@ export default function SessionProviderWrapper({
     window.addEventListener('focus', focusCheck);
     document.addEventListener('visibilitychange', focusCheck);
     window.addEventListener(WEB_SESSION_CHECK_EVENT, unauthorizedCheck);
-    let channel: BroadcastChannel | undefined;
-    const onExpoMessage = (event: MessageEvent<unknown>) => {
-      if (isExpoAuthClearMessage(event.data)) externalRefresh();
-    };
-    if (enableExpoAuthBridge && typeof BroadcastChannel !== 'undefined') {
-      try {
-        channel = new BroadcastChannel(EXPO_AUTH_CHANNEL_NAME);
-        channel.addEventListener('message', onExpoMessage);
-      } catch {
-        /* The local provider still works without cross-tab hints. */
-      }
-    }
     return () => {
       mountedRef.current = false;
       ++requestSequenceRef.current;
@@ -350,10 +342,38 @@ export default function SessionProviderWrapper({
       window.removeEventListener(WEB_SESSION_CHECK_EVENT, unauthorizedCheck);
       identityProbe?.abort();
       identityProbe = null;
-      channel?.removeEventListener('message', onExpoMessage);
-      channel?.close();
     };
-  }, [enableExpoAuthBridge, update]);
+  }, [update]);
+
+  // Static marketing HTML discovers this runtime flag after hydration. Updating
+  // cross-tab hints must not cancel or restart the owned session read above.
+  const listenForExpoAuth = enableExpoAuthBridge || awaitExpoAuthBridge;
+  useEffect(() => {
+    if (!listenForExpoAuth) return;
+    if (typeof BroadcastChannel === 'undefined') return;
+    let channel: BroadcastChannel;
+    const externalRefresh = () => {
+      beginWebSessionIntent();
+      void update();
+    };
+    const onExpoMessage = (event: MessageEvent<unknown>) => {
+      if (!isExpoAuthClearMessage(event.data)) return;
+      // Unknown configuration may outlive a cross-app sign-out. The hint asks
+      // for actual cookie evidence; it never supplies an accepted identity.
+      externalRefresh();
+    };
+    try {
+      channel = new BroadcastChannel(EXPO_AUTH_CHANNEL_NAME);
+      channel.addEventListener('message', onExpoMessage);
+    } catch {
+      /* The local provider still works without cross-tab hints. */
+      return;
+    }
+    return () => {
+      channel.removeEventListener('message', onExpoMessage);
+      channel.close();
+    };
+  }, [listenForExpoAuth, update]);
 
   useEffect(() => {
     if (!enableExpoAuthBridge || !settled) return;

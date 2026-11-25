@@ -35,8 +35,8 @@ vi.mock('../build-plans-page', () => ({
 vi.mock('../ui', () => ({ PageFrame: 'page-frame' }));
 vi.mock('../orders/orders-list', () => ({ default: 'orders-list' }));
 vi.mock('../orders/[licenceId]/order-status', () => ({ default: 'order-status' }));
-import OrdersPage from '../orders/page';
-import OrderPage from '../orders/[licenceId]/page';
+import OrdersPage from '@/app/(site)/build-plans/orders/page';
+import OrderPage from '@/app/(site)/build-plans/orders/[licenceId]/page';
 
 const order = { licenceId: 'BS-CNC-K7QM3T', licenseeName: 'Buyer name', previewImages: ['preview-url'] };
 function props() {

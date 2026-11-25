@@ -28,7 +28,7 @@ const DELETED_PATHS = ['app/components/settings', 'app/lib/data-sync/moonboard']
  * hardware the epic deliberately keeps on Next.
  */
 const KEPT_PATHS = [
-  'app/settings/page.tsx',
+  'app/(site)/settings/page.tsx',
   'app/settings/settings-page-content.tsx',
   'app/components/account/controllers-section.tsx',
   'app/components/account/set-password-section.tsx',

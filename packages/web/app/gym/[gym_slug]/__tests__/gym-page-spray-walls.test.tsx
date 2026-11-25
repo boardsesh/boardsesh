@@ -41,7 +41,7 @@ vi.mock('@/app/lib/analytics', () => ({ track: vi.fn() }));
 const executeAuthenticatedGraphQL = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/graphql/server-graphql', () => ({ executeAuthenticatedGraphQL }));
 
-const GymPage = (await import('../page')).default;
+const GymPage = (await import('@/app/(site)/gym/[gym_slug]/page')).default;
 
 function gym(slug: string, overrides: Partial<Gym> = {}): Gym {
   return {

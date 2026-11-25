@@ -1335,22 +1335,51 @@ describe('anonymous marketing HTML caching', () => {
     { 'next-router-prefetch': '1' },
   ])('bypasses credential and router variants %j', (headers) => {
     const response = middleware(new NextRequest('https://www.boardsesh.com/apps/kilter', { headers }));
-    expect(response.headers.has('cdn-cache-control')).toBe(false);
-    expect(response.headers.has('cache-control')).toBe(false);
+    expect(response.headers.get('cdn-cache-control')).toBe('no-store');
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
   });
   it('does not cache a saved-language redirect or its localized homepage', () => {
     const redirect = middleware(
       new NextRequest('https://www.boardsesh.com/', { headers: { cookie: `${LOCALE_COOKIE}=es` } }),
     );
     expect(redirect.status).toBe(307);
-    expect(redirect.headers.has('cdn-cache-control')).toBe(false);
+    expect(redirect.headers.get('cdn-cache-control')).toBe('no-store');
+    expect(redirect.headers.get('cache-control')).toBe('private, no-store');
     const localized = middleware(new NextRequest('https://www.boardsesh.com/es/'));
-    expect(localized.headers.has('cdn-cache-control')).toBe(false);
+    expect(localized.headers.get('cdn-cache-control')).toBe('no-store');
+    expect(localized.headers.get('cache-control')).toBe('private, no-store');
   });
   it('keeps guide aliases and unknown guides outside the public cache', () => {
     for (const pathname of ['/es/apps/kilter', '/apps/no-such-guide', '/apps/kilter?utm_source=test']) {
       const response = middleware(new NextRequest(`https://www.boardsesh.com${pathname}`));
-      expect(response.headers.has('cdn-cache-control')).toBe(false);
+      expect(response.headers.get('cdn-cache-control')).toBe('no-store');
+      expect(response.headers.get('cache-control')).toBe('private, no-store');
     }
+  });
+});
+
+describe('prerendered locale homepage routing', () => {
+  it.each(['es', 'fr', 'de', 'it'])('keeps /%s on its own static route and preserves the locale cookie', (locale) => {
+    const response = middleware(makeRequest(`/${locale}`));
+    expect(response.status).toBe(200);
+    expect(response.headers.has('x-middleware-rewrite')).toBe(false);
+    expect(response.headers.get(`x-middleware-request-${LOCALE_HEADER}`)).toBe(locale);
+    expect(response.cookies.get(LOCALE_COOKIE)?.value).toBe(locale);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(response.headers.get('cdn-cache-control')).toBe('no-store');
+  });
+
+  it.each(['/fr/de', '/es/fr/', '/de/it'])('rejects a nested locale homepage alias %s', (pathname) => {
+    const response = middleware(makeRequest(pathname));
+    expect(response.status).toBe(404);
+    expect(response.headers.get('X-Robots-Tag')).toContain('noindex');
+    expect(response.headers.has('x-middleware-rewrite')).toBe(false);
+  });
+
+  it('keeps the session redirect outside the static marketing cache', () => {
+    const response = middleware(makeRequest('/?session=shared-session'));
+    expect(response.status).toBe(307);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(response.headers.get('cdn-cache-control')).toBe('no-store');
   });
 });

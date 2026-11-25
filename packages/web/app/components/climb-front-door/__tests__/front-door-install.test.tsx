@@ -37,7 +37,7 @@ vi.mock('@/app/lib/graphql/server-cached-client', () => ({
 }));
 
 // What the root layout's provider gives a cold server render: no answer yet.
-vi.mock('@/app/components/consent/consent-provider', () => ({
+vi.mock('@/app/components/consent/consent-state-provider', () => ({
   useConsent: () => ({ granted: false, snapshot: { record: null }, dialogOpen: false }),
 }));
 

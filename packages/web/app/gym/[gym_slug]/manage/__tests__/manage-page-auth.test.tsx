@@ -31,7 +31,7 @@ vi.mock('../manage-no-access', () => ({ default: 'manage-no-access' }));
 vi.mock('@/app/lib/directory-reports/directory-reports-flag', () => ({ isDirectoryReportsEnabled: async () => true }));
 vi.mock('@/app/lib/gym-mcp/availability.server', () => ({ getGymMcpAvailability: control.mcpAvailable }));
 import { GET_GYM_PENDING_CLAIM } from '@boardsesh/graphql/operations';
-import ManageGymPage, { generateMetadata } from '../page';
+import ManageGymPage, { generateMetadata } from '@/app/(site)/gym/[gym_slug]/manage/page';
 
 const privateGym = {
   uuid: 'private-gym',

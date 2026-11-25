@@ -6,7 +6,7 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import CloseIcon from '@mui/icons-material/Close';
-import { useConsent } from '@/app/components/consent/consent-provider';
+import { useConsent } from '@/app/components/consent/consent-state-provider';
 import { useInstallPlatform } from '@/app/hooks/use-install-platform';
 import { useInboundCampaign } from '@/app/hooks/use-inbound-campaign';
 import { useQrLandingMedium } from '@/app/hooks/use-qr-landing-medium';

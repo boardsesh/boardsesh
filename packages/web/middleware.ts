@@ -64,6 +64,23 @@ function isExpoWebProxyEnabled(): boolean {
 
 export function middleware(request: NextRequest) {
   const response = routeRequest(request);
+  const { strippedPath } = detectLocale(request.nextUrl.pathname);
+  if (
+    (strippedPath === '/' || isAppGuidePath(strippedPath)) &&
+    !isCacheableMarketingRequest({
+      method: request.method,
+      pathname: request.nextUrl.pathname,
+      search: request.nextUrl.search,
+      headers: request.headers,
+    })
+  ) {
+    // Apply after routing so session, sticky-language and guide-alias redirects
+    // receive the same protection as successful static marketing responses.
+    response.headers.set('Cache-Control', 'private, no-store');
+    response.headers.set('CDN-Cache-Control', 'no-store');
+    response.headers.set('Vercel-CDN-Cache-Control', 'no-store');
+    response.headers.append('Vary', MARKETING_CACHE_VARY);
+  }
   // The capability survives sign-in inside callbackUrl, and can cross locale
   // redirects. Protect every response branch carrying it, regardless of path.
   if (request.nextUrl.searchParams.has(BOARD_INVITE_PARAM) || searchCarriesBoardInvite(request.nextUrl.search)) {
@@ -217,6 +234,23 @@ function routeRequest(request: NextRequest) {
     ? { locale: DEFAULT_LOCALE, strippedPath: pathname, needsRewrite: false }
     : detectLocale(pathname);
   const isAppGuide = isAppGuidePath(strippedPath);
+  // Locale homepages have public, prerendered routes of their own. Other
+  // translated pages still rewrite to the existing application route.
+  const isLocalizedHome = needsRewrite && strippedPath === '/';
+  // Do not let the translated application rewrite create a second locale-home
+  // URL such as /fr/de that renders the German homepage under a French prefix.
+  if (
+    needsRewrite &&
+    SUPPORTED_LOCALES.some(
+      (candidate) =>
+        candidate !== DEFAULT_LOCALE && (strippedPath === `/${candidate}` || strippedPath === `/${candidate}/`),
+    )
+  ) {
+    return new NextResponse(null, {
+      status: 404,
+      headers: { 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' },
+    });
+  }
   if (isAppGuide && needsRewrite) {
     const target = request.nextUrl.clone();
     target.pathname = strippedPath;
@@ -284,7 +318,7 @@ function routeRequest(request: NextRequest) {
   requestHeaders.set(PATHNAME_HEADER, strippedPath);
 
   let response: NextResponse;
-  if (needsRewrite) {
+  if (needsRewrite && !isLocalizedHome) {
     const rewrittenUrl = request.nextUrl.clone();
     rewrittenUrl.pathname = strippedPath;
     response = NextResponse.rewrite(rewrittenUrl, {

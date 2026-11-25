@@ -83,8 +83,9 @@ describe('HomeShowcaseVideo', () => {
   it('loads a responsive hero poster eagerly and defers the video source', () => {
     render(<HomeShowcaseVideo />);
     const poster = document.querySelector('img');
-    expect(poster?.getAttribute('src')).toContain('/_next/image?');
-    expect(poster?.getAttribute('srcset')).toContain('w=');
+    expect(poster?.getAttribute('src')).toBe('/images/home/showcase-hero-9x16-640w.webp');
+    expect(poster?.getAttribute('srcset')).toContain('/images/home/showcase-hero-9x16-360w.webp 360w');
+    expect(poster?.getAttribute('srcset')).toContain('/images/home/showcase-hero-9x16-720w.webp 720w');
     expect(poster?.getAttribute('sizes')).toContain('(max-width: 760px)');
     expect(poster?.getAttribute('width')).toBe('720');
     expect(poster?.getAttribute('height')).toBe('1280');

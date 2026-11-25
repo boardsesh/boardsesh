@@ -4,7 +4,7 @@
  * the router as `//host`. The page's other dependencies are stubbed; the router
  * and its rewrite are not.
  */
-import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
 import React from 'react';
 import { render, waitFor } from '@testing-library/react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
@@ -49,6 +49,15 @@ vi.mock('@/app/lib/analytics', () => ({
 }));
 
 const { default: AuthPageContent } = await import('../auth-page-content');
+const browserWindow = window;
+const documentLocation = {
+  origin: browserWindow.location.origin,
+  href: new URL('/auth/login', browserWindow.location.origin).href,
+  pathname: '/auth/login',
+  search: '',
+  assign: vi.fn(),
+  replace: vi.fn(),
+};
 
 function openLoginPage(query: string) {
   navigationState.searchParams = new URLSearchParams(query);
@@ -59,7 +68,16 @@ describe('AuthPageContent — through the real locale router', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     i18nState.language = 'en-US';
+    vi.stubGlobal(
+      'window',
+      new Proxy(browserWindow, {
+        get(target, property) {
+          return property === 'location' ? documentLocation : Reflect.get(target, property, target);
+        },
+      }),
+    );
   });
+  afterEach(() => vi.unstubAllGlobals());
 
   it.each([
     ['/es//evil.example', 'callbackUrl=/es//evil.example'],
@@ -73,8 +91,13 @@ describe('AuthPageContent — through the real locale router', () => {
     ['/%2e//evil.example', 'callbackUrl=/%252e//evil.example'],
   ])('sends %s to / instead of letting the router expose //', async (_label, query) => {
     openLoginPage(query);
-    await waitFor(() => expect(nextRouter.push).toHaveBeenCalled());
-    expect(nextRouter.push.mock.calls).toEqual([['/']]);
+    await waitFor(() => expect(documentLocation.assign).toHaveBeenCalledOnce());
+    const [destination] = documentLocation.assign.mock.calls[0];
+    // Invalid callbacks resolve to our own normalized homepage. The marketing
+    // document then replaces the login document with its correct provider set.
+    expect(String(destination)).toBe(`${documentLocation.origin}/`);
+    expect(new URL(String(destination)).origin).toBe(documentLocation.origin);
+    expect(nextRouter.push).not.toHaveBeenCalled();
   });
 
   it('still applies the visitor locale to a real return path', async () => {
@@ -82,6 +105,7 @@ describe('AuthPageContent — through the real locale router', () => {
     openLoginPage('callbackUrl=/gym/bloclab/manage');
     await waitFor(() => expect(nextRouter.push).toHaveBeenCalled());
     expect(nextRouter.push.mock.calls).toEqual([['/es/gym/bloclab/manage']]);
+    expect(documentLocation.assign).not.toHaveBeenCalled();
   });
 
   it('passes an absolute same-origin return URL straight through', async () => {
@@ -89,5 +113,6 @@ describe('AuthPageContent — through the real locale router', () => {
     openLoginPage(new URLSearchParams({ callbackUrl: returnUrl }).toString());
     await waitFor(() => expect(nextRouter.push).toHaveBeenCalled());
     expect(nextRouter.push.mock.calls).toEqual([[returnUrl]]);
+    expect(documentLocation.assign).not.toHaveBeenCalled();
   });
 });

@@ -11,7 +11,7 @@ import {
   stripGymQrParams,
   type AnalyticsBoardType,
 } from '@boardsesh/analytics';
-import { useConsent } from '@/app/components/consent/consent-provider';
+import { useConsent } from '@/app/components/consent/consent-state-provider';
 import { track } from '@/app/lib/analytics';
 import { captureQrLanding, type QrLanding, type QrLandingKind } from '@/app/lib/qr-landing';
 

@@ -143,7 +143,8 @@ function requireRedirectError(outcome: unknown) {
   return outcome;
 }
 
-const pageModule = await import('../page');
+const pageModule =
+  await import('@/app/(site)/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/view/[climb_uuid]/page');
 const { getLocale } = await import('@/app/lib/i18n/get-locale');
 const { getClimb } = await import('@/app/lib/data/queries');
 

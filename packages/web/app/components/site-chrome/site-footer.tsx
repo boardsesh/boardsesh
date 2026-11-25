@@ -8,8 +8,8 @@ import { useTranslation } from 'react-i18next';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import { boardTypeLabel } from '@boardsesh/board-constants/board-type-labels';
 import { navLinkClicked, type WebsiteNavTarget } from '@boardsesh/analytics';
-import { trackWebsiteJourneyEvent } from '@/app/lib/website-journey-analytics';
-import { useConsent } from '../consent/consent-provider';
+import { trackWebsiteJourneyEvent, trackWebsiteJourneyLinkClick } from '@/app/lib/website-journey-analytics';
+import { useConsent } from '../consent/consent-state-provider';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import CompactLanguageSwitcher from '@/app/components/i18n/compact-language-switcher';
 import StartClimbingButton from '@/app/components/start-climbing-button';
@@ -18,6 +18,7 @@ import { isChromeLessPath } from '@/app/lib/chrome-less-routes';
 import { usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
 import BrandLockup from './brand-lockup';
 import styles from './site-footer.module.css';
+import { useMarketingCapabilities } from '../marketing/marketing-capabilities-context';
 
 // Column links are grey (#B0B0B0), lifting to the label ink with an underline on
 // hover or focus. The violet stays with inline links and the page's one CTA.
@@ -37,7 +38,12 @@ const LINK_SX = {
 const OPEN_BROWSER_SX = brandCtaOutlinedSx({ size: 'medium' });
 type FooterLink = { href: string; label: string; target: WebsiteNavTarget; external?: boolean; locale?: 'en-US' };
 
-export default function SiteFooter({ developerHref = '/developers' }: { developerHref?: '/developers' | '/docs' }) {
+export default function SiteFooter({
+  developerHref: initialDeveloperHref = '/developers',
+}: {
+  developerHref?: '/developers' | '/docs';
+}) {
+  const developerHref = useMarketingCapabilities()?.developerHref ?? initialDeveloperHref;
   const { t } = useTranslation('common');
   const { t: consentTranslation } = useTranslation('consent');
   const { openChoices } = useConsent();
@@ -118,7 +124,7 @@ export default function SiteFooter({ developerHref = '/developers' }: { develope
           <MuiLink
             component={LocaleLink}
             href="/"
-            onClick={() => trackWebsiteJourneyEvent(navLinkClicked('footer', '/'))}
+            onClick={(click) => trackWebsiteJourneyLinkClick(click, navLinkClicked('footer', '/'))}
             aria-label={t('ariaLabels.home')}
             underline="none"
             sx={{ display: 'inline-flex', alignItems: 'center', minWidth: 44, minHeight: 44 }}
@@ -153,7 +159,7 @@ export default function SiteFooter({ developerHref = '/developers' }: { develope
                   target={link.external ? '_blank' : undefined}
                   rel={link.external ? 'noopener noreferrer' : undefined}
                   sx={LINK_SX}
-                  onClick={() => trackWebsiteJourneyEvent(navLinkClicked('footer', link.target))}
+                  onClick={(click) => trackWebsiteJourneyLinkClick(click, navLinkClicked('footer', link.target))}
                 >
                   {link.label}
                 </MuiLink>

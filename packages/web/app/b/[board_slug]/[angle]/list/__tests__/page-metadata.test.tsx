@@ -95,7 +95,7 @@ vi.mock('@/app/components/climb-front-door/static-list-front-door', () => ({
   default: () => null,
 }));
 
-const pageModule = await import('../page');
+const pageModule = await import('@/app/(site)/b/[board_slug]/[angle]/list/page');
 
 // Every test states the board it wants. A shared `mockResolvedValueOnce` queue
 // made each outcome depend on how many times the previous test happened to call

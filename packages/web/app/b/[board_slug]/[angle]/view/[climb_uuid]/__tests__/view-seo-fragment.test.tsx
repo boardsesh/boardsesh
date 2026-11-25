@@ -168,7 +168,7 @@ vi.mock('@/app/components/board-renderer/util', () => ({
 // providers into a node test.
 vi.mock('@/app/components/similar-climbs/similar-climbs-list', () => ({ default: () => null }));
 // The root layout's provider, as a cold server render sees it: no answer yet.
-vi.mock('@/app/components/consent/consent-provider', () => ({
+vi.mock('@/app/components/consent/consent-state-provider', () => ({
   useConsent: () => ({ granted: false, snapshot: { record: null }, dialogOpen: false }),
 }));
 vi.mock('@/app/components/social/climb-social-section', () => ({ default: () => null }));
@@ -180,7 +180,7 @@ function requireRedirectError(outcome: unknown) {
   return outcome;
 }
 
-const pageModule = await import('../page');
+const pageModule = await import('@/app/(site)/b/[board_slug]/[angle]/view/[climb_uuid]/page');
 
 const PARAMS = { board_slug: 'my-board', angle: '40', climb_uuid: 'test-climb' };
 

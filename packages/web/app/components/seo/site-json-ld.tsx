@@ -1,5 +1,6 @@
 import React from 'react';
-import { getServerTranslation } from '@/app/lib/i18n/server';
+import { getServerTranslation, getServerTranslationForLocale } from '@/app/lib/i18n/server';
+import type { Locale } from '@/app/lib/i18n/config';
 import { absoluteUrl } from '@/app/lib/seo/base-url';
 import { JsonLd } from '@/app/lib/seo/json-ld';
 import { SITE_NAME } from '@/app/lib/seo/metadata';
@@ -29,8 +30,10 @@ export const WEBSITE_ID = absoluteUrl('/#website');
  * not exist is a fabricated capability — Google follows it, gets a 404, and
  * learns the markup is unreliable. Pinned by a deep-scan test.
  */
-export default async function SiteJsonLd() {
-  const { t, locale } = await getServerTranslation('marketing');
+export default async function SiteJsonLd({ locale: explicitLocale }: { locale?: Locale } = {}) {
+  const { t, locale } = explicitLocale
+    ? await getServerTranslationForLocale(explicitLocale, 'marketing')
+    : await getServerTranslation('marketing');
 
   const siteUrl = absoluteUrl('/');
   const logoUrl = resolveShellStaticAssetUrl('/brand/boardsesh-mark.webp');
