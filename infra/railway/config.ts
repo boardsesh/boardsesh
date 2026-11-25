@@ -779,6 +779,12 @@ const railwayHostedState: RailwayDesiredState = {
           name: 'SMTP_PASSWORD',
           reason: 'Required to authenticate the SMTP transport for credential-account emails.',
         },
+        {
+          name: 'EMAIL_FROM',
+          reason:
+            'Required so password-reset and verification emails use the configured Boardsesh sender ' +
+            'instead of falling back to the SMTP login address.',
+        },
       ],
       optionalVars: [
         {
