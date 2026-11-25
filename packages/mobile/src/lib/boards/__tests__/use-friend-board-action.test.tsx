@@ -25,6 +25,7 @@ vi.mock('../use-activate-board', () => ({
   },
 }));
 vi.mock('../../graphql/hooks', () => ({
+  BOARDS_BY_SERIAL_NUMBERS_QUERY_KEY: 'boardsBySerialNumbers',
   useFollowBoard: (options: typeof followOptionsSeen.value) => {
     followOptionsSeen.value = options;
     return { mutate: followMock };
@@ -151,6 +152,8 @@ describe('useFriendBoardAction', () => {
 
     expect(accessMock).toHaveBeenCalledWith({ action: 'request', kind: 'board', resourceId: 'board-1' });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['friendsBoards'] });
+    // The In range card for the same board reads its state the same way.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['boardsBySerialNumbers'] });
     expect(hook.result.current.sheet).toBeNull();
   });
 

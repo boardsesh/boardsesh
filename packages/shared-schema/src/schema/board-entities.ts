@@ -7,6 +7,28 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     boardType: String!
     observedSerialNumber: String!
     candidates: [UserBoard!]!
+    """
+    Lined up with candidates: entry i is candidate i's request card, or null.
+    Only a signed-in viewer gets cards, only for a Followers or Invite-only home
+    board they cannot open, and at most 10 distinct boards an hour. Every other
+    entry is null, and the candidate stays the anonymous stub it always was.
+    """
+    candidateRequestCards: [SerialBoardRequestCard]!
+  }
+  """
+  A private home board heard over Bluetooth that the viewer cannot open: whose
+  it is, so they can ask to climb on it (requestResourceAccess with the
+  preview's uuid). Never the location, slug, serial, presence ids, counts or
+  the owner's id.
+  """
+  type SerialBoardRequestCard {
+    preview: FriendBoardPreview!
+    "Profile display name, falling back to the account name"
+    ownerDisplayName: String
+    "Profile avatar, falling back to the account image"
+    ownerAvatarUrl: String
+    "The viewer already asked and the owner has not answered."
+    requested: Boolean!
   }
   "A public climb preview without sender identity. See each field for its presence or logbook source."
   type BoardDiscoveryClimb {
@@ -209,7 +231,8 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
 
   """
   The part of a friend's board every listed row may show, whatever the viewer's
-  access. Never carries the slug, serial number, location, presence ids or counts.
+  access, and all a Bluetooth request card shows of a board. Never carries the
+  slug, serial number, location, presence ids or counts.
   """
   type FriendBoardPreview {
     "The board's uuid: the resourceId for requestResourceAccess. Opens nothing by itself on an Invite-only board."

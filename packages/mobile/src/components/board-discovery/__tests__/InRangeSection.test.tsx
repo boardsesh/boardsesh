@@ -640,6 +640,19 @@ describe('InRangeSection', () => {
     expect(screen.queryByText('In front of you')).toBeNull();
   });
 
+  // A friend's private board heard in range (in-range-request-card.ts): ask, not Climb here.
+  it.each([
+    { askToClimb: 'ask' as const, button: 'Ask to climb' },
+    { askToClimb: 'waiting' as const, button: 'Requested' },
+  ])('offers "$button" on a friend\'s board the climber can\'t open', ({ askToClimb, button }) => {
+    const friendBoard = { ...KILTER, title: "Sam's board is here", askToClimb };
+    renderSlot({ kind: 'hero', board: friendBoard, strongestSignal: true });
+    expect(screen.getByText("Sam's board is here")).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Climb here' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: button }));
+    expect(handlers.onPickBoard).toHaveBeenCalledWith(friendBoard);
+  });
+
   it('asks for signal when serials could not be looked up, with Retry', () => {
     renderSlot({ kind: 'none' }, { notice: { kind: 'lookup_failed', besideHeardBoards: false } });
     expect(screen.getByText('Found a board, need signal')).toBeTruthy();

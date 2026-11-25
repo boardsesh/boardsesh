@@ -71,6 +71,12 @@ import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
 import { wizardBoardHref, wizardFriendHref } from '../../src/lib/boards/add-board-wizard';
 import { friendBoardToItem, friendsShelfBoards } from '../../src/lib/boards/friend-boards';
 import { useFriendBoardAction } from '../../src/lib/boards/use-friend-board-action';
+import {
+  friendBoardFromRequestCard,
+  requestCardOf,
+  withInRangeRequestCard,
+  type InRangeRequestCopy,
+} from '../../src/lib/boards/in-range-request-card';
 import { useFriendsBoardsShelf } from '../../src/lib/graphql/hooks/use-friends-boards';
 import { boardUuidOrNull } from '../../src/lib/boards/board-identity';
 import { orderBoardsForPartnerWorkout } from '../../src/lib/partner-workout-board-order';
@@ -542,10 +548,21 @@ export default function BoardSelection() {
   // get a menu At {gym}.
   const myBoardsByUuid = useMemo(() => new Map(myBoards.map((board) => [board.uuid, board])), [myBoards]);
   const myBoardKeys = useMemo<ReadonlySet<string>>(() => new Set(myBoardsByUuid.keys()), [myBoardsByUuid]);
+  // A friend's private home board heard in range says whose it is, with Ask
+  // to climb (in-range-request-card.ts). Every other board reads as before.
+  const inRangeRequestCopy = useMemo<InRangeRequestCopy>(
+    () => ({
+      titleNamed: (name) => t('mobile.inRange.friendBoardHere', { name }),
+      titleUnnamed: t('mobile.inRange.friendBoardHereUnnamed'),
+      ownerFallback: t('mobile.friendBoards.ownerFallback'),
+    }),
+    [t],
+  );
   const topDisplay = useMemo<PickerTopView<DiscoveryBoardItem>>(
     () =>
-      mapPickerTopBoards(topView, (boards, kind) =>
-        pickerTopBoardsToItems(
+      mapPickerTopBoards(topView, (boards, kind) => {
+        const boardsByKey = new Map(boards.map((row) => [row.key, row.board]));
+        return pickerTopBoardsToItems(
           boards.map((row) => ({ ...row, board: myBoardsByUuid.get(row.board.uuid) ?? row.board })),
           {
             labelOptions: kind === 'at_gym' ? gymLabelOptions : labelOptions,
@@ -555,9 +572,13 @@ export default function BoardSelection() {
             pinnedOverrides,
             importStatusStale,
           },
-        ),
-      ),
+        ).map((item) => {
+          const board = kind === 'hero' ? boardsByKey.get(item.key) : undefined;
+          return board ? withInRangeRequestCard(item, board, inRangeRequestCopy) : item;
+        });
+      }),
     [
+      inRangeRequestCopy,
       topView,
       myBoardsByUuid,
       myBoardKeys,
@@ -1471,6 +1492,13 @@ export default function BoardSelection() {
     (item: DiscoveryBoardItem, drawnPosition?: number) => {
       const topPick = topPicks.get(item.key);
       if (!topPick) return;
+      // A friend's board the climber can't open: Ask to climb, not a pick.
+      // The scan keeps going, and nothing is bound.
+      const requestCard = requestCardOf(topPick.board);
+      if (requestCard) {
+        onFriendBoardPress(friendBoardFromRequestCard(requestCard), topPick.position);
+        return;
+      }
       if (topPick.pickSource === 'bluetooth') chooseFirstBoardPath('scan');
       const uuid = boardUuidOrNull(topPick.board.uuid);
       const board = (uuid ? myBoards.find((saved) => saved.uuid === uuid) : undefined) ?? topPick.board;
@@ -1479,7 +1507,7 @@ export default function BoardSelection() {
       // board: `pickBoard` drops it for every pick but the Near you one.
       pickBoard(board, { pickSource, section, position: drawnPosition ?? position });
     },
-    [topPicks, chooseFirstBoardPath, myBoards, pickBoard],
+    [topPicks, onFriendBoardPress, chooseFirstBoardPath, myBoards, pickBoard],
   );
   const onAtGymDetails = useCallback(
     (item: DiscoveryBoardItem, drawnPosition?: number) => {

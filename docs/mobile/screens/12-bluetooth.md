@@ -160,6 +160,26 @@ gym has (`use-steady-picker-top.ts`, `decisionAtDrawnTop`). The hero says "In
 front of you" while no box is heard louder, "Nearby" otherwise, from what the
 scan hears now.
 
+**A friend's private board in range.** The In range slot's serial lookup asks
+for request cards (`GetObservedBoardSerialMatchesWithRequestCards`, `requestCards`
+on `useBoardsBySerialNumbers`); the device picker and every other caller use the
+lookup without them, so they spend none of the climber's hourly budget. A
+signed-in climber at a Followers or Invite-only home board they can't open gets
+the same anonymous stub as before plus a card, which `fetchBoardsForObservedSerials`
+puts on that stub (`requestCard`, read with `requestCardOf` in
+`src/lib/boards/in-range-request-card.ts`). A card on a board with a uuid, or of
+another board type, is ignored. The hero then reads "Sam's board is here"
+(`mobile.inRange.friendBoardHere`, or "A climber's board is here" with no name),
+the board and its angle under it, and Ask to climb, or Requested once they asked,
+in place of Climb here. Nothing is drawn over the art. The tap is not a pick: the
+scan goes on, nothing is bound, and `useFriendBoardAction` opens the same sheet
+as the Friends' boards shelf. After an ask or a cancel the serial lookup is read
+again, so the button follows the server. Over the 10-boards-an-hour cap, signed
+out, or on an Unlisted or Only me board, the stub draws exactly as before. What
+the server reveals and why is in
+[privacy](../../product/privacy.md#what-a-serial-tells-a-climber-nearby). The scan
+itself is unchanged.
+
 **Remembered boards.** A connect remembers the box for the board in view: by
 serial for Aurora boxes, by BLE device id for a MoonBoard or a serial-less
 Kilter-built box named for that board type (`Kilter Board`, `isKilterBuiltBox`).

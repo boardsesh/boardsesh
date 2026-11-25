@@ -3917,7 +3917,8 @@ export type FriendBoardOwner = {
 
 /**
  * The part of a friend's board every listed row may show, whatever the viewer's
- * access. Never carries the slug, serial number, location, presence ids or counts.
+ * access, and all a Bluetooth request card shows of a board. Never carries the
+ * slug, serial number, location, presence ids or counts.
  */
 export type FriendBoardPreview = {
   __typename?: 'FriendBoardPreview';
@@ -7924,6 +7925,13 @@ export type ObservedBoardSerialInput = {
 export type ObservedBoardSerialMatch = {
   __typename?: 'ObservedBoardSerialMatch';
   boardType: Scalars['String']['output'];
+  /**
+   * Lined up with candidates: entry i is candidate i's request card, or null.
+   * Only a signed-in viewer gets cards, only for a Followers or Invite-only home
+   * board they cannot open, and at most 10 distinct boards an hour. Every other
+   * entry is null, and the candidate stays the anonymous stub it always was.
+   */
+  candidateRequestCards: Array<Maybe<SerialBoardRequestCard>>;
   candidates: Array<UserBoard>;
   observedSerialNumber: Scalars['String']['output'];
 };
@@ -11631,6 +11639,23 @@ export type SendDeviceLogsResponse = {
   __typename?: 'SendDeviceLogsResponse';
   accepted: Scalars['Int']['output'];
   success: Scalars['Boolean']['output'];
+};
+
+/**
+ * A private home board heard over Bluetooth that the viewer cannot open: whose
+ * it is, so they can ask to climb on it (requestResourceAccess with the
+ * preview's uuid). Never the location, slug, serial, presence ids, counts or
+ * the owner's id.
+ */
+export type SerialBoardRequestCard = {
+  __typename?: 'SerialBoardRequestCard';
+  /** Profile avatar, falling back to the account image */
+  ownerAvatarUrl?: Maybe<Scalars['String']['output']>;
+  /** Profile display name, falling back to the account name */
+  ownerDisplayName?: Maybe<Scalars['String']['output']>;
+  preview: FriendBoardPreview;
+  /** The viewer already asked and the owner has not answered. */
+  requested: Scalars['Boolean']['output'];
 };
 
 /** An active climbing session where users can collaborate on a queue. */
@@ -15612,6 +15637,7 @@ export type ResolversTypes = ResolversObject<{
   SendAppBugReportMessageInput: SendAppBugReportMessageInput;
   SendDeviceLogsInput: SendDeviceLogsInput;
   SendDeviceLogsResponse: ResolverTypeWrapper<SendDeviceLogsResponse>;
+  SerialBoardRequestCard: ResolverTypeWrapper<SerialBoardRequestCard>;
   Session: ResolverTypeWrapper<Session>;
   SessionBoardPathChanged: ResolverTypeWrapper<SessionBoardPathChanged>;
   SessionBoardSerialChanged: ResolverTypeWrapper<SessionBoardSerialChanged>;
@@ -16258,6 +16284,7 @@ export type ResolversParentTypes = ResolversObject<{
   SendAppBugReportMessageInput: SendAppBugReportMessageInput;
   SendDeviceLogsInput: SendDeviceLogsInput;
   SendDeviceLogsResponse: SendDeviceLogsResponse;
+  SerialBoardRequestCard: SerialBoardRequestCard;
   Session: Session;
   SessionBoardPathChanged: SessionBoardPathChanged;
   SessionBoardSerialChanged: SessionBoardSerialChanged;
@@ -20785,6 +20812,7 @@ export type ObservedBoardSerialMatchResolvers<
     ResolversParentTypes['ObservedBoardSerialMatch'],
 > = ResolversObject<{
   boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  candidateRequestCards?: Resolver<Array<Maybe<ResolversTypes['SerialBoardRequestCard']>>, ParentType, ContextType>;
   candidates?: Resolver<Array<ResolversTypes['UserBoard']>, ParentType, ContextType>;
   observedSerialNumber?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
@@ -22656,6 +22684,17 @@ export type SendDeviceLogsResponseResolvers<
 > = ResolversObject<{
   accepted?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   success?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SerialBoardRequestCardResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SerialBoardRequestCard'] = ResolversParentTypes['SerialBoardRequestCard'],
+> = ResolversObject<{
+  ownerAvatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  ownerDisplayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  preview?: Resolver<ResolversTypes['FriendBoardPreview'], ParentType, ContextType>;
+  requested?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -24543,6 +24582,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   SaveClimbResult?: SaveClimbResultResolvers<ContextType>;
   SearchPlaylistsResult?: SearchPlaylistsResultResolvers<ContextType>;
   SendDeviceLogsResponse?: SendDeviceLogsResponseResolvers<ContextType>;
+  SerialBoardRequestCard?: SerialBoardRequestCardResolvers<ContextType>;
   Session?: SessionResolvers<ContextType>;
   SessionBoardPathChanged?: SessionBoardPathChangedResolvers<ContextType>;
   SessionBoardSerialChanged?: SessionBoardSerialChangedResolvers<ContextType>;

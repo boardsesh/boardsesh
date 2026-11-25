@@ -558,6 +558,8 @@
       "moonboardTitle": "A MoonBoard is in range",
       "moonboardBody": "MoonBoards don't send a serial number, so tell us where you are and we'll find this one.",
       "typeTitle": "A {{board}} board is in range",
+      "friendBoardHere": "{{name}}'s board is here",
+      "friendBoardHereUnnamed": "A climber's board is here",
       "bareNameBody": "Its box doesn't say which board it is, so tell us where you are and we'll find this one.",
       "unknownSetupBody": "We don't know its setup yet, so tell us where you are and we'll find this one.",
       "alsoNeedSignal": "Another board is in range. We need signal to name it.",

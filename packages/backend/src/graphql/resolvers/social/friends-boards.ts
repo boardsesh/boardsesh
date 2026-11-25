@@ -1,4 +1,4 @@
-import { and, asc, count, eq, ilike, isNull, ne, notExists, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { and, asc, count, eq, ilike, isNull, ne, notExists, or, sql, type SQL } from 'drizzle-orm';
 import type { ConnectionContext, FriendBoard } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { contentVisibilityCondition, followerBoardListingCondition } from '@boardsesh/db/queries';
@@ -7,6 +7,10 @@ import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/h
 import { FriendsBoardsInputSchema } from '../../../validation/schemas';
 import { privacyControlsEnabled, resourceAccessCondition } from '../../../services/privacy';
 import { enrichBoards } from './boards';
+import { homeWallCondition } from './home-wall';
+
+type EnrichedBoard = Awaited<ReturnType<typeof enrichBoards>>[number];
+type FriendBoardItem = Omit<FriendBoard, 'board'> & { board: EnrichedBoard | null };
 
 /**
  * Friends' boards: home boards owned by people the viewer follows, for the
@@ -31,21 +35,6 @@ import { enrichBoards } from './boards';
  * The owner's name and avatar are always shown: the viewer follows them, which
  * is what `canViewActivityIdentity` asks of a private account.
  */
-/**
- * A home wall, gym or not: no gym, a gym that is gone, or a gym the board's own
- * owner runs that is not a public listed gym (a home wall that minted a private
- * or unlisted gym). A board at someone else's gym, or at a public listed gym,
- * is found through that gym instead. One primary-key lookup per board.
- */
-function homeWallCondition(gymIdColumn: SQLWrapper, ownerIdColumn: SQLWrapper): SQL {
-  return sql`NOT EXISTS (SELECT 1 FROM gyms friend_gym
-    WHERE friend_gym.id = ${gymIdColumn} AND friend_gym.deleted_at IS NULL
-      AND (friend_gym.owner_id <> ${ownerIdColumn} OR (friend_gym.is_public AND friend_gym.is_listed)))`;
-}
-
-type EnrichedBoard = Awaited<ReturnType<typeof enrichBoards>>[number];
-type FriendBoardItem = Omit<FriendBoard, 'board'> & { board: EnrichedBoard | null };
-
 export async function readFriendsBoards(
   viewerId: string,
   input: { query?: string | null; limit?: number | null; offset?: number | null },

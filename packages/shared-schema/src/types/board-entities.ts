@@ -3,7 +3,11 @@ import type { PrivacyLocationAudience, PrivacyResourceAudience } from '../genera
 
 // Board entity types
 export type ObservedBoardSerialInput = { boardType: string; observedSerialNumber: string };
-export type ObservedBoardSerialMatch = ObservedBoardSerialInput & { candidates: UserBoard[] };
+export type ObservedBoardSerialMatch = ObservedBoardSerialInput & {
+  candidates: UserBoard[];
+  /** Lined up with `candidates`: candidate i's request card, or null. */
+  candidateRequestCards: Array<SerialBoardRequestCard | null>;
+};
 
 export type UserBoard = {
   uuid: string;
@@ -117,6 +121,15 @@ export type FriendBoardPreview = {
   sizeId: number;
   setIds: string;
   angle: number;
+};
+
+/** A private home board heard over Bluetooth that the viewer cannot open. Never its place, slug or serial. */
+export type SerialBoardRequestCard = {
+  preview: FriendBoardPreview;
+  ownerDisplayName: string | null;
+  ownerAvatarUrl: string | null;
+  /** The viewer already asked and the owner has not answered. */
+  requested: boolean;
 };
 
 export type FriendBoard = {

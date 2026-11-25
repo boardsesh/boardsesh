@@ -1,6 +1,7 @@
 // A tap on a friend's board, wherever it is drawn: the picker's Friends'
-// boards shelf and the wizard's "Whose board?". What it does follows the
-// server's word on the viewer's access (`FriendBoard.viewerAccess`):
+// boards shelf, the wizard's "Whose board?" and the picker's In range card for
+// a private board heard over Bluetooth (in-range-request-card.ts). What it does
+// follows the server's word on the viewer's access (`FriendBoard.viewerAccess`):
 //
 // - CAN_CLIMB: bind the board as a Your boards tap does, then save it (follow)
 //   so it lands in Your boards. "Saved to Your boards · Undo" shows on the tab
@@ -23,7 +24,7 @@ import {
   type FriendBoardAccessError,
 } from '../../components/board-discovery/FriendBoardAccessSheet';
 import { useToast } from '../../providers/toast-provider';
-import { useFollowBoard } from '../graphql/hooks';
+import { BOARDS_BY_SERIAL_NUMBERS_QUERY_KEY, useFollowBoard } from '../graphql/hooks';
 import { FRIENDS_BOARDS_QUERY_KEY } from '../graphql/hooks/use-friends-boards';
 import { useResourceAccessAction } from '../graphql/hooks/use-resource-privacy';
 import { isGraphqlRateLimitedError } from '../graphql/extract-error-message';
@@ -147,8 +148,10 @@ export function useFriendBoardAction({ returnTo, section, onBound, beforeClimb }
       try {
         await runAccessAction({ action, kind: 'board', resourceId: target.preview.uuid });
         // The privacy write already refreshes every screen; the list is read
-        // again either way, never set to Requested by hand.
+        // again either way, never set to Requested by hand. So is the serial
+        // lookup, whose In range card says Requested the same way.
         void queryClient.invalidateQueries({ queryKey: [FRIENDS_BOARDS_QUERY_KEY] });
+        void queryClient.invalidateQueries({ queryKey: [BOARDS_BY_SERIAL_NUMBERS_QUERY_KEY] });
         close();
       } catch (error: unknown) {
         const reason = friendBoardAccessError(error, getConnectivitySnapshot().effectiveOffline);

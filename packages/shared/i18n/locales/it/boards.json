@@ -558,6 +558,8 @@
       "moonboardTitle": "C'è una MoonBoard a portata",
       "moonboardBody": "Le MoonBoard non trasmettono un numero di serie, quindi dicci dove sei e la troveremo.",
       "typeTitle": "C'è un pannello {{board}} a portata",
+      "friendBoardHere": "Qui c'è il pannello di {{name}}",
+      "friendBoardHereUnnamed": "Qui c'è il pannello di un climber",
       "bareNameBody": "Il suo controller non dice quale pannello sia, quindi dicci dove sei e lo troveremo.",
       "unknownSetupBody": "Non ne conosciamo ancora la configurazione, quindi dicci dove sei e lo troveremo.",
       "alsoNeedSignal": "C'è un altro pannello a portata. Serve segnale per identificarlo.",

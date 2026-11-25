@@ -16,6 +16,7 @@ import type {
   ExistingWallCandidates,
   ExistingWallCandidatesInput,
   FriendBoardConnection,
+  SerialBoardRequestCard,
 } from '@boardsesh/shared-schema';
 
 // ============================================
@@ -335,6 +336,38 @@ export const GET_OBSERVED_BOARD_SERIAL_MATCHES = gql`
   }
 `;
 
+/**
+ * The same lookup for the picker's In range slot, which also asks for the
+ * request cards: whose private home board the climber is standing at, so they
+ * can ask to climb on it. Each card spends one slot of the climber's hourly
+ * budget, so only a surface that draws them asks.
+ */
+export const GET_OBSERVED_BOARD_SERIAL_MATCHES_WITH_REQUEST_CARDS = gql`
+  query GetObservedBoardSerialMatchesWithRequestCards($input: [ObservedBoardSerialInput!]!) {
+    observedBoardSerialMatches(input: $input) {
+      boardType
+      observedSerialNumber
+      candidates {
+        ${BOARD_FIELDS_WITH_BOARD_ID}
+      }
+      candidateRequestCards {
+        requested
+        ownerDisplayName
+        ownerAvatarUrl
+        preview {
+          uuid
+          name
+          boardType
+          layoutId
+          sizeId
+          setIds
+          angle
+        }
+      }
+    }
+  }
+`;
+
 export const GET_MY_BOARD_SERIAL_CONFIGS = gql`
   query GetMyBoardSerialConfigs($serialNumbers: [String!]!) {
     myBoardSerialConfigs(serialNumbers: $serialNumbers) {
@@ -608,6 +641,11 @@ export type ObservedBoardSerialInput = { boardType: string; observedSerialNumber
 export type ObservedBoardSerialMatch = ObservedBoardSerialInput & { candidates: UserBoard[] };
 export type GetObservedBoardSerialMatchesQueryResponse = {
   observedBoardSerialMatches: ObservedBoardSerialMatch[];
+};
+export type GetObservedBoardSerialMatchesWithRequestCardsQueryResponse = {
+  observedBoardSerialMatches: Array<
+    ObservedBoardSerialMatch & { candidateRequestCards: Array<SerialBoardRequestCard | null> }
+  >;
 };
 
 export type BoardSerialConfig = {
