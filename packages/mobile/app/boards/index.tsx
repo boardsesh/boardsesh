@@ -38,7 +38,7 @@ import { FirstBoardChoice } from '../../src/components/board-discovery/FirstBoar
 import { gymPageHref } from '../../src/components/gym-page/gym-page-route';
 import { InRangeSection } from '../../src/components/board-discovery/InRangeSection';
 import { nearbyListTitle } from '../../src/components/board-discovery/nearby-board-type-copy';
-import { NearbyLocationBanner } from '../../src/components/board-discovery/NearbyLocationBanner';
+import { LocationAskCard } from '../../src/components/location/LocationAskCard';
 import { NearbyQuietStatus } from '../../src/components/board-discovery/NearbyQuietStatus';
 import { NearbyReservedSlot } from '../../src/components/board-discovery/NearbyReservedSlot';
 import { offlineBoardRows } from '../../src/components/board-discovery/offline-board-items';
@@ -714,6 +714,10 @@ export default function BoardSelection() {
     fromOnboarding,
     fromNoBoard,
     locationStatus: location.status,
+    locationPermission: location.permission,
+    // Outside "Where do you climb?" the picker reads the permission on open;
+    // the opening waits for that read, or its locationStatus says nothing.
+    locationPending: !firstBoardMode && !location.permissionChecked,
     nearbyResultCount,
   });
   const chooseFirstBoardPath = useFirstBoardPickerTracking(firstBoardChoiceEntry, nearbyResultCount);
@@ -1327,15 +1331,11 @@ export default function BoardSelection() {
   const requestLocationIfAllowed = location.requestIfAllowed;
   const refreshLocation = location.refresh;
   const locationGranted = location.status === 'granted';
-  // Onboarding handoff: pre-resolve location on mount so Near you is already
-  // loading instead of waiting for a tap the user might not discover. Not in
+  // A climber who already allowed location gets Near you on open, with no
+  // prompt; onboarding's handoff too. Nothing here shows the system prompt on
+  // open: the rest get "See gyms near you", which asks from a tap. Not in
   // first-board mode: there the question comes with its reason, on the "At a
   // gym" tap, instead of as the first thing a newcomer sees.
-  useEffect(() => {
-    if (fromOnboarding && !firstBoardMode) void requestLocation();
-  }, [fromOnboarding, firstBoardMode, requestLocation]);
-  // Everyone else who already allowed location gets Near you on open, with no
-  // prompt. The rest see "Show boards near you", which asks.
   useEffect(() => {
     if (!firstBoardMode) void requestLocationIfAllowed();
   }, [firstBoardMode, requestLocationIfAllowed]);
@@ -1599,15 +1599,17 @@ export default function BoardSelection() {
       </NearbyReservedSlot>
     </ShelfSection>
   ) : undefined;
-  // Without location, the foot of the picker says what it would show, with
-  // Allow location while the prompt can still ask and Open Settings after.
-  // Nothing before the permission is read, so the banner never flashes.
+  // Without location, the foot of the picker asks for it again: "See gyms
+  // near you", the same card as the gym map, sharing its 14-day "Not now".
+  // Nothing before the permission is read, so the card never flashes.
   const locationBanner =
     location.permission === 'ask' || location.permission === 'blocked' ? (
-      <NearbyLocationBanner
+      <LocationAskCard
+        surface="board_picker"
         permission={location.permission}
-        onAllowLocation={searchNearby}
-        onOpenSettings={onOpenLocationSettings}
+        onAllow={requestLocation}
+        onRecheck={requestLocationIfAllowed}
+        style={styles.locationAskGutter}
       />
     ) : undefined;
 
@@ -1785,6 +1787,9 @@ const styles = StyleSheet.create({
   offlineNotice: {
     paddingHorizontal: spacing[4],
     paddingBottom: spacing[5],
+  },
+  locationAskGutter: {
+    paddingHorizontal: spacing[4],
   },
   centered: {
     flexGrow: 1,

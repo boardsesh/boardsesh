@@ -49,7 +49,14 @@ vi.mock('../../../lib/graphql/hooks', () => ({
   useNearbyGyms: () => ({ data: { gyms: [{ uuid: 'gym-1', name: 'Crag Hall' }] }, isLoading: false }),
 }));
 vi.mock('../../../lib/use-device-location', () => ({
-  useDeviceLocation: () => ({ status: 'granted', coords: null, request: vi.fn(), refresh: vi.fn() }),
+  useDeviceLocation: () => ({
+    status: 'granted',
+    permission: 'granted',
+    coords: null,
+    request: vi.fn(),
+    requestIfAllowed: vi.fn(),
+    refresh: vi.fn(),
+  }),
 }));
 vi.mock('../../ModalSheet', () => ({
   ModalSheet: ({ children, header }: { children?: ReactNode; header?: ReactNode }) =>

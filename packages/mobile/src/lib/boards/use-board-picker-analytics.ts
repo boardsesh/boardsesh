@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { normalizeSetIdsForCompare, type UserBoard } from '@boardsesh/shared-schema';
 import { track } from '../analytics';
-import type { LocationStatus } from '../use-device-location';
+import type { LocationPermission, LocationStatus } from '../use-device-location';
 import { boardReturnToRoute, type BoardReturnTo } from './board-return-to';
 import type { FirstBoardGymState } from './first-board-gym-state';
 import type { BoundBoard } from './use-activate-board';
@@ -58,6 +58,14 @@ type PickerAnalyticsOptions = {
    * then. Absent where there is no Near you (the gym finder).
    */
   locationStatus?: LocationStatus;
+  /** The permission read behind `locationStatus`, reported with it. */
+  locationPermission?: LocationPermission;
+  /**
+   * Hold the opening while the picker's "already allowed?" read is out. It
+   * used to fire first, so `locationStatus` always said `idle` (an allowed
+   * climber's search had not started yet). The read takes milliseconds.
+   */
+  locationPending?: boolean;
   /**
    * Near you's answer (`pickerNearbyResultCount`), reported on each pick as it
    * stands then. Absent where there is no Near you (the gym finder).
@@ -75,6 +83,8 @@ export function useBoardPickerAnalytics({
   surface = 'picker',
   fromNoBoard = false,
   locationStatus,
+  locationPermission,
+  locationPending = false,
   nearbyResultCount,
 }: PickerAnalyticsOptions) {
   const opened = useRef(false);
@@ -92,17 +102,27 @@ export function useBoardPickerAnalytics({
   const analyticsReturnTo = boardReturnToRoute(returnTo);
 
   useEffect(() => {
-    if (!trackOpened || opened.current || (activeBoard === undefined && !restoreFailed)) return;
+    if (!trackOpened || opened.current || locationPending || (activeBoard === undefined && !restoreFailed)) return;
     opened.current = true;
     track(SHARED_EVENTS.BoardPickerOpened, {
       source,
       returnTo: analyticsReturnTo,
       hadActiveBoard: activeBoard === undefined ? null : activeBoard !== null,
       restoreFailed,
-      // As known at the opening: mostly `idle`, while the "already allowed?" read is out.
+      // As known at the opening, once the "already allowed?" read is back.
       locationStatus,
+      locationPermission,
     });
-  }, [activeBoard, restoreFailed, analyticsReturnTo, source, trackOpened, locationStatus]);
+  }, [
+    activeBoard,
+    restoreFailed,
+    analyticsReturnTo,
+    source,
+    trackOpened,
+    locationStatus,
+    locationPermission,
+    locationPending,
+  ]);
 
   // Read at the pick, through a ref, so the bind callback (and every memo that
   // closes over it) keeps one identity while the search answers.

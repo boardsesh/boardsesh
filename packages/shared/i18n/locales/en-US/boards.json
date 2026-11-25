@@ -426,8 +426,6 @@
         "editWall": "Edit Spraywall"
       },
       "nearbyMap": "Map",
-      "allowLocation": "Allow location",
-      "locationBanner": "Location is off. Turn it on to see boards near you.",
       "manage": "See all",
       "nearbyAllAbove": "No other boards within 20 km",
       "yourBoardsAllAbove": "All your boards are listed above"
@@ -664,6 +662,15 @@
       "yourBoard": "Your board",
       "cancel": "Not now"
     },
+    "locationAsk": {
+      "title": "See gyms near you",
+      "body": "Sorts by distance. Search works without it.",
+      "browserBody": "Allow location for this site in your browser. Search works without it.",
+      "allow": "Allow",
+      "openSettings": "Open Settings",
+      "notNow": "Not now",
+      "searchHint": "Search a town to find its gyms."
+    },
     "gyms": {
       "mapUnavailable": "The map couldn’t load. You can still find gyms in the list.",
       "retryMap": "Reload map",
@@ -671,7 +678,6 @@
       "subtitle": "Tap a gym to use its board",
       "locationNeeded": "Share your location to find gyms nearby",
       "grantLocation": "Use my location",
-      "locationBlocked": "Your browser is keeping your location to itself. Type a town in the search box instead — that works everywhere.",
       "empty": "No gyms nearby yet",
       "noBoards": "No boards here yet",
       "boardCount_one": "{{count}} board",

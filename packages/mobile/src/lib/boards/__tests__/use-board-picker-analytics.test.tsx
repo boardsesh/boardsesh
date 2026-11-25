@@ -238,6 +238,34 @@ describe('Near you on the picker events', () => {
     expect(track).toHaveBeenCalledOnce();
   });
 
+  // It used to fire before the "already allowed?" read came back, so
+  // locationStatus always said idle.
+  it('holds the opening until the permission read is back, then reports it', () => {
+    type PendingProps = { locationPending: boolean; locationStatus: LocationStatus };
+    const { rerender } = renderHook(
+      ({ locationPending, locationStatus }: PendingProps) =>
+        useBoardPickerAnalytics({
+          activeBoard: null,
+          restoreFailed: false,
+          returnTo: '/(tabs)/climbs',
+          fromOnboarding: false,
+          locationStatus,
+          locationPermission: locationPending ? 'unknown' : 'granted',
+          locationPending,
+        }),
+      { initialProps: { locationPending: true, locationStatus: 'idle' } as PendingProps },
+    );
+    expect(track).not.toHaveBeenCalled();
+
+    rerender({ locationPending: false, locationStatus: 'loading' });
+    expect(track).toHaveBeenCalledExactlyOnceWith(
+      'Board Picker Opened',
+      expect.objectContaining({ locationStatus: 'loading', locationPermission: 'granted' }),
+    );
+    rerender({ locationPending: false, locationStatus: 'granted' });
+    expect(track).toHaveBeenCalledOnce();
+  });
+
   it('reports what Near you had found at each pick', async () => {
     const { result, rerender } = renderPicker({ locationStatus: 'loading', nearbyResultCount: null });
     const pickBeforeTheAnswer = result.current;

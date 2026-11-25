@@ -426,8 +426,6 @@
         "editWall": "Modifica la Spraywall"
       },
       "nearbyMap": "Mappa",
-      "allowLocation": "Consenti posizione",
-      "locationBanner": "La posizione è disattivata. Attivala per vedere i pannelli vicino a te.",
       "manage": "Vedi tutti",
       "nearbyAllAbove": "Nessun altro pannello entro 20 km",
       "yourBoardsAllAbove": "Tutti i tuoi pannelli sono più in alto"
@@ -664,6 +662,15 @@
       "yourBoard": "Il tuo pannello",
       "cancel": "Non ora"
     },
+    "locationAsk": {
+      "title": "Vedi le palestre vicino a te",
+      "body": "Le ordina per distanza. La ricerca funziona anche senza.",
+      "browserBody": "Consenti la posizione per questo sito nel tuo browser. La ricerca funziona anche senza.",
+      "allow": "Consenti",
+      "openSettings": "Apri Impostazioni",
+      "notNow": "Non ora",
+      "searchHint": "Cerca una città per vedere le sue palestre."
+    },
     "gyms": {
       "mapUnavailable": "Impossibile caricare la mappa. Puoi comunque trovare le palestre nella lista.",
       "retryMap": "Ricarica mappa",
@@ -671,7 +678,6 @@
       "subtitle": "Tocca una palestra per usare il suo pannello",
       "locationNeeded": "Condividi la tua posizione per trovare le palestre vicine",
       "grantLocation": "Usa la mia posizione",
-      "locationBlocked": "Il tuo browser tiene la tua posizione per sé. Scrivi invece una città nella casella di ricerca: funziona ovunque.",
       "empty": "Ancora nessuna palestra vicina",
       "noBoards": "Ancora nessun pannello qui",
       "boardCount_one": "{{count}} pannello",

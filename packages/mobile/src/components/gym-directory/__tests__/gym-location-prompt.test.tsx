@@ -40,55 +40,84 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-const openAppSettings = vi.fn();
-vi.mock('../../../lib/open-app-settings', () => ({
-  canOpenAppSettings: () => platform.OS === 'ios' || platform.OS === 'android',
-  openAppSettings: (...args: unknown[]) => openAppSettings(...args),
+const snooze = vi.hoisted(() => ({ snoozed: false }));
+vi.mock('../../../lib/location-ask', () => ({
+  useLocationAskSnoozed: () => snooze.snoozed,
+  shouldOfferLocationAsk: (permission: string, snoozed: boolean) =>
+    (permission === 'ask' || permission === 'blocked') && !snoozed,
+}));
+// The card's buttons, snooze and Settings trip are its own suite's
+// (components/location/__tests__/LocationAskCard.test.tsx).
+vi.mock('../../location/LocationAskCard', () => ({
+  LocationAskCard: ({ permission, surface }: { permission: string; surface: string }) =>
+    createElement('div', {
+      'data-testid': 'location-ask-card',
+      'data-permission': permission,
+      'data-surface': surface,
+    }),
 }));
 
-import { GymLocationPrompt } from '../GymLocationPrompt';
+import { GymLocationPrompt, type GymLocationPromptProps } from '../GymLocationPrompt';
+
+const onRequest = vi.fn(async () => 'granted' as const);
+const onRecheck = vi.fn(async () => 'granted' as const);
+
+function renderPrompt(overrides: Partial<GymLocationPromptProps>) {
+  return render(
+    <GymLocationPrompt
+      status="idle"
+      permission="ask"
+      permissionChecked
+      onRequest={onRequest}
+      onRecheck={onRecheck}
+      {...overrides}
+    />,
+  );
+}
 
 beforeEach(() => {
   platform.OS = 'ios';
-  openAppSettings.mockReset();
+  snooze.snoozed = false;
+  onRequest.mockClear();
+  onRecheck.mockClear();
 });
 
 describe('GymLocationPrompt', () => {
-  it('shows a spinner while idle or loading, without a button', () => {
-    const { getByTestId, queryByRole } = render(<GymLocationPrompt status="idle" onRequest={vi.fn()} />);
+  it('shows a spinner, without a button, until the on-open read is back', () => {
+    const { getByTestId, queryByRole, queryByTestId } = renderPrompt({
+      permissionChecked: false,
+      permission: 'unknown',
+    });
     expect(getByTestId('spinner')).toBeTruthy();
     expect(queryByRole('button')).toBeNull();
+    expect(queryByTestId('location-ask-card')).toBeNull();
   });
 
-  it('pressing the button in the unavailable state retries via onRequest, not openAppSettings', () => {
-    const onRequest = vi.fn();
-    const { getByText } = render(<GymLocationPrompt status="unavailable" onRequest={onRequest} />);
-
-    fireEvent.click(getByText('mobile.gyms.grantLocation'));
-
-    expect(onRequest).toHaveBeenCalledTimes(1);
-    expect(openAppSettings).not.toHaveBeenCalled();
+  it('shows a spinner while a fix is on its way', () => {
+    const { getByTestId } = renderPrompt({ status: 'loading', permission: 'granted' });
+    expect(getByTestId('spinner')).toBeTruthy();
   });
 
-  it('on native (ios/android), denied renders the button and pressing it deep-links to Settings, not onRequest', () => {
-    platform.OS = 'ios';
-    const onRequest = vi.fn();
-    const { getByText } = render(<GymLocationPrompt status="denied" onRequest={onRequest} />);
-
-    fireEvent.click(getByText('mobile.gyms.grantLocation'));
-
-    expect(openAppSettings).toHaveBeenCalledTimes(1);
+  it.each(['ask', 'blocked'] as const)('asks with "See gyms near you" while location is %s', (permission) => {
+    const { getByTestId } = renderPrompt({ permission });
+    const card = getByTestId('location-ask-card');
+    expect(card.getAttribute('data-permission')).toBe(permission);
+    expect(card.getAttribute('data-surface')).toBe('gym_finder');
+    // Asking is the card's tap, never the screen's open.
     expect(onRequest).not.toHaveBeenCalled();
   });
 
-  // Regression guard for BOARDSESH-DT: on web there's no settings deep-link and
-  // the browser won't re-prompt, so denied must render explanatory copy and NO
-  // dead button — the header search field above this panel is the working path.
-  it('on web, denied renders explanatory copy and no button', () => {
-    platform.OS = 'web';
-    const { getByText, queryByRole } = render(<GymLocationPrompt status="denied" onRequest={vi.fn()} />);
-
-    expect(getByText('mobile.gyms.locationBlocked')).toBeTruthy();
+  it('points at search instead once a "Not now" holds', () => {
+    snooze.snoozed = true;
+    const { queryByTestId, getByText, queryByRole } = renderPrompt({ permission: 'blocked' });
+    expect(queryByTestId('location-ask-card')).toBeNull();
+    expect(getByText('mobile.locationAsk.searchHint')).toBeTruthy();
     expect(queryByRole('button')).toBeNull();
+  });
+
+  it('retries a failed fix from Use my location', () => {
+    const { getByText } = renderPrompt({ status: 'unavailable', permission: 'granted' });
+    fireEvent.click(getByText('mobile.gyms.grantLocation'));
+    expect(onRequest).toHaveBeenCalledTimes(1);
   });
 });

@@ -240,6 +240,7 @@ vi.mock('../../../src/lib/use-device-location', () => ({
       permission:
         state.locationPermission ??
         (state.locationStatus === 'granted' ? 'granted' : state.locationStatus === 'denied' ? 'blocked' : 'ask'),
+      permissionChecked: state.locationPermission !== 'unknown',
       coords: state.locationStatus === 'granted' ? { latitude: 1, longitude: 2 } : null,
       request: requestLocationMock,
       requestIfAllowed: requestLocationIfAllowedMock,
@@ -349,22 +350,25 @@ vi.mock('../../../src/components/board-discovery/NearbyReservedSlot', () => ({
   NearbyReservedSlot: ({ searching, children }: { searching: boolean; children?: ReactNode }) =>
     searching ? createElement('div', { 'data-testid': 'near-you-placeholder' }) : children,
 }));
-// The banner's own copy and buttons are its own suite's; here, which one shows and what it calls.
-vi.mock('../../../src/components/board-discovery/NearbyLocationBanner', () => ({
-  NearbyLocationBanner: ({
+// The card's own copy, buttons, snooze and Settings trip are its own suite's;
+// here, whether it shows, for which permission, and what it calls.
+vi.mock('../../../src/components/location/LocationAskCard', () => ({
+  LocationAskCard: ({
+    surface,
     permission,
-    onAllowLocation,
-    onOpenSettings,
+    onAllow,
+    onRecheck,
   }: {
+    surface: string;
     permission: string;
-    onAllowLocation: () => void;
-    onOpenSettings: () => void;
+    onAllow: () => void;
+    onRecheck: () => void;
   }) =>
     createElement(
       'div',
-      { 'data-testid': 'location-banner', 'data-permission': permission },
-      createElement('button', { type: 'button', onClick: onAllowLocation }, 'banner:allow'),
-      createElement('button', { type: 'button', onClick: onOpenSettings }, 'banner:settings'),
+      { 'data-testid': 'location-banner', 'data-permission': permission, 'data-surface': surface },
+      createElement('button', { type: 'button', onClick: onAllow }, 'banner:allow'),
+      createElement('button', { type: 'button', onClick: onRecheck }, 'banner:recheck'),
     ),
 }));
 vi.mock('../../../src/components/board-discovery/DiscoveryBoardArt', () => ({ DiscoveryBoardArt: () => null }));
@@ -790,13 +794,16 @@ describe('the In range scan', () => {
 });
 
 describe('the ordinary onboarding picker', () => {
-  it('shows the ordinary list and pre-resolves location', () => {
+  // Onboarding's handoff reads an earlier yes like every other opening, but
+  // never shows the system prompt on open.
+  it('shows the ordinary list and uses location only if already allowed', () => {
     state.params = { source: 'onboarding' };
     render(createElement(BoardSelection));
 
     expect(screen.queryByTestId('first-board-choice')).toBeNull();
     expect(screen.getByTestId('in-range')).toBeTruthy();
-    expect(requestLocationMock).toHaveBeenCalledTimes(1);
+    expect(requestLocationMock).not.toHaveBeenCalled();
+    expect(requestLocationIfAllowedMock).toHaveBeenCalledOnce();
     expect(trackingCtrl.entryArgs.every((entry) => entry === null)).toBe(true);
   });
 
@@ -946,6 +953,7 @@ describe("the ordinary picker's Near you", () => {
     expect(screen.queryByTestId('near-you-placeholder')).toBeNull();
     const banner = screen.getByTestId('location-banner');
     expect(banner.getAttribute('data-permission')).toBe('ask');
+    expect(banner.getAttribute('data-surface')).toBe('board_picker');
     const yourBoards = screen.getByText('mobile.discovery.yourBoardsTitle');
     expect(yourBoards.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     fireEvent.click(screen.getByText('banner:allow'));
@@ -960,16 +968,19 @@ describe("the ordinary picker's Near you", () => {
     expect(screen.getByTestId('location-banner').getAttribute('data-permission')).toBe('ask');
   });
 
-  // Refused for good: only Settings can turn it on.
-  it('sends the climber to Settings from the banner once location is refused for good', () => {
+  // Refused for good: only Settings can turn it on. The card opens Settings
+  // itself and, on the way back, reads the permission without asking.
+  it('hands the card the blocked state and a read without asking, once location is refused for good', () => {
     state.locationStatus = 'denied';
     render(createElement(BoardSelection));
 
     expect(screen.queryByText('mobile.discovery.nearbyTitle')).toBeNull();
     expect(screen.getByTestId('location-banner').getAttribute('data-permission')).toBe('blocked');
     expect(screen.queryByTestId('near-you-placeholder')).toBeNull();
-    fireEvent.click(screen.getByText('banner:settings'));
-    expect(openAppSettingsMock).toHaveBeenCalledTimes(1);
+    requestLocationIfAllowedMock.mockClear();
+    fireEvent.click(screen.getByText('banner:recheck'));
+    expect(requestLocationIfAllowedMock).toHaveBeenCalledOnce();
+    expect(requestLocationMock).not.toHaveBeenCalled();
   });
 
   // Before the permission is read there is nothing to say either way.

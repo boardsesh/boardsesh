@@ -48,16 +48,29 @@ export type DeviceLocation = {
    * a screen can offer the right way to turn it on before anything is asked.
    */
   permission: LocationPermission;
+  /**
+   * The first permission read has finished, whatever it found (a read that
+   * threw leaves `permission` at `unknown`). A screen that waits for "do we
+   * already have location?" before saying anything waits on this, never on
+   * `permission` alone, which can stay `unknown` for good.
+   */
+  permissionChecked: boolean;
   coords: Coords | null;
-  /** Kick off the permission prompt + one-shot fix. Safe to call repeatedly. */
-  request: () => Promise<void>;
+  /**
+   * Kick off the permission prompt + one-shot fix. Safe to call repeatedly.
+   * Resolves to the permission as the prompt left it (or as last read, when
+   * the call was a no-op), so the caller can report the answer.
+   */
+  request: () => Promise<LocationPermission>;
   /**
    * `request`, but only when location is already allowed, so it never shows the
    * permission prompt: a screen can search on open for a climber who said yes
    * before, and ask the rest from a tap. Anything else (not asked, denied, no
-   * module) leaves `status` at `idle`.
+   * module) leaves `status` at `idle`. Resolves to the permission it read.
+   * Every screen calls this, never `request`, when it opens: the system prompt
+   * only ever comes from a tap.
    */
-  requestIfAllowed: () => Promise<void>;
+  requestIfAllowed: () => Promise<LocationPermission>;
   /**
    * Take a fresh fix once location is granted, for a climber who has moved
    * since the first one. `request` never does: after a grant it is a no-op.
@@ -91,7 +104,15 @@ export function useDeviceLocation({
   rereadWhenActive = false,
 }: DeviceLocationOptions = {}): DeviceLocation {
   const [status, setStatus] = useState<LocationStatus>('idle');
-  const [permission, setPermission] = useState<LocationPermission>('unknown');
+  const [permission, setPermissionState] = useState<LocationPermission>('unknown');
+  const [permissionChecked, setPermissionChecked] = useState(false);
+  // The permission as last read, for the promise `request` and
+  // `requestIfAllowed` resolve to: state set in the same call is not readable yet.
+  const permissionRef = useRef<LocationPermission>('unknown');
+  const setPermission = useCallback((next: LocationPermission) => {
+    permissionRef.current = next;
+    setPermissionState(next);
+  }, []);
   const [coords, setCoords] = useState<Coords | null>(null);
   // Once a request reaches a terminal state (granted / denied / unavailable),
   // or while one is in flight, further taps are no-ops — no redundant native
@@ -103,8 +124,8 @@ export function useDeviceLocation({
   const coordsRef = useRef<Coords | null>(null);
   coordsRef.current = coords;
 
-  const request = useCallback(async () => {
-    if (settledRef.current) return;
+  const request = useCallback(async (): Promise<LocationPermission> => {
+    if (settledRef.current) return permissionRef.current;
     settledRef.current = true;
     setStatus('loading');
 
@@ -112,10 +133,11 @@ export function useDeviceLocation({
       const Location = await import('expo-location');
       const answer = await Location.requestForegroundPermissionsAsync();
       setPermission(locationPermissionFrom(answer));
+      setPermissionChecked(true);
       if (answer.status !== 'granted') {
         if (retryAfterDenial) settledRef.current = false;
         setStatus('denied');
-        return;
+        return permissionRef.current;
       }
 
       const position = await Location.getCurrentPositionAsync({
@@ -124,6 +146,7 @@ export function useDeviceLocation({
       setCoords({ latitude: position.coords.latitude, longitude: position.coords.longitude });
       setStatus('granted');
     } catch {
+      setPermissionChecked(true);
       // Module missing (pre-expo-location build) or a location error — either
       // way there's nothing to show; surface it as unavailable, not a crash.
       // This can be transient (a one-off GPS error), so re-open the gate to
@@ -131,20 +154,23 @@ export function useDeviceLocation({
       settledRef.current = false;
       setStatus('unavailable');
     }
-  }, [retryAfterDenial]);
+    return permissionRef.current;
+  }, [retryAfterDenial, setPermission]);
 
-  const requestIfAllowed = useCallback(async () => {
-    if (settledRef.current) return;
+  const requestIfAllowed = useCallback(async (): Promise<LocationPermission> => {
+    if (settledRef.current) return permissionRef.current;
     try {
       const Location = await import('expo-location');
       const read = locationPermissionFrom(await Location.getForegroundPermissionsAsync());
       setPermission(read);
-      if (read !== 'granted') return;
+      if (read !== 'granted') return read;
     } catch {
-      return;
+      return permissionRef.current;
+    } finally {
+      setPermissionChecked(true);
     }
-    await request();
-  }, [request]);
+    return request();
+  }, [request, setPermission]);
 
   useEffect(() => {
     if (!rereadWhenActive) return undefined;
@@ -179,5 +205,5 @@ export function useDeviceLocation({
     }
   }, []);
 
-  return { status, permission, coords, request, requestIfAllowed, refresh };
+  return { status, permission, permissionChecked, coords, request, requestIfAllowed, refresh };
 }

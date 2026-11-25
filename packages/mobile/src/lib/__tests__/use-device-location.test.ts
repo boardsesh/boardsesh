@@ -24,7 +24,7 @@ vi.mock('react-native', () => ({
   },
 }));
 
-import { locationPermissionFrom, useDeviceLocation } from '../use-device-location';
+import { locationPermissionFrom, useDeviceLocation, type LocationPermission } from '../use-device-location';
 
 describe('locationPermissionFrom', () => {
   it.each([
@@ -87,6 +87,44 @@ describe('useDeviceLocation', () => {
 
     expect(result.current.permission).toBe('blocked');
     expect(expoLocation.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
+  });
+
+  // A screen waits on this, not on `permission`, which can stay unknown.
+  it.each([
+    ['answers', () => expoLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'undetermined' }), 'ask'],
+    ['throws', () => expoLocation.getForegroundPermissionsAsync.mockRejectedValue(new Error('no module')), 'unknown'],
+  ])('marks the permission checked once the read %s, and resolves to it', async (_label, arrange, expected) => {
+    arrange();
+    const { result } = renderHook(() => useDeviceLocation());
+    expect(result.current.permissionChecked).toBe(false);
+
+    let resolved: string | undefined;
+    await act(async () => {
+      resolved = await result.current.requestIfAllowed();
+    });
+
+    expect(result.current.permissionChecked).toBe(true);
+    expect(result.current.permission).toBe(expected);
+    expect(resolved).toBe(expected);
+  });
+
+  it('resolves request to what the prompt left', async () => {
+    expoLocation.requestForegroundPermissionsAsync.mockResolvedValue({ status: 'denied', canAskAgain: false });
+    const { result } = renderHook(() => useDeviceLocation());
+
+    let answer: string | undefined;
+    await act(async () => {
+      answer = await result.current.request();
+    });
+    expect(answer).toBe('blocked');
+    expect(result.current.permissionChecked).toBe(true);
+
+    // Sticky after a denial: a second call is a no-op that still says where it stands.
+    await act(async () => {
+      answer = await result.current.request();
+    });
+    expect(answer).toBe('blocked');
+    expect(expoLocation.requestForegroundPermissionsAsync).toHaveBeenCalledOnce();
   });
 
   it('takes the permission from the answer to the prompt', async () => {
@@ -295,7 +333,7 @@ describe('useDeviceLocation', () => {
       );
       const { result } = renderHook(() => useDeviceLocation({ retryAfterDenial: true }));
 
-      let first: Promise<void> = Promise.resolve();
+      let first: Promise<LocationPermission> = Promise.resolve('unknown');
       act(() => {
         first = result.current.request();
       });
@@ -359,7 +397,7 @@ describe('useDeviceLocation', () => {
     );
     const { result } = renderHook(() => useDeviceLocation());
 
-    let first: Promise<void> = Promise.resolve();
+    let first: Promise<LocationPermission> = Promise.resolve('unknown');
     act(() => {
       first = result.current.request();
     });

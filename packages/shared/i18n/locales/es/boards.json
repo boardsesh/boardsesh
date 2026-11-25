@@ -426,8 +426,6 @@
         "editWall": "Editar Spraywall"
       },
       "nearbyMap": "Mapa",
-      "allowLocation": "Permitir ubicación",
-      "locationBanner": "La ubicación está desactivada. Actívala para ver plafones cerca de ti.",
       "manage": "Ver todos",
       "nearbyAllAbove": "No hay más plafones a menos de 20 km",
       "yourBoardsAllAbove": "Todos tus plafones están más arriba"
@@ -664,6 +662,15 @@
       "yourBoard": "Tu plafón",
       "cancel": "Ahora no"
     },
+    "locationAsk": {
+      "title": "Ve rocódromos cerca de ti",
+      "body": "Los ordena por distancia. Buscar funciona sin tu ubicación.",
+      "browserBody": "Permite la ubicación para este sitio en tu navegador. Buscar funciona sin ella.",
+      "allow": "Permitir",
+      "openSettings": "Abrir Ajustes",
+      "notNow": "Ahora no",
+      "searchHint": "Busca una ciudad para ver sus rocódromos."
+    },
     "gyms": {
       "mapUnavailable": "No se ha podido cargar el mapa. Puedes seguir buscando rocódromos en la lista.",
       "retryMap": "Recargar mapa",
@@ -671,7 +678,6 @@
       "subtitle": "Toca un rocódromo para usar su plafón",
       "locationNeeded": "Comparte tu ubicación para encontrar rocódromos cerca",
       "grantLocation": "Usar mi ubicación",
-      "locationBlocked": "Tu navegador no comparte tu ubicación. Escribe una ciudad en el buscador: eso funciona siempre.",
       "empty": "Aún no hay rocódromos cerca",
       "noBoards": "Aún no hay plafones aquí",
       "boardCount_one": "{{count}} plafón",

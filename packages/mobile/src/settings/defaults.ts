@@ -61,4 +61,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   playlistSortsV1: null,
   supportAsksShown: true,
   supportCardV1: null,
+  locationAskSnoozedUntil: null,
 };

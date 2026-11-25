@@ -245,8 +245,8 @@ vi.mock('../../../src/components/board-discovery/NearbyReservedSlot', () => ({
   NearbyReservedSlot: ({ searching, children }: { searching: boolean; children?: ReactNode }) =>
     searching ? createElement('div', { 'data-testid': 'near-you-placeholder' }) : children,
 }));
-vi.mock('../../../src/components/board-discovery/NearbyLocationBanner', () => ({
-  NearbyLocationBanner: ({ permission }: { permission: string }) =>
+vi.mock('../../../src/components/location/LocationAskCard', () => ({
+  LocationAskCard: ({ permission }: { permission: string }) =>
     createElement('div', { 'data-testid': 'location-banner', 'data-permission': permission }),
 }));
 const clearPendingRecognitionMock = vi.hoisted(() => vi.fn());
@@ -360,6 +360,7 @@ vi.mock('../../../src/lib/use-device-location', () => ({
     status: state.locationStatus,
     // Near you's cards are this suite's subject: location is allowed.
     permission: 'granted',
+    permissionChecked: true,
     coords: undefined,
     request: vi.fn(),
     requestIfAllowed: vi.fn(async () => {}),

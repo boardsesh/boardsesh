@@ -25,7 +25,7 @@ type NearbyQuietStatusProps = {
  * footnote line under the header, which already carries Map (or Show all when
  * narrowed to one type), with the one action that can change the answer. Near
  * you shows only once location is allowed, so it never asks for it: the
- * picker's location banner does (`NearbyLocationBanner`). First run keeps
+ * picker's "See gyms near you" card does (`LocationAskCard`). First run keeps
  * `NearbySearchStatus`'s fuller panel.
  *
  * Its action sits between two others: Map 8pt above (and right above, once Map

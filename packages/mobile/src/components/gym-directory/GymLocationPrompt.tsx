@@ -4,66 +4,84 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
+import { LocationAskCard } from '../location/LocationAskCard';
 import { useTheme } from '../../providers/theme-provider';
-import { canOpenAppSettings, openAppSettings } from '../../lib/open-app-settings';
+import { shouldOfferLocationAsk, useLocationAskSnoozed } from '../../lib/location-ask';
 import { spacing } from '../../theme/tokens';
-import type { LocationStatus } from '../../lib/use-device-location';
+import type { LocationPermission, LocationStatus } from '../../lib/use-device-location';
 
 export type GymLocationPromptProps = {
   status: LocationStatus;
-  /** Kick off (or retry) the permission prompt + one-shot fix. */
-  onRequest: () => void;
+  permission: LocationPermission;
+  /** The on-open permission read is back (`useDeviceLocation().permissionChecked`). */
+  permissionChecked: boolean;
+  /** Shows the system prompt (or retries a failed fix): the location hook's `request`. */
+  onRequest: () => Promise<LocationPermission>;
+  /** Reads the permission again without asking: the location hook's `requestIfAllowed`. */
+  onRecheck: () => Promise<LocationPermission>;
 };
 
 /**
- * Prompt shown in the gym-panel body while there's no location to center the
- * map on yet. Three states:
- *  - idle/loading: a spinner while the one-shot request is in flight.
- *  - denied, and this platform can't deep-link to OS settings (Expo web —
- *    the browser's permission prompt won't come back and there's no settings
- *    link to send the user to): explanatory copy only, no button. The header
- *    search field above this panel is the working path on web, which is what
- *    the copy tells the user to use instead.
- *  - anything else (idle/loading fallthrough already handled above, so in
- *    practice: denied on native, or unavailable): the icon + copy + a button
- *    that either retries the request or, after a native denial, deep-links to
- *    Settings (iOS/Android only ever prompt once, so re-requesting after a
- *    denial would silently re-resolve denied).
+ * The gym panel's body while there's no place to centre the map on yet. The
+ * screen never asks for location on open (it only reads an earlier yes), so:
+ *  - before that read is back, or while a fix is on its way: a spinner.
+ *  - a fix that failed with location allowed (Location Services off for the
+ *    whole phone, a GPS error): the line and Use my location, which tries again.
+ *  - location off: "See gyms near you" (`LocationAskCard`), the same card and
+ *    the same 14-day "Not now" as the board picker.
+ *  - after a "Not now" (or with no location module to read): one line pointing
+ *    at the search box above, which works without location.
  */
-export function GymLocationPrompt({ status, onRequest }: GymLocationPromptProps) {
+export function GymLocationPrompt({
+  status,
+  permission,
+  permissionChecked,
+  onRequest,
+  onRecheck,
+}: GymLocationPromptProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
+  const snoozed = useLocationAskSnoozed();
 
-  if (status === 'idle' || status === 'loading') {
+  if (!permissionChecked || status === 'loading') {
     return <ActivityIndicator size="large" />;
   }
 
-  if (status === 'denied' && !canOpenAppSettings()) {
+  if (status === 'unavailable') {
     return (
       <>
         <Icon name="location" size={40} color={systemColors.tertiaryLabel} />
         <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.centerText}>
-          {t('mobile.gyms.locationBlocked')}
+          {t('mobile.gyms.locationNeeded')}
         </Text>
+        <Button
+          title={t('mobile.gyms.grantLocation')}
+          variant="outlined"
+          onPress={() => void onRequest()}
+          style={styles.centerButton}
+        />
       </>
+    );
+  }
+
+  if (shouldOfferLocationAsk(permission, snoozed)) {
+    return (
+      <LocationAskCard
+        surface="gym_finder"
+        permission={permission}
+        onAllow={onRequest}
+        onRecheck={onRecheck}
+        style={styles.cardWidth}
+      />
     );
   }
 
   return (
     <>
-      <Icon name="location" size={40} color={systemColors.tertiaryLabel} />
+      <Icon name="search" size={40} color={systemColors.tertiaryLabel} />
       <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.centerText}>
-        {t('mobile.gyms.locationNeeded')}
+        {t('mobile.locationAsk.searchHint')}
       </Text>
-      <Button
-        title={t('mobile.gyms.grantLocation')}
-        variant="outlined"
-        onPress={() => {
-          if (status === 'denied') void openAppSettings();
-          else onRequest();
-        }}
-        style={styles.centerButton}
-      />
     </>
   );
 }
@@ -74,5 +92,8 @@ const styles = StyleSheet.create({
   },
   centerButton: {
     marginTop: spacing[2],
+  },
+  cardWidth: {
+    alignSelf: 'stretch',
   },
 });
