@@ -863,6 +863,30 @@ describe('followedLiveSessions — board privacy and ordering', () => {
     expect(JSON.stringify(session)).not.toContain(board.slug);
   });
 
+  it('stops a removed member’s saved board from feeding the board arm', async () => {
+    const board = await makeBoard({ name: 'Members Only Wall' });
+    await chooseBoardAudience(board.uuid, 'invite_only');
+    await db
+      .insert(dbSchema.resourceGrants)
+      .values({ kind: 'board', resourceId: board.uuid, userId: VIEWER, status: 'approved' });
+    await followBoard(VIEWER, board.uuid);
+    // A stranger's public session: only the board arm can bring it to the viewer.
+    const sessionId = await makeSession({ boardId: board.id });
+    await goLive(sessionId, STRANGER);
+    await addTick({ sessionId, boardId: board.id });
+
+    const [asMember] = await followedLiveSessions(VIEWER);
+    expect(asMember.sessionId).toBe(sessionId);
+    expect(asMember.reasons).toEqual(['FOLLOWED_BOARD']);
+
+    await db
+      .update(dbSchema.resourceGrants)
+      .set({ status: 'revoked' })
+      .where(and(eq(dbSchema.resourceGrants.resourceId, board.uuid), eq(dbSchema.resourceGrants.userId, VIEWER)));
+    // The save row survives the removal (for a re-invite) but no longer counts.
+    expect(ids(await followedLiveSessions(VIEWER))).toEqual([]);
+  });
+
   it('uses the board audience override before its legacy public flag on live cards', async () => {
     await follow(VIEWER, FRIEND);
     const board = await makeBoard({ isPublic: false });

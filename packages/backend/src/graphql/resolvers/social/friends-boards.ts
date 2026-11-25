@@ -1,7 +1,7 @@
-import { and, asc, count, eq, ilike, isNull, ne, notExists, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, ilike, isNull, ne, notExists, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import type { ConnectionContext, FriendBoard } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
-import { followerBoardListingCondition } from '@boardsesh/db/queries';
+import { contentVisibilityCondition, followerBoardListingCondition } from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
 import { FriendsBoardsInputSchema } from '../../../validation/schemas';
@@ -15,8 +15,12 @@ import { enrichBoards } from './boards';
  *
  * Every gate runs in the WHERE the count and the page share:
  * - the viewer follows the owner (`user_follows`, which holds accepted follows only);
- * - a live home board: not deleted or merged away, no gym, not a spray wall;
- * - not the viewer's own board and not already in their Your boards (`board_follows`);
+ * - a live home board: not deleted or merged away, not a spray wall, and not at
+ *   someone else's gym or at a public listed gym (`homeWallCondition`);
+ * - not the viewer's own board and not one their Your boards already shows: a
+ *   `board_follows` row they can still open, read the way `myBoards` reads it.
+ *   A save they can no longer open (the board went Invite-only since) stays
+ *   listed, so they can ask for it again;
  * - the audience rule (`followerBoardListingCondition`).
  *
  * A row the viewer can climb on gets the full `UserBoard` from `enrichBoards`, so
@@ -27,6 +31,18 @@ import { enrichBoards } from './boards';
  * The owner's name and avatar are always shown: the viewer follows them, which
  * is what `canViewActivityIdentity` asks of a private account.
  */
+/**
+ * A home wall, gym or not: no gym, a gym that is gone, or a gym the board's own
+ * owner runs that is not a public listed gym (a home wall that minted a private
+ * or unlisted gym). A board at someone else's gym, or at a public listed gym,
+ * is found through that gym instead. One primary-key lookup per board.
+ */
+function homeWallCondition(gymIdColumn: SQLWrapper, ownerIdColumn: SQLWrapper): SQL {
+  return sql`NOT EXISTS (SELECT 1 FROM gyms friend_gym
+    WHERE friend_gym.id = ${gymIdColumn} AND friend_gym.deleted_at IS NULL
+      AND (friend_gym.owner_id <> ${ownerIdColumn} OR (friend_gym.is_public AND friend_gym.is_listed)))`;
+}
+
 type EnrichedBoard = Awaited<ReturnType<typeof enrichBoards>>[number];
 type FriendBoardItem = Omit<FriendBoard, 'board'> & { board: EnrichedBoard | null };
 
@@ -43,14 +59,21 @@ export async function readFriendsBoards(
   const conditions: SQL[] = [
     isNull(boards.deletedAt),
     isNull(boards.mergedIntoBoardUuid),
-    isNull(boards.gymId),
+    homeWallCondition(boards.gymId, boards.ownerId),
     ne(boards.boardType, 'spray'),
     ne(boards.ownerId, viewerId),
     notExists(
       db
         .select({ id: dbSchema.boardFollows.id })
         .from(dbSchema.boardFollows)
-        .where(and(eq(dbSchema.boardFollows.userId, viewerId), eq(dbSchema.boardFollows.boardUuid, boards.uuid))),
+        .where(
+          and(
+            eq(dbSchema.boardFollows.userId, viewerId),
+            eq(dbSchema.boardFollows.boardUuid, boards.uuid),
+            // The same access check myBoards puts on a saved board.
+            resourceAccessCondition('board', boards.uuid, viewerId),
+          ),
+        ),
     ),
     // With the controls off the owner cannot reach the switch, so it reads as off.
     followerBoardListingCondition(boards.uuid, viewerId, { honourListedToFollowers: privacyControlsEnabled() }),
@@ -77,12 +100,15 @@ export async function readFriendsBoards(
   if (totalCount === 0 || offset >= totalCount) return { items: [], totalCount, hasMore: false };
 
   // Order keys only, never returned. The viewer's own logs on the board read
-  // `boardsesh_ticks_board_user_idx`; the owner's latest log is one step down
-  // `boardsesh_ticks_user_climbed_at_idx`.
+  // `boardsesh_ticks_board_user_idx`. The owner's latest log walks
+  // `boardsesh_ticks_user_climbed_at_idx` down to the first log the viewer may
+  // read, so an Only me log does not move the owner's boards up the list.
   const viewerLastLog = sql`(SELECT max(viewer_tick.climbed_at) FROM boardsesh_ticks viewer_tick
     WHERE viewer_tick.board_id = ${boards.id} AND viewer_tick.user_id = ${viewerId})`;
   const ownerLastLog = sql`(SELECT owner_tick.climbed_at FROM boardsesh_ticks owner_tick
-    WHERE owner_tick.user_id = ${boards.ownerId} ORDER BY owner_tick.climbed_at DESC LIMIT 1)`;
+    WHERE owner_tick.user_id = ${boards.ownerId}
+      AND ${contentVisibilityCondition('tick', sql`owner_tick.uuid`, sql`owner_tick.user_id`, viewerId)}
+    ORDER BY owner_tick.climbed_at DESC LIMIT 1)`;
 
   const rows = await db
     .select({
