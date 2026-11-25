@@ -18,8 +18,20 @@ describe('board code camera guard', () => {
     setCameraNativeBindingsForTests({ hasExpoCamera: () => true, loadExpoCamera });
     expect(isBoardCodeScannerAvailable()).toBe(true);
     expect(loadBoardCodeCamera()).toBe(FAKE_CAMERA);
+    expect(loadBoardCodeCamera()).toBe(FAKE_CAMERA);
     // Asked once per app run: the binary cannot gain or lose the module.
     expect(loadExpoCamera).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the Scan button without loading expo-camera', () => {
+    const hasExpoCamera = vi.fn(() => true);
+    const loadExpoCamera = vi.fn(() => FAKE_CAMERA);
+    setCameraNativeBindingsForTests({ hasExpoCamera, loadExpoCamera });
+    expect(isBoardCodeScannerAvailable()).toBe(true);
+    expect(isBoardCodeScannerAvailable()).toBe(true);
+    // The button's screen never pays for expo-camera's JavaScript; only the scan screen does.
+    expect(loadExpoCamera).not.toHaveBeenCalled();
+    expect(hasExpoCamera).toHaveBeenCalledTimes(1);
   });
 
   it('never requires expo-camera on an older binary, whose import would throw', () => {
@@ -32,14 +44,14 @@ describe('board code camera guard', () => {
     expect(loadExpoCamera).not.toHaveBeenCalled();
   });
 
-  it('hides the scanner when loading expo-camera throws anyway', () => {
+  it('lets the scan screen say "update" when loading expo-camera throws anyway', () => {
     setCameraNativeBindingsForTests({
       hasExpoCamera: () => true,
       loadExpoCamera: () => {
         throw new Error('boom');
       },
     });
-    expect(isBoardCodeScannerAvailable()).toBe(false);
+    expect(loadBoardCodeCamera()).toBeNull();
   });
 
   it('hides the scanner when the availability check itself throws', () => {

@@ -13,7 +13,7 @@
 // the app needs updating instead of crashing.
 
 import { useCallback, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, Platform, StyleSheet, View } from 'react-native';
 import { useIsFocused, useRouter, type Href } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator } from '../ActivityIndicator';
@@ -21,6 +21,7 @@ import { Button } from '../Button';
 import { EmptyState } from '../EmptyState';
 import { Text } from '../Text';
 import { loadBoardCodeCamera, type BoardCodeCamera } from '../../lib/board-code-scanner/camera-module';
+import { useRecheckOnForeground } from '../../lib/board-code-scanner/use-recheck-on-foreground';
 import { noteBoardFlowSecured } from '../../lib/boards/board-create-flow';
 import { hapticSuccess, hapticWarning } from '../../lib/haptics';
 import { openAppSettings } from '../../lib/open-app-settings';
@@ -57,7 +58,9 @@ function BoardCodeScanner({ camera }: { camera: BoardCodeCamera }) {
   const isFocused = useIsFocused();
   const { systemColors } = useTheme();
   const bottomChrome = useBottomChromeMetrics();
-  const [permission, requestPermission] = useCameraPermissions();
+  const [permission, requestPermission, getPermission] = useCameraPermissions();
+  // Back from Settings with the camera turned on: show the viewfinder, not "camera is off".
+  useRecheckOnForeground(getPermission);
 
   // One code opens one thing. The camera reports the same code many times a
   // second, so a ref (not state) closes the gate before the next frame arrives.
@@ -75,22 +78,28 @@ function BoardCodeScanner({ camera }: { camera: BoardCodeCamera }) {
         lastRefusedRef.current = data;
         setRefused(true);
         hapticWarning();
+        // Android reads the caption's live region; VoiceOver has none, so say it.
+        if (Platform.OS === 'ios') AccessibilityInfo.announceForAccessibility(t('mobile.scanCode.notBoardsesh'));
         return;
       }
       handledRef.current = true;
       setHandled(true);
       hapticSuccess();
+      // The climber followed a code out of the wizard: not an abandoned board
+      // flow, whichever screen the code opens.
+      noteBoardFlowSecured();
       // Replace the boards modal with the link's own route, the one a tapped
-      // link opens: the board hand-off or the crew's join screen.
+      // link opens: the board hand-off or the crew's join screen. Neither takes
+      // the wizard's returnTo; each decides where the climber lands, as it does
+      // for a link opened from the system camera.
       if (scanned.kind === 'board') {
-        noteBoardFlowSecured();
         // A validated app path (scanned-board-code.ts); typed routes can't know that.
         router.replace(scanned.href as Href);
       } else {
         router.replace({ pathname: '/join/[sessionId]', params: { sessionId: scanned.sessionId } });
       }
     },
-    [router],
+    [router, t],
   );
 
   const onAllow = useCallback(() => void requestPermission(), [requestPermission]);

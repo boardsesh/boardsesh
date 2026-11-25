@@ -718,6 +718,11 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
           barcodeScannerEnabled: true,
         },
       ],
+      // Leaves expo-camera's unused document scanner (Google's
+      // play-services-mlkit-document-scanner) out of the Android app: sets
+      // expo-camera's own gradle switch and excludes the artifact the prebuilt
+      // AAR pulls in regardless. Android-only, deterministic.
+      './plugins/with-android-camera-no-document-scanner',
       'react-native-ble-plx',
       // Brand tint #8C4A52 matches brandColors.tint — kept as a literal here
       // because app.config.ts runs at build time, before any theme provider.

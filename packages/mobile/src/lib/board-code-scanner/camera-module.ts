@@ -42,27 +42,39 @@ const NATIVE_BINDINGS: CameraNativeBindings = {
 };
 
 let bindings: CameraNativeBindings = NATIVE_BINDINGS;
-// `undefined` = not asked yet. The answer cannot change within an app run.
+// `undefined` = not asked yet. Neither answer can change within an app run.
+let hasCameraModule: boolean | undefined;
 let loadedCamera: BoardCodeCamera | null | undefined;
+
+/**
+ * Whether this binary can scan a board code: shows or hides the Scan button.
+ * Asks the native side only, so the screen that shows the button never loads
+ * expo-camera's JavaScript; that waits for the scan screen.
+ */
+export function isBoardCodeScannerAvailable(): boolean {
+  if (hasCameraModule !== undefined) return hasCameraModule;
+  try {
+    hasCameraModule = bindings.hasExpoCamera();
+  } catch {
+    hasCameraModule = false;
+  }
+  return hasCameraModule;
+}
 
 /** expo-camera, or null when this binary has no camera module (an older store build). */
 export function loadBoardCodeCamera(): BoardCodeCamera | null {
   if (loadedCamera !== undefined) return loadedCamera;
   try {
-    loadedCamera = bindings.hasExpoCamera() ? bindings.loadExpoCamera() : null;
+    loadedCamera = isBoardCodeScannerAvailable() ? bindings.loadExpoCamera() : null;
   } catch {
     loadedCamera = null;
   }
   return loadedCamera;
 }
 
-/** Whether this binary can scan a board code: shows or hides the Scan button. */
-export function isBoardCodeScannerAvailable(): boolean {
-  return loadBoardCodeCamera() !== null;
-}
-
-/** Tests only: swap the native side and forget the cached answer. */
+/** Tests only: swap the native side and forget the cached answers. */
 export function setCameraNativeBindingsForTests(next: CameraNativeBindings | null): void {
   bindings = next ?? NATIVE_BINDINGS;
+  hasCameraModule = undefined;
   loadedCamera = undefined;
 }
