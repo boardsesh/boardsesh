@@ -131,7 +131,13 @@ Add these to `packages/web/.env.development.local` (local) or your production en
 | `SMTP_PORT`     | SMTP port                                                                                     | `465`               |
 | `SMTP_USER`     | SMTP username/email                                                                           | -                   |
 | `SMTP_PASSWORD` | SMTP app password                                                                             | -                   |
-| `EMAIL_FROM`    | Sender email address                                                                          | Same as `SMTP_USER` |
+| `EMAIL_FROM`    | Sender name and email address                                                                 | Same as `SMTP_USER` |
+
+Set `EMAIL_FROM` on the **web** service to `Boardsesh <no-reply@boardsesh.com>`
+using an identity the SMTP provider authorizes. Password-reset and verification
+emails are sent by the web service, so setting this on the backend alone does
+not change their sender. Keep `SMTP_USER` as the SMTP login; it can differ from
+the sender address. Redeploy the web service after changing the variable.
 
 ### Example Configuration
 
@@ -161,7 +167,7 @@ SMTP_HOST=smtp.fastmail.com
 SMTP_PORT=465
 SMTP_USER=your-email@fastmail.com
 SMTP_PASSWORD=your-app-password
-EMAIL_FROM=your-email@fastmail.com
+EMAIL_FROM="Boardsesh <no-reply@boardsesh.com>"
 ```
 
 ---
