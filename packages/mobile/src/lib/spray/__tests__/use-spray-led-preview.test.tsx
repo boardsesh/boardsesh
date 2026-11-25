@@ -182,6 +182,36 @@ describe('spray LED preview lifecycle', () => {
     expect(mocks.close).not.toHaveBeenCalled();
   });
 
+  it.each([{ brightness: 200 }, { autoOffMinutes: 30 }])(
+    'keeps the wired photo selection when lighting options change to %o',
+    async (changedLighting) => {
+      mocks.settings = { ...mocks.settings, brightness: 64, autoOffMinutes: 0 } as typeof mocks.settings;
+      const { result, rerender } = renderHook(() => useSprayLedPreview('wall'));
+      const wiredIndices = [2, 5];
+      await act(() => result.current.lightAll(wiredIndices));
+      wiredIndices.push(9);
+      mocks.settings = { ...mocks.settings, ...changedLighting } as typeof mocks.settings;
+      await act(async () => rerender());
+      expect(mocks.show.mock.calls).toEqual([[[2, 5]], [[2, 5]]]);
+      expect(mocks.lightAll).not.toHaveBeenCalled();
+      expect(mocks.create).toHaveBeenCalledTimes(1);
+      expect(mocks.close).not.toHaveBeenCalled();
+      expect(result.current.allLit).toBe(true);
+    },
+  );
+
+  it('does not reclaim another preview when a previously lit test changes brightness', async () => {
+    mocks.settings = { ...mocks.settings, brightness: 64, autoOffMinutes: 0 } as typeof mocks.settings;
+    const { result, rerender } = renderHook(() => useSprayLedPreview('wall'));
+    await act(() => result.current.lightAll([2, 5]));
+    mocks.isOwner.mockReturnValue(false);
+    mocks.settings = { ...mocks.settings, brightness: 200 } as typeof mocks.settings;
+    await act(async () => rerender());
+    expect(mocks.show).toHaveBeenCalledExactlyOnceWith([2, 5]);
+    expect(mocks.lightAll).not.toHaveBeenCalled();
+    expect(mocks.close).not.toHaveBeenCalled();
+  });
+
   it('waits for interaction and keeps callbacks stable through state changes', async () => {
     const { result, rerender, unmount } = renderHook(() => useSprayLedPreview('wall'));
     expect(result.current.available).toBe(true);

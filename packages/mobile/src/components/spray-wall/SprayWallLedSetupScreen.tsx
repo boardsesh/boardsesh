@@ -1296,7 +1296,7 @@ function ChoiceCard({
   minimumHeight?: number;
   onMeasureContent?: (height: number) => void;
 }) {
-  const { systemColors, brandColors, spacing } = useTheme();
+  const { systemColors, selection, spacing } = useTheme();
   const content = (
     <>
       <View style={styles.thumbnail}>{children}</View>
@@ -1315,8 +1315,8 @@ function ChoiceCard({
       style={[
         styles.card,
         {
-          borderColor: selected ? brandColors.primary : systemColors.separator,
-          backgroundColor: systemColors.secondaryGroupedBackground,
+          borderColor: selected ? selection.checkmark : systemColors.separator,
+          backgroundColor: selected ? selection.fill : systemColors.secondaryGroupedBackground,
           padding: spacing[2],
           gap: spacing[2],
           minHeight: minimumHeight,

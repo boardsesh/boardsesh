@@ -948,6 +948,7 @@
     "turnOffAll": "关闭所有灯光",
     "lightAdjacentHolds": "点亮上方岩点",
     "lightAdjacentHoldsHelp": "在每个已点亮的起步点和手点上方添加较暗的 LED。需要支持额外 LED 功能的 MoonBoard 控制器。",
+    "spraywallLightAdjacentHoldsHelp": "将每个已点亮岩点上方关联的 LED 以 25% 亮度点亮为白色。",
     "disconnect": "断开训练板连接"
   },
   "bluetooth": {

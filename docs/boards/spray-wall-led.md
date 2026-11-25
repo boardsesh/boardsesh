@@ -312,6 +312,20 @@ returns an upgrade-required error rather than silently acknowledging an ignored
 save. Settings-only updates remain independent; a modern confirmed pattern change
 can replace the setup. The same board-row transaction lock covers this check.
 
+`saveSprayWallLedSetup` stores `holdLeds` as the app sends it. Every installed
+app knows about these links, and one leaves the key out once its last link is
+cleared (this app sends `[]`), so a layout without `holdLeds` clears the stored
+links.
+
+LED pairs (`ledGroups`) are newer than any installed app, so an app from before
+them saves a layout with no `ledGroups` key, which would erase a newer phone's
+pairs. `saveSprayWallLedSetup` therefore keeps the stored list
+(`keepLedPairsFromOlderApp`), an empty one too, minus pairs whose LEDs are gone.
+If the older app rebuilt the LEDs (the placement, holes, corners, rows or
+columns changed, and so did the LEDs), the stored pairs would name the wrong
+LEDs, so the new layout's default pairs apply. A current app always sends
+`ledGroups`, `null` for the default pairs, which the reader treats like no list.
+
 Enable LEDs, finish setup and take the wall through the usual lightbulb control.
 Routes illuminate their mapped LEDs using the existing start, hand, foot and
 finish colors, including saved color overrides. Route playback and creator
@@ -466,6 +480,9 @@ snapshot, including when playback's cached copy is still fresh. Offline reads
 and failed refreshes retain the local copy. The refresh wait is bounded, and a
 response arriving after that deadline cannot replace the editor's snapshot.
 Once editing begins, a background response never resets the climber's edits.
+An old pending layout from before strip support needs one verified server read
+before the updated editor can open it. Until then, the existing load error is
+recoverable by connecting and trying again.
 
 **Saves** write the copy, then upload. One upload runs per wall at a time and it
 reads the newest copy when it goes, so step saves collapse and cannot land out of
@@ -477,6 +494,16 @@ merges, local saves and upload acknowledgements share a cache write lane.
 A newer save keeps its unsent marker until its own upload succeeds. The cached
 copy is cleared at sign-out and when wall access is withdrawn; erasure waits
 for outstanding disk writes and prevents old saves from uploading afterwards.
+Queued legacy layouts retain the capabilities of the app that authored them.
+The local-only `_legacyLedCapabilities` provenance is never sent to the backend;
+a new editor save atomically replaces it with the current capability keys.
+An authoritative strip layout replaces refused legacy geometry without clearing
+dirty brightness, auto-off or controller settings. Non-strip reconciliation
+preserves newer manual assignments before the editor takes its snapshot.
+
+Changing brightness or auto-off while a full photo test is lit repeats the same
+acknowledged LED selection. It does not include skipped or off-photo positions,
+and cannot take the wall back from a newer preview or route.
 
 ## Controller boundary
 

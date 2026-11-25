@@ -22,6 +22,7 @@ function LightingStory() {
         alwaysDrive: { enabled: always, onChange: setAlways },
         playlistTapLoadsQueue: { enabled: playlist, onChange: setPlaylist },
         moonboardLightAdjacentHolds: null,
+        spraywallLightAdjacentHolds: null,
         onOpenDrivingHelp: () => {},
       }),
     }),

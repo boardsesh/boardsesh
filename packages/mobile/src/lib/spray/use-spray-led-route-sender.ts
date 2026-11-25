@@ -13,7 +13,7 @@ import { sprayLedPhotoKey } from './spray-led-photo-key';
 import { getSprayWall, sprayWallRemovalGeneration, subscribeToSprayWallWithdrawals } from './spray-wall-registry';
 import { sprayPrivacyGeneration } from './spray-privacy-generation';
 
-type RouteRuntime = { wallUuid: string; url: string; session: LedPreviewSession };
+type RouteRuntime = { wallUuid: string; url: string; lightingKey: string; session: LedPreviewSession };
 type RouteRequest = { frames: string; mirrored?: boolean; signal?: AbortSignal; pending: boolean };
 type AcknowledgedRoute = { request: RouteRequest; session: LedPreviewSession; upperLighting: boolean };
 type RouteWrite = (
@@ -230,6 +230,15 @@ export function useSprayLedRouteSender({
         }
         if (!settings.controller.url || mirrored) return fail();
         let current = runtime.current;
+        const lighting = { brightness: settings.brightness, autoOffMinutes: settings.autoOffMinutes };
+        const lightingKey = `${lighting.brightness}:${lighting.autoOffMinutes}`;
+        // A changed brightness or auto-off goes to the open session, whose next write
+        // wakes the wall with them. Closing it would switch the wall off first.
+        if (current && current.lightingKey !== lightingKey) {
+          current.session.setLighting(lighting);
+          current = { ...current, lightingKey };
+          runtime.current = current;
+        }
         if (!current || current.url !== settings.controller.url || current.wallUuid !== wallUuid) {
           const driver = await loadSprayLedDriver(settings.controller.type);
           if (!isCurrent()) return false;
@@ -237,7 +246,8 @@ export function useSprayLedRouteSender({
           current = {
             wallUuid,
             url: settings.controller.url,
-            session: createLedPreviewSession(driver, settings.controller.url),
+            lightingKey,
+            session: createLedPreviewSession(driver, settings.controller.url, lighting),
           };
           runtime.current = current;
         }

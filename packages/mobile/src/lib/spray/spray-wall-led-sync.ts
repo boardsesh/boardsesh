@@ -6,9 +6,14 @@ import {
   type SaveSprayWallLedSetupMutationVariables,
   type SprayWallLedSetupData,
 } from '@boardsesh/graphql/operations/spray-walls';
-import { isSprayWallLedSaveRefused } from '@boardsesh/graphql/errors';
+import { hasGraphqlErrorCode, isSprayWallLedSaveRefused } from '@boardsesh/graphql/errors';
 import { normalizeLocalControllerUrl } from '@boardsesh/led-controller';
-import { readTnutLayout, type TnutLayout } from '@boardsesh/spray-wall-geometry';
+import {
+  keepLedLinksFromOlderApp,
+  keepLedPairsFromOlderApp,
+  readTnutLayout,
+  type TnutLayout,
+} from '@boardsesh/spray-wall-geometry';
 import { getPreference, removePreference, setPreference } from '../preference-store';
 import { notifySprayLedConfiguration } from './spray-led-config-events';
 import {
@@ -67,6 +72,37 @@ const fetches = new Map<string, ServerRead>();
 const freshness = new Map<string, Freshness>();
 const uploads = new Map<string, UploadQueue>();
 const fieldGenerations = new Map<string, Partial<Record<SprayWallLedField, number>>>();
+const reconciledLegacyLayouts = new Map<string, number>();
+const LAYOUT_CAPABILITIES = ['ledGroups', 'tnutLeds', 'holdAboveLeds', 'ledStripes'] as const;
+const LEGACY_CAPABILITIES_KEY = '_legacyLedCapabilities';
+type LayoutCapability = (typeof LAYOUT_CAPABILITIES)[number];
+type LayoutCapabilities = Record<LayoutCapability, boolean>;
+
+function layoutCapabilities(stored: unknown): LayoutCapabilities {
+  const record = typeof stored === 'object' && stored !== null ? (stored as Record<string, unknown>) : {};
+  // A verified merge can copy modern assignments for local lighting. They are
+  // still server-owned, so retries retain the original writer's capabilities.
+  const original = record[LEGACY_CAPABILITIES_KEY];
+  return Object.fromEntries(
+    LAYOUT_CAPABILITIES.map((field) => [
+      field,
+      original === undefined ? Object.hasOwn(record, field) : Array.isArray(original) && original.includes(field),
+    ]),
+  ) as LayoutCapabilities;
+}
+
+function modernLayout(capabilities: LayoutCapabilities): boolean {
+  return LAYOUT_CAPABILITIES.every((field) => capabilities[field]);
+}
+
+function legacyLayoutCopy(layout: TnutLayout, capabilities: LayoutCapabilities) {
+  return {
+    ...layout,
+    ...(capabilities.ledGroups ? { ledGroups: layout.ledGroups ?? null } : {}),
+    ...(capabilities.ledStripes ? { ledStripes: layout.ledStripes ?? null } : {}),
+    [LEGACY_CAPABILITIES_KEY]: LAYOUT_CAPABILITIES.filter((field) => capabilities[field]),
+  };
+}
 
 function fieldGenerationOf(wallUuid: string, field: SprayWallLedField): number {
   return fieldGenerations.get(wallUuid)?.[field] ?? 0;
@@ -90,11 +126,13 @@ subscribeSprayWallLedCacheErased((wallUuid) => {
     freshness.clear();
     uploads.clear();
     writeGenerations.clear();
+    reconciledLegacyLayouts.clear();
     return;
   }
   fetches.delete(wallUuid);
   freshness.delete(wallUuid);
   uploads.delete(wallUuid);
+  reconciledLegacyLayouts.delete(wallUuid);
   bumpGeneration(wallUuid);
 });
 
@@ -211,11 +249,14 @@ async function applyServerSettings(
 }
 
 async function applyServerLayout(wallUuid: string, server: TnutLayout | null): Promise<boolean> {
+  const stored = await getPreference<unknown>(sprayWallLedLayoutKey(wallUuid), { strictParsing: true });
   const cached = await readCachedLayout(wallUuid);
-  if (sameLayout(cached, server)) return false;
+  const changed = !sameLayout(cached, server);
+  const legacy = typeof stored === 'object' && stored !== null && Object.hasOwn(stored, LEGACY_CAPABILITIES_KEY);
+  if (!changed && !legacy) return false;
   if (server === null) await removePreference(sprayWallLedLayoutKey(wallUuid));
   else await setPreference(sprayWallLedLayoutKey(wallUuid), server);
-  return true;
+  return changed;
 }
 
 function publishServerChange(wallUuid: string): void {
@@ -260,7 +301,11 @@ async function mergeServerAnswer(
   const { setup, viewerCanEdit } = answer;
   const unsent = await readUnsent(wallUuid);
   if (setup === null && viewerCanEdit) {
-    if (!SPRAY_WALL_LED_FIELDS.some((field) => unsent[field])) await adoptLocalSetup(wallUuid);
+    if (!isCurrent()) return;
+    reconciledLegacyLayouts.set(wallUuid, fieldGenerationOf(wallUuid, 'layout'));
+    if (!SPRAY_WALL_LED_FIELDS.some((field) => unsent[field])) {
+      await adoptLocalSetup(wallUuid);
+    }
     return;
   }
 
@@ -271,7 +316,36 @@ async function mergeServerAnswer(
     unsent.settings && unsent.brightness && unsent.autoOff
       ? false
       : await applyServerSettings(wallUuid, serverSettings, unsent);
-  const layoutChanged = unsent.layout ? false : await applyServerLayout(wallUuid, serverLayout);
+  if (!isCurrent()) return;
+  let layoutChanged = false;
+  if (!unsent.layout) {
+    layoutChanged = await applyServerLayout(wallUuid, serverLayout);
+  } else {
+    const stored = await getPreference<unknown>(sprayWallLedLayoutKey(wallUuid), { strictParsing: true });
+    const cached = readTnutLayout(stored);
+    const capabilities = layoutCapabilities(stored);
+    if (!isCurrent()) return;
+    if (cached && !modernLayout(capabilities)) {
+      if (!capabilities.ledStripes && serverLayout?.ledPlacement === 'stripe') {
+        // Write the replacement before clearing only this rejected layout. A
+        // failed refresh or restart must never make the legacy copy editable.
+        layoutChanged = await applyServerLayout(wallUuid, serverLayout);
+        if (!isCurrent()) return;
+        await removePreference(sprayWallLedUnsentKey('layout', wallUuid));
+        uploads.get(wallUuid)?.dirty.delete('layout');
+      } else {
+        const merged = keepLedLinksFromOlderApp(
+          keepLedPairsFromOlderApp(cached, capabilities.ledGroups, serverLayout),
+          capabilities,
+          serverLayout,
+        );
+        layoutChanged = !sameLayout(cached, merged);
+        await setPreference(sprayWallLedLayoutKey(wallUuid), legacyLayoutCopy(merged, capabilities));
+        if (!isCurrent()) return;
+        reconciledLegacyLayouts.set(wallUuid, fieldGenerationOf(wallUuid, 'layout'));
+      }
+    }
+  }
   if (isCurrent() && (settingsChanged || layoutChanged)) publishServerChange(wallUuid);
 }
 
@@ -373,6 +447,22 @@ export async function prepareSprayWallLedEdit(wallUuid: string): Promise<void> {
     void retryUnsent(wallUuid);
   }
   if (sprayWallLedCacheGeneration(wallUuid) !== cacheGeneration) throw new Error('LED setup access changed');
+  const stored = await getPreference<unknown>(sprayWallLedLayoutKey(wallUuid), { strictParsing: true });
+  const capabilities = layoutCapabilities(stored);
+  if (
+    stored !== null &&
+    !modernLayout(capabilities) &&
+    reconciledLegacyLayouts.get(wallUuid) !== fieldGenerationOf(wallUuid, 'layout')
+  ) {
+    // Unlike playback/retry, an editor cannot treat an unreadable dirty flag
+    // as a clean legacy copy and promote it to a modern authored layout.
+    const pending = await getPreference<unknown>(sprayWallLedUnsentKey('layout', wallUuid), { strictParsing: true });
+    if (pending !== null && typeof pending !== 'boolean') throw new Error('Invalid saved LED layout flag');
+    if (pending === true || (typeof stored === 'object' && Object.hasOwn(stored, LEGACY_CAPABILITIES_KEY))) {
+      throw new Error('Refresh the saved LED layout before editing');
+    }
+  }
+  if (sprayWallLedCacheGeneration(wallUuid) !== cacheGeneration) throw new Error('LED setup access changed');
 }
 
 /**
@@ -399,6 +489,7 @@ export async function markSprayWallLedSaveStarted(
     if (sprayWallLedCacheGeneration(wallUuid) !== cacheGeneration) throw new Error('LED save withdrawn');
   };
   bumpGeneration(wallUuid);
+  if (fields.includes('layout')) reconciledLegacyLayouts.delete(wallUuid);
   fieldGenerations.set(wallUuid, {
     ...fieldGenerations.get(wallUuid),
     ...Object.fromEntries(fields.map((name) => [name, fieldGenerationOf(wallUuid, name) + 1])),
@@ -460,15 +551,19 @@ async function buildUploadInput(
     const stored = await getPreference<unknown>(sprayWallLedLayoutKey(wallUuid), { strictParsing: true });
     const layout = stored === null ? null : readTnutLayout(stored);
     if (!layout) throw new Error('Invalid saved T-nut layout');
-    // Name every supported override list, including an explicit clear. Missing
-    // keys identify an older app, whose upload must preserve newer assignments.
-    input.layout = {
-      ...layout,
-      ledGroups: layout.ledGroups ?? null,
-      tnutLeds: layout.tnutLeds ?? [],
-      holdAboveLeds: layout.holdAboveLeds ?? [],
-      ledStripes: layout.ledStripes ?? null,
-    };
+    const capabilities = layoutCapabilities(stored);
+    if (!modernLayout(capabilities)) {
+      // Keep this provenance after acknowledgement too: an editor opened after
+      // a restart still needs an authoritative snapshot before promoting it.
+      await setPreference(sprayWallLedLayoutKey(wallUuid), legacyLayoutCopy(layout, capabilities));
+    }
+    const uploadedLayout: Record<string, unknown> = { ...layout };
+    for (const field of LAYOUT_CAPABILITIES) {
+      if (capabilities[field])
+        uploadedLayout[field] = layout[field] ?? (field === 'ledGroups' || field === 'ledStripes' ? null : []);
+      else delete uploadedLayout[field];
+    }
+    input.layout = uploadedLayout;
   }
   return fields.length > 0 ? input : null;
 }
@@ -503,10 +598,23 @@ async function drainUploads(wallUuid: string, queue: UploadQueue): Promise<void>
         bumpGeneration(wallUuid);
         await clearAcknowledgedFields();
         if (stale()) return;
-        if (queue.dirty.size === 0) notifySprayWallLedUploadOutcome(wallUuid, 'uploaded');
+        if (queue.dirty.size === 0 && !(await isUnsent('layout', wallUuid)) && !stale()) {
+          notifySprayWallLedUploadOutcome(wallUuid, 'uploaded');
+        }
       } catch (uploadError) {
         if (stale()) return;
-        if (isSprayWallLedSaveRefused(uploadError)) {
+        if (fields.includes('layout') && hasGraphqlErrorCode(uploadError, 'SPRAY_WALL_LED_STRIPE_UPGRADE_REQUIRED')) {
+          if (fieldGenerationOf(wallUuid, 'layout') === sentGenerations.get('layout')) {
+            reconciledLegacyLayouts.delete(wallUuid);
+          }
+          // The whole mutation was refused, including independent settings.
+          // Retry those fields without resending the refused legacy geometry.
+          for (const field of fields) if (field !== 'layout') queue.dirty.add(field);
+          bumpGeneration(wallUuid);
+          freshness.delete(wallUuid);
+          await refreshFromServer(wallUuid, true);
+          if (stale()) return;
+        } else if (isSprayWallLedSaveRefused(uploadError)) {
           // This viewer can never send it: the server's copy wins on the next read.
           await clearAcknowledgedFields();
           if (stale()) return;
@@ -535,4 +643,5 @@ export function resetSprayWallLedSyncForTests(): void {
   uploads.clear();
   writeGenerations.clear();
   fieldGenerations.clear();
+  reconciledLegacyLayouts.clear();
 }

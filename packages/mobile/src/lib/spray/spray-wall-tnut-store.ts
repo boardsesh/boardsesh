@@ -42,7 +42,15 @@ export async function saveSprayWallTnutLayout(wallUuid: string, layout: TnutLayo
     .then(() => {
       assertCurrent();
       return markSprayWallLedSaveStarted(wallUuid, 'layout', () =>
-        setPreference(sprayWallLedLayoutKey(wallUuid), validated),
+        // Capability markers belong to this authored snapshot, not to a retry
+        // that might be replaying a layout saved by an older installed app.
+        setPreference(sprayWallLedLayoutKey(wallUuid), {
+          ...validated,
+          ledGroups: validated.ledGroups ?? null,
+          tnutLeds: validated.tnutLeds ?? [],
+          holdAboveLeds: validated.holdAboveLeds ?? [],
+          ledStripes: validated.ledStripes ?? null,
+        }),
       );
     });
   pendingWrites.set(wallUuid, write);

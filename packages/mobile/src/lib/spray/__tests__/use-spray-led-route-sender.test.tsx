@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   clear: vi.fn(),
   close: vi.fn(),
   detach: vi.fn(),
+  setLighting: vi.fn(),
   create: vi.fn(),
   loadDriver: vi.fn(),
   invalidate: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock('react-native', () => ({
   },
 }));
 vi.mock('../spray-led-driver', () => ({ loadSprayLedDriver: mocks.loadDriver }));
+vi.mock('../spray-led-ble-primer', () => ({ explainSprayBluetooth: async () => true }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => 'query-client' }));
 vi.mock('@boardsesh/spray-wall-geometry', () => ({ buildSprayLedMapping: mocks.mapping }));
 vi.mock('@boardsesh/led-controller', () => ({
@@ -128,6 +130,7 @@ beforeEach(() => {
     close: mocks.close,
     detach: mocks.detach,
     isOwner: () => mocks.ownsLane,
+    setLighting: mocks.setLighting,
   });
 });
 afterEach(cleanup);
@@ -309,6 +312,12 @@ describe('spray route transport', () => {
 
   it('applies a deferred upper-light change to the acknowledged route when its replacement fails', async () => {
     upperMapping();
+    mocks.settings.mockResolvedValue({
+      enabled: true,
+      controller: { type: 'wled', url: 'http://wall.local' },
+      brightness: 200,
+      autoOffMinutes: 30,
+    });
     mocks.layout.mockResolvedValue({ ...layout, ledPlacement: 'below' });
     const { result, rerender } = renderHook(({ enabled }) => useUpperSender(enabled), {
       initialProps: { enabled: false },
@@ -322,6 +331,12 @@ describe('spray route transport', () => {
     );
     const replacement = result.current.send('p8r1');
     await vi.waitFor(() => expect(mocks.payload).toHaveBeenCalledTimes(2));
+    mocks.settings.mockResolvedValue({
+      enabled: true,
+      controller: { type: 'wled', url: 'http://wall.local' },
+      brightness: 90,
+      autoOffMinutes: 0,
+    });
     rerender({ enabled: true });
     complete(payload);
     expect(await replacement).toBe(false);
@@ -335,6 +350,7 @@ describe('spray route transport', () => {
     ]);
     expect(mocks.invalidate).not.toHaveBeenCalledWith(true);
     expect(mocks.close).not.toHaveBeenCalled();
+    expect(mocks.setLighting).toHaveBeenCalledExactlyOnceWith({ brightness: 90, autoOffMinutes: 0 });
   });
 
   it.each(['preview', 'release', 'abort', 'credentials', 'returned-option', 'background'])(
@@ -588,6 +604,32 @@ describe('spray route transport', () => {
     expect(mocks.create).not.toHaveBeenCalled();
     expect(mocks.clear).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['wled', 'http://wall.local'],
+    ['wled-ble', 'wled-ble:wled-aabbccddeeff'],
+  ] as const)(
+    'lights a %s wall at its brightness and auto-off, and hands a change to the open session',
+    async (type, url) => {
+      mocks.settings.mockResolvedValue({
+        enabled: true,
+        controller: { type, url },
+        brightness: 200,
+        autoOffMinutes: 30,
+      });
+      const { result } = renderHook(() => useSender());
+      expect(await result.current.send('p7r1')).toBe(true);
+      expect(mocks.loadDriver).toHaveBeenCalledWith(type);
+      expect(mocks.create).toHaveBeenLastCalledWith('wled-driver', url, { brightness: 200, autoOffMinutes: 30 });
+      mocks.settings.mockResolvedValue({ enabled: true, controller: { type, url }, brightness: 90, autoOffMinutes: 0 });
+      expect(await result.current.send('p7r2')).toBe(true);
+      // Closing the session would switch the wall off before the next climb lights.
+      expect(mocks.close).not.toHaveBeenCalled();
+      expect(mocks.create).toHaveBeenCalledOnce();
+      expect(mocks.setLighting).toHaveBeenCalledExactlyOnceWith({ brightness: 90, autoOffMinutes: 0 });
+      expect(mocks.show).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it('keeps catalog boards outside LAN setup', async () => {
     const { result } = renderHook(() => useSender('kilter'));

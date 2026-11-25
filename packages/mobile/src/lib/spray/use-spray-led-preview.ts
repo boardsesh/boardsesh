@@ -40,6 +40,8 @@ export function useSprayLedPreviewForSettings(
   const [available, setAvailable] = useState(false);
   // What the wall shows: all LEDs requested for a full test, or the current LED in a row test.
   const [allLit, setAllLit] = useState(false);
+  const allLitNow = useRef(false);
+  const allLitIndices = useRef<readonly number[] | undefined>(undefined);
   const [chaseIndex, setChaseIndex] = useState<number | null>(null);
 
   // A committed Wi-Fi control must already target its current preview session.
@@ -48,6 +50,8 @@ export function useSprayLedPreviewForSettings(
     setError(null);
     setAvailable(false);
     setAllLit(false);
+    allLitNow.current = false;
+    allLitIndices.current = undefined;
     setChaseIndex(null);
     if (!enabled || !url) return;
     const credentialGeneration = getCredentialGeneration();
@@ -65,6 +69,7 @@ export function useSprayLedPreviewForSettings(
         if (next === 'active') return;
         const generation = ++current.generation;
         setAllLit(false);
+        allLitNow.current = false;
         setChaseIndex(null);
         if (controllerType === 'wled-ble') {
           setState('idle');
@@ -131,6 +136,7 @@ export function useSprayLedPreviewForSettings(
       setError(null);
       setState(nextState);
       setAllLit(false);
+      allLitNow.current = false;
       setChaseIndex(null);
       try {
         const completed = await operation(current, generation);
@@ -197,11 +203,18 @@ export function useSprayLedPreviewForSettings(
   const lightAll = useCallback(
     (indices?: readonly number[]) => {
       if (indices?.length === 0) return Promise.resolve(false);
+      const requestedIndices = indices === undefined ? undefined : [...indices];
       return run(
         'sending',
         async (current, generation) => {
-          const completed = await (indices ? current.session.show(indices) : current.session.lightAll());
-          if (completed && current.active && current.generation === generation) setAllLit(true);
+          const completed = await (requestedIndices
+            ? current.session.show(requestedIndices)
+            : current.session.lightAll());
+          if (completed && current.active && current.generation === generation) {
+            allLitIndices.current = requestedIndices;
+            allLitNow.current = true;
+            setAllLit(true);
+          }
           return completed;
         },
         'lit',
@@ -211,13 +224,11 @@ export function useSprayLedPreviewForSettings(
   );
   // A new brightness or auto-off goes to the open session; a wall lit with Light all
   // shows it straight away, anything else from its next lighting.
-  const allLitNow = useRef(false);
-  allLitNow.current = allLit;
   useEffect(() => {
     const current = runtime.current;
     if (!current?.active) return;
     current.session.setLighting({ brightness, autoOffMinutes });
-    if (allLitNow.current) void lightAll();
+    if (allLitNow.current && current.session.isOwner()) void lightAll(allLitIndices.current);
   }, [brightness, autoOffMinutes, lightAll]);
   const clear = useCallback(() => run('stopping', (current) => current.session.clear(), 'idle'), [run]);
   const stop = useCallback(() => run('stopping', (current) => current.session.stop(), 'idle'), [run]);

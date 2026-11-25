@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ActionSheetIOS, Alert, Modal as NativeModal, Platform, StyleSheet } from 'react-native';
-import { Button, Dialog, Portal, Text } from 'react-native-paper';
+import { Button, Dialog, Text } from 'react-native-paper';
 import { useTheme } from './theme-provider';
 
 /** One action in a `choose()` prompt. Rendered in the order given. */
@@ -114,8 +114,8 @@ const styles = StyleSheet.create({
  *
  * On Android the Paper `Dialog` lives inside a React Native `Modal`, above the
  * separate native window used by Expo's bottom sheets. A root Paper `Portal`
- * would render underneath an open sheet and leave its prompt unreachable. Web
- * keeps the Paper `Portal` host.
+ * would render underneath an open sheet and leave its prompt unreachable. Web uses the same modal stack so discard prompts
+ * take focus above an open sheet and restore it afterwards.
  *
  * On iOS we always fall back to the native `Alert` — even on the Material
  * variant — because prompts are often
@@ -141,8 +141,8 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   // onPress and onDismiss in the same tick, or is double-tapped before re-render.
   const settledIdsRef = useRef<Set<number>>(new Set());
 
-  // iOS and native Liquid Glass use Alert (see FullWindowOverlay above).
-  // The browser always uses the Paper queue.
+  // Browser prompts must share the modal stack, including the forced glass look.
+  // Native iOS always uses Alert; Android glass retains its existing Alert path.
   const useNativeAlert = Platform.OS !== 'web' && (variant === 'liquidGlass' || Platform.OS === 'ios');
 
   const choose = useCallback(
@@ -222,7 +222,9 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       <Dialog.Title>{current.title}</Dialog.Title>
       {current.message ? (
         <Dialog.Content>
-          <Text variant="bodyMedium">{current.message}</Text>
+          <Text variant="bodyMedium" selectable={Platform.OS === 'web'}>
+            {current.message}
+          </Text>
         </Dialog.Content>
       ) : null}
       <Dialog.Actions style={styles.actions}>
@@ -246,19 +248,15 @@ export function DialogProvider({ children }: { children: ReactNode }) {
           `!useNativeAlert` condition keeps the Paper dialog off Liquid Glass / iOS
           even if the variant flips while a prompt is mid-flight. */}
       {!useNativeAlert && current ? (
-        Platform.OS === 'android' ? (
-          <NativeModal
-            visible
-            transparent
-            statusBarTranslucent
-            navigationBarTranslucent
-            onRequestClose={() => settle(current, current.cancelValue)}
-          >
-            {dialog}
-          </NativeModal>
-        ) : (
-          <Portal>{dialog}</Portal>
-        )
+        <NativeModal
+          visible
+          transparent
+          statusBarTranslucent
+          navigationBarTranslucent
+          onRequestClose={() => settle(current, current.cancelValue)}
+        >
+          {dialog}
+        </NativeModal>
       ) : null}
     </DialogContext>
   );

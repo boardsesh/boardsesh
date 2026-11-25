@@ -8,6 +8,8 @@ const route = vi.hoisted(() => ({
   listeners: new Set<() => void>(),
   orientation: undefined as string | undefined,
   barsHidden: false,
+  headerBlurEffect: undefined as string | undefined,
+  glassCapable: false,
   platformOS: 'android',
   isPad: false,
   width: 400,
@@ -40,15 +42,22 @@ vi.mock('expo-router', () => ({
     screenOptions,
     children,
   }: {
-    screenOptions: { orientation?: string; statusBarHidden?: boolean; navigationBarHidden?: boolean };
+    screenOptions: {
+      orientation?: string;
+      statusBarHidden?: boolean;
+      navigationBarHidden?: boolean;
+      headerBlurEffect?: string;
+    };
     children: ReactNode;
   }) => {
     route.orientation = screenOptions.orientation;
     route.barsHidden = Boolean(screenOptions.statusBarHidden && screenOptions.navigationBarHidden);
+    route.headerBlurEffect = screenOptions.headerBlurEffect;
     return createElement('div', null, children);
   },
 }));
 vi.mock('../../../theme/navigation', () => ({ glassStackScreenOptions: {} }));
+vi.mock('../../../hooks/use-glass-capability', () => ({ useGlassCapability: () => route.glassCapable }));
 import { RootNavigationStack } from '../RootNavigationStack';
 const FrozenProvider = memo(
   ({ children }: { children: ReactNode }) => children,
@@ -67,8 +76,41 @@ afterEach(() => {
   route.isPad = false;
   route.width = 400;
   route.height = 800;
+  route.glassCapable = false;
+});
+describe('root header blur', () => {
+  it('gives root-level pushed screens no legacy blur on iOS 26 glass', () => {
+    route.platformOS = 'ios';
+    route.glassCapable = true;
+    render(createElement(RootNavigationStack, null, 'screen'));
+    expect(route.headerBlurEffect).toBeUndefined();
+  });
+  it('keeps the systemMaterial blur on iOS without glass', () => {
+    route.platformOS = 'ios';
+    route.glassCapable = false;
+    render(createElement(RootNavigationStack, null, 'screen'));
+    expect(route.headerBlurEffect).toBe('systemMaterial');
+  });
 });
 describe('fullscreen native orientation', () => {
+  it.each([false, true])('keeps the iOS header blur gate through fullscreen rotation (glass=%s)', (glassCapable) => {
+    route.platformOS = 'ios';
+    route.glassCapable = glassCapable;
+    const { rerender } = render(createElement(RootNavigationStack, null, 'screen'));
+    const expectedBlur = glassCapable ? undefined : 'systemMaterial';
+    navigate('/spray-led-fullscreen');
+    expect(route.orientation).toBe('all');
+    expect(route.headerBlurEffect).toBe(expectedBlur);
+    route.width = 800;
+    route.height = 400;
+    rerender(createElement(RootNavigationStack, null, 'screen'));
+    expect(route.orientation).toBe('all');
+    expect(route.headerBlurEffect).toBe(expectedBlur);
+    navigate('/boards');
+    expect(route.orientation).toBe('portrait');
+    expect(route.headerBlurEffect).toBe(expectedBlur);
+  });
+
   it('unlocks attached screens below a frozen provider and restores portrait on exit', () => {
     render(createElement(FrozenProvider, null, createElement(RootNavigationStack, null, 'screen')));
     expect(route.orientation).toBe('portrait');

@@ -178,17 +178,22 @@ describe('saving a wall’s LED setup', () => {
     const uuid = await createWall();
     const configured = createLedStripes(layout(), 'vertical', 3);
     if (configured === 'capacity') throw new Error('Unexpected fixture capacity');
-    await save(uuid, OWNER, { layout: configured });
+    await save(uuid, OWNER, { layout: configured, brightness: 51, autoOffMinutes: 30 });
     const older = { ...layout(), ledGroups: [], tnutLeds: [], holdAboveLeds: [] };
-    await expect(save(uuid, OWNER, { layout: older })).rejects.toMatchObject({
+    await expect(save(uuid, OWNER, { layout: older, brightness: 127, autoOffMinutes: 60 })).rejects.toMatchObject({
       extensions: { code: SPRAY_WALL_LED_STRIPE_UPGRADE_REQUIRED_CODE },
     });
-    expect((await read(uuid, OWNER))?.setup?.layout).toMatchObject({
-      ledPlacement: 'stripe',
-      ledStripes: configured.ledStripes,
+    expect((await read(uuid, OWNER))?.setup).toMatchObject({
+      brightness: 51,
+      autoOffMinutes: 30,
+      layout: { ledPlacement: 'stripe', ledStripes: configured.ledStripes },
     });
     // A settings-only change from that phone remains independent of geometry.
-    await expect(save(uuid, OWNER, { enabled: false })).resolves.toMatchObject({ enabled: false });
+    await expect(save(uuid, OWNER, { enabled: false, brightness: 90, autoOffMinutes: 0 })).resolves.toMatchObject({
+      enabled: false,
+      brightness: 90,
+      autoOffMinutes: 0,
+    });
     expect((await read(uuid, OWNER))?.setup?.layout).toHaveProperty('ledPlacement', 'stripe');
   });
 
@@ -349,6 +354,22 @@ describe('saving a wall’s LED setup', () => {
       await save(uuid, OWNER, { layout: { ...older(), tnutLeds: [], holdAboveLeds: [] } });
       await save(uuid, OWNER, { layout: older() });
       expect(await storedLayout(uuid)).toMatchObject({ tnutLeds: [], holdAboveLeds: [] });
+    });
+
+    it('saves brightness with an older layout without losing modern assignments or auto-off', async () => {
+      const uuid = await createWall();
+      await save(uuid, OWNER, { layout: current(), brightness: 51, autoOffMinutes: 30 });
+      await expect(save(uuid, OWNER, { layout: older(), brightness: 127 })).resolves.toMatchObject({
+        brightness: 127,
+        autoOffMinutes: 30,
+        layout: { tnutLeds: current().tnutLeds, holdAboveLeds: current().holdAboveLeds },
+      });
+      await save(uuid, OWNER, { autoOffMinutes: 0 });
+      expect((await read(uuid, OWNER))?.setup).toMatchObject({
+        brightness: 127,
+        autoOffMinutes: 0,
+        layout: { tnutLeds: current().tnutLeds, holdAboveLeds: current().holdAboveLeds },
+      });
     });
 
     it('accepts modern per-role resets and prunes missing LEDs and holes during old saves', async () => {

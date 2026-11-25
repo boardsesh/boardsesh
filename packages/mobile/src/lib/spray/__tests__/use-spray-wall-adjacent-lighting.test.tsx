@@ -19,6 +19,8 @@ const WALL_LAYOUT = 7001;
 const OTHER_WALL_LAYOUT = 7002;
 const configured: SprayWallLedSettings = {
   version: 1,
+  brightness: 64,
+  autoOffMinutes: 0,
   enabled: true,
   controller: { type: 'wled', url: 'http://wall.local' },
 };

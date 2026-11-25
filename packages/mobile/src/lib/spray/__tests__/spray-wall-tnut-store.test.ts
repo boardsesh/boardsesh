@@ -42,6 +42,8 @@ function configured(): TnutLayout {
       { x: 0.7, y: 0.8 },
     ],
     photoKey: '42:version-9',
+    tnutLeds: [],
+    holdAboveLeds: [],
   };
 }
 function deferred() {
@@ -119,7 +121,7 @@ describe('the phone copy of a wall\u2019s T-nut layout', () => {
     const controller = { version: 1, enabled: true, controller: { type: 'wled', url: 'http://wled.local' } };
     preferences.records.set(controllerKey, controller);
     await saveSprayWallTnutLayout('wall-one', configured());
-    expect(preferences.set).toHaveBeenCalledWith(layoutKey, configured());
+    expect(preferences.set).toHaveBeenCalledWith(layoutKey, { ...configured(), ledGroups: null, ledStripes: null });
     expect(preferences.records.get(controllerKey)).toBe(controller);
     await expect(loadSprayWallTnutLayout('wall-one')).resolves.toEqual(configured());
     await expect(loadSprayWallTnutLayout('another-wall')).resolves.toBeNull();
@@ -176,6 +178,18 @@ describe('the phone copy of a wall\u2019s T-nut layout', () => {
     await expect(saveSprayWallTnutLayout('wall-one', invalid)).rejects.toThrow('Invalid T-nut layout');
     expect(preferences.set).not.toHaveBeenCalled();
     expect(preferences.records.get(layoutKey)).toBe(stored);
+  });
+
+  it('stores every modern capability in the authored snapshot and drops legacy replay provenance', async () => {
+    const legacy = { ...configured(), _legacyLedCapabilities: ['ledGroups'] };
+    await saveSprayWallTnutLayout('wall-one', legacy);
+    expect(preferences.records.get(layoutKey)).toEqual({
+      ...configured(),
+      ledGroups: null,
+      tnutLeds: [],
+      holdAboveLeds: [],
+      ledStripes: null,
+    });
   });
 
   it('waits for a pending write before reopening the same wall', async () => {
