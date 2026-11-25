@@ -633,6 +633,35 @@ export function notificationPrivacyCondition(
   const feedbackMessage = alias(schema.appFeedbackMessages, 'privacy_notification_feedback_message');
   const deletedBoard = alias(schema.userBoards, 'privacy_notification_deleted_board');
   const deletedGym = alias(schema.gyms, 'privacy_notification_deleted_gym');
+  const accessGrant = alias(schema.resourceGrants, 'privacy_notification_access_grant');
+  const accessBoard = alias(schema.userBoards, 'privacy_notification_access_board');
+  const liveBoard = (ownerId?: string) =>
+    exists(
+      queryBuilder
+        .select({ id: accessBoard.id })
+        .from(accessBoard)
+        .where(
+          and(
+            eq(accessBoard.uuid, notification.entityId),
+            isNull(accessBoard.deletedAt),
+            ownerId === undefined ? undefined : eq(accessBoard.ownerId, ownerId),
+          ),
+        ),
+    );
+  const boardGrant = (userId: SQLWrapper, status: 'pending' | 'approved') =>
+    exists(
+      queryBuilder
+        .select({ userId: accessGrant.userId })
+        .from(accessGrant)
+        .where(
+          and(
+            eq(accessGrant.kind, 'board'),
+            eq(accessGrant.resourceId, notification.entityId),
+            eq(accessGrant.userId, userId),
+            eq(accessGrant.status, status),
+          ),
+        ),
+    );
   return or(
     eq(notification.type, 'new_follower'),
     // A directory notice (a report, a staff action on a board) about a board or
@@ -701,9 +730,27 @@ export function notificationPrivacyCondition(
           .where(and(eq(followRequest.requesterId, notification.actorId), eq(followRequest.recipientId, viewerId))),
       ),
     ),
+    // Asking to climb on a board names the climber to the board's owner,
+    // whatever the climber's activity privacy, while the request still waits.
+    and(
+      eq(notification.type, 'board_access_requested'),
+      sql`${notification.entityType}::text = 'board'`,
+      boardGrant(notification.actorId, 'pending'),
+      liveBoard(viewerId),
+    ),
+    // The owner's yes names them to the climber they let in, while that
+    // climber is still a member of the board.
+    and(
+      eq(notification.type, 'board_access_approved'),
+      sql`${notification.entityType}::text = 'board'`,
+      boardGrant(sql`${viewerId}`, 'approved'),
+      liveBoard(),
+    ),
     and(
       ne(notification.type, 'follow_request'),
       ne(notification.type, 'app_feedback_reply'),
+      ne(notification.type, 'board_access_requested'),
+      ne(notification.type, 'board_access_approved'),
       or(
         isNull(notification.actorId),
         and(

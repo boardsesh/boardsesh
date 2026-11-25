@@ -2465,6 +2465,13 @@
       "when": 1795642962189,
       "tag": "0351_resource_privacy_listed_to_followers",
       "breakpoints": true
+    },
+    {
+      "idx": 352,
+      "version": "7",
+      "when": 1795644950513,
+      "tag": "0352_board_access_notification_types",
+      "breakpoints": true
     }
   ]
 }

@@ -492,22 +492,35 @@ export async function isSessionMember(ctx: ConnectionContext, sessionId: string)
  * @param ctx - Connection context
  * @param limit - Optional custom limit (default: 60 requests per minute)
  * @param operation - Operation name for Redis key namespacing (default: 'default')
+ * @param options.windowMs - Window length (default: one minute). A longer window,
+ *   such as a daily cap, counts in its own buckets on both tiers, so it never
+ *   shares a count with a per-minute limit on the same operation name.
  */
-export async function applyRateLimit(ctx: ConnectionContext, limit?: number, operation = 'default'): Promise<void> {
+export async function applyRateLimit(
+  ctx: ConnectionContext,
+  limit?: number,
+  operation = 'default',
+  options: { windowMs?: number } = {},
+): Promise<void> {
   if (process.env.NODE_ENV === 'development') return;
 
   const maxRequests = limit ?? 60;
+  const windowMs = options.windowMs ?? RATE_LIMIT_WINDOW_MS;
+  // Only a non-default window adds anything to the bucket names, so every
+  // existing per-minute caller keeps the keys (and counts) it has today.
+  const customWindow = windowMs !== RATE_LIMIT_WINDOW_MS;
+  const bucketOperation = customWindow ? `${operation}:${windowMs}ms` : operation;
 
   // Tier 1: Synchronous in-memory rate limiting (fast path, per-instance)
   // Use userId for authenticated users, clientIp for anonymous HTTP requests,
   // or connectionId as fallback (WebSocket connections)
   let key: string;
   if (ctx.isAuthenticated && ctx.userId) {
-    key = `${ctx.userId}:${operation}`;
+    key = `${ctx.userId}:${bucketOperation}`;
   } else if (ctx.clientIp) {
-    key = `ip:${ctx.clientIp}:${operation}`;
+    key = `ip:${ctx.clientIp}:${bucketOperation}`;
   } else {
-    key = ctx.connectionId;
+    key = customWindow ? `${ctx.connectionId}:${bucketOperation}` : ctx.connectionId;
   }
 
   // Surface a structured RATE_LIMITED error (with retryAfterSeconds) so clients
@@ -517,16 +530,17 @@ export async function applyRateLimit(ctx: ConnectionContext, limit?: number, ope
   // is preserved for older clients. See #2763.
   try {
     // Tier 1: Synchronous in-memory rate limiting (fast path, per-instance)
-    checkRateLimit(key, maxRequests);
+    if (customWindow) checkRateLimit(key, maxRequests, windowMs);
+    else checkRateLimit(key, maxRequests);
 
     // Tier 2: Distributed Redis rate limiting. Tier 1 already ran, so Redis
     // failures must not increment the same in-memory bucket a second time.
     if (ctx.isAuthenticated && ctx.userId) {
-      await checkRateLimitRedis(ctx.userId, operation, maxRequests, RATE_LIMIT_WINDOW_MS, {
+      await checkRateLimitRedis(ctx.userId, bucketOperation, maxRequests, windowMs, {
         fallbackToMemory: false,
       });
     } else if (ctx.transport === 'ws' && ctx.clientIp) {
-      await checkRateLimitRedis(`ip:${ctx.clientIp}`, operation, maxRequests, RATE_LIMIT_WINDOW_MS, {
+      await checkRateLimitRedis(`ip:${ctx.clientIp}`, bucketOperation, maxRequests, windowMs, {
         fallbackToMemory: false,
       });
     }
@@ -540,7 +554,7 @@ export async function applyRateLimit(ctx: ConnectionContext, limit?: number, ope
         ANONYMOUS_SOCKET_PEER_RATE_LIMIT_FLOOR,
         maxRequests * ANONYMOUS_SOCKET_PEER_RATE_LIMIT_MULTIPLIER,
       );
-      await checkRateLimitRedis(`socket-peer:${ctx.socketPeerIp}`, operation, socketPeerLimit, RATE_LIMIT_WINDOW_MS, {
+      await checkRateLimitRedis(`socket-peer:${ctx.socketPeerIp}`, bucketOperation, socketPeerLimit, windowMs, {
         fallbackToMemory: true,
       });
     }

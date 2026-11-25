@@ -292,6 +292,66 @@ describe('applyRateLimit key selection', () => {
   });
 });
 
+describe('applyRateLimit windowMs', () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('passes a custom window to both tiers, in buckets of its own', async () => {
+    const ctx: ConnectionContext = { connectionId: 'ws-1', isAuthenticated: true, userId: 'user-42' };
+
+    await applyRateLimit(ctx, 5, 'requestResourceAccessDaily', { windowMs: DAY_MS });
+
+    expect(mockCheckRateLimit).toHaveBeenCalledWith('user-42:requestResourceAccessDaily:86400000ms', 5, DAY_MS);
+    // The Redis limiter derives its bucket and TTL from the window passed here.
+    expect(mockCheckRateLimitRedis).toHaveBeenCalledWith(
+      'user-42',
+      'requestResourceAccessDaily:86400000ms',
+      5,
+      DAY_MS,
+      { fallbackToMemory: false },
+    );
+  });
+
+  it('keeps the per-minute keys and arguments when the window is the default', async () => {
+    const ctx: ConnectionContext = { connectionId: 'ws-1', isAuthenticated: true, userId: 'user-42' };
+
+    await applyRateLimit(ctx, 5, 'createSession', { windowMs: 60_000 });
+
+    expect(mockCheckRateLimit).toHaveBeenCalledWith('user-42:createSession', 5);
+    expect(mockCheckRateLimitRedis).toHaveBeenCalledWith('user-42', 'createSession', 5, 60_000, {
+      fallbackToMemory: false,
+    });
+  });
+
+  it('keeps an anonymous connection-keyed daily bucket apart from its per-minute one', async () => {
+    const ctx: ConnectionContext = { connectionId: 'ws-anon-9', isAuthenticated: false };
+
+    await applyRateLimit(ctx, 5, 'daily', { windowMs: DAY_MS });
+
+    expect(mockCheckRateLimit).toHaveBeenCalledWith('ws-anon-9:daily:86400000ms', 5, DAY_MS);
+  });
+
+  it('reports the caller-facing operation name when the daily bucket is full', async () => {
+    mockCheckRateLimit.mockImplementationOnce(() => {
+      throw new RateLimitError(60 * 60 * 20);
+    });
+    const ctx: ConnectionContext = { connectionId: 'ws-1', isAuthenticated: true, userId: 'user-42' };
+
+    const error = await applyRateLimit(ctx, 5, 'requestResourceAccessDaily', { windowMs: DAY_MS }).catch(
+      (caught: unknown) => caught,
+    );
+
+    expect((error as GraphQLError).extensions).toMatchObject({
+      code: 'RATE_LIMITED',
+      operation: 'requestResourceAccessDaily',
+      retryAfterSeconds: 72_000,
+    });
+  });
+});
+
 describe('applyRateLimit structured RATE_LIMITED error (#2763)', () => {
   beforeEach(() => {
     vi.clearAllMocks();

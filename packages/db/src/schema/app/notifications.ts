@@ -42,6 +42,10 @@ export const notificationTypeEnum = pgEnum('notification_type', [
   // A climber's suggested setup changed a board at an unclaimed gym; sent to
   // the board's creator, who can undo it (docs/product/directory-reports.md).
   'board_setup_changed_by_climber',
+  // Asking to climb on an Invite-only board (docs/product/privacy.md): the
+  // request, to the board's owner, and the yes, to the climber who asked.
+  'board_access_requested',
+  'board_access_approved',
 ]);
 
 export const notifications = pgTable(

@@ -25,6 +25,8 @@
     "commentOnPlaylist": "{{actor}} comentó en tu playlist",
     "commentOnBoardWithBody": "{{actor}} comentó en tu plafón: \"{{body}}\"",
     "commentOnBoard": "{{actor}} comentó en tu plafón",
+    "boardAccessRequested": "{{actor}} quiere escalar en tu plafón",
+    "boardAccessApproved": "{{actor}} dijo que sí: ya puedes escalar en su plafón",
     "commentOnSprayWallWithBody": "{{actor}} comentó en tu Spraywall: \"{{body}}\"",
     "commentOnSprayWall": "{{actor}} comentó en tu Spraywall",
     "commentOnGymWithBody": "{{actor}} comentó en tu rocódromo: \"{{body}}\"",

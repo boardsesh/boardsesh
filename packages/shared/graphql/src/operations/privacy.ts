@@ -187,6 +187,16 @@ export const REQUEST_RESOURCE_ACCESS = gql`
     requestResourceAccess(kind: $kind, resourceId: $resourceId)
   }
 `;
+export const DECLINE_RESOURCE_ACCESS = gql`
+  mutation DeclineResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {
+    declineResourceAccess(kind: $kind, resourceId: $resourceId, userId: $userId)
+  }
+`;
+export const CANCEL_RESOURCE_ACCESS_REQUEST = gql`
+  mutation CancelResourceAccessRequest($kind: PrivacyResourceKind!, $resourceId: ID!) {
+    cancelResourceAccessRequest(kind: $kind, resourceId: $resourceId)
+  }
+`;
 export const INVITE_RESOURCE_MEMBER = gql`
   mutation InviteResourceMember($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {
     inviteResourceMember(kind: $kind, resourceId: $resourceId, userId: $userId)
