@@ -1,4 +1,4 @@
-import { boardOriginFor, type BoardName, type UserBoard } from '@boardsesh/shared-schema';
+import { boardOriginFor, type BoardName, type FriendBoard, type UserBoard } from '@boardsesh/shared-schema';
 import { toBoardName } from '@boardsesh/board-config';
 import { useIsFocused, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -68,7 +68,10 @@ import {
   type BoardPickerAddSurface,
 } from '../../src/lib/boards/board-picker-add-analytics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
-import { wizardBoardHref } from '../../src/lib/boards/add-board-wizard';
+import { wizardBoardHref, wizardFriendHref } from '../../src/lib/boards/add-board-wizard';
+import { friendBoardToItem, friendsShelfBoards } from '../../src/lib/boards/friend-boards';
+import { useFriendBoardAction } from '../../src/lib/boards/use-friend-board-action';
+import { useFriendsBoardsShelf } from '../../src/lib/graphql/hooks/use-friends-boards';
 import { boardUuidOrNull } from '../../src/lib/boards/board-identity';
 import { orderBoardsForPartnerWorkout } from '../../src/lib/partner-workout-board-order';
 import { usePendingWorkout } from '../../src/lib/pending-workout-store';
@@ -128,6 +131,7 @@ import { openSignIn } from '../../src/lib/routing/open-sign-in';
 // `boardConnection` is always undefined, and a fresh `[]` per render would
 // recompute the offline rows on every commit.
 const EMPTY_BOARDS: UserBoard[] = [];
+const EMPTY_FRIEND_BOARDS: FriendBoard[] = [];
 
 // Near you boards belong to other people: their cards offer Climb here,
 // Details and, with the `directory-reports` flag, Report a problem; nothing that
@@ -396,7 +400,7 @@ export default function BoardSelection() {
   // Keep the offline snapshots in step with the live list: renames, a backfill for
   // boards downloaded before this existed, and a prune of boards the server no longer
   // lists. No-ops while offline.
-  useRememberDownloadedBoards(boardConnection);
+  useRememberDownloadedBoards(boardConnection, undefined, isError);
 
   // Offline (or a connection that reports online while every request fails), the
   // network board list is unavailable: `myBoards` is a plain `getHttpClient` query,
@@ -1277,6 +1281,76 @@ export default function BoardSelection() {
     </ShelfSection>
   ) : null;
 
+  // Friends' boards: home boards owned by people the climber follows, right
+  // under Your boards. One small page and never more (a shelf, not a list);
+  // "See all" opens Whose board?. Not on the offline or error layouts, never
+  // persisted (docs/data/offline-reads.md, Bucket 3), and hidden when empty.
+  const { data: friendsShelf } = useFriendsBoardsShelf({
+    viewerId: currentUserId,
+    enabled: isAuthenticated && !isLocalOnly && !showFirstBoardChoice,
+  });
+  const friendShelfBoards = useMemo(
+    () => friendsShelfBoards(friendsShelf?.items ?? EMPTY_FRIEND_BOARDS, myBoardKeys),
+    [friendsShelf?.items, myBoardKeys],
+  );
+  const friendRowCopy = useMemo(
+    () => ({ ownerFallback: t('mobile.friendBoards.ownerFallback'), requested: t('mobile.friendBoards.requested') }),
+    [t],
+  );
+  const friendShelfItems = useMemo(
+    () =>
+      friendShelfBoards.flatMap((friendBoard) => {
+        const item = friendBoardToItem(friendBoard, {
+          includeOwner: true,
+          copy: friendRowCopy,
+          activeUuid: activeBoard?.uuid,
+        });
+        return item ? [item] : [];
+      }),
+    [friendShelfBoards, friendRowCopy, activeBoard?.uuid],
+  );
+  const friendShelfByUuid = useMemo(
+    () => new Map(friendShelfBoards.map((friendBoard) => [friendBoard.preview.uuid, friendBoard])),
+    [friendShelfBoards],
+  );
+  // A pick here stops the scan and drops a held box, as every pick does.
+  const beforeFriendClimb = useCallback(() => {
+    dropHeldBox();
+    stopScan();
+  }, [dropHeldBox, stopScan]);
+  const friendBoardAction = useFriendBoardAction({
+    returnTo: boardReturnTo,
+    section: 'friends_boards',
+    onBound: trackBoardSelection,
+    beforeClimb: beforeFriendClimb,
+  });
+  const onFriendBoardPress = friendBoardAction.onPress;
+  const onSelectFriendBoard = useCallback(
+    (item: DiscoveryBoardItem, position: number) => {
+      const friendBoard = friendShelfByUuid.get(item.key);
+      if (friendBoard) onFriendBoardPress(friendBoard, position);
+    },
+    [friendShelfByUuid, onFriendBoardPress],
+  );
+  const onSeeAllFriendBoards = useCallback(() => {
+    router.push(wizardFriendHref({ entry: 'picker', returnTo, source, trail: [] }, { fromShelf: true }));
+  }, [router, returnTo, source]);
+  const friendsBoardsSection =
+    isAuthenticated && friendShelfItems.length > 0 ? (
+      <ShelfSection
+        title={t('mobile.friendBoards.shelfTitle')}
+        action={{ label: t('mobile.friendBoards.seeAll'), onPress: onSeeAllFriendBoards }}
+        testID="picker-friends-boards-shelf"
+      >
+        <BoardRowList
+          items={friendShelfItems}
+          onSelect={onSelectFriendBoard}
+          BoardArt={DiscoveryBoardArt}
+          testID="picker-friends-boards"
+        />
+      </ShelfSection>
+    ) : null;
+
   const requestLocation = location.request;
   const requestLocationIfAllowed = location.requestIfAllowed;
   const refreshLocation = location.refresh;
@@ -1632,6 +1706,7 @@ export default function BoardSelection() {
       fromOnboarding={fromOnboarding}
       inRangeSection={inRangeSection}
       myBoardsSection={myBoardsSection}
+      friendsBoardsSection={friendsBoardsSection}
       nearbySection={nearbyPanel}
       locationBanner={locationBanner}
       hasBoards={hasBoards}
@@ -1664,6 +1739,7 @@ export default function BoardSelection() {
             returnTo={boardReturnTo}
           />
           {reportHost.sheet}
+          {friendBoardAction.sheet}
           {shownReviewBoard ? (
             <ReportReviewSheet
               key={shownReviewBoard.uuid}

@@ -59,6 +59,8 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetDeleteAccountInfo',
   'GetFollowers',
   'GetFollowing',
+  // Friends' boards and Whose board?: only the board picker and the add-a-board wizard ask.
+  'GetFriendsBoards',
   'GetGroupedNotifications',
   'GetGym',
   // The gym page: only a pasted gym link asks by slug, and no capture flow opens the page.

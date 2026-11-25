@@ -140,9 +140,13 @@ export const BoardRow = memo(function BoardRow({ item, onPress, menu, BoardArt }
   const actionsLabel = t('mobile.discovery.cardActionsAria', { name: item.title });
   // VoiceOver reads the row as one element, so the badge and the detail lines
   // a wall list draws go into its label too.
+  const lockedLabel = item.accessLocked ? t('mobile.friendBoards.lockedAria') : null;
   const rowAccessibilityLabel = useMemo(
-    () => [boardItemAccessibilityLabel(item, copy), item.badge, ...(item.detailLines ?? [])].filter(Boolean).join(', '),
-    [item, copy],
+    () =>
+      [boardItemAccessibilityLabel(item, copy), item.badge, lockedLabel, ...(item.detailLines ?? [])]
+        .filter(Boolean)
+        .join(', '),
+    [item, copy, lockedLabel],
   );
   const wrapTarget = useCallback(
     (target: ReactElement) => (
@@ -198,6 +202,10 @@ export const BoardRow = memo(function BoardRow({ item, onPress, menu, BoardArt }
           <StatusPill label={t('reportReview.statusPill')} tone="warning" testID="board-row-reported" />
         ) : item.badge ? (
           <StatusPill label={item.badge} testID="board-row-badge" />
+        ) : item.accessLocked ? (
+          <View testID="board-row-locked">
+            <Icon name="lock" size={BOARD_SUBTITLE_GLYPH_SIZE} color={systemColors.secondaryLabel} />
+          </View>
         ) : undefined
       }
       accessory={accessory}

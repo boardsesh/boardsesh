@@ -1224,9 +1224,11 @@ export const SHARED_EVENTS = {
   // carries gym_finder. pickSource: your_boards | nearby | offline | bluetooth
   // (a board the picker's scan put at the top; the Bluetooth sheet before
   // 2026-11) | gym_walls (a wall At {gym} because of the board you're on; the
-  // "Also at {gym}" rows before that) | gym_finder | null (the list the board
+  // "Also at {gym}" rows before that) | gym_finder | friends (a board someone
+  // the viewer follows owns, from 2026-11) | null (the list the board
   // was tapped in). section (from 2026-11): at_gym | hero | your_boards |
-  // near_you | offline | map | null (where it was drawn), with position, its
+  // near_you | offline | map | friends_boards (the picker's Friends' boards) |
+  // friend_step (the add-a-board wizard's Whose board?) | null (where it was drawn), with position, its
   // 0-based place there (null when it has none). nearbyResultCount (from
   // 2026-11): boards the Near you search had returned by the pick, 0 for
   // nothing within 20 km, null when it did not search, was still searching or
@@ -1290,7 +1292,8 @@ export const SHARED_EVENTS = {
   // range's It's my own board, a gym page) }.
   // From the add-board-wizard flag (which replaced create-board-gym-first) the
   // wizard's step 1 sends it with surface where, and kind can also be spray (A
-  // spray wall, handed off to the add-a-wall wizard). First run's inline At
+  // spray wall, handed off to the add-a-wall wizard) or friend (A friend's
+  // board, from 2026-11: Whose board?, a board someone they follow owns). First run's inline At
   // home, In range's It's my own board and a gym page still send it with
   // preAnswered true.
   BoardKindChosen: 'Board Kind Chosen',
@@ -1299,7 +1302,8 @@ export const SHARED_EVENTS = {
   // map) | gym_boards (Boards at {gym}) | new_gym (Add your gym, from 2026-11:
   // the gym isn't listed) | board (Which board?, the type tiles)
   // | setup (the builder) | spray (handed off to the add-a-wall wizard, whose
-  // own Spray Wall events take over), path: gym | home | spray (null on step
+  // own Spray Wall events take over) | friend (Whose board?, from 2026-11: a
+  // friend's board, step 2 of 2), path: gym | home | spray | friend (null on step
   // 1, before it is answered), entry: picker | manage (the + on either) |
   // empty_state | first_run | gym_page | in_range | link (an old
   // /boards/where, /boards/find-wall or bare /boards/create link redirected

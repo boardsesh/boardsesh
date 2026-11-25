@@ -268,6 +268,10 @@ vi.mock('../../components/board-presence/BoardSheet', async () => {
     }),
   };
 });
+// Saved to Your boards · Undo, after a friend's board: its own suite covers it.
+vi.mock('../../components/board-discovery/SavedFriendBoardUndoSnackbar', () => ({
+  SavedFriendBoardUndoSnackbar: () => null,
+}));
 vi.mock('../../components/board-presence/UndoWallChangeSnackbar', () => ({
   UndoWallChangeSnackbar: () => createElement('div', { 'data-undo-snackbar': 'true' }),
 }));

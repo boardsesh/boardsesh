@@ -4,6 +4,8 @@ import {
   APPROVE_RESOURCE_ACCESS,
   REVOKE_RESOURCE_ACCESS,
   REQUEST_RESOURCE_ACCESS,
+  DECLINE_RESOURCE_ACCESS,
+  CANCEL_RESOURCE_ACCESS_REQUEST,
   INVITE_RESOURCE_MEMBER,
   GET_CONTENT_AUDIENCE,
   GET_RESOURCE_PRIVACY,
@@ -147,9 +149,14 @@ export function useResourceGrantStatuses(
     combine: combineGrantStatuses,
   });
 }
+export type ResourceAccessActionName = keyof typeof RESOURCE_ACTIONS;
 const RESOURCE_ACTIONS = {
   request: REQUEST_RESOURCE_ACCESS,
+  // The asker takes their own waiting request back (no userId).
+  cancel: CANCEL_RESOURCE_ACCESS_REQUEST,
   approve: APPROVE_RESOURCE_ACCESS,
+  // The owner says no to a waiting request: not a ban, they can ask again.
+  decline: DECLINE_RESOURCE_ACCESS,
   revoke: REVOKE_RESOURCE_ACCESS,
   invite: INVITE_RESOURCE_MEMBER,
 };

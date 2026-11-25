@@ -15,6 +15,7 @@ import type {
   BoardDiscoveryInput,
   ExistingWallCandidates,
   ExistingWallCandidatesInput,
+  FriendBoardConnection,
 } from '@boardsesh/shared-schema';
 
 // ============================================
@@ -164,6 +165,37 @@ export const GET_MY_BOARDS = gql`
     myBoards(input: $input) {
       boards {
         ${BOARD_FIELDS_WITH_BOARD_ID}
+      }
+      totalCount
+      hasMore
+    }
+  }
+`;
+
+// Home boards owned by people the viewer follows ("A friend's board"). `board`
+// is only set for CAN_CLIMB; the preview is all a request row may show.
+export const GET_FRIENDS_BOARDS = gql`
+  query GetFriendsBoards($input: FriendsBoardsInput) {
+    friendsBoards(input: $input) {
+      items {
+        viewerAccess
+        owner {
+          userId
+          displayName
+          avatarUrl
+        }
+        preview {
+          uuid
+          name
+          boardType
+          layoutId
+          sizeId
+          setIds
+          angle
+        }
+        board {
+          ${BOARD_FIELDS_WITH_BOARD_ID}
+        }
       }
       totalCount
       hasMore
@@ -417,6 +449,14 @@ export type GetMyBoardsQueryVariables = {
 
 export type GetMyBoardsQueryResponse = {
   myBoards: UserBoardConnection;
+};
+
+export type GetFriendsBoardsQueryVariables = {
+  input?: { query?: string | null; limit?: number | null; offset?: number | null };
+};
+
+export type GetFriendsBoardsQueryResponse = {
+  friendsBoards: FriendBoardConnection;
 };
 
 export type GetDefaultBoardQueryResponse = {

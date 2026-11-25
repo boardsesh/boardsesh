@@ -33,11 +33,12 @@ export function trackBoardPickerAddSelected({ kind, surface, boardKind }: BoardP
 export type BoardKindSurface = 'picker' | 'manage' | 'where' | 'first_run' | 'in_range' | 'gym_page';
 
 /**
- * `Board Kind Chosen` (#8151). See SHARED_EVENTS. `spray` only from the add-a-board
- * wizard's step 1, whose third answer is a spray wall.
+ * `Board Kind Chosen` (#8151). See SHARED_EVENTS. `spray` and `friend` only from
+ * the add-a-board wizard's step 1: a spray wall, or a board someone the climber
+ * follows owns.
  */
 export function trackBoardKindChosen(event: {
-  kind: BoardKind | 'spray';
+  kind: BoardKind | 'spray' | 'friend';
   surface: BoardKindSurface;
   preAnswered: boolean;
 }) {

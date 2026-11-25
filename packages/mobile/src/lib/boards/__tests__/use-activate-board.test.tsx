@@ -91,6 +91,24 @@ describe('useActivateBoard', () => {
     expect(adoptFoundBoardMock).toHaveBeenCalledWith(BOARD);
   });
 
+  // A friend's board: the caller follows it itself (adoption never follows a
+  // private board), so the bind neither adopts it nor says it was followed.
+  it('skips adoption for a caller that follows the board itself', async () => {
+    const onBound = vi.fn(async () => {});
+    const result = activate({ adopt: false, onBound });
+    await result.current(BOARD, { pickSource: 'friends', section: 'friends_boards', position: 2 });
+
+    expect(setActiveBoardMock).toHaveBeenCalledWith(BOARD);
+    expect(dismissToMock).toHaveBeenCalledWith('/(tabs)/climbs');
+    expect(adoptFoundBoardMock).not.toHaveBeenCalled();
+    expect(onBound).toHaveBeenCalledWith(BOARD, {
+      pickSource: 'friends',
+      section: 'friends_boards',
+      position: 2,
+      followed: false,
+    });
+  });
+
   // A board that won't survive the next cold start is worse than no board, so a
   // failed write must not be followed by a navigation that implies success.
   it('does not navigate when the write fails', async () => {

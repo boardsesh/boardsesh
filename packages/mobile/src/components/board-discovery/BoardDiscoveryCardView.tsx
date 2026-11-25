@@ -94,6 +94,11 @@ export type DiscoveryBoardItem = {
   detailLines?: readonly string[];
   /** A short neutral pill beside the title ("Your board", "Following"). Rows only. */
   badge?: string | null;
+  /**
+   * A friend's board the viewer has to ask to climb on: a small lock beside
+   * the title, never on the art. Rows only.
+   */
+  accessLocked?: boolean;
 };
 
 /**

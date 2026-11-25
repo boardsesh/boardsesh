@@ -197,6 +197,16 @@ function nearbyBoardsResult() {
   };
 }
 
+// Friends' boards: its sheet's graph is native, and its query is its own module.
+const friendsShelfState = vi.hoisted(() => ({ data: undefined as unknown }));
+const friendBoardPressMock = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/lib/boards/use-friend-board-action', () => ({
+  useFriendBoardAction: () => ({ onPress: friendBoardPressMock, sheet: null }),
+}));
+vi.mock('../../../src/lib/graphql/hooks/use-friends-boards', () => ({
+  useFriendsBoardsShelf: () => ({ data: friendsShelfState.data }),
+}));
+
 vi.mock('../../../src/lib/graphql/hooks', () => ({
   useBoard: () => ({ data: undefined }),
   useGymBoards: () => ({ data: undefined }),
