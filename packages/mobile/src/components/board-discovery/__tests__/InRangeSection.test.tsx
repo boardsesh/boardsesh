@@ -12,6 +12,7 @@ import settingsCatalog from '@boardsesh/i18n/locales/en-US/settings.json';
 import type { DiscoveryBoardItem } from '../BoardDiscoveryCardView';
 import type { PickerScanNotice, PickerTopContent, UnnamedInRangeRow } from '../picker-top-view';
 import type { InRangeLocationHint } from '../InRangeSection';
+import type { BluetoothOffFix } from '../bluetooth-radio';
 
 type Children = { children?: ReactNode };
 const settingsCtrl = vi.hoisted(() => ({ canOpen: true }));
@@ -214,6 +215,8 @@ const UNKNOWN_SETUP: UnnamedInRangeRow = {
   key: 'unknown_setup:kilter',
   boardType: 'kilter',
   rssi: -60,
+  serials: ['751737'],
+  serialLessBoxCount: 0,
 };
 type AtGym = Extract<PickerTopContent<DiscoveryBoardItem>, { kind: 'at_gym' }>;
 const AT_CRUX: AtGym = {
@@ -232,6 +235,8 @@ const HERO: PickerTopContent<DiscoveryBoardItem> = { kind: 'hero', board: KILTER
 const handlers = {
   onStart: vi.fn(),
   onOpenSettings: vi.fn(),
+  onTurnOnBluetooth: vi.fn(),
+  onBluetoothNotNow: vi.fn(),
   onRetryLookup: vi.fn(),
   onPickBoard: vi.fn(),
   onUseMyLocation: vi.fn(),
@@ -251,12 +256,16 @@ function renderSlot(
     scanning = false,
     heardNothing = false,
     locationHint = null,
+    bluetoothOffFix = 'control_center',
+    withNotNow = true,
   }: {
     notice?: PickerScanNotice | null;
     unnamed?: UnnamedInRangeRow | null;
     scanning?: boolean;
     heardNothing?: boolean;
     locationHint?: InRangeLocationHint | null;
+    bluetoothOffFix?: BluetoothOffFix;
+    withNotNow?: boolean;
   } = {},
 ) {
   return render(
@@ -264,7 +273,9 @@ function renderSlot(
       view={{ notice, content, unnamed, scanning, heardNothing, loudestBoardKey: null }}
       BoardArt={BoardArt}
       locationHint={locationHint}
+      bluetoothOffFix={bluetoothOffFix}
       {...handlers}
+      onBluetoothNotNow={withNotNow ? handlers.onBluetoothNotNow : undefined}
     />,
   );
 }
@@ -317,10 +328,17 @@ describe('InRangeSection', () => {
       calls: 'onOpenSettings',
     },
     {
-      name: 'Bluetooth off',
+      name: 'Bluetooth off on iOS',
       notice: { kind: 'blocked_off' },
-      line: 'Turn on Bluetooth to spot the board in front of you.',
+      line: "Turn on Bluetooth in Control Center. We'll look for the board in front of you once it's on.",
       button: 'Scan again',
+      calls: 'onStart',
+    },
+    {
+      name: 'Bluetooth not allowed, after Not now',
+      notice: { kind: 'permission_line' },
+      line: 'Boardsesh needs Bluetooth to light climbs on the wall.',
+      button: 'Allow Bluetooth',
       calls: 'onStart',
     },
     {
@@ -383,8 +401,40 @@ describe('InRangeSection', () => {
     renderSlot({ kind: 'none' }, { notice: { kind: 'permission_card' } });
     expect(headings()).toEqual(['In range']);
     expect(screen.getByText("Spot the board you're at")).toBeTruthy();
+    expect(buttons()).toEqual(['Continue', 'Not now']);
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(handlers.onStart).toHaveBeenCalledOnce();
+    expect(handlers.onBluetoothNotNow).not.toHaveBeenCalled();
+  });
+
+  it('turns the card into a line from then on with Not now, without asking', () => {
+    renderSlot({ kind: 'none' }, { notice: { kind: 'permission_card' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+    expect(handlers.onBluetoothNotNow).toHaveBeenCalledOnce();
+    expect(handlers.onStart).not.toHaveBeenCalled();
+  });
+
+  it('offers no Not now where the screen has nowhere to keep it', () => {
+    renderSlot({ kind: 'none' }, { notice: { kind: 'permission_card' }, withNotNow: false });
+    expect(buttons()).toEqual(['Continue']);
+  });
+
+  // The radio is off five times as often as the permission is blocked: the
+  // line leads with the fix. Android can ask; iOS can only say where.
+  it.each<{ fix: BluetoothOffFix; line: string; button: string; calls: keyof typeof handlers }>([
+    { fix: 'turn_on', line: 'Bluetooth is off.', button: 'Turn on Bluetooth', calls: 'onTurnOnBluetooth' },
+    {
+      fix: 'control_center',
+      line: "Turn on Bluetooth in Control Center. We'll look for the board in front of you once it's on.",
+      button: 'Scan again',
+      calls: 'onStart',
+    },
+  ])('Bluetooth off with $fix leads with "$line"', ({ fix, line, button, calls }) => {
+    renderSlot({ kind: 'none' }, { notice: { kind: 'blocked_off' }, bluetoothOffFix: fix });
+    expect(screen.getByText(line)).toBeTruthy();
+    expect(buttons()).toEqual([button]);
+    fireEvent.click(screen.getByRole('button', { name: button }));
+    expect(handlers[calls]).toHaveBeenCalledOnce();
   });
 
   it('waits for a tap with the Scan card', () => {
@@ -433,6 +483,7 @@ describe('InRangeSection', () => {
     expect(screen.queryByRole('button', { name: 'See Crux' })).toBeNull();
     rerender(
       <InRangeSection
+        bluetoothOffFix="control_center"
         view={{
           notice: null,
           content: AT_CRUX,
@@ -485,6 +536,7 @@ describe('InRangeSection', () => {
   it("offers the card menu only on the climber's own walls", () => {
     render(
       <InRangeSection
+        bluetoothOffFix="control_center"
         view={{
           notice: null,
           content: AT_CRUX,

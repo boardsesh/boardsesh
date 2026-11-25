@@ -4,6 +4,7 @@ import type { QuickstartScanDevice } from '../../../lib/ble/quickstart-scan-devi
 import type { RecognizedBoardDevice } from '../../../lib/ble/recognized-board-devices-store';
 import {
   buildQuickstartRows,
+  builderSerialForRow,
   carryDrawnAnswer,
   quickstartLookupState,
   type QuickstartLookupState,
@@ -205,6 +206,122 @@ describe('buildQuickstartRows', () => {
 
 // A serial-less box this phone has bound to one of the climber's boards is
 // named by its Bluetooth id (recognized-board-devices-store.ts).
+// The builder opens with the serial of a box nobody has saved only when that
+// box is the one box of its type heard: with two, the signal can't say which
+// one the climber stands at.
+describe('the serial an unknown box hands the builder', () => {
+  type UnknownSetupRow = Extract<ReturnType<typeof buildQuickstartRows>[number], { kind: 'unknown_setup' }>;
+  function unknownRow(devices: QuickstartScanDevice[], boardType: 'kilter' | 'tension' = 'kilter'): UnknownSetupRow {
+    const rows = buildQuickstartRows({ devices, boards: [], lookup: 'resolved' });
+    const row = rows.find((candidate) => candidate.kind === 'unknown_setup' && candidate.boardType === boardType);
+    if (!row || row.kind !== 'unknown_setup') throw new Error(`no unknown_setup row for ${boardType}`);
+    return row;
+  }
+
+  it('carries every unsaved serial of its type, once each, in the order heard', () => {
+    const row = unknownRow([
+      serialDevice('751737', 'kilter', -50),
+      serialDevice('T-9', 'tension', -40),
+      serialDevice('800001', 'kilter', -70),
+      serialDevice('751737', 'kilter', -45),
+    ]);
+    expect(row.serials).toEqual(['751737', '800001']);
+  });
+
+  it('never carries a serial that named a saved board', () => {
+    const rows = buildQuickstartRows({
+      devices: [serialDevice('1', 'kilter', -50), serialDevice('2', 'kilter', -60)],
+      boards: [savedBoard('crux', '1')],
+      lookup: 'resolved',
+    });
+    const unknown = rows.find((row) => row.kind === 'unknown_setup');
+    expect(unknown?.kind === 'unknown_setup' ? unknown.serials : null).toEqual(['2']);
+  });
+
+  it.each<{ name: string; devices: QuickstartScanDevice[]; listenedLongEnough: boolean; expected: string | null }>([
+    {
+      name: 'one box heard long enough: its serial',
+      devices: [serialDevice('751737', 'kilter', -50)],
+      listenedLongEnough: true,
+      expected: '751737',
+    },
+    {
+      name: 'one box, but a scan cut short: nothing, a second may not have been heard yet',
+      devices: [serialDevice('751737', 'kilter', -50)],
+      listenedLongEnough: false,
+      expected: null,
+    },
+    {
+      name: 'two boxes of the type: nothing',
+      devices: [serialDevice('751737', 'kilter', -50), serialDevice('800001', 'kilter', -60)],
+      listenedLongEnough: true,
+      expected: null,
+    },
+    {
+      name: 'one box of the type beside one of another type: its serial',
+      devices: [serialDevice('751737', 'kilter', -50), serialDevice('T-9', 'tension', -40)],
+      listenedLongEnough: true,
+      expected: '751737',
+    },
+  ])('$name', ({ devices, listenedLongEnough, expected }) => {
+    expect(builderSerialForRow(unknownRow(devices), listenedLongEnough, 'resolved')).toBe(expected);
+  });
+
+  it('counts a box the lookup has not answered: two unsaved boxes, one lookup failed, give nothing', () => {
+    const rows = buildQuickstartRows({
+      devices: [serialDevice('751737', 'kilter', -50), serialDevice('800001', 'kilter', -60)],
+      boards: [],
+      answeredSerials: ['751737'],
+      lookup: 'failed',
+    });
+    const row = rows.find((candidate) => candidate.kind === 'unknown_setup');
+    if (!row || row.kind !== 'unknown_setup') throw new Error('no unknown_setup row');
+    expect(row.serials).toEqual(['751737', '800001']);
+    expect(builderSerialForRow(row, true, 'failed')).toBeNull();
+    // Even read as answered, two boxes are two boxes.
+    expect(builderSerialForRow(row, true, 'resolved')).toBeNull();
+  });
+
+  it.each<QuickstartLookupState>(['none', 'pending', 'updating', 'failed'])(
+    'gives nothing until the lookup has answered every serial (%s)',
+    (lookup) => {
+      expect(builderSerialForRow(unknownRow([serialDevice('751737', 'kilter', -50)]), true, lookup)).toBeNull();
+    },
+  );
+
+  it('counts a bare-name box of the same type: a serial box beside one gives nothing', () => {
+    const row = unknownRow([serialDevice('751737', 'kilter', -50), bareBox('BARE-1', 'kilter', -60)]);
+    expect(row.serialLessBoxCount).toBe(1);
+    expect(builderSerialForRow(row, true, 'resolved')).toBeNull();
+  });
+
+  it('does not count a bare-name box of another type', () => {
+    const row = unknownRow([serialDevice('751737', 'kilter', -50), bareBox('BARE-1', 'tension', -60)]);
+    expect(row.serialLessBoxCount).toBe(0);
+    expect(builderSerialForRow(row, true, 'resolved')).toBe('751737');
+  });
+
+  it('gives nothing for a row with no serial behind it', () => {
+    expect(
+      builderSerialForRow({ ...unknownRow([serialDevice('1', 'kilter', -50)]), serials: [] }, true, 'resolved'),
+    ).toBeNull();
+    expect(
+      builderSerialForRow(
+        { kind: 'moonboard', key: 'moonboard:moonboard', boardType: 'moonboard', rssi: -50, deviceId: 'MOON' },
+        true,
+        'resolved',
+      ),
+    ).toBeNull();
+    expect(
+      builderSerialForRow(
+        { kind: 'bare_name', key: 'bare_name:kilter', boardType: 'kilter', rssi: -50, deviceId: 'BOX' },
+        true,
+        'resolved',
+      ),
+    ).toBeNull();
+  });
+});
+
 describe('buildQuickstartRows with recognised Bluetooth ids', () => {
   function ownBoard(uuid: string, boardType: string): UserBoard {
     return { uuid, name: uuid, boardType, serialNumber: null } as unknown as UserBoard;

@@ -524,3 +524,54 @@ describe('useBoardBuilder', () => {
     expect(input?.setIds).toBe('1,20');
   });
 });
+
+// The one unsaved box the In range slot heard: its serial fills the field, is
+// said out loud while it stands, and belongs to its own board type.
+describe('useBoardBuilder with a heard serial', () => {
+  function renderHeard() {
+    return renderHook(() => useBoardBuilder(null, { initialBoardName: 'kilter', initialSerialNumber: '751737' }));
+  }
+
+  it('opens with the serial filled in and said out loud', () => {
+    const { result } = renderHeard();
+    expect(result.current.serialNumber).toBe('751737');
+    expect(result.current.heardSerial).toBe('751737');
+  });
+
+  it('clears it when the board type moves off the one it was heard as', () => {
+    const { result } = renderHeard();
+    act(() => result.current.selectBoard('tension'));
+    expect(result.current.serialNumber).toBe('');
+    expect(result.current.heardSerial).toBeNull();
+    // Coming back does not bring it back: the climber moved off that box.
+    act(() => result.current.selectBoard('kilter'));
+    expect(result.current.serialNumber).toBe('');
+  });
+
+  it('keeps it on a tap of the same board type', () => {
+    const { result } = renderHeard();
+    act(() => result.current.selectBoard('kilter'));
+    expect(result.current.serialNumber).toBe('751737');
+  });
+
+  it('keeps a serial the climber typed over it, on any board type', () => {
+    const { result } = renderHeard();
+    act(() => result.current.setSerialNumber('999999'));
+    expect(result.current.heardSerial).toBeNull();
+    act(() => result.current.selectBoard('tension'));
+    expect(result.current.serialNumber).toBe('999999');
+  });
+
+  it('says nothing without one, and a seed (an edit) never takes it', () => {
+    const { result: plain } = renderHook(() => useBoardBuilder(null, { initialBoardName: 'kilter' }));
+    expect(plain.current.heardSerial).toBeNull();
+    const { result: edit } = renderHook(() =>
+      useBoardBuilder(
+        { boardName: 'kilter', layoutId: 1, sizeId: 7, setIds: '1', serialNumber: 'OWN' },
+        { initialSerialNumber: '751737' },
+      ),
+    );
+    expect(edit.current.serialNumber).toBe('OWN');
+    expect(edit.current.heardSerial).toBeNull();
+  });
+});

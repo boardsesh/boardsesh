@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addBoardRoute } from '../add-board-route';
+import { addBoardRoute, builderSerialParam } from '../add-board-route';
 
 describe('addBoardRoute', () => {
   it.each([
@@ -92,5 +92,19 @@ describe('addBoardRoute', () => {
     },
   ] as const)('$name', ({ kind, context, expected }) => {
     expect(addBoardRoute(kind, context)).toEqual(expected);
+  });
+});
+
+describe('builderSerialParam', () => {
+  it.each<{ value: string | string[] | undefined; expected: string | undefined }>([
+    { value: '751737', expected: '751737' },
+    { value: '  751737 ', expected: '751737' },
+    { value: '', expected: undefined },
+    { value: '   ', expected: undefined },
+    { value: undefined, expected: undefined },
+    { value: ['751737', '800001'], expected: undefined },
+    { value: 'x'.repeat(101), expected: undefined },
+  ])('reads $value as $expected', ({ value, expected }) => {
+    expect(builderSerialParam(value)).toBe(expected);
   });
 });

@@ -40,6 +40,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notifyClimbComments: true,
   kioskHintSeen: false,
   browseNoticeSeen: false,
+  pickerBluetoothNotNow: false,
   bottomChromeDiagnostics: false,
   qaPromptOnLaunch: false,
   qaBriefSeenKey: null,

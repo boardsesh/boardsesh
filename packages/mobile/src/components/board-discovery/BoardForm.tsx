@@ -177,6 +177,7 @@ export function BoardForm({
   const keyboardHeight = useKeyboardHeight(Platform.OS === 'android');
   const { width: windowWidth } = useWindowDimensions();
   const [advancedOpen, setAdvancedOpen] = useState(focusLocationOnOpen);
+  const openAdvanced = useCallback(() => setAdvancedOpen(true), []);
   // The set chips, under "Holds: 3 of 4 sets" in the main form. Closed by
   // default: nearly every wall has every set, which the size picks for it.
   const [setsOpen, setSetsOpen] = useState(false);
@@ -373,6 +374,21 @@ export function BoardForm({
                 ? t('mobile.edit.configLockedHintSpray')
                 : t('mobile.edit.configLockedHint')}
             </Text>
+          </View>
+        ) : null}
+
+        {/* The serial the In range slot heard, said where it can be seen: the
+            field itself is under More options. Change opens it. */}
+        {builder.heardSerial ? (
+          <View
+            style={[styles.lockedHint, { backgroundColor: systemColors.secondaryBackground }]}
+            testID="heard-serial"
+          >
+            <Icon name="bluetooth" size={16} color={systemColors.secondaryLabel} />
+            <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.lockedHintText}>
+              {t('mobile.create.heardSerial', { serial: builder.heardSerial })}
+            </Text>
+            <Button title={t('mobile.create.heardSerialChange')} variant="text" onPress={openAdvanced} />
           </View>
         ) : null}
 

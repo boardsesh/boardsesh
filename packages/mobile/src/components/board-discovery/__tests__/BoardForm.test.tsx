@@ -85,6 +85,9 @@ vi.mock('../../PressableSurface', () => ({
 }));
 vi.mock('../../Text', () => ({ Text: ({ children }: Children) => createElement('span', null, children) }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
+vi.mock('../../SwitchRow', () => ({
+  SwitchRow: ({ label }: { label: string }) => createElement('span', null, label),
+}));
 vi.mock('../../BoardImageNative', () => ({ BoardImageNative: () => null }));
 vi.mock('../../play-drawer/AngleBoardDiagram', () => ({ AngleBoardDiagram: () => null }));
 vi.mock('../../ble/TimerPairingSheet', () => ({ TimerPairingSheet: () => null }));
@@ -328,5 +331,35 @@ describe('BoardForm hold sets and catalogue errors (#8151)', () => {
     fireEvent.click(getByText('mobile.create.configError.removeSets'));
     // Only the refused set still picked: 404 isn't in the setup.
     expect(toggleSet.mock.calls).toEqual([[99]]);
+  });
+});
+
+// The serial the In range slot heard lives under More options; the form says it
+// above the fold, and Change opens More options to it.
+describe('BoardForm with a heard serial', () => {
+  function renderHeard(heardSerial: string | null) {
+    return render(
+      <BoardForm
+        builder={{ ...builderFor('kilter'), serialNumber: heardSerial ?? '', heardSerial } as BoardFormProps['builder']}
+        defaultName="Home Kilter"
+        submitting={false}
+        onSubmit={() => {}}
+        submitLabel="Save"
+      />,
+    );
+  }
+
+  it('says the serial above More options, and Change opens it', () => {
+    const view = renderHeard('751737');
+    expect(view.getByText('mobile.create.heardSerial')).toBeTruthy();
+    expect(view.queryByText('mobile.create.timerPairCta')).toBeNull();
+    fireEvent.click(view.getByText('mobile.create.heardSerialChange'));
+    expect(view.getByText('mobile.create.timerPairCta')).toBeTruthy();
+  });
+
+  it('says nothing when no serial was heard', () => {
+    const view = renderHeard(null);
+    expect(view.queryByText('mobile.create.heardSerial')).toBeNull();
+    expect(view.queryByText('mobile.create.heardSerialChange')).toBeNull();
   });
 });

@@ -3,7 +3,10 @@
 `packages/mobile/app/boards/index.tsx` hosts the board picker. Its presentation
 lives under `packages/mobile/src/components/board-discovery/`; activation,
 identity comparisons, follow behavior, and picker analytics live under
-`packages/mobile/src/lib/boards/`.
+`packages/mobile/src/lib/boards/`. The In range slot's state (the scan, the top
+it leads with, the Bluetooth asks) is `usePickerInRange` and its buttons are
+`useInRangeActions`, both in board-discovery; the screen keeps the picks, Near
+you and location.
 
 ## Pick an existing board
 

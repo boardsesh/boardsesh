@@ -54,6 +54,20 @@ vi.mock('../../../lib/ble/bluetooth-status-store', () => ({
 vi.mock('../../../lib/ble/transport-runtime', () => ({
   bluetoothTransport: () => (bluetooth.transportInstalled ? { discovery: 'external' } : undefined),
 }));
+// The radio's on/off reports, by hand: who is listening, and a way to say "on".
+const radioWatch = vi.hoisted(() => ({
+  listeners: [] as Array<() => void>,
+  subscriptions: 0,
+}));
+vi.mock('../bluetooth-radio', () => ({
+  watchBluetoothPoweredOn: (onPoweredOn: () => void) => {
+    radioWatch.subscriptions += 1;
+    radioWatch.listeners.push(onPoweredOn);
+    return () => {
+      radioWatch.listeners = radioWatch.listeners.filter((listener) => listener !== onPoweredOn);
+    };
+  },
+}));
 const settings = vi.hoisted(() => ({ openAppSettings: vi.fn(async () => true) }));
 vi.mock('../../../lib/open-app-settings', () => settings);
 
@@ -136,6 +150,8 @@ beforeEach(async () => {
   scan.finish.mockReset();
   scan.retryLookup.mockReset();
   settings.openAppSettings.mockClear();
+  radioWatch.listeners = [];
+  radioWatch.subscriptions = 0;
   // The 30 s cooldown is module state that spans picker visits: a fresh module
   // per test, so each starts with no picker scan behind it.
   vi.resetModules();
@@ -696,5 +712,115 @@ describe('usePickerBoardScan for the rows', () => {
   it('has nothing to trust before any scan ran', () => {
     const { result } = renderPickerScan({ focused: true, autoStart: false });
     expect(result.current.listenedLongEnough()).toBe(false);
+  });
+});
+
+// Bluetooth off: the radio coming on starts the scan, as Turn on Bluetooth
+// (Android) or Control Center (iOS) were the climber's answer to the line.
+describe('usePickerBoardScan with Bluetooth off', () => {
+  function radioOffOnStart() {
+    scan.start.mockReset().mockImplementation(async () => {
+      scan.status = 'unavailable';
+      scan.unavailableReason = 'powered_off';
+    });
+  }
+
+  function radioComesOn() {
+    act(() => {
+      for (const listener of radioWatch.listeners.slice()) listener();
+    });
+  }
+
+  it('scans once the radio reports on, reported as a tap', async () => {
+    radioOffOnStart();
+    const { result, rerender } = renderPickerScan();
+    await waitFor(() => expect(startTriggers()).toEqual(['picker_auto']));
+    rerender({ focused: true, autoStart: true });
+    await waitFor(() => expect(result.current.phase).toBe('blocked_off'));
+    expect(radioWatch.listeners).toHaveLength(1);
+
+    scan.start.mockImplementation(async () => {
+      scan.status = 'scanning';
+    });
+    radioComesOn();
+    expect(startTriggers()).toEqual(['picker_auto', 'picker_tap']);
+    rerender({ focused: true, autoStart: true });
+    // Scanning: nothing listens for the radio any more.
+    expect(radioWatch.listeners).toEqual([]);
+  });
+
+  it('does not listen for the radio while the picker is not on top', async () => {
+    radioOffOnStart();
+    const { rerender } = renderPickerScan();
+    await waitFor(() => expect(scan.start).toHaveBeenCalledOnce());
+    rerender({ focused: false, autoStart: true });
+    expect(radioWatch.listeners).toEqual([]);
+  });
+
+  it('leaves the radio alone with auto-scan switched off: the line has Turn on and Scan again', async () => {
+    scan.status = 'unavailable';
+    scan.unavailableReason = 'powered_off';
+    const { result } = renderPickerScan({ focused: true, autoStart: false });
+    expect(result.current.phase).toBe('blocked_off');
+    expect(radioWatch.subscriptions).toBe(0);
+  });
+
+  it('starts nothing after a pick, until the next tap', async () => {
+    radioOffOnStart();
+    const { result, rerender } = renderPickerScan();
+    await waitFor(() => expect(startTriggers()).toEqual(['picker_auto']));
+    rerender({ focused: true, autoStart: true });
+    await waitFor(() => expect(result.current.phase).toBe('blocked_off'));
+
+    act(() => result.current.stop());
+    rerender({ focused: true, autoStart: true });
+    // Still listening: the pick, not a missing listener, is what starts nothing.
+    expect(radioWatch.listeners).toHaveLength(1);
+    radioComesOn();
+    expect(startTriggers()).toEqual(['picker_auto']);
+  });
+
+  // Android's Turn on dialog reads as the background: the radio's report lands
+  // there, and the start waits for the app. Past a minute the climber has moved on.
+  it.each<{ name: string; heldMs: number; runs: boolean }>([
+    { name: 'runs a held radio start when the app is back within a minute', heldMs: 20_000, runs: true },
+    { name: 'drops a held radio start older than a minute', heldMs: 61_000, runs: false },
+  ])('$name', async ({ heldMs, runs }) => {
+    radioOffOnStart();
+    const { result, rerender } = renderPickerScan();
+    await waitFor(() => expect(startTriggers()).toEqual(['picker_auto']));
+    rerender({ focused: true, autoStart: true });
+    await waitFor(() => expect(result.current.phase).toBe('blocked_off'));
+
+    // The radio's start gets through its checks while the app is in the background.
+    appState.currentState = 'background';
+    scan.start.mockImplementation(async () => {
+      scan.options?.mayStartRadio?.();
+    });
+    radioComesOn();
+    await act(async () => {});
+    expect(startTriggers()).toEqual(['picker_auto', 'picker_tap']);
+
+    scan.start.mockImplementation(async () => {
+      scan.status = 'scanning';
+    });
+    act(() => {
+      vi.advanceTimersByTime(heldMs);
+    });
+    fireAppState('active');
+    await act(async () => {});
+    expect(startTriggers()).toEqual(runs ? ['picker_auto', 'picker_tap', 'picker_tap'] : ['picker_auto', 'picker_tap']);
+  });
+
+  it('starts nothing twice when a tap already started the scan', async () => {
+    scan.status = 'unavailable';
+    scan.unavailableReason = 'powered_off';
+    // A start that waits on the radio, so it is still on its way when the report lands.
+    scan.start.mockReset().mockImplementation(() => new Promise<void>(() => {}));
+    const { result } = renderPickerScan();
+    expect(radioWatch.listeners).toHaveLength(1);
+    act(() => result.current.start());
+    radioComesOn();
+    expect(startTriggers()).toEqual(['picker_tap']);
   });
 });

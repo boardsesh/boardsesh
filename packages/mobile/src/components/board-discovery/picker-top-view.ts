@@ -30,7 +30,9 @@
 // The scan's own states (asking for Bluetooth, Bluetooth off or refused, a tap
 // to scan, serials it could not look up) are a notice drawn above whatever
 // leads, so the gym of the board you're on still shows when the scan waits for
-// a tap (the `picker-auto-scan-kill` switch) or cannot run at all.
+// a tap (the `picker-auto-scan-kill` switch) or cannot run at all. Once the
+// climber has said Not now to the Bluetooth card it is one line with Allow
+// Bluetooth from then on, never gone: a board can't be lit without Bluetooth.
 //
 // The board you're on shows once on the whole screen: Your boards and Near you
 // leave out every board the top lists (`pickerTopBoardUuids`).
@@ -53,11 +55,13 @@ export type AtGymSource = 'scan' | 'active_board';
 
 /** The scan's own card or line, drawn above whatever leads the top. */
 export type PickerScanNotice =
-  /** Bluetooth not allowed yet: the Continue card, which asks. */
+  /** Bluetooth not allowed yet: the Continue card, which asks, with Not now. */
   | { kind: 'permission_card' }
+  /** Bluetooth not allowed yet, after Not now on the card: a line and Allow Bluetooth, which asks. */
+  | { kind: 'permission_line' }
   /** Bluetooth refused for good: a line and Open Settings. */
   | { kind: 'blocked_denied' }
-  /** Bluetooth off: a line and Scan again. */
+  /** Bluetooth off: a line, and Turn on Bluetooth (Android) or a Control Center hint (iOS). */
   | { kind: 'blocked_off' }
   /** Bluetooth could not be reached for a reason the scan could not read: a line and Scan again. */
   | { kind: 'unreachable' }
@@ -166,6 +170,8 @@ export type PickerTopInputs = {
    * stands at, never leads and then gives way.
    */
   holdScanLead?: boolean;
+  /** The climber said Not now to the Bluetooth card: asking is one line from then on. */
+  bluetoothNotNow?: boolean;
 };
 
 const NONE: PickerTopLead = { kind: 'none' };
@@ -260,12 +266,15 @@ function leadFromNamed(
 }
 
 /** Which notice the scan shows for a phase that does not listen. */
-function noticeForIdlePhase(phase: Exclude<PickerScanPhase, 'scanning' | 'done'>): PickerScanNotice | null {
+function noticeForIdlePhase(
+  phase: Exclude<PickerScanPhase, 'scanning' | 'done'>,
+  bluetoothNotNow: boolean,
+): PickerScanNotice | null {
   switch (phase) {
     case 'hidden':
       return null;
     case 'needs_permission':
-      return { kind: 'permission_card' };
+      return bluetoothNotNow ? { kind: 'permission_line' } : { kind: 'permission_card' };
     case 'blocked_denied':
       return { kind: 'blocked_denied' };
     case 'blocked_off':
@@ -283,6 +292,7 @@ export function decidePickerTop({
   lookup,
   activeBoard,
   holdScanLead = false,
+  bluetoothNotNow = false,
 }: PickerTopInputs): PickerTopDecision {
   const active = activeBoard ?? null;
   const activeGym = active ? gymOf(active) : null;
@@ -293,7 +303,7 @@ export function decidePickerTop({
   if (phase !== 'scanning' && phase !== 'done') {
     // The scan is not listening: whatever it heard before says nothing now.
     return {
-      notice: noticeForIdlePhase(phase),
+      notice: noticeForIdlePhase(phase, bluetoothNotNow),
       lead: fromActiveBoard ?? NONE,
       unnamed: null,
       scanning: false,

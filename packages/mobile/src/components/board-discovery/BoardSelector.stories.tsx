@@ -393,6 +393,9 @@ function SelectorStory({ onReady, onError, stateName }: StoryRenderControls & { 
               BoardArt={StoryBoardArt}
               onStart={noop}
               onOpenSettings={noop}
+              bluetoothOffFix="control_center"
+              onTurnOnBluetooth={noop}
+              onBluetoothNotNow={noop}
               onRetryLookup={noop}
               onPickBoard={noop}
               onUseMyLocation={noop}

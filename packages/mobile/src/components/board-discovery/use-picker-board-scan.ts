@@ -33,6 +33,15 @@
 //     stamps no cooldown. Running it in the background would spend one of
 //     Android's 5 scan starts per 30 s on a scan nobody sees, and the scan
 //     would end at once (the background ends a running scan).
+//   - While the slot says Bluetooth is off, the radio coming on starts a scan
+//     (`watchBluetoothPoweredOn`), reported as a tap: the climber turned it on
+//     because the slot asked (Android's Turn on Bluetooth dialog, iOS Control
+//     Center). Only with auto-scan on, only once per time the slot says off,
+//     and never after a pick (`stop()`) until the next tap. A radio start held
+//     for the app (Android's dialog reads as the background) is dropped once
+//     the radio came on more than RADIO_ON_START_MAX_HOLD_MS ago: by then the
+//     climber has moved on. It reports as 'picker_tap' because the trigger
+//     type lives in lib/ble/use-board-scan.ts.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
@@ -43,6 +52,7 @@ import { bluetoothTransport } from '../../lib/ble/transport-runtime';
 import { hasAndroidBleScanPermissions } from '../../lib/ble/use-ble-permissions';
 import type { BoardScanTrigger } from '../../lib/ble/use-board-scan';
 import { openAppSettings } from '../../lib/open-app-settings';
+import { watchBluetoothPoweredOn } from './bluetooth-radio';
 import {
   isWithinPickerScanCooldown,
   listenedLongEnoughForSoleBox,
@@ -83,6 +93,9 @@ export type PickerScan = {
   /** Run the serial lookup again, for the "need signal" row. */
   retryLookup: () => void;
 };
+
+/** How long a scan the radio coming on asked for may wait for the app to be 'active'. */
+export const RADIO_ON_START_MAX_HOLD_MS = 60_000;
 
 // When the last picker scan ended, across picker visits: the picker is a modal
 // route, so every open is a new mount.
@@ -249,18 +262,25 @@ export function usePickerBoardScan({
   // for the radio, and a held start waits for the app, so the slot reads
   // 'scanning' through all three, not the button.
   const startAttemptRef = useRef(0);
+  // When the radio came on, for a held start that the radio asked for; null
+  // for every other held start.
+  const heldRadioOnAtRef = useRef<number | null>(null);
   const runStart = useCallback(
-    (trigger: BoardScanTrigger) => {
+    (trigger: BoardScanTrigger, radioOnAtMs: number | null = null) => {
       const attempt = startAttemptRef.current + 1;
       startAttemptRef.current = attempt;
       startHeldRef.current = false;
+      heldRadioOnAtRef.current = null;
       setHeldStart(null);
       setStarting(true);
       const settle = () => {
         if (!mountedRef.current || startAttemptRef.current !== attempt) return;
         setStarting(false);
         // Through every check, but the app was not 'active': run it when it is.
-        if (startHeldRef.current) setHeldStart(trigger);
+        if (startHeldRef.current) {
+          heldRadioOnAtRef.current = radioOnAtMs;
+          setHeldStart(trigger);
+        }
         // The request may have changed the answer (an iOS Allow, an Android grant).
         void readPermission().then((nextPermission) => {
           if (mountedRef.current) setPermission(nextPermission);
@@ -278,13 +298,16 @@ export function usePickerBoardScan({
   // slot meant to run by itself may run by itself again later: it never ran.
   useEffect(() => {
     if (heldStart === null) return;
-    if (!focused || connectedToBoard || !canScan) {
+    const radioOnAtMs = heldRadioOnAtRef.current;
+    const staleRadioStart = radioOnAtMs !== null && Date.now() - radioOnAtMs > RADIO_ON_START_MAX_HOLD_MS;
+    if (!focused || connectedToBoard || !canScan || staleRadioStart) {
       startAttemptRef.current += 1;
+      heldRadioOnAtRef.current = null;
       setHeldStart(null);
       if (heldStart === 'picker_auto') setAutoStartUsed(false);
       return;
     }
-    if (AppState.currentState === 'active') runStart(heldStart);
+    if (AppState.currentState === 'active') runStart(heldStart, radioOnAtMs);
   }, [heldStart, focused, connectedToBoard, canScan, activations, runStart]);
 
   const resolution = resolvePickerScan({
@@ -301,6 +324,29 @@ export function usePickerBoardScan({
     unavailableReason,
     lookup,
   });
+
+  // A pick ended this visit's scanning (`stop()`): the radio coming on starts
+  // nothing until the climber taps a scan again.
+  const pickedRef = useRef(false);
+
+  // The slot says Bluetooth is off: scan once the radio reports on. A start
+  // from the callback reads the latest state, so a scan already on its way (a
+  // tap that raced the radio) is not started twice.
+  const waitsForRadio =
+    canScan &&
+    focused &&
+    autoStart &&
+    !connectedToBoard &&
+    status === 'unavailable' &&
+    unavailableReason === 'powered_off';
+  useEffect(() => {
+    if (!waitsForRadio) return;
+    return watchBluetoothPoweredOn(() => {
+      const { status: scanStatus, startPending: alreadyStarting, connectedToBoard: connected } = scanStateRef.current;
+      if (pickedRef.current || connected || alreadyStarting || scanStatus !== 'unavailable') return;
+      runStart('picker_tap', Date.now());
+    });
+  }, [waitsForRadio, runStart]);
 
   const shouldAutoStart = resolution.autoStart;
   useEffect(() => {
@@ -322,6 +368,7 @@ export function usePickerBoardScan({
   const start = useCallback(() => {
     const { status: scanStatus, startPending: alreadyStarting, connectedToBoard: connected } = scanStateRef.current;
     if (!canScan || connected || alreadyStarting || scanStatus === 'scanning') return;
+    pickedRef.current = false;
     runStart('picker_tap');
   }, [canScan, runStart]);
 
@@ -329,6 +376,8 @@ export function usePickerBoardScan({
     // A pick ends this visit's scanning: nothing starts by itself after it, and
     // a start still on its way or held for the app goes too.
     startAttemptRef.current += 1;
+    pickedRef.current = true;
+    heldRadioOnAtRef.current = null;
     setStarting(false);
     setHeldStart(null);
     setAutoStartUsed(true);

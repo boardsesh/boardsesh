@@ -17,6 +17,7 @@ import { SHELF_SECTION_GAP, ShelfSection } from '../ShelfHeader';
 import { Text } from '../Text';
 import { TextAction } from '../TextAction';
 import type { BoardCardMenuAction, BoardCardMenuCapabilities, BoardCardMenuVia } from './board-card-menu';
+import type { BluetoothOffFix } from './bluetooth-radio';
 import type { DiscoveryBoardItem } from './BoardDiscoveryCardView';
 import { BoardRowList } from './BoardRowList';
 import type { DiscoveryBoardArtProps } from './DiscoveryBoardArt';
@@ -46,9 +47,15 @@ export type InRangeSectionProps = {
   view: PickerTopView<DiscoveryBoardItem>;
   /** Draws a board's art in its slot: the real thumbnail in the app, a fixture in stories. */
   BoardArt: ComponentType<DiscoveryBoardArtProps>;
-  /** Continue, Scan and Scan again: asks for Bluetooth when it has to, then scans. */
+  /** Continue, Allow Bluetooth, Scan and Scan again: asks for Bluetooth when it has to, then scans. */
   onStart: () => void;
   onOpenSettings: () => void;
+  /** What "Bluetooth is off" offers on this platform (`bluetoothOffFix`). */
+  bluetoothOffFix: BluetoothOffFix;
+  /** Turn on Bluetooth, on the Android line: the system's dialog. */
+  onTurnOnBluetooth: () => void;
+  /** Not now on the Bluetooth card: the card becomes one line from then on. Absent: no Not now. */
+  onBluetoothNotNow?: () => void;
   onRetryLookup: () => void;
   /** Climb here on the hero, or a tap on a row At {gym} (with its place as drawn). */
   onPickBoard: (item: DiscoveryBoardItem, position?: number) => void;
@@ -73,10 +80,18 @@ export type InRangeSectionProps = {
 };
 
 /** The notices that are one quiet line rather than a card. */
-type QuietNotice = Extract<PickerScanNotice, { kind: 'blocked_denied' | 'blocked_off' | 'unreachable' }>;
+type QuietNotice = Extract<
+  PickerScanNotice,
+  { kind: 'permission_line' | 'blocked_denied' | 'blocked_off' | 'unreachable' }
+>;
 
 function isQuietNotice(notice: PickerScanNotice | null): notice is QuietNotice {
-  return notice?.kind === 'blocked_denied' || notice?.kind === 'blocked_off' || notice?.kind === 'unreachable';
+  return (
+    notice?.kind === 'permission_line' ||
+    notice?.kind === 'blocked_denied' ||
+    notice?.kind === 'blocked_off' ||
+    notice?.kind === 'unreachable'
+  );
 }
 
 /** The scan's own card under "In range": Continue, Scan, or need signal on its own. */
@@ -97,8 +112,9 @@ function hasInRangeSection(view: PickerTopView<DiscoveryBoardItem>): boolean {
  * `buildPickerTopView` (picker-top-view.ts) decide what shows, and the screen
  * owns the scan, the picks and navigation. Top to bottom, each a shelf of the
  * picker's own spacing:
- * - the scan's quiet line (Bluetooth off, refused or unreachable), with no
- *   title, so a climber at home is not shown an empty card;
+ * - the scan's quiet line (Bluetooth not allowed after Not now, off, refused or
+ *   unreachable), with no title, so a climber at home is not shown an empty
+ *   card;
  * - the Android location hint, when the scan heard nothing because of it;
  * - the one board heard somewhere else (the hero), with Climb here, no title;
  * - "In range": the scan's own card (Continue, Scan, need signal), the box it
@@ -112,6 +128,9 @@ export function InRangeSection({
   BoardArt,
   onStart,
   onOpenSettings,
+  bluetoothOffFix,
+  onTurnOnBluetooth,
+  onBluetoothNotNow,
   onRetryLookup,
   onPickBoard,
   onUseMyLocation,
@@ -133,7 +152,13 @@ export function InRangeSection({
     <>
       {isQuietNotice(notice) ? (
         <View style={styles.block}>
-          <QuietNoticeLine notice={notice} onStart={onStart} onOpenSettings={onOpenSettings} />
+          <QuietNoticeLine
+            notice={notice}
+            bluetoothOffFix={bluetoothOffFix}
+            onStart={onStart}
+            onOpenSettings={onOpenSettings}
+            onTurnOnBluetooth={onTurnOnBluetooth}
+          />
         </View>
       ) : null}
       {heardNothing && locationHint ? (
@@ -161,6 +186,8 @@ export function InRangeSection({
                 body={t('mobile.inRange.permissionBody')}
                 action={t('mobile.inRange.continue')}
                 onAction={onStart}
+                secondaryAction={onBluetoothNotNow ? t('mobile.inRange.notNow') : undefined}
+                onSecondaryAction={onBluetoothNotNow}
               />
             ) : notice?.kind === 'tap_to_scan' ? (
               <PromptCard title={t('mobile.inRange.scanTitle')} action={t('mobile.inRange.scan')} onAction={onStart} />
@@ -220,21 +247,39 @@ export function InRangeSection({
 }
 
 /**
- * Bluetooth off, refused for good or unreachable: one quiet line and the button
- * that can fix it. The line opens the page and a shelf header follows 28pt
- * below, whose action leans up: this one leans up too, into the page's top.
+ * Bluetooth not allowed (after Not now), off, refused for good or unreachable:
+ * one quiet line and the button that can fix it. The line opens the page and a
+ * shelf header follows 28pt below, whose action leans up: this one leans up
+ * too, into the page's top.
+ *
+ * Off leads with the fix: Turn on Bluetooth on Android (the system's dialog),
+ * the Control Center hint on iOS, which has no way to turn it on for you. The
+ * scan starts by itself once the radio is on; iOS keeps Scan again in case it
+ * doesn't.
  */
 function QuietNoticeLine({
   notice,
+  bluetoothOffFix,
   onStart,
   onOpenSettings,
+  onTurnOnBluetooth,
 }: {
   notice: QuietNotice;
+  bluetoothOffFix: BluetoothOffFix;
   onStart: () => void;
   onOpenSettings: () => void;
+  onTurnOnBluetooth: () => void;
 }) {
   const { t } = useTranslation('boards');
   switch (notice.kind) {
+    case 'permission_line':
+      return (
+        <EmptyState
+          size="quiet"
+          title={t('mobile.inRange.permissionLine')}
+          actions={<TextAction reach="up" label={t('mobile.inRange.allowBluetooth')} onPress={onStart} />}
+        />
+      );
     case 'blocked_denied':
       return (
         <EmptyState
@@ -248,10 +293,16 @@ function QuietNoticeLine({
         />
       );
     case 'blocked_off':
-      return (
+      return bluetoothOffFix === 'turn_on' ? (
         <EmptyState
           size="quiet"
-          title={t('mobile.inRange.blockedOff')}
+          title={t('mobile.inRange.blockedOffTitle')}
+          actions={<TextAction reach="up" label={t('mobile.inRange.turnOnBluetooth')} onPress={onTurnOnBluetooth} />}
+        />
+      ) : (
+        <EmptyState
+          size="quiet"
+          title={t('mobile.inRange.blockedOffControlCenter')}
           actions={<TextAction reach="up" label={t('mobile.inRange.scanAgain')} onPress={onStart} />}
         />
       );
@@ -313,17 +364,21 @@ function InFrontOfYou({ nearby = false }: { nearby?: boolean }) {
   );
 }
 
-/** The Continue card and the Scan card: a question, a reason and one button. */
+/** The Continue card and the Scan card: a question, a reason, one button and, on Continue, Not now. */
 function PromptCard({
   title,
   body,
   action,
   onAction,
+  secondaryAction,
+  onSecondaryAction,
 }: {
   title: string;
   body?: string;
   action: string;
   onAction: () => void;
+  secondaryAction?: string;
+  onSecondaryAction?: () => void;
 }) {
   const { systemColors } = useTheme();
   return (
@@ -340,8 +395,11 @@ function PromptCard({
             {body}
           </Text>
         ) : null}
-        <View style={styles.buttonRow}>
+        <View style={styles.promptActions}>
           <Button title={action} size="small" onPress={onAction} />
+          {secondaryAction && onSecondaryAction ? (
+            <TextAction label={secondaryAction} onPress={onSecondaryAction} />
+          ) : null}
         </View>
       </View>
     </Card>
@@ -575,6 +633,13 @@ const styles = StyleSheet.create({
   },
   buttonRow: {
     flexDirection: 'row',
+    marginTop: spacing[1],
+  },
+  promptActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing[3],
     marginTop: spacing[1],
   },
   actionsRow: {
