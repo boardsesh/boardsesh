@@ -108,7 +108,9 @@ Limits of the mint path, by design:
 - Two mints at the same spot serialize only through a public, listed gym that was already within 150 m when they started (both lock it). With no such gym nearby there is nothing to lock, and both can mint.
 - A minted gym is public only when its board's audience and location are both public. A home wall with a hidden location mints a private gym, which never enters anyone's search, so it never blocks another mint, as a private wall never blocks anything.
 
-The namespace is new. Other two-int namespaces in the repo: `0x4253524c` board serials ("BSRL"), `(8043, 1)` gym-claim auto-approve, `0x434c4942` climb duplicates, `0x46415653` favourites, `0x70757368` push tokens, `0x46524551` follow requests, `0x434e5354` analytics consent, `0x454d4b59` / `0x50535542` auth email and provider keys, `6975` the auth authority gate. Pick another for a new lock family.
+The namespace is new. Other two-int namespaces in the repo: `0x4253524c` board serials ("BSRL"), `0x47594d4f` / `0x47594d4e` gym creates per owner and per name ("GYMO" / "GYMN", see "Creating a gym" in `gym-board-governance.md`), `(8043, 1)` gym-claim auto-approve, `0x434c4942` climb duplicates, `0x46415653` favourites, `0x70757368` push tokens, `0x46524551` follow requests, `0x434e5354` analytics consent, `0x454d4b59` / `0x50535542` auth email and provider keys, `6975` the auth authority gate. Pick another for a new lock family.
+
+`createGym` has the same kind of check for gyms (`GYM_SIMILAR_EXISTS`), with two differences: it runs on every create, not only when asked, and its refusal carries the gyms whole rather than uuids. See "Creating a gym" in `gym-board-governance.md`.
 
 There is no unique constraint. Two walls with one setup at one gym are real (a gym with two identical MoonBoards), and `CONFIRMED_SEPARATE` is how a climber adds the second.
 

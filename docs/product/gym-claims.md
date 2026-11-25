@@ -10,6 +10,10 @@ Epic #8043, PR 6 of 8.
 
 Anyone signed in who can't already edit the gym, on a public gym, unless the gym is run by its staff (`listingState` `RUN_BY_GYM`: its owner holds an approved claim or got the gym in an admin handover). Nobody can claim a gym its staff run. A dispute goes through Report a problem, which reaches our team. `Gym.canClaim` and `SimilarGym.isClaimable` are false there, and `requestGymClaim` refuses with `extensions.code = 'GYM_RUN_BY_STAFF'` (`GYM_RUN_BY_STAFF_CODE` in `@boardsesh/gym-claim`): "This gym is run by its staff. If that's wrong, report a problem and our team will look." Both claim forms map the code to their own translated line (`isGymRunByStaffError`). A claim already pending on such a gym stays in the queue for a person, and approving one that is older than the gym's current ownership is still refused as superseded (`GYM_CLAIM_SUPERSEDED`).
 
+### Claim instead of a second listing
+
+Adding a gym that already looks listed is refused (`GYM_SIMILAR_EXISTS`, see "Creating a gym" in [gym-board-governance.md](gym-board-governance.md)). Each gym the refusal names carries `isClaimable` and `canClaimByDomain`, computed the same way as for `findSimilarGyms`, so staff who meant to add their own gym are offered its claim rather than a copy. Creating also stops at 25 gyms an account owns (`GYM_LIMIT_REACHED`); a claimed gym counts toward it like any other.
+
 ## Turning auto-approval on
 
 Auto-approval is off until a global admin turns it on. It is two community settings, global scope, both admin-only because of their `gym_` prefix:
