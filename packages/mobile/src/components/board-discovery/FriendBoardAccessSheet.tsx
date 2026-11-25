@@ -14,8 +14,11 @@ import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { MEDIUM_SNAP_POINTS } from '../sheet-snap-points';
 
-/** Why the last ask or cancel didn't go through. */
-export type FriendBoardAccessError = 'rate_limited' | 'offline' | 'failed';
+/**
+ * Why the last ask or cancel didn't go through. `daily_cap` is the daily limit
+ * on asks; `rate_limited` is any shorter wait.
+ */
+export type FriendBoardAccessError = 'daily_cap' | 'rate_limited' | 'offline' | 'failed';
 
 type FriendBoardAccessSheetProps = {
   ownerName: string;
@@ -40,13 +43,15 @@ export function FriendBoardAccessSheet({
   const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
   const errorText =
-    error === 'rate_limited'
+    error === 'daily_cap'
       ? t('mobile.friendBoards.rateLimited')
-      : error === 'offline'
-        ? t('mobile.friendBoards.askOffline')
-        : error === 'failed'
-          ? t('mobile.friendBoards.askFailed')
-          : null;
+      : error === 'rate_limited'
+        ? t('mobile.friendBoards.tooManyTries')
+        : error === 'offline'
+          ? t('mobile.friendBoards.askOffline')
+          : error === 'failed'
+            ? t('mobile.friendBoards.askFailed')
+            : null;
 
   return (
     <ModalSheet

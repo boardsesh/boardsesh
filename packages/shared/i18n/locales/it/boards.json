@@ -1028,7 +1028,7 @@
       "noFollowsBody": "Segui un amico per vedere qui i suoi pannelli.",
       "noBoardsTitle": "Ancora nessun pannello da mostrare",
       "noBoardsBody": "Chiedi al tuo amico di mandarti il link del suo pannello.",
-      "noMatch": "Nessuno di quelli che segui corrisponde a “{{query}}”.",
+      "noMatch": "Nessuna persona o pannello corrisponde a “{{query}}”.",
       "offline": "Sei offline. Per trovare il pannello di un amico serve segnale.",
       "loadFailed": "Impossibile caricare i pannelli dei tuoi amici",
       "signInTitle": "Accedi per arrampicare sul pannello di un amico",
@@ -1041,12 +1041,13 @@
       "cancelRequest": "Annulla richiesta",
       "close": "Chiudi",
       "rateLimited": "Oggi hai già chiesto parecchio. Riprova domani.",
+      "tooManyTries": "Troppi tentativi. Aspetta un momento e riprova.",
       "askOffline": "Sei offline. Per chiedere serve segnale.",
       "askFailed": "Invio non riuscito. Riprova.",
-      "saved": "Salvato in I tuoi pannelli",
+      "saved": "Salvato nei tuoi pannelli",
       "undo": "Annulla",
-      "undoAria": "Togli {{name}} da I tuoi pannelli",
-      "undoError": "Impossibile togliere {{name}} da I tuoi pannelli"
+      "undoAria": "Togli {{name}} dai tuoi pannelli",
+      "undoError": "Impossibile togliere {{name}} dai tuoi pannelli"
     }
   },
   "boardEntity": {

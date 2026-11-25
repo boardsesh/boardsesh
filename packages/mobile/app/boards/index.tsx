@@ -369,6 +369,7 @@ export default function BoardSelection() {
     data: boardConnection,
     isLoading: isMyBoardsLoading,
     isError,
+    isFetchedAfterMount: isMyBoardsFetchedAfterMount,
     refetch,
     isRefetching,
   } = useMyBoards(MY_BOARDS_WITH_IMPORTS_INPUT, { enabled: isAuthenticated });
@@ -400,7 +401,10 @@ export default function BoardSelection() {
   // Keep the offline snapshots in step with the live list: renames, a backfill for
   // boards downloaded before this existed, and a prune of boards the server no longer
   // lists. No-ops while offline.
-  useRememberDownloadedBoards(boardConnection, undefined, isError);
+  useRememberDownloadedBoards(boardConnection, undefined, {
+    fetchFailed: isError,
+    fetchedAfterMount: isMyBoardsFetchedAfterMount,
+  });
 
   // Offline (or a connection that reports online while every request fails), the
   // network board list is unavailable: `myBoards` is a plain `getHttpClient` query,

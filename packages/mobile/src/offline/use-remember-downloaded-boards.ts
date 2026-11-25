@@ -32,7 +32,9 @@ import { useIsOffline } from '../hooks/use-is-offline';
  * Only a COMPLETE list from a fetch that just SUCCEEDED can say a board is
  * gone: a truncated page would delete every card past it, and a failed refetch
  * still hands back the last list, which may predate a board followed since (a
- * friend's board saved on another phone). This is also how a friend's board
+ * friend's board saved on another phone). "Just" means after this screen
+ * mounted: a list hydrated from the persisted cache is as old as the last
+ * session, so it may refresh cards but never prune them. This is also how a friend's board
  * whose owner took the climber back off it leaves the offline picker: it drops
  * out of `myBoards`, and the next complete list prunes its card.
  */
@@ -41,15 +43,28 @@ export function offlineBoardCardSync({
   hasList,
   hasMore,
   fetchFailed,
+  fetchedAfterMount,
 }: {
   isOffline: boolean;
   hasList: boolean;
   hasMore: boolean;
   fetchFailed: boolean;
+  fetchedAfterMount: boolean;
 }): { remember: boolean; prune: boolean } {
   const remember = !isOffline && hasList && !fetchFailed;
-  return { remember, prune: remember && !hasMore };
+  return { remember, prune: remember && fetchedAfterMount && !hasMore };
 }
+
+/** Where the `myBoards` list came from, as React Query reports it. */
+export type BoardListFetchState = {
+  /** The last fetch failed: the list is the one from before it. */
+  fetchFailed: boolean;
+  /** A fetch has finished since the screen mounted (`isFetchedAfterMount`). */
+  fetchedAfterMount: boolean;
+};
+
+/** Before anything says otherwise, the list is trusted to refresh cards, never to prune. */
+const UNVERIFIED_LIST: BoardListFetchState = { fetchFailed: false, fetchedAfterMount: false };
 
 /**
  * `archivedWallUuids` are the climber's archived spray walls. `myBoards` leaves
@@ -60,8 +75,7 @@ export function offlineBoardCardSync({
 export function useRememberDownloadedBoards(
   connection: UserBoardConnection | undefined,
   archivedWallUuids?: readonly string[],
-  /** The last `myBoards` fetch failed: `connection` is the list from before it. */
-  fetchFailed = false,
+  { fetchFailed, fetchedAfterMount }: BoardListFetchState = UNVERIFIED_LIST,
 ): void {
   const isOffline = useIsOffline();
   const [enabledBoards] = useSetting('syncEnabledBoards');
@@ -73,7 +87,13 @@ export function useRememberDownloadedBoards(
   useEffect(() => {
     // Offline, `boards` is either stale or absent — refreshing from it would either
     // no-op or overwrite good snapshots with older ones.
-    const sync = offlineBoardCardSync({ isOffline, hasList: boards !== undefined, hasMore, fetchFailed });
+    const sync = offlineBoardCardSync({
+      isOffline,
+      hasList: boards !== undefined,
+      hasMore,
+      fetchFailed,
+      fetchedAfterMount,
+    });
     if (!sync.remember || !boards) return;
     const enabledScopes = new Set(enabledBoards);
     const downloadedBoards = boards.filter((board) => enabledScopes.has(offlineBoardKeyForBoard(board)));
@@ -86,5 +106,5 @@ export function useRememberDownloadedBoards(
       const known = [...boards.map((board) => board.uuid), ...(archivedWallUuids ?? [])];
       pruneOfflineBoards(known, archivedWallUuids ? undefined : { keepBoardType: 'spray' });
     }
-  }, [isOffline, boards, hasMore, enabledBoards, archivedWallUuids, fetchFailed]);
+  }, [isOffline, boards, hasMore, enabledBoards, archivedWallUuids, fetchFailed, fetchedAfterMount]);
 }

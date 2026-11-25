@@ -185,8 +185,9 @@ vi.mock('../../you/CommentSheet', () => ({
   },
 }));
 
+vi.mock('../answerable-notification', () => ({ isAnswerableBoardAccessRequest: () => false }));
+
 vi.mock('../NotificationRow', () => ({
-  isAnswerableBoardAccessRequest: () => false,
   NotificationRow: ({
     notification,
     onPress,

@@ -1028,7 +1028,7 @@
       "noFollowsBody": "Folge Freund*innen, um ihre Boards hier zu sehen.",
       "noBoardsTitle": "Noch keine Boards zu sehen",
       "noBoardsBody": "Bitte deine Freund*innen, dir den Link zu ihrem Board zu schicken.",
-      "noMatch": "Niemand, dem du folgst, passt zu „{{query}}“.",
+      "noMatch": "Keine Personen oder Boards passen zu „{{query}}“.",
       "offline": "Du bist offline. Um das Board von Freund*innen zu finden, brauchst du Empfang.",
       "loadFailed": "Die Boards deiner Freund*innen ließen sich nicht laden",
       "signInTitle": "Melde dich an, um am Board von Freund*innen zu klettern",
@@ -1041,12 +1041,13 @@
       "cancelRequest": "Anfrage zurückziehen",
       "close": "Schließen",
       "rateLimited": "Du hast heute schon viel angefragt. Versuch es morgen wieder.",
+      "tooManyTries": "Zu viele Versuche. Warte kurz und versuch es noch einmal.",
       "askOffline": "Du bist offline. Zum Anfragen brauchst du Empfang.",
       "askFailed": "Das ging nicht raus. Versuch es noch einmal.",
-      "saved": "Bei Deine Boards gespeichert",
+      "saved": "In „Deine Boards“ gespeichert",
       "undo": "Rückgängig",
-      "undoAria": "{{name}} aus Deine Boards entfernen",
-      "undoError": "{{name}} ließ sich nicht aus Deine Boards entfernen"
+      "undoAria": "{{name}} aus „Deine Boards“ entfernen",
+      "undoError": "{{name}} ließ sich nicht aus „Deine Boards“ entfernen"
     }
   },
   "boardEntity": {

@@ -109,6 +109,10 @@
     "declineLabel": "Refuser {{actor}}",
     "failed": "Impossible de répondre à la demande. Réessaie une fois connecté."
   },
+  "boardAccessRequest": {
+    "approveLabel": "Laisser {{actor}} grimper sur ta board",
+    "declineLabel": "Refuser la demande de {{actor}} pour grimper sur ta board"
+  },
   "errors": {
     "load": "Impossible de charger tes notifications"
   },
