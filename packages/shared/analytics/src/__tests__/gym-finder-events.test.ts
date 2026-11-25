@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  gymCreated,
   gymFinderAddMyGymTapped,
   gymFinderGymPicked,
   gymFinderLocateTapped,
@@ -42,5 +43,24 @@ describe('gym finder events', () => {
     expect(analytics.gymFinderSearchUsed).toBe(gymFinderSearchUsed);
     expect(analytics.gymFinderLocateTapped).toBe(gymFinderLocateTapped);
     expect(analytics.SHARED_EVENTS.GymFinderLocateTapped).toBe('Gym Finder Locate Tapped');
+    expect(analytics.gymCreated).toBe(gymCreated);
+  });
+
+  it('sends Gym Created with counts and flags only', () => {
+    const payload = gymCreated({
+      surface: 'wizard',
+      similarShown: 2,
+      confirmedSeparate: true,
+      hasAddress: false,
+      locationSource: 'map',
+    });
+    expect(payload.name).toBe('Gym Created');
+    expect(Object.keys(payload.properties).sort()).toEqual([
+      'confirmedSeparate',
+      'hasAddress',
+      'locationSource',
+      'similarShown',
+      'surface',
+    ]);
   });
 });
