@@ -425,7 +425,8 @@ function buildArguments(
     const kind = kindFor({ fieldName, argName: arg.name, typeName: named.name });
     if (kind) {
       kindsSeen.add(kind);
-      const value = seedValue(kind);
+      // Catalogue APIs use integer set IDs; older board readers accept strings.
+      const value = kind === 'setIds' && named.name === 'Int' ? world.setIds.split(',').map(Number) : seedValue(kind);
       values[arg.name] = isListType(stripNonNull(arg.type)) && !Array.isArray(value) ? [value] : value;
       continue;
     }
@@ -667,6 +668,8 @@ const NOT_APPLICABLE: Record<string, string> = {
   'Query.boardLeaderboard': 'senders and counts for the board uuid the caller sent; no climb is named',
   'Query.boardDiscovery':
     'anonymous marketing discovery never includes private walls, even for their owner; the explicit public/private/unlisted/hidden transition test below proves its positive and negative paths',
+  'Query.publicClimbRelatedContent':
+    'catalogue-only marketing recommendations and stored beta: the service rejects every spray board before reading its target, even for owners or public walls; public-climb-related-content.test.ts pins that early return, the explicit all-viewer test below pins the GraphQL response, and public-climb-related-content.integration.test.ts proves positive catalogue hydration',
 
   // --- serial-number lookups --------------------------------------------------
   // A spray wall is LED-less by construction (`has_leds` is forced false and is
@@ -1360,8 +1363,25 @@ describe('the spray-wall visibility sweep', () => {
       'Query.searchClimbs',
       'Query.userTicks',
       'Query.boardDiscovery',
+      'Query.publicClimbRelatedContent',
     ]) {
       expect(swept).toContain(key);
+    }
+  });
+
+  it('keeps catalogue-only public related content empty for spray walls, including their owner', () => {
+    const perViewer = outcomes.get('Query.publicClimbRelatedContent');
+    expect(perViewer).toBeDefined();
+    if (!perViewer) throw new Error('publicClimbRelatedContent must participate in the visibility sweep');
+    for (const viewer of VIEWERS) {
+      expect(perViewer[viewer.name].errorMessages, viewer.name).toEqual([]);
+      expect(perViewer[viewer.name].data, viewer.name).toMatchObject({
+        publicClimbRelatedContent: {
+          similarClimbs: [],
+          nearbyClimbs: [],
+          betaLinks: [],
+        },
+      });
     }
   });
 
