@@ -5,7 +5,12 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BoardName, Gym, PlaceSuggestion, UserBoard } from '@boardsesh/shared-schema';
-import { gymClaimCtaClicked } from '@boardsesh/analytics';
+import {
+  gymClaimCtaClicked,
+  gymFinderGymPicked,
+  gymFinderSearchUsed,
+  type GymFinderSearchKind,
+} from '@boardsesh/analytics';
 import { placeSuggestionLabel } from '@boardsesh/gym-filters';
 import { useNearbyBoards, useNearbyGyms } from '../../src/lib/graphql/hooks';
 import { useGymBoards } from '../../src/lib/graphql/hooks/use-gym-boards';
@@ -54,6 +59,8 @@ import { spacing, borderRadius, shadows } from '../../src/theme/tokens';
 // absorbs the programmatic camera settle after a place search so it doesn't
 // read as a user pan.
 const MIN_MOVE_DEG = 0.04;
+/** Every gym finder event from here says where it came from. */
+const FINDER_SURFACE = 'gyms_map';
 
 function movedEnough(a: Coords, b: Coords): boolean {
   const dLat = a.latitude - b.latitude;
@@ -121,6 +128,8 @@ export default function GymDiscovery() {
     onBound: trackBoardSelection,
   });
   const [expandedGymUuid, setExpandedGymUuid] = useState<string | null>(null);
+  const expandedGymUuidRef = useRef(expandedGymUuid);
+  expandedGymUuidRef.current = expandedGymUuid;
   // The selected gym/board mirrors the map pin and drives the row accent. Set by a
   // row tap (→ recenter the map) or a pin tap (→ scroll the row into view).
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -160,6 +169,14 @@ export default function GymDiscovery() {
   // resulting onCameraMove settle near this point must NOT be read as a user pan.
   const programmaticTargetRef = useRef<Coords | null>(null);
   const searchGenerationRef = useRef(0);
+  // Gym Finder Search Used: once per kind per visit.
+  const searchUsedRef = useRef(new Set<GymFinderSearchKind>());
+  const reportSearchUsed = useCallback((kind: GymFinderSearchKind) => {
+    if (searchUsedRef.current.has(kind)) return;
+    searchUsedRef.current.add(kind);
+    const event = gymFinderSearchUsed({ surface: FINDER_SURFACE, kind });
+    track(event.name, event.properties);
+  }, []);
 
   // The zoom of the last camera move: zoomed out past a region (the world view
   // with location off, or back out to it), a pan is no place to search around.
@@ -379,8 +396,9 @@ export default function GymDiscovery() {
       setAppliedFilter(filter);
       resetSearch({ center: coords, filter });
       moveCameraTo(coords);
+      reportSearchUsed('town');
     },
-    [appliedFilter, moveCameraTo, resetSearch],
+    [appliedFilter, moveCameraTo, resetSearch, reportSearchUsed],
   );
 
   const onChangeSearchText = useCallback(
@@ -453,6 +471,11 @@ export default function GymDiscovery() {
   // (no-op when the map is blank — the row just expands).
   const onPressGym = useCallback(
     (gym: Gym) => {
+      // Opening a gym is choosing it; folding it away again is not.
+      if (expandedGymUuidRef.current !== gym.uuid) {
+        const event = gymFinderGymPicked({ surface: FINDER_SURFACE, section: 'list' });
+        track(event.name, event.properties);
+      }
       setExpandedGymUuid((prev) => (prev === gym.uuid ? null : gym.uuid));
       setSelectedId(gym.uuid);
       if (gym.latitude != null && gym.longitude != null) {
@@ -473,6 +496,10 @@ export default function GymDiscovery() {
   const onMarkerPress = useCallback((id: string) => {
     setSelectedId(id);
     const isGym = gymsRef.current.some((gym) => gym.uuid === id);
+    if (isGym && expandedGymUuidRef.current !== id) {
+      const event = gymFinderGymPicked({ surface: FINDER_SURFACE, section: 'map_pin' });
+      track(event.name, event.properties);
+    }
     if (isGym) setExpandedGymUuid(id);
     panelRef.current?.ensureVisible();
     panelRef.current?.scrollToRowKey(isGym ? `gym:${id}` : `std:${id}`);
@@ -525,12 +552,14 @@ export default function GymDiscovery() {
       setAppliedFilter(filter);
       resetSearch({ center: coords, filter });
       moveCameraTo(coords);
+      reportSearchUsed('town');
     } else {
       const filter = { ...appliedFilterRef.current, name: text };
       setAppliedFilter(filter);
       resetSearch({ center: viewCenterRef.current ?? locationCoordsRef.current ?? null, filter });
+      reportSearchUsed('name');
     }
-  }, [inputText, geocode, moveCameraTo, resetSearch, appliedFilter, searchLabel]);
+  }, [inputText, geocode, moveCameraTo, resetSearch, appliedFilter, searchLabel, reportSearchUsed]);
 
   // Clear everything and snap back to the device location.
   const clearSearch = useCallback(() => {
