@@ -98,7 +98,6 @@ vi.mock('../../Button', () => ({
   Button: ({ title, loading }: { title: string; loading?: boolean }) =>
     createElement('button', { 'data-loading': String(!!loading) }, title),
 }));
-vi.mock('../GymPickerSheet', () => ({}));
 vi.mock('../../SegmentedControl', () => ({
   SegmentedControl: ({
     options,

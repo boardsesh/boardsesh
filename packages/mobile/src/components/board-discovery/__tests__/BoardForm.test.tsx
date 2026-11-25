@@ -101,7 +101,8 @@ vi.mock('../../SwitchRow', () => ({
 vi.mock('../../BoardImageNative', () => ({ BoardImageNative: () => null }));
 vi.mock('../../play-drawer/AngleBoardDiagram', () => ({ AngleBoardDiagram: () => null }));
 vi.mock('../../ble/TimerPairingSheet', () => ({ TimerPairingSheet: () => null }));
-vi.mock('../GymPickerSheet', () => ({ GymPickerSheet: () => null }));
+// The gym row pushes a route; its own suite covers the handoff.
+vi.mock('../../../lib/boards/use-gym-picker-route', () => ({ useGymPickerRoute: () => () => undefined }));
 // The gym-location warning has its own hook coverage; these tests exercise form slots.
 vi.mock('../OwnPublicGymWarning', () => ({ OwnPublicGymWarning: () => null }));
 // A marker per chip row, by its label, so a test can see which rows are drawn.

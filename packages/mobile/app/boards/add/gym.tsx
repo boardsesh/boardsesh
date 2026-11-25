@@ -18,6 +18,7 @@ import {
 } from '../../../src/lib/boards/add-board-wizard';
 import { useAddBoardWizardStep } from '../../../src/lib/boards/use-add-board-wizard-step';
 import { useAuth } from '../../../src/providers/auth-provider';
+import { openSignIn } from '../../../src/lib/routing/open-sign-in';
 
 export default function AddBoardGym() {
   const params = useLocalSearchParams<{ boardType?: string }>();
@@ -39,7 +40,8 @@ export default function AddBoardGym() {
   const onAddGym = useCallback(
     (boardType: BoardName | null) => {
       if (!isAuthenticated) {
-        router.push('/auth/login');
+        // In place of the picker, never a card on top of it (open-sign-in.ts).
+        openSignIn(router, 'boards');
         return;
       }
       // The type picked on the map's capsule stands for Which board?, so it

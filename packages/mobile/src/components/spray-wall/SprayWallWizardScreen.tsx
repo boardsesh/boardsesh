@@ -282,8 +282,8 @@ export function SprayWallWizardScreen({
   const navigation = useNavigation();
   const queryClient = useQueryClient();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  // Launch-fixed, like the presentation it follows: an iPad's flow is a full-screen
-  // cover however its window is later resized.
+  // Launch-fixed: on an iPad the form keeps its capped column inside the Boards
+  // sheet however the window is later resized.
   const formColumnCapped = isIpadSprayFlow();
   const bottomInset = useWindowBottomInset();
 

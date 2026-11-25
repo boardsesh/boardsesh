@@ -40,7 +40,9 @@ import { wizardGymBoardsHref } from '../../lib/boards/add-board-wizard';
 import type { DiscoveryBoardItem } from '../board-discovery/BoardDiscoveryCardView';
 import { ClaimGymSheet } from '../gym-directory/ClaimGymSheet';
 import { gymBoardsToItems } from './gym-board-items';
-import { GYM_PAGE_CLAIM_DENIED } from './gym-page-route';
+import { GYM_PAGE_CLAIM_DENIED, gymAnalyticsHref, gymEditHref } from './gym-page-route';
+import { useGymRouteStack } from './use-gym-route-stack';
+import { openSignIn } from '../../lib/routing/open-sign-in';
 import {
   boardsHeaderIndex,
   buildGymPageItems,
@@ -198,6 +200,9 @@ function GymPageContent({
   onRefreshGym: () => void;
 }) {
   const router = useRouter();
+  // The page is registered in the root stack and in the board picker's; what
+  // it opens stays in the one it is in (gym-page-route.ts).
+  const stack = useGymRouteStack();
   const { t } = useTranslation('boards');
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -321,12 +326,13 @@ function GymPageContent({
   );
   const editGym = useCallback(() => {
     hapticSelection();
-    router.push({ pathname: '/gyms/edit', params: { gymUuid: gym.uuid } });
-  }, [router, gym.uuid]);
+    router.push(gymEditHref(gym.uuid, stack));
+  }, [router, gym.uuid, stack]);
   const signIn = useCallback(() => {
     hapticSelection();
-    router.push('/auth/login');
-  }, [router]);
+    // From the picker's copy, in place of the picker rather than a card on top.
+    openSignIn(router, stack);
+  }, [router, stack]);
   // Claim taps join the www claim funnel under their own placement.
   const claim = useCallback(() => {
     hapticSelection();
@@ -361,7 +367,7 @@ function GymPageContent({
         if (tool === 'editDetails') editGym();
         else if (tool === 'insights') {
           hapticSelection();
-          router.push({ pathname: '/gyms/analytics', params: { gymUuid: gym.uuid } });
+          router.push(gymAnalyticsHref(gym.uuid, stack));
         } else if (tool === 'nearbyBoards') openManage('boards');
         else openManage(tool);
       },
@@ -399,6 +405,7 @@ function GymPageContent({
       gym.contactPhone,
       gym.contactEmail,
       router,
+      stack,
       boardReturnTo,
       wizardEnabled,
       refetchBoards,

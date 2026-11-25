@@ -8,6 +8,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useRouter } from 'expo-router';
+import { openSignIn } from '../../lib/routing/open-sign-in';
+import { useGymRouteStack } from '../gym-page/use-gym-route-stack';
 import type { Gym } from '@boardsesh/shared-schema';
 import { ClaimGymSheet } from '../gym-directory/ClaimGymSheet';
 import { ReportDirectorySheet, type ReportInitialSetup, type ReportProblemTarget } from './ReportDirectorySheet';
@@ -65,6 +67,8 @@ function targetKey(target: ReportProblemTarget): string {
 export function useReportProblemHost(): ReportProblemHost {
   const { isAuthenticated } = useAuth();
   const router = useRouter();
+  // From inside the board picker, sign-in replaces it rather than stacking on it.
+  const stack = useGymRouteStack();
   const [opened, setOpened] = useState<{ target: ReportProblemTarget; options: OpenReportOptions } | null>(null);
   const target = opened?.target ?? null;
   const [claimGym, setClaimGym] = useState<Gym | null>(null);
@@ -81,14 +85,14 @@ export function useReportProblemHost(): ReportProblemHost {
   const openReport = useCallback(
     (next: ReportProblemTarget, options: OpenReportOptions = {}) => {
       if (!isAuthenticated) {
-        router.push('/auth/login');
+        openSignIn(router, stack);
         options.onClosed?.();
         return;
       }
       onClosedRef.current = options.onClosed ?? null;
       setOpened({ target: next, options });
     },
-    [isAuthenticated, router],
+    [isAuthenticated, router, stack],
   );
   const closeReport = useCallback(() => {
     setOpened(null);

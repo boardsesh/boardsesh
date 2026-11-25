@@ -198,40 +198,30 @@ function optionsFor(name: string, params: object = {}): ScreenOptions {
 
 const SPRAY_SCREENS = ['spray/new', 'spray/holds'];
 
+// On iPad too the spray screens are plain pushes inside the Boards sheet: a
+// `modal` presentation here was a card on the Boards card (a sheet on a sheet).
 describe('the spray screens on iPad', () => {
-  it.each(SPRAY_SCREENS)('%s uses a native card and fades the home indicator', (name) => {
+  it.each(SPRAY_SCREENS)('%s is a plain push that fades the home indicator', (name) => {
     platformMock.isPad = true;
     const options = optionsFor(name);
-    expect(options.presentation).toBe('modal');
+    expect(Object.keys(options)).not.toContain('presentation');
     expect(options.autoHideHomeIndicator).toBe(true);
   });
 
-  // Full screen means no swipe down and, as a modal, no back chevron.
-  it.each(['spray/new', 'spray/holds'])('%s has an X that goes back through the leave guard', (name) => {
+  // A push has the back chevron, which goes through the same leave guard.
+  it('keeps the back chevron on Edit holds, with no X of its own', () => {
     platformMock.isPad = true;
-    const { headerLeft } = optionsFor(name);
-    if (!headerLeft) throw new Error(`${name} has no headerLeft`);
-    render(createElement('div', null, headerLeft({ tintColor: '#000' })));
-
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-
-    // router.back is what the screens' own Back buttons call, so the
-    // usePreventRemove guard sees the same action.
-    expect(routerMock.back).toHaveBeenCalledTimes(1);
-    expect(routerMock.dismissTo).not.toHaveBeenCalled();
+    expect(Object.keys(optionsFor('spray/holds'))).not.toContain('headerLeft');
   });
 
-  it('leaves a cold-linked screen for Climbs when there is nothing to go back to', () => {
+  // The #5960 X on a reset is every platform's, iPad included.
+  it('keeps the reset close button, which leaves through navigation', () => {
     platformMock.isPad = true;
-    routerMock.canGoBack.mockReturnValue(false);
-    const { headerLeft } = optionsFor('spray/holds');
-    if (!headerLeft) throw new Error('spray/holds has no headerLeft');
+    const { headerLeft } = optionsFor('spray/new', { resetOf: 'wall-uuid' });
+    if (!headerLeft) throw new Error('spray/new has no headerLeft');
     render(createElement('div', null, headerLeft({ tintColor: '#000' })));
-
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-
-    expect(routerMock.dismissTo).toHaveBeenCalledWith('/(tabs)/climbs');
-    expect(routerMock.back).not.toHaveBeenCalled();
+    expect(routerMock.back).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -289,4 +279,20 @@ describe('the add-a-board wizard chrome', () => {
     expect(title).toBe('');
     expect(headerLeft).toBeUndefined();
   });
+});
+
+// A root route pushed from inside this modal is presented as a second sheet, so
+// every gym screen the picker opens has a copy registered here, and the
+// builders' gym row is a pushed page rather than a sheet.
+describe('the screens that stay inside the Boards sheet', () => {
+  it.each(['gyms', 'gyms/edit', 'gyms/analytics', 'gym-picker', 'privacy-access'])(
+    'registers %s in this stack',
+    (name) => {
+      render(createElement(BoardsLayout));
+      const declared = screens.byName.get(name);
+      expect(declared).toBeDefined();
+      const options = typeof declared?.options === 'function' ? declared.options({ route: {} }) : declared?.options;
+      expect(Object.keys(options ?? {})).not.toContain('presentation');
+    },
+  );
 });

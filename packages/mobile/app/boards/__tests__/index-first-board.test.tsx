@@ -679,7 +679,7 @@ describe('the picker in first-board mode', () => {
 
     expect(chooseFirstBoardPathMock).toHaveBeenCalledWith('gym_map');
     expect(routerMock.push).toHaveBeenCalledWith({
-      pathname: '/gyms',
+      pathname: '/boards/gyms',
       params: { returnTo: '/(tabs)/climbs', source: 'onboarding', from: 'picker' },
     });
   });
@@ -833,7 +833,7 @@ describe('the ordinary onboarding picker', () => {
     fireEvent.click(screen.getByText('mobile.discovery.nearbyMap'));
 
     expect(routerMock.push).toHaveBeenCalledWith({
-      pathname: '/gyms',
+      pathname: '/boards/gyms',
       params: { returnTo: '/(tabs)/climbs', source: 'onboarding', from: 'picker' },
     });
   });
@@ -846,7 +846,7 @@ describe('the ordinary onboarding picker', () => {
     fireEvent.click(screen.getByText('mobile.discovery.nearbyMap'));
 
     expect(routerMock.push).toHaveBeenCalledWith({
-      pathname: '/gyms',
+      pathname: '/boards/gyms',
       params: { returnTo: '/(tabs)/climbs', from: 'picker' },
     });
   });
@@ -1030,7 +1030,7 @@ describe("the ordinary picker's Near you", () => {
     expect(screen.queryByText('mobile.firstBoard.findGymOnMap')).toBeNull();
     fireEvent.click(screen.getByText('mobile.discovery.nearbyMap'));
     expect(routerMock.push).toHaveBeenCalledWith({
-      pathname: '/gyms',
+      pathname: '/boards/gyms',
       params: { returnTo: '/(tabs)/climbs', from: 'picker' },
     });
   });
@@ -1328,7 +1328,7 @@ describe("the In range slot's ways forward for a board it can't name", () => {
     expect(scanCtrl.stop).toHaveBeenCalledOnce();
     expect(setPendingRecognitionMock).toHaveBeenCalledExactlyOnceWith({ deviceId: 'MOON-BOX', boardType: 'moonboard' });
     expect(routerMock.push).toHaveBeenCalledWith({
-      pathname: '/gyms',
+      pathname: '/boards/gyms',
       params: { returnTo: '/(tabs)/climbs', source: 'onboarding', from: 'picker', boardType: 'moonboard' },
     });
   });

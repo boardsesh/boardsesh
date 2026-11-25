@@ -190,7 +190,8 @@ vi.mock('../../Button', () => ({
     createElement('button', { onClick: onPress, disabled }, title),
 }));
 vi.mock('../../ActivityIndicator', () => ({ ActivityIndicator: () => createElement('i') }));
-vi.mock('../../board-discovery/GymPickerSheet', () => ({ GymPickerSheet: () => null }));
+// The gym row pushes a route; its own suite covers the handoff.
+vi.mock('../../../lib/boards/use-gym-picker-route', () => ({ useGymPickerRoute: () => () => undefined }));
 vi.mock('../../board-discovery/BoardMetaFields', () => ({
   BuilderTextInput: () => null,
   BoardGymField: () => null,

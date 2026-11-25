@@ -924,14 +924,10 @@
       }
     },
     "gymPicker": {
-      "title": "¿Dónde está este plafón?",
-      "subtitle": "Elige el rocódromo donde está para que los escaladores lo encuentren en el mapa.",
-      "searchPlaceholder": "Buscar rocódromos",
       "noGym": "No está en un rocódromo",
       "noGymHint": "Seguirá apareciendo en el mapa con su propio marcador.",
       "noGymHintOffMap": "No sale en el mapa mientras no sea público.",
       "addNew": "Mi rocódromo no aparece",
-      "empty": "No hay rocódromos cerca",
       "sharedEditHint": "El personal del rocódromo puede editar los datos de este plafón y quitarlo de su ficha. Sigue siendo tuyo.",
       "linkError": "No se pudo vincular ese rocódromo. Puede estar demasiado lejos de tu plafón. El resto de cambios sí se guardaron."
     },

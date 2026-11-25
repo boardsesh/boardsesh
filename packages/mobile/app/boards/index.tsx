@@ -122,6 +122,7 @@ import { useTheme } from '../../src/providers/theme-provider';
 import { useToast } from '../../src/providers/toast-provider';
 import { forgetOfflineBoard, offlineBoardKeyForBoard, useOfflineBoards } from '../../src/settings';
 import { spacing } from '../../src/theme/tokens';
+import { openSignIn } from '../../src/lib/routing/open-sign-in';
 
 // Module-level so an absent board list keeps a stable identity: offline
 // `boardConnection` is always undefined, and a fresh `[]` per render would
@@ -1532,7 +1533,7 @@ export default function BoardSelection() {
         <Text variant="subheadline" tone="secondary" style={styles.stateSubtitle}>
           {t('mobile.signInSubtitle')}
         </Text>
-        <Button title={t('mobile.signInCta')} onPress={() => router.push('/auth/login')} style={styles.stateButton} />
+        <Button title={t('mobile.signInCta')} onPress={() => openSignIn(router, 'boards')} style={styles.stateButton} />
       </ScrollView>
     );
   }

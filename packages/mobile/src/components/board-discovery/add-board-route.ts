@@ -4,13 +4,15 @@
 //
 // With the `add-board-wizard` flag on, the builder is reached through the
 // wizard (`wizardEntry`): the + pushes its step 1. Off, the + menu's rows open
-// the builder, the add-a-wall wizard and the gym map as before.
+// the builder, the add-a-wall wizard and the gym map as before. Every route
+// here is in the picker's own stack, the gym map included.
 
 import type { BoardPickerAddKind } from '../../lib/boards/board-picker-add-analytics';
 import { wizardWhereHref, type AddBoardWizardEntry } from '../../lib/boards/add-board-wizard';
+import { gymMapHref, type GymMapHref } from '../gym-page/gym-page-route';
 
 export type AddBoardRoute = {
-  pathname: '/boards/create' | '/boards/spray/new' | '/gyms' | '/boards/add';
+  pathname: '/boards/create' | '/boards/spray/new' | GymMapHref['pathname'] | '/boards/add';
   params: Record<string, string>;
 };
 
@@ -56,9 +58,13 @@ export function addBoardRoute(kind: BoardPickerAddKind, context: AddBoardRouteCo
       return { pathname: '/boards/create', params };
     case 'spraywall':
       return { pathname: '/boards/spray/new', params };
-    case 'gym_map':
+    case 'gym_map': {
       if (context.fromPicker) params.from = 'picker';
-      return { pathname: '/gyms', params };
+      // Every caller stands in the picker's stack, so the map is the picker's
+      // own copy: the root `/gyms` pushed from in there would stack a second
+      // sheet on the picker (gym-page-route.ts).
+      return gymMapHref('boards', params);
+    }
   }
 }
 

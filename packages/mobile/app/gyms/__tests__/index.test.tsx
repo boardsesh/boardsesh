@@ -93,6 +93,17 @@ const captured = vi.hoisted(() => ({
     isError: boolean;
   },
   rosterGymUuids: [] as (string | null)[],
+  segments: ['gyms'] as string[],
+  panelOpeners: null as { onOpenGym?: (gym: Gym) => void; onEditGym: (gym: Gym) => void } | null,
+  cardList: null as {
+    data: readonly { kind: string; key: string }[];
+    renderItem: (info: { item: unknown }) => ReactNode;
+    map?: ReactNode;
+    mapAvailable?: boolean;
+    mapHidden?: boolean;
+    stickyHeader?: ReactNode;
+  } | null,
+  browseRow: null as { onOpenGym?: (gym: Gym) => void; onEditGym: (gym: Gym) => void } | null,
 }));
 
 vi.mock('react-native', () => ({
@@ -110,15 +121,18 @@ vi.mock('react-native', () => ({
     onChangeText,
     onSubmitEditing,
     onFocus,
+    onBlur,
   }: {
     value: string;
     onChangeText: (text: string) => void;
     onSubmitEditing: () => void;
     onFocus?: () => void;
+    onBlur?: () => void;
   }) =>
     createElement('input', {
       value,
       onFocus,
+      onBlur,
       onChange: (event: { target: { value: string } }) => onChangeText(event.target.value),
       onKeyDown: (event: { key: string }) => {
         if (event.key === 'Enter') onSubmitEditing();
@@ -136,6 +150,21 @@ vi.mock('expo-router', () => ({
   Stack: { Screen: () => null },
   useRouter: () => routerMock,
   useLocalSearchParams: () => captured.params,
+  useSegments: () => captured.segments,
+}));
+vi.mock('../../../src/hooks/use-transparent-header-inset', () => ({ useTransparentHeaderInset: () => 0 }));
+// The board picker's copy draws MapCardList; its own suite covers the layout.
+vi.mock('../../../src/components/gym-directory/MapCardList', () => ({
+  MapCardList: (props: NonNullable<typeof captured.cardList>) => {
+    captured.cardList = props;
+    return createElement('div', { 'data-testid': 'map-card-list' }, props.stickyHeader, props.map);
+  },
+}));
+vi.mock('../../../src/components/gym-directory/GymBrowseRow', () => ({
+  GymBrowseRow: (props: NonNullable<typeof captured.browseRow>) => {
+    captured.browseRow = props;
+    return null;
+  },
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('react-native-safe-area-context', () => ({
@@ -244,6 +273,8 @@ vi.mock('../../../src/components/gym-directory/GymListPanel', () => ({
     availableHeight?: number;
     onActivateBoard: (board: UserBoard) => void;
     onPressGym: (gym: Gym) => void;
+    onOpenGym?: (gym: Gym) => void;
+    onEditGym: (gym: Gym) => void;
     mapAvailable: boolean;
     filterSlot?: ReactNode;
     placeCaption?: ReactNode;
@@ -256,6 +287,7 @@ vi.mock('../../../src/components/gym-directory/GymListPanel', () => ({
       [],
     );
     captured.panelBox = { availableHeight: props.availableHeight };
+    captured.panelOpeners = { onOpenGym: props.onOpenGym, onEditGym: props.onEditGym };
     captured.onActivateBoard = props.onActivateBoard;
     captured.onPressGym = props.onPressGym;
     captured.mapAvailable = props.mapAvailable;
@@ -312,6 +344,8 @@ vi.mock('../../../src/theme/tokens', () => ({
 }));
 
 const { default: GymDiscovery } = await import('../index');
+const { default: BoardsGymMap } = await import('../../boards/gyms');
+const { GymRouteStackContext } = await import('../../../src/components/gym-page/use-gym-route-stack');
 
 const GYM_WALL = { uuid: 'wall-1', name: 'Crux Kilter', gymUuid: 'gym-1' } as unknown as UserBoard;
 
@@ -343,6 +377,10 @@ beforeEach(() => {
   captured.rowArgs = null;
   captured.rosterQuery = { data: undefined, isPending: false, isError: false };
   captured.rosterGymUuids = [];
+  captured.segments = ['gyms'];
+  captured.panelOpeners = null;
+  captured.cardList = null;
+  captured.browseRow = null;
   captured.gymsQuery = idleQuery();
   captured.boardsQuery = idleQuery();
 });
@@ -888,5 +926,117 @@ describe('gym finder analytics', () => {
     act(() => captured.onPressGym?.(gym));
     const picks = trackMock.mock.calls.filter(([name]) => name === 'Gym Finder Gym Picked');
     expect(picks).toEqual([['Gym Finder Gym Picked', { surface: 'gyms_map', section: 'list' }]]);
+  });
+});
+
+// The gym map is registered twice (gym-page-route.ts): the root copy draws the
+// full-screen map and its panel; the board picker's copy (app/boards/gyms.tsx)
+// draws the map card over the list, because a draggable panel inside the
+// picker's sheet is a sheet on a sheet. Each route file names its shell, and
+// what each opens follows the stack it is REGISTERED in (the context the
+// picker's layout provides), never the focused route: a root map under a Boards
+// modal must not swap shells or start pushing into the picker.
+describe('the two copies of the gym map', () => {
+  const madrid: Coords = { latitude: 40.47, longitude: -3.86 };
+  const crux = { uuid: 'gym-1', name: 'Crux' } as unknown as Gym;
+  const gymRow = { kind: 'gym', key: 'gym:gym-1', gym: crux };
+
+  function renderPickerCopy() {
+    return render(createElement(GymRouteStackContext.Provider, { value: 'boards' }, createElement(BoardsGymMap)));
+  }
+
+  it('keeps the full-screen map and its panel on the root stack, whatever route is focused', () => {
+    captured.segments = ['boards', 'index'];
+    const { queryByTestId } = render(createElement(GymDiscovery));
+    expect(captured.panelOpeners).not.toBeNull();
+    expect(queryByTestId('map-card-list')).toBeNull();
+  });
+
+  it('opens the gym page and the gym editor in the root stack from the root map, even under a Boards modal', () => {
+    captured.segments = ['boards', 'index'];
+    render(createElement(GymDiscovery));
+    act(() => captured.panelOpeners?.onOpenGym?.(crux));
+    act(() => captured.panelOpeners?.onEditGym(crux));
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/gyms/[gym]', params: { gym: 'gym-1' } });
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/gyms/edit', params: { gymUuid: 'gym-1' } });
+  });
+
+  it('draws a map card over the list in the picker, with no draggable panel and no floating close', () => {
+    captured.segments = ['gyms'];
+    captured.coords = madrid;
+    const { getByTestId, queryByLabelText } = renderPickerCopy();
+    expect(getByTestId('map-card-list')).toBeTruthy();
+    expect(captured.panelOpeners).toBeNull();
+    expect(captured.cardList?.map).toBeTruthy();
+    expect(queryByLabelText('mobile.gyms.closeMap')).toBeNull();
+    // The filter chips ride in the card list's sticky slot.
+    expect(captured.chips).not.toBeNull();
+  });
+
+  it('shows the location prompt as the only row while there is nowhere to look', () => {
+    renderPickerCopy();
+    expect(captured.cardList?.data.map((row) => row.kind)).toEqual(['locationPrompt']);
+  });
+
+  it('folds the map card on focus, and keeps it folded after a blur that left text', () => {
+    captured.coords = madrid;
+    const { container } = renderPickerCopy();
+    expect(captured.cardList?.mapHidden).toBe(false);
+    const field = container.querySelector('input');
+    if (!field) throw new Error('no search field');
+    act(() => {
+      fireEvent.focus(field);
+    });
+    expect(captured.cardList?.mapHidden).toBe(true);
+    act(() => {
+      fireEvent.change(field, { target: { value: 'Cr' } });
+    });
+    act(() => {
+      fireEvent.blur(field);
+    });
+    expect(captured.cardList?.mapHidden).toBe(true);
+  });
+
+  it('unfolds the map card on a blur that leaves the picked town unchanged', () => {
+    captured.coords = madrid;
+    const lyon: PlaceSuggestion = {
+      id: 2996944,
+      name: 'Lyon',
+      region: 'Auvergne-Rhone-Alpes',
+      country: 'France',
+      countryCode: 'FR',
+      latitude: 45.764,
+      longitude: 4.8357,
+    };
+    const { container } = renderPickerCopy();
+    act(() => captured.onSelectPlace?.(lyon));
+    expect(captured.cardList?.mapHidden).toBe(false);
+    const field = container.querySelector('input');
+    if (!field) throw new Error('no search field');
+    act(() => {
+      fireEvent.focus(field);
+    });
+    expect(captured.cardList?.mapHidden).toBe(true);
+    // Submitting the town's own label changes nothing, so the blur must bring the card back.
+    act(() => {
+      fireEvent.blur(field);
+    });
+    expect(captured.cardList?.mapHidden).toBe(false);
+  });
+
+  it('opens the gym page and the gym editor inside the picker stack, whatever route is focused', () => {
+    captured.segments = ['gyms'];
+    captured.coords = madrid;
+    captured.params = { returnTo: '/(tabs)/climbs' };
+    renderPickerCopy();
+    const rowElement = captured.cardList?.renderItem({ item: gymRow });
+    render(createElement('div', null, rowElement));
+    act(() => captured.browseRow?.onOpenGym?.(crux));
+    act(() => captured.browseRow?.onEditGym(crux));
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/boards/gym/[gym]',
+      params: { gym: 'gym-1', returnTo: '/(tabs)/climbs' },
+    });
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/boards/gyms/edit', params: { gymUuid: 'gym-1' } });
   });
 });

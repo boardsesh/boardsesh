@@ -924,14 +924,10 @@
       }
     },
     "gymPicker": {
-      "title": "Dov'è questo pannello?",
-      "subtitle": "Scegli la palestra in cui si trova così i climber lo trovano sulla mappa.",
-      "searchPlaceholder": "Cerca palestre",
       "noGym": "Non in una palestra",
       "noGymHint": "Comparirà comunque sulla mappa come segnaposto a sé.",
       "noGymHintOffMap": "Resta fuori dalla mappa finché non è pubblico.",
       "addNew": "La mia palestra non è in elenco",
-      "empty": "Nessuna palestra vicina",
       "sharedEditHint": "Lo staff della palestra può modificare i dettagli di questo pannello e toglierlo dalla sua scheda. Resta tuo.",
       "linkError": "Impossibile collegare quella palestra. Potrebbe essere troppo lontana dal tuo pannello. Le altre modifiche sono state salvate."
     },

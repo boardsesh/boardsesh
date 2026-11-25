@@ -340,7 +340,8 @@ vi.mock('../../Button', () => ({
     createElement('button', { onClick: onPress }, title),
 }));
 vi.mock('../../ActivityIndicator', () => ({ ActivityIndicator: () => createElement('i') }));
-vi.mock('../../board-discovery/GymPickerSheet', () => ({ GymPickerSheet: () => null }));
+// The gym row pushes a route; its own suite covers the handoff.
+vi.mock('../../../lib/boards/use-gym-picker-route', () => ({ useGymPickerRoute: () => () => undefined }));
 // The rename sheet is a native sheet; here it is a field that hands its value
 // straight back, as Done would.
 vi.mock('../SprayWallNameSheet', () => ({

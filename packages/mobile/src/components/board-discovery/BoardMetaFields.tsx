@@ -34,14 +34,14 @@ import { Button } from '../Button';
 import { SegmentedControl } from '../SegmentedControl';
 import { sprayWallVisibility, type SprayWallVisibility } from '../../lib/spray/spray-share';
 import { sprayVisibilityHint } from '../spray-wall/spray-details-model';
-import type { PickedGym } from './GymPickerSheet';
+import type { PickedGym } from '../../lib/boards/gym-pick-handoff';
 import { spacing, borderRadius } from '../../theme/tokens';
 
 /**
  * A gym as the picker hands it back and both builders hold it.
  *
  * Re-exported rather than re-declared: the builders' `setSelectedGym` has to
- * accept exactly what `GymPickerSheet.onSelect` produces, and a second
+ * accept exactly what the gym picker hands back (`GymPick`), and a second
  * structurally-identical declaration is a type that drifts the first time the
  * picker learns a new field.
  */
@@ -121,11 +121,9 @@ export function BoardIdentityFields({
   /** Shown while the name is blank — usually the auto-generated default. */
   namePlaceholder: string;
   /**
-   * Open the gym picker.
-   *
-   * The SHEET itself is the host's, deliberately: it has to be a sibling of the
-   * host's ScrollView, not a descendant of it, or it inherits the scroller's
-   * clipping and its pan. This component only draws the row that asks for it.
+   * Open the gym picker: the host pushes `/boards/gym-picker` and takes the
+   * answer back (`useGymPickerRoute`). This component only draws the row that
+   * asks for it.
    */
   onOpenGymPicker: () => void;
   /** The gym was picked earlier in the add-a-board wizard: shown, not changeable here. */
@@ -172,7 +170,7 @@ export function BoardGymField({
   lockedHint,
 }: {
   selectedGym: { name: string } | null;
-  /** Open the gym picker. The sheet is the host's, as for `BoardIdentityFields`. */
+  /** Open the gym picker. The host pushes it, as for `BoardIdentityFields`. */
   onOpenGymPicker: () => void;
   /**
    * The gym the add-a-board wizard's earlier step picked: the row names it with

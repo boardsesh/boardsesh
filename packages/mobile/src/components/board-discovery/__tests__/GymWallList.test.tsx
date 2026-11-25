@@ -12,6 +12,7 @@ import type { ExistingWallCandidate, UserBoard } from '@boardsesh/shared-schema'
 type Children = { children?: ReactNode };
 
 const pushMock = vi.hoisted(() => vi.fn());
+const dismissToMock = vi.hoisted(() => vi.fn());
 const setOptionsMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
 const takeWallMock = vi.hoisted(() => vi.fn());
@@ -44,7 +45,7 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
 vi.mock('expo-router', () => ({
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => ({ push: pushMock, dismissTo: dismissToMock }),
   useNavigation: () => ({ setOptions: setOptionsMock }),
 }));
 vi.mock('react-i18next', () => ({
@@ -417,7 +418,8 @@ describe('GymWallList', () => {
     renderList();
     expect(screen.getByText('Wall a')).toBeTruthy();
     fireEvent.click(screen.getByText('mobile.findWall.signInToAdd'));
-    expect(pushMock).toHaveBeenCalledWith('/auth/login');
+    // In place of the picker, never a second sheet on top of it.
+    expect(dismissToMock).toHaveBeenCalledWith('/auth/login');
   });
 
   it('offers Report a problem instead for a gym with no coordinates', () => {
@@ -434,7 +436,7 @@ describe('GymWallList', () => {
     state.candidates.data = { candidates: [candidate('a')], truncated: false };
     renderList();
     fireEvent.click(screen.getByText('Wall a'));
-    expect(pushMock).toHaveBeenCalledWith('/auth/login');
+    expect(dismissToMock).toHaveBeenCalledWith('/auth/login');
     expect(takeWallMock).not.toHaveBeenCalled();
   });
 

@@ -568,12 +568,11 @@ function RootLayout() {
                                                       no-board CTA — board switching is rare, so it doesn't
                                                       earn a tab. Its own _layout owns the headers.
 
-                                                      On iPad a spray flow opened straight from the live
-                                                      board sheet is this stack's FIRST screen, which
-                                                      ignores its own presentation, so the full-screen
-                                                      cover is decided here from the entry screen. iPad
-                                                      never mounts NativeTabs, so rule 2 of
-                                                      docs/mobile/mobile-sheets-vs-routes.md is not in play. */}
+                                                      Every screen inside it, the iPad spray flow
+                                                      included, is a plain push in its own stack: a
+                                                      root route with no `presentation` pushed from
+                                                      inside it is presented as a second sheet
+                                                      (docs/mobile/mobile-sheets-vs-routes.md). */}
                                                                               <Stack.Screen
                                                                                 name="spray-led-fullscreen"
                                                                                 options={{

@@ -24,7 +24,8 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { useRequestGymClaim } from '../../lib/graphql/hooks';
 import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import type { ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
-import { gymPageHref, gymPageStackForSegments } from '../gym-page/gym-page-route';
+import { gymPageHref } from '../gym-page/gym-page-route';
+import { useGymRouteStack } from '../gym-page/use-gym-route-stack';
 
 type ClaimMode = 'domain' | 'admin';
 
@@ -90,7 +91,8 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed, onCheckBoards }: ClaimG
     requestClaim.reset();
   }, [canUseDomain, requestClaim]);
 
-  const stack = gymPageStackForSegments(segments);
+  // The stack the sheet's own screen is registered in, not the focused route's.
+  const stack = useGymRouteStack();
   // Already on this gym's page (a report sheet's claim nudge there): the page
   // refreshes into its staff view on its own, so pushing it again would stack a copy.
   const onThisGymsPage =
