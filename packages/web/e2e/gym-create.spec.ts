@@ -47,6 +47,13 @@ test.describe('Create a gym from the directory', () => {
     await expect(page.getByRole('button', { name: /Location: 51\.5074, -0\.1278/ })).toBeVisible();
     expect(addressLookups).toBe(1);
     await page.getByRole('button', { name: 'Save and choose boards' }).click();
+    // Every gym within 150 m counts as similar, so a gym an earlier run (or a
+    // retry) left at these coordinates refuses the save until it's confirmed.
+    const addNewGym = page.getByRole('button', { name: 'No, add a new gym' });
+    await expect
+      .poll(async () => (await addNewGym.isVisible()) || /\/gyms\/new\?gym=/.test(page.url()), { timeout: 15_000 })
+      .toBe(true);
+    if (await addNewGym.isVisible()) await addNewGym.click();
     await expect(page).toHaveURL(/\/gyms\/new\?gym=/);
     const savedGymUuid = new URL(page.url()).searchParams.get('gym');
     expect(savedGymUuid).toBeTruthy();
