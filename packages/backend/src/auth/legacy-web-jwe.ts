@@ -5,7 +5,7 @@ let cachedEncryptionKey: Uint8Array | null = null;
 let cachedSecret: string | null = null;
 
 /** The released NextAuth v4 key derivation. No credential or lineage authority. */
-export async function decryptLegacyWebJwe(token: string, secret: string, clockTolerance: number) {
+export async function decryptLegacyWebJwe(token: string, secret: string, clockTolerance: number, currentDate?: Date) {
   if (!cachedEncryptionKey || cachedSecret !== secret) {
     cachedEncryptionKey = await hkdf(
       'sha256',
@@ -16,5 +16,7 @@ export async function decryptLegacyWebJwe(token: string, secret: string, clockTo
     );
     cachedSecret = secret;
   }
-  return jwtDecrypt(token, cachedEncryptionKey, { clockTolerance });
+  // Existing readers retain their own clock. A transaction-bound writer supplies
+  // actual database time, preserving JOSE's claim/tolerance semantics unchanged.
+  return jwtDecrypt(token, cachedEncryptionKey, { clockTolerance, ...(currentDate ? { currentDate } : {}) });
 }

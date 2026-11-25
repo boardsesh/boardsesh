@@ -243,6 +243,67 @@ export const setPasswordCommandSchema = z
     ]),
   })
   .strict();
+/** Transitional default-only writer. Explicit staged/canonical commands stay separate. */
+export const SET_PASSWORD_COMPATIBILITY_PATH = '/api/internal/auth/current-store/set-password/v1/compatibility';
+/** Complete JSON UTF-8 bytes, including source/viewer/password/envelope overhead. */
+export const SET_PASSWORD_COMPATIBILITY_REQUEST_BYTES = 65_536;
+export const setPasswordCompatibilityCommandSchema = z
+  .object({
+    ...commandMetadata,
+    operation: z.literal('set-password'),
+    clientAddress: registrationClientAddressSchema,
+    payload: z
+      .object({
+        credential: z.string().min(1).max(SET_PASSWORD_COMPATIBILITY_REQUEST_BYTES),
+        password: setPasswordPasswordSchema,
+        confirmPassword: z.string(),
+        // Server-resolved presentation metadata, not public body IDs or signed lineage.
+        viewer: z
+          .object({
+            userId: z.string().min(1).max(SET_PASSWORD_COMPATIBILITY_REQUEST_BYTES),
+            authSessionId: z.string().min(1).max(SET_PASSWORD_COMPATIBILITY_REQUEST_BYTES).nullable(),
+          })
+          .strict(),
+      })
+      .strict()
+      .refine((payload) => payload.password === payload.confirmPassword),
+  })
+  .strict();
+export type SetPasswordCompatibilityCommand = z.infer<typeof setPasswordCompatibilityCommandSchema>;
+const setPasswordCompatibilityReplyMetadata = { protocolVersion, operation: z.literal('set-password'), requestId };
+export const setPasswordCompatibilityReplySchema = z.union([
+  z
+    .object({
+      ...setPasswordCompatibilityReplyMetadata,
+      outcome: z.enum(['set', 'already_set', 'unauthenticated', 'identity_changed']),
+    })
+    .strict(),
+  z
+    .object({
+      ...setPasswordCompatibilityReplyMetadata,
+      outcome: z.literal('error'),
+      code: z.enum(['replayed', 'unavailable', 'rolled_back']),
+    })
+    .strict(),
+  z
+    .object({
+      ...setPasswordCompatibilityReplyMetadata,
+      outcome: z.literal('error'),
+      code: z.literal('rate_limited'),
+      retryAfterSeconds: z.number().int().min(1).max(60),
+    })
+    .strict(),
+]);
+export type SetPasswordCompatibilityReply = z.infer<typeof setPasswordCompatibilityReplySchema>;
+/** Dedicated status contract: a committed command replay is unavailable, never already-set. */
+export function setPasswordCompatibilityReplyStatus(reply: SetPasswordCompatibilityReply): number {
+  if (reply.outcome === 'set') return 200;
+  if (reply.outcome === 'unauthenticated') return 401;
+  if (reply.outcome !== 'error') return 409;
+  if (reply.code === 'rate_limited') return 429;
+  return reply.code === 'rolled_back' ? 500 : 503;
+}
+
 export const webSignOutCommandSchema = z
   .object({
     ...commandMetadata,

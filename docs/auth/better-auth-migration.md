@@ -451,6 +451,8 @@ The first row's spread is bcrypt's; the second isolates the database work.
 
 **Password proof publication.** Default web password authorization now delegates through the [pre-enforcement password family](better-auth-password-login-family.md); explicitly staged authorization keeps its qualified authority endpoint. Both web password paths require the backend's actual password proof and preserve its generation, SID and authentication time through JWT construction. The final emitted-cookie admission rejects a proof superseded by reset. Proof-mode-off staged backends are unavailable to this web revision; configure and deploy the proof-capable backend before adoption. Historical issuer retirement and every remaining writer/reader deployment gate remain separate.
 
+**Default first-password writer.** The [compatibility family](better-auth-set-password-compatibility.md) relocates the default legacy-browser set-password SQL/hash to the private backend without changing generation, session ownership or authentication age. Backend/profile/RPC/key/ingress qualification must precede the dependent web adoption. It preserves the old NULL-only verification side effect as a documented compatibility defect; email-confirmed first-password policy, revoke-other-session behavior and full BA-03 acceptance remain separate.
+
 ## Native, watch, and browser compatibility
 
 The compatibility API is an accepted long-lived product contract. It preserves
