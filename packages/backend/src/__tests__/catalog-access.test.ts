@@ -86,6 +86,16 @@ beforeEach(() => {
 });
 
 describe('catalog resolver admission', () => {
+  it('can instrument a schema built through the other GraphQL module entry point', async () => {
+    const esmEntry = 'graphql/index.mjs';
+    const otherGraphQL = (await import(esmEntry)) as typeof import('graphql');
+    const schema = otherGraphQL.buildSchema(`
+      type ClimbSearchResult { totalCount: Int! }
+      type Query { searchClimbs: ClimbSearchResult }
+    `);
+    expect(() => instrumentCatalogAccess(schema)).not.toThrow();
+  });
+
   it('counts parallel aliases individually and refuses excess work before resolvers execute', async () => {
     const { schema, readClimb } = fixture();
     const result = await graphql({

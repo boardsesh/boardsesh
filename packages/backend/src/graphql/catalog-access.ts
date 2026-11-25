@@ -1,4 +1,4 @@
-import { GraphQLError, isObjectType, type GraphQLFieldResolver, type GraphQLSchema } from 'graphql';
+import { GraphQLError, type GraphQLFieldResolver, type GraphQLSchema } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import {
   CatalogRateLimitError,
@@ -139,7 +139,9 @@ export function instrumentCatalogAccess(schema: GraphQLSchema): void {
   // Search returns a lazy context. Hold permits around the child resolvers that
   // actually read Postgres, not the already-completed root resolver.
   const searchType = schema.getType('ClimbSearchResult');
-  if (!isObjectType(searchType)) return;
+  // Schema factories can load graphql's CJS entry while instrumentation loads
+  // ESM. Inspect this known composite type's API without cross-realm instanceof.
+  if (!searchType || !('getInterfaces' in searchType)) return;
   const fields = searchType.getFields();
   const resolveClimbs = fields.climbs?.resolve as CatalogResolver | undefined;
   const resolveHasMore = fields.hasMore?.resolve as CatalogResolver | undefined;
