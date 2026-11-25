@@ -43,6 +43,7 @@ import {
   type WallShelfKey,
 } from '../../lib/boards/wall-candidates';
 import { useTakeExistingWall } from '../../lib/boards/use-take-existing-wall';
+import { wizardSetupHref, type WizardRouteContext } from '../../lib/boards/add-board-wizard';
 import { spacing } from '../../theme/tokens';
 import { SHELF_HEADER_CONTENT_GAP, SHELF_SECTION_GAP, ShelfHeader } from '../ShelfHeader';
 import { PressableSurface } from '../PressableSurface';
@@ -61,6 +62,7 @@ import type { DiscoveryBoardItem } from './BoardDiscoveryCardView';
 import { DiscoveryBoardArt } from './DiscoveryBoardArt';
 import { boardTypeLabel } from './board-builder-labels';
 import { WallNotListedConfirmSheet } from './WallNotListedConfirmSheet';
+import { WizardStepHeader } from './add-board-wizard/WizardStepHeader';
 
 /** Rows a shelf shows before "Show all N". */
 export const WALL_SHELF_COLLAPSED_ROW_COUNT = 5;
@@ -82,6 +84,12 @@ type GymWallListProps = {
   source: string | undefined;
   /** How the climber got here: the gym search, or a gym page. */
   entry: 'find_step' | 'gym_page';
+  /**
+   * The add-a-board wizard's "Boards at {gym}" step: the gym is named in the
+   * body under "Step N of M" instead of in the bar, and "My board isn't listed"
+   * goes on to the wizard's Set up, with the gym locked.
+   */
+  wizard?: { stepLabel: string | null; nextContext: WizardRouteContext };
 };
 
 function lookupErrorReason(error: unknown, offline: boolean): 'offline' | 'rate_limited' | 'exception' {
@@ -89,7 +97,7 @@ function lookupErrorReason(error: unknown, offline: boolean): 'offline' | 'rate_
   return isGraphqlRateLimitedError(error) ? 'rate_limited' : 'exception';
 }
 
-export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry }: GymWallListProps) {
+export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry, wizard }: GymWallListProps) {
   const { t } = useTranslation('boards');
   const router = useRouter();
   const navigation = useNavigation();
@@ -106,10 +114,11 @@ export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry
   const gymBoardsQuery = useGymBoards(gymUuid);
   const gymBoards = gymBoardsQuery.data;
 
-  // The header names the gym once it's known.
+  // The header names the gym once it's known; in the wizard, the body does.
+  const inWizard = wizard !== undefined;
   useEffect(() => {
-    if (gym) navigation.setOptions({ title: gym.name });
-  }, [gym, navigation]);
+    if (gym && !inWizard) navigation.setOptions({ title: gym.name });
+  }, [gym, navigation, inWizard]);
 
   const [chosenType, setChosenType] = useState<BoardName | null>(initialBoardType);
   const boardType = chosenType ?? likelyBoardType(gymBoards);
@@ -269,13 +278,18 @@ export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry
   // Never with the walls listed here acknowledged: this list has no setup to
   // compare against, so the builder's first Save is always REJECT_IF_FOUND on
   // the real one, and its "already has" sheet is the gate (#8151).
+  const wizardContext = wizard?.nextContext;
   const openBuilder = useCallback(() => {
+    if (wizardContext) {
+      router.push(wizardSetupHref(wizardContext, { path: 'gym', boardType, gymUuid }));
+      return;
+    }
     const params: Record<string, string> = { kind: 'gym', gymUuid };
     if (boardType) params.boardType = boardType;
     if (returnTo !== undefined) params.returnTo = returnTo;
     if (source !== undefined) params.source = source;
     router.push({ pathname: '/boards/create', params });
-  }, [gymUuid, boardType, returnTo, source, router]);
+  }, [gymUuid, boardType, returnTo, source, router, wizardContext]);
   const onNotListed = useCallback(() => {
     switch (notListed) {
       case 'sign_in':
@@ -396,6 +410,16 @@ export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry
 
   const listHeader = (
     <View>
+      {wizard ? (
+        <View style={styles.wizardHeader}>
+          <WizardStepHeader
+            stepLabel={wizard.stepLabel}
+            title={
+              gym ? t('mobile.addWizard.gymBoardsTitle', { gym: gym.name }) : t('mobile.addWizard.gymBoardsLoading')
+            }
+          />
+        </View>
+      ) : null}
       <View style={styles.chips}>
         {boardType === null && (gymBoards !== undefined || gymBoardsQuery.isError) ? (
           <Text variant="subheadline" tone="secondary">
@@ -607,6 +631,9 @@ const styles = StyleSheet.create({
   // A closed shelf has no card under it to carry the gap to what follows.
   closedShelfHeader: {
     paddingBottom: SHELF_SECTION_GAP,
+  },
+  wizardHeader: {
+    paddingBottom: spacing[4],
   },
   chips: {
     paddingHorizontal: spacing[4],

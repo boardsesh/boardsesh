@@ -30,6 +30,12 @@ type FirstBoardChoiceProps = {
   nearbyBoardType?: BoardName | null;
   /** Drops `nearbyBoardType`. */
   onShowAllNearby?: () => void;
+  /**
+   * The add-a-board wizard is on: the cards are its step 1, answered here (At
+   * a gym, At home, A spray wall), so they use its words. At a gym still lists
+   * the boards near the climber right here, as before.
+   */
+  wizardCopy?: boolean;
 };
 
 /**
@@ -59,6 +65,7 @@ export function FirstBoardChoice({
   onRetryNearby,
   nearbyBoardType = null,
   onShowAllNearby,
+  wizardCopy = false,
 }: FirstBoardChoiceProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
@@ -101,14 +108,14 @@ export function FirstBoardChoice({
 
       <ChoiceCard
         icon="home"
-        title={t('mobile.firstBoard.own')}
-        hint={t('mobile.firstBoard.ownHint')}
+        title={wizardCopy ? t('mobile.addWizard.home') : t('mobile.firstBoard.own')}
+        hint={wizardCopy ? t('mobile.addWizard.homeHint') : t('mobile.firstBoard.ownHint')}
         onPress={onOwn}
       />
       <ChoiceCard
         icon="camera"
-        title={t('mobile.firstBoard.sprayWall')}
-        hint={t('mobile.firstBoard.sprayWallHint')}
+        title={wizardCopy ? t('mobile.addWizard.spray') : t('mobile.firstBoard.sprayWall')}
+        hint={wizardCopy ? t('mobile.addWizard.sprayHint') : t('mobile.firstBoard.sprayWallHint')}
         onPress={onAddSprayWall}
       />
     </View>

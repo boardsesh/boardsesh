@@ -518,3 +518,44 @@ describe('GymWallList', () => {
     expect(screen.getByTestId('gym-walls-gym-failed')).toBeTruthy();
   });
 });
+
+// The add-a-board wizard's "Boards at {gym}": the gym is named in the body,
+// under the step counter, and "Set up the first one" goes to the wizard's Set
+// up with the gym locked and the type chosen here.
+describe('GymWallList as the wizard step', () => {
+  const wizard = {
+    stepLabel: 'Step 3 of 4',
+    nextContext: {
+      returnTo: '/(tabs)/climbs',
+      source: 'no_board',
+      entry: 'picker' as const,
+      trail: ['where' as const, 'gym' as const, 'gym_boards' as const],
+    },
+  };
+
+  it('names the gym in the body, not the bar', () => {
+    renderList({ wizard });
+    expect(setOptionsMock).not.toHaveBeenCalled();
+    expect(screen.getByText('Step 3 of 4')).toBeTruthy();
+    expect(screen.getByText(/mobile\.addWizard\.gymBoardsTitle/)).toBeTruthy();
+  });
+
+  it("goes on to the wizard's Set up with the gym and the type", () => {
+    renderList({ wizard });
+    fireEvent.click(screen.getByText('mobile.findWall.setUpFirst'));
+    expect(pushMock).toHaveBeenCalledWith({
+      pathname: '/boards/create',
+      params: {
+        returnTo: '/(tabs)/climbs',
+        source: 'no_board',
+        entry: 'picker',
+        trail: 'where,gym,gym_boards',
+        path: 'gym',
+        kind: 'gym',
+        preset: '1',
+        presetBoardType: 'moonboard',
+        gymUuid: 'gym-1',
+      },
+    });
+  });
+});

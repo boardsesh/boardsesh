@@ -62,7 +62,7 @@ const router = { push: vi.fn() };
 const chooseFirstBoardPath = vi.fn();
 const dropHeldBox = vi.fn();
 
-function renderActionsHook() {
+function renderActionsHook(wizardEnabled = false) {
   return renderHook(() =>
     useInRangeActions({
       scan,
@@ -71,13 +71,13 @@ function renderActionsHook() {
       dropHeldBox,
       boardReturnTo: '/(tabs)/climbs',
       source: undefined,
-      gymFirstEnabled: false,
+      wizardEnabled,
     }),
   );
 }
 
-function renderActions() {
-  return renderActionsHook().result.current;
+function renderActions(wizardEnabled = false) {
+  return renderActionsHook(wizardEnabled).result.current;
 }
 
 function radioComesOn() {
@@ -162,6 +162,22 @@ describe("It's my own board", () => {
     });
     expect(pushedParams()).toEqual({ returnTo: '/(tabs)/climbs', preset: '1', presetBoardType: 'moonboard' });
     expect(held.set).toHaveBeenCalledWith({ deviceId: 'MOON', boardType: 'moonboard' });
+  });
+
+  // With the add-a-board wizard on, the button said home and the scan heard the
+  // type: the wizard's Set up opens directly, its only counted screen.
+  it("opens the wizard's Set up with the type and the heard serial, skipping Where and Which board", () => {
+    renderActions(true).onOwnBoard(unknownKilter(['751737']));
+    expect(pushedParams()).toEqual({
+      returnTo: '/(tabs)/climbs',
+      entry: 'in_range',
+      path: 'home',
+      kind: 'home',
+      preset: '1',
+      presetBoardType: 'kilter',
+      serial: '751737',
+    });
+    expect(isHeardSerialOffered({ serial: '751737', boardType: 'kilter' })).toBe(true);
   });
 
   it('holds no box for a serial row: the serial already names it', () => {

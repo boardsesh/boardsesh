@@ -271,3 +271,22 @@ describe('the spray screens on a phone', () => {
     expect(Object.keys(optionsFor('spray/holds'))).toEqual(['title', 'headerBackButtonMenuEnabled']);
   });
 });
+
+// The add-a-board wizard: step 1 has an X and its title, the steps after it
+// the native back chevron and no title (the body's "Step N of M" says where).
+describe('the add-a-board wizard chrome', () => {
+  it('gives step 1 a close button and its title', () => {
+    const { title, headerLeft } = optionsFor('add/index');
+    expect(title).toBe('Add a board');
+    if (!headerLeft) throw new Error('add/index has no headerLeft');
+    render(createElement('div', null, headerLeft({ tintColor: '#000' })));
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(routerMock.back).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['add/gym', 'add/gym-boards', 'add/board'])('keeps the back chevron and blanks the title on %s', (name) => {
+    const { title, headerLeft } = optionsFor(name);
+    expect(title).toBe('');
+    expect(headerLeft).toBeUndefined();
+  });
+});

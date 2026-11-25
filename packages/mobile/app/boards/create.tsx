@@ -57,7 +57,15 @@ import {
 } from '../../src/components/board-discovery/ExistingWallsSheet';
 import { DiscoveryBoardArt } from '../../src/components/board-discovery/DiscoveryBoardArt';
 import type { DiscoveryBoardItem } from '../../src/components/board-discovery/BoardDiscoveryCardView';
-import { useCreateBoardGymFirstEnabled, useDirectoryReportsEnabled } from '../../src/providers/feature-flags-provider';
+import { useAddBoardWizardEnabled, useDirectoryReportsEnabled } from '../../src/providers/feature-flags-provider';
+import {
+  parseWizardEntry,
+  parseWizardPath,
+  parseWizardTrail,
+  trackWizardStepViewed,
+  wizardStepPosition,
+  wizardWhereHref,
+} from '../../src/lib/boards/add-board-wizard';
 import { useReportProblemHost } from '../../src/components/report-problem/use-report-problem';
 import { canReportBoard } from '../../src/components/report-problem/report-problem-model';
 import { dismissManagedSheetAndWait, type ManagedSheetHandle } from '../../src/providers/sheet-presentation-provider';
@@ -244,10 +252,28 @@ export default function CreateBoard() {
     boardType?: string;
     /** `'1'` from "My gym isn't listed": open with the location field focused. */
     focusLocation?: string;
+    /** The add-a-board wizard's branch (`gym` | `home`), when it opened this. */
+    path?: string;
+    /** How the wizard was entered; see `AddBoardWizardEntry`. */
+    entry?: string;
+    /** The wizard steps before this one, for "Step N of M". */
+    trail?: string;
   }>();
   const router = useRouter();
-  const gymFirstEnabled = useCreateBoardGymFirstEnabled();
+  // Decided at mount, like the redirect below: a flag that resolves later never
+  // restyles a form the climber is filling in.
+  const wizardFlagEnabled = useAddBoardWizardEnabled();
+  const [wizardEnabled] = useState(wizardFlagEnabled);
   const kind = parseBoardKind(params.kind);
+  const wizardPath = parseWizardPath(params.path);
+  // Only a builder the wizard (or the In range slot with the wizard on) opened
+  // carries an entry; anything else reports null, as before the wizard.
+  const wizardEntry =
+    wizardEnabled && (wizardPath !== null || params.entry !== undefined) ? parseWizardEntry(params.entry) : null;
+  // "Step 3 of 3": null when the wizard didn't open this, or it is the only screen.
+  const [stepPosition] = useState(() =>
+    wizardEntry === null ? null : wizardStepPosition('setup', parseWizardTrail(params.trail)),
+  );
   const boardReturnTo = resolveBoardReturnTo(params.returnTo);
   // Threaded through the picker from the first-run flow. Creating a board is one
   // of the ways a climber binds their first one, so it has to close out
@@ -358,12 +384,12 @@ export default function CreateBoard() {
     });
   }, [prefillGym, gymPrefilled, prefillCleared, gymChosenInForm, setSelectedGym]);
 
-  // A bare open of the builder (a deep link, an old entry) asks home or gym
-  // first while the gym-first flow is on. Decided at mount only: a flag that
-  // resolves later must never yank a form out from under the climber.
-  const [redirectToWhere] = useState(
+  // A bare open of the builder (a deep link, an old entry) starts the add-a-board
+  // wizard while its flag is on. Decided at mount only: a flag that resolves
+  // later must never yank a form out from under the climber.
+  const [redirectToWizard] = useState(
     () =>
-      gymFirstEnabled &&
+      wizardEnabled &&
       kind === null &&
       !presetRequested &&
       prefillGymUuid === null &&
@@ -371,12 +397,17 @@ export default function CreateBoard() {
       params.boardType === undefined,
   );
   useEffect(() => {
-    if (!redirectToWhere) return;
-    const whereParams: Record<string, string> = {};
-    if (params.returnTo !== undefined) whereParams.returnTo = params.returnTo;
-    if (params.source !== undefined) whereParams.source = params.source;
-    router.replace({ pathname: '/boards/where', params: whereParams });
+    if (!redirectToWizard) return;
+    router.replace(wizardWhereHref({ returnTo: params.returnTo, source: params.source, entry: 'link' }));
     // Once, at mount: see above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // `Add Board Wizard Step Viewed` for Set up, when the wizard opened it.
+  useEffect(() => {
+    if (redirectToWizard || wizardEntry === null) return;
+    trackWizardStepViewed({ step: 'setup', path: wizardPath ?? kind, entry: wizardEntry });
+    // Once per screen: the route's params cannot change while it is mounted.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -443,9 +474,9 @@ export default function CreateBoard() {
     const openedAtMs = Date.now();
     const ticket = boardFlowTicket();
     return () => {
-      // Handed straight on to "Where's this board?": that screen is the one
+      // Handed straight on to the wizard's "Where's the board?": that screen is the one
       // the climber sees, and reports for itself.
-      if (redirectToWhere) return;
+      if (redirectToWizard) return;
       if (boardSecuredRef.current) return;
       if (!claimBoardFlowAbandonment(ticket)) return;
       track(SHARED_EVENTS.BoardBuilderAbandoned, {
@@ -457,6 +488,8 @@ export default function CreateBoard() {
         secondsOpen: Math.round((Date.now() - openedAtMs) / 1000),
         kind,
         step: 'form',
+        wizardPath,
+        wizardEntry,
       });
     };
     // Once per screen: the route's params cannot change while it is mounted.
@@ -711,6 +744,8 @@ export default function CreateBoard() {
           kind,
           candidateCount: acknowledged.length,
           confirmedDistinct: wallCheck.existingWallCheck === 'CONFIRMED_SEPARATE',
+          wizardPath,
+          wizardEntry,
         });
         await finish(board);
         // Navigated away on success — no need to clear `submitting` (unmounting).
@@ -1079,8 +1114,8 @@ export default function CreateBoard() {
       ? { field: configError.field, invalidSetIds: configError.invalidSetIds }
       : null;
 
-  // Handing straight on to "Where's this board?": draw nothing in between.
-  if (redirectToWhere) return null;
+  // Handing straight on to the wizard: draw nothing in between.
+  if (redirectToWizard) return null;
 
   return (
     <>
@@ -1106,6 +1141,11 @@ export default function CreateBoard() {
                 : undefined
         }
         configError={shownConfigError}
+        setupStyle={wizardEnabled ? 'rows' : 'chips'}
+        // The gym the wizard's earlier step picked stays put; one that turned
+        // out to be gone unlocks with "Choose another gym".
+        gymLocked={wizardEnabled && kind === 'gym' && prefillGymUuid !== null && gymPrefilled}
+        stepLabel={stepPosition ? t('mobile.addWizard.stepCounter', stepPosition) : null}
       />
       {existingWalls && (
         <ExistingWallsSheet

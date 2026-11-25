@@ -1036,6 +1036,10 @@ export const SHARED_EVENTS = {
   // climber was shown on the builder's "already has" sheet, against their
   // setup, and said were different; 0 when none) and
   // `confirmedDistinct` (the create went out as CONFIRMED_SEPARATE).
+  // With the add-board-wizard flag the mobile builder also sends `wizardPath`
+  // (gym | home, null when not opened from the wizard) and `wizardEntry` (as
+  // on Add Board Wizard Step Viewed, null when not opened from the wizard), so
+  // builder completion splits by entry with the flag on or off.
   BoardCreated: 'Board Created',
   // Props: { boardType, source, error_reason: 'duplicate_config' | 'rate_limited'
   //          | 'auth' | 'board_limit' | 'exception' }. 'board_limit' is the
@@ -1081,6 +1085,10 @@ export const SHARED_EVENTS = {
   // gym search and wall list). The gym-first screens send only kind, step,
   // openedFrom and secondsOpen. One event per flow: the step the climber left
   // from reports it and the screens under it stay quiet.
+  // With the add-board-wizard flag the wizard's screens report as step choice
+  // (Where's the board?), find (Which gym? and Boards at {gym}) or board
+  // (Which board?), and the builder adds wizardPath and wizardEntry as on Board
+  // Created.
   BoardBuilderAbandoned: 'Board Builder Abandoned',
   // Spray walls — the add-a-wall funnel (epic #5346, SW-09). Four steps, each
   // fired once per wall, so the drop-off between them is readable without a
@@ -1280,7 +1288,24 @@ export const SHARED_EVENTS = {
   // | where ("Where's this board?") | first_run | in_range | gym_page,
   // preAnswered (the entry already said which: first run's My own board, In
   // range's It's my own board, a gym page) }.
+  // From the add-board-wizard flag (which replaced create-board-gym-first) the
+  // wizard's step 1 sends it with surface where, and kind can also be spray (A
+  // spray wall, handed off to the add-a-wall wizard). First run's inline At
+  // home, In range's It's my own board and a gym page still send it with
+  // preAnswered true.
   BoardKindChosen: 'Board Kind Chosen',
+  // Mobile only, flag add-board-wizard. A screen of the add-a-board wizard
+  // opened. Props: { step: where (Where's the board?) | gym (Which gym?, the
+  // map) | gym_boards (Boards at {gym}) | board (Which board?, the type tiles)
+  // | setup (the builder) | spray (handed off to the add-a-wall wizard, whose
+  // own Spray Wall events take over), path: gym | home | spray (null on step
+  // 1, before it is answered), entry: picker | manage (the + on either) |
+  // empty_state | first_run | gym_page | in_range | link (an old
+  // /boards/where, /boards/find-wall or bare /boards/create link redirected
+  // in) }. Once per screen mount, so Back then forward counts twice. Funnel:
+  // where -> gym -> gym_boards -> setup, or where -> board -> setup; then Board
+  // Created, which carries the same entry and path.
+  AddBoardWizardStepViewed: 'Add Board Wizard Step Viewed',
   // The climber began looking for their gym's wall. Props: { method: location
   // (a fix came back) | text (the first search typed; length only) | place (a
   // town picked from the search's suggestions) | gym_page (opened straight on

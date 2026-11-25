@@ -31,6 +31,13 @@ import { serialReuseDisclosure } from '../../lib/boards/serial-reuse';
 import type { useBoardBuilder } from './use-board-builder';
 import type { LockedConfigReason } from './locked-config-reason';
 import { BoardConfigChips } from './BoardConfigChips';
+import { BoardSetupRows, type SetupRowModel } from './BoardSetupRows';
+import { StepCounter } from '../spray-wall/StepCounter';
+import {
+  createSetupOptionHandoffId,
+  subscribeToSetupOptionPicks,
+  type SetupOptionField,
+} from '../../lib/boards/setup-option-handoff';
 import { BoardHoldsSummary } from './BoardHoldsSummary';
 import { boardTypeLabel, cleanLayoutName, formatSizeLabel } from './board-builder-labels';
 import { BoardImageNative } from '../BoardImageNative';
@@ -55,6 +62,8 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 
 const PREVIEW_MAX_HEIGHT = 260;
+/** The restyled Set up's art (`setupStyle="rows"`): smaller, so the rows under it start on the first screen. */
+const ROWS_PREVIEW_MAX_HEIGHT = 200;
 
 type BoardBuilder = ReturnType<typeof useBoardBuilder>;
 
@@ -116,6 +125,17 @@ type BoardFormProps = {
    * under the row it is about. The caller clears it once the setup changes.
    */
   configError?: BoardConfigError | null;
+  /**
+   * How Board, Layout and Size are picked: `chips` (wrapping chip rows, the
+   * edit screen and the builder with the `add-board-wizard` flag off) or `rows`
+   * (inset-grouped rows opening a menu or a pushed checklist, the wizard's Set
+   * up). `rows` also draws the art at 200 pt with no tile behind it.
+   */
+  setupStyle?: 'chips' | 'rows';
+  /** The gym was picked earlier in the wizard: its row shows it and can't change it. */
+  gymLocked?: boolean;
+  /** "Step 4 of 4", above the art, when the wizard counts this screen. */
+  stepLabel?: string | null;
 };
 
 /** The setup row a catalogue refusal is about, and the set ids it refused. */
@@ -148,7 +168,11 @@ export function BoardForm({
   submitBlocked = false,
   errorAction,
   configError = null,
+  setupStyle = 'chips',
+  gymLocked = false,
+  stepLabel = null,
 }: BoardFormProps) {
+  const setupRows = setupStyle === 'rows';
   const headerHeight = useHeaderHeight();
   const { t } = useTranslation('boards');
   const { data: privacySettings } = usePrivacySettings();
@@ -247,6 +271,58 @@ export function BoardForm({
     [builder.sets, builder.setIds],
   );
 
+  // The restyled Set up's rows: the same options as the chips, picked by index
+  // from a menu, or by id from the pushed checklist (more than eight options).
+  const { selectBoard, selectLayout, selectSize } = builder;
+  const setupRowModels = useMemo<SetupRowModel[]>(
+    () => [
+      {
+        label: t('mobile.custom.board'),
+        options: boardOptions,
+        onSelectIndex: (index: number) => {
+          const option = boardOptions[index];
+          if (option) selectBoard(option.value);
+        },
+        testID: 'setup-row-board',
+      },
+      {
+        label: t('mobile.custom.layout'),
+        options: layoutOptions,
+        onSelectIndex: (index: number) => {
+          const option = layoutOptions[index];
+          if (option) selectLayout(option.value);
+        },
+        listField: 'layout',
+        testID: 'setup-row-layout',
+      },
+      {
+        label: t('mobile.custom.size'),
+        options: sizeOptions,
+        onSelectIndex: (index: number) => {
+          const option = sizeOptions[index];
+          if (option) selectSize(option.value);
+        },
+        listField: 'size',
+        testID: 'setup-row-size',
+      },
+    ],
+    [t, boardOptions, layoutOptions, sizeOptions, selectBoard, selectLayout, selectSize],
+  );
+  // The checklist hands its pick back to this form only.
+  const [setupHandoffId] = useState(createSetupOptionHandoffId);
+  const selectLayoutRef = useRef(selectLayout);
+  selectLayoutRef.current = selectLayout;
+  const selectSizeRef = useRef(selectSize);
+  selectSizeRef.current = selectSize;
+  useEffect(
+    () =>
+      subscribeToSetupOptionPicks(setupHandoffId, (pick) => {
+        if (pick.field === 'layout') selectLayoutRef.current(pick.value);
+        else selectSizeRef.current(pick.value);
+      }),
+    [setupHandoffId],
+  );
+
   // Editing a wall. `SUPPORTED_BOARDS` drops spray, so a wall can never be PICKED
   // here — this branch is only reached by opening an existing wall for editing,
   // and each thing it hides is a question a wall has no answer to: there is no
@@ -258,8 +334,10 @@ export function BoardForm({
   const isSprayWall = builder.boardName === 'spray';
   const showPreview = builder.layoutId != null && builder.sizeId != null && builder.setIds.length > 0;
   const setIdsWire = builder.setIds.join(',');
-  // Account for both the scroll content padding and the preview tile's padding.
-  const previewMaxWidth = windowWidth - (spacing[4] + spacing[3]) * 2;
+  // Account for both the scroll content padding and the preview tile's padding
+  // (the rows style draws no tile).
+  const previewMaxWidth = setupRows ? windowWidth - spacing[4] * 2 : windowWidth - (spacing[4] + spacing[3]) * 2;
+  const previewMaxHeight = setupRows ? ROWS_PREVIEW_MAX_HEIGHT : PREVIEW_MAX_HEIGHT;
 
   // The submit lives in the header, so it never moves with the keyboard. The
   // create/edit screens are pushed onto the boards modal stack and keep the
@@ -268,6 +346,17 @@ export function BoardForm({
   // there no way out, so Cancel takes the leading slot then.
   const router = useRouter();
   const navigation = useNavigation();
+  const { boardName: currentBoardName, layoutId: currentLayoutId, sizeId: currentSizeId } = builder;
+  const openSetupList = useCallback(
+    (field: SetupOptionField) => {
+      const selected = field === 'layout' ? currentLayoutId : currentSizeId;
+      const params: Record<string, string> = { field, boardType: currentBoardName, handoffId: setupHandoffId };
+      if (currentLayoutId != null) params.layoutId = String(currentLayoutId);
+      if (selected != null) params.selected = String(selected);
+      router.push({ pathname: '/boards/add/setup-option', params });
+    },
+    [router, currentBoardName, currentLayoutId, currentSizeId, setupHandoffId],
+  );
   const isStackRoot = (navigation.getState()?.index ?? 0) === 0;
   // Counts Save taps, so a second failure with the same words still brings the
   // error into view and says it again.
@@ -343,8 +432,13 @@ export function BoardForm({
             }}
           />
         ) : null}
+        {stepLabel ? <StepCounter label={stepLabel} /> : null}
         {/* Live board art — turns layout/size/set IDs into a recognizable wall. */}
-        <View style={[styles.preview, { backgroundColor: systemColors.secondaryBackground }]}>
+        <View
+          style={
+            setupRows ? styles.rowsPreview : [styles.preview, { backgroundColor: systemColors.secondaryBackground }]
+          }
+        >
           {showPreview ? (
             <BoardConfigPreview
               boardName={builder.boardName}
@@ -352,6 +446,7 @@ export function BoardForm({
               sizeId={builder.sizeId!}
               setIds={setIdsWire}
               maxWidth={previewMaxWidth}
+              maxHeight={previewMaxHeight}
             />
           ) : (
             <View style={styles.previewPlaceholder}>
@@ -392,7 +487,29 @@ export function BoardForm({
           </View>
         ) : null}
 
-        {isSprayWall ? null : (
+        {setupRows && !isSprayWall ? (
+          <BoardSetupRows
+            rows={setupRowModels}
+            placeholder={t('mobile.setupSuggestion.choose')}
+            disabled={lockedConfig}
+            onOpenList={openSetupList}
+          />
+        ) : null}
+        {setupRows && !isSprayWall ? (
+          <>
+            {configError?.field === 'boardType' ? (
+              <ConfigFieldError message={t('mobile.create.configError.boardType')} testID="config-error-boardType" />
+            ) : null}
+            {configError?.field === 'layoutId' ? (
+              <ConfigFieldError message={t('mobile.create.configError.layoutId')} testID="config-error-layoutId" />
+            ) : null}
+            {configError?.field === 'sizeId' ? (
+              <ConfigFieldError message={t('mobile.create.configError.sizeId')} testID="config-error-sizeId" />
+            ) : null}
+          </>
+        ) : null}
+
+        {setupRows || isSprayWall ? null : (
           <>
             <SectionLabel>{t('mobile.custom.board')}</SectionLabel>
             <BoardConfigChips
@@ -411,7 +528,7 @@ export function BoardForm({
             PICKED here, but an existing wall can still be opened for editing, and
             a wall has no catalogue layouts at all — its layout IS the wall — so
             without this it would show a "Layout" heading over an empty row. */}
-        {builder.layouts.length > 0 ? (
+        {!setupRows && builder.layouts.length > 0 ? (
           <>
             <SectionLabel>{t('mobile.custom.layout')}</SectionLabel>
             <BoardConfigChips
@@ -424,11 +541,11 @@ export function BoardForm({
         ) : null}
         {/* Outside the row's gate: a layout the catalogue lacks is exactly the
             case where the row may have nothing to draw. */}
-        {configError?.field === 'layoutId' ? (
+        {!setupRows && configError?.field === 'layoutId' ? (
           <ConfigFieldError message={t('mobile.create.configError.layoutId')} testID="config-error-layoutId" />
         ) : null}
 
-        {builder.sizes.length > 0 ? (
+        {!setupRows && builder.sizes.length > 0 ? (
           <>
             <SectionLabel>{t('mobile.custom.size')}</SectionLabel>
             <BoardConfigChips
@@ -439,7 +556,7 @@ export function BoardForm({
             />
           </>
         ) : null}
-        {configError?.field === 'sizeId' ? (
+        {!setupRows && configError?.field === 'sizeId' ? (
           <ConfigFieldError message={t('mobile.create.configError.sizeId')} testID="config-error-sizeId" />
         ) : null}
 
@@ -513,6 +630,7 @@ export function BoardForm({
               builder={builder}
               namePlaceholder={defaultName}
               onOpenGymPicker={() => setGymPickerOpen(true)}
+              gymLocked={gymLocked}
             />
 
             {/* Visibility on a WALL lives in the main form, beside the name and
@@ -770,12 +888,14 @@ function BoardConfigPreview({
   sizeId,
   setIds,
   maxWidth,
+  maxHeight,
 }: {
   boardName: BoardName;
   layoutId: number;
   sizeId: number;
   setIds: string;
   maxWidth: number;
+  maxHeight: number;
 }) {
   // The preview of a wall being edited resolves synchronously too, so it needs
   // the same subscription as every other board surface. `''` off spray.
@@ -790,7 +910,7 @@ function BoardConfigPreview({
   if (!renderData) return null;
 
   const aspect = renderData.boardWidth / renderData.boardHeight;
-  let height = PREVIEW_MAX_HEIGHT;
+  let height = maxHeight;
   let width = height * aspect;
   if (width > maxWidth) {
     width = maxWidth;
@@ -831,6 +951,14 @@ const styles = StyleSheet.create({
     minHeight: PREVIEW_MAX_HEIGHT,
     borderRadius: borderRadius.lg,
     padding: spacing[3],
+    marginBottom: spacing[2],
+  },
+  // The restyled Set up: the art alone, its own hairline-free board on the
+  // screen's background, no tile behind it.
+  rowsPreview: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: ROWS_PREVIEW_MAX_HEIGHT,
     marginBottom: spacing[2],
   },
   previewPlaceholder: {

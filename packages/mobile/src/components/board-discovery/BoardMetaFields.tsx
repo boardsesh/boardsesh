@@ -20,7 +20,7 @@ import { PressableSurface } from '../PressableSurface';
 // them structurally without either importing the other.
 
 import { useCallback, useEffect, useMemo, type ComponentProps } from 'react';
-import { Platform, StyleSheet } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { OwnPublicGymWarning } from './OwnPublicGymWarning';
 import { useTheme } from '../../providers/theme-provider';
@@ -114,6 +114,7 @@ export function BoardIdentityFields({
   builder,
   namePlaceholder,
   onOpenGymPicker,
+  gymLocked = false,
 }: {
   builder: BoardIdentityBuilder;
   /** Shown while the name is blank — usually the auto-generated default. */
@@ -126,6 +127,8 @@ export function BoardIdentityFields({
    * clipping and its pan. This component only draws the row that asks for it.
    */
   onOpenGymPicker: () => void;
+  /** The gym was picked earlier in the add-a-board wizard: shown, not changeable here. */
+  gymLocked?: boolean;
 }) {
   const { t } = useTranslation('boards');
 
@@ -145,7 +148,11 @@ export function BoardIdentityFields({
         returnKeyType="done"
       />
 
-      <BoardGymField selectedGym={builder.selectedGym} onOpenGymPicker={onOpenGymPicker} />
+      <BoardGymField
+        selectedGym={builder.selectedGym}
+        onOpenGymPicker={onOpenGymPicker}
+        locked={gymLocked && builder.selectedGym !== null}
+      />
     </>
   );
 }
@@ -157,14 +164,43 @@ export function BoardIdentityFields({
 export function BoardGymField({
   selectedGym,
   onOpenGymPicker,
+  locked = false,
 }: {
   selectedGym: { name: string } | null;
   /** Open the gym picker. The sheet is the host's, as for `BoardIdentityFields`. */
   onOpenGymPicker: () => void;
+  /**
+   * The gym the add-a-board wizard's earlier step picked: the row names it with
+   * a lock and opens nothing. Going back a step is how to pick another.
+   */
+  locked?: boolean;
 }) {
   const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
+
+  if (locked && selectedGym) {
+    return (
+      <>
+        <SectionLabel>{t('mobile.create.gym')}</SectionLabel>
+        <View
+          accessible
+          accessibilityLabel={`${t('mobile.create.gym')}, ${selectedGym.name}`}
+          accessibilityHint={t('mobile.addWizard.gymLockedHint')}
+          style={[
+            styles.gymRow,
+            { backgroundColor: systemColors.secondaryBackground, borderColor: systemColors.separator },
+          ]}
+          testID="board-gym-locked"
+        >
+          <Text variant="body" color={systemColors.label} numberOfLines={1} style={styles.gymRowLabel}>
+            {selectedGym.name}
+          </Text>
+          <Icon name="lock" size={16} color={systemColors.tertiaryLabel} />
+        </View>
+      </>
+    );
+  }
 
   return (
     <>

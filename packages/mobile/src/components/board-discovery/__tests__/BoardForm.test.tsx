@@ -23,9 +23,19 @@ const scroll = vi.hoisted(() => ({
   contentSizeChanged: undefined as (() => void) | undefined,
 }));
 
+const pushMock = vi.hoisted(() => vi.fn());
+/** What the restyled form handed its setup rows, and the gym lock its identity fields got. */
+const setupRows = vi.hoisted(() => ({
+  last: null as null | {
+    rows: { label: string; options: { label: string }[]; onSelectIndex: (index: number) => void; listField?: string }[];
+    onOpenList: (field: string) => void;
+  },
+  gymLocked: undefined as boolean | undefined,
+}));
+
 vi.mock('expo-router/react-navigation', () => ({ useHeaderHeight: () => 56 }));
 vi.mock('expo-router', () => ({
-  useRouter: () => ({ back: vi.fn() }),
+  useRouter: () => ({ back: vi.fn(), push: pushMock }),
   useNavigation: () => ({ getState: () => ({ index: 1 }) }),
 }));
 vi.mock('react-native', () => ({
@@ -111,8 +121,20 @@ vi.mock('../../privacy/AudiencePicker', () => ({ AudiencePicker: () => null, BOA
 vi.mock('../../privacy/ResourcePrivacyControl', () => ({
   ResourcePrivacyControl: () => createElement('div', { 'data-testid': 'privacy-control' }),
 }));
+vi.mock('../BoardSetupRows', () => ({
+  BoardSetupRows: (props: NonNullable<(typeof setupRows)['last']>) => {
+    setupRows.last = props;
+    return createElement('div', { 'data-setup-rows': props.rows.map((row) => row.label).join(',') });
+  },
+}));
+vi.mock('../../spray-wall/StepCounter', () => ({
+  StepCounter: ({ label }: { label: string }) => createElement('p', { 'data-step-counter': true }, label),
+}));
 vi.mock('../BoardMetaFields', () => ({
-  BoardIdentityFields: () => createElement('div', { 'data-testid': 'identity' }),
+  BoardIdentityFields: ({ gymLocked }: { gymLocked?: boolean }) => {
+    setupRows.gymLocked = gymLocked;
+    return createElement('div', { 'data-testid': 'identity' });
+  },
   BoardVisibilityFields: () => null,
   BuilderTextInput: () => null,
   SectionLabel: () => null,
@@ -361,5 +383,114 @@ describe('BoardForm with a heard serial', () => {
     const view = renderHeard(null);
     expect(view.queryByText('mobile.create.heardSerial')).toBeNull();
     expect(view.queryByText('mobile.create.heardSerialChange')).toBeNull();
+  });
+});
+
+// The add-a-board wizard's Set up (`setupStyle="rows"`): Board, Layout and Size
+// as rows (a menu, or the pushed checklist past eight options), the chips kept
+// for Holds only, the gym locked when the wizard picked it.
+describe("BoardForm restyled as the wizard's Set up", () => {
+  const selectBoard = vi.fn();
+  const selectLayout = vi.fn();
+  const selectSize = vi.fn();
+  function rowsBuilder(): BoardFormProps['builder'] {
+    return {
+      ...builderFor('kilter'),
+      layoutId: 8,
+      sizeId: 25,
+      setIds: [26, 27],
+      layouts: [
+        { id: 1, name: 'Kilter Board Original' },
+        { id: 8, name: 'Kilter Board Homewall' },
+      ],
+      sizes: [
+        { id: 25, name: '10 x 12', description: 'Full Ride' },
+        { id: 27, name: '8 x 12', description: 'Mainline' },
+      ],
+      sets: [{ id: 26, name: 'Mainline' }],
+      selectBoard,
+      selectLayout,
+      selectSize,
+    } as unknown as BoardFormProps['builder'];
+  }
+  function renderRows(props: Partial<BoardFormProps> = {}) {
+    return render(
+      <BoardForm
+        builder={rowsBuilder()}
+        defaultName="Home Kilter"
+        submitting={false}
+        onSubmit={() => {}}
+        submitLabel="Save"
+        setupStyle="rows"
+        {...props}
+      />,
+    );
+  }
+  function rows() {
+    if (!setupRows.last) throw new Error('no setup rows');
+    return setupRows.last;
+  }
+
+  beforeEach(() => {
+    setupRows.last = null;
+    setupRows.gymLocked = undefined;
+    pushMock.mockClear();
+    selectBoard.mockClear();
+    selectLayout.mockClear();
+    selectSize.mockClear();
+  });
+
+  it('draws Board, Layout and Size as rows, and chips for nothing but the holds', () => {
+    const { container } = renderRows();
+    expect(container.querySelector('[data-setup-rows]')?.getAttribute('data-setup-rows')).toBe(
+      'mobile.custom.board,mobile.custom.layout,mobile.custom.size',
+    );
+    expect(container.querySelector('[data-chips="mobile.custom.board"]')).toBeNull();
+    expect(container.querySelector('[data-chips="mobile.custom.layout"]')).toBeNull();
+    expect(container.querySelector('[data-chips="mobile.custom.size"]')).toBeNull();
+    expect(container.querySelector('[data-holds-summary]')).not.toBeNull();
+    // Only Layout and Size can grow past a menu's eight options.
+    expect(rows().rows.map((row) => row.listField ?? null)).toEqual([null, 'layout', 'size']);
+  });
+
+  it('keeps the chip rows with the default style (the flag off, and the edit screen)', () => {
+    const { container } = render(
+      <BoardForm builder={rowsBuilder()} defaultName="x" submitting={false} onSubmit={() => {}} submitLabel="Save" />,
+    );
+    expect(container.querySelector('[data-setup-rows]')).toBeNull();
+    expect(container.querySelector('[data-chips="mobile.custom.layout"]')).not.toBeNull();
+  });
+
+  it('picks from a menu by the index of the option it drew', () => {
+    renderRows();
+    const [boardRow, layoutRow, sizeRow] = rows().rows;
+    layoutRow?.onSelectIndex(0);
+    expect(selectLayout).toHaveBeenCalledExactlyOnceWith(1);
+    sizeRow?.onSelectIndex(1);
+    expect(selectSize).toHaveBeenCalledExactlyOnceWith(27);
+    boardRow?.onSelectIndex(99);
+    expect(selectBoard).not.toHaveBeenCalled();
+  });
+
+  it('pushes the checklist for a long row, and takes the pick it hands back', async () => {
+    const { emitSetupOptionPick } = await import('../../../lib/boards/setup-option-handoff');
+    renderRows();
+    rows().onOpenList('size');
+    expect(pushMock).toHaveBeenCalledTimes(1);
+    const [{ pathname, params }] = pushMock.mock.calls[0] as [{ pathname: string; params: Record<string, string> }];
+    expect(pathname).toBe('/boards/add/setup-option');
+    expect(params).toMatchObject({ field: 'size', boardType: 'kilter', layoutId: '8', selected: '25' });
+
+    emitSetupOptionPick(params.handoffId ?? '', { field: 'size', value: 27 });
+    expect(selectSize).toHaveBeenCalledExactlyOnceWith(27);
+    // Another form's address gets nothing.
+    emitSetupOptionPick('setup-option-elsewhere', { field: 'layout', value: 1 });
+    expect(selectLayout).not.toHaveBeenCalled();
+  });
+
+  it('says the step above the art, and hands the gym lock to the identity fields', () => {
+    const { container } = renderRows({ stepLabel: 'Step 4 of 4', gymLocked: true });
+    expect(container.querySelector('[data-step-counter]')?.textContent).toBe('Step 4 of 4');
+    expect(setupRows.gymLocked).toBe(true);
   });
 });

@@ -49,7 +49,7 @@ const state = vi.hoisted(() => ({
   offline: { isOffline: false, isBlocked: false, reason: null as string | null },
   reportAction: null as { open: () => void; sheet: ReactNode } | null,
   boardSheets: null as ReactNode,
-  gymFirst: false,
+  wizard: false,
 }));
 
 vi.mock('react-native', () => ({
@@ -189,7 +189,7 @@ vi.mock('../GymPageSections', () => {
 });
 vi.mock('../../../providers/feature-flags-provider', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../providers/feature-flags-provider')>()),
-  useCreateBoardGymFirstEnabled: () => state.gymFirst,
+  useAddBoardWizardEnabled: () => state.wizard,
 }));
 vi.mock('../use-gym-page-data', () => ({
   useGymPageGym: () => state.gymQuery,
@@ -256,7 +256,7 @@ beforeEach(() => {
   state.offline = { isOffline: false, isBlocked: false, reason: null };
   state.reportAction = null;
   state.boardSheets = null;
-  state.gymFirst = false;
+  state.wizard = false;
   headerCapture.accessory = null;
 });
 
@@ -452,17 +452,20 @@ describe('GymPageScreen', () => {
     expect(routerMock.push).toHaveBeenCalledWith(expect.objectContaining({ pathname: '/boards/create' }));
   });
 
-  // #8151: the gym is already known, so Set up a board opens straight on its
-  // walls, where an existing one can be taken before a copy is added.
-  it("opens straight on the gym's walls from Set up a board with the gym-first flag on", () => {
-    state.gymFirst = true;
+  // The gym is already known, so Set up a board opens the add-a-board wizard
+  // on its boards (step 1 of 2), where an existing one can be taken before a
+  // copy is added.
+  it("opens the wizard on the gym's boards from Set up a board with the wizard on", () => {
+    state.wizard = true;
     state.boards = { ...state.boards, data: [], isPending: false };
     render(<GymPageScreen />);
     fireEvent.click(screen.getByText('set-up-board'));
     expect(routerMock.push).toHaveBeenCalledWith({
-      pathname: '/boards/find-wall',
+      pathname: '/boards/add/gym-boards',
       params: expect.objectContaining({ gymUuid: 'gym-uuid-1', entry: 'gym_page' }),
     });
+    const [[route]] = routerMock.push.mock.calls as [[{ params: Record<string, string> }]];
+    expect(route.params.trail).toBeUndefined();
     expect(trackMock).toHaveBeenCalledWith('Board Kind Chosen', {
       kind: 'gym',
       surface: 'gym_page',

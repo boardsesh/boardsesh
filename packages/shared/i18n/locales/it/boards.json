@@ -568,19 +568,25 @@
       "aria": "Aggiungi un pannello",
       "setUp": "Configura un pannello",
       "sprayWall": "Aggiungi una Spraywall",
-      "findGym": "Trova una palestra",
-      "ownBoard": "Il mio pannello",
-      "gymBoard": "Un pannello della mia palestra"
+      "findGym": "Trova una palestra"
     },
-    "boardWhere": {
-      "title": "Dov'è questo pannello?",
-      "own": "Il mio pannello",
-      "ownHint": "A casa o in garage",
-      "gym": "Un pannello in palestra",
-      "gymHint": "Arrampica con la crew che ci registra già le salite"
+    "addWizard": {
+      "title": "Aggiungi un pannello",
+      "whereTitle": "Dov'è il pannello?",
+      "gym": "In una palestra",
+      "gymHint": "Trova la tua palestra, poi il suo pannello",
+      "home": "A casa",
+      "homeHint": "Il tuo muro o il pannello in garage",
+      "spray": "Una Spraywall",
+      "sprayHint": "Fotografala e segna le prese",
+      "whichBoard": "Quale pannello?",
+      "otherBoards": "Altri pannelli",
+      "gymBoardsTitle": "Pannelli a {{gym}}",
+      "gymBoardsLoading": "Pannelli in questa palestra",
+      "stepCounter": "Passo {{current}} di {{total}}",
+      "gymLockedHint": "Scelta al passo precedente. Torna indietro per sceglierne un'altra."
     },
     "findWall": {
-      "screenTitle": "Trova il pannello della tua palestra",
       "boardType": "Tipo di pannello",
       "offline": "Sei offline. Per trovare il pannello della tua palestra serve segnale.",
       "retry": "Riprova",

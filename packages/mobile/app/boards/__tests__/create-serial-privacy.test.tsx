@@ -64,7 +64,7 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
 }));
 
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
-  useCreateBoardGymFirstEnabled: () => false,
+  useAddBoardWizardEnabled: () => false,
   useDirectoryReportsEnabled: () => false,
 }));
 vi.mock('../../../src/components/report-problem/use-report-problem', () => ({

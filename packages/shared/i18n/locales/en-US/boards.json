@@ -568,19 +568,25 @@
       "aria": "Add a board",
       "setUp": "Set up a board",
       "sprayWall": "Add a Spraywall",
-      "findGym": "Find a gym",
-      "ownBoard": "My own board",
-      "gymBoard": "A board at my gym"
+      "findGym": "Find a gym"
     },
-    "boardWhere": {
-      "title": "Where's this board?",
-      "own": "My own board",
-      "ownHint": "At home or in a garage",
-      "gym": "A board at a gym",
-      "gymHint": "Climb with the crew already logging there"
+    "addWizard": {
+      "title": "Add a board",
+      "whereTitle": "Where's the board?",
+      "gym": "At a gym",
+      "gymHint": "Find your gym, then its board",
+      "home": "At home",
+      "homeHint": "Your own wall or garage board",
+      "spray": "A Spraywall",
+      "sprayHint": "Photograph it and mark the holds",
+      "whichBoard": "Which board?",
+      "otherBoards": "Other boards",
+      "gymBoardsTitle": "Boards at {{gym}}",
+      "gymBoardsLoading": "Boards at this gym",
+      "stepCounter": "Step {{current}} of {{total}}",
+      "gymLockedHint": "Picked on the last step. Go back to pick another gym."
     },
     "findWall": {
-      "screenTitle": "Find your gym's board",
       "boardType": "Board type",
       "offline": "You're offline. Finding your gym's board needs signal.",
       "retry": "Try again",

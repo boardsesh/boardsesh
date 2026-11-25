@@ -7,6 +7,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { addBoardRoute } from '../../src/components/board-discovery/add-board-route';
 import { AddBoardMenu } from '../../src/components/board-discovery/AddBoardMenu';
+import { AddBoardButton } from '../../src/components/board-discovery/AddBoardButton';
 import { withoutBoardsShown } from '../../src/components/board-discovery/board-card-actions';
 import {
   boardCardMenuAllows,
@@ -26,7 +27,7 @@ import { BoardDetailSheet, type RelistGym } from '../../src/components/board-dis
 import { useReportProblemHost } from '../../src/components/report-problem/use-report-problem';
 import { ReportReviewSheet, type ReportReviewAction } from '../../src/components/report-problem/ReportReviewSheet';
 import {
-  useCreateBoardGymFirstEnabled,
+  useAddBoardWizardEnabled,
   useDirectoryReportsEnabled,
   useFeatureFlagsResolved,
 } from '../../src/providers/feature-flags-provider';
@@ -63,11 +64,11 @@ import { trackBoardCardAction } from '../../src/lib/boards/board-card-action-ana
 import {
   trackBoardPickerAddSelected,
   trackBoardKindChosen,
-  type BoardKind,
   type BoardPickerAddKind,
   type BoardPickerAddSurface,
 } from '../../src/lib/boards/board-picker-add-analytics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
+import { wizardBoardHref } from '../../src/lib/boards/add-board-wizard';
 import { boardUuidOrNull } from '../../src/lib/boards/board-identity';
 import { orderBoardsForPartnerWorkout } from '../../src/lib/partner-workout-board-order';
 import { usePendingWorkout } from '../../src/lib/pending-workout-store';
@@ -1302,30 +1303,25 @@ export default function BoardSelection() {
     });
   }, [locationGranted, refetchNearby, refreshLocation, requestLocation]);
 
-  // Every way to add a board: the + menu, the empty state and "Where do you
-  // climb?". `source` rides along so a board made on the route closes out
+  // Every way to add a board: the + (or + menu), the empty state and "Where do
+  // you climb?". `source` rides along so a board made on the route closes out
   // onboarding exactly like a pick here: creating a board is how a home-wall
   // owner binds their first one, and the wall wizard binds a Spraywall.
   //
-  // With the gym-first flow on (#8151), the builder is reached by saying whose
-  // board it is: the + menu's two rows say it, the empty state asks on
-  // "Where's this board?".
-  const gymFirstEnabled = useCreateBoardGymFirstEnabled();
+  // With the add-a-board wizard on, a board is set up through the wizard: the +
+  // and the empty state open its step 1, "Where's the board?".
+  const wizardEnabled = useAddBoardWizardEnabled();
   const openAddRoute = useCallback(
-    (kind: BoardPickerAddKind, surface: BoardPickerAddSurface, boardKind?: BoardKind) => {
-      trackBoardPickerAddSelected({ kind, surface, boardKind });
-      if (kind === 'board' && boardKind && surface === 'picker') {
-        trackBoardKindChosen({ kind: boardKind, surface: 'picker', preAnswered: false });
-      }
-      const askKind = kind === 'board' && gymFirstEnabled && !boardKind ? 'ask' : boardKind;
-      router.push(addBoardRoute(kind, { returnTo: boardReturnTo, source, fromPicker: true, boardKind: askKind }));
+    (kind: BoardPickerAddKind, surface: BoardPickerAddSurface) => {
+      trackBoardPickerAddSelected({ kind, surface });
+      const wizardEntry =
+        kind === 'board' && wizardEnabled && (surface === 'picker' || surface === 'empty_state') ? surface : undefined;
+      router.push(addBoardRoute(kind, { returnTo: boardReturnTo, source, fromPicker: true, wizardEntry }));
     },
-    [router, boardReturnTo, source, gymFirstEnabled],
+    [router, boardReturnTo, source, wizardEnabled],
   );
-  const onAddFromMenu = useCallback(
-    (kind: BoardPickerAddKind, boardKind?: BoardKind) => openAddRoute(kind, 'picker', boardKind),
-    [openAddRoute],
-  );
+  const onAddFromMenu = useCallback((kind: BoardPickerAddKind) => openAddRoute(kind, 'picker'), [openAddRoute]);
+  const onAddWizard = useCallback(() => openAddRoute('board', 'picker'), [openAddRoute]);
   const onEmptySetUpBoard = useCallback(() => openAddRoute('board', 'empty_state'), [openAddRoute]);
   const onEmptyAddSprayWall = useCallback(() => openAddRoute('spraywall', 'empty_state'), [openAddRoute]);
 
@@ -1337,10 +1333,12 @@ export default function BoardSelection() {
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: canAddBoards
-        ? () => <AddBoardMenu onSelect={onAddFromMenu} gymFirst={gymFirstEnabled} />
+        ? wizardEnabled
+          ? () => <AddBoardButton onPress={onAddWizard} />
+          : () => <AddBoardMenu onSelect={onAddFromMenu} />
         : undefined,
     });
-  }, [navigation, canAddBoards, onAddFromMenu, gymFirstEnabled]);
+  }, [navigation, canAddBoards, onAddFromMenu, onAddWizard, wizardEnabled]);
 
   // First-board mode's answers. Each one is the existing flow behind it, plus
   // the choice event; see FirstBoardChoice.
@@ -1353,16 +1351,19 @@ export default function BoardSelection() {
   }, [chooseFirstBoardPath, dropHeldBox, searchNearby]);
   // The builder opens preset with a layout and size, so a home-wall owner's
   // Save works from the first frame instead of after finding the layout chip.
+  // With the wizard on, At home is the wizard's step 1 answered here, inline:
+  // it goes on to Which board? (step 2 of 3), so the art picks the type.
   const onFirstBoardOwn = useCallback(() => {
     chooseFirstBoardPath('own');
-    // "My own board" already says whose it is: no question on the way.
-    const boardKind = gymFirstEnabled ? 'home' : undefined;
-    trackBoardPickerAddSelected({ kind: 'board', surface: 'first_run', boardKind });
-    if (boardKind) trackBoardKindChosen({ kind: boardKind, surface: 'first_run', preAnswered: true });
-    router.push(
-      addBoardRoute('board', { returnTo: boardReturnTo, source, preset: BUILDER_PRESET_PARAM_VALUE, boardKind }),
-    );
-  }, [chooseFirstBoardPath, router, boardReturnTo, source, gymFirstEnabled]);
+    if (wizardEnabled) {
+      trackBoardPickerAddSelected({ kind: 'board', surface: 'first_run', boardKind: 'home' });
+      trackBoardKindChosen({ kind: 'home', surface: 'first_run', preAnswered: true });
+      router.push(wizardBoardHref({ returnTo: boardReturnTo, source, entry: 'first_run', trail: ['where'] }, 'home'));
+      return;
+    }
+    trackBoardPickerAddSelected({ kind: 'board', surface: 'first_run' });
+    router.push(addBoardRoute('board', { returnTo: boardReturnTo, source, preset: BUILDER_PRESET_PARAM_VALUE }));
+  }, [chooseFirstBoardPath, router, boardReturnTo, source, wizardEnabled]);
   // The wall wizard binds with the onboarding `source` too, so a wall closes out
   // first-run like any other first board.
   const onFirstBoardSprayWall = useCallback(() => {
@@ -1382,7 +1383,7 @@ export default function BoardSelection() {
     dropHeldBox,
     boardReturnTo,
     source,
-    gymFirstEnabled,
+    wizardEnabled,
   });
   const { startUnnamedRowAction } = inRangeActions;
   // A row at the top (At {gym}, or the hero's Climb here). A pick the scan led
@@ -1647,6 +1648,7 @@ export default function BoardSelection() {
           onRetryNearby={onRetryNearby}
           nearbyBoardType={nearbyBoardType}
           onShowAllNearby={showAllNearby}
+          wizardCopy={wizardEnabled}
         />
       }
       overlays={

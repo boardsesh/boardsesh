@@ -568,19 +568,25 @@
       "aria": "Board hinzufügen",
       "setUp": "Board einrichten",
       "sprayWall": "Spraywall hinzufügen",
-      "findGym": "Halle finden",
-      "ownBoard": "Mein eigenes Board",
-      "gymBoard": "Ein Board in meiner Halle"
+      "findGym": "Halle finden"
     },
-    "boardWhere": {
-      "title": "Wo steht dieses Board?",
-      "own": "Mein eigenes Board",
-      "ownHint": "Zu Hause oder in der Garage",
-      "gym": "Ein Board in einer Halle",
-      "gymHint": "Klettere mit der Crew, die dort schon ihre Begehungen einträgt"
+    "addWizard": {
+      "title": "Board hinzufügen",
+      "whereTitle": "Wo steht das Board?",
+      "gym": "In der Halle",
+      "gymHint": "Finde deine Halle, dann ihr Board",
+      "home": "Zu Hause",
+      "homeHint": "Deine eigene Wand oder das Board in der Garage",
+      "spray": "Eine Spraywall",
+      "sprayHint": "Fotografiere sie und markiere die Griffe",
+      "whichBoard": "Welches Board?",
+      "otherBoards": "Andere Boards",
+      "gymBoardsTitle": "Boards in {{gym}}",
+      "gymBoardsLoading": "Boards in dieser Halle",
+      "stepCounter": "Schritt {{current}} von {{total}}",
+      "gymLockedHint": "Im letzten Schritt gewählt. Geh zurück, um eine andere Halle zu wählen."
     },
     "findWall": {
-      "screenTitle": "Finde das Board deiner Halle",
       "boardType": "Board-Typ",
       "offline": "Du bist offline. Um das Board deiner Halle zu finden, brauchst du Empfang.",
       "retry": "Nochmal versuchen",
