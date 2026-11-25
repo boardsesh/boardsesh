@@ -119,8 +119,12 @@ export type QuickstartRowRecognition = 'serial' | 'device_id';
 export type QuickstartRow =
   /** A board we can name. Tap to make it active. */
   | { kind: 'board'; key: string; board: UserBoard; rssi: number | null; recognizedBy: QuickstartRowRecognition }
-  /** A serial nobody has saved a board for. */
-  | { kind: 'unknown_setup'; key: string; boardType: BoardName; rssi: number | null }
+  /**
+   * Serials nobody has saved a board for, one row per board type. `serials`
+   * are every one of that type heard, in the order heard: with exactly one,
+   * the builder can open with it filled in (`builderSerialForRow`).
+   */
+  | { kind: 'unknown_setup'; key: string; boardType: BoardName; rssi: number | null; serials: readonly string[] }
   /** A MoonBoard. Its controller never says which layout it drives. */
   | { kind: 'moonboard'; key: string; boardType: BoardName; rssi: number | null; deviceId: string | null }
   /** An Aurora box that advertises only its type, no serial. */
@@ -217,6 +221,9 @@ export function buildQuickstartRows({
   const signalBySerial = new Map<string, number | null>();
   const groupSignal = new Map<string, { kind: GroupedRowKind; boardType: BoardName; rssi: number | null }>();
   const groupDeviceIds = new Map<string, Set<string>>();
+  // The unsaved serials behind each unknown_setup row. A Set: a box heard
+  // twice is still one box.
+  const groupSerials = new Map<string, Set<string>>();
   const recognizedById = indexRecognizedBoardDevices(recognition?.devices ?? []);
   const knownBoardsByUuid = new Map<string, UserBoard>();
   for (const board of recognition?.knownBoards ?? []) {
@@ -284,6 +291,10 @@ export function buildQuickstartRows({
       if (device.kind !== 'serial' || !isAnswered(device.serial)) continue;
       if (matchedSerials.has(device.serial) || !device.boardType) continue;
       addToGroup('unknown_setup', device.boardType, device.rssi);
+      const groupKey = `unknown_setup:${device.boardType}`;
+      const serials = groupSerials.get(groupKey) ?? new Set<string>();
+      serials.add(device.serial);
+      groupSerials.set(groupKey, serials);
     }
   }
   if (lookup === 'failed') {
@@ -310,7 +321,13 @@ export function buildQuickstartRows({
 
   for (const [groupKey, group] of groupSignal) {
     if (group.kind === 'unknown_setup') {
-      rows.push({ kind: group.kind, key: groupKey, boardType: group.boardType, rssi: group.rssi });
+      rows.push({
+        kind: group.kind,
+        key: groupKey,
+        boardType: group.boardType,
+        rssi: group.rssi,
+        serials: [...(groupSerials.get(groupKey) ?? [])],
+      });
     } else {
       rows.push({
         kind: group.kind,
@@ -323,4 +340,21 @@ export function buildQuickstartRows({
   }
 
   return rows.sort(compareBySignal);
+}
+
+/**
+ * The serial the builder opens with when the climber says a box it heard but
+ * can't name is their own: only an unknown_setup row (MoonBoards and bare-name
+ * boxes advertise none), only when exactly one box of that type was heard, and
+ * only when the scan listened long enough for "one" to mean one
+ * (`listenedLongEnoughForSoleBox`). With two unsaved Kilter boxes in range the
+ * signal can't say which one the climber stands at, so the field stays empty
+ * rather than guess. The builder's serial checks still run on what it fills.
+ */
+export function builderSerialForRow(
+  row: Extract<QuickstartRow, { kind: 'unknown_setup' | 'moonboard' | 'bare_name' }>,
+  soleBoxHeardLongEnough: boolean,
+): string | null {
+  if (row.kind !== 'unknown_setup' || !soleBoxHeardLongEnough || row.serials.length !== 1) return null;
+  return row.serials[0] ?? null;
 }

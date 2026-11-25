@@ -69,3 +69,16 @@ export function addBoardRoute(kind: BoardPickerAddKind, context: AddBoardRouteCo
       return { pathname: '/gyms', params };
   }
 }
+
+/** The serial field's own limit (BoardForm's `maxLength`). */
+const SERIAL_MAX_LENGTH = 100;
+
+/**
+ * The builder's `serial` param as its serial field takes it: trimmed, and only
+ * within the field's 100 characters. Anything else opens with the field empty,
+ * as before the param existed.
+ */
+export function builderSerialParam(value: string | string[] | undefined): string | undefined {
+  const serial = typeof value === 'string' ? value.trim() : '';
+  return serial.length > 0 && serial.length <= SERIAL_MAX_LENGTH ? serial : undefined;
+}

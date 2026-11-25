@@ -39,6 +39,7 @@ import {
   extractSerialExistsError,
   serialReuseDisclosure,
 } from '../../src/lib/boards/serial-reuse';
+import { builderSerialParam } from '../../src/components/board-discovery/add-board-route';
 import { useBoardBuilder } from '../../src/components/board-discovery/use-board-builder';
 import { usePrivacySettings } from '../../src/lib/graphql/hooks/use-privacy';
 import { BoardForm, type BoardConfigError } from '../../src/components/board-discovery/BoardForm';
@@ -214,6 +215,12 @@ export default function CreateBoard() {
      * it couldn't name and the climber said it's their own.
      */
     presetBoardType?: string;
+    /**
+     * With `presetBoardType`: the serial of the one unsaved box of that type
+     * the In range slot heard, so the climber doesn't type it. Absent when it
+     * heard none, or two or more (`builderSerialForRow`).
+     */
+    serial?: string;
     /** `home` or `gym` from the gym-first flow (#8151): analytics, and whether a bare open asks first. */
     kind?: string;
     /** The gym the climber picked on the wall list: prefilled, coordinates and all. */
@@ -268,6 +275,7 @@ export default function CreateBoard() {
   const builder = useBoardBuilder(null, {
     preset: presetRequested ? presetForBoard : undefined,
     initialBoardName,
+    initialSerialNumber: presetRequested ? builderSerialParam(params.serial) : undefined,
     privacyEnabled: privacySettings?.enabled,
   });
 

@@ -33,6 +33,11 @@
 //     stamps no cooldown. Running it in the background would spend one of
 //     Android's 5 scan starts per 30 s on a scan nobody sees, and the scan
 //     would end at once (the background ends a running scan).
+//   - While the slot says Bluetooth is off, the radio coming on starts a scan
+//     (`watchBluetoothPoweredOn`), reported as a tap: the climber turned it on
+//     because the slot asked (Android's Turn on Bluetooth dialog, iOS Control
+//     Center). Only with auto-scan on, and only once per time the slot says
+//     off; Turn on Bluetooth on a radio already on scans straight away.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
@@ -43,6 +48,7 @@ import { bluetoothTransport } from '../../lib/ble/transport-runtime';
 import { hasAndroidBleScanPermissions } from '../../lib/ble/use-ble-permissions';
 import type { BoardScanTrigger } from '../../lib/ble/use-board-scan';
 import { openAppSettings } from '../../lib/open-app-settings';
+import { watchBluetoothPoweredOn } from './bluetooth-radio';
 import {
   isWithinPickerScanCooldown,
   listenedLongEnoughForSoleBox,
@@ -301,6 +307,25 @@ export function usePickerBoardScan({
     unavailableReason,
     lookup,
   });
+
+  // The slot says Bluetooth is off: scan once the radio reports on. A start
+  // from the callback reads the latest state, so a scan already on its way (a
+  // tap that raced the radio) is not started twice.
+  const waitsForRadio =
+    canScan &&
+    focused &&
+    autoStart &&
+    !connectedToBoard &&
+    status === 'unavailable' &&
+    unavailableReason === 'powered_off';
+  useEffect(() => {
+    if (!waitsForRadio) return;
+    return watchBluetoothPoweredOn(() => {
+      const { status: scanStatus, startPending: alreadyStarting, connectedToBoard: connected } = scanStateRef.current;
+      if (connected || alreadyStarting || scanStatus !== 'unavailable') return;
+      runStart('picker_tap');
+    });
+  }, [waitsForRadio, runStart]);
 
   const shouldAutoStart = resolution.autoStart;
   useEffect(() => {

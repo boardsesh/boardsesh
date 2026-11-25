@@ -236,6 +236,13 @@ export type AppSettings = {
    * it is — an in-memory claim would re-explain it on every cold start.
    */
   browseNoticeSeen: boolean;
+  /**
+   * The climber said Not now to the board picker's Bluetooth card. From then on
+   * the In range slot asks in one line with Allow Bluetooth instead of the card,
+   * and never stops asking: a board can't be lit without Bluetooth. Per device;
+   * survives sign-out.
+   */
+  pickerBluetoothNotNow: boolean;
   /** Show the live bottom-chrome geometry overlay (dev / preview / pr-channel only). */
   bottomChromeDiagnostics: boolean;
   /**

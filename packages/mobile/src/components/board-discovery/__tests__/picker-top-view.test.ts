@@ -64,6 +64,7 @@ const UNKNOWN_SETUP_ROW: QuickstartRow = {
   key: 'unknown_setup:tension',
   boardType: 'tension',
   rssi: -45,
+  serials: ['T-1'],
 };
 const LOOKUP_FAILED_ROW: QuickstartRow = { kind: 'lookup_failed', key: 'lookup_failed', rssi: -40 };
 
@@ -287,6 +288,23 @@ describe('the scan phases', () => {
     { phase: 'blocked_off', expected: 'blocked_off + at_gym:Crux/active_board[crux-kilter*]' },
   ])('$phase still lists the gym of the board you are on', ({ phase, expected }) => {
     expect(top({ phase, activeBoard: cruxKilter })).toBe(expected);
+  });
+
+  // After Not now the card is one line with Allow Bluetooth, and it never goes:
+  // a board can't be lit without Bluetooth.
+  it.each<{ phase: PickerScanPhase; expected: string }>([
+    { phase: 'needs_permission', expected: 'permission_line + none' },
+    { phase: 'blocked_denied', expected: 'blocked_denied + none' },
+    { phase: 'blocked_off', expected: 'blocked_off + none' },
+    { phase: 'tap_to_scan', expected: 'tap_to_scan + none' },
+  ])('after Not now, $phase shows $expected', ({ phase, expected }) => {
+    expect(top({ phase, bluetoothNotNow: true })).toBe(expected);
+  });
+
+  it('keeps the one-line ask above the gym of the board you are on after Not now', () => {
+    expect(top({ phase: 'needs_permission', activeBoard: cruxKilter, bluetoothNotNow: true })).toBe(
+      'permission_line + at_gym:Crux/active_board[crux-kilter*]',
+    );
   });
 
   it('holds the placeholder while scanning for a climber with no board yet', () => {

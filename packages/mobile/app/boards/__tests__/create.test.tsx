@@ -57,7 +57,12 @@ const state = vi.hoisted(() => ({
 const popularConfigs = vi.hoisted(() => ({ configs: [{ boardType: 'moonboard', layoutId: 3 }] }));
 const presetBoardConfigMock = vi.hoisted(() => vi.fn());
 type BuilderOptions =
-  | { preset?: (boardName: string) => unknown; initialBoardName?: string; privacyEnabled?: boolean }
+  | {
+      preset?: (boardName: string) => unknown;
+      initialBoardName?: string;
+      initialSerialNumber?: string;
+      privacyEnabled?: boolean;
+    }
   | undefined;
 const builderCalls = vi.hoisted(() => ({ options: [] as BuilderOptions[] }));
 
@@ -655,6 +660,22 @@ describe('CreateBoard from "My own board"', () => {
     state.params = { preset: '1', presetBoardType: 'moonboard', source: 'onboarding' };
     render(createElement(CreateBoard));
     expect(builderCalls.options.at(-1)?.initialBoardName).toBe('moonboard');
+  });
+
+  // The one unsaved box of that type the In range slot heard: its serial is filled in.
+  it('opens with the serial the In range slot heard', () => {
+    state.params = { preset: '1', presetBoardType: 'kilter', serial: ' 751737 ' };
+    render(createElement(CreateBoard));
+    expect(builderCalls.options.at(-1)?.initialSerialNumber).toBe('751737');
+  });
+
+  it.each<{ name: string; params: Record<string, string> }>([
+    { name: 'without the param', params: { preset: '1', presetBoardType: 'kilter' } },
+    { name: 'outside a preset open', params: { serial: '751737' } },
+  ])('opens with the serial empty $name', ({ params }) => {
+    state.params = params;
+    render(createElement(CreateBoard));
+    expect(builderCalls.options.at(-1)?.initialSerialNumber).toBeUndefined();
   });
 
   // `toBoardName` (mocked here) is what drops a type this build doesn't know.

@@ -115,6 +115,29 @@ switch, each rescanning once it works. A radio the scan could not read
 (`unknown`) says "Couldn't reach Bluetooth" with Scan again, never "Turn on
 Bluetooth".
 
+**Bluetooth off or not allowed in the picker.** Over 60 days 333 climbers reached
+the picker with the radio off and 67 with the permission blocked, so the off line
+leads with the fix (`bluetooth-radio.ts`). On Android it says "Bluetooth is off."
+with Turn on Bluetooth, which opens the system's own enable dialog
+(`ACTION_REQUEST_ENABLE` through `Linking.sendIntent`, JS only; the Bluetooth
+settings page if the dialog can't open; a plain scan if the radio is already on).
+iOS has no way to turn the radio on, so the line points at Control Center and
+keeps Scan again. On both, while the line shows and auto-scan is on, the radio
+reporting on starts one scan by itself (`watchBluetoothPoweredOn`), reported as
+`trigger = 'picker_tap'`. The Continue card that asks for the permission has Not
+now. After it the card is one line, "Boardsesh needs Bluetooth to light climbs on
+the wall." with Allow Bluetooth, for good (`pickerBluetoothNotNow`, per device):
+it never goes away, because a board can't be lit without Bluetooth.
+
+**A serial nobody saved.** The unknown-setup row keeps the serials it heard, per
+board type. "It's my own board" opens the builder with that serial filled in
+(`/boards/create?serial=`) only when exactly one unsaved box of the type was heard
+and the scan listened at least 5 s (`builderSerialForRow`, the same rule as a held
+serial-less box). With two or more, or a scan cut short, the field stays empty.
+The builder's own foreign-serial and serial-reuse checks run on a filled serial as
+on a typed one. MoonBoards and bare-name boxes advertise no serial and keep the
+10-minute box hold (`pending-board-recognition.ts`).
+
 What the scan hears leads the picker's top only 3 s after it first hears
 anything (or once it ends; the permission prompt and a start waiting on the
 radio don't count), and only once the serial lookup has named everything heard

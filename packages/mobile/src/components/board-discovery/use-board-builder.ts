@@ -78,6 +78,12 @@ export type BoardBuilderOptions = {
    * Kilter's.
    */
   initialBoardName?: BoardName;
+  /**
+   * The serial to open with when there is no `seed`: the one unsaved box of
+   * this type the picker's In range slot heard (`builderSerialForRow`). The
+   * builder's serial checks run on it like a typed one.
+   */
+  initialSerialNumber?: string;
 };
 
 function sameSetup(preset: BoardConfigPreset, layoutId: number | null, sizeId: number | null, setIds: number[]) {
@@ -145,7 +151,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(
     seed?.latitude != null && seed?.longitude != null ? { latitude: seed.latitude, longitude: seed.longitude } : null,
   );
-  const [serialNumber, setSerialNumber] = useState(seed?.serialNumber ?? '');
+  const [serialNumber, setSerialNumber] = useState(seed?.serialNumber ?? options?.initialSerialNumber ?? '');
   const [timerName, setTimerName] = useState(seed?.timerName ?? '');
   // The gym this board sits in. Picking one is what gets the board onto the map
   // under a gym rather than as a lone pin (#4166).

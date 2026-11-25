@@ -43,26 +43,14 @@ import { NearbyQuietStatus } from '../../src/components/board-discovery/NearbyQu
 import { NearbyReservedSlot } from '../../src/components/board-discovery/NearbyReservedSlot';
 import { offlineBoardRows } from '../../src/components/board-discovery/offline-board-items';
 import {
-  buildPickerTopView,
-  decidePickerTop,
-  decisionAtDrawnTop,
   mapPickerTopBoards,
-  pickerTopBoardUuids,
-  pickerTopGymUuid,
-  pickerTopPicks,
-  stabilizePickerTop,
   YOUR_BOARDS_COLLAPSED_ROW_COUNT,
   type PickerTopView,
   type UnnamedInRangeRow,
 } from '../../src/components/board-discovery/picker-top-view';
 import { useBoardOfflineState } from '../../src/components/board-discovery/use-board-offline-state';
-import { useInRangeLocationHint } from '../../src/components/board-discovery/use-in-range-location-hint';
-import {
-  scanHeardAnything,
-  usePickerScanHold,
-  usePickerTopSteadiness,
-} from '../../src/components/board-discovery/use-steady-picker-top';
-import { usePickerBoardScan } from '../../src/components/board-discovery/use-picker-board-scan';
+import { useInRangeActions } from '../../src/components/board-discovery/use-in-range-actions';
+import { usePickerInRange } from '../../src/components/board-discovery/use-picker-in-range';
 import { Button } from '../../src/components/Button';
 import { EmptyState } from '../../src/components/EmptyState';
 import { Icon } from '../../src/components/Icon';
@@ -91,10 +79,7 @@ import {
   type FirstBoardEntry,
 } from '../../src/lib/boards/first-board-mode';
 import { deriveLocalOnly, pickerNoticeKey } from '../../src/lib/boards/local-only';
-import {
-  clearPendingBoardRecognition,
-  setPendingBoardRecognition,
-} from '../../src/lib/boards/pending-board-recognition';
+import { clearPendingBoardRecognition } from '../../src/lib/boards/pending-board-recognition';
 import { useActivateBoard, type BoardPickSection, type BoardPickSource } from '../../src/lib/boards/use-activate-board';
 import { pickerNearbyResultCount, useBoardPickerAnalytics } from '../../src/lib/boards/use-board-picker-analytics';
 import { useConnectivity } from '../../src/lib/connectivity/use-connectivity';
@@ -103,7 +88,6 @@ import {
   useBoard,
   useDeleteBoard,
   useDetachBoardFromGym,
-  useGymBoards,
   useLinkBoardToGym,
   useMyBoards,
   useNearbyBoards,
@@ -131,7 +115,7 @@ import { useOfflineCatalogState } from '../../src/offline/use-offline-catalog-st
 import { useRememberDownloadedBoards } from '../../src/offline/use-remember-downloaded-boards';
 import { useAuth } from '../../src/providers/auth-provider';
 import { useConfirm } from '../../src/providers/dialog-provider';
-import { useOfflineDownloadsEnabled, usePickerAutoScanEnabled } from '../../src/providers/feature-flags-provider';
+import { useOfflineDownloadsEnabled } from '../../src/providers/feature-flags-provider';
 import { useQueueActions } from '../../src/providers/queue-provider';
 import { useTheme } from '../../src/providers/theme-provider';
 import { useToast } from '../../src/providers/toast-provider';
@@ -447,55 +431,19 @@ export default function BoardSelection() {
     [isLocalOnly, offlineCards, myBoards, activeBoard, downloadedScopeKeys],
   );
 
-  // The Bluetooth scan behind the top of the picker, run by itself on open
-  // unless the remote switch says to wait for a tap. Only while this screen is
-  // on top and showing the online layout: the offline list and the error state
-  // have no top to fill.
+  // The top of the picker: the Bluetooth scan behind it, and what it leads
+  // with (At {gym}, the one board heard somewhere else, a box it can't name,
+  // or what the scan needs). Only the online layout draws it: the offline list
+  // and the error state have no top to fill. See use-picker-in-range.ts.
   const isFocused = useIsFocused();
-  const pickerAutoScanEnabled = usePickerAutoScanEnabled();
-  const pickerScan = usePickerBoardScan({
-    focused: isFocused && isAuthenticated && !isLocalOnly && !isError,
-    autoStart: pickerAutoScanEnabled,
+  const inRange = usePickerInRange({
+    focused: isFocused,
+    showsTop: isAuthenticated && !isLocalOnly && !isError,
     knownBoards: myBoards,
+    activeBoard,
   });
-  const {
-    phase: scanPhase,
-    rows: scanRows,
-    lookup: scanLookup,
-    listenedLongEnough,
-    start: startScan,
-    stop: stopScan,
-    retryLookup,
-  } = pickerScan;
-  // The top of the picker: At {gym} (the gym the scan heard, else the one the
-  // board you're on is at), the one board heard somewhere else, or a box it
-  // can't name. Two steps, because the gym's roster is a query keyed on the
-  // gym the first step picks; see picker-top-view.ts.
-  // Nothing a scan heard leads for its first seconds after hearing anything,
-  // or while the lookup is still naming it; once it has led it stays put
-  // until the results leave the screen (use-steady-picker-top.ts).
-  const steadiness = usePickerTopSteadiness(scanPhase, scanLookup);
-  const drawnTop = steadiness.drawn;
-  const scanHold = usePickerScanHold(scanPhase, scanHeardAnything(scanRows, scanLookup));
-  const holdScanLead = scanHold || steadiness.waitsOnLookup;
-  const scanDecision = useMemo(
-    () => decidePickerTop({ phase: scanPhase, rows: scanRows, lookup: scanLookup, activeBoard, holdScanLead }),
-    [scanPhase, scanRows, scanLookup, activeBoard, holdScanLead],
-  );
-  // The top already drawn keeps its gym (a hero may become its own gym's), so
-  // the roster fetched is the gym on screen.
-  const topDecision = useMemo(() => decisionAtDrawnTop(scanDecision, drawnTop), [scanDecision, drawnTop]);
-  // Only for the online layout, the one that draws the top.
-  const showsTop = isAuthenticated && !isLocalOnly && !isError;
-  const { data: topGymRoster } = useGymBoards(showsTop ? pickerTopGymUuid(topDecision) : null);
-  const topView = useMemo(
-    () => stabilizePickerTop(drawnTop, buildPickerTopView(topDecision, topGymRoster)),
-    [drawnTop, topDecision, topGymRoster],
-  );
-  // Remembers what the scan led with, so the next render holds it.
-  steadiness.record(topView);
-  // Your boards and Near you leave these out, so a board shows once.
-  const topBoardUuids = useMemo(() => pickerTopBoardUuids(topView), [topView]);
+  const { scan: pickerScan, topView, topBoardUuids, topPicks } = inRange;
+  const stopScan = pickerScan.stop;
   // A box held for the next bind (pending-board-recognition.ts) belongs to this
   // picker visit. The gym map and the builder are pushed over the picker, so
   // they bind, and use the hold, before this unmounts; anything after the
@@ -1426,17 +1374,21 @@ export default function BoardSelection() {
     openAddRoute('gym_map', 'first_run');
   }, [chooseFirstBoardPath, openAddRoute]);
 
-  // The In range slot. A tap anywhere in it is the first-board "scan" path,
-  // which before the slot was the "Scan for the board in front of me" link.
-  const onInRangeStart = useCallback(() => {
-    chooseFirstBoardPath('scan');
-    startScan();
-  }, [chooseFirstBoardPath, startScan]);
+  // The In range slot's buttons (use-in-range-actions.ts).
+  const inRangeActions = useInRangeActions({
+    scan: pickerScan,
+    router,
+    chooseFirstBoardPath,
+    dropHeldBox,
+    boardReturnTo,
+    source,
+    gymFirstEnabled,
+  });
+  const { startUnnamedRowAction } = inRangeActions;
   // A row at the top (At {gym}, or the hero's Climb here). A pick the scan led
   // to is the first-board "scan" path; a wall At {gym} because of the board
   // you're on is not. A board in Your boards binds as that fuller copy: the
   // gym's roster is a narrower read of the same board.
-  const topPicks = useMemo(() => pickerTopPicks(topView), [topView]);
   // `drawnPosition` is where At {gym}'s list drew the row, which a collapsed
   // list knows and the full order doesn't.
   const onPickTopBoard = useCallback(
@@ -1471,29 +1423,8 @@ export default function BoardSelection() {
       }),
     [runBoardMenuAction, onPickTopBoard, onAtGymDetails],
   );
-  // The three ways forward for a board it heard but couldn't name (a MoonBoard,
-  // a box with no serial, a serial nobody has saved). Each one ends the scan and
-  // holds the box so the board the climber binds next, here or on the route it
-  // opens, names it from then on (pending-board-recognition.ts). Only when one
-  // box stands behind the row, and the scan listened long enough for "one" to
-  // mean one: read before `stop()`, which ends the listening. The bind keeps
-  // `source`, so it still closes out first-run. Location is asked on the tap,
-  // never when the scan finds the board. The row acted on last is the box the
-  // climber is at, so a row with no single box drops an older hold. Returns
-  // whether it holds a box.
-  const startUnnamedRowAction = useCallback(
-    (row: UnnamedInRangeRow): boolean => {
-      const soleBoxHeardLongEnough = listenedLongEnough();
-      stopScan();
-      chooseFirstBoardPath('scan');
-      dropHeldBox();
-      if (row.kind === 'unknown_setup' || !row.deviceId || !soleBoxHeardLongEnough) return false;
-      setPendingBoardRecognition({ deviceId: row.deviceId, boardType: row.boardType });
-      return true;
-    },
-    [listenedLongEnough, stopScan, chooseFirstBoardPath, dropHeldBox],
-  );
-  // "Use my location": the boards near the climber, of that type only. In
+  // "Use my location", one of the three ways forward for a board it heard but
+  // couldn't name: the boards near the climber, of that type only. In
   // first-board mode they show under "At a gym", elsewhere in Near you. A pick
   // from that filtered list is the one that may name the held box.
   const onInRangeUseMyLocation = useCallback(
@@ -1506,59 +1437,26 @@ export default function BoardSelection() {
     },
     [startUnnamedRowAction, searchNearby, showFirstBoardChoice],
   );
-  // "Search gyms": the gym map, filtered to that type.
-  const onInRangeSearchGyms = useCallback(
-    (row: UnnamedInRangeRow) => {
-      startUnnamedRowAction(row);
-      const gymMap = addBoardRoute('gym_map', { returnTo: boardReturnTo, source, fromPicker: true });
-      router.push({ pathname: gymMap.pathname, params: { ...gymMap.params, boardType: row.boardType } });
-    },
-    [startUnnamedRowAction, router, boardReturnTo, source],
-  );
-  // "It's my own board": the builder, opened on that type with its preset.
-  const onInRangeOwnBoard = useCallback(
-    (row: UnnamedInRangeRow) => {
-      startUnnamedRowAction(row);
-      const boardKind = gymFirstEnabled ? 'home' : undefined;
-      if (boardKind) trackBoardKindChosen({ kind: boardKind, surface: 'in_range', preAnswered: true });
-      const builder = addBoardRoute('board', {
-        returnTo: boardReturnTo,
-        source,
-        preset: BUILDER_PRESET_PARAM_VALUE,
-        boardKind,
-      });
-      router.push({ pathname: builder.pathname, params: { ...builder.params, presetBoardType: row.boardType } });
-    },
-    [startUnnamedRowAction, router, boardReturnTo, source, gymFirstEnabled],
-  );
-  const onOpenBluetoothSettings = useCallback(() => {
-    chooseFirstBoardPath('scan');
-    void openAppSettings();
-  }, [chooseFirstBoardPath]);
-  const onInRangeRetryLookup = useCallback(() => {
-    chooseFirstBoardPath('scan');
-    retryLookup();
-  }, [chooseFirstBoardPath, retryLookup]);
   // "See gym" on At {gym}: the gym's page, pushed in this modal's own stack.
   const onSeeTopGym = useCallback(
     (gymUuid: string) => router.push(gymPageHref(gymUuid, 'boards', boardReturnTo)),
     [router, boardReturnTo],
   );
-  // Android can withhold what a scan heard; when it heard nothing, the top
-  // says why and offers the fix, which rescans when it works.
-  const locationHint = useInRangeLocationHint(topView.heardNothing, startScan);
   const inRangeSection = (
     <InRangeSection
       view={topDisplay}
       BoardArt={DiscoveryBoardArt}
-      onStart={onInRangeStart}
-      onOpenSettings={onOpenBluetoothSettings}
-      onRetryLookup={onInRangeRetryLookup}
+      onStart={inRangeActions.onStart}
+      onOpenSettings={inRangeActions.onOpenSettings}
+      bluetoothOffFix={inRange.bluetoothOffFix}
+      onTurnOnBluetooth={inRangeActions.onTurnOnBluetooth}
+      onBluetoothNotNow={inRange.sayBluetoothNotNow}
+      onRetryLookup={inRangeActions.onRetryLookup}
       onPickBoard={onPickTopBoard}
       onUseMyLocation={onInRangeUseMyLocation}
-      onSearchGyms={onInRangeSearchGyms}
-      onOwnBoard={onInRangeOwnBoard}
-      locationHint={locationHint}
+      onSearchGyms={inRangeActions.onSearchGyms}
+      onOwnBoard={inRangeActions.onOwnBoard}
+      locationHint={inRange.locationHint}
       atGymMenuCapabilities={showCardMenus ? myBoardMenuCapabilities : undefined}
       onAtGymMenuAction={showCardMenus ? onAtGymMenuAction : undefined}
       atGymMenuKeys={myBoardKeys}
