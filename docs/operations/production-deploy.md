@@ -292,6 +292,17 @@ A shorter diagnostic run intentionally cannot pass.
 The ordinary HTTP tests separately exercise overload, deadlines and cancellation;
 a synthetic HTTP handler alone does not prove production Next retention.
 
+The `Public page sustained load` Actions workflow runs this check on a fresh
+Linux runner with current production web/backend images, the digest-pinned
+seeded development database and Redis. It has a 120-minute job limit, including
+the 60-minute measurement. Internal PRs that change
+`.github/workflows/public-page-soak.yml` trigger it; after the workflow reaches
+the default branch, use Actions → Public page sustained load → Run workflow
+and select the ref to validate. Ordinary app PRs and schedules do not start it.
+Download `public-page-soak-<run-id>-<attempt>` for the canonical/request corpora,
+report, runtime/fixture logs and host/container resource samples, including on
+failure. A failed or missing report leaves the sustained-load gate unmet.
+
 The web-local [Next 16.3.5 patch](../../packages/web/patches/next@16.3.5.patch)
 releases request state from closed responses. Next's response adapter registers
 close callbacks with `once`, including its CJS, ESM and bundled production
