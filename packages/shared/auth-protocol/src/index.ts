@@ -122,6 +122,31 @@ export type RegistrationFamilyCommand =
   | z.infer<typeof registrationFamilyVerifyCommandSchema>;
 
 export const PRE_ENFORCEMENT_PASSWORD_PATH = '/api/internal/auth/current-store/password/v1/authenticate';
+export const RECOVERY_COMMAND_PATHS = {
+  'forgot-password': '/api/internal/auth/current-store/recovery/v1/forgot-password',
+  'reset-password': '/api/internal/auth/current-store/recovery/v1/reset-password',
+} as const;
+export const recoveryFamilyForgotCommandSchema = z
+  .object({
+    ...commandMetadata,
+    operation: z.literal('forgot-password'),
+    clientAddress: registrationClientAddressSchema,
+    payload: z.unknown(),
+  })
+  .strict()
+  .refine((command) => Object.hasOwn(command, 'payload'), { message: 'Missing command payload' });
+export const recoveryFamilyResetCommandSchema = z
+  .object({
+    ...commandMetadata,
+    operation: z.literal('reset-password'),
+    clientAddress: registrationClientAddressSchema,
+    payload: z.unknown(),
+  })
+  .strict()
+  .refine((command) => Object.hasOwn(command, 'payload'), { message: 'Missing command payload' });
+export type RecoveryFamilyCommand =
+  | z.infer<typeof recoveryFamilyForgotCommandSchema>
+  | z.infer<typeof recoveryFamilyResetCommandSchema>;
 
 export const passwordCommandSchema = z
   .object({

@@ -59,6 +59,12 @@ explicitly staged commands retain their stronger qualification. Backend,
 consumer and issuance deployment prerequisites are recorded in
 [registration-family adoption](better-auth-registration-family.md).
 
+## Recovery before authority enforcement
+
+The separate `/api/internal/auth/current-store/recovery/v1/` family requires `private-recovery-v1`. This exact current profile extends the narrow registration/evidence profile with SELECT/INSERT on the additive pre-enforcement reset ledger; it adds no direct partner/provider capabilities. The canonical journal, evidence prerequisites, intended LOGIN grants and current users shape must qualify before this pool is used. Old profile receipts cannot authorize the new reset ledger.
+
+Absent/prepared capture is explicit; enforced/canonical transitions refuse this family and retain the separately selected qualified staged path. Missing configuration or qualification returns unavailable without content-pool or web-SQL fallback. The [family rollout](better-auth-recovery-family.md) separates backend deployment, dependent reset consumers and later default forgot issuance. Prepared snapshots, historical writers and actual deployment coverage remain separate gates.
+
 ## Remaining capability work
 
 The static `private-web-v1` catalog contract is deliberately limited to these three

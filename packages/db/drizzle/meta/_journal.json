@@ -2465,6 +2465,13 @@
       "when": 1795558571908,
       "tag": "0351_auth_password_change_evidence",
       "breakpoints": true
+    },
+    {
+      "idx": 352,
+      "version": "7",
+      "when": 1795569453200,
+      "tag": "0352_auth_pre_enforcement_password_resets",
+      "breakpoints": true
     }
   ]
 }

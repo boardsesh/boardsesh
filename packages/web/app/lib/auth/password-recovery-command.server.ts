@@ -3,7 +3,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
 import { sendPasswordResetEmail } from '@boardsesh/email';
 import type { ForgotPasswordReply, ResetPasswordReply } from '@boardsesh/auth-protocol';
-import { createPasswordCommandClient, registrationMailOrigin } from './password-command-client.server';
+import { createPasswordCommandClient, registrationMailOrigin, webPasswordMode } from './password-command-client.server';
+import { createPreEnforcementRecoveryCommandClient } from './pre-enforcement-recovery-client.server';
+import { cloudflareVouchedVisitorAddress } from './trusted-client-ip.server';
 import { passwordCommandUnavailableResponse } from './register-password-command.server';
 import { appendDeviceTokenCookie } from './device-token-request.server';
 import { withEmailVerificationPrivacy } from './email-verification-response.server';
@@ -53,9 +55,20 @@ export async function forgotPasswordWithCommand(request: NextRequest, payload: u
   }
 }
 
-export async function resetPasswordWithCommand(payload: unknown): Promise<NextResponse> {
+export async function resetPasswordWithCommand(
+  payload: unknown,
+  request?: NextRequest,
+  selectedMode?: ReturnType<typeof webPasswordMode>,
+): Promise<NextResponse> {
   try {
-    const reply = await createPasswordCommandClient().resetPassword(payload);
+    const mode = selectedMode ?? webPasswordMode();
+    const reply =
+      mode === 'backend-staging'
+        ? await createPasswordCommandClient().resetPassword(payload)
+        : await createPreEnforcementRecoveryCommandClient().resetPassword(
+            payload,
+            request ? (cloudflareVouchedVisitorAddress(request) ?? undefined) : undefined,
+          );
     if (reply.outcome === 'reset') {
       const response = withEmailVerificationPrivacy(NextResponse.json({ message: PASSWORD_RESET_SUCCESS_MESSAGE }));
       if (reply.deviceToken) appendDeviceTokenCookie(response, reply.deviceToken);

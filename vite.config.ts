@@ -1325,6 +1325,15 @@ export default defineConfig({
           'vp test run --config packages/web/auth-proofs/password-login.vite.config.ts --maxWorkers=1 --reporter=agent',
         cache: false,
       },
+      'test:recovery-web': {
+        command:
+          'vp test run --config packages/web/auth-proofs/recovery.vite.config.ts --maxWorkers=1 --reporter=agent',
+        cache: false,
+      },
+      'test:recovery-backend': {
+        command: 'vp test run --config packages/backend/vite.recovery-proof.config.ts --maxWorkers=1 --reporter=agent',
+        cache: false,
+      },
       'test:password-login-backend': {
         command:
           'vp test run --config packages/backend/vite.password-login-proof.config.ts --maxWorkers=1 --reporter=agent',

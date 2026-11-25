@@ -1,6 +1,6 @@
 import { mintNativeDeviceToken } from '../device-token';
-import { createHash, randomBytes } from 'node:crypto';
-import { executeFirstRow, type DbInstance } from '@boardsesh/db/client';
+import { createHash } from 'node:crypto';
+import type { DbInstance } from '@boardsesh/db/client';
 import {
   AUTH_COMMAND_FUTURE_SKEW_MS,
   AUTH_PROTOCOL_VERSION,
@@ -22,7 +22,7 @@ import {
   users,
   verificationTokens,
 } from '@boardsesh/db/schema/auth';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { passwordGuessLimiter } from '../password-guess-limit';
 import { z } from 'zod';
@@ -47,8 +47,16 @@ import {
   type IdentityAuthorityReceipt,
 } from '../authority/router';
 
-const purpose = 'password-reset' as const;
-const lifetimeMs = 60 * 60 * 1000;
+import {
+  PASSWORD_RECOVERY_PURPOSE as purpose,
+  PASSWORD_RECOVERY_LIFETIME_MS as lifetimeMs,
+  recoveryClock as clock,
+  issueUidPasswordRecoveryReceipt,
+  readUidPasswordRecoveryReceipt,
+  samePasswordRecoveryBinding as sameBinding,
+  consumeUidPasswordRecoveryReceipt,
+} from './password-recovery-receipts';
+
 const forgotSchema = z.object({ email: z.string().email('Invalid email address') });
 const resetSchema = z
   .object({
@@ -66,18 +74,6 @@ const resetSchema = z
     message: 'Passwords do not match',
     path: ['confirmPassword'],
   });
-const digest = (token: string) => createHash('sha256').update(`password-recovery-v1\0${token}`).digest('hex');
-
-async function clock(transaction: CurrentStoreTransaction) {
-  const instant = await executeFirstRow<{ milliseconds: string | number }>(
-    transaction,
-    sql`SELECT floor(extract(epoch from clock_timestamp()) * 1000) AS milliseconds`,
-  );
-  const milliseconds = Number(instant?.milliseconds);
-  if (!Number.isSafeInteger(milliseconds)) throw new Error('Recovery clock unavailable');
-  return milliseconds;
-}
-
 /**
  * Who owns the key, read without a lock. Only a hint for which climber to lock
  * first: the caller locks that climber's row, then re-reads the owner locked.
@@ -171,69 +167,19 @@ export async function requestPasswordRecovery(
     if (credential.generation !== (cutoff?.generation ?? 0)) throw new CurrentStoreFoundationError('STALE_GENERATION');
     const recipient = user.email.trim();
     if (!z.email().safeParse(recipient).success) return { ...base, outcome: 'accepted' };
-    await transaction
-      .insert(authPasswordRecoveryState)
-      .values({ userId, purpose, generation: 0 })
-      .onConflictDoNothing();
-    const [state] = await transaction
-      .select()
-      .from(authPasswordRecoveryState)
-      .where(and(eq(authPasswordRecoveryState.userId, userId), eq(authPasswordRecoveryState.purpose, purpose)))
-      .for('update');
-    if (!state) throw new Error('Recovery state unavailable');
-    const issued = new Date(await clock(transaction));
-    const expiresAt = new Date(issued.getTime() + lifetimeMs);
-    const [next] = await transaction
-      .update(authPasswordRecoveryState)
-      .set({ generation: sql`${authPasswordRecoveryState.generation} + 1`, updatedAt: issued })
-      .where(and(eq(authPasswordRecoveryState.userId, userId), eq(authPasswordRecoveryState.purpose, purpose)))
-      .returning();
-    if (!next) throw new Error('Recovery generation unavailable');
-    await transaction
-      .update(authPasswordRecoveryTokens)
-      .set({ supersededAt: issued })
-      .where(
-        and(
-          eq(authPasswordRecoveryTokens.userId, userId),
-          eq(authPasswordRecoveryTokens.purpose, purpose),
-          isNull(authPasswordRecoveryTokens.consumedAt),
-          isNull(authPasswordRecoveryTokens.supersededAt),
-        ),
-      );
-    const token = `pr1_${randomBytes(32).toString('base64url')}`;
-    await transaction.insert(authPasswordRecoveryTokens).values({
-      tokenHash: digest(token),
+    const mailPlan = await issueUidPasswordRecoveryReceipt(transaction, {
       userId,
-      purpose,
       deliveredEmail: recipient,
       normalizedEmail: key,
       subjectGeneration: cutoff?.generation ?? 0,
-      issuanceGeneration: next.generation,
-      issuedAt: issued,
-      expiresAt,
     });
     assertFresh(issuedAt);
     return {
       ...base,
       outcome: 'accepted',
-      mailPlan: { kind: 'uid-password-reset-v1', recipient, token, expiresAt: expiresAt.toISOString() },
+      mailPlan,
     };
   });
-}
-
-type Receipt = typeof authPasswordRecoveryTokens.$inferSelect;
-function sameBinding(first: Receipt, locked: Receipt) {
-  return (
-    first.tokenHash === locked.tokenHash &&
-    first.userId === locked.userId &&
-    first.purpose === locked.purpose &&
-    first.deliveredEmail === locked.deliveredEmail &&
-    first.normalizedEmail === locked.normalizedEmail &&
-    first.subjectGeneration === locked.subjectGeneration &&
-    first.issuanceGeneration === locked.issuanceGeneration &&
-    first.issuedAt.getTime() === locked.issuedAt.getTime() &&
-    first.expiresAt.getTime() === locked.expiresAt.getTime()
-  );
 }
 
 type LegacyResetPreview = IdentityPasswordSnapshot;
@@ -387,15 +333,7 @@ export async function consumePasswordRecovery(
     return captureIdentityAuthority(transaction, configuredAuthority);
   });
   const authority = { ...configuredAuthority, expectedWriterEpoch: authorityReceipt.epoch };
-  const [found] = supported
-    ? await database
-        .select()
-        .from(authPasswordRecoveryTokens)
-        .where(eq(authPasswordRecoveryTokens.tokenHash, digest(token!)))
-    : [];
-  const initial = found
-    ? { ...found, issuedAt: new Date(found.issuedAt.getTime()), expiresAt: new Date(found.expiresAt.getTime()) }
-    : undefined;
+  const initial = supported ? await readUidPasswordRecoveryReceipt(database, token!) : undefined;
   const initialCredential = initial
     ? await database.transaction(async (transaction) => {
         await transactionSettings(transaction);
@@ -511,29 +449,14 @@ export async function consumePasswordRecovery(
       normalizeAccountEmail(user.email) !== receipt.normalizedEmail
     )
       return { ...base, outcome: 'invalid_or_expired' };
-    const [consumed] = await transaction
-      .update(authPasswordRecoveryTokens)
-      .set({ consumedAt: sql`clock_timestamp()` })
-      .where(
-        and(
-          eq(authPasswordRecoveryTokens.tokenHash, receipt.tokenHash),
-          isNull(authPasswordRecoveryTokens.consumedAt),
-          isNull(authPasswordRecoveryTokens.supersededAt),
-          sql`${authPasswordRecoveryTokens.expiresAt} > clock_timestamp()`,
-        ),
-      )
-      .returning({ consumedAt: authPasswordRecoveryTokens.consumedAt });
-    if (!consumed?.consumedAt) return { ...base, outcome: 'invalid_or_expired' };
-    await transaction
-      .update(authPasswordRecoveryState)
-      .set({ generation: sql`${authPasswordRecoveryState.generation} + 1`, updatedAt: consumed.consumedAt })
-      .where(and(eq(authPasswordRecoveryState.userId, receipt.userId), eq(authPasswordRecoveryState.purpose, purpose)));
+    const consumedAt = await consumeUidPasswordRecoveryReceipt(transaction, receipt);
+    if (!consumedAt) return { ...base, outcome: 'invalid_or_expired' };
     const changed = await identity.replacePassword(initialCredential, passwordHash);
     if (!changed) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
     if (!user.emailVerified)
       await transaction
         .update(users)
-        .set({ emailVerified: consumed.consumedAt, updatedAt: consumed.consumedAt })
+        .set({ emailVerified: consumedAt, updatedAt: consumedAt })
         .where(and(eq(users.id, receipt.userId), isNull(users.emailVerified)));
     await recordIdentityPasswordMutation(
       transaction,
@@ -549,7 +472,7 @@ export async function consumePasswordRecovery(
     );
     await transaction
       .update(mobileRefreshTokens)
-      .set({ revokedAt: consumed.consumedAt })
+      .set({ revokedAt: consumedAt })
       .where(and(eq(mobileRefreshTokens.userId, receipt.userId), isNull(mobileRefreshTokens.revokedAt)));
     assertFresh(issuedAt);
     await revalidateIdentityAuthority(transaction, authorityReceipt);

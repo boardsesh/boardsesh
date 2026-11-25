@@ -6,6 +6,8 @@ import * as schema from '@boardsesh/db/schema';
 import { readHistoricalCredentialWriterMigrations } from './credential-writer-historical-fixture';
 import {
   PRIVATE_WEB_CREDENTIAL_CAPABILITIES,
+  PRIVATE_RECOVERY_CREDENTIAL_CAPABILITIES,
+  PRIVATE_RECOVERY_CREDENTIAL_COLUMN_CAPABILITIES,
   PRIVATE_PASSWORD_EVIDENCE_CREDENTIAL_CAPABILITIES,
   PRIVATE_PASSWORD_EVIDENCE_CREDENTIAL_COLUMN_CAPABILITIES,
   PRIVATE_REGISTRATION_EVIDENCE_CREDENTIAL_CAPABILITIES,
@@ -31,6 +33,7 @@ export function ownedCredentialProofUrl(connectionString = process.env.CREDENTIA
   const parsed = new URL(connectionString);
   const local = ['127.0.0.1', 'localhost'].includes(parsed.hostname);
   const evidence = parsed.port === '55481' && /^\/epic6975_password_evidence_\d{8}$/.test(parsed.pathname);
+  const recovery = parsed.port === '55482' && /^\/epic6975_recovery_reset_\d{8}$/.test(parsed.pathname);
   const development = parsed.port === '55480' && /^\/epic6975_credential_\d{8}$/.test(parsed.pathname);
   const ci =
     ['1', 'true'].includes(process.env.CI ?? '') &&
@@ -40,7 +43,7 @@ export function ownedCredentialProofUrl(connectionString = process.env.CREDENTIA
   if (
     !['postgres:', 'postgresql:'].includes(parsed.protocol) ||
     !local ||
-    (!development && !evidence && !ci) ||
+    (!development && !evidence && !recovery && !ci) ||
     parsed.username !== 'postgres' ||
     !parsed.password ||
     parsed.search ||
@@ -59,6 +62,7 @@ export async function grantOwnedCredentialWriterCapabilities(
     ![
       'private-registration-v1',
       'private-registration-evidence-v1',
+      'private-recovery-v1',
       'private-web-v1',
       'private-browser-v1',
       'private-provider-v1',
@@ -70,33 +74,37 @@ export async function grantOwnedCredentialWriterCapabilities(
   )
     throw new Error('OWNED_CREDENTIAL_PROOF_CONTRACT_REQUIRED');
   const capabilities =
-    contract === 'private-registration-evidence-v1'
-      ? PRIVATE_REGISTRATION_EVIDENCE_CREDENTIAL_CAPABILITIES
-      : contract === 'private-password-evidence-v1'
-        ? PRIVATE_PASSWORD_EVIDENCE_CREDENTIAL_CAPABILITIES
-        : contract === 'private-browser-renewal-v1'
-          ? PRIVATE_BROWSER_RENEWAL_CREDENTIAL_CAPABILITIES
-          : contract === 'private-native-handoff-v1'
-            ? PRIVATE_NATIVE_HANDOFF_CREDENTIAL_CAPABILITIES
-            : contract === 'private-first-password-v1'
-              ? PRIVATE_FIRST_PASSWORD_CREDENTIAL_CAPABILITIES
-              : contract === 'private-provider-v1'
-                ? PRIVATE_PROVIDER_CREDENTIAL_CAPABILITIES
-                : contract === 'private-browser-v1'
-                  ? PRIVATE_BROWSER_CREDENTIAL_CAPABILITIES
-                  : PRIVATE_WEB_CREDENTIAL_CAPABILITIES;
+    contract === 'private-recovery-v1'
+      ? PRIVATE_RECOVERY_CREDENTIAL_CAPABILITIES
+      : contract === 'private-registration-evidence-v1'
+        ? PRIVATE_REGISTRATION_EVIDENCE_CREDENTIAL_CAPABILITIES
+        : contract === 'private-password-evidence-v1'
+          ? PRIVATE_PASSWORD_EVIDENCE_CREDENTIAL_CAPABILITIES
+          : contract === 'private-browser-renewal-v1'
+            ? PRIVATE_BROWSER_RENEWAL_CREDENTIAL_CAPABILITIES
+            : contract === 'private-native-handoff-v1'
+              ? PRIVATE_NATIVE_HANDOFF_CREDENTIAL_CAPABILITIES
+              : contract === 'private-first-password-v1'
+                ? PRIVATE_FIRST_PASSWORD_CREDENTIAL_CAPABILITIES
+                : contract === 'private-provider-v1'
+                  ? PRIVATE_PROVIDER_CREDENTIAL_CAPABILITIES
+                  : contract === 'private-browser-v1'
+                    ? PRIVATE_BROWSER_CREDENTIAL_CAPABILITIES
+                    : PRIVATE_WEB_CREDENTIAL_CAPABILITIES;
   const columnCapabilities =
-    contract === 'private-registration-evidence-v1'
-      ? PRIVATE_REGISTRATION_EVIDENCE_CREDENTIAL_COLUMN_CAPABILITIES
-      : contract === 'private-password-evidence-v1'
-        ? PRIVATE_PASSWORD_EVIDENCE_CREDENTIAL_COLUMN_CAPABILITIES
-        : contract === 'private-browser-renewal-v1'
-          ? PRIVATE_BROWSER_RENEWAL_CREDENTIAL_COLUMN_CAPABILITIES
-          : contract === 'private-provider-v1' ||
-              contract === 'private-first-password-v1' ||
-              contract === 'private-native-handoff-v1'
-            ? PRIVATE_PROVIDER_CREDENTIAL_COLUMN_CAPABILITIES
-            : PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES;
+    contract === 'private-recovery-v1'
+      ? PRIVATE_RECOVERY_CREDENTIAL_COLUMN_CAPABILITIES
+      : contract === 'private-registration-evidence-v1'
+        ? PRIVATE_REGISTRATION_EVIDENCE_CREDENTIAL_COLUMN_CAPABILITIES
+        : contract === 'private-password-evidence-v1'
+          ? PRIVATE_PASSWORD_EVIDENCE_CREDENTIAL_COLUMN_CAPABILITIES
+          : contract === 'private-browser-renewal-v1'
+            ? PRIVATE_BROWSER_RENEWAL_CREDENTIAL_COLUMN_CAPABILITIES
+            : contract === 'private-provider-v1' ||
+                contract === 'private-first-password-v1' ||
+                contract === 'private-native-handoff-v1'
+              ? PRIVATE_PROVIDER_CREDENTIAL_COLUMN_CAPABILITIES
+              : PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES;
   const relations = await owner<{ schema: string; name: string; kind: string; columns: string[] }[]>`
     SELECT namespace.nspname AS schema, relation.relname AS name, relation.relkind AS kind,
       ARRAY(SELECT attname FROM pg_attribute WHERE attrelid=relation.oid AND attnum>0 AND NOT attisdropped ORDER BY attnum) AS columns
@@ -190,6 +198,7 @@ export async function createCredentialWriterEnvironment(
     ![
       'private-registration-v1',
       'private-registration-evidence-v1',
+      'private-recovery-v1',
       'private-web-v1',
       'private-browser-v1',
       'private-provider-v1',
@@ -211,6 +220,7 @@ export async function createCredentialWriterEnvironment(
     target.pathname !==
       (contract === 'private-registration-v1' ||
       contract === 'private-registration-evidence-v1' ||
+      contract === 'private-recovery-v1' ||
       contract === 'private-provider-v1' ||
       contract === 'private-first-password-v1' ||
       contract === 'private-native-handoff-v1' ||
@@ -248,6 +258,7 @@ export async function createCredentialWriterEnvironment(
     const expected =
       contract === 'private-registration-v1' ||
       contract === 'private-registration-evidence-v1' ||
+      contract === 'private-recovery-v1' ||
       contract === 'private-provider-v1' ||
       contract === 'private-first-password-v1' ||
       contract === 'private-native-handoff-v1' ||

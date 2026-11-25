@@ -1,10 +1,12 @@
 # Backend-owned UID-bound password recovery
 
+The staged contract below is historical and remains separately qualified. The [pre-enforcement recovery family](better-auth-recovery-family.md) adds an explicit absent/prepared backend and a dependent default reset consumer. That consumer leaves the default UUID forgot issuer unchanged; its backend/configuration deployment comes first. Source adoption does not retire old deployed or rollback writers. Optional device recognition is not a login or authentication freshness; reset may publish only that recognition cookie, never an auth cookie or token pair.
+
 Status: implemented and independently reviewed, 2026-11-05. Credential delegation remains default-off. Capability headers, shared web/mobile telemetry redaction and fixed legacy diagnostics apply unconditionally. Focused backend, public-consumer, frontend/privacy, full web/mobile, type and bundle checks pass. Live framework checks retain the explicit development-cache and early-redirect privacy counterexamples below. Production activation remains **NO-GO**.
 
 ## Scope and existing contracts
 
-Move the existing forgot-password issuer and reset-password consumer together behind the default-off current-store backend transport. Keep the public URLs and installed clients. A successful reset issues no session, token pair, authentication freshness or cookie. The accepted policy is that account recovery revokes every first-party credential and partner connection; this slice can commit the credential change, current refresh-row revocation and durable cutoff/event intent together. Today's web/native JWT validators, caches, WebSockets, other issuers and partner consumers do not all enforce that intent, so this is not effective all-session revocation or rollout approval.
+Move the existing forgot-password issuer and reset-password consumer together behind the default-off current-store backend transport. Keep the public URLs and installed clients. A successful reset issues no session, token pair, authentication freshness or auth cookie. An optional host-only device-recognition cookie is auxiliary recognition only. The accepted policy is that account recovery revokes every first-party credential and partner connection; this slice can commit the credential change, current refresh-row revocation and durable cutoff/event intent together. Today's web/native JWT validators, caches, WebSockets, other issuers and partner consumers do not all enforce that intent, so this is not effective all-session revocation or rollout approval.
 
 | Surface | Released behavior to preserve or explicitly replace in staging |
 | --- | --- |

@@ -30,7 +30,9 @@
     "credential-proof.vite.config.ts",
     "../app/lib/auth/types.ts",
     "pre-enforcement-password.integration.proof.ts",
-    "password-login.vite.config.ts"
+    "password-login.vite.config.ts",
+    "pre-enforcement-recovery.integration.proof.ts",
+    "recovery.vite.config.ts"
   ],
   "exclude": []
 }

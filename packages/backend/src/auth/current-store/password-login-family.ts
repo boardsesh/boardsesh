@@ -8,27 +8,18 @@ import { ACCOUNT_EMAIL_CANDIDATE_LIMIT } from '@boardsesh/auth-protocol/account-
 import { accountEmailCandidates } from '@boardsesh/db/queries/account-email';
 import { users } from '@boardsesh/db/schema/auth';
 import { compare } from 'bcryptjs';
-import { sql } from 'drizzle-orm';
-import type { CurrentStoreTransaction } from './foundation-context';
 import { assertFresh, boundSignInLockWaits, claimCommand } from './command-context';
 import { capturePreEnforcementContext, revalidatePreEnforcementContext } from './pre-enforcement-context';
 import { currentStoreWebPasswordSnapshot, sameCredentialMembers } from './web-password-snapshot';
 import { matchCurrentStorePasswordCandidate } from './password-identity';
 import { issueVerifiedWebCredentialProof } from './web-credential-proof';
 
-export const PASSWORD_LOGIN_COMMAND_MS = 7_000;
-export function requirePasswordLoginBudget(deadline: number): number {
-  const remaining = Math.floor(deadline - performance.now());
-  if (remaining <= 0) throw new Error('Password authentication unavailable');
-  return remaining;
-}
-
-async function passwordLoginTransactionSettings(transaction: CurrentStoreTransaction, deadline: number) {
-  const remaining = Math.min(5_000, requirePasswordLoginBudget(deadline));
-  await transaction.execute(
-    sql`SELECT set_config('statement_timeout', ${String(remaining)}, true), set_config('lock_timeout', ${String(Math.min(4_000, remaining))}, true), set_config('transaction_timeout', ${String(remaining)}, true)`,
-  );
-}
+import {
+  PRIVATE_AUTH_COMMAND_MS as PASSWORD_LOGIN_COMMAND_MS,
+  requirePrivateCommandBudget as requirePasswordLoginBudget,
+  privateCommandTransactionSettings as passwordLoginTransactionSettings,
+} from './private-command-budget';
+export { PASSWORD_LOGIN_COMMAND_MS, requirePasswordLoginBudget };
 
 /** Actual password authentication only: no canonical session or identity mutation. */
 export async function authenticatePasswordBeforeEnforcement(
