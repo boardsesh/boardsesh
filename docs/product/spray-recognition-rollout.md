@@ -200,5 +200,80 @@ drafts remain durable. The retired `spray-walls` flag no longer hides the mobile
 surface; new-wall owners can still choose manual placement.
 Leave published walls, photos, queue tables and detection history intact. The
 DR replica is not promoted or repurposed. Restore primary/storage connectivity,
-then retry failed jobs. An image rollback must retain the job's pinned model;
+then retry failed jobs. Imports that expired while the detector was down are
+re-queued as described in the next section. An image rollback must retain the job's pinned model;
 incompatible model identities fail rather than silently changing predictions.
+
+## Reviving imports that expired during a detector outage
+
+A detection waits at most 24 hours in the queue. If the detector claims nothing
+for that long, the backend's reconcile marks it `failed` with `QUEUE_EXPIRED`,
+and the climber only gets proposed holds if they find Retry. After an outage,
+`packages/backend/src/scripts/revive-expired-spray-detections.ts` queues those
+imports again through the same request code the API uses, for the person who
+asked, so the usual completion notification reaches them.
+
+The script exists in production only once the PR that added it (#8181) is
+merged and the backend has deployed. Restart the detector and confirm it is
+claiming jobs first. A revived import gets a fresh 24 hours and expires again if
+nothing claims it.
+
+An operator runs this, not an agent. It runs inside the backend service, because
+the backend's `DATABASE_URL` points at a Railway-internal host that resolves
+only there. It uses that injected `DATABASE_URL`, the writable primary; never
+paste credentials into a command or log. `--apply` refuses a connection that is
+not a primary.
+
+1. Open a backend shell with explicit targets:
+
+   ```sh
+   railway ssh --project afceee45-0af1-46b3-abbe-8b9094c23bc6 \
+     --environment 8cd7204e-8ba4-4790-bb64-6a150971eacd \
+     --service 5912f97f-aa1e-4274-8fbf-eed5da0dceb9
+   ```
+
+2. The image has the source and `tsx` but no `vp`. Move to the backend package
+   and check the deployed build has the script:
+
+   ```sh
+   cd /app/packages/backend
+   test -f src/scripts/revive-expired-spray-detections.ts
+   ```
+
+3. Dry run. It prints one line per expired import with the decision, `revive` or
+   `skip:<reason>`, using the first 8 characters of each id, and writes nothing:
+
+   ```sh
+   node --import tsx src/scripts/revive-expired-spray-detections.ts --since 2026-11-21T07:00:00Z
+   ```
+
+   Check the skips against the table below. `--until` (exclusive) narrows the
+   window; both flags need a zone (`Z` or `+10:00`).
+
+4. Apply. Each revived line gains `new=<id>`, the new detection:
+
+   ```sh
+   node --import tsx src/scripts/revive-expired-spray-detections.ts --since 2026-11-21T07:00:00Z --apply
+   ```
+
+5. Run the dry run from step 3 again. Lines revived in step 4 now read
+   `skip:superseded`; lines skipped before keep their reason. A second `--apply`
+   revives nothing, so a run that stopped on an error can be re-run as is. A
+   failure prints only the error's class and Postgres code, never its message,
+   because a query error's message carries the requester's id and the photo key.
+
+Each import is checked again inside its write transaction, under the same
+requester and wall locks the API takes. The hourly limit of 10 requests is not
+checked here, because these are requests the climber already made once. A
+revived request still counts toward that climber's own limit for the next hour.
+
+| Skip reason | Meaning |
+| --- | --- |
+| `requester-gone` | The requesting account was deleted. |
+| `wall-deleted` / `board-deleted` | The wall or its board was deleted. |
+| `wall-archived` | A published reset replaced the wall. |
+| `not-draft` | The version was published or superseded. |
+| `photo-changed` | The draft has a different photo now. |
+| `superseded` | A later request exists for the same draft and photo: a retry, or this script's earlier run. |
+| `manual-edits` | The climber placed or took off holds by hand on the draft while waiting. |
+| `no-edit-access` | The requester can no longer edit the wall (`canEditBoard`, the API's rule). |
