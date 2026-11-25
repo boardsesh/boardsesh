@@ -29,6 +29,8 @@
     "route-harness.ts",
     "credential-proof.vite.config.ts",
     "../app/lib/auth/types.ts",
+    "registration-family.integration.proof.ts",
+    "registration-proof.vite.config.ts",
     "fixtures/registration-old-reader.ts",
     "registration-consumer.integration.proof.ts",
     "registration-consumer.vite.config.ts",

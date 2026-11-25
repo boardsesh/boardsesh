@@ -1326,6 +1326,12 @@ export default defineConfig({
         dependsOn: ['typecheck:auth-proofs'],
         cache: false,
       },
+      'test:registration-web-issuer': {
+        command:
+          'vp test run --config packages/web/auth-proofs/registration-proof.vite.config.ts --maxWorkers=1 --reporter=agent',
+        dependsOn: ['typecheck:auth-proofs'],
+        cache: false,
+      },
       'test:auth-web-credential-proof': {
         command:
           'vp test run --config packages/web/auth-proofs/credential-proof.vite.config.ts --maxWorkers=1 --reporter=agent',
