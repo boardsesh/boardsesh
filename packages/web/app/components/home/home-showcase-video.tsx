@@ -6,7 +6,6 @@ import IconButton from '@mui/material/IconButton';
 import { styled } from '@mui/material/styles';
 import PauseRounded from '@mui/icons-material/PauseRounded';
 import PlayArrowRounded from '@mui/icons-material/PlayArrowRounded';
-import { useTranslation } from 'react-i18next';
 import { useAutoplayVideo } from '@/app/hooks/use-autoplay-video';
 import { track } from '@/app/lib/analytics-capture';
 import {
@@ -79,8 +78,15 @@ function readsDataSaver(): boolean {
  * The video's headlines are burned into its pixels, so the same words render as
  * a visually hidden caption for screen readers and crawlers.
  */
-export default function HomeShowcaseVideo() {
-  const { t } = useTranslation('marketing');
+export type HomeShowcaseVideoCopy = {
+  videoLabel: string;
+  unsupported: string;
+  play: string;
+  pause: string;
+  scenes: { id: string; headline: string }[];
+};
+
+export default function HomeShowcaseVideo({ copy }: { copy: HomeShowcaseVideoCopy }) {
   const sources = React.useMemo(() => showcaseVideoSources(), []);
   const posterSources = React.useMemo(() => showcasePosterSources(), []);
 
@@ -184,19 +190,6 @@ export default function HomeShowcaseVideo() {
     }
   }, [videoRef, autoplayAllowed, sourceReady, userPaused, toggleUserPaused, ensureSource]);
 
-  const scenes = React.useMemo(
-    () => [
-      { id: 'boards', headline: t('home.showcase.scenes.boards') },
-      { id: 'spray', headline: t('home.showcase.scenes.spray') },
-      { id: 'wall', headline: t('home.showcase.scenes.wall') },
-      { id: 'crew', headline: t('home.showcase.scenes.crew') },
-      { id: 'workouts', headline: t('home.showcase.scenes.workouts') },
-      { id: 'island', headline: t('home.showcase.scenes.island') },
-      { id: 'log', headline: t('home.showcase.scenes.log') },
-      { id: 'outro', headline: t('home.showcase.scenes.outro') },
-    ],
-    [t],
-  );
   // Autoplay held back by the reader's settings and autoplay refused by the
   // browser look the same: the poster stays and a big play button starts it.
   const idleWaitingForPlay = (holdsAutoplay || autoplayRefused) && !isShowingVideo && videoPaused;
@@ -217,13 +210,13 @@ export default function HomeShowcaseVideo() {
         ref={videoRef}
         className={styles.video}
         data-active={isShowingVideo ? 'true' : 'false'}
-        aria-label={t('home.showcase.videoLabel')}
+        aria-label={copy.videoLabel}
         muted
         loop
         playsInline
         preload="none"
       >
-        {t('home.showcase.unsupported')}
+        {copy.unsupported}
       </video>
       {/* One control set for every path: no native controls, even when the
           browser refuses autoplay. The video stays hidden until a frame plays,
@@ -232,14 +225,14 @@ export default function HomeShowcaseVideo() {
       <IconButton
         className={idleWaitingForPlay ? styles.toggleCentered : styles.toggle}
         size={idleWaitingForPlay ? 'large' : 'small'}
-        aria-label={videoPaused ? t('home.showcase.play') : t('home.showcase.pause')}
+        aria-label={videoPaused ? copy.play : copy.pause}
         onClick={handleToggle}
       >
         {videoPaused ? <PlayArrowRounded /> : <PauseRounded />}
       </IconButton>
       <Box component="figcaption" className={styles.sceneList}>
         <ul>
-          {scenes.map((scene) => (
+          {copy.scenes.map((scene) => (
             <li key={scene.id}>{scene.headline}</li>
           ))}
         </ul>

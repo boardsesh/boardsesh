@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslation } from 'react-i18next';
+import type { ConsentLabels } from './consent-labels';
 import Button from '@mui/material/Button';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
@@ -9,6 +9,7 @@ import DialogActions from '@mui/material/DialogActions';
 import ConsentDisclosures from './consent-disclosures';
 
 export type ConsentChoicesDialogProps = {
+  labels: ConsentLabels;
   onClose: () => void;
   onChoose: (choice: 'granted' | 'denied') => void;
   syncFailed: boolean;
@@ -16,12 +17,12 @@ export type ConsentChoicesDialogProps = {
 };
 
 export default function ConsentChoicesDialog({
+  labels,
   onClose,
   onChoose,
   syncFailed,
   disableRestoreFocus,
 }: ConsentChoicesDialogProps) {
-  const { t } = useTranslation('consent');
   return (
     <Dialog
       open
@@ -31,17 +32,17 @@ export default function ConsentChoicesDialog({
       aria-labelledby="consent-choices-title"
       disableRestoreFocus={disableRestoreFocus}
     >
-      <DialogTitle id="consent-choices-title">{t('privacyChoices')}</DialogTitle>
+      <DialogTitle id="consent-choices-title">{labels.privacyChoices}</DialogTitle>
       <DialogContent>
-        <ConsentDisclosures onClose={onClose} syncFailed={syncFailed} />
+        <ConsentDisclosures labels={labels} onClose={onClose} syncFailed={syncFailed} />
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>{t('close')}</Button>
+        <Button onClick={onClose}>{labels.close}</Button>
         <Button variant="outlined" onClick={() => onChoose('granted')}>
-          {t('allow')}
+          {labels.allow}
         </Button>
         <Button variant="outlined" onClick={() => onChoose('denied')}>
-          {t('deny')}
+          {labels.deny}
         </Button>
       </DialogActions>
     </Dialog>

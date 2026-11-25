@@ -14,6 +14,7 @@ import { I18nContext, I18nextProvider, initReactI18next } from 'react-i18next';
 import { loadCatalog } from '@boardsesh/i18n/catalog-loader';
 import { DEFAULT_LOCALE, DEFAULT_NAMESPACE, SUPPORTED_LOCALES, type Locale } from './config';
 import { reportMissingI18nKey } from './missing-key-reporter';
+import { DocumentLocaleProvider } from './document-locale-context';
 
 // This provider has two lifetimes, because `'use client'` does not mean
 // "browser only" — a client component is rendered to HTML on the server on
@@ -136,5 +137,9 @@ export function I18nProvider({
     () => getClientInstance(locale, resources, parentInstance),
     [locale, resources, parentInstance],
   );
-  return <I18nextProvider i18n={instance}>{children}</I18nextProvider>;
+  return (
+    <DocumentLocaleProvider locale={locale}>
+      <I18nextProvider i18n={instance}>{children}</I18nextProvider>
+    </DocumentLocaleProvider>
+  );
 }

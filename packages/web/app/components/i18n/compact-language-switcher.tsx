@@ -2,10 +2,10 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { useTranslation } from 'react-i18next';
+import { useDocumentLocale } from '@/app/lib/i18n/document-locale-context';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import { DEFAULT_LOCALE, LOCALE_COOKIE, LOCALE_LABELS, isSupportedLocale, type Locale } from '@/app/lib/i18n/config';
+import { LOCALE_COOKIE, LOCALE_LABELS, type Locale } from '@/app/lib/i18n/config';
 import { localeHref, stripLocalePrefix } from '@/app/lib/i18n/locale-href';
 import { getPublishedLocales } from '@/app/lib/i18n/published-locales';
 import CompactLanguageMenuFallback from './compact-language-menu-fallback';
@@ -24,8 +24,7 @@ function CompactLanguageSwitcherInner({
   publishedLocales: readonly Locale[];
   ariaLabel: string;
 }) {
-  const { i18n } = useTranslation('common');
-  const current: Locale = isSupportedLocale(i18n.language) ? i18n.language : DEFAULT_LOCALE;
+  const current = useDocumentLocale();
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const [Menu, setMenu] = useState<React.ComponentType<CompactLanguageMenuProps> | null>(null);
   const [openedWithFallback, setOpenedWithFallback] = useState(false);
@@ -88,17 +87,9 @@ function CompactLanguageSwitcherInner({
   );
 }
 
-export default function CompactLanguageSwitcher() {
+export default function CompactLanguageSwitcher({ ariaLabel }: { ariaLabel: string }) {
   const pathname = usePathname() ?? '/';
-  const { i18n, t } = useTranslation('common');
   const publishedLocales = getPublishedLocales(pathname);
   if (publishedLocales.length < 2) return null;
-  const current = isSupportedLocale(i18n.language) ? i18n.language : DEFAULT_LOCALE;
-  return (
-    <CompactLanguageSwitcherInner
-      pathname={pathname}
-      publishedLocales={publishedLocales}
-      ariaLabel={t('languageSwitcher.ariaLabelWithCurrent', { language: LOCALE_LABELS[current] })}
-    />
-  );
+  return <CompactLanguageSwitcherInner pathname={pathname} publishedLocales={publishedLocales} ariaLabel={ariaLabel} />;
 }

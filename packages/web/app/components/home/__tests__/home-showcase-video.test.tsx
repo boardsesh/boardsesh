@@ -3,14 +3,21 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test'
 import { render, act, screen, fireEvent } from '@testing-library/react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => tFromCatalog('marketing', key), i18n: { language: 'en-US' } }),
-}));
-
 const mockTrack = vi.fn();
 vi.mock('@/app/lib/analytics-capture', () => ({ track: (...args: unknown[]) => mockTrack(...args) }));
 
 import HomeShowcaseVideo from '../home-showcase-video';
+
+const showcaseCopy = {
+  videoLabel: tFromCatalog('marketing', 'home.showcase.videoLabel'),
+  unsupported: tFromCatalog('marketing', 'home.showcase.unsupported'),
+  play: tFromCatalog('marketing', 'home.showcase.play'),
+  pause: tFromCatalog('marketing', 'home.showcase.pause'),
+  scenes: ['boards', 'spray', 'wall', 'crew', 'workouts', 'island', 'log', 'outro'].map((id) => ({
+    id,
+    headline: tFromCatalog('marketing', 'home.showcase.scenes.' + id),
+  })),
+};
 
 type ObserverCallback = (entries: { isIntersecting: boolean }[]) => void;
 
@@ -81,7 +88,7 @@ describe('HomeShowcaseVideo', () => {
   });
 
   it('loads a responsive hero poster eagerly and defers the video source', () => {
-    render(<HomeShowcaseVideo />);
+    render(<HomeShowcaseVideo copy={showcaseCopy} />);
     const poster = document.querySelector('img');
     expect(poster?.getAttribute('src')).toBe('/images/home/showcase-hero-9x16-640w.webp');
     expect(poster?.getAttribute('srcset')).toContain('/images/home/showcase-hero-9x16-360w.webp 360w');
@@ -97,7 +104,7 @@ describe('HomeShowcaseVideo', () => {
   });
 
   it('keeps the poster visible and the video hidden until it is playing', () => {
-    render(<HomeShowcaseVideo />);
+    render(<HomeShowcaseVideo copy={showcaseCopy} />);
     scrollIntoView(true);
     runIdleCallbacks();
     const poster = document.querySelector('img');
@@ -111,20 +118,20 @@ describe('HomeShowcaseVideo', () => {
   });
 
   it('renders the pause toggle with the scrim-backed toggle style', () => {
-    render(<HomeShowcaseVideo />);
+    render(<HomeShowcaseVideo copy={showcaseCopy} />);
     const toggle = screen.getByRole('button', { name: tFromCatalog('marketing', 'home.showcase.play') });
     expect(toggle.className).toMatch(/toggle/);
   });
 
   it('lists all eight scene headlines in a hidden caption', () => {
-    render(<HomeShowcaseVideo />);
+    render(<HomeShowcaseVideo copy={showcaseCopy} />);
     const items = document.querySelectorAll('figcaption li');
     expect(items).toHaveLength(8);
     expect(items[5].textContent).toBe(tFromCatalog('marketing', 'home.showcase.scenes.island'));
   });
 
   it('keeps a below-fold video unloaded until it is in view and idle', () => {
-    render(<HomeShowcaseVideo />);
+    render(<HomeShowcaseVideo copy={showcaseCopy} />);
     expect(getVideo().getAttribute('src')).toBeNull();
 
     runIdleCallbacks();
@@ -138,7 +145,7 @@ describe('HomeShowcaseVideo', () => {
 
   it('falls back to the mp4 when webm is not playable', () => {
     canPlayTypeSpy.mockReturnValue('');
-    render(<HomeShowcaseVideo />);
+    render(<HomeShowcaseVideo copy={showcaseCopy} />);
     scrollIntoView(true);
     runIdleCallbacks();
     expect(getVideo().getAttribute('src')).toBe('/videos/home/showcase-9x16-lite.mp4');
@@ -146,7 +153,7 @@ describe('HomeShowcaseVideo', () => {
 
   it('keeps the poster and shows a play button when the reader saves data', () => {
     Object.defineProperty(window.navigator, 'connection', { value: { saveData: true }, configurable: true });
-    render(<HomeShowcaseVideo />);
+    render(<HomeShowcaseVideo copy={showcaseCopy} />);
     scrollIntoView(true);
     runIdleCallbacks();
 
@@ -160,7 +167,7 @@ describe('HomeShowcaseVideo', () => {
 
   it('does not autoplay for reduced motion but plays on request', () => {
     reducedMotion = true;
-    render(<HomeShowcaseVideo />);
+    render(<HomeShowcaseVideo copy={showcaseCopy} />);
     scrollIntoView(true);
     runIdleCallbacks();
     expect(getVideo().getAttribute('src')).toBeNull();
@@ -171,7 +178,7 @@ describe('HomeShowcaseVideo', () => {
   });
 
   it('pauses and resumes through the hook with exactly one play() call per resume', () => {
-    render(<HomeShowcaseVideo />);
+    render(<HomeShowcaseVideo copy={showcaseCopy} />);
     scrollIntoView(true);
     runIdleCallbacks();
     expect(playSpy).toHaveBeenCalledTimes(1);
@@ -192,7 +199,7 @@ describe('HomeShowcaseVideo', () => {
 
   it('treats refused autoplay like data saver: poster stays, big play button, one play() per click', async () => {
     playSpy.mockRejectedValueOnce(new DOMException('blocked', 'NotAllowedError'));
-    render(<HomeShowcaseVideo />);
+    render(<HomeShowcaseVideo copy={showcaseCopy} />);
     scrollIntoView(true);
     runIdleCallbacks();
     await act(async () => {
@@ -211,7 +218,7 @@ describe('HomeShowcaseVideo', () => {
   });
 
   it('releases the deferred load when the reader presses play before the page is idle', () => {
-    render(<HomeShowcaseVideo />);
+    render(<HomeShowcaseVideo copy={showcaseCopy} />);
     scrollIntoView(true);
     fireEvent.click(screen.getByRole('button', { name: tFromCatalog('marketing', 'home.showcase.play') }));
     expect(getVideo().getAttribute('src')).toBe('/videos/home/showcase-9x16-lite.webm');
@@ -219,7 +226,7 @@ describe('HomeShowcaseVideo', () => {
   });
 
   it('reports each quartile once, flagged as autoplayed', () => {
-    render(<HomeShowcaseVideo />);
+    render(<HomeShowcaseVideo copy={showcaseCopy} />);
     runIdleCallbacks();
     const video = getVideo();
 
@@ -245,7 +252,7 @@ describe('HomeShowcaseVideo', () => {
 
   it('flags progress as not autoplayed when the reader pressed play', () => {
     reducedMotion = true;
-    render(<HomeShowcaseVideo />);
+    render(<HomeShowcaseVideo copy={showcaseCopy} />);
     fireEvent.click(screen.getByRole('button', { name: tFromCatalog('marketing', 'home.showcase.play') }));
     playAt(getVideo(), 11);
     expect(mockTrack).toHaveBeenCalledWith(

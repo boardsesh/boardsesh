@@ -1,26 +1,33 @@
 'use client';
 
-import { useTranslation } from 'react-i18next';
+import type { ConsentLabels } from './consent-labels';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
 import LocaleLink from '@/app/components/i18n/locale-link';
 
 /** The same disclosures remain available when the optional dialog cannot load. */
-export default function ConsentDisclosures({ onClose, syncFailed }: { onClose: () => void; syncFailed: boolean }) {
-  const { t } = useTranslation('consent');
+export default function ConsentDisclosures({
+  labels,
+  onClose,
+  syncFailed,
+}: {
+  labels: ConsentLabels;
+  onClose: () => void;
+  syncFailed: boolean;
+}) {
   return (
     <Stack spacing={2}>
       <Typography variant="body2" color="text.secondary">
-        {t('body')}
+        {labels.body}
       </Typography>
       <Typography variant="body2" color="text.secondary">
-        {t('adMeasurement')}
+        {labels.adMeasurement}
       </Typography>
       <MuiLink component={LocaleLink} href="/privacy" onNavigate={onClose}>
-        {t('privacyLink')}
+        {labels.privacyLink}
       </MuiLink>
-      {syncFailed && <Typography role="status">{t('syncError')}</Typography>}
+      {syncFailed && <Typography role="status">{labels.syncError}</Typography>}
     </Stack>
   );
 }

@@ -2,14 +2,15 @@
 
 import React, { useEffect, useState } from 'react';
 import { useMarketingCapabilities } from '../marketing/marketing-capabilities-context';
+import type { HomeSupportBannerProps } from './home-support-banner';
 import { isSupportBannerWindow } from './support-banner-window';
 
 /** Runtime payment configuration must not become a build-time eligibility decision. */
-export default function RuntimeHomeSupportBanner() {
+export default function RuntimeHomeSupportBanner({ copy }: HomeSupportBannerProps) {
   const [inWindow, setInWindow] = useState(false);
   const [visit, setVisit] = useState(0);
   const eligible = useMarketingCapabilities()?.hasMonthlySupport === true && inWindow;
-  const [Banner, setBanner] = useState<React.ComponentType | null>(null);
+  const [Banner, setBanner] = useState<React.ComponentType<HomeSupportBannerProps> | null>(null);
   useEffect(() => {
     const refresh = () => {
       setInWindow(isSupportBannerWindow(new Date()));
@@ -45,5 +46,5 @@ export default function RuntimeHomeSupportBanner() {
       mounted = false;
     };
   }, [eligible, visit, Banner]);
-  return eligible && Banner && isSupportBannerWindow(new Date()) ? <Banner key={visit} /> : null;
+  return eligible && Banner && isSupportBannerWindow(new Date()) ? <Banner key={visit} copy={copy} /> : null;
 }
