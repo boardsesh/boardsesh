@@ -234,8 +234,8 @@ export function resourceAccessCondition(
  * already; this decides the audience part:
  *
  * - Public and Followers boards are listed.
- * - Unlisted and Invite-only boards are listed when the owner turned on "Show
- *   to people I follow" (`listed_to_followers`), or when the viewer already
+ * - Unlisted and Invite-only boards are listed when the owner turned on "Show to
+ *   my followers" (`listed_to_followers`), or when the viewer already
  *   holds the board (approved grant, follower inheritance).
  * - Only me is never listed, and a revoked grant hides the board from that viewer.
  *

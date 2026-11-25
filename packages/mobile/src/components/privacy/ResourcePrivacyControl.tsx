@@ -12,7 +12,7 @@ import { Button } from '../Button';
 import { SwitchRow } from '../SwitchRow';
 import { useResourcePrivacy, useUpdateResourcePrivacy } from '../../lib/graphql/hooks/use-resource-privacy';
 import { usePrivacySettings } from '../../lib/graphql/hooks/use-privacy';
-import { useProfile } from '../../lib/graphql/hooks';
+import { useGym, useProfile } from '../../lib/graphql/hooks';
 import { useConnectivity } from '../../lib/connectivity/use-connectivity';
 import { useTheme } from '../../providers/theme-provider';
 
@@ -38,6 +38,8 @@ export function ResourcePrivacyControl({
   const { data: profile } = useProfile();
   const { data: settings } = usePrivacySettings();
   const { data: privacy } = useResourcePrivacy(kind, resourceId);
+  // Shares OwnPublicGymWarning's cached read. `undefined` while it loads.
+  const { data: gym } = useGym(kind === 'board' ? (gymUuid ?? null) : null);
   const update = useUpdateResourcePrivacy();
   const { effectiveOffline } = useConnectivity();
   if (!settings?.enabled || !privacy || privacy.ownerId !== profile?.id) return null;
@@ -69,10 +71,14 @@ export function ResourcePrivacyControl({
               update.mutate({ kind, resourceId, audience: privacy.audience, inheritFollowers })
             }
           />
-          {showsFriendsListSwitch(privacy.audience, isSprayWall) ? (
+          {showsFriendsListSwitch(privacy.audience, isSprayWall, gymUuid ? gym : null, privacy.ownerId ?? null) ? (
             <SwitchRow
               label={t('privacy.listedToFollowers')}
-              description={t('privacy.listedToFollowersHint')}
+              description={
+                privacy.audience === 'unlisted'
+                  ? t('privacy.listedToFollowersUnlistedHint')
+                  : t('privacy.listedToFollowersInviteHint')
+              }
               wrapDescription
               value={privacy.listedToFollowers}
               disabled={disabled}

@@ -691,7 +691,7 @@
       "details": "Details",
       "activeSprayDetails": "{{name}} · Spraywall-Details",
       "share": {
-        "shareLink": "Mit einem Freund teilen",
+        "shareLink": "Mit Freund*innen teilen",
         "publicHint": "Jede*r kann dieses Board öffnen.",
         "unlistedHint": "Nur die Leute, denen du den Link schickst.",
         "inviteHint": "Wer ihn öffnet, kann auf Beitreten tippen und Zugang erhalten."

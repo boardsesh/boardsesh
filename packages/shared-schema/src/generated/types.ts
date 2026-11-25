@@ -9090,7 +9090,7 @@ export type Query = {
   /**
    * Home boards owned by people the viewer follows, for "A friend's board".
    * Public and Followers boards are listed; Unlisted and Invite-only boards
-   * only when their owner turned on "Show to people I follow"
+   * only when their owner turned on "Show to my followers"
    * (listedToFollowers) or the viewer already holds them. Only-me boards, gym
    * boards, spray walls, the viewer's own boards and boards already in their
    * Your boards are left out. Boards the viewer has logged on come first, most
@@ -11287,7 +11287,7 @@ export type ResourcePrivacySettings = {
   inheritFollowers: Scalars['Boolean']['output'];
   kind: PrivacyResourceKind;
   /**
-   * "Show to people I follow": an Unlisted or Invite-only board is listed in the
+   * "Show to my followers": an Unlisted or Invite-only board is listed in the
    * owner's followers' friendsBoards. It grants no access: an Invite-only board
    * still needs an approved grant to climb on. No effect on other audiences.
    */
@@ -14432,7 +14432,7 @@ export type UpdateResourcePrivacyInput = {
   audience: PrivacyResourceAudience;
   inheritFollowers?: InputMaybe<Scalars['Boolean']['input']>;
   kind: PrivacyResourceKind;
-  /** Omit to keep the stored value. See ResourcePrivacySettings.listedToFollowers. */
+  /** Omit to keep the stored value. Saving any audience but unlisted or invite_only turns it off. See ResourcePrivacySettings.listedToFollowers. */
   listedToFollowers?: InputMaybe<Scalars['Boolean']['input']>;
   locationAudience?: InputMaybe<PrivacyLocationAudience>;
   resourceId: Scalars['ID']['input'];

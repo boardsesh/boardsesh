@@ -974,7 +974,7 @@
       "publicBody": "Questo pannello è pubblico: chiunque abbia il link può aprirlo e arrampicarci.",
       "unlistedBody": "Solo i climber a cui mandi questo link possono aprire il pannello. Non è in elenco da nessuna parte.",
       "inviteBody": "Chiunque abbia questo link può scegliere Unisciti per ottenere l'accesso al tuo pannello.",
-      "qrCaption": "Inquadra qui con la fotocamera",
+      "qrCaption": "Fai inquadrare questo codice",
       "loading": "Preparazione del tuo link",
       "loadFailed": "Impossibile ottenere il tuo link. Chiudi e riprova.",
       "resetLink": "Reimposta il link",

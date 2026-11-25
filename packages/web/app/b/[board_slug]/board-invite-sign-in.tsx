@@ -38,7 +38,8 @@ export default async function BoardInviteSignIn({ boardName, returnPath }: { boa
         <Typography variant="body2" color="text.secondary">
           {t('boardShareLink.appHint')}
         </Typography>
-        <StoreInstallButtons placement="board-invite" align="start" labels={storeLabels} />
+        {/* Plain: Sign in is the page's one filled button. */}
+        <StoreInstallButtons placement="board-invite" align="start" appearance="plain" labels={storeLabels} />
       </Box>
     </Container>
   );
