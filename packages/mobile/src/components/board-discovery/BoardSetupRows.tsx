@@ -4,8 +4,8 @@
 // or the pushed checklist for more (`setupRowControl`), so a long list of sizes
 // is a list you scroll, not a menu running off the screen.
 
-import { memo, useCallback, useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { memo, useCallback, useMemo, useState } from 'react';
+import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { AppMenu, type AppMenuAction } from '../AppMenu';
 import { Icon } from '../Icon';
 import { InsetGroupedList, insetGroupedRowStyles } from '../InsetGroupedList';
@@ -13,6 +13,7 @@ import { PressableSurface } from '../PressableSurface';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
 import { opacity } from '../../theme/tokens';
+import { ROW_GUTTER } from '../art-slot';
 import { setupRowControl, type SetupOptionField } from '../../lib/boards/setup-option-handoff';
 /** One option of a row, in the order the menu or checklist lists them. */
 export type SetupRowOption = { key: string | number; label: string; selected: boolean };
@@ -78,6 +79,14 @@ const SetupChoiceRow = memo(function SetupChoiceRow({
   const openList = useCallback(() => {
     if (listField) onOpenList(listField);
   }, [listField, onOpenList]);
+  // The menu's anchor is native and sizes to its label: cap it at the row's
+  // inner width, so a long size ("10×12 · Full Ride") truncates at 320 pt
+  // instead of running off the card.
+  const [anchorMaxWidth, setAnchorMaxWidth] = useState<number | undefined>(undefined);
+  const onRowLayout = useCallback((event: LayoutChangeEvent) => {
+    const inner = Math.floor(event.nativeEvent.layout.width - ROW_GUTTER * 2);
+    setAnchorMaxWidth((previous) => (previous === inner || inner <= 0 ? previous : inner));
+  }, []);
 
   if (control === 'list') {
     return (
@@ -93,18 +102,20 @@ const SetupChoiceRow = memo(function SetupChoiceRow({
         <Text variant="body" style={styles.label}>
           {label}
         </Text>
+        {/* The same value style as a menu row's anchor: the label colour,
+            regular weight, one line, a small secondary glyph after it. */}
         <View style={styles.listValue}>
-          <Text variant="body" tone="secondary" numberOfLines={2} style={styles.valueText}>
+          <Text variant="body" color={systemColors.label} numberOfLines={1} style={styles.valueText}>
             {value}
           </Text>
-          <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
+          <Icon name="chevron.right" size={VALUE_GLYPH_SIZE} color={systemColors.secondaryLabel} />
         </View>
       </PressableSurface>
     );
   }
 
   return (
-    <View style={[insetGroupedRowStyles.row, styles.row]} testID={testID}>
+    <View style={[insetGroupedRowStyles.row, styles.row]} onLayout={onRowLayout} testID={testID}>
       <Text
         variant="body"
         style={styles.label}
@@ -119,10 +130,14 @@ const SetupChoiceRow = memo(function SetupChoiceRow({
         accessibilityLabel={`${label}, ${value}`}
         actions={actions}
         onSelectIndex={onSelectIndex}
+        maxWidth={anchorMaxWidth}
       />
     </View>
   );
 });
+
+/** The pushed row's trailing glyph: the size of a menu anchor's caret. */
+const VALUE_GLYPH_SIZE = 13;
 
 const styles = StyleSheet.create({
   row: {
