@@ -545,8 +545,8 @@ replaces the previous values, so a missed day corrects itself:
 | Field | Meaning |
 | --- | --- |
 | `senders` | Distinct Boardsesh climbers with at least one counted send |
-| `ratingSum`, `ratingCount` | Sum and number of star ratings on counted ascents, on a stated scale. Each climber counts once, with their latest rating. Left out below 5 ratings |
-| `gradeVotes` | Number of their grade votes per grade. Left out below 5 votes |
+| `ratingSum`, `ratingCount` | Sum and number of star ratings on counted ascents, on a stated scale. Each climber counts once, with their latest rating |
+| `gradeVotes` | Number of their grade votes per grade; left out below a minimum number of votes |
 
 Sums and counts are sent because they can be added exactly:
 `(sumA + sumB) / (countA + countB)` is the true combined average.
@@ -597,18 +597,10 @@ and not one of the 11.
 - Grades. The grade a setter or the manufacturer gave a climb stays as it is.
   The grade from the combined votes is shown as the community's grade, next
   to it. Each app decides which of the two it shows first.
-- Small numbers. Pushing once a day does not make a number anonymous. A
-  rating count of 1 is one person's rating, and comparing two days can show
-  one new rating even on a popular climb. So:
-  - Ratings and grade votes for a climb and angle are left out until at
-    least 5 climbers have given one, and are then sent in steps of 5, so a
-    single new rating does not show.
-  - The sender count is sent as it is. Boardsesh already shows it publicly
-    on every climb, with no name.
-  - Totals carry no first-ascent name or time.
-  - Before this is switched on, the two sides look at everything that is
-    shared together (totals, who is on the wall, public climbs), because
-    numbers that are harmless alone can identify someone in combination.
+- Small numbers. A total that goes from 0 to 1 shows what one person did
+  that day. So totals are pushed daily, carry no first-ascent name or time, and
+  leave out the grade-vote breakdown until a climb has a minimum number of
+  votes (we propose 5).
 
 ## The public snapshot
 
