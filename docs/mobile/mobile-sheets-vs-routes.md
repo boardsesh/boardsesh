@@ -850,9 +850,11 @@ for the root `/gyms` (`GymFinderMapScreen`), a full-screen route of its own. Bot
 hook, `useGymFinder`, and the browse rows (`GymBrowseRow`); only the frame differs.
 
 A step whose map is the point of it, like Add your gym (`NewGymStep`, where the climber moves the
-map under a dot), passes `cardPinned`: the card sits above the list and never scrolls or folds, so
-focusing a field can't take the map away. While the keyboard is up it clips to the map's middle band
-instead of resizing the map, because a resized map reports a camera move nobody made.
+map under a dot), passes `cardPinned`: the card sits above the list and never scrolls, so focusing
+a field can't take the map away. While a field whose content is in the rows is in use it passes
+`cardCompact` too: the card clips to the map's middle band, leaving the rows 120 pt above the
+keyboard, and folds only where an 88 pt band won't fit. It clips and moves the map by layout instead
+of resizing it, because a resized map reports a camera move nobody made.
 
 The same goes for a searchable list: the builders' gym row (Edit board, Set up, a spray wall's
 details) pushes `/boards/gym-picker`, the gym step in pick mode, and takes the answer back through

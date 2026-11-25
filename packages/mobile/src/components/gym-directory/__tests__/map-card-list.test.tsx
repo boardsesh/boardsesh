@@ -199,13 +199,27 @@ describe('pinnedMapBandHeight', () => {
     expect(pinnedMapBandHeight(700, 0)).toBe(210);
   });
 
-  it('is 40% of the page above the keyboard while it is up, 88 pt at least, never more than the card', () => {
-    // 700 - 336 = 364 above the keyboard: 146 pt.
-    expect(pinnedMapBandHeight(700, 336)).toBe(146);
-    // A small phone: 380 - 260 = 120 above it, floored at 88.
-    expect(pinnedMapBandHeight(380, 260)).toBe(88);
-    // A tall page with a short keyboard: the card's own 240 caps it.
-    expect(pinnedMapBandHeight(1200, 100)).toBe(240);
+  it('leaves the rows 120 pt above the keyboard, never more than the card', () => {
+    // 700 - 336 = 364 above the keyboard: room for the whole 210 pt card.
+    expect(pinnedMapBandHeight(700, 336)).toBe(210);
+    // 600 - 336 = 264 above it: 264 - 120 - 16 = 128 pt of band.
+    expect(pinnedMapBandHeight(600, 336)).toBe(128);
+    for (const [page, keyboard] of [
+      [600, 336],
+      [700, 420],
+      [900, 336],
+    ]) {
+      const band = pinnedMapBandHeight(page, keyboard);
+      expect(page - keyboard - (band + 16)).toBeGreaterThanOrEqual(120);
+    }
+  });
+
+  it('folds (0) where the band would be under 88 pt', () => {
+    // 450 - 300 = 150 above the keyboard: 14 pt of band, too little to use.
+    expect(pinnedMapBandHeight(450, 300)).toBe(0);
+    // 224 pt above it: 88 pt, just enough.
+    expect(pinnedMapBandHeight(560, 336)).toBe(88);
+    expect(pinnedMapBandHeight(559, 336)).toBe(0);
   });
 });
 
@@ -344,17 +358,60 @@ describe('MapCardList', () => {
     expect(onLocate).toHaveBeenCalledOnce();
   });
 
-  it('shows the middle band of a pinned card while the keyboard is up, the map keeping its size', () => {
-    state.keyboardOverlap = 336;
+  it('keeps the whole pinned card while the keyboard is up for a field above it (not compact)', () => {
+    state.keyboardOverlap = 500;
     renderList({ cardPinned: true });
-    // 40% of the 364 pt above the keyboard: a 146 pt band of the 210 pt card.
-    expect(styleOf('map-card-box')).toMatchObject({ height: 146 + 16 });
-    expect(styleOf('map-card-band')).toMatchObject({ height: 146 });
-    expect(styleOf('map-card')).toMatchObject({ height: 210, transform: [{ translateY: -32 }] });
+    expect(styleOf('map-card-box')).toMatchObject({ height: 226 });
+    expect(styleOf('map-card-band')).toMatchObject({ height: 210 });
+    expect(styleOf('map-card').marginTop).toBeUndefined();
+  });
+
+  it('shows the middle band of a compact pinned card, moved by layout, the map keeping its size', () => {
+    // The page is 700 pt: 280 above a 420 pt keyboard, 280 - 120 - 16 = 144 pt of band.
+    state.keyboardOverlap = 420;
+    renderList({ cardPinned: true, cardCompact: true });
+    expect(styleOf('map-card-box')).toMatchObject({ height: 144 + 16 });
+    expect(styleOf('map-card-band')).toMatchObject({ height: 144 });
+    // Half of the 66 pt cut, by margin (it animates with the band), never a transform.
+    const card = styleOf('map-card');
+    expect(card).toMatchObject({ height: 210, marginTop: -33 });
+    expect(card.transform).toBeUndefined();
+    // The rows keep 120 pt above the keyboard.
+    expect(700 - 420 - styleOf('map-card-box').height).toBeGreaterThanOrEqual(120);
     expect(screen.getByTestId('the-map')).toBeTruthy();
     // The locate button sits on the band, so it stays in view.
     expect(screen.getByTestId('map-card-band').contains(screen.getByTestId('map-card-locate'))).toBe(true);
     expect(screen.getByTestId('map-card').contains(screen.getByTestId('map-card-locate'))).toBe(false);
+  });
+
+  it('folds a compact pinned card where no useful band fits, and unfolds once it is no longer compact', () => {
+    // 200 pt above the keyboard: 64 pt of band, under 88.
+    state.keyboardOverlap = 500;
+    const view = renderList({ cardPinned: true, cardCompact: true });
+    expect(styleOf('map-card-box')).toMatchObject({ height: 0, overflow: 'hidden' });
+    // Clipped, not resized or unmounted: the map keeps its size and camera.
+    expect(styleOf('map-card')).toMatchObject({ height: 210 });
+    expect(styleOf('map-card').marginTop).toBeUndefined();
+    expect(screen.getByTestId('the-map')).toBeTruthy();
+    view.rerender(
+      createElement(MapCardList<Row>, {
+        data: ROWS,
+        renderItem: renderRow,
+        keyExtractor: rowKey,
+        map: createElement('div', { 'data-testid': 'the-map' }),
+        cardPinned: true,
+        cardCompact: false,
+      }),
+    );
+    expect(styleOf('map-card-box')).toMatchObject({ height: 226 });
+    expect(styleOf('map-card')).toMatchObject({ height: 210 });
+  });
+
+  it('folds a pinned card while the map cannot draw, keeping the map mounted', () => {
+    renderList({ cardPinned: true, mapAvailable: false });
+    expect(styleOf('map-card-box')).toMatchObject({ height: 0, overflow: 'hidden' });
+    expect(styleOf('map-card')).toMatchObject({ height: 210 });
+    expect(screen.getByTestId('the-map')).toBeTruthy();
   });
 
   it('is a plain list with no map: no card, and no sticky row without a sticky header', () => {

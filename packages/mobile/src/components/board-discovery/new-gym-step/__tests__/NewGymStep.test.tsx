@@ -32,6 +32,7 @@ const state = vi.hoisted(() => ({
     mapHidden?: boolean;
     mapAvailable?: boolean;
     cardPinned?: boolean;
+    cardCompact?: boolean;
     hasFooter: boolean;
   } | null,
 }));
@@ -179,6 +180,7 @@ vi.mock('../../../gym-directory/MapCardList', () => ({
     mapHidden,
     mapAvailable,
     cardPinned,
+    cardCompact,
     onLocate,
   }: {
     ref?: Ref<unknown>;
@@ -190,9 +192,16 @@ vi.mock('../../../gym-directory/MapCardList', () => ({
     mapHidden?: boolean;
     mapAvailable?: boolean;
     cardPinned?: boolean;
+    cardCompact?: boolean;
     onLocate?: () => void;
   }) => {
-    state.list = { mapHidden, mapAvailable, cardPinned, hasFooter: footer !== undefined && footer !== null };
+    state.list = {
+      mapHidden,
+      mapAvailable,
+      cardPinned,
+      cardCompact,
+      hasFooter: footer !== undefined && footer !== null,
+    };
     useImperativeHandle(ref, () => ({ scrollToItemKey: scrollToItemKeyMock, scrollToTop: vi.fn() }), []);
     return createElement('section', null, [
       createElement('div', { key: 'map' }, map),
@@ -384,21 +393,35 @@ describe('Save is the ✓ in the bar', () => {
 });
 
 describe('the map stays while a field is in use', () => {
-  it('pins the card, and never folds it when the name, search or address field is focused', () => {
+  it('pins the card, and never hides it for a field: the name keeps the whole card, search and address go compact', () => {
     state.location = { ...state.location, status: 'granted', permission: 'granted', coords: DEVICE };
     renderStep();
-    expect(state.list).toMatchObject({ cardPinned: true, mapAvailable: true });
+    expect(state.list).toMatchObject({ cardPinned: true, mapAvailable: true, cardCompact: false });
     expect(state.list?.mapHidden).toBeFalsy();
-    for (const field of ['new-gym-name', 'search', 'new-gym-address']) {
+    setCenterMock.mockClear();
+    const caption = screen.getByTestId('new-gym-pin-caption').textContent;
+    for (const [field, compact] of [
+      ['new-gym-name', false],
+      ['search', true],
+      ['new-gym-address', true],
+    ] as const) {
       fireEvent.focus(screen.getByTestId(field));
       fireEvent.change(screen.getByTestId(field), { target: { value: 'Boulder' } });
       expect(state.list?.mapHidden, field).toBeFalsy();
       expect(state.list?.cardPinned, field).toBe(true);
+      expect(state.list?.cardCompact, field).toBe(compact);
       expect(screen.getByTestId('gym-map'), field).toBeTruthy();
       expect(screen.getByTestId('new-gym-pin'), field).toBeTruthy();
       fireEvent.blur(screen.getByTestId(field));
+      expect(state.list?.cardCompact, field).toBe(false);
       expect(state.list?.mapHidden, field).toBeFalsy();
     }
+    // None of it moved the camera or the pin.
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(setCenterMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId('new-gym-pin-caption').textContent).toBe(caption);
   });
 
   it('keeps the map after a search is typed and left without a pick', () => {
@@ -407,6 +430,7 @@ describe('the map stays while a field is in use', () => {
     fireEvent.change(screen.getByTestId('search'), { target: { value: 'Amster' } });
     fireEvent.blur(screen.getByTestId('search'));
     expect(state.list?.mapHidden).toBeFalsy();
+    expect(state.list?.cardCompact).toBe(false);
     expect(screen.getByTestId('gym-map')).toBeTruthy();
   });
 });
@@ -582,6 +606,8 @@ describe('"is it one of these?"', () => {
       }),
     );
     expect(props.onCreated).not.toHaveBeenCalled();
+    // Refused: the ✓ is free again.
+    expect(saveAction()).toMatchObject({ disabled: false, loading: false });
     expect(screen.getByTestId('similar:server-1')).toBeTruthy();
     expect(screen.getByText('mobile.newGym.similarRefusedBody')).toBeTruthy();
     expect(scrollToItemKeyMock).toHaveBeenCalledWith('similar:header');
@@ -632,6 +658,8 @@ describe('when the save does not go through', () => {
     typeName('Boulder Space');
     await tapSave();
     expect(screen.getByTestId('notice').textContent).toBe('mobile.newGym.saveFailed');
+    // The ✓ is free again for another try.
+    expect(saveAction()).toMatchObject({ disabled: false, loading: false });
     await tapSave();
     expect(createGymMock).toHaveBeenCalledTimes(2);
     expect(props.onCreated).toHaveBeenCalledOnce();

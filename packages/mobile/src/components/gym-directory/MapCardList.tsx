@@ -30,9 +30,11 @@
 // moves the map under a dot) pins the card instead (`cardPinned`): the card
 // sits above the list, outside it as before, and never scrolls away, so a text
 // field gaining focus (and the list scrolling to keep a row clear of the
-// keyboard) can't carry the map off. While the keyboard is up the card shows
-// a narrower band of the map, its middle (where a dot on its centre is), to
-// leave the rows room, rather than folding. The map itself keeps its size: a
+// keyboard) can't carry the map off. While a field that lives in the rows is
+// in use (`cardCompact`), the card shows a narrower band of the map, its
+// middle (where a dot on its centre is), so the rows keep 120 pt above the
+// keyboard; where even an 88 pt band won't fit, it folds until that field is
+// left. The map itself keeps its size throughout, only clipped and moved: a
 // resized map reports a camera move nobody made, which would read as a pan.
 //
 // Neither platform resizes these screens for the keyboard (panel-keyboard.ts),
@@ -71,22 +73,21 @@ export function mapCardHeight(pageHeight: number): number {
   return Math.min(MAP_CARD_MAX_HEIGHT, Math.max(MAP_CARD_MIN_HEIGHT, Math.round(pageHeight * MAP_CARD_FRACTION)));
 }
 
-/** A pinned card's share of the page left above the keyboard, and its floor (pt), while the keyboard is up. */
-const PINNED_CARD_KEYBOARD_FRACTION = 0.4;
-const PINNED_CARD_KEYBOARD_MIN_HEIGHT = 88;
+/** The room (pt) a compact pinned card leaves the rows above the keyboard. */
+export const PINNED_CARD_ROWS_ROOM = 120;
+/** The shortest band (pt) worth showing; shorter, the card folds instead. */
+export const PINNED_CARD_MIN_BAND = 88;
 
 /**
- * How much of a pinned card shows: all of it with the keyboard down. With it
- * up, 40% of the page left above the keyboard (never under 88 pt, never over
- * the card), so the rows under it (the field being typed in, the towns a
- * search suggests) keep room while the map stays in view.
+ * How much of a compact pinned card shows: what is left above the keyboard
+ * once the rows have 120 pt and the card its inset, never more than the card,
+ * or 0 (folded) when that is under 88 pt.
  */
 export function pinnedMapBandHeight(pageHeight: number, keyboardOverlap: number): number {
   const usual = mapCardHeight(pageHeight);
-  if (keyboardOverlap <= 0) return usual;
-  const aboveKeyboard = Math.max(0, pageHeight - keyboardOverlap);
-  const share = Math.round(aboveKeyboard * PINNED_CARD_KEYBOARD_FRACTION);
-  return Math.min(usual, Math.max(PINNED_CARD_KEYBOARD_MIN_HEIGHT, share));
+  const aboveKeyboard = Math.max(0, pageHeight - Math.max(0, keyboardOverlap));
+  const band = Math.min(usual, aboveKeyboard - PINNED_CARD_ROWS_ROOM - MAP_CARD_INSET * 2);
+  return band < PINNED_CARD_MIN_BAND ? 0 : band;
 }
 
 /**
@@ -146,10 +147,15 @@ export type MapCardListProps<Item> = {
   mapHidden?: boolean;
   /**
    * Hold the card above the rows instead of letting it scroll away with them,
-   * for a screen whose map is its point. It shrinks while the keyboard is up.
-   * Default false.
+   * for a screen whose map is its point. Default false.
    */
   cardPinned?: boolean;
+  /**
+   * A pinned card leaves the rows room: true while a field that lives in the
+   * rows is in use (its keyboard would otherwise leave it no room). The card
+   * shows its middle band, or folds where no useful band fits. Default false.
+   */
+  cardCompact?: boolean;
   /** The locate button in the card's top-right corner; none without it. */
   onLocate?: () => void;
   /** The locate button's accessibility label. */
@@ -183,6 +189,7 @@ export function MapCardList<Item>({
   mapAvailable = true,
   mapHidden = false,
   cardPinned = false,
+  cardCompact = false,
   onLocate,
   locateLabel,
   stickyHeader,
@@ -280,13 +287,13 @@ export function MapCardList<Item>({
   }, []);
 
   const hasMap = map !== undefined && map !== null;
-  const cardFolded = mapHidden || !mapAvailable;
   const cardHeight = mapCardHeight(pageHeight);
-  // How much of the card shows: a pinned card's middle band while the
-  // keyboard is up, all of it otherwise. The card is moved up by half what is
-  // cut, so the band is its middle.
-  const bandHeight = cardPinned ? pinnedMapBandHeight(pageHeight, keyboardOverlap) : cardHeight;
-  const cardShift = Math.round((cardHeight - bandHeight) / 2);
+  // How much of the card shows: a compact pinned card's middle band (0 when
+  // none fits), all of it otherwise. The card is moved up by half what is cut,
+  // so the band is its middle.
+  const bandHeight = cardPinned && cardCompact ? pinnedMapBandHeight(pageHeight, keyboardOverlap) : cardHeight;
+  const cardFolded = mapHidden || !mapAvailable || bandHeight === 0;
+  const cardShift = cardFolded ? 0 : Math.round((cardHeight - bandHeight) / 2);
   // The space the card takes at the top of the list: nothing once folded.
   const cardBoxHeight = hasMap && !cardFolded ? bandHeight + MAP_CARD_INSET * 2 : 0;
 
@@ -334,7 +341,9 @@ export function MapCardList<Item>({
         styles.card,
         CARD_CORNERS,
         { height: cardHeight, backgroundColor: systemColors.tertiaryFill },
-        cardShift > 0 ? { transform: [{ translateY: -cardShift }] } : null,
+        // Moved by layout, not a transform, so it moves in step with the
+        // band's height when the keyboard's LayoutAnimation runs.
+        cardShift > 0 ? { marginTop: -cardShift } : null,
       ]}
       testID="map-card"
     >

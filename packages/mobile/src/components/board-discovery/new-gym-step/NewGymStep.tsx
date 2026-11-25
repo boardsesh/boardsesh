@@ -6,10 +6,13 @@
 // as on Set up; while it can't be pressed, the line under the map says why.
 //
 // - The map is the point of this page, so its card is pinned (`cardPinned`):
-//   it never scrolls away and never folds while a field is in use. Focusing a
-//   field used to fold it (and the list's scroll carried it off), so the
-//   climber lost the map while naming the gym. With the keyboard up the card
-//   shows a narrower band around the dot, leaving the rows room.
+//   it never scrolls away. Focusing a field used to fold it (and the list's
+//   scroll carried it off), so the climber lost the map while naming the gym.
+//   The name field sits above the map: the whole card stays while it is typed
+//   in. The search (its towns are rows) and the address (a row) need room
+//   under the map, so while either is in use the card is compact: a narrower
+//   band around the dot leaving the rows 120 pt, folded only where no useful
+//   band fits, and back on leaving the field.
 //
 // - The pin is the centre of the map: a fixed dot the climber moves the map
 //   under. It starts at the device fix when location was already allowed (no
@@ -152,6 +155,9 @@ const ADDRESS_ROW_SLOT = <AddressRowSlot />;
 const rowKey = (row: NewGymRow) => row.key;
 const rowType = (row: NewGymRow) => row.kind;
 
+/** The field in use whose content lives in the rows under the map. */
+type RowsField = 'search' | 'address' | null;
+
 function nearTarget(coords: Coords, target: Coords): boolean {
   return (
     Math.abs(coords.latitude - target.latitude) < SETTLE_TOLERANCE_DEG &&
@@ -184,6 +190,9 @@ export function NewGymStep({
   const addressEditedRef = useRef(false);
   const [searchText, setSearchText] = useState('');
   const [placeSuggestions, setPlaceSuggestions] = useState<readonly PlaceSuggestion[]>(NO_PLACES);
+  // The search's towns and the address are rows: while one is in use the map
+  // card goes compact, so the keyboard leaves them room.
+  const [rowsField, setRowsField] = useState<RowsField>(null);
 
   // --- the pin ---
   const [pin, setPin] = useState<GymPin | null>(null);
@@ -423,6 +432,7 @@ export function NewGymStep({
   }, []);
   // The towns it suggests are the first rows, right under the map.
   const onSearchFocusChange = useCallback((focused: boolean) => {
+    setRowsField((current) => (focused ? 'search' : current === 'search' ? null : current));
     if (focused) listRef.current?.scrollToTop();
   }, []);
 
@@ -442,9 +452,10 @@ export function NewGymStep({
     setAddress(text);
   }, []);
   const onAddressFocusChange = useCallback((focused: boolean) => {
+    setRowsField((current) => (focused ? 'address' : current === 'address' ? null : current));
     if (!focused) return;
-    // Clear of the keyboard once it is up. The map stays where it is: only
-    // the rows under it scroll.
+    // Clear of the keyboard once it is up. The map stays where it is (compact):
+    // only the rows under it scroll.
     if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
     scrollTimerRef.current = setTimeout(() => {
       scrollTimerRef.current = null;
@@ -827,6 +838,7 @@ export function NewGymStep({
             map={mapElement}
             mapAvailable={mapAvailable}
             cardPinned
+            cardCompact={rowsField !== null}
             onLocate={onUseMyLocation}
             locateLabel={t('mobile.gyms.grantLocation')}
             testID="new-gym-list"
