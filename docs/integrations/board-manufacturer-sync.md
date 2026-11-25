@@ -60,6 +60,10 @@ manufacturer builds no sync client.
 Both sides want the two apps to share climbs, logbooks and playlists: set a
 climb in one app and it shows up in the other.
 
+This document says "the manufacturer" for whoever runs the API. The company
+that owns the brand, the one that runs the API and the one that makes the
+controller can be different parties, so each annex records who approves what.
+
 Not every Boardsesh climber has an account with the manufacturer, so the
 proposal has two layers:
 
@@ -87,7 +91,10 @@ occasionally, and a climber who never links keeps every feature.
    catalogue as a file anyone can download (see
    [The public snapshot](#the-public-snapshot)). The Boardsesh app uses the
    same file to work offline, and serving a file from a CDN costs far less
-   than syncing a database to every phone.
+   than syncing a database to every phone. For a manufacturer's own catalogue
+   this is a request and not a condition: what is published follows the
+   option the manufacturer chooses there, and agreeing to sync is not
+   agreeing to publish.
 2. **Only public climbs and totals are open.** Logbooks, accounts, drafts and
    private walls are not.
 3. **A logbook belongs to the climber.** The climber decides whether it moves
@@ -218,10 +225,13 @@ Boardsesh merges them:
 
 ![Three climbs with the same lit holds, two set in the manufacturer's app at 25 and 40 degrees and one set in Boardsesh, are stored in Boardsesh as three source climbs with their own ids, setters and ascents, and shown as one climb named after the one published first, while the manufacturer keeps its two climbs separate](diagrams/same-climb-merge.svg)
 
-- Climbers browsing Boardsesh see one climb. It shows the name and setter of
-  the one that was published first, whichever app it came from, and that
-  setter's grade until there are enough grade votes (see
-  [Limits](#limits)).
+- Climbers browsing Boardsesh see one climb. It shows the name, setter and
+  grade of the one that was published first, whichever app it came from.
+- Anything the manufacturer curates stays with its own source climb: an
+  official grade, a benchmark mark, whether it counts for a ranking. Matching
+  holds do not pass any of that to another source climb, and community votes
+  never replace a curated grade. Boardsesh shows the community's grade next
+  to it.
 - This is a display rule only. Underneath, Boardsesh keeps every source
   climb with its own id, setter, publication date and editing rights. A
   setter editing their climb never changes another setter's climb.
@@ -268,6 +278,16 @@ Publishing a climb cannot be undone, so Boardsesh checks first:
 3. **If the manufacturer removes a climb,** Boardsesh stops listing it and
    keeps the ascents already logged on it. Boardsesh does not create it
    again.
+   - In a merged climb only that source is removed. The others stay listed,
+     and the name and setter shown move to the earliest one left.
+   - The removed source's totals and any official status it carried are no
+     longer shown. Its ascents stay in the logbooks of the climbers who
+     logged them.
+   - The merged climb disappears from browsing only when every source is
+     removed, or when Boardsesh's own moderation hides it.
+   - Boardsesh remembers the removal. A later pull, a retry, or another
+     source with the same holds does not bring the removed one back. Only
+     the side that removed it can restore it.
 4. **Hold ids never change meaning.** A climb's holds refer to physical LEDs.
    A change to what an id means is a new board layout, announced ahead of
    time.
@@ -332,6 +352,27 @@ One screen, before anything moves:
 - Boardsesh will keep reading their manufacturer account in the background.
 - After copying, each service keeps its copy under its own privacy policy.
 - They can unlink at any time.
+
+### Who can see a synced ascent
+
+The two apps may not have the same privacy settings for a logbook. Boardsesh
+has public and private accounts, and each ascent can be Public, Followers or
+Only me. The rule for the sync:
+
+**An ascent is never more visible in the other app than the climber made it
+in the app they logged it in.**
+
+- Where the other app has a matching or stricter setting, the ascent gets
+  that setting.
+- Where it has none (for example every logbook there is public), the link
+  screen says so, and ascents that are not public are synced only if the
+  climber agrees.
+- An ascent that arrives from the manufacturer as private becomes "Only me"
+  in Boardsesh.
+- Visibility is separate from totals. In Boardsesh a private account and an
+  "Only me" ascent still count in a climb's totals, as numbers with no name.
+  We need to know whether the manufacturer's private ascents count in its
+  totals in the same way.
 
 ### Unlinking
 
@@ -534,8 +575,9 @@ and not one of the 11.
   of them at the same angle is counted twice, and can have two ratings. A way
   to ask the manufacturer for distinct senders across several climbs would
   remove this.
-- Displayed grade. We propose both apps show the grade from the combined
-  votes, and the setter's grade until there are enough votes.
+- Grades. The grade a setter or the manufacturer gave a climb stays as it is.
+  The grade from the combined votes is shown as the community's grade, next
+  to it. Each app decides which of the two it shows first.
 - Small numbers. A total that goes from 0 to 1 shows what one person did
   that day. So totals are pushed daily, carry no first-ascent name or time, and
   leave out the grade-vote breakdown until a climb has a minimum number of
@@ -615,17 +657,37 @@ What has to be agreed per board is in the manufacturer's annex.
 
 ## Operations
 
-- Moderation. Each company moderates its own app. The manufacturer may
-  hide or remove any climb Boardsesh wrote, and Boardsesh will not write it
-  again. Boardsesh removes abuse on its side and answers the manufacturer's
-  reports about climbs that came from Boardsesh.
+- Moderation. Each company moderates its own app. The manufacturer may hide
+  or remove any climb Boardsesh wrote, and Boardsesh will not write it again.
+  Boardsesh removes abuse on its side and answers the manufacturer's reports
+  about climbs that came from Boardsesh.
 - Limits. Boardsesh keeps to the rate limits the manufacturer states, and
   limits how many climbs one setter can publish in a day.
-- Access. The manufacturer can revoke the partner credential or a
-  climber's token at any time. Boardsesh then stops and keeps what it has.
-- Outages. When the manufacturer's API is down, Boardsesh keeps working
-  and holds its pushes until it is back. When Boardsesh is down, the
-  manufacturer's app is not affected.
+- Scope. The partner credential covers the agreed boards and the agreed
+  operations (read the catalogue, write climbs, write totals) and nothing
+  else. The manufacturer can withdraw one operation without the others.
+- Support. Before writes are switched on, the two sides agree a contact for
+  incidents, how much notice an API change gets, the request volume to expect,
+  and who looks into each kind of failure. Either side can pause one kind of
+  record (for example playlists) without stopping the rest.
+
+### When the connection stops
+
+| | Outage (the API cannot be reached) | Suspended (access paused by either side) | Ended (the agreement stops) |
+| --- | --- | --- | --- |
+| Pushes waiting in Boardsesh | Kept, sent when the API is back | Kept; sent after access returns only if the manufacturer agrees, otherwise dropped | Dropped |
+| Pulls | Resume from the last cursor | Stop | Stop |
+| Records already copied | Stay in both services | Stay in both services | Stay in both services, each under its own policy |
+| The board in Boardsesh | Works as normal | Works; climbers see that sync is paused | Works from the catalogue Boardsesh already holds, with no new climbs from the manufacturer |
+| Public snapshot | Unchanged | No new builds for that board | No new builds; whether the last one stays published is part of ending the agreement |
+| Tokens and credentials | Kept | Kept, unused | Deleted |
+| What climbers see | Nothing, unless it lasts | "Sync paused" on linked accounts | "No longer syncing"; their account is unlinked |
+| Names and logos | Unchanged | Unchanged | Removed, back to the wording used for any other board |
+
+After access ends, an account deletion or a name removal in one service can no
+longer reach the other through the sync. Each company then handles such
+requests for the data it holds, and the two agree a contact for passing them
+on.
 
 ## Names and trademarks
 
@@ -657,7 +719,8 @@ works with, with no claim of a relationship.
   privacy policy.
 - **Tier 0 totals are counts,** with the limits under [Limits](#limits).
 - **A private Boardsesh account** hides that climber's activity. It does not
-  hide climbs they published, and their sends still count in totals.
+  hide climbs they published. Its sends still count in totals, as numbers
+  with no name, whether or not the climber has linked.
 - **Deleting a Boardsesh account** removes the account's link to its climbs
   and sets the setter name to "Unknown" if the climber chooses that. The
   climbs stay. Snapshot files downloaded earlier keep the old name.

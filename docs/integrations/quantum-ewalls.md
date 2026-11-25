@@ -113,14 +113,24 @@ Android app, not from a contract. Our notes are in
   separate climb in eWalls. A person who sent both is then counted twice in
   Boardsesh. Can eWalls return the number of distinct people across a set of
   climb ids?
+- **B10.** Does eWalls have official or curated data on a climb: a grade set
+  by Walltopia, benchmark climbs, climbs that count for a ranking? Boardsesh
+  would keep those with the eWalls climb and show the community's grade next
+  to it, never in place of it.
 
 ### C. Linked accounts
 
 - **C1.** How does Boardsesh read one climber's complete logbook? We see
   ascents inside the catalogue changes, apparently including other climbers',
   but not a full history for one climber.
-- **C2.** Who can see an ascent in eWalls: everyone, or only the climber?
-  Boardsesh has "Only me" ascents and will tell the climber before linking.
+- **C2.** Does eWalls have public and private logbooks? Is that set per
+  account, per ascent, or not at all, and who can see an ascent by default?
+  Boardsesh has public and private accounts, and each ascent can be Public,
+  Followers or Only me. We propose that an ascent is never more visible in
+  the other app than the climber made it; see
+  [Who can see a synced ascent](board-manufacturer-sync.md#who-can-see-a-synced-ascent).
+- **C2b.** Does a private ascent in eWalls still count in a climb's totals? In
+  Boardsesh it does, as a number with no name.
 - **C3.** When Boardsesh logs an ascent, does the response give its permanent
   id? (See also A6.)
 - **C4.** Can an ascent carry the date and time it was climbed, and is that
@@ -268,8 +278,33 @@ and shows gyms with the boards they have.
 - **I4.** When a board moves to another venue or is replaced, does its id
   stay the same?
 
-### J. Optional
+### J. Who approves and who supports
 
-- **J1.** Would eWalls like to send its changes to Boardsesh, or send a short
+The brand, the API and the controller may belong to different teams or
+companies. To avoid assuming, please fill in who decides each of these:
+
+| Decision | Who approves at Walltopia / eWalls |
+| --- | --- |
+| Boardsesh reading the public catalogue | |
+| Boardsesh writing climbs, ascents and playlists for linked climbers | |
+| Boardsesh writing climbs and totals for climbers with no eWalls account | |
+| The public Quantum Board catalogue in Boardsesh's downloadable snapshot | |
+| Use of the Quantum Board, eWalls and Walltopia names and logos | |
+| Controller and firmware questions (section F) | |
+
+Agreeing to one row does not mean agreeing to another.
+
+- **J1.** Who should Boardsesh contact about an incident, an invalid write or
+  a moderation report, and who should eWalls contact at Boardsesh?
+- **J2.** How much notice does eWalls give before an API change?
+- **J3.** What request volume is acceptable? We can give an estimate per
+  linked climber once the calls are agreed.
+- **J4.** If access is paused and later restored, may Boardsesh send the
+  changes that were waiting? See
+  [When the connection stops](board-manufacturer-sync.md#when-the-connection-stops).
+
+### K. Optional
+
+- **K1.** Would eWalls like to send its changes to Boardsesh, or send a short
   "something changed for this climber" message, so they arrive sooner than
   the scheduled pull? Boardsesh does not need this to start.
