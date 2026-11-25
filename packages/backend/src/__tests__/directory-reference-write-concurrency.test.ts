@@ -146,6 +146,16 @@ describe('resource references serialize with directory repairs', () => {
   });
 
   it('holds the active board through a committed access request so merge cannot pass its grant check', async () => {
+    // An ask for a board the requester can already open is a silent no-op, so
+    // the board must be Invite-only for the pending grant to be written.
+    await db.update(tables.userBoards).set({ isPublic: false }).where(eq(tables.userBoards.id, duplicate.id));
+    await db.insert(tables.resourcePrivacy).values({
+      kind: 'board',
+      resourceId: duplicate.uuid,
+      ownerId,
+      audience: 'invite_only',
+      locationAudience: 'public',
+    });
     const requested = deferred<void>();
     const release = deferred<void>();
     const request = runWithDatabaseTransaction(async () => {
