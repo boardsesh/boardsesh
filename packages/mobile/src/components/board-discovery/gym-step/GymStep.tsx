@@ -30,7 +30,7 @@ import { useDeviceLocation, type Coords } from '../../../lib/use-device-location
 import { useDiscoverySearch } from '../../../lib/use-discovery-search';
 import type { WallFinderFilter } from '../../../lib/wall-finder-filter';
 import { selectEffectiveOffline, useConnectivityField } from '../../../lib/connectivity/use-connectivity';
-import { isPickableBoardType, locationPromptStatus, lookupState } from '../../../lib/boards/find-wall-state';
+import { isPickableBoardType, lookupState } from '../../../lib/boards/find-wall-state';
 import { track } from '../../../lib/analytics';
 import { useAuth } from '../../../providers/auth-provider';
 import { useTheme } from '../../../providers/theme-provider';
@@ -95,18 +95,10 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
 
   // --- location: read on open, asked only from the prompt's button ---
   const location = useDeviceLocation({ retryAfterDenial: true, rereadWhenActive: true });
-  const { requestIfAllowed, request: requestLocation, coords: deviceCoords } = location;
-  const [permissionChecked, setPermissionChecked] = useState(false);
+  const { requestIfAllowed, coords: deviceCoords } = location;
   useEffect(() => {
-    let mounted = true;
-    void requestIfAllowed().finally(() => {
-      if (mounted) setPermissionChecked(true);
-    });
-    return () => {
-      mounted = false;
-    };
+    void requestIfAllowed();
   }, [requestIfAllowed]);
-  const onUseMyLocation = useCallback(() => void requestLocation(), [requestLocation]);
 
   // --- what is searched ---
   // `inputText` is the field; `nameQuery` the gym-name filter it carries (empty
@@ -439,12 +431,11 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
   const locationPrompt =
     center === null && nameQuery.trim().length < MIN_NAME_LENGTH ? (
       <GymLocationPrompt
-        status={locationPromptStatus({
-          checked: permissionChecked,
-          status: location.status,
-          permission: location.permission,
-        })}
-        onRequest={onUseMyLocation}
+        status={location.status}
+        permission={location.permission}
+        permissionChecked={location.permissionChecked}
+        onRequest={location.request}
+        onRecheck={requestIfAllowed}
       />
     ) : undefined;
 

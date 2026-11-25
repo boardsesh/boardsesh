@@ -2,30 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   isPickableBoardType,
   likelyBoardType,
-  locationPromptStatus,
   lookupState,
   notListedRowState,
 } from '../find-wall-state';
-
-describe('locationPromptStatus', () => {
-  it.each([
-    // Still reading the permission on open: a spinner, not a button that flashes.
-    { checked: false, status: 'idle', permission: 'unknown', drawn: 'idle' },
-    // Never asked, or Android after one no: the button asks.
-    { checked: true, status: 'idle', permission: 'unknown', drawn: 'unavailable' },
-    { checked: true, status: 'idle', permission: 'ask', drawn: 'unavailable' },
-    { checked: true, status: 'denied', permission: 'ask', drawn: 'unavailable' },
-    // A fix that failed with permission allowed: try again, not Settings.
-    { checked: true, status: 'unavailable', permission: 'granted', drawn: 'unavailable' },
-    // Refused for good: Settings (or, in a browser, search a town).
-    { checked: true, status: 'idle', permission: 'blocked', drawn: 'denied' },
-    { checked: true, status: 'denied', permission: 'blocked', drawn: 'denied' },
-    { checked: false, status: 'loading', permission: 'granted', drawn: 'loading' },
-    { checked: true, status: 'granted', permission: 'granted', drawn: 'granted' },
-  ] as const)('$status / $permission (read: $checked) draws $drawn', ({ checked, status, permission, drawn }) => {
-    expect(locationPromptStatus({ checked, status, permission })).toBe(drawn);
-  });
-});
 
 describe('lookupState', () => {
   const base = { enabled: true, offline: false, isLoading: false, isError: false, count: null };

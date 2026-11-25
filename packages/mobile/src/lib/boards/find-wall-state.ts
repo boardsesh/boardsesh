@@ -6,35 +6,6 @@
 
 import type { BoardName } from '@boardsesh/shared-schema';
 import { SUPPORTED_BOARDS } from '@boardsesh/board-config';
-import type { LocationPermission, LocationStatus } from '../use-device-location';
-
-/**
- * What the gym step's location prompt (`GymLocationPrompt`, in place of the
- * list while there is nowhere to look yet) is drawn as. Location is never asked
- * on open: the step only reads a permission the climber already gave, and asks
- * from the prompt's button.
- *
- * - `idle`: the permission hasn't been read yet (a spinner, not a button that
- *   would flash and vanish for a climber who said yes before).
- * - `loading`: asking, or waiting for a fix.
- * - `denied`: refused for good (`blocked`). Native offers Settings; a browser
- *   can't, so it says to search a town instead.
- * - `unavailable`: anything else, not asked yet included. Its button asks.
- */
-export function locationPromptStatus({
-  checked,
-  status,
-  permission,
-}: {
-  /** The on-open permission read has finished. */
-  checked: boolean;
-  status: LocationStatus;
-  permission: LocationPermission;
-}): LocationStatus {
-  if (status === 'loading' || status === 'granted') return status;
-  if (!checked) return 'idle';
-  return permission === 'blocked' ? 'denied' : 'unavailable';
-}
 
 /**
  * One lookup on these screens (the gyms, a gym's walls, the board search).
