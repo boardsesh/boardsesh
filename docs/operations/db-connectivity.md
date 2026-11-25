@@ -1011,6 +1011,15 @@ attempt with its own claim if the family has retries left; that uses one. A
 family with `retryLimit: 0` loses that run outright. `provider-routine-cycle` is
 one; its next cycle, five minutes later, covers it.
 
+**The hold detector takes both deadlines too.** `packages/hold-detector` builds
+its own pg-boss client (`detectorJobQueueOptions`) and reaches the primary
+through the same proxy. It shipped without them: from about 07:04 UTC on
+2026-11-21 one fetch sat on a dead proxy leg, the detector claimed no job for
+four days, and every spray-wall import expired after 24 h. Its health check
+stayed green because its other two pool connections and its Drizzle pool still
+answered. The options now live in `@boardsesh/db/background-jobs`
+(`WORKER_JOB_QUEUE_POOL_OPTIONS`), and both clients spread them.
+
 **The backend's pool has neither deadline.** Its supervision and maintenance
 passes, such as the queue-stats pass that seq-scans `pgboss.job_common`, can
 legitimately run longer than 30 s.
