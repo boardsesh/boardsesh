@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  isPickableBoardType,
-  likelyBoardType,
-  lookupState,
-  notListedRowState,
-} from '../find-wall-state';
+import { isPickableBoardType, likelyBoardType, lookupState, notListedRowState } from '../find-wall-state';
 
 describe('lookupState', () => {
   const base = { enabled: true, offline: false, isLoading: false, isError: false, count: null };
