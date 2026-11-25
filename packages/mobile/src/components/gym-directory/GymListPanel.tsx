@@ -265,8 +265,13 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
     }),
     [insets.bottom, pickMode, footerHeight],
   );
+  // Pick mode tops the prompt: centred, it would sit under the pinned footer at
+  // the Medium detent, where the panel hangs below the screen.
   const promptAreaStyle = useMemo(
-    () => (pickMode ? [styles.promptArea, { paddingBottom: footerHeight + spacing[6] }] : styles.promptArea),
+    () =>
+      pickMode
+        ? [styles.promptArea, styles.pickPromptArea, { paddingBottom: footerHeight + spacing[6] }]
+        : styles.promptArea,
     [pickMode, footerHeight],
   );
   // Pick rows are grouped cards: they sit on the grouped background, so a
@@ -882,6 +887,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing[3],
     padding: spacing[3],
+  },
+  pickPromptArea: {
+    justifyContent: 'flex-start',
+    paddingTop: spacing[4],
   },
   pickGutter: {
     paddingHorizontal: spacing[4],

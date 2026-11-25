@@ -21,7 +21,7 @@ vi.mock('../../../src/components/PressableSurface', async () => {
 // off".
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
-import { createElement, useEffect, type ReactNode } from 'react';
+import { createElement, useEffect, useImperativeHandle, type ReactNode, type Ref } from 'react';
 import type { Gym, PlaceSuggestion, UserBoard } from '@boardsesh/shared-schema';
 import type { Coords } from '../../../src/lib/use-device-location';
 import type { WallFinderFilterChipsProps } from '../../../src/components/gym-directory/WallFinderFilterChips';
@@ -52,12 +52,16 @@ const locationMocks = vi.hoisted(() => ({
   requestIfAllowed: vi.fn(async () => 'ask' as const),
 }));
 const platform = vi.hoisted(() => ({ OS: 'ios' }));
+const cameraMocks = vi.hoisted(() => ({ setCenter: vi.fn(), showWorld: vi.fn() }));
+const panelSnapTo = vi.hoisted(() => vi.fn());
 const captured = vi.hoisted(() => ({
   params: {} as Record<string, string | undefined>,
   activateOptions: null as ActivateOptions | null,
   analyticsOptions: null as AnalyticsOptions | null,
   onActivateBoard: null as ((board: UserBoard) => void) | null,
-  onRegionChange: null as ((center: Coords) => void) | null,
+  onRegionChange: null as ((center: Coords, zoom?: number) => void) | null,
+  mapCenter: undefined as Coords | null | undefined,
+  locationStatus: 'idle',
   onMapUnavailable: null as (() => void) | null,
   onMapReady: null as (() => void) | null,
   mapAvailable: null as boolean | null,
@@ -98,13 +102,16 @@ vi.mock('react-native', () => ({
     value,
     onChangeText,
     onSubmitEditing,
+    onFocus,
   }: {
     value: string;
     onChangeText: (text: string) => void;
     onSubmitEditing: () => void;
+    onFocus?: () => void;
   }) =>
     createElement('input', {
       value,
+      onFocus,
       onChange: (event: { target: { value: string } }) => onChangeText(event.target.value),
       onKeyDown: (event: { key: string }) => {
         if (event.key === 'Enter') onSubmitEditing();
@@ -147,7 +154,7 @@ vi.mock('../../../src/lib/graphql/use-active-board', () => ({
 }));
 vi.mock('../../../src/lib/use-device-location', () => ({
   useDeviceLocation: () => ({
-    status: 'idle',
+    status: captured.locationStatus,
     permission: 'ask',
     permissionChecked: true,
     coords: captured.coords,
@@ -202,10 +209,14 @@ vi.mock('../../../src/components/Icon', () => ({ Icon: () => null }));
 vi.mock('../../../src/components/ActivityIndicator', () => ({ ActivityIndicator: () => null }));
 vi.mock('../../../src/components/gym-directory/GymMap', () => ({
   GymMap: (props: {
-    onRegionChange: (center: Coords) => void;
+    center: Coords | null;
+    onRegionChange: (center: Coords, zoom?: number) => void;
     onMapUnavailable: () => void;
     onMapReady: () => void;
+    ref?: Ref<unknown>;
   }) => {
+    useImperativeHandle(props.ref, () => cameraMocks, []);
+    captured.mapCenter = props.center;
     captured.onRegionChange = props.onRegionChange;
     captured.onMapUnavailable = props.onMapUnavailable;
     captured.onMapReady = props.onMapReady;
@@ -217,6 +228,7 @@ vi.mock('../../../src/components/gym-directory/GymMap', () => ({
 }));
 vi.mock('../../../src/components/gym-directory/GymListPanel', () => ({
   GymListPanel: (props: {
+    ref?: Ref<unknown>;
     onActivateBoard: (board: UserBoard) => void;
     onPressGym: (gym: Gym) => void;
     mapAvailable: boolean;
@@ -225,6 +237,11 @@ vi.mock('../../../src/components/gym-directory/GymListPanel', () => ({
     searchSlot?: ReactNode;
     locationPrompt?: ReactNode;
   }) => {
+    useImperativeHandle(
+      props.ref,
+      () => ({ snapTo: panelSnapTo, ensureVisible: vi.fn(), scrollToRowKey: vi.fn() }),
+      [],
+    );
     captured.onActivateBoard = props.onActivateBoard;
     captured.onPressGym = props.onPressGym;
     captured.mapAvailable = props.mapAvailable;
@@ -292,6 +309,11 @@ beforeEach(() => {
   captured.analyticsOptions = null;
   captured.onActivateBoard = null;
   captured.onRegionChange = null;
+  captured.mapCenter = undefined;
+  captured.locationStatus = 'idle';
+  cameraMocks.setCenter.mockClear();
+  cameraMocks.showWorld.mockClear();
+  panelSnapTo.mockClear();
   captured.onMapUnavailable = null;
   captured.onMapReady = null;
   captured.mapAvailable = null;
@@ -582,6 +604,79 @@ describe('discovery search integration', () => {
       vi.advanceTimersByTime(500);
     });
     expect(queryMocks.gyms.mock.lastCall?.[0]).toBeNull();
+    // No fix to go back to: the camera leaves the city for the world, and the
+    // map stays up instead of being torn down.
+    expect(cameraMocks.showWorld).toHaveBeenCalled();
+    expect(captured.mapMounts).toBe(1);
+    expect(captured.mapCenter).toBeNull();
+  });
+
+  it('flies back to the climber when a picked city is edited', () => {
+    const screen = render(createElement(GymDiscovery));
+    act(() =>
+      captured.onSelectPlace?.({
+        id: 4180439,
+        name: 'Atlanta',
+        region: 'Georgia',
+        country: 'United States',
+        countryCode: 'US',
+        latitude: 33.749,
+        longitude: -84.388,
+      }),
+    );
+    cameraMocks.setCenter.mockClear();
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Atlant' } });
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(cameraMocks.setCenter).toHaveBeenCalledWith(madrid);
+    expect(queryMocks.gyms.mock.lastCall?.[0]).toEqual(madrid);
+    expect(cameraMocks.showWorld).not.toHaveBeenCalled();
+  });
+
+  it('opens on the world with location off, flies to a fix that arrives later, and keeps the map mounted', () => {
+    captured.coords = undefined;
+    captured.locationStatus = 'denied';
+    const screen = render(createElement(GymDiscovery));
+    expect(captured.mapMounts).toBe(1);
+    expect(captured.mapCenter).toBeNull();
+
+    captured.locationStatus = 'granted';
+    captured.coords = madrid;
+    screen.rerender(createElement(GymDiscovery));
+    expect(cameraMocks.setCenter).toHaveBeenCalledWith(madrid);
+    expect(captured.mapMounts).toBe(1);
+  });
+
+  it('searches the world view only once it is zoomed in to a region', () => {
+    captured.coords = undefined;
+    captured.locationStatus = 'denied';
+    render(createElement(GymDiscovery));
+    const utrecht = { latitude: 52.09, longitude: 5.12 };
+    act(() => captured.onRegionChange?.(utrecht, 3));
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(queryMocks.gyms.mock.lastCall?.[0]).toBeNull();
+
+    act(() => captured.onRegionChange?.(utrecht, 10));
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(queryMocks.gyms.mock.lastCall?.[0]).toEqual(utrecht);
+
+    // Zooming back out to the world leaves the search where it was.
+    act(() => captured.onRegionChange?.({ latitude: 20, longitude: -30 }, 2));
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(queryMocks.gyms.mock.lastCall?.[0]).toEqual(utrecht);
+  });
+
+  it('raises the panel while the search field has focus', () => {
+    const screen = render(createElement(GymDiscovery));
+    fireEvent.focus(screen.getByRole('textbox'));
+    expect(panelSnapTo).toHaveBeenCalledWith('high');
   });
 
   it('keeps chip changes made while native geocoding is pending', async () => {

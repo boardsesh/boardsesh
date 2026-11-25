@@ -300,6 +300,8 @@ describe('GymStep', () => {
     expect(screen.getByTestId('gym:gym-1').textContent).toBe('Boulderhal | Fokkerweg 75 | 3mobile.gyms.boardCount');
     expect(trackMock).toHaveBeenCalledWith('Board Wall Search Started', expect.objectContaining({ method: 'place' }));
     expect(dismissKeyboardMock).toHaveBeenCalled();
+    // Back to the middle detent, so the fly-to is in view.
+    expect(snapToMock).toHaveBeenLastCalledWith('medium');
   });
 
   it('keeps a picked town when a location fix arrives after it', async () => {
@@ -349,6 +351,11 @@ describe('GymStep', () => {
     await settle();
     expect(state.gymsArgs[0]).toEqual(utrecht);
     expect(screen.queryByTestId('location-prompt')).toBeNull();
+
+    // Zooming back out to the world never searches mid-ocean.
+    act(() => state.onRegionChange?.({ latitude: 20, longitude: -30 }, 2));
+    await settle();
+    expect(state.gymsArgs[0]).toEqual(utrecht);
   });
 
   it('offers Try again when the first gym lookup fails, under the notice and in the caption', async () => {

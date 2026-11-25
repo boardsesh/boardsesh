@@ -42,6 +42,7 @@ import { CapsuleRow } from '../../filter-capsules/CapsuleRow';
 import type { Capsule } from '../../filter-capsules/CapsuleRow.types';
 import { GymMap, type GymMapHandle, type GymMapMarker } from '../../gym-directory/GymMap';
 import { GymListPanel, type GymListPanelHandle } from '../../gym-directory/GymListPanel';
+import { zoomedInToSearch } from '../../gym-directory/map-search-zoom';
 import { GymLocationPrompt } from '../../gym-directory/GymLocationPrompt';
 import { GymSearchField } from '../../gym-directory/GymSearchField';
 import { buildGymPickRows } from '../../gym-directory/gym-pick-rows';
@@ -64,11 +65,6 @@ const SEARCH_RADIUS_KM = 50;
 const MAP_FRACTION = 0.35;
 /** How far a pan must move the camera (degrees) before the list follows it. */
 const MIN_MOVE_DEG = 0.04;
-/**
- * How far in the world view must be zoomed before its centre is a place to
- * search around: about a region, where a 50 km radius covers what is shown.
- */
-const SEARCH_ZOOM_THRESHOLD = 8;
 /** Gym-name search: the shortest name looked up, and how long the text must be still. */
 const MIN_NAME_LENGTH = 2;
 const NAME_DEBOUNCE_MS = 300;
@@ -152,16 +148,10 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
       programmaticTargetRef.current = null;
       return current;
     }
-    if (current === null) {
-      // The world view itself is no place to search around; zoomed in to a
-      // town (location off, nothing typed), its centre is.
-      const zoom = cameraZoomRef.current;
-      if (zoom === undefined || zoom < SEARCH_ZOOM_THRESHOLD) return null;
-      programmaticTargetRef.current = null;
-      setViewCenter(next);
-      return next;
-    }
-    if (!movedEnough(next, current)) return current;
+    // Zoomed out past a region (the world view, or back out to it) the centre
+    // is no place to search around: the list stays where it was.
+    if (!zoomedInToSearch(cameraZoomRef.current, current !== null)) return current;
+    if (current !== null && !movedEnough(next, current)) return current;
     programmaticTargetRef.current = null;
     setViewCenter(next);
     return next;
@@ -238,6 +228,8 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
       const coords = { latitude: place.latitude, longitude: place.longitude };
       const label = placeSuggestionLabel(place);
       Keyboard.dismiss();
+      // Down to the middle detent, so the climber sees the map fly there.
+      panelRef.current?.snapTo('medium');
       setInputText(label);
       setNameQuery('');
       setSearchedName('');

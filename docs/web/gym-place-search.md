@@ -98,8 +98,11 @@ The native apps show the same five suggestions as the climber types
 (`usePlaceSuggestions`, shared with the browser field), floating over the map
 and list with a GeoNames credit under them. They show while the field is
 focused and close on submit or a pick. Editing a selected town clears its
-geographic selection on native too; focusing the field selects a picked town's
-label, so typing replaces it. On /gyms a submitted search still geocodes with
+geographic selection on native too, and the camera goes with it: back to the
+climber's fix, or out to the world when there is none (the map stays mounted).
+Focusing the field raises the list and selects a picked town's label, so typing
+replaces it. A pan or zoom moves the search only when the map is zoomed in to
+about a region (zoom 8 or closer), so the world view never searches mid-ocean. On /gyms a submitted search still geocodes with
 the native geocoder; the add-a-board gym step (`GymStep`) has no submit action,
 because its gym-name results follow the text (2+ characters, 300 ms after the
 last keystroke) and a town comes from its suggestion.
