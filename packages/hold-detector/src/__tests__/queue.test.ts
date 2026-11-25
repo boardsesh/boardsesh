@@ -5,7 +5,13 @@ import {
   WORKER_JOB_QUEUE_STATEMENT_TIMEOUT_MS,
 } from '@boardsesh/db/background-jobs';
 import { SPRAY_DETECTION_QUEUE } from '@boardsesh/shared-schema';
-import { WORK_LOOP_STALL_SECONDS, detectorJobQueueOptions, workLoopAgeSeconds } from '../queue';
+import {
+  PROBE_STALL_SECONDS,
+  WORK_LOOP_STALL_SECONDS,
+  detectorJobQueueOptions,
+  probeHasHung,
+  workLoopAgeSeconds,
+} from '../queue';
 
 const connectionString = 'postgresql://worker:secret@primary.example:5432/boardsesh?sslmode=verify-full';
 const createdOn = Date.parse('2026-11-21T07:00:00Z');
@@ -92,5 +98,21 @@ describe('work loop age', () => {
 
   it('starts the clock at registration when nothing has been fetched yet', () => {
     expect(workLoopAgeSeconds([worker()], SPRAY_DETECTION_QUEUE, createdOn + 10_000)).toBe(10);
+  });
+});
+
+describe('probe hang', () => {
+  const startedAtMs = createdOn;
+
+  it('lets a probe against a failing database finish its deadlines first', () => {
+    // Two pg-boss reads (10 s checkout + 30 s read each), then the Drizzle read:
+    // a 10 s connect-retry budget, up to 20 s reconnect backoff and a 30 s connect.
+    const slowestFailingProbeMs = 2 * (10_000 + WORKER_JOB_QUEUE_QUERY_TIMEOUT_MS) + 10_000 + 20_000 + 30_000;
+    expect(probeHasHung(startedAtMs, startedAtMs + slowestFailingProbeMs)).toBe(false);
+  });
+
+  it('calls a probe hung once it passes the limit', () => {
+    expect(probeHasHung(startedAtMs, startedAtMs + PROBE_STALL_SECONDS * 1000 - 1)).toBe(false);
+    expect(probeHasHung(startedAtMs, startedAtMs + PROBE_STALL_SECONDS * 1000)).toBe(true);
   });
 });
