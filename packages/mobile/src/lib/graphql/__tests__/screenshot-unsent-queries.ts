@@ -41,6 +41,8 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'ContentAudience',
   // The add-a-board wizard's gym steps (#8151): behind add-board-wizard, which capture flows don't open.
   'ExistingWallCandidates',
+  // The add-a-board wizard's Add your gym step (/boards/add/new-gym): no capture flow adds a gym.
+  'FindSimilarGyms',
   'GetActivityFeed',
   'GetAngles',
   'GetBetaLinks',
