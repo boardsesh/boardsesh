@@ -191,5 +191,56 @@ drafts remain durable. The retired `spray-walls` flag no longer hides the mobile
 surface; new-wall owners can still choose manual placement.
 Leave published walls, photos, queue tables and detection history intact. The
 DR replica is not promoted or repurposed. Restore primary/storage connectivity,
-then retry failed jobs. An image rollback must retain the job's pinned model;
+then retry failed jobs. Imports that expired while the detector was down are
+re-queued as described in the next section. An image rollback must retain the job's pinned model;
 incompatible model identities fail rather than silently changing predictions.
+
+## Reviving imports that expired during a detector outage
+
+A detection waits at most 24 hours in the queue. If the detector claims nothing
+for that long, the backend's reconcile marks it `failed` with `QUEUE_EXPIRED`,
+and the climber only gets proposed holds if they find Retry. After an outage,
+`packages/backend/src/scripts/revive-expired-spray-detections.ts` queues those
+imports again through the same request code the API uses, for the person who
+asked, so the usual completion notification reaches them.
+
+Restart the detector and confirm it is claiming jobs first. A revived import gets
+a fresh 24 hours and expires again if nothing claims it.
+
+An operator runs this, not an agent. It needs the backend's production
+`DATABASE_URL` (the writable primary) exported in the shell. The read-only
+replica cannot take the writes, and `--apply` refuses a connection that is not a
+primary.
+
+1. Dry run. It prints one line per expired import with the decision, `revive` or
+   `skip:<reason>`, using the first 8 characters of each id, and writes nothing:
+
+   ```sh
+   vp exec tsx packages/backend/src/scripts/revive-expired-spray-detections.ts --since 2026-11-21T07:00:00Z
+   ```
+
+2. Check the skips against the table below. `--until` (exclusive) narrows the
+   window; both flags need a zone (`Z` or `+10:00`).
+3. Apply. Each revived line gains `new=<id>`, the new detection:
+
+   ```sh
+   vp exec tsx packages/backend/src/scripts/revive-expired-spray-detections.ts --since 2026-11-21T07:00:00Z --apply
+   ```
+
+4. Run the dry run again. Every line now reads `skip:superseded`. A second
+   `--apply` revives nothing, so a run that stopped on an error can be re-run as is.
+
+Each import is checked again inside its write transaction, under the same
+requester and wall locks the API takes. The hourly limit of 10 requests does not
+apply here: these are requests the climber already made once.
+
+| Skip reason | Meaning |
+| --- | --- |
+| `requester-gone` | The requesting account was deleted. |
+| `wall-deleted` / `board-deleted` | The wall or its board was deleted. |
+| `wall-archived` | A published reset replaced the wall. |
+| `not-draft` | The version was published or superseded. |
+| `photo-changed` | The draft has a different photo now. |
+| `superseded` | A later request exists for the same draft and photo: a retry, or this script's earlier run. |
+| `has-holds` | The draft has holds the climber placed by hand while waiting. |
+| `no-edit-access` | The requester can no longer edit the wall (`canEditBoard`, the API's rule). |

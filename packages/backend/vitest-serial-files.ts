@@ -30,6 +30,7 @@ export const SERIAL_TEST_FILES = [
   'src/__tests__/provider-sync-control.test.ts',
   'src/__tests__/user-data-export-jobs.test.ts',
   'src/__tests__/spray-detection.test.ts',
+  'src/__tests__/revive-expired-spray-detections.test.ts',
   'src/__tests__/spray-wall-art-jobs.test.ts',
   'src/__tests__/spray-detection-notifications.test.ts',
   'src/__tests__/posthog-person-deletion-enqueue.test.ts',

@@ -223,4 +223,56 @@ describe('durable spray recognition', () => {
     expect(retry.id).not.toBe(requested.id);
     expect(duplicate.id).toBe(retry.id);
   });
+  it('retries an import the queue expired for the person retrying', async () => {
+    const { owner, input } = await draft();
+    const requested = await sprayDetectionMutations.requestSprayWallDetection({}, { input }, owner);
+    await db
+      .update(sprayWallDetections)
+      .set({ status: 'failed', error: 'QUEUE_EXPIRED' })
+      .where(eq(sprayWallDetections.id, requested.id));
+    const retry = await sprayDetectionMutations.retrySprayWallDetection({}, { id: requested.id }, owner);
+    const [record] = await db.select().from(sprayWallDetections).where(eq(sprayWallDetections.id, retry.id));
+    expect(retry).toMatchObject({ status: 'pending', versionId: input.versionId });
+    expect(record.requestedBy).toBe(owner.userId);
+    expect(await requireJobQueue().getJobById(SPRAY_DETECTION_QUEUE, record.jobId)).toMatchObject({
+      data: { detectionId: retry.id },
+    });
+  });
+  it('refuses a request once the hourly limit is spent', async () => {
+    const { owner, input } = await draft();
+    const [version] = await db
+      .select()
+      .from(sprayWallVersions)
+      .where(eq(sprayWallVersions.id, Number(input.versionId)));
+    // Ten earlier requests this hour, for another photo, so none of them is
+    // returned as the existing request for this one.
+    await db.insert(sprayWallDetections).values(
+      Array.from({ length: 10 }, () => ({
+        id: randomUUID(),
+        wallId: version.wallId,
+        versionId: version.id,
+        requestedBy: owner.userId,
+        photoKey: 'spray-walls/earlier.jpg',
+        photoWidth: 800,
+        photoHeight: 600,
+        jobId: randomUUID(),
+        modelVersion: 'test',
+        weightsSha256: 'test',
+        status: 'failed' as const,
+      })),
+    );
+    await expect(sprayDetectionMutations.requestSprayWallDetection({}, { input }, owner)).rejects.toMatchObject({
+      extensions: { code: 'SPRAY_DETECTION_RATE_LIMITED' },
+    });
+  });
+  it('refuses a version that is not a draft with a photo', async () => {
+    const { owner, input } = await draft();
+    await db
+      .update(sprayWallVersions)
+      .set({ status: 'published' })
+      .where(eq(sprayWallVersions.id, Number(input.versionId)));
+    await expect(sprayDetectionMutations.requestSprayWallDetection({}, { input }, owner)).rejects.toMatchObject({
+      extensions: { code: 'SPRAY_DETECTION_INVALID_DRAFT' },
+    });
+  });
 });

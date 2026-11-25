@@ -121,8 +121,9 @@ export function resetAllRateLimits(): void {
   rateLimitMap.clear();
 }
 
-// Periodically clean up expired entries to prevent memory leaks
-setInterval(() => {
+// Periodically clean up expired entries to prevent memory leaks. Unref'd so a
+// script that imports a resolver can still exit once its own work is done.
+const rateLimitCleanup = setInterval(() => {
   const now = Date.now();
   for (const [connectionId, entry] of rateLimitMap) {
     if (now > entry.resetAt) {
@@ -130,3 +131,4 @@ setInterval(() => {
     }
   }
 }, 60_000); // Clean up every minute
+rateLimitCleanup.unref();
