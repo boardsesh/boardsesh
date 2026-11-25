@@ -212,18 +212,42 @@ vi.mock('../../../gym-directory/PickGymRow', () => ({
     subtitle,
     boardsLabel,
     selected,
+    checked,
     onPickGym,
   }: {
     gym: Gym;
     subtitle: string | null;
     boardsLabel: string;
     selected: boolean;
+    checked?: boolean;
     onPickGym: (gym: Gym) => void;
   }) =>
     createElement(
       'button',
-      { type: 'button', 'data-testid': `gym:${gym.uuid}`, 'data-selected': selected, onClick: () => onPickGym(gym) },
+      {
+        type: 'button',
+        'data-testid': `gym:${gym.uuid}`,
+        'data-selected': selected,
+        'data-checked': String(checked),
+        onClick: () => onPickGym(gym),
+      },
       `${gym.name} | ${subtitle} | ${boardsLabel}`,
+    ),
+  NoGymRow: ({
+    title,
+    subtitle,
+    checked,
+    onPickNone,
+  }: {
+    title: string;
+    subtitle: string;
+    checked: boolean;
+    onPickNone: () => void;
+  }) =>
+    createElement(
+      'button',
+      { type: 'button', 'data-testid': 'no-gym', 'data-checked': String(checked), onClick: onPickNone },
+      `${title} | ${subtitle}`,
     ),
   PickPlaceRow: ({
     place,
@@ -241,8 +265,12 @@ vi.mock('../../../gym-directory/PickGymRow', () => ({
     ),
   PickRetryAction: ({ label, onPress }: { label: string; onPress: () => void }) =>
     createElement('button', { type: 'button', 'data-testid': 'retry', onClick: onPress }, label),
-  AddGymRow: ({ title, onAddGym }: { title: string; onAddGym: () => void }) =>
-    createElement('button', { type: 'button', 'data-testid': 'add-gym', onClick: onAddGym }, title),
+  AddGymRow: ({ title, subtitle, onAddGym }: { title: string; subtitle?: string; onAddGym: () => void }) =>
+    createElement(
+      'button',
+      { type: 'button', 'data-testid': 'add-gym', 'data-subtitle': subtitle ?? '', onClick: onAddGym },
+      title,
+    ),
 }));
 vi.mock('../../../gym-directory/GymLocationPrompt', () => ({
   GymLocationPrompt: ({
@@ -721,5 +749,70 @@ describe('GymStep', () => {
     expect(screen.queryByTestId('step-counter')).toBeNull();
     view.rerender(createElement(GymStep, { onPickGym: vi.fn(), onAddGym: vi.fn(), stepLabel: 'Step 2 of 3' }));
     expect(screen.getByTestId('step-counter').textContent).toBe('Step 2 of 3');
+  });
+});
+
+// The builders' gym row pushes the same step in pick mode (/boards/gym-picker):
+// it was a searchable list in a sheet, on top of the Boards sheet.
+describe("GymStep as the builders' gym picker", () => {
+  const MADRID = { latitude: 40.42, longitude: -3.7 };
+
+  function renderPicker(overrides: Partial<{ currentGymUuid: string | null; showsOnMap: boolean }> = {}) {
+    const onPickGym = vi.fn();
+    const onAddGym = vi.fn();
+    const onPickNone = vi.fn();
+    render(
+      createElement(GymStep, {
+        onPickGym,
+        onAddGym,
+        picker: {
+          currentGymUuid: overrides.currentGymUuid === undefined ? 'gym-1' : overrides.currentGymUuid,
+          showsOnMap: overrides.showsOnMap ?? true,
+          initialCenter: MADRID,
+          onPickNone,
+        },
+      }),
+    );
+    return { onPickGym, onAddGym, onPickNone };
+  }
+
+  it('counts no step, says who can edit a linked board, and opens on the board itself', async () => {
+    state.gyms = { gyms: [BOULDERHAL] };
+    renderPicker();
+    await settle();
+    expect(screen.queryByTestId('step-counter')).toBeNull();
+    expect(screen.getByTestId('gym-step-header').textContent).toContain('mobile.gymPicker.sharedEditHint');
+    // No location asked for: the list searches around the board's own position.
+    expect(state.gymsArgs[0]).toEqual(MADRID);
+  });
+
+  it('ticks the current gym, and "Not at a gym" when there is none', async () => {
+    state.gyms = { gyms: [BOULDERHAL] };
+    renderPicker();
+    await settle();
+    expect(screen.getByTestId('gym:gym-1').getAttribute('data-checked')).toBe('true');
+    expect(screen.getByTestId('no-gym').getAttribute('data-checked')).toBe('false');
+    cleanup();
+    renderPicker({ currentGymUuid: null, showsOnMap: false });
+    await settle();
+    expect(screen.getByTestId('gym:gym-1').getAttribute('data-checked')).toBe('false');
+    expect(screen.getByTestId('no-gym').getAttribute('data-checked')).toBe('true');
+    expect(screen.getByTestId('no-gym').textContent).toContain('mobile.gymPicker.noGymHintOffMap');
+  });
+
+  it('picks a gym, none, or "My gym isn\'t listed", under its own surface and outside the wizard funnel', async () => {
+    state.gyms = { gyms: [BOULDERHAL] };
+    const { onPickGym, onAddGym, onPickNone } = renderPicker();
+    await settle();
+    fireEvent.click(screen.getByTestId('gym:gym-1'));
+    expect(onPickGym).toHaveBeenCalledWith(BOULDERHAL, null);
+    fireEvent.click(screen.getByTestId('no-gym'));
+    expect(onPickNone).toHaveBeenCalledOnce();
+    expect(screen.getByTestId('add-gym').textContent).toBe('mobile.gymPicker.addNew');
+    fireEvent.click(screen.getByTestId('add-gym'));
+    expect(onAddGym).toHaveBeenCalledOnce();
+    expect(tracked('Gym Finder Gym Picked')).toEqual([{ surface: 'builder_gym_picker', section: 'list' }]);
+    expect(tracked('Gym Finder Add My Gym Tapped')).toEqual([{ surface: 'builder_gym_picker' }]);
+    expect(tracked('Board Wall Search Started')).toEqual([]);
   });
 });

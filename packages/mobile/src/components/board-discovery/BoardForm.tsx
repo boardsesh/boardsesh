@@ -50,7 +50,8 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { TimerPairingSheet } from '../ble/TimerPairingSheet';
-import { GymPickerSheet } from './GymPickerSheet';
+import { useGymPickerRoute } from '../../lib/boards/use-gym-picker-route';
+import type { GymPick } from '../../lib/boards/gym-pick-handoff';
 import {
   BoardIdentityFields,
   BoardVisibilityFields,
@@ -226,7 +227,27 @@ export function BoardForm({
     for (const setId of refusedSelectedSetIds) toggleSet(setId);
   }, [refusedSelectedSetIds, toggleSet]);
   const [timerPairingOpen, setTimerPairingOpen] = useState(false);
-  const [gymPickerOpen, setGymPickerOpen] = useState(false);
+  // The gym row pushes the gym picker in this stack (never a sheet on the
+  // Boards sheet); its answer comes back here.
+  const { setSelectedGym } = builder;
+  const onGymPick = useCallback(
+    (pick: GymPick) => {
+      if (pick.kind === 'gym') {
+        setSelectedGym(pick.gym);
+        return;
+      }
+      setSelectedGym(null);
+      // "My gym isn't listed": say where the board is instead.
+      if (pick.kind === 'not_listed') setAdvancedOpen(true);
+    },
+    [setSelectedGym],
+  );
+  const openGymPicker = useGymPickerRoute({
+    currentGymUuid: builder.selectedGym?.uuid ?? null,
+    boardCoords: builder.coords,
+    showsOnMap: builder.isPublic,
+    onPick: onGymPick,
+  });
 
   // Chip options — memoised so the per-snap angle re-render doesn't rebuild them
   // (they don't depend on angle), letting the memoised chip rows bail out.
@@ -431,7 +452,7 @@ export function BoardForm({
             variant="text"
             onPress={() => {
               errorAction.onPress();
-              if (errorAction.opensGymPicker) setGymPickerOpen(true);
+              if (errorAction.opensGymPicker) openGymPicker();
             }}
           />
         ) : null}
@@ -632,7 +653,7 @@ export function BoardForm({
             <BoardIdentityFields
               builder={builder}
               namePlaceholder={defaultName}
-              onOpenGymPicker={() => setGymPickerOpen(true)}
+              onOpenGymPicker={openGymPicker}
               gymLocked={gymLocked}
               gymLockedHint={gymLockedHint}
             />
@@ -828,27 +849,6 @@ export function BoardForm({
             setTimerPairingOpen(false);
           }}
           onDismiss={() => setTimerPairingOpen(false)}
-        />
-      ) : null}
-
-      {/* Presence-driven, like TimerPairingSheet — the two are never open at
-          once and the sheet coordinator serialises them. A SIBLING of the
-          ScrollView, never a child of it. */}
-      {gymPickerOpen ? (
-        <GymPickerSheet
-          selectedUuid={builder.selectedGym?.uuid ?? null}
-          boardCoords={builder.coords}
-          showsOnMap={builder.isPublic}
-          onSelect={(gym) => {
-            builder.setSelectedGym(gym);
-            setGymPickerOpen(false);
-          }}
-          onRequestManualLocation={() => {
-            builder.setSelectedGym(null);
-            setGymPickerOpen(false);
-            setAdvancedOpen(true);
-          }}
-          onDismiss={() => setGymPickerOpen(false)}
         />
       ) : null}
     </KeyboardAvoidingView>

@@ -1,5 +1,5 @@
 // Gym finder telemetry (mobile, from 2026-11): the add-a-board wizard's
-// "Which gym?" step and the gym map. The names and what each one means live in
+// "Which gym?" step, the gym map and the builders' gym picker. The names and what each one means live in
 // `SHARED_EVENTS` (events.ts); this file types the PROPERTIES and pairs each
 // with its own name, so a call site cannot invent a field or send one event's
 // props under another's name.
@@ -10,8 +10,12 @@
 
 import { SHARED_EVENTS } from './events';
 
-/** Where the event fired: the wizard's "Which gym?" step, or the gym map. */
-export type GymFinderSurface = 'wizard_gym_step' | 'gyms_map';
+/**
+ * Where the event fired: the wizard's "Which gym?" step, the gym map (the root
+ * one and the board picker's copy alike), or the builders' gym row (the same
+ * step in pick mode).
+ */
+export type GymFinderSurface = 'wizard_gym_step' | 'gyms_map' | 'builder_gym_picker';
 
 /** How the chosen gym was reached: its row in the list, or its pin on the map. */
 export type GymFinderPickSection = 'list' | 'map_pin';

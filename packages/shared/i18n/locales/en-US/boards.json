@@ -924,14 +924,10 @@
       }
     },
     "gymPicker": {
-      "title": "Where is this board?",
-      "subtitle": "Pick the gym it's in so climbers find it on the map.",
-      "searchPlaceholder": "Search gyms",
       "noGym": "Not at a gym",
       "noGymHint": "It'll still show on the map as its own pin.",
       "noGymHintOffMap": "It stays off the map while it isn't public.",
       "addNew": "My gym isn't listed",
-      "empty": "No gyms nearby",
       "sharedEditHint": "The gym's staff can edit this board's details and take it off their listing. It stays yours.",
       "linkError": "Couldn't link that gym. It may be too far from your board. Your other changes were saved."
     },

@@ -24,6 +24,11 @@
 // A pick hands the gym to the caller (the add-a-board wizard's
 // `/boards/add/gym`, whose next screen is the gym's wall list); so does "Add
 // my gym".
+//
+// In pick mode (`picker`) it is the builders' gym row (`/boards/gym-picker`):
+// no step counter, the current gym ticked, "Not at a gym" and "My gym isn't
+// listed" in place of "Add my gym", and the map opening on the board's own
+// position when it has one.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, Platform, StyleSheet, View } from 'react-native';
@@ -35,6 +40,7 @@ import {
   gymFinderLocateTapped,
   gymFinderSearchUsed,
   type GymFinderSearchKind,
+  type GymFinderSurface,
 } from '@boardsesh/analytics';
 import { SUPPORTED_BOARDS } from '@boardsesh/board-config';
 import { placeSuggestionLabel } from '@boardsesh/gym-filters';
@@ -64,7 +70,7 @@ import { zoomedInToSearch } from '../../gym-directory/map-search-zoom';
 import { GymLocationPrompt } from '../../gym-directory/GymLocationPrompt';
 import { GymSearchField } from '../../gym-directory/GymSearchField';
 import { GymListEmptyRow, GymListSectionHeader } from '../../gym-directory/GymListTextRows';
-import { AddGymRow, PickGymRow, PickPlaceRow, PickRetryAction } from '../../gym-directory/PickGymRow';
+import { AddGymRow, NoGymRow, PickGymRow, PickPlaceRow, PickRetryAction } from '../../gym-directory/PickGymRow';
 import { buildGymPickRows, type GymPickRow } from '../../gym-directory/gym-pick-rows';
 import { WizardStepHeader } from '../add-board-wizard/WizardStepHeader';
 import { boardTypeLabel } from '../board-builder-labels';
@@ -78,6 +84,19 @@ export type GymStepProps = {
   initialBoardType?: BoardName | null;
   /** "Step 2 of 3" above the title, for a flow that counts its steps. */
   stepLabel?: string;
+  /** The builders' gym picker: choose the board's gym rather than move a flow on. */
+  picker?: GymStepPicker;
+};
+
+export type GymStepPicker = {
+  /** The board's gym now, ticked; null ticks "Not at a gym". */
+  currentGymUuid: string | null;
+  /** Whether the board shows on the map at all, for "Not at a gym"'s line. */
+  showsOnMap: boolean;
+  /** Where the board is, when known: the map and the list start there. */
+  initialCenter: Coords | null;
+  /** "Not at a gym". "My gym isn't listed" is `onAddGym`. */
+  onPickNone: () => void;
 };
 
 /** The gym search radius around the map's centre. */
@@ -90,7 +109,8 @@ const NAME_DEBOUNCE_MS = 300;
 /** The capsule menu's value for "any board type". */
 const ANY_BOARD = 'any';
 /** Every gym finder event from here says where it came from. */
-const SURFACE = 'wizard_gym_step';
+const WIZARD_SURFACE: GymFinderSurface = 'wizard_gym_step';
+const PICKER_SURFACE: GymFinderSurface = 'builder_gym_picker';
 const NO_PLACES: readonly PlaceSuggestion[] = [];
 
 const pickRowKey = (row: GymPickRow) => row.key;
@@ -109,8 +129,14 @@ function lookupErrorReason(error: unknown, offline: boolean): 'offline' | 'rate_
 
 type SearchMethod = 'location' | 'text' | 'place';
 
-export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabel }: GymStepProps) {
+export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabel, picker }: GymStepProps) {
   const { t } = useTranslation('boards');
+  const finderSurface = picker ? PICKER_SURFACE : WIZARD_SURFACE;
+  // The wizard's own funnel events (Board Wall Search Started / Lookup Failed)
+  // are about adding a board; the builders' picker stays out of them.
+  const countsInWizardFunnel = picker === undefined;
+  // Undefined on the wizard: its rows carry a chevron, not a tick.
+  const currentGymUuid = picker ? picker.currentGymUuid : undefined;
   const { systemColors, brandColors } = useTheme();
   const { isAuthenticated } = useAuth();
   const offline = useConnectivityField(selectEffectiveOffline);
@@ -132,7 +158,7 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
   const [inputText, setInputText] = useState('');
   const [nameQuery, setNameQuery] = useState('');
   const [pickedPlace, setPickedPlace] = useState<string | null>(null);
-  const [viewCenter, setViewCenter] = useState<Coords | null>(null);
+  const [viewCenter, setViewCenter] = useState<Coords | null>(picker?.initialCenter ?? null);
   const [boardType, setBoardType] = useState<BoardName | null>(initialBoardType);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // The map card folds when the field gains focus and stays folded while a
@@ -199,20 +225,27 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
   const boardTypeRef = useRef(boardType);
   boardTypeRef.current = boardType;
   const searchStartedRef = useRef(new Set<SearchMethod>());
-  const reportSearchStarted = useCallback((method: SearchMethod, queryLength: number) => {
-    if (searchStartedRef.current.has(method)) return;
-    searchStartedRef.current.add(method);
-    track(SHARED_EVENTS.BoardWallSearchStarted, { method, boardType: boardTypeRef.current, queryLength });
-  }, []);
+  const reportSearchStarted = useCallback(
+    (method: SearchMethod, queryLength: number) => {
+      if (!countsInWizardFunnel) return;
+      if (searchStartedRef.current.has(method)) return;
+      searchStartedRef.current.add(method);
+      track(SHARED_EVENTS.BoardWallSearchStarted, { method, boardType: boardTypeRef.current, queryLength });
+    },
+    [countsInWizardFunnel],
+  );
   const pickedPlaceRef = useRef(pickedPlace);
   pickedPlaceRef.current = pickedPlace;
   const searchUsedRef = useRef(new Set<GymFinderSearchKind>());
-  const reportSearchUsed = useCallback((kind: GymFinderSearchKind) => {
-    if (searchUsedRef.current.has(kind)) return;
-    searchUsedRef.current.add(kind);
-    const event = gymFinderSearchUsed({ surface: SURFACE, kind });
-    track(event.name, event.properties);
-  }, []);
+  const reportSearchUsed = useCallback(
+    (kind: GymFinderSearchKind) => {
+      if (searchUsedRef.current.has(kind)) return;
+      searchUsedRef.current.add(kind);
+      const event = gymFinderSearchUsed({ surface: finderSurface, kind });
+      track(event.name, event.properties);
+    },
+    [finderSurface],
+  );
   useEffect(() => {
     if (deviceCoords) reportSearchStarted('location', 0);
   }, [deviceCoords, reportSearchStarted]);
@@ -345,7 +378,7 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
   const permissionRef = useRef(location.permission);
   permissionRef.current = location.permission;
   const onLocate = useCallback(() => {
-    const event = gymFinderLocateTapped(SURFACE);
+    const event = gymFinderLocateTapped(finderSurface);
     track(event.name, event.properties);
     if (deviceCoordsRef.current) {
       goToClimber();
@@ -357,7 +390,7 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
     }
     locateRequestedRef.current = true;
     void requestLocation();
-  }, [goToClimber, requestLocation]);
+  }, [finderSurface, goToClimber, requestLocation]);
 
   // A fix that arrives after the map opened on the world flies there, unless a
   // town was picked meanwhile; after a locate tap it flies there regardless.
@@ -425,7 +458,7 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
   const retryGyms = useCallback(() => void refetchGyms(), [refetchGyms]);
 
   useEffect(() => {
-    if (lookup === 'failed') {
+    if (lookup === 'failed' && countsInWizardFunnel) {
       track(SHARED_EVENTS.BoardWallLookupFailed, {
         stage: 'gyms',
         error_reason: lookupErrorReason(gymsQuery.error, offline),
@@ -507,19 +540,19 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
     (gym: Gym) => {
       reportNameSearchIfActive();
       const event = gymFinderGymPicked({
-        surface: SURFACE,
+        surface: finderSurface,
         section: gym.uuid === selectedIdRef.current ? 'map_pin' : 'list',
       });
       track(event.name, event.properties);
       onPickGym(gym, boardTypeRef.current);
     },
-    [onPickGym, reportNameSearchIfActive],
+    [finderSurface, onPickGym, reportNameSearchIfActive],
   );
   const handleAddGym = useCallback(() => {
-    const event = gymFinderAddMyGymTapped(SURFACE);
+    const event = gymFinderAddMyGymTapped(finderSurface);
     track(event.name, event.properties);
     onAddGym(boardTypeRef.current);
-  }, [onAddGym]);
+  }, [finderSurface, onAddGym]);
 
   // --- the map ---
   // A browser has no native map (GymMap reports it unavailable on mount): start
@@ -664,6 +697,7 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
               boardsLabel={item.boardsLabel}
               position={item.position}
               selected={item.selected}
+              checked={currentGymUuid === undefined ? undefined : item.gym.uuid === currentGymUuid}
               onPickGym={handlePickGym}
             />
           );
@@ -686,18 +720,32 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
           return locationPrompt;
       }
     },
-    [retryGyms, handlePickGym, onSelectPlace, locationPrompt],
+    [retryGyms, handlePickGym, onSelectPlace, locationPrompt, currentGymUuid],
   );
 
+  const showsOnMap = picker?.showsOnMap ?? true;
+  const onPickNone = picker?.onPickNone;
   const addGymFooter = useMemo(
-    () => (
-      <AddGymRow
-        title={t('mobile.gymStep.addGym')}
-        subtitle={isAuthenticated ? t('mobile.gymStep.addGymHint') : t('mobile.findWall.signInToAdd')}
-        onAddGym={handleAddGym}
-      />
-    ),
-    [isAuthenticated, t, handleAddGym],
+    () =>
+      onPickNone ? (
+        <View>
+          <NoGymRow
+            title={t('mobile.gymPicker.noGym')}
+            subtitle={showsOnMap ? t('mobile.gymPicker.noGymHint') : t('mobile.gymPicker.noGymHintOffMap')}
+            checked={currentGymUuid === null}
+            position="first"
+            onPickNone={onPickNone}
+          />
+          <AddGymRow title={t('mobile.gymPicker.addNew')} position="last" onAddGym={handleAddGym} />
+        </View>
+      ) : (
+        <AddGymRow
+          title={t('mobile.gymStep.addGym')}
+          subtitle={isAuthenticated ? t('mobile.gymStep.addGymHint') : t('mobile.findWall.signInToAdd')}
+          onAddGym={handleAddGym}
+        />
+      ),
+    [onPickNone, showsOnMap, currentGymUuid, isAuthenticated, t, handleAddGym],
   );
 
   return (
@@ -706,7 +754,11 @@ export function GymStep({ onPickGym, onAddGym, initialBoardType = null, stepLabe
       testID="gym-step"
     >
       <View style={styles.headerBlock} testID="gym-step-header">
-        <WizardStepHeader stepLabel={stepLabel ?? null} title={t('mobile.gymStep.title')} />
+        <WizardStepHeader
+          stepLabel={stepLabel ?? null}
+          title={t('mobile.gymStep.title')}
+          body={picker ? t('mobile.gymPicker.sharedEditHint') : undefined}
+        />
         <View style={styles.searchRow}>
           <GymSearchField
             text={inputText}

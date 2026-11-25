@@ -6,14 +6,16 @@
 // (`saveDetails`); this screen only edits the builder it is handed.
 //
 // The form is a native one (`MoreForm`), which hosts no text field, so the name
-// opens a small sheet to type in, and the gym opens the gym picker. Both sheets
-// sit beside the form, not inside it.
+// opens a small sheet to type in, beside the form, not inside it. The gym pushes
+// the gym picker (`/boards/gym-picker`) in the board picker's stack: a
+// searchable list in a sheet here was a sheet on the Boards sheet.
 
 import { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { MoreForm } from '../MoreForm';
-import { GymPickerSheet } from '../board-discovery/GymPickerSheet';
+import { useGymPickerRoute } from '../../lib/boards/use-gym-picker-route';
+import type { GymPick } from '../../lib/boards/gym-pick-handoff';
 import { SPRAY_ANGLE_OPTIONS, type SprayWallBuilder } from '../board-discovery/use-spray-wall-builder';
 import { useDraftNumber } from '../../hooks/use-committed-slider-value';
 import { hapticSelection } from '../../lib/haptics';
@@ -52,7 +54,6 @@ type SprayWallDetailsStepProps = {
 export function SprayWallDetailsStep({ builder, defaultName, saving, error }: SprayWallDetailsStepProps) {
   const { t } = useTranslation('boards');
   const [renameOpen, setRenameOpen] = useState(false);
-  const [gymPickerOpen, setGymPickerOpen] = useState(false);
 
   // A drag moves the thumb only; release writes the builder.
   const { draftValue: draftAngle, setDraftValue: setDraftAngle } = useDraftNumber(builder.angle);
@@ -73,11 +74,22 @@ export function SprayWallDetailsStep({ builder, defaultName, saving, error }: Sp
     [setName],
   );
 
+  // "Not at a gym" and "My gym isn't listed" both clear the link: a wall has no
+  // location field to send the climber to.
+  const onGymPick = useCallback(
+    (pick: GymPick) => setSelectedGym(pick.kind === 'gym' ? pick.gym : null),
+    [setSelectedGym],
+  );
+  const pushGymPicker = useGymPickerRoute({
+    currentGymUuid: builder.selectedGym?.uuid ?? null,
+    boardCoords: builder.coords,
+    showsOnMap: builder.isPublic,
+    onPick: onGymPick,
+  });
   const openGymPicker = useCallback(() => {
     hapticSelection();
-    setGymPickerOpen(true);
-  }, []);
-  const closeGymPicker = useCallback(() => setGymPickerOpen(false), []);
+    pushGymPicker();
+  }, [pushGymPicker]);
 
   // Every callback the form hands a native control is stable: the model is
   // rebuilt on every drag frame, and a fresh closure each time would re-bind
@@ -157,22 +169,6 @@ export function SprayWallDetailsStep({ builder, defaultName, saving, error }: Sp
         onDone={finishRename}
         onClose={closeRename}
       />
-      {gymPickerOpen ? (
-        <GymPickerSheet
-          selectedUuid={builder.selectedGym?.uuid ?? null}
-          boardCoords={builder.coords}
-          showsOnMap={builder.isPublic}
-          onSelect={(gym) => {
-            setSelectedGym(gym);
-            setGymPickerOpen(false);
-          }}
-          onRequestManualLocation={() => {
-            setSelectedGym(null);
-            setGymPickerOpen(false);
-          }}
-          onDismiss={closeGymPicker}
-        />
-      ) : null}
     </View>
   );
 }

@@ -1346,9 +1346,12 @@ export const SHARED_EVENTS = {
   // offline | rate_limited | exception }.
   BoardWallLookupFailed: 'Board Wall Lookup Failed',
   // The gym finders (mobile only, from 2026-11): the add-a-board wizard's
-  // "Which gym?" step and the gym map. Each carries `surface`:
-  // wizard_gym_step | gyms_map. Built by gym-finder-events.ts; none of them
-  // carries a gym, coordinates or anything typed.
+  // "Which gym?" step, the gym map and the builders' gym row. Each carries
+  // `surface`: wizard_gym_step | gyms_map (the root map and the board
+  // picker's copy) | builder_gym_picker (Edit board, Set up or a spray wall's
+  // details choosing the board's gym; there "Add my gym" is "My gym isn't
+  // listed"). Built by gym-finder-events.ts; none of them carries a gym,
+  // coordinates or anything typed.
   //
   // A gym was chosen. Props: { surface, section: list (a row tapped without
   // its pin) | map_pin (the row a pin tap had selected, or on the gym map the

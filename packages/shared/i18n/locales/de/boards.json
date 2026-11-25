@@ -924,14 +924,10 @@
       }
     },
     "gymPicker": {
-      "title": "Wo steht dieses Board?",
-      "subtitle": "Wähl die Halle, in der es steht, damit Kletterer*innen es auf der Karte finden.",
-      "searchPlaceholder": "Hallen suchen",
       "noGym": "Nicht in einer Halle",
       "noGymHint": "Es erscheint trotzdem als eigener Pin auf der Karte.",
       "noGymHintOffMap": "Erscheint nicht auf der Karte, solange es nicht öffentlich ist.",
       "addNew": "Meine Halle fehlt in der Liste",
-      "empty": "Keine Hallen in der Nähe",
       "sharedEditHint": "Das Team der Halle kann die Details dieses Boards bearbeiten und es aus seinem Eintrag nehmen. Es bleibt deins.",
       "linkError": "Diese Halle ließ sich nicht verknüpfen. Vielleicht ist sie zu weit von deinem Board entfernt. Deine übrigen Änderungen wurden gespeichert."
     },

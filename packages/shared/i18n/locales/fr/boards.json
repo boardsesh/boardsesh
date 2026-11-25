@@ -924,14 +924,10 @@
       }
     },
     "gymPicker": {
-      "title": "Où se trouve cette board ?",
-      "subtitle": "Choisis la salle où elle se trouve pour que les grimpeurs la trouvent sur la carte.",
-      "searchPlaceholder": "Rechercher une salle",
       "noGym": "Pas dans une salle",
       "noGymHint": "Elle apparaîtra quand même sur la carte avec son propre repère.",
       "noGymHintOffMap": "Elle reste hors de la carte tant qu'elle n'est pas publique.",
       "addNew": "Ma salle n'est pas listée",
-      "empty": "Aucune salle à proximité",
       "sharedEditHint": "L'équipe de la salle peut modifier les infos de cette board et la retirer de sa fiche. Elle reste à toi.",
       "linkError": "Impossible d'associer cette salle. Elle est peut-être trop loin de ta board. Tes autres modifications ont bien été enregistrées."
     },
