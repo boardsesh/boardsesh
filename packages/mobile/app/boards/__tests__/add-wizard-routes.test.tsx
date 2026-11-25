@@ -4,7 +4,7 @@
 // and what it reports. The step components (GymStep, BoardTypeStep) are stubs
 // that hand back their callbacks; their own suites cover what they draw.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 type Children = { children?: ReactNode };
@@ -42,7 +42,14 @@ const newGymStep = vi.hoisted(() => ({
     onClaimGym: (gymUuid: string) => void;
     onCreated: (gym: { uuid: string }) => void;
     onSignInNeeded: () => void;
+    onSubmittingChange: (submitting: boolean) => void;
   },
+}));
+const navigationState = vi.hoisted(() => ({
+  preventRemove: [] as boolean[],
+  options: [] as Array<Record<string, unknown>>,
+  focused: true,
+  disablePrevention: vi.fn(),
 }));
 const typeStep = vi.hoisted(() => ({
   last: null as null | { stepLabel: string | null; onPick: (boardName: string) => void },
@@ -55,7 +62,15 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('expo-router', () => ({
   useRouter: () => ({ push: pushMock, back: backMock, dismissTo: dismissToMock, replace: replaceMock }),
-  useNavigation: () => ({ getState: () => ({ index: state.stackIndex }) }),
+  useNavigation: () => ({
+    getState: () => ({ index: state.stackIndex }),
+    setOptions: (options: Record<string, unknown>) => navigationState.options.push(options),
+  }),
+  useIsFocused: () => navigationState.focused,
+  usePreventRemove: (prevent: boolean) => {
+    navigationState.preventRemove.push(prevent);
+    return navigationState.disablePrevention;
+  },
   Redirect: ({ href }: { href: { pathname: string; params: Record<string, string> } }) =>
     createElement('a', { 'data-testid': 'redirect', 'data-href': JSON.stringify(href) }),
   useLocalSearchParams: () => state.params,
@@ -138,6 +153,9 @@ beforeEach(() => {
   state.focusEffects = [];
   gymStep.last = null;
   newGymStep.last = null;
+  navigationState.focused = true;
+  navigationState.preventRemove = [];
+  navigationState.options = [];
   typeStep.last = null;
   wallList.last = null;
   headerActions.leading = undefined;
@@ -457,11 +475,67 @@ describe('Add your gym', () => {
     });
   });
 
-  it('sends a signed-out Save to sign in', () => {
+  it('sends a signed-out Save to sign in in place of the picker, not stacked on it', () => {
     state.params = { ...state.params, trail: 'where,gym' };
     render(createElement(AddBoardNewGym));
     newGymStep.last?.onSignInNeeded();
-    expect(pushMock).toHaveBeenCalledExactlyOnceWith('/auth/login');
+    expect(dismissToMock).toHaveBeenCalledExactlyOnceWith('/auth/login');
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it('holds the screen while a save is out, and lets it go for the hand-off', () => {
+    state.params = { ...state.params, trail: 'where,gym', boardType: 'kilter' };
+    navigationState.preventRemove = [];
+    navigationState.options = [];
+    render(createElement(AddBoardNewGym));
+    expect(navigationState.preventRemove.at(-1)).toBe(false);
+    act(() => newGymStep.last?.onSubmittingChange(true));
+    expect(navigationState.preventRemove.at(-1)).toBe(true);
+    expect(navigationState.options.at(-1)).toEqual({ gestureEnabled: false });
+    act(() => newGymStep.last?.onCreated(created));
+    expect(navigationState.disablePrevention).toHaveBeenCalled();
+    expect(replaceMock).toHaveBeenCalledOnce();
+    expect(navigationState.preventRemove.at(-1)).toBe(false);
+  });
+
+  it('frees the screen again when the save comes back refused', () => {
+    state.params = { ...state.params, trail: 'where,gym' };
+    navigationState.preventRemove = [];
+    render(createElement(AddBoardNewGym));
+    act(() => newGymStep.last?.onSubmittingChange(true));
+    act(() => newGymStep.last?.onSubmittingChange(false));
+    expect(navigationState.preventRemove.at(-1)).toBe(false);
+    expect(navigationState.options.at(-1)).toEqual({ gestureEnabled: true });
+  });
+
+  it('moves nothing for a save that lands after the screen went, and reports the flow once', () => {
+    state.params = { ...state.params, trail: 'where,gym', boardType: 'kilter' };
+    const { unmount } = render(createElement(AddBoardNewGym));
+    const step = newGymStep.last;
+    act(() => step?.onSubmittingChange(true));
+    unmount();
+    step?.onCreated(created);
+    expect(replaceMock).not.toHaveBeenCalled();
+    // The gym is on its way: leaving mid-save is not abandoning (Gym Created reports it).
+    expect(events('Board Builder Abandoned')).toEqual([]);
+  });
+
+  it('moves nothing for a save that lands while another screen is in front', () => {
+    state.params = { ...state.params, trail: 'where,gym' };
+    render(createElement(AddBoardNewGym));
+    navigationState.focused = false;
+    render(createElement(AddBoardNewGym));
+    newGymStep.last?.onCreated(created);
+    expect(replaceMock).not.toHaveBeenCalled();
+  });
+
+  it('reports leaving after a refused save as leaving', () => {
+    state.params = { ...state.params, trail: 'where,gym' };
+    const { unmount } = render(createElement(AddBoardNewGym));
+    act(() => newGymStep.last?.onSubmittingChange(true));
+    act(() => newGymStep.last?.onSubmittingChange(false));
+    unmount();
+    expect(events('Board Builder Abandoned')).toEqual([expect.objectContaining({ step: 'find', kind: 'gym' })]);
   });
 
   it('reports leaving with nothing added as the find step on the gym path', () => {

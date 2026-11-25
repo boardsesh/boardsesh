@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { PlaceSuggestion, SimilarGym } from '@boardsesh/shared-schema';
 import {
   GYM_NAME_MAX_LENGTH,
+  acknowledgeAt,
+  acknowledgedFor,
+  isSavablePin,
   MAX_ACKNOWLEDGED_GYM_UUIDS,
   acknowledgeGyms,
   buildCreateGymInput,
@@ -45,10 +48,12 @@ describe('the name and the pin', () => {
     expect(savableGymName(text)).toBe(expected);
   });
 
-  it('needs both a name and a pin to save', () => {
-    expect(canSaveGym('Boulder Space', PIN)).toBe(true);
+  it('needs both a name and a pin to save, and a town is not a pin yet', () => {
+    expect(canSaveGym('Boulder Space', { ...PIN, source: 'map' })).toBe(true);
     expect(canSaveGym('Boulder Space', null)).toBe(false);
-    expect(canSaveGym('  ', PIN)).toBe(false);
+    expect(canSaveGym('  ', { ...PIN, source: 'device' })).toBe(false);
+    expect(canSaveGym('Boulder Space', { ...PIN, source: 'town' })).toBe(false);
+    expect(isSavablePin({ ...PIN, source: 'address' })).toBe(true);
   });
 });
 
@@ -113,6 +118,35 @@ describe('the duplicate check a save sends', () => {
     ).toMatchObject({
       address: 'Fokkerweg 75',
       duplicateCheck: { mode: 'CONFIRMED_SEPARATE', acknowledgedGymUuids: ['a'] },
+    });
+  });
+});
+
+describe('a "not my gym" answers one question', () => {
+  const given = acknowledgeAt(null, 'Boulder Space', PIN, ['a', 'b']);
+
+  it('holds for the same name, however it is spaced or cased, and a pin within 150 m', () => {
+    expect(acknowledgedFor(given, ' boulder  SPACE ', PIN)).toEqual(['a', 'b']);
+    expect(acknowledgedFor(given, 'Boulder Space', { latitude: 52.371, longitude: 4.89 })).toEqual(['a', 'b']);
+  });
+
+  it('lapses for a new name, a pin moved past 150 m, or a pin added or taken away', () => {
+    expect(acknowledgedFor(given, 'Boulder Space Annex', PIN)).toEqual([]);
+    expect(acknowledgedFor(given, 'Boulder Space', { latitude: 52.397, longitude: 4.89 })).toEqual([]);
+    expect(acknowledgedFor(given, 'Boulder Space', null)).toEqual([]);
+    expect(acknowledgedFor(acknowledgeAt(null, 'Boulder Space', null, ['a']), 'Boulder Space', PIN)).toEqual([]);
+    expect(acknowledgedFor(null, 'Boulder Space', PIN)).toEqual([]);
+  });
+
+  it('adds to answers that still hold, keeping where they were given, and starts over when they lapsed', () => {
+    const nudged = { latitude: 52.3712, longitude: 4.89 };
+    const added = acknowledgeAt(given, 'Boulder Space', nudged, ['c']);
+    expect(added).toEqual({ uuids: ['a', 'b', 'c'], name: 'boulder space', pin: { latitude: 52.37, longitude: 4.89 } });
+    const elsewhere = { latitude: 52.4, longitude: 4.89 };
+    expect(acknowledgeAt(given, 'Boulder Space', elsewhere, ['c'])).toEqual({
+      uuids: ['c'],
+      name: 'boulder space',
+      pin: elsewhere,
     });
   });
 });
@@ -203,6 +237,11 @@ describe('the line under the map', () => {
       name: 'no map, the device fix',
       args: { ...base, mapAvailable: false, pin: { ...PIN, source: 'device' as const } },
       expected: { kind: 'fallbackYou' },
+    },
+    {
+      name: 'no map, a town (only a fix or an address places it)',
+      args: { ...base, mapAvailable: false, pin: { ...PIN, source: 'town' as const }, placeLabel: 'Amsterdam' },
+      expected: { kind: 'fallbackNeeded' },
     },
     {
       name: 'no map, an address',

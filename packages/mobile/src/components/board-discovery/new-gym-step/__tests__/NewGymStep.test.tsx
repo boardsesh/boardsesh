@@ -187,7 +187,12 @@ vi.mock('../../../gym-directory/PickGymRow', () => ({
   }: {
     place: PlaceSuggestion;
     onSelectPlace: (place: PlaceSuggestion) => void;
-  }) => createElement('button', { type: 'button', onClick: () => onSelectPlace(place) }, place.name),
+  }) =>
+    createElement(
+      'button',
+      { type: 'button', 'data-testid': `place:${place.id}`, onClick: () => onSelectPlace(place) },
+      place.name,
+    ),
 }));
 const AMSTERDAM: PlaceSuggestion = {
   id: 2759794,
@@ -204,11 +209,13 @@ vi.mock('../../../gym-directory/GymSearchField', () => ({
     onChangeText,
     onSubmit,
     onSelectPlace,
+    onSuggestionsChange,
   }: {
     text: string;
     onChangeText: (text: string) => void;
     onSubmit: () => void;
     onSelectPlace: (place: PlaceSuggestion) => void;
+    onSuggestionsChange?: (places: readonly PlaceSuggestion[]) => void;
   }) =>
     createElement('div', null, [
       createElement('input', {
@@ -223,6 +230,12 @@ vi.mock('../../../gym-directory/GymSearchField', () => ({
         type: 'button',
         'data-testid': 'pick-amsterdam',
         onClick: () => onSelectPlace(AMSTERDAM),
+      }),
+      createElement('button', {
+        key: 'suggest',
+        type: 'button',
+        'data-testid': 'suggest-amsterdam',
+        onClick: () => onSuggestionsChange?.([AMSTERDAM]),
       }),
     ]),
 }));
@@ -309,12 +322,37 @@ describe('what Save needs', () => {
     typeName('Boulder Space');
     expect(saveButton().disabled).toBe(true);
 
+    // A town is where to start looking, not the gym: Save waits for a move.
     fireEvent.click(screen.getByTestId('pick-amsterdam'));
     expect(setCenterMock).toHaveBeenLastCalledWith({ latitude: 52.374, longitude: 4.8897 }, 13);
+    expect(saveButton().disabled).toBe(true);
+    expect(screen.getByText('mobile.newGym.pinMoveHint')).toBeTruthy();
+    // A town label is no street address.
+    expect((screen.getByTestId('new-gym-address') as HTMLInputElement).value).toBe('');
+
+    // The fly-in settles on the town: still not savable.
+    act(() => {
+      state.onRegionChange?.({ latitude: 52.374, longitude: 4.8897 }, 13);
+      vi.advanceTimersByTime(300);
+    });
+    expect(saveButton().disabled).toBe(true);
+    // The climber moves the map under the dot.
+    act(() => {
+      state.onRegionChange?.({ latitude: 52.36, longitude: 4.9 }, 16);
+      vi.advanceTimersByTime(300);
+    });
     expect(saveButton().disabled).toBe(false);
 
     typeName('   ');
     expect(saveButton().disabled).toBe(true);
+  });
+
+  it('lists towns only where the map can draw', () => {
+    renderStep();
+    fireEvent.click(screen.getByTestId('suggest-amsterdam'));
+    expect(screen.getByTestId('place:2759794')).toBeTruthy();
+    act(() => state.onMapUnavailable?.());
+    expect(screen.queryByTestId('place:2759794')).toBeNull();
   });
 
   it('starts the pin at a fix location already allowed', () => {
@@ -546,5 +584,163 @@ describe('never two gyms', () => {
     expect(createGymMock).toHaveBeenCalledOnce();
     expect(props.onCreated).toHaveBeenCalledOnce();
     expect(createdEvents()).toHaveLength(1);
+  });
+});
+
+describe('every camera report counts', () => {
+  const PANNED = { latitude: 52.3, longitude: 4.95 };
+
+  it('applies a single end-of-move report (iOS) that lands away from our move once its window is over', async () => {
+    renderStep();
+    typeName('Boulder Space');
+    fireEvent.click(screen.getByTestId('pick-amsterdam'));
+    // The climber grabs the map mid-flight; iOS reports once, where it ended.
+    act(() => {
+      vi.advanceTimersByTime(400);
+      state.onRegionChange?.(PANNED, 16);
+      vi.advanceTimersByTime(300);
+    });
+    // Held: it may be a frame of our own flight.
+    expect(saveButton().disabled).toBe(true);
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(saveButton().disabled).toBe(false);
+    await act(async () => {
+      fireEvent.click(saveButton());
+    });
+    expect(createGymMock).toHaveBeenCalledWith(expect.objectContaining(PANNED));
+    expect(createdEvents()).toEqual([expect.objectContaining({ locationSource: 'map' })]);
+  });
+
+  it('keeps the fix through per-frame reports (Android) that settle on it, Save on the last good pin throughout', async () => {
+    state.location = { ...state.location, status: 'granted', permission: 'granted', coords: DEVICE };
+    renderStep();
+    typeName('Boulder Space');
+    // A long flight, a frame every 16 ms for 2 s (past the 1.5 s window): the
+    // window only ends once the camera has been quiet.
+    act(() => {
+      for (let frame = 0; frame < 125; frame += 1) {
+        state.onRegionChange?.({ latitude: 30 + frame * 0.18, longitude: 4.89 }, 4 + frame * 0.09);
+        vi.advanceTimersByTime(16);
+      }
+    });
+    // Mid-flight, zoomed out: the pin stands.
+    expect(saveButton().disabled).toBe(false);
+    act(() => {
+      state.onRegionChange?.(DEVICE, 16);
+      vi.advanceTimersByTime(300);
+    });
+    expect(screen.getByTestId('new-gym-pin-caption').textContent).toBe('mobile.newGym.pinAtYou');
+    await act(async () => {
+      fireEvent.click(saveButton());
+    });
+    expect(createGymMock).toHaveBeenCalledWith(expect.objectContaining(DEVICE));
+    expect(createdEvents()).toEqual([expect.objectContaining({ locationSource: 'device' })]);
+  });
+
+  it('drops a held report once one settles on the target', () => {
+    state.location = { ...state.location, status: 'granted', permission: 'granted', coords: DEVICE };
+    renderStep();
+    act(() => {
+      state.onRegionChange?.(PANNED, 16);
+      vi.advanceTimersByTime(300);
+      state.onRegionChange?.(DEVICE, 16);
+      vi.advanceTimersByTime(2000);
+    });
+    expect(screen.getByTestId('new-gym-pin-caption').textContent).toBe('mobile.newGym.pinAtYou');
+  });
+
+  it('saves a pan that ended a moment ago', async () => {
+    state.location = { ...state.location, status: 'granted', permission: 'granted', coords: DEVICE };
+    renderStep();
+    typeName('Boulder Space');
+    act(() => {
+      state.onRegionChange?.(DEVICE, 16);
+      vi.advanceTimersByTime(2000);
+      state.onRegionChange?.(PANNED, 16);
+    });
+    await act(async () => {
+      fireEvent.click(saveButton());
+    });
+    expect(createGymMock).toHaveBeenCalledWith(expect.objectContaining(PANNED));
+  });
+
+  it('never moves a map the climber zoomed out when location is read again', () => {
+    state.location = { ...state.location, status: 'granted', permission: 'granted', coords: DEVICE };
+    const view = renderStep();
+    act(() => {
+      state.onRegionChange?.(DEVICE, 16);
+      vi.advanceTimersByTime(2000);
+      state.onRegionChange?.({ latitude: 30, longitude: 0 }, 4);
+      vi.advanceTimersByTime(300);
+    });
+    setCenterMock.mockClear();
+    // Back from the background: a fresh fix.
+    state.location = { ...state.location, coords: { latitude: 52.371, longitude: 4.891 } };
+    view.rerender(createElement(NewGymStep, { stepLabel: 'Step 3 of 4', ...props }));
+    expect(setCenterMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId('new-gym-pin-caption').textContent).toBe('mobile.newGym.pinZoomIn');
+  });
+});
+
+describe('a "not my gym" answers one question', () => {
+  beforeEach(() => {
+    state.location = { ...state.location, status: 'granted', permission: 'granted', coords: DEVICE };
+  });
+
+  it('asks again about a gym dismissed 3 km away once the pin is on it', async () => {
+    state.similar = [similarGym('far', { distanceMeters: 3000 })];
+    renderStep();
+    typeName('Boulder Space');
+    settle();
+    fireEvent.click(screen.getByText('similarGyms.refusal.addNew'));
+    expect(screen.queryByTestId('similar:far')).toBeNull();
+
+    // The climber pans 3 km, onto that very gym.
+    act(() => {
+      state.onRegionChange?.(DEVICE, 16);
+      vi.advanceTimersByTime(2000);
+      state.onRegionChange?.({ latitude: 52.397, longitude: 4.89 }, 16);
+      vi.advanceTimersByTime(300);
+    });
+    settle();
+    expect(screen.getByTestId('similar:far')).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(saveButton());
+    });
+    expect(createGymMock).toHaveBeenCalledWith(
+      expect.objectContaining({ duplicateCheck: { mode: 'REJECT_IF_FOUND' } }),
+    );
+  });
+
+  it('keeps the answer for a nudge of the pin, and drops it for a new name', async () => {
+    state.similar = [similarGym('near')];
+    renderStep();
+    typeName('Boulder Space');
+    settle();
+    fireEvent.click(screen.getByText('similarGyms.refusal.addNew'));
+    act(() => {
+      state.onRegionChange?.(DEVICE, 16);
+      vi.advanceTimersByTime(2000);
+      state.onRegionChange?.({ latitude: 52.3705, longitude: 4.89 }, 16);
+      vi.advanceTimersByTime(300);
+    });
+    settle();
+    expect(screen.queryByTestId('similar:near')).toBeNull();
+
+    typeName('  boulder   SPACE ');
+    settle();
+    expect(screen.queryByTestId('similar:near')).toBeNull();
+
+    typeName('Boulder Space Annex');
+    settle();
+    expect(screen.getByTestId('similar:near')).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(saveButton());
+    });
+    expect(createGymMock).toHaveBeenCalledWith(
+      expect.objectContaining({ duplicateCheck: { mode: 'REJECT_IF_FOUND' } }),
+    );
   });
 });

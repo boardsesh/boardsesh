@@ -33,8 +33,18 @@ export function savableGymName(text: string): string | null {
 }
 
 /** Save needs a name and a pin; nothing else. */
-export function canSaveGym(nameText: string, pin: Coords | null): boolean {
-  return savableGymName(nameText) !== null && pin !== null;
+/**
+ * A pin that can be saved. A picked town is only where to start looking (its
+ * centre is rarely the gym), so it counts once the climber has moved the map
+ * under the dot, which makes it a `map` pin.
+ */
+export function isSavablePin(pin: GymPin | null): pin is GymPin {
+  return pin !== null && pin.source !== 'town';
+}
+
+/** Save needs a name and a savable pin; nothing else. */
+export function canSaveGym(nameText: string, pin: GymPin | null): boolean {
+  return savableGymName(nameText) !== null && isSavablePin(pin);
 }
 
 /**
@@ -65,6 +75,60 @@ export function acknowledgeGyms(acknowledged: readonly string[], newlyDismissed:
   const fresh = new Set(newlyDismissed);
   const kept = acknowledged.filter((uuid) => !fresh.has(uuid));
   return [...kept, ...fresh].slice(-MAX_ACKNOWLEDGED_GYM_UUIDS);
+}
+
+/** How far the pin may move before a "not my gym" no longer answers the question. */
+export const ACKNOWLEDGEMENT_RADIUS_METERS = 150;
+
+/**
+ * The gyms the climber said are not theirs, and the question they answered:
+ * the name (normalized) and the pin as they were then. A different gym asked
+ * about under another name, or 3 km away, is a different question.
+ */
+export type GymAcknowledgement = { uuids: readonly string[]; name: string; pin: Coords | null };
+
+/** A name as the "not my gym" answers compare it: trimmed, lower case, single spaces. */
+export function normalizedGymName(text: string): string {
+  return text.trim().toLocaleLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * The gyms still dismissed for this name and pin: none once the name has
+ * changed, the pin has moved more than 150 m from where they were dismissed,
+ * or a pin was added or taken away since.
+ */
+export function acknowledgedFor(
+  acknowledgement: GymAcknowledgement | null,
+  nameText: string,
+  pin: Coords | null,
+): readonly string[] {
+  if (!acknowledgement) return [];
+  if (normalizedGymName(nameText) !== acknowledgement.name) return [];
+  if ((acknowledgement.pin === null) !== (pin === null)) return [];
+  if (acknowledgement.pin && pin && distanceBetweenMeters(acknowledgement.pin, pin) > ACKNOWLEDGEMENT_RADIUS_METERS) {
+    return [];
+  }
+  return acknowledgement.uuids;
+}
+
+/**
+ * `newlyDismissed` added to the answers that still hold for this name and pin.
+ * The place they answer stays where the first of them was given, so a run of
+ * small moves can't carry them away from it.
+ */
+export function acknowledgeAt(
+  acknowledgement: GymAcknowledgement | null,
+  nameText: string,
+  pin: Coords | null,
+  newlyDismissed: readonly string[],
+): GymAcknowledgement {
+  const stillHeld = acknowledgedFor(acknowledgement, nameText, pin);
+  const anchor = acknowledgement && stillHeld.length > 0 ? acknowledgement.pin : pin;
+  return {
+    uuids: acknowledgeGyms(stillHeld, newlyDismissed),
+    name: normalizedGymName(nameText),
+    pin: anchor ? { latitude: anchor.latitude, longitude: anchor.longitude } : null,
+  };
 }
 
 /**
@@ -229,6 +293,8 @@ export function pinCaptionFor({
   if (!mapAvailable) {
     if (!pin) return { kind: 'fallbackNeeded' };
     if (pin.source === 'device') return { kind: 'fallbackYou' };
+    // Without a map a town can't be narrowed down to the gym: only a fix or an address places it.
+    if (pin.source === 'town') return { kind: 'fallbackNeeded' };
     return placeLabel ? { kind: 'fallbackPlace', place: placeLabel } : { kind: 'fallbackNeeded' };
   }
   if (!pin) return zoomedOut ? { kind: 'zoomIn' } : { kind: 'needed' };

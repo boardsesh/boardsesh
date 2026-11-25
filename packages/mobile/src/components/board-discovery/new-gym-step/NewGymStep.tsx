@@ -5,17 +5,26 @@
 // then `MapCardList`, whose map card holds the pin, with Save pinned at the
 // bottom.
 //
-// - The pin is the centre of the map: a fixed marker the climber moves the map
+// - The pin is the centre of the map: a fixed dot the climber moves the map
 //   under. It starts at the device fix when location was already allowed (no
-//   prompt on open; "Use my location" asks), or at a town picked from the
-//   search's suggestions, or an address typed and submitted. Zoomed out past a
-//   town, the centre means nowhere, so there is no pin until they zoom in.
+//   prompt on open; "Use my location" asks), or at an address typed and
+//   submitted. A town picked from the search's suggestions only moves the map
+//   there: its centre is rarely the gym, so Save waits until the map has moved
+//   under the dot. Zoomed out past a town, the centre means nowhere, so there
+//   is no pin until they zoom in.
+// - Every camera report counts. A report is applied once the camera has been
+//   still for a moment; one that comes while a move we made is still flying is
+//   held, and applied as the climber's pan if, once the flight's window is
+//   over, the camera is still away from where we sent it. iOS reports once at
+//   the end of a move, Android every frame: both land the same way.
 // - Where the map can't draw (a browser, a broken native map) the card folds
-//   away and the pin is the device fix, a town or a geocoded address, and the
-//   line under the field says where the gym will go.
+//   away and the pin is the device fix or a geocoded address (no towns: one
+//   can't be narrowed down to the gym), and the line says where the gym will go.
 // - As the name and the pin settle, the gyms already listed nearby that look
 //   like it are asked about ("Is it one of these?"). A tap on one goes to its
 //   boards; Claim opens its page; "No, add a new gym" says none is.
+// - A "not my gym" answers one question: the name and the pin as they were.
+//   A new name, or a pin moved more than 150 m, asks again from scratch.
 // - Save sends the gyms the climber said are not theirs. The server checks
 //   again and refuses with the ones it still finds (`GYM_SIMILAR_EXISTS`):
 //   they join the same list, and "No, add a new gym" then saves straight away.
@@ -23,7 +32,17 @@
 //
 // The created gym goes to the caller, which moves the wizard on.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  memo,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+} from 'react';
 import { Keyboard, Platform, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { gymCreated } from '@boardsesh/analytics';
@@ -58,14 +77,17 @@ import {
   GYM_ADDRESS_MAX_LENGTH,
   GYM_NAME_MAX_LENGTH,
   SIMILAR_HEADER_KEY,
-  acknowledgeGyms,
+  acknowledgeAt,
+  acknowledgedFor,
   buildCreateGymInput,
   buildNewGymRows,
   canSaveGym,
+  isSavablePin,
   pinCaptionFor,
   savableGymName,
   similarGymsLookupInput,
   similarGymsToAsk,
+  type GymAcknowledgement,
   type GymPin,
   type NewGymRow,
 } from './new-gym-step-state';
@@ -81,6 +103,8 @@ export type NewGymStepProps = {
   onCreated: (gym: Gym) => void;
   /** Save tapped while signed out. */
   onSignInNeeded: () => void;
+  /** A save went out (true) or came back refused or failed (false). It stays true once the gym is created. */
+  onSubmittingChange?: (submitting: boolean) => void;
 };
 
 /** The zoom the camera flies to for a pin: a few streets across, so the gym's door can be found. */
@@ -91,9 +115,9 @@ const TOWN_ZOOM = 13;
 const PIN_MIN_ZOOM = 11;
 /** How close (degrees, about 50 m) a camera report must be to a move we made to be its settle. */
 const SETTLE_TOLERANCE_DEG = 0.0005;
-/** How long a move we made may report frames far from its target before a report counts as a pan. */
+/** How long a move we made may report points away from its target before they count as the climber's pan. */
 const PROGRAMMATIC_MOVE_MS = 1500;
-/** A pan reports many frames; the pin follows once it is still for this long. */
+/** A pan reports many frames (Android) or one at its end (iOS); the pin follows once the camera is still this long. */
 const PIN_SETTLE_MS = 250;
 /** The "is it one of these?" lookup waits for the name and pin to be still this long. */
 const SIMILAR_LOOKUP_DEBOUNCE_MS = 500;
@@ -102,7 +126,21 @@ const ADDRESS_SCROLL_DELAY_MS = 300;
 
 const NO_MARKERS: [] = [];
 const NO_PLACES: readonly PlaceSuggestion[] = [];
-const NO_ACKNOWLEDGED: readonly string[] = [];
+
+type CameraReport = { coords: Coords; zoom?: number };
+
+// The pin and address rows read their element from these, so a keystroke or
+// a pan redraws that one row, not every row the list's `renderItem` draws.
+const PinRowContext = createContext<ReactElement | null>(null);
+const AddressRowContext = createContext<ReactElement | null>(null);
+const PinRowSlot = memo(function PinRowSlot() {
+  return useContext(PinRowContext);
+});
+const AddressRowSlot = memo(function AddressRowSlot() {
+  return useContext(AddressRowContext);
+});
+const PIN_ROW_SLOT = <PinRowSlot />;
+const ADDRESS_ROW_SLOT = <AddressRowSlot />;
 
 const rowKey = (row: NewGymRow) => row.key;
 const rowType = (row: NewGymRow) => row.kind;
@@ -116,7 +154,14 @@ function nearTarget(coords: Coords, target: Coords): boolean {
   );
 }
 
-export function NewGymStep({ stepLabel, onPickExistingGym, onClaimGym, onCreated, onSignInNeeded }: NewGymStepProps) {
+export function NewGymStep({
+  stepLabel,
+  onPickExistingGym,
+  onClaimGym,
+  onCreated,
+  onSignInNeeded,
+  onSubmittingChange,
+}: NewGymStepProps) {
   const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
   const { isAuthenticated } = useAuth();
@@ -141,21 +186,28 @@ export function NewGymStep({ stepLabel, onPickExistingGym, onClaimGym, onCreated
 
   // --- the pin ---
   const [pin, setPin] = useState<GymPin | null>(null);
-  // The pin as of the last camera report, ahead of the state that follows it
-  // once the pan is still: Save reads this one.
+  // The pin as last settled, read by Save. It never goes null while a move we
+  // made is flying: Save keeps the last good pin until the camera settles.
   const pinRef = useRef<GymPin | null>(null);
   const [zoomedOut, setZoomedOut] = useState(false);
   // The town picked or the address searched, for the line under the map.
   const [placeLabel, setPlaceLabel] = useState<string | null>(null);
   const [placeNotFound, setPlaceNotFound] = useState(false);
+  // A camera move we made, until the camera has settled on its target or its
+  // window is over.
   const programmaticMoveRef = useRef<{ target: Coords; issuedAtMs: number } | null>(null);
+  // The latest camera report not applied yet, and the timer that applies it.
+  const lastReportRef = useRef<CameraReport | null>(null);
+  const cameraTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The map has been flown somewhere: until then its centre is the world view's.
   const mapCenteredRef = useRef(false);
-  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The climber placed the pin themselves (a pan, a town, an address): a
+  // location read when the app comes back to the front never moves it.
+  const climberChoseRef = useRef(false);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
-      if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+      if (cameraTimerRef.current) clearTimeout(cameraTimerRef.current);
       if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
     },
     [],
@@ -166,7 +218,10 @@ export function NewGymStep({ stepLabel, onPickExistingGym, onClaimGym, onCreated
   const [refused, setRefused] = useState<readonly SimilarGym[] | null>(null);
 
   const placePin = useCallback((next: GymPin, zoom: number) => {
-    if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+    if (cameraTimerRef.current) clearTimeout(cameraTimerRef.current);
+    cameraTimerRef.current = null;
+    lastReportRef.current = null;
+    if (next.source !== 'device') climberChoseRef.current = true;
     pinRef.current = next;
     setPin(next);
     setRefused(null);
@@ -186,13 +241,19 @@ export function NewGymStep({ stepLabel, onPickExistingGym, onClaimGym, onCreated
   const deviceCoordsRef = useRef(deviceCoords);
   deviceCoordsRef.current = deviceCoords;
   const locateRequestedRef = useRef(false);
-  // A fix starts the pin when nothing else has; after "Use my location" it
-  // moves the pin there whatever was chosen before.
+  // A fix the climber asked for ("Use my location") moves the pin there,
+  // whatever was chosen before. Unasked (the read on open, or again when the
+  // app comes back to the front) it only starts a pin nobody has placed, or
+  // follows a pin that is the device fix already: it never moves a map the
+  // climber panned, zoomed out or searched.
   useEffect(() => {
     if (!deviceCoords) return;
     const asked = locateRequestedRef.current;
     locateRequestedRef.current = false;
-    if (!asked && pinRef.current !== null) return;
+    const current = pinRef.current;
+    const unclaimed = current === null && !climberChoseRef.current;
+    const followsFix = current?.source === 'device';
+    if (!asked && !unclaimed && !followsFix) return;
     placePin({ ...deviceCoords, source: 'device' }, PIN_ZOOM);
   }, [deviceCoords, placePin]);
   useEffect(() => {
@@ -216,29 +277,55 @@ export function NewGymStep({ stepLabel, onPickExistingGym, onClaimGym, onCreated
   }, [placePin, requestLocation]);
 
   // --- the map: its centre is the pin ---
-  const onRegionChange = useCallback((coords: Coords, zoom?: number) => {
+  // The climber's pan: the centre is the pin, or nowhere when zoomed out past a town.
+  const applyPan = useCallback((report: CameraReport) => {
+    climberChoseRef.current = true;
+    const meansAPlace = report.zoom !== undefined ? report.zoom >= PIN_MIN_ZOOM : mapCenteredRef.current;
+    if (meansAPlace) mapCenteredRef.current = true;
+    const next: GymPin | null = meansAPlace ? { ...report.coords, source: 'map' } : null;
+    pinRef.current = next;
+    setPin(next);
+    setRefused(null);
+    setZoomedOut(next === null);
+  }, []);
+  // Apply the latest report once the camera is still. A report away from a
+  // move we made, inside its window, may be a frame of that flight: it is held
+  // until the window is over, then applied as a pan if nothing nearer came. A
+  // report that settles on the target ends the move and keeps the pin as
+  // placed (its town, fix or address).
+  const settleCameraRef = useRef<() => void>(() => {});
+  settleCameraRef.current = () => {
+    cameraTimerRef.current = null;
+    const report = lastReportRef.current;
+    if (!report) return;
     const programmaticMove = programmaticMoveRef.current;
     if (programmaticMove) {
-      // Our own move settling (the pin is already there), or one of its
-      // animation frames: neither is the climber's pan.
-      if (nearTarget(coords, programmaticMove.target)) {
+      if (nearTarget(report.coords, programmaticMove.target)) {
         programmaticMoveRef.current = null;
+        lastReportRef.current = null;
         return;
       }
-      if (Date.now() - programmaticMove.issuedAtMs < PROGRAMMATIC_MOVE_MS) return;
+      const windowLeftMs = programmaticMove.issuedAtMs + PROGRAMMATIC_MOVE_MS - Date.now();
+      if (windowLeftMs > 0) {
+        cameraTimerRef.current = setTimeout(() => settleCameraRef.current(), windowLeftMs);
+        return;
+      }
       programmaticMoveRef.current = null;
     }
-    const meansAPlace = zoom !== undefined ? zoom >= PIN_MIN_ZOOM : mapCenteredRef.current;
-    const next: GymPin | null = meansAPlace ? { ...coords, source: 'map' } : null;
-    if (meansAPlace) mapCenteredRef.current = true;
-    pinRef.current = next;
-    if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
-    settleTimerRef.current = setTimeout(() => {
-      settleTimerRef.current = null;
-      setPin(next);
-      setRefused(null);
-      setZoomedOut(next === null);
-    }, PIN_SETTLE_MS);
+    lastReportRef.current = null;
+    applyPan(report);
+  };
+  const onRegionChange = useCallback((coords: Coords, zoom?: number) => {
+    lastReportRef.current = { coords, zoom };
+    if (cameraTimerRef.current) clearTimeout(cameraTimerRef.current);
+    cameraTimerRef.current = setTimeout(() => settleCameraRef.current(), PIN_SETTLE_MS);
+  }, []);
+  // Save reads the pin now: a pan that ended a moment ago counts. A report
+  // held during one of our moves stays held (the last good pin stands).
+  const flushCamera = useCallback(() => {
+    if (!cameraTimerRef.current || programmaticMoveRef.current) return;
+    clearTimeout(cameraTimerRef.current);
+    settleCameraRef.current();
   }, []);
 
   // A browser has no native map: start folded there, so no empty card flashes.
@@ -304,11 +391,11 @@ export function NewGymStep({ stepLabel, onPickExistingGym, onClaimGym, onCreated
       setSearchText(label);
       setPlaceLabel(label);
       setPlaceNotFound(false);
-      seedAddress(label);
+      // A town is no street address: the address field is left alone.
       listRef.current?.scrollToTop();
       placePin({ latitude: place.latitude, longitude: place.longitude, source: 'town' }, TOWN_ZOOM);
     },
-    [placePin, seedAddress],
+    [placePin],
   );
   const searchTextRef = useRef(searchText);
   searchTextRef.current = searchText;
@@ -375,9 +462,11 @@ export function NewGymStep({ stepLabel, onPickExistingGym, onClaimGym, onCreated
   }, []);
 
   // --- "Is it one of these?" ---
-  const [acknowledged, setAcknowledged] = useState<readonly string[]>(NO_ACKNOWLEDGED);
-  const acknowledgedRef = useRef(acknowledged);
-  acknowledgedRef.current = acknowledged;
+  const [acknowledgement, setAcknowledgement] = useState<GymAcknowledgement | null>(null);
+  const acknowledgementRef = useRef(acknowledgement);
+  acknowledgementRef.current = acknowledgement;
+  // The gyms still dismissed for the name and pin on screen.
+  const acknowledged = acknowledgedFor(acknowledgement, name, pin);
   const lookupNow = similarGymsLookupInput(name, pin);
   const lookupKey = lookupNow ? `${lookupNow.name}|${lookupNow.latitude ?? ''}|${lookupNow.longitude ?? ''}` : '';
   const lookupNowRef = useRef(lookupNow);
@@ -404,16 +493,21 @@ export function NewGymStep({ stepLabel, onPickExistingGym, onClaimGym, onCreated
   const [submitting, setSubmitting] = useState(false);
   const { mutateAsync: createGymAsync } = createGym;
   const save = useCallback(
-    async (acknowledgedGymUuids: readonly string[]) => {
+    async (acknowledgementToSend: GymAcknowledgement | null) => {
       if (!isAuthenticated) {
         onSignInNeeded();
         return;
       }
+      if (submittingRef.current) return;
+      flushCamera();
       const savedName = savableGymName(nameRef.current);
       const savedPin = pinRef.current;
-      if (!savedName || !savedPin || submittingRef.current) return;
+      if (!savedName || !isSavablePin(savedPin)) return;
+      // Only the answers given for this name and this spot.
+      const acknowledgedGymUuids = acknowledgedFor(acknowledgementToSend, nameRef.current, savedPin);
       submittingRef.current = true;
       setSubmitting(true);
+      onSubmittingChange?.(true);
       setNotice(null);
       Keyboard.dismiss();
       const input = buildCreateGymInput({
@@ -439,6 +533,7 @@ export function NewGymStep({ stepLabel, onPickExistingGym, onClaimGym, onCreated
       } catch (error) {
         submittingRef.current = false;
         setSubmitting(false);
+        onSubmittingChange?.(false);
         const refusedGyms = readSimilarGymsError(error);
         if (refusedGyms && similarGymsToAsk(undefined, refusedGyms, acknowledgedGymUuids).length > 0) {
           setRefused(refusedGyms);
@@ -447,9 +542,9 @@ export function NewGymStep({ stepLabel, onPickExistingGym, onClaimGym, onCreated
         setNotice(isGymLimitError(error) ? t('mobile.newGym.limitReached') : t('mobile.newGym.saveFailed'));
       }
     },
-    [isAuthenticated, onSignInNeeded, createGymAsync, onCreated, t],
+    [isAuthenticated, onSignInNeeded, flushCamera, onSubmittingChange, createGymAsync, onCreated, t],
   );
-  const onSave = useCallback(() => void save(acknowledgedRef.current), [save]);
+  const onSave = useCallback(() => void save(acknowledgementRef.current), [save]);
   // "No, add a new gym": none of the gyms shown is theirs. After a refused
   // save it saves again at once, naming every gym shown so far.
   const refusedRef = useRef(refused);
@@ -457,13 +552,15 @@ export function NewGymStep({ stepLabel, onPickExistingGym, onClaimGym, onCreated
   const similarRef = useRef(similar);
   similarRef.current = similar;
   const onAddNew = useCallback(() => {
-    const next = acknowledgeGyms(
-      acknowledgedRef.current,
+    const next = acknowledgeAt(
+      acknowledgementRef.current,
+      nameRef.current,
+      pinRef.current,
       similarRef.current.map((gym) => gym.uuid),
     );
     const wasRefused = refusedRef.current !== null;
-    acknowledgedRef.current = next;
-    setAcknowledged(next);
+    acknowledgementRef.current = next;
+    setAcknowledgement(next);
     setRefused(null);
     if (wasRefused) void save(next);
   }, [save]);
@@ -477,7 +574,8 @@ export function NewGymStep({ stepLabel, onPickExistingGym, onClaimGym, onCreated
     () =>
       buildNewGymRows({
         places: {
-          suggestions: placeSuggestions,
+          // Without a map a town can't be narrowed down to the gym: no towns then.
+          suggestions: mapAvailable ? placeSuggestions : NO_PLACES,
           label: t('mobile.gymStep.places'),
           // The browser's field carries its own GeoNames link.
           attribution: Platform.OS === 'web' ? null : t('mobile.gyms.placesAttribution'),
@@ -489,7 +587,7 @@ export function NewGymStep({ stepLabel, onPickExistingGym, onClaimGym, onCreated
           similarBody: refused ? t('mobile.newGym.similarRefusedBody') : t('mobile.newGym.similarBody'),
         },
       }),
-    [placeSuggestions, similar, notice, refused, t],
+    [mapAvailable, placeSuggestions, similar, notice, refused, t],
   );
 
   const caption = pinCaptionFor({ pin, mapAvailable, zoomedOut, deviceCoords, placeLabel });
@@ -641,7 +739,7 @@ export function NewGymStep({ stepLabel, onPickExistingGym, onClaimGym, onCreated
             </Text>
           );
         case 'pin':
-          return pinRow;
+          return PIN_ROW_SLOT;
         case 'similarIntro':
           return (
             <Text variant="subheadline" tone="secondary" style={styles.intro}>
@@ -661,7 +759,7 @@ export function NewGymStep({ stepLabel, onPickExistingGym, onClaimGym, onCreated
         case 'addNew':
           return addNewRow;
         case 'address':
-          return addressRow;
+          return ADDRESS_ROW_SLOT;
         case 'notice':
           return (
             <View style={styles.gutter}>
@@ -670,7 +768,7 @@ export function NewGymStep({ stepLabel, onPickExistingGym, onClaimGym, onCreated
           );
       }
     },
-    [onSelectPlace, pinRow, onPickExistingGym, onClaimGym, addNewRow, addressRow],
+    [onSelectPlace, onPickExistingGym, onClaimGym, addNewRow],
   );
 
   const saveEnabled = canSaveGym(name, pin);
@@ -726,20 +824,24 @@ export function NewGymStep({ stepLabel, onPickExistingGym, onClaimGym, onCreated
           />
         </View>
       </View>
-      <MapCardList
-        ref={listRef}
-        data={rows}
-        renderItem={renderRow}
-        keyExtractor={rowKey}
-        getItemType={rowType}
-        map={mapElement}
-        mapAvailable={mapAvailable}
-        mapHidden={searchFolded || focusedField !== null}
-        onLocate={onUseMyLocation}
-        locateLabel={t('mobile.gyms.grantLocation')}
-        footer={footer}
-        testID="new-gym-list"
-      />
+      <PinRowContext.Provider value={pinRow}>
+        <AddressRowContext.Provider value={addressRow}>
+          <MapCardList
+            ref={listRef}
+            data={rows}
+            renderItem={renderRow}
+            keyExtractor={rowKey}
+            getItemType={rowType}
+            map={mapElement}
+            mapAvailable={mapAvailable}
+            mapHidden={searchFolded || focusedField !== null}
+            onLocate={onUseMyLocation}
+            locateLabel={t('mobile.gyms.grantLocation')}
+            footer={footer}
+            testID="new-gym-list"
+          />
+        </AddressRowContext.Provider>
+      </PinRowContext.Provider>
     </View>
   );
 }

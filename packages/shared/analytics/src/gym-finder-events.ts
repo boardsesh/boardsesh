@@ -63,7 +63,9 @@ export type GymCreatedSurface = 'wizard';
 
 /**
  * Where the new gym's location came from: the device fix, the map moved under
- * the pin, a town picked from the suggestions, or a typed address geocoded.
+ * the dot, or a typed address geocoded. `town` (a picked town, the map not
+ * moved yet) is a pin the app holds but never saves, so `Gym Created` never
+ * carries it.
  */
 export type GymLocationSource = 'device' | 'map' | 'town' | 'address';
 

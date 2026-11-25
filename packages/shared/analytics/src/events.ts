@@ -1377,10 +1377,12 @@ export const SHARED_EVENTS = {
   // different listed gyms were shown as already listed nearby, from the
   // lookup as the name and pin settled or from a GYM_SIMILAR_EXISTS refusal),
   // confirmedSeparate (the save said some of them were not this gym),
-  // hasAddress, locationSource: device (the device fix) | map (the map moved
-  // under the pin) | town (a picked town, pin not moved) | address (a typed
-  // address geocoded, where the map can't draw) }. Once per created gym; a
-  // refusal is not sent. Names no gym, place or text typed.
+  // hasAddress, locationSource: device (the device fix, the map not moved
+  // since) | map (the map moved under the dot) | address (a typed address
+  // geocoded and the map not moved since, on native or where the map can't
+  // draw) }. town is in the type but never sent: a picked town only moves the
+  // map, and Save waits until the climber moves it under the dot (map). Once
+  // per created gym; a refusal is not sent. Names no gym, place or text typed.
   GymCreated: 'Gym Created',
   // A gym's page opened, once per gym per visit, after the gym loaded and the
   // viewer's identity resolved. Props: { surface: app (the app's gym page,
