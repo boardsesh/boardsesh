@@ -67,7 +67,7 @@ import {
 import { onGymDetailsEdited, REPORT_FIXING_GYM_FIELDS } from './directory-reports/lifecycle';
 import { afterCommit, transactionWithAfterCommit } from '../../../db/after-commit';
 import { managedGymImageKey, removeManagedGymImage } from '../../../services/gym-image-storage';
-import { getPostgresErrorCode } from '../../../utils/postgres-errors';
+import { getPostgresErrorCode, isUniqueViolation } from '../../../utils/postgres-errors';
 
 // ============================================
 // Helpers
@@ -76,8 +76,11 @@ import { getPostgresErrorCode } from '../../../utils/postgres-errors';
 /**
  * Generate a unique slug from a gym name.
  * Exported for reuse in board auto-gym creation.
+ *
+ * `executor` reads on a connection the caller already holds, e.g. createGym's
+ * transaction, so the read sees what the create's locks serialized.
  */
-export async function generateUniqueGymSlug(name: string): Promise<string> {
+export async function generateUniqueGymSlug(name: string, executor: Pick<typeof db, 'select'> = db): Promise<string> {
   const baseSlug =
     name
       .toLowerCase()
@@ -86,7 +89,7 @@ export async function generateUniqueGymSlug(name: string): Promise<string> {
       .slice(0, 100) || 'gym';
 
   // Find all existing slugs matching this base in a single query
-  const existing = await db
+  const existing = await executor
     .select({ slug: dbSchema.gyms.slug })
     .from(dbSchema.gyms)
     .where(
@@ -1437,70 +1440,85 @@ export const socialGymMutations = {
     const acknowledgedGymUuids = validatedInput.duplicateCheck?.acknowledgedGymUuids ?? [];
 
     const uuid = uuidv4();
-    // On the pool, before the transaction: a transaction that waited on a second
-    // pool connection would hold its own while it waited.
-    const slug = await generateUniqueGymSlug(validatedInput.name);
     const hours = validatedInput.hours?.trim() || null;
 
-    // The cap, the similar-gym read and the insert share one transaction under
-    // the create locks (owner, then normalized name), so a double-tapped Save or
-    // two climbers adding one gym by name can't both pass. Every read in here
-    // runs on the transaction's own connection.
-    const outcome = await transactionWithAfterCommit(async (tx) => {
-      await lockGymCreate(tx, userId, validatedInput.name);
-      await assertGymCapNotReached(tx, userId);
+    // The cap, the similar-gym read, the slug and the insert share one
+    // transaction under the create locks (owner, then normalized name), so a
+    // double-tapped Save or two climbers adding one gym by name can't both
+    // pass. Every read in here runs on the transaction's own connection.
+    const createInTransaction = () =>
+      transactionWithAfterCommit(async (tx) => {
+        await lockGymCreate(tx, userId, validatedInput.name);
+        await assertGymCapNotReached(tx, userId);
 
-      // Reads past the five the form shows, so gyms after the first five a
-      // climber acknowledged get their turn in the next refusal.
-      const similarGyms = await findSimilarGymCandidates({
-        name: validatedInput.name,
-        latitude: validatedInput.latitude,
-        longitude: validatedInput.longitude,
-        viewerUserId: userId,
-        limit: MAX_ACKNOWLEDGED_GYM_UUIDS,
-        executor: tx,
-      });
-      const blocking = blockingSimilarGyms(similarGyms, duplicateCheckMode, acknowledgedGymUuids);
-      if (blocking.length > 0) return { kind: 'refused' as const, blocking };
-
-      if (similarGyms.length > 0) {
-        // The one path that lists a gym beside ones the climber saw. Leave a
-        // trail, as the board checks do, so a script confirming every call shows.
-        logger.info('createGym: similar gyms acknowledged as separate', {
-          userId,
-          similarCount: similarGyms.length,
-          acknowledgedCount: acknowledgedGymUuids.length,
-        });
-      }
-
-      const [createdGym] = await tx
-        .insert(dbSchema.gyms)
-        .values({
-          uuid,
-          slug,
-          ownerId: userId,
+        // Reads past the five the form shows, so gyms after the first five a
+        // climber acknowledged get their turn in the next refusal.
+        const similarGyms = await findSimilarGymCandidates({
           name: validatedInput.name,
-          description: validatedInput.description ?? null,
-          hours,
-          hoursUpdatedAt: hours === null ? null : new Date(),
-          address: validatedInput.address ?? null,
-          website: validatedInput.website ?? null,
-          // The creator IS the owner, so a website supplied at creation is
-          // owner-vouched and may drive the self-service domain claim (#3431).
-          // Written explicitly rather than leaning on the DB default so the intent
-          // reads here, next to the website it describes.
-          websiteVouchedByOwner: validatedInput.website != null,
-          contactEmail: validatedInput.contactEmail ?? null,
-          contactPhone: validatedInput.contactPhone ?? null,
-          latitude: validatedInput.latitude ?? null,
-          longitude: validatedInput.longitude ?? null,
-          isPublic: validatedInput.isPublic ?? true,
-          isListed: validatedInput.isListed ?? true,
-          imageUrl: validatedInput.imageUrl ?? null,
-        })
-        .returning();
-      return { kind: 'created' as const, gym: createdGym };
-    });
+          latitude: validatedInput.latitude,
+          longitude: validatedInput.longitude,
+          viewerUserId: userId,
+          limit: MAX_ACKNOWLEDGED_GYM_UUIDS,
+          executor: tx,
+        });
+        const blocking = blockingSimilarGyms(similarGyms, duplicateCheckMode, acknowledgedGymUuids);
+        if (blocking.length > 0) return { kind: 'refused' as const, blocking };
+
+        if (similarGyms.length > 0) {
+          // The one path that lists a gym beside ones the climber saw. Leave a
+          // trail, as the board checks do, so a script confirming every call shows.
+          logger.info('createGym: similar gyms acknowledged as separate', {
+            userId,
+            similarCount: similarGyms.length,
+            acknowledgedCount: acknowledgedGymUuids.length,
+          });
+        }
+
+        // Read after the locks, on the transaction. Two different names can
+        // still share a slug ("Rock Hall", "Rock-Hall!") and hold different name
+        // locks; the unique index catches that and the create is retried below.
+        const slug = await generateUniqueGymSlug(validatedInput.name, tx);
+        const [createdGym] = await tx
+          .insert(dbSchema.gyms)
+          .values({
+            uuid,
+            slug,
+            ownerId: userId,
+            name: validatedInput.name,
+            description: validatedInput.description ?? null,
+            hours,
+            hoursUpdatedAt: hours === null ? null : new Date(),
+            address: validatedInput.address ?? null,
+            website: validatedInput.website ?? null,
+            // The creator IS the owner, so a website supplied at creation is
+            // owner-vouched and may drive the self-service domain claim (#3431).
+            // Written explicitly rather than leaning on the DB default so the intent
+            // reads here, next to the website it describes.
+            websiteVouchedByOwner: validatedInput.website != null,
+            contactEmail: validatedInput.contactEmail ?? null,
+            contactPhone: validatedInput.contactPhone ?? null,
+            latitude: validatedInput.latitude ?? null,
+            longitude: validatedInput.longitude ?? null,
+            isPublic: validatedInput.isPublic ?? true,
+            isListed: validatedInput.isListed ?? true,
+            imageUrl: validatedInput.imageUrl ?? null,
+          })
+          .returning();
+        return { kind: 'created' as const, gym: createdGym };
+      });
+
+    let outcome: Awaited<ReturnType<typeof createInTransaction>>;
+    try {
+      outcome = await createInTransaction();
+    } catch (error) {
+      // Another create took the slug between this one's read and its insert.
+      // The failed insert aborted the transaction, so run the whole create
+      // again: it re-checks under the locks and picks the next free slug. Once:
+      // a second collision in a row is not a race worth hiding.
+      if (!isUniqueViolation(error, 'gyms_unique_slug')) throw error;
+      logger.info('createGym: slug taken by a concurrent create, retrying', { userId });
+      outcome = await createInTransaction();
+    }
 
     if (outcome.kind === 'refused') {
       throw similarGymsExistError(await toSimilarGymResults(outcome.blocking.slice(0, MAX_SIMILAR_GYMS), userId));
