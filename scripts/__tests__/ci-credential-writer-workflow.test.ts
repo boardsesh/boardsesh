@@ -83,6 +83,23 @@ describe('owned credential writer CI boundary', () => {
     );
   });
 
+  it('runs default password through the real framework and mounted admission on the current fixture', () => {
+    const step = proof.steps.find((entry) => entry.run?.includes('vp run test:password-login-web'));
+    expect(step).toBeDefined();
+    expect(step?.if).toBeUndefined();
+    expect(step?.env).toBeUndefined();
+    expect(step?.['continue-on-error']).toBeUndefined();
+    expect(step?.run).toContain('--reporter=junit --outputFile.junit=./test-results/junit-password-login-web.xml');
+    expect(step?.run).toContain('test -s packages/web/test-results/junit-password-login-web.xml');
+    const configuration = readFileSync('packages/web/auth-proofs/password-login.vite.config.ts', 'utf8');
+    expect(configuration).toContain('pre-enforcement-password.integration.proof.ts');
+    expect(configuration).toContain('maxWorkers: 1');
+    expect(configuration).toContain('fileParallelism: false');
+    expect(rootSource).toContain(
+      'vp test run --config packages/web/auth-proofs/password-login.vite.config.ts --maxWorkers=1 --reporter=agent',
+    );
+  });
+
   it('owns a fresh database on the existing pinned PG18/PostGIS image', () => {
     expect(Object.keys(proof.services ?? {})).toEqual(['postgres']);
     expect(proof.services?.postgres.image).toBe(workflow.jobs['test-backend'].services?.postgres.image);
@@ -308,6 +325,7 @@ describe('owned credential writer CI boundary', () => {
       'packages/backend/test-results/junit-browser-renewal-credential-writer.xml',
       'packages/backend/test-results/junit-registration-credential-writer.xml',
       'packages/backend/test-results/junit-password-login-backend.xml',
+      'packages/web/test-results/junit-password-login-web.xml',
     ]);
   });
 
