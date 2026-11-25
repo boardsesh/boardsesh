@@ -54,6 +54,11 @@ export function assertHomepageBudget(
   if (!check) throw new Error('Homepage production-smoke assertion is missing');
   const failure = check.assert(response);
   if (failure) throw new Error(failure);
+  for (const link of response.body.match(/<link\b[^>]*>/gi) ?? []) {
+    if (/\brel\s*=\s*["']preload["']/i.test(link) && /\bas\s*=\s*["']font["']/i.test(link)) {
+      throw new Error('Homepage must use system fonts without a custom font preload');
+    }
+  }
   const heading = response.body.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ?? '';
   if (visibleText(heading) !== expectedHeading) throw new Error(`Expected homepage H1: ${expectedHeading}`);
   const main = response.body.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1] ?? '';

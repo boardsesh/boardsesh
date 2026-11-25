@@ -2,7 +2,14 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
 const mocks = vi.hoisted(() => ({
-  state: { language: 'zh-CN', consentPrompt: false, consentSettled: true, dialogOpen: false, pathname: '/' },
+  state: {
+    language: 'zh-CN',
+    consentPrompt: false,
+    consentSettled: true,
+    dialogOpen: false,
+    accountReady: true,
+    pathname: '/',
+  },
   translate: (key: string) => key,
   getPreference: vi.fn(),
   setPreference: vi.fn(),
@@ -16,9 +23,15 @@ vi.mock('@/app/lib/user-preferences-db', () => ({
   setPreference: mocks.setPreference,
 }));
 vi.mock('@/app/lib/i18n/use-locale-router', () => ({ usePathnameWithoutLocale: () => mocks.state.pathname }));
-vi.mock('../../consent/consent-state-provider', () => ({ useConsent: () => ({ dialogOpen: mocks.state.dialogOpen }) }));
+vi.mock('../../consent/consent-state-provider', () => ({
+  useConsent: () => ({
+    dialogOpen: mocks.state.dialogOpen,
+    accountReady: mocks.state.accountReady,
+  }),
+}));
 
 import ChineseTranslationOnboarding from '../chinese-translation-onboarding';
+import * as dialogLoader from '../chinese-translation-dialog-loader';
 
 function Welcome() {
   return (
@@ -35,19 +48,25 @@ beforeEach(() => {
     consentPrompt: false,
     consentSettled: true,
     dialogOpen: false,
+    accountReady: true,
     pathname: '/',
   });
   vi.stubEnv('NEXT_PUBLIC_CHINESE_TERMINOLOGY_FORM_URL', 'https://forms.gle/nativeTerms');
   mocks.getPreference.mockResolvedValue(null);
   mocks.setPreference.mockResolvedValue(undefined);
+  vi.spyOn(dialogLoader, 'loadChineseTranslationDialog');
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
 
 describe('Chinese translation welcome on www', () => {
   it('waits while the consent region is still unknown', async () => {
     mocks.state.consentSettled = false;
     const view = render(<Welcome />);
-    await waitFor(() => expect(mocks.getPreference).toHaveBeenCalled());
+    expect(mocks.getPreference).not.toHaveBeenCalled();
+    expect(dialogLoader.loadChineseTranslationDialog).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).toBeNull();
     mocks.state.consentSettled = true;
     view.rerender(<Welcome />);
@@ -82,6 +101,7 @@ describe('Chinese translation welcome on www', () => {
     mocks.state.language = 'en-US';
     const view = render(<Welcome />);
     expect(mocks.getPreference).not.toHaveBeenCalled();
+    expect(dialogLoader.loadChineseTranslationDialog).not.toHaveBeenCalled();
     mocks.state.language = 'zh-CN';
     view.rerender(<Welcome />);
     await screen.findByRole('dialog');
@@ -90,7 +110,7 @@ describe('Chinese translation welcome on www', () => {
   it('keeps consent choices in front of the welcome', async () => {
     mocks.state.consentPrompt = true;
     const view = render(<Welcome />);
-    await waitFor(() => expect(mocks.getPreference).toHaveBeenCalled());
+    expect(mocks.getPreference).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).toBeNull();
     mocks.state.consentPrompt = false;
     view.rerender(<Welcome />);
@@ -102,6 +122,55 @@ describe('Chinese translation welcome on www', () => {
     render(<Welcome />);
     await waitFor(() => expect(mocks.getPreference).toHaveBeenCalled());
     expect(screen.queryByRole('dialog')).toBeNull();
+    expect(dialogLoader.loadChineseTranslationDialog).not.toHaveBeenCalled();
+  });
+
+  it('waits for account resolution before reading the preference or downloading the dialog', async () => {
+    mocks.state.accountReady = false;
+    const view = render(<Welcome />);
+    expect(mocks.getPreference).not.toHaveBeenCalled();
+    expect(dialogLoader.loadChineseTranslationDialog).not.toHaveBeenCalled();
+    mocks.state.accountReady = true;
+    view.rerender(<Welcome />);
+    await screen.findByRole('dialog');
+    expect(dialogLoader.loadChineseTranslationDialog).toHaveBeenCalledOnce();
+  });
+
+  it('waits for the tab to become visible before reading or downloading', async () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    render(<Welcome />);
+    expect(mocks.getPreference).not.toHaveBeenCalled();
+    expect(dialogLoader.loadChineseTranslationDialog).not.toHaveBeenCalled();
+    visibility.mockReturnValue('visible');
+    fireEvent(document, new Event('visibilitychange'));
+    await screen.findByRole('dialog');
+    expect(dialogLoader.loadChineseTranslationDialog).toHaveBeenCalledOnce();
+  });
+
+  it('does not reshow a welcome dismissed in another tab while this tab was hidden', async () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    render(<Welcome />);
+    await screen.findByRole('dialog');
+    visibility.mockReturnValue('hidden');
+    fireEvent(document, new Event('visibilitychange'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    mocks.getPreference.mockResolvedValue(true);
+    visibility.mockReturnValue('visible');
+    fireEvent(document, new Event('visibilitychange'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(mocks.getPreference).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(dialogLoader.loadChineseTranslationDialog).toHaveBeenCalledOnce();
+  });
+
+  it('does not download behind open privacy choices', async () => {
+    mocks.state.dialogOpen = true;
+    const view = render(<Welcome />);
+    expect(mocks.getPreference).not.toHaveBeenCalled();
+    expect(dialogLoader.loadChineseTranslationDialog).not.toHaveBeenCalled();
+    mocks.state.dialogOpen = false;
+    view.rerender(<Welcome />);
+    await screen.findByRole('dialog');
   });
 
   it('has a working continue action while the form is being prepared', async () => {

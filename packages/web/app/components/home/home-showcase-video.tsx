@@ -8,7 +8,7 @@ import PauseRounded from '@mui/icons-material/PauseRounded';
 import PlayArrowRounded from '@mui/icons-material/PlayArrowRounded';
 import { useTranslation } from 'react-i18next';
 import { useAutoplayVideo } from '@/app/hooks/use-autoplay-video';
-import { track } from '@/app/lib/analytics';
+import { track } from '@/app/lib/analytics-capture';
 import {
   SHOWCASE_CUT,
   SHOWCASE_POSTER_HEIGHT,

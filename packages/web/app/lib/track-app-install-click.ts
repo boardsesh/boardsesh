@@ -2,7 +2,7 @@
 // and, with ad-measurement consent, the Meta and Reddit `Lead` conversion.
 // Every "get the app" CTA on www calls this, so the two can never drift.
 
-import { track } from './analytics';
+import { track } from './analytics-capture';
 import { reportAdLead } from './ad-pixels-browser';
 import {
   APP_INSTALL_CLICK_EVENT,

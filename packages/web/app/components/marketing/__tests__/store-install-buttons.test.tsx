@@ -7,7 +7,7 @@ import { __resetQrLandingForTests } from '@/app/lib/qr-landing';
 import { buildStoreUrl } from '@/app/lib/store-links';
 
 const track = vi.hoisted(() => vi.fn());
-vi.mock('@/app/lib/analytics', () => ({ track }));
+vi.mock('@/app/lib/analytics-capture', () => ({ track }));
 
 // Flipped by the update-mode cases: a visitor still inside the retired Capacitor app.
 const capacitorShell = vi.hoisted(() => ({ isNative: false }));

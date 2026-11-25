@@ -5,7 +5,7 @@ import type { AnalyticsBoardType } from '@boardsesh/analytics';
 import { __resetQrLandingForTests, captureQrLandingMedium } from '@/app/lib/qr-landing';
 
 const track = vi.hoisted(() => vi.fn());
-vi.mock('@/app/lib/analytics', () => ({ track }));
+vi.mock('@/app/lib/analytics-capture', () => ({ track }));
 
 // The real provider settles after hydration; each test says where consent stands.
 const consentState = vi.hoisted(() => ({ granted: true }));

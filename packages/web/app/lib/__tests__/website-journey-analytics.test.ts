@@ -2,10 +2,10 @@
 import type { MouseEvent } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { webAppOpened } from '@boardsesh/analytics';
-import { track, trackBeforeNavigation } from '../analytics';
+import { track, trackBeforeNavigation } from '../analytics-capture';
 import { trackWebsiteJourneyEvent, trackWebsiteJourneyLinkClick } from '../website-journey-analytics';
 
-vi.mock('../analytics', () => ({ track: vi.fn(), trackBeforeNavigation: vi.fn() }));
+vi.mock('../analytics-capture', () => ({ track: vi.fn(), trackBeforeNavigation: vi.fn() }));
 
 const navigate = vi.fn();
 function linkClick(modifiers: Partial<MouseEvent<HTMLAnchorElement>> = {}, target = '') {
@@ -78,6 +78,15 @@ describe('website journey tracking', () => {
       expect(track).toHaveBeenCalledWith(payload.name, payload.properties);
     },
   );
+
+  it('keeps download navigation inside the browser click', () => {
+    const click = linkClick();
+    click.currentTarget.setAttribute('download', '');
+    trackWebsiteJourneyLinkClick(click, payload);
+    expect(click.preventDefault).not.toHaveBeenCalled();
+    expect(trackBeforeNavigation).not.toHaveBeenCalled();
+    expect(track).toHaveBeenCalledWith(payload.name, payload.properties);
+  });
 
   it('keeps a new-tab link intact', () => {
     const click = linkClick({}, '_blank');

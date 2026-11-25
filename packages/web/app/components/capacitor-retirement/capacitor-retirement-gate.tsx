@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { getPlatform, isNativeApp, waitForCapacitor } from '@/app/lib/ble/capacitor-utils';
-import { track } from '@/app/lib/analytics';
+import { track } from '@/app/lib/analytics-capture';
 
 // Only the retired app ever needs this, so keep it out of everyone else's
 // initial payload.

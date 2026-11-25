@@ -8,7 +8,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 const mockTrack = vi.fn();
-vi.mock('@/app/lib/analytics', () => ({ track: (...args: unknown[]) => mockTrack(...args) }));
+vi.mock('@/app/lib/analytics-capture', () => ({ track: (...args: unknown[]) => mockTrack(...args) }));
 
 import HomeShowcaseVideo from '../home-showcase-video';
 

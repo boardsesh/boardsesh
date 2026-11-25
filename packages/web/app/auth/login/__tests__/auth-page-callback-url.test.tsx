@@ -1,4 +1,4 @@
-import { track } from '@/app/lib/analytics';
+import { track } from '@/app/lib/analytics-capture';
 /**
  * Where the login page sends the browser after sign-in. `callbackUrl` comes off
  * the address bar, so a crafted value must never navigate off-site, while every
@@ -49,10 +49,8 @@ vi.mock('@/app/components/providers/snackbar-provider', () => ({
   useSnackbar: () => ({ showMessage: vi.fn() }),
 }));
 
-vi.mock('@/app/lib/analytics', () => ({
-  track: vi.fn(),
-  setPersonProperties: vi.fn(),
-}));
+vi.mock('@/app/lib/analytics-capture', () => ({ track: vi.fn() }));
+vi.mock('@/app/lib/analytics', () => ({ track: vi.fn(), setPersonProperties: vi.fn() }));
 
 const { default: AuthPageContent } = await import('../auth-page-content');
 

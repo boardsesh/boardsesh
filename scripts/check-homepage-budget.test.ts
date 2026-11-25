@@ -45,6 +45,15 @@ describe('rendered homepage budget assertion', () => {
     expect(() => assertHomepageBudget(response(withoutStats), title, fixture.visibleMarkers)).toThrow('123,400');
   });
 
+  it.each([
+    '<link rel="preload" href="/font.woff2" as="font" />',
+    "<link as='font' href='/font.woff' rel='preload' />",
+  ])('rejects a font preload shared from another route root: %s', (preload) => {
+    expect(() => assertHomepageBudget(response(preload + completeHtml), title, fixture.visibleMarkers)).toThrow(
+      'system fonts without a custom font preload',
+    );
+  });
+
   it('rejects poorly compressible HTML exceeding the shared 60,000-byte budget', () => {
     const payload = Array.from({ length: 6000 }, (_, index) =>
       createHash('sha256').update(String(index)).digest('hex'),

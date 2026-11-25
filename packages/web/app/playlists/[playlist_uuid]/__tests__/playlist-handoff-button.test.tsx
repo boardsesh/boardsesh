@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   trackBeforeNavigation: vi.fn(async () => {}),
 }));
 
-vi.mock('@/app/lib/analytics', () => ({
+vi.mock('@/app/lib/analytics-capture', () => ({
   track: mocks.track,
   trackBeforeNavigation: mocks.trackBeforeNavigation,
 }));

@@ -14,7 +14,7 @@ vi.mock('../consent', () => ({
   subscribeWebConsent: () => () => {},
 }));
 const analyticsTrack = vi.hoisted(() => vi.fn());
-vi.mock('../analytics', () => ({ track: analyticsTrack }));
+vi.mock('../analytics-capture', () => ({ track: analyticsTrack }));
 
 type Queued = { queue?: unknown[][]; callQueue?: unknown[][] };
 type TestWindow = Window & { fbq?: Queued; _fbq?: unknown; rdt?: Queued };

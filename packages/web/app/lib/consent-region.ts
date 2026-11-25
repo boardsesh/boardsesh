@@ -1,6 +1,5 @@
 import { createConsentRegionLookup } from '@boardsesh/consent';
-import { GET_CONSENT_REGION, type GetConsentRegionResponse } from '@boardsesh/graphql/operations/analytics-consent';
-import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
+import type { GetConsentRegionResponse } from '@boardsesh/graphql/operations/analytics-consent';
 import { isGlobalPrivacyControlEnabled } from '@/app/lib/consent';
 
 /** Past this the banner shows: an answer we never got counts as "ask". */
@@ -56,6 +55,13 @@ async function requestConsentRegion(): Promise<ConsentRegionAnswer> {
   });
   const answer = (async (): Promise<boolean | null> => {
     try {
+      // The lookup owns its transport; cached explicit consent needs neither.
+      // Include module loading in the same deadline as the request itself.
+      const [{ GET_CONSENT_REGION }, { createGraphQLHttpClient }] = await Promise.all([
+        import('@boardsesh/graphql/operations/analytics-consent'),
+        import('@/app/lib/graphql/client'),
+      ]);
+      if (controller.signal.aborted) return null;
       // Building the client sits inside the try: `getGraphQLHttpUrl` throws on
       // an unknown host, and that must read as an unknown region (show the
       // banner), never as an unhandled rejection that leaves it hidden.

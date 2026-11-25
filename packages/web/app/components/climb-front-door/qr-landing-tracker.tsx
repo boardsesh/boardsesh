@@ -12,7 +12,7 @@ import {
   type AnalyticsBoardType,
 } from '@boardsesh/analytics';
 import { useConsent } from '@/app/components/consent/consent-state-provider';
-import { track } from '@/app/lib/analytics';
+import { track } from '@/app/lib/analytics-capture';
 import { captureQrLanding, type QrLanding, type QrLandingKind } from '@/app/lib/qr-landing';
 
 type QrLandingTrackerProps = {

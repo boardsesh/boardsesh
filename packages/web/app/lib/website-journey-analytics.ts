@@ -1,6 +1,6 @@
 import type { MouseEvent } from 'react';
 import type { WebsiteJourneyEvent } from '@boardsesh/analytics';
-import { track, trackBeforeNavigation } from './analytics';
+import { track, trackBeforeNavigation } from './analytics-capture';
 import {
   needsMarketingDocumentNavigation,
   withMarketingNavigationCampaign,

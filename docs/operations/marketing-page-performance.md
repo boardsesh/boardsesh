@@ -8,6 +8,12 @@ management and other interactive routes. Separate App Router root layouts keep
 request-dependent application metadata and providers out of the marketing render.
 The route groups preserve the public URLs.
 
+Marketing headings use the existing system font stack. Application headings
+retain Geist on demand; its preload is disabled because Turbopack shares that
+font's CSS across the document roots. Verify the emitted HTML and browser
+requests when changing font configuration: removing the marketing import alone
+does not remove the other root's font preload.
+
 The English homepage and translated homepages are pre-rendered with a fifteen
 minute regeneration interval. English app guides and the comparison page are
 pre-rendered from their public catalogs. Translated homepages use real locale
@@ -32,6 +38,18 @@ blocked while account authority is unresolved. The homepage beta section loads
 its query dependencies near the viewport. Its in-memory client does not restore
 the application's persisted queries; requests remain scoped to the accepted
 account and login session.
+
+Marketing event handlers use a small capture facade. It loads the analytics SDK
+only for eligible events and rechecks consent, session ownership and location
+before sending a cold event. Navigation waits at most 250 milliseconds for both
+the import and flush. Operational flags and early crash reporting retain their
+existing startup paths. The region lookup owns its dynamically loaded GraphQL
+transport; its five-second deadline includes loading the modules.
+
+Closed language menus and privacy dialogs load on interaction. Their immediate
+controls remain usable while a chunk loads or fails. Chinese translation
+onboarding waits for account and consent authority, a visible document and an
+unseen dismissal preference before loading its dialog.
 
 The shared playlist hooks remain in use on mobile. Web playlist detail supplies
 its own GraphQL transport and no longer needs a global playlist adapter. Profile

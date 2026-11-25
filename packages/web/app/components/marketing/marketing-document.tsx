@@ -1,5 +1,4 @@
 import React from 'react';
-import localFont from 'next/font/local';
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v15-appRouter';
 import AppThemeProvider from '@/app/components/providers/app-theme-provider';
 import CapacitorRetirementGate from '@/app/components/capacitor-retirement/capacitor-retirement-gate';
@@ -13,13 +12,7 @@ import { classifyMarketingBrowser } from '@/app/lib/marketing-platform';
 import { BUILD_RELEASE } from '@/app/api/health/build-release';
 import { devEditorHostnames } from '@/app/lib/i18n/dev-editor';
 import '@/app/components/index.css';
-
-const displayFont = localFont({
-  src: '../../fonts/GeistVF.woff',
-  variable: '--font-display',
-  display: 'swap',
-  preload: true,
-});
+import styles from './marketing-document.module.css';
 
 /** This document's render inputs are public build data plus an explicit locale. */
 export default async function MarketingDocument({ children, locale }: { children: React.ReactNode; locale: Locale }) {
@@ -29,7 +22,7 @@ export default async function MarketingDocument({ children, locale }: { children
       : null;
   const assetOrigin = process.env.NEXT_PUBLIC_NEXT_ASSET_BASE_URL;
   return (
-    <html className={displayFont.variable} lang={LOCALE_HTML_LANG[locale]} data-theme="dark" suppressHydrationWarning>
+    <html className={styles.displayFonts} lang={LOCALE_HTML_LANG[locale]} data-theme="dark" suppressHydrationWarning>
       <head>
         {assetOrigin ? <link rel="preconnect" href={assetOrigin} crossOrigin="anonymous" /> : null}
         <meta name="boardsesh-release" content={BUILD_RELEASE} />
