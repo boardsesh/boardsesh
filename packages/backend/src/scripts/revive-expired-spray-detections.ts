@@ -9,14 +9,17 @@
  * (`requestSprayDetection`), for the original requester, so the completion
  * notification reaches them.
  *
- *   vp exec tsx packages/backend/src/scripts/revive-expired-spray-detections.ts --since 2026-11-21T07:00:00Z
- *   vp exec tsx packages/backend/src/scripts/revive-expired-spray-detections.ts --since 2026-11-21T07:00:00Z --apply
+ * In a backend shell, from /app/packages/backend (the image has no `vp`):
  *
- * `--until` (exclusive) bounds the window from above. Needs the backend's
+ *   node --import tsx src/scripts/revive-expired-spray-detections.ts --since 2026-11-21T07:00:00Z
+ *   node --import tsx src/scripts/revive-expired-spray-detections.ts --since 2026-11-21T07:00:00Z --apply
+ *
+ * `--until` (exclusive) bounds the window from above. Uses the service's
  * DATABASE_URL: the writable primary. Every eligibility rule is checked again
  * inside the write transaction, under the locks the API takes, and a revived
  * row is no longer the latest for its draft, so a second `--apply` revives
- * nothing. Output carries truncated ids only.
+ * nothing. Output carries truncated ids only, and a failure prints the error's
+ * class and code, never its message.
  *
  * Runbook: docs/product/spray-recognition-rollout.md, "Reviving imports that
  * expired during a detector outage".
@@ -24,7 +27,7 @@
 
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { and, asc, desc, eq, gte, isNull, lt } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNull, lt, or } from 'drizzle-orm';
 import type { PgBoss } from 'pg-boss';
 import { closePool, getConnectionConfig } from '@boardsesh/db/client';
 import { sprayWallDetections, sprayWallHolds, sprayWallVersions, sprayWalls, userBoards } from '@boardsesh/db/schema';
@@ -38,6 +41,7 @@ import {
   type SprayDetectionRow,
 } from '../services/spray-detection-request';
 import { logger } from '../utils/logger';
+import { getPostgresErrorCode } from '../utils/postgres-errors';
 
 const LOG_PREFIX = '[revive-expired-spray-detections]';
 
@@ -56,7 +60,7 @@ export type RevivalSkipReason =
   | 'not-draft'
   | 'photo-changed'
   | 'superseded'
-  | 'has-holds'
+  | 'manual-edits'
   | 'no-edit-access';
 
 export type RevivalDecision = {
@@ -69,6 +73,11 @@ export type RevivalDecision = {
   revivedId: string | null;
 };
 
+/** A bad command line. Its message is ours and safe to print, unlike any other failure's. */
+export class RevivalArgumentError extends Error {
+  override name = 'RevivalArgumentError';
+}
+
 const ISO_TIMESTAMP_WITH_ZONE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
 
 function parseTimestamp(flag: string, argument: string | undefined): Date | null {
@@ -77,7 +86,7 @@ function parseTimestamp(flag: string, argument: string | undefined): Date | null
   // A zone is required: a bare local time would mean a different window on
   // every operator's machine.
   if (!ISO_TIMESTAMP_WITH_ZONE.test(argument) || Number.isNaN(parsed.getTime())) {
-    throw new Error(`${flag} must be an ISO timestamp with a zone, such as 2026-11-21T07:00:00Z`);
+    throw new RevivalArgumentError(`${flag} must be an ISO timestamp with a zone, such as 2026-11-21T07:00:00Z`);
   }
   return parsed;
 }
@@ -88,21 +97,21 @@ export function parseArgs(argv: readonly string[]): RevivalOptions {
   for (let index = 0; index < argv.length; index++) {
     const flag = argv[index];
     if (flag === '--apply') {
-      if (apply) throw new Error('Duplicate option: --apply');
+      if (apply) throw new RevivalArgumentError('Duplicate option: --apply');
       apply = true;
     } else if (flag === '--since' || flag === '--until') {
-      if (timestamps.has(flag)) throw new Error(`Duplicate option: ${flag}`);
+      if (timestamps.has(flag)) throw new RevivalArgumentError(`Duplicate option: ${flag}`);
       const argument = argv[++index];
-      if (!argument || argument.startsWith('--')) throw new Error(`${flag} requires an ISO timestamp`);
+      if (!argument || argument.startsWith('--')) throw new RevivalArgumentError(`${flag} requires an ISO timestamp`);
       timestamps.set(flag, argument);
     } else {
-      throw new Error(`Unknown option: ${flag}`);
+      throw new RevivalArgumentError(`Unknown option: ${flag}`);
     }
   }
   const since = parseTimestamp('--since', timestamps.get('--since'));
-  if (!since) throw new Error('--since is required');
+  if (!since) throw new RevivalArgumentError('--since is required');
   const until = parseTimestamp('--until', timestamps.get('--until'));
-  if (until && until.getTime() <= since.getTime()) throw new Error('--until must be after --since');
+  if (until && until.getTime() <= since.getTime()) throw new RevivalArgumentError('--until must be after --since');
   return { since, until, apply };
 }
 
@@ -162,14 +171,20 @@ async function revivalBlocker(
     .orderBy(desc(sprayWallDetections.createdAt), desc(sprayWallDetections.id))
     .limit(1);
   if (latest?.id !== expired.id) return 'superseded';
-  // Holds the climber placed by hand while waiting. A late proposal would sit
-  // on top of their work, so leave this draft alone.
-  const [liveHold] = await transaction
+  // The climber edited holds by hand while waiting: placed one on this draft,
+  // or took one off. A late proposal would sit on top of their work, so leave
+  // this draft alone.
+  const [editedHold] = await transaction
     .select({ holdId: sprayWallHolds.holdId })
     .from(sprayWallHolds)
-    .where(and(eq(sprayWallHolds.installedVersionId, version.id), isNull(sprayWallHolds.removedVersionId)))
+    .where(
+      or(
+        and(eq(sprayWallHolds.installedVersionId, version.id), isNull(sprayWallHolds.removedVersionId)),
+        eq(sprayWallHolds.removedVersionId, version.id),
+      ),
+    )
     .limit(1);
-  if (liveHold) return 'has-holds';
+  if (editedHold) return 'manual-edits';
   // The same rule `loadEditableWall` applies to the API request.
   if (!(await canEditBoard(requestedBy, board, transaction))) return 'no-edit-access';
   return null;
@@ -210,6 +225,19 @@ async function decide(
     // A dry run cannot write, whatever the code above does.
     boss ? undefined : { accessMode: 'read only' },
   );
+}
+
+/**
+ * What a failure prints: the error's class and its Postgres or driver code.
+ * Never the message: a Drizzle query error's message lists the bound
+ * parameters, which here include the requester's id and the photo key.
+ */
+export function describeFailure(error: unknown): string {
+  if (error instanceof RevivalArgumentError) return error.message;
+  const errorClass = error instanceof Error ? error.constructor.name || error.name : typeof error;
+  const code = getPostgresErrorCode(error);
+  // A code is an identifier such as `23503` or `ECONNREFUSED`; anything else is dropped.
+  return code && /^[0-9A-Z_]{1,40}$/.test(code) ? `${errorClass} code=${code}` : errorClass;
 }
 
 function shortId(id: string): string {
@@ -288,7 +316,7 @@ async function main(argv: readonly string[]): Promise<void> {
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   main(process.argv.slice(2))
     .catch((error: unknown) => {
-      logger.error(`${LOG_PREFIX} failed`, { error: error instanceof Error ? error.message : String(error) });
+      logger.error(`${LOG_PREFIX} failed: ${describeFailure(error)}`);
       process.exitCode = 1;
     })
     .finally(() => closePool());

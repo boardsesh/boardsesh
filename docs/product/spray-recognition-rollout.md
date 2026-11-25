@@ -204,35 +204,59 @@ and the climber only gets proposed holds if they find Retry. After an outage,
 imports again through the same request code the API uses, for the person who
 asked, so the usual completion notification reaches them.
 
-Restart the detector and confirm it is claiming jobs first. A revived import gets
-a fresh 24 hours and expires again if nothing claims it.
+The script exists in production only once the PR that added it (#8181) is
+merged and the backend has deployed. Restart the detector and confirm it is
+claiming jobs first. A revived import gets a fresh 24 hours and expires again if
+nothing claims it.
 
-An operator runs this, not an agent. It needs the backend's production
-`DATABASE_URL` (the writable primary) exported in the shell. The read-only
-replica cannot take the writes, and `--apply` refuses a connection that is not a
-primary.
+An operator runs this, not an agent. It runs inside the backend service, because
+the backend's `DATABASE_URL` points at a Railway-internal host that resolves
+only there. It uses that injected `DATABASE_URL`, the writable primary; never
+paste credentials into a command or log. `--apply` refuses a connection that is
+not a primary.
 
-1. Dry run. It prints one line per expired import with the decision, `revive` or
+1. Open a backend shell with explicit targets:
+
+   ```sh
+   railway ssh --project afceee45-0af1-46b3-abbe-8b9094c23bc6 \
+     --environment 8cd7204e-8ba4-4790-bb64-6a150971eacd \
+     --service 5912f97f-aa1e-4274-8fbf-eed5da0dceb9
+   ```
+
+2. The image has the source and `tsx` but no `vp`. Move to the backend package
+   and check the deployed build has the script:
+
+   ```sh
+   cd /app/packages/backend
+   test -f src/scripts/revive-expired-spray-detections.ts
+   ```
+
+3. Dry run. It prints one line per expired import with the decision, `revive` or
    `skip:<reason>`, using the first 8 characters of each id, and writes nothing:
 
    ```sh
-   vp exec tsx packages/backend/src/scripts/revive-expired-spray-detections.ts --since 2026-11-21T07:00:00Z
+   node --import tsx src/scripts/revive-expired-spray-detections.ts --since 2026-11-21T07:00:00Z
    ```
 
-2. Check the skips against the table below. `--until` (exclusive) narrows the
+   Check the skips against the table below. `--until` (exclusive) narrows the
    window; both flags need a zone (`Z` or `+10:00`).
-3. Apply. Each revived line gains `new=<id>`, the new detection:
+
+4. Apply. Each revived line gains `new=<id>`, the new detection:
 
    ```sh
-   vp exec tsx packages/backend/src/scripts/revive-expired-spray-detections.ts --since 2026-11-21T07:00:00Z --apply
+   node --import tsx src/scripts/revive-expired-spray-detections.ts --since 2026-11-21T07:00:00Z --apply
    ```
 
-4. Run the dry run again. Every line now reads `skip:superseded`. A second
-   `--apply` revives nothing, so a run that stopped on an error can be re-run as is.
+5. Run the dry run from step 3 again. Lines revived in step 4 now read
+   `skip:superseded`; lines skipped before keep their reason. A second `--apply`
+   revives nothing, so a run that stopped on an error can be re-run as is. A
+   failure prints only the error's class and Postgres code, never its message,
+   because a query error's message carries the requester's id and the photo key.
 
 Each import is checked again inside its write transaction, under the same
-requester and wall locks the API takes. The hourly limit of 10 requests does not
-apply here: these are requests the climber already made once.
+requester and wall locks the API takes. The hourly limit of 10 requests is not
+checked here, because these are requests the climber already made once. A
+revived request still counts toward that climber's own limit for the next hour.
 
 | Skip reason | Meaning |
 | --- | --- |
@@ -242,5 +266,5 @@ apply here: these are requests the climber already made once.
 | `not-draft` | The version was published or superseded. |
 | `photo-changed` | The draft has a different photo now. |
 | `superseded` | A later request exists for the same draft and photo: a retry, or this script's earlier run. |
-| `has-holds` | The draft has holds the climber placed by hand while waiting. |
+| `manual-edits` | The climber placed or took off holds by hand on the draft while waiting. |
 | `no-edit-access` | The requester can no longer edit the wall (`canEditBoard`, the API's rule). |

@@ -24,6 +24,7 @@ import { db } from '../db/client';
 import { requireJobQueue, startJobQueue, stopJobQueue } from '../services/job-queue';
 import { sprayWallMutations } from '../graphql/resolvers/board/spray-walls';
 import {
+  describeFailure,
   parseArgs,
   reviveExpiredSprayDetections,
   type RevivalDecision,
@@ -163,7 +164,7 @@ describe('reviving spray imports a detector outage expired', () => {
     expect(unchanged).toMatchObject({ status: 'failed', error: 'QUEUE_EXPIRED' });
   });
 
-  it('leaves a draft alone once the climber placed holds on it by hand', async () => {
+  it('leaves a draft alone once the climber placed a hold on it by hand', async () => {
     const expiryWindow = testWindow();
     const draft = await draftWall();
     const expired = await expireDetection(draft, expiryWindow.at(5));
@@ -182,7 +183,35 @@ describe('reviving spray imports a detector outage expired', () => {
       report: ignoreReport,
     });
 
-    expect(decisions).toMatchObject([{ expiredId: expired.id, decision: 'skip:has-holds', revivedId: null }]);
+    expect(decisions).toMatchObject([{ expiredId: expired.id, decision: 'skip:manual-edits', revivedId: null }]);
+    expect(await detectionsFor(draft)).toHaveLength(1);
+  });
+
+  it('leaves a draft alone once the climber took a hold off by hand', async () => {
+    const expiryWindow = testWindow();
+    const draft = await draftWall();
+    const expired = await expireDetection(draft, expiryWindow.at(5));
+    const [earlier] = await db
+      .insert(sprayWallVersions)
+      .values({ wallId: draft.wall.id, versionNumber: 2, status: 'superseded' })
+      .returning();
+    await db.insert(sprayWallHolds).values({
+      wallId: draft.wall.id,
+      holdId: 1,
+      cx: 100,
+      cy: 100,
+      r: 10,
+      installedVersionId: earlier.id,
+      removedVersionId: draft.version.id,
+    });
+
+    const decisions = await reviveExpiredSprayDetections({
+      ...expiryWindow,
+      boss: requireJobQueue(),
+      report: ignoreReport,
+    });
+
+    expect(decisions).toMatchObject([{ expiredId: expired.id, decision: 'skip:manual-edits', revivedId: null }]);
     expect(await detectionsFor(draft)).toHaveLength(1);
   });
 
@@ -289,6 +318,53 @@ describe('reviving spray imports a detector outage expired', () => {
     await expireDetection(draft, new Date(expiryWindow.since.getTime() - 1));
 
     expect(await reviveExpiredSprayDetections({ ...expiryWindow, boss: null, report: ignoreReport })).toEqual([]);
+  });
+});
+
+describe('revival failure output', () => {
+  it('prints a failing query as its class and code, without parameters or ids', async () => {
+    const detectionId = randomUUID();
+    const requesterId = randomUUID();
+    const photoKey = `spray-walls/${randomUUID()}/private.jpg`;
+    // No wall -1 and no such requester: a foreign-key violation whose bound
+    // parameters carry both ids and the photo key.
+    const failure: unknown = await db
+      .insert(sprayWallDetections)
+      .values({
+        id: detectionId,
+        wallId: -1,
+        versionId: -1,
+        requestedBy: requesterId,
+        photoKey,
+        photoWidth: 800,
+        photoHeight: 600,
+        jobId: randomUUID(),
+        modelVersion: SPRAY_DETECTION_MODEL_VERSION,
+        weightsSha256: SPRAY_DETECTION_WEIGHTS_SHA256,
+      })
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    // The raw error is what used to be printed.
+    expect(failure instanceof Error ? failure.message : '').toContain(requesterId);
+
+    const output = describeFailure(failure);
+
+    expect(output).toBe('DrizzleQueryError code=23503');
+    expect(output).not.toContain('params');
+    expect(output).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/);
+    expect(output).not.toContain(photoKey);
+  });
+
+  it('prints a bad command line in full', () => {
+    let failure: unknown;
+    try {
+      parseArgs(['--since', 'yesterday']);
+    } catch (error) {
+      failure = error;
+    }
+    expect(describeFailure(failure)).toBe('--since must be an ISO timestamp with a zone, such as 2026-11-21T07:00:00Z');
   });
 });
 
