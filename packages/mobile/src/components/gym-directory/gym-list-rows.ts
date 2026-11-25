@@ -1,5 +1,6 @@
 import type { Gym, UserBoard } from '@boardsesh/shared-schema';
 import type { GymBoardFilter } from '@boardsesh/gym-filters';
+import type { GroupedCellPosition } from '../gym-page/gym-page-view-model';
 
 // One flat, heterogeneous row list for the gym panel's FlashList. The old screen
 // mapped every gym AND every board inside a ScrollView, which can't recycle. Here
@@ -11,7 +12,13 @@ import type { GymBoardFilter } from '@boardsesh/gym-filters';
 export type GymListRow =
   | { kind: 'sectionHeader'; key: string; label: string }
   | { kind: 'loading'; key: string }
-  | { kind: 'empty'; key: string; label: string }
+  | {
+      kind: 'empty';
+      key: string;
+      label: string;
+      /** Pick mode: a "Try again" under the notice (a lookup that failed). */
+      retryLabel?: string;
+    }
   | {
       kind: 'gym';
       key: string;
@@ -23,7 +30,20 @@ export type GymListRow =
       /** The expanded gym's roster has not settled (loading or failed): don't claim "no boards". */
       boardsPending: boolean;
     }
-  | { kind: 'standalone'; key: string; board: UserBoard; subtitle: string; selected: boolean };
+  | { kind: 'standalone'; key: string; board: UserBoard; subtitle: string; selected: boolean }
+  // Pick mode (the add-a-board gym step, `gym-pick-rows.ts`): a gym to choose,
+  // one slice of an inset-grouped card. "Add my gym" is the panel's pinned footer.
+  | {
+      kind: 'pickGym';
+      key: string;
+      gym: Gym;
+      /** "1.2 km · Street 1", the distance or the address alone, or null with neither. */
+      subtitle: string | null;
+      /** "3 boards" or "No boards yet". */
+      boardsLabel: string;
+      position: GroupedCellPosition;
+      selected: boolean;
+    };
 
 export type GymListLabels = {
   gymsSection: string;

@@ -574,21 +574,11 @@
     },
     "findWall": {
       "screenTitle": "Busca el plafón de tu rocódromo",
-      "searchPlaceholder": "Buscar rocódromos o plafones",
       "boardType": "Tipo de plafón",
-      "useMyLocation": "Usar mi ubicación",
-      "useMyLocationHint": "Mira los plafones cerca de ti sin escribir.",
-      "locationDenied": "La ubicación está desactivada. Busca por nombre.",
-      "locationBlockedWeb": "Permite la ubicación para este sitio en tu navegador, o busca por nombre.",
       "offline": "No tienes conexión. Para encontrar el plafón de tu rocódromo hace falta señal.",
       "retry": "Inténtalo de nuevo",
       "gyms": "Rocódromos",
-      "boards": "Plafones",
       "gymsFailed": "No se pudieron buscar rocódromos",
-      "boardsFailed": "No se pudieron buscar plafones",
-      "noMatches": "Ningún rocódromo ni plafón coincide",
-      "searchPrompt": "Escribe el nombre de tu rocódromo o usa tu ubicación.",
-      "gymNotListed": "Mi rocódromo no aparece",
       "signInToAdd": "Inicia sesión para añadir un plafón",
       "pickBoardType": "¿Qué plafón es?",
       "gymFailed": "No se pudo cargar este rocódromo",
@@ -618,6 +608,14 @@
       "confirmBodyLookupFailed": "No pudimos comprobar los plafones de {{gym}}. ¿Añadir el tuyo igualmente?",
       "confirmDifferent": "Es otro muro",
       "confirmKeepLooking": "Seguir buscando"
+    },
+    "gymStep": {
+      "searchPlaceholder": "Busca una ciudad o un rocódromo",
+      "anyBoard": "Cualquier plafón",
+      "inThisArea": "Rocódromos en esta zona",
+      "noNameMatch": "Ningún rocódromo tiene ese nombre",
+      "addGym": "Añadir mi rocódromo",
+      "addGymHint": "¿No aparece? Añádelo con tu plafón"
     },
     "boardDetail": {
       "setActive": "Usar este plafón",

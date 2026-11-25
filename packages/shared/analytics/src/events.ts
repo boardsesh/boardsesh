@@ -1282,9 +1282,10 @@ export const SHARED_EVENTS = {
   // range's It's my own board, a gym page) }.
   BoardKindChosen: 'Board Kind Chosen',
   // The climber began looking for their gym's wall. Props: { method: location
-  // (a fix came back) | text (the first search typed; length only) | gym_page
-  // (opened straight on a gym's walls), boardType (the chip chosen, or null),
-  // queryLength }. Once per method per screen.
+  // (a fix came back) | text (the first search typed; length only) | place (a
+  // town picked from the search's suggestions) | gym_page (opened straight on
+  // a gym's walls), boardType (the type chosen, or null), queryLength }. Once
+  // per method per screen.
   BoardWallSearchStarted: 'Board Wall Search Started',
   // A gym's existing walls came back. Props: { boardType, exactCount,
   // nearMissCount (SETS_DIFFER + LAYOUT_OR_SIZE_DIFFERS), nearbyCount (walls on
@@ -1300,8 +1301,8 @@ export const SHARED_EVENTS = {
   BoardWallCandidatesShown: 'Board Wall Candidates Shown',
   // The climber took an existing wall instead of adding one: followed (when it
   // wasn't theirs yet) and made active. Props: { match: exact | near_miss |
-  // nearby | at_gym (no draft to compare) | other_type | search (a board found
-  // by name on the find step), position (0-based, as drawn in its shelf),
+  // nearby | at_gym (no draft to compare) | other_type, position (0-based, as
+  // drawn in its shelf),
   // alreadyFollowed, fixSetupStarted (true when the climber picked "Use it and
   // fix its setup" on the builder's near-miss "Is this your wall?" step, which
   // opens Report a problem on "Set up wrong" after the bind; whether a report
@@ -1316,7 +1317,7 @@ export const SHARED_EVENTS = {
   // gym had no walls: there was nothing to confirm.
   BoardWallNotListedConfirmed: 'Board Wall Not Listed Confirmed',
   // A lookup on the gym-first screens failed (shown as Try again, never as "no
-  // boards"). Props: { stage: gyms | gym_boards | nearby_boards, error_reason:
+  // boards"). Props: { stage: gyms | gym_boards, error_reason:
   // offline | rate_limited | exception }.
   BoardWallLookupFailed: 'Board Wall Lookup Failed',
   // A gym's page opened, once per gym per visit, after the gym loaded and the

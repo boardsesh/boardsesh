@@ -1,18 +1,20 @@
 // The gym-first create flow's find step (#8151): without `gymUuid`, find the
-// gym ("Find your gym's board"); with it, that gym's walls. A gym page's "Set
-// up a board" opens straight on its walls (`entry=gym_page`). Only reachable
-// with the `create-board-gym-first` flag on.
+// gym ("Find your gym's board", the map and search of `GymStep`); with it,
+// that gym's walls. A gym page's "Set up a board" opens straight on its walls
+// (`entry=gym_page`). Only reachable with the `create-board-gym-first` flag on.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { toBoardName } from '@boardsesh/board-config';
-import { FindWallGymSearch } from '../../src/components/board-discovery/FindWallGymSearch';
+import type { BoardName, Gym } from '@boardsesh/shared-schema';
+import { GymStep } from '../../src/components/board-discovery/gym-step/GymStep';
 import { GymWallList } from '../../src/components/board-discovery/GymWallList';
 import { isPickableBoardType } from '../../src/lib/boards/find-wall-state';
 import { boardFlowTicket, claimBoardFlowAbandonment } from '../../src/lib/boards/board-create-flow';
 import { track } from '../../src/lib/analytics';
 import { useCreateBoardGymFirstEnabled } from '../../src/providers/feature-flags-provider';
+import { useAuth } from '../../src/providers/auth-provider';
 
 export default function FindWall() {
   const params = useLocalSearchParams<{
@@ -60,6 +62,37 @@ export default function FindWall() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A gym picked on the map: its walls, on this same route. The type chosen
+  // there carries on, so the wall list opens on it.
+  const { isAuthenticated } = useAuth();
+  const routeParams = useCallback(
+    (boardType: BoardName | null, extra: Record<string, string>) => {
+      const nextParams: Record<string, string> = { ...extra };
+      if (boardType) nextParams.boardType = boardType;
+      if (params.returnTo !== undefined) nextParams.returnTo = params.returnTo;
+      if (params.source !== undefined) nextParams.source = params.source;
+      return nextParams;
+    },
+    [params.returnTo, params.source],
+  );
+  const onPickGym = useCallback(
+    (gym: Gym, boardType: BoardName | null) =>
+      router.push({ pathname: '/boards/find-wall', params: routeParams(boardType, { gymUuid: gym.uuid }) }),
+    [router, routeParams],
+  );
+  // "Add my gym": the builder, opened on its location so the climber can name
+  // the gym and place it. Adding needs an account.
+  const onAddGym = useCallback(
+    (boardType: BoardName | null) => {
+      if (!isAuthenticated) {
+        router.push('/auth/login');
+        return;
+      }
+      router.push({ pathname: '/boards/create', params: routeParams(boardType, { kind: 'gym', focusLocation: '1' }) });
+    },
+    [isAuthenticated, router, routeParams],
+  );
+
   if (redirectToBuilder) return null;
   if (gymUuid) {
     return (
@@ -72,5 +105,5 @@ export default function FindWall() {
       />
     );
   }
-  return <FindWallGymSearch initialBoardType={initialBoardType} returnTo={params.returnTo} source={params.source} />;
+  return <GymStep initialBoardType={initialBoardType} onPickGym={onPickGym} onAddGym={onAddGym} />;
 }

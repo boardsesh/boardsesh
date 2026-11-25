@@ -574,21 +574,11 @@
     },
     "findWall": {
       "screenTitle": "Trova il pannello della tua palestra",
-      "searchPlaceholder": "Cerca palestre o pannelli",
       "boardType": "Tipo di pannello",
-      "useMyLocation": "Usa la mia posizione",
-      "useMyLocationHint": "Vedi i pannelli vicino a te senza scrivere.",
-      "locationDenied": "La posizione è disattivata. Cerca per nome.",
-      "locationBlockedWeb": "Consenti la posizione per questo sito nel browser, oppure cerca per nome.",
       "offline": "Sei offline. Per trovare il pannello della tua palestra serve segnale.",
       "retry": "Riprova",
       "gyms": "Palestre",
-      "boards": "Pannelli",
       "gymsFailed": "Impossibile cercare le palestre",
-      "boardsFailed": "Impossibile cercare i pannelli",
-      "noMatches": "Nessuna palestra o pannello corrisponde",
-      "searchPrompt": "Scrivi il nome della tua palestra o usa la tua posizione.",
-      "gymNotListed": "La mia palestra non è in elenco",
       "signInToAdd": "Accedi per aggiungere un pannello",
       "pickBoardType": "Che pannello è?",
       "gymFailed": "Impossibile caricare questa palestra",
@@ -618,6 +608,14 @@
       "confirmBodyLookupFailed": "Impossibile controllare i pannelli di {{gym}}. Aggiungere comunque il tuo?",
       "confirmDifferent": "È una parete diversa",
       "confirmKeepLooking": "Continua a cercare"
+    },
+    "gymStep": {
+      "searchPlaceholder": "Cerca una città o una palestra",
+      "anyBoard": "Qualsiasi pannello",
+      "inThisArea": "Palestre in questa zona",
+      "noNameMatch": "Nessuna palestra con questo nome",
+      "addGym": "Aggiungi la mia palestra",
+      "addGymHint": "Non c’è? Aggiungila con il tuo pannello"
     },
     "boardDetail": {
       "setActive": "Imposta come pannello attivo",

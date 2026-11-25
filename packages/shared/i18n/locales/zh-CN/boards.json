@@ -574,21 +574,11 @@
     },
     "findWall": {
       "screenTitle": "找到你岩馆的训练板",
-      "searchPlaceholder": "搜索岩馆或训练板",
       "boardType": "训练板类型",
-      "useMyLocation": "使用我的位置",
-      "useMyLocationHint": "无需输入即可查看附近的训练板。",
-      "locationDenied": "定位已关闭。请改用名称搜索。",
-      "locationBlockedWeb": "请在浏览器中允许此网站使用定位，或按名称搜索。",
       "offline": "你已离线。查找岩馆的训练板需要网络。",
       "retry": "重试",
       "gyms": "岩馆",
-      "boards": "训练板",
       "gymsFailed": "无法搜索岩馆",
-      "boardsFailed": "无法搜索训练板",
-      "noMatches": "没有匹配的岩馆或训练板",
-      "searchPrompt": "输入岩馆名称，或使用你的位置。",
-      "gymNotListed": "列表里没有我的岩馆",
       "signInToAdd": "登录后添加训练板",
       "pickBoardType": "是哪种训练板？",
       "gymFailed": "无法加载这个岩馆",
@@ -618,6 +608,14 @@
       "confirmBodyLookupFailed": "我们无法检查 {{gym}} 的训练板。仍然添加你的吗？",
       "confirmDifferent": "这是另一面墙",
       "confirmKeepLooking": "继续查找"
+    },
+    "gymStep": {
+      "searchPlaceholder": "搜索城市或岩馆",
+      "anyBoard": "任意训练板",
+      "inThisArea": "这一带的岩馆",
+      "noNameMatch": "没有叫这个名字的岩馆",
+      "addGym": "添加我的岩馆",
+      "addGymHint": "列表里没有？连同你的训练板一起添加"
     },
     "boardDetail": {
       "setActive": "设为当前训练板",

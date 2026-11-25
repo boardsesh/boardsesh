@@ -118,14 +118,20 @@ There is no unique constraint. Two walls with one setup at one gym are real (a g
 
 ## The app
 
-The mobile app (native and Expo web) uses both halves. Screens: `app/boards/where.tsx`, `app/boards/find-wall.tsx` (`FindWallGymSearch`, `GymWallList`), and the builder, `app/boards/create.tsx`.
+The mobile app (native and Expo web) uses both halves. Screens: `app/boards/where.tsx`, `app/boards/find-wall.tsx` (`GymStep`, `GymWallList`), and the builder, `app/boards/create.tsx`.
 
 **The builder always opts in.** Every create sends `existingWallCheck`, whatever the flag says. The first Save is always `REJECT_IF_FOUND` against the climber's real setup; nothing earlier in the flow acknowledges a wall, because the gym's wall list has no setup to compare against and `CONFIRMED_SEPARATE` never blocks on `SETS_DIFFER`. On `BOARD_EXISTING_WALLS` the builder looks every named wall up by uuid (the gym may be one the server auto-attached, which the app never learned) and shows `ExistingWallsSheet`, keeping the form. "Use this board" follows and binds the wall. "Keep setting up mine" resends as `CONFIRMED_SEPARATE` with the walls the climber was actually shown, newest first so the 40-wall cap drops older ones. A wall that couldn't be loaded is never acknowledged: the sheet says some couldn't load, offers Try again, and the server names it again on the next Save. A refusal naming no walls is shown as a plain error.
 
 **The gym-first screens** sit behind the PostHog flag `create-board-gym-first` (fail closed):
 
 1. The + menu splits "Set up a board" into "My own board" (the builder, preset) and "A board at my gym". Entries that don't say (the picker's empty state, Manage boards' Create board, a bare `/boards/create`) ask "Where's this board?" first.
-2. "Find your gym's board" searches gyms (`searchGyms`) and boards by name. It reads a location permission already given on open and asks only from "Use my location".
+2. "Find your gym's board" is a map with a search bar, like the website's gym directory (`GymStep`, built from the /gyms parts: `GymMap`, `GymListPanel` in pick mode, `GymSearchField`, `GymLocationPrompt`). The search field sits under the bar, the map takes the top 35% and the gym list is a panel under it.
+   - Location is never asked on open. The step reads a permission already given (`requestIfAllowed`); otherwise the map shows the whole world and the list shows the location prompt, whose button asks (or opens Settings once refused for good).
+   - Typing filters gyms by name (`searchGyms`, 2+ characters, once the text is still) and suggests up to five towns (`searchPlaces`). Focusing the field raises the list over the map. Picking a town flies the map there and lists the gyms within 50 km, with no location needed; editing it clears it. Panning the map from a real centre re-runs the search around the new centre, and so does zooming the world view in to a region.
+   - Each gym row shows its name, the distance from the climber (only when their location is known) and the address (the line is left out with neither), an "N boards" pill, and "Run by the gym" for gyms their staff run. Listings that share a name are not folded: the address tells them apart.
+   - A failed lookup says so with Try again, never "no gyms".
+   - One "Any board" capsule menu narrows the gyms to a board type and carries that type to the wall list.
+   - A pin tap only selects its row. A row tap opens that gym's walls (step 3). "Add my gym" is pinned at the foot of the visible list and opens the builder on its location (sign in first when signed out).
 3. The gym's wall list calls `existingWallCandidates` with no draft, so its walls go on an "At {gym}" shelf, with "Listed nearby" for the 150 m listings and the gym's other board types collapsed under "Other boards here". A tap is "Use this board": follow unless already followed or owned, then bind.
 4. "My board isn't listed" opens a confirm when walls are listed, as a speed bump; it acknowledges nothing. With no walls it goes straight on; when the lookup failed it reads "Add it anyway". The builder's Save is then checked as above. A gym with no coordinates (and not the viewer's to edit) would fail the 150 m link check, so it offers Report a problem instead. Save waits until the prefilled gym has loaded, so a board never saves without its gym.
 5. A gym page's Set up a board opens straight on that gym's walls.

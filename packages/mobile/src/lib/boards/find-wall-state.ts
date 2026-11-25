@@ -6,36 +6,6 @@
 
 import type { BoardName } from '@boardsesh/shared-schema';
 import { SUPPORTED_BOARDS } from '@boardsesh/board-config';
-import type { LocationPermission, LocationStatus } from '../use-device-location';
-
-/**
- * The "Use my location" row on the gym search.
- *
- * - `not_asked`: the button and its reason line. Never asked on open: the
- *   screen only reads a permission the climber already gave.
- * - `loading`: asking, or waiting for a fix.
- * - `granted`: nothing to say; the gyms are sorted around them.
- * - `denied`: off on the phone. Search by name, Open Settings where it can.
- * - `blocked_web`: a browser refusal is final (`locationPermissionFrom`), and
- *   only the site's settings can undo it, which an app can't open.
- */
-export type LocationRowState = 'not_asked' | 'loading' | 'granted' | 'denied' | 'blocked_web';
-
-export function locationRowState({
-  status,
-  permission,
-  platform,
-}: {
-  status: LocationStatus;
-  permission: LocationPermission;
-  platform: string;
-}): LocationRowState {
-  if (status === 'granted') return 'granted';
-  if (status === 'loading') return 'loading';
-  const refused = status === 'denied' || status === 'unavailable' || permission === 'blocked';
-  if (!refused) return 'not_asked';
-  return platform === 'web' && permission === 'blocked' ? 'blocked_web' : 'denied';
-}
 
 /**
  * One lookup on these screens (the gyms, a gym's walls, the board search).

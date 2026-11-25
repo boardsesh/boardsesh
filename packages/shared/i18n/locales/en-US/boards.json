@@ -574,21 +574,11 @@
     },
     "findWall": {
       "screenTitle": "Find your gym's board",
-      "searchPlaceholder": "Search gyms or boards",
       "boardType": "Board type",
-      "useMyLocation": "Use my location",
-      "useMyLocationHint": "See boards near you without typing.",
-      "locationDenied": "Location is off. Search by name instead.",
-      "locationBlockedWeb": "Allow location for this site in your browser, or search by name.",
       "offline": "You're offline. Finding your gym's board needs signal.",
       "retry": "Try again",
       "gyms": "Gyms",
-      "boards": "Boards",
       "gymsFailed": "Couldn't search gyms",
-      "boardsFailed": "Couldn't search boards",
-      "noMatches": "No gyms or boards match that",
-      "searchPrompt": "Type your gym's name, or use your location.",
-      "gymNotListed": "My gym isn't listed",
       "signInToAdd": "Sign in to add a board",
       "pickBoardType": "Which board is it?",
       "gymFailed": "Couldn't load this gym",
@@ -618,6 +608,14 @@
       "confirmBodyLookupFailed": "We couldn't check {{gym}}'s boards. Add yours anyway?",
       "confirmDifferent": "It's a different wall",
       "confirmKeepLooking": "Keep looking"
+    },
+    "gymStep": {
+      "searchPlaceholder": "Search a town or gym",
+      "anyBoard": "Any board",
+      "inThisArea": "Gyms in this area",
+      "noNameMatch": "No gyms match that name",
+      "addGym": "Add my gym",
+      "addGymHint": "Not listed? Add it with your board"
     },
     "boardDetail": {
       "setActive": "Set as active board",

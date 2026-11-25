@@ -1,6 +1,6 @@
 import { PressableSurface } from '../../src/components/PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,6 +28,8 @@ import { GymMap, type GymMapHandle, type GymMapMarker } from '../../src/componen
 import { GymListPanel, type GymListPanelHandle } from '../../src/components/gym-directory/GymListPanel';
 import { GymLocationPrompt } from '../../src/components/gym-directory/GymLocationPrompt';
 import { GymSearchField } from '../../src/components/gym-directory/GymSearchField';
+import { zoomedInToSearch } from '../../src/components/gym-directory/map-search-zoom';
+import { panelBoxHeight, useKeyboardOverlap } from '../../src/components/gym-directory/panel-keyboard';
 import { ClaimGymSheet } from '../../src/components/gym-directory/ClaimGymSheet';
 import { gymPageHref } from '../../src/components/gym-page/gym-page-route';
 import { WallFinderFilterChips } from '../../src/components/gym-directory/WallFinderFilterChips';
@@ -74,6 +76,11 @@ export default function GymDiscovery() {
   const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
   const insets = useSafeAreaInsets();
+  // The panel spans the window; while the keyboard is up it ends at the
+  // keyboard's top, so its last rows are never under it (nothing resizes this
+  // screen for the keyboard).
+  const { height: windowHeight } = useWindowDimensions();
+  const keyboardOverlap = useKeyboardOverlap();
   // A climber who says no to the prompt may ask again from the card: Android's
   // second ask, or Settings once only Settings can turn it on. Coming back
   // from Settings (the card's, or the quiet Use my location's) reads the
@@ -154,24 +161,32 @@ export default function GymDiscovery() {
   const programmaticTargetRef = useRef<Coords | null>(null);
   const searchGenerationRef = useRef(0);
 
+  // The zoom of the last camera move: zoomed out past a region (the world view
+  // with location off, or back out to it), a pan is no place to search around.
+  const cameraZoomRef = useRef<number | undefined>(undefined);
   const resolveCameraCenter = useCallback((next: Coords, current: Coords | null) => {
     const target = programmaticTargetRef.current;
     if (target && !movedEnough(next, target)) {
       programmaticTargetRef.current = null;
       return current;
     }
+    if (!zoomedInToSearch(cameraZoomRef.current, current !== null)) return current;
     if (current && !movedEnough(next, current)) return current;
     programmaticTargetRef.current = null;
     setViewCenter(next);
     setSearchLabel(null);
     return next;
   }, []);
-  const {
-    search,
-    isDebouncing,
-    cameraMoved: handleRegionChange,
-    resetSearch,
-  } = useDiscoverySearch(center, appliedFilter, { resolveCameraCenter });
+  const { search, isDebouncing, cameraMoved, resetSearch } = useDiscoverySearch(center, appliedFilter, {
+    resolveCameraCenter,
+  });
+  const handleRegionChange = useCallback(
+    (coords: Coords, zoom?: number) => {
+      cameraZoomRef.current = zoom;
+      cameraMoved(coords);
+    },
+    [cameraMoved],
+  );
 
   // On open, use location only if the climber already allowed it: the map and
   // nearby queries default to it. Never the system prompt here; that comes
@@ -330,6 +345,26 @@ export default function GymDiscovery() {
     mapRef.current?.setCenter(coords);
   }, []);
 
+  // Drop a chosen city: back to the climber's fix, or out to the world when
+  // there is none. The list and the map move together.
+  const leaveSelectedPlace = useCallback(
+    (filter: WallFinderFilter) => {
+      setSearchLabel(null);
+      setViewCenter(null);
+      setExpandedGymUuid(null);
+      setSelectedId(null);
+      const deviceCoords = locationCoordsRef.current;
+      resetSearch({ center: deviceCoords ?? null, filter });
+      if (deviceCoords) {
+        moveCameraTo(deviceCoords);
+      } else {
+        programmaticTargetRef.current = null;
+        mapRef.current?.showWorld();
+      }
+    },
+    [moveCameraTo, resetSearch],
+  );
+
   const onSelectPlace = useCallback(
     (place: PlaceSuggestion) => {
       searchGenerationRef.current += 1;
@@ -353,13 +388,10 @@ export default function GymDiscovery() {
       searchGenerationRef.current += 1;
       setInputText(text);
       // Editing a selected city must not leave its invisible geographic filter
-      // attached to a later gym-name search.
-      if (Platform.OS === 'web' && searchLabel !== null) {
-        setSearchLabel(null);
-        setViewCenter(null);
-      }
+      // attached to a later gym-name search (native gets town suggestions too).
+      if (searchLabel !== null) leaveSelectedPlace(appliedFilterRef.current);
     },
-    [searchLabel],
+    [searchLabel, leaveSelectedPlace],
   );
 
   const activate = useCallback(
@@ -477,7 +509,7 @@ export default function GymDiscovery() {
       });
       return;
     }
-    if (Platform.OS === 'web' && searchLabel !== null) {
+    if (searchLabel !== null) {
       // The chosen city is already applied. Submitting its display label must
       // not reinterpret it as a gym name.
       return;
@@ -505,14 +537,14 @@ export default function GymDiscovery() {
     searchGenerationRef.current += 1;
     setInputText('');
     setAppliedFilter(DEFAULT_WALL_FINDER_FILTER);
-    setSearchLabel(null);
-    setViewCenter(null);
-    setExpandedGymUuid(null);
-    setSelectedId(null);
-    const deviceCoords = locationCoordsRef.current;
-    resetSearch({ center: deviceCoords ?? null, filter: DEFAULT_WALL_FINDER_FILTER });
-    if (deviceCoords) moveCameraTo(deviceCoords);
-  }, [moveCameraTo, resetSearch]);
+    leaveSelectedPlace(DEFAULT_WALL_FINDER_FILTER);
+  }, [leaveSelectedPlace]);
+
+  // Typing raises the list over the map, so the keyboard doesn't cover the
+  // town suggestions or the results.
+  const onSearchFocusChange = useCallback((focused: boolean) => {
+    if (focused) panelRef.current?.snapTo('high');
+  }, []);
 
   // Chip toggles update immediately; the complete search input is debounced and
   // are orthogonal to a place search (a place relocates, it isn't a filter term).
@@ -596,6 +628,7 @@ export default function GymDiscovery() {
       onSubmit={() => void onSubmitSearch()}
       onSelectPlace={onSelectPlace}
       onClear={clearSearch}
+      onFocusChange={onSearchFocusChange}
     />
   );
 
@@ -639,6 +672,25 @@ export default function GymDiscovery() {
       </View>
     ) : null;
 
+  // The map mounts once there is somewhere to look: a fix, a city, or location
+  // settled as off (then it opens on the whole world). Once up it stays up, so
+  // dropping a city flies the camera instead of tearing the map down.
+  const locationOff = location.status === 'denied' || location.status === 'unavailable';
+  const [mapMounted, setMapMounted] = useState(false);
+  const showMap = mapMounted || center !== null || locationOff;
+  // A map that opened without a fix flies to the climber once one arrives.
+  const mapOpenedWithoutFixRef = useRef(false);
+  useEffect(() => {
+    if (!showMap || mapMounted) return;
+    mapOpenedWithoutFixRef.current = center === null;
+    setMapMounted(true);
+  }, [showMap, mapMounted, center]);
+  useEffect(() => {
+    if (!location.coords || !mapOpenedWithoutFixRef.current || viewCenterRef.current !== null) return;
+    mapOpenedWithoutFixRef.current = false;
+    moveCameraTo(location.coords);
+  }, [location.coords, moveCameraTo]);
+
   // No place to show yet: prompt for location inside the panel (the header search
   // still works for browsing a typed place without granting it).
   const locationPrompt =
@@ -655,7 +707,7 @@ export default function GymDiscovery() {
   return (
     <View style={[styles.flex, { backgroundColor: systemColors.background }]}>
       {screen}
-      {center ? (
+      {showMap ? (
         <GymMap
           key={mapAttempt}
           ref={mapRef}
@@ -675,6 +727,8 @@ export default function GymDiscovery() {
         ref={panelRef}
         data={rows}
         mapAvailable={mapAvailable && (Platform.OS !== 'web' || center !== null)}
+        availableHeight={panelBoxHeight(windowHeight, keyboardOverlap)}
+        keyboardOpen={keyboardOverlap > 0}
         onPressGym={onPressGym}
         onActivateBoard={activate}
         onEditGym={onEditGym}

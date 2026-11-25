@@ -574,21 +574,11 @@
     },
     "findWall": {
       "screenTitle": "Trouve la board de ta salle",
-      "searchPlaceholder": "Rechercher une salle ou une board",
       "boardType": "Type de board",
-      "useMyLocation": "Utiliser ma position",
-      "useMyLocationHint": "Vois les boards près de toi sans rien taper.",
-      "locationDenied": "La localisation est désactivée. Cherche par nom.",
-      "locationBlockedWeb": "Autorise la localisation pour ce site dans ton navigateur, ou cherche par nom.",
       "offline": "Tu es hors ligne. Il faut du réseau pour trouver la board de ta salle.",
       "retry": "Réessayer",
       "gyms": "Salles",
-      "boards": "Boards",
       "gymsFailed": "Impossible de chercher les salles",
-      "boardsFailed": "Impossible de chercher les boards",
-      "noMatches": "Aucune salle ni board ne correspond",
-      "searchPrompt": "Tape le nom de ta salle, ou utilise ta position.",
-      "gymNotListed": "Ma salle n'est pas listée",
       "signInToAdd": "Connecte-toi pour ajouter une board",
       "pickBoardType": "Quelle board est-ce ?",
       "gymFailed": "Impossible de charger cette salle",
@@ -618,6 +608,14 @@
       "confirmBodyLookupFailed": "Nous n'avons pas pu vérifier les boards de {{gym}}. Ajouter la tienne quand même ?",
       "confirmDifferent": "C'est un autre mur",
       "confirmKeepLooking": "Continuer à chercher"
+    },
+    "gymStep": {
+      "searchPlaceholder": "Rechercher une ville ou une salle",
+      "anyBoard": "Toutes les boards",
+      "inThisArea": "Salles dans cette zone",
+      "noNameMatch": "Aucune salle ne porte ce nom",
+      "addGym": "Ajouter ma salle",
+      "addGymHint": "Pas dans la liste ? Ajoute-la avec ta board"
     },
     "boardDetail": {
       "setActive": "Utiliser cette board",

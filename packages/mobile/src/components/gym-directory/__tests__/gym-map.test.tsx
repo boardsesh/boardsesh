@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 import { act, cleanup, render } from '@testing-library/react';
-import { createElement, forwardRef } from 'react';
+import { createElement, createRef, forwardRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+type CameraPosition = { coordinates: { latitude: number; longitude: number }; zoom?: number };
+
 type MapProps = {
+  cameraPosition?: CameraPosition;
   onMapLoaded?: () => void;
   onMarkerClick?: (event: { id: string }) => void;
-  onCameraMove?: (event: { coordinates: { latitude: number; longitude: number } }) => void;
+  onCameraMove?: (event: { coordinates: { latitude: number; longitude: number }; zoom?: number }) => void;
 };
 
 const nativeState = vi.hoisted(() => ({
@@ -14,6 +17,7 @@ const nativeState = vi.hoisted(() => ({
   available: true,
   throwOnRender: false,
   props: null as MapProps | null,
+  setCameraPosition: vi.fn<(position: CameraPosition) => void>(),
 }));
 
 vi.mock('react-native', () => ({
@@ -26,9 +30,10 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('../native-maps', () => {
-  const MapView = forwardRef<unknown, MapProps>((props, _ref) => {
+  const MapView = forwardRef<unknown, MapProps>((props, ref) => {
     if (nativeState.throwOnRender) throw new Error('Native view missing');
     nativeState.props = props;
+    if (typeof ref === 'function') ref({ setCameraPosition: nativeState.setCameraPosition });
     return createElement('div', { 'data-testid': 'native-map' });
   });
   return {
@@ -38,7 +43,7 @@ vi.mock('../native-maps', () => {
   };
 });
 
-import { GymMap } from '../GymMap';
+import { DEFAULT_ZOOM, GymMap, WORLD_VIEW, type GymMapHandle } from '../GymMap';
 
 const center = { latitude: 40.76, longitude: -111.89 };
 
@@ -48,6 +53,7 @@ beforeEach(() => {
   nativeState.available = true;
   nativeState.throwOnRender = false;
   nativeState.props = null;
+  nativeState.setCameraPosition.mockReset();
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
@@ -119,7 +125,7 @@ describe('gym map availability', () => {
       nativeState.props?.onCameraMove?.({ coordinates: center });
     });
     expect(onMarkerPress).toHaveBeenCalledWith('gym-1');
-    expect(onRegionChange).toHaveBeenCalledWith(center);
+    expect(onRegionChange).toHaveBeenCalledWith(center, undefined);
   });
 
   it('keeps the original deadline across parent renders and uses the latest callback', () => {
@@ -177,5 +183,64 @@ describe('gym map availability', () => {
     expect(onUnavailable).toHaveBeenCalledOnce();
     expect(queryByTestId('native-map')).toBeNull();
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('gym map camera', () => {
+  it('opens on the whole world when there is nowhere to centre yet', () => {
+    render(<GymMap center={null} markers={[]} />);
+    expect(nativeState.props?.cameraPosition).toEqual(WORLD_VIEW);
+  });
+
+  it('opens on a centre at the zoom it was given', () => {
+    render(<GymMap center={center} zoom={12} markers={[]} />);
+    expect(nativeState.props?.cameraPosition).toEqual({ coordinates: center, zoom: 12 });
+  });
+
+  it('keeps the opening camera when the centre arrives later, so the screen flies there itself', () => {
+    const { rerender } = render(<GymMap center={null} markers={[]} />);
+    rerender(<GymMap center={center} markers={[]} />);
+    expect(nativeState.props?.cameraPosition).toEqual(WORLD_VIEW);
+  });
+
+  it('flies to a searched place and back out to the world through the ref', () => {
+    const mapRef = createRef<GymMapHandle>();
+    render(<GymMap ref={mapRef} center={null} markers={[]} />);
+    const place = { latitude: 52.37, longitude: 4.89 };
+
+    act(() => mapRef.current?.setCenter(place));
+    expect(nativeState.setCameraPosition).toHaveBeenLastCalledWith({ coordinates: place, zoom: DEFAULT_ZOOM });
+    act(() => mapRef.current?.setCenter(place, 13));
+    expect(nativeState.setCameraPosition).toHaveBeenLastCalledWith({ coordinates: place, zoom: 13 });
+    act(() => mapRef.current?.showWorld());
+    expect(nativeState.setCameraPosition).toHaveBeenLastCalledWith(WORLD_VIEW);
+  });
+});
+
+describe('gym map camera before Google Maps loads', () => {
+  it('replays the last camera move once the map has loaded', () => {
+    const mapRef = createRef<GymMapHandle>();
+    render(<GymMap ref={mapRef} center={null} markers={[]} />);
+    const place = { latitude: 52.37, longitude: 4.89 };
+    act(() => mapRef.current?.setCenter({ latitude: 1, longitude: 1 }));
+    act(() => mapRef.current?.setCenter(place, 12));
+    nativeState.setCameraPosition.mockClear();
+
+    act(() => nativeState.props?.onMapLoaded?.());
+    expect(nativeState.setCameraPosition).toHaveBeenCalledOnce();
+    expect(nativeState.setCameraPosition).toHaveBeenCalledWith({ coordinates: place, zoom: 12 });
+  });
+
+  it('moves nothing on load when the screen never asked', () => {
+    render(<GymMap center={center} markers={[]} />);
+    act(() => nativeState.props?.onMapLoaded?.());
+    expect(nativeState.setCameraPosition).not.toHaveBeenCalled();
+  });
+
+  it('reports the zoom with a pan', () => {
+    const onRegionChange = vi.fn();
+    render(<GymMap center={center} markers={[]} onRegionChange={onRegionChange} />);
+    act(() => nativeState.props?.onCameraMove?.({ coordinates: center, zoom: 11 }));
+    expect(onRegionChange).toHaveBeenCalledWith(center, 11);
   });
 });

@@ -1,34 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  isPickableBoardType,
-  likelyBoardType,
-  locationRowState,
-  lookupState,
-  notListedRowState,
-} from '../find-wall-state';
-
-describe('locationRowState', () => {
-  it.each([
-    // Never asked: the button and its reason, never a prompt on open.
-    { status: 'idle', permission: 'unknown', platform: 'ios', state: 'not_asked' },
-    { status: 'idle', permission: 'ask', platform: 'android', state: 'not_asked' },
-    { status: 'loading', permission: 'ask', platform: 'ios', state: 'loading' },
-    { status: 'granted', permission: 'granted', platform: 'ios', state: 'granted' },
-    // Refused, or Location Services off for the whole phone.
-    { status: 'denied', permission: 'blocked', platform: 'ios', state: 'denied' },
-    { status: 'denied', permission: 'ask', platform: 'android', state: 'denied' },
-    { status: 'unavailable', permission: 'granted', platform: 'ios', state: 'denied' },
-    // Read as blocked on open, before anything was asked.
-    { status: 'idle', permission: 'blocked', platform: 'ios', state: 'denied' },
-    // A browser refusal is final: only the site's settings undo it.
-    { status: 'denied', permission: 'blocked', platform: 'web', state: 'blocked_web' },
-    { status: 'idle', permission: 'blocked', platform: 'web', state: 'blocked_web' },
-    // A browser fix that failed with permission still allowed is not a block.
-    { status: 'unavailable', permission: 'granted', platform: 'web', state: 'denied' },
-  ] as const)('$status / $permission on $platform reads $state', ({ status, permission, platform, state }) => {
-    expect(locationRowState({ status, permission, platform })).toBe(state);
-  });
-});
+import { isPickableBoardType, likelyBoardType, lookupState, notListedRowState } from '../find-wall-state';
 
 describe('lookupState', () => {
   const base = { enabled: true, offline: false, isLoading: false, isError: false, count: null };
