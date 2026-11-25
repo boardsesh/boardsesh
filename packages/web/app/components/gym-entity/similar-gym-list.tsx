@@ -15,7 +15,7 @@ import VerifiedOutlined from '@mui/icons-material/VerifiedOutlined';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import type { SimilarGym } from '@boardsesh/shared-schema';
-import { gymClaimCtaClicked } from '@boardsesh/analytics';
+import { gymClaimCtaClicked, type GymClaimPlacement } from '@boardsesh/analytics';
 import { trackGymFunnelEvent, viewerStateFrom } from '@/app/lib/gym-funnel-analytics';
 import { themeTokens } from '@/app/theme/theme-config';
 import ClaimGymDialog from './claim-gym-dialog';
@@ -30,7 +30,14 @@ function capitalize(value: string): string {
  * Shared by the as-you-type suggestions and createGym's GYM_SIMILAR_EXISTS
  * refusal, so both name a gym the same way.
  */
-export default function SimilarGymList({ gyms }: { gyms: readonly SimilarGym[] }) {
+export default function SimilarGymList({
+  gyms,
+  claimPlacement,
+}: {
+  gyms: readonly SimilarGym[];
+  /** Where a Claim click is counted from: the live suggestions or the refusal dialog. */
+  claimPlacement: Extract<GymClaimPlacement, 'similar-gyms' | 'similar-gyms-refusal'>;
+}) {
   const { t } = useTranslation('boards');
   // `isAuthenticated` rather than useSession().status: both lists only exist
   // once a signed-in request returned them, so the session has settled.
@@ -115,7 +122,7 @@ export default function SimilarGymList({ gyms }: { gyms: readonly SimilarGym[] }
                       onClick={() => {
                         trackGymFunnelEvent(
                           gymClaimCtaClicked({
-                            placement: 'similar-gyms',
+                            placement: claimPlacement,
                             viewerState: viewerStateFrom(isAuthenticated),
                             gymUuid: gym.uuid,
                           }),

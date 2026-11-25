@@ -15,6 +15,9 @@ import GymForm, { type GymFormFieldValues } from './gym-form';
 import SimilarGymSuggestions from './similar-gym-suggestions';
 import SimilarGymRefusalDialog from './similar-gym-refusal-dialog';
 
+/** Mirrors the server's cap on `duplicateCheck.acknowledgedGymUuids`. */
+const MAX_ACKNOWLEDGED_GYM_UUIDS = 50;
+
 type CreateGymFormProps = {
   boardUuid?: string;
   onSuccess?: (gym: Gym) => void | Promise<void>;
@@ -108,9 +111,11 @@ export default function CreateGymForm({ boardUuid, onSuccess, onCancel, submitLa
   const handleConfirmSeparate = useCallback(async () => {
     const pendingInput = pendingInputRef.current;
     if (!pendingInput || !refusedGyms) return;
+    // The server takes at most 50; keep the most recent ones, which are the
+    // nearest the next refusal could name again.
     acknowledgedGymUuidsRef.current = [
       ...new Set([...acknowledgedGymUuidsRef.current, ...refusedGyms.map((gym) => gym.uuid)]),
-    ];
+    ].slice(-MAX_ACKNOWLEDGED_GYM_UUIDS);
     setIsConfirmingSeparate(true);
     try {
       await submitCreate(pendingInput, acknowledgedGymUuidsRef.current);

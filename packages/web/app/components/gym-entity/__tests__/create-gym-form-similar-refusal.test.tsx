@@ -25,8 +25,9 @@ vi.mock('@/app/components/providers/snackbar-provider', () => ({
   useSnackbar: () => ({ showMessage }),
 }));
 
+const trackGymFunnelEvent = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/gym-funnel-analytics', () => ({
-  trackGymFunnelEvent: vi.fn(),
+  trackGymFunnelEvent,
   viewerStateFrom: () => 'signed-in',
 }));
 
@@ -93,6 +94,7 @@ describe('CreateGymForm, similar-gym refusal', () => {
   beforeEach(() => {
     mockRequest.mockReset();
     showMessage.mockReset();
+    trackGymFunnelEvent.mockReset();
   });
 
   it('shows the gyms the server named, and resends as a separate gym when the climber says no', async () => {
@@ -157,6 +159,41 @@ describe('CreateGymForm, similar-gym refusal', () => {
 
     await waitFor(() => expect(sentInputs()).toHaveLength(2));
     expect(sentInputs()[1].duplicateCheck).toBeUndefined();
+  });
+
+  it('keeps only the 50 most recent gyms it was shown when it confirms', async () => {
+    const firstRound = Array.from({ length: 48 }, (_, index) => similarGym(`old-${index}`, `Old ${index}`));
+    const secondRound = Array.from({ length: 5 }, (_, index) => similarGym(`new-${index}`, `New ${index}`));
+    mockRequest
+      .mockRejectedValueOnce(similarGymsRefusal(firstRound))
+      .mockRejectedValueOnce(similarGymsRefusal(secondRound))
+      .mockResolvedValueOnce({ createGym: createdGym });
+
+    render(<CreateGymForm submitLabel="Save" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'similarGyms.refusal.addNew' }));
+    expect(await screen.findByText('New 4')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'similarGyms.refusal.addNew' }));
+
+    await waitFor(() => expect(sentInputs()).toHaveLength(3));
+    const acknowledged = (sentInputs()[2].duplicateCheck as { acknowledgedGymUuids: string[] }).acknowledgedGymUuids;
+    expect(acknowledged).toHaveLength(50);
+    expect(acknowledged.slice(0, 2)).toEqual(['old-3', 'old-4']);
+    expect(acknowledged.slice(-5)).toEqual(secondRound.map((gym) => gym.uuid));
+  });
+
+  it("counts a Claim from the refusal dialog under the refusal's own placement", async () => {
+    mockRequest.mockRejectedValueOnce(
+      similarGymsRefusal([{ ...similarGym('gym-1', 'Bahnhof Bloc'), isClaimable: true }]),
+    );
+
+    render(<CreateGymForm submitLabel="Save" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'similarGyms.claim' }));
+
+    expect(trackGymFunnelEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ properties: expect.objectContaining({ placement: 'similar-gyms-refusal' }) }),
+    );
   });
 
   it('says the account is at its gym limit instead of the server text', async () => {

@@ -41,7 +41,7 @@ export default function SimilarGymRefusalDialog({
       <DialogTitle>{t('similarGyms.refusal.title')}</DialogTitle>
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         <DialogContentText>{t('similarGyms.refusal.body')}</DialogContentText>
-        {gyms && <SimilarGymList gyms={gyms} />}
+        {gyms && <SimilarGymList gyms={gyms} claimPlacement="similar-gyms-refusal" />}
       </DialogContent>
       <DialogActions>
         <MuiButton variant="text" onClick={onClose} disabled={isSubmitting}>

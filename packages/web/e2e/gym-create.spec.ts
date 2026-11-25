@@ -17,6 +17,11 @@ test.describe('Create a gym from the directory', () => {
     const gymName = `Gym setup ${randomUUID().slice(0, 8)}`;
     const address = '123 Gym Setup Street, London';
     const hours = 'Mon-Fri 9am-9pm';
+    // A fresh point in London per run: every gym within 150 m counts as
+    // similar, so a fixed point would collide with the gym an earlier run left
+    // on a database that persists between runs.
+    const latitude = Number((51.45 + Math.random() * 0.1).toFixed(4));
+    const longitude = Number((-0.18 + Math.random() * 0.1).toFixed(4));
     let addressLookups = 0;
     await page.route('**/graphql', async (route) => {
       const request = route.request();
@@ -28,7 +33,7 @@ test.describe('Create a gym from the directory', () => {
       expect(operation.variables?.address).toBe(address);
       addressLookups += 1;
       await route.fulfill({
-        json: { data: { lookupGymAddressCoordinates: { latitude: 51.5074, longitude: -0.1278 } } },
+        json: { data: { lookupGymAddressCoordinates: { latitude, longitude } } },
       });
     });
 
@@ -44,16 +49,31 @@ test.describe('Create a gym from the directory', () => {
     await page.getByPlaceholder('Search address or city...').fill(address);
     expect(addressLookups).toBe(0);
     await page.getByRole('button', { name: 'Search', exact: true }).click();
-    await expect(page.getByRole('button', { name: /Location: 51\.5074, -0\.1278/ })).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: `Location: ${latitude.toFixed(4)}, ${longitude.toFixed(4)}` }),
+    ).toBeVisible();
     expect(addressLookups).toBe(1);
+    const createGymAnswered = () =>
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          (response.request().postData() ?? '').includes('mutation CreateGym'),
+      );
+    let answered = createGymAnswered();
     await page.getByRole('button', { name: 'Save and choose boards' }).click();
-    // Every gym within 150 m counts as similar, so a gym an earlier run (or a
-    // retry) left at these coordinates refuses the save until it's confirmed.
+    await answered;
+    // Even at a fresh point a gym may already be listed nearby (or share the
+    // name), and each refusal names up to five. Confirm until the save goes
+    // through, a bounded number of rounds.
     const addNewGym = page.getByRole('button', { name: 'No, add a new gym' });
-    await expect
-      .poll(async () => (await addNewGym.isVisible()) || /\/gyms\/new\?gym=/.test(page.url()), { timeout: 15_000 })
-      .toBe(true);
-    if (await addNewGym.isVisible()) await addNewGym.click();
+    const savedUrl = /\/gyms\/new\?gym=/;
+    for (let round = 0; round < 5 && !savedUrl.test(page.url()); round++) {
+      await expect.poll(async () => savedUrl.test(page.url()) || (await addNewGym.isVisible())).toBe(true);
+      if (savedUrl.test(page.url())) break;
+      answered = createGymAnswered();
+      await addNewGym.click();
+      await answered;
+    }
     await expect(page).toHaveURL(/\/gyms\/new\?gym=/);
     const savedGymUuid = new URL(page.url()).searchParams.get('gym');
     expect(savedGymUuid).toBeTruthy();

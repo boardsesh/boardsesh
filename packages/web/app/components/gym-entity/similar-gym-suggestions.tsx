@@ -85,7 +85,7 @@ export default function SimilarGymSuggestions({ name, latitude, longitude }: Sim
         </MuiTypography>
       </Box>
 
-      <SimilarGymList gyms={suggestions} />
+      <SimilarGymList gyms={suggestions} claimPlacement="similar-gyms" />
 
       <MuiTypography variant="caption" color="text.secondary">
         {t('similarGyms.createAnyway')}
