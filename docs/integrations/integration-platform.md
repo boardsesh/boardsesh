@@ -81,6 +81,18 @@ Not available, by design, at any milestone on this roadmap:
 - Acting without a climber (client-credentials tokens). Nothing in the first
   use cases needs it.
 
+**Manufacturer agreements (proposed, not built).** A board's own manufacturer
+is a different case from an app: it already holds that board's catalogue and
+runs the other half of the climbers' logbooks. The proposal in
+[board-manufacturer-sync.md](board-manufacturer-sync.md) would give a
+manufacturer, by agreement and for its own boards only, a system credential
+and two catalogue feeds. That reverses two items of the list above (bulk
+catalogs with community stats; client-credentials tokens) and D7's single
+self-service path for that one kind of partner, and it has the manufacturer run the sign-in for
+account linking, where D1 keeps Boardsesh as the server for apps. Its table
+"What this changes on the Boardsesh side" is the full list. Until those
+endpoints ship, everything in this document stands as written.
+
 ---
 
 ## Decisions
