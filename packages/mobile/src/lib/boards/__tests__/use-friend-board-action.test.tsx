@@ -7,7 +7,9 @@ import type { FriendBoard, FriendBoardAccess, UserBoard } from '@boardsesh/share
 
 const activateMock = vi.hoisted(() => vi.fn(async (_board: UserBoard, _pick?: unknown) => {}));
 const activateOptionsSeen = vi.hoisted(() => ({ value: undefined as Record<string, unknown> | undefined }));
-const followMock = vi.hoisted(() => vi.fn());
+const followMock = vi.hoisted(() => vi.fn(async (_board: UserBoard): Promise<unknown> => true));
+const offerDownloadMock = vi.hoisted(() => vi.fn(async (_board: UserBoard) => {}));
+const adoptOptionsSeen = vi.hoisted(() => ({ value: undefined as Record<string, unknown> | undefined }));
 const followOptionsSeen = vi.hoisted(() => ({
   value: undefined as { onFollowed?: (board: { uuid: string; name: string }) => void } | undefined,
 }));
@@ -25,10 +27,15 @@ vi.mock('../use-activate-board', () => ({
   },
 }));
 vi.mock('../../graphql/hooks', () => ({
-  BOARDS_BY_SERIAL_NUMBERS_QUERY_KEY: 'boardsBySerialNumbers',
   useFollowBoard: (options: typeof followOptionsSeen.value) => {
     followOptionsSeen.value = options;
-    return { mutate: followMock };
+    return { mutateAsync: followMock };
+  },
+}));
+vi.mock('../../board-discovery/use-adopt-found-board', () => ({
+  useAdoptFoundBoard: (options: Record<string, unknown>) => {
+    adoptOptionsSeen.value = options;
+    return offerDownloadMock;
   },
 }));
 vi.mock('../../graphql/hooks/use-resource-privacy', () => ({
@@ -54,6 +61,10 @@ type SheetProps = {
   onCancelRequest: () => void;
   onDismiss: () => void;
 };
+
+function rateLimited(retryAfterSeconds?: number) {
+  return { response: { errors: [{ extensions: { code: 'RATE_LIMITED', retryAfterSeconds } }] } };
+}
 
 const BOARD = { uuid: 'board-1', name: 'Garage', boardType: 'kilter', isFollowedByMe: false } as unknown as UserBoard;
 
@@ -91,11 +102,17 @@ describe('friendBoardTap', () => {
   });
 
   it('reads a rate limit, no signal and anything else apart', () => {
-    expect(friendBoardAccessError({ response: { errors: [{ extensions: { code: 'RATE_LIMITED' } }] } }, false)).toBe(
-      'rate_limited',
-    );
-    expect(friendBoardAccessError(new Error('boom'), true)).toBe('offline');
-    expect(friendBoardAccessError(new Error('boom'), false)).toBe('failed');
+    expect(friendBoardAccessError(rateLimited(), false, 'request')).toBe('rate_limited');
+    expect(friendBoardAccessError(new Error('boom'), true, 'request')).toBe('offline');
+    expect(friendBoardAccessError(new Error('boom'), false, 'request')).toBe('failed');
+  });
+
+  it('says "tomorrow" only for an ask that waits more than an hour', () => {
+    expect(friendBoardAccessError(rateLimited(20 * 60 * 60), false, 'request')).toBe('daily_cap');
+    expect(friendBoardAccessError(rateLimited(60 * 60), false, 'request')).toBe('rate_limited');
+    expect(friendBoardAccessError(rateLimited(30), false, 'request')).toBe('rate_limited');
+    // Taking a request back has no daily cap: always the neutral copy.
+    expect(friendBoardAccessError(rateLimited(20 * 60 * 60), false, 'cancel')).toBe('rate_limited');
   });
 });
 
@@ -103,6 +120,7 @@ describe('useFriendBoardAction', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     activateMock.mockResolvedValue(undefined);
+    followMock.mockResolvedValue(true);
     accessMock.mockResolvedValue(true);
     connectivity.effectiveOffline = false;
   });
@@ -117,6 +135,13 @@ describe('useFriendBoardAction', () => {
     expect(activateMock).toHaveBeenCalledWith(BOARD, { pickSource: 'friends', section: 'friends_boards', position: 3 });
     await waitFor(() => expect(followMock).toHaveBeenCalledWith(BOARD));
     expect(hook.result.current.sheet).toBeNull();
+  });
+
+  it('offers the download as adoption would, without adoption following too', async () => {
+    const { hook } = render();
+    act(() => hook.result.current.onPress(friendBoard('CAN_CLIMB', BOARD), 0));
+    await waitFor(() => expect(offerDownloadMock).toHaveBeenCalledWith(BOARD));
+    expect(adoptOptionsSeen.value).toEqual({ follow: false });
   });
 
   it('offers Undo and refreshes the friend lists once the save lands', () => {
@@ -142,7 +167,7 @@ describe('useFriendBoardAction', () => {
     expect(followMock).not.toHaveBeenCalled();
   });
 
-  it('asks the owner from the sheet, then reads the list again instead of assuming Requested', async () => {
+  it('asks the owner from the sheet and closes on the write, leaving the refresh to the action', async () => {
     const { hook, invalidate, sheetProps } = render();
     act(() => hook.result.current.onPress(friendBoard('CAN_REQUEST'), 0));
 
@@ -151,20 +176,28 @@ describe('useFriendBoardAction', () => {
     await act(async () => sheetProps()?.onAsk());
 
     expect(accessMock).toHaveBeenCalledWith({ action: 'request', kind: 'board', resourceId: 'board-1' });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['friendsBoards'] });
-    // The In range card for the same board reads its state the same way.
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['boardsBySerialNumbers'] });
+    // useResourceAccessAction refreshes friendsBoards itself, without being awaited.
+    expect(invalidate).not.toHaveBeenCalled();
     expect(hook.result.current.sheet).toBeNull();
   });
 
   it('keeps the sheet open with gentle copy when the daily cap is hit', async () => {
-    accessMock.mockRejectedValue({ response: { errors: [{ extensions: { code: 'RATE_LIMITED' } }] } });
+    accessMock.mockRejectedValue(rateLimited(20 * 60 * 60));
     const { hook, sheetProps } = render();
     act(() => hook.result.current.onPress(friendBoard('CAN_REQUEST'), 0));
     await act(async () => sheetProps()?.onAsk());
 
-    expect(sheetProps()?.error).toBe('rate_limited');
+    expect(sheetProps()?.error).toBe('daily_cap');
     expect(reportErrorMock).not.toHaveBeenCalled();
+  });
+
+  it('reads a short limit on a cancel as a moment to wait', async () => {
+    accessMock.mockRejectedValue(rateLimited(20 * 60 * 60));
+    const { hook, sheetProps } = render();
+    act(() => hook.result.current.onPress(friendBoard('REQUESTED'), 0));
+    await act(async () => sheetProps()?.onCancelRequest());
+
+    expect(sheetProps()?.error).toBe('rate_limited');
   });
 
   it('takes a waiting request back from the same sheet', async () => {
@@ -184,11 +217,38 @@ describe('useFriendBoardAction', () => {
     expect(activateMock).not.toHaveBeenCalled();
   });
 
-  it('tells the pick event the board was saved', async () => {
+  it('tells the pick event the board was saved once the save lands', async () => {
+    let finishFollow: (value: unknown) => void = () => {};
+    followMock.mockReturnValue(new Promise((resolve) => (finishFollow = resolve)));
     const onBound = vi.fn(async () => {});
-    render({ onBound });
-    const reportBound = activateOptionsSeen.value?.onBound as (board: UserBoard, bound: object) => Promise<void>;
-    await reportBound(BOARD, { pickSource: 'friends', followed: false });
-    expect(onBound).toHaveBeenCalledWith(BOARD, { pickSource: 'friends', followed: true });
+    const { hook } = render({ onBound });
+    expect(activateOptionsSeen.value?.onBound).toBeUndefined();
+    act(() => hook.result.current.onPress(friendBoard('CAN_CLIMB', BOARD), 2));
+
+    await waitFor(() => expect(followMock).toHaveBeenCalled());
+    expect(onBound).not.toHaveBeenCalled();
+    await act(async () => finishFollow(true));
+    expect(onBound).toHaveBeenCalledWith(BOARD, {
+      pickSource: 'friends',
+      section: 'friends_boards',
+      position: 2,
+      followed: true,
+    });
+  });
+
+  it('tells the pick event the board was not saved when the save fails', async () => {
+    followMock.mockRejectedValue(new Error('nope'));
+    const onBound = vi.fn(async () => {});
+    const { hook } = render({ onBound });
+    act(() => hook.result.current.onPress(friendBoard('CAN_CLIMB', BOARD), 0));
+    await waitFor(() => expect(onBound).toHaveBeenCalledWith(BOARD, expect.objectContaining({ followed: false })));
+  });
+
+  it('reports a board already in Your boards as not newly saved', async () => {
+    const followed = { ...BOARD, isFollowedByMe: true } as UserBoard;
+    const onBound = vi.fn(async () => {});
+    const { hook } = render({ onBound });
+    act(() => hook.result.current.onPress(friendBoard('CAN_CLIMB', followed), 0));
+    await waitFor(() => expect(onBound).toHaveBeenCalledWith(followed, expect.objectContaining({ followed: false })));
   });
 });

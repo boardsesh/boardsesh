@@ -5,29 +5,32 @@
 //
 // - CAN_CLIMB: bind the board as a Your boards tap does, then save it (follow)
 //   so it lands in Your boards. "Saved to Your boards · Undo" shows on the tab
-//   the bind lands on (saved-friend-board-undo.ts).
+//   the bind lands on (saved-friend-board-undo.ts), and "Download X?" is
+//   offered as adoption would, without adoption's own follow.
 // - CAN_REQUEST: "Ask {{name}} to climb here", a short sheet whose button asks
 //   the owner (requestResourceAccess).
 // - REQUESTED: the same sheet, waiting, with "Cancel request".
 //
 // The sheet's errors stay in the sheet: the boards modal is a native surface,
-// and the toast overlay draws behind it. After an ask or a cancel the list is
-// read again rather than assumed: the server answers an ask for a board the
-// viewer can already open with a quiet yes and no request.
+// and the toast overlay draws behind it. The sheet closes on the write itself;
+// the access action then reads the list again rather than assuming Requested:
+// the server answers an ask for a board the viewer can already open with a
+// quiet yes and no request.
 
-import { useCallback, useMemo, useState, type ReactElement } from 'react';
+import { useCallback, useState, type ReactElement } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import type { FriendBoard, UserBoard } from '@boardsesh/shared-schema';
+import type { FriendBoard } from '@boardsesh/shared-schema';
 import {
   FriendBoardAccessSheet,
   type FriendBoardAccessError,
 } from '../../components/board-discovery/FriendBoardAccessSheet';
 import { useToast } from '../../providers/toast-provider';
-import { BOARDS_BY_SERIAL_NUMBERS_QUERY_KEY, useFollowBoard } from '../graphql/hooks';
+import { useFollowBoard } from '../graphql/hooks';
 import { FRIENDS_BOARDS_QUERY_KEY } from '../graphql/hooks/use-friends-boards';
 import { useResourceAccessAction } from '../graphql/hooks/use-resource-privacy';
-import { isGraphqlRateLimitedError } from '../graphql/extract-error-message';
+import { readGraphqlRateLimit } from '../graphql/extract-error-message';
+import { useAdoptFoundBoard } from '../board-discovery/use-adopt-found-board';
 import { getConnectivitySnapshot } from '../connectivity/connectivity-store';
 import { reportError } from '../error-reporting';
 import { announceSavedFriendBoard } from './saved-friend-board-undo';
@@ -50,10 +53,27 @@ export function friendBoardTap(friendBoard: FriendBoard): FriendBoardTap {
   }
 }
 
-/** Pure: how a failed ask or cancel reads in the sheet. */
-export function friendBoardAccessError(error: unknown, offline: boolean): FriendBoardAccessError {
+/**
+ * A rate limit that lifts in more than this is the daily cap on asks; a shorter
+ * one is the per-minute limit every privacy write shares.
+ */
+const DAILY_CAP_RETRY_AFTER_SECONDS = 60 * 60;
+
+/**
+ * Pure: how a failed ask or cancel reads in the sheet. Only an ask can hit the
+ * daily cap ("try again tomorrow"); any other limit, or one with no wait given,
+ * reads as the neutral "wait a moment".
+ */
+export function friendBoardAccessError(
+  error: unknown,
+  offline: boolean,
+  action: 'request' | 'cancel',
+): FriendBoardAccessError {
   if (offline) return 'offline';
-  return isGraphqlRateLimitedError(error) ? 'rate_limited' : 'failed';
+  const rateLimit = readGraphqlRateLimit(error);
+  if (!rateLimit) return 'failed';
+  const retryAfterSeconds = rateLimit.retryAfterSeconds ?? 0;
+  return action === 'request' && retryAfterSeconds > DAILY_CAP_RETRY_AFTER_SECONDS ? 'daily_cap' : 'rate_limited';
 }
 
 export type FriendBoardActionOptions = {
@@ -79,26 +99,21 @@ export function useFriendBoardAction({ returnTo, section, onBound, beforeClimb }
   const [target, setTarget] = useState<FriendBoard | null>(null);
   const [sheetError, setSheetError] = useState<FriendBoardAccessError | null>(null);
 
-  // The bind says the board was followed when this hook is about to follow it:
-  // adoption is off (it never follows a private board), so it can't say so itself.
-  const reportBound = useMemo<ActivateBoardOptions['onBound']>(
-    () =>
-      onBound
-        ? (board: UserBoard, bound) => onBound(board, { ...bound, followed: board.isFollowedByMe !== true })
-        : undefined,
-    [onBound],
-  );
-  // `rethrow`, so a bind that failed is never followed by a save.
+  // `rethrow`, so a bind that failed is never followed by a save. No `onBound`:
+  // adoption is off (it never follows a private board), so the bind can't say
+  // whether the board was saved; the pick is reported once the save settles.
   const activate = useActivateBoard({
     returnTo,
     adopt: false,
-    onBound: reportBound,
     recognizesHeldBox: false,
     writeFailure: 'rethrow',
   });
+  // Adoption's "Download X?" (or the auto-download setting) without its follow:
+  // this hook saves the board itself, for Undo.
+  const offerDownload = useAdoptFoundBoard({ follow: false });
 
   // Config-level callbacks: they run after the bind has closed the modal.
-  const { mutate: followBoard } = useFollowBoard({
+  const { mutateAsync: followBoard } = useFollowBoard({
     onFollowed: (board) => {
       announceSavedFriendBoard(board);
       void queryClient.invalidateQueries({ queryKey: [FRIENDS_BOARDS_QUERY_KEY] });
@@ -126,14 +141,28 @@ export function useFriendBoardAction({ returnTo, section, onBound, beforeClimb }
       const board = friendBoard.board;
       if (!board) return;
       beforeClimb?.();
+      const reportPick = (followed: boolean) => {
+        onBound?.(board, { pickSource: 'friends', section, position, followed }).catch(reportError);
+      };
       activate(board, { pickSource: 'friends', section, position }).then(
         () => {
-          if (board.isFollowedByMe !== true) followBoard(board);
+          void offerDownload(board);
+          if (board.isFollowedByMe === true) {
+            reportPick(false);
+            return;
+          }
+          // `mutateAsync`, not `mutate`: the bind has closed the modal, and a
+          // per-call callback dies with the screen. The failure is already
+          // reported and toasted by the hook's own `onFollowError`.
+          followBoard(board).then(
+            () => reportPick(true),
+            () => reportPick(false),
+          );
         },
         () => showToast(t('mobile.boardSwitchError'), 'error'),
       );
     },
-    [activate, followBoard, beforeClimb, section, showToast, t],
+    [activate, followBoard, offerDownload, onBound, beforeClimb, section, showToast, t],
   );
 
   const close = useCallback(() => {
@@ -146,20 +175,17 @@ export function useFriendBoardAction({ returnTo, section, onBound, beforeClimb }
       if (!target) return;
       setSheetError(null);
       try {
+        // Resolves on the write: the action refreshes the friend lists without
+        // holding the sheet open for it, and never sets Requested by hand.
         await runAccessAction({ action, kind: 'board', resourceId: target.preview.uuid });
-        // The privacy write already refreshes every screen; the list is read
-        // again either way, never set to Requested by hand. So is the serial
-        // lookup, whose In range card says Requested the same way.
-        void queryClient.invalidateQueries({ queryKey: [FRIENDS_BOARDS_QUERY_KEY] });
-        void queryClient.invalidateQueries({ queryKey: [BOARDS_BY_SERIAL_NUMBERS_QUERY_KEY] });
         close();
       } catch (error: unknown) {
-        const reason = friendBoardAccessError(error, getConnectivitySnapshot().effectiveOffline);
+        const reason = friendBoardAccessError(error, getConnectivitySnapshot().effectiveOffline, action);
         if (reason === 'failed') reportError(error);
         setSheetError(reason);
       }
     },
-    [target, runAccessAction, queryClient, close],
+    [target, runAccessAction, close],
   );
   const ask = useCallback(() => void runOnTarget('request'), [runOnTarget]);
   const cancelRequest = useCallback(() => void runOnTarget('cancel'), [runOnTarget]);

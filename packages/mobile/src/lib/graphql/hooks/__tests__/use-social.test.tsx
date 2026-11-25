@@ -244,6 +244,24 @@ describe('useToggleUserFollow', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['following'] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['searchUsers'] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['activityFeed'] });
+    // Both the picker shelf and "A friend's board" sit under this root.
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['friendsBoards'] });
+  });
+
+  it("refreshes friends' boards after an unfollow, shelf and list alike", async () => {
+    requestMock.mockResolvedValue({ unfollowUser: true });
+    const { queryClient, Wrapper } = makeWrapper();
+    queryClient.setQueryData(['friendsBoards', 'me', 'shelf'], { items: [], hasMore: false });
+    queryClient.setQueryData(['friendsBoards', 'me', 'list', ''], { pages: [], pageParams: [] });
+
+    const { result } = renderHook(() => useToggleUserFollow('me'), { wrapper: Wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({ userId: 'target-user', isFollowedByMe: true });
+    });
+
+    expect(queryClient.getQueryState(['friendsBoards', 'me', 'shelf'])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(['friendsBoards', 'me', 'list', ''])?.isInvalidated).toBe(true);
   });
 
   it('unfollows users with the unfollow mutation', async () => {

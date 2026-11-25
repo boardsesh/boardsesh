@@ -26,6 +26,11 @@ type FollowRequestNotificationRowProps = {
   onPress: (notification: GroupedNotification) => void;
   /** Stable handler from the screen: approves or declines the request. */
   onAnswer: AnswerFollowRequest;
+  /**
+   * What is being asked for, so VoiceOver hears what Approve and Decline do:
+   * a follow (the default) or a climb on the owner's board.
+   */
+  request?: 'follow' | 'board_access';
 };
 
 /**
@@ -39,7 +44,12 @@ type FollowRequestNotificationRowProps = {
  * The row only tracks which answer is in flight. On success the screen's cache
  * drops the row; on failure the buttons come back with a line saying why.
  */
-export function FollowRequestNotificationRow({ notification, onPress, onAnswer }: FollowRequestNotificationRowProps) {
+export function FollowRequestNotificationRow({
+  notification,
+  onPress,
+  onAnswer,
+  request = 'follow',
+}: FollowRequestNotificationRowProps) {
   const { t } = useTranslation('notifications');
   const { systemColors, brandColors } = useTheme();
   // Keyed by the row's uuid: FlashList hands a recycled cell, state and all, to
@@ -53,6 +63,14 @@ export function FollowRequestNotificationRow({ notification, onPress, onAnswer }
   const actor = requester?.displayName || t('actorSummary.fallback');
   const copy = notificationCopy(notification, actor);
   const body = t(copy.textI18nKey, copy.params);
+  const approveLabel =
+    request === 'board_access'
+      ? t('boardAccessRequest.approveLabel', { actor })
+      : t('followRequest.approveLabel', { actor });
+  const declineLabel =
+    request === 'board_access'
+      ? t('boardAccessRequest.declineLabel', { actor })
+      : t('followRequest.declineLabel', { actor });
 
   const handlePress = useCallback(() => onPress(notification), [onPress, notification]);
   const answer = useCallback(
@@ -104,7 +122,7 @@ export function FollowRequestNotificationRow({ notification, onPress, onAnswer }
       <View style={styles.actions}>
         <Button
           title={t('followRequest.approve')}
-          accessibilityLabel={t('followRequest.approveLabel', { actor })}
+          accessibilityLabel={approveLabel}
           variant="filled"
           size="small"
           loading={pending === 'approve'}
@@ -113,7 +131,7 @@ export function FollowRequestNotificationRow({ notification, onPress, onAnswer }
         />
         <Button
           title={t('followRequest.decline')}
-          accessibilityLabel={t('followRequest.declineLabel', { actor })}
+          accessibilityLabel={declineLabel}
           variant="outlined"
           size="small"
           loading={pending === 'decline'}

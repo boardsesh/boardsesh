@@ -15,7 +15,8 @@ import {
   type ResourcePrivacySettings,
 } from '@boardsesh/graphql/operations/privacy';
 import { getHttpClient } from '../client';
-import { useProfile } from './index';
+import { FRIENDS_BOARDS_QUERY_KEY } from './use-friends-boards';
+import { BOARDS_BY_SERIAL_NUMBERS_QUERY_KEY, useProfile } from './index';
 import { usePrivacySettings } from './use-privacy';
 import { refreshAfterOwnPrivacyChange } from '../../privacy/privacy-cache';
 import { getConnectivitySnapshot } from '../../connectivity/connectivity-store';
@@ -160,6 +161,8 @@ const RESOURCE_ACTIONS = {
   revoke: REVOKE_RESOURCE_ACCESS,
   invite: INVITE_RESOURCE_MEMBER,
 };
+/** The asker's own actions; every other one is the owner's. */
+const ASKER_ACTIONS: ReadonlySet<ResourceAccessActionName> = new Set(['request', 'cancel']);
 export function useResourceAccessAction() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -176,6 +179,18 @@ export function useResourceAccessAction() {
       if (getConnectivitySnapshot().effectiveOffline) throw new Error('Privacy changes require a connection.');
       return getHttpClient().request(RESOURCE_ACTIONS[action], variables);
     },
-    onSuccess: () => refreshAfterOwnPrivacyChange(queryClient),
+    onSuccess: (_result, { action }) => {
+      // An ask, or taking it back, changes no privacy of the viewer's own: only
+      // the lists that show what they asked for. Not awaited, so the caller
+      // hears back on the write itself, not on a refetch.
+      if (ASKER_ACTIONS.has(action)) {
+        void queryClient.invalidateQueries({ queryKey: [FRIENDS_BOARDS_QUERY_KEY] });
+        void queryClient.invalidateQueries({ queryKey: ['resourceGrantStatuses'] });
+        // The picker's In range card for a friend's board heard over Bluetooth.
+        void queryClient.invalidateQueries({ queryKey: [BOARDS_BY_SERIAL_NUMBERS_QUERY_KEY] });
+        return;
+      }
+      return refreshAfterOwnPrivacyChange(queryClient);
+    },
   });
 }

@@ -13,7 +13,8 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { OfflineState } from '../OfflineState';
 import { CommentSheet } from '../you/CommentSheet';
 import { notificationClimbRender } from './notification-climb-render';
-import { NotificationRow, isAnswerableBoardAccessRequest } from './NotificationRow';
+import { NotificationRow } from './NotificationRow';
+import { isAnswerableBoardAccessRequest } from './answerable-notification';
 import { useNotificationNavigation, type OpenCommentThread } from './use-notification-navigation';
 import { useUndoSetupChange } from './use-undo-setup-change';
 import {
