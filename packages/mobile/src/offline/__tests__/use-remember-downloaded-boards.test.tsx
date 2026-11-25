@@ -21,7 +21,7 @@ vi.mock('../../settings', () => ({
     `${input.boardType}:${input.layoutId}:${input.sizeId}`,
 }));
 
-const { useRememberDownloadedBoards } = await import('../use-remember-downloaded-boards');
+const { offlineBoardCardSync, useRememberDownloadedBoards } = await import('../use-remember-downloaded-boards');
 
 const board = (overrides: Partial<UserBoard> & { uuid: string; name: string }): UserBoard =>
   ({
@@ -148,4 +148,34 @@ describe('useRememberDownloadedBoards', () => {
     renderHook(() => useRememberDownloadedBoards(connection([garage])));
     expect(pruneOfflineBoardsMock).toHaveBeenCalledWith(['garage'], { keepBoardType: 'spray' });
   });
+
+  // A friend's board the owner took the climber back off drops out of
+  // myBoards; the next complete list prunes its card. A failed refetch still
+  // hands back the last list, which may predate a board saved since, so it
+  // must not prune (or refresh) anything.
+  it('prunes a friend board that left a complete list, but never on a failed fetch', () => {
+    state.enabledBoards = ['kilter:8:17'];
+
+    renderHook(() => useRememberDownloadedBoards(connection([garage]), undefined, true));
+    expect(rememberOfflineBoardsMock).not.toHaveBeenCalled();
+    expect(pruneOfflineBoardsMock).not.toHaveBeenCalled();
+
+    renderHook(() => useRememberDownloadedBoards(connection([garage]), undefined, false));
+    expect(pruneOfflineBoardsMock).toHaveBeenCalledWith(['garage'], { keepBoardType: 'spray' });
+  });
+});
+
+describe('offlineBoardCardSync', () => {
+  it.each([
+    { isOffline: false, hasList: true, hasMore: false, fetchFailed: false, remember: true, prune: true },
+    { isOffline: false, hasList: true, hasMore: true, fetchFailed: false, remember: true, prune: false },
+    { isOffline: false, hasList: true, hasMore: false, fetchFailed: true, remember: false, prune: false },
+    { isOffline: true, hasList: true, hasMore: false, fetchFailed: false, remember: false, prune: false },
+    { isOffline: false, hasList: false, hasMore: false, fetchFailed: false, remember: false, prune: false },
+  ])(
+    'offline $isOffline, list $hasList, more $hasMore, failed $fetchFailed → remember $remember, prune $prune',
+    ({ remember, prune, ...input }) => {
+      expect(offlineBoardCardSync(input)).toEqual({ remember, prune });
+    },
+  );
 });

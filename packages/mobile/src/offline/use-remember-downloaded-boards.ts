@@ -26,6 +26,32 @@ import { useIsOffline } from '../hooks/use-is-offline';
  * off must not strand a device that has downloads.
  */
 /**
+ * Whether a `myBoards` result may refresh the offline cards, and whether it may
+ * prune them. Pure, for the table in its test.
+ *
+ * Only a COMPLETE list from a fetch that just SUCCEEDED can say a board is
+ * gone: a truncated page would delete every card past it, and a failed refetch
+ * still hands back the last list, which may predate a board followed since (a
+ * friend's board saved on another phone). This is also how a friend's board
+ * whose owner took the climber back off it leaves the offline picker: it drops
+ * out of `myBoards`, and the next complete list prunes its card.
+ */
+export function offlineBoardCardSync({
+  isOffline,
+  hasList,
+  hasMore,
+  fetchFailed,
+}: {
+  isOffline: boolean;
+  hasList: boolean;
+  hasMore: boolean;
+  fetchFailed: boolean;
+}): { remember: boolean; prune: boolean } {
+  const remember = !isOffline && hasList && !fetchFailed;
+  return { remember, prune: remember && !hasMore };
+}
+
+/**
  * `archivedWallUuids` are the climber's archived spray walls. `myBoards` leaves
  * them out, so without them a complete list would prune an archived wall's card
  * and the wall could no longer be opened offline. Left out (unknown: a caller
@@ -34,6 +60,8 @@ import { useIsOffline } from '../hooks/use-is-offline';
 export function useRememberDownloadedBoards(
   connection: UserBoardConnection | undefined,
   archivedWallUuids?: readonly string[],
+  /** The last `myBoards` fetch failed: `connection` is the list from before it. */
+  fetchFailed = false,
 ): void {
   const isOffline = useIsOffline();
   const [enabledBoards] = useSetting('syncEnabledBoards');
@@ -45,7 +73,8 @@ export function useRememberDownloadedBoards(
   useEffect(() => {
     // Offline, `boards` is either stale or absent — refreshing from it would either
     // no-op or overwrite good snapshots with older ones.
-    if (isOffline || !boards) return;
+    const sync = offlineBoardCardSync({ isOffline, hasList: boards !== undefined, hasMore, fetchFailed });
+    if (!sync.remember || !boards) return;
     const enabledScopes = new Set(enabledBoards);
     const downloadedBoards = boards.filter((board) => enabledScopes.has(offlineBoardKeyForBoard(board)));
     // `rememberOfflineBoards` skips the write when nothing changed, which is what
@@ -53,9 +82,9 @@ export function useRememberDownloadedBoards(
     rememberOfflineBoards(downloadedBoards);
     // Only a COMPLETE list can say a board is gone. `myBoards` pages at 20, so a
     // truncated first page would otherwise delete every card past it.
-    if (!hasMore) {
+    if (sync.prune) {
       const known = [...boards.map((board) => board.uuid), ...(archivedWallUuids ?? [])];
       pruneOfflineBoards(known, archivedWallUuids ? undefined : { keepBoardType: 'spray' });
     }
-  }, [isOffline, boards, hasMore, enabledBoards, archivedWallUuids]);
+  }, [isOffline, boards, hasMore, enabledBoards, archivedWallUuids, fetchFailed]);
 }
