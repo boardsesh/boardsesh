@@ -139,7 +139,10 @@ describe('watchBluetoothPoweredOn', () => {
     emit('PoweredOff');
     expect(onPoweredOn).not.toHaveBeenCalled();
     emit('PoweredOn');
-    emit('PoweredOff');
+    expect(onPoweredOn).toHaveBeenCalledOnce();
+    // It stops listening as it fires.
+    expect(radio.removed).toBe(1);
+    expect(radio.listeners).toEqual([]);
     emit('PoweredOn');
     expect(onPoweredOn).toHaveBeenCalledOnce();
     stop();

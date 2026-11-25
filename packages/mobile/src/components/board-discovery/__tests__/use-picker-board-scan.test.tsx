@@ -774,6 +774,8 @@ describe('usePickerBoardScan with Bluetooth off', () => {
 
     act(() => result.current.stop());
     rerender({ focused: true, autoStart: true });
+    // Still listening: the pick, not a missing listener, is what starts nothing.
+    expect(radioWatch.listeners).toHaveLength(1);
     radioComesOn();
     expect(startTriggers()).toEqual(['picker_auto']);
   });

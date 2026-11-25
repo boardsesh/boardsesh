@@ -28,7 +28,7 @@ export function offerHeardSerial(
   offer = { serial, boardType, expiresAt: nowMs + HEARD_SERIAL_OFFER_TTL_MS };
 }
 
-/** Drop the offer: sign-out, or the picker leaving with no builder opened. */
+/** Drop the offer: the picker's next unnamed-row tap, or the picker unmounting. */
 export function clearHeardSerialOffer(): void {
   offer = null;
 }

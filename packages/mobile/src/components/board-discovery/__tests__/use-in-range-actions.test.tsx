@@ -25,16 +25,26 @@ vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../../lib/open-app-settings', () => ({ openAppSettings: vi.fn(async () => true) }));
 const held = vi.hoisted(() => ({ set: vi.fn() }));
 vi.mock('../../../lib/boards/pending-board-recognition', () => ({ setPendingBoardRecognition: held.set }));
-const radio = vi.hoisted(() => ({ outcome: 'asked' as 'asked' | 'already_on', turnOn: vi.fn(), poweredOn: false }));
+const radio = vi.hoisted(() => ({
+  outcome: 'asked' as 'asked' | 'already_on',
+  turnOn: vi.fn(),
+  // Who watches for the radio coming on, and a way to say it did.
+  watchers: [] as Array<() => void>,
+}));
 vi.mock('../bluetooth-radio', () => ({
   turnOnBluetooth: async () => {
     radio.turnOn();
     return radio.outcome;
   },
-  isBluetoothPoweredOn: async () => radio.poweredOn,
+  watchBluetoothPoweredOn: (onPoweredOn: () => void) => {
+    radio.watchers.push(onPoweredOn);
+    return () => {
+      radio.watchers = radio.watchers.filter((watcher) => watcher !== onPoweredOn);
+    };
+  },
 }));
 
-const { useInRangeActions } = await import('../use-in-range-actions');
+const { RADIO_RETURN_WATCH_MS, useInRangeActions } = await import('../use-in-range-actions');
 const { clearHeardSerialOffer, isHeardSerialOffered } = await import('../../../lib/boards/heard-serial-offer');
 
 const scanCtrl = { listenedLongEnough: true };
@@ -52,7 +62,7 @@ const router = { push: vi.fn() };
 const chooseFirstBoardPath = vi.fn();
 const dropHeldBox = vi.fn();
 
-function renderActions() {
+function renderActionsHook() {
   return renderHook(() =>
     useInRangeActions({
       scan,
@@ -63,7 +73,15 @@ function renderActions() {
       source: undefined,
       gymFirstEnabled: false,
     }),
-  ).result.current;
+  );
+}
+
+function renderActions() {
+  return renderActionsHook().result.current;
+}
+
+function radioComesOn() {
+  for (const watcher of radio.watchers.slice()) watcher();
 }
 
 function unknownKilter(serials: string[]): UnnamedInRangeRow {
@@ -89,7 +107,7 @@ function fireAppState(nextState: string) {
 
 beforeEach(() => {
   appState.handlers = [];
-  radio.poweredOn = false;
+  radio.watchers = [];
   clearHeardSerialOffer();
   scanCtrl.listenedLongEnough = true;
   radio.outcome = 'asked';
@@ -154,27 +172,65 @@ describe("It's my own board", () => {
 });
 
 describe('Turn on Bluetooth', () => {
-  it('asks the system, then scans when the app comes back with the radio on', async () => {
+  it('asks the system, then watches the radio when the app comes back and scans once it is on', async () => {
     renderActions().onTurnOnBluetooth();
     await act(async () => {});
     expect(radio.turnOn).toHaveBeenCalledOnce();
     expect(scan.start).not.toHaveBeenCalled();
     expect(chooseFirstBoardPath).toHaveBeenCalledWith('scan');
 
-    radio.poweredOn = true;
     fireAppState('background');
-    expect(appState.handlers).toHaveLength(1);
-    await act(async () => fireAppState('active'));
-    expect(scan.start).toHaveBeenCalledOnce();
-    // Read once: a later return to the app starts nothing.
+    expect(radio.watchers).toEqual([]);
+    act(() => fireAppState('active'));
     expect(appState.handlers).toEqual([]);
+    // Still Resetting on return: nothing yet, the watch waits for it.
+    expect(radio.watchers).toHaveLength(1);
+    expect(scan.start).not.toHaveBeenCalled();
+    act(() => radioComesOn());
+    expect(scan.start).toHaveBeenCalledOnce();
+    expect(radio.watchers).toEqual([]);
   });
 
-  it('starts nothing when the climber came back with the radio still off', async () => {
-    renderActions().onTurnOnBluetooth();
+  it('stops watching after a while with the radio still off', async () => {
+    vi.useFakeTimers();
+    try {
+      renderActions().onTurnOnBluetooth();
+      await act(async () => {});
+      act(() => fireAppState('active'));
+      expect(radio.watchers).toHaveLength(1);
+      act(() => {
+        vi.advanceTimersByTime(RADIO_RETURN_WATCH_MS + 1);
+      });
+      expect(radio.watchers).toEqual([]);
+      expect(scan.start).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('registers nothing and starts nothing once the picker is gone', async () => {
+    const { result, unmount } = renderActionsHook();
+    result.current.onTurnOnBluetooth();
+    unmount();
     await act(async () => {});
-    await act(async () => fireAppState('active'));
+    expect(appState.handlers).toEqual([]);
+
+    radio.outcome = 'already_on';
+    const second = renderActionsHook();
+    second.result.current.onTurnOnBluetooth();
+    second.unmount();
+    await act(async () => {});
     expect(scan.start).not.toHaveBeenCalled();
+  });
+
+  it('drops the watch when the picker goes while it waits', async () => {
+    const { result, unmount } = renderActionsHook();
+    result.current.onTurnOnBluetooth();
+    await act(async () => {});
+    act(() => fireAppState('active'));
+    expect(radio.watchers).toHaveLength(1);
+    unmount();
+    expect(radio.watchers).toEqual([]);
   });
 
   it('scans straight away when the radio is already on', async () => {

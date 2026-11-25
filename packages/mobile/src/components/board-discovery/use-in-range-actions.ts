@@ -15,12 +15,15 @@ import { setPendingBoardRecognition } from '../../lib/boards/pending-board-recog
 import type { FirstBoardPath } from '../../lib/onboarding/first-board-picker-analytics';
 import { openAppSettings } from '../../lib/open-app-settings';
 import { addBoardRoute } from './add-board-route';
-import { isBluetoothPoweredOn, turnOnBluetooth } from './bluetooth-radio';
+import { turnOnBluetooth, watchBluetoothPoweredOn } from './bluetooth-radio';
 import type { UnnamedInRangeRow } from './picker-top-view';
 import { builderSerialForRow } from './quickstart-scan-rows';
 import type { PickerScan } from './use-picker-board-scan';
 
 type Router = ReturnType<typeof useRouter>;
+
+/** How long after coming back from the Turn on dialog the radio may take to report on. */
+export const RADIO_RETURN_WATCH_MS = 10_000;
 
 export type InRangeActions = {
   /** Continue, Allow Bluetooth, Scan and Scan again. */
@@ -63,26 +66,47 @@ export function useInRangeActions({
   const startRef = useRef(start);
   startRef.current = start;
 
+  // Async tails (the Turn on dialog's answer, the radio watch) do nothing once
+  // the picker is gone: no listener registered, no scan started.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   // A serial offered to a builder this picker never opened goes with the picker.
   useEffect(() => clearHeardSerialOffer, []);
 
   // Back from Android's Turn on dialog (or the settings page it fell back to):
-  // read the radio once and scan if it is on, whether or not auto-scan is on.
-  // The scan's own guard drops this when the radio-on report already started one.
-  const returnWatchRef = useRef<{ remove(): void } | null>(null);
+  // watch the radio for up to RADIO_RETURN_WATCH_MS and scan once it is on,
+  // whether or not auto-scan is on. A watch, not one read: the radio can still
+  // be Resetting when the app comes back. The scan's own guard drops this when
+  // the radio-on report already started one.
+  const appStateWatchRef = useRef<{ remove(): void } | null>(null);
+  const stopRadioWatchRef = useRef<(() => void) | null>(null);
+  const radioWatchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stopWatchingReturn = useCallback(() => {
-    returnWatchRef.current?.remove();
-    returnWatchRef.current = null;
+    appStateWatchRef.current?.remove();
+    appStateWatchRef.current = null;
+    stopRadioWatchRef.current?.();
+    stopRadioWatchRef.current = null;
+    if (radioWatchTimerRef.current !== null) clearTimeout(radioWatchTimerRef.current);
+    radioWatchTimerRef.current = null;
   }, []);
   useEffect(() => stopWatchingReturn, [stopWatchingReturn]);
   const scanWhenBackIfOn = useCallback(() => {
     stopWatchingReturn();
-    returnWatchRef.current = AppState.addEventListener('change', (nextAppState) => {
+    if (!mountedRef.current) return;
+    appStateWatchRef.current = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState !== 'active') return;
       stopWatchingReturn();
-      void isBluetoothPoweredOn().then((poweredOn) => {
-        if (poweredOn) startRef.current();
+      stopRadioWatchRef.current = watchBluetoothPoweredOn(() => {
+        stopWatchingReturn();
+        if (mountedRef.current) startRef.current();
       });
+      radioWatchTimerRef.current = setTimeout(stopWatchingReturn, RADIO_RETURN_WATCH_MS);
     });
   }, [stopWatchingReturn]);
 
@@ -94,6 +118,7 @@ export function useInRangeActions({
   const onTurnOnBluetooth = useCallback(() => {
     chooseFirstBoardPath('scan');
     void turnOnBluetooth().then((outcome) => {
+      if (!mountedRef.current) return;
       if (outcome === 'already_on') start();
       else scanWhenBackIfOn();
     });

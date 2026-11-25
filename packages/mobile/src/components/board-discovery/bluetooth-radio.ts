@@ -38,7 +38,15 @@ export function bluetoothOffFix(platformOS: string): BluetoothOffFix {
 const REQUEST_ENABLE_ACTION = 'android.bluetooth.adapter.action.REQUEST_ENABLE';
 const BLUETOOTH_SETTINGS_ACTION = 'android.settings.BLUETOOTH_SETTINGS';
 
-/** Whether the radio reads on right now. An unreadable radio reads as off. Never throws. */
+/**
+ * Whether the radio reads on right now. An unreadable radio reads as off.
+ * Never throws.
+ *
+ * WARNING: never call this on iOS before Bluetooth is authorized. Reading the
+ * state creates the ble-plx manager, and creating it while the question is
+ * unanswered shows the system Bluetooth prompt (ble-manager.ts). Every caller
+ * today runs only after a scan reached the radio (`blocked_off`) or on Android.
+ */
 export async function isBluetoothPoweredOn(): Promise<boolean> {
   try {
     const radioState: string = await (await loadBleManager()).state();
@@ -88,6 +96,8 @@ export function watchBluetoothPoweredOn(onPoweredOn: () => void): () => void {
       const fire = () => {
         if (done) return;
         done = true;
+        subscription?.remove();
+        subscription = null;
         onPoweredOn();
       };
       subscription = bleManager.onStateChange((radioState: string) => {
