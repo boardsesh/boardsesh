@@ -30,7 +30,8 @@ and lays out a board first. Nothing in this document asks about them.
 2. **Permission to read the public Quantum Board catalogue** through the
    eWalls API, and a short written statement of which climbs are public.
 
-That is enough for phase 1. Everything else can follow at a pace that suits
+That is enough for phase 1. How the two apps share one physical board
+(section F) also needs testing on a real board before release. Everything else can follow at a pace that suits
 eWalls.
 
 ## What Boardsesh proposes for Quantum
@@ -76,6 +77,11 @@ Android app, not from a contract. Our notes are in
 - **A5.** Would eWalls offer a standard OAuth 2.0 sign-in for linking, with
   sign-up on the same page? See
   [Linking an account](board-manufacturer-sync.md#linking-an-account).
+- **A6.** When Boardsesh creates a record (a climb, an ascent, a playlist) and
+  gets no answer, how can it repeat the request safely? We would send the
+  same request key each time. Can the server refuse a second create with a
+  key it has seen, or tell us what happened to a key? The app sends a client
+  id with an ascent, and we do not know whether the server uses it.
 
 ### B. The catalogue, eWalls to Boardsesh
 
@@ -100,8 +106,10 @@ Android app, not from a contract. Our notes are in
   board, and can two boards share one?
 - **B9.** Can two climbs in eWalls have exactly the same holds? Boardsesh
   shows such climbs as one climb, under the name and setter of the one
-  published first, and adds their ascents and totals together. Is there
-  anything in eWalls that this would conflict with?
+  published first, and adds their ascents and totals together. Each stays a
+  separate climb in eWalls. A person who sent both is then counted twice in
+  Boardsesh. Can eWalls return the number of distinct people across a set of
+  climb ids?
 
 ### C. Linked accounts
 
@@ -111,8 +119,7 @@ Android app, not from a contract. Our notes are in
 - **C2.** Who can see an ascent in eWalls: everyone, or only the climber?
   Boardsesh has "Only me" ascents and will tell the climber before linking.
 - **C3.** When Boardsesh logs an ascent, does the response give its permanent
-  id? The app sends a client id with an ascent; does the server refuse a
-  second ascent with the same client id?
+  id? (See also A6.)
 - **C4.** Can an ascent carry the date and time it was climbed, and is that
   returned unchanged? This matters for sends logged offline and for a
   climber's history from before they linked.
