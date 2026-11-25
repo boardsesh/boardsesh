@@ -96,8 +96,19 @@ test('set-password asks a bridged session to sign in again; on a fresh login it 
     await page.goto(`${WWW_ORIGIN}/settings`);
     await markDocument(page);
     const change = await edgeCookies.during(async () => {
-      await submitPassword(page, account.password);
-      await expect(page.getByText(PASSWORD_SET)).toBeVisible({ timeout: 30_000 });
+      // Observe this mutation and the durable card, even if the transient
+      // snackbar ends while Playwright handles an unrelated consent prompt.
+      const [saved] = await Promise.all([
+        page.waitForResponse(
+          (response) =>
+            response.url() === `${WWW_ORIGIN}/api/internal/set-password` && response.request().method() === 'POST',
+        ),
+        submitPassword(page, account.password),
+      ]);
+      expect(saved.status()).toBe(200);
+      await expect(page.getByText(`Password login is enabled for ${account.email}`, { exact: true })).toBeVisible({
+        timeout: 30_000,
+      });
     });
     const set = change.records.find(
       (record) => record.host === WWW_HOST && record.path === '/api/internal/set-password',
