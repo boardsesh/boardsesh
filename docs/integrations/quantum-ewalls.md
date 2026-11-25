@@ -209,22 +209,23 @@ A climber outside any session is one player.
 is on a board and what is lit. For Quantum we propose the Boardsesh
 backend subscribes to the eWalls board socket, so eWalls climbers appear in
 Boardsesh, and we would like Boardsesh climbers to appear in eWalls the same
-way. Presence shows where a person is right now, so it follows its own rules
-and not the sync's:
+way. Presence is handled apart from the logbook sync, and it follows the
+privacy rules Boardsesh already has for presence:
 
-- By default a player from the other app is shown as an anonymous player in
-  their layer's colour. The controller needs no more than that.
-- A name is shown only if that climber's privacy settings allow it. Boardsesh
-  already has these settings and applies them to what it sends. We need to
-  know what eWalls has (F11).
+- What Boardsesh sends to eWalls about a climber on the wall is what Boardsesh
+  itself would show a member of the public looking at that board. A climber
+  is named where Boardsesh would name them and anonymous where Boardsesh
+  would show them as anonymous.
 - Neither service keeps the other's presence data after the climber has left
   the wall.
+- We would like to apply eWalls' own rules to eWalls climbers shown in
+  Boardsesh, and need to know what they are (F11).
 
 **Climbs the other app does not know.** A climber can light a climb that is
-not saved yet. eWalls may have the same case with its own unsaved climbs. We
-propose that the holds of an unpublished climb are not sent to the other
-service. The other app shows that the player's layer is in use, with no
-climb.
+not saved yet. eWalls may have the same case with its own unsaved climbs.
+Boardsesh presence already handles this: it shows the lit layer and the
+player, with no link to a climb. We propose both apps do the same for a climb
+they do not know.
 
 What we need to know:
 

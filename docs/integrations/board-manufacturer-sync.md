@@ -662,18 +662,22 @@ backend can subscribe to that feed and show the manufacturer's climbers in the
 same place.
 
 Presence says where a person is right now, so it is handled apart from the
-sync and has its own rules:
+logbook sync. It needs no new privacy rules, because Boardsesh already has
+them ([privacy.md](../product/privacy.md)):
 
-- To share the wall, the two apps need only an anonymous player id that lasts
-  as long as the layer does. That is the default.
-- A climber's name goes to the other app only if their own privacy settings
-  allow it. Boardsesh already has these settings (a private account, and
-  "anonymous on boards I don't own"), and they apply to what Boardsesh sends
-  as well as to what it shows.
-- The holds of a climb that is not published are not sent to the other
-  service. Everyone at the wall can see them lit; nobody else needs them.
-- Presence is not stored by the receiving side beyond the time the climber
-  is on the wall.
+- **What Boardsesh sends to the manufacturer about a climber on the wall is
+  what Boardsesh itself would show a member of the public looking at that
+  board.** No new default is added and none is removed.
+- So a climber is named in the manufacturer's app when Boardsesh would name
+  them there, and is anonymous when Boardsesh would show them as anonymous:
+  for example when they have switched on "anonymous on boards I don't own",
+  or when their account or the board's own privacy hides them.
+- A climb that is not published is shown as a lit layer with no link to a
+  climb, as Boardsesh presence shows it today.
+- A climber who changes a privacy setting changes what the manufacturer's app
+  shows from then on.
+- Neither side keeps the other's presence data after the climber has left the
+  wall.
 
 What has to be agreed per board is in the manufacturer's annex.
 
