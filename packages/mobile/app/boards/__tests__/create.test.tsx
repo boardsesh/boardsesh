@@ -309,7 +309,6 @@ vi.mock('../../../src/components/board-discovery/BoardForm', () => ({
     onSubmit,
     errorMessage,
     defaultName,
-    focusLocationOnOpen,
     submitBlocked,
     errorAction,
     configError,
@@ -321,7 +320,6 @@ vi.mock('../../../src/components/board-discovery/BoardForm', () => ({
     onSubmit: () => void;
     errorMessage?: string | null;
     defaultName: string;
-    focusLocationOnOpen?: boolean;
     submitBlocked?: boolean;
     errorAction?: { label: string; onPress: () => void };
     configError?: { field: string; invalidSetIds: readonly number[] } | null;
@@ -335,7 +333,6 @@ vi.mock('../../../src/components/board-discovery/BoardForm', () => ({
       {
         'data-testid': 'board-form',
         'data-default-name': defaultName,
-        'data-focus-location': String(!!focusLocationOnOpen),
         'data-submit-blocked': String(!!submitBlocked),
         'data-config-error': configError ? `${configError.field}:${configError.invalidSetIds.join(',')}` : '',
         'data-setup-style': setupStyle ?? 'chips',
@@ -1363,12 +1360,6 @@ describe('CreateBoard from the gym-first flow (#8151)', () => {
     expect(container.querySelector('[data-default-name]')?.getAttribute('data-default-name')).toBe(
       'Boulder Space MoonBoard',
     );
-  });
-
-  it("focuses the location field for My gym isn't listed", () => {
-    state.params = { kind: 'gym', focusLocation: '1' };
-    const { container } = render(createElement(CreateBoard));
-    expect(container.querySelector('[data-focus-location]')?.getAttribute('data-focus-location')).toBe('true');
   });
 
   it('starts the add-a-board wizard for a bare open with the flag on', () => {

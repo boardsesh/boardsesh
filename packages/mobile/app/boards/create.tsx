@@ -243,8 +243,6 @@ export default function CreateBoard() {
     gymUuid?: string;
     /** The board type chosen on the wall list. */
     boardType?: string;
-    /** `'1'`: open with the location field focused (old links; the wizard no longer sends it). */
-    focusLocation?: string;
     /** The add-a-board wizard's branch (`gym` | `home`), when it opened this. */
     path?: string;
     /** How the wizard was entered; see `AddBoardWizardEntry`. */
@@ -1134,7 +1132,6 @@ export default function CreateBoard() {
         }
         onSubmit={() => void handleCreate()}
         submitLabel={t('mobile.create.save')}
-        focusLocationOnOpen={params.focusLocation === '1'}
         submitBlocked={prefillPending}
         errorAction={
           createError
