@@ -274,11 +274,14 @@ describe('the add-a-board wizard chrome', () => {
     expect(routerMock.back).toHaveBeenCalledTimes(1);
   });
 
-  it.each(['add/gym', 'add/gym-boards', 'add/board'])('keeps the back chevron and blanks the title on %s', (name) => {
-    const { title, headerLeft } = optionsFor(name);
-    expect(title).toBe('');
-    expect(headerLeft).toBeUndefined();
-  });
+  it.each(['add/gym', 'add/gym-boards', 'add/new-gym', 'add/board'])(
+    'keeps the back chevron and blanks the title on %s',
+    (name) => {
+      const { title, headerLeft } = optionsFor(name);
+      expect(title).toBe('');
+      expect(headerLeft).toBeUndefined();
+    },
+  );
 });
 
 // A root route pushed from inside this modal is presented as a second sheet, so

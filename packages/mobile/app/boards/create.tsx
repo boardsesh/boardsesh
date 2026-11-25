@@ -243,7 +243,7 @@ export default function CreateBoard() {
     gymUuid?: string;
     /** The board type chosen on the wall list. */
     boardType?: string;
-    /** `'1'` from "My gym isn't listed": open with the location field focused. */
+    /** `'1'`: open with the location field focused (old links; the wizard no longer sends it). */
     focusLocation?: string;
     /** The add-a-board wizard's branch (`gym` | `home`), when it opened this. */
     path?: string;
@@ -267,6 +267,8 @@ export default function CreateBoard() {
   const [stepPosition] = useState(() =>
     wizardEntry === null ? null : wizardStepPosition('setup', parseWizardTrail(params.trail)),
   );
+  // The gym was added on Add your gym, a step that is no longer in the history.
+  const [addedGymInWizard] = useState(() => wizardEntry !== null && parseWizardTrail(params.trail).includes('new_gym'));
   const boardReturnTo = resolveBoardReturnTo(params.returnTo);
   // Threaded through the picker from the first-run flow. Creating a board is one
   // of the ways a climber binds their first one, so it has to close out
@@ -1148,8 +1150,15 @@ export default function CreateBoard() {
         // The gym the wizard's earlier step picked stays put; one that turned
         // out to be gone unlocks with "Choose another gym".
         gymLocked={wizardEnabled && kind === 'gym' && prefillGymUuid !== null && gymPrefilled}
-        // From a gym page there is no earlier step to go back to.
-        gymLockedHint={wizardEntry === 'gym_page' ? t('mobile.addWizard.gymLockedHintGymPage') : undefined}
+        // From a gym page there is no earlier step to go back to; a gym the
+        // climber just added is theirs, and Back leads to Which gym?.
+        gymLockedHint={
+          wizardEntry === 'gym_page'
+            ? t('mobile.addWizard.gymLockedHintGymPage')
+            : addedGymInWizard
+              ? t('mobile.addWizard.gymLockedHintNewGym')
+              : undefined
+        }
         stepLabel={stepPosition ? t('mobile.addWizard.stepCounter', stepPosition) : null}
       />
       {existingWalls && (

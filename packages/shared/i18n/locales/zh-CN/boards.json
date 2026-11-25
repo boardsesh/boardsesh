@@ -585,7 +585,8 @@
       "gymBoardsLoading": "这家岩馆的训练板",
       "stepCounter": "第 {{current}} / {{total}} 步",
       "gymLockedHint": "已在上一步选好。返回上一步可以换一家岩馆。",
-      "gymLockedHintGymPage": "正在从这家岩馆的页面设置。要在别的岩馆添加训练板，请打开那家岩馆的页面。"
+      "gymLockedHintGymPage": "正在从这家岩馆的页面设置。要在别的岩馆添加训练板，请打开那家岩馆的页面。",
+      "gymLockedHintNewGym": "你刚添加了这家岩馆。返回上一步可以换一家。"
     },
     "findWall": {
       "boardType": "训练板类型",
@@ -630,8 +631,36 @@
       "inThisArea": "这一带的岩馆",
       "noNameMatch": "没有叫这个名字的岩馆",
       "addGym": "添加我的岩馆",
-      "addGymHint": "列表里没有？连同你的训练板一起添加",
+      "addGymHint": "列表里没有？先添加岩馆，再添加训练板",
       "places": "地点"
+    },
+    "newGym": {
+      "title": "添加你的岩馆",
+      "nameLabel": "岩馆名称",
+      "namePlaceholder": "你的岩馆叫什么",
+      "searchPlaceholder": "搜索城市或地址",
+      "pinNeeded": "搜索城市或使用你的位置，然后移动地图，让图钉落在你的岩馆上。",
+      "pinZoomIn": "放大地图，直到图钉落在你的岩馆上。",
+      "pinAtYou": "图钉就在你所在的位置。",
+      "pinFromYou": "图钉距离你 {{distance}}。",
+      "pinNearPlace": "图钉在 {{place}} 附近。",
+      "pinSet": "图钉已放好。",
+      "pinMoveHint": "移动地图，让图钉落在你的岩馆上。",
+      "fallbackNeeded": "这里无法加载地图。搜索你的岩馆地址，或使用你的位置。",
+      "fallbackYou": "我们会把你的岩馆放在你现在的位置。",
+      "fallbackPlace": "我们会把你的岩馆放在 {{place}}。",
+      "placeNotFound": "找不到这个地点。请从列表中选择城市，或换一个地址试试。",
+      "addressLabel": "地址（可选）",
+      "addressPlaceholder": "街道和门牌号",
+      "similarTitle": "附近已有这些岩馆",
+      "similarBody": "是其中之一吗？点你的岩馆来添加它的训练板。",
+      "similarRefusedBody": "这些岩馆已在列表中。点你的岩馆来添加它的训练板，或告诉我们你的是另一家岩馆。",
+      "claim": "认领",
+      "claimAria": "认领{{gym}}",
+      "save": "添加岩馆",
+      "saveHint": "填写名称并放好图钉后即可添加。",
+      "limitReached": "你拥有的岩馆已达到单个账户的上限。删除一个你不再管理的岩馆后即可添加新的。",
+      "saveFailed": "无法添加你的岩馆，请重试。"
     },
     "boardDetail": {
       "setActive": "设为当前训练板",

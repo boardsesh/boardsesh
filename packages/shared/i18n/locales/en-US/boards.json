@@ -585,7 +585,8 @@
       "gymBoardsLoading": "Boards at this gym",
       "stepCounter": "Step {{current}} of {{total}}",
       "gymLockedHint": "Picked on the last step. Go back to pick another gym.",
-      "gymLockedHintGymPage": "Set up from this gym's page. Open another gym's page to add a board there."
+      "gymLockedHintGymPage": "Set up from this gym's page. Open another gym's page to add a board there.",
+      "gymLockedHintNewGym": "You just added this gym. Go back to pick another one."
     },
     "findWall": {
       "boardType": "Board type",
@@ -630,8 +631,36 @@
       "inThisArea": "Gyms in this area",
       "noNameMatch": "No gyms match that name",
       "addGym": "Add my gym",
-      "addGymHint": "Not listed? Add it with your board",
+      "addGymHint": "Not listed? Add it, then its board",
       "places": "Places"
+    },
+    "newGym": {
+      "title": "Add your gym",
+      "nameLabel": "Gym name",
+      "namePlaceholder": "Your gym's name",
+      "searchPlaceholder": "Search a town or address",
+      "pinNeeded": "Search a town or use your location, then move the map so the pin sits on your gym.",
+      "pinZoomIn": "Zoom in until the pin sits on your gym.",
+      "pinAtYou": "The pin is where you are.",
+      "pinFromYou": "The pin is {{distance}} from you.",
+      "pinNearPlace": "The pin is near {{place}}.",
+      "pinSet": "The pin is set.",
+      "pinMoveHint": "Move the map so the pin sits on your gym.",
+      "fallbackNeeded": "The map can't load here. Search your gym's address or use your location.",
+      "fallbackYou": "We'll put your gym where you are now.",
+      "fallbackPlace": "We'll put your gym at {{place}}.",
+      "placeNotFound": "Couldn't find that place. Pick a town from the list or try another address.",
+      "addressLabel": "Address (optional)",
+      "addressPlaceholder": "Street and number",
+      "similarTitle": "Already listed nearby",
+      "similarBody": "Is it one of these? Tap yours to add its board.",
+      "similarRefusedBody": "These gyms are already listed. Tap yours to add its board, or tell us yours is a different gym.",
+      "claim": "Claim",
+      "claimAria": "Claim {{gym}}",
+      "save": "Add gym",
+      "saveHint": "Give it a name and a pin to add it.",
+      "limitReached": "You own the most gyms one account can. Delete one you no longer run to add another.",
+      "saveFailed": "Couldn't add your gym. Try again."
     },
     "boardDetail": {
       "setActive": "Set as active board",

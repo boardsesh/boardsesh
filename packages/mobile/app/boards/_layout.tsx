@@ -103,6 +103,7 @@ function BoardsLayout() {
         />
         <Stack.Screen name="add/gym" options={{ title: '' }} />
         <Stack.Screen name="add/gym-boards" options={{ title: '' }} />
+        <Stack.Screen name="add/new-gym" options={{ title: '' }} />
         <Stack.Screen name="add/board" options={{ title: '' }} />
         <Stack.Screen name="add/setup-option" options={{ title: '' }} />
         {/* The retired gym-first routes (#8151), now redirects into the wizard

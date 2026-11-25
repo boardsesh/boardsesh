@@ -3,10 +3,13 @@
 //   /boards/add             "Where's the board?"  at a gym | at home | a spray wall
 //   /boards/add/gym         "Which gym?"          the map and search (GymStep)
 //   /boards/add/gym-boards  "Boards at {gym}"     the gym's walls (GymWallList)
+//   /boards/add/new-gym     "Add your gym"        a gym that isn't listed (NewGymStep)
 //   /boards/add/board       "Which board?"        the board type tiles
 //   /boards/create          Set up                the builder, restyled
 //
-// Gym path: Where → Which gym? → Boards at {gym} → Set up. Home path: Where →
+// Gym path: Where → Which gym? → Boards at {gym} → Set up, or, for a gym that
+// isn't listed, Where → Which gym? → Add your gym → (Which board?, when no type
+// was chosen on the map) → Set up, with the new gym locked. Home path: Where →
 // Which board? → Set up. A spray wall hands off to /boards/spray/new, which has
 // its own steps. An entry that already knows the answer skips ahead: a gym
 // page opens on its boards, the In range slot's "It's my own board" on Set up
@@ -20,7 +23,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../analytics';
 
 /** One screen of the wizard. `spray` is the hand-off to the add-a-wall wizard. */
-export type AddBoardWizardStep = 'where' | 'gym' | 'gym_boards' | 'board' | 'setup' | 'spray';
+export type AddBoardWizardStep = 'where' | 'gym' | 'gym_boards' | 'new_gym' | 'board' | 'setup' | 'spray';
 
 /** Which branch of the wizard: the gym's boards, the climber's own board, or a spray wall. */
 export type AddBoardWizardPath = 'gym' | 'home' | 'spray';
@@ -47,6 +50,7 @@ const COUNTED_STEPS: ReadonlySet<string> = new Set<AddBoardWizardStep>([
   'where',
   'gym',
   'gym_boards',
+  'new_gym',
   'board',
   'setup',
 ]);
@@ -67,15 +71,23 @@ export function parseWizardTrail(value: unknown): AddBoardWizardStep[] {
   return value.split(',').filter((step): step is AddBoardWizardStep => COUNTED_STEPS.has(step));
 }
 
-/** How many counted screens follow `step` on its path: every path ends on Set up. */
-function stepsAfter(step: AddBoardWizardStep): number {
+/**
+ * How many counted screens follow `step` on its path: every path ends on Set
+ * up. `boardTypeKnown` only matters on Add your gym: with no type chosen on the
+ * map, Which board? comes before Set up.
+ */
+function stepsAfter(step: AddBoardWizardStep, boardTypeKnown: boolean): number {
   switch (step) {
     case 'where':
       // Not knowable before the answer; step 1 shows no counter (see below).
       return 0;
     case 'gym':
-      // Then Boards at {gym} (or, for an unlisted gym, Which board?) and Set up.
+      // Then Boards at {gym} (or, for a gym that isn't listed, Add your gym)
+      // and Set up. Which gym? can't know the climber will add a gym with no
+      // type chosen, which is one screen longer: Add your gym says so.
       return 2;
+    case 'new_gym':
+      return boardTypeKnown ? 1 : 2;
     case 'gym_boards':
     case 'board':
       return 1;
@@ -95,10 +107,14 @@ export type WizardStepPosition = { current: number; total: number } | null;
  * and for a flow of one screen (the In range slot's Set up), where "Step 1 of
  * 1" says nothing.
  */
-export function wizardStepPosition(step: AddBoardWizardStep, trail: readonly AddBoardWizardStep[]): WizardStepPosition {
+export function wizardStepPosition(
+  step: AddBoardWizardStep,
+  trail: readonly AddBoardWizardStep[],
+  { boardTypeKnown = false }: { boardTypeKnown?: boolean } = {},
+): WizardStepPosition {
   if (step === 'where' || step === 'spray') return null;
   const current = trail.length + 1;
-  const total = current + stepsAfter(step);
+  const total = current + stepsAfter(step, boardTypeKnown);
   return total > 1 ? { current, total } : null;
 }
 
@@ -148,18 +164,28 @@ export function wizardGymBoardsHref(
 }
 
 /**
- * "Which board?". On the gym path (an unlisted gym), the builder it leads to
- * opens with More options' location field focused, so the climber says where
- * the gym is.
+ * "Add your gym": the gym isn't listed, so the climber adds it (name and a
+ * pin) before its board. `boardType` is the type chosen on the map, carried
+ * on to Set up; without one, Which board? comes next.
+ */
+export function wizardNewGymHref(context: WizardRouteContext, boardType?: string | null): WizardHref {
+  const params = baseParams(context);
+  if (boardType) params.boardType = boardType;
+  return { pathname: '/boards/add/new-gym', params };
+}
+
+/**
+ * "Which board?". On the gym path it follows Add your gym, carrying the gym
+ * just added (`gymUuid`) on to Set up, where it is locked.
  */
 export function wizardBoardHref(
   context: WizardRouteContext,
   path: 'gym' | 'home',
-  options: { focusLocation?: boolean } = {},
+  options: { gymUuid?: string } = {},
 ): WizardHref {
   const params = baseParams(context);
   params.path = path;
-  if (options.focusLocation) params.focusLocation = '1';
+  if (options.gymUuid) params.gymUuid = options.gymUuid;
   return { pathname: '/boards/add/board', params };
 }
 
@@ -179,7 +205,6 @@ export function wizardSetupHref(
     path: 'gym' | 'home';
     boardType?: string | null;
     gymUuid?: string;
-    focusLocation?: boolean;
   },
 ): WizardHref {
   const params = baseParams(context);
@@ -192,7 +217,6 @@ export function wizardSetupHref(
     params.boardType = setup.boardType;
   }
   if (setup.gymUuid) params.gymUuid = setup.gymUuid;
-  if (setup.focusLocation) params.focusLocation = '1';
   return { pathname: '/boards/create', params };
 }
 

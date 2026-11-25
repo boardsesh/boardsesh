@@ -1482,6 +1482,14 @@ describe("CreateBoard as the add-a-board wizard's Set up", () => {
     wizard.rerender(createElement(CreateBoard));
     await waitFor(() => expect(form(wizard.container).getAttribute('data-gym-locked')).toBe('true'));
     expect(form(wizard.container).getAttribute('data-gym-locked-hint')).toBe('');
+    wizard.unmount();
+
+    // A gym the climber just added on Add your gym: theirs, and Back leads to Which gym?.
+    state.params = { ...state.params, entry: 'picker', trail: 'where,gym,new_gym' };
+    const added = render(createElement(CreateBoard));
+    added.rerender(createElement(CreateBoard));
+    await waitFor(() => expect(form(added.container).getAttribute('data-gym-locked')).toBe('true'));
+    expect(form(added.container).getAttribute('data-gym-locked-hint')).toBe('mobile.addWizard.gymLockedHintNewGym');
   });
 
   // A gym's wall is shared: the wizard opens it on its type only, and nothing

@@ -585,7 +585,8 @@
       "gymBoardsLoading": "Boards in dieser Halle",
       "stepCounter": "Schritt {{current}} von {{total}}",
       "gymLockedHint": "Im letzten Schritt gewählt. Geh zurück, um eine andere Halle zu wählen.",
-      "gymLockedHintGymPage": "Du richtest es auf der Seite dieser Halle ein. Öffne die Seite einer anderen Halle, um dort ein Board hinzuzufügen."
+      "gymLockedHintGymPage": "Du richtest es auf der Seite dieser Halle ein. Öffne die Seite einer anderen Halle, um dort ein Board hinzuzufügen.",
+      "gymLockedHintNewGym": "Du hast diese Halle gerade hinzugefügt. Geh zurück, um eine andere zu wählen."
     },
     "findWall": {
       "boardType": "Board-Typ",
@@ -630,8 +631,36 @@
       "inThisArea": "Hallen in dieser Gegend",
       "noNameMatch": "Keine Halle heißt so",
       "addGym": "Meine Halle hinzufügen",
-      "addGymHint": "Nicht dabei? Füg sie mit deinem Board hinzu",
+      "addGymHint": "Nicht dabei? Füg sie hinzu, dann ihr Board",
       "places": "Orte"
+    },
+    "newGym": {
+      "title": "Füg deine Halle hinzu",
+      "nameLabel": "Name der Halle",
+      "namePlaceholder": "Wie heißt deine Halle?",
+      "searchPlaceholder": "Stadt oder Adresse suchen",
+      "pinNeeded": "Such eine Stadt oder nutz deinen Standort, dann schieb die Karte, bis die Markierung auf deiner Halle sitzt.",
+      "pinZoomIn": "Zoom hinein, bis die Markierung auf deiner Halle sitzt.",
+      "pinAtYou": "Die Markierung ist da, wo du bist.",
+      "pinFromYou": "Die Markierung ist {{distance}} von dir entfernt.",
+      "pinNearPlace": "Die Markierung ist in der Nähe von {{place}}.",
+      "pinSet": "Die Markierung ist gesetzt.",
+      "pinMoveHint": "Schieb die Karte, bis die Markierung auf deiner Halle sitzt.",
+      "fallbackNeeded": "Die Karte kann hier nicht laden. Such die Adresse deiner Halle oder nutz deinen Standort.",
+      "fallbackYou": "Wir setzen deine Halle dorthin, wo du gerade bist.",
+      "fallbackPlace": "Wir setzen deine Halle nach {{place}}.",
+      "placeNotFound": "Diesen Ort haben wir nicht gefunden. Wähl eine Stadt aus der Liste oder versuch eine andere Adresse.",
+      "addressLabel": "Adresse (optional)",
+      "addressPlaceholder": "Straße und Hausnummer",
+      "similarTitle": "Schon in der Nähe eingetragen",
+      "similarBody": "Ist es eine davon? Tipp auf deine, um ihr Board hinzuzufügen.",
+      "similarRefusedBody": "Diese Hallen sind schon eingetragen. Tipp auf deine, um ihr Board hinzuzufügen, oder sag uns, dass deine eine andere Halle ist.",
+      "claim": "Beanspruchen",
+      "claimAria": "{{gym}} beanspruchen",
+      "save": "Halle hinzufügen",
+      "saveHint": "Gib ihr einen Namen und eine Markierung, um sie hinzuzufügen.",
+      "limitReached": "Du hast schon so viele Hallen, wie ein Konto haben kann. Lösch eine, die du nicht mehr betreibst, um eine neue anzulegen.",
+      "saveFailed": "Deine Halle konnte nicht hinzugefügt werden. Versuch es noch mal."
     },
     "boardDetail": {
       "setActive": "Als aktives Board setzen",
