@@ -4,6 +4,7 @@ import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { createHash } from 'node:crypto';
 
 function option(name, fallback) {
   const index = process.argv.indexOf(`--${name}`);
@@ -51,6 +52,8 @@ for (const variable of [
 if (!process.env.DATABASE_URL) throw new Error('Set DATABASE_URL to the isolated seeded development database');
 if (!process.env.BACKEND_INTERNAL_URL)
   throw new Error('Set BACKEND_INTERNAL_URL to the isolated development backend or a loopback fixture');
+if (new URL(process.env.BACKEND_INTERNAL_URL).pathname !== '/graphql')
+  throw new Error('BACKEND_INTERNAL_URL must include the /graphql endpoint path');
 
 const reservation = createServer();
 await new Promise((resolveListen, reject) => {
@@ -64,6 +67,44 @@ await new Promise((resolveClose) => reservation.close(resolveClose));
 const origin = `http://127.0.0.1:${port}`;
 const samples = [];
 const output = resolve(option('output', 'public-page-soak.json'));
+const guardPreload = resolve(
+  option('guard-preload', fileURLToPath(new URL('./public-page-load-guard-preload.cjs', import.meta.url))),
+);
+const samplerPreload = fileURLToPath(new URL('./public-page-soak-sample.cjs', import.meta.url));
+const cataloguePath = fileURLToPath(new URL('../../shared/i18n/locales/en-US/climbs.json', import.meta.url));
+const catalogue = JSON.parse(await readFile(cataloguePath, 'utf8'));
+const sourceFiles = {
+  harness: fileURLToPath(import.meta.url),
+  guardPreload,
+  guard: resolve(guardPreload, '../public-page-load-guard.cjs'),
+  samplerPreload,
+  standaloneEntry: resolve(standalone, 'server.js'),
+  catalogue: cataloguePath,
+};
+const sourceHashes = Object.fromEntries(
+  await Promise.all(
+    Object.entries(sourceFiles).map(async ([name, path]) => [
+      name,
+      createHash('sha256')
+        .update(await readFile(path))
+        .digest('hex'),
+    ]),
+  ),
+);
+const evidence = { revision: option('revision', null), sourceFiles, sourceHashes, startedAt: new Date().toISOString() };
+
+function renderedText(body, text) {
+  const escaped = text
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll("'", '&#x27;');
+  return (
+    body.includes(`>${escaped}<`) ||
+    body.includes(`"children":${JSON.stringify(text)}`) ||
+    body.includes(`"pendingMessage":${JSON.stringify(text)}`)
+  );
+}
 const server = fork(resolve(standalone, 'server.js'), [], {
   cwd: resolve(standalone),
   execArgv: [
@@ -71,9 +112,9 @@ const server = fork(resolve(standalone, 'server.js'), [], {
     '--max-old-space-size=1900',
     '--expose-gc',
     '--require',
-    resolve(option('guard-preload', fileURLToPath(new URL('./public-page-load-guard-preload.cjs', import.meta.url)))),
+    guardPreload,
     '--require',
-    fileURLToPath(new URL('./public-page-soak-sample.cjs', import.meta.url)),
+    samplerPreload,
   ],
   env: {
     ...process.env,
@@ -137,12 +178,14 @@ let attempted = 0;
 let skipped = 0;
 let transportErrors = 0;
 let invalidClimbBodies = 0;
+const unavailableClimbBodies = { beta: 0, related: 0 };
 let peakOutstanding = 0;
 const outstanding = new Set();
 let sampler;
 let producer;
 let sampling = false;
 let producerPaused = false;
+let report;
 async function takeQuiescentSample() {
   await Promise.allSettled(outstanding);
   const deadline = Date.now() + 15_000;
@@ -168,7 +211,7 @@ try {
   }
   await takeSample(false);
   process.stdout.write(
-    JSON.stringify({ type: 'ready', origin, standalone: resolve(standalone), pid: server.pid }) + '\n',
+    JSON.stringify({ type: 'ready', origin, standalone: resolve(standalone), pid: server.pid, evidence }) + '\n',
   );
   let collectedRetentionBaseline = false;
   sampler = setInterval(async () => {
@@ -192,6 +235,7 @@ try {
           statuses,
           transportErrors,
           invalidClimbBodies,
+          unavailableClimbBodies,
           outstanding: outstanding.size,
           sample,
         }) + '\n',
@@ -228,6 +272,14 @@ try {
           (!body.includes('climb-similar-heading') || (!body.includes('<h1') && !body.includes('"h1"')))
         )
           invalidClimbBodies += 1;
+        if (response.status === 200) {
+          if (renderedText(body, catalogue.frontDoor.beta.unavailable)) unavailableClimbBodies.beta += 1;
+          if (
+            renderedText(body, catalogue.frontDoor.similar.unavailable) ||
+            renderedText(body, catalogue.frontDoor.similar.nearbyUnavailable)
+          )
+            unavailableClimbBodies.related += 1;
+        }
       })
       .catch(() => {
         transportErrors += 1;
@@ -257,12 +309,16 @@ try {
     !statuses[500] &&
     !statuses[502] &&
     (statuses[200] ?? 0) > attempted * 0.5 &&
-    samples.every((sample) => (sample.guard?.active ?? 0) <= 16);
-  const report = {
+    unavailableClimbBodies.related < (statuses[200] ?? 0) * 0.5 &&
+    samples.every(
+      (sample) => (sample.guard?.active ?? 0) <= 16 && !sample.guard?.pressure && !sample.guard?.pressureRejected,
+    );
+  report = {
     passed,
     minutes,
     requestsPerMinute,
-    distinctPaths: paths.length,
+    distinctPaths: new Set(paths).size,
+    evidence,
     targetRequests: minutes * requestsPerMinute,
     achievedRateFraction: attempted / (minutes * requestsPerMinute),
     attempted,
@@ -270,24 +326,47 @@ try {
     statuses,
     transportErrors,
     invalidClimbBodies,
+    unavailableClimbBodies,
     peakOutstanding,
     retainedGrowthBytes,
     fatal,
     samples,
     logsTail,
   };
-  await writeFile(output, JSON.stringify(report, null, 2));
-  process.stdout.write(JSON.stringify({ passed, output, attempted, statuses, retainedGrowthBytes, fatal }) + '\n');
   if (!passed) process.exitCode = 1;
 } finally {
   clearInterval(producer);
   clearInterval(sampler);
-  server.kill('SIGTERM');
-  const force = setTimeout(() => server.kill('SIGKILL'), 10_000);
-  force.unref();
-  await new Promise((resolveExit) => {
-    if (server.exitCode !== null || server.signalCode !== null) resolveExit();
-    else server.once('exit', resolveExit);
+  const shutdownStartedAt = Date.now();
+  let forcedKill = false;
+  const shutdown = new Promise((resolveExit) => {
+    if (server.exitCode !== null || server.signalCode !== null)
+      resolveExit({ code: server.exitCode, signal: server.signalCode });
+    else server.once('exit', (code, signal) => resolveExit({ code, signal }));
   });
+  server.kill('SIGTERM');
+  const force = setTimeout(() => {
+    forcedKill = true;
+    server.kill('SIGKILL');
+  }, 10_000);
+  force.unref();
+  const exit = await shutdown;
   clearTimeout(force);
+  if (report) {
+    report.shutdown = { ...exit, forcedKill, durationMs: Date.now() - shutdownStartedAt };
+    report.passed &&= !forcedKill && exit.code === 143;
+    await writeFile(output, JSON.stringify(report, null, 2));
+    process.stdout.write(
+      JSON.stringify({
+        passed: report.passed,
+        output,
+        attempted,
+        statuses,
+        retainedGrowthBytes: report.retainedGrowthBytes,
+        fatal: report.fatal,
+        shutdown: report.shutdown,
+      }) + '\n',
+    );
+    if (!report.passed) process.exitCode = 1;
+  }
 }

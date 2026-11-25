@@ -274,7 +274,8 @@ vp exec node packages/web/scripts/public-page-soak.mjs \
 
 `DATABASE_URL` and `BACKEND_INTERNAL_URL` must point to loopback fixtures; the
 harness refuses configured production database/backend hosts and non-loopback
-HTTP fetches. An isolated Docker run may opt into the Docker host alias with
+HTTP fetches. `BACKEND_INTERNAL_URL` includes the full `/graphql` endpoint path.
+An isolated Docker run may opt into the Docker host alias with
 `--allow-docker-host`. The test-only sampler records natural heap usage every
 minute and requests full GC only at minutes 30 and 60, to measure retained growth
 without a forced collection masking pressure recovery each minute. Both the
@@ -283,6 +284,10 @@ transport/500/502 failures, at least half of requests successfully rendering rea
 climb bodies, no more than 16 active renders, and less than 64 MiB retained-heap growth
 over the final 30 minutes. The two retention samples are taken after in-flight
 requests drain, and the driver must achieve at least 90% of its requested rate.
+The report records source hashes, optional beta/related-section failures and
+Next's final shutdown code/duration. At least half of successful bodies must
+include available related content; heap-pressure rejections or a forced shutdown
+make the run fail. Stop the producer before judging Next's drain behavior.
 A shorter diagnostic run intentionally cannot pass.
 The ordinary HTTP tests separately exercise overload, deadlines and cancellation;
 a synthetic HTTP handler alone does not prove production Next retention.
