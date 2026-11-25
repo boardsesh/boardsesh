@@ -98,21 +98,21 @@ describe('applyRateLimit key selection', () => {
     });
   });
 
-  it('keeps anonymous HTTP callers on the local tier', async () => {
-    // Distributed limiting for the separate HTTP trust boundary is tracked in
-    // #3096. This issue only hardens WebSocket upgrade identity.
+  it('shares anonymous HTTP limits through Redis', async () => {
     const ctx: ConnectionContext = {
       connectionId: 'http-abc-123',
       transport: 'http',
       isAuthenticated: false,
       userId: undefined,
-      clientIp: '203.0.113.50',
+      trustedClientIp: '203.0.113.50',
     };
 
     await applyRateLimit(ctx, 5, 'createSession');
 
     expect(mockCheckRateLimit).toHaveBeenCalledWith('ip:203.0.113.50:createSession', 5);
-    expect(mockCheckRateLimitRedis).not.toHaveBeenCalled();
+    expect(mockCheckRateLimitRedis).toHaveBeenCalledWith('ip:203.0.113.50', 'createSession', 5, 60_000, {
+      fallbackToMemory: false,
+    });
   });
 
   it('adds a high-ceiling distributed TCP-peer bucket for anonymous WebSocket callers', async () => {
@@ -120,7 +120,7 @@ describe('applyRateLimit key selection', () => {
       connectionId: 'ws-anon-123',
       transport: 'ws',
       isAuthenticated: false,
-      clientIp: '203.0.113.50',
+      trustedClientIp: '203.0.113.50',
       socketPeerIp: '10.0.0.8',
     };
 
@@ -133,12 +133,13 @@ describe('applyRateLimit key selection', () => {
     ]);
   });
 
-  it('keeps the TCP-peer bucket stable when a direct-origin caller rotates the Cloudflare header', async () => {
+  it.each(['http', 'ws'] as const)('ignores forged legacy IPs across %s requests', async (transport) => {
     const firstContext: ConnectionContext = {
       connectionId: 'ws-anon-1',
-      transport: 'ws',
+      transport,
       isAuthenticated: false,
       clientIp: '203.0.113.1',
+      trustedClientIp: '198.51.100.10',
       socketPeerIp: '10.0.0.8',
     };
     const secondContext: ConnectionContext = {
@@ -150,9 +151,50 @@ describe('applyRateLimit key selection', () => {
     await applyRateLimit(firstContext, 5, 'createSession');
     await applyRateLimit(secondContext, 5, 'createSession');
 
-    const peerCalls = mockCheckRateLimitRedis.mock.calls.filter(([identity]) => identity === 'socket-peer:10.0.0.8');
-    expect(peerCalls).toHaveLength(2);
-    expect(peerCalls[0]).toEqual(peerCalls[1]);
+    expect(mockCheckRateLimit.mock.calls).toEqual([
+      ['ip:198.51.100.10:createSession', 5],
+      ['ip:198.51.100.10:createSession', 5],
+    ]);
+    const identityCalls = mockCheckRateLimitRedis.mock.calls.filter(([identity]) => identity === 'ip:198.51.100.10');
+    expect(identityCalls).toHaveLength(2);
+    expect(identityCalls[0]).toEqual(identityCalls[1]);
+  });
+
+  it('attributes server-rendered catalog requests to their verified visitor', async () => {
+    await applyRateLimit(
+      {
+        connectionId: 'ssr-request',
+        transport: 'http',
+        isAuthenticated: false,
+        catalogClientIp: '203.0.113.20',
+        trustedClientIp: '198.51.100.10',
+      },
+      120,
+      'search-climbs',
+    );
+    expect(mockCheckRateLimitRedis).toHaveBeenCalledWith('ip:203.0.113.20', 'search-climbs', 120, 60_000, {
+      fallbackToMemory: false,
+    });
+  });
+
+  it('gives only verified anonymous cache work a bounded service allowance', async () => {
+    for (const attribution of ['server-cache', undefined]) {
+      await applyRateLimit(
+        {
+          connectionId: 'cache',
+          isAuthenticated: false,
+          catalogClientIp: attribution,
+          clientIp: 'server-cache',
+          trustedClientIp: '203.0.113.20',
+        },
+        120,
+        'search-climbs',
+      );
+    }
+    expect(mockCheckRateLimit.mock.calls).toEqual([
+      ['ip:server-cache:search-climbs', 600],
+      ['ip:203.0.113.20:search-climbs', 120],
+    ]);
   });
 
   it('does not apply the anonymous peer ceiling to authenticated WebSocket callers', async () => {
@@ -161,7 +203,7 @@ describe('applyRateLimit key selection', () => {
       transport: 'ws',
       isAuthenticated: true,
       userId: 'user-42',
-      clientIp: '203.0.113.50',
+      trustedClientIp: '203.0.113.50',
       socketPeerIp: '10.0.0.8',
     };
 
@@ -178,14 +220,14 @@ describe('applyRateLimit key selection', () => {
       connectionId: 'ws-anon-123',
       transport: 'ws',
       isAuthenticated: false,
-      clientIp: undefined,
+      trustedClientIp: undefined,
       socketPeerIp: '10.0.0.8',
     };
 
     await applyRateLimit(ctx, 5, 'createSession');
 
-    expect(mockCheckRateLimit).toHaveBeenCalledWith('ws-anon-123', 5);
-    expect(mockCheckRateLimitRedis).toHaveBeenCalledOnce();
+    expect(mockCheckRateLimit).toHaveBeenCalledWith('ip:10.0.0.8:createSession', 5);
+    expect(mockCheckRateLimitRedis).toHaveBeenCalledTimes(2);
     expect(mockCheckRateLimitRedis).toHaveBeenCalledWith('socket-peer:10.0.0.8', 'createSession', 600, 60_000, {
       fallbackToMemory: true,
     });
@@ -196,13 +238,13 @@ describe('applyRateLimit key selection', () => {
       connectionId: 'ws-request-1',
       transport: 'ws',
       isAuthenticated: false,
-      clientIp: '10.0.0.1',
+      trustedClientIp: '10.0.0.1',
     };
     const ctx2: ConnectionContext = {
       connectionId: 'ws-request-2',
       transport: 'ws',
       isAuthenticated: false,
-      clientIp: '10.0.0.1',
+      trustedClientIp: '10.0.0.1',
     };
 
     await applyRateLimit(ctx1, 5, 'createSession');
@@ -215,12 +257,12 @@ describe('applyRateLimit key selection', () => {
     expect(mockCheckRateLimitRedis).toHaveBeenCalledTimes(2);
   });
 
-  it('shares the local bucket across anonymous HTTP requests from the same IP', async () => {
+  it('shares both tiers across anonymous HTTP requests from the same IP', async () => {
     const firstContext: ConnectionContext = {
       connectionId: 'http-request-1',
       transport: 'http',
       isAuthenticated: false,
-      clientIp: '10.0.0.1',
+      trustedClientIp: '10.0.0.1',
     };
     const secondContext: ConnectionContext = {
       ...firstContext,
@@ -234,7 +276,7 @@ describe('applyRateLimit key selection', () => {
       'ip:10.0.0.1:createSession',
       'ip:10.0.0.1:createSession',
     ]);
-    expect(mockCheckRateLimitRedis).not.toHaveBeenCalled();
+    expect(mockCheckRateLimitRedis).toHaveBeenCalledTimes(2);
   });
 
   it('keeps every bucket key unchanged when a client identity is present', async () => {
@@ -246,12 +288,12 @@ describe('applyRateLimit key selection', () => {
     };
     const contexts: ConnectionContext[] = [
       { connectionId: 'ws-user', transport: 'ws', isAuthenticated: true, userId: 'user-42' },
-      { connectionId: 'http-anon', transport: 'http', isAuthenticated: false, clientIp: '203.0.113.50' },
+      { connectionId: 'http-anon', transport: 'http', isAuthenticated: false, trustedClientIp: '203.0.113.50' },
       {
         connectionId: 'ws-anon',
         transport: 'ws',
         isAuthenticated: false,
-        clientIp: '203.0.113.50',
+        trustedClientIp: '203.0.113.50',
         socketPeerIp: '10.0.0.8',
       },
       { connectionId: 'ws-no-ip', isAuthenticated: false },
@@ -273,22 +315,24 @@ describe('applyRateLimit key selection', () => {
       'user-42:createSession',
       'ip:203.0.113.50:createSession',
       'ip:203.0.113.50:createSession',
-      'ws-no-ip',
+      'ip:unknown:createSession',
     ]);
   });
 
-  it('falls back to connectionId when no clientIp and not authenticated', async () => {
+  it('uses a stable unknown bucket when no verified identity is available', async () => {
     const ctx: ConnectionContext = {
       connectionId: 'ws-anon-456',
       isAuthenticated: false,
       userId: undefined,
-      clientIp: undefined,
+      trustedClientIp: undefined,
     };
 
     await applyRateLimit(ctx, 5, 'default');
 
-    expect(mockCheckRateLimit).toHaveBeenCalledWith('ws-anon-456', 5);
-    expect(mockCheckRateLimitRedis).not.toHaveBeenCalled();
+    expect(mockCheckRateLimit).toHaveBeenCalledWith('ip:unknown:default', 5);
+    expect(mockCheckRateLimitRedis).toHaveBeenCalledWith('ip:unknown', 'default', 5, 60_000, {
+      fallbackToMemory: false,
+    });
   });
 });
 
@@ -325,7 +369,7 @@ describe('applyRateLimit structured RATE_LIMITED error (#2763)', () => {
       connectionId: 'ws-anon-1',
       transport: 'ws',
       isAuthenticated: false,
-      clientIp: '203.0.113.50',
+      trustedClientIp: '203.0.113.50',
       socketPeerIp: '10.0.0.8',
     };
 
@@ -352,7 +396,7 @@ describe('applyRateLimit structured RATE_LIMITED error (#2763)', () => {
       transport: 'http',
       isAuthenticated: true,
       userId: 'user-1',
-      clientIp: '203.0.113.9',
+      trustedClientIp: '203.0.113.9',
       clientIdentity: { name: 'boardsesh-mobile', version: '2.6.0', platform: 'ios', build: '45' },
       clientIdentityRaw: 'boardsesh-mobile/2.6.0 (ios; build 45)',
     };

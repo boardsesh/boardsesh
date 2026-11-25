@@ -7,6 +7,7 @@ import {
   type Server,
 } from 'node:http';
 import { brotliDecompressSync, gunzipSync } from 'node:zlib';
+import { CATALOG_PROOF_HEADER, signCatalogRequest } from '@boardsesh/crypto/catalog-request-proof';
 
 /**
  * Cover for issue #4034: anonymous HTTP requests must key their rate-limit
@@ -77,6 +78,35 @@ function fetchRequest(headers: Record<string, string> = {}): Request {
 describe('buildHttpConnectionContext client IP', () => {
   beforeEach(() => {
     resolverCalls.length = 0;
+  });
+
+  it('accepts signed visitor attribution without authenticating that visitor', async () => {
+    const proof = signCatalogRequest(
+      { purpose: 'graphql', method: 'POST', pathname: '/graphql', clientIp: '203.0.113.20' },
+      process.env.NEXTAUTH_SECRET!,
+    );
+    const context = await buildHttpConnectionContext({
+      request: fetchRequest({ [CATALOG_PROOF_HEADER]: proof }),
+      req: nodeRequest({ remoteAddress: '198.51.100.10' }),
+    });
+    expect(context.catalogClientIp).toBe('203.0.113.20');
+    expect(context.trustedClientIp).toBe('198.51.100.10');
+    expect(context.isAuthenticated).toBe(false);
+    expect(context.userId).toBeUndefined();
+  });
+
+  it('ignores an attacker-signed proof and forged Cloudflare identity at a direct origin', async () => {
+    const proof = signCatalogRequest(
+      { purpose: 'graphql', method: 'POST', pathname: '/graphql', clientIp: 'server-cache' },
+      'attacker-secret',
+    );
+    const context = await buildHttpConnectionContext({
+      request: fetchRequest({ [CATALOG_PROOF_HEADER]: proof }),
+      req: nodeRequest({ remoteAddress: '198.51.100.10', headers: { 'cf-connecting-ip': '203.0.113.99' } }),
+    });
+    expect(context.catalogClientIp).toBeUndefined();
+    expect(context.trustedClientIp).toBe('198.51.100.10');
+    expect(context.isAuthenticated).toBe(false);
   });
 
   it('ignores a client-authored first forwarded hop and keys on the last one', async () => {

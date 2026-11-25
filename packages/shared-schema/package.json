@@ -16,6 +16,11 @@
       "import": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./catalog-access-policy": {
+      "types": "./src/catalog-access-policy.ts",
+      "import": "./src/catalog-access-policy.ts",
+      "default": "./src/catalog-access-policy.ts"
+    },
     "./characteristics": {
       "types": "./src/characteristics.ts",
       "import": "./src/characteristics.ts",

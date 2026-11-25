@@ -2,6 +2,11 @@ import { CredentialAuthorityUnavailable } from '@/app/lib/auth/credential-admiss
 import 'server-only';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { executeAuthenticatedGraphQL } from './server-graphql';
+import {
+  catalogGraphQLProofHeaders,
+  catalogRequestIdentity,
+  CATALOG_SERVER_CACHE_IDENTITY,
+} from './catalog-attribution.server';
 import { unstable_cache } from 'next/cache';
 import { type RequestDocument, type Variables, GraphQLClient } from 'graphql-request';
 import { sortObjectKeys } from '@/app/lib/cache-utils';
@@ -33,12 +38,14 @@ export async function executeGraphQLInternal<T = unknown, V extends Variables = 
   document: RequestDocument,
   variables?: V,
   signal?: AbortSignal,
+  catalogIdentity = CATALOG_SERVER_CACHE_IDENTITY,
 ): Promise<T> {
   const url = getGraphQLHttpUrl();
   const client = new GraphQLClient(url, {
     headers: {
       'Content-Type': 'application/json',
       ...webClientIdentityHeaders(),
+      ...catalogGraphQLProofHeaders(url, catalogIdentity),
     },
     signal: signal ?? AbortSignal.timeout(SSR_BACKEND_FETCH_TIMEOUT_MS),
   });
@@ -80,8 +87,12 @@ export function createCachedGraphQLQuery<T = unknown, V extends Variables = Vari
 ) {
   return async (variables?: V): Promise<T> => {
     if (cacheTag.startsWith('discover-playlists')) {
-      return executeGraphQLInternal<T, V>(document, variables);
+      const catalogIdentity = await catalogRequestIdentity();
+      return executeGraphQLInternal<T, V>(document, variables, undefined, catalogIdentity);
     }
+    // Public cached reads also run during static rendering and background
+    // revalidation. Reading headers here would make those routes dynamic.
+    // Their cache misses consume the bounded server-cache budget instead.
     const cachedFn = unstable_cache(
       async () => {
         try {

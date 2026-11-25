@@ -453,41 +453,13 @@ export async function isSessionMember(ctx: ConnectionContext, sessionId: string)
 }
 
 /**
- * Apply rate limiting to a connection.
- *
- * Two-tier enforcement strategy:
- *
- * 1. **In-memory** (all users): Fast synchronous check, per-instance.
- *    For authenticated users the key is `userId:operation`; for
- *    unauthenticated users it is `ip:<clientIp>:operation` on both transports
- *    (HTTP sets clientIp in yoga.ts, WebSocket in websocket/setup.ts since
- *    issue #2863), falling back to `connectionId` only when no client IP could
- *    be resolved. This provides immediate per-process protection and works
- *    even when Redis is down.
- *
- * 2. **Redis** (authenticated callers and anonymous WebSockets): Distributed
- *    enforcement across multiple backend instances. Authenticated callers key
- *    on userId; anonymous WebSockets key on the trusted-hop clientIp resolved
- *    during upgrade. Uses an atomic Lua script (INCR + EXPIRE) so counts are
- *    consistent cluster-wide.
- *
- *    Anonymous HTTP deliberately stays on Tier 1 only. Since issue #4034 both
- *    transports resolve clientIp through the same trusted-hop resolver, so the
- *    trust boundary no longer blocks it — extending Tier 2 to anonymous HTTP is
- *    now a cost/benefit call (one Redis round-trip on every anonymous HTTP
- *    request vs. limits that currently scale with instance count) and is left
- *    open on #4034 rather than folded into that fix.
- *
- * Callers are checked by *both* tiers intentionally:
- * the in-memory check is a fast short-circuit that avoids a Redis
- * round-trip when the user is clearly over the limit on this instance,
- * while Redis ensures the limit holds across all instances.
- *
- * Anonymous WebSocket callers also get a high-ceiling Redis bucket keyed on
- * socketPeerIp. That address cannot be supplied in a request header, so a
- * direct-origin caller forging cf-connecting-ip still hits a finite shared
- * ceiling. Hosted proxy fan-in is why this secondary limit is intentionally
- * much higher than the per-client bucket.
+ * Per-operation limits apply to authenticated and anonymous HTTP/WS callers.
+ * A local check protects each process during Redis failures; Redis shares the
+ * allowance across replicas and transports. Anonymous keys use only verified
+ * transport identity or signed server attribution, never the legacy header-derived
+ * clientIp or connectionId. Server attribution carries no authentication privilege.
+ * An unresolved identity shares one bucket, so reconnecting cannot reset it.
+ * Anonymous WebSockets also retain the generous TCP-peer backstop.
  *
  * @param ctx - Connection context
  * @param limit - Optional custom limit (default: 60 requests per minute)
@@ -496,19 +468,14 @@ export async function isSessionMember(ctx: ConnectionContext, sessionId: string)
 export async function applyRateLimit(ctx: ConnectionContext, limit?: number, operation = 'default'): Promise<void> {
   if (process.env.NODE_ENV === 'development') return;
 
-  const maxRequests = limit ?? 60;
+  // Public SSR cache misses have one signed service identity across visitors.
+  // Keep them bounded without giving the entire website one person's quota.
+  const cacheService = !ctx.isAuthenticated && ctx.catalogClientIp === 'server-cache';
+  const maxRequests = (limit ?? 60) * (cacheService ? 5 : 1);
 
-  // Tier 1: Synchronous in-memory rate limiting (fast path, per-instance)
-  // Use userId for authenticated users, clientIp for anonymous HTTP requests,
-  // or connectionId as fallback (WebSocket connections)
-  let key: string;
-  if (ctx.isAuthenticated && ctx.userId) {
-    key = `${ctx.userId}:${operation}`;
-  } else if (ctx.clientIp) {
-    key = `ip:${ctx.clientIp}:${operation}`;
-  } else {
-    key = ctx.connectionId;
-  }
+  const trustedClientIp = ctx.catalogClientIp ?? ctx.trustedClientIp ?? ctx.socketPeerIp ?? 'unknown';
+  const identity = ctx.isAuthenticated && ctx.userId ? ctx.userId : `ip:${trustedClientIp}`;
+  const key = `${identity}:${operation}`;
 
   // Surface a structured RATE_LIMITED error (with retryAfterSeconds) so clients
   // can branch on `extensions.code` instead of message-string matching, and the
@@ -521,20 +488,13 @@ export async function applyRateLimit(ctx: ConnectionContext, limit?: number, ope
 
     // Tier 2: Distributed Redis rate limiting. Tier 1 already ran, so Redis
     // failures must not increment the same in-memory bucket a second time.
-    if (ctx.isAuthenticated && ctx.userId) {
-      await checkRateLimitRedis(ctx.userId, operation, maxRequests, RATE_LIMIT_WINDOW_MS, {
-        fallbackToMemory: false,
-      });
-    } else if (ctx.transport === 'ws' && ctx.clientIp) {
-      await checkRateLimitRedis(`ip:${ctx.clientIp}`, operation, maxRequests, RATE_LIMIT_WINDOW_MS, {
-        fallbackToMemory: false,
-      });
-    }
+    await checkRateLimitRedis(identity, operation, maxRequests, RATE_LIMIT_WINDOW_MS, {
+      fallbackToMemory: false,
+    });
 
     // A rejected client/user bucket intentionally short-circuits before this
     // secondary peer bucket: the request is already blocked and must not spend
-    // another identity's shared-proxy quota. Header rotation keeps reaching this
-    // call because each forged client bucket remains below its own limit.
+    // another identity's shared-proxy quota.
     if (!ctx.isAuthenticated && ctx.transport === 'ws' && ctx.socketPeerIp) {
       const socketPeerLimit = Math.max(
         ANONYMOUS_SOCKET_PEER_RATE_LIMIT_FLOOR,
@@ -553,7 +513,7 @@ export async function applyRateLimit(ctx: ConnectionContext, limit?: number, ope
         operation,
         client: ctx.clientIdentityRaw ?? UNKNOWN_CLIENT,
         userId: ctx.userId,
-        clientIp: ctx.clientIp,
+        clientIp: trustedClientIp,
         transport: ctx.transport,
       });
       throw new GraphQLError(error.message, {

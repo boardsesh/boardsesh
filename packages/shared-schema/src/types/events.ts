@@ -217,6 +217,8 @@ export type ConnectionContext = {
   // verified Cloudflare edge, otherwise the hop our private ingress appended or
   // the socket peer; an IPv6 client is its /64. Unset on test contexts.
   trustedClientIp?: string;
+  /** Verified www server attribution for request budgets; never grants user access. */
+  catalogClientIp?: string;
   // Cloudflare's country for an HTTP request, accepted only from a trusted
   // edge hop (resolveFlagCountry in packages/backend/src/utils/flag-country.ts);
   // 'XX' when unknown or untrusted, undefined on WebSocket and test contexts.

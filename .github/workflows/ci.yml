@@ -1569,6 +1569,7 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5433/boardsesh_backend_test
           REDIS_URL: redis://localhost:6380
+          CATALOG_BUDGET_TEST_REDIS_URL: redis://localhost:6380
           BASE_REF: ${{ github.base_ref }}
           EVENT_NAME: ${{ github.event_name }}
         run: |

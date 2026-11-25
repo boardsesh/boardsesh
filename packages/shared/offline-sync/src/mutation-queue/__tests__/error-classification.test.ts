@@ -7,6 +7,7 @@ import {
   isGraphQLEmptyResponseError,
   isRetryable,
   getErrorStatus,
+  getRateLimitRetryAfterSeconds,
   isNetworkError,
   isPermanentRejection,
   isClimbReferenceToDeletedClimb,
@@ -17,6 +18,58 @@ import {
   PERMANENT_REJECTION_STATUSES,
 } from '../error-classification';
 import { isDatabaseLockedError } from '../../db/lock-errors';
+
+describe('getRateLimitRetryAfterSeconds', () => {
+  const limited = { extensions: { code: 'RATE_LIMITED', retryAfterSeconds: 3600 } };
+
+  it.each([
+    limited,
+    { errors: [limited] },
+    { graphqlErrors: [limited] },
+    { response: { errors: [limited] } },
+    { cause: { cause: { response: { errors: [limited] } } } },
+  ])('reads a structured cooldown from supported GraphQL wrappers', (error) => {
+    expect(getRateLimitRetryAfterSeconds(error)).toBe(3600);
+    expect(hasGraphqlErrorCode(error, 'RATE_LIMITED')).toBe(true);
+  });
+
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, '3600', null, undefined])(
+    'ignores malformed cooldown %s',
+    (retryAfterSeconds) => {
+      expect(getRateLimitRetryAfterSeconds({ extensions: { code: 'RATE_LIMITED', retryAfterSeconds } })).toBeNull();
+    },
+  );
+
+  it('keeps zero and fractional seconds valid for the scheduler to clamp', () => {
+    for (const retryAfterSeconds of [0, 0.5]) {
+      expect(getRateLimitRetryAfterSeconds({ extensions: { code: 'RATE_LIMITED', retryAfterSeconds } })).toBe(
+        retryAfterSeconds,
+      );
+    }
+  });
+
+  it('uses the longest applicable cooldown without trusting unrelated errors', () => {
+    expect(
+      getRateLimitRetryAfterSeconds({
+        errors: [
+          { extensions: { code: 'RATE_LIMITED', retryAfterSeconds: 1 } },
+          limited,
+          { extensions: { code: 'INTERNAL_SERVER_ERROR', retryAfterSeconds: 86400 } },
+        ],
+      }),
+    ).toBe(3600);
+    expect(getRateLimitRetryAfterSeconds({ extensions: { code: 429, retryAfterSeconds: 3600 } })).toBeNull();
+    expect(getRateLimitRetryAfterSeconds(new Error('RATE_LIMITED retryAfterSeconds: 3600'))).toBeNull();
+  });
+
+  it('bounds nested and cyclic causes', () => {
+    const cycle: { cause?: unknown } = {};
+    cycle.cause = { cause: cycle };
+    expect(getRateLimitRetryAfterSeconds(cycle)).toBeNull();
+    expect(getRateLimitRetryAfterSeconds({ cause: { cause: { cause: limited } } })).toBe(3600);
+    expect(getRateLimitRetryAfterSeconds({ cause: { cause: { cause: { cause: limited } } } })).toBeNull();
+  });
+});
 
 describe('isGraphQLEmptyResponseError', () => {
   it('matches the platform error directly and through a cause wrapper', () => {

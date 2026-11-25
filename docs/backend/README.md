@@ -24,5 +24,6 @@ a production rollout or a physical-device result.
 | [Bug-report conversations](bug-report-conversations.md) | `bug-report-conversations.md` |
 | [Background workers](background-workers.md) | `background-workers.md` |
 | [Backend Logging](logging.md) | `logging.md` |
+| [Catalog rate limits](catalog-rate-limits.md) | `catalog-rate-limits.md` |
 | [Scheduler service (`packages/scheduler`)](scheduler.md) | `scheduler.md` |
 | [WebSocket Implementation for Party Sessions](websocket-implementation.md) | `websocket-implementation.md` |

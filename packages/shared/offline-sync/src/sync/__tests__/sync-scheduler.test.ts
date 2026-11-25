@@ -728,6 +728,109 @@ describe('sync-scheduler', () => {
     }
   });
 
+  it('waits for an hourly catalog reset, then automatically drains and resumes sync', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-25T12:00:00Z'));
+    try {
+      const limited = { response: { errors: [{ extensions: { code: 'RATE_LIMITED', retryAfterSeconds: 3600 } }] } };
+      mockPullSync.mockRejectedValueOnce(limited).mockResolvedValue(undefined);
+      const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
+      const onProgress = vi.fn();
+      const stop = startSyncScheduler(
+        mockDb,
+        createMockQueryClient(),
+        mockGraphqlFetch,
+        getEnabledBoards,
+        drainQueue,
+        createFakeTriggers().triggers,
+        { onProgress },
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mockPullSync).toHaveBeenCalledTimes(1);
+      expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ phase: 'idle', failed: true }));
+      await vi.advanceTimersByTimeAsync(3_599_999);
+      expect(mockPullSync).toHaveBeenCalledTimes(1);
+      expect(drainQueue).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(drainQueue).toHaveBeenCalledTimes(2);
+      expect(mockPullSync).toHaveBeenCalledTimes(2);
+      // Success clears the alarm; no periodic polling of the exhausted window.
+      await vi.advanceTimersByTimeAsync(3_600_000);
+      expect(mockPullSync).toHaveBeenCalledTimes(2);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps explicit sync triggers able to drain writes during an automatic cooldown', async () => {
+    vi.useFakeTimers();
+    try {
+      mockPullSync
+        .mockRejectedValueOnce({ extensions: { code: 'RATE_LIMITED', retryAfterSeconds: 3600 } })
+        .mockResolvedValue(undefined);
+      const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
+      const queryClient = createMockQueryClient();
+      const stop = startSyncScheduler(
+        mockDb,
+        queryClient,
+        mockGraphqlFetch,
+        getEnabledBoards,
+        drainQueue,
+        createFakeTriggers().triggers,
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(drainQueue).toHaveBeenCalledTimes(1);
+      triggerSync(mockDb, queryClient, mockGraphqlFetch, getEnabledBoards, drainQueue);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(drainQueue).toHaveBeenCalledTimes(2);
+      expect(mockPullSync).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(3_600_000);
+      expect(mockPullSync).toHaveBeenCalledTimes(2);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    { retryAfterSeconds: 0, delayMs: 1000 },
+    { retryAfterSeconds: 0.1, delayMs: 1000 },
+    { retryAfterSeconds: 86400, delayMs: 86_400_000 },
+    { retryAfterSeconds: Number.MAX_VALUE, delayMs: 86_400_000 },
+    { retryAfterSeconds: '3600', delayMs: 30_000 },
+    { retryAfterSeconds: -1, delayMs: 30_000 },
+    { retryAfterSeconds: Number.NaN, delayMs: 30_000 },
+    { retryAfterSeconds: Number.POSITIVE_INFINITY, delayMs: 30_000 },
+  ])('bounds automatic retry for server cooldown $retryAfterSeconds', async ({ retryAfterSeconds, delayMs }) => {
+    vi.useFakeTimers();
+    try {
+      mockPullSync
+        .mockRejectedValueOnce({
+          cause: { graphqlErrors: [{ extensions: { code: 'RATE_LIMITED', retryAfterSeconds } }] },
+        })
+        .mockResolvedValue(undefined);
+      const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
+      const stop = startSyncScheduler(
+        mockDb,
+        createMockQueryClient(),
+        mockGraphqlFetch,
+        getEnabledBoards,
+        drainQueue,
+        createFakeTriggers().triggers,
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(delayMs - 1);
+      expect(mockPullSync).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(mockPullSync).toHaveBeenCalledTimes(2);
+      expect(drainQueue).toHaveBeenCalledTimes(2);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('a trigger queued behind an in-flight cycle does NOT re-run after cleanup', async () => {
     // Sign-out / flag-flip stops the scheduler while a cycle is mid-pull; the
     // pending follow-up captured before the stop must die with it, or a "new"
