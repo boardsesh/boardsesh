@@ -1,3 +1,4 @@
+import { passwordChangeEvidenceEnabled } from './password-change-evidence';
 import type { CredentialWriterContract } from '@boardsesh/db/credential-writer-acl';
 
 export type CredentialDatabaseEnvironment = Readonly<Record<string, string | undefined>>;
@@ -36,14 +37,22 @@ export function credentialWriterContract(environment: CredentialDatabaseEnvironm
   const contract = selectedContract === undefined || selectedContract === '' ? 'private-web-v1' : selectedContract;
   if (
     contract !== 'private-registration-v1' &&
+    contract !== 'private-registration-evidence-v1' &&
     contract !== 'private-web-v1' &&
     contract !== 'private-browser-v1' &&
     contract !== 'private-provider-v1' &&
     contract !== 'private-first-password-v1' &&
     contract !== 'private-native-handoff-v1' &&
-    contract !== 'private-browser-renewal-v1'
+    contract !== 'private-browser-renewal-v1' &&
+    contract !== 'private-password-evidence-v1'
   )
     throw new Error('CREDENTIAL_DATABASE_CONFIGURATION_REQUIRED');
+  if (
+    passwordChangeEvidenceEnabled(environment) &&
+    contract !== 'private-password-evidence-v1' &&
+    contract !== 'private-registration-evidence-v1'
+  )
+    throw new Error('PASSWORD_CHANGE_EVIDENCE_CREDENTIAL_PROFILE_REQUIRED');
   return contract;
 }
 

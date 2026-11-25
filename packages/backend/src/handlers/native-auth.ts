@@ -4,6 +4,8 @@ import {
   revalidateRegistrationContext,
 } from '../auth/current-store/registration-context';
 import { issuePreEnforcementVerification } from '../auth/current-store/registration-family';
+import { getCredentialDatabase } from '../auth/credential-database';
+import { passwordChangeEvidenceEnabled } from '../auth/password-change-evidence';
 import { assertLegacyIdentityWriterAllowed } from '../auth/current-store/identity-writer-gate';
 import {
   captureIdentityAuthority,
@@ -1041,6 +1043,10 @@ export async function handleNativeAuthRegister(
   let configuration: ReturnType<typeof currentStoreNativeRegistrationConfiguration>;
   try {
     configuration = currentStoreNativeRegistrationConfiguration();
+    // Capture uses the qualified current LOGIN, including its native refresh INSERT.
+    // Explicit database arguments remain the owned-test injection boundary.
+    if (passwordChangeEvidenceEnabled() && database === db)
+      database = await getCredentialDatabase('private-registration-evidence-v1');
   } catch {
     logger.warn('[NativeAuth] Reserved registration unavailable', { category: 'configuration' });
     sendJson(res, 503, { error: 'Service temporarily unavailable' });
