@@ -26,6 +26,15 @@
 // (`useScrollOffset`). A touch on the card reaches the map directly; the
 // list never sees it. The page clips the card once it has scrolled away.
 //
+// A screen whose map is the point of it ("Add your gym", where the climber
+// moves the map under a dot) pins the card instead (`cardPinned`): the card
+// sits above the list, outside it as before, and never scrolls away, so a text
+// field gaining focus (and the list scrolling to keep a row clear of the
+// keyboard) can't carry the map off. While the keyboard is up the card shows
+// a narrower band of the map, its middle (where a dot on its centre is), to
+// leave the rows room, rather than folding. The map itself keeps its size: a
+// resized map reports a camera move nobody made, which would read as a pan.
+//
 // Neither platform resizes these screens for the keyboard (panel-keyboard.ts),
 // so the page ends at the keyboard's top on its own. No grabber, no rounded
 // panel top, no shadow: nothing here pretends to be a sheet.
@@ -60,6 +69,24 @@ const MAP_CARD_INSET = spacing[2];
 /** The map card's height for a page `pageHeight` tall: 30% of it, 150 to 240 pt. */
 export function mapCardHeight(pageHeight: number): number {
   return Math.min(MAP_CARD_MAX_HEIGHT, Math.max(MAP_CARD_MIN_HEIGHT, Math.round(pageHeight * MAP_CARD_FRACTION)));
+}
+
+/** A pinned card's share of the page left above the keyboard, and its floor (pt), while the keyboard is up. */
+const PINNED_CARD_KEYBOARD_FRACTION = 0.4;
+const PINNED_CARD_KEYBOARD_MIN_HEIGHT = 88;
+
+/**
+ * How much of a pinned card shows: all of it with the keyboard down. With it
+ * up, 40% of the page left above the keyboard (never under 88 pt, never over
+ * the card), so the rows under it (the field being typed in, the towns a
+ * search suggests) keep room while the map stays in view.
+ */
+export function pinnedMapBandHeight(pageHeight: number, keyboardOverlap: number): number {
+  const usual = mapCardHeight(pageHeight);
+  if (keyboardOverlap <= 0) return usual;
+  const aboveKeyboard = Math.max(0, pageHeight - keyboardOverlap);
+  const share = Math.round(aboveKeyboard * PINNED_CARD_KEYBOARD_FRACTION);
+  return Math.min(usual, Math.max(PINNED_CARD_KEYBOARD_MIN_HEIGHT, share));
 }
 
 /**
@@ -117,6 +144,12 @@ export type MapCardListProps<Item> = {
   mapAvailable?: boolean;
   /** Fold the card away, e.g. while a search is in progress. */
   mapHidden?: boolean;
+  /**
+   * Hold the card above the rows instead of letting it scroll away with them,
+   * for a screen whose map is its point. It shrinks while the keyboard is up.
+   * Default false.
+   */
+  cardPinned?: boolean;
   /** The locate button in the card's top-right corner; none without it. */
   onLocate?: () => void;
   /** The locate button's accessibility label. */
@@ -149,6 +182,7 @@ export function MapCardList<Item>({
   map,
   mapAvailable = true,
   mapHidden = false,
+  cardPinned = false,
   onLocate,
   locateLabel,
   stickyHeader,
@@ -248,13 +282,19 @@ export function MapCardList<Item>({
   const hasMap = map !== undefined && map !== null;
   const cardFolded = mapHidden || !mapAvailable;
   const cardHeight = mapCardHeight(pageHeight);
+  // How much of the card shows: a pinned card's middle band while the
+  // keyboard is up, all of it otherwise. The card is moved up by half what is
+  // cut, so the band is its middle.
+  const bandHeight = cardPinned ? pinnedMapBandHeight(pageHeight, keyboardOverlap) : cardHeight;
+  const cardShift = Math.round((cardHeight - bandHeight) / 2);
   // The space the card takes at the top of the list: nothing once folded.
-  const cardBoxHeight = hasMap && !cardFolded ? cardHeight + MAP_CARD_INSET * 2 : 0;
+  const cardBoxHeight = hasMap && !cardFolded ? bandHeight + MAP_CARD_INSET * 2 : 0;
 
-  // The list's header is an empty spacer the card floats over.
+  // The list's header is an empty spacer the card floats over. A pinned card
+  // takes its own space above the list instead.
   const cardSpacer = useMemo(
-    () => (hasMap ? <View style={{ height: cardBoxHeight }} testID="map-card-spacer" /> : null),
-    [hasMap, cardBoxHeight],
+    () => (hasMap && !cardPinned ? <View style={{ height: cardBoxHeight }} testID="map-card-spacer" /> : null),
+    [hasMap, cardPinned, cardBoxHeight],
   );
   // The card follows the rows up, 1:1, on the UI thread; past its own height
   // it is clipped away, so it stops there. A pull past the top (iOS bounce)
@@ -276,6 +316,33 @@ export function MapCardList<Item>({
     [footerPinned, footerHeight, keyboardUp, insets.bottom],
   );
 
+  // A pinned card's locate button rides on the band, so a narrowed band keeps it.
+  const locateButton =
+    onLocate && locateLabel ? (
+      <ChromeIconButton
+        icon="location"
+        role="action"
+        onPress={onLocate}
+        accessibilityLabel={locateLabel}
+        style={[styles.locate, shadows.sm, { backgroundColor: systemColors.secondaryBackground }]}
+        testID="map-card-locate"
+      />
+    ) : null;
+  const card = hasMap ? (
+    <View
+      style={[
+        styles.card,
+        CARD_CORNERS,
+        { height: cardHeight, backgroundColor: systemColors.tertiaryFill },
+        cardShift > 0 ? { transform: [{ translateY: -cardShift }] } : null,
+      ]}
+      testID="map-card"
+    >
+      {map}
+      {cardPinned ? null : locateButton}
+    </View>
+  ) : null;
+
   return (
     <View
       style={[styles.page, { backgroundColor: systemColors.groupedBackground, paddingBottom: keyboardOverlap }]}
@@ -283,6 +350,21 @@ export function MapCardList<Item>({
       testID={testID}
     >
       <View style={styles.column}>
+        {hasMap && cardPinned ? (
+          // Pinned: in the column's flow above the list, so it never moves
+          // with the scroll. Folded the same way as the floating card.
+          <View
+            style={[styles.cardBox, { height: cardBoxHeight }]}
+            accessibilityElementsHidden={cardFolded}
+            importantForAccessibility={cardFolded ? 'no-hide-descendants' : 'auto'}
+            testID="map-card-box"
+          >
+            <View style={[styles.card, CARD_CORNERS, { height: bandHeight }]} testID="map-card-band">
+              {card}
+              {locateButton}
+            </View>
+          </View>
+        ) : null}
         <FlashList
           ref={listRef}
           data={rows}
@@ -302,32 +384,17 @@ export function MapCardList<Item>({
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
         />
-        {hasMap ? (
+        {hasMap && !cardPinned ? (
           // Folded, not unmounted: the outer box shrinks to nothing and clips,
           // while the map keeps its full size inside (a 0×0 Google Map may never
           // load), its camera, and a late load's report.
           <Animated.View
-            style={[styles.cardBox, { height: cardBoxHeight }, cardFollowStyle]}
+            style={[styles.cardBox, styles.cardBoxFloating, { height: cardBoxHeight }, cardFollowStyle]}
             accessibilityElementsHidden={cardFolded}
             importantForAccessibility={cardFolded ? 'no-hide-descendants' : 'auto'}
             testID="map-card-box"
           >
-            <View
-              style={[styles.card, CARD_CORNERS, { height: cardHeight, backgroundColor: systemColors.tertiaryFill }]}
-              testID="map-card"
-            >
-              {map}
-              {onLocate && locateLabel ? (
-                <ChromeIconButton
-                  icon="location"
-                  role="action"
-                  onPress={onLocate}
-                  accessibilityLabel={locateLabel}
-                  style={[styles.locate, shadows.sm, { backgroundColor: systemColors.secondaryBackground }]}
-                  testID="map-card-locate"
-                />
-              ) : null}
-            </View>
+            {card}
           </Animated.View>
         ) : null}
         {footerPinned ? (
@@ -365,13 +432,15 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   cardBox: {
+    overflow: 'hidden',
+    paddingHorizontal: spacing[4],
+    paddingTop: MAP_CARD_INSET,
+  },
+  cardBoxFloating: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    overflow: 'hidden',
-    paddingHorizontal: spacing[4],
-    paddingTop: MAP_CARD_INSET,
   },
   card: {
     overflow: 'hidden',

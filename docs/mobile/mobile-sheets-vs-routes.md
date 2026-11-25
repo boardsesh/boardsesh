@@ -849,6 +849,11 @@ the UI thread. "Which gym?" (`GymStep`) is the example, and so is the Boards cop
 for the root `/gyms` (`GymFinderMapScreen`), a full-screen route of its own. Both shells share one
 hook, `useGymFinder`, and the browse rows (`GymBrowseRow`); only the frame differs.
 
+A step whose map is the point of it, like Add your gym (`NewGymStep`, where the climber moves the
+map under a dot), passes `cardPinned`: the card sits above the list and never scrolls or folds, so
+focusing a field can't take the map away. While the keyboard is up it clips to the map's middle band
+instead of resizing the map, because a resized map reports a camera move nobody made.
+
 The same goes for a searchable list: the builders' gym row (Edit board, Set up, a spray wall's
 details) pushes `/boards/gym-picker`, the gym step in pick mode, and takes the answer back through
 an addressed handoff (`gym-pick-handoff.ts`). It used to be a list in a sheet on the Boards sheet.

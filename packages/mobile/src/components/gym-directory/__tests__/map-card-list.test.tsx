@@ -143,7 +143,7 @@ vi.mock('../../../theme/tokens', () => ({
   spacing: { 1: 4, 2: 8, 4: 16, 6: 24 },
 }));
 
-const { MapCardList, mapCardHeight, rowScrollTarget } = await import('../MapCardList');
+const { MapCardList, mapCardHeight, pinnedMapBandHeight, rowScrollTarget } = await import('../MapCardList');
 type Handle = import('../MapCardList').MapCardListHandle;
 
 type Row = { key: string; label: string };
@@ -191,6 +191,21 @@ describe('mapCardHeight', () => {
     expect(mapCardHeight(0)).toBe(150);
     expect(mapCardHeight(700)).toBe(210);
     expect(mapCardHeight(1200)).toBe(240);
+  });
+});
+
+describe('pinnedMapBandHeight', () => {
+  it('is the whole card with the keyboard down', () => {
+    expect(pinnedMapBandHeight(700, 0)).toBe(210);
+  });
+
+  it('is 40% of the page above the keyboard while it is up, 88 pt at least, never more than the card', () => {
+    // 700 - 336 = 364 above the keyboard: 146 pt.
+    expect(pinnedMapBandHeight(700, 336)).toBe(146);
+    // A small phone: 380 - 260 = 120 above it, floored at 88.
+    expect(pinnedMapBandHeight(380, 260)).toBe(88);
+    // A tall page with a short keyboard: the card's own 240 caps it.
+    expect(pinnedMapBandHeight(1200, 100)).toBe(240);
   });
 });
 
@@ -309,6 +324,37 @@ describe('MapCardList', () => {
       }),
     );
     expect(styleOf('map-card-box')).toMatchObject({ height: 0 });
+  });
+
+  it('pins the card above the list when asked: no spacer, no scroll-linked move, locate on the card', () => {
+    state.scrollOffset = 300;
+    const onLocate = vi.fn();
+    renderList({ cardPinned: true, stickyHeader: undefined, footer: undefined, onLocate });
+    const box = styleOf('map-card-box');
+    expect(box).toMatchObject({ height: 226, overflow: 'hidden' });
+    expect(box.position).toBeUndefined();
+    expect(box.transform).toBeUndefined();
+    expect(screen.queryByTestId('map-card-spacer')).toBeNull();
+    expect(styleOf('map-card-band')).toMatchObject({ height: 210, overflow: 'hidden' });
+    expect(styleOf('map-card')).toMatchObject({ height: 210 });
+    expect(styleOf('map-card').transform).toBeUndefined();
+    // Still never inside the scroll view.
+    expect(screen.getByTestId('flash-list').contains(screen.getByTestId('the-map'))).toBe(false);
+    fireEvent.click(screen.getByTestId('map-card-locate'));
+    expect(onLocate).toHaveBeenCalledOnce();
+  });
+
+  it('shows the middle band of a pinned card while the keyboard is up, the map keeping its size', () => {
+    state.keyboardOverlap = 336;
+    renderList({ cardPinned: true });
+    // 40% of the 364 pt above the keyboard: a 146 pt band of the 210 pt card.
+    expect(styleOf('map-card-box')).toMatchObject({ height: 146 + 16 });
+    expect(styleOf('map-card-band')).toMatchObject({ height: 146 });
+    expect(styleOf('map-card')).toMatchObject({ height: 210, transform: [{ translateY: -32 }] });
+    expect(screen.getByTestId('the-map')).toBeTruthy();
+    // The locate button sits on the band, so it stays in view.
+    expect(screen.getByTestId('map-card-band').contains(screen.getByTestId('map-card-locate'))).toBe(true);
+    expect(screen.getByTestId('map-card').contains(screen.getByTestId('map-card-locate'))).toBe(false);
   });
 
   it('is a plain list with no map: no card, and no sticky row without a sticky header', () => {

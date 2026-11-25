@@ -2,8 +2,14 @@
 // The climber names it and puts a pin on it, then goes on to its board. One
 // page inside the Boards sheet, shaped like Which gym? (`GymStep`): a pinned
 // header block (the step counter, the title, the name and the search field),
-// then `MapCardList`, whose map card holds the pin, with Save pinned at the
-// bottom.
+// then `MapCardList`, whose map card holds the pin. Save is the ✓ in the bar,
+// as on Set up; while it can't be pressed, the line under the map says why.
+//
+// - The map is the point of this page, so its card is pinned (`cardPinned`):
+//   it never scrolls away and never folds while a field is in use. Focusing a
+//   field used to fold it (and the list's scroll carried it off), so the
+//   climber lost the map while naming the gym. With the keyboard up the card
+//   shows a narrower band around the dot, leaving the rows room.
 //
 // - The pin is the centre of the map: a fixed dot the climber moves the map
 //   under. It starts at the device fix when location was already allowed (no
@@ -55,6 +61,7 @@ import { useGeocodePlace } from '../../../lib/use-place-search';
 import { selectEffectiveOffline, useConnectivityField } from '../../../lib/connectivity/use-connectivity';
 import { canOpenAppSettings, openAppSettings } from '../../../lib/open-app-settings';
 import { track } from '../../../lib/analytics';
+import { useHeaderActions } from '../../../hooks/use-header-actions';
 import { useTransparentHeaderInset } from '../../../hooks/use-transparent-header-inset';
 import { useAuth } from '../../../providers/auth-provider';
 import { useTheme } from '../../../providers/theme-provider';
@@ -145,8 +152,6 @@ const ADDRESS_ROW_SLOT = <AddressRowSlot />;
 const rowKey = (row: NewGymRow) => row.key;
 const rowType = (row: NewGymRow) => row.kind;
 
-type FocusedField = 'name' | 'address' | null;
-
 function nearTarget(coords: Coords, target: Coords): boolean {
   return (
     Math.abs(coords.latitude - target.latitude) < SETTLE_TOLERANCE_DEG &&
@@ -179,10 +184,6 @@ export function NewGymStep({
   const addressEditedRef = useRef(false);
   const [searchText, setSearchText] = useState('');
   const [placeSuggestions, setPlaceSuggestions] = useState<readonly PlaceSuggestion[]>(NO_PLACES);
-  const [focusedField, setFocusedField] = useState<FocusedField>(null);
-  // As on Which gym?: the map card folds while the search is in use, so the
-  // keyboard never covers the towns, and comes back on a pick or a clear.
-  const [searchFolded, setSearchFolded] = useState(false);
 
   // --- the pin ---
   const [pin, setPin] = useState<GymPin | null>(null);
@@ -387,7 +388,6 @@ export function NewGymStep({
     (place: PlaceSuggestion) => {
       const label = placeSuggestionLabel(place);
       Keyboard.dismiss();
-      setSearchFolded(false);
       setSearchText(label);
       setPlaceLabel(label);
       setPlaceNotFound(false);
@@ -410,7 +410,6 @@ export function NewGymStep({
         return;
       }
       Keyboard.dismiss();
-      setSearchFolded(false);
       setPlaceLabel(text);
       setPlaceNotFound(false);
       seedAddress(text);
@@ -421,15 +420,10 @@ export function NewGymStep({
   const onClearSearch = useCallback(() => {
     setSearchText('');
     setPlaceNotFound(false);
-    setSearchFolded(false);
   }, []);
+  // The towns it suggests are the first rows, right under the map.
   const onSearchFocusChange = useCallback((focused: boolean) => {
-    if (focused) {
-      setSearchFolded(true);
-      listRef.current?.scrollToTop();
-      return;
-    }
-    if (searchTextRef.current.trim().length === 0) setSearchFolded(false);
+    if (focused) listRef.current?.scrollToTop();
   }, []);
 
   // --- the name and the address ---
@@ -447,13 +441,10 @@ export function NewGymStep({
     addressEditedRef.current = true;
     setAddress(text);
   }, []);
-  const onNameFocusChange = useCallback((focused: boolean) => {
-    setFocusedField((current) => (focused ? 'name' : current === 'name' ? null : current));
-  }, []);
   const onAddressFocusChange = useCallback((focused: boolean) => {
-    setFocusedField((current) => (focused ? 'address' : current === 'address' ? null : current));
     if (!focused) return;
-    // Clear of the keyboard once it is up (the map card folds meanwhile).
+    // Clear of the keyboard once it is up. The map stays where it is: only
+    // the rows under it scroll.
     if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
     scrollTimerRef.current = setTimeout(() => {
       scrollTimerRef.current = null;
@@ -625,6 +616,7 @@ export function NewGymStep({
   const showMoveHint = mapAvailable && pin !== null;
   const showMapUnavailable = !mapAvailable && Platform.OS !== 'web';
   const locating = location.status === 'loading';
+  const saveEnabled = canSaveGym(name, pin);
   const pinRow = useMemo(
     () => (
       <View style={styles.pinRow} testID="new-gym-pin-row">
@@ -639,6 +631,12 @@ export function NewGymStep({
         {placeNotFound ? (
           <Text variant="footnote" color={systemColors.error} accessibilityLiveRegion="polite">
             {t('mobile.newGym.placeNotFound')}
+          </Text>
+        ) : null}
+        {/* Why the ✓ in the bar can't be pressed yet. */}
+        {!saveEnabled ? (
+          <Text variant="footnote" tone="secondary" testID="new-gym-save-hint">
+            {t('mobile.newGym.saveHint')}
           </Text>
         ) : null}
         <View style={styles.pinActions}>
@@ -669,6 +667,7 @@ export function NewGymStep({
       captionText,
       showMoveHint,
       placeNotFound,
+      saveEnabled,
       pin?.source,
       locating,
       showMapUnavailable,
@@ -771,26 +770,20 @@ export function NewGymStep({
     [onSelectPlace, onPickExistingGym, onClaimGym, addNewRow],
   );
 
-  const saveEnabled = canSaveGym(name, pin);
-  const footer = useMemo(
-    () => (
-      <View style={styles.footer}>
-        <Button
-          title={t('mobile.newGym.save')}
-          onPress={onSave}
-          disabled={!saveEnabled || submitting}
-          loading={submitting}
-          size="large"
-        />
-        {!saveEnabled ? (
-          <Text variant="footnote" tone="secondary" style={styles.footerHint}>
-            {t('mobile.newGym.saveHint')}
-          </Text>
-        ) : null}
-      </View>
-    ),
-    [onSave, saveEnabled, submitting, t],
-  );
+  // Save is the ✓ in the bar, as on Set up: it never rides on the keyboard
+  // and never covers the rows. Held while a save is out (and after it went
+  // through: the caller moves on, and the gym must never be added twice).
+  useHeaderActions({
+    trailing: {
+      kind: 'confirm',
+      label: t('mobile.newGym.save'),
+      onPress: onSave,
+      disabled: !saveEnabled || submitting,
+      loading: submitting,
+      prominent: true,
+    },
+    clearOnUnmount: true,
+  });
 
   return (
     <View
@@ -806,7 +799,6 @@ export function NewGymStep({
             placeholder={t('mobile.newGym.namePlaceholder')}
             maxLength={GYM_NAME_MAX_LENGTH}
             onChangeText={onChangeName}
-            onFocusChange={onNameFocusChange}
             testID="new-gym-name"
           />
           <GymSearchField
@@ -834,10 +826,9 @@ export function NewGymStep({
             getItemType={rowType}
             map={mapElement}
             mapAvailable={mapAvailable}
-            mapHidden={searchFolded || focusedField !== null}
+            cardPinned
             onLocate={onUseMyLocation}
             locateLabel={t('mobile.gyms.grantLocation')}
-            footer={footer}
             testID="new-gym-list"
           />
         </AddressRowContext.Provider>
@@ -909,12 +900,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     paddingTop: spacing[3],
     paddingBottom: spacing[2],
-  },
-  footer: {
-    paddingHorizontal: spacing[4],
-    gap: spacing[1],
-  },
-  footerHint: {
-    textAlign: 'center',
   },
 });
