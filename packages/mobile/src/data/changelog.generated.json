@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-24T23:40:34.925Z",
+  "generatedAt": "2026-11-25T07:15:15.648Z",
   "entries": [
+    {
+      "prNumber": 8157,
+      "category": "new",
+      "title": "Adding a board at your gym? Find the one your crew already climbs on, so your sends land in the same place.",
+      "mergedAt": "2026-11-25T07:10:44Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8157"
+    },
     {
       "prNumber": 8142,
       "category": "fixed",

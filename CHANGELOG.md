@@ -4,6 +4,12 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/operations/mobile-ota-updates.md.
 
+## 2026-11-25
+
+### New
+
+- Adding a board at your gym? Find the one your crew already climbs on, so your sends land in the same place. ([#8157](https://github.com/boardsesh/boardsesh/pull/8157))
+
 ## 2026-11-24
 
 ### New
