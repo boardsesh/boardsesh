@@ -9,9 +9,10 @@
 
 import type { BoardPickerAddKind } from '../../lib/boards/board-picker-add-analytics';
 import { wizardWhereHref, type AddBoardWizardEntry } from '../../lib/boards/add-board-wizard';
+import { gymMapHref, type GymMapHref } from '../gym-page/gym-page-route';
 
 export type AddBoardRoute = {
-  pathname: '/boards/create' | '/boards/spray/new' | '/boards/gyms' | '/boards/add';
+  pathname: '/boards/create' | '/boards/spray/new' | GymMapHref['pathname'] | '/boards/add';
   params: Record<string, string>;
 };
 
@@ -61,8 +62,8 @@ export function addBoardRoute(kind: BoardPickerAddKind, context: AddBoardRouteCo
       if (context.fromPicker) params.from = 'picker';
       // Every caller stands in the picker's stack, so the map is the picker's
       // own copy: the root `/gyms` pushed from in there would stack a second
-      // sheet on the picker (`gymMapHref`, gym-page-route.ts).
-      return { pathname: '/boards/gyms', params };
+      // sheet on the picker (gym-page-route.ts).
+      return gymMapHref('boards', params);
     }
   }
 }
