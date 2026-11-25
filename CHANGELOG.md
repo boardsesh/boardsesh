@@ -8,10 +8,18 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### New
 
+- Adding a board is now one short flow: say where it is, find your gym on a map or pick your board, then set it up. ([#8182](https://github.com/boardsesh/boardsesh/pull/8182))
+  The board setup screen is cleaner: fewer chips, clear rows for layout and size.
+- Bluetooth off? The board picker now has a Turn on button, and starts looking for your board as soon as it's on. ([#8175](https://github.com/boardsesh/boardsesh/pull/8175))
+  Setting up a board you're standing in front of fills in its serial for you.
+- Adding a board at your gym? Find the gym on a map, or search a town, even with location off. ([#8176](https://github.com/boardsesh/boardsesh/pull/8176))
+- Boardsesh no longer asks for your location just because you opened a screen. Say "Not now" once and it stays quiet for two weeks, and you can still turn it on any time. ([#8173](https://github.com/boardsesh/boardsesh/pull/8173))
 - Adding a board at your gym? Find the one your crew already climbs on, so your sends land in the same place. ([#8157](https://github.com/boardsesh/boardsesh/pull/8157))
 
 ### Fixed
 
+- Sign out from website Settings before the next climber uses your computer. ([#8177](https://github.com/boardsesh/boardsesh/pull/8177))
+- Spray wall imports no longer get stuck waiting in the queue ([#8178](https://github.com/boardsesh/boardsesh/pull/8178))
 - Shared session and join links show the whole climb in chat previews. ([#8156](https://github.com/boardsesh/boardsesh/pull/8156))
 
 ## 2026-11-24

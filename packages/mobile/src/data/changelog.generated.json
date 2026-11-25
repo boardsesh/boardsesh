@@ -1,6 +1,50 @@
 {
-  "generatedAt": "2026-11-25T09:48:09.038Z",
+  "generatedAt": "2026-11-25T12:58:26.256Z",
   "entries": [
+    {
+      "prNumber": 8182,
+      "category": "new",
+      "title": "Adding a board is now one short flow: say where it is, find your gym on a map or pick your board, then set it up.",
+      "mergedAt": "2026-11-25T12:38:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8182",
+      "body": "The board setup screen is cleaner: fewer chips, clear rows for layout and size."
+    },
+    {
+      "prNumber": 8175,
+      "category": "new",
+      "title": "Bluetooth off? The board picker now has a Turn on button, and starts looking for your board as soon as it's on.",
+      "mergedAt": "2026-11-25T12:23:59Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8175",
+      "body": "Setting up a board you're standing in front of fills in its serial for you."
+    },
+    {
+      "prNumber": 8177,
+      "category": "fixed",
+      "title": "Sign out from website Settings before the next climber uses your computer.",
+      "mergedAt": "2026-11-25T12:16:31Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8177"
+    },
+    {
+      "prNumber": 8176,
+      "category": "new",
+      "title": "Adding a board at your gym? Find the gym on a map, or search a town, even with location off.",
+      "mergedAt": "2026-11-25T12:14:23Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8176"
+    },
+    {
+      "prNumber": 8173,
+      "category": "new",
+      "title": "Boardsesh no longer asks for your location just because you opened a screen. Say \"Not now\" once and it stays quiet for two weeks, and you can still turn it on any time.",
+      "mergedAt": "2026-11-25T12:05:35Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8173"
+    },
+    {
+      "prNumber": 8178,
+      "category": "fixed",
+      "title": "Spray wall imports no longer get stuck waiting in the queue",
+      "mergedAt": "2026-11-25T10:20:54Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8178"
+    },
     {
       "prNumber": 8156,
       "category": "fixed",
