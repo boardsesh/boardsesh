@@ -278,7 +278,9 @@ without a forced collection masking pressure recovery each minute. Both the
 pre-GC and post-GC values are recorded. Passing requires 60 minutes, no heap exhaustion or
 transport/500/502 failures, at least half of requests successfully rendering real
 climb bodies, no more than 16 active renders, and less than 64 MiB retained-heap growth
-over the final 30 minutes. A shorter diagnostic run intentionally cannot pass.
+over the final 30 minutes. The two retention samples are taken after in-flight
+requests drain, and the driver must achieve at least 90% of its requested rate.
+A shorter diagnostic run intentionally cannot pass.
 The ordinary HTTP tests separately exercise overload, deadlines and cancellation;
 a synthetic HTTP handler alone does not prove production Next retention.
 

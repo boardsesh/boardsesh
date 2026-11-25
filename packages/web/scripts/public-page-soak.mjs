@@ -89,6 +89,9 @@ const server = fork(resolve(standalone, 'server.js'), [], {
   stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
 });
 let fatal = null;
+server.on('error', (error) => {
+  fatal ??= error.message;
+});
 let logsTail = '';
 for (const stream of [server.stdout, server.stderr])
   stream.on('data', (chunk) => {
@@ -99,6 +102,33 @@ for (const stream of [server.stdout, server.stderr])
 server.on('message', (message) => {
   if (message?.type === 'public-page-soak-sample') samples.push(message);
 });
+let sampleSequence = 0;
+function takeSample(forceGc) {
+  return new Promise((resolveSample, reject) => {
+    if (!server.connected) {
+      reject(new Error('Standalone IPC channel closed'));
+      return;
+    }
+    const requestId = ++sampleSequence;
+    const timeout = setTimeout(() => {
+      server.removeListener('message', onSample);
+      reject(new Error('Standalone did not return a heap sample within five seconds'));
+    }, 5_000);
+    function onSample(message) {
+      if (message?.type !== 'public-page-soak-sample' || message.requestId !== requestId) return;
+      clearTimeout(timeout);
+      server.removeListener('message', onSample);
+      resolveSample(message);
+    }
+    server.on('message', onSample);
+    server.send({ type: 'public-page-soak-sample', forceGc, requestId }, (error) => {
+      if (!error) return;
+      clearTimeout(timeout);
+      server.removeListener('message', onSample);
+      reject(error);
+    });
+  });
+}
 server.once('exit', (code, signal) => {
   fatal ??= `Standalone exited: ${code ?? signal}`;
 });
@@ -111,6 +141,19 @@ let peakOutstanding = 0;
 const outstanding = new Set();
 let sampler;
 let producer;
+let sampling = false;
+let producerPaused = false;
+async function takeQuiescentSample() {
+  await Promise.allSettled(outstanding);
+  const deadline = Date.now() + 15_000;
+  let sample = await takeSample(false);
+  while ((sample.guard?.active ?? 0) > 0 && Date.now() < deadline) {
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+    sample = await takeSample(false);
+  }
+  if (sample.guard?.active !== 0) throw new Error('Standalone render work did not settle before the retention sample');
+  return takeSample(true);
+}
 try {
   const bootDeadline = Date.now() + 30_000;
   while (true) {
@@ -123,27 +166,47 @@ try {
     if (Date.now() > bootDeadline) throw new Error('Standalone did not become healthy');
     await new Promise((resolveWait) => setTimeout(resolveWait, 250));
   }
-  server.send({ type: 'public-page-soak-sample', forceGc: false });
+  await takeSample(false);
+  process.stdout.write(
+    JSON.stringify({ type: 'ready', origin, standalone: resolve(standalone), pid: server.pid }) + '\n',
+  );
   let collectedRetentionBaseline = false;
-  sampler = setInterval(() => {
-    const forceGc = !collectedRetentionBaseline && performance.now() - startedAt >= 29.5 * 60_000;
-    if (forceGc) collectedRetentionBaseline = true;
-    server.send({ type: 'public-page-soak-sample', forceGc });
-    process.stdout.write(
-      JSON.stringify({
-        elapsedMinutes: Math.round((performance.now() - startedAt) / 60_000),
-        attempted,
-        statuses,
-        transportErrors,
-        outstanding: outstanding.size,
-        sample: samples.at(-1),
-      }) + '\n',
-    );
+  sampler = setInterval(async () => {
+    if (sampling) return;
+    sampling = true;
+    try {
+      const forceGc = !collectedRetentionBaseline && performance.now() - startedAt >= 29.5 * 60_000;
+      if (forceGc) {
+        producerPaused = true;
+        await Promise.allSettled(outstanding);
+      }
+      const sample = forceGc ? await takeQuiescentSample() : await takeSample(false);
+      if (forceGc) {
+        collectedRetentionBaseline = true;
+        producerPaused = false;
+      }
+      process.stdout.write(
+        JSON.stringify({
+          elapsedMinutes: Math.round((performance.now() - startedAt) / 60_000),
+          attempted,
+          statuses,
+          transportErrors,
+          invalidClimbBodies,
+          outstanding: outstanding.size,
+          sample,
+        }) + '\n',
+      );
+    } catch (error) {
+      fatal ??= error instanceof Error ? error.message : String(error);
+    } finally {
+      producerPaused = false;
+      sampling = false;
+    }
   }, 60_000);
   const startedAt = performance.now();
   const endAt = startedAt + minutes * 60_000;
   producer = setInterval(() => {
-    if (fatal || performance.now() >= endAt) return;
+    if (fatal || producerPaused || performance.now() >= endAt) return;
     if (outstanding.size >= maximumOutstanding) {
       skipped += 1;
       return;
@@ -175,9 +238,10 @@ try {
   }, 60_000 / requestsPerMinute);
   while (performance.now() < endAt && !fatal) await new Promise((resolveWait) => setTimeout(resolveWait, 500));
   clearInterval(producer);
+  clearInterval(sampler);
   await Promise.allSettled(outstanding);
-  server.send({ type: 'public-page-soak-sample', forceGc: true });
-  await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+  while (sampling) await new Promise((resolveWait) => setTimeout(resolveWait, 10));
+  if (!fatal) await takeQuiescentSample();
   const finalWindow = samples.filter((sample) => sample.forcedGc && sample.timestamp >= Date.now() - 31 * 60_000);
   const retainedGrowthBytes =
     finalWindow.length > 1 ? finalWindow.at(-1).heapUsedBytes - finalWindow[0].heapUsedBytes : null;
@@ -185,9 +249,11 @@ try {
     !fatal &&
     minutes >= 60 &&
     finalWindow.length >= 2 &&
+    finalWindow.every((sample) => sample.guard?.active === 0) &&
     retainedGrowthBytes <= 64 * 1024 * 1024 &&
     transportErrors === 0 &&
     invalidClimbBodies === 0 &&
+    attempted >= minutes * requestsPerMinute * 0.9 &&
     !statuses[500] &&
     !statuses[502] &&
     (statuses[200] ?? 0) > attempted * 0.5 &&
@@ -197,6 +263,8 @@ try {
     minutes,
     requestsPerMinute,
     distinctPaths: paths.length,
+    targetRequests: minutes * requestsPerMinute,
+    achievedRateFraction: attempted / (minutes * requestsPerMinute),
     attempted,
     skipped,
     statuses,

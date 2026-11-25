@@ -23,6 +23,7 @@ process.on('message', (message) => {
   const guard = http[Symbol.for('boardsesh.public-page-load-guard')];
   process.send?.({
     type: 'public-page-soak-sample',
+    requestId: message.requestId,
     timestamp: Date.now(),
     forcedGc: Boolean(message.forceGc),
     beforeGcHeapUsedBytes,
