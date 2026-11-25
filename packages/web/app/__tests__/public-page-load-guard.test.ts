@@ -370,7 +370,7 @@ describe('public catalogue HTTP budget', () => {
     });
   });
 
-  it('recovers from real disposable heap pressure without forcing GC or restarting', async () => {
+  it('reopens after allocation-driven natural GC collects disposable heap pressure', async () => {
     const { stdout } = await promisify(execFile)(
       process.execPath,
       [
@@ -382,11 +382,14 @@ describe('public catalogue HTTP budget', () => {
     const report = JSON.parse(stdout) as {
       initialStatus: number;
       recoveredAfterMs: number | null;
+      allocationCount: number;
       heapFraction: number;
       stats: GuardStats;
     };
     expect(report.initialStatus).toBe(503);
     expect(report.recoveredAfterMs).not.toBeNull();
+    expect(report.allocationCount).toBeGreaterThan(0);
+    expect(report.allocationCount).toBeLessThanOrEqual(350);
     expect(report.heapFraction).toBeLessThan(0.6);
     expect(report.stats).toMatchObject({ active: 0, pressure: false });
   }, 50_000);

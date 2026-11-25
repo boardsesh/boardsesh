@@ -11,6 +11,7 @@ async function run() {
     held.push(Array.from({ length: 256 * 1024 }, () => 7));
   }
   const retained = Symbol.for('boardsesh.pressure-fixture-holds');
+  const allocationProbe = Symbol.for('boardsesh.pressure-fixture-allocation');
   global[retained] = held;
   const server = http.createServer(guard.wrap((_request, response) => response.end('ok')));
   await new Promise((resolve, reject) => {
@@ -32,9 +33,15 @@ async function run() {
     delete global[retained];
     held = [];
     let recoveredAfterMs = null;
+    let allocationCount = 0;
     const startedAt = Date.now();
     while (Date.now() - startedAt < 35_000) {
       await new Promise((resolve) => setTimeout(resolve, 100));
+      // Continue a small, bounded allocation workload after dropping the large
+      // retained set. V8 need not schedule a major collection while idle. Keep
+      // only the latest 2 MiB array alive; never force a collection with gc().
+      global[allocationProbe] = Array.from({ length: 256 * 1024 }, () => 9);
+      allocationCount += 1;
       if ((await sample()) === 200) {
         recoveredAfterMs = Date.now() - startedAt;
         break;
@@ -45,12 +52,14 @@ async function run() {
       JSON.stringify({
         initialStatus,
         recoveredAfterMs,
+        allocationCount,
         heapFraction: heap.used_heap_size / heap.heap_size_limit,
         stats: guard.getStats(),
       }),
     );
   } finally {
     delete global[retained];
+    delete global[allocationProbe];
     guard.close();
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));

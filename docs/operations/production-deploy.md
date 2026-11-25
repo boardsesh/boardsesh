@@ -256,7 +256,10 @@ activity it emits one `[PublicPageLoadGuard]` aggregate with counters, active an
 peak renders, heap usage/limit, pressure duration and event-loop p99. It never
 records request paths or identities. Pressure that does not recover remains
 visible in `pressureMs`; there is no automatic restart concealing retained
-objects. Investigate that condition before declaring the memory issue fixed.
+objects. V8 does not guarantee when idle major GC runs, so admission can remain
+closed until observed heap falls below 60%; investigate sustained `pressureMs`
+before declaring the memory issue fixed. The real-heap regression exercises
+allocation-driven natural GC, not a bounded idle-recovery guarantee.
 
 The isolated production soak uses an already-built standalone artifact and the
 seeded local database/backend. Build the artifact with the CI Docker web context;
