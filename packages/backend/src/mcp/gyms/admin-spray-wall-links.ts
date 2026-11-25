@@ -24,10 +24,12 @@ const attachmentSchema = z.object({
   expectedStateHash: z.string().regex(/^[a-f0-9]{64}$/),
   expectedGymStateHash: z.string().regex(/^[a-f0-9]{64}$/),
   reason: z.string().trim().min(10).max(1000),
+  allowLegacyGymMemberAccess: z.boolean().default(false),
 });
 
-export type SprayWallGymLinkInput = z.infer<typeof attachmentSchema>;
+export type SprayWallGymLinkInput = z.input<typeof attachmentSchema>;
 type BoardRow = typeof tables.userBoards.$inferSelect;
+type BoardPolicy = typeof tables.resourcePrivacy.$inferSelect;
 type WallState = Pick<
   typeof tables.sprayWalls.$inferSelect,
   'boardUuid' | 'currentVersionId' | 'deletedAt' | 'archivedAt'
@@ -47,6 +49,27 @@ function activeWall(board: BoardRow | undefined, wall: WallState | undefined): b
     !wall.deletedAt &&
     !wall.archivedAt
   );
+}
+
+/** Without an override, nonpublic spray walls inherit gym-member layout and climb access. */
+function legacyGymMemberAccess(board: BoardRow, policy: BoardPolicy | undefined) {
+  const requiresAcknowledgement = !policy && !board.isPublic;
+  return {
+    requiresAcknowledgement,
+    uuidReadMayExpand: requiresAcknowledgement && !board.isUnlisted,
+    layoutReadAndClimbSettingMayExpand: requiresAcknowledgement,
+    hiddenWallsRemainOwnerOnly: true,
+  };
+}
+
+function requireLegacyAccessAcknowledgement(
+  effect: ReturnType<typeof legacyGymMemberAccess>,
+  allowLegacyGymMemberAccess: boolean,
+): void {
+  if (effect.requiresAcknowledgement && !allowLegacyGymMemberAccess)
+    refusal(
+      'This wall has no explicit privacy policy. Linking may let gym members read it and set climbs under legacy rules. Review the inspection and explicitly allowLegacyGymMemberAccess before attaching it. Hidden walls stay owner-only while hidden.',
+    );
 }
 
 async function loadTarget(gymUuid: string) {
@@ -137,8 +160,10 @@ export async function inspectSprayWallGymLinks(
               isPublic: board.isPublic,
               isUnlisted: board.isUnlisted,
               hideLocation: board.hideLocation,
+              hasPrivacyOverride: !!policy,
               audience: policy?.audience ?? (board.isUnlisted ? 'unlisted' : board.isPublic ? 'public' : 'only_me'),
               locationAudience: policy?.locationAudience ?? (board.hideLocation ? 'only_me' : 'public'),
+              legacyGymMemberAccess: legacyGymMemberAccess(board, policy),
               gymUuid: linkedGyms.find((candidate) => candidate.id === board.gymId)?.uuid ?? null,
               isLinked: board.gymId !== null,
               isPublished: walls.find((wall) => wall.boardUuid === board.uuid)!.currentVersionId !== null,
@@ -213,7 +238,7 @@ function handleLockFailure(error: unknown): never {
   throw error;
 }
 
-/** This repair changes the catalogue association only; publication and audience remain owner-controlled. */
+/** Stored privacy and publication stay unchanged; legacy membership access requires explicit acknowledgement. */
 export async function attachUnlinkedSprayWallToGym(input: SprayWallGymLinkInput, context: ConnectionContext) {
   const validated = attachmentSchema.parse(input);
   return runWithDatabaseTransaction(() =>
@@ -226,6 +251,8 @@ export async function attachUnlinkedSprayWallToGym(input: SprayWallGymLinkInput,
         gymRepairStateHash(gym) !== validated.expectedGymStateHash
       )
         refusal('The gym or wall changed. Inspect both again before attaching the wall.');
+      const membershipEffect = legacyGymMemberAccess(board, policy);
+      requireLegacyAccessAcknowledgement(membershipEffect, validated.allowLegacyGymMemberAccess);
       const now = new Date();
       const [updated] = await transaction
         .update(tables.userBoards)
@@ -246,6 +273,8 @@ export async function attachUnlinkedSprayWallToGym(input: SprayWallGymLinkInput,
           expectedStateHash: validated.expectedStateHash,
           expectedGymStateHash: validated.expectedGymStateHash,
           stateHashAfter: stateHash,
+          allowLegacyGymMemberAccess: validated.allowLegacyGymMemberAccess,
+          legacyGymMemberAccess: membershipEffect,
         },
       });
       await recordBoardModerationEvent(transaction, {
@@ -269,6 +298,7 @@ export async function authorizeSprayWallGymLinkReplay(input: SprayWallGymLinkInp
     const { gym, board, policy } = await lockSelection(validated, context);
     if (board.gymId !== gym.id || gymRepairStateHash(gym) !== validated.expectedGymStateHash)
       refusal('The selected gym or wall changed. Inspect them before starting a new action.');
+    requireLegacyAccessAcknowledgement(legacyGymMemberAccess(board, policy), validated.allowLegacyGymMemberAccess);
     const [audit] = await db
       .select({ details: tables.gymDirectoryRepairAudit.details })
       .from(tables.gymDirectoryRepairAudit)
@@ -281,6 +311,7 @@ export async function authorizeSprayWallGymLinkReplay(input: SprayWallGymLinkInp
           sql`${tables.gymDirectoryRepairAudit.details}->>'boardUuid' = ${board.uuid}`,
           sql`${tables.gymDirectoryRepairAudit.details}->>'expectedStateHash' = ${validated.expectedStateHash}`,
           sql`${tables.gymDirectoryRepairAudit.details}->>'expectedGymStateHash' = ${validated.expectedGymStateHash}`,
+          sql`${tables.gymDirectoryRepairAudit.details}->>'allowLegacyGymMemberAccess' = ${String(validated.allowLegacyGymMemberAccess)}`,
         ),
       )
       .orderBy(desc(tables.gymDirectoryRepairAudit.id))

@@ -90,7 +90,7 @@ export const gymMcpAdminTools: readonly GymMcpTool[] = [
   adminTool({
     name: 'inspect_spray_wall_gym_links',
     description:
-      'Global admin only: inspect explicit spray-wall UUIDs and a destination gym before linking an unlinked wall. Includes private or unlocated walls, owner identities, privacy flags and state hashes. Does not return photos, pairing credentials, private coordinates or individual climber activity.',
+      'Global admin only: inspect explicit spray-wall UUIDs and a destination gym before linking an unlinked wall. Includes owner identities, stored privacy, state hashes and a preview of legacy gym-member read/climb-setting access requiring acknowledgement. Does not return photos, pairing credentials, private coordinates or individual climber activity.',
     schema: z
       .object({
         gymUuid: UUIDSchema,
@@ -102,7 +102,7 @@ export const gymMcpAdminTools: readonly GymMcpTool[] = [
   adminTool({
     name: 'attach_unlinked_spray_wall_to_gym',
     description:
-      'Global admin only: attach one explicitly inspected unlinked spray wall to a gym, including a private wall or one without coordinates. The creator keeps ownership, visibility, location privacy, photos, climbs and history. Linking may grant the gym owner or staff management access under existing rules. Never moves an already-linked wall or merges records. Requires both current state hashes, a reason and confirmation.',
+      'Global admin only: attach an explicitly inspected unlinked spray wall to a gym. Stored ownership, privacy flags/policy, photos, publication and history stay unchanged. Existing gym management rules apply. A nonpublic wall without a privacy policy requires allowLegacyGymMemberAccess=true: gym members may gain read and climb-setting access, including layout access to unlisted walls. Hidden walls remain owner-only while hidden. Never moves linked walls or merges records. Requires both state hashes, a reason and confirmation.',
     write: true,
     schema: z
       .object({
@@ -111,6 +111,12 @@ export const gymMcpAdminTools: readonly GymMcpTool[] = [
         boardUuid: UUIDSchema,
         expectedStateHash: stateHash,
         expectedGymStateHash: stateHash,
+        allowLegacyGymMemberAccess: z
+          .boolean()
+          .default(false)
+          .describe(
+            'Explicitly approve the inspected legacy gym-member read and climb-setting effect. Required for a nonpublic wall with no resource privacy policy; never changes its stored privacy or publication.',
+          ),
       })
       .strict(),
     authorizeReplay: authorizeSprayWallGymLinkReplay,

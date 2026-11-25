@@ -98,8 +98,8 @@ editing retains its owner-only privacy rules.
 
 | Admin tool | Operation |
 | --- | --- |
-| `inspect_spray_wall_gym_links` | Inspect up to ten explicit spray-wall UUIDs and an active destination gym, including private or unlocated walls. Returns owner identities, privacy/configuration fields and state hashes; excludes photos, private coordinates, pairing secrets and individual activity. |
-| `attach_unlinked_spray_wall_to_gym` | Link an explicitly inspected, active, unlinked spray wall to a gym. Requires both the wall and gym state hashes. The board owner, visibility, location privacy, photos, climbs and history stay unchanged. The gym relationship can grant its owner/staff management access under existing rules. Already-linked, archived, deleted or held-off walls are refused; no gym or board merge occurs. |
+| `inspect_spray_wall_gym_links` | Inspect up to ten explicit spray-wall UUIDs and an active destination gym, including private or unlocated walls. Returns owner identities, stored privacy/configuration fields, state hashes and `legacyGymMemberAccess`, previewing membership access that needs acknowledgement; excludes photos, private coordinates, pairing secrets and individual activity. |
+| `attach_unlinked_spray_wall_to_gym` | Link an explicitly inspected, active, unlinked spray wall to a gym. Requires both the wall and gym state hashes. Stored ownership, privacy flags/policy, photos, publication, climbs and history stay unchanged. Existing gym management rules apply. Nonpublic walls without an explicit policy also require `allowLegacyGymMemberAccess=true`, approving the inspected gym-member read and climb-setting effect. Already-linked, archived, deleted or held-off walls are refused; no gym or board merge occurs. |
 | `inspect_gym_duplicates` | Compare explicit gym UUIDs, board configurations, owner account IDs and display names, privacy, history counts and distances; return current state hashes. Pairing credentials, emails and individual climber activity are omitted. |
 | `correct_gym_board_setup` | Correct layout, size, hold sets, angle or adjustability through the existing board writer. Use `allowDuplicateConfig=true` explicitly when a confirmed duplicate already has that setup. Existing logged climbs keep their original problem identities. |
 | `correct_gym_board_location_visibility` | Set location visibility explicitly, synchronizing `hideLocation` and the location policy without changing owner, board audience or access grants. Record the reason and previous state. |
@@ -114,6 +114,21 @@ not proof. Hashes cover configuration, ownership and privacy state; a changed
 record requires a new inspection. Reuse a retry key only with the exact original
 arguments. Successful merge retries recognize the resulting tombstones rather
 than trying to merge them again.
+
+Inspection marks an explicit stored policy with `hasPrivacyOverride=true`;
+otherwise its audience fields describe the legacy board flags, and
+`legacyGymMemberAccess` describes the additional spray-wall membership rules.
+Spray-wall attachments default `allowLegacyGymMemberAccess` to `false`. When a
+nonpublic wall has no `resource_privacy` row, existing legacy rules may let gym
+members read it and set climbs after linking. This includes a new route through
+enumerable layout IDs for unlisted walls, whose UUID share links already work.
+Inspect `legacyGymMemberAccess` and obtain explicit approval for that effect
+before setting the flag to `true`. Hidden walls remain owner-only while hidden;
+their membership rules can take effect when they are unhidden. Public walls and
+walls with an explicit privacy policy need no acknowledgement. This action
+neither creates a policy nor publishes a draft or applies pending publication
+choices. The audit stores the acknowledgement and derived membership effect;
+retry receipts bind the acknowledgement alongside the other arguments.
 
 For a canonical URL repair, inspect the survivor and the alias-holding tombstone
 together. Supply `gymUuid`, `aliasGymUuid`, the approved `slug`, the survivor's

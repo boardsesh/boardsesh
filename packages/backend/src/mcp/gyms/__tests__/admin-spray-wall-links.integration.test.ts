@@ -7,6 +7,13 @@ import * as tables from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import * as runtimeLoader from '../../../auth/partner/load-authority';
 import type { PartnerAuthorityRuntime } from '../../../auth/partner/authority';
+import { canEditBoard } from '../../../graphql/resolvers/social/boards';
+import {
+  viewerCanSeeSprayWall,
+  viewerCanSeeSprayWallByLayout,
+  viewerCanWriteSprayClimbs,
+} from '../../../graphql/resolvers/board/spray-walls';
+import { canAccessResource } from '../../../services/privacy';
 import { executeGymMcpTool } from '../dispatch';
 import { GYM_MCP_RESOURCE } from '../configuration';
 import type { GymMcpPrincipal } from '../auth';
@@ -250,6 +257,8 @@ describe('explicit admin spray wall gym links', () => {
         isPublic,
         isPublished: isPublic,
         isLinked: false,
+        hasPrivacyOverride: true,
+        legacyGymMemberAccess: { requiresAcknowledgement: false },
       });
       const encoded = JSON.stringify(inspected);
       expect(encoded).not.toMatch(/private-|latitude|longitude|photo|serial|activity|climbEvents|ticks/);
@@ -274,6 +283,7 @@ describe('explicit admin spray wall gym links', () => {
         reason: input.reason,
         before: { gymId: null },
         after: { gymId: gym.id },
+        details: { allowLegacyGymMemberAccess: false, legacyGymMemberAccess: { requiresAcknowledgement: false } },
       });
       expect(await db.select().from(tables.gymMembers).where(eq(tables.gymMembers.gymId, gym.id))).toEqual([]);
       expect(
@@ -284,6 +294,200 @@ describe('explicit admin spray wall gym links', () => {
       ).toMatchObject([{ action: 'relinked', actorRole: 'global_admin', gymId: gym.id }]);
     },
   );
+
+  it('preserves a creator/editor’s private wall when attaching it to another person’s gym', async () => {
+    const gymOwnerId = randomUUID();
+    const gymAdminId = randomUUID();
+    const unrelatedId = randomUUID();
+    await db.insert(tables.users).values([
+      { id: gymOwnerId, email: `${gymOwnerId}@example.test`, name: 'Separate gym owner' },
+      { id: gymAdminId, email: `${gymAdminId}@example.test`, name: 'Gym staff' },
+      { id: unrelatedId, email: `${unrelatedId}@example.test`, name: 'Unrelated climber' },
+    ]);
+    [gym] = await db.update(tables.gyms).set({ ownerId: gymOwnerId }).where(eq(tables.gyms.id, gym.id)).returning();
+    await db.insert(tables.gymMembers).values([
+      { gymId: gym.id, userId: ownerId, role: 'editor' },
+      { gymId: gym.id, userId: gymAdminId, role: 'admin' },
+    ]);
+    const fixture = await createWall();
+    const before = await snapshot(fixture);
+    const memberships = await db
+      .select()
+      .from(tables.gymMembers)
+      .where(eq(tables.gymMembers.gymId, gym.id))
+      .orderBy(tables.gymMembers.id);
+    for (const viewerId of [gymOwnerId, gymAdminId, unrelatedId]) {
+      expect(await canEditBoard(viewerId, before.board)).toBe(false);
+      expect(await canAccessResource('board', fixture.board.uuid, viewerId)).toBe(false);
+      expect(await viewerCanSeeSprayWall(before.walls[0]!, before.board, viewerId)).toBe(false);
+    }
+
+    await attachUnlinkedSprayWallToGym(await attachmentInput(fixture.board.uuid), context());
+
+    const after = await snapshot(fixture);
+    expect(after.board).toMatchObject({ ownerId, gymId: gym.id, isPublic: false, hideLocation: true });
+    expect(after.policies).toMatchObject([{ ownerId, audience: 'only_me', locationAudience: 'only_me' }]);
+    expect({
+      ...after.board,
+      gymId: before.board.gymId,
+      updatedAt: before.board.updatedAt,
+      syncFrozenAt: before.board.syncFrozenAt,
+    }).toEqual(before.board);
+    expect({ ...after, board: before.board }).toEqual(before);
+    const [destination] = await db.select().from(tables.gyms).where(eq(tables.gyms.id, gym.id));
+    expect(destination!.ownerId).toBe(gymOwnerId);
+    expect(
+      await db
+        .select()
+        .from(tables.gymMembers)
+        .where(eq(tables.gymMembers.gymId, gym.id))
+        .orderBy(tables.gymMembers.id),
+    ).toEqual(memberships);
+
+    for (const viewerId of [ownerId, gymOwnerId, gymAdminId, unrelatedId]) {
+      // Existing gym authority permits metadata edits; an explicit only_me
+      // audience still controls the wall and its photo through both read gates.
+      expect(await canEditBoard(viewerId, after.board)).toBe(viewerId !== unrelatedId);
+      expect(await canAccessResource('board', fixture.board.uuid, viewerId)).toBe(viewerId === ownerId);
+      expect(await viewerCanSeeSprayWall(after.walls[0]!, after.board, viewerId)).toBe(viewerId === ownerId);
+      expect(await viewerCanSeeSprayWallByLayout(after.walls[0]!, after.board, viewerId)).toBe(viewerId === ownerId);
+    }
+  });
+
+  it.each([false, true])(
+    'requires acknowledgement for legacy nonpublic membership access (unlisted=%s)',
+    async (isUnlisted) => {
+      const memberId = randomUUID();
+      const unrelatedId = randomUUID();
+      const gymOwnerId = randomUUID();
+      await db.insert(tables.users).values([
+        { id: memberId, email: `${memberId}@example.test`, name: 'Ordinary gym member' },
+        { id: unrelatedId, email: `${unrelatedId}@example.test`, name: 'Unrelated climber' },
+        { id: gymOwnerId, email: `${gymOwnerId}@example.test`, name: 'Separate gym owner' },
+      ]);
+      await db.update(tables.gyms).set({ ownerId: gymOwnerId }).where(eq(tables.gyms.id, gym.id));
+      await db.insert(tables.gymMembers).values([
+        { gymId: gym.id, userId: ownerId, role: 'editor' },
+        { gymId: gym.id, userId: memberId, role: 'member' },
+      ]);
+      const fixture = await createWall();
+      await db.delete(tables.resourcePrivacy).where(eq(tables.resourcePrivacy.resourceId, fixture.board.uuid));
+      await db.update(tables.userBoards).set({ isUnlisted }).where(eq(tables.userBoards.id, fixture.board.id));
+      const before = await snapshot(fixture);
+      const input = await attachmentInput(fixture.board.uuid);
+      const inspected = await inspectSprayWallGymLinks(
+        { gymUuid: gym.uuid, boardUuids: [fixture.board.uuid] },
+        context(),
+      );
+      const effect = {
+        requiresAcknowledgement: true,
+        uuidReadMayExpand: !isUnlisted,
+        layoutReadAndClimbSettingMayExpand: true,
+        hiddenWallsRemainOwnerOnly: true,
+      };
+      expect(inspected.boards[0]!.legacyGymMemberAccess).toEqual(effect);
+      expect(inspected.boards[0]!.hasPrivacyOverride).toBe(false);
+      for (const viewerId of [memberId, unrelatedId]) {
+        expect(await viewerCanSeeSprayWall(before.walls[0]!, before.board, viewerId)).toBe(isUnlisted);
+        expect(await viewerCanSeeSprayWallByLayout(before.walls[0]!, before.board, viewerId)).toBe(false);
+        expect(await viewerCanWriteSprayClimbs(before.walls[0]!, before.board, viewerId, undefined)).toBe(false);
+      }
+      await expect(attachUnlinkedSprayWallToGym(input, context())).rejects.toMatchObject({
+        extensions: { code: 'CONFLICT' },
+      });
+      await expect(
+        attachUnlinkedSprayWallToGym({ ...input, allowLegacyGymMemberAccess: false }, context()),
+      ).rejects.toMatchObject({ extensions: { code: 'CONFLICT' } });
+      expect(await snapshot(fixture)).toEqual(before);
+      expect(await audits()).toEqual([]);
+
+      const identity = await principal();
+      const approved = { ...input, allowLegacyGymMemberAccess: true, idempotencyKey: randomUUID(), confirm: true };
+      const first = await executeGymMcpTool(identity, OPERATION, approved);
+      const after = await snapshot(fixture);
+      expect(after.policies).toEqual([]);
+      expect({
+        ...after.board,
+        gymId: before.board.gymId,
+        updatedAt: before.board.updatedAt,
+        syncFrozenAt: before.board.syncFrozenAt,
+      }).toEqual(before.board);
+      expect({ ...after, board: before.board }).toEqual(before);
+      expect(after.walls[0]).toMatchObject({ currentVersionId: null, pendingIsPublic: true, pendingIsUnlisted: false });
+      expect(await audits()).toMatchObject([
+        { details: { allowLegacyGymMemberAccess: true, legacyGymMemberAccess: effect } },
+      ]);
+      expect(await executeGymMcpTool(identity, OPERATION, approved)).toEqual(first);
+      expect(await snapshot(fixture)).toEqual(after);
+      await expect(
+        executeGymMcpTool(identity, OPERATION, { ...approved, allowLegacyGymMemberAccess: false }),
+      ).rejects.toMatchObject({ extensions: { code: 'IDEMPOTENCY_CONFLICT' } });
+      await expect(
+        authorizeSprayWallGymLinkReplay({ ...input, allowLegacyGymMemberAccess: false }, context()),
+      ).rejects.toMatchObject({ extensions: { code: 'CONFLICT' } });
+      for (const viewerId of [ownerId, memberId, unrelatedId]) {
+        expect(await viewerCanSeeSprayWall(after.walls[0]!, after.board, viewerId)).toBe(
+          viewerId !== unrelatedId || isUnlisted,
+        );
+        expect(await viewerCanSeeSprayWallByLayout(after.walls[0]!, after.board, viewerId)).toBe(
+          viewerId !== unrelatedId,
+        );
+        expect(await viewerCanWriteSprayClimbs(after.walls[0]!, after.board, viewerId, undefined)).toBe(
+          viewerId !== unrelatedId,
+        );
+      }
+    },
+  );
+
+  it('attaches a public legacy wall without acknowledgement or policy creation', async () => {
+    const fixture = await createWall(true);
+    await db.delete(tables.resourcePrivacy).where(eq(tables.resourcePrivacy.resourceId, fixture.board.uuid));
+    const before = await snapshot(fixture);
+    const input = await attachmentInput(fixture.board.uuid);
+    const inspected = await inspectSprayWallGymLinks(
+      { gymUuid: gym.uuid, boardUuids: [fixture.board.uuid] },
+      context(),
+    );
+    expect(inspected.boards[0]!.legacyGymMemberAccess.requiresAcknowledgement).toBe(false);
+    expect(inspected.boards[0]!.hasPrivacyOverride).toBe(false);
+    await attachUnlinkedSprayWallToGym(input, context());
+    const after = await snapshot(fixture);
+    expect(after.policies).toEqual([]);
+    expect({ ...after, board: before.board }).toEqual(before);
+  });
+
+  it('refuses a removed privacy policy even when legacy access was acknowledged', async () => {
+    const fixture = await createWall();
+    const input = await attachmentInput(fixture.board.uuid);
+    await db.delete(tables.resourcePrivacy).where(eq(tables.resourcePrivacy.resourceId, fixture.board.uuid));
+    await expect(
+      attachUnlinkedSprayWallToGym({ ...input, allowLegacyGymMemberAccess: true }, context()),
+    ).rejects.toMatchObject({ extensions: { code: 'CONFLICT' } });
+    expect((await snapshot(fixture)).board.gymId).toBeNull();
+    expect(await audits()).toEqual([]);
+  });
+
+  it('requires legacy acknowledgement for hidden walls while retaining their owner-only protection', async () => {
+    const fixture = await createWall();
+    await db.delete(tables.resourcePrivacy).where(eq(tables.resourcePrivacy.resourceId, fixture.board.uuid));
+    await db
+      .update(tables.sprayWalls)
+      .set({ hiddenAt: new Date(), hiddenBy: adminId })
+      .where(eq(tables.sprayWalls.id, fixture.wall.id));
+    await db.insert(tables.gymMembers).values({ gymId: gym.id, userId: scopedAdminId, role: 'member' });
+    const before = await snapshot(fixture);
+    const input = await attachmentInput(fixture.board.uuid);
+    await expect(attachUnlinkedSprayWallToGym(input, context())).rejects.toMatchObject({
+      extensions: { code: 'CONFLICT' },
+    });
+    await attachUnlinkedSprayWallToGym({ ...input, allowLegacyGymMemberAccess: true }, context());
+    const after = await snapshot(fixture);
+    expect({ ...after, board: before.board }).toEqual(before);
+    expect(await viewerCanSeeSprayWall(after.walls[0]!, after.board, scopedAdminId)).toBe(false);
+    expect(await viewerCanSeeSprayWallByLayout(after.walls[0]!, after.board, scopedAdminId)).toBe(false);
+    expect(await viewerCanWriteSprayClimbs(after.walls[0]!, after.board, scopedAdminId, undefined)).toBe(false);
+    expect(await viewerCanSeeSprayWall(after.walls[0]!, after.board, ownerId)).toBe(true);
+  });
 
   it('requires explicit bounded distinct UUIDs and a live destination', async () => {
     const fixture = await createWall();
