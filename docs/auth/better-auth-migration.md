@@ -447,12 +447,7 @@ before and after, three alternating rounds (median per round):
 
 The first row's spread is bcrypt's; the second isolates the database work.
 
-**Known gap, staged web only.** The web stamps a password sign-in's cookie with a
-generation it reads after the backend's `authenticated` reply
-(`auth-options.ts`, `signInGeneration`). A reset committing in that gap yields a
-cookie stamped with the new generation from a password checked before it. The
-reply should carry the generation the backend checked; that is a protocol change
-for a later PR and has no reach while `CURRENT_STORE_WEB_AUTH_MODE` is off.
+**Password proof publication.** Default web password authorization now delegates through the [pre-enforcement password family](better-auth-password-login-family.md); explicitly staged authorization keeps its qualified authority endpoint. Both web password paths require the backend's actual password proof and preserve its generation, SID and authentication time through JWT construction. The final emitted-cookie admission rejects a proof superseded by reset. Proof-mode-off staged backends are unavailable to this web revision; configure and deploy the proof-capable backend before adoption. Historical issuer retirement and every remaining writer/reader deployment gate remain separate.
 
 ## Native, watch, and browser compatibility
 

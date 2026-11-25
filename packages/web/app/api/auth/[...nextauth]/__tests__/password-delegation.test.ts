@@ -102,6 +102,14 @@ function backendResponse(
             operation: 'password',
             requestId: command.requestId,
             outcome: 'authenticated',
+            credentialProof: {
+              version: 1,
+              userId: selected.id,
+              authSessionId: 'backend-password-login',
+              generation: 0,
+              authenticatedAt: new Date().toISOString(),
+              linkGuarded: true,
+            },
             user: selected,
             verification: { userId: selected.id, required: true, verified: options.verified ?? true },
             ...(options.privateField ? { mailPlan: { token: 'private' } } : {}),
@@ -297,22 +305,23 @@ describe('public NextAuth App Router password delegation', () => {
     });
   });
 
-  // Legacy sign-in runs bcrypt on the web process for every address, unknown ones
-  // included, so one client must not be able to fill its event loop.
+  // The default mode delegates every password to the backend. The public
+  // per-client limit still refunds accepted passwords and bounds rejected ones.
   it('never limits right passwords in legacy mode: 20 sign-ins from one visitor all succeed', async () => {
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
-    legacyAuthorize.mockResolvedValue({ id: 'legacy-user', email: 'legacy@example.com' });
-    legacySignIn.mockResolvedValue(true);
-    vi.stubGlobal('fetch', vi.fn());
+    const fetchMock = backendResponse();
+    vi.stubGlobal('fetch', fetchMock);
     for (let attempt = 0; attempt < 20; attempt += 1) expect((await passwordFromVisitor()).status).toBe(200);
-    expect(legacyAuthorize).toHaveBeenCalledTimes(20);
+    expect(fetchMock).toHaveBeenCalledTimes(20);
+    expect(legacyAuthorize).not.toHaveBeenCalled();
   });
   it('limits the 11th wrong legacy password from one visitor, with the same answer for every address', async () => {
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
-    legacyAuthorize.mockResolvedValue(null);
-    vi.stubGlobal('fetch', vi.fn());
+    const fetchMock = backendResponse({ outcome: 'invalid_credentials' });
+    vi.stubGlobal('fetch', fetchMock);
     for (let attempt = 0; attempt < 10; attempt += 1) expect((await passwordFromVisitor()).status).toBe(401);
-    expect(legacyAuthorize).toHaveBeenCalledTimes(10);
+    expect(fetchMock).toHaveBeenCalledTimes(10);
+    expect(legacyAuthorize).not.toHaveBeenCalled();
 
     const existingAddress = await passwordFromVisitor();
     const unknownAddress = await passwordFromVisitor(clientAddress, 'nobody-here@example.com');
@@ -323,22 +332,25 @@ describe('public NextAuth App Router password delegation', () => {
       expect(limited.headers.getSetCookie()).toEqual([]);
       expect(await limited.json()).toEqual({ url: `${baseUrl}/auth/error?error=AuthBackendUnavailable` });
     }
-    expect(legacyAuthorize).toHaveBeenCalledTimes(10);
+    expect(fetchMock).toHaveBeenCalledTimes(10);
+    expect(legacyAuthorize).not.toHaveBeenCalled();
 
     expect((await passwordFromVisitor('198.51.100.251')).status).toBe(401);
-    expect(legacyAuthorize).toHaveBeenCalledTimes(11);
+    expect(fetchMock).toHaveBeenCalledTimes(11);
+    expect(legacyAuthorize).not.toHaveBeenCalled();
   });
   it('skips the legacy limit, rather than put every visitor in one bucket, when no Cloudflare edge vouches', async () => {
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    legacyAuthorize.mockResolvedValue(null);
-    vi.stubGlobal('fetch', vi.fn());
+    const fetchMock = backendResponse({ outcome: 'invalid_credentials' });
+    vi.stubGlobal('fetch', fetchMock);
     // Two different callers behind a hop we cannot vouch for: neither is ever limited.
     for (let attempt = 0; attempt < 12; attempt += 1) {
       expect((await password()).status).toBe(401);
       expect((await password('fd12:3456::1')).status).toBe(401);
     }
-    expect(legacyAuthorize).toHaveBeenCalledTimes(24);
+    expect(fetchMock).toHaveBeenCalledTimes(24);
+    expect(legacyAuthorize).not.toHaveBeenCalled();
     expect(warn.mock.calls.length).toBeLessThanOrEqual(1);
     warn.mockRestore();
   });
@@ -347,27 +359,26 @@ describe('public NextAuth App Router password delegation', () => {
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
     vi.stubEnv('CLOUDFLARE_ORIGIN_PROOF_SECRET', 'origin-proof-fixture-secret-at-least-32-bytes');
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    legacyAuthorize.mockResolvedValue(null);
-    vi.stubGlobal('fetch', vi.fn());
+    const fetchMock = backendResponse({ outcome: 'invalid_credentials' });
+    vi.stubGlobal('fetch', fetchMock);
     const unproven = () => password('172.70.9.9', selected.email, { 'CF-Connecting-IP': clientAddress });
     for (let attempt = 0; attempt < 10; attempt += 1) expect((await unproven()).status).toBe(401);
     expect((await unproven()).status).toBe(429);
-    expect(legacyAuthorize).toHaveBeenCalledTimes(10);
+    expect(fetchMock).toHaveBeenCalledTimes(10);
+    expect(legacyAuthorize).not.toHaveBeenCalled();
     warn.mockRestore();
   });
-  it('uses the exact original credentials path in legacy mode without RPC configuration', async () => {
+  it('preserves cookies and refuses default password login without backend configuration', async () => {
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
     vi.stubEnv('CURRENT_STORE_AUTH_RPC_SECRET', '');
-    legacyAuthorize.mockResolvedValue({ id: 'legacy-user', email: 'legacy@example.com' });
-    legacySignIn.mockResolvedValue(true);
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const response = await password();
-    expect(response.status).toBe(200);
-    remember(response);
-    expect((await decode({ token: cookies.get('next-auth.session-token'), secret }))?.sub).toBe('legacy-user');
-    expect(legacyAuthorize).toHaveBeenCalledOnce();
-    expect(legacySignIn).toHaveBeenCalledOnce();
+    expect(response.status).toBe(503);
+    expect(response.headers.getSetCookie()).toEqual([]);
+    expect(await response.json()).toEqual({ url: `${baseUrl}/auth/error?error=AuthBackendUnavailable` });
+    expect(legacyAuthorize).not.toHaveBeenCalled();
+    expect(legacySignIn).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -94,9 +94,9 @@ import { authOptions } from '../auth-options';
 import { issueNativeOAuthTransferToken } from '../native-oauth-transfer';
 import { createWebOAuthIdentityAuthRequest } from '../web-oauth-auth.server';
 
-// Only the database, the backend admission call and Next's ambient request I/O are
-// replaced. The App Router handler, CSRF check, password compare, callbacks and
-// JWE encoder all run.
+// Database, private password RPC and admission are fixtures here. The actual
+// route, CSRF, proof consumption, callbacks and JWE codec run. Password checking
+// and DB clocks are independently exercised by the owned PG/HTTP proof family.
 const requestStorage = new AsyncLocalStorage<NextRequest>();
 const require = createRequire(import.meta.url);
 const nextIo = require('next/headers') as {
@@ -117,6 +117,17 @@ const climber = {
   image: null,
   emailVerified: new Date('2026-01-01T00:00:00.000Z'),
 };
+
+function fixturePasswordProof(generation = 0) {
+  return {
+    version: 1 as const,
+    userId: climber.id,
+    authSessionId: 'fixture-password-login',
+    generation,
+    authenticatedAt: new Date(Date.now()).toISOString(),
+    linkGuarded: true,
+  };
+}
 
 let cookies: Map<string, string>;
 let csrfToken: string;
@@ -183,6 +194,26 @@ beforeEach(async () => {
   insertedMarkers.clear();
   databaseRows.set(schema.users, [climber]);
   databaseRows.set(schema.userCredentials, [{ passwordHash: hashSync(PASSWORD, 4) }]);
+  vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
+  vi.stubEnv('CURRENT_STORE_AUTH_BACKEND_ORIGIN', 'http://127.0.0.1:47990');
+  vi.stubEnv('CURRENT_STORE_AUTH_RPC_SECRET', 'owned-auth-time-password-rpc-secret-6975');
+  vi.stubGlobal('fetch', async (_destination: unknown, init?: RequestInit) => {
+    if (typeof init?.body !== 'string') throw new Error('Expected private password command');
+    const command = JSON.parse(init.body) as { requestId: string; operation: string; payload: { password: string } };
+    if (command.operation !== 'password') throw new Error('Unexpected fixture command');
+    const rows = databaseRows.get(schema.authSubjectCutoffs);
+    if (rows instanceof Error) throw rows;
+    const generation = Array.isArray(rows) ? ((rows[0] as { generation?: number } | undefined)?.generation ?? 0) : 0;
+    return Response.json({
+      protocolVersion: 2,
+      operation: 'password',
+      requestId: command.requestId,
+      outcome: 'authenticated',
+      user: { id: climber.id, email: climber.email, name: climber.name, image: climber.image },
+      verification: { userId: climber.id, required: false, verified: true },
+      credentialProof: fixturePasswordProof(generation),
+    });
+  });
   cookies = new Map();
   const response = await invoke('csrf');
   remember(response);
@@ -306,6 +337,7 @@ describe('auth_time on the backend-staged sign-in paths', () => {
         outcome: 'authenticated',
         user: { id: climber.id, email: climber.email, name: climber.name, image: climber.image },
         verification: { userId: climber.id, required: true, verified: true },
+        credentialProof: fixturePasswordProof(2),
       });
     });
     vi.stubGlobal('fetch', backend);
@@ -380,7 +412,7 @@ describe('auth_time in the jwt callback', () => {
   it.each(['google', 'apple', 'credentials'])('records a %s sign-in in whole seconds', async (provider) => {
     const claims = await runJwtCallback({
       token: { sub: climber.id },
-      user: { id: climber.id },
+      user: { id: climber.id, ...(provider === 'credentials' ? { webCredentialProof: fixturePasswordProof() } : {}) },
       account: accountFor(provider),
     });
 
@@ -426,32 +458,33 @@ describe('auth_time in the jwt callback', () => {
 });
 
 describe('link_guarded beside auth_time', () => {
-  it('is written by a password sign-in only while partner OAuth is on', async () => {
+  it('carries actual-password proof freshness independently of partner OAuth mode', async () => {
     remember(await signInWithPassword());
-    expect(await currentSessionClaims()).not.toHaveProperty('link_guarded');
-
+    expect((await currentSessionClaims())?.link_guarded).toBe(true);
     vi.stubEnv('PARTNER_OAUTH_MODE', 'allowlist');
     remember(await signInWithPassword());
-    const claims = await currentSessionClaims();
-    expect(claims?.auth_time).toBe(SIGN_IN_AT_SECONDS);
-    expect(claims?.link_guarded).toBe(true);
+    expect(await currentSessionClaims()).toMatchObject({ auth_time: SIGN_IN_AT_SECONDS, link_guarded: true });
   });
-
-  it('survives a cookie rotation, and a rotation never adds it', async () => {
-    vi.stubEnv('PARTNER_OAUTH_MODE', 'allowlist');
+  it('keeps guarded and historical unguarded authentication through rotation', async () => {
     remember(await signInWithPassword());
     vi.setSystemTime(SIGN_IN_AT_MS + ONE_DAY_MS);
     remember(await invoke('session'));
     expect((await currentSessionClaims())?.link_guarded).toBe(true);
-
-    // A sign-in made while the mode was off stays unguarded after it turns on.
-    vi.stubEnv('PARTNER_OAUTH_MODE', 'off');
-    remember(await signInWithPassword());
+    cookies.set(
+      SESSION_COOKIE,
+      await encode({
+        token: {
+          sub: climber.id,
+          email: climber.email,
+          authSessionId: 'historical-login',
+          auth_time: SIGN_IN_AT_SECONDS,
+        },
+        secret: sessionSecret,
+      }),
+    );
     vi.stubEnv('PARTNER_OAUTH_MODE', 'allowlist');
     remember(await invoke('session'));
-    const claims = await currentSessionClaims();
-    expect(claims?.auth_time).toBeDefined();
-    expect(claims).not.toHaveProperty('link_guarded');
+    expect(await currentSessionClaims()).not.toHaveProperty('link_guarded');
   });
 
   it('is never written for a native transfer, which has no auth_time', async () => {
@@ -574,24 +607,13 @@ describe('gen beside auth_time', () => {
     expect(JSON.stringify(session)).not.toContain('"gen"');
   });
 
-  it('signs in with gen 0 when the read fails, a stamp that can only end the cookie sooner', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  it('refuses unavailable password authority without a local generation-zero fallback', async () => {
     vi.mocked(Sentry.captureMessage).mockClear();
     databaseRows.set(schema.authSubjectCutoffs, new Error('primary unavailable'));
-
     const response = await signInWithPassword();
-    expect(sessionCookieNames(response)).toEqual([SESSION_COOKIE]);
-    remember(response);
-
-    expect(await currentSessionClaims()).toMatchObject({ sub: climber.id, gen: 0, auth_time: SIGN_IN_AT_SECONDS });
-    expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: 'auth_generation_read_unavailable', phase: 'jwt' }));
-    // Counted in Sentry, so a web role without SELECT on the table raises an issue.
-    expect(Sentry.captureMessage).toHaveBeenCalledTimes(1);
-    expect(Sentry.captureMessage).toHaveBeenCalledWith(
-      'auth_generation_read_unavailable',
-      expect.objectContaining({ level: 'warning', fingerprint: ['auth_generation_read_unavailable'] }),
-    );
-    warn.mockRestore();
+    expect(response.status).toBe(503);
+    expect(response.headers.getSetCookie()).toEqual([]);
+    expect(Sentry.captureMessage).not.toHaveBeenCalled();
   });
 
   it('adds under 60 bytes to the largest cookie a sign-in writes, and never another chunk', async () => {
