@@ -34,6 +34,7 @@ export function ownedCredentialProofUrl(connectionString = process.env.CREDENTIA
   const local = ['127.0.0.1', 'localhost'].includes(parsed.hostname);
   const evidence = parsed.port === '55481' && /^\/epic6975_password_evidence_\d{8}$/.test(parsed.pathname);
   const recovery = parsed.port === '55482' && /^\/epic6975_recovery_reset_\d{8}$/.test(parsed.pathname);
+  const setPassword = parsed.port === '55483' && /^\/epic6975_set_password_\d{8}$/.test(parsed.pathname);
   const development = parsed.port === '55480' && /^\/epic6975_credential_\d{8}$/.test(parsed.pathname);
   const ci =
     ['1', 'true'].includes(process.env.CI ?? '') &&
@@ -43,7 +44,7 @@ export function ownedCredentialProofUrl(connectionString = process.env.CREDENTIA
   if (
     !['postgres:', 'postgresql:'].includes(parsed.protocol) ||
     !local ||
-    (!development && !evidence && !recovery && !ci) ||
+    (!development && !evidence && !recovery && !setPassword && !ci) ||
     parsed.username !== 'postgres' ||
     !parsed.password ||
     parsed.search ||
@@ -210,6 +211,11 @@ export async function createCredentialWriterEnvironment(
   )
     throw new Error('OWNED_CREDENTIAL_PROOF_CONTRACT_REQUIRED');
   const target = ownedCredentialProofUrl();
+  if (
+    target.port === '55483' &&
+    !['private-registration-v1', 'private-registration-evidence-v1', 'private-recovery-v1'].includes(contract)
+  )
+    throw new Error('OWNED_CREDENTIAL_PROOF_PROFILE_DATABASE_MISMATCH');
   if (
     target.port === '55481' &&
     !['private-password-evidence-v1', 'private-registration-evidence-v1', 'private-registration-v1'].includes(contract)

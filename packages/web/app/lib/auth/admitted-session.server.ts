@@ -1,5 +1,6 @@
 import 'server-only';
 import { cache } from 'react';
+import type { BrowserSession } from '@/app/components/providers/session-provider';
 import { cookies } from 'next/headers';
 import { getServerSession } from 'next-auth/next';
 import { getToken } from 'next-auth/jwt';
@@ -9,6 +10,11 @@ import { admitPresentedWebCredential, CredentialAuthorityUnavailable } from './c
 import { isSecureCookieContext, sessionCookieNameCandidates } from './secure-cookies';
 
 export type PresentedWebCredential = Readonly<{ credential: string; cookieName: string }>;
+
+export type AdmittedServerSessionSnapshot = Readonly<{
+  session: BrowserSession | null;
+  legacyCredential: PresentedWebCredential | null;
+}>;
 
 /** Public NextAuth cookie reconstruction, including its numbered chunks. */
 export async function capturePresentedWebCredential(request: NextRequest): Promise<PresentedWebCredential | null> {
@@ -106,14 +112,24 @@ export async function getAdmittedRawServerToken(source: AdmittedSessionSource = 
 
 /** Never mint a session or silently turn an authority outage into anonymity. */
 export async function getAdmittedServerSession(source: AdmittedSessionSource = {}) {
-  const held = await resolvedForRequest(source);
-  if (!held || held.resolved.kind === 'legacy') return getLegacyAdmittedServerSession();
-  return held.resolved.kind === 'active' ? held.module.sessionFromActive(held.resolved.session) : null;
+  return (await getAdmittedServerSessionSnapshot(source)).session;
 }
 
-async function getLegacyAdmittedServerSession() {
+/** The legacy source and viewer from one resolution; callers never select the cookie again. */
+export async function getAdmittedServerSessionSnapshot(
+  source: AdmittedSessionSource = {},
+): Promise<AdmittedServerSessionSnapshot> {
+  const held = await resolvedForRequest(source);
+  if (!held || held.resolved.kind === 'legacy') return getLegacyAdmittedServerSessionSnapshot();
+  return Object.freeze({
+    session: held.resolved.kind === 'active' ? held.module.sessionFromActive(held.resolved.session) : null,
+    legacyCredential: null,
+  });
+}
+
+async function getLegacyAdmittedServerSessionSnapshot(): Promise<AdmittedServerSessionSnapshot> {
   const admitted = await admitServerCredentialForRender();
-  if (!admitted) return null;
+  if (!admitted) return Object.freeze({ session: null, legacyCredential: null });
   const { presented, userId } = admitted;
 
   const { authOptions } = await import('./auth-options');
@@ -129,10 +145,11 @@ async function getLegacyAdmittedServerSession() {
       },
     },
   });
-  if (!session) return null;
+  if (!session) return Object.freeze({ session: null, legacyCredential: null });
   if (session.user?.id !== userId) throw new CredentialAuthorityUnavailable();
   // A deletion that completed while the local session callback ran must not
   // turn that callback's result into a newly admitted private viewer.
-  if (!(await admitPresentedWebCredential(presented.credential))) return null;
-  return session;
+  if (!(await admitPresentedWebCredential(presented.credential)))
+    return Object.freeze({ session: null, legacyCredential: null });
+  return Object.freeze({ session, legacyCredential: presented });
 }

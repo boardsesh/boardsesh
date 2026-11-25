@@ -166,6 +166,92 @@ describe('owned credential writer CI boundary', () => {
     );
   });
 
+  it('runs the complete default set-password compatibility backend proof on the current fixture', () => {
+    const previousIndex = proof.steps.findIndex((step) => step.run?.includes('vp run test:recovery-web'));
+    const index = proof.steps.findIndex((step) => step.run?.includes('vp run test:set-password-compatibility-backend'));
+    expect(previousIndex).toBeGreaterThan(-1);
+    expect(index).toBe(previousIndex + 1);
+    expect(
+      proof.steps.filter((step) => step.run?.includes('vp run test:set-password-compatibility-backend')),
+    ).toHaveLength(1);
+    const step = proof.steps[index];
+    expect(step?.if).toBeUndefined();
+    expect(step?.env).toBeUndefined();
+    expect(step?.['continue-on-error']).toBeUndefined();
+    expect(step?.run).toContain(
+      '--reporter=junit --outputFile.junit=./test-results/junit-set-password-compatibility-backend.xml',
+    );
+    expect(step?.run).toContain('test -s packages/backend/test-results/junit-set-password-compatibility-backend.xml');
+    expect(step?.run).not.toMatch(/--changed|--shard|-t |--testNamePattern/);
+    const configuration = readFileSync('packages/backend/vite.set-password-compatibility-proof.config.ts', 'utf8');
+    expect(configuration).toContain('src/auth/authority/__tests__/set-password-compatibility-backend.proof.ts');
+    expect(configuration).toContain('maxWorkers: 1');
+    expect(configuration).toContain('fileParallelism: false');
+    expect(configuration).not.toMatch(/testNamePattern|\.skip\(/);
+    const taskStart = rootSource.indexOf("'test:set-password-compatibility-backend': {");
+    expect(taskStart).toBeGreaterThan(-1);
+    const taskEnd = rootSource.indexOf('\n      },', taskStart);
+    expect(taskEnd).toBeGreaterThan(taskStart);
+    const task = rootSource.slice(taskStart, taskEnd);
+    expect(task).toContain(
+      'vp test run --config packages/backend/vite.set-password-compatibility-proof.config.ts --maxWorkers=1 --reporter=agent',
+    );
+    expect(task).toContain('cache: false');
+    expect(task).not.toMatch(/--changed|--shard|dependsOn|-t |--testNamePattern/);
+    expect(selectTestDefaultProjects(rootSource, (path) => readFileSync(path, 'utf8'))).not.toContain(
+      'set-password-compatibility-backend-proof',
+    );
+  });
+
+  it('runs the complete dependent set-password web proof and moved default golden after its backend', () => {
+    const backendIndex = proof.steps.findIndex((step) =>
+      step.run?.includes('vp run test:set-password-compatibility-backend'),
+    );
+    const index = proof.steps.findIndex((step) => step.run?.includes('vp run test:set-password-compatibility-web'));
+    expect(backendIndex).toBeGreaterThan(-1);
+    expect(index).toBe(backendIndex + 1);
+    expect(proof.steps.filter((step) => step.run?.includes('vp run test:set-password-compatibility-web'))).toHaveLength(
+      1,
+    );
+    const step = proof.steps[index];
+    expect(step?.if).toBeUndefined();
+    expect(step?.env).toBeUndefined();
+    expect(step?.['continue-on-error']).toBeUndefined();
+    expect(step?.run).toContain(
+      '--reporter=junit --outputFile.junit=./test-results/junit-set-password-compatibility-web.xml',
+    );
+    expect(step?.run).toContain('test -s packages/web/test-results/junit-set-password-compatibility-web.xml');
+    expect(step?.run).not.toMatch(/--changed|--shard|-t |--testNamePattern/);
+    const configuration = readFileSync('packages/web/auth-proofs/set-password-compatibility.vite.config.ts', 'utf8');
+    expect(configuration).toContain('auth-proofs/set-password-compatibility.integration.proof.ts');
+    expect(configuration).toContain('maxWorkers: 1');
+    expect(configuration).toContain('fileParallelism: false');
+    expect(configuration).not.toMatch(/testNamePattern|\.skip\(/);
+    const taskStart = rootSource.indexOf("'test:set-password-compatibility-web': {");
+    expect(taskStart).toBeGreaterThan(-1);
+    const taskEnd = rootSource.indexOf('\n      },', taskStart);
+    expect(taskEnd).toBeGreaterThan(taskStart);
+    const task = rootSource.slice(taskStart, taskEnd);
+    expect(task).toContain(
+      'vp test run --config packages/web/auth-proofs/set-password-compatibility.vite.config.ts --maxWorkers=1 --reporter=agent',
+    );
+    expect(task).toContain('cache: false');
+    expect(task).not.toMatch(/--changed|--shard|dependsOn|-t |--testNamePattern/);
+    expect(selectTestDefaultProjects(rootSource, (path) => readFileSync(path, 'utf8'))).not.toContain(
+      'set-password-compatibility-web-proof',
+    );
+    const typecheck = JSON.parse(readFileSync('packages/web/auth-proofs/tsconfig.json', 'utf8')) as {
+      include: string[];
+    };
+    expect(typecheck.include).toContain('set-password-compatibility.integration.proof.ts');
+    expect(typecheck.include).toContain('set-password-compatibility.vite.config.ts');
+    const source = readFileSync('packages/web/auth-proofs/set-password-compatibility.integration.proof.ts', 'utf8');
+    expect(source).toContain('legacy/default set-password answers as before on the owned current-profile fixture');
+    expect(source).toContain('expect(await hasPassword(userId)).toBe(true)');
+    expect(source).toContain('"setCookie": []');
+    expect(source).not.toMatch(/\b(?:it|test|describe)\.(?:skip|only)\s*\(/);
+  });
+
   it('owns a fresh database on the existing pinned PG18/PostGIS image', () => {
     expect(Object.keys(proof.services ?? {})).toEqual(['postgres']);
     expect(proof.services?.postgres.image).toBe(workflow.jobs['test-backend'].services?.postgres.image);
@@ -406,6 +492,8 @@ describe('owned credential writer CI boundary', () => {
       'packages/backend/test-results/junit-password-evidence-proof.xml',
       'packages/backend/test-results/junit-recovery-backend.xml',
       'packages/web/test-results/junit-recovery-web.xml',
+      'packages/backend/test-results/junit-set-password-compatibility-backend.xml',
+      'packages/web/test-results/junit-set-password-compatibility-web.xml',
     ]);
   });
 

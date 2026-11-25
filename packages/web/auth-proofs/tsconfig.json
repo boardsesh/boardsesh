@@ -32,7 +32,9 @@
     "pre-enforcement-password.integration.proof.ts",
     "password-login.vite.config.ts",
     "pre-enforcement-recovery.integration.proof.ts",
-    "recovery.vite.config.ts"
+    "recovery.vite.config.ts",
+    "set-password-compatibility.integration.proof.ts",
+    "set-password-compatibility.vite.config.ts"
   ],
   "exclude": []
 }

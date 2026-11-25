@@ -608,6 +608,8 @@ describe('identity writer catalog', () => {
       ['packages/backend/src/auth/current-store/password-identity.ts', 1],
       // Default reset owns the shared absent/prepared gate and users row; capture follows its real conditional write in the same transaction.
       ['packages/backend/src/auth/current-store/password-recovery-family.ts', 1],
+      // Compatibility capture follows the actual INSERT in its gated, users-locked transaction.
+      ['packages/backend/src/auth/current-store/set-password-compatibility.ts', 1],
     ]);
   });
 
