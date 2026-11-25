@@ -74,6 +74,20 @@ Anything else goes to review, as before. For 14 days after an auto-approval, nob
 
 A gym is in one of three states: **Run by the gym** (an approved claim or an admin handover), **Added by a climber**, or **Not claimed yet**. Screens that can't be edited say who can change them and offer Report a problem and, where it applies, Claim. They no longer say only "You don't have permission".
 
+## Creating a gym: one listing per gym
+
+A second listing of a real gym splits its boards, followers and claim across two pages. Climbers mostly made those by typing a gym that was already there, so `createGym` now refuses a gym that looks listed until the climber has seen the matches.
+
+- **What counts as similar.** The `findSimilarGyms` search, run as the caller: the same name within 5 km, any name within 150 m, or a name that contains (or is contained in) the other within 1 km. With no coordinates, name only. Only public, listed gyms and the caller's own count, so another climber's private or unlisted gym never blocks and never leaks.
+- **The check.** `CreateGymInput.duplicateCheck: { mode, acknowledgedGymUuids }`. Absent means `REJECT_IF_FOUND`: unlike the board wall check, every gym create is checked, old clients and scripts too.
+  - `REJECT_IF_FOUND` refuses on any match.
+  - `CONFIRMED_SEPARATE` refuses on a match missing from `acknowledgedGymUuids` (at most 50; www keeps the 50 most recent it showed). An empty list, or one naming none of the matches, refuses on all of them, so a blind confirmation never skips the check.
+- **The refusal.** `GYM_SIMILAR_EXISTS`, with `extensions.candidates` in the `SimilarGym` shape (name, address, distance, `isClaimable` and the rest), nearest first, at most 5. Unlike `BOARD_EXISTING_WALLS`, which names walls by uuid only, it carries the gyms whole: they are exactly what `findSimilarGyms` returns to the same caller, so the error shows nothing the query doesn't. The check reads up to 50 matches; once the first five are acknowledged the next refusal names the next ones. Without coordinates the name search reads 50 rows with exact names first in SQL, so an exact duplicate can't fall outside the window behind many substring matches. `readSimilarGymsError` in `@boardsesh/graphql` reads it.
+- **The cap.** An account may list at most 25 gyms itself (`MAX_AUTO_MINTED_GYMS_PER_OWNER`, the number that already stopped `createBoard` minting gyms). Only gyms in the "Added by a climber" state count (`CLIMBER_LISTED`): live, not merged, and not held through an approved claim or an admin handover, read with the same SQL as `listingState` (`ownerHoldsClaimOrHandoverColumn`). Staff who claimed thirty listings run them; they didn't add them. Gyms `createBoard` minted count, and so does a gym whose claim is still pending. Past the cap `createGym` refuses with `GYM_LIMIT_REACHED` (`extensions.maxGyms`). Exempt: the SYSTEM catalogue owner and global admins (an `admin` role with no board type); an admin scoped to one board type is not. `createBoard`'s mint path still counts every owned gym, without a lock.
+- **The name** is trimmed on the server before anything else, so the stored name, the slug and the check see the same text.
+- **Concurrency.** The cap, the similar-gym read, the slug and the insert run in one transaction. It first takes `pg_advisory_xact_lock` per owner (`0x47594d4f`, "GYMO", key `hashtext(owner id)`) and then per normalized name (`0x47594d4e`, "GYMN"). A double-tapped Save, or two climbers adding one gym by the same name at once, serialize: the second reads after the first commits and is refused. Two climbers adding one gym under different names at the same moment are not serialized (no key both share); the 150 m tier catches the second one only once the first has committed. Two different names can share a slug ("Rock Hall", "Rock-Hall!"); the slug is read on the transaction after the locks, and when the `gyms_unique_slug` index still catches a concurrent create, the whole create runs once more and takes the next slug.
+- **Where it shows.** www `/gyms/new` keeps its as-you-type suggestions, and on the refusal opens "Is it one of these?" with the same cards, Claim where the climber may (counted as placement `similar-gyms-refusal`), and "No, add a new gym", which resends as `CONFIRMED_SEPARATE` with every gym shown since that Save. The app doesn't call `createGym` yet.
+
 ## Not built, on purpose
 
 - A community vote that hides boards (see decision 2).
@@ -211,3 +225,4 @@ The mechanics are in [gym-claims.md](gym-claims.md).
 - Staff board actions on www: `docs/web/gym-board-management.md`.
 - Climb reports, for comparison: `docs/product/climb-moderation.md`.
 - Stopping a second copy of a wall before it is created (the gym's existing walls, the `createBoard` recheck): `docs/product/existing-wall-check.md`.
+- Stopping a second listing of a gym, and the gym cap: `createGym` in `gyms.ts`, its guards in `gym-create-guards.ts`, the search in `findSimilarGymCandidates` (`gym-matching.ts`), www's dialog in `packages/web/app/components/gym-entity/similar-gym-refusal-dialog.tsx`. Tests: `packages/backend/src/__tests__/create-gym-duplicate-check.test.ts`.

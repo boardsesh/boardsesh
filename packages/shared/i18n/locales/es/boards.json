@@ -1140,7 +1140,13 @@
     "providerBadge": "Desde {{provider}}",
     "viewGym": "Ver el rocódromo",
     "claim": "Este es mi rocódromo: reclamarlo",
-    "createAnyway": "¿Ninguno es el tuyo? Añade tu rocódromo con el botón de abajo."
+    "createAnyway": "¿Ninguno es el tuyo? Añade tu rocódromo con el botón de abajo.",
+    "refusal": {
+      "title": "¿Es alguno de estos?",
+      "body": "Estos rocódromos ya están en la lista. Si el tuyo es uno de ellos, ábrelo o reclámalo en vez de añadir una copia.",
+      "addNew": "No, añadir un rocódromo nuevo",
+      "back": "Volver al formulario"
+    }
   },
   "gymEntity": {
     "stats": {
@@ -1194,7 +1200,8 @@
       "authRequired": "Debes iniciar sesión para crear un rocódromo",
       "errorMessage": "Error al crear el rocódromo",
       "nameRequired": "Se requiere el nombre del rocódromo",
-      "createdNamed": "¡Rocódromo \"{{name}}\" creado!"
+      "createdNamed": "¡Rocódromo \"{{name}}\" creado!",
+      "limitReached": "Ya tienes el máximo de rocódromos que permite una cuenta. Elimina uno que ya no gestiones para añadir otro."
     },
     "helpers": {
       "website": "Se usa para verificar la propiedad cuando alguien reclama este rocódromo",

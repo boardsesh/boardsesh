@@ -1140,7 +1140,13 @@
     "providerBadge": "来自 {{provider}}",
     "viewGym": "查看岩馆",
     "claim": "这是我的岩馆，认领它",
-    "createAnyway": "都不是？使用下方按钮添加你的岩馆。"
+    "createAnyway": "都不是？使用下方按钮添加你的岩馆。",
+    "refusal": {
+      "title": "是其中之一吗？",
+      "body": "这些岩馆已在列表中。如果你的岩馆是其中之一，请打开或认领它，而不是再添加一个副本。",
+      "addNew": "不是，添加新岩馆",
+      "back": "返回表单"
+    }
   },
   "gymEntity": {
     "stats": {
@@ -1194,7 +1200,8 @@
       "authRequired": "请先登录再创建岩馆",
       "errorMessage": "创建岩馆失败",
       "nameRequired": "请填写岩馆名称",
-      "createdNamed": "岩馆“{{name}}”已创建！"
+      "createdNamed": "岩馆“{{name}}”已创建！",
+      "limitReached": "你拥有的岩馆已达到单个账户的上限。删除一个你不再管理的岩馆后即可添加新的。"
     },
     "helpers": {
       "website": "有人认领此岩馆时，用于验证所有权",

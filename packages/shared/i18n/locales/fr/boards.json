@@ -1140,7 +1140,13 @@
     "providerBadge": "Depuis {{provider}}",
     "viewGym": "Voir la salle",
     "claim": "C'est ma salle — la revendiquer",
-    "createAnyway": "Aucune ne correspond ? Ajoutez votre salle avec le bouton ci-dessous."
+    "createAnyway": "Aucune ne correspond ? Ajoutez votre salle avec le bouton ci-dessous.",
+    "refusal": {
+      "title": "Est-ce l'une de celles-ci ?",
+      "body": "Ces salles sont déjà référencées. Si la vôtre en fait partie, ouvrez-la ou revendiquez-la plutôt que d'en ajouter une copie.",
+      "addNew": "Non, ajouter une nouvelle salle",
+      "back": "Retour au formulaire"
+    }
   },
   "gymEntity": {
     "stats": {
@@ -1194,7 +1200,8 @@
       "authRequired": "Vous devez être connecté pour créer une salle",
       "errorMessage": "Échec de la création de la salle",
       "nameRequired": "Le nom de la salle est obligatoire",
-      "createdNamed": "Salle « {{name}} » créée !"
+      "createdNamed": "Salle « {{name}} » créée !",
+      "limitReached": "Vous possédez déjà le nombre maximal de salles pour un compte. Supprimez-en une que vous ne gérez plus pour en ajouter une autre."
     },
     "helpers": {
       "website": "Sert à vérifier la propriété lorsque quelqu’un revendique cette salle",

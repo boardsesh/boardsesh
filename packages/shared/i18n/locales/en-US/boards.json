@@ -1140,7 +1140,13 @@
     "providerBadge": "From {{provider}}",
     "viewGym": "See the gym",
     "claim": "This is my gym — claim it",
-    "createAnyway": "None of these? Add your gym with the button below."
+    "createAnyway": "None of these? Add your gym with the button below.",
+    "refusal": {
+      "title": "Is it one of these?",
+      "body": "These gyms are already listed. If yours is one of them, open it or claim it instead of adding a copy.",
+      "addNew": "No, add a new gym",
+      "back": "Back to the form"
+    }
   },
   "gymEntity": {
     "stats": {
@@ -1194,7 +1200,8 @@
       "authRequired": "You must be signed in to create a gym",
       "errorMessage": "Failed to create gym",
       "nameRequired": "Gym name is required",
-      "createdNamed": "Gym \"{{name}}\" created!"
+      "createdNamed": "Gym \"{{name}}\" created!",
+      "limitReached": "You own the most gyms one account can. Delete one you no longer run to add another."
     },
     "helpers": {
       "website": "Used to verify ownership when someone claims this gym",

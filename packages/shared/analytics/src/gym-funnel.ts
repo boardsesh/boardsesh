@@ -80,6 +80,12 @@ export type GymClaimViewerState = 'signed-in' | 'signed-out';
  *                      NOT in #4374's list; added because the call site is real
  *                      and folding it into the directory would mix "browsing
  *                      the directory" with "about to create a duplicate".
+ *  - `similar-gyms-refusal` — Claim on a gym listed in the "Is it one of these?"
+ *                      dialog, shown when createGym refuses a gym that looks
+ *                      listed (GYM_SIMILAR_EXISTS). Its own value, not
+ *                      `similar-gyms`: the climber already pressed Save, so a
+ *                      claim here is a duplicate the server stopped, not one
+ *                      the live suggestions caught.
  *  - `gym-page-header` — "Run this gym? Claim it" in the run-by line under the
  *                      gym page's H1 (packages/web/app/gym/[gym_slug]/gym-run-by-line.tsx).
  *                      Its own value, not `gym-page`: the call-out and the line
@@ -101,6 +107,7 @@ export type GymClaimPlacement =
   | 'preview-sheet'
   | 'directory-footer'
   | 'similar-gyms'
+  | 'similar-gyms-refusal'
   | 'gym-page-header'
   | 'directory-result'
   | 'manage-lock'

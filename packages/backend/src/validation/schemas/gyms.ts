@@ -100,10 +100,33 @@ export const GymPhotoUrlSchema = z
 export const GymHoursSchema = z.string().max(GYM_HOURS_MAX_LENGTH, 'Opening hours too long');
 
 /**
+ * Cap on `CreateGymInput.duplicateCheck.acknowledgedGymUuids`. createGym's
+ * duplicate check reads this many similar gyms, so a climber who acknowledges
+ * them round by round (five a refusal) can always name every one. The web
+ * client keeps the most recent this-many it was shown.
+ */
+export const MAX_ACKNOWLEDGED_GYM_UUIDS = 50;
+
+/**
+ * createGym's duplicate check. Absent (or null) means REJECT_IF_FOUND: unlike
+ * createBoard's opt-in wall check, every gym create is checked, because a
+ * second listing of a real gym splits its boards, followers and claim.
+ */
+export const GymDuplicateCheckSchema = z.object({
+  mode: z.enum(['REJECT_IF_FOUND', 'CONFIRMED_SEPARATE']),
+  acknowledgedGymUuids: z
+    .array(UUIDSchema)
+    .max(MAX_ACKNOWLEDGED_GYM_UUIDS, `At most ${MAX_ACKNOWLEDGED_GYM_UUIDS} acknowledged gyms`)
+    .nullish(),
+});
+
+/**
  * Create gym input validation schema
  */
 export const CreateGymInputSchema = z.object({
-  name: z.string().min(1, 'Gym name cannot be empty').max(100, 'Gym name too long'),
+  // Trimmed before the length checks, so "  " is empty and the stored name,
+  // the slug and the duplicate check all see the same text.
+  name: z.string().trim().min(1, 'Gym name cannot be empty').max(100, 'Gym name too long'),
   description: z.string().max(500, 'Description too long').optional(),
   hours: GymHoursSchema.optional(),
   address: z.string().max(300, 'Address too long').optional(),
@@ -116,6 +139,7 @@ export const CreateGymInputSchema = z.object({
   isListed: z.boolean().optional(),
   imageUrl: GymPhotoUrlSchema.optional(),
   boardUuid: UUIDSchema.optional(),
+  duplicateCheck: GymDuplicateCheckSchema.nullish(),
 });
 
 /**
