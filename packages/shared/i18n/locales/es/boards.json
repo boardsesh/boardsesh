@@ -568,19 +568,26 @@
       "aria": "Añadir un plafón",
       "setUp": "Configurar un plafón",
       "sprayWall": "Añadir un Spraywall",
-      "findGym": "Buscar un rocódromo",
-      "ownBoard": "Mi propio plafón",
-      "gymBoard": "Un plafón de mi rocódromo"
+      "findGym": "Buscar un rocódromo"
     },
-    "boardWhere": {
-      "title": "¿Dónde está este plafón?",
-      "own": "Mi propio plafón",
-      "ownHint": "En casa o en un garaje",
-      "gym": "Un plafón de un rocódromo",
-      "gymHint": "Escala con quienes ya registran sus bloques ahí"
+    "addWizard": {
+      "title": "Añadir un plafón",
+      "whereTitle": "¿Dónde está el plafón?",
+      "gym": "En un rocódromo",
+      "gymHint": "Busca tu rocódromo y luego su plafón",
+      "home": "En casa",
+      "homeHint": "Tu propio muro o el plafón del garaje",
+      "spray": "Un Spraywall",
+      "sprayHint": "Fotografíalo y marca las presas",
+      "whichBoard": "¿Qué plafón?",
+      "otherBoards": "Otros plafones",
+      "gymBoardsTitle": "Plafones en {{gym}}",
+      "gymBoardsLoading": "Plafones en este rocódromo",
+      "stepCounter": "Paso {{current}} de {{total}}",
+      "gymLockedHint": "Elegido en el paso anterior. Vuelve atrás para elegir otro rocódromo.",
+      "gymLockedHintGymPage": "Lo estás configurando desde la página de este rocódromo. Abre la página de otro rocódromo para añadir un plafón allí."
     },
     "findWall": {
-      "screenTitle": "Busca el plafón de tu rocódromo",
       "boardType": "Tipo de plafón",
       "offline": "No tienes conexión. Para encontrar el plafón de tu rocódromo hace falta señal.",
       "retry": "Inténtalo de nuevo",

@@ -14,8 +14,9 @@
 //   row; only a row tap picks, so a mis-tapped pin never moves the flow on.
 //   Zooming the world view in to a town searches there, as the website does.
 //
-// A pick hands the gym to the caller (today `/boards/find-wall`, whose next
-// screen is the gym's wall list); so does "Add my gym", the list's last row.
+// A pick hands the gym to the caller (the add-a-board wizard's
+// `/boards/add/gym`, whose next screen is the gym's wall list); so does "Add
+// my gym", the list's last row.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, StyleSheet, View, type LayoutChangeEvent } from 'react-native';

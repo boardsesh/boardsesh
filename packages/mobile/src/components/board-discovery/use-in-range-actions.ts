@@ -10,6 +10,7 @@ import type { useRouter } from 'expo-router';
 import { trackBoardKindChosen } from '../../lib/boards/board-picker-add-analytics';
 import type { BoardReturnTo } from '../../lib/boards/board-return-to';
 import { BUILDER_PRESET_PARAM_VALUE } from '../../lib/boards/first-board-mode';
+import { wizardSetupHref } from '../../lib/boards/add-board-wizard';
 import { clearHeardSerialOffer, offerHeardSerial } from '../../lib/boards/heard-serial-offer';
 import { setPendingBoardRecognition } from '../../lib/boards/pending-board-recognition';
 import type { FirstBoardPath } from '../../lib/onboarding/first-board-picker-analytics';
@@ -50,7 +51,7 @@ export function useInRangeActions({
   dropHeldBox,
   boardReturnTo,
   source,
-  gymFirstEnabled,
+  wizardEnabled,
 }: {
   scan: PickerScan;
   router: Router;
@@ -60,7 +61,8 @@ export function useInRangeActions({
   boardReturnTo: BoardReturnTo;
   /** The picker's own `source` param, carried to the routes so a bind there closes out first run. */
   source: string | undefined;
-  gymFirstEnabled: boolean;
+  /** The add-a-board wizard is on: "It's my own board" opens its Set up, type and serial known. */
+  wizardEnabled: boolean;
 }): InRangeActions {
   const { start, stop, listenedLongEnough, retryLookup, lookup } = scan;
   const startRef = useRef(start);
@@ -169,26 +171,31 @@ export function useInRangeActions({
   // serial nobody has saved opens with that serial filled in, when it was the
   // only box of its type heard (`builderSerialForRow`); read, like the hold,
   // before the scan stops. The offer is what lets the builder trust the param
-  // (heard-serial-offer.ts).
+  // (heard-serial-offer.ts). With the add-a-board wizard on it is the wizard's
+  // Set up, entered here: the button said home and the scan heard the type, so
+  // Where's the board? and Which board? are skipped.
   const onOwnBoard = useCallback(
     (row: UnnamedInRangeRow) => {
       const serial = builderSerialForRow(row, listenedLongEnough(), lookup);
       startUnnamedRowAction(row);
       if (serial) offerHeardSerial({ serial, boardType: row.boardType });
-      const boardKind = gymFirstEnabled ? 'home' : undefined;
-      if (boardKind) trackBoardKindChosen({ kind: boardKind, surface: 'in_range', preAnswered: true });
-      const builder = addBoardRoute('board', {
-        returnTo: boardReturnTo,
-        source,
-        preset: BUILDER_PRESET_PARAM_VALUE,
-        boardKind,
-      });
+      const serialParams = serial ? { serial } : {};
+      if (wizardEnabled) {
+        trackBoardKindChosen({ kind: 'home', surface: 'in_range', preAnswered: true });
+        const setup = wizardSetupHref(
+          { returnTo: boardReturnTo, source, entry: 'in_range', trail: [] },
+          { path: 'home', boardType: row.boardType },
+        );
+        router.push({ pathname: setup.pathname, params: { ...setup.params, ...serialParams } });
+        return;
+      }
+      const builder = addBoardRoute('board', { returnTo: boardReturnTo, source, preset: BUILDER_PRESET_PARAM_VALUE });
       router.push({
         pathname: builder.pathname,
-        params: { ...builder.params, presetBoardType: row.boardType, ...(serial ? { serial } : {}) },
+        params: { ...builder.params, presetBoardType: row.boardType, ...serialParams },
       });
     },
-    [listenedLongEnough, lookup, startUnnamedRowAction, router, boardReturnTo, source, gymFirstEnabled],
+    [listenedLongEnough, lookup, startUnnamedRowAction, router, boardReturnTo, source, wizardEnabled],
   );
 
   return { onStart, onTurnOnBluetooth, onOpenSettings, onRetryLookup, startUnnamedRowAction, onSearchGyms, onOwnBoard };

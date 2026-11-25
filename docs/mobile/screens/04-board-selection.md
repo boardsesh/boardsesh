@@ -27,6 +27,33 @@ and [Bluetooth](12-bluetooth.md).
 
 `app/boards/create.tsx`, `edit.tsx`, and `manage.tsx` use the board-discovery
 components. Keep board creation separate from selecting an existing saved wall.
+
+### Add a board wizard
+
+Behind the `add-board-wizard` flag, the + on the picker and on Manage boards
+pushes one wizard under `app/boards/add/` instead of opening a menu:
+
+- `index.tsx`, "Where's the board?": at a gym, at home, or a Spraywall (handed
+  to `/boards/spray/new` unchanged). It has an X and the title "Add a board".
+- `gym.tsx`, "Which gym?": `GymStep`, the map and search.
+- `gym-boards.tsx`, "Boards at {gym}": `GymWallList`, where an existing wall is
+  taken before a copy is added.
+- `board.tsx`, "Which board?": `BoardTypeStep`, art tiles for MoonBoard, Kilter
+  and Tension, then the other types as rows.
+- `create.tsx`, Set up, restyled: 200 pt art, Board, Layout and Size as rows
+  (`BoardSetupRows`; a menu up to 8 options, else `add/setup-option.tsx`),
+  chips for Holds only, the gym locked when the wizard picked it.
+
+From step 2 the bar has a back chevron and no title, and the body says "Step N
+of M", counting only the screens the climber sees. Entries that know the
+answer skip ahead: a gym page opens on its boards, In range's "It's my own
+board" opens Set up, first run's inline At home opens Which board?. The step
+counting, the routes per entry and the analytics are in
+`src/lib/boards/add-board-wizard.ts`; the full flow is in
+[existing-wall check](../../product/existing-wall-check.md), "The app". With
+the flag off the + is the menu (Set up a board, Add a Spraywall, Find a gym)
+and the builder keeps its chips. `where.tsx` and `find-wall.tsx` redirect into
+the wizard for one release.
 Spray walls use their own photo, hold-review, and LED setup tasks; see
 [spray walls](../../product/spray-walls.md) and [spray LED setup](../../boards/spray-wall-led.md).
 

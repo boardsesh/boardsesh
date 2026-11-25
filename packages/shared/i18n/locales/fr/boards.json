@@ -568,19 +568,26 @@
       "aria": "Ajouter une board",
       "setUp": "Configurer une board",
       "sprayWall": "Ajouter un Spraywall",
-      "findGym": "Trouver une salle",
-      "ownBoard": "Ma propre board",
-      "gymBoard": "Une board de ma salle"
+      "findGym": "Trouver une salle"
     },
-    "boardWhere": {
-      "title": "Où se trouve cette board ?",
-      "own": "Ma propre board",
-      "ownHint": "À la maison ou dans un garage",
-      "gym": "Une board en salle",
-      "gymHint": "Grimpe avec ceux qui y notent déjà leurs blocs"
+    "addWizard": {
+      "title": "Ajouter une board",
+      "whereTitle": "Où se trouve la board ?",
+      "gym": "En salle",
+      "gymHint": "Trouve ta salle, puis sa board",
+      "home": "À la maison",
+      "homeHint": "Ton propre mur ou la board de ton garage",
+      "spray": "Un Spraywall",
+      "sprayHint": "Photographie-le et marque les prises",
+      "whichBoard": "Quelle board ?",
+      "otherBoards": "Autres boards",
+      "gymBoardsTitle": "Boards à {{gym}}",
+      "gymBoardsLoading": "Boards de cette salle",
+      "stepCounter": "Étape {{current}} sur {{total}}",
+      "gymLockedHint": "Choisie à l'étape précédente. Reviens en arrière pour choisir une autre salle.",
+      "gymLockedHintGymPage": "Tu la configures depuis la page de cette salle. Ouvre la page d'une autre salle pour y ajouter une board."
     },
     "findWall": {
-      "screenTitle": "Trouve la board de ta salle",
       "boardType": "Type de board",
       "offline": "Tu es hors ligne. Il faut du réseau pour trouver la board de ta salle.",
       "retry": "Réessayer",

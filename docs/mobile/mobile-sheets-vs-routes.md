@@ -1039,7 +1039,10 @@ per sheet so an account change resets each draft.
   the tabs, so rule 2 is not in play.
 - **Board picker** (`/boards`) — the top (At {gym}, or what the Bluetooth scan heard), Your
   boards and Near you are sections of the one scrolling route, and the ways to add a board are a native menu off the + in
-  its top bar (`AddBoardMenu`), never a sheet. The Bluetooth quickstart sheet that the slot
+  its top bar (`AddBoardMenu`), never a sheet. With the `add-board-wizard` flag the + is one
+  button that pushes the add-a-board wizard (`/boards/add`, pushed routes in the boards stack, the
+  multi-step chrome above), and Set up's long Layout or Size lists are a pushed checklist
+  (`/boards/add/setup-option`), not a sheet over the form. The Bluetooth quickstart sheet that the slot
   replaced was the one sheet the picker presented besides the board details sheet.
 - **Crowdsourced-QA verdict sheet** (`QaVerdictSheet`) — opened from a user-drawer row, so it
   follows the same root-hosting rule as `FeedbackSheet`: mounted at the `UserDrawerProvider` root,

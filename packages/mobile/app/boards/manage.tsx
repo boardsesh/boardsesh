@@ -19,7 +19,7 @@ import { useAuth } from '../../src/providers/auth-provider';
 import { useConfirm } from '../../src/providers/dialog-provider';
 import { useTheme } from '../../src/providers/theme-provider';
 import {
-  useCreateBoardGymFirstEnabled,
+  useAddBoardWizardEnabled,
   useOfflineDownloadProgressEnabled,
   useOfflineDownloadsEnabled,
 } from '../../src/providers/feature-flags-provider';
@@ -87,14 +87,10 @@ import type { ArchivedSprayWallSummary } from '../../src/components/board-discov
 import { useOpenSprayWall } from '../../src/lib/spray/use-open-spray-wall';
 import { useActivateBoard } from '../../src/lib/boards/use-activate-board';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
-import {
-  trackBoardKindChosen,
-  trackBoardPickerAddSelected,
-  type BoardKind,
-  type BoardPickerAddKind,
-} from '../../src/lib/boards/board-picker-add-analytics';
+import { trackBoardPickerAddSelected, type BoardPickerAddKind } from '../../src/lib/boards/board-picker-add-analytics';
 import { addBoardRoute } from '../../src/components/board-discovery/add-board-route';
 import { AddBoardMenu } from '../../src/components/board-discovery/AddBoardMenu';
+import { AddBoardButton } from '../../src/components/board-discovery/AddBoardButton';
 import { offlineBoardRows } from '../../src/components/board-discovery/offline-board-items';
 import { useConnectivity } from '../../src/lib/connectivity/use-connectivity';
 import { pickerNoticeKey } from '../../src/lib/boards/local-only';
@@ -601,36 +597,33 @@ export default function ManageBoards() {
   );
   useRememberDownloadedBoards(boardConnection, archivedWallUuids);
 
-  // With the gym-first flow on (#8151), Create board asks whose board it is
-  // first ("Where's this board?"), and the + menu's two rows already say.
-  const gymFirstEnabled = useCreateBoardGymFirstEnabled();
-  const onCreate = useCallback(() => {
-    trackBoardPickerAddSelected({ kind: 'board', surface: 'manage' });
-    router.push(addBoardRoute('board', { boardKind: gymFirstEnabled ? 'ask' : undefined }));
-  }, [router, gymFirstEnabled]);
+  // With the add-a-board wizard on, Create board and the + open its step 1,
+  // "Where's the board?". Off, the builder and the + menu as before.
+  const wizardEnabled = useAddBoardWizardEnabled();
+  const openAddRoute = useCallback(
+    (kind: BoardPickerAddKind) => {
+      trackBoardPickerAddSelected({ kind, surface: 'manage' });
+      const wizardEntry = kind === 'board' && wizardEnabled ? 'manage' : undefined;
+      router.push(addBoardRoute(kind, { wizardEntry }));
+    },
+    [router, wizardEnabled],
+  );
+  const onCreate = useCallback(() => openAddRoute('board'), [openAddRoute]);
 
   // The same + as the picker's top bar, in place of the outlined Create board
   // button that sat over the list. Online and signed in only: every way behind
   // it needs a connection and an account.
-  const onAddFromMenu = useCallback(
-    (kind: BoardPickerAddKind, boardKind?: BoardKind) => {
-      trackBoardPickerAddSelected({ kind, surface: 'manage', boardKind });
-      if (kind === 'board' && boardKind)
-        trackBoardKindChosen({ kind: boardKind, surface: 'manage', preAnswered: false });
-      const askKind = kind === 'board' && gymFirstEnabled && !boardKind ? 'ask' : boardKind;
-      router.push(addBoardRoute(kind, { boardKind: askKind }));
-    },
-    [router, gymFirstEnabled],
-  );
   const navigation = useNavigation();
   const canAddBoards = isAuthenticated && !shouldUseOfflineList;
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: canAddBoards
-        ? () => <AddBoardMenu onSelect={onAddFromMenu} gymFirst={gymFirstEnabled} />
+        ? wizardEnabled
+          ? () => <AddBoardButton onPress={onCreate} />
+          : () => <AddBoardMenu onSelect={openAddRoute} />
         : undefined,
     });
-  }, [navigation, canAddBoards, onAddFromMenu, gymFirstEnabled]);
+  }, [navigation, canAddBoards, openAddRoute, onCreate, wizardEnabled]);
 
   const renderItem = useCallback(
     ({ item }: { item: ManageItem }) => {

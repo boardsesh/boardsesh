@@ -150,6 +150,8 @@ const state = vi.hoisted(() => ({
   linkedQuery: { data: undefined as UserBoard | null | undefined, isFetching: false },
   directoryReports: false,
   flagsResolved: true,
+  /** `add-board-wizard`. */
+  wizard: false,
 }));
 
 const board = (overrides: Partial<UserBoard> & { uuid: string; name: string }): UserBoard =>
@@ -239,6 +241,11 @@ vi.mock('../../../src/components/board-discovery/AddBoardMenu', () => ({
         createElement('button', { key: kind, type: 'button', onClick: () => onSelect(kind) }, `add ${kind}`),
       ),
     ),
+}));
+// With the add-a-board wizard on, the + is one button.
+vi.mock('../../../src/components/board-discovery/AddBoardButton', () => ({
+  AddBoardButton: ({ onPress }: { onPress: () => void }) =>
+    createElement('button', { type: 'button', onClick: onPress }, 'add wizard'),
 }));
 vi.mock('../../../src/components/board-discovery/DiscoveryBoardArt', () => ({ DiscoveryBoardArt: () => null }));
 vi.mock('../../../src/components/board-discovery/NearbyReservedSlot', () => ({
@@ -414,7 +421,7 @@ vi.mock('../../../src/providers/feature-flags-provider', () => ({
   useFeatureFlag: () => false,
   useOfflineDownloadsEnabled: () => true,
   usePickerAutoScanEnabled: () => true,
-  useCreateBoardGymFirstEnabled: () => false,
+  useAddBoardWizardEnabled: () => state.wizard,
 }));
 vi.mock('../../../src/offline/use-downloaded-scope-keys', () => ({ useDownloadedScopeKeys: () => ({ data: [] }) }));
 vi.mock('../../../src/offline/use-offline-catalog-state', () => ({ useOfflineCatalogState: () => null }));
@@ -572,6 +579,7 @@ beforeEach(() => {
   state.linkedQuery = { data: undefined, isFetching: false };
   state.directoryReports = false;
   state.flagsResolved = true;
+  state.wizard = false;
   state.isAuthenticated = true;
   scanCtrl.phase = 'hidden';
   scanCtrl.rows = [];
@@ -1255,6 +1263,23 @@ describe('the empty state', () => {
     expect(trackMock).toHaveBeenCalledWith('Board Picker Add Selected', { kind, surface: 'empty_state' });
   });
 
+  it("sends Set up a board to the wizard's step 1 with the wizard on, and the Spraywall straight to its wizard", () => {
+    state.wizard = true;
+    state.myBoards = [];
+    render(createElement(BoardSelection));
+
+    fireEvent.click(screen.getByRole('button', { name: 'mobile.addBoard.setUp' }));
+    expect(routerMock.push).toHaveBeenLastCalledWith({
+      pathname: '/boards/add',
+      params: { returnTo: '/(tabs)/climbs', entry: 'empty_state' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'mobile.addBoard.sprayWall' }));
+    expect(routerMock.push).toHaveBeenLastCalledWith({
+      pathname: '/boards/spray/new',
+      params: { returnTo: '/(tabs)/climbs' },
+    });
+  });
+
   it('is not shown to a climber with boards', () => {
     render(createElement(BoardSelection));
     expect(screen.queryByText('No boards yet')).toBeNull();
@@ -1592,6 +1617,24 @@ describe('where a pick came from', () => {
       params: { returnTo: '/(tabs)/climbs', source: 'onboarding' },
     });
     expect(trackMock).toHaveBeenCalledWith('Board Picker Add Selected', { kind, surface: 'picker' });
+  });
+
+  // With the add-a-board wizard on, the + is one button straight to its step
+  // 1, and Find a gym is gone from it (Near you's Map › opens the gym map).
+  it("opens the wizard's Where's the board? from a single + with the wizard on", () => {
+    state.wizard = true;
+    state.source = 'onboarding';
+    render(createElement(BoardSelection));
+    renderHeaderPlus();
+
+    expect(screen.queryByRole('button', { name: 'add gym_map' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'add wizard' }));
+
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/boards/add',
+      params: { returnTo: '/(tabs)/climbs', source: 'onboarding', entry: 'picker' },
+    });
+    expect(trackMock).toHaveBeenCalledWith('Board Picker Add Selected', { kind: 'board', surface: 'picker' });
   });
 
   it('offers no + to a signed-out climber', () => {

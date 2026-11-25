@@ -1,9 +1,9 @@
-// A gym's walls of one board type (#8151): the gym-first create flow's second
-// step, and where a gym page's "Set up a board" opens. Backed by
+// A gym's walls of one board type (#8151): the add-a-board wizard's "Boards at
+// {gym}" step, where a gym page's "Set up a board" also opens. Backed by
 // `existingWallCandidates`, so it lists the walls the server would refuse a
 // copy of: the gym's own, listings merged into it, and public listings within
 // 150 m. The climber takes one ("Use this board", which follows it), or says
-// theirs isn't listed and goes on to the builder with the gym prefilled.
+// theirs isn't listed and goes on to the wizard's Set up with the gym locked.
 //
 // One virtualized FlashList: a header cell per shelf, each wall its own slice
 // of an inset-grouped card (`InsetGroupedCell`), five a shelf until "Show all".
@@ -13,7 +13,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { useNavigation, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { SUPPORTED_BOARDS } from '@boardsesh/board-config';
@@ -43,6 +43,7 @@ import {
   type WallShelfKey,
 } from '../../lib/boards/wall-candidates';
 import { useTakeExistingWall } from '../../lib/boards/use-take-existing-wall';
+import { wizardSetupHref, type WizardRouteContext } from '../../lib/boards/add-board-wizard';
 import { spacing } from '../../theme/tokens';
 import { SHELF_HEADER_CONTENT_GAP, SHELF_SECTION_GAP, ShelfHeader } from '../ShelfHeader';
 import { PressableSurface } from '../PressableSurface';
@@ -61,6 +62,7 @@ import type { DiscoveryBoardItem } from './BoardDiscoveryCardView';
 import { DiscoveryBoardArt } from './DiscoveryBoardArt';
 import { boardTypeLabel } from './board-builder-labels';
 import { WallNotListedConfirmSheet } from './WallNotListedConfirmSheet';
+import { WizardStepHeader } from './add-board-wizard/WizardStepHeader';
 
 /** Rows a shelf shows before "Show all N". */
 export const WALL_SHELF_COLLAPSED_ROW_COUNT = 5;
@@ -82,6 +84,12 @@ type GymWallListProps = {
   source: string | undefined;
   /** How the climber got here: the gym search, or a gym page. */
   entry: 'find_step' | 'gym_page';
+  /**
+   * The add-a-board wizard step this list is: the gym is named in the body
+   * under "Step N of M" (the bar has no title), and "My board isn't listed"
+   * goes on to the wizard's Set up, with the gym locked.
+   */
+  wizard: { stepLabel: string | null; nextContext: WizardRouteContext };
 };
 
 function lookupErrorReason(error: unknown, offline: boolean): 'offline' | 'rate_limited' | 'exception' {
@@ -89,10 +97,9 @@ function lookupErrorReason(error: unknown, offline: boolean): 'offline' | 'rate_
   return isGraphqlRateLimitedError(error) ? 'rate_limited' : 'exception';
 }
 
-export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry }: GymWallListProps) {
+export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry, wizard }: GymWallListProps) {
   const { t } = useTranslation('boards');
   const router = useRouter();
-  const navigation = useNavigation();
   const { systemColors } = useTheme();
   const bottomChrome = useBottomChromeMetrics();
   const { isAuthenticated } = useAuth();
@@ -105,11 +112,6 @@ export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry
   const gymName = gym?.name ?? '';
   const gymBoardsQuery = useGymBoards(gymUuid);
   const gymBoards = gymBoardsQuery.data;
-
-  // The header names the gym once it's known.
-  useEffect(() => {
-    if (gym) navigation.setOptions({ title: gym.name });
-  }, [gym, navigation]);
 
   const [chosenType, setChosenType] = useState<BoardName | null>(initialBoardType);
   const boardType = chosenType ?? likelyBoardType(gymBoards);
@@ -269,13 +271,10 @@ export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry
   // Never with the walls listed here acknowledged: this list has no setup to
   // compare against, so the builder's first Save is always REJECT_IF_FOUND on
   // the real one, and its "already has" sheet is the gate (#8151).
+  const wizardContext = wizard.nextContext;
   const openBuilder = useCallback(() => {
-    const params: Record<string, string> = { kind: 'gym', gymUuid };
-    if (boardType) params.boardType = boardType;
-    if (returnTo !== undefined) params.returnTo = returnTo;
-    if (source !== undefined) params.source = source;
-    router.push({ pathname: '/boards/create', params });
-  }, [gymUuid, boardType, returnTo, source, router]);
+    router.push(wizardSetupHref(wizardContext, { path: 'gym', boardType, gymUuid }));
+  }, [gymUuid, boardType, router, wizardContext]);
   const onNotListed = useCallback(() => {
     switch (notListed) {
       case 'sign_in':
@@ -396,6 +395,12 @@ export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry
 
   const listHeader = (
     <View>
+      <View style={styles.wizardHeader}>
+        <WizardStepHeader
+          stepLabel={wizard.stepLabel}
+          title={gym ? t('mobile.addWizard.gymBoardsTitle', { gym: gym.name }) : t('mobile.addWizard.gymBoardsLoading')}
+        />
+      </View>
       <View style={styles.chips}>
         {boardType === null && (gymBoards !== undefined || gymBoardsQuery.isError) ? (
           <Text variant="subheadline" tone="secondary">
@@ -607,6 +612,9 @@ const styles = StyleSheet.create({
   // A closed shelf has no card under it to carry the gap to what follows.
   closedShelfHeader: {
     paddingBottom: SHELF_SECTION_GAP,
+  },
+  wizardHeader: {
+    paddingBottom: spacing[4],
   },
   chips: {
     paddingHorizontal: spacing[4],

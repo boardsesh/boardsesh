@@ -195,6 +195,12 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
   // nothing to add when the type changes.
   const boardNameRef = useRef(boardName);
   boardNameRef.current = boardName;
+  // The current layout and size, for the selects below to tell a re-pick of
+  // the ticked value (a no-op) from a change, without new callback identities.
+  const layoutIdRef = useRef(layoutId);
+  layoutIdRef.current = layoutId;
+  const sizeIdRef = useRef(sizeId);
+  sizeIdRef.current = sizeId;
   const appliedPresetRef = useRef(appliedPreset);
   appliedPresetRef.current = appliedPreset;
   const presetOption = options?.preset;
@@ -227,7 +233,12 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
   // rows don't re-render when an unrelated field — e.g. the dragged angle —
   // changes. With a preset, "resets" means "moves to that type's preset", so a
   // climber switching from Kilter to Tension still has a working Save.
+  //
+  // Picking the value already picked changes nothing: a menu or a chip row
+  // hands back its ticked option too, and resetting the levels below on that
+  // would throw away the setup under the climber's thumb.
   const selectBoard = useCallback((next: BoardName) => {
+    if (next === boardNameRef.current) return;
     const preset = presetRef.current?.(next) ?? null;
     setupTouchedRef.current = false;
     setBoardName(next);
@@ -245,6 +256,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
   }, []);
   const selectLayout = useCallback(
     (next: number) => {
+      if (next === layoutIdRef.current) return;
       setupTouchedRef.current = true;
       // The layout's default size and every set of it come with it. The rule
       // replaces every level below the board type, so none is passed in.
@@ -259,6 +271,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
     (next: number) => {
       // Pre-select every set for the size — the common case (a "Full Ride" owner
       // has them all), and why the set toggles live behind Advanced.
+      if (next === sizeIdRef.current) return;
       setupTouchedRef.current = true;
       const selected = selectSetupSize({ boardName, layoutId, sizeId: null, setIds: [] }, next);
       setSizeId(selected.sizeId);

@@ -568,19 +568,26 @@
       "aria": "添加训练板",
       "setUp": "设置训练板",
       "sprayWall": "添加喷点墙",
-      "findGym": "寻找岩馆",
-      "ownBoard": "我自己的训练板",
-      "gymBoard": "我岩馆里的训练板"
+      "findGym": "寻找岩馆"
     },
-    "boardWhere": {
-      "title": "这块训练板在哪里？",
-      "own": "我自己的训练板",
-      "ownHint": "在家或车库里",
-      "gym": "岩馆里的训练板",
-      "gymHint": "和已经在那里记录的伙伴一起爬"
+    "addWizard": {
+      "title": "添加训练板",
+      "whereTitle": "训练板在哪里？",
+      "gym": "在岩馆",
+      "gymHint": "先找到你的岩馆，再找它的训练板",
+      "home": "在家",
+      "homeHint": "你自己的墙或车库里的训练板",
+      "spray": "喷点墙",
+      "sprayHint": "拍照并标记岩点",
+      "whichBoard": "哪种训练板？",
+      "otherBoards": "其他训练板",
+      "gymBoardsTitle": "{{gym}} 的训练板",
+      "gymBoardsLoading": "这家岩馆的训练板",
+      "stepCounter": "第 {{current}} / {{total}} 步",
+      "gymLockedHint": "已在上一步选好。返回上一步可以换一家岩馆。",
+      "gymLockedHintGymPage": "正在从这家岩馆的页面设置。要在别的岩馆添加训练板，请打开那家岩馆的页面。"
     },
     "findWall": {
-      "screenTitle": "找到你岩馆的训练板",
       "boardType": "训练板类型",
       "offline": "你已离线。查找岩馆的训练板需要网络。",
       "retry": "重试",

@@ -79,6 +79,49 @@ describe('useBoardBuilder', () => {
     expect(result.current.canCreate).toBe(false);
   });
 
+  // A menu or chip row hands back its ticked option too: re-picking it must
+  // keep the setup below it, not reset it.
+  describe('re-picking the value already picked', () => {
+    function builtKilter() {
+      const { result } = renderHook(() => useBoardBuilder());
+      act(() => result.current.selectBoard('kilter'));
+      act(() => result.current.selectLayout(8));
+      const sizeId = result.current.sizes[1]?.id;
+      if (sizeId === undefined) throw new Error('Kilter Homewall has no second size');
+      act(() => result.current.selectSize(sizeId));
+      // A set taken off by hand, which any reset would put back.
+      const firstSet = result.current.setIds[0];
+      if (firstSet === undefined) throw new Error('no sets');
+      act(() => result.current.toggleSet(firstSet));
+      return { result, setup: { layoutId: 8, sizeId, setIds: [...result.current.setIds] } };
+    }
+
+    it('keeps everything on the same board type', () => {
+      const { result, setup } = builtKilter();
+      act(() => result.current.selectBoard('kilter'));
+      expect(result.current).toMatchObject(setup);
+    });
+
+    it('keeps the size and sets on the same layout', () => {
+      const { result, setup } = builtKilter();
+      act(() => result.current.selectLayout(8));
+      expect(result.current).toMatchObject(setup);
+    });
+
+    it('keeps the sets on the same size', () => {
+      const { result, setup } = builtKilter();
+      act(() => result.current.selectSize(setup.sizeId));
+      expect(result.current).toMatchObject(setup);
+    });
+
+    it('still resets below a real change', () => {
+      const { result, setup } = builtKilter();
+      act(() => result.current.selectLayout(1));
+      expect(result.current.layoutId).toBe(1);
+      expect(result.current.setIds).not.toEqual(setup.setIds);
+    });
+  });
+
   // #5654, "My own board": the builder opens with a setup chosen, so the
   // preview renders and Save works from the first frame.
   describe('with a preset', () => {

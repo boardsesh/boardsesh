@@ -35,7 +35,8 @@ import { OfflineState } from '../OfflineState';
 import { Text } from '../Text';
 import { addBoardRoute } from '../board-discovery/add-board-route';
 import { trackBoardKindChosen, trackBoardPickerAddSelected } from '../../lib/boards/board-picker-add-analytics';
-import { useCreateBoardGymFirstEnabled } from '../../providers/feature-flags-provider';
+import { useAddBoardWizardEnabled } from '../../providers/feature-flags-provider';
+import { wizardGymBoardsHref } from '../../lib/boards/add-board-wizard';
 import type { DiscoveryBoardItem } from '../board-discovery/BoardDiscoveryCardView';
 import { ClaimGymSheet } from '../gym-directory/ClaimGymSheet';
 import { gymBoardsToItems } from './gym-board-items';
@@ -222,7 +223,7 @@ function GymPageContent({
   );
 
   const reportAction = useGymReportAction(gym);
-  const gymFirstEnabled = useCreateBoardGymFirstEnabled();
+  const wizardEnabled = useAddBoardWizardEnabled();
 
   // --- boards ---
   const boardsQuery = useGymBoards(gym.uuid);
@@ -371,13 +372,13 @@ function GymPageContent({
       },
       onSetUpBoard: () => {
         hapticSelection();
-        // With the gym-first flow on (#8151) the gym is already known: open
-        // straight on its walls, where an existing one can be taken before a
-        // copy is added. Off, the builder as before.
-        if (gymFirstEnabled) {
+        // With the add-a-board wizard on the gym is already known: open the
+        // wizard on its boards ("Boards at {gym}"), where an existing one can
+        // be taken before a copy is added. Off, the builder as before.
+        if (wizardEnabled) {
           trackBoardPickerAddSelected({ kind: 'board', surface: 'gym_page', boardKind: 'gym' });
           trackBoardKindChosen({ kind: 'gym', surface: 'gym_page', preAnswered: true });
-          router.push(addBoardRoute('board', { returnTo: boardReturnTo, boardKind: 'gym', gymUuid: gym.uuid }));
+          router.push(wizardGymBoardsHref({ returnTo: boardReturnTo, entry: 'gym_page', trail: [] }, gym.uuid));
           return;
         }
         router.push(addBoardRoute('board', { returnTo: boardReturnTo }));
@@ -399,7 +400,7 @@ function GymPageContent({
       gym.contactEmail,
       router,
       boardReturnTo,
-      gymFirstEnabled,
+      wizardEnabled,
       refetchBoards,
       reportAction,
     ],

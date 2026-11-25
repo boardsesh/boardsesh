@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// The gym rows shared by the builder's gym picker sheet and the gym-first
+// The gym rows shared by the builder's gym picker sheet and the add-a-board
 // "Find your gym's board" screen (#8151).
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';

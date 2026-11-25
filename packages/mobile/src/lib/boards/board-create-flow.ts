@@ -13,6 +13,18 @@
 // below the boards stack; a counter rather than a clock, so two events in one
 // millisecond still order.
 
+import { NO_BOARD_PICKER_SOURCE } from './first-board-mode';
+
+/** Which picker path opened the flow, on `Board Builder Abandoned`. */
+export type BuilderOpenedFrom = 'onboarding' | 'no_board' | 'board_picker';
+
+/** The picker's `source` param as `openedFrom`: the same mapping for the builder and every wizard screen. */
+export function builderOpenedFrom(pickerSource: string | undefined): BuilderOpenedFrom {
+  if (pickerSource === 'onboarding') return 'onboarding';
+  if (pickerSource === NO_BOARD_PICKER_SOURCE) return 'no_board';
+  return 'board_picker';
+}
+
 let sequence = 0;
 let lastEndedAt = 0;
 

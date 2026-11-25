@@ -226,10 +226,10 @@ export const FEATURE_FLAG_DEFINITIONS = [
     defaultEnabled: false,
   },
   {
-    key: 'create-board-gym-first',
-    label: 'Ask home or gym before setting up a board',
+    key: 'add-board-wizard',
+    label: 'Add a board wizard',
     description:
-      'Splits "Set up a board" into "My own board" and "A board at my gym", and opens the gym-first screens: Where\'s this board?, Find your gym\'s board and the gym\'s wall list (#8151). The builder sends the server\'s existing-wall check whatever this flag says. A POSITIVE rollout flag: unresolved or off keeps the single Set up a board row.',
+      "The + opens one \"Add a board\" wizard: Where's the board? (at a gym, at home, a spray wall), then the gym map and the gym's boards, or the board type tiles, then the restyled Set up screen. A gym page's Set up a board opens on the gym's boards, and first run's At home opens the board type tiles. Replaces create-board-gym-first. The builder sends the server's existing-wall check whatever this flag says. A POSITIVE rollout flag, rolled out by percentage: unresolved or off keeps the + menu (Set up a board, Add a Spraywall, Find a gym) and the old builder.",
     defaultEnabled: false,
   },
   {
@@ -609,13 +609,13 @@ export function useDirectorySetupSuggestionsEnabled(): boolean {
 }
 
 /**
- * The gym-first create-board flow (#8151): the + menu's home and gym rows and
- * the screens behind them. Positive and fail-closed: off, missing or unresolved
- * keeps today's single "Set up a board" row. Only the screens hang on it; the
- * builder's existing-wall check is sent either way.
+ * The add-a-board wizard (docs/product/existing-wall-check.md, "The app"): the
+ * + opens `/boards/add`, and the builder is restyled. Positive and fail-closed:
+ * off, missing or unresolved keeps the + menu and the old builder. Only the
+ * screens hang on it; the builder's existing-wall check is sent either way.
  */
-export function useCreateBoardGymFirstEnabled(): boolean {
-  return useFeatureFlag('create-board-gym-first') === true;
+export function useAddBoardWizardEnabled(): boolean {
+  return useFeatureFlag('add-board-wizard') === true;
 }
 
 /** Kill switch for the Android lock screen card (#7327). Missing or unresolved reads as enabled. */

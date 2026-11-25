@@ -32,8 +32,15 @@ export function trackBoardPickerAddSelected({ kind, surface, boardKind }: BoardP
 /** Where home-or-gym was answered. */
 export type BoardKindSurface = 'picker' | 'manage' | 'where' | 'first_run' | 'in_range' | 'gym_page';
 
-/** `Board Kind Chosen` (#8151). See SHARED_EVENTS. */
-export function trackBoardKindChosen(event: { kind: BoardKind; surface: BoardKindSurface; preAnswered: boolean }) {
+/**
+ * `Board Kind Chosen` (#8151). See SHARED_EVENTS. `spray` only from the add-a-board
+ * wizard's step 1, whose third answer is a spray wall.
+ */
+export function trackBoardKindChosen(event: {
+  kind: BoardKind | 'spray';
+  surface: BoardKindSurface;
+  preAnswered: boolean;
+}) {
   track(SHARED_EVENTS.BoardKindChosen, event);
 }
 

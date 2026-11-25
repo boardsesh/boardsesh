@@ -121,6 +121,24 @@ describe('FirstBoardChoice', () => {
     expect(callbacks.onAddSprayWall).toHaveBeenCalledTimes(1);
   });
 
+  // With the add-a-board wizard on, the cards are its step 1 answered inline:
+  // its words, and the same three ways (At a gym still lists nearby boards here).
+  it("uses the wizard's step 1 words with the wizard on", () => {
+    render(
+      <FirstBoardChoice
+        gymState="idle"
+        nearbyResults={createElement('div', { 'data-testid': 'nearby' }, 'Near you')}
+        {...callbacks}
+        wizardCopy
+      />,
+    );
+    expect(screen.getByRole('button', { name: "At a gym. Pick your gym's board" })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'At home. Your own wall or garage board' }));
+    fireEvent.click(screen.getByRole('button', { name: 'A Spraywall. Photograph it and mark the holds' }));
+    expect(callbacks.onOwn).toHaveBeenCalledTimes(1);
+    expect(callbacks.onAddSprayWall).toHaveBeenCalledTimes(1);
+  });
+
   it('shows nothing under "At a gym" until it is tapped', () => {
     renderChoice('idle');
     expect(screen.queryByTestId('nearby')).toBeNull();

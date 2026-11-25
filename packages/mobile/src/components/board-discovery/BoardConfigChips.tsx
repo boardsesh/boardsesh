@@ -50,10 +50,13 @@ function BoardConfigChipsInner<T>({ groupLabel, options, onSelect, disabled = fa
             styles.chip,
             disabled && styles.chipDisabled,
             {
-              borderWidth: option.selected ? 2 : undefined,
-              // Selected is a state: the brand wash behind a label-colour title.
-              borderColor: option.selected ? selection.checkmark : systemColors.separator,
-              backgroundColor: option.selected ? selection.fill : 'transparent',
+              // The resting chip is a fill capsule with a transparent border (the
+              // grade rail's resting look, docs/design/mobile-chrome.md); selected
+              // is a state: the brand wash behind a label-colour title, with a
+              // visible ring. The border is 1 pt in both states, so a chip never
+              // changes size (and the label never jumps) when it is picked.
+              borderColor: option.selected ? selection.checkmark : 'transparent',
+              backgroundColor: option.selected ? selection.fill : systemColors.fill,
             },
           ]}
         >
@@ -82,7 +85,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[3],
     paddingVertical: spacing[2],
     borderRadius: borderRadius.full,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
