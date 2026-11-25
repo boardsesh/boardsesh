@@ -96,6 +96,7 @@ import { useConnectivity } from '../../src/lib/connectivity/use-connectivity';
 import { pickerNoticeKey } from '../../src/lib/boards/local-only';
 import { useStoredUserId } from '../../src/hooks/use-current-user-id';
 import { spacing } from '../../src/theme/tokens';
+import { openSignIn } from '../../src/lib/routing/open-sign-in';
 
 const EMPTY_BOARDS: UserBoard[] = [];
 const EMPTY_ITEMS: ManageItem[] = [];
@@ -765,7 +766,7 @@ export default function ManageBoards() {
         <Text tone="secondary" variant="subheadline" style={styles.stateSubtitle}>
           {t('mobile.signInSubtitle')}
         </Text>
-        <Button title={t('mobile.signInCta')} onPress={() => router.push('/auth/login')} style={styles.stateButton} />
+        <Button title={t('mobile.signInCta')} onPress={() => openSignIn(router, 'boards')} style={styles.stateButton} />
       </View>
     );
   }

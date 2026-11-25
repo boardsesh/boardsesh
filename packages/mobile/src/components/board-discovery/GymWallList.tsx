@@ -14,6 +14,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
+import { openSignIn } from '../../lib/routing/open-sign-in';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { SUPPORTED_BOARDS } from '@boardsesh/board-config';
@@ -240,7 +241,8 @@ export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry
       if (!row || takingRef.current) return;
       // Following a wall needs an account, like adding one.
       if (!isAuthenticated) {
-        router.push('/auth/login');
+        // In place of the picker, never a card on top of it (open-sign-in.ts).
+        openSignIn(router, 'boards');
         return;
       }
       takingRef.current = true;
@@ -278,7 +280,7 @@ export function GymWallList({ gymUuid, initialBoardType, returnTo, source, entry
   const onNotListed = useCallback(() => {
     switch (notListed) {
       case 'sign_in':
-        router.push('/auth/login');
+        openSignIn(router, 'boards');
         return;
       case 'report':
         reportAction?.open();

@@ -10,6 +10,7 @@ import { createElement, type ReactNode } from 'react';
 type Children = { children?: ReactNode };
 
 const pushMock = vi.hoisted(() => vi.fn());
+const dismissToMock = vi.hoisted(() => vi.fn());
 const backMock = vi.hoisted(() => vi.fn());
 const headerActions = vi.hoisted(() => ({
   leading: undefined as null | undefined | { kind: string; onPress: () => void },
@@ -43,7 +44,7 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
 vi.mock('expo-router', () => ({
-  useRouter: () => ({ push: pushMock, back: backMock }),
+  useRouter: () => ({ push: pushMock, back: backMock, dismissTo: dismissToMock }),
   useNavigation: () => ({ getState: () => ({ index: state.stackIndex }) }),
   Redirect: ({ href }: { href: { pathname: string; params: Record<string, string> } }) =>
     createElement('a', { 'data-testid': 'redirect', 'data-href': JSON.stringify(href) }),
@@ -240,11 +241,13 @@ describe('Which gym?', () => {
     expect(route.params).not.toHaveProperty('preset');
   });
 
+  // In place of the picker: pushed from in here it stacked a second sheet.
   it('sends a signed-out climber to sign in to add a gym', () => {
     state.signedIn = false;
     render(createElement(AddBoardGym));
     gymStep.last?.onAddGym('kilter');
-    expect(pushMock).toHaveBeenCalledExactlyOnceWith('/auth/login');
+    expect(dismissToMock).toHaveBeenCalledExactlyOnceWith('/auth/login');
+    expect(pushMock).not.toHaveBeenCalled();
   });
 });
 

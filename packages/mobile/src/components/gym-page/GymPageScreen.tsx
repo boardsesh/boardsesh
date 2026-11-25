@@ -42,6 +42,7 @@ import { ClaimGymSheet } from '../gym-directory/ClaimGymSheet';
 import { gymBoardsToItems } from './gym-board-items';
 import { GYM_PAGE_CLAIM_DENIED, gymAnalyticsHref, gymEditHref } from './gym-page-route';
 import { useGymRouteStack } from './use-gym-route-stack';
+import { openSignIn } from '../../lib/routing/open-sign-in';
 import {
   boardsHeaderIndex,
   buildGymPageItems,
@@ -329,8 +330,9 @@ function GymPageContent({
   }, [router, gym.uuid, stack]);
   const signIn = useCallback(() => {
     hapticSelection();
-    router.push('/auth/login');
-  }, [router]);
+    // From the picker's copy, in place of the picker rather than a card on top.
+    openSignIn(router, stack);
+  }, [router, stack]);
   // Claim taps join the www claim funnel under their own placement.
   const claim = useCallback(() => {
     hapticSelection();

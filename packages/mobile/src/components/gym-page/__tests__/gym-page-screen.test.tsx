@@ -499,4 +499,12 @@ describe('GymPageScreen inside the board picker', () => {
       params: { gymUuid: 'gym-uuid-1' },
     });
   });
+
+  it('puts sign-in in place of the picker instead of stacking it on top', () => {
+    state.isAuthenticated = false;
+    render(<GymPageScreen />);
+    fireEvent.click(screen.getByText('sign-in'));
+    expect(routerMock.dismissTo).toHaveBeenCalledWith('/auth/login');
+    expect(routerMock.push).not.toHaveBeenCalledWith('/auth/login');
+  });
 });
