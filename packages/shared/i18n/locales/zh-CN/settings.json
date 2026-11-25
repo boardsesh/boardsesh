@@ -58,6 +58,7 @@
     }
   },
   "title": "设置",
+  "signOut": "退出登录",
   "loading": {
     "profileError": "加载个人资料失败"
   },

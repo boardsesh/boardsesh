@@ -58,6 +58,7 @@
     }
   },
   "title": "Ajustes",
+  "signOut": "Cerrar sesión",
   "loading": {
     "profileError": "No se pudo cargar el perfil"
   },
