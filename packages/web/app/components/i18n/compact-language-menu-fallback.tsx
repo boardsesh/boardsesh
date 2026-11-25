@@ -104,7 +104,7 @@ export default function CompactLanguageMenuFallback({
             gap: 1,
             alignItems: 'center',
             width: '100%',
-            minHeight: 44,
+            minHeight: { xs: 48, sm: 44 },
             px: 2,
             bgcolor: locale === current ? 'action.selected' : undefined,
             textAlign: 'left',
