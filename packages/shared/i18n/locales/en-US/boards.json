@@ -691,7 +691,7 @@
       "details": "Details",
       "activeSprayDetails": "{{name}} · Spraywall details",
       "share": {
-        "shareLink": "Share link",
+        "shareLink": "Share with a friend",
         "publicHint": "Anyone can open this board.",
         "unlistedHint": "Only the climbers you send it to.",
         "inviteHint": "Whoever opens it can tap Join to get access."
@@ -974,6 +974,7 @@
       "publicBody": "This board is public, so anyone with the link can open it and climb on it.",
       "unlistedBody": "Only the climbers you send this link to can open the board. It isn't listed anywhere.",
       "inviteBody": "Anyone with this link can choose Join to get access to your board.",
+      "qrCaption": "Point their camera here",
       "loading": "Getting your link",
       "loadFailed": "Couldn't get your link. Close this and try again.",
       "resetLink": "Reset link",
@@ -1817,7 +1818,8 @@
     "joinBody": "Joining gives you access to this board. Its owner can see your name in the member list.",
     "join": "Join",
     "cancel": "Cancel",
-    "joinFailed": "Couldn't join this board. Try again, or ask its owner for a new link."
+    "joinFailed": "Couldn't join this board. Try again, or ask its owner for a new link.",
+    "appHint": "Climb it in the Boardsesh app. After you install it, open this link again on your phone."
   },
   "sprayLedSetup": {
     "title": "LED setup",

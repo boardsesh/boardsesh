@@ -720,6 +720,8 @@
     "postAudience": "Qui peut voir ceci ?",
     "revisionChanged": "Tes réglages de confidentialité ont changé. Choisis à nouveau une audience.",
     "allowFollowers": "Autoriser les abonnés approuvés",
+    "listedToFollowers": "Montrer aux personnes que je suis",
+    "listedToFollowersHint": "Elles la verront dans Boards des amis et pourront demander à grimper.",
     "manageAccess": "Gérer l’accès",
     "removeAccess": "Retirer l’accès",
     "invite": "Inviter",

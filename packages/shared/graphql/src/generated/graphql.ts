@@ -17706,6 +17706,7 @@ export type ResourcePrivacyQuery = {
     audience: PrivacyResourceAudience;
     locationAudience: PrivacyLocationAudience;
     inheritFollowers: boolean;
+    listedToFollowers: boolean;
     revision: number;
   } | null;
 };
@@ -17724,6 +17725,7 @@ export type UpdateResourcePrivacyMutation = {
     audience: PrivacyResourceAudience;
     locationAudience: PrivacyLocationAudience;
     inheritFollowers: boolean;
+    listedToFollowers: boolean;
     revision: number;
   };
 };
@@ -26807,6 +26809,7 @@ export const ResourcePrivacyDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'audience' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'locationAudience' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'inheritFollowers' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'listedToFollowers' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'revision' } },
               ],
             },
@@ -26855,6 +26858,7 @@ export const UpdateResourcePrivacyDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'audience' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'locationAudience' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'inheritFollowers' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'listedToFollowers' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'revision' } },
               ],
             },

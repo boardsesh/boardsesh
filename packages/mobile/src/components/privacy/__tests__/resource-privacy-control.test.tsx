@@ -52,6 +52,7 @@ const boardPrivacy = (overrides: Record<string, unknown> = {}) => ({
   audience: 'public',
   locationAudience: 'public',
   inheritFollowers: false,
+  listedToFollowers: false,
   revision: 1,
   ...overrides,
 });

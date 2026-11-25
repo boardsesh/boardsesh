@@ -70,7 +70,7 @@ async function handleBoardInvite(boardSlug: string, inviteToken: string): Promis
   if (!preview) return null;
   if (authToken) {
     return (
-      <I18nProvider locale={await getLocale()} namespaces={['boards']}>
+      <I18nProvider locale={await getLocale()} namespaces={['boards', 'marketing']}>
         <BoardInviteJoin boardName={preview.name} inviteToken={inviteToken} />
       </I18nProvider>
     );

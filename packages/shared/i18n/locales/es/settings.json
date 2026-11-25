@@ -720,6 +720,8 @@
     "postAudience": "¿Quién puede ver esto?",
     "revisionChanged": "Tus ajustes de privacidad han cambiado. Elige el público de nuevo.",
     "allowFollowers": "Permitir seguidores aprobados",
+    "listedToFollowers": "Mostrar a quienes sigo",
+    "listedToFollowersHint": "Lo verán en Plafones de amigos y podrán pedir escalar.",
     "manageAccess": "Gestionar acceso",
     "removeAccess": "Quitar acceso",
     "invite": "Invitar",

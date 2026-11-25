@@ -123,6 +123,7 @@ export type ResourcePrivacySettings = {
   audience: PrivacyResourceAudience;
   locationAudience: PrivacyLocationAudience;
   inheritFollowers: boolean;
+  listedToFollowers: boolean;
   revision: number;
 };
 export type PrivacyPublicationInput = { audience: PrivacyAudience; privacyRevision: number };
@@ -144,6 +145,7 @@ export const GET_RESOURCE_PRIVACY = gql`
       audience
       locationAudience
       inheritFollowers
+      listedToFollowers
       revision
     }
   }
@@ -157,6 +159,7 @@ export const UPDATE_RESOURCE_PRIVACY = gql`
       audience
       locationAudience
       inheritFollowers
+      listedToFollowers
       revision
     }
   }

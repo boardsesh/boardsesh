@@ -137,8 +137,8 @@ type Documents = {
   '\n  mutation RemoveFollower($userId: ID!) {\n    removeFollower(userId: $userId)\n  }\n': typeof types.RemoveFollowerDocument;
   '\n  mutation SetContentAudience($input: SetContentAudienceInput!) {\n    setContentAudience(input: $input)\n  }\n': typeof types.SetContentAudienceDocument;
   '\n  query ContentAudience($entityType: PrivacyContentType!, $entityId: ID!) {\n    contentAudience(entityType: $entityType, entityId: $entityId) {\n      audience\n      isExplicit\n      canEdit\n    }\n  }\n': typeof types.ContentAudienceDocument;
-  '\n  query ResourcePrivacy($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    resourcePrivacy(kind: $kind, resourceId: $resourceId) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      revision\n    }\n  }\n': typeof types.ResourcePrivacyDocument;
-  '\n  mutation UpdateResourcePrivacy($input: UpdateResourcePrivacyInput!) {\n    updateResourcePrivacy(input: $input) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      revision\n    }\n  }\n': typeof types.UpdateResourcePrivacyDocument;
+  '\n  query ResourcePrivacy($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    resourcePrivacy(kind: $kind, resourceId: $resourceId) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      listedToFollowers\n      revision\n    }\n  }\n': typeof types.ResourcePrivacyDocument;
+  '\n  mutation UpdateResourcePrivacy($input: UpdateResourcePrivacyInput!) {\n    updateResourcePrivacy(input: $input) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      listedToFollowers\n      revision\n    }\n  }\n': typeof types.UpdateResourcePrivacyDocument;
   '\n  query ResourceAccessRequests($kind: PrivacyResourceKind!, $resourceId: ID!, $offset: Int, $userIds: [ID!]) {\n    resourceAccessRequests(kind: $kind, resourceId: $resourceId, offset: $offset, userIds: $userIds) {\n      userId\n      status\n      invitedBy\n      displayName\n      avatarUrl\n    }\n  }\n': typeof types.ResourceAccessRequestsDocument;
   '\n  mutation ApproveResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    approveResourceAccess(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n': typeof types.ApproveResourceAccessDocument;
   '\n  mutation RevokeResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    revokeResourceAccess(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n': typeof types.RevokeResourceAccessDocument;
@@ -466,9 +466,9 @@ const documents: Documents = {
     types.SetContentAudienceDocument,
   '\n  query ContentAudience($entityType: PrivacyContentType!, $entityId: ID!) {\n    contentAudience(entityType: $entityType, entityId: $entityId) {\n      audience\n      isExplicit\n      canEdit\n    }\n  }\n':
     types.ContentAudienceDocument,
-  '\n  query ResourcePrivacy($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    resourcePrivacy(kind: $kind, resourceId: $resourceId) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      revision\n    }\n  }\n':
+  '\n  query ResourcePrivacy($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    resourcePrivacy(kind: $kind, resourceId: $resourceId) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      listedToFollowers\n      revision\n    }\n  }\n':
     types.ResourcePrivacyDocument,
-  '\n  mutation UpdateResourcePrivacy($input: UpdateResourcePrivacyInput!) {\n    updateResourcePrivacy(input: $input) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      revision\n    }\n  }\n':
+  '\n  mutation UpdateResourcePrivacy($input: UpdateResourcePrivacyInput!) {\n    updateResourcePrivacy(input: $input) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      listedToFollowers\n      revision\n    }\n  }\n':
     types.UpdateResourcePrivacyDocument,
   '\n  query ResourceAccessRequests($kind: PrivacyResourceKind!, $resourceId: ID!, $offset: Int, $userIds: [ID!]) {\n    resourceAccessRequests(kind: $kind, resourceId: $resourceId, offset: $offset, userIds: $userIds) {\n      userId\n      status\n      invitedBy\n      displayName\n      avatarUrl\n    }\n  }\n':
     types.ResourceAccessRequestsDocument,
@@ -1388,14 +1388,14 @@ export function graphql(
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(
-  source: '\n  query ResourcePrivacy($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    resourcePrivacy(kind: $kind, resourceId: $resourceId) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      revision\n    }\n  }\n',
-): (typeof documents)['\n  query ResourcePrivacy($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    resourcePrivacy(kind: $kind, resourceId: $resourceId) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      revision\n    }\n  }\n'];
+  source: '\n  query ResourcePrivacy($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    resourcePrivacy(kind: $kind, resourceId: $resourceId) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      listedToFollowers\n      revision\n    }\n  }\n',
+): (typeof documents)['\n  query ResourcePrivacy($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    resourcePrivacy(kind: $kind, resourceId: $resourceId) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      listedToFollowers\n      revision\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(
-  source: '\n  mutation UpdateResourcePrivacy($input: UpdateResourcePrivacyInput!) {\n    updateResourcePrivacy(input: $input) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      revision\n    }\n  }\n',
-): (typeof documents)['\n  mutation UpdateResourcePrivacy($input: UpdateResourcePrivacyInput!) {\n    updateResourcePrivacy(input: $input) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      revision\n    }\n  }\n'];
+  source: '\n  mutation UpdateResourcePrivacy($input: UpdateResourcePrivacyInput!) {\n    updateResourcePrivacy(input: $input) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      listedToFollowers\n      revision\n    }\n  }\n',
+): (typeof documents)['\n  mutation UpdateResourcePrivacy($input: UpdateResourcePrivacyInput!) {\n    updateResourcePrivacy(input: $input) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      listedToFollowers\n      revision\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

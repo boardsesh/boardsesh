@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { PrivacyLocationAudience } from '@boardsesh/graphql/operations/privacy';
 import { AudiencePicker, BOARD_AUDIENCES, SESSION_AUDIENCES } from './AudiencePicker';
 import { locationOptions } from './location-options';
+import { showsFriendsListSwitch } from './friends-list-switch';
 import { OwnPublicGymWarning } from '../board-discovery/OwnPublicGymWarning';
 import { Text } from '../Text';
 import { Button } from '../Button';
@@ -19,11 +20,14 @@ export function ResourcePrivacyControl({
   kind,
   resourceId,
   gymUuid,
+  isSprayWall = false,
 }: {
   kind: 'board' | 'session';
   resourceId: string;
   /** A board's gym: its location hint and the own-public-gym warning. */
   gymUuid?: string | null;
+  /** A spray wall can't be listed to followers, so it never shows that switch. */
+  isSprayWall?: boolean;
 }) {
   const { t } = useTranslation('settings');
   const { t: tBoards } = useTranslation('boards');
@@ -65,6 +69,18 @@ export function ResourcePrivacyControl({
               update.mutate({ kind, resourceId, audience: privacy.audience, inheritFollowers })
             }
           />
+          {showsFriendsListSwitch(privacy.audience, isSprayWall) ? (
+            <SwitchRow
+              label={t('privacy.listedToFollowers')}
+              description={t('privacy.listedToFollowersHint')}
+              wrapDescription
+              value={privacy.listedToFollowers}
+              disabled={disabled}
+              onValueChange={(listedToFollowers) =>
+                update.mutate({ kind, resourceId, audience: privacy.audience, listedToFollowers })
+              }
+            />
+          ) : null}
           <Text variant="subheadline">{t('privacy.locationAudience')}</Text>
           {/* The choice always governs the board's own place. A viewer it is
               hidden from still sees a public gym's listed location. */}

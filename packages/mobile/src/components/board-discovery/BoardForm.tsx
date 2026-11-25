@@ -683,7 +683,12 @@ export function BoardForm({
         ) : null}
 
         {privacySettings?.enabled && currentBoardUuid ? (
-          <ResourcePrivacyControl kind="board" resourceId={currentBoardUuid} gymUuid={builder.selectedGym?.uuid} />
+          <ResourcePrivacyControl
+            kind="board"
+            resourceId={currentBoardUuid}
+            gymUuid={builder.selectedGym?.uuid}
+            isSprayWall={isSprayWall}
+          />
         ) : null}
 
         {privacySettings?.enabled && !currentBoardUuid ? (

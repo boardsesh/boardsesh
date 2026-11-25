@@ -8,6 +8,8 @@ import Typography from '@mui/material/Typography';
 import { useTranslation } from 'react-i18next';
 import { unstable_rethrow } from 'next/navigation';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import StoreInstallButtons from '@/app/components/marketing/store-install-buttons';
+import { DEFAULT_LOCALE, isSupportedLocale } from '@/app/lib/i18n/config';
 import { joinBoardInvite } from './join-board-invite';
 
 /**
@@ -26,7 +28,8 @@ function isNextNavigation(error: unknown): boolean {
 
 /** Only a deliberate button tap sends the grant mutation. */
 export default function BoardInviteJoin({ boardName, inviteToken }: { boardName: string; inviteToken: string }) {
-  const { t } = useTranslation('boards');
+  const { t, i18n } = useTranslation('boards');
+  const { t: tMarketing } = useTranslation('marketing');
   const [joining, setJoining] = useState(false);
   const [failed, setFailed] = useState(false);
   const handleJoin = async () => {
@@ -66,6 +69,19 @@ export default function BoardInviteJoin({ boardName, inviteToken }: { boardName:
             {t('boardShareLink.cancel')}
           </Button>
         </Box>
+        <Typography variant="body2" color="text.secondary">
+          {t('boardShareLink.appHint')}
+        </Typography>
+        <StoreInstallButtons
+          placement="board-invite"
+          align="start"
+          labels={{
+            ios: tMarketing('home.hero.ctaInstallIos'),
+            android: tMarketing('home.hero.ctaInstallAndroid'),
+            update: tMarketing('home.hero.ctaUpdate'),
+            locale: isSupportedLocale(i18n.language) ? i18n.language : DEFAULT_LOCALE,
+          }}
+        />
       </Box>
     </Container>
   );

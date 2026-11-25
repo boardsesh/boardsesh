@@ -720,6 +720,8 @@
     "postAudience": "Wer kann das sehen?",
     "revisionChanged": "Deine Privatsphäre-Einstellungen haben sich geändert. Wähle die Zielgruppe erneut.",
     "allowFollowers": "Bestätigte Follower zulassen",
+    "listedToFollowers": "Den Leuten zeigen, denen ich folge",
+    "listedToFollowersHint": "Sie sehen es unter Boards von Freunden und können anfragen, ob sie klettern dürfen.",
     "manageAccess": "Zugriff verwalten",
     "removeAccess": "Zugriff entfernen",
     "invite": "Einladen",

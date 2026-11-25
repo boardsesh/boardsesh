@@ -4,7 +4,9 @@ import Button from '@mui/material/Button';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import StoreInstallButtons from '@/app/components/marketing/store-install-buttons';
 import { getServerTranslation } from '@/app/lib/i18n/server';
+import { getStoreButtonLabels } from '@/app/lib/store-button-labels.server';
 
 /**
  * What a signed-out visitor sees on a board's share link: the board's name and
@@ -18,6 +20,7 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
  */
 export default async function BoardInviteSignIn({ boardName, returnPath }: { boardName: string; returnPath: string }) {
   const { t } = await getServerTranslation('boards');
+  const storeLabels = await getStoreButtonLabels();
   const signInHref = `/auth/login?callbackUrl=${encodeURIComponent(returnPath)}`;
 
   return (
@@ -32,6 +35,10 @@ export default async function BoardInviteSignIn({ boardName, returnPath }: { boa
         <Button variant="contained" size="large" component={LocaleLink} href={signInHref} prefetch={false}>
           {t('boardShareLink.signIn')}
         </Button>
+        <Typography variant="body2" color="text.secondary">
+          {t('boardShareLink.appHint')}
+        </Typography>
+        <StoreInstallButtons placement="board-invite" align="start" labels={storeLabels} />
       </Box>
     </Container>
   );

@@ -9,7 +9,10 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
     createElement('a', { href }, children as import('react').ReactNode),
 }));
 vi.mock('../join-board-invite', () => ({ joinBoardInvite }));
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('@/app/components/marketing/store-install-buttons', () => ({
+  default: ({ placement }: { placement: string }) => createElement('div', { 'data-store-placement': placement }),
+}));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en-US' } }) }));
 const { default: BoardInviteJoin } = await import('../board-invite-join');
 const TOKEN = 'Ab3_dE-fGhIjKlMnOpQrSt';
 beforeEach(() => {
@@ -47,5 +50,10 @@ describe('board invite Join confirmation', () => {
     expect(screen.queryByRole('alert')).toBeNull();
     // Join stays disabled while the board page loads.
     expect((join as HTMLButtonElement).disabled).toBe(true);
+  });
+  it('offers the app stores and tells a friend to reopen the link after installing', () => {
+    const { container } = render(createElement(BoardInviteJoin, { boardName: 'Friends Garage', inviteToken: TOKEN }));
+    expect(container.querySelector('[data-store-placement="board-invite"]')).not.toBeNull();
+    expect(screen.getByText('boardShareLink.appHint')).toBeTruthy();
   });
 });

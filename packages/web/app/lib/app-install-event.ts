@@ -53,6 +53,8 @@ export type AppInstallSource = 'app-store' | 'google-play' | 'capacitor-retireme
  *  - `setup-report`: the store badge (both badges from md) in the report
  *    dialog after a climber's suggested setup changed a board for everyone
  *    ("Climb it now in the Boardsesh app", docs/product/directory-reports.md).
+ *  - `board-invite`: the store pair under a board invite link's sign-in and
+ *    Join screens (`/b/{slug}?invite=`), for a friend who opened it without the app.
  *  - `spray-climb`: a climb on a spray wall (`SprayClimbFrontDoor`).
  *  - `spray-wall`: a Spraywall's own page (`SprayWallFrontDoor`), where its
  *    share link and its printed QR land (#4415). After a scan the link id is
@@ -112,6 +114,7 @@ export const APP_INSTALL_PLACEMENTS = [
   'playlist-qr-card',
   'home-qr-card',
   'setup-report',
+  'board-invite',
   'compare-hub',
   'compare-kilter',
   'compare-aurora',

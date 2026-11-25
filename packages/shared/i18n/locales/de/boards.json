@@ -691,7 +691,7 @@
       "details": "Details",
       "activeSprayDetails": "{{name}} · Spraywall-Details",
       "share": {
-        "shareLink": "Link teilen",
+        "shareLink": "Mit einem Freund teilen",
         "publicHint": "Jede*r kann dieses Board öffnen.",
         "unlistedHint": "Nur die Leute, denen du den Link schickst.",
         "inviteHint": "Wer ihn öffnet, kann auf Beitreten tippen und Zugang erhalten."
@@ -974,6 +974,7 @@
       "publicBody": "Dieses Board ist öffentlich: Jede*r mit dem Link kann es öffnen und darauf klettern.",
       "unlistedBody": "Nur wer diesen Link von dir bekommt, kann das Board öffnen. Gelistet ist es nirgends.",
       "inviteBody": "Alle mit diesem Link können auf Beitreten tippen und Zugang zu deinem Board erhalten.",
+      "qrCaption": "Kamera hier draufhalten",
       "loading": "Dein Link wird erstellt",
       "loadFailed": "Dein Link konnte nicht geladen werden. Schließ das Fenster und versuch es noch mal.",
       "resetLink": "Link zurücksetzen",
@@ -1817,7 +1818,8 @@
     "joinBody": "Wenn du beitrittst, erhältst du Zugang zu diesem Board. Die Person, der es gehört, sieht deinen Namen in der Mitgliederliste.",
     "join": "Beitreten",
     "cancel": "Abbrechen",
-    "joinFailed": "Du konntest diesem Board nicht beitreten. Versuch es erneut oder bitte um einen neuen Link."
+    "joinFailed": "Du konntest diesem Board nicht beitreten. Versuch es erneut oder bitte um einen neuen Link.",
+    "appHint": "Klettere mit der Boardsesh-App. Nach der Installation öffnest du diesen Link noch einmal auf deinem Handy."
   },
   "sprayLedSetup": {
     "title": "LED-Einrichtung",

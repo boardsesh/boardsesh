@@ -720,6 +720,8 @@
     "postAudience": "Who can see this?",
     "revisionChanged": "Your privacy settings changed. Choose an audience again.",
     "allowFollowers": "Allow approved followers",
+    "listedToFollowers": "Show to people I follow",
+    "listedToFollowersHint": "They'll see it under Friends' boards and can ask to climb.",
     "manageAccess": "Manage access",
     "removeAccess": "Remove access",
     "invite": "Invite",
