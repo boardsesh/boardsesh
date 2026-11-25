@@ -121,15 +121,18 @@ vi.mock('react-native', () => ({
     onChangeText,
     onSubmitEditing,
     onFocus,
+    onBlur,
   }: {
     value: string;
     onChangeText: (text: string) => void;
     onSubmitEditing: () => void;
     onFocus?: () => void;
+    onBlur?: () => void;
   }) =>
     createElement('input', {
       value,
       onFocus,
+      onBlur,
       onChange: (event: { target: { value: string } }) => onChangeText(event.target.value),
       onKeyDown: (event: { key: string }) => {
         if (event.key === 'Enter') onSubmitEditing();
@@ -341,6 +344,8 @@ vi.mock('../../../src/theme/tokens', () => ({
 }));
 
 const { default: GymDiscovery } = await import('../index');
+const { default: BoardsGymMap } = await import('../../boards/gyms');
+const { GymRouteStackContext } = await import('../../../src/components/gym-page/use-gym-route-stack');
 
 const GYM_WALL = { uuid: 'wall-1', name: 'Crux Kilter', gymUuid: 'gym-1' } as unknown as UserBoard;
 
@@ -924,22 +929,31 @@ describe('gym finder analytics', () => {
   });
 });
 
-// The same screen is registered twice (gym-page-route.ts). Inside the board
-// picker's sheet it must not draw the draggable panel (a sheet on a sheet), and
-// everything it opens has to stay in the picker's stack: a root route pushed
-// from in there is presented as a second sheet.
-describe('the board picker copy of the gym map', () => {
+// The gym map is registered twice (gym-page-route.ts): the root copy draws the
+// full-screen map and its panel; the board picker's copy (app/boards/gyms.tsx)
+// draws the map card over the list, because a draggable panel inside the
+// picker's sheet is a sheet on a sheet. Each route file names its shell, and
+// what each opens follows the stack it is REGISTERED in (the context the
+// picker's layout provides), never the focused route: a root map under a Boards
+// modal must not swap shells or start pushing into the picker.
+describe('the two copies of the gym map', () => {
   const madrid: Coords = { latitude: 40.47, longitude: -3.86 };
   const crux = { uuid: 'gym-1', name: 'Crux' } as unknown as Gym;
   const gymRow = { kind: 'gym', key: 'gym:gym-1', gym: crux };
 
-  it('keeps the full-screen map and its panel on the root stack', () => {
+  function renderPickerCopy() {
+    return render(createElement(GymRouteStackContext.Provider, { value: 'boards' }, createElement(BoardsGymMap)));
+  }
+
+  it('keeps the full-screen map and its panel on the root stack, whatever route is focused', () => {
+    captured.segments = ['boards', 'index'];
     const { queryByTestId } = render(createElement(GymDiscovery));
     expect(captured.panelOpeners).not.toBeNull();
     expect(queryByTestId('map-card-list')).toBeNull();
   });
 
-  it('opens the gym page and the gym editor in the root stack from the root map', () => {
+  it('opens the gym page and the gym editor in the root stack from the root map, even under a Boards modal', () => {
+    captured.segments = ['boards', 'index'];
     render(createElement(GymDiscovery));
     act(() => captured.panelOpeners?.onOpenGym?.(crux));
     act(() => captured.panelOpeners?.onEditGym(crux));
@@ -947,10 +961,10 @@ describe('the board picker copy of the gym map', () => {
     expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/gyms/edit', params: { gymUuid: 'gym-1' } });
   });
 
-  it('draws a map card over the list, with no draggable panel and no floating close', () => {
-    captured.segments = ['boards', 'gyms'];
+  it('draws a map card over the list in the picker, with no draggable panel and no floating close', () => {
+    captured.segments = ['gyms'];
     captured.coords = madrid;
-    const { getByTestId, queryByLabelText } = render(createElement(GymDiscovery));
+    const { getByTestId, queryByLabelText } = renderPickerCopy();
     expect(getByTestId('map-card-list')).toBeTruthy();
     expect(captured.panelOpeners).toBeNull();
     expect(captured.cardList?.map).toBeTruthy();
@@ -960,15 +974,13 @@ describe('the board picker copy of the gym map', () => {
   });
 
   it('shows the location prompt as the only row while there is nowhere to look', () => {
-    captured.segments = ['boards', 'gyms'];
-    render(createElement(GymDiscovery));
+    renderPickerCopy();
     expect(captured.cardList?.data.map((row) => row.kind)).toEqual(['locationPrompt']);
   });
 
-  it('folds the map card while the search field has focus', () => {
-    captured.segments = ['boards', 'gyms'];
+  it('folds the map card on focus, and keeps it folded after a blur that left text', () => {
     captured.coords = madrid;
-    const { container } = render(createElement(GymDiscovery));
+    const { container } = renderPickerCopy();
     expect(captured.cardList?.mapHidden).toBe(false);
     const field = container.querySelector('input');
     if (!field) throw new Error('no search field');
@@ -976,13 +988,20 @@ describe('the board picker copy of the gym map', () => {
       fireEvent.focus(field);
     });
     expect(captured.cardList?.mapHidden).toBe(true);
+    act(() => {
+      fireEvent.change(field, { target: { value: 'Cr' } });
+    });
+    act(() => {
+      fireEvent.blur(field);
+    });
+    expect(captured.cardList?.mapHidden).toBe(true);
   });
 
-  it('opens the gym page and the gym editor inside the picker stack', () => {
-    captured.segments = ['boards', 'gyms'];
+  it('opens the gym page and the gym editor inside the picker stack, whatever route is focused', () => {
+    captured.segments = ['gyms'];
     captured.coords = madrid;
     captured.params = { returnTo: '/(tabs)/climbs' };
-    render(createElement(GymDiscovery));
+    renderPickerCopy();
     const rowElement = captured.cardList?.renderItem({ item: gymRow });
     render(createElement('div', null, rowElement));
     act(() => captured.browseRow?.onOpenGym?.(crux));

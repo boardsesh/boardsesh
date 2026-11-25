@@ -6,6 +6,7 @@ import { useGym, useProfile } from '../../lib/graphql/hooks';
 import { scopedRouter as router } from '../../lib/routing/scoped-navigation';
 import { useTheme } from '../../providers/theme-provider';
 import { gymEditHref } from '../gym-page/gym-page-route';
+import { useGymRouteStack } from '../gym-page/use-gym-route-stack';
 
 /**
  * A board in a public gym is shown at the gym's location to anyone its own
@@ -13,14 +14,16 @@ import { gymEditHref } from '../gym-page/gym-page-route';
  * wall that minted a public gym under the old rules), its listing is their
  * home address. Say so, and point at the gym's settings where it can be made
  * private. A synced or someone else's gym never shows this: the climber cannot
- * change it, and its location is not theirs. The builder lives in the board
- * picker's stack, so the gym's settings open in that same stack.
+ * change it, and its location is not theirs. It renders in Edit board (the
+ * board picker's stack) and in Settings › Privacy › Manage access, so the gym's
+ * settings open in the stack it stands in.
  */
 export function OwnPublicGymWarning({ gymUuid }: { gymUuid: string | null | undefined }) {
   const { t } = useTranslation('boards');
   const { spacing } = useTheme();
   const { data: profile } = useProfile();
   const { data: gym } = useGym(gymUuid ?? null);
+  const stack = useGymRouteStack();
   if (!gym || !profile?.id || !gym.isPublic || gym.ownerId !== profile.id) return null;
   return (
     <View style={{ gap: spacing[2] }} accessibilityRole="alert">
@@ -28,7 +31,7 @@ export function OwnPublicGymWarning({ gymUuid }: { gymUuid: string | null | unde
       <Button
         title={t('mobile.publicGymWarning.openSettings')}
         variant="outlined"
-        onPress={() => router.push(gymEditHref(gym.uuid, 'boards'))}
+        onPress={() => router.push(gymEditHref(gym.uuid, stack))}
       />
     </View>
   );

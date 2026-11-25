@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -50,8 +50,25 @@ export function GymFinderCardScreen() {
   const finder = useGymFinder({ revealRow, mapAvailableOnOpen: Platform.OS !== 'web' });
   const { onPressGym, activate, onEditGym, onEditBoard, onClaimGym, onOpenGym } = finder;
 
-  // Typing folds the map card away, so the keyboard never covers the results.
-  const [searchFocused, setSearchFocused] = useState(false);
+  // Focusing the field folds the map card away and goes back to the top, so
+  // the keyboard never covers the results. Letting go keeps it folded while
+  // anything is typed (a card regrowing under the finger would throw the rows
+  // down mid-drag), as the wizard's gym step does; a town picked brings it back.
+  const [mapFolded, setMapFolded] = useState(false);
+  const inputTextRef = useRef(finder.inputText);
+  inputTextRef.current = finder.inputText;
+  const onSearchFocusChange = useCallback((focused: boolean) => {
+    if (focused) {
+      setMapFolded(true);
+      listRef.current?.scrollToTop();
+      return;
+    }
+    if (inputTextRef.current.trim().length === 0) setMapFolded(false);
+  }, []);
+  const placePicked = finder.searchLabel !== null;
+  useEffect(() => {
+    if (placePicked) setMapFolded(false);
+  }, [placePicked]);
 
   const data = finder.locationPromptShown ? LOCATION_PROMPT_ROWS : finder.rows;
   const noBoardsLabel = t('mobile.gyms.noBoards');
@@ -161,7 +178,7 @@ export function GymFinderCardScreen() {
     >
       <Stack.Screen options={{ title: t('mobile.gyms.title') }} />
       <View style={styles.headerBlock}>
-        <GymFinderSearch finder={finder} onFocusChange={setSearchFocused} />
+        <GymFinderSearch finder={finder} onFocusChange={onSearchFocusChange} />
       </View>
       <MapCardList
         ref={listRef}
@@ -171,7 +188,7 @@ export function GymFinderCardScreen() {
         getItemType={cardRowType}
         map={mapElement}
         mapAvailable={mapAvailable}
-        mapHidden={searchFocused}
+        mapHidden={mapFolded}
         stickyHeader={stickyHeader}
         testID="gym-finder-card-list"
       />

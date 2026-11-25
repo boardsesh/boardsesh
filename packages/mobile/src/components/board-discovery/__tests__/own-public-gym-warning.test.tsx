@@ -33,6 +33,7 @@ vi.mock('../../../lib/graphql/hooks', () => ({
 }));
 
 import { OwnPublicGymWarning } from '../OwnPublicGymWarning';
+import { GymRouteStackContext } from '../../gym-page/use-gym-route-stack';
 
 const SYSTEM_OWNER = '00000000-0000-0000-0000-000000000000';
 const gym = (overrides: Record<string, unknown>) => ({
@@ -49,15 +50,28 @@ beforeEach(() => {
 });
 
 describe('OwnPublicGymWarning', () => {
-  // The builder is in the board picker's stack: a root `/gyms/edit` pushed from
-  // there would be presented as a second sheet on the picker.
+  // Edit board stands in the board picker's stack: a root `/gyms/edit` pushed
+  // from there would be presented as a second sheet on the picker.
   it("warns the owner that their own public gym shows its location, and opens the gym's settings in the picker", () => {
     gymState.gym = gym({});
-    const view = render(<OwnPublicGymWarning gymUuid="gym-uuid" />);
+    const view = render(
+      <GymRouteStackContext.Provider value="boards">
+        <OwnPublicGymWarning gymUuid="gym-uuid" />
+      </GymRouteStackContext.Provider>,
+    );
 
     expect(view.getByText('mobile.publicGymWarning.message:My Garage')).toBeTruthy();
     fireEvent.click(view.getByText('mobile.publicGymWarning.openSettings'));
     expect(push).toHaveBeenCalledWith({ pathname: '/boards/gyms/edit', params: { gymUuid: 'gym-uuid' } });
+  });
+
+  // Settings › Privacy › Manage access is on the root stack: the picker's copy
+  // would open the Boards modal headless.
+  it("opens the root gym settings from Settings' Manage access", () => {
+    gymState.gym = gym({});
+    const view = render(<OwnPublicGymWarning gymUuid="gym-uuid" />);
+    fireEvent.click(view.getByText('mobile.publicGymWarning.openSettings'));
+    expect(push).toHaveBeenCalledWith({ pathname: '/gyms/edit', params: { gymUuid: 'gym-uuid' } });
   });
 
   it.each([

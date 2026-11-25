@@ -83,6 +83,8 @@ vi.mock('../../../lib/graphql/extract-error-message', () => ({
 }));
 
 import { ClaimGymSheet } from '../ClaimGymSheet';
+import { GymRouteStackContext } from '../../gym-page/use-gym-route-stack';
+import type { GymPageStack } from '../../gym-page/gym-page-route';
 
 // No website, so the sheet opens in admin-review mode — the only path that can
 // come back `approved`.
@@ -91,8 +93,12 @@ const gym = { uuid: 'gym-uuid-1', slug: null, name: 'Bonsist', website: null } a
 const dismissMock = vi.fn(() => sheetCallbacks.onFullyDismissed?.());
 const sheetRef = { current: { dismiss: dismissMock } } as unknown as RefObject<ManagedSheetHandle | null>;
 
-const renderSheet = (overrides?: Partial<Gym>, onCheckBoards?: () => void) =>
-  render(<ClaimGymSheet sheetRef={sheetRef} gym={{ ...gym, ...overrides } as Gym} onCheckBoards={onCheckBoards} />);
+const renderSheet = (overrides?: Partial<Gym>, onCheckBoards?: () => void, stack: GymPageStack = 'root') =>
+  render(
+    <GymRouteStackContext.Provider value={stack}>
+      <ClaimGymSheet sheetRef={sheetRef} gym={{ ...gym, ...overrides } as Gym} onCheckBoards={onCheckBoards} />
+    </GymRouteStackContext.Provider>,
+  );
 
 const submit = () => fireEvent.click(screen.getByLabelText('mobile.gymClaim.admin.submit'));
 
@@ -139,11 +145,13 @@ describe('ClaimGymSheet — claim outcome', () => {
     expect(router.push).toHaveBeenCalledWith({ pathname: '/gyms/[gym]', params: { gym: 'gym-uuid-1' } });
   });
 
+  // The stack the sheet's screen is registered in, not the focused route: the
+  // focused route here says root, the sheet stands in the picker.
   it("opens the board picker's copy of the page from inside the picker's stack", async () => {
-    router.segments = ['boards'];
+    router.segments = ['gyms'];
     mockMutateAsync.mockResolvedValueOnce({ status: 'approved', email: null });
 
-    renderSheet();
+    renderSheet(undefined, undefined, 'boards');
     submit();
     await waitFor(() => expect(screen.getByText('mobile.gymClaim.approved.manageCta')).toBeTruthy());
 

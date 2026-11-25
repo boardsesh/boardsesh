@@ -943,14 +943,24 @@ export { default } from '../../gyms/edit';
 ```
 
 The gym screens all have one: `app/boards/gym/[gym].tsx`, `app/boards/gyms.tsx`,
-`app/boards/gyms/edit.tsx` and `app/boards/gyms/analytics.tsx`. A screen registered in both
-stacks pushes into the one it stands in: the builders in `src/components/gym-page/gym-page-route.ts`
-(`gymPageHref`, `gymMapHref`, `gymEditHref`, `gymAnalyticsHref`) take a stack, and
-`useGymRouteStack()` reads it from the route's segments. A screen that can only ever be inside the
-picker (the builder's own-public-gym warning, `addBoardRoute('gym_map')`) names the `boards` copy
-directly.
+`app/boards/gyms/edit.tsx` and `app/boards/gyms/analytics.tsx`, and so does Edit board's Manage
+access (`app/boards/privacy-access.tsx`). The gym map's two files each name their own shell
+(`GymFinderMapScreen` at the root, `GymFinderCardScreen` in the picker) instead of re-exporting
+one screen. A screen registered in both stacks pushes into the one it stands in: the builders in
+`src/components/gym-page/gym-page-route.ts` (`gymPageHref`, `gymMapHref`, `gymEditHref`,
+`gymAnalyticsHref`) take a stack, and `useGymRouteStack()` reads it from
+`GymRouteStackContext`, which `app/boards/_layout.tsx` provides as `boards` around its `<Stack>`
+(the default is `root`).
 
-Sign-in has no copy: from inside the picker `openSignIn(router, 'boards')`
+**Never read the stack from `useSegments()`.** Segments are the FOCUSED route, not the one a
+screen is mounted in: the root gym map under a Boards modal would read `boards`, swap its shell
+and remount its map, and the picker's copy would read `root` the moment anything above it has
+focus. The context is fixed by where the screen is registered.
+
+A screen that can only ever be inside the picker (`addBoardRoute('gym_map')`) names the `boards`
+copy directly.
+
+Sign-in has no copy: from inside the picker `openSignIn(router, stack)`
 (`src/lib/routing/open-sign-in.ts`) calls `router.dismissTo('/auth/login')`, which pops the picker
 and puts sign-in in its place (StackRouter's `POP_TO` with no `auth` below), so it opens as the
 full-screen card it is from the tabs. The root `auth` screen keeps no `presentation`:

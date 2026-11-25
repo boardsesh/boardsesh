@@ -11,10 +11,11 @@ const privacy = vi.hoisted(() => ({
   current: null as null | Record<string, unknown>,
 }));
 const mutate = vi.hoisted(() => vi.fn());
+const push = vi.hoisted(() => vi.fn());
 
 vi.mock('react-native', () => ({ View: 'div', StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 } }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('../../../lib/routing/scoped-navigation', () => ({ scopedRouter: { push: vi.fn() } }));
+vi.mock('../../../lib/routing/scoped-navigation', () => ({ scopedRouter: { push } }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ spacing: [0, 4, 8, 12], brandColors: { error: 'red' } }),
 }));
@@ -42,6 +43,7 @@ vi.mock('../../board-discovery/OwnPublicGymWarning', () => ({
 vi.mock('../../../lib/connectivity/use-connectivity', () => ({ useConnectivity: () => ({ effectiveOffline: false }) }));
 
 import { ResourcePrivacyControl } from '../ResourcePrivacyControl';
+import { GymRouteStackContext } from '../../gym-page/use-gym-route-stack';
 
 const boardPrivacy = (overrides: Record<string, unknown> = {}) => ({
   kind: 'board',
@@ -56,6 +58,7 @@ const boardPrivacy = (overrides: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   mutate.mockReset();
+  push.mockReset();
   privacy.current = null;
 });
 
@@ -81,5 +84,33 @@ describe('ResourcePrivacyControl board location', () => {
     privacy.current = boardPrivacy();
     const view = render(<ResourcePrivacyControl kind="board" resourceId="board-uuid" />);
     expect(view.queryByText('mobile.create.gymLocationHint')).toBeNull();
+  });
+});
+
+// Edit board stands in the board picker's stack, where the root Manage access
+// pushed on top would be presented as a second sheet.
+describe('ResourcePrivacyControl Manage access', () => {
+  it("opens the picker's copy from Edit board", () => {
+    privacy.current = boardPrivacy();
+    const view = render(
+      <GymRouteStackContext.Provider value="boards">
+        <ResourcePrivacyControl kind="board" resourceId="board-uuid" />
+      </GymRouteStackContext.Provider>,
+    );
+    fireEvent.click(view.getByText('privacy.manageAccess'));
+    expect(push).toHaveBeenCalledWith({
+      pathname: '/boards/privacy-access',
+      params: { kind: 'board', resourceId: 'board-uuid' },
+    });
+  });
+
+  it("opens Settings' copy everywhere else", () => {
+    privacy.current = boardPrivacy();
+    const view = render(<ResourcePrivacyControl kind="session" resourceId="session-uuid" />);
+    fireEvent.click(view.getByText('privacy.manageAccess'));
+    expect(push).toHaveBeenCalledWith({
+      pathname: '/settings/privacy-access',
+      params: { kind: 'session', resourceId: 'session-uuid' },
+    });
   });
 });

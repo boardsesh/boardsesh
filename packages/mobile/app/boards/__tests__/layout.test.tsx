@@ -285,11 +285,14 @@ describe('the add-a-board wizard chrome', () => {
 // every gym screen the picker opens has a copy registered here, and the
 // builders' gym row is a pushed page rather than a sheet.
 describe('the screens that stay inside the Boards sheet', () => {
-  it.each(['gyms', 'gyms/edit', 'gyms/analytics', 'gym-picker'])('registers %s in this stack', (name) => {
-    render(createElement(BoardsLayout));
-    const declared = screens.byName.get(name);
-    expect(declared).toBeDefined();
-    const options = typeof declared?.options === 'function' ? declared.options({ route: {} }) : declared?.options;
-    expect(Object.keys(options ?? {})).not.toContain('presentation');
-  });
+  it.each(['gyms', 'gyms/edit', 'gyms/analytics', 'gym-picker', 'privacy-access'])(
+    'registers %s in this stack',
+    (name) => {
+      render(createElement(BoardsLayout));
+      const declared = screens.byName.get(name);
+      expect(declared).toBeDefined();
+      const options = typeof declared?.options === 'function' ? declared.options({ route: {} }) : declared?.options;
+      expect(Object.keys(options ?? {})).not.toContain('presentation');
+    },
+  );
 });

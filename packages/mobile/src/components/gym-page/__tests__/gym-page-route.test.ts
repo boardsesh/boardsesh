@@ -4,21 +4,7 @@
 // no `presentation` as a modal when a modal sits under it), so each opener has
 // to pick the copy in the stack it stands in.
 import { describe, expect, it } from 'vitest';
-import { gymAnalyticsHref, gymEditHref, gymMapHref, gymPageHref, gymPageStackForSegments } from '../gym-page-route';
-
-describe('gymPageStackForSegments', () => {
-  it.each([
-    [['boards'], 'boards'],
-    [['boards', 'gyms'], 'boards'],
-    [['boards', 'gym', '[gym]'], 'boards'],
-    [['gyms'], 'root'],
-    [['gyms', '[gym]'], 'root'],
-    [['(tabs)', 'home'], 'root'],
-    [[], 'root'],
-  ] as const)('reads %j as the %s stack', (segments, stack) => {
-    expect(gymPageStackForSegments(segments)).toBe(stack);
-  });
-});
+import { gymAnalyticsHref, gymEditHref, gymMapHref, gymPageHref } from '../gym-page-route';
 
 describe('the gym screens per stack', () => {
   it('opens the map, the page, the editor and the insights inside the picker', () => {

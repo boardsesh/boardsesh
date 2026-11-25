@@ -1,4 +1,5 @@
 import { scopedRouter as router } from '../../lib/routing/scoped-navigation';
+import { useGymRouteStack } from '../gym-page/use-gym-route-stack';
 import { View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { PrivacyLocationAudience } from '@boardsesh/graphql/operations/privacy';
@@ -27,6 +28,9 @@ export function ResourcePrivacyControl({
   const { t } = useTranslation('settings');
   const { t: tBoards } = useTranslation('boards');
   const { spacing, brandColors } = useTheme();
+  // Edit board's "Manage access" stays in the picker's stack: the root copy
+  // pushed from in there would stack a second sheet.
+  const stack = useGymRouteStack();
   const { data: profile } = useProfile();
   const { data: settings } = usePrivacySettings();
   const { data: privacy } = useResourcePrivacy(kind, resourceId);
@@ -84,7 +88,12 @@ export function ResourcePrivacyControl({
       <Button
         title={t('privacy.manageAccess')}
         variant="outlined"
-        onPress={() => router.push({ pathname: '/settings/privacy-access', params: { kind, resourceId } })}
+        onPress={() =>
+          router.push({
+            pathname: stack === 'boards' ? '/boards/privacy-access' : '/settings/privacy-access',
+            params: { kind, resourceId },
+          })
+        }
       />
       {effectiveOffline ? <Text>{t('privacy.offline')}</Text> : null}
       {update.isError ? (

@@ -204,6 +204,7 @@ vi.mock('../use-gym-board-menu', () => ({
 vi.mock('../use-gym-report-action', () => ({ useGymReportAction: () => state.reportAction }));
 
 import GymPageScreen from '../GymPageScreen';
+import { GymRouteStackContext } from '../use-gym-route-stack';
 
 function makeGym(overrides: Partial<Gym> = {}): Gym {
   return {
@@ -481,16 +482,23 @@ describe('GymPageScreen', () => {
 // there a root route would stack a second sheet on the picker, so what the page
 // opens stays in the picker's stack.
 describe('GymPageScreen inside the board picker', () => {
+  // The stack the page is registered in, not the focused route's segments.
   beforeEach(() => {
-    state.segments = ['boards', 'gym', '[gym]'];
+    state.segments = ['gyms', '[gym]'];
   });
+  const renderInPicker = () =>
+    render(
+      <GymRouteStackContext.Provider value="boards">
+        <GymPageScreen />
+      </GymRouteStackContext.Provider>,
+    );
 
   it("opens the staff's editor and insights in the picker's stack", () => {
     state.gymQuery = {
       ...state.gymQuery,
       data: makeGym({ myRole: 'admin', canEdit: true, canClaim: false, listingState: 'RUN_BY_GYM' }),
     };
-    render(<GymPageScreen />);
+    renderInPicker();
     fireEvent.click(screen.getByText('tool-editDetails'));
     expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/boards/gyms/edit', params: { gymUuid: 'gym-uuid-1' } });
     fireEvent.click(screen.getByText('tool-insights'));
@@ -502,7 +510,7 @@ describe('GymPageScreen inside the board picker', () => {
 
   it('puts sign-in in place of the picker instead of stacking it on top', () => {
     state.isAuthenticated = false;
-    render(<GymPageScreen />);
+    renderInPicker();
     fireEvent.click(screen.getByText('sign-in'));
     expect(routerMock.dismissTo).toHaveBeenCalledWith('/auth/login');
     expect(routerMock.push).not.toHaveBeenCalledWith('/auth/login');

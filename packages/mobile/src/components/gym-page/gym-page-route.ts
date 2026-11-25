@@ -44,11 +44,6 @@ export function gymPageHref(
   };
 }
 
-/** Which stack a route's segments stand in: the board picker's modal stack, or the root one. */
-export function gymPageStackForSegments(segments: readonly string[]): GymPageStack {
-  return segments[0] === 'boards' ? 'boards' : 'root';
-}
-
 export type GymMapHref = {
   pathname: '/gyms' | '/boards/gyms';
   params: Record<string, string>;
