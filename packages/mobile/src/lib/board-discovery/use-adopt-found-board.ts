@@ -53,6 +53,12 @@ export type AdoptFoundBoardOptions = {
    * `autoOfflineBoards` setting asked for.
    */
   offerOffline?: boolean;
+  /**
+   * Whether adopting follows the board. Defaults to true. False for a friend's
+   * board, which the caller saves itself so it can offer Undo: only the
+   * offline half runs.
+   */
+  follow?: boolean;
 };
 
 /**
@@ -63,7 +69,7 @@ export type AdoptFoundBoardOptions = {
  * navigation; the offline confirm rides the root dialog, which survives the modal
  * dismiss that navigating away from the picker triggers.
  */
-export function useAdoptFoundBoard({ offerOffline = true }: AdoptFoundBoardOptions = {}) {
+export function useAdoptFoundBoard({ offerOffline = true, follow = true }: AdoptFoundBoardOptions = {}) {
   const { showToast } = useToast();
   const { t } = useTranslation('boards');
   const { isAuthenticated, viewerId } = useViewer();
@@ -91,7 +97,7 @@ export function useAdoptFoundBoard({ offerOffline = true }: AdoptFoundBoardOptio
         offerOffline,
       });
 
-      if (decision.follow && isAuthenticated) {
+      if (follow && decision.follow && isAuthenticated) {
         followBoard.mutate(board);
       }
 
@@ -121,6 +127,7 @@ export function useAdoptFoundBoard({ offerOffline = true }: AdoptFoundBoardOptio
       offlineEnabled,
       autoOffline,
       offerOffline,
+      follow,
       isAuthenticated,
       viewerId,
       t,

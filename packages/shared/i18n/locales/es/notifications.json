@@ -109,6 +109,10 @@
     "declineLabel": "Rechazar a {{actor}}",
     "failed": "No se pudo responder a la solicitud. Inténtalo cuando tengas conexión."
   },
+  "boardAccessRequest": {
+    "approveLabel": "Dejar que {{actor}} escale en tu plafón",
+    "declineLabel": "Rechazar la petición de {{actor}} para escalar en tu plafón"
+  },
   "errors": {
     "load": "No se pudieron cargar tus notificaciones"
   },

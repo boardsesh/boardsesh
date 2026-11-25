@@ -32,6 +32,7 @@ import { batchVoteSummaryEntityIds, type SocialEntityType } from '@boardsesh/sha
 import { getHttpClient } from '../client';
 import { NOTIFICATION_ACTORS_QUERY_KEY } from '../notification-actors-key';
 import { useToggleAuthorFollow } from './use-followed-authors';
+import { FRIENDS_BOARDS_QUERY_KEY } from './use-friends-boards';
 import { updateUserFollowCaches } from './user-follow-cache';
 
 const SOCIAL_PAGE_SIZE = 30;
@@ -154,6 +155,9 @@ export function useToggleUserFollow(currentUserId: string | undefined) {
       void queryClient.invalidateQueries({ queryKey: ['activityFeed'] });
       // The follow-back list behind a "new followers" notification.
       void queryClient.invalidateQueries({ queryKey: [NOTIFICATION_ACTORS_QUERY_KEY] });
+      // Friends' boards list the boards of people the viewer follows: the
+      // picker shelf and "A friend's board" both sit under this root.
+      void queryClient.invalidateQueries({ queryKey: [FRIENDS_BOARDS_QUERY_KEY] });
     },
   });
 }

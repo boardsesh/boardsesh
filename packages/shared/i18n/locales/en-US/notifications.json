@@ -109,6 +109,10 @@
     "declineLabel": "Decline {{actor}}",
     "failed": "Couldn't answer this request. Try again when connected."
   },
+  "boardAccessRequest": {
+    "approveLabel": "Let {{actor}} climb on your board",
+    "declineLabel": "Decline {{actor}}'s ask to climb on your board"
+  },
   "errors": {
     "load": "Couldn't load your notifications"
   },

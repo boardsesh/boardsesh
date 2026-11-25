@@ -109,6 +109,10 @@
     "declineLabel": "拒绝 {{actor}}",
     "failed": "无法处理此请求，请联网后重试。"
   },
+  "boardAccessRequest": {
+    "approveLabel": "允许 {{actor}} 在你的训练板上攀爬",
+    "declineLabel": "拒绝 {{actor}} 在你的训练板上攀爬的申请"
+  },
   "errors": {
     "load": "无法加载通知"
   },
