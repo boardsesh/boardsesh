@@ -997,6 +997,33 @@ describe('the two copies of the gym map', () => {
     expect(captured.cardList?.mapHidden).toBe(true);
   });
 
+  it('unfolds the map card on a blur that leaves the picked town unchanged', () => {
+    captured.coords = madrid;
+    const lyon: PlaceSuggestion = {
+      id: 2996944,
+      name: 'Lyon',
+      region: 'Auvergne-Rhone-Alpes',
+      country: 'France',
+      countryCode: 'FR',
+      latitude: 45.764,
+      longitude: 4.8357,
+    };
+    const { container } = renderPickerCopy();
+    act(() => captured.onSelectPlace?.(lyon));
+    expect(captured.cardList?.mapHidden).toBe(false);
+    const field = container.querySelector('input');
+    if (!field) throw new Error('no search field');
+    act(() => {
+      fireEvent.focus(field);
+    });
+    expect(captured.cardList?.mapHidden).toBe(true);
+    // Submitting the town's own label changes nothing, so the blur must bring the card back.
+    act(() => {
+      fireEvent.blur(field);
+    });
+    expect(captured.cardList?.mapHidden).toBe(false);
+  });
+
   it('opens the gym page and the gym editor inside the picker stack, whatever route is focused', () => {
     captured.segments = ['gyms'];
     captured.coords = madrid;

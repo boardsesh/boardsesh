@@ -57,13 +57,20 @@ export function GymFinderCardScreen() {
   const [mapFolded, setMapFolded] = useState(false);
   const inputTextRef = useRef(finder.inputText);
   inputTextRef.current = finder.inputText;
+  const searchLabelRef = useRef(finder.searchLabel);
+  searchLabelRef.current = finder.searchLabel;
   const onSearchFocusChange = useCallback((focused: boolean) => {
     if (focused) {
       setMapFolded(true);
       listRef.current?.scrollToTop();
       return;
     }
-    if (inputTextRef.current.trim().length === 0) setMapFolded(false);
+    // Unfold on a blur that left the field empty, or still holding the picked
+    // town's own label: submitting that label changes nothing (the town is
+    // already applied), so no later pick would bring the card back.
+    const typedText = inputTextRef.current.trim();
+    const pickedTownLabel = searchLabelRef.current?.trim() ?? null;
+    if (typedText.length === 0 || typedText === pickedTownLabel) setMapFolded(false);
   }, []);
   const placePicked = finder.searchLabel !== null;
   useEffect(() => {
