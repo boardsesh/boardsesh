@@ -11,6 +11,7 @@ import { sprayWallDetections } from '@boardsesh/db/schema';
 import { readSprayDetection, sprayDetectionSourceIsCurrent } from '@boardsesh/db/queries';
 import { db } from '../db/client';
 import { MAINTENANCE_POLLING_INTERVAL_SECONDS } from './job-queue-client';
+import { reportNotificationPushHealth } from './notification-push-health';
 
 let reconcileCursor: string | undefined;
 
@@ -74,6 +75,7 @@ export async function startSprayDetectionMaintenance(boss: PgBoss): Promise<void
     { pollingIntervalSeconds: MAINTENANCE_POLLING_INTERVAL_SECONDS },
     async () => {
       await reconcileSprayDetections(boss);
+      await reportNotificationPushHealth();
     },
   );
 }

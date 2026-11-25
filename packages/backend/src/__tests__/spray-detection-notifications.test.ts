@@ -28,6 +28,9 @@ import { notificationDeviceMutations } from '../graphql/resolvers/social/notific
 import { sprayWallMutations } from '../graphql/resolvers/board/spray-walls';
 import { socialNotificationQueries } from '../graphql/resolvers/social/notifications';
 import { pubsub } from '../pubsub';
+import { logger } from '../utils/logger';
+import { readNotificationPushHealth } from '../services/notification-push-health';
+import { replayNotificationPushDeliveries } from '../scripts/replay-notification-push';
 
 vi.mock('../utils/redis-rate-limiter', () => ({ checkRateLimitRedis: vi.fn().mockResolvedValue(undefined) }));
 const context = (userId: string): ConnectionContext => ({ userId, isAuthenticated: true, connectionId: userId });
@@ -383,6 +386,7 @@ describe('spray import completion notifications', () => {
   });
 
   it.each(['before completion', 'after queue'])('does not deliver an expired device lease %s', async (expiryStage) => {
+    const deliveryLog = vi.spyOn(logger, 'info').mockImplementation(() => logger);
     const target = await completedWall();
     const installationId = randomUUID();
     await notificationDeviceMutations.registerNotificationDevice(
@@ -421,6 +425,12 @@ describe('spray import completion notifications', () => {
       .from(notificationDeliveries)
       .where(eq(notificationDeliveries.id, deliveries[0].id));
     expect(skipped.status).toBe('skipped');
+    expect(deliveryLog).toHaveBeenCalledWith('Expo push delivery result', {
+      event: 'notification.push.delivery',
+      stage: 'validation',
+      status: 'skipped',
+      reason: 'device_unavailable',
+    });
   });
 
   it('serializes competing registrations for a token into one active account', async () => {
@@ -445,6 +455,7 @@ describe('spray import completion notifications', () => {
   });
 
   it('commits clearing a failed receipt before requesting a retry', async () => {
+    const deliveryLog = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
     const target = await completedWall();
     await notificationDeviceMutations.registerNotificationDevice(
       {},
@@ -483,9 +494,17 @@ describe('spray import completion notifications', () => {
     await expect(deliverSprayNotification(boss, delivery.id)).rejects.toThrow('EXPO_PUSH_RETRY');
     const [retry] = await db.select().from(notificationDeliveries).where(eq(notificationDeliveries.id, delivery.id));
     expect(retry).toMatchObject({ status: 'pending', ticketId: null });
+    expect(deliveryLog).toHaveBeenCalledWith('Expo push delivery result', {
+      event: 'notification.push.delivery',
+      stage: 'receipt',
+      status: 'pending',
+      errorCode: 'MessageRateExceeded',
+      errorMessage: 'The device push rate limit was exceeded.',
+    });
   });
 
   it('keeps a delivery retryable when push credentials are invalid', async () => {
+    const deliveryLog = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
     const target = await completedWall();
     await notificationDeviceMutations.registerNotificationDevice(
       {},
@@ -510,17 +529,37 @@ describe('spray import completion notifications', () => {
       'fetch',
       vi.fn(
         async () =>
-          new Response(JSON.stringify({ data: { status: 'error', details: { error: 'InvalidCredentials' } } }), {
-            status: 200,
-          }),
+          new Response(
+            JSON.stringify({
+              data: {
+                status: 'error',
+                message: `Waiting wall ExpoPushToken[secret] ${target.ctx.userId}`,
+                details: { error: 'InvalidCredentials' },
+              },
+            }),
+            {
+              status: 200,
+            },
+          ),
       ),
     );
     await expect(deliverSprayNotification(boss, delivery.id)).rejects.toThrow('EXPO_PUSH_RETRY');
     const [kept] = await db.select().from(notificationDeliveries).where(eq(notificationDeliveries.id, delivery.id));
     expect(kept).toMatchObject({ status: 'pending', ticketId: null });
+    expect(deliveryLog).toHaveBeenCalledWith('Expo push delivery result', {
+      event: 'notification.push.delivery',
+      stage: 'ticket',
+      status: 'pending',
+      errorCode: 'InvalidCredentials',
+      errorMessage: 'The APNs or FCM push credentials are invalid.',
+    });
+    expect(JSON.stringify(deliveryLog.mock.calls)).not.toContain('secret');
+    expect(JSON.stringify(deliveryLog.mock.calls)).not.toContain(target.ctx.userId);
+    expect(JSON.stringify(deliveryLog.mock.calls)).not.toContain('Waiting wall');
   });
 
   it('keeps a failed HTTP delivery pending and persists the successful retry ticket', async () => {
+    const httpLog = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
     const target = await completedWall();
     await notificationDeviceMutations.registerNotificationDevice(
       {},
@@ -552,6 +591,11 @@ describe('spray import completion notifications', () => {
     await expect(deliverSprayNotification(boss, delivery.id)).rejects.toThrow('EXPO_PUSH_HTTP_FAILED');
     const [pending] = await db.select().from(notificationDeliveries).where(eq(notificationDeliveries.id, delivery.id));
     expect(pending).toMatchObject({ status: 'pending', ticketId: null });
+    expect(httpLog).toHaveBeenCalledWith('Expo push HTTP request failed', {
+      event: 'notification.push.http_error',
+      stage: 'ticket',
+      httpStatus: 500,
+    });
 
     await deliverSprayNotification(boss, delivery.id);
     const retryDeliveries = await db
@@ -605,6 +649,7 @@ describe('spray import completion notifications', () => {
   });
 
   it('persists tickets, checks receipts, and retires invalid tokens', async () => {
+    const deliveryLog = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
     const target = await completedWall();
     await notificationDeviceMutations.registerNotificationDevice(
       {},
@@ -665,5 +710,186 @@ describe('spray import completion notifications', () => {
     expect(device.active).toBe(false);
     const [finished] = await db.select().from(notificationDeliveries).where(eq(notificationDeliveries.id, delivery.id));
     expect(finished.status).toBe('skipped');
+    expect(deliveryLog).toHaveBeenCalledWith('Expo push delivery result', {
+      event: 'notification.push.delivery',
+      stage: 'receipt',
+      status: 'skipped',
+      reason: 'DeviceNotRegistered',
+      errorCode: 'DeviceNotRegistered',
+      errorMessage: 'The device is no longer registered for push notifications.',
+    });
+  });
+
+  it.each(['ok', 'MessageTooBig'])('logs the committed receipt result: %s', async (result) => {
+    const deliveryLog = vi.spyOn(logger, 'info').mockImplementation(() => logger);
+    const warningLog = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const target = await completedWall();
+    await notificationDeviceMutations.registerNotificationDevice(
+      {},
+      {
+        input: {
+          installationId: randomUUID(),
+          token: `ExpoPushToken[${randomUUID()}]`,
+          platform: 'ios',
+          locale: 'en-US',
+        },
+      },
+      target.ctx,
+    );
+    await finishSprayDetection(db, target.detectionId, target.attemptToken, proposal);
+    const boss = await startJobQueue();
+    await notifySprayDetectionCompleted(boss, target.detectionId);
+    const [delivery] = await db
+      .select()
+      .from(notificationDeliveries)
+      .where(eq(notificationDeliveries.notificationUuid, target.detectionId));
+    const transport = vi
+      .fn()
+      .mockImplementation(
+        async () => new Response(JSON.stringify({ data: { status: 'ok', id: 'diagnostic-ticket' } }), { status: 200 }),
+      );
+    vi.stubGlobal('fetch', transport);
+    if (result === 'ok') {
+      const failedEnqueue = vi.spyOn(boss, 'send').mockResolvedValueOnce(null);
+      await expect(deliverSprayNotification(boss, delivery.id)).rejects.toThrow('RECEIPT_ENQUEUE_FAILED');
+      expect(deliveryLog).not.toHaveBeenCalledWith('Expo push delivery result', expect.anything());
+      const [rolledBack] = await db
+        .select()
+        .from(notificationDeliveries)
+        .where(eq(notificationDeliveries.id, delivery.id));
+      expect(rolledBack).toMatchObject({ status: 'pending', ticketId: null });
+      failedEnqueue.mockRestore();
+      transport.mockClear();
+    }
+    await deliverSprayNotification(boss, delivery.id);
+    expect(deliveryLog).toHaveBeenCalledWith('Expo push delivery result', {
+      event: 'notification.push.delivery',
+      stage: 'ticket',
+      status: 'receipt',
+    });
+    await db
+      .update(notificationDeliveries)
+      .set({ updatedAt: new Date(Date.now() - 16 * 60_000) })
+      .where(eq(notificationDeliveries.id, delivery.id));
+    transport.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            'diagnostic-ticket': result === 'ok' ? { status: 'ok' } : { status: 'error', details: { error: result } },
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    await deliverSprayNotification(boss, delivery.id);
+    const [finished] = await db.select().from(notificationDeliveries).where(eq(notificationDeliveries.id, delivery.id));
+    expect(finished.status).toBe(result === 'ok' ? 'done' : 'skipped');
+    if (result === 'ok') {
+      expect(deliveryLog).toHaveBeenCalledWith('Expo push delivery result', {
+        event: 'notification.push.delivery',
+        stage: 'receipt',
+        status: 'done',
+      });
+    } else {
+      expect(warningLog).toHaveBeenCalledWith('Expo push delivery result', {
+        event: 'notification.push.delivery',
+        stage: 'receipt',
+        status: 'skipped',
+        reason: 'MessageTooBig',
+        errorCode: 'MessageTooBig',
+        errorMessage: 'The notification payload exceeds the provider size limit.',
+      });
+    }
+    await deliverSprayNotification(boss, delivery.id);
+    expect(transport).toHaveBeenCalledTimes(2);
+  });
+
+  it('aggregates recent statuses and includes old pending/receipt rows in outstanding health', async () => {
+    const target = await completedWall();
+    await finishSprayDetection(db, target.detectionId, target.attemptToken, proposal);
+    await notifySprayDetectionCompleted(await startJobQueue(), target.detectionId);
+    const now = new Date();
+    const before = await readNotificationPushHealth(db, now);
+    for (const status of ['pending', 'receipt', 'done', 'skipped'] as const) {
+      const installationId = randomUUID();
+      const token = `ExpoPushToken[${randomUUID()}]`;
+      await db.insert(notificationDevices).values({
+        installationId,
+        userId: target.ctx.userId!,
+        token,
+        platform: 'ios',
+        locale: 'en-US',
+      });
+      await db.insert(notificationDeliveries).values({
+        id: randomUUID(),
+        notificationUuid: target.detectionId,
+        installationId,
+        recipientId: target.ctx.userId!,
+        token,
+        locale: 'en-US',
+        status,
+        updatedAt: new Date(now.getTime() - (status === 'pending' || status === 'receipt' ? 25 * 60 * 60_000 : 1000)),
+      });
+    }
+    const after = await readNotificationPushHealth(db, now);
+    expect(after.updatedLast24h).toEqual({
+      ...before.updatedLast24h,
+      done: before.updatedLast24h.done + 1,
+      skipped: before.updatedLast24h.skipped + 1,
+    });
+    expect(after.outstanding).toEqual({
+      pending: before.outstanding.pending + 1,
+      receipt: before.outstanding.receipt + 1,
+    });
+    expect(after.oldestOutstandingUpdateAgeSeconds).toBeGreaterThanOrEqual(25 * 60 * 60);
+  });
+
+  it('dry-runs replay without writes, then applies through normal expired-device validation', async () => {
+    const target = await completedWall();
+    await finishSprayDetection(db, target.detectionId, target.attemptToken, proposal);
+    const boss = await startJobQueue();
+    await notifySprayDetectionCompleted(boss, target.detectionId);
+    const installationId = randomUUID();
+    const token = `ExpoPushToken[${randomUUID()}]`;
+    // Born expired: the normal delivery driver must skip this device without sending.
+    await db.insert(notificationDevices).values({
+      installationId,
+      userId: target.ctx.userId!,
+      token,
+      platform: 'ios',
+      locale: 'en-US',
+    });
+    const deliveryId = randomUUID();
+    await db.insert(notificationDeliveries).values({
+      id: deliveryId,
+      notificationUuid: target.detectionId,
+      installationId,
+      recipientId: target.ctx.userId!,
+      token,
+      locale: 'en-US',
+      updatedAt: new Date('1900-01-01T00:00:00Z'),
+    });
+    const transport = vi.fn();
+    vi.stubGlobal('fetch', transport);
+    expect(await replayNotificationPushDeliveries(1, null)).toEqual({
+      selected: 1,
+      attempted: 0,
+      deferred: 0,
+      retryableErrors: 0,
+      statuses: { pending: 1, receipt: 0, done: 0, skipped: 0, missing: 0 },
+    });
+    const [unchanged] = await db.select().from(notificationDeliveries).where(eq(notificationDeliveries.id, deliveryId));
+    expect(unchanged.status).toBe('pending');
+    expect(unchanged.updatedAt).toEqual(new Date('1900-01-01T00:00:00Z'));
+    expect(await replayNotificationPushDeliveries(1, boss)).toEqual({
+      selected: 1,
+      attempted: 1,
+      deferred: 0,
+      retryableErrors: 0,
+      statuses: { pending: 0, receipt: 0, done: 0, skipped: 1, missing: 0 },
+    });
+    expect(transport).not.toHaveBeenCalled();
+    const [skipped] = await db.select().from(notificationDeliveries).where(eq(notificationDeliveries.id, deliveryId));
+    expect(skipped.status).toBe('skipped');
   });
 });
