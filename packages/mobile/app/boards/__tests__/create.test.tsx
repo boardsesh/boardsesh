@@ -12,6 +12,7 @@ vi.mock('../../../src/lib/onboarding/use-onboarding-link-offer', () => ({ useOnb
 // user's decision, not the client's.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { offerHeardSerial } from '../../../src/lib/boards/heard-serial-offer';
 import { createElement, type ReactNode } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
@@ -662,8 +663,10 @@ describe('CreateBoard from "My own board"', () => {
     expect(builderCalls.options.at(-1)?.initialBoardName).toBe('moonboard');
   });
 
-  // The one unsaved box of that type the In range slot heard: its serial is filled in.
+  // The one unsaved box of that type the In range slot heard: its serial is
+  // filled in, but only the one the picker just offered for that type.
   it('opens with the serial the In range slot heard', () => {
+    offerHeardSerial({ serial: '751737', boardType: 'kilter' });
     state.params = { preset: '1', presetBoardType: 'kilter', serial: ' 751737 ' };
     render(createElement(CreateBoard));
     expect(builderCalls.options.at(-1)?.initialSerialNumber).toBe('751737');
@@ -671,9 +674,26 @@ describe('CreateBoard from "My own board"', () => {
 
   it.each<{ name: string; params: Record<string, string> }>([
     { name: 'without the param', params: { preset: '1', presetBoardType: 'kilter' } },
-    { name: 'outside a preset open', params: { serial: '751737' } },
+    { name: 'outside a preset open', params: { presetBoardType: 'kilter', serial: '751737' } },
+    { name: 'from a link with no board type', params: { preset: '1', serial: '751737' } },
+    {
+      name: 'when the board type disagrees with the offer',
+      params: { preset: '1', presetBoardType: 'tension', serial: '751737' },
+    },
+    {
+      name: 'for a serial the picker never offered',
+      params: { preset: '1', presetBoardType: 'kilter', serial: '800001' },
+    },
   ])('opens with the serial empty $name', ({ params }) => {
+    offerHeardSerial({ serial: '751737', boardType: 'kilter' });
     state.params = params;
+    render(createElement(CreateBoard));
+    expect(builderCalls.options.at(-1)?.initialSerialNumber).toBeUndefined();
+  });
+
+  it('opens with the serial empty once the offer has run out', () => {
+    offerHeardSerial({ serial: '751737', boardType: 'kilter' }, Date.now() - 11 * 60 * 1000);
+    state.params = { preset: '1', presetBoardType: 'kilter', serial: '751737' };
     render(createElement(CreateBoard));
     expect(builderCalls.options.at(-1)?.initialSerialNumber).toBeUndefined();
   });

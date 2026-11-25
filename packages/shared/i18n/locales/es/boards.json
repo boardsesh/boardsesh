@@ -452,6 +452,8 @@
       "serial": "Número de serie del controlador",
       "serialPlaceholder": "p. ej. ABC-12345",
       "serialHint": "Opcional: tu controlador se vincula solo la primera vez que conectas.",
+      "heardSerial": "Número de serie {{serial}}, del controlador que tienes delante.",
+      "heardSerialChange": "Cambiar",
       "save": "Guardar mi plafón",
       "createError": "No se pudo crear ese plafón. Inténtalo de nuevo.",
       "limitReached": "Has llegado al número máximo de plafones para una cuenta. Borra uno que ya no uses para añadir otro.",

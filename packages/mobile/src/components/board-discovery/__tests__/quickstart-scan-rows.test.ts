@@ -264,21 +264,59 @@ describe('the serial an unknown box hands the builder', () => {
       expected: '751737',
     },
   ])('$name', ({ devices, listenedLongEnough, expected }) => {
-    expect(builderSerialForRow(unknownRow(devices), listenedLongEnough)).toBe(expected);
+    expect(builderSerialForRow(unknownRow(devices), listenedLongEnough, 'resolved')).toBe(expected);
+  });
+
+  it('counts a box the lookup has not answered: two unsaved boxes, one lookup failed, give nothing', () => {
+    const rows = buildQuickstartRows({
+      devices: [serialDevice('751737', 'kilter', -50), serialDevice('800001', 'kilter', -60)],
+      boards: [],
+      answeredSerials: ['751737'],
+      lookup: 'failed',
+    });
+    const row = rows.find((candidate) => candidate.kind === 'unknown_setup');
+    if (!row || row.kind !== 'unknown_setup') throw new Error('no unknown_setup row');
+    expect(row.serials).toEqual(['751737', '800001']);
+    expect(builderSerialForRow(row, true, 'failed')).toBeNull();
+    // Even read as answered, two boxes are two boxes.
+    expect(builderSerialForRow(row, true, 'resolved')).toBeNull();
+  });
+
+  it.each<QuickstartLookupState>(['none', 'pending', 'updating', 'failed'])(
+    'gives nothing until the lookup has answered every serial (%s)',
+    (lookup) => {
+      expect(builderSerialForRow(unknownRow([serialDevice('751737', 'kilter', -50)]), true, lookup)).toBeNull();
+    },
+  );
+
+  it('counts a bare-name box of the same type: a serial box beside one gives nothing', () => {
+    const row = unknownRow([serialDevice('751737', 'kilter', -50), bareBox('BARE-1', 'kilter', -60)]);
+    expect(row.serialLessBoxCount).toBe(1);
+    expect(builderSerialForRow(row, true, 'resolved')).toBeNull();
+  });
+
+  it('does not count a bare-name box of another type', () => {
+    const row = unknownRow([serialDevice('751737', 'kilter', -50), bareBox('BARE-1', 'tension', -60)]);
+    expect(row.serialLessBoxCount).toBe(0);
+    expect(builderSerialForRow(row, true, 'resolved')).toBe('751737');
   });
 
   it('gives nothing for a row with no serial behind it', () => {
-    expect(builderSerialForRow({ ...unknownRow([serialDevice('1', 'kilter', -50)]), serials: [] }, true)).toBeNull();
+    expect(
+      builderSerialForRow({ ...unknownRow([serialDevice('1', 'kilter', -50)]), serials: [] }, true, 'resolved'),
+    ).toBeNull();
     expect(
       builderSerialForRow(
         { kind: 'moonboard', key: 'moonboard:moonboard', boardType: 'moonboard', rssi: -50, deviceId: 'MOON' },
         true,
+        'resolved',
       ),
     ).toBeNull();
     expect(
       builderSerialForRow(
         { kind: 'bare_name', key: 'bare_name:kilter', boardType: 'kilter', rssi: -50, deviceId: 'BOX' },
         true,
+        'resolved',
       ),
     ).toBeNull();
   });

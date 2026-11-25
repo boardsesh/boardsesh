@@ -80,8 +80,10 @@ export type BoardBuilderOptions = {
   initialBoardName?: BoardName;
   /**
    * The serial to open with when there is no `seed`: the one unsaved box of
-   * this type the picker's In range slot heard (`builderSerialForRow`). The
-   * builder's serial checks run on it like a typed one.
+   * `initialBoardName` the picker's In range slot heard (`builderSerialForRow`).
+   * The builder's serial checks run on it like a typed one. It is said out
+   * loud (`heardSerial`) while it stands, and goes when the board type moves
+   * off the one it was heard as.
    */
   initialSerialNumber?: string;
 };
@@ -151,7 +153,14 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(
     seed?.latitude != null && seed?.longitude != null ? { latitude: seed.latitude, longitude: seed.longitude } : null,
   );
-  const [serialNumber, setSerialNumber] = useState(seed?.serialNumber ?? options?.initialSerialNumber ?? '');
+  // The serial the In range slot heard, and the board type it was heard as.
+  const [heardSerialOffer] = useState(() =>
+    !seed && options?.initialSerialNumber ? { serial: options.initialSerialNumber, boardName: initialBoard } : null,
+  );
+  const heardSerialOfferRef = useRef(heardSerialOffer);
+  const [serialNumber, setSerialNumber] = useState(seed?.serialNumber ?? heardSerialOffer?.serial ?? '');
+  // Shown above the fold while the field still holds it untouched.
+  const heardSerial = heardSerialOffer !== null && serialNumber === heardSerialOffer.serial ? serialNumber : null;
   const [timerName, setTimerName] = useState(seed?.timerName ?? '');
   // The gym this board sits in. Picking one is what gets the board onto the map
   // under a gym rather than as a lone pin (#4166).
@@ -227,6 +236,12 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
     setSetIds(preset?.setIds ?? []);
     setAppliedPreset(preset);
     setAngle(defaultAngle(next));
+    // A heard serial belongs to the box's own board type: another type is
+    // another box. One the climber typed over stays.
+    const offer = heardSerialOfferRef.current;
+    if (offer && next !== offer.boardName) {
+      setSerialNumber((current) => (current === offer.serial ? '' : current));
+    }
   }, []);
   const selectLayout = useCallback(
     (next: number) => {
@@ -416,6 +431,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
     timerName,
     selectedGym,
     // derived
+    heardSerial,
     layouts,
     sizes,
     sets,

@@ -4,16 +4,18 @@
 // link. The screen keeps "Use my location", which belongs to Near you, and the
 // picks, which belong to the whole picker.
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
+import { AppState } from 'react-native';
 import type { useRouter } from 'expo-router';
 import { trackBoardKindChosen } from '../../lib/boards/board-picker-add-analytics';
 import type { BoardReturnTo } from '../../lib/boards/board-return-to';
 import { BUILDER_PRESET_PARAM_VALUE } from '../../lib/boards/first-board-mode';
+import { clearHeardSerialOffer, offerHeardSerial } from '../../lib/boards/heard-serial-offer';
 import { setPendingBoardRecognition } from '../../lib/boards/pending-board-recognition';
 import type { FirstBoardPath } from '../../lib/onboarding/first-board-picker-analytics';
 import { openAppSettings } from '../../lib/open-app-settings';
 import { addBoardRoute } from './add-board-route';
-import { turnOnBluetooth } from './bluetooth-radio';
+import { isBluetoothPoweredOn, turnOnBluetooth } from './bluetooth-radio';
 import type { UnnamedInRangeRow } from './picker-top-view';
 import { builderSerialForRow } from './quickstart-scan-rows';
 import type { PickerScan } from './use-picker-board-scan';
@@ -57,7 +59,32 @@ export function useInRangeActions({
   source: string | undefined;
   gymFirstEnabled: boolean;
 }): InRangeActions {
-  const { start, stop, listenedLongEnough, retryLookup } = scan;
+  const { start, stop, listenedLongEnough, retryLookup, lookup } = scan;
+  const startRef = useRef(start);
+  startRef.current = start;
+
+  // A serial offered to a builder this picker never opened goes with the picker.
+  useEffect(() => clearHeardSerialOffer, []);
+
+  // Back from Android's Turn on dialog (or the settings page it fell back to):
+  // read the radio once and scan if it is on, whether or not auto-scan is on.
+  // The scan's own guard drops this when the radio-on report already started one.
+  const returnWatchRef = useRef<{ remove(): void } | null>(null);
+  const stopWatchingReturn = useCallback(() => {
+    returnWatchRef.current?.remove();
+    returnWatchRef.current = null;
+  }, []);
+  useEffect(() => stopWatchingReturn, [stopWatchingReturn]);
+  const scanWhenBackIfOn = useCallback(() => {
+    stopWatchingReturn();
+    returnWatchRef.current = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState !== 'active') return;
+      stopWatchingReturn();
+      void isBluetoothPoweredOn().then((poweredOn) => {
+        if (poweredOn) startRef.current();
+      });
+    });
+  }, [stopWatchingReturn]);
 
   const onStart = useCallback(() => {
     chooseFirstBoardPath('scan');
@@ -68,8 +95,9 @@ export function useInRangeActions({
     chooseFirstBoardPath('scan');
     void turnOnBluetooth().then((outcome) => {
       if (outcome === 'already_on') start();
+      else scanWhenBackIfOn();
     });
-  }, [chooseFirstBoardPath, start]);
+  }, [chooseFirstBoardPath, start, scanWhenBackIfOn]);
 
   const onOpenSettings = useCallback(() => {
     chooseFirstBoardPath('scan');
@@ -95,6 +123,7 @@ export function useInRangeActions({
       stop();
       chooseFirstBoardPath('scan');
       dropHeldBox();
+      clearHeardSerialOffer();
       if (row.kind === 'unknown_setup' || !row.deviceId || !soleBoxHeardLongEnough) return false;
       setPendingBoardRecognition({ deviceId: row.deviceId, boardType: row.boardType });
       return true;
@@ -113,12 +142,14 @@ export function useInRangeActions({
 
   // The builder, opened on that type with its preset. A box that advertised a
   // serial nobody has saved opens with that serial filled in, when it was the
-  // only one of its type heard (`builderSerialForRow`); read, like the hold,
-  // before the scan stops.
+  // only box of its type heard (`builderSerialForRow`); read, like the hold,
+  // before the scan stops. The offer is what lets the builder trust the param
+  // (heard-serial-offer.ts).
   const onOwnBoard = useCallback(
     (row: UnnamedInRangeRow) => {
-      const serial = builderSerialForRow(row, listenedLongEnough());
+      const serial = builderSerialForRow(row, listenedLongEnough(), lookup);
       startUnnamedRowAction(row);
+      if (serial) offerHeardSerial({ serial, boardType: row.boardType });
       const boardKind = gymFirstEnabled ? 'home' : undefined;
       if (boardKind) trackBoardKindChosen({ kind: boardKind, surface: 'in_range', preAnswered: true });
       const builder = addBoardRoute('board', {
@@ -132,7 +163,7 @@ export function useInRangeActions({
         params: { ...builder.params, presetBoardType: row.boardType, ...(serial ? { serial } : {}) },
       });
     },
-    [listenedLongEnough, startUnnamedRowAction, router, boardReturnTo, source, gymFirstEnabled],
+    [listenedLongEnough, lookup, startUnnamedRowAction, router, boardReturnTo, source, gymFirstEnabled],
   );
 
   return { onStart, onTurnOnBluetooth, onOpenSettings, onRetryLookup, startUnnamedRowAction, onSearchGyms, onOwnBoard };

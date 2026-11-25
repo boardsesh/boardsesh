@@ -216,6 +216,7 @@ const UNKNOWN_SETUP: UnnamedInRangeRow = {
   boardType: 'kilter',
   rssi: -60,
   serials: ['751737'],
+  serialLessBoxCount: 0,
 };
 type AtGym = Extract<PickerTopContent<DiscoveryBoardItem>, { kind: 'at_gym' }>;
 const AT_CRUX: AtGym = {

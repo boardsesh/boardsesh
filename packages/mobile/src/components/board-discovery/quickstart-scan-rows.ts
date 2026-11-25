@@ -121,10 +121,20 @@ export type QuickstartRow =
   | { kind: 'board'; key: string; board: UserBoard; rssi: number | null; recognizedBy: QuickstartRowRecognition }
   /**
    * Serials nobody has saved a board for, one row per board type. `serials`
-   * are every one of that type heard, in the order heard: with exactly one,
-   * the builder can open with it filled in (`builderSerialForRow`).
+   * are every serial of that type heard that no saved board answers for,
+   * looked up or not, in the order heard; `serialLessBoxCount` the bare-name
+   * boxes of that type heard, which could be the same wall. With exactly one
+   * box behind the row, the builder can open with its serial filled in
+   * (`builderSerialForRow`).
    */
-  | { kind: 'unknown_setup'; key: string; boardType: BoardName; rssi: number | null; serials: readonly string[] }
+  | {
+      kind: 'unknown_setup';
+      key: string;
+      boardType: BoardName;
+      rssi: number | null;
+      serials: readonly string[];
+      serialLessBoxCount: number;
+    }
   /** A MoonBoard. Its controller never says which layout it drives. */
   | { kind: 'moonboard'; key: string; boardType: BoardName; rssi: number | null; deviceId: string | null }
   /** An Aurora box that advertises only its type, no serial. */
@@ -221,9 +231,9 @@ export function buildQuickstartRows({
   const signalBySerial = new Map<string, number | null>();
   const groupSignal = new Map<string, { kind: GroupedRowKind; boardType: BoardName; rssi: number | null }>();
   const groupDeviceIds = new Map<string, Set<string>>();
-  // The unsaved serials behind each unknown_setup row. A Set: a box heard
-  // twice is still one box.
-  const groupSerials = new Map<string, Set<string>>();
+  // Serials a saved board answers for. Every other serial of a type is a box
+  // the unknown_setup row of that type may stand for.
+  const matchedSerials = new Set<string>();
   const recognizedById = indexRecognizedBoardDevices(recognition?.devices ?? []);
   const knownBoardsByUuid = new Map<string, UserBoard>();
   for (const board of recognition?.knownBoards ?? []) {
@@ -268,7 +278,6 @@ export function buildQuickstartRows({
   const isAnswered = (serial: string): boolean => lookup === 'resolved' || (carriedSerials?.has(serial) ?? false);
 
   if (lookup === 'resolved' || carriesAnswer) {
-    const matchedSerials = new Set<string>();
     // A hidden board found by serial has an empty uuid, so rows key on its
     // serial and config instead (#6552).
     const boardKeys = boardRowKeys(boards);
@@ -291,10 +300,6 @@ export function buildQuickstartRows({
       if (device.kind !== 'serial' || !isAnswered(device.serial)) continue;
       if (matchedSerials.has(device.serial) || !device.boardType) continue;
       addToGroup('unknown_setup', device.boardType, device.rssi);
-      const groupKey = `unknown_setup:${device.boardType}`;
-      const serials = groupSerials.get(groupKey) ?? new Set<string>();
-      serials.add(device.serial);
-      groupSerials.set(groupKey, serials);
     }
   }
   if (lookup === 'failed') {
@@ -326,7 +331,7 @@ export function buildQuickstartRows({
         key: groupKey,
         boardType: group.boardType,
         rssi: group.rssi,
-        serials: [...(groupSerials.get(groupKey) ?? [])],
+        ...boxesOfType(devices, group.boardType, matchedSerials),
       });
     } else {
       rows.push({
@@ -343,18 +348,49 @@ export function buildQuickstartRows({
 }
 
 /**
+ * Every box of `boardType` heard that the unknown_setup row may stand for: the
+ * serials no saved board answers for (looked up or not; a Set, since a box
+ * heard twice is one box) and the bare-name boxes of that type, which say no
+ * serial at all.
+ */
+function boxesOfType(
+  devices: readonly QuickstartScanDevice[],
+  boardType: BoardName,
+  matchedSerials: ReadonlySet<string>,
+): { serials: string[]; serialLessBoxCount: number } {
+  const serials = new Set<string>();
+  const serialLessDeviceIds = new Set<string>();
+  for (const device of devices) {
+    if (device.boardType !== boardType) continue;
+    if (device.kind === 'serial') {
+      if (!matchedSerials.has(device.serial)) serials.add(device.serial);
+    } else if (device.kind === 'bare_name') {
+      serialLessDeviceIds.add(device.deviceId);
+    }
+  }
+  return { serials: [...serials], serialLessBoxCount: serialLessDeviceIds.size };
+}
+
+/**
  * The serial the builder opens with when the climber says a box it heard but
- * can't name is their own: only an unknown_setup row (MoonBoards and bare-name
- * boxes advertise none), only when exactly one box of that type was heard, and
- * only when the scan listened long enough for "one" to mean one
- * (`listenedLongEnoughForSoleBox`). With two unsaved Kilter boxes in range the
- * signal can't say which one the climber stands at, so the field stays empty
- * rather than guess. The builder's serial checks still run on what it fills.
+ * can't name is their own. Only:
+ * - an unknown_setup row (MoonBoards and bare-name boxes advertise none);
+ * - once the lookup has answered every serial heard (`resolved`): an
+ *   unanswered one may be a second unsaved box;
+ * - when exactly one box of that type was heard, counting every unsaved
+ *   serial and every bare-name box of the type;
+ * - when the scan listened long enough for "one" to mean one
+ *   (`listenedLongEnoughForSoleBox`).
+ * With two boxes of a type in range the signal can't say which one the
+ * climber stands at, so the field stays empty rather than guess. The
+ * builder's serial checks still run on what it fills.
  */
 export function builderSerialForRow(
   row: Extract<QuickstartRow, { kind: 'unknown_setup' | 'moonboard' | 'bare_name' }>,
   soleBoxHeardLongEnough: boolean,
+  lookup: QuickstartLookupState,
 ): string | null {
-  if (row.kind !== 'unknown_setup' || !soleBoxHeardLongEnough || row.serials.length !== 1) return null;
+  if (row.kind !== 'unknown_setup' || lookup !== 'resolved' || !soleBoxHeardLongEnough) return null;
+  if (row.serials.length !== 1 || row.serialLessBoxCount !== 0) return null;
   return row.serials[0] ?? null;
 }

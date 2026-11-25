@@ -452,6 +452,8 @@
       "serial": "Controller-Seriennummer",
       "serialPlaceholder": "z. B. ABC-12345",
       "serialHint": "Optional — dein Controller verknüpft sich beim ersten Verbinden selbst.",
+      "heardSerial": "Seriennummer {{serial}}, vom Controller vor dir.",
+      "heardSerialChange": "Ändern",
       "save": "Mein Board speichern",
       "createError": "Dieses Board ließ sich nicht anlegen. Versuch es nochmal.",
       "limitReached": "Du hast die maximale Anzahl Boards für ein Konto erreicht. Lösch ein Board, das du nicht mehr nutzt, um ein neues anzulegen.",

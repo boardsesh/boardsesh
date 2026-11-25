@@ -8,19 +8,34 @@ import type { UnnamedInRangeRow } from '../picker-top-view';
 // Bluetooth. The serial rule itself is quickstart-scan-rows.test.ts's; here,
 // that the builder gets it as its `serial` param, and only then.
 
+const appState = vi.hoisted(() => ({ handlers: [] as Array<(state: string) => void> }));
+vi.mock('react-native', () => ({
+  AppState: {
+    addEventListener: (_event: string, handler: (state: string) => void) => {
+      appState.handlers.push(handler);
+      return {
+        remove: () => {
+          appState.handlers = appState.handlers.filter((registered) => registered !== handler);
+        },
+      };
+    },
+  },
+}));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../../lib/open-app-settings', () => ({ openAppSettings: vi.fn(async () => true) }));
 const held = vi.hoisted(() => ({ set: vi.fn() }));
 vi.mock('../../../lib/boards/pending-board-recognition', () => ({ setPendingBoardRecognition: held.set }));
-const radio = vi.hoisted(() => ({ outcome: 'asked' as 'asked' | 'already_on', turnOn: vi.fn() }));
+const radio = vi.hoisted(() => ({ outcome: 'asked' as 'asked' | 'already_on', turnOn: vi.fn(), poweredOn: false }));
 vi.mock('../bluetooth-radio', () => ({
   turnOnBluetooth: async () => {
     radio.turnOn();
     return radio.outcome;
   },
+  isBluetoothPoweredOn: async () => radio.poweredOn,
 }));
 
 const { useInRangeActions } = await import('../use-in-range-actions');
+const { clearHeardSerialOffer, isHeardSerialOffered } = await import('../../../lib/boards/heard-serial-offer');
 
 const scanCtrl = { listenedLongEnough: true };
 const scan: PickerScan = {
@@ -52,7 +67,14 @@ function renderActions() {
 }
 
 function unknownKilter(serials: string[]): UnnamedInRangeRow {
-  return { kind: 'unknown_setup', key: 'unknown_setup:kilter', boardType: 'kilter', rssi: -50, serials };
+  return {
+    kind: 'unknown_setup',
+    key: 'unknown_setup:kilter',
+    boardType: 'kilter',
+    rssi: -50,
+    serials,
+    serialLessBoxCount: 0,
+  };
 }
 
 function pushedParams(): Record<string, string> {
@@ -61,7 +83,14 @@ function pushedParams(): Record<string, string> {
   return route.params;
 }
 
+function fireAppState(nextState: string) {
+  for (const handler of appState.handlers.slice()) handler(nextState);
+}
+
 beforeEach(() => {
+  appState.handlers = [];
+  radio.poweredOn = false;
+  clearHeardSerialOffer();
   scanCtrl.listenedLongEnough = true;
   radio.outcome = 'asked';
   radio.turnOn.mockClear();
@@ -83,6 +112,16 @@ describe("It's my own board", () => {
       serial: '751737',
     });
     expect(scan.stop).toHaveBeenCalledOnce();
+    // The builder trusts the param only because the picker offered it.
+    expect(isHeardSerialOffered({ serial: '751737', boardType: 'kilter' })).toBe(true);
+    expect(isHeardSerialOffered({ serial: '751737', boardType: 'tension' })).toBe(false);
+  });
+
+  it('withdraws an earlier offer when the next row offers none', () => {
+    const actions = renderActions();
+    actions.onOwnBoard(unknownKilter(['751737']));
+    actions.onOwnBoard(unknownKilter(['751737', '800001']));
+    expect(isHeardSerialOffered({ serial: '751737', boardType: 'kilter' })).toBe(false);
   });
 
   it.each<{ name: string; serials: string[]; listenedLongEnough: boolean }>([
@@ -115,12 +154,27 @@ describe("It's my own board", () => {
 });
 
 describe('Turn on Bluetooth', () => {
-  it('asks the system and leaves the scan to the radio coming on', async () => {
+  it('asks the system, then scans when the app comes back with the radio on', async () => {
     renderActions().onTurnOnBluetooth();
     await act(async () => {});
     expect(radio.turnOn).toHaveBeenCalledOnce();
     expect(scan.start).not.toHaveBeenCalled();
     expect(chooseFirstBoardPath).toHaveBeenCalledWith('scan');
+
+    radio.poweredOn = true;
+    fireAppState('background');
+    expect(appState.handlers).toHaveLength(1);
+    await act(async () => fireAppState('active'));
+    expect(scan.start).toHaveBeenCalledOnce();
+    // Read once: a later return to the app starts nothing.
+    expect(appState.handlers).toEqual([]);
+  });
+
+  it('starts nothing when the climber came back with the radio still off', async () => {
+    renderActions().onTurnOnBluetooth();
+    await act(async () => {});
+    await act(async () => fireAppState('active'));
+    expect(scan.start).not.toHaveBeenCalled();
   });
 
   it('scans straight away when the radio is already on', async () => {

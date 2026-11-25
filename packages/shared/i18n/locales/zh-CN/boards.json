@@ -452,6 +452,8 @@
       "serial": "控制器序列号",
       "serialPlaceholder": "例如 ABC-12345",
       "serialHint": "选填，首次连接时控制器会自动关联。",
+      "heardSerial": "序列号 {{serial}}，来自你面前的控制器。",
+      "heardSerialChange": "更改",
       "save": "保存我的训练板",
       "createError": "无法创建这块训练板，请重试。",
       "limitReached": "此账号的训练板数量已达上限。请删除不再使用的训练板，再添加新的。",

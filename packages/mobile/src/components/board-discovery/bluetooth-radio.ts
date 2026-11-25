@@ -18,6 +18,7 @@
 // should load ble-plx before a scan has.
 
 import { Linking, Platform } from 'react-native';
+import { openAppSettings } from '../../lib/open-app-settings';
 
 type RadioStateSubscription = { remove(): void };
 
@@ -37,37 +38,46 @@ export function bluetoothOffFix(platformOS: string): BluetoothOffFix {
 const REQUEST_ENABLE_ACTION = 'android.bluetooth.adapter.action.REQUEST_ENABLE';
 const BLUETOOTH_SETTINGS_ACTION = 'android.settings.BLUETOOTH_SETTINGS';
 
+/** Whether the radio reads on right now. An unreadable radio reads as off. Never throws. */
+export async function isBluetoothPoweredOn(): Promise<boolean> {
+  try {
+    const radioState: string = await (await loadBleManager()).state();
+    return radioState === 'PoweredOn';
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Turn on Bluetooth (Android). `already_on`: the radio came on since the scan
  * gave up, so the caller should just scan; the dialog would show nothing.
- * `asked`: the system dialog (or, where it can't open, the Bluetooth settings
- * page) is up, and the scan starts by itself when the radio reports on. Never
- * throws, so a button handler can call it bare.
+ * `asked`: the system dialog is up, or where it can't open the Bluetooth
+ * settings page, or where neither opens the app's own settings page; the
+ * caller reads the radio again when the app comes back. Never throws, so a
+ * button handler can call it bare.
  */
 export async function turnOnBluetooth(): Promise<'already_on' | 'asked'> {
   if (Platform.OS !== 'android') return 'asked';
-  try {
-    const radioState: string = await (await loadBleManager()).state();
-    if (radioState === 'PoweredOn') return 'already_on';
-  } catch {
-    // Unreadable: ask anyway, the dialog says nothing harmful when it is on.
-  }
-  try {
-    await Linking.sendIntent(REQUEST_ENABLE_ACTION);
-  } catch {
+  // Unreadable reads as off: ask anyway, the dialog says nothing harmful when it is on.
+  if (await isBluetoothPoweredOn()) return 'already_on';
+  for (const action of [REQUEST_ENABLE_ACTION, BLUETOOTH_SETTINGS_ACTION]) {
     try {
-      await Linking.sendIntent(BLUETOOTH_SETTINGS_ACTION);
+      await Linking.sendIntent(action);
+      return 'asked';
     } catch {
-      // Nothing more to try: leave the climber on the picker.
+      // That page can't open here: try the next one.
     }
   }
+  await openAppSettings();
   return 'asked';
 }
 
 /**
- * Calls `onPoweredOn` the first time the radio reports on after this call
- * (a change, not the state it is already in), then stops listening. Returns
- * the unsubscribe. A manager that can't be listened to calls nothing.
+ * Calls `onPoweredOn` once, the first time the radio is on after this call:
+ * from a report of it coming on, or from one read of the state right after
+ * subscribing, so a radio that came on before the subscription took is not
+ * missed. Then stops listening. Returns the unsubscribe. A manager that can't
+ * be listened to calls nothing.
  */
 export function watchBluetoothPoweredOn(onPoweredOn: () => void): () => void {
   let done = false;
@@ -75,11 +85,17 @@ export function watchBluetoothPoweredOn(onPoweredOn: () => void): () => void {
   void loadBleManager()
     .then((bleManager) => {
       if (done) return;
-      subscription = bleManager.onStateChange((radioState: string) => {
-        if (done || radioState !== 'PoweredOn') return;
+      const fire = () => {
+        if (done) return;
         done = true;
         onPoweredOn();
+      };
+      subscription = bleManager.onStateChange((radioState: string) => {
+        if (radioState === 'PoweredOn') fire();
       }, false);
+      return bleManager.state().then((radioState: string) => {
+        if (radioState === 'PoweredOn') fire();
+      });
     })
     .catch(() => {
       // No manager to listen to: Scan again and a fresh picker still work.

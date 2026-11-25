@@ -12,6 +12,9 @@ vi.mock('react-native', () => ({
   Linking: linking,
 }));
 
+const settings = vi.hoisted(() => ({ openAppSettings: vi.fn(async () => true) }));
+vi.mock('../../../lib/open-app-settings', () => settings);
+
 type StateListener = (radioState: string) => void;
 const radio = vi.hoisted(() => ({
   state: 'PoweredOff',
@@ -35,7 +38,8 @@ vi.mock('../../../lib/ble/ble-manager', () => ({
   }),
 }));
 
-const { bluetoothOffFix, turnOnBluetooth, watchBluetoothPoweredOn } = await import('../bluetooth-radio');
+const { bluetoothOffFix, isBluetoothPoweredOn, turnOnBluetooth, watchBluetoothPoweredOn } =
+  await import('../bluetooth-radio');
 
 function emit(radioState: string) {
   for (const listener of radio.listeners.slice()) listener(radioState);
@@ -48,6 +52,7 @@ async function settle() {
 beforeEach(() => {
   platform.OS = 'android';
   linking.sendIntent.mockReset().mockResolvedValue(undefined);
+  settings.openAppSettings.mockClear();
   radio.state = 'PoweredOff';
   radio.listeners = [];
   radio.emitCurrentState = [];
@@ -79,9 +84,15 @@ describe('turnOnBluetooth', () => {
     ]);
   });
 
-  it('never throws, even when nothing opens', async () => {
+  it("opens the app's settings when neither Bluetooth page opens, and never throws", async () => {
     linking.sendIntent.mockRejectedValue(new Error('no activity'));
     await expect(turnOnBluetooth()).resolves.toBe('asked');
+    expect(settings.openAppSettings).toHaveBeenCalledOnce();
+  });
+
+  it("leaves the app's settings alone when the dialog opened", async () => {
+    await turnOnBluetooth();
+    expect(settings.openAppSettings).not.toHaveBeenCalled();
   });
 
   it('says the radio is already on rather than show a dialog with nothing to do', async () => {
@@ -97,8 +108,28 @@ describe('turnOnBluetooth', () => {
   });
 });
 
+describe('isBluetoothPoweredOn', () => {
+  it.each([
+    { radioState: 'PoweredOn', poweredOn: true },
+    { radioState: 'PoweredOff', poweredOn: false },
+    { radioState: 'Resetting', poweredOn: false },
+  ])('$radioState reads $poweredOn', async ({ radioState, poweredOn }) => {
+    radio.state = radioState;
+    await expect(isBluetoothPoweredOn()).resolves.toBe(poweredOn);
+  });
+});
+
 describe('watchBluetoothPoweredOn', () => {
-  it('calls once, on the radio coming on, and not for the state it is already in', async () => {
+  it('calls once when the radio came on before the subscription took', async () => {
+    radio.state = 'PoweredOn';
+    const onPoweredOn = vi.fn();
+    watchBluetoothPoweredOn(onPoweredOn);
+    await vi.waitFor(() => expect(onPoweredOn).toHaveBeenCalledOnce());
+    emit('PoweredOn');
+    expect(onPoweredOn).toHaveBeenCalledOnce();
+  });
+
+  it('calls once, when the radio comes on, and not while it reads off', async () => {
     const onPoweredOn = vi.fn();
     const stop = watchBluetoothPoweredOn(onPoweredOn);
     await settle();

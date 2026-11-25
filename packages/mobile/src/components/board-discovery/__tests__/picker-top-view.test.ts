@@ -65,6 +65,7 @@ const UNKNOWN_SETUP_ROW: QuickstartRow = {
   boardType: 'tension',
   rssi: -45,
   serials: ['T-1'],
+  serialLessBoxCount: 0,
 };
 const LOOKUP_FAILED_ROW: QuickstartRow = { kind: 'lookup_failed', key: 'lookup_failed', rssi: -40 };
 

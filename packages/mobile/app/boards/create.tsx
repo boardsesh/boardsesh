@@ -40,6 +40,7 @@ import {
   serialReuseDisclosure,
 } from '../../src/lib/boards/serial-reuse';
 import { builderSerialParam } from '../../src/components/board-discovery/add-board-route';
+import { isHeardSerialOffered } from '../../src/lib/boards/heard-serial-offer';
 import { useBoardBuilder } from '../../src/components/board-discovery/use-board-builder';
 import { usePrivacySettings } from '../../src/lib/graphql/hooks/use-privacy';
 import { BoardForm, type BoardConfigError } from '../../src/components/board-discovery/BoardForm';
@@ -204,6 +205,18 @@ function classifyCreateFailure(error: unknown): 'rate_limited' | 'auth' | 'board
   return 'exception';
 }
 
+/**
+ * The `serial` param, when it came from the In range slot: it needs the
+ * `presetBoardType` it was heard as, and the picker's offer of exactly that
+ * serial for exactly that type.
+ */
+function heardSerialForBuilder(serialValue: string | undefined, boardTypeValue: string | undefined) {
+  const serial = builderSerialParam(serialValue);
+  const boardType = toBoardName(boardTypeValue);
+  if (!serial || !boardType) return undefined;
+  return isHeardSerialOffered({ serial, boardType }) ? serial : undefined;
+}
+
 export default function CreateBoard() {
   const params = useLocalSearchParams<{
     returnTo?: string;
@@ -218,7 +231,9 @@ export default function CreateBoard() {
     /**
      * With `presetBoardType`: the serial of the one unsaved box of that type
      * the In range slot heard, so the climber doesn't type it. Absent when it
-     * heard none, or two or more (`builderSerialForRow`).
+     * heard none, or two or more (`builderSerialForRow`). Filled in only when
+     * the picker just offered this serial for this type (heard-serial-offer.ts):
+     * a link naming a serial by itself opens with the field empty.
      */
     serial?: string;
     /** `home` or `gym` from the gym-first flow (#8151): analytics, and whether a bare open asks first. */
@@ -272,10 +287,14 @@ export default function CreateBoard() {
   const initialBoardName = presetRequested
     ? (toBoardName(params.presetBoardType) ?? undefined)
     : (toBoardName(params.boardType) ?? undefined);
+  // Read once: the builder only takes its first value, and the offer can expire under an open form.
+  const [initialSerialNumber] = useState(() =>
+    presetRequested ? heardSerialForBuilder(params.serial, params.presetBoardType) : undefined,
+  );
   const builder = useBoardBuilder(null, {
     preset: presetRequested ? presetForBoard : undefined,
     initialBoardName,
-    initialSerialNumber: presetRequested ? builderSerialParam(params.serial) : undefined,
+    initialSerialNumber,
     privacyEnabled: privacySettings?.enabled,
   });
 

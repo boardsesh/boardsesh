@@ -765,6 +765,51 @@ describe('usePickerBoardScan with Bluetooth off', () => {
     expect(radioWatch.subscriptions).toBe(0);
   });
 
+  it('starts nothing after a pick, until the next tap', async () => {
+    radioOffOnStart();
+    const { result, rerender } = renderPickerScan();
+    await waitFor(() => expect(startTriggers()).toEqual(['picker_auto']));
+    rerender({ focused: true, autoStart: true });
+    await waitFor(() => expect(result.current.phase).toBe('blocked_off'));
+
+    act(() => result.current.stop());
+    rerender({ focused: true, autoStart: true });
+    radioComesOn();
+    expect(startTriggers()).toEqual(['picker_auto']);
+  });
+
+  // Android's Turn on dialog reads as the background: the radio's report lands
+  // there, and the start waits for the app. Past a minute the climber has moved on.
+  it.each<{ name: string; heldMs: number; runs: boolean }>([
+    { name: 'runs a held radio start when the app is back within a minute', heldMs: 20_000, runs: true },
+    { name: 'drops a held radio start older than a minute', heldMs: 61_000, runs: false },
+  ])('$name', async ({ heldMs, runs }) => {
+    radioOffOnStart();
+    const { result, rerender } = renderPickerScan();
+    await waitFor(() => expect(startTriggers()).toEqual(['picker_auto']));
+    rerender({ focused: true, autoStart: true });
+    await waitFor(() => expect(result.current.phase).toBe('blocked_off'));
+
+    // The radio's start gets through its checks while the app is in the background.
+    appState.currentState = 'background';
+    scan.start.mockImplementation(async () => {
+      scan.options?.mayStartRadio?.();
+    });
+    radioComesOn();
+    await act(async () => {});
+    expect(startTriggers()).toEqual(['picker_auto', 'picker_tap']);
+
+    scan.start.mockImplementation(async () => {
+      scan.status = 'scanning';
+    });
+    act(() => {
+      vi.advanceTimersByTime(heldMs);
+    });
+    fireAppState('active');
+    await act(async () => {});
+    expect(startTriggers()).toEqual(runs ? ['picker_auto', 'picker_tap', 'picker_tap'] : ['picker_auto', 'picker_tap']);
+  });
+
   it('starts nothing twice when a tap already started the scan', async () => {
     scan.status = 'unavailable';
     scan.unavailableReason = 'powered_off';

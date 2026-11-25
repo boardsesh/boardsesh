@@ -452,6 +452,8 @@
       "serial": "Controller serial",
       "serialPlaceholder": "e.g. ABC-12345",
       "serialHint": "Optional — your controller links itself the first time you connect.",
+      "heardSerial": "Serial {{serial}}, from the box in front of you.",
+      "heardSerialChange": "Change",
       "save": "Save my board",
       "createError": "Couldn't create that board. Try again.",
       "limitReached": "You've reached the maximum number of boards for one account. Delete a board you no longer use to add another.",
