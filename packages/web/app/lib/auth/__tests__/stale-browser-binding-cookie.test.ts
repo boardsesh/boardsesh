@@ -17,6 +17,7 @@ const origin = 'http://localhost:3000';
 const io = vi.hoisted(() => ({
   request: undefined as NextRequest | undefined,
   authorizeCalls: 0,
+  passwordCalls: 0,
 }));
 
 vi.mock('server-only', () => ({}));
@@ -42,8 +43,18 @@ vi.mock('@/app/lib/auth/auth-options', async () => {
         }),
       ],
       callbacks: {
-        jwt: async ({ token, user }: { token: JWT; user?: { id: string } }) => {
-          if (user) token.authSessionId = `login-${user.id}`;
+        jwt: async ({
+          token,
+          user,
+        }: {
+          token: JWT;
+          user?: { id: string; webCredentialProof?: { authSessionId: string; generation: number } };
+        }) => {
+          if (user) {
+            if (!user.webCredentialProof) throw new Error('Owned fixture requires backend proof');
+            token.authSessionId = user.webCredentialProof.authSessionId;
+            token.gen = user.webCredentialProof.generation;
+          }
           return token;
         },
         session: async ({ session, token }: { session: Session; token: JWT }) => ({
@@ -56,6 +67,32 @@ vi.mock('@/app/lib/auth/auth-options', async () => {
     },
   };
 });
+
+// Replace password-service I/O only; NextAuth, stale-cookie handling and the
+// credential-admission HTTP path remain real in this browser-cookie fixture.
+vi.mock('@/app/lib/auth/pre-enforcement-password-client.server', () => ({
+  createPreEnforcementPasswordCommandClient: () => ({
+    password: async () => {
+      io.passwordCalls += 1;
+      return {
+        protocolVersion: 2,
+        operation: 'password',
+        requestId: 'stale-cookie-password-fixture',
+        outcome: 'authenticated',
+        user: { id: 'climber-a', email: 'climber-a@example.invalid', name: null, image: null },
+        verification: { userId: 'climber-a', required: false, verified: true },
+        credentialProof: {
+          version: 1,
+          userId: 'climber-a',
+          authSessionId: 'login-climber-a',
+          generation: 0,
+          authenticatedAt: new Date().toISOString(),
+          linkGuarded: true,
+        },
+      };
+    },
+  }),
+}));
 
 import { GET as authGet, POST as authPost } from '@/app/api/auth/[...nextauth]/route';
 import { GET as wsAuthGet } from '@/app/api/internal/ws-auth/route';
@@ -163,6 +200,7 @@ beforeEach(() => {
   vi.stubEnv('CURRENT_STORE_WEB_OAUTH_MODE', 'legacy');
   vi.stubEnv('BACKEND_INTERNAL_URL', `ws://127.0.0.1:${(backend.address() as AddressInfo).port}/graphql`);
   io.authorizeCalls = 0;
+  io.passwordCalls = 0;
   admissionReads = 0;
   cookieJar = new Map();
 });
@@ -182,7 +220,8 @@ describe.each([
     const response = await credentialsLogin();
     expect(response.status).toBe(200);
     expect(response.headers.get('X-Boardsesh-Credential-Authority')).toBeNull();
-    expect(io.authorizeCalls).toBe(1);
+    expect(io.authorizeCalls).toBe(0);
+    expect(io.passwordCalls).toBe(1);
     remember(response);
     expect((await decode({ token: cookieJar.get(SESSION_COOKIE), secret }))?.sub).toBe('climber-a');
   });

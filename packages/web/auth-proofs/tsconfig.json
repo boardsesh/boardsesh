@@ -3,7 +3,9 @@
   "compilerOptions": {
     "incremental": false,
     "target": "ES2022",
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
   "include": [
     "web-credential-proof.integration.proof.ts",
@@ -28,7 +30,9 @@
     "web-session-harness.ts",
     "route-harness.ts",
     "credential-proof.vite.config.ts",
-    "../app/lib/auth/types.ts"
+    "../app/lib/auth/types.ts",
+    "pre-enforcement-password.integration.proof.ts",
+    "password-login.vite.config.ts"
   ],
   "exclude": []
 }

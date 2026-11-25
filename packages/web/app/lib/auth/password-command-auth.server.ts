@@ -13,14 +13,14 @@ import {
   webPasswordMode,
   type PasswordCommandClient,
 } from './password-command-client.server';
-import { PasswordGuessRefusedError, readRequestDeviceToken } from './guess-limit-client.server';
+import { createPreEnforcementPasswordCommandClient } from './pre-enforcement-password-client.server';
+import { readRequestDeviceToken } from './guess-limit-client.server';
 import { resolvePublicAuthOrigin } from './canonical-auth-url';
 import { checkRateLimit, releaseRateLimitAttempt } from './rate-limiter';
 import { cloudflareVisitorRateLimitKey, trustedClientRateLimitKey } from './trusted-client-ip.server';
 
 type AuthenticatedReply = Extract<PasswordReply, { outcome: 'authenticated' }>;
 type Provider = NextAuthOptions['providers'][number];
-type CredentialsConfig = Parameters<typeof CredentialsProvider>[0];
 
 /** Same per-minute number as native login and web registration. */
 const LOGIN_ATTEMPTS_PER_CLIENT = 10;
@@ -30,36 +30,6 @@ const UNKEYED_WARNING_INTERVAL_MS = 60_000;
 
 function isCredentialsProvider(provider: Provider): boolean {
   return ((provider.options as { id?: string } | undefined)?.id ?? provider.id) === 'credentials';
-}
-
-/**
- * The legacy credentials provider, calling `onPasswordAccepted` whenever its own
- * authorize accepts a password. NextAuth reads a provider's settings from its
- * `options`, so that is where the original authorize lives.
- */
-function reportAcceptedPassword(
-  existing: Provider,
-  onPasswordAccepted: () => void,
-  onRefused: (retryAfterSeconds: number) => void,
-): Provider {
-  const configured = { ...existing, ...(existing.options as Partial<CredentialsConfig> | undefined) };
-  const { authorize } = configured as Pick<CredentialsConfig, 'authorize'>;
-  return CredentialsProvider({
-    id: configured.id,
-    name: configured.name,
-    credentials: (configured as Pick<CredentialsConfig, 'credentials'>).credentials,
-    async authorize(credentials, request) {
-      try {
-        const user = await authorize(credentials, request);
-        if (user) onPasswordAccepted();
-        return user;
-      } catch (error) {
-        if (!(error instanceof PasswordGuessRefusedError)) throw error;
-        onRefused(error.retryAfterSeconds);
-        return null;
-      }
-    },
-  });
 }
 
 /**
@@ -78,7 +48,7 @@ function reportAcceptedPassword(
  */
 export function createPasswordCommandAuthRequest(
   base: NextAuthOptions,
-  clientFactory: () => PasswordCommandClient = createPasswordCommandClient,
+  clientFactory?: () => Pick<PasswordCommandClient, 'password'>,
   onPasswordAccepted: () => void = () => {},
   clientAddress: string | null = null,
   requestOptions?: { webSession?: WebSessionRequest; cookieHeader?: string | null },
@@ -87,25 +57,12 @@ export function createPasswordCommandAuthRequest(
   let unavailable = false;
   let retryAfterSeconds: number | undefined;
   let verdict: AuthenticatedReply | undefined;
+  let defaultFamily = false;
+  let selectedClient = clientFactory;
   try {
-    if (webPasswordMode() === 'legacy') {
-      const options: NextAuthOptions = {
-        ...base,
-        providers: base.providers.map((existing) =>
-          isCredentialsProvider(existing)
-            ? reportAcceptedPassword(existing, onPasswordAccepted, (seconds) => {
-                retryAfterSeconds = seconds;
-              })
-            : existing,
-        ),
-      };
-      return {
-        options,
-        unavailable: () => false,
-        limited: () => retryAfterSeconds,
-        issuedWebSession: (): IssuedWebSessionReply | undefined => undefined,
-      };
-    }
+    defaultFamily = webPasswordMode() === 'legacy';
+    selectedClient ??= defaultFamily ? createPreEnforcementPasswordCommandClient : createPasswordCommandClient;
+    if (defaultFamily && webSession !== undefined) unavailable = true;
   } catch {
     unavailable = true;
   }
@@ -126,7 +83,9 @@ export function createPasswordCommandAuthRequest(
       try {
         const deviceToken = readRequestDeviceToken(requestOptions?.cookieHeader);
         const commandOptions = { ...(webSession ? { webSession } : {}), ...(deviceToken ? { deviceToken } : {}) };
-        const reply = await clientFactory().password(
+        const client = selectedClient;
+        if (!client) return rejectUnavailable();
+        const reply = await client().password(
           credentials.email,
           credentials.password,
           clientAddress ?? undefined,
@@ -138,6 +97,12 @@ export function createPasswordCommandAuthRequest(
           return null;
         }
         if (reply.outcome !== 'authenticated') return rejectUnavailable();
+        if (
+          !reply.credentialProof ||
+          reply.credentialProof.authenticatedAt === null ||
+          !reply.credentialProof.linkGuarded
+        )
+          return rejectUnavailable();
         if (webSession && !issuedAsAsked(reply)) return rejectUnavailable();
         verdict = reply;
         onPasswordAccepted();
@@ -231,9 +196,9 @@ export interface PasswordLoginAdmission {
 
 /**
  * Keeps one client from spending a shared login budget and locking out everyone
- * else. In staged mode that is the backend's process-wide budget. In legacy mode
- * it is this web process's event loop: every attempt, unknown address included,
- * costs about 200 ms of bcrypt here, so 5 a second from one client would fill it.
+ * else. Both default and staged password checks now run in the backend, behind
+ * its bounded work queue and client/account budgets. This public guard rejects
+ * over-budget requests before NextAuth can send an RPC.
  *
  * Only rejected passwords use up the 10 a minute. The attempt is counted here,
  * before NextAuth reads the body, and given back when the password is right, so

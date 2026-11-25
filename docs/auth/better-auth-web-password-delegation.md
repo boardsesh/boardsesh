@@ -2,6 +2,8 @@
 
 This implementation-only BA-03 slice moves web registration and password verification together behind a default-off staging mode. It does not switch authority to Better Auth, migrate identities or complete the single-writer boundary. Production activation remains **NO-GO**.
 
+The original default-local-password descriptions below are historical. The dependent [default password-proof adoption](better-auth-password-login-family.md) now sends legacy/default password checks to its separate private endpoint, requires its proof even with staged mode off, and has no local credential/generation fallback. Registration and the explicitly staged protocol retain their separate selectors. Old staged backends with credential-proof mode off are unavailable to the adopting web revision; backend/proof/key deployment comes first.
+
 ## Contracts and ownership
 
 `CURRENT_STORE_WEB_AUTH_MODE` defaults to `legacy`. Only the explicit `backend-staging` value selects delegation. Default-off mode does not require the new service secret, backend address, projection metadata or SMTP changes. A malformed enabled configuration, disabled backend, timeout, redirect or malformed reply cannot select legacy DB access or bcrypt as an availability fallback.

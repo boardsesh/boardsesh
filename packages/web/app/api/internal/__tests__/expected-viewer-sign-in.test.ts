@@ -138,7 +138,21 @@ async function signIn(shape: CookieShape = 'current'): Promise<void> {
   if (!jwt) throw new Error('auth-options has no jwt callback');
   const token = await jwt({
     token: { name: climber.name, email: climber.email, picture: null, sub: climber.id },
-    user: { id: climber.id, email: climber.email, name: climber.name },
+    user: {
+      id: climber.id,
+      email: climber.email,
+      name: climber.name,
+      // This fixture starts after backend password authentication. Each actual
+      // sign-in supplies its own immutable proof; renewals keep that proof's SID.
+      webCredentialProof: {
+        version: 1,
+        userId: climber.id,
+        authSessionId: randomUUID(),
+        generation: 0,
+        authenticatedAt: new Date().toISOString(),
+        linkGuarded: true,
+      },
+    },
     account: { provider: 'credentials', type: 'credentials', providerAccountId: climber.id },
     trigger: 'signIn',
     isNewUser: false,
