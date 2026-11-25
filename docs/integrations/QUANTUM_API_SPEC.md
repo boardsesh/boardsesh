@@ -1,7 +1,7 @@
 # Quantum Board / ewalls API integration notes
 
 **Inspected:** ewalls Android 2.6.5, version code 552, on 2026-11-19.
-**Status:** prototype evidence read from the shipped client. The agreed contract replaces it section by section; the open questions are in [quantum-ewalls.md](quantum-ewalls.md) and the sync design is in [board-manufacturer-sync.md](board-manufacturer-sync.md).
+**Status:** notes read from the shipped client, not a contract. The agreed contract replaces it section by section; the open questions are in [quantum-ewalls.md](quantum-ewalls.md) and the sync design is in [board-manufacturer-sync.md](board-manufacturer-sync.md).
 **Bluetooth:** [Quantum Board Bluetooth protocol](../boards/QUANTUM_BLUETOOTH_PROTOCOL_SPEC.md).
 
 Walltopia identifies **ewalls** (`com.walltopia.ewalls2`) as the companion app

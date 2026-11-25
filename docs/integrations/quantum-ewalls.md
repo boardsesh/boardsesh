@@ -22,30 +22,6 @@ Two things let us replace guesses with facts, and commit neither side to more:
 2. **A read-only system credential** for the public Quantum catalogue, and a
    sentence from eWalls saying which climbs that credential is meant to see.
 
-## Where Boardsesh is today
-
-Boardsesh has a working prototype of Quantum Board support. It is not
-released: the board is hidden in the apps behind a feature flag that is off,
-and the catalogue download has not been run against the production service.
-
-- All five models are supported as fixed board layouts: XL, L and M share one
-  layout; S Fitness and Belay each have their own.
-- The public catalogue is read from eWalls as a complete first download
-  followed by changes, every six hours. We first built this by reading the
-  code of the eWalls Android app (2.6.5), without sending requests, so it
-  rests on our reading and not on an agreed contract. Our notes are in
-  [QUANTUM_API_SPEC.md](QUANTUM_API_SPEC.md). We would like to replace it with
-  whatever eWalls specifies.
-- The board is lit over Bluetooth with the binary protocol. Boardsesh reads
-  the list of active players before it writes, and leaves other players'
-  layers alone. Notes:
-  [QUANTUM_BLUETOOTH_PROTOCOL_SPEC.md](../boards/QUANTUM_BLUETOOTH_PROTOCOL_SPEC.md).
-- Nothing personal is kept. The catalogue changes can include ascents,
-  favourites and projects; Boardsesh discards them, and writes nothing to
-  eWalls.
-- None of it has been tested against a real controller or with an account
-  eWalls has approved for the purpose.
-
 ## What Boardsesh proposes for Quantum
 
 | | Proposal |
@@ -60,6 +36,11 @@ and the catalogue download has not been run against the production service.
 ## Questions for eWalls
 
 Each has a letter and number so answers can refer to it.
+
+Where a question says "we see", it comes from our reading of the eWalls
+Android app, not from a contract. Our notes are in
+[QUANTUM_API_SPEC.md](QUANTUM_API_SPEC.md) and
+[QUANTUM_BLUETOOTH_PROTOCOL_SPEC.md](../boards/QUANTUM_BLUETOOTH_PROTOCOL_SPEC.md).
 
 ### A. Access
 
@@ -146,14 +127,13 @@ Each has a letter and number so answers can refer to it.
 The controller holds several coloured layers at once, one per active player,
 and eWalls shows who is on the wall.
 
-What Boardsesh does in the prototype:
+How Boardsesh intends to behave on a shared wall:
 
-- Lights one layer per climber and supports four layers at a time.
-- Reads the active players before every change and confirms afterwards.
-- Replaces or clears only its own layer.
-- Refuses to light a climb with more than 92 distinct diodes, the size of one
-  command, instead of cutting it short. See F9.
-- Supports the binary protocol only.
+- Light one layer per climber.
+- Read the active players before every change and confirm afterwards.
+- Replace or clear only its own layer.
+- Never cut a climb short to make it fit a command. See F9.
+- Use the binary protocol only.
 
 What we need to know:
 

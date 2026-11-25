@@ -141,7 +141,7 @@ Boardsesh pulls. We need:
 - **A stated retention** for the feed, and a clear signal when a cursor is too
   old and we must start over.
 
-Boardsesh refreshes on a schedule (every six hours in the prototype) and
+Boardsesh refreshes on a schedule (we suggest every six hours) and
 stages a full read before replacing anything, so a half-finished download
 never reaches climbers.
 
