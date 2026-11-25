@@ -16,6 +16,14 @@ const reply: Extract<PasswordReply, { outcome: 'authenticated' }> = {
   operation: 'password',
   requestId: 'e363934b-b7ba-41ba-a279-52185daa100e',
   outcome: 'authenticated',
+  credentialProof: {
+    version: 1,
+    userId: 'selected',
+    authSessionId: 'selected-login',
+    generation: 0,
+    authenticatedAt: '2026-11-24T01:02:03.000Z',
+    linkGuarded: true,
+  },
   user: { id: 'selected', email: 'duplicate@example.com', name: null, image: null },
   verification: { userId: 'selected', required: true, verified: false },
 };
@@ -43,40 +51,37 @@ function parameters(userId: string) {
 afterEach(() => vi.unstubAllEnvs());
 
 describe('request-local backend password verdict', () => {
-  it('keeps the legacy authorize and every other option, and needs no transport configuration when disabled', async () => {
+  it('delegates the default password path and never invokes the local provider', async () => {
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
     const original = base();
-    const factory = vi.fn();
-    const scoped = createPasswordCommandAuthRequest(original, factory);
+    const password = vi.fn(async () => reply);
+    const scoped = createPasswordCommandAuthRequest(original, () => ({ password }));
     expect(scoped.options.providers[0]).toBe(original.providers[0]);
-    expect(scoped.options.callbacks).toBe(original.callbacks);
-    await expect(provider(scoped.options).authorize({ email: 'x', password: 'y' }, { headers: {} })).resolves.toEqual({
-      id: 'local-fallback',
+    expect(await provider(scoped.options).authorize({ email: 'x', password: ' raw ' }, { headers: {} })).toMatchObject({
+      id: 'selected',
+      webCredentialProof: reply.credentialProof,
     });
-    expect(factory).not.toHaveBeenCalled();
+    expect(password).toHaveBeenCalledWith('x', ' raw ', undefined);
   });
-  it('reports a password legacy authorize accepts, and not one it rejects', async () => {
-    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
-    const accepted = vi.fn();
-    await provider(createPasswordCommandAuthRequest(base(), undefined, accepted).options).authorize(
-      { email: 'x', password: 'right' },
-      { headers: {} },
-    );
-    expect(accepted).toHaveBeenCalledOnce();
-
-    const rejecting = {
-      ...base(),
-      providers: [CredentialsProvider({ credentials: {}, authorize: async () => null })],
-    } satisfies NextAuthOptions;
-    accepted.mockClear();
-    await expect(
-      provider(createPasswordCommandAuthRequest(rejecting, undefined, accepted).options).authorize(
-        { email: 'x', password: 'wrong' },
-        { headers: {} },
-      ),
-    ).resolves.toBeNull();
-    expect(accepted).not.toHaveBeenCalled();
-  });
+  it.each(['legacy', 'backend-staging'])(
+    'rejects missing, unknown-age or unguarded password proof under %s',
+    async (mode) => {
+      vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', mode);
+      for (const credentialProof of [
+        undefined,
+        { ...reply.credentialProof!, authenticatedAt: null },
+        { ...reply.credentialProof!, linkGuarded: false },
+      ]) {
+        const scoped = createPasswordCommandAuthRequest(base(), () => ({
+          password: async () => ({ ...reply, credentialProof }),
+        }));
+        await expect(
+          provider(scoped.options).authorize({ email: 'x', password: 'right' }, { headers: {} }),
+        ).rejects.toThrow();
+        expect(scoped.unavailable()).toBe(true);
+      }
+    },
+  );
   it('reports a password the backend accepts, and not one it rejects', async () => {
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'backend-staging');
     const accepted = vi.fn();
@@ -124,7 +129,7 @@ describe('request-local backend password verdict', () => {
     }));
     await expect(
       provider(scoped.options).authorize({ email: 'duplicate@example.com', password: 'x' }, { headers: {} }),
-    ).resolves.toEqual(reply.user);
+    ).resolves.toEqual({ ...reply.user, webCredentialProof: reply.credentialProof });
     await expect(scoped.options.callbacks?.signIn?.(parameters('selected'))).resolves.toBe(
       '/auth/verify-request?error=EmailNotVerified',
     );
