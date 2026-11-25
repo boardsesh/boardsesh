@@ -1,4 +1,5 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import frenchConsent from '@boardsesh/i18n/locales/fr/consent.json';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 const mocks = vi.hoisted(() => ({
@@ -7,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   decide: vi.fn(),
   reportPromptShowing: vi.fn(),
 }));
+vi.mock('server-only', () => ({}));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@/app/lib/i18n/use-locale-router', () => ({ usePathnameWithoutLocale: () => mocks.state.pathname }));
 vi.mock('@/app/components/i18n/locale-link', () => ({
@@ -33,6 +35,7 @@ vi.mock('../consent-state-provider', async () => {
   };
 });
 
+import MarketingConsentBanner from '../../marketing/marketing-consent-banner';
 import ConsentBanner from '../consent-banner';
 
 beforeEach(() => {
@@ -44,6 +47,20 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('lazy privacy details', () => {
+  it('uses the marketing document language for the first choices and the full dialog', async () => {
+    mocks.load.mockImplementation(() => import('../consent-choices-dialog'));
+    render(await MarketingConsentBanner({ locale: 'fr' }));
+    expect(screen.getByRole('button', { name: frenchConsent.allow })).toBeTruthy();
+    expect(screen.getByRole('button', { name: frenchConsent.deny })).toBeTruthy();
+    expect(mocks.load).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: frenchConsent.details }));
+    const dialog = await screen.findByRole('dialog', { name: frenchConsent.privacyChoices });
+    expect(within(dialog).getByText(frenchConsent.adMeasurement)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: frenchConsent.deny }));
+    expect(mocks.decide).toHaveBeenCalledWith('denied');
+  });
+
   it('keeps the prompt and immediate choices without downloading a closed dialog', () => {
     render(<ConsentBanner />);
     expect(screen.getByText('bannerSummary')).toBeTruthy();

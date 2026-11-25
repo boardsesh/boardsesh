@@ -3,9 +3,8 @@
 import React from 'react';
 import Image from 'next/image';
 import Box from '@mui/material/Box';
-import { useTranslation } from 'react-i18next';
 import { resolveMarketingStaticAssetUrl } from '@/app/lib/marketing-static-asset-url';
-import { isSupportedLocale } from '@/app/lib/i18n/config';
+import { useDocumentLocale } from '@/app/lib/i18n/document-locale-context';
 import { marketingScreenshot, type MarketingShot } from '@/app/lib/marketing-screenshots';
 import { useMarketingPreview } from './marketing-preview-provider';
 import styles from './marketing-screenshot.module.css';
@@ -28,14 +27,10 @@ export function MarketingScreenshot({
   preload?: boolean;
   sizes?: string;
 }) {
-  // The default namespace, which the root layout loads on every page: only the
-  // language is read here, and asking for `marketing` would make a page that
-  // has no marketing catalog (the climb page) fetch it after hydration.
-  const { i18n } = useTranslation();
+  const locale = useDocumentLocale();
   const preview = useMarketingPreview();
   const platform = preview?.platform ?? 'android';
   const isWaitingForPlatform = preview?.isPlatformResolved === false;
-  const locale = isSupportedLocale(i18n.language) ? i18n.language : 'en-US';
   const capture = marketingScreenshot(platform, locale, shot);
   return (
     <Box

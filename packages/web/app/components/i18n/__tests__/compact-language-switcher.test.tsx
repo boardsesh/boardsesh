@@ -1,6 +1,7 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { DocumentLocaleProvider } from '@/app/lib/i18n/document-locale-context';
 import { LOCALE_LABELS, SUPPORTED_LOCALES } from '@/app/lib/i18n/config';
 
 const route = vi.hoisted(() => ({ pathname: '/fr/gyms' }));
@@ -12,14 +13,15 @@ vi.mock('next/navigation', () => ({
   usePathname: () => route.pathname,
   useSearchParams: () => new URLSearchParams(),
 }));
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    i18n: { language: 'fr' },
-    t: (key: string, options?: { language?: string }) => `${key}:${options?.language ?? ''}`,
-  }),
-}));
-
 const { default: CompactLanguageSwitcher } = await import('../compact-language-switcher');
+
+function renderSwitcher() {
+  return render(
+    <DocumentLocaleProvider locale="fr">
+      <CompactLanguageSwitcher ariaLabel="Langue : Français" />
+    </DocumentLocaleProvider>,
+  );
+}
 
 beforeEach(() => {
   menu.load.mockReset().mockImplementation(() => new Promise(() => {}));
@@ -33,7 +35,7 @@ afterEach(() => {
 
 describe('the language menu marks the current locale', () => {
   it('announces the current locale with aria-current and shows it with a hidden check', () => {
-    render(<CompactLanguageSwitcher />);
+    renderSwitcher();
     expect(menu.load).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button'));
     expect(menu.load).toHaveBeenCalledOnce();
@@ -51,7 +53,7 @@ describe('the language menu marks the current locale', () => {
   });
 
   it('offers immediate keyboard choices and restores focus while the menu chunk is pending', () => {
-    render(<CompactLanguageSwitcher />);
+    renderSwitcher();
     const trigger = screen.getByRole('button');
     trigger.focus();
     fireEvent.click(trigger);
@@ -68,7 +70,7 @@ describe('the language menu marks the current locale', () => {
 
   it('keeps language choices working if the enhanced menu cannot download', async () => {
     menu.load.mockRejectedValue(new Error('offline'));
-    render(<CompactLanguageSwitcher />);
+    renderSwitcher();
     const trigger = screen.getByRole('button');
     fireEvent.click(trigger);
     await act(async () => {});
@@ -82,7 +84,7 @@ describe('the language menu marks the current locale', () => {
     const originalWidth = Object.getOwnPropertyDescriptor(window, 'innerWidth')!;
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 320 });
     try {
-      render(<CompactLanguageSwitcher />);
+      renderSwitcher();
       const trigger = screen.getByRole('button');
       vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue(new DOMRect(triggerLeft, 600, 65, 44));
       fireEvent.click(trigger);
@@ -105,7 +107,7 @@ describe('the language menu marks the current locale', () => {
           finishLoading = resolve;
         }),
     );
-    render(<CompactLanguageSwitcher />);
+    renderSwitcher();
     const trigger = screen.getByRole('button');
     fireEvent.click(trigger);
     const current = screen.getByRole('menuitem', { name: LOCALE_LABELS.fr });
@@ -122,7 +124,7 @@ describe('the language menu marks the current locale', () => {
 
   it.each(['/apps', '/apps/kilter', '/compare/spray-wall-apps'])('hides the picker on %s', (pathname) => {
     route.pathname = pathname;
-    render(<CompactLanguageSwitcher />);
+    renderSwitcher();
     expect(screen.queryByRole('button')).toBeNull();
     expect(menu.load).not.toHaveBeenCalled();
   });

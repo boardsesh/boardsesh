@@ -2,9 +2,9 @@
 
 import React from 'react';
 import NextLink from 'next/link';
-import { useTranslation } from 'react-i18next';
 import { applyLocale } from '@/app/lib/i18n/locale-href';
-import { DEFAULT_LOCALE, LOCALE_COOKIE, type Locale, isSupportedLocale } from '@/app/lib/i18n/config';
+import { LOCALE_COOKIE, type Locale, isSupportedLocale } from '@/app/lib/i18n/config';
+import { useDocumentLocale } from '@/app/lib/i18n/document-locale-context';
 import { needsAppGuideDocumentNavigation } from '@/app/lib/i18n/published-locales';
 import {
   needsMarketingDocumentNavigation,
@@ -17,8 +17,8 @@ type LocaleLinkProps = Omit<React.ComponentProps<typeof NextLink>, 'href'> & {
 };
 
 export default function LocaleLink({ href, locale, onNavigate, replace, prefetch, ...rest }: LocaleLinkProps) {
-  const { i18n } = useTranslation();
-  const activeLocale: Locale = locale ?? (isSupportedLocale(i18n.language) ? i18n.language : DEFAULT_LOCALE);
+  const documentLocale = useDocumentLocale();
+  const activeLocale: Locale = locale ?? documentLocale;
   const localizedHref = applyLocale(href, activeLocale);
   const crossesDocumentShell =
     typeof window !== 'undefined' && needsMarketingDocumentNavigation(window.location.pathname, localizedHref);
@@ -33,7 +33,7 @@ export default function LocaleLink({ href, locale, onNavigate, replace, prefetch
       needsAppGuideDocumentNavigation(
         window.location.pathname,
         destination.pathname,
-        i18n.language,
+        documentLocale,
         activeLocale,
         savedLocale && isSupportedLocale(savedLocale) ? savedLocale : undefined,
       );

@@ -1,7 +1,7 @@
 import React from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import TextField from '@mui/material/TextField';
+import Typography from '@mui/material/Typography';
 import Chip from '@mui/material/Chip';
 import MuiLink from '@mui/material/Link';
 import { getServerTranslation, getServerTranslationForLocale } from '@/app/lib/i18n/server';
@@ -55,14 +55,34 @@ export default async function HomeGymSearch({ locale: explicitLocale }: { locale
         method="get"
         action={localeHref('/gyms', locale)}
         role="search"
-        sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 2, my: 3 }}
+        sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 2, my: 3 }}
       >
-        <TextField
-          name="q"
-          label={directoryCopy.searchLabel}
-          placeholder={directoryCopy.search}
-          sx={{ flex: '1 1 240px' }}
-        />
+        <Box sx={{ display: 'grid', gap: 0.5, flex: '1 1 240px', minWidth: 0 }}>
+          <Typography component="label" htmlFor="home-gym-query" variant="body2">
+            {directoryCopy.searchLabel}
+          </Typography>
+          <Box
+            component="input"
+            id="home-gym-query"
+            name="q"
+            placeholder={directoryCopy.search}
+            sx={{
+              boxSizing: 'border-box',
+              width: '100%',
+              minHeight: 48,
+              px: 2,
+              font: 'inherit',
+              fontSize: 'var(--font-size-base)',
+              bgcolor: 'var(--input-bg)',
+              color: 'var(--input-text)',
+              borderRadius: 'var(--border-radius-button)',
+              border: '1px solid var(--input-border)',
+              '&::placeholder': { color: 'var(--input-placeholder)', opacity: 1 },
+              '&:hover': { borderColor: 'var(--input-border-hover)' },
+              '&:focus': { outline: '2px solid var(--color-primary)', outlineOffset: -2 },
+            }}
+          />
+        </Box>
         <Button type="submit" variant="contained" sx={SEARCH_SX}>
           {directoryCopy.search}
         </Button>

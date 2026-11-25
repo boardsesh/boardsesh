@@ -7,6 +7,7 @@ import { createTestQueryClient } from '@/app/test-utils/test-providers';
 import type { RecentBetaLinkRow } from '@/app/lib/server-recent-beta-links';
 import type { BetaLink } from '@/app/lib/api-wrappers/sync-api-types';
 import { dedupeBetaLinks } from '@boardsesh/shared-schema';
+import enCommon from '@boardsesh/i18n/locales/en-US/common.json';
 
 const mockRequest = vi.fn();
 const mockClientToken = vi.fn();
@@ -26,13 +27,6 @@ vi.mock('@/app/hooks/use-ws-auth-token', () => ({
   useWsAuthToken: () => ({ token: viewerState.token, isLoading: viewerState.isTokenLoading }),
 }));
 const boardseshBetaListSpy = vi.fn();
-
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string) => key,
-    i18n: { language: 'en-US' },
-  }),
-}));
 
 vi.mock('@/app/lib/graphql/client', () => ({
   createGraphQLHttpClient: (token: string | null) => {
@@ -79,6 +73,13 @@ vi.mock('../boardsesh-beta-list', () => ({
 }));
 
 import HomeRecentBetaSection from '../home-recent-beta-section';
+
+const sectionProps = {
+  locale: 'en-US' as const,
+  resources: { common: { betaVideos: enCommon.betaVideos } },
+  title: 'home.recentBeta.title',
+  lead: 'home.recentBeta.lead',
+};
 
 // Transform the deferred module before timing viewport behavior. Its component
 // remains unmounted until intersection; parallel test compilation is unrelated.
@@ -133,7 +134,7 @@ class FakeIntersectionObserver {
 function renderSection(client = createTestQueryClient()) {
   return render(
     <QueryClientProvider client={client}>
-      <HomeRecentBetaSection />
+      <HomeRecentBetaSection {...sectionProps} />
     </QueryClientProvider>,
   );
 }
@@ -163,7 +164,7 @@ afterEach(() => {
 
 describe('HomeRecentBetaSection', () => {
   it('server-renders the heading and lead without beta rows or a query', () => {
-    const html = renderToString(<HomeRecentBetaSection />);
+    const html = renderToString(<HomeRecentBetaSection {...sectionProps} />);
     expect(html).toContain('home.recentBeta.title');
     expect(html).toContain('home.recentBeta.lead');
     expect(html).not.toContain('boardsesh-beta-list');
@@ -265,7 +266,7 @@ describe('HomeRecentBetaSection', () => {
     viewerState.isTokenLoading = true;
     rerender(
       <QueryClientProvider client={client}>
-        <HomeRecentBetaSection />
+        <HomeRecentBetaSection {...sectionProps} />
       </QueryClientProvider>,
     );
     expect(mockRequest).not.toHaveBeenCalled();
@@ -274,7 +275,7 @@ describe('HomeRecentBetaSection', () => {
     viewerState.isTokenLoading = false;
     rerender(
       <QueryClientProvider client={client}>
-        <HomeRecentBetaSection />
+        <HomeRecentBetaSection {...sectionProps} />
       </QueryClientProvider>,
     );
     await waitFor(() => expect(mockRequest).toHaveBeenCalledOnce());
@@ -311,7 +312,7 @@ describe('HomeRecentBetaSection', () => {
     viewerState.token = 'viewer-b-token';
     rerender(
       <QueryClientProvider client={client}>
-        <HomeRecentBetaSection />
+        <HomeRecentBetaSection {...sectionProps} />
       </QueryClientProvider>,
     );
     expect(screen.queryByText('https://instagram.com/a::Private A')).toBeNull();
@@ -325,14 +326,14 @@ describe('HomeRecentBetaSection', () => {
     viewerState.token = 'viewer-b-refreshed-token';
     rerender(
       <QueryClientProvider client={client}>
-        <HomeRecentBetaSection />
+        <HomeRecentBetaSection {...sectionProps} />
       </QueryClientProvider>,
     );
     expect(mockRequest).toHaveBeenCalledTimes(2);
     viewerState.session = { user: { id: 'viewer-b' }, authSessionId: 'new-login-b' };
     rerender(
       <QueryClientProvider client={client}>
-        <HomeRecentBetaSection />
+        <HomeRecentBetaSection {...sectionProps} />
       </QueryClientProvider>,
     );
     await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(3));

@@ -6,7 +6,9 @@ import { refreshWebConsent } from '@/app/lib/consent';
 import ChineseTranslationOnboarding from '../chinese-translation-onboarding';
 
 const mocks = vi.hoisted(() => ({ getPreference: vi.fn(), loadDialog: vi.fn() }));
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ i18n: { language: 'zh-CN' } }) }));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'zh-CN' } }),
+}));
 vi.mock('@/app/lib/i18n/use-locale-router', () => ({ usePathnameWithoutLocale: () => '/' }));
 vi.mock('@/app/lib/user-preferences-db', () => ({ getPreference: mocks.getPreference, setPreference: vi.fn() }));
 vi.mock('@/app/lib/consent-pending-db', () => ({
