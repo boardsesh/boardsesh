@@ -596,7 +596,7 @@ export default function ManageBoards() {
     () => (sprayWallLifecycle ? archivedWalls.map((wall) => wall.uuid) : undefined),
     [sprayWallLifecycle, archivedWalls],
   );
-  useRememberDownloadedBoards(boardConnection, archivedWallUuids);
+  useRememberDownloadedBoards(boardConnection, archivedWallUuids, isError);
 
   // With the add-a-board wizard on, Create board and the + open its step 1,
   // "Where's the board?". Off, the builder and the + menu as before.
