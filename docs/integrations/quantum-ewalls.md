@@ -38,6 +38,7 @@ eWalls.
 | | Proposal |
 | --- | --- |
 | eWalls to Boardsesh, public climbs and totals | Boardsesh pulls on a schedule, for everyone |
+| eWalls to Boardsesh, boards and gyms | Boardsesh pulls the list of installed Quantum Boards and their venues, if eWalls has it |
 | eWalls to Boardsesh, a linked climber's logbook, favourites, playlists | Boardsesh pulls with that climber's token, when they open Boardsesh and on the schedule |
 | Boardsesh to eWalls, a linked climber's changes | Boardsesh pushes at once, as that climber |
 | Boardsesh to eWalls, climbers without an eWalls account | Boardsesh pushes their public climbs with their public Boardsesh name as setter, and their share of the totals, on the schedule. Their logbook does not cross |
@@ -50,7 +51,7 @@ eWalls.
 
 | Phase | Result | Needs from eWalls |
 | --- | --- | --- |
-| 1. Read | Quantum Board in Boardsesh: browse, light, log in Boardsesh | The first ask; sections A, B and F; E1 and E4 |
+| 1. Read | Quantum Board in Boardsesh: browse, light, log in Boardsesh | The first ask; sections A, B, F and I; E1 and E4 |
 | 2. Linked accounts | One logbook, favourites, projects and playlists in both apps; climbs a linked climber sets appear in both | Section C |
 | 3. Everyone else | Climbs from climbers without an eWalls account, and their share of the totals, in eWalls | Sections D and E. This phase needs new endpoints and a credential that acts for no climber |
 
@@ -240,8 +241,23 @@ one with whoever works on the controller firmware, if that helps.
   open-source code?
 - **H2.** Is there a logo and wording Walltopia would like Boardsesh to use?
 
-### I. Optional
+### I. Boards and gyms
 
-- **I1.** Would eWalls like to send its changes to Boardsesh, or send a short
+Boardsesh ties ascents, sessions and board presence to the physical board,
+and shows gyms with the boards they have.
+
+- **I1.** Does eWalls hold a list of installed Quantum Boards, each with a
+  stable id, its model, the name it advertises over Bluetooth, and the venue
+  it is in? May Boardsesh read it?
+- **I2.** Does eWalls hold venue details (name, address or coordinates), and
+  does it tell a public venue from a private home?
+- **I3.** Does an ascent in eWalls record which board it was logged on, and
+  can Boardsesh send that when it logs an ascent?
+- **I4.** When a board moves to another venue or is replaced, does its id
+  stay the same?
+
+### J. Optional
+
+- **J1.** Would eWalls like to send its changes to Boardsesh, or send a short
   "something changed for this climber" message, so they arrive sooner than
   the scheduled pull? Boardsesh does not need this to start.

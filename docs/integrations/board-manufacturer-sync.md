@@ -21,20 +21,21 @@ manufacturer builds no sync client.
 4. [The two tiers](#the-two-tiers)
 5. [How data moves](#how-data-moves)
 6. [Climbs](#climbs)
-7. [Linking an account](#linking-an-account)
-8. [Linked climbers: logbook, favourites, playlists](#linked-climbers-logbook-favourites-playlists)
-9. [Edits from both apps](#edits-from-both-apps)
-10. [Climbers who have not linked](#climbers-who-have-not-linked)
-11. [Totals](#totals)
-12. [The public snapshot](#the-public-snapshot)
-13. [Sharing one wall](#sharing-one-wall)
-14. [Operations](#operations)
-15. [Names and trademarks](#names-and-trademarks)
-16. [Privacy and data roles](#privacy-and-data-roles)
-17. [Phases and who builds what](#phases-and-who-builds-what)
-18. [If a manufacturer prefers to pull](#if-a-manufacturer-prefers-to-pull)
-19. [What this changes on the Boardsesh side](#what-this-changes-on-the-boardsesh-side)
-20. [Open questions](#open-questions)
+7. [Boards and gyms](#boards-and-gyms)
+8. [Linking an account](#linking-an-account)
+9. [Linked climbers: logbook, favourites, playlists](#linked-climbers-logbook-favourites-playlists)
+10. [Edits from both apps](#edits-from-both-apps)
+11. [Climbers who have not linked](#climbers-who-have-not-linked)
+12. [Totals](#totals)
+13. [The public snapshot](#the-public-snapshot)
+14. [Sharing one wall](#sharing-one-wall)
+15. [Operations](#operations)
+16. [Names and trademarks](#names-and-trademarks)
+17. [Privacy and data roles](#privacy-and-data-roles)
+18. [Phases and who builds what](#phases-and-who-builds-what)
+19. [If a manufacturer prefers to pull](#if-a-manufacturer-prefers-to-pull)
+20. [What this changes on the Boardsesh side](#what-this-changes-on-the-boardsesh-side)
+21. [Open questions](#open-questions)
 
 ## Terms
 
@@ -121,7 +122,7 @@ can use the board in Boardsesh. That contradicts principle 4.
 
 | Direction | Whose data | How | When |
 | --- | --- | --- | --- |
-| Manufacturer to Boardsesh | Public catalogue | Boardsesh pulls with the partner credential (a test account at first) | On a schedule (we suggest every six hours) |
+| Manufacturer to Boardsesh | Public catalogue; boards and gyms | Boardsesh pulls with the partner credential (a test account at first) | On a schedule (we suggest every six hours) |
 | Manufacturer to Boardsesh | A linked climber's logbook, favourites, playlists | Boardsesh pulls with that climber's token | When the climber opens Boardsesh, and on the schedule |
 | Boardsesh to manufacturer | A linked climber's changes | Boardsesh pushes with that climber's token | At once |
 | Boardsesh to manufacturer | Public climbs and totals of climbers who have not linked | Boardsesh pushes with the partner credential | On the schedule |
@@ -247,6 +248,23 @@ Publishing a climb cannot be undone, so Boardsesh checks first:
 4. **Hold ids never change meaning.** A climb's holds refer to physical LEDs.
    A change to what an id means is a new board layout, announced ahead of
    time.
+
+## Boards and gyms
+
+Boardsesh ties as much as it can to the physical board: each ascent, each
+session, who is on the wall, and a gym's page with its boards. So besides
+climbs, Boardsesh would like to pull the manufacturer's list of installed
+boards and the gyms they are in, where the manufacturer has that data.
+
+- For each board: a stable id, the model and size, the name it advertises
+  over Bluetooth or its serial number, the angle range, and whether it is in
+  a public venue or a private home.
+- For each public venue: its name and location, and which boards it has.
+- On an ascent: which board it was logged on, in both directions.
+
+Boardsesh already keeps a directory of gyms and boards. A board or gym that
+arrives from the manufacturer is matched to an existing entry, or added.
+Boards in private homes are not listed publicly.
 
 ## Linking an account
 
@@ -581,7 +599,7 @@ works with, with no claim of a relationship.
 
 | Phase | Climbers get | Manufacturer provides | Boardsesh builds |
 | --- | --- | --- | --- |
-| 1. Read | The manufacturer's public climbs and totals in Boardsesh | Test user accounts; permission to read the catalogue | The importer and board support |
+| 1. Read | The manufacturer's public climbs and totals in Boardsesh, on the right board in the right gym | Test user accounts; permission to read the catalogue and the list of boards and gyms | The importer and board support |
 | 2. Linked accounts | One logbook, favourites, projects and playlists in both apps, with edits from both; climbs a linked climber sets appear in both | Sign-in for linking; the API needs listed under [Linked climbers](#what-the-manufacturers-api-needs-for-this) | Link and sign-up prompt; pull and push; matching; the review of likely duplicates at first sync |
 | 3. Everyone else | Climbs set by unlinked climbers, and their share of the totals, in the manufacturer's app | The four items under [Climbers who have not linked](#climbers-who-have-not-linked) | The scheduled push of climbs and totals |
 
