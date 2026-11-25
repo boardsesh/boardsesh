@@ -844,8 +844,14 @@ card's frame ends where the rows begin so Apple's Maps / Legal link stays visibl
 pinned controls start below a transparent bar. The card is not inside the scroll view: on Android
 a ScrollView takes every vertical pan and pinch that starts on a child, and Google Maps never asks it
 not to, so the list keeps an empty spacer and the card floats over it, moved by the scroll offset on
-the UI thread. "Which gym?" (`GymStep`) is the example. The
-full-bleed map with one draggable panel stays the shape for a full-screen route such as `/gyms`.
+the UI thread. "Which gym?" (`GymStep`) is the example, and so is the Boards copy of the gym map
+(`/boards/gyms`, `GymFinderCardScreen`). The full-bleed map with one draggable panel stays the shape
+for the root `/gyms` (`GymFinderMapScreen`), a full-screen route of its own. Both shells share one
+hook, `useGymFinder`, and the browse rows (`GymBrowseRow`); only the frame differs.
+
+The same goes for a searchable list: the builders' gym row (Edit board, Set up, a spray wall's
+details) pushes `/boards/gym-picker`, the gym step in pick mode, and takes the answer back through
+an addressed handoff (`gym-pick-handoff.ts`). It used to be a list in a sheet on the Boards sheet.
 
 ## Pushing a route from INSIDE a modal route (the cross-navigator trap)
 
@@ -903,6 +909,60 @@ Two things that are easy to get wrong:
 
 The rule of thumb: **before pushing a route, ask which navigator it lands in.** Same navigator
 is fine. A navigator _below_ the modal you're standing in needs the dismiss first.
+
+## Same-navigator modal inheritance (a root route pushed over a root modal)
+
+The opposite case also goes wrong, quietly. The board picker (`/boards`) is a root `modal`.
+Pushing a root route that has **no `presentation`** from inside it (`/gyms`, `/gyms/edit`,
+`/gyms/analytics`, `/auth/login`) does not push a card: expo-router presents it as **another
+modal**, because a modal sits under it. On iOS that is a second page sheet on the first, with
+its own rounded top; on `/gyms` it also carried the gym map's draggable panel, three rounded
+tops in a row.
+
+expo-router 58 (`build/react-navigation/native-stack/utils/getModalRoutesKeys.js`) decides it
+here, walking the root stack's routes in order:
+
+```js
+if (acc.length && !presentation || presentation === 'modal' || /* …every other modal kind */) {
+  acc.push(route.key);
+}
+```
+
+Once one route is a modal (`acc.length`), every later route with no `presentation` joins it.
+`NativeStackView` then renders it with `presentation = 'modal'`, and in development it warns:
+_"Route … has no presentation option, so it is shown as a modal because a modal screen is below
+it."_ Giving the root route `presentation: 'card'` is no fix either: on iOS a card above a modal
+is pushed behind the modal (the next warning in the same file).
+
+**The rule: a screen the picker opens is registered in the picker's own stack.** Add a one-line
+re-export under `app/boards/` and register it in `app/boards/_layout.tsx`:
+
+```tsx
+// app/boards/gyms/edit.tsx
+export { default } from '../../gyms/edit';
+```
+
+The gym screens all have one: `app/boards/gym/[gym].tsx`, `app/boards/gyms.tsx`,
+`app/boards/gyms/edit.tsx` and `app/boards/gyms/analytics.tsx`. A screen registered in both
+stacks pushes into the one it stands in: the builders in `src/components/gym-page/gym-page-route.ts`
+(`gymPageHref`, `gymMapHref`, `gymEditHref`, `gymAnalyticsHref`) take a stack, and
+`useGymRouteStack()` reads it from the route's segments. A screen that can only ever be inside the
+picker (the builder's own-public-gym warning, `addBoardRoute('gym_map')`) names the `boards` copy
+directly.
+
+Sign-in has no copy: from inside the picker `openSignIn(router, 'boards')`
+(`src/lib/routing/open-sign-in.ts`) calls `router.dismissTo('/auth/login')`, which pops the picker
+and puts sign-in in its place (StackRouter's `POP_TO` with no `auth` below), so it opens as the
+full-screen card it is from the tabs. The root `auth` screen keeps no `presentation`:
+`transparentModal` there would change every sign-in in the app for a path no native climber
+reaches today (AuthProvider replaces the whole app with a redirect to sign-in while signed out).
+
+Inside the picker the iPad spray screens are plain pushes too. A `modal` presentation there was a
+card on the Boards card, not the full-screen cover the old comments promised.
+
+Left as they are, by design: short confirm sheets over the picker (ExistingWallsSheet,
+WallNotListedConfirmSheet, the duplicate and serial prompts, board details, share and report) and
+ClaimGymSheet on the gym page. Each is one decision, not a screen to move around in.
 
 ## A latency footgun (any route)
 
@@ -1025,7 +1085,9 @@ per sheet so an account change resets each draft.
   that hosts its own sheets (claim, report) → pushed route. Registered twice: on the root stack,
   and as a one-line re-export at `app/boards/gym/[gym].tsx` so the board picker pushes it inside
   its own modal stack. `gymPageHref(gymUuid, stack)` picks the copy. The board detail sheet's
-  "At {gym}" row suspends, pushes the picker's copy and re-presents on return (rule 1).
+  "At {gym}" row suspends, pushes the picker's copy and re-presents on return (rule 1). The gym
+  map, the gym editor and the gym's insights follow the same two-copy pattern
+  (`gymMapHref`, `gymEditHref`, `gymAnalyticsHref`; "Same-navigator modal inheritance").
 - **Player (now-playing)** — immersive full-screen, hosts 5–6 sub-sheets that must stack above
   it → `transparentModal` + opaque backing route. The exception that proves rule 1.
 - **Boards picker / share-beta / join** — self-contained flows from a tab → `modal` card.
@@ -1083,10 +1145,11 @@ per sheet so an account change resets each draft.
   nested navigator costs you the back-swipe and the inherited header for nothing — the depth is
   already expressed by the route names. Reach for the same shape for any settings screen that grows
   sub-pages.
-- **Spray-wall flows on iPad** (`/boards/spray/new`, `/holds`) stay native modal
-  cards over the adaptive tab sidebar. The hold editor and scan step measure the
-  card area to choose their phone/tablet layout and fit the photo. iPad maintenance
-  screens retain an X through the leave guard and can hide the home indicator.
+- **Spray-wall flows on iPad** (`/boards/spray/new`, `/holds`) are plain pushes inside
+  the Boards sheet, as on a phone: a `modal` there was a card on the Boards card
+  ("Same-navigator modal inheritance"). The hold editor and scan step choose their
+  phone/tablet layout from the window and fit the photo to the sheet. The back chevron
+  leaves through the leave guard, and the home indicator fades.
   `fullScreenModal` would snapshot the native tab container (rule 2).
 - **Account** (`/account`) is the native iOS avatar sheet. Settings and Edit profile
   push inside its own stack; Back returns to the account menu. Android and the

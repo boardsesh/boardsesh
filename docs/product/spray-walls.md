@@ -414,7 +414,7 @@ reset, which has no details step. Publishing is not counted: it runs by itself.
 | `review` | `SprayHoldEditorScreen`. Its one button, "Next", commits the holds (`REVIEW_COMMITTED`) and hands over to the background step. Until its draft has loaded it shows `SprayEditorLoading`, never a bare spinner: the local photo dimmed with a status card and no scan band when the wizard still has the file, a spinner and a status line otherwise, and "Couldn't load your wall" with "Try again" when the read has given up or is parked offline (`useSprayWallDraft`'s `isStalled`; an automatic retry still in flight keeps the plain wait). "Try again" re-probes connectivity before it refetches, because an offline connectivity store refuses requests before they reach the network. The wizard prefetches that draft during `detect` (`prefetchSprayWallDraft`). |
 | `background` → `look` | `SprayWallLookStep` is a settings-style form (`MoreForm`, the Settings pages' rows, #6477) under a short header (step counter, question, one line). Its first phase is a horizontal row of draft previews (`SprayWallBackgroundCarousel`): Photo, Wall only, and Holds only. Swiping or tapping a neighboring card chooses that background; dots show the current choice. The gate's sentence is the footer (`buildSprayBackgroundModel` in `spray-look-model.ts`). Where only the photo can be stored, only its card is offered and the footer says why. Both preview steps render the form model through `MoreFormRN` on iOS and Android, fitting their rows to measured controls and footer text without a native form host around the horizontal list. Next moves to the hold-look step without saving or publishing. |
 | `look` → `details` | The second phase mirrors Settings → Board: a swipeable carousel of full previews of the draft wall (`BoardLookCarousel`, hero-sized for the row, `selectOnSnap`, no descriptions, `RailIndexDots` under it) hosted as one fixed-height full-bleed `custom` row, with ~12 holds lit as a stand-in problem (`samplePreviewHolds`, `useSyntheticSprayWallPreview`), then "Dim the rest of the wall" as a `slider` row (`buildSprayLookModel`). A swipe selects the card it lands on. A dim drag redraws the selected card only: the step swaps just that option, and `buildBoardLookPreviewSettings` hands every unchanged option back the override it already had, so no other card's native render re-fires; the value is committed on release. The row's height is worked out from the form slot's measured height, because a native host pins it in points. On Android both phases render through `MoreFormRN`, because a Compose `RNHostView` row drew nothing on the emulator (the preview and the rail went missing; Settings → Board shows the same symptom). Until a preview can be drawn (loading, or the draft cannot be shown) the plain fallback lists the looks by name with the dim slider and a Try again. Defaults to `DEFAULT_SPRAY_WALL_LOOK_OPTION_ID` (Aura Outline) and has no Skip. Back returns to background with both selections and dimming preserved. The two phases share one mounted component. Its Next stores the look and selected background together with `setSprayWallRenderSettings`, then `LOOK_CONFIRMED`, which goes on to the details step; on a reset the button says Save and the publish follows it directly. A failed save is said at the top of the form with "Keep going anyway" ("Publish anyway" on a reset, whose sentence says publish too). The confirmed choice is kept per draft version, so Back from the details step reopens the look as it was. Leaving still keeps the draft. |
-| `details` → `publish` | "Name your wall", named in the bar like a Settings page and built the same way (`MoreForm` over `buildSprayDetailsModel` in `spray-details-model.ts`; no step counter): a Name row showing the current name (prefilled with the default) that opens a small rename sheet (`SprayWallNameSheet`, which refuses an empty name); who can see it as a segmented Private / Link only / Public row, defaulting to Link only for new walls, with the choice's meaning in its footer; the angle as a slider snapped to `SPRAY_ANGLE_OPTIONS` ("Fixed once you publish."), written to the builder on release only; and a Gym row that opens `GymPickerSheet`, with the wall cap as the last footer. A failed Save is the form's first row. No location fields: picking a gym fills the location from the gym, and Edit board keeps the manual ones. Prefilled from what the server holds (`detailsSeedFromWall`, preferring `pendingVisibility` over the still-private board row), including on a resumed wall. Save sends ONE `updateSprayWall` with only the fields that changed since then (`buildDetailsUpdate`), or nothing at all when nothing did; a failure stays on the step with its message and Save resends the same change. Publishing then runs by itself once — `publishSprayWallVersion`, `invalidateSprayWallRenderData`, and the board bind — and stops on an error with Try again. The after-publish visibility write stays, as an idempotent repair. |
+| `details` → `publish` | "Name your wall", named in the bar like a Settings page and built the same way (`MoreForm` over `buildSprayDetailsModel` in `spray-details-model.ts`; no step counter): a Name row showing the current name (prefilled with the default) that opens a small rename sheet (`SprayWallNameSheet`, which refuses an empty name); who can see it as a segmented Private / Link only / Public row, defaulting to Link only for new walls, with the choice's meaning in its footer; the angle as a slider snapped to `SPRAY_ANGLE_OPTIONS` ("Fixed once you publish."), written to the builder on release only; and a Gym row that pushes the gym picker (`/boards/gym-picker`, the gym step in pick mode, inside the Boards stack), with the wall cap as the last footer. A failed Save is the form's first row. No location fields: picking a gym fills the location from the gym, and Edit board keeps the manual ones. Prefilled from what the server holds (`detailsSeedFromWall`, preferring `pendingVisibility` over the still-private board row), including on a resumed wall. Save sends ONE `updateSprayWall` with only the fields that changed since then (`buildDetailsUpdate`), or nothing at all when nothing did; a failure stays on the step with its message and Save resends the same change. Publishing then runs by itself once — `publishSprayWallVersion`, `invalidateSprayWallRenderData`, and the board bind — and stops on an error with Try again. The after-publish visibility write stays, as an idempotent repair. |
 
 These are independent previews. Background uses the draft's canonical wall
 frame and the existing on-phone photo warp and hold mask. Hold lighting uses
@@ -507,30 +507,20 @@ confirming redispatches the original navigation action. Footer exits use the
 same guard, so they ask once. Both spray routes disable the native back-button
 history menu, which does not support removal prevention.
 
-### Full screen on iPad
+### The spray screens on iPad
 
-On iPad the two spray routes (`spray/new`, which also builds a reset, and `spray/holds`) are a
-`fullScreenModal`, not the page card every other Boards screen is. A card leaves
-the editor a box in the middle of the screen with the app dimmed around it.
-`sprayFlowCoversScreen()` (`src/lib/spray/spray-flow-presentation.ts`) is the
-one switch: `Platform.isPad` on iOS. Phones and Android, tablets included, keep
-the presentation and layout they had, key for key.
+On iPad the two spray routes (`spray/new`, which also builds a reset, and `spray/holds`) and LED
+setup are plain pushes inside the Boards sheet, as on a phone. They used to be presented as a
+`modal` from inside the Boards modal: a card on the Boards card, a sheet on a sheet
+(`docs/mobile/mobile-sheets-vs-routes.md`, "Same-navigator modal inheritance"), and never the
+full-screen cover this section once described. `isIpadSprayFlow()`
+(`src/lib/spray/spray-flow-presentation.ts`) is the one switch for the iPad layout:
+`Platform.isPad` on iOS. Phones and Android, tablets included, keep the layout they had.
 
-- **Two places set it.** Pushed over the picker, a spray screen's own options
-  make it full screen (`sprayFlowScreenOptions`). Opened from the live wall
-  sheet, `/boards/spray/holds` or `/reset` is the FIRST screen of the Boards
-  stack, and a stack's first screen ignores its own presentation. So the root
-  `boards` screen in `app/_layout.tsx` takes an options function and asks
-  `opensIntoSprayFlow(route)` which screen the modal was opened on: the nested
-  navigate's `params.screen`, or the first route of a cold link's state. It reads
-  the ENTRY, so the presentation does not change while the modal is up. With
-  neither, it opens as the card, which still works.
-- **An X on holds and reset.** A full-screen modal has no swipe down and no back
-  chevron, so both need the wizard's header X (`SprayWizardExitButton`). Reset
-  already carries it on every platform (#5960), so iPad only adds the
-  presentation there; holds gets it on iPad only. It calls `router.back()` like
-  the screens' own Back buttons, so the `usePreventRemove` guards above still
-  ask first; with nothing to go back to it dismisses to Climbs.
+- **Opened from the live wall sheet**, `/boards/spray/holds` or a reset is the first screen of the
+  Boards stack: the Boards sheet itself.
+- **The way out is the back chevron**, or the reset's own X (`SprayWizardExitButton`, every
+  platform since #5960). Both go through the `usePreventRemove` guards above.
 - **The home indicator fades** (`autoHideHomeIndicator`). The status bar stays:
   hiding it per screen needs the view-controller-based status bar appearance,
   which Expo turns off.
@@ -549,9 +539,6 @@ the presentation and layout they had, key for key.
   remounting the gesture overlay. The stroke's points are board pixels, so what
   was drawn is not wrong; the rest of it would be. Phones are portrait-locked and
   never resize.
-
-Why iPad may use `fullScreenModal` when `docs/mobile/mobile-sheets-vs-routes.md` rule 2
-bans it: the ban is about the iOS 26 NativeTabs, and iPad never mounts them.
 
 ### The iPad editor and Apple Pencil
 

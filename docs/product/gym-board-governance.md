@@ -191,7 +191,7 @@ The mechanics are in [gym-claims.md](gym-claims.md).
 
 ### PR 8: the app's gym page
 
-- The page is a pushed route, `app/gyms/[gym].tsx`, with a one-line copy at `app/boards/gym/[gym].tsx` so the board picker pushes it inside its own stack. Every in-app entry point opens it by gym uuid through `gymPageHref`; a slug also resolves, for pasted links.
+- The page is a pushed route, `app/gyms/[gym].tsx`, with a one-line copy at `app/boards/gym/[gym].tsx` so the board picker pushes it inside its own stack. Every in-app entry point opens it by gym uuid through `gymPageHref`; a slug also resolves, for pasted links. Its staff tools open the gym editor and insights in the same stack the page is in (`gymEditHref`, `gymAnalyticsHref`, with copies at `app/boards/gyms/edit.tsx` and `app/boards/gyms/analytics.tsx`): a root route pushed from inside the picker would stack a second sheet (`docs/mobile/mobile-sheets-vs-routes.md`, "Same-navigator modal inheritance").
 - What the page shows is one pure function, `deriveGymPageViewModel` (`packages/mobile/src/components/gym-page/gym-page-view-model.ts`), tested viewer by listing state. The owner is read from `ownerId` before `myRole`, because the server reports an owner's role as `admin`. A viewer who can edit the gym without being its staff (a community leader, our team) gets the staff tools and the listing pill, not a staff pill or Start here.
 - The claim stays hidden for everyone on a gym its staff run, and on a private gym. Signed out, the server never answers `canClaim`, so the page offers "Log in and claim it" on any public gym not run by its staff.
 - A pending claim comes from the web's `GET_GYM_PENDING_CLAIM` document, asked only where a claim card could show. Any failure reads as no pending claim, which only shows the card again.
@@ -220,7 +220,7 @@ The mechanics are in [gym-claims.md](gym-claims.md).
 - Permission rules: `packages/backend/src/graphql/resolvers/social/boards.ts` (`requireBoardDeleteAccess`, `canEditBoard`, and `UserBoard.canDelete` / `canRemoveFromGym` in the board enrichment) and `gym-stray-boards.ts` (`detachBoardFromGym`).
 - Staff actions on boards and the re-link hold: the `board_moderation_events` table (`packages/db/src/schema/app/board-moderation-events.ts`) and its rules in `packages/backend/src/graphql/resolvers/social/board-moderation-events.ts`.
 - Gym listing state (`Gym.listingState`): `gymListingState` in `packages/backend/src/graphql/resolvers/social/gyms.ts`.
-- The app's gym page: `packages/mobile/src/components/gym-page/` (screen, view model, board rows), routed at `app/gyms/[gym].tsx` and `app/boards/gym/[gym].tsx`.
+- The app's gym page: `packages/mobile/src/components/gym-page/` (screen, view model, board rows), routed at `app/gyms/[gym].tsx` and `app/boards/gym/[gym].tsx`; the routes for every gym screen are in `gym-page-route.ts`.
 - Who runs a gym on www: the run-by line and the claim call-outs in `packages/web/app/gym/[gym_slug]/` (`gym-run-by-line.tsx`, `gym-claim-cta.tsx`, `gym-claim-callout.tsx`, `gym-claim-cta-logic.ts`), the directory's chips and claim mode in `packages/web/app/gyms/gym-directory-card.tsx`.
 - Staff board actions on www: `docs/web/gym-board-management.md`.
 - Climb reports, for comparison: `docs/product/climb-moderation.md`.
