@@ -1,14 +1,13 @@
 import { useMemo, type ReactNode } from 'react';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import MaterialCommunityIcons from '../components/MaterialCommunityIcon';
 import { PaperProvider } from 'react-native-paper';
 import { useTheme } from './theme-provider';
 import { buildPaperTheme } from '../theme/paper-theme';
 
 type PaperIconProps = { name: string; color?: string; size: number };
 
-// Route react-native-paper's icons to the @expo/vector-icons MaterialCommunityIcons
-// font the app already bundles (Paper uses MDI names by default), so we don't
-// ship a second icon font.
+// Paper uses MDI names. Share the app renderer: bundled SVG paths on Android,
+// and the existing MaterialCommunityIcons font on iOS and web.
 function paperIcon({ name, color, size }: PaperIconProps) {
   return (
     <MaterialCommunityIcons

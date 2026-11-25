@@ -151,6 +151,16 @@ function isWebShimOrigin(originModulePath) {
 
 const defaultResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
+  // Paper's built-in controls import this font renderer directly, bypassing
+  // PaperProvider.settings.icon. Keep every Android MDI consumer font-free.
+  if (platform === 'android' && moduleName === '@expo/vector-icons/MaterialCommunityIcons') {
+    return context.resolveRequest(
+      context,
+      path.resolve(projectRoot, 'src/components/MaterialCommunityIcon.android.tsx'),
+      platform,
+    );
+  }
+
   const webRuntimeModulePath = platform === 'web' ? resolveWebRuntimeModulePath(WEB_RUNTIME_MODULES, moduleName) : null;
   if (webRuntimeModulePath) {
     return context.resolveRequest(context, webRuntimeModulePath, platform);

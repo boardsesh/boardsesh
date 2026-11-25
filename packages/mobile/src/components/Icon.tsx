@@ -1,4 +1,4 @@
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import MaterialCommunityIcons from './MaterialCommunityIcon';
 import { SymbolView, type SymbolWeight, type SymbolScale } from 'expo-symbols';
 import { Platform, I18nManager, useWindowDimensions, type ColorValue } from 'react-native';
 import { useBoldText } from '../hooks/use-bold-text';
