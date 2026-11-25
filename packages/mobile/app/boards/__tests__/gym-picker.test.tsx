@@ -66,13 +66,27 @@ describe('/boards/gym-picker', () => {
     stop();
   });
 
-  it('hands back "Not at a gym" and "My gym isn\'t listed"', () => {
+  it.each([
+    ['Not at a gym', 'none'],
+    ["My gym isn't listed", 'not_listed'],
+  ] as const)('hands back %s', (_label, kind) => {
     const { picks, stop } = listen();
     render(createElement(BoardGymPicker));
+    if (kind === 'none') state.gymStep?.picker?.onPickNone();
+    else state.gymStep?.onAddGym(null);
+    expect(picks).toEqual([{ kind }]);
+    expect(routerMock.back).toHaveBeenCalledOnce();
+    stop();
+  });
+
+  // A second tap while the screen is leaving would pop the builder under it too.
+  it('hands back one answer per visit, however fast the taps', () => {
+    const { picks, stop } = listen();
+    render(createElement(BoardGymPicker));
+    state.gymStep?.onPickGym(CRUX, null);
     state.gymStep?.picker?.onPickNone();
-    state.gymStep?.onAddGym(null);
-    expect(picks).toEqual([{ kind: 'none' }, { kind: 'not_listed' }]);
-    expect(routerMock.back).toHaveBeenCalledTimes(2);
+    expect(picks).toHaveLength(1);
+    expect(routerMock.back).toHaveBeenCalledOnce();
     stop();
   });
 

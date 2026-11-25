@@ -6,7 +6,7 @@
 // nobody to hand it to (a bare link), it goes back, or to the wizard's step 1
 // when there is nothing to go back to.
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import type { Gym } from '@boardsesh/shared-schema';
 import { GymStep, type GymStepPicker } from '../../src/components/board-discovery/gym-step/GymStep';
@@ -37,8 +37,13 @@ export default function BoardGymPicker() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // One answer per visit: a second tap while the screen is leaving would hand
+  // a second pick back and pop the builder under it too.
+  const handedBackRef = useRef(false);
   const handBack = useCallback(
     (pick: GymPick) => {
+      if (handedBackRef.current) return;
+      handedBackRef.current = true;
       hapticSelection();
       emitGymPick(handoffId, pick);
       router.back();
