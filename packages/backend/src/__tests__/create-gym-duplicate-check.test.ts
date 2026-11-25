@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vite-plus/test';
+import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { and, count, eq, isNull, sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
@@ -170,6 +170,27 @@ const takeOwnerLock = (transaction: DbTransaction, ownerId: string) =>
   transaction.execute(sql`SELECT pg_advisory_xact_lock(${GYM_CREATE_OWNER_LOCK_NAMESPACE}::int, hashtext(${ownerId}))`);
 
 const errorCode = (reason: unknown) => (reason as { extensions?: { code?: string } }).extensions?.code;
+
+// The test schema (schema-sql.ts) declares `gyms` without production's partial
+// unique slug index (migration 0054), so on the test DB two live gyms can share
+// a slug and createGym's slug retry has nothing to catch. This file adds the
+// index, under its production name, and drops it again only if it added it.
+let addedSlugIndex = false;
+
+beforeAll(async () => {
+  const existing = await db.execute(sql`SELECT 1 FROM pg_indexes WHERE indexname = 'gyms_unique_slug'`);
+  if (Array.from(existing as Iterable<unknown>).length > 0) return;
+  // Earlier files may have left gyms behind, duplicate slugs included.
+  await db.execute(sql`TRUNCATE TABLE "gyms" RESTART IDENTITY CASCADE`);
+  await db.execute(
+    sql`CREATE UNIQUE INDEX "gyms_unique_slug" ON "gyms" USING btree ("slug") WHERE "gyms"."deleted_at" IS NULL`,
+  );
+  addedSlugIndex = true;
+});
+
+afterAll(async () => {
+  if (addedSlugIndex) await db.execute(sql`DROP INDEX IF EXISTS "gyms_unique_slug"`);
+});
 
 beforeEach(async () => {
   resetAllRateLimits();
