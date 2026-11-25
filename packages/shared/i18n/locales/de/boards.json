@@ -1140,7 +1140,13 @@
     "providerBadge": "Von {{provider}}",
     "viewGym": "Halle ansehen",
     "claim": "Das ist meine Halle — beanspruchen",
-    "createAnyway": "Nichts dabei? Leg deine Halle mit dem Button unten an."
+    "createAnyway": "Nichts dabei? Leg deine Halle mit dem Button unten an.",
+    "refusal": {
+      "title": "Ist es eine davon?",
+      "body": "Diese Hallen sind schon eingetragen. Wenn deine dabei ist, öffne oder beanspruche sie, statt eine Kopie anzulegen.",
+      "addNew": "Nein, neue Halle anlegen",
+      "back": "Zurück zum Formular"
+    }
   },
   "gymEntity": {
     "stats": {
@@ -1194,7 +1200,8 @@
       "authRequired": "Du musst angemeldet sein, um eine Halle anzulegen",
       "errorMessage": "Halle konnte nicht angelegt werden",
       "nameRequired": "Hallenname ist Pflicht",
-      "createdNamed": "Halle „{{name}}“ angelegt!"
+      "createdNamed": "Halle „{{name}}“ angelegt!",
+      "limitReached": "Du hast schon so viele Hallen, wie ein Konto haben kann. Lösch eine, die du nicht mehr betreibst, um eine neue anzulegen."
     },
     "helpers": {
       "website": "Damit prüfen wir die Inhaberschaft, wenn jemand diese Halle beansprucht",

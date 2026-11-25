@@ -1140,7 +1140,13 @@
     "providerBadge": "Da {{provider}}",
     "viewGym": "Vedi la palestra",
     "claim": "È la mia palestra: rivendicala",
-    "createAnyway": "Nessuna di queste? Aggiungi la tua palestra con il pulsante qui sotto."
+    "createAnyway": "Nessuna di queste? Aggiungi la tua palestra con il pulsante qui sotto.",
+    "refusal": {
+      "title": "È una di queste?",
+      "body": "Queste palestre sono già in elenco. Se la tua è una di queste, aprila o rivendicala invece di aggiungerne una copia.",
+      "addNew": "No, aggiungi una nuova palestra",
+      "back": "Torna al modulo"
+    }
   },
   "gymEntity": {
     "stats": {
@@ -1194,7 +1200,8 @@
       "authRequired": "Devi aver effettuato l'accesso per creare una palestra",
       "errorMessage": "Impossibile creare la palestra",
       "nameRequired": "Il nome della palestra è obbligatorio",
-      "createdNamed": "Palestra \"{{name}}\" creata!"
+      "createdNamed": "Palestra \"{{name}}\" creata!",
+      "limitReached": "Hai già il numero massimo di palestre per un account. Eliminane una che non gestisci più per aggiungerne un'altra."
     },
     "helpers": {
       "website": "Serve a verificare la proprietà quando qualcuno rivendica questa palestra",
