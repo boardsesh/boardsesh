@@ -63,7 +63,16 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
   useGym: () => ({ data: undefined }),
 }));
 
-vi.mock('../../../src/providers/feature-flags-provider', () => ({ useCreateBoardGymFirstEnabled: () => false }));
+vi.mock('../../../src/providers/feature-flags-provider', () => ({
+  useCreateBoardGymFirstEnabled: () => false,
+  useDirectoryReportsEnabled: () => false,
+}));
+vi.mock('../../../src/components/report-problem/use-report-problem', () => ({
+  useReportProblemHost: () => ({ openReport: vi.fn(), sheet: null, isOpen: false }),
+}));
+vi.mock('../../../src/providers/sheet-presentation-provider', () => ({
+  dismissManagedSheetAndWait: async () => ({ status: 'dismissed' }),
+}));
 vi.mock('../../../src/components/board-discovery/DiscoveryBoardArt', () => ({ DiscoveryBoardArt: () => null }));
 vi.mock('../../../src/components/board-discovery/ExistingWallsSheet', () => ({ ExistingWallsSheet: () => null }));
 
@@ -97,6 +106,8 @@ vi.mock('../../../src/lib/analytics', () => ({ track: trackMock }));
 vi.mock('@boardsesh/board-config', () => ({
   toBoardName: (value: string) => value,
   boardSetupLabelParts: () => ({ layout: null, size: null, sets: [], angle: null }),
+  parseSetIds: (setIds: string) => setIds.split(',').filter(Boolean).map(Number),
+  findUnknownSetupField: () => null,
 }));
 vi.mock('../../../src/lib/boards/board-config-preset', () => ({ presetBoardConfig: () => null }));
 

@@ -118,6 +118,35 @@ export function readExistingWallsError(error: unknown): ExistingWallErrorCandida
   return null;
 }
 
+/** The `createBoard` / `updateBoard` input field a catalogue refusal names. */
+export type UnknownBoardConfigField = 'boardType' | 'layoutId' | 'sizeId' | 'setIds';
+
+const UNKNOWN_BOARD_CONFIG_FIELDS = new Set<string>(['boardType', 'layoutId', 'sizeId', 'setIds']);
+
+/**
+ * The server's catalogue refusing a setup (`UNKNOWN_BOARD_CONFIG`), with the
+ * field it refused when the server said (#8151): `field` names the first one
+ * in cascade order (board type, layout, size, sets), and `invalidSetIds` the
+ * set ids the layout and size don't have. An older server sends the code
+ * alone, which reads as `field: null`. Null when the error is something else.
+ */
+export function readUnknownBoardConfigError(
+  error: unknown,
+): { field: UnknownBoardConfigField | null; invalidSetIds: number[] } | null {
+  for (const graphqlError of getGraphqlErrors(error)) {
+    if (graphqlError.extensions?.code !== 'UNKNOWN_BOARD_CONFIG') continue;
+    const { field, invalidSetIds } = graphqlError.extensions;
+    return {
+      field:
+        typeof field === 'string' && UNKNOWN_BOARD_CONFIG_FIELDS.has(field) ? (field as UnknownBoardConfigField) : null,
+      invalidSetIds: Array.isArray(invalidSetIds)
+        ? invalidSetIds.filter((setId): setId is number => typeof setId === 'number' && Number.isInteger(setId))
+        : [],
+    };
+  }
+  return null;
+}
+
 /**
  * The server refusing to add another board because the account is at its
  * ceiling. Worth branching on rather than surfacing as a generic failure: the

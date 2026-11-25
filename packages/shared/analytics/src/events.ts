@@ -1041,6 +1041,9 @@ export const SHARED_EVENTS = {
   //          | 'auth' | 'board_limit' | 'exception' }. 'board_limit' is the
   //          per-account board cap: a refusal no retry can clear, so it is worth
   //          keeping out of the 'exception' bucket.
+  // From 2026-11 (#8151) the mobile builder also sends 'unknown_config': the
+  // setup isn't in the catalogue, found by the app's own check of the bundled
+  // catalogue before Save goes out, or by the server's UNKNOWN_BOARD_CONFIG.
   BoardCreateFailed: 'Board Create Failed',
   // The user already owned this board, so nothing was created and we activated
   // the existing one instead. Props: { boardType, source, preset, presetKept }
@@ -1266,13 +1269,21 @@ export const SHARED_EVENTS = {
   // with no draft to compare against: the find step has none), lookup: ok |
   // failed, trigger: find_step (the gym's wall list) | pre_submit (Save was
   // refused with BOARD_EXISTING_WALLS) }. Once per gym and type per screen.
+  // From PR 3 of #8151, pre_submit also carries mismatchCount (walls on another
+  // layout or size, from the follow-up lookup with the climber's setup; they
+  // never block, so the refusal doesn't name them) and mismatchLookup: ok |
+  // failed | none (no gym to look in). It fires once that lookup has settled.
   BoardWallCandidatesShown: 'Board Wall Candidates Shown',
   // The climber took an existing wall instead of adding one: followed (when it
   // wasn't theirs yet) and made active. Props: { match: exact | near_miss |
   // nearby | at_gym (no draft to compare) | other_type | search (a board found
   // by name on the find step), position (0-based, as drawn in its shelf),
-  // alreadyFollowed, fixSetupStarted (always false until the near-miss sheet
-  // lands), trigger: find_step | pre_submit }.
+  // alreadyFollowed, fixSetupStarted (true when the climber picked "Use it and
+  // fix its setup" on the builder's near-miss "Is this your wall?" step, which
+  // opens Report a problem on "Set up wrong" after the bind; whether a report
+  // was then sent is Report Problem Sent), trigger: find_step | pre_submit }.
+  // On pre_submit, near_miss covers both Set up differently and the Possible
+  // setup mismatch shelf (another layout or size).
   BoardWallCandidateUsed: 'Board Wall Candidate Used',
   // The climber said theirs is a different wall and went on to the builder.
   // Props: { candidateCount (walls listed when they confirmed; nothing is

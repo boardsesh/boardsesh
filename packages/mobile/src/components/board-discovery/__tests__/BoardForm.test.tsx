@@ -91,7 +91,18 @@ vi.mock('../../ble/TimerPairingSheet', () => ({ TimerPairingSheet: () => null })
 vi.mock('../GymPickerSheet', () => ({ GymPickerSheet: () => null }));
 // The gym-location warning has its own hook coverage; these tests exercise form slots.
 vi.mock('../OwnPublicGymWarning', () => ({ OwnPublicGymWarning: () => null }));
-vi.mock('../BoardConfigChips', () => ({ BoardConfigChips: () => null }));
+// A marker per chip row, by its label, so a test can see which rows are drawn.
+vi.mock('../BoardConfigChips', () => ({
+  BoardConfigChips: ({ groupLabel }: { groupLabel: string }) => createElement('div', { 'data-chips': groupLabel }),
+}));
+vi.mock('../BoardHoldsSummary', () => ({
+  BoardHoldsSummary: ({ onToggleExpanded }: { onToggleExpanded: () => void }) =>
+    createElement('button', { type: 'button', 'data-holds-summary': true, onClick: onToggleExpanded }),
+}));
+vi.mock('../../Button', () => ({
+  Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
+    createElement('button', { type: 'button', onClick: onPress }, title),
+}));
 vi.mock('../../privacy/AudiencePicker', () => ({ AudiencePicker: () => null, BOARD_AUDIENCES: [] }));
 // The two controls that say who sees the wall, one per mode, as markers.
 vi.mock('../../privacy/ResourcePrivacyControl', () => ({
@@ -249,5 +260,73 @@ describe('BoardForm spray wall LED placement', () => {
   it('never renders the LED section for catalogue boards, even when supplied', () => {
     const view = renderForm('kilter', true);
     expect(view.queryByTestId('led-settings')).toBeNull();
+  });
+});
+
+describe('BoardForm hold sets and catalogue errors (#8151)', () => {
+  const toggleSet = vi.fn();
+  function catalogueBuilder(): BoardFormProps['builder'] {
+    return {
+      ...builderFor('moonboard'),
+      layoutId: 5,
+      sizeId: 1,
+      setIds: [17, 18, 99],
+      layouts: [{ id: 5, name: 'MoonBoard Masters 2019' }],
+      sizes: [{ id: 1, name: 'Standard' }],
+      sets: [
+        { id: 17, name: 'Hold Set A' },
+        { id: 18, name: 'Hold Set B' },
+        { id: 20, name: 'Screw-on Feet' },
+      ],
+      toggleSet,
+    } as unknown as BoardFormProps['builder'];
+  }
+  function renderCatalogue(configError: BoardFormProps['configError'] = null, lockedConfig = false) {
+    return render(
+      <BoardForm
+        builder={catalogueBuilder()}
+        defaultName="Gym MoonBoard"
+        submitting={false}
+        onSubmit={() => {}}
+        submitLabel="Save"
+        configError={configError}
+        lockedConfig={lockedConfig}
+      />,
+    );
+  }
+  const setChips = (container: HTMLElement) => container.querySelector('[data-chips="mobile.custom.sets"]');
+
+  beforeEach(() => toggleSet.mockClear());
+
+  it('draws the holds summary in the main form, and the set chips under it on Change', () => {
+    const { container } = renderCatalogue();
+    expect(container.querySelector('[data-holds-summary]')).not.toBeNull();
+    // Not behind More options any more, and closed until asked for.
+    expect(setChips(container)).toBeNull();
+    fireEvent.click(container.querySelector('[data-holds-summary]')!);
+    expect(setChips(container)).not.toBeNull();
+  });
+
+  it("keeps a locked setup's sets in view, since it has no Change", () => {
+    const { container } = renderCatalogue(null, true);
+    expect(setChips(container)).not.toBeNull();
+  });
+
+  it.each([
+    ['boardType', 'mobile.create.configError.boardType'],
+    ['layoutId', 'mobile.create.configError.layoutId'],
+    ['sizeId', 'mobile.create.configError.sizeId'],
+  ] as const)('says a refused %s under its row', (field, message) => {
+    const { getByText } = renderCatalogue({ field, invalidSetIds: [] });
+    expect(getByText(message)).toBeTruthy();
+  });
+
+  it('opens the set chips for refused sets, and removes the picked ones in one tap', () => {
+    const { container, getByText } = renderCatalogue({ field: 'setIds', invalidSetIds: [99, 404] });
+    expect(getByText('mobile.create.configError.setIds')).toBeTruthy();
+    expect(setChips(container)).not.toBeNull();
+    fireEvent.click(getByText('mobile.create.configError.removeSets'));
+    // Only the refused set still picked: 404 isn't in the setup.
+    expect(toggleSet.mock.calls).toEqual([[99]]);
   });
 });

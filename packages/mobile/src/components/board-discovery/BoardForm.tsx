@@ -31,6 +31,7 @@ import { serialReuseDisclosure } from '../../lib/boards/serial-reuse';
 import type { useBoardBuilder } from './use-board-builder';
 import type { LockedConfigReason } from './locked-config-reason';
 import { BoardConfigChips } from './BoardConfigChips';
+import { BoardHoldsSummary } from './BoardHoldsSummary';
 import { boardTypeLabel, cleanLayoutName, formatSizeLabel } from './board-builder-labels';
 import { BoardImageNative } from '../BoardImageNative';
 import { getBoardRenderData } from '../../lib/board-details';
@@ -109,6 +110,18 @@ type BoardFormProps = {
    * also opens the gym picker, for a prefilled gym that turned out to be gone.
    */
   errorAction?: { label: string; onPress: () => void; opensGymPicker?: boolean };
+  /**
+   * A setup the catalogue doesn't list (#8151), from the app's own check of the
+   * bundled catalogue or the server's `UNKNOWN_BOARD_CONFIG` refusal: drawn
+   * under the row it is about. The caller clears it once the setup changes.
+   */
+  configError?: BoardConfigError | null;
+};
+
+/** The setup row a catalogue refusal is about, and the set ids it refused. */
+export type BoardConfigError = {
+  field: 'boardType' | 'layoutId' | 'sizeId' | 'setIds';
+  invalidSetIds: readonly number[];
 };
 
 /**
@@ -134,6 +147,7 @@ export function BoardForm({
   focusLocationOnOpen = false,
   submitBlocked = false,
   errorAction,
+  configError = null,
 }: BoardFormProps) {
   const headerHeight = useHeaderHeight();
   const { t } = useTranslation('boards');
@@ -163,6 +177,26 @@ export function BoardForm({
   const keyboardHeight = useKeyboardHeight(Platform.OS === 'android');
   const { width: windowWidth } = useWindowDimensions();
   const [advancedOpen, setAdvancedOpen] = useState(focusLocationOnOpen);
+  // The set chips, under "Holds: 3 of 4 sets" in the main form. Closed by
+  // default: nearly every wall has every set, which the size picks for it.
+  const [setsOpen, setSetsOpen] = useState(false);
+  const toggleSetsOpen = useCallback(() => setSetsOpen((open) => !open), []);
+  // A refused set has to be reachable to fix, so its chips show with the error.
+  // A locked setup has no Change, so its (disabled) chips always show which
+  // sets it has.
+  const setsShown = setsOpen || configError?.field === 'setIds' || lockedConfig;
+  // The refused sets still picked: one tap takes them off ("Remove them").
+  const { toggleSet } = builder;
+  const refusedSelectedSetIds = useMemo(
+    () =>
+      configError?.field === 'setIds'
+        ? configError.invalidSetIds.filter((setId) => builder.setIds.includes(setId))
+        : [],
+    [configError, builder.setIds],
+  );
+  const removeRefusedSets = useCallback(() => {
+    for (const setId of refusedSelectedSetIds) toggleSet(setId);
+  }, [refusedSelectedSetIds, toggleSet]);
   const [timerPairingOpen, setTimerPairingOpen] = useState(false);
   const [gymPickerOpen, setGymPickerOpen] = useState(false);
 
@@ -351,6 +385,9 @@ export function BoardForm({
               onSelect={builder.selectBoard}
               disabled={lockedConfig}
             />
+            {configError?.field === 'boardType' ? (
+              <ConfigFieldError message={t('mobile.create.configError.boardType')} testID="config-error-boardType" />
+            ) : null}
           </>
         )}
 
@@ -369,6 +406,11 @@ export function BoardForm({
             />
           </>
         ) : null}
+        {/* Outside the row's gate: a layout the catalogue lacks is exactly the
+            case where the row may have nothing to draw. */}
+        {configError?.field === 'layoutId' ? (
+          <ConfigFieldError message={t('mobile.create.configError.layoutId')} testID="config-error-layoutId" />
+        ) : null}
 
         {builder.sizes.length > 0 ? (
           <>
@@ -380,6 +422,49 @@ export function BoardForm({
               disabled={lockedConfig}
             />
           </>
+        ) : null}
+        {configError?.field === 'sizeId' ? (
+          <ConfigFieldError message={t('mobile.create.configError.sizeId')} testID="config-error-sizeId" />
+        ) : null}
+
+        {/* The hold sets, in the main form (#8151): a setup missing a set shows
+            here, not behind More options. */}
+        {builder.sets.length > 0 && !isSprayWall ? (
+          <>
+            <SectionLabel>{t('mobile.custom.sets')}</SectionLabel>
+            <BoardHoldsSummary
+              boardName={builder.boardName}
+              layoutId={builder.layoutId}
+              sets={builder.sets}
+              selectedSetIds={builder.setIds}
+              expanded={setsShown}
+              onToggleExpanded={toggleSetsOpen}
+              onAddSet={toggleSet}
+              disabled={lockedConfig}
+            />
+            {setsShown ? (
+              <BoardConfigChips
+                groupLabel={t('mobile.custom.sets')}
+                options={setOptions}
+                onSelect={toggleSet}
+                disabled={lockedConfig}
+              />
+            ) : null}
+          </>
+        ) : null}
+        {configError?.field === 'setIds' ? (
+          <ConfigFieldError
+            message={t('mobile.create.configError.setIds', { count: Math.max(1, configError.invalidSetIds.length) })}
+            action={
+              refusedSelectedSetIds.length > 0
+                ? {
+                    label: t('mobile.create.configError.removeSets', { count: refusedSelectedSetIds.length }),
+                    onPress: removeRefusedSets,
+                  }
+                : undefined
+            }
+            testID="config-error-setIds"
+          />
         ) : null}
 
         {builder.angles.length > 0 && !isSprayWall ? (
@@ -479,7 +564,7 @@ export function BoardForm({
 
         {isSprayWall ? sprayLedSection : null}
 
-        {/* Advanced — hold sets (default all), visibility, location, serial. */}
+        {/* Advanced — ownership, visibility, location, serial. */}
         <PressableSurface
           onPress={() => setAdvancedOpen((open) => !open)}
           accessibilityRole="button"
@@ -492,18 +577,6 @@ export function BoardForm({
 
         {advancedOpen ? (
           <View style={styles.advancedBody}>
-            {builder.sets.length > 0 ? (
-              <>
-                <SectionLabel>{t('mobile.custom.sets')}</SectionLabel>
-                <BoardConfigChips
-                  groupLabel={t('mobile.custom.sets')}
-                  options={setOptions}
-                  onSelect={builder.toggleSet}
-                  disabled={lockedConfig}
-                />
-              </>
-            ) : null}
-
             <SwitchRow label={t('mobile.create.ownBoard')} value={builder.isOwned} onValueChange={builder.setIsOwned} />
             {!privacySettings?.enabled ? (
               <BoardVisibilityFields
@@ -644,6 +717,36 @@ export function BoardForm({
   );
 }
 
+/**
+ * A setup row the catalogue refused, said under that row, with the fix when
+ * there is a one-tap one. Announced as it appears, like the form's top error.
+ */
+function ConfigFieldError({
+  message,
+  action,
+  testID,
+}: {
+  message: string;
+  action?: { label: string; onPress: () => void };
+  testID: string;
+}) {
+  const { systemColors } = useTheme();
+  return (
+    <View style={styles.fieldError} testID={testID}>
+      <Text
+        variant="footnote"
+        color={systemColors.error}
+        accessibilityRole="alert"
+        accessibilityLiveRegion="polite"
+        style={styles.fieldErrorText}
+      >
+        {message}
+      </Text>
+      {action ? <Button title={action.label} variant="text" size="small" onPress={action.onPress} /> : null}
+    </View>
+  );
+}
+
 /** The empty board art (no lit holds) at the config's native aspect ratio. */
 function BoardConfigPreview({
   boardName,
@@ -779,5 +882,13 @@ const styles = StyleSheet.create({
   },
   errorMessage: {
     textAlign: 'center',
+  },
+  fieldError: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+  },
+  fieldErrorText: {
+    flex: 1,
   },
 });

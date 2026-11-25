@@ -489,7 +489,34 @@
         "body": "Nimm das Board, an dem deine Crew schon klettert, damit eure Begehungen zusammen landen. Richte deins nur weiter ein, wenn es eine andere Wand ist.",
         "useBoard": "Dieses Board nutzen",
         "keepMine": "Meins weiter einrichten",
-        "loadFailed": "Nicht alle Boards konnten geladen werden. Versuch es nochmal, um sie zu sehen, bevor du deins weiter einrichtest."
+        "loadFailed": "Nicht alle Boards konnten geladen werden. Versuch es nochmal, um sie zu sehen, bevor du deins weiter einrichtest.",
+        "setupMismatch": "Vielleicht falsch eingerichtet",
+        "layoutDiffers": "Layout {{wall}}. Deins: {{yours}}",
+        "sizeDiffers": "Größe {{wall}}. Deins: {{yours}}",
+        "missingSets": "Ohne {{sets}}",
+        "extraSets": "Hat auch {{sets}}",
+        "choiceTitle": "Ist das deine Wand?",
+        "choiceBody": "Das Setup passt nicht zu deinem. Wenn du an dieser Wand kletterst, nimm sie, damit deine Begehungen bei denen deiner Crew landen.",
+        "choiceUseAsIs": "So nutzen, wie sie ist",
+        "choiceFixSetup": "Nutzen und Setup korrigieren",
+        "choiceDifferent": "Nein, das ist eine andere Wand"
+      },
+      "holdsSummary_one": "Griffe: {{selected}} von {{count}} Set",
+      "holdsSummary_other": "Griffe: {{selected}} von {{count}} Sets",
+      "holdsChange": "Ändern",
+      "holdsChangeLabel": "Griff-Sets ändern",
+      "holdsDone": "Fertig",
+      "omissionHint": "Fehlt {{set}}?",
+      "omissionAdd": "{{set}} hinzufügen",
+      "configError": {
+        "boardType": "Diesen Board-Typ können wir nicht speichern. Wähl einen anderen.",
+        "layoutId": "Dieses Layout kennen wir nicht. Wähl ein anderes.",
+        "sizeId": "Diese Größe passt nicht zu diesem Layout. Wähl eine andere.",
+        "setIds_one": "Ein Griff-Set gibt es für diese Größe nicht. Entfern es oder wähl deine Sets neu.",
+        "setIds_other": "{{count}} Griff-Sets gibt es für diese Größe nicht. Entfern sie oder wähl deine Sets neu.",
+        "removeSets_one": "Entfernen",
+        "removeSets_other": "Alle entfernen",
+        "noField": "Dieses Setup kennen wir nicht. Prüf Board, Layout, Größe und Griffe."
       }
     },
     "custom": {
@@ -2023,7 +2050,8 @@
         "reviewClashes": "Diese Einrichtung kollidiert mit einem anderen Board, deshalb wird sie zuerst geprüft. Wir sagen dir Bescheid, sobald es korrigiert ist.",
         "alreadySetUp": "Es ist schon so eingerichtet."
       }
-    }
+    },
+    "setupNote": "An der Wand ist es so eingerichtet: {{setup}}"
   },
   "reportReview": {
     "title": "Kletterer*innen haben dieses Board gemeldet",

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { toBoardName } from '@boardsesh/board-config';
+import { findUnknownSetupField, parseSetIds, toBoardName, type WallSetup } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { BoardName, CreateBoardInput, ExistingWallCheck, UserBoard } from '@boardsesh/shared-schema';
 import {
@@ -12,6 +12,7 @@ import {
   usePopularBoardConfigs,
   fetchBoardByUuid,
   fetchBoardsBySerialNumbers,
+  fetchExistingWallCandidates,
 } from '../../src/lib/graphql/hooks';
 import { useActivateBoard } from '../../src/lib/boards/use-activate-board';
 import {
@@ -21,6 +22,7 @@ import {
   isBoardLimitError,
   readDuplicateBoardError,
   readExistingWallsError,
+  readUnknownBoardConfigError,
   type DuplicateBoardError,
   type ExistingWallErrorCandidate,
 } from '../../src/lib/graphql/extract-error-message';
@@ -39,7 +41,7 @@ import {
 } from '../../src/lib/boards/serial-reuse';
 import { useBoardBuilder } from '../../src/components/board-discovery/use-board-builder';
 import { usePrivacySettings } from '../../src/lib/graphql/hooks/use-privacy';
-import { BoardForm } from '../../src/components/board-discovery/BoardForm';
+import { BoardForm, type BoardConfigError } from '../../src/components/board-discovery/BoardForm';
 import { BoardDuplicatePromptSheet } from '../../src/components/board-discovery/BoardDuplicatePromptSheet';
 import { SerialReuseConfirmSheet } from '../../src/components/board-discovery/SerialReuseConfirmSheet';
 import {
@@ -47,10 +49,16 @@ import {
   formatDefaultBoardName,
   formatGymBoardName,
 } from '../../src/components/board-discovery/board-builder-labels';
-import { ExistingWallsSheet } from '../../src/components/board-discovery/ExistingWallsSheet';
+import {
+  ExistingWallsSheet,
+  type ExistingWallsSheetShelf,
+} from '../../src/components/board-discovery/ExistingWallsSheet';
 import { DiscoveryBoardArt } from '../../src/components/board-discovery/DiscoveryBoardArt';
 import type { DiscoveryBoardItem } from '../../src/components/board-discovery/BoardDiscoveryCardView';
-import { useCreateBoardGymFirstEnabled } from '../../src/providers/feature-flags-provider';
+import { useCreateBoardGymFirstEnabled, useDirectoryReportsEnabled } from '../../src/providers/feature-flags-provider';
+import { useReportProblemHost } from '../../src/components/report-problem/use-report-problem';
+import { canReportBoard } from '../../src/components/report-problem/report-problem-model';
+import { dismissManagedSheetAndWait, type ManagedSheetHandle } from '../../src/providers/sheet-presentation-provider';
 import { parseBoardKind } from '../../src/lib/boards/board-picker-add-analytics';
 import {
   boardFlowTicket,
@@ -64,6 +72,13 @@ import {
   wallRelation,
   type WallRowCopy,
 } from '../../src/lib/boards/wall-candidates';
+import {
+  arrangeExistingWalls,
+  wallDifferenceLine,
+  type ExistingWall,
+  type ExistingWallShelfKey,
+  type WallDifferenceCopy,
+} from '../../src/lib/boards/near-miss-walls';
 
 /**
  * The overrides the climber has explicitly granted so far.
@@ -124,11 +139,28 @@ type ExistingWallsPrompt = {
   /** Some named wall couldn't be shown: say so and offer Try again. */
   loadFailed: boolean;
   granted: CreateOverrides;
+  /** The setup the server compared: the climber's, as it was sent. */
+  draft: WallSetup;
+  /**
+   * The gym's walls on another layout or size (#8151, PR 3): never named by a
+   * refusal, since they never block, but often the same wall entered wrong.
+   * Looked up with the draft; empty until then, and when that lookup fails.
+   * `nearby` is the other listing a wall is on when it isn't this gym's own,
+   * so its row says which gym and how far.
+   */
+  mismatch: MismatchWall[];
 };
 
-function usedWallMatch(matchKind: ExistingWallErrorCandidate['matchKind']): 'exact' | 'near_miss' | 'at_gym' {
-  if (matchKind === 'EXACT') return 'exact';
-  return matchKind === null ? 'at_gym' : 'near_miss';
+type MismatchWall = { board: UserBoard; nearby: { gymName: string; distanceMeters: number | null } | null };
+
+/**
+ * One setup as a comparable key: board type, layout, size and the sets in
+ * order without repeats. A catalogue error stays on screen while the form
+ * still holds the setup it was about.
+ */
+function setupKey(boardType: string, layoutId: number | null, sizeId: number | null, setIds: readonly number[]) {
+  const sets = [...new Set(setIds)].sort((first, second) => first - second).join(',');
+  return `${boardType}:${layoutId ?? ''}:${sizeId ?? ''}:${sets}`;
 }
 
 /** Which picker path opened the builder, on `Board Builder Abandoned`. */
@@ -339,6 +371,10 @@ export default function CreateBoard() {
   // The "already has" sheet (#8151): the gym the board lands on already has
   // this wall. One refusal's sheet at a time, like the two above.
   const [existingWalls, setExistingWalls] = useState<ExistingWallsPrompt | null>(null);
+  const existingWallsSheetRef = useRef<ManagedSheetHandle>(null);
+  // A setup the catalogue doesn't list (#8151): the app's own check or the
+  // server's refusal, drawn under its row while the form still holds it.
+  const [configError, setConfigError] = useState<(BoardConfigError & { setupKey: string }) | null>(null);
   // `submitting` is only accurate on the NEXT render, so it can't guard a call
   // that fires in the same tick as the state update — which is exactly what
   // "add a new board here" does (dismiss the sheet, then create). This ref is
@@ -415,6 +451,41 @@ export default function CreateBoard() {
     haptic: false,
   });
 
+  // "Use it and fix its setup" (#8151): the wall is bound like any pick, then,
+  // before the builder leaves, the report sheet opens on "Set up wrong" with
+  // the climber's setup in it. The builder leaves once that sheet (or the claim
+  // sheet it hands over to) has closed, sent or not. The board is already the
+  // active one, so a fix that applies reaches it there, and the report's own
+  // "Climb it now" stays hidden.
+  const reportHost = useReportProblemHost();
+  const { openReport } = reportHost;
+  const directoryReportsEnabled = useDirectoryReportsEnabled();
+  const fixDraftRef = useRef<WallSetup | null>(null);
+  const openFixReport = useCallback(
+    (board: UserBoard) =>
+      new Promise<void>((resolve) => {
+        const draft = fixDraftRef.current;
+        openReport(
+          { kind: 'board', board },
+          {
+            initialReason: 'wrong_setup',
+            initialSetup: draft ? { layoutId: draft.layoutId, sizeId: draft.sizeId, setIds: draft.setIds } : undefined,
+            climbNowOffered: false,
+            onClosed: resolve,
+          },
+        );
+      }),
+    [openReport],
+  );
+  const finishAfterFix = useActivateBoard({
+    source: fromOnboarding ? 'onboarding' : undefined,
+    returnTo: boardReturnTo,
+    isLocalOnly: true,
+    writeFailure: 'rethrow',
+    haptic: false,
+    onBound: openFixReport,
+  });
+
   /**
    * Look up the walls a BOARD_EXISTING_WALLS refusal named, for its sheet. By
    * uuid, because the gym may be one the server attached from a typed location,
@@ -422,28 +493,75 @@ export default function CreateBoard() {
    * wall the climber can't see is left out, and a failure leaves only the
    * count, never "no walls": Keep setting up mine still works either way.
    */
-  const loadExistingWalls = useCallback(async (named: ExistingWallErrorCandidate[], boardType: string) => {
-    const lookups = await Promise.allSettled(
-      named.slice(0, EXISTING_WALLS_LOOKUP_LIMIT).map((wall) => fetchBoardByUuid(wall.boardUuid)),
-    );
-    const boards = lookups.flatMap((lookup) => (lookup.status === 'fulfilled' && lookup.value ? [lookup.value] : []));
-    // Any wall named and not shown is a failure, not "fewer walls": a partial
-    // answer must never read as the whole one.
-    const loadFailed = boards.length < named.length;
-    setExistingWalls((current) => (current && current.named === named ? { ...current, boards, loadFailed } : current));
-    track(SHARED_EVENTS.BoardWallCandidatesShown, {
-      boardType,
-      exactCount: named.filter((wall) => wall.matchKind === 'EXACT').length,
-      nearMissCount: named.filter(
-        (wall) => wall.matchKind === 'SETS_DIFFER' || wall.matchKind === 'LAYOUT_OR_SIZE_DIFFERS',
-      ).length,
-      nearbyCount: 0,
-      otherTypeCount: 0,
-      atGymCount: named.filter((wall) => wall.matchKind === null).length,
-      lookup: boards.length === 0 && named.length > 0 ? 'failed' : 'ok',
-      trigger: 'pre_submit',
-    });
-  }, []);
+  const loadExistingWalls = useCallback(
+    async (named: ExistingWallErrorCandidate[], draft: WallSetup, knownGymUuid: string | null) => {
+      const boardType = draft.boardType;
+      const lookups = await Promise.allSettled(
+        named.slice(0, EXISTING_WALLS_LOOKUP_LIMIT).map((wall) => fetchBoardByUuid(wall.boardUuid)),
+      );
+      const boards = lookups.flatMap((lookup) => (lookup.status === 'fulfilled' && lookup.value ? [lookup.value] : []));
+      // Any wall named and not shown is a failure, not "fewer walls": a partial
+      // answer must never read as the whole one.
+      const loadFailed = boards.length < named.length;
+      setExistingWalls((current) =>
+        current && current.named === named ? { ...current, boards, loadFailed } : current,
+      );
+      // The gym's walls on another layout or size never block, so the refusal
+      // never names them: ask for them with the draft. Advisory, so a failure
+      // just leaves that shelf out. The gym is the one the board was sent with,
+      // or else the one a named wall is on (the server may have attached it).
+      // A wall on a listing within 150 m stays, with that listing's name on its
+      // row: a second listing of the same gym is exactly where copies hide.
+      const namedUuids = new Set(named.map((wall) => wall.boardUuid));
+      const gymUuid = knownGymUuid ?? boards.find((board) => board.gymUuid)?.gymUuid ?? null;
+      let mismatchLookup: 'ok' | 'failed' | 'none' = 'none';
+      let mismatchCount = 0;
+      if (gymUuid) {
+        try {
+          const { candidates } = await fetchExistingWallCandidates({
+            boardType,
+            gymUuid,
+            layoutId: draft.layoutId,
+            sizeId: draft.sizeId,
+            setIds: draft.setIds,
+          });
+          const mismatch: MismatchWall[] = candidates
+            .filter(
+              (candidate) => candidate.matchKind === 'LAYOUT_OR_SIZE_DIFFERS' && !namedUuids.has(candidate.board.uuid),
+            )
+            .map((candidate) => ({
+              board: candidate.board,
+              nearby:
+                candidate.source === 'NEARBY_LISTING'
+                  ? { gymName: candidate.gymName, distanceMeters: candidate.gymDistanceMeters ?? null }
+                  : null,
+            }));
+          mismatchLookup = 'ok';
+          mismatchCount = mismatch.length;
+          setExistingWalls((current) => (current && current.named === named ? { ...current, mismatch } : current));
+        } catch {
+          // Advisory only: the walls that block are already on the sheet.
+          mismatchLookup = 'failed';
+        }
+      }
+      // Once both lookups have settled, so the counts are what the sheet shows.
+      track(SHARED_EVENTS.BoardWallCandidatesShown, {
+        boardType,
+        exactCount: named.filter((wall) => wall.matchKind === 'EXACT').length,
+        nearMissCount: named.filter(
+          (wall) => wall.matchKind === 'SETS_DIFFER' || wall.matchKind === 'LAYOUT_OR_SIZE_DIFFERS',
+        ).length,
+        mismatchCount,
+        mismatchLookup,
+        nearbyCount: 0,
+        otherTypeCount: 0,
+        atGymCount: named.filter((wall) => wall.matchKind === null).length,
+        lookup: boards.length === 0 && named.length > 0 ? 'failed' : 'ok',
+        trigger: 'pre_submit',
+      });
+    },
+    [],
+  );
 
   /**
    * Always calls the server. The old short-circuit — activate an owned board
@@ -458,6 +576,29 @@ export default function CreateBoard() {
       if (inFlightRef.current || prefillPending) return;
       const input = builder.buildCreateInput(defaultName);
       if (!input) return;
+      // A setup the bundled catalogue doesn't list can't be drawn or toggled
+      // here, and the server would refuse it: say so on its row and keep the
+      // form. Every row the builder offers comes from that catalogue, so only
+      // a preset or a seed can get here.
+      const inputSetIds = parseSetIds(input.setIds);
+      const inputBoardName = toBoardName(input.boardType);
+      const unknownSetup = inputBoardName
+        ? findUnknownSetupField(inputBoardName, {
+            layoutId: input.layoutId,
+            sizeId: input.sizeId,
+            setIds: inputSetIds,
+          })
+        : null;
+      if (unknownSetup) {
+        submitAttemptedRef.current = true;
+        setCreateError(null);
+        setConfigError({
+          ...unknownSetup,
+          setupKey: setupKey(input.boardType, input.layoutId, input.sizeId, inputSetIds),
+        });
+        track(SHARED_EVENTS.BoardCreateFailed, { boardType: input.boardType, source, error_reason: 'unknown_config' });
+        return;
+      }
       // The first Save is always REJECT_IF_FOUND against the real setup; only
       // the "already has" sheet below acknowledges walls.
       const acknowledged = overrides?.acknowledgedWallUuids ?? [];
@@ -471,6 +612,7 @@ export default function CreateBoard() {
       submitAttemptedRef.current = true;
       setSubmitting(true);
       setCreateError(null);
+      setConfigError(null);
       hapticSelection();
 
       try {
@@ -569,10 +711,39 @@ export default function CreateBoard() {
         // only be refused again, so it falls through to the plain failure.
         const namedWalls = readExistingWallsError(error);
         if (namedWalls && namedWalls.length > 0) {
-          setExistingWalls({ named: namedWalls, boards: null, loadFailed: false, granted });
+          const draft: WallSetup = {
+            boardType: input.boardType,
+            layoutId: input.layoutId,
+            sizeId: input.sizeId,
+            setIds: input.setIds,
+          };
+          setExistingWalls({ named: namedWalls, boards: null, loadFailed: false, granted, draft, mismatch: [] });
           inFlightRef.current = false;
           setSubmitting(false);
-          void loadExistingWalls(namedWalls, input.boardType);
+          void loadExistingWalls(namedWalls, draft, input.gymUuid ?? null);
+          return;
+        }
+        // The catalogue refused the setup. With the field named, the error goes
+        // on that row and the form stays; an older server names none, which
+        // gets a line of our own rather than its English message.
+        const unknownConfig = readUnknownBoardConfigError(error);
+        if (unknownConfig) {
+          track(SHARED_EVENTS.BoardCreateFailed, {
+            boardType: input.boardType,
+            source,
+            error_reason: 'unknown_config',
+          });
+          if (unknownConfig.field) {
+            setConfigError({
+              field: unknownConfig.field,
+              invalidSetIds: unknownConfig.invalidSetIds,
+              setupKey: setupKey(input.boardType, input.layoutId, input.sizeId, inputSetIds),
+            });
+          } else {
+            setCreateError(t('mobile.create.configError.noField'));
+          }
+          inFlightRef.current = false;
+          setSubmitting(false);
           return;
         }
         const duplicateError = readDuplicateBoardError(error);
@@ -709,45 +880,106 @@ export default function CreateBoard() {
     }),
     [t],
   );
-  const existingWallItems = useMemo(
-    () =>
-      (existingWalls?.boards ?? []).flatMap((board) => {
-        const item = wallCandidateItem(board, { copy: wallRowCopy, viewerId });
-        return item ? [item] : [];
-      }),
-    [existingWalls?.boards, wallRowCopy, viewerId],
+  const differenceCopy = useMemo<WallDifferenceCopy>(
+    () => ({
+      layout: (wall, yours) => t('mobile.create.existingWalls.layoutDiffers', { wall, yours }),
+      size: (wall, yours) => t('mobile.create.existingWalls.sizeDiffers', { wall, yours }),
+      missing: (sets) => t('mobile.create.existingWalls.missingSets', { sets }),
+      extra: (sets) => t('mobile.create.existingWalls.extraSets', { sets }),
+    }),
+    [t],
   );
+  // The walls on their shelves: same setup, set up differently, then a
+  // possible setup mismatch. A near-miss row leads with what differs.
+  const arrangedWalls = useMemo(() => {
+    if (!existingWalls?.boards) return [];
+    const matchKinds = new Map(existingWalls.named.map((wall) => [wall.boardUuid, wall.matchKind]));
+    const named = existingWalls.boards.map((board) => ({ board, matchKind: matchKinds.get(board.uuid) ?? null }));
+    return arrangeExistingWalls(
+      existingWalls.draft,
+      named,
+      existingWalls.mismatch.map((wall) => wall.board),
+    );
+  }, [existingWalls?.boards, existingWalls?.named, existingWalls?.draft, existingWalls?.mismatch]);
+  const nearbyListings = useMemo(
+    () => new Map((existingWalls?.mismatch ?? []).map((wall) => [wall.board.uuid, wall.nearby])),
+    [existingWalls?.mismatch],
+  );
+  const existingWallsByKey = useMemo(() => {
+    const byKey = new Map<string, ExistingWall>();
+    for (const shelf of arrangedWalls) for (const wall of shelf.walls) byKey.set(wall.board.uuid, wall);
+    return byKey;
+  }, [arrangedWalls]);
+  const existingWallShelves = useMemo<ExistingWallsSheetShelf[]>(
+    () =>
+      arrangedWalls.map((shelf) => ({
+        key: shelf.key,
+        items: shelf.walls.flatMap(({ board, difference }) => {
+          const item = wallCandidateItem(board, {
+            copy: wallRowCopy,
+            viewerId,
+            nearby: nearbyListings.get(board.uuid) ?? null,
+          });
+          if (!item) return [];
+          if (!difference) return [item];
+          return [
+            { ...item, detailLines: [wallDifferenceLine(difference, differenceCopy), ...(item.detailLines ?? [])] },
+          ];
+        }),
+      })),
+    [arrangedWalls, wallRowCopy, differenceCopy, viewerId, nearbyListings],
+  );
+  // The title counts the walls on the sheet once they're in; the refusal's
+  // count until then.
+  const shownWallCount = existingWallShelves.reduce((total, shelf) => total + shelf.items.length, 0);
+  // "Use it and fix its setup" goes through Report a problem, so it is offered
+  // on the walls a report is: not the climber's own, nor one they can edit.
+  const fixableWallKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const [key, wall] of existingWallsByKey) {
+      if (canReportBoard(wall.board, { enabled: directoryReportsEnabled, viewerUserId: viewerId })) keys.add(key);
+    }
+    return keys;
+  }, [existingWallsByKey, directoryReportsEnabled, viewerId]);
 
   /**
-   * "Use this board" on the "already has" sheet: follow the wall unless it's
-   * already the climber's, then make it active and leave. Nothing is created.
-   * A failed follow must not activate a wall the climber can't reach later.
+   * Take a wall from the "already has" sheet: follow it unless it's already
+   * the climber's, then make it active and leave. Nothing is created. A failed
+   * follow must not activate a wall the climber can't reach later.
+   *
+   * With `fixSetup`, this sheet goes and settles first (two native sheets
+   * can't overlap a present with a dismiss), then the bind opens the report
+   * sheet on the climber's setup and leaves once it has closed.
    */
-  const handleUseExistingWall = useCallback(
-    async (item: DiscoveryBoardItem, position: number) => {
+  const takeExistingWall = useCallback(
+    async (item: DiscoveryBoardItem, position: number, shelf: ExistingWallShelfKey, fixSetup: boolean) => {
       if (!existingWalls || inFlightRef.current) return;
-      const board = existingWalls.boards?.find((candidate) => candidate.uuid === item.key);
-      if (!board) return;
-      const named = existingWalls.named.find((wall) => wall.boardUuid === board.uuid);
+      const wall = existingWallsByKey.get(item.key);
+      if (!wall) return;
+      const { board } = wall;
       inFlightRef.current = true;
       setSubmitting(true);
       try {
         const relation = wallRelation(board, viewerId);
         if (relation === null) await followBoard.mutateAsync(board);
         track(SHARED_EVENTS.BoardWallCandidateUsed, {
-          match: usedWallMatch(named?.matchKind ?? null),
+          match: shelf === 'same_setup' ? 'exact' : 'near_miss',
           position,
           alreadyFollowed: relation !== null,
-          fixSetupStarted: false,
+          fixSetupStarted: fixSetup,
           trigger: 'pre_submit',
         });
         // Abandonment is judged on unmount, which the bind's navigation
         // triggers: mark the board secured just before it, after the follow,
         // and undo that if the bind itself fails so the quit is still counted.
         markBoardSecured();
+        if (fixSetup) {
+          fixDraftRef.current = existingWalls.draft;
+          await dismissManagedSheetAndWait(existingWallsSheetRef.current);
+        }
         setExistingWalls(null);
         try {
-          await finish(board);
+          await (fixSetup ? finishAfterFix(board) : finish(board));
         } catch (bindError) {
           unmarkBoardSecured();
           throw bindError;
@@ -759,7 +991,27 @@ export default function CreateBoard() {
         setSubmitting(false);
       }
     },
-    [existingWalls, viewerId, followBoard, markBoardSecured, unmarkBoardSecured, finish, t],
+    [
+      existingWalls,
+      existingWallsByKey,
+      viewerId,
+      followBoard,
+      markBoardSecured,
+      unmarkBoardSecured,
+      finish,
+      finishAfterFix,
+      t,
+    ],
+  );
+  const handleUseExistingWall = useCallback(
+    (item: DiscoveryBoardItem, position: number, shelf: ExistingWallShelfKey) =>
+      void takeExistingWall(item, position, shelf, false),
+    [takeExistingWall],
+  );
+  const handleFixExistingWall = useCallback(
+    (item: DiscoveryBoardItem, position: number, shelf: ExistingWallShelfKey) =>
+      void takeExistingWall(item, position, shelf, true),
+    [takeExistingWall],
   );
 
   /** "Keep setting up mine": resend, acknowledging every wall the refusal named. */
@@ -785,13 +1037,20 @@ export default function CreateBoard() {
     if (!existingWalls) return;
     const { named } = existingWalls;
     setExistingWalls({ ...existingWalls, boards: null, loadFailed: false });
-    void loadExistingWalls(named, builder.boardName);
-  }, [existingWalls, loadExistingWalls, builder.boardName]);
+    void loadExistingWalls(named, existingWalls.draft, builder.selectedGym?.uuid ?? null);
+  }, [existingWalls, loadExistingWalls, builder.selectedGym?.uuid]);
 
   const handleDismissExistingWalls = useCallback(() => {
     if (inFlightRef.current) return;
     setExistingWalls(null);
   }, []);
+
+  // The catalogue error, while the form still holds the setup it was about.
+  const currentSetupKey = setupKey(builder.boardName, builder.layoutId, builder.sizeId, builder.setIds);
+  const shownConfigError: BoardConfigError | null =
+    configError && configError.setupKey === currentSetupKey
+      ? { field: configError.field, invalidSetIds: configError.invalidSetIds }
+      : null;
 
   // Handing straight on to "Where's this board?": draw nothing in between.
   if (redirectToWhere) return null;
@@ -819,23 +1078,29 @@ export default function CreateBoard() {
                 ? { label: t('mobile.findWall.retry'), onPress: retryPrefillGym }
                 : undefined
         }
+        configError={shownConfigError}
       />
       {existingWalls && (
         <ExistingWallsSheet
           gymName={builder.selectedGym?.name ?? existingWalls.boards?.[0]?.gymName ?? null}
           boardLabel={boardTypeLabel(builder.boardName)}
-          wallCount={existingWalls.named.length}
-          items={existingWallItems}
+          wallCount={shownWallCount > 0 ? shownWallCount : existingWalls.named.length}
+          shelves={existingWallShelves}
+          fixableKeys={fixableWallKeys}
+          canKeepMine={(existingWalls.boards?.length ?? 0) > 0}
           loading={existingWalls.boards === null}
           loadFailed={existingWalls.loadFailed}
           busy={submitting}
-          onUse={(item, position) => void handleUseExistingWall(item, position)}
+          onUse={handleUseExistingWall}
+          onFixSetup={handleFixExistingWall}
           onKeepMine={handleKeepMine}
           onRetry={handleRetryExistingWalls}
           onDismiss={handleDismissExistingWalls}
           BoardArt={DiscoveryBoardArt}
+          sheetRef={existingWallsSheetRef}
         />
       )}
+      {reportHost.sheet}
       {duplicate && (
         <BoardDuplicatePromptSheet
           duplicate={duplicate.error}

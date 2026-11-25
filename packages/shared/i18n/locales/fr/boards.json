@@ -489,7 +489,34 @@
         "body": "Utilise celle sur laquelle les autres grimpent déjà, pour que vos croix soient au même endroit. Continue la tienne seulement si c'est un autre mur.",
         "useBoard": "Utiliser cette board",
         "keepMine": "Continuer avec la mienne",
-        "loadFailed": "Impossible de charger toutes ces boards. Réessaie pour les voir avant de continuer la tienne."
+        "loadFailed": "Impossible de charger toutes ces boards. Réessaie pour les voir avant de continuer la tienne.",
+        "setupMismatch": "Configuration peut-être erronée",
+        "layoutDiffers": "Layout {{wall}}. Sur ta board : {{yours}}",
+        "sizeDiffers": "Taille {{wall}}. Sur ta board : {{yours}}",
+        "missingSets": "Il manque {{sets}}",
+        "extraSets": "A aussi {{sets}}",
+        "choiceTitle": "C'est ton mur ?",
+        "choiceBody": "Sa configuration ne correspond pas à la tienne. Si c'est le mur où tu grimpes, utilise-le pour que tes croix rejoignent celles des autres.",
+        "choiceUseAsIs": "L'utiliser tel quel",
+        "choiceFixSetup": "L'utiliser et corriger sa configuration",
+        "choiceDifferent": "Non, c'est un autre mur"
+      },
+      "holdsSummary_one": "Prises : {{selected}} sur {{count}} set",
+      "holdsSummary_other": "Prises : {{selected}} sur {{count}} sets",
+      "holdsChange": "Modifier",
+      "holdsChangeLabel": "Modifier les sets de prises",
+      "holdsDone": "OK",
+      "omissionHint": "Il manque {{set}} ?",
+      "omissionAdd": "Ajouter {{set}}",
+      "configError": {
+        "boardType": "Impossible d'enregistrer ce type de board. Choisis-en un autre.",
+        "layoutId": "On ne connaît pas ce layout. Choisis-en un autre.",
+        "sizeId": "Cette taille ne correspond pas à ce layout. Choisis-en une autre.",
+        "setIds_one": "Un set de prises n'existe pas pour cette taille. Retire-le ou choisis à nouveau tes sets.",
+        "setIds_other": "{{count}} sets de prises n'existent pas pour cette taille. Retire-les ou choisis à nouveau tes sets.",
+        "removeSets_one": "Le retirer",
+        "removeSets_other": "Les retirer",
+        "noField": "On ne connaît pas cette configuration. Vérifie la board, le layout, la taille et les prises."
       }
     },
     "custom": {
@@ -2023,7 +2050,8 @@
         "reviewClashes": "Cette configuration entre en conflit avec une autre board, donc elle est vérifiée d'abord. On te prévient dès que c'est corrigé.",
         "alreadySetUp": "Elle est déjà configurée comme ça."
       }
-    }
+    },
+    "setupNote": "Sur le mur, la configuration est : {{setup}}"
   },
   "reportReview": {
     "title": "Des grimpeurs ont signalé cette board",

@@ -12,8 +12,13 @@
 // So does a suggestion the server refuses because the board already has it
 // (someone fixed it while this sheet was open): there is nothing to change, but
 // the right setup is there to climb.
+//
+// The builder's near-miss "Use it and fix its setup" (#8151) opens it on "Set
+// up wrong" with the climber's own setup already in the fields
+// (`initialReason`, `initialSetup`), or written into the note while the setup
+// fields are off. Nothing is sent until the climber taps Send.
 
-import { useCallback, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -21,6 +26,7 @@ import {
   initialSetupSelection,
   isSetupChanged,
   isSetupSelectionComplete,
+  normaliseSetIds,
   setupSelectionReducer,
   toSuggestedSetup,
   type SetupSelection,
@@ -182,13 +188,32 @@ export function setupReviewLine(reason: BoardSetupReviewReason, gym: string, t: 
   }
 }
 
+/** A setup the sheet can open on instead of the board's own: the climber's, from the builder. */
+export type ReportInitialSetup = { layoutId: number; sizeId: number; setIds: string };
+
+/** A selection as a comparable key: layout, size, sets in canonical order, and a fixed angle. */
+function selectionKey(selection: SetupSelection | null): string {
+  if (!selection) return '';
+  const angle = selection.angleIsFixed ? String(selection.angle) : '';
+  return `${selection.layoutId ?? ''}|${selection.sizeId ?? ''}|${normaliseSetIds(selection.setIds.join(','))}|${angle}`;
+}
+
 /** The setup reducer over a board this build may not know (no selection, no fields). */
 function setupReducer(selection: SetupSelection | null, action: SetupSelectionAction): SetupSelection | null {
   return selection ? setupSelectionReducer(selection, action) : selection;
 }
 
-function initialSelectionFor(board: UserBoard | null): SetupSelection | null {
-  return board ? initialSetupSelection(board) : null;
+function initialSelectionFor({
+  board,
+  initialSetup,
+}: {
+  board: UserBoard | null;
+  initialSetup: ReportInitialSetup | null;
+}): SetupSelection | null {
+  if (!board) return null;
+  // The climber's setup on the board's own type and tilt: the angle stays the
+  // board's, since an adjustable board's angle isn't part of what's wrong.
+  return initialSetupSelection(initialSetup ? { ...board, ...initialSetup } : board);
 }
 
 type ReportReason = BoardReportReason | GymReportReason;
@@ -205,6 +230,10 @@ export function ReportDirectorySheet({
   target,
   onClose,
   onClaim,
+  initialReason = null,
+  initialSetup = null,
+  climbNowOffered = true,
+  closeAfterDismissed = false,
 }: {
   target: ReportProblemTarget;
   onClose: () => void;
@@ -213,6 +242,25 @@ export function ReportDirectorySheet({
    * host can present the claim sheet without overlapping the two.
    */
   onClaim: (gym: Gym) => void;
+  /** The reason to open on, already picked. */
+  initialReason?: ReportReason | null;
+  /**
+   * The setup the climber says the board has, for "Set up wrong" on a board:
+   * the setup fields open on it, or, with them off, the note says it.
+   */
+  initialSetup?: ReportInitialSetup | null;
+  /**
+   * The done step's "Climb it now". Off when the board is already bound and
+   * the host moves on once this sheet closes (the builder's near-miss fix).
+   */
+  climbNowOffered?: boolean;
+  /**
+   * Call `onClose` only once this sheet has fully slid away, for a host that
+   * navigates as soon as the report is done with (the builder's near-miss fix):
+   * leaving while a native sheet is still dismissing is the overlap the
+   * presentation coordinator exists to prevent.
+   */
+  closeAfterDismissed?: boolean;
 }) {
   const { t } = useTranslation('boards');
   const { effectiveOffline } = useConnectivity();
@@ -224,8 +272,7 @@ export function ReportDirectorySheet({
   const { data: fetchedGym } = useGym(board ? boardGymUuid : null);
   const gym: Gym | null = target.kind === 'gym' ? target.gym : (fetchedGym ?? null);
 
-  const [reason, setReason] = useState<ReportReason | null>(null);
-  const [note, setNote] = useState('');
+  const [reason, setReason] = useState<ReportReason | null>(initialReason);
   const [duplicateOf, setDuplicateOf] = useState<string | null>(null);
   const [result, setResult] = useState<DirectoryReportSubmitResult | null>(null);
   const inFlight = useRef(false);
@@ -239,13 +286,37 @@ export function ReportDirectorySheet({
   // The setup fields start on the board as it is now. Null for a gym report,
   // and for a board type this build doesn't know, which keeps the note field.
   const setupSuggestionsEnabled = useDirectorySetupSuggestionsEnabled();
-  const [selection, dispatchSetup] = useReducer(setupReducer, board, initialSelectionFor);
+  const [selection, dispatchSetup] = useReducer(
+    setupReducer,
+    { board, initialSetup: board && initialReason === 'wrong_setup' ? initialSetup : null },
+    initialSelectionFor,
+  );
   const showSetupFields =
     setupSuggestionsEnabled &&
     board !== null &&
     selection !== null &&
     reason !== null &&
     isSetupSuggestionAllowed(reason, board.boardType);
+  // With the setup fields off (the flag, or a board they don't cover), the
+  // climber's setup goes into the note instead, for them to send or edit.
+  const [generatedNote] = useState(() => {
+    if (!board || !initialSetup || initialReason !== 'wrong_setup' || showSetupFields) return '';
+    const setup = formatSetupSummary(board.boardType, initialSetup);
+    return setup ? t('report.setupNote', { setup }).slice(0, REPORT_NOTE_MAX_LENGTH) : '';
+  });
+  const [note, setNote] = useState(generatedNote);
+  // That note says the setup in words only while nothing better says it: the
+  // setup fields appearing (the flag resolving late) or another reason take it
+  // away, unless the climber has made it their own.
+  useEffect(() => {
+    if (!generatedNote) return;
+    if (showSetupFields || reason !== 'wrong_setup') {
+      setNote((current) => (current === generatedNote ? '' : current));
+    }
+  }, [generatedNote, showSetupFields, reason]);
+  // What the sheet opened on, so a report nobody has touched yet closes
+  // without asking to discard it.
+  const [initialSelectionKey] = useState(() => selectionKey(selection));
   // Changed, and whole: a layout the catalogue lists no sets for can't be sent.
   const setupChanged =
     showSetupFields &&
@@ -266,11 +337,28 @@ export function ReportDirectorySheet({
       claiming.current = true;
       const dismissal = await dismissManagedSheetAndWait(sheetRef.current);
       // The host went away mid-handoff: nothing left to present the claim from.
-      if (dismissal.status === 'aborted') return;
+      // Still say the report is done, so a host waiting on it never hangs.
+      if (dismissal.status === 'aborted') {
+        onClose();
+        return;
+      }
       onClaim(claimTarget);
     },
-    [onClaim],
+    [onClaim, onClose],
   );
+
+  // Done, Cancel, a pan-down or being displaced. A host that leaves the route
+  // on close waits for the sheet to be gone first.
+  const closing = useRef(false);
+  const close = useCallback(() => {
+    if (!closeAfterDismissed) {
+      onClose();
+      return;
+    }
+    if (closing.current) return;
+    closing.current = true;
+    void dismissManagedSheetAndWait(sheetRef.current).then(() => onClose());
+  }, [closeAfterDismissed, onClose]);
 
   const reportBoard = useReportBoard();
   const reportGym = useReportGym();
@@ -499,7 +587,7 @@ export function ReportDirectorySheet({
   let doneAction: ReactNode = null;
   if (alreadySetUp) {
     doneMessage = t('mobile.setupSuggestion.alreadySetUp');
-    doneAction = climbNowAction;
+    doneAction = climbNowOffered ? climbNowAction : null;
   } else if (result) {
     const setupDone = setupDoneCopy(result);
     if (setupDone?.kind === 'applied') {
@@ -518,7 +606,7 @@ export function ReportDirectorySheet({
       doneMessage = appliedGym
         ? t('mobile.setupSuggestion.appliedBody', { gym: appliedGym, setup })
         : t('mobile.setupSuggestion.appliedBodyGeneric', { setup });
-      doneAction = climbNowAction;
+      doneAction = climbNowOffered ? climbNowAction : null;
     } else if (setupDone?.kind === 'review') {
       doneMessage = setupReviewLine(setupDone.reason, gymName, t);
     } else {
@@ -623,8 +711,12 @@ export function ReportDirectorySheet({
       doneAction={doneAction}
       offlineMessage={effectiveOffline ? t('report.offline') : null}
       errorMessage={mutation.isError && !alreadySetUp ? t('report.error') : null}
-      dirty={reason !== null || note.length > 0 || setupChanged}
-      onClose={onClose}
+      dirty={
+        reason !== initialReason ||
+        (note.length > 0 && note !== generatedNote) ||
+        (setupChanged && selectionKey(selection) !== initialSelectionKey)
+      }
+      onClose={close}
       sheetRef={sheetRef}
       testID="report-problem"
     />

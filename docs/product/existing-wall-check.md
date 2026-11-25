@@ -130,7 +130,29 @@ The mobile app (native and Expo web) uses both halves. Screens: `app/boards/wher
 4. "My board isn't listed" opens a confirm when walls are listed, as a speed bump; it acknowledges nothing. With no walls it goes straight on; when the lookup failed it reads "Add it anyway". The builder's Save is then checked as above. A gym with no coordinates (and not the viewer's to edit) would fail the 150 m link check, so it offers Report a problem instead. Save waits until the prefilled gym has loaded, so a board never saves without its gym.
 5. A gym page's Set up a board opens straight on that gym's walls.
 
-A failed lookup is never drawn as "no boards". The near-miss "Is this your wall?" sheet and the builder's setup hints come in a follow-up.
+A failed lookup is never drawn as "no boards".
+
+**Near misses on the "already has" sheet.** The gym's wall list has no setup to compare against, so near misses are sorted out in the builder, where the climber's setup is known. `arrangeExistingWalls` (`src/lib/boards/near-miss-walls.ts`) puts the sheet's walls on three shelves, in order:
+
+1. Same setup: the refusal's `EXACT` walls.
+2. Set up differently: its `SETS_DIFFER` walls, each with what differs in catalogue words ("Missing Screw-on Feet", "Also has Hold Set C").
+3. Possible setup mismatch: walls on another layout or size ("2016 layout. Yours: Masters 2019").
+
+A refusal never names the third kind, since they never block. When the sheet opens, the builder calls `existingWallCandidates` once with the draft (the gym it sent, or else the gym a named wall is on) and keeps its `LAYOUT_OR_SIZE_DIFFERS` walls. A wall from a public listing within 150 m keeps that listing's name and distance on its row ("Boulder Space Annex · 82 m away"), since a second listing of the same gym is where copies hide. The sheet's title counts every wall it shows. That lookup is advisory: if it fails, the shelf is left out and nothing else changes. These walls are never acknowledged on "Keep setting up mine". The shelf follows the app's own `classifyWallMatch` of the draft against each wall. A named wall neither side can place goes on Set up differently, so it is never acknowledged unseen.
+
+The lower shelf only appears alongside a refusal. If a gym's only copy is on another layout (a seeded 2016 record, and the climber sets up a Masters 2019), Save is not refused and this sheet never opens. The gym-first wall list still shows that wall under "At {gym}".
+
+A same-setup row takes the wall as before. A near-miss row asks "Is this your wall?" inside the same sheet, not in a second sheet stacked on it:
+
+- **Use it as it is.** Same path as Use this board.
+- **Use it and fix its setup.** Offered only where Report a problem is (`directory-reports` on, and not a wall the climber can edit). The wall is followed. Then the sheet dismisses and waits to settle, and the wall is bound. The bind's `onBound` opens `ReportDirectorySheet` through `useReportProblemHost` on "Set up wrong", with the climber's setup in the setup fields (`initialReason`, `initialSetup`). With `directory-setup-suggestions` off, the setup is written into the note instead. Nothing is sent until the climber taps Send. The builder leaves once the report sheet has fully slid away (`closeAfterDismissed`), or once the claim sheet it hands over to has closed. `onClosed` always fires, even if no sheet could open or its host went away mid-handoff, so the builder never waits forever. A report nobody has touched closes without asking to discard it. If the setup fields appear late (the flag resolving), the generated note is dropped, unless the climber has edited it. The report's own "Climb it now" is hidden (`climbNowOffered: false`): the wall is already active, and a fix that applies reaches it there.
+- **No, it's a different wall.** Back to the list.
+
+`Board Wall Candidate Used` carries `match: near_miss` for both near-miss shelves, and `fixSetupStarted`. `Board Wall Candidates Shown` fires once the follow-up lookup has settled, with `mismatchCount` and `mismatchLookup`.
+
+**Setup clarity in the builder.** The hold sets moved out of More options into the main form, under "Holds: 3 of 4 sets" (`BoardHoldsSummary`). Change opens the set chips. On a Masters 2017 or 2019 without its Screw-on Feet, `likelySetupOmissions` adds "Missing Screw-on Feet?" with a one-tap Add. Partial setups stay allowed.
+
+**Catalogue errors on the right row.** Before Save goes out, `findUnknownSetupField` (`@boardsesh/board-config`) checks the setup against the bundled catalogue in the server's order: layout, size, then sets. A server `UNKNOWN_BOARD_CONFIG` is read with `readUnknownBoardConfigError` (`@boardsesh/graphql`). Either way the error is drawn under the board type, layout, size or holds row, and the form keeps its state. Refused sets open the set chips, with a one-tap remove for the ones still picked. The error goes away once the setup changes. An older server that names no field gets one line of our own at the top of the form. Both report `Board Create Failed` with `error_reason: unknown_config`.
 
 ## Out of scope
 
@@ -144,4 +166,4 @@ A failed lookup is never drawn as "no boards". The near-miss "Is this your wall?
 
 The backend must be in production before the app's OTA that sends `existingWallCheck`: an unknown input field fails GraphQL validation on an older backend. The PostHog flag `create-board-gym-first` gates only the app's new screens. The app always sends `existingWallCheck`, so the server check runs whether or not the flag is on.
 
-Tests: `packages/backend/src/__tests__/existing-wall-check.test.ts`, `packages/shared/board-config/src/__tests__/wall-match.test.ts`, `packages/shared/graphql/src/__tests__/existing-walls-error.test.ts`, and the `UNKNOWN_BOARD_CONFIG detail` block in `board-catalog-validation.test.ts`.
+Tests: `packages/backend/src/__tests__/existing-wall-check.test.ts`, `packages/shared/board-config/src/__tests__/wall-match.test.ts`, `packages/shared/graphql/src/__tests__/existing-walls-error.test.ts`, and the `UNKNOWN_BOARD_CONFIG detail` block in `board-catalog-validation.test.ts`. The app's near-miss and setup half: `near-miss-walls.test.ts`, `ExistingWallsSheet.test.tsx`, `BoardHoldsSummary.test.tsx`, the hold-set block in `BoardForm.test.tsx`, the builder prefill block in `ReportDirectorySheet.test.tsx`, the near-miss and catalogue-error blocks in `app/boards/__tests__/create.test.tsx`, `setup-validation.test.ts` and `unknown-board-config-error.test.ts`.
