@@ -3,6 +3,8 @@
 // errors carrying `response.errors[]`; some call sites re-throw with
 // `graphqlErrors`, so both shapes are accepted.
 
+import type { SimilarGym } from '@boardsesh/shared-schema';
+
 type GraphqlErrorLike = {
   message?: string;
   extensions?: {
@@ -116,6 +118,63 @@ export function readExistingWallsError(error: unknown): ExistingWallErrorCandida
     });
   }
   return null;
+}
+
+function asNullableString(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
+/** One `SimilarGym` off an error's extensions, or null when it isn't one. */
+function readSimilarGym(rawGym: unknown): SimilarGym | null {
+  if (!rawGym || typeof rawGym !== 'object') return null;
+  const candidate = rawGym as Record<string, unknown>;
+  const uuid = asString(candidate.uuid);
+  const name = asString(candidate.name);
+  if (!uuid || !name) return null;
+  return {
+    uuid,
+    name,
+    slug: asString(candidate.slug),
+    address: asNullableString(candidate.address),
+    website: asNullableString(candidate.website),
+    distanceMeters: typeof candidate.distanceMeters === 'number' ? candidate.distanceMeters : null,
+    ownerType: candidate.ownerType === 'SYSTEM' ? 'SYSTEM' : 'USER',
+    isClaimable: candidate.isClaimable === true,
+    canClaimByDomain: candidate.canClaimByDomain === true,
+    providerOrigins: Array.isArray(candidate.providerOrigins)
+      ? candidate.providerOrigins.filter((origin): origin is string => typeof origin === 'string')
+      : [],
+  };
+}
+
+/**
+ * `createGym` refusing because similar gyms are already listed
+ * (`GYM_SIMILAR_EXISTS`). Returns the gyms it named, in the `SimilarGym` shape
+ * findSimilarGyms returns, or null when the error is something else. The
+ * client shows them and, when the climber says theirs is a different gym,
+ * retries with `duplicateCheck: { mode: CONFIRMED_SEPARATE }` and every gym it
+ * has shown so far. An empty list still means the refusal happened.
+ */
+export function readSimilarGymsError(error: unknown): SimilarGym[] | null {
+  for (const graphqlError of getGraphqlErrors(error)) {
+    if (graphqlError.extensions?.code !== 'GYM_SIMILAR_EXISTS') continue;
+    const rawCandidates = graphqlError.extensions.candidates;
+    if (!Array.isArray(rawCandidates)) return [];
+    return rawCandidates.flatMap((rawCandidate: unknown) => {
+      const similarGym = readSimilarGym(rawCandidate);
+      return similarGym ? [similarGym] : [];
+    });
+  }
+  return null;
+}
+
+/**
+ * `createGym` refusing because the account already owns the most gyms one
+ * account may (`GYM_LIMIT_REACHED`). Not a retry: the climber deletes a gym
+ * they no longer run first.
+ */
+export function isGymLimitError(error: unknown): boolean {
+  return getGraphqlErrors(error).some((graphqlError) => graphqlError.extensions?.code === 'GYM_LIMIT_REACHED');
 }
 
 /** The `createBoard` / `updateBoard` input field a catalogue refusal names. */
