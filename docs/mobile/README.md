@@ -21,6 +21,7 @@ a production rollout or a physical-device result.
 | Document | Path |
 | --- | --- |
 | [Contributing to existing screens](contributing-to-screens.md) | `contributing-to-screens.md` |
+| [Android Material icon rendering](icon-rendering.md) | `icon-rendering.md` |
 | [Repeatable local iOS profiling](ios-profiling.md) | `ios-profiling.md` |
 | [Live Activity Board Control Roadmap](live-activity-board-control.md) | `live-activity-board-control.md` |
 | [Mobile CPU profiling on physical phones](mobile-performance-profiling.md) | `mobile-performance-profiling.md` |
