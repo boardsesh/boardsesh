@@ -90,6 +90,34 @@ describe('POST /api/auth/forgot-password', () => {
     expect(mockSendPasswordResetEmail).not.toHaveBeenCalled();
   });
 
+  it('keeps default UUID issuance and hashed storage even when the private recovery backend is configured', async () => {
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
+    vi.stubEnv('CURRENT_STORE_AUTH_BACKEND_ORIGIN', 'https://unused-recovery.example.test');
+    vi.stubEnv('CURRENT_STORE_AUTH_RPC_SECRET', 'unused-recovery-rpc-secret-at-least-32bytes');
+    const privateRpc = vi.fn();
+    vi.stubGlobal('fetch', privateRpc);
+    lookup.stored = [passwordAccount];
+    mockSendPasswordResetEmail.mockResolvedValueOnce(undefined);
+    try {
+      const response = await POST(createRequest({ email: passwordAccount.email }));
+      expect(response.status).toBe(200);
+      const [recipient, token] = mockSendPasswordResetEmail.mock.calls[0] as [string, string, string];
+      expect(recipient).toBe(passwordAccount.email);
+      expect(token).toMatch(/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i);
+      expect(mockValues).toHaveBeenCalledWith({
+        identifier: `password-reset:${passwordAccount.email}`,
+        token: `sha256:${token}`,
+        expires: expect.any(Date),
+      });
+      expect(privateRpc).not.toHaveBeenCalled();
+      expect(response.headers.getSetCookie()).toEqual([]);
+      expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    } finally {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('returns 429 when rate limited', async () => {
     mockCheckRateLimit.mockReturnValueOnce({ limited: true, retryAfterSeconds: 30 });
 

@@ -1,370 +1,253 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
-
+import { AUTH_BACKEND_UNAVAILABLE, RECOVERY_COMMAND_PATHS } from '@boardsesh/auth-protocol';
+import { mintDeviceToken, verifyDeviceToken } from '@boardsesh/auth-protocol/device-token';
+import { CLOUDFLARE_ORIGIN_PROOF_HEADER } from '@boardsesh/consent/origin-proof';
 vi.mock('server-only', () => ({}));
-
-const mockCheckRateLimit = vi.fn();
-const mockGetClientIp = vi.fn();
-vi.mock('@/app/lib/auth/rate-limiter', () => ({
-  checkRateLimit: (...args: unknown[]) => mockCheckRateLimit(...args),
-  getClientIp: (...args: unknown[]) => mockGetClientIp(...args),
-}));
-
-vi.mock('@/app/lib/auth/password-reset', () => ({
-  getPasswordResetIdentifier: (email: string) => `password-reset:${email}`,
-  hashResetToken: (token: string) => `sha256:${token}`,
-  consistentDelay: async () => {},
-}));
-
-const mockHash = vi.fn();
-vi.mock('bcryptjs', () => ({
-  default: {
-    hash: (...args: unknown[]) => mockHash(...args),
-  },
-}));
-
-// Structural stand-ins so a test can see which row a write targets.
-vi.mock('drizzle-orm', () => ({
-  and: (...conditions: unknown[]) => ({ and: conditions }),
-  eq: (column: unknown, value: unknown) => ({ eq: [column, value] }),
-  gt: (column: unknown, value: unknown) => ({ gt: [column, value] }),
-  isNull: (column: unknown) => ({ isNull: column }),
-}));
-
-const lookup = vi.hoisted(() => ({ stored: [] as StoredAccount[] }));
-vi.mock('@boardsesh/db/queries/account-email', async () => {
-  const { fakeAccountEmailLookup } = await import('@/app/test-utils/account-email-lookup');
-  return fakeAccountEmailLookup(() => lookup.stored);
-});
-
-const mockTokenLimit = vi.fn();
-const mockTxCredentialsLimit = vi.fn();
-const mockTxUpdateWhere = vi.fn().mockResolvedValue(undefined);
-const mockTxUserUpdateWhere = vi.fn().mockResolvedValue(undefined);
-const mockTxTokenDeleteWhere = vi.fn().mockResolvedValue(undefined);
-const mockTxInsertValues = vi.fn().mockResolvedValue(undefined);
-const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
-const mockDelete = vi.fn((_table?: unknown) => ({ where: mockDeleteWhere }));
-const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
-  const tx = {
-    select: () => ({ from: () => ({ where: () => ({ limit: mockTxCredentialsLimit }) }) }),
-    update: (table: unknown) => ({
-      set: () => ({
-        where: table === 'userCredentials' ? mockTxUpdateWhere : mockTxUserUpdateWhere,
-      }),
-    }),
-    insert: () => ({ values: mockTxInsertValues }),
-    delete: () => ({ where: mockTxTokenDeleteWhere }),
-  };
-  await fn(tx);
-});
-
-const mockSelect = vi.fn((_selection?: Record<string, unknown>) => ({
-  from: () => ({
-    where: () => ({
-      limit: mockTokenLimit,
-    }),
+const mocks = vi.hoisted(() => ({
+  rate: vi.fn(),
+  ip: vi.fn(() => '127.0.0.1'),
+  delay: vi.fn(async () => {}),
+  database: vi.fn(() => {
+    throw new Error('No web credential SQL');
+  }),
+  hash: vi.fn(() => {
+    throw new Error('No web hashing');
   }),
 }));
-
-vi.mock('@/app/lib/db/db', () => ({
-  getDb: () => ({
-    select: (selection?: Record<string, unknown>) => mockSelect(selection),
-    delete: (table?: unknown) => mockDelete(table),
-    transaction: (fn: (tx: unknown) => Promise<void>) => mockTransaction(fn),
-  }),
-}));
-
-vi.mock('@/app/lib/db/schema', () => ({
-  verificationTokens: {
-    identifier: 'verificationTokens.identifier',
-    token: 'verificationTokens.token',
-    expires: 'verificationTokens.expires',
-  },
-  users: { id: 'users.id', email: 'users.email', emailVerified: 'users.emailVerified' },
-  userCredentials: 'userCredentials',
-}));
-
-import type { StoredAccount } from '@/app/test-utils/account-email-lookup';
+vi.mock('@/app/lib/auth/rate-limiter', () => ({ checkRateLimit: mocks.rate, getClientIp: mocks.ip }));
+vi.mock('@/app/lib/auth/password-reset', () => ({ consistentDelay: mocks.delay }));
+vi.mock('@/app/lib/db/db', () => ({ getDb: mocks.database }));
+vi.mock('bcryptjs', () => ({ default: { hash: mocks.hash }, hash: mocks.hash }));
 import { POST } from '../route';
-
-function createRequest(body: Record<string, unknown>, headers: Record<string, string> = {}): NextRequest {
-  return new NextRequest('http://localhost/api/auth/reset-password', {
+const uuid = '6f1c1f3e-8d7a-4b7e-9a35-3f4a1f0f2b11';
+const versioned = `pr1_${'A'.repeat(43)}`;
+const submitted = {
+  email: ' Stored.Case@Example.test ',
+  token: uuid,
+  password: ' raw é\u0301 password ',
+  confirmPassword: ' raw é\u0301 password ',
+};
+const proofSecret = 'owned-zone-origin-proof-secret-at-least-32';
+const edgeHeaders = { 'X-Forwarded-For': '198.51.100.7, 203.0.113.9, 172.70.1.2', 'CF-Connecting-IP': '203.0.113.9' };
+function request(body: unknown = submitted, headers: Record<string, string> = {}, raw = false) {
+  return new NextRequest('https://www.boardsesh.test/api/auth/reset-password', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...headers },
-    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json', Cookie: 'next-auth.session-token=existing-sibling', ...headers },
+    body: raw ? String(body) : JSON.stringify(body),
   });
 }
-
-const edgeHeaders = {
-  'X-Forwarded-For': '198.51.100.7, 203.0.113.9, 172.70.1.2',
-  'CF-Connecting-IP': '203.0.113.9',
-};
-const limitedSubmission = {
-  email: 'test@example.com',
-  token: '6f1c1f3e-8d7a-4b7e-9a35-3f4a1f0f2b11',
-  password: 'validpassword',
-  confirmPassword: 'validpassword',
-};
-
-describe('POST /api/auth/reset-password', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockGetClientIp.mockReturnValue('127.0.0.1');
-    mockCheckRateLimit.mockReturnValue({ limited: false, retryAfterSeconds: 0 });
-    mockHash.mockResolvedValue('hashed-password');
-    mockTxCredentialsLimit.mockResolvedValue([{ userId: 'user-1' }]);
-    lookup.stored = [
-      { id: 'user-1', email: 'test@example.com', passwordHash: '$2b$12$a' },
-      { id: 'oauth-user', email: 'oauth@example.com' },
-    ];
-  });
-
-  it('returns 429 when rate limited', async () => {
-    mockCheckRateLimit.mockReturnValueOnce({ limited: true, retryAfterSeconds: 25 });
-
-    const response = await POST(
-      createRequest({
-        email: 'test@example.com',
-        token: crypto.randomUUID(),
-        password: 'validpassword',
-        confirmPassword: 'validpassword',
-      }),
+function commandBody(options: RequestInit | undefined): Record<string, unknown> {
+  if (typeof options?.body !== 'string') throw new Error('Owned serialized command missing');
+  return JSON.parse(options.body) as Record<string, unknown>;
+}
+function backend(reply: Record<string, unknown> = { outcome: 'reset' }, status = 200) {
+  return vi.fn<typeof fetch>(async (_url, options) => {
+    const command = commandBody(options) as Record<string, unknown>;
+    return Response.json(
+      { protocolVersion: 2, operation: command.operation, requestId: command.requestId, ...reply },
+      { status },
     );
-
+  });
+}
+function privacy(response: Response) {
+  expect(response.headers.getSetCookie()).toEqual([]);
+  expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+  expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
+}
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
+  vi.stubEnv('CURRENT_STORE_AUTH_BACKEND_ORIGIN', 'https://backend.boardsesh.test');
+  vi.stubEnv('CURRENT_STORE_AUTH_RPC_SECRET', 'owned-default-reset-service-secret-32bytes');
+  vi.stubEnv('NEXTAUTH_SECRET', 'different-cookie-key');
+  vi.stubEnv('NEXTAUTH_URL', 'https://www.boardsesh.test');
+  vi.stubEnv('CLOUDFLARE_ORIGIN_PROOF_SECRET', '');
+  vi.stubEnv('CLOUDFLARE_ORIGIN_PROOF_NEXT_SECRET', '');
+  mocks.rate.mockReturnValue({ limited: false, retryAfterSeconds: 0 });
+});
+afterEach(() => {
+  expect(mocks.database).not.toHaveBeenCalled();
+  expect(mocks.hash).not.toHaveBeenCalled();
+  expect(mocks.delay).toHaveBeenCalledWith(expect.any(Number), 1500);
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+describe('public reset delegates every default credential mutation', () => {
+  it.each([undefined, '', 'legacy'])('uses private reset in default mode %j for UUID and pr1', async (mode) => {
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', mode);
+    const send = backend();
+    vi.stubGlobal('fetch', send);
+    for (const token of [uuid, versioned]) {
+      const payload = { ...submitted, token };
+      const response = await POST(request(payload));
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        message: 'Password reset successful. You can now sign in with your new password.',
+      });
+      privacy(response);
+      const [url, options] = send.mock.calls.at(-1) ?? [];
+      expect(url).toBe(`https://backend.boardsesh.test${RECOVERY_COMMAND_PATHS['reset-password']}`);
+      expect(commandBody(options)).toMatchObject({ payload });
+      expect(new Headers(options?.headers).get('Cookie')).toBeNull();
+    }
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+  it('publishes optional reset recognition without a login, freshness claim, or public token', async () => {
+    const secret = 'owned-default-reset-device-recognition-key-32bytes';
+    const { token } = await mintDeviceToken({ userId: 'reset-owner', secret });
+    const send = backend({ outcome: 'reset', deviceToken: token });
+    vi.stubGlobal('fetch', send);
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    const cookies = response.headers.getSetCookie();
+    expect(cookies).toHaveLength(1);
+    expect(cookies[0]).toContain('__Host-boardsesh.device=');
+    expect(cookies[0]).toContain('HttpOnly');
+    expect(cookies[0]).toContain('SameSite=Lax');
+    expect(cookies[0]).toContain('Secure');
+    expect(cookies[0]).not.toContain('Domain=');
+    expect(cookies[0]).not.toMatch(/session|auth_time|viewer/);
+    expect(await response.json()).toEqual({
+      message: 'Password reset successful. You can now sign in with your new password.',
+    });
+    expect(await verifyDeviceToken(token, { userId: 'reset-owner', secret })).not.toBeNull();
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
+  });
+  it('keeps staged reset on the qualified existing path', async () => {
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'backend-staging');
+    const send = backend();
+    vi.stubGlobal('fetch', send);
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    expect(send.mock.calls[0][0]).toBe('https://backend.boardsesh.test/api/internal/auth/current-store/reset-password');
+    privacy(response);
+  });
+  it.each([
+    [{ outcome: 'invalid_or_expired' }, 200, 400, 'Invalid or expired reset link'],
+    [{ outcome: 'legacy_unbound' }, 503, 503, AUTH_BACKEND_UNAVAILABLE],
+    [{ outcome: 'error', code: 'replayed' }, 409, 503, AUTH_BACKEND_UNAVAILABLE],
+    [{ outcome: 'error', code: 'validation_error', message: 'Invalid reset token' }, 400, 400, 'Invalid reset token'],
+    [
+      { outcome: 'error', code: 'rate_limited', retryAfterSeconds: 31 },
+      429,
+      429,
+      'Too many requests. Please try again later.',
+    ],
+  ] as const)(
+    'maps an authoritative reply without exposing private fields',
+    async (reply, privateStatus, status, error) => {
+      const send = backend(reply, privateStatus);
+      vi.stubGlobal('fetch', send);
+      const response = await POST(request());
+      expect(response.status).toBe(status);
+      expect(await response.json()).toEqual({ error });
+      if (status === 429) expect(response.headers.get('Retry-After')).toBe('31');
+      expect(send).toHaveBeenCalledOnce();
+      privacy(response);
+    },
+  );
+  it('forwards malformed payload untouched for backend validation', async () => {
+    const send = backend({ outcome: 'error', code: 'validation_error', message: 'Invalid reset token' }, 400);
+    vi.stubGlobal('fetch', send);
+    const response = await POST(request({ email: false, token: 'x', password: 1, confirmPassword: null }));
+    expect(response.status).toBe(400);
+    expect(commandBody(send.mock.calls[0][1])).toMatchObject({
+      payload: { email: false, token: 'x', password: 1, confirmPassword: null },
+    });
+    privacy(response);
+  });
+  it.each(['lost-reply', 'old-backend', 'missing-config'])(
+    'preserves sibling cookies on %s without fallback or retry',
+    async (failure) => {
+      const send = vi.fn<typeof fetch>(async () => {
+        if (failure === 'lost-reply') throw new Error('private committed acknowledgement lost');
+        return Response.json({ error: 'disabled' }, { status: 404 });
+      });
+      vi.stubGlobal('fetch', send);
+      if (failure === 'missing-config') vi.stubEnv('CURRENT_STORE_AUTH_BACKEND_ORIGIN', '');
+      const response = await POST(request());
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ error: AUTH_BACKEND_UNAVAILABLE });
+      expect(send).toHaveBeenCalledTimes(failure === 'missing-config' ? 0 : 1);
+      privacy(response);
+    },
+  );
+  it.each(['pr1_short', 'PR1_upper'])('rejects supported malformed capability %s before RPC', async (token) => {
+    const send = backend();
+    vi.stubGlobal('fetch', send);
+    const response = await POST(request({ ...submitted, token }));
+    expect(response.status).toBe(400);
+    expect(send).not.toHaveBeenCalled();
+    privacy(response);
+  });
+  it.each(['pr2_future', 'PR99_unknown'])('reserves future capability %s as unavailable before RPC', async (token) => {
+    const send = backend();
+    vi.stubGlobal('fetch', send);
+    const response = await POST(request({ ...submitted, token }));
+    expect(response.status).toBe(503);
+    expect(send).not.toHaveBeenCalled();
+    privacy(response);
+  });
+  it('keeps the default public5/60 bucket and refuses before RPC', async () => {
+    mocks.rate.mockReturnValue({ limited: true, retryAfterSeconds: 25 });
+    const send = backend();
+    vi.stubGlobal('fetch', send);
+    const response = await POST(request(submitted, edgeHeaders));
     expect(response.status).toBe(429);
     expect(response.headers.get('Retry-After')).toBe('25');
+    expect(mocks.rate).toHaveBeenCalledWith('reset-password:127.0.0.1', 5, 60000);
+    expect(send).not.toHaveBeenCalled();
+    privacy(response);
   });
-
-  it('keys the staged limiter on the trusted client, not the first forwarded hop', async () => {
+  it('uses the existing trusted public key only in staged mode', async () => {
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'backend-staging');
-    try {
-      mockCheckRateLimit.mockReturnValueOnce({ limited: true, retryAfterSeconds: 25 });
-      const response = await POST(createRequest(limitedSubmission, edgeHeaders));
-      expect(response.status).toBe(429);
-      expect(mockCheckRateLimit).toHaveBeenCalledWith('reset-password:203.0.113.9', 5, 60_000);
-      expect(mockGetClientIp).not.toHaveBeenCalled();
-    } finally {
-      vi.unstubAllEnvs();
-    }
-  });
-
-  it('keeps the legacy limiter key when staged auth is off', async () => {
-    mockCheckRateLimit.mockReturnValueOnce({ limited: true, retryAfterSeconds: 25 });
-    const response = await POST(createRequest(limitedSubmission, edgeHeaders));
+    mocks.rate.mockReturnValue({ limited: true, retryAfterSeconds: 25 });
+    const response = await POST(request(submitted, edgeHeaders));
     expect(response.status).toBe(429);
-    expect(mockCheckRateLimit).toHaveBeenCalledWith('reset-password:127.0.0.1', 5, 60_000);
-    expect(mockGetClientIp).toHaveBeenCalledOnce();
+    expect(mocks.rate).toHaveBeenCalledWith('reset-password:203.0.113.9', 5, 60000);
+    privacy(response);
   });
-
-  it('returns 400 for invalid request body', async () => {
-    const response = await POST(createRequest({ email: 'bad', token: 'x', password: '123', confirmPassword: '123' }));
-    expect(response.status).toBe(400);
-  });
-
-  it('returns 400 when reset token does not exist (no cleanup delete to avoid DoS)', async () => {
-    mockTokenLimit.mockResolvedValue([]);
-
+  it.each([false, true])('only zone-vouched origin context enters private metadata, proven=%s', async (proven) => {
+    vi.stubEnv('CLOUDFLARE_ORIGIN_PROOF_SECRET', proofSecret);
+    const send = backend();
+    vi.stubGlobal('fetch', send);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
     const response = await POST(
-      createRequest({
-        email: 'test@example.com',
-        token: crypto.randomUUID(),
-        password: 'validpassword',
-        confirmPassword: 'validpassword',
-      }),
+      request(
+        { ...submitted, clientAddress: '8.8.8.8' },
+        { ...edgeHeaders, ...(proven ? { [CLOUDFLARE_ORIGIN_PROOF_HEADER]: proofSecret } : {}) },
+      ),
     );
-
-    expect(response.status).toBe(400);
-    expect(mockDelete).not.toHaveBeenCalled();
-  });
-
-  it('returns 400 without mutating anything when the token belongs to a different email', async () => {
-    // The SELECT requires identifier (derived from email) AND tokenHash to match the
-    // same row, so a real token paired with the wrong email yields no rows. Nothing
-    // should be hashed, written, or deleted on this path.
-    mockTokenLimit.mockResolvedValue([]);
-
-    const response = await POST(
-      createRequest({
-        email: 'attacker@example.com',
-        token: crypto.randomUUID(),
-        password: 'validpassword',
-        confirmPassword: 'validpassword',
-      }),
-    );
-
-    expect(response.status).toBe(400);
-    expect(mockHash).not.toHaveBeenCalled();
-    expect(mockTransaction).not.toHaveBeenCalled();
-    expect(mockDelete).not.toHaveBeenCalled();
-  });
-
-  it('resets password successfully', async () => {
-    mockTokenLimit.mockResolvedValue([{ expires: new Date(Date.now() + 60_000) }]);
-
-    const response = await POST(
-      createRequest({
-        email: 'test@example.com',
-        token: crypto.randomUUID(),
-        password: 'validpassword',
-        confirmPassword: 'validpassword',
-      }),
-    );
-
     expect(response.status).toBe(200);
-    expect(mockHash).toHaveBeenCalledWith('validpassword', 12);
-    expect(mockTransaction).toHaveBeenCalled();
-    expect(mockTxUpdateWhere).toHaveBeenCalled();
+    const command = commandBody(send.mock.calls[0][1]) as Record<string, unknown>;
+    if (proven) expect(command.clientAddress).toBe('203.0.113.9');
+    else expect(command).not.toHaveProperty('clientAddress');
+    expect(command.payload).toMatchObject({ clientAddress: '8.8.8.8' });
+    privacy(response);
   });
-
-  it('returns 400 when token is expired (simulated by empty SELECT result from db-side expiry filter)', async () => {
-    // The WHERE clause includes gt(expires, now), so an expired token returns no rows.
-    // We do NOT delete here to avoid a DoS where an attacker invalidates a victim's token.
-    mockTokenLimit.mockResolvedValue([]);
-
-    const response = await POST(
-      createRequest({
-        email: 'test@example.com',
-        token: crypto.randomUUID(),
-        password: 'validpassword',
-        confirmPassword: 'validpassword',
-      }),
-    );
-
-    expect(response.status).toBe(400);
-    expect(mockDelete).not.toHaveBeenCalled();
+  it.each(['legacy', 'backend-staging'])('preserves malformedJSON policy and safe diagnostics in %s', async (mode) => {
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', mode);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const send = backend();
+    vi.stubGlobal('fetch', send);
+    const response = await POST(request('private-password-pr1_secret', {}, true));
+    expect(response.status).toBe(mode === 'legacy' ? 500 : 503);
+    expect(send).not.toHaveBeenCalled();
+    if (mode === 'legacy') expect(errors).toHaveBeenCalledWith('Password reset request failed');
+    else expect(errors).not.toHaveBeenCalled();
+    expect(JSON.stringify(errors.mock.calls)).not.toContain('private-password');
+    privacy(response);
   });
-
-  it('inserts credentials when user does not already have password credentials', async () => {
-    mockTokenLimit.mockResolvedValue([{ expires: new Date(Date.now() + 60_000) }]);
-    mockTxCredentialsLimit.mockResolvedValue([]);
-
-    const response = await POST(
-      createRequest({
-        email: 'oauth@example.com',
-        token: crypto.randomUUID(),
-        password: 'validpassword',
-        confirmPassword: 'validpassword',
-      }),
-    );
-
-    expect(response.status).toBe(200);
-    expect(mockTxInsertValues).toHaveBeenCalled();
-  });
-
-  describe('any capitalisation (BA-02)', () => {
-    const submission = (email: string) => ({
-      email,
-      token: crypto.randomUUID(),
-      password: 'validpassword',
-      confirmPassword: 'validpassword',
-    });
-    const credentialWriteTargets = () => mockTxUpdateWhere.mock.calls.map(([condition]) => condition);
-
-    beforeEach(() => {
-      mockTokenLimit.mockResolvedValue([{ expires: new Date(Date.now() + 60_000) }]);
-    });
-
-    it('resets the mixed-case account when the link carries its address exactly as stored', async () => {
-      lookup.stored = [{ id: 'mixed', email: 'Mixed.Case@Example.test', passwordHash: '$2b$12$a' }];
-
-      const response = await POST(createRequest(submission('Mixed.Case@Example.test')));
-
-      expect(response.status).toBe(200);
-      expect(credentialWriteTargets()).toEqual([{ eq: [undefined, 'mixed'] }]);
-    });
-
-    // Every issuer writes the account's stored address into the link, so a link
-    // in other capitals was issued for another row: one since deleted, or one
-    // whose address was resolved away.
-    it('refuses a link whose address no account stores exactly, even when one account has it in other capitals', async () => {
-      lookup.stored = [{ id: 'mixed', email: 'Mixed.Case@Example.test', passwordHash: '$2b$12$a' }];
-
-      const response = await POST(createRequest(submission('mixed.case@example.test')));
-
-      expect(response.status).toBe(400);
-      expect(await response.json()).toEqual({ error: 'Invalid or expired reset link' });
-      expect(mockHash).not.toHaveBeenCalled();
-      expect(mockTransaction).not.toHaveBeenCalled();
-    });
-
-    it("never changes B with A's link once A is gone, though their addresses differ only in capitals", async () => {
-      const accountA = { id: 'account-a', email: 'Shared@Example.test', passwordHash: '$2b$12$a' };
-      const accountB = { id: 'account-b', email: 'shared@example.test', passwordHash: '$2b$12$b' };
-
-      lookup.stored = [accountA, accountB];
-      expect((await POST(createRequest(submission(accountA.email)))).status).toBe(200);
-      expect(credentialWriteTargets()).toEqual([{ eq: [undefined, 'account-a'] }]);
-
-      vi.clearAllMocks();
-      mockTokenLimit.mockResolvedValue([{ expires: new Date(Date.now() + 60_000) }]);
-      lookup.stored = [accountB];
-      const response = await POST(createRequest(submission(accountA.email)));
-
-      expect(response.status).toBe(400);
-      expect(mockHash).not.toHaveBeenCalled();
-      expect(mockTransaction).not.toHaveBeenCalled();
-    });
-
-    it('refuses an account created after the link was issued, even at the exact address', async () => {
-      // A one-hour link with 30 minutes left was issued 30 minutes ago.
-      mockTokenLimit.mockResolvedValue([{ expires: new Date(Date.now() + 30 * 60_000) }]);
-      lookup.stored = [
-        {
-          id: 'new-holder',
-          email: 'reused@example.test',
-          passwordHash: '$2b$12$c',
-          createdAt: new Date(Date.now() - 5 * 60_000),
-        },
-      ];
-
-      const response = await POST(createRequest(submission('reused@example.test')));
-
-      expect(response.status).toBe(400);
-      expect(mockHash).not.toHaveBeenCalled();
-      expect(mockTransaction).not.toHaveBeenCalled();
-    });
-
-    it('resets the group member the link names exactly, not its sibling', async () => {
-      lookup.stored = [
-        { id: 'mixed', email: 'Mixed.Case@Example.test', passwordHash: '$2b$12$a' },
-        { id: 'sibling', email: 'mixed.case@example.test', passwordHash: '$2b$12$b' },
-      ];
-
-      const response = await POST(createRequest(submission('mixed.case@example.test')));
-
-      expect(response.status).toBe(200);
-      expect(credentialWriteTargets()).toEqual([{ eq: [undefined, 'sibling'] }]);
-    });
-
-    it('refuses a link whose address several accounts share in other capitals', async () => {
-      lookup.stored = [
-        { id: 'mixed', email: 'Mixed.Case@Example.test', passwordHash: '$2b$12$a' },
-        { id: 'sibling', email: 'mixed.case@example.test', passwordHash: '$2b$12$b' },
-      ];
-
-      const response = await POST(createRequest(submission('MIXED.CASE@EXAMPLE.TEST')));
-
-      expect(response.status).toBe(400);
-      expect(await response.json()).toEqual({ error: 'Invalid or expired reset link' });
-      expect(mockHash).not.toHaveBeenCalled();
-      expect(mockTransaction).not.toHaveBeenCalled();
-    });
-  });
-
-  it('returns 500 when transaction fails unexpectedly', async () => {
-    mockTokenLimit.mockResolvedValue([{ expires: new Date(Date.now() + 60_000) }]);
-    mockTransaction.mockRejectedValueOnce(new Error('db transaction failed'));
-
-    const response = await POST(
-      createRequest({
-        email: 'test@example.com',
-        token: crypto.randomUUID(),
-        password: 'validpassword',
-        confirmPassword: 'validpassword',
-      }),
-    );
-
-    expect(response.status).toBe(500);
+  it('refuses unknown modes before parsing or sending', async () => {
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'unknown');
+    const send = backend();
+    vi.stubGlobal('fetch', send);
+    const response = await POST(request('private malformed', {}, true));
+    expect(response.status).toBe(503);
+    expect(send).not.toHaveBeenCalled();
+    privacy(response);
   });
 });

@@ -224,7 +224,7 @@ describe('actual public recovery routes with strict backend delegation', () => {
       privacy(response);
     },
   );
-  it.each([token, 'pr2_future', 'PR99_unknown'])(
+  it.each(['pr2_future', 'PR99_unknown'])(
     'never sends reserved namespace %s to disabled legacy SQL',
     async (capability) => {
       vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');

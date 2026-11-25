@@ -42,15 +42,30 @@ Existing recovery telemetry/referrer/cache controls and the measured framework/e
 
 `vp run test:recovery-backend` selects the complete restricted-LOGIN PostgreSQL/HTTP proof and operation-limit suite, serially and without task caching. CI runs it after the existing current-journal credential proofs and requires its nonempty JUnit artifact in the required credential-writer job. This describes required wiring, not an assertion that a particular commit passed. Case counts and independent replay receipts must come from the frozen final source.
 
-## Dependent web boundary
+## Default web reset consumer
 
-The backend-only intermediate revision does not change default public reset/forgot adapters and does not contain a recovery-web proof task. The later consumer revision must delegate UUID and `pr1_` reset without web SQL/fallback, retain the public status/floor/privacy contracts, and leave UUID forgot issuance unchanged. Its actual public-to-private joined proof and mandatory CI artifact belong in that dependent tree. Issuer adoption remains a further separate rollout boundary.
+The dependent web revision delegates both UUID and `pr1_` reset payloads unchanged through the strict recovery client. It performs no credential SQL, hash, generation fallback or automatic retry. `backend-staging` keeps the existing explicitly qualified client and protocol. Default public forgot retains the released UUID issuer, generic responses and mail behavior.
+
+Public forgot/reset keep their separate five-per-minute guards and 1500 ms minimum response floors. Malformed default JSON keeps its fixed safe 500; malformed explicitly staged JSON remains unavailable. Reserved future `prN_` versions return 503 before RPC, malformed supported `pr1_` syntax has the finite invalid-link 400, and neither reaches legacy SQL.
+
+| Private result/status | Public reset status |
+| --- | --- |
+| `reset`, 200 | 200, fixed success message |
+| `invalid_or_expired`, 200 | 400, fixed invalid-link message |
+| `error/replayed`, 409 | 503, fixed unavailable message |
+| validation error, 400 | 400, allowlisted validation message |
+| rate limit, 429 | 429 with Retry-After |
+| `legacy_unbound`, 503; transport/configuration/schema uncertainty | 503, fixed unavailable message |
+
+Success creates no login, token pair or authentication age. An optional host-only HttpOnly device-recognition cookie is auxiliary recognition only. Public replies expose no private mail plan or credential. Failure/uncertainty neither sets nor clears authentication cookies; an existing sibling cookie is preserved. API results keep private/no-store and no-referrer headers.
+
+`vp run test:recovery-web` is the dependent joined proof task. It must drive public reset/default UUID issuance, the strict client, actual private HTTP/restricted LOGIN and PostgreSQL before a successful publication receipt is recorded. Distinguish mounted route exports and real framework libraries from a running Next server, deployed ingress and actual native/device execution. The backend-only intermediate tree does not contain this task, config or proof; add its mandatory CI artifact in the dependent web commit.
 
 ## Qualification seams
 
-The separate dependent joined web proof is specified to use actual public route exports, the real NextAuth/JWT library, strict private HTTP, the qualified restricted credential LOGIN and primary PostgreSQL. Next's ambient request I/O, the NextAuth adapter stand-in, web content-DB access and the physical admission-pool connection are bound to the owned fixture. The SMTP side effect is captured offline; it does not execute real email delivery. Credential/admission decisions and the mounted production Yoga/token validator remain real.
+The joined web proof uses actual public route exports, the real NextAuth/JWT library, strict private HTTP, the qualified restricted credential LOGIN and primary PostgreSQL. Next's ambient request I/O, the NextAuth adapter stand-in, web content-DB access and the physical admission-pool connection are bound to the owned fixture. The SMTP side effect is captured offline; it does not execute real email delivery. Credential/admission decisions and the mounted production Yoga/token validator remain real.
 
-The joined proof explicitly injects bounded local limiter fallback (`redis: () => null`). It does not exercise joined Redis I/O. Existing shared limiter Redis/fault regressions are separate evidence. The dependent web commit must add its whole configured task and nonempty JUnit artifact against isolated PostgreSQL; this backend-only tree adds only the backend task, and an unused Redis service would establish no additional coverage. These seams do not prove a complete Next server, browser/device execution or deployed ingress.
+The joined proof explicitly injects bounded local limiter fallback (`redis: () => null`). It does not exercise joined Redis I/O. Existing shared limiter Redis/fault regressions are separate evidence. The required CI job supplies its isolated PostgreSQL fixture and executes the whole configured joined task with a nonempty JUnit artifact; an unused Redis service would establish no additional coverage. These seams do not prove a complete Next server, browser/device execution or deployed ingress.
 
 ## Source delivery plan
 

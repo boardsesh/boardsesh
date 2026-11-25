@@ -134,6 +134,38 @@ describe('owned credential writer CI boundary', () => {
     );
   });
 
+  it('runs the complete dependent recovery web proof after its backend prerequisite', () => {
+    const backendIndex = proof.steps.findIndex((step) => step.run?.includes('vp run test:recovery-backend'));
+    const webIndex = proof.steps.findIndex((step) => step.run?.includes('vp run test:recovery-web'));
+    expect(backendIndex).toBeGreaterThan(-1);
+    expect(webIndex).toBe(backendIndex + 1);
+    const step = proof.steps[webIndex];
+    expect(step?.if).toBeUndefined();
+    expect(step?.env).toBeUndefined();
+    expect(step?.['continue-on-error']).toBeUndefined();
+    expect(step?.run).toContain('--reporter=junit --outputFile.junit=./test-results/junit-recovery-web.xml');
+    expect(step?.run).toContain('test -s packages/web/test-results/junit-recovery-web.xml');
+    expect(step?.run).not.toMatch(/--changed|--shard|-t |--testNamePattern/);
+    const configuration = readFileSync('packages/web/auth-proofs/recovery.vite.config.ts', 'utf8');
+    expect(configuration).toContain('pre-enforcement-recovery.integration.proof.ts');
+    expect(configuration).toContain('maxWorkers: 1');
+    expect(configuration).toContain('fileParallelism: false');
+    expect(configuration).not.toMatch(/testNamePattern|\.skip\(/);
+    const taskStart = rootSource.indexOf("'test:recovery-web': {");
+    expect(taskStart).toBeGreaterThan(-1);
+    const taskEnd = rootSource.indexOf('\n      },', taskStart);
+    expect(taskEnd).toBeGreaterThan(taskStart);
+    const task = rootSource.slice(taskStart, taskEnd);
+    expect(task).toContain(
+      'vp test run --config packages/web/auth-proofs/recovery.vite.config.ts --maxWorkers=1 --reporter=agent',
+    );
+    expect(task).toContain('cache: false');
+    expect(task).not.toMatch(/--changed|--shard|dependsOn|-t |--testNamePattern/);
+    expect(selectTestDefaultProjects(rootSource, (path) => readFileSync(path, 'utf8'))).not.toContain(
+      'recovery-web-proof',
+    );
+  });
+
   it('owns a fresh database on the existing pinned PG18/PostGIS image', () => {
     expect(Object.keys(proof.services ?? {})).toEqual(['postgres']);
     expect(proof.services?.postgres.image).toBe(workflow.jobs['test-backend'].services?.postgres.image);
@@ -373,6 +405,7 @@ describe('owned credential writer CI boundary', () => {
       'packages/web/test-results/junit-password-login-web.xml',
       'packages/backend/test-results/junit-password-evidence-proof.xml',
       'packages/backend/test-results/junit-recovery-backend.xml',
+      'packages/web/test-results/junit-recovery-web.xml',
     ]);
   });
 
