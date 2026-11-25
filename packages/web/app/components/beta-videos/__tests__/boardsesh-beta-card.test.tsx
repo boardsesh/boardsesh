@@ -25,6 +25,47 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe('BoardseshBetaList duplicate videos', () => {
+  it('keeps the creator link when a duplicate supplies the missing handle', () => {
+    vi.spyOn(HTMLImageElement.prototype, 'complete', 'get').mockReturnValue(false);
+    render(
+      <BoardseshBetaList
+        links={[
+          { ...betaLink, foreign_username: null },
+          { ...betaLink, climb_uuid: 'climb-2', foreign_username: 'filmer' },
+        ]}
+        isLoading={false}
+        source="home"
+        getClimbName={() => 'Newest climb'}
+        getClimbHref={(link) => `/climbs/${link.climb_uuid}`}
+      />,
+    );
+    expect(screen.getByText('@filmer').getAttribute('href')).toBe(betaLink.link);
+    expect(screen.getAllByRole('link').map((link) => link.getAttribute('href'))).toContain('/climbs/climb-1');
+  });
+
+  it.each(['rail', 'grid'] as const)('shows a repeated post once in the %s layout without a key warning', (layout) => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(HTMLImageElement.prototype, 'complete', 'get').mockReturnValue(false);
+    const repeatedLink = 'https://www.instagram.com/p/Dcr9yaNoG6z/';
+    render(
+      <BoardseshBetaList
+        links={[
+          { ...betaLink, link: repeatedLink },
+          { ...betaLink, link: repeatedLink, climb_uuid: 'climb-2' },
+          { ...betaLink, link: 'https://instagram.com/reel/Dcr9yaNoG6z/?igsh=shared', climb_uuid: 'climb-3' },
+        ]}
+        isLoading={false}
+        source="profile"
+        layout={layout}
+      />,
+    );
+    expect(screen.getAllByRole('link')).toHaveLength(1);
+    expect(screen.getByRole('link').getAttribute('href')).toBe(repeatedLink);
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+});
+
 describe('BoardseshBetaCard thumbnail fallback', () => {
   it('keeps a thumbnail that is still loading', () => {
     vi.spyOn(HTMLImageElement.prototype, 'complete', 'get').mockReturnValue(false);

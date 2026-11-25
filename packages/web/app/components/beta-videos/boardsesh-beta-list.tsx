@@ -6,6 +6,7 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Skeleton from '@mui/material/Skeleton';
 import type { BetaLink } from '@/app/lib/api-wrappers/sync-api-types';
+import { betaLinkIdentity, dedupeBetaLinks } from '@/app/lib/beta-video-url';
 import BoardseshBetaCard, { type BoardseshBetaCardSource } from './boardsesh-beta-card';
 import BoardseshBetaGridCard from './boardsesh-beta-grid-card';
 import styles from './boardsesh-beta.module.css';
@@ -99,7 +100,7 @@ function BoardseshBetaGrid({ links, isLoading, source }: BoardseshBetaGridProps)
       <Box component="ul" className={styles.grid} data-expanded={expanded ? 'true' : undefined}>
         {links.map((link, index) => (
           <BoardseshBetaGridCard
-            key={link.link}
+            key={betaLinkIdentity(link.link)}
             link={link}
             source={source}
             beyondPreview={index >= GRID_PREVIEW_COUNT}
@@ -126,7 +127,8 @@ const BoardseshBetaList: React.FC<BoardseshBetaListProps> = ({
   layout = 'rail',
 }) => {
   const { t } = useTranslation('common');
-  const visibleLinks = source === 'home' ? links.filter((link) => Boolean(link.thumbnail)) : links;
+  const uniqueLinks = dedupeBetaLinks(links);
+  const visibleLinks = source === 'home' ? uniqueLinks.filter((link) => Boolean(link.thumbnail)) : uniqueLinks;
   if (layout === 'grid') return <BoardseshBetaGrid links={visibleLinks} isLoading={isLoading} source={source} />;
   // `data-source` is what the stylesheet reads to drop the inline inset on the
   // home rail, which already sits inside the page container's own padding.
@@ -145,7 +147,7 @@ const BoardseshBetaList: React.FC<BoardseshBetaListProps> = ({
           <>
             {visibleLinks.map((link, index) => (
               <BoardseshBetaCard
-                key={link.link}
+                key={betaLinkIdentity(link.link)}
                 link={link}
                 climbName={getClimbName?.(link) ?? null}
                 climbHref={getClimbHref?.(link) ?? null}

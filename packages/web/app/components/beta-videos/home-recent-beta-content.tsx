@@ -55,6 +55,8 @@ function RecentBetaContent() {
       const link = mapBetaLinkRow(row.betaLink);
       if (!link.thumbnail) continue;
       mapped.push(link);
+      // Keep the newest row's climb metadata when legacy rows repeat a URL.
+      if (nameByLink.has(link.link)) continue;
       nameByLink.set(link.link, row.climbName);
       const href =
         row.layoutId != null && link.angle != null
