@@ -5,12 +5,17 @@ import { boardBetaLinks, boardClimbs, boardClimbStats, boardDifficultyGrades } f
 import type { PublicClimbRelatedContentInput } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import {
+  parsePublicRelatedCachePayload,
+  publicClimbRelatedContent,
   publicClimbRelatedContentDependencies,
+  publicClimbRelatedContentService,
   WRITE_PUBLIC_RELATED_CACHE_SCRIPT,
 } from '../graphql/resolvers/climbs/public-climb-related-content';
 import {
   PublicClimbRelatedContentService,
   publicRelatedCacheKey,
+  PUBLIC_RELATED_RATE_LIMIT,
+  emptyPublicRelatedContent,
   type PublicRelatedSnapshot,
 } from '../services/public-climb-related-content';
 import { getStoredPublicBetaLinks } from '../graphql/resolvers/beta-videos/queries';
@@ -75,6 +80,7 @@ async function primed(input = INPUT, snapshot = SNAPSHOT) {
   expect(target).not.toBeNull();
   cache.set(publicRelatedCacheKey(input, target!), snapshot);
   const buildSnapshot = vi.fn(publicClimbRelatedContentDependencies.buildSnapshot);
+  const buildNearby = vi.fn(async () => ({ similar: [], nearby: snapshot.nearby, nearbyGrade: null }));
   const service = new PublicClimbRelatedContentService({
     ...publicClimbRelatedContentDependencies,
     readCache: async (key) => cache.get(key) ?? null,
@@ -83,8 +89,9 @@ async function primed(input = INPUT, snapshot = SNAPSHOT) {
     },
     readBeta: async () => ({ links: [], hasMore: false }),
     buildSnapshot,
+    buildNearby,
   });
-  return { service, buildSnapshot, target: target! };
+  return { service, buildSnapshot, buildNearby, target: target! };
 }
 
 beforeEach(async () => {
@@ -206,6 +213,52 @@ describe('public related content cached IDs against current catalogue', () => {
       .where(eq(boardClimbs.uuid, CANDIDATE.uuid));
     expect((await service.read(INPUT)).nearbyClimbs).toEqual([]);
   });
+
+  it.each(['hidden', 'unlisted', 'draft', 'deleted', 'grade', 'size'])(
+    'rechecks a shared nearby candidate that becomes %s and excludes the current target',
+    async (change) => {
+      await seed();
+      const nearby = [
+        { ...CANDIDATE, uuid: INPUT.climbUuid, similarity: 0 },
+        { ...CANDIDATE, similarity: 0 },
+      ];
+      const { service, buildNearby } = await primed(INPUT, { similar: [], nearby, nearbyGrade: null });
+      expect((await service.read(INPUT)).nearbyClimbs.map((climb) => climb.uuid)).toEqual([CANDIDATE.uuid]);
+      if (change === 'deleted') await db.delete(boardClimbs).where(eq(boardClimbs.uuid, CANDIDATE.uuid));
+      else if (change === 'grade')
+        await db
+          .update(boardClimbStats)
+          .set({ displayDifficulty: 30 })
+          .where(eq(boardClimbStats.climbUuid, CANDIDATE.uuid));
+      else
+        await db
+          .update(boardClimbs)
+          .set(
+            change === 'hidden'
+              ? { isHidden: true }
+              : change === 'unlisted'
+                ? { isListed: false }
+                : change === 'size'
+                  ? { compatibleSizeIds: [11] }
+                  : { isDraft: true },
+          )
+          .where(eq(boardClimbs.uuid, CANDIDATE.uuid));
+      const response = await service.read(INPUT);
+      expect(response.nearbyStatus).toBe('loaded');
+      expect(response.nearbyClimbs).toEqual([]);
+      expect(buildNearby).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('uses a shared nearby pool when every cached similar candidate loses visibility', async () => {
+    await seed();
+    const { service, buildNearby } = await primed();
+    await db.update(boardClimbs).set({ isHidden: true }).where(eq(boardClimbs.uuid, CANDIDATE.uuid));
+    const response = await service.read(INPUT);
+    expect(response.similarClimbs).toEqual([]);
+    expect(response.nearbyStatus).toBe('loaded');
+    expect(buildNearby).toHaveBeenCalledOnce();
+  });
 });
 
 describe('atomic bounded Redis recommendation cache', () => {
@@ -239,6 +292,113 @@ describe('atomic bounded Redis recommendation cache', () => {
     for (const key of remaining) {
       expect(await redis.ttl(key)).toBeGreaterThan(604790);
       expect(JSON.parse((await redis.get(key))!)).toEqual(SNAPSHOT);
+    }
+  });
+
+  it('shares one pool across targets and replicas without extending its residual TTL', async () => {
+    await seed();
+    const writtenKeys = new Set<string>();
+    const buildSnapshot = vi.fn(async () => ({ similar: [], nearby: [], nearbyGrade: null }));
+    const buildNearby = vi.fn(async () => ({
+      similar: [],
+      nearby: [
+        { ...CANDIDATE, uuid: INPUT.climbUuid, similarity: 0 },
+        { ...CANDIDATE, similarity: 0 },
+      ],
+      nearbyGrade: null,
+    }));
+    const dependencies = {
+      ...publicClimbRelatedContentDependencies,
+      buildSnapshot,
+      buildNearby,
+      readBeta: async () => ({ links: [], hasMore: false }),
+      readCache: async (key: string) => parsePublicRelatedCachePayload(await redis.get(key)),
+      writeCache: async (key: string, snapshot: PublicRelatedSnapshot) => {
+        writtenKeys.add(key);
+        await redis.eval(
+          WRITE_PUBLIC_RELATED_CACHE_SCRIPT,
+          2,
+          key,
+          index,
+          JSON.stringify(snapshot),
+          '604800',
+          String(Date.now()),
+          '20000',
+        );
+      },
+    };
+    try {
+      const first = new PublicClimbRelatedContentService(dependencies);
+      expect((await first.read(INPUT)).nearbyClimbs.map((climb) => climb.uuid)).toEqual([CANDIDATE.uuid]);
+      const poolKey = [...writtenKeys].find((key) => key.includes(':nearby:'))!;
+      await redis.pexpire(poolKey, 10000);
+      const ttl = await redis.pttl(poolKey);
+      const secondInput = { ...INPUT, climbUuid: CANDIDATE.uuid };
+      const second = new PublicClimbRelatedContentService(dependencies);
+      expect((await second.read(secondInput)).nearbyClimbs.map((climb) => climb.uuid)).toEqual([INPUT.climbUuid]);
+      expect(buildNearby).toHaveBeenCalledOnce();
+      expect(await redis.pttl(poolKey)).toBeGreaterThan(0);
+      expect(await redis.pttl(poolKey)).toBeLessThanOrEqual(ttl);
+      const secondTarget = await dependencies.readTarget(secondInput);
+      const copied = parsePublicRelatedCachePayload(await redis.get(publicRelatedCacheKey(secondInput, secondTarget!)));
+      expect(copied?.nearby).toEqual([]);
+      await redis.del(poolKey);
+      await second.read(secondInput);
+      expect(buildNearby).toHaveBeenCalledTimes(2);
+    } finally {
+      await redis.del(...writtenKeys);
+      if (writtenKeys.size > 0) await redis.zrem(index, ...writtenKeys);
+    }
+  });
+
+  it('invalidates explicit legacy failure payloads and rebuilds them instead of serving loaded-empty', async () => {
+    await seed();
+    const target = await publicClimbRelatedContentDependencies.readTarget(INPUT);
+    const key = publicRelatedCacheKey(INPUT, target!);
+    const buildSnapshot = vi.fn(async () => SNAPSHOT);
+    try {
+      await redis.set(key, JSON.stringify({ ...SNAPSHOT, nearbyUnavailable: true }), 'EX', 604800);
+      expect(parsePublicRelatedCachePayload(await redis.get(key))).toBeNull();
+      const service = new PublicClimbRelatedContentService({
+        ...publicClimbRelatedContentDependencies,
+        buildSnapshot,
+        readCache: async (cacheKey) => parsePublicRelatedCachePayload(await redis.get(cacheKey)),
+        writeCache: async (cacheKey, snapshot) => {
+          await redis.set(cacheKey, JSON.stringify(snapshot), 'EX', 604800);
+        },
+        readBeta: async () => ({ links: [], hasMore: false }),
+      });
+      expect((await service.read(INPUT)).similarClimbs).toHaveLength(1);
+      expect(buildSnapshot).toHaveBeenCalledOnce();
+      expect(parsePublicRelatedCachePayload(await redis.get(key))).toEqual(SNAPSHOT);
+    } finally {
+      await redis.del(key);
+    }
+  });
+});
+
+describe('public related content shared SSR quota', () => {
+  it('allows the shared SSR workload but still rejects a single peer above its operation quota', async () => {
+    const read = vi.spyOn(publicClimbRelatedContentService, 'read').mockResolvedValue(emptyPublicRelatedContent());
+    vi.stubEnv('NODE_ENV', 'production');
+    try {
+      const context = {
+        connectionId: 'public-related-quota',
+        isAuthenticated: false,
+        clientIp: '127.0.0.91',
+        transport: 'http' as const,
+      };
+      const input = { ...INPUT, climbUuid: '12345678-1234-1234-1234-123456789012' };
+      for (let count = 0; count < PUBLIC_RELATED_RATE_LIMIT; count++)
+        await publicClimbRelatedContent(undefined, { input }, context);
+      expect(read).toHaveBeenCalledTimes(PUBLIC_RELATED_RATE_LIMIT);
+      await expect(publicClimbRelatedContent(undefined, { input }, context)).rejects.toMatchObject({
+        extensions: { code: 'RATE_LIMITED', operation: 'public-climb-related-content' },
+      });
+      expect(read).toHaveBeenCalledTimes(PUBLIC_RELATED_RATE_LIMIT);
+    } finally {
+      vi.unstubAllEnvs();
+      read.mockRestore();
     }
   });
 });

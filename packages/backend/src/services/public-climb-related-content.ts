@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
+import { getBoulderGradesForBoard } from '@boardsesh/board-constants/boulder-grade-mapping';
 import type {
   BetaLinksGqlRow,
+  BoardName,
   PublicClimbRelatedContent,
   PublicClimbRelatedContentInput,
   SimilarClimb,
@@ -12,6 +14,7 @@ export const PUBLIC_RELATED_MAX_ACTIVE = 8;
 export const PUBLIC_RELATED_MAX_MISSES = 4;
 export const PUBLIC_RELATED_DEADLINE_MS = 3000;
 export const PUBLIC_RELATED_CACHE_PREFIX = 'boardsesh:{public-climb-related}:v1';
+export const PUBLIC_RELATED_RATE_LIMIT = 2400;
 
 export function publicRelatedCacheTtlSeconds(rawDays: string | undefined): number {
   return (rawDays === '30' ? 30 : 7) * 86_400;
@@ -28,19 +31,29 @@ export type PublicRelatedSnapshot = {
   nearbyUnavailable?: boolean;
 };
 export type PublicRelatedTarget = { revision: string; difficulty: number | null };
+export type PublicRelatedNearbyInput = Pick<
+  PublicClimbRelatedContentInput,
+  'boardType' | 'layoutId' | 'sizeId' | 'setIds' | 'angle'
+> & { minGrade: number; maxGrade: number };
 
 export type PublicRelatedDependencies = {
-  readTarget(input: PublicClimbRelatedContentInput): Promise<PublicRelatedTarget | null>;
-  readCache(key: string): Promise<PublicRelatedSnapshot | null>;
-  writeCache(key: string, snapshot: PublicRelatedSnapshot): Promise<void>;
-  buildSnapshot(input: PublicClimbRelatedContentInput, target: PublicRelatedTarget): Promise<PublicRelatedSnapshot>;
+  readTarget(this: void, input: PublicClimbRelatedContentInput): Promise<PublicRelatedTarget | null>;
+  readCache(this: void, key: string): Promise<PublicRelatedSnapshot | null>;
+  writeCache(this: void, key: string, snapshot: PublicRelatedSnapshot): Promise<void>;
+  buildSnapshot(
+    this: void,
+    input: PublicClimbRelatedContentInput,
+    target: PublicRelatedTarget,
+  ): Promise<PublicRelatedSnapshot>;
+  buildNearby(this: void, input: PublicRelatedNearbyInput): Promise<PublicRelatedSnapshot>;
   hydrate(
+    this: void,
     input: PublicClimbRelatedContentInput,
     candidates: PublicRelatedCandidate[],
     target: PublicRelatedTarget,
   ): Promise<SimilarClimb[]>;
-  readBeta(input: PublicClimbRelatedContentInput): Promise<{ links: BetaLinksGqlRow[]; hasMore: boolean }>;
-  reportFailure(): void;
+  readBeta(this: void, input: PublicClimbRelatedContentInput): Promise<{ links: BetaLinksGqlRow[]; hasMore: boolean }>;
+  reportFailure(this: void): void;
 };
 
 export function publicRelatedCacheKey(input: PublicClimbRelatedContentInput, target: PublicRelatedTarget): string {
@@ -56,6 +69,43 @@ export function publicRelatedCacheKey(input: PublicClimbRelatedContentInput, tar
     target.difficulty,
   ];
   return `${PUBLIC_RELATED_CACHE_PREFIX}:${createHash('sha256').update(JSON.stringify(normalized)).digest('hex')}`;
+}
+
+export function publicRelatedNearbyCacheKey(input: PublicRelatedNearbyInput): string {
+  const normalized = [
+    input.boardType,
+    input.layoutId,
+    input.sizeId,
+    [...new Set(input.setIds)].sort((left, right) => left - right),
+    input.angle,
+    input.minGrade,
+    input.maxGrade,
+  ];
+  return `${PUBLIC_RELATED_CACHE_PREFIX}:nearby:${createHash('sha256').update(JSON.stringify(normalized)).digest('hex')}`;
+}
+
+function nearbyBand(input: PublicClimbRelatedContentInput, target: PublicRelatedTarget) {
+  if (input.includeNearby === false || target.difficulty == null) return null;
+  const grades = getBoulderGradesForBoard(input.boardType as BoardName);
+  const targetGrade = grades.find((grade) => grade.difficulty_id === target.difficulty);
+  if (!targetGrade) return null;
+  const targetVGrade = Number(targetGrade.v_grade.slice(1));
+  const band = grades.filter((grade) => Math.abs(Number(grade.v_grade.slice(1)) - targetVGrade) <= 1);
+  const minGrade = band[0]?.difficulty_id;
+  const maxGrade = band.at(-1)?.difficulty_id;
+  if (minGrade == null || maxGrade == null) return null;
+  return {
+    grade: targetGrade.difficulty_name,
+    input: {
+      boardType: input.boardType,
+      layoutId: input.layoutId,
+      sizeId: input.sizeId,
+      setIds: [...new Set(input.setIds)].sort((left, right) => left - right),
+      angle: input.angle,
+      minGrade,
+      maxGrade,
+    },
+  };
 }
 
 export function emptyPublicRelatedContent(unavailable = false): PublicClimbRelatedContent {
@@ -133,18 +183,39 @@ export class PublicClimbRelatedContentService {
     await Promise.all([
       (async () => {
         try {
-          const snapshot = await this.snapshot(input, target);
-          const hydrated = await this.dependencies.hydrate(input, [...snapshot.similar, ...snapshot.nearby], target);
-          const byUuid = new Map(hydrated.map((climb) => [climb.uuid, climb]));
+          const snapshot = await this.cachedSnapshot(publicRelatedCacheKey(input, target), () =>
+            this.dependencies.buildSnapshot(input, target),
+          );
+          const similar = await this.dependencies.hydrate(input, snapshot.similar, target);
+          const similarByUuid = new Map(similar.map((climb) => [climb.uuid, climb]));
           response.similarClimbs = snapshot.similar
             .flatMap((candidate) =>
-              byUuid.get(candidate.uuid) ? [{ ...byUuid.get(candidate.uuid)!, ...candidate }] : [],
+              similarByUuid.get(candidate.uuid) ? [{ ...similarByUuid.get(candidate.uuid)!, ...candidate }] : [],
             )
             .slice(0, 10);
-          if (snapshot.nearbyGrade !== null && input.includeNearby !== false) {
-            response.nearbyStatus = snapshot.nearbyUnavailable ? 'unavailable' : 'loaded';
-            response.nearbyGrade = snapshot.nearbyGrade;
-            response.nearbyClimbs = snapshot.nearby
+          let nearby: PublicRelatedCandidate[] = [];
+          const band = response.similarClimbs.length === 0 ? nearbyBand(input, target) : null;
+          if (band) {
+            response.nearbyGrade = band.grade;
+            try {
+              // The first miss is settled before acquiring a pool miss slot. Pool
+              // IDs never enter the per-climb cache, so composition cannot extend
+              // their TTL or retain a target-specific exclusion for another climb.
+              const pool = await this.cachedSnapshot(publicRelatedNearbyCacheKey(band.input), () =>
+                this.dependencies.buildNearby(band.input),
+              );
+              nearby = pool.nearby;
+              response.nearbyStatus = 'loaded';
+            } catch {
+              response.nearbyStatus = 'unavailable';
+              this.failures++;
+              this.dependencies.reportFailure();
+            }
+          }
+          if (band) {
+            const hydrated = await this.dependencies.hydrate(input, nearby, target);
+            const byUuid = new Map(hydrated.map((climb) => [climb.uuid, climb]));
+            response.nearbyClimbs = nearby
               .flatMap((candidate) =>
                 byUuid.get(candidate.uuid) ? [{ ...byUuid.get(candidate.uuid)!, ...candidate }] : [],
               )
@@ -152,6 +223,7 @@ export class PublicClimbRelatedContentService {
           }
         } catch {
           response.similarStatus = 'unavailable';
+          if (response.nearbyStatus !== null) response.nearbyStatus = 'unavailable';
           this.failures++;
           this.dependencies.reportFailure();
         }
@@ -171,13 +243,12 @@ export class PublicClimbRelatedContentService {
     return response;
   }
 
-  private async snapshot(
-    input: PublicClimbRelatedContentInput,
-    target: PublicRelatedTarget,
+  private async cachedSnapshot(
+    key: string,
+    build: () => Promise<PublicRelatedSnapshot>,
   ): Promise<PublicRelatedSnapshot> {
-    const key = publicRelatedCacheKey(input, target);
     const cached = await this.dependencies.readCache(key);
-    if (cached) {
+    if (cached && !cached.nearbyUnavailable) {
       this.cacheHits++;
       return cached;
     }
@@ -188,10 +259,9 @@ export class PublicClimbRelatedContentService {
       throw new Error('Public recommendation refresh capacity reached');
     }
     this.cacheMisses++;
-    const started = this.dependencies
-      .buildSnapshot(input, target)
+    const started = build()
       .then(async (snapshot) => {
-        if (snapshot.nearbyUnavailable) return snapshot;
+        if (snapshot.nearbyUnavailable) throw new Error('Incomplete nearby recommendation snapshot');
         try {
           await this.dependencies.writeCache(key, snapshot);
         } catch {

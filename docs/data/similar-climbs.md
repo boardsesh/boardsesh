@@ -76,7 +76,10 @@ insertion/eviction script caps the namespace at 20,000 entries. Capacity evictio
 can refresh an entry before its normal TTL.
 
 At most eight public reads and four distinct cache misses may remain active per
-backend process. Duplicate misses join the same work. The three-second response
+backend process, shared across per-climb and nearby-pool lookups. Duplicate misses
+join the same work. The public read's 2,400/minute peer-IP quota accommodates
+anonymous readers sharing the web server's backend connection; authentication and
+other operations' limits are unchanged. The three-second response
 deadline does not release admission while the real operation is still running.
 Redis failure or saturation marks recommendations unavailable instead of
 starting an uncached refresh. Stored beta is independently available, privacy
@@ -85,14 +88,18 @@ for the remainder. Missing thumbnails remain missing instead of triggering
 external metadata fetches or writes during SSR. The read logs aggregate cache
 hits, misses, pending work and rejections at most once per minute.
 
-When a graded public page has an empty shared-hold list, the backend uses the
-catalogue search to select up to six nearby-grade IDs. It uses the page's layout,
-size, hold sets and angle, ranking eligible climbs within one V grade by ascents
-at that angle. On MoonBoard, frame/set compatibility may reject a whole search
-page; the bounded fallback checks one more page. Those IDs share the weekly
-recommendation cache. Visibility, current grade-band eligibility and board
-compatibility are checked again during hydration. A failed nearby read reports
-an unavailable section and is never cached as an empty result for a week.
+When a graded public page has no shared-hold suggestions after fresh hydration,
+the backend uses a shared nearby pool. Its key includes board type, layout, size,
+normalized hold sets, angle and difficulty band. One catalogue search selects up
+to 14 raw IDs within one V grade, ranked by ascents at that angle, for all targets
+sharing that key. Each read excludes its current target and returns up to six
+suggestions after fresh visibility, grade, set and size checks. Pools use the same
+weekly TTL and bounded Redis namespace as per-climb IDs, but remain independent:
+pool IDs are never copied into a newly cached per-climb result, which would extend
+their original expiry. A per-climb miss settles before acquiring a pool miss slot,
+so nested admission cannot exhaust the four-slot budget. Failed or incomplete
+nearby reads remain unavailable and uncached; legacy cache payloads explicitly
+marked `nearbyUnavailable: true` are invalidated rather than served as loaded-empty.
 
 ## What is stored
 

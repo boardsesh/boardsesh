@@ -1,4 +1,4 @@
-import { and, eq, exists, inArray, sql } from 'drizzle-orm';
+import { and, eq, exists, inArray, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 import { canAddClimbToBoard } from '@boardsesh/board-config';
@@ -23,11 +23,13 @@ import {
   PUBLIC_RELATED_CACHE_MAX_BYTES,
   PUBLIC_RELATED_CACHE_MAX_ENTRIES,
   PUBLIC_RELATED_CACHE_PREFIX,
+  PUBLIC_RELATED_RATE_LIMIT,
   publicRelatedCacheTtlSeconds,
   type PublicRelatedCandidate,
   type PublicRelatedSnapshot,
   type PublicRelatedTarget,
   type PublicRelatedDependencies,
+  type PublicRelatedNearbyInput,
 } from '../../../services/public-climb-related-content';
 
 export const PublicClimbRelatedContentInputSchema = z.object({
@@ -55,6 +57,9 @@ const snapshotSchema = z.object({
   similar: z.array(candidateSchema).max(25),
   nearby: z.array(candidateSchema).max(14),
   nearbyGrade: z.string().max(30).nullable(),
+  // Older payloads could contain a failed optional read. Never strip this flag
+  // and then treat an incomplete result as a loaded empty list for a week.
+  nearbyUnavailable: z.literal(false).optional(),
 });
 const cacheTtlSeconds = publicRelatedCacheTtlSeconds(process.env.PUBLIC_CLIMB_RECOMMENDATION_CACHE_DAYS);
 const CACHE_INDEX_KEY = `${PUBLIC_RELATED_CACHE_PREFIX}:index`;
@@ -123,10 +128,7 @@ function candidateIds(climbs: SimilarClimb[]): PublicRelatedCandidate[] {
   }));
 }
 
-async function buildSnapshot(
-  input: PublicClimbRelatedContentInput,
-  target: PublicRelatedTarget,
-): Promise<PublicRelatedSnapshot> {
+async function buildSnapshot(input: PublicClimbRelatedContentInput): Promise<PublicRelatedSnapshot> {
   const similar = await getMaterializedSimilarClimbs(dbRead, {
     boardType: input.boardType,
     layoutId: input.layoutId,
@@ -136,17 +138,10 @@ async function buildSnapshot(
     sizeId: input.boardType === 'woods' ? input.sizeId : undefined,
     statsAngle: input.angle,
   });
-  const snapshot: PublicRelatedSnapshot = { similar: candidateIds(similar), nearby: [], nearbyGrade: null };
-  if (similar.length > 0 || input.includeNearby === false || target.difficulty == null) return snapshot;
-  const grades = getBoulderGradesForBoard(input.boardType as BoardName);
-  const targetGrade = grades.find((grade) => grade.difficulty_id === target.difficulty);
-  if (!targetGrade) return snapshot;
-  const targetVGrade = Number(targetGrade.v_grade.slice(1));
-  const band = grades.filter((grade) => Math.abs(Number(grade.v_grade.slice(1)) - targetVGrade) <= 1);
-  const minGrade = band[0]?.difficulty_id;
-  const maxGrade = band.at(-1)?.difficulty_id;
-  if (minGrade == null || maxGrade == null) return snapshot;
-  snapshot.nearbyGrade = targetGrade.difficulty_name;
+  return { similar: candidateIds(similar), nearby: [], nearbyGrade: null };
+}
+
+async function buildNearby(input: PublicRelatedNearbyInput): Promise<PublicRelatedSnapshot> {
   const params = {
     board_name: input.boardType as BoardName,
     layout_id: input.layoutId,
@@ -154,36 +149,29 @@ async function buildSnapshot(
     set_ids: input.setIds,
     angle: input.angle,
   };
-  try {
-    for (const page of [0, 1]) {
-      const { climbs } = await searchClimbs(params, {
-        minGrade,
-        maxGrade,
-        minAscents: 1,
-        sortBy: 'ascents',
-        sortOrder: 'desc',
-        page,
-        pageSize: 7,
-      });
-      snapshot.nearby = climbs
-        .filter(
-          (climb) =>
-            climb.uuid !== input.climbUuid && Boolean(climb.difficulty) && canAddClimbToBoard(climb, params).ok,
-        )
-        .slice(0, 6)
-        .map((climb) => ({
-          uuid: climb.uuid,
-          similarity: 0,
-          sharedHoldCount: 0,
-          candidateHoldCount: 0,
-          targetHoldCount: 0,
-        }));
-      if (snapshot.nearby.length > 0 || climbs.length < 7) break;
-    }
-  } catch {
-    snapshot.nearbyUnavailable = true;
-  }
-  return snapshot;
+  const { climbs } = await searchClimbs(params, {
+    minGrade: input.minGrade,
+    maxGrade: input.maxGrade,
+    minAscents: 1,
+    sortBy: 'ascents',
+    sortOrder: 'desc',
+    page: 0,
+    pageSize: 14,
+  });
+  return {
+    similar: [],
+    nearby: climbs
+      .filter((climb) => Boolean(climb.difficulty) && canAddClimbToBoard(climb, params).ok)
+      .slice(0, 14)
+      .map((climb) => ({
+        uuid: climb.uuid,
+        similarity: 0,
+        sharedHoldCount: 0,
+        candidateHoldCount: 0,
+        targetHoldCount: 0,
+      })),
+    nearbyGrade: null,
+  };
 }
 
 async function hydrate(
@@ -243,6 +231,7 @@ async function hydrate(
       and(
         eq(boardClimbs.boardType, input.boardType),
         eq(boardClimbs.layoutId, input.layoutId),
+        ne(boardClimbs.uuid, input.climbUuid),
         inArray(boardClimbs.uuid, [...new Set(candidates.map((candidate) => candidate.uuid))]),
         sql`${boardClimbs.isDraft} IS NOT TRUE`,
         sql`${boardClimbs.isListed} IS NOT FALSE`,
@@ -292,20 +281,26 @@ async function hydrate(
 
 let lastFailureReport = 0;
 let lastStatsReport = 0;
+
+export function parsePublicRelatedCachePayload(payload: string | null): PublicRelatedSnapshot | null {
+  if (!payload || Buffer.byteLength(payload) > PUBLIC_RELATED_CACHE_MAX_BYTES) return null;
+  try {
+    const parsed = snapshotSchema.safeParse(JSON.parse(payload));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
 export const publicClimbRelatedContentDependencies: PublicRelatedDependencies = {
   readTarget,
   buildSnapshot,
+  buildNearby,
   hydrate,
   async readCache(key) {
     if (!redisClientManager.isRedisConnected()) throw new Error('Recommendation cache unavailable');
     const payload = await redisClientManager.getClients().publisher.get(key);
-    if (!payload || Buffer.byteLength(payload) > PUBLIC_RELATED_CACHE_MAX_BYTES) return null;
-    try {
-      const parsed = snapshotSchema.safeParse(JSON.parse(payload));
-      return parsed.success ? parsed.data : null;
-    } catch {
-      return null;
-    }
+    return parsePublicRelatedCachePayload(payload);
   },
   async writeCache(key, snapshot) {
     const payload = JSON.stringify(snapshot);
@@ -341,7 +336,9 @@ export async function publicClimbRelatedContent(
   { input }: { input: PublicClimbRelatedContentInput },
   ctx: ConnectionContext,
 ) {
-  await applyRateLimit(ctx, 600, 'public-climb-related-content');
+  // Every anonymous SSR reader shares the web origin's backend peer address.
+  // The service still caps real work at eight reads and four cold misses.
+  await applyRateLimit(ctx, PUBLIC_RELATED_RATE_LIMIT, 'public-climb-related-content');
   const response = await publicClimbRelatedContentService.read(
     validateInput(PublicClimbRelatedContentInputSchema, input, 'input'),
   );
