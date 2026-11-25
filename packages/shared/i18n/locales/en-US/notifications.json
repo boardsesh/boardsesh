@@ -25,6 +25,8 @@
     "commentOnPlaylist": "{{actor}} commented on your playlist",
     "commentOnBoardWithBody": "{{actor}} commented on your board: \"{{body}}\"",
     "commentOnBoard": "{{actor}} commented on your board",
+    "boardAccessRequested": "{{actor}} wants to climb on your board",
+    "boardAccessApproved": "{{actor}} said yes: you can climb on their board now",
     "commentOnSprayWallWithBody": "{{actor}} commented on your Spraywall: \"{{body}}\"",
     "commentOnSprayWall": "{{actor}} commented on your Spraywall",
     "commentOnGymWithBody": "{{actor}} commented on your gym: \"{{body}}\"",

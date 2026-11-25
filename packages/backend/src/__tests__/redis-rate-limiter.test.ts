@@ -128,6 +128,28 @@ describe('checkRateLimitRedis', () => {
       const expireSeconds = mockEval.mock.calls[0][3];
       expect(expireSeconds).toBe('30');
     });
+
+    it('keeps a daily window in one day-long bucket with a day-long TTL', async () => {
+      const dayMs = 24 * 60 * 60 * 1000;
+      mockEval.mockResolvedValue(1);
+
+      await checkRateLimitRedis('user-1', 'requestResourceAccessDaily', 5, dayMs);
+      vi.setSystemTime(new Date('2024-01-15T23:59:00.000Z'));
+      await checkRateLimitRedis('user-1', 'requestResourceAccessDaily', 5, dayMs);
+
+      const [firstKey, firstExpire] = mockEval.mock.calls[0].slice(2);
+      const [laterKey] = mockEval.mock.calls[1].slice(2);
+      expect(firstKey).toBe(`ratelimit:user-1:requestResourceAccessDaily:${Math.floor(Date.now() / dayMs)}`);
+      expect(laterKey).toBe(firstKey);
+      expect(firstExpire).toBe('86400');
+
+      // Over the cap at 10:00 UTC: wait for the rest of the day (14 hours), not a minute.
+      vi.setSystemTime(new Date('2024-01-15T10:00:00.000Z'));
+      mockEval.mockResolvedValue(6);
+      await expect(checkRateLimitRedis('user-1', 'requestResourceAccessDaily', 5, dayMs)).rejects.toMatchObject({
+        retryAfterSeconds: 14 * 60 * 60,
+      });
+    });
   });
 
   describe('when Redis is not connected', () => {

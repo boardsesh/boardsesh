@@ -143,6 +143,8 @@ type Documents = {
   '\n  mutation ApproveResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    approveResourceAccess(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n': typeof types.ApproveResourceAccessDocument;
   '\n  mutation RevokeResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    revokeResourceAccess(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n': typeof types.RevokeResourceAccessDocument;
   '\n  mutation RequestResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    requestResourceAccess(kind: $kind, resourceId: $resourceId)\n  }\n': typeof types.RequestResourceAccessDocument;
+  '\n  mutation DeclineResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    declineResourceAccess(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n': typeof types.DeclineResourceAccessDocument;
+  '\n  mutation CancelResourceAccessRequest($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    cancelResourceAccessRequest(kind: $kind, resourceId: $resourceId)\n  }\n': typeof types.CancelResourceAccessRequestDocument;
   '\n  mutation InviteResourceMember($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    inviteResourceMember(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n': typeof types.InviteResourceMemberDocument;
   '\n  query ProfilePrivacy($userId: ID!) {\n    publicProfile(userId: $userId) {\n      isPrivate\n      canViewActivity\n    }\n  }\n': typeof types.ProfilePrivacyDocument;
   '\n  query BoardShareLink($boardUuid: ID!) {\n    boardShareLink(boardUuid: $boardUuid) {\n      boardUuid\n      token\n      path\n      createdAt\n    }\n  }\n': typeof types.BoardShareLinkDocument;
@@ -478,6 +480,10 @@ const documents: Documents = {
     types.RevokeResourceAccessDocument,
   '\n  mutation RequestResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    requestResourceAccess(kind: $kind, resourceId: $resourceId)\n  }\n':
     types.RequestResourceAccessDocument,
+  '\n  mutation DeclineResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    declineResourceAccess(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n':
+    types.DeclineResourceAccessDocument,
+  '\n  mutation CancelResourceAccessRequest($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    cancelResourceAccessRequest(kind: $kind, resourceId: $resourceId)\n  }\n':
+    types.CancelResourceAccessRequestDocument,
   '\n  mutation InviteResourceMember($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    inviteResourceMember(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n':
     types.InviteResourceMemberDocument,
   '\n  query ProfilePrivacy($userId: ID!) {\n    publicProfile(userId: $userId) {\n      isPrivate\n      canViewActivity\n    }\n  }\n':
@@ -1420,6 +1426,18 @@ export function graphql(
 export function graphql(
   source: '\n  mutation RequestResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    requestResourceAccess(kind: $kind, resourceId: $resourceId)\n  }\n',
 ): (typeof documents)['\n  mutation RequestResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    requestResourceAccess(kind: $kind, resourceId: $resourceId)\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation DeclineResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    declineResourceAccess(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n',
+): (typeof documents)['\n  mutation DeclineResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    declineResourceAccess(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation CancelResourceAccessRequest($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    cancelResourceAccessRequest(kind: $kind, resourceId: $resourceId)\n  }\n',
+): (typeof documents)['\n  mutation CancelResourceAccessRequest($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    cancelResourceAccessRequest(kind: $kind, resourceId: $resourceId)\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

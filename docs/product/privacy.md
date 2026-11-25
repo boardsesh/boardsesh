@@ -106,6 +106,17 @@ Never listed, whatever the audience: a climber the owner removed (a revoked gran
 
 Saving a board (`followBoard`) needs the same access as opening it by its uuid, so a member of a Followers or Invite-only board can keep it in Your boards; before this, only Public boards could be saved. Joining through a share link and an owner approving a request both save the board for the climber. An owner's name invite (`inviteResourceMember`) does not, so a stranger cannot push a board into someone's picker, and an approved grant alone never adds a board to Your boards. `myBoards` checks access in its WHERE, so a board the climber can no longer open (removed by the owner, made Only me) drops out of the list and its count. The `board_follows` row stays, and a re-invite brings the board back.
 
+### Asking to climb
+
+A climber asks to climb on a board they can't open yet; the owner says yes or no. One waiting request per climber per board: it is the `pending` row in `resource_grants`.
+
+1. **Ask** (`requestResourceAccess`). Writes the pending row and tells the owner with a `board_access_requested` notification (the climber is the actor, the board is the entity). Asking again while the request waits changes nothing and tells nobody. A member stays a member. A climber the owner removed stays removed, and the owner is not told: their row already exists, so nothing is written. Each climber can ask 5 times a day across all boards (`applyRateLimit` with a 24-hour window, counted per UTC day), on top of the 30-a-minute privacy limit; every call counts, including one that changed nothing.
+2. **Yes** (`approveResourceAccess`, owner only). The row becomes approved, the board lands in the climber's Your boards, the owner's request notification is deleted, and the climber gets a `board_access_approved` notification (the owner is the actor).
+3. **No** (`declineResourceAccess`, owner only). Deletes the pending row and the owner's request notification. It is not a ban: the climber sees the board as askable again and can ask later, within the daily cap. A member's or a removed climber's row is left alone. To keep someone out for good, the owner removes them (`revokeResourceAccess`).
+4. **Take it back** (`cancelResourceAccessRequest`, the climber). Deletes their own pending row and the owner's request notification.
+
+Decline and cancel return whether a request was waiting. The request notification shows in the owner's inbox only while the request still waits on a live board they own, and the approval notification shows only while the climber is still a member, so a late write or an answer from somewhere else never leaves a stale row to act on. Both are written after the request or approval commits, are grouped per board like other notifications (several climbers asking about one board make one row; `notificationActors` lists them), and are not pushed to phones yet. A session access request writes the same pending row and sends no notification. Installed apps that predate these two types show them as a plain "new notification" row.
+
 ## Enforcement and writes
 
 `packages/shared/privacy` defines renderer-independent policy. `packages/db/src/queries/privacy.ts` expresses the policy inside queries, before pagination and counts. Backend runtime helpers in `services/privacy.ts` authorize individual resources. Policy reads use the primary database: a lagging replica cannot restore a revoked grant.

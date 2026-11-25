@@ -56,6 +56,8 @@ describe('notificationCopy', () => {
     ['app_feedback_reply', 'items.bugReportReply'],
     ['new_follower', 'items.newFollower'],
     ['follow_request', 'items.followRequest'],
+    ['board_access_requested', 'items.boardAccessRequested'],
+    ['board_access_approved', 'items.boardAccessApproved'],
     ['comment_reply', 'items.commentReply'],
     ['comment_on_tick', 'items.commentOnTick'],
     ['comment_on_climb', 'items.commentOnClimbGeneric'],

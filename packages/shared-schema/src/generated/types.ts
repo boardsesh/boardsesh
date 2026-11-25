@@ -5646,6 +5646,7 @@ export type Mutation = {
   /** Edit active board metadata as a global admin; privacy and credentials remain owner-only. */
   adminUpdateBoard: AdminBoard;
   approveFollowRequest: Scalars['Boolean']['output'];
+  /** Owner only. Lets a waiting request in; on a board, tells the climber (board_access_approved). */
   approveResourceAccess: Scalars['Boolean']['output'];
   attachAppWorkout: Scalars['Boolean']['output'];
   /**
@@ -5663,6 +5664,8 @@ export type Mutation = {
   attachBoardToGym: Scalars['Boolean']['output'];
   authorizeControllerForSession: Scalars['Boolean']['output'];
   cancelFollowRequest: Scalars['Boolean']['output'];
+  /** Take back your own waiting request. True when one was waiting. */
+  cancelResourceAccessRequest: Scalars['Boolean']['output'];
   /**
    * Confirm which board a (non-unique) serial routes to after the user picks
    * from a disambiguation prompt. Remembers the choice per user so the prompt
@@ -5780,6 +5783,13 @@ export type Mutation = {
    */
   createSprayWallVersion: SprayWallVersion;
   declineFollowRequest: Scalars['Boolean']['output'];
+  /**
+   * Owner only. Says no to a waiting request: the request is deleted, so the
+   * climber can ask again later. Not a ban (that is revokeResourceAccess); a
+   * member's or removed person's grant is left as it is. True when a request was
+   * waiting.
+   */
+  declineResourceAccess: Scalars['Boolean']['output'];
   /**
    * Delete the current user's account.
    * Deletes draft climbs, optionally removes setter name from published climbs,
@@ -6183,6 +6193,12 @@ export type Mutation = {
    * Rate limited to 5 requests a minute.
    */
   requestProviderSync: ProviderSyncRequest;
+  /**
+   * Ask the owner to climb on a board (or join a session). Tells a board's owner
+   * once (board_access_requested) while the request waits. Asking again while it
+   * waits, or after the owner removed you, changes nothing and tells nobody.
+   * At most 5 a day per climber.
+   */
   requestResourceAccess: Scalars['Boolean']['output'];
   requestSprayWallDetection: SprayWallDetection;
   /** Prepare a weekly climbing archive and, where supported, its Aurora companion. */
@@ -6635,6 +6651,12 @@ export type MutationCancelFollowRequestArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationCancelResourceAccessRequestArgs = {
+  kind: PrivacyResourceKind;
+  resourceId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationChooseBoardForSerialArgs = {
   boardId: Scalars['Int']['input'];
   serial: Scalars['String']['input'];
@@ -6729,6 +6751,13 @@ export type MutationCreateSprayWallVersionArgs = {
 
 /** Root mutation type for all write operations. */
 export type MutationDeclineFollowRequestArgs = {
+  userId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationDeclineResourceAccessArgs = {
+  kind: PrivacyResourceKind;
+  resourceId: Scalars['ID']['input'];
   userId: Scalars['ID']['input'];
 };
 
@@ -7803,6 +7832,8 @@ export type NotificationEvent = {
 
 export type NotificationType =
   | 'app_feedback_reply'
+  | 'board_access_approved'
+  | 'board_access_requested'
   | 'board_deleted_by_staff'
   | 'board_edited_by_staff'
   | 'board_removed_from_gym'
@@ -19536,6 +19567,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationCancelFollowRequestArgs, 'userId'>
   >;
+  cancelResourceAccessRequest?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationCancelResourceAccessRequestArgs, 'kind' | 'resourceId'>
+  >;
   chooseBoardForSerial?: Resolver<
     ResolversTypes['ResolvedBoard'],
     ParentType,
@@ -19644,6 +19681,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationDeclineFollowRequestArgs, 'userId'>
+  >;
+  declineResourceAccess?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationDeclineResourceAccessArgs, 'kind' | 'resourceId' | 'userId'>
   >;
   deleteAccount?: Resolver<
     ResolversTypes['Boolean'],
