@@ -13,7 +13,9 @@ const displayFont = localFont({
   src: '../../fonts/GeistVF.woff',
   variable: '--font-display',
   display: 'swap',
-  preload: true,
+  // Turbopack shares this font's CSS across document roots. Only application
+  // headings use it; marketing pages must not preload an unused custom font.
+  preload: false,
 });
 
 export default async function ApplicationDocument({

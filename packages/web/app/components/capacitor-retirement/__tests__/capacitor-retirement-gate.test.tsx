@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { CapacitorRetirementGate } from '../capacitor-retirement-gate';
 import { CAPACITOR_BRIDGE_TIMEOUT_MS } from '@/app/lib/ble/capacitor-utils';
-import { track } from '@/app/lib/analytics';
+import { track } from '@/app/lib/analytics-capture';
 
 /**
  * Detection is deliberately NOT mocked here. The one property this whole change
@@ -12,7 +12,7 @@ import { track } from '@/app/lib/analytics';
  * `capacitor-utils` stays real and these tests drive `window.Capacitor` and the
  * user agent directly.
  */
-vi.mock('@/app/lib/analytics', () => ({
+vi.mock('@/app/lib/analytics-capture', () => ({
   track: vi.fn(),
 }));
 vi.mock('../capacitor-retirement-screen', () => ({

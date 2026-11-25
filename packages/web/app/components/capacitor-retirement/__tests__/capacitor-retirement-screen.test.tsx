@@ -4,7 +4,7 @@ import React from 'react';
 import { CapacitorRetirementScreen } from '../capacitor-retirement-screen';
 import { getPlatform } from '@/app/lib/ble/capacitor-utils';
 import { openExternalUrl } from '@/app/lib/open-external-url';
-import { track } from '@/app/lib/analytics';
+import { track } from '@/app/lib/analytics-capture';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
 vi.mock('react-i18next', () => ({
@@ -22,7 +22,7 @@ vi.mock('@/app/lib/ble/capacitor-utils', () => ({
 vi.mock('@/app/lib/open-external-url', () => ({
   openExternalUrl: vi.fn(),
 }));
-vi.mock('@/app/lib/analytics', () => ({
+vi.mock('@/app/lib/analytics-capture', () => ({
   track: vi.fn(),
 }));
 

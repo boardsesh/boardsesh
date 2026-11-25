@@ -40,10 +40,10 @@ describe('web lookUpConsentRegion', () => {
     const { lookUpConsentRegion, expireConsentRegionLookup } = await import('../consent-region');
     expect(expireConsentRegionLookup()).toBe(false);
     const pending = lookUpConsentRegion();
+    await vi.waitFor(() => expect(transport.request).toHaveBeenCalledOnce());
     expect(expireConsentRegionLookup()).toBe(true);
     expect(expireConsentRegionLookup()).toBe(true);
     transport.request.mockResolvedValue({ consentRegion: { countryCode: 'DE', promptRequired: true } });
-    await Promise.resolve();
     answer({ consentRegion: { countryCode: 'US', promptRequired: false } });
     await expect(pending).resolves.toEqual({ promptRequired: true, globalPrivacyControl: false });
     await expect(lookUpConsentRegion()).resolves.toEqual({ promptRequired: true, globalPrivacyControl: false });
@@ -90,5 +90,17 @@ describe('web lookUpConsentRegion', () => {
     await vi.advanceTimersByTimeAsync(1);
     await expect(lookup).resolves.toEqual({ promptRequired: null, globalPrivacyControl: false });
     expect(signal?.aborted).toBe(true);
+  });
+
+  it('does not start a late request when module loading outlasts the lookup deadline', async () => {
+    vi.useFakeTimers();
+    const { CONSENT_REGION_WAIT_MS, lookUpConsentRegion } = await import('../consent-region');
+    const pending = lookUpConsentRegion();
+    // Fire the deadline before dynamic-import continuations can run.
+    vi.advanceTimersByTime(CONSENT_REGION_WAIT_MS);
+    await expect(pending).resolves.toEqual({ promptRequired: null, globalPrivacyControl: false });
+    await vi.dynamicImportSettled();
+    expect(transport.request).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

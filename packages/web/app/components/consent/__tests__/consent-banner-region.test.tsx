@@ -313,7 +313,8 @@ describe('consent banner by region', () => {
     const view = await renderBanner();
     await waitFor(() => expect(consentCookie()).toMatch(/\.region$/));
     fireEvent.click(view.getByRole('button', { name: 'open-privacy-choices' }));
-    fireEvent.click(await view.findByRole('button', { name: 'deny' }));
+    const dialog = await view.findByRole('dialog', { name: 'privacyChoices' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'deny' }));
     await waitFor(() => expect(consentCookie()).toMatch(/^v1\.denied\.\d+\.web$/));
     expect(document.documentElement.dataset.consent).toBe('denied');
   });

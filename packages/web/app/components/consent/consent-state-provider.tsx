@@ -39,6 +39,8 @@ const SERVER_SNAPSHOT: ConsentSyncSnapshot = {
 };
 type ConsentContextValue = {
   snapshot: ConsentSyncSnapshot;
+  /** Identity is settled and its consent account has finished resolving. */
+  accountReady: boolean;
   granted: boolean;
   dialogOpen: boolean;
   /**
@@ -178,6 +180,7 @@ export function ConsentStateProvider({
   const context = useMemo(
     () => ({
       snapshot,
+      accountReady,
       granted: analyticsAuthorized,
       dialogOpen,
       promptShowing,
@@ -189,6 +192,7 @@ export function ConsentStateProvider({
     }),
     [
       snapshot,
+      accountReady,
       analyticsAuthorized,
       dialogOpen,
       promptShowing,

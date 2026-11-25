@@ -1,13 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ComponentType } from 'react';
 import { useTranslation } from 'react-i18next';
-import Button from '@mui/material/Button';
-import Dialog from '@mui/material/Dialog';
-import DialogActions from '@mui/material/DialogActions';
-import DialogContent from '@mui/material/DialogContent';
-import DialogTitle from '@mui/material/DialogTitle';
-import Typography from '@mui/material/Typography';
 import {
   chineseTranslationOnboardingKey,
   getChineseTerminologyFormUrl,
@@ -18,60 +12,64 @@ import { usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
 import { isChromeLessPath } from '@/app/lib/chrome-less-routes';
 import { useConsent } from '../consent/consent-state-provider';
 import type { ConsentRegionPromptState } from '../consent/use-consent-region-prompt';
+import { loadChineseTranslationDialog } from './chinese-translation-dialog-loader';
+import type { ChineseTranslationDialogProps } from './chinese-translation-dialog';
 
+function EligibleChineseTranslationWelcome({
+  formUrl,
+  preferenceKey,
+}: {
+  formUrl: string | null;
+  preferenceKey: string;
+}) {
+  const [TranslationDialog, setTranslationDialog] = useState<ComponentType<ChineseTranslationDialogProps> | null>(null);
+  useEffect(() => {
+    let mounted = true;
+    void getPreference<boolean>(preferenceKey)
+      .then(async (seen) => {
+        if (!mounted || seen === true || document.visibilityState !== 'visible') return;
+        const { default: LoadedDialog } = await loadChineseTranslationDialog();
+        if (mounted) setTranslationDialog(() => LoadedDialog);
+      })
+      .catch(() => {
+        /* This optional welcome must not interrupt the page when offline. */
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [preferenceKey]);
+  const dismiss = () => {
+    setTranslationDialog(null);
+    void setPreference(preferenceKey, true);
+  };
+  return TranslationDialog ? <TranslationDialog formUrl={formUrl} onDismiss={dismiss} /> : null;
+}
+
+/** Keep the optional welcome's dialog graph out of every other visitor's payload. */
 export default function ChineseTranslationOnboarding({ consentRegion }: { consentRegion: ConsentRegionPromptState }) {
   const formUrl = getChineseTerminologyFormUrl(process.env.NEXT_PUBLIC_CHINESE_TERMINOLOGY_FORM_URL);
-  const { t, i18n } = useTranslation('common');
-  const [open, setOpen] = useState(false);
+  const preferenceKey = chineseTranslationOnboardingKey(formUrl);
+  const { i18n } = useTranslation('common');
   const pathname = usePathnameWithoutLocale();
-  const chromeLess = isChromeLessPath(pathname.toLowerCase());
-  const { dialogOpen } = useConsent();
-  const eligible = isChineseTranslationLocale(i18n.language) && !chromeLess;
-  const { prompt: consentPrompt, settled: consentSettled } = consentRegion;
+  const { dialogOpen, accountReady } = useConsent();
+  const [visible, setVisible] = useState(false);
+  const eligible =
+    isChineseTranslationLocale(i18n.language) &&
+    !isChromeLessPath(pathname.toLowerCase()) &&
+    consentRegion.settled &&
+    !consentRegion.prompt &&
+    !dialogOpen &&
+    accountReady &&
+    visible;
 
   useEffect(() => {
-    if (!eligible) return;
-    let cancelled = false;
-    void getPreference<boolean>(chineseTranslationOnboardingKey(formUrl)).then((seen) => {
-      if (!cancelled) setOpen(seen !== true);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [eligible, formUrl]);
+    const refreshVisibility = () => setVisible(document.visibilityState === 'visible');
+    refreshVisibility();
+    document.addEventListener('visibilitychange', refreshVisibility);
+    return () => document.removeEventListener('visibilitychange', refreshVisibility);
+  }, []);
 
-  const dismiss = () => {
-    setOpen(false);
-    void setPreference(chineseTranslationOnboardingKey(formUrl), true);
-  };
-
-  return (
-    <Dialog
-      open={eligible && open && consentSettled && !dialogOpen && !consentPrompt}
-      onClose={dismiss}
-      aria-labelledby="chinese-translation-title"
-    >
-      <DialogTitle id="chinese-translation-title">{t('chineseTranslation.title')}</DialogTitle>
-      <DialogContent>
-        <Typography paragraph>{t('chineseTranslation.body')}</Typography>
-        <Typography paragraph>{t('chineseTranslation.terms')}</Typography>
-        <Typography>{formUrl ? t('chineseTranslation.invitation') : t('chineseTranslation.formPending')}</Typography>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={dismiss}>{t('chineseTranslation.continue')}</Button>
-        {formUrl && (
-          <Button
-            component="a"
-            href={formUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={dismiss}
-            variant="contained"
-          >
-            {t('chineseTranslation.openForm')}
-          </Button>
-        )}
-      </DialogActions>
-    </Dialog>
-  );
+  return eligible ? (
+    <EligibleChineseTranslationWelcome key={preferenceKey} formUrl={formUrl} preferenceKey={preferenceKey} />
+  ) : null;
 }

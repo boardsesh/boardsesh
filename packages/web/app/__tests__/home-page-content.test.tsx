@@ -37,7 +37,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 const mockTrack = vi.fn();
-vi.mock('@/app/lib/analytics', () => ({
+vi.mock('@/app/lib/analytics-capture', () => ({
   track: (...args: unknown[]) => mockTrack(...args),
 }));
 

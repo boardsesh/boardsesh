@@ -8,7 +8,7 @@ import type { StoreButtonLabels } from '@/app/components/marketing/store-install
 import { __resetSessionInboundCampaignForTests } from '@/app/lib/inbound-campaign';
 
 const track = vi.hoisted(() => vi.fn());
-vi.mock('@/app/lib/analytics', () => ({ track }));
+vi.mock('@/app/lib/analytics-capture', () => ({ track }));
 
 const GymInstallCta = (await import('../gym-install-cta')).default;
 

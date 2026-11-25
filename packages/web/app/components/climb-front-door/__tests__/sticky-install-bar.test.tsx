@@ -9,7 +9,7 @@ import { classifyMarketingBrowser } from '@/app/lib/marketing-platform';
 import { MarketingPreviewProvider } from '@/app/components/marketing/marketing-preview-provider';
 
 const track = vi.hoisted(() => vi.fn());
-vi.mock('@/app/lib/analytics', () => ({ track }));
+vi.mock('@/app/lib/analytics-capture', () => ({ track }));
 
 vi.mock('@/app/lib/ble/capacitor-utils', () => ({
   isNativeApp: () => false,

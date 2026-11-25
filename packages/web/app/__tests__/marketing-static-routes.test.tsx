@@ -7,7 +7,6 @@ vi.mock('next/headers', () => ({
     throw new Error('Static marketing must not read request headers');
   },
 }));
-vi.mock('next/font/local', () => ({ default: () => ({ variable: '--font-display' }) }));
 
 const englishRoot = await import('@/app/(marketing)/layout');
 const englishHome = await import('@/app/(marketing)/page');

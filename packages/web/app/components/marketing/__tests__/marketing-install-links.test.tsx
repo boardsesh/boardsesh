@@ -5,7 +5,7 @@ import { __resetSessionInboundCampaignForTests } from '@/app/lib/inbound-campaig
 import { buildStoreUrl } from '@/app/lib/store-links';
 
 const track = vi.hoisted(() => vi.fn());
-vi.mock('@/app/lib/analytics', () => ({ track }));
+vi.mock('@/app/lib/analytics-capture', () => ({ track }));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en-US' } }),
