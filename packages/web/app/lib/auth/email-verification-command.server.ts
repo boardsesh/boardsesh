@@ -2,6 +2,8 @@ import 'server-only';
 import { NextResponse, type NextRequest } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
 import { sendVerificationEmail } from '@boardsesh/email';
+import { createRegistrationCommandClient } from './registration-command-client.server';
+import { cloudflareVouchedVisitorAddress } from './trusted-client-ip.server';
 import { createPasswordCommandClient, registrationMailOrigin } from './password-command-client.server';
 import { passwordCommandUnavailableResponse } from './register-password-command.server';
 import { emailVerificationRedirect, emailVerificationUnavailableResponse } from './email-verification-response.server';
@@ -12,7 +14,9 @@ export async function verifyEmailWithCommand(
   legacyEmail?: string,
 ): Promise<NextResponse> {
   try {
-    const reply = await createPasswordCommandClient().verifyEmail(token, legacyEmail);
+    const reply = await createRegistrationCommandClient({
+      clientAddress: cloudflareVouchedVisitorAddress(request),
+    }).verifyEmail(token, legacyEmail);
     if (reply.outcome === 'verified') return emailVerificationRedirect(request, '/auth/login?verified=true');
     if (reply.outcome === 'invalid_token')
       return emailVerificationRedirect(request, '/auth/verify-request?error=InvalidToken');
