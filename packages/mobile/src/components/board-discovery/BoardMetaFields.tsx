@@ -115,6 +115,7 @@ export function BoardIdentityFields({
   namePlaceholder,
   onOpenGymPicker,
   gymLocked = false,
+  gymLockedHint,
 }: {
   builder: BoardIdentityBuilder;
   /** Shown while the name is blank — usually the auto-generated default. */
@@ -129,6 +130,8 @@ export function BoardIdentityFields({
   onOpenGymPicker: () => void;
   /** The gym was picked earlier in the add-a-board wizard: shown, not changeable here. */
   gymLocked?: boolean;
+  /** What a screen reader says about the locked gym: where it was picked, and how to pick another. */
+  gymLockedHint?: string;
 }) {
   const { t } = useTranslation('boards');
 
@@ -152,6 +155,7 @@ export function BoardIdentityFields({
         selectedGym={builder.selectedGym}
         onOpenGymPicker={onOpenGymPicker}
         locked={gymLocked && builder.selectedGym !== null}
+        lockedHint={gymLockedHint}
       />
     </>
   );
@@ -165,6 +169,7 @@ export function BoardGymField({
   selectedGym,
   onOpenGymPicker,
   locked = false,
+  lockedHint,
 }: {
   selectedGym: { name: string } | null;
   /** Open the gym picker. The sheet is the host's, as for `BoardIdentityFields`. */
@@ -174,6 +179,8 @@ export function BoardGymField({
    * a lock and opens nothing. Going back a step is how to pick another.
    */
   locked?: boolean;
+  /** Overrides the locked row's spoken hint (a gym page's entry has no step to go back to). */
+  lockedHint?: string;
 }) {
   const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('boards');
@@ -186,7 +193,7 @@ export function BoardGymField({
         <View
           accessible
           accessibilityLabel={`${t('mobile.create.gym')}, ${selectedGym.name}`}
-          accessibilityHint={t('mobile.addWizard.gymLockedHint')}
+          accessibilityHint={lockedHint ?? t('mobile.addWizard.gymLockedHint')}
           style={[
             styles.gymRow,
             { backgroundColor: systemColors.secondaryBackground, borderColor: systemColors.separator },

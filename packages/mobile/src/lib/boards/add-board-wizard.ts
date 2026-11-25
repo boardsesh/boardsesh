@@ -168,7 +168,10 @@ const PRESET_PARAM_VALUE = '1';
 
 /**
  * Set up, from the wizard. A home board opens on the type's most used setup
- * (`preset`); a gym board on the gym's own walls' type, with the gym locked.
+ * (`preset`). A gym board opens on its type only (`boardType`), with nothing
+ * below it chosen, and with the gym locked when it was picked: a gym's wall is
+ * shared by everyone who climbs there, so it must never save a guessed layout
+ * or size its owner didn't pick.
  */
 export function wizardSetupHref(
   context: WizardRouteContext,
@@ -182,9 +185,11 @@ export function wizardSetupHref(
   const params = baseParams(context);
   params.path = setup.path;
   params.kind = setup.path;
-  if (setup.boardType) {
+  if (setup.boardType && setup.path === 'home') {
     params.preset = PRESET_PARAM_VALUE;
     params.presetBoardType = setup.boardType;
+  } else if (setup.boardType) {
+    params.boardType = setup.boardType;
   }
   if (setup.gymUuid) params.gymUuid = setup.gymUuid;
   if (setup.focusLocation) params.focusLocation = '1';

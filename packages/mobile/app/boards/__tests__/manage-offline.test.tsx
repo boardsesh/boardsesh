@@ -68,7 +68,7 @@ const state = vi.hoisted(() => ({
   snapshotSourceAvailable: true,
   /** `offline-download-progress`. Defaults ON, like the real flag. */
   downloadProgressEnabled: true,
-  /** `create-board-gym-first` (#8151). */
+  /** `add-board-wizard`. */
   wizard: false,
   syncStatus: {
     isSyncing: false,

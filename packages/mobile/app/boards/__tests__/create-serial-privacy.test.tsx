@@ -43,6 +43,11 @@ function board(overrides: Partial<UserBoard>): UserBoard {
   } as unknown as UserBoard;
 }
 
+// Whether Back landed on a wizard step is the hook's own suite
+// (use-stepped-back-in-wizard.test.ts); here every report goes out at once.
+vi.mock('../../../src/lib/boards/use-stepped-back-in-wizard', () => ({
+  useSteppedBackInWizard: () => (report: () => void) => report(),
+}));
 vi.mock('expo-router', () => ({
   useRouter: () => routerMock,
   useLocalSearchParams: () => ({}),

@@ -240,6 +240,17 @@ function candidate(uuid: string, overrides: Partial<ExistingWallCandidate> = {})
   };
 }
 
+/** The wizard step the list is: Boards at {gym}, step 3 of the gym path. */
+const WIZARD = {
+  stepLabel: 'Step 3 of 4',
+  nextContext: {
+    returnTo: '/(tabs)/climbs',
+    source: 'no_board',
+    entry: 'picker' as const,
+    trail: ['where' as const, 'gym' as const, 'gym_boards' as const],
+  },
+};
+
 function renderList(props: Partial<Parameters<typeof GymWallList>[0]> = {}) {
   return render(
     createElement(GymWallList, {
@@ -248,6 +259,7 @@ function renderList(props: Partial<Parameters<typeof GymWallList>[0]> = {}) {
       returnTo: '/(tabs)/climbs',
       source: 'no_board',
       entry: 'find_step',
+      wizard: WIZARD,
       ...props,
     }),
   );
@@ -272,10 +284,9 @@ beforeEach(() => {
 });
 
 describe('GymWallList', () => {
-  it('asks the server for the gym walls of the chosen type, and names the gym in the header', () => {
+  it('asks the server for the gym walls of the chosen type', () => {
     renderList();
     expect(state.candidatesInput).toEqual({ gymUuid: 'gym-1', boardType: 'moonboard', limit: 40 });
-    expect(setOptionsMock).toHaveBeenCalledWith({ title: 'Boulder Space' });
   });
 
   it('shows the walls at the gym and the listing nearby on their own shelves', () => {
@@ -332,11 +343,14 @@ describe('GymWallList', () => {
     expect(pushMock).toHaveBeenCalledWith({
       pathname: '/boards/create',
       params: {
+        returnTo: '/(tabs)/climbs',
+        source: 'no_board',
+        entry: 'picker',
+        trail: 'where,gym,gym_boards',
+        path: 'gym',
         kind: 'gym',
         gymUuid: 'gym-1',
         boardType: 'moonboard',
-        returnTo: '/(tabs)/climbs',
-        source: 'no_board',
       },
     });
     expect(events('Board Wall Not Listed Confirmed')[0]).toEqual({ candidateCount: 2, lookup: 'ok' });
@@ -552,8 +566,7 @@ describe('GymWallList as the wizard step', () => {
         trail: 'where,gym,gym_boards',
         path: 'gym',
         kind: 'gym',
-        preset: '1',
-        presetBoardType: 'moonboard',
+        boardType: 'moonboard',
         gymUuid: 'gym-1',
       },
     });

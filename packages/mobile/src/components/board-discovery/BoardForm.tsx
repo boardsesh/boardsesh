@@ -134,6 +134,8 @@ type BoardFormProps = {
   setupStyle?: 'chips' | 'rows';
   /** The gym was picked earlier in the wizard: its row shows it and can't change it. */
   gymLocked?: boolean;
+  /** The locked gym row's spoken hint, when it differs from "picked on the last step". */
+  gymLockedHint?: string;
   /** "Step 4 of 4", above the art, when the wizard counts this screen. */
   stepLabel?: string | null;
 };
@@ -170,6 +172,7 @@ export function BoardForm({
   configError = null,
   setupStyle = 'chips',
   gymLocked = false,
+  gymLockedHint,
   stepLabel = null,
 }: BoardFormProps) {
   const setupRows = setupStyle === 'rows';
@@ -631,6 +634,7 @@ export function BoardForm({
               namePlaceholder={defaultName}
               onOpenGymPicker={() => setGymPickerOpen(true)}
               gymLocked={gymLocked}
+              gymLockedHint={gymLockedHint}
             />
 
             {/* Visibility on a WALL lives in the main form, beside the name and

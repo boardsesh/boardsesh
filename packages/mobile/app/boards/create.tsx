@@ -31,7 +31,7 @@ import { useAuth } from '../../src/providers/auth-provider';
 import { useConfirm } from '../../src/providers/dialog-provider';
 import { hapticSelection } from '../../src/lib/haptics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
-import { BUILDER_PRESET_PARAM_VALUE, NO_BOARD_PICKER_SOURCE } from '../../src/lib/boards/first-board-mode';
+import { BUILDER_PRESET_PARAM_VALUE } from '../../src/lib/boards/first-board-mode';
 import { presetBoardConfig } from '../../src/lib/boards/board-config-preset';
 import {
   selectForeignSerialBoards,
@@ -72,9 +72,11 @@ import { dismissManagedSheetAndWait, type ManagedSheetHandle } from '../../src/p
 import { parseBoardKind } from '../../src/lib/boards/board-picker-add-analytics';
 import {
   boardFlowTicket,
+  builderOpenedFrom,
   claimBoardFlowAbandonment,
   noteBoardFlowSecured,
 } from '../../src/lib/boards/board-create-flow';
+import { useSteppedBackInWizard } from '../../src/lib/boards/use-stepped-back-in-wizard';
 import {
   acknowledgedWallUuids,
   MAX_ACKNOWLEDGED_WALLS,
@@ -171,15 +173,6 @@ type MismatchWall = { board: UserBoard; nearby: { gymName: string; distanceMeter
 function setupKey(boardType: string, layoutId: number | null, sizeId: number | null, setIds: readonly number[]) {
   const sets = [...new Set(setIds)].sort((first, second) => first - second).join(',');
   return `${boardType}:${layoutId ?? ''}:${sizeId ?? ''}:${sets}`;
-}
-
-/** Which picker path opened the builder, on `Board Builder Abandoned`. */
-type BuilderOpenedFrom = 'onboarding' | 'no_board' | 'board_picker';
-
-function builderOpenedFrom(pickerSource: string | undefined): BuilderOpenedFrom {
-  if (pickerSource === 'onboarding') return 'onboarding';
-  if (pickerSource === NO_BOARD_PICKER_SOURCE) return 'no_board';
-  return 'board_picker';
 }
 
 /** Analytics properties describing a create attempt. Never carries free text or coordinates. */
@@ -470,6 +463,10 @@ export default function CreateBoard() {
     };
   });
   const openedFrom = builderOpenedFrom(params.source);
+  // Back to the wizard's step under Set up is not leaving the flow, so from the
+  // wizard the report waits a tick to hear whether it was (a step back says
+  // nothing). Outside the wizard it goes out on unmount, as before.
+  const reportUnlessSteppedBack = useSteppedBackInWizard();
   useEffect(() => {
     const openedAtMs = Date.now();
     const ticket = boardFlowTicket();
@@ -477,20 +474,26 @@ export default function CreateBoard() {
       // Handed straight on to the wizard's "Where's the board?": that screen is the one
       // the climber sees, and reports for itself.
       if (redirectToWizard) return;
-      if (boardSecuredRef.current) return;
-      if (!claimBoardFlowAbandonment(ticket)) return;
-      track(SHARED_EVENTS.BoardBuilderAbandoned, {
-        ...builderSnapshotRef.current,
-        source,
-        preset: presetRequested,
-        openedFrom,
-        submitAttempted: submitAttemptedRef.current,
-        secondsOpen: Math.round((Date.now() - openedAtMs) / 1000),
-        kind,
-        step: 'form',
-        wizardPath,
-        wizardEntry,
-      });
+      const secondsOpen = Math.round((Date.now() - openedAtMs) / 1000);
+      const snapshot = builderSnapshotRef.current;
+      const report = () => {
+        if (boardSecuredRef.current) return;
+        if (!claimBoardFlowAbandonment(ticket)) return;
+        track(SHARED_EVENTS.BoardBuilderAbandoned, {
+          ...snapshot,
+          source,
+          preset: presetRequested,
+          openedFrom,
+          submitAttempted: submitAttemptedRef.current,
+          secondsOpen,
+          kind,
+          step: 'form',
+          wizardPath,
+          wizardEntry,
+        });
+      };
+      if (wizardEntry === null) report();
+      else reportUnlessSteppedBack(report);
     };
     // Once per screen: the route's params cannot change while it is mounted.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1145,6 +1148,8 @@ export default function CreateBoard() {
         // The gym the wizard's earlier step picked stays put; one that turned
         // out to be gone unlocks with "Choose another gym".
         gymLocked={wizardEnabled && kind === 'gym' && prefillGymUuid !== null && gymPrefilled}
+        // From a gym page there is no earlier step to go back to.
+        gymLockedHint={wizardEntry === 'gym_page' ? t('mobile.addWizard.gymLockedHintGymPage') : undefined}
         stepLabel={stepPosition ? t('mobile.addWizard.stepCounter', stepPosition) : null}
       />
       {existingWalls && (

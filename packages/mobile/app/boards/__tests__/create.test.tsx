@@ -111,6 +111,11 @@ function duplicateError() {
   };
 }
 
+// Whether Back landed on a wizard step is the hook's own suite
+// (use-stepped-back-in-wizard.test.ts); here every report goes out at once.
+vi.mock('../../../src/lib/boards/use-stepped-back-in-wizard', () => ({
+  useSteppedBackInWizard: () => (report: () => void) => report(),
+}));
 vi.mock('expo-router', () => ({
   useRouter: () => ({ dismissTo: dismissToMock, replace: replaceMock }),
   useLocalSearchParams: () => state.params,
@@ -310,6 +315,7 @@ vi.mock('../../../src/components/board-discovery/BoardForm', () => ({
     configError,
     setupStyle,
     gymLocked,
+    gymLockedHint,
     stepLabel,
   }: {
     onSubmit: () => void;
@@ -321,6 +327,7 @@ vi.mock('../../../src/components/board-discovery/BoardForm', () => ({
     configError?: { field: string; invalidSetIds: readonly number[] } | null;
     setupStyle?: string;
     gymLocked?: boolean;
+    gymLockedHint?: string;
     stepLabel?: string | null;
   }) =>
     createElement(
@@ -333,6 +340,7 @@ vi.mock('../../../src/components/board-discovery/BoardForm', () => ({
         'data-config-error': configError ? `${configError.field}:${configError.invalidSetIds.join(',')}` : '',
         'data-setup-style': setupStyle ?? 'chips',
         'data-gym-locked': String(!!gymLocked),
+        'data-gym-locked-hint': gymLockedHint ?? '',
         'data-step-label': stepLabel ?? '',
       },
       [
@@ -1456,6 +1464,42 @@ describe("CreateBoard as the add-a-board wizard's Set up", () => {
     off.rerender(createElement(CreateBoard));
     await waitFor(() => expect(setSelectedGymMock).toHaveBeenCalled());
     expect(form(off.container).getAttribute('data-gym-locked')).toBe('false');
+  });
+
+  it("says a gym page's lock comes from that page, with no step to go back to", async () => {
+    state.wizard = true;
+    state.gym = { uuid: 'gym-1', name: 'Boulder Space', latitude: 52.1, longitude: 4.3 };
+    state.params = { kind: 'gym', path: 'gym', entry: 'gym_page', trail: 'gym_boards', gymUuid: 'gym-1' };
+    const page = render(createElement(CreateBoard));
+    page.rerender(createElement(CreateBoard));
+    await waitFor(() => expect(form(page.container).getAttribute('data-gym-locked')).toBe('true'));
+    expect(form(page.container).getAttribute('data-gym-locked-hint')).toBe('mobile.addWizard.gymLockedHintGymPage');
+    page.unmount();
+
+    // From the wizard's own gym step, the default hint (go back a step).
+    state.params = { ...state.params, entry: 'picker', trail: 'where,gym,gym_boards' };
+    const wizard = render(createElement(CreateBoard));
+    wizard.rerender(createElement(CreateBoard));
+    await waitFor(() => expect(form(wizard.container).getAttribute('data-gym-locked')).toBe('true'));
+    expect(form(wizard.container).getAttribute('data-gym-locked-hint')).toBe('');
+  });
+
+  // A gym's wall is shared: the wizard opens it on its type only, and nothing
+  // below is guessed for it, so Board Created says no preset.
+  it('opens a gym board on its type without a preset, and a home board with one', async () => {
+    state.wizard = true;
+    state.gym = { uuid: 'gym-1', name: 'Boulder Space', latitude: 52.1, longitude: 4.3 };
+    state.params = { kind: 'gym', path: 'gym', entry: 'picker', boardType: 'moonboard', gymUuid: 'gym-1' };
+    const { rerender } = render(createElement(CreateBoard));
+    rerender(createElement(CreateBoard));
+    await waitFor(() => expect(setSelectedGymMock).toHaveBeenCalled());
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() =>
+      expect(trackMock).toHaveBeenCalledWith(
+        'Board Created',
+        expect.objectContaining({ preset: false, wizardPath: 'gym', kind: 'gym' }),
+      ),
+    );
   });
 
   it("carries the wizard's path and entry on Board Created, so completion splits by entry", async () => {

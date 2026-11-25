@@ -10,11 +10,20 @@ import { createElement, type ReactNode } from 'react';
 type Children = { children?: ReactNode };
 
 const pushMock = vi.hoisted(() => vi.fn());
+const backMock = vi.hoisted(() => vi.fn());
+const headerActions = vi.hoisted(() => ({
+  leading: undefined as null | undefined | { kind: string; onPress: () => void },
+}));
+const wallList = vi.hoisted(() => ({ last: null as null | { gymUuid: string; entry: string } }));
 const trackMock = vi.hoisted(() => vi.fn());
 const state = vi.hoisted(() => ({
   params: {} as Record<string, string | undefined>,
   signedIn: true,
   focusEffects: [] as Array<() => void>,
+  /** The screen's index in its stack: 0 is the stack's first screen. */
+  stackIndex: 1,
+  /** What `useSteppedBackInWizard` would find: the climber went Back to a wizard step. */
+  steppedBack: false,
 }));
 const gymStep = vi.hoisted(() => ({
   last: null as null | {
@@ -34,7 +43,10 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
 vi.mock('expo-router', () => ({
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => ({ push: pushMock, back: backMock }),
+  useNavigation: () => ({ getState: () => ({ index: state.stackIndex }) }),
+  Redirect: ({ href }: { href: { pathname: string; params: Record<string, string> } }) =>
+    createElement('a', { 'data-testid': 'redirect', 'data-href': JSON.stringify(href) }),
   useLocalSearchParams: () => state.params,
   useFocusEffect: (effect: () => void) => {
     state.focusEffects.push(effect);
@@ -68,6 +80,22 @@ vi.mock('../../../src/components/board-discovery/add-board-wizard/BoardTypeStep'
     return null;
   },
 }));
+vi.mock('../../../src/hooks/use-header-actions', () => ({
+  useHeaderActions: ({ leading }: { leading?: null | { kind: string; onPress: () => void } }) => {
+    headerActions.leading = leading;
+  },
+}));
+vi.mock('../../../src/lib/boards/use-stepped-back-in-wizard', () => ({
+  useSteppedBackInWizard: () => (report: () => void) => {
+    if (!state.steppedBack) report();
+  },
+}));
+vi.mock('../../../src/components/board-discovery/GymWallList', () => ({
+  GymWallList: (props: { gymUuid: string; entry: string }) => {
+    wallList.last = props;
+    return null;
+  },
+}));
 vi.mock('../../../src/lib/graphql/hooks', () => ({ usePopularBoardConfigs: () => ({ data: undefined }) }));
 vi.mock('../../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
@@ -79,6 +107,7 @@ vi.mock('../../../src/theme/tokens', () => ({ spacing: { 3: 12, 4: 16, 5: 20 } }
 const { default: AddBoardWhere } = await import('../add/index');
 const { default: AddBoardGym } = await import('../add/gym');
 const { default: AddBoardType } = await import('../add/board');
+const { default: AddBoardGymBoards } = await import('../add/gym-boards');
 
 function events(name: string) {
   return trackMock.mock.calls.filter(([eventName]) => eventName === name).map(([, props]) => props);
@@ -91,6 +120,10 @@ beforeEach(() => {
   state.focusEffects = [];
   gymStep.last = null;
   typeStep.last = null;
+  wallList.last = null;
+  headerActions.leading = undefined;
+  state.stackIndex = 1;
+  state.steppedBack = false;
 });
 
 describe("step 1, Where's the board?", () => {
@@ -144,6 +177,15 @@ describe("step 1, Where's the board?", () => {
     ]);
   });
 
+  it('names the picker it came from the way the builder does', () => {
+    state.params = { entry: 'manage' };
+    const { unmount } = render(createElement(AddBoardWhere));
+    unmount();
+    expect(events('Board Builder Abandoned')).toEqual([
+      expect.objectContaining({ openedFrom: 'board_picker', wizardEntry: 'manage' }),
+    ]);
+  });
+
   it('reports again once back from the Spraywall wizard and then closed', () => {
     const { unmount } = render(createElement(AddBoardWhere));
     fireEvent.click(screen.getByText('mobile.addWizard.spray'));
@@ -184,13 +226,18 @@ describe('Which gym?', () => {
         params: expect.objectContaining({ path: 'gym', focusLocation: '1', trail: 'where,gym' }),
       }),
     );
+    // The type picked on the map stands for Which board?: Set up stays step 4
+    // of 4, and a gym board opens on its type only, never a guessed setup.
     gymStep.last?.onAddGym('moonboard');
-    expect(pushMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        pathname: '/boards/create',
-        params: expect.objectContaining({ path: 'gym', presetBoardType: 'moonboard', focusLocation: '1' }),
-      }),
-    );
+    const [route] = pushMock.mock.calls.at(-1) as [{ pathname: string; params: Record<string, string> }];
+    expect(route.pathname).toBe('/boards/create');
+    expect(route.params).toMatchObject({
+      path: 'gym',
+      boardType: 'moonboard',
+      focusLocation: '1',
+      trail: 'where,gym,board',
+    });
+    expect(route.params).not.toHaveProperty('preset');
   });
 
   it('sends a signed-out climber to sign in to add a gym', () => {
@@ -233,5 +280,70 @@ describe('Which board?', () => {
         params: expect.objectContaining({ path: 'gym', kind: 'gym', focusLocation: '1', trail: 'where,gym,board' }),
       }),
     );
+  });
+});
+
+describe('leaving and stepping back', () => {
+  it('reports nothing when Back lands on the wizard step under it', () => {
+    state.params = { ...state.params, trail: 'where' };
+    state.steppedBack = true;
+    const { unmount } = render(createElement(AddBoardGym));
+    unmount();
+    expect(events('Board Builder Abandoned')).toEqual([]);
+  });
+
+  it('reports the step it left from when the wizard is closed', () => {
+    state.params = { ...state.params, trail: 'where' };
+    const { unmount } = render(createElement(AddBoardGym));
+    unmount();
+    expect(events('Board Builder Abandoned')).toEqual([expect.objectContaining({ step: 'find', kind: 'gym' })]);
+  });
+});
+
+describe('a step that is the first screen of its stack', () => {
+  it("gets an X that closes the modal (a gym page's Boards at {gym})", () => {
+    state.stackIndex = 0;
+    state.params = { entry: 'gym_page', gymUuid: 'gym-1' };
+    render(createElement(AddBoardGymBoards));
+    expect(headerActions.leading?.kind).toBe('close');
+    headerActions.leading?.onPress();
+    expect(backMock).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the back chevron when there is a step under it', () => {
+    state.params = { ...state.params, trail: 'where' };
+    render(createElement(AddBoardGym));
+    expect(headerActions.leading).toBeNull();
+  });
+
+  it("leaves step 1's own X to the layout", () => {
+    state.stackIndex = 0;
+    render(createElement(AddBoardWhere));
+    expect(headerActions.leading).toBeNull();
+  });
+});
+
+describe('Boards at {gym}', () => {
+  it("opens a gym page's gym as step 1 of 2", () => {
+    state.params = { entry: 'gym_page', gymUuid: 'gym-1' };
+    render(createElement(AddBoardGymBoards));
+    expect(wallList.last).toMatchObject({ gymUuid: 'gym-1', entry: 'gym_page' });
+    expect(events('Add Board Wizard Step Viewed')).toEqual([{ step: 'gym_boards', path: 'gym', entry: 'gym_page' }]);
+  });
+
+  it('sends a link with no gym to Which gym?, logging nothing', () => {
+    state.params = { entry: 'link', trail: 'where', boardType: 'kilter' };
+    const { unmount } = render(createElement(AddBoardGymBoards));
+    const href = JSON.parse(screen.getByTestId('redirect').getAttribute('data-href') ?? '{}') as {
+      pathname: string;
+      params: Record<string, string>;
+    };
+    expect(href).toEqual({
+      pathname: '/boards/add/gym',
+      params: { entry: 'link', trail: 'where', boardType: 'kilter' },
+    });
+    expect(wallList.last).toBeNull();
+    unmount();
+    expect(trackMock).not.toHaveBeenCalled();
   });
 });

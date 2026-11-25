@@ -10,7 +10,12 @@ import { toBoardName } from '@boardsesh/board-config';
 import type { BoardName, Gym } from '@boardsesh/shared-schema';
 import { GymStep } from '../../../src/components/board-discovery/gym-step/GymStep';
 import { isPickableBoardType } from '../../../src/lib/boards/find-wall-state';
-import { wizardBoardHref, wizardGymBoardsHref, wizardSetupHref } from '../../../src/lib/boards/add-board-wizard';
+import {
+  trailThrough,
+  wizardBoardHref,
+  wizardGymBoardsHref,
+  wizardSetupHref,
+} from '../../../src/lib/boards/add-board-wizard';
 import { useAddBoardWizardStep } from '../../../src/lib/boards/use-add-board-wizard-step';
 import { useAuth } from '../../../src/providers/auth-provider';
 
@@ -37,9 +42,15 @@ export default function AddBoardGym() {
         router.push('/auth/login');
         return;
       }
+      // The type picked on the map's capsule stands for Which board?, so it
+      // counts as that step: Set up is still step 4 of 4, as this screen's
+      // "Step 2 of 4" promised.
       router.push(
         boardType
-          ? wizardSetupHref(nextContext, { path: 'gym', boardType, focusLocation: true })
+          ? wizardSetupHref(
+              { ...nextContext, trail: trailThrough(nextContext.trail, 'board') },
+              { path: 'gym', boardType, focusLocation: true },
+            )
           : wizardBoardHref(nextContext, 'gym', { focusLocation: true }),
       );
     },

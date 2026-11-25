@@ -584,7 +584,8 @@
       "gymBoardsTitle": "Boards at {{gym}}",
       "gymBoardsLoading": "Boards at this gym",
       "stepCounter": "Step {{current}} of {{total}}",
-      "gymLockedHint": "Picked on the last step. Go back to pick another gym."
+      "gymLockedHint": "Picked on the last step. Go back to pick another gym.",
+      "gymLockedHintGymPage": "Set up from this gym's page. Open another gym's page to add a board there."
     },
     "findWall": {
       "boardType": "Board type",

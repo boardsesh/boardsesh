@@ -584,7 +584,8 @@
       "gymBoardsTitle": "Plafones en {{gym}}",
       "gymBoardsLoading": "Plafones en este rocódromo",
       "stepCounter": "Paso {{current}} de {{total}}",
-      "gymLockedHint": "Elegido en el paso anterior. Vuelve atrás para elegir otro rocódromo."
+      "gymLockedHint": "Elegido en el paso anterior. Vuelve atrás para elegir otro rocódromo.",
+      "gymLockedHintGymPage": "Lo estás configurando desde la página de este rocódromo. Abre la página de otro rocódromo para añadir un plafón allí."
     },
     "findWall": {
       "boardType": "Tipo de plafón",

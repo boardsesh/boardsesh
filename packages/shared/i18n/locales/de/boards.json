@@ -584,7 +584,8 @@
       "gymBoardsTitle": "Boards in {{gym}}",
       "gymBoardsLoading": "Boards in dieser Halle",
       "stepCounter": "Schritt {{current}} von {{total}}",
-      "gymLockedHint": "Im letzten Schritt gewählt. Geh zurück, um eine andere Halle zu wählen."
+      "gymLockedHint": "Im letzten Schritt gewählt. Geh zurück, um eine andere Halle zu wählen.",
+      "gymLockedHintGymPage": "Du richtest es auf der Seite dieser Halle ein. Öffne die Seite einer anderen Halle, um dort ein Board hinzuzufügen."
     },
     "findWall": {
       "boardType": "Board-Typ",

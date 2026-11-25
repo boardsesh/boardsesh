@@ -584,7 +584,8 @@
       "gymBoardsTitle": "Pannelli a {{gym}}",
       "gymBoardsLoading": "Pannelli in questa palestra",
       "stepCounter": "Passo {{current}} di {{total}}",
-      "gymLockedHint": "Scelta al passo precedente. Torna indietro per sceglierne un'altra."
+      "gymLockedHint": "Scelta al passo precedente. Torna indietro per sceglierne un'altra.",
+      "gymLockedHintGymPage": "Lo stai configurando dalla pagina di questa palestra. Apri la pagina di un'altra palestra per aggiungere lì un pannello."
     },
     "findWall": {
       "boardType": "Tipo di pannello",

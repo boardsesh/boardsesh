@@ -137,4 +137,21 @@ describe('wizard hrefs', () => {
       params: { ...context, entry: 'gym_page', trail: 'gym_boards', path: 'gym', kind: 'gym', gymUuid: 'gym-1' },
     });
   });
+
+  // A gym's wall is shared by everyone there: it never opens on a guessed
+  // layout and size, only on its type. A home board opens on the type's most
+  // used setup.
+  it('presets the home path only; the gym path gets the type alone', () => {
+    const gym = wizardSetupHref(
+      { ...context, trail: ['where', 'gym', 'gym_boards'] },
+      { path: 'gym', boardType: 'kilter', gymUuid: 'gym-1' },
+    );
+    expect(gym.params).toMatchObject({ boardType: 'kilter', gymUuid: 'gym-1', kind: 'gym' });
+    expect(gym.params).not.toHaveProperty('preset');
+    expect(gym.params).not.toHaveProperty('presetBoardType');
+
+    const home = wizardSetupHref({ ...context, trail: ['where', 'board'] }, { path: 'home', boardType: 'kilter' });
+    expect(home.params).toMatchObject({ preset: '1', presetBoardType: 'kilter', kind: 'home' });
+    expect(home.params).not.toHaveProperty('boardType');
+  });
 });

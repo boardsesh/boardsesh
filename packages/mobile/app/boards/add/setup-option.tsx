@@ -2,10 +2,11 @@
 // (`setupRowControl`): a pushed list of the catalogue's layouts or sizes, each
 // with its art, the current one ticked. A tap hands the pick back to the form
 // that pushed it (setup-option-handoff.ts) and goes back. Built from the
-// catalogue, not from the form, so a link opened on its own still lists the
-// right options (and hands its tap to nobody).
+// catalogue, not from the form. Opened with nothing to list or nobody to hand
+// the pick to (a bare link), it goes back, or to the wizard's step 1 when
+// there is nothing to go back to.
 
-import { memo, useCallback, useLayoutEffect, useMemo } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -46,6 +47,15 @@ export default function SetupOptionList() {
     [field, boardName, layoutId],
   );
 
+  const unusable = rows.length === 0 || handoffId === '';
+  useEffect(() => {
+    if (!unusable) return;
+    if (router.canGoBack()) router.back();
+    else router.replace('/boards/add');
+    // Once, at mount: the params cannot change while it is mounted.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const onPick = useCallback(
     (value: number) => {
       hapticSelection();
@@ -54,6 +64,8 @@ export default function SetupOptionList() {
     },
     [handoffId, field, router],
   );
+
+  if (unusable) return null;
 
   return (
     <ScrollView

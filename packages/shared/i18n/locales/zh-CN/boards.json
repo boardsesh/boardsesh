@@ -584,7 +584,8 @@
       "gymBoardsTitle": "{{gym}} 的训练板",
       "gymBoardsLoading": "这家岩馆的训练板",
       "stepCounter": "第 {{current}} / {{total}} 步",
-      "gymLockedHint": "已在上一步选好。返回上一步可以换一家岩馆。"
+      "gymLockedHint": "已在上一步选好。返回上一步可以换一家岩馆。",
+      "gymLockedHintGymPage": "正在从这家岩馆的页面设置。要在别的岩馆添加训练板，请打开那家岩馆的页面。"
     },
     "findWall": {
       "boardType": "训练板类型",

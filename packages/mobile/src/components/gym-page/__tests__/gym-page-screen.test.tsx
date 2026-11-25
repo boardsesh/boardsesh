@@ -445,7 +445,7 @@ describe('GymPageScreen', () => {
     expect(kinds()).toContain('block-boards-empty');
   });
 
-  it('opens the builder from Set up a board with the gym-first flag off', () => {
+  it('opens the builder from Set up a board with the wizard off', () => {
     state.boards = { ...state.boards, data: [], isPending: false };
     render(<GymPageScreen />);
     fireEvent.click(screen.getByText('set-up-board'));

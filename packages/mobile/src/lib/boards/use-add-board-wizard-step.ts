@@ -1,14 +1,19 @@
 // What every add-a-board wizard screen reads from its route and reports: the
 // entry and trail it was handed, "Step N of M", `Add Board Wizard Step
 // Viewed` on mount, and `Board Builder Abandoned` when the climber leaves the
-// flow from it (one per flow, board-create-flow.ts).
+// flow from it (one per flow, board-create-flow.ts; Back to the step under it
+// is not leaving, use-stepped-back-in-wizard.ts). A step that opened as the
+// stack's first screen (a gym page pushes Boards at {gym} into a fresh boards
+// modal) has no back chevron, so it gets an X.
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../analytics';
-import { boardFlowTicket, claimBoardFlowAbandonment } from './board-create-flow';
+import { useHeaderActions } from '../../hooks/use-header-actions';
+import { boardFlowTicket, builderOpenedFrom, claimBoardFlowAbandonment } from './board-create-flow';
+import { useSteppedBackInWizard } from './use-stepped-back-in-wizard';
 import {
   parseWizardEntry,
   parseWizardTrail,
@@ -67,6 +72,16 @@ export function useAddBoardWizardStep({
     [returnTo, source, entry, trail, step],
   );
 
+  // The first screen of its stack (a gym page's entry) has no chevron: an X,
+  // which closes the modal. Step 1 has its own X from the layout.
+  const router = useRouter();
+  const navigation = useNavigation();
+  const [isStackRoot] = useState(() => (navigation.getState()?.index ?? 0) === 0);
+  useHeaderActions({
+    leading: isStackRoot && step !== 'where' ? { kind: 'close', onPress: () => router.back() } : null,
+  });
+
+  const reportUnlessSteppedBack = useSteppedBackInWizard();
   const handedOffRef = useRef(false);
   const markHandedOff = useCallback(() => {
     handedOffRef.current = true;
@@ -80,14 +95,20 @@ export function useAddBoardWizardStep({
     const openedAtMs = Date.now();
     const ticket = boardFlowTicket();
     return () => {
-      if (handedOffRef.current || !claimBoardFlowAbandonment(ticket)) return;
-      track(SHARED_EVENTS.BoardBuilderAbandoned, {
-        kind: abandonKind,
-        step: abandonStep,
-        openedFrom: source ?? null,
-        wizardEntry: entry,
-        wizardPath: path,
-        secondsOpen: Math.round((Date.now() - openedAtMs) / 1000),
+      // Off to the add-a-wall wizard, or (checked a tick later) back to the
+      // step under this one: the climber hasn't left yet.
+      if (handedOffRef.current) return;
+      const secondsOpen = Math.round((Date.now() - openedAtMs) / 1000);
+      reportUnlessSteppedBack(() => {
+        if (!claimBoardFlowAbandonment(ticket)) return;
+        track(SHARED_EVENTS.BoardBuilderAbandoned, {
+          kind: abandonKind,
+          step: abandonStep,
+          openedFrom: builderOpenedFrom(source),
+          wizardEntry: entry,
+          wizardPath: path,
+          secondsOpen,
+        });
       });
     };
     // Once per screen: the route's params cannot change while it is mounted.
