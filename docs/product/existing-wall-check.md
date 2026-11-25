@@ -118,23 +118,39 @@ There is no unique constraint. Two walls with one setup at one gym are real (a g
 
 ## The app
 
-The mobile app (native and Expo web) uses both halves. Screens: `app/boards/where.tsx`, `app/boards/find-wall.tsx` (`GymStep`, `GymWallList`), and the builder, `app/boards/create.tsx`.
+The mobile app (native and Expo web) uses both halves. Screens: the add-a-board wizard under `app/boards/add/` (`index.tsx` Where's the board?, `gym.tsx` with `GymStep`, `gym-boards.tsx` with `GymWallList`, `board.tsx` with `BoardTypeStep`) and the builder, `app/boards/create.tsx`. `app/boards/where.tsx` and `app/boards/find-wall.tsx` are now redirects into the wizard, kept for one release.
 
 **The builder always opts in.** Every create sends `existingWallCheck`, whatever the flag says. The first Save is always `REJECT_IF_FOUND` against the climber's real setup; nothing earlier in the flow acknowledges a wall, because the gym's wall list has no setup to compare against and `CONFIRMED_SEPARATE` never blocks on `SETS_DIFFER`. On `BOARD_EXISTING_WALLS` the builder looks every named wall up by uuid (the gym may be one the server auto-attached, which the app never learned) and shows `ExistingWallsSheet`, keeping the form. "Use this board" follows and binds the wall. "Keep setting up mine" resends as `CONFIRMED_SEPARATE` with the walls the climber was actually shown, newest first so the 40-wall cap drops older ones. A wall that couldn't be loaded is never acknowledged: the sheet says some couldn't load, offers Try again, and the server names it again on the next Save. A refusal naming no walls is shown as a plain error.
 
-**The gym-first screens** sit behind the PostHog flag `create-board-gym-first` (fail closed):
+**The add-a-board wizard** sits behind the PostHog flag `add-board-wizard` (fail closed, rolled out by percentage). It replaced `create-board-gym-first`, which only about one real climber ever saw; that flag and its hook are gone. With the flag off the + is the old menu (Set up a board, Add a Spraywall, Find a gym) and the builder keeps its chips.
 
-1. The + menu splits "Set up a board" into "My own board" (the builder, preset) and "A board at my gym". Entries that don't say (the picker's empty state, Manage boards' Create board, a bare `/boards/create`) ask "Where's this board?" first.
-2. "Find your gym's board" is a map with a search bar, like the website's gym directory (`GymStep`, built from the /gyms parts: `GymMap`, `GymListPanel` in pick mode, `GymSearchField`, `GymLocationPrompt`). The search field sits under the bar, the map takes the top 35% and the gym list is a panel under it.
+```
++ ─► /boards/add  "Where's the board?"   (X, no counter: the path isn't chosen yet)
+       ├ At a gym   ─► Which gym? (map + search) ─► Boards at {gym} ─► Set up
+       ├ At home    ─► Which board? (art tiles) ─► Set up
+       └ A Spraywall ─► /boards/spray/new (unchanged)
+```
+
+1. **Where's the board?** Three `ChoiceCard`s. Every + opens it (the picker's, Manage boards', the picker's empty state). From step 2 on the bar has a back chevron and no title; the body says "Step N of M" (`StepCounter`), counting only the screens the climber sees (`wizardStepPosition`, `src/lib/boards/add-board-wizard.ts`): the gym path is 4 steps, the home path 3.
+2. **Which gym?** is `GymStep`: a map with a search bar, like the website's gym directory, built from the /gyms parts (`GymMap`, `GymListPanel` in pick mode, `GymSearchField`, `GymLocationPrompt`). The search field sits under the bar, the map takes the top 35% and the gym list is a panel under it.
    - Location is never asked on open. The step reads a permission already given (`requestIfAllowed`); otherwise the map shows the whole world and the list shows the location prompt, whose button asks (or opens Settings once refused for good).
    - Typing filters gyms by name (`searchGyms`, 2+ characters, once the text is still) and suggests up to five towns (`searchPlaces`). Focusing the field raises the list over the map. Picking a town flies the map there and lists the gyms within 50 km, with no location needed; editing it clears it. Panning the map from a real centre re-runs the search around the new centre, and so does zooming the world view in to a region.
    - Each gym row shows its name, the distance from the climber (only when their location is known) and the address (the line is left out with neither), an "N boards" pill, and "Run by the gym" for gyms their staff run. Listings that share a name are not folded: the address tells them apart.
    - A failed lookup says so with Try again, never "no gyms".
-   - One "Any board" capsule menu narrows the gyms to a board type and carries that type to the wall list.
-   - A pin tap only selects its row. A row tap opens that gym's walls (step 3). "Add my gym" is pinned at the foot of the visible list and opens the builder on its location (sign in first when signed out).
-3. The gym's wall list calls `existingWallCandidates` with no draft, so its walls go on an "At {gym}" shelf, with "Listed nearby" for the 150 m listings and the gym's other board types collapsed under "Other boards here". A tap is "Use this board": follow unless already followed or owned, then bind.
-4. "My board isn't listed" opens a confirm when walls are listed, as a speed bump; it acknowledges nothing. With no walls it goes straight on; when the lookup failed it reads "Add it anyway". The builder's Save is then checked as above. A gym with no coordinates (and not the viewer's to edit) would fail the 150 m link check, so it offers Report a problem instead. Save waits until the prefilled gym has loaded, so a board never saves without its gym.
-5. A gym page's Set up a board opens straight on that gym's walls.
+   - One "Any board" capsule menu narrows the gyms to a board type and carries that type on.
+   - A pin tap only selects its row. A row tap opens that gym's boards (step 3). "Add my gym" is pinned at the foot of the visible list (sign in first when signed out): it goes to Which board? when no type was chosen, else straight to Set up, both with More options' location field focused.
+3. **Boards at {gym}** is `GymWallList`, named in the body instead of the bar. It calls `existingWallCandidates` with no draft, so its walls go on an "At {gym}" shelf, with "Listed nearby" for the 150 m listings and the gym's other board types collapsed under "Other boards here". A tap is "Use this board" (`useTakeExistingWall`): follow unless already followed or owned, then bind.
+4. **"My board isn't listed"** opens a confirm when walls are listed, as a speed bump; it acknowledges nothing. With no walls it goes straight on; when the lookup failed it reads "Add it anyway". It opens Set up with the type chosen on the list and the gym locked (the gym row shows it with a lock; going back is how to pick another). The type is already known here, so Which board? is skipped. The builder's Save is then checked as above. A gym with no coordinates (and not the viewer's to edit) would fail the 150 m link check, so it offers Report a problem instead. Save waits until the prefilled gym has loaded, so a board never saves without its gym; a gym that turned out to be gone unlocks with "Choose another gym".
+5. **Which board?** (`BoardTypeStep`) is three art tiles for MoonBoard, Kilter and Tension (95% of created boards), each the board's real art at the setup Set up opens on (`boardTypeArt`), then an "Other boards" list of the other types by name. Below 340 pt or with text over 130% every type is a row. A tap opens Set up on that type's most used layout and size (`presetBoardConfig`).
+
+Entries that already know the answer skip ahead:
+
+- A gym page's Set up a board opens Boards at {gym} as step 1 of 2.
+- The picker's In range "It's my own board" (a box it heard but couldn't name) opens Set up directly with the type and, when exactly one box of that type was heard, its serial (`heard-serial-offer.ts`). It is the flow's only screen, so it shows no counter.
+- First run ("Where do you climb?") keeps its inline At a gym carousel (it binds 90% of first boards in a median 10 s) and shows step 1's words on its cards; At home opens Which board? as step 2 of 3.
+- An old `/boards/where`, `/boards/find-wall` or bare `/boards/create` link lands on the matching wizard step (`legacy-board-routes.ts`), counted as `entry: link`.
+
+**Set up with the wizard on** (`BoardForm` `setupStyle="rows"`). The art is 200 pt tall (260 before) with no tile behind it. Board, Layout and Size are inset-grouped rows (`BoardSetupRows`): a native menu (`AppMenu`) for up to 8 options, or a pushed checklist (`/boards/add/setup-option`, handed back through `setup-option-handoff.ts`) for more, which today is only Kilter Homewall's 10 sizes. Holds keep their chips, now with a 1 pt border in every state so a label never moves when picked (for everyone, flag or not). Angle, Name and Gym follow; More options stays collapsed. The existing-wall check, the serial-reuse check, `ExistingWallsSheet`, the duplicate sheets and the heard-serial line all work as before.
 
 A failed lookup is never drawn as "no boards".
 
@@ -146,7 +162,7 @@ A failed lookup is never drawn as "no boards".
 
 A refusal never names the third kind, since they never block. When the sheet opens, the builder calls `existingWallCandidates` once with the draft (the gym it sent, or else the gym a named wall is on) and keeps its `LAYOUT_OR_SIZE_DIFFERS` walls. A wall from a public listing within 150 m keeps that listing's name and distance on its row ("Boulder Space Annex · 82 m away"), since a second listing of the same gym is where copies hide. The sheet's title counts every wall it shows. That lookup is advisory: if it fails, the shelf is left out and nothing else changes. These walls are never acknowledged on "Keep setting up mine". The shelf follows the app's own `classifyWallMatch` of the draft against each wall. A named wall neither side can place goes on Set up differently, so it is never acknowledged unseen.
 
-The lower shelf only appears alongside a refusal. If a gym's only copy is on another layout (a seeded 2016 record, and the climber sets up a Masters 2019), Save is not refused and this sheet never opens. The gym-first wall list still shows that wall under "At {gym}".
+The lower shelf only appears alongside a refusal. If a gym's only copy is on another layout (a seeded 2016 record, and the climber sets up a Masters 2019), Save is not refused and this sheet never opens. The wizard's Boards at {gym} still shows that wall under "At {gym}".
 
 A same-setup row takes the wall as before. A near-miss row asks "Is this your wall?" inside the same sheet, not in a second sheet stacked on it:
 
@@ -170,6 +186,8 @@ A same-setup row takes the wall as before. A near-miss row asks "Is this your wa
 
 ## Rollout
 
-The backend must be in production before the app's OTA that sends `existingWallCheck`: an unknown input field fails GraphQL validation on an older backend. The PostHog flag `create-board-gym-first` gates only the app's new screens. The app always sends `existingWallCheck`, so the server check runs whether or not the flag is on.
+The backend must be in production before the app's OTA that sends `existingWallCheck`: an unknown input field fails GraphQL validation on an older backend. The PostHog flag `add-board-wizard` (which replaced `create-board-gym-first`) gates only the app's new screens. The app always sends `existingWallCheck`, so the server check runs whether or not the flag is on.
 
-Tests: `packages/backend/src/__tests__/existing-wall-check.test.ts`, `packages/shared/board-config/src/__tests__/wall-match.test.ts`, `packages/shared/graphql/src/__tests__/existing-walls-error.test.ts`, and the `UNKNOWN_BOARD_CONFIG detail` block in `board-catalog-validation.test.ts`. The app's near-miss and setup half: `near-miss-walls.test.ts`, `ExistingWallsSheet.test.tsx`, `BoardHoldsSummary.test.tsx`, the hold-set block in `BoardForm.test.tsx`, the builder prefill block in `ReportDirectorySheet.test.tsx`, the near-miss and catalogue-error blocks in `app/boards/__tests__/create.test.tsx`, `setup-validation.test.ts` and `unknown-board-config-error.test.ts`.
+Analytics: each wizard screen sends `Add Board Wizard Step Viewed` (`step`, `path`, `entry`); step 1 sends `Board Kind Chosen` with `surface: where` (kind `spray` for a Spraywall); `Board Created` and `Board Builder Abandoned` carry `wizardPath` and `wizardEntry`, so builder completion (69% of 1,058 before the wizard) compares by entry with the flag on and off.
+
+Tests: `packages/backend/src/__tests__/existing-wall-check.test.ts`, `packages/shared/board-config/src/__tests__/wall-match.test.ts`, `packages/shared/graphql/src/__tests__/existing-walls-error.test.ts`, and the `UNKNOWN_BOARD_CONFIG detail` block in `board-catalog-validation.test.ts`. The app's near-miss and setup half: `near-miss-walls.test.ts`, `ExistingWallsSheet.test.tsx`, `BoardHoldsSummary.test.tsx`, the hold-set block in `BoardForm.test.tsx`, the builder prefill block in `ReportDirectorySheet.test.tsx`, the near-miss and catalogue-error blocks in `app/boards/__tests__/create.test.tsx`, `setup-validation.test.ts` and `unknown-board-config-error.test.ts`. The wizard: `add-board-wizard.test.ts` (step counting and routes per entry), `board-type-tiles.test.ts`, `setup-option-rows.test.ts`, `add-wizard-routes.test.tsx`, `BoardTypeStep.test.tsx`, `BoardSetupRows.test.tsx`, the rows block in `BoardForm.test.tsx`, the wizard blocks in `create.test.tsx`, `GymWallList.test.tsx` and `layout.test.tsx`, and the `where.test.tsx` / `find-wall.test.tsx` redirects.
