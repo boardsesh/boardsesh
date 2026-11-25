@@ -292,6 +292,16 @@ A shorter diagnostic run intentionally cannot pass.
 The ordinary HTTP tests separately exercise overload, deadlines and cancellation;
 a synthetic HTTP handler alone does not prove production Next retention.
 
+Climb-view documents use `Cache-Control: private, no-store` and no-store on
+`CDN-Cache-Control`, `Vercel-CDN-Cache-Control` and `Cloudflare-CDN-Cache-Control`
+for both URL shapes, including locales, HTML and Flight/query variants. Weekly
+backend recommendation caches retain candidate IDs; each response still checks
+current visibility. Once all origin replicas serve the new policy, invalidate
+any climb-view HTML or Flight entries retained by an
+external CDN under the former 24-hour plus seven-day stale policy. New headers
+cannot revoke already stored copies. This code change does not purge production
+caches; confirm that invalidation separately before treating rollout as complete.
+
 The `Public page sustained load` Actions workflow runs this check on a fresh
 Linux runner with current production web/backend images, the digest-pinned
 seeded development database and Redis. It has a 120-minute job limit, including

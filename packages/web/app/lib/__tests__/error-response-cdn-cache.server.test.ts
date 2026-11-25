@@ -10,7 +10,7 @@ import {
   withdrawSharedCacheHeaders,
 } from '../error-response-cdn-cache.server';
 
-// What the middleware stamps on a list or climb-view URL before the page renders.
+// What the middleware stamps on an eligible list URL before the page renders.
 const LIST_PAGE_CDN_CACHE = 's-maxage=86400, stale-while-revalidate=604800';
 // What Next writes itself on a 404 or an error render.
 const NEXT_ERROR_CACHE_CONTROL = 'private, no-cache, no-store, max-age=0, must-revalidate';
@@ -65,6 +65,69 @@ afterEach(async () => {
 });
 
 describe('installErrorResponseCdnCacheGuard', () => {
+  const climbPaths = [
+    '/kilter/original/12x12-square/screw_bolt/40/view/climb',
+    '/b/garage/40/view/climb',
+    '/fr/kilter/1/10/1,20/40/view/climb%2Fname?_rsc=',
+    '/de/b/garage/40/view/climb?utm_source=owned',
+  ];
+  const cacheHeaders = [
+    'cache-control',
+    'cdn-cache-control',
+    'vercel-cdn-cache-control',
+    'cloudflare-cdn-cache-control',
+  ];
+
+  it.each(climbPaths)('enforces private storage policy at the final write for %s', async (path) => {
+    server = await startServer((response) => {
+      for (const name of cacheHeaders) response.setHeader(name, 'public, max-age=86400');
+      response.setHeader('X-Kept', 'yes');
+      response.end('owned climb fixture');
+    });
+    const { headers } = await fetchResponse(server, 'GET', { path, headers: { rsc: '1' } });
+    expect(headers['cache-control']).toBe('private, no-store');
+    for (const name of cacheHeaders.slice(1)) expect(headers[name]).toBe('no-store');
+    expect(headers['x-kept']).toBe('yes');
+  });
+
+  it.each(['object', 'array'] as const)(
+    'rejects a later %s writeHead cache override on climb responses',
+    async (shape) => {
+      server = await startServer((response) => {
+        response.setHeader('Cache-Control', 'private, no-store');
+        response.setHeader('CDN-Cache-Control', 'no-store');
+        const staleHeaders = {
+          'Cache-Control': 'public, s-maxage=86400',
+          'CDN-Cache-Control': 's-maxage=86400',
+          'Vercel-CDN-Cache-Control': 's-maxage=86400',
+          'Cloudflare-CDN-Cache-Control': 's-maxage=86400',
+          'X-Kept': 'yes',
+          'Set-Cookie': 'owned=fixture; HttpOnly',
+        };
+        response.writeHead(200, shape === 'object' ? staleHeaders : Object.entries(staleHeaders).flat());
+        response.end('owned Flight fixture');
+      });
+      const { headers } = await fetchResponse(server, 'HEAD', {
+        path: '/fr/b/garage/40/view/climb?_rsc=',
+        headers: { rsc: '1', 'next-router-prefetch': '1' },
+      });
+      expect(headers['cache-control']).toBe('private, no-store');
+      for (const name of cacheHeaders.slice(1)) expect(headers[name]).toBe('no-store');
+      expect(headers['x-kept']).toBe('yes');
+      expect(headers['set-cookie']).toEqual(['owned=fixture; HttpOnly']);
+    },
+  );
+
+  it.each([308, 404, 500])('keeps climb redirects and error responses private on status %i', async (status) => {
+    server = await startServer((response) => {
+      response.writeHead(status, { 'Cache-Control': 'public, max-age=86400', Location: '/b/garage/40/view/climb' });
+      response.end();
+    });
+    const { headers } = await fetchResponse(server, 'GET', { path: '/kilter/1/10/1,20/40/view/climb' });
+    expect(headers['cache-control']).toBe('private, no-store');
+    for (const name of cacheHeaders.slice(1)) expect(headers[name]).toBe('no-store');
+  });
+
   it.each([404, 410, 500, 503])('turns the middleware TTL into no-store on a %i', async (statusCode) => {
     server = await startServer(nextStyleResponse(statusCode));
     const { statusCode: received, headers } = await fetchResponse(server);
@@ -82,14 +145,14 @@ describe('installErrorResponseCdnCacheGuard', () => {
     expect(headers['vercel-cdn-cache-control']).toBe(LIST_PAGE_CDN_CACHE);
   });
 
-  it('keeps the TTL on a redirect, which the climb-view legacy 308 relies on', async () => {
+  it('keeps the TTL on an eligible list redirect', async () => {
     server = await startServer((response) => {
       response.setHeader('CDN-Cache-Control', LIST_PAGE_CDN_CACHE);
-      response.setHeader('Location', '/b/kilter-original-12x12/40/view/abc');
+      response.setHeader('Location', '/b/kilter-original-12x12/40/list');
       response.statusCode = 308;
       response.end();
     });
-    const { statusCode, headers } = await fetchResponse(server);
+    const { statusCode, headers } = await fetchResponse(server, 'GET', { path: '/kilter/1/10/1,20/40/list' });
     expect(statusCode).toBe(308);
     expect(headers['cdn-cache-control']).toBe(LIST_PAGE_CDN_CACHE);
   });

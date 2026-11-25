@@ -11,12 +11,9 @@ const REVALIDATE_SECRET = process.env.REVALIDATE_SECRET;
  * /[board]/.../view/[climb_uuid] render rebuilds with fresh data instead of
  * waiting for the 1h `unstable_cache` TTL to expire.
  *
- * This only reaches Next's data cache — it does not purge the CDN entry set
- * via Vercel-CDN-Cache-Control (see `getClimbViewPageCacheTTL` in
- * `list-page-cache.ts`). So after a backend climb mutation, the CDN can keep
- * serving the pre-mutation HTML for up to 24h (plus stale-while-revalidate)
- * even though the next origin render would already reflect the change.
- * Purging the CDN entry by tag on this same path is tracked in #4665.
+ * This only reaches Next's data cache. Climb-view HTML and Flight responses
+ * now carry private/no-store headers; external copies stored under the older
+ * CDN policy must be invalidated when that policy change rolls out.
  *
  * Auth: bearer token equal to REVALIDATE_SECRET — kept distinct from
  * CRON_SECRET so a leaked backend env doesn't grant access to other

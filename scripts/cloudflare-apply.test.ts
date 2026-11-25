@@ -2428,8 +2428,8 @@ describe('www list + climb-view HTML cache rule (#4652)', () => {
     const pathPrefixes = buildWwwHtmlCachePathPrefixes();
     const admitted = (pathname: string) => pathPrefixes.some((pathPrefix) => pathname.startsWith(pathPrefix));
 
-    // Both trees, plus a locale twin of each — the four shapes getListPageCacheTTL
-    // and getClimbViewPageCacheTTL decorate.
+    // Both trees, plus locale twins. Lists opt in with origin TTL headers;
+    // climb documents opt out with no-store despite matching this URL rule.
     expect(admitted('/kilter/homewall/7x10-full-ride/main_aux/40/list')).toBe(true);
     expect(admitted('/b/some-gym-kilter/40/list')).toBe(true);
     expect(admitted('/de/tension/8/25/15,17/40/view/abc-uuid')).toBe(true);
@@ -2619,7 +2619,9 @@ describe('www list + climb-view HTML cache rule (#4652)', () => {
     const middleware = readFileSync('packages/web/middleware.ts', 'utf8');
     expect(middleware).toContain("response.headers.set('CDN-Cache-Control', cdnCacheValue)");
     expect(middleware).toContain('getListPageCacheTTL');
-    expect(middleware).toContain('getClimbViewPageCacheTTL');
+    // Climb documents carry revocable SSR content; only lists retain this TTL.
+    expect(middleware).not.toContain('getClimbViewPageCacheTTL');
+    expect(middleware).toContain('isClimbViewRequest');
   });
 });
 

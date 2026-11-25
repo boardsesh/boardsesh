@@ -2,7 +2,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { SUPPORTED_BOARDS } from './app/lib/board-data';
 import {
-  getClimbViewPageCacheTTL,
+  isClimbViewRequest,
   getListPageCacheTTL,
   isBoardPosterRequest,
   isSprayWallCapabilityRequest,
@@ -65,6 +65,14 @@ function isExpoWebProxyEnabled(): boolean {
 export function middleware(request: NextRequest) {
   const response = routeRequest(request);
   const { strippedPath } = detectLocale(request.nextUrl.pathname);
+  if (isClimbViewRequest(strippedPath)) {
+    // Apply after routing so locale/session redirects and early refusals have
+    // the same policy as HTML and Flight. Backend candidate caches remain
+    // shared; delivered documents cannot outlive a beta/visibility revocation.
+    response.headers.set('Cache-Control', 'private, no-store');
+    response.headers.set('CDN-Cache-Control', 'no-store');
+    response.headers.set('Vercel-CDN-Cache-Control', 'no-store');
+  }
   if (
     (strippedPath === '/' || isAppGuidePath(strippedPath)) &&
     !isCacheableMarketingRequest({
@@ -355,12 +363,7 @@ function routeRequest(request: NextRequest) {
   // `installErrorResponseCdnCacheGuard` (instrumentation.ts) turns these headers
   // into `no-store` on any 4xx or 5xx once the status is final.
   // Cache-key follows the original (locale-prefixed) URL, so en and es never collide.
-  // Climb view pages are equally URL-determined and personalization-free, so they
-  // cache the same way — including their legacy numeric variants, whose permanent
-  // redirect the CDN can then serve without re-rendering.
-  const cacheTTL =
-    getListPageCacheTTL(strippedPath, request.nextUrl.searchParams) ??
-    getClimbViewPageCacheTTL(strippedPath, request.nextUrl.searchParams);
+  const cacheTTL = getListPageCacheTTL(strippedPath, request.nextUrl.searchParams);
   if (
     isSprayWallCapabilityRequest(strippedPath, request.nextUrl.searchParams) ||
     isBoardInviteRequest(strippedPath, request.nextUrl.searchParams) ||
