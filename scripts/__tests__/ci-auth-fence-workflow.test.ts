@@ -83,10 +83,12 @@ describe('BA-04 writer fence CI proof', () => {
     expect(proof.run).toContain('/<skipped');
     expect(proof.run).toContain('fullSchema < 18');
     expect(proof.run).not.toMatch(/--changed|--shard|-t /);
-    const task = rootSource.slice(
-      rootSource.indexOf("'test:auth-fence': {"),
-      rootSource.indexOf("'test:auth-web-credential-proof': {"),
-    );
+    // Bound this task itself: neighboring proofs can have their own dependencies.
+    const taskStart = rootSource.indexOf("'test:auth-fence': {");
+    expect(taskStart).toBeGreaterThan(-1);
+    const taskEnd = rootSource.indexOf('\n      },', taskStart);
+    expect(taskEnd).toBeGreaterThan(taskStart);
+    const task = rootSource.slice(taskStart, taskEnd);
     expect(task).toContain('vp test run --config packages/backend/vite.auth-fence.config.ts --maxWorkers=1');
     expect(task).toContain('cache: false');
     expect(task).not.toMatch(/--changed|--shard|dependsOn/);
