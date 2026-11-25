@@ -70,7 +70,7 @@ no mobile counterpart. They live in their own module.
 
 | Property       | Values                                                                                   |
 | -------------- | ---------------------------------------------------------------------------------------- |
-| `placement`    | `gym-page`, `gym-page-header`, `preview-sheet`, `directory-footer`, `directory-result`, `manage-lock`, `similar-gyms`, `app-gym-list`, `app-gym-page` (see below) |
+| `placement`    | `gym-page`, `gym-page-header`, `preview-sheet`, `directory-footer`, `directory-result`, `manage-lock`, `similar-gyms`, `similar-gyms-refusal`, `app-gym-list`, `app-gym-page` (see below) |
 | `viewerState`  | `signed-in`, `signed-out` — only the gym page, a claim-mode directory card and the app's gym page can fire `signed-out`, see below |
 | `method`       | `domain`, `admin` — mirrors the `GymClaimMethod` GraphQL enum                            |
 | `status`       | `email_sent`, `approved`, `admin_review`, `error`                                        |
@@ -575,6 +575,10 @@ inside the create-gym flow, shown to someone who is about to add a gym that may
 already exist. Folding it into the directory placement would merge "browsing the
 directory" with "about to create a duplicate", which are opposite intents and
 the two most interesting rows to tell apart.
+
+### `similar-gyms-refusal`: Claim in the create refusal
+
+`createGym` refuses a gym that looks listed (`GYM_SIMILAR_EXISTS`, docs/product/gym-board-governance.md), and www's `/gyms/new` then opens "Is it one of these?" with the gyms the server named (`similar-gym-refusal-dialog.tsx`). A Claim there is counted as `similar-gyms-refusal`, not `similar-gyms`: the climber had already pressed Save, so it is a duplicate the server stopped rather than one the live suggestions caught. `gymUuid` is the listed gym's.
 
 ### Claim placements added with the claim discovery work (#8043, PR 7)
 
