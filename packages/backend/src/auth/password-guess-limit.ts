@@ -1,3 +1,4 @@
+import { passwordChangeEvidenceEnabled } from './password-change-evidence';
 import { randomUUID } from 'node:crypto';
 import { readDeviceTokenSecret } from '@boardsesh/auth-protocol/device-token';
 import { logger } from '../utils/logger';
@@ -55,8 +56,8 @@ export const ACCOUNT_GUESS_LIMIT_ENFORCE_BLOCKERS: readonly string[] = Object.fr
   // owner signs in unrecognised and an attacker can refill the cleared email
   // bucket first. Needs a design decision recorded on #7656.
   'RESET_DOES_NOT_RESCUE_NATIVE_OWNER',
-  // The 5 s rule reads `user_credentials.updated_at`; under the Better Auth
-  // authority the password lives in `auth_account`. Needs an authority-aware read.
+  // Evidence capture/read is opt-in and legacy web writers still do not capture.
+  // Keep this gate until deployed profiles, all writers and rollback are qualified.
   'PASSWORD_CHANGE_TIME_IGNORES_AUTHORITY',
   // The in-flight cap is per subject: a burst over many emails can still fill
   // the counter's pool, so the target's reserves end as pool waits and run
@@ -93,6 +94,7 @@ export function accountGuessLimitMode(
 export function assertAccountGuessLimitConfiguration(environment: Environment = process.env): void {
   accountGuessLimitMode(environment);
   passwordGuessPoolMax(environment);
+  passwordChangeEvidenceEnabled(environment);
 }
 
 /** What the compare site learns before it compares. */

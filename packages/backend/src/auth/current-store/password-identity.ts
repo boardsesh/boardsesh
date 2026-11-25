@@ -1,3 +1,4 @@
+import { recordPasswordChangeEvidence } from '../password-change-evidence';
 import crypto from 'node:crypto';
 import { mirrorIdentityIfEnabled } from '../authority/sync-identity';
 import { bindIdentityAuthority } from '../authority/identity-authority';
@@ -228,6 +229,7 @@ export async function insertCurrentStorePasswordIdentity(
     await assertLegacyIdentityWriterAllowed(transaction);
     await transaction.insert(users).values(user);
     await transaction.insert(userCredentials).values({ userId, passwordHash });
+    await recordPasswordChangeEvidence(transaction, userId, passwordHash);
   }
   await transaction.insert(userProfiles).values({ userId }).onConflictDoNothing();
   if (receipt?.authority === 'better-auth') await mirrorAuthorityToCurrentStore(transaction, userId);

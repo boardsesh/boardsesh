@@ -504,6 +504,10 @@ const REVIEWED_IDENTITY_WRITERS: Readonly<Record<string, ReviewedIdentityWriter>
   // it must never wait on the authority gate.
   // The fifth write is a give-back replay record in verificationTokens, which the existing cleanup removes.
   'packages/backend/src/auth/password-guess-windows.ts': { writes: 5 },
+  // Dedicated password evidence (#7656): one exact-hash upsert after a real
+  // primary mutation, in its caller's already-gated transaction and users-row
+  // lock. The caller boundary below pins those reviewed mutation modules.
+  'packages/backend/src/auth/password-change-evidence.ts': { writes: 1 },
   // Documented legacy branches of the worker jobs; their staged modes go through the backend.
   'packages/db/src/jobs/system-user.ts': { writes: 1 },
   'packages/location-sync/src/upsert.ts': { writes: 1 },
@@ -586,6 +590,23 @@ describe('identity writer catalog', () => {
       const source = readRepoFile(path);
       for (const name of functions) expect(source).toContain(`function ${name}(`);
     }
+  });
+
+  it('keeps dedicated password evidence in the reviewed primary password writers', () => {
+    const writerModule = 'packages/backend/src/auth/password-change-evidence.ts';
+    const callers = trackedSourceFiles
+      .filter(
+        (path) =>
+          isProductionSource(path) &&
+          !/\.proof\.[cm]?[jt]sx?$/.test(path) &&
+          path !== writerModule &&
+          /\brecordPasswordChangeEvidence\b/.test(readRepoFile(path)),
+      )
+      .map((path) => [path, [...readRepoFile(path).matchAll(/\brecordPasswordChangeEvidence\s*\(/g)].length]);
+    expect(callers).toEqual([
+      ['packages/backend/src/auth/authority/identity-authority.ts', 3],
+      ['packages/backend/src/auth/current-store/password-identity.ts', 1],
+    ]);
   });
 
   it('keeps each legacy writer behind its gate', () => {

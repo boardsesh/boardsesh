@@ -1,3 +1,4 @@
+import { passwordChangeEvidenceEnabled } from './password-change-evidence';
 import { createDbOnPool, createDedicatedPoolFromUrl, type DbInstance, type PoolInstance } from '@boardsesh/db/client';
 import type { CredentialWriterContract, CredentialWriterReceipt } from '@boardsesh/db/credential-writer-acl';
 
@@ -74,6 +75,11 @@ let credentialConnectionIdentity: string | undefined;
 const reviewedCapabilities: Readonly<Record<CredentialWriterContract, readonly CredentialWriterContract[]>> =
   Object.freeze({
     'private-registration-v1': Object.freeze(['private-registration-v1', 'private-web-v1'] as const),
+    'private-registration-evidence-v1': Object.freeze([
+      'private-registration-evidence-v1',
+      'private-registration-v1',
+      'private-web-v1',
+    ] as const),
     'private-web-v1': Object.freeze(['private-web-v1'] as const),
     'private-browser-v1': Object.freeze(['private-web-v1', 'private-browser-v1'] as const),
     'private-provider-v1': Object.freeze(['private-web-v1', 'private-browser-v1', 'private-provider-v1'] as const),
@@ -97,6 +103,17 @@ const reviewedCapabilities: Readonly<Record<CredentialWriterContract, readonly C
       'private-first-password-v1',
       'private-native-handoff-v1',
       'private-browser-renewal-v1',
+    ] as const),
+    'private-password-evidence-v1': Object.freeze([
+      'private-registration-v1',
+      'private-registration-evidence-v1',
+      'private-web-v1',
+      'private-browser-v1',
+      'private-provider-v1',
+      'private-first-password-v1',
+      'private-native-handoff-v1',
+      'private-browser-renewal-v1',
+      'private-password-evidence-v1',
     ] as const),
   });
 
@@ -129,4 +146,11 @@ export async function closeCredentialDatabase(): Promise<void> {
   credentialDatabase = undefined;
   credentialConnectionIdentity = undefined;
   if (pending) await (await pending.catch(() => undefined))?.close();
+}
+
+/** The same pre-listen qualification used by startup and the owned proofs.
+ * A narrow registration profile remains narrow; required capabilities are
+ * still checked by each handler and never silently upgraded. */
+export async function qualifyPasswordChangeEvidenceAtStartup(): Promise<void> {
+  if (passwordChangeEvidenceEnabled()) await getCredentialDatabase();
 }

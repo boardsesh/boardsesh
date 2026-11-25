@@ -1,0 +1,35 @@
+# Password-change evidence
+
+The additive `auth_password_change_evidence` relation records a real password creation or replacement. It stores one row per user: the SHA-256 fingerprint of the exact stored password-hash string and `changed_at` from PostgreSQL `clock_timestamp()`, evaluated after the primary write and its lock waits. The user FK cascades on account deletion. There is no timestamp default or historical backfill.
+
+A matching fingerprint binds the time to the current selected credential. Missing or mismatched evidence means unknown age. Neither `user_credentials.updated_at` nor `auth_account.updated_at` is an age fallback in evidence mode. Import, generation changes, provider mutations, login, refresh and forward/reverse copies create no evidence and leave existing evidence unchanged. A copy does not prove when the password was set.
+
+## Deployment boundary
+
+`AUTH_PASSWORD_CHANGE_EVIDENCE_MODE` accepts `off` and `on`; unset or empty is `off`. An invalid value refuses backend startup. Off preserves existing writer and recognition behavior, with no evidence-table query from those paths.
+
+Deploy the generated additive migration before enabling capture. An explicit evidence credential profile must then be provisioned and qualified on the same database as the content connection. `private-registration-evidence-v1` extends the backend registration profile with evidence SELECT/INSERT, UPDATE of `password_fingerprint` and `changed_at` only, and native refresh INSERT. It keeps registration’s current trigger closure and grants no direct partner revoker or provider capabilities. `private-password-evidence-v1` extends the reviewed browser-renewal/native capabilities and explicitly supports registration too. It does not permit changing evidence ownership or deleting evidence. Both profiles use literal current-schema users and evidence receipts. Every historical profile retains its exact grants and shape receipt; extra evidence grants are refused by those profiles.
+
+On-mode backend startup calls `qualifyPasswordChangeEvidenceAtStartup` before listening. It qualifies the explicitly configured narrow or broader evidence profile, with the existing same-database identity checks. Handler capability checks refuse unsupported provider/browser operations on the narrow profile; they never upgrade the role. Default native registration also selects that qualified pool, including native refresh INSERT, before creating an identity. Private web writers obtain the same pool through their existing command boundary. A missing schema, stale shape, wrong profile, missing grant or database failure cannot silently skip capture: the password transaction aborts. Ordinary production defaults remain off. Owner provisioning, mode changes and rollout receipts belong in #7430; this change performs none.
+
+The registration backend is included in this stack. The narrow evidence profile explicitly satisfies `private-registration-v1` and `private-web-v1`; the broader evidence profile also explicitly satisfies registration and registration-evidence. The existing registration profile retains its original exact grants. Neither it nor historical profiles accept extra evidence grants or multiple users shapes. Registration does not depend on the separate email-uniqueness change.
+
+## Writers and recognition
+
+Capture runs in the common bound authority's `insertPassword` and successful `replacePassword`, plus `insertCurrentStorePasswordIdentity`'s legacy insertion. These cover staged/canonical registration, reset, first-password and set-password, and default backend native registration. Evidence, password, receipts, revocation, mirrors and native refresh persistence share the caller's transaction.
+
+Direct legacy Next.js registration/reset/set-password writers remain outside capture until their separate backend adoption. They receive no evidence-table access. If one changes the hash, old evidence no longer matches, so evidence-mode recognition treats its device token as absent. Development fixture/seed imports also remain unknown unless they explicitly represent a real captured write.
+
+Evidence-mode device recognition bounds candidate users first, then reads the live authority manifest, cutoff, selected password and evidence in one statement snapshot. A per-user canonical aggregate returns one row, so a malformed credential inventory cannot consume another user’s candidate slot. Current-store selection reads the legacy hash. Better Auth selection requires exactly one credential account, `account_id = user_id`, and source generation equal to the current cutoff generation. Unsupported authority state is unavailable; missing, deleted, ambiguous, stale-generation or mismatched evidence is unrecognised. The five-second device-token tolerance stays unchanged. The counter's deadline and settlement boundaries stay unchanged.
+
+`PASSWORD_CHANGE_TIME_IGNORES_AUTHORITY` remains an enforcement blocker. This slice does not prove all deployed writers capture, seed historical users, qualify production roles, resolve native-owner recovery or choose the cross-subject overload policy. A successful ordinary login does not turn unknown password age into known age.
+
+## Rollback and partner boundary
+
+Retain the additive schema and evidence when rolling back application traffic or disabling capture. Do not restore an old password or evidence snapshot. A password written while capture is off can invalidate the fingerprint, and enabling capture again must leave that age unknown. Rehearse captured writes, disabled-capture writes, authority switches and reverse mirrors before adoption. Keep bcrypt compatibility throughout the existing rollback window.
+
+Partner consent, developer changes and legacy provider-link checks are unchanged. Their nullable password time currently means no password. Missing dedicated evidence for an existing password cannot become that null case. Adoption needs three states (no password, known time, unknown time) and a proved ordering source for historical unknown age. Merely refusing unknown age would repeatedly ask historical password users to sign in, because login cannot manufacture a password-change timestamp. Preserve the published sign-in contract and the no-forced-reset migration policy when that separate boundary is designed.
+
+## Validation
+
+The required credential CI job runs `test:password-evidence-proof` against the full canonical PostgreSQL journal and actual dedicated LOGIN. It covers exact catalog/column grants, absent timestamp defaults, selected-authority matching, actual CHECK/late-SQL failures and rollback, concurrent CAS lock waits, copy/import preservation, real provider-generation changes, five-second recognition, default native HTTP registration and refresh-failure rollback. A separate suite-owned database copy proves the actual pre-listen narrow profile, default private registration with UID receipts, native creation, web/native races, and real evidence/refresh faults without injected handler databases. Historical profile proofs continue to run with capture off.

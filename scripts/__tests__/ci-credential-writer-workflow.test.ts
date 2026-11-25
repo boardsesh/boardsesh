@@ -46,6 +46,7 @@ const nativeHandoffConfigPath = 'packages/backend/vite.native-handoff-proof.conf
 const nativeHandoffConfiguration = readFileSync(nativeHandoffConfigPath, 'utf8');
 const browserRenewalConfigPath = 'packages/backend/vite.browser-renewal-proof.config.ts';
 const browserRenewalConfiguration = readFileSync(browserRenewalConfigPath, 'utf8');
+const evidenceConfigPath = 'packages/backend/vite.password-evidence-proof.config.ts';
 const providerConfiguration = readFileSync(providerConfigPath, 'utf8');
 const bootstrapPath = 'packages/backend/scripts/bootstrap-credential-writer-proof-database.sh';
 const bootstrap = readFileSync(bootstrapPath, 'utf8');
@@ -139,6 +140,17 @@ describe('owned credential writer CI boundary', () => {
     const browserRenewalTaskIndex = proof.steps.findIndex((step) =>
       step.run?.includes('vp run test:browser-renewal-credential-writer'),
     );
+    const evidenceTaskIndex = proof.steps.findIndex((step) =>
+      step.run?.includes('vp run test:password-evidence-proof'),
+    );
+    expect(evidenceTaskIndex).toBeGreaterThan(browserRenewalTaskIndex);
+    expect(proof.steps[evidenceTaskIndex].if).toBeUndefined();
+    expect(proof.steps[evidenceTaskIndex]['continue-on-error']).toBeUndefined();
+    expect(proof.steps[evidenceTaskIndex].run).toContain(
+      'test -s packages/backend/test-results/junit-password-evidence-proof.xml',
+    );
+    expect(rootSource).toContain('vp test run --config ' + evidenceConfigPath);
+    expect(readFileSync(evidenceConfigPath, 'utf8')).not.toContain('setupFiles');
     expect(historicalBootstrapIndex).toBeGreaterThan(-1);
     expect(historicalTaskIndex).toBeGreaterThan(historicalBootstrapIndex);
     expect(bootstrapIndex).toBeGreaterThan(historicalTaskIndex);
@@ -326,6 +338,7 @@ describe('owned credential writer CI boundary', () => {
       'packages/backend/test-results/junit-registration-credential-writer.xml',
       'packages/backend/test-results/junit-password-login-backend.xml',
       'packages/web/test-results/junit-password-login-web.xml',
+      'packages/backend/test-results/junit-password-evidence-proof.xml',
     ]);
   });
 
