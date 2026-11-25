@@ -1,7 +1,9 @@
 import { GraphQLError } from 'graphql';
 import { ZodError } from 'zod';
-import { isDatabaseLeakError } from '../../graphql/mask-error';
+import * as Sentry from '@sentry/node';
+import { isDatabaseLeakError, maskDatabaseError } from '../../graphql/mask-error';
 import { logger } from '../../utils/logger';
+import { markErrorReported, wasErrorReported } from '../../utils/sentry-dedupe';
 
 export function recordGymMcpToolResult(
   tool: string,
@@ -19,6 +21,28 @@ export function gymMcpToolFailure(error: unknown, tool?: string, startedAt?: num
       : error instanceof GraphQLError && typeof error.extensions.code === 'string'
         ? error.extensions.code
         : 'INTERNAL_SERVER_ERROR';
+  if (code === 'INTERNAL_SERVER_ERROR' && !wasErrorReported(error)) {
+    if (isDatabaseLeakError(error)) {
+      // Receipt and authorization failures happen outside graphql(). Report the
+      // driver cause, not Drizzle's wrapper containing SQL and bound arguments.
+      maskDatabaseError(error);
+    } else {
+      Sentry.captureException(error, { tags: { source: 'gym-mcp', tool: tool ?? 'unknown' } });
+    }
+    markErrorReported(error);
+    const original = error instanceof GraphQLError ? (error.originalError ?? error) : error;
+    const errorType =
+      original instanceof TypeError
+        ? 'TypeError'
+        : original instanceof ReferenceError
+          ? 'ReferenceError'
+          : original instanceof RangeError
+            ? 'RangeError'
+            : original instanceof Error
+              ? 'Error'
+              : 'unknown';
+    logger.warn('Gym MCP internal failure', { tool, errorType });
+  }
   const message =
     error instanceof ZodError
       ? 'Check the tool arguments and try again.'

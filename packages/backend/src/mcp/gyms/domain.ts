@@ -3,7 +3,9 @@ import { GraphQLError, graphql } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as tables from '@boardsesh/db/schema';
 import { db } from '../../db/client';
-import { isDatabaseLeakError } from '../../graphql/mask-error';
+import { isDatabaseLeakError, maskDatabaseError } from '../../graphql/mask-error';
+import { logger } from '../../utils/logger';
+import { markErrorReported } from '../../utils/sentry-dedupe';
 import {
   enrichGym,
   userCanEditGym,
@@ -56,9 +58,16 @@ export const executeGymDocument: GymToolExecutor = async (document, variables, c
   if (result.errors?.length) {
     const failure = result.errors[0]!;
     if (isDatabaseLeakError(failure)) {
-      throw new GraphQLError('The gym action could not be completed. Try again.', {
-        extensions: { code: 'INTERNAL_SERVER_ERROR' },
+      const databaseCode = getPostgresErrorCode(failure.originalError ?? failure);
+      logger.warn('Gym MCP database operation failed', {
+        operation: document,
+        databaseCode: databaseCode && /^[0-9A-Z]{5}$/.test(databaseCode) ? databaseCode : 'unknown',
       });
+      // Direct graphql() execution bypasses Yoga's reporting hook. Capture the
+      // original driver failure before replacing its SQL-bearing message.
+      const masked = maskDatabaseError(failure);
+      markErrorReported(masked);
+      throw masked;
     }
     // graphql() catches resolver failures. Throw again so the enclosing OAuth
     // transaction rolls back the action AND its idempotency receipt.
