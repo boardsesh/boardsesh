@@ -38,6 +38,17 @@ function requestFor(operation: string, args: Record<string, unknown>): CatalogBu
   if (operation === 'holdHeatmap') {
     return { operation, lane: 'interactive', requestedRows: 0, workUnits: 10 };
   }
+  if (operation === 'betaLinks') {
+    // This read can enrich external posts and cache thumbnails. Meter its work
+    // and concurrency without claiming a result limit the resolver does not enforce.
+    return { operation, lane: 'interactive', requestedRows: 0, workUnits: 3 };
+  }
+  if (operation === 'checkMoonBoardClimbDuplicates') {
+    // Each candidate receives one match result, but even one candidate groups
+    // the layout's holds and scans its legacy climbs. Charge aggregate work.
+    const candidates = Array.isArray(input.climbs) ? input.climbs.length : 100;
+    return { operation, lane: 'interactive', requestedRows: Math.min(candidates, 100), workUnits: 10 };
+  }
   if (operation === 'similarClimbs') {
     return { operation, lane: 'interactive', requestedRows: boundedInteger(input.limit, 25, 200), workUnits: 3 };
   }
@@ -95,6 +106,7 @@ async function guarded<Result>(
       extensions: {
         code: 'RATE_LIMITED',
         operation: request.operation,
+        limitReason: error.reason,
         retryAfterSeconds: error.retryAfterSeconds,
         snapshotManifestUrl: error.snapshotManifestUrl,
       },
@@ -113,6 +125,8 @@ export const CATALOG_QUERY_OPERATIONS = [
   'userFavoriteClimbs',
   'similarClimbs',
   'holdHeatmap',
+  'betaLinks',
+  'checkMoonBoardClimbDuplicates',
   'climbStatsHistory',
   'climbStatsForAngles',
   'climbStatsForClimbs',

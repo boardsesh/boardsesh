@@ -13,7 +13,10 @@ vi.mock('../utils/catalog-budget', () => ({
   releaseCatalogAccess: release,
   CatalogRateLimitError: class extends Error {
     code = 'RATE_LIMITED';
-    constructor(public retryAfterSeconds: number) {
+    constructor(
+      public retryAfterSeconds: number,
+      public reason: string,
+    ) {
       super('Rate limited');
     }
   },
@@ -143,6 +146,7 @@ describe('internal catalog admission', () => {
     expect(response.headers).toMatchObject({ 'Retry-After': '42', 'Cache-Control': 'no-store' });
     expect(response.body).toMatchObject({
       code: 'RATE_LIMITED',
+      limitReason: 'work',
       snapshotManifestUrl: expect.stringContaining('/manifest.json'),
     });
     expect(response.body).not.toHaveProperty('lease');

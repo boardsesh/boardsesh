@@ -89,9 +89,11 @@ describe('catalog budget local fallback', () => {
   it('gives only an explicit server-cache identity its separate bounded allowance', async () => {
     const limiter = localLimiter();
     const service = { service: 'www-catalog-cache' } as const;
-    const lease = await limiter.reserveCatalogAccess(service, { ...request, workUnits: 600, requestedRows: 500_000 });
+    const lease = await limiter.reserveCatalogAccess(service, { ...request, workUnits: 3000, requestedRows: 500_000 });
     await limiter.releaseCatalogAccess(lease);
-    await expect(limiter.reserveCatalogAccess(service, request)).rejects.toMatchObject({ reason: 'work' });
+    await expect(limiter.reserveCatalogAccess(service, { ...request, requestedRows: 0 })).rejects.toMatchObject({
+      reason: 'work',
+    });
     await expect(
       limiter.reserveCatalogAccess({ userId: 'service:www-catalog-cache' }, { ...request, workUnits: 600 }),
     ).rejects.toMatchObject({ reason: 'work' });
@@ -102,7 +104,7 @@ describe('catalog budget local fallback', () => {
 
   it('keeps cache service work outside visitor and authenticated IP buckets', async () => {
     const limiter = localLimiter();
-    const visitor = await limiter.reserveCatalogAccess(guest, { ...request, workUnits: 180 });
+    const visitor = await limiter.reserveCatalogAccess(guest, { ...request, workUnits: 600 });
     await limiter.releaseCatalogAccess(visitor);
     for (let index = 0; index < 20; index++) {
       const lease = await limiter.reserveCatalogAccess(
@@ -131,11 +133,30 @@ describe('catalog budget local fallback', () => {
     await expect(limiter.reserveCatalogAccess(guest, request)).resolves.toBeDefined();
   });
 
+  it('reports the longest exhausted quota window during a Redis outage', async () => {
+    const limiter = localLimiter();
+    for (const requestedRows of [30_000, 30_000, 30_000, 10_000]) {
+      const lease = await limiter.reserveCatalogAccess(guest, { ...request, requestedRows });
+      await limiter.releaseCatalogAccess(lease);
+      limiter.advance(3_600_000);
+    }
+    const workLease = await limiter.reserveCatalogAccess(guest, {
+      ...request,
+      requestedRows: 0,
+      workUnits: CATALOG_BUDGET_LIMITS.anonymousInteractive.workPerMinute,
+    });
+    await limiter.releaseCatalogAccess(workLease);
+    await expect(limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 1 })).rejects.toMatchObject({
+      reason: 'rows',
+      retryAfterSeconds: 8 * 3600,
+    });
+  });
+
   it('refunds unused rows once, including concurrent releases, without refunding work', async () => {
     const limiter = localLimiter();
-    const first = await limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 30_000, workUnits: 90 });
+    const first = await limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 30_000, workUnits: 300 });
     await Promise.all([limiter.releaseCatalogAccess(first, 0), limiter.releaseCatalogAccess(first, 0)]);
-    const second = await limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 30_000, workUnits: 90 });
+    const second = await limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 30_000, workUnits: 300 });
     await limiter.releaseCatalogAccess(first, 0);
     await expect(limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 0 })).rejects.toMatchObject({
       reason: 'work',
@@ -229,7 +250,7 @@ describe('catalog budget local fallback', () => {
     const limiter = localLimiter();
     const queryError = new Error('database query failed');
     await expect(
-      limiter.runCatalogQuery(guest, { ...request, requestedRows: 30_000, workUnits: 180 }, async () => {
+      limiter.runCatalogQuery(guest, { ...request, requestedRows: 30_000, workUnits: 600 }, async () => {
         throw queryError;
       }),
     ).rejects.toBe(queryError);
@@ -250,7 +271,7 @@ describe('catalog budget local fallback', () => {
     const stale = await limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 30_000 });
     limiter.advance(CATALOG_BUDGET_LIMITS.leaseTtlMs + 1);
     const current = await Promise.all(
-      Array.from({ length: 6 }, () => limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 0 })),
+      Array.from({ length: 8 }, () => limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 0 })),
     );
     await limiter.releaseCatalogAccess(stale, 0);
     await expect(limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 0 })).rejects.toMatchObject({
@@ -289,13 +310,13 @@ describe('catalog budget Redis failure boundaries', () => {
     let online = false;
     const evaluate = vi.fn<RedisEval>().mockResolvedValue(1);
     const limiter = createCatalogBudgetLimiter({ now: () => START, redis: () => (online ? { eval: evaluate } : null) });
-    const leases = await Promise.all(Array.from({ length: 6 }, () => limiter.reserveCatalogAccess(guest, request)));
+    const leases = await Promise.all(Array.from({ length: 6 }, () => limiter.reserveCatalogAccess(user, request)));
     online = true;
-    await expect(limiter.reserveCatalogAccess(guest, request)).rejects.toMatchObject({ reason: 'concurrency' });
+    await expect(limiter.reserveCatalogAccess(user, request)).rejects.toMatchObject({ reason: 'concurrency' });
     expect(evaluate).not.toHaveBeenCalled();
     await limiter.releaseCatalogAccess(leases[0], 0);
-    evaluate.mockResolvedValue(allowed([7, 3000, 3000]));
-    await expect(limiter.reserveCatalogAccess(guest, request)).resolves.toMatchObject({ mode: 'redis' });
+    evaluate.mockResolvedValue(allowed([7, 3000, 3000, 7, 3000, 3000]));
+    await expect(limiter.reserveCatalogAccess(user, request)).resolves.toMatchObject({ mode: 'redis' });
   });
 
   it('includes pending Redis admissions when local fallback checks concurrency', async () => {
@@ -308,7 +329,7 @@ describe('catalog budget Redis failure boundaries', () => {
     const pending = limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 0 });
     online = false;
     await Promise.all(
-      Array.from({ length: 5 }, () => limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 0 })),
+      Array.from({ length: 7 }, () => limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 0 })),
     );
     await expect(limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 0 })).rejects.toMatchObject({
       reason: 'concurrency',
@@ -326,11 +347,11 @@ describe('catalog budget Redis failure boundaries', () => {
       .mockReturnValueOnce(secondReply.promise);
     let online = true;
     const limiter = createCatalogBudgetLimiter({ now: () => START, redis: () => (online ? { eval: evaluate } : null) });
-    const first = limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 0, workUnits: 90 });
-    const second = limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 0, workUnits: 90 });
-    secondReply.resolve(allowed([180, 0, 0]));
+    const first = limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 0, workUnits: 300 });
+    const second = limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 0, workUnits: 300 });
+    secondReply.resolve(allowed([600, 0, 0]));
     await second;
-    firstReply.resolve(allowed([90, 0, 0]));
+    firstReply.resolve(allowed([300, 0, 0]));
     await first;
     online = false;
     await expect(limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 0 })).rejects.toMatchObject({
@@ -387,10 +408,10 @@ describe('catalog budget Redis failure boundaries', () => {
   });
 
   it('does not reset a budget when Redis fails and recovers', async () => {
-    const evaluate = vi.fn<RedisEval>().mockResolvedValue(allowed([179, 0, 0]));
+    const evaluate = vi.fn<RedisEval>().mockResolvedValue(allowed([599, 0, 0]));
     let online = true;
     const limiter = createCatalogBudgetLimiter({ now: () => START, redis: () => (online ? { eval: evaluate } : null) });
-    const first = await limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 0, workUnits: 179 });
+    const first = await limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 0, workUnits: 599 });
     evaluate.mockResolvedValue(1);
     await limiter.releaseCatalogAccess(first);
     online = false;
@@ -399,8 +420,8 @@ describe('catalog budget Redis failure boundaries', () => {
     online = true;
     evaluate.mockImplementation(async (_script, keyCount, ...arguments_) => {
       const payload = JSON.parse(String(arguments_[keyCount])) as { counters: { floor: number }[] };
-      expect(payload.counters[0].floor).toBe(180);
-      return JSON.stringify({ allowed: false, reason: 'work', retryAfterSeconds: 60, counts: [180, 0, 0] });
+      expect(payload.counters[0].floor).toBe(600);
+      return JSON.stringify({ allowed: false, reason: 'work', retryAfterSeconds: 60, counts: [600, 0, 0] });
     });
     await expect(limiter.reserveCatalogAccess(guest, request)).rejects.toMatchObject({ reason: 'work' });
     online = false;
@@ -409,17 +430,27 @@ describe('catalog budget Redis failure boundaries', () => {
 
   it('retains outage charges that overlap an earlier Redis response', async () => {
     const response = deferred<unknown>();
+    const evaluate = vi.fn<RedisEval>().mockReturnValue(response.promise);
     let online = true;
     const limiter = createCatalogBudgetLimiter({
       now: () => START,
-      redis: () => (online ? { eval: () => response.promise } : null),
+      redis: () => (online ? { eval: evaluate } : null),
     });
     const inFlight = limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 0 });
     online = false;
-    const local = await limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 0, workUnits: 179 });
+    const local = await limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 0, workUnits: 599 });
     await limiter.releaseCatalogAccess(local);
     response.resolve(allowed([1, 0, 0]));
     await inFlight;
+    await expect(limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 0 })).rejects.toMatchObject({
+      reason: 'work',
+    });
+    online = true;
+    evaluate.mockImplementation(async (_script, keyCount, ...arguments_) => {
+      const payload = JSON.parse(String(arguments_[keyCount])) as { counters: { floor: number }[] };
+      expect(payload.counters[0].floor).toBe(600);
+      return JSON.stringify({ allowed: false, reason: 'work', retryAfterSeconds: 60, counts: [600, 0, 0] });
+    });
     await expect(limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 0 })).rejects.toMatchObject({
       reason: 'work',
     });
@@ -515,12 +546,31 @@ describe.skipIf(!process.env.CATALOG_BUDGET_TEST_REDIS_URL)('catalog budget real
   it('atomically shares work budgets across separate backend instances', async () => {
     const instances = Array.from({ length: 4 }, backend);
     const outcomes = await Promise.allSettled(
-      instances.map((instance) => instance.reserveCatalogAccess(guest, { ...request, workUnits: 60 })),
+      instances.map((instance) => instance.reserveCatalogAccess(guest, { ...request, workUnits: 200 })),
     );
     expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(3);
     const denied = outcomes.find((outcome) => outcome.status === 'rejected');
     expect(denied?.reason).toBeInstanceOf(CatalogRateLimitError);
     expect(denied?.reason).toMatchObject({ reason: 'work' });
+  });
+
+  it('reports the day reset when both Redis minute work and day rows are exhausted', async () => {
+    const limiter = backend();
+    for (const requestedRows of [30_000, 30_000, 30_000, 10_000]) {
+      const lease = await limiter.reserveCatalogAccess(guest, { ...request, requestedRows });
+      await limiter.releaseCatalogAccess(lease);
+      timestamp += 3_600_000;
+    }
+    const workLease = await limiter.reserveCatalogAccess(guest, {
+      ...request,
+      requestedRows: 0,
+      workUnits: CATALOG_BUDGET_LIMITS.anonymousInteractive.workPerMinute,
+    });
+    await limiter.releaseCatalogAccess(workLease);
+    await expect(limiter.reserveCatalogAccess(guest, { ...request, requestedRows: 1 })).rejects.toMatchObject({
+      reason: 'rows',
+      retryAfterSeconds: 8 * 3600,
+    });
   });
 
   it('releases on a different instance and refunds exactly once', async () => {
@@ -535,6 +585,31 @@ describe.skipIf(!process.env.CATALOG_BUDGET_TEST_REDIS_URL)('catalog budget real
     });
   });
 
+  it('preserves remote refunds after an outage floor is acknowledged', async () => {
+    let online = false;
+    const reserving = createCatalogBudgetLimiter({ now: () => timestamp, redis: () => (online ? adapter : null) });
+    const releasing = backend();
+    const statsRequest: CatalogBudgetRequest = {
+      operation: 'reststats',
+      lane: 'interactive',
+      requestedRows: 181,
+      workUnits: 3,
+    };
+    const outageLease = await reserving.reserveCatalogAccess(guest, statsRequest);
+    await reserving.releaseCatalogAccess(outageLease, 0);
+    online = true;
+
+    // Every response is empty. A sticky floor used to restore each reservation
+    // after the other replica refunded it, falsely exhausting 30,000 rows at 165.
+    for (let index = 0; index < 200; index++) {
+      timestamp += 2000;
+      const lease = await reserving.reserveCatalogAccess(guest, statsRequest);
+      await releasing.releaseCatalogAccess(lease, 0);
+    }
+    const fullAllowance = await reserving.reserveCatalogAccess(guest, { ...request, requestedRows: 30_000 });
+    await releasing.releaseCatalogAccess(fullAllowance, 0);
+  });
+
   it('caps global concurrency across instances and identities, then releases one slot', async () => {
     const leases: CatalogAccessLease[] = [];
     const first = backend();
@@ -546,6 +621,24 @@ describe.skipIf(!process.env.CATALOG_BUDGET_TEST_REDIS_URL)('catalog budget real
     });
     await first.releaseCatalogAccess(leases[0], 0);
     await expect(first.reserveCatalogAccess({ userId: 'one-too-many' }, request)).resolves.toBeDefined();
+  });
+
+  it('allows sixteen shared-IP guest reads and suggests a short retry when all slots are busy', async () => {
+    const first = backend();
+    const second = backend();
+    const outcomes = await Promise.allSettled(
+      Array.from({ length: 17 }, (_, index) => (index % 2 === 0 ? first : second).reserveCatalogAccess(guest, request)),
+    );
+    const accepted = outcomes.filter((outcome) => outcome.status === 'fulfilled');
+    expect(accepted).toHaveLength(16);
+    expect(outcomes.find((outcome) => outcome.status === 'rejected')?.reason).toMatchObject({
+      reason: 'concurrency',
+      retryAfterSeconds: 1,
+    });
+
+    // Completion, not the crash-recovery expiry, makes the slot usable again.
+    await second.releaseCatalogAccess(accepted[0].value, 0);
+    await expect(first.reserveCatalogAccess(guest, request)).resolves.toBeDefined();
   });
 
   it('ignores stale and nonexistent releases without refunding live rows', async () => {
@@ -563,7 +656,7 @@ describe.skipIf(!process.env.CATALOG_BUDGET_TEST_REDIS_URL)('catalog budget real
   it('carries local outage work into Redis before admitting recovery traffic', async () => {
     let online = false;
     const first = createCatalogBudgetLimiter({ now: () => timestamp, redis: () => (online ? adapter : null) });
-    const local = await first.reserveCatalogAccess(guest, { ...request, requestedRows: 0, workUnits: 179 });
+    const local = await first.reserveCatalogAccess(guest, { ...request, requestedRows: 0, workUnits: 599 });
     await first.releaseCatalogAccess(local);
     online = true;
     await first.reserveCatalogAccess(guest, { ...request, requestedRows: 0 });
@@ -576,14 +669,14 @@ describe.skipIf(!process.env.CATALOG_BUDGET_TEST_REDIS_URL)('catalog budget real
     let online = false;
     const recovering = createCatalogBudgetLimiter({ now: () => timestamp, redis: () => (online ? adapter : null) });
     const localLeases = await Promise.all(
-      Array.from({ length: 3 }, () => recovering.reserveCatalogAccess(guest, request)),
+      Array.from({ length: 3 }, () => recovering.reserveCatalogAccess(user, request)),
     );
     const remote = backend();
-    await Promise.all(Array.from({ length: 3 }, () => remote.reserveCatalogAccess(guest, request)));
+    await Promise.all(Array.from({ length: 3 }, () => remote.reserveCatalogAccess(user, request)));
     online = true;
-    await expect(recovering.reserveCatalogAccess(guest, request)).rejects.toMatchObject({ reason: 'concurrency' });
+    await expect(recovering.reserveCatalogAccess(user, request)).rejects.toMatchObject({ reason: 'concurrency' });
     await recovering.releaseCatalogAccess(localLeases[0], 0);
-    await expect(recovering.reserveCatalogAccess(guest, request)).resolves.toBeDefined();
+    await expect(recovering.reserveCatalogAccess(user, request)).resolves.toBeDefined();
   });
 
   it('counts an uncertain timed-out Redis lease conservatively during recovery', async () => {
@@ -605,7 +698,7 @@ describe.skipIf(!process.env.CATALOG_BUDGET_TEST_REDIS_URL)('catalog budget real
     await firstApplied.promise;
     const uncertainLease = await pending;
     expect(uncertainLease.mode).toBe('local');
-    for (let index = 0; index < 4; index++) await limiter.reserveCatalogAccess(guest, request);
+    for (let index = 0; index < 14; index++) await limiter.reserveCatalogAccess(guest, request);
     await expect(limiter.reserveCatalogAccess(guest, request)).rejects.toMatchObject({ reason: 'concurrency' });
     reply.resolve(allowed([1, 500, 500]));
   });

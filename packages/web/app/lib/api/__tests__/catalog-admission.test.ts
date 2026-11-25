@@ -81,19 +81,39 @@ describe('REST catalog admission adapter', () => {
     });
   });
 
-  it('returns a non-cacheable 429 before touching the database', async () => {
-    fetchMock.mockReset().mockResolvedValue(new Response(null, { status: 429, headers: { 'Retry-After': '42' } }));
-    const work = vi.fn(async () => NextResponse.json({ found: true }));
-    const response = await withCatalogAdmission(request, 'restclimb', work);
-    expect(work).not.toHaveBeenCalled();
-    expect(response.status).toBe(429);
-    expect(response.headers.get('Retry-After')).toBe('42');
-    expect(response.headers.get('Cache-Control')).toBe('no-store');
-    expect(await response.json()).toMatchObject({
-      code: 'RATE_LIMITED',
-      snapshotManifestUrl: expect.stringContaining('/manifest.json'),
-    });
-  });
+  it.each(['work', 'rows', 'concurrency', 'capacity'])(
+    'returns a non-cacheable %s refusal before database work',
+    async (limitReason) => {
+      fetchMock
+        .mockReset()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ limitReason }), { status: 429, headers: { 'Retry-After': '42' } }),
+        );
+      const work = vi.fn(async () => NextResponse.json({ found: true }));
+      const response = await withCatalogAdmission(request, 'restclimb', work);
+      expect(work).not.toHaveBeenCalled();
+      expect(response.status).toBe(429);
+      expect(response.headers.get('Retry-After')).toBe('42');
+      expect(response.headers.get('Cache-Control')).toBe('no-store');
+      expect(await response.json()).toMatchObject({
+        code: 'RATE_LIMITED',
+        limitReason,
+        snapshotManifestUrl: expect.stringContaining('/manifest.json'),
+      });
+    },
+  );
+
+  it.each([null, JSON.stringify({ limitReason: 'unknown upstream detail' })])(
+    'preserves 429 when its reason is unavailable',
+    async (body) => {
+      fetchMock.mockReset().mockResolvedValue(new Response(body, { status: 429, headers: { 'Retry-After': '42' } }));
+      const work = vi.fn(async () => NextResponse.json({ found: true }));
+      const response = await withCatalogAdmission(request, 'restclimb', work);
+      expect(response.status).toBe(429);
+      expect((await response.json()).limitReason).toBeUndefined();
+      expect(work).not.toHaveBeenCalled();
+    },
+  );
 
   it('fails closed when the secret or admission service is unavailable', async () => {
     const work = vi.fn(async () => NextResponse.json({ found: true }));

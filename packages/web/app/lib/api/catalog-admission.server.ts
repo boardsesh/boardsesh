@@ -10,10 +10,17 @@ import { getBackendHttpUrl } from '@/app/lib/backend-url';
 import { trustedClientRateLimitKey } from '@/app/lib/auth/trusted-client-ip.server';
 
 type RestCatalogOperation = 'restclimb' | 'reststats' | 'restsetters';
-type AdmissionFailure = { error: string; code: string; retryAfterSeconds: number; snapshotManifestUrl: string };
+type LimitReason = 'work' | 'rows' | 'concurrency' | 'capacity';
+type AdmissionFailure = {
+  error: string;
+  code: string;
+  retryAfterSeconds: number;
+  limitReason?: LimitReason;
+  snapshotManifestUrl: string;
+};
 const ADMISSION_TIMEOUT_MS = 3000;
 
-function refusal(status: 429 | 503, retryAfter = 1): NextResponse<AdmissionFailure> {
+function refusal(status: 429 | 503, retryAfter = 1, limitReason?: LimitReason): NextResponse<AdmissionFailure> {
   const retryAfterSeconds = Math.max(1, Math.ceil(retryAfter));
   return NextResponse.json(
     {
@@ -23,6 +30,7 @@ function refusal(status: 429 | 503, retryAfter = 1): NextResponse<AdmissionFailu
           : 'Catalog access is temporarily unavailable. The daily snapshots remain available.',
       code: status === 429 ? 'RATE_LIMITED' : 'CATALOG_ADMISSION_UNAVAILABLE',
       retryAfterSeconds,
+      limitReason,
       snapshotManifestUrl: CATALOG_SNAPSHOT_MANIFEST_URL,
     },
     {
@@ -70,7 +78,17 @@ export async function withCatalogAdmission<T>(
     const response = await command('reserve', { operation });
     if (!response.ok) {
       const retryAfter = Number(response.headers.get('Retry-After'));
-      return refusal(response.status === 429 ? 429 : 503, Number.isFinite(retryAfter) ? retryAfter : 1);
+      const failure: unknown = await response.json().catch(() => null);
+      const limitReason =
+        response.status === 429 &&
+        typeof failure === 'object' &&
+        failure !== null &&
+        'limitReason' in failure &&
+        typeof failure.limitReason === 'string' &&
+        ['work', 'rows', 'concurrency', 'capacity'].includes(failure.limitReason)
+          ? (failure.limitReason as LimitReason)
+          : undefined;
+      return refusal(response.status === 429 ? 429 : 503, Number.isFinite(retryAfter) ? retryAfter : 1, limitReason);
     }
     const reservation: unknown = await response.json();
     if (

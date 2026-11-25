@@ -18,6 +18,7 @@ import {
 } from './pull-client';
 import type { SnapshotSource, SnapshotBootstrapErrorReporter } from './snapshot-bootstrap';
 import { onPurgeSettled } from '../mutation-queue/drainer';
+import { getRateLimitRetryAfterSeconds } from '../mutation-queue/error-classification';
 import { purgeNamespaceForScopeKey } from '../offline-board-key';
 
 /**
@@ -152,6 +153,8 @@ let activeRetryWakeCoordinator: RetryWakeCoordinator | null = null;
 // failures cannot recreate the indefinite "Waiting to download" state.
 const CYCLE_ERROR_RETRY_KEY = '__sync-cycle-error__';
 const CYCLE_ERROR_RETRY_DELAY_MS = 30_000;
+// Preserve the catalog's daily reset while avoiding overflowing platform timers.
+const MAX_RATE_LIMIT_RETRY_DELAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Is a drain+pull cycle running right now? The scheduler's single-flight latch,
@@ -244,9 +247,14 @@ async function runSync(request: SyncRunRequest): Promise<void> {
     }
   } catch (error) {
     if (activeRetryWakeCoordinator?.db === db) {
+      const retryAfterSeconds = getRateLimitRetryAfterSeconds(error);
+      const retryDelayMs =
+        retryAfterSeconds === null
+          ? CYCLE_ERROR_RETRY_DELAY_MS
+          : Math.min(MAX_RATE_LIMIT_RETRY_DELAY_MS, Math.max(1000, retryAfterSeconds * 1000));
       activeRetryWakeCoordinator.schedule({
         scopeKey: CYCLE_ERROR_RETRY_KEY,
-        retryAt: Date.now() + CYCLE_ERROR_RETRY_DELAY_MS,
+        retryAt: Date.now() + retryDelayMs,
       });
     }
     try {

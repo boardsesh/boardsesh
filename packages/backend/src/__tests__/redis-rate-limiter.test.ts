@@ -77,6 +77,31 @@ describe('checkRateLimitRedis', () => {
       await expect(checkRateLimitRedis('user-1', 'vote', 30, 60_000)).resolves.toBeUndefined();
     });
 
+    it.each([false, true])(
+      'bounds an unanswered Redis command without repeating an existing local charge (fallback=%s)',
+      async (fallbackToMemory) => {
+        mockEval.mockImplementation(() => new Promise<never>(() => undefined));
+        let settled = false;
+        const checking = checkRateLimitRedis('ip:203.0.113.10', 'search-climbs', 120, 60_000, {
+          fallbackToMemory,
+        }).then(() => {
+          settled = true;
+        });
+
+        await vi.advanceTimersByTimeAsync(99);
+        expect(settled).toBe(false);
+        expect(mockCheckRateLimit).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        await expect(checking).resolves.toBeUndefined();
+        expect(settled).toBe(true);
+        expect(mockEval).toHaveBeenCalledOnce();
+        expect(mockCheckRateLimit).toHaveBeenCalledTimes(fallbackToMemory ? 1 : 0);
+        if (fallbackToMemory) {
+          expect(mockCheckRateLimit).toHaveBeenCalledWith('ip:203.0.113.10:search-climbs', 120, 60_000);
+        }
+      },
+    );
+
     it('throws when rate limit is exceeded', async () => {
       mockEval.mockResolvedValue(31); // over limit of 30
 

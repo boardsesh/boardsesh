@@ -55,12 +55,13 @@ export class CatalogRateLimitError extends Error {
  */
 export const CATALOG_BUDGET_LIMITS = {
   interactive: { workPerMinute: 180, rowsPerHour: 100_000, rowsPerDay: 500_000, concurrency: 6 },
-  anonymousInteractive: { workPerMinute: 180, rowsPerHour: 30_000, rowsPerDay: 100_000, concurrency: 6 },
-  serverCache: { workPerMinute: 600, rowsPerHour: 500_000, rowsPerDay: 2_000_000, concurrency: 8 },
+  anonymousInteractive: { workPerMinute: 600, rowsPerHour: 30_000, rowsPerDay: 100_000, concurrency: 16 },
+  serverCache: { workPerMinute: 3000, rowsPerHour: 2_000_000, rowsPerDay: 20_000_000, concurrency: 8 },
   sync: { workPerMinute: 180, rowsPerHour: 5_000_000, rowsPerDay: 30_000_000, concurrency: 2 },
   authenticatedIpMultiplier: 20,
   authenticatedIpConcurrency: 48,
   identityConcurrency: 8,
+  anonymousIdentityConcurrency: 16,
   globalConcurrency: 32,
   syncGlobalConcurrency: 8,
   fallbackConcurrency: 8,
@@ -97,7 +98,7 @@ interface LocalCounter {
   redisRevision: number;
   /** Ignore reductions from admission replies that arrive out of request order. */
   redisSequence: number;
-  /** Keep a floor after an outage so Redis recovery does not reset the allowance. */
+  /** Net outage charges still need an acknowledged Redis floor. */
   needsFloor: boolean;
   /** Net local charges since creation, used to reconcile overlapping Redis replies. */
   fallbackCharges: number;
@@ -144,9 +145,12 @@ for index, counter in ipairs(request.counters) do
   if count > previous then
     redis.call('SET', key, count, 'PX', math.max(1, counter.expiresAt - request.now))
   end
-  if count + counter.amount > counter.limit and not reason then
-    reason = counter.reason
-    retry = math.max(1, math.ceil((counter.expiresAt - request.now) / 1000))
+  if count + counter.amount > counter.limit then
+    local reset = math.max(1, math.ceil((counter.expiresAt - request.now) / 1000))
+    if not reason or reset > retry then
+      reason = counter.reason
+      retry = reset
+    end
   end
 end
 local concurrencyOffset = #request.counters + 1
@@ -154,9 +158,9 @@ for index, scope in ipairs(request.concurrency) do
   local key = KEYS[concurrencyOffset + index]
   redis.call('ZREMRANGEBYSCORE', key, '-inf', request.now)
   if redis.call('ZCARD', key) >= scope.limit and not reason then
-    local earliest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
     reason = 'concurrency'
-    retry = math.max(1, math.ceil((tonumber(earliest[2]) - request.now) / 1000))
+    -- Ordinary reads release promptly; the 120s lease is only crash recovery.
+    retry = 1
   end
 end
 if reason then
@@ -248,7 +252,13 @@ function budgetSpecs(identity: CatalogIdentity, request: CatalogBudgetRequest, n
   };
   addCounters(`identity:${primary}`, 1);
   const concurrency: ConcurrencySpec[] = [
-    { key: `${PREFIX}active:identity:${primary}`, limit: CATALOG_BUDGET_LIMITS.identityConcurrency },
+    {
+      key: `${PREFIX}active:identity:${primary}`,
+      limit:
+        !authenticated && !service
+          ? CATALOG_BUDGET_LIMITS.anonymousIdentityConcurrency
+          : CATALOG_BUDGET_LIMITS.identityConcurrency,
+    },
     { key: `${PREFIX}active:${request.lane}:${primary}`, limit: limits.concurrency },
     { key: `${PREFIX}active:global`, limit: CATALOG_BUDGET_LIMITS.globalConcurrency },
   ];
@@ -340,8 +350,10 @@ export function createCatalogBudgetLimiter(dependencies: CatalogBudgetDependenci
       const concurrentFallback = Math.max(0, (existing?.fallbackCharges ?? 0) - fallbackAtStart[index]);
       const observed = reply.counts[index] + concurrentFallback;
       counters.set(spec.key, {
-        // A healthy observation includes refunds made by other instances. Once local
-        // outage charges exist, retain the conservative floor until its window ends.
+        // Retain a conservative observation while transferring local outage charges.
+        // The script acknowledges its floor even on refusal. Once no concurrent
+        // fallback changed that net charge, later Redis observations must be allowed
+        // to include refunds made by another instance instead of restoring them.
         count:
           existing && (existing.needsFloor || sequence < existing.redisSequence)
             ? Math.max(existing.count, observed)
@@ -349,18 +361,23 @@ export function createCatalogBudgetLimiter(dependencies: CatalogBudgetDependenci
         expiresAt: spec.expiresAt,
         redisRevision: (existing?.redisRevision ?? 0) + 1,
         redisSequence: Math.max(existing?.redisSequence ?? 0, sequence),
-        needsFloor: existing?.needsFloor ?? false,
+        needsFloor: Boolean(existing?.needsFloor && existing.fallbackCharges !== fallbackAtStart[index]),
         fallbackCharges: existing?.fallbackCharges ?? 0,
       });
     }
   }
 
   function reserveLocal(entry: LocalLease, timestamp: number): CatalogAccessLease {
+    let quotaFailure: CatalogRateLimitError | undefined;
     for (const spec of entry.counters) {
       if ((counters.get(spec.key)?.count ?? 0) + spec.amount > spec.limit) {
-        throw new CatalogRateLimitError(Math.max(1, Math.ceil((spec.expiresAt - timestamp) / 1000)), spec.reason);
+        const resetSeconds = Math.max(1, Math.ceil((spec.expiresAt - timestamp) / 1000));
+        if (!quotaFailure || resetSeconds > quotaFailure.retryAfterSeconds) {
+          quotaFailure = new CatalogRateLimitError(resetSeconds, spec.reason);
+        }
       }
     }
+    if (quotaFailure) throw quotaFailure;
     const pendingOthers = pendingAdmissions.size - (pendingAdmissions.has(entry.lease.id) ? 1 : 0);
     if (leases.size + pendingOthers >= CATALOG_BUDGET_LIMITS.fallbackConcurrency) {
       throw new CatalogRateLimitError(1, 'concurrency');

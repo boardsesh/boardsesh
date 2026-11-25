@@ -4,21 +4,6 @@ type GraphqlErrorEntry = {
   extensions?: { code?: unknown; status?: unknown };
 };
 
-/**
- * Does any entry in a GraphQL `errors` array carry this STRING `extensions.code`?
- * Deliberately string-only: a NUMERIC `extensions.code` is an HTTP status in
- * disguise and belongs to `statusFromGraphqlErrors` below, so the two readers
- * never claim the same field.
- */
-function graphqlErrorsCarryCode(errors: unknown, code: string): boolean {
-  if (!Array.isArray(errors)) return false;
-  for (const entry of errors as GraphqlErrorEntry[]) {
-    const entryCode = entry?.extensions?.code;
-    if (typeof entryCode === 'string' && entryCode === code) return true;
-  }
-  return false;
-}
-
 function statusFromGraphqlErrors(errors: unknown): number | null {
   if (!Array.isArray(errors)) return null;
   for (const entry of errors as GraphqlErrorEntry[]) {
@@ -69,44 +54,57 @@ export function getErrorStatus(error: unknown): number | null {
   return null;
 }
 
-/**
- * Does this error carry the spec-shaped STRING GraphQL error code `code`?
- * Reads exactly the shapes `getErrorStatus` walks — a top-level `errors` array
- * and graphql-request's `error.response.errors` — plus an `extensions` object on
- * the error itself, which is how a single GraphQLError arrives when it is
- * re-thrown rather than collected into a response envelope.
- *
- * Numeric `extensions.code` values are ignored on purpose (see
- * `graphqlErrorsCarryCode`): those are statuses, and asking for them here would
- * make `hasGraphqlErrorCode(error, '500')` accidentally meaningful.
- */
-export function hasGraphqlErrorCode(error: unknown, code: string, depth = 0): boolean {
-  if (error === null || typeof error !== 'object') return false;
-
+/** Structural client-independent error reader; cause traversal is bounded even for cycles. */
+function* graphqlErrorExtensions(error: unknown, depth = 0): Generator<Record<string, unknown>> {
+  if (error === null || typeof error !== 'object') return;
   const errorRecord = error as Record<string, unknown>;
-
-  // Same bounded `.cause` walk the stable-name checks use: a future fetch
-  // wrapper that re-throws the graphql-request ClientError as a cause must not
-  // silently reopen the instant dead-letter this predicate exists to prevent.
   if (depth < MAX_CAUSE_DEPTH) {
     const cause = errorRecord.cause;
-    if (cause !== undefined && cause !== error && hasGraphqlErrorCode(cause, code, depth + 1)) return true;
+    if (cause !== undefined && cause !== error) yield* graphqlErrorExtensions(cause, depth + 1);
   }
-
-  if (graphqlErrorsCarryCode(errorRecord.errors, code)) return true;
-
   const response = errorRecord.response;
-  if (response !== null && typeof response === 'object') {
-    if (graphqlErrorsCarryCode((response as Record<string, unknown>).errors, code)) return true;
+  const responseErrors =
+    response !== null && typeof response === 'object' ? (response as Record<string, unknown>).errors : undefined;
+  for (const errors of [errorRecord.errors, errorRecord.graphqlErrors, responseErrors]) {
+    if (!Array.isArray(errors)) continue;
+    for (const entry of errors) {
+      if (entry === null || typeof entry !== 'object') continue;
+      const extensions = (entry as Record<string, unknown>).extensions;
+      if (extensions !== null && typeof extensions === 'object') yield extensions as Record<string, unknown>;
+    }
   }
-
   const extensions = errorRecord.extensions;
   if (extensions !== null && typeof extensions === 'object') {
-    const extensionCode = (extensions as { code?: unknown }).code;
-    if (typeof extensionCode === 'string' && extensionCode === code) return true;
+    yield extensions as Record<string, unknown>;
   }
+}
 
+/**
+ * Read STRING GraphQL codes from errors, graphqlErrors, response.errors, direct
+ * extensions, and bounded causes. Numeric codes remain statuses, never strings.
+ */
+export function hasGraphqlErrorCode(error: unknown, code: string, depth = 0): boolean {
+  for (const extensions of graphqlErrorExtensions(error, depth)) {
+    if (typeof extensions.code === 'string' && extensions.code === code) return true;
+  }
   return false;
+}
+
+/** Longest valid server cooldown, without accepting numeric strings or unrelated errors. */
+export function getRateLimitRetryAfterSeconds(error: unknown): number | null {
+  let longestRetry: number | null = null;
+  for (const extensions of graphqlErrorExtensions(error)) {
+    const retryAfterSeconds = extensions.retryAfterSeconds;
+    if (
+      extensions.code === 'RATE_LIMITED' &&
+      typeof retryAfterSeconds === 'number' &&
+      Number.isFinite(retryAfterSeconds) &&
+      retryAfterSeconds >= 0
+    ) {
+      longestRetry = Math.max(longestRetry ?? 0, retryAfterSeconds);
+    }
+  }
+  return longestRetry;
 }
 
 // The clause graphql-js writes for an unknown input field, per field name. Built

@@ -152,6 +152,7 @@ export async function handleCatalogAdmission(
           error: 'Catalog request budget exceeded. Use the daily snapshots for bulk downloads.',
           code: error.code,
           retryAfterSeconds: error.retryAfterSeconds,
+          limitReason: error.reason,
           snapshotManifestUrl: CATALOG_SNAPSHOT_MANIFEST_URL,
         },
         { 'Retry-After': String(Math.max(1, error.retryAfterSeconds)) },
