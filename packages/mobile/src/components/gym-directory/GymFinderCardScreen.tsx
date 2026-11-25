@@ -121,16 +121,37 @@ export function GymFinderCardScreen() {
     ],
   );
 
-  const stickyHeader = (
-    <>
-      {finder.filtersShown ? (
-        <View style={styles.gutter}>
-          <GymFinderFilters finder={finder} />
-        </View>
-      ) : null}
-      {/* A browser never has the map: saying so there would be noise. */}
-      <GymFinderStatus finder={finder} mapUnavailableShown={Platform.OS !== 'web'} inset />
-    </>
+  // Rebuilt only when what it shows changes: the card list's sticky row redraws with it.
+  const { filtersShown, appliedFilter, layoutOptions, sizeOptions, searchLabel, isUpdating, refreshFailed } = finder;
+  const { mapAvailable, retryMap, retrySearch } = finder;
+  const finderRef = useRef(finder);
+  finderRef.current = finder;
+  const stickyHeader = useMemo(
+    () => (
+      <>
+        {filtersShown ? (
+          <View style={styles.gutter}>
+            <GymFinderFilters finder={finderRef.current} />
+          </View>
+        ) : null}
+        {/* A browser never has the map: saying so there would be noise. */}
+        <GymFinderStatus finder={finderRef.current} mapUnavailableShown={Platform.OS !== 'web'} inset />
+      </>
+    ),
+    // Every value the two read is listed; the toggles they also read are stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      filtersShown,
+      appliedFilter,
+      layoutOptions,
+      sizeOptions,
+      searchLabel,
+      isUpdating,
+      refreshFailed,
+      mapAvailable,
+      retryMap,
+      retrySearch,
+    ],
   );
 
   return (
@@ -149,7 +170,7 @@ export function GymFinderCardScreen() {
         keyExtractor={cardRowKey}
         getItemType={cardRowType}
         map={mapElement}
-        mapAvailable={finder.mapAvailable}
+        mapAvailable={mapAvailable}
         mapHidden={searchFocused}
         stickyHeader={stickyHeader}
         testID="gym-finder-card-list"
