@@ -155,6 +155,7 @@ export default function ManageBoards() {
     data: boardConnection,
     isLoading,
     isError,
+    isFetchedAfterMount: isMyBoardsFetchedAfterMount,
     refetch,
     isRefetching,
   } = useMyBoards(MY_BOARDS_WITH_IMPORTS_INPUT, { enabled: isAuthenticated });
@@ -596,7 +597,10 @@ export default function ManageBoards() {
     () => (sprayWallLifecycle ? archivedWalls.map((wall) => wall.uuid) : undefined),
     [sprayWallLifecycle, archivedWalls],
   );
-  useRememberDownloadedBoards(boardConnection, archivedWallUuids, isError);
+  useRememberDownloadedBoards(boardConnection, archivedWallUuids, {
+    fetchFailed: isError,
+    fetchedAfterMount: isMyBoardsFetchedAfterMount,
+  });
 
   // With the add-a-board wizard on, Create board and the + open its step 1,
   // "Where's the board?". Off, the builder and the + menu as before.

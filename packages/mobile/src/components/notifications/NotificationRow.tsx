@@ -15,18 +15,9 @@ import { actorSummary, notificationCopy, notificationIconName } from './notifica
 import { FollowRequestNotificationRow, type AnswerFollowRequest } from './FollowRequestNotificationRow';
 import { SetupChangeNotificationRow } from './SetupChangeNotificationRow';
 import type { UndoSetupChange } from './setup-change-notice';
+import { isAnswerableBoardAccessRequest } from './answerable-notification';
 
 const AVATAR_SIZE = 40;
-
-/** A `board_access_requested` row the owner can answer in place: one climber asking. */
-export function isAnswerableBoardAccessRequest(notification: GroupedNotification): boolean {
-  return (
-    notification.type === 'board_access_requested' &&
-    notification.actorCount === 1 &&
-    notification.actors.length > 0 &&
-    !!notification.entityId
-  );
-}
 const GROUP_AVATAR_SIZE = 28;
 /** Matches `Badge`'s `size="small"` dot, which this row used to render. */
 const UNREAD_DOT_SIZE = 8;
@@ -94,6 +85,7 @@ export const NotificationRow = memo(function NotificationRow({
         notification={notification}
         onPress={onPress}
         onAnswer={onAnswerBoardAccessRequest}
+        request="board_access"
       />
     );
   }

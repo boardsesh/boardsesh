@@ -109,6 +109,10 @@
     "declineLabel": "Rifiuta {{actor}}",
     "failed": "Impossibile rispondere a questa richiesta. Riprova quando sei online."
   },
+  "boardAccessRequest": {
+    "approveLabel": "Lascia che {{actor}} arrampichi sul tuo pannello",
+    "declineLabel": "Rifiuta la richiesta di {{actor}} di arrampicare sul tuo pannello"
+  },
   "errors": {
     "load": "Impossibile caricare le tue notifiche"
   },

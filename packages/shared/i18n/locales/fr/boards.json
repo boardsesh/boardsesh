@@ -1028,7 +1028,7 @@
       "noFollowsBody": "Suis un ami pour voir ses boards ici.",
       "noBoardsTitle": "Aucune board à afficher pour le moment",
       "noBoardsBody": "Demande à ton ami de te passer le lien de sa board.",
-      "noMatch": "Personne parmi ceux que tu suis ne correspond à « {{query}} ».",
+      "noMatch": "Aucune personne ni board ne correspond à « {{query}} ».",
       "offline": "Tu es hors ligne. Il faut du réseau pour trouver la board d'un ami.",
       "loadFailed": "Impossible de charger les boards de tes amis",
       "signInTitle": "Connecte-toi pour grimper sur la board d'un ami",
@@ -1041,12 +1041,13 @@
       "cancelRequest": "Annuler la demande",
       "close": "Fermer",
       "rateLimited": "Tu as déjà beaucoup demandé aujourd'hui. Réessaie demain.",
+      "tooManyTries": "Trop d'essais. Attends un instant et réessaie.",
       "askOffline": "Tu es hors ligne. Il faut du réseau pour demander.",
       "askFailed": "La demande n'est pas partie. Réessaie.",
-      "saved": "Ajoutée à Tes boards",
+      "saved": "Ajoutée à tes boards",
       "undo": "Annuler",
-      "undoAria": "Retirer {{name}} de Tes boards",
-      "undoError": "Impossible de retirer {{name}} de Tes boards"
+      "undoAria": "Retirer {{name}} de tes boards",
+      "undoError": "Impossible de retirer {{name}} de tes boards"
     },
     "scanCode": {
       "button": "Scanner le code d'une board",

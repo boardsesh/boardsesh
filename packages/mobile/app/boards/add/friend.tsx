@@ -33,6 +33,7 @@ import { WizardStepHeader } from '../../../src/components/board-discovery/add-bo
 import { InsetGroupedCell } from '../../../src/components/gym-page/InsetGroupedCell';
 import type { GroupedCellPosition } from '../../../src/components/gym-page/gym-page-view-model';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
+import { useStoredUserId } from '../../../src/hooks/use-current-user-id';
 import { useOfflineQueryState } from '../../../src/hooks/use-offline-query-state';
 import { isBoardCodeScannerAvailable } from '../../../src/lib/board-code-scanner/camera-module';
 import { noteBoardFlowSecured } from '../../../src/lib/boards/board-create-flow';
@@ -80,8 +81,14 @@ export default function AddBoardFriend() {
   }, [fromShelf, markHandedOff]);
 
   const { isAuthenticated } = useAuth();
-  const { data: profile } = useProfile({ enabled: isAuthenticated });
-  const viewerId = isAuthenticated ? profile?.id : undefined;
+  // The id keys the list; the profile read failing online must not leave it
+  // disabled behind a spinner, so the id saved at sign-in stands in, as it
+  // does in the picker.
+  const { data: profile, isError: profileFailed, refetch: refetchProfile } = useProfile({ enabled: isAuthenticated });
+  const { userId: storedUserId, isLoading: storedUserIdLoading } = useStoredUserId(isAuthenticated && !profile?.id);
+  const viewerId = isAuthenticated ? (profile?.id ?? storedUserId) : undefined;
+  // Neither source has an id: the list can't be asked for, so say so.
+  const viewerUnknown = isAuthenticated && viewerId === undefined && profileFailed && !storedUserIdLoading;
   const { data: activeBoard } = useActiveBoard();
 
   const [searchText, setSearchText] = useState('');
@@ -140,7 +147,16 @@ export default function AddBoardFriend() {
   const onEndReached = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage && fetchStatus === 'idle') void fetchNextPage({ cancelRefetch: false });
   }, [hasNextPage, isFetchingNextPage, fetchStatus, fetchNextPage]);
-  const retry = useCallback(() => void refetch(), [refetch]);
+  const retry = useCallback(() => {
+    if (viewerUnknown) void refetchProfile();
+    else void refetch();
+  }, [viewerUnknown, refetchProfile, refetch]);
+  // Pull to refresh: the spinner follows the pull, not background refetches.
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const onRefresh = useCallback(() => {
+    setPullRefreshing(true);
+    void refetch().finally(() => setPullRefreshing(false));
+  }, [refetch]);
   const findPeople = useCallback(() => router.push('/boards/users/search'), [router]);
   const signIn = useCallback(() => openSignIn(router, 'boards'), [router]);
   // Asked once per app run: the binary either links the camera module or not.
@@ -180,13 +196,13 @@ export default function AddBoardFriend() {
     boardCount: cells.length,
   });
   const searching = trimmedSearch !== query;
-  const showSpinner = cells.length === 0 && (searching || (isPending && !offline.isBlocked));
+  const showSpinner = cells.length === 0 && !viewerUnknown && (searching || (isPending && !offline.isBlocked));
 
   const listEmpty = showSpinner ? (
     <View style={styles.centerState}>
       <ActivityIndicator size="small" />
     </View>
-  ) : isError && emptyKind !== 'offline' ? (
+  ) : (isError || viewerUnknown) && emptyKind !== 'offline' ? (
     <EmptyState
       size="section"
       title={t('mobile.friendBoards.loadFailed')}
@@ -275,6 +291,8 @@ export default function AddBoardFriend() {
         ListFooterComponent={listFooter}
         onEndReached={onEndReached}
         onEndReachedThreshold={0.5}
+        refreshing={pullRefreshing}
+        onRefresh={viewerId === undefined ? undefined : onRefresh}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         contentInsetAdjustmentBehavior="automatic"

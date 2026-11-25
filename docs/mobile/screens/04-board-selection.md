@@ -47,22 +47,29 @@ by `viewerAccess`:
   off, then followed, so it lands in Your boards (adoption never follows a
   private board). "Saved to Your boards · Undo" shows on the tab the bind lands
   on (`SavedFriendBoardUndoSnackbar`, hosted by the drawer host, because the
-  bind closes the boards modal); Undo unfollows it. The pick event says
+  bind closes the boards modal); Undo unfollows it. "Download X?" is offered as
+  adoption would (`useAdoptFoundBoard({ follow: false })`). The pick event is
+  sent once the save settles, so its `followed` is what happened; it says
   `pickSource: friends`, `section: friends_boards` (or `friend_step`).
 - `CAN_REQUEST`: `FriendBoardAccessSheet`, "Ask {{name}} to climb here", whose
-  button calls `requestResourceAccess`. The list is read again afterwards, never
-  set to Requested by hand: the server answers an ask for a board the climber
-  can already open with a quiet yes. A `RATE_LIMITED` answer reads "You've
-  asked a lot today" inside the sheet (a toast would draw behind the modal).
+  button calls `requestResourceAccess`. The sheet closes on the write; the
+  friend lists are then read again (not the app-wide refresh an owner's
+  privacy write gets), never set to Requested by hand: the server answers an
+  ask for a board the climber can already open with a quiet yes. A
+  `RATE_LIMITED` answer whose `retryAfterSeconds` is over an hour is the daily
+  cap and reads "Try again tomorrow"; a shorter one (and any limit on Cancel
+  request) reads "Wait a moment". Both show inside the sheet (a toast would
+  draw behind the modal).
 - `REQUESTED`: the same sheet, "Waiting on {{name}}", with Cancel request
   (`cancelResourceAccessRequest`).
 
 `friendsBoards` is network only and never persisted
 ([offline reads](../../data/offline-reads.md), Bucket 3). When an owner takes a
 climber back off a board, it drops out of `myBoards`, and the next complete,
-successful `myBoards` read prunes its offline card (`offlineBoardCardSync` in
-`src/offline/use-remember-downloaded-boards.ts`); a failed or truncated read
-prunes nothing.
+successful `myBoards` read since the screen mounted prunes its offline card
+(`offlineBoardCardSync` in `src/offline/use-remember-downloaded-boards.ts`); a
+failed or truncated read, or a list hydrated from the persisted cache, prunes
+nothing. Following or unfollowing someone refreshes `friendsBoards`.
 
 The owner hears about a request in the inbox: one climber asking shows Approve
 and Decline in place (`useAnswerBoardAccessRequest`); a row with several opens
