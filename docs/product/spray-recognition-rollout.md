@@ -41,6 +41,15 @@ to 90 seconds. Attempt tokens fence completions from crashed/stale workers.
 Draft publication, deletion or source changes invalidate late results. The
 backend runs a bounded reconciliation page each minute and handles dead letters.
 
+The detector's pg-boss pool uses the workers' read deadlines: 30 s client-side,
+25 s server-side (`docs/operations/db-connectivity.md`, "Worker job-queue read
+deadline"). As a backstop, a probe every 15 s reads pg-boss's worker state. If
+the detection loop has not fetched, finished a job or reported an error for
+300 s, `/health` turns 503, the detector logs `work_loop_stalled` and exits, and
+Docker's `restart: unless-stopped` starts a fresh process. A failing fetch still
+counts as a live loop, since a restart cannot fix a database outage.
+`boardsesh_detector_work_loop_age_seconds` exposes the same age on `/metrics`.
+
 Mobile polls in the foreground and resumes by draft version. New-wall owners
 can choose manual placement while waiting. A reset has no empty-result fallback
 that can silently remove all existing holds: it retains the published wall and

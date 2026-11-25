@@ -14,6 +14,7 @@ import {
 import { detectorConfig } from './config';
 import { InferenceRunner } from './inference';
 import { detectionProposal } from './result';
+import { WORK_LOOP_STALL_SECONDS, detectorJobQueueOptions, workLoopAgeSeconds } from './queue';
 
 async function main(): Promise<void> {
   const config = detectorConfig();
@@ -28,13 +29,7 @@ async function main(): Promise<void> {
     credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
   });
   const inference = new InferenceRunner(config.model);
-  const boss = new PgBoss({
-    connectionString: config.databaseUrl,
-    max: 3,
-    migrate: false,
-    supervise: false,
-    schedule: false,
-  });
+  const boss = new PgBoss(detectorJobQueueOptions(config.databaseUrl));
   let ready = false;
   let stopping = false;
   let completed = 0;
@@ -43,17 +38,22 @@ async function main(): Promise<void> {
   let lastQueueContact = 0;
   let pendingCount = 0;
   let oldestPendingAt: Date | null = null;
+  let workLoopAge: number | null = null;
   const processStartedAt = Date.now() / 1000;
   boss.on('error', () => {
     ready = false;
     console.error(JSON.stringify({ event: 'queue_connection_failed' }));
   });
   const health = createServer((request, response) => {
-    const healthy = ready && inference.ready && Date.now() - lastQueueContact < 60_000;
+    const healthy =
+      ready &&
+      inference.ready &&
+      Date.now() - lastQueueContact < 60_000 &&
+      (workLoopAge === null || workLoopAge < WORK_LOOP_STALL_SECONDS);
     if (request.url === '/metrics') {
       response.setHeader('Content-Type', 'text/plain; version=0.0.4');
       response.end(
-        `boardsesh_detector_ready ${healthy ? 1 : 0}\nboardsesh_detector_completed_total ${completed}\nboardsesh_detector_failures_total ${failures}\nboardsesh_detector_last_duration_ms ${lastCompletedMs}\nboardsesh_detector_rss_bytes ${process.memoryUsage().rss}\nboardsesh_detector_pending ${pendingCount}\nboardsesh_detector_oldest_pending_seconds ${oldestPendingAt ? Math.max(0, (Date.now() - oldestPendingAt.getTime()) / 1000) : 0}\nboardsesh_detector_process_start_seconds ${processStartedAt}\nboardsesh_detector_model_info{version="${config.model.version}",sha256="${config.model.weightsSha256}"} 1\n`,
+        `boardsesh_detector_ready ${healthy ? 1 : 0}\nboardsesh_detector_completed_total ${completed}\nboardsesh_detector_failures_total ${failures}\nboardsesh_detector_last_duration_ms ${lastCompletedMs}\nboardsesh_detector_rss_bytes ${process.memoryUsage().rss}\nboardsesh_detector_pending ${pendingCount}\nboardsesh_detector_oldest_pending_seconds ${oldestPendingAt ? Math.max(0, (Date.now() - oldestPendingAt.getTime()) / 1000) : 0}\nboardsesh_detector_process_start_seconds ${processStartedAt}\nboardsesh_detector_work_loop_age_seconds ${workLoopAge ?? 0}\nboardsesh_detector_model_info{version="${config.model.version}",sha256="${config.model.weightsSha256}"} 1\n`,
       );
       return;
     }
@@ -126,6 +126,14 @@ async function main(): Promise<void> {
     },
   );
   const probe = async () => {
+    workLoopAge = workLoopAgeSeconds(boss.getWipData(), SPRAY_DETECTION_QUEUE, Date.now());
+    if (!stopping && workLoopAge !== null && workLoopAge >= WORK_LOOP_STALL_SECONDS) {
+      // A stuck loop never recovers in place, and a graceful stop would wait on
+      // the same stuck call. Exit so Docker's restart policy starts a fresh
+      // process; a claimed job's attempt token fences anything it left behind.
+      console.error(JSON.stringify({ event: 'work_loop_stalled', ageSeconds: Math.round(workLoopAge) }));
+      process.exit(1);
+    }
     try {
       // Both queues must exist: a missing completion queue means the backend
       // migrator has not run for this release yet.
