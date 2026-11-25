@@ -376,6 +376,13 @@ export type AppSettings = {
    * `useSupportCard` (`lib/support-asks.ts`); never `useSetting` this key.
    */
   supportCardV1: SupportCardRecord | null;
+  /**
+   * When the "See gyms near you" card may ask for location again (epoch ms).
+   * "Not now" on any surface sets it 14 days out, so a no in the picker also
+   * quiets the gym map. `null` until the first "Not now". Read and written
+   * only through `lib/location-ask.ts`. Per device; survives sign-out.
+   */
+  locationAskSnoozedUntil: number | null;
 };
 
 export type SettingsKey = keyof AppSettings;

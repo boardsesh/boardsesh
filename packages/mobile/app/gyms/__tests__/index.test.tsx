@@ -47,6 +47,10 @@ const refetchGyms = vi.hoisted(() => vi.fn());
 const refetchBoards = vi.hoisted(() => vi.fn());
 const queryMocks = vi.hoisted(() => ({ gyms: vi.fn(), boards: vi.fn() }));
 const geocodeMock = vi.hoisted(() => vi.fn<(text: string) => Promise<Coords | null>>());
+const locationMocks = vi.hoisted(() => ({
+  request: vi.fn(async () => 'granted' as const),
+  requestIfAllowed: vi.fn(async () => 'ask' as const),
+}));
 const platform = vi.hoisted(() => ({ OS: 'ios' }));
 const captured = vi.hoisted(() => ({
   params: {} as Record<string, string | undefined>,
@@ -142,7 +146,14 @@ vi.mock('../../../src/lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: null, isError: false }),
 }));
 vi.mock('../../../src/lib/use-device-location', () => ({
-  useDeviceLocation: () => ({ status: 'idle', coords: captured.coords, request: vi.fn(() => Promise.resolve()) }),
+  useDeviceLocation: () => ({
+    status: 'idle',
+    permission: 'ask',
+    permissionChecked: true,
+    coords: captured.coords,
+    request: locationMocks.request,
+    requestIfAllowed: locationMocks.requestIfAllowed,
+  }),
 }));
 vi.mock('../../../src/lib/use-place-search', () => ({
   useGeocodePlace: () => ({ geocode: geocodeMock, isGeocoding: false }),
@@ -398,6 +409,30 @@ describe('picking a board on the gym finder', () => {
     expect(captured.activateOptions?.source).toBeUndefined();
     expect(captured.analyticsOptions?.fromOnboarding).toBe(false);
     expect(captured.analyticsOptions?.fromNoBoard).toBe(false);
+  });
+});
+
+// The map used to show the system prompt on every open. Now it only uses an
+// earlier yes, and asking waits for a tap on "See gyms near you".
+describe('location on open', () => {
+  beforeEach(() => {
+    locationMocks.request.mockClear();
+    locationMocks.requestIfAllowed.mockClear();
+  });
+
+  it('never shows the system prompt on open', () => {
+    captured.coords = undefined;
+    render(createElement(GymDiscovery));
+    expect(locationMocks.request).not.toHaveBeenCalled();
+    expect(locationMocks.requestIfAllowed).toHaveBeenCalledOnce();
+  });
+
+  it('reads the permission once, not on every render', () => {
+    captured.coords = undefined;
+    const screen = render(createElement(GymDiscovery));
+    screen.rerender(createElement(GymDiscovery));
+    expect(locationMocks.requestIfAllowed).toHaveBeenCalledOnce();
+    expect(locationMocks.request).not.toHaveBeenCalled();
   });
 });
 

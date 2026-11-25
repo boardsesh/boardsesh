@@ -74,7 +74,11 @@ export default function GymDiscovery() {
   const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
   const insets = useSafeAreaInsets();
-  const location = useDeviceLocation();
+  // A climber who says no to the prompt may ask again from the card: Android's
+  // second ask, or Settings once only Settings can turn it on. Coming back
+  // from Settings (the card's, or the quiet Use my location's) reads the
+  // permission again, so a grant there centres the map with no second tap.
+  const location = useDeviceLocation({ retryAfterDenial: true, rereadWhenActive: true });
   const { geocode, isGeocoding } = useGeocodePlace();
   const { returnTo, source, from, boardType } = useLocalSearchParams<{
     returnTo?: string;
@@ -169,13 +173,14 @@ export default function GymDiscovery() {
     resetSearch,
   } = useDiscoverySearch(center, appliedFilter, { resolveCameraCenter });
 
-  // Ask for location once on mount — the map + nearby queries default to it.
-  // Read `request` through a ref so this fires exactly once (the hook is
-  // one-shot); a typed place search works even if the user denies location.
-  const requestLocationRef = useRef(location.request);
-  requestLocationRef.current = location.request;
+  // On open, use location only if the climber already allowed it: the map and
+  // nearby queries default to it. Never the system prompt here; that comes
+  // from a tap on "See gyms near you" (GymLocationPrompt). A typed place
+  // search works without location. Through a ref so this runs exactly once.
+  const requestLocationIfAllowedRef = useRef(location.requestIfAllowed);
+  requestLocationIfAllowedRef.current = location.requestIfAllowed;
   useEffect(() => {
-    void requestLocationRef.current();
+    void requestLocationIfAllowedRef.current();
   }, []);
 
   useEffect(
@@ -638,7 +643,13 @@ export default function GymDiscovery() {
   // still works for browsing a typed place without granting it).
   const locationPrompt =
     !center && !appliedFilter.name?.trim() ? (
-      <GymLocationPrompt status={location.status} onRequest={() => void location.request()} />
+      <GymLocationPrompt
+        status={location.status}
+        permission={location.permission}
+        permissionChecked={location.permissionChecked}
+        onRequest={location.request}
+        onRecheck={location.requestIfAllowed}
+      />
     ) : undefined;
 
   return (

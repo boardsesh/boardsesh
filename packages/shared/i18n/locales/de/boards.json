@@ -426,8 +426,6 @@
         "editWall": "Spraywall bearbeiten"
       },
       "nearbyMap": "Karte",
-      "allowLocation": "Standort erlauben",
-      "locationBanner": "Standort ist aus. Schalte ihn ein, um Boards in deiner Nähe zu sehen.",
       "manage": "Alle ansehen",
       "nearbyAllAbove": "Keine weiteren Boards im Umkreis von 20 km",
       "yourBoardsAllAbove": "Alle deine Boards stehen weiter oben"
@@ -664,6 +662,16 @@
       "yourBoard": "Dein Board",
       "cancel": "Jetzt nicht"
     },
+    "locationAsk": {
+      "titleBoards": "Boards in deiner Nähe sehen",
+      "titleGyms": "Hallen in deiner Nähe sehen",
+      "body": "Sortiert nach Entfernung. Suchen geht auch ohne Standort.",
+      "browserBody": "Erlaube den Standort für diese Seite in deinem Browser. Suchen geht auch ohne.",
+      "allow": "Erlauben",
+      "openSettings": "Einstellungen öffnen",
+      "notNow": "Jetzt nicht",
+      "searchHint": "Such eine Stadt, um ihre Hallen zu sehen."
+    },
     "gyms": {
       "mapUnavailable": "Die Karte konnte nicht geladen werden. Du kannst weiterhin Hallen in der Liste finden.",
       "retryMap": "Karte neu laden",
@@ -671,7 +679,6 @@
       "subtitle": "Tipp auf eine Halle, um ihr Board zu nutzen",
       "locationNeeded": "Teil deinen Standort, um Hallen in der Nähe zu finden",
       "grantLocation": "Meinen Standort nutzen",
-      "locationBlocked": "Dein Browser gibt deinen Standort nicht raus. Tipp stattdessen einen Ort ins Suchfeld, das geht überall.",
       "empty": "Noch keine Hallen in der Nähe",
       "noBoards": "Hier noch keine Boards",
       "boardCount_one": "{{count}} Board",

@@ -1,12 +1,14 @@
 import { createContext, useCallback, useContext, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { STORY_CLIMBS } from '../../dev/fixtures/climbs';
 import { StoryBoard } from '../../dev/stories/StoryBoard';
 import { useStoryArtReadiness } from '../../dev/stories/StoryPage';
 import type { StoryModule, StoryRenderControls } from '../../dev/stories/types';
 import type { BoardArtReadiness } from '../../lib/board-render/ready-board-art';
+import type { LocationPermission } from '../../lib/use-device-location';
+import { spacing } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { BoardThumbnail } from '../boards/BoardThumbnail';
 import { SheetTopBar } from '../SheetTopBar';
@@ -24,12 +26,17 @@ import { BoardSelectorView } from './BoardSelectorView';
 import type { DiscoveryBoardArtProps } from './DiscoveryBoardArt';
 import { FirstBoardChoice } from './FirstBoardChoice';
 import { InRangeSection } from './InRangeSection';
-import { NearbyLocationBanner } from './NearbyLocationBanner';
+import { LocationAskCard } from '../location/LocationAskCard';
 import { NearbyQuietStatus } from './NearbyQuietStatus';
 import { NearbyReservedSlot } from './NearbyReservedSlot';
 import type { PickerTopView } from './picker-top-view';
 
 const noop = () => {};
+// The story's card answers like a climber who tapped and left it as it was.
+const answerPermission = async (): Promise<LocationPermission> => 'ask';
+const storyStyles = StyleSheet.create({
+  locationAskGutter: { paddingHorizontal: spacing[4] },
+});
 const EMPTY_BOARD = { ...STORY_CLIMBS[0], frames: '' };
 const ReadyContext = createContext<{ onDisplayed: (id: string) => void; onError: (error: unknown) => void }>({
   onDisplayed: noop,
@@ -415,7 +422,13 @@ function SelectorStory({ onReady, onError, stateName }: StoryRenderControls & { 
           nearbySection={location === 'granted' ? nearbySection : undefined}
           locationBanner={
             location === 'granted' ? undefined : (
-              <NearbyLocationBanner permission={location} onAllowLocation={noop} onOpenSettings={noop} />
+              <LocationAskCard
+                surface="board_picker"
+                permission={location}
+                onAllow={answerPermission}
+                onRecheck={answerPermission}
+                style={storyStyles.locationAskGutter}
+              />
             )
           }
           firstBoardChoice={

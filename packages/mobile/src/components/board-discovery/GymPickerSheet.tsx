@@ -24,6 +24,7 @@ import { Button } from '../Button';
 import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticLight } from '../../lib/haptics';
+import { canOpenAppSettings, openAppSettings } from '../../lib/open-app-settings';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { GymSearchList } from './GymSearchList';
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
@@ -69,16 +70,24 @@ export function GymPickerSheet({
   const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
   const [search, setSearch] = useState('');
-  const deviceLocation = useDeviceLocation();
+  // Re-asks after a denial: Use my location is the way back in. Once only
+  // Settings can turn location on, that button opens Settings, so coming back
+  // to the app reads the permission again: a grant there loads the nearby
+  // gyms, instead of the next tap sending the climber back to Settings.
+  const deviceLocation = useDeviceLocation({ retryAfterDenial: true, rereadWhenActive: boardCoords == null });
 
-  // Prefer coordinates the board already carries; otherwise ask the device once.
+  // Prefer coordinates the board already carries; otherwise use the device's,
+  // but only if the climber already allowed location: opening the sheet never
+  // shows the system prompt, Use my location does.
   const coords = boardCoords ?? deviceLocation.coords;
-  // Depend on `request` (a stable useCallback), not the whole hook result — that
-  // object is a fresh reference every render, which re-fired this on each one.
-  const requestLocation = deviceLocation.request;
+  // Depend on `requestIfAllowed` (a stable useCallback), not the whole hook
+  // result — that object is a fresh reference every render.
+  const requestLocationIfAllowed = deviceLocation.requestIfAllowed;
   useEffect(() => {
-    if (boardCoords == null) void requestLocation();
-  }, [boardCoords, requestLocation]);
+    if (boardCoords == null) void requestLocationIfAllowed();
+  }, [boardCoords, requestLocationIfAllowed]);
+  // Once only Settings can turn location on, the prompt would be a dead tap.
+  const locationSettingsOnly = deviceLocation.permission === 'blocked' && canOpenAppSettings();
 
   // With no coordinates the query still runs as a text search, so someone who
   // declined location can find their gym by typing.
@@ -186,7 +195,7 @@ export function GymPickerSheet({
           </Text>
           <Button
             title={t('mobile.gyms.grantLocation')}
-            onPress={() => void deviceLocation.request()}
+            onPress={() => void (locationSettingsOnly ? openAppSettings() : deviceLocation.request())}
             variant="tonal"
             size="medium"
           />

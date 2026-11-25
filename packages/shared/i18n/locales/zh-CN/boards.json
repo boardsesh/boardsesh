@@ -426,8 +426,6 @@
         "editWall": "编辑喷点墙"
       },
       "nearbyMap": "地图",
-      "allowLocation": "允许定位",
-      "locationBanner": "定位已关闭，开启后可查看附近的训练板。",
       "manage": "查看全部",
       "nearbyAllAbove": "20 公里内没有其他训练板",
       "yourBoardsAllAbove": "你的所有训练板都已列在上方"
@@ -664,6 +662,16 @@
       "yourBoard": "你的训练板",
       "cancel": "暂时不用"
     },
+    "locationAsk": {
+      "titleBoards": "查看附近的训练板",
+      "titleGyms": "查看附近的岩馆",
+      "body": "按距离排序。不开启也能搜索。",
+      "browserBody": "请在浏览器中允许此网站使用位置。不开启也能搜索。",
+      "allow": "允许",
+      "openSettings": "打开设置",
+      "notNow": "暂时不用",
+      "searchHint": "搜索城镇，查看当地的岩馆。"
+    },
     "gyms": {
       "mapUnavailable": "地图无法加载，你仍可以在列表中寻找岩馆。",
       "retryMap": "重新加载地图",
@@ -671,7 +679,6 @@
       "subtitle": "点一下岩馆，使用它的训练板",
       "locationNeeded": "分享位置，寻找附近的岩馆",
       "grantLocation": "使用我的位置",
-      "locationBlocked": "浏览器不允许共享位置。请在搜索框输入城镇名称，此方式适用于任何地方。",
       "empty": "附近还没有岩馆",
       "noBoards": "这里还没有训练板",
       "boardCount_one": "{{count}} 块训练板",

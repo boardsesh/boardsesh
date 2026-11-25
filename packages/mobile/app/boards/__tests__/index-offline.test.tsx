@@ -131,8 +131,8 @@ vi.mock('../../../src/components/board-discovery/NearbyReservedSlot', () => ({
   NearbyReservedSlot: ({ searching, children }: { searching: boolean; children?: ReactNode }) =>
     searching ? createElement('div', { 'data-testid': 'near-you-placeholder' }) : children,
 }));
-vi.mock('../../../src/components/board-discovery/NearbyLocationBanner', () => ({
-  NearbyLocationBanner: ({ permission }: { permission: string }) =>
+vi.mock('../../../src/components/location/LocationAskCard', () => ({
+  LocationAskCard: ({ permission }: { permission: string }) =>
     createElement('div', { 'data-testid': 'location-banner', 'data-permission': permission }),
 }));
 vi.mock('../../../src/components/board-discovery/DiscoveryBoardArt', () => ({ DiscoveryBoardArt: () => null }));
@@ -218,6 +218,7 @@ vi.mock('../../../src/lib/use-device-location', () => ({
   useDeviceLocation: () => ({
     status: 'idle',
     permission: 'granted',
+    permissionChecked: true,
     coords: undefined,
     request: vi.fn(),
     requestIfAllowed: vi.fn(async () => {}),

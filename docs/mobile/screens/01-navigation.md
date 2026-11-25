@@ -151,20 +151,23 @@ The bar itself depends on the device:
 
 The picker emits `Board Picker Opened` once after the active-board read settles
 and `Board Picker Selection Completed` after an existing-board selection is
-persisted. The opening carries `locationStatus` as known then (`idle`,
-`loading`, `granted`, `denied` or `unavailable`; mostly `idle`, since the
-"already allowed?" read is still out). The pick carries `nearbyResultCount`,
+persisted. The opening waits for the picker's "already allowed?" read (a few
+milliseconds; not under "Where do you climb?", which reads nothing on open) and
+carries `locationStatus` as known then (`idle`, `loading`, `granted`, `denied`
+or `unavailable`: `loading` or `granted` for a climber who allowed location,
+`idle` for everyone else) and `locationPermission`, the read itself (`ask`,
+`blocked`, `granted`, or `unknown` when nothing was read). Before the location
+re-ask OTA it fired before that read came back, so `locationStatus` always
+said `idle`. The pick carries `nearbyResultCount`,
 how many boards the Near you search had returned by then (after a board-type
 filter, before boards shown elsewhere in the picker are left out): `0` for "Nothing
 within 20 km", `null` when the picker did not search (location not allowed, or
 first-board mode before "At a gym"), is still searching, or the search failed.
 `First Board Picker Skipped` carries the same count as it stood when the picker
 closed. Near you shows only once location is allowed, above Your boards; without
-it the foot of the picker has a banner instead, with Allow location while the
-system prompt can still ask and Open Settings once only Settings can (in a
-browser, a refusal is final: the line shows alone). Its button sends no event of
-its own: the opening's `locationStatus` and the picks' `section` tell the two
-layouts apart. While Near you searches, placeholder cards as tall as its cards
+it the foot of the picker has the "See gyms near you" card instead
+(`LocationAskCard`, the same card the gym map shows). See "Asking for location"
+below. While Near you searches, placeholder cards as tall as its cards
 hold its space, so Your boards never moves under a pick that lands as the search
 answers: cards keep at least that height, and a quiet line (nothing new within
 20 km, a failed search) keeps it too, centred, once the climber has touched the
@@ -192,6 +195,46 @@ so those picks never count against the picker's openings. Creation
 flows retain their existing creation/activation events. Screen-event deduplication
 is unchanged, so these events diagnose reselection without restoring a per-screen
 navigation stream. They do not establish a retrospective before/after baseline.
+
+### Asking for location
+
+Location is never needed: searching works without it. A climber who said no,
+or was never asked, still gets a clear second ask, without being nagged.
+
+- **Nothing asks on open.** The picker, the gym map (`/gyms`) and the gym
+  picker sheet call `requestIfAllowed`: they use an earlier yes and read the
+  permission, and the system prompt only follows a tap. The gym map used to
+  show the prompt on every open, and the onboarding handoff to the picker
+  showed it on arrival. The gym map and the gym picker sheet read the
+  permission again when the app comes back, so a grant made in Settings from
+  their buttons takes effect with no second tap.
+- **One card** (`src/components/location/LocationAskCard.tsx`): "See boards
+  near you" in the picker (its Near you lists boards), "See gyms near you" on
+  the gym map, then "Sorts by distance. Search works without it.", with Allow
+  and Not now. Allow shows the system prompt while it can still ask, and is
+  disabled until the prompt answers. Once only Settings can turn location on
+  (`blocked`: iOS after one no, Android "Don't ask again"), the button reads
+  Open Settings, and the permission is read again when the app comes back to
+  the foreground, so a grant there fills Near you or centres the map with no
+  second tap. In a browser nothing can open the site's settings, so the line
+  says where to turn it on and only Not now shows.
+- **One snooze.** Not now on any surface hides the card on every surface for
+  14 days (`lib/location-ask.ts`, the `locationAskSnoozedUntil` setting, per
+  device). A stored time further out than 14 days means the clock went back,
+  and reads as expired. The gym map's panel then says to search a town, with a
+  quiet Use my location under it: the climber opened the map on purpose, so
+  that tap asks (or opens Settings) whatever the snooze says. In a browser that
+  has said no it is left out, as it could do nothing.
+- **Never while allowed**, and never before the permission is read, so it
+  never flashes.
+- **Events:** `Location Ask Shown` `{ surface: board_picker | gym_finder,
+  permission: ask | blocked }`, once per card per screen visit (on the gym
+  map the card stays up while its own prompt is out, so a no does not show it
+  twice), and `Location Ask Answered` `{ surface, answer: allow |
+  open_settings | not_now, permission }`, the permission after the answer.
+  `allow` is sent as the prompt closes, not after the fix. `open_settings` is
+  sent when the app comes back to the foreground, so a climber who never comes
+  back sends nothing. The gym map's quiet Use my location sends neither.
 
 A pick follows the board unless the climber built it (`ownerId` matches them) or
 already follows it. `UserBoard.isOwned` plays no part: it is the creator's "a

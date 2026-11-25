@@ -1200,8 +1200,14 @@ export const SHARED_EVENTS = {
   // picker's "Find gym" reports no opening, the picker did).
   // hadActiveBoard is null when storage could not be read, not false.
   // locationStatus (from 2026-11): idle | loading | granted | denied |
-  // unavailable, as known at the opening (mostly idle: the "already allowed?"
-  // read is still out). The gym finder's own opening carries none.
+  // unavailable, as known at the opening. Until the location re-ask OTA it was
+  // sent before the "already allowed?" read came back, so it always read idle;
+  // since then the opening waits for that read (outside "Where do you climb?",
+  // which reads nothing on open), so an allowed climber reads loading or
+  // granted and everyone else idle. locationPermission (from the same OTA):
+  // unknown | ask | blocked | granted, the read itself; unknown under "Where
+  // do you climb?" or when the read failed. The gym finder's own opening
+  // carries neither.
   BoardPickerOpened: 'Board Picker Opened',
   // Existing-board selection in that picker, only after a successful write.
   // sameBoard compares UUIDs; sameConfig compares board type/layout/size/sets.
@@ -1222,6 +1228,24 @@ export const SHARED_EVENTS = {
   // from the on-device rows shown with no connection.
   // New-board creation/onboarding activation have their own existing events.
   BoardPickerSelectionCompleted: 'Board Picker Selection Completed',
+  // Mobile only. The "See gyms near you" card asked for location. Props: {
+  // surface: board_picker (the picker, where Near you would be) | gym_finder
+  // (the gym map with no place to show yet), permission: ask (Allow shows the
+  // system prompt) | blocked (Allow opens Settings) }. Once per card per
+  // screen visit. Never shown while location is allowed, and never for 14
+  // days after a "Not now" on any surface. Nothing on open ever shows the
+  // system prompt; only the card's Allow does.
+  LocationAskShown: 'Location Ask Shown',
+  // Mobile only. The climber answered that card. Props: { surface (as above),
+  // answer: allow (tapped Allow, the system prompt ran) | open_settings
+  // (tapped Allow while blocked; sent when the app comes back to the
+  // foreground, so a climber who never comes back sends nothing) | not_now
+  // (snoozed every surface for 14 days), permission: unknown | ask | blocked
+  // | granted, the permission after the answer (for allow, what the prompt
+  // left, sent as it closes, before the fix; for open_settings, what Settings
+  // left; for not_now, unchanged) }. The gym map's quiet "Use my location"
+  // under its search line (shown after a Not now) sends neither event.
+  LocationAskAnswered: 'Location Ask Answered',
   // Mobile only. A row picked from a board card's menu in the picker. Props:
   // { action: climb_here | pin | unpin | download | details | edit | unfollow
   // | delete, via: menu_button (the ⋯ beside the title) | long_press (a hold
