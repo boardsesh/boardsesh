@@ -834,6 +834,16 @@ itself, `PlaylistDetailView` wraps it in `ownHeaderRight()`.
 - **The one form-footer exception** is `LogAscentSheet`. Its `TickActionBar` (Attempt / Save) stays at
   the bottom for thumb reach while logging an ascent.
 
+## A map inside a sheet
+
+A wizard step inside the Boards sheet never draws its own draggable panel. A panel with a grabber, a
+rounded top and a shadow under a map, inside a pageSheet, is a sheet on a sheet: two grabbers, and a
+drag that fights the sheet's own swipe down. Put the map in a card at the top of the step's list
+instead (`MapCardList`, `src/components/gym-directory/`): the list is the one vertical gesture, the
+card's frame ends where the rows begin so Apple's Maps / Legal link stays visible, and the step's
+pinned controls start below a transparent bar. "Which gym?" (`GymStep`) is the example. The
+full-bleed map with one draggable panel stays the shape for a full-screen route such as `/gyms`.
+
 ## Pushing a route from INSIDE a modal route (the cross-navigator trap)
 
 The in-tree-opener rule above is about sheets. Routes have their own version of it, and it
