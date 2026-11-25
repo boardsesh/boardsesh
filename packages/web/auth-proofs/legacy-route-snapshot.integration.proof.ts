@@ -7,11 +7,15 @@ import './legacy-credential-fixture';
  * inline snapshots were written by this file run against the route before any
  * B1c change, and must not move.
  *
- * Real: the route exports, NextAuth, auth-options, bcrypt, PostgreSQL. The
+ * Real: the route exports, NextAuth, auth-options, private password HTTP, bcrypt, PostgreSQL. The
  * credential admission is the backend's own reader over the same database,
  * as in `web-credential-proof.integration.proof.ts`.
  */
 import { hash } from 'bcryptjs';
+import { createServer, type Server } from 'node:http';
+import { handleCurrentStorePasswordLogin } from '../../backend/src/handlers/current-store-password-login';
+import { createPasswordLoginLimiter } from '../../backend/src/auth/current-store/password-login-limits';
+import { createPasswordCompareGate } from '../../backend/src/auth/current-store/password-compare-gate';
 import { afterAll, beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { userCredentials, users } from '@boardsesh/db/schema';
 import { createEnvironment } from '../../backend/src/auth/authority/__tests__/environment';
@@ -55,6 +59,9 @@ import * as authRoute from '../app/api/auth/[...nextauth]/route';
 const CLIMBER = { id: '0b5f2c1e-7596-4b1c-8a11-000000000001', email: 'snapshot-climber@example.test' };
 const PASSWORD = 'snapshot climber password';
 let environment: Awaited<ReturnType<typeof createEnvironment>>;
+let passwordServer: Server;
+let passwordOrigin: string;
+const passwordRpcSecret = 'owned-legacy-snapshot-password-rpc-secret-6975';
 
 beforeAll(async () => {
   environment = await createEnvironment();
@@ -63,9 +70,30 @@ beforeAll(async () => {
   await environment.database
     .insert(userCredentials)
     .values({ userId: CLIMBER.id, passwordHash: await hash(PASSWORD, 4) });
+  const guards = {
+    limits: createPasswordLoginLimiter({ redis: () => null, maxPendingRedisCommands: 4 }),
+    gate: createPasswordCompareGate(),
+  };
+  passwordServer = createServer((request, response) => {
+    void handleCurrentStorePasswordLogin(request, response, environment.database, guards).catch(() => {
+      response.writeHead(500);
+      response.end();
+    });
+  });
+  await new Promise<void>((resolve) => passwordServer.listen(0, '127.0.0.1', resolve));
+  const address = passwordServer.address();
+  if (!address || typeof address === 'string') throw new Error('Owned snapshot password binding missing');
+  passwordOrigin = `http://127.0.0.1:${address.port}`;
   patchNextRequestIo();
 });
 beforeEach(() => {
+  vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
+  vi.stubEnv('CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE', 'off');
+  vi.stubEnv('CURRENT_STORE_AUTH_BACKEND_ORIGIN', passwordOrigin);
+  vi.stubEnv('CURRENT_STORE_AUTH_RPC_SECRET', passwordRpcSecret);
+  vi.stubEnv('AUTH_ACCOUNT_GUESS_LIMIT_MODE', 'off');
+  vi.stubEnv('AUTH_CUTOFF_ENFORCEMENT', 'enforce');
+  vi.stubEnv('DEBUG_SQL', 'false');
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 afterEach(() => {
@@ -74,6 +102,8 @@ afterEach(() => {
 });
 afterAll(async () => {
   vi.restoreAllMocks();
+  passwordServer?.closeAllConnections();
+  if (passwordServer) await new Promise<void>((resolve) => passwordServer.close(() => resolve()));
   await environment?.close();
 });
 

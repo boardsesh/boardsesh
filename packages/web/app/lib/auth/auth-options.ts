@@ -11,8 +11,6 @@ import CredentialsProvider from 'next-auth/providers/credentials';
 import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
-import { compare } from 'bcryptjs';
-import { ABSENT_PASSWORD_HASH } from '@boardsesh/auth-protocol/password-hash';
 import { normalizeAccountEmail, soleAccount } from '@boardsesh/auth-protocol/account-email';
 import { findAccountsByEmail } from '@boardsesh/db/queries/account-email';
 import { nativeOAuthTransferSpentMarker, verifyNativeOAuthTransferToken } from '@/app/lib/auth/native-oauth-transfer';
@@ -20,7 +18,6 @@ import { isSecureCookieContext, sessionCookieDomain } from '@/app/lib/auth/secur
 import { isAllowedAppOrigin } from '@/app/lib/auth/app-origin-allowlist';
 import { applyCanonicalAuthUrl } from '@/app/lib/auth/canonical-auth-url';
 import { partnerLinkGuardActive } from '@/app/lib/auth/partner-link-guard-mode';
-import { admitLegacyWebPasswordGuess } from './guess-limit-client.server';
 import { parseAccountCreationReceipt } from '@boardsesh/analytics';
 
 // Must run before anything below reads NEXTAUTH_URL (the cookie block does, via
@@ -205,53 +202,10 @@ providers.push(
       email: { label: 'Email', type: 'email', placeholder: 'your@email.com' },
       password: { label: 'Password', type: 'password' },
     },
-    async authorize(credentials, request) {
-      if (!credentials?.email || !credentials?.password) {
-        return null;
-      }
-
-      // An unknown address, an account with no password (OAuth only), an
-      // address several accounts share in different capitals and a wrong
-      // password must take the same time to reject, or the answer tells a
-      // caller which addresses have accounts. So every path makes this one
-      // query and then one bcrypt comparison at the stored cost.
-      const found = await findAccountsByEmail(getDb(), credentials.email);
-      const admission = await admitLegacyWebPasswordGuess({
-        email: credentials.email,
-        accounts: found.rows,
-        cookieHeader: request?.headers?.cookie,
-      });
-      try {
-        const candidates = found.rows.flatMap((account) =>
-          account.passwordHash === null ? [] : [{ ...account, passwordHash: account.passwordHash }],
-        );
-        if (candidates.length === 0) {
-          await compare(credentials.password, ABSENT_PASSWORD_HASH);
-          await admission.settle('rejected');
-          return null;
-        }
-        // Several rows can store the very same text. The password decides, as
-        // native sign-in's bounded match does: exactly one of them must accept it.
-        const accepted = await Promise.all(
-          candidates.map((candidate) => compare(credentials.password, candidate.passwordHash)),
-        );
-        const matched = candidates.filter((_candidate, index) => accepted[index]);
-        if (matched.length !== 1) {
-          await admission.settle('rejected');
-          return null;
-        }
-        await admission.settle('accepted');
-        const [account] = matched;
-
-        return {
-          id: account.id,
-          email: account.email,
-          name: account.name,
-          image: account.image,
-        };
-      } finally {
-        await admission.settle('no_verdict');
-      }
+    // The public route installs a request-local backend provider. Direct use
+    // cannot revive a local credential or generation fallback.
+    async authorize() {
+      return null;
     },
   }),
 );
@@ -546,6 +500,7 @@ export const authOptions: NextAuthOptions = {
           throw new Error('Web proof compatibility mode is backend-only');
         const proved = user.webCredentialProof ? webCredentialProofSchema.parse(user.webCredentialProof) : undefined;
         if (proved && proved.userId !== user.id) throw new Error('Web proof identity mismatch');
+        if (account?.provider === 'credentials' && !proved) throw new Error('Backend web credential proof required');
         if (
           !proved &&
           webCredentialProofMode(process.env) === 'required' &&

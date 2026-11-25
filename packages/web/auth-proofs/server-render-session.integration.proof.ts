@@ -28,6 +28,7 @@ import {
   randomClientAddress,
   startWebSessionBackend,
   stubBetterAuthEnvironment,
+  stubQualifiedPasswordEnvironment,
   type WebSessionBackend,
 } from './web-session-harness';
 
@@ -185,6 +186,10 @@ async function legacyLogin(claims: Partial<JWT> = {}) {
 type SessionJson = { user?: { id: string }; authSessionId?: string };
 
 describe('server renders with the mode unset, empty or legacy (as on main)', () => {
+  beforeEach(() => {
+    stubQualifiedPasswordEnvironment(backend.origin);
+  });
+
   it.each([undefined, '', 'legacy'])(
     'read the admitted legacy cookie and forward it as the bearer (mode %j)',
     async (mode) => {
@@ -192,6 +197,7 @@ describe('server renders with the mode unset, empty or legacy (as on main)', () 
       const climber = await createClimber(environment.database);
       const jar = new CookieJar();
       await login(jar, climber.email);
+      expect(jar.get(LEGACY, DOMAIN)).toEqual(expect.any(String));
       const { session, token } = await renderPage(jar.header());
       expect(session?.user.id).toBe(climber.id);
       expect(token).toBe(jar.get(LEGACY, DOMAIN));
