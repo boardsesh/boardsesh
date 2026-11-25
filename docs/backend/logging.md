@@ -1,5 +1,13 @@
 # Backend Logging
 
+Hosted gym MCP tools execute GraphQL directly, so they bypass Yoga's error
+reporting hook. Database failures use `maskDatabaseError()` to report the
+original driver exception to Sentry before masking it. Other unexpected tool
+failures are reported once with `source=gym-mcp` and the tool name. Railway
+warnings contain only the fixed operation and SQLSTATE, or the tool and error
+type; they exclude tool inputs, SQL text and exception messages. The client
+continues to receive the generic `INTERNAL_SERVER_ERROR` response.
+
 The backend uses [winston](https://github.com/winstonjs/winston) for structured logging. There is one singleton logger at `packages/backend/src/utils/logger.ts`; all backend code calls `logger.info` / `logger.warn` / `logger.error` rather than `console.*`. The lint rule `no-console` is set to `error` for `packages/backend/src/**/*.ts` (configured under `lint.overrides` in the root `vite.config.ts`), so reintroducing `console.*` fails CI. Test files keep the global allow list for `warn`/`error`/`info` since test infra uses console for orchestration.
 
 ## Output formats

@@ -109,7 +109,10 @@ export async function executeGymMcpWriteAction(
         idempotencyKey,
         operationName,
         inputHash,
-        result,
+        // graphql() returns a null-prototype record. Drizzle inspects the
+        // prototype when distinguishing SQL expressions from JSON values, so
+        // pass an ordinary record while preserving the exact response fields.
+        result: { ...result },
       });
     } catch (error) {
       // This insert has only the receipt identity's unique constraint. A

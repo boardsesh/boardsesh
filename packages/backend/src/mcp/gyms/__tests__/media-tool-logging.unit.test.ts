@@ -23,8 +23,8 @@ vi.mock('../dispatch', () => ({
   executeGymMcpWriteAction: fixtures.runWrite,
   createGymMcpContext: () => ({ userId: 'owner' }),
 }));
-vi.mock('../../../utils/logger', () => ({ logger: { info: fixtures.log } }));
-vi.mock('../../../graphql/mask-error', () => ({ isDatabaseLeakError: () => false }));
+vi.mock('../../../utils/logger', () => ({ logger: { info: fixtures.log, warn: vi.fn() } }));
+vi.mock('../../../graphql/mask-error', () => ({ isDatabaseLeakError: () => false, maskDatabaseError: vi.fn() }));
 
 import { registerGymMcpMediaTools } from '../media-tools';
 
