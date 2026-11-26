@@ -78,7 +78,8 @@ The bar itself depends on the device:
   Logbook. When Climbs is the iOS 26 bar's search tab, the screen also sets
   `headerSearchBarOptions` (`useClimbsTabBarSearchField`), which iOS moves into
   the tab bar: selecting the tab opens that field and the keyboard, typing
-  commits the name after 300 ms like the Filters row, Cancel empties it, and a
+  searches as you type, throttled like the Filters row (the first keystroke at
+  once, then at most every 300 ms, always ending on the last text), Cancel empties it, and a
   name set elsewhere (Filters, a recent filter, a board switch) is written back
   into the field unless the climber is mid-typing. A second tap then belongs to
   the field, so it does not open Filters. Everywhere else the screen has no

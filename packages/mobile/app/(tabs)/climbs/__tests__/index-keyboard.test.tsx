@@ -1324,13 +1324,16 @@ describe('ClimbList with Climbs as the bar search tab', () => {
   const searchBarOptions = () =>
     mocks.stackOptions.findLast((options) => options.headerSearchBarOptions)?.headerSearchBarOptions;
 
-  it('hands the bar a climb-name field that commits the name after the pause', async () => {
+  it('hands the bar a climb-name field that searches as the climber types', async () => {
     mocks.tabBarSearch = true;
     const { findByText } = render(<ClimbList />);
     await findByText('Moonage');
 
     const field = searchBarOptions();
     expect(field).toMatchObject({ placement: 'automatic', placeholder: 'search.placeholders.climbs' });
+    // Throttled: the first keystroke searches at once, the rest within 300 ms.
+    act(() => field?.onChangeText?.({ nativeEvent: { text: 'c' } } as never));
+    expect(mocks.setName).toHaveBeenLastCalledWith('c');
     act(() => field?.onChangeText?.({ nativeEvent: { text: 'crimp ' } } as never));
     expect(mocks.setName).not.toHaveBeenCalledWith('crimp');
     await act(async () => {
@@ -3142,11 +3145,12 @@ describe('ClimbList live filter session integration', () => {
     const finalFilters = { ...selectedFilters, minGrade: 20 };
     act(() => {
       sheet.onSelectionChange(selectedFilters, selectedBoardFilters);
+      // The first keystroke commits at once (throttled); the rest waits.
+      sheet.onNameChange('  c');
       sheet.onNameChange('  crimp  ');
       sheet.onSelectionChange(finalFilters, selectedBoardFilters);
     });
-    expect(mocks.searchState).toEqual({ filters: finalFilters, boardFilters: selectedBoardFilters, name: '' });
-    expect(mocks.searchInput).toMatchObject({ filters: {}, boardFilters: {}, name: '' });
+    expect(mocks.searchState).toEqual({ filters: finalFilters, boardFilters: selectedBoardFilters, name: 'c' });
     expect(mocks.addRecentFilter).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -3168,22 +3172,23 @@ describe('ClimbList live filter session integration', () => {
     expect(mocks.addRecentFilter).toHaveBeenCalledTimes(1);
   });
 
-  it('runs the name query at 300 ms without another filter delay or intermediate recent', async () => {
+  it('runs the name query on the first keystroke and then every 300 ms, with no intermediate recent', async () => {
     await openSheet();
     const sheet = latestSheet();
     act(() => {
       sheet.onSelectionChange(selectedFilters, selectedBoardFilters);
+      sheet.onNameChange('c');
+    });
+    expect(mocks.searchState.name).toBe('c');
+    act(() => {
+      vi.advanceTimersByTime(100);
       sheet.onNameChange('crimp');
     });
     act(() => {
-      vi.advanceTimersByTime(250);
+      vi.advanceTimersByTime(199);
     });
-    expect(mocks.searchInput).toEqual({ filters: selectedFilters, boardFilters: selectedBoardFilters, name: '' });
+    expect(mocks.searchState.name).toBe('c');
     expect(mocks.addRecentFilter).not.toHaveBeenCalled();
-    act(() => {
-      vi.advanceTimersByTime(49);
-    });
-    expect(mocks.searchState.name).toBe('');
     act(() => {
       vi.advanceTimersByTime(1);
     });

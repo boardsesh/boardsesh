@@ -85,7 +85,14 @@ export function useClimbsSearchSession(
     name,
     replaceSearch,
   });
-  const searchName = useDebouncedSearchName({ scopeKey: filterScopeKey, name, onCommit: setName });
+  // Throttled, not debounced: the list follows the name as it is typed, in the
+  // tab bar's field and Filters' row alike.
+  const searchName = useDebouncedSearchName({
+    scopeKey: filterScopeKey,
+    name,
+    onCommit: setName,
+    pacing: 'throttle',
+  });
   const [storedRecentFilters, setRecentFilters] = useState<RecentFilter[]>([]);
   const filtersOpenSourceRef = useRef<ClimbFiltersOpenSource>('filters_chip');
   useEffect(() => {
