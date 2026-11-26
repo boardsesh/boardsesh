@@ -44,6 +44,8 @@ import { useProfileShareOptions } from '../../../src/hooks/use-profile-share-opt
 import { useShareLinkAction } from '../../../src/hooks/use-share-link-action';
 import { noteBoardFlowSecured } from '../../../src/lib/boards/board-create-flow';
 import { resolveBoardReturnTo } from '../../../src/lib/boards/board-return-to';
+import { wizardPickerSurface } from '../../../src/lib/boards/add-board-wizard';
+import { isNoBoardEntry } from '../../../src/lib/boards/first-board-mode';
 import {
   friendBoardListCells,
   friendBoardsEmptyKind,
@@ -51,6 +53,7 @@ import {
   type FriendBoardRowCopy,
 } from '../../../src/lib/boards/friend-boards';
 import { useAddBoardWizardStep } from '../../../src/lib/boards/use-add-board-wizard-step';
+import { useBoardPickerAnalytics } from '../../../src/lib/boards/use-board-picker-analytics';
 import { useFriendBoardAction } from '../../../src/lib/boards/use-friend-board-action';
 import { useProfile } from '../../../src/lib/graphql/hooks';
 import { useFriendsBoards } from '../../../src/lib/graphql/hooks/use-friends-boards';
@@ -75,7 +78,7 @@ export default function AddBoardFriend() {
   const bottomChrome = useBottomChromeMetrics();
   const params = useLocalSearchParams<{ shelf?: string }>();
   const fromShelf = params.shelf === '1';
-  const { nextContext, stepLabel, markHandedOff } = useAddBoardWizardStep({
+  const { entry, nextContext, stepLabel, markHandedOff } = useAddBoardWizardStep({
     step: 'friend',
     path: 'friend',
     abandonStep: 'find',
@@ -95,7 +98,7 @@ export default function AddBoardFriend() {
   const viewerId = isAuthenticated ? (profile?.id ?? storedUserId) : undefined;
   // Neither source has an id: the list can't be asked for, so say so.
   const viewerUnknown = isAuthenticated && viewerId === undefined && profileFailed && !storedUserIdLoading;
-  const { data: activeBoard } = useActiveBoard();
+  const { data: activeBoard, isError: boardRestoreFailed } = useActiveBoard();
 
   const [searchText, setSearchText] = useState('');
   const trimmedSearch = searchText.trim();
@@ -123,9 +126,22 @@ export default function AddBoardFriend() {
   const beforeClimb = useCallback(() => {
     noteBoardFlowSecured();
   }, []);
+  const boardReturnTo = resolveBoardReturnTo(nextContext.returnTo);
+  // The pick event. Reached from the picker (its +, or the Friends' boards
+  // "See all"), a pick here completes the picker's opening, under its source;
+  // from anywhere else this step counts its own opening.
+  const trackBoardSelection = useBoardPickerAnalytics({
+    activeBoard,
+    restoreFailed: boardRestoreFailed,
+    returnTo: boardReturnTo,
+    fromOnboarding: nextContext.source === 'onboarding',
+    fromNoBoard: isNoBoardEntry({ source: nextContext.source }),
+    surface: wizardPickerSurface(entry),
+  });
   const { onPress, sheet } = useFriendBoardAction({
-    returnTo: resolveBoardReturnTo(nextContext.returnTo),
+    returnTo: boardReturnTo,
     section: 'friend_step',
+    onBound: trackBoardSelection,
     beforeClimb,
   });
   // A row's place among the boards as drawn, for the pick event.
