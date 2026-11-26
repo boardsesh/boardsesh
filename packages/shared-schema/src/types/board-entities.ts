@@ -103,7 +103,7 @@ export type UserBoardConnection = {
   hasMore: boolean;
 };
 
-/** What the viewer may do on a board owned by someone they follow (`friendsBoards`). */
+/** What the viewer may do on a board owned by someone who follows them (`friendsBoards`). */
 export type FriendBoardAccess = 'CAN_CLIMB' | 'CAN_REQUEST' | 'REQUESTED';
 
 export type FriendBoardOwner = {
