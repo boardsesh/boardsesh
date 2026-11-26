@@ -781,7 +781,20 @@ async function loadFollowedBoards(viewerId: string): Promise<ArmBoard[]> {
     })
     .from(dbSchema.boardFollows)
     .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.uuid, dbSchema.boardFollows.boardUuid))
-    .where(and(eq(dbSchema.boardFollows.userId, viewerId), isNull(dbSchema.userBoards.deletedAt)));
+    .where(
+      and(
+        eq(dbSchema.boardFollows.userId, viewerId),
+        isNull(dbSchema.userBoards.deletedAt),
+        // A save outlives access (a removed member keeps the row for a
+        // re-invite), so the board must still open for the viewer, read the
+        // way myBoards reads a saved board. Spray walls keep their wall rule
+        // (viewerMayUseBoardArm below).
+        or(
+          eq(dbSchema.userBoards.boardType, 'spray'),
+          resourceAccessCondition('board', dbSchema.userBoards.uuid, viewerId),
+        ),
+      ),
+    );
   const usable = await Promise.all(rows.map((row) => viewerMayUseBoardArm(row, viewerId)));
   return rows.filter((_, index) => usable[index]).map(toArmBoard);
 }

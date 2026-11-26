@@ -18,7 +18,7 @@ import {
   setContentPrivacy,
 } from '../../../services/privacy';
 import { publishSocialEvent } from '../../../events';
-import { isShareLinkAudience, revokeBoardShareLinks } from '../../../services/board-share-links';
+import { isShareLinkAudience, revokeBoardShareLinks, saveToYourBoards } from '../../../services/board-share-links';
 import { deleteFollowRequestNotifications, lockFollowRequestPair } from '../../../events/follow-request-notifications';
 import { logger } from '../../../utils/logger';
 
@@ -54,6 +54,10 @@ const resourceSchema = z
     audience: resourceAudience,
     locationAudience: locationAudience.optional(),
     inheritFollowers: z.boolean().optional(),
+    // Only listing: lists an Unlisted or Invite-only board in the Friends'
+    // boards of the owner's friends (mutual follows). Stored for any audience so a round trip through Public
+    // keeps the owner's choice; it grants no access.
+    listedToFollowers: z.boolean().optional(),
   })
   .strict();
 /**
@@ -296,11 +300,11 @@ async function lockOwnedResource(
   kind: PrivacyResourceKind,
   resourceId: string,
   userId: string,
-): Promise<void> {
+): Promise<{ boardType: string | null }> {
   const rows =
     kind === 'board'
       ? await transaction
-          .select({ ownerId: schema.userBoards.ownerId })
+          .select({ ownerId: schema.userBoards.ownerId, boardType: schema.userBoards.boardType })
           .from(schema.userBoards)
           .where(
             and(
@@ -311,11 +315,12 @@ async function lockOwnedResource(
           )
           .for('update')
       : await transaction
-          .select({ ownerId: schema.boardSessions.createdByUserId })
+          .select({ ownerId: schema.boardSessions.createdByUserId, boardType: sql<string | null>`NULL` })
           .from(schema.boardSessions)
           .where(and(eq(schema.boardSessions.id, resourceId), eq(schema.boardSessions.createdByUserId, userId)))
           .for('update');
   if (rows.length === 0) notFound();
+  return { boardType: rows[0].boardType };
 }
 async function requireResourceOwner(kind: PrivacyResourceKind, resourceId: string, userId: string) {
   const resource = await getResourcePrivacy(kind, resourceId);
@@ -617,6 +622,13 @@ export const privacyMutations = {
         .where(eq(schema.userBoards.uuid, update.resourceId))
         .limit(1);
       if (board?.boardType === 'spray') {
+        // A spray wall is never listed in Friends' boards, so the switch has
+        // nothing to do there. Turning it on is refused rather than dropped;
+        // false (what a settings round trip sends) is accepted.
+        if (update.listedToFollowers === true)
+          throw new GraphQLError('Spray walls cannot be shown to friends', {
+            extensions: { code: 'BAD_USER_INPUT' },
+          });
         const { updateSprayResourcePrivacy } = await import('../board/spray-walls');
         await updateSprayResourcePrivacy(
           update.resourceId,
@@ -671,6 +683,7 @@ export const privacyMutations = {
         audience: update.audience,
         locationAudience: update.locationAudience ?? lockedOverride?.locationAudience ?? current.locationAudience,
         inheritFollowers: update.inheritFollowers ?? lockedOverride?.inheritFollowers ?? current.inheritFollowers,
+        listedToFollowers: update.listedToFollowers ?? lockedOverride?.listedToFollowers ?? current.listedToFollowers,
         updatedAt: new Date(),
       };
       await transaction
@@ -757,8 +770,8 @@ export const privacyMutations = {
     const ownerId = await privacyActor(ctx);
     await requireResourceOwner(input.kind, input.resourceId, ownerId);
     await db.transaction(async (transaction) => {
-      await lockOwnedResource(transaction, input.kind, input.resourceId, ownerId);
-      await transaction
+      const { boardType } = await lockOwnedResource(transaction, input.kind, input.resourceId, ownerId);
+      const approved = await transaction
         .update(schema.resourceGrants)
         .set({ status: 'approved', invitedBy: ownerId, updatedAt: new Date() })
         .where(
@@ -768,7 +781,14 @@ export const privacyMutations = {
             eq(schema.resourceGrants.userId, input.userId),
             eq(schema.resourceGrants.status, 'pending'),
           ),
-        );
+        )
+        .returning({ userId: schema.resourceGrants.userId });
+      // The climber asked to climb here: an approval puts the board in their
+      // Your boards. An owner's name invite (inviteResourceMember) does not,
+      // so a stranger cannot push a board into someone's picker. A spray wall
+      // is never saved this way: followBoard keeps its own rule for those.
+      if (input.kind === 'board' && boardType !== 'spray' && approved.length > 0)
+        await saveToYourBoards(transaction, input.userId, input.resourceId);
     });
     await notifyResourceChanged(input.kind, input.resourceId);
     return true;

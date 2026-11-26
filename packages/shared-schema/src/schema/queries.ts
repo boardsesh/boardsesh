@@ -699,6 +699,21 @@ export const queriesTypeDefs = /* GraphQL */ `
     myBoards(input: MyBoardsInput): UserBoardConnection!
 
     """
+    Home boards owned by the viewer's friends, for "A friend's board": friends
+    are people who follow each other, and a one-way follow lists nothing.
+    Public and Followers boards are listed and open; Unlisted boards when their
+    owner turned on "Show to friends" (listedToFollowers) or the viewer already
+    holds them; Invite-only boards when the owner turned the switch on (CAN_CLIMB
+    with an approved grant, otherwise CAN_REQUEST or REQUESTED). With privacy
+    controls off only boards the viewer can open are listed. Only-me boards, gym
+    boards, spray walls, the viewer's own boards and boards already in their
+    Your boards are left out. Boards the viewer has logged on come first, most
+    recent first, then by the owner's latest log, then by owner name.
+    Requires authentication. 30 requests per minute.
+    """
+    friendsBoards(input: FriendsBoardsInput): FriendBoardConnection!
+
+    """
     Search public boards.
     """
     searchBoards(input: SearchBoardsInput!): UserBoardConnection!

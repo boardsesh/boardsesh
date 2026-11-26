@@ -99,6 +99,40 @@ export type UserBoardConnection = {
   hasMore: boolean;
 };
 
+/** What the viewer may do on a board owned by someone who follows them (`friendsBoards`). */
+export type FriendBoardAccess = 'CAN_CLIMB' | 'CAN_REQUEST' | 'REQUESTED';
+
+export type FriendBoardOwner = {
+  userId: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+};
+
+/** Shown on every listed row. Never the slug, serial, location, presence ids or counts. */
+export type FriendBoardPreview = {
+  uuid: string;
+  name: string;
+  boardType: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+  angle: number;
+};
+
+export type FriendBoard = {
+  viewerAccess: FriendBoardAccess;
+  owner: FriendBoardOwner;
+  preview: FriendBoardPreview;
+  /** Set for `CAN_CLIMB` only. */
+  board: UserBoard | null;
+};
+
+export type FriendBoardConnection = {
+  items: FriendBoard[];
+  totalCount: number;
+  hasMore: boolean;
+};
+
 export type BoardLeaderboardEntry = {
   userId: string | null;
   userDisplayName?: string;

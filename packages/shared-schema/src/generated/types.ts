@@ -3878,6 +3878,69 @@ export type FreezeClimbInput = {
   reason?: InputMaybe<Scalars['String']['input']>;
 };
 
+/** One board owned by one of the viewer's friends (people who follow each other). */
+export type FriendBoard = {
+  __typename?: 'FriendBoard';
+  /** The full board, for CAN_CLIMB only. Null for CAN_REQUEST and REQUESTED. */
+  board?: Maybe<UserBoard>;
+  owner: FriendBoardOwner;
+  preview: FriendBoardPreview;
+  viewerAccess: FriendBoardAccess;
+};
+
+/** What the viewer may do on a friend's board (friendsBoards). */
+export type FriendBoardAccess =
+  /** The viewer can open and climb on it: FriendBoard.board is set. */
+  | 'CAN_CLIMB'
+  /** An Invite-only board its owner shows to friends, with no approved grant. The viewer may ask to climb (requestResourceAccess). */
+  | 'CAN_REQUEST'
+  /** The viewer asked to climb and the owner has not answered yet. */
+  | 'REQUESTED';
+
+/** A page of friends' boards. */
+export type FriendBoardConnection = {
+  __typename?: 'FriendBoardConnection';
+  hasMore: Scalars['Boolean']['output'];
+  items: Array<FriendBoard>;
+  totalCount: Scalars['Int']['output'];
+};
+
+/** The person who owns a friend's board: always a friend, someone the viewer follows who follows them back. */
+export type FriendBoardOwner = {
+  __typename?: 'FriendBoardOwner';
+  /** Profile avatar, falling back to the account image */
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  /** Profile display name, falling back to the account name */
+  displayName?: Maybe<Scalars['String']['output']>;
+  userId: Scalars['ID']['output'];
+};
+
+/**
+ * The part of a friend's board every listed row may show, whatever the viewer's
+ * access. Never carries the slug, serial number, location, presence ids or counts.
+ */
+export type FriendBoardPreview = {
+  __typename?: 'FriendBoardPreview';
+  angle: Scalars['Int']['output'];
+  boardType: Scalars['String']['output'];
+  layoutId: Scalars['Int']['output'];
+  name: Scalars['String']['output'];
+  setIds: Scalars['String']['output'];
+  sizeId: Scalars['Int']['output'];
+  /** The board's uuid: the resourceId for requestResourceAccess. Opens nothing by itself on a Followers or Invite-only board. */
+  uuid: Scalars['ID']['output'];
+};
+
+/** Input for friendsBoards. */
+export type FriendsBoardsInput = {
+  /** Max boards to return (1-50, default 20) */
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  /** Offset for pagination */
+  offset?: InputMaybe<Scalars['Int']['input']>;
+  /** Filter on the board name or the owner's display name (case-insensitive, up to 100 characters). */
+  query?: InputMaybe<Scalars['String']['input']>;
+};
+
 export type FrozenLocationSyncEntitiesInput = {
   entityType: LocationSyncEntityType;
   limit?: InputMaybe<Scalars['Int']['input']>;
@@ -9047,6 +9110,20 @@ export type Query = {
    */
   followingClimbAscents: FollowingClimbAscentsResult;
   /**
+   * Home boards owned by the viewer's friends, for "A friend's board": friends
+   * are people who follow each other, and a one-way follow lists nothing.
+   * Public and Followers boards are listed and open; Unlisted boards when their
+   * owner turned on "Show to friends" (listedToFollowers) or the viewer already
+   * holds them; Invite-only boards when the owner turned the switch on (CAN_CLIMB
+   * with an approved grant, otherwise CAN_REQUEST or REQUESTED). With privacy
+   * controls off only boards the viewer can open are listed. Only-me boards, gym
+   * boards, spray walls, the viewer's own boards and boards already in their
+   * Your boards are left out. Boards the viewer has logged on come first, most
+   * recent first, then by the owner's latest log, then by owner name.
+   * Requires authentication. 30 requests per minute.
+   */
+  friendsBoards: FriendBoardConnection;
+  /**
    * Frozen gym or board rows awaiting an explicit location-sync release (global
    * admin only). Includes soft-deleted rows because a later source sync may
    * deliberately resurrect them. Merged gyms are excluded.
@@ -10084,6 +10161,11 @@ export type QueryFollowingAscentsFeedArgs = {
 /** Root query type for all read operations. */
 export type QueryFollowingClimbAscentsArgs = {
   input: FollowingClimbAscentsInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryFriendsBoardsArgs = {
+  input?: InputMaybe<FriendsBoardsInput>;
 };
 
 /** Root query type for all read operations. */
@@ -11235,6 +11317,14 @@ export type ResourcePrivacySettings = {
   audience: PrivacyResourceAudience;
   inheritFollowers: Scalars['Boolean']['output'];
   kind: PrivacyResourceKind;
+  /**
+   * "Show to friends": an Unlisted or Invite-only board is listed in the
+   * friendsBoards of the owner's friends (people who follow each other; the
+   * field name predates the mutual-follow rule). It grants no access: an
+   * Invite-only board still needs an approved grant to climb on. No effect on
+   * other audiences.
+   */
+  listedToFollowers: Scalars['Boolean']['output'];
   locationAudience: PrivacyLocationAudience;
   ownerId?: Maybe<Scalars['ID']['output']>;
   resourceId: Scalars['ID']['output'];
@@ -14375,6 +14465,8 @@ export type UpdateResourcePrivacyInput = {
   audience: PrivacyResourceAudience;
   inheritFollowers?: InputMaybe<Scalars['Boolean']['input']>;
   kind: PrivacyResourceKind;
+  /** Omit to keep the stored value. See ResourcePrivacySettings.listedToFollowers. */
+  listedToFollowers?: InputMaybe<Scalars['Boolean']['input']>;
   locationAudience?: InputMaybe<PrivacyLocationAudience>;
   resourceId: Scalars['ID']['input'];
 };
@@ -15246,6 +15338,12 @@ export type ResolversTypes = ResolversObject<{
   FollowingClimbAscentsResult: ResolverTypeWrapper<FollowingClimbAscentsResult>;
   FollowingClimbAscentsSummary: ResolverTypeWrapper<FollowingClimbAscentsSummary>;
   FreezeClimbInput: FreezeClimbInput;
+  FriendBoard: ResolverTypeWrapper<FriendBoard>;
+  FriendBoardAccess: FriendBoardAccess;
+  FriendBoardConnection: ResolverTypeWrapper<FriendBoardConnection>;
+  FriendBoardOwner: ResolverTypeWrapper<FriendBoardOwner>;
+  FriendBoardPreview: ResolverTypeWrapper<FriendBoardPreview>;
+  FriendsBoardsInput: FriendsBoardsInput;
   FrozenLocationSyncEntitiesInput: FrozenLocationSyncEntitiesInput;
   FrozenLocationSyncEntity: ResolverTypeWrapper<FrozenLocationSyncEntity>;
   FrozenLocationSyncEntityConnection: ResolverTypeWrapper<FrozenLocationSyncEntityConnection>;
@@ -15927,6 +16025,11 @@ export type ResolversParentTypes = ResolversObject<{
   FollowingClimbAscentsResult: FollowingClimbAscentsResult;
   FollowingClimbAscentsSummary: FollowingClimbAscentsSummary;
   FreezeClimbInput: FreezeClimbInput;
+  FriendBoard: FriendBoard;
+  FriendBoardConnection: FriendBoardConnection;
+  FriendBoardOwner: FriendBoardOwner;
+  FriendBoardPreview: FriendBoardPreview;
+  FriendsBoardsInput: FriendsBoardsInput;
   FrozenLocationSyncEntitiesInput: FrozenLocationSyncEntitiesInput;
   FrozenLocationSyncEntity: FrozenLocationSyncEntity;
   FrozenLocationSyncEntityConnection: FrozenLocationSyncEntityConnection;
@@ -18344,6 +18447,51 @@ export type FollowingClimbAscentsSummaryResolvers<
   byAngle?: Resolver<Array<ResolversTypes['FollowingClimbAscentsAngleCount']>, ParentType, ContextType>;
   climberCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   senderCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type FriendBoardResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['FriendBoard'] = ResolversParentTypes['FriendBoard'],
+> = ResolversObject<{
+  board?: Resolver<Maybe<ResolversTypes['UserBoard']>, ParentType, ContextType>;
+  owner?: Resolver<ResolversTypes['FriendBoardOwner'], ParentType, ContextType>;
+  preview?: Resolver<ResolversTypes['FriendBoardPreview'], ParentType, ContextType>;
+  viewerAccess?: Resolver<ResolversTypes['FriendBoardAccess'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type FriendBoardConnectionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['FriendBoardConnection'] = ResolversParentTypes['FriendBoardConnection'],
+> = ResolversObject<{
+  hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  items?: Resolver<Array<ResolversTypes['FriendBoard']>, ParentType, ContextType>;
+  totalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type FriendBoardOwnerResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['FriendBoardOwner'] = ResolversParentTypes['FriendBoardOwner'],
+> = ResolversObject<{
+  avatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  displayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type FriendBoardPreviewResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['FriendBoardPreview'] = ResolversParentTypes['FriendBoardPreview'],
+> = ResolversObject<{
+  angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  setIds?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -21534,6 +21682,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryFollowingClimbAscentsArgs, 'input'>
   >;
+  friendsBoards?: Resolver<
+    ResolversTypes['FriendBoardConnection'],
+    ParentType,
+    ContextType,
+    Partial<QueryFriendsBoardsArgs>
+  >;
   frozenLocationSyncEntities?: Resolver<
     ResolversTypes['FrozenLocationSyncEntityConnection'],
     ParentType,
@@ -22471,6 +22625,7 @@ export type ResourcePrivacySettingsResolvers<
   audience?: Resolver<ResolversTypes['PrivacyResourceAudience'], ParentType, ContextType>;
   inheritFollowers?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   kind?: Resolver<ResolversTypes['PrivacyResourceKind'], ParentType, ContextType>;
+  listedToFollowers?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   locationAudience?: Resolver<ResolversTypes['PrivacyLocationAudience'], ParentType, ContextType>;
   ownerId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   resourceId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
@@ -24258,6 +24413,10 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   FollowingClimbAscentsAngleCount?: FollowingClimbAscentsAngleCountResolvers<ContextType>;
   FollowingClimbAscentsResult?: FollowingClimbAscentsResultResolvers<ContextType>;
   FollowingClimbAscentsSummary?: FollowingClimbAscentsSummaryResolvers<ContextType>;
+  FriendBoard?: FriendBoardResolvers<ContextType>;
+  FriendBoardConnection?: FriendBoardConnectionResolvers<ContextType>;
+  FriendBoardOwner?: FriendBoardOwnerResolvers<ContextType>;
+  FriendBoardPreview?: FriendBoardPreviewResolvers<ContextType>;
   FrozenLocationSyncEntity?: FrozenLocationSyncEntityResolvers<ContextType>;
   FrozenLocationSyncEntityConnection?: FrozenLocationSyncEntityConnectionResolvers<ContextType>;
   FullSync?: FullSyncResolvers<ContextType>;

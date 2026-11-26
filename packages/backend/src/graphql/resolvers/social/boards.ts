@@ -1702,9 +1702,20 @@ export const socialBoardQueries = {
 
     const followedUuids = followedBoardUuids.map((f) => f.boardUuid);
 
-    // Build WHERE: owned OR followed, and not deleted
+    // Build WHERE: owned OR followed-and-still-readable, and not deleted. A
+    // followed board the viewer can no longer open (removed by its owner, made
+    // Only me) drops out here, in the WHERE, so the count agrees with the pages.
+    // The follow row stays: a re-invite brings the board back. Same link reading
+    // as the enrichBoards filter below, since a saved board is one the viewer
+    // was handed.
     const ownerCondition = eq(dbSchema.userBoards.ownerId, userId);
-    const followedCondition = followedUuids.length > 0 ? inArray(dbSchema.userBoards.uuid, followedUuids) : undefined;
+    const followedCondition =
+      followedUuids.length > 0
+        ? and(
+            inArray(dbSchema.userBoards.uuid, followedUuids),
+            resourceAccessCondition('board', dbSchema.userBoards.uuid, userId),
+          )
+        : undefined;
     const matchCondition = followedCondition ? or(ownerCondition, followedCondition)! : ownerCondition;
     // In the WHERE the COUNT and the paged read share, never a post-filter:
     // dropping rows from the page alone would leave the count promising results
@@ -3289,6 +3300,7 @@ export const socialBoardMutations = {
             uuid: dbSchema.userBoards.uuid,
             ownerId: dbSchema.userBoards.ownerId,
             isPublic: dbSchema.userBoards.isPublic,
+            boardType: dbSchema.userBoards.boardType,
           })
           .from(dbSchema.userBoards)
           .where(and(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid), isNull(dbSchema.userBoards.deletedAt)))
@@ -3299,7 +3311,17 @@ export const socialBoardMutations = {
           throw new Error('Board not found');
         }
 
-        if (!board.isPublic && board.ownerId !== userId) {
+        // Anyone who can open the board by its uuid may save it: a member of a
+        // Followers or Invite-only board, a holder of an Unlisted board's link.
+        // Read under the board's share lock, which privacy writers wait on, so a
+        // removal that commits first wins. Spray walls keep their own rules and
+        // the old public-only check.
+        const mayFollow =
+          board.ownerId === userId ||
+          (isSprayBoardType(board.boardType)
+            ? board.isPublic
+            : await canAccessResource('board', board.uuid, userId, tx));
+        if (!mayFollow) {
           throw new Error('Cannot follow a private board');
         }
 

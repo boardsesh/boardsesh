@@ -328,6 +328,11 @@ const narrowedPrivacyTypeCheck = readFileSync(
   new URL('../../../db/drizzle/0282_narrow_content_privacy_type_check.sql', import.meta.url),
   'utf8',
 );
+// "Show to friends" (Friends' boards), on top of 0261's resource_privacy.
+const listedToFollowersSchema = readFileSync(
+  new URL('../../../db/drizzle/0351_resource_privacy_listed_to_followers.sql', import.meta.url),
+  'utf8',
+);
 const anonymousOnForeignBoardsSchema = readFileSync(
   new URL('../../../db/drizzle/0266_anonymous_on_foreign_boards.sql', import.meta.url),
   'utf8',
@@ -2667,6 +2672,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${sessionBoardsSchema}
   ${privacySchema}
   ${narrowedPrivacyTypeCheck}
+  ${listedToFollowersSchema}
   ${anonymousOnForeignBoardsSchema};
   ${boardShareLinksSchema}
   ${sessionWorkoutsSchema}

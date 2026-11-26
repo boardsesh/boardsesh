@@ -215,7 +215,22 @@ export async function resetBoardShareLink(boardUuid: string, ownerId: string): P
 }
 
 /**
- * Make `userId` an approved member of the board the token names.
+ * Put a board the climber just became a member of in their Your boards
+ * (`board_follows`, which `myBoards` reads). Kept when access is later revoked:
+ * `myBoards` hides a board the climber can no longer open, and a re-invite
+ * brings it back.
+ */
+export async function saveToYourBoards(
+  executor: Pick<typeof db, 'insert'>,
+  userId: string,
+  boardUuid: string,
+): Promise<void> {
+  await executor.insert(schema.boardFollows).values({ userId, boardUuid }).onConflictDoNothing();
+}
+
+/**
+ * Make `userId` an approved member of the board the token names, and save the
+ * board to their Your boards.
  *
  * NOT_FOUND, with nothing written, for: a malformed, unknown or revoked token;
  * a deleted board; a board that is no longer Followers or Invite-only; and a
@@ -258,7 +273,11 @@ export async function redeemBoardShareLink(token: string, userId: string): Promi
         )
         .for('update');
       if (grant?.status === 'revoked') notFound();
-      if (grant?.status === 'approved') return { boardUuid: board.uuid, slug: board.slug, granted: false };
+      if (grant?.status === 'approved') {
+        // Joining again puts the board back in Your boards if they had dropped it.
+        await saveToYourBoards(transaction, userId, board.uuid);
+        return { boardUuid: board.uuid, slug: board.slug, granted: false };
+      }
 
       const written = await transaction
         .insert(schema.resourceGrants)
@@ -271,6 +290,7 @@ export async function redeemBoardShareLink(token: string, userId: string): Promi
         })
         .returning({ status: schema.resourceGrants.status });
       if (written.length === 0) notFound();
+      await saveToYourBoards(transaction, userId, board.uuid);
       return { boardUuid: board.uuid, slug: board.slug, granted: true };
     }),
   );

@@ -254,6 +254,8 @@ export interface ResourcePrivacyState {
   audience: PrivacyResourceAudience;
   locationAudience: PrivacyLocationAudience;
   inheritFollowers: boolean;
+  /** "Show to friends": lists an Unlisted or Invite-only board in the Friends' boards of its owner's friends (people who follow each other). */
+  listedToFollowers: boolean;
   revision: number;
   hasOverride: boolean;
 }
@@ -302,6 +304,7 @@ export async function getResourcePrivacy(
     audience: override?.audience ?? legacy.audience,
     locationAudience: override?.locationAudience ?? legacy.locationAudience,
     inheritFollowers: override?.inheritFollowers ?? false,
+    listedToFollowers: override?.listedToFollowers ?? false,
     revision: override?.revision ?? 0,
     hasOverride: !!override,
   };
