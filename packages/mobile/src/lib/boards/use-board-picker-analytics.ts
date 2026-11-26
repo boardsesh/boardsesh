@@ -19,8 +19,20 @@ import type { BoundBoard } from './use-activate-board';
  *   counted that opening, so it reports its own, and both events say
  *   `source: 'gym_finder'`. Filed under the picker's source, its picks would
  *   push the picker's opened-to-picked rate past 100%.
+ * - `'add_wizard_from_picker'`: a step of the add-a-board wizard that binds a
+ *   board (Whose board?), reached from the picker: its +, empty state, first
+ *   run, In range slot or Friends' boards "See all". The picker counted the
+ *   opening, so this reports picks only, under the picker's `source`.
+ * - `'add_wizard'`: the same step reached from somewhere no picker opened
+ *   (Manage boards, a gym page, an old link). It reports its own opening, and
+ *   both events say `source: 'add_wizard'`, for the reason the gym finder does.
  */
-export type PickerSurface = 'picker' | 'gym_finder_from_picker' | 'gym_finder';
+export type PickerSurface =
+  | 'picker'
+  | 'gym_finder_from_picker'
+  | 'gym_finder'
+  | 'add_wizard_from_picker'
+  | 'add_wizard';
 
 /**
  * How many boards the Near you search returned, as the picker's events report
@@ -88,10 +100,10 @@ export function useBoardPickerAnalytics({
   nearbyResultCount,
 }: PickerAnalyticsOptions) {
   const opened = useRef(false);
-  const trackOpened = surface !== 'gym_finder_from_picker';
+  const trackOpened = surface !== 'gym_finder_from_picker' && surface !== 'add_wizard_from_picker';
   const source =
-    surface === 'gym_finder'
-      ? 'gym_finder'
+    surface === 'gym_finder' || surface === 'add_wizard'
+      ? surface
       : fromOnboarding
         ? 'onboarding'
         : fromNoBoard

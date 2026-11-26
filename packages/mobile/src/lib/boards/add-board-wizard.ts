@@ -61,6 +61,23 @@ const COUNTED_STEPS: ReadonlySet<string> = new Set<AddBoardWizardStep>([
   'friend',
 ]);
 
+/** The entries that start inside the board picker, which counted its own opening. */
+const PICKER_ENTRIES: ReadonlySet<AddBoardWizardEntry> = new Set<AddBoardWizardEntry>([
+  'picker',
+  'empty_state',
+  'first_run',
+  'in_range',
+]);
+
+/**
+ * How a wizard step that binds a board files its pick event
+ * (`useBoardPickerAnalytics`): under the picker's opening when the wizard
+ * started in the picker, or as an opening of its own when it did not.
+ */
+export function wizardPickerSurface(entry: AddBoardWizardEntry): 'add_wizard_from_picker' | 'add_wizard' {
+  return PICKER_ENTRIES.has(entry) ? 'add_wizard_from_picker' : 'add_wizard';
+}
+
 /** Read an `entry` route param defensively: anything else is an old link. */
 export function parseWizardEntry(value: unknown): AddBoardWizardEntry {
   return typeof value === 'string' && ENTRIES.has(value) ? (value as AddBoardWizardEntry) : 'link';

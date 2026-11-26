@@ -4,7 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { toBoardName } from '@boardsesh/board-config';
 import type { GroupedNotification, SocialEntityType } from '@boardsesh/shared-schema';
 import { useMarkGroupAsRead } from '../../lib/graphql/hooks/use-notifications';
-import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { getActiveBoardWriteGeneration, useActiveBoard } from '../../lib/graphql/use-active-board';
+import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useClimbModerationEnabled, useDirectoryReportsEnabled } from '../../providers/feature-flags-provider';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
@@ -122,8 +123,14 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
     activateBoardRef.current = activateBoard;
   }, [activateBoard]);
 
+  // Bumped on every tap. The approval branch fetches the board before binding,
+  // and a later tap (a second approval, or any row that routes elsewhere) must
+  // not be overwritten when that slower fetch lands.
+  const tapGenerationRef = useRef(0);
+
   return useCallback(
     (notification: GroupedNotification) => {
+      tapGenerationRef.current += 1;
       if (!notification.isRead) markGroupAsRead(notification);
 
       if (notification.type === 'board_access_requested') {
@@ -139,8 +146,22 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
       if (notification.type === 'board_access_approved') {
         const boardUuid = notification.entityId;
         if (!boardUuid) return;
+        // Captured before the fetch. The result is dropped, with no bind and no
+        // fallback navigation, when by the time it lands the climber tapped
+        // another row, picked or cleared a board anywhere (the write generation
+        // moves), or the account changed: the fetch answered for the old
+        // credentials, and `activateBoardRef.current` would bind it with the
+        // new account's setter.
+        const tapGeneration = tapGenerationRef.current;
+        const boardWriteGeneration = getActiveBoardWriteGeneration();
+        const credentialGeneration = getCredentialGeneration();
+        const isSuperseded = () =>
+          tapGeneration !== tapGenerationRef.current ||
+          boardWriteGeneration !== getActiveBoardWriteGeneration() ||
+          credentialGeneration !== getCredentialGeneration();
         fetchBoardByUuid(boardUuid)
           .then(async (board) => {
+            if (isSuperseded()) return;
             if (board) {
               await activateBoardRef.current(board);
               return;
@@ -150,6 +171,7 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
           })
           .catch((error: unknown) => {
             reportError(error);
+            if (isSuperseded()) return;
             router.push(aboutBoardHref(boardUuid));
           });
         return;
