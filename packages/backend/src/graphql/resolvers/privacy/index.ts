@@ -635,7 +635,7 @@ export const privacyMutations = {
         // nothing to do there. Turning it on is refused rather than dropped;
         // false (what a settings round trip sends) is accepted.
         if (update.listedToFollowers === true)
-          throw new GraphQLError('Spray walls cannot be shown to your followers', {
+          throw new GraphQLError('Spray walls cannot be shown to people you follow', {
             extensions: { code: 'BAD_USER_INPUT' },
           });
         const { updateSprayResourcePrivacy } = await import('../board/spray-walls');

@@ -267,7 +267,7 @@ describe('friendsBoards visibility', () => {
     }
   });
 
-  it('reads every "Show to my followers" switch as off while the privacy controls are off', async () => {
+  it('reads every "Show to people I follow" switch as off while the privacy controls are off', async () => {
     vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', '0');
     try {
       const listed = await listedFor(followed);
@@ -587,7 +587,7 @@ describe('membership puts a board in Your boards', () => {
   });
 });
 
-describe('the "Show to my followers" switch', () => {
+describe('the "Show to people I follow" switch', () => {
   it('is saved, read back, and kept when another setting changes', async () => {
     const board = await seedBoard(owner, 'invite_only');
     const saved = await privacyMutations.updateResourcePrivacy(

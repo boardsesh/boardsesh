@@ -28,7 +28,7 @@ vi.mock('../../Button', () => ({
     </button>
   ),
 }));
-// A checkbox stand-in, so a test can flip "Show to my followers".
+// A checkbox stand-in, so a test can flip "Show to people I follow".
 vi.mock('../../SwitchRow', () => ({
   SwitchRow: ({
     label,
@@ -152,7 +152,7 @@ describe('ResourcePrivacyControl Manage access', () => {
   });
 });
 
-describe('ResourcePrivacyControl "Show to my followers"', () => {
+describe('ResourcePrivacyControl "Show to people I follow"', () => {
   it('sends no listedToFollowers when the audience changes', () => {
     privacy.current = boardPrivacy({ audience: 'unlisted', listedToFollowers: true });
     const view = render(<ResourcePrivacyControl kind="board" resourceId="board-uuid" />);
@@ -174,7 +174,7 @@ describe('ResourcePrivacyControl "Show to my followers"', () => {
     });
   });
 
-  it('says followers can climb straight away on an Unlisted board', () => {
+  it('says people you follow can climb straight away on an Unlisted board', () => {
     privacy.current = boardPrivacy({ audience: 'unlisted' });
     const view = render(<ResourcePrivacyControl kind="board" resourceId="board-uuid" />);
     expect(view.getByText('privacy.listedToFollowersUnlistedHint')).toBeTruthy();

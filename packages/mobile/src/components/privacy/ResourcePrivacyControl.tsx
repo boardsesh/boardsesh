@@ -26,7 +26,7 @@ export function ResourcePrivacyControl({
   resourceId: string;
   /** A board's gym: its location hint and the own-public-gym warning. */
   gymUuid?: string | null;
-  /** A spray wall can't be listed to followers, so it never shows that switch. */
+  /** A spray wall can't be listed to the people its owner follows, so it never shows that switch. */
   isSprayWall?: boolean;
 }) {
   const { t } = useTranslation('settings');

@@ -4,10 +4,10 @@ import type { PrivacyResourceAudience } from '@boardsesh/graphql/operations/priv
 export type FriendsListGym = { ownerId?: string | null; isPublic: boolean; isListed?: boolean };
 
 /**
- * Whether a board owner is offered "Show to my followers".
+ * Whether a board owner is offered "Show to people I follow".
  *
  * Public and Followers boards already appear in the Friends' boards list of
- * everyone who follows the owner, and Only me never does, so the switch only
+ * everyone the owner follows, and Only me never does, so the switch only
  * means something for Unlisted and Invite-only. A spray wall can't be listed
  * this way (the server rejects it), so it never gets the row.
  *

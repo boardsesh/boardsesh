@@ -328,7 +328,7 @@ const narrowedPrivacyTypeCheck = readFileSync(
   new URL('../../../db/drizzle/0282_narrow_content_privacy_type_check.sql', import.meta.url),
   'utf8',
 );
-// "Show to my followers" (Friends' boards), on top of 0261's resource_privacy.
+// "Show to people I follow" (Friends' boards), on top of 0261's resource_privacy.
 const listedToFollowersSchema = readFileSync(
   new URL('../../../db/drizzle/0351_resource_privacy_listed_to_followers.sql', import.meta.url),
   'utf8',
