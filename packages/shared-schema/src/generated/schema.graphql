@@ -288,7 +288,7 @@ input UpdateResourcePrivacyInput {
   audience: PrivacyResourceAudience!
   locationAudience: PrivacyLocationAudience
   inheritFollowers: Boolean
-  "Omit to keep the stored value. See ResourcePrivacySettings.listedToFollowers."
+  "Omit to keep the stored value. Saving any audience but unlisted or invite_only turns it off. See ResourcePrivacySettings.listedToFollowers."
   listedToFollowers: Boolean
 }
 type PrivacyResourceGrant {

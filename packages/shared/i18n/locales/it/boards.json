@@ -691,7 +691,7 @@
       "details": "Dettagli",
       "activeSprayDetails": "{{name}} · Dettagli della Spraywall",
       "share": {
-        "shareLink": "Condividi il link",
+        "shareLink": "Condividi con un amico",
         "publicHint": "Chiunque può aprire questo pannello.",
         "unlistedHint": "Solo i climber a cui lo mandi.",
         "inviteHint": "Chi lo apre può toccare Unisciti per ottenere l'accesso."
@@ -974,6 +974,7 @@
       "publicBody": "Questo pannello è pubblico: chiunque abbia il link può aprirlo e arrampicarci.",
       "unlistedBody": "Solo i climber a cui mandi questo link possono aprire il pannello. Non è in elenco da nessuna parte.",
       "inviteBody": "Chiunque abbia questo link può scegliere Unisciti per ottenere l'accesso al tuo pannello.",
+      "qrCaption": "Fai inquadrare questo codice",
       "loading": "Preparazione del tuo link",
       "loadFailed": "Impossibile ottenere il tuo link. Chiudi e riprova.",
       "resetLink": "Reimposta il link",
@@ -1817,7 +1818,8 @@
     "joinBody": "Unendoti avrai accesso a questo pannello. Il proprietario può vedere il tuo nome nell'elenco dei membri.",
     "join": "Unisciti",
     "cancel": "Annulla",
-    "joinFailed": "Impossibile unirti a questo pannello. Riprova, oppure chiedi un nuovo link al proprietario."
+    "joinFailed": "Impossibile unirti a questo pannello. Riprova, oppure chiedi un nuovo link al proprietario.",
+    "appHint": "Arrampica con l'app Boardsesh. Dopo averla installata, riapri questo link sul tuo telefono."
   },
   "sprayLedSetup": {
     "title": "Configurazione LED",

@@ -109,6 +109,7 @@ describe('buildAppInstallClickProperties', () => {
       'playlist-qr-card',
       'home-qr-card',
       'setup-report',
+      'board-invite',
       'compare-hub',
       'compare-kilter',
       'compare-aurora',

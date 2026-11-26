@@ -14493,7 +14493,7 @@ export type UpdateResourcePrivacyInput = {
   audience: PrivacyResourceAudience;
   inheritFollowers?: InputMaybe<Scalars['Boolean']['input']>;
   kind: PrivacyResourceKind;
-  /** Omit to keep the stored value. See ResourcePrivacySettings.listedToFollowers. */
+  /** Omit to keep the stored value. Saving any audience but unlisted or invite_only turns it off. See ResourcePrivacySettings.listedToFollowers. */
   listedToFollowers?: InputMaybe<Scalars['Boolean']['input']>;
   locationAudience?: InputMaybe<PrivacyLocationAudience>;
   resourceId: Scalars['ID']['input'];
@@ -17770,6 +17770,7 @@ export type ResourcePrivacyQuery = {
     audience: PrivacyResourceAudience;
     locationAudience: PrivacyLocationAudience;
     inheritFollowers: boolean;
+    listedToFollowers: boolean;
     revision: number;
   } | null;
 };
@@ -17788,6 +17789,7 @@ export type UpdateResourcePrivacyMutation = {
     audience: PrivacyResourceAudience;
     locationAudience: PrivacyLocationAudience;
     inheritFollowers: boolean;
+    listedToFollowers: boolean;
     revision: number;
   };
 };
@@ -26930,6 +26932,7 @@ export const ResourcePrivacyDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'audience' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'locationAudience' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'inheritFollowers' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'listedToFollowers' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'revision' } },
               ],
             },
@@ -26978,6 +26981,7 @@ export const UpdateResourcePrivacyDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'audience' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'locationAudience' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'inheritFollowers' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'listedToFollowers' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'revision' } },
               ],
             },

@@ -11,6 +11,7 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import { localeHref } from '@/app/lib/i18n/locale-href';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
+import { getStoreButtonLabels } from '@/app/lib/store-button-labels.server';
 import { WALL_CAPABILITY_PARAM, readWallCapability } from '@/app/lib/spray/spray-visibility';
 import BoardInviteSignIn from '@/app/b/[board_slug]/board-invite-sign-in';
 import BoardInviteJoin from '@/app/b/[board_slug]/board-invite-join';
@@ -69,9 +70,12 @@ async function handleBoardInvite(boardSlug: string, inviteToken: string): Promis
   const preview = await previewBoardInvite(inviteToken);
   if (!preview) return null;
   if (authToken) {
+    // Store labels are translated here so the client gets three strings, not
+    // the whole `marketing` namespace.
+    const [locale, storeLabels] = await Promise.all([getLocale(), getStoreButtonLabels()]);
     return (
-      <I18nProvider locale={await getLocale()} namespaces={['boards']}>
-        <BoardInviteJoin boardName={preview.name} inviteToken={inviteToken} />
+      <I18nProvider locale={locale} namespaces={['boards']}>
+        <BoardInviteJoin boardName={preview.name} inviteToken={inviteToken} storeLabels={storeLabels} />
       </I18nProvider>
     );
   }

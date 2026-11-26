@@ -61,11 +61,20 @@ const resourceSchema = z
     locationAudience: locationAudience.optional(),
     inheritFollowers: z.boolean().optional(),
     // Only listing: lists an Unlisted or Invite-only board in the Friends'
-    // boards of the owner's friends (mutual follows). Stored for any audience so a round trip through Public
-    // keeps the owner's choice; it grants no access.
+    // boards of the owner's friends (mutual follows); it grants no access.
+    // Omitted keeps the stored value while the board stays Unlisted or
+    // Invite-only; any other audience clears it (see `listedToFollowersAudience`).
     listedToFollowers: z.boolean().optional(),
   })
   .strict();
+/**
+ * The audiences "Show to friends" applies to. Saving a board with any
+ * other audience turns the switch off, so a round trip through Public or Only
+ * me cannot re-list the board in Friends' boards without a fresh choice.
+ */
+function listedToFollowersAudience(audience: z.infer<typeof resourceAudience>): boolean {
+  return audience === 'unlisted' || audience === 'invite_only';
+}
 /**
  * One page of an owner's access list. A share link lets anyone holding it add
  * themselves, so the list can outgrow a page: the app pages by `offset`, and a
@@ -717,7 +726,9 @@ export const privacyMutations = {
         audience: update.audience,
         locationAudience: update.locationAudience ?? lockedOverride?.locationAudience ?? current.locationAudience,
         inheritFollowers: update.inheritFollowers ?? lockedOverride?.inheritFollowers ?? current.inheritFollowers,
-        listedToFollowers: update.listedToFollowers ?? lockedOverride?.listedToFollowers ?? current.listedToFollowers,
+        listedToFollowers: listedToFollowersAudience(update.audience)
+          ? (update.listedToFollowers ?? lockedOverride?.listedToFollowers ?? current.listedToFollowers)
+          : false,
         updatedAt: new Date(),
       };
       await transaction

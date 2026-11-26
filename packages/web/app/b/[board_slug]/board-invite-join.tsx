@@ -8,6 +8,7 @@ import Typography from '@mui/material/Typography';
 import { useTranslation } from 'react-i18next';
 import { unstable_rethrow } from 'next/navigation';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import StoreInstallButtons, { type StoreButtonLabels } from '@/app/components/marketing/store-install-buttons';
 import { joinBoardInvite } from './join-board-invite';
 
 /**
@@ -24,8 +25,19 @@ function isNextNavigation(error: unknown): boolean {
   }
 }
 
-/** Only a deliberate button tap sends the grant mutation. */
-export default function BoardInviteJoin({ boardName, inviteToken }: { boardName: string; inviteToken: string }) {
+/**
+ * Only a deliberate button tap sends the grant mutation. `storeLabels` comes
+ * translated from the server, so this island loads no `marketing` namespace.
+ */
+export default function BoardInviteJoin({
+  boardName,
+  inviteToken,
+  storeLabels,
+}: {
+  boardName: string;
+  inviteToken: string;
+  storeLabels: StoreButtonLabels;
+}) {
   const { t } = useTranslation('boards');
   const [joining, setJoining] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -66,6 +78,11 @@ export default function BoardInviteJoin({ boardName, inviteToken }: { boardName:
             {t('boardShareLink.cancel')}
           </Button>
         </Box>
+        <Typography variant="body2" color="text.secondary">
+          {t('boardShareLink.appHint')}
+        </Typography>
+        {/* Plain: Join is the page's one filled button. */}
+        <StoreInstallButtons placement="board-invite" align="start" appearance="plain" labels={storeLabels} />
       </Box>
     </Container>
   );
