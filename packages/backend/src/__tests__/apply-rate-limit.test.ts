@@ -44,6 +44,7 @@ function stripTypeScriptComments(source: string): string {
 // real module so the genuine RateLimitError class survives — applyRateLimit
 // branches on `error instanceof RateLimitError` to build the coded error.
 const mockCheckRateLimit = vi.fn();
+const mockCheckFixedWindowRateLimit = vi.fn();
 const mockCheckRateLimitRedis = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('../utils/rate-limiter', async (importOriginal) => {
@@ -51,6 +52,7 @@ vi.mock('../utils/rate-limiter', async (importOriginal) => {
   return {
     ...actual,
     checkRateLimit: (...args: unknown[]) => mockCheckRateLimit(...args),
+    checkFixedWindowRateLimit: (...args: unknown[]) => mockCheckFixedWindowRateLimit(...args),
   };
 });
 
@@ -289,6 +291,93 @@ describe('applyRateLimit key selection', () => {
 
     expect(mockCheckRateLimit).toHaveBeenCalledWith('ws-anon-456', 5);
     expect(mockCheckRateLimitRedis).not.toHaveBeenCalled();
+  });
+});
+
+describe('applyRateLimit windowMs', () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('passes a custom window to both tiers, in buckets of its own', async () => {
+    const ctx: ConnectionContext = { connectionId: 'ws-1', isAuthenticated: true, userId: 'user-42' };
+
+    await applyRateLimit(ctx, 5, 'requestResourceAccessDaily', { windowMs: DAY_MS });
+
+    // The memory tier counts in the same fixed buckets as Redis, not a rolling window.
+    expect(mockCheckFixedWindowRateLimit).toHaveBeenCalledWith(
+      'user-42:requestResourceAccessDaily:86400000ms',
+      5,
+      DAY_MS,
+    );
+    expect(mockCheckRateLimit).not.toHaveBeenCalled();
+    // The Redis limiter derives its bucket and TTL from the window passed here.
+    expect(mockCheckRateLimitRedis).toHaveBeenCalledWith(
+      'user-42',
+      'requestResourceAccessDaily:86400000ms',
+      5,
+      DAY_MS,
+      { fallbackToMemory: false },
+    );
+  });
+
+  it('keeps the per-minute keys and arguments when the window is the default', async () => {
+    const ctx: ConnectionContext = { connectionId: 'ws-1', isAuthenticated: true, userId: 'user-42' };
+
+    await applyRateLimit(ctx, 5, 'createSession', { windowMs: 60_000 });
+
+    expect(mockCheckRateLimit).toHaveBeenCalledWith('user-42:createSession', 5);
+    expect(mockCheckFixedWindowRateLimit).not.toHaveBeenCalled();
+    expect(mockCheckRateLimitRedis).toHaveBeenCalledWith('user-42', 'createSession', 5, 60_000, {
+      fallbackToMemory: false,
+    });
+  });
+
+  it('keeps an anonymous connection-keyed daily bucket apart from its per-minute one', async () => {
+    const ctx: ConnectionContext = { connectionId: 'ws-anon-9', isAuthenticated: false };
+
+    await applyRateLimit(ctx, 5, 'daily', { windowMs: DAY_MS });
+
+    expect(mockCheckFixedWindowRateLimit).toHaveBeenCalledWith('ws-anon-9:daily:86400000ms', 5, DAY_MS);
+  });
+
+  it("asks the socket-peer bucket's memory fallback for fixed buckets only on a custom window", async () => {
+    const ctx: ConnectionContext = {
+      connectionId: 'ws-anon-9',
+      isAuthenticated: false,
+      transport: 'ws',
+      socketPeerIp: '10.0.0.8',
+    };
+
+    await applyRateLimit(ctx, 5, 'daily', { windowMs: DAY_MS });
+    expect(mockCheckRateLimitRedis).toHaveBeenLastCalledWith('socket-peer:10.0.0.8', 'daily:86400000ms', 600, DAY_MS, {
+      fallbackToMemory: true,
+      fixedWindowFallback: true,
+    });
+
+    await applyRateLimit(ctx, 5, 'perMinute');
+    expect(mockCheckRateLimitRedis).toHaveBeenLastCalledWith('socket-peer:10.0.0.8', 'perMinute', 600, 60_000, {
+      fallbackToMemory: true,
+    });
+  });
+
+  it('reports the caller-facing operation name when the daily bucket is full', async () => {
+    mockCheckFixedWindowRateLimit.mockImplementationOnce(() => {
+      throw new RateLimitError(60 * 60 * 20);
+    });
+    const ctx: ConnectionContext = { connectionId: 'ws-1', isAuthenticated: true, userId: 'user-42' };
+
+    const error = await applyRateLimit(ctx, 5, 'requestResourceAccessDaily', { windowMs: DAY_MS }).catch(
+      (caught: unknown) => caught,
+    );
+
+    expect((error as GraphQLError).extensions).toMatchObject({
+      code: 'RATE_LIMITED',
+      operation: 'requestResourceAccessDaily',
+      retryAfterSeconds: 72_000,
+    });
   });
 });
 

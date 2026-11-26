@@ -65,6 +65,30 @@ export function checkRateLimit(
   return entry;
 }
 
+/**
+ * Like {@link checkRateLimit}, but the window is a fixed bucket aligned to
+ * multiples of `windowMs` since the epoch: the same buckets the Redis tier
+ * counts in (`Math.floor(Date.now() / windowMs)`). A one-day window resets at
+ * midnight UTC on both tiers, and `retryAfterSeconds` is the time left in that
+ * bucket, the same number Redis reports.
+ *
+ * Give it its own key: an entry is only reused while it belongs to the
+ * current bucket.
+ */
+export function checkFixedWindowRateLimit(key: string, maxRequests: number, windowMs: number): RateLimitEntry {
+  const now = Date.now();
+  const resetAt = (Math.floor(now / windowMs) + 1) * windowMs;
+  const entry = rateLimitMap.get(key);
+  if (!entry || entry.resetAt !== resetAt) {
+    const created = { count: 1, resetAt };
+    rateLimitMap.set(key, created);
+    return created;
+  }
+  if (entry.count >= maxRequests) throw new RateLimitError(Math.ceil((resetAt - now) / 1000));
+  entry.count++;
+  return entry;
+}
+
 /** The current window's count, without counting this call. Null when no window is open. */
 export function peekRateLimit(connectionId: string): RateLimitEntry | null {
   const entry = rateLimitMap.get(connectionId);

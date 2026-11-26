@@ -6,7 +6,7 @@ import { z } from 'zod';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { normalizeLocationAudience, type PrivacyContentType, type PrivacyResourceKind } from '@boardsesh/privacy';
 import * as schema from '@boardsesh/db/schema';
-import { db } from '../../../db/client';
+import { db, deferDatabaseEffect } from '../../../db/client';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import {
   canViewUserActivity,
@@ -15,11 +15,17 @@ import {
   getResourcePrivacy,
   isApprovedFollower,
   requirePrivacyControls,
+  resourceAccess,
   setContentPrivacy,
 } from '../../../services/privacy';
 import { publishSocialEvent } from '../../../events';
 import { isShareLinkAudience, revokeBoardShareLinks, saveToYourBoards } from '../../../services/board-share-links';
 import { deleteFollowRequestNotifications, lockFollowRequestPair } from '../../../events/follow-request-notifications';
+import {
+  deleteBoardAccessRequestNotifications,
+  notifyBoardAccessApproved,
+  notifyBoardAccessRequested,
+} from '../../../events/board-access-notifications';
 import { logger } from '../../../utils/logger';
 
 const resourceAudience = z.enum(['public', 'unlisted', 'followers', 'invite_only', 'only_me']);
@@ -70,6 +76,14 @@ const accessListArgsSchema = z.object({
   offset: z.number().int().min(0).max(1_000_000).nullish(),
   userIds: z.array(identifier).max(ACCESS_LIST_PAGE_SIZE).nullish(),
 });
+/**
+ * Asking to climb on someone's board tells its owner, so it is capped per
+ * climber per day on top of the per-minute privacy mutation limit. Asking
+ * again while a request waits counts too: it is still a call. Only board asks
+ * count: asking to join a session keeps the per-minute limit alone.
+ */
+export const RESOURCE_ACCESS_REQUESTS_PER_DAY = 5;
+const RESOURCE_ACCESS_REQUEST_WINDOW_MS = 24 * 60 * 60 * 1000;
 function notFound(): never {
   throw new GraphQLError('Not found', { extensions: { code: 'NOT_FOUND' } });
 }
@@ -321,6 +335,26 @@ async function lockOwnedResource(
           .for('update');
   if (rows.length === 0) notFound();
   return { boardType: rows[0].boardType };
+}
+/** Delete one person's waiting request; true when there was one. Approved and revoked rows stay. */
+async function deletePendingGrant(
+  transaction: PrivacyTransaction,
+  kind: PrivacyResourceKind,
+  resourceId: string,
+  userId: string,
+): Promise<boolean> {
+  const deleted = await transaction
+    .delete(schema.resourceGrants)
+    .where(
+      and(
+        eq(schema.resourceGrants.kind, kind),
+        eq(schema.resourceGrants.resourceId, resourceId),
+        eq(schema.resourceGrants.userId, userId),
+        eq(schema.resourceGrants.status, 'pending'),
+      ),
+    )
+    .returning({ userId: schema.resourceGrants.userId });
+  return deleted.length > 0;
 }
 async function requireResourceOwner(kind: PrivacyResourceKind, resourceId: string, userId: string) {
   const resource = await getResourcePrivacy(kind, resourceId);
@@ -724,7 +758,11 @@ export const privacyMutations = {
     ctx: ConnectionContext,
   ) => {
     const userId = await privacyActor(ctx);
-    await db.transaction(async (transaction) => {
+    if (kind === 'board')
+      await applyRateLimit(ctx, RESOURCE_ACCESS_REQUESTS_PER_DAY, 'requestResourceAccessDaily', {
+        windowMs: RESOURCE_ACCESS_REQUEST_WINDOW_MS,
+      });
+    const ownerToNotify = await db.transaction(async (transaction) => {
       // The grant's user FK must not acquire a user lock after the board lock:
       // owner privacy writers lock users before resources too.
       await transaction
@@ -755,11 +793,26 @@ export const privacyMutations = {
       // lock must not leave a pending grant on its now-dead original identity.
       const resource = await getResourcePrivacy(kind, resourceId, transaction);
       if (!resource || !resource.ownerId || resource.audience === 'only_me') notFound();
-      await transaction
+      // A board the climber can already open (Public, Unlisted, Followers for a
+      // follower, a member, the owner) has nothing to ask for: answer the same
+      // way, write nothing and tell nobody. This is the reading the board's
+      // own uuid gets (`canAccessBoard` with the uuid presented), which is the
+      // key this mutation is called with.
+      if (kind === 'board' && (await resourceAccess(kind, resourceId, userId, transaction)).withLink) return null;
+      // Any existing row wins: a waiting request stays one request, a member
+      // stays a member, and someone the owner removed stays removed without
+      // the owner hearing about it.
+      const inserted = await transaction
         .insert(schema.resourceGrants)
         .values({ kind, resourceId, userId, status: 'pending' })
-        .onConflictDoNothing();
+        .onConflictDoNothing()
+        .returning({ userId: schema.resourceGrants.userId });
+      return kind === 'board' && inserted.length > 0 && resource.ownerId !== userId ? resource.ownerId : null;
     });
+    if (ownerToNotify)
+      await deferDatabaseEffect(async () => {
+        await notifyBoardAccessRequested(userId, ownerToNotify, resourceId);
+      });
     return true;
   },
   approveResourceAccess: async (
@@ -769,7 +822,7 @@ export const privacyMutations = {
   ) => {
     const ownerId = await privacyActor(ctx);
     await requireResourceOwner(input.kind, input.resourceId, ownerId);
-    await db.transaction(async (transaction) => {
+    const approvedBoardRequest = await db.transaction(async (transaction) => {
       const { boardType } = await lockOwnedResource(transaction, input.kind, input.resourceId, ownerId);
       const approved = await transaction
         .update(schema.resourceGrants)
@@ -787,11 +840,51 @@ export const privacyMutations = {
       // Your boards. An owner's name invite (inviteResourceMember) does not,
       // so a stranger cannot push a board into someone's picker. A spray wall
       // is never saved this way: followBoard keeps its own rule for those.
-      if (input.kind === 'board' && boardType !== 'spray' && approved.length > 0)
-        await saveToYourBoards(transaction, input.userId, input.resourceId);
+      if (input.kind !== 'board' || approved.length === 0) return false;
+      if (boardType !== 'spray') await saveToYourBoards(transaction, input.userId, input.resourceId);
+      // Answered: the owner's "wants to climb" row has nothing left to act on.
+      await deleteBoardAccessRequestNotifications(transaction, input.userId, input.resourceId);
+      return true;
     });
+    if (approvedBoardRequest)
+      await deferDatabaseEffect(async () => {
+        await notifyBoardAccessApproved(ownerId, input.userId, input.resourceId);
+      });
     await notifyResourceChanged(input.kind, input.resourceId);
     return true;
+  },
+  /**
+   * Say no to a waiting request. Only the pending row goes, so the climber can
+   * ask again later (within the daily cap); a member or a removed person is
+   * left as they are. Declining is not a ban: that is revokeResourceAccess.
+   */
+  declineResourceAccess: async (
+    _: unknown,
+    input: { kind: PrivacyResourceKind; resourceId: string; userId: string },
+    ctx: ConnectionContext,
+  ) => {
+    const ownerId = await privacyActor(ctx);
+    await requireResourceOwner(input.kind, input.resourceId, ownerId);
+    return db.transaction(async (transaction) => {
+      await lockOwnedResource(transaction, input.kind, input.resourceId, ownerId);
+      const declined = await deletePendingGrant(transaction, input.kind, input.resourceId, input.userId);
+      if (input.kind === 'board')
+        await deleteBoardAccessRequestNotifications(transaction, input.userId, input.resourceId);
+      return declined;
+    });
+  },
+  /** Take back your own waiting request. Nothing else about your access changes. */
+  cancelResourceAccessRequest: async (
+    _: unknown,
+    { kind, resourceId }: { kind: PrivacyResourceKind; resourceId: string },
+    ctx: ConnectionContext,
+  ) => {
+    const userId = await privacyActor(ctx);
+    return db.transaction(async (transaction) => {
+      const cancelled = await deletePendingGrant(transaction, kind, resourceId, userId);
+      if (kind === 'board') await deleteBoardAccessRequestNotifications(transaction, userId, resourceId);
+      return cancelled;
+    });
   },
   revokeResourceAccess: async (
     _: unknown,
@@ -812,6 +905,9 @@ export const privacyMutations = {
           target: [schema.resourceGrants.kind, schema.resourceGrants.resourceId, schema.resourceGrants.userId],
           set: { status: 'revoked', invitedBy: ownerId, updatedAt: new Date() },
         });
+      // Removing someone answers their waiting request too.
+      if (input.kind === 'board')
+        await deleteBoardAccessRequestNotifications(transaction, input.userId, input.resourceId);
     });
     await notifyResourceChanged(input.kind, input.resourceId);
     return true;
@@ -838,6 +934,9 @@ export const privacyMutations = {
           target: [schema.resourceGrants.kind, schema.resourceGrants.resourceId, schema.resourceGrants.userId],
           set: { status: 'approved', invitedBy: ownerId, updatedAt: new Date() },
         });
+      // Inviting someone who was waiting answers their request too.
+      if (input.kind === 'board')
+        await deleteBoardAccessRequestNotifications(transaction, input.userId, input.resourceId);
     });
     await notifyResourceChanged(input.kind, input.resourceId);
     return true;

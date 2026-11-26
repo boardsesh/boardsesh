@@ -112,6 +112,12 @@ export function notificationCopy(notification: GroupedNotification, actor: strin
       return { textI18nKey: 'items.newFollower', params: { actor } };
     case 'follow_request':
       return { textI18nKey: 'items.followRequest', params: { actor } };
+    // Asking to climb on an Invite-only board: the request, to the owner, and
+    // the owner's yes, to the climber who asked.
+    case 'board_access_requested':
+      return { textI18nKey: 'items.boardAccessRequested', params: { actor } };
+    case 'board_access_approved':
+      return { textI18nKey: 'items.boardAccessApproved', params: { actor } };
     case 'comment_reply':
       return commentBody
         ? { textI18nKey: 'items.commentReplyWithBody', params: { actor, body: commentBody } }
@@ -395,7 +401,10 @@ export function notificationIconName(type: NotificationType): IconName {
       return 'comment';
     case 'new_follower':
     case 'follow_request':
+    case 'board_access_requested':
       return 'person.badge.plus';
+    case 'board_access_approved':
+      return 'boards';
     case 'comment_reply':
     case 'comment_on_tick':
     case 'comment_on_climb':

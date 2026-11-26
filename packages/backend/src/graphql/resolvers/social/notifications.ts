@@ -94,6 +94,9 @@ function applyClimbBoardFields(group: ClimbBoardFields, climb: NotificationClimb
  * Types whose entity is a gym uuid and whose row names the gym. The directory
  * report types name theirs through `directoryNotice` (enrichDirectoryNotices).
  */
+/** Asking to climb on a board: the entity is the board, so the row carries its board type. */
+const BOARD_ACCESS_TYPES: ReadonlySet<string> = new Set(['board_access_requested', 'board_access_approved']);
+
 const GYM_NAMED_TYPES: ReadonlySet<string> = new Set([
   'gym_claim_approved',
   'gym_claim_denied',
@@ -355,6 +358,8 @@ export const socialNotificationQueries = {
         proposalEntityIds.push(group.entityId);
       } else if (GYM_NAMED_TYPES.has(group.type)) {
         gymEntityIds.push(group.entityId);
+      } else if (BOARD_ACCESS_TYPES.has(group.type)) {
+        boardEntityIds.push(group.entityId);
       } else if (threadTypes.includes(group.type)) {
         // A vote on a comment names the COMMENT; the thread it lives in is the
         // comment's own entity, one hop away. Every other thread type already
@@ -495,6 +500,8 @@ export const socialNotificationQueries = {
 
       if (GYM_NAMED_TYPES.has(group.type)) {
         group.gymName = gymNameMap.get(group.entityId) ?? undefined;
+      } else if (BOARD_ACCESS_TYPES.has(group.type)) {
+        group.boardType = boardTypeMap.get(group.entityId) ?? undefined;
       } else if (group.type === 'new_climbs_synced') {
         const climb = climbMap.get(group.entityId);
         if (climb) {

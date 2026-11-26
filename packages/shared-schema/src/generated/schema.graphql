@@ -366,8 +366,24 @@ extend type Mutation {
   removeFollower(userId: ID!): Boolean!
   setContentAudience(input: SetContentAudienceInput!): Boolean!
   updateResourcePrivacy(input: UpdateResourcePrivacyInput!): ResourcePrivacySettings!
+  """
+  Ask the owner to climb on a board (or join a session). Tells a board's owner
+  once (board_access_requested) while the request waits. Asking again while it
+  waits, or after the owner removed you, changes nothing and tells nobody.
+  At most 5 a day per climber.
+  """
   requestResourceAccess(kind: PrivacyResourceKind!, resourceId: ID!): Boolean!
+  "Owner only. Lets a waiting request in; on a board, tells the climber (board_access_approved)."
   approveResourceAccess(kind: PrivacyResourceKind!, resourceId: ID!, userId: ID!): Boolean!
+  """
+  Owner only. Says no to a waiting request: the request is deleted, so the
+  climber can ask again later. Not a ban (that is revokeResourceAccess); a
+  member's or removed person's grant is left as it is. True when a request was
+  waiting.
+  """
+  declineResourceAccess(kind: PrivacyResourceKind!, resourceId: ID!, userId: ID!): Boolean!
+  "Take back your own waiting request. True when one was waiting."
+  cancelResourceAccessRequest(kind: PrivacyResourceKind!, resourceId: ID!): Boolean!
   revokeResourceAccess(kind: PrivacyResourceKind!, resourceId: ID!, userId: ID!): Boolean!
   inviteResourceMember(kind: PrivacyResourceKind!, resourceId: ID!, userId: ID!): Boolean!
   "Revoke the board's share link and mint a new one. Owner only; null when the board has no share link."
@@ -5700,6 +5716,8 @@ enum NotificationType {
   gym_claimed_with_your_board
   gym_claim_denied
   board_setup_changed_by_climber
+  board_access_requested
+  board_access_approved
 }
 
 """

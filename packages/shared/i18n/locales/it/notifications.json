@@ -25,6 +25,8 @@
     "commentOnPlaylist": "{{actor}} ha commentato la tua playlist",
     "commentOnBoardWithBody": "{{actor}} ha commentato il tuo pannello: \"{{body}}\"",
     "commentOnBoard": "{{actor}} ha commentato il tuo pannello",
+    "boardAccessRequested": "{{actor}} vuole arrampicare sul tuo pannello",
+    "boardAccessApproved": "{{actor}} ha detto sì: ora puoi arrampicare sul suo pannello",
     "commentOnSprayWallWithBody": "{{actor}} ha commentato la tua Spraywall: \"{{body}}\"",
     "commentOnSprayWall": "{{actor}} ha commentato la tua Spraywall",
     "commentOnGymWithBody": "{{actor}} ha commentato la tua palestra: \"{{body}}\"",

@@ -43,6 +43,8 @@ export const notificationsTypeDefs = /* GraphQL */ `
     gym_claimed_with_your_board
     gym_claim_denied
     board_setup_changed_by_climber
+    board_access_requested
+    board_access_approved
   }
 
   """

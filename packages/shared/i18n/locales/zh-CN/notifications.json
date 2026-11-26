@@ -25,6 +25,8 @@
     "commentOnPlaylist": "{{actor}} 评论了你的线路合集",
     "commentOnBoardWithBody": "{{actor}} 评论了你的训练板：“{{body}}”",
     "commentOnBoard": "{{actor}} 评论了你的训练板",
+    "boardAccessRequested": "{{actor}} 想在你的训练板上攀爬",
+    "boardAccessApproved": "{{actor}} 同意了：你现在可以在 TA 的训练板上攀爬",
     "commentOnSprayWallWithBody": "{{actor}} 评论了你的喷点墙：“{{body}}”",
     "commentOnSprayWall": "{{actor}} 评论了你的喷点墙",
     "commentOnGymWithBody": "{{actor}} 评论了你的岩馆：“{{body}}”",
