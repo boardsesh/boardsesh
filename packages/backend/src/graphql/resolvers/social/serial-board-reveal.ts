@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { SerialBoardRequestCard } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
@@ -23,11 +23,13 @@ const MIN_ACCOUNT_AGE_DAYS = 7;
  *
  * A board gets a card only when all of these hold:
  * - the board is in the viewer's Friends' boards (`friendsBoardListingConditions`):
- *   above all, its owner follows the viewer. Following the owner does not
- *   unlock a card, so a stranger in range learns nothing;
- * - its effective audience is Followers or Invite-only. Only me stays a stub,
- *   and so does Unlisted: an Unlisted board's uuid is its link
- *   (`resourceAccess`);
+ *   above all, the owner and the viewer follow each other. A one-way follow,
+ *   either way, unlocks no card, so a stranger in range learns nothing;
+ * - it is Invite-only (and so opted in to Show to friends). A friend can always
+ *   open a Followers board, and a board they can open never gets a card. Only
+ *   me stays a stub, and so does Unlisted: an Unlisted board's uuid is its link
+ *   (`resourceAccess`). With the privacy controls off nothing is listed
+ *   unreadable, so there are no cards;
  * - the viewer's account is at least 7 days old and has a verified email;
  * - the viewer's caps of distinct boards named this way have room
  *   (`claimSerialReveals`: 10 an hour, 15 a UTC day, 40 in 30 days, none while
@@ -44,9 +46,6 @@ export async function serialBoardRequestCards(
   const cards = new Map<string, SerialBoardRequestCard>();
   if (hiddenBoardUuids.length === 0) return cards;
   const boards = dbSchema.userBoards;
-  const effectiveAudience = sql<string>`COALESCE(${dbSchema.resourcePrivacy.audience},
-    CASE WHEN ${boards.ownerId} = ${SYSTEM_OWNER_ID} THEN 'public'
-      WHEN ${boards.isUnlisted} THEN 'unlisted' WHEN ${boards.isPublic} THEN 'public' ELSE 'only_me' END)`;
   const rows = await db
     .select({
       uuid: boards.uuid,
@@ -64,7 +63,8 @@ export async function serialBoardRequestCards(
     .from(boards)
     .innerJoin(dbSchema.users, eq(dbSchema.users.id, boards.ownerId))
     .leftJoin(dbSchema.userProfiles, eq(dbSchema.userProfiles.userId, boards.ownerId))
-    .leftJoin(
+    // Invite-only exists only as an override row, never as a legacy board flag.
+    .innerJoin(
       dbSchema.resourcePrivacy,
       and(eq(dbSchema.resourcePrivacy.kind, 'board'), eq(dbSchema.resourcePrivacy.resourceId, boards.uuid)),
     )
@@ -72,7 +72,8 @@ export async function serialBoardRequestCards(
       and(
         inArray(boards.uuid, [...new Set(hiddenBoardUuids)]),
         ...friendsBoardListingConditions(viewerId),
-        sql`${effectiveAudience} IN ('followers', 'invite_only')`,
+        eq(dbSchema.resourcePrivacy.audience, 'invite_only'),
+        ne(boards.ownerId, SYSTEM_OWNER_ID),
         sql`EXISTS (SELECT 1 FROM users reveal_viewer WHERE reveal_viewer.id = ${viewerId}
           AND reveal_viewer."emailVerified" IS NOT NULL
           AND reveal_viewer.created_at <= now() - ${`${MIN_ACCOUNT_AGE_DAYS} days`}::interval)`,

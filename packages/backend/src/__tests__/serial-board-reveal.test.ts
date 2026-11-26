@@ -34,14 +34,14 @@ const signedOut = () =>
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * A climber nearby. By default one the owner follows, with an account old
- * enough and a verified email: the one climber who gets cards.
+ * A climber nearby. By default a friend: they and the owner follow each other,
+ * with an account old enough and a verified email: the one climber who gets cards.
  */
 async function newClimber(
   label: string,
   {
     followedByOwner = true,
-    followsOwner = false,
+    followsOwner = true,
     accountAgeDays = 30,
     emailVerified = true,
   }: { followedByOwner?: boolean; followsOwner?: boolean; accountAgeDays?: number; emailVerified?: boolean } = {},
@@ -66,7 +66,7 @@ async function seedBoard(
     ownerId?: string;
     serial?: string;
     angle?: number;
-    /** "Show to people I follow". On by default, so an Invite-only board is listed. */
+    /** "Show to friends". On by default, so an Invite-only board is listed. */
     listedToFollowers?: boolean;
   } = {},
 ): Promise<{ uuid: string; slug: string; serial: string; boardType: string }> {
@@ -180,39 +180,45 @@ async function cardsAt(time: number, climber: string, boards: ReadonlyArray<{ se
 }
 
 describe('a private home board heard over Bluetooth', () => {
-  it.each(['followers', 'invite_only'] as const)(
-    'says whose a %s board is, and nothing that finds it again',
-    async (audience) => {
-      const climber = await newClimber('nearby');
-      const board = await seedBoard(audience);
-      const [match] = await lookUp([board], signedIn(climber));
+  it('says whose an Invite-only board is to a friend, and nothing that finds it again', async () => {
+    const climber = await newClimber('nearby');
+    const board = await seedBoard('invite_only');
+    const [match] = await lookUp([board], signedIn(climber));
 
-      // The stub every binary has always seen stays as it was.
-      expect(match.candidates).toHaveLength(1);
-      expect(match.candidates[0]).toMatchObject({ uuid: '', slug: '', name: 'kilter', locationName: null });
-      expect(match.candidateRequestCards).toEqual([
-        {
-          requested: false,
-          ownerDisplayName: ownerName,
-          ownerAvatarUrl: 'https://a.test/sam.png',
-          preview: {
-            uuid: board.uuid,
-            // The board type, never "Garage …": a board's own name can name a place.
-            name: 'kilter',
-            boardType: 'kilter',
-            layoutId: 1,
-            sizeId: 10,
-            setIds: '1,2',
-            angle: 40,
-          },
+    // The stub every binary has always seen stays as it was.
+    expect(match.candidates).toHaveLength(1);
+    expect(match.candidates[0]).toMatchObject({ uuid: '', slug: '', name: 'kilter', locationName: null });
+    expect(match.candidateRequestCards).toEqual([
+      {
+        requested: false,
+        ownerDisplayName: ownerName,
+        ownerAvatarUrl: 'https://a.test/sam.png',
+        preview: {
+          uuid: board.uuid,
+          // The board type, never "Garage …": a board's own name can name a place.
+          name: 'kilter',
+          boardType: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,2',
+          angle: 40,
         },
-      ]);
-      const serialized = JSON.stringify(match.candidateRequestCards);
-      for (const secret of [board.slug, board.serial, 'Garage', 'Secret garage', '51.5', '-0.12', owner]) {
-        expect(serialized).not.toContain(secret);
-      }
-    },
-  );
+      },
+    ]);
+    const serialized = JSON.stringify(match.candidateRequestCards);
+    for (const secret of [board.slug, board.serial, 'Garage', 'Secret garage', '51.5', '-0.12', owner]) {
+      expect(serialized).not.toContain(secret);
+    }
+  });
+
+  it('opens a Followers board for a friend as itself, with no card', async () => {
+    // A friend follows the owner, so a Followers board is theirs to climb.
+    const climber = await newClimber('nearby');
+    const board = await seedBoard('followers');
+    const [match] = await lookUp([board], signedIn(climber));
+    expect(match.candidates[0]).toMatchObject({ uuid: board.uuid });
+    expect(match.candidateRequestCards).toEqual([null]);
+  });
 
   it.each(['only_me', 'unlisted'] as const)('keeps a %s board anonymous', async (audience) => {
     // Unlisted: the uuid is the board's link, so a card would open it.
@@ -224,7 +230,7 @@ describe('a private home board heard over Bluetooth', () => {
   });
 
   it('gives a signed-out caller the stub and no card', async () => {
-    const board = await seedBoard('followers');
+    const board = await seedBoard('invite_only');
     const [match] = await lookUp([board], signedOut());
     expect(match.candidates[0]).toMatchObject({ uuid: '', slug: '', name: 'kilter' });
     expect(match.candidateRequestCards).toEqual([null]);
@@ -304,7 +310,7 @@ describe('a private home board heard over Bluetooth', () => {
   it('spends no budget for a client that does not ask for cards', async () => {
     const climber = await newClimber('old-binary');
     const boards = [];
-    for (let index = 0; index <= SERIAL_REVEALS_PER_HOUR; index += 1) boards.push(await seedBoard('followers'));
+    for (let index = 0; index <= SERIAL_REVEALS_PER_HOUR; index += 1) boards.push(await seedBoard('invite_only'));
     const infoSpy = vi.spyOn(logger, 'info');
     await lookUp(boards, signedIn(climber), infoSelecting('boardType observedSerialNumber candidates { uuid }'));
     expect(infoSpy).not.toHaveBeenCalledWith('[serial-reveal] request cards', expect.anything());
@@ -318,34 +324,51 @@ describe('a private home board heard over Bluetooth', () => {
     expect(withCards.filter((match) => match.candidateRequestCards[0] !== null)).toHaveLength(SERIAL_REVEALS_PER_HOUR);
   });
 
-  it('names no board to a stranger, nor to someone who follows the owner but is not followed back', async () => {
-    // A follow is one tap. Only the owner's follow, their consent to be listed,
-    // unlocks a card, so following someone to see whose wall this is learns nothing.
-    const stranger = await newClimber('stranger', { followedByOwner: false });
+  it('names no board unless the owner and the climber follow each other', async () => {
+    // A follow is one tap either way. Only a mutual follow unlocks a card, so
+    // following someone, or being followed by a public account, learns nothing.
+    const stranger = await newClimber('stranger', { followedByOwner: false, followsOwner: false });
     const fan = await newClimber('fan', { followedByOwner: false, followsOwner: true });
-    const friend = await newClimber('friend', { followedByOwner: true, followsOwner: false });
+    const followedOnly = await newClimber('followed', { followedByOwner: true, followsOwner: false });
+    const friend = await newClimber('friend');
     const followersBoard = await seedBoard('followers');
     const inviteOnly = await seedBoard('invite_only');
 
-    const strangerMatches = await lookUp([followersBoard, inviteOnly], signedIn(stranger));
-    expect(strangerMatches.flatMap((match) => match.candidateRequestCards)).toEqual([null, null]);
-    expect(strangerMatches.map((match) => match.candidates[0])).toMatchObject([
-      { uuid: '', name: 'kilter' },
-      { uuid: '', name: 'kilter' },
-    ]);
+    for (const climber of [stranger, followedOnly]) {
+      const matches = await lookUp([followersBoard, inviteOnly], signedIn(climber));
+      expect(matches.flatMap((match) => match.candidateRequestCards)).toEqual([null, null]);
+      expect(matches.map((match) => match.candidates[0])).toMatchObject([
+        { uuid: '', name: 'kilter' },
+        { uuid: '', name: 'kilter' },
+      ]);
+    }
     // Following a Followers board's owner opens it, so only the Invite-only one is a stub.
     const [fanMatch] = await lookUp([inviteOnly], signedIn(fan));
     expect(fanMatch.candidates[0]).toMatchObject({ uuid: '', name: 'kilter' });
     expect(fanMatch.candidateRequestCards).toEqual([null]);
 
     const friendMatches = await lookUp([followersBoard, inviteOnly], signedIn(friend));
-    expect(friendMatches.map((match) => match.candidateRequestCards[0]?.preview.uuid)).toEqual([
-      followersBoard.uuid,
+    expect(friendMatches.map((match) => match.candidates[0]?.uuid)).toEqual([followersBoard.uuid, '']);
+    expect(friendMatches.map((match) => match.candidateRequestCards[0]?.preview.uuid ?? null)).toEqual([
+      null,
       inviteOnly.uuid,
     ]);
   });
 
-  it('keeps an Invite-only board the owner did not show to people they follow anonymous', async () => {
+  it('names nothing while the privacy controls are off', async () => {
+    // Nobody can answer a request then, so no board is shown unreadable.
+    const climber = await newClimber('nearby');
+    const board = await seedBoard('invite_only');
+    vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', '0');
+    try {
+      const [match] = await lookUp([board], signedIn(climber));
+      expect(match.candidateRequestCards).toEqual([null]);
+    } finally {
+      vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', '1');
+    }
+  });
+
+  it('keeps an Invite-only board the owner did not show to friends anonymous', async () => {
     const climber = await newClimber('nearby');
     const board = await seedBoard('invite_only', { listedToFollowers: false });
     const [match] = await lookUp([board], signedIn(climber));
@@ -357,7 +380,7 @@ describe('a private home board heard over Bluetooth', () => {
     ['an account with no verified email', { emailVerified: false }],
   ])('names nothing to %s, and answers with the stub', async (_label, eligibility) => {
     const climber = await newClimber('new', eligibility);
-    const board = await seedBoard('followers');
+    const board = await seedBoard('invite_only');
     const [match] = await lookUp([board], signedIn(climber));
     expect(match.candidates[0]).toMatchObject({ uuid: '', name: 'kilter' });
     expect(match.candidateRequestCards).toEqual([null]);
@@ -375,7 +398,7 @@ describe('a private home board heard over Bluetooth', () => {
       .set({ mergedIntoBoardUuid: canonical.uuid })
       .where(eq(schema.userBoards.uuid, merged.uuid));
     // A private gym someone else runs: its walls are found through the gym.
-    const gymOwner = await newClimber('gym-owner', { followedByOwner: false });
+    const gymOwner = await newClimber('gym-owner', { followedByOwner: false, followsOwner: false });
     const [gym] = await db
       .insert(schema.gyms)
       .values({
@@ -399,7 +422,7 @@ describe('a private home board heard over Bluetooth', () => {
   it('lines each card up with its own candidate when two boards share a serial', async () => {
     const climber = await newClimber('nearby');
     // Serials are not unique across owners: the same one shipped twice.
-    const stranger = await newClimber('other-owner', { followedByOwner: false });
+    const stranger = await newClimber('other-owner', { followedByOwner: false, followsOwner: false });
     const friendBoard = await seedBoard('invite_only', { angle: 40 });
     const strangerBoard = await seedBoard('invite_only', { ownerId: stranger, serial: friendBoard.serial, angle: 25 });
     expect(strangerBoard.serial).toBe(friendBoard.serial);
@@ -415,7 +438,7 @@ describe('a private home board heard over Bluetooth', () => {
   it(`names at most ${SERIAL_REVEALS_PER_DAY} distinct boards a UTC day`, async () => {
     const climber = await newClimber('day-scanner');
     const boards = [];
-    for (let index = 0; index <= SERIAL_REVEALS_PER_DAY; index += 1) boards.push(await seedBoard('followers'));
+    for (let index = 0; index <= SERIAL_REVEALS_PER_DAY; index += 1) boards.push(await seedBoard('invite_only'));
     const morning = Date.UTC(2031, 2, 3, 8, 10);
 
     expect(await cardsAt(morning, climber, boards)).toBe(SERIAL_REVEALS_PER_HOUR);
@@ -433,7 +456,7 @@ describe('a private home board heard over Bluetooth', () => {
   it(`names at most ${SERIAL_REVEALS_PER_30_DAYS} distinct boards in any 30 days`, async () => {
     const climber = await newClimber('month-scanner');
     const boards = [];
-    for (let index = 0; index <= SERIAL_REVEALS_PER_30_DAYS; index += 1) boards.push(await seedBoard('followers'));
+    for (let index = 0; index <= SERIAL_REVEALS_PER_30_DAYS; index += 1) boards.push(await seedBoard('invite_only'));
     const start = Date.UTC(2031, 4, 1, 8, 10);
     const hour = 60 * 60 * 1000;
     // 10 an hour, 15 a day: 40 boards over three days.
@@ -454,7 +477,7 @@ describe('a private home board heard over Bluetooth', () => {
 
   it('names nothing while Redis is unavailable, and the scan still answers', async () => {
     const climber = await newClimber('outage');
-    const board = await seedBoard('followers');
+    const board = await seedBoard('invite_only');
 
     vi.spyOn(redisClientManager, 'isRedisConnected').mockReturnValue(false);
     const [disconnected] = await lookUp([board], signedIn(climber));

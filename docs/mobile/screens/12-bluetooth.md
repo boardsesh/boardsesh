@@ -164,8 +164,9 @@ scan hears now.
 for request cards (`GetObservedBoardSerialMatchesWithRequestCards`, `requestCards`
 on `useBoardsBySerialNumbers`); the device picker and every other caller use the
 lookup without them, so they spend none of the climber's caps. A signed-in
-climber at a Followers or Invite-only home board they can't open, whose owner
-follows them (the board is in their Friends' boards), gets
+climber at an Invite-only home board they can't open, shown to friends, whose
+owner they follow and who follows them back (the board is in their Friends'
+boards), gets
 the same anonymous stub as before plus a card, which `fetchBoardsForObservedSerials`
 puts on that stub (`requestCard`, read with `requestCardOf` in
 `src/lib/boards/in-range-request-card.ts`). A card on a board with a uuid, or of
@@ -181,8 +182,10 @@ bundle shipped first, or it was rolled back) rejects the document with
 `GRAPHQL_VALIDATION_FAILED`; the lookup then asks once more without them, so In
 range keeps finding own and gym boards. Over the caps (10 boards an hour, 15 a
 UTC day, 40 in 30 days), while the server's Redis is down, for an account under
-7 days old or without a verified email, for a climber the owner does not follow,
-signed out, or on an Unlisted or Only me board, the stub draws exactly as before. What
+7 days old or without a verified email, for a climber who is not the owner's
+friend (a one-way follow either way), signed out, or on an Unlisted or Only me
+board, the stub draws exactly as before. A friend can open a Followers board, so
+it shows as itself and never as a card. What
 the server reveals and why is in
 [privacy](../../product/privacy.md#what-a-serial-tells-a-climber-nearby). The scan
 itself is unchanged.

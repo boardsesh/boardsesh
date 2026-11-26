@@ -10,9 +10,10 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     """
     Lined up with candidates: entry i is candidate i's request card, or null.
     Only a signed-in viewer gets cards: an account at least 7 days old with a
-    verified email, only for a Followers or Invite-only home board they cannot
-    open whose owner follows them (the board is in their Friends' boards), and at
-    most 10 distinct boards an hour, 15 a UTC day and 40 in 30 days. Every other
+    verified email, only for an Invite-only home board they cannot open whose
+    owner they follow and who follows them back (the board is in their Friends'
+    boards), and at most 10 distinct boards an hour, 15 a UTC day and 40 in 30
+    days. Every other
     entry is null, and the candidate stays the anonymous stub it always was.
     """
     candidateRequestCards: [SerialBoardRequestCard]!
@@ -214,14 +215,14 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
   enum FriendBoardAccess {
     "The viewer can open and climb on it: FriendBoard.board is set."
     CAN_CLIMB
-    "A Followers board whose owner the viewer does not follow, or an Invite-only board listed to the people its owner follows. The viewer may ask to climb (requestResourceAccess)."
+    "An Invite-only board its owner shows to friends, with no approved grant. The viewer may ask to climb (requestResourceAccess)."
     CAN_REQUEST
     "The viewer asked to climb and the owner has not answered yet."
     REQUESTED
   }
 
   """
-  The person who owns a friend's board. Always someone who follows the viewer.
+  The person who owns a friend's board: always a friend, someone the viewer follows who follows them back.
   """
   type FriendBoardOwner {
     userId: ID!
@@ -249,7 +250,7 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
   }
 
   """
-  One board owned by someone who follows the viewer.
+  One board owned by one of the viewer's friends (people who follow each other).
   """
   type FriendBoard {
     viewerAccess: FriendBoardAccess!

@@ -13,22 +13,23 @@ type EnrichedBoard = Awaited<ReturnType<typeof enrichBoards>>[number];
 type FriendBoardItem = Omit<FriendBoard, 'board'> & { board: EnrichedBoard | null };
 
 /**
- * Friends' boards: home boards owned by people who follow the viewer, for the
- * "A friend's board" path and the picker shelf. "When I follow you, you can see
- * my boards": the owner's follow is their consent to be listed. Who sees what
- * is in docs/product/privacy.md ("Friends' boards").
+ * Friends' boards: home boards owned by the viewer's friends, people they follow
+ * who follow them back, for the "A friend's board" path and the picker shelf.
+ * Who sees what is in docs/product/privacy.md ("Friends' boards").
  *
  * Every gate runs in the WHERE the count and the page share
  * (`friendsBoardListingConditions`, which the Bluetooth request card reuses).
  *
  * Who may open a board is unchanged: a row the viewer can climb on gets the full
  * `UserBoard` from `enrichBoards`, so the board's location audience still decides
- * its place. A Followers board whose owner the viewer does not follow, or an
- * opted-in Invite-only board the viewer holds no grant on, is a preview only:
+ * its place. The viewer follows the owner, so a Followers board always opens;
+ * only an opted-in Invite-only board the viewer holds no grant on is a preview:
  * no slug, serial, location, presence id or counts.
  *
- * The owner's name and avatar are always shown: the owner follows the viewer,
- * and the viewer's own followers list already names them.
+ * The owner's name and avatar are always shown. The viewer is an approved
+ * follower of the owner, which is the rule `canViewActivityIdentity` names a
+ * private owner on, so `FriendBoard.owner` and the full board's `owner*` fields
+ * agree.
  */
 export async function readFriendsBoards(
   viewerId: string,
