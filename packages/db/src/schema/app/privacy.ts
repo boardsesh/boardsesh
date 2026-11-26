@@ -57,11 +57,12 @@ export const resourcePrivacy = pgTable(
       .notNull(),
     inheritFollowers: boolean('inherit_followers').default(false).notNull(),
     /**
-     * "Show to people I follow" for an Unlisted or Invite-only board: lists it in
-     * the Friends' boards (`friendsBoards`) of the people the owner follows. It
-     * grants nothing: an Invite-only board still needs an approved grant to climb
-     * on. Public and Followers boards are listed to them without it; Only me
-     * never is. The column name predates the direction and is kept.
+     * "Show to friends" for an Unlisted or Invite-only board: lists it in the
+     * Friends' boards (`friendsBoards`) of the owner's friends, people who follow
+     * each other. It grants nothing: an Invite-only board still needs an approved
+     * grant to climb on. Public and Followers boards are listed to friends without
+     * it; Only me never is. The column name predates the mutual-follow rule and
+     * is kept.
      */
     listedToFollowers: boolean('listed_to_followers').default(false).notNull(),
     revision: integer('revision').default(0).notNull(),

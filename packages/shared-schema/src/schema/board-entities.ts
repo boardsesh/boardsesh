@@ -190,14 +190,14 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
   enum FriendBoardAccess {
     "The viewer can open and climb on it: FriendBoard.board is set."
     CAN_CLIMB
-    "A Followers board whose owner the viewer does not follow, or an Invite-only board listed to the people its owner follows. The viewer may ask to climb (requestResourceAccess)."
+    "An Invite-only board its owner shows to friends, with no approved grant. The viewer may ask to climb (requestResourceAccess)."
     CAN_REQUEST
     "The viewer asked to climb and the owner has not answered yet."
     REQUESTED
   }
 
   """
-  The person who owns a friend's board. Always someone who follows the viewer.
+  The person who owns a friend's board: always a friend, someone the viewer follows who follows them back.
   """
   type FriendBoardOwner {
     userId: ID!
@@ -223,7 +223,7 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
   }
 
   """
-  One board owned by someone who follows the viewer.
+  One board owned by one of the viewer's friends (people who follow each other).
   """
   type FriendBoard {
     viewerAccess: FriendBoardAccess!
