@@ -15,7 +15,7 @@ import { PickerTouchContext } from './picker-touch';
  * The board picker's body (#5654 and the 2026-11 redesign), top to bottom:
  * the top (At {gym}, the board heard somewhere else, or what the scan needs;
  * see picker-top-view.ts), Near you, Your boards (or the empty state),
- * Friends' boards (boards owned by people who follow the climber), and the location
+ * Friends' boards (boards owned by people the climber follows both ways), and the location
  * banner. The screen hands in Near you only once location is
  * allowed, and the banner only while it is not, so one of the two shows. First
  * run swaps all three for "Where do you climb?" under the top. The ways to add

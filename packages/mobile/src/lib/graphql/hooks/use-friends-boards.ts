@@ -9,11 +9,10 @@ import { getHttpClient } from '../client';
 import { FRIENDS_BOARDS_QUERY_KEY } from '../friends-boards-key';
 
 /**
- * Boards owned by people who follow the viewer (`friendsBoards`), for "A
- * friend's board" and the picker's Friends' boards shelf. The owner's follow is
- * the consent to list; whether the viewer can open a board is the board's own
- * audience, so a Followers board from someone the viewer doesn't follow back
- * comes as an ask.
+ * Boards owned by the viewer's friends (`friendsBoards`: the owner and the
+ * viewer follow each other), for "A friend's board" and the picker's Friends'
+ * boards shelf. A friend always follows the owner, so a Followers board always
+ * opens; only an opted-in Invite-only board comes as an ask.
  *
  * Network only, never persisted (docs/data/offline-reads.md, Bucket 3): the
  * list says who may climb where right now, and a stale copy would offer a
