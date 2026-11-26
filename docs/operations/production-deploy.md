@@ -558,6 +558,14 @@ No completed historical measurement substitutes for those checks on a new move.
 
 ## Rollback runbook (web on Railway)
 
+After same-origin Next assets ship, choose only a rollback image with production
+retained-asset support. A pre-compatibility image cannot serve missing chunks for
+cached HTML or open tabs. Keep that floor even when restoring a CDN asset prefix;
+see [the retained asset contract](static-assets.md#retained-nextjs-build-assets).
+The automated path proves its exact rollback deployment before ready image aliases
+move and again before redeploy. A held build still runs the alias proof using the
+actual Production service ID and origin variables.
+
 > **Order matters, and nothing enforces it.** Set the hold **before** you roll
 > back in the Railway dashboard. `check-rollback` used to read Vercel's Instant
 > Rollback state and refuse to promote over a mitigation; Railway exposes no

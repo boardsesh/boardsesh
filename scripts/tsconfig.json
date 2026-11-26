@@ -15,6 +15,12 @@
     "types": ["node"]
   },
   "include": [
+    "retained-next-assets-smoke.ts",
+    "__tests__/retained-next-assets-smoke.test.ts",
+    "web-origin-compatibility.ts",
+    "__tests__/web-origin-compatibility.test.ts",
+    "current-next-assets-smoke.ts",
+    "__tests__/current-next-assets-smoke.test.ts",
     "check-docs.ts",
     "__tests__/check-docs.test.ts",
     "__tests__/immutable-migration-staging.test.ts",

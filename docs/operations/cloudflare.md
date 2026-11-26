@@ -325,9 +325,10 @@ never proxy a Tigris custom domain.
 
 ### Retained Next.js build assets
 
-The compatibility release continues to generate URLs on `assets.boardsesh.com`.
-A request to `www.boardsesh.com/_next/static/` for a file from an older build can
-redirect to its retained copy. These files are public. The request-header rule
+The earlier compatibility release generated URLs on `assets.boardsesh.com`.
+Current www HTML uses same-origin Next asset URLs. A request to
+`www.boardsesh.com/_next/static/` for a file from another build can redirect to
+its retained CDN copy. These files are public. The request-header rule
 removes `Cookie`, `Authorization` and `Referer` before forwarding requests under
 `/_next/static/` to the www, assets and assets-r2 origins. A redirect can
 trigger a second browser request carrying domain cookies or a private referring

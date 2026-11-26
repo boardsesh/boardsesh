@@ -11,7 +11,7 @@ const RETAINED_URL = 'https://assets.boardsesh.com' + RETAINED_PATH;
 const DECODED_BYTES = 1106;
 const DECODED_SHA256 = 'f0722beec8ce9d306099e34857656208a0c6b57f6ff6fcfee239a753319d753e';
 
-async function readBounded(response: Response, limit: number): Promise<Buffer> {
+export async function readBounded(response: Response, limit: number): Promise<Buffer> {
   assert(response.body, 'Missing response body');
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -41,7 +41,7 @@ export async function checkRetainedNextAssets(
   base: string,
   expected: ExpectedDeployment = {},
   fetchImpl: RetainedAssetFetch = fetch,
-): Promise<void> {
+): Promise<{ deploymentId: string; release: string }> {
   const origin = new URL(base);
   assert(
     ['https:', 'http:'].includes(origin.protocol) &&
@@ -128,6 +128,7 @@ export async function checkRetainedNextAssets(
     assert.equal(createHash('sha256').update(bytes).digest('hex'), DECODED_SHA256, 'Retained decoded SHA-256');
   });
   assert.deepEqual(await readDeployment(), initial, 'Deployment changed during the retained asset check');
+  return initial;
 }
 
 async function main() {

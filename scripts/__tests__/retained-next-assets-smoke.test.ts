@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { checkRetainedNextAssets, type RetainedAssetFetch } from '../retained-next-assets-smoke';
 
@@ -5,59 +6,7 @@ const origin = 'https://fixture.up.railway.app';
 const path = '/_next/static/Sj_peyg3dLRKbogd1hG-t/_buildManifest.js';
 const cdn = 'https://assets.boardsesh.com' + path;
 // The immutable release-88 bytes verified by the deploy smoke.
-const manifest = String.raw`self.__BUILD_MANIFEST = {
-  "__rewrites": {
-    "afterFiles": [],
-    "beforeFiles": [
-      {
-        "has": [
-          {
-            "type": "query",
-            "key": "o",
-            "value": "(?<orgid>\\d*)"
-          },
-          {
-            "type": "query",
-            "key": "p",
-            "value": "(?<projectid>\\d*)"
-          },
-          {
-            "type": "query",
-            "key": "r",
-            "value": "(?<region>[a-z]{2})"
-          }
-        ],
-        "source": "/monitoring(/?)"
-      },
-      {
-        "has": [
-          {
-            "type": "query",
-            "key": "o",
-            "value": "(?<orgid>\\d*)"
-          },
-          {
-            "type": "query",
-            "key": "p",
-            "value": "(?<projectid>\\d*)"
-          }
-        ],
-        "source": "/monitoring(/?)"
-      },
-      {
-        "source": "/api/internal/board-render"
-      },
-      {
-        "source": "/api/internal/board-geometry"
-      }
-    ],
-    "fallback": []
-  },
-  "sortedPages": [
-    "/_app",
-    "/_error"
-  ]
-};self.__BUILD_MANIFEST_CB && self.__BUILD_MANIFEST_CB()`;
+const manifest = readFileSync(new URL('./fixtures/retained-next-build-manifest.js.txt', import.meta.url), 'utf8');
 const identity = { deploymentId: 'deployment-1', release: 'release-1' };
 function health(overrides: Record<string, unknown> = {}) {
   return Response.json(

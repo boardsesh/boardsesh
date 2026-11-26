@@ -85,7 +85,7 @@ ARG NEXT_PUBLIC_POSTHOG_KEY
 # it does not degrade to relative URLs — it fails. Vercel builds pass it at
 # `vercel build`; this is the same value for the container build.
 ARG NEXT_PUBLIC_STATIC_ASSET_BASE_URL
-# Only production enables this. Preview/local builds keep serving their own chunks.
+# Empty serves Next assets from the document origin; retained files stay on R2.
 ARG NEXT_PUBLIC_NEXT_ASSET_BASE_URL
 # Explicitly enabled only by the production workflow; previews stay isolated.
 ARG NEXT_PUBLIC_RETAINED_NEXT_ASSETS

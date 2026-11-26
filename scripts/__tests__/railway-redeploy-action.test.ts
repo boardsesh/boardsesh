@@ -1,6 +1,8 @@
 /// <reference types="node" />
 
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 
 const ACTION_PATH = '.github/actions/railway-redeploy/action.yml';
@@ -27,6 +29,17 @@ function runBlock(stepSource: string): string {
   return lines.slice(runIndex + 1).join('\n');
 }
 
+function withActionScratch(check: (folder: string) => void): void {
+  const scratchRoot = join(process.cwd(), '.boardsesh', 'tmp', 'origin-cutover-action-tests');
+  mkdirSync(scratchRoot, { recursive: true });
+  const folder = mkdtempSync(join(scratchRoot, 'case-'));
+  try {
+    check(folder);
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+}
+
 describe('railway-redeploy recovery contract', () => {
   const validateStep = stepNamed(actionSource, 'Validate Railway redeploy identity');
   const triggerStep = stepNamed(actionSource, 'Trigger Railway redeploy from the configured image source');
@@ -42,8 +55,99 @@ describe('railway-redeploy recovery contract', () => {
     expect(actionSource.match(/RAILWAY_SERVICE_ID: \$\{\{ inputs\.service-id \}\}/g) ?? []).toHaveLength(1);
     expect(
       actionSource.match(/RAILWAY_SERVICE_ID: \$\{\{ steps\.railway-validate\.outputs\.service_id \}\}/g) ?? [],
-    ).toHaveLength(3);
+    ).toHaveLength(4);
     expect(rollbackStep).toContain('service-id: ${{ steps.railway-validate.outputs.service_id }}');
+  });
+
+  it('keeps backend validation working with all retained-asset inputs empty', () => {
+    withActionScratch((folder) => {
+      const result = spawnSync('bash', ['-c', runBlock(validateStep)], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          EXPECTED_IMAGE: 'ghcr.io/boardsesh/backend:production',
+          RAILWAY_TOKEN: 'test-token',
+          RAILWAY_SERVICE_ID: '12345678-1234-1234-1234-123456789abc',
+          SERVICE_LABEL: 'backend',
+          RETAINED_ASSETS_ORIGIN: '',
+          EXPECTED_PREVIOUS_DEPLOYMENT_ID: '',
+          EXPECTED_PREVIOUS_RELEASE: '',
+          GITHUB_OUTPUT: join(folder, 'output'),
+        },
+      });
+      expect(result.status, result.stderr).toBe(0);
+      expect(readFileSync(join(folder, 'output'), 'utf8')).toContain('service_id=12345678-1234-1234-1234-123456789abc');
+    });
+  });
+
+  it('rejects a web origin without the verified rollback identity before CLI installation', () => {
+    withActionScratch((folder) => {
+      const result = spawnSync('bash', ['-c', runBlock(validateStep)], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          EXPECTED_IMAGE: 'ghcr.io/boardsesh/web:production',
+          RAILWAY_TOKEN: 'test-token',
+          RAILWAY_SERVICE_ID: '12345678-1234-1234-1234-123456789abc',
+          SERVICE_LABEL: 'web',
+          RETAINED_ASSETS_ORIGIN: 'https://example.up.railway.app',
+          EXPECTED_PREVIOUS_DEPLOYMENT_ID: '',
+          EXPECTED_PREVIOUS_RELEASE: '',
+          GITHUB_OUTPUT: join(folder, 'output'),
+        },
+      });
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain('requires the deployment ID and release verified before alias promotion');
+      expect(existsSync(join(folder, 'output'))).toBe(false);
+    });
+  });
+
+  it.each([false, true])(
+    'runs the captured web proof only when the promotion identity still agrees (changed=%s)',
+    (changed) => {
+      const proofStep = stepNamed(actionSource, 'Recheck retained assets on the captured web rollback deployment');
+      expect(proofStep).toContain("if: inputs.retained-assets-origin != ''");
+      expect(
+        actionSource.indexOf('- name: Recheck retained assets on the captured web rollback deployment'),
+      ).toBeLessThan(actionSource.indexOf('- name: Trigger Railway redeploy from the configured image source'));
+      withActionScratch((folder) => {
+        const called = join(folder, 'guard-called');
+        writeFileSync(
+          join(folder, 'node'),
+          '#!/bin/bash\nprintf \'%s\\n\' "$EXPECTED_PREVIOUS_DEPLOYMENT_ID" > "$GUARD_CALLED_FILE"\n',
+          { mode: 0o700 },
+        );
+        const capturedId = '12345678-1234-1234-1234-123456789abc';
+        const result = spawnSync('bash', ['-c', runBlock(proofStep)], {
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            PATH: folder + ':' + (process.env.PATH ?? ''),
+            GUARD_CALLED_FILE: called,
+            RAILWAY_WEB_ORIGIN: 'https://example.up.railway.app',
+            EXPECTED_PREVIOUS_DEPLOYMENT_ID: capturedId,
+            PROMOTION_PREVIOUS_DEPLOYMENT_ID: changed ? '87654321-1234-1234-1234-123456789abc' : capturedId,
+          },
+        });
+        expect(result.status, result.stderr).toBe(changed ? 1 : 0);
+        expect(existsSync(called)).toBe(!changed);
+        if (!changed) expect(readFileSync(called, 'utf8').trim()).toBe(capturedId);
+        if (changed) expect(result.stdout).toContain('no redeploy was triggered');
+      });
+    },
+  );
+
+  it('checks the restored web deployment before announcing verified recovery', () => {
+    const recoverySmoke = stepNamed(actionSource, 'Verify retained web assets after redeploy recovery');
+    expect(recoverySmoke).toContain("inputs.retained-assets-origin != ''");
+    expect(recoverySmoke).toContain("steps.railway-rollback.outcome == 'success'");
+    expect(recoverySmoke).toContain(
+      'SMOKE_EXPECTED_DEPLOYMENT_ID: ${{ steps.railway-rollback.outputs.rollback_deployment_id }}',
+    );
+    expect(recoverySmoke).toContain('SMOKE_EXPECTED_RELEASE: ${{ inputs.expected-previous-release }}');
+    expect(recoverySmoke).toContain('node scripts/retained-next-assets-smoke.ts');
+    expect(recoveryFailureStep).toContain('RECOVERY_SMOKE_OUTCOME: ${{ steps.railway-recovery-smoke.outcome }}');
+    expect(recoveryFailureStep).toContain('[ "$RECOVERY_SMOKE_OUTCOME" != "success" ]');
   });
 
   it('fails closed with reconciliation guidance when trigger acceptance is ambiguous', () => {
