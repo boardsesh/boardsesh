@@ -24,6 +24,8 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### Fixed
 
+- Settings arrows now follow your reading direction on iOS. ([#8200](https://github.com/boardsesh/boardsesh/pull/8200))
+- Light your spray wall on the first tap after confirming its controller. ([#8168](https://github.com/boardsesh/boardsesh/pull/8168))
 - Adding your gym: save with the tick up top, and the map stays put while you type. ([#8195](https://github.com/boardsesh/boardsesh/pull/8195))
 - Gym assistants can save gym names and profile changes again. ([#8199](https://github.com/boardsesh/boardsesh/pull/8199))
 - See each beta video once, with its climb and filmer intact. ([#8196](https://github.com/boardsesh/boardsesh/pull/8196))

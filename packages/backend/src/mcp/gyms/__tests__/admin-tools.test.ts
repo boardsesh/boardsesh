@@ -14,9 +14,13 @@ const domain = vi.hoisted(() => ({
   inspectGymDuplicates: vi.fn(),
   mergeAdminGyms: vi.fn(),
   mergeDuplicateBoards: vi.fn(),
+  inspectSprayWallGymLinks: vi.fn(),
+  attachUnlinkedSprayWallToGym: vi.fn(),
+  authorizeSprayWallGymLinkReplay: vi.fn(),
 }));
 const dispatch = vi.hoisted(() => ({ receipt: vi.fn(), insert: vi.fn(), write: vi.fn() }));
 vi.mock('../admin-domain', () => domain);
+vi.mock('../admin-spray-wall-links', () => domain);
 vi.mock('../../../services/merge-duplicate-boards', () => ({ mergeDuplicateBoards: domain.mergeDuplicateBoards }));
 vi.mock('../../../db/client', () => ({
   db: {
@@ -66,6 +70,11 @@ const boardMerge = {
   reason,
 };
 const writeArguments: Record<string, Record<string, unknown>> = {
+  attach_unlinked_spray_wall_to_gym: {
+    ...identity,
+    expectedGymStateHash: stateHash,
+    allowLegacyGymMemberAccess: false,
+  },
   repair_gym_canonical_slug: {
     gymUuid,
     aliasGymUuid: duplicateGymUuid,
@@ -93,6 +102,7 @@ beforeEach(() => {
   domain.assertGymMcpGlobalAdmin.mockResolvedValue(undefined);
   domain.authorizeAdminMergeReplay.mockResolvedValue(undefined);
   domain.authorizeCanonicalSlugReplay.mockResolvedValue(undefined);
+  domain.authorizeSprayWallGymLinkReplay.mockResolvedValue(undefined);
   dispatch.receipt.mockResolvedValue([]);
   dispatch.insert.mockResolvedValue(undefined);
   dispatch.write.mockImplementation((_principal, _scope, work: () => Promise<unknown>) => work());
@@ -103,6 +113,8 @@ beforeEach(() => {
     domain.mergeAdminGyms,
     domain.mergeDuplicateBoards,
     domain.repairGymCanonicalSlug,
+    domain.inspectSprayWallGymLinks,
+    domain.attachUnlinkedSprayWallToGym,
   ])
     handler.mockResolvedValue({ saved: true });
 });
@@ -110,6 +122,8 @@ beforeEach(() => {
 describe('gym MCP administrative repair tools', () => {
   it('advertises fixed actions with separate administrative consent scopes', () => {
     expect(gymMcpAdminTools.map((entry) => entry.name)).toEqual([
+      'inspect_spray_wall_gym_links',
+      'attach_unlinked_spray_wall_to_gym',
       'inspect_gym_duplicates',
       'repair_gym_canonical_slug',
       'correct_gym_board_setup',
@@ -134,7 +148,11 @@ describe('gym MCP administrative repair tools', () => {
       expect(entry.inputSchema.shape).not.toHaveProperty('query');
       expect(entry.inputSchema.shape).not.toHaveProperty('document');
       expect(entry.inputSchema.shape).not.toHaveProperty('actorUserId');
-      const valid = entry.readOnly ? { gymUuids: [gymUuid] } : writeArguments[entry.name];
+      const valid = entry.readOnly
+        ? entry.name === 'inspect_spray_wall_gym_links'
+          ? { gymUuid, boardUuids: [boardUuid] }
+          : { gymUuids: [gymUuid] }
+        : writeArguments[entry.name];
       for (const unexpected of [
         { actorUserId: 'another-admin' },
         { query: 'mutation { arbitrary }' },
@@ -152,6 +170,65 @@ describe('gym MCP administrative repair tools', () => {
     await expect(inspect.run({ gymUuids: [gymUuid, duplicateGymUuid] }, context)).resolves.toEqual({ saved: true });
     expect(domain.assertGymMcpGlobalAdmin).toHaveBeenCalledWith(context);
     expect(domain.inspectGymDuplicates).toHaveBeenCalledWith([gymUuid, duplicateGymUuid], context);
+  });
+
+  it('bounds explicit spray-wall inspection and requires both inspected states to attach', async () => {
+    const inspect = tool('inspect_spray_wall_gym_links');
+    for (const boardUuids of [[], [boardUuid, boardUuid], Array(11).fill(boardUuid)])
+      expect(inspect.inputSchema.safeParse({ gymUuid, boardUuids }).success).toBe(false);
+    await inspect.run({ gymUuid, boardUuids: [boardUuid] }, context);
+    expect(domain.inspectSprayWallGymLinks).toHaveBeenCalledWith({ gymUuid, boardUuids: [boardUuid] }, context);
+    const attach = tool('attach_unlinked_spray_wall_to_gym');
+    expect(attach.inputSchema.safeParse(identity).success).toBe(false);
+    const arguments_ = writeArguments.attach_unlinked_spray_wall_to_gym;
+    await attach.run(arguments_, context);
+    expect(domain.attachUnlinkedSprayWallToGym).toHaveBeenCalledWith(arguments_, context);
+    await attach.authorize(arguments_, context, true);
+    expect(domain.authorizeSprayWallGymLinkReplay).toHaveBeenCalledWith(arguments_, context);
+    for (const extra of [{ ownerId: 'new-owner' }, { isPublic: true }, { allowSourceGymMerge: true }])
+      expect(attach.inputSchema.safeParse({ ...arguments_, ...extra }).success).toBe(false);
+  });
+
+  it('defaults legacy member access to false and binds explicit approval to the retry receipt', async () => {
+    const attach = tool('attach_unlinked_spray_wall_to_gym');
+    const original = writeArguments.attach_unlinked_spray_wall_to_gym!;
+    const { allowLegacyGymMemberAccess: _acknowledgement, ...omitted } = original;
+    const optedIn = { ...original, allowLegacyGymMemberAccess: true };
+    expect(attach.inputSchema.parse(omitted)).toMatchObject({ allowLegacyGymMemberAccess: false });
+    expect(gymMcpInputHash(attach.inputSchema.parse(omitted))).toBe(gymMcpInputHash(original));
+    expect(gymMcpInputHash(optedIn)).not.toBe(gymMcpInputHash(original));
+    expect(attach.inputSchema.safeParse({ ...original, allowLegacyGymMemberAccess: 'true' }).success).toBe(false);
+    await attach.run(optedIn, context);
+    expect(domain.attachUnlinkedSprayWallToGym).toHaveBeenCalledWith(optedIn, context);
+    domain.attachUnlinkedSprayWallToGym.mockClear();
+    const principal: GymMcpPrincipal = {
+      userId: context.userId!,
+      clientId: 'admin-assistant',
+      connectionId: 'connection',
+      connectionGeneration: 1,
+      scopes: ['gyms:admin:write'],
+      accessTokenHash: 'test-hash',
+      connectionLastUsedAt: null,
+    };
+    const result = { gymUuid, boardUuid };
+    dispatch.receipt.mockResolvedValue([
+      {
+        operationName: attach.name,
+        inputHash: gymMcpInputHash(optedIn),
+        expiresAt: new Date(Date.now() + 60_000),
+        result,
+      },
+    ]);
+    await expect(executeGymMcpTool(principal, attach.name, omitted)).rejects.toMatchObject({
+      extensions: { code: 'IDEMPOTENCY_CONFLICT' },
+    });
+    await expect(executeGymMcpTool(principal, attach.name, optedIn)).resolves.toEqual(result);
+    expect(domain.authorizeSprayWallGymLinkReplay).toHaveBeenCalledWith(
+      optedIn,
+      expect.objectContaining({ userId: principal.userId }),
+    );
+    expect(domain.attachUnlinkedSprayWallToGym).not.toHaveBeenCalled();
+    expect(dispatch.insert).not.toHaveBeenCalled();
   });
 
   it.each(Object.keys(writeArguments))(

@@ -77,13 +77,17 @@ const VERDICTS: Record<string, Verdict> = {
   // so a transient blip can't fail a deploy or start a restart loop. ---
   'app/api/health/route.ts': 'keep-external',
 
-  // --- /api/internal/* (15) ---
+  // --- /api/internal/* (16) ---
   // Party-session / kiosk auth bridge — never delete.
   'app/api/internal/ws-auth/route.ts': 'keep-external',
   // No web consumer, but no production surface either (404s outside
   // NODE_ENV=development) — the only machine-readable way to confirm which
   // QA notes a running dev server started with.
   'app/api/internal/dev-metadata/route.ts': 'keep-external',
+  // Next's production-only filesystem-miss rewrite calls this fixed-CDN
+  // redirect for retained build files; the deployment smoke checks it too.
+  // This is asset-delivery infrastructure, with no application data or proxy.
+  'app/api/internal/retained-next-assets/[...assetPath]/route.ts': 'keep-caller',
   // Dev-only translation catalog editor (404s outside NODE_ENV=development),
   // called by components/i18n/dev-translation-editor.tsx.
   'app/api/internal/dev-translations/route.ts': 'keep-caller',
@@ -274,6 +278,7 @@ describe('REST surface inventory (issue #1889)', () => {
     // staged browser routes it once counted went with #7596; the closed audit
     // stays historical. #7596 B5e1 added the forced re-sign-in route and the
     // provider-security route; B5e2 the first-password route.
-    expect(derived.size).toBe(43);
+    // #8140 adds the retained Next asset redirect used by the filesystem-miss rewrite.
+    expect(derived.size).toBe(44);
   });
 });

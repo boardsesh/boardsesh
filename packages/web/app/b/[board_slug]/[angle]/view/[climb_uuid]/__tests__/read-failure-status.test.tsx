@@ -22,8 +22,10 @@ vi.mock('@/app/lib/data/queries', () => ({
 }));
 
 vi.mock('@/app/lib/data/front-door-data.server', () => ({
-  getFrontDoorSimilarClimbs: vi.fn(async () => ({ status: 'loaded', items: [] })),
-  getFrontDoorBetaLinks: vi.fn(async () => ({ status: 'loaded', items: [] })),
+  getFrontDoorRelatedContent: vi.fn(async () => ({
+    similarClimbs: { status: 'loaded', items: [] },
+    betaLinks: { status: 'loaded', items: [] },
+  })),
 }));
 
 vi.mock('@/app/lib/board-slug-utils', () => ({
@@ -60,10 +62,6 @@ vi.mock('@/app/components/board-renderer/util', () => ({
     frames ? ['/api/internal/board-render'] : [],
   ),
   buildOverlayUrl: vi.fn(() => '/api/internal/board-render'),
-}));
-
-vi.mock('@/app/lib/warm-overlay-cache', () => ({
-  scheduleOgImageWarming: vi.fn(),
 }));
 
 vi.mock('@/app/components/climb-front-door/climb-front-door', () => ({

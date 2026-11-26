@@ -616,8 +616,9 @@ export default defineConfig({
         // bakes any /app rewrite into a production build — next.config.mjs gates
         // the static fallback on NODE_ENV=development — but the flag is still
         // read at request time (the Expo auth bridge in app/layout.tsx, the
-        // middleware /app carve-out), so keep it in the key.
-        cache: { env: ['BOARDSESH_WEB'] },
+        // middleware /app carve-out), so keep it in the key. Retained Next
+        // assets are a separate build-time production opt-in.
+        cache: { env: ['BOARDSESH_WEB', 'NEXT_PUBLIC_RETAINED_NEXT_ASSETS'] },
       },
       'build:expo-web': {
         // Static Expo web export into packages/web/public/app (gitignored) —

@@ -54,7 +54,6 @@ vi.mock('@/app/components/consent/consent-state-provider', () => ({
 vi.mock('../angle-table', () => ({ default: () => null }));
 vi.mock('../about-climb', () => ({ default: () => null }));
 vi.mock('@/app/components/climb-detail/climb-view-seo-fragment', () => ({ default: () => null }));
-vi.mock('@/app/components/social/climb-social-section', () => ({ default: () => null }));
 vi.mock('../climb-app-showcase', () => ({ default: () => null }));
 
 vi.mock('@/app/components/board-renderer/util', () => ({

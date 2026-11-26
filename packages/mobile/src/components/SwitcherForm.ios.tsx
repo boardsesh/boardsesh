@@ -68,7 +68,7 @@ function TargetTrailing({ row }: { row: SwitcherTargetRow }) {
   if (row.state === 'switching') return <ProgressView />;
   if (row.state === 'active') return <Image systemName="checkmark" modifiers={[ROW_ICON, SECONDARY_LABEL]} />;
   if ((row.state === 'pressable' || row.state === 'disabled') && row.showChevronWhenPressable) {
-    return <Image systemName="chevron.right" modifiers={[CHEVRON, TERTIARY_LABEL]} />;
+    return <Image systemName="chevron.forward" modifiers={[CHEVRON, TERTIARY_LABEL]} />;
   }
   return null;
 }

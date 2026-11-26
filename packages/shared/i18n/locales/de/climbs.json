@@ -214,8 +214,6 @@
     }
   },
   "similarClimbs": {
-    "loadError": "Ähnliche Boulder konnten nicht geladen werden.",
-    "emptyDefault": "Noch keine ähnlichen Boulder.",
     "emptyOnLayout": "Keine ähnlichen Boulder auf diesem Layout.",
     "untitledClimb": "Boulder ohne Namen"
   },
@@ -1064,11 +1062,6 @@
         "body": "4×4 und Volumen-Sessions in deinem Grad, mit eingebautem Timer.",
         "alt": "Ein Volumen-Training bei V2 in Boardsesh einrichten"
       }
-    },
-    "community": {
-      "heading": "Kommentare und Grad-Abstimmungen",
-      "signIn": "Melde dich an, um mitzumachen",
-      "show": "Kommentare anzeigen"
     },
     "similar": {
       "nearbyHeading": "Weitere Boulder auf {{layout}} um {{grade}} bei {{angle}}°",

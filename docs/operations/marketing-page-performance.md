@@ -20,6 +20,22 @@ pre-rendered from their public catalogs. Translated homepages use real locale
 paths, so the HTML language, metadata and cache key agree without reading request
 headers during rendering. Application pages retain request-based locale handling.
 
+## Translation boundary
+
+Marketing resolves page copy, footer labels, privacy controls and optional UI
+labels on the server. Interactive components receive serializable text rather
+than loading the browser translation engine for already-rendered copy. The
+document's explicit locale travels through a small React context so links and
+screenshots keep the correct language without depending on translation state.
+Application pages retain their existing i18next provider and translated adapters.
+
+The deferred homepage beta rail seeds its own common beta-video translations
+inside its existing viewport-triggered module. Its heading and lead remain in
+the first HTML. The hero poster, store badges and FAQ answers also remain
+server-rendered; video playback, preview selection and privacy choices retain
+their interactive controls. Development translation editing keeps its catalog
+provider inside the development-only editor boundary.
+
 ## Account and consent
 
 Marketing loads one guarded browser session owner asynchronously. The first

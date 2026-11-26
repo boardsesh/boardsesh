@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import {
   createLedPreviewSession,
@@ -42,7 +42,8 @@ export function useSprayLedPreviewForSettings(
   const [allLit, setAllLit] = useState(false);
   const [chaseIndex, setChaseIndex] = useState<number | null>(null);
 
-  useEffect(() => {
+  // A committed Wi-Fi control must already target its current preview session.
+  useLayoutEffect(() => {
     setState('idle');
     setError(null);
     setAvailable(false);

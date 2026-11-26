@@ -46,8 +46,10 @@ vi.mock('@/app/lib/data/queries', () => ({
 }));
 
 vi.mock('@/app/lib/data/front-door-data.server', () => ({
-  getFrontDoorSimilarClimbs: vi.fn(async () => ({ status: 'loaded', items: [] })),
-  getFrontDoorBetaLinks: vi.fn(async () => ({ status: 'loaded', items: [] })),
+  getFrontDoorRelatedContent: vi.fn(async () => ({
+    similarClimbs: { status: 'loaded', items: [] },
+    betaLinks: { status: 'loaded', items: [] },
+  })),
 }));
 
 vi.mock('@/app/lib/url-utils.server', () => ({
@@ -82,10 +84,6 @@ vi.mock('@/app/components/board-renderer/util', () => ({
   buildOverlayUrl: vi.fn(() => '/api/internal/board-render'),
 }));
 
-vi.mock('@/app/lib/warm-overlay-cache', () => ({
-  scheduleOgImageWarming: vi.fn(),
-}));
-
 vi.mock('@/app/components/climb-front-door/climb-front-door', () => ({
   default: () => null,
 }));
@@ -99,7 +97,7 @@ vi.mock('@/app/lib/seo/metadata', () => ({
 }));
 
 import { getClimb, getClimbStatsForAllAngles } from '@/app/lib/data/queries';
-import { getFrontDoorBetaLinks, getFrontDoorSimilarClimbs } from '@/app/lib/data/front-door-data.server';
+import { getFrontDoorRelatedContent } from '@/app/lib/data/front-door-data.server';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
 import ClimbViewPage, {
   generateMetadata,
@@ -123,14 +121,11 @@ describe('an alias URL on the config-tuple tree', () => {
 
   it('reads angle stats, similar climbs and beta for the canonical climb, not the husk uuid', async () => {
     await expect(ClimbViewPage(props)).rejects.toThrow('NEXT_REDIRECT');
-    expect(vi.mocked(getFrontDoorSimilarClimbs)).not.toHaveBeenCalled();
+    expect(vi.mocked(getFrontDoorRelatedContent)).not.toHaveBeenCalled();
     await ClimbViewPage({ params: Promise.resolve({ ...(await props.params), climb_uuid: 'canonical-climb' }) });
 
     expect(vi.mocked(getClimbStatsForAllAngles)).toHaveBeenCalledWith('kilter', 'canonical-climb');
-    expect(vi.mocked(getFrontDoorSimilarClimbs)).toHaveBeenCalledWith(
-      expect.objectContaining({ climbUuid: 'canonical-climb' }),
-    );
-    expect(vi.mocked(getFrontDoorBetaLinks)).toHaveBeenCalledWith(
+    expect(vi.mocked(getFrontDoorRelatedContent)).toHaveBeenCalledWith(
       expect.objectContaining({ climbUuid: 'canonical-climb' }),
     );
   });

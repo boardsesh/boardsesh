@@ -6,7 +6,7 @@ import { getServerTranslation, getServerTranslationForLocale } from '@/app/lib/i
 import type { Locale } from '@/app/lib/i18n/config';
 import { PageCard, PageSection } from '@/app/components/ui/page-shell';
 import { MarketingScreenshot, type MarketingShot } from '@/app/components/marketing/marketing-screenshot';
-import { MarketingPreviewSwitch } from '@/app/components/marketing/marketing-preview-switch';
+import { MarketingPreviewSwitchControl } from '@/app/components/marketing/marketing-preview-switch-control';
 import styles from './home-feature-strip.module.css';
 
 /** The benefits stay server-rendered; only each image reads the shared preview choice. */
@@ -43,7 +43,9 @@ export default async function HomeFeatureStrip({ locale: explicitLocale }: { loc
             choice for these screenshots lives here. Other locales keep it in the hero. */}
         {locale === 'en-US' ? (
           <Box className={styles.previewSwitch}>
-            <MarketingPreviewSwitch />
+            <MarketingPreviewSwitchControl
+              labels={{ label: t('preview.label'), ios: t('preview.ios'), android: t('preview.android') }}
+            />
           </Box>
         ) : null}
         <Box component="ul" className={styles.grid}>

@@ -1,4 +1,5 @@
 import { toBoardImageDetails } from '@/app/lib/board-image-details';
+import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
 import React, { Suspense } from 'react';
 import Box from '@mui/material/Box';
 import MuiLink from '@mui/material/Link';
@@ -8,7 +9,7 @@ import { boardTypeProperty } from '@boardsesh/analytics';
 import ClimbViewSeoFragment from '@/app/components/climb-detail/climb-view-seo-fragment';
 import SimilarClimbsList, { ClimbPreviewRows } from '@/app/components/similar-climbs/similar-climbs-list';
 import LocaleLink from '@/app/components/i18n/locale-link';
-import BoardseshBetaList from '@/app/components/beta-videos/boardsesh-beta-list';
+import PublicClimbBetaList from '@/app/components/beta-videos/public-climb-beta-list';
 import { buildBoardArtLayers } from '@/app/components/board-renderer/util';
 import { buildCanonicalClimbListUrl, buildCanonicalClimbViewUrl, constructBoardSlugListUrl } from '@/app/lib/url-utils';
 import { getServerTranslation } from '@/app/lib/i18n/server';
@@ -27,7 +28,6 @@ import ClimbBoardStage from './climb-board-stage';
 import ClimbCreativeWorkJsonLd from './climb-creative-work-json-ld';
 import ClimbHeroCta from './climb-hero-cta';
 import type { HandoffTree } from './climb-handoff-cta';
-import DeferredClimbSocial from './deferred-climb-social';
 import FrontDoorBreadcrumb from './front-door-breadcrumb';
 import HoldLegend from './hold-legend';
 import QrLandingTracker from './qr-landing-tracker';
@@ -246,10 +246,10 @@ export default async function ClimbFrontDoor({
           <ClimbHeroCta
             climbName={climbName}
             climbUuid={climb.uuid}
-            boardName={boardDetails.board_name}
             layoutId={boardDetails.layout_id}
-            layoutName={boardDetails.layout_name}
             angle={angle}
+            boardName={boardDetails.board_name}
+            layoutName={boardDetails.layout_name}
             handoffPath={handoffPath}
             tree={tree}
           />
@@ -257,18 +257,18 @@ export default async function ClimbFrontDoor({
 
         <Box className={styles.details}>
           <AngleTable
+            climbUuid={climb.uuid}
             boardDetails={boardDetails}
             boardSlug={boardSlug}
-            climbUuid={climb.uuid}
             climbName={climbName}
             currentAngle={angle}
             angleStats={angleStats}
           />
 
           <AboutClimb
+            angle={angle}
             climb={climb}
             boardDetails={boardDetails}
-            angle={angle}
             angleStats={angleStats}
             currentAngleStats={currentAngleStats}
           />
@@ -286,7 +286,7 @@ export default async function ClimbFrontDoor({
 
           <Box component="section">
             <Typography variant="h5" component="h2" sx={frontDoorSectionHeadingSx}>
-              {betaLinks.status === 'loaded' && betaLinks.items.length > 0
+              {betaLinks.status === 'loaded' && !betaLinks.hasMore && betaLinks.items.length > 0
                 ? t('frontDoor.beta.headingCount', { count: betaLinks.items.length })
                 : t('frontDoor.beta.heading')}
             </Typography>
@@ -300,7 +300,14 @@ export default async function ClimbFrontDoor({
                 {t('frontDoor.beta.unavailable')}
               </Typography>
             ) : betaLinks.items.length > 0 ? (
-              <BoardseshBetaList links={betaLinks.items} isLoading={false} source="drawer" layout="grid" />
+              <>
+                <PublicClimbBetaList links={betaLinks.items} />
+                {betaLinks.hasMore ? (
+                  <MuiLink href={buildAppHandoffUrl(handoffPath)} sx={boardListLinkSx}>
+                    {t('frontDoor.cta.openInBrowser')}
+                  </MuiLink>
+                ) : null}
+              </>
             ) : (
               <Typography variant="body2" component="p" sx={emptySectionSx}>
                 {t('frontDoor.beta.empty')}
@@ -334,14 +341,6 @@ export default async function ClimbFrontDoor({
             {t('frontDoor.similar.allAtAngle', { board: boardDisplayName, angle })}
           </MuiLink>
         </Box>
-        {/* On an unavailable read the list gets NO seed, which is the retry:
-              React Query treats a seeded query as fresh for five minutes, so
-              handing it `[]` would pin "No similar climbs on this layout." on the
-              page for the whole visit. Unseeded, the browser fetches the section
-              itself on hydration — off the server-render budget, and against the
-              reader's own IP rather than the web server's single shared one.
-              `pendingMessage` is what the crawler (and the reader, for that one
-              round trip) reads meanwhile: prose, never a bare spinner. */}
         {showNearbyClimbs && nearbyClimbs.status === 'loaded' ? (
           <ClimbPreviewRows
             climbs={nearbyClimbs.items}
@@ -357,31 +356,13 @@ export default async function ClimbFrontDoor({
           <SimilarClimbsList
             boardType={boardDetails.board_name as BoardName}
             boardSlug={boardSlug}
-            layoutId={boardDetails.layout_id}
             viewerBoardDetails={toBoardImageDetails(boardDetails)}
-            climbUuid={climb.uuid}
-            angle={angle}
-            threshold={0.5}
-            limit={10}
-            initialClimbs={similarClimbs.status === 'loaded' ? similarClimbs.items : undefined}
+            climbs={similarClimbs.status === 'loaded' ? similarClimbs.items : undefined}
             pendingMessage={similarClimbs.status === 'unavailable' ? t('frontDoor.similar.unavailable') : undefined}
             emptyMessage={t('similarClimbs.emptyOnLayout')}
           />
         )}
       </Box>
-
-      <DeferredClimbSocial
-        climbUuid={climb.uuid}
-        boardType={boardDetails.board_name}
-        angle={angle}
-        currentClimbDifficulty={climb.difficulty}
-        boardName={boardDetails.board_name}
-        labels={{
-          heading: t('frontDoor.community.heading'),
-          signIn: t('frontDoor.community.signIn'),
-          show: t('frontDoor.community.show'),
-        }}
-      />
 
       {/* Last in `<main>`: its end marker is what tells the bar the content is over. */}
       <StickyInstallBar

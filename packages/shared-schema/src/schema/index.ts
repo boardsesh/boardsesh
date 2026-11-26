@@ -20,6 +20,7 @@ import { notificationsTypeDefs } from './notifications';
 import { proposalsTypeDefs } from './proposals';
 import { socialTypeDefs } from './social';
 import { newClimbFeedTypeDefs } from './new-climb-feed';
+import { publicClimbRelatedContentTypeDefs } from './public-climb-related-content';
 import { queriesTypeDefs } from './queries';
 import { mutationsTypeDefs } from './mutations';
 import { subscriptionsTypeDefs } from './subscriptions';
@@ -79,6 +80,7 @@ export const typeDefs = [
   proposalsTypeDefs,
   socialTypeDefs,
   newClimbFeedTypeDefs,
+  publicClimbRelatedContentTypeDefs,
   betaLinksTypeDefs,
   integrationsTypeDefs,
   syncTypeDefs,

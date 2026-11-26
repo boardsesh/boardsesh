@@ -2,11 +2,10 @@ import React from 'react';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
 import { getServerTranslationForLocale } from '@/app/lib/i18n/server';
 import type { Locale } from '@/app/lib/i18n/config';
-import I18nProvider from '@/app/components/providers/i18n-provider';
 import SiteJsonLd from '@/app/components/seo/site-json-ld';
 import ShowcaseVideoJsonLd from '@/app/components/seo/showcase-video-json-ld';
 import HomePageContent from '@/app/home-page-content';
-import TrustFaq from '@/app/components/marketing/trust-faq';
+import MarketingTrustFaq from '@/app/components/marketing/marketing-trust-faq';
 import HomeGymSearch from '@/app/components/home/home-gym-search';
 import { cachedCommunityStats } from '@/app/lib/graphql/server-cached-client';
 import { formatCommunityProof } from '@/app/lib/community-proof';
@@ -47,37 +46,7 @@ export default async function HomePage({ locale }: { locale: Locale }) {
   const heroProof = communityStats ? formatCommunityProof(communityStats, t, locale) : undefined;
 
   return (
-    <I18nProvider
-      locale={locale}
-      namespaces={['marketing', 'website']}
-      resourceKeys={{
-        marketing: ['home', 'preview'],
-        website: [
-          'trust',
-          'boardChoices',
-          'appGuidesLink',
-          'importTitle',
-          'importBody',
-          'importLink',
-          'sprayTitle',
-          'sprayLead',
-          'homeSprayPhotoAlt',
-          'sprayRoute',
-          'photoGuide',
-          'proofNote',
-          'runWall',
-          'gymCard',
-          'gymBody',
-          'forGymsTitle',
-          'claimGym',
-          'wallCard',
-          'sprayNoLights',
-          'partnerCard',
-          'partnerBody',
-          'contact',
-        ],
-      }}
-    >
+    <>
       {/* The English hero preloads its poster on desktop; the localized app
           captures and below-fold thumbnails keep their default lazy loading. */}
       <SiteJsonLd locale={locale} />
@@ -86,12 +55,9 @@ export default async function HomePage({ locale }: { locale: Locale }) {
       {locale === 'en-US' ? <ShowcaseVideoJsonLd /> : null}
       {/* Counts a phone that scanned the hero's laptop code as `Home QR Scanned`. */}
       <QrLandingTracker kind="home" boardType={null} />
-      {/* The three marketing sections are async server components, so they are
-          rendered HERE and handed down as slots: HomePageContent is a client
-          component (the hero reads the visitor's platform) and cannot await
-          them. This keeps their markup — the gym links especially — in the
-          first HTML a crawler sees. */}
+      {/* Static copy is translated on the server; interactive controls receive labels. */}
       <HomePageContent
+        locale={locale}
         heroProof={heroProof}
         desktopInstall={
           <PhoneQrCard
@@ -107,13 +73,17 @@ export default async function HomePage({ locale }: { locale: Locale }) {
         gymSearch={<HomeGymSearch locale={locale} />}
         featureStrip={<HomeFeatureStrip locale={locale} />}
         supportBlock={<HomeSupportBlock locale={locale} />}
-        trustFaq={
-          <I18nProvider locale={locale} namespaces={['marketing']} resourceKeys={{ marketing: ['funding', 'trust'] }}>
-            <TrustFaq limit={6} />
-          </I18nProvider>
+        trustFaq={<MarketingTrustFaq locale={locale} limit={6} />}
+        supportBanner={
+          <RuntimeHomeSupportBanner
+            copy={{
+              text: t('home.supportBanner.text'),
+              cta: t('home.supportBanner.cta'),
+              close: t('home.supportBanner.close'),
+            }}
+          />
         }
-        supportBanner={<RuntimeHomeSupportBanner />}
       />
-    </I18nProvider>
+    </>
   );
 }

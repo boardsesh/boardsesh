@@ -3,6 +3,11 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { SlugSchema, UUIDSchema } from '../../validation/schemas/primitives';
 import { UpdateBoardInputSchema } from '../../validation/schemas';
 import { mergeDuplicateBoards } from '../../services/merge-duplicate-boards';
+import {
+  inspectSprayWallGymLinks,
+  attachUnlinkedSprayWallToGym,
+  authorizeSprayWallGymLinkReplay,
+} from './admin-spray-wall-links';
 import type { GymMcpAuthorizedAction, GymMcpTool } from './registry';
 import {
   assertGymMcpGlobalAdmin,
@@ -24,7 +29,7 @@ const reason = z
 const stateHash = z
   .string()
   .regex(/^[a-f0-9]{64}$/)
-  .describe('The current stateHash returned by inspect_gym_duplicates. Inspect again after each correction.');
+  .describe('The current stateHash returned by the matching inspection tool. Inspect again after each correction.');
 const writeIdentity = {
   idempotencyKey: UUIDSchema.describe('A fresh UUID for this action; reuse unchanged only for a retry.'),
   confirm: z
@@ -82,6 +87,41 @@ function distinctUuids(uuids: string[]): boolean {
 }
 
 export const gymMcpAdminTools: readonly GymMcpTool[] = [
+  adminTool({
+    name: 'inspect_spray_wall_gym_links',
+    description:
+      'Global admin only: inspect explicit spray-wall UUIDs and a destination gym before linking an unlinked wall. Includes owner identities, stored privacy, state hashes and a preview of legacy gym-member read/climb-setting access requiring acknowledgement. Does not return photos, pairing credentials, private coordinates or individual climber activity.',
+    schema: z
+      .object({
+        gymUuid: UUIDSchema,
+        boardUuids: z.array(UUIDSchema).min(1).max(10).refine(distinctUuids, 'Choose each wall once.'),
+      })
+      .strict(),
+    run: inspectSprayWallGymLinks,
+  }),
+  adminTool({
+    name: 'attach_unlinked_spray_wall_to_gym',
+    description:
+      'Global admin only: attach an explicitly inspected unlinked spray wall to a gym. Stored ownership, privacy flags/policy, photos, publication and history stay unchanged. Existing gym management rules apply. A nonpublic wall without a privacy policy requires allowLegacyGymMemberAccess=true: gym members may gain read and climb-setting access, including layout access to unlisted walls. Hidden walls remain owner-only while hidden. Never moves linked walls or merges records. Requires both state hashes, a reason and confirmation.',
+    write: true,
+    schema: z
+      .object({
+        ...writeIdentity,
+        gymUuid: UUIDSchema,
+        boardUuid: UUIDSchema,
+        expectedStateHash: stateHash,
+        expectedGymStateHash: stateHash,
+        allowLegacyGymMemberAccess: z
+          .boolean()
+          .default(false)
+          .describe(
+            'Explicitly approve the inspected legacy gym-member read and climb-setting effect. Required for a nonpublic wall with no resource privacy policy; never changes its stored privacy or publication.',
+          ),
+      })
+      .strict(),
+    authorizeReplay: authorizeSprayWallGymLinkReplay,
+    run: attachUnlinkedSprayWallToGym,
+  }),
   adminTool({
     name: 'inspect_gym_duplicates',
     description:

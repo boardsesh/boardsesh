@@ -38,6 +38,11 @@ vi.mock('../admin-domain', () => ({
   authorizeCanonicalSlugReplay: vi.fn(),
 }));
 vi.mock('../../../services/merge-duplicate-boards', () => ({ mergeDuplicateBoards: vi.fn() }));
+vi.mock('../admin-spray-wall-links', () => ({
+  inspectSprayWallGymLinks: vi.fn(),
+  attachUnlinkedSprayWallToGym: vi.fn(),
+  authorizeSprayWallGymLinkReplay: vi.fn(),
+}));
 
 import { gymMcpAdminTools } from '../admin-tools';
 import { createGymMcpServer } from '../server';
@@ -53,6 +58,7 @@ const principal: GymMcpPrincipal = {
 };
 const inspectionName = 'inspect_gym_duplicates';
 const capabilityName = 'get_gym_mcp_capabilities';
+const readNames = gymMcpAdminTools.filter((tool) => tool.readOnly).map((tool) => tool.name);
 const writeNames = gymMcpAdminTools.filter((tool) => !tool.readOnly).map((tool) => tool.name);
 
 function advertisedNames(): string[] {
@@ -107,7 +113,7 @@ describe('hosted gym administrative tool advertisement', () => {
 
   it('advertises only the explicitly granted admin category', async () => {
     await createGymMcpServer({ ...principal, scopes: ['gyms:read', 'gyms:admin:read'] });
-    expect(advertisedNames()).toEqual([capabilityName, 'list_managed_gyms', inspectionName]);
+    expect(advertisedNames()).toEqual([capabilityName, 'list_managed_gyms', ...readNames]);
     expect(mocks.hasAdmin).toHaveBeenCalledWith(principal.userId);
     mocks.registerTool.mockClear();
     await createGymMcpServer({ ...principal, scopes: ['gyms:read', 'gyms:admin:write'] });
@@ -126,8 +132,8 @@ describe('hosted gym administrative tool advertisement', () => {
     for (const [name, options] of mocks.registerTool.mock.calls) {
       expect(options).toMatchObject({
         annotations: {
-          readOnlyHint: name === inspectionName || name === capabilityName,
-          destructiveHint: name !== inspectionName && name !== capabilityName,
+          readOnlyHint: readNames.includes(String(name)) || name === capabilityName,
+          destructiveHint: !readNames.includes(String(name)) && name !== capabilityName,
           idempotentHint: true,
           openWorldHint: false,
         },

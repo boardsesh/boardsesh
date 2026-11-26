@@ -225,7 +225,9 @@ describe('raw web and mobile fetch documents satisfy the shared transport limits
     ...readOperationStrings(new URL('../../../../packages/mobile/src/notifications/', import.meta.url)),
   ];
   it('finds the raw fetch operation corpus', () => {
-    expect(documents.length).toBeGreaterThanOrEqual(19);
+    // Public climb related content now uses the shared generated operation,
+    // covered above, instead of an inline web fetch document.
+    expect(documents.length).toBeGreaterThanOrEqual(18);
   });
   for (const [sourcePath, source] of documents) {
     const document = parse(source);

@@ -4,9 +4,11 @@ import React, { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { getPlatform, isNativeApp, waitForCapacitor } from '@/app/lib/ble/capacitor-utils';
 import { track } from '@/app/lib/analytics-capture';
+import type { CapacitorRetirementCopy } from './capacitor-retirement-content';
 
 // Only the retired app ever needs this, so keep it out of everyone else's
 // initial payload.
+const CapacitorRetirementContent = dynamic(() => import('./capacitor-retirement-content'), { ssr: false });
 const CapacitorRetirementScreen = dynamic(() => import('./capacitor-retirement-screen'), { ssr: false });
 
 /**
@@ -26,7 +28,13 @@ const CapacitorRetirementScreen = dynamic(() => import('./capacitor-retirement-s
  * Nothing but that real bridge can trigger the takeover — no user-agent
  * heuristic, which would also match Instagram and Facebook in-app WKWebViews.
  */
-export const CapacitorRetirementGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export function CapacitorRetirementGate({
+  children,
+  copy,
+}: {
+  children: React.ReactNode;
+  copy?: CapacitorRetirementCopy;
+}) {
   const [retired, setRetired] = useState(false);
 
   useEffect(() => {
@@ -62,8 +70,8 @@ export const CapacitorRetirementGate: React.FC<{ children: React.ReactNode }> = 
     };
   }, []);
 
-  if (retired) return <CapacitorRetirementScreen />;
-  return <>{children}</>;
-};
+  if (!retired) return <>{children}</>;
+  return copy ? <CapacitorRetirementContent copy={copy} /> : <CapacitorRetirementScreen />;
+}
 
 export default CapacitorRetirementGate;

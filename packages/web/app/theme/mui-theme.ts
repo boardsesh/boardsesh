@@ -58,14 +58,8 @@ declare module '@mui/material/Chip' {
     accent: true;
   }
 }
-declare module '@mui/material/Fab' {
-  interface FabPropsColorOverrides {
-    primaryFill: true;
-    accent: true;
-  }
-}
 // Note: `accent` is deliberately NOT exposed on SvgIcon. Accent is a FILL colour with
-// dark text (Button/Chip/Fab). The mint reads as a foreground on the dark page, but the spark is
+// dark text (Button/Chip). The mint reads as a foreground on the dark page, but the spark is
 // spent once per page as a fill, and its light value is 3.32:1 on white. Icons use a foreground role.
 declare module '@mui/material/SvgIcon' {
   interface SvgIconPropsColorOverrides {
@@ -229,17 +223,6 @@ const sharedComponents: Components<Theme> = {
           backgroundColor: 'var(--semantic-selected-hover)',
         },
       },
-    },
-  },
-  MuiFab: {
-    styleOverrides: {
-      primary: ({ theme }) => ({
-        backgroundColor: theme.palette.primaryFill.main,
-        color: theme.palette.primaryFill.contrastText,
-        '&:hover': {
-          backgroundColor: theme.palette.primaryFill.dark,
-        },
-      }),
     },
   },
   MuiCard: {
@@ -485,18 +468,6 @@ const sharedComponents: Components<Theme> = {
     styleOverrides: {
       paper: {
         borderRadius: themeTokens.borderRadius.md,
-      },
-    },
-  },
-  MuiBottomNavigationAction: {
-    styleOverrides: {
-      label: {
-        fontSize: '10px',
-        marginTop: '2px',
-        lineHeight: 1,
-        '&.Mui-selected': {
-          fontSize: '10px',
-        },
       },
     },
   },

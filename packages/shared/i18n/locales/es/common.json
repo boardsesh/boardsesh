@@ -214,8 +214,7 @@
       "delete": "No se pudo eliminar el comentario",
       "reply": "No se pudo publicar la respuesta",
       "loadReplies": "No se pudieron cargar las respuestas"
-    },
-    "signInToSuggestGrade": "Inicia sesión para proponer un grado"
+    }
   },
   "vote": {
     "upvote": "Voto positivo",

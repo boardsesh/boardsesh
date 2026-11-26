@@ -78,6 +78,25 @@ A display preference never changes who can see what. Privacy follows [docs/produ
 
 Every visible string goes in every locale: en-US, es, fr and de. Catalogs live in `packages/shared/i18n/locales/`. Follow the glossaries: [Spanish](../i18n/i18n-spanish-glossary.md), [French](../i18n/i18n-french-glossary.md), [German](../i18n/i18n-german-glossary.md). Don't hardcode strings. See "Internationalisation" in [CLAUDE.md](../../CLAUDE.md).
 
+## Icons
+
+Use Expo's recommended scoped `@react-native-vector-icons/material-design-icons`
+pack through its root import for Material icons. The shared `Icon` component
+selects Expo SF Symbols on iOS and this pack on Android. SwiftUI controls use
+`systemName` or `systemImage`, and native tabs use `expo-router/native-tabs` with
+`sf` names. Use logical `chevron.forward` / `chevron.backward` for navigation so
+arrows mirror in right-to-left layouts. MUI belongs to the web app.
+
+The root import uses Expo's dynamic font loader. The pack is excluded from
+native autolinking because this app ships its font as an OTA asset; do not add
+a native font-copy plugin or a `/static` import without reviewing compatibility.
+`loadRequiredFonts` preloads the `MaterialDesignIcons` family, and mounting-time
+load failures go to the app's error reporter with `source: icon-font`.
+
+[Expo's icon migration guidance](https://expo.dev/blog/moving-away-from-expo-vector-icons)
+explains the scoped packages and the supported Expo loader. This migration alone
+does not prove that a device-specific missing-icon report is resolved.
+
 ## JS or native
 
 JS-only changes go to `main` and reach climbers by OTA. A change that moves the native fingerprint (a new native module, an Expo plugin, an SDK bump) goes to `release/next`. If you are not sure, open the PR against `main` as JS-only. The OTA compatibility comment on the PR tells you if it is wrong. Details: "JS changes land on `main`, native changes on `release/next`" in [CONTRIBUTING.md](../../CONTRIBUTING.md) and [docs/operations/mobile-store-release.md](../operations/mobile-store-release.md).
