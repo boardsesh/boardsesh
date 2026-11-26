@@ -52,7 +52,7 @@ import {
 import { useNativeTabContentInsetLeft, useNativeTabContentInsetRight } from '../../lib/native-tab-content-inset-store';
 import { MiniPlayerActionsMenu } from './MiniPlayerActionsMenu';
 import { resolveClimbRenderBoard } from '../../lib/boards/climb-render-board';
-import { isQuantumMiniPlayerClimb } from './use-mini-player-climb-action';
+import { isQuantumClimbTarget } from '../../hooks/use-climb-target-availability';
 import { resolvePlayerAngle } from '../play-drawer/player-angle';
 import { usePaneWallControl } from '../play-drawer/pane-wall-control-store';
 import { PaneWallControlBulb } from './PaneWallControlBulb';
@@ -254,7 +254,7 @@ export function NativeAccessoryClimbRow({
   // The board the climb is drawn on, resolved the way the player resolves it, so
   // the heart, the share and Fell / Sent point at the same climb, board and angle.
   const pickBoard = pick?.boardConfig ?? null;
-  const targetBoard = isQuantumMiniPlayerClimb(climb, pickBoard) ? (pickBoard ?? boardConfig) : boardConfig;
+  const targetBoard = isQuantumClimbTarget(climb, pickBoard) ? (pickBoard ?? boardConfig) : boardConfig;
   const climbBoardResolution = useMemo(() => resolveClimbRenderBoard(climb, targetBoard), [climb, targetBoard]);
   const climbBoard = climbBoardResolution?.boardConfig ?? null;
   const workout = useMiniPlayerWorkoutOutcome({

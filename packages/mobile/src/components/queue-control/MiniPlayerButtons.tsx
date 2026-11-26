@@ -26,7 +26,7 @@ import { MiniPlayerTrackPager, useMiniPlayerNavigation } from './use-mini-player
 import { describeMiniPlayerStep } from './mini-player-step-label';
 import { useQueueActions } from '../../providers/queue-provider';
 import { getLastPick, setLastPickMirrored } from '../../lib/last-pick-store';
-import { useRunMiniPlayerClimbAction } from './use-mini-player-climb-action';
+import { useRunAvailableClimbAction } from '../../hooks/use-climb-target-availability';
 
 type MiniPlayerIconButtonProps = {
   iconName: IconName;
@@ -114,7 +114,7 @@ export function useMiniPlayerFavorite({
   const { data: serverFavorited } = useFavoriteStatus(boardName, climb.uuid, angle, { enabled });
   const { mutate: toggleFavorite } = useToggleFavorite();
   const isFavorited = serverFavorited ?? false;
-  const runClimbAction = useRunMiniPlayerClimbAction(climb, climbBoard);
+  const runClimbAction = useRunAvailableClimbAction(climb, climbBoard);
   const mutateFavorite = useCallback(() => {
     hapticSelection();
     toggleFavorite(
@@ -164,7 +164,7 @@ function MiniPlayerFavoriteButton({
 function MiniPlayerShareButton({ climb, climbBoard, size, wideLayout }: ClimbButtonProps) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
-  const runClimbAction = useRunMiniPlayerClimbAction(climb, climbBoard);
+  const runClimbAction = useRunAvailableClimbAction(climb, climbBoard);
   const share = useShareClimbAction({
     // The queue's climb is the shared-schema climb the player shares.
     climb,
@@ -206,7 +206,7 @@ export function useMiniPlayerMirrorToggle({
 }): { isMirrored: boolean; toggle: () => void } {
   const { mirrorCurrentClimb, getQueueSnapshot } = useQueueActions();
   const isMirrored = climb.mirrored === true;
-  const runClimbAction = useRunMiniPlayerClimbAction(climb, climbBoard);
+  const runClimbAction = useRunAvailableClimbAction(climb, climbBoard);
   const mirror = useCallback(() => {
     const snapshot = getQueueSnapshot();
     const headItem = snapshot.currentClimbQueueItem;

@@ -42,6 +42,11 @@ const saveMock = vi.hoisted(() => {
     })),
   };
 });
+const quantum = vi.hoisted(() => ({ enabled: true, isRetired: vi.fn<(climbUuid: string) => Promise<boolean>>() }));
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useFeatureFlag: (key: string) => key === 'quantum-board' && quantum.enabled,
+}));
+vi.mock('../../../db/queries/quantum-climb-retirement', () => ({ isQuantumClimbRetired: quantum.isRetired }));
 const boardState = vi.hoisted(() => ({ current: null as unknown }));
 const toastMock = vi.hoisted(() => ({ showToast: vi.fn() }));
 const presenceState = vi.hoisted(() => ({ enabled: false, boardId: null as number | null }));
@@ -169,6 +174,17 @@ function target(overrides: Partial<WorkoutOutcomeTarget> = {}): WorkoutOutcomeTa
   };
 }
 
+function quantumTarget(climbUuid = 'quantum-first', queueItemUuid = QUEUE_ITEM_UUID): WorkoutOutcomeTarget {
+  return target({
+    climb: climb({ uuid: climbUuid, boardType: 'quantum', layoutId: 9104 }),
+    queueItemUuid,
+    boardName: 'quantum',
+    layoutId: 9104,
+    sizeId: 9204,
+    setIds: '1',
+  });
+}
+
 /** The committed current queue item, as the queue provider's snapshot reports it. */
 const queueSnapshot = { current: { uuid: QUEUE_ITEM_UUID, climb: { uuid: CLIMB_UUID } } as unknown };
 const queueActions = {
@@ -227,6 +243,8 @@ function advanceClock(ms: number) {
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(START_MS);
+  quantum.enabled = true;
+  quantum.isRetired.mockReset().mockResolvedValue(false);
   saveMock.mutateAsync.mockClear();
   saveMock.state.failure = null;
   saveMock.state.isPending = false;
@@ -1148,5 +1166,54 @@ describe('useWorkoutOneTap: a saved go on another climb than the bar shows', () 
       'success',
     );
     expect(bar.result.current.notice).toBeNull();
+  });
+});
+
+describe('useWorkoutOneTap: Quantum eligibility at save time', () => {
+  it('drops a grace-period tap on the disabled Quantum climb the wall left for Kilter', () => {
+    const { result, rerender } = renderOneTap(quantumTarget());
+    quantum.enabled = false;
+    rerender({ target: target({ queueItemUuid: 'kilter-item' }) });
+
+    act(() => result.current.onFell());
+
+    expect(quantum.isRetired).not.toHaveBeenCalled();
+    expect(saveMock.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('checks the retired Quantum climb the wall left instead of the active Quantum climb', async () => {
+    quantum.isRetired.mockImplementation(async (climbUuid) => climbUuid === 'quantum-first');
+    const { result, rerender } = renderOneTap(quantumTarget());
+    rerender({ target: quantumTarget('quantum-next', 'item-2') });
+
+    await act(async () => result.current.onSent());
+
+    expect(quantum.isRetired).toHaveBeenCalledExactlyOnceWith('quantum-first');
+    expect(saveMock.mutateAsync).not.toHaveBeenCalled();
+
+    advanceClock(WALL_MOVED_GRACE_MS);
+    await act(async () => result.current.onSent());
+    expect(quantum.isRetired).toHaveBeenLastCalledWith('quantum-next');
+    expect(sentInput()).toMatchObject({ climbUuid: 'quantum-next', status: 'send' });
+  });
+
+  it('rechecks rollout after the local read and before dispatching a one-tap save', async () => {
+    let completeRead: (retired: boolean) => void = () => {};
+    quantum.isRetired.mockReturnValueOnce(
+      new Promise((resolve) => {
+        completeRead = resolve;
+      }),
+    );
+    const liveTarget = quantumTarget();
+    const { result, rerender } = renderOneTap(liveTarget);
+    const staleTap = result.current.onFell;
+    act(staleTap);
+    expect(quantum.isRetired).toHaveBeenCalledOnce();
+    quantum.enabled = false;
+    rerender({ target: liveTarget });
+
+    await act(async () => completeRead(false));
+
+    expect(saveMock.mutateAsync).not.toHaveBeenCalled();
   });
 });

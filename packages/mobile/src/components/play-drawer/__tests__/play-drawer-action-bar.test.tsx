@@ -12,6 +12,7 @@ vi.mock('../../PressableSurface', async () => {
       createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
   };
 });
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { act, fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -1186,8 +1187,10 @@ describe('PlayDrawerActionBar (the wall leaves a timed block)', () => {
     const onToggleFavorite = vi.fn();
     const onOpenAngleSelector = vi.fn();
     const handlers = { onToggleFavorite, onOpenAngleSelector };
+    const client = new QueryClient();
     const rendered = render(
       createElement(HeldBar, { live: limitTarget, committedQueueItemUuid: 'item-1', ...handlers }),
+      { wrapper: ({ children }) => createElement(QueryClientProvider, { client }, children) },
     );
     // The beat: the wall moves to the cool-down climb, which has no Fell / Sent.
     rendered.rerender(createElement(HeldBar, { live: null, committedQueueItemUuid: 'item-cool', ...handlers }));

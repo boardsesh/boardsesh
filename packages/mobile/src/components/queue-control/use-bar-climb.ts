@@ -1,5 +1,4 @@
 import { useMemo, useRef, useSyncExternalStore } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
 import { useQueueData } from '../../providers/queue-provider';
 import {
@@ -10,10 +9,7 @@ import {
   type LastPick,
 } from '../../lib/last-pick-store';
 import type { BoardConfig, OpenPlayDrawerOptions } from '../../providers/drawer-host-provider';
-import { useIsBoardConfigVisible } from '../../hooks/use-board-visibility';
-import { isQuantumClimbRetired } from '../../db/queries/quantum-climb-retirement';
-import { CLIMB_QUERY_KEY } from '../../lib/graphql/query-keys';
-import { isMiniPlayerClimbAvailable, isQuantumMiniPlayerClimb } from './use-mini-player-climb-action';
+import { useClimbTargetAvailable } from '../../hooks/use-climb-target-availability';
 import { getCredentialGeneration, subscribeToCredentialChanges } from '../../lib/privacy/privacy-cache';
 
 /** What the MiniPlayer shows (owner decision A). */
@@ -72,18 +68,8 @@ export function useBarClimb(boardConfig: BoardConfig | null, retainDuringRehydra
   if (retainDuringRehydrate && canAdoptBar) retained.current.bar = bar;
   const candidate = canAdoptBar ? bar : retained.current.bar;
   const candidateBoard = candidate.pick?.boardConfig ?? boardConfig;
-  const isBoardConfigVisible = useIsBoardConfigVisible();
-  const climb = candidate.climb;
-  const boardAvailable = !climb || isMiniPlayerClimbAvailable(climb, candidateBoard, isBoardConfigVisible);
-  const quantumClimbUuid =
-    climb && boardAvailable && isQuantumMiniPlayerClimb(climb, candidateBoard) ? climb.uuid : undefined;
-  const retirement = useQuery({
-    queryKey: [...CLIMB_QUERY_KEY, 'quantumRetirement', quantumClimbUuid],
-    queryFn: () => isQuantumClimbRetired(quantumClimbUuid!),
-    enabled: quantumClimbUuid !== undefined,
-    networkMode: 'always',
-  });
-  if (!boardAvailable || (quantumClimbUuid && (retirement.data !== false || retirement.isError))) return NO_CLIMB;
+  const targetAvailable = useClimbTargetAvailable(candidate.climb, candidateBoard);
+  if (!targetAvailable) return NO_CLIMB;
   if (canAdoptBar || !candidate.item) return candidate;
   return { item: candidate.item, climb: candidate.item.climb, pick: null };
 }

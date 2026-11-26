@@ -15,7 +15,7 @@ import { countSentAscents } from '../../lib/ascent-status-utils';
 import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
 import { resolveTickMirror } from '../../lib/queue-mirror-orientation';
 import { resolveClimbRenderBoard } from '../../lib/boards/climb-render-board';
-import { isQuantumMiniPlayerClimb, useRunMiniPlayerClimbAction } from './use-mini-player-climb-action';
+import { isQuantumClimbTarget, useRunAvailableClimbAction } from '../../hooks/use-climb-target-availability';
 
 /**
  * `placement` is set only by the tab-bar accessory platter's tick, so its Quick
@@ -38,12 +38,12 @@ export function useLogAscentAction(
   const targetBoard = boardConfigOverride ?? activeBoard;
   const boardConfig = useMemo(
     () =>
-      isQuantumMiniPlayerClimb(climb, targetBoard)
+      isQuantumClimbTarget(climb, targetBoard)
         ? (resolveClimbRenderBoard(climb, targetBoard, { loadMissingSpray: false })?.boardConfig ?? null)
         : activeBoard,
     [climb, targetBoard, activeBoard],
   );
-  const runClimbAction = useRunMiniPlayerClimbAction(climb, targetBoard);
+  const runClimbAction = useRunAvailableClimbAction(climb, targetBoard);
   const { sessionId } = useQueueSessionId();
   const { getQueueSnapshot } = useQueueActions();
   const boardLogbook = useOptionalBoardLogbook();

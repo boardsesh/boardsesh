@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { StrictMode, createElement, useEffect, type ReactNode } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Climb } from '@boardsesh/shared-schema';
 import {
   useWorkoutOutcomeHold,
@@ -35,6 +36,18 @@ function target(queueItemUuid: string, overrides: Partial<WorkoutOutcomeTarget> 
 }
 
 const LIMIT_TARGET = target(LIMIT_ITEM);
+const QUANTUM_TARGET = target(LIMIT_ITEM, {
+  boardName: 'quantum',
+  layoutId: 9104,
+  sizeId: 9204,
+  setIds: '1',
+  climb: { uuid: 'quantum-route', name: 'Quantum route', boardType: 'quantum', layoutId: 9104 } as Climb,
+});
+const quantum = vi.hoisted(() => ({ enabled: true, isRetired: vi.fn<() => Promise<boolean>>() }));
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useFeatureFlag: (key: string) => key === 'quantum-board' && quantum.enabled,
+}));
+vi.mock('../../../db/queries/quantum-climb-retirement', () => ({ isQuantumClimbRetired: quantum.isRetired }));
 
 /** The last timed climb on the wall, with its row up. */
 const onTheLimitClimb: WorkoutOutcomeHoldInput = {
@@ -53,10 +66,16 @@ const afterTheBeat: WorkoutOutcomeHoldInput = {
   displayedQueueItemUuid: COOL_DOWN_ITEM,
 };
 
-const strictMode = ({ children }: { children: ReactNode }) => createElement(StrictMode, null, children);
-
 /** Every row the player committed, in order, so a frame without one would show. */
 function renderHold(initial: WorkoutOutcomeHoldInput = onTheLimitClimb, options: { strict?: boolean } = {}) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function QueryWrapper({ children }: { children: ReactNode }) {
+    return createElement(
+      QueryClientProvider,
+      { client },
+      options.strict ? createElement(StrictMode, null, children) : children,
+    );
+  }
   const committed: (WorkoutOutcomeShown | null)[] = [];
   const renders = { count: 0 };
   const rendered = renderHook(
@@ -68,12 +87,14 @@ function renderHold(initial: WorkoutOutcomeHoldInput = onTheLimitClimb, options:
       });
       return shown;
     },
-    { initialProps: initial, ...(options.strict ? { wrapper: strictMode } : {}) },
+    { initialProps: initial, wrapper: QueryWrapper },
   );
-  return { ...rendered, committed, renders };
+  return { ...rendered, committed, renders, client };
 }
 
 beforeEach(() => {
+  quantum.enabled = true;
+  quantum.isRetired.mockReset().mockResolvedValue(false);
   vi.useFakeTimers();
   vi.setSystemTime(START_MS);
 });
@@ -213,5 +234,29 @@ describe('useWorkoutOutcomeHold', () => {
     rerender({ ...afterTheBeat, sessionId: null });
 
     expect(result.current).toBeNull();
+  });
+});
+
+describe('Quantum workout hold', () => {
+  it('drops the prior Quantum hold as the wall moves to Kilter with rollout off', async () => {
+    vi.useRealTimers();
+    const { result, rerender } = renderHold({ ...onTheLimitClimb, live: QUANTUM_TARGET });
+    await waitFor(() => expect(result.current?.target).toBe(QUANTUM_TARGET));
+
+    quantum.enabled = false;
+    rerender(afterTheBeat);
+    expect(result.current).toBeNull();
+  });
+
+  it('withdraws the held Quantum controls when sync retires their route', async () => {
+    vi.useRealTimers();
+    const { result, rerender, client } = renderHold({ ...onTheLimitClimb, live: QUANTUM_TARGET });
+    await waitFor(() => expect(result.current?.target).toBe(QUANTUM_TARGET));
+    rerender(afterTheBeat);
+    expect(result.current?.target).toBe(QUANTUM_TARGET);
+
+    quantum.isRetired.mockResolvedValue(true);
+    await act(() => client.invalidateQueries({ queryKey: ['climb'] }));
+    await waitFor(() => expect(result.current).toBeNull());
   });
 });

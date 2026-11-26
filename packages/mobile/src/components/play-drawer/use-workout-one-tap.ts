@@ -40,6 +40,7 @@ import { announceQueued } from '../../lib/announce-queued';
 import { hapticSuccess } from '../../lib/haptics';
 import { getWorkoutRunLog } from '../../lib/workout-run-store';
 import { nowDate } from '../../lib/clock';
+import { useRunAvailableClimbAction } from '../../hooks/use-climb-target-availability';
 import { isFirstAscentTick, useHasPriorTickHistory, useTickSaver } from './use-tick-saver';
 import { WALL_MOVED_GRACE_MS, type WorkoutOutcomeTarget } from './workout-outcome';
 import {
@@ -230,6 +231,11 @@ function useOneTapLogger(
 ): OneTapLogger {
   const { t } = useTranslation('session');
   const { climb, queueItemUuid, sessionId, boardName, layoutId, sizeId, setIds, angle, isMirror } = target;
+  const board = useMemo(
+    () => ({ boardName, layoutId, sizeId, setIds, angle }),
+    [boardName, layoutId, sizeId, setIds, angle],
+  );
+  const runClimbAction = useRunAvailableClimbAction(climb, board);
   // No `active`: the tap is the commit, so each save takes the wall as it is.
   const { save, tickBoardName } = useTickSaver({
     climb,
@@ -244,7 +250,7 @@ function useOneTapLogger(
   const hasPriorHistory = useHasPriorTickHistory(climb.uuid, tickBoardName, angle);
   const boardLogbook = useOptionalBoardLogbook();
 
-  const logGo = useCallback(
+  const saveGo = useCallback(
     (status: TickStatus) => {
       // A save for this queue item from another surface hasn't settled yet.
       if (isOneTapSavePending(queueItemUuid)) return;
@@ -293,6 +299,9 @@ function useOneTapLogger(
     [save, climb, angle, isMirror, queueItemUuid, report, t],
   );
 
+  // The tap may have selected the previous climb's logger during the wall
+  // grace period. Check that logger's route just before dispatching its save.
+  const logGo = useCallback((status: TickStatus) => runClimbAction(() => saveGo(status)), [runClimbAction, saveGo]);
   const logFell = useCallback(() => logGo('attempt'), [logGo]);
 
   const logSent = useCallback(() => {

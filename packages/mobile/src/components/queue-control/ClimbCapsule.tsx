@@ -28,7 +28,7 @@ import { BoardControlIndicator } from './BoardControlIndicator';
 import { PickBulbSlot } from './PickPutOnBoardBulb';
 import { usePickBulb } from './use-pick-bulb';
 import { lastPickClimb } from '../../lib/last-pick-store';
-import { isQuantumMiniPlayerClimb } from './use-mini-player-climb-action';
+import { isQuantumClimbTarget } from '../../hooks/use-climb-target-availability';
 
 type ClimbLabelProps = {
   climb: Climb;
@@ -96,7 +96,7 @@ export function ClimbCapsule({ height = TOOLBAR_CAPSULE_HEIGHT, endAction, endAc
   const currentClimb = useMemo(() => (pick ? lastPickClimb(pick) : (currentItem?.climb ?? null)), [pick, currentItem]);
   const pickBoard = pick?.boardConfig ?? null;
   const targetBoard =
-    currentClimb && isQuantumMiniPlayerClimb(currentClimb, pickBoard) ? (pickBoard ?? boardConfig) : boardConfig;
+    currentClimb && isQuantumClimbTarget(currentClimb, pickBoard) ? (pickBoard ?? boardConfig) : boardConfig;
   const showThumbnail = targetBoard != null;
   // The last pick's bulb (owner decision A): lit, unlit, or none for a climb
   // this wall can't light. Null while the bar shows the queue's current climb.
