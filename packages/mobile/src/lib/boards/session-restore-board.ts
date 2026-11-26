@@ -7,6 +7,7 @@ export async function readSessionRestoreBoard(sessionId: string) {
   const parsed = response.sessionRestoreBoardPath ? parseBoardPath(response.sessionRestoreBoardPath) : null;
   return {
     status: response.sessionStatus,
+    geometryPath: response.sessionRestoreBoardPath,
     board: parsed && toBoardName(parsed.boardName) ? parsed : null,
   };
 }

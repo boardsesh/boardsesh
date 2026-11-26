@@ -251,6 +251,18 @@ export const AURORA_HISTORY_CAPABILITY_OPERATIONS = new Set([
   'BoardHistoryPage',
 ]);
 
+/** The pinned wall must be the same one whose join the screenshot recorded. */
+export function legacyScreenshotJoinVariables(variables: unknown): Record<string, unknown> | null {
+  if (!isRecord(variables)) return null;
+  const { expectedBoardPath, ...recordedVariables } = variables;
+  const { boardPath } = recordedVariables;
+  if (typeof expectedBoardPath !== 'string' || typeof boardPath !== 'string') return null;
+  const positionalPath = /^\/?[a-z-]+\/\d+\/\d+\/[\d,]+\/-?\d+$/;
+  if (!positionalPath.test(expectedBoardPath) || boardPath.replace(/^\//, '') !== expectedBoardPath.replace(/^\//, ''))
+    return null;
+  return recordedVariables;
+}
+
 /**
  * Pinned recordings that predate a field the current document now selects.
  * Adapt those responses in memory; never rewrite their bytes or hashes. A
@@ -293,6 +305,16 @@ export function replayCompatibleFixtureResponse(
   if (controllerRouteAdaptation) return controllerRouteAdaptation;
   if (operationName === 'GetSession') return replayGetSessionWithPermanence(requestQuery, fixture, evidence);
   if (operationName === 'SessionStatus') return replaySessionStatusWithBoard(requestQuery, fixture, evidence);
+  if (operationName === 'JoinSession') {
+    const guarded = normalizeDocument(requestQuery);
+    const declaration = ', $expectedBoardPath: String';
+    const argument = ', expectedBoardPath: $expectedBoardPath';
+    if (guarded.split(declaration).length === 2 && guarded.split(argument).length === 2) {
+      const legacy = guarded.replace(declaration, '').replace(argument, '');
+      if (legacy === normalizeDocument(fixture.query)) return { response: fixture.response };
+      return replayCompatibleFixtureResponse(legacy, fixture, evidence);
+    }
+  }
   if (BOARD_WALL_DEVICE_OPERATIONS.has(operationName ?? '')) {
     // The newest board fields first: each adapter strips its own selection and
     // hands the rest back here, so a recording that predates both still lands.

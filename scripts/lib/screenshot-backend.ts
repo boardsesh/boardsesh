@@ -79,6 +79,7 @@ import {
   formatScreenshotBackendLine,
   graphqlFixtureKey,
   indexBatchItemsById,
+  legacyScreenshotJoinVariables,
   pseudonymiseResponse,
   redactIgnoredVariablePaths,
   replayCompatibleFixtureResponse,
@@ -1241,6 +1242,24 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       }
     }
     let entry = graphqlIndex.get(`${operationName}\n${key.variablesHash}`);
+    if (!entry && operationName === 'JoinSession') {
+      const recordedVariables = legacyScreenshotJoinVariables(parsedBody.variables);
+      if (recordedVariables) {
+        const legacyKey = graphqlFixtureKey({ operationName, query, variables: recordedVariables }, sha256Hex);
+        const legacyEntry = graphqlIndex.get(`${operationName}\n${legacyKey.variablesHash}`);
+        if (legacyEntry && isFixtureFileWithinDirectory(fixturesDir, legacyEntry.file)) {
+          try {
+            const fixture = JSON.parse(readFileSync(join(fixturesDir, legacyEntry.file), 'utf8')) as GraphqlFixtureFile;
+            if (!fixture.query.includes('expectedBoardPath') && replayCompatibleFixtureResponse(query, fixture)) {
+              entry = legacyEntry;
+            }
+          } catch {
+            missGraphql(operationName, 'unreadable-fixture');
+            return;
+          }
+        }
+      }
+    }
     if (!entry && AURORA_HISTORY_CAPABILITY_OPERATIONS.has(operationName)) {
       const variables = parsedBody.variables;
       if (

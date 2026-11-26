@@ -419,7 +419,12 @@ export function redactBoardIdentity<T extends Partial<Record<BoardIdentityField,
 export async function projectSessionBoardPath(
   boardPath: string,
   viewerId: string | null | undefined,
-  linkHolders: { presentedByViewer?: boolean; discovery?: boolean; geometryOnly?: boolean } = {},
+  linkHolders: {
+    presentedByViewer?: boolean;
+    discovery?: boolean;
+    geometryOnly?: boolean;
+    lockGeometry?: boolean;
+  } = {},
 ): Promise<string> {
   const named = parseNamedBoardPath(boardPath);
   if (!named) return boardPath;
@@ -433,22 +438,24 @@ export async function projectSessionBoardPath(
     setIds: userBoards.setIds,
     angle: userBoards.angle,
   };
-  const [live] = await db
+  const liveQuery = db
     .select(columns)
     .from(userBoards)
     .where(and(eq(userBoards.slug, named.slug), isNull(userBoards.deletedAt)))
     .limit(1);
+  const [live] = await (linkHolders.lockGeometry ? liveQuery.for('share', { noWait: true }) : liveQuery);
   // Slugs are unique among live boards only: the latest deletion is the board
   // this path last named.
-  const [deleted] = live
-    ? []
-    : await db
-        .select(columns)
-        .from(userBoards)
-        .where(and(eq(userBoards.slug, named.slug), isNotNull(userBoards.deletedAt)))
-        .orderBy(desc(userBoards.deletedAt))
-        .limit(1);
-  const board = live ?? deleted;
+  let board = live;
+  if (!board) {
+    const deletedQuery = db
+      .select(columns)
+      .from(userBoards)
+      .where(and(eq(userBoards.slug, named.slug), isNotNull(userBoards.deletedAt)))
+      .orderBy(desc(userBoards.deletedAt))
+      .limit(1);
+    [board] = await (linkHolders.lockGeometry ? deletedQuery.for('share', { noWait: true }) : deletedQuery);
+  }
   if (!board) return '';
   const geometry = `/${board.boardType}/${board.layoutId}/${board.sizeId}/${board.setIds}/${named.angle ?? board.angle}`;
   if (linkHolders.geometryOnly) return geometry;

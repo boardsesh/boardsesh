@@ -129,6 +129,7 @@ export type JoinSessionCallbacks = {
 };
 
 export type JoinSessionOptions = {
+  expectedBoardPath?: string;
   username?: string;
   avatarUrl?: string;
   initialQueue?: ClimbQueueItem[];

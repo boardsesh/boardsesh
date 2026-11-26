@@ -323,6 +323,7 @@ class RoomManager {
     participantId?: string | null,
     isPublic?: boolean,
     initialHistoryCount?: number,
+    expectedBoardPath?: string,
   ): Promise<{
     clientId: string;
     users: SessionUser[];
@@ -339,6 +340,7 @@ class RoomManager {
     participantId: string;
     participantWasKnown: boolean;
     participantWasReconnecting: boolean;
+    previousMembership?: SessionLeaveResult | null;
   }> {
     return joinSessionFn(
       this.deps(),
@@ -362,6 +364,7 @@ class RoomManager {
         sessionName,
         participantId,
         isPublic,
+        expectedBoardPath,
       },
     );
   }

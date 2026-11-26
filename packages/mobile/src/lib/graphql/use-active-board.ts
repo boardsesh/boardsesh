@@ -185,9 +185,17 @@ export function useSetActiveBoard() {
       const owner = getCurrentUserStorageOwner();
       return enqueueActiveBoardWrite(
         generation,
-        () => {
-          if (!isCurrent()) return Promise.resolve();
-          return setStoredActiveBoard(board, owner);
+        async () => {
+          if (!isCurrent()) return;
+          const previous = isOperationCurrent ? await getStoredActiveBoard(owner) : null;
+          if (credentialGeneration !== getCredentialGeneration() || !isCurrent()) return;
+          await setStoredActiveBoard(board, owner);
+          // IndexedDB/AsyncStorage may have completed after a guarded
+          // navigation was canceled. Repair it before the next queued intent.
+          if (isOperationCurrent && credentialGeneration === getCredentialGeneration() && !isCurrent()) {
+            if (previous) await setStoredActiveBoard(previous, owner);
+            else await clearStoredActiveBoard(owner);
+          }
         },
         () => {
           const cached = queryClient.setQueryData<UserBoard | null>(ACTIVE_BOARD_QUERY_KEY, board);

@@ -6,7 +6,13 @@ import { Alert, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { parseBoardPath, parseNamedBoardPath, formatBoardDisplayName } from '@boardsesh/board-config';
+import {
+  buildBoardPath,
+  parseBoardPath,
+  parseNamedBoardPath,
+  formatBoardDisplayName,
+  sessionBoardPathsMatch,
+} from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../../src/lib/analytics';
 import { Text } from '../../src/components/Text';
@@ -24,6 +30,7 @@ import { isNetworkError } from '@boardsesh/offline-sync/error-classification';
 import { useSessionPreview, useCreateBoard, useBoardBySlug, fetchBoardBySlug } from '../../src/lib/graphql/hooks';
 import { fetchAllMyOwnedBoards } from '../../src/lib/graphql/hooks/fetch-all-my-owned-boards';
 import { createBoardOrAdoptDuplicate } from '../../src/lib/graphql/create-board-or-adopt-duplicate';
+import { readSessionRestoreBoard } from '../../src/lib/boards/session-restore-board';
 import { resolveBoardForSession } from '../../src/lib/board-path-to-user-board';
 import { spacing, cardCorners } from '../../src/theme/tokens';
 import { holdUntilLaunchReady } from '../../src/components/launch-update/hold-until-launch-ready';
@@ -72,7 +79,7 @@ function JoinSessionScreen() {
   const { sessionId: activeSessionId } = useQueueSessionId();
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
-  const { joinSession, clearSession } = useQueueActions();
+  const { joinSession } = useQueueActions();
 
   const preview = useSessionPreview(sessionId);
   const createBoard = useCreateBoard();
@@ -153,6 +160,18 @@ function JoinSessionScreen() {
         isJoinOperationCurrent(operation) && (!userBoard || boardVisibilityRef.current(userBoard));
       try {
         if (!isCurrent()) return;
+        const currentTarget = await readSessionRestoreBoard(operation.sessionId);
+        if (!isCurrent() || activeSessionIdRef.current !== operation.previousSessionId) return;
+        const expectedBoardPath = currentTarget.geometryPath;
+        if (
+          currentTarget.status !== 'active' ||
+          !expectedBoardPath ||
+          !currentTarget.board ||
+          !boardVisibilityRef.current(currentTarget.board) ||
+          (parseBoardPath(operation.boardPath) && !sessionBoardPathsMatch(operation.boardPath, expectedBoardPath))
+        ) {
+          throw new Error('Session board changed or is unavailable');
+        }
         userBoard = await resolveBoardForSession(operation.boardPath, {
           isOperationCurrent: isCurrent,
           isBoardAvailable: (board) => boardVisibilityRef.current(board),
@@ -167,14 +186,21 @@ function JoinSessionScreen() {
           fetchBoardBySlug,
         });
         if (!isCurrent() || activeSessionIdRef.current !== operation.previousSessionId) return;
-        if (operation.previousSessionId && operation.previousSessionId !== operation.sessionId) {
-          await clearSession({ notifyServer: true, isOperationCurrent: isCurrent });
-          if (!isCurrent()) return;
+        const resolvedGeometry = buildBoardPath(
+          userBoard.boardType,
+          userBoard.layoutId,
+          userBoard.sizeId,
+          userBoard.setIds,
+          userBoard.angle,
+        );
+        if (!sessionBoardPathsMatch(expectedBoardPath, resolvedGeometry)) {
+          throw new Error('Session board changed or is unavailable');
         }
         // joinSession returns early when we're already in this session, and that
         // isn't a join the live-sessions funnel should count.
         const joined = await joinSession(operation.sessionId, {
           boardPath: operation.boardPath,
+          expectedBoardPath,
           userBoard,
           isOperationCurrent: isCurrent,
         });
@@ -214,7 +240,7 @@ function JoinSessionScreen() {
         }
       }
     },
-    [clearSession, createBoard, isJoinOperationCurrent, joinSession, liveSessionSource, router, showToast, t],
+    [createBoard, isJoinOperationCurrent, joinSession, router, showToast, t],
   );
 
   const handleJoinPress = useCallback(() => {

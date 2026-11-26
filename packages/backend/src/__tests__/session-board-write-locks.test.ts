@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeEach, describe, expect, it } from 'vite-plus/test';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { eq, inArray, sql } from 'drizzle-orm';
 import * as tables from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
@@ -9,6 +9,7 @@ import { lockActiveBoardForWrite } from '../services/board-reference-lock';
 import { ensureSessionRecordExists } from '../services/room-manager/client-lifecycle';
 import { createDiscoverableSession, updateSessionBoardPathIfChanged } from '../services/room-manager/session-discovery';
 import { sessionMutations } from '../graphql/resolvers/sessions/mutations';
+import { roomManager } from '../services/room-manager';
 
 const userIds: string[] = [];
 const sessionIds: string[] = [];
@@ -347,5 +348,88 @@ describe('session writers serialize with identity merges', () => {
     );
     const [session] = await db.select().from(tables.boardSessions).where(eq(tables.boardSessions.id, sessionId));
     expect(session).toMatchObject({ boardId: canonical.id, boardPath: `/b/${canonical.slug}/45` });
+  });
+});
+
+describe('guarded joins and wall moves', () => {
+  const expectedBoardPath = 'moonboard/5/1/17,18,19,20,21,22,23/40';
+
+  async function prepareJoin() {
+    const currentRoom = await createSession('join', canonical.slug);
+    const targetRoom = await createSession('join', original.slug);
+    const connectionId = randomUUID();
+    await roomManager.registerClient(connectionId, 'Climber', ownerId);
+    await roomManager.joinSession(connectionId, currentRoom, `/b/${canonical.slug}/40`);
+    const join = () =>
+      roomManager.joinSession(
+        connectionId,
+        targetRoom,
+        `/b/${original.slug}/40`,
+        'Climber',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        expectedBoardPath,
+      );
+    return { currentRoom, targetRoom, join };
+  }
+
+  it('keeps the current room when the target already switched to Quantum', async () => {
+    const { currentRoom, targetRoom, join } = await prepareJoin();
+    await updateSessionBoardPathIfChanged(targetRoom, 'quantum/9104/9204/1/35', ownerId);
+
+    await expect(join()).rejects.toMatchObject({ extensions: { code: 'SESSION_BOARD_CHANGED' } });
+    expect(await roomManager.getSessionUsers(currentRoom)).toHaveLength(1);
+    expect(await roomManager.getSessionUsers(targetRoom)).toHaveLength(0);
+  });
+
+  it('keeps the current room when the target is a different named wall with the same geometry', async () => {
+    const { currentRoom, targetRoom, join } = await prepareJoin();
+    await updateSessionBoardPathIfChanged(targetRoom, `/b/${canonical.slug}/40`, ownerId);
+
+    await expect(join()).rejects.toMatchObject({ extensions: { code: 'SESSION_BOARD_CHANGED' } });
+    expect(await roomManager.getSessionUsers(currentRoom)).toHaveLength(1);
+    expect(await roomManager.getSessionUsers(targetRoom)).toHaveLength(0);
+  });
+
+  it('holds the target board stable while the guarded join leaves the old room', async () => {
+    const { currentRoom, targetRoom, join } = await prepareJoin();
+    const leaveStarted = deferred<void>();
+    const resumeLeave = deferred<void>();
+    const originalLeave = roomManager.leaveSession.bind(roomManager);
+    const leave = vi.spyOn(roomManager, 'leaveSession').mockImplementationOnce(async (connectionId) => {
+      leaveStarted.resolve();
+      await resumeLeave.promise;
+      return originalLeave(connectionId);
+    });
+    const joining = join();
+    try {
+      await Promise.race([leaveStarted.promise, joining]);
+      expect(leave).toHaveBeenCalledOnce();
+      const wallChange = sessionActionWithPid(() =>
+        updateSessionBoardPathIfChanged(targetRoom, 'quantum/9104/9204/1/35', ownerId),
+      );
+      try {
+        expect(await waitForLock(await wallChange.pid)).toBe(true);
+        expect(await roomManager.getSessionUsers(currentRoom)).toHaveLength(1);
+        expect(await roomManager.getSessionUsers(targetRoom)).toHaveLength(0);
+        resumeLeave.resolve();
+        await expect(joining).resolves.toMatchObject({ users: [expect.objectContaining({ username: 'Climber' })] });
+        await expect(wallChange.action).resolves.toBe(`/b/${original.slug}/40`);
+        expect(await roomManager.getSessionUsers(currentRoom)).toHaveLength(0);
+        expect(await roomManager.getSessionUsers(targetRoom)).toHaveLength(1);
+      } finally {
+        resumeLeave.resolve();
+        await Promise.allSettled([wallChange.action]);
+      }
+    } finally {
+      resumeLeave.resolve();
+      await Promise.allSettled([joining]);
+      leave.mockRestore();
+    }
   });
 });

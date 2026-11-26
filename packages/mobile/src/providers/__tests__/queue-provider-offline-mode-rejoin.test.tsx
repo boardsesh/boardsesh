@@ -30,6 +30,7 @@ import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect, type RefObject } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
+import { MUTATION_TIMEOUT_MS } from '@boardsesh/graphql-client';
 
 const server = await vi.hoisted(async () =>
   (await import('./helpers/fake-graphql-ws-server')).createFakeGraphqlWsServer(),
@@ -102,7 +103,7 @@ const activeBoard = vi.hoisted(() => ({
     isFollowedByMe: false,
   } satisfies UserBoard,
   getStoredActiveBoard: vi.fn(),
-  setActiveBoard: vi.fn(async () => {}),
+  setActiveBoard: vi.fn(async () => true),
 }));
 
 const toast = vi.hoisted(() => ({
@@ -262,6 +263,8 @@ describe('QueueProvider — crew session after Offline mode on → off', () => {
       readDeviceState: async () => ({ device: 'online', deviceReachability: 'reachable' }),
       onOnlineChange: () => {},
     });
+    activeBoard.setActiveBoard.mockReset().mockResolvedValue(true);
+    sessionStore.setStoredSessionId.mockClear();
     activeBoard.getStoredActiveBoard.mockReset();
     activeBoard.getStoredActiveBoard.mockResolvedValue(activeBoard.stored);
     toast.showToast.mockClear();
@@ -304,6 +307,54 @@ describe('QueueProvider — crew session after Offline mode on → off', () => {
     expect(sessionMutationsSince(mark)).toEqual([
       { connectionId: socket.connectionId, operationName: 'ConfirmClimbOnWall', outcome: 'ok' },
     ]);
+  });
+
+  it('starts the target streams without sending a second join after a confirmed switch', async () => {
+    const queueRef = renderApp();
+    const socket = await waitForLiveSession();
+    const mark = server.operations.length;
+    const boardPath = 'kilter/1/10/1,2/40';
+
+    await act(async () => {
+      expect(
+        await currentQueue(queueRef).joinSession('session-2', {
+          boardPath,
+          expectedBoardPath: boardPath,
+          userBoard: activeBoard.stored,
+        }),
+      ).toBe(true);
+    });
+    await waitFor(() => expect(socket.liveSubscriptions.size).toBe(2));
+    expect(socket.joinedSessionId).toBe('session-2');
+    expect(server.operations.slice(mark).filter(({ operationName }) => operationName.startsWith('Join'))).toEqual([
+      { connectionId: socket.connectionId, operationName: 'JoinConfirmedSession', outcome: 'ok' },
+    ]);
+  });
+
+  it('rejoins the previous room on a fresh connection if an accepted switch loses its reply', async () => {
+    const queueRef = renderApp();
+    const originalSocket = await waitForLiveSession();
+    server.queueFeed.dropNextConfirmedJoinReply = true;
+    vi.useFakeTimers();
+    const boardPath = 'kilter/1/10/1,2/40';
+    const joining = currentQueue(queueRef)
+      .joinSession('session-2', {
+        boardPath,
+        expectedBoardPath: boardPath,
+        userBoard: activeBoard.stored,
+      })
+      .catch((error: unknown) => error);
+
+    await act(async () => vi.advanceTimersByTimeAsync(100));
+    expect(originalSocket.joinedSessionId).toBe('session-2');
+    await act(async () => vi.advanceTimersByTimeAsync(MUTATION_TIMEOUT_MS + 200));
+    expect(await joining).toMatchObject({ message: expect.stringContaining('timed out') });
+    expect(originalSocket.readyState).toBe(originalSocket.CLOSED);
+    expect(server.liveSessionSocket()?.connectionId).not.toBe(originalSocket.connectionId);
+    expect(server.liveSessionSocket()?.joinedSessionId).toBe('session-1');
+    expect(currentQueue(queueRef).sessionId).toBe('session-1');
+    expect(activeBoard.setActiveBoard).not.toHaveBeenCalled();
+    expect(sessionStore.setStoredSessionId).not.toHaveBeenCalled();
   });
 
   it('does not rejoin a crew which switched to Quantum while the saved board remained Kilter', async () => {

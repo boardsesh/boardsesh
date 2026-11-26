@@ -119,6 +119,35 @@ describe('useActiveBoard', () => {
     await expect(getStoredActiveBoard()).resolves.toBeNull();
   });
 
+  it('restores the previous stored board if a guarded selection is canceled during storage', async () => {
+    const { useSetActiveBoard } = await import('../use-active-board');
+    const { getStoredActiveBoard, setStoredActiveBoard } = await import('../../active-board-store');
+    const asyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+    await setStoredActiveBoard(storedBoard);
+    const originalWrite = asyncStorage.setItem.bind(asyncStorage);
+    let resumeWrite = () => {};
+    const hold = new Promise<void>((resolve) => {
+      resumeWrite = resolve;
+    });
+    let announceWrite = () => {};
+    const written = new Promise<void>((resolve) => {
+      announceWrite = resolve;
+    });
+    vi.spyOn(asyncStorage, 'setItem').mockImplementationOnce(async (key, payload) => {
+      await originalWrite(key, payload);
+      announceWrite();
+      await hold;
+    });
+    const { result } = renderHook(() => useSetActiveBoard(), { wrapper: wrapper() });
+    let current = true;
+    const writing = result.current(otherBoard, () => current);
+    await written;
+    current = false;
+    resumeWrite();
+    await expect(writing).resolves.toBe(false);
+    await expect(getStoredActiveBoard()).resolves.toMatchObject(storedBoard);
+  });
+
   it('drops a queued Quantum selection when its flag is revoked before persistence', async () => {
     rollout.enabled = true;
     const { useSetActiveBoard } = await import('../use-active-board');

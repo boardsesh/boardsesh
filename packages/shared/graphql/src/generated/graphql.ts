@@ -6990,6 +6990,7 @@ export type MutationInviteResourceMemberArgs = {
 export type MutationJoinSessionArgs = {
   avatarUrl?: InputMaybe<Scalars['String']['input']>;
   boardPath: Scalars['String']['input'];
+  expectedBoardPath?: InputMaybe<Scalars['String']['input']>;
   initialCurrentClimb?: InputMaybe<ClimbQueueItemInput>;
   initialHistoryCount?: InputMaybe<Scalars['Int']['input']>;
   initialQueue?: InputMaybe<Array<ClimbQueueItemInput>>;
