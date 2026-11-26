@@ -25,13 +25,19 @@ import {
   type GetGymKioskQueryResponse,
   type GymKioskOperationResult,
 } from '@boardsesh/graphql/operations';
-import { disambiguateBoardSubtitles, stripGymNamePrefix } from '@boardsesh/board-config';
+import {
+  disambiguateBoardSubtitles,
+  stripGymNamePrefix,
+  supportsPublicClimbLinks,
+  supportsStaticBoardRender,
+} from '@boardsesh/board-config';
 import { getBoardDiscovery } from '@/app/lib/server-board-discovery';
 import GymPopularClimbPreview, {
   type GymPopularPreviewBoard,
 } from '@/app/components/gym-entity/gym-popular-climb-preview';
 import { gymMapsUrl } from '@/app/lib/gym-maps-url';
 import { constructBoardSlugListUrl } from '@/app/lib/url-utils';
+import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
 import { isBoardConfigVisible } from '@boardsesh/board-config/visibility';
 import { getBoardVisibilityFlags } from '@/app/lib/boards/board-visibility.server';
 import { boardTypeLabel, CATALOGUE_BOARD_TYPES } from '@boardsesh/board-constants';
@@ -417,7 +423,7 @@ export default async function GymPage(props: GymRouteProps) {
   const previewBoard = (discoveryBoards as GymPopularPreviewBoard[]).find(
     (board) =>
       board.popularClimb?.frames &&
-      board.boardType !== 'spray' &&
+      supportsStaticBoardRender(board.boardType) &&
       allBoards.some((visibleBoard) => visibleBoard.uuid === board.uuid),
   );
 
@@ -738,43 +744,49 @@ export default async function GymPage(props: GymRouteProps) {
                   component="ul"
                   sx={{ listStyle: 'none', p: 0, m: 0, display: 'flex', flexDirection: 'column', gap: 1 }}
                 >
-                  {boards.map((board, boardIndex) => (
-                    <Box
-                      component="li"
-                      key={board.uuid}
-                      sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 1 }}
-                    >
-                      <MuiLink
-                        component={LocaleLink}
-                        href={`/b/${board.slug}`}
-                        underline="hover"
-                        sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 1, color: 'var(--color-primary)' }}
+                  {boards.map((board, boardIndex) => {
+                    const hasWebClimbList = supportsPublicClimbLinks(board.boardType);
+                    const encodedSlug = encodeURIComponent(board.slug);
+                    const boardPath = `/b/${hasWebClimbList ? board.slug : encodedSlug}`;
+                    const listPath = constructBoardSlugListUrl(encodedSlug, board.angle);
+                    return (
+                      <Box
+                        component="li"
+                        key={board.uuid}
+                        sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 1 }}
                       >
-                        <Typography component="span" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
-                          {stripGymNamePrefix(board.name, gym.name)}
-                        </Typography>
-                        <Typography component="span" variant="body2" color="text.secondary">
-                          {boardRowSubtitle(boardIndex)}
-                        </Typography>
-                      </MuiLink>
-                      <MuiLink
-                        component={LocaleLink}
-                        href={constructBoardSlugListUrl(encodeURIComponent(board.slug), board.angle)}
-                        sx={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, ml: 2 }}
-                      >
-                        {t('gymPage.seeClimbs')}
-                      </MuiLink>
-                      {showReportProblem && (
-                        <Box sx={{ ml: 'auto' }}>
-                          <ReportBoardButton
-                            gymUuid={gym.uuid}
-                            boardUuid={board.uuid}
-                            boardName={stripGymNamePrefix(board.name, gym.name)}
-                          />
-                        </Box>
-                      )}
-                    </Box>
-                  ))}
+                        <MuiLink
+                          component={LocaleLink}
+                          href={hasWebClimbList ? boardPath : buildAppHandoffUrl(boardPath)}
+                          underline="hover"
+                          sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 1, color: 'var(--color-primary)' }}
+                        >
+                          <Typography component="span" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
+                            {stripGymNamePrefix(board.name, gym.name)}
+                          </Typography>
+                          <Typography component="span" variant="body2" color="text.secondary">
+                            {boardRowSubtitle(boardIndex)}
+                          </Typography>
+                        </MuiLink>
+                        <MuiLink
+                          component={LocaleLink}
+                          href={hasWebClimbList ? listPath : buildAppHandoffUrl(listPath)}
+                          sx={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, ml: 2 }}
+                        >
+                          {t('gymPage.seeClimbs')}
+                        </MuiLink>
+                        {showReportProblem && (
+                          <Box sx={{ ml: 'auto' }}>
+                            <ReportBoardButton
+                              gymUuid={gym.uuid}
+                              boardUuid={board.uuid}
+                              boardName={stripGymNamePrefix(board.name, gym.name)}
+                            />
+                          </Box>
+                        )}
+                      </Box>
+                    );
+                  })}
                 </Box>
               )}
             </Box>
