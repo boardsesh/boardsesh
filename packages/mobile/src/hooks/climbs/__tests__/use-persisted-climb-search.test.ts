@@ -166,6 +166,45 @@ describe('usePersistedClimbSearch', () => {
     screen.unmount();
   });
 
+  it('keeps the name when the same board comes back after a gap', async () => {
+    const request = deferredSearch();
+    storage.getLastSearch.mockReturnValueOnce(request.promise);
+    const screen = setup();
+    await finish(request, saved('crimpy'));
+    const restored = { ...screen.initialProps, name: 'crimpy' };
+    screen.rerender(restored);
+    screen.rerender({ ...restored, boardConfig: null });
+    screen.rerender(restored);
+    expect(screen.result.current).toBe(true);
+    expect(screen.initialProps.replaceSearch).toHaveBeenCalledTimes(1);
+    screen.unmount();
+  });
+
+  it('reads storage again, not clearing the name, after a sign-out read is cut short', async () => {
+    const signedIn = deferredSearch();
+    const signedOut = deferredSearch();
+    const signedInAgain = deferredSearch();
+    storage.getLastSearch
+      .mockReturnValueOnce(signedIn.promise)
+      .mockReturnValueOnce(signedOut.promise)
+      .mockReturnValueOnce(signedInAgain.promise);
+    const screen = setup();
+    await finish(signedIn, saved('crimpy'));
+    const restored = { ...screen.initialProps, name: 'crimpy' };
+    screen.rerender(restored);
+    screen.rerender({ ...restored, isAuthenticated: false });
+    screen.rerender(restored);
+    expect(storage.getLastSearch).toHaveBeenCalledTimes(3);
+    await finish(signedInAgain, saved('crimpy'));
+    expect(screen.initialProps.replaceSearch).toHaveBeenCalledTimes(2);
+    expect(screen.initialProps.replaceSearch).toHaveBeenLastCalledWith(
+      DEFAULT_CLIMB_FILTER_STATE,
+      'crimpy',
+      DEFAULT_CLIMB_BOARD_FILTER_STATE,
+    );
+    screen.unmount();
+  });
+
   it('uses clean defaults after a failed read and becomes ready', async () => {
     const request = deferredSearch();
     storage.getLastSearch.mockReturnValueOnce(request.promise);

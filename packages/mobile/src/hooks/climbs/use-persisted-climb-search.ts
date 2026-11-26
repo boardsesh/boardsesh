@@ -30,8 +30,10 @@ export function usePersistedClimbSearch(options: Options) {
   const boardKey = boardConfig ? boardGeometryKey(boardConfig) : null;
   const scopeKey = boardKey === null ? null : `${boardKey}|${isAuthenticated}`;
   const [restoredScope, setRestoredScope] = useState<string | null>(null);
-  // The sign-in state the in-memory search was last read from storage under.
+  // The sign-in state the in-memory search was last read from storage under,
+  // and the board it was last restored or carried over for.
   const readForAuthRef = useRef<boolean | null>(null);
+  const searchBoardKeyRef = useRef<string | null>(null);
   const latest = useRef(options);
   latest.current = options;
   useEffect(() => {
@@ -46,11 +48,17 @@ export function usePersistedClimbSearch(options: Options) {
       setRestoredScope(null);
       return;
     }
+    const nextBoardKey = boardGeometryKey(board);
     if (readForAuthRef.current === authenticated) {
-      replace(filtersForBoard(currentFilters, board.boardName), '', withoutGeometryFilters(currentBoardFilters));
+      if (searchBoardKeyRef.current !== nextBoardKey) {
+        replace(filtersForBoard(currentFilters, board.boardName), '', withoutGeometryFilters(currentBoardFilters));
+        searchBoardKeyRef.current = nextBoardKey;
+      }
       setRestoredScope(scopeKey);
       return;
     }
+    // A read that is cancelled before it lands must not leave a match behind.
+    readForAuthRef.current = null;
     setRestoredScope(null);
     let cancelled = false;
     void getLastSearch(board, { isAuthenticated: authenticated })
@@ -65,6 +73,7 @@ export function usePersistedClimbSearch(options: Options) {
           saved?.boardFilters ?? DEFAULT_CLIMB_BOARD_FILTER_STATE,
         );
         readForAuthRef.current = authenticated;
+        searchBoardKeyRef.current = nextBoardKey;
         setRestoredScope(scopeKey);
       });
     return () => {

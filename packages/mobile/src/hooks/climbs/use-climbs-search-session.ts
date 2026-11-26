@@ -47,8 +47,8 @@ export function useClimbsSearchSession(boardConfig: BoardSearchConfig | null) {
   // search (name included) and leaves an open filter sheet alone.
   const boardKey = boardConfig ? boardGeometryKey(boardConfig) : null;
   const filterScopeKey = boardKey === null ? null : `${boardKey}|${isAuthenticated}`;
-  const filterScopeRef = useRef(filterScopeKey);
-  filterScopeRef.current = filterScopeKey;
+  const authRef = useRef(isAuthenticated);
+  authRef.current = isAuthenticated;
   const boardKeyRef = useRef(boardKey);
   boardKeyRef.current = boardKey;
   const { lastUsedGrade, rememberGrade } = useLastUsedGrade();
@@ -118,7 +118,7 @@ export function useClimbsSearchSession(boardConfig: BoardSearchConfig | null) {
   );
   const finishFilterSession = useCallback(
     (finalSelection: ClimbFilterSelection) => {
-      const finalScope = filterScopeRef.current;
+      const finalAuth = authRef.current;
       const finalBoardKey = boardKeyRef.current;
       const finalName = searchName.flush();
       replaceSearch(finalSelection.filters, finalName, finalSelection.boardFilters);
@@ -132,7 +132,8 @@ export function useClimbsSearchSession(boardConfig: BoardSearchConfig | null) {
         addRecentFilter(label, finalSelection.filters, finalName, finalBoardKey)
           .then(() => getRecentFilters({ isAuthenticated }))
           .then((recent) => {
-            if (filterScopeRef.current === finalScope) setRecentFilters(recent);
+            // One history for every board: only a sign-in change makes this read stale.
+            if (authRef.current === finalAuth) setRecentFilters(recent);
           })
           .catch(() => {});
       }
