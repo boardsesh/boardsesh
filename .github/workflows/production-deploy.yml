@@ -390,6 +390,7 @@ jobs:
             NEXT_PUBLIC_POSTHOG_KEY=${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
             NEXT_PUBLIC_STATIC_ASSET_BASE_URL=https://assets.boardsesh.com
             NEXT_PUBLIC_NEXT_ASSET_BASE_URL=https://assets.boardsesh.com
+            NEXT_PUBLIC_RETAINED_NEXT_ASSETS=1
             NEXT_PUBLIC_APP_STORE_PROVIDER_ID=${{ vars.NEXT_PUBLIC_APP_STORE_PROVIDER_ID }}
             NEXT_PUBLIC_META_PIXEL_ID=${{ vars.NEXT_PUBLIC_META_PIXEL_ID }}
             NEXT_PUBLIC_REDDIT_PIXEL_ID=${{ vars.NEXT_PUBLIC_REDDIT_PIXEL_ID }}
@@ -1291,7 +1292,9 @@ jobs:
           SMOKE_EMBED_BOARD_UUID: ${{ vars.SMOKE_EMBED_BOARD_UUID }}
         # Plain `node` executes the TypeScript directly (type stripping). The
         # script imports only node: builtins, so no workspace install is needed.
-        run: node scripts/production-smoke.ts --base "$RAILWAY_WEB_ORIGIN"
+        run: |
+          node scripts/production-smoke.ts --base "$RAILWAY_WEB_ORIGIN"
+          node scripts/retained-next-assets-smoke.ts --base "$RAILWAY_WEB_ORIGIN"
 
       - name: Warm anonymous marketing documents at the public edge
         if: steps.railway-smoke.outcome == 'success'
