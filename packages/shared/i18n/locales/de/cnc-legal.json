@@ -7,10 +7,6 @@
   },
   "licence": {
     "headerTitle": "Fertigungslizenz für Baupläne",
-    "draft": {
-      "title": "Entwurf einer Lizenz",
-      "body": "Lizenzentwurf, wartet auf die Prüfung durch eine australische Anwältin oder einen Anwalt für gewerblichen Rechtsschutz; verlass dich noch nicht darauf. Der Text ändert sich, bevor die Baupläne veröffentlicht werden."
-    },
     "intro": {
       "title": "Boardsesh Fertigungslizenz für Baupläne",
       "p1": "Das ist die Vereinbarung, die zu jedem Bauplan-Paket gehört. Sie sagt, was du bauen darfst, was du nicht weitergeben darfst und wer das Risiko trägt, sobald die Teile geschnitten sind. Absichtlich in einfacher Sprache."
@@ -94,15 +90,13 @@
     },
     "governingLaw": {
       "title": "11. Anwendbares Recht",
-      "body": "Für diese Lizenz gilt das Recht des Bundesstaats Victoria (Australien), zuständig sind die Gerichte in Victoria. Platzhalterformulierung, wartet auf die juristische Prüfung.",
-      "publicBody": "Für diese Lizenz gilt das Recht des Bundesstaats Victoria (Australien), zuständig sind die Gerichte in Victoria."
+      "body": "Für diese Lizenz gilt das Recht des Bundesstaats Victoria (Australien), zuständig sind die Gerichte in Victoria."
     },
     "contact": {
       "title": "12. Kontakt",
       "body": "Fragen zur Lizenz oder eine Lizenz, die neu ausgestellt werden muss: <mail>legal@boardsesh.com</mail>."
     },
-    "footer": "Diese Seite ist ein Entwurf, dient der Information und ist keine Rechtsberatung.",
-    "publicFooter": "Diese Seite dient der Information und ist keine Rechtsberatung.",
+    "footer": "Diese Seite dient der Information und ist keine Rechtsberatung.",
     "contents": "Inhalt"
   }
 }

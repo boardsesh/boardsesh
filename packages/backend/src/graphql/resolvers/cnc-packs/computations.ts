@@ -24,10 +24,8 @@ export const cncComputationMutations = {
     context: ConnectionContext,
   ) => {
     const wantsHoles = includeHoles ?? false;
-    if (wantsHoles) {
-      requireAuthenticated(context);
-      requireCncCreationAccess(context.userId!);
-    }
+    if (wantsHoles) requireAuthenticated(context);
+    await requireCncCreationAccess(context.isAuthenticated ? (context.userId ?? null) : null);
     await applyRateLimit(context, wantsHoles ? 10 : 30, 'requestCncLayout');
     try {
       const { layoutRequest } = resolveCncConfig(config);
@@ -44,7 +42,7 @@ export const cncComputationMutations = {
   },
   requestCncArtworkValidation: async (_: unknown, { config }: { config: unknown }, context: ConnectionContext) => {
     requireAuthenticated(context);
-    requireCncCreationAccess(context.userId!);
+    await requireCncCreationAccess(context.userId!);
     await applyRateLimit(context, 60, 'requestCncArtworkValidation');
     try {
       const { layoutRequest, artwork, artworkInput } = resolveCncConfig(config);

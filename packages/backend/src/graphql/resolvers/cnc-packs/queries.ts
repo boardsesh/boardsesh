@@ -249,9 +249,9 @@ export const cncPackQueries = {
     ctx: ConnectionContext,
   ): Promise<unknown> => {
     const wantsHoles = includeHoles ?? false;
+    if (wantsHoles) requireAuthenticated(ctx);
+    await requireCncCreationAccess(ctx.isAuthenticated ? (ctx.userId ?? null) : null);
     if (wantsHoles) {
-      requireAuthenticated(ctx);
-      requireCncCreationAccess(ctx.userId!);
       await applyRateLimit(ctx, RATE_LIMIT_CNC_LAYOUT_HOLES, RATE_LIMIT_CNC_LAYOUT_HOLES_OP);
     } else {
       await applyRateLimit(ctx, RATE_LIMIT_CNC_LAYOUT, RATE_LIMIT_CNC_LAYOUT_OP);

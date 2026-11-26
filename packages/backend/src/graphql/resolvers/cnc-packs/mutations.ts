@@ -122,7 +122,7 @@ export const cncPackMutations = {
     ctx: ConnectionContext,
   ): Promise<{ ok: boolean; collisions: unknown }> => {
     requireAuthenticated(ctx);
-    requireCncCreationAccess(ctx.userId!);
+    await requireCncCreationAccess(ctx.userId!);
     await applyRateLimit(ctx, RATE_LIMIT_VALIDATE_ARTWORK, RATE_LIMIT_VALIDATE_ARTWORK_OP);
 
     let verdict: unknown;
@@ -167,7 +167,7 @@ export const cncPackMutations = {
    */
   createCncPreview: async (_: unknown, { config }: { config: unknown }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
-    requireCncCreationAccess(ctx.userId!);
+    await requireCncCreationAccess(ctx.userId!);
     const userId = ctx.userId!;
     // The per-minute burst guard. The real ceiling is hourly and lives below;
     // this one is here because it costs nothing and stops a runaway client
@@ -284,7 +284,7 @@ export const cncPackMutations = {
     ctx: ConnectionContext,
   ): Promise<{ orderId: string; licenceId: string; checkoutUrl: string }> => {
     requireAuthenticated(ctx);
-    requireCncCheckoutAccess(ctx.userId!);
+    await requireCncCheckoutAccess(ctx.userId!);
     await applyRateLimit(ctx, RATE_LIMIT_FINALISE, RATE_LIMIT_FINALISE_OP);
 
     const validated = validateInput(FinaliseCncOrderInputSchema, input, 'input');
@@ -456,6 +456,7 @@ export const cncPackMutations = {
    * win, since the first moves the row to `queued`.
    */
   regenerateCncPack: async (_: unknown, { licenceId }: { licenceId: string }, ctx: ConnectionContext) => {
+    // Recovery of an existing licensed order stays available with the public flag off.
     await requireAdmin(ctx);
 
     const validLicenceId = validateInput(CncLicenceIdSchema, licenceId, 'licenceId');

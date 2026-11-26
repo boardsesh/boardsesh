@@ -14,7 +14,7 @@ import { createCachedGraphQLQuery } from '@/app/lib/graphql/server-cached-client
  *
  * Both live here rather than being copy-pasted into four route files because
  * getting either wrong is silent: a page that forgets the flag is a publicly
- * reachable shop for a product whose licence is still marked DRAFT, and a page
+ * reachable configurator while the generator rollout is disabled, and a page
  * that fetches the catalogue its own way is a second cache key for four rows of
  * static registry data.
  */
@@ -58,11 +58,8 @@ export const CNC_FLAG_OFF_METADATA: Metadata = { robots: { index: false, follow:
 /**
  * Sixty seconds.
  *
- * The catalogue is a hardcoded registry in the backend, so it only changes on a
- * deploy — but the prices on this page are the prices Stripe will charge, and a
- * long TTL means a price correction is visible to some visitors and not others
- * for as long as the TTL runs. A minute keeps that window shorter than the time
- * it takes to notice.
+ * The catalogue changes on deploy. A short cache keeps supported sizes and
+ * manufacturing defaults consistent with the backend during a rollout.
  */
 const CATALOG_REVALIDATE_SECONDS = 60;
 

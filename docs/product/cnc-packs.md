@@ -863,8 +863,6 @@ Backend, all fail-closed when unset:
 | `STRIPE_PRICE_CNC_PERSONAL` | Unused by free generation; retained for historical checkout tooling. |
 | `STRIPE_PRICE_CNC_COMMERCIAL` | Unused by free generation; retained for historical checkout tooling. |
 | `CNC_TRANSPORT` | Set `pgboss` for the outbound-only deployment; unset retains legacy HTTP compatibility. |
-| `CNC_RELEASE_MODE` | Set `beta` for restricted testing. Missing/unknown mode in pg-boss refuses new private computations, uploads, previews and generation. Set `public` for the deliberately approved public launch. |
-| `CNC_BETA_USER_IDS` | Comma-separated exact account IDs authorized for beta. Empty or malformed lists deny access. No Stripe key is needed for beta generation. Existing owner downloads remain available. |
 | `CNC_GENERATOR_SHA` | In pg-boss mode, requests refuse without the reviewed 40-character generator SHA. Must match the image. |
 | `CNC_WORKER_URL` | Legacy HTTP transport only; leave unset in pg-boss production. |
 | `CNC_WORKER_SECRET` | Legacy HTTP transport only; leave unset in pg-boss production. |
@@ -885,28 +883,31 @@ best-effort: the order is already durable by the time one runs.
 
 ## The web surface
 
-The shop routes under `/build-plans` are server-gated by `cnc-packs`; disabled
-visitors receive `notFound()`. The licence alone has a public-contract exception:
-exact web `CNC_RELEASE_MODE=public` serves it without identity lookup or PostHog,
-including while the storefront flag is off. Missing, unknown and `beta` values
-retain the licence's existing flag gate and DRAFT copy. Other shop and order
-routes keep their existing access gates.
+The generator has one release switch: the PostHog `cnc-packs` flag. Web
+storefront and order routes evaluate it before rendering. Backend uploads,
+previews, layout/artwork computations and finalisation evaluate the same flag
+before new generator work, including anonymous hole-free layout requests.
+Authenticated requests use `users.id` on both sides; anonymous requests use
+`anonymous-web-visitor`. Backend decisions are cached for at most 60 seconds
+with a 1.5-second evaluation deadline; missing or unusable answers fail closed.
+Existing owned results/downloads and queued jobs remain available when the flag
+is switched off. Authorized admins can also rebuild already licensed orders
+for recovery; this does not create a new public licence or configuration.
 
-Explicitly setting web `CNC_RELEASE_MODE=public` removes only the licence's
-editorial DRAFT, pending-review and placeholder wording. The terms, jurisdiction,
-prices and informational/no-legal-advice footer remain unchanged. All build-plan
-routes retain `noindex, follow`, and the sitemap remains empty through the initial
-public rollout. This preparation can deploy while web mode is absent without
-changing the test-user beta.
+`/build-plans/licence` always serves the final non-commercial terms without an
+account or a flag lookup, so existing licensees can still read their contract
+while new generation is disabled. There is one licence wording path and no
+release-mode environment setting. All build-plan routes retain `noindex,
+follow`, and the sitemap remains empty through the initial public rollout.
 
 | Route | What it is |
 | --- | --- |
 | `/build-plans` | The hero and the configurator. Server-renders the catalogue, then hands it to a client component for the choosing. |
-| `/build-plans/licence` | Manufacturing terms; independently available only in exact web public mode. |
+| `/build-plans/licence` | Final manufacturing terms; always available independently of the generator flag. |
 | `/build-plans/orders` | The buyer's own orders, newest first. |
 | `/build-plans/orders/[licenceId]` | One order: status timeline, the configuration it was bought under, and the download button once it is ready. |
 
-`FEATURE_FLAG_OVERRIDES=cnc-packs` is how you reach any of them locally.
+`FEATURE_FLAG_OVERRIDES=cnc-packs` enables the storefront and backend locally. The licence needs no override.
 
 ### The configurator
 
@@ -931,14 +932,14 @@ order would reject.
 Every change is written to IndexedDB under `cnc:configurator-draft`, debounced
 by 600 ms, and read back once before the first save can run.
 
-This exists for exactly one flow: an anonymous buyer configures a wall, presses
-Buy, and is sent through OAuth. That leaves the page entirely, so without the
-draft they come back to the defaults and have to configure it again — at the
-exact moment they had decided to pay. The restore is also why the sign-in
+This keeps a wall configuration through sign-in. An anonymous builder configures
+a wall, asks for a preview, and is sent through OAuth. That leaves the page
+entirely, so without the draft they would return to the defaults and have to
+configure it again. The restore is also why the sign-in
 callback URL is `/build-plans` rather than wherever the modal was opened from.
 
-The draft is cleared twice: once when checkout succeeds (the wall has been
-bought, so there is nothing left to restore) and once on sign-out, because it
+The draft is cleared twice: once when the free pack is finalised (the order now
+carries the wall and licence details) and once on sign-out, because it
 carries the licensee name and email and the next person on a shared machine has
 no business seeing them.
 
@@ -984,10 +985,13 @@ is a write cost paid for a guess.
 
 ## Launch
 
-The existing restricted beta and feature flag remain unchanged by this pricing
-change. Owner licence/printed-plan approval was recorded on 2026-11-14; do not
-repeat that approval request. Free generation has no live-Checkout or CNC-price
-cutover, and the previous GST-dependent sales launch plan is superseded.
+PostHog `cnc-packs` is the sole rollout control for the storefront and new
+generation. Use its existing account targeting for a restricted rollout, or
+turn it on for everyone when ready. No additional CNC release environment
+variables or account allowlist are required. Owner licence/printed-plan approval
+was recorded on 2026-11-14; do not repeat that approval request. Free generation
+has no live-Checkout or CNC-price cutover, and the previous GST-dependent sales
+launch plan is superseded.
 
 Before a later public release:
 
@@ -1000,17 +1004,18 @@ Before a later public release:
    `6c6a11d7c6dc6ba42c4ab69d06a2344a29366586` emitted unconditional DRAFT wording;
    prepare and independently review any required generator update, then verify
    the complete output. Preview `NOT FOR MANUFACTURE` remains required.
-3. Deploy web and backend changes while retaining the restricted beta. Verify
-   personal packs generate with no Stripe secret, no card entry and no donation.
+3. Deploy web and backend changes while retaining the existing PostHog
+   targeting. Verify personal packs generate with no Stripe secret, no card
+   entry and no donation.
    Confirm commercial API requests are rejected and point to
    partnerships@boardsesh.com. Existing historical paid orders and refunds must remain intact.
-4. For the separate launch, publish the approved licence with web
-   `CNC_RELEASE_MODE=public`, select backend `CNC_RELEASE_MODE=public`, then
-   deliberately widen `cnc-packs`. Keep `noindex` and the empty sitemap during
+4. For the separate launch, widen PostHog `cnc-packs` to everyone. The final
+   licence wording is already served. Keep `noindex` and the empty sitemap during
    the initial rollout. No live verification charge is required.
-5. For an incident, close the storefront and disable backend creation, then use
-   the homelab durable-pause/rollback runbook. Preserve orders, artifacts,
-   secrets and schema; keep the public licence available after launch.
+5. For an incident, switch off `cnc-packs` to close the storefront and block
+   new backend creation, then use the homelab durable-pause/rollback runbook.
+   Preserve orders, artifacts, secrets and schema; the final licence remains
+   available independently.
 
 Once the public flag has been stable at 100%, a separate PR can retire the gate
 under `docs/operations/feature-flags.md`. That later work removes `requireCncPacksFlag()`

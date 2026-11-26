@@ -7,10 +7,6 @@
   },
   "licence": {
     "headerTitle": "Licence de fabrication des plans de construction",
-    "draft": {
-      "title": "Licence à l'état de brouillon",
-      "body": "Licence provisoire, en attente de relecture par un avocat australien en propriété intellectuelle ; ne t’appuie pas encore dessus. Le texte changera avant la publication des plans de construction."
-    },
     "intro": {
       "title": "Licence de fabrication des plans de construction Boardsesh",
       "p1": "Voici l'accord fourni avec chaque pack de plans de construction. Il dit ce que tu peux construire, ce que tu ne peux transmettre à personne et qui porte le risque une fois les pièces découpées. En langage clair, volontairement."
@@ -94,15 +90,13 @@
     },
     "governingLaw": {
       "title": "11. Droit applicable",
-      "body": "Cette licence est régie par le droit de l'État de Victoria (Australie), et les tribunaux de Victoria sont compétents. Formulation provisoire, en attente de relecture juridique.",
-      "publicBody": "Cette licence est régie par le droit de l'État de Victoria (Australie), et les tribunaux de Victoria sont compétents."
+      "body": "Cette licence est régie par le droit de l'État de Victoria (Australie), et les tribunaux de Victoria sont compétents."
     },
     "contact": {
       "title": "12. Contact",
       "body": "Une question sur la licence, ou une licence à faire rééditer : <mail>legal@boardsesh.com</mail>."
     },
-    "footer": "Cette page est un brouillon, fournie à titre d'information, et ne constitue pas un conseil juridique.",
-    "publicFooter": "Cette page est fournie à titre d'information et ne constitue pas un conseil juridique.",
+    "footer": "Cette page est fournie à titre d'information et ne constitue pas un conseil juridique.",
     "contents": "Sommaire"
   }
 }

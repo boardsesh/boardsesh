@@ -7,10 +7,6 @@
   },
   "licence": {
     "headerTitle": "Build plans manufacturing licence",
-    "draft": {
-      "title": "Draft licence",
-      "body": "Draft licence, pending review by an Australian IP lawyer; do not rely on it yet. The wording will change before build plans are released."
-    },
     "intro": {
       "title": "Boardsesh Build Plans Manufacturing Licence",
       "p1": "This is the agreement that comes with every build plans pack. It says what you may build, what you may not pass on, and who carries the risk once the parts are cut. Plain language on purpose."
@@ -94,15 +90,13 @@
     },
     "governingLaw": {
       "title": "11. Governing law",
-      "body": "This licence is governed by the law of Victoria, Australia, and the courts of Victoria have jurisdiction. Placeholder wording, pending legal review.",
-      "publicBody": "This licence is governed by the law of Victoria, Australia, and the courts of Victoria have jurisdiction."
+      "body": "This licence is governed by the law of Victoria, Australia, and the courts of Victoria have jurisdiction."
     },
     "contact": {
       "title": "12. Contact",
       "body": "Questions about the licence, or a licence you need reissued: <mail>legal@boardsesh.com</mail>."
     },
-    "footer": "This page is a draft, is provided for information, and is not legal advice.",
-    "publicFooter": "This page is provided for information and is not legal advice.",
+    "footer": "This page is provided for information and is not legal advice.",
     "contents": "Contents"
   }
 }

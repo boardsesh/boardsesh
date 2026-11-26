@@ -143,6 +143,7 @@ const savedEnv = new Map<string, string | undefined>();
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv('FEATURE_FLAG_OVERRIDES', 'cnc-packs');
   for (const key of STRIPE_ENV_KEYS) savedEnv.set(key, process.env[key]);
   process.env.STRIPE_SECRET_KEY = 'sk_test_fake';
   process.env.WEB_PUBLIC_URL = 'https://www.boardsesh.com';
@@ -499,10 +500,8 @@ describe('validateCncArtwork', () => {
 });
 
 describe('createCncPreview', () => {
-  it('refuses an excluded beta account before order lookup or creation', async () => {
-    vi.stubEnv('CNC_TRANSPORT', 'pgboss');
-    vi.stubEnv('CNC_RELEASE_MODE', 'beta');
-    vi.stubEnv('CNC_BETA_USER_IDS', '44444444-4444-4444-8444-444444444444');
+  it('refuses preview work while the PostHog flag is off', async () => {
+    vi.stubEnv('FEATURE_FLAG_OVERRIDES', 'cnc-packs=false');
     await expect(cncPackMutations.createCncPreview(undefined, { config: config() }, authCtx())).rejects.toMatchObject({
       extensions: { code: 'CNC_WORKER_UNAVAILABLE' },
     });
@@ -730,10 +729,8 @@ describe('finaliseCncOrder', () => {
     expect(getOrderByIdMock).not.toHaveBeenCalled();
   });
 
-  it('keeps beta access restricted to the approved account IDs', async () => {
-    vi.stubEnv('CNC_TRANSPORT', 'pgboss');
-    vi.stubEnv('CNC_RELEASE_MODE', 'beta');
-    vi.stubEnv('CNC_BETA_USER_IDS', 'approved-account');
+  it('refuses finalisation while the PostHog flag is off', async () => {
+    vi.stubEnv('FEATURE_FLAG_OVERRIDES', 'cnc-packs=false');
     await expect(
       cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, authCtx()),
     ).rejects.toMatchObject({ extensions: { code: 'CNC_CHECKOUT_UNAVAILABLE' } });
@@ -773,10 +770,8 @@ describe('finaliseCncOrder', () => {
     },
   );
 
-  it('allows an approved beta account without any Stripe configuration', async () => {
-    vi.stubEnv('CNC_TRANSPORT', 'pgboss');
-    vi.stubEnv('CNC_RELEASE_MODE', 'beta');
-    vi.stubEnv('CNC_BETA_USER_IDS', 'user-1');
+  it('allows a flag-enabled account without any Stripe configuration', async () => {
+    vi.stubEnv('FEATURE_FLAG_OVERRIDES', 'cnc-packs');
     vi.stubEnv('STRIPE_SECRET_KEY', undefined);
     await expect(
       cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, authCtx()),
@@ -932,6 +927,7 @@ describe('createCncDownloadGrant', () => {
   });
 
   it('mints a link to the caller’s own ready pack', async () => {
+    vi.stubEnv('FEATURE_FLAG_OVERRIDES', 'cnc-packs=false');
     getOrderByLicenceIdMock.mockResolvedValue(readyOrder());
 
     const grant = await cncPackMutations.createCncDownloadGrant(undefined, { licenceId: 'BS-CNC-ABC234' }, authCtx());
@@ -1025,6 +1021,7 @@ describe('regenerateCncPack', () => {
   });
 
   it('requeues a ready pack with the generation bumped and the attempt budget reset', async () => {
+    vi.stubEnv('FEATURE_FLAG_OVERRIDES', 'cnc-packs=false');
     getOrderByLicenceIdMock.mockResolvedValue(readyOrder({ generation: 2 }));
     transitionOrderMock.mockResolvedValue(readyOrder({ status: 'queued', generation: 3, zipSizeBytes: null }));
 
