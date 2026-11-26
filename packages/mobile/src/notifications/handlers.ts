@@ -8,6 +8,7 @@ export type NotificationHandlerOptions = {
   canNavigate?: boolean;
   onSprayCompletion?: () => void;
   onBugReportReply?: (reportId: string) => void;
+  onRequestNotification?: () => void;
   /**
    * The `directory-reports` flag, once the flag bag is final; undefined while
    * it is not. False sends a report push to the board's plain detail sheet.
@@ -25,6 +26,11 @@ export function resolveNotificationRoute(
 ): NotificationRoute | null {
   const payload = notification.request.content.data;
   switch (payload?.type) {
+    case 'follow_request':
+    case 'board_access_requested':
+      return typeof payload.notificationUuid === 'string' && UUID_PATTERN.test(payload.notificationUuid)
+        ? { path: '/(tabs)/home/notifications', params: { request: payload.notificationUuid } }
+        : null;
     case 'app_feedback_reply':
       return typeof payload.reportId === 'string' && /^\d+$/.test(payload.reportId)
         ? { path: '/bug-reports/[id]', params: { id: payload.reportId } }
@@ -106,6 +112,7 @@ export function setupNotificationHandlers(router: RouterLike, options: Notificat
     if (response.notification.request.content.data?.type === 'spray_wall_detection_completed')
       options.onSprayCompletion?.();
     if (route.path === '/bug-reports/[id]' && route.params?.id) options.onBugReportReply?.(route.params.id);
+    if (route.path === '/(tabs)/home/notifications') options.onRequestNotification?.();
     const href = (route.params ? { pathname: route.path, params: route.params } : route.path) as never;
     // Over the full-screen Wall display, a push to a tab would stack the tabs on
     // top of the kiosk. Close back down to the tabs instead. Root modals (the
@@ -121,6 +128,8 @@ export function setupNotificationHandlers(router: RouterLike, options: Notificat
       const route = resolveNotificationRoute(notification);
       if (route?.params?.id) options.onBugReportReply?.(route.params.id);
     }
+    if (options.canNavigate !== false && resolveNotificationRoute(notification)?.path === '/(tabs)/home/notifications')
+      options.onRequestNotification?.();
   });
   // Preserve the OS response for the existing launch gate; consume once after auth resolves.
   const lastResponse = Notifications.getLastNotificationResponse();

@@ -122,6 +122,8 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'ProfilePrivacy',
   'ProposalReportReleaseContexts', // Only expanded report reasons for scoped admins.
   'QaPreviews',
+  // Only a follow/board request push opens the inbox with request=UUID; captures never tap pushes.
+  'RequestNotification',
   // Only explicit partner history links open this route; captures never visit it.
   'ResolvePartnerSessionHistory',
   'ResourceAccessRequests',

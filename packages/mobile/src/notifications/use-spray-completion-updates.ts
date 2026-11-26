@@ -14,6 +14,9 @@ export function useSprayCompletionUpdates(authenticated: boolean, accountId: str
   const queryClient = useQueryClient();
   const reportRefresh = useRef<ReturnType<typeof createBugReportRefresh> | null>(null);
   const refreshReports = useCallback((reportId?: string) => reportRefresh.current?.refresh(reportId), []);
+  const refreshRequests = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ['notifications'] });
+  }, [queryClient]);
   const refreshCompletion = useCallback(() => {
     for (const key of ['myBoards', 'mySprayWalls', 'sprayImportProgress', 'spray-wall-detection', 'notifications']) {
       void queryClient.invalidateQueries({ queryKey: [key] });
@@ -64,6 +67,7 @@ export function useSprayCompletionUpdates(authenticated: boolean, accountId: str
             if (cancelled || boundClient !== client) return;
             const type = data?.notificationReceived.notification.type;
             if (type === 'spray_wall_detection_completed') refreshCompletion();
+            if (type === 'follow_request' || type === 'board_access_requested') refreshRequests();
             // Friends' boards are the boards of people the climber and the
             // owner follow both ways, so a new follower can add some, and a yes
             // opens one.
@@ -127,6 +131,6 @@ export function useSprayCompletionUpdates(authenticated: boolean, accountId: str
       unsubscribeFocus();
       release();
     };
-  }, [authenticated, accountId, refreshCompletion, refreshReports, queryClient]);
-  return { refreshCompletion, refreshReports };
+  }, [authenticated, accountId, refreshCompletion, refreshReports, refreshRequests, queryClient]);
+  return { refreshCompletion, refreshReports, refreshRequests };
 }

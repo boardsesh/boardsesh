@@ -128,7 +128,11 @@
     "boardReportReminderTitle": "{{board}} 还有一条未处理的举报",
     "boardReportReminderBody": "请在我们的团队介入前修正或保留。",
     "boardRelistTitle": "把 {{board}} 放回 {{gym}}？",
-    "boardRelistBody": "添加它的攀岩者请求重新列出。"
+    "boardRelistBody": "添加它的攀岩者请求重新列出。",
+    "requestTitle": "请求",
+    "requestAnonymous": "有人",
+    "followRequestBody": "{{name}}想关注你",
+    "boardAccessRequestBody": "{{name}}想在你的训练板上攀爬"
   },
   "setupChange": {
     "now": "现在为 {{setup}}",

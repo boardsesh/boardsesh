@@ -318,3 +318,24 @@ export type CommentUpdatesSubscriptionResponse = {
         entityId: string;
       };
 };
+
+/** A push opens one pending request even when its inbox group has several actors. */
+export const REQUEST_NOTIFICATION = gql`
+  query RequestNotification($notificationUuid: ID!) {
+    requestNotification(notificationUuid: $notificationUuid) {
+      uuid
+      type
+      entityType
+      entityId
+      actorCount
+      actors {
+        id
+        displayName
+        avatarUrl
+      }
+      boardType
+      isRead
+      createdAt
+    }
+  }
+`;

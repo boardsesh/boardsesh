@@ -128,7 +128,11 @@
     "boardReportReminderTitle": "{{board}} sigue teniendo un reporte abierto",
     "boardReportReminderBody": "Corrígelo o déjalo como está antes de que nuestro equipo le eche un vistazo.",
     "boardRelistTitle": "¿Volver a poner {{board}} en {{gym}}?",
-    "boardRelistBody": "El escalador que lo añadió pidió que se vuelva a listar."
+    "boardRelistBody": "El escalador que lo añadió pidió que se vuelva a listar.",
+    "requestTitle": "Solicitudes",
+    "requestAnonymous": "Alguien",
+    "followRequestBody": "{{name}} quiere seguirte",
+    "boardAccessRequestBody": "{{name}} quiere escalar en tu plafón"
   },
   "setupChange": {
     "now": "Ahora {{setup}}",

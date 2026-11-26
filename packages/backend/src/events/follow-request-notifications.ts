@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { and, eq, sql, type SQL } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../db/client';
+import { enqueueRequestPush } from '../services/request-notification-push';
 
 /**
  * How long a follow request notification blocks another one from the same
@@ -66,7 +67,7 @@ export async function deleteFollowRequestNotifications(
 
 /**
  * Write the follow request row for one pair, or nothing when one was written
- * inside the dedup window. Returns the new row's uuid so the caller can publish
+ * for the same pending request or inside the dedup window. Returns the new row's uuid so the caller can publish
  * it, or null. The worker and the inline fallback both write through here.
  *
  * The check, the delete and the insert run in one transaction under
@@ -78,19 +79,34 @@ export async function writeFollowRequestNotification(requesterId: string, recipi
   if (requesterId === recipientId) return null;
   return db.transaction(async (transaction) => {
     await lockFollowRequestPair(transaction, requesterId, recipientId);
+    const [pending] = await transaction
+      .select({ createdAt: dbSchema.userFollowRequests.createdAt })
+      .from(dbSchema.userFollowRequests)
+      .where(
+        and(
+          eq(dbSchema.userFollowRequests.requesterId, requesterId),
+          eq(dbSchema.userFollowRequests.recipientId, recipientId),
+        ),
+      )
+      .limit(1);
+    if (!pending) return null;
     const [recent] = await transaction
-      .select({ id: dbSchema.notifications.id })
+      .select({ id: dbSchema.notifications.id, createdAt: dbSchema.notifications.createdAt })
       .from(dbSchema.notifications)
       .where(
         and(
           eq(dbSchema.notifications.type, 'follow_request'),
           eq(dbSchema.notifications.actorId, requesterId),
           eq(dbSchema.notifications.recipientId, recipientId),
-          sql`${dbSchema.notifications.createdAt} > NOW() - make_interval(mins => ${FOLLOW_REQUEST_DEDUP_MINUTES})`,
         ),
       )
       .limit(1);
-    if (recent) return null;
+    if (
+      recent &&
+      (recent.createdAt.getTime() > Date.now() - FOLLOW_REQUEST_DEDUP_MINUTES * 60_000 ||
+        recent.createdAt >= pending.createdAt)
+    )
+      return null;
     await deleteFollowRequestNotifications(requesterId, recipientId, transaction);
     const uuid = crypto.randomUUID();
     // entityId is the requester, so each request is its own inbox row.
@@ -102,6 +118,7 @@ export async function writeFollowRequestNotification(requesterId: string, recipi
       entityType: null,
       entityId: requesterId,
     });
+    await enqueueRequestPush(transaction, uuid, recipientId);
     return uuid;
   });
 }

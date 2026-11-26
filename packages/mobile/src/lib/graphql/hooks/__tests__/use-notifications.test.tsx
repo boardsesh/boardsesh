@@ -21,6 +21,7 @@ import {
   GET_NOTIFICATIONS,
   GET_GROUPED_NOTIFICATIONS,
   NOTIFICATION_RECEIVED_SUBSCRIPTION,
+  REQUEST_NOTIFICATION,
 } from '@boardsesh/graphql/operations/notifications';
 import { notificationCopy } from '../../../../components/notifications/notification-copy';
 import { sprayImportRoute } from '../../../spray/spray-import-progress';
@@ -37,6 +38,7 @@ import {
   useAnswerBoardAccessRequest,
   useAnswerFollowRequest,
   useGroupedNotifications,
+  useRequestNotification,
   nextActorsOffset,
   useMarkAllAsRead,
   useMarkGroupAsRead,
@@ -214,19 +216,57 @@ describe('notification transport review targets', () => {
 });
 
 describe('useMarkGroupAsRead', () => {
+  it('marks a targeted ask read when its board group is tapped, leaving other requests alone', async () => {
+    requestMock.mockResolvedValue({ markGroupNotificationsRead: 2 });
+    const { queryClient, Wrapper } = makeWrapper();
+    const target = makeGroup('request-one', {
+      type: 'board_access_requested',
+      entityType: 'board',
+      entityId: 'board-one',
+    });
+    const other = makeGroup('request-two', {
+      type: 'board_access_requested',
+      entityType: 'board',
+      entityId: 'board-two',
+    });
+    queryClient.setQueryData(['notifications', 'request', target.uuid], target);
+    queryClient.setQueryData(['notifications', 'request', other.uuid], other);
+    queryClient.setQueryData(GROUPED_NOTIFICATIONS_QUERY_KEY, {
+      pages: [{ groups: [{ ...target, uuid: 'latest-board-group', actorCount: 2 }, other], hasMore: false }],
+      pageParams: [0],
+    });
+    const { result } = renderHook(() => useMarkGroupAsRead(), { wrapper: Wrapper });
+    await act(async () => {
+      await result.current.mutateAsync(target);
+    });
+    expect(queryClient.getQueryData(['notifications', 'request', target.uuid])).toMatchObject({ isRead: true });
+    expect(queryClient.getQueryData(['notifications', 'request', other.uuid])).toMatchObject({ isRead: false });
+    expect(
+      queryClient
+        .getQueryData<{ pages: GroupedNotificationConnection[] }>(GROUPED_NOTIFICATIONS_QUERY_KEY)
+        ?.pages[0].groups.map((group) => group.isRead),
+    ).toEqual([true, false]);
+  });
   it('flips only the tapped group and subtracts the server-reported count', async () => {
     requestMock.mockResolvedValue({ markGroupNotificationsRead: 3 });
 
     const { queryClient, Wrapper } = makeWrapper();
     queryClient.setQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, 10);
     queryClient.setQueryData(GROUPED_NOTIFICATIONS_QUERY_KEY, {
-      pages: [{ groups: [makeGroup('a'), makeGroup('b')], totalCount: 2, unreadCount: 10, hasMore: false }],
+      pages: [
+        {
+          groups: [makeGroup('a', { entityId: 'a' }), makeGroup('b', { entityId: 'b' })],
+          totalCount: 2,
+          unreadCount: 10,
+          hasMore: false,
+        },
+      ],
       pageParams: [0],
     });
 
     const { result } = renderHook(() => useMarkGroupAsRead(), { wrapper: Wrapper });
     await act(async () => {
-      await result.current.mutateAsync(makeGroup('a'));
+      await result.current.mutateAsync(makeGroup('a', { entityId: 'a' }));
     });
 
     const cached = queryClient.getQueryData<{ pages: GroupedNotificationConnection[] }>(
@@ -437,11 +477,90 @@ describe('useAnswerBoardAccessRequest', () => {
   });
 });
 
+describe('useRequestNotification', () => {
+  const notificationUuid = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+
+  it('reads one pending request directly, independent of inbox pagination', async () => {
+    const target = makeGroup(notificationUuid, { type: 'follow_request', entityId: 'asker' });
+    requestMock.mockResolvedValue({ requestNotification: target });
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useRequestNotification(notificationUuid), { wrapper: Wrapper });
+    await waitFor(() => expect(result.current.data).toEqual(target));
+    expect(requestMock).toHaveBeenCalledExactlyOnceWith(REQUEST_NOTIFICATION, { notificationUuid });
+  });
+
+  it.each([undefined, '../settings', 'not-a-uuid'])('does not fetch an invalid request identifier %s', (uuid) => {
+    const { Wrapper } = makeWrapper();
+    renderHook(() => useRequestNotification(uuid), { wrapper: Wrapper });
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it('parks the targeted read while the inbox is hidden', () => {
+    const { Wrapper } = makeWrapper();
+    renderHook(() => useRequestNotification(notificationUuid, false), { wrapper: Wrapper });
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it('does not resurrect an answered request from an older read still in flight', async () => {
+    const target = makeGroup(notificationUuid, { type: 'follow_request', entityId: 'asker' });
+    let finishRead: ((response: { requestNotification: GroupedNotification }) => void) | undefined;
+    const waitingRead = new Promise<{ requestNotification: GroupedNotification }>((resolve) => {
+      finishRead = resolve;
+    });
+    requestMock.mockImplementation((document: string) =>
+      document === REQUEST_NOTIFICATION ? waitingRead : Promise.resolve({ declineFollowRequest: true }),
+    );
+    const { queryClient, Wrapper } = makeWrapper();
+    const queryKey = ['notifications', 'request', notificationUuid];
+    queryClient.setQueryData(queryKey, target);
+    const { result } = renderHook(
+      () => ({ request: useRequestNotification(notificationUuid), answer: useAnswerFollowRequest() }),
+      { wrapper: Wrapper },
+    );
+    await waitFor(() => expect(requestMock).toHaveBeenCalledWith(REQUEST_NOTIFICATION, { notificationUuid }));
+    await act(async () => {
+      await result.current.answer({ notification: target, answer: 'decline' });
+      finishRead?.({ requestNotification: target });
+      await waitingRead;
+    });
+    expect(queryClient.getQueryData(queryKey)).toBeNull();
+  });
+
+  it.each(['follow_request', 'board_access_requested'] as const)(
+    'clears the targeted %s row immediately after answering',
+    async (type) => {
+      const target = makeGroup(notificationUuid, {
+        type,
+        actorCount: 1,
+        actors: [{ id: 'asker', displayName: 'Kim' }],
+        entityId: type === 'follow_request' ? 'asker' : 'board-uuid',
+        entityType: type === 'follow_request' ? null : 'board',
+      });
+      requestMock.mockResolvedValue({});
+      const { queryClient, Wrapper } = makeWrapper();
+      const queryKey = ['notifications', 'request', notificationUuid];
+      queryClient.setQueryData(queryKey, target);
+      const { result } = renderHook(
+        () => ({ follow: useAnswerFollowRequest(), board: useAnswerBoardAccessRequest() }),
+        { wrapper: Wrapper },
+      );
+      await act(async () => {
+        await result.current[type === 'follow_request' ? 'follow' : 'board']({
+          notification: target,
+          answer: 'decline',
+        });
+      });
+      expect(queryClient.getQueryData(queryKey)).toBeNull();
+    },
+  );
+});
+
 describe('useMarkAllAsRead', () => {
   it('flips every loaded group across every page and zeroes the badge', async () => {
     requestMock.mockResolvedValue({ markAllNotificationsRead: true });
 
     const { queryClient, Wrapper } = makeWrapper();
+    queryClient.setQueryData(['notifications', 'request', 'ask-one'], makeGroup('ask-one'));
     queryClient.setQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, 9);
     queryClient.setQueryData(GROUPED_NOTIFICATIONS_QUERY_KEY, {
       pages: [
@@ -461,6 +580,7 @@ describe('useMarkAllAsRead', () => {
     );
     expect(cached?.pages.flatMap((page) => page.groups).every((group) => group.isRead)).toBe(true);
     expect(queryClient.getQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY)).toBe(0);
+    expect(queryClient.getQueryData(['notifications', 'request', 'ask-one'])).toMatchObject({ isRead: true });
   });
 });
 

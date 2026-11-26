@@ -128,7 +128,11 @@
     "boardReportReminderTitle": "La board {{board}} a encore un signalement ouvert",
     "boardReportReminderBody": "Corrige ou laisse telle quelle avant que notre équipe s'en occupe.",
     "boardRelistTitle": "Remettre {{board}} dans {{gym}} ?",
-    "boardRelistBody": "Le grimpeur qui l'a ajoutée a demandé à la remettre dans la liste."
+    "boardRelistBody": "Le grimpeur qui l'a ajoutée a demandé à la remettre dans la liste.",
+    "requestTitle": "Demandes",
+    "requestAnonymous": "Quelqu’un",
+    "followRequestBody": "{{name}} veut te suivre",
+    "boardAccessRequestBody": "{{name}} veut grimper sur ta board"
   },
   "setupChange": {
     "now": "Maintenant {{setup}}",

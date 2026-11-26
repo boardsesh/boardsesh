@@ -134,6 +134,19 @@ describe('native notification update bridge', () => {
     expect(mocks.invalidate.mock.calls.map(([options]) => options)).toEqual([{ queryKey: ['friendsBoards'] }]);
   });
 
+  it.each(['follow_request', 'board_access_requested'])('refreshes the inbox for live and pushed %s', (type) => {
+    renderHook(() => useNotificationUpdates(true, 'account'));
+    const sink = mocks.subscribe.mock.calls[0][1] as {
+      next: (payload: { data: { notificationReceived: { notification: { type: string } } } }) => void;
+    };
+    act(() => sink.next({ data: { notificationReceived: { notification: { type } } } }));
+    expect(mocks.invalidate).toHaveBeenLastCalledWith({ queryKey: ['notifications'] });
+    mocks.invalidate.mockClear();
+    const handlers = mocks.setupHandlers.mock.calls[0][1] as { onRequestNotification: () => void };
+    act(() => handlers.onRequestNotification());
+    expect(mocks.invalidate.mock.calls.map(([options]) => options)).toEqual([{ queryKey: ['notifications'] }]);
+  });
+
   it('coalesces native push and websocket staff replies without refreshing spray caches', async () => {
     renderHook(() => useNotificationUpdates(true, 'account'));
     const sink = mocks.subscribe.mock.calls[0][1] as {
