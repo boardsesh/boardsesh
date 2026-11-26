@@ -25,13 +25,13 @@ and [Bluetooth](12-bluetooth.md).
 
 ### Friends' boards
 
-Right under Your boards, the picker shows up to five home boards owned by people
-who follow the climber (`friendsBoards`, `useFriendsBoardsShelf`). The owner's
-follow lists the board; whether the climber can open it is the board's own
-audience ([privacy](../../product/privacy.md#friends-boards)). So a Followers
-board from someone the climber doesn't follow back comes as an ask, the same
-as an Invite-only one. It reads one page
-of six and never more: a sixth row covers a board that is also in Your boards,
+Right under Your boards, the picker shows up to five home boards owned by the
+climber's friends (`friendsBoards`, `useFriendsBoardsShelf`): the owner and the
+climber follow each other ([privacy](../../product/privacy.md#friends-boards)).
+A one-way follow, in either direction, lists nothing. A friend always follows
+the owner, so a Followers board always opens (`CAN_CLIMB`); only an Invite-only
+board its owner opted in comes as an ask. It reads one page of six and never
+more: a sixth row covers a board that is also in Your boards,
 which the shelf leaves out by uuid (`friendsShelfBoards` in
 `src/lib/boards/friend-boards.ts`). The shelf is hidden when it is empty, signed
 out, under "Where do you climb?", and on the offline and error layouts. "See
@@ -55,8 +55,8 @@ by `viewerAccess`:
   adoption would (`useAdoptFoundBoard({ follow: false })`). The pick event is
   sent once the save settles, so its `followed` is what happened; it says
   `pickSource: friends`, `section: friends_boards` (or `friend_step`).
-- `CAN_REQUEST`: `FriendBoardAccessSheet`, "Ask {{name}} to climb here", whose
-  button calls `requestResourceAccess`. The sheet closes on the write; the
+- `CAN_REQUEST`: `FriendBoardAccessSheet`, "Ask {{name}} to climb here", which
+  says the owner approves each climber on the board, and whose button calls `requestResourceAccess`. The sheet closes on the write; the
   friend lists are then read again (not the app-wide refresh an owner's
   privacy write gets), never set to Requested by hand: the server answers an
   ask for a board the climber can already open with a quiet yes. A
@@ -74,7 +74,7 @@ successful `myBoards` read since the screen mounted prunes its offline card
 (`offlineBoardCardSync` in `src/offline/use-remember-downloaded-boards.ts`); a
 failed or truncated read, or a list hydrated from the persisted cache, prunes
 nothing. `friendsBoards` is read again when the climber follows or unfollows
-someone (a Followers board opens once they follow its owner back), and on a live
+someone (a follow can make a friend, an unfollow ends one), and on a live
 `new_follower` or `board_access_approved` notification
 (`use-spray-completion-updates.ts`). An unfollow by someone else sends no
 notification; the list catches up once the app-wide five-minute stale time
@@ -103,19 +103,22 @@ pushes one wizard under `app/boards/add/` instead of opening a menu:
 - `index.tsx`, "Where's the board?": at a gym, at home, a friend's board, or a
   Spraywall (handed to `/boards/spray/new` unchanged). It has an X and the
   title "Add a board".
-- `friend.tsx`, "Whose board?" (step 2 of 2): boards owned by people who
-  follow the climber, under an owner header each, with a search on the board
-  or owner name, one page per end-reach. Following someone doesn't add their
-  boards here, so the footer offers "Share your profile so friends can follow
-  you" (the profile's share link, `useProfileShareOptions`; hidden for a
-  private profile, which has no public link) and the share-link hint. A tap
-  works as on Friends' boards above. Empty states: nobody follows you (with
-  Share your profile), nothing shared yet, no match, offline; signed out it
-  asks for sign-in. Under the search, "Scan a board code" pushes `scan.tsx`,
-  the in-app camera (`BoardCodeScannerScreen`, expo-camera). It reads QR codes
-  only and follows a code only when it is a board or climb link on www or apex
-  boardsesh.com or the app's scheme (`parseBoardLinkPath`, the deep-link
-  parser) or a crew `/join/{id}` link
+- `friend.tsx`, "Whose board?" (step 2 of 2): boards owned by the climber's
+  friends (they follow each other), under an owner header each, with a search
+  on the board or owner name, one page per end-reach. Either follow may be the
+  missing one, so the footer offers both: "Not following them yet? Find
+  people" (`app/boards/users/search.tsx`, the climber search inside the
+  picker's stack) and "Share your profile so friends can follow you" (the
+  profile's share link, `useProfileShareOptions`; hidden for a private
+  profile, which has no public link), then the share-link hint. A tap works as
+  on Friends' boards above. Empty states: no friends' boards yet (with Find
+  people and Share your profile; the app can't tell "no friends" from "friends
+  with no boards" without a new field, so one placard covers both), no match,
+  offline; signed out it asks for sign-in. Under the search, "Scan a board
+  code" pushes `scan.tsx`, the in-app camera (`BoardCodeScannerScreen`,
+  expo-camera). It reads QR codes only and follows a code only when it is a
+  board or climb link on www or apex boardsesh.com or the app's scheme
+  (`parseBoardLinkPath`, the deep-link parser) or a crew `/join/{id}` link
   (`src/lib/routing/scanned-board-code.ts`); it replaces the boards modal with
   that link's route, as a tapped link would open it. Any other code shows
   "That code isn't a Boardsesh board" and the camera keeps looking; the same

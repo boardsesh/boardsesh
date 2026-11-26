@@ -90,8 +90,9 @@ export const privacyTypeDefs = /* GraphQL */ `
     locationAudience: PrivacyLocationAudience!
     inheritFollowers: Boolean!
     """
-    "Show to people I follow": an Unlisted or Invite-only board is listed in the
-    friendsBoards of the people the owner follows. It grants no access: an
+    "Show to friends": an Unlisted or Invite-only board is listed in the
+    friendsBoards of the owner's friends (people who follow each other; the
+    field name predates the mutual-follow rule). It grants no access: an
     Invite-only board still needs an approved grant to climb on. No effect on
     other audiences.
     """

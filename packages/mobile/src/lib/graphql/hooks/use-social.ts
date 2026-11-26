@@ -155,9 +155,9 @@ export function useToggleUserFollow(currentUserId: string | undefined) {
       void queryClient.invalidateQueries({ queryKey: ['activityFeed'] });
       // The follow-back list behind a "new followers" notification.
       void queryClient.invalidateQueries({ queryKey: [NOTIFICATION_ACTORS_QUERY_KEY] });
-      // Friends' boards list the boards of people who follow the viewer, and a
-      // Followers board there opens only once the viewer follows its owner
-      // back: the picker shelf and "A friend's board" both sit under this root.
+      // Friends' boards list the boards of people the viewer and the owner
+      // follow both ways, so a follow can add some and an unfollow drops them:
+      // the picker shelf and "A friend's board" both sit under this root.
       void queryClient.invalidateQueries({ queryKey: [FRIENDS_BOARDS_QUERY_KEY] });
     },
   });

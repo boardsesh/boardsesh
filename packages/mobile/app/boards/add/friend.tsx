@@ -1,17 +1,17 @@
 // The add-a-board wizard's "Whose board?" (flag `add-board-wizard`): home
-// boards owned by people who follow the climber (`friendsBoards`), grouped
-// under their owner. Step 2 of 2 from "Where's the board?"; the picker's Friends'
+// boards owned by the climber's friends (`friendsBoards`: they follow each
+// other), grouped under their owner. Step 2 of 2 from "Where's the board?"; the picker's Friends'
 // boards shelf opens it too ("See all", uncounted). A tap climbs the board, or
 // asks its owner first (use-friend-board-action.tsx).
 //
 // One virtualized FlashList: an owner header cell, then each of their boards
 // as a slice of an inset-grouped card. The step header and the search sit in
-// the list header; Share your profile and the share-link hint in its footer.
-// One page per end-reach.
+// the list header; Find people, Share your profile and the share-link hint in
+// its footer. One page per end-reach.
 //
-// Following someone doesn't list their boards here; their following you does.
-// So the way to get a friend's board onto this list is to send them your
-// profile to follow, and Share your profile is the action this screen offers.
+// A board shows up here only once the climber and its owner follow each other,
+// so either side may be missing a follow: Find people is for the climber to
+// follow their friend, Share your profile for the friend to follow them.
 //
 // "Scan a board code" under the search opens the in-app camera
 // (boards/add/scan.tsx). It is hidden on a binary without the camera module
@@ -55,7 +55,6 @@ import { useFriendBoardAction } from '../../../src/lib/boards/use-friend-board-a
 import { useProfile } from '../../../src/lib/graphql/hooks';
 import { useFriendsBoards } from '../../../src/lib/graphql/hooks/use-friends-boards';
 import { usePrivacySettings } from '../../../src/lib/graphql/hooks/use-privacy';
-import { usePublicProfile } from '../../../src/lib/graphql/hooks/use-social';
 import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { openSignIn } from '../../../src/lib/routing/open-sign-in';
 import { useAuth } from '../../../src/providers/auth-provider';
@@ -110,9 +109,6 @@ export default function AddBoardFriend() {
   const { data, hasNextPage, isFetchingNextPage, fetchNextPage, isPending, isError, refetch, fetchStatus } =
     friendsBoards;
   const offline = useOfflineQueryState(friendsBoards);
-  // Only asked when the list is empty, to tell "nobody follows you" from "nobody shares".
-  const listIsEmpty = (data?.pages[0]?.items.length ?? 0) === 0;
-  const { data: viewerProfile } = usePublicProfile(viewerId, listIsEmpty && query.length === 0);
 
   const copy = useMemo<FriendBoardRowCopy>(
     () => ({ ownerFallback: t('mobile.friendBoards.ownerFallback'), requested: t('mobile.friendBoards.requested') }),
@@ -164,9 +160,11 @@ export default function AddBoardFriend() {
     setPullRefreshing(true);
     void refetch().finally(() => setPullRefreshing(false));
   }, [refetch]);
-  // A friend lists their boards here by following the climber, so the
-  // climber's profile link is what to send them. Only a public profile has a
-  // link (useProfileShareOptions); a private one shows no button.
+  // The climber follows their friend from the climber search inside this
+  // modal's stack, and sends their profile link so the friend can follow them.
+  // Only a public profile has a link (useProfileShareOptions); a private one
+  // shows no share button.
+  const findPeople = useCallback(() => router.push('/boards/users/search'), [router]);
   const { data: privacy } = usePrivacySettings();
   const profileShare = useProfileShareOptions({
     userId: profile?.id,
@@ -209,7 +207,6 @@ export default function AddBoardFriend() {
   const emptyKind = friendBoardsEmptyKind({
     offline: offline.isBlocked,
     query,
-    followerCount: viewerProfile?.followerCount,
     boardCount: cells.length,
   });
   const searching = trimmedSearch !== query;
@@ -235,30 +232,29 @@ export default function AddBoardFriend() {
     />
   ) : emptyKind === 'no_match' ? (
     <EmptyState size="section" title={t('mobile.friendBoards.noMatch', { query })} testID="friend-boards-no-match" />
-  ) : emptyKind === 'no_followers' ? (
-    <EmptyState
-      size="section"
-      title={t('mobile.friendBoards.noFollowersTitle')}
-      body={t('mobile.friendBoards.noFollowersBody')}
-      actions={
-        canShareProfile ? (
-          <Button
-            title={t('mobile.friendBoards.shareProfile')}
-            onPress={shareProfile}
-            testID="friend-boards-share-profile"
-          />
-        ) : undefined
-      }
-      testID="friend-boards-no-followers"
-    />
   ) : (
     <EmptyState
       size="section"
       title={t('mobile.friendBoards.noBoardsTitle')}
       body={t('mobile.friendBoards.noBoardsBody')}
+      actions={
+        <>
+          <Button title={t('mobile.friendBoards.findPeople')} onPress={findPeople} testID="friend-boards-find-people" />
+          {canShareProfile ? (
+            <Button
+              title={t('mobile.friendBoards.shareProfile')}
+              variant="text"
+              onPress={shareProfile}
+              testID="friend-boards-share-profile"
+            />
+          ) : null}
+        </>
+      }
       testID="friend-boards-no-boards"
     />
   );
+  // The empty placard carries both actions itself.
+  const footerActions = emptyKind !== 'no_boards';
 
   const listHeader = (
     <View>
@@ -290,7 +286,15 @@ export default function AddBoardFriend() {
   const listFooter = (
     <View style={styles.footer}>
       {isFetchingNextPage ? <ActivityIndicator size="small" /> : null}
-      {canShareProfile && emptyKind !== 'no_followers' ? (
+      {footerActions ? (
+        <Button
+          title={t('mobile.friendBoards.notFollowing')}
+          variant="text"
+          onPress={findPeople}
+          testID="friend-boards-find-people-footer"
+        />
+      ) : null}
+      {footerActions && canShareProfile ? (
         <Button
           title={t('mobile.friendBoards.shareProfileFooter')}
           variant="text"
