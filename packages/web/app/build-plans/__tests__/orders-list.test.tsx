@@ -58,11 +58,27 @@ function preview(licenceId: string, createdAt: string, status: CncOrderStatus = 
   return order({ licenceId, createdAt, status, tier: null, paidAt: null, zipSizeBytes: null, amountCents: null });
 }
 
-async function renderList(orders: readonly CncOrder[]) {
-  return render(await OrdersList({ orders, catalog: null, locale: 'en-US' }));
+async function renderList(orders: readonly CncOrder[], creationEnabled = true) {
+  return render(await OrdersList({ orders, catalog: null, locale: 'en-US', creationEnabled }));
 }
 
 describe('OrdersList', () => {
+  it('opens existing previews instead of offering generation while the flag is off', async () => {
+    await renderList([preview('BS-CNC-NEWEST', '2026-09-05T10:00:00.000Z')], false);
+
+    expect(screen.queryByRole('link', { name: 'Finalise' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Open build plan BS-CNC-NEWEST' }).getAttribute('href')).toBe(
+      '/build-plans/orders/BS-CNC-NEWEST',
+    );
+  });
+
+  it('offers no configurator link in the empty state while the flag is off', async () => {
+    await renderList([], false);
+
+    expect(screen.getByText('No walls here yet.')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Configure a wall' })).toBeNull();
+  });
+
   it('invites the buyer to configure a wall instead of showing an empty box', async () => {
     await renderList([]);
 

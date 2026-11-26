@@ -9,8 +9,8 @@ import { getServerFeatureFlag } from '@/app/lib/feature-flags/server-feature-fla
 import { createCachedGraphQLQuery } from '@/app/lib/graphql/server-cached-client';
 
 /**
- * The one gate every `/build-plans*` route calls, and the one catalogue fetch
- * the public pages share.
+ * The storefront's creation gate and the catalogue fetch build-plan pages share.
+ * Owned orders and the final licence remain readable when creation is paused.
  *
  * Both live here rather than being copy-pasted into four route files because
  * getting either wrong is silent: a page that forgets the flag is a publicly

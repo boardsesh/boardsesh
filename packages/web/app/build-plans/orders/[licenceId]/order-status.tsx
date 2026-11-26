@@ -101,6 +101,7 @@ type OrderStatusProps = {
   wallLabel: string;
   checkoutOutcome: 'success' | 'cancelled' | null;
   locale: string;
+  creationEnabled: boolean;
 };
 
 export default function OrderStatus(props: OrderStatusProps) {
@@ -125,6 +126,7 @@ function OwnedOrderStatus({
   locale,
   ownerId,
   authSessionId,
+  creationEnabled,
 }: OrderStatusProps & { ownerId: string; authSessionId: string | null }) {
   const { t } = useTranslation('cnc');
   const { token } = useWsAuthToken();
@@ -332,7 +334,7 @@ function OwnedOrderStatus({
 
           {(order.hasPreview || order.status === 'preview_ready') && (
             <Box className={styles.cardActions} sx={{ mt: order.previewImages.length > 0 ? 3 : 2 }}>
-              {order.status === 'preview_ready' && (
+              {creationEnabled && order.status === 'preview_ready' && (
                 <Button component={LocaleLink} href={finaliseHref(order.licenceId)} variant="contained" size="large">
                   {t('order.finalise')}
                 </Button>

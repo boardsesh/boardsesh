@@ -10,12 +10,7 @@ import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { executeAuthenticatedGraphQL } from '@/app/lib/graphql/server-graphql';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
-import {
-  CNC_FLAG_OFF_METADATA,
-  fetchCncCatalog,
-  isCncPacksEnabled,
-  requireCncPacksFlag,
-} from '@/app/build-plans/build-plans-page';
+import { fetchCncCatalog, isCncPacksEnabled } from '@/app/build-plans/build-plans-page';
 import { wallLabel } from '@/app/build-plans/order-display';
 import { PageFrame } from '@/app/build-plans/ui';
 import OrderStatus from '@/app/build-plans/orders/[licenceId]/order-status';
@@ -59,8 +54,6 @@ function isLicenceIdShape(licenceId: string): boolean {
  * picks this tab out of five open ones.
  */
 export async function generateMetadata(props: OrderRouteProps): Promise<Metadata> {
-  if (!(await isCncPacksEnabled())) return CNC_FLAG_OFF_METADATA;
-
   const { licenceId } = await props.params;
   const { t, locale } = await getServerTranslation('cnc');
   return createNoIndexMetadata({
@@ -72,8 +65,6 @@ export async function generateMetadata(props: OrderRouteProps): Promise<Metadata
 }
 
 export default async function BuildPlanOrderPage(props: OrderRouteProps) {
-  await requireCncPacksFlag();
-
   const { licenceId } = await props.params;
   if (!isLicenceIdShape(licenceId)) {
     notFound();
@@ -90,7 +81,7 @@ export default async function BuildPlanOrderPage(props: OrderRouteProps) {
   // `cncOrder` answers null for a licence that does not exist AND for one that
   // belongs to somebody else — deliberately indistinguishable, so this page
   // must not treat them differently either.
-  const [order, catalog] = await Promise.all([
+  const [order, catalog, creationEnabled] = await Promise.all([
     executeAuthenticatedGraphQL<GetCncOrderQueryResponse>(GET_CNC_ORDER, { licenceId }, authToken)
       .then((response) => response.cncOrder)
       .catch((error: unknown) => {
@@ -98,6 +89,7 @@ export default async function BuildPlanOrderPage(props: OrderRouteProps) {
         return null satisfies CncOrder | null;
       }),
     fetchCncCatalog(),
+    isCncPacksEnabled().catch(() => false),
   ]);
 
   if (!order) {
@@ -136,6 +128,7 @@ export default async function BuildPlanOrderPage(props: OrderRouteProps) {
         wallLabel={wallLabel(catalog, order, t)}
         checkoutOutcome={checkoutOutcome}
         locale={locale}
+        creationEnabled={creationEnabled}
       />
     </I18nProvider>
   );

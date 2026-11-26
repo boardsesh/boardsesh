@@ -144,7 +144,7 @@ function OwnedConfigurator({
 }: ConfiguratorProps & { ownerId: string | null; authSessionId: string | null }) {
   const { t } = useTranslation('cnc');
   const { openAuthModal } = useAuthModal();
-  const { token, isAuthenticated } = useWsAuthToken();
+  const { token, isAuthenticated, isLoading: isAuthLoading } = useWsAuthToken();
   const { data: session } = useSession();
 
   const isMountedRef = useRef(true);
@@ -175,6 +175,8 @@ function OwnedConfigurator({
     includeHoles: isAuthenticated && hasArtwork,
     authToken: token,
     cacheScope: JSON.stringify([ownerId, authSessionId]),
+    authRequired: ownerId !== null,
+    authLoading: isAuthLoading,
   });
 
   const {

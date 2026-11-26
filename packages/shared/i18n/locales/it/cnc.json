@@ -328,7 +328,7 @@
       "signedOut": "Accedi e disegneremo la tua parete. Le anteprime sono gratuite e non serve una carta.",
       "idle": "Disponiamo ogni foglio e ti mostriamo i disegni con filigrana. Modifica ciò che vuoi e richiedi una nuova anteprima.",
       "working": "Stiamo disegnando i fogli. Ci vogliono circa quindici secondi.",
-      "ready": "Disegni di verifica con filigrana. Completa l'acquisto per ottenere i file DXF da tagliare in officina.",
+      "ready": "Disegni di verifica con filigrana. Conferma la licenza per generare gratuitamente i file DXF da tagliare in officina.",
       "stale": "Hai modificato la parete dopo questi disegni. Aggiorna l'anteprima per vedere quelli nuovi.",
       "failed": "Non è stato possibile generare l’anteprima. Riprova.",
       "rateLimited": "Hai esaurito le anteprime gratuite per quest'ora. Quelle già create sono nella pagina dei tuoi progetti di costruzione; potrai crearne un'altra allo scoccare dell'ora.",
@@ -342,7 +342,7 @@
     },
     "finalise": {
       "heading": "Intestatario della licenza",
-      "help": "La licenza compare su ogni file del pacchetto, così eventuali copie diffuse possono essere ricondotte all'acquisto.",
+      "help": "La licenza compare su ogni file del pacchetto, così eventuali copie diffuse possono essere ricondotte alla licenza.",
       "stale": "Aggiorna prima l'anteprima: la parete è cambiata rispetto a questi disegni."
     },
     "original": {
@@ -431,7 +431,7 @@
     "previewWaiting": "Le anteprime richiedono circa quindici secondi. Questa pagina si aggiorna automaticamente.",
     "preview": {
       "heading": "La tua anteprima gratuita",
-      "note": "Disegni di verifica con filigrana. Completa l'acquisto per ottenere i file DXF da tagliare in officina.",
+      "note": "Disegni di verifica con filigrana. Conferma la licenza per generare gratuitamente i file DXF da tagliare in officina.",
       "drawing": "Stiamo disegnando i fogli. Compariranno qui appena saranno pronti.",
       "panel": "Pannello {{number}}",
       "assembly": "Assemblaggio"

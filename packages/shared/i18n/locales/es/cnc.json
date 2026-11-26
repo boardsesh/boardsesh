@@ -328,7 +328,7 @@
       "signedOut": "Inicia sesión y dibujamos tu muro. Las vistas previas son gratis y no hace falta tarjeta.",
       "idle": "Repartimos todas las hojas y te devolvemos planos con marca de agua. Cambia algo y vuelve a pedirla.",
       "working": "Dibujando tus hojas. Tarda unos quince segundos.",
-      "ready": "Planos de revisión con marca de agua. Cierra la compra para conseguir los archivos DXF con los que corta tu taller.",
+      "ready": "Planos de revisión con marca de agua. Confirma la licencia para generar gratis los archivos DXF con los que corta tu taller.",
       "stale": "Has cambiado el muro desde estas hojas. Actualiza la vista previa para ver las nuevas.",
       "failed": "Esa vista previa no se generó. Inténtalo otra vez.",
       "rateLimited": "Ya has gastado las vistas previas gratis de esta hora. Las que tienes están en tus planos; la siguiente, a la hora en punto.",
@@ -405,7 +405,7 @@
     "previewedOn": "Vista previa del {{date}}",
     "view": "Abrir",
     "viewOne": "Abrir el plano de construcción {{licenceId}}",
-    "finalise": "Cerrar la compra",
+    "finalise": "Generar pack",
     "loadError": "No hemos podido cargar tus planos de construcción. Recarga la página."
   },
   "order": {
@@ -431,7 +431,7 @@
     "previewWaiting": "Las vistas previas tardan unos quince segundos. Esta página se actualiza sola.",
     "preview": {
       "heading": "Tu vista previa gratis",
-      "note": "Planos de revisión con marca de agua. Cierra la compra para conseguir los archivos DXF con los que corta tu taller.",
+      "note": "Planos de revisión con marca de agua. Confirma la licencia para generar gratis los archivos DXF con los que corta tu taller.",
       "drawing": "Estamos dibujando tus tableros. Aparecen aquí en cuanto estén.",
       "panel": "Tablero {{number}}",
       "assembly": "Montaje"
@@ -482,7 +482,7 @@
       "body": "Repartimos todas las hojas y te devolvemos los planos con marca de agua. Cambia algo y vuelve a pedir una vista previa dentro del límite por hora."
     },
     "finalise": {
-      "title": "Cierra la compra y construye",
+      "title": "Genera los archivos y construye",
       "body": "Pon el nombre en la licencia personal y los DXF listos para cortar y las hojas de impresión llegan gratis a tu cuenta."
     }
   }

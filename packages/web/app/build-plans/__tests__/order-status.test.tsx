@@ -96,11 +96,16 @@ function previewOrder(overrides: Partial<CncOrder> = {}): CncOrder {
   });
 }
 
-function renderStatus(initialOrder: CncOrder, checkoutOutcome: 'success' | 'cancelled' | null = null) {
+function renderStatus(
+  initialOrder: CncOrder,
+  checkoutOutcome: 'success' | 'cancelled' | null = null,
+  creationEnabled = true,
+) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <OrderStatus
+        creationEnabled={creationEnabled}
         initialOwnerId="buyer-a"
         initialOrder={initialOrder}
         wallLabel="10x12"
@@ -218,6 +223,23 @@ describe('the preview', () => {
 });
 
 describe('downloads', () => {
+  it('keeps ready downloads usable while new generation is disabled', async () => {
+    const downloadUrl = 'https://backend.example/api/cnc/packs/BS-CNC-K7QM3T/download?token=paused';
+    graphqlRequest.mockResolvedValue({ createCncDownloadGrant: { url: downloadUrl } });
+    renderStatus(order(), null, false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Download the pack' }));
+    await waitFor(() => expect(locationAssign).toHaveBeenCalledWith(downloadUrl));
+    expect(screen.queryByRole('link', { name: 'Generate free build pack' })).toBeNull();
+  });
+
+  it('keeps preview downloads while hiding new-generation links when disabled', () => {
+    renderStatus(previewOrder(), null, false);
+
+    expect(screen.getByRole('button', { name: 'Download the preview' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Generate free build pack' })).toBeNull();
+  });
+
   it('offers a quiet donation link without requiring it to download a free pack', async () => {
     const downloadUrl = 'https://backend.example/api/cnc/packs/BS-CNC-K7QM3T/download?token=abc';
     graphqlRequest.mockResolvedValue({ createCncDownloadGrant: { url: downloadUrl } });
@@ -454,6 +476,7 @@ describe('account isolation', () => {
     const view = () => (
       <QueryClientProvider client={queryClient}>
         <OrderStatus
+          creationEnabled={true}
           initialOwnerId="buyer-a"
           initialOrder={initialOrder}
           wallLabel="10x12"
@@ -476,6 +499,7 @@ describe('account isolation', () => {
     const view = () => (
       <QueryClientProvider client={queryClient}>
         <OrderStatus
+          creationEnabled={true}
           initialOwnerId="buyer-a"
           initialOrder={initialOrder}
           wallLabel="10x12"

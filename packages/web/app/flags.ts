@@ -38,10 +38,9 @@ export const FEATURE_FLAG_KEYS = [GYM_KIOSK_FLAG, MOONBOARD_WIDE_ANGLES_FLAG] as
 // the page and the operations cannot disagree on who is invited.
 export const DEVELOPER_CONSOLE_FLAG = PARTNER_DEVELOPER_CONSOLE_FLAG;
 
-// Gates `/build-plans` — the free CNC build-pack configurator, the orders
-// pages, and the footer link into them. This is the sole release switch for
-// the storefront and new backend generation work. The final manufacturing
-// licence remains readable independently of the rollout.
+// Gates the free `/build-plans` configurator and new-generation links. This is
+// the sole release switch for the storefront and new backend generation work.
+// Owned orders and the final licence remain readable independently of rollout.
 //
 // Resolved with `allowAnonymous: true` so signed-out visitors can read the
 // storefront. Signed-in evaluations use the same users.id as the backend.

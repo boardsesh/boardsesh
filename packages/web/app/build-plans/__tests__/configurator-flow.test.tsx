@@ -58,14 +58,7 @@ vi.mock('@/app/lib/graphql/client', () => ({
   getGraphQLHttpUrl: () => 'https://api.boardsesh.test/graphql',
 }));
 
-const useCncLayout = vi.hoisted(() =>
-  vi.fn((_config: unknown, _options: unknown) => ({
-    summary: null,
-    model: null,
-    isLoading: false,
-    errorKey: null,
-  })),
-);
+const useCncLayout = vi.hoisted(() => vi.fn<typeof import('../configurator/use-cnc-layout').useCncLayout>());
 vi.mock('../configurator/use-cnc-layout', () => ({ useCncLayout }));
 
 vi.mock('../configurator/use-cnc-artwork-validation', () => ({
@@ -75,7 +68,8 @@ vi.mock('../configurator/use-cnc-artwork-validation', () => ({
 const ConfiguratorModule = await import('../configurator/configurator');
 const Configurator = ConfiguratorModule.default;
 
-const ORDER_URL = 'http://localhost/build-plans/orders/BS-CNC-K7QM3T';
+const ORDER_PATH = '/build-plans/orders/BS-CNC-K7QM3T';
+const ORDER_URL = `https://www.boardsesh.com${ORDER_PATH}`;
 const locationAssign = vi.fn();
 
 function catalog(): CncCatalog {
@@ -209,7 +203,7 @@ beforeEach(() => {
   graphqlRequest.mockReset().mockImplementation((document: string) => respond(document));
   locationAssign.mockReset();
   useWsAuthToken.mockReset().mockReturnValue({ token: 'ws-token', isAuthenticated: true });
-  useCncLayout.mockClear();
+  useCncLayout.mockReset().mockReturnValue({ summary: null, model: null, isLoading: false, errorKey: null });
   Object.defineProperty(window, 'location', {
     configurable: true,
     writable: true,
@@ -218,6 +212,24 @@ beforeEach(() => {
 });
 
 describe('the preview step', () => {
+  it('shows translated failure feedback when a signed-in credential request fails', async () => {
+    const { useCncLayout: realLayout } = await vi.importActual<typeof import('../configurator/use-cnc-layout')>(
+      '../configurator/use-cnc-layout',
+    );
+    useCncLayout.mockImplementation(realLayout);
+    useWsAuthToken.mockReturnValue({
+      token: null,
+      isAuthenticated: false,
+      isLoading: false,
+      error: 'Credential endpoint unavailable',
+    });
+    renderConfigurator();
+
+    expect(await screen.findByText(tFromCatalog('cnc', 'errors.generic'))).toBeTruthy();
+    expect(graphqlRequest).not.toHaveBeenCalled();
+    expect(screen.queryByText('Credential endpoint unavailable')).toBeNull();
+  });
+
   it('asks a signed-out buyer to sign in rather than calling the generator', async () => {
     useWsAuthToken.mockReturnValue({ token: null, isAuthenticated: false });
     renderConfigurator();
@@ -340,7 +352,7 @@ describe('the finalise step', () => {
         },
       });
     });
-    await waitFor(() => expect(locationAssign).toHaveBeenCalledWith(ORDER_URL));
+    await waitFor(() => expect(locationAssign).toHaveBeenCalledWith(ORDER_PATH));
   });
 });
 
@@ -391,7 +403,7 @@ describe('checkout session lifetime', () => {
         finish?.({ finaliseCncOrder: { orderId: '41', licenceId: 'BS-CNC-K7QM3T', checkoutUrl: ORDER_URL } });
         await pending;
       });
-      if (transition === 'token refresh') await waitFor(() => expect(locationAssign).toHaveBeenCalledWith(ORDER_URL));
+      if (transition === 'token refresh') await waitFor(() => expect(locationAssign).toHaveBeenCalledWith(ORDER_PATH));
       else expect(locationAssign).not.toHaveBeenCalled();
     },
   );

@@ -5,6 +5,7 @@ const control = vi.hoisted(() => ({
   token: vi.fn(),
   session: vi.fn(),
   query: vi.fn(),
+  flag: vi.fn(),
   redirect: vi.fn((destination: string): never => {
     throw new Error(`REDIRECT:${destination}`);
   }),
@@ -27,9 +28,11 @@ vi.mock('@/app/lib/i18n/server', () => ({
 vi.mock('@/app/lib/seo/metadata', () => ({ createNoIndexMetadata: (metadata: unknown) => metadata }));
 vi.mock('@/app/components/providers/i18n-provider', () => ({ default: 'test-i18n' }));
 vi.mock('../build-plans-page', () => ({
-  requireCncPacksFlag: async () => {},
+  requireCncPacksFlag: async () => {
+    if (!(await control.flag())) throw new Error('NOT_FOUND');
+  },
   fetchCncCatalog: async () => ({ entries: [] }),
-  isCncPacksEnabled: async () => true,
+  isCncPacksEnabled: control.flag,
   CNC_FLAG_OFF_METADATA: {},
 }));
 vi.mock('../ui', () => ({ PageFrame: 'page-frame' }));
@@ -47,12 +50,34 @@ function props() {
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  control.flag.mockResolvedValue(true);
   control.token.mockResolvedValue('buyer-token');
   control.session.mockResolvedValue({ user: { id: 'buyer-a' } });
   control.query.mockResolvedValue({ myCncOrders: [order], cncOrder: order });
 });
 
 describe('order pages and the signed-in buyer', () => {
+  it('keeps authenticated order history and status available with the flag off', async () => {
+    control.flag.mockResolvedValue(false);
+
+    const list = await OrdersPage();
+    expect(JSON.stringify(list)).toContain('Buyer name');
+    expect(JSON.stringify(list)).toContain('"creationEnabled":false');
+    expect(JSON.stringify(list)).not.toContain('orders.configureAnother');
+    const detail = await OrderPage(props());
+    expect(detail.props.children.type).toBe('order-status');
+    expect(detail.props.children.props).toMatchObject({ initialOwnerId: 'buyer-a', creationEnabled: false });
+    expect(control.query).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let an unavailable creation flag hide existing orders', async () => {
+    control.flag.mockRejectedValue(new Error('POSTHOG_UNAVAILABLE'));
+
+    expect(JSON.stringify(await OrdersPage())).toContain('Buyer name');
+    const detail = await OrderPage(props());
+    expect(detail.props.children.props.creationEnabled).toBe(false);
+  });
+
   it('renders purchase history and order detail from the buyer token', async () => {
     const list = await OrdersPage();
     expect(JSON.stringify(list)).toContain('orders-list');
@@ -70,6 +95,7 @@ describe('order pages and the signed-in buyer', () => {
   });
 
   it('sends signed-out visitors to sign-in without reading orders', async () => {
+    control.flag.mockResolvedValue(false);
     control.token.mockResolvedValue(undefined);
     control.session.mockResolvedValue(null);
     await expect(OrdersPage()).rejects.toThrow('REDIRECT:/auth/login?callbackUrl=%2Fbuild-plans%2Forders');

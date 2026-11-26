@@ -9,11 +9,15 @@ export default async function OrdersList({
   orders,
   catalog,
   locale,
+  creationEnabled,
 }: {
   orders: readonly CncOrder[];
   catalog: CncCatalog | null;
   locale: string;
+  creationEnabled: boolean;
 }) {
   const { t } = await getServerTranslation('cnc');
-  return <OrdersListContent orders={orders} catalog={catalog} locale={locale} t={t} />;
+  return (
+    <OrdersListContent orders={orders} catalog={catalog} locale={locale} creationEnabled={creationEnabled} t={t} />
+  );
 }

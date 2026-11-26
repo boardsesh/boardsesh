@@ -9,6 +9,8 @@ import {
 } from '@boardsesh/graphql/operations/cnc-packs';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { removePreference } from '@/app/lib/user-preferences-db';
+import { useDocumentLocale } from '@/app/lib/i18n/document-locale-context';
+import { applyLocale } from '@/app/lib/i18n/locale-href';
 import { useCncRequestScope } from '../use-cnc-request-scope';
 import { cncErrorKey, type CncErrorKey } from '../cnc-error';
 import { CNC_CONFIGURATOR_DRAFT_KEY } from './configurator-state';
@@ -23,27 +25,15 @@ export type CncFinaliseResult = {
   errorKey: CncErrorKey | null;
 };
 
-/** Only navigate to an order page on this site, never a payment provider. */
-export function isCheckoutRedirectUrl(url: string, siteOrigin: string | null = currentSiteOrigin()): boolean {
-  try {
-    const { origin, pathname } = new URL(url);
-    return (
-      siteOrigin !== null &&
-      siteOrigin !== 'null' &&
-      origin === siteOrigin &&
-      /^\/build-plans\/orders\/BS-CNC-[A-Z0-9]+$/.test(pathname)
-    );
-  } catch {
-    return false;
-  }
-}
-
-function currentSiteOrigin(): string | null {
-  return typeof window === 'undefined' ? null : window.location.origin;
+/** Build a local order path from the identifier; never follow a server URL. */
+export function cncOrderPath(licenceId: unknown): string | null {
+  if (typeof licenceId !== 'string' || licenceId.length !== 13 || !/^BS-CNC-[A-Z0-9]{6}$/.test(licenceId)) return null;
+  return `/build-plans/orders/${licenceId}`;
 }
 
 export function useCncFinalise(authToken: string | null): CncFinaliseResult {
   const beginRequest = useCncRequestScope();
+  const locale = useDocumentLocale();
   const [isFinalising, setIsFinalising] = useState(false);
   const [errorKey, setErrorKey] = useState<CncErrorKey | null>(null);
 
@@ -60,8 +50,8 @@ export function useCncFinalise(authToken: string | null): CncFinaliseResult {
           { input },
         );
         if (!isCurrent()) return;
-        const { checkoutUrl } = response.finaliseCncOrder;
-        if (!isCheckoutRedirectUrl(checkoutUrl)) {
+        const orderPath = cncOrderPath(response.finaliseCncOrder.licenceId);
+        if (!orderPath) {
           // Preserve the draft when the response cannot safely be opened.
           setErrorKey('generic');
           setIsFinalising(false);
@@ -70,13 +60,15 @@ export function useCncFinalise(authToken: string | null): CncFinaliseResult {
         // The order now carries the licence details; clear the browser draft
         // before opening its generation status.
         await removePreference(CNC_CONFIGURATOR_DRAFT_KEY);
-        if (isCurrent()) window.location.assign(checkoutUrl);
+        // Start a fresh document so the preview's React Query entry cannot
+        // replace the newly queued/ready order fetched by the server.
+        if (isCurrent()) window.location.assign(applyLocale(orderPath, locale));
       } catch (error) {
         if (isCurrent()) setErrorKey(cncErrorKey(error));
         if (isCurrent()) setIsFinalising(false);
       }
     },
-    [authToken, beginRequest],
+    [authToken, beginRequest, locale],
   );
 
   return { finalise, isFinalising, errorKey };

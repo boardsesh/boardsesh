@@ -884,14 +884,15 @@ best-effort: the order is already durable by the time one runs.
 ## The web surface
 
 The generator has one release switch: the PostHog `cnc-packs` flag. Web
-storefront and order routes evaluate it before rendering. Backend uploads,
-previews, layout/artwork computations and finalisation evaluate the same flag
+storefront evaluates it before rendering. Existing owned order history and
+status routes remain available; only their new-generation links follow the flag.
+Backend uploads, previews, layout/artwork computations and finalisation evaluate the same flag
 before new generator work, including anonymous hole-free layout requests.
 Authenticated requests use `users.id` on both sides; anonymous requests use
 `anonymous-web-visitor`. Backend decisions are cached for at most 60 seconds
 with a 1.5-second evaluation deadline; missing or unusable answers fail closed.
-Existing owned results/downloads and queued jobs remain available when the flag
-is switched off. Authorized admins can also rebuild already licensed orders
+Existing owned order pages, results/downloads and queued jobs remain available
+when the flag is switched off. Authorized admins can also rebuild already licensed orders
 for recovery; this does not create a new public licence or configuration.
 
 `/build-plans/licence` always serves the final non-commercial terms without an

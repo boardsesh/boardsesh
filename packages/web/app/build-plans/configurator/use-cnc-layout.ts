@@ -58,14 +58,16 @@ export type CncLayoutOptions = {
    * Off by default, and for two reasons: the hole list adds about 40 KB to
    * every response, and the resolver that returns it is authenticated and
    * capped at 10 calls a minute rather than 30. Turn it on only while the
-   * placement editor is open and only for a signed-in buyer — the query key
-   * carries the flag, so the cheap public answer stays cached either way and
-   * flipping back to it costs nothing.
+   * placement editor is open and only for a signed-in builder. Query keys
+   * keep the two response shapes separate within each account/login scope.
    */
   includeHoles?: boolean;
-  /** Required when `includeHoles` is set; the holes are not public. */
+  /** Send an available credential for rollout targeting, even without holes. */
   authToken?: string | null;
   cacheScope?: string;
+  /** The caller is signed in, so an anonymous rollout answer must not be used. */
+  authRequired?: boolean;
+  authLoading?: boolean;
 };
 
 /**
@@ -75,13 +77,19 @@ export type CncLayoutOptions = {
  * preview is allowed to fetch, and every number the summary card shows comes
  * from `bom_preview` rather than from the holes themselves.
  *
- * With no token, no token is sent. The layout resolver is public for exactly
- * this reason — the preview is what makes someone want to buy, so it must
- * render before anyone is asked to sign in.
+ * Anonymous visitors can fetch hole-free layouts when their rollout is on.
+ * Signed-in requests use their account's credential and cache scope, so account
+ * targeting works before the artwork editor requests any private hole data.
  */
 export function useCncLayout(
   config: CncBoardConfigInput | null,
-  { includeHoles = false, authToken = null, cacheScope = 'anonymous' }: CncLayoutOptions = {},
+  {
+    includeHoles = false,
+    authToken = null,
+    cacheScope = 'anonymous',
+    authRequired = false,
+    authLoading = false,
+  }: CncLayoutOptions = {},
 ): CncLayoutResult {
   const beginRequest = useCncRequestScope();
   const debouncedConfig = useDebouncedConfig(config);
@@ -90,22 +98,23 @@ export function useCncLayout(
   // out caller silently falls back to the public shape rather than spending a
   // round trip on a request the resolver will refuse.
   const wantsHoles = includeHoles && authToken !== null;
+  const missingAuth = authRequired && authToken === null;
 
   const query = useQuery({
-    queryKey: ['cncLayout', configKey, wantsHoles, wantsHoles ? cacheScope : 'public'] as const,
+    queryKey: ['cncLayout', configKey, wantsHoles, cacheScope, authToken !== null] as const,
     queryFn: async ({ signal }) => {
       if (!debouncedConfig) throw new Error('useCncLayout: queryFn ran without a config');
-      const isCurrent = wantsHoles ? beginRequest() : undefined;
+      const isCurrent = beginRequest();
       const layout = await computeCnc('layout', debouncedConfig, {
         includeHoles: wantsHoles,
-        authToken: wantsHoles ? authToken : undefined,
+        authToken: authToken ?? undefined,
         signal,
         isCurrent,
       });
-      if (isCurrent && !isCurrent()) throw new Error('STALE_CNC_REQUEST');
+      if (!isCurrent()) throw new Error('STALE_CNC_REQUEST');
       return { summary: readLayoutSummary(layout), model: readLayoutModel(layout) };
     },
-    enabled: debouncedConfig !== null,
+    enabled: debouncedConfig !== null && !missingAuth,
     // The generator caches layouts for a minute of its own; match it here so
     // stepping back to a configuration already seen costs nothing at all.
     staleTime: 60_000,
@@ -118,7 +127,12 @@ export function useCncLayout(
   return {
     summary: query.data?.summary ?? null,
     model: query.data?.model ?? null,
-    isLoading: query.isFetching,
-    errorKey: query.error ? cncErrorKey(query.error) : null,
+    isLoading: query.isFetching || (debouncedConfig !== null && missingAuth && authLoading),
+    errorKey:
+      debouncedConfig !== null && missingAuth && !authLoading
+        ? 'generic'
+        : query.error
+          ? cncErrorKey(query.error)
+          : null,
   };
 }

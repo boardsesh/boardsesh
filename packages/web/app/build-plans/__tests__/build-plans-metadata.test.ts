@@ -55,11 +55,14 @@ const ROUTES = [
  * The page is a server component that returns plain elements, so walking them
  * beats mounting the whole MUI + i18n stack to learn what one prop resolved to.
  */
-function orderStatusProps(tree: ReactElement): { checkoutOutcome: 'success' | 'cancelled' | null } {
+function orderStatusProps(tree: ReactElement): {
+  checkoutOutcome: 'success' | 'cancelled' | null;
+  creationEnabled: boolean;
+} {
   // `I18nProvider` wraps `OrderStatus` directly: the page frame moved into
   // `OrderStatus` itself, because the header carries a live status chip.
   const orderStatus = (tree.props as { children: ReactElement }).children;
-  return orderStatus.props as { checkoutOutcome: 'success' | 'cancelled' | null };
+  return orderStatus.props as { checkoutOutcome: 'success' | 'cancelled' | null; creationEnabled: boolean };
 }
 
 function cncOrder(overrides: Partial<CncOrder> = {}): CncOrder {
@@ -180,16 +183,17 @@ describe('the flag gate', () => {
     expect(notFound).toHaveBeenCalledTimes(1);
   });
 
-  it('404s the orders pages too — the gate is not just the shop front', async () => {
+  it('keeps owned order pages available when new generation is disabled', async () => {
     getServerFeatureFlag.mockResolvedValue(false);
+    executeAuthenticatedGraphQL.mockResolvedValue({ myCncOrders: [], cncOrder: cncOrder() });
 
-    await expect(ordersRoute.default()).rejects.toThrow('NEXT_NOT_FOUND');
-    await expect(
-      orderRoute.default({
-        params: Promise.resolve({ licenceId: 'BS-CNC-K7QM3T' }),
-        searchParams: Promise.resolve({}),
-      }),
-    ).rejects.toThrow('NEXT_NOT_FOUND');
+    await expect(ordersRoute.default()).resolves.toBeTruthy();
+    const detail = await orderRoute.default({
+      params: Promise.resolve({ licenceId: 'BS-CNC-K7QM3T' }),
+      searchParams: Promise.resolve({}),
+    });
+    expect(orderStatusProps(detail).creationEnabled).toBe(false);
+    expect(notFound).not.toHaveBeenCalled();
   });
 
   it('evaluates the flag for signed-out visitors, not only for a session', async () => {
@@ -246,33 +250,18 @@ describe('metadata while the flag is off', () => {
     searchParams: Promise.resolve({}),
   };
 
-  it('says nothing but noindex on any of the three routes', async () => {
+  it('keeps only the storefront metadata hidden while its flag is off', async () => {
     getServerFeatureFlag.mockResolvedValue(false);
 
-    const all = [
-      { route: '/build-plans', metadata: await buildPlansRoute.generateMetadata() },
-      { route: '/build-plans/orders', metadata: await ordersRoute.generateMetadata() },
-      { route: '/build-plans/orders/[licenceId]', metadata: await orderRoute.generateMetadata(ORDER_ROUTE_PROPS) },
-    ];
-
-    for (const { route, metadata } of all) {
-      // Bare on purpose: `generateMetadata` runs before the page body can
-      // `notFound()`, so a title, description or canonical here would describe
-      // the shape of a surface that answers 404 to everyone.
-      expect({ route, metadata }).toEqual({ route, metadata: { robots: { index: false, follow: true } } });
+    expect(await buildPlansRoute.generateMetadata()).toEqual({ robots: { index: false, follow: true } });
+    for (const metadata of [
+      await ordersRoute.generateMetadata(),
+      await orderRoute.generateMetadata(ORDER_ROUTE_PROPS),
+    ]) {
+      expect(metadata.title).toBeDefined();
+      expect(metadata.robots).toEqual({ index: false, follow: true });
+      expect(metadata.alternates?.canonical).toBeDefined();
     }
-  });
-
-  it('leaks neither the licence id nor a route-shaped canonical', async () => {
-    getServerFeatureFlag.mockResolvedValue(false);
-
-    const metadata = await orderRoute.generateMetadata(ORDER_ROUTE_PROPS);
-
-    expect(metadata.title).toBeUndefined();
-    expect(metadata.description).toBeUndefined();
-    expect(metadata.alternates).toBeUndefined();
-    expect(metadata.openGraph).toBeUndefined();
-    expect(JSON.stringify(metadata)).not.toContain('BS-CNC-K7QM3T');
   });
 
   it('resolves the flag through the same gate the page body uses', async () => {
