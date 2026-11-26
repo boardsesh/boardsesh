@@ -1,4 +1,5 @@
-import { and, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, eq, exists, inArray, isNotNull, lte, ne, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import type { SerialBoardRequestCard } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
@@ -46,6 +47,31 @@ export async function serialBoardRequestCards(
   const cards = new Map<string, SerialBoardRequestCard>();
   if (hiddenBoardUuids.length === 0) return cards;
   const boards = dbSchema.userBoards;
+  const grants = dbSchema.resourceGrants;
+  // The owner's row is already joined as `users`; the viewer needs its own alias.
+  const viewer = alias(dbSchema.users, 'reveal_viewer');
+  const pendingRequest = db
+    .select({ one: sql`1` })
+    .from(grants)
+    .where(
+      and(
+        eq(grants.kind, 'board'),
+        eq(grants.resourceId, boards.uuid),
+        eq(grants.userId, viewerId),
+        eq(grants.status, 'pending'),
+      ),
+    );
+  const eligibleViewer = db
+    .select({ one: sql`1` })
+    .from(viewer)
+    .where(
+      and(
+        eq(viewer.id, viewerId),
+        isNotNull(viewer.emailVerified),
+        // The interval arithmetic is the one piece the query builder can't express.
+        lte(viewer.createdAt, sql`now() - ${`${MIN_ACCOUNT_AGE_DAYS} days`}::interval`),
+      ),
+    );
   const rows = await db
     .select({
       uuid: boards.uuid,
@@ -56,9 +82,7 @@ export async function serialBoardRequestCards(
       angle: boards.angle,
       ownerDisplayName: sql<string | null>`COALESCE(${dbSchema.userProfiles.displayName}, ${dbSchema.users.name})`,
       ownerAvatarUrl: sql<string | null>`COALESCE(${dbSchema.userProfiles.avatarUrl}, ${dbSchema.users.image})`,
-      requested: sql<boolean>`EXISTS (SELECT 1 FROM resource_grants reveal_request
-        WHERE reveal_request.kind = 'board' AND reveal_request.resource_id = ${boards.uuid}
-          AND reveal_request.user_id = ${viewerId} AND reveal_request.status = 'pending')`,
+      requested: exists(pendingRequest).mapWith(Boolean),
     })
     .from(boards)
     .innerJoin(dbSchema.users, eq(dbSchema.users.id, boards.ownerId))
@@ -74,9 +98,7 @@ export async function serialBoardRequestCards(
         ...friendsBoardListingConditions(viewerId),
         eq(dbSchema.resourcePrivacy.audience, 'invite_only'),
         ne(boards.ownerId, SYSTEM_OWNER_ID),
-        sql`EXISTS (SELECT 1 FROM users reveal_viewer WHERE reveal_viewer.id = ${viewerId}
-          AND reveal_viewer."emailVerified" IS NOT NULL
-          AND reveal_viewer.created_at <= now() - ${`${MIN_ACCOUNT_AGE_DAYS} days`}::interval)`,
+        exists(eligibleViewer),
       ),
     )
     .orderBy(boards.id);
