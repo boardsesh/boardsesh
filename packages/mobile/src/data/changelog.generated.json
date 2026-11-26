@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-11-25T23:26:29.536Z",
+  "generatedAt": "2026-11-26T12:05:05.219Z",
   "entries": [
+    {
+      "prNumber": 8204,
+      "category": "new",
+      "title": "Global admins can place unlinked spray walls on the right gym listing, with an explicit check when gym members would gain access.",
+      "mergedAt": "2026-11-26T08:40:14Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8204"
+    },
+    {
+      "prNumber": 8186,
+      "category": "fixed",
+      "title": "Find beta and nearby climbs on lighter public climb pages. Comments and grade proposals stay in the app.",
+      "mergedAt": "2026-11-26T08:39:47Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8186"
+    },
     {
       "prNumber": 8200,
       "category": "fixed",

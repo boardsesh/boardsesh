@@ -4,6 +4,16 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/operations/mobile-ota-updates.md.
 
+## 2026-11-26
+
+### New
+
+- Global admins can place unlinked spray walls on the right gym listing, with an explicit check when gym members would gain access. ([#8204](https://github.com/boardsesh/boardsesh/pull/8204))
+
+### Fixed
+
+- Find beta and nearby climbs on lighter public climb pages. Comments and grade proposals stay in the app. ([#8186](https://github.com/boardsesh/boardsesh/pull/8186))
+
 ## 2026-11-25
 
 ### New
