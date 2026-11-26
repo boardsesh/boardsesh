@@ -1,3 +1,4 @@
+import { toBoardName } from '@boardsesh/board-config';
 import { projectSessionBoardPath } from '../../../services/board-session-privacy';
 import { redactQueueEvents } from '../../../services/privacy-queue-events';
 import { canAccessResource } from '../../../services/privacy';
@@ -15,7 +16,9 @@ import { SessionIdSchema, LatitudeSchema, LongitudeSchema, RadiusMetersSchema } 
 import { generateSessionHealthExport, generateSessionSummary } from './session-summary';
 import { getDistributedState } from '../../../services/distributed-state';
 import { buildSessionPayload } from './helpers';
-import { dbRead } from '../../../db/client';
+import { db, dbRead } from '../../../db/client';
+import { parseSessionBoardPath } from '../../../services/session-board';
+import { sprayLayoutIsReadableWithCapability } from '../climbs/spray-read-access';
 import { sessions } from '../../../db/schema';
 
 export const sessionQueries = {
@@ -194,7 +197,19 @@ export const sessionQueries = {
     if (!(await canAccessResource('session', sessionId, ctx.userId))) return null;
     const session = await roomManager.getSessionById(sessionId);
     if (!session?.boardPath) return null;
-    return (await projectSessionBoardPath(session.boardPath, ctx.userId, { geometryOnly: true })) || null;
+    const boardPath = await projectSessionBoardPath(session.boardPath, ctx.userId, { geometryOnly: true });
+    const { config } = parseSessionBoardPath(boardPath);
+    if (!config || !toBoardName(config.boardType)) return null;
+
+    // A spray layout identifies one wall. Holding the session link alone does
+    // not grant access to that wall, including when its path was a saved slug.
+    if (
+      config.boardType === 'spray' &&
+      !(await sprayLayoutIsReadableWithCapability(config.boardType, config.layoutId, ctx.userId, undefined, db))
+    ) {
+      return null;
+    }
+    return boardPath;
   },
 
   /**

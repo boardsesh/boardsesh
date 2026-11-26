@@ -6,6 +6,7 @@ import type { RawData, WebSocketServer } from 'ws';
 vi.mock('../services/room-manager', () => ({
   roomManager: {
     registerClient: vi.fn().mockResolvedValue('participant-1'),
+    markClientClosing: vi.fn(() => false),
     clearBoardWriterForConnection: vi.fn().mockResolvedValue(undefined),
     disconnectClient: vi.fn().mockResolvedValue(undefined),
     removeClient: vi.fn().mockResolvedValue(undefined),
