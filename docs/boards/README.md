@@ -7,7 +7,7 @@ Board protocols, connection ownership, LED controllers and firmware. Protocol ev
 ## Start here
 
 - [Board connection holder — "who's connected / writing to the wall"](board-connection-holder.md)
-- [Quantum Board proof of concept](../quantumboard.md)
+- [Quantum Board proof of concept](quantumboard.md)
 - [Aurora Bluetooth Protocol Specification](AURORA_BLUETOOTH_PROTOCOL_SPEC.md)
 - [WLED Bluetooth for Spraywalls](wled-bluetooth.md)
 - [Embedded Architecture](embedded-architecture.md)
@@ -24,7 +24,7 @@ a production rollout or a physical-device result.
 | [Aurora Bluetooth Protocol Specification](AURORA_BLUETOOTH_PROTOCOL_SPEC.md) | `AURORA_BLUETOOTH_PROTOCOL_SPEC.md` |
 | [LED Box Bluetooth Connection Protocol](LED_BOX_BLE_CONNECTION_PROTOCOL.md) | `LED_BOX_BLE_CONNECTION_PROTOCOL.md` |
 | [MoonBoard Bluetooth Protocol Specification](MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md) | `MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md` |
-| [Quantum Board proof of concept](../quantumboard.md) | `../quantumboard.md` |
+| [Quantum Board proof of concept](quantumboard.md) | `quantumboard.md` |
 | [Rogue Fitness Timer — Bluetooth LE Protocol Spec](ROGUE_TIMER_BLE_SPEC.md) | `ROGUE_TIMER_BLE_SPEC.md` |
 | [Woods Board Bluetooth Protocol Specification](WOODS_BLUETOOTH_PROTOCOL_SPEC.md) | `WOODS_BLUETOOTH_PROTOCOL_SPEC.md` |
 | [Board connection holder — "who's connected / writing to the wall"](board-connection-holder.md) | `board-connection-holder.md` |

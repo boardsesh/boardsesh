@@ -1092,7 +1092,7 @@ batches and the `board_shared_syncs.metadata` checkpoint use the job's attempt
 fence. Bundled hardware geometry must match before a catalog can be accepted.
 Personal account collections and outbound uploads are separate from this shared
 catalogue job. Credential configuration, scope rebinding, and remaining partner
-validation are described in [quantumboard.md](quantumboard.md).
+validation are described in [quantumboard.md](../boards/quantumboard.md).
 
 `aurora-shared-sync` and `kilter-catalog-sync` borrow a token from the board's
 most recently successful `active` credential (Kilter falls back to the

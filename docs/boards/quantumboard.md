@@ -60,7 +60,7 @@ provider boundary; callers use the common layout and size contracts.
 
 Physical hold maps and per-size LED membership ship as generated board constants,
 following the existing generated catalog pattern. The source and provenance are
-recorded in [quantum-board-geometry](quantum-board-geometry/README.md). The
+recorded in [quantum-board-geometry](../quantum-board-geometry/README.md). The
 source contains 3,154 model-specific diode rows; shared standard-family holds
 have one canonical placement identity. Runtime catalog imports must match the
 bundled physical fingerprint, including on the first import. A geometry correction
