@@ -39,15 +39,17 @@ type ClimbFiltersOpenSource = 'tab_reselect' | 'filters_chip' | 'empty_recovery'
 
 type ClimbsSearchSessionOptions = {
   /**
-   * Climbs is the bar's search tab (`useClimbsTabBarSearch`). Its tab tap opens
-   * the bar's search field, so a second tap no longer opens Filters.
+   * Climbs is the bar's search tab (`useClimbsTabBarSearch`). A second tap on the
+   * tab then focuses the bar's search field (`onTabBarSearchReselect`) instead of
+   * opening Filters.
    */
   tabBarSearch?: boolean;
+  onTabBarSearchReselect?: () => void;
 };
 
 export function useClimbsSearchSession(
   boardConfig: BoardSearchConfig | null,
-  { tabBarSearch = false }: ClimbsSearchSessionOptions = {},
+  { tabBarSearch = false, onTabBarSearchReselect }: ClimbsSearchSessionOptions = {},
 ) {
   const { t } = useTranslation('climbs');
   const { isAuthenticated } = useAuth();
@@ -221,8 +223,9 @@ export function useClimbsSearchSession(
   const handleOpenFilters = useCallback(() => openFiltersFrom('filters_chip'), [openFiltersFrom]);
   const handleOpenFiltersFromEmpty = useCallback(() => openFiltersFrom('empty_recovery'), [openFiltersFrom]);
   const handleTabReselect = useCallback(() => {
-    if (!tabBarSearch) openFiltersFrom('tab_reselect');
-  }, [openFiltersFrom, tabBarSearch]);
+    if (tabBarSearch) onTabBarSearchReselect?.();
+    else openFiltersFrom('tab_reselect');
+  }, [openFiltersFrom, tabBarSearch, onTabBarSearchReselect]);
   useTabReselect(handleTabReselect);
   const handleApplyRecentFilter = useCallback(
     (pillFilters: ClimbFilters, pillSearchText: string) => {

@@ -293,18 +293,22 @@ export function TabLayoutView({
 
       {/* Last, so it is the rightmost tab, like Apple Music's Search tab (HIG Tab
           bars: the search tab sits "at the trailing end"). By default it is the bar's
-          search tab (`role="search"`, a UISearchTab on iOS 26.1+): iOS sets it apart
-          from the other tabs and brings the screen's climb-name search field into the
-          bar (`headerSearchBarOptions` in climbs/index.tsx). Selecting it opens that
-          field. Changing the role remounts the tab. With the setting off it is an
-          ordinary labelled tab with no search field, a second tap opens Filters
-          (`useTabReselect`), and `prominent` keeps it on screen at the right when the
-          bar collapses on scroll. The search tab needs no `prominent`: iOS already
-          keeps it apart, and only one tab may be prominent. */}
+          search tab (`role="search"`, a UISearchTab on iOS 26.1+), with the screen's
+          climb-name search field in the bar (`headerSearchBarOptions` in
+          climbs/index.tsx). Selecting it shows the list and leaves the field alone
+          (`disableAutomaticSearchActivation`); tapping the field, or the tab a second
+          time, focuses it. Changing the role remounts the tab. With the setting off it
+          is an ordinary labelled tab with no search field and a second tap opens
+          Filters (`useTabReselect`).
+
+          iOS 26.x sets a search tab apart at the right of the bar on its own. iOS 27
+          only does that while activation is on, so there `prominent` keeps Climbs
+          apart and on screen when the bar collapses on scroll, either way. */}
       <NativeTabs.Trigger
         name="climbs"
         role={climbsSearchTab ? 'search' : undefined}
-        prominent={prominentClimbsTab && !climbsSearchTab}
+        disableAutomaticSearchActivation={climbsSearchTab ? true : undefined}
+        prominent={prominentClimbsTab}
       >
         <NativeTabs.Trigger.Icon sf={TAB_SF_SYMBOLS.climbs} md="search" />
         <NativeTabs.Trigger.Label>{t('mobile.nav.climbs')}</NativeTabs.Trigger.Label>

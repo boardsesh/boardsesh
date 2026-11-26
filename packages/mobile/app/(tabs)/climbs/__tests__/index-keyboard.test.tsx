@@ -1352,14 +1352,19 @@ describe('ClimbList with Climbs as the bar search tab', () => {
     expect(mocks.setName).toHaveBeenLastCalledWith('');
   });
 
-  it('leaves a second tap to the search field instead of opening Filters', async () => {
+  it('focuses the search field on a second tap instead of opening Filters', async () => {
     mocks.tabBarSearch = true;
     const { findByText, queryByTestId } = render(<ClimbList />);
     await findByText('Moonage');
+    const ref = searchBarOptions()?.ref as { current: unknown } | undefined;
+    if (!ref) throw new Error('Expected the tab bar search field');
+    const focus = vi.fn();
+    ref.current = { focus, blur: vi.fn(), setText: vi.fn(), clearText: vi.fn() };
 
     expect(mocks.tabReselect).toBeDefined();
     act(() => mocks.tabReselect?.());
 
+    expect(focus).toHaveBeenCalledOnce();
     expect(queryByTestId('filter-sheet')).toBeNull();
   });
 });

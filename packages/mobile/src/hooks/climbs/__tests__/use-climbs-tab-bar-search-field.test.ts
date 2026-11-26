@@ -9,9 +9,13 @@ type SearchBarOptions = NonNullable<ReturnType<typeof useClimbsTabBarSearchField
 type TextEvent = Parameters<NonNullable<SearchBarOptions['onChangeText']>>[0];
 type CancelEvent = Parameters<NonNullable<SearchBarOptions['onCancelButtonPress']>>[0];
 
+// One native field per test, shared across rerenders like the screen's ref.
+let fieldRef: { current: SearchBarCommands | null } = { current: null };
+
 function makeOptions(overrides: Partial<Options> = {}): Options {
   return {
     enabled: true,
+    fieldRef,
     placeholder: 'Search climbs...',
     name: '',
     searchReady: true,
@@ -41,14 +45,15 @@ function textEvent(text: string): TextEvent {
 const targetEvent = {} as unknown as CancelEvent;
 
 function attach(options: ReturnType<typeof useClimbsTabBarSearchField>, field: SearchBarCommands) {
-  const ref = options?.ref as { current: SearchBarCommands | null } | undefined;
-  if (!ref) throw new Error('no search bar ref');
-  ref.current = field;
+  // The native bar fills the ref it is handed, which must be the caller's own.
+  expect(options?.ref).toBe(fieldRef);
+  fieldRef.current = field;
 }
 
 describe('useClimbsTabBarSearchField', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    fieldRef = { current: null };
   });
   afterEach(() => {
     vi.useRealTimers();

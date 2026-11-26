@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, type RefObject } from 'react';
 import type { NativeStackNavigationOptions } from 'expo-router';
 import type { SearchBarCommands } from 'react-native-screens';
 import { visibleSearchTextNeedsSync } from '../../lib/search-name';
@@ -8,6 +8,8 @@ type SearchBarOptions = NonNullable<NativeStackNavigationOptions['headerSearchBa
 type ClimbsTabBarSearchFieldOptions = {
   /** Climbs is the bar's search tab (`useClimbsTabBarSearch`). Off, no field. */
   enabled: boolean;
+  /** Filled with the native field once it mounts; the caller focuses it on a second tab tap. */
+  fieldRef: RefObject<SearchBarCommands | null>;
   placeholder: string;
   /** The committed climb name. */
   name: string;
@@ -40,10 +42,9 @@ const SYNC_RETRY_MS = 50;
  * but never while the climber is mid-typing a term of its own.
  */
 export function useClimbsTabBarSearchField(options: ClimbsTabBarSearchFieldOptions): SearchBarOptions | undefined {
-  const { enabled, placeholder, name, searchReady } = options;
+  const { enabled, placeholder, name, searchReady, fieldRef } = options;
   const latest = useRef(options);
   latest.current = options;
-  const fieldRef = useRef<SearchBarCommands>(null);
   const visibleTextRef = useRef('');
 
   useEffect(() => {
@@ -71,7 +72,7 @@ export function useClimbsTabBarSearchField(options: ClimbsTabBarSearchFieldOptio
       cancelled = true;
       if (timer !== null) clearTimeout(timer);
     };
-  }, [enabled, searchReady, name]);
+  }, [enabled, searchReady, name, fieldRef]);
 
   return useMemo((): SearchBarOptions | undefined => {
     if (!enabled) return undefined;
@@ -98,5 +99,5 @@ export function useClimbsTabBarSearchField(options: ClimbsTabBarSearchFieldOptio
       },
       onFocus: () => latest.current.onFocus?.(),
     };
-  }, [enabled, placeholder]);
+  }, [enabled, placeholder, fieldRef]);
 }

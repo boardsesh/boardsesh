@@ -49,7 +49,7 @@ The bar itself depends on the device:
   answer the tab layout and the Climbs screen both read). It is read once per
   launch, so a flip applies after the app restarts: changing a tab's role remounts
   the tab, and Settings can be open inside the Climbs stack. The queue accessory and scroll minimization ride
-  the iOS 26 bar. With the search tab off, on an iOS 27 iPhone Climbs is the bar's prominent tab, so
+  the iOS 26 bar. On an iOS 27 iPhone Climbs is the bar's prominent tab, search tab or not, so
   it stays on screen at the right when the bar collapses, as Music's Search does;
   the collapsed accessory fills the room left between it and the selected tab. On iOS 18 the bar has neither, and the current climb rides
   the floating JS queue bar just above the native bar.
@@ -77,12 +77,15 @@ The bar itself depends on the device:
   search is the first row of the Filters sheet on every platform, as in the
   Logbook. When Climbs is the iOS 26 bar's search tab, the screen also sets
   `headerSearchBarOptions` (`useClimbsTabBarSearchField`), which iOS moves into
-  the tab bar: selecting the tab opens that field and the keyboard, typing
+  the tab bar. Selecting the tab shows the list and leaves the field alone
+  (`disableAutomaticSearchActivation`; tapping it straight into the keyboard
+  shipped in #8261 and was reverted in #8265). Tapping the field focuses it, typing
   searches as you type, throttled like the Filters row (the first keystroke at
   once, then at most every 300 ms, always ending on the last text), Cancel empties it, and a
   name set elsewhere (Filters, a recent filter, a board switch) is written back
-  into the field unless the climber is mid-typing. A second tap then belongs to
-  the field, so it does not open Filters. Everywhere else the screen has no
+  into the field unless the climber is mid-typing. A second tap on the tab
+  focuses the field instead of opening Filters. iOS 26.x sets a search tab apart
+  on its own; iOS 27 does only while activation is on, hence `prominent` there. Everywhere else the screen has no
   search field, and a second tap on the Climbs tab with the list showing
   opens Filters without the keyboard (`useTabReselect`, which listens for the tab
   bar's re-press; the JS tablet rails navigate without one, so there the Filters

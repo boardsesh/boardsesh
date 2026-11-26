@@ -234,12 +234,14 @@ vi.mock('expo-router/native-tabs', () => {
       hidden,
       role,
       prominent,
+      disableAutomaticSearchActivation,
       children,
     }: {
       name: string;
       hidden?: boolean;
       role?: string;
       prominent?: boolean;
+      disableAutomaticSearchActivation?: boolean;
       children?: ReactNode;
     }) =>
       // Model NativeTabs: a `hidden` trigger declares the route but is not a tab.
@@ -247,7 +249,12 @@ vi.mock('expo-router/native-tabs', () => {
         ? null
         : createElement(
             'section',
-            { 'data-trigger': name, 'data-tab-role': role, 'data-prominent': String(prominent ?? false) },
+            {
+              'data-trigger': name,
+              'data-tab-role': role,
+              'data-prominent': String(prominent ?? false),
+              'data-search-activation-disabled': disableAutomaticSearchActivation,
+            },
             children,
           ),
     {
@@ -412,16 +419,33 @@ describe('TabLayout', () => {
   );
 
   it('makes Climbs the search tab on the iOS 26 iPhone bar by default, like Apple Music', () => {
-    // role="search" is a UISearchTab: iOS sets it apart at the right of the bar and
-    // brings the Climbs screen's name search field into the bar. It is never also
-    // prominent: iOS already keeps it apart, and only one tab may be prominent.
+    // role="search" is a UISearchTab: iOS brings the Climbs screen's name search
+    // field into the bar. Selecting the tab must not focus it, or the list can
+    // never be reached without the keyboard.
     const { container } = render(<TabLayout />);
     const climbs = container.querySelector('[data-trigger="climbs"]');
 
     expect(climbs?.getAttribute('data-tab-role')).toBe('search');
     expect(container.querySelectorAll('[data-tab-role]')).toHaveLength(1);
-    expect(climbs?.getAttribute('data-prominent')).toBe('false');
+    expect(climbs?.getAttribute('data-search-activation-disabled')).toBe('true');
   });
+
+  // iOS 27 sets a search tab apart only while it activates search on selection.
+  // With activation off, `prominent` keeps it apart; iOS 26.x does it unasked.
+  it.each([
+    ['27.0', true],
+    ['26.1', false],
+  ] as const)(
+    'keeps the search tab apart through prominent only where needed (iOS %s)',
+    (platformVersion, prominent) => {
+      cfg.platformVersion = platformVersion;
+      const { container } = render(<TabLayout />);
+      const climbs = container.querySelector('[data-trigger="climbs"]');
+
+      expect(climbs?.getAttribute('data-tab-role')).toBe('search');
+      expect(climbs?.getAttribute('data-prominent')).toBe(String(prominent));
+    },
+  );
 
   it('keeps Climbs an ordinary labelled tab when the climber turned the search tab off', () => {
     setLoadedSetting('climbsTabBarSearch', false);
@@ -431,6 +455,7 @@ describe('TabLayout', () => {
       const climbs = container.querySelector('[data-trigger="climbs"]');
 
       expect(climbs?.hasAttribute('data-tab-role')).toBe(false);
+      expect(climbs?.hasAttribute('data-search-activation-disabled')).toBe(false);
       expect(container.querySelector('[data-tab-role]')).toBeNull();
       expect(climbs?.textContent).toContain('mobile.nav.climbs');
     } finally {

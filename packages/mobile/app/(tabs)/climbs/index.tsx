@@ -12,6 +12,7 @@ import { usePullRefresh } from '../../../src/hooks/use-pull-refresh';
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { View, StyleSheet, RefreshControl, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { type FlashListRef } from '@shopify/flash-list';
+import type { SearchBarCommands } from 'react-native-screens';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
@@ -139,7 +140,13 @@ function ClimbListInner() {
     [hasBoardConfig, boardName, layoutId, sizeId, setIds, angle],
   );
   const tabBarSearch = useClimbsTabBarSearch();
-  const searchSession = useClimbsSearchSession(boardConfig, { tabBarSearch });
+  // The bar's native search field, once it mounts. A second tap on the tab focuses it.
+  const tabBarFieldRef = useRef<SearchBarCommands>(null);
+  const focusTabBarField = useCallback(() => tabBarFieldRef.current?.focus(), []);
+  const searchSession = useClimbsSearchSession(boardConfig, {
+    tabBarSearch,
+    onTabBarSearchReselect: focusTabBarField,
+  });
   const {
     filters,
     boardFilters,
@@ -479,6 +486,7 @@ function ClimbListInner() {
   // controller into the tab bar: the climb-name field the climber types in there.
   const tabBarSearchField = useClimbsTabBarSearchField({
     enabled: tabBarSearch,
+    fieldRef: tabBarFieldRef,
     placeholder: t('search.placeholders.climbs'),
     name,
     searchReady,
