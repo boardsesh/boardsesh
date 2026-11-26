@@ -5,7 +5,7 @@
 //   /boards/add/gym-boards  "Boards at {gym}"     the gym's walls (GymWallList)
 //   /boards/add/new-gym     "Add your gym"        a gym that isn't listed (NewGymStep)
 //   /boards/add/board       "Which board?"        the board type tiles
-//   /boards/add/friend      "Whose board?"        boards of people who follow you
+//   /boards/add/friend      "Whose board?"        boards of friends (you follow each other)
 //   /boards/create          Set up                the builder, restyled
 //
 // Gym path: Where → Which gym? → Boards at {gym} → Set up, or, for a gym that
@@ -172,7 +172,7 @@ export function wizardGymBoardsHref(
 }
 
 /**
- * "Whose board?": the boards of people the climber follows. Step 2 of 2 from
+ * "Whose board?": the boards of the climber's friends. Step 2 of 2 from
  * step 1. The picker's Friends' boards "See all" opens it too (`fromShelf`):
  * uncounted, and browsing rather than a flow to abandon.
  */

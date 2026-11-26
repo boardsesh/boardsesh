@@ -123,8 +123,8 @@ describe('native notification update bridge', () => {
     expect(mocks.invalidate).toHaveBeenCalledWith({ queryKey: ['notifications'] });
   });
 
-  // Friends' boards list the boards of people who follow the climber: a new
-  // follower can add some, and an owner's yes opens one.
+  // Friends' boards list the boards of people who follow the climber back: a
+  // new follower can add some, and an owner's yes opens one.
   it.each(['new_follower', 'board_access_approved'])('refreshes Friends boards on a live %s', (type) => {
     renderHook(() => useNotificationUpdates(true, 'account'));
     const sink = mocks.subscribe.mock.calls[0][1] as {

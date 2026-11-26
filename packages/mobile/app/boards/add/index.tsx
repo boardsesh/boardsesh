@@ -41,7 +41,7 @@ export default function AddBoardWhere() {
     trackBoardKindChosen({ kind: 'home', surface: 'where', preAnswered: false });
     router.push(wizardBoardHref(nextContext, 'home'));
   }, [router, nextContext]);
-  // A board owned by someone who follows the climber: Whose board?, the last step.
+  // A board a friend owns (they follow each other): Whose board?, the last step.
   const onFriend = useCallback(() => {
     trackBoardKindChosen({ kind: 'friend', surface: 'where', preAnswered: false });
     router.push(wizardFriendHref(nextContext));
