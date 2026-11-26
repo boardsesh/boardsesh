@@ -119,6 +119,7 @@ const RuntimeClimbListThumbnail = React.memo(function RuntimeClimbListThumbnail(
   size,
   readyBoardArtRef,
   onArtDisplayed,
+  onArtError,
   loadImage,
 }: ClimbListThumbnailProps & { loadImage: RuntimeBoardImageLoader }) {
   const listCell = useClimbListThumbnailSize();
@@ -131,7 +132,9 @@ const RuntimeClimbListThumbnail = React.memo(function RuntimeClimbListThumbnail(
         layoutId={layoutId}
         sizeId={sizeId}
         style={{ height: '100%' }}
+        backgroundVariant="thumb"
         onArtDisplayed={onArtDisplayed}
+        onArtError={onArtError}
         accessible={false}
       />
     </View>

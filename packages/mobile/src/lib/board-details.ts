@@ -8,7 +8,6 @@ import {
   BOARD_IMAGE_DIMENSIONS,
   MOONBOARD_SIZE,
   WOODS_LAYOUTS,
-  getQuantumNeutralGrid,
   getMoonBoardDetails,
   getMoonBoardGeometryByLayoutId,
   getWoodsBoardDetails,
@@ -355,7 +354,7 @@ export function getBoardRenderDimensions(params: BoardRenderInput): { boardWidth
   const renderData = getBoardRenderData({ ...params, setIds });
   if (renderData) return { boardWidth: renderData.boardWidth, boardHeight: renderData.boardHeight };
   if (params.boardName === 'quantum') {
-    const dimensions = getQuantumNeutralGrid(params.layoutId, params.sizeId);
+    const dimensions = getQuantumGeometryBoardDetails(params.layoutId, params.sizeId);
     return dimensions ? { boardWidth: dimensions.boardWidth, boardHeight: dimensions.boardHeight } : null;
   }
   return null;
@@ -372,8 +371,8 @@ export function getBoardAspectRatio(params: {
   // Code-driven boards have no `board_images` row to read dimensions from, so
   // their aspect ratio comes off the render data (which is memoized anyway).
   if (boardName === 'quantum') {
-    const neutralGrid = getQuantumNeutralGrid(layoutId, sizeId);
-    return neutralGrid ? neutralGrid.boardWidth / neutralGrid.boardHeight : 1080 / 1920;
+    const details = getQuantumGeometryBoardDetails(layoutId, sizeId);
+    return details ? details.boardWidth / details.boardHeight : 1080 / 1920;
   }
 
   if (boardName === 'moonboard' || boardName === 'woods' || boardName === 'spray') {

@@ -35,12 +35,14 @@ vi.mock('../env', () => ({
 }));
 
 import { getImageFilename } from '@boardsesh/board-constants/product-sizes';
+import { getQuantumSourceDiodeBindings } from '@boardsesh/board-constants/quantum';
 import { BOARD_IMAGE_DIMENSIONS, getMoonBoardDetails } from '@boardsesh/board-config';
 import type { MoonBoardLayoutKey } from '@boardsesh/board-config';
 import {
   clearBoardRenderDataCache,
   getBoardAspectRatio,
   getBoardRenderData,
+  getBoardRenderDimensions,
   moonBoardGridLabelsImageKey,
 } from '../board-details';
 import { getQuantumGeometry } from '../quantum-geometry-store';
@@ -112,11 +114,7 @@ describe('getBoardAspectRatio', () => {
     expect(getBoardAspectRatio({ boardName: 'woods', layoutId: 1, sizeId: 1, setIds: [1] })).toBeCloseTo(720 / 1000);
   });
 
-  it('uses fixed source-coordinate aspect instead of protocol grid proportions', () => {
-    expect(getBoardAspectRatio({ boardName: 'quantum', layoutId: 9101, sizeId: 9201, setIds: [1] })).toBeCloseTo(1, 3);
-    expect(getBoardAspectRatio({ boardName: 'quantum', layoutId: 9101, sizeId: 9202, setIds: [1] })).toBeCloseTo(
-      94544 / 79327,
-    );
+  it('falls back for a Quantum size from another layout', () => {
     expect(getBoardAspectRatio({ boardName: 'quantum', layoutId: 9104, sizeId: 9201, setIds: [1] })).toBeCloseTo(
       1080 / 1920,
     );
@@ -199,23 +197,31 @@ describe('getBoardRenderData', () => {
     expect(mockedGetMoonBoardDetails).not.toHaveBeenCalled();
   });
 
-  it('renders fixed Quantum size membership without a registry or geometry query', () => {
-    for (const [sizeId, count] of [
-      [9201, 657],
-      [9202, 549],
-      [9203, 432],
-    ]) {
-      const geometry = getQuantumGeometry(9101, sizeId)!;
-      const render = getBoardRenderData({ boardName: 'quantum', layoutId: 9101, sizeId, setIds: [1] });
-      expect(render?.holdsData).toHaveLength(count);
-      expect(render).toMatchObject({
-        edgeLeft: geometry.edgeLeft,
-        edgeRight: geometry.edgeRight,
-        edgeBottom: geometry.edgeBottom,
-        edgeTop: geometry.edgeTop,
-        backgroundImageKeys: [],
-      });
-    }
+  it.each([
+    [9101, 9201, 1964, 1984, 657, 2105, 43.078, 284.95],
+    [9101, 9202, 1964, 1692, 549, 2110, 43.035, 494.859],
+    [9101, 9203, 1548, 1692, 432, 2020, 101.856, 1142.935],
+    [9104, 9204, 1176, 1892, 252, 1090, 89.077, 1140.219],
+  ])(
+    'keeps Quantum %i/%i hold identities and projects them into cropped artwork pixels',
+    (layoutId, sizeId, boardWidth, boardHeight, count, anchorId, observedX, observedY) => {
+      const config = { boardName: 'quantum' as const, layoutId, sizeId, setIds: [1] };
+      const geometry = getQuantumGeometry(layoutId, sizeId)!;
+      const render = getBoardRenderData(config);
+      const anchor = getQuantumSourceDiodeBindings(layoutId, sizeId)?.find(({ autocadId }) => autocadId === anchorId);
+      const hold = render?.holdsData.find(({ id }) => id === anchor?.placementId);
+      if (!render || !hold) throw new Error('Expected a known artwork anchor');
+
+      expect(render.holdsData).toHaveLength(count);
+      expect(render.holdsData.map(({ id }) => id)).toEqual(geometry.placements.map(({ placementId }) => placementId));
+      expect(render.backgroundImageKeys).toEqual([]);
+      expect(getBoardRenderDimensions(config)).toEqual({ boardWidth, boardHeight });
+      expect(getBoardAspectRatio(config)).toBe(boardWidth / boardHeight);
+      expect(Math.hypot(hold.cx - observedX, hold.cy - observedY)).toBeLessThan(2.3);
+    },
+  );
+
+  it('rejects an unrelated Quantum set or layout', () => {
     expect(getBoardRenderData({ boardName: 'quantum', layoutId: 9101, sizeId: 9201, setIds: [2] })).toBeNull();
     expect(getBoardRenderData({ boardName: 'quantum', layoutId: 9104, sizeId: 9201, setIds: [1] })).toBeNull();
   });

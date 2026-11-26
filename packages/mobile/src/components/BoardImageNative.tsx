@@ -220,6 +220,7 @@ const BoardImageNative = React.memo(function BoardImageNative({ boardName, ...pr
         layoutId={props.layoutId}
         sizeId={props.sizeId}
         style={props.style}
+        backgroundVariant={props.backgroundVariant ?? (props.renderWidth == null ? 'full' : 'thumb')}
         overlayTestID={props.overlayTestID}
         onArtReadinessChange={props.onArtReadinessChange}
         accessible={props.accessible}
@@ -233,7 +234,7 @@ const BoardImageNative = React.memo(function BoardImageNative({ boardName, ...pr
 });
 
 /** Existing photo-background renderer. Split out so its render hook is never
- * called for Quantum, whose renderer is entirely code-driven. */
+ * called for Quantum, whose overlays use the existing SVG renderer. */
 const PhotoBoardImageNative = React.memo(function PhotoBoardImageNative({
   readyBoardArt,
   onReadyArtDisplayed,

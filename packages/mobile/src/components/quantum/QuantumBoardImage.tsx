@@ -1,18 +1,20 @@
-import React, { useLayoutEffect, useMemo, type ReactNode } from 'react';
+import React, { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { BoardArtReadiness } from '../../lib/board-render/ready-board-art';
 import { useBoardAccessibilitySummary } from '../../hooks/use-board-accessibility-summary';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
+import { Image, type ImageErrorEventData } from 'expo-image';
 import Svg, { Path, Rect } from 'react-native-svg';
-import { getQuantumNeutralGrid } from '@boardsesh/board-config';
+import type { QuantumBoardDetails } from '@boardsesh/board-config';
 import { useTheme } from '../../providers/theme-provider';
-import { getQuantumGeometryBoardDetails, useQuantumGeometry } from '../../lib/quantum-geometry-store';
+import { useIsAppBackgrounded } from '../../lib/app-visibility';
+import type { BackgroundVariant } from '../../lib/bundled-board-art';
+import { getQuantumGeometryBoardDetails } from '../../lib/quantum-geometry-store';
 import { BoardHoldOverlay } from '../board-renderer/BoardHoldOverlay';
+import { useBoardArtVisible } from '../board-art-visibility-context';
 import { useParseFrames } from '../board-renderer/use-parse-frames';
-import type { HoldPlacement } from '../board-renderer/types';
+import { getQuantumArtworkSource } from './quantum-board-artwork';
 import { getQuantumNeutralGridPath, getQuantumRenderPathData } from './quantum-board-paths';
 import type { HoldColorOverrides } from '../../lib/hold-color-overrides';
-
-const EMPTY_HOLDS: HoldPlacement[] = [];
 
 type QuantumBoardImageProps = {
   frames: string;
@@ -20,58 +22,100 @@ type QuantumBoardImageProps = {
   sizeId: number;
   style?: ViewStyle;
   overlayTestID?: string;
+  backgroundVariant?: BackgroundVariant;
   onArtReadinessChange?: (readiness: BoardArtReadiness) => void;
   onArtDisplayed?: () => void;
+  onArtError?: (error: unknown) => void;
   accessible?: boolean;
   underOverlay?: ReactNode;
   holdColorOverride?: HoldColorOverrides;
 };
 
-/**
- * A neutral Quantum wall: hold centres projected from the fixed bundled
- * geometry, with source-coordinate aspect independent of protocol grid metadata. It contains no copied
- * manufacturer artwork, logo, or guessed row-major placement identity.
- */
+/** Draw the fixed wall artwork and overlays in the same calibrated canvas. */
 export const QuantumBoardImage = React.memo(function QuantumBoardImage({
-  frames,
   layoutId,
   sizeId,
+  backgroundVariant = 'full',
+  ...props
+}: QuantumBoardImageProps) {
+  const details = getQuantumGeometryBoardDetails(layoutId, sizeId);
+  const appBackgrounded = useIsAppBackgrounded();
+  const boardArtVisible = useBoardArtVisible();
+  const hidden = appBackgrounded || !boardArtVisible;
+  const { onArtReadinessChange } = props;
+  useLayoutEffect(() => {
+    if (!details) onArtReadinessChange?.('failed');
+    else if (hidden) onArtReadinessChange?.('loading');
+  }, [details, hidden, onArtReadinessChange]);
+
+  if (!details) return <View style={props.style} />;
+  if (hidden) {
+    // Match photo boards: release the mounted bitmap while the app or tab is hidden.
+    return <View style={[{ width: '100%', aspectRatio: details.boardWidth / details.boardHeight }, props.style]} />;
+  }
+  const source = getQuantumArtworkSource(details.neutralGrid.model, backgroundVariant);
+  return (
+    <QuantumImageCanvas
+      key={`${layoutId}:${sizeId}:${backgroundVariant}`}
+      details={details}
+      source={source}
+      {...props}
+    />
+  );
+});
+
+type QuantumImageCanvasProps = Omit<QuantumBoardImageProps, 'layoutId' | 'sizeId' | 'backgroundVariant'> & {
+  details: QuantumBoardDetails;
+  source: number | null;
+};
+
+function QuantumImageCanvas({
+  details,
+  source,
+  frames,
   style,
   overlayTestID,
   onArtReadinessChange,
   onArtDisplayed,
+  onArtError,
   accessible = true,
   underOverlay,
   holdColorOverride,
-}: QuantumBoardImageProps) {
+}: QuantumImageCanvasProps) {
   const { chartColors } = useTheme();
   const accessibilitySummary = useBoardAccessibilitySummary('quantum', frames);
-  const geometry = useQuantumGeometry(layoutId, sizeId);
-  const neutralGrid = useMemo(() => getQuantumNeutralGrid(layoutId, sizeId), [layoutId, sizeId]);
-  const boardDetails = useMemo(
-    () => (geometry ? getQuantumGeometryBoardDetails(layoutId, sizeId) : null),
-    [geometry, layoutId, sizeId],
-  );
-  const renderPathData = boardDetails ? getQuantumRenderPathData(boardDetails) : null;
-  const holdsData = renderPathData?.holdsData ?? EMPTY_HOLDS;
+  const { holdsData, neutralHoldsPath } = getQuantumRenderPathData(details);
   // Quantum models do not advertise mirroring. Keeping this false also avoids
   // visually plausible but controller-wrong hold swaps on a crafted route.
   const litHolds = useParseFrames(frames, 'quantum', holdsData, false, holdColorOverride);
 
+  // The canvas is keyed by model and variant so a stale image event from a
+  // recycled row cannot reveal the replacement board or mark it ready.
+  const [readiness, setReadiness] = useState<BoardArtReadiness>(source === null ? 'failed' : 'loading');
+  const currentCanvas = useRef(false);
   useLayoutEffect(() => {
-    const readiness = !neutralGrid ? 'failed' : !geometry ? 'loading' : 'ready';
+    currentCanvas.current = true;
+    return () => {
+      currentCanvas.current = false;
+    };
+  }, []);
+  const onDisplay = useCallback(() => {
+    if (currentCanvas.current) setReadiness('ready');
+  }, []);
+  const onError = useCallback(
+    (event: ImageErrorEventData) => {
+      if (!currentCanvas.current) return;
+      setReadiness('failed');
+      onArtError?.(event);
+    },
+    [onArtError],
+  );
+  useLayoutEffect(() => {
     onArtReadinessChange?.(readiness);
     if (readiness === 'ready') onArtDisplayed?.();
-  }, [frames, geometry, neutralGrid, onArtReadinessChange, onArtDisplayed]);
+  }, [frames, readiness, onArtReadinessChange, onArtDisplayed]);
 
-  if (!neutralGrid) {
-    // Unknown layout/size pairs render nothing. The caller retains its measured
-    // container, but we do not invent a model shape for invalid configuration.
-    return <View style={style} />;
-  }
-
-  const { boardWidth, boardHeight } = neutralGrid;
-  const neutralGridPath = getQuantumNeutralGridPath(neutralGrid);
+  const { boardWidth, boardHeight, neutralGrid } = details;
   const containerStyle: ViewStyle = {
     width: '100%',
     aspectRatio: boardWidth / boardHeight,
@@ -86,34 +130,60 @@ export const QuantumBoardImage = React.memo(function QuantumBoardImage({
       accessibilityRole={accessible ? 'image' : undefined}
       accessibilityLabel={accessible ? accessibilitySummary : undefined}
     >
+      {source !== null ? (
+        <Image
+          testID="quantum-board-artwork"
+          source={source}
+          style={styles.artwork}
+          contentFit="contain"
+          cachePolicy="memory"
+          transition={0}
+          accessible={false}
+          pointerEvents="none"
+          onDisplay={onDisplay}
+          onError={onError}
+        />
+      ) : null}
       <Svg
         width="100%"
         height="100%"
         viewBox={`0 0 ${boardWidth} ${boardHeight}`}
         preserveAspectRatio="xMidYMid meet"
+        style={styles.baseOverlay}
         pointerEvents="none"
         testID={!underOverlay && litHolds.length > 0 ? overlayTestID : undefined}
       >
-        <Rect width={boardWidth} height={boardHeight} fill={chartColors.secondaryBackground} />
-        <Path testID="quantum-neutral-grid" d={neutralGridPath} stroke={chartColors.separator} strokeWidth={2} />
-        {renderPathData?.neutralHoldsPath ? (
-          <Path
-            testID="quantum-neutral-holds"
-            d={renderPathData.neutralHoldsPath}
-            fill={chartColors.secondaryLabel}
-            fillOpacity={0.34}
-          />
+        {readiness !== 'ready' ? (
+          <>
+            <Rect width={boardWidth} height={boardHeight} fill={chartColors.secondaryBackground} />
+            <Path
+              testID="quantum-neutral-grid"
+              d={getQuantumNeutralGridPath(neutralGrid)}
+              stroke={chartColors.separator}
+              strokeWidth={2}
+            />
+            <Path
+              testID="quantum-neutral-holds"
+              d={neutralHoldsPath}
+              fill={chartColors.secondaryLabel}
+              fillOpacity={0.34}
+            />
+          </>
         ) : null}
         {!underOverlay ? <BoardHoldOverlay holds={litHolds} /> : null}
       </Svg>
-      {underOverlay}
+      {underOverlay ? (
+        <View style={styles.underOverlay} pointerEvents="none">
+          {underOverlay}
+        </View>
+      ) : null}
       {underOverlay ? (
         <Svg
           width="100%"
           height="100%"
           viewBox={`0 0 ${boardWidth} ${boardHeight}`}
           preserveAspectRatio="xMidYMid meet"
-          style={StyleSheet.absoluteFill}
+          style={styles.litOverlay}
           pointerEvents="none"
           testID={litHolds.length > 0 ? overlayTestID : undefined}
         >
@@ -122,4 +192,13 @@ export const QuantumBoardImage = React.memo(function QuantumBoardImage({
       ) : null}
     </View>
   );
+}
+
+const styles = StyleSheet.create({
+  artwork: { ...StyleSheet.absoluteFill, zIndex: 0 },
+  // Keep the SVG in flow to size the board, and position it so it paints
+  // above the absolute bitmap in Expo web as well as on native.
+  baseOverlay: { position: 'relative', zIndex: 1 },
+  underOverlay: { ...StyleSheet.absoluteFill, zIndex: 2 },
+  litOverlay: { ...StyleSheet.absoluteFill, zIndex: 3 },
 });

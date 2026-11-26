@@ -104,14 +104,12 @@ export function cleanLayoutName(rawName: string, boardName: string): string {
   return cleaned || rawName;
 }
 
-/** "12 x 14" → "12×14". The app's board builder re-exports it. */
+/** Formats numeric dimensions such as "12 x 14" and preserves names such as "XL". */
 export function formatSizeDimensions(size: { name: string }): string {
   return size.name
-    .replace(/\s*high\s*/gi, '')
-    .replace(/\s*wide\s*/gi, '')
+    .replace(/(\d+(?:\.\d+)?)(?:\s*high)?\s*[x×]\s*(\d+(?:\.\d+)?)(?:\s*wide\b)?/i, '$1×$2')
     .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/\s*x\s*/i, '×');
+    .trim();
 }
 
 /** The board's cleaned layout name ("Kilter Board Original" → "Original"), or null. */

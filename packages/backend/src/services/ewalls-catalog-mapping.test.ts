@@ -245,19 +245,74 @@ describe('direct eWalls catalog normalization', () => {
     },
   );
 
-  it('rejects missing, duplicate, or unverified route lights without truncating the climb', () => {
-    for (const lights of [
+  it('withholds an enabled route with no holds while keeping other routes eligible', () => {
+    const emptyRouteId = '22222222-2222-4222-8222-222222222222';
+    const initial = bootstrap();
+    const prepared = prepareEwallsCatalog(
+      {
+        ...initial,
+        routes: {
+          ...initial.routes,
+          upsert: [
+            route({
+              id: emptyRouteId,
+              name: 'EMPTY_ROUTE_SOURCE_TITLE',
+              lights: [],
+              updatedAt: '2026-11-18T10:00:00+02:00',
+            }),
+            ...initial.routes.upsert,
+          ],
+        },
+      },
       [],
+      NOW,
+    );
+    expect(prepared.withdrawals).toEqual([{ routeId: emptyRouteId, updatedAt: '2026-11-18T08:00:00.000Z' }]);
+    expect(prepared.upstreamRouteIds).toEqual([ROUTE_ID]);
+    expect(prepared.catalog).toEqual(prepareEwallsCatalog(initial, [], NOW).catalog);
+  });
+
+  it('validates an enabled route’s physical family before withholding an empty light array', () => {
+    const input = bootstrap(route({ type: 'xsmall', minVariant: 'xsmall', lights: [] }));
+    expect(() => prepareEwallsCatalog(input, [], NOW)).toThrow(/another physical family/);
+  });
+
+  it('maps repeated diode associations with the same normalized UUID and role to one hold', () => {
+    const uniqueLights = SHARED.map((binding, index) => ({ diodeId: binding.diodeUuid, step: index + 1 }));
+    const duplicateLights = uniqueLights.map(({ diodeId, step }) => ({
+      diode: { id: diodeId.replaceAll('-', '').toUpperCase() },
+      step,
+    }));
+    const unique = prepareEwallsCatalog(bootstrap(route({ lights: uniqueLights })), [], NOW);
+    const repeated = prepareEwallsCatalog(bootstrap(route({ lights: [...uniqueLights, ...duplicateLights] })), [], NOW);
+    expect(repeated.catalog.holds).toHaveLength(uniqueLights.length);
+    expect(repeated).toEqual(unique);
+  });
+
+  it('rejects missing, malformed, or unverified route lights without truncating the climb', () => {
+    for (const lights of [
+      undefined,
+      null,
+      {},
+      '[]',
       [{ step: 1 }],
       [{ diodeId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', step: 1 }],
-      [
-        { diodeId: SHARED[0]!.diodeUuid, step: 1 },
-        { diodeId: SHARED[0]!.diodeUuid, step: 3 },
-      ],
     ]) {
-      expect(() => prepareEwallsCatalog(bootstrap(route({ lights })), [], NOW)).toThrow(/light|association/);
+      expect(() => prepareEwallsCatalog(bootstrap(route({ lights })), [], NOW)).toThrow(/light/);
     }
     expect(() => prepareEwallsCatalog(bootstrap(route(), null), [], NOW)).toThrow(/no verified source binding/);
+  });
+
+  it.each([
+    { step: 3, error: /conflicting roles/ },
+    { step: 99, error: /unknown or missing light step/ },
+  ])('rejects an ambiguous or invalid repeated diode role $step', ({ step, error }) => {
+    const diodeId = SHARED[0]!.diodeUuid;
+    const lights = [
+      { diodeId, step: 1 },
+      { diodeId: diodeId.replaceAll('-', '').toUpperCase(), step },
+    ];
+    expect(() => prepareEwallsCatalog(bootstrap(route({ lights })), [], NOW)).toThrow(error);
   });
 
   it('keeps every imported diode while the independent authoring/activation cap stays 92', () => {

@@ -6,6 +6,7 @@ import {
   type QuantumGeometryPlacement,
 } from '@boardsesh/board-constants/quantum';
 import { getQuantumBoardDetails, type QuantumBoardDetails } from '@boardsesh/board-config';
+import { projectQuantumBoardArtwork } from './quantum-art-projection';
 
 /** Fixed app-bundled map, matching the usual board-constants hold/LED tables.
  * The old module name stays as a compatibility import boundary; there is no
@@ -28,8 +29,10 @@ export function getQuantumGeometryBoardDetails(layoutId: number, sizeId: number)
     ...geometry,
     placements: geometry.placements.map((placement) => ({ id: placement.placementId, x: placement.x, y: placement.y })),
   });
-  if (details) detailsByGeometry.set(geometry, details);
-  return details;
+  if (!details) return null;
+  const projectedDetails = projectQuantumBoardArtwork(details);
+  detailsByGeometry.set(geometry, projectedDetails);
+  return projectedDetails;
 }
 export function hasCompleteQuantumGeometryCatalog(): boolean {
   return Object.values(QUANTUM_MODELS).every(

@@ -180,18 +180,22 @@ function verifyDiodes(
   return accepted;
 }
 
-function lights(route: EwallsRecord, diodes: ReadonlyMap<string, QuantumSourceDiodeBinding>): readonly BoundLight[] {
-  if (!Array.isArray(route.lights) || route.lights.length === 0) return invalid('route has no lights');
-  const used = new Set<string>();
-  return route.lights.map((input: unknown) => {
+function bindLights(
+  routeLights: readonly unknown[],
+  diodes: ReadonlyMap<string, QuantumSourceDiodeBinding>,
+): readonly BoundLight[] {
+  const bound = new Map<string, BoundLight>();
+  for (const input of routeLights) {
     const light = record(input) ?? invalid('light must be an association record');
     const id = uuid(record(light.diode)?.id ?? light.diodeId ?? light.id, 'light diode identity');
-    if (used.has(id)) return invalid('duplicate route diode association');
-    used.add(id);
     const diode = diodes.get(id) ?? invalid('light diode has no verified source binding');
-    if (light.step !== 1 && light.step !== 2 && light.step !== 3) return invalid('unknown or missing light step');
-    return { diode, step: light.step };
-  });
+    const { step } = light;
+    if (step !== 1 && step !== 2 && step !== 3) return invalid('unknown or missing light step');
+    const previous = bound.get(id);
+    if (previous && previous.step !== step) return invalid('conflicting roles for a route diode');
+    if (!previous) bound.set(id, { diode, step });
+  }
+  return [...bound.values()];
 }
 
 function characteristics(route: EwallsRecord): readonly string[] {
@@ -392,12 +396,17 @@ export function prepareEwallsCatalog(
       withdrawals.push({ routeId, updatedAt: normalizeEwallsTimestamp(route.updatedAt) });
       continue;
     }
-    upstreamRouteIds.push(routeId);
     if (route.type === 'belay') return invalid('unsupported Belay route');
     const fit = boardType(route.minVariant || route.type);
     const routeModel = QUANTUM_MODELS[releasedEwallsModel(fit)];
     if (routeModel.layoutId !== selectedModel.layoutId) return invalid('route belongs to another physical family');
-    const boundLights = lights(route, verifiedDiodes);
+    if (!Array.isArray(route.lights)) return invalid('route lights must be an array');
+    if (route.lights.length === 0) {
+      withdrawals.push({ routeId, updatedAt: normalizeEwallsTimestamp(route.updatedAt) });
+      continue;
+    }
+    upstreamRouteIds.push(routeId);
+    const boundLights = bindLights(route.lights, verifiedDiodes);
     const compatibleSizeIds = RELEASED_EWALLS_BOARD_TYPES.flatMap((type) => {
       if (!FITS[type as EwallsBoardType].includes(fit)) return [];
       const model = QUANTUM_MODELS[releasedEwallsModel(type)];

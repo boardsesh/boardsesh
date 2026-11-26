@@ -79,11 +79,17 @@ query describes angles present in the catalog, not a verified hardware range.
 `@boardsesh/quantum-sync` provides a typed client for
 `https://e-walls.eu/api/v1/board/routes-delta`. Bootstrap requests start at page 1
 with limit 500 and stage the entire result before import. The client checks
-`initialSync`, unique route IDs, consistent counts, page progress, resource
-bounds, and the exact final `totalCount`. An incomplete response is never
-published. Later requests pass the server's opaque `timestamp` as `lastFetch`.
-Routes use `changed`/`deleted` collections; tombstones carry object IDs. No
-Blossom, Nostr, SQLite-download, or third-party mirror path remains.
+unique route IDs, consistent counts, page progress, resource bounds, and the
+exact final `totalCount`. eWalls sets `initialSync` on page 1 and clears it on
+continuation pages, which still contain route arrays and can have different
+timestamps. Before import, one delta from the first page's opaque `timestamp`
+must explicitly report no route changes or deletions. A reported change can
+shift offset pages even when the total stays the same, so the worker retries
+the bootstrap on a later attempt. The API's snapshot guarantees are unverified.
+The stored cursor stays at the first page, and subsequent deltas pass it as
+`lastFetch`. Delta routes use `changed`/`deleted` collections and tombstones
+carry object IDs. No Blossom, Nostr, SQLite-download, or third-party mirror
+path remains.
 
 The scheduled shared-catalogue source requires backend-only configuration:
 
@@ -104,11 +110,13 @@ invented refresh flow.
 
 Only explicitly enabled public routes in that approved catalogue lens are
 projected into shared content. Disabled and unknown-visibility records are
-withheld before their content is mapped. A withdrawal retires the source across
-overlapping model scopes, removes it from public browsing and future exports,
-and retires its downloaded copy while preserving logged ticks. Snapshot and
-reference exports apply the same eligibility to associated stats, grades and
-aliases. Personal response collections never become shared catalogue rows.
+withheld before their content is mapped. An explicitly empty light array also
+withdraws the route because there are no holds to display. A withdrawal retires
+the source across overlapping model scopes, removes it from public browsing and
+future exports, and retires its downloaded copy while preserving logged ticks.
+A newer upstream revision can restore a retired route with its original holds.
+Snapshot and reference exports apply the same eligibility to associated stats,
+grades and aliases. Personal response collections never become shared catalogue rows.
 
 The API's `-1` angle sentinel stays unknown, rather than becoming a real climb
 angle. Known grade representations retain their mapping; unknown representations
@@ -117,7 +125,9 @@ source metadata rather than treated as verified sender counts or community votes
 
 Diode UUIDs and binary `autocadId` addresses must match the fixed generated
 bindings. Light associations resolve through the API diode cache and retain
-explicit start/middle/finish roles. Invalid or ambiguous UUIDs, roles, models,
+explicit start/middle/finish roles. Repeated associations with the same normalized
+diode UUID and role produce one hold. A missing or malformed light array or
+conflicting roles for one diode refuse the batch. Invalid UUIDs, roles, models,
 addresses, or supplied physical fields refuse the batch before writes. UUID
 case and compact/dashed representations normalize before aliases, membership,
 or tombstones are compared. Native fit variants and exact physical diode
@@ -191,6 +201,9 @@ of migration 0353: add its nullable controller column, build the partial unique
 index outside the migrator transaction, and verify `pg_index.indisvalid`. The
 migration then skips that completed index. This avoids blocking climb writes
 during a full `board_climbs` scan; fresh test/dev databases build it normally.
+After the first bulk import into a seeded local database, refresh planner
+statistics for `board_climbs`, `board_climb_holds`, and `board_climb_stats` if
+query plans still estimate that Quantum rows are absent.
 
 ## Rendering and sharing
 
@@ -199,11 +212,20 @@ the normal export path, including the controller identity needed to light a
 downloaded climb. Public climb pages and Open Graph rendering are a separate
 capability from downloading that catalogue.
 
-Full boards, list thumbnails, and prewarming use one renderer-selection policy.
-The current Quantum drawing adapter uses SVG for its fixed diode/hold data;
-[#7919](https://github.com/boardsesh/boardsesh/issues/7919) tracks moving that input
-onto the usual renderer/shader pipeline. Leaf components do not choose a renderer
-by board name.
+The mobile and Expo browser builds bundle board artwork for XL, L, M, and
+S Fitness from eWalls 2.6.5. Full boards use the cropped art at its source
+resolution. Small previews use quarter-resolution copies with the same aspect.
+The SVG renderer draws the existing role colours and accessibility shapes over
+the image, and keeps the neutral diagram available if decoding fails.
+
+Hold centres are optically registered against the artwork's visible hold
+apertures. The measured affine fit is for rendering. S Fitness uses its own fit
+and tall artwork aspect. Held-out wall anchors were within 2.2 source pixels.
+Standard boards' kicker targets retain the shared transform. Their LED alignment
+remains unverified. Setup, play, editor hit testing, and heatmaps use the same
+crop and projected positions. See the [artwork provenance and calibration record](../../packages/mobile/src/components/quantum/board-art/README.md).
+[#7919](https://github.com/boardsesh/boardsesh/issues/7919) tracks moving the
+overlays onto the usual renderer/shader pipeline.
 
 Public sharing remains capability-gated until server rendering supports the board.
 [#7918](https://github.com/boardsesh/boardsesh/issues/7918) tracks public climb pages,

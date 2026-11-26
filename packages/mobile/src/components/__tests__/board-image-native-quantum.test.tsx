@@ -1,9 +1,14 @@
 // @vitest-environment jsdom
 import { createElement, useLayoutEffect, type CSSProperties, type ReactNode, type SVGProps } from 'react';
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const nativeRender = vi.hoisted(() => ({ calls: 0, runtimeLoads: 0 }));
+const nativeRender = vi.hoisted(() => ({ calls: 0, runtimeLoads: 0, variants: [] as Array<string | undefined> }));
+
+vi.mock('expo-image', () => ({
+  Image: ({ testID, onDisplay, style }: { testID?: string; onDisplay?: () => void; style?: CSSProperties }) =>
+    createElement('img', { 'data-testid': testID, onLoad: onDisplay, style }),
+}));
 
 type MockViewProps = {
   children?: ReactNode;
@@ -91,8 +96,10 @@ vi.mock('../LayeredClimbImage', () => ({
 
 vi.mock('../quantum/quantum-board-image-loader', async () => {
   const { QuantumBoardImage } = await import('../quantum/QuantumBoardImage');
-  const RuntimeImage = (props: Parameters<typeof QuantumBoardImage>[0]) =>
-    createElement('div', { 'data-testid': 'quantum-board' }, createElement(QuantumBoardImage, props));
+  const RuntimeImage = (props: Parameters<typeof QuantumBoardImage>[0]) => {
+    nativeRender.variants.push(props.backgroundVariant);
+    return createElement('div', { 'data-testid': 'quantum-board' }, createElement(QuantumBoardImage, props));
+  };
   return {
     loadQuantumBoardImage: () => {
       nativeRender.runtimeLoads += 1;
@@ -119,13 +126,14 @@ const baseProps = {
 beforeEach(async () => {
   nativeRender.calls = 0;
   nativeRender.runtimeLoads = 0;
+  nativeRender.variants = [];
   await setHoldColorOverridesPreference({});
 });
 
 afterEach(cleanup);
 
 describe('BoardImageNative Quantum routing', () => {
-  it('uses the neutral renderer without invoking the photo renderer hook', () => {
+  it('uses full Quantum artwork without invoking the raster renderer hook', () => {
     const { getByTestId, queryByTestId } = render(
       createElement(BoardImageNative, { ...baseProps, boardName: 'quantum' }),
     );
@@ -133,6 +141,7 @@ describe('BoardImageNative Quantum routing', () => {
     expect(getByTestId('quantum-board')).toBeTruthy();
     expect(queryByTestId('photo-board')).toBeNull();
     expect(nativeRender.calls).toBe(0);
+    expect(nativeRender.variants.at(-1)).toBe('full');
   });
 
   it('leaves the existing photo-backed board path unchanged', () => {
@@ -184,7 +193,8 @@ describe('BoardImageNative Quantum routing', () => {
     expect(Number.parseFloat(heatDot.style.width)).toBeGreaterThan(0);
     expect(heatDot.parentElement?.getAttribute('data-pointer-events')).toBe('none');
 
-    const wall = getByTestId('quantum-neutral-holds');
+    const wall = getByTestId('quantum-board-artwork');
+    fireEvent.load(wall);
     const litClimb = getByTestId('lit-climb');
     expect(wall.compareDocumentPosition(heatDot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(heatDot.compareDocumentPosition(litClimb) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -192,7 +202,9 @@ describe('BoardImageNative Quantum routing', () => {
     expect(litClimb.querySelector('circle')?.getAttribute('fill-opacity')).toBe('0.6');
     expect(litClimb.getAttribute('pointer-events')).toBe('none');
     expect(litClimb.style.position).toBe('absolute');
-    expect(litClimb.getAttribute('viewBox')).toBe(wall.closest('svg')?.getAttribute('viewBox'));
+    expect(litClimb.getAttribute('viewBox')).toBe(`0 0 ${details.boardWidth} ${details.boardHeight}`);
+    expect(Number(wall.style.zIndex)).toBeLessThan(Number(heatDot.parentElement?.parentElement?.style.zIndex));
+    expect(Number(heatDot.parentElement?.parentElement?.style.zIndex)).toBeLessThan(Number(litClimb.style.zIndex));
     expect(nativeRender.calls).toBe(0);
   });
 
@@ -222,7 +234,7 @@ describe('ClimbListThumbnail Quantum routing', () => {
     expect(nativeRender.runtimeLoads).toBe(0);
   });
 
-  it('routes Quantum to the neutral renderer without invoking the photo hook', () => {
+  it('uses thumbnail Quantum artwork without invoking the raster renderer hook', () => {
     const { getByTestId, queryByTestId } = render(
       createElement(ClimbListThumbnail, { ...baseProps, boardName: 'quantum' }),
     );
@@ -230,6 +242,7 @@ describe('ClimbListThumbnail Quantum routing', () => {
     expect(getByTestId('quantum-board')).toBeTruthy();
     expect(queryByTestId('photo-board')).toBeNull();
     expect(nativeRender.calls).toBe(0);
+    expect(nativeRender.variants.at(-1)).toBe('thumb');
   });
 
   it('keeps photo-backed list thumbnails on the native raster path', () => {

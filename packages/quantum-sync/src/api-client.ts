@@ -12,7 +12,16 @@ export const EWALLS_API_BASE_URL = 'https://e-walls.eu/api/v1/';
 const PAGE_SIZE = 500;
 const MAX_PAGES = 50;
 
-type ErrorCode = 'expired' | 'authentication' | 'http' | 'transport' | 'aborted' | 'timeout' | 'limit' | 'invalid';
+type ErrorCode =
+  | 'expired'
+  | 'authentication'
+  | 'http'
+  | 'transport'
+  | 'aborted'
+  | 'timeout'
+  | 'limit'
+  | 'invalid'
+  | 'unstable';
 
 export class EwallsApiError extends Error {
   constructor(
@@ -221,7 +230,9 @@ export class EwallsApiClient {
       const body = await this.request(`board/routes-delta?${params}`, {}, true, budget, signal);
       const total = body.totalCount;
       if (
-        body.initialSync !== true ||
+        typeof body.initialSync !== 'boolean' ||
+        (page === 1 && !body.initialSync) ||
+        (body.page !== undefined && body.page !== page) ||
         !Array.isArray(body.routes) ||
         body.routes.length > PAGE_SIZE ||
         typeof body.hasMore !== 'boolean' ||
@@ -233,7 +244,7 @@ export class EwallsApiClient {
         return invalid();
       const checkpoint = nonempty(body.timestamp);
       if (!first) first = { checkpoint, total, diodes: diodes(body), account: this.readAccount(body, true) };
-      if (first.total !== total || first.checkpoint !== checkpoint) return invalid();
+      if (first.total !== total || (body.initialSync && first.checkpoint !== checkpoint)) return invalid();
       for (const item of body.routes) {
         const row = identified(item, 'id');
         if (routes.has(row.id)) return invalid();
@@ -241,11 +252,18 @@ export class EwallsApiClient {
       }
       if (!body.hasMore) {
         if (routes.size !== total) return invalid();
+        // A route change can shift offset pages without changing the total count.
+        const verification = await this.readDeltaBody(requestScope, first.checkpoint, budget, signal);
+        nonempty(verification.timestamp);
+        const { changed, deleted } = record(verification.routes);
+        const changedRoutes = list(changed);
+        const deletedRoutes = list(deleted);
+        if (changedRoutes.length || deletedRoutes.length) throw new EwallsApiError('unstable');
         return {
           kind: 'bootstrap',
           scope: requestScope,
           baseCheckpoint: null,
-          checkpoint,
+          checkpoint: first.checkpoint,
           routes: { upsert: [...routes.values()], deleted: [] },
           diodes: first.diodes,
           account: first.account,
@@ -256,23 +274,27 @@ export class EwallsApiClient {
     throw new EwallsApiError('limit');
   }
 
-  async delta(scope: EwallsScope, baseCheckpoint: string, signal?: AbortSignal): Promise<EwallsDelta> {
-    const requestScope = { ...scope };
-    const params = scopeParams(requestScope);
+  private async readDeltaBody(
+    scope: EwallsScope,
+    baseCheckpoint: string,
+    budget: { remaining: number },
+    signal?: AbortSignal,
+  ) {
+    const params = scopeParams(scope);
     params.set('lastFetch', nonempty(baseCheckpoint));
-    const body = await this.request(
-      `board/routes-delta?${params}`,
-      {},
-      true,
-      { remaining: this.maxTotalBytes },
-      signal,
-    );
+    const body = await this.request(`board/routes-delta?${params}`, {}, true, budget, signal);
     if (
       (body.initialSync !== undefined && body.initialSync !== false) ||
       (body.hasMore !== undefined && body.hasMore !== false) ||
       body.totalCount !== undefined
     )
       return invalid();
+    return body;
+  }
+
+  async delta(scope: EwallsScope, baseCheckpoint: string, signal?: AbortSignal): Promise<EwallsDelta> {
+    const requestScope = { ...scope };
+    const body = await this.readDeltaBody(requestScope, baseCheckpoint, { remaining: this.maxTotalBytes }, signal);
     return {
       kind: 'delta',
       scope: requestScope,

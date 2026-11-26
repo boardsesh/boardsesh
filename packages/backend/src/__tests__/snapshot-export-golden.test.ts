@@ -887,7 +887,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
         'big',
         'xl withdrawal',
         'xl bootstrap',
-        [{ ...unpublished(previousId, true), updatedAt: withdrawnAt }],
+        [{ ...approved(previousId), name: 'Source route without holds', lights: [], updatedAt: withdrawnAt }],
         withdrawnAt,
       );
       await apply('medium', 'l stale active', 'l bootstrap', [approved(previousId)], '2026-05-06T12:30:00.000Z');
