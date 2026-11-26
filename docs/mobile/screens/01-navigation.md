@@ -44,7 +44,9 @@ The bar itself depends on the device:
   screen's climb-name search field into the bar (see "Climbs search" below).
   iOS 18, iOS 26.0 (react-native-screens builds a UISearchTab only from 26.1)
   and the iPad sidebar keep an ordinary labelled tab. The climber can turn
-  the search tab off under Settings › Climbs & grades › Search from the tab bar
+  the search tab off in the Climbs list's View options (Climbs ⋯ › View options
+  › Tab bar › Search from the tab bar, the same page as Settings › Climbs &
+  grades › Climb list), which brings back the bar from before #8261
   (`climbsTabBarSearch`, on by default; `useClimbsTabBarSearch` is the one
   answer the tab layout and the Climbs screen both read). It is read once per
   launch, so a flip applies after the app restarts: changing a tab's role remounts

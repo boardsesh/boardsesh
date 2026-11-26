@@ -10,6 +10,9 @@ import { useClimbRowDisplayControls } from './use-climb-row-display-controls';
 import { ClimbRowSettingsPreview } from './ClimbRowSettingsPreview';
 import { useClimbListLayout, useClimbListTwoColumnsPossible } from '../../../hooks/use-climb-list-layout';
 import { hapticSelection } from '../../../lib/haptics';
+import { trackSettingChanged } from '../../../lib/settings-analytics';
+import { useSetting } from '../../../settings';
+import { useClimbsTabBarSearchAvailable } from '../../../hooks/use-climbs-tab-bar-search';
 import type { ClimbListLayoutPreference } from '../../climb-list-thumbnail-metrics';
 
 export function ClimbListSettingsScreen() {
@@ -30,6 +33,22 @@ export function ClimbListSettingsScreen() {
   const layout = useMemo(
     () => (twoColumnsPossible ? { value: listLayout, onChange: handleLayoutChange } : null),
     [twoColumnsPossible, listLayout, handleLayoutChange],
+  );
+  const tabBarSearchAvailable = useClimbsTabBarSearchAvailable();
+  const [tabBarSearchEnabled, setTabBarSearchEnabled] = useSetting('climbsTabBarSearch');
+  const tabBarSearch = useMemo(
+    () =>
+      tabBarSearchAvailable
+        ? {
+            enabled: tabBarSearchEnabled,
+            onChange: (enabled: boolean) => {
+              hapticSelection();
+              setTabBarSearchEnabled(enabled);
+              trackSettingChanged('climbList', 'climbsTabBarSearch', enabled);
+            },
+          }
+        : null,
+    [tabBarSearchAvailable, tabBarSearchEnabled, setTabBarSearchEnabled],
   );
   const preview = useMemo(
     () => (
@@ -52,8 +71,9 @@ export function ClimbListSettingsScreen() {
         preview,
         previewHeight: previewLayout.height,
         layout,
+        tabBarSearch,
       }),
-    [display, setField, t, preview, previewLayout.height, layout],
+    [display, setField, t, preview, previewLayout.height, layout, tabBarSearch],
   );
   return Platform.OS === 'android' ? <MoreFormRN model={model} /> : <MoreForm model={model} />;
 }

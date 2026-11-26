@@ -18,8 +18,14 @@ export function buildClimbListSettingsModel(input: {
    * two columns (every iPhone, the Duo included), where the section is left out.
    */
   layout: { value: ClimbListLayoutPreference; onChange: (value: ClimbListLayoutPreference) => void } | null;
+  /**
+   * Climbs as the tab bar's search tab (`useClimbsTabBarSearch`). Off, the bar is
+   * the one from before #8261. `null` where the bar has no search tab (iOS 18 and
+   * 26.0, iPad, Material, Android): no section at all.
+   */
+  tabBarSearch: { enabled: boolean; onChange: (enabled: boolean) => void } | null;
 }): MoreFormModel {
-  const { display, setField, t, layout } = input;
+  const { display, setField, t, layout, tabBarSearch } = input;
   const toggle = (field: ClimbRowFieldId, label: string, subtitle?: string): MoreToggleRow => ({
     kind: 'toggle',
     key: field,
@@ -107,6 +113,24 @@ export function buildClimbListSettingsModel(input: {
           ),
         ],
       },
+      ...(tabBarSearch === null
+        ? []
+        : [
+            {
+              key: 'tabBar',
+              title: t('mobile.settings.tabBarSearch.sectionTitle'),
+              footer: t('mobile.settings.tabBarSearch.footer'),
+              rows: [
+                {
+                  kind: 'toggle' as const,
+                  key: 'climbsTabBarSearch',
+                  label: t('mobile.settings.tabBarSearch.title'),
+                  value: tabBarSearch.enabled,
+                  onValueChange: tabBarSearch.onChange,
+                },
+              ],
+            },
+          ]),
     ],
   };
 }
