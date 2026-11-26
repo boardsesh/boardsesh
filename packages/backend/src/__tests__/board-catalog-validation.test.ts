@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { QUANTUM_MODELS, QUANTUM_SET_ID } from '@boardsesh/board-constants';
+import { QUANTUM_RELEASED_MODELS } from '@boardsesh/board-constants/quantum';
 import {
   MOONBOARD_LAYOUTS,
   MOONBOARD_SETS,
@@ -356,11 +357,20 @@ describe('assertKnownBoardConfig', () => {
   it('validates only exact Quantum model pairs with the single canonical set', async () => {
     const selectSpy = vi.spyOn(db, 'select');
 
-    for (const model of Object.values(QUANTUM_MODELS)) {
+    for (const modelName of QUANTUM_RELEASED_MODELS) {
+      const model = QUANTUM_MODELS[modelName];
       await expect(
         assertKnownBoardConfig('quantum', model.layoutId, model.sizeId, String(QUANTUM_SET_ID)),
       ).resolves.toBeUndefined();
     }
+    await expectUnknownBoardConfig(
+      assertKnownBoardConfig(
+        'quantum',
+        QUANTUM_MODELS.belay.layoutId,
+        QUANTUM_MODELS.belay.sizeId,
+        String(QUANTUM_SET_ID),
+      ),
+    );
     await expectUnknownBoardConfig(
       assertKnownBoardConfig('quantum', QUANTUM_MODELS.xl.layoutId, QUANTUM_MODELS.s.sizeId, String(QUANTUM_SET_ID)),
     );
@@ -804,6 +814,25 @@ describe('social board create catalog gate', () => {
       ),
     );
 
+    expect(await sideEffectCounts(AUTO_GYM_USER_ID)).toEqual(before);
+  });
+
+  it('rejects direct creation of the deferred Quantum Belay board before any write', async () => {
+    const before = await sideEffectCounts(AUTO_GYM_USER_ID);
+    await expectUnknownBoardConfig(
+      socialBoardMutations.createBoard(
+        undefined,
+        {
+          input: createInput({
+            boardType: 'quantum',
+            layoutId: QUANTUM_MODELS.belay.layoutId,
+            sizeId: QUANTUM_MODELS.belay.sizeId,
+            setIds: String(QUANTUM_SET_ID),
+          }),
+        },
+        authCtx(AUTO_GYM_USER_ID),
+      ),
+    );
     expect(await sideEffectCounts(AUTO_GYM_USER_ID)).toEqual(before);
   });
 

@@ -128,7 +128,7 @@ function count(input: unknown): number | null {
   return parsed !== null && Number.isSafeInteger(parsed) && parsed >= 0 && parsed <= 2_147_483_647 ? parsed : null;
 }
 
-function timestamp(input: unknown): string | null {
+export function normalizeEwallsTimestamp(input: unknown): string | null {
   if (typeof input !== 'string' || !ISO_TIMESTAMP.safeParse(input).success) return null;
   const parsed = new Date(input);
   return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
@@ -249,9 +249,9 @@ function sourceMetadata(route: EwallsRecord, routeId: string): EwallsSourceMetad
     ascents: count(route.ascents) ?? undefined,
     plays: count(route.plays) ?? undefined,
     tags: tags?.length ? Object.freeze(tags) : undefined,
-    createdAt: timestamp(route.createdAt) ?? undefined,
-    updatedAt: timestamp(route.updatedAt) ?? undefined,
-    publishedAt: timestamp(route.publishedAt) ?? undefined,
+    createdAt: normalizeEwallsTimestamp(route.createdAt) ?? undefined,
+    updatedAt: normalizeEwallsTimestamp(route.updatedAt) ?? undefined,
+    publishedAt: normalizeEwallsTimestamp(route.publishedAt) ?? undefined,
     disabled: false,
     ...rules,
   });
@@ -389,7 +389,7 @@ export function prepareEwallsCatalog(
     if (seenRoutes.has(routeId)) return invalid('duplicate route UUID');
     seenRoutes.add(routeId);
     if (flag(route.disabled) !== false) {
-      withdrawals.push({ routeId, updatedAt: timestamp(route.updatedAt) });
+      withdrawals.push({ routeId, updatedAt: normalizeEwallsTimestamp(route.updatedAt) });
       continue;
     }
     upstreamRouteIds.push(routeId);
@@ -446,8 +446,8 @@ export function prepareEwallsCatalog(
       controllerRouteUuid: routeId,
       isDraft: false,
       isListed: true,
-      createdAt: timestamp(route.createdAt),
-      publishedAt: timestamp(route.publishedAt),
+      createdAt: normalizeEwallsTimestamp(route.createdAt),
+      publishedAt: normalizeEwallsTimestamp(route.publishedAt),
       synced: true,
       syncError: null,
       userId: null,

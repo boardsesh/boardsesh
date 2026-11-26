@@ -41,7 +41,11 @@ import {
   makeEwallsCatalogState,
   readEwallsCatalogState,
 } from './ewalls-catalog-state';
-import { normalizeEwallsRouteId, type EwallsVisibilityWithdrawal } from './ewalls-catalog-mapping';
+import {
+  normalizeEwallsRouteId,
+  normalizeEwallsTimestamp,
+  type EwallsVisibilityWithdrawal,
+} from './ewalls-catalog-mapping';
 import { releasedEwallsModel, RELEASED_EWALLS_BOARD_TYPES } from './ewalls-catalog-scope';
 
 const QUANTUM_IMPORT_BATCH_SIZE = 500;
@@ -157,17 +161,6 @@ export async function importPreparedEwallsCatalog(
     const importedAt = (options.now ?? (() => new Date()))();
     const prior = await loadEwallsCatalogState(transaction, batch.scope, upstreamAccountId);
     if ((prior?.checkpoint ?? null) !== input.expectedCheckpoint) throw new EwallsCheckpointChangedError();
-    const visibilityWithdrawals = await applyVisibilityWithdrawals(
-      transaction,
-      layoutId,
-      input.withdrawals ?? [],
-      importedAt,
-    );
-    const catalog = await filterStaleVisibilityRestorations(transaction, incomingCatalog, options.signal);
-    const routeIds = new Set(batch.kind === 'bootstrap' ? [] : (prior?.routeIds ?? []));
-    for (const climb of catalog.climbs) routeIds.add(climb.controllerRouteUuid);
-    for (const routeId of deletions) routeIds.delete(routeId);
-    for (const routeId of visibilityWithdrawals) routeIds.delete(routeId);
     const scopeRows = await transaction
       .select({ tableName: boardSharedSyncs.tableName, metadata: boardSharedSyncs.metadata })
       .from(boardSharedSyncs)
@@ -177,7 +170,7 @@ export async function importPreparedEwallsCatalog(
           like(boardSharedSyncs.tableName, `${EWALLS_CATALOG_STATE_PREFIX}%`),
         ),
       );
-    const retainedElsewhere = new Set<string>();
+    const otherScopes = [];
     for (const row of scopeRows) {
       if (row.tableName === stateKey) continue;
       const other = readEwallsCatalogState(row.metadata);
@@ -187,15 +180,61 @@ export async function importPreparedEwallsCatalog(
       if (!RELEASED_EWALLS_BOARD_TYPES.includes(other.scope.forcedType)) continue;
       const otherModelKey = releasedEwallsModel(other.scope.forcedType);
       if (QUANTUM_MODELS[otherModelKey].layoutId !== layoutId) continue;
+      otherScopes.push({ tableName: row.tableName, state: other });
+    }
+    const withdrawalRecords = { ...prior?.visibilityWithdrawals };
+    const withdrawalFences = new Map<string, string>();
+    for (const scope of [prior, ...otherScopes.map(({ state }) => state)]) {
+      for (const [routeId, withdrawnAt] of Object.entries(scope?.visibilityWithdrawals ?? {})) {
+        advanceRouteFence(withdrawalFences, routeId, withdrawnAt);
+      }
+    }
+    const storedRoutes = await loadEwallsRouteVersions(transaction, layoutId, upserts, options.signal);
+    for (const [routeId, stored] of storedRoutes) {
+      if (stored.legacyWithdrawal) {
+        const priorWithdrawal = withdrawalFences.get(routeId);
+        if (priorWithdrawal === undefined || stored.legacyWithdrawal > priorWithdrawal) {
+          advanceRouteFence(withdrawalFences, routeId, stored.legacyWithdrawal);
+          withdrawalRecords[routeId] = stored.legacyWithdrawal;
+        }
+      }
+    }
+    const routeIds = new Set(batch.kind === 'bootstrap' ? [] : (prior?.routeIds ?? []));
+    const priorRouteIds = new Set(prior?.routeIds ?? []);
+    const visibilityWithdrawals = new Set<string>();
+    const observedAt = importedAt.toISOString();
+    for (const { routeId, updatedAt } of input.withdrawals ?? []) {
+      const stored = storedRoutes.get(routeId);
+      const latestPublicVersion = stored?.publicVersion;
+      if (updatedAt && latestPublicVersion && updatedAt < latestPublicVersion) {
+        if (stored?.isListed && priorRouteIds.has(routeId)) routeIds.add(routeId);
+        continue;
+      }
+      const withdrawnAt =
+        updatedAt ?? (latestPublicVersion && latestPublicVersion > observedAt ? latestPublicVersion : observedAt);
+      advanceRouteFence(withdrawalFences, routeId, withdrawnAt);
+      withdrawalRecords[routeId] = withdrawalFences.get(routeId)!;
+      visibilityWithdrawals.add(routeId);
+      routeIds.delete(routeId);
+    }
+    const catalog = filterEwallsPublicRevisions(
+      incomingCatalog,
+      storedRoutes,
+      withdrawalFences,
+      priorRouteIds,
+      routeIds,
+    );
+    for (const routeId of deletions) routeIds.delete(routeId);
+
+    const retainedElsewhere = new Set<string>();
+    for (const { tableName, state: other } of otherScopes) {
       const retainedIds = other.routeIds.filter((routeId) => !visibilityWithdrawals.has(routeId));
       for (const routeId of retainedIds) retainedElsewhere.add(routeId);
       if (retainedIds.length !== other.routeIds.length) {
         await transaction
           .update(boardSharedSyncs)
           .set({ metadata: { ...other, routeIds: retainedIds } })
-          .where(
-            and(eq(boardSharedSyncs.boardType, QUANTUM_BOARD_TYPE), eq(boardSharedSyncs.tableName, row.tableName)),
-          );
+          .where(and(eq(boardSharedSyncs.boardType, QUANTUM_BOARD_TYPE), eq(boardSharedSyncs.tableName, tableName)));
       }
     }
     const removed = [
@@ -214,6 +253,7 @@ export async function importPreparedEwallsCatalog(
       scope: batch.scope,
       checkpoint: batch.checkpoint,
       routeIds: [...routeIds],
+      visibilityWithdrawals: withdrawalRecords,
       diodes: input.diodes,
       hardwareFingerprint: catalog.hardwareFingerprint,
       importedAt,
@@ -242,83 +282,84 @@ export async function importPreparedEwallsCatalog(
   });
 }
 
-/** A visibility signal is about the route itself, unlike scope-local membership
- * deletions. Persist its version on existing identities to fence stale reads
- * from another model without creating rows for ineligible new routes. */
-async function applyVisibilityWithdrawals(
-  transaction: QuantumCatalogTransaction,
-  layoutId: number,
-  withdrawals: readonly EwallsVisibilityWithdrawal[],
-  importedAt: Date,
-): Promise<ReadonlySet<string>> {
-  const withdrawn = new Set<string>();
-  await processBatches(withdrawals, async (batch) => {
-    const incoming = sql.join(
-      batch.map(
-        ({ routeId, updatedAt }) =>
-          sql`(${quantumCanonicalClimbUuid(layoutId, routeId)}::text, ${routeId}::text, ${updatedAt}::text)`,
-      ),
-      sql`, `,
-    );
-    const rows = await transaction
-      .update(boardClimbs)
-      .set({
-        isListed: false,
-        updatedAt: importedAt,
-        sourceMetadata: sql`COALESCE(${boardClimbs.sourceMetadata}, '{}'::jsonb) || jsonb_build_object(
-          'visibilityWithdrawnAt', GREATEST(
-            ${boardClimbs.sourceMetadata}->>'visibilityWithdrawnAt',
-            COALESCE(visibility.source_updated_at, ${importedAt.toISOString()})
-          )
-        )`,
-      })
-      .from(sql`(VALUES ${incoming}) AS visibility(uuid, route_id, source_updated_at)`)
-      .where(
-        and(
-          quantumCatalogClimbCondition(),
-          sql`${boardClimbs.uuid} = visibility.uuid AND ${boardClimbs.controllerRouteUuid} = visibility.route_id`,
-          sql`(visibility.source_updated_at IS NULL
-            OR ${boardClimbs.sourceMetadata}->>'updatedAt' IS NULL
-            OR ${boardClimbs.sourceMetadata}->>'updatedAt' !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$'
-            OR ${boardClimbs.sourceMetadata}->>'updatedAt' <= visibility.source_updated_at
-            OR ${boardClimbs.isListed} IS NOT TRUE)`,
-        ),
-      )
-      .returning({ routeId: boardClimbs.controllerRouteUuid });
-    for (const row of rows) {
-      if (row.routeId) withdrawn.add(row.routeId);
-    }
-  });
-  return withdrawn;
+function advanceRouteFence(fences: Map<string, string>, routeId: string, timestamp: string): void {
+  const previous = fences.get(routeId);
+  if (previous === undefined || timestamp > previous) fences.set(routeId, timestamp);
 }
 
-async function filterStaleVisibilityRestorations(
+type StoredEwallsRouteVersion = {
+  isListed: boolean | null;
+  publicVersion: string | null;
+  legacyWithdrawal: string | null;
+};
+
+async function loadEwallsRouteVersions(
   transaction: QuantumCatalogTransaction,
-  catalog: PreparedQuantumCatalog,
+  layoutId: number,
+  routeIds: readonly string[],
   signal?: AbortSignal,
-): Promise<PreparedQuantumCatalog> {
-  const excluded = new Set<string>();
-  await processBatches(catalog.climbs, async (batch) => {
+): Promise<Map<string, StoredEwallsRouteVersion>> {
+  const versions = new Map<string, StoredEwallsRouteVersion>();
+  await processBatches(routeIds, async (batch) => {
     throwIfAborted(signal);
-    const versions = new Map(batch.map((climb) => [climb.uuid, climb.sourceMetadata.updatedAt]));
-    const retired = await transaction
+    const storedRoutes = await transaction
       .select({
         uuid: boardClimbs.uuid,
-        withdrawnAt: sql<string>`${boardClimbs.sourceMetadata}->>'visibilityWithdrawnAt'`,
+        routeId: boardClimbs.controllerRouteUuid,
+        isListed: boardClimbs.isListed,
+        publicVersion: sql<string | null>`${boardClimbs.sourceMetadata}->>'updatedAt'`,
+        legacyWithdrawal: sql<string | null>`${boardClimbs.sourceMetadata}->>'visibilityWithdrawnAt'`,
       })
       .from(boardClimbs)
       .where(
         and(
           quantumCatalogClimbCondition(),
-          inArray(boardClimbs.uuid, [...versions.keys()]),
-          sql`${boardClimbs.sourceMetadata} ? 'visibilityWithdrawnAt'`,
+          inArray(
+            boardClimbs.uuid,
+            batch.map((routeId) => quantumCanonicalClimbUuid(layoutId, routeId)),
+          ),
         ),
       );
-    for (const row of retired) {
-      const sourceVersion = versions.get(row.uuid);
-      if (typeof sourceVersion !== 'string' || sourceVersion <= row.withdrawnAt) excluded.add(row.uuid);
+    for (const row of storedRoutes) {
+      if (!row.routeId || row.uuid !== quantumCanonicalClimbUuid(layoutId, row.routeId)) continue;
+      versions.set(row.routeId, {
+        isListed: row.isListed,
+        publicVersion: normalizeEwallsTimestamp(row.publicVersion),
+        legacyWithdrawal: normalizeEwallsTimestamp(row.legacyWithdrawal),
+      });
     }
   });
+  return versions;
+}
+
+/** A model feed can attest membership without replacing newer public content.
+ * A revision preceding a withdrawal cannot establish any new membership. */
+function filterEwallsPublicRevisions(
+  catalog: PreparedQuantumCatalog,
+  storedRoutes: ReadonlyMap<string, StoredEwallsRouteVersion>,
+  withdrawalFences: ReadonlyMap<string, string>,
+  priorRouteIds: ReadonlySet<string>,
+  routeIds: Set<string>,
+): PreparedQuantumCatalog {
+  const excluded = new Set<string>();
+  for (const climb of catalog.climbs) {
+    const routeId = climb.controllerRouteUuid;
+    const stored = storedRoutes.get(routeId);
+    const revision = normalizeEwallsTimestamp(climb.sourceMetadata.updatedAt);
+    const withdrawnAt = withdrawalFences.get(routeId);
+    const predatesWithdrawal = withdrawnAt !== undefined && (revision === null || revision <= withdrawnAt);
+    const latestPublicVersion = stored?.publicVersion;
+    const olderThanPublic = latestPublicVersion != null && (revision === null || revision < latestPublicVersion);
+    const sameAlreadyPublic = stored?.isListed && latestPublicVersion != null && revision === latestPublicVersion;
+    if (predatesWithdrawal || olderThanPublic || sameAlreadyPublic) {
+      excluded.add(climb.uuid);
+      if (stored?.isListed && (priorRouteIds.has(routeId) || (!predatesWithdrawal && revision !== null))) {
+        routeIds.add(routeId);
+      }
+    } else {
+      routeIds.add(routeId);
+    }
+  }
   if (excluded.size === 0) return catalog;
   return {
     ...catalog,

@@ -1,6 +1,6 @@
 import { tickPrivacyCondition } from '../../shared/activity-privacy';
 import { canViewUserActivity } from '../../../../services/privacy';
-import { eq, and, desc, sql, max, type SQL } from 'drizzle-orm';
+import { eq, and, desc, not, sql, max, type SQL } from 'drizzle-orm';
 import { QueryBuilder } from 'drizzle-orm/pg-core';
 import { GraphQLError } from 'graphql';
 import { type ConnectionContext, type Climb, type PlaylistClimbViewInput } from '@boardsesh/shared-schema';
@@ -10,6 +10,7 @@ import {
   isRecommendationType,
   RECOMMENDATION_TYPES,
   sprayClimbVisibilityCondition,
+  unavailableQuantumClimbCondition,
   withSerialPlan,
   type RecommendationType,
 } from '@boardsesh/db/queries';
@@ -128,6 +129,13 @@ function smartBaseConditions(
   const conditions: SQL[] = [
     eq(dbSchema.boardseshTicks.userId, userId),
     tickPrivacyCondition(viewerUserId, dbSchema.boardseshTicks),
+    sql`(${dbSchema.boardseshTicks.boardType} <> 'quantum' OR ${climbReferenceReadableCondition(
+      {
+        boardType: dbSchema.boardseshTicks.boardType,
+        climbUuid: canonicalTickClimbUuid,
+      },
+      viewerUserId,
+    )})`,
   ];
   if (boardName) {
     conditions.push(eq(dbSchema.boardseshTicks.boardType, boardName));
@@ -483,6 +491,7 @@ export function logbookViewSource(
       eq(climbs.uuid, smartRowsColumn('climb_uuid')),
     )!,
     where: and(
+      not(unavailableQuantumClimbCondition()),
       climbDraftVisibilityCondition(
         { boardType: climbs.boardType, userId: climbs.userId, isDraft: climbs.isDraft },
         viewerUserId,

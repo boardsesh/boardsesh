@@ -60,6 +60,10 @@ import {
   boardClimbs,
   boardClimbStats,
   boardseshTicks,
+  playlistClimbs,
+  playlistOwnership,
+  playlists,
+  userFavorites,
   users,
 } from '@boardsesh/db/schema';
 import { getQuantumSourceDiodeBindings } from '@boardsesh/board-constants/quantum';
@@ -67,6 +71,8 @@ import type { EwallsBootstrap, EwallsDelta, EwallsIdentifiedRecord } from '@boar
 import { db } from '../db/client';
 import { getClimbByUuid } from '../db/queries/climbs/get-climb';
 import { getStoredPublicBetaLinks } from '../graphql/resolvers/beta-videos/queries';
+import { favoriteClimbsQuery } from '../graphql/resolvers/favorites/favorite-climbs-query';
+import { playlistClimbs as queryPlaylistClimbs } from '../graphql/resolvers/playlists/queries/playlist-climbs';
 import { syncQueries } from '../graphql/resolvers/sync/queries';
 import { toIso } from '../graphql/resolvers/sync/row-normalize';
 import { prepareEwallsCatalog } from '../services/ewalls-catalog-mapping';
@@ -736,16 +742,29 @@ describe('board-snapshot export ↔ live pull parity', () => {
       'big',
       'xl bootstrap',
       null,
-      [approved(previousId), approved(retainedId), unpublished(disabledId, 1), unpublished(unknownId, undefined)],
+      [
+        approved(previousId),
+        approved(retainedId),
+        { ...unpublished(disabledId, 1), updatedAt: withdrawnAt },
+        unpublished(unknownId, undefined),
+      ],
       previousAt,
     );
-    await apply('medium', 'l bootstrap', null, [approved(previousId), approved(retainedId)], previousAt);
+    await apply(
+      'medium',
+      'l bootstrap',
+      null,
+      [approved(previousId), approved(retainedId), approved(disabledId)],
+      previousAt,
+    );
     expect(await db.select({ uuid: boardClimbs.uuid }).from(boardClimbs)).toEqual(
       expect.arrayContaining([{ uuid: formerUuid }, { uuid: retainedUuid }]),
     );
     expect(await db.select().from(boardClimbs)).toHaveLength(2);
     const catalogState = await loadEwallsCatalogState(db, scope('big'), accountId);
     expect(catalogState?.diodes).toEqual([{ id: binding.diodeUuid, autocadId: binding.autocadId }]);
+    expect(catalogState?.visibilityWithdrawals).toEqual({ [disabledId]: withdrawnAt, [unknownId]: previousAt });
+    expect(JSON.stringify(catalogState)).not.toContain('PRIVATE_');
 
     await db
       .insert(users)
@@ -791,6 +810,37 @@ describe('board-snapshot export ↔ live pull parity', () => {
       getClimbByUuid({ board_name: boardType, layout_id: layoutId, size_id: 9203, angle: 35, climb_uuid: uuid });
     expect(await detail(previousId)).toMatchObject({ controllerRouteUuid: previousId });
     expect((await getStoredPublicBetaLinks(boardType, formerUuid)).links).toHaveLength(1);
+    const playlistUuid = 'quantum-withdrawal-favorites';
+    const [playlist] = await db
+      .insert(playlists)
+      .values({
+        uuid: playlistUuid,
+        boardType,
+        layoutId,
+        name: 'Quantum saved routes',
+        isPublic: true,
+      })
+      .returning({ id: playlists.id });
+    await db.insert(playlistOwnership).values({ playlistId: playlist.id, userId: USER_ID, role: 'owner' });
+    await db.insert(playlistClimbs).values(
+      [formerUuid, retainedUuid].map((climbUuid, position) => ({
+        playlistId: playlist.id,
+        climbUuid,
+        position,
+        angle: 35,
+      })),
+    );
+    await db.insert(userFavorites).values(
+      [formerUuid, retainedUuid].map((climbUuid) => ({
+        userId: USER_ID,
+        boardName: boardType,
+        climbUuid,
+        angle: 35,
+      })),
+    );
+    const scoped = { boardName: boardType, layoutId, sizeId: 9203, setIds: '1', angle: 35, pageSize: 1 };
+    const favoritesPage = () => favoriteClimbsQuery.userFavoriteClimbs(undefined, { input: scoped }, ctx());
+    expect(await favoritesPage()).toMatchObject({ totalCount: 2, hasMore: true });
 
     const clientDb = createTestDatabase(join(workDir, 'quantum-client.db'));
     try {
@@ -880,6 +930,17 @@ describe('board-snapshot export ↔ live pull parity', () => {
       expect(await detail(previousId)).toBeNull();
       expect(await detail(formerUuid)).toBeNull();
       expect((await getStoredPublicBetaLinks(boardType, formerUuid)).links).toEqual([]);
+      const savedPage = {
+        totalCount: 1,
+        hasMore: false,
+        climbs: [expect.objectContaining({ uuid: retainedUuid, controllerRouteUuid: retainedId })],
+      };
+      await expect(favoritesPage()).resolves.toMatchObject(savedPage);
+      for (const options of [{ pageSize: 1 }, scoped]) {
+        await expect(
+          queryPlaylistClimbs(undefined, { input: { playlistId: playlistUuid, ...options } }, ctx()),
+        ).resolves.toMatchObject(savedPage);
+      }
       expect(
         await db.select().from(boardClimbAliases).where(eq(boardClimbAliases.canonicalUuid, formerUuid)),
       ).toHaveLength(2);
@@ -959,9 +1020,41 @@ describe('board-snapshot export ↔ live pull parity', () => {
         'medium',
         'l newly public',
         'l undated active',
-        [{ ...approved(previousId), updatedAt: restoredAt }],
+        [{ ...approved(previousId), updatedAt: restoredAt, name: 'Restored public title', grade: '[26]' }],
         restoredAt,
       );
+      await apply(
+        'big',
+        'xl stale metadata',
+        'xl withdrawal',
+        [{ ...approved(previousId), updatedAt: '2026-05-06T18:00:00.000Z', name: 'Older public title', grade: '[15]' }],
+        '2026-05-08T12:00:00.000Z',
+      );
+      await apply(
+        'big',
+        'xl duplicate revision',
+        'xl stale metadata',
+        [{ ...approved(previousId), updatedAt: restoredAt, name: 'Conflicting duplicate title', grade: '[14]' }],
+        '2026-05-09T12:00:00.000Z',
+      );
+      await apply(
+        'big',
+        'xl stale withdrawal',
+        'xl duplicate revision',
+        [{ ...unpublished(previousId, true), updatedAt: withdrawnAt }],
+        '2026-05-10T12:00:00.000Z',
+      );
+      expect((await loadEwallsCatalogState(db, scope('big'), accountId))?.routeIds).toContain(previousId);
+      expect(await db.select().from(boardClimbs).where(eq(boardClimbs.uuid, formerUuid))).toMatchObject([
+        {
+          name: 'Restored public title',
+          isListed: true,
+          sourceMetadata: { updatedAt: restoredAt },
+        },
+      ]);
+      expect(await db.select().from(boardClimbStats).where(eq(boardClimbStats.climbUuid, formerUuid))).toMatchObject([
+        { displayDifficulty: 28, ascensionistCount: 1 },
+      ]);
       await pull();
       expect(
         await clientDb.getFirstAsync('SELECT controller_route_uuid FROM board_climbs WHERE uuid = ?', [formerUuid]),
@@ -981,6 +1074,10 @@ describe('board-snapshot export ↔ live pull parity', () => {
         .delete(boardBetaLinks)
         .where(and(eq(boardBetaLinks.boardType, boardType), eq(boardBetaLinks.climbUuid, formerUuid)));
       await db.delete(boardseshTicks).where(eq(boardseshTicks.uuid, tickUuid));
+      await db
+        .delete(userFavorites)
+        .where(and(eq(userFavorites.userId, USER_ID), eq(userFavorites.boardName, boardType)));
+      await db.delete(playlists).where(eq(playlists.id, playlist.id));
     }
   });
 

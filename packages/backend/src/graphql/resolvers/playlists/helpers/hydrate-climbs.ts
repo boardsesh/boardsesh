@@ -1,5 +1,9 @@
-import { climbDraftVisibilityCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
-import { eq, and, inArray, sql, type SQL } from 'drizzle-orm';
+import {
+  climbDraftVisibilityCondition,
+  sprayClimbVisibilityCondition,
+  unavailableQuantumClimbCondition,
+} from '@boardsesh/db/queries';
+import { eq, and, inArray, not, sql, type SQL } from 'drizzle-orm';
 import { type Climb, type BoardName } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
 import { getClimbStars, getGradeLabel, toConfidenceTier } from '@boardsesh/db/queries';
@@ -252,6 +256,7 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
     .where(
       and(
         inArray(tables.climbs.uuid, uuids),
+        not(unavailableQuantumClimbCondition()),
         // The draft rule. Every caller hydrates from a list it did not write (a
         // playlist, a liked list, a logbook), and any of them can name someone
         // else's draft. A published climb hydrates whoever set it.

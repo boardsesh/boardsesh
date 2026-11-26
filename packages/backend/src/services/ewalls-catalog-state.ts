@@ -19,6 +19,7 @@ const stateSchema = z.object({
   scope: scopeSchema,
   checkpoint: z.string().min(1).max(4096),
   routeIds: z.array(z.string().min(1).max(64)).max(25_000),
+  visibilityWithdrawals: z.record(z.guid(), z.iso.datetime()).default({}),
   diodes: z
     .array(
       z.object({
@@ -81,6 +82,7 @@ export function makeEwallsCatalogState(input: {
   scope: EwallsScope;
   checkpoint: string;
   routeIds: readonly string[];
+  visibilityWithdrawals: Readonly<Record<string, string>>;
   diodes: readonly EwallsRecord[];
   hardwareFingerprint: string;
   importedAt: Date;
@@ -91,6 +93,7 @@ export function makeEwallsCatalogState(input: {
     scope: input.scope,
     checkpoint: input.checkpoint,
     routeIds: [...input.routeIds].sort(),
+    visibilityWithdrawals: input.visibilityWithdrawals,
     diodes: input.diodes,
     hardwareFingerprint: input.hardwareFingerprint,
     lastSuccessAt: input.importedAt.toISOString(),

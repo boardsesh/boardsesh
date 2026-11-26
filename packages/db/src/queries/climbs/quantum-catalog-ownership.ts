@@ -1,4 +1,5 @@
 import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { QUANTUM_RELEASED_LAYOUT_IDS } from '@boardsesh/board-constants/quantum';
 import { boardClimbs } from '../../schema';
 
 /** Deleted accounts leave public authored climbs ownerless; they remain app-owned. */
@@ -21,4 +22,11 @@ export function retiredQuantumCatalogClimbCondition(prefix: SQL = sql`board_clim
     isBoardseshAuthored: sql`${prefix}is_boardsesh_authored`,
     controllerRouteUuid: sql`${prefix}controller_route_uuid`,
   })})`;
+}
+
+/** Rows that must not hydrate through a saved or public climb reference. */
+export function unavailableQuantumClimbCondition(prefix: SQL = sql`board_climbs.`): SQL {
+  return sql`(${prefix}board_type IS NOT DISTINCT FROM 'quantum' AND (
+    ${prefix}layout_id NOT IN ${QUANTUM_RELEASED_LAYOUT_IDS} OR ${retiredQuantumCatalogClimbCondition(prefix)}
+  ))`;
 }

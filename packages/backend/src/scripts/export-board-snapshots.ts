@@ -61,6 +61,7 @@ import {
 } from '@boardsesh/offline-sync';
 import { createPool, closePool } from '@boardsesh/db/client';
 import { QUANTUM_RELEASED_LAYOUT_IDS } from '@boardsesh/board-constants/quantum';
+import { snapshotQuantumEligibility } from './quantum-snapshot-eligibility';
 import { normalizeRow, toIso, type RawRow } from '../graphql/resolvers/sync/row-normalize';
 import { uploadToS3, isS3Configured, getPublicUrl, getFromS3Strict, deleteFromS3, listS3Objects } from '../storage/s3';
 import { logger } from '../utils/logger';
@@ -494,14 +495,6 @@ export function withoutRowid(createTableStatement: string): string {
  * something a climber opted into by sharing a link.
  */
 const SNAPSHOT_EXCLUDED_BOARD_TYPES: ReadonlySet<string> = new Set(['spray']);
-const RELEASED_QUANTUM_LAYOUT_IDS_SQL = QUANTUM_RELEASED_LAYOUT_IDS.join(', ');
-
-function snapshotQuantumEligibility(prefix = ''): string {
-  return `(${prefix}board_type <> 'quantum' OR (
-    ${prefix}layout_id IN (${RELEASED_QUANTUM_LAYOUT_IDS_SQL})
-    AND ${prefix}is_listed IS TRUE AND ${prefix}controller_route_uuid IS NOT NULL
-  ))`;
-}
 
 /**
  * Every (board_type, layout_id) pair that has at least one climb, minus the

@@ -1,5 +1,5 @@
 import { setContentPrivacy } from '../../../services/privacy';
-import { eq, and, asc, inArray, sql } from 'drizzle-orm';
+import { eq, and, asc, inArray, not, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import { v4 as uuidv4 } from 'uuid';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
@@ -27,6 +27,7 @@ import {
   acquireUpstreamPlaylistLock,
   recordDeletedUpstreamPlaylist,
   refreshPlaylistGradeSummariesFor,
+  unavailableQuantumClimbCondition,
 } from '@boardsesh/db/queries';
 
 type ClimbBoardScope = { boardType: string; layoutId: number };
@@ -776,7 +777,7 @@ export const playlistMutations = {
           : await tx
               .select({ uuid: UNIFIED_TABLES.climbs.uuid })
               .from(UNIFIED_TABLES.climbs)
-              .where(inArray(UNIFIED_TABLES.climbs.uuid, rowClimbUuids));
+              .where(and(inArray(UNIFIED_TABLES.climbs.uuid, rowClimbUuids), not(unavailableQuantumClimbCondition())));
       const resolvableClimbUuids = new Set(resolvableRows.map((row) => row.uuid));
 
       // Throws if the climb isn't in the playlist; returns only the rows whose
