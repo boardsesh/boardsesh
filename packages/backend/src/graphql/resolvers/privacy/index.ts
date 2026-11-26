@@ -55,7 +55,7 @@ const resourceSchema = z
     locationAudience: locationAudience.optional(),
     inheritFollowers: z.boolean().optional(),
     // Only listing: lists an Unlisted or Invite-only board in the Friends'
-    // boards of the people the owner follows. Stored for any audience so a round trip through Public
+    // boards of the owner's friends (mutual follows). Stored for any audience so a round trip through Public
     // keeps the owner's choice; it grants no access.
     listedToFollowers: z.boolean().optional(),
   })
@@ -626,7 +626,7 @@ export const privacyMutations = {
         // nothing to do there. Turning it on is refused rather than dropped;
         // false (what a settings round trip sends) is accepted.
         if (update.listedToFollowers === true)
-          throw new GraphQLError('Spray walls cannot be shown to people you follow', {
+          throw new GraphQLError('Spray walls cannot be shown to friends', {
             extensions: { code: 'BAD_USER_INPUT' },
           });
         const { updateSprayResourcePrivacy } = await import('../board/spray-walls');
