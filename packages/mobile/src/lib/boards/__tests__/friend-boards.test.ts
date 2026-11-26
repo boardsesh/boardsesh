@@ -108,13 +108,11 @@ describe('friendBoardListCells', () => {
 
 describe('friendBoardsEmptyKind', () => {
   it.each([
-    { offline: false, query: '', followerCount: 3, boardCount: 2, expected: null },
-    { offline: true, query: '', followerCount: 3, boardCount: 0, expected: 'offline' },
-    { offline: false, query: 'sam', followerCount: 3, boardCount: 0, expected: 'no_match' },
-    { offline: false, query: '', followerCount: 0, boardCount: 0, expected: 'no_followers' },
-    { offline: false, query: '', followerCount: 4, boardCount: 0, expected: 'no_boards' },
-    // Unknown follower count: never tell someone nobody follows them on a guess.
-    { offline: false, query: '', followerCount: undefined, boardCount: 0, expected: 'no_boards' },
+    { offline: false, query: '', boardCount: 2, expected: null },
+    { offline: true, query: '', boardCount: 0, expected: 'offline' },
+    { offline: false, query: 'sam', boardCount: 0, expected: 'no_match' },
+    // No friends yet and friends with nothing to show read the same.
+    { offline: false, query: '', boardCount: 0, expected: 'no_boards' },
   ])('$expected for $boardCount boards, query "$query", offline $offline', ({ expected, ...input }) => {
     expect(friendBoardsEmptyKind(input)).toBe(expected);
   });

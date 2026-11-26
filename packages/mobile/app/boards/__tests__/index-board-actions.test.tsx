@@ -2031,7 +2031,7 @@ describe("Friends' boards shelf", () => {
     friendsShelfState.data = undefined;
   });
 
-  it('lists boards of people who follow you, leaving out the ones already yours', () => {
+  it('lists boards of friends, leaving out the ones already yours', () => {
     friendsShelfState.data = {
       items: [friend('mine'), friend('f1'), friend('f2', 'CAN_REQUEST'), friend('f3', 'REQUESTED')],
       totalCount: 4,
