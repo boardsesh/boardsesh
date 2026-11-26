@@ -18,6 +18,11 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 - Show your home board's QR code so a friend can scan it with their camera, and choose whether your friends can find it. ([#8203](https://github.com/boardsesh/boardsesh/pull/8203))
 - Global admins can place unlinked spray walls on the right gym listing, with an explicit check when gym members would gain access. ([#8204](https://github.com/boardsesh/boardsesh/pull/8204))
 
+### Improved
+
+- Generate CNC build packs free for your own non-commercial wall. ([#8263](https://github.com/boardsesh/boardsesh/pull/8263))
+  Support Boardsesh with an optional donation; commercial builders can contact partnerships.
+
 ### Fixed
 
 - Find beta and nearby climbs on lighter public climb pages. Comments and grade proposals stay in the app. ([#8186](https://github.com/boardsesh/boardsesh/pull/8186))

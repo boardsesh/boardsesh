@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-11-26T20:03:04.624Z",
+  "generatedAt": "2026-11-26T22:15:14.080Z",
   "entries": [
+    {
+      "prNumber": 8263,
+      "category": "improved",
+      "title": "Generate CNC build packs free for your own non-commercial wall.",
+      "mergedAt": "2026-11-26T22:11:03Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8263",
+      "body": "Support Boardsesh with an optional donation; commercial builders can contact partnerships."
+    },
     {
       "prNumber": 8261,
       "category": "new",
