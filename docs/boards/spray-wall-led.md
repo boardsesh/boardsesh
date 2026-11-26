@@ -138,7 +138,11 @@ every signed-in climber who can open the wall lights it from their own phone. Se
 10. In the cable editor, choose **Lay cable**, then tap LEDs or drag across them.
    New LEDs append to the existing cable end in stroke order. Revisiting a wired
    LED does not branch, reverse or create another start. After an explicit cut,
-   drawing extends the last cable section. **Lay cable** stays available with
+   tap the output end of the section you want to extend, then tap new LEDs or
+   drag from that end. Either member of an output pair, or any member of an
+   output strip, selects that whole unit. A larger purple ring marks the chosen
+   output. The final cable end remains the default when no section was chosen.
+   **Lay cable** stays available with
    a complete route. To reroute already wired LEDs, choose **Select two LEDs**
    to cut the connection between two selections or reconnect free endpoints.
    Either member selects both LEDs of a pair, and the pair counts as one selection.
@@ -155,7 +159,12 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    available until the next assignment; the resulting gap is red in **Light and
    tap**, as on **Skipped LEDs**, including after the cable is complete. Undoing
    the assignment restores its pending count; another Undo reverses the skip.
-   A cut keeps every LED on a section. Purple dots mark LEDs and faint orange
+   Cutting off the last LED or unit makes it unwired again, ready to place
+   anywhere on the cable. The upstream start stays wired even if it is the only
+   position left. An interior cut retains both sections. Extending an earlier
+   section preserves section order and gap counts; later physical indices move
+   forward by the number of newly inserted LEDs. Undo restores the full edit.
+   Purple dots mark LEDs and faint orange
    rings mark holes. Turquoise lines show the cable and arrows show its direction.
    When both members of a pair follow one another on the cable without a skip
    between them, incoming and outgoing lines meet at the pair's midpoint.

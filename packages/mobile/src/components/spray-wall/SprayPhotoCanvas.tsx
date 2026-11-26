@@ -184,7 +184,10 @@ function FittedCanvas({
         drawing.value = true;
         cancelled.value = false;
         lastSnapIndex.value = -1;
-        trace.value = [dragStart.value ?? pointAt(event.x, event.y)];
+        // Drag hit testing is wider than tracing. Keep the chosen cable output
+        // even when the finger started beside it, while moves retain their grab offset.
+        const marker = mode === 'draw' && dragIndex.value >= 0 ? editablePoints.value?.[dragIndex.value] : undefined;
+        trace.value = [marker ? { x: marker.x, y: marker.y } : (dragStart.value ?? pointAt(event.x, event.y))];
         draftPath.value = `M${event.x} ${event.y}`;
         interactions.value++;
         if (interactions.value === 1) runOnJS(reportInteraction)(true);

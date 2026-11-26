@@ -3,6 +3,7 @@ import { createElement, useState, type ReactElement, type ReactNode } from 'reac
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  addLedStripe,
   createLedStripes,
   DEFAULT_TNUT_CORNERS,
   ledPairs,
@@ -390,6 +391,235 @@ describe('LED pairs behind a hold', () => {
   });
 });
 
+describe('continuing cut cable sections', () => {
+  const sectioned: TnutLayout = {
+    ...original,
+    ledPositions: [
+      { id: 'a', x: 0.1, y: 0.1 },
+      { id: 'b', x: 0.3, y: 0.1 },
+      { id: 'c', x: 0.7, y: 0.1 },
+      { id: 'd', x: 0.9, y: 0.1 },
+      { id: 'e', x: 0.3, y: 0.6 },
+      { id: 'f', x: 0.3, y: 0.9 },
+      { id: 'g', x: 0.9, y: 0.6 },
+    ],
+    wiring: {
+      ...original.wiring!,
+      paths: [
+        ['a', 'b'],
+        ['c', 'd'],
+      ],
+      skips: [{ from: 'a', to: 'b', count: 2 }],
+    },
+  };
+  const tap = (x: number, y: number) => act(() => controls.canvas?.onTap?.({ x, y }, 400, 400));
+
+  it('selects either output end without adding a history step and extends it in place', () => {
+    render(<Editor initial={sectioned} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    tap(0.3, 0.1);
+    expect(controls.changed).not.toHaveBeenCalled();
+    expect((screen.getByText('overlay undo') as HTMLButtonElement).disabled).toBe(true);
+    tap(0.3, 0.6);
+    tap(0.3, 0.9);
+    expect(controls.layout?.wiring?.paths).toEqual([
+      ['a', 'b', 'e', 'f'],
+      ['c', 'd'],
+    ]);
+    expect(controls.layout?.wiring?.skips).toEqual(sectioned.wiring?.skips);
+    tap(0.9, 0.1);
+    tap(0.9, 0.6);
+    expect(controls.layout?.wiring?.paths).toEqual([
+      ['a', 'b', 'e', 'f'],
+      ['c', 'd', 'g'],
+    ]);
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring?.paths).toEqual([
+      ['a', 'b', 'e', 'f'],
+      ['c', 'd'],
+    ]);
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring?.paths).toEqual([
+      ['a', 'b', 'e'],
+      ['c', 'd'],
+    ]);
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring?.paths).toEqual(sectioned.wiring?.paths);
+    expect((screen.getByText('overlay undo') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('does not retarget a chosen output by tapping another section input', () => {
+    render(<Editor initial={sectioned} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    tap(0.3, 0.1);
+    tap(0.7, 0.1);
+    tap(0.3, 0.6);
+    expect(controls.layout?.wiring?.paths).toEqual([
+      ['a', 'b', 'e'],
+      ['c', 'd'],
+    ]);
+  });
+
+  it('uses the first hit for both drag preview and commit when crossing another output', () => {
+    render(<Editor initial={sectioned} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    const stroke = [
+      { x: 0.3, y: 0.1 },
+      { x: 0.9, y: 0.1 },
+      { x: 0.9, y: 0.6 },
+    ];
+    act(() => controls.canvas?.onTraceProgress?.(stroke, 0.01));
+    const preview = cableOverlay().props.wiring;
+    expect(preview?.paths).toEqual([
+      ['a', 'b', 'g'],
+      ['c', 'd'],
+    ]);
+    expect(controls.layout?.wiring?.paths).toEqual(sectioned.wiring?.paths);
+    act(() => controls.canvas?.onTrace?.(stroke, 0.01));
+    expect(controls.layout?.wiring).toEqual(preview);
+  });
+
+  it('keeps the intermediate output across a multi-stop drag and undoes each addition', () => {
+    render(<Editor initial={sectioned} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    const stroke = [
+      { x: 0.3, y: 0.1 },
+      { x: 0.3, y: 0.6 },
+      { x: 0.3, y: 0.9 },
+    ];
+    act(() => controls.canvas?.onTraceProgress?.(stroke, 0.01));
+    expect(cableOverlay().props.wiring?.paths).toEqual([
+      ['a', 'b', 'e', 'f'],
+      ['c', 'd'],
+    ]);
+    act(() => controls.canvas?.onTrace?.(stroke, 0.01));
+    expect(controls.layout?.wiring?.paths).toEqual([
+      ['a', 'b', 'e', 'f'],
+      ['c', 'd'],
+    ]);
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring?.paths).toEqual([
+      ['a', 'b', 'e'],
+      ['c', 'd'],
+    ]);
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring?.paths).toEqual(sectioned.wiring?.paths);
+  });
+
+  it('does not choose an output crossed later when the drag begins at a section input', () => {
+    render(<Editor initial={sectioned} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    const stroke = [
+      { x: 0.7, y: 0.1 },
+      { x: 0.3, y: 0.1 },
+      { x: 0.3, y: 0.6 },
+    ];
+    act(() => controls.canvas?.onTraceProgress?.(stroke, 0.01));
+    expect(cableOverlay().props.wiring?.paths).toEqual([
+      ['a', 'b'],
+      ['c', 'd', 'e'],
+    ]);
+    act(() => controls.canvas?.onTrace?.(stroke, 0.01));
+    expect(controls.layout?.wiring?.paths).toEqual([
+      ['a', 'b'],
+      ['c', 'd', 'e'],
+    ]);
+  });
+
+  it('returns a cut terminal LED to ordinary Lay cable and restores the cut with Undo', () => {
+    const initial = {
+      ...sectioned,
+      wiring: { ...sectioned.wiring!, paths: [['a', 'b', 'e']], skips: [] },
+    };
+    render(<Editor initial={initial} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.selectLeds'));
+    tap(0.3, 0.1);
+    tap(0.3, 0.6);
+    fireEvent.click(screen.getByText('sprayLedSetup.cutCable'));
+    expect(controls.layout?.wiring?.paths).toEqual([['a', 'b']]);
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    tap(0.3, 0.6);
+    expect(controls.layout?.wiring?.paths).toEqual(initial.wiring.paths);
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring?.paths).toEqual([['a', 'b']]);
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring?.paths).toEqual(initial.wiring.paths);
+  });
+
+  it.each([0.1, 0.3])('resolves either tail-pair member at x=%s to its output', (x) => {
+    render(
+      <Editor
+        initial={{
+          ...sectioned,
+          ledGroups: [
+            ['a', 'b'],
+            ['c', 'd'],
+          ],
+        }}
+        kind="wiring"
+      />,
+    );
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    tap(x, 0.1);
+    tap(0.3, 0.6);
+    expect(controls.layout?.wiring?.paths).toEqual([
+      ['a', 'b', 'e'],
+      ['c', 'd'],
+    ]);
+  });
+
+  it('does not select a partial legacy pair as another section output', () => {
+    render(
+      <Editor
+        initial={{
+          ...sectioned,
+          ledGroups: [['a', 'b']],
+          wiring: { ...sectioned.wiring!, paths: [['a'], ['b', 'c', 'd']], skips: [] },
+        }}
+        kind="wiring"
+      />,
+    );
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    tap(0.1, 0.1);
+    tap(0.3, 0.6);
+    expect(controls.layout?.wiring?.paths).toEqual([['a'], ['b', 'c', 'd', 'e']]);
+  });
+
+  it('selects a whole terminal strip from its middle without branching inside it', () => {
+    const stripes = createLedStripes(
+      {
+        ...original,
+        ledPlacement: 'stripe',
+        columns: 2,
+        rows: 2,
+        holes: [
+          { x: 0.1, y: 0.1 },
+          { x: 0.9, y: 0.1 },
+          { x: 0.1, y: 0.9 },
+          { x: 0.9, y: 0.9 },
+        ],
+      },
+      'vertical',
+      3,
+    );
+    if (stripes === 'capacity') throw new Error('Unexpected fixture capacity');
+    const [first, second] = stripes.ledStripes!.stripes.map((stripe) => stripe.ledIds);
+    const withLoose = addLedStripe(stripes, { x: 0.5, y: 0.5 }, { x: 0.5, y: 0.6 }, 1);
+    if (withLoose === 'capacity') throw new Error('Unexpected fixture capacity');
+    const looseId = withLoose.ledStripes!.stripes[2].ledIds[0];
+    const initial = {
+      ...withLoose,
+      wiring: { ...original.wiring!, paths: [first, second], skips: [] },
+    };
+    render(<Editor initial={initial} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    tap(0.1, 0.5);
+    tap(0.5, 0.5);
+    expect(controls.layout?.wiring?.paths).toEqual([[...first, looseId], second]);
+    expect(readTnutLayout(controls.layout)).not.toBeNull();
+  });
+});
+
 describe('paired cable actions', () => {
   const grouped: TnutLayout = {
     ...original,
@@ -462,7 +692,7 @@ describe('paired cable actions', () => {
     const cut = screen.getByText('sprayLedSetup.cutCable') as HTMLButtonElement;
     expect(cut.disabled).toBe(false);
     fireEvent.click(cut);
-    expect(controls.layout?.wiring?.paths).toEqual([['e'], ['a', 'b']]);
+    expect(controls.layout?.wiring?.paths).toEqual([['e']]);
   });
 
   it('undoes each pair stop separately after a cable drag crosses both pairs', () => {
@@ -781,7 +1011,7 @@ describe('indivisible stripe cable actions', () => {
     tap(0.9, 0.5);
     expect(selectedIds()).toEqual([...first, ...second]);
     fireEvent.click(screen.getByText('sprayLedSetup.cutCable'));
-    expect(controls.layout?.wiring?.paths).toEqual([first, second]);
+    expect(controls.layout?.wiring?.paths).toEqual([first]);
     expect(readTnutLayout(controls.layout)).not.toBeNull();
     fireEvent.click(screen.getByText('sprayLedSetup.connectCable'));
     expect(controls.layout?.wiring?.paths).toEqual(layout.wiring?.paths);

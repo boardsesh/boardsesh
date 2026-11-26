@@ -11,7 +11,7 @@ const wiring: TnutWiring = {
 };
 
 describe('cable edits for selected LED units', () => {
-  it('cuts and reconnects whole reversed stripes without changing their physical numbers', () => {
+  it('detaches and reconnects whole reversed stripes in their physical order', () => {
     const original: TnutWiring = {
       direction: 'custom',
       startCorner: 'tl',
@@ -22,10 +22,7 @@ describe('cable edits for selected LED units', () => {
     const first = ['a', 'b', 'c'];
     const second = ['d', 'e', 'f'];
     const split = planCableUnitEdits(original, first, second).cut;
-    expect(split.paths).toEqual([
-      ['c', 'b', 'a'],
-      ['d', 'e', 'f'],
-    ]);
+    expect(split.paths).toEqual([['c', 'b', 'a']]);
     // Cutting removes that connection's skipped segment, as for existing pairs.
     const connected = planCableUnitEdits(split, second, first).joined;
     expect(connected.paths).toEqual(original.paths);
@@ -54,7 +51,7 @@ describe('cable edits for selected LED units', () => {
         ['e', 'f'],
       ],
     ],
-    [['e'], ['f'], [['b', 'a', 'd', 'c', 'e'], ['f']]],
+    [['e'], ['f'], [['b', 'a', 'd', 'c', 'e']]],
   ] as const)('cuts only the boundary of %j and %j', (first, second, paths) => {
     expect(planCableUnitEdits(wiring, first, second).cut.paths).toEqual(paths);
   });
@@ -78,5 +75,40 @@ describe('cable edits for selected LED units', () => {
     const next = planCableUnitEdits(wiring, ['g', 'h'], ['f']).joined;
     expect(next.paths).toEqual([['b', 'a', 'd', 'c', 'e', 'f', 'g', 'h']]);
     expect(next.skips).toEqual(wiring.skips);
+  });
+
+  it('detaches a terminal LED while retaining the controller-connected first LED', () => {
+    const two: TnutWiring = { ...wiring, paths: [['a', 'b']], skips: [{ from: 'a', to: 'b', count: 2 }] };
+    const cut = planCableUnitEdits(two, ['b'], ['a']).cut;
+    expect(cut.paths).toEqual([['a']]);
+    expect(cut.skips).toEqual([]);
+    expect(cut.initialSkip).toBe(3);
+    expect(assignLedIndices(cut)).toEqual([{ id: 'a', index: 3 }]);
+  });
+
+  it('keeps an upstream singleton when an interior cut leaves a longer downstream section', () => {
+    const three: TnutWiring = { ...wiring, paths: [['a', 'b', 'c']], skips: [] };
+    expect(planCableUnitEdits(three, ['a'], ['b']).cut.paths).toEqual([['a'], ['b', 'c']]);
+  });
+
+  it('detaches a whole terminal pair and removes only its obsolete skips', () => {
+    const paired: TnutWiring = {
+      ...wiring,
+      paths: [['a', 'b', 'c', 'd']],
+      skips: [
+        { from: 'a', to: 'b', count: 1 },
+        { from: 'b', to: 'c', count: 2 },
+        { from: 'c', to: 'd', count: 3 },
+      ],
+    };
+    const cut = planCableUnitEdits(paired, ['b'], ['d', 'c']).cut;
+    expect(cut.paths).toEqual([['a', 'b']]);
+    expect(cut.skips).toEqual([{ from: 'a', to: 'b', count: 1 }]);
+    expect(cut.initialSkip).toBe(paired.initialSkip);
+  });
+
+  it('leaves other existing singleton sections intact when detaching a tail', () => {
+    const sectioned: TnutWiring = { ...wiring, paths: [['a'], ['b', 'c'], ['d']], skips: [] };
+    expect(planCableUnitEdits(sectioned, ['b'], ['c']).cut.paths).toEqual([['a'], ['b'], ['d']]);
   });
 });

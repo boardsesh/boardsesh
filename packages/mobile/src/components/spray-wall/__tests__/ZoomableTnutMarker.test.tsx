@@ -2,7 +2,7 @@
 import { createElement, type ComponentProps, type ReactNode } from 'react';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Quad } from '@boardsesh/spray-wall-geometry';
+import { traceLedPath, type Quad } from '@boardsesh/spray-wall-geometry';
 import type { SprayLookPreviewSource } from '../../../lib/spray/spray-look-preview';
 
 type Event = {
@@ -390,6 +390,34 @@ describe('SprayPhotoCanvas', () => {
     expect(lock).toHaveBeenLastCalledWith(false);
   });
 
+  it('keeps the selected output in a cable trace started near its marker while dragging away', () => {
+    const onTrace = vi.fn<NonNullable<SprayPhotoCanvasProps['onTrace']>>();
+    const onTraceProgress = vi.fn<NonNullable<SprayPhotoCanvasProps['onTraceProgress']>>();
+    const leds = [
+      { id: 'intermediate-output', x: 0.2, y: 0.4 },
+      { id: 'new-led', x: 0.8, y: 0.8 },
+    ];
+    render(createElement(SprayPhotoCanvas, canvasProps({ mode: 'draw', onTrace, onTraceProgress, dragPoints: leds })));
+    const draw = runtime.gestures.find((gesture) => gesture.options.enabled?.[0] === true)!;
+    // 18px from the output: inside the drag hit area (22px), outside the cable trace's (14px).
+    expect(fire(draw, 'onTouchesDown', { changedTouches: [{ x: 78, y: 180 }] }).fail).not.toHaveBeenCalled();
+    fire(draw, 'onStart', { x: 84, y: 186 });
+    const bridges = runtime.bridges;
+    fire(draw, 'onUpdate', { x: 150, y: 260 });
+    expect(runtime.bridges).toBe(bridges);
+    fire(draw, 'onUpdate', { x: 240, y: 360 });
+    expect(onTraceProgress).toHaveBeenCalledTimes(1);
+    const [preview, tolerance] = onTraceProgress.mock.calls[0];
+    expect(traceLedPath(leds, preview, tolerance)).toEqual(['intermediate-output', 'new-led']);
+    fire(draw, 'onUpdate', { x: 241, y: 360 });
+    expect(onTraceProgress).toHaveBeenCalledTimes(1);
+    end(draw, { x: 240, y: 360 });
+    expect(onTrace).toHaveBeenCalledTimes(1);
+    const [committed, hitTolerance] = onTrace.mock.calls[0];
+    expect(committed[0]).toEqual({ x: 0.2, y: 0.4 });
+    expect(traceLedPath(leds, committed, hitTolerance)).toEqual(['intermediate-output', 'new-led']);
+  });
+
   it('does not add a hole when a pinch finishes before the tap callback', () => {
     const onTap = vi.fn();
     render(createElement(SprayPhotoCanvas, canvasProps({ mode: 'tap', onTap })));
@@ -440,6 +468,17 @@ describe('SprayPhotoCanvas', () => {
     expect(onMove).toHaveBeenCalledExactlyOnceWith({ x: 0.4, y: 0.4 }, { x: 0.6, y: 0.6 }, 600, 900);
     fire(move, 'onFinalize');
     expect(runtime.shapes[0].compute().d).toBe('');
+  });
+
+  it('retains the actual touch origin for a move started near a marker', () => {
+    const onMove = vi.fn();
+    render(createElement(SprayPhotoCanvas, canvasProps({ mode: 'move', onMove, dragPoints: [{ x: 0.2, y: 0.4 }] })));
+    const move = runtime.gestures.find((gesture) => gesture.options.enabled?.[0] === true)!;
+    expect(fire(move, 'onTouchesDown', { changedTouches: [{ x: 78, y: 180 }] }).fail).not.toHaveBeenCalled();
+    fire(move, 'onStart', { x: 84, y: 186 });
+    fire(move, 'onUpdate', { x: 240, y: 360 });
+    end(move, { x: 240, y: 360 });
+    expect(onMove).toHaveBeenCalledExactlyOnceWith({ x: 0.26, y: 0.4 }, { x: 0.8, y: 0.8 }, 300, 450);
   });
 
   it.each(['move', 'draw'] as const)('gives empty-space %s drags to the photo pan', (mode) => {

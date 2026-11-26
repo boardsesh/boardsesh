@@ -43,7 +43,19 @@ export function planCableUnitEdits(wiring: TnutWiring, first: CableUnit, second:
     const [before, after] =
       firstLocation.end < secondLocation.start ? [firstLocation, secondLocation] : [secondLocation, firstLocation];
     if (before.end + 1 !== after.start) return unchanged;
-    return { ...unchanged, cut: cutWiring(wiring, path[before.end], path[after.start]) };
+    const split = cutWiring(wiring, path[before.end], path[after.start]);
+    if (after.end !== path.length - 1) return { ...unchanged, cut: split };
+    // The detached output unit has no connection left. The controller-connected
+    // upstream unit remains a valid cable start, even when it is the only stop.
+    const detached = new Set(path.slice(after.start));
+    return {
+      ...unchanged,
+      cut: {
+        ...split,
+        paths: split.paths.filter((_, index) => index !== firstLocation.section + 1),
+        skips: split.skips.filter(({ from, to }) => !detached.has(from) && !detached.has(to)),
+      },
+    };
   }
   if (firstLocation.section < 0 && secondLocation.section < 0 && wiring.paths.length) return unchanged;
 

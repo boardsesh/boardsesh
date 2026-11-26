@@ -946,12 +946,17 @@ describe('SprayWallLedSetupScreen', () => {
     expect(controls.canvas?.mode).toBe('draw');
     tap({ x: 0.2, y: 0.3 });
     expect(wired()).toBe('3');
-    // Cutting keeps each LED on one of the sections.
+    // Cutting off the output makes it unwired; Undo restores the complete cable.
     fireEvent.click(button('selectLeds'));
     tap({ x: 0.5, y: 0.3 });
     tap({ x: 0.8, y: 0.3 });
     fireEvent.click(button('cutCable'));
     expect(shown('drawCable')).toBe(true);
+    expect(wired()).toBe('2');
+    expect(shown('lightAndTap')).toBe(true);
+    expect(screen.queryByText('sprayLedSetup.cableComplete')).toBeNull();
+    fireEvent.click(button('undo'));
+    expect(wired()).toBe('3');
     expect(screen.getByText('sprayLedSetup.cableComplete')).toBeTruthy();
   });
 

@@ -20,7 +20,6 @@ import {
   type LedPosition,
   type TnutLayout,
   type TnutPoint,
-  type TnutWiring,
 } from '@boardsesh/spray-wall-geometry';
 import { useTheme } from '../../providers/theme-provider';
 import { useConfirm } from '../../providers/dialog-provider';
@@ -37,6 +36,7 @@ import { planCableUnitEdits } from './spray-cable-unit-edits';
 import { expandCableUnits, mapCableUnitsById } from './spray-led-units';
 import { nearestPhotoPointIndex } from './tnut-corner-viewport';
 import { useSprayCableHistory, type SprayCableHistory } from './use-spray-cable-history';
+import { planCableExtension, type CableExtensionPlan } from './spray-cable-extension';
 
 const NO_LEDS: LedPosition[] = [];
 type MapEditorProps = {
@@ -320,9 +320,14 @@ function CableEditor({
   const pairs = useMemo(() => ledPairs(layout), [layout]);
   const unitsById = useMemo(() => mapCableUnitsById(layout), [layout]);
   const indivisibleMembers = useMemo(() => new Set(stripeCableUnits(layout).flat()), [layout]);
-  const [previewWiring, setPreviewWiring] = useState<TnutWiring | null>(null);
+  const [drawSection, setDrawSection] = useState<string | null>(null);
+  const [previewPlan, setPreviewPlan] = useState<CableExtensionPlan | null>(null);
   const leds = layout.ledPositions ?? NO_LEDS;
   const wiring = layout.wiring;
+  const drawFrom = drawSection ? (wiring?.paths.find((path) => path[0] === drawSection)?.at(-1) ?? null) : undefined;
+  useEffect(() => {
+    if (drawSection && drawFrom === null) setDrawSection(null);
+  }, [drawSection, drawFrom]);
   const indices = useMemo(
     () => new Map(wiring ? assignLedIndices(wiring).map(({ id, index }) => [id, index]) : []),
     [wiring],
@@ -373,6 +378,8 @@ function CableEditor({
     validatingPair.current = null;
     acknowledgedIndex.current = null;
     if (mode === 'light' && next !== 'light') void stop();
+    setDrawSection(null);
+    setPreviewPlan(null);
     setMode(next);
   }
 
@@ -460,32 +467,29 @@ function CableEditor({
       : null;
 
   function extend(ids: string[]) {
-    setPreviewWiring(null);
+    setPreviewPlan(null);
     if (mode !== 'draw' || !wiring) return;
-    // One history step per stop: Undo keeps pairs whole, including along a drag.
-    const steps: TnutWiring[] = [];
-    const wiredIds = new Set(indices.keys());
-    let current = wiring;
-    for (const id of ids) {
-      const members = expandCableUnits([id], unitsById, wiredIds, indivisibleMembers);
-      if (!members.length) continue;
-      const next = extendWiring(current, members);
-      if (next === current) continue;
-      steps.push(next);
-      for (const member of members) wiredIds.add(member);
-      current = next;
-    }
-    changeSteps(steps);
+    const plan = planCableExtension(wiring, ids, drawFrom, unitsById, indivisibleMembers);
+    if (plan.output) setDrawSection(plan.output.sectionStart);
+    changeSteps(plan.steps);
   }
 
   function previewTrace(points: TnutPoint[], tolerance: number) {
     if (mode !== 'draw' || !wiring) return;
-    const next = extendWiring(
+    const plan = planCableExtension(
       wiring,
-      expandCableUnits(traceLedPath(leds, points, tolerance), unitsById, new Set(indices.keys()), indivisibleMembers),
+      traceLedPath(leds, points, tolerance),
+      drawFrom,
+      unitsById,
+      indivisibleMembers,
+      false,
     );
-    setPreviewWiring(next === wiring ? null : next);
+    setPreviewPlan(plan.output ? plan : null);
   }
+
+  const displayedWiring = previewPlan?.steps.at(-1) ?? wiring;
+  const displayedTail = previewPlan?.output?.tail ?? drawFrom;
+  const drawSelection = displayedTail ? [...(unitsById.get(displayedTail) ?? [displayedTail])] : undefined;
 
   function tap(point: TnutPoint, renderWidth: number, renderHeight: number) {
     const index = nearestPhotoPointIndex(leds, point, renderWidth, renderHeight, 22);
@@ -695,7 +699,7 @@ function CableEditor({
               acknowledgedIndex.current = null;
               undo();
               setSelected([]);
-              setPreviewWiring(null);
+              setPreviewPlan(null);
             }}
           />
         }
@@ -704,7 +708,7 @@ function CableEditor({
           photoUri,
           onInteractionChange: (active) => {
             // A trace cancelled by a pinch never commits; drop its preview.
-            if (!active) setPreviewWiring(null);
+            if (!active) setPreviewPlan(null);
             onInteractionChange(active);
           },
           mode: mode === 'draw' ? 'draw' : mode === 'select' || mode === 'light' ? 'tap' : 'pan',
@@ -717,11 +721,11 @@ function CableEditor({
             <SpraySetupOverlay
               holes={layout.holes}
               leds={leds}
-              wiring={previewWiring ?? wiring}
+              wiring={displayedWiring}
               showSkips={chosenMode === 'light'}
               distinguishSkips
               ledPairs={pairs}
-              selected={mode === 'select' ? selectedUnits.flat() : undefined}
+              selected={mode === 'select' ? selectedUnits.flat() : mode === 'draw' ? drawSelection : undefined}
               width={renderWidth}
               height={renderHeight}
               zoom={zoom}

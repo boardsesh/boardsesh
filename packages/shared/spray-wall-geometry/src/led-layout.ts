@@ -314,8 +314,12 @@ export function createWiring(
   wiring.paths = [path];
   return wiring;
 }
-/** Append one trace to the existing tail, never start another section or revisit an LED. */
-export function extendWiring(wiring: TnutWiring, ids: string[]): TnutWiring {
+/** Append to a section's output, defaulting to the final tail; never branch or revisit an LED. */
+export function extendWiring(wiring: TnutWiring, ids: string[], from?: string): TnutWiring {
+  const section = from === undefined ? wiring.paths.length - 1 : wiring.paths.findIndex((path) => path.at(-1) === from);
+  // A selected end can disappear after Undo or another cable edit. Do not move
+  // that edit silently to a different section or turn an interior LED into a branch.
+  if (from !== undefined && section < 0) return wiring;
   const used = new Set(wiring.paths.flat());
   const additions: string[] = [];
   for (const id of ids) {
@@ -326,7 +330,7 @@ export function extendWiring(wiring: TnutWiring, ids: string[]): TnutWiring {
   }
   if (!additions.length) return wiring;
   const paths = wiring.paths.slice();
-  if (paths.length) paths[paths.length - 1] = [...paths[paths.length - 1], ...additions];
+  if (section >= 0) paths[section] = [...paths[section], ...additions];
   else paths.push(additions);
   return { ...wiring, paths };
 }
