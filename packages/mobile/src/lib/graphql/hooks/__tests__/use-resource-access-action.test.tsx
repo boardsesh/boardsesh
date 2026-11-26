@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   APPROVE_RESOURCE_ACCESS,
   CANCEL_RESOURCE_ACCESS_REQUEST,
+  DECLINE_RESOURCE_ACCESS,
   REQUEST_RESOURCE_ACCESS,
 } from '@boardsesh/graphql/operations/privacy';
 
@@ -57,18 +58,23 @@ describe('useResourceAccessAction', () => {
     expect(invalidate).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps the owner's refresh-everything after an approve", async () => {
+  it.each([
+    { action: 'approve' as const, document: APPROVE_RESOURCE_ACCESS },
+    // Declining sends the decline mutation, never the revoke ban.
+    { action: 'decline' as const, document: DECLINE_RESOURCE_ACCESS },
+  ])("keeps the owner's refresh-everything after $action", async ({ action, document }) => {
     refreshMock.mockResolvedValue(undefined);
     const { result } = setup();
     await act(async () => {
-      await result.current.mutateAsync({ action: 'approve', kind: 'board', resourceId: 'board-1', userId: 'kim' });
+      await result.current.mutateAsync({ action, kind: 'board', resourceId: 'board-1', userId: 'kim' });
     });
 
-    expect(requestMock).toHaveBeenCalledWith(APPROVE_RESOURCE_ACCESS, {
+    expect(requestMock).toHaveBeenCalledWith(document, {
       kind: 'board',
       resourceId: 'board-1',
       userId: 'kim',
     });
+    expect(requestMock).toHaveBeenCalledOnce();
     expect(refreshMock).toHaveBeenCalledOnce();
   });
 });
