@@ -59,7 +59,76 @@ afterEach(() => {
 });
 
 describe('CNC layout request and cache ownership', () => {
-  it('keeps private layouts separate for each login and shares only hole-free layouts', async () => {
+  it('waits for a signed-in credential before submitting a hole-free layout', async () => {
+    state.compute.mockResolvedValue(LAYOUT);
+    const { client, Wrapper } = layoutWrapper();
+    const mounted = renderHook(
+      ({ token }) =>
+        useCncLayout(CONFIG, {
+          authToken: token,
+          cacheScope: 'account-a-login',
+          authRequired: true,
+          authLoading: token === null,
+        }),
+      { wrapper: Wrapper, initialProps: { token: null as string | null } },
+    );
+
+    await tick(500);
+    expect(state.compute).not.toHaveBeenCalled();
+    mounted.rerender({ token: 'secret-account-credential' });
+    await tick();
+
+    expect(state.compute).toHaveBeenCalledOnce();
+    expect(state.compute.mock.calls[0][2]).toMatchObject({
+      includeHoles: false,
+      authToken: 'secret-account-credential',
+    });
+    expect(mounted.result.current.summary?.panelCount).toBe(1);
+    const queryKeys = client
+      .getQueryCache()
+      .getAll()
+      .map((query) => query.queryKey);
+    expect(queryKeys.map((key) => key[4])).toEqual([false, true]);
+    expect(JSON.stringify(queryKeys)).not.toContain('secret-account-credential');
+  });
+
+  it('ends loading with a translated error key when a required credential is unavailable', async () => {
+    const { Wrapper } = layoutWrapper();
+    const mounted = renderHook(
+      () =>
+        useCncLayout(CONFIG, { authToken: null, authRequired: true, authLoading: false, cacheScope: 'account-login' }),
+      { wrapper: Wrapper },
+    );
+    await tick(500);
+
+    expect(state.compute).not.toHaveBeenCalled();
+    expect(mounted.result.current.isLoading).toBe(false);
+    expect(mounted.result.current.errorKey).toBe('generic');
+  });
+
+  it('does not reuse an anonymous rollout refusal for an invited account', async () => {
+    state.compute
+      .mockRejectedValueOnce({ response: { errors: [{ extensions: { code: 'CNC_WORKER_UNAVAILABLE' } }] } })
+      .mockResolvedValueOnce(LAYOUT);
+    const { Wrapper } = layoutWrapper();
+    const anonymous = renderHook(() => useCncLayout(CONFIG), { wrapper: Wrapper });
+    await tick();
+    expect(anonymous.result.current.errorKey).toBe('CNC_WORKER_UNAVAILABLE');
+    anonymous.unmount();
+
+    const signedIn = renderHook(
+      () => useCncLayout(CONFIG, { authToken: 'account-token', cacheScope: 'account-login' }),
+      { wrapper: Wrapper },
+    );
+    await tick();
+
+    expect(state.compute).toHaveBeenCalledTimes(2);
+    expect(state.compute.mock.calls[1][2]).toMatchObject({ authToken: 'account-token', includeHoles: false });
+    expect(signedIn.result.current.errorKey).toBeNull();
+    expect(signedIn.result.current.summary?.panelCount).toBe(1);
+  });
+
+  it('keeps both layout shapes scoped to each login and sends available credentials', async () => {
     state.compute.mockResolvedValue(LAYOUT);
     const { client, Wrapper } = layoutWrapper();
     const first = renderHook(
@@ -86,11 +155,11 @@ describe('CNC layout request and cache ownership', () => {
     await tick();
     expect(state.compute.mock.calls[2][2]).toMatchObject({
       includeHoles: false,
-      authToken: undefined,
-      isCurrent: undefined,
+      authToken: 'buyer-b',
+      isCurrent: expect.any(Function),
     });
     expect(publicLayout.result.current.summary?.panelCount).toBe(1);
-    expect(client.getQueryCache().getAll().at(-1)?.queryKey[3]).toBe('public');
+    expect(client.getQueryCache().getAll().at(-1)?.queryKey[3]).toBe('b-session-2');
   });
 
   it('keeps a private layout that lands after the configurator unmounts out of the cache', async () => {

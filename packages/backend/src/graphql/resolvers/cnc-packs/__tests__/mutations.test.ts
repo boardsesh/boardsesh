@@ -81,7 +81,6 @@ vi.mock('../../../../services/cnc/stripe', async (importOriginal) => ({
 
 import { cncPackMutations } from '../mutations';
 import { CncWorkerUnavailableError, CncWorkerValidationError } from '../../../../services/cnc/worker-client';
-import { CncStripeUnavailableError } from '../../../../services/cnc/stripe';
 
 const authCtx = (): ConnectionContext => ({
   connectionId: 'conn-user-1',
@@ -144,6 +143,7 @@ const savedEnv = new Map<string, string | undefined>();
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv('FEATURE_FLAG_OVERRIDES', 'cnc-packs');
   for (const key of STRIPE_ENV_KEYS) savedEnv.set(key, process.env[key]);
   process.env.STRIPE_SECRET_KEY = 'sk_test_fake';
   process.env.WEB_PUBLIC_URL = 'https://www.boardsesh.com';
@@ -159,7 +159,7 @@ beforeEach(() => {
   countOrdersCreatedSinceMock.mockResolvedValue(0);
   attachCheckoutSessionMock.mockResolvedValue({ id: 7 });
   getOrderByIdMock.mockResolvedValue(previewOrder());
-  transitionOrderMock.mockResolvedValue(previewOrder({ status: 'pending_payment', tier: 'personal' }));
+  transitionOrderMock.mockResolvedValue(previewOrder({ status: 'queued', tier: 'personal' }));
   createCheckoutSessionMock.mockResolvedValue({
     sessionId: 'cs_test_1',
     url: 'https://checkout.stripe.com/c/pay/cs_test_1',
@@ -500,10 +500,8 @@ describe('validateCncArtwork', () => {
 });
 
 describe('createCncPreview', () => {
-  it('refuses an excluded beta account before order lookup or creation', async () => {
-    vi.stubEnv('CNC_TRANSPORT', 'pgboss');
-    vi.stubEnv('CNC_RELEASE_MODE', 'beta');
-    vi.stubEnv('CNC_BETA_USER_IDS', '44444444-4444-4444-8444-444444444444');
+  it('refuses preview work while the PostHog flag is off', async () => {
+    vi.stubEnv('FEATURE_FLAG_OVERRIDES', 'cnc-packs=false');
     await expect(cncPackMutations.createCncPreview(undefined, { config: config() }, authCtx())).rejects.toMatchObject({
       extensions: { code: 'CNC_WORKER_UNAVAILABLE' },
     });
@@ -722,19 +720,7 @@ describe('createCncPreview', () => {
 });
 
 describe('finaliseCncOrder', () => {
-  it('refuses a live Stripe key in beta before touching the order or Stripe', async () => {
-    const betaUserId = '44444444-4444-4444-8444-444444444444';
-    vi.stubEnv('CNC_TRANSPORT', 'pgboss');
-    vi.stubEnv('CNC_RELEASE_MODE', 'beta');
-    vi.stubEnv('CNC_BETA_USER_IDS', betaUserId);
-    vi.stubEnv('STRIPE_SECRET_KEY', 'rk_live_fake');
-    await expect(
-      cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, { ...authCtx(), userId: betaUserId }),
-    ).rejects.toMatchObject({ extensions: { code: 'CNC_CHECKOUT_UNAVAILABLE' } });
-    expect(getOrderByIdMock).not.toHaveBeenCalled();
-    expect(transitionOrderMock).not.toHaveBeenCalled();
-    expect(createCheckoutSessionMock).not.toHaveBeenCalled();
-  });
+  const orderUrl = 'https://www.boardsesh.com/build-plans/orders/BS-CNC-ABC234';
 
   it('requires authentication', async () => {
     await expect(cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, anonCtx())).rejects.toThrow(
@@ -743,130 +729,121 @@ describe('finaliseCncOrder', () => {
     expect(getOrderByIdMock).not.toHaveBeenCalled();
   });
 
-  it('attaches the licence to the previewed order and returns the hosted checkout URL', async () => {
-    await expect(cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, authCtx())).resolves.toEqual({
-      orderId: '7',
-      licenceId: 'BS-CNC-ABC234',
-      checkoutUrl: 'https://checkout.stripe.com/c/pay/cs_test_1',
-    });
-
-    // The configuration is never re-submitted: the row already carries the wall
-    // the buyer approved, so nothing here can change what they are buying.
-    expect(createPreviewOrderMock).not.toHaveBeenCalled();
-    expect(transitionOrderMock).toHaveBeenCalledWith(
-      7,
-      'finalise',
-      expect.objectContaining({
-        tier: 'personal',
-        licenseeName: 'Marco de Jongh',
-        licenseeEmail: 'buyer@example.com',
-        amountCents: 14900,
-        currency: 'AUD',
-        // The pack gets its own attempt budget rather than inheriting whatever
-        // the preview spent.
-        attempts: 0,
-        claimToken: null,
-      }),
-    );
-    expect(attachCheckoutSessionMock).toHaveBeenCalledWith(7, 'cs_test_1');
-
-    const [sessionInput] = createCheckoutSessionMock.mock.calls[0] as [
-      { successUrl: string; cancelUrl: string; customerEmail: string },
-    ];
-    expect(sessionInput.successUrl).toBe('https://www.boardsesh.com/build-plans/orders/BS-CNC-ABC234?checkout=success');
-    expect(sessionInput.cancelUrl).toBe(
-      'https://www.boardsesh.com/build-plans/orders/BS-CNC-ABC234?checkout=cancelled',
-    );
-    // Stripe's customer_email is the signed-in account's own email, never the
-    // buyer-typed licenseeEmail — even though they differ here on purpose.
-    expect(sessionInput.customerEmail).toBe('account-holder@example.com');
-    expect(getAccountEmailMock).toHaveBeenCalledWith('user-1');
-  });
-
-  it('refuses somebody else’s order the same way it refuses one that does not exist', async () => {
-    getOrderByIdMock.mockResolvedValue(previewOrder({ userId: 'someone-else' }));
+  it('refuses finalisation while the PostHog flag is off', async () => {
+    vi.stubEnv('FEATURE_FLAG_OVERRIDES', 'cnc-packs=false');
     await expect(
       cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, authCtx()),
-    ).rejects.toMatchObject({ extensions: { code: 'NOT_FOUND' } });
-
-    getOrderByIdMock.mockResolvedValue(null);
-    await expect(
-      cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, authCtx()),
-    ).rejects.toMatchObject({ extensions: { code: 'NOT_FOUND' } });
-
-    expect(createCheckoutSessionMock).not.toHaveBeenCalled();
+    ).rejects.toMatchObject({ extensions: { code: 'CNC_CHECKOUT_UNAVAILABLE' } });
+    expect(getOrderByIdMock).not.toHaveBeenCalled();
+    expect(transitionOrderMock).not.toHaveBeenCalled();
   });
 
-  it.each(['preview_queued', 'preview_generating', 'preview_failed', 'queued', 'ready', 'cancelled'])(
-    'refuses to sell a %s order — only a finished preview can be bought',
-    async (status) => {
-      getOrderByIdMock.mockResolvedValue(previewOrder({ status }));
-
+  it.each([undefined, 'sk_test_fake', 'sk_live_fake'])(
+    'queues a free personal pack with Stripe key %j',
+    async (stripeKey) => {
+      vi.stubEnv('NODE_ENV', 'production');
+      vi.stubEnv('STRIPE_SECRET_KEY', stripeKey);
       await expect(
         cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, authCtx()),
-      ).rejects.toMatchObject({ extensions: { code: 'CNC_ORDER_NOT_FINALISABLE', status } });
-
-      expect(transitionOrderMock).not.toHaveBeenCalled();
+      ).resolves.toEqual({ orderId: '7', licenceId: 'BS-CNC-ABC234', checkoutUrl: orderUrl });
+      expect(transitionOrderMock).toHaveBeenCalledExactlyOnceWith(
+        7,
+        'finaliseFree',
+        expect.objectContaining({
+          tier: 'personal',
+          licenseeName: 'Marco de Jongh',
+          licenseeEmail: 'buyer@example.com',
+          licenceAcceptedAt: expect.any(Date),
+          amountCents: 0,
+          currency: 'AUD',
+          queuedAt: expect.any(Date),
+          attempts: 0,
+          claimToken: null,
+        }),
+      );
+      expect(transitionOrderMock.mock.calls[0][2]).not.toHaveProperty('paidAt');
+      expect(transitionOrderMock.mock.calls[0][2]).not.toHaveProperty('stripeCheckoutSessionId');
+      expect(createPreviewOrderMock).not.toHaveBeenCalled();
       expect(createCheckoutSessionMock).not.toHaveBeenCalled();
+      expect(attachCheckoutSessionMock).not.toHaveBeenCalled();
+      expect(getAccountEmailMock).not.toHaveBeenCalled();
     },
   );
 
-  it('refuses when another tab already finalised the order', async () => {
-    // The read said `preview_ready`, the conditional UPDATE disagreed.
-    transitionOrderMock.mockResolvedValue(null);
+  it('allows a flag-enabled account without any Stripe configuration', async () => {
+    vi.stubEnv('FEATURE_FLAG_OVERRIDES', 'cnc-packs');
+    vi.stubEnv('STRIPE_SECRET_KEY', undefined);
+    await expect(
+      cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, authCtx()),
+    ).resolves.toMatchObject({ checkoutUrl: orderUrl });
+  });
 
+  it('refuses somebody else’s order the same way it refuses one that does not exist', async () => {
+    for (const order of [previewOrder({ userId: 'someone-else' }), null]) {
+      getOrderByIdMock.mockResolvedValue(order);
+      await expect(
+        cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, authCtx()),
+      ).rejects.toMatchObject({ extensions: { code: 'NOT_FOUND' } });
+    }
+    expect(transitionOrderMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'preview_queued',
+    'preview_generating',
+    'preview_failed',
+    'pending_payment',
+    'queued',
+    'generating',
+    'ready',
+    'failed',
+    'cancelled',
+    'refunded',
+  ])('refuses a %s order; only an approved preview can be finalised', async (status) => {
+    getOrderByIdMock.mockResolvedValue(previewOrder({ status }));
+    await expect(
+      cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, authCtx()),
+    ).rejects.toMatchObject({ extensions: { code: 'CNC_ORDER_NOT_FINALISABLE', status } });
+    expect(transitionOrderMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses when another tab already finalised the order', async () => {
+    transitionOrderMock.mockResolvedValue(null);
     await expect(
       cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, authCtx()),
     ).rejects.toMatchObject({ extensions: { code: 'CNC_ORDER_NOT_FINALISABLE' } });
-    expect(createCheckoutSessionMock).not.toHaveBeenCalled();
   });
 
-  it('refuses an order when the licence was not accepted', async () => {
+  it('requires licence acceptance even though generation is free', async () => {
     await expect(
       cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput({ acceptLicence: false }) }, authCtx()),
     ).rejects.toThrow(/accept the manufacturing licence/);
     expect(transitionOrderMock).not.toHaveBeenCalled();
   });
 
-  it('refuses a commercial licence with no named installation', async () => {
-    // Without the site name a commercial single-build licence is just a more
-    // expensive personal one, and the licence record says nothing useful.
-    await expect(
-      cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput({ tier: 'commercial_single' }) }, authCtx()),
-    ).rejects.toThrow(/one named installation/);
-    expect(transitionOrderMock).not.toHaveBeenCalled();
-  });
-
-  it('accepts a commercial licence that names its installation, at the commercial price', async () => {
-    await expect(
-      cncPackMutations.finaliseCncOrder(
-        undefined,
-        { input: finaliseInput({ tier: 'commercial_single', customerSiteName: 'Northside Climbing' }) },
-        authCtx(),
-      ),
-    ).resolves.toMatchObject({ licenceId: 'BS-CNC-ABC234' });
-
-    expect(transitionOrderMock).toHaveBeenCalledWith(
-      7,
-      'finalise',
-      expect.objectContaining({
-        tier: 'commercial_single',
-        customerSiteName: 'Northside Climbing',
-        amountCents: 75000,
-      }),
-    );
-  });
+  it.each([undefined, 'Northside Climbing'])(
+    'refuses commercial generation with site %j before looking up or moving an order',
+    async (customerSiteName) => {
+      await expect(
+        cncPackMutations.finaliseCncOrder(
+          undefined,
+          {
+            input: finaliseInput({ tier: 'commercial_single', customerSiteName }),
+          },
+          authCtx(),
+        ),
+      ).rejects.toThrow(/non-commercial use only.*partnerships@boardsesh.com/);
+      expect(getOrderByIdMock).not.toHaveBeenCalled();
+      expect(transitionOrderMock).not.toHaveBeenCalled();
+      expect(createCheckoutSessionMock).not.toHaveBeenCalled();
+    },
+  );
 
   it('treats an empty site name on a personal licence as no site name', async () => {
-    // A configurator that keeps the field mounted after a tier switch submits
-    // "", which is an empty field rather than a value.
-    await expect(
-      cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput({ customerSiteName: '  ' }) }, authCtx()),
-    ).resolves.toMatchObject({ licenceId: 'BS-CNC-ABC234' });
-
+    await cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput({ customerSiteName: '  ' }) }, authCtx());
     expect(transitionOrderMock).toHaveBeenCalledWith(
       7,
-      'finalise',
+      'finaliseFree',
       expect.objectContaining({ customerSiteName: null }),
     );
   });
@@ -875,86 +852,39 @@ describe('finaliseCncOrder', () => {
     await expect(
       cncPackMutations.finaliseCncOrder(
         undefined,
-        { input: finaliseInput({ customerSiteName: 'Northside Climbing' }) },
+        {
+          input: finaliseInput({ customerSiteName: 'Northside Climbing' }),
+        },
         authCtx(),
       ),
-    ).rejects.toThrow(/commercial tier/);
+    ).rejects.toThrow(/partnerships@boardsesh.com/);
   });
 
-  it('refuses to take an order when Stripe is not configured', async () => {
-    delete process.env.STRIPE_SECRET_KEY;
-
-    await expect(
-      cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, authCtx()),
-    ).rejects.toMatchObject({ extensions: { code: 'CNC_CHECKOUT_UNAVAILABLE' } });
-    expect(transitionOrderMock).not.toHaveBeenCalled();
-  });
-
-  it('refuses a wall the catalogue no longer sells', async () => {
+  it('refuses a wall the catalogue no longer offers', async () => {
     getOrderByIdMock.mockResolvedValue(previewOrder({ sizeId: 999 }));
-
     await expect(
       cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, authCtx()),
     ).rejects.toMatchObject({ extensions: { code: 'CNC_INVALID_CONFIG' } });
     expect(transitionOrderMock).not.toHaveBeenCalled();
   });
 
-  it('returns the order to its preview when Stripe will not open a session', async () => {
-    // `cancelled` would throw away a perfectly good preview because of our
-    // outage — and cost the buyer a slot in the hourly budget to make another.
-    createCheckoutSessionMock.mockRejectedValue(new CncStripeUnavailableError('Stripe is down'));
-
+  it.each([0, 1])('keeps artwork traceable without making attachment count %s a gate', async (attachedCount) => {
+    transitionOrderMock.mockResolvedValue(
+      previewOrder({ status: 'queued', artwork: [{ assetId: 'asset-1', assetKey: 'k', mime: 'm' }] }),
+    );
+    attachAssetsToOrderMock.mockResolvedValue(attachedCount);
     await expect(
       cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, authCtx()),
-    ).rejects.toMatchObject({ extensions: { code: 'CNC_CHECKOUT_UNAVAILABLE' } });
-
-    expect(transitionOrderMock).toHaveBeenCalledWith(7, 'finaliseFailed');
-    expect(releaseArtAssetsForOrderMock).toHaveBeenCalledWith(7);
-  });
-
-  it('stamps the sale onto the uploads it names', async () => {
-    transitionOrderMock.mockResolvedValue(
-      previewOrder({ status: 'pending_payment', artwork: [{ assetId: 'asset-1', assetKey: 'k', mime: 'm' }] }),
-    );
-    attachAssetsToOrderMock.mockResolvedValue(1);
-
-    await cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, authCtx());
-
+    ).resolves.toMatchObject({ checkoutUrl: orderUrl });
     expect(attachAssetsToOrderMock).toHaveBeenCalledWith(7, 'user-1', ['asset-1']);
   });
 
-  it('still sells the pack when the upload was already stamped by an earlier order', async () => {
-    // One upload can appear in several orders now — every preview iteration is
-    // a row of its own, and a buyer may build two walls with the same logo. The
-    // stamp is a cleanup marker, not an exclusive claim, and ownership was
-    // proven when the preview row was written.
-    transitionOrderMock.mockResolvedValue(
-      previewOrder({ status: 'pending_payment', artwork: [{ assetId: 'asset-1', assetKey: 'k', mime: 'm' }] }),
-    );
-    attachAssetsToOrderMock.mockResolvedValue(0);
-
+  it('still returns the order page when artwork cleanup stamping fails', async () => {
+    transitionOrderMock.mockResolvedValue(previewOrder({ status: 'queued', artwork: [{ assetId: 'asset-1' }] }));
+    attachAssetsToOrderMock.mockRejectedValueOnce(new Error('unavailable'));
     await expect(
       cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, authCtx()),
-    ).resolves.toMatchObject({ checkoutUrl: 'https://checkout.stripe.com/c/pay/cs_test_1' });
-  });
-
-  it('still returns the checkout URL when the session id could not be attached', async () => {
-    // The session id is a support convenience; the webhook finds the order by
-    // metadata regardless, so losing it must not cost the buyer their checkout.
-    attachCheckoutSessionMock.mockResolvedValue(null);
-
-    await expect(
-      cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, authCtx()),
-    ).resolves.toMatchObject({ checkoutUrl: 'https://checkout.stripe.com/c/pay/cs_test_1' });
-  });
-
-  it('falls back to the licensee email for Stripe when the account has none on file', async () => {
-    getAccountEmailMock.mockResolvedValue(null);
-
-    await cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, authCtx());
-
-    const [sessionInput] = createCheckoutSessionMock.mock.calls[0] as [{ customerEmail: string }];
-    expect(sessionInput.customerEmail).toBe('buyer@example.com');
+    ).resolves.toMatchObject({ checkoutUrl: orderUrl });
   });
 });
 
@@ -997,6 +927,7 @@ describe('createCncDownloadGrant', () => {
   });
 
   it('mints a link to the caller’s own ready pack', async () => {
+    vi.stubEnv('FEATURE_FLAG_OVERRIDES', 'cnc-packs=false');
     getOrderByLicenceIdMock.mockResolvedValue(readyOrder());
 
     const grant = await cncPackMutations.createCncDownloadGrant(undefined, { licenceId: 'BS-CNC-ABC234' }, authCtx());
@@ -1090,6 +1021,7 @@ describe('regenerateCncPack', () => {
   });
 
   it('requeues a ready pack with the generation bumped and the attempt budget reset', async () => {
+    vi.stubEnv('FEATURE_FLAG_OVERRIDES', 'cnc-packs=false');
     getOrderByLicenceIdMock.mockResolvedValue(readyOrder({ generation: 2 }));
     transitionOrderMock.mockResolvedValue(readyOrder({ status: 'queued', generation: 3, zipSizeBytes: null }));
 
@@ -1111,136 +1043,5 @@ describe('regenerateCncPack', () => {
     await expect(
       cncPackMutations.regenerateCncPack(undefined, { licenceId: 'BS-CNC-ABC234' }, authCtx()),
     ).rejects.toMatchObject({ extensions: { code: 'CNC_PACK_NOT_DOWNLOADABLE' } });
-  });
-});
-
-describe('finaliseCncOrder with the dev checkout bypass', () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  /** The bypass's own precondition: it refuses to run where a card can be charged. */
-  function enableBypass(): void {
-    delete process.env.STRIPE_SECRET_KEY;
-    process.env.CNC_CHECKOUT_BYPASS = '1';
-  }
-
-  const ORDER_PAGE_URL = 'https://www.boardsesh.com/build-plans/orders/BS-CNC-ABC234';
-
-  it('queues the order at the catalogue price and returns the order page', async () => {
-    enableBypass();
-    transitionOrderMock.mockResolvedValue(previewOrder({ status: 'pending_payment', tier: 'personal' }));
-
-    const result = await cncPackMutations.finaliseCncOrder(
-      undefined,
-      { input: finaliseInput({ tier: 'personal' }) },
-      authCtx(),
-    );
-
-    // Stripe is not asked for anything at all.
-    expect(createCheckoutSessionMock).not.toHaveBeenCalled();
-    expect(attachCheckoutSessionMock).not.toHaveBeenCalled();
-
-    expect(transitionOrderMock).toHaveBeenCalledWith(7, 'checkoutCompleted', {
-      paidAt: expect.any(Date),
-      queuedAt: expect.any(Date),
-      // The personal tier's catalogue price, since there is no charge to read.
-      amountCents: 14900,
-      currency: 'AUD',
-      stripeCheckoutSessionId: 'bypass-BS-CNC-ABC234',
-      stripePaymentIntentId: null,
-    });
-
-    expect(result).toEqual({
-      orderId: '7',
-      licenceId: 'BS-CNC-ABC234',
-      checkoutUrl: `${ORDER_PAGE_URL}?checkout=success`,
-    });
-  });
-
-  it('prices the commercial tier from the catalogue too', async () => {
-    enableBypass();
-
-    await cncPackMutations.finaliseCncOrder(
-      undefined,
-      // A commercial licence names the installation it covers.
-      { input: finaliseInput({ tier: 'commercial_single', customerSiteName: 'Northside Climbing' }) },
-      authCtx(),
-    );
-
-    expect(transitionOrderMock).toHaveBeenCalledWith(
-      7,
-      'checkoutCompleted',
-      expect.objectContaining({ amountCents: 75000 }),
-    );
-  });
-
-  it('refuses the checkout when the order it just finalised will not queue', async () => {
-    // Zero rows back means the state machine and the bypass disagree. Handing
-    // the buyer an order-page URL for an order still sitting in
-    // `pending_payment` would look like a purchase that silently did nothing.
-    enableBypass();
-    transitionOrderMock.mockImplementation(async (_id: number, event: string) =>
-      event === 'finalise' ? previewOrder({ status: 'pending_payment' }) : null,
-    );
-
-    await expect(
-      cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, authCtx()),
-    ).rejects.toMatchObject({ extensions: { code: 'CNC_CHECKOUT_UNAVAILABLE' } });
-  });
-
-  it('is off in production, even with the env var set', async () => {
-    // NODE_ENV is the hard guard: a production process with this variable
-    // inherited from somewhere must take the real path, which here means
-    // refusing outright because there is no Stripe key.
-    enableBypass();
-    vi.stubEnv('NODE_ENV', 'production');
-
-    await expect(
-      cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, authCtx()),
-    ).rejects.toMatchObject({ extensions: { code: 'CNC_CHECKOUT_UNAVAILABLE' } });
-
-    expect(transitionOrderMock).not.toHaveBeenCalled();
-  });
-
-  it('takes the real Stripe path in production when Stripe is configured', async () => {
-    process.env.CNC_CHECKOUT_BYPASS = '1';
-    vi.stubEnv('NODE_ENV', 'production');
-    process.env.STRIPE_SECRET_KEY = 'sk_live_not_really';
-
-    const result = await cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, authCtx());
-
-    expect(createCheckoutSessionMock).toHaveBeenCalledTimes(1);
-    expect(result.checkoutUrl).toBe('https://checkout.stripe.com/c/pay/cs_test_1');
-    // `finalise` and nothing else: the bypass's own `checkoutCompleted` is the
-    // transition that must not have happened.
-    expect(transitionOrderMock).toHaveBeenCalledTimes(1);
-    expect(transitionOrderMock).toHaveBeenCalledWith(7, 'finalise', expect.anything());
-  });
-
-  it('is ignored whenever a Stripe secret key is present', async () => {
-    // The condition that makes "bypass" and "charging people" mutually
-    // exclusive: a stack that can take a payment never fakes one, dev or not.
-    process.env.CNC_CHECKOUT_BYPASS = '1';
-    process.env.STRIPE_SECRET_KEY = 'sk_test_fake';
-
-    const result = await cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, authCtx());
-
-    expect(createCheckoutSessionMock).toHaveBeenCalledTimes(1);
-    expect(result.checkoutUrl).toBe('https://checkout.stripe.com/c/pay/cs_test_1');
-    expect(transitionOrderMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('is off on a deployed Railway service', async () => {
-    // Railway prod leaves NODE_ENV unset, so the environment variable is the
-    // only thing that says "this is a deploy, not a laptop".
-    enableBypass();
-    process.env.RAILWAY_ENVIRONMENT = 'production';
-
-    await expect(
-      cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, authCtx()),
-    ).rejects.toMatchObject({ extensions: { code: 'CNC_CHECKOUT_UNAVAILABLE' } });
-
-    expect(transitionOrderMock).not.toHaveBeenCalled();
   });
 });

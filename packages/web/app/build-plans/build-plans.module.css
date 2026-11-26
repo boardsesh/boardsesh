@@ -30,10 +30,6 @@
   color: var(--neutral-500);
 }
 
-.contactRow {
-  margin-top: 16px;
-}
-
 .trademarkNote.trademarkNote {
   max-width: 68ch;
   color: var(--neutral-500);

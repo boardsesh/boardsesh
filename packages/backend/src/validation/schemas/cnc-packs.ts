@@ -188,37 +188,17 @@ export const FinaliseCncOrderInputSchema = z
     // business, and the buyer gets to say which address that is.
     licenseeEmail: z.string().trim().email('That does not look like an email address').max(200, 'Email too long'),
     customerSiteName: OptionalTrimmedName,
-    acceptLicence: z.literal(true, 'You have to accept the manufacturing licence to buy a pack'),
+    acceptLicence: z.literal(true, 'You have to accept the manufacturing licence to generate a pack'),
   })
   .superRefine((input, ctx) => {
-    // A commercial single-build licence covers one identified installation, so
-    // the installation has to be identified. Without this the tier is just a
-    // more expensive personal licence.
-    if (input.tier === 'commercial_single') {
-      if (!input.customerSiteName) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['customerSiteName'],
-          message: 'A commercial licence covers one named installation — tell us which one.',
-        });
-      } else if (input.customerSiteName.length < CNC_MIN_LICENSEE_NAME_LENGTH) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['customerSiteName'],
-          message: `The installation name must be at least ${CNC_MIN_LICENSEE_NAME_LENGTH} characters.`,
-        });
-      }
-      return;
-    }
-
-    // And the other direction: a personal licence that names a customer site
-    // is a commercial build bought at the personal price, whether by mistake or
-    // not. Rejecting it keeps the licence record honest about what was sold.
-    if (input.customerSiteName) {
+    // The free licence is for an own non-commercial wall. Commercial callers
+    // are rejected explicitly by the resolver and directed to partnerships.
+    if (input.tier === 'personal' && input.customerSiteName) {
       ctx.addIssue({
         code: 'custom',
         path: ['customerSiteName'],
-        message: 'A personal licence covers your own wall. Building for a customer needs the commercial tier.',
+        message:
+          'Free build packs cover your own non-commercial wall. For commercial use, contact partnerships@boardsesh.com.',
       });
     }
   });

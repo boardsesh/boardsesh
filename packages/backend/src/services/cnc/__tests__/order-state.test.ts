@@ -38,6 +38,7 @@ const LEGAL_TRANSITIONS: ReadonlyArray<[CncOrderFromStatus, CncOrderEvent]> = [
   ['preview_generating', 'previewComplete'],
   ['preview_generating', 'previewFail'],
   ['preview_ready', 'finalise'],
+  ['preview_ready', 'finaliseFree'],
   ['pending_payment', 'finaliseFailed'],
   ['pending_payment', 'checkoutCompleted'],
   ['pending_payment', 'checkoutExpired'],
@@ -61,6 +62,7 @@ const ALL_EVENTS: readonly CncOrderEvent[] = [
   'previewComplete',
   'previewFail',
   'finalise',
+  'finaliseFree',
   'finaliseFailed',
   'checkoutCompleted',
   'checkoutExpired',
@@ -121,6 +123,14 @@ describe('canTransition', () => {
     const intoPendingPayment = CNC_ORDER_TRANSITIONS.filter((transition) => transition.to === 'pending_payment');
     expect(intoPendingPayment.map((transition) => transition.event)).toEqual(['finalise']);
     expect(intoPendingPayment[0].from).toEqual(['preview_ready']);
+  });
+
+  it('queues free packs only after an approved preview', () => {
+    const freeFinalise = CNC_ORDER_TRANSITIONS.find((transition) => transition.event === 'finaliseFree');
+    expect(freeFinalise).toMatchObject({ from: ['preview_ready'], to: 'queued' });
+    for (const status of ALL_STATUSES) {
+      expect(canTransition(status, 'finaliseFree')).toBe(status === 'preview_ready');
+    }
   });
 
   it('never moves an existing row back into a preview queue', () => {

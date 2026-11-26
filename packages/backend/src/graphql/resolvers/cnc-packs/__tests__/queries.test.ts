@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import type { CncOrder } from '@boardsesh/db/schema';
 
@@ -142,10 +142,13 @@ function makeOrder(overrides: Partial<CncOrder> = {}): CncOrder {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv('FEATURE_FLAG_OVERRIDES', 'cnc-packs');
   // Back to "allowed" for every test, so the one that makes it reject cannot
   // leak its verdict into whatever runs next.
   requireAdminMock.mockResolvedValue(undefined);
 });
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe('cncCatalog', () => {
   it('publishes Homewall, Original and both TB2 layouts', async () => {
@@ -211,10 +214,7 @@ describe('cncCatalog', () => {
 
   it("reports prices as amountCents, not the service layer's priceCents", async () => {
     const entry = (await cncPackQueries.cncCatalog(undefined, undefined, anonCtx())).entries[0];
-    expect(entry.tiers).toEqual([
-      { tier: 'personal', amountCents: 14900, currency: 'AUD' },
-      { tier: 'commercial_single', amountCents: 75000, currency: 'AUD' },
-    ]);
+    expect(entry.tiers).toEqual([{ tier: 'personal', amountCents: 0, currency: 'AUD' }]);
   });
 
   it('never leaks the Stripe price env var names', async () => {
@@ -231,6 +231,16 @@ describe('cncCatalog', () => {
 });
 
 describe('cncLayout', () => {
+  it.each([false, true])('blocks new layout work with includeHoles=%j while the flag is off', async (includeHoles) => {
+    vi.stubEnv('FEATURE_FLAG_OVERRIDES', 'cnc-packs=false');
+    await expect(
+      cncPackQueries.cncLayout(undefined, { config: {}, includeHoles }, authCtx('user-1')),
+    ).rejects.toMatchObject({
+      extensions: { code: 'CNC_WORKER_UNAVAILABLE' },
+    });
+    expect(fetchLayoutMock).not.toHaveBeenCalled();
+  });
+
   it('returns the generator response for a configuration on sale', async () => {
     fetchLayoutMock.mockResolvedValue({ panels: [] });
 

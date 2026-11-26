@@ -318,7 +318,7 @@ describe('draft persistence', () => {
     expect(Object.keys(draft)).not.toContain('licenceAccepted');
   });
 
-  it('round-trips a configuration and comes back un-accepted', () => {
+  it('restores commercial drafts as personal with fresh acceptance', () => {
     const state: CncConfiguratorState = {
       ...initialConfiguratorState(tenByTwelve()),
       options: { ...defaultOptions(tenByTwelve()), sheetStock: '3600x1220' },
@@ -333,8 +333,8 @@ describe('draft persistence', () => {
 
     expect(restored).toMatchObject({
       sizeId: 25,
-      tier: 'commercial_single',
-      customerSiteName: 'Northside Boulder',
+      tier: 'personal',
+      customerSiteName: '',
       licenceAccepted: false,
     });
     expect(restored?.options.sheetStock).toBe('3600x1220');

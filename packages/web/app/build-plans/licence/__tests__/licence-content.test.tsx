@@ -47,57 +47,38 @@ function outboundHrefs(container: HTMLElement): (string | null)[] {
 }
 
 describe('LicenceContent', () => {
-  it('leads with the DRAFT banner', () => {
-    // Publication preparation keeps the current beta wording by default.
+  it('always renders the final licence without draft or placeholder wording', () => {
     renderLicence();
-    expect(screen.getByText('Draft licence')).toBeTruthy();
-    expect(screen.getByText(/pending review by an Australian IP lawyer/)).toBeTruthy();
-  });
 
-  it('removes only editorial draft wording for the public release', () => {
-    const { container, rerender } = renderLicence();
-    const originalClauses = new Map(
-      Array.from(container.querySelectorAll('article li[id]')).map((clause) => [clause.id, clause.textContent]),
-    );
-    const originalLinks = outboundHrefs(container);
-
-    rerender(<LicenceContent publicRelease />);
-
-    expect(screen.queryByText('Draft licence')).toBeNull();
-    expect(screen.queryByText(/pending review by an Australian IP lawyer/)).toBeNull();
-    expect(screen.queryByText(/Placeholder wording/)).toBeNull();
+    expect(screen.queryByText(/draft|pending review|placeholder wording/i)).toBeNull();
     expect(
       screen.getByText(
         'This licence is governed by the law of Victoria, Australia, and the courts of Victoria have jurisdiction.',
       ),
     ).toBeTruthy();
     expect(screen.getByText('This page is provided for information and is not legal advice.')).toBeTruthy();
-    expect(outboundHrefs(container)).toEqual(originalLinks);
-    const publicClauses = Array.from(container.querySelectorAll('article li[id]'));
-    expect(publicClauses).toHaveLength(originalClauses.size);
-    for (const clause of publicClauses) {
-      if (clause.id !== 'governing-law') expect(clause.textContent).toBe(originalClauses.get(clause.id));
-    }
   });
 
-  it('renders both licence tiers with their prices', () => {
+  it('shows the free personal licence and separate commercial terms', () => {
     // Scoped to the document: each clause title appears twice on the page now,
     // once as a clause heading and once in the contents rail beside it.
     const { container } = renderLicence();
     const article = container.querySelector('article');
-    expect(within(article as HTMLElement).getByText('3. Personal licence (A$149)')).toBeTruthy();
-    expect(within(article as HTMLElement).getByText('4. Commercial single-build licence (A$750)')).toBeTruthy();
+    expect(within(article as HTMLElement).getByText(tFromCatalog('cnc-legal', 'licence.personal.title'))).toBeTruthy();
+    expect(
+      within(article as HTMLElement).getByText(tFromCatalog('cnc-legal', 'licence.commercial.title')),
+    ).toBeTruthy();
   });
 
   it('links the licence contact and the volume enquiry at different addresses', () => {
     // Two distinct mailboxes, and the split is the point: legal@ answers
-    // licence questions and reissues, support@ takes ten-build and OEM
+    // licence questions and reissues, partnerships@ takes ten-build and OEM
     // enquiries. A single address here would route contract questions into the
     // support queue.
     const { container } = renderLicence();
     const hrefs = outboundHrefs(container);
     expect(hrefs).toContain('mailto:legal@boardsesh.com');
-    expect(hrefs).toContain('mailto:support@boardsesh.com');
+    expect(hrefs).toContain('mailto:partnerships@boardsesh.com');
   });
 
   it('cross-links the legal and privacy policies', () => {
@@ -131,6 +112,6 @@ describe('LicenceContent', () => {
     // arriving without a home for it in this file.
     const { container } = renderLicence();
     const hrefs = outboundHrefs(container);
-    expect(hrefs).toEqual(['mailto:support@boardsesh.com', '/legal', '/privacy', 'mailto:legal@boardsesh.com']);
+    expect(hrefs).toEqual(['mailto:partnerships@boardsesh.com', '/legal', '/privacy', 'mailto:legal@boardsesh.com']);
   });
 });

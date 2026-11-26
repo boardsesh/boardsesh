@@ -11,12 +11,7 @@ import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { executeAuthenticatedGraphQL } from '@/app/lib/graphql/server-graphql';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
-import {
-  CNC_FLAG_OFF_METADATA,
-  fetchCncCatalog,
-  isCncPacksEnabled,
-  requireCncPacksFlag,
-} from '@/app/build-plans/build-plans-page';
+import { fetchCncCatalog, isCncPacksEnabled } from '@/app/build-plans/build-plans-page';
 import { PageFrame } from '@/app/build-plans/ui';
 import OrdersList from '@/app/build-plans/orders/orders-list';
 
@@ -31,8 +26,6 @@ const ORDERS_PATH = '/build-plans/orders';
  * TODO on `/build-plans` does not apply here.
  */
 export async function generateMetadata(): Promise<Metadata> {
-  if (!(await isCncPacksEnabled())) return CNC_FLAG_OFF_METADATA;
-
   const { t, locale } = await getServerTranslation('cnc');
   return createNoIndexMetadata({
     title: t('metadata.orders.title'),
@@ -43,8 +36,6 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function BuildPlansOrdersPage() {
-  await requireCncPacksFlag();
-
   // `getServerAuthToken` is BOTH the session read and the credential: it
   // returns what the backend accepts as a Bearer token (the next-auth session
   // cookie, or under `better-auth` the 15-minute access token of the session
@@ -60,7 +51,7 @@ export default async function BuildPlansOrdersPage() {
   // The catalogue is only here to turn a size id into a wall label. A failed
   // fetch costs the label, not the list — an order still shows its licence id,
   // status and date, which is what someone came to check.
-  const [ordersResult, catalog] = await Promise.all([
+  const [ordersResult, catalog, creationEnabled] = await Promise.all([
     executeAuthenticatedGraphQL<GetMyCncOrdersQueryResponse>(GET_MY_CNC_ORDERS, undefined, authToken)
       .then((response) => ({ ok: true as const, orders: response.myCncOrders }))
       .catch((error: unknown) => {
@@ -68,6 +59,7 @@ export default async function BuildPlansOrdersPage() {
         return { ok: false as const, orders: [] as CncOrder[] };
       }),
     fetchCncCatalog(),
+    isCncPacksEnabled().catch(() => false),
   ]);
 
   return (
@@ -76,13 +68,20 @@ export default async function BuildPlansOrdersPage() {
         title={t('orders.heading')}
         intro={t('orders.intro')}
         actions={
-          <MuiLink component={LocaleLink} href="/build-plans" variant="body2">
-            {t('orders.configureAnother')}
-          </MuiLink>
+          creationEnabled ? (
+            <MuiLink component={LocaleLink} href="/build-plans" variant="body2">
+              {t('orders.configureAnother')}
+            </MuiLink>
+          ) : null
         }
       >
         {ordersResult.ok ? (
-          <OrdersList orders={ordersResult.orders} catalog={catalog} locale={locale} />
+          <OrdersList
+            orders={ordersResult.orders}
+            catalog={catalog}
+            locale={locale}
+            creationEnabled={creationEnabled}
+          />
         ) : (
           <Alert severity="error" sx={{ borderRadius: 'var(--border-radius-lg)' }}>
             {t('orders.loadError')}

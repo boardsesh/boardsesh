@@ -7,19 +7,17 @@ import {
 import type { CncOrderOptions } from '@boardsesh/db/schema';
 
 /**
- * What Boardsesh will sell a CNC build pack for, and which manufacturing
- * choices the buyer may make.
+ * Which free non-commercial CNC packs Boardsesh offers and which
+ * manufacturing choices the builder may make.
  *
- * This registry is the single gate between a URL tuple and a purchasable pack:
- * checkout, the layout preview and the generator job all resolve through
- * `findCatalogEntry`, so a board/size that is not listed here cannot be bought
- * and cannot reach the worker.
+ * The layout preview, finalisation and generator job all resolve through
+ * `findCatalogEntry`, so an unlisted board/size cannot reach the worker.
  *
  * Bumped whenever an entry, an allowed value or a default changes. Every order
  * stores the version it was priced and configured under, so a regenerate months
- * later rebuilds the pack the buyer paid for rather than today's defaults.
+ * later rebuilds the pack the builder approved rather than today's defaults.
  */
-export const CNC_CATALOG_VERSION = '2026-09-07.5';
+export const CNC_CATALOG_VERSION = '2026-11-26.1';
 
 /**
  * sha256 of `JSON.stringify(CNC_CATALOG)`, pinned so the version above cannot
@@ -36,7 +34,7 @@ export const CNC_CATALOG_VERSION = '2026-09-07.5';
  * Never paste the new hash on its own — a hash change with an unchanged version
  * is exactly the bug this pair exists to catch.
  */
-export const CNC_CATALOG_CONTENT_HASH = '91fe71348a2f41045abdc41a668a664146494fbfc806247c30e81845b8993eb3';
+export const CNC_CATALOG_CONTENT_HASH = '1ff6bfe4571b345303c7099a57e1f118ff3fb831b3594620d255a771a47430af';
 
 export type CncLicenceTier = 'personal' | 'commercial_single';
 
@@ -125,8 +123,7 @@ const KILTER_HOMEWALL_MANUFACTURING_OPTIONS: readonly CncManufacturingOption[] =
 ];
 
 const KILTER_HOMEWALL_TIERS: readonly CncTierPrice[] = [
-  { tier: 'personal', priceCents: 14900, currency: 'AUD', stripePriceEnv: 'STRIPE_PRICE_CNC_PERSONAL' },
-  { tier: 'commercial_single', priceCents: 75000, currency: 'AUD', stripePriceEnv: 'STRIPE_PRICE_CNC_COMMERCIAL' },
+  { tier: 'personal', priceCents: 0, currency: 'AUD', stripePriceEnv: 'STRIPE_PRICE_CNC_PERSONAL' },
 ];
 
 type KilterSize = {

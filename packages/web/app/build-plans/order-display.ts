@@ -100,6 +100,7 @@ export function wallLabel(
  * is no such binding in a plain helper module.
  *
  * i18n-keep cnc:orders.previewTier
+ * i18n-keep cnc:tiers.commercial.name
  */
 export function tierLabel(tier: CncLicenceTier | null, translate: (key: string) => string): string {
   if (tier === null) return translate('orders.previewTier');

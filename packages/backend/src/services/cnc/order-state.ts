@@ -28,7 +28,7 @@ export type CncOrderStatus =
  *
  * The order row is one queue carrying both, so almost everything downstream —
  * the claim, the job payload, the completion report, the download route — takes
- * this rather than re-deriving it from a status. `full` is the paid pack;
+ * this rather than re-deriving it from a status. `full` is the licensed manufacturing pack;
  * `preview` is the free watermarked raster the buyer iterates on.
  */
 export type CncDeliverable = 'full' | 'preview';
@@ -47,6 +47,7 @@ export type CncOrderEvent =
   | 'previewComplete'
   | 'previewFail'
   | 'finalise'
+  | 'finaliseFree'
   | 'finaliseFailed'
   | 'checkoutCompleted'
   | 'checkoutExpired'
@@ -95,6 +96,12 @@ export const CNC_ORDER_TRANSITIONS: readonly CncOrderTransition[] = [
     from: ['preview_generating'],
     to: null,
     why: 'Back to the preview queue for another attempt, or terminal once the same three-attempt budget is spent.',
+  },
+  {
+    event: 'finaliseFree',
+    from: ['preview_ready'],
+    to: 'queued',
+    why: 'An approved preview receives its accepted licence and enters the full-pack queue for free, without a payment record.',
   },
   {
     event: 'finalise',

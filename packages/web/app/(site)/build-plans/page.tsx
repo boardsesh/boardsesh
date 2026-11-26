@@ -21,11 +21,9 @@ import styles from '@/app/build-plans/build-plans.module.css';
  *
  * TODO(launch): swap `createNoIndexMetadata` for `createPageMetadata` and add
  * `/build-plans` to a sitemap shard when the flag reaches 100% — this is a
- * search surface (people look for "kilter homewall plans"), and it is only
- * kept out of the index because the manufacturing licence still ships marked
- * DRAFT pending the Australian IP review. Note the gate is BOTH: the page also
- * 404s while the flag is off, because noindex alone would leave a publicly
- * reachable shop.
+ * search surface (people look for "kilter homewall plans"). Indexing remains
+ * separate from the initial public rollout. The page also 404s while the flag
+ * is off; noindex alone would leave the configurator reachable.
  */
 export async function generateMetadata(): Promise<Metadata> {
   // Same gate as the page body, via the same helper. While the flag is off the
@@ -56,12 +54,12 @@ export default async function BuildPlansPage() {
         actions={<BuildPlansHeaderActions />}
         note={t('hero.firstBoard')}
       >
-        <BuildPlansContent catalog={catalog} locale={locale} />
+        <BuildPlansContent />
         {catalog && catalog.entries.length > 0 ? (
           <Configurator catalog={catalog} locale={locale} />
         ) : (
           // The header and the sections above are fully server-rendered and
-          // still tell the story; only the part that needs live prices is
+          // still tell the story; only the part that needs the catalogue is
           // missing, so say that rather than replacing the whole page with an
           // error.
           <Alert severity="warning">{t('errors.CNC_WORKER_UNAVAILABLE')}</Alert>

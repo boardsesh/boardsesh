@@ -2,11 +2,11 @@
   "metadata": {
     "buildPlans": {
       "title": "家庭训练板建造图纸",
-      "description": "家庭攀岩墙 CNC 文件：按加工厂现有板材规格排布面板和钻孔位置。"
+      "description": "免费 CNC 文件，供你建造自己非商业使用的攀岩墙：面板和孔位已排布在加工厂使用的板材上。"
     },
     "orders": {
       "title": "你的建造图纸",
-      "description": "查看你购买的每份建造图纸包及其当前进度。"
+      "description": "查看你生成的每份建造图纸包及其当前进度。"
     },
     "order": {
       "title": "建造图纸 {{licenceId}}",
@@ -15,14 +15,14 @@
   },
   "hero": {
     "title": "为家庭训练板准备的建造图纸",
-    "subtitle": "交给 CNC 加工厂的 DXF 文件。按加工厂已有板材规格排布面板和钻孔位置。",
+    "subtitle": "免费的 DXF 文件，供你建造自己非商业使用的岩墙。面板和孔位已排布在 CNC 加工厂常备的板材上。",
     "firstBoard": "兼容 Kilter Homewall、Kilter Original (OG) 和 Tension Board 2，包括 Mirror 与 Spray 布局。",
     "included": {
       "heading": "你将获得",
       "dxf": "同时附有装配图，无需猜测即可对齐面板。",
       "pdf": "可打印的 A3 或 Tabloid 图纸，在切割任何板材前即可查看排布。",
       "bom": "订购材料前，先算清板材数量、面板尺寸及每个孔位。",
-      "licence": "以你的名字颁发，适用于一面墙，可长期保留。",
+      "licence": "许可署你的姓名，仅适用于一面自用、非商业用途的岩墙。",
       "dxfLabel": "每块面板一份 DXF",
       "pdfLabel": "核对图纸",
       "bomLabel": "切割清单",
@@ -32,25 +32,25 @@
     "cta": "配置你的岩墙"
   },
   "tiers": {
-    "heading": "选择许可",
-    "intro": "一份许可适用一面墙。第二面墙需要第二份许可。",
+    "heading": "你的许可",
+    "intro": "免费图纸包仅供你本人非商业使用。一份许可适用一面墙；第二面墙需要第二份许可。",
     "personal": {
       "name": "个人",
-      "blurb": "为自己建一面墙，放在车库、棚屋或空房间。"
+      "blurb": "为自己建造一面非商业用途的岩墙，可以放在车库、棚屋或空闲房间。"
     },
     "commercial": {
-      "name": "商业单次建造",
-      "blurb": "为一个客户或一家岩馆建一面墙。许可上会注明设施。"
+      "name": "商业单次建造"
     },
     "contact": {
-      "heading": "要建不止一面墙？",
-      "body": "十次建造包和 OEM 条款需联系我们协商，无法直接结账。请告诉我们你要建什么，我们会提供报价。",
-      "cta": "发邮件给我们",
-      "subject": "建造图纸：多次建造许可"
+      "heading": "为客户或岩馆建造？",
+      "body": "免费图纸包仅适用于自己非商业使用的岩墙。如需商业建造或 OEM 使用，请联系我们另行商定许可。",
+      "cta": "洽谈商业使用",
+      "subject": "Boardsesh CNC 合作"
     },
     "licenceLink": "阅读许可",
     "ordersLink": "你的建造图纸",
-    "perWall": "每面墙"
+    "perWall": "每面墙",
+    "free": "免费"
   },
   "configurator": {
     "heading": "配置你的岩墙",
@@ -201,7 +201,7 @@
     },
     "artwork": {
       "heading": "自定义文字与标志",
-      "help": "将你自己的文字铣刻在面板上，或上传标志。最多 {{count}} 项，购买前我们会逐一检查是否与孔位冲突。",
+      "help": "将你自己的文字铣刻在面板上，或上传标志。最多 {{count}} 项，生成前我们会逐一检查是否与孔位冲突。",
       "add": "添加标签",
       "remove": "移除",
       "itemLabel": "标签 {{number}}",
@@ -269,7 +269,7 @@
           "imageTooLarge": "图片太大，无法描摹，每边最多支持 4096 像素。",
           "unreadableImage": "无法打开图片，请重新导出为 PNG。",
           "rateLimited": "上传次数过多，请几分钟后重试。",
-          "unavailable": "暂时无法上传，未收取任何费用，请稍后重试。",
+          "unavailable": "暂时无法上传，请稍后重试。",
           "generic": "上传未完成，请重试。"
         }
       },
@@ -317,9 +317,7 @@
       "name": "许可持有人姓名",
       "email": "邮箱",
       "emailHelp": "图纸包完成后将发送到此邮箱。",
-      "siteName": "客户或岩馆名称",
-      "siteHelp": "本商业许可适用的唯一设施。",
-      "required": "购买前请填写。"
+      "required": "生成图纸包前请填写。"
     },
     "licence": {
       "accept": "我接受制造许可",
@@ -330,9 +328,9 @@
       "signedOut": "登录后我们会绘制你的岩墙。预览免费，无需填写银行卡。",
       "idle": "我们会排布每张板材，并提供带水印的图纸。修改后可再次预览。",
       "working": "正在绘制板材图纸，约需十五秒。",
-      "ready": "带水印的核对图纸。确认购买后即可获得供加工厂切割的 DXF 文件。",
+      "ready": "带水印的核对图纸。确认许可后即可免费生成供加工厂切割的 DXF 文件。",
       "stale": "生成图纸后你修改了岩墙。请更新预览查看新图纸。",
-      "failed": "预览生成失败。未收取任何费用，请重试。",
+      "failed": "预览生成失败，请重试。",
       "rateLimited": "本小时的免费预览次数已用完。已有预览可在你的建造图纸页查看，下个整点恢复。",
       "download": "下载预览",
       "downloading": "正在获取链接…",
@@ -369,18 +367,18 @@
     "previewUpdate": "更新预览",
     "previewing": "正在绘制预览…",
     "previewRetry": "重试",
-    "finalise": "确认并购买",
-    "finalising": "正在打开结账…",
-    "free": "预览免费，无需银行卡。",
+    "finalise": "生成免费图纸包",
+    "finalising": "正在将图纸包加入队列…",
+    "free": "图纸包供你本人非商业使用，免费且无需银行卡。",
     "signInTitle": "登录获取免费预览",
     "signInBody": "预览需要保存在账号中。登录后会直接返回你的配置。"
   },
   "errors": {
     "CNC_INVALID_CONFIG": "此组合无法加工。请修改上方配置，我们会重新检查。",
-    "CNC_WORKER_UNAVAILABLE": "图纸生成器暂未响应。未收取任何费用，请一分钟后重试。",
-    "CNC_CHECKOUT_UNAVAILABLE": "暂时无法付款。未收取任何费用，请稍后重试。",
-    "generic": "操作未完成，未收取任何费用。",
-    "RATE_LIMITED": "本小时预览次数过多。未收取任何费用，下个整点可继续。"
+    "CNC_WORKER_UNAVAILABLE": "图纸生成器暂未响应，请一分钟后重试。",
+    "CNC_CHECKOUT_UNAVAILABLE": "暂时无法将图纸包加入队列，请稍后重试。",
+    "generic": "操作未完成，请重试。",
+    "RATE_LIMITED": "本小时预览次数过多，请在每小时次数限制重置后重试。"
   },
   "status": {
     "pending_payment": "等待付款",
@@ -397,17 +395,17 @@
   },
   "orders": {
     "heading": "你的建造图纸",
-    "intro": "你预览或购买的所有岩墙，最新的在前。无论此页面如何变化，许可始终归你所有。",
+    "intro": "你预览或生成的所有岩墙，最新的在前。无论此页面如何变化，许可始终归你所有。",
     "configureAnother": "配置另一面墙",
     "empty": "这里还没有岩墙。",
-    "emptyBody": "配置一面墙，我们会免费绘制每张板材的预览。确认购买前不会收费。",
+    "emptyBody": "配置你自己非商业使用的岩墙，我们会免费绘制每张板材的预览。完整图纸包也免费。",
     "emptyCta": "配置岩墙",
     "previewTier": "预览",
     "orderedOn": "订购于 {{date}}",
     "previewedOn": "预览于 {{date}}",
     "view": "打开",
     "viewOne": "打开建造图纸 {{licenceId}}",
-    "finalise": "确认购买",
+    "finalise": "生成图纸包",
     "loadError": "无法加载你的建造图纸，请重新加载页面。"
   },
   "order": {
@@ -425,7 +423,7 @@
     "timeline": {
       "heading": "当前进度",
       "preview": "免费预览已绘制",
-      "finalised": "许可已署名并付款",
+      "finalised": "许可已确认",
       "building": "正在生成加工文件",
       "ready": "可以下载"
     },
@@ -433,12 +431,12 @@
     "previewWaiting": "预览约需十五秒，此页面会自动更新。",
     "preview": {
       "heading": "你的免费预览",
-      "note": "带水印的核对图纸。确认购买后即可获得供加工厂切割的 DXF 文件。",
+      "note": "带水印的核对图纸。确认许可后即可免费生成供加工厂切割的 DXF 文件。",
       "drawing": "正在绘制板材图纸，完成后会立即显示在这里。",
       "panel": "面板 {{number}}",
       "assembly": "装配"
     },
-    "finalise": "确认并购买",
+    "finalise": "生成免费图纸包",
     "downloadPreview": "下载预览",
     "download": "下载图纸包",
     "downloading": "正在获取链接…",
@@ -447,7 +445,7 @@
     "checkoutCancelled": "结账已取消，未收取任何费用。",
     "previewFailed": {
       "heading": "此预览绘制失败",
-      "body": "未收取任何费用。请修改岩墙配置后重新预览，或联系我们检查。",
+      "body": "请修改岩墙配置后重新预览，或联系我们检查。",
       "contact": "发邮件给我们处理",
       "subject": "建造图纸 {{licenceId}} 预览绘制失败"
     },
@@ -458,7 +456,7 @@
     },
     "refunded": {
       "heading": "已退款",
-      "body": "此订单已退款，下载已关闭。准备好建造时可再次购买。"
+      "body": "此订单已退款，下载已关闭。你可以为自己非商业使用的岩墙生成新的免费图纸包。"
     },
     "notFound": {
       "heading": "没有这份建造图纸",
@@ -468,22 +466,24 @@
     "downloadCard": {
       "heading": "你的建造图纸包",
       "note": "每块面板一份 DXF，加上装配图、打印图纸和许可，打包为一个 ZIP 文件。"
-    }
+    },
+    "donationReminder": "这些文件免费供你本人用于非商业建造。如果它们对你有帮助，可以支持 Boardsesh。",
+    "donationLink": "愿意的话，可以捐赠"
   },
   "flow": {
     "heading": "使用流程",
-    "intro": "预览免费，确认购买前不收费。",
+    "intro": "预览和完整图纸包免费供你本人非商业使用。",
     "configure": {
       "title": "配置你的岩墙",
       "body": "选择尺寸、加工厂使用的板材、孔径，以及希望铣刻在面板上的内容。"
     },
     "preview": {
       "title": "获取免费预览",
-      "body": "我们会排布每张板材，并提供带水印的图纸。随时修改并重新预览。"
+      "body": "我们会排布每张板材，并提供带水印的图纸。你可以修改配置，在每小时次数限制内重新预览。"
     },
     "finalise": {
-      "title": "确认购买，开始建造",
-      "body": "填写许可姓名并付款后，可直接加工的 DXF 文件和打印图纸会存入你的账号。"
+      "title": "生成文件，开始建造",
+      "body": "填写个人许可姓名后，可直接加工的 DXF 文件和打印图纸会免费存入你的账号。"
     }
   }
 }

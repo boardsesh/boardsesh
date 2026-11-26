@@ -10,31 +10,20 @@ import Checkbox from '@mui/material/Checkbox';
 import FormControl from '@mui/material/FormControl';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import FormHelperText from '@mui/material/FormHelperText';
-import FormLabel from '@mui/material/FormLabel';
 import InputLabel from '@mui/material/InputLabel';
 import MenuItem from '@mui/material/MenuItem';
 import MuiLink from '@mui/material/Link';
-import Radio from '@mui/material/Radio';
-import RadioGroup from '@mui/material/RadioGroup';
 import Select from '@mui/material/Select';
 import Skeleton from '@mui/material/Skeleton';
 import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { KILTER_ORIGINAL_LAYOUT_ID } from '@boardsesh/board-constants';
-import type {
-  CncArtworkKind,
-  CncCatalog,
-  CncCatalogEntry,
-  CncLicenceTier,
-  CncOrder,
-  CncOrderStatus,
-} from '@boardsesh/shared-schema';
+import type { CncArtworkKind, CncCatalog, CncCatalogEntry, CncOrder, CncOrderStatus } from '@boardsesh/shared-schema';
 import {
   cncArtworkPlaced,
   cncBuildPlansPageViewed,
   cncConfiguratorChanged,
-  cncCheckoutStarted,
   cncPreviewRequested,
   type CncConfigProps,
   type CncConfiguratorStep,
@@ -68,13 +57,11 @@ import {
   catalogEntryKey,
   finaliseBlockers,
   findEntry,
-  formatPrice,
   fromOwnedDraft,
   supportsKicker,
   initialConfiguratorState,
   isPreviewStale,
   optionValueKey,
-  tierPrice,
   isArtworkLocallyValid,
   isArtworkReady,
   newArtworkItem,
@@ -93,8 +80,6 @@ import { useCncFinalise } from './use-cnc-finalise';
 import { useCncLayout } from './use-cnc-layout';
 import { useCncPreview } from './use-cnc-preview';
 import { useCncOrderPoll } from '../use-cnc-order-poll';
-
-const TIERS: readonly CncLicenceTier[] = ['personal', 'commercial_single'];
 
 /** Frozen empty list for a layout that has not landed yet. See the note in `artwork-step.tsx`. */
 const EMPTY_PANELS: readonly CncLayoutPanel[] = [];
@@ -119,7 +104,7 @@ const DRAFT_SAVE_DEBOUNCE_MS = 600;
 
 type ConfiguratorProps = {
   catalog: CncCatalog;
-  /** Resolved on the server, so prices format the same before and after hydration. */
+  /** Resolved on the server for preview dates and measurements. */
   locale: string;
 };
 
@@ -159,7 +144,7 @@ function OwnedConfigurator({
 }: ConfiguratorProps & { ownerId: string | null; authSessionId: string | null }) {
   const { t } = useTranslation('cnc');
   const { openAuthModal } = useAuthModal();
-  const { token, isAuthenticated } = useWsAuthToken();
+  const { token, isAuthenticated, isLoading: isAuthLoading } = useWsAuthToken();
   const { data: session } = useSession();
 
   const isMountedRef = useRef(true);
@@ -190,6 +175,8 @@ function OwnedConfigurator({
     includeHoles: isAuthenticated && hasArtwork,
     authToken: token,
     cacheScope: JSON.stringify([ownerId, authSessionId]),
+    authRequired: ownerId !== null,
+    authLoading: isAuthLoading,
   });
 
   const {
@@ -229,7 +216,6 @@ function OwnedConfigurator({
     errorKey: artworkErrorKey,
   } = useCncArtworkValidation(configInput, token);
 
-  const price = tierPrice(entry, state.tier);
   const blockers = finaliseBlockers(state);
   const { toggles: machiningToggles, choices: machiningChoices } = partitionByControl(
     visibleMachiningOptions(entry, state.includeKicker),
@@ -454,23 +440,12 @@ function OwnedConfigurator({
     const orderId = state.previewOrderId;
     if (!orderId || !canFinalise || isFinalising) return;
 
-    if (price) {
-      trackCncFunnelEvent(
-        cncCheckoutStarted({
-          config: analyticsConfig,
-          tier: state.tier,
-          amount_cents: price.amountCents,
-          currency: price.currency,
-        }),
-      );
-    }
-
     void finalise({
       orderId,
-      tier: state.tier,
+      tier: 'personal',
       licenseeName: state.licenseeName.trim(),
       licenseeEmail: state.licenseeEmail.trim(),
-      customerSiteName: state.tier === 'commercial_single' ? state.customerSiteName.trim() : null,
+      customerSiteName: null,
       acceptLicence: true,
     });
   };
@@ -491,8 +466,6 @@ function OwnedConfigurator({
               configurationLabel={entry.boardName === 'tension' ? tb2ConfigurationLabel(state.options, t) : null}
               isLoading={isLayoutLoading}
               hasError={layoutErrorKey !== null}
-              price={price ? formatPrice(price.amountCents, price.currency, locale) : null}
-              tier={state.tier}
               isAuthenticated={isAuthenticated}
               isRequesting={isRequestingPreview}
               isWorking={isPreviewWorking}
@@ -734,42 +707,12 @@ function OwnedConfigurator({
                   description={t('configurator.finalise.help')}
                 />
                 <Box className={styles.stepBody}>
-                  <FormControl component="fieldset" fullWidth>
-                    {/* A licence tier is a mutually exclusive choice, not a set of
-                        independent switches — a `RadioGroup` says that in the
-                        accessibility tree, where a checkbox row would let a
-                        screen reader user believe both tiers could be on at
-                        once. */}
-                    <FormLabel component="legend">{t('tiers.heading')}</FormLabel>
-                    <RadioGroup
-                      value={state.tier}
-                      onChange={(event) => {
-                        dispatch({ type: 'setTier', tier: event.target.value as CncLicenceTier });
-                        reportStep('tier');
-                      }}
-                    >
-                      {TIERS.map((tier) => {
-                        const tierAmount = tierPrice(entry, tier);
-                        return (
-                          <FormControlLabel
-                            key={tier}
-                            value={tier}
-                            control={<Radio />}
-                            label={
-                              <span>
-                                {tier === 'personal' ? t('tiers.personal.name') : t('tiers.commercial.name')}
-                                {tierAmount ? (
-                                  <Typography component="span" color="text.secondary">
-                                    {` · ${formatPrice(tierAmount.amountCents, tierAmount.currency, locale)}`}
-                                  </Typography>
-                                ) : null}
-                              </span>
-                            }
-                          />
-                        );
-                      })}
-                    </RadioGroup>
-                  </FormControl>
+                  <Typography variant="body2" component="p">
+                    {t('tiers.intro')}
+                  </Typography>
+                  <MuiLink href="mailto:partnerships@boardsesh.com" variant="body2">
+                    {t('tiers.contact.cta')}
+                  </MuiLink>
 
                   <FieldGrid columns="single">
                     <TextField
@@ -792,18 +735,6 @@ function OwnedConfigurator({
                       fullWidth
                       required
                     />
-                    {state.tier === 'commercial_single' && (
-                      <TextField
-                        label={t('configurator.licensee.siteName')}
-                        helperText={t('configurator.licensee.siteHelp')}
-                        value={state.customerSiteName}
-                        onChange={(event) => dispatch({ type: 'setCustomerSiteName', value: event.target.value })}
-                        onBlur={() => reportStep('licensee')}
-                        size="small"
-                        fullWidth
-                        required
-                      />
-                    )}
                   </FieldGrid>
 
                   <Box>
@@ -1063,8 +994,6 @@ function SummaryRail({
   configurationLabel,
   isLoading,
   hasError,
-  price,
-  tier,
   isAuthenticated,
   isRequesting,
   isWorking,
@@ -1081,9 +1010,6 @@ function SummaryRail({
   configurationLabel: string | null;
   isLoading: boolean;
   hasError: boolean;
-  /** Already formatted for the request's locale, or null when the tier has no price. */
-  price: string | null;
-  tier: CncLicenceTier;
   isAuthenticated: boolean;
   isRequesting: boolean;
   isWorking: boolean;
@@ -1222,9 +1148,9 @@ function SummaryRail({
 
       <Box className={styles.railAction}>
         <Typography variant="body2" component="p" className={styles.railPriceLabel}>
-          {tier === 'personal' ? t('tiers.personal.name') : t('tiers.commercial.name')}
+          {t('tiers.personal.name')}
         </Typography>
-        <PriceTag amount={price ?? '—'} note={t('tiers.perWall')} />
+        <PriceTag amount={t('tiers.free')} note={t('tiers.perWall')} />
 
         <Button
           variant="contained"

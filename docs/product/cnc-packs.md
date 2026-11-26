@@ -1,25 +1,25 @@
 # CNC build packs
 
-Boardsesh sells generated CNC manufacturing packs for climbing-wall panels: DXFs
-per panel, printable PDFs, a bill of materials and build notes, licensed per
-wall. The app stays free and open source; the packs are the paid thing.
+Boardsesh generates CNC manufacturing packs for climbing-wall panels for free:
+DXFs per panel, printable PDFs, a bill of materials and build notes, licensed
+per wall. Free personal licences cover your own non-commercial wall. Commercial use
+requires contacting partnerships@boardsesh.com; it is not available through the
+self-serve generator.
 
-**Buyers iterate for free and pay at the end.** Configuring a wall produces a
-watermarked, rasterised PREVIEW — pictures of the sheets, no DXF, no manifest,
-stamped NOT FOR MANUFACTURE — and only when the buyer likes what they see do
-they finalise it into a purchase. Nobody pays for a wall they have not looked
-at, and nobody has to pay to find out what the pack looks like.
+Configure and preview the wall, accept the manufacturing licence, then generate
+and download the full files. No payment, card, Stripe account configuration or
+donation is required. The ready-pack download card has one quiet link to
+`/support`; it does not open a prompt or interrupt generation or downloading.
 
 The generator itself lives in a private repo and runs as a separate worker
-service. This document covers the Boardsesh half: previews, orders, payment,
-the job API the generator pulls work from, and the download routes.
+service. This document covers previews, free pack orders, generation and downloads,
+plus historical paid-order webhook compatibility.
 
 ## Supported layouts and OG drilling
 
 The catalogue offers Kilter Homewall (layout `8`) and Kilter Original (layout
 `1`). Original sizes are `14` (7×10), `8` (8×12), `10` (12×12), and `28`
-(16×12). Both Original sets, `1` and `20`, are required at every size. Pricing
-uses the existing personal and commercial single-build tiers.
+(16×12). Both Original sets, `1` and `20`, are required at every size. The public catalogue offers the free personal non-commercial licence only.
 
 Original orders store `options.includeKicker`: false for 7×10, true by default
 and optional for the other three sizes. Original main-wall and kicker holds
@@ -52,13 +52,13 @@ are no new public routes or database migrations.
 
 In production, `CNC_TRANSPORT=pgboss` uses two dedicated worker roles on the
 CNC VM: `cnc-interactive` for layout/artwork and `cnc-generation` for previews
-and paid packs. Each has its own queue and one active job, so rendering a pack
+and full packs. Each has its own queue and one active job, so rendering a pack
 cannot block the configurator. Six database connections are reserved in total.
 The VM makes outbound verified-TLS connections to the existing primary and R2;
 it has no public listener, tunnel, public DNS name or browser SSO dependency.
 
 The order remains the source of truth for configuration, payment, licence and
-published artifacts. Preview creation, paid webhook handling and regeneration
+published artifacts. Preview creation, free finalisation, historical paid webhook handling and regeneration
 enqueue pg-boss work in the same transaction as their order change. A generation
 is bound to its run ID; publication checks the current attempt fence, generation,
 status and claim token again. Refunds and superseded attempts cannot publish.
@@ -80,7 +80,7 @@ on SIGTERM and drains for 600 seconds; container and host shutdown budgets excee
 that allowance. Emails and analytics remain backend-owned with leased retries.
 
 One row in `cnc_orders` exists per previewed configuration, and that same row
-becomes the licence when the buyer purchases it. Its visible states remain:
+becomes the licence when its owner finalises it. Its visible states remain:
 
 | From | Event | To |
 | --- | --- | --- |
@@ -88,7 +88,7 @@ becomes the licence when the buyer purchases it. Its visible states remain:
 | `preview_queued` / `preview_generating` (stale lease) | worker claim | `preview_generating` |
 | `preview_generating` | complete | `preview_ready` |
 | `preview_generating` | fail | `preview_queued`, or `preview_failed` once the attempt budget is spent |
-| `preview_ready` | `finaliseCncOrder` | `pending_payment` |
+| `preview_ready` | `finaliseCncOrder` (`finaliseFree`) | `queued` |
 | `pending_payment` | Stripe would not open a session | `preview_ready` (the preview is still good) |
 | `pending_payment` | `checkout.session.completed` (paid), or `checkout.session.async_payment_succeeded` | `queued` |
 | `pending_payment` | `checkout.session.expired`, or `checkout.session.async_payment_failed` | `cancelled` |
@@ -104,18 +104,17 @@ Every real transition is a conditional `UPDATE ... WHERE id = $id AND status IN
 caller no-ops. That is what makes a Stripe redelivery and a late worker report
 harmless.
 
-Three invariants the table enforces on its own:
+The current creation path uses `finaliseFree`: only `preview_ready` can become
+`queued`, with the accepted licence, `amountCents: 0` and `queuedAt` written in
+the same conditional transition. pg-boss run creation shares its transaction;
+a failed enqueue leaves the preview ready to retry. Preview attempts and lease
+fields reset, giving the full pack its own three attempts. No `paidAt`, fake
+Stripe session, purchase email or purchase analytics event is created.
 
-- **The only way into `pending_payment` is `finalise`, and the only status it
-  opens from is `preview_ready`.** Nothing can be bought that was not previewed
-  first.
-- **`pending_payment -> queued` happens in exactly one place: the paid
-  webhook.** Nothing else queues a pack, which is what stops an unpaid order
-  reaching the generator — even though its own preview went through the same
-  worker minutes earlier.
-- **Nothing moves an existing row back into a preview queue.** Re-previewing
-  writes a NEW row (below), so the images already handed to a buyer never start
-  describing a different wall.
+The historical `finalise`, `finaliseFailed`, checkout and refund events remain
+for older orders and webhook redeliveries. New requests never enter
+`pending_payment`. Existing immutable previews and owner-only downloads keep
+their protections.
 
 ### Re-previewing
 
@@ -148,75 +147,19 @@ guard that never reaches Postgres.
 
 The attempt budget is per DELIVERABLE, not per row: `finalise` resets `attempts`
 and clears the lease, so a wall whose preview needed two goes still reaches the
-paid queue with all three attempts.
+full-pack queue with all three attempts.
 
-## Stripe
+## Historical Stripe orders
+
+New CNC packs do not use Stripe Checkout. Existing paid orders retain their
+charged amounts, payment timestamps, refund behavior and audit records.
+Stripe credentials and webhook settings below apply only to reconciliation of
+historical sessions and refunds. Do not create new CNC prices or activate a live
+checkout as a prerequisite for free generation.
 
 Out-of-order refunds resolve ownership through canonical PaymentIntent metadata.
 That lookup has a 10-second timeout and no SDK retries; a lookup outage leaves the
 webhook unprocessed so Stripe can redeliver it.
-
-
-Hosted Stripe Checkout, AUD, Stripe Tax for GST. Two tiers in v1: Personal
-(one wall, own non-commercial use) and Commercial single-build (one identified
-customer installation, which is why those orders carry a site name).
-
-### Stripe dashboard prerequisites
-
-Set up before the first live sale, none of it in code:
-
-- **Terms of Service URL** — Settings → Public details. `consent_collection`
-  requires one to be set or Checkout Sessions fail to create.
-- **Stripe Tax enabled, with an AU GST registration.** `automatic_tax.enabled`
-  on the session assumes Tax is switched on and the registration exists; it
-  does not enable either for you.
-- **The two AUD prices** — one per tier, named by the env vars below. Prices
-  live in Stripe, never in the repo.
-- **The webhook endpoint, with all five events** — see the table below. Fewer
-  than five is a silent gap: a missing `async_payment_failed`, say, leaves a
-  declined delayed-payment order in `pending_payment` forever, with nothing to
-  cancel it.
-- **Payment methods** — instant methods (card, Apple Pay/Google Pay, etc.) are
-  always safe to enable. Delayed-payment methods are safe too now that the
-  webhook handles their async events; see the note under the events table
-  below.
-
-### Checkout
-
-`Mutation.finaliseCncOrder` takes a `preview_ready` order the caller owns, writes
-the tier, the licensee and the licence acceptance onto it, moves it to
-`pending_payment`, and then opens the session. That order matters — the webhook
-finds the row by `metadata.orderId`, so the row has to exist before a payment
-can complete, and here it has existed since the buyer asked for a preview.
-
-**The configuration is not re-submitted.** `FinaliseCncOrderInput` carries an
-`orderId` and the licence details, nothing else: the row already holds the wall
-the buyer approved in the preview they are looking at, and taking it again would
-be a way to pay for one wall and receive another. The price comes from the
-catalogue entry for the ORDER's own tuple, so a wall retired between preview and
-finalise is refused rather than sold at last week's number.
-
-If Stripe will not open a session the order goes back to `preview_ready`, not to
-`cancelled`: the preview is still perfectly good, and making a buyer regenerate
-one because of our outage would cost them a slot in the hourly budget as well as
-the wait. `sendCncOrderStuckAdminEmail` still pages an operator when that revert
-ALSO fails, because a row stranded in `pending_payment` has no
-`checkout.session.expired` coming to retire it.
-
-The session carries the order back three ways, deliberately redundantly:
-
-- `metadata.orderId` — what the webhook looks the row up by.
-- `metadata.licenceId` — cross-checked against the row, so a session pointing at
-  the wrong order is ignored rather than queueing somebody else's pack.
-- `client_reference_id` — the licence id again, for the Stripe dashboard, which
-  is where support actually looks.
-
-The same metadata is copied onto the PaymentIntent, because a refund arrives as
-a charge with no session in sight.
-
-Sessions expire 31 minutes out. Stripe's floor is 30 minutes measured against
-its own clock when the request lands, so the extra minute is latency cushion,
-not a product decision.
 
 ### Webhook
 
@@ -432,9 +375,9 @@ polling at once get different rows or nothing. The claim also runs the reaper
 first (see below), so **there is no scheduler job** — the worker's own poll is
 what fails abandoned work.
 
-**Paid packs are handed out before free previews**, then oldest first within
-each. A buyer who has paid is waiting; a buyer previewing is still deciding, and
-a burst of previews must never leave a purchase sitting behind them. It is a
+**Full packs are handed out before previews**, then oldest first within each.
+A builder who has finalised is waiting for manufacturing files, while someone
+previewing is still deciding. A burst of previews must not block full packs. It is a
 sort key on the one scan rather than two queries, because a second pass would
 need a second lock and could hand a worker nothing while a row sat free between
 them.
@@ -915,13 +858,11 @@ Backend, all fail-closed when unset:
 
 | Var | Without it |
 | --- | --- |
-| `STRIPE_SECRET_KEY` | Checkout refuses to take an order. |
+| `STRIPE_SECRET_KEY` | Free generation is unaffected. Historical refund metadata lookup needs it. |
 | `STRIPE_WEBHOOK_SECRET` | The webhook route 404s. |
-| `STRIPE_PRICE_CNC_PERSONAL` | The personal tier cannot be sold. |
-| `STRIPE_PRICE_CNC_COMMERCIAL` | The commercial tier cannot be sold. |
+| `STRIPE_PRICE_CNC_PERSONAL` | Unused by free generation; retained for historical checkout tooling. |
+| `STRIPE_PRICE_CNC_COMMERCIAL` | Unused by free generation; retained for historical checkout tooling. |
 | `CNC_TRANSPORT` | Set `pgboss` for the outbound-only deployment; unset retains legacy HTTP compatibility. |
-| `CNC_RELEASE_MODE` | Set `beta` for the restricted sandbox launch. Missing/unknown mode in pg-boss refuses new private computations, uploads, previews and checkout. `public` is selected only after actual GST confirmation and the live checkout cutover. |
-| `CNC_BETA_USER_IDS` | Comma-separated exact account IDs authorized for beta. Empty or malformed lists deny access. Beta checkout requires a test/sandbox Stripe secret or restricted key. Existing owner downloads remain available. |
 | `CNC_GENERATOR_SHA` | In pg-boss mode, requests refuse without the reviewed 40-character generator SHA. Must match the image. |
 | `CNC_WORKER_URL` | Legacy HTTP transport only; leave unset in pg-boss production. |
 | `CNC_WORKER_SECRET` | Legacy HTTP transport only; leave unset in pg-boss production. |
@@ -933,37 +874,41 @@ Object storage: packs are written to and served from the **private** bucket
 Without it the claim route and the download route both answer 503; there is
 nowhere to put a pack and nowhere to read one from.
 
-Prices live in Stripe. The catalogue's `priceCents` is display copy of them, and
-a price change is a dashboard action rather than a deploy.
+The catalogue publishes only the personal non-commercial tier, at zero cost. Free finalisation records
+zero explicitly; historical paid orders keep the original charged amount.
 
 Emails reuse the existing SMTP config (`SMTP_USER`, `SMTP_PASSWORD`,
 `EMAIL_FROM`) and `ADMIN_EMAIL` for the pack-failed notification. Every send is
-best-effort: the order is already paid and durable by the time one runs.
+best-effort: the order is already durable by the time one runs.
 
 ## The web surface
 
-The shop routes under `/build-plans` are server-gated by `cnc-packs`; disabled
-visitors receive `notFound()`. The licence alone has a public-contract exception:
-exact web `CNC_RELEASE_MODE=public` serves it without identity lookup or PostHog,
-including while the storefront flag is off. Missing, unknown and `beta` values
-retain the licence's existing flag gate and DRAFT copy. Other shop and order
-routes keep their existing access gates.
+The generator has one release switch: the PostHog `cnc-packs` flag. Web
+storefront evaluates it before rendering. Existing owned order history and
+status routes remain available; only their new-generation links follow the flag.
+Backend uploads, previews, layout/artwork computations and finalisation evaluate the same flag
+before new generator work, including anonymous hole-free layout requests.
+Authenticated requests use `users.id` on both sides; anonymous requests use
+`anonymous-web-visitor`. Backend decisions are cached for at most 60 seconds
+with a 1.5-second evaluation deadline; missing or unusable answers fail closed.
+Existing owned order pages, results/downloads and queued jobs remain available
+when the flag is switched off. Authorized admins can also rebuild already licensed orders
+for recovery; this does not create a new public licence or configuration.
 
-Explicitly setting web `CNC_RELEASE_MODE=public` removes only the licence's
-editorial DRAFT, pending-review and placeholder wording. The terms, jurisdiction,
-prices and informational/no-legal-advice footer remain unchanged. All build-plan
-routes retain `noindex, follow`, and the sitemap remains empty through the initial
-public rollout. This preparation can deploy while web mode is absent without
-changing the test-user beta.
+`/build-plans/licence` always serves the final non-commercial terms without an
+account or a flag lookup, so existing licensees can still read their contract
+while new generation is disabled. There is one licence wording path and no
+release-mode environment setting. All build-plan routes retain `noindex,
+follow`, and the sitemap remains empty through the initial public rollout.
 
 | Route | What it is |
 | --- | --- |
 | `/build-plans` | The hero and the configurator. Server-renders the catalogue, then hands it to a client component for the choosing. |
-| `/build-plans/licence` | Manufacturing terms; independently available only in exact web public mode. |
+| `/build-plans/licence` | Final manufacturing terms; always available independently of the generator flag. |
 | `/build-plans/orders` | The buyer's own orders, newest first. |
 | `/build-plans/orders/[licenceId]` | One order: status timeline, the configuration it was bought under, and the download button once it is ready. |
 
-`FEATURE_FLAG_OVERRIDES=cnc-packs` is how you reach any of them locally.
+`FEATURE_FLAG_OVERRIDES=cnc-packs` enables the storefront and backend locally. The licence needs no override.
 
 ### The configurator
 
@@ -988,14 +933,14 @@ order would reject.
 Every change is written to IndexedDB under `cnc:configurator-draft`, debounced
 by 600 ms, and read back once before the first save can run.
 
-This exists for exactly one flow: an anonymous buyer configures a wall, presses
-Buy, and is sent through OAuth. That leaves the page entirely, so without the
-draft they come back to the defaults and have to configure it again — at the
-exact moment they had decided to pay. The restore is also why the sign-in
+This keeps a wall configuration through sign-in. An anonymous builder configures
+a wall, asks for a preview, and is sent through OAuth. That leaves the page
+entirely, so without the draft they would return to the defaults and have to
+configure it again. The restore is also why the sign-in
 callback URL is `/build-plans` rather than wherever the modal was opened from.
 
-The draft is cleared twice: once when checkout succeeds (the wall has been
-bought, so there is nothing left to restore) and once on sign-out, because it
+The draft is cleared twice: once when the free pack is finalised (the order now
+carries the wall and licence details) and once on sign-out, because it
 carries the licensee name and email and the next person on a shared machine has
 no business seeing them.
 
@@ -1041,85 +986,37 @@ is a write cost paid for a guess.
 
 ## Launch
 
-Current scope remains the two-account **test-user beta**, pending actual GST
-registration ([issue 7518](https://github.com/boardsesh/boardsesh/issues/7518)).
-The owner authorized preparing the public release now and launching after GST
-confirmation. Owner licence/printed-plan approval was recorded on 2026-11-14
-(the deployment conversation's “I approve now” reply); it does not assert an
-independent lawyer review or prove that tax registration is complete. Do not
-repeat that approval request. The remaining external launch condition is actual
-GST confirmation, followed by the prepared operational cutover below.
+PostHog `cnc-packs` is the sole rollout control for the storefront and new
+generation. Use its existing account targeting for a restricted rollout, or
+turn it on for everyone when ready. No additional CNC release environment
+variables or account allowlist are required. Owner licence/printed-plan approval
+was recorded on 2026-11-14; do not repeat that approval request. Free generation
+has no live-Checkout or CNC-price cutover, and the previous GST-dependent sales
+launch plan is superseded.
 
-### Prepare while GST is pending
+Before a later public release:
 
-1. Stage and verify the live AUD tax-inclusive Personal (14900 cents) and
-   Commercial single-build (75000 cents) prices, and the owned webhook at
-   `https://ws.boardsesh.com/api/cnc/stripe/webhook`. Require all five events:
-   `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
-   `checkout.session.async_payment_failed`, `checkout.session.expired` and
-   `charge.refunded`. Store the new signing secret in the Homelab vault without
-   printing it. The staging helper leaves the live webhook **disabled**; preparation
-   neither enables it nor activates live credentials in production.
-2. Keep backend `CNC_RELEASE_MODE=beta`, its sandbox key/prices/webhook secret,
-   the exact two `CNC_BETA_USER_IDS`, and their PostHog targeting unchanged.
-   Keep web mode missing or `beta`: the licence remains DRAFT, every build-plan
-   route stays noindex, and anonymous/other accounts remain excluded.
-3. Verify the existing pinned pg-boss workers, build receipts, restricted roles,
-   private R2 uploads, owner-only complete downloads and monitoring. Preserve
-   `FINGERPRINT_SECRET` and `CNC_DOWNLOAD_TOKEN_SECRET`. No VM recreation or legacy
-   HTTP worker URL/secret is needed. The currently deployed generator source
-   `6c6a11d7c6dc6ba42c4ab69d06a2344a29366586` still emits unconditional DRAFT text
-   in full-pack `LICENCE.txt` (`packaging/licence.py`) and `README_CNC.txt`
-   (`packaging/templates/README_CNC.txt.j2`). Prepare a separately reviewed,
-   immutable publication-ready renderer image with those editorial notices
-   removed and substantive clauses unchanged; verify a complete full pack.
-   Prepare its future pin change without activating it before GST confirmation.
-   Retain today's beta pin now. Preview `NOT FOR MANUFACTURE` remains required.
-4. Record live Stripe Tax/registration status and the required Checkout
-   Terms-of-Service URL, `https://www.boardsesh.com/build-plans/licence`.
-   `automatic_tax.enabled` and `consent_collection` do not configure those
-   account settings. Do not create a GST registration on an assumption or make
-   real verification charges. A sandbox Tax success is not live readiness.
-
-### Cut over only after actual GST confirmation
-
-1. Confirm actual GST registration, the live Stripe preflight and the reviewed
-   publication-ready full-pack release. Turn the storefront flag off and set
-   backend `CNC_RELEASE_MODE=disabled`; redeploy its current image. Reconcile all
-   pending sandbox Checkout sessions and asynchronous payments before replacing
-   the single active Stripe key/signing secret: wait for settlement or explicitly
-   expire unpaid sandbox sessions and verify their final state. Preserve orders,
-   artifacts and the sandbox configuration for rollback; do not treat test orders
-   as live purchases. With new creation disabled, pause both consumers, promote
-   the reviewed publication-ready image/app/generator pins and matching backend
-   `CNC_GENERATOR_SHA` together, then verify the paused release before resuming.
-   Use the homelab's typed-boolean pause/promotion procedure.
-2. While the backend stays disabled, stage matching live `STRIPE_SECRET_KEY`,
-   `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_CNC_PERSONAL` and
-   `STRIPE_PRICE_CNC_COMMERCIAL`. Redeploy the current backend image and verify
-   it has loaded these bindings while release mode remains disabled. Verify
-   identities, AUD 14900/75000-cent amounts, inclusive-tax behavior and GST
-   readiness. Retain `CNC_TRANSPORT=pgboss`, the
-   reviewed publication-ready generator pin and download secret. The stored beta
-   allowlist can remain; public mode ignores it.
-3. Set **web** `CNC_RELEASE_MODE=public` and deploy its current image. Verify the
-   anonymous Terms URL returns 200 with approved wording while the storefront flag
-   remains off and backend disabled. Confirm the live Checkout Terms-of-Service
-   URL is `https://www.boardsesh.com/build-plans/licence`. Substantive clauses,
-   amounts, jurisdiction and noindex must remain unchanged.
-4. Enable the owned staged **live** webhook, then read back its enabled state,
-   exact URL, API version, matching signing-secret receipt and all five events
-   listed above. Verify delivery readiness before changing backend mode. The
-   preparation helper intentionally does not perform this activation. Avoid real
-   verification charges.
-5. Only then set backend `CNC_RELEASE_MODE=public` and redeploy; verify health.
-   Widen `cnc-packs` deliberately and remove only a conflicting CNC entry from
-   production `FEATURE_FLAG_OVERRIDES`, preserving unrelated overrides. Wait for
-   the web's 60-second cache; verify public configuration/preview, live catalogue,
-   owned downloads and monitoring. Keep noindex/empty sitemap through the initial
-   rollout. For an incident, close the storefront and disable backend release
-   mode, then follow the homelab durable-pause/rollback runbook. Leave the public
-   Terms URL available; preserve secrets, orders and schema.
+1. Verify a complete free personal non-commercial pack with
+   the pinned pg-boss workers, private R2 uploads, owner-only downloads and
+   monitoring. Preserve `FINGERPRINT_SECRET`, `CNC_DOWNLOAD_TOKEN_SECRET`, stored
+   historical orders and the webhook configuration required to reconcile them.
+2. Confirm the private generator's full-pack `LICENCE.txt` and `README_CNC.txt`
+   match the approved free terms. The earlier generator pin
+   `6c6a11d7c6dc6ba42c4ab69d06a2344a29366586` emitted unconditional DRAFT wording;
+   prepare and independently review any required generator update, then verify
+   the complete output. Preview `NOT FOR MANUFACTURE` remains required.
+3. Deploy web and backend changes while retaining the existing PostHog
+   targeting. Verify personal packs generate with no Stripe secret, no card
+   entry and no donation.
+   Confirm commercial API requests are rejected and point to
+   partnerships@boardsesh.com. Existing historical paid orders and refunds must remain intact.
+4. For the separate launch, widen PostHog `cnc-packs` to everyone. The final
+   licence wording is already served. Keep `noindex` and the empty sitemap during
+   the initial rollout. No live verification charge is required.
+5. For an incident, switch off `cnc-packs` to close the storefront and block
+   new backend creation, then use the homelab durable-pause/rollback runbook.
+   Preserve orders, artifacts, secrets and schema; the final licence remains
+   available independently.
 
 Once the public flag has been stable at 100%, a separate PR can retire the gate
 under `docs/operations/feature-flags.md`. That later work removes `requireCncPacksFlag()`
@@ -1137,8 +1034,7 @@ likely to be wanted:
 - **Pruning old previews.** Every preview leaves a zip and a handful of PNGs in
   the private bucket, and a buyer who never finalises leaves them forever. The
   four-an-hour ceiling bounds the rate, not the total. The shape is a sweep over
-  `preview_generated_at` older than 30 days on orders that never reached
-  `pending_payment`: delete the objects, null the columns, leave the row (it is
+  `preview_generated_at` older than 30 days on orders that never received an accepted licence: delete the objects, null the columns, leave the row (it is
   the record that the licence id was issued). Nothing about the read paths needs
   to change — `hasPreview` and `previewImages` already key off the columns.
 - **Art asset orphan sweep.** An upload that never reached checkout stays in the
@@ -1150,61 +1046,24 @@ likely to be wanted:
   v2, so `png` is absent from `CncArtworkRules.allowedKinds` and an order naming
   a PNG asset is refused with `CNC_INVALID_CONFIG`. Adding it is a generator
   change plus one entry in that list.
-- **10-build pack credits.** Today the 10-build tier is a `mailto:` on the
-  pricing page. Doing it properly means a credit balance that is not an order
-  row — one payment, ten licences drawn down over months — which is a second
-  table and a second state machine, not a third tier in `catalog.ts`.
-- **OEM licensing.** Also `mailto:` today, and probably always negotiated rather
-  than self-serve.
+- **Bulk and OEM terms.** The self-serve licences still cover one identified
+  wall. Requests for different licence terms remain a conversation; they do not
+  put a payment requirement on the free generator.
 
 ## Local end-to-end
 
-```
-stripe listen --forward-to localhost:8080/api/cnc/stripe/webhook
-```
+No Stripe setup or `CNC_CHECKOUT_BYPASS` is needed. That obsolete bypass has been
+removed; local and production finalisation use the same free path.
 
-Use the `whsec_` it prints as `STRIPE_WEBHOOK_SECRET`, set the test secret key
-and the two test price ids, and pay with card `4242 4242 4242 4242`.
+1. `createCncPreview` returns `preview_queued`.
+2. The worker completes the watermarked `preview` job into `preview_ready`.
+3. Check the preview, then accept the personal non-commercial licence.
+4. `finaliseCncOrder` queues the full pack at zero cost and returns its order URL.
+5. The worker completes the `full` job into `ready`; an owner download grant
+   serves the complete pack without a donation.
 
-### Local testing without Stripe
-
-`CNC_CHECKOUT_BYPASS=1` skips the payment leg entirely. **The bypass applies at
-FINALISE, not at preview** — a preview never touches Stripe, so it needs nothing
-skipped and runs identically with the flag on or off. `finaliseCncOrder` moves
-the previewed order to `pending_payment` as usual, then queues it itself with
-the catalogue tier price and a `bypass-<licenceId>` session id, and returns the
-order page (`/build-plans/orders/<licenceId>?checkout=success`) instead of a
-Stripe URL. Everything after that — the worker claim, generation, the pack in
-the private bucket, the download grant — is the real path. The order-received
-email and the `Build Plans Pack Purchased` analytics event are **not** sent: a
-fake sale must not reach a real inbox or a real funnel.
-
-It refuses to be on unless all four hold, and they are checked on every call
-(`services/cnc/checkout-bypass.ts`):
-
-- `CNC_CHECKOUT_BYPASS` is exactly `1`,
-- `NODE_ENV` is not `production`,
-- `RAILWAY_ENVIRONMENT` is unset — every deployed service has one, and Railway
-  prod leaves `NODE_ENV` unset, so the previous condition alone would not catch
-  it,
-- `STRIPE_SECRET_KEY` is unset. A stack that can charge a card never fakes a
-  payment, which is what keeps the bypass and real money mutually exclusive
-  rather than merely unlikely.
-
-The backend logs one loud warning at boot when it is on. Use it for the
-generator, the worker loop and the download; use `stripe listen` above for
-anything about the payment itself.
-
-The whole local loop with the bypass on, no Stripe anywhere:
-
-1. `createCncPreview` → the order comes back `preview_queued`.
-2. The worker claims it as a `preview` job and completes it → `preview_ready`,
-   `previewImages` populated.
-3. `createCncDownloadGrant(licenceId, PREVIEW)` or the image URLs on the order
-   → the watermarked sheets.
-4. `finaliseCncOrder` → straight to `queued`, no payment.
-5. The worker claims it as a `full` job → `ready`, and
-   `createCncDownloadGrant(licenceId)` serves the real pack.
+For historical webhook work only, use Stripe's sandbox listener and test events;
+do not use new free orders as payment or refund fixtures.
 
 ## Tension Board 2
 

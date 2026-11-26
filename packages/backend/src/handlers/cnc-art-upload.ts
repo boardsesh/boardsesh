@@ -257,7 +257,7 @@ export async function handleCncArtUpload(req: IncomingMessage, res: ServerRespon
     return;
   }
   const userId = authResult.userId;
-  if (!isCncCreationAllowed(userId)) {
+  if (!(await isCncCreationAllowed(userId))) {
     sendJson(res, 403, { error: 'Build packs are unavailable for this account.' });
     return;
   }

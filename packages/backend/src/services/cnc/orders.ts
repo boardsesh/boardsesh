@@ -436,7 +436,7 @@ export async function transitionOrder(
   patch: CncOrderPatch = {},
   options: TransitionOrderOptions = {},
 ): Promise<CncOrder | null> {
-  const queuesGeneration = event === 'checkoutCompleted' || event === 'regenerate';
+  const queuesGeneration = event === 'finaliseFree' || event === 'checkoutCompleted' || event === 'regenerate';
   if (usesCncJobQueue() && queuesGeneration && !options.executor) {
     return db.transaction((transaction) =>
       transitionOrder(orderId, event, patch, { ...options, executor: transaction }),

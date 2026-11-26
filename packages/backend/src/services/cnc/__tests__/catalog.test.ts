@@ -39,7 +39,7 @@ describe('CNC catalogue', () => {
   });
 
   it('has a version string orders can be pinned to', () => {
-    expect(CNC_CATALOG_VERSION).toBe('2026-09-07.5');
+    expect(CNC_CATALOG_VERSION).toBe('2026-11-26.1');
   });
 
   it('takes its default set ids from board-constants rather than a second hardcoded list', () => {
@@ -60,17 +60,12 @@ describe('CNC catalogue', () => {
     expect(entryFor(25).kickerOptional).toBe(true);
   });
 
-  it('prices both tiers in AUD against their Stripe price env vars', () => {
-    const tiers = entryFor(25).tiers;
-    expect(tiers).toEqual([
-      { tier: 'personal', priceCents: 14900, currency: 'AUD', stripePriceEnv: 'STRIPE_PRICE_CNC_PERSONAL' },
-      {
-        tier: 'commercial_single',
-        priceCents: 75000,
-        currency: 'AUD',
-        stripePriceEnv: 'STRIPE_PRICE_CNC_COMMERCIAL',
-      },
-    ]);
+  it('offers only a free personal licence for every supported wall', () => {
+    for (const entry of CNC_CATALOG) {
+      expect(entry.tiers).toEqual([
+        { tier: 'personal', priceCents: 0, currency: 'AUD', stripePriceEnv: 'STRIPE_PRICE_CNC_PERSONAL' },
+      ]);
+    }
   });
 });
 

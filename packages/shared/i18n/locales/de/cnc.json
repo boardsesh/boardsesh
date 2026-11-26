@@ -2,11 +2,11 @@
   "metadata": {
     "buildPlans": {
       "title": "Baupläne für ein Board zu Hause",
-      "description": "CNC-Dateien für deine Kletterwand zu Hause: Platten und Bohrpositionen, passend zum Plattenmaterial deiner Werkstatt."
+      "description": "Kostenlose CNC-Dateien für deine eigene nicht gewerblich genutzte Kletterwand: Platten und Bohrungen auf den Bögen deiner Werkstatt angeordnet."
     },
     "orders": {
       "title": "Deine Baupläne",
-      "description": "Jedes Bau-Pack, das du gekauft hast, und wie weit es ist."
+      "description": "Jedes Bau-Pack, das du erstellt hast, und wie weit es ist."
     },
     "order": {
       "title": "Bauplan {{licenceId}}",
@@ -15,14 +15,14 @@
   },
   "hero": {
     "title": "Baupläne für dein Board zu Hause",
-    "subtitle": "DXF-Dateien für deine CNC-Werkstatt. Platten und Bohrpositionen, passend zum vorhandenen Plattenmaterial.",
+    "subtitle": "Kostenlose DXF-Dateien für deine eigene nicht gewerblich genutzte Wand. Platten und Bohrungen auf den Bögen, die deine CNC-Werkstatt bereits verwendet.",
     "firstBoard": "Kompatibel mit Kilter Homewall, Kilter Original (OG) und Tension Board 2, einschließlich Mirror- und Spray-Layouts.",
     "included": {
       "heading": "Was du bekommst",
       "dxf": "Montagezeichnungen für die ganze Wand sind dabei, damit die Panels ohne Rätselraten zusammenpassen.",
       "pdf": "Druckbare Seiten in A3 oder Tabloid, das Layout steht fest, bevor die erste Platte geschnitten wird.",
       "bom": "Plattenzahl, Panelmaße und jede Bohrung, gezählt bevor du Material bestellst.",
-      "licence": "Auf deinen Namen, gültig für eine Wand, dauerhaft deine.",
+      "licence": "Auf deinen Namen für eine Wand, für deine eigene nicht gewerbliche Nutzung.",
       "dxfLabel": "Eine DXF-Datei pro Panel",
       "pdfLabel": "Kontrollbögen",
       "bomLabel": "Eine Zuschnittliste",
@@ -32,25 +32,25 @@
     "cta": "Wand konfigurieren"
   },
   "tiers": {
-    "heading": "Wähl eine Lizenz",
-    "intro": "Eine Lizenz, eine Wand. Für eine zweite Wand brauchst du eine zweite Lizenz.",
+    "heading": "Deine Lizenz",
+    "intro": "Kostenlose Packs sind für deine eigene nicht gewerbliche Nutzung. Eine Lizenz gilt für eine Wand; für eine zweite Wand brauchst du eine zweite Lizenz.",
     "personal": {
       "name": "Privat",
-      "blurb": "Bau eine Wand für dich selbst. Garage, Schuppen, freies Zimmer."
+      "blurb": "Baue eine Wand für deine eigene nicht gewerbliche Nutzung. Deine Garage, dein Schuppen, dein freies Zimmer."
     },
     "commercial": {
-      "name": "Gewerblich, ein Bau",
-      "blurb": "Bau eine Wand für eine*n Kund*in oder eine Halle. Die Anlage steht namentlich in der Lizenz."
+      "name": "Gewerblich, ein Bau"
     },
     "contact": {
-      "heading": "Baust du mehr als eine?",
-      "body": "Über Zehner-Packs und OEM-Konditionen redet man, dafür gibt es keinen Kaufen-Button. Sag uns, was du baust, und wir melden uns mit einem Preis.",
-      "cta": "Schreib uns",
-      "subject": "Baupläne: Lizenz für mehrere Bauten"
+      "heading": "Baust du für Kundschaft oder eine Halle?",
+      "body": "Kostenlose Packs gelten für deine eigene nicht gewerblich genutzte Wand. Für gewerbliche Bauten oder OEM-Nutzung vereinbaren wir eine gesonderte Lizenz mit dir.",
+      "cta": "Gewerbliche Nutzung besprechen",
+      "subject": "Boardsesh CNC-Partnerschaft"
     },
     "licenceLink": "Lizenz lesen",
     "ordersLink": "Deine Baupläne",
-    "perWall": "pro Wand"
+    "perWall": "pro Wand",
+    "free": "Kostenlos"
   },
   "configurator": {
     "heading": "Konfiguriere deine Wand",
@@ -201,7 +201,7 @@
     },
     "artwork": {
       "heading": "Eigener Text und Logos",
-      "help": "Fräse deine eigenen Worte in ein Panel oder lade ein Logo hoch. Bis zu {{count}} Elemente, und wir prüfen jedes gegen das Lochraster, bevor du kaufst.",
+      "help": "Fräse deine eigenen Worte in ein Panel oder lade ein Logo hoch. Bis zu {{count}} Elemente, und wir prüfen jedes gegen das Lochraster, bevor wir das Pack erstellen.",
       "add": "Beschriftung hinzufügen",
       "remove": "Entfernen",
       "itemLabel": "Beschriftung {{number}}",
@@ -269,7 +269,7 @@
           "imageTooLarge": "Dieses Bild ist zu groß zum Nachzeichnen. 4096 Pixel pro Seite sind das Maximum.",
           "unreadableImage": "Wir konnten dieses Bild nicht öffnen. Exportiere es noch einmal als PNG.",
           "rateLimited": "Das sind viele Uploads. Warte ein paar Minuten und versuch es noch einmal.",
-          "unavailable": "Uploads gehen gerade nicht. Es wurde nichts abgebucht. Versuch es gleich noch einmal.",
+          "unavailable": "Uploads gehen gerade nicht. Versuch es gleich noch einmal.",
           "generic": "Der Upload hat nicht geklappt. Versuch es noch einmal."
         }
       },
@@ -317,9 +317,7 @@
       "name": "Name auf der Lizenz",
       "email": "E-Mail",
       "emailHelp": "Wohin das Pack geht, sobald es fertig ist.",
-      "siteName": "Name der Kundschaft oder Halle",
-      "siteHelp": "Die eine Anlage, die diese gewerbliche Lizenz abdeckt.",
-      "required": "Füll das aus, bevor du kaufst."
+      "required": "Füll das aus, bevor du dein Pack erstellst."
     },
     "licence": {
       "accept": "Ich akzeptiere die Fertigungslizenz",
@@ -332,7 +330,7 @@
       "working": "Wir zeichnen deine Bögen. Das dauert etwa fünfzehn Sekunden.",
       "ready": "Kontrollzeichnungen mit Wasserzeichen. Schließ ab, dann bekommst du die DXF-Dateien, aus denen deine Werkstatt schneidet.",
       "stale": "Du hast die Wand seit diesen Bögen geändert. Hol dir die Vorschau neu.",
-      "failed": "Diese Vorschau wurde nicht erstellt. Es wurde nichts abgebucht — probier es nochmal.",
+      "failed": "Diese Vorschau wurde nicht erstellt. Probier es nochmal.",
       "rateLimited": "Das waren alle kostenlosen Vorschauen dieser Stunde. Die vorhandenen liegen bei deinen Bauplänen, die nächste gibt es zur vollen Stunde.",
       "download": "Vorschau herunterladen",
       "downloading": "Link wird geholt…",
@@ -369,18 +367,18 @@
     "previewUpdate": "Vorschau aktualisieren",
     "previewing": "Deine Vorschau wird gezeichnet…",
     "previewRetry": "Nochmal versuchen",
-    "finalise": "Abschließen und kaufen",
-    "finalising": "Kasse wird geöffnet…",
-    "free": "Vorschauen sind kostenlos. Keine Karte nötig.",
+    "finalise": "Kostenloses Bau-Pack erstellen",
+    "finalising": "Dein Bau-Pack wird eingereiht…",
+    "free": "Bau-Packs sind für deine eigene nicht gewerbliche Nutzung kostenlos. Keine Karte nötig.",
     "signInTitle": "Für deine kostenlose Vorschau anmelden",
     "signInBody": "Deine Vorschau braucht ein Konto, auf dem sie liegt. Wir bringen dich direkt zurück zu deiner Konfiguration."
   },
   "errors": {
     "CNC_INVALID_CONFIG": "Diese Kombination lässt sich nicht fräsen. Änder oben etwas, dann prüfen wir es neu.",
-    "CNC_WORKER_UNAVAILABLE": "Der Plangenerator antwortet gerade nicht. Es wurde nichts abgebucht. Probier es in einer Minute nochmal.",
-    "CNC_CHECKOUT_UNAVAILABLE": "Zahlungen sind gerade nicht möglich. Es wurde nichts abgebucht. Probier es gleich nochmal.",
-    "generic": "Das ist nicht durchgegangen. Es wurde nichts abgebucht.",
-    "RATE_LIMITED": "Das sind ziemlich viele Vorschauen für eine Stunde. Es wurde nichts abgebucht — die nächste gibt es zur vollen Stunde."
+    "CNC_WORKER_UNAVAILABLE": "Der Plangenerator antwortet gerade nicht. Probier es in einer Minute nochmal.",
+    "CNC_CHECKOUT_UNAVAILABLE": "Wir können dein Bau-Pack gerade nicht einreihen. Probier es gleich nochmal.",
+    "generic": "Das ist nicht durchgegangen. Probier es nochmal.",
+    "RATE_LIMITED": "Das sind ziemlich viele Vorschauen für eine Stunde. Probier es erneut, wenn dein Stundenlimit zurückgesetzt ist."
   },
   "status": {
     "pending_payment": "Warten auf Zahlung",
@@ -397,10 +395,10 @@
   },
   "orders": {
     "heading": "Deine Baupläne",
-    "intro": "Jede Wand, die du dir angesehen oder gekauft hast, neueste zuerst. Eine Lizenz bleibt deine, egal was mit dieser Seite passiert.",
+    "intro": "Jede Wand, die du als Vorschau oder Bau-Pack erstellt hast, neueste zuerst. Eine Lizenz bleibt deine, egal was mit dieser Seite passiert.",
     "configureAnother": "Noch eine Wand konfigurieren",
     "empty": "Hier ist noch keine Wand.",
-    "emptyBody": "Konfigurier eine Wand und wir zeichnen dir gratis eine Vorschau von jeder Platte. Abgebucht wird erst, wenn du abschließt.",
+    "emptyBody": "Konfigurier deine eigene nicht gewerblich genutzte Wand und wir zeichnen dir gratis eine Vorschau von jeder Platte. Das vollständige Bau-Pack ist auch kostenlos.",
     "emptyCta": "Wand konfigurieren",
     "previewTier": "Vorschau",
     "orderedOn": "Bestellt am {{date}}",
@@ -425,7 +423,7 @@
     "timeline": {
       "heading": "Wie weit es ist",
       "preview": "Gratis-Vorschau gezeichnet",
-      "finalised": "Lizenz auf deinen Namen und bezahlt",
+      "finalised": "Lizenz bestätigt",
       "building": "Dateien werden zugeschnitten",
       "ready": "Bereit zum Download"
     },
@@ -438,7 +436,7 @@
       "panel": "Platte {{number}}",
       "assembly": "Montage"
     },
-    "finalise": "Abschließen und kaufen",
+    "finalise": "Kostenloses Bau-Pack erstellen",
     "downloadPreview": "Vorschau herunterladen",
     "download": "Pack herunterladen",
     "downloading": "Link wird geholt…",
@@ -447,7 +445,7 @@
     "checkoutCancelled": "Die Bezahlung wurde abgebrochen. Es wurde nichts abgebucht.",
     "previewFailed": {
       "heading": "Diese Vorschau wurde nicht gezeichnet",
-      "body": "Es wurde nichts abgebucht. Änder etwas an deiner Wand und hol dir eine neue Vorschau, oder sag uns Bescheid und wir schauen es uns an.",
+      "body": "Änder etwas an deiner Wand und hol dir eine neue Vorschau, oder sag uns Bescheid und wir schauen es uns an.",
       "contact": "Schreib uns, wir kümmern uns darum",
       "subject": "Die Vorschau für Bauplan {{licenceId}} wurde nicht gezeichnet"
     },
@@ -458,7 +456,7 @@
     },
     "refunded": {
       "heading": "Erstattet",
-      "body": "Diese Bestellung wurde erstattet, deshalb ist der Download aus. Kauf ihn neu, wenn du bauen willst."
+      "body": "Diese Bestellung wurde erstattet, deshalb ist der Download aus. Du kannst ein neues kostenloses Pack für deine eigene nicht gewerblich genutzte Wand erstellen."
     },
     "notFound": {
       "heading": "Diesen Bauplan gibt es nicht",
@@ -468,22 +466,24 @@
     "downloadCard": {
       "heading": "Dein Bau-Pack",
       "note": "Eine DXF-Datei pro Platte, die Montagezeichnungen, die Druckbögen und deine Lizenz, alles in einem Zip."
-    }
+    },
+    "donationReminder": "Diese Dateien sind für deinen eigenen nicht gewerblichen Bau kostenlos. Wenn sie dir geholfen haben, kannst du Boardsesh unterstützen.",
+    "donationLink": "Spende, wenn du möchtest"
   },
   "flow": {
     "heading": "So läuft das",
-    "intro": "Vorschauen sind kostenlos. Bis zum Abschluss wird nichts abgebucht.",
+    "intro": "Vorschauen und vollständige Bau-Packs für deine eigene nicht gewerbliche Nutzung sind kostenlos.",
     "configure": {
       "title": "Wand konfigurieren",
       "body": "Wähl die Größe, die Platten, mit denen deine Werkstatt arbeitet, die Bohrungsdurchmesser und alles, was in ein Panel gefräst werden soll."
     },
     "preview": {
       "title": "Kostenlose Vorschau holen",
-      "body": "Wir teilen alle Bögen auf und schicken dir die Zeichnungen mit Wasserzeichen zurück. Ändere etwas und hol dir die nächste, so oft du willst."
+      "body": "Wir teilen alle Bögen auf und schicken dir die Zeichnungen mit Wasserzeichen zurück. Ändere etwas und hol dir innerhalb des Stundenlimits eine neue Vorschau."
     },
     "finalise": {
       "title": "Abschließen und bauen",
-      "body": "Trag den Namen für die Lizenz ein, bezahl, und die fräsfertigen DXF-Dateien und Druckbögen landen in deinem Konto."
+      "body": "Trag den Namen für die persönliche Lizenz ein, und die fräsfertigen DXF-Dateien und Druckbögen landen kostenlos in deinem Konto."
     }
   }
 }
