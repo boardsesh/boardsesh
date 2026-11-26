@@ -380,6 +380,10 @@
         "personalGrades": "Meine Grade verwenden",
         "personalGradesDescription": "Zeigt den Grad, den du einem Boulder gegeben hast, statt den der Community, und sortiert und filtert danach."
       },
+      "tabBarSearch": {
+        "title": "Suche in der Tab-Leiste",
+        "footer": "Boulder bekommt rechts in der Tab-Leiste einen eigenen Button mit einem Feld für Boulder-Namen. Aus ist es ein normaler Tab, und du suchst Namen unter Filter. Gilt ab dem nächsten Öffnen von Boardsesh."
+      },
       "offline": {
         "title": "Offline",
         "offlineMode": "Offline-Modus",

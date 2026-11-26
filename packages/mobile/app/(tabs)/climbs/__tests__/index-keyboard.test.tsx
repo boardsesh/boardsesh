@@ -193,6 +193,8 @@ const mocks = vi.hoisted(() => ({
   refocusCount: 0,
   // What the screen asks to run when its tab is tapped again while it is showing.
   tabReselect: undefined as (() => void) | undefined,
+  // Climbs is the iOS 26 bar's search tab (`useClimbsTabBarSearch`).
+  tabBarSearch: false,
   scrollToOffset: vi.fn(),
   stackOptions: [] as NativeStackNavigationOptions[],
   // The system text size, and whether the list is fetching another page: the
@@ -836,6 +838,9 @@ vi.mock('../../../../src/hooks/use-bottom-accessory', () => ({
   useNativeAccessoryActive: () => false,
   useLiquidGlassTabBar: () => false,
 }));
+vi.mock('../../../../src/hooks/use-climbs-tab-bar-search', () => ({
+  useClimbsTabBarSearch: () => mocks.tabBarSearch,
+}));
 vi.mock('../../../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({
     scrollBottomPadding: 96,
@@ -983,6 +988,7 @@ vi.mock('../../../../src/lib/filter-tokens', async (importOriginal) => {
 });
 vi.mock('../../../../src/lib/search-name', () => ({
   normalizeSearchName: (text: string) => text.trim(),
+  visibleSearchTextNeedsSync: (visibleText: string, name: string) => visibleText.trim() !== name,
 }));
 vi.mock('../../../../src/lib/analytics', () => ({ track: mocks.track }));
 vi.mock('../../../../src/theme/ios-colors', () => ({
@@ -1127,6 +1133,7 @@ beforeEach(() => {
   mocks.setGrade.mockClear();
   mocks.refocusCount = 0;
   mocks.tabReselect = undefined;
+  mocks.tabBarSearch = false;
   mocks.scrollToOffset.mockClear();
   mocks.stackOptions.length = 0;
   mocks.fontScale = 1;
@@ -1310,6 +1317,54 @@ describe('ClimbList second tap on the Climbs tab', () => {
     expect(trackedPayloads('Climb Filters Closed')).toEqual([
       { source: 'filters_chip', activeFilterCount: 0, hasName: false },
     ]);
+  });
+});
+
+describe('ClimbList with Climbs as the bar search tab', () => {
+  const searchBarOptions = () =>
+    mocks.stackOptions.findLast((options) => options.headerSearchBarOptions)?.headerSearchBarOptions;
+
+  it('hands the bar a climb-name field that commits the name after the pause', async () => {
+    mocks.tabBarSearch = true;
+    const { findByText } = render(<ClimbList />);
+    await findByText('Moonage');
+
+    const field = searchBarOptions();
+    expect(field).toMatchObject({ placement: 'automatic', placeholder: 'search.placeholders.climbs' });
+    act(() => field?.onChangeText?.({ nativeEvent: { text: 'crimp ' } } as never));
+    expect(mocks.setName).not.toHaveBeenCalledWith('crimp');
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+    expect(mocks.setName).toHaveBeenLastCalledWith('crimp');
+  });
+
+  it('empties the name on Cancel', async () => {
+    mocks.tabBarSearch = true;
+    mocks.searchState = { filters: {}, boardFilters: {}, name: 'crimp' };
+    const { findByText } = render(<ClimbList />);
+    await findByText('Moonage');
+
+    act(() => searchBarOptions()?.onCancelButtonPress?.({} as never));
+    expect(mocks.setName).toHaveBeenLastCalledWith('');
+  });
+
+  it('leaves a second tap to the search field instead of opening Filters', async () => {
+    mocks.tabBarSearch = true;
+    const { findByText, queryByTestId } = render(<ClimbList />);
+    await findByText('Moonage');
+
+    act(() => mocks.tabReselect?.());
+
+    expect(queryByTestId('filter-sheet')).toBeNull();
+  });
+
+  it('installs no search field on Material', () => {
+    mocks.tabBarSearch = true;
+    mocks.nativeRootHeader = false;
+    render(<ClimbList />);
+
+    expect(mocks.stackOptions.some((options) => options.headerSearchBarOptions)).toBe(false);
   });
 });
 

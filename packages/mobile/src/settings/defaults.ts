@@ -27,6 +27,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoDisconnectMigrated: false,
   playlistTapLoadsQueue: false,
   gradeRowShown: false,
+  climbsTabBarSearch: true,
   restTimerTargetSeconds: null,
   restTimerAutoAdvance: false,
   restTimerMode: 'afterTick',

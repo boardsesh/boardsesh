@@ -380,6 +380,10 @@
         "personalGrades": "Utiliser mes cotations",
         "personalGradesDescription": "Affiche la cotation que tu as donnée à un bloc plutôt que celle de la communauté, et trie et filtre avec."
       },
+      "tabBarSearch": {
+        "title": "Rechercher depuis la barre d'onglets",
+        "footer": "Blocs a son propre bouton à droite de la barre d'onglets, avec un champ pour le nom des blocs. Désactivé, c'est un onglet normal et tu cherches les noms dans Filtres. Prend effet à la prochaine ouverture de Boardsesh."
+      },
       "offline": {
         "title": "Hors ligne",
         "offlineMode": "Mode hors ligne",

@@ -7,6 +7,7 @@ import { TabletSidebar } from '../../src/components/navigation/TabletSidebar';
 import { IpadPlayPane } from '../../src/components/play-drawer/IpadPlayPane';
 import { QueueBottomAccessory } from '../../src/components/queue-control/QueueBottomAccessory';
 import { useAccessoryHostRoute } from '../../src/hooks/use-accessory-host-route';
+import { useClimbsTabBarSearch } from '../../src/hooks/use-climbs-tab-bar-search';
 import { useTabChrome } from '../../src/hooks/use-bottom-accessory';
 import { useDeviceLayout } from '../../src/hooks/use-device-layout';
 import { useStickyAccessoryPresence } from '../../src/hooks/use-sticky-accessory-presence';
@@ -44,8 +45,10 @@ const ACCESSORY_HIDDEN_NATIVE_PROPS = { ios: { bottomAccessoryHidden: true } } a
  * Glass extras on top: a native `BottomAccessory` platter for the current climb +
  * tick (on iPad too, like Music's MiniPlayer) and minimize-on-scroll.
  * On iOS 18 the bar has neither, so the current climb rides the floating JS
- * `PersistentQueueBar` just above the native bar. Climbs is an ordinary labelled
- * tab everywhere, like Apple Music's Search tab. Material, Android and the
+ * `PersistentQueueBar` just above the native bar. On the iPhone's iOS 26 bar
+ * Climbs is the search tab by default, with the climb-name search field in the
+ * bar, like Apple Music's Search; elsewhere, or with the setting off, it is an
+ * ordinary labelled tab. Material, Android and the
  * tablet shell use a JS `Tabs` navigator with the Material 3 `MaterialTabBar`.
  * `useTabChrome()` is the one answer for all of it.
  */
@@ -72,9 +75,9 @@ export default function TabLayout() {
   // Route term on the same mount gate: the host stays mounted anywhere the tab bar is
   // on screen — every route inside the tabs group, pushed sub-routes included, plus the
   // transparent player. The accessory is a CHILD of the bar, so unmounting it on a push
-  // ran `setBottomAccessory:nil` with the bar still up and left the then docked
+  // ran `setBottomAccessory:nil` with the bar still up and left the docked
   // role="search" Climbs item on a stale frame, unhittable until a force-quit (#5055;
-  // Climbs is an ordinary tab since #6827, the rule stands). It unmounts only
+  // the rule stands with the search tab turned off too). It unmounts only
   // on a root push/modal, where the whole tab VC leaves and the accessory co-detaches
   // with the bar — the case that releases the backing view, so UIKit still never stacks a
   // stale glass platter under the fresh one on return (doubled, offset text). See
@@ -106,6 +109,7 @@ export default function TabLayout() {
   // screens, keep "the tab bar and primary destinations" accessible. So the rail
   // never minimizes; the horizontal iPhone bar keeps minimize-on-scroll.
   const verticalTabBar = useVerticalTabBar();
+  const climbsSearchTab = useClimbsTabBarSearch();
   const tabBarMinimizeBehavior = liquidGlassTabBar ? (verticalTabBar ? 'never' : 'onScrollDown') : undefined;
   const { width: windowWidth } = useWindowDimensions();
   const segments = useSegments();
@@ -189,6 +193,7 @@ export default function TabLayout() {
       tabBarMinimizeBehavior={tabBarMinimizeBehavior}
       accessoryNativeProps={accessoryNativeProps}
       prominentClimbsTab={prominentClimbsTab}
+      climbsSearchTab={climbsSearchTab}
       showDetailPane={showDetailPane}
       showWallColumn={showWallColumn}
       wallDisplayOpen={wallDisplayOpen}

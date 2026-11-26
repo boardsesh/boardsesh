@@ -188,6 +188,14 @@ export type AppSettings = {
    */
   gradeRowShown: boolean;
   /**
+   * The Climbs tab is the iOS 26 search tab: it sits apart at the right of the
+   * bottom bar and carries a climb-name search field, like Apple Music's Search.
+   * Off, Climbs is an ordinary tab and the name search lives in Filters. Only
+   * the iPhone's Liquid Glass bar reads it (`useClimbsTabBarSearch`), once per
+   * launch: a flip applies from the next start. On by default.
+   */
+  climbsTabBarSearch: boolean;
+  /**
    * Rest timer (#5378) — the shape of the timer, not whether it is armed.
    * Arming is deliberately in-memory (see `rest-timer-store.ts`): a flag set
    * three weeks ago must never silently start moving someone's wall on app open.
