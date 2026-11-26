@@ -1,6 +1,6 @@
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { MaterialDesignIcons } from '@react-native-vector-icons/material-design-icons';
 import { Tabs } from 'expo-router';
-import { NativeTabs } from 'expo-router/unstable-native-tabs';
+import { NativeTabs } from 'expo-router/native-tabs';
 import type { ComponentProps } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Platform, StyleSheet, View, type ColorValue } from 'react-native';
@@ -11,19 +11,15 @@ import { WALL_COLUMN_WIDTH } from '../../theme/size-class';
 import { selectByVariant } from '../../theme/variants/select-by-variant';
 
 type TabIconProps = { focused: boolean; color: ColorValue; size: number };
-type MaterialIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
+type MaterialIconName = ComponentProps<typeof MaterialDesignIcons>['name'];
 
-// Material (MaterialCommunityIcons) glyphs for the JS tab bar, mirroring the
+// Material (MaterialDesignIcons) glyphs for the JS tab bar, mirroring the
 // SF Symbols / md hints used by the native tab bar. Rendered on all platforms in
 // the Material variant so it reads as Material even on iOS.
 const materialTabIcon =
   (active: MaterialIconName, inactive: MaterialIconName) =>
   ({ focused, color, size }: TabIconProps) => (
-    <MaterialCommunityIcons
-      name={focused ? active : inactive}
-      color={color as React.ComponentProps<typeof MaterialCommunityIcons>['color']}
-      size={size}
-    />
+    <MaterialDesignIcons name={focused ? active : inactive} color={color} size={size} />
   );
 
 // HIG Tab bars: a selected tab shows the filled variant of its SF Symbol, an

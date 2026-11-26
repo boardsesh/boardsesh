@@ -289,11 +289,11 @@ Those values are public build inputs, not credentials. A CI contract test keeps 
 
 ### Retained Next.js build assets
 
-Production Next builds use `NEXT_PUBLIC_NEXT_ASSET_BASE_URL=https://assets.boardsesh.com`
-as their `assetPrefix`, with anonymous cross-origin script loading. Local and
-preview builds leave this input unset and serve their own build assets. This
-prefix covers Next's JavaScript, CSS and bundled fonts/media; catalogued images
-continue using the existing `/static/v1/` URLs.
+Production Next builds explicitly leave `NEXT_PUBLIC_NEXT_ASSET_BASE_URL` empty.
+Current JavaScript, CSS and bundled media use the document's `/_next/static/`
+origin and connection. Local and preview builds also serve their own build
+assets. Catalogued images continue using the existing CDN `/static/v1/` URLs;
+they are independent of Next's asset prefix.
 
 The `publish-next-assets` job copies only `.next/static` from the exact web image
 digest into `/_next/static/` in the existing static-assets bucket. It excludes
@@ -306,18 +306,64 @@ with and without an Origin header. No old objects are deleted.
 Railway promotion requires successful publication, including when other jobs
 succeed. A held web build still publishes its assets so its image remains usable
 for a later redeploy. The publisher moves the `production` and `latest` image tags
-only after asset verification and checks that both resolve to the built digest.
+only after asset verification and a live rollback-compatibility proof, and checks
+that both resolve to the built digest.
 Build SHA/ref tags exist earlier for diagnosis; a failed build's SHA is not a
 ready rollback target. Publication failures participate directly in both deploy
 notification gates.
 
-This protects HTML generated with the new CDN prefix across subsequent deploys.
-Previously cached HTML still names `www/_next/static` paths, and files already
-missing from older images are not recovered by this rollout. Clearing that old
-HTML cache after rollout, or waiting for its existing freshness window, switches
-new requests to the retained asset URLs. Extending HTML cache duration also
+Retained publication protects older HTML across subsequent deploys and rollbacks.
+Production builds opt into retained-file routing with
+`NEXT_PUBLIC_RETAINED_NEXT_ASSETS=1`, independently of the asset prefix. Preview
+and local builds leave it unset, including optimized production-mode previews.
+
+Next checks its filesystem first. A missing `/_next/static/` file then takes an
+`afterFiles` rewrite to the internal retained-asset handler. Only GET and HEAD
+receive a temporary redirect to the fixed public asset origin. The handler
+validates decoded path segments, rejects source maps, drops the original query,
+and sends `no-store` plus `no-referrer`. It makes no upstream request and forwards
+no request headers or bodies. Existing local files retain their ordinary static
+response and immutable policy. The internal endpoint is a utility surface and
+returns `X-Robots-Tag: noindex, follow`.
+
+Cloudflare removes Cookie, Authorization and Referer only on these public asset
+paths on www and the retained/staging hosts. Asset errors from HTTP 400 through
+599 are not stored at the edge, preventing a missing object from becoming a
+cached failure. The production deployment waits for the Cloudflare prerequisite.
+
+Previously cached HTML naming `www/_next/static` can therefore recover files
+that are retained in the bucket but absent from the current image. Files never
+published to that bucket still cannot be recovered. Extending HTML cache duration
 requires invalidation when public content or visibility changes; its TTL remains
 controlled by the page-cache policy rather than the asset policy.
+
+Before moving mutable image aliases, `web-origin-compatibility.ts` verifies the
+exact quiet, sole active Railway deployment, its configured and running image,
+rollback capability, no-cache health ID/release, and a retained-only historical
+file's redirect and immutable bytes. It repeats the platform read after the HTTP
+proof. A newer terminal failed deployment may coexist with the active release;
+an in-flight or ambiguous serving state fails the proof.
+
+The job records the verified ID and release. Immediately before redeploy, the
+shared action requires its captured rollback target to match that ID and repeats
+the proof. Held builds also move aliases, so their guard reads the actual
+Production `RAILWAY_WEB_SERVICE_ID` and `RAILWAY_WEB_ORIGIN` variables, rather than
+the resolver's deliberately empty hold outputs. Missing variables or unsupported
+live compatibility stop alias promotion; immutable asset/SHA publication can
+already have succeeded. Deploy the compatibility release first, then retry;
+do not disable this guard to complete the cutover.
+
+Post-deploy checks verify both Home and Kilter HTML advertise same-origin Next
+assets and that current files return direct 200 responses. The ordinary and
+retained-file smokes remain required. Automatic rollback verifies the **new**
+rollback deployment ID and the previously verified release. Recovery is only
+announced after its smoke succeeds.
+
+Manual deploys/rollbacks must not select a pre-compatibility image after same-origin
+HTML has been served; those images cannot recover its missing chunks. This is a
+permanent rollback floor, including if the CDN prefix is restored later. An
+operator who bypasses the workflow must preserve retained publication and respect
+that floor.
 
 ### Catalogued public assets
 

@@ -214,8 +214,6 @@
     }
   },
   "similarClimbs": {
-    "loadError": "Impossible de charger les blocs similaires.",
-    "emptyDefault": "Pas encore de blocs similaires.",
     "emptyOnLayout": "Pas de blocs similaires sur cette configuration.",
     "untitledClimb": "Bloc sans nom"
   },
@@ -1064,11 +1062,6 @@
         "body": "Des 4×4 et des séances de volume à ton niveau, avec un minuteur intégré.",
         "alt": "Préparation d’une séance de volume en V2 dans Boardsesh"
       }
-    },
-    "community": {
-      "heading": "Commentaires et votes de cotation",
-      "signIn": "Connecte-toi pour participer",
-      "show": "Voir les commentaires"
     },
     "similar": {
       "nearbyHeading": "D’autres blocs sur {{layout}} autour du {{grade}} à {{angle}}°",

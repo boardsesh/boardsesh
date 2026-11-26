@@ -1,4 +1,5 @@
 import React from 'react';
+import frenchMarketing from '@boardsesh/i18n/locales/fr/marketing.json';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test';
 import { MarketingCapabilitiesContext } from '../../marketing/marketing-capabilities-context';
@@ -20,7 +21,7 @@ function ConfiguredBanner({ available }: { available: boolean }) {
     <MarketingCapabilitiesContext.Provider
       value={{ enableExpoAuthBridge: false, developerHref: '/docs', hasMonthlySupport: available }}
     >
-      <RuntimeHomeSupportBanner />
+      <RuntimeHomeSupportBanner copy={frenchMarketing.home.supportBanner} />
     </MarketingCapabilitiesContext.Provider>
   );
 }

@@ -1,4 +1,4 @@
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { MaterialDesignIcons } from '@react-native-vector-icons/material-design-icons';
 import { SymbolView, type SymbolWeight, type SymbolScale } from 'expo-symbols';
 import { Platform, I18nManager, useWindowDimensions, type ColorValue } from 'react-native';
 import { useBoldText } from '../hooks/use-bold-text';
@@ -26,7 +26,7 @@ type IconProps = {
   textVariant?: TextVariant;
 };
 
-// iOS renders native SF Symbols (expo-symbols); Android keeps MaterialCommunityIcons.
+// iOS renders native SF Symbols (expo-symbols); Android keeps MaterialDesignIcons.
 // Both glyph names live in icon-map.ts keyed by the same semantic IconName, so call
 // sites stay platform-agnostic.
 export function Icon({
@@ -78,20 +78,19 @@ export function Icon({
     );
   }
 
-  // Vector icon declarations still use the pre-strict native color union.
   return (
-    <MaterialCommunityIcons
+    <MaterialDesignIcons
       name={
-        (I18nManager.isRTL && (name === 'back' || name === 'chevron.left')
+        I18nManager.isRTL && (name === 'back' || name === 'chevron.left')
           ? name === 'back'
             ? 'arrow-right'
             : 'chevron-right'
           : I18nManager.isRTL && name === 'chevron.right'
             ? 'chevron-left'
-            : mapping.android) as React.ComponentProps<typeof MaterialCommunityIcons>['name']
+            : mapping.android
       }
       size={size}
-      color={color as React.ComponentProps<typeof MaterialCommunityIcons>['color']}
+      color={color}
     />
   );
 }

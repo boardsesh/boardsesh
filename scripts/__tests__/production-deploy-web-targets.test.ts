@@ -122,10 +122,12 @@ describe('production-deploy web deploy targets', () => {
     }
   });
 
-  it('publishes validated Railway identity once and never rereads raw web variables downstream', () => {
+  it('reads raw web identity only in the resolver and independent held-image proof', () => {
     const uncommentedWorkflow = withoutComments(workflowSource);
-    expect(uncommentedWorkflow.match(/vars\.RAILWAY_WEB_SERVICE_ID/g) ?? []).toHaveLength(1);
-    expect(uncommentedWorkflow.match(/vars\.RAILWAY_WEB_ORIGIN/g) ?? []).toHaveLength(1);
+    expect(uncommentedWorkflow.match(/vars\.RAILWAY_WEB_SERVICE_ID/g) ?? []).toHaveLength(2);
+    expect(uncommentedWorkflow.match(/vars\.RAILWAY_WEB_ORIGIN/g) ?? []).toHaveLength(2);
+    expect(deployWebRailwayJob).not.toContain('vars.RAILWAY_WEB_SERVICE_ID');
+    expect(deployWebRailwayJob).not.toContain('vars.RAILWAY_WEB_ORIGIN');
     expect(deployWebRailwayJob).toContain(
       'service-id: ${{ needs.resolve-web-targets.outputs.web_railway_service_id }}',
     );
@@ -221,7 +223,8 @@ describe('production-deploy web deploy targets', () => {
       'BOARDSESH_WEB=1',
       'NEXT_PUBLIC_POSTHOG_KEY=${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}',
       'NEXT_PUBLIC_STATIC_ASSET_BASE_URL=https://assets.boardsesh.com',
-      'NEXT_PUBLIC_NEXT_ASSET_BASE_URL=https://assets.boardsesh.com',
+      'NEXT_PUBLIC_NEXT_ASSET_BASE_URL=',
+      'NEXT_PUBLIC_RETAINED_NEXT_ASSETS=1',
       'NEXT_PUBLIC_APP_STORE_PROVIDER_ID=${{ vars.NEXT_PUBLIC_APP_STORE_PROVIDER_ID }}',
       'NEXT_PUBLIC_META_PIXEL_ID=${{ vars.NEXT_PUBLIC_META_PIXEL_ID }}',
       'NEXT_PUBLIC_REDDIT_PIXEL_ID=${{ vars.NEXT_PUBLIC_REDDIT_PIXEL_ID }}',
@@ -313,6 +316,36 @@ describe('production-deploy web deploy targets', () => {
     expect(publishNextAssetsJob).toContain('packages: write');
   });
 
+  it('serves Next assets on the document origin while retaining public images on the CDN', () => {
+    expect(buildWebJob).toMatch(/^            NEXT_PUBLIC_NEXT_ASSET_BASE_URL=$/m);
+    expect(buildWebJob).toContain('NEXT_PUBLIC_STATIC_ASSET_BASE_URL=https://assets.boardsesh.com');
+    expect(buildWebJob).toContain('NEXT_PUBLIC_RETAINED_NEXT_ASSETS=1');
+    const smoke = stepNamed(deployWebRailwayJob, 'Post-deploy smoke against the Railway web origin');
+    expect(smoke).toContain('node scripts/current-next-assets-smoke.ts --base "$RAILWAY_WEB_ORIGIN"');
+  });
+
+  it('proves the live rollback deployment before aliases move, including held builds', () => {
+    const proof = stepNamed(publishNextAssetsJob, 'Verify the live web rollback target supports retained assets');
+    expect(proof).not.toMatch(/^\s+if:/m);
+    expect(proof).toContain('RAILWAY_WEB_ORIGIN: ${{ vars.RAILWAY_WEB_ORIGIN }}');
+    expect(proof).toContain('RAILWAY_SERVICE_ID: ${{ vars.RAILWAY_WEB_SERVICE_ID }}');
+    expect(proof).toContain('EXPECTED_IMAGE: ${{ needs.build-web.outputs.image }}:production');
+    expect(proof).toContain('RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}');
+    expect(proof).toContain('node scripts/web-origin-compatibility.ts --base "$RAILWAY_WEB_ORIGIN"');
+    expect(
+      publishNextAssetsJob.indexOf('- name: Verify the live web rollback target supports retained assets'),
+    ).toBeGreaterThan(publishNextAssetsJob.indexOf('- name: Publish and validate immutable Next assets'));
+    expect(publishNextAssetsJob.indexOf('- name: Promote the verified web image')).toBeGreaterThan(
+      publishNextAssetsJob.indexOf('- name: Verify the live web rollback target supports retained assets'),
+    );
+    expect(publishNextAssetsJob).toContain(
+      'rollback_deployment_id: ${{ steps.retained-compatibility.outputs.verified_previous_deployment_id }}',
+    );
+    expect(publishNextAssetsJob).toContain(
+      'rollback_release: ${{ steps.retained-compatibility.outputs.verified_previous_release }}',
+    );
+  });
+
   it('redeploys the Railway web service through the shared composite action', () => {
     expect(deployWebRailwayJob).toContain('uses: ./.github/actions/railway-redeploy');
     expect(deployWebRailwayJob).toContain(
@@ -321,11 +354,21 @@ describe('production-deploy web deploy targets', () => {
     expect(deployWebRailwayJob).toContain('railway-token: ${{ secrets.RAILWAY_TOKEN }}');
     expect(deployWebRailwayJob).toContain('service-label: web');
     expect(deployWebRailwayJob).toContain('expected-image: ${{ needs.build-web.outputs.image }}:production');
+    expect(deployWebRailwayJob).toContain(
+      'retained-assets-origin: ${{ needs.resolve-web-targets.outputs.web_railway_origin }}',
+    );
+    expect(deployWebRailwayJob).toContain(
+      'expected-previous-deployment-id: ${{ needs.publish-next-assets.outputs.rollback_deployment_id }}',
+    );
+    expect(deployWebRailwayJob).toContain(
+      'expected-previous-release: ${{ needs.publish-next-assets.outputs.rollback_release }}',
+    );
+    expect(deployBackendJob).not.toContain('retained-assets-origin:');
   });
 
   it('binds smoke to the exact release and restores a failed Railway-only deployment', () => {
     const railwaySmokeStep = stepNamed(deployWebRailwayJob, 'Post-deploy smoke against the Railway web origin');
-    expect(deployWebRailwayJob).toContain('run: node scripts/production-smoke.ts --base "$RAILWAY_WEB_ORIGIN"');
+    expect(railwaySmokeStep).toContain('node scripts/production-smoke.ts --base "$RAILWAY_WEB_ORIGIN"');
     expect(railwaySmokeStep).toContain('continue-on-error: true');
     expect(railwaySmokeStep).toContain("steps.railway-redeploy.outcome == 'success'");
     expect(deployWebRailwayJob).toContain(
@@ -342,11 +385,23 @@ describe('production-deploy web deploy targets', () => {
     const railwayRecoveryFailureStep = stepNamed(deployWebRailwayJob, 'Fail after Railway web smoke recovery');
     expect(railwayRecoveryFailureStep).toContain('ROLLBACK_OUTCOME: ${{ steps.railway-rollback.outcome }}');
     expect(railwayRecoveryFailureStep).toContain('if [ "$ROLLBACK_OUTCOME" = "success" ]');
+    expect(railwayRecoveryFailureStep).toContain('RECOVERY_SMOKE_OUTCOME: ${{ steps.railway-recovery-smoke.outcome }}');
+    expect(railwayRecoveryFailureStep).toContain('&& [ "$RECOVERY_SMOKE_OUTCOME" = "success" ]');
     expect(runBlock(railwayRecoveryFailureStep)).not.toContain('${{');
     expect(railwayRecoveryFailureStep).toContain('verified automatic rollback restored');
     expect(railwayRecoveryFailureStep).toContain('automatic recovery was not verified');
     expect(railwayRecoveryFailureStep).toContain('exit 1');
     expect(deployWebRailwayJob).toContain('Verify Railway web functionality after rollback');
+    const recoverySmoke = stepNamed(deployWebRailwayJob, 'Verify Railway web functionality after rollback');
+    expect(recoverySmoke).toContain(
+      'SMOKE_EXPECTED_DEPLOYMENT_ID: ${{ steps.railway-rollback.outputs.rollback_deployment_id }}',
+    );
+    expect(recoverySmoke).toContain(
+      'SMOKE_EXPECTED_RELEASE: ${{ needs.publish-next-assets.outputs.rollback_release }}',
+    );
+    expect(recoverySmoke).toContain('node scripts/production-smoke.ts --base "$RAILWAY_WEB_ORIGIN"');
+    expect(recoverySmoke).toContain('node scripts/retained-next-assets-smoke.ts --base "$RAILWAY_WEB_ORIGIN"');
+    expect(recoverySmoke).not.toContain('current-next-assets-smoke.ts');
   });
 
   it('keeps a single Railway promote path', () => {
@@ -470,6 +525,13 @@ describe('production-deploy web deploy targets', () => {
     // `web_vercel`-shaped condition here would silently leave a broken
     // container serving www.
     expect(deployWebRailwayJob).toContain('id: railway-smoke');
+    const smokeStep = stepNamed(deployWebRailwayJob, 'Post-deploy smoke against the Railway web origin');
+    const regularSmoke = smokeStep.indexOf('node scripts/production-smoke.ts --base');
+    const retainedSmoke = smokeStep.indexOf('node scripts/retained-next-assets-smoke.ts --base');
+    expect(regularSmoke).toBeGreaterThan(-1);
+    expect(retainedSmoke).toBeGreaterThan(regularSmoke);
+    expect(smokeStep).toContain('SMOKE_EXPECTED_DEPLOYMENT_ID: ${{ steps.railway-redeploy.outputs.deployment_id }}');
+    expect(smokeStep).toContain('SMOKE_EXPECTED_RELEASE: ${{ github.sha }}');
 
     const rollbackStep = stepNamed(deployWebRailwayJob, 'Restore the previous Railway web deployment');
     expect(rollbackStep).toContain("if: steps.railway-smoke.outcome == 'failure'");

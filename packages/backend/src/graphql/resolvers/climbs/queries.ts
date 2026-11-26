@@ -53,6 +53,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
 import { redisClientManager } from '../../../redis/client';
 import { requireAdmin } from '../social/roles';
+import { publicClimbRelatedContent } from './public-climb-related-content';
 
 // Debug logging flag - only log in development
 const DEBUG = process.env.NODE_ENV === 'development';
@@ -120,6 +121,7 @@ function cacheHoldHeatmap(cacheKey: string, stats: HoldStat[]): void {
 }
 
 export const climbQueries = {
+  publicClimbRelatedContent,
   /**
    * Per-hold usage over the climbs a search matches — the hold heatmap's live
    * path. Admin only: every other climber answers this on device from the

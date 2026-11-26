@@ -8,6 +8,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test'
 import React from 'react';
 import { render, waitFor } from '@testing-library/react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
+import { DEFAULT_LOCALE, type Locale } from '@/app/lib/i18n/config';
+import { DocumentLocaleProvider } from '@/app/lib/i18n/document-locale-context';
 
 const { i18nState, navigationState, nextRouter } = vi.hoisted(() => ({
   i18nState: { language: 'en-US' },
@@ -59,15 +61,19 @@ const documentLocation = {
   replace: vi.fn(),
 };
 
-function openLoginPage(query: string) {
+function openLoginPage(query: string, locale: Locale = DEFAULT_LOCALE) {
+  i18nState.language = locale;
   navigationState.searchParams = new URLSearchParams(query);
-  render(<AuthPageContent />);
+  render(
+    <DocumentLocaleProvider locale={locale}>
+      <AuthPageContent />
+    </DocumentLocaleProvider>,
+  );
 }
 
 describe('AuthPageContent — through the real locale router', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    i18nState.language = 'en-US';
     vi.stubGlobal(
       'window',
       new Proxy(browserWindow, {
@@ -101,8 +107,7 @@ describe('AuthPageContent — through the real locale router', () => {
   });
 
   it('still applies the visitor locale to a real return path', async () => {
-    i18nState.language = 'es';
-    openLoginPage('callbackUrl=/gym/bloclab/manage');
+    openLoginPage('callbackUrl=/gym/bloclab/manage', 'es');
     await waitFor(() => expect(nextRouter.push).toHaveBeenCalled());
     expect(nextRouter.push.mock.calls).toEqual([['/es/gym/bloclab/manage']]);
     expect(documentLocation.assign).not.toHaveBeenCalled();

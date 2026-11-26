@@ -1,3 +1,4 @@
+import { isRetainedNextAssetsEnabled } from './config/retained-next-assets.mjs';
 import { withSentryConfig } from '@sentry/nextjs';
 import os from 'node:os';
 import path from 'node:path';
@@ -356,6 +357,16 @@ export function resolveNextAssetPrefix(rawBaseUrl, runtimeEnvironment = process.
   return prefix.origin;
 }
 
+/** Missing retained files keep working after an image changes; present files bypass the handler. */
+export function getRetainedNextAssetRewrites(
+  environment = process.env.NODE_ENV,
+  configuredOptIn = process.env.NEXT_PUBLIC_RETAINED_NEXT_ASSETS,
+) {
+  return isRetainedNextAssetsEnabled(environment, configuredOptIn)
+    ? [{ source: '/_next/static/:assetPath+', destination: '/api/internal/retained-next-assets/:assetPath*' }]
+    : [];
+}
+
 const nextAssetPrefix = resolveNextAssetPrefix(process.env.NEXT_PUBLIC_NEXT_ASSET_BASE_URL);
 
 /** @type {import('next').NextConfig} */
@@ -537,6 +548,12 @@ const nextConfig = {
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
         ],
       },
+      // Next preserves matching config headers over Route Handler headers.
+      // Keep redirect queries out of Referrers on both public and direct paths.
+      ...['/_next/static/:assetPath*', '/api/internal/retained-next-assets/:assetPath*'].map((source) => ({
+        source,
+        headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }],
+      })),
       // Matching config headers can override a route handler's response. Keep
       // credential URLs after the site-wide default, including locale rewrites.
       ...[
@@ -610,6 +627,7 @@ const nextConfig = {
     ];
   },
   async rewrites() {
+    const retainedNextAssetRewrites = getRetainedNextAssetRewrites();
     // Released Live Activities, ESP32 firmware and already-crawled HTML still
     // request this path. Keep it as a routing-layer proxy so they receive the
     // Railway image bytes without invoking a Next.js function.
@@ -626,7 +644,10 @@ const nextConfig = {
     };
 
     if (process.env.BOARDSESH_WEB !== '1') {
-      return { beforeFiles: [boardRenderCompatibilityRewrite, boardGeometryRewrite] };
+      return {
+        beforeFiles: [boardRenderCompatibilityRewrite, boardGeometryRewrite],
+        afterFiles: retainedNextAssetRewrites,
+      };
     }
 
     const expoWebOrigin = resolveExpoWebDevOrigin(process.env.BOARDSESH_EXPO_WEB_ORIGIN);
@@ -641,13 +662,17 @@ const nextConfig = {
       // is what makes #3795 (web → Railway, whose image DOES build from
       // Dockerfile.web) safe to land after this.
       if (process.env.NODE_ENV !== 'development') {
-        return { beforeFiles: [boardRenderCompatibilityRewrite, boardGeometryRewrite] };
+        return {
+          beforeFiles: [boardRenderCompatibilityRewrite, boardGeometryRewrite],
+          afterFiles: retainedNextAssetRewrites,
+        };
       }
 
       console.warn(
         '[next.config] BOARDSESH_WEB=1 but BOARDSESH_EXPO_WEB_ORIGIN is unset — serving the static export from public/app if present (development only; production never serves /app).',
       );
       return {
+        afterFiles: retainedNextAssetRewrites,
         beforeFiles: [
           boardRenderCompatibilityRewrite,
           boardGeometryRewrite,
@@ -665,6 +690,7 @@ const nextConfig = {
     // server. beforeFiles, not the default afterFiles, so a stale local export
     // sitting in public/app can never shadow Metro while the proxy is active.
     return {
+      afterFiles: retainedNextAssetRewrites,
       beforeFiles: [
         boardRenderCompatibilityRewrite,
         boardGeometryRewrite,

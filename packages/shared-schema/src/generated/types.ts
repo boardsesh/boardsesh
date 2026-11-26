@@ -8639,6 +8639,28 @@ export type ProviderSyncRequest = {
   status: Scalars['String']['output'];
 };
 
+export type PublicClimbRelatedContent = {
+  __typename?: 'PublicClimbRelatedContent';
+  betaHasMore: Scalars['Boolean']['output'];
+  betaLinks: Array<BetaLink>;
+  betaStatus: Scalars['String']['output'];
+  nearbyClimbs: Array<SimilarClimb>;
+  nearbyGrade?: Maybe<Scalars['String']['output']>;
+  nearbyStatus?: Maybe<Scalars['String']['output']>;
+  similarClimbs: Array<SimilarClimb>;
+  similarStatus: Scalars['String']['output'];
+};
+
+export type PublicClimbRelatedContentInput = {
+  angle: Scalars['Int']['input'];
+  boardType: Scalars['String']['input'];
+  climbUuid: Scalars['String']['input'];
+  includeNearby?: InputMaybe<Scalars['Boolean']['input']>;
+  layoutId: Scalars['Int']['input'];
+  setIds: Array<Scalars['Int']['input']>;
+  sizeId: Scalars['Int']['input'];
+};
+
 /** Public-facing user profile for social features. */
 export type PublicUserProfile = {
   __typename?: 'PublicUserProfile';
@@ -9411,6 +9433,7 @@ export type Query = {
   proposeSprayWallReset?: Maybe<SprayWallResetProposal>;
   /** Only the registered app's public name; never the workout title, notes or blocks. */
   publicAppWorkoutLaunch?: Maybe<AppWorkoutLaunch>;
+  publicClimbRelatedContent: PublicClimbRelatedContent;
   /** Canonical public venues for sitemap publication. Fails rather than truncating when the sitemap budget is exceeded. */
   publicGymSitemap: Array<GymSitemapEntry>;
   /** Get a public user profile by ID. */
@@ -10433,6 +10456,11 @@ export type QueryProposeSprayWallResetArgs = {
 /** Root query type for all read operations. */
 export type QueryPublicAppWorkoutLaunchArgs = {
   id: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryPublicClimbRelatedContentArgs = {
+  input: PublicClimbRelatedContentInput;
 };
 
 /** Root query type for all read operations. */
@@ -14497,7 +14525,7 @@ export type UpdateResourcePrivacyInput = {
   audience: PrivacyResourceAudience;
   inheritFollowers?: InputMaybe<Scalars['Boolean']['input']>;
   kind: PrivacyResourceKind;
-  /** Omit to keep the stored value. See ResourcePrivacySettings.listedToFollowers. */
+  /** Omit to keep the stored value. Saving any audience but unlisted or invite_only turns it off. See ResourcePrivacySettings.listedToFollowers. */
   listedToFollowers?: InputMaybe<Scalars['Boolean']['input']>;
   locationAudience?: InputMaybe<PrivacyLocationAudience>;
   resourceId: Scalars['ID']['input'];
@@ -15573,6 +15601,8 @@ export type ResolversTypes = ResolversObject<{
   ProposalVoteSummary: ResolverTypeWrapper<ProposalVoteSummary>;
   ProposeSprayWallResetInput: ProposeSprayWallResetInput;
   ProviderSyncRequest: ResolverTypeWrapper<ProviderSyncRequest>;
+  PublicClimbRelatedContent: ResolverTypeWrapper<PublicClimbRelatedContent>;
+  PublicClimbRelatedContentInput: PublicClimbRelatedContentInput;
   PublicUserProfile: ResolverTypeWrapper<PublicUserProfile>;
   PublishSprayWallVersionInput: PublishSprayWallVersionInput;
   QaLabel: ResolverTypeWrapper<QaLabel>;
@@ -16225,6 +16255,8 @@ export type ResolversParentTypes = ResolversObject<{
   ProposalVoteSummary: ProposalVoteSummary;
   ProposeSprayWallResetInput: ProposeSprayWallResetInput;
   ProviderSyncRequest: ProviderSyncRequest;
+  PublicClimbRelatedContent: PublicClimbRelatedContent;
+  PublicClimbRelatedContentInput: PublicClimbRelatedContentInput;
   PublicUserProfile: PublicUserProfile;
   PublishSprayWallVersionInput: PublishSprayWallVersionInput;
   QaLabel: QaLabel;
@@ -21223,6 +21255,22 @@ export type ProviderSyncRequestResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type PublicClimbRelatedContentResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['PublicClimbRelatedContent'] =
+    ResolversParentTypes['PublicClimbRelatedContent'],
+> = ResolversObject<{
+  betaHasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  betaLinks?: Resolver<Array<ResolversTypes['BetaLink']>, ParentType, ContextType>;
+  betaStatus?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  nearbyClimbs?: Resolver<Array<ResolversTypes['SimilarClimb']>, ParentType, ContextType>;
+  nearbyGrade?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  nearbyStatus?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  similarClimbs?: Resolver<Array<ResolversTypes['SimilarClimb']>, ParentType, ContextType>;
+  similarStatus?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type PublicUserProfileResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['PublicUserProfile'] = ResolversParentTypes['PublicUserProfile'],
@@ -21993,6 +22041,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryPublicAppWorkoutLaunchArgs, 'id'>
+  >;
+  publicClimbRelatedContent?: Resolver<
+    ResolversTypes['PublicClimbRelatedContent'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryPublicClimbRelatedContentArgs, 'input'>
   >;
   publicGymSitemap?: Resolver<Array<ResolversTypes['GymSitemapEntry']>, ParentType, ContextType>;
   publicProfile?: Resolver<
@@ -24563,6 +24617,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   ProposalReportReleaseContext?: ProposalReportReleaseContextResolvers<ContextType>;
   ProposalVoteSummary?: ProposalVoteSummaryResolvers<ContextType>;
   ProviderSyncRequest?: ProviderSyncRequestResolvers<ContextType>;
+  PublicClimbRelatedContent?: PublicClimbRelatedContentResolvers<ContextType>;
   PublicUserProfile?: PublicUserProfileResolvers<ContextType>;
   QaLabel?: QaLabelResolvers<ContextType>;
   QaPreview?: QaPreviewResolvers<ContextType>;

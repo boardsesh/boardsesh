@@ -38,7 +38,7 @@ const ACCESSORY_HIDDEN_NATIVE_PROPS = { ios: { bottomAccessoryHidden: true } } a
 
 /**
  * Bottom tabs. Every iPhone and iPad on the Liquid Glass variant gets the system
- * UIKit tab bar (`expo-router/unstable-native-tabs`), iOS 18 included (HIG, Tab
+ * UIKit tab bar (`expo-router/native-tabs`), iOS 18 included (HIG, Tab
  * bars: use the system bar so it carries the platform's own materials, Dynamic
  * Type and accessibility); on iPad it adapts to a sidebar. iOS 26 adds the Liquid
  * Glass extras on top: a native `BottomAccessory` platter for the current climb +

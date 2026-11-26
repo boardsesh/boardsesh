@@ -7,7 +7,6 @@ import IconButton from '@mui/material/IconButton';
 import Slide from '@mui/material/Slide';
 import Typography from '@mui/material/Typography';
 import CloseOutlined from '@mui/icons-material/CloseOutlined';
-import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { brandCtaSx } from '@/app/components/ui/brand-cta';
 import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
@@ -19,6 +18,10 @@ import {
   supportBannerMonth,
 } from './support-banner-window';
 import styles from './home-support-banner.module.css';
+
+export type HomeSupportBannerProps = {
+  copy: { text: string; cta: string; close: string };
+};
 
 const CTA_SX = brandCtaSx({ size: 'medium' });
 // Under the consent banner (tooltip) and MUI dialogs (modal sits lower, but a
@@ -40,8 +43,7 @@ const STRIP_SX = { zIndex: (theme: { zIndex: { snackbar: number } }) => theme.zI
  * on the 1st of the next. The thank-you page (`/support?thanks=1`) hides it for
  * good in that browser.
  */
-export default function HomeSupportBanner() {
-  const { t } = useTranslation('marketing');
+export default function HomeSupportBanner({ copy }: HomeSupportBannerProps) {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -72,13 +74,13 @@ export default function HomeSupportBanner() {
       <Box className={styles.strip} sx={STRIP_SX}>
         <Box component="aside" className={styles.banner} data-testid="home-support-banner">
           <Typography variant="body1" component="p" className={styles.text}>
-            {t('home.supportBanner.text')}
+            {copy.text}
           </Typography>
           <Box className={styles.actions}>
             <Button variant="contained" component={LocaleLink} href={SUPPORT_BANNER_HREF} sx={CTA_SX}>
-              {t('home.supportBanner.cta')}
+              {copy.cta}
             </Button>
-            <IconButton aria-label={t('home.supportBanner.close')} onClick={close} className={styles.close}>
+            <IconButton aria-label={copy.close} onClick={close} className={styles.close}>
               <CloseOutlined />
             </IconButton>
           </Box>

@@ -7,7 +7,7 @@
     "build": "node scripts/copy-maplibre-worker.mjs && tsx scripts/generate-openapi.ts && next build",
     "build:ci": "node scripts/copy-maplibre-worker.mjs && tsx scripts/generate-openapi.ts && next build",
     "generate:openapi": "tsx scripts/generate-openapi.ts",
-    "start": "next start",
+    "start": "node --require ./scripts/public-page-load-guard-preload.cjs ./node_modules/next/dist/bin/next start",
     "lint": "vp lint",
     "lint-fix": "vp lint --fix",
     "typecheck": "tsc --noEmit",
@@ -22,9 +22,6 @@
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^8.5.0",
-    "@atlaskit/pragmatic-drag-and-drop": "^2.0.1",
-    "@atlaskit/pragmatic-drag-and-drop-hitbox": "^2.0.0",
-    "@atlaskit/pragmatic-drag-and-drop-react-drop-indicator": "^4.1.1",
     "@auth/drizzle-adapter": "^1.11.3",
     "@aws-sdk/client-s3": "^3.1101.0",
     "@boardsesh/analytics": "workspace:*",

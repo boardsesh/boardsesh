@@ -61,7 +61,7 @@ export function useUpdateResourcePrivacy() {
     networkMode: 'always',
     mutationFn: async (
       input: Pick<ResourcePrivacySettings, 'kind' | 'resourceId' | 'audience'> &
-        Partial<Pick<ResourcePrivacySettings, 'locationAudience' | 'inheritFollowers'>>,
+        Partial<Pick<ResourcePrivacySettings, 'locationAudience' | 'inheritFollowers' | 'listedToFollowers'>>,
     ) => {
       if (getConnectivitySnapshot().effectiveOffline) throw new Error('Privacy changes require a connection.');
       return (

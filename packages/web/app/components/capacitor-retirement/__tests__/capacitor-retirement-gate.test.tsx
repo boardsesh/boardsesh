@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
 import { render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
+import frenchCommon from '@boardsesh/i18n/locales/fr/common.json';
 import { CapacitorRetirementGate } from '../capacitor-retirement-gate';
 import { CAPACITOR_BRIDGE_TIMEOUT_MS } from '@/app/lib/ble/capacitor-utils';
 import { track } from '@/app/lib/analytics-capture';
@@ -108,6 +109,18 @@ describe('CapacitorRetirementGate — inside the retired app', () => {
     expect(screen.queryByText(APP_CONTENT)).toBeNull();
     expect(mockedTrack).toHaveBeenCalledWith('Capacitor Retirement Screen Shown', { platform: 'ios' });
   });
+
+  it('focuses the store action with the marketing document’s translated copy', async () => {
+    setCapacitor({ isNativePlatform: () => true, getPlatform: () => 'ios', Plugins: {} });
+    const copy = frenchCommon.capacitorRetirement;
+    render(<CapacitorRetirementGate copy={copy}>{APP_CONTENT}</CapacitorRetirementGate>);
+
+    expect(await screen.findByText(copy.title, {}, { timeout: 4000 })).toBeTruthy();
+    expect(screen.queryByText(APP_CONTENT)).toBeNull();
+    expect(screen.getByText(copy.description)).toBeTruthy();
+    expect(screen.getByText(copy.fallbackCta)).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByText(copy.cta).closest('button'));
+  }, 10000);
 
   it('still takes over when the bridge is injected after the app mounts', async () => {
     // The real race: app JS runs before window.Capacitor appears. A one-shot

@@ -17,7 +17,10 @@ const MAX_SMOKE_SCRIPTS = 16;
 const MAX_SMOKE_FONTS = 32;
 const MAX_SMOKE_SCRIPT_BYTES = 32 * 1024 * 1024;
 const MAX_SMOKE_TOTAL_SCRIPT_BYTES = 64 * 1024 * 1024;
-const REQUIRED_ICON_FONTS = ['MaterialCommunityIcons', 'MaterialSymbols_400Regular'];
+const REQUIRED_ICON_FONTS = [
+  { label: 'Material Design', names: ['MaterialCommunityIcons', 'MaterialDesignIcons'] },
+  { label: 'MaterialSymbols_400Regular', names: ['MaterialSymbols_400Regular'] },
+];
 
 function previewIdentity(input) {
   const text = String(input);
@@ -521,9 +524,9 @@ export function createCloudflareClient({
           if (fontPaths.size > MAX_SMOKE_FONTS) throw new Error('Preview exceeds the smoke font limit.');
         }
       }
-      for (const name of REQUIRED_ICON_FONTS) {
-        if (![...fontPaths].some((path) => path.split('/').at(-1)?.startsWith(`${name}.`)))
-          throw new Error(`Preview JavaScript is missing the ${name} icon font reference.`);
+      for (const { label, names } of REQUIRED_ICON_FONTS) {
+        if (![...fontPaths].some((path) => names.some((name) => path.split('/').at(-1)?.startsWith(`${name}.`))))
+          throw new Error(`Preview JavaScript is missing the ${label} icon font reference.`);
       }
       for (const path of fontPaths) {
         const font = await get(path);

@@ -287,6 +287,9 @@ export const RESPONSE_HEADER_RULE_PHASE = 'http_response_headers_transform';
  */
 export const COMPRESSION_RULE_PHASE = 'http_response_compression';
 
+/** Page-scoped feature settings; this does not change the zone-wide defaults. */
+export const CONFIGURATION_RULE_PHASE = 'http_config_settings';
+
 /** Request-header rewrites sent from Cloudflare to origins. */
 export const REQUEST_HEADER_RULE_PHASE = 'http_request_late_transform';
 
@@ -375,6 +378,7 @@ export interface CacheRuleActionParameters {
      * send no Cache-Control and must never be edge-cached.
      */
     mode: 'bypass_by_default';
+    status_code_ttl?: { status_code_range: { from: number; to: number }; value: number }[];
   };
   browser_ttl: {
     /** Honour the origin max-age so a zone-level Browser Cache TTL can't override it. */
@@ -500,17 +504,27 @@ export interface CompressionRuleDesired {
   enabled: boolean;
 }
 
+/** Only the email transform is managed; other page settings remain foreign. */
+export interface ConfigurationRuleDesired {
+  description: string;
+  expression: string;
+  action: 'set_config';
+  action_parameters: {
+    email_obfuscation: boolean;
+  };
+  enabled: boolean;
+}
+
 /**
- * A Request Header Transform rule. The expression value is evaluated at the
- * edge, so the origin receives Cloudflare's country lookup rather than a value
- * supplied by the client.
+ * A Request Header Transform rule can remove an incoming header or replace it
+ * with an expression evaluated at the edge before forwarding to the origin.
  */
 export interface RequestHeaderRuleDesired {
   description: string;
   expression: string;
   action: 'rewrite';
   action_parameters: {
-    headers: Record<string, { operation: 'set'; expression: string }>;
+    headers: Record<string, { operation: 'set'; expression: string } | { operation: 'remove' }>;
   };
   enabled: boolean;
 }
@@ -518,7 +532,7 @@ export interface RequestHeaderRuleDesired {
 export interface CloudflareDesiredState {
   zoneName: string;
   dnsRecords: DnsRecordDesired[];
-  /** Order is not significant: cache rules are matched by expression, not precedence. */
+  /** Place more specific overrides after rules that can match the same request. */
   cacheRules: CacheRuleDesired[];
   /**
    * Order IS significant and is preserved on apply: the bot-phase exception
@@ -535,10 +549,12 @@ export interface CloudflareDesiredState {
   redirectRules: RedirectRuleDesired[];
   /** Order is not significant: the rule is host-scoped and identified by description. */
   requestHeaderRules: RequestHeaderRuleDesired[];
-  /** Order is not significant: matched by expression, like cache rules. */
+  /** The current response-header rules match distinct hosts. */
   responseHeaderRules: ResponseHeaderRuleDesired[];
   /** Order is not significant: each rule is scoped to its own host. */
   compressionRules: CompressionRuleDesired[];
+  /** Keep overrides scoped to the public pages that need them. */
+  configurationRules: ConfigurationRuleDesired[];
   ssl: SslDesired;
 }
 
@@ -1085,6 +1101,14 @@ export const ASSETS_CACHE_EXPRESSION =
   `((http.host eq "${ASSETS_HOSTNAME}" or http.host eq "${ASSETS_STAGING_HOSTNAME}") ` +
   `and (starts_with(http.request.uri.path, "/static/v1/") or starts_with(http.request.uri.path, "/_next/static/")))`;
 
+export const NEXT_STATIC_CACHE_RULE_DESCRIPTION =
+  'boardsesh:next-static-edge-cache (managed by scripts/cloudflare-apply.ts)';
+export const NEXT_STATIC_REQUEST_HEADER_RULE_DESCRIPTION =
+  'boardsesh:next-static-request-headers (managed by scripts/cloudflare-apply.ts)';
+
+const nextStaticPath = 'starts_with(http.request.uri.path, "/_next/static/")';
+const nextStaticHosts = `http.host in {"${WWW_HOSTNAME}" "${ASSETS_HOSTNAME}" "${ASSETS_STAGING_HOSTNAME}"}`;
+
 export const ASSETS_CORS_HEADER_RULE_DESCRIPTION =
   'boardsesh:assets-cors-header (managed by scripts/cloudflare-apply.ts)';
 
@@ -1125,6 +1149,24 @@ export const OTA_ASSETS_CACHE_EXPRESSION = `http.host eq "${OTA_ASSETS_HOSTNAME}
 export const OTA_ASSETS_COMPRESSION_RULE_DESCRIPTION =
   'boardsesh:ota-assets-compression (managed by scripts/cloudflare-apply.ts)';
 export const OTA_ASSETS_COMPRESSION_EXPRESSION = `http.host eq "${OTA_ASSETS_HOSTNAME}"`;
+
+/** Keep this marker stable: it identifies the managed Next transport policy. */
+export const NEXT_STATIC_COMPRESSION_RULE_DESCRIPTION =
+  'boardsesh:next-static-compression (managed by scripts/cloudflare-apply.ts)';
+export const NEXT_STATIC_COMPRESSION_EXPRESSION =
+  `(http.host in {"${WWW_HOSTNAME}" "${ASSETS_HOSTNAME}" "${ASSETS_STAGING_HOSTNAME}"}` +
+  ' and http.request.method in {"GET" "HEAD"}' +
+  ' and starts_with(http.request.uri.path, "/_next/static/")' +
+  ' and (ends_with(http.request.uri.path, ".js")' +
+  ' or ends_with(http.request.uri.path, ".mjs")' +
+  ' or ends_with(http.request.uri.path, ".css")))';
+
+export const MARKETING_EMAIL_RULE_DESCRIPTION =
+  'boardsesh:critical-marketing-email (managed by scripts/cloudflare-apply.ts)';
+export const MARKETING_EMAIL_EXPRESSION =
+  `(http.host eq "${WWW_HOSTNAME}"` +
+  ' and http.request.method in {"GET" "HEAD"}' +
+  ' and http.request.uri.path in {"/" "/apps/kilter"})';
 
 export const OBSERVE_COUNTRY_HEADER_RULE_DESCRIPTION =
   'boardsesh:observe-country-header (managed by scripts/cloudflare-apply.ts)';
@@ -1465,10 +1507,6 @@ export const desiredCloudflareState: CloudflareDesiredState = {
       },
       enabled: true,
     },
-    // Appended rather than prepended: two fixtures in
-    // scripts/cloudflare-apply.test.ts address the og rule by index 0. Cache
-    // rules are matched by expression and their order carries no meaning (see
-    // the field comment on cacheRules), so the end is the right place.
     {
       description: ASSETS_CACHE_RULE_DESCRIPTION,
       expression: ASSETS_CACHE_EXPRESSION,
@@ -1518,6 +1556,21 @@ export const desiredCloudflareState: CloudflareDesiredState = {
       action_parameters: {
         cache: true,
         edge_ttl: { mode: 'bypass_by_default' },
+        browser_ttl: { mode: 'respect_origin' },
+      },
+      enabled: true,
+    },
+    {
+      // The narrower policy wins when an R2 URL also matches ASSETS_CACHE_EXPRESSION.
+      description: NEXT_STATIC_CACHE_RULE_DESCRIPTION,
+      expression: `(${nextStaticHosts} and http.request.method in {"GET" "HEAD"} and ${nextStaticPath})`,
+      action: 'set_cache_settings',
+      action_parameters: {
+        cache: true,
+        edge_ttl: {
+          mode: 'bypass_by_default',
+          status_code_ttl: [{ status_code_range: { from: 400, to: 599 }, value: -1 }],
+        },
         browser_ttl: { mode: 'respect_origin' },
       },
       enabled: true,
@@ -1635,6 +1688,19 @@ export const desiredCloudflareState: CloudflareDesiredState = {
       },
       enabled: true,
     },
+    {
+      description: NEXT_STATIC_REQUEST_HEADER_RULE_DESCRIPTION,
+      expression: `(${nextStaticHosts} and ${nextStaticPath})`,
+      action: 'rewrite',
+      action_parameters: {
+        headers: {
+          cookie: { operation: 'remove' },
+          authorization: { operation: 'remove' },
+          referer: { operation: 'remove' },
+        },
+      },
+      enabled: true,
+    },
   ],
   responseHeaderRules: [
     {
@@ -1670,6 +1736,27 @@ export const desiredCloudflareState: CloudflareDesiredState = {
         // Brotli interceptor on Android); gzip is the fallback.
         algorithms: [{ name: 'brotli' }, { name: 'gzip' }],
       },
+      enabled: true,
+    },
+    {
+      description: NEXT_STATIC_COMPRESSION_RULE_DESCRIPTION,
+      expression: NEXT_STATIC_COMPRESSION_EXPRESSION,
+      action: 'compress_response',
+      action_parameters: {
+        // Measured smaller than Zstandard on startup JS/CSS; keep both fallbacks.
+        algorithms: [{ name: 'brotli' }, { name: 'zstd' }, { name: 'gzip' }],
+      },
+      enabled: true,
+    },
+  ],
+  configurationRules: [
+    {
+      description: MARKETING_EMAIL_RULE_DESCRIPTION,
+      expression: MARKETING_EMAIL_EXPRESSION,
+      action: 'set_config',
+      // These public contacts already appear in the server's Flight data.
+      // Preserve native mail links without injecting a parser-blocking decoder.
+      action_parameters: { email_obfuscation: false },
       enabled: true,
     },
   ],

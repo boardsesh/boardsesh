@@ -1,40 +1,15 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vite-plus/test';
 import { renderToString } from 'react-dom/server';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { SimilarClimb } from '@boardsesh/shared-schema';
 import type { BoardImageDetails } from '@/app/lib/types';
+import { resolveServerTree } from '@/app/lib/__tests__/helpers/resolve-server-tree';
 import SimilarClimbsList from '../similar-climbs-list';
 
-/**
- * The claim that motivates the similar-climbs rewrite (W-15, #4369): every card
- * is now a real `<a href>` present in the FIRST server render, seeded from the
- * page's `initialClimbs`, rather than a `<button>` that swaps the queue's
- * current climb after hydration.
- *
- * Two things have to be true for the front door's "similar climbs" section to
- * be worth anything to a crawler, and neither was covered — the page-level SSR
- * suite mocks this component out entirely:
- *
- *  1. The server HTML carries one anchor per seeded climb.
- *  2. Seeding leaves React Query out of `isLoading`, so the HTML carries the
- *     cards rather than a spinner.
- *
- * The GraphQL client is NOT mocked with a working implementation on purpose: if
- * the component ever fetches instead of using the seed, the query function
- * below throws and the section renders its error state rather than the links.
- *
- * The last case covers the other half of the seeding contract:
- * `initialDataUpdatedAt`, without which React Query stamps `dataUpdatedAt = 0`,
- * every staleTime loses to `Date.now() - 0`, and the client re-runs a resolver
- * that is rate-limited 30/min against the web server's single IP the moment the
- * front door hydrates.
- */
-
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+vi.mock('server-only', () => ({}));
+vi.mock('@/app/lib/i18n/server', () => ({
+  getServerTranslation: async () => ({ t: (key: string) => key, locale: 'en-US' }),
 }));
-
 vi.mock('@/app/components/i18n/locale-link', () => ({
   default: ({ href, children, className }: { href: string; children: React.ReactNode; className?: string }) => (
     <a href={href} className={className}>
@@ -42,16 +17,10 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
     </a>
   ),
 }));
-
-vi.mock('@/app/components/board-renderer/board-image-layers', () => ({ default: () => null }));
-vi.mock('@/app/hooks/use-grade-format', () => ({
-  useGradeFormat: () => ({ formatGrade: (grade?: string) => grade, getGradeColor: () => undefined }),
-}));
-const graphqlRequest = vi.fn(() => {
-  throw new Error('the page seeds similar climbs via initialClimbs — this must not run');
-});
 vi.mock('@/app/lib/graphql/client', () => ({
-  createGraphQLHttpClient: () => ({ request: graphqlRequest }),
+  createGraphQLHttpClient: () => {
+    throw new Error('read-only rows must not fetch');
+  },
 }));
 
 function makeSimilarClimb(index: number): SimilarClimb {
@@ -88,122 +57,51 @@ function makeBoardDetails(): BoardImageDetails {
 
 const seededClimbs = Array.from({ length: 6 }, (_, index) => makeSimilarClimb(index));
 
-function seededList(queryClient: QueryClient) {
-  return (
-    <QueryClientProvider client={queryClient}>
+async function renderRows(overrides: Partial<React.ComponentProps<typeof SimilarClimbsList>> = {}) {
+  return renderToString(
+    await resolveServerTree(
       <SimilarClimbsList
         boardType="kilter"
-        layoutId={1}
         viewerBoardDetails={makeBoardDetails()}
-        climbUuid="ORIGIN-CLIMB"
-        angle={40}
-        initialClimbs={seededClimbs}
-      />
-    </QueryClientProvider>
+        climbs={seededClimbs}
+        emptyMessage="No similar climbs"
+        pendingMessage="Try again later"
+        {...overrides}
+      />,
+    ),
   );
 }
 
-function makeQueryClient() {
-  // `retry: false` so the negative control (the throwing client) surfaces
-  // immediately rather than being swallowed by React Query's retry loop.
-  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
-}
-
-function renderSeededList() {
-  return renderToString(seededList(makeQueryClient()));
-}
-
-describe('SimilarClimbsList server render', () => {
-  it('preserves the named board for compatible similar climbs', () => {
-    const html = renderToString(
-      <QueryClientProvider client={makeQueryClient()}>
-        <SimilarClimbsList
-          boardType="kilter"
-          boardSlug="gym-wall"
-          layoutId={1}
-          viewerBoardDetails={makeBoardDetails()}
-          climbUuid="ORIGIN-CLIMB"
-          angle={40}
-          initialClimbs={seededClimbs}
-        />
-      </QueryClientProvider>,
-    );
-    expect(html).toContain('href="/b/gym-wall/40/view/similar-boulder-0-SIMILAR0"');
-    expect(html.match(/href="\/b\/gym-wall\//g)).toHaveLength(seededClimbs.length);
+describe('public related-climb server render', () => {
+  it('renders every row without a query provider or browser fetch', async () => {
+    const html = await renderRows();
+    expect(html.match(/href="\/kilter\/[^"]*\/view\/[^"]*"/g)).toHaveLength(seededClimbs.length);
+    expect(html).toContain('/view/similar-boulder-5-SIMILAR5');
+    expect(html).not.toMatch(/MuiCircularProgress|<button/);
+    expect(html).toContain('setter · ★3.0 · sends');
+    expect(html).toContain('frontDoor.hero.gradeForSearch');
+    expect(html).toContain('loading="lazy"');
   });
 
-  it('draws and links a Woods 8x10-only climb on the 8x10, not the 12x12 default', () => {
-    const woods12x12 = { ...makeBoardDetails(), board_name: 'woods', layout_id: 1, size_id: 2 } as BoardImageDetails;
-    const eightByTenOnly = { ...makeSimilarClimb(0), compatibleSizeIds: [1] } as SimilarClimb;
-    const html = renderToString(
-      <QueryClientProvider client={makeQueryClient()}>
-        <SimilarClimbsList
-          boardType="woods"
-          layoutId={1}
-          viewerBoardDetails={woods12x12}
-          climbUuid="ORIGIN-CLIMB"
-          angle={40}
-          initialClimbs={[eightByTenOnly]}
-        />
-      </QueryClientProvider>,
+  it('preserves the named wall for compatible climbs', async () => {
+    expect(await renderRows({ boardSlug: 'gym-wall' })).toContain(
+      'href="/b/gym-wall/40/view/similar-boulder-0-SIMILAR0"',
     );
+  });
+
+  it('draws and links an incompatible Woods climb on its actual size', async () => {
+    const html = await renderRows({
+      boardType: 'woods',
+      viewerBoardDetails: { ...makeBoardDetails(), board_name: 'woods', size_id: 2 },
+      climbs: [{ ...makeSimilarClimb(0), compatibleSizeIds: [1] }],
+    });
     const href = html.match(/href="(\/woods\/[^"]*)"/)?.[1] ?? '';
     expect(href).toContain('8x10');
     expect(href).not.toContain('12x12');
   });
 
-  it('emits one crawlable anchor per seeded climb, not a spinner', () => {
-    const html = renderSeededList();
-
-    const anchors = html.match(/href="\/kilter\/[^"]*\/view\/[^"]*"/g) ?? [];
-    expect(anchors).toHaveLength(seededClimbs.length);
-    expect(html).not.toContain('MuiCircularProgress');
-  });
-
-  it('points each anchor at the canonical config-tuple view URL for the viewer board', () => {
-    const html = renderSeededList();
-
-    expect(html).toContain('href="/kilter/original/12x12-square/screw_bolt/40/view/similar-boulder-0-SIMILAR0"');
-    // Non-vacuous: the LAST seeded card is there too, so this isn't one anchor
-    // plus a client-side tail.
-    expect(html).toContain('/view/similar-boulder-5-SIMILAR5');
-  });
-
-  it('renders each climb as a row: name with its grade in words, setter and sends, and a grade tile', () => {
-    const page = new DOMParser().parseFromString(`<!doctype html><body>${renderSeededList()}</body>`, 'text/html');
-    const rows = [...page.querySelectorAll('ul > li')];
-    const firstRow = rows[0].querySelector('a');
-
-    expect(rows).toHaveLength(seededClimbs.length);
-    expect(firstRow?.textContent).toContain('Similar Boulder 0');
-    // The tile is aria-hidden; the hidden ", V4" is how a screen reader hears the grade.
-    expect(firstRow?.textContent).toContain('frontDoor.hero.gradeForSearch');
-    expect(firstRow?.querySelector('[aria-hidden="true"]')?.textContent).toBe('V4');
-    expect(firstRow?.textContent).toContain('setter · ★3.0 · sends');
-  });
-
-  it('renders no <button> cards — the queue-activation path is gone', () => {
-    const html = renderSeededList();
-
-    expect(html).not.toMatch(/<button/);
-  });
-
-  it('lands the seed in the cache fresh, so hydration does not refetch it', async () => {
-    graphqlRequest.mockClear();
-    const { render, screen, cleanup } = await import('@testing-library/react');
-    const queryClient = makeQueryClient();
-
-    render(seededList(queryClient));
-    await screen.findByText('Similar Boulder 0');
-
-    const [seededQuery] = queryClient.getQueryCache().findAll({ queryKey: ['similarClimbs'] });
-    // A seeded query stamped `dataUpdatedAt = 0` would lose every staleTime
-    // comparison to `Date.now() - 0` and refetch on hydration, re-running a
-    // resolver rate-limited 30/min behind the web server's single IP. This
-    // asserts the freshness, not which option supplies it.
-    expect(seededQuery?.state.dataUpdatedAt).toBeGreaterThan(0);
-    expect(seededQuery?.isStale()).toBe(false);
-    expect(graphqlRequest).not.toHaveBeenCalled();
-    cleanup();
+  it('keeps unavailable distinct from genuinely empty without a client retry', async () => {
+    expect(await renderRows({ climbs: undefined })).toContain('Try again later');
+    expect(await renderRows({ climbs: [] })).toContain('No similar climbs');
   });
 });

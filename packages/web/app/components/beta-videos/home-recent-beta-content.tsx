@@ -13,6 +13,8 @@ import type { BetaLink } from '@/app/lib/api-wrappers/sync-api-types';
 import type { RecentBetaLinkRow } from '@/app/lib/server-recent-beta-links';
 import BoardseshBetaList from './boardsesh-beta-list';
 import MarketingQueryProvider from '../marketing/marketing-query-provider';
+import { I18nProvider } from '@/app/lib/i18n/client';
+import type { Locale } from '@/app/lib/i18n/config';
 
 const RECENT_BETA_LIMIT = 20;
 const RECENT_BETA_STALE_TIME_MS = 5 * 60 * 1000;
@@ -21,11 +23,19 @@ type RecentBetaResponse = {
   recentBetaLinks: RecentBetaLinkRow[];
 };
 
-export default function HomeRecentBetaContent() {
+export default function HomeRecentBetaContent({
+  locale,
+  resources,
+}: {
+  locale: Locale;
+  resources: Record<string, Record<string, unknown>>;
+}) {
   return (
-    <MarketingQueryProvider>
-      <RecentBetaContent />
-    </MarketingQueryProvider>
+    <I18nProvider locale={locale} resources={resources}>
+      <MarketingQueryProvider>
+        <RecentBetaContent />
+      </MarketingQueryProvider>
+    </I18nProvider>
   );
 }
 

@@ -120,6 +120,7 @@ export const queriesTypeDefs = /* GraphQL */ `
     (no climbUuid) is admin-only. See docs/data/similar-climbs.md.
     """
     similarClimbs(input: SimilarClimbsInput!): [SimilarClimb!]!
+    publicClimbRelatedContent(input: PublicClimbRelatedContentInput!): PublicClimbRelatedContent!
 
     """
     Per-hold usage over the climbs a search matches (the hold heatmap). Admin

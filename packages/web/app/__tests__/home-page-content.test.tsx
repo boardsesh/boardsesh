@@ -4,7 +4,11 @@ import React from 'react';
 import enMarketing from '@boardsesh/i18n/locales/en-US/marketing.json';
 import { buildStoreUrl } from '@/app/lib/store-links';
 import { __resetSessionInboundCampaignForTests } from '@/app/lib/inbound-campaign';
-import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
+import deMarketing from '@boardsesh/i18n/locales/de/marketing.json';
+import esMarketing from '@boardsesh/i18n/locales/es/marketing.json';
+import frMarketing from '@boardsesh/i18n/locales/fr/marketing.json';
+import itMarketing from '@boardsesh/i18n/locales/it/marketing.json';
+import { DocumentLocaleProvider } from '@/app/lib/i18n/document-locale-context';
 
 // Every hero store link names the hero as its placement (#6027).
 const HERO_PLAY_STORE_URL = buildStoreUrl('android', { placement: 'hero' });
@@ -12,29 +16,8 @@ const HERO_APP_STORE_URL = buildStoreUrl('ios', { placement: 'hero' });
 
 // --- Mocks ---
 
-// Resolve real en-US copy so assertions against the hero CTA still match after
-// the page started reading from i18n catalogs. Falls back to the raw key, which
-// surfaces missing keys clearly if a regex stops matching.
-function resolveMarketingKey(key: string): string {
-  const segments = key.split('.');
-  let node: unknown = enMarketing;
-  for (const segment of segments) {
-    if (node && typeof node === 'object' && segment in (node as Record<string, unknown>)) {
-      node = (node as Record<string, unknown>)[segment];
-    } else {
-      return key;
-    }
-  }
-  return typeof node === 'string' ? node : key;
-}
-
-let mockLanguage = 'en-US';
-vi.mock('react-i18next', () => ({
-  useTranslation: (namespace = 'marketing') => ({
-    t: (key: string) => tFromCatalog(namespace, key),
-    i18n: { language: mockLanguage, changeLanguage: () => Promise.resolve() },
-  }),
-}));
+// Exercise the same fixed-locale catalogs as the static server page.
+vi.mock('server-only', () => ({}));
 
 const mockTrack = vi.fn();
 vi.mock('@/app/lib/analytics-capture', () => ({
@@ -84,17 +67,14 @@ vi.mock('@/app/components/beta-videos/home-recent-beta-section', () => ({
 // now, and mocking it would make the physical-board identity cases vacuous.
 // Board artwork is an ordinary backend image and needs no browser renderer mock.
 
-vi.mock('@/app/components/i18n/locale-link', () => ({
-  default: ({ href, children, ...props }: { href: string; children?: React.ReactNode; [key: string]: unknown }) => (
-    <a href={href} {...props}>
-      {children}
-    </a>
-  ),
-}));
-
 // --- Helpers ---
 
-const defaultProps = {};
+const marketingByLocale = { 'en-US': enMarketing, de: deMarketing, es: esMarketing, fr: frMarketing, it: itMarketing };
+
+async function renderHome({ locale = 'en-US', ...slots }: Partial<Parameters<typeof HomePageContent>[0]> = {}) {
+  const page = await HomePageContent({ locale, ...slots });
+  return render(<DocumentLocaleProvider locale={locale}>{page}</DocumentLocaleProvider>);
+}
 
 const ANDROID_UA =
   'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Mobile Safari/537.36';
@@ -133,43 +113,45 @@ describe('HomePageContent', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    mockLanguage = 'en-US';
     loadSpy.mockRestore();
     openSpy.mockRestore();
     setUserAgent(ORIGINAL_UA);
   });
 
-  it('keeps discovery after the app introduction', () => {
-    render(
-      <HomePageContent featureStrip={<section data-testid="features" />} gymSearch={<section data-testid="gyms" />} />,
-    );
+  it('keeps discovery after the app introduction', async () => {
+    await renderHome({
+      featureStrip: <section data-testid="features" />,
+      gymSearch: <section data-testid="gyms" />,
+    });
     const featureSection = screen.getByTestId('features');
     const gymSection = screen.getByTestId('gyms');
     expect(featureSection.compareDocumentPosition(gymSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('keeps the playable demo in the hero before the journey and feature sections', () => {
-    render(<HomePageContent featureStrip={<section data-testid="features" />} />);
+  it('keeps the playable demo in the hero before the journey and feature sections', async () => {
+    await renderHome({ featureStrip: <section data-testid="features" /> });
     const heroHeading = screen.getByRole('heading', { level: 1 });
     const hero = heroHeading.closest('section');
-    const video = screen.getByLabelText(resolveMarketingKey('home.showcase.videoLabel'));
+    const video = screen.getByLabelText(enMarketing.home.showcase.videoLabel);
     const featureSection = screen.getByTestId('features');
     expect(hero?.contains(video)).toBe(true);
     expect(video.compareDocumentPosition(featureSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(document.querySelectorAll('video')).toHaveLength(1);
-    expect(screen.queryByAltText(resolveMarketingKey('home.hero.playShotAlt'))).toBeNull();
+    expect(screen.queryByAltText(enMarketing.home.hero.playShotAlt)).toBeNull();
     expect(document.querySelectorAll('figcaption li')).toHaveLength(8);
-    expect(screen.getByRole('button', { name: resolveMarketingKey('home.showcase.play') })).toBeTruthy();
+    expect(screen.getByRole('button', { name: enMarketing.home.showcase.play })).toBeTruthy();
   });
 
-  it.each(['es', 'fr', 'de', 'it'])(
+  it.each(['es', 'fr', 'de', 'it'] as const)(
     'keeps the three real board captures without English video on the %s page',
-    (language) => {
-      mockLanguage = language;
-      render(<HomePageContent featureStrip={<section data-testid="features" />} />);
+    async (locale) => {
+      await renderHome({ locale, featureStrip: <section data-testid="features" /> });
       const hero = screen.getByRole('heading', { level: 1 }).closest('section');
-      for (const key of ['tensionShotAlt', 'moonboardShotAlt', 'playShotAlt']) {
-        expect(hero?.contains(screen.getByAltText(resolveMarketingKey(`home.hero.${key}`)))).toBe(true);
+      const copy = marketingByLocale[locale].home.hero;
+      expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(copy.title);
+      expect(screen.getByRole('link', { name: copy.eyebrow }).getAttribute('href')).toBe(`/${locale}/boards`);
+      for (const alt of [copy.tensionShotAlt, copy.moonboardShotAlt, copy.playShotAlt]) {
+        expect(hero?.contains(screen.getByAltText(alt))).toBe(true);
       }
       expect(document.querySelector('video')).toBeNull();
     },
@@ -178,7 +160,7 @@ describe('HomePageContent', () => {
   describe('hero install CTA', () => {
     it('renders both store buttons on desktop web', async () => {
       setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0.0.0 Safari/537.36');
-      render(<HomePageContent {...defaultProps} />);
+      await renderHome();
       expect(await screen.findByRole('link', { name: /app store|get the free app/i })).toBeTruthy();
       fireEvent.click(await screen.findByRole('link', { name: /google play|get the free app/i }));
       expect(
@@ -188,7 +170,7 @@ describe('HomePageContent', () => {
 
     it('keeps the shared App Store badge on iPhone beside the desktop install slot', async () => {
       setUserAgent(IOS_SAFARI_UA);
-      render(<HomePageContent {...defaultProps} desktopInstall={<div data-testid="laptop-install" />} />);
+      await renderHome({ desktopInstall: <div data-testid="laptop-install" /> });
 
       const link = await screen.findByRole('link', { name: enMarketing.home.hero.ctaInstallIos });
       const badge = link.querySelector('img');
@@ -204,7 +186,7 @@ describe('HomePageContent', () => {
 
     it('shows the App Store install CTA on iOS web and opens the store on click', async () => {
       setUserAgent(IOS_SAFARI_UA);
-      render(<HomePageContent {...defaultProps} />);
+      await renderHome();
 
       const button = await screen.findByRole('link', { name: /app store|get the free app/i });
       fireEvent.click(button);
@@ -224,7 +206,7 @@ describe('HomePageContent', () => {
 
     it('shows the Google Play install CTA on Android web and opens Play on click', async () => {
       setUserAgent(ANDROID_UA);
-      render(<HomePageContent {...defaultProps} />);
+      await renderHome();
 
       const button = await screen.findByRole('link', { name: /google play|get the free app/i });
       fireEvent.click(button);
@@ -246,7 +228,7 @@ describe('HomePageContent', () => {
       __resetSessionInboundCampaignForTests();
       window.history.replaceState(null, '', '/?utm_source=instagram&utm_medium=social&utm_campaign=spray-launch');
       setUserAgent(ANDROID_UA);
-      render(<HomePageContent {...defaultProps} />);
+      await renderHome();
 
       const button = await screen.findByRole('link', { name: /google play|get the free app/i });
       const referrer = new URLSearchParams(
@@ -265,7 +247,7 @@ describe('HomePageContent', () => {
     it('shows an update CTA for a retired iOS native app, pointed at the App Store', async () => {
       setUserAgent(IOS_SAFARI_UA);
       mockIsNativeApp.mockReturnValue(true);
-      render(<HomePageContent {...defaultProps} />);
+      await renderHome();
 
       const button = await screen.findByRole('link', { name: /update the app/i });
       fireEvent.click(button);
@@ -283,7 +265,7 @@ describe('HomePageContent', () => {
     it('shows an update CTA for a retired Android native app, pointed at Google Play', async () => {
       setUserAgent(ANDROID_UA);
       mockIsNativeApp.mockReturnValue(true);
-      render(<HomePageContent {...defaultProps} />);
+      await renderHome();
 
       const button = await screen.findByRole('link', { name: /update the app/i });
       fireEvent.click(button);
@@ -313,7 +295,7 @@ describe('HomePageContent', () => {
         return Promise.resolve(true);
       });
 
-      render(<HomePageContent {...defaultProps} />);
+      await renderHome();
       expect(await screen.findByRole('link', { name: /update the app/i })).toBeTruthy();
       expect(screen.queryByRole('link', { name: /google play|get the free app/i })).toBeNull();
       expect(mockWaitForCapacitor).toHaveBeenCalledTimes(1);
@@ -321,8 +303,8 @@ describe('HomePageContent', () => {
   });
 
   describe('public journeys', () => {
-    it('offers all catalog boards and the photo wall before session detail', () => {
-      render(<HomePageContent featureStrip={<section data-testid="features" />} />);
+    it('offers all catalog boards and the photo wall before session detail', async () => {
+      await renderHome({ featureStrip: <section data-testid="features" /> });
       const boardLinks = screen
         .getAllByRole('link')
         .filter((link) => link.getAttribute('href')?.startsWith('/boards#'));
@@ -338,31 +320,33 @@ describe('HomePageContent', () => {
       expect(hrefs).toContain('/for-gyms');
     });
 
-    it('reports a named compatibility choice without a wall or account identifier', () => {
-      render(<HomePageContent />);
+    it('reports a named compatibility choice without a wall or account identifier', async () => {
+      await renderHome();
       fireEvent.click(screen.getByRole('link', { name: 'Woods' }));
       expect(mockTrack).toHaveBeenCalledWith('Compatibility Board Selected', { board: 'woods', source: 'home-chip' });
     });
 
-    it.each(['en-US', 'es', 'de'])('links the English-only board app guides from the %s hero', (language) => {
-      mockLanguage = language;
-      render(<HomePageContent />);
-      const hero = screen.getByRole('heading', { level: 1 }).closest('section');
-      const guides = screen.getByRole('link', { name: resolveMarketingKey('home.hero.compareApps') });
-      // The unprefixed path on every homepage: /apps has no localized copy, so /es/apps would only redirect.
-      expect(guides.getAttribute('href')).toBe('/apps');
-      expect(guides.getAttribute('hreflang')).toBe('en');
-      expect(hero?.contains(guides)).toBe(true);
-    });
+    it.each(['en-US', 'es', 'de'] as const)(
+      'links the English-only board app guides from the %s hero',
+      async (locale) => {
+        await renderHome({ locale });
+        const hero = screen.getByRole('heading', { level: 1 }).closest('section');
+        const guides = screen.getByRole('link', { name: marketingByLocale[locale].home.hero.compareApps });
+        // /apps is the canonical English guide across every homepage locale.
+        expect(guides.getAttribute('href')).toBe('/apps');
+        expect(guides.getAttribute('hreflang')).toBe('en');
+        expect(hero?.contains(guides)).toBe(true);
+      },
+    );
   });
 
   describe('heading semantics', () => {
-    it('gives the hero title a real <h1>, not just h5 styling', () => {
+    it('gives the hero title a real <h1>, not just h5 styling', async () => {
       // MUI maps variant="h5" to a literal <h5>, so this shipped with no <h1>
       // anywhere on the site's highest-traffic indexable page. The fix is
       // `component="h1"` — visually identical, semantically correct — and this
       // pins it, because nothing visual changes if it regresses.
-      render(<HomePageContent {...defaultProps} />);
+      await renderHome();
 
       // jsdom, so this pins the element the component *renders*, not what the
       // deployed HTML contains. The SSR half is covered by the `/` check in

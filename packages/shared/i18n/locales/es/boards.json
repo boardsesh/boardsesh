@@ -695,7 +695,7 @@
       "details": "Detalles",
       "activeSprayDetails": "{{name}} · detalles del Spraywall",
       "share": {
-        "shareLink": "Compartir enlace",
+        "shareLink": "Compartir con un amigo",
         "publicHint": "Cualquiera puede abrir este plafón.",
         "unlistedHint": "Solo quien reciba el enlace.",
         "inviteHint": "Quien lo abra puede pulsar Unirme para acceder a tu plafón."
@@ -978,6 +978,7 @@
       "publicBody": "Este plafón es público: cualquiera con el enlace puede abrirlo y escalar en él.",
       "unlistedBody": "Solo quien reciba este enlace puede abrir el plafón. No aparece en ninguna lista.",
       "inviteBody": "Cualquiera con este enlace puede pulsar Unirme para acceder a tu plafón.",
+      "qrCaption": "Que apunten su cámara aquí",
       "loading": "Preparando tu enlace",
       "loadFailed": "No pudimos preparar tu enlace. Cierra y vuelve a intentarlo.",
       "resetLink": "Restablecer enlace",
@@ -1858,7 +1859,8 @@
     "joinBody": "Al unirte podrás acceder a este plafón. Su propietario podrá ver tu nombre en la lista de miembros.",
     "join": "Unirme",
     "cancel": "Cancelar",
-    "joinFailed": "No se pudo acceder a este plafón. Inténtalo de nuevo o pide otro enlace a su propietario."
+    "joinFailed": "No se pudo acceder a este plafón. Inténtalo de nuevo o pide otro enlace a su propietario.",
+    "appHint": "Escala en la app de Boardsesh. Cuando la instales, abre este enlace otra vez en tu móvil."
   },
   "sprayLedSetup": {
     "title": "Configurar LED",

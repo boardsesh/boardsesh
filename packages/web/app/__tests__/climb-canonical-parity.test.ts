@@ -78,8 +78,10 @@ vi.mock('@/app/lib/data/queries', () => ({
 }));
 
 vi.mock('@/app/lib/data/front-door-data.server', () => ({
-  getFrontDoorSimilarClimbs: vi.fn(async () => ({ status: 'loaded', items: [] })),
-  getFrontDoorBetaLinks: vi.fn(async () => ({ status: 'loaded', items: [] })),
+  getFrontDoorRelatedContent: vi.fn(async () => ({
+    similarClimbs: { status: 'loaded', items: [] },
+    betaLinks: { status: 'loaded', items: [] },
+  })),
 }));
 
 vi.mock('@/app/lib/data/list-page-data.server', () => ({
@@ -167,7 +169,6 @@ vi.mock('@/app/components/board-renderer/util', () => ({
   ),
   buildOverlayUrl: vi.fn(() => '/api/internal/board-render'),
 }));
-vi.mock('@/app/lib/warm-overlay-cache', () => ({ scheduleOgImageWarming: vi.fn() }));
 // Recorded rather than discarded: the `noindex` prop is what stops the
 // CreativeWork JSON-LD from naming the indexable twin on a hidden `/b` page, and
 // the prop is the only place that decision is made.

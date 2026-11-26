@@ -62,7 +62,6 @@ vi.mock('../angle-table', () => ({ default: () => null }));
 vi.mock('../about-climb', () => ({ default: () => null }));
 vi.mock('@/app/components/climb-detail/climb-view-seo-fragment', () => ({ default: () => null }));
 vi.mock('@/app/components/similar-climbs/similar-climbs-list', () => ({ default: () => null }));
-vi.mock('@/app/components/social/climb-social-section', () => ({ default: () => null }));
 vi.mock('@/app/components/beta-videos/boardsesh-beta-list', () => ({ default: () => null }));
 vi.mock('@/app/components/climb-list/static-climb-list', () => ({ default: () => null }));
 vi.mock('@/app/components/board-renderer/util', () => ({

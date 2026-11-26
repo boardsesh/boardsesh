@@ -1163,8 +1163,7 @@
       "delete": "Kommentar konnte nicht gelöscht werden",
       "reply": "Antwort konnte nicht gepostet werden",
       "loadReplies": "Antworten konnten nicht geladen werden"
-    },
-    "signInToSuggestGrade": "Melde dich an, um einen Grad vorzuschlagen"
+    }
   },
   "vote": {
     "upvote": "Hochstimmen",

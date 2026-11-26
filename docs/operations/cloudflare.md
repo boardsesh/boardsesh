@@ -22,6 +22,57 @@ token setup, CI auto-apply, and the Pages deploy of `app.boardsesh.com`.
 See `docs/operations/user-media-storage.md`, `docs/operations/static-assets.md`, `docs/data/board-snapshots.md`, and
 `docs/operations/mobile-ota-updates.md` for the storage-specific contracts and cutover runbooks.
 
+### Next script and stylesheet compression
+
+`boardsesh:next-static-compression` prefers Brotli for GET/HEAD JavaScript and CSS
+under `/_next/static/` on www, assets and assets-r2. The remaining preference is
+Zstandard, then gzip, so clients without Brotli can still receive compressed
+files. Clients supporting none of these receive identity responses.
+[Cloudflare's compression settings](https://developers.cloudflare.com/rules/compression-rules/settings/)
+document the ordered algorithm list and negotiation behavior.
+
+The release-88 comparison on November 26, 2026 fetched 34 startup JS/CSS URLs in
+both encodings, with all 68 responses returning immutable cache HITs and matching
+decoded hashes. Brotli transferred 449,002 bytes versus 462,002 for Zstandard:
+13,000 bytes (2.81%) less. This measures response-body bytes, not an LCP reduction.
+Images, fonts, source maps, API responses and the OTA host are outside this rule.
+
+After the normal production apply, probe a current script and stylesheet with
+`Accept-Encoding: br, zstd, gzip` and require `Content-Encoding: br`. Repeat with
+Zstandard-only, gzip-only and identity requests; compare decoded SHA-256 and MIME
+types, and confirm repeat cache HITs. Recheck both public landing pages. The
+2.5-second LCP target still requires the production mobile measurement protocol.
+
+### Public marketing contacts
+
+When applied, `boardsesh:critical-marketing-email` disables Email Obfuscation for GET/HEAD
+requests to `www.boardsesh.com/` and `/apps/kilter`. These pages already expose
+their public contact addresses in Next's Flight data. Serving their original
+contact markup avoids injecting Cloudflare's parser-blocking decoder and keeps
+the contact details usable without JavaScript.
+
+The rule uses the `http_config_settings` phase, with `set_config` and
+`email_obfuscation: false`. It is a page override, rather than a zone setting.
+The production apply on November 26, 2026 returned HTTP 403 on this phase's read,
+before any writes. It requires **Zone → Config Rules → Edit**, also listed as
+Config Settings Write in the [API permission table](https://developers.cloudflare.com/fundamentals/api/reference/permissions/).
+Existing Transform Rules and Zone WAF scopes did not authorize it. Keep every
+existing token permission when adding the new one.
+
+During permission bootstrap, this phase is optional so other resources can
+still deploy. The apply reports it as unreadable/unapplied, never fully
+converged. The email decoder remains until a successful live apply is verified.
+After the new scope has been confirmed, make the phase mandatory like the
+other seven phases so a later permission loss fails loudly.
+
+After production apply, allow existing HTML cache entries to expire. Check both
+pages with JavaScript disabled: Home must retain its original `mailto:` contact
+link, and Kilter must show its original plain-text contact address. The returned
+documents must contain no email-decoder script or encoded email link. Confirm
+repeat anonymous cache HITs, then rerun
+the mobile LCP protocol. Removing a request does not by itself prove the
+2.5-second target.
+
 ### OTA assets host
 
 `ota-assets.boardsesh.com` is the custom domain on `boardsesh-ota-v3`. Two rules make it worth having, and both exist
@@ -322,6 +373,23 @@ Retain the Tigris bucket, credentials and staging domain. If R2 has accepted new
 writes, reverse-copy and verify those hashes before routing back to Tigris.
 Reintroduce the DNS-only record below only in an explicit rollback change;
 never proxy a Tigris custom domain.
+
+### Retained Next.js build assets
+
+The earlier compatibility release generated URLs on `assets.boardsesh.com`.
+Current www HTML uses same-origin Next asset URLs. A request to
+`www.boardsesh.com/_next/static/` for a file from another build can redirect to
+its retained CDN copy. These files are public. The request-header rule
+removes `Cookie`, `Authorization` and `Referer` before forwarding requests under
+`/_next/static/` to the www, assets and assets-r2 origins. A redirect can
+trigger a second browser request carrying domain cookies or a private referring
+page, so the rule covers the destination as well.
+
+On these three hosts, a cache rule applies to GET and HEAD under `/_next/static/`.
+It respects origin headers for immutable files and the no-store redirect for a
+file missing from the current image. It runs after the general assets rule and
+sets the edge TTL to `-1` for HTTP 400–599 so a failed fetch can be retried
+immediately. Requests under `/static/v1/` use the general catalogue policy.
 
 ### Historical Tigris routing and rollback
 

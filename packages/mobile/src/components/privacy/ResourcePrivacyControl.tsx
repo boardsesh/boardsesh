@@ -5,13 +5,14 @@ import { useTranslation } from 'react-i18next';
 import type { PrivacyLocationAudience } from '@boardsesh/graphql/operations/privacy';
 import { AudiencePicker, BOARD_AUDIENCES, SESSION_AUDIENCES } from './AudiencePicker';
 import { locationOptions } from './location-options';
+import { showsFriendsListSwitch } from './friends-list-switch';
 import { OwnPublicGymWarning } from '../board-discovery/OwnPublicGymWarning';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { SwitchRow } from '../SwitchRow';
 import { useResourcePrivacy, useUpdateResourcePrivacy } from '../../lib/graphql/hooks/use-resource-privacy';
 import { usePrivacySettings } from '../../lib/graphql/hooks/use-privacy';
-import { useProfile } from '../../lib/graphql/hooks';
+import { useGym, useProfile } from '../../lib/graphql/hooks';
 import { useConnectivity } from '../../lib/connectivity/use-connectivity';
 import { useTheme } from '../../providers/theme-provider';
 
@@ -19,11 +20,14 @@ export function ResourcePrivacyControl({
   kind,
   resourceId,
   gymUuid,
+  isSprayWall = false,
 }: {
   kind: 'board' | 'session';
   resourceId: string;
   /** A board's gym: its location hint and the own-public-gym warning. */
   gymUuid?: string | null;
+  /** A spray wall can't be listed to its owner's friends, so it never shows that switch. */
+  isSprayWall?: boolean;
 }) {
   const { t } = useTranslation('settings');
   const { t: tBoards } = useTranslation('boards');
@@ -34,6 +38,8 @@ export function ResourcePrivacyControl({
   const { data: profile } = useProfile();
   const { data: settings } = usePrivacySettings();
   const { data: privacy } = useResourcePrivacy(kind, resourceId);
+  // Shares OwnPublicGymWarning's cached read. `undefined` while it loads.
+  const { data: gym } = useGym(kind === 'board' ? (gymUuid ?? null) : null);
   const update = useUpdateResourcePrivacy();
   const { effectiveOffline } = useConnectivity();
   if (!settings?.enabled || !privacy || privacy.ownerId !== profile?.id) return null;
@@ -65,6 +71,22 @@ export function ResourcePrivacyControl({
               update.mutate({ kind, resourceId, audience: privacy.audience, inheritFollowers })
             }
           />
+          {showsFriendsListSwitch(privacy.audience, isSprayWall, gymUuid ? gym : null, privacy.ownerId ?? null) ? (
+            <SwitchRow
+              label={t('privacy.listedToFollowers')}
+              description={
+                privacy.audience === 'unlisted'
+                  ? t('privacy.listedToFollowersUnlistedHint')
+                  : t('privacy.listedToFollowersInviteHint')
+              }
+              wrapDescription
+              value={privacy.listedToFollowers}
+              disabled={disabled}
+              onValueChange={(listedToFollowers) =>
+                update.mutate({ kind, resourceId, audience: privacy.audience, listedToFollowers })
+              }
+            />
+          ) : null}
           <Text variant="subheadline">{t('privacy.locationAudience')}</Text>
           {/* The choice always governs the board's own place. A viewer it is
               hidden from still sees a public gym's listed location. */}

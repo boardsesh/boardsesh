@@ -13,11 +13,10 @@ import { fetchSprayWallArtImageUrl, fetchSprayWallPhotoUrl } from '@/app/lib/spr
  *
  * An unlisted wall has no such copy by design — it is read by whoever has the
  * link, through fifteen-minute presigned URLs over the private bucket. Putting
- * one of those straight into the page's HTML looks fine and then breaks: a
- * climb-view URL carries a 24-hour CDN `s-maxage` (`list-page-cache.ts`), so
- * for almost all of that day the cached HTML would point at a signature that
- * expired hours earlier. A stable path in the HTML and a fresh signature per
- * image fetch is the shape that survives the cache.
+ * one of those straight into the page's HTML can break after its fifteen-minute
+ * expiry, even though climb-view HTML now carries private/no-store headers.
+ * A stable path in the HTML and a fresh signature per image fetch keeps delayed
+ * image loads independent of the document's original render time.
  *
  * The gate is the backend's, not this route's, and deliberately so. The read is
  * anonymous, so `sprayWallRenderData` applies the wall view rule with no viewer:

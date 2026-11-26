@@ -1,10 +1,11 @@
 import type { SymbolViewProps } from 'expo-symbols';
+import type { MaterialDesignIconsIconName } from '@react-native-vector-icons/material-design-icons';
 
 export type IconMapping = {
   // SFSymbol union (from sf-symbols-typescript via expo-symbols) — every name is
   // validated at compile time, so a typo fails `vp run typecheck:mobile`.
-  ios: SymbolViewProps['name'];
-  android: string;
+  ios: Extract<SymbolViewProps['name'], string>;
+  android: MaterialDesignIconsIconName;
   /**
    * Downward nudge applied to the SF Symbol, as a fraction of its point size, so
    * the glyph's *ink* lands on the centre line rather than its bounding box.
@@ -188,7 +189,7 @@ export const iconMap = {
   'person.check': { ios: 'person.crop.circle.badge.checkmark', android: 'account-check-outline' },
   people: { ios: 'person.2', android: 'account-multiple-outline' },
   'people.fill': { ios: 'person.2.fill', android: 'account-multiple' },
-  discord: { ios: 'bubble.left.and.bubble.right.fill', android: 'discord' },
+  discord: { ios: 'bubble.left.and.bubble.right.fill', android: 'message-text' },
   notification: { ios: 'bell', android: 'bell-outline' },
   'notification.fill': { ios: 'bell.fill', android: 'bell' },
 

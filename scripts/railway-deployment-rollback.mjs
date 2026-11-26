@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { appendFileSync } from 'node:fs';
+import { isDeepStrictEqual } from 'node:util';
+import { normalizeExpectedImage } from './railway-deployment-status.mjs';
 import { fileURLToPath } from 'node:url';
 
 const scriptPath = fileURLToPath(import.meta.url);
@@ -66,6 +68,7 @@ const DEPLOYMENTS_QUERY = `
 const SERVICE_INSTANCE_STATE_QUERY = `
   query ServiceInstanceStateForVerifiedRollback($environmentId: String!, $serviceId: String!) {
     serviceInstance(environmentId: $environmentId, serviceId: $serviceId) {
+      source { image }
       latestDeployment {
         id
         status
@@ -143,7 +146,7 @@ function normalizeDeployment(rawDeployment, label) {
     .trim()
     .toUpperCase();
   if (!KNOWN_STATUSES.has(status)) {
-    throw new Error(`Railway ${label} returned unknown status ${status || '<empty>'}`);
+    throw new Error(`Railway ${label} returned unknown status`);
   }
 
   const createdAt = String(rawDeployment.createdAt ?? '').trim();
@@ -177,12 +180,21 @@ function assertDeploymentScope(deployment, scope, label) {
   }
 }
 
-async function requestGraphql({ fetchImpl, token, query, variables, operation, requestTimeoutMs = 30_000 }) {
+async function requestGraphql({
+  fetchImpl,
+  token,
+  query,
+  variables,
+  operation,
+  requestTimeoutMs = 30_000,
+  readJson = (response) => response.json(),
+}) {
   requireBoundedInteger(requestTimeoutMs, 'requestTimeoutMs', 300_000);
   let response;
   try {
     response = await fetchImpl(RAILWAY_GRAPHQL_ENDPOINT, {
       method: 'POST',
+      redirect: 'error',
       headers: {
         'Content-Type': 'application/json',
         'Project-Access-Token': token,
@@ -201,7 +213,7 @@ async function requestGraphql({ fetchImpl, token, query, variables, operation, r
 
   let payload;
   try {
-    payload = await response.json();
+    payload = await readJson(response);
   } catch {
     throw new RailwayReadError(`Railway ${operation} returned invalid JSON`);
   }
@@ -215,7 +227,7 @@ async function requestGraphql({ fetchImpl, token, query, variables, operation, r
   return payload.data;
 }
 
-async function queryProjectScope({ fetchImpl, token, requestTimeoutMs }) {
+async function queryProjectScope({ fetchImpl, token, requestTimeoutMs, readJson }) {
   const data = await requestGraphql({
     fetchImpl,
     token,
@@ -223,6 +235,7 @@ async function queryProjectScope({ fetchImpl, token, requestTimeoutMs }) {
     variables: {},
     operation: 'project token query',
     requestTimeoutMs,
+    readJson,
   });
   if (!data.projectToken || typeof data.projectToken !== 'object' || Array.isArray(data.projectToken)) {
     throw new RailwayReadError('Railway project token query response did not contain projectToken');
@@ -245,7 +258,7 @@ async function queryDeployment({ fetchImpl, token, deploymentId, operation, requ
   return normalizeDeployment(data.deployment, operation);
 }
 
-async function queryServiceDeployments({ fetchImpl, token, scope, operation, requestTimeoutMs }) {
+async function queryServiceDeployments({ fetchImpl, token, scope, operation, requestTimeoutMs, readJson }) {
   const data = await requestGraphql({
     fetchImpl,
     token,
@@ -261,6 +274,7 @@ async function queryServiceDeployments({ fetchImpl, token, scope, operation, req
     },
     operation,
     requestTimeoutMs,
+    readJson,
   });
 
   const edges = data.deployments?.edges;
@@ -283,7 +297,7 @@ async function queryServiceDeployments({ fetchImpl, token, scope, operation, req
   });
 }
 
-async function queryServiceInstanceState({ fetchImpl, token, scope, operation, requestTimeoutMs }) {
+async function queryServiceInstanceState({ fetchImpl, token, scope, operation, requestTimeoutMs, readJson }) {
   const data = await requestGraphql({
     fetchImpl,
     token,
@@ -294,6 +308,7 @@ async function queryServiceInstanceState({ fetchImpl, token, scope, operation, r
     },
     operation,
     requestTimeoutMs,
+    readJson,
   });
   const serviceInstance = data.serviceInstance;
   if (!serviceInstance || typeof serviceInstance !== 'object' || Array.isArray(serviceInstance)) {
@@ -315,7 +330,60 @@ async function queryServiceInstanceState({ fetchImpl, token, scope, operation, r
     assertDeploymentScope(deployment, scope, `${operation} active deployment ${index + 1}`);
     return deployment;
   });
-  return { active, latest };
+  return { active, latest, configuredImage: serviceInstance.source?.image };
+}
+
+// Identify exactly the deployment which a web redeploy would capture for recovery.
+// A newer unsuccessful attempt may be listed as latest while an older success serves.
+async function readWebRollbackBaseline({
+  fetchImpl,
+  token,
+  serviceId: rawServiceId,
+  expectedImage: rawExpectedImage,
+  readJson,
+}) {
+  const serviceId = requireSafeId(rawServiceId, 'RAILWAY_SERVICE_ID');
+  const expectedImage = normalizeExpectedImage(rawExpectedImage);
+  if (!String(token ?? '').trim()) throw new Error('RAILWAY_TOKEN is required');
+  const options = { fetchImpl, token, readJson };
+  const scope = { ...(await queryProjectScope(options)), serviceId };
+  const { active, latest, configuredImage } = await queryServiceInstanceState({
+    ...options,
+    scope,
+    operation: 'web service instance',
+  });
+  const deployments = await queryServiceDeployments({ ...options, scope, operation: 'web deployment list' });
+  if (configuredImage !== expectedImage)
+    throw new Error('Railway configured web source image disagrees with EXPECTED_IMAGE');
+  if (active.length !== 1 || active[0].status !== 'SUCCESS' || active[0].canRollback !== true) {
+    throw new Error('Expected exactly one active, rollback-capable successful web deployment');
+  }
+  const serving = active[0];
+  if (serving.image !== expectedImage) throw new Error('Railway running web image disagrees with EXPECTED_IMAGE');
+  if (deployments.some(({ status }) => ACTIVE_STATUSES.has(status) || status === 'SLEEPING' || status === 'REMOVING')) {
+    throw new Error('Railway web deployment list is not quiet');
+  }
+  for (const candidate of [latest, serving]) {
+    if (
+      !isDeepStrictEqual(
+        candidate,
+        deployments.find(({ id }) => id === candidate.id),
+      )
+    ) {
+      throw new Error('Railway service instance and deployment list disagree');
+    }
+  }
+  if (deployments.some((row) => row.id !== latest.id && row.createdAtMs >= latest.createdAtMs)) {
+    throw new Error('Railway latest deployment must be uniquely newest');
+  }
+  if (
+    deployments.some(
+      (row) => row.status === 'SUCCESS' && row.id !== serving.id && row.createdAtMs >= serving.createdAtMs,
+    )
+  ) {
+    throw new Error('Railway serving deployment must be the uniquely newest successful deployment');
+  }
+  return { serving, latest, deploymentIds: deployments.map(({ id }) => id).sort() };
 }
 
 async function readWithRetries({ read, maxConsecutiveReadErrors, pollIntervalMs, sleepImpl }) {
@@ -689,5 +757,6 @@ export {
   appendRollbackOutput,
   deploymentsAfterBaseline,
   requestGraphql,
+  readWebRollbackBaseline,
   rollbackDeployment,
 };

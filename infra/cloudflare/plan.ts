@@ -9,6 +9,7 @@
 import {
   CACHE_RULE_PHASE,
   COMPRESSION_RULE_PHASE,
+  CONFIGURATION_RULE_PHASE,
   DYNAMIC_REDIRECT_RULE_PHASE,
   RATE_LIMIT_RULE_PHASE,
   REQUEST_HEADER_RULE_PHASE,
@@ -20,6 +21,7 @@ import {
 import type {
   CacheRuleDesired,
   CompressionRuleDesired,
+  ConfigurationRuleDesired,
   DnsRecordDesired,
   R2BucketDesired,
   R2Cors,
@@ -41,7 +43,8 @@ export type ManagedRuleDesired =
   | RedirectRuleDesired
   | RequestHeaderRuleDesired
   | ResponseHeaderRuleDesired
-  | CompressionRuleDesired;
+  | CompressionRuleDesired
+  | ConfigurationRuleDesired;
 
 /** A DNS record as Cloudflare returns it. Which fields are owned depends on the desired record's management mode. */
 export interface LiveDnsRecord {
@@ -118,7 +121,8 @@ export type ManagedRuleResource =
   | 'redirect-rule'
   | 'request-header-rule'
   | 'response-header-rule'
-  | 'compression-rule';
+  | 'compression-rule'
+  | 'configuration-rule';
 
 /**
  * Every ruleset phase this tool owns, in one place.
@@ -161,6 +165,7 @@ export interface DesiredRuleSets {
   requestHeaderRules: RequestHeaderRuleDesired[];
   responseHeaderRules: ResponseHeaderRuleDesired[];
   compressionRules: CompressionRuleDesired[];
+  configurationRules: ConfigurationRuleDesired[];
 }
 
 export const MANAGED_RULE_PHASES = [
@@ -231,6 +236,17 @@ export const MANAGED_RULE_PHASES = [
     // rule every OTA bundle goes out uncompressed, so losing the scope must
     // fail loudly.
     optional: false,
+  },
+  {
+    resource: 'configuration-rule',
+    phase: CONFIGURATION_RULE_PHASE,
+    label: 'Configuration rule',
+    selectLive: (live) => live.rules['configuration-rule'],
+    selectDesired: (desired) => desired.configurationRules,
+    // Production returned 403 on 2026-11-26: Config Rules Edit is separate
+    // from the existing Transform Rules / Zone WAF scopes. Bootstrap it
+    // without blocking unrelated deploys, then require it after a live apply.
+    optional: true,
   },
 ] as const satisfies readonly ManagedRulePhase[];
 

@@ -1163,8 +1163,7 @@
       "delete": "Impossible de supprimer le commentaire",
       "reply": "Impossible de publier la réponse",
       "loadReplies": "Impossible de charger les réponses"
-    },
-    "signInToSuggestGrade": "Connecte-toi pour proposer une cotation"
+    }
   },
   "vote": {
     "upvote": "Voter pour",

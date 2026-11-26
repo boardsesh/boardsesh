@@ -71,15 +71,11 @@ const SELECTABLE_TEXT = textSelection(true);
  */
 export type SettingsRowTints = { control: string; fill: string };
 
-// The SFSymbol union the Image `systemName` prop accepts. The model carries a
-// semantic `MoreIconName`; map it to the SF Symbol here (the symbol union isn't
-// resolvable from the shared types module), then narrow at the single call site.
+// Check settings glyph names against the SF Symbol union accepted by SwiftUI.
 type SystemImageName = NonNullable<ComponentProps<typeof Image>['systemName']>;
 
-// Semantic icon → SF Symbol. Kept as plain strings + cast at the call site (the
-// prior `sfSymbol` field was a string too) so an SF Symbol name that isn't in the
-// `sf-symbols-typescript` union doesn't fail the type-check.
-const IOS_SF_SYMBOL: Record<MoreIconName, string> = {
+// Semantic icon → SF Symbol, validated without a call-site cast.
+const IOS_SF_SYMBOL: Record<MoreIconName, SystemImageName> = {
   // Matches the Home chrome's bell, so the two ways into notifications read as
   // the same destination.
   // A shield with a check — "the crew vets this", rather than a gavel's
@@ -111,8 +107,7 @@ const IOS_SF_SYMBOL: Record<MoreIconName, string> = {
   // The Home tab's own glyph.
   home: 'house',
   timers: 'timer',
-  // Sparkles for features not everyone has yet. `testtube.2` drew filled
-  // liquid, and `flask` needs iOS 17 (the app's floor is 16.4).
+  // Sparkles for features not everyone has yet.
   earlyAccess: 'sparkles',
   // `hammer` drew larger than the other glyphs in the column.
   developer: 'wrench.and.screwdriver',
@@ -142,7 +137,7 @@ function NavRow({ row }: { row: MoreNavRow }) {
         <Label
           icon={
             row.icon ? (
-              <Image systemName={IOS_SF_SYMBOL[row.icon] as SystemImageName} modifiers={[ROW_ICON, SECONDARY_LABEL]} />
+              <Image systemName={IOS_SF_SYMBOL[row.icon]} modifiers={[ROW_ICON, SECONDARY_LABEL]} />
             ) : undefined
           }
         >
@@ -153,7 +148,7 @@ function NavRow({ row }: { row: MoreNavRow }) {
         </Label>
         <Spacer />
         {row.value ? <Text modifiers={[SECONDARY_LABEL]}>{row.value}</Text> : null}
-        <Image systemName={row.external ? 'arrow.up.right' : 'chevron.right'} modifiers={[CHEVRON, TERTIARY_LABEL]} />
+        <Image systemName={row.external ? 'arrow.up.right' : 'chevron.forward'} modifiers={[CHEVRON, TERTIARY_LABEL]} />
       </HStack>
     </Button>
   );
