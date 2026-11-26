@@ -12,6 +12,9 @@ describe('board launch visibility', () => {
     expect(isBoardTypeVisible('quantum')).toBe(false);
     expect(isBoardTypeVisible('spray')).toBe(true);
   });
+  it.each([undefined, null, '', ' ', 1])('declines a malformed cached board type (%j)', (boardType) => {
+    expect(isBoardTypeVisible(boardType, { [QUANTUM_BOARD_FLAG]: true })).toBe(false);
+  });
 });
 
 describe('Quantum board configurations', () => {

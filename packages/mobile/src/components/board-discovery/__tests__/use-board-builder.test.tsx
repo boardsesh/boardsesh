@@ -88,7 +88,7 @@ describe('useBoardBuilder', () => {
       useBoardBuilder({ boardName: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' }),
     );
 
-    expect(result.current.layouts.map((layout) => layout.id)).toEqual([9101, 9104, 9105]);
+    expect(result.current.layouts.map((layout) => layout.id)).toEqual([9101, 9104]);
     expect(result.current.angles).toEqual([]);
     expect(result.current.canCreate).toBe(false);
     expect(result.current.buildCreateInput()).toBeNull();

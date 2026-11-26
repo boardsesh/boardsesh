@@ -6,8 +6,11 @@ export type BoardVisibilityFlags = Readonly<Record<string, unknown>>;
 const BOARD_LAUNCH_FLAGS: Partial<Record<BoardName, string>> = { quantum: QUANTUM_BOARD_FLAG };
 
 /** Technical board support is independent of whether its rollout is visible. */
-export function isBoardTypeVisible(boardType: string, flags: BoardVisibilityFlags = {}): boolean {
-  const launchFlag = BOARD_LAUNCH_FLAGS[boardType.trim().toLowerCase() as BoardName];
+export function isBoardTypeVisible(boardType: unknown, flags: BoardVisibilityFlags = {}): boolean {
+  if (typeof boardType !== 'string') return false;
+  const normalized = boardType.trim().toLowerCase();
+  if (!normalized) return false;
+  const launchFlag = BOARD_LAUNCH_FLAGS[normalized as BoardName];
   return launchFlag === undefined || flags[launchFlag] === true;
 }
 

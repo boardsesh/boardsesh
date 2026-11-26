@@ -448,10 +448,10 @@ export function buildJoinAndWhere(
 
   // Base: board / layout / listed / non-draft.
   if (followedCondition) push(followedCondition.sql, ...followedCondition.binds);
-  if (boardType === 'quantum' || context === 'playlist') push(`(${QUANTUM_CLIMB_RETIREMENT_SQL}) IS NOT TRUE`);
   // Playlists own their membership, visibility and geometry. Their filters
   // reuse the expressions below against stats joined at each row's display angle.
   if (context === 'catalogue') {
+    if (boardType === 'quantum') push(`(${QUANTUM_CLIMB_RETIREMENT_SQL}) IS NOT TRUE`);
     push('c.board_type = ?', boardType);
     push('c.layout_id = ?', input.layoutId);
     if (isDraftQuery) {

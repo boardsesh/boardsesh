@@ -38,6 +38,7 @@ import {
   type LocalClimbRow,
 } from './search-climbs-local';
 import { canReadFollowedAuthors, followedAuthorsLocalCondition } from './followed-authors-local';
+import { QUANTUM_CLIMB_RETIREMENT_SQL } from './quantum-climb-retirement';
 
 type PlaylistRow = {
   uuid: string;
@@ -95,7 +96,11 @@ function mapPlaylist(row: PlaylistRow): Playlist {
   };
 }
 
-const PLAYLIST_SELECT = `SELECT p.*, (SELECT COUNT(*) FROM playlist_climbs pc WHERE pc.playlist_uuid = p.uuid) AS climb_count FROM playlists p`;
+const PLAYLIST_MEMBER_NOT_RETIRED = `(${QUANTUM_CLIMB_RETIREMENT_SQL}) IS NOT TRUE`;
+const PLAYLIST_SELECT = `SELECT p.*, (
+  SELECT COUNT(*) FROM playlist_climbs pc LEFT JOIN board_climbs c ON c.uuid = pc.climb_uuid
+  WHERE pc.playlist_uuid = p.uuid AND ${PLAYLIST_MEMBER_NOT_RETIRED}
+) AS climb_count FROM playlists p`;
 // The server's numeric ID is not mirrored. UUID is the stable offline tie-break.
 const PLAYLIST_ORDER = 'ORDER BY COALESCE(p.last_accessed_at, p.updated_at) DESC, p.uuid DESC';
 
@@ -314,6 +319,7 @@ async function completePlaylistCoverage(db: OfflineDatabase, playlistId: string,
   const rows = await db.getAllAsync<CoverageRow>(
     `SELECT c.uuid, c.board_type, c.layout_id, c.compatible_size_ids FROM playlist_climbs pc
      LEFT JOIN board_climbs c ON c.uuid = pc.climb_uuid WHERE pc.playlist_uuid = ?
+       AND ${PLAYLIST_MEMBER_NOT_RETIRED}
        AND (c.uuid IS NULL OR COALESCE(c.is_draft, 0) = 0 OR c.user_id = ?
          OR (c.board_type = 'spray' AND EXISTS (SELECT 1 FROM spray_walls wall WHERE wall.layout_id = c.layout_id)))`,
     [playlistId, viewerId],
@@ -390,7 +396,7 @@ function playlistBase(input: GetPlaylistClimbsInput, viewerId: string): SqlFragm
       SELECT c.*, pc.position, pc.added_at AS playlist_added_at, pc.angle AS playlist_angle,
         ${preferred.sql} AS preferred_angle
       FROM playlist_climbs pc JOIN board_climbs c ON c.uuid = pc.climb_uuid
-      WHERE pc.playlist_uuid = ? AND (COALESCE(c.is_draft, 0) = 0 OR c.user_id = ?
+      WHERE pc.playlist_uuid = ? AND ${PLAYLIST_MEMBER_NOT_RETIRED} AND (COALESCE(c.is_draft, 0) = 0 OR c.user_id = ?
         OR (c.board_type = 'spray' AND EXISTS (SELECT 1 FROM spray_walls wall WHERE wall.layout_id = c.layout_id))) AND ${scope.sql}
     )`,
     binds: [...preferred.binds, input.playlistId, viewerId, ...scope.binds],

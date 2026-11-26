@@ -45,7 +45,10 @@ vi.mock('../../../providers/theme-provider', () => ({
     actionColors: { success: 'green', favorite: 'pink', accent: 'purple' },
   }),
 }));
-vi.mock('../../../providers/feature-flags-provider', () => ({ useClimbModerationEnabled: () => true }));
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useClimbModerationEnabled: () => true,
+  useFeatureFlag: () => false,
+}));
 vi.mock('../../../lib/spray/use-spray-wall-archive', () => ({ useSprayWallIsArchived: () => false }));
 vi.mock('../../../hooks/use-is-climb-favorited', () => ({ useIsClimbFavorited: () => false }));
 vi.mock('../../../hooks/use-privacy-scoped-state', () => ({ usePrivacyScopedState: useState }));
