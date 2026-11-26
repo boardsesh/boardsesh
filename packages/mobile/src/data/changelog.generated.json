@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-26T19:38:05.994Z",
+  "generatedAt": "2026-11-26T20:03:04.624Z",
   "entries": [
+    {
+      "prNumber": 8261,
+      "category": "new",
+      "title": "Search climbs by name right from the tab bar on iOS 26. You can turn it off in Settings › Climbs & grades.",
+      "mergedAt": "2026-11-26T19:58:02Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8261"
+    },
     {
       "prNumber": 8260,
       "category": "new",

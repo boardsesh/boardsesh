@@ -8,6 +8,7 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### New
 
+- Search climbs by name right from the tab bar on iOS 26. You can turn it off in Settings › Climbs & grades. ([#8261](https://github.com/boardsesh/boardsesh/pull/8261))
 - Your climb filters now stay put when you change the angle or switch boards ([#8260](https://github.com/boardsesh/boardsesh/pull/8260))
   Changing the angle keeps your climb name search too; switching boards clears just the name
   Recent searches work on every board and angle
