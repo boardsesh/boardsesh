@@ -54,15 +54,15 @@ const resourceSchema = z
     audience: resourceAudience,
     locationAudience: locationAudience.optional(),
     inheritFollowers: z.boolean().optional(),
-    // Only listing: lists an Unlisted or Invite-only board in followers'
-    // Friends' boards; it grants no access. Omitted keeps the stored value
-    // while the board stays Unlisted or Invite-only; any other audience
-    // clears it (see `listedToFollowersAudience`).
+    // Only listing: lists an Unlisted or Invite-only board in the Friends'
+    // boards of the people the owner follows; it grants no access. Omitted
+    // keeps the stored value while the board stays Unlisted or Invite-only;
+    // any other audience clears it (see `listedToFollowersAudience`).
     listedToFollowers: z.boolean().optional(),
   })
   .strict();
 /**
- * The audiences "Show to my followers" applies to. Saving a board with any
+ * The audiences "Show to people I follow" applies to. Saving a board with any
  * other audience turns the switch off, so a round trip through Public or Only
  * me cannot re-list the board in Friends' boards without a fresh choice.
  */

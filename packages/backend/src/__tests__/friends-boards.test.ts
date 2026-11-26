@@ -9,16 +9,28 @@ import { socialBoardMutations, socialBoardQueries } from '../graphql/resolvers/s
 import { privacyMutations, privacyQueries } from '../graphql/resolvers/privacy';
 import { boardShareLinkMutations, boardShareLinkQueries } from '../graphql/resolvers/privacy/board-share-links';
 
-// Friends' boards (docs/product/privacy.md): which boards of the people a
-// climber follows are listed to them, what a row shows, and how joining a
-// board puts it in Your boards. Real Postgres: the gating is SQL.
+// Friends' boards (docs/product/privacy.md): a board is listed to the people
+// its owner follows ("when I follow you, you can see my boards"), what a row
+// shows, and how joining a board puts it in Your boards. Real Postgres: the
+// gating is SQL.
 
 const owner = 'friends-owner';
-const follower = 'friends-follower';
+// The owner follows each other and they follow the owner back.
+const friend = 'friends-friend';
+// The owner follows them; they do not follow the owner.
+const followed = 'friends-followed';
+// They follow the owner; the owner does not follow them.
+const fan = 'friends-fan';
 const stranger = 'friends-stranger';
+// The owner follows them; an approved grant on every board.
 const member = 'friends-member';
+// The owner follows them; a pending request on every board.
 const requester = 'friends-requester';
+// Mutual follow; removed from every board.
 const removed = 'friends-removed';
+// They follow the owner and hold an approved grant on every board, but the
+// owner does not follow them.
+const fanMember = 'friends-fan-member';
 const otherOwner = 'friends-other-owner';
 const joiner = 'friends-joiner';
 const orderer = 'friends-orderer';
@@ -86,6 +98,11 @@ async function setGrant(boardUuid: string, userId: string, status: 'pending' | '
     });
 }
 
+/** `followerId` follows `followingId` (an accepted follow). */
+async function follow(followerId: string, followingId: string) {
+  await db.insert(schema.userFollows).values({ followerId, followingId }).onConflictDoNothing();
+}
+
 async function follows(userId: string, boardUuid: string): Promise<boolean> {
   const rows = await db
     .select({ id: schema.boardFollows.id })
@@ -106,11 +123,14 @@ beforeAll(async () => {
   await db.insert(schema.users).values(
     [
       owner,
-      follower,
+      friend,
+      followed,
+      fan,
       stranger,
       member,
       requester,
       removed,
+      fanMember,
       otherOwner,
       joiner,
       orderer,
@@ -124,31 +144,44 @@ beforeAll(async () => {
     })),
   );
   await db.insert(schema.userProfiles).values({ userId: owner, displayName: 'Sam Setter' });
-  await db
-    .insert(schema.userFollows)
-    .values([follower, member, requester, removed, joiner].map((followerId) => ({ followerId, followingId: owner })));
+  await db.insert(schema.userFollows).values([
+    ...[friend, followed, member, requester, removed, joiner].map((viewer) => ({
+      followerId: owner,
+      followingId: viewer,
+    })),
+    ...[friend, fan, removed, fanMember].map((viewer) => ({ followerId: viewer, followingId: owner })),
+  ]);
   for (const audience of AUDIENCES) {
     for (const listed of [false, true]) {
       const board = await seedBoard(owner, audience, { listed });
       matrix.set(keyOf(audience, listed), { uuid: board.uuid, audience, listed });
       await setGrant(board.uuid, member, 'approved');
+      await setGrant(board.uuid, fanMember, 'approved');
       await setGrant(board.uuid, requester, 'pending');
       await setGrant(board.uuid, removed, 'revoked');
     }
   }
 });
+
+const followedByOwner = new Set([friend, followed, member, requester, removed]);
+const followsOwner = new Set([friend, fan, removed, fanMember]);
 afterAll(() => vi.unstubAllEnvs());
 
 /** What each viewer should see, keyed by audience:listed. Missing = not listed. */
 function expectedFor(viewer: string): Map<string, string> {
   const expected = new Map<string, string>();
   for (const [key, { audience, listed }] of matrix) {
-    if (viewer === stranger || viewer === removed || audience === 'only_me') continue;
-    if (audience === 'public' || audience === 'followers') expected.set(key, 'CAN_CLIMB');
-    else if (viewer === member) expected.set(key, 'CAN_CLIMB');
+    // The owner's follow lists; the viewer's follow alone lists nothing.
+    if (!followedByOwner.has(viewer) || viewer === removed || audience === 'only_me') continue;
+    const hasGrant = viewer === member;
+    const askState = viewer === requester ? 'REQUESTED' : 'CAN_REQUEST';
+    if (audience === 'public') expected.set(key, 'CAN_CLIMB');
+    // Always listed; it opens only for people who follow the owner (or hold a grant).
+    else if (audience === 'followers') expected.set(key, hasGrant || followsOwner.has(viewer) ? 'CAN_CLIMB' : askState);
+    else if (hasGrant) expected.set(key, 'CAN_CLIMB');
     else if (!listed) continue;
     else if (audience === 'unlisted') expected.set(key, 'CAN_CLIMB');
-    else expected.set(key, viewer === requester ? 'REQUESTED' : 'CAN_REQUEST');
+    else expected.set(key, askState);
   }
   return expected;
 }
@@ -166,14 +199,46 @@ async function listedFor(viewer: string): Promise<Map<string, string>> {
 }
 
 describe('friendsBoards visibility', () => {
-  for (const viewer of [follower, stranger, member, requester, removed]) {
+  for (const viewer of [friend, followed, fan, stranger, member, requester, removed, fanMember]) {
     it(`lists exactly the expected boards for ${viewer}`, async () => {
       expect(Object.fromEntries(await listedFor(viewer))).toEqual(Object.fromEntries(expectedFor(viewer)));
     });
   }
 
+  it('lists nothing to someone who follows the owner when the owner does not follow back', async () => {
+    expect(await friendsBoards(fan, { limit: 50 })).toEqual({ items: [], totalCount: 0, hasMore: false });
+    // Not even a board they hold an approved grant on.
+    expect((await friendsBoards(fanMember, { limit: 50 })).totalCount).toBe(0);
+  });
+
+  it('lists a Followers board as an ask card one way, and as climbable both ways', async () => {
+    const followersBoard = matrix.get(keyOf('followers', false))!.uuid;
+    const accessOf = async (viewer: string) =>
+      (await friendsBoards(viewer, { limit: 50 })).items.find((item) => item.preview.uuid === followersBoard)
+        ?.viewerAccess;
+    expect(await accessOf(followed)).toBe('CAN_REQUEST');
+    expect(await accessOf(friend)).toBe('CAN_CLIMB');
+  });
+
+  it('lists one person’s boards to the other, not the other way round', async () => {
+    const sam = 'friends-direction-sam';
+    const alex = 'friends-direction-alex';
+    await db.insert(schema.users).values([sam, alex].map((id) => ({ id, name: id, email: `${id}@test.invalid` })));
+    const samBoard = await seedBoard(sam, 'public');
+    const alexBoard = await seedBoard(alex, 'public');
+    await follow(sam, alex);
+    expect((await readFriendsBoards(alex, { limit: 50 })).items.map((item) => item.preview.uuid)).toEqual([
+      samBoard.uuid,
+    ]);
+    expect((await readFriendsBoards(sam, { limit: 50 })).totalCount).toBe(0);
+    await follow(alex, sam);
+    expect((await readFriendsBoards(sam, { limit: 50 })).items.map((item) => item.preview.uuid)).toEqual([
+      alexBoard.uuid,
+    ]);
+  });
+
   it('shows a full board only to someone who can climb on it', async () => {
-    const page = await friendsBoards(follower, { limit: 50 });
+    const page = await friendsBoards(followed, { limit: 50 });
     for (const item of page.items) {
       expect(item.owner).toEqual({ userId: owner, displayName: 'Sam Setter', avatarUrl: null });
       if (item.viewerAccess === 'CAN_CLIMB') {
@@ -188,21 +253,24 @@ describe('friendsBoards visibility', () => {
   });
 
   it('keeps the slug, serial, location and counts off a request card', async () => {
-    const page = await friendsBoards(follower, { limit: 50 });
+    const page = await friendsBoards(followed, { limit: 50 });
     const requestCards = page.items.filter((item) => item.viewerAccess !== 'CAN_CLIMB');
-    expect(requestCards).toHaveLength(1);
-    const [card] = requestCards;
-    expect(Object.keys(card.preview).sort()).toEqual(
-      ['angle', 'boardType', 'layoutId', 'name', 'setIds', 'sizeId', 'uuid'].sort(),
-    );
-    const serialized = JSON.stringify(card);
-    expect(serialized).not.toMatch(/friends-invite-only|SERIAL-|Secret garage|51\.5|-0\.12/);
+    // Both Followers boards and the opted-in Invite-only board.
+    expect(requestCards).toHaveLength(3);
+    for (const card of requestCards) {
+      expect(card.board).toBeNull();
+      expect(Object.keys(card.preview).sort()).toEqual(
+        ['angle', 'boardType', 'layoutId', 'name', 'setIds', 'sizeId', 'uuid'].sort(),
+      );
+      const serialized = JSON.stringify(card);
+      expect(serialized).not.toMatch(/friends-invite-only|friends-followers|SERIAL-|Secret garage|51\.5|-0\.12/);
+    }
   });
 
   it('reads every "Show to my followers" switch as off while the privacy controls are off', async () => {
     vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', '0');
     try {
-      const listed = await listedFor(follower);
+      const listed = await listedFor(followed);
       expect([...listed.keys()].sort()).toEqual(
         ['public:quiet', 'public:listed', 'followers:quiet', 'followers:listed'].sort(),
       );
@@ -212,17 +280,17 @@ describe('friendsBoards visibility', () => {
   });
 
   it('filters on the board name and the owner name', async () => {
-    const byOwner = await friendsBoards(follower, { query: 'sam set', limit: 50 });
-    expect(byOwner.totalCount).toBe(expectedFor(follower).size);
-    const byBoard = await friendsBoards(follower, { query: 'garage invite_only listed', limit: 50 });
+    const byOwner = await friendsBoards(followed, { query: 'sam set', limit: 50 });
+    expect(byOwner.totalCount).toBe(expectedFor(followed).size);
+    const byBoard = await friendsBoards(followed, { query: 'garage invite_only listed', limit: 50 });
     expect(byBoard.items.map((item) => item.preview.uuid)).toEqual([matrix.get(keyOf('invite_only', true))!.uuid]);
     // LIKE wildcards are matched literally.
-    expect((await friendsBoards(follower, { query: '%' })).totalCount).toBe(0);
+    expect((await friendsBoards(followed, { query: '%' })).totalCount).toBe(0);
   });
 
   it('pages with a count that matches the rows', async () => {
-    const first = await friendsBoards(follower, { limit: 2 });
-    const rest = await friendsBoards(follower, { limit: 50, offset: 2 });
+    const first = await friendsBoards(followed, { limit: 2 });
+    const rest = await friendsBoards(followed, { limit: 50, offset: 2 });
     expect(first.hasMore).toBe(true);
     expect(rest.hasMore).toBe(false);
     const uuids = [...first.items, ...rest.items].map((item) => item.preview.uuid);
@@ -241,7 +309,7 @@ describe('friendsBoards visibility', () => {
 
 describe('friendsBoards leaves out boards that are not a friend’s home board to save', () => {
   it('skips deleted boards, gym boards, spray walls and boards already saved', async () => {
-    await db.insert(schema.userFollows).values({ followerId: follower, followingId: otherOwner });
+    await follow(otherOwner, followed);
     const [gym] = await db
       .insert(schema.gyms)
       .values({ uuid: `friends-gym-${uuidv4()}`, name: 'Friends Gym', ownerId: otherOwner, isPublic: true })
@@ -251,15 +319,15 @@ describe('friendsBoards leaves out boards that are not a friend’s home board t
     await seedBoard(otherOwner, 'public', { gymId: Number(gym.id) });
     await seedBoard(otherOwner, 'public', { boardType: 'spray' });
     const saved = await seedBoard(otherOwner, 'public', { name: 'Other saved' });
-    await db.insert(schema.boardFollows).values({ userId: follower, boardUuid: saved.uuid });
+    await db.insert(schema.boardFollows).values({ userId: followed, boardUuid: saved.uuid });
 
-    const page = await readFriendsBoards(follower, { limit: 50 });
+    const page = await readFriendsBoards(followed, { limit: 50 });
     const otherOwnerUuids = page.items.filter((item) => item.owner.userId === otherOwner).map((i) => i.preview.uuid);
     expect(otherOwnerUuids).toEqual([visible.uuid]);
   });
 
   it('lists a home wall at a gym its owner runs privately, but not at someone else’s gym', async () => {
-    await db.insert(schema.userFollows).values({ followerId: follower, followingId: otherOwner }).onConflictDoNothing();
+    await follow(otherOwner, followed);
     const mintGym = async (gymOwner: string, values: { isPublic: boolean; isListed?: boolean; deleted?: boolean }) => {
       const [gym] = await db
         .insert(schema.gyms)
@@ -290,14 +358,17 @@ describe('friendsBoards leaves out boards that are not a friend’s home board t
       gymId: await mintGym(stranger, { isPublic: false }),
     });
 
-    const listed = (await readFriendsBoards(follower, { limit: 50 })).items.map((item) => item.preview.uuid);
+    const listed = (await readFriendsBoards(followed, { limit: 50 })).items.map((item) => item.preview.uuid);
     expect(listed).toEqual(expect.arrayContaining([privateHome.uuid, unlistedHome.uuid, deletedGym.uuid]));
     expect(listed).not.toContain(ownPublicGym.uuid);
     expect(listed).not.toContain(someoneElsesPrivateGym.uuid);
   });
 
   it('keeps listing a saved board the climber can no longer open, so they can ask for it', async () => {
-    await db.insert(schema.userFollows).values({ followerId: saver, followingId: otherOwner });
+    // Mutual: saver can open (and so save) the Followers board, and otherOwner's
+    // follow lists otherOwner's boards to saver.
+    await follow(saver, otherOwner);
+    await follow(otherOwner, saver);
     const wasPublic = await seedBoard(otherOwner, 'public', { name: 'Was public' });
     const wasFollowers = await seedBoard(otherOwner, 'followers', { name: 'Was followers' });
     for (const board of [wasPublic, wasFollowers]) {
@@ -332,10 +403,8 @@ describe('friendsBoards leaves out boards that are not a friend’s home board t
       { userId: busyOwner, displayName: 'Aaron Busy' },
       { userId: quietOwner, displayName: 'Bea Quiet' },
     ]);
-    await db.insert(schema.userFollows).values([
-      { followerId: orderer, followingId: busyOwner },
-      { followerId: orderer, followingId: quietOwner },
-    ]);
+    await follow(busyOwner, orderer);
+    await follow(quietOwner, orderer);
     const busyBoard = await seedBoard(busyOwner, 'public');
     const quietBoard = await seedBoard(quietOwner, 'public');
     const hiddenTick = `friends-tick-hidden-${uuidv4()}`;
@@ -382,7 +451,7 @@ describe('friendsBoards leaves out boards that are not a friend’s home board t
     await db.insert(schema.boardseshTicks).values([
       {
         uuid: `friends-tick-old-${uuidv4()}`,
-        userId: follower,
+        userId: friend,
         climbUuid: 'catalog-climb',
         boardType: 'kilter',
         angle: 40,
@@ -392,7 +461,7 @@ describe('friendsBoards leaves out boards that are not a friend’s home board t
       },
       {
         uuid: `friends-tick-new-${uuidv4()}`,
-        userId: follower,
+        userId: friend,
         climbUuid: 'catalog-climb',
         boardType: 'kilter',
         angle: 40,
@@ -401,7 +470,7 @@ describe('friendsBoards leaves out boards that are not a friend’s home board t
         boardId: idOf(newer.uuid),
       },
     ]);
-    const page = await readFriendsBoards(follower, { limit: 2 });
+    const page = await readFriendsBoards(friend, { limit: 2 });
     expect(page.items.map((item) => item.preview.uuid)).toEqual([newer.uuid, older.uuid]);
   });
 });
@@ -416,14 +485,18 @@ describe('membership puts a board in Your boards', () => {
   it('lets a member save a private board, and nobody else', async () => {
     const followersBoard = await seedBoard(owner, 'followers');
     await expect(
-      socialBoardMutations.followBoard(null, { input: { boardUuid: followersBoard.uuid } }, context(follower)),
+      socialBoardMutations.followBoard(null, { input: { boardUuid: followersBoard.uuid } }, context(friend)),
     ).resolves.toBe(true);
+    // Listed to `followed` (the owner follows them), but not theirs to save.
+    await expect(
+      socialBoardMutations.followBoard(null, { input: { boardUuid: followersBoard.uuid } }, context(followed)),
+    ).rejects.toThrow('Cannot follow a private board');
     await expect(
       socialBoardMutations.followBoard(null, { input: { boardUuid: followersBoard.uuid } }, context(stranger)),
     ).rejects.toThrow('Cannot follow a private board');
 
     await expect(
-      socialBoardMutations.followBoard(null, { input: { boardUuid: board.uuid } }, context(follower)),
+      socialBoardMutations.followBoard(null, { input: { boardUuid: board.uuid } }, context(friend)),
     ).rejects.toThrow('Cannot follow a private board');
     await setGrant(board.uuid, member, 'approved');
     await expect(
@@ -449,32 +522,32 @@ describe('membership puts a board in Your boards', () => {
 
   it('does not save a spray wall when the owner approves a request on it', async () => {
     const wall = await seedBoard(owner, 'invite_only', { boardType: 'spray' });
-    await setGrant(wall.uuid, follower, 'pending');
+    await setGrant(wall.uuid, followed, 'pending');
     await privacyMutations.approveResourceAccess(
       null,
-      { kind: 'board', resourceId: wall.uuid, userId: follower },
+      { kind: 'board', resourceId: wall.uuid, userId: followed },
       context(owner),
     );
     const [grant] = await db
       .select({ status: schema.resourceGrants.status })
       .from(schema.resourceGrants)
-      .where(and(eq(schema.resourceGrants.resourceId, wall.uuid), eq(schema.resourceGrants.userId, follower)));
+      .where(and(eq(schema.resourceGrants.resourceId, wall.uuid), eq(schema.resourceGrants.userId, followed)));
     expect(grant.status).toBe('approved');
-    expect(await follows(follower, wall.uuid)).toBe(false);
+    expect(await follows(followed, wall.uuid)).toBe(false);
   });
 
   it('saves the board when the owner approves a request, but not on a name invite', async () => {
-    await privacyMutations.requestResourceAccess(null, { kind: 'board', resourceId: board.uuid }, context(follower));
-    const requested = await readFriendsBoards(follower, { limit: 50 });
+    await privacyMutations.requestResourceAccess(null, { kind: 'board', resourceId: board.uuid }, context(followed));
+    const requested = await readFriendsBoards(followed, { limit: 50 });
     expect(requested.items.find((item) => item.preview.uuid === board.uuid)?.viewerAccess).toBe('REQUESTED');
-    expect(await follows(follower, board.uuid)).toBe(false);
+    expect(await follows(followed, board.uuid)).toBe(false);
 
     await privacyMutations.approveResourceAccess(
       null,
-      { kind: 'board', resourceId: board.uuid, userId: follower },
+      { kind: 'board', resourceId: board.uuid, userId: followed },
       context(owner),
     );
-    expect(await follows(follower, board.uuid)).toBe(true);
+    expect(await follows(followed, board.uuid)).toBe(true);
 
     await privacyMutations.inviteResourceMember(
       null,
@@ -546,7 +619,7 @@ describe('the "Show to my followers" switch', () => {
       );
     expect((await save({ audience: 'unlisted', listedToFollowers: true }))?.listedToFollowers).toBe(true);
     const listedUuids = async () =>
-      (await readFriendsBoards(follower, { limit: 50 })).items.map((item) => item.preview.uuid);
+      (await readFriendsBoards(followed, { limit: 50 })).items.map((item) => item.preview.uuid);
     expect(await listedUuids()).toContain(board.uuid);
     // Through Public and back: the switch does not come back on its own.
     expect((await save({ audience: 'public' }))?.listedToFollowers).toBe(false);

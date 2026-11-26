@@ -1,7 +1,7 @@
 import { and, asc, count, eq, ilike, isNull, ne, notExists, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import type { ConnectionContext, FriendBoard } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
-import { contentVisibilityCondition, followerBoardListingCondition } from '@boardsesh/db/queries';
+import { contentVisibilityCondition, followedByOwnerListingCondition } from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
 import { FriendsBoardsInputSchema } from '../../../validation/schemas';
@@ -9,27 +9,30 @@ import { privacyControlsEnabled, resourceAccessCondition } from '../../../servic
 import { enrichBoards } from './boards';
 
 /**
- * Friends' boards: home boards owned by people the viewer follows, for the
- * "A friend's board" path and the picker shelf. Who sees what is in
- * docs/product/privacy.md ("Friends' boards").
+ * Friends' boards: home boards owned by people who follow the viewer, for the
+ * "A friend's board" path and the picker shelf. "When I follow you, you can see
+ * my boards": the owner's follow is their consent to be listed. Who sees what
+ * is in docs/product/privacy.md ("Friends' boards").
  *
  * Every gate runs in the WHERE the count and the page share:
- * - the viewer follows the owner (`user_follows`, which holds accepted follows only);
+ * - the owner follows the viewer (`user_follows`, which holds accepted follows
+ *   only). The viewer following the owner lists nothing by itself;
  * - a live home board: not deleted or merged away, not a spray wall, and not at
  *   someone else's gym or at a public listed gym (`homeWallCondition`);
  * - not the viewer's own board and not one their Your boards already shows: a
  *   `board_follows` row they can still open, read the way `myBoards` reads it.
  *   A save they can no longer open (the board went Invite-only since) stays
  *   listed, so they can ask for it again;
- * - the audience rule (`followerBoardListingCondition`).
+ * - the audience rule (`followedByOwnerListingCondition`).
  *
- * A row the viewer can climb on gets the full `UserBoard` from `enrichBoards`, so
- * the board's location audience still decides its place. An opted-in Invite-only
- * board the viewer holds no grant on is a preview only: no slug, serial,
- * location, presence id or counts.
+ * Who may open a board is unchanged: a row the viewer can climb on gets the full
+ * `UserBoard` from `enrichBoards`, so the board's location audience still decides
+ * its place. A Followers board whose owner the viewer does not follow, or an
+ * opted-in Invite-only board the viewer holds no grant on, is a preview only:
+ * no slug, serial, location, presence id or counts.
  *
- * The owner's name and avatar are always shown: the viewer follows them, which
- * is what `canViewActivityIdentity` asks of a private account.
+ * The owner's name and avatar are always shown: the owner follows the viewer,
+ * and the viewer's own followers list already names them.
  */
 /**
  * A home wall, gym or not: no gym, a gym that is gone, or a gym the board's own
@@ -76,7 +79,7 @@ export async function readFriendsBoards(
         ),
     ),
     // With the controls off the owner cannot reach the switch, so it reads as off.
-    followerBoardListingCondition(boards.uuid, viewerId, { honourListedToFollowers: privacyControlsEnabled() }),
+    followedByOwnerListingCondition(boards.uuid, viewerId, { honourListedToFollowers: privacyControlsEnabled() }),
   ];
   const query = input.query?.trim();
   if (query) {
@@ -84,15 +87,15 @@ export async function readFriendsBoards(
     conditions.push(or(ilike(boards.name, pattern), ilike(ownerName, pattern))!);
   }
   const whereClause = and(...conditions);
-  const followsOwner = and(
-    eq(dbSchema.userFollows.followerId, viewerId),
-    eq(dbSchema.userFollows.followingId, boards.ownerId),
+  const ownerFollowsViewer = and(
+    eq(dbSchema.userFollows.followerId, boards.ownerId),
+    eq(dbSchema.userFollows.followingId, viewerId),
   );
 
   const [countRow] = await db
     .select({ count: count() })
     .from(boards)
-    .innerJoin(dbSchema.userFollows, followsOwner)
+    .innerJoin(dbSchema.userFollows, ownerFollowsViewer)
     .innerJoin(dbSchema.users, eq(dbSchema.users.id, boards.ownerId))
     .leftJoin(dbSchema.userProfiles, eq(dbSchema.userProfiles.userId, boards.ownerId))
     .where(whereClause);
@@ -102,7 +105,8 @@ export async function readFriendsBoards(
   // Order keys only, never returned. The viewer's own logs on the board read
   // `boardsesh_ticks_board_user_idx`. The owner's latest log walks
   // `boardsesh_ticks_user_climbed_at_idx` down to the first log the viewer may
-  // read, so an Only me log does not move the owner's boards up the list.
+  // read (`contentVisibilityCondition` asks about this viewer, follow or not),
+  // so an Only me log does not move the owner's boards up the list.
   const viewerLastLog = sql`(SELECT max(viewer_tick.climbed_at) FROM boardsesh_ticks viewer_tick
     WHERE viewer_tick.board_id = ${boards.id} AND viewer_tick.user_id = ${viewerId})`;
   const ownerLastLog = sql`(SELECT owner_tick.climbed_at FROM boardsesh_ticks owner_tick
@@ -121,7 +125,7 @@ export async function readFriendsBoards(
           AND friend_request.user_id = ${viewerId} AND friend_request.status = 'pending')`,
     })
     .from(boards)
-    .innerJoin(dbSchema.userFollows, followsOwner)
+    .innerJoin(dbSchema.userFollows, ownerFollowsViewer)
     .innerJoin(dbSchema.users, eq(dbSchema.users.id, boards.ownerId))
     .leftJoin(dbSchema.userProfiles, eq(dbSchema.userProfiles.userId, boards.ownerId))
     .where(whereClause)
