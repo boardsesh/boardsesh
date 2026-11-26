@@ -12,6 +12,8 @@ import { enrichSprayNotificationTargets } from './spray-notification-targets';
 import { enrichDirectoryNotices } from './directory-reports/notices';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { alias } from 'drizzle-orm/pg-core';
+import { z } from 'zod';
+import { readRequestNotification } from '../../../services/request-notification-push';
 import { notificationPrivacyCondition } from '../shared/activity-privacy';
 
 type NotificationRow = {
@@ -129,6 +131,16 @@ function mapNotificationRow(row: NotificationRow) {
 }
 
 export const socialNotificationQueries = {
+  requestNotification: async (_: unknown, args: { notificationUuid: string }, ctx: ConnectionContext) => {
+    requireAuthenticated(ctx);
+    await applyRateLimit(ctx, 60, 'requestNotification');
+    const { notificationUuid } = validateInput(
+      z.object({ notificationUuid: z.string().uuid() }),
+      args,
+      'requestNotification',
+    );
+    return readRequestNotification(notificationUuid, ctx.userId!);
+  },
   notifications: async (
     _: unknown,
     { unreadOnly, limit = 20, offset = 0 }: { unreadOnly?: boolean; limit?: number; offset?: number },

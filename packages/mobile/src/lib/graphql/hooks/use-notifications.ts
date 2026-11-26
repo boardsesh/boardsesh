@@ -5,6 +5,7 @@ import {
   GET_UNREAD_NOTIFICATION_COUNT,
   MARK_GROUP_NOTIFICATIONS_READ,
   MARK_ALL_NOTIFICATIONS_READ,
+  REQUEST_NOTIFICATION,
   type GetGroupedNotificationsQueryResponse,
   type GetGroupedNotificationsQueryVariables,
   type GetNotificationActorsQueryResponse,
@@ -43,6 +44,30 @@ export { GROUPED_NOTIFICATIONS_QUERY_KEY, NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY }
 const PAGE_SIZE = 20;
 
 const NOTIFICATIONS_STALE_TIME_MS = 60 * 1000;
+const REQUEST_NOTIFICATION_QUERY_KEY = ['notifications', 'request'] as const;
+const REQUEST_NOTIFICATION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isRequestNotificationUuid(candidate: unknown): candidate is string {
+  return typeof candidate === 'string' && REQUEST_NOTIFICATION_UUID.test(candidate);
+}
+
+/** One still-pending ask, independent of inbox grouping and pagination. */
+export function useRequestNotification(notificationUuid: string | undefined, enabled = true) {
+  const { data: authToken } = useAuthToken();
+  return useQuery({
+    queryKey: [...REQUEST_NOTIFICATION_QUERY_KEY, notificationUuid],
+    queryFn: async () => {
+      const response = await getHttpClient().request<{ requestNotification: GroupedNotification | null }>(
+        REQUEST_NOTIFICATION,
+        { notificationUuid },
+      );
+      return response.requestNotification;
+    },
+    enabled: !!authToken && enabled && isRequestNotificationUuid(notificationUuid),
+    // A request can have been answered on another device since the push arrived.
+    staleTime: 0,
+  });
+}
 
 /** The shape React Query stores for the infinite grouped-notifications query. */
 type GroupedNotificationPages = { pages: GroupedNotificationConnection[]; pageParams: unknown[] };
@@ -182,6 +207,14 @@ export function useMarkGroupAsRead() {
       return response.markGroupNotificationsRead;
     },
     onSuccess: (markedCount, notification) => {
+      queryClient.setQueriesData<GroupedNotification | null>({ queryKey: REQUEST_NOTIFICATION_QUERY_KEY }, (previous) =>
+        previous &&
+        previous.type === notification.type &&
+        previous.entityType === notification.entityType &&
+        previous.entityId === notification.entityId
+          ? { ...previous, isRead: true }
+          : previous,
+      );
       queryClient.setQueriesData<GroupedNotificationPages>({ queryKey: GROUPED_NOTIFICATIONS_QUERY_KEY }, (previous) =>
         previous
           ? {
@@ -189,7 +222,11 @@ export function useMarkGroupAsRead() {
               pages: previous.pages.map((page) => ({
                 ...page,
                 groups: page.groups.map((group) =>
-                  group.uuid === notification.uuid ? { ...group, isRead: true } : group,
+                  group.type === notification.type &&
+                  group.entityType === notification.entityType &&
+                  group.entityId === notification.entityId
+                    ? { ...group, isRead: true }
+                    : group,
                 ),
               })),
             }
@@ -212,6 +249,9 @@ export function useMarkAllAsRead() {
       await getHttpClient().request(MARK_ALL_NOTIFICATIONS_READ);
     },
     onSuccess: () => {
+      queryClient.setQueriesData<GroupedNotification | null>({ queryKey: REQUEST_NOTIFICATION_QUERY_KEY }, (previous) =>
+        previous ? { ...previous, isRead: true } : previous,
+      );
       queryClient.setQueriesData<GroupedNotificationPages>({ queryKey: GROUPED_NOTIFICATIONS_QUERY_KEY }, (previous) =>
         previous
           ? {
@@ -259,7 +299,12 @@ export function useAnswerFollowRequest() {
         userId: requesterId,
       });
     },
-    onSuccess: (_result, { notification, answer }) => {
+    onSuccess: async (_result, { notification, answer }) => {
+      await queryClient.cancelQueries({
+        queryKey: [...REQUEST_NOTIFICATION_QUERY_KEY, notification.uuid],
+        exact: true,
+      });
+      queryClient.setQueryData([...REQUEST_NOTIFICATION_QUERY_KEY, notification.uuid], null);
       queryClient.setQueriesData<GroupedNotificationPages>({ queryKey: GROUPED_NOTIFICATIONS_QUERY_KEY }, (previous) =>
         previous
           ? {
@@ -335,7 +380,12 @@ export function useAnswerBoardAccessRequest() {
         variables,
       );
     },
-    onSuccess: (_result, { notification }) => {
+    onSuccess: async (_result, { notification }) => {
+      await queryClient.cancelQueries({
+        queryKey: [...REQUEST_NOTIFICATION_QUERY_KEY, notification.uuid],
+        exact: true,
+      });
+      queryClient.setQueryData([...REQUEST_NOTIFICATION_QUERY_KEY, notification.uuid], null);
       queryClient.setQueriesData<GroupedNotificationPages>({ queryKey: GROUPED_NOTIFICATIONS_QUERY_KEY }, (previous) =>
         previous
           ? {
@@ -354,6 +404,9 @@ export function useAnswerBoardAccessRequest() {
       }
       void queryClient.invalidateQueries({ queryKey: ['resourceAccessRequests'] });
       void queryClient.invalidateQueries({ queryKey: ['resourceGrantStatuses'] });
+      // A targeted push row represents one asker; the normal group may still
+      // contain other pending asks on this board.
+      void queryClient.invalidateQueries({ queryKey: GROUPED_NOTIFICATIONS_QUERY_KEY });
     },
   });
 

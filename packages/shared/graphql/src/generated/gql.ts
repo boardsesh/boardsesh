@@ -97,6 +97,7 @@ type Documents = {
   '\n  mutation MarkNotificationRead($notificationUuid: ID!) {\n    markNotificationRead(notificationUuid: $notificationUuid)\n  }\n': typeof types.MarkNotificationReadDocument;
   '\n  mutation MarkGroupNotificationsRead($type: NotificationType!, $entityType: SocialEntityType, $entityId: String) {\n    markGroupNotificationsRead(type: $type, entityType: $entityType, entityId: $entityId)\n  }\n': typeof types.MarkGroupNotificationsReadDocument;
   '\n  mutation MarkAllNotificationsRead {\n    markAllNotificationsRead\n  }\n': typeof types.MarkAllNotificationsReadDocument;
+  '\n  query RequestNotification($notificationUuid: ID!) {\n    requestNotification(notificationUuid: $notificationUuid) {\n      uuid\n      type\n      entityType\n      entityId\n      actorCount\n      actors {\n        id\n        displayName\n        avatarUrl\n      }\n      boardType\n      isRead\n      createdAt\n    }\n  }\n': typeof types.RequestNotificationDocument;
   '\n  mutation RecordOfflineWriteObservations($input: RecordOfflineWriteObservationsInput!) {\n    recordOfflineWriteObservations(input: $input) {\n      receipts {\n        deliveryId\n        revision\n        serverAcceptedAt\n        serverRejectedAt\n      }\n    }\n  }\n': typeof types.RecordOfflineWriteObservationsDocument;
   '\n  query ResolvePartnerSessionHistory($exportId: ID!) {\n    resolvePartnerSessionHistory(exportId: $exportId)\n  }\n': typeof types.ResolvePartnerSessionHistoryDocument;
   '\n  query SearchPlaces($query: String!) {\n    searchPlaces(query: $query) {\n      id\n      name\n      region\n      country\n      countryCode\n      latitude\n      longitude\n    }\n  }\n': typeof types.SearchPlacesDocument;
@@ -388,6 +389,8 @@ const documents: Documents = {
     types.MarkGroupNotificationsReadDocument,
   '\n  mutation MarkAllNotificationsRead {\n    markAllNotificationsRead\n  }\n':
     types.MarkAllNotificationsReadDocument,
+  '\n  query RequestNotification($notificationUuid: ID!) {\n    requestNotification(notificationUuid: $notificationUuid) {\n      uuid\n      type\n      entityType\n      entityId\n      actorCount\n      actors {\n        id\n        displayName\n        avatarUrl\n      }\n      boardType\n      isRead\n      createdAt\n    }\n  }\n':
+    types.RequestNotificationDocument,
   '\n  mutation RecordOfflineWriteObservations($input: RecordOfflineWriteObservationsInput!) {\n    recordOfflineWriteObservations(input: $input) {\n      receipts {\n        deliveryId\n        revision\n        serverAcceptedAt\n        serverRejectedAt\n      }\n    }\n  }\n':
     types.RecordOfflineWriteObservationsDocument,
   '\n  query ResolvePartnerSessionHistory($exportId: ID!) {\n    resolvePartnerSessionHistory(exportId: $exportId)\n  }\n':
@@ -1150,6 +1153,12 @@ export function graphql(
 export function graphql(
   source: '\n  mutation MarkAllNotificationsRead {\n    markAllNotificationsRead\n  }\n',
 ): (typeof documents)['\n  mutation MarkAllNotificationsRead {\n    markAllNotificationsRead\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query RequestNotification($notificationUuid: ID!) {\n    requestNotification(notificationUuid: $notificationUuid) {\n      uuid\n      type\n      entityType\n      entityId\n      actorCount\n      actors {\n        id\n        displayName\n        avatarUrl\n      }\n      boardType\n      isRead\n      createdAt\n    }\n  }\n',
+): (typeof documents)['\n  query RequestNotification($notificationUuid: ID!) {\n    requestNotification(notificationUuid: $notificationUuid) {\n      uuid\n      type\n      entityType\n      entityId\n      actorCount\n      actors {\n        id\n        displayName\n        avatarUrl\n      }\n      boardType\n      isRead\n      createdAt\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

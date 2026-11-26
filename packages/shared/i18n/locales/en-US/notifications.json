@@ -128,7 +128,11 @@
     "boardReportReminderTitle": "{{board}} still has an open report",
     "boardReportReminderBody": "Fix it or keep it before our team takes a look.",
     "boardRelistTitle": "Put {{board}} back on {{gym}}?",
-    "boardRelistBody": "The climber who added it asked to be listed again."
+    "boardRelistBody": "The climber who added it asked to be listed again.",
+    "requestTitle": "Requests",
+    "requestAnonymous": "Someone",
+    "followRequestBody": "{{name}} wants to follow you",
+    "boardAccessRequestBody": "{{name}} wants to climb on your board"
   },
   "setupChange": {
     "now": "Now {{setup}}",

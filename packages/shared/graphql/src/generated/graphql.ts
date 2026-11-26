@@ -9440,6 +9440,8 @@ export type Query = {
    * @deprecated Remix after a reset was retired. Always null.
    */
   remixClimb?: Maybe<SprayRemixSeed>;
+  /** One pending request in your inbox, including its Approve/Decline actor. */
+  requestNotification?: Maybe<GroupedNotification>;
   /**
    * Resolve a partner export reference to a read-only completed session detail
    * for its authenticated creator or a durable participant. This is a
@@ -10447,6 +10449,11 @@ export type QueryRecentBetaLinksArgs = {
 export type QueryRemixClimbArgs = {
   parentUuid: Scalars['ID']['input'];
   sprayWallUuid?: InputMaybe<Scalars['ID']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryRequestNotificationArgs = {
+  notificationUuid: Scalars['ID']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -17091,6 +17098,31 @@ export type MarkGroupNotificationsReadMutation = { __typename?: 'Mutation'; mark
 export type MarkAllNotificationsReadMutationVariables = Exact<{ [key: string]: never }>;
 
 export type MarkAllNotificationsReadMutation = { __typename?: 'Mutation'; markAllNotificationsRead: boolean };
+
+export type RequestNotificationQueryVariables = Exact<{
+  notificationUuid: Scalars['ID']['input'];
+}>;
+
+export type RequestNotificationQuery = {
+  __typename?: 'Query';
+  requestNotification?: {
+    __typename?: 'GroupedNotification';
+    uuid: string;
+    type: NotificationType;
+    entityType?: SocialEntityType | null;
+    entityId?: string | null;
+    actorCount: number;
+    boardType?: string | null;
+    isRead: boolean;
+    createdAt: string;
+    actors: Array<{
+      __typename?: 'GroupedNotificationActor';
+      id: string;
+      displayName?: string | null;
+      avatarUrl?: string | null;
+    }>;
+  } | null;
+};
 
 export type RecordOfflineWriteObservationsMutationVariables = Exact<{
   input: RecordOfflineWriteObservationsInput;
@@ -24993,6 +25025,64 @@ export const MarkAllNotificationsReadDocument = {
     },
   ],
 } as unknown as DocumentNode<MarkAllNotificationsReadMutation, MarkAllNotificationsReadMutationVariables>;
+export const RequestNotificationDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'RequestNotification' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'notificationUuid' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'requestNotification' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'notificationUuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'notificationUuid' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'type' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'entityType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'entityId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'actorCount' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'actors' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isRead' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<RequestNotificationQuery, RequestNotificationQueryVariables>;
 export const RecordOfflineWriteObservationsDocument = {
   kind: 'Document',
   definitions: [

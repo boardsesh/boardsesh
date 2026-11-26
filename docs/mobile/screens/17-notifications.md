@@ -10,6 +10,14 @@ Mark all as read appears when there are unread notifications. Follow requests
 provide Approve/Decline actions. Offline/unavailable, failed, loading, and empty
 states use the screen's query-state handling.
 
+Follow-request and board-access-request pushes open the inbox with a `request`
+notification UUID. The screen reads that one still-pending request directly and
+shows its Approve/Decline row, including when several people asked about the same
+board or the request is older than the first inbox page. It does not fetch more
+inbox pages to find the row. After an answer, cancellation, or decline elsewhere,
+the request read returns null and the full inbox resumes. Unknown push types are
+ignored by clients that do not recognize them.
+
 ## Notification copy
 
 The table records the notification meanings; native glyph selection belongs to

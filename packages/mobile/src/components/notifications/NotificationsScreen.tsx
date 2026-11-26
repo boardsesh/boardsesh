@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { useIsFocused, useNavigation } from 'expo-router';
+import { useIsFocused, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type { BottomSheet } from '../sheet-presentation';
 import type { GroupedNotification, SocialEntityType } from '@boardsesh/shared-schema';
@@ -22,6 +22,8 @@ import {
   useAnswerFollowRequest,
   useGroupedNotifications,
   useMarkAllAsRead,
+  useRequestNotification,
+  isRequestNotificationUuid,
   useUnreadNotificationCount,
 } from '../../lib/graphql/hooks/use-notifications';
 import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
@@ -72,6 +74,13 @@ export default function NotificationsScreen() {
   const navigation = useNavigation();
   const bottomChrome = useBottomChromeMetrics();
   const focused = useIsFocused();
+  const { request } = useLocalSearchParams<{ request?: string | string[] }>();
+  const requestUuid = isRequestNotificationUuid(request) ? request : undefined;
+  const requestQuery = useRequestNotification(requestUuid, focused);
+  // A tapped ask gets its own single-actor row even when the regular inbox
+  // groups several askers on a board or the ask is older than the first page.
+  // Once answered or cancelled, the server returns null and the full inbox resumes.
+  const showingRequest = !!requestUuid && requestQuery.data !== null;
 
   // Destructured, not held as `query`: React Query mints a fresh result object
   // on every render, so a callback listing the whole object as a dep gets a new
@@ -79,16 +88,16 @@ export default function NotificationsScreen() {
   // stable across renders.
   const {
     data,
-    status,
-    fetchStatus,
-    isPending,
-    isError,
-    isRefetching,
+    status: listStatus,
+    fetchStatus: listFetchStatus,
+    isPending: listPending,
+    isError: listError,
+    isRefetching: listRefetching,
     hasNextPage,
     isFetchingNextPage,
     fetchNextPage,
     refetch,
-  } = useGroupedNotifications(focused);
+  } = useGroupedNotifications(focused && !showingRequest);
   const unreadCount = useUnreadNotificationCount();
   const { mutate: markAllAsRead } = useMarkAllAsRead();
   // Stable (React Query's mutateAsync), so it can ride into every memoized row.
@@ -113,23 +122,41 @@ export default function NotificationsScreen() {
 
   const handlePress = useNotificationNavigation(openCommentThread);
 
-  const groups = useMemo(() => data?.pages.flatMap((page) => page.groups) ?? EMPTY_GROUPS, [data]);
+  const requestNotification = requestQuery.data;
+  const groups = useMemo(
+    () =>
+      showingRequest
+        ? requestNotification
+          ? [requestNotification]
+          : EMPTY_GROUPS
+        : (data?.pages.flatMap((page) => page.groups) ?? EMPTY_GROUPS),
+    [showingRequest, requestNotification, data],
+  );
+  const status = showingRequest ? requestQuery.status : listStatus;
+  const fetchStatus = showingRequest ? requestQuery.fetchStatus : listFetchStatus;
+  const isPending = showingRequest ? requestQuery.isPending : listPending;
+  const isError = showingRequest ? requestQuery.isError : listError;
+  const isRefetching = showingRequest ? requestQuery.isRefetching : listRefetching;
+  const refetchRequest = requestQuery.refetch;
 
   // Notifications are network-only. `query-provider` runs React Query in
   // `offlineFirst`, so an offline fetch PAUSES rather than failing: `isPending`
   // never clears and the screen would spin forever without this branch.
-  const offline = useOfflineQueryState({ status, fetchStatus, data });
+  const offline = useOfflineQueryState({ status, fetchStatus, data: showingRequest ? requestNotification : data });
   const showOffline = offline.isBlocked && groups.length === 0;
   const showSpinner = !showOffline && isPending && groups.length === 0;
   const showError = !showOffline && isError && groups.length === 0;
 
   const handleMarkAllAsRead = useCallback(() => markAllAsRead(), [markAllAsRead]);
-  const handleRefresh = useCallback(() => void refetch({ cancelRefetch: false }), [refetch]);
+  const handleRefresh = useCallback(() => {
+    if (showingRequest) void refetchRequest({ cancelRefetch: false });
+    else void refetch({ cancelRefetch: false });
+  }, [showingRequest, refetchRequest, refetch]);
 
   const handleEndReached = useCallback(() => {
-    if (focused && hasNextPage && !isFetchingNextPage && !isRefetching && fetchStatus === 'idle')
+    if (!showingRequest && focused && hasNextPage && !isFetchingNextPage && !isRefetching && fetchStatus === 'idle')
       void fetchNextPage({ cancelRefetch: false });
-  }, [focused, hasNextPage, isFetchingNextPage, isRefetching, fetchStatus, fetchNextPage]);
+  }, [showingRequest, focused, hasNextPage, isFetchingNextPage, isRefetching, fetchStatus, fetchNextPage]);
 
   // "Mark all as read" lives in the native header rather than the list body, so
   // it stays reachable while the list is scrolled (the `setters` / `zone` filter
@@ -203,7 +230,7 @@ export default function NotificationsScreen() {
           )
         }
         ListFooterComponent={
-          isFetchingNextPage ? (
+          !showingRequest && isFetchingNextPage ? (
             <View style={styles.footer}>
               <ActivityIndicator size="small" />
             </View>
@@ -215,7 +242,7 @@ export default function NotificationsScreen() {
           // pops at the top of the list every time the user paginates at the
           // bottom. The footer spinner already owns that state.
           <RefreshControl
-            refreshing={isRefetching && !isFetchingNextPage}
+            refreshing={isRefetching && (showingRequest || !isFetchingNextPage)}
             onRefresh={handleRefresh}
             tintColor={brandColors.primary}
           />

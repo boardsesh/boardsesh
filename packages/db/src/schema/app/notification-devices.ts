@@ -1,4 +1,4 @@
-import { boolean, index, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { boolean, date, index, integer, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 import { users } from '../auth/users';
 import { notifications } from './notifications';
 
@@ -49,3 +49,12 @@ export const notificationDeliveries = pgTable(
     targetIdx: uniqueIndex('notification_deliveries_target_idx').on(table.notificationUuid, table.installationId),
   }),
 );
+
+/** Shared UTC-day budget; answering/deleting an inbox request cannot reset it. */
+export const requestNotificationPushBudgets = pgTable('request_notification_push_budgets', {
+  recipientId: text('recipient_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  day: date('day').notNull(),
+  count: integer('count').notNull(),
+});

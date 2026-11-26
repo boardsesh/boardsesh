@@ -9443,6 +9443,8 @@ export type Query = {
    * @deprecated Remix after a reset was retired. Always null.
    */
   remixClimb?: Maybe<SprayRemixSeed>;
+  /** One pending request in your inbox, including its Approve/Decline actor. */
+  requestNotification?: Maybe<GroupedNotification>;
   /**
    * Resolve a partner export reference to a read-only completed session detail
    * for its authenticated creator or a durable participant. This is a
@@ -10450,6 +10452,11 @@ export type QueryRecentBetaLinksArgs = {
 export type QueryRemixClimbArgs = {
   parentUuid: Scalars['ID']['input'];
   sprayWallUuid?: InputMaybe<Scalars['ID']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryRequestNotificationArgs = {
+  notificationUuid: Scalars['ID']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -21992,6 +21999,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryRemixClimbArgs, 'parentUuid'>
+  >;
+  requestNotification?: Resolver<
+    Maybe<ResolversTypes['GroupedNotification']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryRequestNotificationArgs, 'notificationUuid'>
   >;
   resolvePartnerSessionHistory?: Resolver<
     Maybe<ResolversTypes['ID']>,

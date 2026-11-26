@@ -1062,6 +1062,9 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     notifications(unreadOnly: Boolean, limit: Int, offset: Int): NotificationConnection!
 
+    "One pending request in your inbox, including its Approve/Decline actor."
+    requestNotification(notificationUuid: ID!): GroupedNotification
+
     """
     Get grouped notifications for the current user.
     Groups notifications by (type, entity_type, entity_id).

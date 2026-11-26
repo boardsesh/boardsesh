@@ -16,12 +16,16 @@ type Query = {
   refetch: () => void;
   fetchNextPage: () => void;
 };
+type RequestQuery = Omit<Query, 'data' | 'hasNextPage' | 'isFetchingNextPage' | 'fetchNextPage'> & {
+  data: GroupedNotification | null | undefined;
+};
 
 const fetchNextPage = vi.hoisted(() => vi.fn());
 const refetch = vi.hoisted(() => vi.fn());
 const markGroupMutate = vi.hoisted(() => vi.fn());
 const markAllMutate = vi.hoisted(() => vi.fn());
 const answerFollowRequest = vi.hoisted(() => vi.fn());
+const answerBoardAccessRequest = vi.hoisted(() => vi.fn());
 const undoSetupChange = vi.hoisted(() => vi.fn());
 const openPlayDrawer = vi.hoisted(() => vi.fn());
 const openClimbInPlayDrawer = vi.hoisted(() => vi.fn());
@@ -33,6 +37,8 @@ const state = vi.hoisted(() => ({
   unreadCount: 0,
   offline: { isOffline: false, isBlocked: false, reason: null as null | 'offline' | 'error' },
   setupSuggestions: false,
+  requestParam: undefined as string | string[] | undefined,
+  requestQuery: null as unknown as RequestQuery,
 }));
 
 // The FlashList props the screen last handed down, so the perf test can compare
@@ -59,11 +65,13 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 // implementation returns the module-level imperative api, not a fresh handle.
 const routerMock = vi.hoisted(() => ({ push: vi.fn() }));
 const groupedEnabled = vi.hoisted(() => vi.fn());
+const requestedNotification = vi.hoisted(() => vi.fn());
 
 vi.mock('expo-router', () => ({
   useNavigation: () => navMock,
   useIsFocused: () => state.focused,
   useRouter: () => routerMock,
+  useLocalSearchParams: () => ({ request: state.requestParam }),
 }));
 
 vi.mock('react-native', () => ({
@@ -119,7 +127,13 @@ vi.mock('../../../lib/graphql/hooks/use-notifications', () => ({
   useMarkGroupAsRead: () => ({ mutate: markGroupMutate }),
   useMarkAllAsRead: () => ({ mutate: markAllMutate }),
   useAnswerFollowRequest: () => answerFollowRequest,
-  useAnswerBoardAccessRequest: () => answerFollowRequest,
+  useAnswerBoardAccessRequest: () => answerBoardAccessRequest,
+  useRequestNotification: (uuid: string | undefined, enabled: boolean) => {
+    requestedNotification(uuid, enabled);
+    return state.requestQuery;
+  },
+  isRequestNotificationUuid: (candidate: unknown) =>
+    typeof candidate === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(candidate),
 }));
 // The approved-board row binds the board; the bind's own graph is native.
 vi.mock('../../../lib/boards/use-activate-board', () => ({ useActivateBoard: () => vi.fn() }));
@@ -185,18 +199,18 @@ vi.mock('../../you/CommentSheet', () => ({
   },
 }));
 
-vi.mock('../answerable-notification', () => ({ isAnswerableBoardAccessRequest: () => false }));
-
 vi.mock('../NotificationRow', () => ({
   NotificationRow: ({
     notification,
     onPress,
     onAnswerFollowRequest,
+    onAnswerBoardAccessRequest,
     onUndoSetupChange,
   }: {
     notification: GroupedNotification;
     onPress: (notification: GroupedNotification) => void;
     onAnswerFollowRequest?: (input: { notification: GroupedNotification; answer: 'approve' | 'decline' }) => void;
+    onAnswerBoardAccessRequest?: (input: { notification: GroupedNotification; answer: 'approve' | 'decline' }) => void;
     onUndoSetupChange?: (notification: GroupedNotification) => void;
   }) =>
     createElement(
@@ -206,7 +220,11 @@ vi.mock('../NotificationRow', () => ({
       onAnswerFollowRequest
         ? createElement('button', {
             'data-approve': notification.uuid,
-            onClick: () => onAnswerFollowRequest({ notification, answer: 'approve' }),
+            onClick: () =>
+              (notification.type === 'board_access_requested' ? onAnswerBoardAccessRequest : onAnswerFollowRequest)?.({
+                notification,
+                answer: 'approve',
+              }),
           })
         : null,
       onUndoSetupChange
@@ -267,12 +285,80 @@ beforeEach(() => {
   state.unreadCount = 0;
   state.offline = { isOffline: false, isBlocked: false, reason: null };
   state.setupSuggestions = false;
+  state.requestParam = undefined;
+  state.requestQuery = { ...makeQuery(), data: null };
   list.renderItem = null;
   list.keyExtractor = null;
   list.getItemType = null;
   list.onEndReached = null;
   commentSheet.entityId = null;
   commentSheet.entityType = '';
+});
+
+describe('NotificationsScreen request pushes', () => {
+  const requestUuid = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+
+  it.each(['follow_request', 'board_access_requested'] as const)(
+    'shows the exact %s asker without loading pages or inheriting a board group',
+    (type) => {
+      const target = makeNotification({
+        uuid: requestUuid,
+        type,
+        entityType: type === 'board_access_requested' ? 'board' : null,
+        entityId: type === 'board_access_requested' ? 'board-uuid' : 'asker',
+        actorCount: 1,
+        actors: [{ id: 'asker', displayName: 'Kim' }],
+      });
+      state.requestParam = requestUuid;
+      state.requestQuery = { ...makeQuery(), data: target };
+      state.query = makeQuery({
+        hasNextPage: true,
+        data: {
+          pages: [
+            { groups: [makeNotification({ uuid: 'grouped-board', actorCount: 3 })], hasMore: true, unreadCount: 3 },
+          ],
+        },
+      });
+      const { container } = render(<NotificationsScreen />);
+      expect(requestedNotification).toHaveBeenLastCalledWith(requestUuid, true);
+      expect(groupedEnabled).toHaveBeenLastCalledWith(false);
+      expect(container.querySelector('[data-row="grouped-board"]')).toBeNull();
+      fireEvent.click(container.querySelector(`[data-approve="${requestUuid}"]`)!);
+      expect(type === 'board_access_requested' ? answerBoardAccessRequest : answerFollowRequest).toHaveBeenCalledWith({
+        notification: target,
+        answer: 'approve',
+      });
+      list.onEndReached?.();
+      expect(fetchNextPage).not.toHaveBeenCalled();
+    },
+  );
+
+  it('waits for the target, then returns to the full inbox when the ask is no longer pending', () => {
+    state.requestParam = requestUuid;
+    state.requestQuery = {
+      ...makeQuery({ isPending: true, status: 'pending', fetchStatus: 'fetching' }),
+      data: undefined,
+    };
+    state.query = makeQuery({ data: { pages: [{ groups: [makeNotification()], hasMore: false, unreadCount: 1 }] } });
+    const { container, rerender } = render(<NotificationsScreen />);
+    expect(container.querySelector('[data-spinner]')).not.toBeNull();
+    expect(container.querySelector('[data-row]')).toBeNull();
+    state.requestQuery = { ...makeQuery(), data: null };
+    rerender(<NotificationsScreen />);
+    expect(groupedEnabled).toHaveBeenLastCalledWith(true);
+    expect(container.querySelector('[data-row="n1"]')).not.toBeNull();
+    expect(fetchNextPage).not.toHaveBeenCalled();
+  });
+
+  it.each(['../settings', ['aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee']])(
+    'ignores malformed or ambiguous request parameters',
+    (requestParam) => {
+      state.requestParam = requestParam;
+      render(<NotificationsScreen />);
+      expect(requestedNotification).toHaveBeenLastCalledWith(undefined, true);
+      expect(groupedEnabled).toHaveBeenLastCalledWith(true);
+    },
+  );
 });
 
 describe('NotificationsScreen states', () => {

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
+import { requestPushCopy, requestPushTarget } from './request-notification-push';
 import type { PgBoss } from 'pg-boss';
 import {
   SPRAY_DETECTION_COMPLETION_QUEUE,
@@ -234,6 +235,15 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
         .from(notifications)
         .where(eq(notifications.uuid, delivery.notificationUuid))
         .limit(1);
+      if (notice?.type === 'follow_request' || notice?.type === 'board_access_requested') {
+        const request = await requestPushTarget(delivery.notificationUuid, validation);
+        return request?.recipientId === delivery.recipientId
+          ? {
+              copy: requestPushCopy(delivery.locale, request.type, request.actorName),
+              data: { type: request.type, notificationUuid: delivery.notificationUuid },
+            }
+          : null;
+      }
       if (notice?.type === 'app_feedback_reply') {
         const support = await feedbackReplyTarget(delivery.notificationUuid, validation);
         return support?.recipientId === delivery.recipientId

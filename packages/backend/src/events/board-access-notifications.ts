@@ -1,9 +1,10 @@
 import crypto from 'crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import { pubsub } from '../pubsub/index';
 import { logger } from '../utils/logger';
+import { enqueueRequestPush } from '../services/request-notification-push';
 
 /**
  * The inbox rows for asking to climb on an Invite-only board
@@ -22,11 +23,13 @@ import { logger } from '../utils/logger';
  * hold a board lock at that point, while owner privacy writers lock users rows
  * before boards: inside the transaction that order could deadlock.
  *
- * Neither is pushed to a phone yet: like a follow request, they reach the
- * inbox and any open app live.
+ * New pending requests also enqueue a push in the inbox transaction.
+ * Approvals stay in-app only.
  */
 
 type DeleteExecutor = Pick<typeof db, 'delete'>;
+// ASCII BARQ: serialize notification writers for one board/requester pair.
+const BOARD_ACCESS_NOTIFICATION_LOCK_NAMESPACE = 0x42415251;
 
 /** Delete the owner's `board_access_requested` row for one climber's request on one board. */
 export async function deleteBoardAccessRequestNotifications(
@@ -98,7 +101,39 @@ async function writeBoardAccessNotification(input: {
   if (recipientId === actorId) return null;
   if ((await grantStatus(boardUuid, input.grantUserId)) !== input.requiredStatus) return null;
   const uuid = crypto.randomUUID();
-  await db.transaction(async (transaction) => {
+  const written = await db.transaction(async (transaction) => {
+    // Only notification writers take this lock; never hold the board lock
+    // while inserting users' foreign keys (see the deferred-write rule above).
+    await transaction.execute(
+      sql`SELECT pg_advisory_xact_lock(${BOARD_ACCESS_NOTIFICATION_LOCK_NAMESPACE}, hashtext(${`${actorId}:${recipientId}:${boardUuid}:${type}`}))`,
+    );
+    const [currentGrant] = await transaction
+      .select({ status: dbSchema.resourceGrants.status, createdAt: dbSchema.resourceGrants.createdAt })
+      .from(dbSchema.resourceGrants)
+      .where(
+        and(
+          eq(dbSchema.resourceGrants.kind, 'board'),
+          eq(dbSchema.resourceGrants.resourceId, boardUuid),
+          eq(dbSchema.resourceGrants.userId, input.grantUserId),
+        ),
+      )
+      .limit(1);
+    if (currentGrant?.status !== input.requiredStatus) return false;
+    if (type === 'board_access_requested') {
+      const [existing] = await transaction
+        .select({ uuid: dbSchema.notifications.uuid, createdAt: dbSchema.notifications.createdAt })
+        .from(dbSchema.notifications)
+        .where(
+          and(
+            eq(dbSchema.notifications.type, type),
+            eq(dbSchema.notifications.actorId, actorId),
+            eq(dbSchema.notifications.recipientId, recipientId),
+            eq(dbSchema.notifications.entityId, boardUuid),
+          ),
+        )
+        .limit(1);
+      if (existing && existing.createdAt >= currentGrant.createdAt) return false;
+    }
     await transaction
       .delete(dbSchema.notifications)
       .where(
@@ -118,7 +153,10 @@ async function writeBoardAccessNotification(input: {
       entityType: 'board',
       entityId: boardUuid,
     });
+    if (type === 'board_access_requested') await enqueueRequestPush(transaction, uuid, recipientId);
+    return true;
   });
+  if (!written) return null;
   pubsub.publishNotificationEvent(recipientId, {
     notification: {
       uuid,

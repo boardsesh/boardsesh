@@ -33,6 +33,54 @@ describe('native import notification handlers', () => {
     mocks.lastResponse.mockReturnValue(null);
   });
 
+  it.each(['follow_request', 'board_access_requested'])('opens the exact inbox request for %s', async (type) => {
+    const { resolveNotificationRoute } = await import('../handlers');
+    expect(resolveNotificationRoute(notification({ type, notificationUuid: wallUuid }))).toEqual({
+      path: '/(tabs)/home/notifications',
+      params: { request: wallUuid },
+    });
+    for (const notificationUuid of [undefined, '../settings', 42]) {
+      expect(resolveNotificationRoute(notification({ type, notificationUuid }))).toBeNull();
+    }
+  });
+
+  it('ignores unknown push types without navigating or refreshing request caches', async () => {
+    const { setupNotificationHandlers } = await import('../handlers');
+    mocks.lastResponse.mockReturnValue(response({ type: 'future_request', notificationUuid: wallUuid }));
+    const router = { push: vi.fn() };
+    const refresh = vi.fn();
+    setupNotificationHandlers(router, { onRequestNotification: refresh });
+    expect(router.push).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it.each(['follow_request', 'board_access_requested'])(
+    'refreshes %s on foreground receipt and taps only after authenticated navigation is ready',
+    async (type) => {
+      const incoming = response({ type, notificationUuid: wallUuid }, type);
+      mocks.lastResponse.mockReturnValue(incoming);
+      const { setupNotificationHandlers } = await import('../handlers');
+      const router = { push: vi.fn() };
+      const refresh = vi.fn();
+      const cleanup = setupNotificationHandlers(router, { canNavigate: false, onRequestNotification: refresh });
+      expect(router.push).not.toHaveBeenCalled();
+      expect(refresh).not.toHaveBeenCalled();
+      cleanup();
+      setupNotificationHandlers(router, { canNavigate: true, onRequestNotification: refresh });
+      const receive = mocks.listenReceived.mock.calls[1][0] as (received: Notification) => void;
+      const tap = mocks.listenResponse.mock.calls[1][0] as (tapped: NotificationResponse) => void;
+      receive(incoming.notification);
+      tap(incoming);
+      receive(notification({ type, notificationUuid: '../settings' }));
+      expect(refresh).toHaveBeenCalledTimes(2);
+      expect(router.push).toHaveBeenCalledOnce();
+      expect(router.push).toHaveBeenCalledWith({
+        pathname: '/(tabs)/home/notifications',
+        params: { request: wallUuid },
+      });
+    },
+  );
+
   it('opens the review sheet for a board report push and rejects a malformed board uuid', async () => {
     const { resolveNotificationRoute } = await import('../handlers');
     expect(

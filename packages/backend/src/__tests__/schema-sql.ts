@@ -255,6 +255,11 @@ const sprayWallDeletionSchema = readFileSync(
   'utf8',
 );
 
+const requestPushBudgetSchema = readFileSync(
+  new URL('../../../db/drizzle/0353_request_notification_push_budget.sql', import.meta.url),
+  'utf8',
+);
+
 // Exercise the generated migration instead of maintaining a second detection schema.
 const notificationDeviceSchema = readFileSync(
   new URL('../../../db/drizzle/0259_lumpy_cerise.sql', import.meta.url),
@@ -1551,6 +1556,8 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   DROP TABLE IF EXISTS "notification_deliveries";
   DROP TABLE IF EXISTS "notification_devices";
   ${notificationDeviceSchema}
+  DROP TABLE IF EXISTS request_notification_push_budgets;
+  ${requestPushBudgetSchema}
 
 
   -- Beta links the session feed INNER-joins for featured-beta enrichment. Empty

@@ -14,7 +14,7 @@ export function useNotificationUpdates(authenticated: boolean, accountId: string
   const consentSettled = useConsentSettled();
   const { i18n } = useTranslation();
   const locale = i18n.language;
-  const { refreshCompletion, refreshReports } = useSprayCompletionUpdates(authenticated, accountId);
+  const { refreshCompletion, refreshReports, refreshRequests } = useSprayCompletionUpdates(authenticated, accountId);
   // Undefined until the flag bag is final, so a push tapped at launch is not
   // routed on a flag that has not loaded yet: the picker waits for it instead.
   const flagsResolved = useFeatureFlagsResolved();
@@ -26,9 +26,18 @@ export function useNotificationUpdates(authenticated: boolean, accountId: string
         canNavigate: authenticated && consentSettled,
         onSprayCompletion: refreshCompletion,
         onBugReportReply: refreshReports,
+        onRequestNotification: refreshRequests,
         directoryReportsEnabled,
       }),
-    [authenticated, accountId, refreshCompletion, refreshReports, consentSettled, directoryReportsEnabled],
+    [
+      authenticated,
+      accountId,
+      refreshCompletion,
+      refreshReports,
+      refreshRequests,
+      consentSettled,
+      directoryReportsEnabled,
+    ],
   );
   useEffect(() => {
     if (!authenticated) return;
