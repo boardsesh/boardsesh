@@ -36,6 +36,15 @@ export const QUANTUM_MODELS = {
 
 export type QuantumModelName = keyof typeof QUANTUM_MODELS;
 
+export const QUANTUM_RELEASED_MODELS = ['xl', 'l', 'm', 's'] as const satisfies readonly QuantumModelName[];
+
+export function isReleasedQuantumConfig(layoutId: number, sizeId: number): boolean {
+  return QUANTUM_RELEASED_MODELS.some((model) => {
+    const config = QUANTUM_MODELS[model];
+    return config.layoutId === layoutId && config.sizeId === sizeId;
+  });
+}
+
 /** eWalls 2.6.5 board-picker identities; unrelated to diode type labels. */
 export const QUANTUM_MODEL_BY_EWALLS_TYPE = {
   big: 'xl',

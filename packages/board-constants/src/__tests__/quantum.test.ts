@@ -10,10 +10,12 @@ import {
 import {
   QUANTUM_MODELS,
   QUANTUM_PRODUCT_IDS,
+  QUANTUM_RELEASED_MODELS,
   QUANTUM_SET_ID,
   getQuantumBundledGeometry,
   getQuantumPlacementId,
   getQuantumSourceDiodeBindings,
+  isReleasedQuantumConfig,
   QUANTUM_MODEL_BY_EWALLS_TYPE,
 } from '../quantum';
 import { getBoardHolePlacements } from '../hole-placements';
@@ -28,6 +30,16 @@ const MODELS = [
 ] as const;
 
 describe('fixed Quantum model constants', () => {
+  it('accepts only released physical layout and size pairs', () => {
+    expect(QUANTUM_RELEASED_MODELS).toEqual(['xl', 'l', 'm', 's']);
+    for (const [model, , layoutId, sizeId] of MODELS) {
+      expect(isReleasedQuantumConfig(layoutId, sizeId)).toBe(model !== 'belay');
+    }
+    expect(isReleasedQuantumConfig(9101, 9204)).toBe(false);
+    expect(isReleasedQuantumConfig(9104, 9201)).toBe(false);
+    expect(isReleasedQuantumConfig(9101, 0)).toBe(false);
+  });
+
   it('binds the documented eWalls board types to the existing physical sizes', () => {
     expect(QUANTUM_MODEL_BY_EWALLS_TYPE).toEqual({ big: 'xl', medium: 'l', small: 'm', xsmall: 's', belay: 'belay' });
   });
