@@ -96,7 +96,7 @@
     "winston": "^3.19.0",
     "winston-transport": "^4.9.0",
     "ws": "^8.21.1",
-    "zod": "^4.4.3"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@boardsesh/graphql-client": "workspace:*",

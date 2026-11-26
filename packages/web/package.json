@@ -131,7 +131,7 @@
     "web-vitals": "^6.0.1",
     "ws": "^8.21.1",
     "yup": "^1.7.1",
-    "zod": "^4.4.3"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
