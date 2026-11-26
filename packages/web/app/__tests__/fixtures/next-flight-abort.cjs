@@ -1,5 +1,5 @@
 // Execute the installed Flight helpers against Next's real React renderer.
-// Bundle helpers are extracted because the runtime does not export them.
+// Bundle helpers stay in their original module scope to exercise their real imports.
 const assert = require('node:assert/strict');
 const { AsyncLocalStorage } = require('node:async_hooks');
 const { getEventListeners, once } = require('node:events');
@@ -34,13 +34,9 @@ function installedFlightHelper(relative) {
   if (relative === artifacts[0]) {
     return webRequire('next/dist/server/app-render/stream-ops.node').renderToNodeFlightStream;
   }
-  const ast = ts.createSourceFile(
-    relative,
-    readFileSync(resolve(nextRoot, relative), 'utf8'),
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.JS,
-  );
+  const filename = resolve(nextRoot, relative);
+  const source = readFileSync(filename, 'utf8');
+  const ast = ts.createSourceFile(relative, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   const functions = [];
   function visit(node) {
     if (ts.isFunctionDeclaration(node) && node.getText(ast).includes('renderToPipeableStream is not implemented')) {
@@ -51,22 +47,32 @@ function installedFlightHelper(relative) {
   visit(ast);
   assert.equal(functions.length, 1, `${relative}: expected one installed Flight helper`);
   const flightHelper = functions[0];
-  const context = { Error, Object, PassThrough, ResponseAborted };
-  function bindConstructors(node) {
-    if (ts.isNewExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
-      const constructor = node.expression;
-      if (['PassThrough', 'ResponseAborted'].includes(constructor.name.text)) {
-        const namespace = constructor.expression.getText(ast);
-        context[namespace] ??= {};
-        context[namespace][constructor.name.text] =
-          constructor.name.text === 'PassThrough' ? PassThrough : ResponseAborted;
-      }
-    }
-    ts.forEachChild(node, bindConstructors);
+  if (relative === artifacts[1]) {
+    const functionSource = flightHelper.getText(ast).replace(/^export\s+/, '');
+    return new vm.Script(`(${functionSource})`, { filename }).runInNewContext({
+      Error,
+      Object,
+      PassThrough,
+      ResponseAborted,
+    });
   }
-  bindConstructors(flightHelper);
-  const functionSource = flightHelper.getText(ast).replace(/^export\s+/, '');
-  return new vm.Script(`(${functionSource})`, { filename: relative }).runInNewContext(context);
+
+  // The compiled bundles mangle imported export names. Capture the function
+  // where it is declared so the bundle resolves each constructor itself.
+  assert.ok(flightHelper.name);
+  const capture = `;captureInstalledFlightHelper(${flightHelper.name.text});`;
+  const loadBundle = vm.compileFunction(
+    source.slice(0, flightHelper.end) + capture + source.slice(flightHelper.end),
+    ['require', 'module', 'exports', '__dirname', '__filename', 'captureInstalledFlightHelper'],
+    { filename },
+  );
+  const bundle = { exports: {} };
+  const helpers = [];
+  loadBundle(createRequire(filename), bundle, bundle.exports, dirname(filename), filename, (helper) =>
+    helpers.push(helper),
+  );
+  assert.equal(helpers.length, 1, `${relative}: expected the bundle to initialize its Flight helper once`);
+  return helpers[0];
 }
 
 function render(helper, element, signal) {

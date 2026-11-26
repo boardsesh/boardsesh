@@ -44,7 +44,7 @@ virtualStoreDirMaxLength: 120
 # the consuming app instead of the store's hoisted types: mobile uses React
 # 19.3, while web stays on 19.2. Mixing the declarations breaks refs and keys.
 packageExtensions:
-  'next@16.3.5':
+  'next@16.4.6':
     peerDependencies:
       '@types/react': '*'
       '@types/react-dom': '*'
@@ -97,7 +97,7 @@ patchedDependencies:
   'posthog-react-native-session-replay@1.6.0': patches/posthog-react-native-session-replay@1.6.0.patch
   'postgres@3.4.9': packages/db/patches/postgres@3.4.9.patch
   'react-native-ble-plx@3.5.1': patches/react-native-ble-plx@3.5.1.patch
-  next@16.3.5: packages/web/patches/next@16.3.5.patch
+  next@16.4.6: packages/web/patches/next@16.4.6.patch
 
 # pnpm blocks dependency lifecycle scripts unless they are listed here. Only
 # add a package after reviewing what its build script does.
