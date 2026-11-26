@@ -383,7 +383,11 @@
       "tabBarSearch": {
         "sectionTitle": "Tab-Leiste",
         "title": "Suche in der Tab-Leiste",
-        "footer": "Boulder bekommt rechts in der Tab-Leiste einen eigenen Button mit einem Feld für Boulder-Namen. Aus ist es ein normaler Tab, und du suchst Namen unter Filter. Gilt, nachdem du Boardsesh neu gestartet hast."
+        "footer": "Boulder bekommt rechts in der Tab-Leiste einen eigenen Button mit einem Feld für Boulder-Namen. Aus ist es ein normaler Tab, und du suchst Namen unter Filter. Gilt, nachdem du Boardsesh neu gestartet hast.",
+        "restartTitle": "Boardsesh neu starten?",
+        "restartMessage": "Die neue Tab-Leiste erscheint nach dem Neustart.",
+        "restartNow": "Jetzt neu starten",
+        "restartLater": "Später"
       },
       "offline": {
         "title": "Offline",

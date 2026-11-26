@@ -658,7 +658,11 @@
       "tabBarSearch": {
         "sectionTitle": "Barra de pestañas",
         "title": "Buscar desde la barra de pestañas",
-        "footer": "Bloques tiene su propio botón a la derecha de la barra de pestañas, con un campo para nombres de bloques. Desactivado, es una pestaña normal y buscas nombres en Filtros. Se aplica cuando reinicies Boardsesh."
+        "footer": "Bloques tiene su propio botón a la derecha de la barra de pestañas, con un campo para nombres de bloques. Desactivado, es una pestaña normal y buscas nombres en Filtros. Se aplica cuando reinicies Boardsesh.",
+        "restartTitle": "¿Reiniciar Boardsesh?",
+        "restartMessage": "La nueva barra de pestañas aparece después de reiniciar.",
+        "restartNow": "Reiniciar ahora",
+        "restartLater": "Más tarde"
       },
       "offline": {
         "title": "Sin conexión",

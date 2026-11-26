@@ -383,7 +383,11 @@
       "tabBarSearch": {
         "sectionTitle": "标签栏",
         "title": "在标签栏中搜索",
-        "footer": "线路会在标签栏右侧单独显示，并带有输入线路名称的搜索框。关闭后它是普通标签，在筛选中搜索名称。重启 Boardsesh 后生效。"
+        "footer": "线路会在标签栏右侧单独显示，并带有输入线路名称的搜索框。关闭后它是普通标签，在筛选中搜索名称。重启 Boardsesh 后生效。",
+        "restartTitle": "重启 Boardsesh？",
+        "restartMessage": "重启后会显示新的标签栏。",
+        "restartNow": "立即重启",
+        "restartLater": "稍后"
       },
       "offline": {
         "title": "离线",
