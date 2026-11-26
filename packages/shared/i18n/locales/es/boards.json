@@ -558,6 +558,8 @@
       "moonboardTitle": "Hay un MoonBoard al alcance",
       "moonboardBody": "Los MoonBoard no envían número de serie, así que dinos dónde estás y encontraremos este.",
       "typeTitle": "Hay un plafón {{board}} al alcance",
+      "friendBoardHere": "El plafón de {{name}} está aquí",
+      "friendBoardHereUnnamed": "El plafón de un escalador está aquí",
       "bareNameBody": "Su caja no dice qué plafón es, así que dinos dónde estás y lo encontraremos.",
       "unknownSetupBody": "Aún no sabemos cómo está configurado, así que dinos dónde estás y lo encontraremos.",
       "alsoNeedSignal": "Hay otro plafón al alcance. Necesitamos conexión para identificarlo.",

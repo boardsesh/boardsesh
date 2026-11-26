@@ -16,7 +16,7 @@ import {
 } from '@boardsesh/graphql/operations/privacy';
 import { getHttpClient } from '../client';
 import { FRIENDS_BOARDS_QUERY_KEY } from './use-friends-boards';
-import { useProfile } from './index';
+import { BOARDS_BY_SERIAL_NUMBERS_QUERY_KEY, useProfile } from './index';
 import { usePrivacySettings } from './use-privacy';
 import { refreshAfterOwnPrivacyChange } from '../../privacy/privacy-cache';
 import { getConnectivitySnapshot } from '../../connectivity/connectivity-store';
@@ -186,6 +186,8 @@ export function useResourceAccessAction() {
       if (ASKER_ACTIONS.has(action)) {
         void queryClient.invalidateQueries({ queryKey: [FRIENDS_BOARDS_QUERY_KEY] });
         void queryClient.invalidateQueries({ queryKey: ['resourceGrantStatuses'] });
+        // The picker's In range card for a friend's board heard over Bluetooth.
+        void queryClient.invalidateQueries({ queryKey: [BOARDS_BY_SERIAL_NUMBERS_QUERY_KEY] });
         return;
       }
       return refreshAfterOwnPrivacyChange(queryClient);

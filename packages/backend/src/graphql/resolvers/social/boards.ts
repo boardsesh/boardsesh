@@ -17,8 +17,8 @@ import {
 } from '../../../services/privacy';
 import { v4 as uuidv4 } from 'uuid';
 import { eq, ne, and, count, isNull, isNotNull, sql, ilike, or, asc, desc, inArray, like, type SQL } from 'drizzle-orm';
-import { GraphQLError } from 'graphql';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { GraphQLError, type GraphQLResolveInfo } from 'graphql';
+import type { ConnectionContext, SerialBoardRequestCard } from '@boardsesh/shared-schema';
 import { normaliseSetIds } from '@boardsesh/board-config';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { readSprayWallImportProgress } from '@boardsesh/db/queries';
@@ -78,6 +78,8 @@ import { assertKnownBoardConfig } from '../board-presence/board-catalog';
 import { isSprayBoardType, sprayBoardRowIsReadable } from '../climbs/spray-read-access';
 import { publishBoardQueuePreviewTombstoneForBoard } from '../../../services/board-queue-preview';
 import { logger } from '../../../utils/logger';
+import { serialBoardRequestCards } from './serial-board-reveal';
+import { isFieldSelected, selectedFieldNames } from '../shared/selected-fields';
 import { isUniqueViolation } from '../../../utils/postgres-errors';
 import { getPopularConfigs } from '../../../services/popular-board-configs';
 import { lockAndAssertBoardSerialAvailable } from '../board-serial-write-lock';
@@ -1547,7 +1549,12 @@ export const socialBoardQueries = {
     return enriched;
   },
 
-  observedBoardSerialMatches: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
+  observedBoardSerialMatches: async (
+    _: unknown,
+    { input }: { input: unknown },
+    ctx: ConnectionContext,
+    info?: GraphQLResolveInfo,
+  ) => {
     await applyRateLimit(ctx, 20, 'observedBoardSerialMatches');
     const observed = validateInput(
       z
@@ -1586,6 +1593,12 @@ export const socialBoardQueries = {
       | Awaited<ReturnType<typeof projectAnonymousSerialBoards>>[number]
       | Awaited<ReturnType<typeof enrichBoards>>[number]
     >();
+    // Signed-in only: a private home board the viewer cannot open may say
+    // whose it is (serial-board-reveal.ts). Its stub stays in `candidates`
+    // unchanged, so a binary that predates the cards sees what it always did,
+    // and one that does not ask for the cards spends none of its caps.
+    const wantsRequestCards = isFieldSelected(selectedFieldNames(info), 'candidateRequestCards');
+    let requestCards = new Map<string, SerialBoardRequestCard>();
     if (!ctx.isAuthenticated) {
       const projected = await projectAnonymousSerialBoards(rows);
       rows.forEach((board, index) => candidatesByUuid.set(board.uuid, projected[index]));
@@ -1595,24 +1608,36 @@ export const socialBoardQueries = {
       );
       const readable = rows.filter((_, index) => visibility[index]);
       const hidden = rows.filter((_, index) => !visibility[index]);
-      const [enriched, projected] = await Promise.all([
+      const [enriched, projected, cards] = await Promise.all([
         enrichBoards(
           readable.map((board) => ({ board })),
           ctx.userId,
           { allowUnlistedLink: false },
         ),
         projectAnonymousSerialBoards(hidden),
+        wantsRequestCards
+          ? serialBoardRequestCards(
+              ctx.userId!,
+              hidden.map((board) => board.uuid),
+            )
+          : requestCards,
       ]);
       enriched.forEach((board) => candidatesByUuid.set(board.uuid, board));
       hidden.forEach((board, index) => candidatesByUuid.set(board.uuid, projected[index]));
+      requestCards = cards;
     }
-    return unique.map((entry) => ({
-      ...entry,
-      candidates: rows
-        .filter((board) => board.boardType === entry.boardType && board.serialNumber === entry.observedSerialNumber)
-        .map((board) => candidatesByUuid.get(board.uuid))
-        .filter((board) => board !== undefined),
-    }));
+    return unique.map((entry) => {
+      const matched = rows.flatMap((board) => {
+        if (board.boardType !== entry.boardType || board.serialNumber !== entry.observedSerialNumber) return [];
+        const candidate = candidatesByUuid.get(board.uuid);
+        return candidate ? [{ candidate, requestCard: requestCards.get(board.uuid) ?? null }] : [];
+      });
+      return {
+        ...entry,
+        candidates: matched.map(({ candidate }) => candidate),
+        candidateRequestCards: matched.map(({ requestCard }) => requestCard),
+      };
+    });
   },
 
   /**

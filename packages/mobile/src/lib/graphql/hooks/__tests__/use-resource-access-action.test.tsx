@@ -14,7 +14,10 @@ const requestMock = vi.hoisted(() => vi.fn());
 const refreshMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../client', () => ({ getHttpClient: () => ({ request: requestMock }) }));
-vi.mock('../index', () => ({ useProfile: () => ({ data: { id: 'viewer' } }) }));
+vi.mock('../index', () => ({
+  BOARDS_BY_SERIAL_NUMBERS_QUERY_KEY: 'boardsBySerialNumbers',
+  useProfile: () => ({ data: { id: 'viewer' } }),
+}));
 vi.mock('../use-privacy', () => ({ usePrivacySettings: () => ({ data: undefined }) }));
 vi.mock('../../../privacy/privacy-cache', () => ({ refreshAfterOwnPrivacyChange: refreshMock }));
 vi.mock('../../../connectivity/connectivity-store', () => ({
@@ -55,7 +58,9 @@ describe('useResourceAccessAction', () => {
     expect(refreshMock).not.toHaveBeenCalled();
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['friendsBoards'] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['resourceGrantStatuses'] });
-    expect(invalidate).toHaveBeenCalledTimes(2);
+    // The In range card for a friend's board heard over Bluetooth says Requested the same way.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['boardsBySerialNumbers'] });
+    expect(invalidate).toHaveBeenCalledTimes(3);
   });
 
   it.each([

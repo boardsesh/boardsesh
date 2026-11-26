@@ -464,7 +464,15 @@ export function fetchBoardsBySerialNumbers(serialNumbers: string[]): Promise<Use
  * Correlate typed BLE observations through a batch wrapper because stored
  * serial fields are owner-only. Untyped form lookups retain the legacy query.
  */
-export function useBoardsBySerialNumbers(serialNumbers: string[], advertisedTypes: AdvertisedBoardTypes = new Map()) {
+/** The serial lookup's query key prefix: an ask to climb reads it again, so a request card says Requested. */
+export const BOARDS_BY_SERIAL_NUMBERS_QUERY_KEY = 'boardsBySerialNumbers';
+
+export function useBoardsBySerialNumbers(
+  serialNumbers: string[],
+  advertisedTypes: AdvertisedBoardTypes = new Map(),
+  /** Also ask for request cards (`fetchBoardsForObservedSerials`): the In range slot only. */
+  { requestCards = false }: { requestCards?: boolean } = {},
+) {
   // Sorted entries, not the map, so the key hashes stably across renders while
   // still changing when a late-arriving device name reveals a type. Memoized to
   // match useResolvedBleDeviceBoards: React Query's structural hashing already
@@ -475,8 +483,8 @@ export function useBoardsBySerialNumbers(serialNumbers: string[], advertisedType
     [advertisedTypes],
   );
   return useQuery({
-    queryKey: ['boardsBySerialNumbers', serialNumbers, advertisedTypeEntries],
-    queryFn: () => fetchBoardsForObservedSerials(serialNumbers, advertisedTypes),
+    queryKey: [BOARDS_BY_SERIAL_NUMBERS_QUERY_KEY, serialNumbers, advertisedTypeEntries, requestCards],
+    queryFn: () => fetchBoardsForObservedSerials(serialNumbers, advertisedTypes, { requestCards }),
     enabled: serialNumbers.length > 0,
   });
 }

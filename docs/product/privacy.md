@@ -120,6 +120,35 @@ Decline and cancel return whether a request was waiting. The request notificatio
 
 **Rolling the backend back past these two types.** Migration 0352 stays (enum values are additive), but an older backend's GraphQL `NotificationType` enum has no `board_access_requested` or `board_access_approved`, and its inbox filter does not exclude them by type, so a row that passes its generic actor and board checks reaches the response. An owner or climber with such a row then gets an error from the whole inbox query (`groupedNotifications`), because the non-null `type` field cannot serialize the unknown value. Before deploying the older backend, delete those rows: `DELETE FROM notifications WHERE type IN ('board_access_requested', 'board_access_approved');`. The pending requests in `resource_grants` stay and still show first in the board's access list, where the owner can approve them; only the inbox rows go.
 
+### What a serial tells a climber nearby
+
+A Bluetooth controller advertises its serial to every phone in range, so a serial is observed hardware, not a link. `observedBoardSerialMatches` answers each serial a phone heard with the boards that carry it (`candidates`), and, for a signed-in climber, a request card beside each one (`candidateRequestCards`, lined up with `candidates`, null where there is no card).
+
+| What the climber is | What they learn from a serial |
+| --- | --- |
+| Signed out | The geometry stub for any board they can't open: empty uuid and slug, the board type as its name, layout, size, sets and angle. Never a card. |
+| Signed in, can open the board | The board, read as any listing reads it (`enrichBoards`, no-link rule). No card. |
+| Signed in, can't open an Invite-only home board their own Friends' boards lists (they and the owner follow each other, and the owner turned on "Show to friends") | The stub, and a card: the board's uuid, type, layout, size, sets and angle (`FriendBoardPreview`, with the board type as its name), the owner's display name and avatar, and whether they already asked. |
+| Anyone else: a climber who is not the owner's friend (a one-way follow, in either direction), an Unlisted or Only me board, an Invite-only board without "Show to friends", or any board while the privacy controls are off | The stub only. |
+
+A climber nearby only ever learns whose board this is when the owner already chose to show them their boards. The card goes only to a viewer whose Friends' boards would list the board: the same rule, shared in code (`friendsBoardListingConditions`, `packages/backend/src/graphql/resolvers/social/friends-board-listing.ts`), above all that the owner and the viewer follow each other. A one-way follow unlocks nothing, so a stranger cannot follow someone to learn whose wall a garage holds. A friend follows the owner, so a Followers board always opens for them as itself and never needs a card: only an Invite-only board with "Show to friends" on yields one. Unlisted stays a stub even when listed: an Unlisted board's uuid is its link. With the privacy controls off nobody can answer a request, so nothing unreadable is listed and there are no cards.
+
+Showing the owner's display name and avatar is fine for the same reason: the owner follows this climber back, and the climber's own followers list already names them. The card never carries the board's own name, which is free text and can name a place ("Garage at 12 Example Street"); the board type stands in for it, as on the stub. Nor does it carry the board's location (whatever its location audience allows), slug, stored serial, presence id, counts or the owner's user id. With it the climber can ask to climb (`requestResourceAccess` with the preview's uuid), under the same 5 a day and one waiting request per board as any ask. There is no other way to ask by serial. No card for: spray walls, deleted or merged-away boards, a board at someone else's gym or at a public listed gym (the home-wall rule), the climber's own board, or a climber the owner removed (a revoked grant).
+
+**Who can get a card at all.** An account at least 7 days old (`users.created_at`) with a verified email (`users."emailVerified"` set). Anyone else gets the stub, not an error, so a throwaway account learns nothing.
+
+**Caps.** The lookup keeps its 20 requests a minute. On top of that, one climber is shown cards for at most (`claimSerialReveals`, `packages/backend/src/utils/serial-reveal-budget.ts`):
+
+- 10 distinct boards an hour, in fixed buckets on the hour;
+- 15 distinct boards a UTC day, resetting at 00:00 UTC;
+- 40 distinct boards in any 30 days, a rolling window: each board counts from the last time it was shown, and drops out 30 days after that.
+
+A board already counted in a window costs nothing more in that window, so standing at a friend's wall and opening the picker again is free. A board that would go over any cap gets the stub, not an error, so the scan keeps working. Redis keeps the three counts per climber (two sets of board uuids and a sorted set scored by time), checked and filled by one Lua script, so two instances cannot both spend the last slot. The caps live only in Redis and fail closed: when Redis is not connected, a command fails, or it is slower than 100 ms, no card is shown at all. A command that timed out may still run in Redis later and count boards the climber never saw, so an outage can only use slots up early, never show more than the caps. Only a client that selects `candidateRequestCards` spends the caps: an older binary, and the app's own device picker, which draws no cards, ask without it.
+
+Every lookup that found a card candidate logs `[serial-reveal] request cards` at info with the climber's user id, how many boards were shown and how many were held back by the caps. It never logs a serial or a board. That line is what abuse review reads.
+
+What this does not hide: the owner's followee learns that the owner's board is here. That is what the owner opted into by following them; an owner who does not want it unfollows them, or makes the board Only me.
+
 ## Enforcement and writes
 
 `packages/shared/privacy` defines renderer-independent policy. `packages/db/src/queries/privacy.ts` expresses the policy inside queries, before pagination and counts. Backend runtime helpers in `services/privacy.ts` authorize individual resources. Policy reads use the primary database: a lagging replica cannot restore a revoked grant.

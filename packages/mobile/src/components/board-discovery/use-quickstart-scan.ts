@@ -56,7 +56,8 @@ export function useQuickstartScan({
   // Scoped to what each controller announced. Aurora reuses a serial across
   // board apps, so unscoped this would offer a stranger's Kilter board for an
   // in-range Tension controller and let the climber make it active.
-  const boardLookup = useBoardsBySerialNumbers(serials, advertisedTypes);
+  // With request cards: a friend's private home board says whose it is.
+  const boardLookup = useBoardsBySerialNumbers(serials, advertisedTypes, { requestCards: true });
   const { data: boards, isLoading: isResolvingBoards, refetch: refetchBoards } = boardLookup;
   const { data: serialConfigs, isResolving: isResolvingPreferences } = useMyBoardSerialConfigs(serials);
   const visibleBoards = useMemo(

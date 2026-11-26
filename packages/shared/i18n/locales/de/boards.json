@@ -558,6 +558,8 @@
       "moonboardTitle": "Ein MoonBoard ist in Reichweite",
       "moonboardBody": "MoonBoards senden keine Seriennummer. Sag uns, wo du bist, dann finden wir dieses.",
       "typeTitle": "Ein {{board}} Board ist in Reichweite",
+      "friendBoardHere": "Hier ist das Board von {{name}}",
+      "friendBoardHereUnnamed": "Hier ist das Board von jemand anderem",
       "bareNameBody": "Seine Box verrät nicht, welches Board es ist. Sag uns, wo du bist, dann finden wir es.",
       "unknownSetupBody": "Sein Setup kennen wir noch nicht. Sag uns, wo du bist, dann finden wir es.",
       "alsoNeedSignal": "Noch ein Board ist in Reichweite. Zum Erkennen brauchen wir Empfang.",

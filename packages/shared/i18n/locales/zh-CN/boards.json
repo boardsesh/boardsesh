@@ -558,6 +558,8 @@
       "moonboardTitle": "信号范围内有一块 MoonBoard",
       "moonboardBody": "MoonBoard 不会发送序列号。请告诉我们你在哪里，方便找到这块板。",
       "typeTitle": "信号范围内有一块 {{board}} 训练板",
+      "friendBoardHere": "{{name}} 的训练板就在这里",
+      "friendBoardHereUnnamed": "一位攀岩者的训练板就在这里",
       "bareNameBody": "控制盒没有说明具体是哪块训练板。请告诉我们你在哪里，方便找到它。",
       "unknownSetupBody": "我们还不知道它的配置。请告诉我们你在哪里，方便找到它。",
       "alsoNeedSignal": "信号范围内还有另一块训练板，需要联网才能确定名称。",
