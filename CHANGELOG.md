@@ -8,6 +8,7 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### New
 
+- Standing at a friend's home board? Boardsesh spots it over Bluetooth and lets you ask to climb. ([#8210](https://github.com/boardsesh/boardsesh/pull/8210))
 - Climb on a friend's home board. When you follow each other, their boards show up under Friends' boards; invite-only ones get an Ask to climb button. ([#8207](https://github.com/boardsesh/boardsesh/pull/8207))
   Owners can say yes right from their notifications.
 - Show your home board's QR code so a friend can scan it with their camera, and choose whether your friends can find it. ([#8203](https://github.com/boardsesh/boardsesh/pull/8203))

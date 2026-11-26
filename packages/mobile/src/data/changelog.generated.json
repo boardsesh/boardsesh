@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-26T12:53:13.975Z",
+  "generatedAt": "2026-11-26T13:31:26.830Z",
   "entries": [
+    {
+      "prNumber": 8210,
+      "category": "new",
+      "title": "Standing at a friend's home board? Boardsesh spots it over Bluetooth and lets you ask to climb.",
+      "mergedAt": "2026-11-26T13:26:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8210"
+    },
     {
       "prNumber": 8207,
       "category": "new",
