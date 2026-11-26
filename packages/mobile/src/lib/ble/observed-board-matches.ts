@@ -8,13 +8,48 @@ import {
 } from '@boardsesh/graphql/operations';
 import type { SerialBoardRequestCard } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../graphql/client';
+import { isGraphqlValidationFailedError } from '../graphql/extract-error-message';
 import type { ObservedBoard } from '../boards/in-range-request-card';
 import { matchesAdvertisedType, type AdvertisedBoardTypes } from './advertised-board-type';
 
+type ObservedMatchesResponse =
+  | GetObservedBoardSerialMatchesQueryResponse
+  | GetObservedBoardSerialMatchesWithRequestCardsQueryResponse;
+type ObservedInput = ReadonlyArray<{ boardType: string; observedSerialNumber: string }>;
+
+/**
+ * The serial lookup, with request cards when asked. A backend without
+ * `candidateRequestCards` (this bundle shipped before it, or it was rolled
+ * back) rejects the whole document, so that rejection is asked once more
+ * without the cards: In range keeps finding the climber's own and gym boards.
+ */
+async function requestObservedMatches(
+  observedInput: ObservedInput,
+  requestCards: boolean,
+): Promise<ObservedMatchesResponse> {
+  const client = getHttpClient();
+  if (!requestCards) {
+    return client.request<GetObservedBoardSerialMatchesQueryResponse>(GET_OBSERVED_BOARD_SERIAL_MATCHES, {
+      input: observedInput,
+    });
+  }
+  try {
+    return await client.request<GetObservedBoardSerialMatchesWithRequestCardsQueryResponse>(
+      GET_OBSERVED_BOARD_SERIAL_MATCHES_WITH_REQUEST_CARDS,
+      { input: observedInput },
+    );
+  } catch (error) {
+    if (!isGraphqlValidationFailedError(error)) throw error;
+    return client.request<GetObservedBoardSerialMatchesQueryResponse>(GET_OBSERVED_BOARD_SERIAL_MATCHES, {
+      input: observedInput,
+    });
+  }
+}
+
 /**
  * Correlate only serials the caller heard, without relying on owner-only fields.
- * `requestCards`: also ask for request cards, which spend the climber's hourly
- * budget (10 boards). Only the picker's In range slot, which draws them, asks.
+ * `requestCards`: also ask for request cards, which spend the climber's hourly,
+ * daily and 30-day caps. Only the picker's In range slot, which draws them, asks.
  */
 export async function fetchBoardsForObservedSerials(
   serialNumbers: string[],
@@ -30,11 +65,7 @@ export async function fetchBoardsForObservedSerials(
   const client = getHttpClient();
   const [observedResult, untypedResult] = await Promise.all([
     observedInput.length > 0
-      ? client.request<
-          GetObservedBoardSerialMatchesQueryResponse | GetObservedBoardSerialMatchesWithRequestCardsQueryResponse
-        >(requestCards ? GET_OBSERVED_BOARD_SERIAL_MATCHES_WITH_REQUEST_CARDS : GET_OBSERVED_BOARD_SERIAL_MATCHES, {
-          input: observedInput,
-        })
+      ? requestObservedMatches(observedInput, requestCards)
       : Promise.resolve({ observedBoardSerialMatches: [] }),
     untypedSerials.length > 0
       ? client.request<GetBoardsBySerialNumbersQueryResponse>(GET_BOARDS_BY_SERIAL_NUMBERS, {

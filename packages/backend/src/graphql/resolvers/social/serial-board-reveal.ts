@@ -1,39 +1,41 @@
-import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { SerialBoardRequestCard } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import { logger } from '../../../utils/logger';
 import { claimSerialReveals } from '../../../utils/serial-reveal-budget';
-import { homeWallCondition } from './home-wall';
+import { friendsBoardListingConditions } from './friends-board-listing';
 
 /** The owner `getResourcePrivacy` reads as Public whatever the board's booleans say. */
 const SYSTEM_OWNER_ID = '00000000-0000-0000-0000-000000000000';
+
+/** A new account is named no one's board: no throwaway accounts walking a street. */
+const MIN_ACCOUNT_AGE_DAYS = 7;
 
 /**
  * Request cards for private home boards a signed-in climber heard over
  * Bluetooth and cannot open (`observedBoardSerialMatches`). A card says whose
  * board it is so the climber can ask to climb on it (`requestResourceAccess`),
- * and nothing that finds the board again: never its location (whatever its
- * location audience), slug, stored serial, presence ids or counts, and never
- * the owner's id. The rules are in docs/product/privacy.md ("What a serial
- * tells a climber nearby").
+ * and nothing that finds the board again: never its free-text name (it can
+ * name a place), location (whatever its location audience), slug, stored
+ * serial, presence ids or counts, and never the owner's id. The rules are in
+ * docs/product/privacy.md ("What a serial tells a climber nearby").
  *
  * A board gets a card only when all of these hold:
+ * - the board is in the viewer's Friends' boards (`friendsBoardListingConditions`):
+ *   above all, its owner follows the viewer. Following the owner does not
+ *   unlock a card, so a stranger in range learns nothing;
  * - its effective audience is Followers or Invite-only. Only me stays a stub,
  *   and so does Unlisted: an Unlisted board's uuid is its link
- *   (`resourceAccess`), so a card would hand the board, and a Public location,
- *   to anyone in range;
- * - it is a live home wall: not deleted or merged away, not a spray wall, not
- *   at someone else's gym or a public listed gym (`homeWallCondition`, the same
- *   rule as Friends' boards);
- * - the viewer is not its owner and holds no revoked grant on it: someone the
- *   owner removed learns nothing new;
- * - the viewer's hourly budget of distinct boards named this way has room
- *   (`claimSerialReveals`). Over it, the board stays an anonymous stub, so the
- *   scan keeps working.
+ *   (`resourceAccess`);
+ * - the viewer's account is at least 7 days old and has a verified email;
+ * - the viewer's caps of distinct boards named this way have room
+ *   (`claimSerialReveals`: 10 an hour, 15 a UTC day, 40 in 30 days, none while
+ *   Redis is unavailable).
  *
- * `hiddenBoardUuids` are boards the caller already found the viewer cannot
- * read without a link. Returns a card per named board, keyed by uuid.
+ * Anything else stays an anonymous stub, never an error, so the scan keeps
+ * working. `hiddenBoardUuids` are boards the caller already found the viewer
+ * cannot read without a link. Returns a card per named board, keyed by uuid.
  */
 export async function serialBoardRequestCards(
   viewerId: string,
@@ -48,7 +50,6 @@ export async function serialBoardRequestCards(
   const rows = await db
     .select({
       uuid: boards.uuid,
-      name: boards.name,
       boardType: boards.boardType,
       layoutId: boards.layoutId,
       sizeId: boards.sizeId,
@@ -70,15 +71,11 @@ export async function serialBoardRequestCards(
     .where(
       and(
         inArray(boards.uuid, [...new Set(hiddenBoardUuids)]),
-        isNull(boards.deletedAt),
-        isNull(boards.mergedIntoBoardUuid),
-        ne(boards.boardType, 'spray'),
-        ne(boards.ownerId, viewerId),
-        homeWallCondition(boards.gymId, boards.ownerId),
+        ...friendsBoardListingConditions(viewerId),
         sql`${effectiveAudience} IN ('followers', 'invite_only')`,
-        sql`NOT EXISTS (SELECT 1 FROM resource_grants reveal_revoked
-          WHERE reveal_revoked.kind = 'board' AND reveal_revoked.resource_id = ${boards.uuid}
-            AND reveal_revoked.user_id = ${viewerId} AND reveal_revoked.status = 'revoked')`,
+        sql`EXISTS (SELECT 1 FROM users reveal_viewer WHERE reveal_viewer.id = ${viewerId}
+          AND reveal_viewer."emailVerified" IS NOT NULL
+          AND reveal_viewer.created_at <= now() - ${`${MIN_ACCOUNT_AGE_DAYS} days`}::interval)`,
       ),
     )
     .orderBy(boards.id);
@@ -96,7 +93,8 @@ export async function serialBoardRequestCards(
       ownerAvatarUrl: row.ownerAvatarUrl,
       preview: {
         uuid: row.uuid,
-        name: row.name,
+        // The board type, as on the stub: a board's own name can name a place.
+        name: row.boardType,
         boardType: row.boardType,
         layoutId: Number(row.layoutId),
         sizeId: Number(row.sizeId),

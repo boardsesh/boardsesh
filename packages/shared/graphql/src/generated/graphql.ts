@@ -3922,6 +3922,7 @@ export type FriendBoardPreview = {
   angle: Scalars['Int']['output'];
   boardType: Scalars['String']['output'];
   layoutId: Scalars['Int']['output'];
+  /** The board's own name on a Friends' boards row. On a Bluetooth request card, the board type: a name can name a place. */
   name: Scalars['String']['output'];
   setIds: Scalars['String']['output'];
   sizeId: Scalars['Int']['output'];
@@ -7924,8 +7925,10 @@ export type ObservedBoardSerialMatch = {
   boardType: Scalars['String']['output'];
   /**
    * Lined up with candidates: entry i is candidate i's request card, or null.
-   * Only a signed-in viewer gets cards, only for a Followers or Invite-only home
-   * board they cannot open, and at most 10 distinct boards an hour. Every other
+   * Only a signed-in viewer gets cards: an account at least 7 days old with a
+   * verified email, only for a Followers or Invite-only home board they cannot
+   * open whose owner follows them (the board is in their Friends' boards), and at
+   * most 10 distinct boards an hour, 15 a UTC day and 40 in 30 days. Every other
    * entry is null, and the candidate stays the anonymous stub it always was.
    */
   candidateRequestCards: Array<Maybe<SerialBoardRequestCard>>;
@@ -11644,8 +11647,8 @@ export type SendDeviceLogsResponse = {
 /**
  * A private home board heard over Bluetooth that the viewer cannot open: whose
  * it is, so they can ask to climb on it (requestResourceAccess with the
- * preview's uuid). Never the location, slug, serial, presence ids, counts or
- * the owner's id.
+ * preview's uuid). The preview's name is the board type, never the board's own
+ * name. Never the location, slug, serial, presence ids, counts or the owner's id.
  */
 export type SerialBoardRequestCard = {
   __typename?: 'SerialBoardRequestCard';

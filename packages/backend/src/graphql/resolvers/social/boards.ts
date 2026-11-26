@@ -1596,7 +1596,7 @@ export const socialBoardQueries = {
     // Signed-in only: a private home board the viewer cannot open may say
     // whose it is (serial-board-reveal.ts). Its stub stays in `candidates`
     // unchanged, so a binary that predates the cards sees what it always did,
-    // and one that does not ask for the cards spends none of its hourly budget.
+    // and one that does not ask for the cards spends none of its caps.
     const wantsRequestCards = isFieldSelected(selectedFieldNames(info), 'candidateRequestCards');
     let requestCards = new Map<string, SerialBoardRequestCard>();
     if (!ctx.isAuthenticated) {

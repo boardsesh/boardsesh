@@ -803,6 +803,50 @@ describe('the In range scan', () => {
     expect(clearPendingRecognitionMock).toHaveBeenCalledOnce();
   });
 
+  // A friend's private board heard over Bluetooth: tapping its card asks the
+  // owner. It never binds the board, ends the scan or connects to the box.
+  it('asks to climb from a request card, and binds nothing', async () => {
+    const card = {
+      requested: false,
+      ownerDisplayName: 'Sam',
+      ownerAvatarUrl: null,
+      preview: {
+        uuid: 'friend-wall',
+        name: 'kilter',
+        boardType: 'kilter',
+        layoutId: 8,
+        sizeId: 17,
+        setIds: '20,21',
+        angle: 40,
+      },
+    };
+    const stubBoard = {
+      ...gymWall,
+      uuid: '',
+      name: 'kilter',
+      isOwned: false,
+      requestCard: card,
+    } as unknown as UserBoard;
+    scanCtrl.phase = 'done';
+    scanCtrl.rows = [{ kind: 'board', key: 'board:stub', board: stubBoard, rssi: -50, recognizedBy: 'serial' }];
+    render(createElement(BoardSelection));
+    const hero = inRange().view.content as unknown as { kind: string; board: { key: string } };
+    expect(hero.kind).toBe('hero');
+
+    await act(async () => {
+      inRange().onPickBoard({ key: hero.board.key });
+    });
+
+    expect(friendBoardPressMock).toHaveBeenCalledWith(
+      expect.objectContaining({ viewerAccess: 'CAN_REQUEST', preview: card.preview, board: null }),
+      0,
+    );
+    expect(setActiveBoardMock).not.toHaveBeenCalled();
+    expect(scanCtrl.stop).not.toHaveBeenCalled();
+    expect(chooseFirstBoardPathMock).not.toHaveBeenCalled();
+    expect(trackMock).not.toHaveBeenCalledWith('Board Picker Selection Completed', expect.anything());
+  });
+
   it('retries a lookup with no signal through the scan', () => {
     render(createElement(BoardSelection));
     act(() => {

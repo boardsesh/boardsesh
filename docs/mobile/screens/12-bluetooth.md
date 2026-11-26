@@ -163,19 +163,26 @@ scan hears now.
 **A friend's private board in range.** The In range slot's serial lookup asks
 for request cards (`GetObservedBoardSerialMatchesWithRequestCards`, `requestCards`
 on `useBoardsBySerialNumbers`); the device picker and every other caller use the
-lookup without them, so they spend none of the climber's hourly budget. A
-signed-in climber at a Followers or Invite-only home board they can't open gets
+lookup without them, so they spend none of the climber's caps. A signed-in
+climber at a Followers or Invite-only home board they can't open, whose owner
+follows them (the board is in their Friends' boards), gets
 the same anonymous stub as before plus a card, which `fetchBoardsForObservedSerials`
 puts on that stub (`requestCard`, read with `requestCardOf` in
 `src/lib/boards/in-range-request-card.ts`). A card on a board with a uuid, or of
 another board type, is ignored. The hero then reads "Sam's board is here"
 (`mobile.inRange.friendBoardHere`, or "A climber's board is here" with no name),
 the board and its angle under it, and Ask to climb, or Requested once they asked,
-in place of Climb here. Nothing is drawn over the art. The tap is not a pick: the
+in place of Climb here. The card's name is the board type, never the board's own
+name, so the hero titles it by its owner. Nothing is drawn over the art. The tap is not a pick: the
 scan goes on, nothing is bound, and `useFriendBoardAction` opens the same sheet
 as the Friends' boards shelf. After an ask or a cancel the serial lookup is read
-again, so the button follows the server. Over the 10-boards-an-hour cap, signed
-out, or on an Unlisted or Only me board, the stub draws exactly as before. What
+again, so the button follows the server. A backend without the cards (this
+bundle shipped first, or it was rolled back) rejects the document with
+`GRAPHQL_VALIDATION_FAILED`; the lookup then asks once more without them, so In
+range keeps finding own and gym boards. Over the caps (10 boards an hour, 15 a
+UTC day, 40 in 30 days), while the server's Redis is down, for an account under
+7 days old or without a verified email, for a climber the owner does not follow,
+signed out, or on an Unlisted or Only me board, the stub draws exactly as before. What
 the server reveals and why is in
 [privacy](../../product/privacy.md#what-a-serial-tells-a-climber-nearby). The scan
 itself is unchanged.

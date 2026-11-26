@@ -1,13 +1,13 @@
-import { and, asc, count, eq, ilike, isNull, ne, notExists, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
 import type { ConnectionContext, FriendBoard } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
-import { contentVisibilityCondition, followedByOwnerListingCondition } from '@boardsesh/db/queries';
+import { contentVisibilityCondition } from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
 import { FriendsBoardsInputSchema } from '../../../validation/schemas';
-import { privacyControlsEnabled, resourceAccessCondition } from '../../../services/privacy';
+import { resourceAccessCondition } from '../../../services/privacy';
 import { enrichBoards } from './boards';
-import { homeWallCondition } from './home-wall';
+import { friendsBoardListingConditions } from './friends-board-listing';
 
 type EnrichedBoard = Awaited<ReturnType<typeof enrichBoards>>[number];
 type FriendBoardItem = Omit<FriendBoard, 'board'> & { board: EnrichedBoard | null };
@@ -18,16 +18,8 @@ type FriendBoardItem = Omit<FriendBoard, 'board'> & { board: EnrichedBoard | nul
  * my boards": the owner's follow is their consent to be listed. Who sees what
  * is in docs/product/privacy.md ("Friends' boards").
  *
- * Every gate runs in the WHERE the count and the page share:
- * - the owner follows the viewer (`user_follows`, which holds accepted follows
- *   only). The viewer following the owner lists nothing by itself;
- * - a live home board: not deleted or merged away, not a spray wall, and not at
- *   someone else's gym or at a public listed gym (`homeWallCondition`);
- * - not the viewer's own board and not one their Your boards already shows: a
- *   `board_follows` row they can still open, read the way `myBoards` reads it.
- *   A save they can no longer open (the board went Invite-only since) stays
- *   listed, so they can ask for it again;
- * - the audience rule (`followedByOwnerListingCondition`).
+ * Every gate runs in the WHERE the count and the page share
+ * (`friendsBoardListingConditions`, which the Bluetooth request card reuses).
  *
  * Who may open a board is unchanged: a row the viewer can climb on gets the full
  * `UserBoard` from `enrichBoards`, so the board's location audience still decides
@@ -48,43 +40,17 @@ export async function readFriendsBoards(
   const ownerName = sql<string | null>`COALESCE(${dbSchema.userProfiles.displayName}, ${dbSchema.users.name})`;
   const ownerAvatar = sql<string | null>`COALESCE(${dbSchema.userProfiles.avatarUrl}, ${dbSchema.users.image})`;
 
-  const conditions: SQL[] = [
-    isNull(boards.deletedAt),
-    isNull(boards.mergedIntoBoardUuid),
-    homeWallCondition(boards.gymId, boards.ownerId),
-    ne(boards.boardType, 'spray'),
-    ne(boards.ownerId, viewerId),
-    notExists(
-      db
-        .select({ id: dbSchema.boardFollows.id })
-        .from(dbSchema.boardFollows)
-        .where(
-          and(
-            eq(dbSchema.boardFollows.userId, viewerId),
-            eq(dbSchema.boardFollows.boardUuid, boards.uuid),
-            // The same access check myBoards puts on a saved board.
-            resourceAccessCondition('board', boards.uuid, viewerId),
-          ),
-        ),
-    ),
-    // With the controls off the owner cannot reach the switch, so it reads as off.
-    followedByOwnerListingCondition(boards.uuid, viewerId, { honourListedToFollowers: privacyControlsEnabled() }),
-  ];
+  const conditions: SQL[] = friendsBoardListingConditions(viewerId);
   const query = input.query?.trim();
   if (query) {
     const pattern = `%${query.replace(/[%_\\]/g, '\\$&')}%`;
     conditions.push(or(ilike(boards.name, pattern), ilike(ownerName, pattern))!);
   }
   const whereClause = and(...conditions);
-  const ownerFollowsViewer = and(
-    eq(dbSchema.userFollows.followerId, boards.ownerId),
-    eq(dbSchema.userFollows.followingId, viewerId),
-  );
 
   const [countRow] = await db
     .select({ count: count() })
     .from(boards)
-    .innerJoin(dbSchema.userFollows, ownerFollowsViewer)
     .innerJoin(dbSchema.users, eq(dbSchema.users.id, boards.ownerId))
     .leftJoin(dbSchema.userProfiles, eq(dbSchema.userProfiles.userId, boards.ownerId))
     .where(whereClause);
@@ -114,7 +80,6 @@ export async function readFriendsBoards(
           AND friend_request.user_id = ${viewerId} AND friend_request.status = 'pending')`,
     })
     .from(boards)
-    .innerJoin(dbSchema.userFollows, ownerFollowsViewer)
     .innerJoin(dbSchema.users, eq(dbSchema.users.id, boards.ownerId))
     .leftJoin(dbSchema.userProfiles, eq(dbSchema.userProfiles.userId, boards.ownerId))
     .where(whereClause)

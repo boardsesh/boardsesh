@@ -339,8 +339,8 @@ export const GET_OBSERVED_BOARD_SERIAL_MATCHES = gql`
 /**
  * The same lookup for the picker's In range slot, which also asks for the
  * request cards: whose private home board the climber is standing at, so they
- * can ask to climb on it. Each card spends one slot of the climber's hourly
- * budget, so only a surface that draws them asks.
+ * can ask to climb on it. Each card spends a slot of the climber's hourly,
+ * daily and 30-day caps, so only a surface that draws them asks.
  */
 export const GET_OBSERVED_BOARD_SERIAL_MATCHES_WITH_REQUEST_CARDS = gql`
   query GetObservedBoardSerialMatchesWithRequestCards($input: [ObservedBoardSerialInput!]!) {
