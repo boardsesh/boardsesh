@@ -19,7 +19,14 @@ const stateSchema = z.object({
   scope: scopeSchema,
   checkpoint: z.string().min(1).max(4096),
   routeIds: z.array(z.string().min(1).max(64)).max(25_000),
-  diodes: z.array(z.record(z.string(), z.unknown())).max(25_000),
+  diodes: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(64),
+        autocadId: z.union([z.number(), z.string().max(32)]).optional(),
+      }),
+    )
+    .max(25_000),
   hardwareFingerprint: z.string(),
   lastSuccessAt: z.string(),
 });

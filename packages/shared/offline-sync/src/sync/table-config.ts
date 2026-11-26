@@ -172,12 +172,12 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
     // re-crawl every downloaded Kilter and Tension catalogue to write NULLs.
     // Shared drafts were previously filtered out for every other wall viewer;
     // their existing cursors must replay old rows now made readable.
-    refreshRevisionByBoardType: { spray: 3 },
+    refreshRevisionByBoardType: { spray: 3, quantum: 2 },
     refreshColumns: ['is_hidden'],
     // Required on spray pages only. A page from a server that predates the
     // column must not complete the spray replay above, but making it required
     // everywhere would let one such page reopen coverage on every catalogue.
-    refreshColumnsByBoardType: { spray: ['retired_by_reset'] },
+    refreshColumnsByBoardType: { spray: ['retired_by_reset'], quantum: ['controller_route_uuid'] },
     queryName: 'syncClimbs',
     cursorColumn: UPDATED_AT_CURSOR,
     operationKey: 'SYNC_CLIMBS',

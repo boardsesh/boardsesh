@@ -37,6 +37,9 @@ export const QUANTUM_MODELS = {
 export type QuantumModelName = keyof typeof QUANTUM_MODELS;
 
 export const QUANTUM_RELEASED_MODELS = ['xl', 'l', 'm', 's'] as const satisfies readonly QuantumModelName[];
+export const QUANTUM_RELEASED_LAYOUT_IDS: readonly number[] = Object.freeze([
+  ...new Set(QUANTUM_RELEASED_MODELS.map((model) => QUANTUM_MODELS[model].layoutId)),
+]);
 
 export function isReleasedQuantumConfig(layoutId: number, sizeId: number): boolean {
   return QUANTUM_RELEASED_MODELS.some((model) => {

@@ -31,6 +31,7 @@ export interface EwallsDelta extends EwallsBatch {
 export interface EwallsApiOptions {
   fetch?: typeof fetch;
   token?: string;
+  includeAccountCollections?: boolean;
   timeoutMs?: number;
   maxResponseBytes?: number;
   maxTotalBytes?: number;

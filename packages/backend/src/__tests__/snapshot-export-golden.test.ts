@@ -21,7 +21,7 @@
 // shape 1 to the same rows and pins what differs between the two files.
 
 import { describe, it, expect, beforeEach, afterEach } from 'vite-plus/test';
-import { sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { DatabaseSync } from 'node:sqlite';
 import {
   closeSync,
@@ -38,7 +38,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ConnectionContext, SyncCursorInput } from '@boardsesh/shared-schema';
 import type { QueryInvalidator } from '@boardsesh/offline-sync';
-import { pullSync, runMigrations, TABLE_CONFIGS } from '@boardsesh/offline-sync';
+import {
+  bootstrapScopeFromSnapshot,
+  bootstrapScopeGradesFromSnapshot,
+  pullSync,
+  runMigrations,
+  TABLE_CONFIGS,
+} from '@boardsesh/offline-sync';
 import { createTestDatabase } from '@boardsesh/offline-sync/testing';
 // createPool is the SAME accessor runExport uses (primary-only: replica
 // commit-order snapshots can omit lower-cursor rows, so the export never reads
@@ -46,9 +52,27 @@ import { createTestDatabase } from '@boardsesh/offline-sync/testing';
 // pool is returned (packages/db/src/client/postgres.ts), so the pool used here
 // carries drizzle's transparent timestamp parsers exactly like production.
 import { createPool } from '@boardsesh/db/client';
+import {
+  boardBetaLinks,
+  boardClimbAliases,
+  boardClimbGrades,
+  boardClimbHolds,
+  boardClimbs,
+  boardClimbStats,
+  boardseshTicks,
+  users,
+} from '@boardsesh/db/schema';
+import { getQuantumSourceDiodeBindings } from '@boardsesh/board-constants/quantum';
+import type { EwallsBootstrap, EwallsDelta, EwallsIdentifiedRecord } from '@boardsesh/quantum-sync';
 import { db } from '../db/client';
+import { getClimbByUuid } from '../db/queries/climbs/get-climb';
+import { getStoredPublicBetaLinks } from '../graphql/resolvers/beta-videos/queries';
 import { syncQueries } from '../graphql/resolvers/sync/queries';
 import { toIso } from '../graphql/resolvers/sync/row-normalize';
+import { prepareEwallsCatalog } from '../services/ewalls-catalog-mapping';
+import { loadEwallsCatalogState } from '../services/ewalls-catalog-state';
+import { importPreparedEwallsCatalog } from '../services/quantum-catalog-import';
+import { quantumCanonicalClimbUuid } from '../services/quantum-catalog-mapping';
 import {
   exportLayoutSnapshot,
   selectDeletionReplayBoundary,
@@ -640,6 +664,322 @@ describe('board-snapshot export ↔ live pull parity', () => {
       'Manufacturer FA',
     ]);
     expect(result.grades).toBeUndefined();
+  });
+
+  it('redacts withdrawn Quantum routes in a live delta and excludes their references from public snapshots', async () => {
+    const boardType = 'quantum';
+    const layoutId = 9101;
+    const accountId = 'synthetic-catalogue';
+    const previousAt = '2026-05-05T12:00:00.000Z';
+    const withdrawnAt = '2026-05-06T12:00:00.000Z';
+    const restoredAt = '2026-05-07T12:00:00.000Z';
+    const previousId = '11111111-1111-4111-8111-111111111111';
+    const retainedId = '22222222-2222-4222-8222-222222222222';
+    const disabledId = '33333333-3333-4333-8333-333333333333';
+    const unknownId = '44444444-4444-4444-8444-444444444444';
+    const formerUuid = quantumCanonicalClimbUuid(layoutId, previousId);
+    const retainedUuid = quantumCanonicalClimbUuid(layoutId, retainedId);
+    const tickUuid = 'retained-quantum-tick';
+    const [binding] = getQuantumSourceDiodeBindings(layoutId, 9203)!;
+    const diode = { id: binding.diodeUuid, autocadId: binding.autocadId, profile: { marker: 'PRIVATE_DIODE_PROFILE' } };
+    const changes = { upsert: [], deleted: [] };
+    const account = {
+      ascents: { ...changes, upsert: [{ id: 'PRIVATE_ASCENT_PROFILE' }] },
+      favorites: changes,
+      projects: changes,
+    };
+    const scope = (forcedType: string) => ({ board: '', forcedType });
+    const approved = (id: string) => ({
+      id,
+      name: id === previousId ? 'Withdrawn public route' : 'Retained public route',
+      type: 'small',
+      disabled: false,
+      grade: '[19]',
+      angle: 35,
+      ascents: 28,
+      rating: 4.5,
+      createdAt: previousAt,
+      updatedAt: previousAt,
+      lights: [{ diodeId: binding.diodeUuid, step: 1 }],
+    });
+    const unpublished = (id: string, disabled: unknown) => ({
+      id,
+      disabled,
+      name: 'PRIVATE_WRONG_ROUTE',
+      type: 'unsupported',
+      lights: [{ diode: { id: 'PRIVATE_UNVERIFIED_ROUTE' }, step: 99 }],
+    });
+    async function apply(
+      forcedType: string,
+      checkpoint: string,
+      baseCheckpoint: string | null,
+      upsert: EwallsIdentifiedRecord[],
+      importedAt: string,
+    ) {
+      const fields = { scope: scope(forcedType), checkpoint, routes: { ...changes, upsert }, account, diodes: [diode] };
+      const batch: EwallsBootstrap | EwallsDelta =
+        baseCheckpoint === null
+          ? { ...fields, kind: 'bootstrap', baseCheckpoint }
+          : { ...fields, kind: 'delta', baseCheckpoint };
+      const now = () => new Date(importedAt);
+      await importPreparedEwallsCatalog(
+        {
+          batch,
+          ...prepareEwallsCatalog(batch, undefined, now()),
+          upstreamAccountId: accountId,
+          expectedCheckpoint: baseCheckpoint,
+        },
+        { now },
+      );
+    }
+    await apply(
+      'big',
+      'xl bootstrap',
+      null,
+      [approved(previousId), approved(retainedId), unpublished(disabledId, 1), unpublished(unknownId, undefined)],
+      previousAt,
+    );
+    await apply('medium', 'l bootstrap', null, [approved(previousId), approved(retainedId)], previousAt);
+    expect(await db.select({ uuid: boardClimbs.uuid }).from(boardClimbs)).toEqual(
+      expect.arrayContaining([{ uuid: formerUuid }, { uuid: retainedUuid }]),
+    );
+    expect(await db.select().from(boardClimbs)).toHaveLength(2);
+    const catalogState = await loadEwallsCatalogState(db, scope('big'), accountId);
+    expect(catalogState?.diodes).toEqual([{ id: binding.diodeUuid, autocadId: binding.autocadId }]);
+
+    await db
+      .insert(users)
+      .values({ id: USER_ID, name: 'Tick owner', email: 'snapshot-test-quantum-account@example.test' })
+      .onConflictDoNothing();
+    await db.insert(boardseshTicks).values({
+      uuid: tickUuid,
+      userId: USER_ID,
+      boardType,
+      climbUuid: formerUuid,
+      angle: 35,
+      status: 'send',
+      climbedAt: previousAt,
+    });
+    await db
+      .insert(boardBetaLinks)
+      .values({ boardType, climbUuid: formerUuid, link: 'https://example.test/quantum-beta', isListed: true });
+    await db.insert(boardClimbGrades).values(
+      [formerUuid, retainedUuid].map((climbUuid) => ({
+        boardType,
+        climbUuid,
+        angle: 35,
+        localGrade: 20,
+        confidence: 'provisional',
+        modelVersion: 'test-model',
+        coeffVersion: 'test-coeff',
+        computedAt: previousAt,
+      })),
+    );
+    await db
+      .update(boardClimbStats)
+      .set({
+        upstreamAscensionistCount: 26,
+        upstreamQualityAverage: 4.5,
+        ascensionistCount: 27,
+        boardseshAscensionistCount: 1,
+        boardseshQualitySum: 3,
+        boardseshQualityCount: 1,
+        updatedAt: new Date(previousAt),
+      })
+      .where(eq(boardClimbStats.climbUuid, formerUuid));
+    const detail = (uuid: string) =>
+      getClimbByUuid({ board_name: boardType, layout_id: layoutId, size_id: 9203, angle: 35, climb_uuid: uuid });
+    expect(await detail(previousId)).toMatchObject({ controllerRouteUuid: previousId });
+    expect((await getStoredPublicBetaLinks(boardType, formerUuid)).links).toHaveLength(1);
+
+    const clientDb = createTestDatabase(join(workDir, 'quantum-client.db'));
+    try {
+      await runMigrations(clientDb);
+      const fetchWithDeletions = async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
+        if (query.includes('syncDeletions')) {
+          const args = variables as Parameters<typeof syncQueries.syncDeletions>[1];
+          return { syncDeletions: await syncQueries.syncDeletions(undefined, args, ctx()) } as T;
+        }
+        return graphqlFetch<T>(query, variables);
+      };
+      const pull = () =>
+        pullSync(clientDb, noopQueryClient(), fetchWithDeletions, { enabledBoards: ['quantum:9101:9203'] });
+      await pull();
+      expect(
+        await clientDb.getFirstAsync('SELECT controller_route_uuid FROM board_climbs WHERE uuid = ?', [formerUuid]),
+      ).toEqual({ controller_route_uuid: previousId });
+      expect(
+        await clientDb.getFirstAsync('SELECT ascensionist_count FROM board_climb_stats WHERE climb_uuid = ?', [
+          formerUuid,
+        ]),
+      ).toEqual({ ascensionist_count: 27 });
+      expect(
+        await clientDb.getFirstAsync('SELECT local_grade FROM board_climb_grades WHERE climb_uuid = ?', [formerUuid]),
+      ).toEqual({ local_grade: 20 });
+      await clientDb.runAsync(
+        "INSERT INTO boardsesh_ticks (uuid, board_type, climb_uuid, angle, status) VALUES (?, 'quantum', ?, 35, 'send')",
+        [tickUuid, formerUuid],
+      );
+      const oldClimbArtifact = join(workDir, 'quantum-old-artifact.db');
+      const oldGradesArtifact = join(workDir, 'quantum-old-grades.db');
+      await exportLayoutSnapshot({
+        sqlClient: createPool(),
+        boardType,
+        layoutId,
+        filePath: oldClimbArtifact,
+        gradesFilePath: oldGradesArtifact,
+        builtAt: '2026-05-06T00:00:00.000Z',
+        stabilityWindowSeconds: 0,
+      });
+
+      await apply(
+        'big',
+        'xl withdrawal',
+        'xl bootstrap',
+        [{ ...unpublished(previousId, true), updatedAt: withdrawnAt }],
+        withdrawnAt,
+      );
+      await apply('medium', 'l stale active', 'l bootstrap', [approved(previousId)], '2026-05-06T12:30:00.000Z');
+      await apply(
+        'medium',
+        'l equal active',
+        'l stale active',
+        [{ ...approved(previousId), updatedAt: withdrawnAt }],
+        '2026-05-06T13:00:00.000Z',
+      );
+      await apply(
+        'medium',
+        'l undated active',
+        'l equal active',
+        [{ ...approved(previousId), updatedAt: undefined }],
+        '2026-05-06T14:00:00.000Z',
+      );
+      expect((await loadEwallsCatalogState(db, scope('medium'), accountId))?.routeIds).toEqual([retainedId]);
+      for (const sizeId of [9201, 9202, 9203]) {
+        const args = {
+          boardType,
+          layoutId,
+          sizeId,
+          cursor: { updatedAt: previousAt, syncSeq: '99999999' },
+          limit: 100,
+        };
+        const page = await syncQueries.syncClimbs(undefined, args, ctx());
+        expect(page.documents).toEqual([
+          expect.objectContaining({
+            uuid: formerUuid,
+            is_listed: false,
+            is_hidden: true,
+            name: '',
+            frames: null,
+            controller_route_uuid: null,
+            compatible_size_ids: null,
+          }),
+        ]);
+      }
+      expect(await detail(previousId)).toBeNull();
+      expect(await detail(formerUuid)).toBeNull();
+      expect((await getStoredPublicBetaLinks(boardType, formerUuid)).links).toEqual([]);
+      expect(
+        await db.select().from(boardClimbAliases).where(eq(boardClimbAliases.canonicalUuid, formerUuid)),
+      ).toHaveLength(2);
+      expect(await db.select().from(boardClimbHolds).where(eq(boardClimbHolds.climbUuid, formerUuid))).toHaveLength(1);
+      expect(await db.select().from(boardseshTicks).where(eq(boardseshTicks.uuid, tickUuid))).toMatchObject([
+        { climbUuid: formerUuid },
+      ]);
+      expect(await db.select().from(boardClimbStats).where(eq(boardClimbStats.climbUuid, formerUuid))).toMatchObject([
+        {
+          upstreamAscensionistCount: null,
+          upstreamQualityAverage: null,
+          ascensionistCount: 1,
+          qualityAverage: 3,
+        },
+      ]);
+      expect(await db.select().from(boardClimbs).where(eq(boardClimbs.uuid, formerUuid))).toMatchObject([
+        {
+          controllerRouteUuid: previousId,
+          name: 'Withdrawn public route',
+          isListed: false,
+        },
+      ]);
+
+      await pull();
+      // Opening a second size can re-import the previous immutable artifact
+      // before its delta. It must leave the first size's retirement in place.
+      const secondScope = { boardType, layoutId, sizeId: 9202 };
+      const scopeKey = 'quantum:9101:9202';
+      await bootstrapScopeFromSnapshot({ db: clientDb, scope: secondScope, scopeKey, filePath: oldClimbArtifact });
+      await bootstrapScopeGradesFromSnapshot({
+        db: clientDb,
+        scope: secondScope,
+        scopeKey,
+        filePath: oldGradesArtifact,
+      });
+      expect(
+        await clientDb.getFirstAsync(
+          'SELECT name, frames, controller_route_uuid, is_listed FROM board_climbs WHERE uuid = ?',
+          [formerUuid],
+        ),
+      ).toEqual({ name: '', frames: null, controller_route_uuid: null, is_listed: 0 });
+      expect(
+        await clientDb.getFirstAsync('SELECT climb_uuid FROM board_climb_stats WHERE climb_uuid = ?', [formerUuid]),
+      ).toBeNull();
+      expect(
+        await clientDb.getFirstAsync('SELECT climb_uuid FROM board_climb_grades WHERE climb_uuid = ?', [formerUuid]),
+      ).toBeNull();
+      expect(await clientDb.getFirstAsync('SELECT climb_uuid FROM boardsesh_ticks WHERE uuid = ?', [tickUuid])).toEqual(
+        { climb_uuid: formerUuid },
+      );
+
+      const filePath = join(workDir, 'quantum-artifact.db');
+      const gradesFilePath = join(workDir, 'quantum-grades.db');
+      await exportLayoutSnapshot({
+        sqlClient: createPool(),
+        boardType,
+        layoutId,
+        filePath,
+        gradesFilePath,
+        builtAt: BUILT_AT,
+        stabilityWindowSeconds: 0,
+      });
+      expect(readArtifactRows(filePath, 'board_climbs', CLIMB_COLUMNS)).toEqual([
+        expect.objectContaining({
+          uuid: retainedUuid,
+          controller_route_uuid: retainedId,
+        }),
+      ]);
+      expect(readArtifactRows(filePath, 'board_climb_stats', STATS_COLUMNS)).toEqual([
+        expect.objectContaining({ climb_uuid: retainedUuid }),
+      ]);
+      expect(readArtifactRows(gradesFilePath, 'board_climb_grades', GRADES_COLUMNS)).toEqual([
+        expect.objectContaining({ climb_uuid: retainedUuid }),
+      ]);
+
+      await apply(
+        'medium',
+        'l newly public',
+        'l undated active',
+        [{ ...approved(previousId), updatedAt: restoredAt }],
+        restoredAt,
+      );
+      await pull();
+      expect(
+        await clientDb.getFirstAsync('SELECT controller_route_uuid FROM board_climbs WHERE uuid = ?', [formerUuid]),
+      ).toEqual({ controller_route_uuid: previousId });
+      expect(
+        await clientDb.getFirstAsync('SELECT ascensionist_count FROM board_climb_stats WHERE climb_uuid = ?', [
+          formerUuid,
+        ]),
+      ).toEqual({ ascensionist_count: 1 });
+      expect(
+        await clientDb.getFirstAsync('SELECT local_grade FROM board_climb_grades WHERE climb_uuid = ?', [formerUuid]),
+      ).toEqual({ local_grade: 20 });
+    } finally {
+      clientDb.close();
+      await db
+        .delete(boardBetaLinks)
+        .where(and(eq(boardBetaLinks.boardType, boardType), eq(boardBetaLinks.climbUuid, formerUuid)));
+      await db.delete(boardseshTicks).where(eq(boardseshTicks.uuid, tickUuid));
+    }
   });
 
   it('records snapshot_meta watermarks equal to the max keyset cursor of the exported rows', async () => {

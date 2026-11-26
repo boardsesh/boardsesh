@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DbInstance } from '@boardsesh/db/client';
 import type { BackgroundJobContext } from '../types';
 import { quantumCatalogSyncFamily } from '../quantum-catalog-sync';
@@ -8,7 +8,9 @@ vi.mock('../../../services/quantum-catalog-sync', () => ({ syncQuantumCatalogOnc
 
 beforeEach(() => {
   syncCatalog.mockReset();
+  vi.stubEnv('FEATURE_FLAG_OVERRIDES', 'quantum-catalog-sync');
 });
+afterEach(() => vi.unstubAllEnvs());
 
 describe('Quantum catalog shared-worker integration', () => {
   it('uses the existing routine worker and one six-hour schedule', async () => {
@@ -46,4 +48,27 @@ describe('Quantum catalog shared-worker integration', () => {
       expect.objectContaining({ database: context.database, signal: context.signal }),
     );
   });
+
+  it.each(['quantum-catalog-sync=false', 'quantum-catalog-sync=variant'])(
+    'skips fan-out and a previously queued job when the switch is %s',
+    async (override) => {
+      vi.stubEnv('FEATURE_FLAG_OVERRIDES', override);
+      const transaction = vi.fn();
+      expect(await quantumCatalogSyncFamily.schedules?.[0].fanOut({} as DbInstance)).toEqual([]);
+      await quantumCatalogSyncFamily.execute(
+        {
+          runId: 'queued-run',
+          family: 'quantum-catalog-sync',
+          signal: new AbortController().signal,
+          expiresAt: Date.now() + 600_000,
+          database: {} as DbInstance,
+          transaction,
+          enqueue: vi.fn(),
+        },
+        {},
+      );
+      expect(transaction).not.toHaveBeenCalled();
+      expect(syncCatalog).not.toHaveBeenCalled();
+    },
+  );
 });

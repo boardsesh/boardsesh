@@ -76,7 +76,7 @@ function changes<K extends string>(
   return { upsert: additions.map(parseRow), deleted: removals.map((input) => parseRow(input)[key]) };
 }
 
-function account(body: EwallsRecord, initial: boolean) {
+function account(body: EwallsRecord, initial: boolean): EwallsBootstrap['account'] {
   return {
     ascents: changes(body.ascents, 'id', 'changed', initial),
     favorites: changes(body.favorites, 'routeId', 'added', initial),
@@ -100,10 +100,12 @@ export class EwallsApiClient {
   private readonly timeoutMs: number;
   private readonly maxResponseBytes: number;
   private readonly maxTotalBytes: number;
+  private readonly includeAccountCollections: boolean;
 
   constructor(options: EwallsApiOptions = {}) {
     this.fetcher = options.fetch ?? fetch;
     this.#token = options.token;
+    this.includeAccountCollections = options.includeAccountCollections ?? true;
     this.timeoutMs = options.timeoutMs ?? 30_000;
     this.maxResponseBytes = options.maxResponseBytes ?? 32 * 1024 * 1024;
     this.maxTotalBytes = options.maxTotalBytes ?? 128 * 1024 * 1024;
@@ -201,6 +203,10 @@ export class EwallsApiClient {
     );
   }
 
+  private readAccount(body: EwallsRecord, initial: boolean) {
+    return account(this.includeAccountCollections ? body : {}, initial);
+  }
+
   async bootstrap(scope: EwallsScope, signal?: AbortSignal): Promise<EwallsBootstrap> {
     const requestScope = { ...scope };
     const params = scopeParams(requestScope);
@@ -226,7 +232,7 @@ export class EwallsApiClient {
       )
         return invalid();
       const checkpoint = nonempty(body.timestamp);
-      if (!first) first = { checkpoint, total, diodes: diodes(body), account: account(body, true) };
+      if (!first) first = { checkpoint, total, diodes: diodes(body), account: this.readAccount(body, true) };
       if (first.total !== total || first.checkpoint !== checkpoint) return invalid();
       for (const item of body.routes) {
         const row = identified(item, 'id');
@@ -273,7 +279,7 @@ export class EwallsApiClient {
       baseCheckpoint,
       checkpoint: nonempty(body.timestamp),
       routes: changes(body.routes, 'id', 'changed', false),
-      account: account(body, false),
+      account: this.readAccount(body, false),
       diodes: diodes(body),
     };
   }

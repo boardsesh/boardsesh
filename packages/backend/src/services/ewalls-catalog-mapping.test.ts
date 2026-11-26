@@ -104,10 +104,10 @@ describe('direct eWalls catalog normalization', () => {
     expect(prepared.catalog.stats[0]).toMatchObject({
       displayDifficulty: 21,
       difficultyAverage: 21,
-      upstreamAscensionistCount: 12,
-      ascensionistCount: 12,
-      upstreamQualityAverage: 4.5,
-      qualityAverage: 4.5,
+      upstreamAscensionistCount: null,
+      ascensionistCount: null,
+      upstreamQualityAverage: null,
+      qualityAverage: null,
       upstreamSyncedAt: NOW.toISOString(),
     });
     expect(
@@ -118,15 +118,17 @@ describe('direct eWalls catalog normalization', () => {
       provider: 'ewalls',
       grade: '[19]',
       tags: ['technical', 'sloper'],
-      plays: '20',
-      ascents: '12',
+      plays: 20,
+      ascents: 12,
+      rating: 4.5,
       angle: '35',
     });
     expect(prepared.catalog.hardwareFingerprint).toBe(QUANTUM_HARDWARE_FINGERPRINT);
-    expect(prepared.catalog.layouts.map((layout) => layout.id)).toEqual([9101, 9104, 9105]);
-    expect(prepared.catalog.products.map((product) => product.id)).toEqual([91, 94, 95]);
-    expect(prepared.catalog.leds).toHaveLength(3154);
-    expect(prepared.catalog.holes).toHaveLength(2173);
+    expect(prepared.catalog.layouts.map((layout) => layout.id)).toEqual([9101, 9104]);
+    expect(prepared.catalog.products.map((product) => product.id)).toEqual([91, 94]);
+    expect(prepared.catalog.productSizes.map((size) => size.id)).toEqual([9201, 9202, 9203, 9204]);
+    expect([...new Set(prepared.catalog.leds.map((led) => led.productSizeId))]).toEqual([9201, 9202, 9203, 9204]);
+    expect([...new Set(prepared.catalog.holes.map((hole) => hole.productId))]).toEqual([91, 94]);
   });
 
   it.each([
@@ -168,10 +170,9 @@ describe('direct eWalls catalog normalization', () => {
     });
   });
 
-  it.each([
-    ['xsmall', 9104, 9204],
-    ['belay', 9105, 9205],
-  ] as const)('keeps %s in its own family and product', (type, layoutId, sizeId) => {
+  it('keeps S Fitness in its own family and product', () => {
+    const type = 'xsmall';
+    const { layoutId, sizeId } = { layoutId: 9104, sizeId: 9204 };
     const binding = getQuantumSourceDiodeBindings(layoutId, sizeId)![0]!;
     const prepared = prepareEwallsCatalog(
       bootstrap(
@@ -194,6 +195,11 @@ describe('direct eWalls catalog normalization', () => {
     expect(() => prepareEwallsCatalog(bootstrap(route({ type, minVariant: type })), [], NOW)).toThrow(
       /another physical family/,
     );
+  });
+
+  it('rejects the deferred Belay scope and published route fit before geometry', () => {
+    expect(() => prepareEwallsCatalog(bootstrap(route(), null, 'belay'), [], NOW)).toThrow(/Unsupported/);
+    expect(() => prepareEwallsCatalog(bootstrap(route({ minVariant: 'belay' })), [], NOW)).toThrow(/Unsupported/);
   });
 
   it('requires a verified upstream UUID/address pair and ignores misleading ledId or placementId fields', () => {
@@ -285,7 +291,9 @@ describe('direct eWalls catalog normalization', () => {
     expect(prepareEwallsCatalog(delta, prior, NOW).catalog.climbs[0]!.frames).toBe(
       prepareEwallsCatalog(initial, [], NOW).catalog.climbs[0]!.frames,
     );
-    expect(prepareEwallsCatalog({ ...delta, diodes: [] }, prior, NOW).diodes).toEqual(prior);
+    expect(prepareEwallsCatalog({ ...delta, diodes: [] }, prior, NOW).diodes).toEqual(
+      SHARED.map((binding) => ({ id: binding.diodeUuid, autocadId: binding.autocadId })),
+    );
     expect(() => prepareEwallsCatalog({ ...delta, diodes: prior.slice(0, 1) }, prior, NOW)).toThrow(
       /no verified source binding/,
     );
@@ -294,7 +302,7 @@ describe('direct eWalls catalog normalization', () => {
   it('preserves unknown representations without inventing dates, zero counts, ratings, or angles', () => {
     const sourceRoute = route({
       angle: 'unknown',
-      grade: { label: 'undocumented' },
+      grade: '[999]',
       rating: 'NaN',
       ascents: '',
       createdAt: 1700000000,
@@ -307,13 +315,7 @@ describe('direct eWalls catalog normalization', () => {
       angle: null,
       createdAt: null,
       publishedAt: null,
-      sourceMetadata: {
-        angle: 'unknown',
-        grade: { label: 'undocumented' },
-        rating: 'NaN',
-        ascents: '',
-        createdAt: 1700000000,
-      },
+      sourceMetadata: { grade: '[999]' },
     });
     const withAngle = prepareEwallsCatalog(bootstrap({ ...sourceRoute, angle: -10 }), [], NOW);
     expect(withAngle.catalog.stats[0]).toMatchObject({
@@ -325,12 +327,13 @@ describe('direct eWalls catalog normalization', () => {
       qualityAverage: null,
       upstreamQualityAverage: null,
     });
-    expect(JSON.stringify(withAngle.catalog)).not.toContain('NaN":');
+    expect(JSON.stringify(withAngle.catalog)).not.toContain('NaN');
   });
 
-  it('accepts explicit zero values while rejecting out-of-range and nonnumeric values as unknown', () => {
+  it('keeps explicit zero only in the source metadata for unconfirmed aggregate semantics', () => {
     const prepared = prepareEwallsCatalog(bootstrap(route({ angle: 0, rating: 0, ascents: 0 })), [], NOW);
-    expect(prepared.catalog.stats[0]).toMatchObject({ angle: 0, ascensionistCount: 0, qualityAverage: 0 });
+    expect(prepared.catalog.stats[0]).toMatchObject({ angle: 0, ascensionistCount: null, qualityAverage: null });
+    expect(prepared.catalog.climbs[0]!.sourceMetadata).toMatchObject({ angle: 0, rating: 0, ascents: 0 });
     for (const invalid of [NaN, Infinity, true, '', ' ', '0x10', -1, 2.5, 2_147_483_648]) {
       const result = prepareEwallsCatalog(bootstrap(route({ ascents: invalid, rating: invalid })), [], NOW);
       expect(result.catalog.stats[0]!.ascensionistCount).toBeNull();
@@ -339,11 +342,20 @@ describe('direct eWalls catalog normalization', () => {
     expect(prepareEwallsCatalog(bootstrap(route({ angle: 91 })), [], NOW).catalog.climbs[0]!.angle).toBeNull();
   });
 
+  it.each([-1, '-1'] as const)('retires the unknown angle sentinel %s', (sourceAngle) => {
+    const prepared = prepareEwallsCatalog(bootstrap(route({ angle: sourceAngle })), [], NOW);
+    expect(prepared.catalog.climbs[0]).toMatchObject({ angle: null, sourceMetadata: { angle: sourceAngle } });
+    expect(prepared.catalog.stats).toEqual([]);
+  });
+
   it('keeps account enrichment and personal collection records out of the public catalog', () => {
     const input = bootstrap(
       route({
         ascents: [{ userId: 'PRIVATE_ACCOUNT_MARKER' }],
         rating: { user: 'PRIVATE_ACCOUNT_MARKER' },
+        angle: { user: 'PRIVATE_ACCOUNT_MARKER' },
+        tags: ['technical', { user: 'PRIVATE_ACCOUNT_MARKER' }],
+        grade: '[{"user":"PRIVATE_ACCOUNT_MARKER"}]',
         logged: true,
         userAscents: 'PRIVATE_ACCOUNT_MARKER',
         isFavourite: true,
@@ -351,6 +363,7 @@ describe('direct eWalls catalog normalization', () => {
         activatedBy: { email: 'PRIVATE_ACCOUNT_MARKER' },
         user: { id: 'PRIVATE_ACCOUNT_MARKER' },
       }),
+      SHARED.map((binding) => ({ ...diode(binding), owner: { name: 'PRIVATE_ACCOUNT_MARKER' } })),
     );
     const account = {
       ascents: { upsert: [{ id: 'PRIVATE_ACCOUNT_MARKER' }], deleted: [] },
@@ -358,25 +371,43 @@ describe('direct eWalls catalog normalization', () => {
       projects: { upsert: [{ routeId: 'PRIVATE_ACCOUNT_MARKER' }], deleted: [] },
     };
     const prepared = prepareEwallsCatalog({ ...input, account }, [], NOW);
-    expect(JSON.stringify(prepared.catalog)).not.toContain('PRIVATE_ACCOUNT_MARKER');
+    expect(JSON.stringify(prepared)).not.toContain('PRIVATE_ACCOUNT_MARKER');
     expect(prepared.catalog.climbs[0]!.sourceMetadata).not.toHaveProperty('logged');
-    expect(prepared.catalog.climbs[0]!.sourceMetadata).not.toHaveProperty('ascents');
-    expect(prepared.catalog.climbs[0]!.sourceMetadata).not.toHaveProperty('rating');
+    expect(prepared.catalog.climbs[0]!.sourceMetadata.ascents).toBeUndefined();
+    expect(prepared.catalog.climbs[0]!.sourceMetadata.rating).toBeUndefined();
+    expect(prepared.catalog.climbs[0]!.sourceMetadata.grade).toBeUndefined();
+    expect(prepared.catalog.climbs[0]!.sourceMetadata.tags).toEqual(['technical']);
     expect(prepared.catalog.climbs[0]!.userId).toBeNull();
-    expect(prepareEwallsCatalog(bootstrap(route({ disabled: undefined })), [], NOW).catalog.climbs[0]!.isListed).toBe(
-      false,
-    );
-    expect(prepareEwallsCatalog(bootstrap(route({ disabled: 'false' })), [], NOW).catalog.climbs[0]!.isListed).toBe(
-      false,
-    );
   });
+
+  it.each([true, 1, undefined, null, 'false', { profile: 'PRIVATE_ACCOUNT_MARKER' }])(
+    'classifies a nonpublic visibility %j before touching malformed geometry',
+    (disabled) => {
+      const prepared = prepareEwallsCatalog(
+        bootstrap(
+          route({
+            disabled,
+            type: 'invalid',
+            lights: [{ profile: 'PRIVATE_ACCOUNT_MARKER' }],
+          }),
+          null,
+        ),
+        [],
+        NOW,
+      );
+      expect(prepared.catalog).toMatchObject({ climbs: [], aliases: [], holds: [], stats: [] });
+      expect(prepared.upstreamRouteIds).toEqual([]);
+      expect(prepared.withdrawals).toEqual([{ routeId: ROUTE_ID, updatedAt: null }]);
+      expect(JSON.stringify(prepared)).not.toContain('PRIVATE_ACCOUNT_MARKER');
+    },
+  );
 
   it('normalizes binary UUID representation without requiring a particular RFC UUID version', () => {
     const raw = 'ABCDEF0123456789ABCDEF0123456789';
     expect(normalizeEwallsRouteId(raw)).toBe('abcdef01-2345-6789-abcd-ef0123456789');
     const prepared = prepareEwallsCatalog(bootstrap(route({ id: raw })), [], NOW);
     expect(prepared.catalog.climbs[0]!.controllerRouteUuid).toBe(normalizeEwallsRouteId(raw));
-    expect(prepared.catalog.climbs[0]!.sourceMetadata.id).toBe(raw);
+    expect(prepared.catalog.climbs[0]!.sourceMetadata.id).toBe(normalizeEwallsRouteId(raw));
     expect(() =>
       prepareEwallsCatalog(
         {

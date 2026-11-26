@@ -8,12 +8,14 @@ import {
   QUANTUM_LAYOUTS,
   QUANTUM_MODEL_BY_EWALLS_TYPE,
   QUANTUM_MODELS,
+  QUANTUM_RELEASED_MODELS,
   QUANTUM_PRODUCT_SIZES,
   type QuantumModelName,
   type QuantumSourceDiodeBinding,
   type QuantumGeometryPlacement,
 } from '@boardsesh/board-constants/quantum';
 import { CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
+import { RELEASED_EWALLS_BOARD_TYPES, releasedEwallsModel } from './ewalls-catalog-scope';
 import {
   fingerprintFromHolds,
   mapQuantumGrade,
@@ -32,6 +34,7 @@ import {
 type EwallsBoardType = keyof typeof QUANTUM_MODEL_BY_EWALLS_TYPE;
 type Model = (typeof QUANTUM_MODELS)[QuantumModelName];
 type BoundLight = Readonly<{ diode: QuantumSourceDiodeBinding; step: 1 | 2 | 3 }>;
+export type EwallsVisibilityWithdrawal = Readonly<{ routeId: string; updatedAt: string | null }>;
 
 // F18659 passes selected board first and route fit second to F8224. These are
 // source compatibility rules, followed by exact immutable physical membership.
@@ -42,20 +45,7 @@ const FITS: Readonly<Record<EwallsBoardType, readonly EwallsBoardType[]>> = {
   xsmall: ['xsmall'],
   belay: ['belay'],
 };
-const SOURCE_FIELDS = [
-  'id',
-  'type',
-  'minVariant',
-  'grade',
-  'angle',
-  'rating',
-  'ascents',
-  'plays',
-  'tags',
-  'createdAt',
-  'updatedAt',
-  'publishedAt',
-  'disabled',
+const SOURCE_RULES = [
   'edge',
   'kickplate',
   'standard',
@@ -65,6 +55,26 @@ const SOURCE_FIELDS = [
   'noKickplate',
   'noMatching',
 ] as const;
+type SourceRule = (typeof SOURCE_RULES)[number];
+type RawGrade = string | number | readonly number[];
+type EwallsSourceMetadata = Readonly<
+  {
+    provider: 'ewalls';
+    id: string;
+    type?: EwallsBoardType;
+    minVariant?: EwallsBoardType;
+    grade?: RawGrade;
+    angle?: string | number;
+    rating?: number;
+    ascents?: number;
+    plays?: number;
+    tags?: readonly string[];
+    createdAt?: string;
+    updatedAt?: string;
+    publishedAt?: string;
+    disabled: false;
+  } & Partial<Record<SourceRule, boolean>>
+>;
 const ISO_TIMESTAMP = z.iso.datetime({ offset: true });
 let fixedCatalog: Omit<PreparedQuantumCatalog, 'climbs' | 'aliases' | 'holds' | 'stats'> | null = null;
 const physicalPositionsBySize = new Map<number, ReadonlyMap<number, QuantumGeometryPlacement>>();
@@ -103,14 +113,14 @@ function boardType(input: unknown): EwallsBoardType {
 
 function numeric(input: unknown): number | null {
   if (typeof input === 'number') return Number.isFinite(input) ? input : null;
-  if (typeof input !== 'string' || !/^-?\d+(?:\.\d+)?$/.test(input)) return null;
+  if (typeof input !== 'string' || input.length > 32 || !/^-?\d+(?:\.\d+)?$/.test(input)) return null;
   const parsed = Number(input);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
 function angle(input: unknown): number | null {
   const parsed = numeric(input);
-  return parsed !== null && Number.isInteger(parsed) && parsed >= -90 && parsed <= 90 ? parsed : null;
+  return parsed !== null && parsed !== -1 && Number.isInteger(parsed) && parsed >= -90 && parsed <= 90 ? parsed : null;
 }
 
 function count(input: unknown): number | null {
@@ -195,19 +205,56 @@ function characteristics(route: EwallsRecord): readonly string[] {
   return entries.flatMap(([key, characteristic]) => (flag(route[key]) === true ? [characteristic] : []));
 }
 
-function sourceMetadata(route: EwallsRecord): Readonly<Record<string, unknown>> {
-  // Never spread an enriched API/UI record: userAscents, logged, favourites,
-  // projects, activatedBy and user/profile payloads belong to account scope.
-  const fields = Object.fromEntries(
-    SOURCE_FIELDS.filter((key) => {
-      const sourceField = route[key];
-      if (sourceField === undefined) return false;
-      // These fields are scalar aggregates in the native cache mapper. An
-      // enriched ascent/profile collection is not public aggregate metadata.
-      return !['ascents', 'plays', 'rating'].includes(key) || sourceField === null || typeof sourceField !== 'object';
-    }).map((key) => [key, route[key]]),
+// Native routes use a JSON array string for grade IDs. Keep unknown primitive
+// representations, and accept arrays only when each entry is a grade ID.
+function sourceGrade(input: unknown): RawGrade | undefined {
+  if (typeof input === 'number') return Number.isSafeInteger(input) ? input : undefined;
+  if (Array.isArray(input)) {
+    return input.length <= 8 && input.every((id: unknown) => typeof id === 'number' && Number.isSafeInteger(id))
+      ? Object.freeze([...input] as number[])
+      : undefined;
+  }
+  if (typeof input !== 'string' || input.length > 64) return undefined;
+  if (/^\[\s*(?:-?\d+(?:\s*,\s*-?\d+)*)?\s*\]$/.test(input)) return input;
+  return /^[\p{L}\d+? /.-]+$/u.test(input) ? input : undefined;
+}
+
+function sourceBoardType(input: unknown): EwallsBoardType | undefined {
+  return typeof input === 'string' && Object.hasOwn(QUANTUM_MODEL_BY_EWALLS_TYPE, input)
+    ? (input as EwallsBoardType)
+    : undefined;
+}
+
+function sourceMetadata(route: EwallsRecord, routeId: string): EwallsSourceMetadata {
+  const rating = numeric(route.rating);
+  const tags = Array.isArray(route.tags)
+    ? route.tags
+        .slice(0, 32)
+        .filter((tag: unknown): tag is string => typeof tag === 'string' && /^[a-z0-9 -]{1,40}$/.test(tag))
+    : undefined;
+  const rules = Object.fromEntries(
+    SOURCE_RULES.flatMap((rule) => {
+      const enabled = flag(route[rule]);
+      return enabled === null ? [] : [[rule, enabled]];
+    }),
   );
-  return Object.freeze(JSON.parse(JSON.stringify({ provider: 'ewalls', ...fields })) as Record<string, unknown>);
+  return Object.freeze({
+    provider: 'ewalls',
+    id: routeId,
+    type: sourceBoardType(route.type),
+    minVariant: sourceBoardType(route.minVariant),
+    grade: sourceGrade(route.grade),
+    angle: numeric(route.angle) === null ? undefined : (route.angle as string | number),
+    rating: rating !== null && rating >= 0 && rating <= 5 ? rating : undefined,
+    ascents: count(route.ascents) ?? undefined,
+    plays: count(route.plays) ?? undefined,
+    tags: tags?.length ? Object.freeze(tags) : undefined,
+    createdAt: timestamp(route.createdAt) ?? undefined,
+    updatedAt: timestamp(route.updatedAt) ?? undefined,
+    publishedAt: timestamp(route.publishedAt) ?? undefined,
+    disabled: false,
+    ...rules,
+  });
 }
 
 function referenceCatalog(): NonNullable<typeof fixedCatalog> {
@@ -215,7 +262,10 @@ function referenceCatalog(): NonNullable<typeof fixedCatalog> {
   const holes = new Map<number, PreparedQuantumCatalog['holes'][number]>();
   const placements = new Map<number, PreparedQuantumCatalog['placements'][number]>();
   const leds: PreparedQuantumCatalog['leds'][number][] = [];
-  for (const model of Object.values(QUANTUM_MODELS)) {
+  const models = QUANTUM_RELEASED_MODELS.map((model) => QUANTUM_MODELS[model]);
+  const layoutIds = [...new Set(models.map((model) => model.layoutId))];
+  const productIds = [...new Set(layoutIds.map((id) => QUANTUM_LAYOUTS[id]!.productId))];
+  for (const model of models) {
     const geometry = getQuantumBundledGeometry(model.layoutId, model.sizeId) ?? invalid('missing fixed geometry');
     const productId = QUANTUM_LAYOUTS[model.layoutId]!.productId;
     const bindings = new Map(
@@ -261,10 +311,10 @@ function referenceCatalog(): NonNullable<typeof fixedCatalog> {
       })),
     ),
     products: Object.freeze(
-      [91, 94, 95].map((id) => ({
+      productIds.map((id) => ({
         boardType: QUANTUM_BOARD_TYPE,
         id,
-        name: id === 91 ? 'Quantum Board' : id === 94 ? 'Quantum S Fitness' : 'Quantum Belay Board',
+        name: id === QUANTUM_LAYOUTS[QUANTUM_MODELS.s.layoutId]!.productId ? 'Quantum S Fitness' : 'Quantum Board',
         isListed: true,
         password: null,
         minCountInFrame: 1,
@@ -274,9 +324,9 @@ function referenceCatalog(): NonNullable<typeof fixedCatalog> {
     sets: Object.freeze([{ boardType: QUANTUM_BOARD_TYPE, id: QUANTUM_SET_ID, name: 'Default', hsm: null }]),
     roles: QUANTUM_ROLE_ROWS,
     layouts: Object.freeze(
-      Object.values(QUANTUM_LAYOUTS).map((layout) => ({
+      layoutIds.map((layoutId) => ({
         boardType: QUANTUM_BOARD_TYPE,
-        ...layout,
+        ...QUANTUM_LAYOUTS[layoutId]!,
         instagramCaption: null,
         isMirrored: false,
         isListed: true,
@@ -285,16 +335,16 @@ function referenceCatalog(): NonNullable<typeof fixedCatalog> {
       })),
     ),
     productSizes: Object.freeze(
-      Object.values(QUANTUM_PRODUCT_SIZES).map((size, position) => ({
+      models.map(({ sizeId }, position) => ({
         boardType: QUANTUM_BOARD_TYPE,
-        ...size,
+        ...QUANTUM_PRODUCT_SIZES[sizeId]!,
         imageFilename: null,
         position,
         isListed: true,
       })),
     ),
     productSizeLayoutSets: Object.freeze(
-      Object.values(QUANTUM_MODELS).map((model) => ({
+      models.map((model) => ({
         boardType: QUANTUM_BOARD_TYPE,
         id: model.sizeId,
         productSizeId: model.sizeId,
@@ -317,8 +367,13 @@ export function prepareEwallsCatalog(
   batch: EwallsBootstrap | EwallsDelta,
   priorDiodes: readonly EwallsRecord[] = [],
   now: Date = new Date(),
-): Readonly<{ catalog: PreparedQuantumCatalog; diodes: readonly EwallsRecord[]; upstreamRouteIds: readonly string[] }> {
-  const selectedModel = QUANTUM_MODELS[QUANTUM_MODEL_BY_EWALLS_TYPE[boardType(batch.scope.forcedType)]];
+): Readonly<{
+  catalog: PreparedQuantumCatalog;
+  diodes: readonly EwallsRecord[];
+  upstreamRouteIds: readonly string[];
+  withdrawals: readonly EwallsVisibilityWithdrawal[];
+}> {
+  const selectedModel = QUANTUM_MODELS[releasedEwallsModel(batch.scope.forcedType)];
   const diodes = batch.diodes?.length ? batch.diodes : priorDiodes;
   const verifiedDiodes = verifyDiodes(diodes, familyBindings(selectedModel));
   const climbs: PreparedQuantumClimb[] = [];
@@ -326,25 +381,29 @@ export function prepareEwallsCatalog(
   const stats: PreparedQuantumStat[] = [];
   const aliases = new Map<string, string>();
   const upstreamRouteIds: string[] = [];
+  const withdrawals: EwallsVisibilityWithdrawal[] = [];
   const seenRoutes = new Set<string>();
   const syncedAt = now.toISOString();
   for (const route of batch.routes.upsert) {
     const routeId = normalizeEwallsRouteId(route.id);
     if (seenRoutes.has(routeId)) return invalid('duplicate route UUID');
     seenRoutes.add(routeId);
+    if (flag(route.disabled) !== false) {
+      withdrawals.push({ routeId, updatedAt: timestamp(route.updatedAt) });
+      continue;
+    }
     upstreamRouteIds.push(routeId);
+    if (route.type === 'belay') return invalid('unsupported Belay route');
     const fit = boardType(route.minVariant || route.type);
-    const routeModel = QUANTUM_MODELS[QUANTUM_MODEL_BY_EWALLS_TYPE[fit]];
+    const routeModel = QUANTUM_MODELS[releasedEwallsModel(fit)];
     if (routeModel.layoutId !== selectedModel.layoutId) return invalid('route belongs to another physical family');
     const boundLights = lights(route, verifiedDiodes);
-    const compatibleSizeIds = Object.entries(QUANTUM_MODEL_BY_EWALLS_TYPE)
-      .flatMap(([type, modelName]) => {
-        if (!FITS[type as EwallsBoardType].includes(fit)) return [];
-        const model = QUANTUM_MODELS[modelName];
-        const members = physicalPositions(model);
-        return boundLights.every((light) => members.has(light.diode.placementId)) ? [model.sizeId] : [];
-      })
-      .sort((first, second) => first - second);
+    const compatibleSizeIds = RELEASED_EWALLS_BOARD_TYPES.flatMap((type) => {
+      if (!FITS[type as EwallsBoardType].includes(fit)) return [];
+      const model = QUANTUM_MODELS[releasedEwallsModel(type)];
+      const members = physicalPositions(model);
+      return boundLights.every((light) => members.has(light.diode.placementId)) ? [model.sizeId] : [];
+    }).sort((first, second) => first - second);
     if (compatibleSizeIds.length === 0) return invalid('route does not fit any supported physical size');
     const climbUuid = quantumCanonicalClimbUuid(routeModel.layoutId, routeId);
     const preparedHolds = boundLights
@@ -364,6 +423,7 @@ export function prepareEwallsCatalog(
     const setter = record(route.routeSetter);
     const setterName = setter ? [text(setter.firstName), text(setter.lastName)].filter(Boolean).join(' ') : '';
     const name = text(route.name) ?? invalid('route.name is missing');
+    const metadata = sourceMetadata(route, routeId);
     climbs.push({
       uuid: climbUuid,
       boardType: QUANTUM_BOARD_TYPE,
@@ -385,7 +445,7 @@ export function prepareEwallsCatalog(
         .join(''),
       controllerRouteUuid: routeId,
       isDraft: false,
-      isListed: flag(route.disabled) === false,
+      isListed: true,
       createdAt: timestamp(route.createdAt),
       publishedAt: timestamp(route.publishedAt),
       synced: true,
@@ -395,7 +455,7 @@ export function prepareEwallsCatalog(
       compatibleSizeIds,
       holdFingerprint: fingerprintFromHolds(preparedHolds),
       characteristics: characteristics(route),
-      sourceMetadata: sourceMetadata(route),
+      sourceMetadata: metadata,
     });
     holds.push(...preparedHolds);
     for (const aliasUuid of [climbUuid, routeId]) {
@@ -405,21 +465,18 @@ export function prepareEwallsCatalog(
       aliases.set(aliasUuid, climbUuid);
     }
     if (routeAngle !== null) {
-      const grade =
-        typeof route.grade === 'string' ? route.grade : Array.isArray(route.grade) ? JSON.stringify(route.grade) : '';
+      const grade = typeof metadata.grade === 'string' ? metadata.grade : (JSON.stringify(metadata.grade) ?? '');
       const difficulty = mapQuantumGrade(grade);
-      const rating = numeric(route.rating);
-      const quality = rating !== null && rating >= 0 && rating <= 5 ? rating : null;
       stats.push({
         boardType: QUANTUM_BOARD_TYPE,
         climbUuid,
         angle: routeAngle,
         displayDifficulty: difficulty,
         difficultyAverage: difficulty,
-        upstreamAscensionistCount: count(route.ascents),
-        ascensionistCount: count(route.ascents),
-        upstreamQualityAverage: quality,
-        qualityAverage: quality,
+        upstreamAscensionistCount: null,
+        ascensionistCount: null,
+        upstreamQualityAverage: null,
+        qualityAverage: null,
         qualityNormalized: true,
         upstreamSyncedAt: syncedAt,
       });
@@ -433,7 +490,10 @@ export function prepareEwallsCatalog(
       stats: Object.freeze(stats),
       aliases: Object.freeze([...aliases].map(([aliasUuid, canonicalUuid]) => ({ aliasUuid, canonicalUuid }))),
     }),
-    diodes: Object.freeze([...diodes]),
+    diodes: Object.freeze(
+      [...verifiedDiodes.values()].map(({ diodeUuid, autocadId }) => Object.freeze({ id: diodeUuid, autocadId })),
+    ),
     upstreamRouteIds: Object.freeze(upstreamRouteIds),
+    withdrawals: Object.freeze(withdrawals),
   });
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { pathToFileURL } from 'node:url';
 import { closePool } from '@boardsesh/db/client';
-import { syncQuantumCatalogOnce } from '../services/quantum-catalog-sync';
+import { quantumCatalogSyncFlag } from '../services/quantum-catalog-sync-flag';
 
 export async function runQuantumSyncCli(
   argv: readonly string[],
@@ -13,6 +13,8 @@ export async function runQuantumSyncCli(
 ): Promise<void> {
   parseCommand(argv);
   const log = runtime.log ?? writeStdout;
+  if (!(await quantumCatalogSyncFlag.isEnabled())) return;
+  const { syncQuantumCatalogOnce } = await import('../services/quantum-catalog-sync');
   await syncQuantumCatalogOnce({ signal: runtime.signal, log });
 }
 

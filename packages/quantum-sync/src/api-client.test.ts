@@ -78,6 +78,20 @@ describe('eWalls client', () => {
       lastFetch: checkpoint,
     });
   });
+  it('ignores account payloads on both catalogue acquisition paths when configured', async () => {
+    const { fetcher } = setup(
+      { ...page(['route'], 1), ascents: 'private unparsed collection' },
+      { timestamp: 'next', routes: { changed: [{ id: 'route' }] }, favorites: { nonsense: true } },
+    );
+    const client = new EwallsApiClient({ fetch: fetcher, token: 'secret-bearer', includeAccountCollections: false });
+    const empty = { upsert: [], deleted: [] };
+    const unchanged = {
+      routes: { upsert: [{ id: 'route' }], deleted: [] },
+      account: { ascents: empty, favorites: empty, projects: empty },
+    };
+    expect(await client.bootstrap(scope)).toMatchObject(unchanged);
+    expect(await client.delta(scope, checkpoint)).toMatchObject(unchanged);
+  });
   it.each([
     page([], 0),
     { timestamp: 'n', routes: { deleted: ['id'] } },

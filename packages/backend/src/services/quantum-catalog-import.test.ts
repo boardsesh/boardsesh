@@ -296,7 +296,7 @@ describe('Quantum catalog database import', () => {
     );
   });
 
-  it('keeps missing upstream statistics unknown, retains prior measurements, and accepts explicit zero', async () => {
+  it('clears old upstream statistics when a route is reprocessed and keeps local ratings', async () => {
     async function apply(checkpoint: string, base: string | null, count: number | null, rating: number | null) {
       const catalog = apiCatalog();
       const stats = catalog.stats.map((row) => ({
@@ -324,15 +324,15 @@ describe('Quantum catalog database import', () => {
       .set({ boardseshAscensionistCount: 2, boardseshQualityCount: 2, boardseshQualitySum: 2 })
       .where(eq(boardClimbStats.climbUuid, CATALOG_UUID));
     expect(await apply('d', 'c', null, null)).toMatchObject({
-      upstreamAscensionistCount: 12,
-      ascensionistCount: 14,
-      upstreamQualityAverage: 4.5,
-      qualityAverage: 4,
+      upstreamAscensionistCount: null,
+      ascensionistCount: 2,
+      upstreamQualityAverage: null,
+      qualityAverage: 1,
     });
     expect(await apply('e', 'd', 0, null)).toMatchObject({
       upstreamAscensionistCount: 0,
       ascensionistCount: 2,
-      upstreamQualityAverage: 4.5,
+      upstreamQualityAverage: null,
       qualityAverage: 1,
     });
   });

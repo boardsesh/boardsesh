@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { MAX_DIODES_PER_LAYER } from '@boardsesh/board-layers';
-import { QUANTUM_MODELS } from '@boardsesh/board-constants/quantum';
+import { isReleasedQuantumConfig, QUANTUM_RELEASED_LAYOUT_IDS } from '@boardsesh/board-constants/quantum';
 import { CONFIDENCE, MAX_SEARCH_PAGE } from '@boardsesh/db/queries/constants';
 
 import { CLIMB_CHARACTERISTICS, TOGGLEABLE_CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
@@ -298,6 +298,10 @@ export const ClimbSearchInputSchema = z
   .refine((input) => input.draftScope !== 'WALL' || input.boardName === 'spray', {
     message: 'Wall draft scope is only supported for spray walls',
     path: ['draftScope'],
+  })
+  .refine((input) => input.boardName !== 'quantum' || isReleasedQuantumConfig(input.layoutId, input.sizeId), {
+    message: 'Unknown Quantum Board layout or size',
+    path: ['sizeId'],
   });
 
 // Only the freely-toggleable characteristics (no_kickboard, campus) are settable
@@ -328,12 +332,11 @@ const ToggleableCharacteristicsSchema = z
 // same reason as ToggleableCharacteristicsSchema: clients send explicit null.
 const RuleFlagSchema = z.boolean().optional().nullable();
 
-const QUANTUM_LAYOUT_IDS = new Set<number>(Object.values(QUANTUM_MODELS).map(({ layoutId }) => layoutId));
 const QUANTUM_CANONICAL_PLACEMENT_ID_MIN = 1_000_000;
 const QUANTUM_CANONICAL_PLACEMENT_ID_MAX = 5_999_999;
 
 export function isQuantumLayoutId(layoutId: number): boolean {
-  return QUANTUM_LAYOUT_IDS.has(layoutId);
+  return QUANTUM_RELEASED_LAYOUT_IDS.includes(layoutId);
 }
 
 /** Strictly decode the single-frame Quantum format accepted by create/edit.
@@ -446,8 +449,12 @@ export const SaveClimbInputSchema = z
   })
   .superRefine((input, context) => {
     addQuantumFrameIssues(input, context);
-    if (input.boardType === 'quantum' && !isQuantumLayoutId(input.layoutId)) {
-      context.addIssue({ code: 'custom', path: ['layoutId'], message: 'Unknown Quantum Board layout' });
+    if (input.boardType === 'quantum') {
+      if (!isQuantumLayoutId(input.layoutId)) {
+        context.addIssue({ code: 'custom', path: ['layoutId'], message: 'Unknown Quantum Board layout' });
+      } else if (input.sizeId != null && !isReleasedQuantumConfig(input.layoutId, input.sizeId)) {
+        context.addIssue({ code: 'custom', path: ['sizeId'], message: 'Unknown Quantum Board size for this layout' });
+      }
     }
   })
   .refine((input) => isBoardAngleSupported(input.boardType, input.angle), {

@@ -55,17 +55,19 @@ export function buildMultiRowInsertSql(
     .filter((column) => !primaryKeyColumns.includes(column))
     .map((column) => `${column} = excluded.${column}`)
     .join(', ');
-  // Sync/export timestamps are UTC ISO text, but PostgreSQL omits trailing
-  // fractional zeroes. Pad the fraction so TEXT ordering preserves microseconds.
-  const timestampKey = (column: string) =>
-    `(substr(${column}, 1, 19) || '.' || CASE WHEN substr(${column}, 20, 1) = '.'
-      THEN substr(substr(${column}, 21, length(${column}) - 21) || '000000', 1, 6)
-      ELSE '000000' END)`;
   return `INSERT INTO ${tableName} (${columnList}) VALUES ${valuesClause}
     ON CONFLICT (${primaryKeyColumns.join(', ')}) DO UPDATE SET ${assignments}
     WHERE ${tableName}.${cursorColumn} IS NULL
-       OR (${timestampKey(`excluded.${cursorColumn}`)}, excluded.sync_seq)
-          >= (${timestampKey(`${tableName}.${cursorColumn}`)}, ${tableName}.sync_seq)`;
+       OR (${syncTimestampKey(`excluded.${cursorColumn}`)}, excluded.sync_seq)
+          >= (${syncTimestampKey(`${tableName}.${cursorColumn}`)}, ${tableName}.sync_seq)`;
+}
+
+// Sync/export timestamps are UTC ISO text, but PostgreSQL omits trailing
+// fractional zeroes. Pad the fraction so TEXT ordering preserves microseconds.
+export function syncTimestampKey(column: string): string {
+  return `(substr(${column}, 1, 19) || '.' || CASE WHEN substr(${column}, 20, 1) = '.'
+    THEN substr(substr(${column}, 21, length(${column}) - 21) || '000000', 1, 6)
+    ELSE '000000' END)`;
 }
 
 /**

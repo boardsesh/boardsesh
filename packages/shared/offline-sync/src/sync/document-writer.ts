@@ -2,6 +2,9 @@ import type { SqlExecutor, SqlValue } from '../database';
 import { buildMultiRowInsertSql, multiRowChunkSize } from './pull-write';
 import { reportExtraColumn, type SchemaDriftReporter } from './schema-compatibility';
 import { climbMutationEntityKey } from '../mutation-queue/queue';
+import { isQuantumRetirement, quantumRetirementSql } from './quantum-retirement';
+
+const QUANTUM_REFERENCE_TABLES = ['board_climb_stats', 'board_climb_grades'] as const;
 
 /** Coerce canonical JSON using the same representations as the ordinary pull. */
 export function toSqliteValue(value: unknown): SqlValue {
@@ -85,7 +88,24 @@ export async function writePullDocuments(
   };
 
   for (let chunkStart = 0; chunkStart < writableDocuments.length; chunkStart += chunkSize) {
-    const chunk = writableDocuments.slice(chunkStart, chunkStart + chunkSize);
+    let chunk = writableDocuments.slice(chunkStart, chunkStart + chunkSize);
+    if (tableName === 'board_climb_stats' || tableName === 'board_climb_grades') {
+      const quantumClimbUuids = chunk
+        .filter((document) => document.board_type === 'quantum' && typeof document.climb_uuid === 'string')
+        .map((document) => String(document.climb_uuid));
+      if (quantumClimbUuids.length > 0) {
+        const retiredRows = await transaction.getAllAsync<{ uuid: string }>(
+          `SELECT uuid FROM board_climbs WHERE ${quantumRetirementSql()}
+            AND uuid IN (${quantumClimbUuids.map(() => '?').join(', ')})`,
+          quantumClimbUuids,
+        );
+        const retiredUuids = new Set(retiredRows.map((row) => row.uuid));
+        chunk = chunk.filter(
+          (document) => document.board_type !== 'quantum' || !retiredUuids.has(String(document.climb_uuid)),
+        );
+      }
+    }
+    if (chunk.length === 0) continue;
     const values: SqlValue[] = [];
     for (const document of chunk) {
       for (const column of columns) {
@@ -93,5 +113,19 @@ export async function writePullDocuments(
       }
     }
     await transaction.runAsync(sqlForRowCount(chunk.length), values);
+    if (tableName === 'board_climbs') {
+      const retirements = chunk.filter(isQuantumRetirement).map((document) => String(document.uuid));
+      if (retirements.length === 0) continue;
+      for (const referenceTable of QUANTUM_REFERENCE_TABLES) {
+        // Read the resulting row: an older page may have lost the cursor guard
+        // to a newer public version, whose references must remain intact.
+        await transaction.runAsync(
+          `DELETE FROM ${referenceTable} WHERE board_type = 'quantum' AND climb_uuid IN (
+             SELECT uuid FROM board_climbs WHERE ${quantumRetirementSql()}
+               AND uuid IN (${retirements.map(() => '?').join(', ')}))`,
+          retirements,
+        );
+      }
+    }
   }
 }

@@ -1,8 +1,9 @@
 import { EwallsApiClient, type EwallsScope } from '@boardsesh/quantum-sync';
-import { QUANTUM_MODEL_BY_EWALLS_TYPE } from '@boardsesh/board-constants/quantum';
 import { db, type Database } from '../db/client';
 import { loadEwallsCatalogState } from './ewalls-catalog-state';
 import { prepareEwallsCatalog } from './ewalls-catalog-mapping';
+import { RELEASED_EWALLS_BOARD_TYPES, validateEwallsScopes } from './ewalls-catalog-scope';
+import { quantumCatalogSyncFlag } from './quantum-catalog-sync-flag';
 import {
   importPreparedEwallsCatalog,
   type QuantumCatalogBatchRunner,
@@ -31,6 +32,16 @@ export async function syncQuantumCatalogOnce(
   options: QuantumCatalogSyncOptions = {},
 ): Promise<QuantumCatalogSyncResult> {
   const environment = options.environment ?? process.env;
+  const scopes =
+    options.scopes ??
+    RELEASED_EWALLS_BOARD_TYPES.map((forcedType) => ({
+      board: environment.QUANTUM_API_BOARD_NAME ?? '',
+      forcedType,
+    }));
+  validateEwallsScopes(scopes);
+  if (scopes.length === 0 || !(await quantumCatalogSyncFlag.isEnabled(environment))) {
+    return Object.freeze({ source: 'ewalls-api', scopes: Object.freeze([]) });
+  }
   if (
     !environment.QUANTUM_API_TOKEN ||
     !environment.QUANTUM_API_ACCOUNT_ID ||
@@ -41,19 +52,12 @@ export async function syncQuantumCatalogOnce(
     );
   }
   const database = options.database ?? db;
-  const client = options.client ?? new EwallsApiClient({ token: environment.QUANTUM_API_TOKEN });
+  const client =
+    options.client ?? new EwallsApiClient({ token: environment.QUANTUM_API_TOKEN, includeAccountCollections: false });
   const account = await client.currentUser(options.signal);
   if (environment.QUANTUM_API_ACCOUNT_ID && account.id !== environment.QUANTUM_API_ACCOUNT_ID) {
     throw new Error('The eWalls catalogue credential belongs to a different configured account.');
   }
-  const scopes =
-    options.scopes ??
-    Object.keys(QUANTUM_MODEL_BY_EWALLS_TYPE).map((forcedType) => ({
-      board: environment.QUANTUM_API_BOARD_NAME ?? '',
-      forcedType,
-    }));
-  if (new Set(scopes.map((scope) => JSON.stringify([scope.board, scope.forcedType]))).size !== scopes.length)
-    throw new Error('Duplicate eWalls catalogue scopes');
   const results: Array<QuantumCatalogSyncResult['scopes'][number]> = [];
   for (const scope of scopes) {
     options.signal?.throwIfAborted();
@@ -67,6 +71,7 @@ export async function syncQuantumCatalogOnce(
         batch,
         catalog: prepared.catalog,
         diodes: prepared.diodes,
+        withdrawals: prepared.withdrawals,
         upstreamAccountId: account.id,
         expectedCheckpoint: state?.checkpoint ?? null,
       },

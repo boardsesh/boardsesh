@@ -15,6 +15,7 @@ import {
   withNoMatch,
 } from '@boardsesh/shared-schema';
 import type { BoardName } from '@boardsesh/board-constants';
+import { isReleasedQuantumConfig, QUANTUM_MODELS, QUANTUM_RELEASED_MODELS } from '@boardsesh/board-constants/quantum';
 import { fingerprintFromHolds } from '@boardsesh/kilter-sync/sync';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -100,6 +101,46 @@ type UpdateClimbOutcome = {
   holdsRevisionNumber: number;
   replayedPublishAt?: string | null;
 };
+
+async function assertQuantumHoldsFitBoard(
+  transaction: Pick<typeof db, 'select'>,
+  layoutId: number,
+  sizeId: number | null | undefined,
+  placementIds: number[],
+): Promise<void> {
+  // Installed clients may omit sizeId. They must still fit wholly within at
+  // least one released physical size associated with the requested layout.
+  const allowedSizes =
+    sizeId == null
+      ? QUANTUM_RELEASED_MODELS.map((model) => QUANTUM_MODELS[model])
+          .filter((model) => model.layoutId === layoutId)
+          .map((model) => model.sizeId)
+      : [sizeId];
+  const { boardPlacements, boardLeds } = dbSchema;
+  const [matchingSize] = await transaction
+    .select({ sizeId: boardLeds.productSizeId })
+    .from(boardPlacements)
+    .innerJoin(
+      boardLeds,
+      and(eq(boardLeds.boardType, boardPlacements.boardType), eq(boardLeds.holeId, boardPlacements.holeId)),
+    )
+    .where(
+      and(
+        eq(boardPlacements.boardType, 'quantum'),
+        eq(boardPlacements.layoutId, layoutId),
+        inArray(boardPlacements.id, placementIds),
+        inArray(boardLeds.productSizeId, allowedSizes),
+      ),
+    )
+    .groupBy(boardLeds.productSizeId)
+    .having(sql`count(DISTINCT ${boardPlacements.id}) = ${placementIds.length}`)
+    .limit(1);
+  if (!matchingSize) {
+    throw new GraphQLError('One or more holds are not on this Quantum Board layout or size', {
+      extensions: { code: 'BAD_USER_INPUT' },
+    });
+  }
+}
 
 function generateClimbUuid(): string {
   // Match Aurora-style uppercase UUID without dashes
@@ -373,21 +414,7 @@ export const climbMutations = {
       }
       if (sprayTarget) assertSprayTargetNotArchived(sprayTarget);
       if (quantumPlacementIds !== null) {
-        const placements = await tx
-          .select({ id: dbSchema.boardPlacements.id })
-          .from(dbSchema.boardPlacements)
-          .where(
-            and(
-              eq(dbSchema.boardPlacements.boardType, 'quantum'),
-              eq(dbSchema.boardPlacements.layoutId, validated.layoutId),
-              inArray(dbSchema.boardPlacements.id, quantumPlacementIds),
-            ),
-          );
-        if (placements.length !== quantumPlacementIds.length) {
-          throw new GraphQLError('One or more holds are not on this Quantum Board layout', {
-            extensions: { code: 'BAD_USER_INPUT' },
-          });
-        }
+        await assertQuantumHoldsFitBoard(tx, validated.layoutId, validated.sizeId, quantumPlacementIds);
       }
 
       if (shouldGate) {
@@ -985,7 +1012,12 @@ export const climbMutations = {
       let quantumGeometry: { layoutId: number; placementIds: number[] } | null = null;
       if (boardType === 'quantum') {
         const placementIds = parseQuantumClimbPlacementIds(nextFrames);
-        if (!isQuantumLayoutId(existing.layoutId) || nextFramesCount !== 1 || placementIds === null) {
+        if (
+          !isQuantumLayoutId(existing.layoutId) ||
+          (validated.sizeId != null && !isReleasedQuantumConfig(existing.layoutId, validated.sizeId)) ||
+          nextFramesCount !== 1 ||
+          placementIds === null
+        ) {
           throw new GraphQLError('Invalid Quantum climb geometry', { extensions: { code: 'BAD_USER_INPUT' } });
         }
         quantumGeometry = { layoutId: existing.layoutId, placementIds };
@@ -1129,21 +1161,12 @@ export const climbMutations = {
 
       const outcome = await database.transaction(async (tx): Promise<UpdateClimbOutcome> => {
         if (quantumGeometry !== null) {
-          const placements = await tx
-            .select({ id: dbSchema.boardPlacements.id })
-            .from(dbSchema.boardPlacements)
-            .where(
-              and(
-                eq(dbSchema.boardPlacements.boardType, 'quantum'),
-                eq(dbSchema.boardPlacements.layoutId, quantumGeometry.layoutId),
-                inArray(dbSchema.boardPlacements.id, quantumGeometry.placementIds),
-              ),
-            );
-          if (placements.length !== quantumGeometry.placementIds.length) {
-            throw new GraphQLError('One or more holds are not on this Quantum Board layout', {
-              extensions: { code: 'BAD_USER_INPUT' },
-            });
-          }
+          await assertQuantumHoldsFitBoard(
+            tx,
+            quantumGeometry.layoutId,
+            validated.sizeId,
+            quantumGeometry.placementIds,
+          );
         }
         if (shouldGate) {
           await acquireDuplicateGateLock(tx, boardType, existing.layoutId, gateSignature, {

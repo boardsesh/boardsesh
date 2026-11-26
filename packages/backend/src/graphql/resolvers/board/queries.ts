@@ -1,7 +1,8 @@
-import { eq, asc, and, isNotNull } from 'drizzle-orm';
+import { eq, ne, asc, and, isNotNull } from 'drizzle-orm';
 import type { QueryResolvers } from '@boardsesh/shared-schema/generated';
 import { ANGLES } from '@boardsesh/board-config';
 import { quantumCatalogClimbCondition } from '@boardsesh/db/queries';
+import { QUANTUM_RELEASED_LAYOUT_IDS } from '@boardsesh/board-constants/quantum';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { validateInput } from '../shared/helpers';
@@ -49,6 +50,7 @@ export const boardQueries: Pick<QueryResolvers, 'grades' | 'angles'> = {
 
 /** Angles represented by signed-catalog routes, excluding Boardsesh-authored rows. */
 export async function getQuantumCatalogAngles(layoutId: number): Promise<Array<{ angle: number }>> {
+  if (!QUANTUM_RELEASED_LAYOUT_IDS.includes(layoutId)) return [];
   const rows = await db
     .selectDistinct({ angle: dbSchema.boardClimbs.angle })
     .from(dbSchema.boardClimbs)
@@ -57,6 +59,7 @@ export async function getQuantumCatalogAngles(layoutId: number): Promise<Array<{
         quantumCatalogClimbCondition(),
         eq(dbSchema.boardClimbs.layoutId, layoutId),
         eq(dbSchema.boardClimbs.isListed, true),
+        ne(dbSchema.boardClimbs.angle, -1),
         isNotNull(dbSchema.boardClimbs.angle),
       ),
     )

@@ -32,11 +32,7 @@ import { blendedQualityAverageSql, quantumCatalogClimbCondition } from '@boardse
 import type { EwallsBootstrap, EwallsDelta, EwallsRecord } from '@boardsesh/quantum-sync';
 import { db, type Database } from '../db/client';
 import { QUANTUM_BOARD_TYPE, type PreparedQuantumCatalog } from './quantum-catalog-mapping';
-import {
-  QUANTUM_HARDWARE_FINGERPRINT,
-  QUANTUM_MODEL_BY_EWALLS_TYPE,
-  QUANTUM_MODELS,
-} from '@boardsesh/board-constants/quantum';
+import { QUANTUM_HARDWARE_FINGERPRINT, QUANTUM_MODELS } from '@boardsesh/board-constants/quantum';
 import { quantumCanonicalClimbUuid } from './quantum-catalog-mapping';
 import {
   EWALLS_CATALOG_STATE_PREFIX,
@@ -45,7 +41,8 @@ import {
   makeEwallsCatalogState,
   readEwallsCatalogState,
 } from './ewalls-catalog-state';
-import { normalizeEwallsRouteId } from './ewalls-catalog-mapping';
+import { normalizeEwallsRouteId, type EwallsVisibilityWithdrawal } from './ewalls-catalog-mapping';
+import { releasedEwallsModel, RELEASED_EWALLS_BOARD_TYPES } from './ewalls-catalog-scope';
 
 const QUANTUM_IMPORT_BATCH_SIZE = 500;
 const QUANTUM_IMPORT_LOCK_NAMESPACE = 0x5155_414e; // ASCII "QUAN"
@@ -116,6 +113,7 @@ export async function importPreparedEwallsCatalog(
     batch: EwallsBootstrap | EwallsDelta;
     catalog: PreparedQuantumCatalog;
     diodes: readonly EwallsRecord[];
+    withdrawals?: readonly EwallsVisibilityWithdrawal[];
     upstreamAccountId: string;
     expectedCheckpoint: string | null;
   },
@@ -126,22 +124,20 @@ export async function importPreparedEwallsCatalog(
     now?: () => Date;
   } = {},
 ): Promise<QuantumCatalogImportResult> {
-  const { batch, catalog, upstreamAccountId } = input;
-  if (catalog.hardwareFingerprint !== QUANTUM_HARDWARE_FINGERPRINT) {
-    throw new QuantumHardwareFingerprintDriftError(QUANTUM_HARDWARE_FINGERPRINT, catalog.hardwareFingerprint);
+  const { batch, catalog: incomingCatalog, upstreamAccountId } = input;
+  const modelKey = releasedEwallsModel(batch.scope.forcedType);
+  const layoutId = QUANTUM_MODELS[modelKey].layoutId;
+  if (incomingCatalog.hardwareFingerprint !== QUANTUM_HARDWARE_FINGERPRINT) {
+    throw new QuantumHardwareFingerprintDriftError(QUANTUM_HARDWARE_FINGERPRINT, incomingCatalog.hardwareFingerprint);
   }
   if (batch.kind === 'delta' && batch.baseCheckpoint !== input.expectedCheckpoint)
     throw new EwallsCheckpointChangedError();
-  const modelKey = QUANTUM_MODEL_BY_EWALLS_TYPE[batch.scope.forcedType as keyof typeof QUANTUM_MODEL_BY_EWALLS_TYPE];
-  if (!modelKey) throw new Error('Unsupported eWalls catalogue type');
-  const layoutId = QUANTUM_MODELS[modelKey].layoutId;
-  if (catalog.climbs.some((climb) => climb.layoutId !== layoutId))
+  if (incomingCatalog.climbs.some((climb) => climb.layoutId !== layoutId))
     throw new Error('eWalls catalogue crosses physical families');
   const database = options.database ?? db;
   const transactionRunner =
     options.transaction ??
     (<Result>(run: (transaction: QuantumCatalogTransaction) => Promise<Result>) => database.transaction(run));
-  const importedAt = (options.now ?? (() => new Date()))();
   const stateKey = ewallsCatalogStateKey(batch.scope, upstreamAccountId);
   const upserts = batch.routes.upsert.map((route) => normalizeEwallsRouteId(route.id));
   const deletions = batch.routes.deleted.map(normalizeEwallsRouteId);
@@ -158,11 +154,20 @@ export async function importPreparedEwallsCatalog(
       sql`SELECT pg_advisory_xact_lock(${QUANTUM_IMPORT_LOCK_NAMESPACE}, ${QUANTUM_IMPORT_LOCK_KEY})`,
     );
     throwIfAborted(options.signal);
+    const importedAt = (options.now ?? (() => new Date()))();
     const prior = await loadEwallsCatalogState(transaction, batch.scope, upstreamAccountId);
     if ((prior?.checkpoint ?? null) !== input.expectedCheckpoint) throw new EwallsCheckpointChangedError();
+    const visibilityWithdrawals = await applyVisibilityWithdrawals(
+      transaction,
+      layoutId,
+      input.withdrawals ?? [],
+      importedAt,
+    );
+    const catalog = await filterStaleVisibilityRestorations(transaction, incomingCatalog, options.signal);
     const routeIds = new Set(batch.kind === 'bootstrap' ? [] : (prior?.routeIds ?? []));
-    for (const routeId of upserts) routeIds.add(routeId);
+    for (const climb of catalog.climbs) routeIds.add(climb.controllerRouteUuid);
     for (const routeId of deletions) routeIds.delete(routeId);
+    for (const routeId of visibilityWithdrawals) routeIds.delete(routeId);
     const scopeRows = await transaction
       .select({ tableName: boardSharedSyncs.tableName, metadata: boardSharedSyncs.metadata })
       .from(boardSharedSyncs)
@@ -179,16 +184,31 @@ export async function importPreparedEwallsCatalog(
       if (other.upstreamAccountId !== upstreamAccountId || other.scope.board !== batch.scope.board) {
         throw new EwallsCatalogAuthorityChangedError();
       }
-      const otherModelKey = QUANTUM_MODEL_BY_EWALLS_TYPE[other.scope.forcedType];
+      if (!RELEASED_EWALLS_BOARD_TYPES.includes(other.scope.forcedType)) continue;
+      const otherModelKey = releasedEwallsModel(other.scope.forcedType);
       if (QUANTUM_MODELS[otherModelKey].layoutId !== layoutId) continue;
-      for (const routeId of other.routeIds) retainedElsewhere.add(routeId);
+      const retainedIds = other.routeIds.filter((routeId) => !visibilityWithdrawals.has(routeId));
+      for (const routeId of retainedIds) retainedElsewhere.add(routeId);
+      if (retainedIds.length !== other.routeIds.length) {
+        await transaction
+          .update(boardSharedSyncs)
+          .set({ metadata: { ...other, routeIds: retainedIds } })
+          .where(
+            and(eq(boardSharedSyncs.boardType, QUANTUM_BOARD_TYPE), eq(boardSharedSyncs.tableName, row.tableName)),
+          );
+      }
     }
-    const removed = (prior?.routeIds ?? [])
-      .filter((routeId) => !routeIds.has(routeId) && !retainedElsewhere.has(routeId))
-      .map((routeId) => quantumCanonicalClimbUuid(layoutId, routeId));
+    const removed = [
+      ...new Set([
+        ...(prior?.routeIds ?? []).filter((routeId) => !routeIds.has(routeId) && !retainedElsewhere.has(routeId)),
+        ...visibilityWithdrawals,
+      ]),
+    ].map((routeId) => quantumCanonicalClimbUuid(layoutId, routeId));
     await assertNoForeignClimbUuidCollisions(transaction, catalog, options.signal);
     const existing = await assertExistingQuantumRouteGeometry(transaction, catalog, options.signal);
     if (!prior) await upsertQuantumReferenceCatalog(transaction, catalog, options.signal);
+    // The existing climb membership trigger re-delivers retained stats and
+    // grades when a withdrawn route becomes public again.
     await reconcileQuantumClimbs(transaction, catalog, existing, importedAt, removed, options.signal);
     throwIfAborted(options.signal);
     const metadata = makeEwallsCatalogState({
@@ -222,6 +242,93 @@ export async function importPreparedEwallsCatalog(
       statsUpserted: catalog.stats.length,
     });
   });
+}
+
+/** A visibility signal is about the route itself, unlike scope-local membership
+ * deletions. Persist its version on existing identities to fence stale reads
+ * from another model without creating rows for ineligible new routes. */
+async function applyVisibilityWithdrawals(
+  transaction: QuantumCatalogTransaction,
+  layoutId: number,
+  withdrawals: readonly EwallsVisibilityWithdrawal[],
+  importedAt: Date,
+): Promise<ReadonlySet<string>> {
+  const withdrawn = new Set<string>();
+  await processBatches(withdrawals, async (batch) => {
+    const incoming = sql.join(
+      batch.map(
+        ({ routeId, updatedAt }) =>
+          sql`(${quantumCanonicalClimbUuid(layoutId, routeId)}::text, ${routeId}::text, ${updatedAt}::text)`,
+      ),
+      sql`, `,
+    );
+    const rows = await transaction
+      .update(boardClimbs)
+      .set({
+        isListed: false,
+        updatedAt: importedAt,
+        sourceMetadata: sql`COALESCE(${boardClimbs.sourceMetadata}, '{}'::jsonb) || jsonb_build_object(
+          'visibilityWithdrawnAt', GREATEST(
+            ${boardClimbs.sourceMetadata}->>'visibilityWithdrawnAt',
+            COALESCE(visibility.source_updated_at, ${importedAt.toISOString()})
+          )
+        )`,
+      })
+      .from(sql`(VALUES ${incoming}) AS visibility(uuid, route_id, source_updated_at)`)
+      .where(
+        and(
+          quantumCatalogClimbCondition(),
+          sql`${boardClimbs.uuid} = visibility.uuid AND ${boardClimbs.controllerRouteUuid} = visibility.route_id`,
+          sql`(visibility.source_updated_at IS NULL
+            OR ${boardClimbs.sourceMetadata}->>'updatedAt' IS NULL
+            OR ${boardClimbs.sourceMetadata}->>'updatedAt' !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$'
+            OR ${boardClimbs.sourceMetadata}->>'updatedAt' <= visibility.source_updated_at
+            OR ${boardClimbs.isListed} IS NOT TRUE)`,
+        ),
+      )
+      .returning({ routeId: boardClimbs.controllerRouteUuid });
+    for (const row of rows) {
+      if (row.routeId) withdrawn.add(row.routeId);
+    }
+  });
+  return withdrawn;
+}
+
+async function filterStaleVisibilityRestorations(
+  transaction: QuantumCatalogTransaction,
+  catalog: PreparedQuantumCatalog,
+  signal?: AbortSignal,
+): Promise<PreparedQuantumCatalog> {
+  const excluded = new Set<string>();
+  await processBatches(catalog.climbs, async (batch) => {
+    throwIfAborted(signal);
+    const versions = new Map(batch.map((climb) => [climb.uuid, climb.sourceMetadata.updatedAt]));
+    const retired = await transaction
+      .select({
+        uuid: boardClimbs.uuid,
+        withdrawnAt: sql<string>`${boardClimbs.sourceMetadata}->>'visibilityWithdrawnAt'`,
+      })
+      .from(boardClimbs)
+      .where(
+        and(
+          quantumCatalogClimbCondition(),
+          inArray(boardClimbs.uuid, [...versions.keys()]),
+          sql`${boardClimbs.sourceMetadata} ? 'visibilityWithdrawnAt'`,
+        ),
+      );
+    for (const row of retired) {
+      const sourceVersion = versions.get(row.uuid);
+      if (typeof sourceVersion !== 'string' || sourceVersion <= row.withdrawnAt) excluded.add(row.uuid);
+    }
+  });
+  if (excluded.size === 0) return catalog;
+  return {
+    ...catalog,
+    climbs: catalog.climbs.filter((climb) => !excluded.has(climb.uuid)),
+    holds: catalog.holds.filter((hold) => !excluded.has(hold.climbUuid)),
+    stats: catalog.stats.filter((stat) => !excluded.has(stat.climbUuid)),
+    aliases: catalog.aliases.filter((alias) => !excluded.has(alias.canonicalUuid)),
+  };
 }
 
 async function assertNoForeignClimbUuidCollisions(
@@ -597,7 +704,8 @@ async function reconcileQuantumClimbs(
   );
   // eWalls supplies route-level aggregates at the current route angle. Retire
   // earlier upstream contributions without disturbing local ticks or their grades.
-  await processBatches(prepared.climbs, async (climbs) => {
+  const affectedClimbUuids = [...prepared.climbs.map((climb) => climb.uuid), ...removedCanonicalUuids];
+  await processBatches(affectedClimbUuids, async (climbUuids) => {
     throwIfAborted(signal);
     await transaction
       .update(boardClimbStats)
@@ -621,17 +729,15 @@ async function reconcileQuantumClimbs(
         and(
           eq(boardClimbStats.boardType, QUANTUM_BOARD_TYPE),
           eq(boardClimbStats.climbUuid, boardClimbs.uuid),
-          inArray(
-            boardClimbs.uuid,
-            climbs.map((climb) => climb.uuid),
-          ),
+          inArray(boardClimbs.uuid, climbUuids),
+          quantumCatalogClimbCondition(),
           isNotNull(boardClimbStats.upstreamSyncedAt),
-          sql`${boardClimbStats.angle} IS DISTINCT FROM ${boardClimbs.angle}`,
+          sql`(${boardClimbs.isListed} IS NOT TRUE OR ${boardClimbStats.angle} IS DISTINCT FROM ${boardClimbs.angle})`,
         ),
       );
   });
-  const resolvedUpstreamAscensionistCount = sql`COALESCE(excluded.upstream_ascensionist_count, ${boardClimbStats.upstreamAscensionistCount})`;
-  const resolvedUpstreamQuality = sql`COALESCE(excluded.upstream_quality_average, ${boardClimbStats.upstreamQualityAverage})`;
+  const resolvedUpstreamAscensionistCount = sql`excluded.upstream_ascensionist_count`;
+  const resolvedUpstreamQuality = sql`excluded.upstream_quality_average`;
   const blendedQuality = blendedQualityAverageSql({
     upstreamQualityAverage: resolvedUpstreamQuality,
     upstreamAscensionistCount: resolvedUpstreamAscensionistCount,
@@ -642,9 +748,8 @@ async function reconcileQuantumClimbs(
     upstreamAscensionistCount: resolvedUpstreamAscensionistCount,
     ascensionistCount: sql`CASE WHEN ${resolvedUpstreamAscensionistCount} IS NULL THEN ${boardClimbStats.boardseshAscensionistCount}
       ELSE ${resolvedUpstreamAscensionistCount} + COALESCE(${boardClimbStats.boardseshAscensionistCount}, 0) END`,
-    displayDifficulty: sql`COALESCE(excluded.display_difficulty, ${boardClimbStats.displayDifficulty})`,
-    tickGradedAt: sql`CASE WHEN excluded.display_difficulty IS NULL THEN ${boardClimbStats.tickGradedAt} END`,
-    difficultyAverage: sql`COALESCE(excluded.difficulty_average, ${boardClimbStats.difficultyAverage})`,
+    displayDifficulty: sql`CASE WHEN ${boardClimbStats.tickGradedAt} IS NOT NULL THEN ${boardClimbStats.displayDifficulty} ELSE excluded.display_difficulty END`,
+    difficultyAverage: sql`CASE WHEN ${boardClimbStats.tickGradedAt} IS NOT NULL THEN ${boardClimbStats.difficultyAverage} ELSE excluded.difficulty_average END`,
     upstreamQualityAverage: resolvedUpstreamQuality,
     qualityAverage: blendedQuality,
     qualityNormalized: sql`true`,
@@ -653,7 +758,7 @@ async function reconcileQuantumClimbs(
     throwIfAborted(signal);
     await transaction
       .insert(boardClimbStats)
-      .values([...statsBatch])
+      .values(statsBatch.map((stat) => ({ ...stat, updatedAt: importedAt })))
       .onConflictDoUpdate({
         target: [boardClimbStats.boardType, boardClimbStats.climbUuid, boardClimbStats.angle],
         set: {

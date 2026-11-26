@@ -100,6 +100,33 @@ describe('Quantum authored-climb safety', () => {
     expect(edited.holdFingerprint).not.toBe(created.holdFingerprint);
   });
 
+  it('rejects XL-only holds when saving or editing a climb on the shared-layout M board', async () => {
+    const input = {
+      boardType: 'quantum',
+      layoutId: 9101,
+      name: 'Quantum scope validation',
+      isDraft: true,
+      frames: 'p1000007r12p1000009r14',
+      angle: 40,
+    };
+    await expect(
+      climbMutations.saveClimb({}, { input: { ...input, sizeId: 9203 } }, context(OWNER)),
+    ).rejects.toMatchObject({ extensions: { code: 'BAD_USER_INPUT' } });
+    const saved = await climbMutations.saveClimb({}, { input: { ...input, sizeId: 9201 } }, context(OWNER));
+    await expect(
+      climbMutations.updateClimb(
+        {},
+        {
+          input: { uuid: saved.uuid, boardType: 'quantum', sizeId: 9203, frames: 'p1000008r12p1000010r14' },
+        },
+        context(OWNER),
+      ),
+    ).rejects.toMatchObject({ extensions: { code: 'BAD_USER_INPUT' } });
+    expect(await db.select().from(schema.boardClimbs).where(eq(schema.boardClimbs.uuid, saved.uuid))).toMatchObject([
+      { frames: input.frames, isDraft: true },
+    ]);
+  });
+
   it('keeps a lit personal draft unidentified for its owner and unrelated viewers', async () => {
     const draftUuid = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
     await db.insert(schema.boardClimbs).values({

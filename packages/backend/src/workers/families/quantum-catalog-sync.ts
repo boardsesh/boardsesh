@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { logger } from '../../utils/logger';
+import { quantumCatalogSyncFlag } from '../../services/quantum-catalog-sync-flag';
 import { BOARD_WIDE_FAN_OUT_DEADLINE_SECONDS, QUANTUM_CATALOG_SYNC_BUDGET } from './fan-out-budget';
 import type { BackgroundJobFamilyModule } from './types';
 
@@ -17,8 +18,15 @@ export const quantumCatalogSyncFamily: BackgroundJobFamilyModule<Record<string, 
     heartbeatSeconds: 300,
     priority: 0,
   },
-  schedules: [{ key: 'every-6h', cron: '43 */6 * * *', fanOut: async () => [{ payload: {} }] }],
+  schedules: [
+    {
+      key: 'every-6h',
+      cron: '43 */6 * * *',
+      fanOut: async () => ((await quantumCatalogSyncFlag.isEnabled()) ? [{ payload: {} }] : []),
+    },
+  ],
   async execute(context) {
+    if (!(await quantumCatalogSyncFlag.isEnabled())) return;
     const { syncQuantumCatalogOnce } = await import('../../services/quantum-catalog-sync');
     await syncQuantumCatalogOnce({
       database: context.database,

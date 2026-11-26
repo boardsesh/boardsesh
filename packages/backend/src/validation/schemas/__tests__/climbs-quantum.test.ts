@@ -18,6 +18,8 @@ describe('Quantum climb mutation validation', () => {
 
   it.each([
     { input: { ...validSave, layoutId: 1 }, reason: 'layout' },
+    { input: { ...validSave, layoutId: 9105, sizeId: 9205 }, reason: 'unreleased Belay layout' },
+    { input: { ...validSave, sizeId: 9204 }, reason: 'size from a different physical family' },
     {
       input: { ...validSave, frames: 'p1000001r12,p1000002r14', framesCount: 2 },
       reason: 'multiple frames',

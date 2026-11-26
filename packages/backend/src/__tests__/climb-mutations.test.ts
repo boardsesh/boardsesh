@@ -91,6 +91,9 @@ function createMockChain(resolveValue: unknown = [], onValues?: (values: unknown
     'from',
     'where',
     'leftJoin',
+    'innerJoin',
+    'groupBy',
+    'having',
     'orderBy',
     'limit',
     'for',
@@ -189,7 +192,7 @@ describe('climb mutations', () => {
       .mockReturnValueOnce(
         createMockChain([{ name: 'Alice', displayName: 'Alice Setter', image: null, avatarUrl: null }]),
       )
-      .mockReturnValueOnce(createMockChain([{ id: 1000001 }, { id: 1000002 }]));
+      .mockReturnValueOnce(createMockChain([{ sizeId: 9201 }]));
     mockDb.insert.mockImplementation((table: unknown) =>
       createMockChain(undefined, (values) => insertCalls.push({ table, values })),
     );
@@ -224,7 +227,7 @@ describe('climb mutations', () => {
       .mockReturnValueOnce(
         createMockChain([{ name: 'Alice', displayName: 'Alice Setter', image: null, avatarUrl: null }]),
       )
-      .mockReturnValueOnce(createMockChain([{ id: 1000001 }]));
+      .mockReturnValueOnce(createMockChain([]));
     mockDb.insert.mockImplementation((table: unknown) =>
       createMockChain(undefined, (values) => insertCalls.push({ table, values })),
     );
