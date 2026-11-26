@@ -114,13 +114,24 @@ describe('native notification update bridge', () => {
     const sink = mocks.subscribe.mock.calls[0][1] as {
       next: (payload: { data: { notificationReceived: { notification: { type: string } } } }) => void;
     };
-    act(() => sink.next({ data: { notificationReceived: { notification: { type: 'new_follower' } } } }));
+    act(() => sink.next({ data: { notificationReceived: { notification: { type: 'comment_reply' } } } }));
     expect(mocks.invalidate).not.toHaveBeenCalled();
     act(() =>
       sink.next({ data: { notificationReceived: { notification: { type: 'spray_wall_detection_completed' } } } }),
     );
     expect(mocks.invalidate).toHaveBeenCalledTimes(5);
     expect(mocks.invalidate).toHaveBeenCalledWith({ queryKey: ['notifications'] });
+  });
+
+  // Friends' boards list the boards of people who follow the climber back: a
+  // new follower can add some, and an owner's yes opens one.
+  it.each(['new_follower', 'board_access_approved'])('refreshes Friends boards on a live %s', (type) => {
+    renderHook(() => useNotificationUpdates(true, 'account'));
+    const sink = mocks.subscribe.mock.calls[0][1] as {
+      next: (payload: { data: { notificationReceived: { notification: { type: string } } } }) => void;
+    };
+    act(() => sink.next({ data: { notificationReceived: { notification: { type } } } }));
+    expect(mocks.invalidate.mock.calls.map(([options]) => options)).toEqual([{ queryKey: ['friendsBoards'] }]);
   });
 
   it('coalesces native push and websocket staff replies without refreshing spray caches', async () => {

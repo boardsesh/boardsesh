@@ -164,14 +164,25 @@ beforeEach(() => {
 });
 
 describe("step 1, Where's the board?", () => {
-  it('offers a gym, home and a Spraywall, and counts itself viewed with no path yet', () => {
+  it("offers a gym, home, a friend's board and a Spraywall, and counts itself viewed with no path yet", () => {
     render(createElement(AddBoardWhere));
     expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
       'mobile.addWizard.gym',
       'mobile.addWizard.home',
+      'mobile.addWizard.friend',
       'mobile.addWizard.spray',
     ]);
     expect(events('Add Board Wizard Step Viewed')).toEqual([{ step: 'where', path: null, entry: 'picker' }]);
+  });
+
+  it('goes on to Whose board? as step 2 of the friend path', () => {
+    render(createElement(AddBoardWhere));
+    fireEvent.click(screen.getByText('mobile.addWizard.friend'));
+    expect(pushMock).toHaveBeenCalledWith({
+      pathname: '/boards/add/friend',
+      params: { returnTo: '/(tabs)/climbs', source: 'onboarding', entry: 'picker', trail: 'where' },
+    });
+    expect(events('Board Kind Chosen')).toEqual([{ kind: 'friend', surface: 'where', preAnswered: false }]);
   });
 
   it('goes on to Which gym? as step 2 of the gym path', () => {

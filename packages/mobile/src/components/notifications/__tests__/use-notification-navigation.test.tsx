@@ -27,10 +27,15 @@ vi.mock('expo-router', () => ({
 vi.mock('../../../lib/graphql/hooks/use-notifications', () => ({
   useMarkGroupAsRead: () => ({ mutate: markGroupMutate }),
 }));
+const generations = vi.hoisted(() => ({ boardWrite: 0, credential: 0 }));
 vi.mock('../../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({
     data: { boardType: 'kilter', angle: 45, layoutId: 8, sizeId: 25, setIds: '1,20' },
   }),
+  getActiveBoardWriteGeneration: () => generations.boardWrite,
+}));
+vi.mock('../../../lib/privacy/privacy-cache', () => ({
+  getCredentialGeneration: () => generations.credential,
 }));
 vi.mock('../../../providers/drawer-host-provider', () => ({ useDrawerHost: () => ({ openPlayDrawer }) }));
 vi.mock('../../../providers/feature-flags-provider', () => ({
@@ -41,6 +46,18 @@ vi.mock('../../../lib/open-climb-in-play-drawer', () => ({ openClimbInPlayDrawer
 const explainDirectoryNotice = vi.hoisted(() => vi.fn());
 vi.mock('../explain-directory-notice', () => ({ explainDirectoryNotice }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+const activateBoard = vi.hoisted(() => vi.fn(async () => {}));
+const activateOptions = vi.hoisted(() => ({ value: undefined as unknown }));
+vi.mock('../../../lib/boards/use-activate-board', () => ({
+  useActivateBoard: (options: unknown) => {
+    activateOptions.value = options;
+    return activateBoard;
+  },
+}));
+const fetchBoardByUuid = vi.hoisted(() => vi.fn());
+vi.mock('../../../lib/graphql/hooks/fetch-board-by-uuid', () => ({ fetchBoardByUuid }));
+const reportError = vi.hoisted(() => vi.fn());
+vi.mock('../../../lib/error-reporting', () => ({ reportError }));
 
 import { useNotificationNavigation } from '../use-notification-navigation';
 
@@ -76,7 +93,25 @@ function tap(notification: GroupedNotification) {
 beforeEach(() => {
   vi.clearAllMocks();
   state.directoryReportsEnabled = true;
+  generations.boardWrite = 0;
+  generations.credential = 0;
 });
+
+/** A promise the test settles by hand, to land a fetch after something else happened. */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((onResolve, onReject) => {
+    resolve = onResolve;
+    reject = onReject;
+  });
+  return { promise, resolve, reject };
+}
+
+/** Lets pending promise callbacks run. */
+function flushPromises() {
+  return new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
 
 describe('useNotificationNavigation proposal rows', () => {
   beforeEach(() => {
@@ -368,5 +403,125 @@ describe('useNotificationNavigation gym claims', () => {
     );
     expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/gyms/[gym]', params: { gym: 'gym-uuid-1' } });
     expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+  });
+});
+
+// Asking to climb on an Invite-only board: the owner's row opens the board's
+// Manage access; the climber's "they said yes" row puts them on the board.
+describe('board access notification navigation', () => {
+  const requested = makeNotification({
+    type: 'board_access_requested',
+    entityType: 'board',
+    entityId: 'board-1',
+    climbUuid: null,
+    boardType: null,
+    proposalUuid: null,
+    actors: [{ id: 'climber-1', displayName: 'Kim', avatarUrl: null }],
+  } as Partial<GroupedNotification>);
+  const approved = makeNotification({
+    type: 'board_access_approved',
+    entityType: 'board',
+    entityId: 'board-1',
+    climbUuid: null,
+    boardType: null,
+    proposalUuid: null,
+  } as Partial<GroupedNotification>);
+
+  it("opens the board's Manage access for the owner", () => {
+    tap(requested);
+    expect(markGroupMutate).toHaveBeenCalledWith(requested);
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/settings/privacy-access',
+      params: { kind: 'board', resourceId: 'board-1' },
+    });
+  });
+
+  it('puts the climber on the board once the owner said yes, landing on Climbs', async () => {
+    const board = { uuid: 'board-1', name: 'Garage' };
+    fetchBoardByUuid.mockResolvedValue(board);
+    tap(approved);
+    expect(fetchBoardByUuid).toHaveBeenCalledWith('board-1');
+    await vi.waitFor(() => expect(activateBoard).toHaveBeenCalledWith(board));
+    expect(activateOptions.value).toMatchObject({ returnTo: '/(tabs)/climbs', recognizesHeldBox: false });
+    expect(routerMock.push).not.toHaveBeenCalled();
+  });
+
+  it('opens the board sheet when the board is gone since', async () => {
+    fetchBoardByUuid.mockResolvedValue(null);
+    tap(approved);
+    await vi.waitFor(() =>
+      expect(routerMock.push).toHaveBeenCalledWith({
+        pathname: '/boards',
+        params: { board: 'board-1', details: '1' },
+      }),
+    );
+    expect(activateBoard).not.toHaveBeenCalled();
+  });
+
+  // A slow board fetch must not overwrite what the climber did meanwhile.
+  describe('when the board fetch lands after something newer', () => {
+    const board = { uuid: 'board-1', name: 'Garage' };
+
+    it('drops the bind when the climber picked another board meanwhile', async () => {
+      const fetch = deferred<typeof board | null>();
+      fetchBoardByUuid.mockReturnValue(fetch.promise);
+      tap(approved);
+      generations.boardWrite += 1;
+      fetch.resolve(board);
+      await flushPromises();
+      expect(activateBoard).not.toHaveBeenCalled();
+      expect(routerMock.push).not.toHaveBeenCalled();
+    });
+
+    it('drops the bind when the account changed meanwhile', async () => {
+      const fetch = deferred<typeof board | null>();
+      fetchBoardByUuid.mockReturnValue(fetch.promise);
+      tap(approved);
+      generations.credential += 1;
+      fetch.resolve(board);
+      await flushPromises();
+      expect(activateBoard).not.toHaveBeenCalled();
+    });
+
+    it('binds only the second approval when the first lands last', async () => {
+      const first = deferred<typeof board | null>();
+      const second = deferred<{ uuid: string; name: string } | null>();
+      fetchBoardByUuid.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+      const { result } = renderHook(() => useNotificationNavigation(openCommentThread));
+      result.current(approved);
+      result.current({ ...approved, entityId: 'board-2' });
+      const secondBoard = { uuid: 'board-2', name: 'Cellar' };
+      second.resolve(secondBoard);
+      await vi.waitFor(() => expect(activateBoard).toHaveBeenCalledWith(secondBoard));
+      first.resolve(board);
+      await flushPromises();
+      expect(activateBoard).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips the fallback board sheet once another row was tapped', async () => {
+      const fetch = deferred<typeof board | null>();
+      fetchBoardByUuid.mockReturnValue(fetch.promise);
+      const { result } = renderHook(() => useNotificationNavigation(openCommentThread));
+      result.current(approved);
+      result.current(requested);
+      fetch.resolve(null);
+      await flushPromises();
+      expect(routerMock.push).toHaveBeenCalledTimes(1);
+      expect(routerMock.push).toHaveBeenCalledWith({
+        pathname: '/settings/privacy-access',
+        params: { kind: 'board', resourceId: 'board-1' },
+      });
+    });
+
+    it('skips the fallback board sheet on a failed fetch for a changed account', async () => {
+      const fetch = deferred<typeof board | null>();
+      fetchBoardByUuid.mockReturnValue(fetch.promise);
+      tap(approved);
+      generations.credential += 1;
+      fetch.reject(new Error('network'));
+      await flushPromises();
+      expect(reportError).toHaveBeenCalled();
+      expect(routerMock.push).not.toHaveBeenCalled();
+    });
   });
 });

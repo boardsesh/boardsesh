@@ -184,6 +184,16 @@ vi.mock('@boardsesh/offline-sync', () => ({
     `${input.boardType}:${input.layoutId}:${input.sizeId}`,
 }));
 
+// Friends' boards: its sheet's graph is native, and its query is its own module.
+const friendsShelfState = vi.hoisted(() => ({ data: undefined as unknown }));
+const friendBoardPressMock = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/lib/boards/use-friend-board-action', () => ({
+  useFriendBoardAction: () => ({ onPress: friendBoardPressMock, sheet: null }),
+}));
+vi.mock('../../../src/lib/graphql/hooks/use-friends-boards', () => ({
+  useFriendsBoardsShelf: () => ({ data: friendsShelfState.data }),
+}));
+
 vi.mock('../../../src/lib/graphql/hooks', () => ({
   useBoard: () => ({ data: undefined }),
   useMyBoards: () => ({ ...state.myBoards, refetch: vi.fn() }),

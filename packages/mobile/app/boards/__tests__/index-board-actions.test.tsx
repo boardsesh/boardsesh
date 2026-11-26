@@ -19,10 +19,10 @@ vi.mock('../../../src/components/PressableSurface', async () => {
 // ⋯ and the hold), so this suite pins what the menu offers where, what each row
 // does, and the fact that a picker opened mid-session must still switch boards
 // when the identity lookup fails.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { createElement, type ReactElement, type ReactNode } from 'react';
-import type { UserBoard } from '@boardsesh/shared-schema';
+import type { FriendBoard, FriendBoardAccess, UserBoard } from '@boardsesh/shared-schema';
 import type {
   BoardCardMenuAction,
   BoardCardMenuCapabilities,
@@ -41,6 +41,8 @@ type CarouselItem = Pick<
   | 'isPinned'
   | 'offlineState'
   | 'sprayImport'
+  | 'accessLocked'
+  | 'badge'
   | 'canEdit'
   | 'canDelete'
   | 'canRemoveFromGym'
@@ -303,6 +305,16 @@ vi.mock('@boardsesh/offline-sync', () => ({
   getDownloadedScopeKeys: vi.fn(async () => []),
   offlineBoardKeyForBoard: (input: { boardType: string; layoutId: number; sizeId: number }) =>
     `${input.boardType}:${input.layoutId}:${input.sizeId}`,
+}));
+
+// Friends' boards: its sheet's graph is native, and its query is its own module.
+const friendsShelfState = vi.hoisted(() => ({ data: undefined as unknown }));
+const friendBoardPressMock = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/lib/boards/use-friend-board-action', () => ({
+  useFriendBoardAction: () => ({ onPress: friendBoardPressMock, sheet: null }),
+}));
+vi.mock('../../../src/lib/graphql/hooks/use-friends-boards', () => ({
+  useFriendsBoardsShelf: () => ({ data: friendsShelfState.data }),
 }));
 
 vi.mock('../../../src/lib/graphql/hooks', () => ({
@@ -2002,5 +2014,64 @@ describe("the review sheet's Remove and Delete", () => {
       expect(detachBoardFromGymMock).toHaveBeenCalledWith({ boardUuid: 'active-wall', gymUuid: 'crux-uuid' }),
     );
     expect(toastMock.showToast).not.toHaveBeenCalledWith('Could not switch board', 'error');
+  });
+});
+
+// Friends' boards: right under Your boards, one small page, never a board the
+// climber already has, and See all opens Whose board?.
+describe("Friends' boards shelf", () => {
+  const friend = (uuid: string, viewerAccess: FriendBoardAccess = 'CAN_CLIMB'): FriendBoard => ({
+    viewerAccess,
+    owner: { userId: 'sam', displayName: 'Sam', avatarUrl: null },
+    preview: { uuid, name: `Friend ${uuid}`, boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1', angle: 40 },
+    board: null,
+  });
+
+  afterEach(() => {
+    friendsShelfState.data = undefined;
+  });
+
+  it('lists boards of friends, leaving out the ones already yours', () => {
+    friendsShelfState.data = {
+      items: [friend('mine'), friend('f1'), friend('f2', 'CAN_REQUEST'), friend('f3', 'REQUESTED')],
+      totalCount: 4,
+      hasMore: false,
+    };
+    render(createElement(BoardSelection));
+
+    const shelf = carouselProps.byFirstKey.get('f1');
+    expect(shelf?.items.map((item) => item.key)).toEqual(['f1', 'f2', 'f3']);
+    expect(shelf?.items.map((item) => [item.accessLocked, item.badge])).toEqual([
+      [false, null],
+      [true, null],
+      [false, 'mobile.friendBoards.requested'],
+    ]);
+    // Your boards is still its own list.
+    expect(carouselProps.byFirstKey.get('mine')?.items.map((item) => item.key)).toEqual(['mine', 'gym']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Friend f2' }));
+    expect(friendBoardPressMock).toHaveBeenCalledWith(
+      expect.objectContaining({ preview: expect.objectContaining({ uuid: 'f2' }) }),
+      undefined,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'mobile.friendBoards.seeAll' }));
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/boards/add/friend',
+      params: expect.objectContaining({ entry: 'picker', shelf: '1' }),
+    });
+  });
+
+  it('is hidden when every friend board is already yours', () => {
+    friendsShelfState.data = { items: [friend('mine')], totalCount: 1, hasMore: false };
+    render(createElement(BoardSelection));
+    expect(screen.queryByText('mobile.friendBoards.shelfTitle')).toBeNull();
+  });
+
+  it('is hidden signed out', () => {
+    state.isAuthenticated = false;
+    friendsShelfState.data = { items: [friend('f1')], totalCount: 1, hasMore: false };
+    render(createElement(BoardSelection));
+    expect(screen.queryByText('mobile.friendBoards.shelfTitle')).toBeNull();
   });
 });

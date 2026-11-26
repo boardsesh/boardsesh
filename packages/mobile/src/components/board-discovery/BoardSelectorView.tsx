@@ -14,8 +14,9 @@ import { PickerTouchContext } from './picker-touch';
 /**
  * The board picker's body (#5654 and the 2026-11 redesign), top to bottom:
  * the top (At {gym}, the board heard somewhere else, or what the scan needs;
- * see picker-top-view.ts), Near you, Your boards (or the empty state), and the
- * location banner. The screen hands in Near you only once location is
+ * see picker-top-view.ts), Near you, Your boards (or the empty state),
+ * Friends' boards (boards owned by people the climber follows both ways), and the location
+ * banner. The screen hands in Near you only once location is
  * allowed, and the banner only while it is not, so one of the two shows. First
  * run swaps all three for "Where do you climb?" under the top. The ways to add
  * a board live in the screen's top bar.
@@ -33,6 +34,7 @@ export function BoardSelectorView({
   fromOnboarding,
   inRangeSection,
   myBoardsSection,
+  friendsBoardsSection,
   nearbySection,
   locationBanner,
   hasBoards,
@@ -49,6 +51,8 @@ export function BoardSelectorView({
   /** The top of the picker: At {gym}, the hero, or the scan's card; see InRangeSection. */
   inRangeSection?: ReactNode;
   myBoardsSection?: ReactNode;
+  /** Friends' boards, right after Your boards. Absent when there are none. */
+  friendsBoardsSection?: ReactNode;
   /** Near you, above Your boards. Only with location allowed. */
   nearbySection?: ReactNode;
   /** The way to turn location on, at the foot of the picker, in place of Near you. */
@@ -129,6 +133,8 @@ export function BoardSelectorView({
                 }
               />
             )}
+
+            {friendsBoardsSection}
 
             {locationBanner}
           </>

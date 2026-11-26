@@ -28,6 +28,7 @@ import { QueueSheet, type QueueSheetHandle } from '../components/play-drawer/Que
 import { useQueueSheetHandlers } from '../components/play-drawer/use-queue-sheet-handlers';
 import { QueueAddedSnackbar } from '../components/QueueAddedSnackbar';
 import { UndoWallChangeSnackbar } from '../components/board-presence/UndoWallChangeSnackbar';
+import { SavedFriendBoardUndoSnackbar } from '../components/board-discovery/SavedFriendBoardUndoSnackbar';
 import { BoardSheet, type BoardSheetClimbAction, type BoardSheetHandle } from '../components/board-presence/BoardSheet';
 import type { QueueItemRowBoard } from '../components/QueueItemRow';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
@@ -1509,6 +1510,9 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
               onDismiss={dismissUndoWallChangeSnackbar}
               onUndo={handleUndoWallChange}
             />
+            {/* "Saved to Your boards · Undo" after a friend's board is picked:
+                the pick closed the boards modal, so it shows here. */}
+            <SavedFriendBoardUndoSnackbar />
           </ClimbMenusProvider>
         </PlayDrawerRouteContext.Provider>
       </PreviewedClimbContext.Provider>

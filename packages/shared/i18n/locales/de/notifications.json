@@ -109,6 +109,10 @@
     "declineLabel": "{{actor}} ablehnen",
     "failed": "Die Anfrage konnte nicht beantwortet werden. Versuche es mit Verbindung erneut."
   },
+  "boardAccessRequest": {
+    "approveLabel": "{{actor}} an deinem Board klettern lassen",
+    "declineLabel": "Anfrage von {{actor}} für dein Board ablehnen"
+  },
   "errors": {
     "load": "Deine Benachrichtigungen konnten nicht geladen werden"
   },

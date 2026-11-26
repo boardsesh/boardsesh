@@ -4,6 +4,7 @@ import type { Client } from '@boardsesh/graphql-client';
 import { APP_BUG_REPORT_CHANGED, type AppBugReportChangedSubscriptionResponse } from '@boardsesh/graphql/operations';
 import { NOTIFICATION_RECEIVED_SUBSCRIPTION } from '@boardsesh/graphql/operations/notifications';
 import { getConnectivitySnapshot, subscribeConnectivity } from '../lib/connectivity/connectivity-store';
+import { FRIENDS_BOARDS_QUERY_KEY } from '../lib/graphql/friends-boards-key';
 import { getWsClient } from '../lib/graphql/ws-client';
 import { subscribeWsClientDisposed } from '../lib/graphql/ws-client-lifecycle';
 import { createBugReportRefresh } from '../lib/feedback/bug-report-refresh';
@@ -61,7 +62,14 @@ export function useSprayCompletionUpdates(authenticated: boolean, accountId: str
         {
           next: ({ data }) => {
             if (cancelled || boundClient !== client) return;
-            if (data?.notificationReceived.notification.type === 'spray_wall_detection_completed') refreshCompletion();
+            const type = data?.notificationReceived.notification.type;
+            if (type === 'spray_wall_detection_completed') refreshCompletion();
+            // Friends' boards are the boards of people the climber and the
+            // owner follow both ways, so a new follower can add some, and a yes
+            // opens one.
+            if (type === 'new_follower' || type === 'board_access_approved') {
+              void queryClient.invalidateQueries({ queryKey: [FRIENDS_BOARDS_QUERY_KEY] });
+            }
             if (data?.notificationReceived.notification.type === 'app_feedback_reply' && accountId) {
               refreshReports(data.notificationReceived.notification.entityId ?? undefined);
             }

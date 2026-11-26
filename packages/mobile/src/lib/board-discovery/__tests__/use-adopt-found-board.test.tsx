@@ -112,6 +112,18 @@ describe('useAdoptFoundBoard', () => {
     expect(spies.mutate).toHaveBeenCalledWith(board);
   });
 
+  // A friend's board: the caller saves it itself (for Undo), so only the
+  // download offer runs.
+  it('offers the download without following when told not to follow', async () => {
+    cfg.offlineEnabled = true;
+    const { result } = renderHook(() => useAdoptFoundBoard({ follow: false }));
+    const board = makeBoard();
+    await result.current(board);
+    expect(spies.mutate).not.toHaveBeenCalled();
+    expect(spies.confirm).toHaveBeenCalledOnce();
+    expect(spies.enableBoardsOffline).toHaveBeenCalledWith(board, { trigger: 'adopt-confirmed', source: 'adopt' });
+  });
+
   it('does not follow a board the viewer built', async () => {
     const { result } = renderHook(() => useAdoptFoundBoard());
     await result.current(makeBoard({ ownerId: 'viewer-1' }));

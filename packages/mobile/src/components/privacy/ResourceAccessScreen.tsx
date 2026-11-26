@@ -12,6 +12,7 @@ import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useBoard, useProfile, useSearchUsers } from '../../lib/graphql/hooks';
 import { usePrivacySettings } from '../../lib/graphql/hooks/use-privacy';
 import {
+  type ResourceAccessActionName,
   useResourceAccessAction,
   useResourceAccessRequests,
   useResourceGrantStatuses,
@@ -43,6 +44,8 @@ function cardPosition(index: number, count: number): CardPosition {
   return index === count - 1 ? 'last' : 'middle';
 }
 
+type AccessRowAction = Extract<ResourceAccessActionName, 'invite' | 'approve' | 'decline' | 'revoke'>;
+
 const AccessPersonRow = memo(function AccessPersonRow({
   person,
   position,
@@ -52,7 +55,7 @@ const AccessPersonRow = memo(function AccessPersonRow({
   person: AccessPerson;
   position: CardPosition;
   disabled: boolean;
-  onAction: (action: 'invite' | 'approve' | 'revoke', userId: string) => void;
+  onAction: (action: AccessRowAction, userId: string) => void;
 }) {
   const { t } = useTranslation('settings');
   const { spacing, borderRadius, systemColors } = useTheme();
@@ -101,7 +104,9 @@ const AccessPersonRow = memo(function AccessPersonRow({
                   size="small"
                   variant="outlined"
                   disabled={disabled}
-                  onPress={() => onAction('revoke', person.userId)}
+                  // Declining a waiting request lets them ask again later;
+                  // revoking an approved climber is a ban.
+                  onPress={() => onAction(person.status === 'pending' ? 'decline' : 'revoke', person.userId)}
                 />
               ) : (
                 <Button
@@ -173,7 +178,7 @@ export function ResourceAccessScreen() {
     [people],
   );
   const onAction = useCallback(
-    (next: 'invite' | 'approve' | 'revoke', userId: string) => {
+    (next: AccessRowAction, userId: string) => {
       action.mutate({ action: next, kind, resourceId, userId });
     },
     [action, kind, resourceId],

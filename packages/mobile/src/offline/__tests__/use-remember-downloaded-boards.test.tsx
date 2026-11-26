@@ -21,7 +21,7 @@ vi.mock('../../settings', () => ({
     `${input.boardType}:${input.layoutId}:${input.sizeId}`,
 }));
 
-const { useRememberDownloadedBoards } = await import('../use-remember-downloaded-boards');
+const { offlineBoardCardSync, useRememberDownloadedBoards } = await import('../use-remember-downloaded-boards');
 
 const board = (overrides: Partial<UserBoard> & { uuid: string; name: string }): UserBoard =>
   ({
@@ -38,6 +38,9 @@ const connection = (boards: UserBoard[], hasMore = false): UserBoardConnection =
   totalCount: boards.length,
   hasMore,
 });
+
+/** A list a fetch since mount just returned. */
+const FRESH = { fetchFailed: false, fetchedAfterMount: true };
 
 const garage = board({ uuid: 'garage', name: 'Marco garage' });
 const tension = board({ uuid: 'tension', name: 'Tension wall', boardType: 'tension', layoutId: 12, sizeId: 3 });
@@ -87,7 +90,7 @@ describe('useRememberDownloadedBoards', () => {
   it('prunes cards for boards the server no longer lists', () => {
     state.enabledBoards = ['kilter:8:17'];
 
-    renderHook(() => useRememberDownloadedBoards(connection([garage])));
+    renderHook(() => useRememberDownloadedBoards(connection([garage]), undefined, FRESH));
 
     // Deleted / unfollowed on another device: nothing local fires, so the complete
     // list is the only signal that the board is gone.
@@ -98,7 +101,7 @@ describe('useRememberDownloadedBoards', () => {
     // myBoards pages at 20; pruning on the first page would delete every card past it.
     state.enabledBoards = ['kilter:8:17'];
 
-    renderHook(() => useRememberDownloadedBoards(connection([garage], true)));
+    renderHook(() => useRememberDownloadedBoards(connection([garage], true), undefined, FRESH));
 
     expect(rememberOfflineBoardsMock).toHaveBeenCalledTimes(1);
     expect(pruneOfflineBoardsMock).not.toHaveBeenCalled();
@@ -127,7 +130,7 @@ describe('useRememberDownloadedBoards', () => {
     state.enabledBoards = ['kilter:8:17'];
     const stable = connection([garage]);
 
-    const { rerender } = renderHook(() => useRememberDownloadedBoards(stable));
+    const { rerender } = renderHook(() => useRememberDownloadedBoards(stable, undefined, FRESH));
     rerender();
     rerender();
 
@@ -140,12 +143,116 @@ describe('useRememberDownloadedBoards', () => {
   // An archived spray wall is not in `myBoards`; its download card must survive
   // a complete list, or the wall could not be opened offline.
   it('keeps the cards of archived walls the caller names', () => {
-    renderHook(() => useRememberDownloadedBoards(connection([garage]), ['old-wall']));
+    renderHook(() => useRememberDownloadedBoards(connection([garage]), ['old-wall'], FRESH));
     expect(pruneOfflineBoardsMock).toHaveBeenCalledWith(['garage', 'old-wall']);
   });
 
   it('prunes no spray card when the archived list is unknown', () => {
-    renderHook(() => useRememberDownloadedBoards(connection([garage])));
+    renderHook(() => useRememberDownloadedBoards(connection([garage]), undefined, FRESH));
     expect(pruneOfflineBoardsMock).toHaveBeenCalledWith(['garage'], { keepBoardType: 'spray' });
   });
+
+  // A friend's board the owner took the climber back off drops out of
+  // myBoards; the next complete list prunes its card. A failed refetch still
+  // hands back the last list, which may predate a board saved since, so it
+  // must not prune (or refresh) anything.
+  it('prunes a friend board that left a complete list, but never on a failed fetch', () => {
+    state.enabledBoards = ['kilter:8:17'];
+
+    renderHook(() =>
+      useRememberDownloadedBoards(connection([garage]), undefined, { fetchFailed: true, fetchedAfterMount: true }),
+    );
+    expect(rememberOfflineBoardsMock).not.toHaveBeenCalled();
+    expect(pruneOfflineBoardsMock).not.toHaveBeenCalled();
+
+    renderHook(() => useRememberDownloadedBoards(connection([garage]), undefined, FRESH));
+    expect(pruneOfflineBoardsMock).toHaveBeenCalledWith(['garage'], { keepBoardType: 'spray' });
+  });
+
+  // The persisted cache hands back last session's list before any fetch: it
+  // may predate a board saved since, so it refreshes cards but prunes none.
+  it('never prunes from a list hydrated before any fetch since mount', () => {
+    state.enabledBoards = ['kilter:8:17'];
+
+    const { rerender } = renderHook(
+      ({ fetchedAfterMount }) =>
+        useRememberDownloadedBoards(connection([garage]), undefined, { fetchFailed: false, fetchedAfterMount }),
+      { initialProps: { fetchedAfterMount: false } },
+    );
+    expect(rememberOfflineBoardsMock).toHaveBeenCalledTimes(1);
+    expect(pruneOfflineBoardsMock).not.toHaveBeenCalled();
+
+    rerender({ fetchedAfterMount: true });
+    expect(pruneOfflineBoardsMock).toHaveBeenCalledWith(['garage'], { keepBoardType: 'spray' });
+  });
+
+  it('prunes nothing when the caller says nothing about the fetch', () => {
+    state.enabledBoards = ['kilter:8:17'];
+    renderHook(() => useRememberDownloadedBoards(connection([garage])));
+    expect(pruneOfflineBoardsMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('offlineBoardCardSync', () => {
+  it.each([
+    {
+      isOffline: false,
+      hasList: true,
+      hasMore: false,
+      fetchFailed: false,
+      fetchedAfterMount: true,
+      remember: true,
+      prune: true,
+    },
+    {
+      isOffline: false,
+      hasList: true,
+      hasMore: false,
+      fetchFailed: false,
+      fetchedAfterMount: false,
+      remember: true,
+      prune: false,
+    },
+    {
+      isOffline: false,
+      hasList: true,
+      hasMore: true,
+      fetchFailed: false,
+      fetchedAfterMount: true,
+      remember: true,
+      prune: false,
+    },
+    {
+      isOffline: false,
+      hasList: true,
+      hasMore: false,
+      fetchFailed: true,
+      fetchedAfterMount: true,
+      remember: false,
+      prune: false,
+    },
+    {
+      isOffline: true,
+      hasList: true,
+      hasMore: false,
+      fetchFailed: false,
+      fetchedAfterMount: true,
+      remember: false,
+      prune: false,
+    },
+    {
+      isOffline: false,
+      hasList: false,
+      hasMore: false,
+      fetchFailed: false,
+      fetchedAfterMount: true,
+      remember: false,
+      prune: false,
+    },
+  ])(
+    'offline $isOffline, list $hasList, more $hasMore, failed $fetchFailed, after mount $fetchedAfterMount → remember $remember, prune $prune',
+    ({ remember, prune, ...input }) => {
+      expect(offlineBoardCardSync(input)).toEqual({ remember, prune });
+    },
+  );
 });

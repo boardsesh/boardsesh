@@ -28,7 +28,7 @@ Budgets: target under 100 KB serialized, hard cap 512 KB with lowest-priority-fi
 
 ### Bucket 3 — honest offline states, no storage at all
 
-Feeds (`crewFeed`, `sessionGroupedFeed`, `activityFeed`), session detail, board presence, `searchUsers`, `bulkVoteSummaries`, `comments`, `gymMembers`, `nearbyBoards`/`nearbyGyms`, `betaLinkPreview`.
+Feeds (`crewFeed`, `sessionGroupedFeed`, `activityFeed`), `friendsBoards`, session detail, board presence, `searchUsers`, `bulkVoteSummaries`, `comments`, `gymMembers`, `nearbyBoards`/`nearbyGyms`, `betaLinkPreview`.
 
 `crewFeed` is viewer-scoped and live: it mixes followed climbers' sessions with recently published climbs by followed authors. It is not persisted or replayed offline, even though follows and author metadata are stored locally for climb search.
 
@@ -66,6 +66,7 @@ These have "now" semantics or are unbounded, so a stale copy is worse than an ho
 | `['followingClimbLogs', viewerId, board, uuid]`                                          | Neither, by design          | Other climbers' logs on a climb (play drawer "Climber logs"). Network only, never persisted, no local reader: the server decides per request who may see a spray wall's logs. Offline shows a placard in the card |
 | `['climbLogs', ...]`, `['climbLogsPreview', ...]`                                        | Neither, by design          | Everyone's logs on a climb (the "Everyone" section of the Climber logs list, and the card's fall-through rows). Same rule as the row above: network only, never persisted. Offline, the list shows no Everyone section and sends no request |
 | `['crewFeed', viewerId]`                                                               | Neither                     | Viewer-scoped live feed; no persisted cache                        |
+| `['friendsBoards', viewerId, …]`                                                         | Neither                     | Boards of friends, people the viewer and the owner follow both ways (Friends' boards, Whose board?); who may climb where changes when an owner answers, so a stale copy would offer a board taken back. Offline, Whose board? says it needs signal and the picker hides the shelf |
 | `['sessionSummary', sessionId]`                                                          | Neither                     | The running session's start time, for the Session tab and Home's Session card. Offline the card still shows (the session id is local) and only the timer waits |
 | `['recentBetaLinks', limit, boardType, layoutId]`                                        | Neither                     | Home's Fresh beta shelf. Offline the shelf says so and asks for nothing |
 | `['mySmartPlaylistCounts', token]`                                                       | Neither                     | Counts for Discover's smart lists and Home's Playlists card. Offline the card's rows show without counts; each list shows its own offline state |

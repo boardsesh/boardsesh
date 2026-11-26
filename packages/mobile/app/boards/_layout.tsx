@@ -105,6 +105,7 @@ function BoardsLayout() {
         <Stack.Screen name="add/gym-boards" options={{ title: '' }} />
         <Stack.Screen name="add/new-gym" options={{ title: '' }} />
         <Stack.Screen name="add/board" options={{ title: '' }} />
+        <Stack.Screen name="add/friend" options={{ title: '' }} />
         <Stack.Screen name="add/setup-option" options={{ title: '' }} />
         {/* The retired gym-first routes (#8151), now redirects into the wizard
           for one release. They draw nothing: no title to flash. */}
@@ -130,6 +131,9 @@ function BoardsLayout() {
         <Stack.Screen name="gyms/analytics" />
         {/* Edit board's "Manage access", the same screen as Settings' copy. */}
         <Stack.Screen name="privacy-access" options={{ title: tSettings('privacy.manageAccess') }} />
+        {/* "Whose board?"'s Find people, the same screen as Home's climber
+          search, so it pushes inside this modal instead of stacking a second one. */}
+        <Stack.Screen name="users/search" />
         <Stack.Screen
           name="spray/led-setup"
           options={{

@@ -8,9 +8,11 @@ const {
   parseWizardTrail,
   trailThrough,
   wizardBoardHref,
+  wizardFriendHref,
   wizardGymBoardsHref,
   wizardGymHref,
   wizardNewGymHref,
+  wizardPickerSurface,
   wizardSetupHref,
   wizardStepPosition,
   wizardWhereHref,
@@ -97,6 +99,7 @@ describe('route params', () => {
     { value: 'gym', expected: 'gym' },
     { value: 'home', expected: 'home' },
     { value: 'spray', expected: 'spray' },
+    { value: 'friend', expected: 'friend' },
     { value: 'garage', expected: null },
     { value: undefined, expected: null },
   ])('reads path $value as $expected', ({ value, expected }) => {
@@ -138,6 +141,19 @@ describe('wizard hrefs', () => {
       pathname: '/boards/add/gym-boards',
       params: { ...context, trail: 'where,gym', gymUuid: 'gym-1' },
     });
+  });
+
+  // A friend's board: Whose board? is the last screen, step 2 of 2 from step 1.
+  it('opens Whose board? from step 1 as step 2 of 2', () => {
+    const href = wizardFriendHref({ ...context, trail: ['where'] });
+    expect(href).toEqual({ pathname: '/boards/add/friend', params: { ...context, trail: 'where' } });
+    expect(wizardStepPosition('friend', parseWizardTrail(href.params.trail))).toEqual({ current: 2, total: 2 });
+  });
+
+  it("opens Whose board? from the picker's See all, uncounted and marked as the shelf's", () => {
+    const href = wizardFriendHref({ ...context, trail: [] }, { fromShelf: true });
+    expect(href).toEqual({ pathname: '/boards/add/friend', params: { ...context, shelf: '1' } });
+    expect(wizardStepPosition('friend', [])).toBeNull();
   });
 
   it('opens Add your gym carrying the type chosen on the map', () => {
@@ -193,5 +209,17 @@ describe('wizard hrefs', () => {
     const home = wizardSetupHref({ ...context, trail: ['where', 'board'] }, { path: 'home', boardType: 'kilter' });
     expect(home.params).toMatchObject({ preset: '1', presetBoardType: 'kilter', kind: 'home' });
     expect(home.params).not.toHaveProperty('boardType');
+  });
+});
+
+// A pick on Whose board? completes the picker's opening only when the wizard
+// started in the picker; elsewhere the step counts an opening of its own.
+describe('wizardPickerSurface', () => {
+  it.each(['picker', 'empty_state', 'first_run', 'in_range'] as const)('files a %s entry under the picker', (entry) => {
+    expect(wizardPickerSurface(entry)).toBe('add_wizard_from_picker');
+  });
+
+  it.each(['manage', 'gym_page', 'link'] as const)('counts a %s entry as its own opening', (entry) => {
+    expect(wizardPickerSurface(entry)).toBe('add_wizard');
   });
 });
