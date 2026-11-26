@@ -53,6 +53,8 @@ export type TabLayoutViewProps = {
   tabBarMinimizeBehavior: ComponentProps<typeof NativeTabs>['minimizeBehavior'];
   accessoryNativeProps: ComponentProps<typeof NativeTabs>['unstable_nativeProps'];
   prominentClimbsTab: boolean;
+  /** Climbs is the bar's search tab, with the name search in the bar (`useClimbsTabBarSearch`). */
+  climbsSearchTab: boolean;
   showDetailPane: boolean;
   showWallColumn: boolean;
   wallDisplayOpen: boolean;
@@ -71,6 +73,7 @@ export function TabLayoutView({
   tabBarMinimizeBehavior,
   accessoryNativeProps,
   prominentClimbsTab,
+  climbsSearchTab,
   showDetailPane,
   showWallColumn,
   wallDisplayOpen,
@@ -289,13 +292,20 @@ export function TabLayoutView({
       </NativeTabs.Trigger>
 
       {/* Last, so it is the rightmost tab, like Apple Music's Search tab (HIG Tab
-          bars: the search tab sits "at the trailing end"). An ordinary labelled tab,
-          not `role="search"`: since SDK 58 that role makes a UISearchTab, which iOS 26
-          sets apart from the other tabs and which brings a search field into the bar.
-          Climbs has no search field; a second tap on the tab opens Filters instead
-          (`useTabReselect` in climbs/index.tsx). `prominent` keeps it on screen at the
-          right when the bar collapses on scroll, as Music's Search does. */}
-      <NativeTabs.Trigger name="climbs" prominent={prominentClimbsTab}>
+          bars: the search tab sits "at the trailing end"). By default it is the bar's
+          search tab (`role="search"`, a UISearchTab on iOS 26.1+): iOS sets it apart
+          from the other tabs and brings the screen's climb-name search field into the
+          bar (`headerSearchBarOptions` in climbs/index.tsx). Selecting it opens that
+          field. Changing the role remounts the tab. With the setting off it is an
+          ordinary labelled tab with no search field, a second tap opens Filters
+          (`useTabReselect`), and `prominent` keeps it on screen at the right when the
+          bar collapses on scroll. The search tab needs no `prominent`: iOS already
+          keeps it apart, and only one tab may be prominent. */}
+      <NativeTabs.Trigger
+        name="climbs"
+        role={climbsSearchTab ? 'search' : undefined}
+        prominent={prominentClimbsTab && !climbsSearchTab}
+      >
         <NativeTabs.Trigger.Icon sf={TAB_SF_SYMBOLS.climbs} md="search" />
         <NativeTabs.Trigger.Label>{t('mobile.nav.climbs')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
