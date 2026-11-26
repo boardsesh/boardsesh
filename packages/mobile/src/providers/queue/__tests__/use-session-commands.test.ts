@@ -18,6 +18,7 @@ import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
 const mocks = vi.hoisted(() => ({
+  quantumEnabled: false,
   storedActiveBoard: null as UserBoard | null,
   boardRead: null as (() => Promise<UserBoard | null>) | null,
   activeBoardGeneration: 0,
@@ -33,6 +34,14 @@ const mocks = vi.hoisted(() => ({
   setStoredSessionId: vi.fn((_sessionId: string) => Promise.resolve()),
   setStoredSessionVisibility: vi.fn((_sessionId: string, _isPublic: boolean) => Promise.resolve()),
 }));
+
+vi.mock('../../feature-flags-provider', () => ({
+  useFeatureFlag: (flag: string) => flag === 'quantum-board' && mocks.quantumEnabled,
+}));
+
+beforeEach(() => {
+  mocks.quantumEnabled = false;
+});
 
 vi.mock('../../../lib/ble/quantum-layer-identity-store', () => ({
   rememberStartedQuantumSessionPlayer: mocks.rememberStartedQuantumSessionPlayer,
@@ -172,6 +181,7 @@ describe('useSessionCommands — createSessionWithConfig boardPath', () => {
   });
 
   it('creates one Quantum session credential only after saving creator-device provenance', async () => {
+    mocks.quantumEnabled = true;
     mocks.storedActiveBoard = { ...homeBoard(), boardType: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' };
     const { result } = renderSessionCommands();
     await act(async () => {
@@ -185,6 +195,17 @@ describe('useSessionCommands — createSessionWithConfig boardPath', () => {
     expect(mocks.setStoredCreatedSessionId.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.rememberStartedQuantumSessionPlayer.mock.invocationCallOrder[0],
     );
+  });
+
+  it('does not create a Quantum session or player while the rollout is disabled', async () => {
+    mocks.storedActiveBoard = { ...homeBoard(), boardType: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' };
+    const { result } = renderSessionCommands();
+    await act(async () => {
+      expect(await result.current.createSessionWithConfig()).toBeNull();
+    });
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(mocks.setStoredCreatedSessionId).not.toHaveBeenCalled();
+    expect(mocks.rememberStartedQuantumSessionPlayer).not.toHaveBeenCalled();
   });
 
   it('keeps a personal ledless wall and its capability when another climber joins', async () => {
@@ -453,6 +474,7 @@ describe('partner initial seed recovery', () => {
   });
 
   it('never mints a driver when two phones receive the same partner Start session', async () => {
+    mocks.quantumEnabled = true;
     mocks.storedActiveBoard = { ...homeBoard(), boardType: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' };
     mocks.rememberStartedQuantumSessionPlayer.mockClear();
     mocks.request.mockResolvedValue({
