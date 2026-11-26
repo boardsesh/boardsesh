@@ -374,6 +374,13 @@ class RoomManager {
     return result;
   }
 
+  markClientClosing(connectionId: string): boolean {
+    const client = this.clients.get(connectionId);
+    if (!client) return false;
+    client.isClosing = true;
+    return client.sessionId !== null;
+  }
+
   async disconnectClient(connectionId: string): Promise<SessionDisconnectResult | null> {
     return disconnectClientFn(this.deps(), connectionId, (sessionId, participantId, newLeader) => {
       pubsub.publishSessionEvent(sessionId, {

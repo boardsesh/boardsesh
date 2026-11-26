@@ -375,7 +375,7 @@ describe('guarded joins and wall moves', () => {
         undefined,
         expectedBoardPath,
       );
-    return { currentRoom, targetRoom, join };
+    return { connectionId, currentRoom, targetRoom, join };
   }
 
   it('keeps the current room when the target already switched to Quantum', async () => {
@@ -394,6 +394,35 @@ describe('guarded joins and wall moves', () => {
     await expect(join()).rejects.toMatchObject({ extensions: { code: 'SESSION_BOARD_CHANGED' } });
     expect(await roomManager.getSessionUsers(currentRoom)).toHaveLength(1);
     expect(await roomManager.getSessionUsers(targetRoom)).toHaveLength(0);
+  });
+
+  it('does not establish membership when the socket closes while its JOIN waits on the room lock', async () => {
+    const { connectionId, currentRoom, targetRoom, join } = await prepareJoin();
+    const locked = deferred<void>();
+    const release = deferred<void>();
+    const lock = db.transaction(async (tx) => {
+      await tx.select().from(tables.boardSessions).where(eq(tables.boardSessions.id, targetRoom)).for('update');
+      locked.resolve();
+      await release.promise;
+    });
+    await locked.promise;
+    const pending = sessionActionWithPid(join);
+    const rejected = expect(pending.action).rejects.toThrow('Client disconnected while joining');
+    try {
+      expect(await waitForLock(await pending.pid)).toBe(true);
+      roomManager.markClientClosing(connectionId);
+      await roomManager.disconnectClient(connectionId);
+      release.resolve();
+      await lock;
+      await rejected;
+      expect(
+        (await roomManager.getSessionUsers(currentRoom)).every((user) => user.connectionState !== 'CONNECTED'),
+      ).toBe(true);
+      expect(await roomManager.getSessionUsers(targetRoom)).toHaveLength(0);
+    } finally {
+      release.resolve();
+      await Promise.allSettled([lock, rejected, pending.action]);
+    }
   });
 
   it('holds the target board stable while the guarded join leaves the old room', async () => {

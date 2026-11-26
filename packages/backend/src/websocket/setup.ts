@@ -576,9 +576,9 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         const context = ctx.extra?.context;
         if (context) {
           logger.info(`Client disconnected: ${context.connectionId} (code: ${code})`);
-
-          // Get the latest context state (sessionId may have been updated)
-          const latestContext = getContext(context.connectionId);
+          // Room membership can be established before the JOIN response
+          // updates the GraphQL context. Mark it closed before any await.
+          const wasInSession = roomManager.markClientClosing(context.connectionId);
 
           // Board-presence crash backstop: if this connection held a board's
           // writer slot, free it (compare-and-delete, no-op once someone else
@@ -590,7 +590,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           await roomManager.clearBoardWriterForConnection(context.connectionId);
 
           // Handle session cleanup
-          if (latestContext?.sessionId) {
+          if (wasInSession) {
             const result = await roomManager.disconnectClient(context.connectionId);
 
             if (result?.participantFullyLeft) {

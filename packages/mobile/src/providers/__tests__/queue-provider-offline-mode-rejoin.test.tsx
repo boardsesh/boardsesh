@@ -54,6 +54,8 @@ vi.mock('../../lib/graphql/ws-client', async () => {
   });
 });
 
+const rollout = vi.hoisted(() => ({ quantumEnabled: false }));
+
 const http = vi.hoisted(() => ({
   request: vi.fn(),
 }));
@@ -136,11 +138,18 @@ vi.mock('@boardsesh/play-view', async (importOriginal) => ({
   emitWallConfirm: vi.fn(),
 }));
 
-vi.mock('../feature-flags-provider', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../feature-flags-provider')>()),
-  useBackendOutageDetectionEnabled: () => true,
-  useInteractiveRequestDeadlineEnabled: () => true,
-}));
+vi.mock('../feature-flags-provider', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../feature-flags-provider')>();
+  return {
+    ...actual,
+    useFeatureFlag: (flag: Parameters<typeof actual.useFeatureFlag>[0]) => {
+      const enabled = actual.useFeatureFlag(flag);
+      return flag === 'quantum-board' ? rollout.quantumEnabled : enabled;
+    },
+    useBackendOutageDetectionEnabled: () => true,
+    useInteractiveRequestDeadlineEnabled: () => true,
+  };
+});
 
 vi.mock('../../lib/session-store', () => sessionStore);
 
@@ -209,17 +218,21 @@ function Probe({ queueRef }: { queueRef: RefObject<QueueHandle | null> }) {
   return null;
 }
 
-function renderApp() {
+function renderAppWithRefresh() {
   const queueRef: RefObject<QueueHandle | null> = { current: null };
-  render(
+  const app = () =>
     createElement(
       'div',
       null,
       createElement(ConnectivityBridge),
       createElement(QueueProvider, null, createElement(Probe, { queueRef })),
-    ),
-  );
-  return queueRef;
+    );
+  const screen = render(app());
+  return { queueRef, refresh: () => screen.rerender(app()) };
+}
+
+function renderApp() {
+  return renderAppWithRefresh().queueRef;
 }
 
 function currentQueue(queueRef: RefObject<QueueHandle | null>): QueueHandle {
@@ -257,6 +270,7 @@ async function settleNetwork() {
 describe('QueueProvider — crew session after Offline mode on → off', () => {
   beforeEach(() => {
     server.reset();
+    rollout.quantumEnabled = false;
     __resetConnectivityStoreForTests();
     bindConnectivityStore({
       probe: async () => 'healthy',
@@ -381,6 +395,133 @@ describe('QueueProvider — crew session after Offline mode on → off', () => {
     );
     expect(sessionStore.clearStoredSessionId).not.toHaveBeenCalled();
   });
+
+  it('retires a reconnect accepted for Quantum if visibility closes before its reply', async () => {
+    const { queueRef, refresh } = renderAppWithRefresh();
+    const originalSocket = await waitForLiveSession();
+    await act(async () => setOfflineMode(true, 'more'));
+    await waitFor(() => expect(originalSocket.readyState).toBe(originalSocket.CLOSED));
+
+    const quantumPath = 'quantum/9104/9204/1/35';
+    http.request.mockImplementation(async (operation: string) =>
+      operation.includes('SessionStatus') ? { sessionStatus: 'active', sessionRestoreBoardPath: quantumPath } : {},
+    );
+    let receiveJoin: (reply: { variables: Record<string, unknown>; release: () => void }) => void = () => {};
+    const heldReply = new Promise<{ variables: Record<string, unknown>; release: () => void }>((resolve) => {
+      receiveJoin = resolve;
+    });
+    server.queueFeed.holdNextJoinReply = (variables, release) => receiveJoin({ variables, release });
+
+    rollout.quantumEnabled = true;
+    refresh();
+    const reconnectMark = server.operations.length;
+    await act(async () => setOfflineMode(false, 'more'));
+    const { variables, release } = await heldReply;
+    expect(variables).toMatchObject({ boardPath: quantumPath, expectedBoardPath: quantumPath, sessionId: 'session-1' });
+    const [joiningSocket] = server.openSockets();
+    expect(joiningSocket?.joinedSessionId).toBe('session-1');
+    expect(joiningSocket?.connectionId).not.toBe(originalSocket.connectionId);
+
+    rollout.quantumEnabled = false;
+    refresh();
+    await act(async () => {
+      const confirming = currentQueue(queueRef).confirmClimbOnWall('climb-on-rejected-reconnect');
+      release();
+      await confirming.catch(() => {});
+    });
+    await settleNetwork();
+
+    expect(joiningSocket?.readyState).toBe(joiningSocket?.CLOSED);
+    expect(
+      server.operations
+        .slice(reconnectMark)
+        .map(({ operationName }) => operationName)
+        .filter((operationName) => operationName !== 'QueueCapabilitiesProbe'),
+    ).toEqual(['JoinSession']);
+    expect(currentQueue(queueRef).sessionId).toBe('session-1');
+    expect(activeBoard.setActiveBoard).not.toHaveBeenCalled();
+    expect(sessionStore.clearStoredSessionId).not.toHaveBeenCalled();
+    expect(sessionStore.setStoredSessionId).not.toHaveBeenCalled();
+  });
+
+  it.each(['pending server join', 'timed-out join', 'rate-limit retry'] as const)(
+    'keeps subsequent writes in the confirmed room after an old %s',
+    async (oldJoin) => {
+      const queueRef = renderApp();
+      await waitForLiveSession();
+      await act(async () => setOfflineMode(true, 'more'));
+      await waitFor(() => expect(server.openSockets()).toHaveLength(0));
+
+      let finishOldJoin: () => void = () => {};
+      let oldJoinHeld = false;
+      if (oldJoin !== 'rate-limit retry') {
+        server.queueFeed.holdNextJoin = (complete) => {
+          finishOldJoin = complete;
+          oldJoinHeld = true;
+        };
+      } else {
+        server.queueFeed.rateLimitNextJoin = true;
+      }
+      const mark = server.operations.length;
+      vi.useFakeTimers();
+      await act(async () => {
+        setOfflineMode(false, 'more');
+        await vi.advanceTimersByTimeAsync(100);
+      });
+      const [oldSocket] = server.openSockets();
+      if (!oldSocket) throw new Error('Old room JOIN did not open a socket');
+      if (oldJoin !== 'rate-limit retry') {
+        expect(oldJoinHeld).toBe(true);
+      } else {
+        expect(server.operations.slice(mark)).toContainEqual({
+          connectionId: oldSocket.connectionId,
+          operationName: 'JoinSession',
+          outcome: 'rate_limited',
+        });
+      }
+
+      if (oldJoin === 'timed-out join') {
+        await act(async () => vi.advanceTimersByTimeAsync(MUTATION_TIMEOUT_MS));
+        expect(oldSocket.readyState).toBe(oldSocket.OPEN);
+      }
+
+      const boardPath = 'kilter/1/10/1,2/40';
+      await act(async () => {
+        const joining = currentQueue(queueRef).joinSession('session-2', {
+          boardPath,
+          expectedBoardPath: boardPath,
+          userBoard: activeBoard.stored,
+        });
+        await vi.advanceTimersByTimeAsync(150);
+        expect(await joining).toBe(true);
+      });
+      const [targetSocket] = server.openSockets();
+      if (!targetSocket) throw new Error('Confirmed JOIN did not open the target socket');
+      expect(targetSocket.joinedSessionId).toBe('session-2');
+      expect(targetSocket.connectionId).not.toBe(oldSocket.connectionId);
+
+      await act(async () => {
+        finishOldJoin();
+        await vi.advanceTimersByTimeAsync(4000);
+        const confirming = currentQueue(queueRef).confirmClimbOnWall('climb-on-new-room');
+        await vi.advanceTimersByTimeAsync(100);
+        await confirming;
+      });
+      expect(oldSocket.readyState).toBe(oldSocket.CLOSED);
+      expect(targetSocket.joinedSessionId).toBe('session-2');
+      expect(
+        server.operations
+          .slice(mark)
+          .filter(
+            ({ connectionId, operationName }) =>
+              connectionId === targetSocket.connectionId && operationName === 'JoinSession',
+          ),
+      ).toEqual([]);
+      expect(
+        server.operations.slice(mark).filter(({ operationName }) => operationName === 'ConfirmClimbOnWall'),
+      ).toEqual([{ connectionId: targetSocket.connectionId, operationName: 'ConfirmClimbOnWall', outcome: 'ok' }]);
+    },
+  );
 
   it('re-joins on the new connection after Offline mode on → off, so session mutations land', async () => {
     const queueRef = renderApp();

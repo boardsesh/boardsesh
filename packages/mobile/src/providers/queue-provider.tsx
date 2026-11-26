@@ -986,6 +986,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   };
   type PendingConfirmedJoin = ConfirmedSessionJoin & { client: Client | null };
   const confirmedSessionJoinRef = useRef<PendingConfirmedJoin | null>(null);
+  const dispatchedOrdinaryJoinsRef = useRef(new Set<{ client: Client }>());
+  const unacknowledgedOrdinaryJoinRef = useRef<Client | null>(null);
   const acknowledgedJoinRef = useRef<{
     sessionId: string;
     expectedBoardPath: string;
@@ -1061,13 +1063,34 @@ export function QueueProvider({ children }: { children: ReactNode }) {
             username: sentIdentity.username,
             avatarUrl: sentIdentity.avatarUrl,
           };
-          const runJoin = (query: string) => {
+          let dispatchedClient: Client | null = null;
+          const runJoin = async (query: string) => {
             assertJoinAvailable();
-            if (!boardVisibilityRef.current(sessionBoard)) throw new Error('Session board unavailable');
-            return execute<JoinSessionResponse>(getWsClient, {
-              query,
-              variables: joinVariables,
-            });
+            const client = getWsClient();
+            const dispatch = { client };
+            dispatchedClient = client;
+            dispatchedOrdinaryJoinsRef.current.add(dispatch);
+            try {
+              return await execute<JoinSessionResponse>(
+                () => {
+                  assertJoinAvailable();
+                  if (!boardVisibilityRef.current(sessionBoard) || getWsClient() !== client) {
+                    throw new Error('Session board unavailable');
+                  }
+                  return client;
+                },
+                { query, variables: joinVariables },
+              );
+            } catch (error) {
+              // A local timeout can settle the promise before the server
+              // finishes the JOIN. A later switch must still isolate it.
+              if (!(error instanceof GraphQLOperationError) && isJoinCurrent() && getWsClient() === client) {
+                unacknowledgedOrdinaryJoinRef.current = client;
+              }
+              throw error;
+            } finally {
+              dispatchedOrdinaryJoinsRef.current.delete(dispatch);
+            }
           };
           if (confirmation) {
             const client = getWsClient();
@@ -1127,7 +1150,16 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           } else {
             result = await runJoin(JOIN_SESSION);
           }
-          if (!isJoinCurrent()) throw new Error('Queue authorization changed');
+          if (!isJoinCurrent() || (dispatchedClient && getWsClient() !== dispatchedClient)) {
+            throw new Error('Queue authorization changed');
+          }
+          if (!boardVisibilityRef.current(sessionBoard)) {
+            // The guarded JOIN may already have bound this connection to
+            // the room. Retire it before any queued mutation or stream can
+            // use that membership, without touching a replacement socket.
+            if (dispatchedClient) disposeWsClient();
+            throw new Error('Session board unavailable');
+          }
           // Remember what we announced so the re-announce effect only fires if
           // the identity changes after this join (profile loaded late / edited).
           announcedIdentityRef.current = acknowledgment?.sentIdentity ?? sentIdentity;
@@ -1176,6 +1208,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     () =>
       subscribeWsConnectionEnded(() => {
         acknowledgedJoinRef.current = null;
+        unacknowledgedOrdinaryJoinRef.current = null;
         joinTracker.bumpEpoch();
       }),
     [joinTracker],
@@ -1451,7 +1484,22 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       const pending: PendingConfirmedJoin = { ...request, client: null };
       confirmedSessionJoinRef.current = pending;
       let needsRecovery = false;
+      let restartPreviousRoom = false;
       try {
+        // An ordinary JOIN already on the wire may still bind its connection
+        // after this switch succeeds. Move the confirmation to a fresh client
+        // if that request has not settled. The pending confirmation also
+        // fences preflight and rate-limit continuations for the old room.
+        const ordinaryJoins = dispatchedOrdinaryJoinsRef.current;
+        const unacknowledgedJoin = unacknowledgedOrdinaryJoinRef.current;
+        if (ordinaryJoins.size > 0 || unacknowledgedJoin) {
+          const client = getWsClient();
+          if (unacknowledgedJoin === client || Array.from(ordinaryJoins).some((join) => join.client === client)) {
+            disposeWsClient();
+            restartPreviousRoom = true;
+          }
+        }
+        joinTracker.reset();
         await joinTracker.ensureJoined(request.sessionId);
         needsRecovery = true;
         // Realtime seeds the accepted roster after local publication, using
@@ -1467,18 +1515,17 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       } finally {
         confirmedSessionJoinRef.current = null;
         try {
-          if (
-            needsRecovery &&
-            sessionIdRef.current === previousSessionId &&
-            credentialGeneration === getCredentialGeneration()
-          ) {
-            acknowledgedJoinRef.current = null;
-            if (pending.client && getWsClient() === pending.client) {
-              // The server could be completing a timed-out JOIN. Rejoin on a
-              // fresh socket so that late completion cannot win the switch.
-              disposeWsClient();
-              if (previousSessionId) restartJoinedSubscriptionsRef.current?.();
+          if (sessionIdRef.current === previousSessionId && credentialGeneration === getCredentialGeneration()) {
+            if (needsRecovery) {
+              acknowledgedJoinRef.current = null;
+              if (pending.client && getWsClient() === pending.client) {
+                // The server could be completing a timed-out JOIN. Rejoin on a
+                // fresh socket so that late completion cannot win the switch.
+                disposeWsClient();
+                restartPreviousRoom = true;
+              }
             }
+            if (restartPreviousRoom && previousSessionId) restartJoinedSubscriptionsRef.current?.();
           }
         } finally {
           permission();

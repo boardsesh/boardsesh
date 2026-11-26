@@ -93,6 +93,9 @@ export function execute<TData = unknown, TVariables = Record<string, unknown>>(
   const options = normalizeExecuteOptions(timeoutOrOptions);
 
   function executeOnce(): Promise<TData> {
+    // A scoped getter can reject a retired connection before the retry sends.
+    // Resolve it before starting the attempt's deadline.
+    const attemptClient = typeof client === 'function' ? client() : client;
     return new Promise<TData>((resolve, reject) => {
       let result: TData | undefined;
       let hasResolved = false;
@@ -110,7 +113,6 @@ export function execute<TData = unknown, TVariables = Record<string, unknown>>(
         fn();
       }
 
-      const attemptClient = typeof client === 'function' ? client() : client;
       unsubscribe = attemptClient.subscribe<TData>(
         { query: operation.query, variables: operation.variables as Record<string, unknown> },
         {

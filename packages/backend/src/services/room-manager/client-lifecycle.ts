@@ -120,9 +120,12 @@ export async function joinSession(
   } = options;
 
   const client = clients.get(connectionId);
-  if (!client) {
+  if (!client || client.isClosing) {
     throw new Error('Client not registered');
   }
+  const assertClientStillConnected = () => {
+    if (clients.get(connectionId) !== client || client.isClosing) throw new Error('Client disconnected while joining');
+  };
 
   // Refuse to resurrect a server-ended session (#2696). The Postgres row is the
   // durable source of truth (Redis only holds live presence), so a stale/ended
@@ -178,19 +181,10 @@ export async function joinSession(
   const joinAvatarUrl = avatarUrl || accountIdentity?.avatarUrl;
 
   const establishMembership = async () => {
+    assertClientStillConnected();
     const isSameGuardedRoom = expectedBoardPath !== undefined && client.sessionId === sessionId;
     const previousMembership = client.sessionId && !isSameGuardedRoom ? await leaveSessionFn(connectionId) : null;
-    if (clients.get(connectionId) !== client) throw new Error('Client disconnected while joining');
-
-    // Update client info
-    client.sessionId = sessionId;
-    client.participantId = resolvedParticipantId;
-    if (joinUsername) {
-      client.username = joinUsername;
-    }
-    if (joinAvatarUrl) {
-      client.avatarUrl = joinAvatarUrl;
-    }
+    assertClientStillConnected();
 
     let isNewSession = false;
 
@@ -226,6 +220,18 @@ export async function joinSession(
     }
     const sessionClientIds = sessionsMap.get(sessionId)!;
 
+    assertClientStillConnected();
+
+    // Update client info
+    client.sessionId = sessionId;
+    client.participantId = resolvedParticipantId;
+    if (joinUsername) {
+      client.username = joinUsername;
+    }
+    if (joinAvatarUrl) {
+      client.avatarUrl = joinAvatarUrl;
+    }
+
     // Determine leader status
     let isLeader: boolean;
 
@@ -242,6 +248,7 @@ export async function joinSession(
       isLeader = isSameGuardedRoom ? client.isLeader : sessionClientIds.size === 0;
     }
 
+    assertClientStillConnected();
     client.isLeader = isLeader;
     sessionClientIds.add(connectionId);
     const participantStatus = upsertLocalParticipant(
@@ -514,6 +521,7 @@ export async function disconnectClient(
     return null;
   }
 
+  client.isClosing = true;
   const sessionId = client.sessionId;
   const participantId = client.participantId || connectionId;
   const wasLeader = client.isLeader;
@@ -1049,6 +1057,8 @@ export async function removeClient(
   connectionId: string,
 ): Promise<{ distributedStateCleanedUp: boolean }> {
   const { clients, sessions: sessionsMap, distributedState } = deps;
+  const closingClient = clients.get(connectionId);
+  if (closingClient) closingClient.isClosing = true;
   let distributedStateCleanedUp = true;
 
   if (distributedState) {
