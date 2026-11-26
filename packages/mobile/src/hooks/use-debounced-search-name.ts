@@ -7,15 +7,9 @@ type DebouncedSearchNameOptions = {
   onCommit: (name: string) => void;
   /** Playlist fields clear immediately; Climbs flushes on explicit clear/dismiss. */
   commitEmptyImmediately?: boolean;
-  /**
-   * `debounce` (default) commits once typing pauses for 300 ms. `throttle` commits
-   * the first keystroke at once, then at most once per 300 ms while typing, and
-   * always the last text: the list follows the field as the climber types.
-   */
-  pacing?: 'debounce' | 'throttle';
 };
 
-const NAME_COMMIT_INTERVAL_MS = 300;
+const NAME_DEBOUNCE_MS = 300;
 
 /** Owns pending text, cancellation and finalization without duplicating committed search state. */
 export function useDebouncedSearchName(options: DebouncedSearchNameOptions) {
@@ -25,9 +19,6 @@ export function useDebouncedSearchName(options: DebouncedSearchNameOptions) {
   committedNameRef.current = options.name;
   const pendingRef = useRef<{ scopeKey: string | null; name: string } | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // When the last commit landed, for `throttle`. Only a scheduled commit counts:
-  // a clear or replace is the climber's explicit act, not typing.
-  const lastScheduledCommitAtRef = useRef(Number.NEGATIVE_INFINITY);
 
   const cancel = useCallback(() => {
     if (timerRef.current !== null) clearTimeout(timerRef.current);
@@ -62,42 +53,18 @@ export function useDebouncedSearchName(options: DebouncedSearchNameOptions) {
     return committedNameRef.current;
   }, [cancel]);
 
-  const commitScheduled = useCallback(() => {
-    lastScheduledCommitAtRef.current = Date.now();
-    flush();
-  }, [flush]);
-
   const schedule = useCallback(
     (text: string) => {
-      const name = normalizeSearchName(text);
-      const { scopeKey, commitEmptyImmediately, pacing = 'debounce' } = optionsRef.current;
-      if (pacing === 'throttle') {
-        // A commit already waiting picks up this text when it fires.
-        const timerWaiting = timerRef.current !== null && pendingRef.current?.scopeKey === scopeKey;
-        if (!timerWaiting) cancel();
-        pendingRef.current = { scopeKey, name };
-        if (name === '' && commitEmptyImmediately) {
-          flush();
-          return;
-        }
-        if (timerWaiting) return;
-        const sinceLastCommit = Date.now() - lastScheduledCommitAtRef.current;
-        if (sinceLastCommit >= NAME_COMMIT_INTERVAL_MS) {
-          commitScheduled();
-        } else {
-          timerRef.current = setTimeout(commitScheduled, NAME_COMMIT_INTERVAL_MS - sinceLastCommit);
-        }
-        return;
-      }
       cancel();
-      pendingRef.current = { scopeKey, name };
-      if (name === '' && commitEmptyImmediately) {
+      const name = normalizeSearchName(text);
+      pendingRef.current = { scopeKey: optionsRef.current.scopeKey, name };
+      if (name === '' && optionsRef.current.commitEmptyImmediately) {
         flush();
       } else {
-        timerRef.current = setTimeout(flush, NAME_COMMIT_INTERVAL_MS);
+        timerRef.current = setTimeout(flush, NAME_DEBOUNCE_MS);
       }
     },
-    [cancel, flush, commitScheduled],
+    [cancel, flush],
   );
 
   const clear = useCallback(() => {

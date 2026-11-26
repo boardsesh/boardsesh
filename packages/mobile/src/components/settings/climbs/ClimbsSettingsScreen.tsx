@@ -20,8 +20,6 @@ import { isDefaultPlayerButtons, usePlayerButtonsPreference } from '../../../lib
 import { climbPinnedChipsStore } from '../../../lib/pinned-chips-store';
 import { playlistPinnedChipsStore } from '../../../lib/playlist-pinned-chips-store';
 import { isDefaultPinOrder } from '../quick-filters/quick-filters-settings-model';
-import { useSetting } from '../../../settings';
-import { useClimbsTabBarSearchAvailable } from '../../../hooks/use-climbs-tab-bar-search';
 import { buildClimbsModel } from './climbs-model';
 
 export function ClimbsSettingsScreen() {
@@ -46,8 +44,6 @@ export function ClimbsSettingsScreen() {
   // Until the saved pins load, both lists read as their defaults.
   const { pinned: climbPins } = climbPinnedChipsStore.usePinnedChips();
   const { pinned: playlistPins } = playlistPinnedChipsStore.usePinnedChips();
-  const tabBarSearchAvailable = useClimbsTabBarSearchAvailable();
-  const [tabBarSearch, setTabBarSearch] = useSetting('climbsTabBarSearch');
   const quickFiltersAreDefault =
     isDefaultPinOrder(climbPins, climbPinnedChipsStore.defaults) &&
     isDefaultPinOrder(playlistPins, playlistPinnedChipsStore.defaults);
@@ -95,15 +91,6 @@ export function ClimbsSettingsScreen() {
             hapticSelection();
             router.push('/settings/quick-filters');
           },
-          tabBarSearch: tabBarSearchAvailable
-            ? {
-                enabled: tabBarSearch,
-                onChange: (enabled) => {
-                  hapticSelection();
-                  setTabBarSearch(enabled);
-                },
-              }
-            : null,
         }),
         'climbs',
       ),
@@ -119,9 +106,6 @@ export function ClimbsSettingsScreen() {
       climbRowDisplay,
       climbViewIsDefault,
       quickFiltersAreDefault,
-      tabBarSearchAvailable,
-      tabBarSearch,
-      setTabBarSearch,
     ],
   );
 

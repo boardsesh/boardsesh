@@ -37,18 +37,7 @@ import { useGradeDisclosure } from '../use-grade-disclosure';
 
 type ClimbFiltersOpenSource = 'tab_reselect' | 'filters_chip' | 'empty_recovery';
 
-type ClimbsSearchSessionOptions = {
-  /**
-   * Climbs is the bar's search tab (`useClimbsTabBarSearch`). Its tab tap opens
-   * the bar's search field, so a second tap no longer opens Filters.
-   */
-  tabBarSearch?: boolean;
-};
-
-export function useClimbsSearchSession(
-  boardConfig: BoardSearchConfig | null,
-  { tabBarSearch = false }: ClimbsSearchSessionOptions = {},
-) {
+export function useClimbsSearchSession(boardConfig: BoardSearchConfig | null) {
   const { t } = useTranslation('climbs');
   const { isAuthenticated } = useAuth();
   const { filters, boardFilters, name, setGrade, setName, replaceSearch, patchFilters, patchBoardFilters } =
@@ -85,14 +74,7 @@ export function useClimbsSearchSession(
     name,
     replaceSearch,
   });
-  // Throttled, not debounced: the list follows the name as it is typed, in the
-  // tab bar's field and Filters' row alike.
-  const searchName = useDebouncedSearchName({
-    scopeKey: filterScopeKey,
-    name,
-    onCommit: setName,
-    pacing: 'throttle',
-  });
+  const searchName = useDebouncedSearchName({ scopeKey: filterScopeKey, name, onCommit: setName });
   const [storedRecentFilters, setRecentFilters] = useState<RecentFilter[]>([]);
   const filtersOpenSourceRef = useRef<ClimbFiltersOpenSource>('filters_chip');
   useEffect(() => {
@@ -196,11 +178,6 @@ export function useClimbsSearchSession(
     [runWhileOpen, searchName],
   );
   const handleClearName = searchName.clear;
-  // The bar's own search field (`useClimbsTabBarSearchField`): the same debounced
-  // name as Filters' row, without Filters having to be open.
-  const handleBarNameChange = searchName.schedule;
-  const handleBarNameSubmit = searchName.flush;
-  const readPendingName = searchName.read;
   const handleSheetClearName = useCallback(() => runWhileOpen(handleClearName), [runWhileOpen, handleClearName]);
   const readyRef = useRef(searchReady);
   readyRef.current = searchReady;
@@ -220,9 +197,7 @@ export function useClimbsSearchSession(
   );
   const handleOpenFilters = useCallback(() => openFiltersFrom('filters_chip'), [openFiltersFrom]);
   const handleOpenFiltersFromEmpty = useCallback(() => openFiltersFrom('empty_recovery'), [openFiltersFrom]);
-  const handleTabReselect = useCallback(() => {
-    if (!tabBarSearch) openFiltersFrom('tab_reselect');
-  }, [openFiltersFrom, tabBarSearch]);
+  const handleTabReselect = useCallback(() => openFiltersFrom('tab_reselect'), [openFiltersFrom]);
   useTabReselect(handleTabReselect);
   const handleApplyRecentFilter = useCallback(
     (pillFilters: ClimbFilters, pillSearchText: string) => {
@@ -284,9 +259,6 @@ export function useClimbsSearchSession(
     handleSheetNameChange,
     handleClearName,
     handleSheetClearName,
-    handleBarNameChange,
-    handleBarNameSubmit,
-    readPendingName,
     handleOpenFilters,
     handleOpenFiltersFromEmpty,
     recentFilters,
