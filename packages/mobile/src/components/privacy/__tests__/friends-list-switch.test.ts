@@ -7,7 +7,7 @@ describe('showsFriendsListSwitch', () => {
     expect(showsFriendsListSwitch('invite_only', false, null, 'owner')).toBe(true);
   });
 
-  it('is hidden where the people the owner follows already see the board, or nobody should', () => {
+  it("is hidden where the owner's friends already see the board, or nobody should", () => {
     expect(showsFriendsListSwitch('public', false, null, 'owner')).toBe(false);
     expect(showsFriendsListSwitch('followers', false, null, 'owner')).toBe(false);
     expect(showsFriendsListSwitch('only_me', false, null, 'owner')).toBe(false);
