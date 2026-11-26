@@ -19,7 +19,7 @@ function restoreProperty(name: 'indexedDB' | 'localStorage', descriptor: Propert
   else Reflect.deleteProperty(globalThis, name);
 }
 
-describe('getOrCreateQuantumLayerIdentities on web', () => {
+describe('Quantum controller players on web', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
@@ -46,33 +46,32 @@ describe('getOrCreateQuantumLayerIdentities on web', () => {
     restoreProperty('localStorage', originalLocalStorageDescriptor);
   });
 
-  it('reuses UUIDs only in memory and never touches browser or SecureStore persistence', async () => {
-    const firstPageIds = [
-      '10000000-0000-4000-8000-000000000001',
-      '10000000-0000-4000-8000-000000000002',
-      '10000000-0000-4000-8000-000000000003',
-      '10000000-0000-4000-8000-000000000004',
-    ];
-    const generateFirstPageUuid = vi.fn(() => firstPageIds[generateFirstPageUuid.mock.calls.length - 1]);
+  it('reuses one solo and one started-session credential only while the page is loaded', async () => {
+    const soloId = '10000000-0000-4000-8000-000000000001';
+    const sessionId = '20000000-0000-4000-8000-000000000001';
+    const scope = { sessionId: 'public-session-id', accountId: 'account-id' };
     const firstPageStore = await import('../quantum-layer-identity-store.web');
 
-    const created = await firstPageStore.getOrCreateQuantumLayerIdentities(generateFirstPageUuid);
-    const reused = await firstPageStore.getOrCreateQuantumLayerIdentities(() => {
-      throw new Error('same-page identities should be reused');
+    const created = await firstPageStore.getOrCreateQuantumSoloPlayer(() => soloId);
+    const reused = await firstPageStore.getOrCreateQuantumSoloPlayer(() => {
+      throw new Error('same-page solo credential should be reused');
     });
-
-    expect(created.map((layer) => layer.controllerUserUuid)).toEqual(firstPageIds);
+    expect(created.controllerUserUuid).toBe(soloId);
     expect(reused).toBe(created);
+    await firstPageStore.rememberStartedQuantumSessionPlayer(
+      scope,
+      () => true,
+      () => sessionId,
+    );
+    await expect(firstPageStore.getQuantumSessionPlayer(scope)).resolves.toMatchObject({
+      controllerUserUuid: sessionId,
+    });
+    await expect(firstPageStore.getQuantumSessionPlayer({ ...scope, accountId: 'other' })).resolves.toBeNull();
 
-    // Reloading the module models a fresh page: there is no persisted identity
-    // to recover, so the four controller UUIDs rotate.
     vi.resetModules();
-    const nextPageIds = firstPageIds.map((uuid) => uuid.replace('10000000', '20000000'));
-    const generateNextPageUuid = vi.fn(() => nextPageIds[generateNextPageUuid.mock.calls.length - 1]);
-    const nextPageStore = await import('../quantum-layer-identity-store.web');
-    const nextPage = await nextPageStore.getOrCreateQuantumLayerIdentities(generateNextPageUuid);
-
-    expect(nextPage.map((layer) => layer.controllerUserUuid)).toEqual(nextPageIds);
+    const nextPage = await import('../quantum-layer-identity-store.web');
+    await expect(nextPage.getQuantumSessionPlayer(scope)).resolves.toBeNull();
+    expect(await nextPage.getOrCreateQuantumSoloPlayer(() => sessionId)).not.toBe(created);
     expect(secureStore.getItemAsync).not.toHaveBeenCalled();
     expect(secureStore.setItemAsync).not.toHaveBeenCalled();
     expect(indexedDbReads).toBe(0);

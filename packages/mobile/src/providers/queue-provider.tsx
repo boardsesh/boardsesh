@@ -1291,6 +1291,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     activeBoardSettled: !isActiveBoardPending,
   });
 
+  const sessionContextRevision = useRef(0);
+  const onSessionContextChanging = useCallback(() => {
+    sessionContextRevision.current += 1;
+    resetQueueMutationLane();
+  }, [resetQueueMutationLane]);
+  const getCurrentSessionId = useCallback(() => sessionIdRef.current, []);
+  const getSessionContextRevision = useCallback(() => sessionContextRevision.current, []);
+
   // Explicit session lifecycle commands: create (Start button), join, end, clear.
   // See useSessionCommands. clearSessionRef is read by the session-realtime
   // SessionEnded handler, so keep it pointed at the latest clearSession.
@@ -1304,7 +1312,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     seedFailedSessionIdRef,
     setSessionId,
     sessionIdRef,
-    onSessionContextChanging: resetQueueMutationLane,
+    authenticatedUserIdRef,
+    onSessionContextChanging,
     dispatch,
     setPlaylistSuggestionSourceState,
     setActiveBoard,
@@ -3720,7 +3729,16 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // SessionId-only selector: identity changes only when a session starts/ends,
   // so structural readers (tab layout, board adapter, session screen) stop
   // re-rendering the navigation tree on every queue mutation.
-  const sessionIdValue = useMemo<QueueSessionIdContextValue>(() => ({ sessionId, undoScope }), [sessionId, undoScope]);
+  const sessionIdValue = useMemo<QueueSessionIdContextValue>(
+    () => ({
+      sessionId,
+      undoScope,
+      accountId: authenticatedUserId,
+      getCurrentSessionId,
+      getSessionContextRevision,
+    }),
+    [sessionId, undoScope, authenticatedUserId, getCurrentSessionId, getSessionContextRevision],
+  );
 
   // Live analytics + presence: the ≤1/2s party push recreates only this small
   // value, re-rendering only SessionScreen + InSessionView.

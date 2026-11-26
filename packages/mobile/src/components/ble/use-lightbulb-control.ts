@@ -180,6 +180,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     localConnected,
     pending,
     isQuantum,
+    quantumDriverStatus,
     controlAvailable,
     ledless,
     wallHeldLocally,
@@ -197,9 +198,11 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
   const holderIsAuthoritative = holderConfirmed || crewHolderUnconfirmed;
   const climbBoardConnect = useClimbBoardConnect();
 
+  const quantumPeer = quantumDriverStatus === 'peer';
+  const quantumCanConnect = quantumDriverStatus === 'available';
   const pressAction = useMemo((): PlayDrawerLightbulbPressAction => {
     if (isQuantum) {
-      if (!controlAvailable || pending) {
+      if (!controlAvailable || pending || !quantumCanConnect) {
         return 'noop';
       }
       return localConnected ? 'openControls' : 'connect';
@@ -221,6 +224,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     ledless,
     wallHeldLocally,
     isQuantum,
+    quantumCanConnect,
     controlAvailable,
     pending,
     localConnected,
@@ -259,7 +263,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
       // The same gate onPress applies, so a caller that skips its own check
       // can't open a second link while one is pending or a peer holds the wall.
       if (isQuantum) {
-        if (!quantumActions || !controlAvailable || pending || localConnected) {
+        if (!quantumActions || !quantumCanConnect || !controlAvailable || pending || localConnected) {
           return false;
         }
         return quantumActions.connect();
@@ -293,6 +297,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
       connectAfterMove,
       isQuantum,
       quantumActions,
+      quantumCanConnect,
       controlAvailable,
       pending,
       localConnected,
@@ -313,9 +318,12 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
 
   const onPress = useCallback(() => {
     if (isQuantum) {
-      if (!quantumActions || pending || !controlAvailable) return;
-      // Quantum never auto-sends a queue/current climb. A connected tap opens
-      // the four fixed layer choices; a disconnected tap only connects.
+      if (quantumPeer) {
+        showToast(t('lightControl.quantum.sessionDriver'));
+        return;
+      }
+      if (!quantumActions || !quantumCanConnect || pending || !controlAvailable) return;
+      // A connected tap opens color controls. A disconnected tap connects.
       if (localConnected) {
         onOpenControls?.({ surface, placement });
       } else {
@@ -372,6 +380,8 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     onRelayToHolder,
     connect,
     isQuantum,
+    quantumPeer,
+    quantumCanConnect,
     quantumActions,
     pending,
     controlAvailable,
@@ -398,6 +408,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     pending,
     available: controlAvailable,
     ...labels,
+    accessibilityLabel: quantumPeer ? t('lightControl.quantum.sessionDriver') : labels.accessibilityLabel,
     onPress,
     connect,
     moveToClimbBoard,

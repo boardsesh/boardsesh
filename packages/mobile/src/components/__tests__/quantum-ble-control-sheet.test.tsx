@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 vi.mock('react-native', () => ({
@@ -28,7 +28,7 @@ const rows: QuantumLayerControlRow[] = [
     slot: 1,
     colorKey: 'cyan',
     colorHex: '#00FFFF',
-    action: { kind: 'remove', activeRouteUuid: '20000000-0000-4000-8000-000000000001' },
+    action: { kind: 'active' },
   },
   {
     slot: 2,
@@ -38,26 +38,34 @@ const rows: QuantumLayerControlRow[] = [
   },
 ];
 
+const ownedRemoval = {
+  controllerUserUuid: '10000000-0000-4000-8000-000000000001',
+  controllerRouteUuid: '20000000-0000-4000-8000-000000000001',
+  colorKey: 'cyan' as const,
+  colorHex: '#00FFFF',
+};
+
 const props = {
   visible: true,
   rows,
   targetError: null,
-  busySlot: null,
-  clearing: false,
+  busyAction: null,
+  removals: [ownedRemoval],
   actionFailed: false,
-  hasActivePlayers: true,
   onLayerPress: vi.fn(),
-  onClearAll: vi.fn(),
+  onRemove: vi.fn(),
   onDisconnect: vi.fn(),
   onClose: vi.fn(),
 };
 
 beforeEach(() => {
   props.onLayerPress.mockClear();
-  props.onClearAll.mockClear();
+  props.onRemove.mockClear();
   props.onDisconnect.mockClear();
   props.onClose.mockClear();
 });
+
+afterEach(cleanup);
 
 describe('QuantumBleControlSheet', () => {
   it('offers explicit light/remove rows but disables a foreign color', () => {
@@ -65,22 +73,16 @@ describe('QuantumBleControlSheet', () => {
 
     fireEvent.click(getByText('lightControl.quantum.layerTitle:lightControl.quantum.light'));
     expect(props.onLayerPress).toHaveBeenLastCalledWith(rows[0]);
-    fireEvent.click(getByText('lightControl.quantum.layerTitle:lightControl.quantum.remove'));
-    expect(props.onLayerPress).toHaveBeenLastCalledWith(rows[1]);
+    fireEvent.click(getByText('lightControl.quantum.removeColor'));
+    expect(props.onRemove).toHaveBeenLastCalledWith(ownedRemoval);
     fireEvent.click(getByText('lightControl.quantum.layerTitle:lightControl.quantum.foreign'));
-    expect(props.onLayerPress).toHaveBeenCalledTimes(2);
+    expect(props.onLayerPress).toHaveBeenCalledOnce();
   });
 
-  it('requires an inline second tap before clearing every controller player', () => {
-    const { getByText, queryByText } = render(<QuantumBleControlSheet {...props} />);
-    expect(queryByText('lightControl.quantum.clearConfirm')).toBeNull();
-
-    fireEvent.click(getByText('lightControl.quantum.clearStart:lightControl.quantum.clearStartSubtitle'));
-    expect(props.onClearAll).not.toHaveBeenCalled();
-    expect(getByText('lightControl.quantum.clearQuestion')).toBeDefined();
-
-    fireEvent.click(getByText('lightControl.quantum.clearConfirm'));
-    expect(props.onClearAll).toHaveBeenCalledOnce();
+  it.each([{ removals: [] }, { removals: [ownedRemoval] }])('offers no wall-wide action with %j', ({ removals }) => {
+    const { queryByText } = render(<QuantumBleControlSheet {...props} removals={removals} />);
+    expect(queryByText(/clear|turnOffAll/i)).toBeNull();
+    expect(Boolean(queryByText('lightControl.quantum.removeColor'))).toBe(removals.length > 0);
   });
 
   it('disconnects only from the labelled row and closes the sheet', () => {

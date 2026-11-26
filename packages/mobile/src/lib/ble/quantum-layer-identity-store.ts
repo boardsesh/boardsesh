@@ -1,52 +1,95 @@
 import * as SecureStore from 'expo-secure-store';
 import { randomUUID } from 'expo-crypto';
-import { buildInstallationBoardLayers, type InstallationBoardLayer } from '@boardsesh/board-layers';
-import { SECURE_STORE_WRITE_OPTIONS } from '../secure-store-options';
+import { buildInstallationBoardLayers } from '@boardsesh/board-layers';
 
-const QUANTUM_LAYER_IDENTITIES_KEY = 'boardsesh_quantum_layer_ids_v1';
+const LEGACY_LAYER_IDS_KEY = 'boardsesh_quantum_layer_ids_v1';
+const SOLO_PLAYER_KEY = 'boardsesh_quantum_solo_player_v1';
+const SESSION_PLAYER_KEY = 'boardsesh_quantum_session_player_v1';
+// Unlike the ordinary provenance marker, the radio credential must stay
+// on the original iPhone even across an encrypted backup restore.
+const DEVICE_ONLY_OPTIONS: SecureStore.SecureStoreOptions = {
+  keychainAccessible:
+    'AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY' in SecureStore ? SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY : undefined,
+};
+const PLAYER_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-type StoredQuantumLayerIdentities = {
-  version: 1;
-  controllerUserUuids: string[];
+export type QuantumLocalPlayer = {
+  controllerUserUuid: string;
+  legacyCleanupUserUuids: readonly string[];
 };
 
-let inFlightLoad: Promise<InstallationBoardLayer[]> | null = null;
+export type QuantumSessionPlayerScope = { sessionId: string; accountId: string };
 
-function parseStoredLayers(raw: string | null): InstallationBoardLayer[] | null {
+type StoredSessionPlayer = QuantumSessionPlayerScope & { controllerUserUuid: string };
+
+let soloLoad: Promise<QuantumLocalPlayer> | null = null;
+let sessionWriteTail: Promise<void> = Promise.resolve();
+
+function parseLegacyUserUuids(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as { version?: unknown; controllerUserUuids?: string[] };
+    if (parsed.version !== 1 || !Array.isArray(parsed.controllerUserUuids)) return [];
+    return buildInstallationBoardLayers(parsed.controllerUserUuids).map((layer) => layer.controllerUserUuid);
+  } catch {
+    return [];
+  }
+}
+
+/** Keep one solo credential. Older credentials stay available for scoped cleanup. */
+export function getOrCreateQuantumSoloPlayer(generateUuid: () => string = randomUUID): Promise<QuantumLocalPlayer> {
+  if (soloLoad) return soloLoad;
+  soloLoad = (async () => {
+    const [stored, legacyRaw] = await Promise.all([
+      SecureStore.getItemAsync(SOLO_PLAYER_KEY),
+      SecureStore.getItemAsync(LEGACY_LAYER_IDS_KEY),
+    ]);
+    const legacyUserUuids = parseLegacyUserUuids(legacyRaw);
+    const controllerUserUuid = stored && PLAYER_UUID.test(stored) ? stored : generateUuid();
+    if (stored !== controllerUserUuid) {
+      await SecureStore.setItemAsync(SOLO_PLAYER_KEY, controllerUserUuid, DEVICE_ONLY_OPTIONS);
+    }
+    return {
+      controllerUserUuid,
+      legacyCleanupUserUuids: legacyUserUuids.filter((legacyUuid) => legacyUuid !== controllerUserUuid),
+    };
+  })().finally(() => {
+    soloLoad = null;
+  });
+  return soloLoad;
+}
+
+export async function getQuantumSessionPlayer(scope: QuantumSessionPlayerScope): Promise<QuantumLocalPlayer | null> {
+  const raw = await SecureStore.getItemAsync(SESSION_PLAYER_KEY);
   if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw) as Partial<StoredQuantumLayerIdentities>;
-    if (parsed.version !== 1 || !Array.isArray(parsed.controllerUserUuids)) return null;
-    return buildInstallationBoardLayers(parsed.controllerUserUuids);
+    const stored = JSON.parse(raw) as Partial<StoredSessionPlayer>;
+    const uuid = stored.controllerUserUuid;
+    if (
+      stored.sessionId !== scope.sessionId ||
+      stored.accountId !== scope.accountId ||
+      !uuid ||
+      !PLAYER_UUID.test(uuid)
+    ) {
+      return null;
+    }
+    return { controllerUserUuid: uuid, legacyCleanupUserUuids: [] };
   } catch {
     return null;
   }
 }
 
-/**
- * Resolve the four install-local controller identities. They are physical-wall
- * credentials, not account or party identities: this module is their only
- * persistence path, and no analytics/network module imports it.
- *
- * This native implementation uses Keychain/Keystore. The `.web.ts` sibling is
- * deliberately memory-only because Expo web's SecureStore shim is plaintext.
- */
-export function getOrCreateQuantumLayerIdentities(
+/** Only the Start command calls this, after writing the device creator marker. */
+export function rememberStartedQuantumSessionPlayer(
+  scope: QuantumSessionPlayerScope,
+  isCurrent: () => boolean,
   generateUuid: () => string = randomUUID,
-): Promise<InstallationBoardLayer[]> {
-  if (inFlightLoad) return inFlightLoad;
-
-  inFlightLoad = (async () => {
-    const stored = parseStoredLayers(await SecureStore.getItemAsync(QUANTUM_LAYER_IDENTITIES_KEY));
-    if (stored) return stored;
-
-    const controllerUserUuids = Array.from({ length: 4 }, () => generateUuid());
-    const layers = buildInstallationBoardLayers(controllerUserUuids);
-    const payload: StoredQuantumLayerIdentities = { version: 1, controllerUserUuids };
-    await SecureStore.setItemAsync(QUANTUM_LAYER_IDENTITIES_KEY, JSON.stringify(payload), SECURE_STORE_WRITE_OPTIONS);
-    return layers;
-  })().finally(() => {
-    inFlightLoad = null;
+): Promise<void> {
+  const write = sessionWriteTail.then(async () => {
+    if (!isCurrent() || (await getQuantumSessionPlayer(scope)) || !isCurrent()) return;
+    const stored: StoredSessionPlayer = { ...scope, controllerUserUuid: generateUuid() };
+    await SecureStore.setItemAsync(SESSION_PLAYER_KEY, JSON.stringify(stored), DEVICE_ONLY_OPTIONS);
   });
-  return inFlightLoad;
+  sessionWriteTail = write.catch(() => undefined);
+  return write;
 }

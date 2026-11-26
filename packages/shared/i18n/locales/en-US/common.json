@@ -981,7 +981,6 @@
       },
       "light": "Light this climb",
       "replace": "Replace with this climb",
-      "remove": "Remove this layer",
       "foreign": "In use by another climber",
       "boardFull": "All four wall slots are in use",
       "noClimb": "Choose a climb to light",
@@ -991,11 +990,11 @@
       "multiFrameUnsupported": "Multi-frame climbs can't be lit on Quantum yet",
       "tooManyHolds": "This climb exceeds the 92-light limit in Boardsesh",
       "actionFailed": "Couldn't update the wall. Refresh and try again.",
-      "clearStart": "Clear all layers",
-      "clearStartSubtitle": "You'll confirm before every layer turns off",
-      "clearQuestion": "Turn off all four layers?",
-      "clearConfirm": "Turn off every layer",
-      "clearCancel": "Keep the layers"
+      "active": "On the wall",
+      "remove": "Turn off my lights",
+      "removeColor": "Turn off my {{color}} lights",
+      "invalidFrames": "This climb's holds couldn't be read",
+      "sessionDriver": "The phone that started this session controls the lights"
     }
   },
   "bluetooth": {

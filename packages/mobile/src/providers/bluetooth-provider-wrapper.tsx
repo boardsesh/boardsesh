@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { QUANTUM_MODELS, type QuantumModelName } from '@boardsesh/board-constants/quantum';
+import { useQuantumBluetoothSelection } from './use-quantum-bluetooth-selection';
 import { BluetoothProvider } from './bluetooth-provider';
 import { QuantumBluetoothProvider } from './quantum-bluetooth-provider';
 import { useActiveBoard } from '../lib/graphql/use-active-board';
@@ -33,20 +33,11 @@ export function BluetoothProviderWrapper({ children }: { children: ReactNode }) 
   // either — this wall can't draw them — but it may not advance the queue past
   // the first, because the climber navigated there on purpose.
   const reachableBoardKeys = useReachableBoardKeys(activeBoard);
-  const quantumModelId =
-    activeBoard?.boardType === 'quantum'
-      ? ((Object.entries(QUANTUM_MODELS).find(
-          ([, model]) => model.layoutId === activeBoard.layoutId && model.sizeId === activeBoard.sizeId,
-        )?.[0] as QuantumModelName | undefined) ?? null)
-      : null;
+  const quantumSelection = useQuantumBluetoothSelection(activeBoard);
   const legacyActiveBoard = activeBoard?.boardType === 'quantum' ? undefined : activeBoard;
 
   return (
-    <QuantumBluetoothProvider
-      selectedModelId={quantumModelId}
-      selectedBoardUuid={quantumModelId ? activeBoard?.uuid : null}
-      preferredSerial={quantumModelId ? activeBoard?.serialNumber : undefined}
-    >
+    <QuantumBluetoothProvider {...quantumSelection}>
       <BluetoothProvider
         angle={legacyActiveBoard?.angle}
         reachableBoardKeys={reachableBoardKeys}

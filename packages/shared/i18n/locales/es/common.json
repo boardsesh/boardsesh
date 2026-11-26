@@ -1256,7 +1256,6 @@
       },
       "light": "Iluminar este bloque",
       "replace": "Sustituir por este bloque",
-      "remove": "Quitar esta capa",
       "foreign": "En uso por otra persona",
       "boardFull": "Las cuatro plazas del plafón están ocupadas",
       "noClimb": "Elige un bloque para iluminar",
@@ -1266,11 +1265,11 @@
       "multiFrameUnsupported": "Los bloques de varias secuencias aún no se pueden iluminar en Quantum",
       "tooManyHolds": "Este bloque supera el límite de 92 luces de Boardsesh",
       "actionFailed": "No se pudo actualizar el plafón. Actualiza e inténtalo de nuevo.",
-      "clearStart": "Apagar todas las capas",
-      "clearStartSubtitle": "Confirmarás antes de apagar todas las capas",
-      "clearQuestion": "¿Apagar las cuatro capas?",
-      "clearConfirm": "Apagar todas las capas",
-      "clearCancel": "Mantener las capas"
+      "active": "Encendido en el plafón",
+      "remove": "Apagar mis luces",
+      "removeColor": "Apagar mis luces de color {{color}}",
+      "invalidFrames": "No se han podido leer las presas de este bloque",
+      "sessionDriver": "El móvil que inició la sesión controla las luces"
     }
   },
   "bluetooth": {

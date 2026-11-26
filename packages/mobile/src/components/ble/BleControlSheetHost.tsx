@@ -1,6 +1,8 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
+import { BOARD_LAYER_COLORS } from '@boardsesh/board-layers';
+import { quantumUuidsEqual } from '@boardsesh/ble-protocol/quantum';
 import { announceQueued } from '../../lib/announce-queued';
 import { hapticSelection } from '../../lib/haptics';
 import {
@@ -19,7 +21,11 @@ import {
 } from '../../providers/quantum-bluetooth-context';
 import { disconnectAllBluetooth } from '../../lib/ble/bluetooth-status-store';
 import { BleControlSheet } from './BleControlSheet';
-import { QuantumBleControlSheet, type QuantumLayerControlRow } from './QuantumBleControlSheet';
+import {
+  QuantumBleControlSheet,
+  type QuantumLayerControlRow,
+  type QuantumLayerRemovalRow,
+} from './QuantumBleControlSheet';
 import { useSetting } from '../../settings';
 import { trackSettingChanged } from '../../lib/settings-analytics';
 import { keepLightingLabel } from '../settings/board-lighting/board-lighting-model';
@@ -33,7 +39,11 @@ export const BOARD_CONTROLS_SETTINGS_PAGE = 'boardControls';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useQueueData } from '../../providers/queue-provider';
 import { getQuantumGeometryGeneration, useQuantumGeometry } from '../../lib/quantum-geometry-store';
-import { buildQuantumClimbLightTarget, deriveQuantumLayerAction } from '../../lib/ble/quantum-climb-lights';
+import {
+  buildQuantumClimbLightTarget,
+  deriveQuantumLayerAction,
+  quantumLayerColorNumber,
+} from '../../lib/ble/quantum-climb-lights';
 import type { Climb } from '@boardsesh/shared-schema';
 
 type BleControlSheetHostProps = {
@@ -99,8 +109,7 @@ export function BleControlSheetHost({
     activeBoard?.sizeId ?? 0,
     quantumActive && activeBoard?.boardType === 'quantum',
   );
-  const [busySlot, setBusySlot] = useState<number | null>(null);
-  const [clearing, setClearing] = useState(false);
+  const [busyAction, setBusyAction] = useState<string | number | null>(null);
   const [actionFailed, setActionFailed] = useState(false);
   const wallIdentity = `${bluetooth?.boardName}:${bluetooth?.layoutId}:${bluetooth?.sizeId}`;
   const currentWall = useRef(wallIdentity);
@@ -141,60 +150,81 @@ export function BleControlSheetHost({
 
   useEffect(() => {
     if (!visible) {
-      setBusySlot(null);
-      setClearing(false);
+      setBusyAction(null);
       setActionFailed(false);
     }
   }, [visible]);
 
   const quantumTargetResult = useMemo(() => {
     const climb = controlClimbTarget ?? currentClimbQueueItem?.climb;
-    if (!climb || !activeBoard || activeBoard.boardType !== 'quantum') return null;
+    if (!quantumActive || !climb || !activeBoard || activeBoard.boardType !== 'quantum') return null;
     return buildQuantumClimbLightTarget(
       climb,
       quantumGeometry,
       activeBoard.layoutId,
       getQuantumGeometryGeneration(activeBoard.layoutId, activeBoard.sizeId),
     );
-  }, [activeBoard, currentClimbQueueItem?.climb, controlClimbTarget, quantumGeometry]);
+  }, [activeBoard, currentClimbQueueItem?.climb, controlClimbTarget, quantumActive, quantumGeometry]);
   const quantumTarget = quantumTargetResult?.ok ? quantumTargetResult.target : null;
   const targetError = quantumTargetResult && !quantumTargetResult.ok ? quantumTargetResult.reason : null;
-  const quantumRows = useMemo<QuantumLayerControlRow[]>(
-    () =>
-      (quantumState?.layers ?? []).map((layer) => ({
-        slot: layer.slot,
-        colorKey: layer.color.key,
-        colorHex: layer.color.hex,
-        action: deriveQuantumLayerAction(layer, quantumState?.roster?.players ?? [], quantumTarget),
-      })),
-    [quantumState?.layers, quantumState?.roster?.players, quantumTarget],
-  );
+  const quantumPlayer = quantumState?.player;
+  const quantumPlayers = quantumState?.roster?.players;
+  const quantumRows = useMemo<QuantumLayerControlRow[]>(() => {
+    if (!quantumPlayer || !quantumPlayers) return [];
+    return BOARD_LAYER_COLORS.map((color, slot) => ({
+      slot,
+      colorKey: color.key,
+      colorHex: color.hex,
+      action: deriveQuantumLayerAction(quantumPlayer.controllerUserUuid, color, quantumPlayers, quantumTarget),
+    }));
+  }, [quantumPlayer, quantumPlayers, quantumTarget]);
+  const quantumRemovals = useMemo<QuantumLayerRemovalRow[]>(() => {
+    if (!quantumPlayer || !quantumPlayers) return [];
+    const ownedUserUuids = [quantumPlayer.controllerUserUuid, ...quantumPlayer.legacyCleanupUserUuids];
+    return quantumPlayers.flatMap((player) => {
+      if (!ownedUserUuids.some((userUuid) => quantumUuidsEqual(userUuid, player.userId))) return [];
+      const color = BOARD_LAYER_COLORS.find((candidate) => quantumLayerColorNumber(candidate) === player.color);
+      return [
+        {
+          controllerUserUuid: player.userId,
+          controllerRouteUuid: player.routeId,
+          colorKey: color?.key,
+          colorHex: '#' + player.color.toString(16).padStart(6, '0'),
+        },
+      ];
+    });
+  }, [quantumPlayer, quantumPlayers]);
 
   const handleQuantumLayerPress = useCallback(
     (row: QuantumLayerControlRow) => {
-      if (!quantumActions || busySlot !== null || clearing) return;
-      setBusySlot(row.slot);
+      if (!quantumActions || busyAction !== null || !quantumTarget) return;
+      if (row.action.kind !== 'light' && row.action.kind !== 'replace') return;
+      setBusyAction(row.slot);
       setActionFailed(false);
-      const operation =
-        row.action.kind === 'remove'
-          ? quantumActions.removeLayer({ slot: row.slot, controllerRouteUuid: row.action.activeRouteUuid })
-          : quantumTarget
-            ? quantumActions.activateLayer({ slot: row.slot, ...quantumTarget })
-            : Promise.reject(new Error('Quantum climb has no safe light target'));
-      void operation.catch(() => setActionFailed(true)).finally(() => setBusySlot(null));
+      void quantumActions
+        .activateLayer({
+          slot: row.slot,
+          ...quantumTarget,
+          expectedOwnedRouteUuid: row.action.kind === 'replace' ? row.action.activeRouteUuid : undefined,
+        })
+        .catch(() => setActionFailed(true))
+        .finally(() => setBusyAction(null));
     },
-    [busySlot, clearing, quantumActions, quantumTarget],
+    [busyAction, quantumActions, quantumTarget],
   );
 
-  const handleQuantumClearAll = useCallback(() => {
-    if (!quantumActions || busySlot !== null || clearing) return;
-    setClearing(true);
-    setActionFailed(false);
-    void quantumActions
-      .clearAll({ confirmed: true })
-      .catch(() => setActionFailed(true))
-      .finally(() => setClearing(false));
-  }, [busySlot, clearing, quantumActions]);
+  const handleQuantumRemove = useCallback(
+    (row: QuantumLayerRemovalRow) => {
+      if (!quantumActions || busyAction !== null) return;
+      setBusyAction(row.controllerUserUuid);
+      setActionFailed(false);
+      void quantumActions
+        .removeLayer(row)
+        .catch(() => setActionFailed(true))
+        .finally(() => setBusyAction(null));
+    },
+    [busyAction, quantumActions],
+  );
 
   const handleQuantumDisconnect = useCallback(() => {
     void quantumActions?.disconnect();
@@ -273,12 +303,11 @@ export function BleControlSheetHost({
         visible={visible}
         rows={quantumRows}
         targetError={targetError}
-        busySlot={busySlot}
-        clearing={clearing}
+        removals={quantumRemovals}
+        busyAction={busyAction}
         actionFailed={actionFailed}
-        hasActivePlayers={(quantumState.roster?.players.length ?? 0) > 0}
         onLayerPress={handleQuantumLayerPress}
-        onClearAll={handleQuantumClearAll}
+        onRemove={handleQuantumRemove}
         onDisconnect={handleQuantumDisconnect}
         onClose={onClose}
       />

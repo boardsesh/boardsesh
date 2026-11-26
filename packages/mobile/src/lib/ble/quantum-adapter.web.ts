@@ -1,3 +1,4 @@
+import { QUANTUM_RELEASED_MODELS } from '@boardsesh/board-constants/quantum';
 import {
   QUANTUM_LEGACY_SERVICE_UUID,
   QUANTUM_METADATA_CHARACTERISTIC_UUID,
@@ -6,10 +7,12 @@ import {
   QUANTUM_STATE_CHARACTERISTIC_UUID,
   QUANTUM_WRITE_CHARACTERISTIC_UUID,
   QuantumCommand,
+  assertQuantumWriteEligible,
   parseQuantumControllerMetadata,
   parseQuantumDeviceSerial,
   type QuantumBoardModelId,
   type QuantumBroadcast,
+  type QuantumWriteEligibility,
 } from '@boardsesh/ble-protocol/quantum';
 import {
   requestWebBluetoothDevice,
@@ -146,6 +149,9 @@ export class WebQuantumBluetoothTransport implements QuantumBluetoothTransport {
     _targetSerial?: string,
     _targetDeviceId?: string,
   ): Promise<QuantumControllerConnection> {
+    if (!QUANTUM_RELEASED_MODELS.some((modelId) => modelId === selectedModelId)) {
+      throw new QuantumControllerModelMismatchError(selectedModelId);
+    }
     if (!isQuantumWebBluetoothAvailable()) {
       throw new Error('Quantum board control requires Chromium in a secure context');
     }
@@ -240,7 +246,7 @@ export class WebQuantumBluetoothTransport implements QuantumBluetoothTransport {
     return Promise.resolve();
   }
 
-  writeFrame(frame: Uint8Array): Promise<void> {
+  writeFrame(frame: Uint8Array, isEligible?: QuantumWriteEligibility): Promise<void> {
     if (frame.length === 0 || frame.length > this.maximumWriteBytes) {
       return Promise.reject(
         new Error(`Quantum frame needs ${frame.length} atomic bytes; transport allows ${this.maximumWriteBytes}`),
@@ -249,10 +255,16 @@ export class WebQuantumBluetoothTransport implements QuantumBluetoothTransport {
     return this.enqueueGatt(async () => {
       const write = this.characteristics?.write;
       if (!write) throw new Error('Quantum controller is not connected');
+      assertQuantumWriteEligible(isEligible);
       if (frame[1] === QuantumCommand.REQUEST_USER_ROUTE_LIST) this.notificationInbox.markRosterRequest();
+      else this.notificationInbox.markMutation();
       if (this.device?.name?.startsWith('QB_')) await write.writeValueWithResponse(frame.slice());
       else await write.writeValueWithoutResponse(frame.slice());
     });
+  }
+
+  getMutationFailure(command: QuantumCommand) {
+    return this.notificationInbox.getMutationFailure(command);
   }
 
   readState(): Promise<Uint8Array | undefined> {

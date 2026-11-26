@@ -981,7 +981,6 @@
       },
       "light": "Illumina questo blocco",
       "replace": "Sostituisci con questo blocco",
-      "remove": "Rimuovi questo livello",
       "foreign": "In uso da un altro climber",
       "boardFull": "Tutti e quattro i livelli del pannello sono occupati",
       "noClimb": "Scegli un blocco da illuminare",
@@ -990,12 +989,12 @@
       "geometryMissing": "Le posizioni dei LED non sono pronte per questo blocco",
       "tooManyHolds": "Questo blocco supera il limite di 92 luci di Boardsesh",
       "actionFailed": "Impossibile aggiornare il pannello. Aggiorna e riprova.",
-      "clearStart": "Spegni tutti i livelli",
-      "clearStartSubtitle": "Dovrai confermare prima di spegnere tutti i livelli",
-      "clearQuestion": "Spegnere tutti e quattro i livelli?",
-      "clearConfirm": "Spegni ogni livello",
-      "clearCancel": "Mantieni i livelli",
-      "multiFrameUnsupported": "I blocchi con più sequenze non possono ancora essere illuminati su Quantum"
+      "multiFrameUnsupported": "I blocchi con più sequenze non possono ancora essere illuminati su Quantum",
+      "active": "Illuminato in parete",
+      "remove": "Spegni le mie luci",
+      "removeColor": "Spegni le mie luci ({{color}})",
+      "invalidFrames": "Impossibile leggere le prese del blocco",
+      "sessionDriver": "Il telefono che ha avviato la sessione controlla le luci"
     }
   },
   "bluetooth": {

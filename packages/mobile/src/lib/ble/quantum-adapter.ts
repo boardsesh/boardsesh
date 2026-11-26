@@ -1,3 +1,4 @@
+import { QUANTUM_RELEASED_MODELS } from '@boardsesh/board-constants/quantum';
 import { Platform } from 'react-native';
 import type { BleError, Characteristic, Device, Subscription } from 'react-native-ble-plx';
 import {
@@ -9,11 +10,13 @@ import {
   QUANTUM_STATE_CHARACTERISTIC_UUID,
   QUANTUM_WRITE_CHARACTERISTIC_UUID,
   QuantumCommand,
+  assertQuantumWriteEligible,
   parseQuantumControllerMetadata,
   parseQuantumDeviceSerial,
   quantumAttPayloadBytes,
   type QuantumBoardModelId,
   type QuantumBroadcast,
+  type QuantumWriteEligibility,
 } from '@boardsesh/ble-protocol/quantum';
 import { SCAN_TIMEOUT_MS, SERIAL_RECONNECT_GRACE_MS } from '@boardsesh/ble-protocol/scan-constants';
 import { getBleManager } from './ble-manager';
@@ -141,6 +144,9 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
     targetSerial?: string,
     targetDeviceId?: string,
   ): Promise<QuantumControllerConnection> {
+    if (!QUANTUM_RELEASED_MODELS.some((modelId) => modelId === selectedModelId)) {
+      throw new QuantumControllerModelMismatchError(selectedModelId);
+    }
     const initialDisconnect = this.disconnect();
     const connectionAttemptGeneration = this.connectionAttemptGeneration;
     await initialDisconnect;
@@ -453,7 +459,7 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
     }
   }
 
-  writeFrame(frame: Uint8Array): Promise<void> {
+  writeFrame(frame: Uint8Array, isEligible?: QuantumWriteEligibility): Promise<void> {
     if (frame.length === 0 || frame.length > this.maximumWriteBytes) {
       return Promise.reject(
         new Error(`Quantum frame needs ${frame.length} atomic bytes; transport allows ${this.maximumWriteBytes}`),
@@ -462,11 +468,14 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
     return this.enqueueGatt(async () => {
       const write = this.characteristics?.write;
       if (!write) throw new Error('Quantum controller is not connected');
+      assertQuantumWriteEligible(isEligible);
       // Mark inside the serialized GATT lane, immediately before the request;
       // a delayed notification from an earlier transaction cannot cross this
       // freshness floor while another queued operation is still running.
       if (frame[1] === QuantumCommand.REQUEST_USER_ROUTE_LIST) {
         this.notificationInbox.markRosterRequest();
+      } else {
+        this.notificationInbox.markMutation();
       }
       // Both binary modes send one complete command and require separate roster confirmation.
       await this.runGattWithTimeout(
@@ -478,6 +487,10 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
         () => this.retireConnection('Quantum controller write timed out'),
       );
     });
+  }
+
+  getMutationFailure(command: QuantumCommand) {
+    return this.notificationInbox.getMutationFailure(command);
   }
 
   readState(): Promise<Uint8Array | undefined> {

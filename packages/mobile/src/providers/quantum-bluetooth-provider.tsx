@@ -1,18 +1,26 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { AppState } from 'react-native';
 import { useBoardPresenceActions } from '@boardsesh/board-presence-react';
-import { MAX_DIODES_PER_LAYER, type InstallationBoardLayer } from '@boardsesh/board-layers';
-import { QUANTUM_MODELS } from '@boardsesh/board-constants/quantum';
-import type {
-  QuantumBoardModelId,
-  QuantumControllerMetadata,
-  QuantumRosterSnapshot,
+import { BOARD_LAYER_COLORS, MAX_DIODES_PER_LAYER } from '@boardsesh/board-layers';
+import { QUANTUM_MODELS, QUANTUM_RELEASED_MODELS } from '@boardsesh/board-constants/quantum';
+import {
+  encodeQuantumActivation,
+  quantumUuidsEqual,
+  type QuantumBoardModelId,
+  type QuantumControllerMetadata,
+  type QuantumRosterSnapshot,
 } from '@boardsesh/ble-protocol/quantum';
 import { DevicePickerSheet } from '../components/ble/DevicePickerSheet';
 import { registerBluetoothConnection } from '../lib/ble/bluetooth-status-store';
 import { requestBleRuntimePermissions } from '../lib/ble/use-ble-permissions';
 import { createQuantumBluetoothTransport } from '../lib/ble/quantum-adapter';
-import { getOrCreateQuantumLayerIdentities } from '../lib/ble/quantum-layer-identity-store';
+import {
+  getOrCreateQuantumSoloPlayer,
+  getQuantumSessionPlayer,
+  type QuantumLocalPlayer,
+} from '../lib/ble/quantum-layer-identity-store';
+import { getStoredCreatedSessionId } from '../lib/session-store';
+import { getCredentialGeneration, subscribeToCredentialChanges } from '../lib/privacy/privacy-cache';
 import {
   isQuantumRoutePresenceOwnerCurrent,
   sanitizeQuantumRosterForPresence,
@@ -30,6 +38,7 @@ import { getDatabaseHandle } from '../db';
 import { getQuantumRoutePresenceClimbsLocal } from '../db/queries/quantum-route-presence-local';
 import {
   assessQuantumActivationSafety,
+  quantumLayerColorNumber,
   buildQuantumClimbLightTarget,
   resolveQuantumPlacementDiodes,
 } from '../lib/ble/quantum-climb-lights';
@@ -63,13 +72,15 @@ export type QuantumBluetoothState = {
   connection: QuantumControllerConnection | null;
   metadata: QuantumControllerMetadata | null;
   roster: QuantumRosterSnapshot | null;
-  layers: readonly InstallationBoardLayer[];
+  player: QuantumLocalPlayer | null;
+  driverStatus: 'checking' | 'available' | 'peer' | 'unavailable';
   lastError: Error | null;
 };
 
 export type QuantumActivateLayerInput = {
   slot: number;
   controllerRouteUuid: string;
+  expectedOwnedRouteUuid?: string;
   diodeIds: readonly number[];
   placementIds: readonly number[];
   layoutId: number;
@@ -85,7 +96,7 @@ export type QuantumActivateLayerInput = {
 };
 
 export type QuantumRemoveLayerInput = {
-  slot: number;
+  controllerUserUuid: string;
   controllerRouteUuid: string;
 };
 
@@ -95,7 +106,6 @@ export type QuantumBluetoothActions = {
   refresh(): Promise<QuantumRosterSnapshot | null>;
   activateLayer(input: QuantumActivateLayerInput): Promise<QuantumRosterSnapshot>;
   removeLayer(input: QuantumRemoveLayerInput): Promise<QuantumRosterSnapshot>;
-  clearAll(input: { confirmed: boolean }): Promise<QuantumRosterSnapshot>;
 };
 
 import { QuantumBluetoothStateContext, QuantumBluetoothActionsContext } from './quantum-bluetooth-context';
@@ -115,16 +125,6 @@ function modelPickerConfig(modelId: QuantumBoardModelId | null): BleBoardConfig 
     sizeId: model.sizeId,
     setIds: '1',
   };
-}
-
-function colorNumber(layer: InstallationBoardLayer): number {
-  return (layer.color.red << 16) | (layer.color.green << 8) | layer.color.blue;
-}
-
-function requireLayer(layers: readonly InstallationBoardLayer[], slot: number): InstallationBoardLayer {
-  const layer = layers.find((candidate) => candidate.slot === slot);
-  if (!layer) throw new Error(`Quantum layer slot ${slot} is unavailable`);
-  return layer;
 }
 
 function validateDiodeIds(diodeIds: readonly number[]): number[] {
@@ -270,23 +270,38 @@ function applyRecoveredRoutePresence(
 }
 
 export function QuantumBluetoothProvider({
-  selectedModelId,
+  selectedModelId: candidateModelId,
   selectedBoardUuid,
   preferredSerial,
+  sessionId = null,
+  accountId = null,
+  sessionContextReady = true,
+  getCurrentSessionId,
+  isSelectionIntentCurrent,
   children,
 }: {
   selectedModelId: QuantumBoardModelId | null;
   selectedBoardUuid?: string | null;
   preferredSerial?: string | null;
+  sessionId?: string | null;
+  accountId?: string | null;
+  sessionContextReady?: boolean;
+  getCurrentSessionId?: () => string | null;
+  isSelectionIntentCurrent?: () => boolean;
   children: ReactNode;
 }) {
+  const selectedModelId = QUANTUM_RELEASED_MODELS.find((modelId) => modelId === candidateModelId) ?? null;
+  const credentialGeneration = useSyncExternalStore(
+    subscribeToCredentialChanges,
+    getCredentialGeneration,
+    getCredentialGeneration,
+  );
   const { reportLayers } = useBoardPresenceActions();
   const presenceControls = useBoardPresenceControls();
   const [status, setStatus] = useState<QuantumBluetoothStatus>(selectedModelId ? 'disconnected' : 'inactive');
   const [isAvailable, setIsAvailable] = useState<boolean | null>(null);
   const [connection, setConnection] = useState<QuantumControllerConnection | null>(null);
   const [roster, setRoster] = useState<QuantumRosterSnapshot | null>(null);
-  const [layers, setLayers] = useState<readonly InstallationBoardLayer[]>([]);
   const [lastError, setLastError] = useState<Error | null>(null);
   const [pickerState, setPickerState] = useState<Pick<
     PickerState,
@@ -295,20 +310,64 @@ export function QuantumBluetoothProvider({
   const cancelActivePickerRef = useRef<((error: Error) => void) | null>(null);
   const mountedRef = useRef(true);
   const attemptGenerationRef = useRef(0);
-  const selectionIdentity = selectedModelId
-    ? JSON.stringify([selectedModelId, selectedBoardUuid ?? null, preferredSerial ?? null])
-    : 'inactive';
+  // A new selection gets a distinct token even when it returns to the
+  // same board/session after a flag toggle. Old callbacks retain their token.
+  const selectionIdentity = useMemo(
+    () => ({
+      modelId: selectedModelId,
+      selectedBoardUuid,
+      preferredSerial,
+      sessionId,
+      accountId,
+      sessionContextReady,
+      credentialGeneration,
+    }),
+    [
+      selectedModelId,
+      selectedBoardUuid,
+      preferredSerial,
+      sessionId,
+      accountId,
+      sessionContextReady,
+      credentialGeneration,
+    ],
+  );
   const selectionIdentityRef = useRef(selectionIdentity);
   selectionIdentityRef.current = selectionIdentity;
-  const activeConnectionIdentityRef = useRef<string | null>(null);
+  const activeConnectionIdentityRef = useRef<typeof selectionIdentity | null>(null);
+  const isSelectionCurrent = useCallback(
+    () =>
+      mountedRef.current &&
+      selectionIdentityRef.current === selectionIdentity &&
+      credentialGeneration === getCredentialGeneration() &&
+      (getCurrentSessionId === undefined || getCurrentSessionId() === sessionId),
+    [credentialGeneration, getCurrentSessionId, selectionIdentity, sessionId],
+  );
+  const [playerResolution, setPlayerResolution] = useState<{
+    scope: typeof selectionIdentity;
+    player: QuantumLocalPlayer | null;
+  } | null>(null);
+  const playerResolutionRef = useRef(playerResolution);
+  const resolvePlayer = useCallback(async () => {
+    if (!sessionId) return getOrCreateQuantumSoloPlayer();
+    if (!accountId || (await getStoredCreatedSessionId()) !== sessionId) return null;
+    return getQuantumSessionPlayer({ sessionId, accountId });
+  }, [accountId, sessionId]);
+  const publishPlayerResolution = useCallback(
+    (player: QuantumLocalPlayer | null) => {
+      if (!isSelectionCurrent()) return;
+      const resolution = { scope: selectionIdentity, player };
+      playerResolutionRef.current = resolution;
+      setPlayerResolution(resolution);
+    },
+    [isSelectionCurrent, selectionIdentity],
+  );
   const selectedModelIdRef = useRef(selectedModelId);
   selectedModelIdRef.current = selectedModelId;
   const selectedBoardUuidRef = useRef(selectedBoardUuid);
   selectedBoardUuidRef.current = selectedBoardUuid;
   const preferredSerialRef = useRef(preferredSerial);
   preferredSerialRef.current = preferredSerial;
-  const layersRef = useRef(layers);
-  layersRef.current = layers;
   const transportRef = useRef<QuantumBluetoothTransport | null>(null);
   const controllerRef = useRef<QuantumBoardController | null>(null);
   const removeControllerListenerRef = useRef<(() => void) | null>(null);
@@ -558,18 +617,25 @@ export function QuantumBluetoothProvider({
 
   const connect = useCallback<QuantumBluetoothActions['connect']>(
     (targetSerial, targetDeviceId) => {
+      if (!selectedModelId || !sessionContextReady || !isSelectionCurrent() || isSelectionIntentCurrent?.() === false)
+        return Promise.resolve(false);
       if (connectPromiseRef.current) return connectPromiseRef.current;
+      if (activeConnectionIdentityRef.current === selectionIdentity && controllerRef.current) {
+        return Promise.resolve(false);
+      }
       const attemptGeneration = ++attemptGenerationRef.current;
       const connectionOwner = ++connectionOwnerSequenceRef.current;
-      const attemptIdentity = selectionIdentityRef.current;
+      const attemptIdentity = selectionIdentity;
       const attemptBoardUuid = selectedBoardUuidRef.current;
       const attemptIsCurrent = () =>
-        mountedRef.current &&
         attemptGenerationRef.current === attemptGeneration &&
-        selectionIdentityRef.current === attemptIdentity;
+        isSelectionCurrent() &&
+        isSelectionIntentCurrent?.() !== false;
       const operation = (async () => {
-        const modelId = selectedModelIdRef.current;
-        if (!modelId || !attemptIsCurrent()) return false;
+        const modelId = selectedModelId;
+        const loaded = playerResolutionRef.current;
+        if (sessionId && (loaded?.scope !== attemptIdentity || !loaded.player)) return false;
+        if (!attemptIsCurrent()) return false;
         setStatus('connecting');
         setLastError(null);
 
@@ -577,10 +643,10 @@ export function QuantumBluetoothProvider({
           const permissionsGranted = await requestBleRuntimePermissions();
           if (!attemptIsCurrent()) return false;
           if (!permissionsGranted) throw new Error('Bluetooth permission was not granted');
-          const resolvedLayers = await getOrCreateQuantumLayerIdentities();
+          const player = loaded?.scope === attemptIdentity ? loaded.player : await resolvePlayer();
           if (!attemptIsCurrent()) return false;
-          layersRef.current = resolvedLayers;
-          setLayers(resolvedLayers);
+          if (!player) throw new Error('This phone cannot drive the Quantum wall');
+          publishPlayerResolution(player);
 
           await disposeConnection();
           if (!attemptIsCurrent()) return false;
@@ -645,7 +711,7 @@ export function QuantumBluetoothProvider({
           };
           activePresenceConnectionRef.current = presenceConnection;
           boundPresenceBoardIdRef.current = presenceConnection.boardId;
-          const initialSnapshot = await controller.refresh();
+          const initialSnapshot = await controller.refresh(attemptIsCurrent);
           if (
             !attemptIsCurrent() ||
             activePresenceConnectionRef.current?.generation !== presenceConnection.generation ||
@@ -684,17 +750,50 @@ export function QuantumBluetoothProvider({
       connectPromiseRef.current = operation;
       return operation;
     },
-    [devicePicker, disposeConnection, recoverAndReportRoster],
+    [
+      devicePicker,
+      disposeConnection,
+      isSelectionIntentCurrent,
+      isSelectionCurrent,
+      publishPlayerResolution,
+      recoverAndReportRoster,
+      resolvePlayer,
+      selectedModelId,
+      selectionIdentity,
+      sessionContextReady,
+      sessionId,
+    ],
   );
+
+  // A rendered action belongs to the controller link shown in that render.
+  // Check that link again in the GATT lane, immediately before each write.
+  const actionConnectionOwner = status === 'connected' ? activeConnectionOwnerRef.current : null;
+  const canUseConnection = useCallback(
+    () =>
+      actionConnectionOwner !== null &&
+      activeConnectionOwnerRef.current === actionConnectionOwner &&
+      activeConnectionIdentityRef.current === selectionIdentity &&
+      isSelectionCurrent() &&
+      isSelectionIntentCurrent?.() !== false,
+    [actionConnectionOwner, isSelectionIntentCurrent, isSelectionCurrent, selectionIdentity],
+  );
+  const requireCurrentPlayer = useCallback(() => {
+    const resolution = playerResolutionRef.current;
+    if (!canUseConnection() || resolution?.scope !== selectionIdentity || !resolution.player) {
+      throw new Error('Quantum controller is not connected for this phone');
+    }
+    return resolution.player;
+  }, [canUseConnection, selectionIdentity]);
 
   const refresh = useCallback<QuantumBluetoothActions['refresh']>(async () => {
     const controller = controllerRef.current;
-    if (!controller || activeConnectionIdentityRef.current !== selectionIdentityRef.current) return null;
+    if (!controller || !canUseConnection()) return null;
     const presenceConnection = activePresenceConnectionRef.current;
     const connectionOwner = activeConnectionOwnerRef.current;
     const modelId = selectedModelIdRef.current;
     try {
-      const snapshot = await controller.refresh();
+      const snapshot = await controller.refresh(canUseConnection);
+      if (!canUseConnection()) return null;
       const transport = transportRef.current;
       if (modelId && presenceConnection && connectionOwner !== null && transport) {
         await recoverAndReportRoster({
@@ -710,17 +809,17 @@ export function QuantumBluetoothProvider({
       return controller.snapshot ?? snapshot;
     } catch (error) {
       const normalized = error instanceof Error ? error : new Error('Quantum roster refresh failed');
-      setLastError(normalized);
+      if (canUseConnection()) setLastError(normalized);
       throw normalized;
     }
-  }, [recoverAndReportRoster]);
+  }, [canUseConnection, recoverAndReportRoster]);
 
   const activateLayer = useCallback<QuantumBluetoothActions['activateLayer']>(
     async (input) => {
       try {
+        const player = requireCurrentPlayer();
         const controller = controllerRef.current;
-        if (!controller || activeConnectionIdentityRef.current !== selectionIdentityRef.current)
-          throw new Error('Quantum controller is not connected');
+        if (!controller) throw new Error('Quantum controller is not connected');
         const presenceConnection = activePresenceConnectionRef.current;
         const connectionOwner = activeConnectionOwnerRef.current;
         const modelId = selectedModelIdRef.current;
@@ -732,11 +831,21 @@ export function QuantumBluetoothProvider({
         if (input.layoutId !== selectedModel.layoutId || input.sizeId !== selectedModel.sizeId) {
           throw new Error('Quantum climb target belongs to a different board model');
         }
-        const layer = requireLayer(layersRef.current, input.slot);
-        // Reject unsupported requests before even asking the wall for its roster.
-        // Geometry is checked again after the asynchronous preflight below.
+        const color = BOARD_LAYER_COLORS[input.slot];
+        if (!color) throw new Error('Quantum layer color is unavailable');
         const requestedDiodeIds = validateDiodeIds(input.diodeIds);
-        const preflightSnapshot = await controller.refresh();
+        const activation = {
+          routeId: input.controllerRouteUuid,
+          userId: player.controllerUserUuid,
+          diodeIds: requestedDiodeIds,
+          color: quantumLayerColorNumber(color),
+          durationSeconds: input.durationSeconds,
+          animation: input.animation,
+        };
+        // Validate the complete command before even asking the wall for a roster.
+        encodeQuantumActivation(activation);
+        const preflightSnapshot = await controller.refresh(canUseConnection);
+        if (!canUseConnection()) throw new Error('Quantum controller connection changed during activation preflight');
         const rosterRecovered = await recoverAndReportRoster({
           controller,
           initialSnapshot: preflightSnapshot,
@@ -747,6 +856,7 @@ export function QuantumBluetoothProvider({
         });
         if (
           !rosterRecovered ||
+          !canUseConnection() ||
           controllerRef.current !== controller ||
           activeConnectionOwnerRef.current !== connectionOwner ||
           activePresenceConnectionRef.current?.generation !== presenceConnection.generation ||
@@ -759,9 +869,9 @@ export function QuantumBluetoothProvider({
         if (!confirmedSnapshot) throw new Error('Quantum controller roster is unavailable');
         if (
           confirmedSnapshot.players.some(
-            (player) =>
-              player.routeId.toLowerCase() === input.controllerRouteUuid.toLowerCase() &&
-              player.userId.toLowerCase() !== layer.controllerUserUuid.toLowerCase(),
+            (activePlayer) =>
+              quantumUuidsEqual(activePlayer.routeId, input.controllerRouteUuid) &&
+              !quantumUuidsEqual(activePlayer.userId, player.controllerUserUuid),
           )
         ) {
           throw new Error('Quantum route is already active on another layer');
@@ -793,7 +903,7 @@ export function QuantumBluetoothProvider({
         );
         const safety = assessQuantumActivationSafety(
           confirmedSnapshot.players,
-          layer.controllerUserUuid,
+          player.controllerUserUuid,
           diodeIds,
           resolvedDiodesByRoute,
         );
@@ -805,22 +915,21 @@ export function QuantumBluetoothProvider({
           );
         }
         const snapshot = await controller.activate({
-          routeId: input.controllerRouteUuid,
-          userId: layer.controllerUserUuid,
+          ...activation,
           diodeIds,
-          color: colorNumber(layer),
-          durationSeconds: input.durationSeconds,
-          animation: input.animation,
+          ...(input.expectedOwnedRouteUuid !== undefined ? { expectedOwnedRouteId: input.expectedOwnedRouteUuid } : {}),
           expectedPlayers: confirmedSnapshot.players,
+          isEligible: canUseConnection,
         });
-        if (presenceConnection && activePresenceConnectionRef.current?.generation === presenceConnection.generation) {
+        if (!canUseConnection()) return snapshot;
+        if (activePresenceConnectionRef.current?.generation === presenceConnection.generation) {
           resolvedRoutePresenceRef.current.set(input.controllerRouteUuid.toLowerCase(), {
             climbUuid: input.climbUuid ?? null,
             angle: input.angle ?? null,
             geometryKnown: input.geometryKnown,
             diodeIds,
             geometryGeneration: null,
-            controllerUserUuid: layer.controllerUserUuid,
+            controllerUserUuid: player.controllerUserUuid,
           });
         }
         setLastError(null);
@@ -828,25 +937,31 @@ export function QuantumBluetoothProvider({
         return snapshot;
       } catch (error) {
         const normalized = error instanceof Error ? error : new Error('Quantum layer activation failed');
-        setLastError(normalized);
+        if (canUseConnection()) setLastError(normalized);
         throw normalized;
       }
     },
-    [recoverAndReportRoster, reportConfirmedRoster],
+    [canUseConnection, recoverAndReportRoster, reportConfirmedRoster, requireCurrentPlayer],
   );
 
   const removeLayer = useCallback<QuantumBluetoothActions['removeLayer']>(
     async (input) => {
       try {
+        const player = requireCurrentPlayer();
         const controller = controllerRef.current;
-        if (!controller || activeConnectionIdentityRef.current !== selectionIdentityRef.current)
-          throw new Error('Quantum controller is not connected');
+        if (!controller) throw new Error('Quantum controller is not connected');
+        const ownedUserUuid = [player.controllerUserUuid, ...player.legacyCleanupUserUuids].find((userUuid) =>
+          quantumUuidsEqual(userUuid, input.controllerUserUuid),
+        );
+        if (!ownedUserUuid) throw new Error('This phone does not own the requested Quantum layer');
+
         const presenceConnection = activePresenceConnectionRef.current;
-        const layer = requireLayer(layersRef.current, input.slot);
         const snapshot = await controller.remove({
-          userId: layer.controllerUserUuid,
+          userId: ownedUserUuid,
           routeId: input.controllerRouteUuid,
+          isEligible: canUseConnection,
         });
+        if (!canUseConnection()) return snapshot;
         if (presenceConnection && activePresenceConnectionRef.current?.generation === presenceConnection.generation) {
           resolvedRoutePresenceRef.current.delete(input.controllerRouteUuid.toLowerCase());
         }
@@ -855,34 +970,11 @@ export function QuantumBluetoothProvider({
         return snapshot;
       } catch (error) {
         const normalized = error instanceof Error ? error : new Error('Quantum layer removal failed');
-        setLastError(normalized);
+        if (canUseConnection()) setLastError(normalized);
         throw normalized;
       }
     },
-    [reportConfirmedRoster],
-  );
-
-  const clearAll = useCallback<QuantumBluetoothActions['clearAll']>(
-    async (input) => {
-      try {
-        const controller = controllerRef.current;
-        if (!controller || activeConnectionIdentityRef.current !== selectionIdentityRef.current)
-          throw new Error('Quantum controller is not connected');
-        const presenceConnection = activePresenceConnectionRef.current;
-        const snapshot = await controller.clearAll(input);
-        if (presenceConnection && activePresenceConnectionRef.current?.generation === presenceConnection.generation) {
-          resolvedRoutePresenceRef.current.clear();
-        }
-        setLastError(null);
-        reportConfirmedRoster(snapshot, presenceConnection);
-        return snapshot;
-      } catch (error) {
-        const normalized = error instanceof Error ? error : new Error('Quantum wall clear failed');
-        setLastError(normalized);
-        throw normalized;
-      }
-    },
-    [reportConfirmedRoster],
+    [canUseConnection, reportConfirmedRoster, requireCurrentPlayer],
   );
 
   useEffect(() => {
@@ -912,13 +1004,29 @@ export function QuantumBluetoothProvider({
     void probe.isAvailable().then((available) => {
       if (!cancelled) setIsAvailable(available);
     });
-    void getOrCreateQuantumLayerIdentities().then((resolvedLayers) => {
-      if (!cancelled) setLayers(resolvedLayers);
-    });
+    if (sessionContextReady) {
+      void resolvePlayer().then(
+        (player) => {
+          if (!cancelled) publishPlayerResolution(player);
+        },
+        () => {
+          if (!cancelled) publishPlayerResolution(null);
+        },
+      );
+    }
     return () => {
       cancelled = true;
     };
-  }, [devicePicker, disposeConnection, invalidateConnectionAttempt, selectedModelId, selectionIdentity]);
+  }, [
+    devicePicker,
+    disposeConnection,
+    invalidateConnectionAttempt,
+    publishPlayerResolution,
+    resolvePlayer,
+    selectedModelId,
+    selectionIdentity,
+    sessionContextReady,
+  ]);
 
   useEffect(() => {
     if (status !== 'connected') return;
@@ -952,21 +1060,39 @@ export function QuantumBluetoothProvider({
     };
   }, [disposeConnection, invalidateConnectionAttempt]);
 
+  const playerResolutionCurrent = playerResolution?.scope === selectionIdentity;
+  const player = playerResolutionCurrent ? playerResolution.player : null;
+  const driverStatus = playerResolutionCurrent
+    ? player
+      ? 'available'
+      : sessionId
+        ? 'peer'
+        : 'unavailable'
+    : 'checking';
+  const currentLink = activeConnectionIdentityRef.current === selectionIdentity;
+  const currentStatus = selectedModelId
+    ? currentLink
+      ? status
+      : status === 'connecting' && connectPromiseRef.current
+        ? 'connecting'
+        : 'disconnected'
+    : 'inactive';
   const state = useMemo<QuantumBluetoothState>(
     () => ({
-      status,
+      status: currentStatus,
       isAvailable,
-      connection,
-      metadata: connection?.metadata ?? null,
-      roster,
-      layers,
+      connection: currentLink ? connection : null,
+      metadata: currentLink ? (connection?.metadata ?? null) : null,
+      roster: currentLink ? roster : null,
+      player,
+      driverStatus,
       lastError,
     }),
-    [connection, isAvailable, lastError, layers, roster, status],
+    [connection, currentLink, currentStatus, driverStatus, isAvailable, lastError, player, roster],
   );
   const actions = useMemo<QuantumBluetoothActions>(
-    () => ({ connect, disconnect, refresh, activateLayer, removeLayer, clearAll }),
-    [activateLayer, clearAll, connect, disconnect, refresh, removeLayer],
+    () => ({ connect, disconnect, refresh, activateLayer, removeLayer }),
+    [activateLayer, connect, disconnect, refresh, removeLayer],
   );
   const pickerConfig = useMemo(() => modelPickerConfig(selectedModelId), [selectedModelId]);
 

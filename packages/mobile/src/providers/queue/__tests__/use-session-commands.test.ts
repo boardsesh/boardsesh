@@ -28,10 +28,15 @@ const mocks = vi.hoisted(() => ({
   execute: vi.fn(() => Promise.resolve({})),
   request: vi.fn(),
   rememberPartnerWorkout: vi.fn(async (_sessionId: string, _workoutId: string) => undefined),
+  setStoredCreatedSessionId: vi.fn((_sessionId: string) => Promise.resolve()),
+  rememberStartedQuantumSessionPlayer: vi.fn(),
   setStoredSessionId: vi.fn((_sessionId: string) => Promise.resolve()),
   setStoredSessionVisibility: vi.fn((_sessionId: string, _isPublic: boolean) => Promise.resolve()),
 }));
 
+vi.mock('../../../lib/ble/quantum-layer-identity-store', () => ({
+  rememberStartedQuantumSessionPlayer: mocks.rememberStartedQuantumSessionPlayer,
+}));
 vi.mock('../../../lib/pending-workout-store', () => ({
   rememberPartnerWorkout: mocks.rememberPartnerWorkout,
   clearActivePartnerWorkout: vi.fn(async () => undefined),
@@ -60,7 +65,7 @@ vi.mock('../../../lib/graphql/extract-error-message', () => ({
 vi.mock('../../../lib/session-store', () => ({
   clearStoredCreatedSessionId: mocks.clearStoredCreatedSessionId,
   clearStoredSessionId: mocks.clearStoredSessionId,
-  setStoredCreatedSessionId: () => Promise.resolve(),
+  setStoredCreatedSessionId: mocks.setStoredCreatedSessionId,
   setStoredSessionId: mocks.setStoredSessionId,
   setStoredSessionVisibility: mocks.setStoredSessionVisibility,
 }));
@@ -116,6 +121,7 @@ function renderSessionCommands() {
     seedFailedSessionIdRef: { current: null },
     setSessionId: vi.fn(),
     sessionIdRef: { current: null },
+    authenticatedUserIdRef: { current: 'account-a' },
     onSessionContextChanging: vi.fn(),
     dispatch: vi.fn(),
     setPlaylistSuggestionSourceState: vi.fn(),
@@ -137,6 +143,8 @@ describe('useSessionCommands — createSessionWithConfig boardPath', () => {
     mocks.storedActiveBoard = null;
     mocks.request.mockReset().mockResolvedValue({ createSession: { id: 'session-1' } });
     mocks.setStoredSessionId.mockClear();
+    mocks.setStoredCreatedSessionId.mockClear();
+    mocks.rememberStartedQuantumSessionPlayer.mockReset().mockResolvedValue(undefined);
     mocks.clearStoredQueueSnapshot.mockClear();
   });
 
@@ -160,6 +168,22 @@ describe('useSessionCommands — createSessionWithConfig boardPath', () => {
     });
 
     expect(lastCreatedBoardPath()).toBe('kilter/8/17/27,28/40');
+  });
+
+  it('creates one Quantum session credential only after saving creator-device provenance', async () => {
+    mocks.storedActiveBoard = { ...homeBoard(), boardType: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' };
+    const { result } = renderSessionCommands();
+    await act(async () => {
+      expect(await result.current.createSessionWithConfig()).toBe('session-1');
+    });
+    expect(mocks.setStoredCreatedSessionId).toHaveBeenCalledOnce();
+    expect(mocks.rememberStartedQuantumSessionPlayer).toHaveBeenCalledWith(
+      { sessionId: 'session-1', accountId: 'account-a' },
+      expect.any(Function),
+    );
+    expect(mocks.setStoredCreatedSessionId.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.rememberStartedQuantumSessionPlayer.mock.invocationCallOrder[0],
+    );
   });
 
   it('keeps a personal ledless wall and its capability when another climber joins', async () => {

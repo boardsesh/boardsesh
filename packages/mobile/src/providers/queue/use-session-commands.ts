@@ -1,3 +1,4 @@
+import { isReleasedQuantumConfig } from '@boardsesh/board-constants/quantum';
 import { clearActivePartnerWorkout, rememberPartnerWorkout } from '../../lib/pending-workout-store';
 import { useCallback, useContext, useRef } from 'react';
 import { QueryClientContext } from '@tanstack/react-query';
@@ -59,6 +60,7 @@ type UseSessionCommandsParams = {
   seedFailedSessionIdRef: React.RefObject<string | null>;
   setSessionId: React.Dispatch<React.SetStateAction<string | null>>;
   sessionIdRef: React.RefObject<string | null>;
+  authenticatedUserIdRef?: React.RefObject<string | null>;
   /** Starts a fresh playlist-send lane before the active room changes. */
   onSessionContextChanging: () => void;
   dispatch: React.Dispatch<QueueAction>;
@@ -96,6 +98,7 @@ export function useSessionCommands({
   seedFailedSessionIdRef,
   setSessionId,
   sessionIdRef,
+  authenticatedUserIdRef,
   onSessionContextChanging,
   dispatch,
   setPlaylistSuggestionSourceState,
@@ -122,6 +125,7 @@ export function useSessionCommands({
       const createPromise = (async () => {
         const initialSessionId = sessionIdRef.current;
         const credentialGeneration = getCredentialGeneration();
+        const accountId = authenticatedUserIdRef?.current;
         const boardGeneration = getActiveBoardWriteGeneration();
         const isPartnerScopeCurrent = () =>
           !config?.appWorkoutSeed ||
@@ -193,6 +197,21 @@ export function useSessionCommands({
           // emphasis, never the End action itself.
           try {
             await setStoredCreatedSessionId(newId);
+            if (
+              accountId &&
+              activeBoard.boardType === 'quantum' &&
+              isReleasedQuantumConfig(activeBoard.layoutId, activeBoard.sizeId)
+            ) {
+              const { rememberStartedQuantumSessionPlayer } =
+                await import('../../lib/ble/quantum-layer-identity-store');
+              await rememberStartedQuantumSessionPlayer(
+                { sessionId: newId, accountId },
+                () =>
+                  credentialGeneration === getCredentialGeneration() &&
+                  accountId === authenticatedUserIdRef?.current &&
+                  (sessionIdRef.current === newId || (config?.appWorkoutSeed != null && isPartnerScopeCurrent())),
+              );
+            }
           } catch (provenanceError) {
             if (__DEV__) console.warn('[queue] created-session provenance write failed', provenanceError);
           }
@@ -334,7 +353,7 @@ export function useSessionCommands({
         if (sessionCreationRef.current === createPromise) sessionCreationRef.current = null;
       }
     },
-    [ensureJoined, onSessionContextChanging, setQueueMutation, showToast, t],
+    [authenticatedUserIdRef, ensureJoined, onSessionContextChanging, setQueueMutation, showToast, t],
   );
 
   const clearSession = useCallback(

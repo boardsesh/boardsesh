@@ -1,7 +1,11 @@
-import { parseClimbFrameHoldIds } from '@boardsesh/board-config';
-import { MAX_DIODES_PER_LAYER, type InstallationBoardLayer } from '@boardsesh/board-layers';
+import {
+  MAX_ACTIVE_BOARD_LAYERS,
+  MAX_DIODES_PER_LAYER,
+  parseBoardLayerPlacementIds,
+  type BoardLayerColor,
+} from '@boardsesh/board-layers';
 import type { Climb } from '@boardsesh/queue';
-import type { QuantumActivePlayer } from '@boardsesh/ble-protocol/quantum';
+import { QUANTUM_ZERO_UUID, quantumUuidsEqual, type QuantumActivePlayer } from '@boardsesh/ble-protocol/quantum';
 import type { QuantumGeometryRegistration } from '../quantum-geometry-store';
 
 const QUANTUM_UUID_PATTERN = /^(?:[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
@@ -27,6 +31,7 @@ export type QuantumClimbLightTargetError =
   | 'missing-led-position'
   | 'multi-frame-unsupported'
   | 'empty-climb'
+  | 'invalid-frames'
   | 'too-many-diodes';
 
 export type QuantumClimbLightTargetResult =
@@ -75,7 +80,11 @@ export function buildQuantumClimbLightTarget(
 ): QuantumClimbLightTargetResult {
   if (climb.boardType !== 'quantum') return { ok: false, reason: 'wrong-board' };
   if (climb.layoutId !== selectedLayoutId) return { ok: false, reason: 'wrong-layout' };
-  if (!climb.controllerRouteUuid || !QUANTUM_UUID_PATTERN.test(climb.controllerRouteUuid)) {
+  if (
+    !climb.controllerRouteUuid ||
+    !QUANTUM_UUID_PATTERN.test(climb.controllerRouteUuid) ||
+    quantumUuidsEqual(climb.controllerRouteUuid, QUANTUM_ZERO_UUID)
+  ) {
     return { ok: false, reason: 'missing-route' };
   }
   if (!geometry || geometry.layoutId !== selectedLayoutId || geometryGeneration === null) {
@@ -93,7 +102,11 @@ export function buildQuantumClimbLightTarget(
   // while Quantum's controller accepts only one static diode set per player.
   if (climb.frames?.includes(',')) return { ok: false, reason: 'multi-frame-unsupported' };
 
-  const placementIds = parseClimbFrameHoldIds(climb.frames);
+  if (!climb.frames) return { ok: false, reason: 'empty-climb' };
+  // Parse the whole route so large valid climbs get the limit message and
+  // an incomplete suffix never becomes a partial lighting command.
+  const placementIds = parseBoardLayerPlacementIds(climb.frames, Number.POSITIVE_INFINITY);
+  if (!placementIds) return { ok: false, reason: 'invalid-frames' };
   const diodeResult = resolveQuantumPlacementDiodes(placementIds, geometry, selectedLayoutId);
   if (!diodeResult.ok) return diodeResult;
 
@@ -116,7 +129,7 @@ export function buildQuantumClimbLightTarget(
 export type QuantumLayerAction =
   | { kind: 'light' }
   | { kind: 'replace'; activeRouteUuid: string }
-  | { kind: 'remove'; activeRouteUuid: string }
+  | { kind: 'active' }
   | { kind: 'unavailable'; reason: 'no-target' | 'color-in-use' | 'board-full' };
 
 function canonicalUuid(uuid: string): string {
@@ -151,7 +164,7 @@ export function assessQuantumActivationSafety(
 ): QuantumActivationSafetyResult {
   const candidateDiodes = new Set(candidateDiodeIds);
   for (const player of players) {
-    if (canonicalUuid(player.userId) === canonicalUuid(selectedControllerUserUuid)) continue;
+    if (quantumUuidsEqual(player.userId, selectedControllerUserUuid)) continue;
     const activeDiodeIds = findResolvedRouteDiodes(resolvedDiodesByRoute, player.routeId);
     if (!activeDiodeIds || activeDiodeIds.length === 0) {
       return { ok: false, reason: 'unresolved-active-route' };
@@ -163,27 +176,31 @@ export function assessQuantumActivationSafety(
   return { ok: true };
 }
 
-function layerColorNumber(layer: InstallationBoardLayer): number {
-  return (layer.color.red << 16) | (layer.color.green << 8) | layer.color.blue;
+export function quantumLayerColorNumber(color: BoardLayerColor): number {
+  return (color.red << 16) | (color.green << 8) | color.blue;
 }
 
-/** Derive one explicit row action from the confirmed controller roster. Foreign
- * players are never adopted as ours, but still reserve their color and slot. */
+/** Colors are choices for the same player. Other players reserve their color. */
 export function deriveQuantumLayerAction(
-  layer: InstallationBoardLayer,
+  controllerUserUuid: string,
+  color: BoardLayerColor,
   players: readonly QuantumActivePlayer[],
   target: QuantumClimbLightTarget | null,
 ): QuantumLayerAction {
-  const ownPlayer = players.find((player) => canonicalUuid(player.userId) === canonicalUuid(layer.controllerUserUuid));
-  if (ownPlayer) {
-    if (target && canonicalUuid(ownPlayer.routeId) !== canonicalUuid(target.controllerRouteUuid)) {
-      return { kind: 'replace', activeRouteUuid: ownPlayer.routeId };
-    }
-    return { kind: 'remove', activeRouteUuid: ownPlayer.routeId };
+  const ownPlayer = players.find((player) => quantumUuidsEqual(player.userId, controllerUserUuid));
+  const selectedColor = quantumLayerColorNumber(color);
+  if (players.some((player) => player !== ownPlayer && player.color === selectedColor)) {
+    return { kind: 'unavailable', reason: 'color-in-use' };
   }
-
-  const color = layerColorNumber(layer);
-  if (players.some((player) => player.color === color)) return { kind: 'unavailable', reason: 'color-in-use' };
-  if (players.length >= 4) return { kind: 'unavailable', reason: 'board-full' };
-  return target ? { kind: 'light' } : { kind: 'unavailable', reason: 'no-target' };
+  if (!ownPlayer && players.length >= MAX_ACTIVE_BOARD_LAYERS) {
+    return { kind: 'unavailable', reason: 'board-full' };
+  }
+  if (
+    ownPlayer?.color === selectedColor &&
+    (!target || quantumUuidsEqual(ownPlayer.routeId, target.controllerRouteUuid))
+  ) {
+    return { kind: 'active' };
+  }
+  if (!target) return { kind: 'unavailable', reason: 'no-target' };
+  return ownPlayer ? { kind: 'replace', activeRouteUuid: ownPlayer.routeId } : { kind: 'light' };
 }

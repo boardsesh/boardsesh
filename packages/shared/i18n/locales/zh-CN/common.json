@@ -957,7 +957,6 @@
       },
       "light": "点亮此线路",
       "replace": "替换为此线路",
-      "remove": "移除此图层",
       "foreign": "其他攀岩者正在使用",
       "boardFull": "墙上的四个图层均已占用",
       "noClimb": "选择要点亮的线路",
@@ -966,12 +965,12 @@
       "geometryMissing": "此线路的 LED 位置尚未就绪",
       "tooManyHolds": "此线路超过了 Boardsesh 的 92 盏灯限制",
       "actionFailed": "无法更新攀岩墙。请刷新后重试。",
-      "clearStart": "清除所有图层",
-      "clearStartSubtitle": "关闭所有图层前需要再次确认",
-      "clearQuestion": "关闭全部四个图层？",
-      "clearConfirm": "关闭所有图层",
-      "clearCancel": "保留图层",
-      "multiFrameUnsupported": "Quantum 暂不支持点亮多帧线路"
+      "multiFrameUnsupported": "Quantum 暂不支持点亮多帧线路",
+      "active": "已在岩壁上点亮",
+      "remove": "关闭我的灯光",
+      "removeColor": "关闭我的{{color}}灯光",
+      "invalidFrames": "无法读取这条线路的岩点",
+      "sessionDriver": "发起本次活动的手机负责控制灯光"
     }
   },
   "bluetooth": {

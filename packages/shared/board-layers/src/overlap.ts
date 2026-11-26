@@ -20,7 +20,10 @@ export type LayerPlacementPresence = {
  * party presence. A partial parse is unknown so overlap filtering fails open
  * when catalogue geometry is malformed.
  */
-export function parseBoardLayerPlacementIds(frames: string | null | undefined): number[] | null {
+export function parseBoardLayerPlacementIds(
+  frames: string | null | undefined,
+  maximumPlacements = MAX_DIODES_PER_LAYER,
+): number[] | null {
   if (!frames) return null;
   const placementIds: number[] = [];
   const seenPlacementIds = new Set<number>();
@@ -35,9 +38,10 @@ export function parseBoardLayerPlacementIds(frames: string | null | undefined): 
     if (!Number.isSafeInteger(placementId) || placementId < 0 || seenPlacementIds.has(placementId)) return null;
     seenPlacementIds.add(placementId);
     placementIds.push(placementId);
+    if (placementIds.length > maximumPlacements) return null;
   }
 
-  if (consumedLength !== frames.length || placementIds.length === 0 || placementIds.length > MAX_DIODES_PER_LAYER) {
+  if (consumedLength !== frames.length || placementIds.length === 0) {
     return null;
   }
   return placementIds;

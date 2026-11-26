@@ -35,9 +35,10 @@ type BluetoothCtx = {
 
 const ctrl = vi.hoisted(() => ({
   bluetooth: null as BluetoothCtx,
-  quantumState: { status: 'inactive', isAvailable: null } as {
+  quantumState: { status: 'inactive', isAvailable: null, driverStatus: 'checking' } as {
     status: 'inactive' | 'disconnected' | 'connecting' | 'connected';
     isAvailable: boolean | null;
+    driverStatus: 'checking' | 'available' | 'peer';
   },
   quantumActions: {
     connect: vi.fn().mockResolvedValue(true),
@@ -143,7 +144,7 @@ function renderControl(options: Partial<Parameters<typeof useLightbulbControl>[0
 
 beforeEach(() => {
   ctrl.bluetooth = makeBluetooth();
-  ctrl.quantumState = { status: 'inactive', isAvailable: null };
+  ctrl.quantumState = { status: 'inactive', isAvailable: null, driverStatus: 'checking' };
   ctrl.quantumActions.connect.mockClear();
   ctrl.quantumActions.disconnect.mockClear();
   ctrl.boardId = null;
@@ -312,7 +313,7 @@ describe('useLightbulbControl press action', () => {
   });
 
   it('connects Quantum without auto-sending or calling the legacy provider', () => {
-    ctrl.quantumState = { status: 'disconnected', isAvailable: true };
+    ctrl.quantumState = { status: 'disconnected', isAvailable: true, driverStatus: 'available' };
     const { result } = renderControl();
     result.current.onPress();
     expect(ctrl.quantumActions.connect).toHaveBeenCalledOnce();
@@ -322,7 +323,7 @@ describe('useLightbulbControl press action', () => {
   });
 
   it('opens explicit Quantum layer controls instead of disconnecting on a connected tap', () => {
-    ctrl.quantumState = { status: 'connected', isAvailable: true };
+    ctrl.quantumState = { status: 'connected', isAvailable: true, driverStatus: 'available' };
     const openControls = vi.fn();
     const { result } = renderControl({ onOpenControls: openControls });
     expect(result.current.pressAction).toBe('openControls');
@@ -335,15 +336,26 @@ describe('useLightbulbControl press action', () => {
   });
 
   it('keeps browse controls available but hides Quantum BLE when Web Bluetooth is unsupported', () => {
-    ctrl.quantumState = { status: 'disconnected', isAvailable: false };
+    ctrl.quantumState = { status: 'disconnected', isAvailable: false, driverStatus: 'available' };
     const { result } = renderControl();
     result.current.onPress();
     expect(result.current.available).toBe(false);
     expect(ctrl.quantumActions.connect).not.toHaveBeenCalled();
   });
 
+  it('tells session peers which phone controls the lights and never opens their picker', async () => {
+    ctrl.quantumState = { status: 'disconnected', isAvailable: true, driverStatus: 'peer' };
+    const { result } = renderControl();
+    expect(result.current.accessibilityLabel).toBe('lightControl.quantum.sessionDriver');
+    result.current.onPress();
+    await expect(result.current.connect()).resolves.toBe(false);
+    expect(showToastMock).toHaveBeenCalledWith('lightControl.quantum.sessionDriver');
+    expect(ctrl.quantumActions.connect).not.toHaveBeenCalled();
+    expect(ctrl.bluetooth?.connect).not.toHaveBeenCalled();
+  });
+
   it('surfaces a failed Quantum connection after the picker closes', async () => {
-    ctrl.quantumState = { status: 'disconnected', isAvailable: true };
+    ctrl.quantumState = { status: 'disconnected', isAvailable: true, driverStatus: 'available' };
     ctrl.quantumActions.connect.mockResolvedValueOnce(false);
     const { result } = renderControl();
     result.current.onPress();

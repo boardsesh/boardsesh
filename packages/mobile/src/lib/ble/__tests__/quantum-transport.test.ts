@@ -35,6 +35,18 @@ const PLAYER: QuantumActivePlayer = {
 };
 
 describe('QuantumNotificationInbox', () => {
+  it('keeps a scoped mutation refusal even when it precedes the roster request', () => {
+    const inbox = new QuantumNotificationInbox();
+    const releaseRefusal = Uint8Array.of(1, QuantumCommand.TURN_OFF_BY_USER | 0x80, 254);
+    inbox.push(releaseRefusal);
+    inbox.markMutation();
+    expect(inbox.getMutationFailure(QuantumCommand.TURN_OFF_BY_USER)).toBeUndefined();
+    inbox.push(releaseRefusal);
+    inbox.markRosterRequest();
+    expect(inbox.getMutationFailure(QuantumCommand.TURN_OFF_BY_USER)).toBe('ack-timeout');
+    expect(inbox.getMutationFailure(QuantumCommand.ACTIVATE_WALL)).toBeUndefined();
+  });
+
   it('consumes a full oversized roster without dispatching embedded packet markers', async () => {
     const inbox = new QuantumNotificationInbox();
     const listener = vi.fn();
@@ -132,20 +144,19 @@ class InstantTime implements QuantumTime {
 }
 
 describe('QuantumBoardController', () => {
-  it('requires explicit confirmation and proves a global clear with readback', async () => {
+  it('sends only an owner-scoped removal and confirms it with readback', async () => {
     const transport = new ScriptedTransport([rosterFrame([PLAYER]), rosterFrame([])]);
     const time = new InstantTime();
     const controller = new QuantumBoardController(transport, { time });
 
-    await expect(controller.clearAll({ confirmed: false })).rejects.toThrow('explicit confirmation');
-    const snapshot = await controller.clearAll({ confirmed: true });
+    const snapshot = await controller.remove({ userId: USER, routeId: ROUTE });
 
     expect(snapshot.players).toEqual([]);
     expect(transport.writes.map((frame) => frame[1])).toEqual([
       QuantumCommand.REQUEST_USER_ROUTE_LIST,
-      QuantumCommand.TURN_OFF_ALL,
+      QuantumCommand.TURN_OFF_BY_USER,
       QuantumCommand.REQUEST_USER_ROUTE_LIST,
     ]);
-    expect(time.sleeps).toContain(250);
+    expect(transport.writes[1].slice(2, 18)).toEqual(encodeQuantumUuid(USER));
   });
 });

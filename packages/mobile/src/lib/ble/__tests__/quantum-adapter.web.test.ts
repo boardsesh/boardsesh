@@ -232,6 +232,35 @@ describe('WebQuantumBluetoothTransport', () => {
       await second.readState();
     },
   );
+  it('rechecks queued write eligibility before the browser characteristic call', async () => {
+    const { writeValueWithResponse } = setupDevice();
+    const adapter = new WebQuantumBluetoothTransport();
+    await adapter.requestAndConnect('l');
+    let releaseFirst!: () => void;
+    writeValueWithResponse.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((resolve) => {
+          releaseFirst = () => resolve(undefined);
+        }),
+    );
+    const first = adapter.writeFrame(Uint8Array.of(1, 0x47));
+    await Promise.resolve();
+    let eligible = true;
+    const queued = adapter.writeFrame(Uint8Array.of(1, 0x41), () => eligible);
+    const rejected = expect(queued).rejects.toMatchObject({ code: 'operation-cancelled' });
+    eligible = false;
+    releaseFirst();
+    await first;
+    await rejected;
+    expect(writeValueWithResponse).toHaveBeenCalledOnce();
+  });
+
+  it('refuses Belay before opening the browser chooser', async () => {
+    setupDevice();
+    await expect(new WebQuantumBluetoothTransport().requestAndConnect('belay')).rejects.toThrow('metadata');
+    expect(webBluetooth.requestDevice).not.toHaveBeenCalled();
+  });
+
   it('fences queued GATT work and disconnect from a superseded live browser adapter', async () => {
     const shared = setupDevice();
     const first = new WebQuantumBluetoothTransport();

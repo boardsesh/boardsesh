@@ -7,11 +7,13 @@ import {
   type QuantumActivePlayer,
   type QuantumBoardModelId,
   type QuantumBroadcast,
+  type QuantumControllerFailure,
   type QuantumControllerMetadata,
   type QuantumRemoveTransaction,
   type QuantumRosterSnapshot,
   type QuantumRosterTransport,
   type QuantumTime,
+  type QuantumWriteEligibility,
 } from '@boardsesh/ble-protocol/quantum';
 import type { DevicePickerFn } from './types';
 
@@ -79,9 +81,27 @@ export class QuantumNotificationInbox {
   private readonly listeners = new Set<(broadcast: QuantumBroadcast) => void>();
   private sequence = 0;
   private rosterFloor = 0;
+  private mutationFloor = 0;
 
   markRosterRequest(): void {
     this.rosterFloor = this.sequence;
+  }
+
+  markMutation(): void {
+    this.mutationFloor = this.sequence;
+  }
+
+  getMutationFailure(command: QuantumCommand): QuantumControllerFailure | undefined {
+    for (const { sequence, broadcast } of this.records) {
+      if (
+        sequence > this.mutationFloor &&
+        broadcast.type === 'controller-error' &&
+        broadcast.failedCommand === command
+      ) {
+        return broadcast.failure;
+      }
+    }
+    return undefined;
   }
 
   push(value: Uint8Array): void {
@@ -133,6 +153,7 @@ export class QuantumNotificationInbox {
     this.records.length = 0;
     this.sequence = 0;
     this.rosterFloor = 0;
+    this.mutationFloor = 0;
   }
 
   private isRosterResponse(record: QuantumNotificationRecord): boolean {
@@ -145,7 +166,6 @@ export class QuantumNotificationInbox {
 
 export type QuantumBoardControllerOptions = {
   time?: QuantumTime;
-  clearSettleDelayMs?: number;
 };
 
 const SYSTEM_TIME: QuantumTime = {
@@ -155,8 +175,8 @@ const SYSTEM_TIME: QuantumTime = {
 };
 
 /**
- * One serialized command lane for refresh, layer activation/removal, and the
- * destructive global clear. Write acknowledgement is never treated as proof:
+ * One serialized command lane for refresh and scoped layer mutations.
+ * Write acknowledgement is never treated as proof:
  * every mutation returns only after a fresh FFF4/FFF1 roster readback.
  */
 export class QuantumBoardController {
@@ -169,9 +189,7 @@ export class QuantumBoardController {
 
   constructor(transport: QuantumBluetoothTransport, options: QuantumBoardControllerOptions = {}) {
     this.time = options.time ?? SYSTEM_TIME;
-    this.transactionMachine = new QuantumRosterTransactionMachine(transport, this.time, {
-      clearSettleDelayMs: options.clearSettleDelayMs,
-    });
+    this.transactionMachine = new QuantumRosterTransactionMachine(transport, this.time);
     this.removeBroadcastListener = transport.onBroadcast((broadcast) => {
       if (broadcast.type === 'roster' && broadcast.players.length <= QUANTUM_MAX_PLAYERS)
         this.publish(broadcast.players, this.time.now());
@@ -189,8 +207,8 @@ export class QuantumBoardController {
     return () => this.listeners.delete(listener);
   }
 
-  async refresh(): Promise<QuantumRosterSnapshot> {
-    return this.publishMachineSnapshot(await this.transactionMachine.refresh());
+  async refresh(isEligible?: QuantumWriteEligibility): Promise<QuantumRosterSnapshot> {
+    return this.publishMachineSnapshot(await this.transactionMachine.refresh(isEligible));
   }
 
   async activate(request: QuantumActivateTransaction): Promise<QuantumRosterSnapshot> {
@@ -199,13 +217,6 @@ export class QuantumBoardController {
 
   async remove(request: QuantumRemoveTransaction): Promise<QuantumRosterSnapshot> {
     return this.publishMachineSnapshot(await this.transactionMachine.remove(request));
-  }
-
-  /** Global clear is deliberately impossible without an explicit UI-owned
-   * confirmation. Callers should obtain that confirmation inline, then pass
-   * `confirmed: true`; the empty roster readback is still mandatory. */
-  async clearAll(request: { confirmed: boolean }): Promise<QuantumRosterSnapshot> {
-    return this.publishMachineSnapshot(await this.transactionMachine.clearAll(request));
   }
 
   destroy(): void {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -17,16 +17,22 @@ export type QuantumLayerControlRow = Readonly<{
   action: QuantumLayerAction;
 }>;
 
+export type QuantumLayerRemovalRow = Readonly<{
+  controllerUserUuid: string;
+  controllerRouteUuid: string;
+  colorKey?: BoardLayerColorKey;
+  colorHex: string;
+}>;
+
 type QuantumBleControlSheetProps = {
   visible: boolean;
   rows: readonly QuantumLayerControlRow[];
   targetError: QuantumClimbLightTargetError | null;
-  busySlot: number | null;
-  clearing: boolean;
+  removals: readonly QuantumLayerRemovalRow[];
+  busyAction: string | number | null;
   actionFailed: boolean;
-  hasActivePlayers: boolean;
   onLayerPress: (row: QuantumLayerControlRow) => void;
-  onClearAll: () => void;
+  onRemove: (row: QuantumLayerRemovalRow) => void;
   onDisconnect: () => void;
   onClose: () => void;
 };
@@ -56,6 +62,7 @@ function targetErrorLabel(reason: QuantumClimbLightTargetError | null, t: TFunct
     return t('lightControl.quantum.geometryMissing');
   }
   if (reason === 'multi-frame-unsupported') return t('lightControl.quantum.multiFrameUnsupported');
+  if (reason === 'invalid-frames') return t('lightControl.quantum.invalidFrames');
   if (reason === 'too-many-diodes') return t('lightControl.quantum.tooManyHolds');
   return t('lightControl.quantum.noClimb');
 }
@@ -70,8 +77,8 @@ function actionLabel(
       return t('lightControl.quantum.light');
     case 'replace':
       return t('lightControl.quantum.replace');
-    case 'remove':
-      return t('lightControl.quantum.remove');
+    case 'active':
+      return t('lightControl.quantum.active');
     case 'unavailable':
       if (action.reason === 'color-in-use') return t('lightControl.quantum.foreign');
       if (action.reason === 'board-full') return t('lightControl.quantum.boardFull');
@@ -80,28 +87,21 @@ function actionLabel(
 }
 
 /** Explicit Quantum roster controls. Navigation and queue gestures never call
- * these handlers; the climber chooses a fixed color slot here. */
+ * these handlers; the climber chooses a color for this phone's player. */
 export function QuantumBleControlSheet({
   visible,
   rows,
   targetError,
-  busySlot,
-  clearing,
+  removals,
+  busyAction,
   actionFailed,
-  hasActivePlayers,
   onLayerPress,
-  onClearAll,
+  onRemove,
   onDisconnect,
   onClose,
 }: QuantumBleControlSheetProps) {
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
-  const [confirmingClear, setConfirmingClear] = useState(false);
-
-  useEffect(() => {
-    if (!visible || !hasActivePlayers) setConfirmingClear(false);
-  }, [hasActivePlayers, visible]);
-
   const handleDisconnect = useCallback(() => {
     onDisconnect();
     onClose();
@@ -111,8 +111,8 @@ export function QuantumBleControlSheet({
     <ModalSheet visible={visible} enableDynamicSizing onClose={onClose} enablePanDownToClose scrollable>
       <View style={styles.content}>
         {rows.map((row) => {
-          const busy = busySlot === row.slot;
-          const canPress = !clearing && busySlot === null && row.action.kind !== 'unavailable';
+          const busy = busyAction === row.slot;
+          const canPress = busyAction === null && (row.action.kind === 'light' || row.action.kind === 'replace');
           const translatedColor = colorLabel(row.colorKey, t);
           return (
             <ListRow
@@ -139,41 +139,25 @@ export function QuantumBleControlSheet({
           />
         ) : null}
 
-        {hasActivePlayers && confirmingClear ? (
-          <>
-            <ListRow
-              title={t('lightControl.quantum.clearQuestion')}
-              leading={<Icon name="lightbulb.slash" size={22} color={systemColors.error} />}
-              showSeparator
-            />
-            <ListRow
-              title={t('lightControl.quantum.clearConfirm')}
-              leading={<Icon name="check.small" size={22} color={systemColors.error} />}
-              trailing={clearing ? <ActivityIndicator size="small" /> : undefined}
-              onPress={clearing || busySlot !== null ? undefined : onClearAll}
-              showSeparator
-            />
-            <ListRow
-              title={t('lightControl.quantum.clearCancel')}
-              leading={<Icon name="close" size={22} />}
-              onPress={clearing ? undefined : () => setConfirmingClear(false)}
-              showSeparator
-            />
-          </>
-        ) : hasActivePlayers ? (
+        {removals.map((row) => (
           <ListRow
-            title={t('lightControl.quantum.clearStart')}
-            subtitle={t('lightControl.quantum.clearStartSubtitle')}
-            leading={<Icon name="lightbulb.slash" size={22} color={systemColors.error} />}
-            onPress={busySlot === null ? () => setConfirmingClear(true) : undefined}
+            key={row.controllerUserUuid}
+            title={
+              row.colorKey
+                ? t('lightControl.quantum.removeColor', { color: colorLabel(row.colorKey, t) })
+                : t('lightControl.quantum.remove')
+            }
+            leading={<View style={[styles.colorDot, { backgroundColor: row.colorHex }]} />}
+            trailing={busyAction === row.controllerUserUuid ? <ActivityIndicator size="small" /> : undefined}
+            onPress={busyAction === null ? () => onRemove(row) : undefined}
             showSeparator
           />
-        ) : null}
+        ))}
 
         <ListRow
           title={t('lightControl.disconnect')}
           leading={<Icon name="bluetooth.off" size={22} color={systemColors.error} />}
-          onPress={busySlot === null && !clearing ? handleDisconnect : undefined}
+          onPress={busyAction === null ? handleDisconnect : undefined}
           showSeparator={false}
         />
       </View>

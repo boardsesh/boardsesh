@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getQuantumBundledGeometry } from '@boardsesh/board-constants/quantum';
-import { buildInstallationBoardLayers } from '@boardsesh/board-layers';
+import { BOARD_LAYER_COLORS } from '@boardsesh/board-layers';
 import type { Climb } from '@boardsesh/queue';
 import type { QuantumActivePlayer } from '@boardsesh/ble-protocol/quantum';
 import {
@@ -17,7 +17,6 @@ const USER_UUIDS = [
 ] as const;
 const ROUTE_UUID = '20000000-0000-4000-8000-000000000001';
 const OTHER_ROUTE_UUID = '20000000-0000-4000-8000-000000000002';
-const layers = buildInstallationBoardLayers(USER_UUIDS);
 
 function climb(overrides: Partial<Climb> = {}): Climb {
   return {
@@ -26,7 +25,7 @@ function climb(overrides: Partial<Climb> = {}): Climb {
     boardType: 'quantum',
     setter_username: 'Setter',
     name: 'Test',
-    frames: 'p0r15p8r12p0r14',
+    frames: 'p0r14p8r12',
     controllerRouteUuid: ROUTE_UUID,
     angle: 30,
     ascensionist_count: 0,
@@ -98,13 +97,13 @@ describe('buildQuantumClimbLightTarget', () => {
     },
   );
 
-  it('maps placement zero and de-duplicates diode addresses through authoritative geometry', () => {
+  it('maps placement zero through authoritative geometry', () => {
     expect(buildQuantumClimbLightTarget(climb(), geometry, 3, 7)).toEqual({
       ok: true,
       target: {
         controllerRouteUuid: ROUTE_UUID,
         diodeIds: [0, 42],
-        placementIds: [0, 8, 0],
+        placementIds: [0, 8],
         layoutId: 3,
         sizeId: 3,
         geometryGeneration: 7,
@@ -150,6 +149,16 @@ describe('buildQuantumClimbLightTarget', () => {
     });
   });
 
+  it.each(['p0r12p8r', 'p0r12junk', 'p0r12p0r14'])(
+    'refuses invalid hold frames %s instead of lighting a prefix',
+    (frames) => {
+      expect(buildQuantumClimbLightTarget(climb({ frames }), geometry, 3, 7)).toEqual({
+        ok: false,
+        reason: 'invalid-frames',
+      });
+    },
+  );
+
   it('rejects multi-frame climbs instead of unioning removed holds into one static layer', () => {
     expect(buildQuantumClimbLightTarget(climb({ frames: 'p0r15p8r12,"x0' }), geometry, 3, 7)).toEqual({
       ok: false,
@@ -189,28 +198,34 @@ describe('deriveQuantumLayerAction', () => {
   if (!targetResult.ok) throw new Error('fixture target did not resolve');
   const target = targetResult.target;
 
-  it('offers remove for the same route and replace for a different route owned by this install', () => {
-    expect(deriveQuantumLayerAction(layers[0], [player()], target)).toEqual({
-      kind: 'remove',
+  it('shows the current color and reuses the same player for a color or route change', () => {
+    expect(deriveQuantumLayerAction(USER_UUIDS[0], BOARD_LAYER_COLORS[0], [player()], target)).toEqual({
+      kind: 'active',
+    });
+    expect(deriveQuantumLayerAction(USER_UUIDS[0], BOARD_LAYER_COLORS[1], [player()], target)).toEqual({
+      kind: 'replace',
       activeRouteUuid: ROUTE_UUID,
     });
-    expect(deriveQuantumLayerAction(layers[0], [player({ routeId: OTHER_ROUTE_UUID })], target)).toEqual({
+    expect(
+      deriveQuantumLayerAction(USER_UUIDS[0], BOARD_LAYER_COLORS[0], [player({ routeId: OTHER_ROUTE_UUID })], target),
+    ).toEqual({
       kind: 'replace',
       activeRouteUuid: OTHER_ROUTE_UUID,
     });
   });
 
   it('keeps a foreign player unavailable while it consumes the matching color', () => {
-    expect(deriveQuantumLayerAction(layers[0], [player({ userId: USER_UUIDS[1] })], target)).toEqual({
+    expect(
+      deriveQuantumLayerAction(USER_UUIDS[0], BOARD_LAYER_COLORS[0], [player({ userId: USER_UUIDS[1] })], target),
+    ).toEqual({
       kind: 'unavailable',
       reason: 'color-in-use',
     });
   });
 
-  it('allows removing an owned layer even when no climb target can be resolved', () => {
-    expect(deriveQuantumLayerAction(layers[0], [player()], null)).toEqual({
-      kind: 'remove',
-      activeRouteUuid: ROUTE_UUID,
+  it('shows the active color even when no climb target can be resolved', () => {
+    expect(deriveQuantumLayerAction(USER_UUIDS[0], BOARD_LAYER_COLORS[0], [player()], null)).toEqual({
+      kind: 'active',
     });
   });
 });

@@ -17,6 +17,7 @@ const provider = vi.hoisted(() => ({ props: undefined as { boardSerialNumber?: s
 vi.mock('../queue/use-reachable-board-keys', () => ({ useReachableBoardKeys: () => new Set<string>() }));
 
 vi.mock('../../lib/graphql/use-active-board', () => ({
+  getActiveBoardWriteGeneration: () => 0,
   useActiveBoard: () => ({ data: activeBoard.data }),
 }));
 
@@ -42,6 +43,12 @@ vi.mock('../quantum-bluetooth-provider', () => ({
 
 vi.mock('../../lib/live-activity/live-activity-bridge', () => ({
   LiveActivityBridge: () => createElement('div', { 'data-testid': 'live-activity-bridge' }),
+}));
+
+const flags = vi.hoisted(() => ({ enabled: true, resolved: true }));
+vi.mock('../feature-flags-provider', () => ({
+  useFeatureFlag: () => flags.enabled,
+  useFeatureFlagsResolved: () => flags.resolved,
 }));
 
 import { BluetoothProviderWrapper } from '../bluetooth-provider-wrapper';

@@ -141,7 +141,7 @@ function canonicalQuantumUuid(uuid: string): string {
   return decodeQuantumUuid(encodeQuantumUuid(uuid));
 }
 
-function quantumUuidsEqual(first: string, second: string): boolean {
+export function quantumUuidsEqual(first: string, second: string): boolean {
   return canonicalQuantumUuid(first) === canonicalQuantumUuid(second);
 }
 
@@ -441,11 +441,22 @@ function confirmsForeignLayers(
   return remaining.every((missing) => missing.remainingSeconds <= elapsedSeconds);
 }
 
+/** Rechecked in both the transaction lane and the platform GATT lane. */
+export type QuantumWriteEligibility = () => boolean;
+
+export function assertQuantumWriteEligible(isEligible?: QuantumWriteEligibility): void {
+  if (isEligible && !isEligible()) {
+    throw new QuantumRosterTransactionError('operation-cancelled', 'Quantum wall controls are no longer active');
+  }
+}
+
 export interface QuantumRosterTransport {
   /** Largest complete value accepted by one transport write in its negotiated mode. */
   readonly maximumWriteBytes: number;
   /** Issue one characteristic write in the mode selected for this binary connection. */
-  writeFrame(frame: Uint8Array): Promise<void>;
+  writeFrame(frame: Uint8Array, isEligible?: QuantumWriteEligibility): Promise<void>;
+  /** A buffered refusal for the last mutation can arrive before the roster request. */
+  getMutationFailure?(command: QuantumCommand): QuantumControllerFailure | undefined;
   /** Read one complete value from the state characteristic. */
   readState(): Promise<Uint8Array | undefined>;
   /** Optional notification fallback; the adapter owns its timeout mechanism. */
@@ -470,10 +481,11 @@ export type QuantumRosterSnapshot = {
   players: readonly QuantumActivePlayer[];
 };
 
-export type QuantumRosterOperation = 'refresh' | 'activate' | 'remove' | 'clear';
+export type QuantumRosterOperation = 'refresh' | 'activate' | 'remove';
 export type QuantumRosterPhase = 'idle' | 'refreshing' | 'mutating' | 'live' | 'failed';
 
 export type QuantumRosterTransactionErrorCode =
+  | 'operation-cancelled'
   | 'frame-too-large'
   | 'transport-failed'
   | 'roster-unavailable'
@@ -511,17 +523,20 @@ export type QuantumRosterMachineOptions = {
   routeListReadDelayMs?: number;
   releaseBeforeActivationDelayMs?: number;
   activationSettleDelayMs?: number;
-  clearSettleDelayMs?: number;
   notificationTimeoutMs?: number;
 };
 
 export type QuantumActivateTransaction = QuantumActivation & {
+  /** Absent for a fresh player. Required to replace an existing route. */
+  expectedOwnedRouteId?: string;
+  isEligible?: QuantumWriteEligibility;
   expectedPlayers?: readonly QuantumActivePlayer[];
 };
 
 export type QuantumRemoveTransaction = {
   userId: string;
   routeId: string;
+  isEligible?: QuantumWriteEligibility;
   expectedPlayers?: readonly QuantumActivePlayer[];
 };
 
@@ -534,7 +549,6 @@ export class QuantumRosterTransactionMachine {
   private readonly routeListReadDelayMs: number;
   private readonly releaseBeforeActivationDelayMs: number;
   private readonly activationSettleDelayMs: number;
-  private readonly clearSettleDelayMs: number;
   private readonly notificationTimeoutMs: number;
   private operationTail: Promise<void> = Promise.resolve();
   private currentState: QuantumRosterMachineState = { phase: 'idle' };
@@ -547,7 +561,6 @@ export class QuantumRosterTransactionMachine {
     this.routeListReadDelayMs = options.routeListReadDelayMs ?? 50;
     this.releaseBeforeActivationDelayMs = options.releaseBeforeActivationDelayMs ?? 50;
     this.activationSettleDelayMs = options.activationSettleDelayMs ?? 250;
-    this.clearSettleDelayMs = options.clearSettleDelayMs ?? 250;
     this.notificationTimeoutMs = options.notificationTimeoutMs ?? 3_000;
   }
 
@@ -555,8 +568,8 @@ export class QuantumRosterTransactionMachine {
     return this.currentState;
   }
 
-  refresh(): Promise<QuantumRosterSnapshot> {
-    return this.enqueue('refresh', () => this.requestFreshRoster('refresh'));
+  refresh(isEligible?: QuantumWriteEligibility): Promise<QuantumRosterSnapshot> {
+    return this.enqueue('refresh', () => this.requestFreshRoster('refresh', isEligible));
   }
 
   async activate(request: QuantumActivateTransaction): Promise<QuantumRosterSnapshot> {
@@ -564,42 +577,64 @@ export class QuantumRosterTransactionMachine {
       throw new TypeError('Quantum roster mutations require a non-zero user UUID');
     }
 
-    const releaseFrame = encodeQuantumTurnOffUser(request.userId);
     const activationFrame = encodeQuantumActivation(request);
-    this.assertFrameFits(releaseFrame);
     this.assertFrameFits(activationFrame);
 
     return this.enqueue('activate', async () => {
-      const before = await this.requestFreshRoster('activate');
+      const before = await this.requestFreshRoster('activate', request.isEligible);
       const preflightAt = this.time.monotonicNow();
       this.assertExpectedRoster(before, request.expectedPlayers);
 
-      const otherPlayers = before.players.filter((player) => !quantumUuidsEqual(player.userId, request.userId));
-      const isReplacingExistingUser = otherPlayers.length !== before.players.length;
-      if (!isReplacingExistingUser && before.players.length >= QUANTUM_MAX_PLAYERS) {
+      const ownedPlayers = this.ownedPlayers(before, request.userId);
+      const expectedRoute = request.expectedOwnedRouteId;
+      if (
+        expectedRoute === undefined
+          ? ownedPlayers.length !== 0
+          : ownedPlayers.length !== 1 || !quantumUuidsEqual(ownedPlayers[0].routeId, expectedRoute)
+      ) {
+        throw new QuantumRosterTransactionError(
+          'target-route-changed',
+          'Quantum player no longer owns the expected route',
+        );
+      }
+
+      const foreignPlayers = before.players.filter((player) => !quantumUuidsEqual(player.userId, request.userId));
+      if (ownedPlayers.length === 0 && before.players.length >= QUANTUM_MAX_PLAYERS) {
         throw new QuantumRosterTransactionError('board-full', 'Quantum controller already has four active players');
       }
-      if (otherPlayers.some((player) => player.color === (request.color ?? 0x00ffff))) {
+      if (foreignPlayers.some((player) => quantumUuidsEqual(player.routeId, request.routeId))) {
+        throw new QuantumRosterTransactionError('roster-changed', 'Quantum route is already active for another player');
+      }
+      const color = request.color ?? 0x00ffff;
+      if (foreignPlayers.some((player) => player.color === color)) {
         throw new QuantumRosterTransactionError('color-in-use', 'Quantum controller color is already occupied');
       }
 
+      if (ownedPlayers.length === 1) {
+        await this.releaseAndConfirm({
+          operation: 'activate',
+          removalFrame: encodeQuantumTurnOffUser(request.userId),
+          userId: request.userId,
+          foreignPlayers,
+          preflightAt,
+          isEligible: request.isEligible,
+        });
+      }
       this.transition('mutating', 'activate');
-      await this.writeAtomic(releaseFrame);
-      await this.time.sleep(this.releaseBeforeActivationDelayMs);
-      await this.writeAtomic(activationFrame);
+      await this.writeAtomic(activationFrame, request.isEligible);
       await this.time.sleep(this.activationSettleDelayMs);
-
-      const after = await this.requestFreshRoster('activate');
-      const afterOtherPlayers = after.players.filter((player) => !quantumUuidsEqual(player.userId, request.userId));
-      const targetPlayers = after.players.filter((player) => quantumUuidsEqual(player.userId, request.userId));
+      const command = request.swipe ? QuantumCommand.BOARD_SWIPE : QuantumCommand.ACTIVATE_WALL;
+      const after = await this.requestFreshRoster('activate', request.isEligible, command);
+      const afterForeignPlayers = after.players.filter((player) => !quantumUuidsEqual(player.userId, request.userId));
+      const targetPlayers = this.ownedPlayers(after, request.userId);
       const targetConfirmed =
         targetPlayers.length === 1 &&
         quantumUuidsEqual(targetPlayers[0].routeId, request.routeId) &&
-        targetPlayers[0].color === (request.color ?? 0x00ffff);
+        targetPlayers[0].color === color;
 
       if (
         !targetConfirmed ||
-        !confirmsForeignLayers(otherPlayers, afterOtherPlayers, this.time.monotonicNow() - preflightAt)
+        !confirmsForeignLayers(foreignPlayers, afterForeignPlayers, this.time.monotonicNow() - preflightAt)
       ) {
         throw new QuantumRosterTransactionError(
           'confirmation-failed',
@@ -620,54 +655,62 @@ export class QuantumRosterTransactionMachine {
     this.assertFrameFits(removalFrame);
 
     return this.enqueue('remove', async () => {
-      const before = await this.requestFreshRoster('remove');
+      const before = await this.requestFreshRoster('remove', request.isEligible);
       const preflightAt = this.time.monotonicNow();
       this.assertExpectedRoster(before, request.expectedPlayers);
-
-      const target = before.players.find((player) => quantumUuidsEqual(player.userId, request.userId));
-      if (!target) return before;
-      if (!quantumUuidsEqual(target.routeId, request.routeId)) {
+      const ownedPlayers = this.ownedPlayers(before, request.userId);
+      if (ownedPlayers.length === 0) return before;
+      if (ownedPlayers.length !== 1 || !quantumUuidsEqual(ownedPlayers[0].routeId, request.routeId)) {
         throw new QuantumRosterTransactionError(
           'target-route-changed',
-          'Quantum user now owns a different route than the requested removal target',
+          'Quantum player no longer owns the expected removal route',
         );
       }
 
-      const otherPlayers = before.players.filter((player) => !quantumUuidsEqual(player.userId, request.userId));
-      this.transition('mutating', 'remove');
-      await this.writeAtomic(removalFrame);
-      const after = await this.requestFreshRoster('remove');
-      const targetStillPresent = after.players.some((player) => quantumUuidsEqual(player.userId, request.userId));
-
-      if (
-        targetStillPresent ||
-        !confirmsForeignLayers(otherPlayers, after.players, this.time.monotonicNow() - preflightAt)
-      ) {
-        throw new QuantumRosterTransactionError(
-          'confirmation-failed',
-          'Quantum removal did not preserve and confirm the expected roster',
-        );
-      }
-
-      return after;
+      return this.releaseAndConfirm({
+        operation: 'remove',
+        removalFrame,
+        userId: request.userId,
+        foreignPlayers: before.players.filter((player) => !quantumUuidsEqual(player.userId, request.userId)),
+        preflightAt,
+        isEligible: request.isEligible,
+      });
     });
   }
 
-  async clearAll({ confirmed }: { confirmed: boolean }): Promise<QuantumRosterSnapshot> {
-    if (!confirmed) throw new Error('Quantum global clear requires explicit confirmation');
-    const frame = encodeQuantumTurnOffAll();
-    this.assertFrameFits(frame);
-    return this.enqueue('clear', async () => {
-      await this.requestFreshRoster('clear');
-      this.transition('mutating', 'clear');
-      await this.writeAtomic(frame);
-      await this.time.sleep(this.clearSettleDelayMs);
-      const after = await this.requestFreshRoster('clear');
-      if (after.players.length !== 0) {
-        throw new QuantumRosterTransactionError('confirmation-failed', 'Quantum global clear was not confirmed');
-      }
-      return after;
-    });
+  private ownedPlayers(snapshot: QuantumRosterSnapshot, userId: string): QuantumActivePlayer[] {
+    return snapshot.players.filter((player) => quantumUuidsEqual(player.userId, userId));
+  }
+
+  private async releaseAndConfirm({
+    operation,
+    removalFrame,
+    userId,
+    foreignPlayers,
+    preflightAt,
+    isEligible,
+  }: {
+    operation: 'activate' | 'remove';
+    removalFrame: Uint8Array;
+    userId: string;
+    foreignPlayers: readonly QuantumActivePlayer[];
+    preflightAt: number;
+    isEligible?: QuantumWriteEligibility;
+  }): Promise<QuantumRosterSnapshot> {
+    this.transition('mutating', operation);
+    await this.writeAtomic(removalFrame, isEligible);
+    if (operation === 'activate') await this.time.sleep(this.releaseBeforeActivationDelayMs);
+    const after = await this.requestFreshRoster(operation, isEligible, QuantumCommand.TURN_OFF_BY_USER);
+    if (
+      this.ownedPlayers(after, userId).length !== 0 ||
+      !confirmsForeignLayers(foreignPlayers, after.players, this.time.monotonicNow() - preflightAt)
+    ) {
+      throw new QuantumRosterTransactionError(
+        'confirmation-failed',
+        'Quantum removal did not preserve and confirm the expected roster',
+      );
+    }
+    return after;
   }
 
   private enqueue<T>(operation: QuantumRosterOperation, task: () => Promise<T>): Promise<T> {
@@ -698,14 +741,35 @@ export class QuantumRosterTransactionMachine {
     return result;
   }
 
-  private async requestFreshRoster(operation: QuantumRosterOperation): Promise<QuantumRosterSnapshot> {
+  private async requestFreshRoster(
+    operation: QuantumRosterOperation,
+    isEligible?: QuantumWriteEligibility,
+    mutationCommand?: QuantumCommand,
+  ): Promise<QuantumRosterSnapshot> {
     this.transition('refreshing', operation);
-    await this.writeAtomic(encodeQuantumRosterRequest());
+    const assertCurrent = () => {
+      assertQuantumWriteEligible(isEligible);
+      if (mutationCommand === undefined) return;
+      const failure = this.transport.getMutationFailure?.(mutationCommand);
+      if (failure) {
+        throw new QuantumRosterTransactionError(
+          'controller-refused',
+          `Quantum controller refused the command: ${failure}`,
+          {
+            controllerFailure: failure,
+          },
+        );
+      }
+    };
+    assertCurrent();
+    await this.writeAtomic(encodeQuantumRosterRequest(), isEligible);
     await this.time.sleep(this.routeListReadDelayMs);
 
     let readFailure: unknown;
     try {
+      assertCurrent();
       const readFrame = await this.transport.readState();
+      assertCurrent();
       const roster = this.rosterFromFrame(readFrame);
       if (roster) return this.acceptRoster(roster);
     } catch (error) {
@@ -716,6 +780,7 @@ export class QuantumRosterTransactionMachine {
     if (this.transport.waitForNotification) {
       try {
         const notification = await this.transport.waitForNotification(this.notificationTimeoutMs);
+        assertCurrent();
         const roster = this.rosterFromFrame(notification);
         if (roster) return this.acceptRoster(roster);
       } catch (error) {
@@ -783,9 +848,10 @@ export class QuantumRosterTransactionMachine {
     }
   }
 
-  private async writeAtomic(frame: Uint8Array): Promise<void> {
+  private async writeAtomic(frame: Uint8Array, isEligible?: QuantumWriteEligibility): Promise<void> {
     this.assertFrameFits(frame);
-    await this.transport.writeFrame(frame.slice());
+    assertQuantumWriteEligible(isEligible);
+    await this.transport.writeFrame(frame.slice(), isEligible);
   }
 
   private transition(phase: QuantumRosterPhase, operation: QuantumRosterOperation): void {

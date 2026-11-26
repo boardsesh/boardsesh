@@ -1,21 +1,29 @@
 import { randomUUID } from 'expo-crypto';
-import { buildInstallationBoardLayers, type InstallationBoardLayer } from '@boardsesh/board-layers';
+import type { QuantumLocalPlayer, QuantumSessionPlayerScope } from './quantum-layer-identity-store';
 
-let memoryLayers: InstallationBoardLayer[] | null = null;
+let soloPlayer: QuantumLocalPlayer | null = null;
+let sessionPlayer: (QuantumSessionPlayerScope & QuantumLocalPlayer) | null = null;
 
-/**
- * Browser controller identities are credential-like wall capabilities. Keep
- * them stable only for this loaded page: Expo web's SecureStore compatibility
- * layer is plaintext IndexedDB, so it must never receive these UUIDs.
- *
- * A reload deliberately rotates the four identities. The controller roster's
- * existing foreign layers still consume slots and can be cleared explicitly;
- * no identifier is recovered from browser storage or sent to a server.
- */
-export async function getOrCreateQuantumLayerIdentities(
+/** Keep controller credentials in this page's memory. */
+export async function getOrCreateQuantumSoloPlayer(
   generateUuid: () => string = randomUUID,
-): Promise<InstallationBoardLayer[]> {
-  if (memoryLayers) return memoryLayers;
-  memoryLayers = buildInstallationBoardLayers(Array.from({ length: 4 }, () => generateUuid()));
-  return memoryLayers;
+): Promise<QuantumLocalPlayer> {
+  soloPlayer ??= { controllerUserUuid: generateUuid(), legacyCleanupUserUuids: [] };
+  return soloPlayer;
+}
+
+export async function getQuantumSessionPlayer(scope: QuantumSessionPlayerScope): Promise<QuantumLocalPlayer | null> {
+  if (sessionPlayer?.sessionId !== scope.sessionId || sessionPlayer.accountId !== scope.accountId) return null;
+  return { controllerUserUuid: sessionPlayer.controllerUserUuid, legacyCleanupUserUuids: [] };
+}
+
+/** A reload loses the driver credential. A restored session can only read it. */
+export async function rememberStartedQuantumSessionPlayer(
+  scope: QuantumSessionPlayerScope,
+  isCurrent: () => boolean,
+  generateUuid: () => string = randomUUID,
+): Promise<void> {
+  if (!isCurrent() || (sessionPlayer?.sessionId === scope.sessionId && sessionPlayer.accountId === scope.accountId))
+    return;
+  sessionPlayer = { ...scope, controllerUserUuid: generateUuid(), legacyCleanupUserUuids: [] };
 }

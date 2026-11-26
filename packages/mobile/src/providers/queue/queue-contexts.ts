@@ -322,6 +322,10 @@ export const QueueSessionControlContext = createContext<QueueSessionControlConte
  */
 type QueueSessionIdContextValue = {
   sessionId: string | null;
+  /** Includes explicit session transitions before their render commits. */
+  getCurrentSessionId?: () => string | null;
+  getSessionContextRevision?: () => number;
+  accountId?: string | null;
   /** Scope for Undo offers: session, physical board configuration and account. */
   undoScope: string;
 };

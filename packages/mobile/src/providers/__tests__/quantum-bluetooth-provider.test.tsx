@@ -6,10 +6,22 @@ import { runMigrations } from '@boardsesh/offline-sync';
 import { createTestDatabase } from '@boardsesh/offline-sync/testing';
 import { getQuantumBundledGeometry } from '@boardsesh/board-constants/quantum';
 import type { DevicePickerFn } from '../../lib/ble/types';
+import { invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
 
 const ROUTE_UUID = '10000000-0000-4000-8000-000000000001';
 const ACTIVE_ROUTE_UUID = '10000000-0000-4000-8000-000000000002';
 const CONTROLLER_USER_UUID = '20000000-0000-4000-8000-000000000001';
+const STARTED_SESSION_USER_UUID = '20000000-0000-4000-8000-000000000004';
+const ACTIVATION = {
+  slot: 0,
+  controllerRouteUuid: ROUTE_UUID,
+  diodeIds: [1],
+  placementIds: [1_000_001],
+  layoutId: 9101,
+  sizeId: 9201,
+  geometryGeneration: 1,
+  geometryKnown: true as const,
+};
 
 type TestRosterSnapshot = {
   revision: number;
@@ -56,7 +68,6 @@ const controller = vi.hoisted(() => ({
   refresh: vi.fn(),
   activate: vi.fn(),
   remove: vi.fn(),
-  clearAll: vi.fn(),
   destroy: vi.fn(),
   publishSnapshot: undefined as ((snapshot: TestRosterSnapshot) => void) | undefined,
 }));
@@ -111,30 +122,16 @@ vi.mock('../../lib/ble/quantum-adapter', () => ({
     return transport;
   },
 }));
-vi.mock('../../lib/ble/quantum-layer-identity-store', () => ({
-  getOrCreateQuantumLayerIdentities: vi.fn(async () => [
-    {
-      slot: 0,
-      controllerUserUuid: '20000000-0000-4000-8000-000000000001',
-      color: { key: 'green', red: 0, green: 255, blue: 0, hex: '#00FF00' },
-    },
-    {
-      slot: 1,
-      controllerUserUuid: '20000000-0000-4000-8000-000000000002',
-      color: { key: 'cyan', red: 0, green: 255, blue: 255, hex: '#00FFFF' },
-    },
-    {
-      slot: 2,
-      controllerUserUuid: '20000000-0000-4000-8000-000000000003',
-      color: { key: 'magenta', red: 255, green: 0, blue: 255, hex: '#FF00FF' },
-    },
-    {
-      slot: 3,
-      controllerUserUuid: '20000000-0000-4000-8000-000000000004',
-      color: { key: 'yellow', red: 255, green: 255, blue: 0, hex: '#FFFF00' },
-    },
-  ]),
+const playerStorage = vi.hoisted(() => ({
+  solo: vi.fn(),
+  session: vi.fn(),
+  creatorMarker: vi.fn(),
 }));
+vi.mock('../../lib/ble/quantum-layer-identity-store', () => ({
+  getOrCreateQuantumSoloPlayer: playerStorage.solo,
+  getQuantumSessionPlayer: playerStorage.session,
+}));
+vi.mock('../../lib/session-store', () => ({ getStoredCreatedSessionId: playerStorage.creatorMarker }));
 vi.mock('../../db', () => ({
   getDatabaseHandle: localRecovery.getDatabaseHandle,
 }));
@@ -164,8 +161,8 @@ vi.mock('../../lib/ble/quantum-transport', () => ({
       return () => {};
     }
 
-    async refresh(): Promise<TestRosterSnapshot> {
-      const snapshot = (await controller.refresh()) as TestRosterSnapshot;
+    async refresh(isEligible?: () => boolean): Promise<TestRosterSnapshot> {
+      const snapshot = (await controller.refresh(isEligible)) as TestRosterSnapshot;
       this.latestSnapshot = snapshot;
       return snapshot;
     }
@@ -178,12 +175,6 @@ vi.mock('../../lib/ble/quantum-transport', () => ({
 
     async remove(input: unknown): Promise<TestRosterSnapshot> {
       const snapshot = (await controller.remove(input)) as TestRosterSnapshot;
-      this.latestSnapshot = snapshot;
-      return snapshot;
-    }
-
-    async clearAll(input: unknown): Promise<TestRosterSnapshot> {
-      const snapshot = (await controller.clearAll(input)) as TestRosterSnapshot;
       this.latestSnapshot = snapshot;
       return snapshot;
     }
@@ -228,11 +219,17 @@ function Probe() {
   return null;
 }
 
-function provider(model: 'xl' | 'l' | 'm' | null, selectedBoardUuid?: string, preferredSerial?: string) {
+function provider(
+  model: 'xl' | 'l' | 'm' | 'belay' | null,
+  selectedBoardUuid?: string,
+  preferredSerial?: string,
+  scope: { sessionId?: string; accountId?: string; getCurrentSessionId?: () => string | null } = {},
+) {
   return createElement(QuantumBluetoothProvider, {
     selectedModelId: model,
     selectedBoardUuid,
     preferredSerial,
+    ...scope,
     children: createElement(Probe),
   });
 }
@@ -257,6 +254,12 @@ describe('QuantumBluetoothProvider', () => {
     latestActions = null;
     vi.clearAllMocks();
     permissions.request.mockReset().mockResolvedValue(true);
+    playerStorage.solo.mockReset().mockResolvedValue({
+      controllerUserUuid: CONTROLLER_USER_UUID,
+      legacyCleanupUserUuids: ['20000000-0000-4000-8000-000000000002'],
+    });
+    playerStorage.session.mockReset().mockResolvedValue(null);
+    playerStorage.creatorMarker.mockReset().mockResolvedValue(null);
     transport.devicePicker = null;
     transport.isAvailable.mockResolvedValue(true);
     transport.requestAndConnect.mockResolvedValue({
@@ -301,6 +304,134 @@ describe('QuantumBluetoothProvider', () => {
   });
 
   afterEach(cleanup);
+
+  it.each(['joined', 'lost credential'] as const)(
+    'checks device provenance for a %s phone on the same account',
+    async (kind) => {
+      playerStorage.creatorMarker.mockResolvedValue(kind === 'joined' ? null : 'shared-room');
+      render(provider('xl', 'board-A', undefined, { sessionId: 'shared-room', accountId: 'same-account' }));
+      await waitFor(() => expect(latestState?.driverStatus).toBe('peer'));
+      await expect(latestActions!.connect()).resolves.toBe(false);
+      await expect(latestActions!.activateLayer(ACTIVATION)).rejects.toThrow('not connected');
+      await expect(
+        latestActions!.removeLayer({
+          controllerUserUuid: CONTROLLER_USER_UUID,
+          controllerRouteUuid: ROUTE_UUID,
+        }),
+      ).rejects.toThrow('not connected');
+      expect(playerStorage.solo).not.toHaveBeenCalled();
+      expect(playerStorage.session).toHaveBeenCalledTimes(kind === 'joined' ? 0 : 1);
+      expect(permissions.request).not.toHaveBeenCalled();
+      expect(transport.requestAndConnect).not.toHaveBeenCalled();
+    },
+  );
+
+  it('uses the originating phone session credential and permits only scoped cleanup', async () => {
+    playerStorage.creatorMarker.mockResolvedValue('shared-room');
+    playerStorage.session.mockResolvedValue({
+      controllerUserUuid: STARTED_SESSION_USER_UUID,
+      legacyCleanupUserUuids: [],
+    });
+    controller.refresh.mockResolvedValue({ revision: 1, observedAtMs: 1_000, players: [] });
+    controller.activate.mockResolvedValue({ revision: 2, observedAtMs: 1_100, players: [] });
+    controller.remove.mockResolvedValue({ revision: 3, observedAtMs: 1_200, players: [] });
+    render(provider('xl', 'board-A', undefined, { sessionId: 'shared-room', accountId: 'same-account' }));
+    await waitFor(() => expect(latestState?.driverStatus).toBe('available'));
+    await act(async () => {
+      expect(await latestActions!.connect()).toBe(true);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await latestActions!.activateLayer(ACTIVATION);
+      await expect(
+        latestActions!.removeLayer({
+          controllerUserUuid: CONTROLLER_USER_UUID,
+          controllerRouteUuid: ROUTE_UUID,
+        }),
+      ).rejects.toThrow('does not own');
+      expect(controller.remove).not.toHaveBeenCalled();
+      await latestActions!.removeLayer({
+        controllerUserUuid: STARTED_SESSION_USER_UUID,
+        controllerRouteUuid: ROUTE_UUID,
+      });
+    });
+    expect(controller.activate).toHaveBeenCalledWith(expect.objectContaining({ userId: STARTED_SESSION_USER_UUID }));
+    expect(controller.remove).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: STARTED_SESSION_USER_UUID,
+        routeId: ROUTE_UUID,
+      }),
+    );
+    expect(playerStorage.solo).not.toHaveBeenCalled();
+  });
+
+  it.each(['flag', 'model', 'account', 'session'] as const)(
+    'drops an accepted activation during roster preflight when %s changes',
+    async (scopeChange) => {
+      const view = render(provider('xl'));
+      await act(async () => {
+        await latestActions!.connect();
+      });
+      let finishPreflight!: (snapshot: TestRosterSnapshot) => void;
+      controller.refresh.mockReturnValueOnce(
+        new Promise<TestRosterSnapshot>((resolve) => {
+          finishPreflight = resolve;
+        }),
+      );
+      const activation = latestActions!.activateLayer(ACTIVATION);
+      const rejected = expect(activation).rejects.toThrow('connection changed during activation preflight');
+      await waitFor(() => expect(controller.refresh).toHaveBeenCalledTimes(2));
+      const writeGuard = controller.refresh.mock.calls[1][0] as () => boolean;
+      expect(writeGuard()).toBe(true);
+
+      if (scopeChange === 'account') {
+        act(invalidateCredentialSnapshots);
+      } else if (scopeChange === 'session') {
+        view.rerender(provider('xl', undefined, undefined, { sessionId: 'shared-room', accountId: 'same-account' }));
+      } else {
+        view.rerender(provider(scopeChange === 'flag' ? null : 'm'));
+      }
+      expect(writeGuard()).toBe(false);
+      await act(async () => {
+        finishPreflight({ revision: 2, observedAtMs: 2_000, players: [] });
+        await rejected;
+      });
+      expect(controller.activate).not.toHaveBeenCalled();
+      expect(controller.remove).not.toHaveBeenCalled();
+    },
+  );
+
+  it('requires a new explicit connection after re-enabling and retires the previous link callback', async () => {
+    const view = render(provider('xl'));
+    await act(async () => {
+      await latestActions!.connect();
+    });
+    const oldActions = latestActions!;
+    view.rerender(provider(null));
+    view.rerender(provider('xl'));
+    expect(latestState?.status).toBe('disconnected');
+    expect(transport.requestAndConnect).toHaveBeenCalledOnce();
+    await act(async () => {
+      await latestActions!.connect();
+    });
+    expect(latestState?.status).toBe('connected');
+    await expect(oldActions.activateLayer(ACTIVATION)).rejects.toThrow('not connected');
+    await expect(
+      oldActions.removeLayer({
+        controllerUserUuid: CONTROLLER_USER_UUID,
+        controllerRouteUuid: ROUTE_UUID,
+      }),
+    ).rejects.toThrow('not connected');
+    expect(controller.activate).not.toHaveBeenCalled();
+    expect(controller.remove).not.toHaveBeenCalled();
+  });
+
+  it('refuses a Belay configuration even if directly passed to the provider', async () => {
+    render(provider('belay'));
+    expect(latestState?.status).toBe('inactive');
+    await expect(latestActions!.connect()).resolves.toBe(false);
+    expect(transport.requestAndConnect).not.toHaveBeenCalled();
+  });
 
   it.each(['existing', 'pending'] as const)(
     'leaves an %s legacy board presence binding alone while inactive',
@@ -351,8 +482,13 @@ describe('QuantumBluetoothProvider', () => {
       expect(latestState?.connection).toBeNull();
       expect(latestState?.roster).toBeNull();
       expect(presence.reportDisconnectForBoard).toHaveBeenCalledWith(73);
-      await expect(latestActions!.clearAll({ confirmed: true })).rejects.toThrow('not connected');
-      expect(controller.clearAll).not.toHaveBeenCalled();
+      await expect(
+        latestActions!.removeLayer({
+          controllerUserUuid: CONTROLLER_USER_UUID,
+          controllerRouteUuid: ROUTE_UUID,
+        }),
+      ).rejects.toThrow('not connected');
+      expect(controller.remove).not.toHaveBeenCalled();
       expect(presence.reportLayersForBoard).not.toHaveBeenCalled();
     },
   );
@@ -733,6 +869,7 @@ describe('QuantumBluetoothProvider', () => {
       durationSeconds: undefined,
       animation: undefined,
       expectedPlayers: [],
+      isEligible: expect.any(Function),
     });
     expect(presence.reportLayersForBoard).toHaveBeenCalledWith(73, [
       {
@@ -1132,7 +1269,14 @@ describe('QuantumBluetoothProvider', () => {
     const activeSnapshot: TestRosterSnapshot = {
       revision: 2,
       observedAtMs: 2_000,
-      players: [{ routeId: ACTIVE_ROUTE_UUID, userId: CONTROLLER_USER_UUID, remainingSeconds: 90, color: 0x00ff00 }],
+      players: [
+        {
+          routeId: ACTIVE_ROUTE_UUID,
+          userId: '20000000-0000-4000-8000-000000000099',
+          remainingSeconds: 90,
+          color: 0x00ff00,
+        },
+      ],
     };
     localRecovery.getDatabaseHandle.mockReturnValue({});
     localRecovery.getRoutePresenceClimbs.mockResolvedValue([
@@ -1232,11 +1376,12 @@ describe('QuantumBluetoothProvider', () => {
       geometryGeneration: 1,
       geometryKnown: true as const,
     };
-    await expect(latestActions!.activateLayer(overlapCandidate)).rejects.toThrow('overlaps an active layer');
-    expect(controller.activate).not.toHaveBeenCalled();
-
     // A separate installation has no physical confirmation. Queue B cannot prove A.
     firstClient.unmount();
+    playerStorage.solo.mockResolvedValue({
+      controllerUserUuid: '20000000-0000-4000-8000-000000000003',
+      legacyCleanupUserUuids: [],
+    });
     presence.reportLayersForBoard.mockClear();
     render(provider('xl'));
     await act(async () => {
@@ -1335,26 +1480,29 @@ describe('QuantumBluetoothProvider', () => {
     expect(controller.refresh).not.toHaveBeenCalled();
     expect(controller.activate).not.toHaveBeenCalled();
     expect(controller.remove).not.toHaveBeenCalled();
-    expect(controller.clearAll).not.toHaveBeenCalled();
     expect(presence.reportLayersForBoard).not.toHaveBeenCalled();
   });
 
-  it('refuses the same controller route on a second layer before overwriting its physical confirmation', async () => {
-    controller.refresh.mockResolvedValue({ revision: 1, observedAtMs: 1_000, players: [] });
-    render(provider('xl'));
-    await act(async () => {
-      await latestActions!.connect();
-    });
+  it('changes the selected color using the same player and expected prior route', async () => {
     const physicalSnapshot: TestRosterSnapshot = {
       revision: 2,
       observedAtMs: 2_000,
       players: [{ routeId: ROUTE_UUID, userId: CONTROLLER_USER_UUID, remainingSeconds: 90, color: 0x00ff00 }],
     };
-    controller.activate.mockResolvedValue(physicalSnapshot);
+    controller.refresh.mockResolvedValue(physicalSnapshot);
+    controller.activate.mockResolvedValue({
+      ...physicalSnapshot,
+      players: [{ ...physicalSnapshot.players[0], color: 0x00ffff }],
+    });
+    render(provider('xl'));
+    await act(async () => {
+      await latestActions!.connect();
+    });
     await act(async () => {
       await latestActions!.activateLayer({
-        slot: 0,
+        slot: 1,
         controllerRouteUuid: ROUTE_UUID,
+        expectedOwnedRouteUuid: ROUTE_UUID,
         diodeIds: [1],
         placementIds: [1_000_001],
         layoutId: 9101,
@@ -1363,35 +1511,13 @@ describe('QuantumBluetoothProvider', () => {
         geometryKnown: true,
       });
     });
-    controller.activate.mockClear();
-    controller.refresh.mockResolvedValue(physicalSnapshot);
-    await expect(
-      latestActions!.activateLayer({
-        slot: 1,
-        controllerRouteUuid: ROUTE_UUID,
-        diodeIds: [2],
-        placementIds: [1_000_002],
-        layoutId: 9101,
-        sizeId: 9201,
-        geometryGeneration: 1,
-        geometryKnown: true,
+    expect(controller.activate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: CONTROLLER_USER_UUID,
+        color: 0x00ffff,
+        expectedOwnedRouteId: ROUTE_UUID,
       }),
-    ).rejects.toThrow('already active on another layer');
-    expect(controller.activate).not.toHaveBeenCalled();
-    // The rejected second layer cannot replace the first layer's diode 1 proof.
-    await expect(
-      latestActions!.activateLayer({
-        slot: 1,
-        controllerRouteUuid: ACTIVE_ROUTE_UUID,
-        diodeIds: [1],
-        placementIds: [1_000_001],
-        layoutId: 9101,
-        sizeId: 9201,
-        geometryGeneration: 1,
-        geometryKnown: true,
-      }),
-    ).rejects.toThrow('overlaps an active layer');
-    expect(controller.activate).not.toHaveBeenCalled();
+    );
   });
 
   it('keeps a real XL-only downloaded route unknown on M and blocks lighting beside it', async () => {

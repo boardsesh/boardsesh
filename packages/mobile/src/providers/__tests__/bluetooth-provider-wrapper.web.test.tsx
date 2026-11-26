@@ -42,7 +42,14 @@ vi.mock('../quantum-bluetooth-provider', () => ({
 
 const activeBoard = vi.hoisted(() => ({ current: undefined as UserBoard | undefined }));
 vi.mock('../../lib/graphql/use-active-board', () => ({
+  getActiveBoardWriteGeneration: () => 0,
   useActiveBoard: () => ({ data: activeBoard.current }),
+}));
+
+const flags = vi.hoisted(() => ({ enabled: true, resolved: true }));
+vi.mock('../feature-flags-provider', () => ({
+  useFeatureFlag: () => flags.enabled,
+  useFeatureFlagsResolved: () => flags.resolved,
 }));
 
 import { BluetoothProviderWrapper } from '../bluetooth-provider-wrapper.web';
@@ -50,6 +57,8 @@ import { BluetoothProviderWrapper } from '../bluetooth-provider-wrapper.web';
 describe('BluetoothProviderWrapper on web', () => {
   afterEach(() => {
     cleanup();
+    flags.enabled = true;
+    flags.resolved = true;
     activeBoard.current = undefined;
     providerProps.current = null;
     quantumProviderProps.selectedModelId = null;
@@ -165,5 +174,37 @@ describe('BluetoothProviderWrapper on web', () => {
       setIds: undefined,
       boardUuid: undefined,
     });
+  });
+  it('keeps the controller inactive while the flag is unresolved or off, or the model is unreleased', () => {
+    activeBoard.current = {
+      uuid: 'quantum-board-uuid',
+      boardType: 'quantum',
+      layoutId: 9101,
+      sizeId: 9201,
+    } as UserBoard;
+    const child = (
+      <BluetoothProviderWrapper>
+        <div />
+      </BluetoothProviderWrapper>
+    );
+    flags.resolved = false;
+    const view = render(child);
+    expect(quantumProviderProps.selectedModelId).toBeNull();
+    flags.resolved = true;
+    flags.enabled = false;
+    view.rerender(
+      <BluetoothProviderWrapper>
+        <div />
+      </BluetoothProviderWrapper>,
+    );
+    expect(quantumProviderProps.selectedModelId).toBeNull();
+    flags.enabled = true;
+    activeBoard.current = { ...activeBoard.current, layoutId: 9105, sizeId: 9205 };
+    view.rerender(
+      <BluetoothProviderWrapper>
+        <div />
+      </BluetoothProviderWrapper>,
+    );
+    expect(quantumProviderProps.selectedModelId).toBeNull();
   });
 });

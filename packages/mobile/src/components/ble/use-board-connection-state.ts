@@ -2,6 +2,7 @@ import { useContext, useMemo } from 'react';
 import { BoardPresenceCurrentContext } from '@boardsesh/board-presence-react';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useOptionalQuantumBluetoothState } from '../../providers/quantum-bluetooth-context';
+import type { QuantumBluetoothState } from '../../providers/quantum-bluetooth-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useQueueSessionControls } from '../../providers/queue-provider';
 import {
@@ -17,8 +18,9 @@ export type BoardConnectionState = {
   localConnected: boolean;
   /** A connect/disconnect is in flight. */
   pending: boolean;
-  /** The active board uses the explicit four-layer Quantum controller flow. */
+  /** The active board uses explicit Quantum lighting controls. */
   isQuantum: boolean;
+  quantumDriverStatus: QuantumBluetoothState['driverStatus'] | null;
   /** A transport exists for the active board on this platform/context. */
   controlAvailable: boolean;
   /** Current party session id (null when solo). */
@@ -87,7 +89,10 @@ export function useBoardConnectionState(): BoardConnectionState {
   const isQuantum = quantum?.status !== undefined && quantum.status !== 'inactive';
   const localConnected = isQuantum ? quantum.status === 'connected' : (bluetooth?.isConnected ?? false);
   const pending = isQuantum ? quantum.status === 'connecting' : (bluetooth?.loading ?? false);
-  const controlAvailable = isQuantum ? quantum.isAvailable !== false : bluetooth !== null;
+  const quantumDriverStatus = isQuantum ? quantum.driverStatus : null;
+  const controlAvailable = isQuantum
+    ? quantumDriverStatus === 'peer' || quantum.isAvailable !== false
+    : bluetooth !== null;
   const ledless = bluetooth?.ledless ?? false;
   const wallHeldLocally = bluetooth?.virtualWallHeld ?? false;
   const wallHeldByOtherUser = bluetooth?.wallHeldByOtherUser ?? false;
@@ -135,6 +140,7 @@ export function useBoardConnectionState(): BoardConnectionState {
       localConnected,
       pending,
       isQuantum,
+      quantumDriverStatus,
       controlAvailable,
       sessionId,
       boardConnection,
@@ -152,6 +158,7 @@ export function useBoardConnectionState(): BoardConnectionState {
       localConnected,
       pending,
       isQuantum,
+      quantumDriverStatus,
       controlAvailable,
       sessionId,
       boardConnection,

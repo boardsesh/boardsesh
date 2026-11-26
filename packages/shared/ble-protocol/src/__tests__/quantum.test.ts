@@ -331,7 +331,7 @@ describe('Quantum controller parsing', () => {
 });
 
 describe('Quantum roster transaction machine', () => {
-  it('releases, activates, and confirms while preserving every foreign player', async () => {
+  it('activates a fresh player without release and preserves every foreign player', async () => {
     const foreign = player(ROUTE_TWO, USER_TWO, 0xff00ff, 20);
     const confirmed = player(ROUTE_ONE, USER_ONE, 0x00ff00, QUANTUM_DEFAULT_ROUTE_DURATION_SECONDS);
     const transport = new ScriptedQuantumTransport(244, [rosterFrame([foreign]), rosterFrame([confirmed, foreign])]);
@@ -348,12 +348,11 @@ describe('Quantum roster transaction machine', () => {
 
     expect(transport.writes.map((frame) => frame[1])).toEqual([
       QuantumCommand.REQUEST_USER_ROUTE_LIST,
-      QuantumCommand.TURN_OFF_BY_USER,
       QuantumCommand.ACTIVATE_WALL,
       QuantumCommand.REQUEST_USER_ROUTE_LIST,
     ]);
     expect(transport.writes.every((frame) => quantumFrameHasValidCrc(frame))).toBe(true);
-    expect(time.sleeps).toEqual([50, 50, 250, 50]);
+    expect(time.sleeps).toEqual([50, 250, 50]);
     expect(result.revision).toBe(2);
     expect(machine.state).toMatchObject({ phase: 'live', snapshot: { revision: 2 } });
   });
@@ -411,7 +410,7 @@ describe('Quantum roster transaction machine', () => {
 
     await expect(machine.activate({ ...target, diodeIds: [1] })).rejects.toMatchObject({ code: 'confirmation-failed' });
     expect(machine.state.snapshot?.observedAtMs).toBe(3_610_400);
-    expect(time.monotonicNow()).toBe(10_400);
+    expect(time.monotonicNow()).toBe(10_350);
   });
 
   it('accepts an unrelated countdown expiring during activation readback', async () => {
@@ -439,33 +438,104 @@ describe('Quantum roster transaction machine', () => {
     },
   );
 
-  it('keeps global clear and its readback together ahead of a queued refresh', async () => {
+  it('confirms the expected owned route is released before changing its color', async () => {
+    const owned = player(ROUTE_ONE, USER_ONE, 0x00ff00);
     const foreign = player(ROUTE_TWO, USER_TWO, 0xff00ff);
+    const updated = { ...owned, color: 0x00ffff };
     const transport = new ScriptedQuantumTransport(244, [
+      rosterFrame([owned, foreign]),
       rosterFrame([foreign]),
-      rosterFrame([]),
-      rosterFrame([foreign]),
+      rosterFrame([updated, foreign]),
     ]);
-    const time = new ManualQuantumTime();
-    const machine = new QuantumRosterTransactionMachine(transport, time);
-    const originalWrite = transport.writeFrame.bind(transport);
-    transport.writeFrame = async (frame) => {
-      if (frame[1] === QuantumCommand.TURN_OFF_ALL) {
-        expect(machine.state).toMatchObject({ operation: 'clear', phase: 'mutating' });
-      }
-      await originalWrite(frame);
-    };
-    await expect(machine.clearAll({ confirmed: false })).rejects.toThrow('explicit confirmation');
-    expect(transport.writes).toHaveLength(0);
-    const [cleared, refreshed] = await Promise.all([machine.clearAll({ confirmed: true }), machine.refresh()]);
-    expect(cleared.players).toEqual([]);
-    expect(refreshed.players).toEqual([foreign]);
-    expect(transport.writes.map((frame) => frame[1])).toEqual([
-      QuantumCommand.REQUEST_USER_ROUTE_LIST,
-      QuantumCommand.TURN_OFF_ALL,
-      QuantumCommand.REQUEST_USER_ROUTE_LIST,
-      QuantumCommand.REQUEST_USER_ROUTE_LIST,
-    ]);
+    const machine = new QuantumRosterTransactionMachine(transport, new ManualQuantumTime());
+
+    const result = await machine.activate({ ...updated, diodeIds: [1], expectedOwnedRouteId: ROUTE_ONE });
+
+    expect(result.players).toEqual([updated, foreign]);
+    expect(transport.writes.map((frame) => frame[1])).toEqual([0x47, 0x43, 0x47, 0x41, 0x47]);
+    expect(transport.writes[1].slice(2, 18)).toEqual(encodeQuantumUuid(USER_ONE));
+  });
+
+  it.each(['owns different route', 'duplicate user', 'release failed', 'foreign changed'] as const)(
+    'does not activate after an unsafe replacement preflight or release (%s)',
+    async (problem) => {
+      const owned = player(ROUTE_ONE, USER_ONE, 0x00ff00);
+      const foreign = player(ROUTE_TWO, USER_TWO, 0xff00ff);
+      const before =
+        problem === 'owns different route'
+          ? [{ ...owned, routeId: ROUTE_TWO }, foreign]
+          : problem === 'duplicate user'
+            ? [owned, { ...owned, routeId: ROUTE_TWO }, foreign]
+            : [owned, foreign];
+      const after = problem === 'release failed' ? [owned, foreign] : [{ ...foreign, color: 0x00ffff }];
+      const transport = new ScriptedQuantumTransport(244, [rosterFrame(before), rosterFrame(after)]);
+      const machine = new QuantumRosterTransactionMachine(transport, new ManualQuantumTime());
+      const rejectedBeforeRelease = problem === 'owns different route' || problem === 'duplicate user';
+
+      await expect(
+        machine.activate({
+          routeId: ROUTE_ONE,
+          userId: USER_ONE,
+          color: 0x00ffff,
+          diodeIds: [1],
+          expectedOwnedRouteId: ROUTE_ONE,
+        }),
+      ).rejects.toMatchObject({
+        code: rejectedBeforeRelease ? 'target-route-changed' : 'confirmation-failed',
+      });
+      expect(transport.writes.map((frame) => frame[1])).toEqual(rejectedBeforeRelease ? [0x47] : [0x47, 0x43, 0x47]);
+    },
+  );
+
+  it.each(['first roster', 'release delay', 'released roster'] as const)(
+    'does not issue another write after losing eligibility during %s',
+    async (phase) => {
+      const owned = player(ROUTE_ONE, USER_ONE, 0x00ff00);
+      const transport = new ScriptedQuantumTransport(244, [rosterFrame([owned]), rosterFrame([])]);
+      const time = new ManualQuantumTime();
+      let enabled = true;
+      const scriptedRead = transport.readState.bind(transport);
+      const sleep = time.sleep.bind(time);
+      transport.readState = async () => {
+        if (
+          (phase === 'first roster' && transport.writes.length === 1) ||
+          (phase === 'released roster' && transport.writes.length === 3)
+        )
+          enabled = false;
+        return scriptedRead();
+      };
+      time.sleep = async (milliseconds) => {
+        if (phase === 'release delay' && transport.writes.length === 2) enabled = false;
+        await sleep(milliseconds);
+      };
+      const machine = new QuantumRosterTransactionMachine(transport, time);
+
+      await expect(
+        machine.activate({
+          routeId: ROUTE_ONE,
+          userId: USER_ONE,
+          color: 0x00ffff,
+          diodeIds: [1],
+          expectedOwnedRouteId: ROUTE_ONE,
+          isEligible: () => enabled,
+        }),
+      ).rejects.toMatchObject({ code: 'operation-cancelled' });
+
+      expect(transport.writes.map((frame) => frame[1])).toEqual(
+        phase === 'first roster' ? [0x47] : phase === 'release delay' ? [0x47, 0x43] : [0x47, 0x43, 0x47],
+      );
+    },
+  );
+
+  it('leaves a foreign-only roster untouched when asked to remove an absent owner', async () => {
+    const foreign = player(ROUTE_TWO, USER_TWO, 0xff00ff);
+    const transport = new ScriptedQuantumTransport(244, [rosterFrame([foreign])]);
+    const machine = new QuantumRosterTransactionMachine(transport, new ManualQuantumTime());
+
+    await expect(machine.remove({ userId: USER_ONE, routeId: ROUTE_TWO })).resolves.toMatchObject({
+      players: [foreign],
+    });
+    expect(transport.writes.map((frame) => frame[1])).toEqual([0x47]);
   });
 
   it('fails confirmation if activating a target removes another player', async () => {

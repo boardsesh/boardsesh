@@ -404,6 +404,34 @@ describe('RNQuantumBluetoothTransport', () => {
     }
   });
 
+  it('rechecks queued write eligibility before the native characteristic call', async () => {
+    const { adapter, writeWithResponse } = setupController();
+    await adapter.requestAndConnect('m');
+    let releaseFirst!: () => void;
+    writeWithResponse.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((resolve) => {
+          releaseFirst = () => resolve(undefined);
+        }),
+    );
+    const first = adapter.writeFrame(encodeQuantumRosterRequest());
+    await Promise.resolve();
+    let eligible = true;
+    const queued = adapter.writeFrame(Uint8Array.of(1, QuantumCommand.ACTIVATE_WALL), () => eligible);
+    const rejected = expect(queued).rejects.toMatchObject({ code: 'operation-cancelled' });
+    eligible = false;
+    releaseFirst();
+    await first;
+    await rejected;
+    expect(writeWithResponse).toHaveBeenCalledOnce();
+  });
+
+  it('refuses Belay before starting the native scan', async () => {
+    const { adapter } = setupController({ metadataBytes: metadata(3, 8, 12) });
+    await expect(adapter.requestAndConnect('belay')).rejects.toThrow('metadata');
+    expect(manager.startDeviceScan).not.toHaveBeenCalled();
+  });
+
   it('fences queued GATT work and disconnect from a superseded live adapter', async () => {
     const first = setupController();
     await first.adapter.requestAndConnect('m');

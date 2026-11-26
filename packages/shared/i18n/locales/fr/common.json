@@ -981,7 +981,6 @@
       },
       "light": "Allumer ce bloc",
       "replace": "Remplacer par ce bloc",
-      "remove": "Retirer cette couche",
       "foreign": "Utilisée par une autre personne",
       "boardFull": "Les quatre places de la board sont utilisées",
       "noClimb": "Choisis un bloc à allumer",
@@ -991,11 +990,11 @@
       "multiFrameUnsupported": "Les blocs à plusieurs séquences ne peuvent pas encore être allumés sur Quantum",
       "tooManyHolds": "Ce bloc dépasse la limite de 92 lumières de Boardsesh",
       "actionFailed": "Impossible de mettre la board à jour. Actualise et réessaie.",
-      "clearStart": "Éteindre toutes les couches",
-      "clearStartSubtitle": "Tu confirmeras avant de tout éteindre",
-      "clearQuestion": "Éteindre les quatre couches ?",
-      "clearConfirm": "Éteindre toutes les couches",
-      "clearCancel": "Garder les couches"
+      "active": "Allumé sur le mur",
+      "remove": "Éteindre mes lumières",
+      "removeColor": "Éteindre mes lumières ({{color}})",
+      "invalidFrames": "Impossible de lire les prises de ce bloc",
+      "sessionDriver": "Le téléphone qui a démarré la session contrôle les lumières"
     }
   },
   "bluetooth": {
