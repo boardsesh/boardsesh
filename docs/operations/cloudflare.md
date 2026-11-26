@@ -22,6 +22,27 @@ token setup, CI auto-apply, and the Pages deploy of `app.boardsesh.com`.
 See `docs/operations/user-media-storage.md`, `docs/operations/static-assets.md`, `docs/data/board-snapshots.md`, and
 `docs/operations/mobile-ota-updates.md` for the storage-specific contracts and cutover runbooks.
 
+### Next script and stylesheet compression
+
+`boardsesh:next-static-compression` prefers Brotli for GET/HEAD JavaScript and CSS
+under `/_next/static/` on www, assets and assets-r2. The remaining preference is
+Zstandard, then gzip, so clients without Brotli can still receive compressed
+files. Clients supporting none of these receive identity responses.
+[Cloudflare's compression settings](https://developers.cloudflare.com/rules/compression-rules/settings/)
+document the ordered algorithm list and negotiation behavior.
+
+The release-88 comparison on November 26, 2026 fetched 34 startup JS/CSS URLs in
+both encodings, with all 68 responses returning immutable cache HITs and matching
+decoded hashes. Brotli transferred 449,002 bytes versus 462,002 for Zstandard:
+13,000 bytes (2.81%) less. This measures response-body bytes, not an LCP reduction.
+Images, fonts, source maps, API responses and the OTA host are outside this rule.
+
+After the normal production apply, probe a current script and stylesheet with
+`Accept-Encoding: br, zstd, gzip` and require `Content-Encoding: br`. Repeat with
+Zstandard-only, gzip-only and identity requests; compare decoded SHA-256 and MIME
+types, and confirm repeat cache HITs. Recheck both public landing pages. The
+2.5-second LCP target still requires the production mobile measurement protocol.
+
 ### OTA assets host
 
 `ota-assets.boardsesh.com` is the custom domain on `boardsesh-ota-v3`. Two rules make it worth having, and both exist

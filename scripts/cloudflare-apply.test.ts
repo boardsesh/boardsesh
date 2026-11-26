@@ -24,6 +24,8 @@ import {
   OTA_ASSETS_HOSTNAME,
   OTA_ASSETS_CACHE_RULE_DESCRIPTION,
   OTA_ASSETS_COMPRESSION_RULE_DESCRIPTION,
+  NEXT_STATIC_COMPRESSION_RULE_DESCRIPTION,
+  NEXT_STATIC_COMPRESSION_EXPRESSION,
   COMPRESSION_RULE_PHASE,
   CACHE_RULE_PHASE,
   USER_EXPORT_LIFECYCLE_RULE,
@@ -2969,20 +2971,62 @@ describe('desiredR2Buckets', () => {
     });
   });
 
+  it('prefers Brotli only for public Next scripts and styles with both transport fallbacks', () => {
+    const compressionRule = desired.compressionRules.find(
+      (rule) => rule.description === NEXT_STATIC_COMPRESSION_RULE_DESCRIPTION,
+    );
+    expect(NEXT_STATIC_COMPRESSION_EXPRESSION).toBe(
+      '(http.host in {"www.boardsesh.com" "assets.boardsesh.com" "assets-r2.boardsesh.com"}' +
+        ' and http.request.method in {"GET" "HEAD"}' +
+        ' and starts_with(http.request.uri.path, "/_next/static/")' +
+        ' and (ends_with(http.request.uri.path, ".js")' +
+        ' or ends_with(http.request.uri.path, ".mjs")' +
+        ' or ends_with(http.request.uri.path, ".css")))',
+    );
+    expect(compressionRule).toEqual({
+      description: NEXT_STATIC_COMPRESSION_RULE_DESCRIPTION,
+      expression: NEXT_STATIC_COMPRESSION_EXPRESSION,
+      action: 'compress_response',
+      action_parameters: { algorithms: [{ name: 'brotli' }, { name: 'zstd' }, { name: 'gzip' }] },
+      enabled: true,
+    });
+  });
+
+  it('reconciles Next compression preference without changing the OTA policy', () => {
+    const existing = matchingLiveRules(desired.compressionRules);
+    const otaBefore = existing.find((rule) => rule.description === OTA_ASSETS_COMPRESSION_RULE_DESCRIPTION);
+    const drifted = existing.map((rule) =>
+      rule.description === NEXT_STATIC_COMPRESSION_RULE_DESCRIPTION
+        ? { ...rule, action_parameters: { algorithms: [{ name: 'zstd' }, { name: 'brotli' }, { name: 'gzip' }] } }
+        : rule,
+    );
+    const differences = diffManagedRules(drifted, desired.compressionRules, 'compression-rule');
+    expect(differences).toHaveLength(1);
+    expect(differences[0].summary).toContain(NEXT_STATIC_COMPRESSION_RULE_DESCRIPTION);
+    const reconciled = upsertCacheRule(drifted, desired.compressionRules);
+    expect(reconciled.rules.find((rule) => rule.description === OTA_ASSETS_COMPRESSION_RULE_DESCRIPTION)).toMatchObject(
+      {
+        id: otaBefore?.id,
+        ...desired.compressionRules.find((rule) => rule.description === OTA_ASSETS_COMPRESSION_RULE_DESCRIPTION),
+      },
+    );
+    expect(diffManagedRules(reconciled.rules, desired.compressionRules, 'compression-rule')).toEqual([]);
+  });
+
   it('plans the compression rule in its own phase and re-plans a changed algorithm list', () => {
     expect(MANAGED_RULE_PHASES.find((phase) => phase.resource === 'compression-rule')?.phase).toBe(
       COMPRESSION_RULE_PHASE,
     );
 
     const missing = diffManagedRules([], desired.compressionRules, 'compression-rule');
-    expect(missing).toHaveLength(1);
+    expect(missing).toHaveLength(2);
     expect(missing[0].summary).toContain('missing — will create');
 
     const gzipOnly = matchingLiveRules(desired.compressionRules).map((rule) => ({
       ...rule,
       action_parameters: { algorithms: [{ name: 'gzip' }] },
     }));
-    expect(diffManagedRules(gzipOnly, desired.compressionRules, 'compression-rule')).toHaveLength(1);
+    expect(diffManagedRules(gzipOnly, desired.compressionRules, 'compression-rule')).toHaveLength(2);
     expect(
       diffManagedRules(matchingLiveRules(desired.compressionRules), desired.compressionRules, 'compression-rule'),
     ).toEqual([]);
