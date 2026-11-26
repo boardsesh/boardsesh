@@ -94,10 +94,33 @@ describe('saveLastSearch / getLastSearch', () => {
     expect(typeof restored?.updatedAt).toBe('number');
   });
 
-  it('returns null for a board that has never been searched', async () => {
+  it('keeps the whole search, name and board filters included, at another angle of the same board', async () => {
+    const { saveLastSearch, getLastSearch } = await import('../last-search-store');
+    await saveLastSearch(kilterBoard, activeFilters, 'crimps', { onlyBenchmarks: true });
+    const restored = await getLastSearch({ ...kilterBoard, angle: 25 });
+    expect(restored?.filters).toEqual(activeFilters);
+    expect(restored?.searchText).toBe('crimps');
+    expect(restored?.boardFilters).toEqual({ onlyBenchmarks: true });
+  });
+
+  it('carries the filters to another board but clears the name and the hold and zone picks', async () => {
+    const { saveLastSearch, getLastSearch } = await import('../last-search-store');
+    await saveLastSearch(kilterBoard, activeFilters, 'crimps', {
+      onlyBenchmarks: true,
+      holdsFilter: { hold_5: { HAND: 'include' } },
+      zoneBox: { edgeLeft: 0, edgeRight: 10, edgeBottom: 0, edgeTop: 10 },
+      zoneMode: 'anyHold',
+    });
+    const restored = await getLastSearch(tensionBoard);
+    expect(restored?.filters).toEqual(activeFilters);
+    expect(restored?.searchText).toBe('');
+    expect(restored?.boardFilters).toEqual({ onlyBenchmarks: true });
+  });
+
+  it('treats another set of holds on the same layout as another board', async () => {
     const { saveLastSearch, getLastSearch } = await import('../last-search-store');
     await saveLastSearch(kilterBoard, activeFilters, 'crimps');
-    expect(await getLastSearch(tensionBoard)).toBeNull();
+    expect((await getLastSearch({ ...kilterBoard, setIds: '1' }))?.searchText).toBe('');
   });
 
   it('returns null when storage is empty', async () => {
@@ -105,17 +128,17 @@ describe('saveLastSearch / getLastSearch', () => {
     expect(await getLastSearch(kilterBoard)).toBeNull();
   });
 
-  it('keeps two different board configs isolated', async () => {
+  it('keeps one search: a save on another board replaces the earlier one', async () => {
     const { saveLastSearch, getLastSearch } = await import('../last-search-store');
     await saveLastSearch(kilterBoard, activeFilters, 'crimps');
     await saveLastSearch(tensionBoard, { ...defaultFilters, sortBy: 'name' }, 'slopers');
 
     const kilter = await getLastSearch(kilterBoard);
     const tension = await getLastSearch(tensionBoard);
-    expect(kilter?.searchText).toBe('crimps');
-    expect(kilter?.filters.minGrade).toBe(15);
+    expect(kilter?.filters.sortBy).toBe('name');
+    expect(kilter?.searchText).toBe('');
     expect(tension?.searchText).toBe('slopers');
-    expect(tension?.filters.sortBy).toBe('name');
+    expect(Object.keys(JSON.parse((await rawStorage())[STORE_KEY]))).toEqual(['latest']);
   });
 
   it('overwrites the previous search for the same board', async () => {
@@ -174,13 +197,12 @@ describe('saveLastSearch no-op on default/empty', () => {
     expect(await getLastSearch(kilterBoard)).toBeNull();
   });
 
-  it('clearing one board leaves other boards untouched', async () => {
+  it('clearing on any board clears the one saved search', async () => {
     const { saveLastSearch, getLastSearch } = await import('../last-search-store');
     await saveLastSearch(kilterBoard, activeFilters, 'crimps');
-    await saveLastSearch(tensionBoard, activeFilters, 'slopers');
-    await saveLastSearch(kilterBoard, defaultFilters, '');
+    await saveLastSearch(tensionBoard, defaultFilters, '');
     expect(await getLastSearch(kilterBoard)).toBeNull();
-    expect((await getLastSearch(tensionBoard))?.searchText).toBe('slopers');
+    expect(await getLastSearch(tensionBoard)).toBeNull();
   });
 });
 
@@ -255,7 +277,7 @@ describe('getLastSearch defensive validation', () => {
         updatedAt: 2,
       },
     });
-    expect(await getLastSearch(kilterBoard)).toBeNull();
+    expect((await getLastSearch(kilterBoard))?.searchText).toBe('');
     expect((await getLastSearch(tensionBoard))?.searchText).toBe('good');
   });
 });
@@ -280,63 +302,32 @@ describe('getLastSearch auth-gated stripping', () => {
   });
 });
 
-describe('map cap eviction', () => {
+describe('per-board maps written by older app versions', () => {
   beforeEach(resetStore);
 
-  it('keeps only the 20 most-recently-updated boards', async () => {
-    const { saveLastSearch, getLastSearch, boardConfigKey } = await import('../last-search-store');
-    // Force a strictly increasing clock so eviction order is deterministic
-    // even when saves land within the same real millisecond.
-    let clock = 1000;
-    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => (clock += 1));
-    // Persist 25 distinct boards; updatedAt increases with each save.
-    const boards: BoardSearchConfig[] = [];
-    for (let index = 0; index < 25; index += 1) {
-      const board: BoardSearchConfig = { ...kilterBoard, angle: index };
-      boards.push(board);
-      await saveLastSearch(board, activeFilters, `q${index}`);
-    }
-    nowSpy.mockRestore();
-
-    const stored: unknown = JSON.parse((await rawStorage())[STORE_KEY]);
-    expect(Object.keys(stored as Record<string, unknown>)).toHaveLength(20);
-
-    // The 5 oldest boards (angles 0-4) should be evicted.
-    expect(await getLastSearch(boards[0])).toBeNull();
-    expect(await getLastSearch(boards[4])).toBeNull();
-    // The newest boards survive.
-    expect((await getLastSearch(boards[24]))?.searchText).toBe('q24');
-    expect((await getLastSearch(boards[5]))?.searchText).toBe('q5');
-    expect(boardConfigKey(boards[24])).toContain('|24');
-  });
-});
-
-describe('clearLastSearch / clearAllLastSearches', () => {
-  beforeEach(resetStore);
-
-  it('clears only the targeted board', async () => {
-    const { saveLastSearch, getLastSearch, clearLastSearch } = await import('../last-search-store');
-    await saveLastSearch(kilterBoard, activeFilters, 'crimps');
-    await saveLastSearch(tensionBoard, activeFilters, 'slopers');
-    await clearLastSearch(kilterBoard);
-    expect(await getLastSearch(kilterBoard)).toBeNull();
-    expect((await getLastSearch(tensionBoard))?.searchText).toBe('slopers');
-  });
-
-  it('is a no-op clearing a board that was never saved', async () => {
-    const { saveLastSearch, getLastSearch, clearLastSearch } = await import('../last-search-store');
-    await saveLastSearch(tensionBoard, activeFilters, 'slopers');
-    await clearLastSearch(kilterBoard);
-    expect((await getLastSearch(tensionBoard))?.searchText).toBe('slopers');
-  });
-
-  it('clears every board', async () => {
-    const { saveLastSearch, getLastSearch, clearAllLastSearches } = await import('../last-search-store');
-    await saveLastSearch(kilterBoard, activeFilters, 'crimps');
-    await saveLastSearch(tensionBoard, activeFilters, 'slopers');
-    await clearAllLastSearches();
-    expect(await getLastSearch(kilterBoard)).toBeNull();
-    expect(await getLastSearch(tensionBoard)).toBeNull();
+  it('restores the newest entry, with its name only on the board it was typed on', async () => {
+    const { boardConfigKey, getLastSearch } = await import('../last-search-store');
+    await seedRaw({
+      [boardConfigKey(kilterBoard)]: {
+        filters: { sortBy: 'ascents', sortOrder: 'desc', status: 'any', minGrade: 12 },
+        searchText: 'old',
+        updatedAt: 1,
+      },
+      [boardConfigKey(tensionBoard)]: {
+        filters: { sortBy: 'quality', sortOrder: 'desc', status: 'any', minGrade: 20 },
+        searchText: 'newest',
+        boardFilters: { holdsFilter: { hold_5: { HAND: 'include' } } },
+        updatedAt: 2,
+      },
+    });
+    const onTension = await getLastSearch({ ...tensionBoard, angle: 50 });
+    expect(onTension?.filters.minGrade).toBe(20);
+    expect(onTension?.searchText).toBe('newest');
+    expect(onTension?.boardFilters).toEqual({ holdsFilter: { hold_5: { HAND: 'include' } } });
+    const onKilter = await getLastSearch(kilterBoard);
+    expect(onKilter?.filters.minGrade).toBe(20);
+    expect(onKilter?.searchText).toBe('');
+    expect(onKilter?.boardFilters).toEqual({});
   });
 });
 

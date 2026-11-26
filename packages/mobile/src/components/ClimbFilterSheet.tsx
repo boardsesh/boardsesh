@@ -80,6 +80,7 @@ import { spacing } from '../theme/tokens';
 import { GradeRangeRail } from './grade';
 import type { ClimbFilters } from '../lib/climb-filter-types';
 import { DEFAULT_FILTERS, statusForAuth } from '../lib/climb-filter-types';
+import { boardGeometryKey } from '../lib/climb-filter-session-reducer';
 import { NO_LOCKED_DIMENSIONS, withLockedDimensions, type LockedDimensions } from '../lib/dimension-chips';
 
 export type { ClimbFilters };
@@ -278,10 +279,12 @@ export type ClimbFilterSheetProps = {
 // status into one control. undefined = Any; 2 = Established (≥2 ascents). The
 // leading "Unrepeated" bucket (status='projects') is rendered separately.
 
-// A presentation belongs to one board and angle. Late native closes and
-// sub-picker results must not affect a search that replaced that scope.
+// A presentation belongs to one board. Late native closes and sub-picker
+// results must not affect a search that replaced that scope. The angle is left
+// out: an angle change keeps the search, so an open sheet keeps working (the
+// screens that want a fresh sheet per angle remount it through their own key).
 function boardKeyOf(config: BoardSearchConfig | null): string | null {
-  return config ? `${config.boardName}|${config.layoutId}|${config.sizeId}|${config.setIds}|${config.angle}` : null;
+  return config ? boardGeometryKey(config) : null;
 }
 
 export function hasActiveFilters(filters: ClimbFilters): boolean {

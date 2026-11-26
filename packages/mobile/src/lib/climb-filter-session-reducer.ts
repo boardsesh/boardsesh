@@ -145,7 +145,7 @@ export function createClimbFilterSessionState<K extends string>(options: {
 }
 
 /** The board filters without the hold and zone picks. Same reference when there are none. */
-function withoutGeometryFilters(boardFilters: ClimbBoardFilterState): ClimbBoardFilterState {
+export function withoutGeometryFilters(boardFilters: ClimbBoardFilterState): ClimbBoardFilterState {
   if (boardFilters.holdsFilter === undefined && boardFilters.zoneBox == null && boardFilters.zoneMode === undefined) {
     return boardFilters;
   }
