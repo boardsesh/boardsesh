@@ -59,8 +59,15 @@ import { useQueueMutations, type PublishPlaybackStateInput } from '@boardsesh/qu
 import { isNowSlotValidationError } from '@boardsesh/queue-react/create-queue-mutations';
 import type { QueueItemAttribution } from '@boardsesh/queue-react/queue-item-input';
 import type { PlaybackStateChangedEvent, SessionUser } from '@boardsesh/shared-schema';
-import { execute, isNotInSessionError, isRateLimitedError, isTransportClosedError } from '@boardsesh/graphql-client';
+import {
+  GraphQLOperationError,
+  execute,
+  isNotInSessionError,
+  isRateLimitedError,
+  isTransportClosedError,
+} from '@boardsesh/graphql-client';
 import { classifyClimbBoardCompatibility } from '@boardsesh/board-config';
+import { readSessionRestoreBoard } from '../lib/boards/session-restore-board';
 import { buildSessionBoardPath } from '../lib/boards/session-board-path';
 import { SHARED_EVENTS, boardTypeProperty } from '@boardsesh/analytics';
 import { JOIN_SESSION, JOIN_SESSION_NOW_SLOT, UPDATE_USERNAME } from '@boardsesh/graphql/operations/queue-session';
@@ -982,6 +989,20 @@ export function QueueProvider({ children }: { children: ReactNode }) {
             }
           };
           assertJoinAvailable();
+          const target = await readSessionRestoreBoard(sid);
+          if (joinCredentialGeneration !== getCredentialGeneration() || sessionIdRef.current !== sid) {
+            throw new Error('Queue authorization changed');
+          }
+          assertJoinAvailable();
+          if (target.status === 'ended' || target.status === null) {
+            throw new GraphQLOperationError([
+              { message: 'This session has ended', extensions: { code: 'SESSION_ENDED' } },
+            ]);
+          }
+          const sessionBoard = target.board;
+          if (target.status !== 'active' || !sessionBoard || !boardVisibilityRef.current(sessionBoard)) {
+            throw new Error('Session board unavailable');
+          }
           // Snapshot identity at the moment we build the payload. If the profile
           // resolves while JOIN is in flight, we must record the values we
           // actually sent — not identityRef.current's newer ones — so the
@@ -1018,6 +1039,12 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           };
           const runJoin = (query: string) => {
             assertJoinAvailable();
+            if (
+              joinCredentialGeneration !== getCredentialGeneration() ||
+              sessionIdRef.current !== sid ||
+              !boardVisibilityRef.current(sessionBoard)
+            )
+              throw new Error('Session board unavailable');
             return execute<JoinSessionResponse>(getWsClient, { query, variables: joinVariables });
           };
           let result: JoinSessionResponse;

@@ -11,7 +11,11 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { useReducer, useRef } from 'react';
 import { initialState, queueReducer, type ClimbQueueItem, type QueueState } from '@boardsesh/queue';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { isBoardConfigVisible, QUANTUM_BOARD_FLAG } from '@boardsesh/board-config/visibility';
+import {
+  isBoardConfigVisible,
+  QUANTUM_BOARD_FLAG,
+  type BoardVisibilityConfig,
+} from '@boardsesh/board-config/visibility';
 import type { LocalQueueSnapshot } from '../../../lib/queue-snapshot-store';
 
 const storage = vi.hoisted(() => ({
@@ -110,7 +114,9 @@ beforeEach(() => {
   storage.clearSession.mockClear();
   storage.setSession.mockClear();
   storage.setSnapshot.mockClear();
-  storage.sessionStatus.mockReset().mockResolvedValue({ sessionStatus: 'active' });
+  storage.sessionStatus
+    .mockReset()
+    .mockResolvedValue({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' });
   storage.gate = null;
   resetQueueSnapshotRestoredReportForTests();
 });
@@ -176,8 +182,8 @@ it('blocks cold Quantum session restore without erasing the session or solo snap
       sizeId: 9204,
       setIds: '1',
     }) as UserBoard;
-  const disabled = (board: UserBoard) => isBoardConfigVisible(board);
-  const enabled = (board: UserBoard) => isBoardConfigVisible(board, { [QUANTUM_BOARD_FLAG]: true });
+  const disabled = (board: BoardVisibilityConfig) => isBoardConfigVisible(board);
+  const enabled = (board: BoardVisibilityConfig) => isBoardConfigVisible(board, { [QUANTUM_BOARD_FLAG]: true });
   const { result, rerender } = renderHook(
     ({ isBoardAvailable }) => useRestoreHarness([], { getSessionRestoreBoard, isBoardAvailable }),
     { initialProps: { isBoardAvailable: disabled } },
@@ -192,4 +198,27 @@ it('blocks cold Quantum session restore without erasing the session or solo snap
   rerender({ isBoardAvailable: enabled });
   await waitFor(() => expect(storage.setSession).toHaveBeenCalledWith('quantum-crew'));
   expect(storage.clearSession).not.toHaveBeenCalled();
+});
+
+it('does not restore a Quantum crew when the separately selected board is Kilter', async () => {
+  storage.sessionId = 'quantum-crew';
+  storage.sessionStatus.mockResolvedValue({
+    sessionStatus: 'active',
+    sessionRestoreBoardPath: 'quantum/9104/9204/1/35',
+  });
+  const getSessionRestoreBoard = async () =>
+    ({
+      boardType: 'kilter',
+      layoutId: 1,
+      sizeId: 10,
+      setIds: '1',
+    }) as UserBoard;
+  const { result } = renderHook(() => useRestoreHarness([], { getSessionRestoreBoard }));
+
+  await waitFor(() => expect(result.current.restored).toBe(true));
+
+  expect(storage.sessionStatus).toHaveBeenCalledTimes(1);
+  expect(storage.setSession).not.toHaveBeenCalled();
+  expect(storage.clearSession).not.toHaveBeenCalled();
+  expect(storage.setSnapshot).not.toHaveBeenCalled();
 });

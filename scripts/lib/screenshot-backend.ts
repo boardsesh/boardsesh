@@ -1336,11 +1336,10 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     if (serializedResponse === undefined) {
       try {
         const fixture = JSON.parse(readFileSync(join(fixturesDir, entry.file), 'utf8')) as GraphqlFixtureFile;
-        // This set's own JoinSession replies: the only evidence an adapter may
-        // cite (GetSession's `isPermanent`, #6591). Read only when one asks.
-        const joinSessionFixtures = (): GraphqlFixtureFile[] =>
+        // A compatibility adapter can read same-set evidence on demand.
+        const evidenceForOperation = (operationName: string): GraphqlFixtureFile[] =>
           manifest.graphql
-            .filter((recorded) => recorded.operationName === 'JoinSession')
+            .filter((recorded) => recorded.operationName === operationName)
             .map((recorded) => {
               if (!isFixtureFileWithinDirectory(fixturesDir, recorded.file)) throw new Error('Invalid fixture path');
               return JSON.parse(readFileSync(join(fixturesDir, recorded.file), 'utf8')) as GraphqlFixtureFile;
@@ -1348,7 +1347,10 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
         const compatibility =
           campaignResponse ??
           (entry.documentHash !== key.documentHash
-            ? (replayCompatibleFixtureResponse(query, fixture, { joinSessionFixtures }) ??
+            ? (replayCompatibleFixtureResponse(query, fixture, {
+                joinSessionFixtures: () => evidenceForOperation('JoinSession'),
+                getSessionFixtures: () => evidenceForOperation('GetSession'),
+              }) ??
               (manifest.flow === 'app-store-campaign' || cppReplayScope
                 ? replayCampaignSessionResponse(query, parsedBody.variables, fixture)
                 : null))

@@ -1,3 +1,4 @@
+import { projectSessionBoardPath } from '../../../services/board-session-privacy';
 import { redactQueueEvents } from '../../../services/privacy-queue-events';
 import { canAccessResource } from '../../../services/privacy';
 import type {
@@ -181,6 +182,15 @@ export const sessionQueries = {
     validateInput(SessionIdSchema, sessionId, 'sessionId');
     if (!ctx.userId) throw new Error('Authentication required to perform this operation');
     return generateSessionHealthExport(sessionId, ctx.userId);
+  },
+
+  /** Read the authorized board geometry without joining or consulting live presence. */
+  sessionRestoreBoardPath: async (_: unknown, { sessionId }: { sessionId: string }, ctx: ConnectionContext) => {
+    validateInput(SessionIdSchema, sessionId, 'sessionId');
+    if (!(await canAccessResource('session', sessionId, ctx.userId))) return null;
+    const session = await roomManager.getSessionById(sessionId);
+    if (!session?.boardPath) return null;
+    return (await projectSessionBoardPath(session.boardPath, ctx.userId, { geometryOnly: true })) || null;
   },
 
   /**

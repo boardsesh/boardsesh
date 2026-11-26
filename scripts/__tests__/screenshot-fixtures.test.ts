@@ -2250,3 +2250,51 @@ describe('Aurora history opt-in recording compatibility', () => {
     ).toBeNull();
   });
 });
+
+describe('SessionStatus replay geometry', () => {
+  const legacy = 'query SessionStatus($sessionId: ID!) { sessionStatus(sessionId: $sessionId) }';
+  const current = legacy.replace(') }', ') sessionRestoreBoardPath(sessionId: $sessionId) }');
+  const fixture = (operationName: string, query: string, sessionId: string, data: unknown): GraphqlFixtureFile => ({
+    formatVersion: 1,
+    operationName,
+    documentHash: 'original-hash',
+    variablesHash: 'variables',
+    query,
+    variables: { sessionId },
+    response: { data },
+    status: 200,
+    recordedAt: '2026-01-01T00:00:00Z',
+    upstream: 'https://example.test',
+  });
+  const status = fixture('SessionStatus', legacy, 'crew-1', { sessionStatus: 'active' });
+  const preview = (boardPath: string, sessionId = 'crew-1') =>
+    fixture('GetSession', 'query GetSession { session { id boardPath } }', sessionId, {
+      session: { id: sessionId, boardPath },
+    });
+
+  it('recovers the current board from a matching GetSession recording', () => {
+    const boardPath = 'kilter/8/25/26/40';
+    expect(
+      replayCompatibleFixtureResponse(current, status, { getSessionFixtures: () => [preview(boardPath)] }),
+    ).toEqual({
+      response: { data: { sessionStatus: 'active', sessionRestoreBoardPath: boardPath } },
+    });
+  });
+
+  it('requires authoritative geometry from an unambiguous same-session recording', () => {
+    expect(replayCompatibleFixtureResponse(current, status)).toBeNull();
+    expect(
+      replayCompatibleFixtureResponse(current, status, {
+        getSessionFixtures: () => [preview('kilter/8/25/26/40', 'other')],
+      }),
+    ).toBeNull();
+    expect(
+      replayCompatibleFixtureResponse(current, status, {
+        getSessionFixtures: () => [preview('kilter/8/25/26/40'), preview('quantum/9104/9204/1/35')],
+      }),
+    ).toBeNull();
+    expect(
+      replayCompatibleFixtureResponse(current, status, { getSessionFixtures: () => [preview('/b/warehouse')] }),
+    ).toBeNull();
+  });
+});

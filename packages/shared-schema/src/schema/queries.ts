@@ -75,6 +75,12 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     sessionStatus(sessionId: ID!): SessionStatus
 
+    """
+    Geometry of an accessible session's current board, including when its live
+    roster is empty. Returns null when the target cannot be disclosed or resolved.
+    """
+    sessionRestoreBoardPath(sessionId: ID!): String
+
     # ============================================
     # Board Configuration Queries
     # ============================================

@@ -313,7 +313,8 @@ describe('QueueProvider backgrounded JoinSession hygiene', () => {
     // rejoining — it must report 'active' or the session id is dropped and no
     // join ever fires.
     http.request.mockImplementation(async (operation: string) => {
-      if (operation.includes('SessionStatus')) return { sessionStatus: 'active' };
+      if (operation.includes('SessionStatus'))
+        return { sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' };
       if (operation.includes('GetSessionQueueState')) return { session: { queueState: null } };
       return { endSession: { sessionId: 'session-1' } };
     });

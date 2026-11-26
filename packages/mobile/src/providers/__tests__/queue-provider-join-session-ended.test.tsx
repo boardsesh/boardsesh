@@ -281,7 +281,8 @@ describe('QueueProvider JOIN_SESSION SESSION_ENDED guard (#3087)', () => {
     graph.execute.mockReset();
     http.request.mockReset();
     http.request.mockImplementation(async (operation: string) => {
-      if (operation.includes('SessionStatus')) return { sessionStatus: 'active' };
+      if (operation.includes('SessionStatus'))
+        return { sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' };
       if (operation.includes('GetSessionQueueState')) return { session: { queueState: null } };
       return { endSession: { sessionId: 'session-1' } };
     });

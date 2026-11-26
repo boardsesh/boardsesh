@@ -61,6 +61,7 @@ vi.mock('../../../src/lib/analytics', async (importOriginal) => ({
 }));
 vi.mock('../../../src/hooks/use-board-visibility', () => ({
   useIsBoardTypeVisible: () => isBoardTypeVisible,
+  useIsBoardConfigVisible: () => (board: UserBoard) => isBoardTypeVisible(board.boardType),
 }));
 const isBoardTypeVisible = (boardType: string) => boardType !== 'quantum';
 
@@ -565,7 +566,13 @@ describe('discovery search integration', () => {
       isSuccess: true,
       data: {
         gyms: [
-          { uuid: 'atlanta', name: 'Central Rock Gym Atlanta Bouldering', latitude: null, longitude: null } as Gym,
+          {
+            uuid: 'atlanta',
+            name: 'Central Rock Gym Atlanta Bouldering',
+            latitude: null,
+            longitude: null,
+            boardTypes: [],
+          } as unknown as Gym,
         ],
         boards: [],
       },

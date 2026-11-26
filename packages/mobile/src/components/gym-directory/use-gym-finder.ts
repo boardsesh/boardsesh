@@ -267,7 +267,7 @@ export function useGymFinder({ revealRow, mapAvailableOnOpen = true }: UseGymFin
   const gyms = useMemo(
     () =>
       (gymConnection?.gyms ?? [])
-        .map((gym) => ({ ...gym, boardTypes: gym.boardTypes.filter(isBoardTypeVisible) }))
+        .map((gym) => ({ ...gym, boardTypes: (gym.boardTypes ?? []).filter(isBoardTypeVisible) }))
         .filter((gym) => !search.filter.multiBoardTypeOnly || gym.boardTypes.length > 1),
     [gymConnection?.gyms, isBoardTypeVisible, search.filter.multiBoardTypeOnly],
   );

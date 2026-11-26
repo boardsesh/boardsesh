@@ -10,8 +10,9 @@ import {
 } from '../../lib/queue-snapshot-store';
 import { getStoredSessionId, clearStoredSessionId } from '../../lib/session-store';
 import { announceStoredSessionEnded } from '../../lib/ended-session-signal';
-import { getHttpClient } from '../../lib/graphql/client';
-import { SESSION_STATUS, type SessionStatusQueryResponse } from '../../lib/graphql/operations';
+import { onlineManager } from '@tanstack/react-query';
+import { isBoardConfigVisible, type BoardVisibilityConfig } from '@boardsesh/board-config/visibility';
+import { readSessionRestoreBoard } from '../../lib/boards/session-restore-board';
 import { reportError } from '../../lib/error-reporting';
 import { track } from '../../lib/analytics';
 import { nowMs } from '../../lib/clock';
@@ -69,7 +70,7 @@ type UseQueuePersistenceParams = {
   activeBoardRolloutBlocked?: boolean;
   /** Reads the underlying board for the cold session guard, before status or join I/O. */
   getSessionRestoreBoard?: () => Promise<UserBoard | null>;
-  isBoardAvailable?: (board: UserBoard) => boolean;
+  isBoardAvailable?: (board: BoardVisibilityConfig) => boolean;
 };
 
 /**
@@ -102,7 +103,7 @@ export function useQueuePersistence({
   activeBoardSettled,
   activeBoardRolloutBlocked = false,
   getSessionRestoreBoard,
-  isBoardAvailable,
+  isBoardAvailable = isBoardConfigVisible,
 }: UseQueuePersistenceParams): { restored: boolean } {
   const [verifiedOwner, setVerifiedOwner] = useState<{ userId: string; generation: number } | null>(null);
   useEffect(() => {
@@ -147,6 +148,18 @@ export function useQueuePersistence({
   const [blockedRestoreScope, setBlockedRestoreScope] = useState<string | null>(null);
   const boardAvailabilityRef = useRef({ activeBoardRolloutBlocked, isBoardAvailable });
   boardAvailabilityRef.current = { activeBoardRolloutBlocked, isBoardAvailable };
+  const waitForConnection = useRef(false);
+  const [restoreRetry, setRestoreRetry] = useState(0);
+  useEffect(
+    () =>
+      onlineManager.subscribe((online) => {
+        if (online && waitForConnection.current) {
+          waitForConnection.current = false;
+          setRestoreRetry((retry) => retry + 1);
+        }
+      }),
+    [],
+  );
 
   const restoreQueueSnapshot = useCallback(
     (snapshot: {
@@ -226,79 +239,37 @@ export function useQueuePersistence({
         }
         const storedBoard = await getSessionRestoreBoard?.();
         if (!isCurrent() || sessionIdRef.current !== null) return;
-        const restorationBlocked = () => {
-          const latest = boardAvailabilityRef.current;
-          if (!latest.activeBoardRolloutBlocked && (!storedBoard || latest.isBoardAvailable?.(storedBoard) !== false)) {
-            setBlockedRestoreScope(null);
-            return false;
-          }
-          setBlockedRestoreScope(hydrationScope);
-          return true;
-        };
-        if (restorationBlocked()) return;
-        // During a backend outage this call no longer hangs the cold start: the
-        // interactive HTTP client is timed (20s) and, while the connectivity
-        // store says we're offline, short-circuits with a
-        // BackendUnavailableError. That error carries no `response`, so it
-        // falls to the optimistic-restore branch below — the queue comes back
-        // and the realtime join that follows is DEFERRED by
-        // use-session-realtime.ts rather than retrying every 5s. A session
-        // that turns out to be dead stays escapable via End Session (#4862).
+        const isLocalBoardBlocked = () =>
+          boardAvailabilityRef.current.activeBoardRolloutBlocked ||
+          !!(storedBoard && !boardAvailabilityRef.current.isBoardAvailable(storedBoard));
+        setBlockedRestoreScope(hydrationScope);
+        if (isLocalBoardBlocked()) return;
         try {
-          // Verify the stored session is still alive before rejoining. Without
-          // this, JOIN_SESSION recreates a server-ended room as an empty zombie
-          // and we land in InSessionView with no peers (#2683). sessionStatus
-          // reads the durable session row, NOT the presence-gated `session`
-          // query — that one returns null for any empty session, so it can't
-          // tell an ended session apart from a dormant-but-active solo session.
-          // null means the session row no longer exists; anything but 'active'
-          // means drop the stored id.
-          const { sessionStatus } = await getHttpClient().request<SessionStatusQueryResponse>(SESSION_STATUS, {
-            sessionId: storedId,
-          });
-          if (!isCurrent() || sessionIdRef.current !== null || restorationBlocked()) return;
-          if (sessionStatus !== 'active') {
-            if (__DEV__) {
-              console.info(`[session] stored session ${storedId} ended/missing; clearing`);
-            }
-            // A workout run for it is over too (#6903): its last copy and recap
-            // would otherwise wait for a session id that never comes back.
-            // Announced before any await, still under the isCurrent() check above.
+          const { status, board } = await readSessionRestoreBoard(storedId);
+          if (!isCurrent() || sessionIdRef.current !== null || isLocalBoardBlocked()) return;
+          if (status === 'ended' || status === null) {
+            // An ended or missing session cannot be rejoined. A missing board
+            // on an active session has different meaning: keep that session ID.
             announceStoredSessionEnded(storedId);
             await clearStoredSessionId();
             await hydrateLocalSnapshot();
+            if (isCurrent()) setBlockedRestoreScope(null);
             return;
           }
-          // `restored` turns true in the `finally` below, before the session's
-          // queue arrives from the server (the rejoin's FullSync). So a last
-          // pick made while launching into an open crew session is cleared
-          // when that queue lands: LastPickWatcher can't tell it from a
-          // crewmate's newer put-up, which must end the pick. Same for the
-          // offline rejoin below.
+          if (status !== 'active' || !board || !boardAvailabilityRef.current.isBoardAvailable(board)) return;
           setSessionId(storedId);
-        } catch (err) {
-          if (!isCurrent() || restorationBlocked()) return;
-          // graphql-request's ClientError always carries `response`; a genuine
-          // network failure (fetch reject) doesn't — same structural check as
-          // createSessionWithConfig's error handling above.
-          const isServerResponse = !!err && typeof err === 'object' && 'response' in err;
-          if (isServerResponse) {
-            // The backend answered but the query failed (version skew — an
-            // older backend without sessionStatus — or a masked 500). Don't
-            // restore: a zombie session would put the whole app "in session".
-            // Don't clear either: the id may verify fine once backend/app
-            // versions align, so the next launch retries.
-            reportError(err, { tags: { source: 'sessionRestore' } });
-            await hydrateLocalSnapshot();
-            return;
+          setBlockedRestoreScope(null);
+        } catch (error) {
+          if (!isCurrent() || isLocalBoardBlocked()) return;
+          const didAnswer = !!error && typeof error === 'object' && 'response' in error;
+          if (didAnswer) {
+            reportError(error, { tags: { source: 'sessionRestore' } });
+          } else {
+            waitForConnection.current = true;
           }
-          // Offline cold start: can't verify the session status, so restore
-          // optimistically so the queue still comes back. A genuinely-dead
-          // session stays escapable via End Session.
-          if (__DEV__) {
-            console.warn('[session] status check failed; restoring optimistically', err);
-          }
-          if (isCurrent() && sessionIdRef.current === null) setSessionId(storedId);
+          // Keep the stored room and solo snapshot intact until its actual board
+          // can be verified. The solo queue remains available while offline.
+          await hydrateLocalSnapshot();
         }
       })
       .finally(() => {
@@ -315,6 +286,7 @@ export function useQueuePersistence({
     activeBoardRolloutBlocked,
     getSessionRestoreBoard,
     isBoardAvailable,
+    restoreRetry,
   ]);
 
   // Only the clock's time is saved; it is always stamped for the current climb,

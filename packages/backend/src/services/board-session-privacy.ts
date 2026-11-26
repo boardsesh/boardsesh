@@ -419,7 +419,7 @@ export function redactBoardIdentity<T extends Partial<Record<BoardIdentityField,
 export async function projectSessionBoardPath(
   boardPath: string,
   viewerId: string | null | undefined,
-  linkHolders: { presentedByViewer?: boolean; discovery?: boolean } = {},
+  linkHolders: { presentedByViewer?: boolean; discovery?: boolean; geometryOnly?: boolean } = {},
 ): Promise<string> {
   const named = parseNamedBoardPath(boardPath);
   if (!named) return boardPath;
@@ -450,6 +450,8 @@ export async function projectSessionBoardPath(
         .limit(1);
   const board = live ?? deleted;
   if (!board) return '';
+  const geometry = `/${board.boardType}/${board.layoutId}/${board.sizeId}/${board.setIds}/${named.angle ?? board.angle}`;
+  if (linkHolders.geometryOnly) return geometry;
   const mayName = live
     ? (await sessionMayNameLiveBoard(live.id, viewerId, linkHolders.discovery === true)) ||
       (await holdsLiveBoardLink(live, viewerId, linkHolders)) ||
@@ -457,8 +459,7 @@ export async function projectSessionBoardPath(
       // Discovery holds no session.
       (linkHolders.discovery !== true && (await isLiveSessionMemberOnHomeWall(live.uuid, viewerId)))
     : await holdsDeletedBoard(board, viewerId);
-  if (mayName) return boardPath;
-  return `/${board.boardType}/${board.layoutId}/${board.sizeId}/${board.setIds}/${named.angle ?? board.angle}`;
+  return mayName ? boardPath : geometry;
 }
 
 /**

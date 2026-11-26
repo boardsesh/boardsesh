@@ -9600,6 +9600,11 @@ export type Query = {
    */
   sessionHealthExport?: Maybe<SessionHealthExport>;
   /**
+   * Geometry of an accessible session's current board, including when its live
+   * roster is empty. Returns null when the target cannot be disclosed or resolved.
+   */
+  sessionRestoreBoardPath?: Maybe<Scalars['String']['output']>;
+  /**
    * Lightweight, presence-independent lifecycle check for a session.
    * Reads the durable session row (not live Redis presence), so it tells an
    * ended session apart from one that is merely empty. Returns null when the
@@ -10639,6 +10644,11 @@ export type QuerySessionGroupedFeedArgs = {
 
 /** Root query type for all read operations. */
 export type QuerySessionHealthExportArgs = {
+  sessionId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySessionRestoreBoardPathArgs = {
   sessionId: Scalars['ID']['input'];
 };
 
@@ -22313,6 +22323,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QuerySessionHealthExportArgs, 'sessionId'>
+  >;
+  sessionRestoreBoardPath?: Resolver<
+    Maybe<ResolversTypes['String']>,
+    ParentType,
+    ContextType,
+    RequireFields<QuerySessionRestoreBoardPathArgs, 'sessionId'>
   >;
   sessionStatus?: Resolver<
     Maybe<ResolversTypes['SessionStatus']>,

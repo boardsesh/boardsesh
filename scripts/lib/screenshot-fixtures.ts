@@ -168,6 +168,7 @@ const WORKOUT_HEADLINE_BOARD_SELECTION = 'mainTargetGrade mainTargetBoardType';
  * `replayGetSessionWithPermanence`.
  */
 const GET_SESSION_PERMANENCE_SELECTION = 'isPermanent';
+const SESSION_RESTORE_BOARD_SELECTION = 'sessionRestoreBoardPath(sessionId: $sessionId)';
 
 /** Recordings from the same fixture set that a compatibility adapter may cite. */
 export type ReplayCompatibilityEvidence = {
@@ -176,6 +177,7 @@ export type ReplayCompatibilityEvidence = {
    * recording predates `isPermanent`, so callers can load it lazily.
    */
   joinSessionFixtures?: () => readonly GraphqlFixtureFile[];
+  getSessionFixtures?: () => readonly GraphqlFixtureFile[];
 };
 
 /**
@@ -264,6 +266,8 @@ export const AURORA_HISTORY_CAPABILITY_OPERATIONS = new Set([
  *   roster frame never is.
  * - GetSession: the non-null `isPermanent`, taken from what the set recorded
  *   (`replayGetSessionWithPermanence`), never defaulted.
+ * - SessionStatus: the active board geometry, from a same-session GetSession
+ *   recording with a positional board path.
  * - GetSessionDetail / GetSessionGroupedFeed / GetUserGroupedAscentsFeed: each
  *   tick's `characteristics`.
  * - GetBoard / GetMyBoards / GetGymBoardsForSwitcher: each board's non-null
@@ -288,6 +292,7 @@ export function replayCompatibleFixtureResponse(
   const controllerRouteAdaptation = replayWithoutControllerRoute(requestQuery, fixture, evidence);
   if (controllerRouteAdaptation) return controllerRouteAdaptation;
   if (operationName === 'GetSession') return replayGetSessionWithPermanence(requestQuery, fixture, evidence);
+  if (operationName === 'SessionStatus') return replaySessionStatusWithBoard(requestQuery, fixture, evidence);
   if (BOARD_WALL_DEVICE_OPERATIONS.has(operationName ?? '')) {
     // The newest board fields first: each adapter strips its own selection and
     // hands the rest back here, so a recording that predates both still lands.
@@ -463,6 +468,39 @@ export function recordedJoinSessionPermanence(
     recorded.add(joined.isPermanent);
   }
   return recorded.size === 1 ? [...recorded][0] : null;
+}
+
+/** Use only the durable board path witnessed by GetSession in this replay set. */
+function replaySessionStatusWithBoard(
+  requestQuery: string,
+  fixture: GraphqlFixtureFile,
+  evidence: ReplayCompatibilityEvidence,
+): { response: unknown } | null {
+  if (!matchesWithoutSelection(requestQuery, SESSION_RESTORE_BOARD_SELECTION, fixture)) return null;
+  if (!isRecord(fixture.response) || !isRecord(fixture.response.data) || !isRecord(fixture.variables)) return null;
+  const { sessionStatus } = fixture.response.data;
+  if (sessionStatus === null || sessionStatus === 'ended') {
+    return { response: { ...fixture.response, data: { ...fixture.response.data, sessionRestoreBoardPath: null } } };
+  }
+  const { sessionId } = fixture.variables;
+  if (sessionStatus !== 'active' || typeof sessionId !== 'string') return null;
+
+  const paths = new Set<string>();
+  for (const preview of evidence.getSessionFixtures?.() ?? []) {
+    if (
+      preview.operationName !== 'GetSession' ||
+      !isRecord(preview.variables) ||
+      preview.variables.sessionId !== sessionId
+    )
+      continue;
+    if (!isRecord(preview.response) || !isRecord(preview.response.data)) continue;
+    const session = preview.response.data.session;
+    if (!isRecord(session) || session.id !== sessionId || typeof session.boardPath !== 'string') continue;
+    paths.add(session.boardPath);
+  }
+  const [boardPath] = paths;
+  if (paths.size !== 1 || !/^\/?[a-z]+\/\d+\/\d+\//.test(boardPath)) return null;
+  return { response: { ...fixture.response, data: { ...fixture.response.data, sessionRestoreBoardPath: boardPath } } };
 }
 
 function replaySessionUpdatesWithoutRestCadence(

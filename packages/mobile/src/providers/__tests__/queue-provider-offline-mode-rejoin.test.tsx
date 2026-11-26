@@ -271,7 +271,8 @@ describe('QueueProvider — crew session after Offline mode on → off', () => {
     http.request.mockReset();
     // Cold-start restore verifies the stored session over HTTP before joining.
     http.request.mockImplementation(async (operation: string) => {
-      if (operation.includes('SessionStatus')) return { sessionStatus: 'active' };
+      if (operation.includes('SessionStatus'))
+        return { sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' };
       if (operation.includes('GetSessionQueueState')) return { session: { queueState: null } };
       return {};
     });
@@ -303,6 +304,31 @@ describe('QueueProvider — crew session after Offline mode on → off', () => {
     expect(sessionMutationsSince(mark)).toEqual([
       { connectionId: socket.connectionId, operationName: 'ConfirmClimbOnWall', outcome: 'ok' },
     ]);
+  });
+
+  it('does not rejoin a crew which switched to Quantum while the saved board remained Kilter', async () => {
+    renderApp();
+    await waitForLiveSession();
+    await act(async () => setOfflineMode(true, 'more'));
+    await waitFor(() => expect(server.openSockets()).toHaveLength(0));
+    const beforeReconnect = server.operations.length;
+    http.request.mockClear();
+    http.request.mockImplementation(async (operation: string) =>
+      operation.includes('SessionStatus')
+        ? { sessionStatus: 'active', sessionRestoreBoardPath: 'quantum/9104/9204/1/35' }
+        : {},
+    );
+
+    await act(async () => setOfflineMode(false, 'more'));
+    await waitFor(() =>
+      expect(http.request).toHaveBeenCalledWith(expect.stringContaining('SessionStatus'), { sessionId: 'session-1' }),
+    );
+    await settleNetwork();
+
+    expect(server.operations.slice(beforeReconnect).map(({ operationName }) => operationName)).not.toContain(
+      'JoinSession',
+    );
+    expect(sessionStore.clearStoredSessionId).not.toHaveBeenCalled();
   });
 
   it('re-joins on the new connection after Offline mode on → off, so session mutations land', async () => {
@@ -475,7 +501,8 @@ describe('QueueProvider — a wall move in flight across a socket drop', () => {
     sessionStore.getStoredSessionId.mockResolvedValue('session-1');
     http.request.mockReset();
     http.request.mockImplementation(async (operation: string) => {
-      if (operation.includes('SessionStatus')) return { sessionStatus: 'active' };
+      if (operation.includes('SessionStatus'))
+        return { sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' };
       if (operation.includes('GetSessionQueueState')) return { session: { queueState: null } };
       return {};
     });

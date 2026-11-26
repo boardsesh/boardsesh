@@ -8,6 +8,7 @@
  * decide whether to restore or drop a persisted session id.
  */
 
+import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 
 const dbClient = vi.hoisted(() => {
@@ -24,7 +25,16 @@ const dbClient = vi.hoisted(() => {
 });
 
 // Mock connection-opening modules so importing the resolver barrel is side-effect-free.
-vi.mock('../services/room-manager', () => ({ roomManager: {} }));
+const restore = vi.hoisted(() => ({ canAccess: vi.fn(), getSessionById: vi.fn(), project: vi.fn() }));
+vi.mock('../services/room-manager', () => ({ roomManager: { getSessionById: restore.getSessionById } }));
+vi.mock('../services/privacy', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/privacy')>()),
+  canAccessResource: restore.canAccess,
+}));
+vi.mock('../services/board-session-privacy', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/board-session-privacy')>()),
+  projectSessionBoardPath: restore.project,
+}));
 vi.mock('../pubsub/index', () => ({ pubsub: {} }));
 vi.mock('../services/distributed-state', () => ({ getDistributedState: () => null }));
 vi.mock('../db/client', () => ({ db: dbClient.db, dbRead: dbClient.db }));
@@ -84,5 +94,31 @@ describe('sessionStatus query', () => {
   it('rejects a malformed session id before querying', async () => {
     await expect(sessionQueries.sessionStatus({}, { sessionId: 'bad id!' })).rejects.toThrow();
     expect(dbClient.limit).not.toHaveBeenCalled();
+  });
+});
+
+describe('sessionRestoreBoardPath query', () => {
+  const context = { userId: 'viewer' } as ConnectionContext;
+
+  beforeEach(() => {
+    restore.canAccess.mockReset().mockResolvedValue(true);
+    restore.getSessionById.mockReset();
+    restore.project.mockReset();
+  });
+
+  it('checks privacy before reading the session', async () => {
+    restore.canAccess.mockResolvedValue(false);
+    await expect(sessionQueries.sessionRestoreBoardPath({}, { sessionId: 'private' }, context)).resolves.toBeNull();
+    expect(restore.getSessionById).not.toHaveBeenCalled();
+  });
+
+  it('reads the durable target of a dormant session and returns only geometry', async () => {
+    restore.getSessionById.mockResolvedValue({ boardPath: '/b/slug' });
+    restore.project.mockResolvedValue('/quantum/9104/9204/1/35');
+
+    await expect(sessionQueries.sessionRestoreBoardPath({}, { sessionId: 'dormant' }, context)).resolves.toBe(
+      '/quantum/9104/9204/1/35',
+    );
+    expect(restore.project).toHaveBeenCalledWith('/b/slug', 'viewer', { geometryOnly: true });
   });
 });
