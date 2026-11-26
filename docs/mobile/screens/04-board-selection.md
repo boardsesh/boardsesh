@@ -26,7 +26,11 @@ and [Bluetooth](12-bluetooth.md).
 ### Friends' boards
 
 Right under Your boards, the picker shows up to five home boards owned by people
-the climber follows (`friendsBoards`, `useFriendsBoardsShelf`). It reads one page
+who follow the climber (`friendsBoards`, `useFriendsBoardsShelf`). The owner's
+follow lists the board; whether the climber can open it is the board's own
+audience ([privacy](../../product/privacy.md#friends-boards)). So a Followers
+board from someone the climber doesn't follow back comes as an ask, the same
+as an Invite-only one. It reads one page
 of six and never more: a sixth row covers a board that is also in Your boards,
 which the shelf leaves out by uuid (`friendsShelfBoards` in
 `src/lib/boards/friend-boards.ts`). The shelf is hidden when it is empty, signed
@@ -73,7 +77,12 @@ climber back off a board, it drops out of `myBoards`, and the next complete,
 successful `myBoards` read since the screen mounted prunes its offline card
 (`offlineBoardCardSync` in `src/offline/use-remember-downloaded-boards.ts`); a
 failed or truncated read, or a list hydrated from the persisted cache, prunes
-nothing. Following or unfollowing someone refreshes `friendsBoards`.
+nothing. `friendsBoards` is read again when the climber follows or unfollows
+someone (a Followers board opens once they follow its owner back), and on a live
+`new_follower` or `board_access_approved` notification
+(`use-spray-completion-updates.ts`). An unfollow by someone else sends no
+notification; the list catches up once the app-wide five-minute stale time
+runs out, or on a pull to refresh in "Whose board?".
 
 The owner hears about a request in the inbox: one climber asking shows Approve
 and Decline in place (`useAnswerBoardAccessRequest`); a row with several opens
@@ -98,13 +107,15 @@ pushes one wizard under `app/boards/add/` instead of opening a menu:
 - `index.tsx`, "Where's the board?": at a gym, at home, a friend's board, or a
   Spraywall (handed to `/boards/spray/new` unchanged). It has an X and the
   title "Add a board".
-- `friend.tsx`, "Whose board?" (step 2 of 2): boards owned by people the
-  climber follows, under an owner header each, with a search on the board or
-  owner name, one page per end-reach. Its footer has "Not following them yet?
-  Find people" (`app/boards/users/search.tsx`, the climber search inside the
-  picker's stack) and the share-link hint. A tap works as on Friends' boards
-  above. Empty states: follows nobody, nothing shared yet, no match, offline;
-  signed out it asks for sign-in.
+- `friend.tsx`, "Whose board?" (step 2 of 2): boards owned by people who
+  follow the climber, under an owner header each, with a search on the board or
+  owner name, one page per end-reach. Following someone doesn't add their
+  boards here, so the footer offers "Share your profile so friends can follow
+  you" (the profile's share link, `useProfileShareOptions`; hidden for a
+  private profile, which has no public link) and the share-link hint. A tap
+  works as on Friends' boards above. Empty states: nobody follows you (with
+  Share your profile), nothing shared yet, no match, offline; signed out it
+  asks for sign-in.
 - `gym.tsx`, "Which gym?": `GymStep`, the map and search.
 - `gym-boards.tsx`, "Boards at {gym}": `GymWallList`, where an existing wall is
   taken before a copy is added.

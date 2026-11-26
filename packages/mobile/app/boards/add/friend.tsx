@@ -1,13 +1,17 @@
 // The add-a-board wizard's "Whose board?" (flag `add-board-wizard`): home
-// boards owned by people the climber follows (`friendsBoards`), grouped under
-// their owner. Step 2 of 2 from "Where's the board?"; the picker's Friends'
+// boards owned by people who follow the climber (`friendsBoards`), grouped
+// under their owner. Step 2 of 2 from "Where's the board?"; the picker's Friends'
 // boards shelf opens it too ("See all", uncounted). A tap climbs the board, or
 // asks its owner first (use-friend-board-action.tsx).
 //
 // One virtualized FlashList: an owner header cell, then each of their boards
 // as a slice of an inset-grouped card. The step header and the search sit in
-// the list header; Find people and the share-link hint in its footer. One page
-// per end-reach.
+// the list header; Share your profile and the share-link hint in its footer.
+// One page per end-reach.
+//
+// Following someone doesn't list their boards here; their following you does.
+// So the way to get a friend's board onto this list is to send them your
+// profile to follow, and Share your profile is the action this screen offers.
 
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -31,6 +35,8 @@ import type { GroupedCellPosition } from '../../../src/components/gym-page/gym-p
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
 import { useStoredUserId } from '../../../src/hooks/use-current-user-id';
 import { useOfflineQueryState } from '../../../src/hooks/use-offline-query-state';
+import { useProfileShareOptions } from '../../../src/hooks/use-profile-share-options';
+import { useShareLinkAction } from '../../../src/hooks/use-share-link-action';
 import { noteBoardFlowSecured } from '../../../src/lib/boards/board-create-flow';
 import { resolveBoardReturnTo } from '../../../src/lib/boards/board-return-to';
 import {
@@ -43,6 +49,7 @@ import { useAddBoardWizardStep } from '../../../src/lib/boards/use-add-board-wiz
 import { useFriendBoardAction } from '../../../src/lib/boards/use-friend-board-action';
 import { useProfile } from '../../../src/lib/graphql/hooks';
 import { useFriendsBoards } from '../../../src/lib/graphql/hooks/use-friends-boards';
+import { usePrivacySettings } from '../../../src/lib/graphql/hooks/use-privacy';
 import { usePublicProfile } from '../../../src/lib/graphql/hooks/use-social';
 import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { openSignIn } from '../../../src/lib/routing/open-sign-in';
@@ -98,7 +105,7 @@ export default function AddBoardFriend() {
   const { data, hasNextPage, isFetchingNextPage, fetchNextPage, isPending, isError, refetch, fetchStatus } =
     friendsBoards;
   const offline = useOfflineQueryState(friendsBoards);
-  // Only asked when the list is empty, to tell "follows nobody" from "nobody shares".
+  // Only asked when the list is empty, to tell "nobody follows you" from "nobody shares".
   const listIsEmpty = (data?.pages[0]?.items.length ?? 0) === 0;
   const { data: viewerProfile } = usePublicProfile(viewerId, listIsEmpty && query.length === 0);
 
@@ -152,7 +159,17 @@ export default function AddBoardFriend() {
     setPullRefreshing(true);
     void refetch().finally(() => setPullRefreshing(false));
   }, [refetch]);
-  const findPeople = useCallback(() => router.push('/boards/users/search'), [router]);
+  // A friend lists their boards here by following the climber, so the
+  // climber's profile link is what to send them. Only a public profile has a
+  // link (useProfileShareOptions); a private one shows no button.
+  const { data: privacy } = usePrivacySettings();
+  const profileShare = useProfileShareOptions({
+    userId: profile?.id,
+    displayName: profile?.displayName,
+    isPrivate: privacy?.isPrivate,
+  });
+  const shareProfile = useShareLinkAction(profileShare);
+  const canShareProfile = profileShare.url !== null;
   const signIn = useCallback(() => openSignIn(router, 'boards'), [router]);
 
   const renderItem = useCallback(
@@ -184,7 +201,7 @@ export default function AddBoardFriend() {
   const emptyKind = friendBoardsEmptyKind({
     offline: offline.isBlocked,
     query,
-    followingCount: viewerProfile?.followingCount,
+    followerCount: viewerProfile?.followerCount,
     boardCount: cells.length,
   });
   const searching = trimmedSearch !== query;
@@ -210,13 +227,21 @@ export default function AddBoardFriend() {
     />
   ) : emptyKind === 'no_match' ? (
     <EmptyState size="section" title={t('mobile.friendBoards.noMatch', { query })} testID="friend-boards-no-match" />
-  ) : emptyKind === 'no_follows' ? (
+  ) : emptyKind === 'no_followers' ? (
     <EmptyState
       size="section"
-      title={t('mobile.friendBoards.noFollowsTitle')}
-      body={t('mobile.friendBoards.noFollowsBody')}
-      actions={<Button title={t('mobile.friendBoards.findPeople')} onPress={findPeople} />}
-      testID="friend-boards-no-follows"
+      title={t('mobile.friendBoards.noFollowersTitle')}
+      body={t('mobile.friendBoards.noFollowersBody')}
+      actions={
+        canShareProfile ? (
+          <Button
+            title={t('mobile.friendBoards.shareProfile')}
+            onPress={shareProfile}
+            testID="friend-boards-share-profile"
+          />
+        ) : undefined
+      }
+      testID="friend-boards-no-followers"
     />
   ) : (
     <EmptyState
@@ -246,14 +271,14 @@ export default function AddBoardFriend() {
   const listFooter = (
     <View style={styles.footer}>
       {isFetchingNextPage ? <ActivityIndicator size="small" /> : null}
-      {emptyKind === 'no_follows' ? null : (
+      {canShareProfile && emptyKind !== 'no_followers' ? (
         <Button
-          title={t('mobile.friendBoards.notFollowing')}
+          title={t('mobile.friendBoards.shareProfileFooter')}
           variant="text"
-          onPress={findPeople}
-          testID="friend-boards-find-people"
+          onPress={shareProfile}
+          testID="friend-boards-share-profile-footer"
         />
-      )}
+      ) : null}
       <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.hint}>
         {t('mobile.friendBoards.linkHint')}
       </Text>

@@ -1306,7 +1306,7 @@ export default function BoardSelection() {
     </ShelfSection>
   ) : null;
 
-  // Friends' boards: home boards owned by people the climber follows, right
+  // Friends' boards: home boards owned by people who follow the climber, right
   // under Your boards. One small page and never more (a shelf, not a list);
   // "See all" opens Whose board?. Not on the offline or error layouts, never
   // persisted (docs/data/offline-reads.md, Bucket 3), and hidden when empty.
