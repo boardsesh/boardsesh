@@ -54,8 +54,8 @@ const resourceSchema = z
     audience: resourceAudience,
     locationAudience: locationAudience.optional(),
     inheritFollowers: z.boolean().optional(),
-    // Only listing: lists an Unlisted or Invite-only board in followers'
-    // Friends' boards. Stored for any audience so a round trip through Public
+    // Only listing: lists an Unlisted or Invite-only board in the Friends'
+    // boards of the people the owner follows. Stored for any audience so a round trip through Public
     // keeps the owner's choice; it grants no access.
     listedToFollowers: z.boolean().optional(),
   })

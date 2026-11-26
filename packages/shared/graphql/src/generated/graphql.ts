@@ -3875,7 +3875,7 @@ export type FreezeClimbInput = {
   reason?: InputMaybe<Scalars['String']['input']>;
 };
 
-/** One board owned by someone the viewer follows. */
+/** One board owned by someone who follows the viewer. */
 export type FriendBoard = {
   __typename?: 'FriendBoard';
   /** The full board, for CAN_CLIMB only. Null for CAN_REQUEST and REQUESTED. */
@@ -3889,7 +3889,7 @@ export type FriendBoard = {
 export type FriendBoardAccess =
   /** The viewer can open and climb on it: FriendBoard.board is set. */
   | 'CAN_CLIMB'
-  /** An Invite-only board the owner lists to followers. The viewer may ask to climb (requestResourceAccess). */
+  /** A Followers board whose owner the viewer does not follow, or an Invite-only board listed to the people its owner follows. The viewer may ask to climb (requestResourceAccess). */
   | 'CAN_REQUEST'
   /** The viewer asked to climb and the owner has not answered yet. */
   | 'REQUESTED';
@@ -3902,7 +3902,7 @@ export type FriendBoardConnection = {
   totalCount: Scalars['Int']['output'];
 };
 
-/** The person who owns a friend's board. Always someone the viewer follows. */
+/** The person who owns a friend's board. Always someone who follows the viewer. */
 export type FriendBoardOwner = {
   __typename?: 'FriendBoardOwner';
   /** Profile avatar, falling back to the account image */
@@ -3924,7 +3924,7 @@ export type FriendBoardPreview = {
   name: Scalars['String']['output'];
   setIds: Scalars['String']['output'];
   sizeId: Scalars['Int']['output'];
-  /** The board's uuid: the resourceId for requestResourceAccess. Opens nothing by itself on an Invite-only board. */
+  /** The board's uuid: the resourceId for requestResourceAccess. Opens nothing by itself on a Followers or Invite-only board. */
   uuid: Scalars['ID']['output'];
 };
 
@@ -9085,10 +9085,12 @@ export type Query = {
    */
   followingClimbAscents: FollowingClimbAscentsResult;
   /**
-   * Home boards owned by people the viewer follows, for "A friend's board".
-   * Public and Followers boards are listed; Unlisted and Invite-only boards
-   * only when their owner turned on "Show to people I follow"
-   * (listedToFollowers) or the viewer already holds them. Only-me boards, gym
+   * Home boards owned by people who follow the viewer, for "A friend's board":
+   * following someone lists your boards to them, not theirs to you.
+   * Public and Followers boards are listed (a Followers board the viewer cannot
+   * open yet comes back as CAN_REQUEST); Unlisted and Invite-only boards only
+   * when their owner turned on "Show to people I follow" (listedToFollowers) or
+   * the viewer already holds them. Only-me boards, gym
    * boards, spray walls, the viewer's own boards and boards already in their
    * Your boards are left out. Boards the viewer has logged on come first, most
    * recent first, then by the owner's latest log, then by owner name.
@@ -11285,8 +11287,9 @@ export type ResourcePrivacySettings = {
   kind: PrivacyResourceKind;
   /**
    * "Show to people I follow": an Unlisted or Invite-only board is listed in the
-   * owner's followers' friendsBoards. It grants no access: an Invite-only board
-   * still needs an approved grant to climb on. No effect on other audiences.
+   * friendsBoards of the people the owner follows. It grants no access: an
+   * Invite-only board still needs an approved grant to climb on. No effect on
+   * other audiences.
    */
   listedToFollowers: Scalars['Boolean']['output'];
   locationAudience: PrivacyLocationAudience;

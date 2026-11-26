@@ -229,22 +229,23 @@ export function resourceAccessCondition(
 }
 
 /**
- * Whether a board is listed in a follower's Friends' boards. The caller joins
- * `user_follows` on the board's owner, so "the viewer follows the owner" holds
- * already; this decides the audience part:
+ * Whether a board is listed in the viewer's Friends' boards. The caller joins
+ * `user_follows` so that the board's owner follows the viewer: the owner's
+ * follow is their consent to be listed ("when I follow you, you can see my
+ * boards"). This decides the audience part:
  *
- * - Public and Followers boards are listed.
+ * - Public and Followers boards are listed. A Followers board still opens only
+ *   for people who follow the owner, so a viewer who does not is listed a
+ *   request card (`resourceAccessCondition` says no).
  * - Unlisted and Invite-only boards are listed when the owner turned on "Show
  *   to people I follow" (`listed_to_followers`), or when the viewer already
  *   holds the board (approved grant, follower inheritance).
  * - Only me is never listed, and a revoked grant hides the board from that viewer.
  *
- * An opted-in Invite-only board is listed to a follower without a grant, so the
- * follower can ask to climb on it; listing it opens nothing (`resourceAccessCondition`
- * still says no). `honourListedToFollowers: false` reads every switch as off,
- * for when the privacy controls are disabled and the owner cannot reach it.
+ * Listing opens nothing. `honourListedToFollowers: false` reads every switch as
+ * off, for when the privacy controls are disabled and the owner cannot reach it.
  */
-export function followerBoardListingCondition(
+export function followedByOwnerListingCondition(
   boardUuidColumn: SQLWrapper,
   viewerId: ViewerId,
   options: { honourListedToFollowers: boolean },
@@ -254,10 +255,15 @@ export function followerBoardListingCondition(
     allowUnlistedLink: false,
     unlistedWhen: options.honourListedToFollowers ? sql`privacy_override.listed_to_followers` : undefined,
   });
-  if (!options.honourListedToFollowers) return readable;
+  // Followers and Invite-only exist only as an override row, never as a legacy
+  // board flag, so this one lookup covers the boards the viewer cannot open yet.
+  const requestable = options.honourListedToFollowers
+    ? sql`(listed_policy.audience = 'followers'
+        OR (listed_policy.audience = 'invite_only' AND listed_policy.listed_to_followers))`
+    : sql`listed_policy.audience = 'followers'`;
   return sql`(${readable} OR EXISTS (SELECT 1 FROM resource_privacy listed_policy
     WHERE listed_policy.kind = 'board' AND listed_policy.resource_id = ${boardUuidColumn}
-      AND listed_policy.audience = 'invite_only' AND listed_policy.listed_to_followers
+      AND ${requestable}
       AND NOT EXISTS (SELECT 1 FROM resource_grants listed_revoked
         WHERE listed_revoked.kind = 'board' AND listed_revoked.resource_id = ${boardUuidColumn}
           AND listed_revoked.user_id = ${viewerId} AND listed_revoked.status = 'revoked')))`;
