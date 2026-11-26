@@ -2165,7 +2165,7 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
     dnsByName: Record<string, LiveDnsRecord[]>,
     readLifecycleRules: (bucketName: string) => unknown = () => [],
     readCustomDomains: (bucketName: string) => { domain: string; enabled: boolean }[] = () => [],
-    phaseReadResponses: Readonly<Record<string, Response>> = {},
+    phaseResponses: Readonly<Record<string, Response>> = {},
   ): RecordedRequest[] {
     const requests: RecordedRequest[] = [];
     const envelope = (result: unknown) =>
@@ -2188,7 +2188,8 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
       if (url.pathname === '/client/v4/zones/zone-1/settings/ssl') return envelope({ id: 'ssl', value: 'strict' });
       if (url.pathname === '/client/v4/zones/zone-1/dns_settings') return envelope({ flatten_all_cnames: false });
       if (url.pathname.includes('/rulesets/phases/')) {
-        if (method === 'GET' && phaseReadResponses[url.pathname]) return phaseReadResponses[url.pathname];
+        const response = phaseResponses[`${method} ${url.pathname}`];
+        if (response) return response;
         return envelope({ id: 'ruleset-id', rules: [] });
       }
       // R2 is only fetched when CLOUDFLARE_ACCOUNT_ID is set.
@@ -2251,22 +2252,8 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
     ['the compression phase', COMPRESSION_RULE_PHASE],
     ['a long-standing phase', CACHE_RULE_PHASE],
   ])('fails the run when %s refuses its write', async (_label, refusedPhase) => {
-    // No phase is optional any more, so a refused write is a lost scope and must
-    // stop the deploy. The skip-and-warn path in the apply loop only applies to
-    // a phase the registry marks optional while its scope is being rolled out.
-    stubCloudflareApi(dnsResponses(liveApexDnsRecord()));
-    const stubbedFetch = globalThis.fetch as unknown as (
-      input: string,
-      init?: { method?: string; body?: string },
-    ) => Response;
-    vi.stubGlobal('fetch', (input: string, init?: { method?: string; body?: string }) => {
-      if (init?.method === 'PUT' && new URL(input).pathname === phaseEntrypoint(refusedPhase)) {
-        return new Response(
-          JSON.stringify({ success: false, errors: [{ code: 10_000, message: 'Authentication error' }] }),
-          { status: 403 },
-        );
-      }
-      return stubbedFetch(input, init);
+    stubCloudflareApi(dnsResponses(liveApexDnsRecord()), undefined, undefined, {
+      [`PUT ${phaseEntrypoint(refusedPhase)}`]: refusedPhaseResponse(403),
     });
 
     await expect(runCloudflareApply(['--apply'])).rejects.toThrow();
@@ -2414,7 +2401,7 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
       enabled: true,
     };
     const requests = stubCloudflareApi(dnsResponses(liveApexDnsRecord()), undefined, undefined, {
-      [pathname]: Response.json({ success: true, result: { id: 'configuration-id', rules: [foreign] } }),
+      [`GET ${pathname}`]: Response.json({ success: true, result: { id: 'configuration-id', rules: [foreign] } }),
     });
 
     expect(await runCloudflareApply(['--apply'])).toBe(0);
@@ -2440,19 +2427,103 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
     ]);
   });
 
-  it('stops before any write when the configuration phase refuses its read', async () => {
+  function refusedPhaseResponse(status: number): Response {
+    // The production 403 on http_config_settings had a message and no numeric error code.
+    const message =
+      status === 400 ? 'invalid expression' : status === 500 ? 'internal error' : 'request is not authorized';
+    return Response.json({ success: false, errors: [{ message }] }, { status });
+  }
+
+  function stubUnreadableConfig(apex: LiveDnsRecord): RecordedRequest[] {
+    const phaseRules = inSyncRules();
+    const phaseResponses = Object.fromEntries(
+      MANAGED_RULE_PHASES.map(({ phase, resource }) => [
+        `GET ${phaseEntrypoint(phase)}`,
+        phase === CONFIGURATION_RULE_PHASE
+          ? refusedPhaseResponse(403)
+          : Response.json({ success: true, result: { rules: phaseRules[resource] } }),
+      ]),
+    );
+    return stubCloudflareApi(dnsResponses(apex), undefined, undefined, phaseResponses);
+  }
+
+  it('applies outstanding apex DNS drift and reports the unreadable configuration rule as unapplied', async () => {
+    const requests = stubUnreadableConfig(liveVercelApexDnsRecord());
+
+    expect(await runCloudflareApply(['--apply'])).toBe(0);
+
+    expect(requests).toContainEqual({
+      method: 'GET',
+      pathname: phaseEntrypoint(CONFIGURATION_RULE_PHASE),
+      body: undefined,
+    });
+    expect(requests.filter(({ method }) => method !== 'GET')).toEqual([
+      {
+        method: 'PATCH',
+        pathname: '/client/v4/zones/zone-1/dns_records/apex-dns-record-id',
+        body: { type: 'A', name: APEX_HOSTNAME, content: APEX_ORIGINLESS_ADDRESS, ttl: 1, proxied: true },
+      },
+    ]);
+    expect(console.warn).toHaveBeenCalledWith(expect.stringMatching(/unapplied.*http_config_settings/i));
+    expect(console.log).not.toHaveBeenCalledWith(expect.stringMatching(/zone converged/i));
+  });
+
+  it.each([
+    { args: [], status: 1 },
+    { args: ['--apply'], status: 0 },
+  ])('reports an unreadable configuration phase when everything else is in sync ($args)', async ({ args, status }) => {
+    const requests = stubUnreadableConfig(liveApexDnsRecord());
+
+    expect(await runCloudflareApply(args)).toBe(status);
+
+    expect(requests.filter(({ method }) => method !== 'GET')).toEqual([]);
+    expect(console.warn).toHaveBeenCalledWith(expect.stringMatching(/unreadable and unapplied.*http_config_settings/i));
+    expect(console.warn).not.toHaveBeenCalledWith(expect.stringMatching(/(?:was|were) still applied/i));
+    expect(console.log).not.toHaveBeenCalledWith(expect.stringMatching(/In sync — nothing to do|zone converged/i));
+  });
+
+  it.each([401, 403])('reports a configuration write refusal (HTTP %i) as partial convergence', async (status) => {
     const pathname = phaseEntrypoint(CONFIGURATION_RULE_PHASE);
     const requests = stubCloudflareApi(dnsResponses(liveVercelApexDnsRecord()), undefined, undefined, {
-      [pathname]: Response.json(
-        { success: false, errors: [{ code: 10_000, message: 'Authentication error' }] },
-        { status: 403 },
-      ),
+      [`PUT ${pathname}`]: refusedPhaseResponse(status),
     });
 
-    await expect(runCloudflareApply(['--apply'])).rejects.toThrow(/GET .*http_config_settings.*HTTP 403/);
-    expect(requests).toContainEqual({ method: 'GET', pathname, body: undefined });
-    expect(requests.filter((request) => request.method !== 'GET')).toEqual([]);
+    expect(await runCloudflareApply(['--apply'])).toBe(0);
+
+    expect(requests.filter((request) => request.pathname === pathname).map(({ method }) => method)).toEqual([
+      'GET',
+      'PUT',
+    ]);
+    expect(requests).toContainEqual(
+      expect.objectContaining({ method: 'PATCH', pathname: '/client/v4/zones/zone-1/dns_records/apex-dns-record-id' }),
+    );
+    expect(console.warn).not.toHaveBeenCalledWith(expect.stringMatching(/(?:was|were) still applied/i));
+    expect(console.warn).toHaveBeenCalledWith(expect.stringMatching(/unapplied.*http_config_settings/i));
+    expect(console.log).not.toHaveBeenCalledWith(expect.stringMatching(/zone converged/i));
   });
+
+  it.each([400, 500])('fails the run when the configuration write returns HTTP %i', async (status) => {
+    stubCloudflareApi(dnsResponses(liveApexDnsRecord()), undefined, undefined, {
+      [`PUT ${phaseEntrypoint(CONFIGURATION_RULE_PHASE)}`]: refusedPhaseResponse(status),
+    });
+
+    await expect(runCloudflareApply(['--apply'])).rejects.toThrow(
+      new RegExp(`PUT .*http_config_settings.*HTTP ${status}`),
+    );
+    expect(console.log).not.toHaveBeenCalledWith(expect.stringMatching(/zone converged/i));
+  });
+
+  it.each(MANAGED_RULE_PHASES.filter(({ phase }) => phase !== CONFIGURATION_RULE_PHASE))(
+    'stops before every write when the existing $phase phase refuses its read',
+    async ({ phase }) => {
+      const requests = stubCloudflareApi(dnsResponses(liveVercelApexDnsRecord()), undefined, undefined, {
+        [`GET ${phaseEntrypoint(phase)}`]: refusedPhaseResponse(403),
+      });
+
+      await expect(runCloudflareApply(['--apply'])).rejects.toThrow(new RegExp(`GET .*${phase}.*HTTP 403`));
+      expect(requests.filter(({ method }) => method !== 'GET')).toEqual([]);
+    },
+  );
 
   it('sends the apex redirect rule verbatim in the dynamic-redirect PUT', async () => {
     const requests = stubCloudflareApi(dnsResponses(liveApexDnsRecord()));
@@ -2773,12 +2844,10 @@ describe('a rule phase this token cannot read', () => {
     expect(changes.some((change) => change.resource === 'cache-rule')).toBe(true);
   });
 
-  it('has no optional rule phases after every scope was confirmed', () => {
-    // Each phase's scope has been confirmed against the production token by an
-    // apply that wrote it, so losing one must fail loudly instead of degrading
-    // a rule.
+  it('keeps all seven established phases mandatory during the configuration-rule permission rollout', () => {
     const optional = MANAGED_RULE_PHASES.filter((phase) => phase.optional).map((phase) => phase.resource);
-    expect(optional).toEqual([]);
+    expect(optional).toEqual(['configuration-rule']);
+    expect(MANAGED_RULE_PHASES.filter((phase) => !phase.optional)).toHaveLength(7);
   });
 });
 

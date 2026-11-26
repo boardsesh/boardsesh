@@ -243,9 +243,10 @@ export const MANAGED_RULE_PHASES = [
     label: 'Configuration rule',
     selectLive: (live) => live.rules['configuration-rule'],
     selectDesired: (desired) => desired.configurationRules,
-    // Cloudflare accepts the existing Transform Rules / Zone WAF write scopes.
-    // A failed read must not report that the email transform was disabled.
-    optional: false,
+    // Production returned 403 on 2026-11-26: Config Rules Edit is separate
+    // from the existing Transform Rules / Zone WAF scopes. Bootstrap it
+    // without blocking unrelated deploys, then require it after a live apply.
+    optional: true,
   },
 ] as const satisfies readonly ManagedRulePhase[];
 

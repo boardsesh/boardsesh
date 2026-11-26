@@ -45,7 +45,7 @@ types, and confirm repeat cache HITs. Recheck both public landing pages. The
 
 ### Public marketing contacts
 
-`boardsesh:critical-marketing-email` disables Email Obfuscation for GET/HEAD
+When applied, `boardsesh:critical-marketing-email` disables Email Obfuscation for GET/HEAD
 requests to `www.boardsesh.com/` and `/apps/kilter`. These pages already expose
 their public contact addresses in Next's Flight data. Serving their original
 contact markup avoids injecting Cloudflare's parser-blocking decoder and keeps
@@ -53,10 +53,17 @@ the contact details usable without JavaScript.
 
 The rule uses the `http_config_settings` phase, with `set_config` and
 `email_obfuscation: false`. It is a page override, rather than a zone setting.
-[Cloudflare's configuration-rule API](https://developers.cloudflare.com/rules/configuration-rules/create-api/)
-accepts the existing Transform Rules Write or Zone WAF Write permission. The
-apply tool requires a successful read of this phase before writing any rules;
-an authorization failure must not be reported as a successful removal.
+The production apply on November 26, 2026 returned HTTP 403 on this phase's read,
+before any writes. It requires **Zone → Config Rules → Edit**, also listed as
+Config Settings Write in the [API permission table](https://developers.cloudflare.com/fundamentals/api/reference/permissions/).
+Existing Transform Rules and Zone WAF scopes did not authorize it. Keep every
+existing token permission when adding the new one.
+
+During permission bootstrap, this phase is optional so other resources can
+still deploy. The apply reports it as unreadable/unapplied, never fully
+converged. The email decoder remains until a successful live apply is verified.
+After the new scope has been confirmed, make the phase mandatory like the
+other seven phases so a later permission loss fails loudly.
 
 After production apply, allow existing HTML cache entries to expire. Check both
 pages with JavaScript disabled: Home must retain its original `mailto:` contact
