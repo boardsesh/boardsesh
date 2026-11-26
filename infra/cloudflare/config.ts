@@ -1134,6 +1134,17 @@ export const OTA_ASSETS_COMPRESSION_RULE_DESCRIPTION =
   'boardsesh:ota-assets-compression (managed by scripts/cloudflare-apply.ts)';
 export const OTA_ASSETS_COMPRESSION_EXPRESSION = `http.host eq "${OTA_ASSETS_HOSTNAME}"`;
 
+/** Keep this marker stable: it identifies the managed Next transport policy. */
+export const NEXT_STATIC_COMPRESSION_RULE_DESCRIPTION =
+  'boardsesh:next-static-compression (managed by scripts/cloudflare-apply.ts)';
+export const NEXT_STATIC_COMPRESSION_EXPRESSION =
+  `(http.host in {"${WWW_HOSTNAME}" "${ASSETS_HOSTNAME}" "${ASSETS_STAGING_HOSTNAME}"}` +
+  ' and http.request.method in {"GET" "HEAD"}' +
+  ' and starts_with(http.request.uri.path, "/_next/static/")' +
+  ' and (ends_with(http.request.uri.path, ".js")' +
+  ' or ends_with(http.request.uri.path, ".mjs")' +
+  ' or ends_with(http.request.uri.path, ".css")))';
+
 export const OBSERVE_COUNTRY_HEADER_RULE_DESCRIPTION =
   'boardsesh:observe-country-header (managed by scripts/cloudflare-apply.ts)';
 export const OBSERVE_COUNTRY_HEADER_EXPRESSION = `http.host eq "${UPDATES_HOSTNAME}"`;
@@ -1701,6 +1712,16 @@ export const desiredCloudflareState: CloudflareDesiredState = {
         // Both native clients advertise Brotli (URLSession on iOS, OkHttp's
         // Brotli interceptor on Android); gzip is the fallback.
         algorithms: [{ name: 'brotli' }, { name: 'gzip' }],
+      },
+      enabled: true,
+    },
+    {
+      description: NEXT_STATIC_COMPRESSION_RULE_DESCRIPTION,
+      expression: NEXT_STATIC_COMPRESSION_EXPRESSION,
+      action: 'compress_response',
+      action_parameters: {
+        // Measured smaller than Zstandard on startup JS/CSS; keep both fallbacks.
+        algorithms: [{ name: 'brotli' }, { name: 'zstd' }, { name: 'gzip' }],
       },
       enabled: true,
     },
