@@ -80,7 +80,8 @@ const TOKEN_SCOPES = [
   'Zone.Cache Rules Edit      — create/update the /og/ cache rule',
   'Zone.Zone WAF Edit         — create/update crawler rules and the climb-view rate-limit rule\n                               (http_request_firewall_custom and http_ratelimit phases)',
   'Zone.Single Redirect Edit  — create/update the apex → www redirect (http_request_dynamic_redirect phase)',
-  'Zone.Transform Rules Edit  — create/update the Observe country request-header rule, assets CORS\n                               response-header rule and scoped marketing email setting\n                               (request/response transform and http_config_settings phases)',
+  'Zone.Transform Rules Edit  — create/update the Observe country request-header rule and assets CORS\n                               response-header rule (request/response transform phases)',
+  'Zone.Config Rules Edit     — create/update scoped marketing email settings (http_config_settings);\n                               optional during permission bootstrap, required to apply those settings',
   'Zone.Response Compression Edit — create/update the OTA assets compression rule (http_response_compression\n                               phase)',
   'Zone.Zone Settings Read    — read the SSL/TLS mode',
   'Zone.Zone Settings Edit    — ONLY needed with --allow-zone-ssl (to set the zone SSL mode)',
@@ -658,7 +659,7 @@ async function fetchLiveState(
     const phase = MANAGED_RULE_PHASES.find((candidate) => candidate.resource === resource);
     console.warn(
       `[cf-apply] Token cannot read the ${phase?.phase ?? resource} phase — skipping ${resource}. ` +
-        'Zone config for every other phase was still applied. Grant the matching scope (keeping every existing ' +
+        'Continuing with the other phases. Grant the matching scope (keeping every existing ' +
         'one: editing a token REPLACES all its policies) to manage it here.',
     );
   }
@@ -781,6 +782,9 @@ export async function runCloudflareApply(argv: string[] = process.argv.slice(2))
 
   const zoneId = await resolveZoneId(token, desired.zoneName);
   const live = await fetchLiveState(token, zoneId, desired.dnsRecords);
+  const pendingOptionalPhases = new Set(
+    [...(live.unavailableRulePhases ?? [])].map((resource) => resolveRulePhase(resource).phase),
+  );
   const changes = buildPlan(desired, live, { allowZoneSsl: options.allowZoneSsl });
 
   // R2 is ACCOUNT-scoped, unlike everything else here. It is skipped rather
@@ -800,6 +804,13 @@ export async function runCloudflareApply(argv: string[] = process.argv.slice(2))
   }
 
   if (changes.length === 0) {
+    if (pendingOptionalPhases.size > 0) {
+      console.warn(
+        `[cf-apply] Available resources are in sync; optional phases remain unreadable and unapplied: ` +
+          [...pendingOptionalPhases].join(', '),
+      );
+      return options.apply ? 0 : 1;
+    }
     console.log('[cf-apply] In sync — nothing to do.');
     return 0;
   }
@@ -880,11 +891,18 @@ export async function runCloudflareApply(argv: string[] = process.argv.slice(2))
           // a rule nothing depends on yet. Phases that are not optional still
           // throw.
           const refused = error instanceof CloudflareApiRequestError && error.status >= 400 && error.status < 500;
-          if (!phase.optional || !refused) throw error;
+          if (
+            !phase.optional ||
+            !refused ||
+            (phase.resource === 'configuration-rule' && !isAuthorizationError(error))
+          ) {
+            throw error;
+          }
           refusedPhases.add(phase.phase);
+          pendingOptionalPhases.add(phase.phase);
           console.warn(
             `[cf-apply] Cloudflare refused the write to the ${phase.phase} phase (HTTP ${error.status}: ` +
-              `${error.message}). Skipping ${phase.resource}; everything else was still applied. Grant the ` +
+              `${error.message}). Skipping ${phase.resource}; continuing with the remaining resources. Grant the ` +
               'matching scope (keeping every existing one: editing a token REPLACES all its policies) and re-run.',
           );
         }
@@ -906,6 +924,13 @@ export async function runCloudflareApply(argv: string[] = process.argv.slice(2))
     return 1;
   }
 
+  if (pendingOptionalPhases.size > 0) {
+    console.warn(
+      `[cf-apply] Done — available resources converged; optional phases left unapplied: ` +
+        [...pendingOptionalPhases].join(', '),
+    );
+    return 0;
+  }
   console.log('[cf-apply] Done — zone converged to desired state.');
   return 0;
 }
