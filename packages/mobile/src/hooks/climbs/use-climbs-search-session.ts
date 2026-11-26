@@ -25,7 +25,8 @@ import {
   clearRecentFilters,
   type RecentFilter,
 } from '../../lib/recent-filter-store';
-import { boardConfigKey } from '../../lib/last-search-store';
+import { boardGeometryKey } from '../../lib/climb-filter-session-reducer';
+import { recentFiltersForBoard } from '../../lib/recent-filters-for-board';
 import { getFilterSummary } from '../../lib/filter-summary';
 import { filtersForBoard, statusForAuth } from '../../lib/climb-filter-types';
 import { track } from '../../lib/analytics';
@@ -42,10 +43,14 @@ export function useClimbsSearchSession(boardConfig: BoardSearchConfig | null) {
   const { filters, boardFilters, name, setGrade, setName, replaceSearch, patchFilters, patchBoardFilters } =
     useClimbSearch();
   const boardName = boardConfig?.boardName ?? '';
-  const boardKey = boardConfig ? boardConfigKey(boardConfig) : null;
+  // Scoped to the board, not the angle: changing the angle keeps the whole
+  // search (name included) and leaves an open filter sheet alone.
+  const boardKey = boardConfig ? boardGeometryKey(boardConfig) : null;
   const filterScopeKey = boardKey === null ? null : `${boardKey}|${isAuthenticated}`;
   const filterScopeRef = useRef(filterScopeKey);
   filterScopeRef.current = filterScopeKey;
+  const boardKeyRef = useRef(boardKey);
+  boardKeyRef.current = boardKey;
   const { lastUsedGrade, rememberGrade } = useLastUsedGrade();
   const { data: gradesData } = useGrades(boardName);
   const grades = useMemo(() => gradesData ?? [], [gradesData]);
@@ -70,7 +75,7 @@ export function useClimbsSearchSession(boardConfig: BoardSearchConfig | null) {
     replaceSearch,
   });
   const searchName = useDebouncedSearchName({ scopeKey: filterScopeKey, name, onCommit: setName });
-  const [recentFilters, setRecentFilters] = useState<RecentFilter[]>([]);
+  const [storedRecentFilters, setRecentFilters] = useState<RecentFilter[]>([]);
   const filtersOpenSourceRef = useRef<ClimbFiltersOpenSource>('filters_chip');
   useEffect(() => {
     let cancelled = false;
@@ -87,6 +92,15 @@ export function useClimbsSearchSession(boardConfig: BoardSearchConfig | null) {
   const normalizedFilters = useMemo(
     () => statusForAuth(normalizeRetiredFilters(filters), isAuthenticated),
     [filters, isAuthenticated],
+  );
+  const recentFilters = useMemo(
+    () =>
+      boardKey === null
+        ? storedRecentFilters
+        : recentFiltersForBoard(storedRecentFilters, boardKey, (filtersWithoutName) =>
+            getFilterSummary(filtersWithoutName, '', grades, t, gradeStops),
+          ),
+    [storedRecentFilters, boardKey, grades, t, gradeStops],
   );
   const filterSelection = useMemo(
     () => ({ filters: normalizedFilters, boardFilters }),
@@ -105,6 +119,7 @@ export function useClimbsSearchSession(boardConfig: BoardSearchConfig | null) {
   const finishFilterSession = useCallback(
     (finalSelection: ClimbFilterSelection) => {
       const finalScope = filterScopeRef.current;
+      const finalBoardKey = boardKeyRef.current;
       const finalName = searchName.flush();
       replaceSearch(finalSelection.filters, finalName, finalSelection.boardFilters);
       track(SHARED_EVENTS.ClimbFiltersClosed, {
@@ -112,9 +127,9 @@ export function useClimbsSearchSession(boardConfig: BoardSearchConfig | null) {
         activeFilterCount: countActiveFilters(finalSelection.filters, finalSelection.boardFilters),
         hasName: finalName.length > 0,
       });
-      if (hasActiveFilters(finalSelection.filters) || finalName.length > 0) {
+      if (finalBoardKey !== null && (hasActiveFilters(finalSelection.filters) || finalName.length > 0)) {
         const label = getFilterSummary(finalSelection.filters, finalName, grades, t, gradeStops);
-        addRecentFilter(label, finalSelection.filters, finalName)
+        addRecentFilter(label, finalSelection.filters, finalName, finalBoardKey)
           .then(() => getRecentFilters({ isAuthenticated }))
           .then((recent) => {
             if (filterScopeRef.current === finalScope) setRecentFilters(recent);

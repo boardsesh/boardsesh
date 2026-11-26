@@ -16,6 +16,13 @@ export type RecentFilter = {
   filters: ClimbFilters;
   searchText: string;
   timestamp: number;
+  /**
+   * The board (`boardGeometryKey`, angle left out) the search was made on. A
+   * recent search replays its filters on any board and angle, but its climb
+   * name only on this board (see recentFiltersForBoard). Missing on entries
+   * written before boards were recorded; those keep their name everywhere.
+   */
+  boardKey?: string;
 };
 
 export const RECENT_FILTERS_KEY = 'boardsesh_recent_filters';
@@ -109,7 +116,12 @@ export async function getRecentFilters(options?: { isAuthenticated?: boolean }):
   }
 }
 
-export async function addRecentFilter(label: string, filters: ClimbFilters, searchText: string): Promise<void> {
+export async function addRecentFilter(
+  label: string,
+  filters: ClimbFilters,
+  searchText: string,
+  boardKey: string,
+): Promise<void> {
   try {
     const existing = await getRecentFilters();
     const filterKey = getFilterKey(filters, searchText);
@@ -122,6 +134,7 @@ export async function addRecentFilter(label: string, filters: ClimbFilters, sear
       filters,
       searchText,
       timestamp: Date.now(),
+      boardKey,
     };
 
     const updated = [newEntry, ...deduplicated].slice(0, MAX_ITEMS);

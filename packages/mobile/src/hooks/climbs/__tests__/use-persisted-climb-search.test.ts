@@ -5,10 +5,7 @@ import { DEFAULT_CLIMB_FILTER_STATE, DEFAULT_CLIMB_BOARD_FILTER_STATE } from '@b
 import type { LastSearch } from '../../../lib/last-search-store';
 
 const storage = vi.hoisted(() => ({ getLastSearch: vi.fn(), saveLastSearch: vi.fn() }));
-vi.mock('../../../lib/last-search-store', () => ({
-  ...storage,
-  boardConfigKey: (board: { layoutId: number }) => `board-${board.layoutId}`,
-}));
+vi.mock('../../../lib/last-search-store', () => storage);
 import { usePersistedClimbSearch } from '../use-persisted-climb-search';
 
 type Options = Parameters<typeof usePersistedClimbSearch>[0];
@@ -26,6 +23,7 @@ function saved(searchText: string): LastSearch {
     filters: DEFAULT_CLIMB_FILTER_STATE,
     boardFilters: DEFAULT_CLIMB_BOARD_FILTER_STATE,
     searchText,
+    boardKey: 'kilter|1|2|3',
     updatedAt: 1,
   };
 }
@@ -113,6 +111,57 @@ describe('usePersistedClimbSearch', () => {
       DEFAULT_CLIMB_FILTER_STATE,
       'public',
       DEFAULT_CLIMB_BOARD_FILTER_STATE,
+    );
+    screen.unmount();
+  });
+
+  it('keeps the whole search, name included, when only the angle changes', async () => {
+    const request = deferredSearch();
+    storage.getLastSearch.mockReturnValueOnce(request.promise);
+    const screen = setup();
+    await finish(request, saved('crimpy'));
+    const restored = { ...screen.initialProps, name: 'crimpy' };
+    screen.rerender(restored);
+    screen.rerender({ ...restored, boardConfig: { ...restored.boardConfig!, angle: 25 } });
+    expect(screen.result.current).toBe(true);
+    expect(storage.getLastSearch).toHaveBeenCalledTimes(1);
+    expect(screen.initialProps.replaceSearch).toHaveBeenCalledTimes(1);
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(storage.saveLastSearch).toHaveBeenLastCalledWith(
+      { ...restored.boardConfig, angle: 25 },
+      DEFAULT_CLIMB_FILTER_STATE,
+      'crimpy',
+      DEFAULT_CLIMB_BOARD_FILTER_STATE,
+    );
+    screen.unmount();
+  });
+
+  it('keeps the filters but clears the name and hold picks on another board, without a storage read', async () => {
+    const request = deferredSearch();
+    storage.getLastSearch.mockReturnValueOnce(request.promise);
+    const screen = setup();
+    await finish(request, saved('crimpy'));
+    const gradeFilters = { ...DEFAULT_CLIMB_FILTER_STATE, minGrade: 16, maxGrade: 18, includeOtherAngles: true };
+    const restored = {
+      ...screen.initialProps,
+      name: 'crimpy',
+      filters: gradeFilters,
+      boardFilters: { onlyBenchmarks: true, holdsFilter: { hold_5: { HAND: 'include' as const } } },
+    };
+    screen.rerender(restored);
+    screen.rerender({
+      ...restored,
+      boardConfig: { boardName: 'moonboard', layoutId: 2, sizeId: 1, setIds: '4', angle: 40 },
+    });
+    expect(screen.result.current).toBe(true);
+    expect(storage.getLastSearch).toHaveBeenCalledTimes(1);
+    // Other angles only applies on boards whose climbs are angle-bound (Woods), so it drops.
+    expect(screen.initialProps.replaceSearch).toHaveBeenLastCalledWith(
+      { ...DEFAULT_CLIMB_FILTER_STATE, minGrade: 16, maxGrade: 18 },
+      '',
+      { onlyBenchmarks: true },
     );
     screen.unmount();
   });

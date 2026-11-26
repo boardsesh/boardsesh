@@ -225,3 +225,17 @@ describe('getRecentFilters sanitizer', () => {
     for (const entry of result) expect(entry.filters).not.toHaveProperty('holdIntegrity');
   });
 });
+
+describe('addRecentFilter', () => {
+  beforeEach(async () => {
+    const store = await import('expo-secure-store');
+    (store as unknown as { __reset: () => void }).__reset();
+  });
+
+  it('records the board the search was made on', async () => {
+    const { addRecentFilter, getRecentFilters } = await import('../recent-filter-store');
+    await addRecentFilter('V3 crimp', { ...defaultFilters, sortBy: 'ascents', minGrade: 16 }, 'crimp', 'kilter|1|10|1');
+    const [saved] = await getRecentFilters();
+    expect(saved).toMatchObject({ label: 'V3 crimp', searchText: 'crimp', boardKey: 'kilter|1|10|1' });
+  });
+});
