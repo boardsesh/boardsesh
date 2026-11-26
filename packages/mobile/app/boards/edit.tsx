@@ -474,7 +474,12 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       currentBoardUuid={board.uuid}
       sprayLedSection={
         isSprayWall && !wallArchived ? (
-          <SprayWallLedSection wallUuid={board.uuid} disabled={submitting} canInstall={viewerOwnsWall} />
+          <SprayWallLedSection
+            wallUuid={board.uuid}
+            disabled={submitting}
+            canInstall={viewerOwnsWall}
+            wallName={board.name}
+          />
         ) : undefined
       }
       sprayTrainingSection={viewerOwnsWall ? <SprayWallTrainingConsentRow wallUuid={board.uuid} isOwner /> : undefined}

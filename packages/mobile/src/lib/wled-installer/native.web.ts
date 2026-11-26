@@ -6,6 +6,7 @@ const unavailable = async (): Promise<never> => {
 export const nativeInstallerIO: InstallerIO = {
   readJson: unavailable,
   checkUpdateAccess: unavailable,
+  writeConfig: unavailable,
   saveBackup: unavailable,
   exportBackup: unavailable,
   download: unavailable,

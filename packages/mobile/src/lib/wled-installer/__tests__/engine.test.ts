@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  blocksHotspotUpdate,
+  controllerName,
   createWledInstaller,
   readManifest,
   settingsPreserved,
@@ -68,6 +70,7 @@ function setup(releases: FirmwareRelease[] = [release]) {
         : original;
     }),
     checkUpdateAccess: vi.fn(async () => undefined),
+    writeConfig: vi.fn(async () => undefined),
     saveBackup: vi.fn(async () => 'file:///backup.json'),
     exportBackup: vi.fn(async () => undefined),
     download: vi.fn(async (candidate) => {
@@ -363,6 +366,59 @@ describe('WLED owner installer', () => {
         ),
       ).toBe(false);
     }
+  });
+  it("accepts WLED 16's rewritten settings file but no changed owner setting", () => {
+    const backup = { config, presets, uri: 'file:///backup.json' };
+    // A 0.15 file rewritten by WLED 16: every old value kept, new keys added, Wi-Fi sleep forced on.
+    const rewritten = {
+      ...config,
+      hw: { ...config.hw, led: { ...config.hw.led, cct: false } },
+      ota: { lock: false, 'same-subnet': true },
+      wifi: { sleep: true },
+      um: { ...config.um, 'BLE JSON': { enabled: true } },
+    };
+    expect(settingsPreserved({ ...backup, config: { ...config, wifi: { sleep: false } } }, rewritten, presets)).toBe(
+      true,
+    );
+    expect(settingsPreserved(backup, { ...rewritten, hw: { ...rewritten.hw, relay: { pin: 12 } } }, presets)).toBe(
+      false,
+    );
+    expect(settingsPreserved(backup, { ...rewritten, nw: {} }, presets)).toBe(false);
+    // The installer's own writes are expected, and only those.
+    const named = { ...rewritten, id: { name: 'Norte izquierda' } };
+    expect(settingsPreserved(backup, named, presets, { id: { name: 'Norte izquierda' } })).toBe(true);
+    expect(settingsPreserved(backup, named, presets, { id: { name: 'Norte derecha' } })).toBe(false);
+  });
+  it('trims a controller name exactly as the add-on advertises it', () => {
+    expect(controllerName('  Norte izquierda  ')).toBe('Norte izquierda');
+    expect(controllerName('Wall #2 @gym')).toBe('Wall 2 gym');
+    expect(controllerName('Rocódromo Escalada Norte')).toBe('Rocódromo Escalada No');
+    expect(controllerName('12345678901234567890ñ')).toBe('12345678901234567890ñ');
+    expect(controllerName('123456789012345678901ñ')).toBe('123456789012345678901');
+    expect(controllerName('\u0001##')).toBe('');
+  });
+  it("knows when WLED 16's same-network check would refuse an update from its hotspot", () => {
+    expect(blocksHotspotUpdate({}, '16.0.1')).toBe(true);
+    expect(blocksHotspotUpdate({ ota: { 'same-subnet': false } }, '16.0.1')).toBe(false);
+    expect(blocksHotspotUpdate({ ota: { 'same-subnet': true } }, '16.0.1')).toBe(true);
+    expect(blocksHotspotUpdate({}, '0.15.4')).toBe(false);
+  });
+  it("an owner's check finds the original firmware at once and starts from a fresh backup", async () => {
+    const { io, installer } = setup();
+    const published: string[] = [];
+    vi.mocked(io.upload).mockRejectedValue(new Error('lost local Wi-Fi'));
+    await installer.inspect();
+    await installer.install(true, false);
+    const resumed = createWledInstaller('192.168.1.5', io, (next) => published.push(`${next.stage}:${next.error}`));
+    await resumed.inspect();
+    vi.mocked(io.wait).mockClear();
+    vi.mocked(io.saveBackup).mockClear();
+    await resumed.verify();
+    expect(published).toContain('verifying:undefined');
+    expect(published).not.toContain('rebooting:undefined');
+    expect(io.wait).not.toHaveBeenCalled();
+    expect(io.saveBackup).toHaveBeenCalledOnce();
+    expect(resumed.getSnapshot().stage).toBe('ready');
   });
   it('rejects unqualified releases and external plaintext image URLs', () => {
     expect(() => readManifest({ manifestVersion: 1, releases: [{ ...release, qualified: false }] })).toThrow();

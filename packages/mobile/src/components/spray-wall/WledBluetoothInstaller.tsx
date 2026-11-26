@@ -3,8 +3,11 @@ import { AppState, Linking, Platform, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { normalizeLocalControllerUrl } from '@boardsesh/led-controller';
 import {
+  blocksHotspotUpdate,
+  controllerName,
   createWledHotspotInstaller,
   createWledInstaller,
+  CONTROLLER_NAME_BYTES,
   isHotspotError,
   type InstallerSnapshot,
 } from '../../lib/wled-installer/engine';
@@ -38,10 +41,13 @@ const BUSY_STAGES: InstallerSnapshot['stage'][] = [
  */
 export function WledBluetoothInstaller({
   url,
+  wallName,
   disabled,
   onInstalled,
 }: {
   url: string;
+  /** Suggested Bluetooth name; the owner can change it before installing. */
+  wallName?: string;
   disabled: boolean;
   onInstalled?: (controllerId: string) => void;
 }) {
@@ -51,6 +57,8 @@ export function WledBluetoothInstaller({
   const [mode, setMode] = useState<InstallMode>(url ? 'wifi' : 'hotspot');
   const [hotspot, setHotspot] = useState<HotspotCredentials>(DEFAULT_HOTSPOT);
   const [modelConfirmed, setModelConfirmed] = useState(false);
+  // null until a backup is ready, then the owner's edit of the suggested name.
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [audioDisabledConfirmed, setAudioDisabledConfirmed] = useState(false);
   const [betaConfirmed, setBetaConfirmed] = useState(false);
   const installer = useRef<InstallerSession | null>(null);
@@ -107,6 +115,7 @@ export function WledBluetoothInstaller({
     inspecting.current = true;
     setModelConfirmed(false);
     setAudioDisabledConfirmed(false);
+    setNameDraft(null);
     // The hotspot route downloads before it joins, so beta consent comes first there.
     if (!hotspotMode) setBetaConfirmed(false);
     const startedAt = generation.current;
@@ -193,6 +202,14 @@ export function WledBluetoothInstaller({
             : t('sprayLed.installer.failed')),
   }[snapshot.stage];
   const idleOrDone = !busy && !['ready', 'interrupted'].includes(snapshot.stage);
+  const suggestedName = controllerName(wallName ?? '') || controllerName(snapshot.identity?.name ?? '');
+  const nameInput = nameDraft ?? suggestedName;
+  const advertisedName = controllerName(nameInput);
+  const nameBytes = new TextEncoder().encode(advertisedName).length;
+  const switchesSameSubnet =
+    hotspotMode && snapshot.backup && snapshot.identity
+      ? blocksHotspotUpdate(snapshot.backup.config, snapshot.identity.version)
+      : false;
   return (
     <View style={{ gap: spacing[2] }}>
       <Text variant="headline">{t('sprayLed.installer.title')}</Text>
@@ -291,6 +308,23 @@ export function WledBluetoothInstaller({
       {snapshot.stage === 'ready' && snapshot.release ? (
         <>
           <Text variant="footnote">{t('sprayLed.installer.backupHint')}</Text>
+          <SectionLabel>{t('sprayLed.installer.controllerName')}</SectionLabel>
+          <BuilderTextInput
+            value={nameInput}
+            onChangeText={setNameDraft}
+            accessibilityLabel={t('sprayLed.installer.controllerName')}
+            autoCorrect={false}
+            maxLength={40}
+            editable={!disabled}
+          />
+          <Text variant="caption1" color={systemColors.secondaryLabel}>
+            {t('sprayLed.installer.controllerNameHint', { used: nameBytes, max: CONTROLLER_NAME_BYTES })}
+          </Text>
+          {switchesSameSubnet ? (
+            <Text variant="footnote" color={systemColors.secondaryLabel}>
+              {t('sprayLed.installer.hotspot.sameNetwork')}
+            </Text>
+          ) : null}
           {snapshot.release.channel === 'beta' ? (
             <SwitchRow
               label={t('sprayLed.installer.confirmBeta')}
@@ -326,7 +360,7 @@ export function WledBluetoothInstaller({
               (snapshot.release.channel === 'beta' && !betaConfirmed)
             }
             onPress={() => {
-              void installer.current?.install(modelConfirmed, audioDisabledConfirmed, betaConfirmed);
+              void installer.current?.install(modelConfirmed, audioDisabledConfirmed, betaConfirmed, advertisedName);
             }}
           />
           {hotspotMode ? (

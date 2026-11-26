@@ -41,6 +41,10 @@ export type InstallJournal = {
   before: ControllerIdentity;
   backup: Backup;
   release: FirmwareRelease;
+  /** Settings the installer itself wrote before the upload (controller name, update network check). */
+  changes?: JsonObject;
+  /** The installer switched off WLED's "Only allow update from same network/WiFi" and turns it back on. */
+  restoreSameSubnet?: boolean;
 };
 export type InstallerStage =
   | 'idle'
@@ -82,6 +86,8 @@ export type InstallerSnapshot = {
 export interface InstallerIO {
   readJson(this: void, url: string, signal: AbortSignal): Promise<unknown>;
   checkUpdateAccess(this: void, url: string, signal: AbortSignal): Promise<void>;
+  /** Merges settings through WLED's /json/cfg. Throws `locked` when a settings PIN refuses it. */
+  writeConfig(this: void, url: string, changes: JsonObject, signal: AbortSignal): Promise<void>;
   saveBackup(this: void, identity: ControllerIdentity, config: JsonObject, presets: JsonObject): Promise<string>;
   exportBackup(this: void, uri: string): Promise<void>;
   download(
@@ -247,24 +253,80 @@ function canonical(candidate: unknown): string {
       .join(',')}}`;
   return JSON.stringify(candidate) ?? 'null';
 }
-/** The new module may add its own defaults. All owner settings and presets remain authoritative. */
-export function settingsPreserved(before: Backup, config: JsonObject, presets: JsonObject): boolean {
-  const hadBleSettings = isObject(before.config.um) && Object.hasOwn(before.config.um, 'BLE JSON');
-  const withoutNewBleDefaults = (document: JsonObject) => {
+/** `base` with `changes` merged in, objects recursively. Arrays and values in `changes` replace. */
+export function mergeSettings(base: JsonObject, changes: JsonObject): JsonObject {
+  const merged: JsonObject = { ...base };
+  for (const [key, value] of Object.entries(changes)) {
+    merged[key] = isObject(value) && isObject(base[key]) ? mergeSettings(base[key], value) : value;
+  }
+  return merged;
+}
+/**
+ * Every setting in `before` keeps its value in `after`. Keys only in `after` are allowed: WLED 16
+ * writes its full settings format the first time it saves, which adds keys an older file lacked.
+ */
+function keepsEverySetting(before: unknown, after: unknown): boolean {
+  if (Array.isArray(before))
+    return (
+      Array.isArray(after) &&
+      before.length === after.length &&
+      before.every((item, index) => keepsEverySetting(item, after[index]))
+    );
+  if (isObject(before))
+    return isObject(after) && Object.keys(before).every((key) => keepsEverySetting(before[key], after[key]));
+  return canonical(before) === canonical(after);
+}
+/**
+ * Owner settings and presets stay authoritative. Allowed differences: keys WLED adds when it
+ * rewrites the file, the new module's own settings when the backup had none, `rev`, `changes`
+ * the installer wrote itself, and Wi-Fi sleep, which the module keeps on while Bluetooth runs.
+ */
+export function settingsPreserved(
+  before: Backup,
+  config: JsonObject,
+  presets: JsonObject,
+  changes: JsonObject = {},
+): boolean {
+  const comparable = (document: JsonObject) => {
     const copy = { ...document };
     delete copy.rev;
-    if (!hadBleSettings && isObject(copy.um)) {
-      const usermods = { ...copy.um };
-      delete usermods['BLE JSON'];
-      if (Object.keys(usermods).length === 0 && !Object.hasOwn(before.config, 'um')) delete copy.um;
-      else copy.um = usermods;
+    if (isObject(copy.wifi)) {
+      const wifi = { ...copy.wifi };
+      delete wifi.sleep;
+      copy.wifi = wifi;
     }
     return copy;
   };
   return (
-    canonical(withoutNewBleDefaults(before.config)) === canonical(withoutNewBleDefaults(config)) &&
+    keepsEverySetting(comparable(mergeSettings(before.config, changes)), comparable(config)) &&
     canonical(before.presets) === canonical(presets)
   );
+}
+/** Bytes WLED's device name may use in the add-on's advertised `<name>#<serial>`. */
+export const CONTROLLER_NAME_BYTES = 22;
+/**
+ * The name the add-on will advertise, as the add-on itself trims it: whole characters within
+ * 22 UTF-8 bytes, without `#` and `@` (they delimit the serial) or control characters.
+ */
+export function controllerName(raw: string): string {
+  const encoder = new TextEncoder();
+  let name = '';
+  // eslint-disable-next-line no-control-regex -- control characters are what this removes
+  for (const character of raw.replace(/[#@\u0000-\u001f\u007f]/g, '').trim()) {
+    if (encoder.encode(name + character).length > CONTROLLER_NAME_BYTES) break;
+    name += character;
+  }
+  return name.trim();
+}
+/**
+ * WLED 16 refuses an update from a phone on its own hotspot while "Only allow update from same
+ * network/WiFi" is on: it compares the phone with its station address, which is empty when it only
+ * runs the hotspot. The option is on by default in 16 and absent before it.
+ */
+export function blocksHotspotUpdate(config: JsonObject, version: string): boolean {
+  const sameSubnet = isObject(config.ota) ? config.ota['same-subnet'] : undefined;
+  if (typeof sameSubnet === 'boolean') return sameSubnet;
+  return Number.parseInt(version, 10) >= 16;
 }
 
 type PreparedImage = { uri: string; bytes: number; sha256: string };
@@ -365,10 +427,57 @@ function createSession(
     }
     offlineManifest = manifest.filter((release) => offlineImages.has(release.sha256));
   }
+  async function readSettings(signal: AbortSignal) {
+    const [config, presets] = await Promise.all([
+      io.readJson(`${url}/cfg.json`, signal),
+      io.readJson(`${url}/presets.json`, signal),
+    ]);
+    ensureCurrent(signal);
+    return { config: requireObject(config), presets: requireObject(presets) };
+  }
+  /** Puts the owner's update protection back. Best effort: a failure must not hide a good install. */
+  async function restoreSameSubnet(pending: InstallJournal, signal: AbortSignal) {
+    if (!pending.restoreSameSubnet) return;
+    for (let attempt = 0; attempt < 2 && !signal.aborted; attempt++) {
+      try {
+        await io.writeConfig(url, { ota: { 'same-subnet': true } }, signal);
+        return;
+      } catch {
+        // Retried once; WLED answers again after its settings write.
+      }
+    }
+  }
+  function isInstalled(identity: ControllerIdentity, pending: InstallJournal) {
+    const caps = identity.capabilities;
+    return (
+      identity.version === pending.release.wledVersion &&
+      caps?.buildId === pending.release.buildId &&
+      caps.controllerId === identity.controllerId &&
+      caps.protocolVersion === 1 &&
+      caps.usermodVersion === pending.release.usermodVersion &&
+      caps.audio === pending.release.audio &&
+      caps.ledCount === pending.before.ledCount &&
+      caps.maxMessageBytes === 8192
+    );
+  }
+  function isOriginalFirmware(identity: ControllerIdentity, pending: InstallJournal) {
+    const original = pending.before;
+    return (
+      identity.controllerId === original.controllerId &&
+      identity.version === original.version &&
+      identity.architecture === original.architecture &&
+      identity.flashBytes === original.flashBytes &&
+      identity.brand === original.brand &&
+      identity.product === original.product &&
+      identity.capabilities?.buildId !== pending.release.buildId
+    );
+  }
   async function verify(signal: AbortSignal, allowSourceRecovery = false) {
     if (!journal) throw new WledInstallerError('verification');
     const pending = journal;
-    update({ ...snapshot, stage: 'rebooting' });
+    // An owner's check is not a restart, and no earlier error carries into it.
+    update({ ...snapshot, stage: allowSourceRecovery ? 'verifying' : 'rebooting', error: undefined });
+    let originalFirmware: ControllerIdentity | null = null;
     for (let attempt = 0; attempt < 45; attempt++) {
       ensureCurrent(signal);
       try {
@@ -376,33 +485,25 @@ function createSession(
         if (link) await link.ensure(signal);
         const identity = readIdentity(await io.readJson(`${url}/json/info`, signal));
         if (identity.controllerId !== pending.before.controllerId) throw new WledInstallerError('verification');
-        const caps = identity.capabilities;
-        if (
-          identity.version === pending.release.wledVersion &&
-          caps?.buildId === pending.release.buildId &&
-          caps.controllerId === identity.controllerId &&
-          caps.protocolVersion === 1 &&
-          caps.usermodVersion === pending.release.usermodVersion &&
-          caps.audio === pending.release.audio &&
-          caps.ledCount === pending.before.ledCount &&
-          caps.maxMessageBytes === 8192
-        ) {
+        if (isInstalled(identity, pending)) {
           update({ ...snapshot, stage: 'verifying' });
-          const [config, presets] = await Promise.all([
-            io.readJson(`${url}/cfg.json`, signal),
-            io.readJson(`${url}/presets.json`, signal),
-          ]);
-          ensureCurrent(signal);
+          const { config, presets } = await readSettings(signal);
           if (
             identity.ledCount !== pending.before.ledCount ||
-            !settingsPreserved(pending.backup, requireObject(config), requireObject(presets))
+            !settingsPreserved(pending.backup, config, presets, pending.changes)
           ) {
             throw new WledInstallerError('preservation');
           }
+          await restoreSameSubnet(pending, signal);
           await io.clearJournal(url);
           journal = null;
           update({ ...snapshot, stage: 'complete', identity, error: undefined });
           return;
+        }
+        // An owner's check after an interrupted upload: the original firmware answering is the result.
+        if (allowSourceRecovery && isOriginalFirmware(identity, pending)) {
+          originalFirmware = identity;
+          break;
         }
       } catch (error) {
         if (
@@ -414,37 +515,25 @@ function createSession(
       await io.wait(2000, signal);
     }
     if (allowSourceRecovery) {
-      // An explicit inspection after an interrupted upload may prove the original firmware still runs.
-      if (link) await link.ensure(signal);
-      const identity = readIdentity(await io.readJson(`${url}/json/info`, signal));
-      const original = pending.before;
-      if (
-        identity.controllerId === original.controllerId &&
-        identity.version === original.version &&
-        identity.architecture === original.architecture &&
-        identity.flashBytes === original.flashBytes &&
-        identity.brand === original.brand &&
-        identity.product === original.product &&
-        identity.capabilities?.buildId !== pending.release.buildId
-      ) {
-        const [config, presets] = await Promise.all([
-          io.readJson(`${url}/cfg.json`, signal),
-          io.readJson(`${url}/presets.json`, signal),
-        ]);
-        ensureCurrent(signal);
-        if (!settingsPreserved(pending.backup, requireObject(config), requireObject(presets)))
+      if (!originalFirmware) {
+        if (link) await link.ensure(signal);
+        const identity = readIdentity(await io.readJson(`${url}/json/info`, signal));
+        if (isOriginalFirmware(identity, pending)) originalFirmware = identity;
+      }
+      if (originalFirmware) {
+        const { config, presets } = await readSettings(signal);
+        if (!settingsPreserved(pending.backup, config, presets, pending.changes))
           throw new WledInstallerError('preservation');
+        await restoreSameSubnet(pending, signal);
+        // The controller kept the owner's settings; what it holds now is the next attempt's baseline.
+        const current = await readSettings(signal);
+        const backup = { ...current, uri: await io.saveBackup(originalFirmware, current.config, current.presets) };
         await io.checkUpdateAccess(url, signal);
-        releases = await compatibleWith(identity, signal);
+        releases = await compatibleWith(originalFirmware, signal);
         ensureCurrent(signal);
         await io.clearJournal(url);
         journal = null;
-        update({
-          stage: 'ready',
-          identity,
-          backup: pending.backup,
-          release: preferredRelease(releases),
-        });
+        update({ stage: 'ready', identity: originalFirmware, backup, release: preferredRelease(releases) });
         return;
       }
     }
@@ -499,7 +588,8 @@ function createSession(
     exportBackup: async () => {
       if (snapshot.backup) await io.exportBackup(snapshot.backup.uri);
     },
-    install: (modelConfirmed: boolean, audioDisabledConfirmed: boolean, betaConfirmed = false) =>
+    /** `name`: what the controller should advertise to climbers; trimmed as the add-on trims it. */
+    install: (modelConfirmed: boolean, audioDisabledConfirmed: boolean, betaConfirmed = false, name?: string) =>
       exclusive(async (signal) => {
         const { identity, backup, release } = snapshot;
         if (
@@ -534,15 +624,32 @@ function createSession(
         }
         ensureCurrent(signal);
         checkImage(release, image);
-        journal = { url, before: identity, backup, release };
+        const changes: JsonObject = {};
+        const advertised = name === undefined ? '' : controllerName(name);
+        if (advertised) changes.id = { name: advertised };
+        const disablesSameSubnet = link !== null && blocksHotspotUpdate(backup.config, identity.version);
+        if (disablesSameSubnet) changes.ota = { 'same-subnet': false };
+        // Durable before any controller write, so a lost connection still restores the setting.
+        journal = { url, before: identity, backup, release, changes, restoreSameSubnet: disablesSameSubnet };
         await io.writeJournal(journal);
+        ensureCurrent(signal);
+        // Nothing has been uploaded yet: a refusal here leaves no install to confirm.
+        const abandon = async (error: unknown): Promise<never> => {
+          const abandoned = journal;
+          journal = null;
+          if (abandoned) await restoreSameSubnet(abandoned, signal);
+          await io.clearJournal(url).catch(() => undefined);
+          throw error;
+        };
+        if (Object.keys(changes).length) await io.writeConfig(url, changes, signal).catch(abandon);
         ensureCurrent(signal);
         update({ ...snapshot, stage: 'uploading', progress: 0 });
         try {
           await io.upload(url, image.uri, signal, (progress) => update({ ...snapshot, progress }));
         } catch (error) {
           ensureCurrent(signal);
-          if (error instanceof WledInstallerError && error.code === 'locked') throw error;
+          // WLED refuses before writing any of the image (PIN, OTA lock or "same network" check).
+          if (error instanceof WledInstallerError && error.code === 'locked') await abandon(error);
           // A disconnect is ambiguous. Only read-back can establish success.
         }
         ensureCurrent(signal);

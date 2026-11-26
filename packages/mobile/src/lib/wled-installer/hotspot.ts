@@ -133,6 +133,10 @@ export function hotspotInstallerIO(io: InstallerIO, isJoined: () => boolean): In
       guard(url);
       return io.checkUpdateAccess(url, signal);
     },
+    async writeConfig(url, changes, signal) {
+      guard(url);
+      return io.writeConfig(url, changes, signal);
+    },
     async upload(url, uri, signal, progress) {
       guard(url);
       return io.upload(url, uri, signal, progress);

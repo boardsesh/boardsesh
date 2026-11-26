@@ -89,12 +89,36 @@ password; both are prefilled with WLED's defaults.
    `http://4.3.2.1`: backup and export, model, beta and audio consent, the
    OTA/PIN lock check, the journal, and read-back verification. The hotspot is
    kept from the ready backup to the owner's install tap, and nothing else.
+   - **Same-network check.** WLED 16 refuses an update from a phone on its own
+     hotspot while "Only allow update from same network/WiFi" is on (the default
+     in 16; a factory 0.15 settings file has no such key): it compares the phone
+     with its station address, `0.0.0.0` when it only runs the hotspot, and answers
+     401 "Client is not on local subnet". When the backup shows it on, the
+     installer records it in the journal, posts `{"ota":{"same-subnet":false}}` to
+     `/json/cfg` before the upload, and posts `true` again after verification, or
+     after a refused upload. The screen says so before the install tap. WLED 0.15
+     has no such check, so nothing is written there.
+   - **Controller name.** The owner names the controller (prefilled with the
+     wall's name). The installer writes it as WLED's device name (`id.name`) before
+     the upload, trimmed as the add-on trims it: whole characters within 22 UTF-8
+     bytes, without `#` and `@`. The add-on advertises `<name>#<serial>`.
+   - **Settings check.** Every setting in the backup must keep its value. Allowed:
+     keys WLED 16 adds when it rewrites a 0.15 file, the add-on's own section, Wi-Fi
+     sleep (the add-on keeps modem sleep on while Bluetooth runs) and the
+     installer's two writes above.
+   - **Refused at the first byte.** A 401 from `/update` (PIN, OTA lock or the
+     same-network check) means nothing was written: the journal is cleared and the
+     screen shows the blocked state, not an unconfirmed install.
+   - **Settings reloads** keep the LED section mounted, so a reload while the phone
+     is on the hotspot no longer releases it mid-install.
 4. **Restarting.** WLED's hotspot goes down while it restarts. Verification
    waits up to 15 s for the phone to rejoin on its own (Android's request stays
    registered and rebinds; iOS may rejoin a `joinOnce` network), then asks
    again, twice, up to 30 s each. iOS may show its join alert again here. If
    the hotspot never returns, the install is marked unconfirmed (`hotspotLost`)
-   with the journal kept, and **Check installation** rejoins and verifies.
+   with the journal kept, and **Check installation** rejoins and verifies. That
+   check stops as soon as the original firmware answers, puts the same-network
+   setting back, and takes a fresh backup for the next attempt.
 5. **Back to normal.** The app leaves the hotspot (Android unbinds and drops the
    request; iOS removes the configuration) and points the owner to Bluetooth →
    Find Bluetooth controller.

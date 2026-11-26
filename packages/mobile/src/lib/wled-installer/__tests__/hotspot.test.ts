@@ -11,6 +11,7 @@ vi.mock('../../../../modules/wifi-join/src', () => ({
 import {
   createWledHotspotInstaller,
   createWledInstaller,
+  mergeSettings,
   WledInstallerError,
   WLED_APP_SLOT_BYTES,
   WLED_HOTSPOT_URL,
@@ -60,7 +61,12 @@ const presets = { '1': { name: 'Climb', fx: 0 } };
  */
 function setup(releases: FirmwareRelease[] = [release]) {
   const events: string[] = [];
-  const state = { joined: false, uploaded: false, journal: null as InstallJournal | null };
+  const state = {
+    joined: false,
+    uploaded: false,
+    journal: null as InstallJournal | null,
+    config: config as Record<string, unknown>,
+  };
   const snapshots: InstallerSnapshot[] = [];
   const io: InstallerIO = {
     readJson: vi.fn(async (url: string) => {
@@ -72,7 +78,7 @@ function setup(releases: FirmwareRelease[] = [release]) {
       if (!state.joined) throw new WledInstallerError('unavailable');
       const path = url.slice(WLED_HOTSPOT_URL.length);
       events.push(`read ${path}`);
-      if (path === '/cfg.json') return config;
+      if (path === '/cfg.json') return state.config;
       if (path === '/presets.json') return presets;
       return state.uploaded
         ? {
@@ -92,6 +98,12 @@ function setup(releases: FirmwareRelease[] = [release]) {
     checkUpdateAccess: vi.fn(async () => {
       if (!state.joined) throw new WledInstallerError('unavailable');
       events.push('updateAccess');
+    }),
+    // Like WLED's /json/cfg: merges the posted keys into the saved settings.
+    writeConfig: vi.fn(async (_url: string, changes: Record<string, unknown>) => {
+      if (!state.joined) throw new WledInstallerError('unavailable');
+      events.push(`write ${JSON.stringify(changes)}`);
+      state.config = mergeSettings(state.config, changes);
     }),
     saveBackup: vi.fn(async () => 'file:///backup.json'),
     exportBackup: vi.fn(async () => undefined),
@@ -220,13 +232,70 @@ describe('WLED install over the controller hotspot', () => {
     expect(installer.getSnapshot().stage).toBe('complete');
   });
 
-  it('releases after a failed upload', async () => {
-    const { installer, io, events } = setup();
+  it('treats a refused upload as nothing installed: blocked, no journal, setting restored', async () => {
+    const { installer, io, events, state } = setup();
     vi.mocked(io.upload).mockRejectedValue(new WledInstallerError('locked'));
     await installer.inspect(true);
     await installer.install(true, false, true);
-    expect(installer.getSnapshot()).toMatchObject({ stage: 'interrupted', error: 'locked' });
+    expect(installer.getSnapshot()).toMatchObject({ stage: 'blocked', error: 'locked' });
+    expect(state.journal).toBeNull();
+    expect(state.config).toMatchObject({ ota: { 'same-subnet': true } });
     expect(events.at(-1)).toBe('release');
+  });
+
+  it("switches WLED 16's same-network update check off for the upload and back on after verifying", async () => {
+    const { installer, events, state } = setup();
+    await installer.inspect(true);
+    await installer.install(true, false, true);
+    expect(installer.getSnapshot().stage).toBe('complete');
+    const off = events.indexOf('write {"ota":{"same-subnet":false}}');
+    const on = events.indexOf('write {"ota":{"same-subnet":true}}');
+    expect(off).toBeGreaterThan(-1);
+    expect(off).toBeLessThan(events.indexOf('upload'));
+    expect(on).toBeGreaterThan(events.indexOf('read /cfg.json', events.indexOf('upload')));
+    expect(state.config).toMatchObject({ ota: { 'same-subnet': true } });
+    expect(state.journal).toBeNull();
+  });
+
+  it('leaves a same-network check the owner already switched off alone', async () => {
+    const { installer, events, state } = setup();
+    state.config = { ...config, ota: { 'same-subnet': false } };
+    await installer.inspect(true);
+    await installer.install(true, false, true);
+    expect(installer.getSnapshot().stage).toBe('complete');
+    expect(events.some((event) => event.startsWith('write'))).toBe(false);
+  });
+
+  it('writes nothing to factory WLED 0.15, which has no same-network check', async () => {
+    const factoryRelease = {
+      ...release,
+      sourceProfiles: [
+        { version: '0.15.4', brand: 'GLEDOPTO', product: 'Gledopto', appSlotBytes: WLED_APP_SLOT_BYTES },
+      ],
+    };
+    const { installer, io, events, state } = setup([factoryRelease]);
+    const answer = vi.mocked(io.readJson).getMockImplementation()!;
+    vi.mocked(io.readJson).mockImplementation(async (url, signal) => {
+      const info = await answer(url, signal);
+      // The original firmware identifies itself as Gledopto's 0.15.4 build until the upload.
+      return url.endsWith('/json/info') && !state.uploaded
+        ? { ...original, ver: '0.15.4', brand: 'GLEDOPTO', product: 'Gledopto' }
+        : info;
+    });
+    await installer.inspect(true);
+    expect(installer.getSnapshot()).toMatchObject({ stage: 'ready', release: { id: 'beta-audio' } });
+    await installer.install(true, false, true);
+    expect(events.some((event) => event.startsWith('write'))).toBe(false);
+    expect(io.upload).toHaveBeenCalledOnce();
+  });
+
+  it('names the controller before the upload and expects that name when verifying', async () => {
+    const { installer, events, state } = setup();
+    await installer.inspect(true);
+    await installer.install(true, false, true, 'Norte izquierda #2');
+    expect(installer.getSnapshot().stage).toBe('complete');
+    expect(events).toContain('write {"id":{"name":"Norte izquierda 2"},"ota":{"same-subnet":false}}');
+    expect(state.config).toMatchObject({ id: { name: 'Norte izquierda 2' } });
   });
 
   it('rejoins the hotspot after WLED restarts before verifying', async () => {

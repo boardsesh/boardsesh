@@ -156,7 +156,7 @@ afterEach(cleanup);
 
 describe('WLED beta installer consent', () => {
   it('discloses beta before checking the controller and requires beta plus model consent', async () => {
-    render(<WledBluetoothInstaller url="192.168.1.5" disabled={false} />);
+    render(<WledBluetoothInstaller url="192.168.1.5" wallName="Norte izquierda" disabled={false} />);
     expect(screen.getByText('sprayLed.installer.title')).toBeTruthy();
     expect(screen.getByText('sprayLed.installer.betaWarning')).toBeTruthy();
     expect(runtime.install).not.toHaveBeenCalled();
@@ -168,7 +168,7 @@ describe('WLED beta installer consent', () => {
     fireEvent.click(checkbox('confirmBeta'));
     expect(install.disabled).toBe(false);
     fireEvent.click(install);
-    expect(runtime.install).toHaveBeenCalledWith(true, false, true);
+    expect(runtime.install).toHaveBeenCalledWith(true, false, true, 'Norte izquierda');
   });
   it('keeps no-audio approval separate from beta approval', async () => {
     runtime.snapshot!.release!.audio = false;
@@ -180,7 +180,7 @@ describe('WLED beta installer consent', () => {
     expect(install.disabled).toBe(true);
     fireEvent.click(checkbox('confirmNoAudio'));
     fireEvent.click(install);
-    expect(runtime.install).toHaveBeenCalledWith(true, true, true);
+    expect(runtime.install).toHaveBeenCalledWith(true, true, true, '');
   });
   it('resets confirmations when the owner checks again or changes the controller URL', async () => {
     const view = render(<WledBluetoothInstaller url="192.168.1.5" disabled={false} />);
@@ -205,7 +205,19 @@ describe('WLED beta installer consent', () => {
     expect(screen.queryByRole('switch', { name: 'sprayLed.installer.confirmBeta' })).toBeNull();
     fireEvent.click(checkbox('confirmModel'));
     fireEvent.click(screen.getByRole('button', { name: 'sprayLed.installer.install' }));
-    expect(runtime.install).toHaveBeenCalledWith(true, false, false);
+    expect(runtime.install).toHaveBeenCalledWith(true, false, false, '');
+  });
+  it("suggests the wall's name for the controller, trimmed as the add-on advertises it", async () => {
+    render(<WledBluetoothInstaller url="192.168.1.5" wallName="Wall #2 @ the gym" disabled={false} />);
+    await inspect();
+    const field = screen.getByLabelText('sprayLed.installer.controllerName') as HTMLInputElement;
+    expect(field.value).toBe('Wall 2  the gym');
+    fireEvent.change(field, { target: { value: 'Rocódromo Escalada Norte' } });
+    fireEvent.click(checkbox('confirmModel'));
+    fireEvent.click(checkbox('confirmBeta'));
+    fireEvent.click(screen.getByRole('button', { name: 'sprayLed.installer.installBeta' }));
+    // 22 UTF-8 bytes: "ó" takes two, so the "r" no longer fits.
+    expect(runtime.install).toHaveBeenCalledWith(true, false, true, 'Rocódromo Escalada No');
   });
 });
 

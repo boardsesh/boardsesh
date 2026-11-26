@@ -80,6 +80,8 @@
       "exportBackup": "Esporta copia WLED",
       "securitySettings": "Apri sicurezza WLED",
       "backupHint": "La copia include configurazione e preset. Esportala in un posto sicuro prima di installare.",
+      "controllerName": "Nome del controller",
+      "controllerNameHint": "Chi arrampica vede questo nome quando cerca il Bluetooth della tua Spraywall. {{used}} di {{max}} byte; le lettere accentate ne occupano due.",
       "confirmModel": "Ho controllato l’etichetta: Gledopto GL-C-015WL-D",
       "confirmNoAudio": "Accetto questa versione senza effetti reattivi all’audio",
       "install": "Installa firmware verificato",
@@ -105,7 +107,8 @@
         "timeout": "Il collegamento all’hotspot del controller ha richiesto troppo tempo. Avvicinati al controller e riprova.",
         "unsupported": "Per collegarti all’hotspot da Boardsesh serve Android 10 o successivo. Collegati a {{ssid}} nelle impostazioni Wi-Fi, apri 4.3.2.1 in un browser e collega WLED a una rete Wi-Fi. Poi installa tramite Wi-Fi.",
         "lost": "WLED si è riavviato, ma il telefono non è riuscito a ricollegarsi al suo hotspot. Tieni acceso il controller, poi controlla l’installazione.",
-        "locked": "La pagina di aggiornamento di WLED è bloccata. Collegati a {{ssid}} nelle impostazioni Wi-Fi, apri 4.3.2.1/settings/sec in un browser e sblocca OTA. Poi riprova.",
+        "locked": "WLED ha rifiutato l’aggiornamento. Collegati a {{ssid}} nelle impostazioni Wi-Fi, apri 4.3.2.1/settings/sec in un browser, sblocca OTA e togli la spunta a «Only allow update from same network/WiFi». Poi riprova.",
+        "sameNetwork": "Tramite l’hotspot, Boardsesh disattiva in WLED «Only allow update from same network/WiFi» durante l’installazione e poi lo riattiva.",
         "leave": "Scollega dal controller"
       }
     }
