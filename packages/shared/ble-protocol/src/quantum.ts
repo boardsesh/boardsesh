@@ -443,6 +443,8 @@ function confirmsForeignLayers(
 
 /** Rechecked in both the transaction lane and the platform GATT lane. */
 export type QuantumWriteEligibility = () => boolean;
+/** Runs inside the GATT lane, before a physical mutation. */
+export type QuantumWritePreflight = () => Promise<void>;
 
 export function assertQuantumWriteEligible(isEligible?: QuantumWriteEligibility): void {
   if (isEligible && !isEligible()) {
@@ -453,8 +455,16 @@ export function assertQuantumWriteEligible(isEligible?: QuantumWriteEligibility)
 export interface QuantumRosterTransport {
   /** Largest complete value accepted by one transport write in its negotiated mode. */
   readonly maximumWriteBytes: number;
-  /** Issue one characteristic write in the mode selected for this binary connection. */
-  writeFrame(frame: Uint8Array, isEligible?: QuantumWriteEligibility): Promise<void>;
+  /**
+   * Issue one characteristic write in the selected mode. Any preflight must
+   * run inside the transport's write lane. Recheck eligibility and physical
+   * ownership after it settles and immediately before sending.
+   */
+  writeFrame(
+    frame: Uint8Array,
+    isEligible?: QuantumWriteEligibility,
+    beforeWrite?: QuantumWritePreflight,
+  ): Promise<void>;
   /** A buffered refusal for the last mutation can arrive before the roster request. */
   getMutationFailure?(command: QuantumCommand): QuantumControllerFailure | undefined;
   /** Read one complete value from the state characteristic. */
@@ -494,6 +504,7 @@ export type QuantumRosterTransactionErrorCode =
   | 'board-full'
   | 'color-in-use'
   | 'target-route-changed'
+  | 'target-unavailable'
   | 'confirmation-failed';
 
 export type QuantumRosterMachineState = {
@@ -530,6 +541,8 @@ export type QuantumActivateTransaction = QuantumActivation & {
   /** Absent for a fresh player. Required to replace an existing route. */
   expectedOwnedRouteId?: string;
   isEligible?: QuantumWriteEligibility;
+  /** Recheck the climb's availability before release and final activation. */
+  assertTargetAvailable?: QuantumWritePreflight;
   expectedPlayers?: readonly QuantumActivePlayer[];
 };
 
@@ -618,10 +631,11 @@ export class QuantumRosterTransactionMachine {
           foreignPlayers,
           preflightAt,
           isEligible: request.isEligible,
+          beforeWrite: request.assertTargetAvailable,
         });
       }
       this.transition('mutating', 'activate');
-      await this.writeAtomic(activationFrame, request.isEligible);
+      await this.writeAtomic(activationFrame, request.isEligible, request.assertTargetAvailable);
       await this.time.sleep(this.activationSettleDelayMs);
       const command = request.swipe ? QuantumCommand.BOARD_SWIPE : QuantumCommand.ACTIVATE_WALL;
       const after = await this.requestFreshRoster('activate', request.isEligible, command);
@@ -689,6 +703,7 @@ export class QuantumRosterTransactionMachine {
     foreignPlayers,
     preflightAt,
     isEligible,
+    beforeWrite,
   }: {
     operation: 'activate' | 'remove';
     removalFrame: Uint8Array;
@@ -696,9 +711,10 @@ export class QuantumRosterTransactionMachine {
     foreignPlayers: readonly QuantumActivePlayer[];
     preflightAt: number;
     isEligible?: QuantumWriteEligibility;
+    beforeWrite?: QuantumWritePreflight;
   }): Promise<QuantumRosterSnapshot> {
     this.transition('mutating', operation);
-    await this.writeAtomic(removalFrame, isEligible);
+    await this.writeAtomic(removalFrame, isEligible, beforeWrite);
     if (operation === 'activate') await this.time.sleep(this.releaseBeforeActivationDelayMs);
     const after = await this.requestFreshRoster(operation, isEligible, QuantumCommand.TURN_OFF_BY_USER);
     if (
@@ -848,10 +864,14 @@ export class QuantumRosterTransactionMachine {
     }
   }
 
-  private async writeAtomic(frame: Uint8Array, isEligible?: QuantumWriteEligibility): Promise<void> {
+  private async writeAtomic(
+    frame: Uint8Array,
+    isEligible?: QuantumWriteEligibility,
+    beforeWrite?: QuantumWritePreflight,
+  ): Promise<void> {
     this.assertFrameFits(frame);
     assertQuantumWriteEligible(isEligible);
-    await this.transport.writeFrame(frame.slice(), isEligible);
+    await this.transport.writeFrame(frame.slice(), isEligible, beforeWrite);
   }
 
   private transition(phase: QuantumRosterPhase, operation: QuantumRosterOperation): void {

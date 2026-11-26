@@ -426,6 +426,43 @@ describe('RNQuantumBluetoothTransport', () => {
     expect(writeWithResponse).toHaveBeenCalledOnce();
   });
 
+  it('runs target preflight inside the native write lane and rechecks eligibility after it', async () => {
+    const { adapter, writeWithResponse } = setupController();
+    await adapter.requestAndConnect('m');
+    let releaseFirst!: () => void;
+    writeWithResponse.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((resolve) => {
+          releaseFirst = () => resolve(undefined);
+        }),
+    );
+    const first = adapter.writeFrame(encodeQuantumRosterRequest());
+    await Promise.resolve();
+
+    let finishPreflight!: () => void;
+    let markPreflightStarted!: () => void;
+    const preflightStarted = new Promise<void>((resolve) => {
+      markPreflightStarted = resolve;
+    });
+    const preflight = vi.fn(async () => {
+      markPreflightStarted();
+      await new Promise<void>((resolve) => {
+        finishPreflight = resolve;
+      });
+    });
+    let eligible = true;
+    const queued = adapter.writeFrame(Uint8Array.of(1, QuantumCommand.ACTIVATE_WALL), () => eligible, preflight);
+    const rejected = expect(queued).rejects.toMatchObject({ code: 'operation-cancelled' });
+    expect(preflight).not.toHaveBeenCalled();
+    releaseFirst();
+    await first;
+    await preflightStarted;
+    eligible = false;
+    finishPreflight();
+    await rejected;
+    expect(writeWithResponse).toHaveBeenCalledOnce();
+  });
+
   it('refuses Belay before starting the native scan', async () => {
     const { adapter } = setupController({ metadataBytes: metadata(3, 8, 12) });
     await expect(adapter.requestAndConnect('belay')).rejects.toThrow('metadata');

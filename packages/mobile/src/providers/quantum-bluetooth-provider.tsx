@@ -6,6 +6,7 @@ import { QUANTUM_MODELS, QUANTUM_RELEASED_MODELS } from '@boardsesh/board-consta
 import {
   encodeQuantumActivation,
   quantumUuidsEqual,
+  QuantumRosterTransactionError,
   type QuantumBoardModelId,
   type QuantumControllerMetadata,
   type QuantumRosterSnapshot,
@@ -845,13 +846,19 @@ export function QuantumBluetoothProvider({
         };
         // Validate the complete command before even asking the wall for a roster.
         encodeQuantumActivation(activation);
-        const assertClimbAvailable = async () => {
-          if (input.climbUuid && (await isQuantumClimbRetired(input.climbUuid))) {
-            throw new Error('This Quantum climb is no longer available to light');
-          }
-          if (!canUseConnection()) throw new Error('Quantum controller connection changed during activation preflight');
-        };
-        await assertClimbAvailable();
+        const climbUuid = input.climbUuid;
+        const assertTargetAvailable = climbUuid
+          ? async () => {
+              if (await isQuantumClimbRetired(climbUuid)) {
+                throw new QuantumRosterTransactionError(
+                  'target-unavailable',
+                  'This Quantum climb is no longer available to light',
+                );
+              }
+            }
+          : undefined;
+        if (assertTargetAvailable) await assertTargetAvailable();
+        if (!canUseConnection()) throw new Error('Quantum controller connection changed during activation preflight');
         const preflightSnapshot = await controller.refresh(canUseConnection);
         if (!canUseConnection()) throw new Error('Quantum controller connection changed during activation preflight');
         const rosterRecovered = await recoverAndReportRoster({
@@ -884,7 +891,6 @@ export function QuantumBluetoothProvider({
         ) {
           throw new Error('Quantum route is already active on another layer');
         }
-        await assertClimbAvailable();
         const currentGeometryGeneration = getQuantumGeometryGeneration(selectedModel.layoutId, selectedModel.sizeId);
         const currentGeometry = getQuantumGeometry(selectedModel.layoutId, selectedModel.sizeId);
         let diodeIds: number[];
@@ -929,6 +935,7 @@ export function QuantumBluetoothProvider({
           ...(input.expectedOwnedRouteUuid !== undefined ? { expectedOwnedRouteId: input.expectedOwnedRouteUuid } : {}),
           expectedPlayers: confirmedSnapshot.players,
           isEligible: canUseConnection,
+          ...(assertTargetAvailable ? { assertTargetAvailable } : {}),
         });
         if (!canUseConnection()) return snapshot;
         if (activePresenceConnectionRef.current?.generation === presenceConnection.generation) {

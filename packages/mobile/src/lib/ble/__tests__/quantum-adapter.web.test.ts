@@ -255,6 +255,38 @@ describe('WebQuantumBluetoothTransport', () => {
     expect(writeValueWithResponse).toHaveBeenCalledOnce();
   });
 
+  it('runs target preflight in the browser write lane and rechecks ownership after it', async () => {
+    const shared = setupDevice();
+    const first = new WebQuantumBluetoothTransport();
+    const second = new WebQuantumBluetoothTransport();
+    await first.requestAndConnect('l');
+
+    let finishPreflight!: () => void;
+    let markPreflightStarted!: () => void;
+    const preflightStarted = new Promise<void>((resolve) => {
+      markPreflightStarted = resolve;
+    });
+    const queued = first.writeFrame(
+      Uint8Array.of(1, 0x41),
+      () => true,
+      async () => {
+        markPreflightStarted();
+        await new Promise<void>((resolve) => {
+          finishPreflight = resolve;
+        });
+      },
+    );
+    const rejected = expect(queued).rejects.toThrow('not connected');
+    await preflightStarted;
+    expect(shared.writeValueWithResponse).not.toHaveBeenCalled();
+    await second.requestAndConnect('l');
+    finishPreflight();
+    await rejected;
+    expect(shared.writeValueWithResponse).not.toHaveBeenCalled();
+    await second.writeFrame(Uint8Array.of(1, 0x47));
+    expect(shared.writeValueWithResponse).toHaveBeenCalledOnce();
+  });
+
   it('refuses Belay before opening the browser chooser', async () => {
     setupDevice();
     await expect(new WebQuantumBluetoothTransport().requestAndConnect('belay')).rejects.toThrow('metadata');

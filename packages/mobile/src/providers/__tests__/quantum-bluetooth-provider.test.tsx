@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runMigrations } from '@boardsesh/offline-sync';
 import { createTestDatabase } from '@boardsesh/offline-sync/testing';
 import { getQuantumBundledGeometry } from '@boardsesh/board-constants/quantum';
+import type { QuantumActivateTransaction } from '@boardsesh/ble-protocol/quantum';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useQuantumBluetoothSelection } from '../use-quantum-bluetooth-selection';
 import { QueueRestoredContext, QueueSessionIdContext } from '../queue/queue-contexts';
@@ -483,6 +484,14 @@ describe('QuantumBluetoothProvider', () => {
       });
       controller.refresh.mockClear();
       localRecovery.isQuantumClimbRetired.mockResolvedValueOnce(!late).mockResolvedValue(true);
+      const write = vi.fn();
+      if (late) {
+        controller.activate.mockImplementationOnce(async (request: QuantumActivateTransaction) => {
+          await request.assertTargetAvailable?.();
+          write();
+          return { revision: 2, observedAtMs: 2_000, players: [] };
+        });
+      }
       await expect(
         latestActions!.activateLayer({
           ...ACTIVATION,
@@ -490,7 +499,8 @@ describe('QuantumBluetoothProvider', () => {
         }),
       ).rejects.toThrow('no longer available to light');
       expect(controller.refresh).toHaveBeenCalledTimes(late ? 1 : 0);
-      expect(controller.activate).not.toHaveBeenCalled();
+      expect(controller.activate).toHaveBeenCalledTimes(late ? 1 : 0);
+      expect(write).not.toHaveBeenCalled();
       await act(async () => {
         await latestActions!.removeLayer({ controllerUserUuid: CONTROLLER_USER_UUID, controllerRouteUuid: ROUTE_UUID });
       });
@@ -967,6 +977,7 @@ describe('QuantumBluetoothProvider', () => {
       animation: undefined,
       expectedPlayers: [],
       isEligible: expect.any(Function),
+      assertTargetAvailable: expect.any(Function),
     });
     expect(presence.reportLayersForBoard).toHaveBeenCalledWith(73, [
       {

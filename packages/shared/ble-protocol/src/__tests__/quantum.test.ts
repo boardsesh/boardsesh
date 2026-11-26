@@ -14,6 +14,7 @@ import {
   QuantumCommand,
   QuantumRosterTransactionError,
   QuantumRosterTransactionMachine,
+  assertQuantumWriteEligible,
   decodeQuantumUuid,
   encodeQuantumActivation,
   encodeQuantumRosterRequest,
@@ -33,6 +34,8 @@ import {
   type QuantumActivePlayer,
   type QuantumRosterTransport,
   type QuantumTime,
+  type QuantumWriteEligibility,
+  type QuantumWritePreflight,
 } from '../quantum';
 
 const ROUTE_ONE = '00112233-4455-6677-8899-aabbccddeeff';
@@ -78,7 +81,13 @@ class ScriptedQuantumTransport implements QuantumRosterTransport {
     private readonly notifications: ScriptedRead[] = [],
   ) {}
 
-  async writeFrame(frame: Uint8Array): Promise<void> {
+  async writeFrame(
+    frame: Uint8Array,
+    isEligible?: QuantumWriteEligibility,
+    beforeWrite?: QuantumWritePreflight,
+  ): Promise<void> {
+    if (beforeWrite) await beforeWrite();
+    assertQuantumWriteEligible(isEligible);
     this.writes.push(frame.slice());
   }
 
@@ -524,6 +533,46 @@ describe('Quantum roster transaction machine', () => {
       expect(transport.writes.map((frame) => frame[1])).toEqual(
         phase === 'first roster' ? [0x47] : phase === 'release delay' ? [0x47, 0x43] : [0x47, 0x43, 0x47],
       );
+    },
+  );
+
+  it.each(['roster read', 'release confirmation'] as const)(
+    'cancels writes for a target withdrawn during %s',
+    async (phase) => {
+      const owned = player(ROUTE_ONE, USER_ONE, 0x00ff00);
+      const transport = new ScriptedQuantumTransport(244, [
+        rosterFrame([owned]),
+        ...(phase === 'roster read' ? [rosterFrame([owned])] : []),
+        rosterFrame([]),
+      ]);
+      const machine = new QuantumRosterTransactionMachine(transport, new ManualQuantumTime());
+      let withdrawn = false;
+      const scriptedRead = transport.readState.bind(transport);
+      transport.readState = async () => {
+        const roster = await scriptedRead();
+        if (transport.writes.length === (phase === 'roster read' ? 1 : 3)) withdrawn = true;
+        return roster;
+      };
+      const assertTargetAvailable = async () => {
+        if (withdrawn) throw new QuantumRosterTransactionError('target-unavailable', 'Route withdrawn');
+      };
+
+      await expect(
+        machine.activate({
+          routeId: ROUTE_TWO,
+          userId: USER_ONE,
+          color: 0x00ffff,
+          diodeIds: [1],
+          expectedOwnedRouteId: ROUTE_ONE,
+          assertTargetAvailable,
+        }),
+      ).rejects.toMatchObject({ code: 'target-unavailable' });
+
+      expect(transport.writes.map((frame) => frame[1])).toEqual(phase === 'roster read' ? [0x47] : [0x47, 0x43, 0x47]);
+      if (phase === 'roster read') {
+        await expect(machine.remove({ userId: USER_ONE, routeId: ROUTE_ONE })).resolves.toMatchObject({ players: [] });
+        expect(transport.writes.map((frame) => frame[1])).toEqual([0x47, 0x47, 0x43, 0x47]);
+      }
     },
   );
 

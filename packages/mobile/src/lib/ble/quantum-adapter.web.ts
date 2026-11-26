@@ -13,6 +13,7 @@ import {
   type QuantumBoardModelId,
   type QuantumBroadcast,
   type QuantumWriteEligibility,
+  type QuantumWritePreflight,
 } from '@boardsesh/ble-protocol/quantum';
 import {
   requestWebBluetoothDevice,
@@ -246,16 +247,25 @@ export class WebQuantumBluetoothTransport implements QuantumBluetoothTransport {
     return Promise.resolve();
   }
 
-  writeFrame(frame: Uint8Array, isEligible?: QuantumWriteEligibility): Promise<void> {
+  writeFrame(
+    frame: Uint8Array,
+    isEligible?: QuantumWriteEligibility,
+    beforeWrite?: QuantumWritePreflight,
+  ): Promise<void> {
     if (frame.length === 0 || frame.length > this.maximumWriteBytes) {
       return Promise.reject(
         new Error(`Quantum frame needs ${frame.length} atomic bytes; transport allows ${this.maximumWriteBytes}`),
       );
     }
-    return this.enqueueGatt(async () => {
+    return this.enqueueGatt(async (assertOwnsConnection) => {
+      assertQuantumWriteEligible(isEligible);
+      if (beforeWrite) {
+        await beforeWrite();
+        assertOwnsConnection();
+        assertQuantumWriteEligible(isEligible);
+      }
       const write = this.characteristics?.write;
       if (!write) throw new Error('Quantum controller is not connected');
-      assertQuantumWriteEligible(isEligible);
       if (frame[1] === QuantumCommand.REQUEST_USER_ROUTE_LIST) this.notificationInbox.markRosterRequest();
       else this.notificationInbox.markMutation();
       if (this.device?.name?.startsWith('QB_')) await write.writeValueWithResponse(frame.slice());
@@ -303,10 +313,10 @@ export class WebQuantumBluetoothTransport implements QuantumBluetoothTransport {
     this.disconnectListener?.({ description: 'Web Bluetooth GATT connection closed' });
   };
 
-  private enqueueGatt<T>(operation: () => Promise<T>): Promise<T> {
+  private enqueueGatt<T>(operation: (assertOwnsConnection: () => void) => Promise<T>): Promise<T> {
     const ownership = this.physicalOwnership;
     const generation = this.connectionAttemptGeneration;
-    const result = this.gattTail.then(() => {
+    const assertOwnsConnection = () => {
       if (
         !ownership?.isCurrent() ||
         this.physicalOwnership !== ownership ||
@@ -314,7 +324,10 @@ export class WebQuantumBluetoothTransport implements QuantumBluetoothTransport {
       ) {
         throw new Error('Quantum controller is not connected');
       }
-      return operation();
+    };
+    const result = this.gattTail.then(() => {
+      assertOwnsConnection();
+      return operation(assertOwnsConnection);
     });
     this.gattTail = result.then(
       () => undefined,
