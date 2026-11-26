@@ -234,12 +234,14 @@ vi.mock('expo-router/native-tabs', () => {
       hidden,
       role,
       prominent,
+      disableAutomaticSearchActivation,
       children,
     }: {
       name: string;
       hidden?: boolean;
       role?: string;
       prominent?: boolean;
+      disableAutomaticSearchActivation?: boolean;
       children?: ReactNode;
     }) =>
       // Model NativeTabs: a `hidden` trigger declares the route but is not a tab.
@@ -247,7 +249,12 @@ vi.mock('expo-router/native-tabs', () => {
         ? null
         : createElement(
             'section',
-            { 'data-trigger': name, 'data-tab-role': role, 'data-prominent': String(prominent ?? false) },
+            {
+              'data-trigger': name,
+              'data-tab-role': role,
+              'data-prominent': String(prominent ?? false),
+              'data-search-activation-disabled': disableAutomaticSearchActivation,
+            },
             children,
           ),
     {
@@ -322,6 +329,10 @@ import {
 } from '../../../src/lib/native-tab-content-inset-store';
 import { TAB_BADGE_CONNECTED, TAB_BADGE_LIVE } from '../../../src/components/navigation/tab-badge';
 import { markWallDisplayMounted } from '../../../src/lib/wall-display-presence';
+import { resetClimbsTabBarSearchLaunchChoiceForTests } from '../../../src/hooks/use-climbs-tab-bar-search';
+// Static, unlike the start-up test's dynamic import: that test resets the module
+// graph, and the layout imported above reads this instance of the store.
+import { setSetting as setLoadedSetting } from '../../../src/settings/hooks';
 
 describe('TabLayout', () => {
   beforeEach(() => {
@@ -407,19 +418,86 @@ describe('TabLayout', () => {
     },
   );
 
-  it('keeps Climbs an ordinary labelled tab on the iOS 26 bar, like Apple Music', () => {
-    // No role="search": since SDK 58 that is a UISearchTab, which iOS 26 sets apart
-    // from the other tabs and which moves the search field into the bottom bar.
+  it('makes Climbs the search tab on the iOS 26 iPhone bar by default, like Apple Music', () => {
+    // role="search" is a UISearchTab: iOS brings the Climbs screen's name search
+    // field into the bar. Selecting the tab must not focus it, or the list can
+    // never be reached without the keyboard.
     const { container } = render(<TabLayout />);
     const climbs = container.querySelector('[data-trigger="climbs"]');
 
-    expect(climbs?.hasAttribute('data-tab-role')).toBe(false);
+    expect(climbs?.getAttribute('data-tab-role')).toBe('search');
+    expect(container.querySelectorAll('[data-tab-role]')).toHaveLength(1);
+    expect(climbs?.getAttribute('data-search-activation-disabled')).toBe('true');
+  });
+
+  // iOS 27 sets a search tab apart only while it activates search on selection.
+  // With activation off, `prominent` keeps it apart; iOS 26.x does it unasked.
+  it.each([
+    ['27.0', true],
+    ['26.1', false],
+  ] as const)(
+    'keeps the search tab apart through prominent only where needed (iOS %s)',
+    (platformVersion, prominent) => {
+      cfg.platformVersion = platformVersion;
+      const { container } = render(<TabLayout />);
+      const climbs = container.querySelector('[data-trigger="climbs"]');
+
+      expect(climbs?.getAttribute('data-tab-role')).toBe('search');
+      expect(climbs?.getAttribute('data-prominent')).toBe(String(prominent));
+    },
+  );
+
+  it('keeps Climbs an ordinary labelled tab when the climber turned the search tab off', () => {
+    setLoadedSetting('climbsTabBarSearch', false);
+    resetClimbsTabBarSearchLaunchChoiceForTests();
+    try {
+      const { container } = render(<TabLayout />);
+      const climbs = container.querySelector('[data-trigger="climbs"]');
+
+      expect(climbs?.hasAttribute('data-tab-role')).toBe(false);
+      expect(climbs?.hasAttribute('data-search-activation-disabled')).toBe(false);
+      expect(container.querySelector('[data-tab-role]')).toBeNull();
+      expect(climbs?.textContent).toContain('mobile.nav.climbs');
+    } finally {
+      setLoadedSetting('climbsTabBarSearch', true);
+      resetClimbsTabBarSearchLaunchChoiceForTests();
+    }
+  });
+
+  it('holds the launch choice until the next start, so a flip never remounts the open tab', () => {
+    render(<TabLayout />);
+    setLoadedSetting('climbsTabBarSearch', false);
+    try {
+      const { container } = render(<TabLayout />);
+      expect(container.querySelector('[data-trigger="climbs"]')?.getAttribute('data-tab-role')).toBe('search');
+    } finally {
+      setLoadedSetting('climbsTabBarSearch', true);
+      resetClimbsTabBarSearchLaunchChoiceForTests();
+    }
+  });
+
+  it.each([
+    ['26.0', null],
+    ['26.1', 'search'],
+    ['26.4.1', 'search'],
+    ['27.0', 'search'],
+  ] as const)('makes Climbs the search tab only where iOS has a UISearchTab (iOS %s)', (platformVersion, role) => {
+    cfg.platformVersion = platformVersion;
+    const { container } = render(<TabLayout />);
+
+    expect(container.querySelector('[data-trigger="climbs"]')?.getAttribute('data-tab-role')).toBe(role);
+  });
+
+  it('keeps Climbs an ordinary tab in the iPad sidebar bar', () => {
+    cfg.isTablet = true;
+    const { container } = render(<TabLayout />);
+
     expect(container.querySelector('[data-tab-role]')).toBeNull();
-    expect(climbs?.textContent).toContain('mobile.nav.climbs');
   });
 
   // Apple Music keeps Search on screen at the right when the bar collapses. iOS 27
-  // does that for a prominent tab; the API does not exist below 27.
+  // does that for a prominent tab; the API does not exist below 27. Only asked of
+  // the ordinary Climbs tab: the search tab stays apart on its own.
   it.each([
     ['iOS 27 iPhone', '27.0', true, false, true],
     ['iOS 26 iPhone', '26.1', true, false, false],
@@ -428,13 +506,22 @@ describe('TabLayout', () => {
   ] as const)(
     'keeps Climbs prominent only where the bar collapses and the API exists (%s)',
     (_label, platformVersion, glassCapable, isTablet, expected) => {
+      setLoadedSetting('climbsTabBarSearch', false);
+      resetClimbsTabBarSearchLaunchChoiceForTests();
       cfg.platformVersion = platformVersion;
       cfg.glassCapable = glassCapable;
       cfg.isTablet = isTablet;
-      const { container } = render(<TabLayout />);
+      try {
+        const { container } = render(<TabLayout />);
 
-      expect(container.querySelector('[data-trigger="climbs"]')?.getAttribute('data-prominent')).toBe(String(expected));
-      expect(container.querySelectorAll('[data-prominent="true"]')).toHaveLength(expected ? 1 : 0);
+        expect(container.querySelector('[data-trigger="climbs"]')?.getAttribute('data-prominent')).toBe(
+          String(expected),
+        );
+        expect(container.querySelectorAll('[data-prominent="true"]')).toHaveLength(expected ? 1 : 0);
+      } finally {
+        setLoadedSetting('climbsTabBarSearch', true);
+        resetClimbsTabBarSearchLaunchChoiceForTests();
+      }
     },
   );
 
@@ -471,7 +558,7 @@ describe('TabLayout', () => {
 
   it('leaves the iOS 26-only extras off the iOS 18 native bar', () => {
     // No minimize behavior (react-native-screens warns below iOS 26), no search role
-    // (Climbs is an ordinary labelled tab everywhere), and no accessory even
+    // (iOS 18 has no separated search tab), and no accessory even
     // with a climb current: the floating JS queue bar carries it instead.
     cfg.variant = 'liquidGlass';
     cfg.glassCapable = false;

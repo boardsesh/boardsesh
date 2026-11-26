@@ -18,6 +18,7 @@ function makeInput(overrides: Partial<ClimbsModelInput> = {}): ClimbsModelInput 
     onOpenClimbView: vi.fn(),
     quickFiltersLabel: 'Default',
     onOpenQuickFilters: vi.fn(),
+    tabBarSearch: null,
     ...overrides,
   };
 }
@@ -101,6 +102,27 @@ describe('buildClimbsModel', () => {
     expect(row.badge).toBe('userDrawer.newBadge');
     row.onPress();
     expect(onOpenClimbList).toHaveBeenCalledOnce();
+  });
+});
+
+describe('buildClimbsModel tab bar search', () => {
+  it('offers no row where the bar has no search tab', () => {
+    const sections = buildClimbsModel(makeInput({ tabBarSearch: null })).sections;
+    expect(sections.map((section) => section.key)).not.toContain('tabBarSearch');
+  });
+
+  it('adds its own section last, after the climb-list rows, and hands a flip straight on', () => {
+    const onChange = vi.fn();
+    const sections = buildClimbsModel(makeInput({ tabBarSearch: { enabled: true, onChange } })).sections;
+    expect(sections.map((section) => section.key)).toEqual(['grades', 'climbList', 'tabBarSearch']);
+    expect(sections[2].footer).toBe('mobile.settings.tabBarSearch.footer');
+    const row = sections[2].rows[0];
+    if (row.kind !== 'toggle') throw new Error('climbsTabBarSearch is not a toggle');
+    expect(row.key).toBe('climbsTabBarSearch');
+    expect(row.label).toBe('mobile.settings.tabBarSearch.title');
+    expect(row.value).toBe(true);
+    row.onValueChange(false);
+    expect(onChange).toHaveBeenCalledWith(false);
   });
 });
 
