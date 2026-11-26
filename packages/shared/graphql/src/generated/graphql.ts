@@ -8530,6 +8530,28 @@ export type ProviderSyncRequest = {
   status: Scalars['String']['output'];
 };
 
+export type PublicClimbRelatedContent = {
+  __typename?: 'PublicClimbRelatedContent';
+  betaHasMore: Scalars['Boolean']['output'];
+  betaLinks: Array<BetaLink>;
+  betaStatus: Scalars['String']['output'];
+  nearbyClimbs: Array<SimilarClimb>;
+  nearbyGrade?: Maybe<Scalars['String']['output']>;
+  nearbyStatus?: Maybe<Scalars['String']['output']>;
+  similarClimbs: Array<SimilarClimb>;
+  similarStatus: Scalars['String']['output'];
+};
+
+export type PublicClimbRelatedContentInput = {
+  angle: Scalars['Int']['input'];
+  boardType: Scalars['String']['input'];
+  climbUuid: Scalars['String']['input'];
+  includeNearby?: InputMaybe<Scalars['Boolean']['input']>;
+  layoutId: Scalars['Int']['input'];
+  setIds: Array<Scalars['Int']['input']>;
+  sizeId: Scalars['Int']['input'];
+};
+
 /** Public-facing user profile for social features. */
 export type PublicUserProfile = {
   __typename?: 'PublicUserProfile';
@@ -9288,6 +9310,7 @@ export type Query = {
   proposeSprayWallReset?: Maybe<SprayWallResetProposal>;
   /** Only the registered app's public name; never the workout title, notes or blocks. */
   publicAppWorkoutLaunch?: Maybe<AppWorkoutLaunch>;
+  publicClimbRelatedContent: PublicClimbRelatedContent;
   /** Canonical public venues for sitemap publication. Fails rather than truncating when the sitemap budget is exceeded. */
   publicGymSitemap: Array<GymSitemapEntry>;
   /** Get a public user profile by ID. */
@@ -10305,6 +10328,11 @@ export type QueryProposeSprayWallResetArgs = {
 /** Root query type for all read operations. */
 export type QueryPublicAppWorkoutLaunchArgs = {
   id: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryPublicClimbRelatedContentArgs = {
+  input: PublicClimbRelatedContentInput;
 };
 
 /** Root query type for all read operations. */
@@ -18250,6 +18278,72 @@ export type ResolveProposalFeedMutation = {
   };
 };
 
+export type PublicClimbRelatedContentQueryVariables = Exact<{
+  input: PublicClimbRelatedContentInput;
+}>;
+
+export type PublicClimbRelatedContentQuery = {
+  __typename?: 'Query';
+  publicClimbRelatedContent: {
+    __typename?: 'PublicClimbRelatedContent';
+    similarStatus: string;
+    nearbyStatus?: string | null;
+    nearbyGrade?: string | null;
+    betaStatus: string;
+    betaHasMore: boolean;
+    similarClimbs: Array<{
+      __typename?: 'SimilarClimb';
+      uuid: string;
+      name?: string | null;
+      setterUsername?: string | null;
+      angle?: number | null;
+      layoutId: number;
+      frames?: string | null;
+      difficultyName?: string | null;
+      qualityAverage?: number | null;
+      ascensionistCount?: number | null;
+      compatibleSizeIds: Array<number>;
+      requiredSetIds?: Array<number> | null;
+      characteristics?: Array<string> | null;
+      similarity: number;
+      sharedHoldCount: number;
+      candidateHoldCount: number;
+      targetHoldCount: number;
+    }>;
+    nearbyClimbs: Array<{
+      __typename?: 'SimilarClimb';
+      uuid: string;
+      name?: string | null;
+      setterUsername?: string | null;
+      angle?: number | null;
+      layoutId: number;
+      frames?: string | null;
+      difficultyName?: string | null;
+      qualityAverage?: number | null;
+      ascensionistCount?: number | null;
+      compatibleSizeIds: Array<number>;
+      requiredSetIds?: Array<number> | null;
+      characteristics?: Array<string> | null;
+      similarity: number;
+      sharedHoldCount: number;
+      candidateHoldCount: number;
+      targetHoldCount: number;
+    }>;
+    betaLinks: Array<{
+      __typename?: 'BetaLink';
+      climbUuid: string;
+      link: string;
+      foreignUsername?: string | null;
+      angle?: number | null;
+      thumbnail?: string | null;
+      isListed?: boolean | null;
+      createdAt?: string | null;
+      tickUuid?: string | null;
+      boardId?: number | null;
+    }>;
+  };
+};
+
 export type QaPreviewsQueryVariables = Exact<{
   prNumbers: Array<Scalars['Int']['input']> | Scalars['Int']['input'];
   includeBuilding?: InputMaybe<Scalars['Boolean']['input']>;
@@ -19601,28 +19695,6 @@ export type JoinRedirectSessionBoardPathQueryVariables = Exact<{
 export type JoinRedirectSessionBoardPathQuery = {
   __typename?: 'Query';
   session?: { __typename?: 'Session'; boardPath: string } | null;
-};
-
-export type FrontDoorNearbyClimbsQueryVariables = Exact<{
-  input: ClimbSearchInput;
-}>;
-
-export type FrontDoorNearbyClimbsQuery = {
-  __typename?: 'Query';
-  searchClimbs: {
-    __typename?: 'ClimbSearchResult';
-    climbs: Array<{
-      __typename?: 'Climb';
-      uuid: string;
-      name: string;
-      setter_username: string;
-      frames: string;
-      difficulty: string;
-      quality_average: string;
-      ascensionist_count: number;
-      compatibleSizeIds?: Array<number> | null;
-    }>;
-  };
 };
 
 export const SessionFeedItemFieldsFragmentDoc = {
@@ -28385,6 +28457,120 @@ export const ResolveProposalFeedDocument = {
     },
   ],
 } as unknown as DocumentNode<ResolveProposalFeedMutation, ResolveProposalFeedMutationVariables>;
+export const PublicClimbRelatedContentDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'PublicClimbRelatedContent' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'PublicClimbRelatedContentInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'publicClimbRelatedContent' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'similarStatus' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'nearbyStatus' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'nearbyGrade' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'betaStatus' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'betaHasMore' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'similarClimbs' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'qualityAverage' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'ascensionistCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'requiredSetIds' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'similarity' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sharedHoldCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'candidateHoldCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'targetHoldCount' } },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'nearbyClimbs' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'qualityAverage' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'ascensionistCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'requiredSetIds' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'similarity' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sharedHoldCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'candidateHoldCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'targetHoldCount' } },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'betaLinks' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'link' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'foreignUsername' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'thumbnail' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isListed' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'tickUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardId' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<PublicClimbRelatedContentQuery, PublicClimbRelatedContentQueryVariables>;
 export const QaPreviewsDocument = {
   kind: 'Document',
   definitions: [
@@ -31556,58 +31742,3 @@ export const JoinRedirectSessionBoardPathDocument = {
     },
   ],
 } as unknown as DocumentNode<JoinRedirectSessionBoardPathQuery, JoinRedirectSessionBoardPathQueryVariables>;
-export const FrontDoorNearbyClimbsDocument = {
-  kind: 'Document',
-  definitions: [
-    {
-      kind: 'OperationDefinition',
-      operation: 'query',
-      name: { kind: 'Name', value: 'FrontDoorNearbyClimbs' },
-      variableDefinitions: [
-        {
-          kind: 'VariableDefinition',
-          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
-          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ClimbSearchInput' } } },
-        },
-      ],
-      selectionSet: {
-        kind: 'SelectionSet',
-        selections: [
-          {
-            kind: 'Field',
-            name: { kind: 'Name', value: 'searchClimbs' },
-            arguments: [
-              {
-                kind: 'Argument',
-                name: { kind: 'Name', value: 'input' },
-                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
-              },
-            ],
-            selectionSet: {
-              kind: 'SelectionSet',
-              selections: [
-                {
-                  kind: 'Field',
-                  name: { kind: 'Name', value: 'climbs' },
-                  selectionSet: {
-                    kind: 'SelectionSet',
-                    selections: [
-                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'setter_username' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'quality_average' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'ascensionist_count' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
-                    ],
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      },
-    },
-  ],
-} as unknown as DocumentNode<FrontDoorNearbyClimbsQuery, FrontDoorNearbyClimbsQueryVariables>;

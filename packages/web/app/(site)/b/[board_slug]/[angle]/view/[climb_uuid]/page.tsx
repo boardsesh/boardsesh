@@ -7,11 +7,10 @@ import type { Metadata } from 'next';
 import { resolveBoardBySlug, boardToRouteParamsFromAngleSegment } from '@/app/lib/board-slug-utils';
 import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 import { getClimb, getClimbStatsForAllAngles } from '@/app/lib/data/queries';
-import { getFrontDoorBetaLinks, getFrontDoorSimilarClimbs } from '@/app/lib/data/front-door-data.server';
+import { getFrontDoorRelatedContent } from '@/app/lib/data/front-door-data.server';
 import ClimbFrontDoor from '@/app/components/climb-front-door/climb-front-door';
 import { buildCanonicalClimbViewUrl, constructBoardSlugViewUrl, extractUuidFromSlug } from '@/app/lib/url-utils';
 import { buildOgBoardRenderUrl, buildOverlayPreloadUrls } from '@/app/components/board-renderer/util';
-import { scheduleOgImageWarming } from '@/app/lib/warm-overlay-cache';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import { localeHref } from '@/app/lib/i18n/locale-href';
@@ -214,21 +213,17 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
     const boardDetails = getBoardImageDetailsForBoard(parsedParams);
     const noindex = board.isUnlisted || !board.isPublic || board.gymIsListed === false;
 
-    const [angleStats, similarClimbs, betaLinks] = await Promise.all([
-      // Keyed on the climb the URL resolved to: for an alias URL the requested
-      // uuid names a husk with no stats, similar climbs or beta of its own.
+    const [angleStats, { similarClimbs, betaLinks }] = await Promise.all([
       getClimbStatsForAllAngles(parsedParams.board_name, currentClimb.uuid),
-      getFrontDoorSimilarClimbs({
+      getFrontDoorRelatedContent({
         boardType: parsedParams.board_name,
         layoutId: parsedParams.layout_id,
-        climbUuid: currentClimb.uuid,
+        sizeId: parsedParams.size_id,
+        setIds: [...parsedParams.set_ids],
         angle: parsedParams.angle,
-        fallback:
-          noindex || currentClimb.is_hidden
-            ? undefined
-            : { sizeId: parsedParams.size_id, setIds: parsedParams.set_ids, difficulty: currentClimb.difficulty },
+        climbUuid: currentClimb.uuid,
+        includeNearby: !noindex && !currentClimb.is_hidden,
       }),
-      getFrontDoorBetaLinks({ boardType: parsedParams.board_name, climbUuid: currentClimb.uuid }),
     ]);
     const canonicalAngle = selectCanonicalClimbAngle({
       boardName: parsedParams.board_name,
@@ -236,11 +231,6 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
       angleStats,
     });
 
-    scheduleOgImageWarming({
-      boardDetails,
-      climb: currentClimb,
-      identity: buildOgClimbCardIdentity(currentClimb, boardDetails.board_name, canonicalAngle, angleStats),
-    });
     const preloadUrls = buildOverlayPreloadUrls(boardDetails, currentClimb.frames, false);
 
     return (

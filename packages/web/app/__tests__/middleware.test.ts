@@ -4,11 +4,11 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { NextRequest } from 'next/server';
 import { CLIMB_SESSION_COOKIE } from '@/app/lib/climb-session-cookie';
-import { DEFAULT_LOCALE, LOCALE_COOKIE, LOCALE_HEADER } from '@/app/lib/i18n/config';
+import { DEFAULT_LOCALE, LOCALE_COOKIE, LOCALE_HEADER, SUPPORTED_LOCALES } from '@/app/lib/i18n/config';
 import { PATHNAME_HEADER } from '@/app/lib/request-pathname-header';
 
 const {
-  getClimbViewPageCacheTTL,
+  isClimbViewRequest,
   getListPageCacheTTL,
   hasUserSpecificFilters,
   isBoardPosterRequest,
@@ -328,72 +328,32 @@ describe('getListPageCacheTTL', () => {
   });
 });
 
-describe('getClimbViewPageCacheTTL', () => {
-  describe('route matching', () => {
-    it('matches the slug view format', () => {
-      expect(getClimbViewPageCacheTTL(SLUG_VIEW, sp())).toBe(TTL_24H);
-    });
-
-    it('matches the named-segment (legacy) view format', () => {
-      expect(getClimbViewPageCacheTTL(NAMED_VIEW, sp())).toBe(TTL_24H);
-    });
-
-    it('matches the numeric view format (so its redirect is cacheable)', () => {
-      expect(getClimbViewPageCacheTTL(NUMERIC_VIEW, sp())).toBe(TTL_24H);
-    });
-
-    it('never caches the numeric spray climb redirect', () => {
-      expect(getClimbViewPageCacheTTL('/spray/229/229/1/40/view/climb-uuid', sp())).toBeNull();
-    });
-
-    it('matches the tension board view', () => {
-      expect(getClimbViewPageCacheTTL('/tension/original/12x12/screw_bolt/30/view/some-climb-uuid', sp())).toBe(
-        TTL_24H,
-      );
-    });
-
-    it('rejects an unsupported board (legacy view shape)', () => {
-      expect(getClimbViewPageCacheTTL('/fakeboard/1/10/1,20/40/view/some-uuid', sp())).toBeNull();
-    });
-
-    it('rejects a list page', () => {
-      expect(getClimbViewPageCacheTTL(LEGACY_LIST, sp())).toBeNull();
-      expect(getClimbViewPageCacheTTL(SLUG_LIST, sp())).toBeNull();
-    });
-
-    it('rejects a play page (the play redirect page carries no OG card worth caching)', () => {
-      expect(getClimbViewPageCacheTTL('/kilter/1/10/1,20/40/play/some-uuid', sp())).toBeNull();
-      expect(getClimbViewPageCacheTTL('/b/kilter-original-12x12/40/play/some-uuid', sp())).toBeNull();
-    });
-
-    it('rejects a create page', () => {
-      expect(getClimbViewPageCacheTTL('/kilter/original/12x12-square/screw_bolt/40/create', sp())).toBeNull();
-    });
-
-    it('rejects the slug view shape with a wrong segment count', () => {
-      // /b/[board_slug]/view/[uuid] is missing the angle segment.
-      expect(getClimbViewPageCacheTTL('/b/kilter-original-12x12/view/some-uuid', sp())).toBeNull();
-    });
-
-    it('rejects the root and settings paths', () => {
-      expect(getClimbViewPageCacheTTL('/', sp())).toBeNull();
-      expect(getClimbViewPageCacheTTL('/settings', sp())).toBeNull();
-    });
+describe('isClimbViewRequest', () => {
+  it.each([
+    SLUG_VIEW,
+    NAMED_VIEW,
+    NUMERIC_VIEW,
+    '/spray/229/229/1/40/view/climb-uuid',
+    '/tension/original/12x12/screw_bolt/30/view/some-climb-uuid',
+    '/b/board/40/view/climb%2Fname-uuid',
+    '/%6bilter/original/12x12-square/screw_bolt/40/%76iew/climb',
+    `${SLUG_VIEW}/`,
+  ])('identifies the climb document at %s', (pathname) => {
+    expect(isClimbViewRequest(pathname)).toBe(true);
   });
 
-  describe('search params', () => {
-    it('caches with non-user-specific params (tracking/query noise)', () => {
-      expect(getClimbViewPageCacheTTL(SLUG_VIEW, sp({ utm_source: 'twitter' }))).toBe(TTL_24H);
-    });
-
-    it.each([
-      ['hideAttempted', 'true'],
-      ['showOnlyCompleted', '1'],
-      ['onlyDrafts', 'true'],
-    ])('skips cache for user-specific %s=%s (matching list behavior)', (param, value) => {
-      expect(getClimbViewPageCacheTTL(SLUG_VIEW, sp({ [param]: value }))).toBeNull();
-      expect(getClimbViewPageCacheTTL(NAMED_VIEW, sp({ [param]: value }))).toBeNull();
-    });
+  it.each([
+    '/fakeboard/1/10/1,20/40/view/some-uuid',
+    LEGACY_LIST,
+    SLUG_LIST,
+    '/kilter/1/10/1,20/40/play/some-uuid',
+    '/b/kilter-original-12x12/40/play/some-uuid',
+    '/kilter/original/12x12-square/screw_bolt/40/create',
+    '/b/kilter-original-12x12/view/some-uuid',
+    '/',
+    '/settings',
+  ])('leaves unrelated route policy alone at %s', (pathname) => {
+    expect(isClimbViewRequest(pathname)).toBe(false);
   });
 });
 
@@ -802,40 +762,55 @@ describe('middleware cache headers on list pages', () => {
 });
 
 describe('middleware cache headers on climb view pages', () => {
-  const expectedClimbViewCacheHeader = `s-maxage=${TTL_24H}, stale-while-revalidate=${TTL_24H * 7}`;
+  function expectPrivate(response: Response) {
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(response.headers.get('CDN-Cache-Control')).toBe('no-store');
+    expect(response.headers.get('Vercel-CDN-Cache-Control')).toBe('no-store');
+  }
 
-  it.each([
-    ['slug view', SLUG_VIEW],
-    ['named-segment view', NAMED_VIEW],
-    // The numeric view URL 308-redirects to its slug form; caching the request
-    // lets the CDN serve that deterministic redirect without re-rendering.
-    ['numeric view (redirect)', NUMERIC_VIEW],
-  ])('sets 24h CDN cache headers on the %s URL', (_shape, url) => {
-    const response = middleware(makeRequest(url));
-    expect(response.headers.get('Vercel-CDN-Cache-Control')).toBe(expectedClimbViewCacheHeader);
-    expect(response.headers.get('CDN-Cache-Control')).toBe(expectedClimbViewCacheHeader);
+  const prefixes = SUPPORTED_LOCALES.map((locale) => (locale === DEFAULT_LOCALE ? '' : `/${locale}`));
+  it.each(prefixes.flatMap((prefix) => [SLUG_VIEW, NAMED_VIEW, NUMERIC_VIEW].map((path) => `${prefix}${path}`)))(
+    'prevents delivered document storage at %s',
+    (url) => {
+      expectPrivate(middleware(makeRequest(url)));
+    },
+  );
+
+  const requestVariants: [string, Record<string, string>][] = [
+    ['', {}],
+    ['?_rsc=', { rsc: '1' }],
+    ['?_rsc=owned&layout=wide', { rsc: '1', 'next-router-prefetch': '1' }],
+    ['?hideAttempted=true', {}],
+    ['?utm_source=owned&anything=else', { 'next-router-prefetch': '1' }],
+  ];
+  it.each(requestVariants)('protects HTML, Flight, prefetch and query variants %s', (search, headers) => {
+    for (const path of [SLUG_VIEW, NAMED_VIEW]) {
+      const request = makeRequest(`/fr${path}${search}`);
+      for (const [name, content] of Object.entries(headers)) request.headers.set(name, content);
+      expectPrivate(middleware(request));
+    }
+  });
+
+  it('protects encoded dynamic leaves without splitting their slashes', () => {
+    expectPrivate(middleware(makeRequest('/fr/b/garage/40/view/climb%2Fname-uuid')));
+    expectPrivate(middleware(makeRequest('/kilter/original/12x12-square/screw_bolt/40/view/climb%2Fname-uuid')));
+  });
+
+  it('protects early session redirects and crawler refusals', () => {
+    const redirected = middleware(makeRequest(`${SLUG_VIEW}?session=owned-session`));
+    expect(redirected.status).toBe(307);
+    expectPrivate(redirected);
+    const blocked = makeRequest(NAMED_VIEW);
+    blocked.headers.set('user-agent', 'GPTBot/1.4');
+    const response = middleware(blocked);
+    expect(response.status).toBe(403);
+    expectPrivate(response);
   });
 
   it('does not cache a play page', () => {
     const response = middleware(makeRequest('/kilter/1/10/1,20/40/play/some-uuid'));
     expect(response.headers.has('Vercel-CDN-Cache-Control')).toBe(false);
   });
-
-  it('does not cache a view page carrying a user-specific filter', () => {
-    const response = middleware(makeRequest(`${SLUG_VIEW}?hideAttempted=true`));
-    expect(response.headers.has('Vercel-CDN-Cache-Control')).toBe(false);
-  });
-
-  it.each(['es', 'fr', 'de'])(
-    'cache-keys %s and en separately (header follows the original locale-prefixed URL)',
-    (locale) => {
-      const enResponse = middleware(makeRequest(SLUG_VIEW));
-      const localizedResponse = middleware(makeRequest(`/${locale}${SLUG_VIEW}`));
-      // Both are cacheable, but the CDN keys them by their distinct request URLs.
-      expect(enResponse.headers.get('Vercel-CDN-Cache-Control')).toBe(expectedClimbViewCacheHeader);
-      expect(localizedResponse.headers.get('Vercel-CDN-Cache-Control')).toBe(expectedClimbViewCacheHeader);
-    },
-  );
 
   it.each(['es', 'fr', 'de'])(
     'never caches the sticky-locale redirect to %s — a cookie-varying 307 must not enter the CDN',
@@ -848,8 +823,7 @@ describe('middleware cache headers on climb view pages', () => {
       // redirect would be cached under the plain URL and served to every visitor.
       expect(response.status).toBe(307);
       expect(response.headers.get('location')).toContain(`/${locale}`);
-      expect(response.headers.has('Vercel-CDN-Cache-Control')).toBe(false);
-      expect(response.headers.has('CDN-Cache-Control')).toBe(false);
+      expectPrivate(response);
     },
   );
 });
@@ -862,12 +836,9 @@ describe('middleware cache headers on legacy spray climb redirects', () => {
     '/fr/spray/229/229/1/40/view/climb-uuid?wall=11111111-1111-4111-8111-111111111111',
   ])('leaves the handler no-store headers intact on %s', (url) => {
     const response = middleware(makeRequest(url));
-    // Next preserves middleware headers ahead of route-handler headers. Spray
-    // is absent from the catalogue cache allowlist, so the redirect's no-store
-    // headers must reach the outgoing response without a conflicting TTL.
-    expect(response.headers.has('Cache-Control')).toBe(false);
-    expect(response.headers.has('CDN-Cache-Control')).toBe(false);
-    expect(response.headers.has('Vercel-CDN-Cache-Control')).toBe(false);
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(response.headers.get('CDN-Cache-Control')).toBe('no-store');
+    expect(response.headers.get('Vercel-CDN-Cache-Control')).toBe('no-store');
   });
 });
 
@@ -886,17 +857,15 @@ describe('middleware cache headers on a spray wall share link (?wall=)', () => {
     expect(response.headers.get('Vercel-CDN-Cache-Control')).toBe('no-store');
   });
 
-  it('keeps caching the same pages without the param', () => {
-    const response = middleware(makeRequest(SLUG_VIEW));
-    expect(response.headers.get('CDN-Cache-Control')).toBe(
-      `s-maxage=${TTL_24H}, stale-while-revalidate=${TTL_24H * 7}`,
-    );
+  it('keeps ordinary public lists cached without the capability param', () => {
+    const response = middleware(makeRequest(SLUG_LIST));
+    expect(response.headers.get('CDN-Cache-Control')).toBe(`s-maxage=${TTL_15M}, stale-while-revalidate=${TTL_15M}`);
   });
 
   it('gives the TTL helpers no window for a capability URL either', () => {
     const withWall = new URLSearchParams({ wall: '11111111-1111-4111-8111-111111111111' });
     expect(getListPageCacheTTL('/b/garage-wall/40/list', withWall)).toBeNull();
-    expect(getClimbViewPageCacheTTL('/b/garage-wall/40/view/some-climb', withWall)).toBeNull();
+    expect(isClimbViewRequest('/b/garage-wall/40/view/some-climb')).toBe(true);
   });
 });
 
@@ -966,7 +935,7 @@ describe('middleware cache headers on a home board share link (?invite=)', () =>
   it('gives the TTL helpers no window for a share link either', () => {
     const withInvite = new URLSearchParams({ invite: TOKEN });
     expect(getListPageCacheTTL('/b/the-garage/40/list', withInvite)).toBeNull();
-    expect(getClimbViewPageCacheTTL('/b/the-garage/40/view/some-climb', withInvite)).toBeNull();
+    expect(isClimbViewRequest('/b/the-garage/40/view/some-climb')).toBe(true);
   });
 });
 

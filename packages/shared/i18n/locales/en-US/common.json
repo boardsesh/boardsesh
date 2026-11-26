@@ -1163,8 +1163,7 @@
       "delete": "Failed to delete comment",
       "reply": "Failed to post reply",
       "loadReplies": "Failed to load replies"
-    },
-    "signInToSuggestGrade": "Sign in to suggest a grade"
+    }
   },
   "vote": {
     "upvote": "Upvote",

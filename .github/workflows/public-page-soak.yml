@@ -1,0 +1,221 @@
+name: Public page sustained load
+
+on:
+  workflow_dispatch:
+  # This permits the new lane to run before it exists on the default branch.
+  # Ordinary app PRs and scheduled runs do not incur an hour-long benchmark.
+  pull_request:
+    paths:
+      - '.github/workflows/public-page-soak.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-page-soak-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  soak:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      DATABASE_URL: postgresql://postgres:password@127.0.0.1:5433/main
+      ADMIN_DATABASE_URL: postgresql://postgres:password@127.0.0.1:5433/main
+      READ_REPLICA_URL: ''
+      WEB_DATABASE_URL: ''
+      REDIS_URL: redis://127.0.0.1:6380
+      BACKEND_INTERNAL_URL: http://127.0.0.1:8080/graphql
+      NEXT_PUBLIC_WS_URL: ws://127.0.0.1:8080/graphql
+      NEXTAUTH_URL: https://soak.boardsesh.test
+      NEXTAUTH_SECRET: public-page-soak-ci-only
+      IRON_SESSION_PASSWORD: public-page-soak-ci-only-no-authentication
+      NODE_ENV: production
+      SENTRY_ENVIRONMENT: test
+      SENTRY_DSN: ''
+      POSTHOG_API_KEY: ''
+      BOARDSESH_E2E: '1'
+      BATCH_FAMILIES_DISABLED: all
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: false
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Record the isolated runner and create artifact directory
+        run: |
+          mkdir -p artifacts/public-page-soak
+          chmod 0777 artifacts/public-page-soak
+          {
+            git rev-parse HEAD
+            uname -a
+            nproc
+            free -m
+          } > artifacts/public-page-soak/runner.txt
+
+      - name: Generate the production Docker contexts
+        run: |
+          vp exec node scripts/create-service-docker-context.mjs web
+          vp exec node scripts/create-service-docker-context.mjs backend
+
+      # Build sequentially, before starting fixtures, so compilation does not
+      # compete with the measured runtime. Nothing is pushed or deployed.
+      - name: Build the current production web image
+        uses: docker/build-push-action@v7
+        timeout-minutes: 20
+        with:
+          context: .docker-context/web
+          file: .docker-context/web/Dockerfile
+          push: false
+          load: true
+          tags: boardsesh-web:public-page-soak
+          build-args: |
+            NEXT_PUBLIC_WS_URL=ws://127.0.0.1:8080/graphql
+            NEXT_PUBLIC_STATIC_ASSET_BASE_URL=http://127.0.0.1:8080
+            BASE_URL=https://soak.boardsesh.test
+            BOARDSESH_BUILD_RELEASE=${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/boardsesh/boardsesh-web:buildcache-main
+
+      - name: Build the current backend image
+        uses: docker/build-push-action@v7
+        timeout-minutes: 10
+        with:
+          context: .docker-context/backend
+          file: .docker-context/backend/Dockerfile
+          push: false
+          load: true
+          tags: boardsesh-backend:public-page-soak
+          build-args: BOARDSESH_BUILD_RELEASE=${{ github.sha }}
+
+      - name: Start and migrate the isolated fixtures
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          image=$(docker compose -f docker-compose.yml config --images postgres)
+          [[ "$image" =~ ^ghcr.io/boardsesh/boardsesh-dev-db@sha256:[0-9a-f]{64}$ ]]
+          docker run -d --name public-page-soak-db --memory 1536m --cpus 1 --shm-size 256m \
+            -p 127.0.0.1:5433:5432 \
+            -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=password -e POSTGRES_DB=main "$image"
+          docker run -d --name public-page-soak-redis --memory 128m --cpus 0.25 \
+            -p 127.0.0.1:6380:6379 redis:7-alpine \
+            redis-server --maxmemory 64mb --maxmemory-policy noeviction
+          for ((attempt=0; attempt<60; attempt++)); do
+            if docker exec public-page-soak-db pg_isready -U postgres -d main >/dev/null; then break; fi
+            sleep 1
+          done
+          docker exec public-page-soak-db pg_isready -U postgres -d main
+          docker exec public-page-soak-redis redis-cli ping
+          docker run --rm --network host --memory 1024m \
+            -e DATABASE_URL -e ADMIN_DATABASE_URL -e READ_REPLICA_URL -e WEB_DATABASE_URL \
+            -e SYNC_CUTOFF_ADMIN_DATABASE_URL="$DATABASE_URL" -e SYNC_CUTOFF_DEVELOPMENT_BOOTSTRAP=true \
+            --entrypoint sh boardsesh-backend:public-page-soak -ec '
+              cd /app
+              node --import tsx packages/db/scripts/bootstrap-sync-deletions-cutoff-development.ts --apply
+              cd packages/db
+              node node_modules/drizzle-kit/bin.cjs migrate
+              node --import tsx scripts/ensure-dev-job-queue-schema.ts
+            ' > artifacts/public-page-soak/bootstrap.log 2>&1
+
+      - name: Export canonical public fixture paths
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          docker run --rm --network host --memory 512m \
+            -e DATABASE_URL -e READ_REPLICA_URL -e WEB_DATABASE_URL \
+            -v "$PWD/artifacts/public-page-soak:/artifacts" \
+            -v "$PWD/packages/web/scripts/export-public-page-soak-paths.ts:/app/packages/db/scripts/export-public-page-soak-paths.ts:ro" \
+            --workdir /app/packages/db --entrypoint node boardsesh-backend:public-page-soak \
+            --import tsx scripts/export-public-page-soak-paths.ts /artifacts/canonical-paths.json \
+            > artifacts/public-page-soak/export.log 2>&1
+          # The driver requests RSC every third attempt. Keep a multiple-of-three
+          # cycle so only RSC requests receive Next's empty cache-buster; HTML
+          # keeps its canonical clean path. This removes an artificial307 hop.
+          vp exec node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const directory = 'artifacts/public-page-soak';
+          const canonical = JSON.parse(readFileSync(`${directory}/canonical-paths.json`, 'utf8'));
+          if (new Set(canonical).size !== 5000 || canonical.some(path => !/^\/moonboard\/[^/?]+\/[^/?]+\/[^/?]+\/40\/view\/[^/?]+$/.test(path))) {
+            throw new Error('Expected 5,000 distinct canonical public fixture paths');
+          }
+          const requests = canonical.slice(0, canonical.length - canonical.length % 3)
+            .map((path, index) => index % 3 === 0 ? `${path}?_rsc=` : path);
+          if (new Set(requests).size < 800 || requests.length % 3 !== 0) throw new Error('Invalid request corpus');
+          writeFileSync(`${directory}/request-paths.json`, JSON.stringify(requests));
+          console.log(`${canonical.length} canonical paths; ${requests.length} distinct request paths`);
+          NODE
+
+      - name: Start the current backend
+        timeout-minutes: 3
+        run: |
+          docker run -d --name public-page-soak-backend --network host --memory 768m --cpus 1 \
+            -e DATABASE_URL -e READ_REPLICA_URL -e WEB_DATABASE_URL -e REDIS_URL \
+            -e NEXTAUTH_URL -e NEXTAUTH_SECRET -e IRON_SESSION_PASSWORD \
+            -e NEXT_PUBLIC_WS_URL -e BACKEND_INTERNAL_URL -e BOARDSESH_E2E \
+            -e NODE_ENV -e SENTRY_ENVIRONMENT -e SENTRY_DSN -e POSTHOG_API_KEY \
+            -e BATCH_FAMILIES_DISABLED -e PORT=8080 \
+            boardsesh-backend:public-page-soak
+          for ((attempt=0; attempt<90; attempt++)); do
+            if curl --noproxy '*' --fail --silent --max-time 2 http://127.0.0.1:8080/health >/dev/null; then break; fi
+            sleep 1
+          done
+          curl --noproxy '*' --fail --silent --max-time 5 http://127.0.0.1:8080/health \
+            > artifacts/public-page-soak/backend-health.json
+
+      - name: Run the 60-minute production Next soak
+        timeout-minutes: 65
+        run: |
+          set -euo pipefail
+          docker run -d --name public-page-soak-web --network host --memory 2560m --memory-swap 2560m --cpus 2 \
+            -e DATABASE_URL -e READ_REPLICA_URL -e WEB_DATABASE_URL -e BACKEND_INTERNAL_URL \
+            -e NEXT_PUBLIC_WS_URL -e NEXTAUTH_URL -e NEXTAUTH_SECRET -e IRON_SESSION_PASSWORD \
+            -e SENTRY_ENVIRONMENT -e SENTRY_DSN -e BOARDSESH_E2E \
+            -v "$PWD/packages/web/scripts:/soak-source/packages/web/scripts:ro" \
+            -v "$PWD/packages/shared/i18n/locales/en-US:/soak-source/packages/shared/i18n/locales/en-US:ro" \
+            -v "$PWD/artifacts/public-page-soak:/artifacts" \
+            --entrypoint node boardsesh-web:public-page-soak \
+            /soak-source/packages/web/scripts/public-page-soak.mjs \
+            --standalone-dir /app/packages/web --paths-file /artifacts/request-paths.json \
+            --guard-preload /app/packages/web/scripts/public-page-load-guard-preload.cjs \
+            --minutes 60 --requests-per-minute 800 --revision "$GITHUB_SHA" --output /artifacts/report.json
+          (
+            while [[ $(docker inspect --format '{{.State.Running}}' public-page-soak-web) == true ]]; do
+              date -u +%FT%TZ
+              uptime
+              free -m
+              docker stats --no-stream --format '{{json .}}' \
+                public-page-soak-web public-page-soak-backend public-page-soak-db public-page-soak-redis
+              sleep 30
+            done
+          ) > artifacts/public-page-soak/resources.log 2>&1 &
+          resource_monitor=$!
+          trap 'kill "$resource_monitor" 2>/dev/null || true' EXIT
+          exit_code=$(docker wait public-page-soak-web)
+          printf '%s\n' "$exit_code" > artifacts/public-page-soak/exit-code.txt
+          docker logs public-page-soak-web 2>&1 | tee artifacts/public-page-soak/harness.log
+          test "$exit_code" = 0
+
+      - name: Preserve fixture and runtime evidence
+        if: always()
+        run: |
+          mkdir -p artifacts/public-page-soak
+          for name in web backend db redis; do
+            container="public-page-soak-$name"
+            if docker inspect "$container" >/dev/null 2>&1; then
+              docker logs "$container" > "artifacts/public-page-soak/$name.log" 2>&1 || true
+              docker inspect --format '{{json .State}}' "$container" > "artifacts/public-page-soak/$name-state.json"
+              docker stop --time 15 "$container" >/dev/null 2>&1 || true
+            fi
+          done
+      - name: Upload the sustained-load report and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-page-soak-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/public-page-soak/
+          retention-days: 14
+          if-no-files-found: error

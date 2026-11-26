@@ -7,6 +7,8 @@ import RenderResult from 'next/dist/server/render-result';
 import { sendRenderResult } from 'next/dist/server/send-payload';
 import { afterAll, describe, expect, it, vi } from 'vite-plus/test';
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from '@boardsesh/i18n';
+import { NextRequest } from 'next/server';
+import { installErrorResponseCdnCacheGuard } from '../lib/error-response-cdn-cache.server';
 
 await vi.hoisted(async () => {
   // Next's server bootstrap provides this platform global. Its standalone
@@ -17,6 +19,7 @@ await vi.hoisted(async () => {
 afterAll(() => vi.unstubAllGlobals());
 
 const nextConfig = (await import('../../next.config.mjs')).default as unknown as NextConfig;
+const { middleware } = await import('../../middleware');
 const localePrefixes = SUPPORTED_LOCALES.map((locale) => (locale === DEFAULT_LOCALE ? '' : `/${locale}`));
 
 async function configuredHeaders(pathname: string) {
@@ -57,11 +60,19 @@ describe('verification credential URL header precedence', () => {
 });
 
 describe('pinned Next production render response cache policy', () => {
-  async function renderResponse(configured?: Headers) {
+  async function renderResponse(
+    configured?: Headers,
+    contentType: 'text/html; charset=utf-8' | 'text/x-component' = 'text/html; charset=utf-8',
+    revalidate = 0,
+    pathname = '/',
+  ) {
     const socket = new Socket();
     const request = new IncomingMessage(socket);
     request.method = 'GET';
-    const response = new ServerResponse(request);
+    request.url = pathname;
+    class GuardedResponse extends ServerResponse {}
+    installErrorResponseCdnCacheGuard(GuardedResponse);
+    const response = new GuardedResponse(request);
     for (const [name, content] of configured ?? []) response.setHeader(name, content);
     try {
       // Exercise the installed response sender used by production rendering,
@@ -69,8 +80,8 @@ describe('pinned Next production render response cache policy', () => {
       await sendRenderResult({
         req: request,
         res: response,
-        result: RenderResult.fromStatic('<p>Owned cache fixture</p>', 'text/html; charset=utf-8'),
-        cacheControl: { revalidate: 0, expire: undefined },
+        result: RenderResult.fromStatic('<p>Owned cache fixture</p>', contentType),
+        cacheControl: { revalidate, expire: undefined },
         generateEtags: false,
         poweredByHeader: false,
       });
@@ -98,6 +109,27 @@ describe('pinned Next production render response cache policy', () => {
     expect(headers['cdn-cache-control']).toBe('no-store');
     expect(headers['vercel-cdn-cache-control']).toBe('no-store');
     expect(headers['referrer-policy']).toBe('no-referrer');
+  });
+
+  it.each([
+    ['/kilter/original/12x12-square/screw_bolt/40/view/climb', false],
+    ['/kilter/1/10/1,20/40/view/climb?utm_source=owned', false],
+    ['/fr/b/garage/40/view/climb%2Fname?_rsc=', true],
+    ['/de/kilter/original/12x12-square/screw_bolt/40/view/climb?_rsc=', true],
+  ] as const)('retains climb privacy on the final production response for %s', async (pathname, flight) => {
+    const configured = await configuredHeaders(pathname);
+    const request = new NextRequest(`https://www.boardsesh.com${pathname}`, {
+      headers: flight ? { rsc: '1', 'user-agent': 'Mozilla/5.0' } : { 'user-agent': 'Mozilla/5.0' },
+    });
+    const policy = middleware(request);
+    for (const [name, content] of policy.headers) configured.headers.set(name, content);
+    // Even a cacheable renderer setting cannot replace middleware's explicit
+    // private policy. This exercises the installed sender, without a build.
+    const headers = await renderResponse(configured.headers, flight ? 'text/x-component' : undefined, 3600, pathname);
+    expect(headers['cache-control']).toBe('private, no-store');
+    expect(headers['cdn-cache-control']).toBe('no-store');
+    expect(headers['vercel-cdn-cache-control']).toBe('no-store');
+    expect(headers['cloudflare-cdn-cache-control']).toBe('no-store');
   });
 });
 

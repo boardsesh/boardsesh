@@ -566,6 +566,26 @@ export async function invalidateRecentBetaLinksCache(): Promise<void> {
   }
 }
 
+/** Public marketing reads never enrich media or write metadata during rendering. */
+export async function getStoredPublicBetaLinks(boardType: string, climbUuid: string) {
+  if (isSprayBoardType(boardType)) return { links: [], hasMore: false };
+  const rows = await db
+    .select()
+    .from(dbSchema.boardBetaLinks)
+    .where(
+      and(
+        eq(dbSchema.boardBetaLinks.boardType, boardType),
+        eq(dbSchema.boardBetaLinks.climbUuid, climbUuid),
+        betaPrivacyCondition(undefined),
+      ),
+    )
+    .orderBy(desc(dbSchema.boardBetaLinks.createdAt), dbSchema.boardBetaLinks.link)
+    .limit(51);
+  const visibleRows = await withVisibleBetaBoards(rows, undefined);
+  const links = visibleRows.filter((row) => !isKayaClimbUrl(row.link)).map(passthroughResult);
+  return { links: links.slice(0, 50), hasMore: rows.length === 51 };
+}
+
 export const betaLinkQueries = {
   betaLinks: async (
     _: unknown,
