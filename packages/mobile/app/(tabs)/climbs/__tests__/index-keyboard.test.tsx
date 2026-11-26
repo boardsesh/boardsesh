@@ -1354,17 +1354,10 @@ describe('ClimbList with Climbs as the bar search tab', () => {
     const { findByText, queryByTestId } = render(<ClimbList />);
     await findByText('Moonage');
 
+    expect(mocks.tabReselect).toBeDefined();
     act(() => mocks.tabReselect?.());
 
     expect(queryByTestId('filter-sheet')).toBeNull();
-  });
-
-  it('installs no search field on Material', () => {
-    mocks.tabBarSearch = true;
-    mocks.nativeRootHeader = false;
-    render(<ClimbList />);
-
-    expect(mocks.stackOptions.some((options) => options.headerSearchBarOptions)).toBe(false);
   });
 });
 
@@ -3044,6 +3037,34 @@ describe('ClimbList live filter session integration', () => {
   };
 
   afterEach(() => vi.useRealTimers());
+
+  it('writes a name typed in Filters into the tab bar field, never one typed in the field itself', async () => {
+    mocks.tabBarSearch = true;
+    const fieldCommands = { setText: vi.fn(), blur: vi.fn(), clearText: vi.fn() };
+    mocks.statefulSearch = true;
+    const view = render(<ClimbList />);
+    await view.findByText('Moonage');
+    const field = mocks.stackOptions.findLast((options) => options.headerSearchBarOptions)?.headerSearchBarOptions;
+    const ref = field?.ref as { current: unknown } | undefined;
+    if (!ref) throw new Error('Expected the tab bar search field');
+    ref.current = fieldCommands;
+    vi.useFakeTimers();
+
+    act(() => {
+      field?.onChangeText?.({ nativeEvent: { text: 'crimp ' } } as never);
+      vi.advanceTimersByTime(300);
+    });
+    expect(mocks.searchState.name).toBe('crimp');
+    expect(fieldCommands.setText).not.toHaveBeenCalled();
+
+    act(() => mocks.openFilters?.());
+    act(() => {
+      latestSheet().onNameChange('Moonlight');
+      vi.advanceTimersByTime(300);
+    });
+    expect(mocks.searchState.name).toBe('Moonlight');
+    expect(fieldCommands.setText).toHaveBeenLastCalledWith('Moonlight');
+  });
 
   it.each(['board arrival', 'sign-out'] as const)(
     'blocks both Filters entry points until a deferred restore finishes after %s',

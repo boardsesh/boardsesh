@@ -382,7 +382,7 @@
       },
       "tabBarSearch": {
         "title": "Rechercher depuis la barre d'onglets",
-        "footer": "Blocs a son propre bouton à droite de la barre d'onglets, avec un champ pour le nom des blocs. Désactivé, c'est un onglet normal et tu cherches les noms dans Filtres. Prend effet à la prochaine ouverture de Boardsesh."
+        "footer": "Blocs a son propre bouton à droite de la barre d'onglets, avec un champ pour le nom des blocs. Désactivé, c'est un onglet normal et tu cherches les noms dans Filtres. Prend effet après le redémarrage de Boardsesh."
       },
       "offline": {
         "title": "Hors ligne",

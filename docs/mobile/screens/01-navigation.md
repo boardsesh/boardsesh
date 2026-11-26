@@ -42,11 +42,12 @@ The bar itself depends on the device:
   the bar's search tab (`role="search"`, a UISearchTab on iOS 26.1+), like Apple
   Music's Search: iOS sets it apart at the right of the bar and brings the Climbs
   screen's climb-name search field into the bar (see "Climbs search" below).
-  iOS 18 and the iPad sidebar keep an ordinary labelled tab. The climber can turn
+  iOS 18, iOS 26.0 (react-native-screens builds a UISearchTab only from 26.1)
+  and the iPad sidebar keep an ordinary labelled tab. The climber can turn
   the search tab off under Settings › Climbs & grades › Search from the tab bar
   (`climbsTabBarSearch`, on by default; `useClimbsTabBarSearch` is the one
   answer the tab layout and the Climbs screen both read). It is read once per
-  launch, so a flip applies from the next start: changing a tab's role remounts
+  launch, so a flip applies after the app restarts: changing a tab's role remounts
   the tab, and Settings can be open inside the Climbs stack. The queue accessory and scroll minimization ride
   the iOS 26 bar. With the search tab off, on an iOS 27 iPhone Climbs is the bar's prominent tab, so
   it stays on screen at the right when the bar collapses, as Music's Search does;

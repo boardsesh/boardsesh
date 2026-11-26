@@ -451,6 +451,18 @@ describe('TabLayout', () => {
     }
   });
 
+  it.each([
+    ['26.0', null],
+    ['26.1', 'search'],
+    ['26.4.1', 'search'],
+    ['27.0', 'search'],
+  ] as const)('makes Climbs the search tab only where iOS has a UISearchTab (iOS %s)', (platformVersion, role) => {
+    cfg.platformVersion = platformVersion;
+    const { container } = render(<TabLayout />);
+
+    expect(container.querySelector('[data-trigger="climbs"]')?.getAttribute('data-tab-role')).toBe(role);
+  });
+
   it('keeps Climbs an ordinary tab in the iPad sidebar bar', () => {
     cfg.isTablet = true;
     const { container } = render(<TabLayout />);

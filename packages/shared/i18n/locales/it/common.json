@@ -382,7 +382,7 @@
       },
       "tabBarSearch": {
         "title": "Cerca dalla barra delle schede",
-        "footer": "Blocchi ha un pulsante tutto suo a destra della barra delle schede, con un campo per i nomi dei blocchi. Disattivato, è una scheda normale e cerchi i nomi in Filtri. Vale dalla prossima volta che apri Boardsesh."
+        "footer": "Blocchi ha un pulsante tutto suo a destra della barra delle schede, con un campo per i nomi dei blocchi. Disattivato, è una scheda normale e cerchi i nomi in Filtri. Vale dopo aver riavviato Boardsesh."
       },
       "offline": {
         "title": "Offline",
