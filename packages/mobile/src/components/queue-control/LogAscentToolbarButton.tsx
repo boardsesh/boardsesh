@@ -1,6 +1,7 @@
 import { StyleSheet } from 'react-native';
 import Animated from 'react-native-reanimated';
 import type { Climb } from '@boardsesh/queue';
+import type { BoardConfig } from '../../providers/drawer-host-provider';
 import { PressableSurface } from '../PressableSurface';
 import { Icon } from '../Icon';
 import { glassSize } from '../../theme/layout';
@@ -11,6 +12,7 @@ import { useTheme } from '../../providers/theme-provider';
 
 type LogAscentToolbarButtonProps = {
   climb: Climb;
+  boardConfigOverride?: BoardConfig;
   queueItemUuid?: string;
   /** The flip to log, when the bar shows the climber's last pick: the pick's own (`useLogAscentAction`). */
   isMirror?: boolean;
@@ -40,6 +42,7 @@ export function LogAscentToolbarButton({
   iconSize = 26,
   placement,
   appearance = 'plain',
+  boardConfigOverride,
 }: LogAscentToolbarButtonProps) {
   const { systemColors } = useTheme();
   const { accessibilityLabel, disabled, handleLogAscentPress, iconColor, popStyle } = useLogAscentAction(
@@ -47,6 +50,7 @@ export function LogAscentToolbarButton({
     placement,
     queueItemUuid,
     isMirror,
+    boardConfigOverride,
   );
 
   return (

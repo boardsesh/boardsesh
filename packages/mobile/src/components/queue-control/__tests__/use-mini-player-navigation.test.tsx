@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act, renderHook } from '@testing-library/react';
+import { act } from '@testing-library/react';
+import { renderHookWithQueryClient as renderHook } from './test-query-client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource, PlaylistTrackResume } from '@boardsesh/queue';
 import type { TrackPosition } from '@boardsesh/play-view';

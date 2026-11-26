@@ -22,6 +22,7 @@
 import { useSegments } from 'expo-router';
 import { Platform } from 'react-native';
 import { MATERIAL_MINI_PLAYER_CARD_GAP, TOOLBAR_RESERVE, TAB_BAR_HEIGHT, glassSize } from '../../theme/layout';
+import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useQueueSessionId } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { resolveMiniPlayerHost } from '../../hooks/mini-player-host';
@@ -54,7 +55,8 @@ export function PersistentQueueBar() {
   // The climber's last pick, or the queue's current when THAT changed after it
   // (owner decision A). Never the wall's lit climb: that lives in the top "On
   // the wall" strip. ✓ logs the climb the bar shows.
-  const { climb: currentClimb, pick } = useBarClimb();
+  const { boardConfig } = useDrawerHost();
+  const { climb: currentClimb, pick } = useBarClimb(boardConfig);
   // A pick logs the flip the bar draws, its own; the queue's current, its slot's.
   const pickMirrored = pick ? pick.mirrored : undefined;
 
@@ -107,7 +109,13 @@ export function PersistentQueueBar() {
             endActionSize={showReturnToSession ? glassSize.inline : undefined}
           />
         }
-        trailing={<LogAscentFab climb={currentClimb} isMirror={pickMirrored} />}
+        trailing={
+          <LogAscentFab
+            climb={currentClimb}
+            isMirror={pickMirrored}
+            boardConfigOverride={pick?.boardConfig ?? undefined}
+          />
+        }
       />
     </TabBarHideFollower>
   );

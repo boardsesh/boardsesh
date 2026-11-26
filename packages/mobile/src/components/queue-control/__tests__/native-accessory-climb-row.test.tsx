@@ -12,8 +12,9 @@ vi.mock('../../PressableSurface', async () => {
       createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
   };
 });
+import { renderWithQueryClient as render } from './test-query-client';
 import { describe, it, expect, vi, beforeEach, onTestFinished } from 'vitest';
-import { act, cleanup, render } from '@testing-library/react';
+import { act, cleanup } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode, type CSSProperties } from 'react';
 import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
 import type { BoardConfig } from '../../../providers/drawer-host-provider';

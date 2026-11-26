@@ -1,14 +1,31 @@
 // @vitest-environment jsdom
+import { renderWithQueryClient as render } from './test-query-client';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, render } from '@testing-library/react';
+import { act, waitFor } from '@testing-library/react';
 import { createElement } from 'react';
 import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
+import { onlineManager } from '@tanstack/react-query';
+import { ensureMutationQueueTable, runMigrations } from '@boardsesh/offline-sync';
+import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
+import type { BoardConfig } from '../../../providers/drawer-host-provider';
 
 const cfg = vi.hoisted(() => ({
   placement: 'regular' as 'regular' | 'inline',
   sessionId: null as string | null,
+  boardConfig: null as BoardConfig | null,
+  quantumFlag: undefined as boolean | undefined,
+  database: null as TestSqliteDb | null,
   currentClimbQueueItem: { climb: { uuid: 'c1', name: 'Tea Magic', angle: 40 } } as unknown as ClimbQueueItem | null,
 }));
+
+vi.mock('../../../providers/drawer-host-provider', () => ({
+  useDrawerHost: () => ({ boardConfig: cfg.boardConfig }),
+}));
+
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useFeatureFlag: (key: string) => (key === 'quantum-board' ? cfg.quantumFlag : undefined),
+}));
+vi.mock('../../../db/index', () => ({ getDatabaseHandle: () => cfg.database }));
 
 vi.mock('expo-router/native-tabs', () => ({
   NativeTabs: { BottomAccessory: { usePlacement: () => cfg.placement } },
@@ -52,7 +69,7 @@ vi.mock('../NativeAccessoryClimbRow', () => ({
 import { QueueBottomAccessory } from '../QueueBottomAccessory';
 import { MiniPlayerAccessoryBody } from '../MiniPlayerAccessoryBody';
 import { invalidateCredentialSnapshots } from '../../../lib/privacy/privacy-cache';
-import { resetLastPickForTests, setLastPick } from '../../../lib/last-pick-store';
+import { getLastPick, resetLastPickForTests, setLastPick } from '../../../lib/last-pick-store';
 
 describe('QueueBottomAccessory', () => {
   beforeEach(() => {
@@ -222,5 +239,119 @@ describe('QueueBottomAccessory with a last pick', () => {
     });
     const { container } = render(<QueueBottomAccessory />);
     expect(container.querySelector('[data-native-row]')?.getAttribute('data-climb-name')).toBe('The Eyes');
+  });
+});
+
+describe('Quantum route visibility in the accessory', () => {
+  const released: BoardConfig = { boardName: 'quantum', layoutId: 9104, sizeId: 9204, setIds: '1', angle: 40 };
+  const belay: BoardConfig = { ...released, layoutId: 9105, sizeId: 9205 };
+  const kilter: BoardConfig = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1', angle: 40 };
+  const quantumItem = (board = released, climbUuid = 'quantum-climb'): ClimbQueueItem => ({
+    uuid: 'queue-quantum',
+    climb: {
+      uuid: climbUuid,
+      name: 'Quantum climb',
+      angle: 40,
+      boardType: 'quantum',
+      layoutId: board.layoutId,
+      compatibleSizeIds: [board.sizeId],
+      frames: '',
+    } as Climb,
+  });
+
+  beforeEach(async () => {
+    cfg.boardConfig = kilter;
+    cfg.quantumFlag = true;
+    cfg.currentClimbQueueItem = quantumItem();
+    cfg.database = createTestDatabase();
+    await ensureMutationQueueTable(cfg.database);
+    await runMigrations(cfg.database);
+  });
+
+  afterEach(() => {
+    cfg.database?.close();
+    cfg.database = null;
+    cfg.quantumFlag = undefined;
+    cfg.boardConfig = null;
+    resetLastPickForTests();
+    onlineManager.setOnline(true);
+  });
+
+  it.each([false, undefined])('hides the cached Quantum climb when the flag is %s', (flag) => {
+    cfg.quantumFlag = flag;
+    const queued = cfg.currentClimbQueueItem;
+    const { container } = render(<QueueBottomAccessory />);
+    expect(container.querySelector('[data-native-row]')).toBeNull();
+    expect(cfg.currentClimbQueueItem).toBe(queued);
+  });
+
+  it('hides a Belay preview and keeps the last pick', () => {
+    const item = quantumItem(belay);
+    setLastPick({
+      item,
+      boardConfig: belay,
+      suggestionSource: null,
+      commitOptions: undefined,
+      currentAtPick: 'queue-quantum',
+      mirrored: false,
+      wallAtPick: null,
+      pickedAt: 0,
+    });
+    const { container } = render(<QueueBottomAccessory />);
+    expect(container.querySelector('[data-native-row]')).toBeNull();
+    expect(getLastPick()?.item).toBe(item);
+  });
+
+  it.each(['public', 'draft', 'unknown'])('shows an available %s route while offline', async (kind) => {
+    const uuid = 'quantum-climb';
+    if (kind !== 'unknown') {
+      const draft = kind === 'draft';
+      await cfg.database?.runAsync(
+        `INSERT INTO board_climbs
+         (uuid, board_type, layout_id, name, is_listed, is_draft, is_hidden, is_boardsesh_authored, user_id, frames_count, frames)
+         VALUES (?, 'quantum', 9104, 'Quantum climb', ?, ?, ?, ?, ?, 0, '')`,
+        [uuid, draft ? 0 : 1, draft ? 1 : 0, draft ? 1 : 0, draft ? 1 : 0, draft ? 'setter' : null],
+      );
+    }
+    cfg.boardConfig = null;
+    onlineManager.setOnline(false);
+    const { container } = render(<MiniPlayerAccessoryBody placement="regular" host="materialCard" />);
+    await waitFor(() =>
+      expect(container.querySelector('[data-native-row]')?.getAttribute('data-climb-name')).toBe('Quantum climb'),
+    );
+  });
+
+  it('withdraws a retained row when the catalogue sync retires its route', async () => {
+    cfg.boardConfig = released;
+    const { container, queryClient, rerender } = render(<QueueBottomAccessory />);
+    await waitFor(() => expect(container.querySelector('[data-native-row]')).not.toBeNull());
+    cfg.currentClimbQueueItem = null;
+    cfg.boardConfig = null;
+    rerender(<QueueBottomAccessory />);
+    expect(container.querySelector('[data-native-row]')).not.toBeNull();
+
+    await cfg.database?.runAsync(
+      `INSERT INTO board_climbs
+       (uuid, board_type, layout_id, name, is_listed, is_draft, is_hidden, is_boardsesh_authored, frames_count)
+       VALUES ('quantum-climb', 'quantum', 9104, 'Withdrawn', 0, 0, 1, 0, 0)`,
+    );
+    await act(() => queryClient.invalidateQueries({ queryKey: ['climb'] }));
+    await waitFor(() => expect(container.querySelector('[data-native-row]')).toBeNull());
+    expect(await cfg.database?.getFirstAsync("SELECT uuid FROM board_climbs WHERE uuid = 'quantum-climb'")).toEqual({
+      uuid: 'quantum-climb',
+    });
+  });
+
+  it('withdraws the retained row when the flag turns off during a board rehydrate', async () => {
+    cfg.boardConfig = released;
+    const { container, rerender } = render(<QueueBottomAccessory />);
+    await waitFor(() => expect(container.querySelector('[data-native-row]')).not.toBeNull());
+    cfg.currentClimbQueueItem = null;
+    cfg.boardConfig = null;
+    rerender(<QueueBottomAccessory />);
+    expect(container.querySelector('[data-native-row]')).not.toBeNull();
+    cfg.quantumFlag = false;
+    rerender(<QueueBottomAccessory />);
+    expect(container.querySelector('[data-native-row]')).toBeNull();
   });
 });

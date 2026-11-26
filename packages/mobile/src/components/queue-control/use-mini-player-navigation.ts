@@ -91,13 +91,13 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
   const { queue, currentClimbQueueItem, historyCount } = useQueueData();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   // The climber's last pick on the bar, or null while it shows the queue's current.
-  const { pick } = useBarClimb();
+  const { openPlayDrawer, boardConfig } = useDrawerHost();
+  const { pick } = useBarClimb(boardConfig);
   // For Queue Navigation: the session, and Always drive the wall.
   const inSharedSession = useIsSharedSession();
   const [alwaysDrive] = useSetting('alwaysDrive');
   // Driving the wall (#7113): every step lights it, in a crew too.
   const driving = useDrivingWall();
-  const { openPlayDrawer, boardConfig } = useDrawerHost();
   const { data: activeBoard } = useActiveBoard();
   const reachableBoardKeys = useReachableBoardKeys(activeBoard);
 

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
+import { renderWithQueryClient as render } from './test-query-client';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode, type CSSProperties } from 'react';
 import type { ClimbQueueItem, Climb } from '@boardsesh/queue';
 

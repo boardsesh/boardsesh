@@ -1,4 +1,5 @@
-import { useMemo, useSyncExternalStore } from 'react';
+import { useMemo, useRef, useSyncExternalStore } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
 import { useQueueData } from '../../providers/queue-provider';
 import {
@@ -8,7 +9,11 @@ import {
   useLastPick,
   type LastPick,
 } from '../../lib/last-pick-store';
-import type { OpenPlayDrawerOptions } from '../../providers/drawer-host-provider';
+import type { BoardConfig, OpenPlayDrawerOptions } from '../../providers/drawer-host-provider';
+import { useIsBoardConfigVisible } from '../../hooks/use-board-visibility';
+import { isQuantumClimbRetired } from '../../db/queries/quantum-climb-retirement';
+import { CLIMB_QUERY_KEY } from '../../lib/graphql/query-keys';
+import { isMiniPlayerClimbAvailable, isQuantumMiniPlayerClimb } from './use-mini-player-climb-action';
 import { getCredentialGeneration, subscribeToCredentialChanges } from '../../lib/privacy/privacy-cache';
 
 /** What the MiniPlayer shows (owner decision A). */
@@ -36,7 +41,7 @@ const NO_CLIMB: BarClimb = { item: null, climb: null, pick: null };
  * PERF: one object per change of pick or of the queue's current, so a
  * memoised bar re-renders only when the climb it shows changes.
  */
-export function useBarClimb(): BarClimb {
+export function useBarClimb(boardConfig: BoardConfig | null, retainDuringRehydrate = false): BarClimb {
   const { currentClimbQueueItem } = useQueueData();
   const stored = useLastPick();
   const generation = useSyncExternalStore(
@@ -51,11 +56,36 @@ export function useBarClimb(): BarClimb {
   // While the pick shows, the queue's current is not read, so the bar's object
   // keeps its identity through a queue change that leaves the pick standing.
   const shownCurrent = pick ? null : currentClimbQueueItem;
-  return useMemo(() => {
+  const bar = useMemo(() => {
     if (pick && pickClimb) return { item: pick.item, climb: pickClimb, pick };
     if (!shownCurrent) return NO_CLIMB;
     return { item: shownCurrent, climb: shownCurrent.climb, pick: null };
   }, [pick, pickClimb, shownCurrent]);
+
+  // A mounted platter retains a row across a brief rehydrate. Recheck that
+  // snapshot as well as live items when rollout or the local catalogue changes.
+  const retained = useRef({ generation, bar: NO_CLIMB, withdrawn: null as ClimbQueueItem | null });
+  if (retained.current.generation !== generation) {
+    retained.current = { generation, bar: NO_CLIMB, withdrawn: bar.item };
+  }
+  const canAdoptBar = bar.item !== null && (!retainDuringRehydrate || bar.item !== retained.current.withdrawn);
+  if (retainDuringRehydrate && canAdoptBar) retained.current.bar = bar;
+  const candidate = canAdoptBar ? bar : retained.current.bar;
+  const candidateBoard = candidate.pick?.boardConfig ?? boardConfig;
+  const isBoardConfigVisible = useIsBoardConfigVisible();
+  const climb = candidate.climb;
+  const boardAvailable = !climb || isMiniPlayerClimbAvailable(climb, candidateBoard, isBoardConfigVisible);
+  const quantumClimbUuid =
+    climb && boardAvailable && isQuantumMiniPlayerClimb(climb, candidateBoard) ? climb.uuid : undefined;
+  const retirement = useQuery({
+    queryKey: [...CLIMB_QUERY_KEY, 'quantumRetirement', quantumClimbUuid],
+    queryFn: () => isQuantumClimbRetired(quantumClimbUuid!),
+    enabled: quantumClimbUuid !== undefined,
+    networkMode: 'always',
+  });
+  if (!boardAvailable || (quantumClimbUuid && (retirement.data !== false || retirement.isError))) return NO_CLIMB;
+  if (canAdoptBar || !candidate.item) return candidate;
+  return { item: candidate.item, climb: candidate.item.climb, pick: null };
 }
 
 /** How the player reopens what the bar shows. */

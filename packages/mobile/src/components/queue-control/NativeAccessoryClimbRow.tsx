@@ -52,6 +52,7 @@ import {
 import { useNativeTabContentInsetLeft, useNativeTabContentInsetRight } from '../../lib/native-tab-content-inset-store';
 import { MiniPlayerActionsMenu } from './MiniPlayerActionsMenu';
 import { resolveClimbRenderBoard } from '../../lib/boards/climb-render-board';
+import { isQuantumMiniPlayerClimb } from './use-mini-player-climb-action';
 import { resolvePlayerAngle } from '../play-drawer/player-angle';
 import { usePaneWallControl } from '../play-drawer/pane-wall-control-store';
 import { PaneWallControlBulb } from './PaneWallControlBulb';
@@ -252,7 +253,9 @@ export function NativeAccessoryClimbRow({
   const paneWallControl = usePaneWallControl();
   // The board the climb is drawn on, resolved the way the player resolves it, so
   // the heart, the share and Fell / Sent point at the same climb, board and angle.
-  const climbBoardResolution = useMemo(() => resolveClimbRenderBoard(climb, boardConfig), [climb, boardConfig]);
+  const pickBoard = pick?.boardConfig ?? null;
+  const targetBoard = isQuantumMiniPlayerClimb(climb, pickBoard) ? (pickBoard ?? boardConfig) : boardConfig;
+  const climbBoardResolution = useMemo(() => resolveClimbRenderBoard(climb, targetBoard), [climb, targetBoard]);
   const climbBoard = climbBoardResolution?.boardConfig ?? null;
   const workout = useMiniPlayerWorkoutOutcome({
     climb,
@@ -292,7 +295,7 @@ export function NativeAccessoryClimbRow({
   const geometry = accessoryPlatterGeometry(
     platterHeight ?? (isTablet && !isInline ? TALL_PLATTER_MIN_HEIGHT : rowHeight),
   );
-  const thumbnailSize = boardConfig === null ? null : geometry.thumbnailSize;
+  const thumbnailSize = targetBoard === null ? null : geometry.thumbnailSize;
   const widthBesideName = accessoryWidthBesideName(geometry, thumbnailSize !== null);
   // iPad and the open Duo: as many as fit. An iPhone: three at most.
   const wide = isTablet || phoneSplit;
@@ -315,8 +318,8 @@ export function NativeAccessoryClimbRow({
   }, [placement, capacityWidth, widthBesideName]);
   // The platter shows a plain (non-colorized) grade; only the label swaps to the
   // Boardsesh grade when the toggle is on and a trusted one exists.
-  const currentFormattedGrade = resolveGrade(climb, boardConfig?.boardName).label;
-  const byline = useClimbByline(climb, boardConfig, currentFormattedGrade);
+  const currentFormattedGrade = resolveGrade(climb, targetBoard?.boardName).label;
+  const byline = useClimbByline(climb, targetBoard, currentFormattedGrade);
 
   const connectionBadge = getBoardConnectionBadgeVisual({
     boardConnection: inAppBoardConnection,
@@ -515,7 +518,7 @@ export function NativeAccessoryClimbRow({
             bylineColor={systemColors.secondaryLabel}
             byline={byline}
             thumbnailSize={thumbnailSize}
-            boardConfig={boardConfig}
+            boardConfig={targetBoard}
             connectionBadge={connectionBadge}
             nameVariant={wideLayout ? 'body' : 'subheadline'}
           />
@@ -617,6 +620,7 @@ export function NativeAccessoryClimbRow({
                   // player or the bar's Mirror), never its queue slot's.
                   isMirror={pick ? pick.mirrored : undefined}
                   climb={climb}
+                  boardConfigOverride={pick?.boardConfig ?? undefined}
                   size={glassSize.inline}
                   iconSize={wideLayout ? WIDE_LOG_GLYPH_SIZE : geometry.logGlyphSize}
                   appearance={wideLayout ? 'hero' : 'plain'}

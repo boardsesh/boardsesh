@@ -7,13 +7,15 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../../lib/analytics';
 import { useTheme } from '../../providers/theme-provider';
 import { useQueueActions, useQueueSessionId } from '../../providers/queue-provider';
-import { useDrawerHost } from '../../providers/drawer-host-provider';
+import { useDrawerHost, type BoardConfig } from '../../providers/drawer-host-provider';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
 import { springs } from '../../theme/animations';
 import { hapticSelection } from '../../lib/haptics';
 import { countSentAscents } from '../../lib/ascent-status-utils';
 import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
 import { resolveTickMirror } from '../../lib/queue-mirror-orientation';
+import { resolveClimbRenderBoard } from '../../lib/boards/climb-render-board';
+import { isQuantumMiniPlayerClimb, useRunMiniPlayerClimbAction } from './use-mini-player-climb-action';
 
 /**
  * `placement` is set only by the tab-bar accessory platter's tick, so its Quick
@@ -28,10 +30,20 @@ export function useLogAscentAction(
   placement?: AccessoryPlacement,
   queueItemUuid?: string,
   isMirrorOverride?: boolean,
+  boardConfigOverride?: BoardConfig,
 ) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
-  const { boardConfig, openLogAscent } = useDrawerHost();
+  const { boardConfig: activeBoard, openLogAscent } = useDrawerHost();
+  const targetBoard = boardConfigOverride ?? activeBoard;
+  const boardConfig = useMemo(
+    () =>
+      isQuantumMiniPlayerClimb(climb, targetBoard)
+        ? (resolveClimbRenderBoard(climb, targetBoard, { loadMissingSpray: false })?.boardConfig ?? null)
+        : activeBoard,
+    [climb, targetBoard, activeBoard],
+  );
+  const runClimbAction = useRunMiniPlayerClimbAction(climb, targetBoard);
   const { sessionId } = useQueueSessionId();
   const { getQueueSnapshot } = useQueueActions();
   const boardLogbook = useOptionalBoardLogbook();
@@ -81,7 +93,7 @@ export function useLogAscentAction(
 
   const popStyle = useAnimatedStyle(() => ({ transform: [{ scale: pop.value }] }));
 
-  const handleLogAscentPress = useCallback(() => {
+  const logAscent = useCallback(() => {
     if (!boardConfig) return;
     pendingRef.current = true;
     hapticSelection();
@@ -121,6 +133,8 @@ export function useLogAscentAction(
     isMirrorOverride,
     getQueueSnapshot,
   ]);
+
+  const handleLogAscentPress = useCallback(() => runClimbAction(logAscent), [runClimbAction, logAscent]);
 
   // The tick stays an action in the same label colour, even on a logged climb.
   // Its accessibility label still announces that the climb was already logged.

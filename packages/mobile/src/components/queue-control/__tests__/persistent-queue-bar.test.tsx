@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
+import { renderWithQueryClient as render } from './test-query-client';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 
@@ -22,6 +22,10 @@ const cfg = vi.hoisted(() => ({
   sessionId: null as string | null,
   activeSegment: null as string | null,
 }));
+vi.mock('../../../providers/drawer-host-provider', () => ({
+  useDrawerHost: () => ({ boardConfig: null }),
+}));
+
 vi.mock('../../../lib/workout-run-store', () => ({ useWorkoutRunPendingStart: () => false }));
 
 // useAccessoryClimbTap builds a preview queue item via climbToQueueItem, which

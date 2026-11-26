@@ -28,6 +28,7 @@ import { BoardControlIndicator } from './BoardControlIndicator';
 import { PickBulbSlot } from './PickPutOnBoardBulb';
 import { usePickBulb } from './use-pick-bulb';
 import { lastPickClimb } from '../../lib/last-pick-store';
+import { isQuantumMiniPlayerClimb } from './use-mini-player-climb-action';
 
 type ClimbLabelProps = {
   climb: Climb;
@@ -93,8 +94,10 @@ export function ClimbCapsule({ height = TOOLBAR_CAPSULE_HEIGHT, endAction, endAc
   // (owner decision A). Never the wall's lit climb: that lives in the top "On
   // the wall" strip.
   const currentClimb = useMemo(() => (pick ? lastPickClimb(pick) : (currentItem?.climb ?? null)), [pick, currentItem]);
-  // Board art needs the active board config; matches the iOS 26 native accessory.
-  const showThumbnail = boardConfig != null;
+  const pickBoard = pick?.boardConfig ?? null;
+  const targetBoard =
+    currentClimb && isQuantumMiniPlayerClimb(currentClimb, pickBoard) ? (pickBoard ?? boardConfig) : boardConfig;
+  const showThumbnail = targetBoard != null;
   // The last pick's bulb (owner decision A): lit, unlit, or none for a climb
   // this wall can't light. Null while the bar shows the queue's current climb.
   const pickBulb = usePickBulb(pick);
@@ -107,12 +110,12 @@ export function ClimbCapsule({ height = TOOLBAR_CAPSULE_HEIGHT, endAction, endAc
   // Boardsesh grade (label + colour) when the toggle is on and a trusted one
   // exists, else the legacy Aurora grade — the same treatment as the list rows.
   const grades = useMemo(() => {
-    const resolved = currentClimb ? resolveGrade(currentClimb, boardConfig?.boardName) : null;
+    const resolved = currentClimb ? resolveGrade(currentClimb, targetBoard?.boardName) : null;
     return {
       current: resolved?.label ?? null,
       currentColor: resolved?.color ?? DEFAULT_GRADE_COLOR,
     };
-  }, [currentClimb, resolveGrade, boardConfig?.boardName]);
+  }, [currentClimb, resolveGrade, targetBoard?.boardName]);
 
   if (!currentClimb) return null;
 
@@ -149,7 +152,7 @@ export function ClimbCapsule({ height = TOOLBAR_CAPSULE_HEIGHT, endAction, endAc
             formattedGrade={grades.current}
             gradeColor={grades.currentColor}
             showThumbnail={showThumbnail}
-            boardConfig={boardConfig}
+            boardConfig={targetBoard}
           />
         </LargeContentViewer>
       </AccessoryPlayLink>

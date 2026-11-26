@@ -2,7 +2,8 @@
 // Owner decision A: what the MiniPlayer shows. PERF: a mirrored pick's drawn
 // copy follows the pick alone, so a queue change under a standing pick hands
 // the bar the same object and the same climb.
-import { act, renderHook } from '@testing-library/react';
+import { act } from '@testing-library/react';
+import { renderHookWithQueryClient as renderHook } from './test-query-client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 
@@ -32,7 +33,7 @@ describe('useBarClimb', () => {
       wallAtPick: null,
       pickedAt: 0,
     });
-    const { result, rerender } = renderHook(() => useBarClimb());
+    const { result, rerender } = renderHook(() => useBarClimb(null));
     const first = result.current;
     expect(first.pick?.item).toBe(PICK_ITEM);
     expect(first.climb?.mirrored).toBe(true);
@@ -53,7 +54,7 @@ describe('useBarClimb', () => {
       wallAtPick: null,
       pickedAt: 0,
     });
-    const { result, rerender } = renderHook(() => useBarClimb());
+    const { result, rerender } = renderHook(() => useBarClimb(null));
     act(() => {
       queue.current = { uuid: 'queue-next', climb: { uuid: 'next' } };
     });
