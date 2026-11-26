@@ -103,9 +103,11 @@ password; both are prefilled with WLED's defaults.
      the upload, trimmed as the add-on trims it: whole characters within 22 UTF-8
      bytes, without `#` and `@`. The add-on advertises `<name>#<serial>`.
    - **Settings check.** Every setting in the backup must keep its value. Allowed:
-     keys WLED 16 adds when it rewrites a 0.15 file, the add-on's own section, Wi-Fi
-     sleep (the add-on keeps modem sleep on while Bluetooth runs) and the
-     installer's two writes above.
+     keys WLED adds when it rewrites the file, `rev`, Wi-Fi sleep (the add-on keeps
+     modem sleep on while Bluetooth runs), unused button slots (`type` 0, every pin
+     -1), a button count that only grows, the installer's two writes above, and the
+     matched source profile's measured `settingsChanges` (see below). A failed check
+     lists the differing paths on screen.
    - **Refused at the first byte.** A 401 from `/update` (PIN, OTA lock or the
      same-network check) means nothing was written: the journal is cleared and the
      screen shows the blocked state, not an unconfirmed install.
@@ -192,6 +194,22 @@ WLED 16.0.1 at `29b389df1c1aaec6ff53aea742d17063b985906c`. Standard application
 slots are `0x180000` bytes each. Never repartition or replace filesystem contents
 to make a candidate fit. Preserve LED chipset/count/color order/GPIOs, relay,
 microphones, network settings, presets, and any existing BLE enabled setting.
+
+Each source profile may carry `settingsChanges`, the settings its measured update
+drops or changes, as `{ "path": "if.mqtt", "kind": "removed", "feature": "mqtt" }`
+(dot paths, no array indexes). `removed`: the key must be gone afterwards (still
+present with another value fails). `changed`: any value afterwards. The app never
+accepts a waiver equal to, inside or above a protected setting: `hw.led.ins`,
+`hw.led.total`, `hw.led.maxpwr`, `hw.relay`, `hw.btn.ins`, `hw.btn.pull`, `nw.ins`,
+`ap`, `wifi`, `id.name`, `id.mdns`, `um.AudioReactive`, `um.BLE JSON`, `def`,
+`light.gc`; `readManifest` rejects such a release. `feature` names an integration
+the build leaves out (`mqtt`, `hue`, `alexa`, `ir`, `espnow`; any other name counts as
+in use). When the backup shows one in use, the owner must confirm losing it before
+installing, and the completion screen repeats it. Measured on 2026-11-26 for Gledopto
+factory 0.15.4 (`brand`/`product` `GLEDOPTO`) to 16.0.1 with the add-on: `vid`
+changed; removed `id.inv`, `nw.linked_remote`, `hw.led.ledma`, `hw.led.ld`,
+`hw.led.prl`, `light.tr.mode`, `light.tr.fx`, `light.tr.pal`, `if.mqtt`, `if.hue`,
+`if.va`, `hw.ir.pin`, `hw.ir.type`, `nw.espnow`, `if.sync.espnow`.
 
 Record exact source firmware brand/product/version and partition evidence for
 both factory Gledopto firmware and stock WLED 16.0.1. Each manifest source profile

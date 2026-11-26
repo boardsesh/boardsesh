@@ -168,7 +168,7 @@ describe('WLED beta installer consent', () => {
     fireEvent.click(checkbox('confirmBeta'));
     expect(install.disabled).toBe(false);
     fireEvent.click(install);
-    expect(runtime.install).toHaveBeenCalledWith(true, false, true, 'Norte izquierda');
+    expect(runtime.install).toHaveBeenCalledWith(true, false, true, 'Norte izquierda', false);
   });
   it('keeps no-audio approval separate from beta approval', async () => {
     runtime.snapshot!.release!.audio = false;
@@ -180,7 +180,7 @@ describe('WLED beta installer consent', () => {
     expect(install.disabled).toBe(true);
     fireEvent.click(checkbox('confirmNoAudio'));
     fireEvent.click(install);
-    expect(runtime.install).toHaveBeenCalledWith(true, true, true, '');
+    expect(runtime.install).toHaveBeenCalledWith(true, true, true, '', false);
   });
   it('resets confirmations when the owner checks again or changes the controller URL', async () => {
     const view = render(<WledBluetoothInstaller url="192.168.1.5" disabled={false} />);
@@ -205,7 +205,7 @@ describe('WLED beta installer consent', () => {
     expect(screen.queryByRole('switch', { name: 'sprayLed.installer.confirmBeta' })).toBeNull();
     fireEvent.click(checkbox('confirmModel'));
     fireEvent.click(screen.getByRole('button', { name: 'sprayLed.installer.install' }));
-    expect(runtime.install).toHaveBeenCalledWith(true, false, false, '');
+    expect(runtime.install).toHaveBeenCalledWith(true, false, false, '', false);
   });
   it("suggests the wall's name for the controller, trimmed as the add-on advertises it", async () => {
     render(<WledBluetoothInstaller url="192.168.1.5" wallName="Wall #2 @ the gym" disabled={false} />);
@@ -217,7 +217,7 @@ describe('WLED beta installer consent', () => {
     fireEvent.click(checkbox('confirmBeta'));
     fireEvent.click(screen.getByRole('button', { name: 'sprayLed.installer.installBeta' }));
     // 22 UTF-8 bytes: "ó" takes two, so the "r" no longer fits.
-    expect(runtime.install).toHaveBeenCalledWith(true, false, true, 'Rocódromo Escalada No');
+    expect(runtime.install).toHaveBeenCalledWith(true, false, true, 'Rocódromo Escalada No', false);
   });
 });
 

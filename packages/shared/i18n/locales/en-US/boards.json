@@ -82,6 +82,17 @@
       "backupHint": "The backup includes your controller configuration and presets. Export it somewhere safe before installing.",
       "controllerName": "Controller name",
       "controllerNameHint": "Climbers see this name when they look for your Spraywall's Bluetooth. {{used}} of {{max}} bytes used; accented letters take two.",
+      "droppedFeatures": "{{features}} is on, but this firmware leaves it out, so it stops working after the update. Its settings stay in your exported backup.",
+      "confirmDroppedFeatures": "I understand that {{features}} stops working",
+      "droppedFeaturesDone": "{{features}} no longer works on this controller. Its settings are in your exported backup.",
+      "differences": "Settings that changed: {{paths}}",
+      "features": {
+        "mqtt": "MQTT",
+        "hue": "Hue sync",
+        "alexa": "Alexa",
+        "ir": "Infrared remote",
+        "espnow": "ESP-NOW"
+      },
       "confirmModel": "I checked the label: Gledopto GL-C-015WL-D",
       "confirmNoAudio": "I agree to install this image without audio-reactive effects",
       "install": "Install verified firmware",

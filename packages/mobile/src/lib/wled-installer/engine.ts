@@ -17,12 +17,25 @@ export type ControllerIdentity = {
   ledCount: number;
   capabilities: JsonObject | null;
 };
+/**
+ * A settings change measured for one source firmware, so the read-back check can expect it.
+ * `removed`: the key is gone afterwards (present with another value still fails).
+ * `changed`: any value afterwards. `feature`: the integration the build leaves out.
+ */
+export type SettingsChange = { path: string; kind: 'removed' | 'changed'; feature?: string };
+export type SourceProfile = {
+  version: string;
+  brand: string;
+  product: string;
+  appSlotBytes: number;
+  settingsChanges?: SettingsChange[];
+};
 export type FirmwareRelease = {
   id: string;
   hardwareModel: 'GL-C-015WL-D';
   architecture: 'esp32';
   flashBytes: 4_194_304;
-  sourceProfiles: { version: string; brand: string; product: string; appSlotBytes: number }[];
+  sourceProfiles: SourceProfile[];
   wledVersion: string;
   usermodVersion: string;
   protocolVersion: 1;
@@ -82,6 +95,8 @@ export type InstallerSnapshot = {
   backup?: Backup;
   progress?: number | null;
   error?: InstallerError;
+  /** Dotted paths of the settings that differed, when the read-back check failed. */
+  differences?: string[];
 };
 export interface InstallerIO {
   readJson(this: void, url: string, signal: AbortSignal): Promise<unknown>;
@@ -212,7 +227,8 @@ export function readManifest(candidate: unknown): FirmwareRelease[] {
           typeof profile.version === 'string' &&
           typeof profile.brand === 'string' &&
           typeof profile.product === 'string' &&
-          profile.appSlotBytes === WLED_APP_SLOT_BYTES,
+          profile.appSlotBytes === WLED_APP_SLOT_BYTES &&
+          (profile.settingsChanges === undefined || validSettingsChanges(profile.settingsChanges)),
       )
     ) {
       throw new WledInstallerError('incompatible');
@@ -223,17 +239,60 @@ export function readManifest(candidate: unknown): FirmwareRelease[] {
     return { ...release, channel: release.channel ?? 'stable' } as FirmwareRelease;
   });
 }
+/**
+ * Settings no manifest may excuse: what a wall needs to light and to be reached (the doc's
+ * preservation rules). A waiver equal to, inside or above one of these makes the release unusable.
+ */
+export const PROTECTED_SETTINGS = [
+  'hw.led.ins',
+  'hw.led.total',
+  'hw.led.maxpwr',
+  'hw.relay',
+  'hw.btn.ins',
+  'hw.btn.pull',
+  'nw.ins',
+  'ap',
+  'wifi',
+  'id.name',
+  'id.mdns',
+  'um.AudioReactive',
+  'um.BLE JSON',
+  'def',
+  'light.gc',
+];
+const SETTING_PATH = /^[A-Za-z0-9_-]+( [A-Za-z0-9_-]+)*(\.[A-Za-z0-9_-]+( [A-Za-z0-9_-]+)*)*$/;
+function overlaps(path: string, protectedPath: string) {
+  return path === protectedPath || path.startsWith(`${protectedPath}.`) || protectedPath.startsWith(`${path}.`);
+}
+function validSettingsChanges(candidate: unknown): boolean {
+  return (
+    Array.isArray(candidate) &&
+    candidate.every(
+      (change: unknown) =>
+        isObject(change) &&
+        typeof change.path === 'string' &&
+        SETTING_PATH.test(change.path) &&
+        (change.kind === 'removed' || change.kind === 'changed') &&
+        (change.feature === undefined || (typeof change.feature === 'string' && change.feature.length > 0)) &&
+        !PROTECTED_SETTINGS.some((protectedPath) => overlaps(change.path as string, protectedPath)),
+    )
+  );
+}
+function matchesProfile(profile: SourceProfile, identity: ControllerIdentity) {
+  return (
+    profile.version === identity.version && profile.brand === identity.brand && profile.product === identity.product
+  );
+}
+/** The measured source firmware a release was qualified from, for the controller as it was. */
+export function sourceProfileFor(release: FirmwareRelease, identity: ControllerIdentity): SourceProfile | undefined {
+  return release.sourceProfiles.find((profile) => matchesProfile(profile, identity));
+}
 export function compatibleReleases(identity: ControllerIdentity, manifest: FirmwareRelease[]): FirmwareRelease[] {
   return manifest.filter(
     (release) =>
       release.architecture === identity.architecture &&
       release.flashBytes === identity.flashBytes &&
-      release.sourceProfiles.some(
-        (profile) =>
-          profile.version === identity.version &&
-          profile.brand === identity.brand &&
-          profile.product === identity.product,
-      ),
+      release.sourceProfiles.some((profile) => matchesProfile(profile, identity)),
   );
 }
 function preferredRelease(releases: FirmwareRelease[]): FirmwareRelease | undefined {
@@ -262,45 +321,129 @@ export function mergeSettings(base: JsonObject, changes: JsonObject): JsonObject
   return merged;
 }
 /**
- * Every setting in `before` keeps its value in `after`. Keys only in `after` are allowed: WLED 16
- * writes its full settings format the first time it saves, which adds keys an older file lacked.
+ * Collects the paths where `after` lost or changed a setting of `before`. Keys only in `after` are
+ * allowed: WLED 16 writes its full settings format the first time it saves, adding keys an older
+ * file lacked. Arrays keep their length and order.
  */
-function keepsEverySetting(before: unknown, after: unknown): boolean {
-  if (Array.isArray(before))
-    return (
-      Array.isArray(after) &&
-      before.length === after.length &&
-      before.every((item, index) => keepsEverySetting(item, after[index]))
-    );
-  if (isObject(before))
-    return isObject(after) && Object.keys(before).every((key) => keepsEverySetting(before[key], after[key]));
-  return canonical(before) === canonical(after);
+function collectDifferences(before: unknown, after: unknown, path: string, found: string[]) {
+  if (Array.isArray(before)) {
+    if (!Array.isArray(after) || before.length !== after.length) found.push(path);
+    else before.forEach((item, index) => collectDifferences(item, after[index], `${path}[${index}]`, found));
+  } else if (isObject(before)) {
+    if (!isObject(after)) found.push(path);
+    else
+      for (const key of Object.keys(before))
+        collectDifferences(before[key], after[key], path ? `${path}.${key}` : key, found);
+  } else if (canonical(before) !== canonical(after)) found.push(path);
+}
+function settingAt(document: JsonObject, segments: string[]): { found: boolean; value?: unknown } {
+  let current: unknown = document;
+  for (const segment of segments) {
+    if (!isObject(current) || !Object.hasOwn(current, segment)) return { found: false };
+    current = current[segment];
+  }
+  return { found: true, value: current };
+}
+function withoutSetting(document: JsonObject, segments: string[]): JsonObject {
+  const [head, ...rest] = segments;
+  if (!Object.hasOwn(document, head)) return document;
+  const copy = { ...document };
+  if (rest.length === 0) delete copy[head];
+  else if (isObject(copy[head])) copy[head] = withoutSetting(copy[head], rest);
+  return copy;
+}
+/** A button slot WLED keeps for nothing: no type and no pin. WLED 16 stops saving those. */
+function isUnusedButton(button: unknown) {
+  if (!isObject(button) || button.type !== 0) return false;
+  const pins = Array.isArray(button.pin) ? button.pin : [button.pin];
+  return pins.every((pin) => pin === -1);
+}
+/** Differences no owner made and no measurement is needed for, fixed here rather than in a manifest. */
+function normalised(document: JsonObject): JsonObject {
+  const copy = { ...document };
+  delete copy.rev;
+  if (isObject(copy.wifi)) {
+    // The add-on keeps modem sleep on while Bluetooth runs.
+    const wifi = { ...copy.wifi };
+    delete wifi.sleep;
+    copy.wifi = wifi;
+  }
+  if (isObject(copy.hw) && isObject(copy.hw.btn) && Array.isArray(copy.hw.btn.ins)) {
+    copy.hw = { ...copy.hw, btn: { ...copy.hw.btn, ins: copy.hw.btn.ins.filter((button) => !isUnusedButton(button)) } };
+  }
+  return copy;
 }
 /**
- * Owner settings and presets stay authoritative. Allowed differences: keys WLED adds when it
- * rewrites the file, the new module's own settings when the backup had none, `rev`, `changes`
- * the installer wrote itself, and Wi-Fi sleep, which the module keeps on while Bluetooth runs.
+ * Settings the controller lost or changed, as dotted paths (`presets` for the presets file). Allowed:
+ * keys WLED adds when it rewrites the file, `rev`, Wi-Fi sleep, unused button slots, a button count
+ * that only grows, `changes` the installer wrote itself, and the source profile's measured
+ * `settingsChanges`, which can never cover a protected setting.
  */
+export function settingsDifferences(
+  before: Backup,
+  config: JsonObject,
+  presets: JsonObject,
+  changes: JsonObject = {},
+  settingsChanges: SettingsChange[] = [],
+): string[] {
+  let expected = normalised(mergeSettings(before.config, changes));
+  let actual = normalised(config);
+  const found: string[] = [];
+  const buttonCount = settingAt(expected, ['hw', 'btn', 'max']);
+  const newButtonCount = settingAt(actual, ['hw', 'btn', 'max']);
+  if (
+    typeof buttonCount.value === 'number' &&
+    typeof newButtonCount.value === 'number' &&
+    newButtonCount.value >= buttonCount.value
+  ) {
+    expected = withoutSetting(expected, ['hw', 'btn', 'max']);
+    actual = withoutSetting(actual, ['hw', 'btn', 'max']);
+  }
+  for (const change of settingsChanges) {
+    if (PROTECTED_SETTINGS.some((protectedPath) => overlaps(change.path, protectedPath))) continue;
+    const segments = change.path.split('.');
+    const was = settingAt(expected, segments);
+    if (!was.found) continue;
+    const now = settingAt(actual, segments);
+    if (change.kind === 'removed' && now.found && canonical(now.value) !== canonical(was.value))
+      found.push(change.path);
+    expected = withoutSetting(expected, segments);
+    actual = withoutSetting(actual, segments);
+  }
+  collectDifferences(expected, actual, '', found);
+  if (canonical(before.presets) !== canonical(presets)) found.push('presets');
+  return found;
+}
 export function settingsPreserved(
   before: Backup,
   config: JsonObject,
   presets: JsonObject,
   changes: JsonObject = {},
+  settingsChanges: SettingsChange[] = [],
 ): boolean {
-  const comparable = (document: JsonObject) => {
-    const copy = { ...document };
-    delete copy.rev;
-    if (isObject(copy.wifi)) {
-      const wifi = { ...copy.wifi };
-      delete wifi.sleep;
-      copy.wifi = wifi;
-    }
-    return copy;
-  };
-  return (
-    keepsEverySetting(comparable(mergeSettings(before.config, changes)), comparable(config)) &&
-    canonical(before.presets) === canonical(presets)
-  );
+  return settingsDifferences(before, config, presets, changes, settingsChanges).length === 0;
+}
+/** App-coded test of whether a dropped integration was in use, by the manifest's `feature` name. */
+const FEATURE_IN_USE: Record<string, (config: JsonObject) => boolean> = {
+  mqtt: (config) => settingAt(config, ['if', 'mqtt', 'en']).value === true,
+  hue: (config) => settingAt(config, ['if', 'hue', 'en']).value === true,
+  alexa: (config) => settingAt(config, ['if', 'va', 'alexa']).value === true,
+  ir: (config) => {
+    const pin = settingAt(config, ['hw', 'ir', 'pin']).value;
+    return typeof pin === 'number' && pin >= 0;
+  },
+  espnow: (config) =>
+    settingAt(config, ['nw', 'espnow']).value === true || settingAt(config, ['if', 'sync', 'espnow']).value === true,
+};
+/** Integrations the new firmware leaves out that the owner had on. An unknown feature counts as on. */
+export function droppedFeaturesInUse(config: JsonObject, profile: SourceProfile | undefined): string[] {
+  const features = new Set<string>();
+  for (const change of profile?.settingsChanges ?? []) {
+    if (!change.feature) continue;
+    const inUse = FEATURE_IN_USE[change.feature];
+    if (!inUse || inUse(config)) features.add(change.feature);
+  }
+  return [...features];
 }
 /** Bytes WLED's device name may use in the add-on's advertised `<name>#<serial>`. */
 export const CONTROLLER_NAME_BYTES = 22;
@@ -447,6 +590,11 @@ function createSession(
       }
     }
   }
+  /** Against the backup, the installer's own writes and what the source firmware was measured to change. */
+  function differencesFor(pending: InstallJournal, config: JsonObject, presets: JsonObject) {
+    const profile = sourceProfileFor(pending.release, pending.before);
+    return settingsDifferences(pending.backup, config, presets, pending.changes, profile?.settingsChanges);
+  }
   function isInstalled(identity: ControllerIdentity, pending: InstallJournal) {
     const caps = identity.capabilities;
     return (
@@ -476,7 +624,12 @@ function createSession(
     if (!journal) throw new WledInstallerError('verification');
     const pending = journal;
     // An owner's check is not a restart, and no earlier error carries into it.
-    update({ ...snapshot, stage: allowSourceRecovery ? 'verifying' : 'rebooting', error: undefined });
+    update({
+      ...snapshot,
+      stage: allowSourceRecovery ? 'verifying' : 'rebooting',
+      error: undefined,
+      differences: undefined,
+    });
     let originalFirmware: ControllerIdentity | null = null;
     for (let attempt = 0; attempt < 45; attempt++) {
       ensureCurrent(signal);
@@ -488,10 +641,10 @@ function createSession(
         if (isInstalled(identity, pending)) {
           update({ ...snapshot, stage: 'verifying' });
           const { config, presets } = await readSettings(signal);
-          if (
-            identity.ledCount !== pending.before.ledCount ||
-            !settingsPreserved(pending.backup, config, presets, pending.changes)
-          ) {
+          const differences = differencesFor(pending, config, presets);
+          if (identity.ledCount !== pending.before.ledCount) differences.push('leds.count');
+          if (differences.length) {
+            update({ ...snapshot, differences });
             throw new WledInstallerError('preservation');
           }
           await restoreSameSubnet(pending, signal);
@@ -522,8 +675,11 @@ function createSession(
       }
       if (originalFirmware) {
         const { config, presets } = await readSettings(signal);
-        if (!settingsPreserved(pending.backup, config, presets, pending.changes))
+        const differences = differencesFor(pending, config, presets);
+        if (differences.length) {
+          update({ ...snapshot, differences });
           throw new WledInstallerError('preservation');
+        }
         await restoreSameSubnet(pending, signal);
         // The controller kept the owner's settings; what it holds now is the next attempt's baseline.
         const current = await readSettings(signal);
@@ -588,8 +744,17 @@ function createSession(
     exportBackup: async () => {
       if (snapshot.backup) await io.exportBackup(snapshot.backup.uri);
     },
-    /** `name`: what the controller should advertise to climbers; trimmed as the add-on trims it. */
-    install: (modelConfirmed: boolean, audioDisabledConfirmed: boolean, betaConfirmed = false, name?: string) =>
+    /**
+     * `name`: what the controller should advertise to climbers; trimmed as the add-on trims it.
+     * `droppedFeaturesConfirmed`: the owner accepted losing integrations they use that the build leaves out.
+     */
+    install: (
+      modelConfirmed: boolean,
+      audioDisabledConfirmed: boolean,
+      betaConfirmed = false,
+      name?: string,
+      droppedFeaturesConfirmed = false,
+    ) =>
       exclusive(async (signal) => {
         const { identity, backup, release } = snapshot;
         if (
@@ -600,7 +765,9 @@ function createSession(
           !release ||
           (!release.audio && !audioDisabledConfirmed) ||
           (release.channel === 'beta' && !betaConfirmed) ||
-          !releases.includes(release)
+          !releases.includes(release) ||
+          (droppedFeaturesInUse(backup.config, sourceProfileFor(release, identity)).length > 0 &&
+            !droppedFeaturesConfirmed)
         )
           throw new WledInstallerError('incompatible');
         await io.awake(true);

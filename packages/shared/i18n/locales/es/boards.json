@@ -82,6 +82,17 @@
       "backupHint": "La copia incluye la configuración y los preajustes. Expórtala a un lugar seguro antes de instalar.",
       "controllerName": "Nombre del controlador",
       "controllerNameHint": "Los escaladores ven este nombre cuando buscan el Bluetooth de tu Spraywall. {{used}} de {{max}} bytes; las letras con tilde ocupan dos.",
+      "droppedFeatures": "{{features}} está activado, pero este firmware no lo incluye, así que deja de funcionar tras la actualización. Sus ajustes quedan en tu copia exportada.",
+      "confirmDroppedFeatures": "Entiendo que {{features}} deja de funcionar",
+      "droppedFeaturesDone": "{{features}} ya no funciona en este controlador. Sus ajustes están en tu copia exportada.",
+      "differences": "Ajustes que cambiaron: {{paths}}",
+      "features": {
+        "mqtt": "MQTT",
+        "hue": "Sincronización con Hue",
+        "alexa": "Alexa",
+        "ir": "Mando infrarrojo",
+        "espnow": "ESP-NOW"
+      },
       "confirmModel": "He comprobado la etiqueta: Gledopto GL-C-015WL-D",
       "confirmNoAudio": "Acepto instalar esta versión sin efectos reactivos al sonido",
       "install": "Instalar firmware verificado",

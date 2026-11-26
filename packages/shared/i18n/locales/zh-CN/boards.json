@@ -82,6 +82,17 @@
       "backupHint": "备份包含控制器配置和预设。安装前，请将其导出到安全的位置。",
       "controllerName": "控制器名称",
       "controllerNameHint": "攀岩者搜索喷点墙的蓝牙时会看到这个名称。已用 {{used}}/{{max}} 字节，每个汉字占 3 字节。",
+      "droppedFeatures": "{{features}} 已开启，但此固件不包含该功能，更新后将无法使用。其设置保留在你导出的备份中。",
+      "confirmDroppedFeatures": "我了解 {{features}} 将无法使用",
+      "droppedFeaturesDone": "{{features}} 在此控制器上已无法使用。其设置保存在你导出的备份中。",
+      "differences": "已更改的设置：{{paths}}",
+      "features": {
+        "mqtt": "MQTT",
+        "hue": "Hue 同步",
+        "alexa": "Alexa",
+        "ir": "红外遥控",
+        "espnow": "ESP-NOW"
+      },
       "confirmModel": "我已核对标签：Gledopto GL-C-015WL-D",
       "confirmNoAudio": "我同意安装不含声控灯效的此固件",
       "install": "安装已验证固件",

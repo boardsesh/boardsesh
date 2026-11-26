@@ -8,7 +8,9 @@ import {
   createWledHotspotInstaller,
   createWledInstaller,
   CONTROLLER_NAME_BYTES,
+  droppedFeaturesInUse,
   isHotspotError,
+  sourceProfileFor,
   type InstallerSnapshot,
 } from '../../lib/wled-installer/engine';
 import type { HotspotCredentials, HotspotLink } from '../../lib/wled-installer/hotspot';
@@ -59,6 +61,9 @@ export function WledBluetoothInstaller({
   const [modelConfirmed, setModelConfirmed] = useState(false);
   // null until a backup is ready, then the owner's edit of the suggested name.
   const [nameDraft, setNameDraft] = useState<string | null>(null);
+  const [droppedConfirmed, setDroppedConfirmed] = useState(false);
+  // What the owner accepted losing at the install tap, repeated once the install completes.
+  const [droppedAtInstall, setDroppedAtInstall] = useState<string[]>([]);
   const [audioDisabledConfirmed, setAudioDisabledConfirmed] = useState(false);
   const [betaConfirmed, setBetaConfirmed] = useState(false);
   const installer = useRef<InstallerSession | null>(null);
@@ -116,6 +121,8 @@ export function WledBluetoothInstaller({
     setModelConfirmed(false);
     setAudioDisabledConfirmed(false);
     setNameDraft(null);
+    setDroppedConfirmed(false);
+    setDroppedAtInstall([]);
     // The hotspot route downloads before it joins, so beta consent comes first there.
     if (!hotspotMode) setBetaConfirmed(false);
     const startedAt = generation.current;
@@ -206,6 +213,19 @@ export function WledBluetoothInstaller({
   const nameInput = nameDraft ?? suggestedName;
   const advertisedName = controllerName(nameInput);
   const nameBytes = new TextEncoder().encode(advertisedName).length;
+  const featureName = (feature: string) =>
+    ({
+      mqtt: t('sprayLed.installer.features.mqtt'),
+      hue: t('sprayLed.installer.features.hue'),
+      alexa: t('sprayLed.installer.features.alexa'),
+      ir: t('sprayLed.installer.features.ir'),
+      espnow: t('sprayLed.installer.features.espnow'),
+    })[feature] ?? feature;
+  const droppedFeatures =
+    snapshot.stage === 'ready' && snapshot.backup && snapshot.release && snapshot.identity
+      ? droppedFeaturesInUse(snapshot.backup.config, sourceProfileFor(snapshot.release, snapshot.identity))
+      : [];
+  const droppedNames = droppedFeatures.map(featureName).join(', ');
   const switchesSameSubnet =
     hotspotMode && snapshot.backup && snapshot.identity
       ? blocksHotspotUpdate(snapshot.backup.config, snapshot.identity.version)
@@ -267,6 +287,16 @@ export function WledBluetoothInstaller({
             disabled={disabled}
           />
         </>
+      ) : null}
+      {snapshot.stage === 'complete' && droppedAtInstall.length ? (
+        <Text variant="footnote" color={systemColors.secondaryLabel}>
+          {t('sprayLed.installer.droppedFeaturesDone', { features: droppedAtInstall.map(featureName).join(', ') })}
+        </Text>
+      ) : null}
+      {snapshot.error === 'preservation' && snapshot.differences?.length ? (
+        <Text variant="caption1" color={systemColors.secondaryLabel}>
+          {t('sprayLed.installer.differences', { paths: snapshot.differences.slice(0, 8).join(', ') })}
+        </Text>
       ) : null}
       {snapshot.identity ? (
         <Text variant="caption1">
@@ -339,6 +369,19 @@ export function WledBluetoothInstaller({
             onValueChange={setModelConfirmed}
             disabled={disabled}
           />
+          {droppedFeatures.length ? (
+            <>
+              <Text variant="footnote" color={brandColors.error}>
+                {t('sprayLed.installer.droppedFeatures', { features: droppedNames })}
+              </Text>
+              <SwitchRow
+                label={t('sprayLed.installer.confirmDroppedFeatures', { features: droppedNames })}
+                value={droppedConfirmed}
+                onValueChange={setDroppedConfirmed}
+                disabled={disabled}
+              />
+            </>
+          ) : null}
           {!snapshot.release.audio ? (
             <SwitchRow
               label={t('sprayLed.installer.confirmNoAudio')}
@@ -357,10 +400,18 @@ export function WledBluetoothInstaller({
               disabled ||
               !modelConfirmed ||
               (!snapshot.release.audio && !audioDisabledConfirmed) ||
-              (snapshot.release.channel === 'beta' && !betaConfirmed)
+              (snapshot.release.channel === 'beta' && !betaConfirmed) ||
+              (droppedFeatures.length > 0 && !droppedConfirmed)
             }
             onPress={() => {
-              void installer.current?.install(modelConfirmed, audioDisabledConfirmed, betaConfirmed, advertisedName);
+              setDroppedAtInstall(droppedFeatures);
+              void installer.current?.install(
+                modelConfirmed,
+                audioDisabledConfirmed,
+                betaConfirmed,
+                advertisedName,
+                droppedConfirmed,
+              );
             }}
           />
           {hotspotMode ? (

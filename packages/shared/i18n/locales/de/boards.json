@@ -82,6 +82,17 @@
       "backupHint": "Die Sicherung enthält Konfiguration und Presets. Exportiere sie vor der Installation an einen sicheren Ort.",
       "controllerName": "Name des Controllers",
       "controllerNameHint": "Diesen Namen sehen Kletter*innen, wenn sie das Bluetooth deiner Spraywall suchen. {{used}} von {{max}} Bytes; Umlaute zählen doppelt.",
+      "droppedFeatures": "{{features}} ist aktiviert, aber diese Firmware enthält es nicht, daher funktioniert es nach dem Update nicht mehr. Die Einstellungen bleiben in deiner exportierten Sicherung.",
+      "confirmDroppedFeatures": "Ich verstehe, dass {{features}} nicht mehr funktioniert",
+      "droppedFeaturesDone": "{{features}} funktioniert auf diesem Controller nicht mehr. Die Einstellungen sind in deiner exportierten Sicherung.",
+      "differences": "Geänderte Einstellungen: {{paths}}",
+      "features": {
+        "mqtt": "MQTT",
+        "hue": "Hue-Sync",
+        "alexa": "Alexa",
+        "ir": "Infrarot-Fernbedienung",
+        "espnow": "ESP-NOW"
+      },
       "confirmModel": "Etikett geprüft: Gledopto GL-C-015WL-D",
       "confirmNoAudio": "Ich stimme der Installation ohne audioreaktive Effekte zu",
       "install": "Geprüfte Firmware installieren",
