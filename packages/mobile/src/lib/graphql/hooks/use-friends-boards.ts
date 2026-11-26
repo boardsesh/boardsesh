@@ -6,20 +6,26 @@ import {
 } from '@boardsesh/graphql/operations/boards';
 import type { FriendBoardConnection } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../client';
+import { FRIENDS_BOARDS_QUERY_KEY } from '../friends-boards-key';
 
 /**
- * Boards owned by people the viewer follows (`friendsBoards`), for "A friend's
- * board" and the picker's Friends' boards shelf.
+ * Boards owned by people who follow the viewer (`friendsBoards`), for "A
+ * friend's board" and the picker's Friends' boards shelf. The owner's follow is
+ * the consent to list; whether the viewer can open a board is the board's own
+ * audience, so a Followers board from someone the viewer doesn't follow back
+ * comes as an ask.
  *
  * Network only, never persisted (docs/data/offline-reads.md, Bucket 3): the
  * list says who may climb where right now, and a stale copy would offer a
  * board the owner just took back. The persisted cache is an allowlist, so
  * leaving this key off it is the whole opt-out.
  *
- * The key root is `friendsBoards`, which a privacy write by the viewer
- * (`refreshAfterOwnPrivacyChange`) and a follow or unfollow refresh.
+ * The key root is `friendsBoards` (friends-boards-key.ts), which a privacy
+ * write by the viewer (`refreshAfterOwnPrivacyChange`), the viewer's own follow
+ * or unfollow, and a live `new_follower` or `board_access_approved`
+ * notification refresh.
  */
-export const FRIENDS_BOARDS_QUERY_KEY = 'friendsBoards';
+export { FRIENDS_BOARDS_QUERY_KEY };
 
 /** The server's page size for "A friend's board" (it allows 1 to 50). */
 export const FRIENDS_BOARDS_PAGE_SIZE = 20;
