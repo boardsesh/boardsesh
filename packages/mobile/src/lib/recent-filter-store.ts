@@ -126,7 +126,14 @@ export async function addRecentFilter(
     const existing = await getRecentFilters();
     const filterKey = getFilterKey(filters, searchText);
 
-    const deduplicated = existing.filter((entry) => getFilterKey(entry.filters, entry.searchText) !== filterKey);
+    // A named search belongs to its board (the name only replays there), so the
+    // same name on another board is a separate recent. Without a name the board
+    // doesn't matter. An entry saved before boards were recorded is replaced.
+    const named = searchText.trim() !== '';
+    const isSameSearch = (entry: RecentFilter) =>
+      getFilterKey(entry.filters, entry.searchText) === filterKey &&
+      (!named || entry.boardKey === undefined || entry.boardKey === boardKey);
+    const deduplicated = existing.filter((entry) => !isSameSearch(entry));
 
     const newEntry: RecentFilter = {
       id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
