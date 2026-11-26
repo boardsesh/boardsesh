@@ -1197,6 +1197,24 @@ describe('useWorkoutOneTap: Quantum eligibility at save time', () => {
     expect(sentInput()).toMatchObject({ climbUuid: 'quantum-next', status: 'send' });
   });
 
+  it('discards a pending Quantum tap when the same climb moves to a new session', async () => {
+    let completeRead: (retired: boolean) => void = () => {};
+    quantum.isRetired.mockReturnValueOnce(
+      new Promise((resolve) => {
+        completeRead = resolve;
+      }),
+    );
+    const liveTarget = quantumTarget();
+    const { result, rerender } = renderOneTap(liveTarget);
+    act(result.current.onFell);
+    expect(quantum.isRetired).toHaveBeenCalledOnce();
+    rerender({ target: { ...liveTarget, sessionId: 'new-session' } });
+
+    await act(async () => completeRead(false));
+
+    expect(saveMock.mutateAsync).not.toHaveBeenCalled();
+  });
+
   it('rechecks rollout after the local read and before dispatching a one-tap save', async () => {
     let completeRead: (retired: boolean) => void = () => {};
     quantum.isRetired.mockReturnValueOnce(

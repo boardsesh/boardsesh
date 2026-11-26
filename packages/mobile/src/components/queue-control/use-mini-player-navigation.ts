@@ -276,14 +276,9 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
         }
         trackStep('moved');
       };
-      if (!isQuantumClimbTarget(targetItem.climb, navigationBoard)) {
-        commitStep();
-        return;
-      }
-
-      // Queue navigation chooses its target again when called. Keep the step
-      // inputs and session fixed across the local retirement lookup so that
-      // the same tap cannot move to an unchecked climb.
+      // Queue navigation chooses its target again when called. Even an
+      // ordinary rendered neighbour can become a Quantum target by tap time.
+      // Keep the step inputs and session fixed through any retirement lookup.
       const { sessionId } = getQueueSnapshot();
       const storedPick = getLastPick();
       if (resolveBarPick(storedPick, currentClimbQueueItem?.uuid ?? null, getCredentialGeneration()) !== pick) {
@@ -305,6 +300,10 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
         );
       };
       if (!isStepCurrent()) return;
+      if (!isQuantumClimbTarget(targetItem.climb, navigationBoard)) {
+        commitStep();
+        return;
+      }
       runAvailableStep(() => {
         if (isStepCurrent()) commitStep();
       });

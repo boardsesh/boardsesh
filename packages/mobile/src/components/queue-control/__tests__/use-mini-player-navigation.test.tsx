@@ -215,6 +215,26 @@ describe('useMiniPlayerNavigation', () => {
     expect(queue.previousClimb).toHaveBeenCalledOnce();
   });
 
+  it('rejects a stale Next tap from before a retired Quantum neighbour took the slot', () => {
+    driveAlways();
+    const kilterItem = makeItem('old-kilter-neighbour');
+    targets.nextItem = kilterItem;
+    queue.items = [queue.current!, kilterItem];
+    const { result } = renderHook(() => useMiniPlayerNavigation());
+    const staleNext = result.current.onNext;
+    const retiredItem = quantumItem('retired');
+    targets.nextItem = retiredItem;
+    queue.items = [queue.current!, retiredItem];
+    quantum.isRetired.mockResolvedValue(true);
+
+    act(staleNext);
+
+    expect(queue.nextClimb).not.toHaveBeenCalled();
+    expect(quantum.isRetired).not.toHaveBeenCalled();
+    expect(navigationEvents()).toHaveLength(0);
+    expect(queue.items).toContain(retiredItem);
+  });
+
   it('drops the drive step if the queue changes while the local check is pending', async () => {
     driveAlways();
     const checkedItem = quantumItem('checked');

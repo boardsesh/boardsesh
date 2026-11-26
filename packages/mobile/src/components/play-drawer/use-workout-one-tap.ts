@@ -231,11 +231,7 @@ function useOneTapLogger(
 ): OneTapLogger {
   const { t } = useTranslation('session');
   const { climb, queueItemUuid, sessionId, boardName, layoutId, sizeId, setIds, angle, isMirror } = target;
-  const board = useMemo(
-    () => ({ boardName, layoutId, sizeId, setIds, angle }),
-    [boardName, layoutId, sizeId, setIds, angle],
-  );
-  const runClimbAction = useRunAvailableClimbAction(climb, board);
+  const runClimbAction = useRunAvailableClimbAction(climb, target);
   // No `active`: the tap is the commit, so each save takes the wall as it is.
   const { save, tickBoardName } = useTickSaver({
     climb,
