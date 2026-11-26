@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { OfflineWriteEnqueueContext } from '@boardsesh/shared-schema';
 import type { OfflineDatabase, SqlValue } from '../../database';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
-import { runMigrations, ARTIFACT_SCHEMA_VERSION, MIGRATIONS } from '../../db/migrations';
+import { runMigrations, artifactSchemaVersion, MIGRATIONS } from '../../db/migrations';
 import {
   enqueue,
   markCompleted,
@@ -209,7 +209,7 @@ describe('durable offline write denominator', () => {
     await runMigrations(database);
     expect(await readOfflineWriteObservations(database)).toEqual([]);
     expect(await peekPending(database)).toHaveLength(1);
-    expect(ARTIFACT_SCHEMA_VERSION).toBe(12);
+    expect(artifactSchemaVersion(MIGRATIONS.filter(({ version }) => version <= 15))).toBe(12);
   });
 });
 

@@ -57,8 +57,8 @@ const ALTER_ADDED_COLUMNS: { version: number; table: string; column: string }[] 
   { version: 11, table: 'board_climbs', column: 'revision_number' },
   { version: 11, table: 'board_climbs', column: 'holds_revision_number' },
   { version: 12, table: 'board_climbs', column: 'retired_by_reset' },
-  { version: 15, table: 'board_climbs', column: 'controller_route_uuid' },
-  { version: 15, table: 'board_climbs', column: 'is_boardsesh_authored' },
+  { version: 16, table: 'board_climbs', column: 'controller_route_uuid' },
+  { version: 16, table: 'board_climbs', column: 'is_boardsesh_authored' },
 ];
 
 async function rollBackAlterColumnsAbove(
@@ -118,7 +118,7 @@ describe('runMigrations', () => {
       expect(indexes.map((index) => index.name)).toEqual(
         expect.arrayContaining(['idx_pending_mutations_entity', 'idx_pending_mutations_dependency']),
       );
-      expect(ARTIFACT_SCHEMA_VERSION).toBe(15);
+      expect(artifactSchemaVersion(MIGRATIONS.filter(({ version }) => version <= 15))).toBe(12);
       expect(LATEST_SCHEMA_VERSION).toBeGreaterThan(13);
       await runMigrations(database);
       expect(await database.getFirstAsync('SELECT COUNT(*) AS count FROM pending_mutations')).toEqual({ count: 1 });
@@ -532,25 +532,95 @@ describe('runMigrations', () => {
     }
   });
 
-  it('v15 adds controller identity and nullable provenance on fresh and v14-stamped databases', async () => {
-    const freshDb = createTestDatabase();
-    await runMigrations(freshDb);
-    expect(await tableColumns(freshDb, 'board_climbs')).toContain('controller_route_uuid');
-    expect(await tableColumns(freshDb, 'board_climbs')).toContain('is_boardsesh_authored');
-
-    const upgradedDb = await createDatabaseAtVersion(14);
-    expect(await tableColumns(upgradedDb, 'board_climbs')).not.toContain('controller_route_uuid');
-    expect(await tableColumns(upgradedDb, 'board_climbs')).not.toContain('is_boardsesh_authored');
-    await runMigrations(upgradedDb);
-    expect(await tableColumns(upgradedDb, 'board_climbs')).toContain('controller_route_uuid');
-    expect(await tableColumns(upgradedDb, 'board_climbs')).toContain('is_boardsesh_authored');
-    await upgradedDb.runAsync("INSERT INTO board_climbs (uuid, board_type) VALUES ('unknown-provenance', 'quantum')");
-    expect(
-      await upgradedDb.getFirstAsync('SELECT is_boardsesh_authored FROM board_climbs WHERE uuid = ?', [
-        'unknown-provenance',
-      ]),
-    ).toEqual({ is_boardsesh_authored: null });
+  it('creates nullable Quantum climb columns and the delivery journal on a fresh database', async () => {
+    const database = createTestDatabase();
+    try {
+      await runMigrations(database);
+      await database.execAsync("INSERT INTO board_climbs (uuid, board_type) VALUES ('unknown-provenance', 'quantum')");
+      expect(
+        await database.getFirstAsync('SELECT controller_route_uuid, is_boardsesh_authored FROM board_climbs'),
+      ).toEqual({ controller_route_uuid: null, is_boardsesh_authored: null });
+      expect(await listTables(database)).toContain('offline_write_delivery_journal');
+    } finally {
+      database.close();
+    }
   });
+
+  it.each(['released', 'Quantum preview'] as const)(
+    'upgrades the %s v15 schema without rewriting data',
+    async (history) => {
+      const hadQuantumColumns = history === 'Quantum preview';
+      const database = await createDatabaseAtVersion(hadQuantumColumns ? 14 : 15);
+      try {
+        if (hadQuantumColumns) {
+          // The preview's alternate v15 excludes the released device journal.
+          await database.execAsync(`
+          ALTER TABLE board_climbs ADD COLUMN controller_route_uuid TEXT;
+          ALTER TABLE board_climbs ADD COLUMN is_boardsesh_authored INTEGER;
+          UPDATE schema_version SET version = 15 WHERE id = 1;
+        `);
+        }
+        await database.execAsync(`
+        INSERT INTO board_climbs (uuid, board_type, layout_id, frames, sync_seq)
+        VALUES ('keep-climb', 'quantum', 9104, 'p1r12', 3);
+        INSERT INTO pending_mutations (table_name, operation, payload, idempotency_key, entity_key, retry_count)
+        VALUES ('boardsesh_ticks', 'create', '{"climbUuid":"keep-climb"}', 'keep-tick', 'tick:keep-tick', 2);
+      `);
+        if (hadQuantumColumns) {
+          await database.execAsync(
+            "UPDATE board_climbs SET controller_route_uuid = 'keep-controller', is_boardsesh_authored = 1",
+          );
+        } else {
+          await database.execAsync(`
+          INSERT INTO offline_write_delivery_journal (
+            delivery_id, mutation_id, table_name, operation, queued_at, connectivity_reason, origin_release, target, observed_at, revision
+          ) VALUES ('keep-receipt', 1, 'boardsesh_ticks', 'create', '2026-11-21', 'offline', 'release', '{}', '2026-11-21', 3)
+        `);
+        }
+
+        await runMigrations(database);
+        await runMigrations(database);
+
+        expect(await database.getFirstAsync('SELECT version FROM schema_version WHERE id = 1')).toEqual({
+          version: 16,
+        });
+        expect(
+          await database.getFirstAsync(
+            'SELECT uuid, frames, sync_seq, controller_route_uuid, is_boardsesh_authored FROM board_climbs',
+          ),
+        ).toEqual({
+          uuid: 'keep-climb',
+          frames: 'p1r12',
+          sync_seq: 3,
+          controller_route_uuid: hadQuantumColumns ? 'keep-controller' : null,
+          is_boardsesh_authored: hadQuantumColumns ? 1 : null,
+        });
+        expect(
+          await database.getAllAsync('SELECT idempotency_key, payload, entity_key, retry_count FROM pending_mutations'),
+        ).toEqual([
+          {
+            idempotency_key: 'keep-tick',
+            payload: '{"climbUuid":"keep-climb"}',
+            entity_key: 'tick:keep-tick',
+            retry_count: 2,
+          },
+        ]);
+        expect(await database.getAllAsync('SELECT delivery_id, revision FROM offline_write_delivery_journal')).toEqual(
+          hadQuantumColumns ? [] : [{ delivery_id: 'keep-receipt', revision: 3 }],
+        );
+        expect(await tableColumns(database, 'pending_mutations')).toEqual(
+          expect.arrayContaining(['delivery_id', 'delivery_context', 'delivery_target']),
+        );
+        expect(
+          await database.getFirstAsync(
+            "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = 'offline_write_delivery_enqueue'",
+          ),
+        ).toEqual({ name: 'offline_write_delivery_enqueue' });
+      } finally {
+        database.close();
+      }
+    },
+  );
 
   it('applies a newly appended migration on top of an older version', async () => {
     const db = createTestDatabase();
@@ -585,8 +655,8 @@ describe('runMigrations', () => {
 });
 
 describe('ARTIFACT_SCHEMA_VERSION', () => {
-  it('is the last migration that changed an artifact table: v15, the Quantum controller route identity', () => {
-    expect(ARTIFACT_SCHEMA_VERSION).toBe(15);
+  it('is the last migration that changed an artifact table: v16, the Quantum controller route identity', () => {
+    expect(ARTIFACT_SCHEMA_VERSION).toBe(16);
   });
 
   it('is not moved by device-only migrations (v8 spray_walls, v9 followed authors, v10 holds index)', () => {
