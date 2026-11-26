@@ -1355,7 +1355,11 @@ export type BoardShareLinkPreview = {
   __typename?: 'BoardShareLinkPreview';
   /** Board family for signed-in link holders checking rollout eligibility. */
   boardType?: Maybe<Scalars['String']['output']>;
+  /** Quantum configuration for signed-in link holders checking rollout eligibility. */
+  layoutId?: Maybe<Scalars['Int']['output']>;
   name: Scalars['String']['output'];
+  setIds?: Maybe<Scalars['String']['output']>;
+  sizeId?: Maybe<Scalars['Int']['output']>;
 };
 
 /** Where a redeemed share link points, so the client can open the board. */
@@ -17446,7 +17450,10 @@ export type BoardShareLinkPreviewResolvers<
   ParentType extends ResolversParentTypes['BoardShareLinkPreview'] = ResolversParentTypes['BoardShareLinkPreview'],
 > = ResolversObject<{
   boardType?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  layoutId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  setIds?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  sizeId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 

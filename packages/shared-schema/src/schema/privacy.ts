@@ -137,6 +137,10 @@ export const privacyTypeDefs = /* GraphQL */ `
     name: String!
     "Board family for signed-in link holders checking rollout eligibility."
     boardType: String
+    "Quantum configuration for signed-in link holders checking rollout eligibility."
+    layoutId: Int
+    sizeId: Int
+    setIds: String
   }
   extend type PublicUserProfile {
     isPrivate: Boolean!

@@ -54,9 +54,9 @@ async function seedBoard(
       ownerId,
       name: `Share Link ${audience} ${boardSerial}`,
       boardType,
-      layoutId: 1,
+      layoutId: boardType === 'quantum' ? 9105 : 1,
       // A distinct size per board keeps the per-owner config unique index happy.
-      sizeId: 100 + boardSerial,
+      sizeId: boardType === 'quantum' ? 9205 : 100 + boardSerial,
       setIds: '1',
       isPublic: audience === 'public' || audience === 'unlisted',
       isUnlisted: audience === 'unlisted',
@@ -564,13 +564,18 @@ describe('the signed-out preview', () => {
     expect(JSON.stringify(preview)).not.toContain('Example Street');
   });
 
-  it('returns only the board name and family for a signed-in token holder without granting access', async () => {
+  it('returns the Quantum rollout configuration for a signed-in token holder without granting access', async () => {
     const board = await seedBoard(owner, 'invite_only', 'quantum');
     const link = await shareLink(board.uuid);
     const args = { token: link!.token };
     const name = expect.stringContaining('Share Link invite_only');
     const query = boardShareLinkQueries.boardShareLinkPreview;
-    await expect(query(null, args, context(stranger))).resolves.toEqual({ name, boardType: 'quantum' });
+    const configuration = { layoutId: 9105, sizeId: 9205, setIds: '1' };
+    await expect(query(null, args, context(stranger))).resolves.toEqual({
+      name,
+      boardType: 'quantum',
+      ...configuration,
+    });
     await expect(query(null, args, anonymous())).resolves.toEqual({ name });
     await expect(query(null, args, { ...anonymous(), userId: stranger })).resolves.toEqual({ name });
     const { graphql } = createRequire(import.meta.url)('graphql') as typeof GraphQLModule;
@@ -584,7 +589,15 @@ describe('the signed-out preview', () => {
         variableValues: args,
         contextValue: viewer,
       });
-      expect(reply).toEqual({ data: { boardShareLinkPreview: { name, boardType: expectedType } } });
+      expect(reply).toEqual({
+        data: {
+          boardShareLinkPreview: {
+            name,
+            boardType: expectedType,
+            ...(expectedType === null ? { layoutId: null, sizeId: null, setIds: null } : configuration),
+          },
+        },
+      });
     }
     await expect(grantRows(board.uuid, stranger)).resolves.toEqual([]);
   });

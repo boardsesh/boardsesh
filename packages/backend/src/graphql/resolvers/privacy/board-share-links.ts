@@ -45,7 +45,7 @@ export const boardShareLinkQueries = {
   boardShareLinkPreview: async (_: unknown, { token }: { token: string }, ctx: ConnectionContext) => {
     await applyRateLimit(ctx, 600, 'boardShareLinkPreview');
     if (!privacyControlsEnabled()) return null;
-    return previewBoardShareLink(token, { includeBoardType: ctx.isAuthenticated && !!ctx.userId });
+    return previewBoardShareLink(token, { includeBoardConfiguration: ctx.isAuthenticated && !!ctx.userId });
   },
 };
 

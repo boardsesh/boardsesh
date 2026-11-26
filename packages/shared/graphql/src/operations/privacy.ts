@@ -261,6 +261,9 @@ export const GET_BOARD_SHARE_LINK_ELIGIBILITY = gql`
     boardShareLinkPreview(token: $token) {
       name
       boardType
+      layoutId
+      sizeId
+      setIds
     }
   }
 `;

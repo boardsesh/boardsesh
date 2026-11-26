@@ -1352,7 +1352,11 @@ export type BoardShareLinkPreview = {
   __typename?: 'BoardShareLinkPreview';
   /** Board family for signed-in link holders checking rollout eligibility. */
   boardType?: Maybe<Scalars['String']['output']>;
+  /** Quantum configuration for signed-in link holders checking rollout eligibility. */
+  layoutId?: Maybe<Scalars['Int']['output']>;
   name: Scalars['String']['output'];
+  setIds?: Maybe<Scalars['String']['output']>;
+  sizeId?: Maybe<Scalars['Int']['output']>;
 };
 
 /** Where a redeemed share link points, so the client can open the board. */
@@ -18038,7 +18042,14 @@ export type BoardShareLinkEligibilityQueryVariables = Exact<{
 
 export type BoardShareLinkEligibilityQuery = {
   __typename?: 'Query';
-  boardShareLinkPreview?: { __typename?: 'BoardShareLinkPreview'; name: string; boardType?: string | null } | null;
+  boardShareLinkPreview?: {
+    __typename?: 'BoardShareLinkPreview';
+    name: string;
+    boardType?: string | null;
+    layoutId?: number | null;
+    sizeId?: number | null;
+    setIds?: string | null;
+  } | null;
 };
 
 export type GetClimbProposalsQueryVariables = Exact<{
@@ -27750,6 +27761,9 @@ export const BoardShareLinkEligibilityDocument = {
               selections: [
                 { kind: 'Field', name: { kind: 'Name', value: 'name' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'sizeId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'setIds' } },
               ],
             },
           },
