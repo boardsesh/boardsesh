@@ -37,3 +37,24 @@ export function rollbackDeployment(options: {
  * plain Error and means no other actor was detected.
  */
 export class RollbackFencedError extends Error {}
+
+type WebRollbackDeployment = {
+  id: string;
+  serviceId: string;
+  environmentId: string;
+  projectId: string;
+  status: string;
+  createdAt: string;
+  createdAtMs: number;
+  canRollback: unknown;
+  image: string;
+};
+
+/** Read and cross-check the serving web deployment without performing a mutation. */
+export function readWebRollbackBaseline(options: {
+  fetchImpl: (input: string | URL, init?: RequestInit) => Promise<Response>;
+  token: string;
+  serviceId: string;
+  expectedImage: string;
+  readJson: (response: Response) => Promise<unknown>;
+}): Promise<{ serving: WebRollbackDeployment; latest: WebRollbackDeployment; deploymentIds: string[] }>;
