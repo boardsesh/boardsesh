@@ -1768,6 +1768,7 @@ visitor sends none of them. There is no new consent-answer counter.
 | Compatibility | `Compatibility Board Selected {board, source}` | Store clicks by the selected board |
 | Import | `Import Path Chosen {source}` (`account-link` or `aurora-export`) | `Board Account Linked` |
 | Spray wall | `Spraywall Path Clicked {placement}` | `Board Created {boardType: spray}`, then `Climb Created` |
+| Build plans | `Build Plans Path Clicked {placement}` (`home`) | `Build Plans Page Viewed`, then `Build Plans Preview Requested` |
 | Navigation | `Nav Link Clicked {area, target}` | The bounded destination chosen in header, menu or footer |
 | Support | Existing `Support CTA Clicked {cadence, currency, src, option, placement}` | A donation completion, only when a payment provider confirms it |
 

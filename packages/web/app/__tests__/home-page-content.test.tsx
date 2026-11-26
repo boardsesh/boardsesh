@@ -9,6 +9,9 @@ import esMarketing from '@boardsesh/i18n/locales/es/marketing.json';
 import frMarketing from '@boardsesh/i18n/locales/fr/marketing.json';
 import itMarketing from '@boardsesh/i18n/locales/it/marketing.json';
 import { DocumentLocaleProvider } from '@/app/lib/i18n/document-locale-context';
+import enWebsite from '@boardsesh/i18n/locales/en-US/website.json';
+import esWebsite from '@boardsesh/i18n/locales/es/website.json';
+import deWebsite from '@boardsesh/i18n/locales/de/website.json';
 
 // Every hero store link names the hero as its placement (#6027).
 const HERO_PLAY_STORE_URL = buildStoreUrl('android', { placement: 'hero' });
@@ -338,6 +341,46 @@ describe('HomePageContent', () => {
         expect(hero?.contains(guides)).toBe(true);
       },
     );
+  });
+
+  describe('build plans card', () => {
+    const websiteByLocale = { 'en-US': enWebsite, es: esWebsite, de: deWebsite };
+
+    it('sits between the spray wall card and the board choices', async () => {
+      await renderHome();
+      const heading = screen.getByRole('heading', { level: 2, name: enWebsite.buildPlans.title });
+      const spray = screen.getByRole('heading', { level: 2, name: enWebsite.sprayTitle });
+      const boards = screen.getByRole('heading', { level: 2, name: enWebsite.boardChoices });
+      expect(spray.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(heading.compareDocumentPosition(boards) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it.each([
+      ['en-US', '/build-plans'],
+      ['es', '/es/build-plans'],
+      ['de', '/de/build-plans'],
+    ] as const)('links the %s homepage to its own build plans page with no redirect', async (locale, href) => {
+      await renderHome({ locale });
+      // The middleware rewrites /es/build-plans to the same route with Spanish
+      // copy, so the prefixed link lands in the visitor's language directly.
+      const cta = screen.getByRole('link', { name: websiteByLocale[locale].buildPlans.cta });
+      expect(cta.getAttribute('href')).toBe(href);
+    });
+
+    it('reports the click as a journey toward build plans', async () => {
+      await renderHome();
+      // A modified click keeps the browser's own behaviour and records the event
+      // without the departing-tab flush. The window listener runs after React's
+      // and only stops jsdom from attempting the new-tab navigation itself.
+      const blockJsdomNavigation = (click: MouseEvent) => click.preventDefault();
+      window.addEventListener('click', blockJsdomNavigation);
+      try {
+        fireEvent.click(screen.getByRole('link', { name: enWebsite.buildPlans.cta }), { metaKey: true });
+      } finally {
+        window.removeEventListener('click', blockJsdomNavigation);
+      }
+      expect(mockTrack).toHaveBeenCalledWith('Build Plans Path Clicked', { placement: 'home' });
+    });
   });
 
   describe('heading semantics', () => {

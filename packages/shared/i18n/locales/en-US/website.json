@@ -38,6 +38,32 @@
   "gymBody": "Claim your listing to set the boards, angles and hours climbers see.",
   "wallCard": "Your own spray wall",
   "partnerCard": "Hold makers and partners",
+  "buildPlans": {
+    "title": "Building your own board?",
+    "lead": "Free CNC files for your own non-commercial wall. Every panel and every hole, laid out on 2440×1220 or 3600×1220 mm plywood sheets.",
+    "includedLabel": "What the files include",
+    "included": {
+      "dxf": {
+        "label": "One DXF per panel",
+        "body": "Outlines and holes, ready for the router."
+      },
+      "checkSheets": {
+        "label": "Check sheets",
+        "body": "Print them on A3 or Tabloid before anything gets cut."
+      },
+      "cutList": {
+        "label": "A cut list",
+        "body": "Sheet count, panel sizes and every hole, counted before you order material."
+      },
+      "licence": {
+        "label": "A licence in your name",
+        "body": "On every file in the pack. One licence covers one wall."
+      }
+    },
+    "cta": "Configure your wall",
+    "compatibility": "Works with Kilter Homewall, Kilter Original (OG) and Tension Board 2. Holds and LEDs are bought separately.",
+    "drawingCaption": "The hole grid of a 7×10 Kilter Homewall, split into panels"
+  },
   "freeApp": "Get the free app",
   "trust": "Free. Open source. Export your logbook any time.",
   "proofNote": "Counts times a climb stayed lit for about a minute, including repeats.",

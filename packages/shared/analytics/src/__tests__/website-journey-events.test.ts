@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
+  buildPlansPathClicked,
   compatibilityBoardSelected,
   importPathChosen,
   navLinkClicked,
@@ -23,6 +24,10 @@ describe('website journey contract', () => {
       properties: { source: 'aurora-export' },
     });
     expect(spraywallPathClicked('help')).toEqual({ name: 'Spraywall Path Clicked', properties: { placement: 'help' } });
+    expect(buildPlansPathClicked('home')).toEqual({
+      name: 'Build Plans Path Clicked',
+      properties: { placement: 'home' },
+    });
   });
 
   it('names a static navigation target without an account, query or full URL', () => {

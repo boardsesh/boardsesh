@@ -17,8 +17,9 @@ plus historical paid-order webhook compatibility.
 
 ## Supported layouts and OG drilling
 
-The catalogue offers Kilter Homewall (layout `8`) and Kilter Original (layout
-`1`). Original sizes are `14` (7×10), `8` (8×12), `10` (12×12), and `28`
+The catalogue offers Kilter Homewall (layout `8`), Kilter Original (layout
+`1`) and Tension Board 2 (layouts `10` Mirror and `11` Spray, sizes `9`, `8`,
+`7`, `6` and `10`; see [Tension Board 2](#tension-board-2)). Original sizes are `14` (7×10), `8` (8×12), `10` (12×12), and `28`
 (16×12). Both Original sets, `1` and `20`, are required at every size. The public catalogue offers the free personal non-commercial licence only.
 
 Original orders store `options.includeKicker`: false for 7×10, true by default

@@ -38,6 +38,32 @@
   "gymBody": "认领岩馆资料，设置攀岩者能看到的训练板、板面角度和营业时间。",
   "wallCard": "你自己的喷点墙",
   "partnerCard": "岩点制造商和合作伙伴",
+  "buildPlans": {
+    "title": "想自己建一块训练板？",
+    "lead": "为你自用、非商业用途的岩墙免费提供 CNC 文件。每块面板和每个孔位都已排布在 2440×1220 或 3600×1220 mm 的胶合板上。",
+    "includedLabel": "文件包含的内容",
+    "included": {
+      "dxf": {
+        "label": "每块面板一份 DXF",
+        "body": "包含外形和孔位，可直接上机加工。"
+      },
+      "checkSheets": {
+        "label": "核对图纸",
+        "body": "切割前先用 A3 或 Tabloid 打印核对。"
+      },
+      "cutList": {
+        "label": "切割清单",
+        "body": "订购材料前，先算清板材数量、面板尺寸及每个孔位。"
+      },
+      "licence": {
+        "label": "署你姓名的许可",
+        "body": "图纸包里的每个文件都印有你的姓名。一份许可对应一面岩墙。"
+      }
+    },
+    "cta": "配置你的岩墙",
+    "compatibility": "兼容 Kilter Homewall、Kilter Original (OG) 和 Tension Board 2。岩点和 LED 需另行购买。",
+    "drawingCaption": "7×10 Kilter Homewall 的孔位网格，按面板拆分"
+  },
   "freeApp": "免费下载应用",
   "trust": "免费、开源，攀爬日志随时可导出。",
   "proofNote": "每次线路持续点亮约一分钟计为一次，同一条线路可重复计数。",
