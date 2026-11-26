@@ -14,7 +14,10 @@ import {
   APEX_HOSTNAME,
   APEX_ORIGINLESS_ADDRESS,
   APEX_REDIRECT_RULE_DESCRIPTION,
+  ASSETS_CACHE_RULE_DESCRIPTION,
   ASSETS_CNAME_TARGET,
+  NEXT_STATIC_REQUEST_HEADER_RULE_DESCRIPTION,
+  NEXT_STATIC_CACHE_RULE_DESCRIPTION,
   ASSETS_HOSTNAME,
   ASSETS_STAGING_HOSTNAME,
   SNAPSHOTS_HOSTNAME,
@@ -695,6 +698,70 @@ describe('assets.boardsesh.com routing and historical generic DNS fixture', () =
       value: '*',
     });
     expect(corsRule?.enabled).toBe(true);
+  });
+});
+
+describe('public Next.js asset delivery', () => {
+  const cacheRules = desired.cacheRules.filter((rule) => rule.description === NEXT_STATIC_CACHE_RULE_DESCRIPTION);
+  const headerRules = desired.requestHeaderRules.filter(
+    (rule) => rule.description === NEXT_STATIC_REQUEST_HEADER_RULE_DESCRIPTION,
+  );
+
+  it('strips credentials and the referring page only on the three public Next asset paths', () => {
+    expect(headerRules).toEqual([
+      {
+        description: NEXT_STATIC_REQUEST_HEADER_RULE_DESCRIPTION,
+        expression:
+          '(http.host in {"www.boardsesh.com" "assets.boardsesh.com" "assets-r2.boardsesh.com"} and starts_with(http.request.uri.path, "/_next/static/"))',
+        action: 'rewrite',
+        action_parameters: {
+          headers: {
+            cookie: { operation: 'remove' },
+            authorization: { operation: 'remove' },
+            referer: { operation: 'remove' },
+          },
+        },
+        enabled: true,
+      },
+    ]);
+  });
+
+  it('overrides only public Next asset GET and HEAD requests, after the catalogue rule', () => {
+    expect(cacheRules).toHaveLength(1);
+    expect(cacheRules[0].expression).toBe(
+      '(http.host in {"www.boardsesh.com" "assets.boardsesh.com" "assets-r2.boardsesh.com"} and http.request.method in {"GET" "HEAD"} and starts_with(http.request.uri.path, "/_next/static/"))',
+    );
+    const catalogueIndex = desired.cacheRules.findIndex((rule) => rule.description === ASSETS_CACHE_RULE_DESCRIPTION);
+    expect(catalogueIndex).toBeGreaterThanOrEqual(0);
+    expect(desired.cacheRules.indexOf(cacheRules[0])).toBeGreaterThan(catalogueIndex);
+    expect(desired.cacheRules[catalogueIndex].action_parameters.edge_ttl).toEqual({ mode: 'bypass_by_default' });
+  });
+
+  it('respects origin TTLs and prevents storing 400–599 on www and the retained asset hosts', () => {
+    expect(cacheRules[0]).toMatchObject({ action: 'set_cache_settings', enabled: true });
+    expect(cacheRules[0].action_parameters).toEqual({
+      cache: true,
+      edge_ttl: {
+        mode: 'bypass_by_default',
+        status_code_ttl: [{ status_code_range: { from: 400, to: 599 }, value: -1 }],
+      },
+      browser_ttl: { mode: 'respect_origin' },
+    });
+  });
+
+  it('plans updates for a missing error override or omitted header removal and converges after applying', () => {
+    const staleCache = cacheRules.map((rule) => ({
+      ...rule,
+      action_parameters: { ...rule.action_parameters, edge_ttl: { mode: 'bypass_by_default' } },
+    }));
+    const staleHeaders = headerRules.map((rule) => ({
+      ...rule,
+      action_parameters: { headers: { cookie: { operation: 'remove' }, authorization: { operation: 'remove' } } },
+    }));
+    expect(diffManagedRules(matchingLiveRules(staleCache), cacheRules, 'cache-rule')).toHaveLength(1);
+    expect(diffManagedRules(matchingLiveRules(staleHeaders), headerRules, 'request-header-rule')).toHaveLength(1);
+    expect(diffManagedRules(matchingLiveRules(cacheRules), cacheRules, 'cache-rule')).toEqual([]);
+    expect(diffManagedRules(matchingLiveRules(headerRules), headerRules, 'request-header-rule')).toEqual([]);
   });
 });
 

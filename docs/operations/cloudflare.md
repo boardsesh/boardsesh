@@ -323,6 +323,22 @@ writes, reverse-copy and verify those hashes before routing back to Tigris.
 Reintroduce the DNS-only record below only in an explicit rollback change;
 never proxy a Tigris custom domain.
 
+### Retained Next.js build assets
+
+The compatibility release continues to generate URLs on `assets.boardsesh.com`.
+A request to `www.boardsesh.com/_next/static/` for a file from an older build can
+redirect to its retained copy. These files are public. The request-header rule
+removes `Cookie`, `Authorization` and `Referer` before forwarding requests under
+`/_next/static/` to the www, assets and assets-r2 origins. A redirect can
+trigger a second browser request carrying domain cookies or a private referring
+page, so the rule covers the destination as well.
+
+On these three hosts, a cache rule applies to GET and HEAD under `/_next/static/`.
+It respects origin headers for immutable files and the no-store redirect for a
+file missing from the current image. It runs after the general assets rule and
+sets the edge TTL to `-1` for HTTP 400–599 so a failed fetch can be retried
+immediately. Requests under `/static/v1/` use the general catalogue policy.
+
 ### Historical Tigris routing and rollback
 
 Before the cutover, `vp run cf:apply` managed this complete DNS record. An

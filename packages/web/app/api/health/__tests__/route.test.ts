@@ -5,6 +5,7 @@ import { GET, type HealthResponse } from '../route';
 describe('GET /api/health', () => {
   beforeEach(() => {
     vi.stubEnv('BOARDSESH_WEB', undefined);
+    vi.stubEnv('NEXT_PUBLIC_RETAINED_NEXT_ASSETS', undefined);
     vi.stubEnv('PARTNER_OAUTH_MODE', undefined);
     vi.stubEnv('SUPPORT_MONTHLY_LINKS_AUD', undefined);
     vi.stubEnv('SUPPORT_MONTHLY_LINKS_USD', undefined);
@@ -25,6 +26,7 @@ describe('GET /api/health', () => {
         status: 'ok',
         deploymentId: '12345678-1234-4234-8234-123456789abc',
         release: BUILD_RELEASE,
+        staticAssets: { retainedNextAssets: false },
         marketing: { enableExpoAuthBridge: false, developerHref: '/docs', hasMonthlySupport: false },
       });
     } finally {
@@ -45,6 +47,7 @@ describe('GET /api/health', () => {
         status: 'ok',
         deploymentId: 'unknown',
         release: BUILD_RELEASE,
+        staticAssets: { retainedNextAssets: false },
         marketing: { enableExpoAuthBridge: false, developerHref: '/docs', hasMonthlySupport: false },
       });
     } finally {
@@ -81,5 +84,21 @@ describe('GET /api/health', () => {
     vi.stubEnv('SUPPORT_MONTHLY_LINKS_AUD', 'invalid');
     const disabled = (await (await GET()).json()) as HealthResponse;
     expect(disabled.marketing.hasMonthlySupport).toBe(false);
+  });
+});
+
+describe('retained-file capability', () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it.each([
+    ['production', '1', true],
+    ['production', undefined, false],
+    ['production', '0', false],
+    ['development', '1', false],
+  ])('requires explicit production delivery opt-in: %s/%s', async (runtime, optIn, enabled) => {
+    vi.stubEnv('NODE_ENV', runtime);
+    vi.stubEnv('NEXT_PUBLIC_RETAINED_NEXT_ASSETS', optIn);
+    const response = await GET();
+    expect(((await response.json()) as HealthResponse).staticAssets.retainedNextAssets).toBe(enabled);
+    expect(response.headers.get('cache-control')).toBe('no-store');
   });
 });

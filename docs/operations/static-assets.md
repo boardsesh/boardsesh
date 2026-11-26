@@ -312,12 +312,40 @@ ready rollback target. Publication failures participate directly in both deploy
 notification gates.
 
 This protects HTML generated with the new CDN prefix across subsequent deploys.
-Previously cached HTML still names `www/_next/static` paths, and files already
-missing from older images are not recovered by this rollout. Clearing that old
-HTML cache after rollout, or waiting for its existing freshness window, switches
-new requests to the retained asset URLs. Extending HTML cache duration also
+Production builds additionally opt into retained-file routing with
+`NEXT_PUBLIC_RETAINED_NEXT_ASSETS=1`. This is independent of the CDN prefix so a
+later origin cutover can keep compatibility enabled. Preview and local builds
+leave it unset, including optimized production-mode previews.
+
+Next checks its filesystem first. A missing `/_next/static/` file then takes an
+`afterFiles` rewrite to the internal retained-asset handler. Only GET and HEAD
+receive a temporary redirect to the fixed public asset origin. The handler
+validates decoded path segments, rejects source maps, drops the original query,
+and sends `no-store` plus `no-referrer`. It makes no upstream request and forwards
+no request headers or bodies. Existing local files retain their ordinary static
+response and immutable policy. The internal endpoint is a utility surface and
+returns `X-Robots-Tag: noindex, follow`.
+
+Cloudflare removes Cookie, Authorization and Referer only on these public asset
+paths on www and the retained/staging hosts. Asset errors from HTTP 400 through
+599 are not stored at the edge, preventing a missing object from becoming a
+cached failure. The production deployment waits for the Cloudflare prerequisite.
+
+Previously cached HTML naming `www/_next/static` can therefore recover files
+that are retained in the bucket but absent from the current image. Files never
+published to that bucket still cannot be recovered. Extending HTML cache duration
 requires invalidation when public content or visibility changes; its TTL remains
 controlled by the page-cache policy rather than the asset policy.
+
+This compatibility release **keeps the production CDN prefix enabled**. A later
+same-origin cutover must first prove the exact currently active Railway deployment
+supports the fallback, using its no-cache health deployment ID/release and a
+verified retained-only historical asset. Check compatibility before moving mutable
+image aliases as well as immediately before redeploy: held builds also publish
+those aliases. The ordinary deployment smoke and automatic rollback must remain
+working. Manual deploys/rollbacks must not select a pre-compatibility image after
+same-origin HTML has been served; those images cannot recover its missing chunks.
+An operator who bypasses the workflow must respect that permanent rollback floor.
 
 ### Catalogued public assets
 

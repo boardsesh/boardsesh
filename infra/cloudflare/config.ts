@@ -375,6 +375,7 @@ export interface CacheRuleActionParameters {
      * send no Cache-Control and must never be edge-cached.
      */
     mode: 'bypass_by_default';
+    status_code_ttl?: { status_code_range: { from: number; to: number }; value: number }[];
   };
   browser_ttl: {
     /** Honour the origin max-age so a zone-level Browser Cache TTL can't override it. */
@@ -501,16 +502,15 @@ export interface CompressionRuleDesired {
 }
 
 /**
- * A Request Header Transform rule. The expression value is evaluated at the
- * edge, so the origin receives Cloudflare's country lookup rather than a value
- * supplied by the client.
+ * A Request Header Transform rule can remove an incoming header or replace it
+ * with an expression evaluated at the edge before forwarding to the origin.
  */
 export interface RequestHeaderRuleDesired {
   description: string;
   expression: string;
   action: 'rewrite';
   action_parameters: {
-    headers: Record<string, { operation: 'set'; expression: string }>;
+    headers: Record<string, { operation: 'set'; expression: string } | { operation: 'remove' }>;
   };
   enabled: boolean;
 }
@@ -518,7 +518,7 @@ export interface RequestHeaderRuleDesired {
 export interface CloudflareDesiredState {
   zoneName: string;
   dnsRecords: DnsRecordDesired[];
-  /** Order is not significant: cache rules are matched by expression, not precedence. */
+  /** Place more specific overrides after rules that can match the same request. */
   cacheRules: CacheRuleDesired[];
   /**
    * Order IS significant and is preserved on apply: the bot-phase exception
@@ -535,7 +535,7 @@ export interface CloudflareDesiredState {
   redirectRules: RedirectRuleDesired[];
   /** Order is not significant: the rule is host-scoped and identified by description. */
   requestHeaderRules: RequestHeaderRuleDesired[];
-  /** Order is not significant: matched by expression, like cache rules. */
+  /** The current response-header rules match distinct hosts. */
   responseHeaderRules: ResponseHeaderRuleDesired[];
   /** Order is not significant: each rule is scoped to its own host. */
   compressionRules: CompressionRuleDesired[];
@@ -1085,6 +1085,14 @@ export const ASSETS_CACHE_EXPRESSION =
   `((http.host eq "${ASSETS_HOSTNAME}" or http.host eq "${ASSETS_STAGING_HOSTNAME}") ` +
   `and (starts_with(http.request.uri.path, "/static/v1/") or starts_with(http.request.uri.path, "/_next/static/")))`;
 
+export const NEXT_STATIC_CACHE_RULE_DESCRIPTION =
+  'boardsesh:next-static-edge-cache (managed by scripts/cloudflare-apply.ts)';
+export const NEXT_STATIC_REQUEST_HEADER_RULE_DESCRIPTION =
+  'boardsesh:next-static-request-headers (managed by scripts/cloudflare-apply.ts)';
+
+const nextStaticPath = 'starts_with(http.request.uri.path, "/_next/static/")';
+const nextStaticHosts = `http.host in {"${WWW_HOSTNAME}" "${ASSETS_HOSTNAME}" "${ASSETS_STAGING_HOSTNAME}"}`;
+
 export const ASSETS_CORS_HEADER_RULE_DESCRIPTION =
   'boardsesh:assets-cors-header (managed by scripts/cloudflare-apply.ts)';
 
@@ -1465,10 +1473,6 @@ export const desiredCloudflareState: CloudflareDesiredState = {
       },
       enabled: true,
     },
-    // Appended rather than prepended: two fixtures in
-    // scripts/cloudflare-apply.test.ts address the og rule by index 0. Cache
-    // rules are matched by expression and their order carries no meaning (see
-    // the field comment on cacheRules), so the end is the right place.
     {
       description: ASSETS_CACHE_RULE_DESCRIPTION,
       expression: ASSETS_CACHE_EXPRESSION,
@@ -1518,6 +1522,21 @@ export const desiredCloudflareState: CloudflareDesiredState = {
       action_parameters: {
         cache: true,
         edge_ttl: { mode: 'bypass_by_default' },
+        browser_ttl: { mode: 'respect_origin' },
+      },
+      enabled: true,
+    },
+    {
+      // The narrower policy wins when an R2 URL also matches ASSETS_CACHE_EXPRESSION.
+      description: NEXT_STATIC_CACHE_RULE_DESCRIPTION,
+      expression: `(${nextStaticHosts} and http.request.method in {"GET" "HEAD"} and ${nextStaticPath})`,
+      action: 'set_cache_settings',
+      action_parameters: {
+        cache: true,
+        edge_ttl: {
+          mode: 'bypass_by_default',
+          status_code_ttl: [{ status_code_range: { from: 400, to: 599 }, value: -1 }],
+        },
         browser_ttl: { mode: 'respect_origin' },
       },
       enabled: true,
@@ -1631,6 +1650,19 @@ export const desiredCloudflareState: CloudflareDesiredState = {
       action_parameters: {
         headers: {
           [OBSERVE_COUNTRY_HEADER_NAME]: { operation: 'set', expression: 'ip.src.country' },
+        },
+      },
+      enabled: true,
+    },
+    {
+      description: NEXT_STATIC_REQUEST_HEADER_RULE_DESCRIPTION,
+      expression: `(${nextStaticHosts} and ${nextStaticPath})`,
+      action: 'rewrite',
+      action_parameters: {
+        headers: {
+          cookie: { operation: 'remove' },
+          authorization: { operation: 'remove' },
+          referer: { operation: 'remove' },
         },
       },
       enabled: true,

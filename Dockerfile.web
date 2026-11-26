@@ -87,6 +87,8 @@ ARG NEXT_PUBLIC_POSTHOG_KEY
 ARG NEXT_PUBLIC_STATIC_ASSET_BASE_URL
 # Only production enables this. Preview/local builds keep serving their own chunks.
 ARG NEXT_PUBLIC_NEXT_ASSET_BASE_URL
+# Explicitly enabled only by the production workflow; previews stay isolated.
+ARG NEXT_PUBLIC_RETAINED_NEXT_ASSETS
 # App Store provider id (digits) for the `pt` param on App Store campaign links.
 # Optional: empty or non-numeric is ignored by store-links.ts, which then emits
 # `ct` and `mt` with no `pt`. Build-time like every NEXT_PUBLIC_ value.
@@ -108,6 +110,7 @@ ENV BASE_URL=$BASE_URL
 ENV NEXT_PUBLIC_POSTHOG_KEY=$NEXT_PUBLIC_POSTHOG_KEY
 ENV NEXT_PUBLIC_STATIC_ASSET_BASE_URL=$NEXT_PUBLIC_STATIC_ASSET_BASE_URL
 ENV NEXT_PUBLIC_NEXT_ASSET_BASE_URL=$NEXT_PUBLIC_NEXT_ASSET_BASE_URL
+ENV NEXT_PUBLIC_RETAINED_NEXT_ASSETS=$NEXT_PUBLIC_RETAINED_NEXT_ASSETS
 ENV NEXT_PUBLIC_META_PIXEL_ID=$NEXT_PUBLIC_META_PIXEL_ID
 ENV NEXT_PUBLIC_REDDIT_PIXEL_ID=$NEXT_PUBLIC_REDDIT_PIXEL_ID
 ENV SENTRY_RELEASE=$SENTRY_RELEASE

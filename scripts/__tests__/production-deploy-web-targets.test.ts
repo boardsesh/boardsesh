@@ -222,6 +222,7 @@ describe('production-deploy web deploy targets', () => {
       'NEXT_PUBLIC_POSTHOG_KEY=${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}',
       'NEXT_PUBLIC_STATIC_ASSET_BASE_URL=https://assets.boardsesh.com',
       'NEXT_PUBLIC_NEXT_ASSET_BASE_URL=https://assets.boardsesh.com',
+      'NEXT_PUBLIC_RETAINED_NEXT_ASSETS=1',
       'NEXT_PUBLIC_APP_STORE_PROVIDER_ID=${{ vars.NEXT_PUBLIC_APP_STORE_PROVIDER_ID }}',
       'NEXT_PUBLIC_META_PIXEL_ID=${{ vars.NEXT_PUBLIC_META_PIXEL_ID }}',
       'NEXT_PUBLIC_REDDIT_PIXEL_ID=${{ vars.NEXT_PUBLIC_REDDIT_PIXEL_ID }}',
@@ -470,6 +471,13 @@ describe('production-deploy web deploy targets', () => {
     // `web_vercel`-shaped condition here would silently leave a broken
     // container serving www.
     expect(deployWebRailwayJob).toContain('id: railway-smoke');
+    const smokeStep = stepNamed(deployWebRailwayJob, 'Post-deploy smoke against the Railway web origin');
+    const regularSmoke = smokeStep.indexOf('node scripts/production-smoke.ts --base');
+    const retainedSmoke = smokeStep.indexOf('node scripts/retained-next-assets-smoke.ts --base');
+    expect(regularSmoke).toBeGreaterThan(-1);
+    expect(retainedSmoke).toBeGreaterThan(regularSmoke);
+    expect(smokeStep).toContain('SMOKE_EXPECTED_DEPLOYMENT_ID: ${{ steps.railway-redeploy.outputs.deployment_id }}');
+    expect(smokeStep).toContain('SMOKE_EXPECTED_RELEASE: ${{ github.sha }}');
 
     const rollbackStep = stepNamed(deployWebRailwayJob, 'Restore the previous Railway web deployment');
     expect(rollbackStep).toContain("if: steps.railway-smoke.outcome == 'failure'");
