@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-11-26T13:31:26.830Z",
+  "generatedAt": "2026-11-26T19:38:05.994Z",
   "entries": [
+    {
+      "prNumber": 8260,
+      "category": "new",
+      "title": "Your climb filters now stay put when you change the angle or switch boards",
+      "mergedAt": "2026-11-26T19:33:10Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8260",
+      "body": "Changing the angle keeps your climb name search too; switching boards clears just the name\nRecent searches work on every board and angle"
+    },
     {
       "prNumber": 8210,
       "category": "new",

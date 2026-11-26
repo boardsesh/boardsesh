@@ -8,6 +8,9 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### New
 
+- Your climb filters now stay put when you change the angle or switch boards ([#8260](https://github.com/boardsesh/boardsesh/pull/8260))
+  Changing the angle keeps your climb name search too; switching boards clears just the name
+  Recent searches work on every board and angle
 - Standing at a friend's home board? Boardsesh spots it over Bluetooth and lets you ask to climb. ([#8210](https://github.com/boardsesh/boardsesh/pull/8210))
 - Climb on a friend's home board. When you follow each other, their boards show up under Friends' boards; invite-only ones get an Ask to climb button. ([#8207](https://github.com/boardsesh/boardsesh/pull/8207))
   Owners can say yes right from their notifications.
