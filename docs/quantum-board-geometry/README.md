@@ -1,6 +1,6 @@
 # Fixed Quantum geometry
 
-`catalogue-snapshot.json` is the temporary bootstrap source the user approved for this PR. Its provenance block records the pinned CruxCoach publisher, event, compressed snapshot hash and acquisition evidence. That verification establishes publisher provenance. It does not establish a Walltopia signature, direct eWalls acquisition, licensing terms or physical hardware testing. Direct vendor integration remains a follow-up while its contract is obtained.
+`catalogue-snapshot.json` is the fixed geometry capture approved for this PR. Its provenance block records the pinned CruxCoach publisher, event, compressed snapshot hash and acquisition evidence. That verification establishes publisher provenance. It does not establish a Walltopia signature, direct eWalls acquisition or physical hardware testing. Runtime catalogue acquisition now uses eWalls directly; it does not download this source or use the publisher's feed. The owner separately confirmed permission for the Quantum proof of concept, trademarks and public snapshots on 2026-11-26; API and controller questions remain open in [#8179](https://github.com/boardsesh/boardsesh/pull/8179).
 
 Generate the committed constants without network or database access:
 
@@ -13,6 +13,8 @@ The generator follows the existing Woods source-to-constants pattern. It validat
 XL, L and M use layout `9101`, product `91`, sizes `9201`, `9202` and `9203`. All source holds shared across those sizes have identical UUID, source placement/autocad address, LED node, type and coordinates. Their canonical placement IDs therefore share one namespace: `1_000_000 + sourcePlacementId`. Size-specific LED membership determines which holds exist; a bounding rectangle alone does not determine climb compatibility. S uses layout `9104` / product `94`; Belay uses layout `9105` / product `95`.
 
 The current snapshot contains 657 XL, 549 L, 432 M, 252 S and 1264 Belay diode rows. `placementId === autocadId` in every row. The controller's advertised rows/columns identify its protocol model; they do not define the physical render aspect. Rendering preserves the source-coordinate bounds, including the separate Belay map. Those bounds are exporter metadata, without a claim of manufacturer calibration or measured physical dimensions.
+
+The released-model policy exposes XL/L/M/S only. Belay remains in this immutable source and generated data for provenance and future work; it is not a supported catalogue scope, board choice or controller target in this proof of concept.
 
 `QUANTUM_GEOMETRY_SOURCE_SHA256` hashes the exact source file bytes, including provenance. `QUANTUM_GEOMETRY_SHA256` hashes the generated model metadata, hold tuples and LED tables. `QUANTUM_HARDWARE_FINGERPRINT` is the backend's import fence and excludes routes, import time and manifest/provenance metadata:
 

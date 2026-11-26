@@ -1,4 +1,15 @@
-# Quantum Board support
+# Quantum Board proof of concept
+
+This release covers XL, L, M and S Fitness: browse, download, light and log climbs
+in Boardsesh, save drafts offline, and publish climbs to Boardsesh while online.
+The owner confirmed Quantum's permission to use its trademarks, release this
+proof of concept and publish catalogue snapshots on 2026-11-26.
+
+The design and unanswered API/controller questions are recorded in
+[#8179](https://github.com/boardsesh/boardsesh/pull/8179). Account linking, writes
+to eWalls, duplicate-climb display merging, Belay and phone-to-phone session
+control transfer remain follow-ups. Separate source climbs keep their identities
+and may appear separately in this proof of concept.
 
 Quantum uses the same board, climb, hold, grade, and sync contracts as the other
 boards. Provider-specific acquisition, physical identity checks, drawing, and
@@ -14,9 +25,17 @@ Personal account synchronization and outbound writes remain tracked in
 
 Quantum discovery, public compatibility lists, and setup require the positive
 `quantum-board` feature flag on web and mobile.
-It defaults off; missing or unresolved flags keep the board hidden. Testers can
-enable **Quantum Board** through Settings → Developer → Feature Flags. Catalogue
-acquisition remains backend-owned and independent of this UI rollout.
+It defaults off; missing, unresolved and non-boolean flag answers keep the board
+hidden. The same boundary covers restored boards, direct editor/player links,
+invitations and shared-session joins. A rejected join leaves the current board
+and session unchanged. Disabling Quantum preserves stored boards, drafts and
+ticks, and stops further controller mutations.
+
+Testers can enable **Quantum Board** through Settings → Developer → Feature Flags.
+The tester-only override follows the existing app precedence. Public snapshots
+remain public: this flag controls the app rollout, not catalogue confidentiality.
+Backend acquisition has a separate default-off `quantum-catalog-sync` switch;
+both scheduling and execution must be enabled before a catalogue request runs.
 
 ## Board identity and immutable geometry
 
@@ -26,14 +45,13 @@ acquisition remains backend-owned and independent of this UI rollout.
 | L | 91 | 9101 | 9202 | `medium` |
 | M | 91 | 9101 | 9203 | `small` |
 | S Fitness | 94 | 9104 | 9204 | `xsmall` |
-| Belay | 95 | 9105 | 9205 | `belay` |
 
 XL/L/M share a physical layout, with different size membership and bounds.
 [Walltopia documents the shared layout](https://walltopia.com/products/quantum-board/).
 The captured source confirms every L and M diode matches XL by identity, LED
-address, position, and hold type. Fitness is a separate layout. Belay is a fixed
-repeated XL arrangement with separate controller identities; it is not assumed
-to have mutable geometry.
+address, position, and hold type. Fitness is a separate layout. Belay is deferred;
+its source geometry remains recorded for future work. One shared released-model
+policy controls catalogue scopes, reference rows, setup and controller selection.
 
 The checked-in geometry capture used model-local layout IDs for L and M. The
 generator normalizes those historical identities to layout 9101. Native API
@@ -83,6 +101,19 @@ personal credential. Bearer credentials never enter checkpoint metadata, logs,
 or device sync. The client also exposes the documented email login; refresh
 semantics are unknown, so a 401 requires renewed credentials rather than an
 invented refresh flow.
+
+Only explicitly enabled public routes in that approved catalogue lens are
+projected into shared content. Disabled and unknown-visibility records are
+withheld before their content is mapped. A withdrawal retires the source across
+overlapping model scopes, removes it from public browsing and future exports,
+and retires its downloaded copy while preserving logged ticks. Snapshot and
+reference exports apply the same eligibility to associated stats, grades and
+aliases. Personal response collections never become shared catalogue rows.
+
+The API's `-1` angle sentinel stays unknown, rather than becoming a real climb
+angle. Known grade representations retain their mapping; unknown representations
+stay unknown. Unconfirmed supplier count and rating semantics are retained as
+source metadata rather than treated as verified sender counts or community votes.
 
 Diode UUIDs and binary `autocadId` addresses must match the fixed generated
 bindings. Light associations resolve through the API diode cache and retain
@@ -163,6 +194,11 @@ during a full `board_climbs` scan; fresh test/dev databases build it normally.
 
 ## Rendering and sharing
 
+Permission includes the public catalogue snapshots. Eligible Quantum climbs use
+the normal export path, including the controller identity needed to light a
+downloaded climb. Public climb pages and Open Graph rendering are a separate
+capability from downloading that catalogue.
+
 Full boards, list thumbnails, and prewarming use one renderer-selection policy.
 The current Quantum drawing adapter uses SVG for its fixed diode/hold data;
 [#7919](https://github.com/boardsesh/boardsesh/issues/7919) tracks moving that input
@@ -175,8 +211,8 @@ Open Graph images, and links. Issue-linked TODOs mark the temporary guards.
 
 ## Layer control and presence
 
-Boardsesh currently supports four simultaneous colored layers and caps activation
-at 92 distinct diode addresses. These are current application limits; the
+Boardsesh currently understands four simultaneous colored layers and caps activation
+at 92 distinct diode addresses. Each player controls one layer. These are current application limits; the
 firmware's layer capacity and repeated-chunk behavior are unverified. The
 provider and encoder reject oversized activation before any command. Commands
 must fit one complete, mode-appropriate GATT write; frames are not silently
@@ -191,13 +227,29 @@ bytes. Android tries MTUs 512, 247, and 185 and still checks actual write capaci
 Whole notification values accept the documented reserved byte and trailers;
 oversized rosters cannot be truncated or reinterpreted as embedded packets.
 
-Current lighting uses an explicit layer choice. The familiar driving flow with
-one selected free color and a color indicator follows in
-[#7916](https://github.com/boardsesh/boardsesh/issues/7916). Queue, presence,
-reconnect, and rendering updates do not arm an implicit layer writer.
+Lighting uses an explicit free color and a device-local player identity. Changing
+color moves the same player. A solo climber has one local player. A shared session
+has one player controlled by the phone that started it; other phones can queue
+climbs and log ticks. Turns and reconnects do not create more players. Session
+control does not transfer to a joining phone, including another phone signed in
+to the same account. Replayable partner workout starts do not create a new driver
+credential: their response does not establish which phone created the session.
+An existing matching local credential remains usable on retry.
 
-The controller roster is read before mutation and confirmed afterward. Replacement
-and removal protect other players and require the expected target ownership.
+Native credentials stay in SecureStore across reconnects. On iOS they use
+`AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY`, so an encrypted backup cannot give another
+phone the session's controller credential. Browser credentials remain memory-only;
+losing that identity does not authorize taking over the old layer. Legacy identities
+without proof that they belong to this phone cannot authorize cleanup.
+No ordinary Quantum action clears the whole wall. Queue, presence,
+reconnect and rendering updates do not arm an implicit layer writer.
+
+The controller roster is read before mutation and confirmed afterward. A new
+player activates without a preceding removal. Replacement confirms release of
+the expected owned route before activating the next one. Every physical mutation
+rechecks the current connection and operation eligibility, including after waits.
+Malformed frames and oversized climbs fail before any command is submitted.
+Replacement and removal protect other players and require the expected target ownership.
 Native and browser adapters use physical-device ownership across transport
 instances. Old attempts cannot disconnect a replacement, stop its scan, or cancel
 its GATT transaction. Native reconnect also waits for an already-submitted
@@ -225,3 +277,5 @@ Source validation and read-only mapping checks do not prove a production import
 or physical controller acceptance. No production schema or catalog is changed by
 these development checks. Before release, test exact model/LED mapping, multiple
 phones, eWalls coexistence, ownership changes, reconnects, and cleanup on hardware.
+Keep general rollout disabled until that evidence is recorded per model and
+firmware. A passing fixture or bundle check is not physical controller acceptance.

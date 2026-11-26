@@ -80,29 +80,31 @@ export default function GymDirectoryFilters({
           '& > *': { flexShrink: 0 },
         }}
       >
-        {FILTERABLE_BOARD_TYPES.filter((boardType) => isBoardTypeVisible(boardType, visibilityFlags)).map((boardType) => {
-          const selected = query.boardTypes.includes(boardType);
-          return (
-            <Chip
-              key={boardType}
-              clickable
-              component={LocaleLink}
-              href={buildBoardTypeToggleHref(facet, query, boardType)}
-              // A link, so its state is aria-current rather than aria-pressed
-              // (which only a button may carry). The check is the non-colour cue
-              // for the tonal ground.
-              aria-current={selected ? 'true' : undefined}
-              icon={selected ? <SelectedCheck /> : undefined}
-              label={
-                facetCounts && (boardType === 'kilter' || boardType === 'moonboard' || boardType === 'tension')
-                  ? `${boardTypeLabel(boardType)} · ${new Intl.NumberFormat(locale).format(facetCounts[boardType])}`
-                  : boardTypeLabel(boardType)
-              }
-              variant="outlined"
-              sx={filterChipSx({ selected })}
-            />
-          );
-        })}
+        {FILTERABLE_BOARD_TYPES.filter((boardType) => isBoardTypeVisible(boardType, visibilityFlags)).map(
+          (boardType) => {
+            const selected = query.boardTypes.includes(boardType);
+            return (
+              <Chip
+                key={boardType}
+                clickable
+                component={LocaleLink}
+                href={buildBoardTypeToggleHref(facet, query, boardType)}
+                // A link, so its state is aria-current rather than aria-pressed
+                // (which only a button may carry). The check is the non-colour cue
+                // for the tonal ground.
+                aria-current={selected ? 'true' : undefined}
+                icon={selected ? <SelectedCheck /> : undefined}
+                label={
+                  facetCounts && (boardType === 'kilter' || boardType === 'moonboard' || boardType === 'tension')
+                    ? `${boardTypeLabel(boardType)} · ${new Intl.NumberFormat(locale).format(facetCounts[boardType])}`
+                    : boardTypeLabel(boardType)
+                }
+                variant="outlined"
+                sx={filterChipSx({ selected })}
+              />
+            );
+          },
+        )}
       </Box>
 
       <Box
