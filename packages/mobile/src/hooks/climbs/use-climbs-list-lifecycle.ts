@@ -6,6 +6,7 @@ import { shouldFetchNextPage, type NextPageTrigger } from '../../lib/climb-list-
 import { createVisibleRowsStore } from '../../components/ClimbListScrollAhead';
 import type { RefObject } from 'react';
 import type { NextPageInput } from '../../lib/climb-list-pagination';
+import type { ClimberScrollTracker } from '../../lib/climber-scroll-tracker';
 
 const PAGE_SIZE = 30;
 type PaginationState = Pick<
@@ -24,11 +25,17 @@ type Options = PaginationState & {
   listRef: RefObject<FlashListRef<Climb> | null>;
   topClearance: number;
   resetScrollToTop: () => void;
+  /**
+   * Whether the climber scrolled since the last page ask. After a search's first
+   * ask each further one needs it, so rows that lay out at zero height cannot
+   * page the whole search in (`climb-list-pagination`).
+   */
+  climberScroll: ClimberScrollTracker;
   fetchNextPage: () => Promise<{ isFetchNextPageError: boolean }>;
 };
 /** Owns list position and pagination together, so a result-set reset invalidates both. */
 export function useClimbsListLifecycle(options: Options) {
-  const { searchKey, listColumns, listRef, resetScrollToTop } = options;
+  const { searchKey, listColumns, listRef, resetScrollToTop, climberScroll } = options;
   const latest = useRef(options);
   latest.current = options;
   const visibleRowsStore = useMemo(() => createVisibleRowsStore(), []);
@@ -51,7 +58,10 @@ export function useClimbsListLifecycle(options: Options) {
     endReachedPendingRef.current = false;
     loadedCountAtLastFetchRef.current = null;
     lastNextPageFailureAtRef.current = null;
-  }, [searchKey, resetScrollToTop, visibleRowsStore]);
+    // The scroll to the top can cut a fling short with no end event to follow,
+    // and the new search's first ask needs no scroll anyway.
+    climberScroll.forgetGesture();
+  }, [searchKey, resetScrollToTop, visibleRowsStore, climberScroll]);
   useEffect(
     () => () => {
       generation.current += 1;
@@ -70,6 +80,7 @@ export function useClimbsListLifecycle(options: Options) {
           fetchInFlight: isLoadingMoreRef.current,
           msSinceLastFailure: failedAt === null ? null : Date.now() - failedAt,
           loadedCountAtLastFetch: loadedCountAtLastFetchRef.current,
+          climberScrolledSinceLastFetch: climberScroll.hasScrolled(),
           firstVisibleIndex: visibleRowsStore.getFirst(),
           lastVisibleIndex: visibleRowsStore.getLast(),
           endReachedPending: endReachedPendingRef.current,
@@ -79,6 +90,7 @@ export function useClimbsListLifecycle(options: Options) {
         return;
       endReachedPendingRef.current = false;
       loadedCountAtLastFetchRef.current = pagination.loadedCount;
+      climberScroll.reset();
       isLoadingMoreRef.current = true;
       const requestedGeneration = ++generation.current;
       void pagination
@@ -94,7 +106,7 @@ export function useClimbsListLifecycle(options: Options) {
           if (generation.current === requestedGeneration) isLoadingMoreRef.current = false;
         });
     },
-    [visibleRowsStore],
+    [visibleRowsStore, climberScroll],
   );
   const handleEndReached = useCallback(() => {
     const pagination = latest.current;

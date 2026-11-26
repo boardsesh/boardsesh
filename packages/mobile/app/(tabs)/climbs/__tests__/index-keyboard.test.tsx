@@ -199,6 +199,9 @@ const mocks = vi.hoisted(() => ({
   // two things besides the climber's row switches that size the placeholders.
   fontScale: 1,
   isFetchingNextPage: false,
+  // Whether the search has another page, and the spy that asks for it.
+  hasNextPage: false,
+  fetchNextPage: vi.fn(),
   // Whether the scroll-ahead thumbnail warm-up is mounted right now.
   thumbnailPrewarmMounted: false,
   // The list's frame reports its width here, the way `onLayout` would.
@@ -880,8 +883,8 @@ vi.mock('../../../../src/lib/graphql/hooks/use-infinite-search-climbs', () => ({
       isFetchingNextPage: mocks.isFetchingNextPage,
       isRefetching: mocks.isRefetching,
       isPlaceholderData: mocks.isPlaceholderData,
-      fetchNextPage: vi.fn(),
-      hasNextPage: false,
+      fetchNextPage: mocks.fetchNextPage,
+      hasNextPage: mocks.hasNextPage,
       refetch: mocks.refetchClimbs,
     };
   },
@@ -1041,6 +1044,9 @@ beforeEach(() => {
   mocks.setActiveBoard.mockReset();
   mocks.push.mockClear();
   mocks.isClimbsLoading = false;
+  mocks.hasNextPage = false;
+  mocks.fetchNextPage.mockReset();
+  mocks.fetchNextPage.mockResolvedValue({ isFetchNextPageError: false });
   mocks.realFilterTokens = false;
   mocks.searchState = { filters: {}, boardFilters: {}, name: '' };
   mocks.statefulSearch = false;
@@ -1433,28 +1439,187 @@ describe('ClimbList rows scrolling under the pinned filter chips', () => {
 
   // Material, Android, the old floating chrome, and the iOS paths that keep a
   // painted band (before iOS 26, Reduce Transparency, Increase Contrast): no
-  // blur mounts. Only the stable native-offset tracker is needed for clearance.
+  // blur mounts. The gesture listeners are still there: they fire a few times per
+  // gesture, not per frame, and they tell the pagination fence a climber moved
+  // the list (the zero-height-row page drain).
   it.each([true, false])(
-    'tracks native offsets without extra gesture listeners before a blur mounts (UIKit header: %s)',
+    'listens for the gesture itself even before a blur mounts (UIKit header: %s)',
     async (nativeRootHeader) => {
       mocks.nativeRootHeader = nativeRootHeader;
       const { findByText } = render(<ClimbList />);
       await findByText('Moonage');
 
-      expect(mocks.listScrollProps.onScroll).toBeTypeOf('function');
-      for (const listener of SCROLL_LISTENERS.filter((listener) => listener !== 'onScroll')) {
-        expect(mocks.listScrollProps[listener]).toBeUndefined();
+      for (const listener of SCROLL_LISTENERS) {
+        expect(mocks.listScrollProps[listener]).toBeTypeOf('function');
       }
+      // Smoke check: with nothing to forward to, a whole gesture runs without throwing.
+      act(() => {
+        mocks.listScrollProps.onScrollBeginDrag?.(scrollEvent(0));
+        mocks.listScrollProps.onScroll?.(scrollEvent(40));
+        mocks.listScrollProps.onScrollEndDrag?.(scrollEvent(40));
+        mocks.listScrollProps.onMomentumScrollBegin?.();
+        mocks.listScrollProps.onMomentumScrollEnd?.();
+      });
     },
   );
 
-  it("forwards scrolling and retains the store's gesture listeners once a blur mounts", async () => {
-    const { store } = await renderUnderFloatingChips();
+  it("forwards every gesture listener to the store's once a blur mounts", async () => {
+    const { store, rerender } = await renderUnderFloatingChips();
+    const spies = SCROLL_LISTENERS.filter((listener) => listener !== 'onScroll').map((listener) =>
+      vi.spyOn(store.listProps, listener),
+    );
+    // The screen reads the store's handlers when it renders.
+    rerender(<ClimbList />);
 
-    expect(mocks.listScrollProps.onScroll).toBeTypeOf('function');
-    for (const listener of SCROLL_LISTENERS.filter((listener) => listener !== 'onScroll')) {
-      expect(mocks.listScrollProps[listener]).toBe(store.listProps[listener]);
-    }
+    act(() => {
+      mocks.listScrollProps.onScrollBeginDrag?.(scrollEvent(0));
+      mocks.listScrollProps.onScrollEndDrag?.(scrollEvent(40));
+      mocks.listScrollProps.onMomentumScrollBegin?.();
+      mocks.listScrollProps.onMomentumScrollEnd?.();
+    });
+    for (const spy of spies) expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  // The Android out-of-memory crash: rows at zero height read as all on screen,
+  // and each landed page asked for the next. After a search's first page ask,
+  // the next one waits for the climber to move the list.
+  describe('paging past the first extra page', () => {
+    const pagedClimbs = (from: number, count: number) =>
+      Array.from({ length: count }, (_climb, offset) => ({
+        ...mocks.climb,
+        uuid: `paged-climb-${from + offset}`,
+        name: `Paged ${from + offset}`,
+      })) as unknown as Climb[];
+    const sixtyClimbs = () => pagedClimbs(0, 60);
+    /** Each ask lands a page of 30 more climbs on the next render. */
+    const landPagesOnAsk = () =>
+      mocks.fetchNextPage.mockImplementation(async () => {
+        mocks.searchClimbs = [...mocks.searchClimbs, ...pagedClimbs(mocks.searchClimbs.length, 30)];
+        return { isFetchNextPageError: false };
+      });
+    const everyRowOnScreen = () =>
+      act(() => mocks.listViewableItemsChanged?.({ viewableItems: [{ index: 1 }, { index: 59 }] }));
+    const drag = () =>
+      act(() => {
+        mocks.listScrollProps.onScrollBeginDrag?.(scrollEvent(0));
+        mocks.listScrollProps.onScrollEndDrag?.(scrollEvent(40));
+      });
+    const settle = () => act(async () => {});
+
+    beforeEach(() => {
+      mocks.searchClimbs = sixtyClimbs();
+      mocks.hasNextPage = true;
+    });
+
+    it('needs a drag between asks, even when a drag came before the first one', async () => {
+      const { findByText } = render(<ClimbList />);
+      await findByText('Paged 0');
+
+      drag();
+      everyRowOnScreen();
+      await settle();
+      expect(mocks.fetchNextPage).toHaveBeenCalledTimes(1);
+
+      // The drag before the first ask is spent: rows that all read as on screen
+      // do not ask again by themselves.
+      everyRowOnScreen();
+      await settle();
+      expect(mocks.fetchNextPage).toHaveBeenCalledTimes(1);
+
+      drag();
+      everyRowOnScreen();
+      await settle();
+      expect(mocks.fetchNextPage).toHaveBeenCalledTimes(2);
+    });
+
+    // The loop that crashed: a page lands, every row still reads as on screen,
+    // and the screen's own settle check asks for the next one.
+    it('does not ask again when a page lands unless the climber moved the list', async () => {
+      landPagesOnAsk();
+      const { findByText, rerender } = render(<ClimbList />);
+      await findByText('Paged 0');
+      everyRowOnScreen();
+      await settle();
+      expect(mocks.fetchNextPage).toHaveBeenCalledTimes(1);
+
+      // The page lands: 90 climbs, 30 below row 59, inside the look-ahead.
+      rerender(<ClimbList />);
+      await settle();
+      expect(mocks.fetchNextPage).toHaveBeenCalledTimes(1);
+
+      // After a drag, the next report of rows on screen asks again.
+      drag();
+      everyRowOnScreen();
+      await settle();
+      expect(mocks.fetchNextPage).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not count a fling cut short by a new search', async () => {
+      const { findByText } = render(<ClimbList />);
+      await findByText('Paged 0');
+      everyRowOnScreen();
+      await settle();
+      expect(mocks.fetchNextPage).toHaveBeenCalledTimes(1);
+
+      // A fling is still coasting when a grade chip starts a new search. Its end
+      // event never arrives, so the scroll back to the top must not count as one.
+      act(() => {
+        mocks.listScrollProps.onScrollBeginDrag?.(scrollEvent(0));
+        mocks.listScrollProps.onScrollEndDrag?.(scrollEvent(40));
+        mocks.listScrollProps.onMomentumScrollBegin?.();
+      });
+      mocks.statefulSearch = true;
+      act(() => mocks.setName('moon'));
+      await settle();
+      // The new search's first ask needs no drag.
+      everyRowOnScreen();
+      await settle();
+      expect(mocks.fetchNextPage).toHaveBeenCalledTimes(2);
+      // A scroll event from code, with no gesture behind it, is not a drag.
+      act(() => mocks.listScrollProps.onScroll?.(scrollEvent(0)));
+      everyRowOnScreen();
+      await settle();
+      expect(mocks.fetchNextPage).toHaveBeenCalledTimes(2);
+    });
+
+    // VoiceOver, TalkBack, a mouse wheel and a keyboard never send a drag.
+    it('keeps paging for a climber who scrolls without touching the list', async () => {
+      const { findByText } = render(<ClimbList />);
+      await findByText('Paged 0');
+      act(() => mocks.listScrollProps.onScroll?.(scrollEvent(0)));
+      everyRowOnScreen();
+      await settle();
+      expect(mocks.fetchNextPage).toHaveBeenCalledTimes(1);
+
+      act(() => mocks.listScrollProps.onScroll?.(scrollEvent(900)));
+      everyRowOnScreen();
+      await settle();
+      expect(mocks.fetchNextPage).toHaveBeenCalledTimes(2);
+    });
+
+    it('forgets a fling when the list remounts for a new column count', async () => {
+      const { findByText } = render(<ClimbList />);
+      await findByText('Paged 0');
+      act(() => mocks.listClipLayout?.({ nativeEvent: { layout: { width: 390, height: 1000 } } }));
+      everyRowOnScreen();
+      await settle();
+      expect(mocks.fetchNextPage).toHaveBeenCalledTimes(1);
+
+      // Coasting when the list goes to two columns: the old list's end event
+      // never arrives, so the remount forgets that fling, both the scroll it
+      // already counted and the coasting a later scroll event would count.
+      act(() => {
+        mocks.listScrollProps.onScrollBeginDrag?.(scrollEvent(0));
+        mocks.listScrollProps.onScrollEndDrag?.(scrollEvent(0));
+        mocks.listScrollProps.onMomentumScrollBegin?.();
+      });
+      act(() => mocks.listClipLayout?.({ nativeEvent: { layout: { width: 914, height: 1000 } } }));
+      expect(mocks.listNumColumns).toBe(2);
+      act(() => mocks.listScrollProps.onScroll?.(scrollEvent(0)));
+      everyRowOnScreen();
+      await settle();
+      expect(mocks.fetchNextPage).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('tells the blur once rows are under the chips, and again when the list is back at rest', async () => {
