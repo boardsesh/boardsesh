@@ -16,6 +16,7 @@
 // targets, and that a neighbouring climb from another board is not peeked under
 // the current art.
 import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render as renderInitial, act, renderHook } from '@testing-library/react';
 import { Children, Fragment, createElement, isValidElement, useEffect, useRef, type ReactNode } from 'react';
 import { DeferredBoard } from '../DeferredBoard';
@@ -675,8 +676,15 @@ function flushOpeningFrame() {
   openingFrames.clear();
   act(() => scheduled.forEach((callback) => callback(0)));
 }
-function render(...args: Parameters<typeof renderInitial>) {
-  const rendered = renderInitial(...args);
+function renderBeforeOpeningFrame(ui: Parameters<typeof renderInitial>[0]) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function QueryWrapper({ children }: { children: ReactNode }) {
+    return createElement(QueryClientProvider, { client }, children);
+  }
+  return renderInitial(ui, { wrapper: QueryWrapper });
+}
+function render(ui: Parameters<typeof renderInitial>[0]) {
+  const rendered = renderBeforeOpeningFrame(ui);
   flushOpeningFrame();
   return rendered;
 }
@@ -827,7 +835,7 @@ describe('PlayDrawer opening layout', () => {
         onOpenQueue,
         openTarget,
       });
-    const view = renderInitial(element(target));
+    const view = renderBeforeOpeningFrame(element(target));
     const initialBoard = view.getByTestId('board');
     const firstBoardProps = recorded.board[0];
     expect(firstBoardProps).toMatchObject({
@@ -873,7 +881,7 @@ describe('PlayDrawer opening layout', () => {
 
   it.each(['viewport-first', 'headers-first'])('keeps the board mounted through layout callbacks (%s)', (order) => {
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
-    const rendered = renderInitial(
+    const rendered = renderBeforeOpeningFrame(
       createElement(PlayDrawer, {
         presentation: 'pane',
         boardConfig: TWELVE_BY_TWELVE,
@@ -927,7 +935,7 @@ describe('PlayDrawer opening layout', () => {
       boardLayout(layout(390, 650));
     });
     first.unmount();
-    const same = renderInitial(
+    const same = renderBeforeOpeningFrame(
       createElement(PlayDrawer, {
         presentation: 'pane',
         boardConfig: TWELVE_BY_TWELVE,
@@ -940,7 +948,7 @@ describe('PlayDrawer opening layout', () => {
     expect(same.getByTestId('board')).toBeTruthy();
     same.unmount();
     viewport.fontScale = 1.2;
-    const changed = renderInitial(
+    const changed = renderBeforeOpeningFrame(
       createElement(PlayDrawer, {
         presentation: 'pane',
         boardConfig: TWELVE_BY_TWELVE,
