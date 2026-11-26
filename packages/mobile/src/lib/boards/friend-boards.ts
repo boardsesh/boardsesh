@@ -1,7 +1,7 @@
-// "A friend's board" (friendsBoards): the rows the picker's Friends' boards
-// shelf and the wizard's "Whose board?" step draw, and the rules behind them.
-// Pure, so the shelf's dedupe and cap, the owner grouping and the empty states
-// are tables in tests.
+// "A friend's board" (friendsBoards: the boards of people who follow the
+// viewer): the rows the picker's Friends' boards shelf and the wizard's "Whose
+// board?" step draw, and the rules behind them. Pure, so the shelf's dedupe and
+// cap, the owner grouping and the empty states are tables in tests.
 
 import { boardConfigLabel, formatBoardDisplayName, toBoardName } from '@boardsesh/board-config';
 import type { FriendBoard, FriendBoardOwner } from '@boardsesh/shared-schema';
@@ -159,24 +159,28 @@ export function friendBoardListCells(
 }
 
 /** Which placard "Whose board?" shows instead of a list, or null for the list. */
-export type FriendBoardsEmptyKind = 'offline' | 'no_follows' | 'no_boards' | 'no_match';
+export type FriendBoardsEmptyKind = 'offline' | 'no_followers' | 'no_boards' | 'no_match';
 
+/**
+ * The list holds boards of people who follow the viewer, so "nobody follows
+ * you" is its own placard: the fix is for a friend to follow them.
+ */
 export function friendBoardsEmptyKind({
   offline,
   query,
-  followingCount,
+  followerCount,
   boardCount,
 }: {
   /** The list can't load for want of a connection (and nothing is on screen). */
   offline: boolean;
   /** The trimmed search. */
   query: string;
-  /** How many people the viewer follows, when known. */
-  followingCount: number | null | undefined;
+  /** How many people follow the viewer, when known. */
+  followerCount: number | null | undefined;
   boardCount: number;
 }): FriendBoardsEmptyKind | null {
   if (boardCount > 0) return null;
   if (offline) return 'offline';
   if (query.length > 0) return 'no_match';
-  return followingCount === 0 ? 'no_follows' : 'no_boards';
+  return followerCount === 0 ? 'no_followers' : 'no_boards';
 }
