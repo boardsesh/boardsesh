@@ -1226,6 +1226,43 @@ describe('SwipeBoardCarousel still wall (PNG board)', () => {
     expect(bareWallProps.playSurface).toBeUndefined();
   });
 
+  it('keeps the Quantum wall behind a loading page until that page reports its own paint', async () => {
+    const pager = restingPager();
+    const quantumProps = {
+      ...props,
+      boardName: 'quantum' as const,
+      layoutId: 9101,
+      sizeId: 9201,
+      setIds: '1',
+      pager,
+      containerSize: { width: 350, height: 500 },
+    };
+    const { getByTestId, rerender } = render(createElement(SwipeBoardCarousel, quantumProps));
+    await nextFrame();
+    await nextFrame();
+    const bareWall = getByTestId('bare-wall');
+    act(() => readinessCallbackFor('')('ready'));
+    const { pageArt } = recorded.swipeOptions.mock.calls.at(-1)![0] as {
+      pageArt: SharedValue<Record<number, BoardArtReadiness>>;
+    };
+    expect(pageArt.value[0]).toBeUndefined();
+    expect(slotOf(bareWall).dataset.opacity).toBe('1');
+
+    act(() => readinessCallbackFor('b')('loading'));
+    // The mock recomputes animated styles on React renders. Refit the same
+    // canvas to sample a new frame without unmounting its artwork.
+    rerender(createElement(SwipeBoardCarousel, { ...quantumProps, containerSize: { width: 350, height: 480 } }));
+    expect(getByTestId('bare-wall')).toBe(bareWall);
+    expect(slotOf(bareWall).dataset.opacity).toBe('1');
+    expect(pageArt.value[0]).toBe('loading');
+
+    act(() => readinessCallbackFor('b')('ready'));
+    rerender(createElement(SwipeBoardCarousel, { ...quantumProps, containerSize: { width: 350, height: 470 } }));
+    expect(getByTestId('bare-wall')).toBe(bareWall);
+    expect(slotOf(bareWall).dataset.opacity).toBe('0');
+    expect(pageArt.value[0]).toBe('ready');
+  });
+
   it.each([
     ['the kill switch is on', { pngWallFade: false, transition: undefined }],
     ['the lab plays the wipe', { pngWallFade: true, transition: { revealMode: 'wipe' as const } }],

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { createElement, type ReactNode } from 'react';
+import { createElement, type CSSProperties, type ReactNode } from 'react';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -9,16 +9,24 @@ const renderState = vi.hoisted(() => ({
 }));
 
 vi.mock('expo-image', () => ({
-  Image: ({ testID, ...events }: (typeof renderState.images)[number] & { testID: string }) => {
+  Image: ({
+    testID,
+    loading,
+    ...events
+  }: (typeof renderState.images)[number] & {
+    testID: string;
+    loading: 'eager' | 'lazy';
+  }) => {
     renderState.images.push(events);
-    return createElement('img', { 'data-testid': testID });
+    return createElement('img', { 'data-testid': testID, loading });
   },
 }));
 
 vi.mock('../../lib/app-visibility', () => ({ useIsAppBackgrounded: () => false }));
 
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children, style }: { children?: ReactNode; style?: CSSProperties | CSSProperties[] }) =>
+    createElement('div', { style: Array.isArray(style) ? Object.assign({}, ...style) : style }, children),
   StyleSheet: {
     absoluteFill: { position: 'absolute', inset: 0 },
     create: (styles: Record<string, unknown>) => styles,
@@ -79,7 +87,7 @@ afterEach(() => {
 });
 
 describe('QuantumBoardImage', () => {
-  it('keeps the cached neutral path visible until the bundled artwork paints', () => {
+  it('lets bundled artwork paint without an opaque loading diagram', () => {
     const onArtReadinessChange = vi.fn();
     const onArtDisplayed = vi.fn();
     const view = render(
@@ -92,11 +100,10 @@ describe('QuantumBoardImage', () => {
       }),
     );
 
-    expect(view.getByTestId('quantum-neutral-grid')).toBeTruthy();
+    expect(view.queryByTestId('quantum-neutral-grid')).toBeNull();
     expect(view.container.querySelector('svg')?.getAttribute('preserveAspectRatio')).toBe('xMidYMid meet');
-    const neutralHolds = view.getByTestId('quantum-neutral-holds');
-    const compoundPath = neutralHolds.getAttribute('d') ?? '';
-    expect(compoundPath.match(/M/g)).toHaveLength(657);
+    expect(view.queryByTestId('quantum-neutral-holds')).toBeNull();
+    expect(view.getByTestId('quantum-board-artwork').getAttribute('loading')).toBe('eager');
     expect(view.container.querySelectorAll('circle')).toHaveLength(0);
     expect(renderState.holdsDataLengths.at(-1)).toBe(657);
 
@@ -113,6 +120,43 @@ describe('QuantumBoardImage', () => {
     expect(view.queryByTestId('quantum-neutral-holds')).toBeNull();
     expect(onArtReadinessChange).toHaveBeenLastCalledWith('ready');
     expect(onArtDisplayed).toHaveBeenCalledOnce();
+  });
+
+  it('keeps same-model swipes free of neutral dots while a new canvas waits to display', () => {
+    const onArtReadinessChange = vi.fn();
+    const onArtDisplayed = vi.fn();
+    const board = {
+      layoutId: LAYOUT_ID,
+      sizeId: SIZE_ID,
+      onArtReadinessChange,
+      onArtDisplayed,
+    };
+    const previous = render(createElement(QuantumBoardImage, { ...board, frames: 'p1r12' }));
+    act(() => renderState.images.at(-1)?.onDisplay());
+    expect(onArtReadinessChange).toHaveBeenLastCalledWith('ready');
+    previous.unmount();
+
+    const next = render(createElement(QuantumBoardImage, { ...board, frames: 'p2r12' }));
+    expect(next.getByTestId('quantum-board-artwork').parentElement?.style.backgroundColor).toBe('transparent');
+    expect(next.queryByTestId('quantum-neutral-holds')).toBeNull();
+    expect(onArtReadinessChange).toHaveBeenLastCalledWith('loading');
+    expect(onArtDisplayed).toHaveBeenCalledOnce();
+
+    act(() => renderState.images.at(-1)?.onDisplay());
+    expect(onArtReadinessChange).toHaveBeenLastCalledWith('ready');
+    expect(onArtDisplayed).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps thumbnail artwork lazy', () => {
+    const view = render(
+      createElement(QuantumBoardImage, {
+        frames: '',
+        layoutId: LAYOUT_ID,
+        sizeId: SIZE_ID,
+        backgroundVariant: 'thumb',
+      }),
+    );
+    expect(view.getByTestId('quantum-board-artwork').getAttribute('loading')).toBe('lazy');
   });
 
   it('ignores the recycled model’s display callback and reports a real image failure', () => {
@@ -135,7 +179,9 @@ describe('QuantumBoardImage', () => {
 
     const error = { error: 'Artwork failed to decode' };
     act(() => renderState.images.at(-1)?.onError(error));
-    expect(view.getByTestId('quantum-neutral-holds')).toBeTruthy();
+    expect(view.getByTestId('quantum-neutral-grid')).toBeTruthy();
+    const compoundPath = view.getByTestId('quantum-neutral-holds').getAttribute('d') ?? '';
+    expect(compoundPath.match(/M/g)).toHaveLength(252);
     expect(onArtReadinessChange).toHaveBeenLastCalledWith('failed');
     expect(onArtDisplayed).not.toHaveBeenCalled();
     expect(onArtError).toHaveBeenCalledWith(error);

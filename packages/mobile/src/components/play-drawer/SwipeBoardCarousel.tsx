@@ -21,6 +21,7 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import { useBoardAccessibilitySummary } from '../../hooks/use-board-accessibility-summary';
 import { useTranslation } from 'react-i18next';
 import { BoardImageNative } from '../BoardImageNative';
+import { getBoardImageAdapter } from '../board-image-adapters';
 import { StationaryBoardCarousel } from './StationaryBoardCarousel';
 import { useBoardRenderSettings } from '../../lib/board-render-settings';
 import { usePlayerGpuBoard } from './use-player-gpu-board';
@@ -372,6 +373,7 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
 
 type BareWallLayerProps = {
   layers: SharedValue<PngSwapLayers>;
+  pageArt: SharedValue<Readonly<Record<number, BoardArtReadiness>>>;
   /** Written true while the bare wall has painted its veil, false otherwise. */
   ready: SharedValue<boolean>;
   boardBox: ViewStyle;
@@ -391,11 +393,12 @@ type BareWallLayerProps = {
  * The bare wall under the boards on the still wall: the same photo, veil, LED
  * covers and grid labels with no climb lit. Wherever a fading board is
  * see-through it shows the unlit wall the board itself draws, so the wall never
- * brightens. Drawn only while a board above it is see-through, and never a
- * page: the swipe does not wait for it and it reports nothing to `pageArt`.
+ * brightens. Runtime board images also use it under visible pages while they
+ * wait for their bitmap to paint. This layer never reports page readiness.
  */
 const BareWallLayer = React.memo(function BareWallLayer({
   layers,
+  pageArt,
   ready,
   boardBox,
   zoomStyle,
@@ -409,7 +412,16 @@ const BareWallLayer = React.memo(function BareWallLayer({
   overlayRenderWidth,
   fieldColorOverride,
 }: BareWallLayerProps) {
-  const layerStyle = useAnimatedStyle(() => ({ opacity: layers.value.bareWallOpacity }));
+  const useWallWhilePainting = getBoardImageAdapter(boardName).loadImage !== null;
+  const layerStyle = useAnimatedStyle(() => {
+    const { bareWallOpacity, leavingPage, leavingOpacity, arrivingPage, arrivingOpacity } = layers.value;
+    if (!useWallWhilePainting || bareWallOpacity > 0) return { opacity: bareWallOpacity };
+    const art = pageArt.value;
+    // An unreported slot is also loading, as in the carousel gesture gate.
+    const leavingLoading = leavingOpacity > 0 && (art[leavingPage] === undefined || art[leavingPage] === 'loading');
+    const arrivingLoading = arrivingOpacity > 0 && (art[arrivingPage] === undefined || art[arrivingPage] === 'loading');
+    return { opacity: leavingLoading || arrivingLoading ? 1 : 0 };
+  }, [useWallWhilePainting, layers, pageArt]);
   const handleArtReadinessChange = useCallback(
     (readiness: BoardArtReadiness) => {
       ready.value = readiness === 'ready';
@@ -860,6 +872,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
               <BareWallLayer
                 key="bare-wall"
                 layers={pngLayers}
+                pageArt={pageArt}
                 ready={bareWallReady}
                 boardBox={imageBox}
                 zoomStyle={animatedZoomStyle}

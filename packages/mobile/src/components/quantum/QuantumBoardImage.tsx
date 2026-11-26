@@ -59,6 +59,7 @@ export const QuantumBoardImage = React.memo(function QuantumBoardImage({
       key={`${layoutId}:${sizeId}:${backgroundVariant}`}
       details={details}
       source={source}
+      backgroundVariant={backgroundVariant}
       {...props}
     />
   );
@@ -67,11 +68,13 @@ export const QuantumBoardImage = React.memo(function QuantumBoardImage({
 type QuantumImageCanvasProps = Omit<QuantumBoardImageProps, 'layoutId' | 'sizeId' | 'backgroundVariant'> & {
   details: QuantumBoardDetails;
   source: number | null;
+  backgroundVariant: BackgroundVariant;
 };
 
 function QuantumImageCanvas({
   details,
   source,
+  backgroundVariant,
   frames,
   style,
   overlayTestID,
@@ -119,7 +122,7 @@ function QuantumImageCanvas({
   const containerStyle: ViewStyle = {
     width: '100%',
     aspectRatio: boardWidth / boardHeight,
-    backgroundColor: chartColors.secondaryBackground,
+    backgroundColor: readiness === 'loading' ? 'transparent' : chartColors.secondaryBackground,
     ...style,
   };
 
@@ -137,6 +140,9 @@ function QuantumImageCanvas({
           style={styles.artwork}
           contentFit="contain"
           cachePolicy="memory"
+          // Expo web can start the play carousel's mounted neighbours before
+          // they're visible. Virtualized thumbnails keep lazy loading.
+          loading={backgroundVariant === 'full' ? 'eager' : 'lazy'}
           transition={0}
           accessible={false}
           pointerEvents="none"
@@ -153,7 +159,9 @@ function QuantumImageCanvas({
         pointerEvents="none"
         testID={!underOverlay && litHolds.length > 0 ? overlayTestID : undefined}
       >
-        {readiness !== 'ready' ? (
+        {/* Leave a pending bitmap visible as soon as it paints. The neutral
+            diagram is only for artwork that is missing or failed to decode. */}
+        {readiness === 'failed' ? (
           <>
             <Rect width={boardWidth} height={boardHeight} fill={chartColors.secondaryBackground} />
             <Path
