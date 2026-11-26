@@ -269,11 +269,11 @@ export function WledBluetoothInstaller({
             maxLength={32}
             editable={!disabled}
           />
-          <SectionLabel>{t('sprayLed.installer.hotspot.password')}</SectionLabel>
+          <SectionLabel>{t('sprayLed.installer.hotspot.passwordLabel')}</SectionLabel>
           <BuilderTextInput
             value={hotspot.passphrase}
             onChangeText={(passphrase) => setHotspot({ ...hotspot, passphrase })}
-            accessibilityLabel={t('sprayLed.installer.hotspot.password')}
+            accessibilityLabel={t('sprayLed.installer.hotspot.passwordLabel')}
             autoCapitalize="none"
             autoCorrect={false}
             secureTextEntry

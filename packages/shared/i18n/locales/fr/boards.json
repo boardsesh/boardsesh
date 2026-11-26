@@ -107,6 +107,7 @@
         "hint": "Pas de Wi-Fi à ton Spraywall ? Boardsesh télécharge d’abord le firmware avec n’importe quelle connexion, données mobiles comprises. Ensuite ton téléphone rejoint le point d’accès du contrôleur pour l’installer, puis le quitte une fois terminé.",
         "ssid": "Nom du point d’accès du contrôleur",
         "password": "Ce mot de passe ne fonctionne pas. Les mots de passe du point d’accès WLED font de 8 à 63 caractères, et celui par défaut est wled1234.",
+        "passwordLabel": "Mot de passe du point d’accès du contrôleur",
         "start": "Télécharger et connecter",
         "downloading": "Téléchargement et vérification du firmware avant la connexion…",
         "connecting": "Connexion à ton contrôleur… Accepte la demande Wi-Fi si ton téléphone te la propose.",

@@ -107,6 +107,7 @@
         "hint": "Kein WLAN an deiner Spraywall? Boardsesh lädt die Firmware zuerst über jede Internetverbindung herunter, auch mobile Daten. Dann verbindet sich dein Handy mit dem eigenen Hotspot des Controllers, installiert sie und trennt sich danach wieder.",
         "ssid": "Hotspot-Name des Controllers",
         "password": "Dieses Passwort funktioniert nicht. WLED-Hotspot-Passwörter haben 8 bis 63 Zeichen, voreingestellt ist wled1234.",
+        "passwordLabel": "Hotspot-Passwort des Controllers",
         "start": "Herunterladen und verbinden",
         "downloading": "Firmware wird vor dem Verbinden heruntergeladen und geprüft…",
         "connecting": "Verbindung mit deinem Controller… Bestätige die WLAN-Anfrage, falls dein Handy fragt.",

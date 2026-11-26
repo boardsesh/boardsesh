@@ -107,6 +107,7 @@
         "hint": "No Wi-Fi at your Spraywall? Boardsesh downloads the firmware first on any internet, mobile data included. Then your phone joins the controller's own hotspot to install it, and leaves it when done.",
         "ssid": "Controller hotspot name",
         "password": "That password won't work. WLED hotspot passwords have 8 to 63 characters, and the default is wled1234.",
+        "passwordLabel": "Controller hotspot password",
         "start": "Download and connect",
         "downloading": "Downloading and checking the firmware before connecting…",
         "connecting": "Connecting to your controller… Approve the Wi-Fi prompt if your phone asks.",

@@ -107,6 +107,7 @@
         "hint": "Niente Wi-Fi alla tua Spraywall? Boardsesh scarica prima il firmware con qualsiasi connessione, anche i dati mobili. Poi il telefono si collega all’hotspot del controller per installarlo e si scollega alla fine.",
         "ssid": "Nome dell’hotspot del controller",
         "password": "Questa password non funziona. Le password dell’hotspot WLED hanno da 8 a 63 caratteri e quella predefinita è wled1234.",
+        "passwordLabel": "Password dell’hotspot del controller",
         "start": "Scarica e collega",
         "downloading": "Download e verifica del firmware prima di collegarti…",
         "connecting": "Collegamento al controller… Accetta la richiesta Wi-Fi se il telefono la mostra.",

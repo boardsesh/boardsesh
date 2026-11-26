@@ -237,7 +237,9 @@ describe('WLED install over the controller hotspot', () => {
     expect(toggle.checked).toBe(true);
     expect(toggle.disabled).toBe(true);
     expect((screen.getByLabelText('sprayLed.installer.hotspot.ssid') as HTMLInputElement).value).toBe('WLED-AP');
-    expect((screen.getByLabelText('sprayLed.installer.hotspot.password') as HTMLInputElement).value).toBe('wled1234');
+    expect((screen.getByLabelText('sprayLed.installer.hotspot.passwordLabel') as HTMLInputElement).value).toBe(
+      'wled1234',
+    );
     expect(screen.getByText('sprayLed.installer.hotspot.hint')).toBeTruthy();
   });
 
