@@ -211,10 +211,7 @@ describe('cncCatalog', () => {
 
   it("reports prices as amountCents, not the service layer's priceCents", async () => {
     const entry = (await cncPackQueries.cncCatalog(undefined, undefined, anonCtx())).entries[0];
-    expect(entry.tiers).toEqual([
-      { tier: 'personal', amountCents: 14900, currency: 'AUD' },
-      { tier: 'commercial_single', amountCents: 75000, currency: 'AUD' },
-    ]);
+    expect(entry.tiers).toEqual([{ tier: 'personal', amountCents: 0, currency: 'AUD' }]);
   });
 
   it('never leaks the Stripe price env var names', async () => {

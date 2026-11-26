@@ -134,7 +134,7 @@ describe('the timeline', () => {
   it('covers both halves of the lifecycle, free preview first', () => {
     renderStatus(previewOrder());
 
-    for (const step of ['Free preview drawn', 'Licence named and paid', 'Cutting the files', 'Ready to download']) {
+    for (const step of ['Free preview drawn', 'Licence confirmed', 'Cutting the files', 'Ready to download']) {
       expect(screen.getAllByText(step).length).toBeGreaterThan(0);
     }
   });
@@ -205,7 +205,7 @@ describe('the preview', () => {
   it('offers Finalise on a drawn preview, pointing at the configurator', () => {
     renderStatus(previewOrder());
 
-    expect(screen.getByRole('link', { name: 'Finalise and buy' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Generate free build pack' }).getAttribute('href')).toBe(
       '/build-plans?order=BS-CNC-K7QM3T',
     );
   });
@@ -213,11 +213,40 @@ describe('the preview', () => {
   it('offers no Finalise once the order has been bought', () => {
     renderStatus(order({ status: 'ready' }));
 
-    expect(screen.queryByRole('link', { name: 'Finalise and buy' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Generate free build pack' })).toBeNull();
   });
 });
 
 describe('downloads', () => {
+  it('offers a quiet donation link without requiring it to download a free pack', async () => {
+    const downloadUrl = 'https://backend.example/api/cnc/packs/BS-CNC-K7QM3T/download?token=abc';
+    graphqlRequest.mockResolvedValue({ createCncDownloadGrant: { url: downloadUrl } });
+    renderStatus(order({ amountCents: 0, paidAt: null }));
+
+    expect(screen.getByRole('link', { name: 'Donate if you’d like' }).getAttribute('href')).toBe('/support');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Download the pack' }));
+
+    await waitFor(() => expect(locationAssign).toHaveBeenCalledWith(downloadUrl));
+    expect(graphqlRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the donation reminder off the unfinished preview', () => {
+    renderStatus(previewOrder());
+
+    expect(screen.queryByRole('link', { name: 'Donate if you’d like' })).toBeNull();
+  });
+
+  it.each(['personal', 'commercial_single'] as const)(
+    'preserves historical paid %s packs without calling them free or non-commercial',
+    (tier) => {
+      renderStatus(order({ tier }));
+
+      expect(screen.getByRole('button', { name: 'Download the pack' })).toBeTruthy();
+      expect(screen.queryByRole('link', { name: 'Donate if you’d like' })).toBeNull();
+    },
+  );
+
   it('asks for a PREVIEW grant for the watermarked sheets', () => {
     renderStatus(previewOrder());
     fireEvent.click(screen.getByRole('button', { name: 'Download the preview' }));
@@ -345,7 +374,7 @@ describe('polling', () => {
   it('does not re-fetch a drawn preview either — it is waiting on the buyer', async () => {
     renderStatus(previewOrder());
 
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Finalise and buy' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Generate free build pack' })).toBeTruthy());
     expect(graphqlRequest).not.toHaveBeenCalled();
   });
 
@@ -403,11 +432,11 @@ describe('terminal states', () => {
     expect(contact.closest('a')?.getAttribute('href')).toContain('mailto:support@boardsesh.com');
   });
 
-  it('says nothing was charged when a preview did not draw, and offers support', () => {
+  it('explains how to retry when a preview did not draw and offers support', () => {
     renderStatus(previewOrder({ status: 'preview_failed', hasPreview: false, previewImages: [] }));
 
     expect(screen.getByText('This preview did not draw')).toBeTruthy();
-    expect(screen.getByText(/Nothing was charged/)).toBeTruthy();
+    expect(screen.getByText(tFromCatalog('cnc', 'order.previewFailed.body'))).toBeTruthy();
     const contact = screen.getByText('Email us and we will sort it out');
     expect(contact.closest('a')?.getAttribute('href')).toContain('mailto:support@boardsesh.com');
   });

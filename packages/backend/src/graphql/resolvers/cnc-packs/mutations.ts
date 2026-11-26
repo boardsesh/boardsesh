@@ -3,22 +3,17 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { validateArtwork } from '../../../services/cnc/worker-client';
 import { usesCncJobQueue } from '../../../services/cnc/generation-queue';
 import {
-  attachCheckoutSession,
   countOrdersCreatedSince,
   createPreviewOrder,
   findPreviewOrderByConfigHash,
-  getAccountEmail,
   getOrderById,
   getOrderByLicenceId,
   transitionOrder,
 } from '../../../services/cnc/orders';
-import { attachAssetsToOrder, releaseArtAssetsForOrder } from '../../../services/cnc/art-assets';
+import { attachAssetsToOrder } from '../../../services/cnc/art-assets';
 import { findCatalogEntry } from '../../../services/cnc/catalog';
 import { computeCncConfigHash } from '../../../services/cnc/config-hash';
-import { createCheckoutSessionForOrder, isStripeConfigured } from '../../../services/cnc/stripe';
-import { isCheckoutBypassEnabled } from '../../../services/cnc/checkout-bypass';
 import { requireCncCreationAccess, requireCncCheckoutAccess } from '../../../services/cnc/release-access';
-import { sendCncOrderStuckAdminEmail } from '../../../email/cnc-emails';
 import { isDownloadable, type CncDeliverable } from '../../../services/cnc/order-state';
 import { createDownloadGrant, isDownloadGrantConfigured } from '../../../services/cnc/download-grant';
 import { backendPublicUrl, webPublicUrl } from '../../../utils/public-urls';
@@ -31,7 +26,7 @@ import { toGraphQLOrder } from './order-mapper';
 import { toGraphQLWorkerError } from './queries';
 
 /**
- * Write side of CNC build packs: artwork validation, checkout, the download
+ * Write side of CNC build packs: artwork validation, generation, the download
  * grant a browser redeems, and the admin rebuild.
  */
 
@@ -49,9 +44,8 @@ const RATE_LIMIT_VALIDATE_ARTWORK_OP = 'validateCncArtwork';
 /**
  * Ceiling on finalise calls per minute.
  *
- * Deliberately tiny. Every call asks Stripe for a session, so a loop here burns
- * Stripe's rate limit. Five is more attempts than anyone makes honestly — a
- * buyer who bounces off Checkout and comes back is one or two.
+ * Every successful call queues a full manufacturing pack. Keep accidental
+ * loops bounded alongside the existing preview budget.
  */
 const RATE_LIMIT_FINALISE = 5;
 const RATE_LIMIT_FINALISE_OP = 'finaliseCncOrder';
@@ -59,8 +53,8 @@ const RATE_LIMIT_FINALISE_OP = 'finaliseCncOrder';
 /**
  * Previews per buyer per hour, and the window it is counted over.
  *
- * A preview is free and a generation is not: each one is real generator time on
- * a service sized for purchases. Four an hour is more iterations than a person
+ * Preview and full packs are free, but each consumes real generator time.
+ * Four an hour is more iterations than a person
  * makes on one wall in a sitting, and re-asking for a configuration already
  * previewed does not spend one at all — that returns the existing order.
  *
@@ -81,17 +75,8 @@ const PREVIEWS_PER_HOUR =
 const PREVIEW_WINDOW_MS = 60 * 60 * 1000;
 const RATE_LIMIT_CREATE_PREVIEW_OP = 'createCncPreview';
 
-/** Stripe is off, misconfigured, or would not open a session. Nothing the buyer can fix. */
-export const CNC_CHECKOUT_UNAVAILABLE_CODE = 'CNC_CHECKOUT_UNAVAILABLE';
-
-/** The order exists and is the caller's, but it is not a `preview_ready` order waiting to be bought. */
+/** The order exists and is the caller's, but it is not an approved preview waiting to be finalised. */
 export const CNC_ORDER_NOT_FINALISABLE_CODE = 'CNC_ORDER_NOT_FINALISABLE';
-
-function checkoutUnavailableError(): GraphQLError {
-  return new GraphQLError('Checkout is unavailable right now. Nothing has been charged — try again in a minute.', {
-    extensions: { code: CNC_CHECKOUT_UNAVAILABLE_CODE },
-  });
-}
 
 /**
  * Ceiling on download grants per minute.
@@ -125,7 +110,7 @@ export const cncPackMutations = {
    * The placement editor runs its own collision maths for live feedback while
    * the buyer drags, but that copy exists to feel instant, not to be right.
    * This is the generator's own answer, computed by the same code that will
-   * route the panel, and it is what the Buy button waits on.
+   * route the panel, and it is what generation waits on.
    *
    * Authenticated because artwork items reference uploaded assets, and because
    * there is no reason for an anonymous caller to be exercising the generator's
@@ -173,10 +158,8 @@ export const cncPackMutations = {
    * Generate a free, watermarked preview of a configuration.
    *
    * This is the top of the funnel and the only way an order row is ever
-   * created: nothing is charged, nothing is licensed, and the buyer iterates
-   * here as long as they like. Finalising one of these previews is the only way
-   * a pack is ever bought, which is what makes "you cannot buy something you
-   * have not seen" a property of the state machine rather than of the UI.
+   * created: nothing is licensed yet, and the owner can inspect the wall before
+   * accepting the licence and generating manufacturing files.
    *
    * Two things stop this being a free generator farm: `configHash` dedupe (the
    * same configuration returns the order it already made) and a four-an-hour
@@ -292,16 +275,8 @@ export const cncPackMutations = {
   },
 
   /**
-   * Buy a previewed order: attach the licence, then open Stripe Checkout.
-   *
-   * The configuration is NOT re-submitted. It is already on the row, approved
-   * by the buyer in the preview they are looking at, and taking it again here
-   * would be a way to pay for one wall and receive another.
-   *
-   * `preview_ready -> pending_payment` happens here; `pending_payment ->
-   * queued` still happens in exactly one place, the paid webhook. That is what
-   * keeps an unpaid order out of the full-pack queue even though its own
-   * preview went through the same worker minutes earlier.
+   * Attach the accepted licence to an approved preview and queue its free pack.
+   * The stored preview configuration is immutable and is never re-submitted.
    */
   finaliseCncOrder: async (
     _: unknown,
@@ -314,19 +289,10 @@ export const cncPackMutations = {
 
     const validated = validateInput(FinaliseCncOrderInputSchema, input, 'input');
 
-    // Read once and reused below, so the "should this request skip Stripe"
-    // question is answered the same way at both ends of the resolver even if
-    // the env moves underneath it mid-request.
-    const bypassCheckout = isCheckoutBypassEnabled();
-
-    // Checked before the order is touched, not after: moving a preview to
-    // `pending_payment` for a checkout that can never open would strand it. The
-    // dev bypass is the one case where a missing key is not a refusal — and it
-    // is itself gated on that key being absent, so the two can never both be
-    // true.
-    if (!bypassCheckout && !isStripeConfigured()) {
-      logger.error('[cnc-checkout] STRIPE_SECRET_KEY is not set; refusing to take an order');
-      throw checkoutUnavailableError();
+    if (validated.tier !== 'personal') {
+      throw invalidConfigError(
+        'Free build packs are for non-commercial use only. For commercial use, contact partnerships@boardsesh.com.',
+      );
     }
 
     const order = await getOrderById(Number(validated.orderId));
@@ -335,40 +301,34 @@ export const cncPackMutations = {
     if (!order || order.userId !== ctx.userId) throw orderNotFoundError();
 
     if (order.status !== 'preview_ready') {
-      throw new GraphQLError(
-        order.status === 'pending_payment'
-          ? 'This order is already waiting for payment. Open it to finish checking out.'
-          : 'Generate a preview of this wall before buying it.',
-        { extensions: { code: CNC_ORDER_NOT_FINALISABLE_CODE, status: order.status } },
-      );
+      throw new GraphQLError('Generate a preview of this wall before finalising it.', {
+        extensions: { code: CNC_ORDER_NOT_FINALISABLE_CODE, status: order.status },
+      });
     }
 
-    // Priced off the ORDER's own tuple, not off a client-supplied one. A wall
-    // retired from the catalogue between preview and finalise cannot be priced,
-    // and that is the honest answer rather than charging last week's number.
+    // Recheck availability against the order's stored tuple, never a client tuple.
     const entry = findCatalogEntry({ boardName: order.boardName, layoutId: order.layoutId, sizeId: order.sizeId });
     if (!entry) {
-      throw invalidConfigError('Boardsesh no longer sells a build pack for that wall.');
+      throw invalidConfigError('Boardsesh no longer offers a build pack for that wall.');
     }
     const tierPrice = entry.tiers.find((candidate) => candidate.tier === validated.tier);
     if (!tierPrice) {
-      throw invalidConfigError(`The ${validated.tier} tier is not sold for ${entry.label}.`);
+      throw invalidConfigError(`The ${validated.tier} tier is not available for ${entry.label}.`);
     }
 
-    const finalised = await transitionOrder(order.id, 'finalise', {
-      tier: validated.tier,
+    const finalised = await transitionOrder(order.id, 'finaliseFree', {
+      tier: 'personal',
       licenseeName: validated.licenseeName,
       licenseeEmail: validated.licenseeEmail,
       customerSiteName: validated.customerSiteName,
-      // The tick happened on this request. Stripe collects its own acceptance
-      // at Checkout as well; this is the one made against the licence text the
-      // buyer was actually shown.
+      // Record acceptance of the licence text shown for this free pack.
       licenceAcceptedAt: new Date(),
       currency: tierPrice.currency,
-      amountCents: tierPrice.priceCents,
+      amountCents: 0,
+      queuedAt: new Date(),
       // The preview spent attempts on this row; the pack must not inherit them.
       // One order carries two generations now, and a wall whose preview needed a
-      // retry would otherwise reach the paid queue with two tries left instead
+      // retry would otherwise reach the full queue with two tries left instead
       // of three. The lease fields go with them: a stale preview claim token
       // must not be able to report on the pack.
       attempts: 0,
@@ -381,12 +341,12 @@ export const cncPackMutations = {
     if (!finalised) {
       // Somebody else moved the row between the read and the UPDATE — a second
       // tab finalising, most likely.
-      throw new GraphQLError('This order is no longer waiting to be bought. Reload the page.', {
+      throw new GraphQLError('This order has already been finalised. Reload the page.', {
         extensions: { code: CNC_ORDER_NOT_FINALISABLE_CODE, status: order.status },
       });
     }
 
-    // Stamp the uploads this sale claims. Best-effort on purpose, unlike the
+    // Stamp the uploads this pack uses. Best-effort on purpose, unlike the
     // pre-preview flow this replaced: one upload can legitimately appear in
     // several orders now (every preview iteration is a row of its own, and a
     // buyer may build two walls with the same logo), so `order_id` is a cleanup
@@ -412,134 +372,14 @@ export const cncPackMutations = {
 
     const orderUrl = `${webPublicUrl()}/build-plans/orders/${encodeURIComponent(finalised.licenceId)}`;
 
-    // Development only: no Stripe, no webhook, no payment. The order is queued
-    // here because on this stack nothing else ever will — which is precisely
-    // why `isCheckoutBypassEnabled()` refuses to be true anywhere a card can be
-    // charged. Everything downstream (worker claim, generation, download grant)
-    // is the real path, unchanged.
-    //
-    // The buyer-facing side effects of a purchase are deliberately NOT fired:
-    // the "order received" email and the `Build Plans Pack Purchased` analytics
-    // event both live in the paid webhook, and a fake sale must not reach a
-    // real inbox or a real funnel.
-    if (bypassCheckout) {
-      const paidAt = new Date();
-      const queued = await transitionOrder(finalised.id, 'checkoutCompleted', {
-        paidAt,
-        queuedAt: paidAt,
-        // The catalogue price, since there is no Stripe charge to read the real
-        // number off. Same currency the order was reserved at.
-        amountCents: tierPrice.priceCents,
-        currency: tierPrice.currency,
-        // Recognisable on sight in the order row and in support: no Stripe
-        // session id ever looks like this.
-        stripeCheckoutSessionId: `bypass-${finalised.licenceId}`,
-        stripePaymentIntentId: null,
-      });
-      if (!queued) {
-        // The row was moved to `pending_payment` microseconds ago and nothing
-        // else on this stack moves it, so zero rows means the state machine and
-        // this code disagree. Refuse rather than hand back a URL for an order
-        // that was never queued.
-        logger.error('[cnc-checkout] bypass could not queue the order it just finalised', {
-          orderId: finalised.id,
-          licenceId: finalised.licenceId,
-        });
-        throw checkoutUnavailableError();
-      }
-      logger.warn('[cnc-checkout] STRIPE BYPASSED: order queued without a payment (development only)', {
-        orderId: finalised.id,
-        licenceId: finalised.licenceId,
-        tier: tierPrice.tier,
-      });
-      // Straight to the order page the Stripe success_url would have landed on,
-      // so the web app's post-checkout handling is exercised too.
-      return {
-        orderId: String(finalised.id),
-        licenceId: finalised.licenceId,
-        checkoutUrl: `${orderUrl}?checkout=success`,
-      };
-    }
+    logger.info('[cnc-generation] queued a free manufacturing pack', {
+      orderId: finalised.id,
+      licenceId: finalised.licenceId,
+      tier: finalised.tier,
+    });
 
-    // Stripe's receipt and `customer_email` go to the signed-in account, not
-    // the buyer-typed `licenseeEmail` — that field is the licence record (it
-    // can name a teammate or a client) and has never been verified as
-    // deliverable. A missing account email (the row exists but was never
-    // filled in) falls back to it rather than failing the checkout outright.
-    const accountEmail = await getAccountEmail(ctx.userId!);
-    if (!accountEmail) {
-      logger.warn('[cnc-checkout] account has no email on file; using the licensee email for Stripe', {
-        userId: ctx.userId,
-        orderId: finalised.id,
-      });
-    }
-
-    let session: { sessionId: string; url: string };
-    try {
-      session = await createCheckoutSessionForOrder({
-        order: { id: finalised.id, licenceId: finalised.licenceId },
-        tier: tierPrice,
-        successUrl: `${orderUrl}?checkout=success`,
-        cancelUrl: `${orderUrl}?checkout=cancelled`,
-        customerEmail: accountEmail ?? validated.licenseeEmail,
-      });
-    } catch (error) {
-      logger.error('[cnc-checkout] Stripe would not open a session; returning the order to its preview', {
-        orderId: finalised.id,
-        licenceId: finalised.licenceId,
-        error: error instanceof Error ? error.message : error,
-      });
-      // Back to `preview_ready`, not to `cancelled`. Without a session there is
-      // no `checkout.session.expired` webhook to retire the row, and the
-      // preview it came from is still perfectly good — making a buyer
-      // regenerate one because of our outage would cost them a slot in the
-      // hourly budget as well as the wait.
-      try {
-        const returned = await transitionOrder(finalised.id, 'finaliseFailed');
-        if (!returned) throw new Error('the order was no longer in pending_payment');
-      } catch (revertError) {
-        // Both halves failed, so the row is stranded in `pending_payment`: no
-        // session means no `checkout.session.expired` webhook will ever cancel
-        // it, and the cleanup that exists for exactly that case just threw.
-        // Nothing was charged, but somebody has to retire this order by hand —
-        // so this is the one path here that pages a human rather than only
-        // logging.
-        logger.error('[cnc-checkout] order is stuck in pending_payment: checkout and its cleanup both failed', {
-          orderId: finalised.id,
-          licenceId: finalised.licenceId,
-          error: error instanceof Error ? error.message : error,
-          revertError,
-        });
-        // Best-effort, like every other send: `sendCncOrderStuckAdminEmail`
-        // logs and swallows its own failures, and the buyer's error must not
-        // depend on SMTP.
-        await sendCncOrderStuckAdminEmail({
-          licenceId: finalised.licenceId,
-          orderId: finalised.id,
-          licenseeEmail: validated.licenseeEmail,
-          checkoutError: error instanceof Error ? error.message : String(error),
-          cancelError: revertError instanceof Error ? revertError.message : String(revertError),
-        });
-      }
-      // Hand the artwork back. The stamp went on before Stripe was asked for a
-      // session, so without this the buyer's upload stays bound to an order
-      // that was never paid for.
-      await releaseArtAssetsForOrder(finalised.id);
-      throw checkoutUnavailableError();
-    }
-
-    // Best-effort: the session id is for support and the Stripe dashboard. The
-    // webhook finds the order by `metadata.orderId`, so a lost write here costs
-    // traceability, never a payment.
-    const attached = await attachCheckoutSession(finalised.id, session.sessionId);
-    if (!attached) {
-      logger.warn('[cnc-checkout] could not attach the checkout session id', {
-        orderId: finalised.id,
-        sessionId: session.sessionId,
-      });
-    }
-
-    return { orderId: String(finalised.id), licenceId: finalised.licenceId, checkoutUrl: session.url };
+    // Keep the response field for existing clients; its URL now opens the order.
+    return { orderId: String(finalised.id), licenceId: finalised.licenceId, checkoutUrl: orderUrl };
   },
 
   /**

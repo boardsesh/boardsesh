@@ -781,10 +781,11 @@ export function fromDraft(raw: unknown, entries: readonly CncCatalogEntry[]): Cn
     includeKicker: entry.kickerOptional && draft.includeKicker,
     options,
     artwork: readDraftArtwork(draft.artwork),
-    tier: draft.tier,
+    // Commercial drafts return to the free personal licence, requiring fresh acceptance.
+    tier: 'personal',
     licenseeName: draft.licenseeName,
     licenseeEmail: draft.licenseeEmail,
-    customerSiteName: draft.tier === 'commercial_single' ? draft.customerSiteName : '',
+    customerSiteName: '',
     licenceAccepted: false,
     previewOrderId: hasPreviewPointer ? previewOrderId : null,
     previewLicenceId: hasPreviewPointer ? previewLicenceId : null,

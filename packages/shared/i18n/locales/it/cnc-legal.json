@@ -9,7 +9,7 @@
     "headerTitle": "Licenza di fabbricazione dei progetti di costruzione",
     "draft": {
       "title": "Bozza di licenza",
-      "body": "Bozza di licenza in attesa della revisione di un avvocato australiano specializzato in proprietà intellettuale: non farvi ancora affidamento. Il testo cambierà prima che i progetti di costruzione siano messi in vendita."
+      "body": "Bozza di licenza in attesa della revisione di un avvocato australiano specializzato in proprietà intellettuale: non farvi ancora affidamento. Il testo cambierà prima che i progetti di costruzione siano pubblicati."
     },
     "intro": {
       "title": "Licenza di fabbricazione dei progetti di costruzione Boardsesh",
@@ -36,11 +36,11 @@
     },
     "grant": {
       "title": "2. Cosa ricevi",
-      "p1": "Acquistando un pacchetto acquisti una licenza di fabbricazione. Non acquisisci la proprietà dei file, della geometria o del generatore che li ha prodotti. Boardsesh conserva tutti i diritti che detiene sul pacchetto.",
+      "p1": "I nuovi pacchetti generati qui includono una licenza personale gratuita per fabbricare una parete per il tuo uso personale non commerciale. L’uso commerciale richiede un accordo separato. La licenza non trasferisce la proprietà dei file, della geometria o del generatore che li ha prodotti. Boardsesh conserva tutti i diritti che detiene sul pacchetto.",
       "p2": "La licenza decorre dalla consegna del pacchetto e rimane valida finché rispetti le condizioni seguenti. Non richiede rinnovi."
     },
     "personal": {
-      "title": "3. Licenza personale (A$149)",
+      "title": "3. Licenza personale (gratuita)",
       "summary": "Una parete, per il tuo uso personale non commerciale.",
       "allowed1": "Fabbricare una parete dal pacchetto per il tuo uso personale non commerciale.",
       "allowed2": "Tagliare i pezzi personalmente o affidarli a un fabbricante, purché la parete finita sia tua.",
@@ -50,8 +50,8 @@
       "notAllowed4": "Per una seconda parete serve una seconda licenza."
     },
     "commercial": {
-      "title": "4. Licenza commerciale per una singola costruzione (A$750)",
-      "summary": "Una sola installazione per un cliente identificato, indicata nella licenza.",
+      "title": "4. Uso commerciale previo accordo",
+      "summary": "L’uso commerciale richiede un accordo separato: scrivi a partnerships@boardsesh.com. Le condizioni seguenti si applicano solo alle licenze commerciali già emesse.",
       "allowed1": "Fabbricare una parete per l'installazione del cliente indicata nella licenza.",
       "allowed2": "Addebitare a quel cliente il prezzo che desideri per la costruzione. È lo scopo di questa licenza.",
       "notAllowed1": "Non puoi rivendere, ridistribuire, condividere o pubblicare i file, interamente o in parte, modificati o meno.",
@@ -63,13 +63,13 @@
       "notAllowed": "Non puoi"
     },
     "volume": {
-      "title": "5. Dieci costruzioni e OEM",
-      "body": "Tagli grandi quantità o inserisci questi pannelli in un prodotto che vendi? I pacchetti da dieci costruzioni e le condizioni OEM si concordano direttamente. <mail>Scrivici</mail> cosa vuoi costruire e in quale quantità."
+      "title": "5. Costruzioni commerciali e OEM",
+      "body": "Costruisci per un cliente o una palestra, tagli grandi quantità o includi questi pannelli in un prodotto che vendi? Contatta il nostro team collaborazioni per concordare una licenza commerciale. <mail>Scrivici</mail> cosa stai costruendo e in quale quantità."
     },
     "fingerprint": {
       "title": "6. Marcatura identificativa e tutela dei diritti",
       "p1": "Ogni pacchetto è generato individualmente per un ordine e riporta nei file l'ID della propria licenza.",
-      "p2": "I file contengono anche marcature legate all'acquisto. Un pacchetto che compare dove non dovrebbe può essere ricondotto all'ordine con cui è stato acquistato.",
+      "p2": "I file contengono anche marcature legate alla licenza. Un pacchetto che compare dove non dovrebbe può essere ricondotto all’ordine che lo ha generato.",
       "p3": "La violazione delle condizioni precedenti pone fine alla licenza. Fabbricare dopo tale momento significa fabbricare senza licenza e agiremo per tutelare i nostri diritti."
     },
     "compatibility": {
@@ -86,11 +86,11 @@
     },
     "refunds": {
       "title": "9. Rimborsi",
-      "body": "La consegna dei file generati non può essere annullata, quindi un pacchetto non è rimborsabile dopo il download. Prima del download, i rimborsi sono a discrezione di Boardsesh: scrivici e troveremo una soluzione."
+      "body": "I nuovi pacchetti personali sono gratuiti, quindi non c’è alcun pagamento da rimborsare. Per i precedenti ordini a pagamento, la consegna dei file generati non può essere annullata: un pacchetto non è rimborsabile dopo il download. Prima del download, i rimborsi restano a discrezione di Boardsesh: scrivici e troveremo una soluzione."
     },
     "privacy": {
       "title": "10. Privacy",
-      "body": "La registrazione della licenza, che comprende nome, email, ID della licenza e configurazione ordinata, viene conservata come documento contrattuale. Rimane anche dopo l'eliminazione dell'account, perché la licenza e la prova d'acquisto sopravvivono all'account. Tutto il resto segue l'<privacy>informativa sulla privacy</privacy>."
+      "body": "La registrazione della licenza, che comprende nome, email, ID della licenza e configurazione richiesta, viene conservata come documento contrattuale. Rimane anche dopo l’eliminazione dell’account, perché la licenza e la sua registrazione sopravvivono all’account. Tutto il resto segue l’<privacy>informativa sulla privacy</privacy>."
     },
     "governingLaw": {
       "title": "11. Legge applicabile",

@@ -56,12 +56,12 @@ export default async function BuildPlansPage() {
         actions={<BuildPlansHeaderActions />}
         note={t('hero.firstBoard')}
       >
-        <BuildPlansContent catalog={catalog} locale={locale} />
+        <BuildPlansContent />
         {catalog && catalog.entries.length > 0 ? (
           <Configurator catalog={catalog} locale={locale} />
         ) : (
           // The header and the sections above are fully server-rendered and
-          // still tell the story; only the part that needs live prices is
+          // still tell the story; only the part that needs the catalogue is
           // missing, so say that rather than replacing the whole page with an
           // error.
           <Alert severity="warning">{t('errors.CNC_WORKER_UNAVAILABLE')}</Alert>

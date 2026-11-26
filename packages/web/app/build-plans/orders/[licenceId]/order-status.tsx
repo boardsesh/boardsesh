@@ -365,6 +365,14 @@ function OwnedOrderStatus({
           >
             {pendingKind === 'FULL' ? t('order.downloading') : t('order.download')}
           </Button>
+          {order.tier === 'personal' && order.amountCents === 0 && (
+            <Typography variant="body2" component="p" sx={{ mt: 2, color: 'text.secondary' }}>
+              {t('order.donationReminder')}{' '}
+              <MuiLink component={LocaleLink} href="/support" variant="body2">
+                {t('order.donationLink')}
+              </MuiLink>
+            </Typography>
+          )}
         </SectionCard>
       )}
 

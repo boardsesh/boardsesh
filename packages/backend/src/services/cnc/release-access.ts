@@ -8,10 +8,6 @@ export function isCncCreationAllowed(userId: string): boolean {
   if (mode === 'public') return true;
   if (mode !== 'beta' || !userId || userId.trim() !== userId) return false;
 
-  // The beta cannot create a real charge, even for an explicitly allowed buyer.
-  const stripeKey = process.env.STRIPE_SECRET_KEY ?? '';
-  if (stripeKey.trim() !== stripeKey || !/^(?:sk|rk)_test_[A-Za-z0-9]+$/.test(stripeKey)) return false;
-
   // These are immutable account IDs, never email addresses or PostHog identities.
   const allowedIds = (process.env.CNC_BETA_USER_IDS ?? '').split(',').map((entry) => entry.trim());
   if (allowedIds.some((entry) => !/^[A-Za-z0-9_-]{1,128}$/.test(entry))) return false;
@@ -28,7 +24,7 @@ export function requireCncCreationAccess(userId: string): void {
 
 export function requireCncCheckoutAccess(userId: string): void {
   if (!isCncCreationAllowed(userId)) {
-    throw new GraphQLError('Build-pack checkout is unavailable right now. Try again in a minute.', {
+    throw new GraphQLError('Build-pack generation is unavailable right now. Try again in a minute.', {
       extensions: { code: 'CNC_CHECKOUT_UNAVAILABLE' },
     });
   }

@@ -172,7 +172,7 @@ export type SendCncPackFailedAdminEmailInput = {
 };
 
 /**
- * Tell Boardsesh a paid pack gave up.
+ * Tell Boardsesh a manufacturing pack gave up.
  *
  * This is the one mail that carries generator internals, and it is why the
  * buyer's `errorMessage` can stay a fixed public string: somebody has already
@@ -195,11 +195,11 @@ export async function sendCncPackFailedAdminEmail(
       to: ADMIN_NOTIFICATION_EMAIL,
       subject: headerSafe(`CNC pack generation failed: ${licenceId}`),
       html: shell(
-        'A paid build pack failed to generate',
+        'A build pack failed to generate',
         `
         <p style="color: ${emailColors.textPrimary}; font-size: 16px; line-height: 1.5;">
           <strong>${safeLicence}</strong> (order ${String(orderId)}) gave up after ${String(attempts)} attempts.
-          The buyer has paid and is waiting.
+          The builder is waiting for their files.
         </p>
         <p style="color: ${emailColors.textSecondary}; font-size: 15px; line-height: 1.5;">
           Wall: ${safeBoard}<br />

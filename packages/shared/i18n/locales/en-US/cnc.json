@@ -2,11 +2,11 @@
   "metadata": {
     "buildPlans": {
       "title": "Build plans for a home board",
-      "description": "CNC files for a home climbing wall: panels and drilling positions laid out on the sheets your shop stocks."
+      "description": "Free CNC files for your own non-commercial climbing wall: panels and drilling positions laid out on the sheets your shop stocks."
     },
     "orders": {
       "title": "Your build plans",
-      "description": "Every build pack you have bought and where each one is up to."
+      "description": "Every build pack you have generated and where each one is up to."
     },
     "order": {
       "title": "Build plan {{licenceId}}",
@@ -15,14 +15,14 @@
   },
   "hero": {
     "title": "Build plans for your home board",
-    "subtitle": "DXF files for your CNC shop. Panels and drilling positions laid out on the sheets your shop already stocks.",
+    "subtitle": "Free DXF files for your own non-commercial wall. Panels and drilling positions laid out on the sheets your CNC shop already stocks.",
     "firstBoard": "Works with Kilter Homewall, Kilter Original (OG), and Tension Board 2, including Mirror and Spray layouts.",
     "included": {
       "heading": "What you get",
       "dxf": "Assembly drawings included too, so panels line up without any guesswork.",
       "pdf": "Printable A3 or Tabloid pages, laid out before a single sheet gets cut.",
       "bom": "Sheet count, panel sizes, and every hole, counted before you order material.",
-      "licence": "Named to you and good for one wall, yours to keep.",
+      "licence": "Named to you for one wall, for your own non-commercial use.",
       "dxfLabel": "One DXF per panel",
       "pdfLabel": "Check sheets",
       "bomLabel": "A cut list",
@@ -32,25 +32,25 @@
     "cta": "Configure your wall"
   },
   "tiers": {
-    "heading": "Pick a licence",
-    "intro": "One licence, one wall. A second wall needs a second licence.",
+    "heading": "Your licence",
+    "intro": "Free packs are for your own non-commercial use. One licence covers one wall; a second wall needs a second licence.",
     "personal": {
       "name": "Personal",
-      "blurb": "Build one wall for yourself. Your garage, your shed, your spare room."
+      "blurb": "Build one wall for your own non-commercial use. Your garage, your shed, your spare room."
     },
     "commercial": {
-      "name": "Commercial, single build",
-      "blurb": "Build one wall for one customer or one gym. The installation is named on the licence."
+      "name": "Commercial, single build"
     },
     "contact": {
-      "heading": "Building more than one?",
-      "body": "Ten-build packs and OEM terms are a conversation, not a checkout button. Tell us what you are building and we will come back with a price.",
-      "cta": "Email us",
-      "subject": "Build plans: multi-build licence"
+      "heading": "Building for a customer or gym?",
+      "body": "Free packs cover your own non-commercial wall. For commercial builds or OEM use, contact us to agree on a licence.",
+      "cta": "Discuss commercial use",
+      "subject": "Boardsesh CNC partnership"
     },
     "licenceLink": "Read the licence",
     "ordersLink": "Your build plans",
-    "perWall": "per wall"
+    "perWall": "per wall",
+    "free": "Free"
   },
   "configurator": {
     "heading": "Configure your wall",
@@ -201,7 +201,7 @@
     },
     "artwork": {
       "heading": "Custom text and logos",
-      "help": "Route your own words into a panel, or upload a logo. Up to {{count}} items, and we check every one against the hole grid before you buy.",
+      "help": "Route your own words into a panel, or upload a logo. Up to {{count}} items, and we check every one against the hole grid before generation.",
       "add": "Add a label",
       "remove": "Remove",
       "itemLabel": "Label {{number}}",
@@ -269,7 +269,7 @@
           "imageTooLarge": "That image is too big to trace. 4096 pixels a side is the maximum.",
           "unreadableImage": "We could not open that image. Export it again as a PNG.",
           "rateLimited": "That is a lot of uploads. Give it a few minutes and try again.",
-          "unavailable": "Uploads are not working right now. Nothing was charged. Try again shortly.",
+          "unavailable": "Uploads are not working right now. Try again shortly.",
           "generic": "That upload did not go through. Try again."
         }
       },
@@ -317,9 +317,7 @@
       "name": "Name on the licence",
       "email": "Email",
       "emailHelp": "Where the pack lands when it is ready.",
-      "siteName": "Customer or gym name",
-      "siteHelp": "The one installation this commercial licence covers.",
-      "required": "Fill this in before you buy."
+      "required": "Fill this in before you generate your pack."
     },
     "licence": {
       "accept": "I accept the manufacturing licence",
@@ -332,7 +330,7 @@
       "working": "Drawing your sheets. This takes about fifteen seconds.",
       "ready": "Watermarked check drawings. Finalise to get the DXF files your shop cuts from.",
       "stale": "You have changed the wall since these sheets. Update the preview to see the new ones.",
-      "failed": "That preview did not build. Nothing was charged — try again.",
+      "failed": "That preview did not build. Try again.",
       "rateLimited": "That is every free preview for this hour. The ones you have are on your build plans page; the next one is on the hour.",
       "download": "Download the preview",
       "downloading": "Getting your link…",
@@ -369,18 +367,18 @@
     "previewUpdate": "Update preview",
     "previewing": "Drawing your preview…",
     "previewRetry": "Try again",
-    "finalise": "Finalise and buy",
-    "finalising": "Opening checkout…",
-    "free": "Previews are free. No card needed.",
+    "finalise": "Generate free build pack",
+    "finalising": "Queuing your build pack…",
+    "free": "Build packs are free for your own non-commercial use. No card needed.",
     "signInTitle": "Sign in for your free preview",
     "signInBody": "Your preview needs an account to live on. We will bring you straight back to your configuration."
   },
   "errors": {
     "CNC_INVALID_CONFIG": "That combination will not cut. Change something above and we will re-check it.",
-    "CNC_WORKER_UNAVAILABLE": "The plan generator is not answering right now. Nothing was charged. Try again in a minute.",
-    "CNC_CHECKOUT_UNAVAILABLE": "Payments are not available right now. Nothing was charged. Try again shortly.",
-    "generic": "That did not go through. Nothing was charged.",
-    "RATE_LIMITED": "That is a lot of previews for one hour. Nothing was charged — the next one is on the hour."
+    "CNC_WORKER_UNAVAILABLE": "The plan generator is not answering right now. Try again in a minute.",
+    "CNC_CHECKOUT_UNAVAILABLE": "We cannot queue your build pack right now. Try again shortly.",
+    "generic": "That did not go through. Try again.",
+    "RATE_LIMITED": "That is a lot of previews for one hour. Try again when your hourly limit resets."
   },
   "status": {
     "pending_payment": "Waiting on payment",
@@ -397,10 +395,10 @@
   },
   "orders": {
     "heading": "Your build plans",
-    "intro": "Every wall you have previewed or bought, newest first. A licence stays yours whatever happens to this page.",
+    "intro": "Every wall you have previewed or generated, newest first. A licence stays yours whatever happens to this page.",
     "configureAnother": "Configure another wall",
     "empty": "No walls here yet.",
-    "emptyBody": "Configure a wall and we will draw you a free preview of every sheet. Nothing is charged until you finalise.",
+    "emptyBody": "Configure your own non-commercial wall and we will draw a free preview of every sheet. The full build pack is free too.",
     "emptyCta": "Configure a wall",
     "previewTier": "Preview",
     "orderedOn": "Ordered {{date}}",
@@ -425,7 +423,7 @@
     "timeline": {
       "heading": "Where it is up to",
       "preview": "Free preview drawn",
-      "finalised": "Licence named and paid",
+      "finalised": "Licence confirmed",
       "building": "Cutting the files",
       "ready": "Ready to download"
     },
@@ -438,7 +436,7 @@
       "panel": "Panel {{number}}",
       "assembly": "Assembly"
     },
-    "finalise": "Finalise and buy",
+    "finalise": "Generate free build pack",
     "downloadPreview": "Download the preview",
     "download": "Download the pack",
     "downloading": "Getting your link…",
@@ -447,7 +445,7 @@
     "checkoutCancelled": "Checkout was cancelled. Nothing was charged.",
     "previewFailed": {
       "heading": "This preview did not draw",
-      "body": "Nothing was charged. Change something on your wall and preview it again, or tell us and we will look at it.",
+      "body": "Change something on your wall and preview it again, or tell us and we will look at it.",
       "contact": "Email us and we will sort it out",
       "subject": "Build plan {{licenceId}} preview did not draw"
     },
@@ -458,7 +456,7 @@
     },
     "refunded": {
       "heading": "Refunded",
-      "body": "This order was refunded, so the download is switched off. Buy again whenever you are ready to build."
+      "body": "This order was refunded, so the download is switched off. You can generate a new free pack for your own non-commercial wall."
     },
     "notFound": {
       "heading": "No such build plan",
@@ -468,22 +466,24 @@
     "downloadCard": {
       "heading": "Your build pack",
       "note": "One DXF per panel, the assembly drawings, the print sheets and your licence, in one zip."
-    }
+    },
+    "donationReminder": "These files are free for your own non-commercial build. If they helped, you can support Boardsesh.",
+    "donationLink": "Donate if you’d like"
   },
   "flow": {
     "heading": "How it works",
-    "intro": "Previews are free. Nothing is charged until you finalise.",
+    "intro": "Previews and complete build packs for your own non-commercial use are free.",
     "configure": {
       "title": "Configure your wall",
       "body": "Pick the size, the sheets your shop cuts from, the hole diameters, and anything you want routed into a panel."
     },
     "preview": {
       "title": "Get a free preview",
-      "body": "We lay out every sheet and send back watermarked drawings. Change something and preview again, as often as you like."
+      "body": "We lay out every sheet and send back watermarked drawings. Change something and preview again within the hourly limit."
     },
     "finalise": {
       "title": "Finalise and build",
-      "body": "Name the licence, pay, and the cut-ready DXF files and print sheets land in your account."
+      "body": "Name the personal licence and the free, cut-ready DXF files and print sheets land in your account."
     }
   }
 }

@@ -2,11 +2,11 @@
   "metadata": {
     "buildPlans": {
       "title": "Planos para construir un plafón en casa",
-      "description": "Archivos CNC para un muro de escalada en casa: paneles y puntos de perforación repartidos en las planchas de tu taller."
+      "description": "Archivos CNC gratis para tu propio muro de uso no comercial: paneles y agujeros distribuidos en las hojas que usa tu taller."
     },
     "orders": {
       "title": "Tus planos de construcción",
-      "description": "Todos los packs que has comprado y en qué punto está cada uno."
+      "description": "Todos los packs que has generado y en qué punto está cada uno."
     },
     "order": {
       "title": "Plano de construcción {{licenceId}}",
@@ -15,14 +15,14 @@
   },
   "hero": {
     "title": "Planos para construir tu plafón en casa",
-    "subtitle": "Archivos DXF para tu taller CNC. Paneles y puntos de perforación repartidos en las planchas que tu taller ya tiene.",
+    "subtitle": "Archivos DXF gratis para tu propio muro de uso no comercial. Paneles y agujeros distribuidos en las hojas que ya usa tu taller CNC.",
     "firstBoard": "Compatible con Kilter Homewall, Kilter Original (OG) y Tension Board 2, incluidas las distribuciones Mirror y Spray.",
     "included": {
       "heading": "Qué te llevas",
       "dxf": "Los planos de montaje del muro entero van incluidos, así los paneles encajan sin adivinar nada.",
       "pdf": "Páginas imprimibles en A3 o Tabloid, con la distribución lista antes de cortar la primera plancha.",
       "bom": "Cuántas planchas, las medidas de cada panel y todos los agujeros, contados antes de pedir material.",
-      "licence": "A tu nombre y válida para un muro, tuya para siempre.",
+      "licence": "A tu nombre para un muro, para tu propio uso no comercial.",
       "dxfLabel": "Un DXF por panel",
       "pdfLabel": "Hojas de comprobación",
       "bomLabel": "Una lista de corte",
@@ -32,25 +32,25 @@
     "cta": "Configura tu muro"
   },
   "tiers": {
-    "heading": "Elige una licencia",
-    "intro": "Una licencia, un muro. Un segundo muro necesita una segunda licencia.",
+    "heading": "Tu licencia",
+    "intro": "Los packs gratis son para tu propio uso no comercial. Una licencia cubre un muro; un segundo muro necesita una segunda licencia.",
     "personal": {
       "name": "Personal",
-      "blurb": "Construye un muro para ti. Tu garaje, tu trastero, la habitación que te sobra."
+      "blurb": "Construye un muro para tu propio uso no comercial. Tu garaje, tu cobertizo, tu habitación libre."
     },
     "commercial": {
-      "name": "Comercial, una construcción",
-      "blurb": "Construye un muro para un cliente o un rocódromo. La instalación va nombrada en la licencia."
+      "name": "Comercial, una construcción"
     },
     "contact": {
-      "heading": "¿Vas a construir más de uno?",
-      "body": "Los packs de diez construcciones y las condiciones OEM se hablan, no se pulsan en un botón de compra. Cuéntanos qué vas a construir y te damos precio.",
-      "cta": "Escríbenos",
-      "subject": "Planos de construcción: licencia para varias construcciones"
+      "heading": "¿Construyes para un cliente o un rocódromo?",
+      "body": "Los packs gratis cubren tu propio muro de uso no comercial. Para construcciones comerciales o uso OEM, contacta con nosotros para acordar una licencia.",
+      "cta": "Consultar el uso comercial",
+      "subject": "Colaboración CNC con Boardsesh"
     },
     "licenceLink": "Lee la licencia",
     "ordersLink": "Tus planos de construcción",
-    "perWall": "por muro"
+    "perWall": "por muro",
+    "free": "Gratis"
   },
   "configurator": {
     "heading": "Configura tu muro",
@@ -201,7 +201,7 @@
     },
     "artwork": {
       "heading": "Texto y logos personalizados",
-      "help": "Graba tus propias palabras en un panel, o sube un logo. Hasta {{count}} elementos, y comprobamos cada uno contra la retícula de agujeros antes de que compres.",
+      "help": "Graba tus propias palabras en un panel, o sube un logo. Hasta {{count}} elementos, y comprobamos cada uno contra la retícula de agujeros antes de generar el pack.",
       "add": "Añadir una etiqueta",
       "remove": "Quitar",
       "itemLabel": "Etiqueta {{number}}",
@@ -269,7 +269,7 @@
           "imageTooLarge": "Esa imagen es demasiado grande para vectorizarla. El máximo son 4096 píxeles por lado.",
           "unreadableImage": "No hemos podido abrir esa imagen. Vuelve a exportarla como PNG.",
           "rateLimited": "Son muchas subidas. Espera unos minutos e inténtalo otra vez.",
-          "unavailable": "Las subidas no funcionan ahora mismo. No se ha cobrado nada. Inténtalo en un momento.",
+          "unavailable": "Las subidas no funcionan ahora mismo. Inténtalo en un momento.",
           "generic": "Esa subida no ha salido. Inténtalo otra vez."
         }
       },
@@ -317,9 +317,7 @@
       "name": "Nombre en la licencia",
       "email": "Email",
       "emailHelp": "Adónde llega el pack cuando esté listo.",
-      "siteName": "Nombre del cliente o del rocódromo",
-      "siteHelp": "La única instalación que cubre esta licencia comercial.",
-      "required": "Rellena esto antes de comprar."
+      "required": "Rellena esto antes de generar el pack."
     },
     "licence": {
       "accept": "Acepto la licencia de fabricación",
@@ -332,7 +330,7 @@
       "working": "Dibujando tus hojas. Tarda unos quince segundos.",
       "ready": "Planos de revisión con marca de agua. Cierra la compra para conseguir los archivos DXF con los que corta tu taller.",
       "stale": "Has cambiado el muro desde estas hojas. Actualiza la vista previa para ver las nuevas.",
-      "failed": "Esa vista previa no se generó. No se ha cobrado nada: inténtalo otra vez.",
+      "failed": "Esa vista previa no se generó. Inténtalo otra vez.",
       "rateLimited": "Ya has gastado las vistas previas gratis de esta hora. Las que tienes están en tus planos; la siguiente, a la hora en punto.",
       "download": "Descargar la vista previa",
       "downloading": "Buscando tu enlace…",
@@ -369,18 +367,18 @@
     "previewUpdate": "Actualizar la vista previa",
     "previewing": "Dibujando tu vista previa…",
     "previewRetry": "Inténtalo otra vez",
-    "finalise": "Cierra la compra",
-    "finalising": "Abriendo el pago…",
-    "free": "Las vistas previas son gratis. Sin tarjeta.",
+    "finalise": "Generar pack gratis",
+    "finalising": "Poniendo tu pack en la cola…",
+    "free": "Los packs son gratis para tu propio uso no comercial. Sin tarjeta.",
     "signInTitle": "Inicia sesión para tu vista previa gratis",
     "signInBody": "Tu vista previa necesita una cuenta donde vivir. Te devolvemos justo a tu configuración."
   },
   "errors": {
     "CNC_INVALID_CONFIG": "Esa combinación no se puede cortar. Cambia algo de arriba y lo volvemos a comprobar.",
-    "CNC_WORKER_UNAVAILABLE": "El generador de planos no responde ahora mismo. No se ha cobrado nada. Inténtalo dentro de un minuto.",
-    "CNC_CHECKOUT_UNAVAILABLE": "Los pagos no están disponibles ahora mismo. No se ha cobrado nada. Inténtalo en un rato.",
-    "generic": "Eso no ha salido. No se ha cobrado nada.",
-    "RATE_LIMITED": "Son muchas vistas previas para una hora. No se ha cobrado nada: la siguiente, a la hora en punto."
+    "CNC_WORKER_UNAVAILABLE": "El generador de planos no responde ahora mismo. Inténtalo dentro de un minuto.",
+    "CNC_CHECKOUT_UNAVAILABLE": "No podemos poner tu pack en la cola ahora mismo. Inténtalo en un rato.",
+    "generic": "Eso no ha salido. Inténtalo otra vez.",
+    "RATE_LIMITED": "Son muchas vistas previas para una hora. Inténtalo cuando se restablezca el límite por hora."
   },
   "status": {
     "pending_payment": "Esperando el pago",
@@ -397,10 +395,10 @@
   },
   "orders": {
     "heading": "Tus planos de construcción",
-    "intro": "Todos los muros que has previsualizado o comprado, del más nuevo al más antiguo. La licencia es tuya pase lo que pase con esta página.",
+    "intro": "Todos los muros que has previsualizado o generado, del más nuevo al más antiguo. La licencia es tuya pase lo que pase con esta página.",
     "configureAnother": "Configura otro muro",
     "empty": "Aquí no hay ningún muro todavía.",
-    "emptyBody": "Configura un muro y te dibujamos gratis una vista previa de cada tablero. No se cobra nada hasta que lo cierres.",
+    "emptyBody": "Configura tu propio muro de uso no comercial y te dibujamos gratis una vista previa de cada panel. El pack completo también es gratis.",
     "emptyCta": "Configura un muro",
     "previewTier": "Vista previa",
     "orderedOn": "Pedido el {{date}}",
@@ -425,7 +423,7 @@
     "timeline": {
       "heading": "En qué punto está",
       "preview": "Vista previa gratis dibujada",
-      "finalised": "Licencia a tu nombre y pagada",
+      "finalised": "Licencia confirmada",
       "building": "Cortando los archivos",
       "ready": "Listo para descargar"
     },
@@ -438,7 +436,7 @@
       "panel": "Tablero {{number}}",
       "assembly": "Montaje"
     },
-    "finalise": "Cerrar la compra",
+    "finalise": "Generar pack gratis",
     "downloadPreview": "Descargar la vista previa",
     "download": "Descargar el pack",
     "downloading": "Preparando tu enlace…",
@@ -447,7 +445,7 @@
     "checkoutCancelled": "Se canceló el pago. No se ha cobrado nada.",
     "previewFailed": {
       "heading": "Esta vista previa no se dibujó",
-      "body": "No se ha cobrado nada. Cambia algo del muro y vuelve a pedir la vista previa, o dínoslo y le echamos un ojo.",
+      "body": "Cambia algo del muro y vuelve a pedir la vista previa, o dínoslo y le echamos un ojo.",
       "contact": "Escríbenos y lo arreglamos",
       "subject": "La vista previa del plano de construcción {{licenceId}} no se dibujó"
     },
@@ -458,7 +456,7 @@
     },
     "refunded": {
       "heading": "Reembolsado",
-      "body": "Este pedido se reembolsó, así que la descarga está desactivada. Cómpralo otra vez cuando quieras construir."
+      "body": "Este pedido se reembolsó, así que la descarga está desactivada. Puedes generar un nuevo pack gratis para tu propio muro de uso no comercial."
     },
     "notFound": {
       "heading": "No existe ese plano de construcción",
@@ -468,22 +466,24 @@
     "downloadCard": {
       "heading": "Tu pack de construcción",
       "note": "Un DXF por tablero, los planos de montaje, las hojas para imprimir y tu licencia, todo en un zip."
-    }
+    },
+    "donationReminder": "Estos archivos son gratis para tu propia construcción de uso no comercial. Si te han ayudado, puedes apoyar a Boardsesh.",
+    "donationLink": "Dona si quieres"
   },
   "flow": {
     "heading": "Cómo funciona",
-    "intro": "Las vistas previas son gratis. No se cobra nada hasta que cierras la compra.",
+    "intro": "Las vistas previas y los packs completos para tu propio uso no comercial son gratis.",
     "configure": {
       "title": "Configura tu muro",
       "body": "Elige la medida, las planchas con las que corta tu taller, los diámetros de los agujeros y lo que quieras fresar en un panel."
     },
     "preview": {
       "title": "Pide una vista previa gratis",
-      "body": "Repartimos todas las hojas y te devolvemos los planos con marca de agua. Cambia algo y vuelve a pedirla, las veces que quieras."
+      "body": "Repartimos todas las hojas y te devolvemos los planos con marca de agua. Cambia algo y vuelve a pedir una vista previa dentro del límite por hora."
     },
     "finalise": {
       "title": "Cierra la compra y construye",
-      "body": "Pon el nombre en la licencia, paga, y los DXF listos para cortar y las hojas de impresión llegan a tu cuenta."
+      "body": "Pon el nombre en la licencia personal y los DXF listos para cortar y las hojas de impresión llegan gratis a tu cuenta."
     }
   }
 }

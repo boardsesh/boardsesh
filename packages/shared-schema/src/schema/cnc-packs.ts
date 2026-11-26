@@ -7,7 +7,8 @@ export const cncPacksTypeDefs = /* GraphQL */ `
   What the buyer is allowed to build with a pack.
   \`personal\` is one wall for their own non-commercial use; \`commercial_single\`
   is one identified customer installation, which is why those orders also carry
-  a site name.
+  a site name. New free packs only allow \`personal\`; commercial use requires
+  contacting partnerships@boardsesh.com.
   """
   enum CncLicenceTier {
     personal
@@ -17,12 +18,9 @@ export const cncPacksTypeDefs = /* GraphQL */ `
   """
   Lifecycle of one order.
 
-  An order starts as a FREE PREVIEW: \`preview_queued -> preview_generating ->
-  preview_ready\`, repeatable and never charged. Finalising it moves it to
-  \`pending_payment\`, and everything after that is driven by a Stripe webhook or
-  by the pack generator. \`refunded\` is terminal for downloads and is
-  deliberately distinct from \`cancelled\`, which only ever means the checkout
-  session expired before payment.
+  An order starts as a free preview: \`preview_queued -> preview_generating ->
+  preview_ready\`. Finalising attaches the accepted licence and queues the full
+  pack for free. Payment-related states remain for historical orders and refunds.
 
   A \`preview_failed\` order can be previewed again; so can a \`preview_ready\` one
   whose configuration changed — both write a NEW order, because a preview is an
@@ -46,7 +44,7 @@ export const cncPacksTypeDefs = /* GraphQL */ `
   Which artifact a download link is for.
 
   \`PREVIEW\` is the free watermarked, rasterised pack — available from
-  \`preview_ready\` onward, including after the order is bought. \`FULL\` is the
+  \`preview_ready\` onward, including after the order is finalised. \`FULL\` is the
   licensed pack with the DXFs and is only ever available at \`ready\`.
   """
   enum CncDownloadKind {
@@ -81,10 +79,10 @@ export const cncPacksTypeDefs = /* GraphQL */ `
     png
   }
 
-  "One purchasable licence tier and its price, in the smallest currency unit."
+  "One licence tier and its price, in the smallest currency unit."
   type CncTierPrice {
     tier: CncLicenceTier!
-    "Price in cents. Prices live in Stripe; this is the display copy of them."
+    "Zero for free generation. Historical paid orders retain their charged amount."
     amountCents: Int!
     "ISO 4217 code. AUD for every v1 tier."
     currency: String!
@@ -264,7 +262,7 @@ export const cncPacksTypeDefs = /* GraphQL */ `
     id: ID!
     "The licence printed on every file in the pack. The id support and leak investigations start from."
     licenceId: String!
-    "Null until the order is finalised: a preview is not a sale, so nothing has been licensed yet."
+    "Null until the order is finalised: nothing has been licensed yet."
     tier: CncLicenceTier
     status: CncOrderStatus!
     boardName: String!
@@ -288,7 +286,7 @@ export const cncPacksTypeDefs = /* GraphQL */ `
     lastDownloadedAt: String
     "A fixed public message when the order failed, null otherwise. Never generator internals."
     errorMessage: String
-    "True once the free preview has been generated. Stays true after the pack is bought."
+    "True once the free preview has been generated. Stays true after the pack is finalised."
     hasPreview: Boolean!
     previewGeneratedAt: String
     """
@@ -310,42 +308,40 @@ export const cncPacksTypeDefs = /* GraphQL */ `
   }
 
   """
-  Everything buying a previewed order needs: who the licence names, how to reach
+  Everything finalising a previewed order needs: who the licence names, how to reach
   them, and their acceptance of it.
 
   No configuration. The order already carries the exact wall the buyer
-  previewed and approved — re-submitting it here would let a client buy
+  previewed and approved — re-submitting it here would let a client request
   something other than what it was shown.
 
-  \`acceptLicence\` must be \`true\`. The licence is the product, so there is no
-  such thing as a checkout that proceeds without it.
+  \`acceptLicence\` must be \`true\`. Generation is free, but accepting
+  the manufacturing licence is still required.
   """
   input FinaliseCncOrderInput {
-    "The preview order being bought. It must be the caller's own and it must be \`preview_ready\`."
+    "The preview order being finalised. It must be the caller's own and it must be \`preview_ready\`."
     orderId: ID!
     tier: CncLicenceTier!
     "The name printed on every file in the pack."
     licenseeName: String!
     "Where the licence and the download link are sent. Not taken from the account."
     licenseeEmail: String!
-    "The installation the licence names. Required for \`commercial_single\`, rejected for \`personal\`."
+    "Historical compatibility field. New free packs reject commercial requests; contact partnerships@boardsesh.com."
     customerSiteName: String
     acceptLicence: Boolean!
   }
 
   """
-  An opened Stripe Checkout Session and the order it will pay for.
+  A finalised free pack and its order-page URL.
 
-  The order already exists in \`pending_payment\` by the time this comes back —
-  creating a session is not a payment, and nothing is queued for generation
-  until the Stripe webhook confirms the charge. Send the buyer to
-  \`checkoutUrl\`; they land back on the order page either way.
+  The order is already queued when this returns. Historical type and field
+  names remain stable for existing clients; no payment session is opened.
   """
   type CncCheckoutSession {
     orderId: ID!
-    "The licence this order will carry, reserved now so the order page works before payment lands."
+    "The licence identifying this queued pack."
     licenceId: String!
-    "Stripe's hosted checkout page. Expires 31 minutes after it is created."
+    "The order page for this free pack, retained under its historical field name."
     checkoutUrl: String!
   }
 

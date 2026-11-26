@@ -13,7 +13,7 @@ import { PageFrame, SectionCard } from '../ui';
 import styles from '../build-plans.module.css';
 
 const LICENCE_EMAIL = 'mailto:legal@boardsesh.com';
-const VOLUME_EMAIL = 'mailto:support@boardsesh.com';
+const VOLUME_EMAIL = 'mailto:partnerships@boardsesh.com';
 
 /**
  * The manufacturing licence that ships with every build-plans pack.
@@ -27,7 +27,7 @@ const VOLUME_EMAIL = 'mailto:support@boardsesh.com';
  * The beta keeps its DRAFT notice until the server selects the public release.
  * Public copy removes editorial draft wording without changing the terms.
  *
- * Clause numbers come from the catalog strings ("3. Personal licence (A$149)"),
+ * Clause numbers come from the catalog strings ("3. Personal licence (free)"),
  * not from a CSS counter: those numbers are part of the licence a buyer may
  * quote back at us, so they belong in the translated text.
  */

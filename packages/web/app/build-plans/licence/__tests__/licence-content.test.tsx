@@ -80,24 +80,26 @@ describe('LicenceContent', () => {
     }
   });
 
-  it('renders both licence tiers with their prices', () => {
+  it('shows the free personal licence and separate commercial terms', () => {
     // Scoped to the document: each clause title appears twice on the page now,
     // once as a clause heading and once in the contents rail beside it.
     const { container } = renderLicence();
     const article = container.querySelector('article');
-    expect(within(article as HTMLElement).getByText('3. Personal licence (A$149)')).toBeTruthy();
-    expect(within(article as HTMLElement).getByText('4. Commercial single-build licence (A$750)')).toBeTruthy();
+    expect(within(article as HTMLElement).getByText(tFromCatalog('cnc-legal', 'licence.personal.title'))).toBeTruthy();
+    expect(
+      within(article as HTMLElement).getByText(tFromCatalog('cnc-legal', 'licence.commercial.title')),
+    ).toBeTruthy();
   });
 
   it('links the licence contact and the volume enquiry at different addresses', () => {
     // Two distinct mailboxes, and the split is the point: legal@ answers
-    // licence questions and reissues, support@ takes ten-build and OEM
+    // licence questions and reissues, partnerships@ takes ten-build and OEM
     // enquiries. A single address here would route contract questions into the
     // support queue.
     const { container } = renderLicence();
     const hrefs = outboundHrefs(container);
     expect(hrefs).toContain('mailto:legal@boardsesh.com');
-    expect(hrefs).toContain('mailto:support@boardsesh.com');
+    expect(hrefs).toContain('mailto:partnerships@boardsesh.com');
   });
 
   it('cross-links the legal and privacy policies', () => {
@@ -131,6 +133,6 @@ describe('LicenceContent', () => {
     // arriving without a home for it in this file.
     const { container } = renderLicence();
     const hrefs = outboundHrefs(container);
-    expect(hrefs).toEqual(['mailto:support@boardsesh.com', '/legal', '/privacy', 'mailto:legal@boardsesh.com']);
+    expect(hrefs).toEqual(['mailto:partnerships@boardsesh.com', '/legal', '/privacy', 'mailto:legal@boardsesh.com']);
   });
 });

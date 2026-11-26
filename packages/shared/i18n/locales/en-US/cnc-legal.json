@@ -9,7 +9,7 @@
     "headerTitle": "Build plans manufacturing licence",
     "draft": {
       "title": "Draft licence",
-      "body": "Draft licence, pending review by an Australian IP lawyer; do not rely on it yet. The wording will change before build plans go on sale."
+      "body": "Draft licence, pending review by an Australian IP lawyer; do not rely on it yet. The wording will change before build plans are released."
     },
     "intro": {
       "title": "Boardsesh Build Plans Manufacturing Licence",
@@ -36,11 +36,11 @@
     },
     "grant": {
       "title": "2. What you get",
-      "p1": "Buying a pack buys a licence to manufacture. It does not transfer ownership of the files, the geometry or the generator that produced them. Boardsesh keeps every right it holds in the pack.",
+      "p1": "New packs generated here come with a free personal licence to manufacture one wall for your own non-commercial use. Commercial use requires a separate agreement. The licence does not transfer ownership of the files, the geometry or the generator that produced them. Boardsesh keeps every right it holds in the pack.",
       "p2": "The licence starts when the pack is delivered and lasts as long as you keep to the terms below. There is nothing to renew."
     },
     "personal": {
-      "title": "3. Personal licence (A$149)",
+      "title": "3. Personal licence (free)",
       "summary": "One wall, your own non-commercial use.",
       "allowed1": "Manufacture one wall from the pack for your own non-commercial use.",
       "allowed2": "Cut the parts yourself or hand them to a fabricator, as long as the finished wall is yours.",
@@ -50,8 +50,8 @@
       "notAllowed4": "A second wall needs a second licence."
     },
     "commercial": {
-      "title": "4. Commercial single-build licence (A$750)",
-      "summary": "One identified customer installation, named on the licence.",
+      "title": "4. Commercial use by agreement",
+      "summary": "Commercial use requires a separate agreement: contact partnerships@boardsesh.com. The following terms apply only to commercial licences already issued.",
       "allowed1": "Manufacture one wall for the customer installation named on the licence.",
       "allowed2": "Charge that customer whatever you like for the build. That is the point of this tier.",
       "notAllowed1": "No resale, redistribution, sharing or public posting of the files, whole or in part, modified or not.",
@@ -63,13 +63,13 @@
       "notAllowed": "You may not"
     },
     "volume": {
-      "title": "5. Ten builds and OEM",
-      "body": "Cutting at volume, or putting these panels into a product you sell? Ten-build packs and OEM terms are by agreement. <mail>Email us</mail> with what you are building and how many."
+      "title": "5. Commercial builds and OEM",
+      "body": "Building for a customer or gym, cutting at volume, or putting these panels into a product you sell? Contact our partnerships team to agree on a commercial licence. <mail>Email us</mail> with what you are building and how many."
     },
     "fingerprint": {
       "title": "6. Fingerprinting and enforcement",
       "p1": "Every pack is generated individually for one order and carries its licence id in the files.",
-      "p2": "The files also carry markings tied to the purchase. A pack that turns up somewhere it should not can be traced back to the order that bought it.",
+      "p2": "The files also carry markings tied to the licence. A pack that turns up somewhere it should not can be traced back to the order that generated it.",
       "p3": "Breaking the terms above ends the licence. Manufacturing after that point is manufacturing without a licence, and we will pursue it."
     },
     "compatibility": {
@@ -86,11 +86,11 @@
     },
     "refunds": {
       "title": "9. Refunds",
-      "body": "Generated files cannot be un-delivered, so a pack is not refundable once it has been downloaded. Before download, refunds are at Boardsesh's discretion — email us and we will sort it out."
+      "body": "New personal packs are free, so there is no payment to refund. For earlier paid orders, generated files cannot be un-delivered: a pack is not refundable once downloaded. Before download, refunds remain at Boardsesh’s discretion — email us and we will sort it out."
     },
     "privacy": {
       "title": "10. Privacy",
-      "body": "The licence record — your name, email, licence id and the configuration you ordered — is kept as a contract record. It stays after an account is deleted, because the licence and its proof of purchase outlive the account. Everything else follows the <privacy>privacy policy</privacy>."
+      "body": "The licence record — your name, email, licence id and the configuration you requested — is kept as a contract record. It stays after an account is deleted, because the licence and its record outlive the account. Everything else follows the <privacy>privacy policy</privacy>."
     },
     "governingLaw": {
       "title": "11. Governing law",

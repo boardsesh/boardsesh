@@ -2,11 +2,11 @@
   "metadata": {
     "buildPlans": {
       "title": "Progetti di costruzione per un pannello domestico",
-      "description": "File CNC per un pannello da arrampicata domestico: pannelli e posizioni di foratura disposti sulle lastre usate dal tuo laboratorio."
+      "description": "File CNC gratuiti per la tua parete a uso personale non commerciale: pannelli e fori disposti sui fogli del tuo laboratorio."
     },
     "orders": {
       "title": "I tuoi progetti di costruzione",
-      "description": "Tutti i pacchetti di costruzione che hai acquistato e il loro stato."
+      "description": "Tutti i pacchetti di costruzione che hai generato e il loro stato."
     },
     "order": {
       "title": "Progetto di costruzione {{licenceId}}",
@@ -15,14 +15,14 @@
   },
   "hero": {
     "title": "Progetti per costruire il tuo pannello domestico",
-    "subtitle": "File DXF per il tuo laboratorio CNC. Pannelli e posizioni di foratura disposti sulle lastre già usate dal laboratorio.",
+    "subtitle": "File DXF gratuiti per la tua parete a uso personale non commerciale. Pannelli e fori disposti sui fogli che il tuo laboratorio CNC usa già.",
     "firstBoard": "Compatibile con Kilter Homewall, Kilter Original (OG) e Tension Board 2, incluse le disposizioni Mirror e Spray.",
     "included": {
       "heading": "Cosa ricevi",
       "dxf": "Sono inclusi anche i disegni di assemblaggio, per allineare i pannelli senza andare a tentativi.",
       "pdf": "Pagine stampabili in A3 o Tabloid, con la disposizione definita prima di tagliare il primo foglio.",
       "bom": "Numero di fogli, dimensioni dei pannelli e conteggio di tutti i fori, prima di ordinare il materiale.",
-      "licence": "Intestata a te e valida per una parete, da conservare.",
+      "licence": "Intestata a te per una parete, per il tuo uso personale non commerciale.",
       "dxfLabel": "Un DXF per pannello",
       "pdfLabel": "Fogli di verifica",
       "bomLabel": "Distinta di taglio",
@@ -32,25 +32,25 @@
     "cta": "Configura la tua parete"
   },
   "tiers": {
-    "heading": "Scegli una licenza",
-    "intro": "Una licenza, una parete. Per una seconda parete serve una seconda licenza.",
+    "heading": "La tua licenza",
+    "intro": "I pacchetti gratuiti sono per il tuo uso personale non commerciale. Una licenza copre una parete; per una seconda parete serve una seconda licenza.",
     "personal": {
       "name": "Personale",
-      "blurb": "Costruisci una parete per te. Nel garage, nel capanno o nella stanza libera."
+      "blurb": "Costruisci una parete per il tuo uso personale non commerciale. Il tuo garage, il tuo capanno, la tua stanza libera."
     },
     "commercial": {
-      "name": "Commerciale, singola costruzione",
-      "blurb": "Costruisci una parete per un cliente o una palestra. L'installazione è indicata nella licenza."
+      "name": "Commerciale, singola costruzione"
     },
     "contact": {
-      "heading": "Ne costruisci più di una?",
-      "body": "Per pacchetti da dieci costruzioni e condizioni OEM, parliamone direttamente. Raccontaci cosa stai costruendo e ti proporremo un prezzo.",
-      "cta": "Scrivici",
-      "subject": "Progetti di costruzione: licenza per più costruzioni"
+      "heading": "Costruisci per un cliente o una palestra?",
+      "body": "I pacchetti gratuiti coprono la tua parete a uso personale non commerciale. Per costruzioni commerciali o uso OEM, contattaci per concordare una licenza.",
+      "cta": "Parliamo di uso commerciale",
+      "subject": "Collaborazione CNC Boardsesh"
     },
     "licenceLink": "Leggi la licenza",
     "ordersLink": "I tuoi progetti di costruzione",
-    "perWall": "per parete"
+    "perWall": "per parete",
+    "free": "Gratis"
   },
   "configurator": {
     "heading": "Configura la tua parete",
@@ -201,7 +201,7 @@
     },
     "artwork": {
       "heading": "Testi e loghi personalizzati",
-      "help": "Incidi le tue parole in un pannello oppure carica un logo. Fino a {{count}} elementi: li controlliamo tutti rispetto alla griglia dei fori prima dell'acquisto.",
+      "help": "Incidi le tue parole in un pannello oppure carica un logo. Fino a {{count}} elementi: li controlliamo tutti rispetto alla griglia dei fori prima di generare il pacchetto.",
       "add": "Aggiungi una scritta",
       "remove": "Rimuovi",
       "itemLabel": "Scritta {{number}}",
@@ -269,7 +269,7 @@
           "imageTooLarge": "L'immagine è troppo grande per ricavarne un tracciato. Il limite è di 4096 pixel per lato.",
           "unreadableImage": "Non è stato possibile aprire l'immagine. Esportala di nuovo come PNG.",
           "rateLimited": "Hai caricato molti file. Aspetta qualche minuto e riprova.",
-          "unavailable": "Il caricamento non è disponibile al momento. Non è stato addebitato nulla. Riprova tra poco.",
+          "unavailable": "Il caricamento non è disponibile al momento. Riprova tra poco.",
           "generic": "Il caricamento non è riuscito. Riprova."
         }
       },
@@ -317,9 +317,7 @@
       "name": "Nome sulla licenza",
       "email": "Email",
       "emailHelp": "L'indirizzo a cui riceverai il pacchetto quando sarà pronto.",
-      "siteName": "Nome del cliente o della palestra",
-      "siteHelp": "L'unica installazione coperta da questa licenza commerciale.",
-      "required": "Compila questo campo prima dell'acquisto."
+      "required": "Compila questo campo prima di generare il pacchetto."
     },
     "licence": {
       "accept": "Accetto la licenza di fabbricazione",
@@ -332,7 +330,7 @@
       "working": "Stiamo disegnando i fogli. Ci vogliono circa quindici secondi.",
       "ready": "Disegni di verifica con filigrana. Completa l'acquisto per ottenere i file DXF da tagliare in officina.",
       "stale": "Hai modificato la parete dopo questi disegni. Aggiorna l'anteprima per vedere quelli nuovi.",
-      "failed": "Non è stato possibile generare l'anteprima. Non è stato addebitato nulla: riprova.",
+      "failed": "Non è stato possibile generare l’anteprima. Riprova.",
       "rateLimited": "Hai esaurito le anteprime gratuite per quest'ora. Quelle già create sono nella pagina dei tuoi progetti di costruzione; potrai crearne un'altra allo scoccare dell'ora.",
       "download": "Scarica l'anteprima",
       "downloading": "Preparazione del link…",
@@ -369,18 +367,18 @@
     "previewUpdate": "Aggiorna l'anteprima",
     "previewing": "Creazione dell'anteprima…",
     "previewRetry": "Riprova",
-    "finalise": "Completa e acquista",
-    "finalising": "Apertura del pagamento…",
-    "free": "Le anteprime sono gratuite. Non serve una carta.",
+    "finalise": "Genera il pacchetto gratuito",
+    "finalising": "Pacchetto in coda…",
+    "free": "I pacchetti sono gratuiti per il tuo uso personale non commerciale. Non serve una carta.",
     "signInTitle": "Accedi per la tua anteprima gratuita",
     "signInBody": "Serve un account per conservare la tua anteprima. Ti riporteremo direttamente alla tua configurazione."
   },
   "errors": {
     "CNC_INVALID_CONFIG": "Questa combinazione non è adatta al taglio. Modifica una delle scelte qui sopra e la ricontrolleremo.",
-    "CNC_WORKER_UNAVAILABLE": "Il generatore di progetti non risponde al momento. Non è stato addebitato nulla. Riprova tra un minuto.",
-    "CNC_CHECKOUT_UNAVAILABLE": "I pagamenti non sono disponibili al momento. Non è stato addebitato nulla. Riprova tra poco.",
-    "generic": "L'operazione non è riuscita. Non è stato addebitato nulla.",
-    "RATE_LIMITED": "Hai richiesto molte anteprime in un'ora. Non è stato addebitato nulla: potrai crearne un'altra allo scoccare dell'ora."
+    "CNC_WORKER_UNAVAILABLE": "Il generatore di progetti non risponde al momento. Riprova tra un minuto.",
+    "CNC_CHECKOUT_UNAVAILABLE": "Non possiamo mettere in coda il tuo pacchetto al momento. Riprova tra poco.",
+    "generic": "L’operazione non è riuscita. Riprova.",
+    "RATE_LIMITED": "Hai richiesto molte anteprime in un’ora. Riprova quando si azzera il limite orario."
   },
   "status": {
     "pending_payment": "In attesa del pagamento",
@@ -397,10 +395,10 @@
   },
   "orders": {
     "heading": "I tuoi progetti di costruzione",
-    "intro": "Tutte le pareti di cui hai richiesto un'anteprima o che hai acquistato, dalla più recente. La licenza resta tua indipendentemente da questa pagina.",
+    "intro": "Tutte le pareti di cui hai richiesto un’anteprima o generato il pacchetto, dalla più recente. La licenza resta tua indipendentemente da questa pagina.",
     "configureAnother": "Configura un'altra parete",
     "empty": "Non ci sono ancora pareti.",
-    "emptyBody": "Configura una parete e prepareremo un'anteprima gratuita di ogni foglio. Non viene addebitato nulla finché non completi l'acquisto.",
+    "emptyBody": "Configura la tua parete a uso personale non commerciale e prepareremo un’anteprima gratuita di ogni foglio. Anche il pacchetto completo è gratuito.",
     "emptyCta": "Configura una parete",
     "previewTier": "Anteprima",
     "orderedOn": "Ordinato il {{date}}",
@@ -425,7 +423,7 @@
     "timeline": {
       "heading": "Stato di avanzamento",
       "preview": "Anteprima gratuita creata",
-      "finalised": "Licenza intestata e pagata",
+      "finalised": "Licenza confermata",
       "building": "Preparazione dei file di taglio",
       "ready": "Pronto da scaricare"
     },
@@ -438,7 +436,7 @@
       "panel": "Pannello {{number}}",
       "assembly": "Assemblaggio"
     },
-    "finalise": "Completa e acquista",
+    "finalise": "Genera il pacchetto gratuito",
     "downloadPreview": "Scarica l'anteprima",
     "download": "Scarica il pacchetto",
     "downloading": "Preparazione del link…",
@@ -447,7 +445,7 @@
     "checkoutCancelled": "Il pagamento è stato annullato. Non è stato addebitato nulla.",
     "previewFailed": {
       "heading": "Non è stato possibile disegnare questa anteprima",
-      "body": "Non è stato addebitato nulla. Modifica qualcosa nella tua parete e richiedi una nuova anteprima, oppure scrivici e controlleremo.",
+      "body": "Modifica qualcosa nella tua parete e richiedi una nuova anteprima, oppure scrivici e controlleremo.",
       "contact": "Scrivici e risolveremo il problema",
       "subject": "Anteprima del progetto di costruzione {{licenceId}} non riuscita"
     },
@@ -458,7 +456,7 @@
     },
     "refunded": {
       "heading": "Rimborsato",
-      "body": "Questo ordine è stato rimborsato, quindi il download è disattivato. Acquista di nuovo quando vuoi iniziare a costruire."
+      "body": "Questo ordine è stato rimborsato, quindi il download è disattivato. Puoi generare un nuovo pacchetto gratuito per la tua parete a uso personale non commerciale."
     },
     "notFound": {
       "heading": "Progetto di costruzione inesistente",
@@ -468,22 +466,24 @@
     "downloadCard": {
       "heading": "Il tuo pacchetto di costruzione",
       "note": "Un DXF per pannello, disegni di assemblaggio, fogli da stampare e la tua licenza, in un unico file ZIP."
-    }
+    },
+    "donationReminder": "Questi file sono gratuiti per la tua costruzione a uso personale non commerciale. Se ti hanno aiutato, puoi sostenere Boardsesh.",
+    "donationLink": "Dona se ti va"
   },
   "flow": {
     "heading": "Come funziona",
-    "intro": "Le anteprime sono gratuite. Non viene addebitato nulla finché non completi l'acquisto.",
+    "intro": "Le anteprime e i pacchetti completi per il tuo uso personale non commerciale sono gratuiti.",
     "configure": {
       "title": "Configura la tua parete",
       "body": "Scegli le dimensioni, i fogli usati dalla tua officina, i diametri dei fori e ciò che vuoi fresare in un pannello."
     },
     "preview": {
       "title": "Ottieni un'anteprima gratuita",
-      "body": "Disponiamo ogni foglio e ti mostriamo i disegni con filigrana. Modifica qualcosa e richiedi un'altra anteprima ogni volta che vuoi."
+      "body": "Disponiamo ogni foglio e ti mostriamo i disegni con filigrana. Modifica qualcosa e richiedi un’altra anteprima entro il limite orario."
     },
     "finalise": {
       "title": "Completa e costruisci",
-      "body": "Intesta la licenza e paga: i file DXF pronti per il taglio e i fogli da stampare arriveranno nel tuo account."
+      "body": "Intesta la licenza personale: i file DXF pronti per il taglio e i fogli da stampare arriveranno gratuitamente nel tuo account."
     }
   }
 }

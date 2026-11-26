@@ -75,7 +75,7 @@ vi.mock('../configurator/use-cnc-artwork-validation', () => ({
 const ConfiguratorModule = await import('../configurator/configurator');
 const Configurator = ConfiguratorModule.default;
 
-const STRIPE_URL = 'https://checkout.stripe.com/c/pay/cs_test_a1b2c3';
+const ORDER_URL = 'http://localhost/build-plans/orders/BS-CNC-K7QM3T';
 const locationAssign = vi.fn();
 
 function catalog(): CncCatalog {
@@ -106,8 +106,8 @@ function catalog(): CncCatalog {
           },
         ],
         tiers: [
-          { tier: 'personal', amountCents: 14900, currency: 'AUD' },
-          { tier: 'commercial_single', amountCents: 75000, currency: 'AUD' },
+          { tier: 'personal', amountCents: 0, currency: 'AUD' },
+          { tier: 'commercial_single', amountCents: 0, currency: 'AUD' },
         ],
       },
     ],
@@ -152,7 +152,7 @@ function respond(document: string) {
   if (document.includes('query GetCncOrder')) return Promise.resolve({ cncOrder: readyOrder() });
   if (document.includes('mutation FinaliseCncOrder')) {
     return Promise.resolve({
-      finaliseCncOrder: { orderId: '41', licenceId: 'BS-CNC-K7QM3T', checkoutUrl: STRIPE_URL },
+      finaliseCncOrder: { orderId: '41', licenceId: 'BS-CNC-K7QM3T', checkoutUrl: ORDER_URL },
     });
   }
   return Promise.resolve({});
@@ -189,15 +189,16 @@ function sentCall(operation: string): unknown {
 /** The rail's one button, whatever it currently says. */
 function primaryAction(): HTMLButtonElement {
   const button =
-    screen.queryByRole('button', { name: /free preview|Update preview|Finalise and buy|Drawing your preview/i }) ??
-    null;
+    screen.queryByRole('button', {
+      name: /free preview|Update preview|Generate free build pack|Drawing your preview/i,
+    }) ?? null;
   if (!button) throw new Error('the rail has no primary action');
   return button as HTMLButtonElement;
 }
 
 async function previewThisWall() {
   fireEvent.click(primaryAction());
-  await screen.findByRole('button', { name: 'Finalise and buy' });
+  await screen.findByRole('button', { name: 'Generate free build pack' });
 }
 
 beforeEach(() => {
@@ -254,7 +255,7 @@ describe('the preview step', () => {
 
     // Same button, same place, changed label — never a second preview button.
     await screen.findByRole('button', { name: 'Update preview' });
-    expect(screen.queryByRole('button', { name: 'Finalise and buy' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Generate free build pack' })).toBeNull();
   });
 });
 
@@ -289,7 +290,7 @@ describe('the finalise step', () => {
 
     await screen.findByRole('button', { name: 'Get a free preview' });
     expect(screen.queryByRole('radiogroup')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Finalise and buy' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Generate free build pack' })).toBeNull();
   });
 
   it('stays disabled until the licence questions are answered', async () => {
@@ -298,23 +299,22 @@ describe('the finalise step', () => {
 
     expect(primaryAction().disabled).toBe(true);
     // A disabled button always says why.
-    expect(screen.getByText('Fill this in before you buy.')).toBeDefined();
+    expect(screen.getByText('Fill this in before you generate your pack.')).toBeDefined();
   });
 
-  it('offers the two tiers as one mutually exclusive choice', async () => {
+  it('offers only non-commercial generation and directs commercial enquiries to partnerships', async () => {
     renderConfigurator();
     await previewThisWall();
 
-    const radios = screen.getAllByRole('radio') as HTMLInputElement[];
-    expect(radios).toHaveLength(2);
-    expect(radios[0].checked).toBe(true);
-
-    fireEvent.click(radios[1]);
-    expect(radios[1].checked).toBe(true);
-    expect(radios[0].checked).toBe(false);
+    expect(screen.queryByRole('radiogroup')).toBeNull();
+    expect(screen.queryByLabelText(/Customer or gym name/)).toBeNull();
+    expect(screen.getByRole('link', { name: tFromCatalog('cnc', 'tiers.contact.cta') }).getAttribute('href')).toBe(
+      'mailto:partnerships@boardsesh.com',
+    );
+    expect(screen.getByText(tFromCatalog('cnc', 'tiers.intro'))).toBeTruthy();
   });
 
-  it('buys the previewed order by id and sends the browser to Stripe', async () => {
+  it('queues the free previewed pack by id and opens its order page', async () => {
     renderConfigurator();
     await previewThisWall();
 
@@ -340,7 +340,7 @@ describe('the finalise step', () => {
         },
       });
     });
-    await waitFor(() => expect(locationAssign).toHaveBeenCalledWith(STRIPE_URL));
+    await waitFor(() => expect(locationAssign).toHaveBeenCalledWith(ORDER_URL));
   });
 });
 
@@ -371,7 +371,7 @@ describe('checkout session lifetime', () => {
       );
       await waitFor(() => expect(primaryAction().disabled).toBe(false));
       fireEvent.click(primaryAction());
-      await screen.findByRole('button', { name: 'Opening checkout…' });
+      await screen.findByRole('button', { name: 'Queuing your build pack…' });
 
       useWsAuthToken.mockReturnValue({ token: 'rotated-token', isAuthenticated: true });
       if (transition !== 'token refresh') {
@@ -382,14 +382,16 @@ describe('checkout session lifetime', () => {
       }
       mounted.rerender(view());
       if (transition === 'token refresh')
-        expect((screen.getByRole('button', { name: 'Opening checkout…' }) as HTMLButtonElement).disabled).toBe(true);
+        expect((screen.getByRole('button', { name: 'Queuing your build pack…' }) as HTMLButtonElement).disabled).toBe(
+          true,
+        );
       else expect(screen.queryByRole('img', { name: 'Panel 1' })).toBeNull();
 
       await act(async () => {
-        finish?.({ finaliseCncOrder: { orderId: '41', licenceId: 'BS-CNC-K7QM3T', checkoutUrl: STRIPE_URL } });
+        finish?.({ finaliseCncOrder: { orderId: '41', licenceId: 'BS-CNC-K7QM3T', checkoutUrl: ORDER_URL } });
         await pending;
       });
-      if (transition === 'token refresh') await waitFor(() => expect(locationAssign).toHaveBeenCalledWith(STRIPE_URL));
+      if (transition === 'token refresh') await waitFor(() => expect(locationAssign).toHaveBeenCalledWith(ORDER_URL));
       else expect(locationAssign).not.toHaveBeenCalled();
     },
   );
@@ -495,7 +497,7 @@ it('selects TB2 dimensions and engraving and submits the matching tuple', async 
   // within one wall retain their stale preview until the buyer updates it.
   expect(screen.queryByRole('img', { name: 'Panel 1' })).toBeNull();
   expect(screen.getByRole('button', { name: 'Get a free preview' })).toBeDefined();
-  expect(screen.queryByRole('button', { name: 'Finalise and buy' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Generate free build pack' })).toBeNull();
   expect(lastLayoutConfig()).toMatchObject({
     boardName: 'tension',
     sizeId: 9,

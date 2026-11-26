@@ -10,11 +10,11 @@ vi.mock('@/app/lib/graphql/client', () => ({
 const removePreference = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/user-preferences-db', () => ({ removePreference }));
 
-const { useCncFinalise, isCheckoutRedirectUrl, STRIPE_CHECKOUT_ORIGIN } =
-  await import('../configurator/use-cnc-finalise');
+const { useCncFinalise, isCheckoutRedirectUrl } = await import('../configurator/use-cnc-finalise');
 const { CNC_CONFIGURATOR_DRAFT_KEY } = await import('../configurator/configurator-state');
 
 const locationAssign = vi.fn();
+const ORDER_URL = 'http://localhost/build-plans/orders/BS-CNC-K7QM3T';
 
 /** The only thing finalise sends: who the licence names. The wall is already on the order. */
 const FINALISE_INPUT: FinaliseCncOrderInput = {
@@ -43,13 +43,13 @@ beforeEach(() => {
   Object.defineProperty(window, 'location', {
     configurable: true,
     writable: true,
-    value: { assign: locationAssign, href: 'http://localhost/build-plans' },
+    value: { assign: locationAssign, origin: 'http://localhost', href: 'http://localhost/build-plans' },
   });
 });
 
 describe('isCheckoutRedirectUrl', () => {
-  it('accepts Stripe-hosted checkout, whatever the path and query carry', () => {
-    expect(isCheckoutRedirectUrl(`${STRIPE_CHECKOUT_ORIGIN}/c/pay/cs_test_a1b2c3#fidkd`)).toBe(true);
+  it('rejects payment redirects, even to the former checkout provider', () => {
+    expect(isCheckoutRedirectUrl('https://checkout.stripe.com/c/pay/cs_test')).toBe(false);
   });
 
   it('rejects every near-miss origin', () => {
@@ -66,12 +66,9 @@ describe('isCheckoutRedirectUrl', () => {
     }
   });
 
-  it('accepts this site itself, which is where the dev-only bypass sends the buyer', () => {
+  it('accepts the free pack order page on this site', () => {
     expect(
-      isCheckoutRedirectUrl(
-        'https://boardsesh.test/build-plans/orders/BS-CNC-ABC234?checkout=success',
-        'https://boardsesh.test',
-      ),
+      isCheckoutRedirectUrl('https://boardsesh.test/build-plans/orders/BS-CNC-ABC234', 'https://boardsesh.test'),
     ).toBe(true);
     expect(
       isCheckoutRedirectUrl('https://evil.example/build-plans/orders/BS-CNC-ABC234', 'https://boardsesh.test'),
@@ -83,11 +80,16 @@ describe('isCheckoutRedirectUrl', () => {
       expect({ url, allowed: isCheckoutRedirectUrl(url) }).toEqual({ url, allowed: false });
     }
   });
+
+  it('rejects other paths on the same site', () => {
+    expect(isCheckoutRedirectUrl('http://localhost/support')).toBe(false);
+    expect(isCheckoutRedirectUrl('http://localhost/auth/logout')).toBe(false);
+  });
 });
 
 describe('useCncFinalise', () => {
-  it('buys the previewed order by id and sends the browser to Stripe', async () => {
-    graphqlRequest.mockResolvedValue(checkoutUrlResponse(`${STRIPE_CHECKOUT_ORIGIN}/c/pay/cs_test_a1b2c3`));
+  it('queues the previewed pack and opens its order page without payment', async () => {
+    graphqlRequest.mockResolvedValue(checkoutUrlResponse(ORDER_URL));
 
     const { result } = renderHook(() => useCncFinalise('ws-token'));
     await act(async () => {
@@ -97,11 +99,11 @@ describe('useCncFinalise', () => {
     // The order id is the whole point: nothing about the wall is sent again,
     // because the order already carries the configuration that was previewed.
     expect(graphqlRequest.mock.calls[0][1]).toEqual({ input: FINALISE_INPUT });
-    expect(locationAssign).toHaveBeenCalledWith(`${STRIPE_CHECKOUT_ORIGIN}/c/pay/cs_test_a1b2c3`);
+    expect(locationAssign).toHaveBeenCalledWith(ORDER_URL);
     expect(removePreference).toHaveBeenCalledWith(CNC_CONFIGURATOR_DRAFT_KEY);
     expect(result.current.errorKey).toBeNull();
     // Never cleared on the success path: the navigation is already in flight,
-    // and a re-enabled button is a second Stripe session for one wall.
+    // and a re-enabled button invites a duplicate generation request.
     expect(result.current.isFinalising).toBe(true);
   });
 
@@ -180,10 +182,10 @@ it('preserves pending checkout and its successful response across same-login cre
   mounted.rerender({ token: 'new-token' });
   expect(mounted.result.current.isFinalising).toBe(true);
   await act(async () => {
-    finish?.(checkoutUrlResponse('https://checkout.stripe.com/c/pay/old'));
+    finish?.(checkoutUrlResponse(ORDER_URL));
     await pending;
   });
-  expect(locationAssign).toHaveBeenCalledWith('https://checkout.stripe.com/c/pay/old');
+  expect(locationAssign).toHaveBeenCalledWith(ORDER_URL);
   expect(removePreference).toHaveBeenCalledWith(CNC_CONFIGURATOR_DRAFT_KEY);
   expect(mounted.result.current.isFinalising).toBe(true);
 });
@@ -203,7 +205,7 @@ it('ignores a checkout response after its owned component unmounts', async () =>
   });
   mounted.unmount();
   await act(async () => {
-    finish?.(checkoutUrlResponse('https://checkout.stripe.com/c/pay/previous-login'));
+    finish?.(checkoutUrlResponse(ORDER_URL));
     await pending;
   });
   expect(locationAssign).not.toHaveBeenCalled();

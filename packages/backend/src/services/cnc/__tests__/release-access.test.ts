@@ -10,7 +10,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe('server CNC release access', () => {
-  it('allows exactly the approved account IDs during a Stripe sandbox beta', () => {
+  it('allows exactly the approved account IDs during a free-generation beta', () => {
     expect(isCncCreationAllowed('marco-account')).toBe(true);
     expect(isCncCreationAllowed('test-account')).toBe(true);
     for (const userId of ['other-account', 'MARCO-ACCOUNT', 'marco', '', ' marco-account', 'marco-account ']) {
@@ -25,18 +25,14 @@ describe('server CNC release access', () => {
     expect(isCncCreationAllowed('account')).toBe(false);
   });
 
-  it.each(['', 'sk_live_synthetic123', 'rk_live_synthetic123', 'sk_test_', 'sk_test_secret\n', ' sk_test_secret'])(
-    'refuses beta work with an absent, live or malformed Stripe key: %j',
+  it.each([undefined, '', 'sk_live_synthetic123', 'rk_live_synthetic123', 'sk_test_synthetic123'])(
+    'allows approved beta accounts independently of Stripe key %j',
     (key) => {
       vi.stubEnv('STRIPE_SECRET_KEY', key);
-      expect(isCncCreationAllowed('marco-account')).toBe(false);
+      expect(isCncCreationAllowed('marco-account')).toBe(true);
+      expect(isCncCreationAllowed('other-account')).toBe(false);
     },
   );
-
-  it('accepts a restricted Stripe test key too', () => {
-    vi.stubEnv('STRIPE_SECRET_KEY', 'rk_test_synthetic123');
-    expect(isCncCreationAllowed('marco-account')).toBe(true);
-  });
 
   it.each([
     '',
@@ -61,7 +57,7 @@ describe('server CNC release access', () => {
     vi.stubEnv('STRIPE_SECRET_KEY', 'sk_live_synthetic123');
     expect(isCncCreationAllowed('existing-buyer')).toBe(true);
     vi.stubEnv('CNC_RELEASE_MODE', 'beta');
-    expect(isCncCreationAllowed('marco-account')).toBe(false);
+    expect(isCncCreationAllowed('marco-account')).toBe(true);
     vi.stubEnv('CNC_RELEASE_MODE', 'disabled');
     expect(isCncCreationAllowed('existing-buyer')).toBe(false);
   });
