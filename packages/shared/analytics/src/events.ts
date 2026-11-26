@@ -1205,7 +1205,9 @@ export const SHARED_EVENTS = {
   // source: onboarding | no_board (Climbs' "Pick your board" empty state,
   // #5654) | session | board_picker (other/unknown entry) | gym_finder (the
   // gym map opened on its own, from Home or My gyms; the map pushed from the
-  // picker's "Find gym" reports no opening, the picker did).
+  // picker's "Find gym" reports no opening, the picker did) | add_wizard (the
+  // add-a-board wizard's Whose board? reached from Manage boards or an old
+  // link; reached from the picker it reports no opening, the picker did).
   // hadActiveBoard is null when storage could not be read, not false.
   // locationStatus (from 2026-11): idle | loading | granted | denied |
   // unavailable, as known at the opening. Until the location re-ask OTA it was
@@ -1221,7 +1223,7 @@ export const SHARED_EVENTS = {
   // sameBoard compares UUIDs; sameConfig compares board type/layout/size/sets.
   // source matches the opening that led here: a pick on the gym map pushed from
   // the picker carries the picker's source, a pick on a map opened on its own
-  // carries gym_finder. pickSource: your_boards | nearby | offline | bluetooth
+  // carries gym_finder, and Whose board? does the same (add_wizard on its own). pickSource: your_boards | nearby | offline | bluetooth
   // (a board the picker's scan put at the top; the Bluetooth sheet before
   // 2026-11) | gym_walls (a wall At {gym} because of the board you're on; the
   // "Also at {gym}" rows before that) | gym_finder | friends (a board someone

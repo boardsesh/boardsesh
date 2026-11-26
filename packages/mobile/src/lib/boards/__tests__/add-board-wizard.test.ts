@@ -12,6 +12,7 @@ const {
   wizardGymBoardsHref,
   wizardGymHref,
   wizardNewGymHref,
+  wizardPickerSurface,
   wizardSetupHref,
   wizardStepPosition,
   wizardWhereHref,
@@ -208,5 +209,17 @@ describe('wizard hrefs', () => {
     const home = wizardSetupHref({ ...context, trail: ['where', 'board'] }, { path: 'home', boardType: 'kilter' });
     expect(home.params).toMatchObject({ preset: '1', presetBoardType: 'kilter', kind: 'home' });
     expect(home.params).not.toHaveProperty('boardType');
+  });
+});
+
+// A pick on Whose board? completes the picker's opening only when the wizard
+// started in the picker; elsewhere the step counts an opening of its own.
+describe('wizardPickerSurface', () => {
+  it.each(['picker', 'empty_state', 'first_run', 'in_range'] as const)('files a %s entry under the picker', (entry) => {
+    expect(wizardPickerSurface(entry)).toBe('add_wizard_from_picker');
+  });
+
+  it.each(['manage', 'gym_page', 'link'] as const)('counts a %s entry as its own opening', (entry) => {
+    expect(wizardPickerSurface(entry)).toBe('add_wizard');
   });
 });
