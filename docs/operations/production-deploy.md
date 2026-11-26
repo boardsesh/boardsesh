@@ -313,7 +313,7 @@ Download `public-page-soak-<run-id>-<attempt>` for the canonical/request corpora
 report, runtime/fixture logs and host/container resource samples, including on
 failure. A failed or missing report leaves the sustained-load gate unmet.
 
-The web-local [Next 16.3.5 patch](../../packages/web/patches/next@16.3.5.patch)
+The web-local [Next 16.4.6 patch](../../packages/web/patches/next@16.4.6.patch)
 releases request state from closed responses. Next's response adapter registers
 close callbacks with `once`, including its CJS, ESM and bundled production
 implementations. The generated App Router page and API-route templates also
@@ -342,15 +342,14 @@ against the installed package before retiring the patch. Keep web-only patches
 under `packages/web/patches`; the mobile fingerprint hashes the root `patches`
 directory.
 
-The Flight stream helper also backports [Next's client-abort fix](https://github.com/vercel/next.js/pull/96715).
+Next 16.4.6 includes [the Flight client-abort fix](https://github.com/vercel/next.js/pull/96715)
+upstream, so the local patch no longer modifies Flight stream helpers.
 It registers a one-shot close callback before React pipes into the destination,
 and aborts an unfinished render with the `ResponseAborted` cancellation reason.
 Next's existing error handler recognizes that reason and leaves genuine render
-errors reportable. The bundled runtimes create the same named error locally,
-because their existing `ResponseAborted` class lives in a separate closure;
-this avoids adding a dependency outside the standalone bundle. Both module
-formats and every bundled App Router runtime carry the fix. The installed-package
-regression test uses real React Flight rendering and loopback HTTP disconnects,
+errors reportable. Both module formats and every bundled App Router runtime
+carry the upstream fix. The installed-package regression test uses real React
+Flight rendering and loopback HTTP disconnects,
 and verifies that pending components stop rendering after cancellation.
 
 During the 2026-11-23 incident, Railway retained

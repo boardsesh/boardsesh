@@ -857,7 +857,7 @@ export const UNGUARDED_PATCHES: Readonly<Record<string, string>> = {
 export const NON_NATIVE_PATCHES: Readonly<Record<string, string>> = {
   'postgres@3.4.9': 'packages/db/patches/postgres@3.4.9.patch',
   '@mui/material@7.3.11': 'packages/web/patches/@mui__material@7.3.11.patch',
-  'next@16.3.5': 'packages/web/patches/next@16.3.5.patch',
+  'next@16.4.6': 'packages/web/patches/next@16.4.6.patch',
 };
 
 /** Resolve these files from web, whose React declarations the patch must use. */

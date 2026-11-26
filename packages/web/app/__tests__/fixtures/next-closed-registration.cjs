@@ -282,7 +282,7 @@ async function actualRoute(scenario) {
       };
     },
   });
-  const cache = new ResponseCache(false);
+  const cache = new ResponseCache({ minimalMode: false, route: '/fixture/route' });
   const stale = {
     isStale: true,
     cacheControl: { revalidate: 1, expire: 10 },
