@@ -43,6 +43,29 @@ Zstandard-only, gzip-only and identity requests; compare decoded SHA-256 and MIM
 types, and confirm repeat cache HITs. Recheck both public landing pages. The
 2.5-second LCP target still requires the production mobile measurement protocol.
 
+### Public marketing contacts
+
+`boardsesh:critical-marketing-email` disables Email Obfuscation for GET/HEAD
+requests to `www.boardsesh.com/` and `/apps/kilter`. These pages already expose
+their public contact addresses in Next's Flight data. Serving their original
+contact markup avoids injecting Cloudflare's parser-blocking decoder and keeps
+the contact details usable without JavaScript.
+
+The rule uses the `http_config_settings` phase, with `set_config` and
+`email_obfuscation: false`. It is a page override, rather than a zone setting.
+[Cloudflare's configuration-rule API](https://developers.cloudflare.com/rules/configuration-rules/create-api/)
+accepts the existing Transform Rules Write or Zone WAF Write permission. The
+apply tool requires a successful read of this phase before writing any rules;
+an authorization failure must not be reported as a successful removal.
+
+After production apply, allow existing HTML cache entries to expire. Check both
+pages with JavaScript disabled: Home must retain its original `mailto:` contact
+link, and Kilter must show its original plain-text contact address. The returned
+documents must contain no email-decoder script or encoded email link. Confirm
+repeat anonymous cache HITs, then rerun
+the mobile LCP protocol. Removing a request does not by itself prove the
+2.5-second target.
+
 ### OTA assets host
 
 `ota-assets.boardsesh.com` is the custom domain on `boardsesh-ota-v3`. Two rules make it worth having, and both exist

@@ -287,6 +287,9 @@ export const RESPONSE_HEADER_RULE_PHASE = 'http_response_headers_transform';
  */
 export const COMPRESSION_RULE_PHASE = 'http_response_compression';
 
+/** Page-scoped feature settings; this does not change the zone-wide defaults. */
+export const CONFIGURATION_RULE_PHASE = 'http_config_settings';
+
 /** Request-header rewrites sent from Cloudflare to origins. */
 export const REQUEST_HEADER_RULE_PHASE = 'http_request_late_transform';
 
@@ -501,6 +504,17 @@ export interface CompressionRuleDesired {
   enabled: boolean;
 }
 
+/** Only the email transform is managed; other page settings remain foreign. */
+export interface ConfigurationRuleDesired {
+  description: string;
+  expression: string;
+  action: 'set_config';
+  action_parameters: {
+    email_obfuscation: boolean;
+  };
+  enabled: boolean;
+}
+
 /**
  * A Request Header Transform rule can remove an incoming header or replace it
  * with an expression evaluated at the edge before forwarding to the origin.
@@ -539,6 +553,8 @@ export interface CloudflareDesiredState {
   responseHeaderRules: ResponseHeaderRuleDesired[];
   /** Order is not significant: each rule is scoped to its own host. */
   compressionRules: CompressionRuleDesired[];
+  /** Keep overrides scoped to the public pages that need them. */
+  configurationRules: ConfigurationRuleDesired[];
   ssl: SslDesired;
 }
 
@@ -1145,6 +1161,13 @@ export const NEXT_STATIC_COMPRESSION_EXPRESSION =
   ' or ends_with(http.request.uri.path, ".mjs")' +
   ' or ends_with(http.request.uri.path, ".css")))';
 
+export const MARKETING_EMAIL_RULE_DESCRIPTION =
+  'boardsesh:critical-marketing-email (managed by scripts/cloudflare-apply.ts)';
+export const MARKETING_EMAIL_EXPRESSION =
+  `(http.host eq "${WWW_HOSTNAME}"` +
+  ' and http.request.method in {"GET" "HEAD"}' +
+  ' and http.request.uri.path in {"/" "/apps/kilter"})';
+
 export const OBSERVE_COUNTRY_HEADER_RULE_DESCRIPTION =
   'boardsesh:observe-country-header (managed by scripts/cloudflare-apply.ts)';
 export const OBSERVE_COUNTRY_HEADER_EXPRESSION = `http.host eq "${UPDATES_HOSTNAME}"`;
@@ -1723,6 +1746,17 @@ export const desiredCloudflareState: CloudflareDesiredState = {
         // Measured smaller than Zstandard on startup JS/CSS; keep both fallbacks.
         algorithms: [{ name: 'brotli' }, { name: 'zstd' }, { name: 'gzip' }],
       },
+      enabled: true,
+    },
+  ],
+  configurationRules: [
+    {
+      description: MARKETING_EMAIL_RULE_DESCRIPTION,
+      expression: MARKETING_EMAIL_EXPRESSION,
+      action: 'set_config',
+      // These public contacts already appear in the server's Flight data.
+      // Preserve native mail links without injecting a parser-blocking decoder.
+      action_parameters: { email_obfuscation: false },
       enabled: true,
     },
   ],

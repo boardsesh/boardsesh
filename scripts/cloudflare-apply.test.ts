@@ -27,6 +27,8 @@ import {
   NEXT_STATIC_COMPRESSION_RULE_DESCRIPTION,
   NEXT_STATIC_COMPRESSION_EXPRESSION,
   COMPRESSION_RULE_PHASE,
+  CONFIGURATION_RULE_PHASE,
+  MARKETING_EMAIL_RULE_DESCRIPTION,
   CACHE_RULE_PHASE,
   USER_EXPORT_LIFECYCLE_RULE,
   desiredR2Buckets,
@@ -938,6 +940,7 @@ describe('www.boardsesh.com under Cloudflare management (#4655)', () => {
       requestHeaderRules: [],
       responseHeaderRules: [],
       compressionRules: [],
+      configurationRules: [],
       ssl: desired.ssl,
     };
     const flattenedZone: LiveState = {
@@ -2162,6 +2165,7 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
     dnsByName: Record<string, LiveDnsRecord[]>,
     readLifecycleRules: (bucketName: string) => unknown = () => [],
     readCustomDomains: (bucketName: string) => { domain: string; enabled: boolean }[] = () => [],
+    phaseReadResponses: Readonly<Record<string, Response>> = {},
   ): RecordedRequest[] {
     const requests: RecordedRequest[] = [];
     const envelope = (result: unknown) =>
@@ -2183,7 +2187,10 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
       if (url.pathname.startsWith('/client/v4/zones/zone-1/dns_records/')) return envelope({});
       if (url.pathname === '/client/v4/zones/zone-1/settings/ssl') return envelope({ id: 'ssl', value: 'strict' });
       if (url.pathname === '/client/v4/zones/zone-1/dns_settings') return envelope({ flatten_all_cnames: false });
-      if (url.pathname.includes('/rulesets/phases/')) return envelope({ id: 'ruleset-id', rules: [] });
+      if (url.pathname.includes('/rulesets/phases/')) {
+        if (method === 'GET' && phaseReadResponses[url.pathname]) return phaseReadResponses[url.pathname];
+        return envelope({ id: 'ruleset-id', rules: [] });
+      }
       // R2 is only fetched when CLOUDFLARE_ACCOUNT_ID is set.
       if (url.pathname.endsWith('/r2/buckets')) {
         return envelope({ buckets: desiredR2Buckets.map((bucket) => ({ name: bucket.name })) });
@@ -2394,6 +2401,58 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
       expect(lifecyclePuts).toEqual(['boardsesh-ota-backups', 'boardsesh-store-creatives', 'boardsesh-ota-sourcemaps']);
     },
   );
+
+  it('preserves existing configuration rules when disabling email obfuscation for the two marketing pages', async () => {
+    const pathname = phaseEntrypoint('http_config_settings');
+    const foreign = {
+      id: 'operator-managed-id',
+      ref: 'operator-managed',
+      description: 'Disable Rocket Loader for the app',
+      expression: '(http.host eq "app.boardsesh.com")',
+      action: 'set_config',
+      action_parameters: { rocket_loader: false },
+      enabled: true,
+    };
+    const requests = stubCloudflareApi(dnsResponses(liveApexDnsRecord()), undefined, undefined, {
+      [pathname]: Response.json({ success: true, result: { id: 'configuration-id', rules: [foreign] } }),
+    });
+
+    expect(await runCloudflareApply(['--apply'])).toBe(0);
+    expect(requests.filter((request) => request.pathname === pathname)).toEqual([
+      { method: 'GET', pathname, body: undefined },
+      {
+        method: 'PUT',
+        pathname,
+        body: {
+          rules: [
+            foreign,
+            {
+              description: MARKETING_EMAIL_RULE_DESCRIPTION,
+              expression:
+                '(http.host eq "www.boardsesh.com" and http.request.method in {"GET" "HEAD"} and http.request.uri.path in {"/" "/apps/kilter"})',
+              action: 'set_config',
+              action_parameters: { email_obfuscation: false },
+              enabled: true,
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it('stops before any write when the configuration phase refuses its read', async () => {
+    const pathname = phaseEntrypoint(CONFIGURATION_RULE_PHASE);
+    const requests = stubCloudflareApi(dnsResponses(liveVercelApexDnsRecord()), undefined, undefined, {
+      [pathname]: Response.json(
+        { success: false, errors: [{ code: 10_000, message: 'Authentication error' }] },
+        { status: 403 },
+      ),
+    });
+
+    await expect(runCloudflareApply(['--apply'])).rejects.toThrow(/GET .*http_config_settings.*HTTP 403/);
+    expect(requests).toContainEqual({ method: 'GET', pathname, body: undefined });
+    expect(requests.filter((request) => request.method !== 'GET')).toEqual([]);
+  });
 
   it('sends the apex redirect rule verbatim in the dynamic-redirect PUT', async () => {
     const requests = stubCloudflareApi(dnsResponses(liveApexDnsRecord()));
