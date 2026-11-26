@@ -128,6 +128,20 @@ describe('ResourceAccessScreen with share-link members', () => {
       userId: 'link-joiner',
     });
   });
+  it('declines a waiting request without revoking it, so the climber can ask again', () => {
+    grants.pages = [[{ userId: 'asker', status: 'pending', invitedBy: null, displayName: 'Asker' }]];
+    const view = render(<ResourceAccessScreen />);
+
+    fireEvent.click(view.getByText('privacy.decline'));
+    expect(mutate).toHaveBeenCalledWith({
+      action: 'decline',
+      kind: 'board',
+      resourceId: 'board-1',
+      userId: 'asker',
+    });
+    expect(mutate).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'revoke' }));
+  });
+
   it('loads the next page of members at the end of the list', () => {
     grants.pages = [[{ userId: 'link-joiner', status: 'approved', invitedBy: 'owner-1', displayName: 'Link Joiner' }]];
     grants.hasNextPage = true;

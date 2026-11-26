@@ -208,6 +208,60 @@ describe('board picker analytics', () => {
   });
 });
 
+// Whose board? binds a friend's board inside the add-a-board wizard.
+describe("the wizard's Whose board? step", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const friendPick: BoundBoard = { pickSource: 'friends', section: 'friend_step', position: 2, followed: true };
+
+  // The picker's + or its Friends' boards "See all" opened the step; the picker
+  // already counted the opening, so the pick completes it under its source.
+  it("reports only the pick, under the picker's source, when the picker opened the wizard", async () => {
+    const { result } = renderHook(() =>
+      useBoardPickerAnalytics({
+        activeBoard: null,
+        restoreFailed: false,
+        returnTo: '/(tabs)/climbs',
+        fromOnboarding: false,
+        surface: 'add_wizard_from_picker',
+      }),
+    );
+    expect(track).not.toHaveBeenCalled();
+    await result.current(board, friendPick);
+    expect(track).toHaveBeenCalledExactlyOnceWith(
+      'Board Picker Selection Completed',
+      expect.objectContaining({
+        source: 'board_picker',
+        pickSource: 'friends',
+        section: 'friend_step',
+        position: 2,
+        followed: true,
+      }),
+    );
+  });
+
+  it('counts its own opening under add_wizard when no picker opened the wizard', async () => {
+    const { result } = renderHook(() =>
+      useBoardPickerAnalytics({
+        activeBoard: null,
+        restoreFailed: false,
+        returnTo: '/(tabs)/climbs',
+        fromOnboarding: true,
+        surface: 'add_wizard',
+      }),
+    );
+    expect(track).toHaveBeenCalledExactlyOnceWith(
+      'Board Picker Opened',
+      expect.objectContaining({ source: 'add_wizard' }),
+    );
+    await result.current(board, friendPick);
+    expect(track).toHaveBeenLastCalledWith(
+      'Board Picker Selection Completed',
+      expect.objectContaining({ source: 'add_wizard', section: 'friend_step' }),
+    );
+  });
+});
+
 // Near you empty vs results (2026-11): the opening says where location stood,
 // and each pick says what Near you had found by then.
 describe('Near you on the picker events', () => {
