@@ -254,7 +254,7 @@ export interface ResourcePrivacyState {
   audience: PrivacyResourceAudience;
   locationAudience: PrivacyLocationAudience;
   inheritFollowers: boolean;
-  /** "Show to people I follow": lists an Unlisted or Invite-only board in the Friends' boards of the people its owner follows. */
+  /** "Show to friends": lists an Unlisted or Invite-only board in the Friends' boards of its owner's friends (people who follow each other). */
   listedToFollowers: boolean;
   revision: number;
   hasOverride: boolean;
