@@ -8,6 +8,9 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### New
 
+- Climb on a friend's home board. When you follow each other, their boards show up under Friends' boards; invite-only ones get an Ask to climb button. ([#8207](https://github.com/boardsesh/boardsesh/pull/8207))
+  Owners can say yes right from their notifications.
+- Show your home board's QR code so a friend can scan it with their camera, and choose whether your friends can find it. ([#8203](https://github.com/boardsesh/boardsesh/pull/8203))
 - Global admins can place unlinked spray walls on the right gym listing, with an explicit check when gym members would gain access. ([#8204](https://github.com/boardsesh/boardsesh/pull/8204))
 
 ### Fixed

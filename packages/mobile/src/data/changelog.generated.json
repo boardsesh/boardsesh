@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-11-26T12:05:05.219Z",
+  "generatedAt": "2026-11-26T12:53:13.975Z",
   "entries": [
+    {
+      "prNumber": 8207,
+      "category": "new",
+      "title": "Climb on a friend's home board. When you follow each other, their boards show up under Friends' boards; invite-only ones get an Ask to climb button.",
+      "mergedAt": "2026-11-26T12:46:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8207",
+      "body": "Owners can say yes right from their notifications."
+    },
+    {
+      "prNumber": 8203,
+      "category": "new",
+      "title": "Show your home board's QR code so a friend can scan it with their camera, and choose whether your friends can find it.",
+      "mergedAt": "2026-11-26T12:41:22Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8203"
+    },
     {
       "prNumber": 8204,
       "category": "new",
