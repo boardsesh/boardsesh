@@ -3,8 +3,53 @@ import { buildMultiRowInsertSql, multiRowChunkSize } from './pull-write';
 import { reportExtraColumn, type SchemaDriftReporter } from './schema-compatibility';
 import { climbMutationEntityKey } from '../mutation-queue/queue';
 import { isQuantumRetirement, quantumRetirementSql } from './quantum-retirement';
+import { getCheckpointKey } from './checkpoints';
 
 const QUANTUM_REFERENCE_TABLES = ['board_climb_stats', 'board_climb_grades'] as const;
+
+async function retiredPublicCandidates(
+  transaction: SqlExecutor,
+  documents: readonly Record<string, unknown>[],
+): Promise<string[]> {
+  const published = documents
+    .filter(
+      (document) =>
+        document.board_type === 'quantum' &&
+        document.is_listed === true &&
+        document.is_boardsesh_authored === false &&
+        document.user_id === null &&
+        typeof document.controller_route_uuid === 'string',
+    )
+    .map((document) => String(document.uuid));
+  if (!published.length) return [];
+  const retired = await transaction.getAllAsync<{ uuid: string }>(
+    `SELECT uuid FROM board_climbs WHERE ${quantumRetirementSql()}
+      AND uuid IN (${published.map(() => '?').join(', ')})`,
+    published,
+  );
+  return retired.map((row) => row.uuid);
+}
+
+async function replayRestoredQuantumReferences(transaction: SqlExecutor, previouslyRetired: string[]): Promise<void> {
+  if (!previouslyRetired.length) return;
+  // Check the persisted row after the cursor guard. A stale public page must
+  // neither reopen the route nor clear checkpoints for one still withdrawn.
+  const restoredLayouts = await transaction.getAllAsync<{ layout_id: number }>(
+    `SELECT DISTINCT layout_id FROM board_climbs
+      WHERE board_type = 'quantum' AND is_listed = 1
+        AND uuid IN (${previouslyRetired.map(() => '?').join(', ')})`,
+    previouslyRetired,
+  );
+  for (const { layout_id: layoutId } of restoredLayouts) {
+    for (const referenceTable of QUANTUM_REFERENCE_TABLES) {
+      // The server retains these reference rows during withdrawal. They may
+      // have older cursors than the ones this device already walked.
+      await transaction.runAsync('DELETE FROM sync_meta WHERE key LIKE ?', [
+        getCheckpointKey(referenceTable, `quantum:${layoutId}:%`),
+      ]);
+    }
+  }
+}
 
 /** Coerce canonical JSON using the same representations as the ordinary pull. */
 export function toSqliteValue(value: unknown): SqlValue {
@@ -42,6 +87,8 @@ export async function writePullDocuments(
     );
     if (writableDocuments.length === 0) return;
   }
+  const previouslyRetired =
+    tableName === 'board_climbs' ? await retiredPublicCandidates(transaction, writableDocuments) : [];
   // Unknown columns are SKIPPED, not fatal: the backend deploys before OTA
   // clients update, so a newly-added server column must not brick every older
   // client's sync loop. SQL safety is unaffected — the statement's column list
@@ -128,4 +175,5 @@ export async function writePullDocuments(
       }
     }
   }
+  await replayRestoredQuantumReferences(transaction, previouslyRetired);
 }

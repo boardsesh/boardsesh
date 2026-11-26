@@ -207,8 +207,6 @@ export async function importPreparedEwallsCatalog(
     await assertNoForeignClimbUuidCollisions(transaction, catalog, options.signal);
     const existing = await assertExistingQuantumRouteGeometry(transaction, catalog, options.signal);
     if (!prior) await upsertQuantumReferenceCatalog(transaction, catalog, options.signal);
-    // The existing climb membership trigger re-delivers retained stats and
-    // grades when a withdrawn route becomes public again.
     await reconcileQuantumClimbs(transaction, catalog, existing, importedAt, removed, options.signal);
     throwIfAborted(options.signal);
     const metadata = makeEwallsCatalogState({

@@ -815,6 +815,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
       ).toEqual({ ascensionist_count: 27 });
       expect(
         await clientDb.getFirstAsync('SELECT local_grade FROM board_climb_grades WHERE climb_uuid = ?', [formerUuid]),
+        'the initial public grade is mirrored',
       ).toEqual({ local_grade: 20 });
       await clientDb.runAsync(
         "INSERT INTO boardsesh_ticks (uuid, board_type, climb_uuid, angle, status) VALUES (?, 'quantum', ?, 35, 'send')",
@@ -972,6 +973,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
       ).toEqual({ ascensionist_count: 1 });
       expect(
         await clientDb.getFirstAsync('SELECT local_grade FROM board_climb_grades WHERE climb_uuid = ?', [formerUuid]),
+        'the restored grade is mirrored again',
       ).toEqual({ local_grade: 20 });
     } finally {
       clientDb.close();
