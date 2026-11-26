@@ -120,7 +120,6 @@ vi.mock('@/app/lib/board-image-details', async () => ({
 
 // Body/metadata imports pulled in at module load but never exercised on the
 // redirect path; stub the ones that reach server-only or client code.
-vi.mock('@/app/lib/warm-overlay-cache', () => ({ scheduleOgImageWarming: vi.fn() }));
 vi.mock('@/app/lib/i18n/server', () => ({
   getServerTranslation: vi.fn(async () => ({ t: (key: string) => key, locale: 'en-US' })),
 }));
@@ -132,8 +131,10 @@ vi.mock('@/app/components/board-renderer/util', () => ({
   buildOverlayUrl: vi.fn(() => '/api/internal/board-render'),
 }));
 vi.mock('@/app/lib/data/front-door-data.server', () => ({
-  getFrontDoorSimilarClimbs: vi.fn(async () => ({ status: 'loaded', items: [] })),
-  getFrontDoorBetaLinks: vi.fn(async () => ({ status: 'loaded', items: [] })),
+  getFrontDoorRelatedContent: vi.fn(async () => ({
+    similarClimbs: { status: 'loaded', items: [] },
+    betaLinks: { status: 'loaded', items: [] },
+  })),
 }));
 vi.mock('@/app/components/climb-front-door/climb-front-door', () => ({ default: () => null }));
 

@@ -188,6 +188,17 @@ describe('BoardShareSheet text', () => {
     expect(renderSheet().getByText('mobile.sprayShare.unlistedBody').getAttribute('data-color')).toBe('#LABEL');
   });
 
+  it('captions the QR code only once there is a link to scan', () => {
+    const withLink = renderSheet();
+    expect(withLink.getByText('mobile.boardShare.qrCaption')).toBeTruthy();
+    withLink.unmount();
+    const loading = render(
+      <BoardShareSheet visible onDismiss={vi.fn()} shareUrl={null} wallName="Garage" visibility="invite" />,
+    );
+    expect(loading.getByTestId('link-loading')).toBeTruthy();
+    expect(loading.queryByText('mobile.boardShare.qrCaption')).toBeNull();
+  });
+
   it('draws the URL in secondary label, spaced off the buttons', () => {
     const url = renderSheet().getByText(URL);
     expect(url.getAttribute('data-color')).toBe('#SECONDARY');

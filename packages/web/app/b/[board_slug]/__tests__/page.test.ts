@@ -36,6 +36,8 @@ vi.mock('@/app/lib/i18n/server', () => ({
 }));
 const getLocale = vi.hoisted(() => vi.fn(async () => 'en-US'));
 vi.mock('@/app/lib/i18n/get-locale', () => ({ getLocale }));
+const STORE_LABELS = vi.hoisted(() => ({ ios: 'ios', android: 'android', update: 'update', locale: 'en-US' }));
+vi.mock('@/app/lib/store-button-labels.server', () => ({ getStoreButtonLabels: async () => STORE_LABELS }));
 
 const pageModule = await import('@/app/(site)/b/[board_slug]/page');
 const BoardSlugPage = pageModule.default;
@@ -160,10 +162,17 @@ describe('/b/[board_slug] with a home board share link (?invite=)', () => {
     const rendered = (await BoardSlugPage({
       params: Promise.resolve({ board_slug: 'stale-slug' }),
       searchParams: Promise.resolve({ invite: TOKEN }),
-    })) as { props: { children: { type: unknown; props: { boardName: string; inviteToken: string } } } };
+    })) as {
+      props: {
+        namespaces: string[];
+        children: { type: unknown; props: { boardName: string; inviteToken: string } };
+      };
+    };
     const confirmation = rendered.props.children;
     expect(confirmation.type).toBe(BoardInviteJoin);
-    expect(confirmation.props).toEqual({ boardName: 'Friends Garage', inviteToken: TOKEN });
+    // Store labels come translated from the server: no `marketing` namespace on the client.
+    expect(rendered.props.namespaces).toEqual(['boards']);
+    expect(confirmation.props).toEqual({ boardName: 'Friends Garage', inviteToken: TOKEN, storeLabels: STORE_LABELS });
     expect(redeemBoardInvite).not.toHaveBeenCalled();
     expect(resolveBoardBySlug).not.toHaveBeenCalled();
   });

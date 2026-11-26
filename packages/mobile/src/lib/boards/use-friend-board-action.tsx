@@ -1,6 +1,7 @@
 // A tap on a friend's board, wherever it is drawn: the picker's Friends'
-// boards shelf and the wizard's "Whose board?". What it does follows the
-// server's word on the viewer's access (`FriendBoard.viewerAccess`):
+// boards shelf, the wizard's "Whose board?" and the picker's In range card for
+// a private board heard over Bluetooth (in-range-request-card.ts). What it does
+// follows the server's word on the viewer's access (`FriendBoard.viewerAccess`):
 //
 // - CAN_CLIMB: bind the board as a Your boards tap does, then save it (follow)
 //   so it lands in Your boards. "Saved to Your boards · Undo" shows on the tab

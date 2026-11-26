@@ -41,8 +41,8 @@ vi.mock('@/app/lib/i18n/server', () => ({
   })),
 }));
 
-vi.mock('@/app/components/marketing/marketing-preview-switch', () => ({
-  MarketingPreviewSwitch: () => <div data-testid="preview-switch" />,
+vi.mock('@/app/components/marketing/marketing-preview-switch-control', () => ({
+  MarketingPreviewSwitchControl: () => <div data-testid="preview-switch" />,
 }));
 
 // `next/image` is a client component with its own loader; a plain <img> keeps

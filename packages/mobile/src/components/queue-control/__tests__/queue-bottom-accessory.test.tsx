@@ -10,7 +10,7 @@ const cfg = vi.hoisted(() => ({
   currentClimbQueueItem: { climb: { uuid: 'c1', name: 'Tea Magic', angle: 40 } } as unknown as ClimbQueueItem | null,
 }));
 
-vi.mock('expo-router/unstable-native-tabs', () => ({
+vi.mock('expo-router/native-tabs', () => ({
   NativeTabs: { BottomAccessory: { usePlacement: () => cfg.placement } },
 }));
 

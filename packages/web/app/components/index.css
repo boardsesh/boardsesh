@@ -350,24 +350,6 @@ button,
   }
 }
 
-/* Header shadow utility */
-.header-shadow {
-  border-bottom: 1px solid var(--neutral-200);
-  position: relative;
-  z-index: 10;
-}
-
-.header-shadow::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -4px;
-  height: 4px;
-  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.06), transparent);
-  pointer-events: none;
-}
-
 /* Autofill + caret. Browsers repaint autofilled fields with their own yellow/blue
    background and text colour; force the field's own surface + text back so an
    autofilled input matches an empty one in both schemes. --input-bg / --input-text
@@ -387,19 +369,6 @@ input:autofill {
   background-color: var(--input-bg);
   color: var(--input-text);
   caret-color: var(--input-text);
-}
-
-/* Override Atlaskit drag-and-drop indicator color to match theme
-   Note: !important is required here as third-party library sets inline styles */
-[data-drop-indicator-edge] {
-  --indicator-color: var(--color-primary) !important;
-  background-color: var(--color-primary) !important;
-}
-
-/* Alternative selector for drop indicator line */
-.pragmatic-drop-indicator,
-[class*='drop-indicator'] {
-  background-color: var(--color-primary) !important;
 }
 
 /* Cached HTML contains the same banner for every browser; the pre-paint cookie mirror hides answered choices. */

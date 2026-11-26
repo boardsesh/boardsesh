@@ -1163,8 +1163,7 @@
       "delete": "删除评论失败",
       "reply": "发表回复失败",
       "loadReplies": "加载回复失败"
-    },
-    "signInToSuggestGrade": "登录后即可建议难度"
+    }
   },
   "vote": {
     "upvote": "赞成",

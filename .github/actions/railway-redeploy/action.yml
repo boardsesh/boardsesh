@@ -25,6 +25,18 @@ inputs:
     description: 'Human name for this service in log lines ("web", "backend").'
     required: false
     default: service
+  retained-assets-origin:
+    description: 'Web-only direct origin for the retained-asset rollback proof. Empty preserves the ordinary service flow.'
+    required: false
+    default: ''
+  expected-previous-deployment-id:
+    description: 'Web rollback deployment verified before moving the ready image aliases.'
+    required: false
+    default: ''
+  expected-previous-release:
+    description: 'Web release verified before moving the ready image aliases.'
+    required: false
+    default: ''
 outputs:
   previous_deployment_id:
     description: 'The deployment that was live before the redeploy; the rollback target.'
@@ -43,6 +55,9 @@ runs:
         RAILWAY_TOKEN: ${{ inputs.railway-token }}
         RAILWAY_SERVICE_ID: ${{ inputs.service-id }}
         SERVICE_LABEL: ${{ inputs.service-label }}
+        RETAINED_ASSETS_ORIGIN: ${{ inputs.retained-assets-origin }}
+        EXPECTED_PREVIOUS_DEPLOYMENT_ID: ${{ inputs.expected-previous-deployment-id }}
+        EXPECTED_PREVIOUS_RELEASE: ${{ inputs.expected-previous-release }}
       run: |
         set -euo pipefail
         NORMALIZED_RAILWAY_SERVICE_ID="${RAILWAY_SERVICE_ID,,}"
@@ -60,6 +75,16 @@ runs:
         fi
         if ! [[ "$SERVICE_LABEL" =~ ^[A-Za-z0-9._\ -]{1,40}$ ]]; then
           echo "::error::service-label contains unsupported characters."
+          exit 1
+        fi
+        if [ -n "$RETAINED_ASSETS_ORIGIN" ]; then
+          if ! [[ "$EXPECTED_PREVIOUS_DEPLOYMENT_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] \
+            || ! [[ "$EXPECTED_PREVIOUS_RELEASE" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Web redeploy requires the deployment ID and release verified before alias promotion."
+            exit 1
+          fi
+        elif [ -n "$EXPECTED_PREVIOUS_DEPLOYMENT_ID" ] || [ -n "$EXPECTED_PREVIOUS_RELEASE" ]; then
+          echo "::error::Retained-asset identity requires its direct web origin."
           exit 1
         fi
         printf 'service_id=%s\n' "$NORMALIZED_RAILWAY_SERVICE_ID" >> "$GITHUB_OUTPUT"
@@ -139,6 +164,25 @@ runs:
           echo "state_dir=$RAILWAY_STATE_DIR"
         } >> "$GITHUB_OUTPUT"
         echo "::notice::Railway baseline captured at $CAPTURE_STARTED_AT; previous=$PREVIOUS_DEPLOYMENT_ID; baseline=$BASELINE_DEPLOYMENT_IDS"
+
+    - name: Recheck retained assets on the captured web rollback deployment
+      if: inputs.retained-assets-origin != ''
+      shell: bash
+      env:
+        RAILWAY_WEB_ORIGIN: ${{ inputs.retained-assets-origin }}
+        RAILWAY_SERVICE_ID: ${{ steps.railway-validate.outputs.service_id }}
+        RAILWAY_TOKEN: ${{ inputs.railway-token }}
+        EXPECTED_IMAGE: ${{ inputs.expected-image }}
+        EXPECTED_PREVIOUS_DEPLOYMENT_ID: ${{ steps.railway-capture.outputs.previous_deployment_id }}
+        PROMOTION_PREVIOUS_DEPLOYMENT_ID: ${{ inputs.expected-previous-deployment-id }}
+        EXPECTED_PREVIOUS_RELEASE: ${{ inputs.expected-previous-release }}
+      run: |
+        set -euo pipefail
+        if [ "$EXPECTED_PREVIOUS_DEPLOYMENT_ID" != "$PROMOTION_PREVIOUS_DEPLOYMENT_ID" ]; then
+          echo "::error::The web rollback deployment changed after alias promotion; no redeploy was triggered."
+          exit 1
+        fi
+        node scripts/web-origin-compatibility.ts --base "$RAILWAY_WEB_ORIGIN"
 
     # `--from-source` is load-bearing for image-backed services: without it,
     # Railway redeploys the prior snapshot and never re-resolves the freshly
@@ -305,17 +349,36 @@ runs:
         target-deployment-id: ${{ steps.railway-capture.outputs.previous_deployment_id }}
         expected-current-deployment-id: ${{ steps.railway-wait.outputs.deployment_id }}
 
+    - name: Verify retained web assets after redeploy recovery
+      id: railway-recovery-smoke
+      if: >-
+        always()
+        && inputs.retained-assets-origin != ''
+        && steps.railway-rollback.outcome == 'success'
+      shell: bash
+      env:
+        RAILWAY_WEB_ORIGIN: ${{ inputs.retained-assets-origin }}
+        SMOKE_EXPECTED_DEPLOYMENT_ID: ${{ steps.railway-rollback.outputs.rollback_deployment_id }}
+        SMOKE_EXPECTED_RELEASE: ${{ inputs.expected-previous-release }}
+      run: node scripts/retained-next-assets-smoke.ts --base "$RAILWAY_WEB_ORIGIN"
+
     - name: Fail after verified Railway recovery
       if: always() && steps.railway-wait.outcome == 'failure'
       shell: bash
       env:
         AUTOMATIC_RECOVERY_SAFE: ${{ steps.railway-wait.outputs.automatic_recovery_safe }}
         ROLLBACK_OUTCOME: ${{ steps.railway-rollback.outcome }}
+        RETAINED_ASSETS_ORIGIN: ${{ inputs.retained-assets-origin }}
+        RECOVERY_SMOKE_OUTCOME: ${{ steps.railway-recovery-smoke.outcome }}
       run: |
         if [ "$AUTOMATIC_RECOVERY_SAFE" != "true" ]; then
           echo "::error::Railway redeploy identity is ambiguous; no automatic rollback was attempted. Follow the reconciliation runbook."
         elif [ "$ROLLBACK_OUTCOME" = "success" ]; then
-          echo "::error::Railway redeploy failed; verified automatic rollback restored the captured last-known-good deployment."
+          if [ -n "$RETAINED_ASSETS_ORIGIN" ] && [ "$RECOVERY_SMOKE_OUTCOME" != "success" ]; then
+            echo "::error::Railway redeploy failed; the rollback completed but retained web assets were not verified. Follow the reconciliation runbook."
+          else
+            echo "::error::Railway redeploy failed; verified automatic rollback restored the captured last-known-good deployment."
+          fi
         else
           echo "::error::Railway redeploy failed and automatic recovery was not verified. Follow the reconciliation runbook."
         fi

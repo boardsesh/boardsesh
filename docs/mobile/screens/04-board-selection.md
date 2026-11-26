@@ -67,6 +67,10 @@ by `viewerAccess`:
 - `REQUESTED`: the same sheet, "Waiting on {{name}}", with Cancel request
   (`cancelResourceAccessRequest`).
 
+The In range hero uses the same hook for a friend's private board the scan
+heard and the climber can't open: "Sam's board is here" with Ask to climb
+([Bluetooth](12-bluetooth.md)).
+
 `friendsBoards` is network only and never persisted
 ([offline reads](../../data/offline-reads.md), Bucket 3). When an owner takes a
 climber back off a board, it drops out of `myBoards`, and the next complete,

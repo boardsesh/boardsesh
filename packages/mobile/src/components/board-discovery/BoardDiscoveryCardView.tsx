@@ -99,6 +99,12 @@ export type DiscoveryBoardItem = {
    * the title, never on the art. Rows only.
    */
   accessLocked?: boolean;
+  /**
+   * A friend's private board heard over Bluetooth that the viewer can't open
+   * (in-range-request-card.ts): the In range hero offers Ask to climb, or
+   * Requested once they asked, instead of Climb here. Hero only.
+   */
+  askToClimb?: 'ask' | 'waiting';
 };
 
 /**

@@ -7,6 +7,7 @@ import {
   MARKETING_CDN_CACHE_CONTROL,
 } from './marketing-page-cache';
 import { ServerResponse, type OutgoingHttpHeader, type OutgoingHttpHeaders } from 'node:http';
+import { isClimbViewRequest } from './climb-view-request';
 
 /**
  * The headers a shared cache reads ahead of `Cache-Control`, lower-cased the way
@@ -63,19 +64,22 @@ export function withdrawSharedCacheHeaders(
 function withdrawSharedCacheFromHeadersArgument(
   headers: HeadersArgument,
   includeCacheControl: boolean,
+  cacheControlDirective = ERROR_RESPONSE_SHARED_CACHE_DIRECTIVE,
 ): HeadersArgument {
   const shouldWithdraw = (headerName: string) =>
     SHARED_CACHE_HEADER_SET.has(headerName.toLowerCase()) ||
     (includeCacheControl && headerName.toLowerCase() === 'cache-control');
+  const directive = (headerName: string) =>
+    headerName.toLowerCase() === 'cache-control' ? cacheControlDirective : ERROR_RESPONSE_SHARED_CACHE_DIRECTIVE;
   if (Array.isArray(headers)) {
     return headers.map((entry, index) =>
-      index % 2 === 1 && shouldWithdraw(String(headers[index - 1])) ? ERROR_RESPONSE_SHARED_CACHE_DIRECTIVE : entry,
+      index % 2 === 1 && shouldWithdraw(String(headers[index - 1])) ? directive(String(headers[index - 1])) : entry,
     );
   }
   return Object.fromEntries(
     Object.entries(headers).map(([headerName, headerValue]) => [
       headerName,
-      shouldWithdraw(headerName) ? ERROR_RESPONSE_SHARED_CACHE_DIRECTIVE : headerValue,
+      shouldWithdraw(headerName) ? directive(headerName) : headerValue,
     ]),
   );
 }
@@ -179,12 +183,12 @@ function isHeadersArgument(argument: unknown): argument is HeadersArgument {
 }
 
 /**
- * Wraps `writeHead` on the response prototype so a 4xx or 5xx never leaves this
- * process carrying a shared-cache TTL.
+ * Wraps `writeHead` so climb documents always remain private/no-store, and a
+ * 4xx or 5xx never leaves this process carrying a shared-cache TTL.
  *
  * Why here and not in the middleware: the middleware stamps
- * `CDN-Cache-Control: s-maxage=86400, stale-while-revalidate=604800` on list and
- * climb-view URLs before the page renders, and Next copies middleware headers
+ * `CDN-Cache-Control: s-maxage=86400, stale-while-revalidate=604800` on eligible
+ * list URLs before the page renders, and Next copies middleware headers
  * onto the response with `res.setHeader` before it renders
  * (`next/dist/server/lib/router-server.js`). Nothing on the error paths
  * removes it (all in Next 16.3.5):
@@ -208,7 +212,8 @@ function isHeadersArgument(argument: unknown): argument is HeadersArgument {
  * `res.statusCode` and streams the body, and Node's `_implicitHeader` calls
  * `this.writeHead(this.statusCode)` on the first write or `end`.
  *
- * Board redirects keep their TTL: the climb-view legacy 308 is cached on purpose.
+ * List redirects keep their TTL. Climb documents and their redirects already
+ * receive an explicit private/no-store policy from middleware.
  * Marketing public Cache-Control is revoked as well on errors, redirects or
  * Set-Cookie, non-HTML responses or ineligible original requests, so an
  * unexpected per-browser or Flight response cannot enter any cache.
@@ -225,6 +230,24 @@ export function installErrorResponseCdnCacheGuard(
   // oxlint-disable-next-line typescript/unbound-method
   const originalWriteHead = prototype.writeHead;
   function guardedWriteHead(this: ServerResponse, statusCode: number, ...rest: unknown[]): ServerResponse {
+    let pathname: string | undefined;
+    try {
+      pathname = new URL(this.req.url ?? '', 'http://localhost').pathname;
+    } catch {
+      // Malformed requests still pass through the ordinary error guard below.
+    }
+    if (pathname && isClimbViewRequest(pathname)) {
+      // Enforce the policy at the actual write, even if a renderer or a later
+      // object/flat-array writeHead argument replaced middleware's headers.
+      this.setHeader('Cache-Control', 'private, no-store');
+      for (const headerName of SHARED_CACHE_HEADERS) this.setHeader(headerName, 'no-store');
+      const privateRest = rest.map((argument) =>
+        isHeadersArgument(argument)
+          ? withdrawSharedCacheFromHeadersArgument(argument, true, 'private, no-store')
+          : argument,
+      );
+      return Reflect.apply(originalWriteHead, this, [statusCode, ...privateRest]) as ServerResponse;
+    }
     const headerArguments = rest.filter(isHeadersArgument);
     const isMarketing =
       this.getHeader('cache-control') === MARKETING_CACHE_CONTROL ||

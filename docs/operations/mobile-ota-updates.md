@@ -1670,8 +1670,8 @@ fingerprint sources. Those were the only source differences between the approved
 iOS 2.5.0 runtime (`b71bdb600c5a`) and main (`b1058ef575fa`). No mobile native
 feature caused that drift.
 
-Main pins both datasets to the approved versions in `pnpm-workspace.yaml`, while
-keeping Next.js 16.3.5. Advance these dependencies on `main`; the native-release
+Main pins both datasets to the approved versions in `pnpm-workspace.yaml`.
+Advance these dependencies on `main`; the native-release
 coordinator bumps the patch and starts replacement tester builds. Do not exclude their files from fingerprinting or override the
 runtime hash to force an OTA through. Compare actual fingerprint sources when a
 web dependency update unexpectedly changes mobile compatibility; a matching PR

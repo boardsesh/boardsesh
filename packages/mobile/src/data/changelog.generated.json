@@ -1,6 +1,56 @@
 {
-  "generatedAt": "2026-11-25T21:15:20.668Z",
+  "generatedAt": "2026-11-26T13:31:26.830Z",
   "entries": [
+    {
+      "prNumber": 8210,
+      "category": "new",
+      "title": "Standing at a friend's home board? Boardsesh spots it over Bluetooth and lets you ask to climb.",
+      "mergedAt": "2026-11-26T13:26:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8210"
+    },
+    {
+      "prNumber": 8207,
+      "category": "new",
+      "title": "Climb on a friend's home board. When you follow each other, their boards show up under Friends' boards; invite-only ones get an Ask to climb button.",
+      "mergedAt": "2026-11-26T12:46:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8207",
+      "body": "Owners can say yes right from their notifications."
+    },
+    {
+      "prNumber": 8203,
+      "category": "new",
+      "title": "Show your home board's QR code so a friend can scan it with their camera, and choose whether your friends can find it.",
+      "mergedAt": "2026-11-26T12:41:22Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8203"
+    },
+    {
+      "prNumber": 8204,
+      "category": "new",
+      "title": "Global admins can place unlinked spray walls on the right gym listing, with an explicit check when gym members would gain access.",
+      "mergedAt": "2026-11-26T08:40:14Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8204"
+    },
+    {
+      "prNumber": 8186,
+      "category": "fixed",
+      "title": "Find beta and nearby climbs on lighter public climb pages. Comments and grade proposals stay in the app.",
+      "mergedAt": "2026-11-26T08:39:47Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8186"
+    },
+    {
+      "prNumber": 8200,
+      "category": "fixed",
+      "title": "Settings arrows now follow your reading direction on iOS.",
+      "mergedAt": "2026-11-25T23:16:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8200"
+    },
+    {
+      "prNumber": 8168,
+      "category": "fixed",
+      "title": "Light your spray wall on the first tap after confirming its controller.",
+      "mergedAt": "2026-11-25T22:38:16Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8168"
+    },
     {
       "prNumber": 8195,
       "category": "fixed",

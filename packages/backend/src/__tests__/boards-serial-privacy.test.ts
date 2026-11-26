@@ -37,6 +37,12 @@ vi.mock('../utils/redis-rate-limiter', () => ({
   checkRateLimitRedis: vi.fn(),
 }));
 
+// Request cards for private boards run real SQL; serial-board-reveal.test.ts
+// covers them against Postgres. Here the stub stays the whole answer.
+vi.mock('../graphql/resolvers/social/serial-board-reveal', () => ({
+  serialBoardRequestCards: vi.fn(async () => new Map()),
+}));
+
 vi.mock('../events/index', () => ({
   publishSocialEvent: vi.fn().mockResolvedValue(undefined),
 }));
@@ -859,6 +865,7 @@ describe('observedBoardSerialMatches', () => {
       context,
     );
     expect(matches[0].candidates).toEqual([legacyProjection]);
+    expect(matches[0].candidateRequestCards).toEqual([null]);
     expect(matches[0].candidates[0]).toMatchObject({
       uuid: '',
       slug: '',

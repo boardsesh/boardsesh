@@ -467,7 +467,25 @@ const HeroCard = memo(function HeroCard({
             </Text>
           ) : null}
           <View style={styles.buttonRow}>
-            <Button title={t('mobile.discovery.menu.climbHere')} size="small" icon="play.fill" onPress={handlePick} />
+            {item.askToClimb === 'ask' ? (
+              <Button
+                title={t('mobile.friendBoards.ask')}
+                size="small"
+                icon="lock"
+                onPress={handlePick}
+                testID="in-range-ask-to-climb"
+              />
+            ) : item.askToClimb === 'waiting' ? (
+              <Button
+                title={t('mobile.friendBoards.requested')}
+                size="small"
+                variant="tonal"
+                onPress={handlePick}
+                testID="in-range-ask-waiting"
+              />
+            ) : (
+              <Button title={t('mobile.discovery.menu.climbHere')} size="small" icon="play.fill" onPress={handlePick} />
+            )}
           </View>
         </View>
       </View>

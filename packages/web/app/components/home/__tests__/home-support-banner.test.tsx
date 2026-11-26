@@ -3,7 +3,7 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vite-plus/test';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
+import frenchMarketing from '@boardsesh/i18n/locales/fr/marketing.json';
 import RuntimeHomeSupportBanner from '../runtime-home-support-banner';
 import { MarketingCapabilitiesContext } from '../../marketing/marketing-capabilities-context';
 
@@ -12,6 +12,7 @@ const preferences = vi.hoisted(() => ({
   setPreference: vi.fn(async (_key: string, _value: unknown): Promise<void> => {}),
 }));
 
+const copy = frenchMarketing.home.supportBanner;
 const CLOSED_MONTH_KEY = 'supportBanner:closedMonth';
 const SUPPORTER_KEY = 'supportBanner:supporter';
 
@@ -21,13 +22,6 @@ function storedPreferences(values: Record<string, unknown>) {
 }
 
 vi.mock('@/app/lib/user-preferences-db', () => preferences);
-
-vi.mock('react-i18next', () => ({
-  useTranslation: (ns?: string) => ({
-    t: (key: string, options?: Record<string, unknown>) => tFromCatalog(ns, key, options),
-    i18n: { language: 'en-US' },
-  }),
-}));
 
 vi.mock('@/app/components/i18n/locale-link', () => ({
   default: React.forwardRef<HTMLAnchorElement, { href: string; children?: React.ReactNode }>(
@@ -42,7 +36,7 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
 const { default: HomeSupportBanner } = await import('../home-support-banner');
 
 async function renderBanner() {
-  const view = render(<HomeSupportBanner />);
+  const view = render(<HomeSupportBanner copy={copy} />);
   // Let the IndexedDB read settle.
   await act(async () => {});
   return view;
@@ -64,8 +58,8 @@ describe('HomeSupportBanner', () => {
   it('asks for support and links to /support tagged with its src', async () => {
     await renderBanner();
 
-    expect(screen.getByText(tFromCatalog('marketing', 'home.supportBanner.text'))).toBeTruthy();
-    const link = screen.getByText(tFromCatalog('marketing', 'home.supportBanner.cta')).closest('a');
+    expect(screen.getByText(copy.text)).toBeTruthy();
+    const link = screen.getByText(copy.cta).closest('a');
     expect(link?.getAttribute('href')).toBe('/support?src=web-home-banner');
   });
 
@@ -86,7 +80,7 @@ describe('HomeSupportBanner', () => {
   it('remembers the month of a close in IndexedDB', async () => {
     await renderBanner();
 
-    fireEvent.click(screen.getByLabelText(tFromCatalog('marketing', 'home.supportBanner.close')));
+    fireEvent.click(screen.getByLabelText(copy.close));
 
     expect(preferences.setPreference).toHaveBeenCalledWith(CLOSED_MONTH_KEY, '2026-12');
   });
@@ -126,7 +120,7 @@ describe('HomeSupportBanner', () => {
       <MarketingCapabilitiesContext.Provider
         value={{ enableExpoAuthBridge: true, developerHref: '/docs', hasMonthlySupport: true }}
       >
-        <RuntimeHomeSupportBanner />
+        <RuntimeHomeSupportBanner copy={copy} />
       </MarketingCapabilitiesContext.Provider>,
     );
     expect(await screen.findByTestId('home-support-banner')).toBeTruthy();

@@ -214,8 +214,6 @@
     }
   },
   "similarClimbs": {
-    "loadError": "Couldn't load similar climbs.",
-    "emptyDefault": "No similar climbs yet.",
     "emptyOnLayout": "No similar climbs on this layout.",
     "untitledClimb": "Untitled climb"
   },
@@ -1064,11 +1062,6 @@
         "body": "4×4s and volume sessions at your grade, with a built-in timer.",
         "alt": "Setting up a volume workout at V2 in Boardsesh"
       }
-    },
-    "community": {
-      "heading": "Comments and grade votes",
-      "signIn": "Sign in to join in",
-      "show": "Show comments"
     },
     "similar": {
       "nearbyHeading": "More {{layout}} climbs around {{grade}} at {{angle}}°",

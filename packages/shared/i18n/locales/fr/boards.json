@@ -558,6 +558,8 @@
       "moonboardTitle": "Une MoonBoard est à portée",
       "moonboardBody": "Les MoonBoard n'indiquent pas leur numéro de série : dis-nous où tu es et on la retrouvera.",
       "typeTitle": "Une board {{board}} est à portée",
+      "friendBoardHere": "La board de {{name}} est ici",
+      "friendBoardHereUnnamed": "La board d'un grimpeur est ici",
       "bareNameBody": "Son boîtier n'indique pas laquelle c'est : dis-nous où tu es et on la retrouvera.",
       "unknownSetupBody": "On ne connaît pas encore sa configuration : dis-nous où tu es et on la retrouvera.",
       "alsoNeedSignal": "Une autre board est à portée. Il faut du réseau pour l'identifier.",
@@ -693,7 +695,7 @@
       "details": "Détails",
       "activeSprayDetails": "{{name}} · détails du Spraywall",
       "share": {
-        "shareLink": "Partager le lien",
+        "shareLink": "Partager avec un ami",
         "publicHint": "N'importe qui peut ouvrir cette board.",
         "unlistedHint": "Seulement les grimpeurs à qui tu l'envoies.",
         "inviteHint": "Qui l'ouvre peut choisir Rejoindre pour accéder à ta board."
@@ -976,6 +978,7 @@
       "publicBody": "Cette board est publique : n'importe qui avec le lien peut l'ouvrir et grimper dessus.",
       "unlistedBody": "Seuls les grimpeurs à qui tu envoies ce lien peuvent ouvrir la board. Elle n'est listée nulle part.",
       "inviteBody": "Toute personne ayant ce lien peut choisir Rejoindre pour accéder à ta board.",
+      "qrCaption": "Qu'ils pointent leur appareil photo ici",
       "loading": "Préparation de ton lien",
       "loadFailed": "Impossible de récupérer ton lien. Ferme et réessaie.",
       "resetLink": "Réinitialiser le lien",
@@ -1871,7 +1874,8 @@
     "joinBody": "En rejoignant cette board, tu y auras accès. Son propriétaire pourra voir ton nom dans la liste des membres.",
     "join": "Rejoindre",
     "cancel": "Annuler",
-    "joinFailed": "Impossible de rejoindre cette board. Réessaie ou demande un nouveau lien à son propriétaire."
+    "joinFailed": "Impossible de rejoindre cette board. Réessaie ou demande un nouveau lien à son propriétaire.",
+    "appHint": "Grimpe avec l'app Boardsesh. Une fois installée, rouvre ce lien sur ton téléphone."
   },
   "sprayLedSetup": {
     "title": "Configuration des LED",

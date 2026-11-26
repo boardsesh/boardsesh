@@ -3917,13 +3917,15 @@ export type FriendBoardOwner = {
 
 /**
  * The part of a friend's board every listed row may show, whatever the viewer's
- * access. Never carries the slug, serial number, location, presence ids or counts.
+ * access, and all a Bluetooth request card shows of a board. Never carries the
+ * slug, serial number, location, presence ids or counts.
  */
 export type FriendBoardPreview = {
   __typename?: 'FriendBoardPreview';
   angle: Scalars['Int']['output'];
   boardType: Scalars['String']['output'];
   layoutId: Scalars['Int']['output'];
+  /** The board's own name on a Friends' boards row. On a Bluetooth request card, the board type: a name can name a place. */
   name: Scalars['String']['output'];
   setIds: Scalars['String']['output'];
   sizeId: Scalars['Int']['output'];
@@ -7924,6 +7926,16 @@ export type ObservedBoardSerialInput = {
 export type ObservedBoardSerialMatch = {
   __typename?: 'ObservedBoardSerialMatch';
   boardType: Scalars['String']['output'];
+  /**
+   * Lined up with candidates: entry i is candidate i's request card, or null.
+   * Only a signed-in viewer gets cards: an account at least 7 days old with a
+   * verified email, only for an Invite-only home board they cannot open whose
+   * owner they follow and who follows them back (the board is in their Friends'
+   * boards), and at most 10 distinct boards an hour, 15 a UTC day and 40 in 30
+   * days. Every other
+   * entry is null, and the candidate stays the anonymous stub it always was.
+   */
+  candidateRequestCards: Array<Maybe<SerialBoardRequestCard>>;
   candidates: Array<UserBoard>;
   observedSerialNumber: Scalars['String']['output'];
 };
@@ -8625,6 +8637,28 @@ export type ProviderSyncRequest = {
   runId: Scalars['ID']['output'];
   /** That run's status: queued, running or retrying */
   status: Scalars['String']['output'];
+};
+
+export type PublicClimbRelatedContent = {
+  __typename?: 'PublicClimbRelatedContent';
+  betaHasMore: Scalars['Boolean']['output'];
+  betaLinks: Array<BetaLink>;
+  betaStatus: Scalars['String']['output'];
+  nearbyClimbs: Array<SimilarClimb>;
+  nearbyGrade?: Maybe<Scalars['String']['output']>;
+  nearbyStatus?: Maybe<Scalars['String']['output']>;
+  similarClimbs: Array<SimilarClimb>;
+  similarStatus: Scalars['String']['output'];
+};
+
+export type PublicClimbRelatedContentInput = {
+  angle: Scalars['Int']['input'];
+  boardType: Scalars['String']['input'];
+  climbUuid: Scalars['String']['input'];
+  includeNearby?: InputMaybe<Scalars['Boolean']['input']>;
+  layoutId: Scalars['Int']['input'];
+  setIds: Array<Scalars['Int']['input']>;
+  sizeId: Scalars['Int']['input'];
 };
 
 /** Public-facing user profile for social features. */
@@ -9399,6 +9433,7 @@ export type Query = {
   proposeSprayWallReset?: Maybe<SprayWallResetProposal>;
   /** Only the registered app's public name; never the workout title, notes or blocks. */
   publicAppWorkoutLaunch?: Maybe<AppWorkoutLaunch>;
+  publicClimbRelatedContent: PublicClimbRelatedContent;
   /** Canonical public venues for sitemap publication. Fails rather than truncating when the sitemap budget is exceeded. */
   publicGymSitemap: Array<GymSitemapEntry>;
   /** Get a public user profile by ID. */
@@ -10421,6 +10456,11 @@ export type QueryProposeSprayWallResetArgs = {
 /** Root query type for all read operations. */
 export type QueryPublicAppWorkoutLaunchArgs = {
   id: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryPublicClimbRelatedContentArgs = {
+  input: PublicClimbRelatedContentInput;
 };
 
 /** Root query type for all read operations. */
@@ -11636,6 +11676,23 @@ export type SendDeviceLogsResponse = {
   __typename?: 'SendDeviceLogsResponse';
   accepted: Scalars['Int']['output'];
   success: Scalars['Boolean']['output'];
+};
+
+/**
+ * A private home board heard over Bluetooth that the viewer cannot open: whose
+ * it is, so they can ask to climb on it (requestResourceAccess with the
+ * preview's uuid). The preview's name is the board type, never the board's own
+ * name. Never the location, slug, serial, presence ids, counts or the owner's id.
+ */
+export type SerialBoardRequestCard = {
+  __typename?: 'SerialBoardRequestCard';
+  /** Profile avatar, falling back to the account image */
+  ownerAvatarUrl?: Maybe<Scalars['String']['output']>;
+  /** Profile display name, falling back to the account name */
+  ownerDisplayName?: Maybe<Scalars['String']['output']>;
+  preview: FriendBoardPreview;
+  /** The viewer already asked and the owner has not answered. */
+  requested: Scalars['Boolean']['output'];
 };
 
 /** An active climbing session where users can collaborate on a queue. */
@@ -14468,7 +14525,7 @@ export type UpdateResourcePrivacyInput = {
   audience: PrivacyResourceAudience;
   inheritFollowers?: InputMaybe<Scalars['Boolean']['input']>;
   kind: PrivacyResourceKind;
-  /** Omit to keep the stored value. See ResourcePrivacySettings.listedToFollowers. */
+  /** Omit to keep the stored value. Saving any audience but unlisted or invite_only turns it off. See ResourcePrivacySettings.listedToFollowers. */
   listedToFollowers?: InputMaybe<Scalars['Boolean']['input']>;
   locationAudience?: InputMaybe<PrivacyLocationAudience>;
   resourceId: Scalars['ID']['input'];
@@ -15544,6 +15601,8 @@ export type ResolversTypes = ResolversObject<{
   ProposalVoteSummary: ResolverTypeWrapper<ProposalVoteSummary>;
   ProposeSprayWallResetInput: ProposeSprayWallResetInput;
   ProviderSyncRequest: ResolverTypeWrapper<ProviderSyncRequest>;
+  PublicClimbRelatedContent: ResolverTypeWrapper<PublicClimbRelatedContent>;
+  PublicClimbRelatedContentInput: PublicClimbRelatedContentInput;
   PublicUserProfile: ResolverTypeWrapper<PublicUserProfile>;
   PublishSprayWallVersionInput: PublishSprayWallVersionInput;
   QaLabel: ResolverTypeWrapper<QaLabel>;
@@ -15617,6 +15676,7 @@ export type ResolversTypes = ResolversObject<{
   SendAppBugReportMessageInput: SendAppBugReportMessageInput;
   SendDeviceLogsInput: SendDeviceLogsInput;
   SendDeviceLogsResponse: ResolverTypeWrapper<SendDeviceLogsResponse>;
+  SerialBoardRequestCard: ResolverTypeWrapper<SerialBoardRequestCard>;
   Session: ResolverTypeWrapper<Session>;
   SessionBoardPathChanged: ResolverTypeWrapper<SessionBoardPathChanged>;
   SessionBoardSerialChanged: ResolverTypeWrapper<SessionBoardSerialChanged>;
@@ -16195,6 +16255,8 @@ export type ResolversParentTypes = ResolversObject<{
   ProposalVoteSummary: ProposalVoteSummary;
   ProposeSprayWallResetInput: ProposeSprayWallResetInput;
   ProviderSyncRequest: ProviderSyncRequest;
+  PublicClimbRelatedContent: PublicClimbRelatedContent;
+  PublicClimbRelatedContentInput: PublicClimbRelatedContentInput;
   PublicUserProfile: PublicUserProfile;
   PublishSprayWallVersionInput: PublishSprayWallVersionInput;
   QaLabel: QaLabel;
@@ -16263,6 +16325,7 @@ export type ResolversParentTypes = ResolversObject<{
   SendAppBugReportMessageInput: SendAppBugReportMessageInput;
   SendDeviceLogsInput: SendDeviceLogsInput;
   SendDeviceLogsResponse: SendDeviceLogsResponse;
+  SerialBoardRequestCard: SerialBoardRequestCard;
   Session: Session;
   SessionBoardPathChanged: SessionBoardPathChanged;
   SessionBoardSerialChanged: SessionBoardSerialChanged;
@@ -20790,6 +20853,7 @@ export type ObservedBoardSerialMatchResolvers<
     ResolversParentTypes['ObservedBoardSerialMatch'],
 > = ResolversObject<{
   boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  candidateRequestCards?: Resolver<Array<Maybe<ResolversTypes['SerialBoardRequestCard']>>, ParentType, ContextType>;
   candidates?: Resolver<Array<ResolversTypes['UserBoard']>, ParentType, ContextType>;
   observedSerialNumber?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
@@ -21188,6 +21252,22 @@ export type ProviderSyncRequestResolvers<
   coalesced?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   runId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   status?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type PublicClimbRelatedContentResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['PublicClimbRelatedContent'] =
+    ResolversParentTypes['PublicClimbRelatedContent'],
+> = ResolversObject<{
+  betaHasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  betaLinks?: Resolver<Array<ResolversTypes['BetaLink']>, ParentType, ContextType>;
+  betaStatus?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  nearbyClimbs?: Resolver<Array<ResolversTypes['SimilarClimb']>, ParentType, ContextType>;
+  nearbyGrade?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  nearbyStatus?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  similarClimbs?: Resolver<Array<ResolversTypes['SimilarClimb']>, ParentType, ContextType>;
+  similarStatus?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -21962,6 +22042,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryPublicAppWorkoutLaunchArgs, 'id'>
   >;
+  publicClimbRelatedContent?: Resolver<
+    ResolversTypes['PublicClimbRelatedContent'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryPublicClimbRelatedContentArgs, 'input'>
+  >;
   publicGymSitemap?: Resolver<Array<ResolversTypes['GymSitemapEntry']>, ParentType, ContextType>;
   publicProfile?: Resolver<
     Maybe<ResolversTypes['PublicUserProfile']>,
@@ -22661,6 +22747,17 @@ export type SendDeviceLogsResponseResolvers<
 > = ResolversObject<{
   accepted?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   success?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SerialBoardRequestCardResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SerialBoardRequestCard'] = ResolversParentTypes['SerialBoardRequestCard'],
+> = ResolversObject<{
+  ownerAvatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  ownerDisplayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  preview?: Resolver<ResolversTypes['FriendBoardPreview'], ParentType, ContextType>;
+  requested?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -24520,6 +24617,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   ProposalReportReleaseContext?: ProposalReportReleaseContextResolvers<ContextType>;
   ProposalVoteSummary?: ProposalVoteSummaryResolvers<ContextType>;
   ProviderSyncRequest?: ProviderSyncRequestResolvers<ContextType>;
+  PublicClimbRelatedContent?: PublicClimbRelatedContentResolvers<ContextType>;
   PublicUserProfile?: PublicUserProfileResolvers<ContextType>;
   QaLabel?: QaLabelResolvers<ContextType>;
   QaPreview?: QaPreviewResolvers<ContextType>;
@@ -24548,6 +24646,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   SaveClimbResult?: SaveClimbResultResolvers<ContextType>;
   SearchPlaylistsResult?: SearchPlaylistsResultResolvers<ContextType>;
   SendDeviceLogsResponse?: SendDeviceLogsResponseResolvers<ContextType>;
+  SerialBoardRequestCard?: SerialBoardRequestCardResolvers<ContextType>;
   Session?: SessionResolvers<ContextType>;
   SessionBoardPathChanged?: SessionBoardPathChangedResolvers<ContextType>;
   SessionBoardSerialChanged?: SessionBoardSerialChangedResolvers<ContextType>;

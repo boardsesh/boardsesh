@@ -148,6 +148,9 @@ export function BoardShareSheet({
             <QRCode value={shareUrl} size={QR_SIZE} backgroundColor={QR_TILE_BACKGROUND} />
           </View>
 
+          <Text variant="footnote" emphasized color={systemColors.label} style={styles.subtitle}>
+            {t('mobile.boardShare.qrCaption')}
+          </Text>
           <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={2} style={styles.url}>
             {shareUrl}
           </Text>

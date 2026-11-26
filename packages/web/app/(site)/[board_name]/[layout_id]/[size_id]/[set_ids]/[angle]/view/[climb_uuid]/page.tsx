@@ -5,7 +5,7 @@ import React from 'react';
 import { notFound, permanentRedirect, redirect } from 'next/navigation';
 import type { BoardRouteParametersWithUuid, Climb, ParsedBoardRouteParametersWithUuid } from '@/app/lib/types';
 import { getClimb, getClimbStatsForAllAngles } from '@/app/lib/data/queries';
-import { getFrontDoorBetaLinks, getFrontDoorSimilarClimbs } from '@/app/lib/data/front-door-data.server';
+import { getFrontDoorRelatedContent } from '@/app/lib/data/front-door-data.server';
 import { resolveRenderBoard, type RenderBoardConfig } from '@boardsesh/board-config';
 import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 import {
@@ -19,7 +19,6 @@ import { parseRouteParams } from '@/app/lib/url-utils.server';
 import type { Metadata } from 'next';
 import ClimbFrontDoor from '@/app/components/climb-front-door/climb-front-door';
 import { buildOgBoardRenderUrl, buildOverlayPreloadUrls } from '@/app/components/board-renderer/util';
-import { scheduleOgImageWarming } from '@/app/lib/warm-overlay-cache';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { DEFAULT_LOCALE } from '@/app/lib/i18n/config';
 import { getLocale } from '@/app/lib/i18n/get-locale';
@@ -249,20 +248,17 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
 
     const boardDetails = getBoardImageDetailsForBoard(parsedParams);
 
-    const [angleStats, similarClimbs, betaLinks] = await Promise.all([
-      // Keyed on the climb the URL resolved to: for an alias URL the requested
-      // uuid names a husk with no stats, similar climbs or beta of its own.
+    const [angleStats, { similarClimbs, betaLinks }] = await Promise.all([
       getClimbStatsForAllAngles(parsedParams.board_name, currentClimb.uuid),
-      getFrontDoorSimilarClimbs({
+      getFrontDoorRelatedContent({
         boardType: parsedParams.board_name,
         layoutId: parsedParams.layout_id,
-        climbUuid: currentClimb.uuid,
+        sizeId: parsedParams.size_id,
+        setIds: [...parsedParams.set_ids],
         angle: parsedParams.angle,
-        fallback: currentClimb.is_hidden
-          ? undefined
-          : { sizeId: parsedParams.size_id, setIds: parsedParams.set_ids, difficulty: currentClimb.difficulty },
+        climbUuid: currentClimb.uuid,
+        includeNearby: !currentClimb.is_hidden,
       }),
-      getFrontDoorBetaLinks({ boardType: parsedParams.board_name, climbUuid: currentClimb.uuid }),
     ]);
 
     const preloadUrls = buildOverlayPreloadUrls(boardDetails, currentClimb.frames, false);
@@ -279,14 +275,6 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
       boardName: parsedParams.board_name,
       catalogAngle: currentClimb.catalogAngle,
       angleStats,
-    });
-
-    // The board overlay is preloaded below and fetched directly from Railway.
-    // Keep only the single OG warm so a later share-card unfurl is a byte hit.
-    scheduleOgImageWarming({
-      boardDetails,
-      climb: currentClimb,
-      identity: buildOgClimbCardIdentity(currentClimb, boardDetails.board_name, canonicalAngle, angleStats),
     });
 
     return (

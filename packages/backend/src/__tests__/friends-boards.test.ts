@@ -685,6 +685,32 @@ describe('the "Show to friends" switch', () => {
     expect(read?.listedToFollowers).toBe(true);
   });
 
+  it('is turned off when the board leaves Unlisted and Invite-only', async () => {
+    const board = await seedBoard(owner, 'unlisted');
+    const save = (input: {
+      audience: 'public' | 'unlisted' | 'invite_only' | 'only_me';
+      listedToFollowers?: boolean;
+    }) =>
+      privacyMutations.updateResourcePrivacy(
+        null,
+        { input: { kind: 'board', resourceId: board.uuid, ...input } },
+        context(owner),
+      );
+    expect((await save({ audience: 'unlisted', listedToFollowers: true }))?.listedToFollowers).toBe(true);
+    const listedUuids = async () =>
+      (await readFriendsBoards(friend, { limit: 50 })).items.map((item) => item.preview.uuid);
+    expect(await listedUuids()).toContain(board.uuid);
+    // Through Public and back: the switch does not come back on its own.
+    expect((await save({ audience: 'public' }))?.listedToFollowers).toBe(false);
+    expect((await save({ audience: 'unlisted' }))?.listedToFollowers).toBe(false);
+    expect(await listedUuids()).not.toContain(board.uuid);
+
+    // Only me clears it too, even when a client sends true alongside.
+    await save({ audience: 'invite_only', listedToFollowers: true });
+    expect((await save({ audience: 'only_me', listedToFollowers: true }))?.listedToFollowers).toBe(false);
+    expect((await save({ audience: 'invite_only' }))?.listedToFollowers).toBe(false);
+  });
+
   it('refuses to turn it on for a spray wall', async () => {
     const wall = await seedBoard(owner, 'invite_only', { boardType: 'spray' });
     await expect(

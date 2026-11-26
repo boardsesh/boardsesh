@@ -3914,13 +3914,15 @@ export type FriendBoardOwner = {
 
 /**
  * The part of a friend's board every listed row may show, whatever the viewer's
- * access. Never carries the slug, serial number, location, presence ids or counts.
+ * access, and all a Bluetooth request card shows of a board. Never carries the
+ * slug, serial number, location, presence ids or counts.
  */
 export type FriendBoardPreview = {
   __typename?: 'FriendBoardPreview';
   angle: Scalars['Int']['output'];
   boardType: Scalars['String']['output'];
   layoutId: Scalars['Int']['output'];
+  /** The board's own name on a Friends' boards row. On a Bluetooth request card, the board type: a name can name a place. */
   name: Scalars['String']['output'];
   setIds: Scalars['String']['output'];
   sizeId: Scalars['Int']['output'];
@@ -7921,6 +7923,16 @@ export type ObservedBoardSerialInput = {
 export type ObservedBoardSerialMatch = {
   __typename?: 'ObservedBoardSerialMatch';
   boardType: Scalars['String']['output'];
+  /**
+   * Lined up with candidates: entry i is candidate i's request card, or null.
+   * Only a signed-in viewer gets cards: an account at least 7 days old with a
+   * verified email, only for an Invite-only home board they cannot open whose
+   * owner they follow and who follows them back (the board is in their Friends'
+   * boards), and at most 10 distinct boards an hour, 15 a UTC day and 40 in 30
+   * days. Every other
+   * entry is null, and the candidate stays the anonymous stub it always was.
+   */
+  candidateRequestCards: Array<Maybe<SerialBoardRequestCard>>;
   candidates: Array<UserBoard>;
   observedSerialNumber: Scalars['String']['output'];
 };
@@ -8622,6 +8634,28 @@ export type ProviderSyncRequest = {
   runId: Scalars['ID']['output'];
   /** That run's status: queued, running or retrying */
   status: Scalars['String']['output'];
+};
+
+export type PublicClimbRelatedContent = {
+  __typename?: 'PublicClimbRelatedContent';
+  betaHasMore: Scalars['Boolean']['output'];
+  betaLinks: Array<BetaLink>;
+  betaStatus: Scalars['String']['output'];
+  nearbyClimbs: Array<SimilarClimb>;
+  nearbyGrade?: Maybe<Scalars['String']['output']>;
+  nearbyStatus?: Maybe<Scalars['String']['output']>;
+  similarClimbs: Array<SimilarClimb>;
+  similarStatus: Scalars['String']['output'];
+};
+
+export type PublicClimbRelatedContentInput = {
+  angle: Scalars['Int']['input'];
+  boardType: Scalars['String']['input'];
+  climbUuid: Scalars['String']['input'];
+  includeNearby?: InputMaybe<Scalars['Boolean']['input']>;
+  layoutId: Scalars['Int']['input'];
+  setIds: Array<Scalars['Int']['input']>;
+  sizeId: Scalars['Int']['input'];
 };
 
 /** Public-facing user profile for social features. */
@@ -9396,6 +9430,7 @@ export type Query = {
   proposeSprayWallReset?: Maybe<SprayWallResetProposal>;
   /** Only the registered app's public name; never the workout title, notes or blocks. */
   publicAppWorkoutLaunch?: Maybe<AppWorkoutLaunch>;
+  publicClimbRelatedContent: PublicClimbRelatedContent;
   /** Canonical public venues for sitemap publication. Fails rather than truncating when the sitemap budget is exceeded. */
   publicGymSitemap: Array<GymSitemapEntry>;
   /** Get a public user profile by ID. */
@@ -10418,6 +10453,11 @@ export type QueryProposeSprayWallResetArgs = {
 /** Root query type for all read operations. */
 export type QueryPublicAppWorkoutLaunchArgs = {
   id: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryPublicClimbRelatedContentArgs = {
+  input: PublicClimbRelatedContentInput;
 };
 
 /** Root query type for all read operations. */
@@ -11633,6 +11673,23 @@ export type SendDeviceLogsResponse = {
   __typename?: 'SendDeviceLogsResponse';
   accepted: Scalars['Int']['output'];
   success: Scalars['Boolean']['output'];
+};
+
+/**
+ * A private home board heard over Bluetooth that the viewer cannot open: whose
+ * it is, so they can ask to climb on it (requestResourceAccess with the
+ * preview's uuid). The preview's name is the board type, never the board's own
+ * name. Never the location, slug, serial, presence ids, counts or the owner's id.
+ */
+export type SerialBoardRequestCard = {
+  __typename?: 'SerialBoardRequestCard';
+  /** Profile avatar, falling back to the account image */
+  ownerAvatarUrl?: Maybe<Scalars['String']['output']>;
+  /** Profile display name, falling back to the account name */
+  ownerDisplayName?: Maybe<Scalars['String']['output']>;
+  preview: FriendBoardPreview;
+  /** The viewer already asked and the owner has not answered. */
+  requested: Scalars['Boolean']['output'];
 };
 
 /** An active climbing session where users can collaborate on a queue. */
@@ -14465,7 +14522,7 @@ export type UpdateResourcePrivacyInput = {
   audience: PrivacyResourceAudience;
   inheritFollowers?: InputMaybe<Scalars['Boolean']['input']>;
   kind: PrivacyResourceKind;
-  /** Omit to keep the stored value. See ResourcePrivacySettings.listedToFollowers. */
+  /** Omit to keep the stored value. Saving any audience but unlisted or invite_only turns it off. See ResourcePrivacySettings.listedToFollowers. */
   listedToFollowers?: InputMaybe<Scalars['Boolean']['input']>;
   locationAudience?: InputMaybe<PrivacyLocationAudience>;
   resourceId: Scalars['ID']['input'];
@@ -17742,6 +17799,7 @@ export type ResourcePrivacyQuery = {
     audience: PrivacyResourceAudience;
     locationAudience: PrivacyLocationAudience;
     inheritFollowers: boolean;
+    listedToFollowers: boolean;
     revision: number;
   } | null;
 };
@@ -17760,6 +17818,7 @@ export type UpdateResourcePrivacyMutation = {
     audience: PrivacyResourceAudience;
     locationAudience: PrivacyLocationAudience;
     inheritFollowers: boolean;
+    listedToFollowers: boolean;
     revision: number;
   };
 };
@@ -18385,6 +18444,72 @@ export type ResolveProposalFeedMutation = {
     upvoterCount: number;
     commentCount: number;
     climbIsHidden?: boolean | null;
+  };
+};
+
+export type PublicClimbRelatedContentQueryVariables = Exact<{
+  input: PublicClimbRelatedContentInput;
+}>;
+
+export type PublicClimbRelatedContentQuery = {
+  __typename?: 'Query';
+  publicClimbRelatedContent: {
+    __typename?: 'PublicClimbRelatedContent';
+    similarStatus: string;
+    nearbyStatus?: string | null;
+    nearbyGrade?: string | null;
+    betaStatus: string;
+    betaHasMore: boolean;
+    similarClimbs: Array<{
+      __typename?: 'SimilarClimb';
+      uuid: string;
+      name?: string | null;
+      setterUsername?: string | null;
+      angle?: number | null;
+      layoutId: number;
+      frames?: string | null;
+      difficultyName?: string | null;
+      qualityAverage?: number | null;
+      ascensionistCount?: number | null;
+      compatibleSizeIds: Array<number>;
+      requiredSetIds?: Array<number> | null;
+      characteristics?: Array<string> | null;
+      similarity: number;
+      sharedHoldCount: number;
+      candidateHoldCount: number;
+      targetHoldCount: number;
+    }>;
+    nearbyClimbs: Array<{
+      __typename?: 'SimilarClimb';
+      uuid: string;
+      name?: string | null;
+      setterUsername?: string | null;
+      angle?: number | null;
+      layoutId: number;
+      frames?: string | null;
+      difficultyName?: string | null;
+      qualityAverage?: number | null;
+      ascensionistCount?: number | null;
+      compatibleSizeIds: Array<number>;
+      requiredSetIds?: Array<number> | null;
+      characteristics?: Array<string> | null;
+      similarity: number;
+      sharedHoldCount: number;
+      candidateHoldCount: number;
+      targetHoldCount: number;
+    }>;
+    betaLinks: Array<{
+      __typename?: 'BetaLink';
+      climbUuid: string;
+      link: string;
+      foreignUsername?: string | null;
+      angle?: number | null;
+      thumbnail?: string | null;
+      isListed?: boolean | null;
+      createdAt?: string | null;
+      tickUuid?: string | null;
+      boardId?: number | null;
+    }>;
   };
 };
 
@@ -19739,28 +19864,6 @@ export type JoinRedirectSessionBoardPathQueryVariables = Exact<{
 export type JoinRedirectSessionBoardPathQuery = {
   __typename?: 'Query';
   session?: { __typename?: 'Session'; boardPath: string } | null;
-};
-
-export type FrontDoorNearbyClimbsQueryVariables = Exact<{
-  input: ClimbSearchInput;
-}>;
-
-export type FrontDoorNearbyClimbsQuery = {
-  __typename?: 'Query';
-  searchClimbs: {
-    __typename?: 'ClimbSearchResult';
-    climbs: Array<{
-      __typename?: 'Climb';
-      uuid: string;
-      name: string;
-      setter_username: string;
-      frames: string;
-      difficulty: string;
-      quality_average: string;
-      ascensionist_count: number;
-      compatibleSizeIds?: Array<number> | null;
-    }>;
-  };
 };
 
 export const SessionFeedItemFieldsFragmentDoc = {
@@ -26858,6 +26961,7 @@ export const ResourcePrivacyDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'audience' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'locationAudience' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'inheritFollowers' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'listedToFollowers' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'revision' } },
               ],
             },
@@ -26906,6 +27010,7 @@ export const UpdateResourcePrivacyDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'audience' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'locationAudience' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'inheritFollowers' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'listedToFollowers' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'revision' } },
               ],
             },
@@ -28625,6 +28730,120 @@ export const ResolveProposalFeedDocument = {
     },
   ],
 } as unknown as DocumentNode<ResolveProposalFeedMutation, ResolveProposalFeedMutationVariables>;
+export const PublicClimbRelatedContentDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'PublicClimbRelatedContent' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'PublicClimbRelatedContentInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'publicClimbRelatedContent' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'similarStatus' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'nearbyStatus' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'nearbyGrade' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'betaStatus' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'betaHasMore' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'similarClimbs' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'qualityAverage' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'ascensionistCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'requiredSetIds' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'similarity' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sharedHoldCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'candidateHoldCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'targetHoldCount' } },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'nearbyClimbs' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'qualityAverage' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'ascensionistCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'requiredSetIds' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'similarity' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sharedHoldCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'candidateHoldCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'targetHoldCount' } },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'betaLinks' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'link' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'foreignUsername' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'thumbnail' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isListed' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'tickUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardId' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<PublicClimbRelatedContentQuery, PublicClimbRelatedContentQueryVariables>;
 export const QaPreviewsDocument = {
   kind: 'Document',
   definitions: [
@@ -31796,58 +32015,3 @@ export const JoinRedirectSessionBoardPathDocument = {
     },
   ],
 } as unknown as DocumentNode<JoinRedirectSessionBoardPathQuery, JoinRedirectSessionBoardPathQueryVariables>;
-export const FrontDoorNearbyClimbsDocument = {
-  kind: 'Document',
-  definitions: [
-    {
-      kind: 'OperationDefinition',
-      operation: 'query',
-      name: { kind: 'Name', value: 'FrontDoorNearbyClimbs' },
-      variableDefinitions: [
-        {
-          kind: 'VariableDefinition',
-          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
-          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ClimbSearchInput' } } },
-        },
-      ],
-      selectionSet: {
-        kind: 'SelectionSet',
-        selections: [
-          {
-            kind: 'Field',
-            name: { kind: 'Name', value: 'searchClimbs' },
-            arguments: [
-              {
-                kind: 'Argument',
-                name: { kind: 'Name', value: 'input' },
-                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
-              },
-            ],
-            selectionSet: {
-              kind: 'SelectionSet',
-              selections: [
-                {
-                  kind: 'Field',
-                  name: { kind: 'Name', value: 'climbs' },
-                  selectionSet: {
-                    kind: 'SelectionSet',
-                    selections: [
-                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'setter_username' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'quality_average' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'ascensionist_count' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
-                    ],
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      },
-    },
-  ],
-} as unknown as DocumentNode<FrontDoorNearbyClimbsQuery, FrontDoorNearbyClimbsQueryVariables>;

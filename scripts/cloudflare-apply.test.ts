@@ -14,14 +14,21 @@ import {
   APEX_HOSTNAME,
   APEX_ORIGINLESS_ADDRESS,
   APEX_REDIRECT_RULE_DESCRIPTION,
+  ASSETS_CACHE_RULE_DESCRIPTION,
   ASSETS_CNAME_TARGET,
+  NEXT_STATIC_REQUEST_HEADER_RULE_DESCRIPTION,
+  NEXT_STATIC_CACHE_RULE_DESCRIPTION,
   ASSETS_HOSTNAME,
   ASSETS_STAGING_HOSTNAME,
   SNAPSHOTS_HOSTNAME,
   OTA_ASSETS_HOSTNAME,
   OTA_ASSETS_CACHE_RULE_DESCRIPTION,
   OTA_ASSETS_COMPRESSION_RULE_DESCRIPTION,
+  NEXT_STATIC_COMPRESSION_RULE_DESCRIPTION,
+  NEXT_STATIC_COMPRESSION_EXPRESSION,
   COMPRESSION_RULE_PHASE,
+  CONFIGURATION_RULE_PHASE,
+  MARKETING_EMAIL_RULE_DESCRIPTION,
   CACHE_RULE_PHASE,
   USER_EXPORT_LIFECYCLE_RULE,
   desiredR2Buckets,
@@ -698,6 +705,70 @@ describe('assets.boardsesh.com routing and historical generic DNS fixture', () =
   });
 });
 
+describe('public Next.js asset delivery', () => {
+  const cacheRules = desired.cacheRules.filter((rule) => rule.description === NEXT_STATIC_CACHE_RULE_DESCRIPTION);
+  const headerRules = desired.requestHeaderRules.filter(
+    (rule) => rule.description === NEXT_STATIC_REQUEST_HEADER_RULE_DESCRIPTION,
+  );
+
+  it('strips credentials and the referring page only on the three public Next asset paths', () => {
+    expect(headerRules).toEqual([
+      {
+        description: NEXT_STATIC_REQUEST_HEADER_RULE_DESCRIPTION,
+        expression:
+          '(http.host in {"www.boardsesh.com" "assets.boardsesh.com" "assets-r2.boardsesh.com"} and starts_with(http.request.uri.path, "/_next/static/"))',
+        action: 'rewrite',
+        action_parameters: {
+          headers: {
+            cookie: { operation: 'remove' },
+            authorization: { operation: 'remove' },
+            referer: { operation: 'remove' },
+          },
+        },
+        enabled: true,
+      },
+    ]);
+  });
+
+  it('overrides only public Next asset GET and HEAD requests, after the catalogue rule', () => {
+    expect(cacheRules).toHaveLength(1);
+    expect(cacheRules[0].expression).toBe(
+      '(http.host in {"www.boardsesh.com" "assets.boardsesh.com" "assets-r2.boardsesh.com"} and http.request.method in {"GET" "HEAD"} and starts_with(http.request.uri.path, "/_next/static/"))',
+    );
+    const catalogueIndex = desired.cacheRules.findIndex((rule) => rule.description === ASSETS_CACHE_RULE_DESCRIPTION);
+    expect(catalogueIndex).toBeGreaterThanOrEqual(0);
+    expect(desired.cacheRules.indexOf(cacheRules[0])).toBeGreaterThan(catalogueIndex);
+    expect(desired.cacheRules[catalogueIndex].action_parameters.edge_ttl).toEqual({ mode: 'bypass_by_default' });
+  });
+
+  it('respects origin TTLs and prevents storing 400–599 on www and the retained asset hosts', () => {
+    expect(cacheRules[0]).toMatchObject({ action: 'set_cache_settings', enabled: true });
+    expect(cacheRules[0].action_parameters).toEqual({
+      cache: true,
+      edge_ttl: {
+        mode: 'bypass_by_default',
+        status_code_ttl: [{ status_code_range: { from: 400, to: 599 }, value: -1 }],
+      },
+      browser_ttl: { mode: 'respect_origin' },
+    });
+  });
+
+  it('plans updates for a missing error override or omitted header removal and converges after applying', () => {
+    const staleCache = cacheRules.map((rule) => ({
+      ...rule,
+      action_parameters: { ...rule.action_parameters, edge_ttl: { mode: 'bypass_by_default' } },
+    }));
+    const staleHeaders = headerRules.map((rule) => ({
+      ...rule,
+      action_parameters: { headers: { cookie: { operation: 'remove' }, authorization: { operation: 'remove' } } },
+    }));
+    expect(diffManagedRules(matchingLiveRules(staleCache), cacheRules, 'cache-rule')).toHaveLength(1);
+    expect(diffManagedRules(matchingLiveRules(staleHeaders), headerRules, 'request-header-rule')).toHaveLength(1);
+    expect(diffManagedRules(matchingLiveRules(cacheRules), cacheRules, 'cache-rule')).toEqual([]);
+    expect(diffManagedRules(matchingLiveRules(headerRules), headerRules, 'request-header-rule')).toEqual([]);
+  });
+});
+
 describe('api.boardsesh.com (#6981)', () => {
   it('names the host the backend filter guards', () => {
     expect(API_HOSTNAME).toBe('api.boardsesh.com');
@@ -869,6 +940,7 @@ describe('www.boardsesh.com under Cloudflare management (#4655)', () => {
       requestHeaderRules: [],
       responseHeaderRules: [],
       compressionRules: [],
+      configurationRules: [],
       ssl: desired.ssl,
     };
     const flattenedZone: LiveState = {
@@ -2093,6 +2165,7 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
     dnsByName: Record<string, LiveDnsRecord[]>,
     readLifecycleRules: (bucketName: string) => unknown = () => [],
     readCustomDomains: (bucketName: string) => { domain: string; enabled: boolean }[] = () => [],
+    phaseResponses: Readonly<Record<string, Response>> = {},
   ): RecordedRequest[] {
     const requests: RecordedRequest[] = [];
     const envelope = (result: unknown) =>
@@ -2114,7 +2187,11 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
       if (url.pathname.startsWith('/client/v4/zones/zone-1/dns_records/')) return envelope({});
       if (url.pathname === '/client/v4/zones/zone-1/settings/ssl') return envelope({ id: 'ssl', value: 'strict' });
       if (url.pathname === '/client/v4/zones/zone-1/dns_settings') return envelope({ flatten_all_cnames: false });
-      if (url.pathname.includes('/rulesets/phases/')) return envelope({ id: 'ruleset-id', rules: [] });
+      if (url.pathname.includes('/rulesets/phases/')) {
+        const response = phaseResponses[`${method} ${url.pathname}`];
+        if (response) return response;
+        return envelope({ id: 'ruleset-id', rules: [] });
+      }
       // R2 is only fetched when CLOUDFLARE_ACCOUNT_ID is set.
       if (url.pathname.endsWith('/r2/buckets')) {
         return envelope({ buckets: desiredR2Buckets.map((bucket) => ({ name: bucket.name })) });
@@ -2175,22 +2252,8 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
     ['the compression phase', COMPRESSION_RULE_PHASE],
     ['a long-standing phase', CACHE_RULE_PHASE],
   ])('fails the run when %s refuses its write', async (_label, refusedPhase) => {
-    // No phase is optional any more, so a refused write is a lost scope and must
-    // stop the deploy. The skip-and-warn path in the apply loop only applies to
-    // a phase the registry marks optional while its scope is being rolled out.
-    stubCloudflareApi(dnsResponses(liveApexDnsRecord()));
-    const stubbedFetch = globalThis.fetch as unknown as (
-      input: string,
-      init?: { method?: string; body?: string },
-    ) => Response;
-    vi.stubGlobal('fetch', (input: string, init?: { method?: string; body?: string }) => {
-      if (init?.method === 'PUT' && new URL(input).pathname === phaseEntrypoint(refusedPhase)) {
-        return new Response(
-          JSON.stringify({ success: false, errors: [{ code: 10_000, message: 'Authentication error' }] }),
-          { status: 403 },
-        );
-      }
-      return stubbedFetch(input, init);
+    stubCloudflareApi(dnsResponses(liveApexDnsRecord()), undefined, undefined, {
+      [`PUT ${phaseEntrypoint(refusedPhase)}`]: refusedPhaseResponse(403),
     });
 
     await expect(runCloudflareApply(['--apply'])).rejects.toThrow();
@@ -2326,6 +2389,142 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
     },
   );
 
+  it('preserves existing configuration rules when disabling email obfuscation for the two marketing pages', async () => {
+    const pathname = phaseEntrypoint('http_config_settings');
+    const foreign = {
+      id: 'operator-managed-id',
+      ref: 'operator-managed',
+      description: 'Disable Rocket Loader for the app',
+      expression: '(http.host eq "app.boardsesh.com")',
+      action: 'set_config',
+      action_parameters: { rocket_loader: false },
+      enabled: true,
+    };
+    const requests = stubCloudflareApi(dnsResponses(liveApexDnsRecord()), undefined, undefined, {
+      [`GET ${pathname}`]: Response.json({ success: true, result: { id: 'configuration-id', rules: [foreign] } }),
+    });
+
+    expect(await runCloudflareApply(['--apply'])).toBe(0);
+    expect(requests.filter((request) => request.pathname === pathname)).toEqual([
+      { method: 'GET', pathname, body: undefined },
+      {
+        method: 'PUT',
+        pathname,
+        body: {
+          rules: [
+            foreign,
+            {
+              description: MARKETING_EMAIL_RULE_DESCRIPTION,
+              expression:
+                '(http.host eq "www.boardsesh.com" and http.request.method in {"GET" "HEAD"} and http.request.uri.path in {"/" "/apps/kilter"})',
+              action: 'set_config',
+              action_parameters: { email_obfuscation: false },
+              enabled: true,
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
+  function refusedPhaseResponse(status: number): Response {
+    // The production 403 on http_config_settings had a message and no numeric error code.
+    const message =
+      status === 400 ? 'invalid expression' : status === 500 ? 'internal error' : 'request is not authorized';
+    return Response.json({ success: false, errors: [{ message }] }, { status });
+  }
+
+  function stubUnreadableConfig(apex: LiveDnsRecord): RecordedRequest[] {
+    const phaseRules = inSyncRules();
+    const phaseResponses = Object.fromEntries(
+      MANAGED_RULE_PHASES.map(({ phase, resource }) => [
+        `GET ${phaseEntrypoint(phase)}`,
+        phase === CONFIGURATION_RULE_PHASE
+          ? refusedPhaseResponse(403)
+          : Response.json({ success: true, result: { rules: phaseRules[resource] } }),
+      ]),
+    );
+    return stubCloudflareApi(dnsResponses(apex), undefined, undefined, phaseResponses);
+  }
+
+  it('applies outstanding apex DNS drift and reports the unreadable configuration rule as unapplied', async () => {
+    const requests = stubUnreadableConfig(liveVercelApexDnsRecord());
+
+    expect(await runCloudflareApply(['--apply'])).toBe(0);
+
+    expect(requests).toContainEqual({
+      method: 'GET',
+      pathname: phaseEntrypoint(CONFIGURATION_RULE_PHASE),
+      body: undefined,
+    });
+    expect(requests.filter(({ method }) => method !== 'GET')).toEqual([
+      {
+        method: 'PATCH',
+        pathname: '/client/v4/zones/zone-1/dns_records/apex-dns-record-id',
+        body: { type: 'A', name: APEX_HOSTNAME, content: APEX_ORIGINLESS_ADDRESS, ttl: 1, proxied: true },
+      },
+    ]);
+    expect(console.warn).toHaveBeenCalledWith(expect.stringMatching(/unapplied.*http_config_settings/i));
+    expect(console.log).not.toHaveBeenCalledWith(expect.stringMatching(/zone converged/i));
+  });
+
+  it.each([
+    { args: [], status: 1 },
+    { args: ['--apply'], status: 0 },
+  ])('reports an unreadable configuration phase when everything else is in sync ($args)', async ({ args, status }) => {
+    const requests = stubUnreadableConfig(liveApexDnsRecord());
+
+    expect(await runCloudflareApply(args)).toBe(status);
+
+    expect(requests.filter(({ method }) => method !== 'GET')).toEqual([]);
+    expect(console.warn).toHaveBeenCalledWith(expect.stringMatching(/unreadable and unapplied.*http_config_settings/i));
+    expect(console.warn).not.toHaveBeenCalledWith(expect.stringMatching(/(?:was|were) still applied/i));
+    expect(console.log).not.toHaveBeenCalledWith(expect.stringMatching(/In sync — nothing to do|zone converged/i));
+  });
+
+  it.each([401, 403])('reports a configuration write refusal (HTTP %i) as partial convergence', async (status) => {
+    const pathname = phaseEntrypoint(CONFIGURATION_RULE_PHASE);
+    const requests = stubCloudflareApi(dnsResponses(liveVercelApexDnsRecord()), undefined, undefined, {
+      [`PUT ${pathname}`]: refusedPhaseResponse(status),
+    });
+
+    expect(await runCloudflareApply(['--apply'])).toBe(0);
+
+    expect(requests.filter((request) => request.pathname === pathname).map(({ method }) => method)).toEqual([
+      'GET',
+      'PUT',
+    ]);
+    expect(requests).toContainEqual(
+      expect.objectContaining({ method: 'PATCH', pathname: '/client/v4/zones/zone-1/dns_records/apex-dns-record-id' }),
+    );
+    expect(console.warn).not.toHaveBeenCalledWith(expect.stringMatching(/(?:was|were) still applied/i));
+    expect(console.warn).toHaveBeenCalledWith(expect.stringMatching(/unapplied.*http_config_settings/i));
+    expect(console.log).not.toHaveBeenCalledWith(expect.stringMatching(/zone converged/i));
+  });
+
+  it.each([400, 500])('fails the run when the configuration write returns HTTP %i', async (status) => {
+    stubCloudflareApi(dnsResponses(liveApexDnsRecord()), undefined, undefined, {
+      [`PUT ${phaseEntrypoint(CONFIGURATION_RULE_PHASE)}`]: refusedPhaseResponse(status),
+    });
+
+    await expect(runCloudflareApply(['--apply'])).rejects.toThrow(
+      new RegExp(`PUT .*http_config_settings.*HTTP ${status}`),
+    );
+    expect(console.log).not.toHaveBeenCalledWith(expect.stringMatching(/zone converged/i));
+  });
+
+  it.each(MANAGED_RULE_PHASES.filter(({ phase }) => phase !== CONFIGURATION_RULE_PHASE))(
+    'stops before every write when the existing $phase phase refuses its read',
+    async ({ phase }) => {
+      const requests = stubCloudflareApi(dnsResponses(liveVercelApexDnsRecord()), undefined, undefined, {
+        [`GET ${phaseEntrypoint(phase)}`]: refusedPhaseResponse(403),
+      });
+
+      await expect(runCloudflareApply(['--apply'])).rejects.toThrow(new RegExp(`GET .*${phase}.*HTTP 403`));
+      expect(requests.filter(({ method }) => method !== 'GET')).toEqual([]);
+    },
+  );
+
   it('sends the apex redirect rule verbatim in the dynamic-redirect PUT', async () => {
     const requests = stubCloudflareApi(dnsResponses(liveApexDnsRecord()));
 
@@ -2428,8 +2627,8 @@ describe('www list + climb-view HTML cache rule (#4652)', () => {
     const pathPrefixes = buildWwwHtmlCachePathPrefixes();
     const admitted = (pathname: string) => pathPrefixes.some((pathPrefix) => pathname.startsWith(pathPrefix));
 
-    // Both trees, plus a locale twin of each — the four shapes getListPageCacheTTL
-    // and getClimbViewPageCacheTTL decorate.
+    // Both trees, plus locale twins. Lists opt in with origin TTL headers;
+    // climb documents opt out with no-store despite matching this URL rule.
     expect(admitted('/kilter/homewall/7x10-full-ride/main_aux/40/list')).toBe(true);
     expect(admitted('/b/some-gym-kilter/40/list')).toBe(true);
     expect(admitted('/de/tension/8/25/15,17/40/view/abc-uuid')).toBe(true);
@@ -2619,7 +2818,9 @@ describe('www list + climb-view HTML cache rule (#4652)', () => {
     const middleware = readFileSync('packages/web/middleware.ts', 'utf8');
     expect(middleware).toContain("response.headers.set('CDN-Cache-Control', cdnCacheValue)");
     expect(middleware).toContain('getListPageCacheTTL');
-    expect(middleware).toContain('getClimbViewPageCacheTTL');
+    // Climb documents carry revocable SSR content; only lists retain this TTL.
+    expect(middleware).not.toContain('getClimbViewPageCacheTTL');
+    expect(middleware).toContain('isClimbViewRequest');
   });
 });
 
@@ -2645,12 +2846,10 @@ describe('a rule phase this token cannot read', () => {
     expect(changes.some((change) => change.resource === 'cache-rule')).toBe(true);
   });
 
-  it('has no optional rule phases after every scope was confirmed', () => {
-    // Each phase's scope has been confirmed against the production token by an
-    // apply that wrote it, so losing one must fail loudly instead of degrading
-    // a rule.
+  it('keeps all seven established phases mandatory during the configuration-rule permission rollout', () => {
     const optional = MANAGED_RULE_PHASES.filter((phase) => phase.optional).map((phase) => phase.resource);
-    expect(optional).toEqual([]);
+    expect(optional).toEqual(['configuration-rule']);
+    expect(MANAGED_RULE_PHASES.filter((phase) => !phase.optional)).toHaveLength(7);
   });
 });
 
@@ -2902,20 +3101,62 @@ describe('desiredR2Buckets', () => {
     });
   });
 
+  it('prefers Brotli only for public Next scripts and styles with both transport fallbacks', () => {
+    const compressionRule = desired.compressionRules.find(
+      (rule) => rule.description === NEXT_STATIC_COMPRESSION_RULE_DESCRIPTION,
+    );
+    expect(NEXT_STATIC_COMPRESSION_EXPRESSION).toBe(
+      '(http.host in {"www.boardsesh.com" "assets.boardsesh.com" "assets-r2.boardsesh.com"}' +
+        ' and http.request.method in {"GET" "HEAD"}' +
+        ' and starts_with(http.request.uri.path, "/_next/static/")' +
+        ' and (ends_with(http.request.uri.path, ".js")' +
+        ' or ends_with(http.request.uri.path, ".mjs")' +
+        ' or ends_with(http.request.uri.path, ".css")))',
+    );
+    expect(compressionRule).toEqual({
+      description: NEXT_STATIC_COMPRESSION_RULE_DESCRIPTION,
+      expression: NEXT_STATIC_COMPRESSION_EXPRESSION,
+      action: 'compress_response',
+      action_parameters: { algorithms: [{ name: 'brotli' }, { name: 'zstd' }, { name: 'gzip' }] },
+      enabled: true,
+    });
+  });
+
+  it('reconciles Next compression preference without changing the OTA policy', () => {
+    const existing = matchingLiveRules(desired.compressionRules);
+    const otaBefore = existing.find((rule) => rule.description === OTA_ASSETS_COMPRESSION_RULE_DESCRIPTION);
+    const drifted = existing.map((rule) =>
+      rule.description === NEXT_STATIC_COMPRESSION_RULE_DESCRIPTION
+        ? { ...rule, action_parameters: { algorithms: [{ name: 'zstd' }, { name: 'brotli' }, { name: 'gzip' }] } }
+        : rule,
+    );
+    const differences = diffManagedRules(drifted, desired.compressionRules, 'compression-rule');
+    expect(differences).toHaveLength(1);
+    expect(differences[0].summary).toContain(NEXT_STATIC_COMPRESSION_RULE_DESCRIPTION);
+    const reconciled = upsertCacheRule(drifted, desired.compressionRules);
+    expect(reconciled.rules.find((rule) => rule.description === OTA_ASSETS_COMPRESSION_RULE_DESCRIPTION)).toMatchObject(
+      {
+        id: otaBefore?.id,
+        ...desired.compressionRules.find((rule) => rule.description === OTA_ASSETS_COMPRESSION_RULE_DESCRIPTION),
+      },
+    );
+    expect(diffManagedRules(reconciled.rules, desired.compressionRules, 'compression-rule')).toEqual([]);
+  });
+
   it('plans the compression rule in its own phase and re-plans a changed algorithm list', () => {
     expect(MANAGED_RULE_PHASES.find((phase) => phase.resource === 'compression-rule')?.phase).toBe(
       COMPRESSION_RULE_PHASE,
     );
 
     const missing = diffManagedRules([], desired.compressionRules, 'compression-rule');
-    expect(missing).toHaveLength(1);
+    expect(missing).toHaveLength(2);
     expect(missing[0].summary).toContain('missing — will create');
 
     const gzipOnly = matchingLiveRules(desired.compressionRules).map((rule) => ({
       ...rule,
       action_parameters: { algorithms: [{ name: 'gzip' }] },
     }));
-    expect(diffManagedRules(gzipOnly, desired.compressionRules, 'compression-rule')).toHaveLength(1);
+    expect(diffManagedRules(gzipOnly, desired.compressionRules, 'compression-rule')).toHaveLength(2);
     expect(
       diffManagedRules(matchingLiveRules(desired.compressionRules), desired.compressionRules, 'compression-rule'),
     ).toEqual([]);

@@ -389,7 +389,8 @@ jobs:
             BOARDSESH_WEB=1
             NEXT_PUBLIC_POSTHOG_KEY=${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
             NEXT_PUBLIC_STATIC_ASSET_BASE_URL=https://assets.boardsesh.com
-            NEXT_PUBLIC_NEXT_ASSET_BASE_URL=https://assets.boardsesh.com
+            NEXT_PUBLIC_NEXT_ASSET_BASE_URL=
+            NEXT_PUBLIC_RETAINED_NEXT_ASSETS=1
             NEXT_PUBLIC_APP_STORE_PROVIDER_ID=${{ vars.NEXT_PUBLIC_APP_STORE_PROVIDER_ID }}
             NEXT_PUBLIC_META_PIXEL_ID=${{ vars.NEXT_PUBLIC_META_PIXEL_ID }}
             NEXT_PUBLIC_REDDIT_PIXEL_ID=${{ vars.NEXT_PUBLIC_REDDIT_PIXEL_ID }}
@@ -463,6 +464,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      rollback_deployment_id: ${{ steps.retained-compatibility.outputs.verified_previous_deployment_id }}
+      rollback_release: ${{ steps.retained-compatibility.outputs.verified_previous_release }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
@@ -503,6 +507,17 @@ jobs:
           STATIC_ASSETS_AWS_ENDPOINT_URL: ${{ secrets.STATIC_ASSETS_AWS_ENDPOINT_URL }}
           STATIC_ASSETS_AWS_REGION: ${{ secrets.STATIC_ASSETS_AWS_REGION }}
         run: vp run upload:next-static-assets -- --directory "$RUNNER_TEMP/boardsesh-next-static"
+
+      # A held build moves these aliases too. Read the real Production vars:
+      # resolve-web-targets intentionally emits empty IDs/origins during a hold.
+      - name: Verify the live web rollback target supports retained assets
+        id: retained-compatibility
+        env:
+          RAILWAY_WEB_ORIGIN: ${{ vars.RAILWAY_WEB_ORIGIN }}
+          RAILWAY_SERVICE_ID: ${{ vars.RAILWAY_WEB_SERVICE_ID }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          EXPECTED_IMAGE: ${{ needs.build-web.outputs.image }}:production
+        run: node scripts/web-origin-compatibility.ts --base "$RAILWAY_WEB_ORIGIN"
 
       - name: Promote the verified web image
         env:
@@ -1269,6 +1284,9 @@ jobs:
           railway-token: ${{ secrets.RAILWAY_TOKEN }}
           service-label: web
           expected-image: ${{ needs.build-web.outputs.image }}:production
+          retained-assets-origin: ${{ needs.resolve-web-targets.outputs.web_railway_origin }}
+          expected-previous-deployment-id: ${{ needs.publish-next-assets.outputs.rollback_deployment_id }}
+          expected-previous-release: ${{ needs.publish-next-assets.outputs.rollback_release }}
 
       - name: Post-deploy smoke against the Railway web origin
         id: railway-smoke
@@ -1291,7 +1309,10 @@ jobs:
           SMOKE_EMBED_BOARD_UUID: ${{ vars.SMOKE_EMBED_BOARD_UUID }}
         # Plain `node` executes the TypeScript directly (type stripping). The
         # script imports only node: builtins, so no workspace install is needed.
-        run: node scripts/production-smoke.ts --base "$RAILWAY_WEB_ORIGIN"
+        run: |
+          node scripts/production-smoke.ts --base "$RAILWAY_WEB_ORIGIN"
+          node scripts/retained-next-assets-smoke.ts --base "$RAILWAY_WEB_ORIGIN"
+          node scripts/current-next-assets-smoke.ts --base "$RAILWAY_WEB_ORIGIN"
 
       - name: Warm anonymous marketing documents at the public edge
         if: steps.railway-smoke.outcome == 'success'
@@ -1317,22 +1338,28 @@ jobs:
           expected-current-deployment-id: ${{ steps.railway-redeploy.outputs.deployment_id }}
 
       - name: Verify Railway web functionality after rollback
+        id: railway-recovery-smoke
         if: >-
           always()
           && steps.railway-smoke.outcome == 'failure'
           && steps.railway-rollback.outcome == 'success'
         env:
           RAILWAY_WEB_ORIGIN: ${{ needs.resolve-web-targets.outputs.web_railway_origin }}
+          SMOKE_EXPECTED_DEPLOYMENT_ID: ${{ steps.railway-rollback.outputs.rollback_deployment_id }}
+          SMOKE_EXPECTED_RELEASE: ${{ needs.publish-next-assets.outputs.rollback_release }}
           SMOKE_KIOSK_GYM_SLUG: ${{ vars.SMOKE_KIOSK_GYM_SLUG }}
           SMOKE_EMBED_BOARD_UUID: ${{ vars.SMOKE_EMBED_BOARD_UUID }}
-        run: node scripts/production-smoke.ts --base "$RAILWAY_WEB_ORIGIN"
+        run: |
+          node scripts/production-smoke.ts --base "$RAILWAY_WEB_ORIGIN"
+          node scripts/retained-next-assets-smoke.ts --base "$RAILWAY_WEB_ORIGIN"
 
       - name: Fail after Railway web smoke recovery
         if: always() && steps.railway-smoke.outcome == 'failure'
         env:
           ROLLBACK_OUTCOME: ${{ steps.railway-rollback.outcome }}
+          RECOVERY_SMOKE_OUTCOME: ${{ steps.railway-recovery-smoke.outcome }}
         run: |
-          if [ "$ROLLBACK_OUTCOME" = "success" ]; then
+          if [ "$ROLLBACK_OUTCOME" = "success" ] && [ "$RECOVERY_SMOKE_OUTCOME" = "success" ]; then
             echo "::error::Web smoke failed; verified automatic rollback restored the captured last-known-good deployment."
           else
             echo "::error::Web smoke failed and automatic recovery was not verified. Follow the reconciliation runbook."

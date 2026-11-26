@@ -52,7 +52,7 @@ function fingerprint(state: unknown): string {
   return createHash('sha256').update(JSON.stringify(state)).digest('hex');
 }
 
-function gymRepairStateHash(gym: GymRow): string {
+export function gymRepairStateHash(gym: GymRow): string {
   return fingerprint(gym);
 }
 

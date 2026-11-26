@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { createElement, Fragment, type ReactNode } from 'react';
+import { createElement, Fragment, Profiler, type ReactNode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -11,6 +11,7 @@ import {
 import type { SprayWallLedSettings } from '../../../lib/spray/use-spray-wall-led-settings';
 
 const controller = vi.hoisted(() => ({ probe: vi.fn(), lightAll: vi.fn(), turnOff: vi.fn(), show: vi.fn() }));
+const previewTargets = vi.hoisted(() => vi.fn());
 const storage = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), records: new Map<string, unknown>() }));
 const navigation = vi.hoisted(() => ({ push: vi.fn() }));
 const network = vi.hoisted(() => ({ fetch: vi.fn() }));
@@ -42,7 +43,13 @@ vi.mock('expo-router', () => ({ useRouter: () => navigation }));
 
 vi.mock('@boardsesh/led-controller', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@boardsesh/led-controller')>()),
-  getLedControllerDriver: () => ({ ...controller, createPreview: () => controller }),
+  getLedControllerDriver: () => ({
+    ...controller,
+    createPreview: (url: string) => {
+      previewTargets(url);
+      return controller;
+    },
+  }),
   createWledDriver: () => ({ probe: (url: string, signal?: AbortSignal) => controller.probe(url, signal) }),
 }));
 vi.mock('@react-native-community/netinfo', () => ({ default: { fetch: network.fetch } }));
@@ -209,6 +216,38 @@ afterEach(async () => {
 });
 
 describe('SprayWallLedSection', () => {
+  it.each(['', 'http://old.local'])(
+    'delivers the first enabled tap to the confirmed controller, previously %s',
+    async (previousUrl) => {
+      storage.records.set(settingsKey, savedSettings(true, previousUrl));
+      const nextUrl = 'http://next.local';
+      let firstTapSent = false;
+      const tapOnFirstEnabledCommit = () => {
+        if (firstTapSent) return;
+        const lightingButton = screen.queryByRole('button', { name: 'sprayLed.lightAll' }) as HTMLButtonElement | null;
+        if (!lightingButton || lightingButton.disabled) return;
+        firstTapSent = true;
+        // Exercise input at commit, before passive effects can initialize a session.
+        lightingButton.click();
+      };
+      render(
+        createElement(
+          Profiler,
+          { id: 'led-preview-readiness', onRender: tapOnFirstEnabledCommit },
+          createElement(SprayWallLedSection, { wallUuid: 'wall-1' }),
+        ),
+      );
+      await openSection();
+      enterUrl(nextUrl);
+      fireEvent.click(button('confirm'));
+      await waitFor(() => expect(firstTapSent).toBe(true));
+      await waitFor(() => expect(screen.queryByText('sprayLed.lit')).not.toBeNull());
+      expect(controller.lightAll).toHaveBeenCalledTimes(1);
+      expect(previewTargets).toHaveBeenCalledTimes(1);
+      expect(previewTargets).toHaveBeenCalledWith(nextUrl);
+    },
+  );
+
   it('offers firmware installation only to an explicitly identified owner', async () => {
     storage.records.set('sprayWallLedSettings:wall-1', {
       version: 1,

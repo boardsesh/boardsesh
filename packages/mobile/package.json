@@ -54,13 +54,14 @@
     "@boardsesh/wled-ble-protocol": "workspace:*",
     "@boardsesh/workout-summary": "workspace:*",
     "@expo/ui": "58.0.29",
-    "@expo/vector-icons": "15.1.1",
     "@react-native-async-storage/async-storage": "3.1.1",
     "@react-native-community/blur": "4.4.1",
     "@react-native-community/datetimepicker": "9.2.1",
     "@react-native-community/netinfo": "12.0.1",
     "@react-native-google-signin/google-signin": "16.1.4",
     "@react-native-masked-view/masked-view": "0.3.2",
+    "@react-native-vector-icons/common": "14.0.0",
+    "@react-native-vector-icons/material-design-icons": "14.0.0",
     "@sentry/cli": "3.8.2",
     "@sentry/react-native": "8.35.0",
     "@shopify/flash-list": "2.3.3",
@@ -151,6 +152,9 @@
         "expo-app-metrics",
         "expo-observe",
         "posthog-react-native-session-replay"
+      ],
+      "exclude": [
+        "@react-native-vector-icons/material-design-icons"
       ]
     },
     "install": {

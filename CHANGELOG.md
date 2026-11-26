@@ -4,6 +4,20 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/operations/mobile-ota-updates.md.
 
+## 2026-11-26
+
+### New
+
+- Standing at a friend's home board? Boardsesh spots it over Bluetooth and lets you ask to climb. ([#8210](https://github.com/boardsesh/boardsesh/pull/8210))
+- Climb on a friend's home board. When you follow each other, their boards show up under Friends' boards; invite-only ones get an Ask to climb button. ([#8207](https://github.com/boardsesh/boardsesh/pull/8207))
+  Owners can say yes right from their notifications.
+- Show your home board's QR code so a friend can scan it with their camera, and choose whether your friends can find it. ([#8203](https://github.com/boardsesh/boardsesh/pull/8203))
+- Global admins can place unlinked spray walls on the right gym listing, with an explicit check when gym members would gain access. ([#8204](https://github.com/boardsesh/boardsesh/pull/8204))
+
+### Fixed
+
+- Find beta and nearby climbs on lighter public climb pages. Comments and grade proposals stay in the app. ([#8186](https://github.com/boardsesh/boardsesh/pull/8186))
+
 ## 2026-11-25
 
 ### New
@@ -24,6 +38,8 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### Fixed
 
+- Settings arrows now follow your reading direction on iOS. ([#8200](https://github.com/boardsesh/boardsesh/pull/8200))
+- Light your spray wall on the first tap after confirming its controller. ([#8168](https://github.com/boardsesh/boardsesh/pull/8168))
 - Adding your gym: save with the tick up top, and the map stays put while you type. ([#8195](https://github.com/boardsesh/boardsesh/pull/8195))
 - Gym assistants can save gym names and profile changes again. ([#8199](https://github.com/boardsesh/boardsesh/pull/8199))
 - See each beta video once, with its climb and filmer intact. ([#8196](https://github.com/boardsesh/boardsesh/pull/8196))

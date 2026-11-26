@@ -214,8 +214,6 @@
     }
   },
   "similarClimbs": {
-    "loadError": "无法加载相似线路。",
-    "emptyDefault": "暂时没有相似线路。",
     "emptyOnLayout": "此布局暂无相似线路。",
     "untitledClimb": "未命名线路"
   },
@@ -1064,11 +1062,6 @@
         "body": "按你的难度安排 4×4 和攀爬量训练，自带计时器。",
         "alt": "在 Boardsesh 中设置 V2 的攀爬量训练"
       }
-    },
-    "community": {
-      "heading": "评论和难度投票",
-      "signIn": "登录后参与",
-      "show": "查看评论"
     },
     "similar": {
       "nearbyHeading": "更多 {{layout}} 在 {{angle}}° 时难度接近 {{grade}} 的线路",

@@ -12,6 +12,7 @@ const privacy = vi.hoisted(() => ({
 }));
 const mutate = vi.hoisted(() => vi.fn());
 const push = vi.hoisted(() => vi.fn());
+const gym = vi.hoisted(() => ({ current: undefined as undefined | null | Record<string, unknown> }));
 
 vi.mock('react-native', () => ({ View: 'div', StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 } }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -27,8 +28,39 @@ vi.mock('../../Button', () => ({
     </button>
   ),
 }));
-vi.mock('../../SwitchRow', () => ({ SwitchRow: () => null }));
-vi.mock('../AudiencePicker', () => ({ AudiencePicker: () => null, BOARD_AUDIENCES: [], SESSION_AUDIENCES: [] }));
+// A checkbox stand-in, so a test can flip "Show to friends".
+vi.mock('../../SwitchRow', () => ({
+  SwitchRow: ({
+    label,
+    description,
+    value,
+    onValueChange,
+  }: {
+    label: string;
+    description?: string;
+    value: boolean;
+    onValueChange: (value: boolean) => void;
+  }) => (
+    <label>
+      <input
+        type="checkbox"
+        aria-label={label}
+        checked={value}
+        onChange={(event) => onValueChange(event.currentTarget.checked)}
+      />
+      {description ? <span>{description}</span> : null}
+    </label>
+  ),
+}));
+vi.mock('../AudiencePicker', () => ({
+  AudiencePicker: ({ onChange }: { onChange: (audience: string) => void }) => (
+    <button type="button" onClick={() => onChange('invite_only')}>
+      audience:invite_only
+    </button>
+  ),
+  BOARD_AUDIENCES: [],
+  SESSION_AUDIENCES: [],
+}));
 vi.mock('../../../lib/graphql/hooks/use-resource-privacy', () => ({
   useResourcePrivacy: () => ({ data: privacy.current }),
   useUpdateResourcePrivacy: () => ({ mutate, isPending: false, isError: false }),
@@ -36,7 +68,10 @@ vi.mock('../../../lib/graphql/hooks/use-resource-privacy', () => ({
 vi.mock('../../../lib/graphql/hooks/use-privacy', () => ({
   usePrivacySettings: () => ({ data: { enabled: true, isPrivate: false } }),
 }));
-vi.mock('../../../lib/graphql/hooks', () => ({ useProfile: () => ({ data: { id: 'owner-id' } }) }));
+vi.mock('../../../lib/graphql/hooks', () => ({
+  useProfile: () => ({ data: { id: 'owner-id' } }),
+  useGym: () => ({ data: gym.current }),
+}));
 vi.mock('../../board-discovery/OwnPublicGymWarning', () => ({
   OwnPublicGymWarning: ({ gymUuid }: { gymUuid?: string | null }) => <span>{`warning:${gymUuid ?? 'none'}`}</span>,
 }));
@@ -52,6 +87,7 @@ const boardPrivacy = (overrides: Record<string, unknown> = {}) => ({
   audience: 'public',
   locationAudience: 'public',
   inheritFollowers: false,
+  listedToFollowers: false,
   revision: 1,
   ...overrides,
 });
@@ -60,6 +96,7 @@ beforeEach(() => {
   mutate.mockReset();
   push.mockReset();
   privacy.current = null;
+  gym.current = undefined;
 });
 
 describe('ResourcePrivacyControl board location', () => {
@@ -112,5 +149,53 @@ describe('ResourcePrivacyControl Manage access', () => {
       pathname: '/settings/privacy-access',
       params: { kind: 'session', resourceId: 'session-uuid' },
     });
+  });
+});
+
+describe('ResourcePrivacyControl "Show to friends"', () => {
+  it('sends no listedToFollowers when the audience changes', () => {
+    privacy.current = boardPrivacy({ audience: 'unlisted', listedToFollowers: true });
+    const view = render(<ResourcePrivacyControl kind="board" resourceId="board-uuid" />);
+    fireEvent.click(view.getByText('audience:invite_only'));
+    expect(mutate).toHaveBeenCalledWith({ kind: 'board', resourceId: 'board-uuid', audience: 'invite_only' });
+    expect(mutate.mock.calls[0][0]).not.toHaveProperty('listedToFollowers');
+  });
+
+  it('sends listedToFollowers with the current audience when flipped', () => {
+    privacy.current = boardPrivacy({ audience: 'invite_only' });
+    const view = render(<ResourcePrivacyControl kind="board" resourceId="board-uuid" />);
+    expect(view.getByText('privacy.listedToFollowersInviteHint')).toBeTruthy();
+    fireEvent.click(view.getByLabelText('privacy.listedToFollowers'));
+    expect(mutate).toHaveBeenCalledWith({
+      kind: 'board',
+      resourceId: 'board-uuid',
+      audience: 'invite_only',
+      listedToFollowers: true,
+    });
+  });
+
+  it('says friends can climb on an Unlisted board', () => {
+    privacy.current = boardPrivacy({ audience: 'unlisted' });
+    const view = render(<ResourcePrivacyControl kind="board" resourceId="board-uuid" />);
+    expect(view.getByText('privacy.listedToFollowersUnlistedHint')).toBeTruthy();
+  });
+
+  it('hides the switch on a Public board and at a public listed gym', () => {
+    privacy.current = boardPrivacy();
+    const publicBoard = render(<ResourcePrivacyControl kind="board" resourceId="board-uuid" />);
+    expect(publicBoard.queryByLabelText('privacy.listedToFollowers')).toBeNull();
+    publicBoard.unmount();
+
+    privacy.current = boardPrivacy({ audience: 'unlisted' });
+    gym.current = { ownerId: 'owner-id', isPublic: true, isListed: true };
+    const atGym = render(<ResourcePrivacyControl kind="board" resourceId="board-uuid" gymUuid="gym-uuid" />);
+    expect(atGym.queryByLabelText('privacy.listedToFollowers')).toBeNull();
+  });
+
+  it("shows it at the owner's own private gym", () => {
+    privacy.current = boardPrivacy({ audience: 'unlisted' });
+    gym.current = { ownerId: 'owner-id', isPublic: false, isListed: false };
+    const view = render(<ResourcePrivacyControl kind="board" resourceId="board-uuid" gymUuid="gym-uuid" />);
+    expect(view.getByLabelText('privacy.listedToFollowers')).toBeTruthy();
   });
 });

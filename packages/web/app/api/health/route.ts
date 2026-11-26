@@ -1,3 +1,4 @@
+import { isRetainedNextAssetsEnabled } from '@/config/retained-next-assets.mjs';
 import { NextResponse } from 'next/server';
 import { BUILD_RELEASE } from './build-release';
 import { getDeveloperDocsState } from '@/app/lib/developer-apps/docs-access';
@@ -16,6 +17,7 @@ export type HealthResponse = {
   deploymentId: string;
   release: string;
   marketing: MarketingRuntimeCapabilities;
+  staticAssets: { retainedNextAssets: boolean };
 };
 
 export async function GET() {
@@ -27,6 +29,7 @@ export async function GET() {
     status: 'ok',
     deploymentId: process.env.RAILWAY_DEPLOYMENT_ID?.trim() || 'unknown',
     release: BUILD_RELEASE,
+    staticAssets: { retainedNextAssets: isRetainedNextAssetsEnabled() },
     marketing: {
       enableExpoAuthBridge: process.env.BOARDSESH_WEB === '1',
       developerHref: getDeveloperDocsState() === 'unavailable' ? '/docs' : '/developers',

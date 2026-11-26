@@ -1,28 +1,24 @@
-import { and, asc, count, eq, ilike, isNull, ne, notExists, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { and, asc, count, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
 import type { ConnectionContext, FriendBoard } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
-import { contentVisibilityCondition, mutualFollowListingCondition } from '@boardsesh/db/queries';
+import { contentVisibilityCondition } from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
 import { FriendsBoardsInputSchema } from '../../../validation/schemas';
-import { privacyControlsEnabled, resourceAccessCondition } from '../../../services/privacy';
+import { resourceAccessCondition } from '../../../services/privacy';
 import { enrichBoards } from './boards';
+import { friendsBoardListingConditions } from './friends-board-listing';
+
+type EnrichedBoard = Awaited<ReturnType<typeof enrichBoards>>[number];
+type FriendBoardItem = Omit<FriendBoard, 'board'> & { board: EnrichedBoard | null };
 
 /**
  * Friends' boards: home boards owned by the viewer's friends, people they follow
  * who follow them back, for the "A friend's board" path and the picker shelf.
  * Who sees what is in docs/product/privacy.md ("Friends' boards").
  *
- * Every gate runs in the WHERE the count and the page share:
- * - the owner and the viewer follow each other (`user_follows`, which holds
- *   approved follows only). A one-way follow, either way, lists nothing;
- * - a live home board: not deleted or merged away, not a spray wall, and not at
- *   someone else's gym or at a public listed gym (`homeWallCondition`);
- * - not the viewer's own board and not one their Your boards already shows: a
- *   `board_follows` row they can still open, read the way `myBoards` reads it.
- *   A save they can no longer open (the board went Invite-only since) stays
- *   listed, so they can ask for it again;
- * - the follow and audience rule (`mutualFollowListingCondition`).
+ * Every gate runs in the WHERE the count and the page share
+ * (`friendsBoardListingConditions`, which the Bluetooth request card reuses).
  *
  * Who may open a board is unchanged: a row the viewer can climb on gets the full
  * `UserBoard` from `enrichBoards`, so the board's location audience still decides
@@ -35,21 +31,6 @@ import { enrichBoards } from './boards';
  * private owner on, so `FriendBoard.owner` and the full board's `owner*` fields
  * agree.
  */
-/**
- * A home wall, gym or not: no gym, a gym that is gone, or a gym the board's own
- * owner runs that is not a public listed gym (a home wall that minted a private
- * or unlisted gym). A board at someone else's gym, or at a public listed gym,
- * is found through that gym instead. One primary-key lookup per board.
- */
-function homeWallCondition(gymIdColumn: SQLWrapper, ownerIdColumn: SQLWrapper): SQL {
-  return sql`NOT EXISTS (SELECT 1 FROM gyms friend_gym
-    WHERE friend_gym.id = ${gymIdColumn} AND friend_gym.deleted_at IS NULL
-      AND (friend_gym.owner_id <> ${ownerIdColumn} OR (friend_gym.is_public AND friend_gym.is_listed)))`;
-}
-
-type EnrichedBoard = Awaited<ReturnType<typeof enrichBoards>>[number];
-type FriendBoardItem = Omit<FriendBoard, 'board'> & { board: EnrichedBoard | null };
-
 export async function readFriendsBoards(
   viewerId: string,
   input: { query?: string | null; limit?: number | null; offset?: number | null },
@@ -60,31 +41,7 @@ export async function readFriendsBoards(
   const ownerName = sql<string | null>`COALESCE(${dbSchema.userProfiles.displayName}, ${dbSchema.users.name})`;
   const ownerAvatar = sql<string | null>`COALESCE(${dbSchema.userProfiles.avatarUrl}, ${dbSchema.users.image})`;
 
-  const conditions: SQL[] = [
-    isNull(boards.deletedAt),
-    isNull(boards.mergedIntoBoardUuid),
-    homeWallCondition(boards.gymId, boards.ownerId),
-    ne(boards.boardType, 'spray'),
-    ne(boards.ownerId, viewerId),
-    notExists(
-      db
-        .select({ id: dbSchema.boardFollows.id })
-        .from(dbSchema.boardFollows)
-        .where(
-          and(
-            eq(dbSchema.boardFollows.userId, viewerId),
-            eq(dbSchema.boardFollows.boardUuid, boards.uuid),
-            // The same access check myBoards puts on a saved board.
-            resourceAccessCondition('board', boards.uuid, viewerId),
-          ),
-        ),
-    ),
-    // With the controls off the owner cannot reach the switch or answer a
-    // request, so the switch reads as off and only openable boards are listed.
-    mutualFollowListingCondition(boards.uuid, boards.ownerId, viewerId, {
-      honourListedToFollowers: privacyControlsEnabled(),
-    }),
-  ];
+  const conditions: SQL[] = friendsBoardListingConditions(viewerId);
   const query = input.query?.trim();
   if (query) {
     const pattern = `%${query.replace(/[%_\\]/g, '\\$&')}%`;

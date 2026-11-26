@@ -4,6 +4,7 @@ import type { SearchRequestPagination } from '@/app/lib/types';
 import { WALL_CAPABILITY_PARAM } from '@/app/lib/spray/spray-visibility';
 import { isBoardInviteRequest } from '@/app/lib/board-invite';
 import { hasLiveSearchData, LIVE_SEARCH_DATA_TTL_SECONDS } from '@/app/lib/live-search-data-boards';
+export { isClimbViewRequest } from './climb-view-request';
 
 // List data tolerates a full day of staleness (a new/edited climb showing up a
 // little late in a list is harmless), so list pages cache for 24h. MoonBoard
@@ -11,19 +12,6 @@ import { hasLiveSearchData, LIVE_SEARCH_DATA_TTL_SECONDS } from '@/app/lib/live-
 // tell without a backend call) use the 15 minute live-data TTL instead, to
 // match their Next data cache (#6803).
 const LIST_PAGE_CACHE_TTL_SECONDS = 86400;
-
-// A climb view page is fully determined by its URL and reads no server-side
-// personalization (queue/session/auth all live in client components), so it's
-// as cacheable as a list page. The crawl surface is 4 locale twins × ~53k
-// climbs (~212k distinct URLs, #4650); at a 1h CDN window nearly every
-// crawler fetch missed and re-rendered at origin (~40k/day). The data caches
-// underneath (`getClimb`/stats in `app/lib/data/queries.ts`, and the
-// front-door similar-climbs/beta-links cache) stay at 3600s, so a re-render
-// is still ≤1h stale even though the CDN copy may now be ≤24h stale (plus a
-// 7d stale-while-revalidate window from the ×7 in middleware). The #4592 fix
-// for the CDN-cacheable self-redirect loop on non-Latin climb names must stay
-// in place — a cacheable redirect loop at this TTL would pin for a full day.
-const CLIMB_VIEW_PAGE_CACHE_TTL_SECONDS = 86400;
 
 /** The printable board poster, `/poster/b/{slug}` (#4415). Never cached; see `isBoardPosterRequest`. */
 const BOARD_POSTER_PATH_PREFIX = '/poster/b';
@@ -131,40 +119,4 @@ export function getListPageCacheTTL(pathname: string, searchParams: URLSearchPar
   }
 
   return LIST_PAGE_CACHE_TTL_SECONDS;
-}
-
-/**
- * Checks whether a request is a cacheable climb view page and returns the CDN
- * cache duration in seconds, or null if it should not be CDN-cached.
- *
- * Matches both URL shapes, and — because it matches on segment shape rather than
- * on slug-vs-numeric — it also matches the legacy numeric variants that
- * permanent-redirect to their slug form. Caching those lets the CDN answer the
- * deterministic 308 without re-rendering:
- *   - /[board]/[layout]/[size]/[sets]/[angle]/view/[climb_uuid]  (legacy + numeric, 7 segments)
- *   - /b/[board_slug]/[angle]/view/[climb_uuid]                  (slug format, 5 segments)
- */
-export function getClimbViewPageCacheTTL(pathname: string, searchParams: URLSearchParams): number | null {
-  const pathParts = pathname.split('/').filter(Boolean);
-
-  const isSlugFormat = pathParts.length === 5 && pathParts[0] === 'b' && pathParts[3] === 'view';
-
-  const isLegacyFormat =
-    pathParts.length === 7 &&
-    (SUPPORTED_BOARDS as readonly string[]).includes(pathParts[0].toLowerCase()) &&
-    pathParts[5] === 'view';
-
-  if (!isSlugFormat && !isLegacyFormat) {
-    return null;
-  }
-
-  if (
-    hasUserSpecificQueryParams(searchParams) ||
-    isSprayWallCapabilityRequest(pathname, searchParams) ||
-    isBoardInviteRequest(pathname, searchParams)
-  ) {
-    return null;
-  }
-
-  return CLIMB_VIEW_PAGE_CACHE_TTL_SECONDS;
 }

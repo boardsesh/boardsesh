@@ -5,6 +5,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import { classifyMarketingBrowser } from '@/app/lib/marketing-platform';
+import * as screenshots from '@/app/lib/marketing-screenshots';
+import { DocumentLocaleProvider } from '@/app/lib/i18n/document-locale-context';
 import { MarketingPreviewProvider } from '../marketing-preview-provider';
 import { MarketingScreenshot } from '../marketing-screenshot';
 import { MarketingPreviewSwitch } from '../marketing-preview-switch';
@@ -17,7 +19,7 @@ beforeEach(() => {
 });
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => tFromCatalog('marketing', key), i18n: { language: 'de' } }),
+  useTranslation: () => ({ t: (key: string) => tFromCatalog('marketing', key) }),
 }));
 vi.mock('@/app/lib/marketing-static-asset-url', () => ({ resolveMarketingStaticAssetUrl: (path: string) => path }));
 
@@ -77,13 +79,19 @@ describe('platform screenshot rendering', () => {
   });
 
   it.each(['ios', 'android'] as const)('server-renders only %s images and preload sources', (platform) => {
+    const captureLookup = vi.spyOn(screenshots, 'marketingScreenshot');
     const initialBrowser = classifyMarketingBrowser(platform === 'ios' ? 'iPhone' : 'Android');
     const markup = renderToString(
-      <MarketingPreviewProvider initialBrowser={initialBrowser}>
-        <Gallery />
-        <MarketingScreenshot shot="queue" alt="Queue" />
-      </MarketingPreviewProvider>,
+      <DocumentLocaleProvider locale="de">
+        <MarketingPreviewProvider initialBrowser={initialBrowser}>
+          <Gallery />
+          <MarketingScreenshot shot="queue" alt="Queue" />
+        </MarketingPreviewProvider>
+      </DocumentLocaleProvider>,
     );
+    // Both platforms currently fall back to their English captures for German.
+    expect(captureLookup).toHaveBeenCalledWith(platform, 'de', 'kilter');
+    expect(captureLookup).toHaveBeenCalledWith(platform, 'de', 'queue');
     const opposite = platform === 'ios' ? 'android' : 'ios';
     expect(markup).toContain(`data-preview-platform="${platform}"`);
     expect(markup).toContain(encodeURIComponent(`/images/app/${platform}/kilter.webp`));

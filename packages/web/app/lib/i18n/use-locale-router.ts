@@ -2,20 +2,14 @@
 
 import { useCallback, useMemo } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { useTranslation } from 'react-i18next';
 import { applyLocale, stripLocalePrefix } from './locale-href';
-import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from './config';
+import { useDocumentLocale } from './document-locale-context';
 import { runIfSessionGenerationCurrent, useSessionGeneration } from '@/app/hooks/use-session-generation';
 import { navigateAcrossMarketingDocument, needsMarketingDocumentNavigation } from './marketing-document-navigation';
 
-function useActiveLocale(): Locale {
-  const { i18n } = useTranslation();
-  return isSupportedLocale(i18n.language) ? i18n.language : DEFAULT_LOCALE;
-}
-
 export function usePathnameWithoutLocale(): string {
   const pathname = usePathname() ?? '/';
-  const activeLocale = useActiveLocale();
+  const activeLocale = useDocumentLocale();
   return stripLocalePrefix(pathname, activeLocale);
 }
 
@@ -25,7 +19,7 @@ type RouterPrefetchOptions = Parameters<ReturnType<typeof useRouter>['prefetch']
 
 export function useLocaleRouter() {
   const router = useRouter();
-  const activeLocale = useActiveLocale();
+  const activeLocale = useDocumentLocale();
   const sourcePath = usePathname() ?? '/';
   // Navigation asked for by a render from before an account change is dropped.
   const generation = useSessionGeneration();

@@ -2,7 +2,7 @@ import React from 'react';
 import Box from '@mui/material/Box';
 import { navLinkClicked } from '@boardsesh/analytics';
 import BrandLockup from '@/app/components/site-chrome/brand-lockup';
-import SiteFooter from '@/app/components/site-chrome/site-footer';
+import MarketingSiteFooter from './marketing-site-footer';
 import MarketingConsentBanner from './marketing-consent-banner';
 import MarketingPhoneInstall from './marketing-phone-install';
 import MarketingDisclosure from './marketing-disclosure';
@@ -100,8 +100,8 @@ export default async function MarketingChrome({
         </MarketingDisclosure>
       </Box>
       {children}
-      <SiteFooter developerHref={developerHref} />
-      <MarketingConsentBanner />
+      <MarketingSiteFooter locale={locale} developerHref={developerHref} />
+      <MarketingConsentBanner locale={locale} />
     </>
   );
 }
