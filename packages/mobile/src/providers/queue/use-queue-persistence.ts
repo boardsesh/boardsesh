@@ -104,7 +104,11 @@ export function useQueuePersistence({
   activeBoardRolloutBlocked = false,
   getSessionRestoreBoard,
   isBoardAvailable = isBoardConfigVisible,
-}: UseQueuePersistenceParams): { restored: boolean } {
+}: UseQueuePersistenceParams): {
+  restored: boolean;
+  sessionAuthorityReady: boolean;
+  beginClearingSavedSession: () => () => void;
+} {
   const [verifiedOwner, setVerifiedOwner] = useState<{ userId: string; generation: number } | null>(null);
   useEffect(() => {
     if (identityReady) return;
@@ -146,6 +150,20 @@ export function useQueuePersistence({
   const hydrationScope = JSON.stringify([ownerReady, ownerUserId, credentialGeneration ?? getCredentialGeneration()]);
   const [hydratedScope, setHydratedScope] = useState<string | null>(null);
   const [blockedRestoreScope, setBlockedRestoreScope] = useState<string | null>(null);
+  const [verifiedSessionScope, setVerifiedSessionScope] = useState<string | null>(null);
+  const savedSessionRevisionRef = useRef(0);
+  const beginClearingSavedSession = useCallback(() => {
+    const revision = ++savedSessionRevisionRef.current;
+    const generation = getCredentialGeneration();
+    setVerifiedSessionScope(null);
+    setBlockedRestoreScope(hydrationScope);
+    return () => {
+      if (revision !== savedSessionRevisionRef.current || generation !== getCredentialGeneration()) return;
+      setBlockedRestoreScope(null);
+      setVerifiedSessionScope(hydrationScope);
+      setHydratedScope(hydrationScope);
+    };
+  }, [hydrationScope]);
   const boardAvailabilityRef = useRef({ activeBoardRolloutBlocked, isBoardAvailable });
   boardAvailabilityRef.current = { activeBoardRolloutBlocked, isBoardAvailable };
   const waitForConnection = useRef(false);
@@ -209,7 +227,9 @@ export function useQueuePersistence({
     }
     let cancelled = false;
     const generation = getCredentialGeneration();
-    const isCurrent = () => !cancelled && generation === getCredentialGeneration();
+    const revision = savedSessionRevisionRef.current;
+    const isCurrent = () =>
+      !cancelled && generation === getCredentialGeneration() && revision === savedSessionRevisionRef.current;
     const owner = getCurrentUserStorageOwner() ?? (ownerUserId ? { userId: ownerUserId, authSessionId: '' } : null);
     const hydrateLocalSnapshot = async () => {
       const snapshotGeneration = getQueueSnapshotGeneration();
@@ -226,7 +246,7 @@ export function useQueuePersistence({
       setHydratedScope(hydrationScope);
       restoreQueueSnapshot(snapshot);
     };
-    void getStoredSessionId()
+    void getStoredSessionId(undefined, { requireReadable: true })
       .then(async (storedId) => {
         if (!isCurrent() || sessionIdRef.current !== null) return;
         if (__DEV__) {
@@ -234,6 +254,7 @@ export function useQueuePersistence({
         }
         if (!storedId) {
           setBlockedRestoreScope(null);
+          setVerifiedSessionScope(hydrationScope);
           await hydrateLocalSnapshot();
           return;
         }
@@ -253,12 +274,16 @@ export function useQueuePersistence({
             announceStoredSessionEnded(storedId);
             await clearStoredSessionId();
             await hydrateLocalSnapshot();
-            if (isCurrent()) setBlockedRestoreScope(null);
+            if (isCurrent()) {
+              setBlockedRestoreScope(null);
+              setVerifiedSessionScope(hydrationScope);
+            }
             return;
           }
           if (status !== 'active' || !board || !boardAvailabilityRef.current.isBoardAvailable(board)) return;
           setSessionId(storedId);
           setBlockedRestoreScope(null);
+          setVerifiedSessionScope(hydrationScope);
         } catch (error) {
           if (!isCurrent() || isLocalBoardBlocked()) return;
           const didAnswer = !!error && typeof error === 'object' && 'response' in error;
@@ -271,6 +296,12 @@ export function useQueuePersistence({
           // can be verified. The solo queue remains available while offline.
           await hydrateLocalSnapshot();
         }
+      })
+      .catch(async (error: unknown) => {
+        if (!isCurrent()) return;
+        setBlockedRestoreScope(hydrationScope);
+        reportError(error, { tags: { source: 'storedSessionRead' } });
+        await hydrateLocalSnapshot();
       })
       .finally(() => {
         if (isCurrent()) setHydratedScope(hydrationScope);
@@ -347,7 +378,17 @@ export function useQueuePersistence({
     hydratedScope,
   ]);
 
-  return { restored: hydratedScope === hydrationScope };
+  return {
+    restored: hydratedScope === hydrationScope,
+    // A usable solo snapshot does not establish that there is no saved crew.
+    sessionAuthorityReady:
+      sessionId !== null ||
+      (ownerReady &&
+        hydratedScope === hydrationScope &&
+        verifiedSessionScope === hydrationScope &&
+        blockedRestoreScope !== hydrationScope),
+    beginClearingSavedSession,
+  };
 }
 
 let queueSnapshotRestoreReported = false;

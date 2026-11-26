@@ -186,6 +186,10 @@ export const sessionQueries = {
 
   /** Read the authorized board geometry without joining or consulting live presence. */
   sessionRestoreBoardPath: async (_: unknown, { sessionId }: { sessionId: string }, ctx: ConnectionContext) => {
+    // The lifecycle status stays public for compatibility. The board belongs
+    // to an authenticated restore operation and retains normal session access.
+    requireAuthenticated(ctx);
+    if (!ctx.userId) return null;
     validateInput(SessionIdSchema, sessionId, 'sessionId');
     if (!(await canAccessResource('session', sessionId, ctx.userId))) return null;
     const session = await roomManager.getSessionById(sessionId);

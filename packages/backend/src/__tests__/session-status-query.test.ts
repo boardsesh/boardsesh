@@ -98,12 +98,21 @@ describe('sessionStatus query', () => {
 });
 
 describe('sessionRestoreBoardPath query', () => {
-  const context = { userId: 'viewer' } as ConnectionContext;
+  const context = { isAuthenticated: true, userId: 'viewer' } as ConnectionContext;
 
   beforeEach(() => {
     restore.canAccess.mockReset().mockResolvedValue(true);
     restore.getSessionById.mockReset();
     restore.project.mockReset();
+  });
+
+  it('does not expose a public or unlisted session board to an anonymous restore request', async () => {
+    const anonymous = { isAuthenticated: false } as ConnectionContext;
+    await expect(sessionQueries.sessionRestoreBoardPath({}, { sessionId: 'public' }, anonymous)).rejects.toThrow(
+      'Authentication required',
+    );
+    expect(restore.canAccess).not.toHaveBeenCalled();
+    expect(restore.getSessionById).not.toHaveBeenCalled();
   });
 
   it('checks privacy before reading the session', async () => {

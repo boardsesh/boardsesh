@@ -326,6 +326,8 @@ type QueueSessionIdContextValue = {
   getCurrentSessionId?: () => string | null;
   getSessionContextRevision?: () => number;
   isSessionLeavePending?: () => boolean;
+  /** A saved crew was verified, removed, or confirmed absent. */
+  sessionAuthorityReady?: boolean;
   accountId?: string | null;
   /** Scope for Undo offers: session, physical board configuration and account. */
   undoScope: string;

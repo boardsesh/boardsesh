@@ -1326,7 +1326,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // Solo-queue persistence: cold-start restore (explicit session first, then the
   // local snapshot) + the debounced solo snapshot save. See useQueuePersistence.
   // `queueRestored` is the restore landing, for QueueRestoredContext.
-  const { restored: queueRestored } = useQueuePersistence({
+  const {
+    restored: queueRestored,
+    sessionAuthorityReady,
+    beginClearingSavedSession,
+  } = useQueuePersistence({
     authenticatedUserId,
     identityReady: !isAuthenticated || !!authenticatedUserId,
     credentialGeneration,
@@ -1380,6 +1384,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     authenticatedUserIdRef,
     onSessionContextChanging,
     beginSessionLeave,
+    beginClearingSavedSession,
     dispatch,
     setPlaylistSuggestionSourceState,
     setActiveBoard,
@@ -3803,8 +3808,17 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       getCurrentSessionId,
       getSessionContextRevision,
       isSessionLeavePending,
+      sessionAuthorityReady,
     }),
-    [sessionId, undoScope, authenticatedUserId, getCurrentSessionId, getSessionContextRevision, isSessionLeavePending],
+    [
+      sessionId,
+      undoScope,
+      authenticatedUserId,
+      getCurrentSessionId,
+      getSessionContextRevision,
+      isSessionLeavePending,
+      sessionAuthorityReady,
+    ],
   );
 
   // Live analytics + presence: the ≤1/2s party push recreates only this small

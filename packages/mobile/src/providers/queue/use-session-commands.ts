@@ -66,6 +66,7 @@ type UseSessionCommandsParams = {
   /** Starts a fresh playlist-send lane before the active room changes. */
   onSessionContextChanging: () => void;
   beginSessionLeave?: () => () => void;
+  beginClearingSavedSession?: () => () => void;
   dispatch: React.Dispatch<QueueAction>;
   setPlaylistSuggestionSourceState: React.Dispatch<React.SetStateAction<PlaylistSuggestionSource | null>>;
   /** Raw active-board setter (useSetActiveBoard), NOT the ref-wrapped one. */
@@ -104,6 +105,7 @@ export function useSessionCommands({
   authenticatedUserIdRef,
   onSessionContextChanging,
   beginSessionLeave,
+  beginClearingSavedSession,
   dispatch,
   setPlaylistSuggestionSourceState,
   setActiveBoard,
@@ -401,6 +403,7 @@ export function useSessionCommands({
         getActiveBoardWriteGeneration() !== activeBoardGeneration
       )
         return;
+      const markSavedSessionCleared = beginClearingSavedSession?.();
       const snapshotRemoval = clearStoredQueueSnapshot();
       if (sessionToClear)
         void clearActivePartnerWorkout(sessionToClear).catch((error: unknown) => {
@@ -426,8 +429,9 @@ export function useSessionCommands({
       // Enqueue both removals before yielding. Session-store serializes them
       // with new joins/starts, so a newer session's persisted identity wins.
       await Promise.all([clearStoredSessionId(), clearStoredCreatedSessionId()]);
+      if (sessionIdRef.current === null) markSavedSessionCleared?.();
     },
-    [beginSessionLeave, onSessionContextChanging],
+    [beginClearingSavedSession, beginSessionLeave, onSessionContextChanging],
   );
 
   const endSession = useCallback(

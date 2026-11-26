@@ -20,6 +20,7 @@ import type { LocalQueueSnapshot } from '../../../lib/queue-snapshot-store';
 
 const storage = vi.hoisted(() => ({
   sessionId: null as string | null,
+  readFailure: null as Error | null,
   clearSession: vi.fn(),
   sessionStatus: vi.fn(),
   setSession: vi.fn(),
@@ -37,7 +38,10 @@ vi.mock('../../../lib/queue-snapshot-store', () => ({
   getQueueSnapshotGeneration: () => 0,
 }));
 vi.mock('../../../lib/session-store', () => ({
-  getStoredSessionId: vi.fn(async () => storage.sessionId),
+  getStoredSessionId: vi.fn(async () => {
+    if (storage.readFailure) throw storage.readFailure;
+    return storage.sessionId;
+  }),
   clearStoredSessionId: storage.clearSession,
 }));
 vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: storage.sessionStatus }) }));
@@ -89,7 +93,7 @@ function useRestoreHarness(
   const stateRef = useRef<QueueState>(state);
   stateRef.current = state;
   const sessionIdRef = useRef<string | null>(null);
-  const { restored } = useQueuePersistence({
+  const { restored, sessionAuthorityReady, beginClearingSavedSession } = useQueuePersistence({
     authenticatedUserId: 'viewer',
     identityReady: true,
     dispatch,
@@ -105,12 +109,13 @@ function useRestoreHarness(
     ...boardPolicy,
   });
   seen.push({ current: state.currentClimbQueueItem?.uuid ?? null, restored });
-  return { state, restored, dispatch };
+  return { state, restored, sessionAuthorityReady, beginClearingSavedSession, dispatch };
 }
 
 beforeEach(() => {
   storage.snapshot = null;
   storage.sessionId = null;
+  storage.readFailure = null;
   storage.clearSession.mockClear();
   storage.setSession.mockClear();
   storage.setSnapshot.mockClear();
@@ -221,4 +226,39 @@ it('does not restore a Quantum crew when the separately selected board is Kilter
   expect(storage.setSession).not.toHaveBeenCalled();
   expect(storage.clearSession).not.toHaveBeenCalled();
   expect(storage.setSnapshot).not.toHaveBeenCalled();
+});
+
+it('lets a returning passenger browse offline without establishing solo wall authority', async () => {
+  storage.sessionId = 'quantum-crew';
+  storage.snapshot = savedQueue(makeItem('my-offline-climb'));
+  storage.sessionStatus.mockRejectedValue(new Error('Offline'));
+  const { result } = renderHook(() => useRestoreHarness([]));
+
+  await waitFor(() => expect(result.current.state.currentClimbQueueItem?.uuid).toBe('my-offline-climb'));
+  expect(result.current.restored).toBe(true);
+  expect(result.current.sessionAuthorityReady).toBe(false);
+  expect(storage.clearSession).not.toHaveBeenCalled();
+
+  act(() => {
+    const finishClearing = result.current.beginClearingSavedSession();
+    finishClearing();
+  });
+  expect(result.current.sessionAuthorityReady).toBe(true);
+});
+
+it('establishes solo wall authority when no crew was saved, including offline', async () => {
+  storage.sessionStatus.mockRejectedValue(new Error('Offline'));
+  const { result } = renderHook(() => useRestoreHarness([]));
+  expect(result.current.sessionAuthorityReady).toBe(false);
+  await waitFor(() => expect(result.current.sessionAuthorityReady).toBe(true));
+  expect(storage.sessionStatus).not.toHaveBeenCalled();
+});
+
+it('preserves solo browsing without establishing wall authority when secure storage cannot be read', async () => {
+  storage.readFailure = new Error('Secure storage unavailable');
+  storage.snapshot = savedQueue(makeItem('my-offline-climb'));
+  const { result } = renderHook(() => useRestoreHarness([]));
+  await waitFor(() => expect(result.current.restored).toBe(true));
+  expect(result.current.sessionAuthorityReady).toBe(false);
+  expect(result.current.state.currentClimbQueueItem?.uuid).toBe('my-offline-climb');
 });

@@ -323,6 +323,31 @@ describe('QuantumBluetoothProvider', () => {
 
   afterEach(cleanup);
 
+  it('waits for saved-session authority even when the solo queue is already available', async () => {
+    const isBoardSelectionCurrent = () => true;
+    const wrap = (sessionAuthorityReady: boolean) =>
+      createElement(QueueSessionIdContext.Provider, {
+        value: { sessionId: null, undoScope: 'offline', sessionAuthorityReady, accountId: 'returning-account' },
+        children: createElement(QueueRestoredContext.Provider, {
+          value: true,
+          children: createElement(WithWrappedSelection, { isBoardSelectionCurrent }),
+        }),
+      });
+    const view = render(wrap(false));
+
+    expect(latestState?.driverStatus).toBe('checking');
+    await expect(latestActions!.connect()).resolves.toBe(false);
+    await expect(latestActions!.activateLayer(ACTIVATION)).rejects.toThrow('not connected');
+    expect(playerStorage.solo).not.toHaveBeenCalled();
+    expect(permissions.request).not.toHaveBeenCalled();
+    expect(transport.requestAndConnect).not.toHaveBeenCalled();
+
+    // A confirmed offline solo session is allowed to use its local player.
+    view.rerender(wrap(true));
+    await waitFor(() => expect(latestState?.driverStatus).toBe('available'));
+    expect(playerStorage.solo).toHaveBeenCalled();
+  });
+
   it.each(['joined', 'lost credential'] as const)(
     'checks device provenance for a %s phone on the same account',
     async (kind) => {
@@ -428,6 +453,7 @@ describe('QuantumBluetoothProvider', () => {
       playerStorage.session.mockResolvedValue({ controllerUserUuid: STARTED_SESSION_USER_UUID });
       const sessionContext = {
         sessionId: 'room-A',
+        sessionAuthorityReady: true,
         accountId: 'account-A',
         undoScope: 'test',
         getCurrentSessionId: () => 'room-A',
