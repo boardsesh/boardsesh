@@ -154,9 +154,9 @@ export async function assertKnownBoardConfig(
   }
 
   if (boardType === 'quantum') {
-    const model = Object.values(QUANTUM_MODELS).find((entry) => entry.layoutId === layoutId);
-    if (!model) throwUnknownBoardConfig('layoutId');
-    if (model.sizeId !== productSizeId) throwUnknownBoardConfig('sizeId');
+    const layoutModels = Object.values(QUANTUM_MODELS).filter((model) => model.layoutId === layoutId);
+    if (layoutModels.length === 0) throwUnknownBoardConfig('layoutId');
+    if (!layoutModels.some((model) => model.sizeId === productSizeId)) throwUnknownBoardConfig('sizeId');
     if (uniqueSetIds.length !== 1 || uniqueSetIds[0] !== QUANTUM_SET_ID) {
       throwUnknownBoardConfig(
         'setIds',

@@ -405,6 +405,19 @@ describe('UNKNOWN_BOARD_CONFIG detail', () => {
     ).toEqual({ code: 'UNKNOWN_BOARD_CONFIG', field: 'boardType' });
   });
 
+  it('identifies an unknown Quantum layout separately from a size from another Quantum layout', async () => {
+    const setIds = String(QUANTUM_SET_ID);
+    expect(
+      await refusalExtensions(
+        assertKnownBoardConfig('quantum', QUANTUM_MODELS.xl.layoutId, QUANTUM_MODELS.s.sizeId, setIds),
+      ),
+    ).toEqual({ code: 'UNKNOWN_BOARD_CONFIG', field: 'sizeId' });
+    expect(await refusalExtensions(assertKnownBoardConfig('quantum', 9102, QUANTUM_MODELS.l.sizeId, setIds))).toEqual({
+      code: 'UNKNOWN_BOARD_CONFIG',
+      field: 'layoutId',
+    });
+  });
+
   it('names the MoonBoard field and its unknown sets without a catalogue query', async () => {
     const selectSpy = vi.spyOn(db, 'select');
     const masters2019 = MOONBOARD_LAYOUTS['moonboard-masters-2019'].id;
