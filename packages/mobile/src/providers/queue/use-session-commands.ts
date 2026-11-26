@@ -2,6 +2,8 @@ import { isReleasedQuantumConfig } from '@boardsesh/board-constants/quantum';
 import { clearActivePartnerWorkout, rememberPartnerWorkout } from '../../lib/pending-workout-store';
 import { useCallback, useContext, useRef } from 'react';
 import { QueryClientContext } from '@tanstack/react-query';
+import { useIsBoardConfigVisible } from '../../hooks/use-board-visibility';
+import { parseBoardPath } from '@boardsesh/board-config';
 import { buildSessionBoardPath } from '../../lib/boards/session-board-path';
 import { execute } from '@boardsesh/graphql-client';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -79,7 +81,7 @@ type SessionCommands = {
     opts: { boardPath: string; userBoard: UserBoard; isOperationCurrent?: () => boolean },
   ) => Promise<boolean>;
   endSession: (options?: EndSessionOptions) => Promise<SessionSummary | null>;
-  clearSession: (options?: { notifyServer?: boolean }) => Promise<void>;
+  clearSession: (options?: { notifyServer?: boolean; isOperationCurrent?: () => boolean }) => Promise<void>;
 };
 
 /**
@@ -113,6 +115,9 @@ export function useSessionCommands({
   // still renders without a QueryClientProvider; endSession then skips the
   // summary cache write.
   const queryClient = useContext(QueryClientContext);
+  const isBoardConfigVisible = useIsBoardConfigVisible();
+  const boardVisibilityRef = useRef(isBoardConfigVisible);
+  boardVisibilityRef.current = isBoardConfigVisible;
 
   // Explicit session creation — the Start button (PreSessionView) and nothing
   // else. Sessions are never created lazily: the solo queue lives locally
@@ -134,7 +139,7 @@ export function useSessionCommands({
             sessionIdRef.current === initialSessionId);
         const activeBoard = await getStoredActiveBoard();
         if (!isPartnerScopeCurrent()) return null;
-        if (!activeBoard) {
+        if (!activeBoard || !boardVisibilityRef.current(activeBoard)) {
           // The Start button is gated on the React Query copy of the active board;
           // if the stored board is somehow missing, fail loudly so the user knows
           // to pick a board instead of tapping into a silent no-op.
@@ -357,9 +362,10 @@ export function useSessionCommands({
   );
 
   const clearSession = useCallback(
-    async (options?: { notifyServer?: boolean }) => {
+    async (options?: { notifyServer?: boolean; isOperationCurrent?: () => boolean }) => {
       const sessionToClear = sessionIdRef.current;
       const activeBoardGeneration = getActiveBoardWriteGeneration();
+      if (options?.isOperationCurrent?.() === false) return;
       // This callback only resets the mutation lane. Solo queues also have
       // pending content writes, so invalidate them before LEAVE can await I/O.
       onSessionContextChanging();
@@ -380,7 +386,12 @@ export function useSessionCommands({
       }
       // A new room or board selected while LEAVE was in flight owns the state
       // now; an old removal must not clear that newer selection.
-      if (sessionIdRef.current !== sessionToClear || getActiveBoardWriteGeneration() !== activeBoardGeneration) return;
+      if (
+        options?.isOperationCurrent?.() === false ||
+        sessionIdRef.current !== sessionToClear ||
+        getActiveBoardWriteGeneration() !== activeBoardGeneration
+      )
+        return;
       const snapshotRemoval = clearStoredQueueSnapshot();
       if (sessionToClear)
         void clearActivePartnerWorkout(sessionToClear).catch((error: unknown) => {
@@ -491,7 +502,11 @@ export function useSessionCommands({
       sessionToJoin: string,
       opts: { boardPath: string; userBoard: UserBoard; isOperationCurrent?: () => boolean },
     ): Promise<boolean> => {
-      const isOperationCurrent = opts.isOperationCurrent ?? (() => true);
+      const pathBoard = parseBoardPath(opts.boardPath);
+      const isOperationCurrent = () =>
+        opts.isOperationCurrent?.() !== false &&
+        boardVisibilityRef.current(opts.userBoard) &&
+        (!pathBoard || boardVisibilityRef.current(pathBoard));
       if (!isOperationCurrent()) return false;
       // Idempotent against double-tap / re-entrant deep links.
       if (sessionIdRef.current === sessionToJoin) return true;

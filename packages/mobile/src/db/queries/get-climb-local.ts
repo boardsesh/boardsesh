@@ -1,3 +1,4 @@
+import { QUANTUM_CLIMB_RETIREMENT_SQL } from './quantum-climb-retirement';
 import type { OfflineDatabase } from '@boardsesh/offline-sync';
 import type { Climb } from '@boardsesh/shared-schema';
 import {
@@ -20,7 +21,8 @@ import {
  *
  * No is_hidden predicate, matching the server's getClimbByUuid: opening a climb
  * directly still works after the community hides it. The flag rides along on the
- * row so the caller can say so.
+ * row so the caller can say so. A redacted catalogue sync marker is an
+ * exception: it identifies a withdrawn upstream Quantum route.
  *
  * A draft opens only for its owner, as on the server. `viewerId` is the signed-in
  * account (the live token, not the owner stamp). The board sync sends a draft to
@@ -89,6 +91,7 @@ export async function getClimbLocal(db: OfflineDatabase, input: GetClimbLocalInp
     WHERE c.uuid = ? AND c.board_type = ?
       AND (COALESCE(c.is_draft, 0) = 0 OR c.user_id = ?
         OR (c.board_type = 'spray' AND EXISTS (SELECT 1 FROM spray_walls wall WHERE wall.layout_id = c.layout_id)))
+      ${boardName === 'quantum' ? `AND (${QUANTUM_CLIMB_RETIREMENT_SQL}) IS NOT TRUE` : ''}
     LIMIT 1
   `;
   // Bind order follows the SQL text: the two tick subqueries, the stats join, the

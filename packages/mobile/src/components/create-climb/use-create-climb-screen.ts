@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { randomUUID } from 'expo-crypto';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { useQueryClient } from '@tanstack/react-query';
+import { onlineManager, useQueryClient } from '@tanstack/react-query';
+import { useIsBoardConfigVisible } from '../../hooks/use-board-visibility';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import {
   isNoMatchClimb,
@@ -289,6 +290,9 @@ export function useCreateClimbScreen({
   const { setCurrentClimb, refreshAuthoredClimb } = useQueueActions();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
+  const isBoardConfigVisible = useIsBoardConfigVisible();
+  const boardVisibilityRef = useRef(isBoardConfigVisible);
+  boardVisibilityRef.current = isBoardConfigVisible;
 
   const isForking = !!forkFrames;
   const isEditing = !!editClimbUuid;
@@ -1257,7 +1261,7 @@ export function useCreateClimbScreen({
   }, [resetHolds, discardAutosaveSlot, isEditing, isForking, onStartedNewClimb, reclaimWall, board.boardName]);
 
   const confirmNewClimb = useCallback(() => {
-    if (saveInFlightRef.current || startNewInFlightRef.current) return;
+    if (saveInFlightRef.current || startNewInFlightRef.current || !boardVisibilityRef.current(board)) return;
     startNewInFlightRef.current = true;
     void resetToBlankClimb();
   }, [resetToBlankClimb]);
@@ -1583,13 +1587,20 @@ export function useCreateClimbScreen({
     const sprayWallUuid = sprayWallUuidFor(board.boardName, board.layoutId);
     let nextSavedClimb: SavedClimbSnapshot | null = null;
     try {
-      if (pendingClimbUuid && !savedClimb) {
+      if (board.boardName === 'quantum' && !onlineManager.isOnline()) {
+        await persistAutosaveSlot(autosaveDraftRef.current);
+        showToast(t('mobile.create.autosave.keptToast'), 'info');
+        return;
+      }
+      if ((pendingClimbUuid && !savedClimb) || board.boardName === 'quantum') {
         await persistAutosaveSlot({ ...autosaveDraftRef.current, pendingClimbUuid });
       }
+      if (!boardVisibilityRef.current(board)) return;
       if (canUpdate && savedClimb) {
         const result = await updateClimb({
           uuid: savedClimb.uuid,
           boardType: board.boardName,
+          ...(board.boardName === 'quantum' ? { editorBoard: board } : {}),
           name: name.trim(),
           description: fullDescription,
           frames,
@@ -1632,8 +1643,9 @@ export function useCreateClimbScreen({
       } else {
         const result = await saveClimb({
           ...(pendingClimbUuid ? { uuid: pendingClimbUuid } : {}),
-          layout_id: board.layoutId,
-          size_id: board.sizeId,
+          ...(board.boardName === 'quantum'
+            ? { editorBoard: board }
+            : { layout_id: board.layoutId, size_id: board.sizeId }),
           name: name.trim(),
           description: fullDescription,
           is_draft: isDraft,

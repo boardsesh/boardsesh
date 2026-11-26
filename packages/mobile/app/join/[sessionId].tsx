@@ -1,3 +1,5 @@
+import { useIsBoardConfigVisible } from '../../src/hooks/use-board-visibility';
+import type { UserBoard } from '@boardsesh/shared-schema';
 import { RequestResourceAccess } from '../../src/components/privacy/RequestResourceAccess';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
@@ -44,7 +46,7 @@ type JoinOperation = {
   sessionId: string;
   boardPath: string;
   authCredentialGeneration: number;
-  wasAlreadyInSession: boolean;
+  previousSessionId: string | null;
   liveSessionSource: LiveSessionJoinSource | null;
 };
 
@@ -76,6 +78,10 @@ function JoinSessionScreen() {
   const createBoard = useCreateBoard();
 
   const [isJoining, setIsJoining] = useState(false);
+  const isBoardConfigVisible = useIsBoardConfigVisible();
+  const boardVisibilityRef = useRef(isBoardConfigVisible);
+  boardVisibilityRef.current = isBoardConfigVisible;
+  const blockedBoardRef = useRef(false);
 
   const session = preview.data;
   const currentSessionRef = useRef<{ id: string; boardPath: string } | null>(null);
@@ -95,6 +101,7 @@ function JoinSessionScreen() {
       screenMountedRef.current &&
       activeJoinOperationRef.current === operation &&
       isAuthenticatedRef.current &&
+      !blockedBoardRef.current &&
       currentSession?.id === operation.sessionId &&
       currentSession.boardPath === operation.boardPath &&
       isAuthCredentialGenerationCurrent(operation.authCredentialGeneration)
@@ -102,14 +109,14 @@ function JoinSessionScreen() {
   }, []);
 
   const beginJoinOperation = useCallback((): JoinOperation | null => {
-    if (!session || !isAuthenticatedRef.current || !screenMountedRef.current) return null;
+    if (!session || !isAuthenticatedRef.current || !screenMountedRef.current || blockedBoardRef.current) return null;
     const activeOperation = activeJoinOperationRef.current;
     if (activeOperation && isJoinOperationCurrent(activeOperation)) return null;
     const operation = {
       sessionId: session.id,
       boardPath: session.boardPath,
       authCredentialGeneration: captureAuthCredentialGeneration(),
-      wasAlreadyInSession: activeSessionIdRef.current === session.id,
+      previousSessionId: activeSessionIdRef.current,
       liveSessionSource,
     };
     activeJoinOperationRef.current = operation;
@@ -127,6 +134,9 @@ function JoinSessionScreen() {
   const slugBoard = useBoardBySlug(namedBoard?.slug ?? null, {
     enabled: isAuthenticated && namedBoard != null,
   });
+  const targetBoard = session && (namedBoard ? slugBoard.data : parseBoardPath(session.boardPath));
+  const blockedBoard = targetBoard != null && !isBoardConfigVisible(targetBoard);
+  blockedBoardRef.current = blockedBoard;
   const boardLabel = useMemo(() => {
     if (namedBoard && slugBoard.data) {
       const name = formatBoardDisplayName(slugBoard.data.boardType);
@@ -137,17 +147,15 @@ function JoinSessionScreen() {
   }, [namedBoard, slugBoard.data, session]);
 
   const performJoin = useCallback(
-    async (operation: JoinOperation, clearPreviousSession: boolean) => {
-      const isCurrent = () => isJoinOperationCurrent(operation);
-      if (!isCurrent()) return;
+    async (operation: JoinOperation) => {
+      let userBoard: UserBoard | null = null;
+      const isCurrent = () =>
+        isJoinOperationCurrent(operation) && (!userBoard || boardVisibilityRef.current(userBoard));
       try {
-        if (clearPreviousSession) {
-          await clearSession({ notifyServer: true });
-          if (!isCurrent()) return;
-        }
-
-        const userBoard = await resolveBoardForSession(operation.boardPath, {
+        if (!isCurrent()) return;
+        userBoard = await resolveBoardForSession(operation.boardPath, {
           isOperationCurrent: isCurrent,
+          isBoardAvailable: (board) => boardVisibilityRef.current(board),
           // `myBoards` includes followed boards as well as owned boards; this
           // loader verifies the signed-in profile and returns only its ownerId rows.
           loadOwnedBoards: fetchAllMyOwnedBoards,
@@ -158,7 +166,11 @@ function JoinSessionScreen() {
             createBoardOrAdoptDuplicate(input, (createInput) => createBoard.mutateAsync(createInput), isCurrent),
           fetchBoardBySlug,
         });
-        if (!isCurrent()) return;
+        if (!isCurrent() || activeSessionIdRef.current !== operation.previousSessionId) return;
+        if (operation.previousSessionId && operation.previousSessionId !== operation.sessionId) {
+          await clearSession({ notifyServer: true, isOperationCurrent: isCurrent });
+          if (!isCurrent()) return;
+        }
         // joinSession returns early when we're already in this session, and that
         // isn't a join the live-sessions funnel should count.
         const joined = await joinSession(operation.sessionId, {
@@ -182,7 +194,7 @@ function JoinSessionScreen() {
         // The last step of the live-sessions funnel (Shelf Viewed → Card Tapped →
         // Live Session Joined). Only joins that started on a live-session card
         // carry a source; invite links don't.
-        if (operation.liveSessionSource && !operation.wasAlreadyInSession) {
+        if (operation.liveSessionSource && operation.previousSessionId !== operation.sessionId) {
           track(SHARED_EVENTS.LiveSessionJoined, { source: operation.liveSessionSource });
         }
         // Land on the Record tab so the user drops straight into the joined session.
@@ -206,7 +218,7 @@ function JoinSessionScreen() {
   );
 
   const handleJoinPress = useCallback(() => {
-    if (!session || !isAuthenticatedRef.current) return;
+    if (!session || !isAuthenticatedRef.current || blockedBoardRef.current) return;
     // Already in a different session — confirm the switch before clearing it.
     if (activeSessionId && activeSessionId !== session.id) {
       const confirmationGeneration = captureAuthCredentialGeneration();
@@ -230,14 +242,14 @@ function JoinSessionScreen() {
               return;
             }
             const operation = beginJoinOperation();
-            if (operation) void performJoin(operation, true);
+            if (operation) void performJoin(operation);
           },
         },
       ]);
       return;
     }
     const operation = beginJoinOperation();
-    if (operation) void performJoin(operation, false);
+    if (operation) void performJoin(operation);
   }, [activeSessionId, beginJoinOperation, performJoin, session, t]);
 
   const activeJoinOperation = activeJoinOperationRef.current;
@@ -306,6 +318,20 @@ function JoinSessionScreen() {
             {t('mobileJoin.notFound')}
           </Text>
           <RequestResourceAccess kind="session" resourceId={sessionId} />
+          <Button title={t('common:actions.done')} variant="outlined" onPress={() => router.back()} />
+        </View>
+      </View>
+    );
+  }
+
+  if (blockedBoard) {
+    return (
+      <View style={containerStyle}>
+        <View style={styles.centered}>
+          <Icon name="warning" size={40} color={brandColors.warning} />
+          <Text variant="title3" style={styles.centeredTitle}>
+            {t('mobileJoin.joinError')}
+          </Text>
           <Button title={t('common:actions.done')} variant="outlined" onPress={() => router.back()} />
         </View>
       </View>

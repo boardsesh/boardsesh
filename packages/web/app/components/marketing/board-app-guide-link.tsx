@@ -7,12 +7,14 @@ import { getBoardAppGuidePath } from '@/app/lib/i18n/published-locales';
 
 /** Published in English only; the label makes the language change explicit. */
 export default async function BoardAppGuideLink({ board }: { board: BoardName }) {
+  const guidePath = getBoardAppGuidePath(board);
+  if (!guidePath) return null;
   const { t } = await getServerTranslation('website');
   return (
     <MuiLink
       component={LocaleLink}
       locale="en-US"
-      href={getBoardAppGuidePath(board)}
+      href={guidePath}
       sx={{ display: 'inline-flex', alignItems: 'center', minHeight: 44 }}
     >
       {board === 'spray' ? t('sprayComparisonLink') : t('boardAppGuideLink', { board: boardTypeLabel(board) })}

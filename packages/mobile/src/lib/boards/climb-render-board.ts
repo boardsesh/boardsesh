@@ -18,6 +18,7 @@
 // rows; this module is the named, board-shaped door onto it.
 
 import { classifyClimbBoardCompatibility, formatBoardDisplayName, toBoardName } from '@boardsesh/board-config';
+import type { BoardVisibilityConfig } from '@boardsesh/board-config/visibility';
 import { getLayoutName } from '@boardsesh/board-constants/product-sizes';
 import type { BoardConfig } from '../../providers/drawer-host-provider';
 import { ensureSprayWallLoaded } from '../spray/spray-wall-registry';
@@ -156,6 +157,24 @@ export function resolveClimbRenderBoard(
       incompatible: resolved.incompatible,
     },
     loadMissingSpray,
+  );
+}
+
+/**
+ * Cached climbs can name their own board independently of the active board or
+ * a supplied override. Normal boards continue through the existing renderer.
+ */
+export function isClimbBoardAvailable(
+  climb: ClimbRenderBoardClimb | null | undefined,
+  board: BoardConfig | null,
+  isBoardAvailable: (config: BoardVisibilityConfig) => boolean,
+): boolean {
+  if (board && !isBoardAvailable(board)) return false;
+  if (climb?.boardType !== 'quantum') return true;
+  if (board?.boardName === 'quantum' && (climb.layoutId == null || climb.layoutId === board.layoutId)) return true;
+  const resolved = resolveClimbRenderBoard(climb, board, { loadMissingSpray: false })?.boardConfig;
+  return (
+    !!resolved && resolved.boardName === 'quantum' && resolved.layoutId === climb.layoutId && isBoardAvailable(resolved)
   );
 }
 

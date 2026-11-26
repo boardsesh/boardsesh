@@ -1,3 +1,6 @@
+import { useQuery } from '@tanstack/react-query';
+import { useIsBoardConfigVisible } from '../../hooks/use-board-visibility';
+import { isQuantumClimbRetired } from '../../db/queries/quantum-climb-retirement';
 import { PlayTopChromeView } from './PlayTopChromeView';
 import { PlayStageView } from './PlayStageView';
 import { randomUUID } from 'expo-crypto';
@@ -35,7 +38,11 @@ import { configKey, getQueueBoardKey, isClimbOnReachableBoard } from '@boardsesh
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { boardSupportsMirroring } from '@boardsesh/play-view';
 import { BoardPresenceClientContext } from '@boardsesh/board-presence-react';
-import { formatRenderBoardLabel, resolveClimbRenderBoard } from '../../lib/boards/climb-render-board';
+import {
+  formatRenderBoardLabel,
+  isClimbBoardAvailable,
+  resolveClimbRenderBoard,
+} from '../../lib/boards/climb-render-board';
 import {
   findGymBoardToConnectForClimb,
   gymBoardButtonName,
@@ -623,7 +630,21 @@ export function PlayCore({
     setSwitchBoardCardHeight((previous) => (Math.abs(previous - measured) > 1 ? measured : previous));
   }, []);
 
-  const displayedQueueItem = drawerPreviewItem ?? currentClimbQueueItem;
+  const pendingDisplayItem = drawerPreviewItem ?? currentClimbQueueItem;
+  const isBoardConfigVisible = useIsBoardConfigVisible();
+  const displayBoardAvailable = isClimbBoardAvailable(pendingDisplayItem?.climb, boardConfig, isBoardConfigVisible);
+  const quantumClimbUuid =
+    displayBoardAvailable && (boardConfig.boardName === 'quantum' || pendingDisplayItem?.climb.boardType === 'quantum')
+      ? pendingDisplayItem?.climb.uuid
+      : undefined;
+  const retirement = useQuery({
+    queryKey: ['climb', 'quantumRetirement', quantumClimbUuid],
+    queryFn: () => isQuantumClimbRetired(quantumClimbUuid!),
+    enabled: !!quantumClimbUuid,
+    networkMode: 'always',
+  });
+  const displayedQueueItem =
+    displayBoardAvailable && (!quantumClimbUuid || retirement.data === false) ? pendingDisplayItem : null;
   const displayedClimb = displayedQueueItem?.climb;
   // The slot ⋯ → Play next moves when the same climb is queued twice.
   const displayedQueueItemUuid = displayedQueueItem?.uuid;

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { onlineManager } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The local-autosave durability contract. Autosave used to be switched OFF in
@@ -79,7 +80,8 @@ vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'preview-uuid' }));
 vi.mock('expo-router', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('@tanstack/react-query', () => ({
+vi.mock('@tanstack/react-query', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-query')>()),
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
 // The controller reaches for nothing else from react-native — the autosave hook
@@ -156,6 +158,8 @@ vi.mock('../brush-roles', () => ({
 
 import { useCreateClimbScreen } from '../use-create-climb-screen';
 
+vi.mock('../../../providers/feature-flags-provider', () => ({ useFeatureFlag: () => true }));
+
 const BOARD = {
   boardName: 'kilter' as const,
   layoutId: 1,
@@ -198,6 +202,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  onlineManager.setOnline(true);
 });
 
 describe('useCreateClimbScreen autosave flush', () => {
@@ -1214,5 +1219,53 @@ describe('useCreateClimbScreen autosave flush', () => {
     // Switching to publish is a payload change, so the failure does not linger.
     act(() => result.current.setIsDraft(false));
     expect(result.current.draftStatus?.text).not.toBe('mobile.create.autosave.saveFailed');
+  });
+});
+
+describe('Quantum editor delivery', () => {
+  const quantum = { boardName: 'quantum' as const, layoutId: 9104, sizeId: 9204, setIds: '1', angle: 35 };
+
+  it('keeps the offline draft locally without trying a server write', async () => {
+    onlineManager.setOnline(false);
+    const { result } = renderHook(() => useCreateClimbScreen({ board: quantum }));
+    await act(async () => {});
+    act(() => result.current.setName('Offline Quantum draft'));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(draftStore.saveDraft).toHaveBeenCalledWith(
+      'draft-key',
+      expect.objectContaining({ name: 'Offline Quantum draft' }),
+      null,
+    );
+    expect(boardActions.saveClimb).not.toHaveBeenCalled();
+    expect(boardActions.updateClimb).not.toHaveBeenCalled();
+    expect(draftStore.clearDraft).not.toHaveBeenCalled();
+  });
+
+  it('keeps the same editor draft after an online publish fails', async () => {
+    boardActions.saveClimb.mockRejectedValue(new Error('Connection lost'));
+    const { result } = renderHook(() => useCreateClimbScreen({ board: quantum }));
+    await act(async () => {});
+    act(() => {
+      result.current.setName('Keep my Quantum draft');
+      result.current.setIsDraft(false);
+    });
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(boardActions.saveClimb).toHaveBeenCalledWith(
+      expect.objectContaining({ editorBoard: quantum, is_draft: false }),
+    );
+    expect(draftStore.saveDraft).toHaveBeenCalledWith(
+      'draft-key',
+      expect.objectContaining({ name: 'Keep my Quantum draft' }),
+      null,
+    );
+    expect(draftStore.clearDraft).not.toHaveBeenCalled();
   });
 });

@@ -94,7 +94,7 @@ beforeEach(() => {
 
 describe('useGymBoards', () => {
   it('hides Quantum in cached gym rosters until enabled and preserves the raw response', async () => {
-    const quantum = makeBoard({ uuid: 'quantum', boardType: 'quantum' });
+    const quantum = makeBoard({ uuid: 'quantum', boardType: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' });
     const kilter = makeBoard({ uuid: 'kilter' });
     requestMock.mockResolvedValue({ gymBoards: [quantum, kilter] });
     const { queryClient, Wrapper } = makeWrapper();

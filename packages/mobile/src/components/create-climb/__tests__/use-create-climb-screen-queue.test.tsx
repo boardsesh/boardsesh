@@ -72,7 +72,8 @@ vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('expo-crypto', () => ({ randomUUID: cryptoMock.randomUUID }));
 vi.mock('expo-router', () => ({ useRouter: () => router }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('@tanstack/react-query', () => ({
+vi.mock('@tanstack/react-query', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-query')>()),
   useQueryClient: () => ({ invalidateQueries: cache.invalidateQueries }),
 }));
 // Partial: the controller now reads @boardsesh/board-config too, which imports
@@ -154,6 +155,7 @@ import { climbToQueueItem, toClimbInput } from '../../../lib/climb-to-queue-item
 import { useCreateClimbScreen } from '../use-create-climb-screen';
 
 const kilterBoard = { boardName: 'kilter' as const, layoutId: 8, sizeId: 17, setIds: '26,27', angle: 40 };
+vi.mock('../../../providers/feature-flags-provider', () => ({ useFeatureFlag: () => true }));
 const quantumBoard = { boardName: 'quantum' as const, layoutId: 9101, sizeId: 9201, setIds: '1', angle: 25 };
 
 /** The queue item handed to setCurrentClimb by the last Set Active / save sync. */

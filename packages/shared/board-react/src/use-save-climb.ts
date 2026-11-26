@@ -12,6 +12,7 @@ import { useBoardAdapter } from './adapter';
 import {
   isDuplicateClimbError,
   toSaveClimbInput,
+  type ClimbAuthoringBoard,
   type SaveClimbOptions,
   type SaveClimbResponse,
   type UpdateClimbResponse,
@@ -41,11 +42,12 @@ export function useSaveClimb(boardName: BoardName | null) {
       if (!isAuthenticated) {
         throw new Error('Authentication required to create climbs');
       }
-      if (!boardName) {
+      const editorBoardName = options.editorBoard?.boardName ?? boardName;
+      if (!editorBoardName) {
         throw new Error('No board selected');
       }
 
-      const variables: SaveClimbMutationVariables = { input: toSaveClimbInput(boardName, options) };
+      const variables: SaveClimbMutationVariables = { input: toSaveClimbInput(editorBoardName, options) };
       const authEpoch = captureAuthEpoch?.();
       const queued = await saveClimbOffline?.(variables.input, { queryClient });
       if (queued) return queued;
@@ -72,10 +74,10 @@ export function useSaveClimb(boardName: BoardName | null) {
       if (authEpoch === undefined || isAuthEpochCurrent?.(authEpoch) !== false) {
         try {
           await afterClimbWrite?.({
-            boardType: boardName,
+            boardType: variables.input.boardType,
             climbUuid: result.saveClimb.uuid,
-            layoutId: options.layout_id,
-            sizeId: options.size_id,
+            layoutId: variables.input.layoutId,
+            sizeId: variables.input.sizeId ?? undefined,
             sprayWallUuid: options.spray_wall_uuid,
             authEpoch,
           });
@@ -114,6 +116,8 @@ export function useSaveClimb(boardName: BoardName | null) {
  * the climb is still a draft or within 24h of first publish — backend
  * enforces both rules.
  */
+export type UpdateClimbOptions = UpdateClimbInput & { editorBoard?: ClimbAuthoringBoard };
+
 export function useUpdateClimb() {
   const {
     isAuthenticated,
@@ -127,14 +131,16 @@ export function useUpdateClimb() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: UpdateClimbInput): Promise<UpdateClimbResponse> => {
+    mutationFn: async ({ editorBoard, ...input }: UpdateClimbOptions): Promise<UpdateClimbResponse> => {
       if (!isAuthenticated) {
         throw new Error('Authentication required to update climbs');
       }
 
-      const variables: UpdateClimbMutationVariables = { input };
+      const variables: UpdateClimbMutationVariables = {
+        input: editorBoard ? { ...input, boardType: editorBoard.boardName, sizeId: editorBoard.sizeId } : input,
+      };
       const authEpoch = captureAuthEpoch?.();
-      const queued = await updateClimbOffline?.(input, { queryClient });
+      const queued = await updateClimbOffline?.(variables.input, { queryClient });
       if (queued) return queued;
       const result = await executeWs<UpdateClimbMutationResponse, UpdateClimbMutationVariables>({
         query: UPDATE_CLIMB_MUTATION,
@@ -142,13 +148,11 @@ export function useUpdateClimb() {
       });
       if (authEpoch === undefined || isAuthEpochCurrent?.(authEpoch) !== false) {
         try {
-          // UpdateClimbInput has no layout field. The mobile mirror
-          // validates the canonical row against the downloaded active board;
-          // a different scope uses the successful-save refresh fallback below.
           await afterClimbWrite?.({
-            boardType: input.boardType,
+            boardType: variables.input.boardType,
             climbUuid: result.updateClimb.uuid,
-            sprayWallUuid: input.sprayWallUuid ?? undefined,
+            ...(editorBoard ? { layoutId: editorBoard.layoutId, sizeId: editorBoard.sizeId } : {}),
+            sprayWallUuid: variables.input.sprayWallUuid ?? undefined,
             authEpoch,
           });
         } catch {
@@ -157,11 +161,11 @@ export function useUpdateClimb() {
       }
       return result.updateClimb;
     },
-    onSuccess: (result) => {
+    onSuccess: (result, { editorBoard }) => {
       // Refresh the climb's detail cache and any list it appears in — the
       // mobile library's ['infiniteSearchClimbs'] / ['searchClimbsCount'] as
       // well as the paged ['searchClimbs'] web/other-surface variant.
-      void queryClient.invalidateQueries({ queryKey: ['climb', result.uuid] });
+      void queryClient.invalidateQueries({ queryKey: editorBoard ? ['climb'] : ['climb', result.uuid] });
       void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
       void queryClient.invalidateQueries({ queryKey: ['infiniteSearchClimbs'] });
       void queryClient.invalidateQueries({ queryKey: ['searchClimbsCount'] });

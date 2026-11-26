@@ -10,9 +10,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { useReducer, useRef } from 'react';
 import { initialState, queueReducer, type ClimbQueueItem, type QueueState } from '@boardsesh/queue';
+import type { UserBoard } from '@boardsesh/shared-schema';
+import { isBoardConfigVisible, QUANTUM_BOARD_FLAG } from '@boardsesh/board-config/visibility';
 import type { LocalQueueSnapshot } from '../../../lib/queue-snapshot-store';
 
 const storage = vi.hoisted(() => ({
+  sessionId: null as string | null,
+  clearSession: vi.fn(),
+  sessionStatus: vi.fn(),
+  setSession: vi.fn(),
+  setSnapshot: vi.fn(async () => undefined),
   snapshot: null as LocalQueueSnapshot | null,
   /** When set, the snapshot read waits for the test to release it. */
   gate: null as Promise<void> | null,
@@ -22,14 +29,14 @@ vi.mock('../../../lib/queue-snapshot-store', () => ({
     if (storage.gate) await storage.gate;
     return storage.snapshot;
   }),
-  setStoredQueueSnapshot: vi.fn(async () => undefined),
+  setStoredQueueSnapshot: storage.setSnapshot,
   getQueueSnapshotGeneration: () => 0,
 }));
 vi.mock('../../../lib/session-store', () => ({
-  getStoredSessionId: vi.fn(async () => null),
-  clearStoredSessionId: vi.fn(),
+  getStoredSessionId: vi.fn(async () => storage.sessionId),
+  clearStoredSessionId: storage.clearSession,
 }));
-vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: vi.fn() }) }));
+vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: storage.sessionStatus }) }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 
@@ -67,7 +74,13 @@ function savedQueue(current: ClimbQueueItem | null): LocalQueueSnapshot {
 type Seen = { current: string | null; restored: boolean };
 
 /** The provider's wiring for the restore, recording what every render saw. */
-function useRestoreHarness(seen: Seen[]) {
+function useRestoreHarness(
+  seen: Seen[],
+  boardPolicy?: Pick<
+    Parameters<typeof useQueuePersistence>[0],
+    'activeBoardRolloutBlocked' | 'getSessionRestoreBoard' | 'isBoardAvailable'
+  >,
+) {
   const [state, dispatch] = useReducer(queueReducer, {}, initialState);
   const stateRef = useRef<QueueState>(state);
   stateRef.current = state;
@@ -77,7 +90,7 @@ function useRestoreHarness(seen: Seen[]) {
     identityReady: true,
     dispatch,
     sessionIdRef,
-    setSessionId: vi.fn(),
+    setSessionId: storage.setSession,
     stateRef,
     sessionId: null,
     queue: state.queue,
@@ -85,6 +98,7 @@ function useRestoreHarness(seen: Seen[]) {
     playlistSuggestionSource: null,
     setPlaylistSuggestionSourceState: vi.fn(),
     activeBoardSettled: true,
+    ...boardPolicy,
   });
   seen.push({ current: state.currentClimbQueueItem?.uuid ?? null, restored });
   return { state, restored, dispatch };
@@ -92,6 +106,11 @@ function useRestoreHarness(seen: Seen[]) {
 
 beforeEach(() => {
   storage.snapshot = null;
+  storage.sessionId = null;
+  storage.clearSession.mockClear();
+  storage.setSession.mockClear();
+  storage.setSnapshot.mockClear();
+  storage.sessionStatus.mockReset().mockResolvedValue({ sessionStatus: 'active' });
   storage.gate = null;
   resetQueueSnapshotRestoredReportForTests();
 });
@@ -145,4 +164,32 @@ describe('useQueuePersistence: restored', () => {
     await waitFor(() => expect(result.current.restored).toBe(true));
     expect(result.current.state.currentClimbQueueItem?.uuid).toBe('queue-restored');
   });
+});
+
+it('blocks cold Quantum session restore without erasing the session or solo snapshot', async () => {
+  storage.sessionId = 'quantum-crew';
+  storage.snapshot = savedQueue(makeItem('private-solo-queue'));
+  const getSessionRestoreBoard = async () =>
+    ({
+      boardType: 'quantum',
+      layoutId: 9104,
+      sizeId: 9204,
+      setIds: '1',
+    }) as UserBoard;
+  const disabled = (board: UserBoard) => isBoardConfigVisible(board);
+  const enabled = (board: UserBoard) => isBoardConfigVisible(board, { [QUANTUM_BOARD_FLAG]: true });
+  const { result, rerender } = renderHook(
+    ({ isBoardAvailable }) => useRestoreHarness([], { getSessionRestoreBoard, isBoardAvailable }),
+    { initialProps: { isBoardAvailable: disabled } },
+  );
+
+  await waitFor(() => expect(result.current.restored).toBe(true));
+  expect(storage.sessionStatus).not.toHaveBeenCalled();
+  expect(storage.setSession).not.toHaveBeenCalled();
+  expect(storage.clearSession).not.toHaveBeenCalled();
+  expect(storage.setSnapshot).not.toHaveBeenCalled();
+
+  rerender({ isBoardAvailable: enabled });
+  await waitFor(() => expect(storage.setSession).toHaveBeenCalledWith('quantum-crew'));
+  expect(storage.clearSession).not.toHaveBeenCalled();
 });

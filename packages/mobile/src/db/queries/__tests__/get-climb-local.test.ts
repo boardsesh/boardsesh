@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { runMigrations, ensureMutationQueueTable } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
+import { isQuantumClimbRetired } from '../quantum-climb-retirement';
 import { getClimbLocal } from '../get-climb-local';
 import { getBoardseshGradeLocal, getBoardseshGradesForAnglesLocal } from '../get-boardsesh-grade-local';
 import { getClimbStatsHistoryLocal } from '../get-climb-stats-history-local';
@@ -101,6 +102,27 @@ describe('getClimbLocal — Boardsesh grade join', () => {
     });
     expect(climb?.uuid).toBe('hidden');
     expect(climb?.is_hidden).toBe(true);
+  });
+
+  it('recognizes withdrawn Quantum rows while preserving authored unlisted climbs', async () => {
+    for (const uuid of ['withdrawn', 'authored', 'old-import']) {
+      await insertClimb(db, uuid, 'quantum', 1);
+    }
+    await db.runAsync(
+      "UPDATE board_climbs SET is_listed = 0, is_boardsesh_authored = 0, frames = NULL WHERE uuid = 'withdrawn'",
+    );
+    await db.runAsync(
+      "UPDATE board_climbs SET is_listed = 0, is_boardsesh_authored = 1, user_id = 'setter' WHERE uuid = 'authored'",
+    );
+    const read = (climbUuid: string) =>
+      getClimbLocal(db, { boardName: 'quantum', layoutId: 1, angle: 40, climbUuid, viewerId: 'setter' });
+
+    expect(await isQuantumClimbRetired('withdrawn', db)).toBe(true);
+    expect(await isQuantumClimbRetired('authored', db)).toBe(false);
+    expect(await isQuantumClimbRetired('unknown', db)).toBe(false);
+    expect(await read('withdrawn')).toBeNull();
+    expect(await read('authored')).toMatchObject({ uuid: 'authored' });
+    expect(await read('old-import')).toMatchObject({ uuid: 'old-import' });
   });
 
   it('reads null grade when no grade row exists at all', async () => {

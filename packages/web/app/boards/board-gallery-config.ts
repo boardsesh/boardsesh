@@ -1,23 +1,31 @@
+import type { ProductSizeData } from '@boardsesh/board-constants/product-sizes';
 import { getBoardLayouts, getBoardSetsForLayoutAndSize, getBoardSizesForLayoutId } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
 
 type CatalogBoardName = Exclude<BoardName, 'spray'>;
 
+export function getGalleryBoardMeasurements(size: ProductSizeData) {
+  const { edgeLeft, edgeRight, edgeBottom, edgeTop } = size;
+  if (edgeLeft == null || edgeRight == null || edgeBottom == null || edgeTop == null) return null;
+  return { physicalWidth: edgeRight - edgeLeft, physicalHeight: edgeTop - edgeBottom };
+}
+
 /** Compare physical catalogue extents, with hold-set coverage breaking equal-area ties. */
 export function getLargestGalleryBoardSize(boardName: CatalogBoardName, layoutId: number) {
-  const sizes = getBoardSizesForLayoutId(boardName, layoutId);
-  const ranked = [...sizes].sort((left, right) => {
-    const leftArea = (left.edgeRight - left.edgeLeft) * (left.edgeTop - left.edgeBottom);
-    const rightArea = (right.edgeRight - right.edgeLeft) * (right.edgeTop - right.edgeBottom);
+  const sizes = getBoardSizesForLayoutId(boardName, layoutId).flatMap((size) => {
+    const measurements = getGalleryBoardMeasurements(size);
+    return measurements ? [{ size, area: measurements.physicalWidth * measurements.physicalHeight }] : [];
+  });
+  const ranked = sizes.sort((left, right) => {
     return (
-      rightArea - leftArea ||
-      getBoardSetsForLayoutAndSize(boardName, layoutId, right.id).length -
-        getBoardSetsForLayoutAndSize(boardName, layoutId, left.id).length
+      right.area - left.area ||
+      getBoardSetsForLayoutAndSize(boardName, layoutId, right.size.id).length -
+        getBoardSetsForLayoutAndSize(boardName, layoutId, left.size.id).length
     );
   });
   const largest = ranked[0];
   if (!largest) throw new Error(`No gallery board size for ${boardName}/${layoutId}`);
-  return largest;
+  return largest.size;
 }
 
 export function getOrderedGalleryLayouts(boardName: CatalogBoardName) {

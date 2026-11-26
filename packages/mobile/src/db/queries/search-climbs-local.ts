@@ -1,3 +1,4 @@
+import { QUANTUM_CLIMB_RETIREMENT_SQL } from './quantum-climb-retirement';
 import { getLocalUserId, type OfflineDatabase } from '@boardsesh/offline-sync';
 import type { BoardName, Climb, ClimbSearchInput } from '@boardsesh/shared-schema';
 import { resolveClimbNoMatch } from '@boardsesh/shared-schema';
@@ -447,6 +448,7 @@ export function buildJoinAndWhere(
 
   // Base: board / layout / listed / non-draft.
   if (followedCondition) push(followedCondition.sql, ...followedCondition.binds);
+  if (boardType === 'quantum' || context === 'playlist') push(`(${QUANTUM_CLIMB_RETIREMENT_SQL}) IS NOT TRUE`);
   // Playlists own their membership, visibility and geometry. Their filters
   // reuse the expressions below against stats joined at each row's display angle.
   if (context === 'catalogue') {

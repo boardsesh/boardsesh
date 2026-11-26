@@ -1,4 +1,13 @@
 // @vitest-environment jsdom
+
+const quantumRollout = vi.hoisted(() => ({ flag: undefined as unknown, isRetired: vi.fn() }));
+vi.mock('../feature-flags-provider', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../feature-flags-provider')>()),
+  useFeatureFlag: () => quantumRollout.flag,
+}));
+vi.mock('../../db/queries/quantum-climb-retirement', () => ({
+  isQuantumClimbRetired: quantumRollout.isRetired,
+}));
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect, useState, type ChangeEvent, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -589,6 +598,8 @@ beforeEach(() => {
   splitCfg.phoneSplit = false;
   resetRoutePlayerHandoffForTests();
   nativeNavigation.dispatch.mockClear();
+  quantumRollout.flag = undefined;
+  quantumRollout.isRetired.mockReset().mockResolvedValue(false);
   activeBoard.stored = { ...activeBoard.defaultStored };
   boardShareSheet.props = null;
   boardSheet.dismissAndWait.mockReset().mockResolvedValue({ status: 'dismissed' });
@@ -2651,5 +2662,53 @@ describe('DrawerHostProvider phone split (iPhone Duo open in landscape)', () => 
     await act(async () => {});
 
     expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
+  });
+});
+
+describe('Quantum cached player and action targets', () => {
+  const fitness: BoardConfig = { boardName: 'quantum', layoutId: 9104, sizeId: 9204, setIds: '1', angle: 35 };
+  const cachedClimb = () =>
+    ({
+      ...makeQueueItem('cached-quantum', 'cached-climb').climb,
+      boardType: 'quantum',
+      layoutId: 9104,
+    }) as Climb;
+
+  it.each([undefined, false, 'tester'])('rejects a cached board override while the flag is %s', (flag) => {
+    quantumRollout.flag = flag;
+    const hosts: HostValue[] = [];
+    const routes: RouteValue[] = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+
+    act(() => hosts.at(-1)?.openPlayDrawer(cachedClimb(), { boardConfig: fitness }));
+
+    expect(hosts.at(-1)?.getClimbActions(cachedClimb(), fitness)).toBeNull();
+    expect(routes.at(-1)?.playTarget).toBeNull();
+    expect(quantumRollout.isRetired).not.toHaveBeenCalled();
+    expect(routerNavigate).not.toHaveBeenCalled();
+  });
+
+  it('keeps a retired cached climb out of the player and admits another S Fitness climb', async () => {
+    quantumRollout.flag = true;
+    quantumRollout.isRetired.mockResolvedValueOnce(true);
+    const hosts: HostValue[] = [];
+    const routes: RouteValue[] = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    const retired = cachedClimb();
+    const available = { ...retired, uuid: 'still-available' };
+
+    await act(async () => hosts.at(-1)?.openPlayDrawer(retired, { boardConfig: fitness }));
+    expect(routes.at(-1)?.playTarget).toBeNull();
+
+    await act(async () => hosts.at(-1)?.openPlayDrawer(available, { boardConfig: fitness }));
+    expect(routes.at(-1)?.playTarget?.climb).toBe(available);
+    expect(routes.at(-1)?.activeBoardConfig).toEqual(fitness);
+    expect(activeBoard.setActiveBoard).not.toHaveBeenCalled();
   });
 });

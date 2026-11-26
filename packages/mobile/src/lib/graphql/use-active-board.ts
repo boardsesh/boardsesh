@@ -11,7 +11,7 @@
 // The queryFn returns `UserBoard | null`.
 
 import { useCallback, useRef, useSyncExternalStore } from 'react';
-import { useIsBoardTypeVisible } from '../../hooks/use-board-visibility';
+import { useIsBoardConfigVisible } from '../../hooks/use-board-visibility';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { getStoredActiveBoard, setStoredActiveBoard, clearStoredActiveBoard } from '../active-board-store';
@@ -121,7 +121,7 @@ export function resetActiveBoardWriteCoordinatorForTests(): void {
  * picked one yet — callers surface the board picker rather than defaulting.
  */
 export function useActiveBoard() {
-  const isBoardTypeVisible = useIsBoardTypeVisible();
+  const isBoardConfigVisible = useIsBoardConfigVisible();
   useSyncExternalStore(subscribeToCredentialChanges, getCredentialGeneration, getCredentialGeneration);
   const query = useQuery({
     queryKey: ACTIVE_BOARD_QUERY_KEY,
@@ -138,7 +138,8 @@ export function useActiveBoard() {
     staleTime: Infinity,
   });
   const board = query.data ? currentActiveBoardProjection(query.data) : query.data;
-  return { ...query, data: board && !isBoardTypeVisible(board.boardType) ? null : board };
+  const isRolloutBlocked = board != null && !isBoardConfigVisible(board);
+  return { ...query, data: isRolloutBlocked ? null : board, isRolloutBlocked };
 }
 
 /**
@@ -147,9 +148,9 @@ export function useActiveBoard() {
  * every reader re-renders with the new board immediately, no refetch.
  */
 export function useSetActiveBoard() {
-  const isBoardTypeVisible = useIsBoardTypeVisible();
-  const visibilityRef = useRef(isBoardTypeVisible);
-  visibilityRef.current = isBoardTypeVisible;
+  const isBoardConfigVisible = useIsBoardConfigVisible();
+  const visibilityRef = useRef(isBoardConfigVisible);
+  visibilityRef.current = isBoardConfigVisible;
   const queryClient = useQueryClient();
   const credentialGeneration = useSyncExternalStore(
     subscribeToCredentialChanges,
@@ -158,7 +159,7 @@ export function useSetActiveBoard() {
   );
   return useCallback(
     async (board: UserBoard, isOperationCurrent?: () => boolean): Promise<boolean> => {
-      const isCurrent = () => visibilityRef.current(board.boardType) && (!isOperationCurrent || isOperationCurrent());
+      const isCurrent = () => visibilityRef.current(board) && (!isOperationCurrent || isOperationCurrent());
       if (credentialGeneration !== getCredentialGeneration() || !isCurrent()) return false;
       const generation = beginActiveBoardWrite();
       const owner = getCurrentUserStorageOwner();

@@ -1,3 +1,4 @@
+import { isReleasedQuantumConfig } from '@boardsesh/board-constants/quantum';
 import type { BoardAdapter } from '@boardsesh/board-react';
 import {
   capturePurgeToken,
@@ -5,7 +6,7 @@ import {
   isSigningOut,
   isScopeDownloadComplete,
   mirrorSavedClimb,
-  offlineBoardKeyForBoard,
+  offlineBoardKey,
   purgeNamespaceKey,
 } from '@boardsesh/offline-sync';
 import { SAVED_CLIMB_DOCUMENTS, type SavedClimbDocumentsResponse } from '@boardsesh/graphql/operations';
@@ -18,31 +19,37 @@ import { isOfflineEngineEnabled } from '../lib/offline-engine';
 
 export const mirrorWrittenClimb: NonNullable<BoardAdapter['afterClimbWrite']> = async (write) => {
   const canWrite = () => write.authEpoch !== undefined && isAuthCredentialGenerationCurrent(write.authEpoch);
-  if (write.boardType !== 'spray' || !isOfflineEngineEnabled() || !canWrite()) return;
+  if ((write.boardType !== 'spray' && write.boardType !== 'quantum') || !isOfflineEngineEnabled() || !canWrite())
+    return;
   try {
     const db = getDatabaseHandle();
     if (!db) return;
-    const board = await getStoredActiveBoard();
+    const activeSprayBoard = write.boardType === 'spray' ? await getStoredActiveBoard() : null;
+    const { layoutId, sizeId } = write;
+    const scope =
+      write.boardType === 'quantum' && layoutId != null && sizeId != null && isReleasedQuantumConfig(layoutId, sizeId)
+        ? { boardType: 'quantum', layoutId, sizeId }
+        : activeSprayBoard;
     if (
       !canWrite() ||
-      !board ||
-      board.boardType !== write.boardType ||
-      (write.layoutId !== undefined && board.layoutId !== write.layoutId) ||
-      (write.sizeId !== undefined && board.sizeId !== write.sizeId)
+      !scope ||
+      scope.boardType !== write.boardType ||
+      (layoutId !== undefined && scope.layoutId !== layoutId) ||
+      (sizeId !== undefined && scope.sizeId !== sizeId)
     )
       return;
-    if (!(await isScopeDownloadComplete(db, offlineBoardKeyForBoard(board))) || !canWrite()) return;
+    if (!(await isScopeDownloadComplete(db, offlineBoardKey(scope))) || !canWrite()) return;
     const purgeToken = capturePurgeToken();
-    const canMirror = () => canWrite() && !isSigningOut() && !hasPurgeLanded(purgeToken, purgeNamespaceKey(board));
+    const canMirror = () => canWrite() && !isSigningOut() && !hasPurgeLanded(purgeToken, purgeNamespaceKey(scope));
     const response = await getOfflineSyncHttpClient().request<SavedClimbDocumentsResponse>(SAVED_CLIMB_DOCUMENTS, {
       boardType: write.boardType,
-      layoutId: board.layoutId,
+      layoutId: scope.layoutId,
       climbUuid: write.climbUuid,
-      sprayWallUuid: write.sprayWallUuid ?? board.uuid,
+      ...(activeSprayBoard ? { sprayWallUuid: write.sprayWallUuid ?? activeSprayBoard.uuid } : {}),
     });
     if (!canMirror()) return;
     if (!response.syncClimbDocuments) throw new Error('Saved climb is unavailable for local mirroring');
-    await mirrorSavedClimb(db, board, write.climbUuid, response.syncClimbDocuments, canMirror);
+    await mirrorSavedClimb(db, scope, write.climbUuid, response.syncClimbDocuments, canMirror);
   } catch (error) {
     if (!canWrite()) return;
     reportHandledError(error, { tags: { source: 'offline-sync', kind: 'saved-climb-mirror' } });

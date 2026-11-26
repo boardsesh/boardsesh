@@ -32,7 +32,7 @@ import GymPopularClimbPreview, {
 } from '@/app/components/gym-entity/gym-popular-climb-preview';
 import { gymMapsUrl } from '@/app/lib/gym-maps-url';
 import { constructBoardSlugListUrl } from '@/app/lib/url-utils';
-import { isBoardTypeVisible } from '@boardsesh/board-config/visibility';
+import { isBoardConfigVisible } from '@boardsesh/board-config/visibility';
 import { getBoardVisibilityFlags } from '@/app/lib/boards/board-visibility.server';
 import { boardTypeLabel, CATALOGUE_BOARD_TYPES } from '@boardsesh/board-constants';
 import { parseGymQrLanding } from '@boardsesh/analytics';
@@ -151,9 +151,9 @@ const fetchGymBoards = cache(async (gymUuid: string, token: string | undefined):
 });
 
 async function visibleGymBoards(boards: UserBoard[]): Promise<UserBoard[]> {
-  if (boards.every((board) => isBoardTypeVisible(board.boardType))) return boards;
+  if (boards.every((board) => isBoardConfigVisible(board))) return boards;
   const flags = await getBoardVisibilityFlags();
-  return boards.filter((board) => isBoardTypeVisible(board.boardType, flags));
+  return boards.filter((board) => isBoardConfigVisible(board, flags));
 }
 
 /**
@@ -403,16 +403,14 @@ export default async function GymPage(props: GymRouteProps) {
   const { t } = await getServerTranslation('kiosk');
   const { t: tBoards } = await getServerTranslation('boards');
   const storeLabels = await getStoreButtonLabels();
-  const [kiosk, roster, gymSprayWalls, discoveryBoards, reportsEnabled, setupSuggestionsEnabled] = await Promise.all(
-    [
-      fetchDefaultKiosk(gym_slug, token),
-      fetchGymBoards(gym.uuid, token),
-      fetchGymSprayWalls(gym.uuid, token),
-      getBoardDiscovery({ gymUuid: gym.uuid, limit: 12 }),
-      isDirectoryReportsEnabled(),
-      isDirectorySetupSuggestionsEnabled(),
-    ],
-  );
+  const [kiosk, roster, gymSprayWalls, discoveryBoards, reportsEnabled, setupSuggestionsEnabled] = await Promise.all([
+    fetchDefaultKiosk(gym_slug, token),
+    fetchGymBoards(gym.uuid, token),
+    fetchGymSprayWalls(gym.uuid, token),
+    getBoardDiscovery({ gymUuid: gym.uuid, limit: 12 }),
+    isDirectoryReportsEnabled(),
+    isDirectorySetupSuggestionsEnabled(),
+  ]);
   const allBoards = await visibleGymBoards(roster);
   const visibleBoardCount = Math.max(0, gym.boardCount - (roster.length - allBoards.length));
   const sprayWalls = gymSprayWalls ?? [];

@@ -23,7 +23,7 @@ import {
   useOfflineDownloadProgressEnabled,
   useOfflineDownloadsEnabled,
 } from '../../src/providers/feature-flags-provider';
-import { useIsBoardTypeVisible } from '../../src/hooks/use-board-visibility';
+import { useIsBoardConfigVisible } from '../../src/hooks/use-board-visibility';
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
 import { getSyncStatusSnapshot, useSyncStatusMetadata } from '../../src/sync/sync-status';
 import { useDownloadActivity } from '../../src/sync/download-activity-store';
@@ -147,7 +147,7 @@ export default function ManageBoards() {
   // cold start with no signal (and an online profile fetch that simply fails).
   const { userId: storedUserId, isLoading: isStoredUserIdLoading } = useStoredUserId(isAuthenticated && !profile?.id);
   const currentUserId = profile?.id ?? storedUserId;
-  const isBoardTypeVisible = useIsBoardTypeVisible();
+  const isBoardConfigVisible = useIsBoardConfigVisible();
   const { data: activeBoard } = useActiveBoard();
   const activeUuid = activeBoard?.uuid;
 
@@ -167,8 +167,8 @@ export default function ManageBoards() {
     unfinishedWallUuids,
   } = useSprayImportProgress(boardConnection?.boards ?? EMPTY_BOARDS);
   const myBoards = useMemo(
-    () => allMyBoards.filter((board) => isBoardTypeVisible(board.boardType)),
-    [allMyBoards, isBoardTypeVisible],
+    () => allMyBoards.filter((board) => isBoardConfigVisible(board)),
+    [allMyBoards, isBoardConfigVisible],
   );
 
   const openImport = useCallback(
@@ -575,7 +575,7 @@ export default function ManageBoards() {
       cachedMyBoards: myBoards,
       activeBoard: activeBoard ?? null,
       downloadedScopeKeys: downloadedScopeKeys ?? [],
-    }).filter((board) => isBoardTypeVisible(board.boardType));
+    }).filter((board) => isBoardConfigVisible(board));
     if (currentUserId !== undefined) {
       return buildManageItems(rows, currentUserId, activeUuid, {
         ownedHeader: t('mobile.manage.ownedHeader'),
@@ -600,7 +600,7 @@ export default function ManageBoards() {
     activeUuid,
     currentUserId,
     t,
-    isBoardTypeVisible,
+    isBoardConfigVisible,
   ]);
   // Only take over the screen when there is actually something to show; otherwise the
   // existing loading/error states still tell the more honest story.

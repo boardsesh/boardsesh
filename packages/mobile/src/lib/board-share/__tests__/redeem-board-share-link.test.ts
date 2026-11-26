@@ -16,8 +16,8 @@ vi.mock('../../auth-store', () => ({
 const { fetchBoardFromShareLink } = await import('../redeem-board-share-link');
 
 const TOKEN = 'Ab3_dE-fGhIjKlMnOpQrSt';
-const MEMBER_BOARD = { uuid: 'board-uuid', slug: 'renamed-garage' } as unknown as UserBoard;
-const PLAIN_BOARD = { uuid: 'plain', slug: 'the-garage' } as unknown as UserBoard;
+const MEMBER_BOARD = { uuid: 'board-uuid', slug: 'renamed-garage', boardType: 'kilter' } as unknown as UserBoard;
+const PLAIN_BOARD = { uuid: 'plain', slug: 'the-garage', boardType: 'kilter' } as unknown as UserBoard;
 
 beforeEach(() => {
   request.mockReset().mockResolvedValueOnce({ boardShareLinkPreview: { name: 'Friends Garage', boardType: 'kilter' } });
@@ -156,7 +156,7 @@ describe('board launch eligibility before invite redemption', () => {
         fallback,
         confirmJoin,
         () => true,
-        (type) => type !== 'quantum',
+        (config) => 'boardType' in config && config.boardType !== 'quantum',
       ),
     ).resolves.toBeNull();
     expect(confirmJoin).not.toHaveBeenCalled();

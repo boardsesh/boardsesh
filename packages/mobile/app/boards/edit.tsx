@@ -1,4 +1,4 @@
-import { useIsBoardTypeVisible } from '../../src/hooks/use-board-visibility';
+import { useIsBoardConfigVisible } from '../../src/hooks/use-board-visibility';
 import { usePrivacySettings } from '../../src/lib/graphql/hooks/use-privacy';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, View, StyleSheet } from 'react-native';
@@ -53,7 +53,7 @@ import { useBoardReports } from '../../src/lib/graphql/hooks/use-directory-repor
 import { useToast } from '../../src/providers/toast-provider';
 
 export default function EditBoard() {
-  const isBoardTypeVisible = useIsBoardTypeVisible();
+  const isBoardConfigVisible = useIsBoardConfigVisible();
   const router = useRouter();
   const { boardUuid } = useLocalSearchParams<{ boardUuid?: string }>();
   const { t } = useTranslation('boards');
@@ -72,7 +72,7 @@ export default function EditBoard() {
 
   // Missing (deleted elsewhere / stale link) or an unrenderable board type:
   // there's nothing to edit, so offer a way back rather than a broken form.
-  if (!board || !boardName || !isBoardTypeVisible(boardName)) {
+  if (!board || !boardName || !isBoardConfigVisible(board)) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         <Icon name="error" size={40} color={systemColors.secondaryLabel} />

@@ -543,7 +543,13 @@ describe('locale expansion is observable in the rendered shard', () => {
     const locations = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map(([, location]) => location);
     // Every board's guide, minus the `#brand` sections of /apps/aurora: one URL per page.
     const paths = [
-      ...new Set([APP_GUIDE_HUB_PATH, ...SUPPORTED_BOARDS.map((board) => getBoardAppGuidePath(board).split('#')[0])]),
+      ...new Set([
+        APP_GUIDE_HUB_PATH,
+        ...SUPPORTED_BOARDS.flatMap((board) => {
+          const guidePath = getBoardAppGuidePath(board);
+          return guidePath ? [guidePath.split('#')[0]] : [];
+        }),
+      ]),
     ];
 
     expect(response.status).toBe(200);

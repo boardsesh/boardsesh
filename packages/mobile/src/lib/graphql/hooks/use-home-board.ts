@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useIsBoardTypeVisible } from '../../../hooks/use-board-visibility';
+import { useIsBoardConfigVisible } from '../../../hooks/use-board-visibility';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useAuth } from '../../../providers/auth-provider';
 import { useActiveBoard } from '../use-active-board';
@@ -45,15 +45,15 @@ function boardActivity(board: UserBoard): number {
  */
 export function useHomeBoard(): HomeBoardResult {
   const { isAuthenticated } = useAuth();
-  const isBoardTypeVisible = useIsBoardTypeVisible();
+  const isBoardConfigVisible = useIsBoardConfigVisible();
   const { data: savedActiveBoard, isLoading: activeBoardLoading } = useActiveBoard();
-  const activeBoard = savedActiveBoard && isBoardTypeVisible(savedActiveBoard.boardType) ? savedActiveBoard : null;
+  const activeBoard = savedActiveBoard && isBoardConfigVisible(savedActiveBoard) ? savedActiveBoard : null;
   const { data: myBoardsConn, isLoading: boardsLoading } = useMyBoards(undefined, { enabled: isAuthenticated });
   const { data: profile, isLoading: profileLoading } = useProfile({ enabled: isAuthenticated });
 
   const boards = useMemo(
-    () => myBoardsConn?.boards.filter((board) => isBoardTypeVisible(board.boardType)),
-    [myBoardsConn?.boards, isBoardTypeVisible],
+    () => myBoardsConn?.boards.filter((board) => isBoardConfigVisible(board)),
+    [myBoardsConn?.boards, isBoardConfigVisible],
   );
   // Only pay for the per-board-type tick scan when it can actually change the
   // answer: no active board AND more than one owned board to disambiguate.

@@ -7,7 +7,7 @@
 // callers keep one import path.
 
 import { useCallback, useMemo } from 'react';
-import { useIsBoardTypeVisible } from '../../../hooks/use-board-visibility';
+import { useIsBoardConfigVisible } from '../../../hooks/use-board-visibility';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   GET_GYM_BOARDS_FOR_SWITCHER,
@@ -88,11 +88,11 @@ async function requestGymBoards(gymUuid: string | null): Promise<GetGymBoardsFor
  */
 export function useGymBoards(gymUuid: string | null) {
   const queryClient = useQueryClient();
-  const isBoardTypeVisible = useIsBoardTypeVisible();
+  const isBoardConfigVisible = useIsBoardConfigVisible();
   const selectVisibleBoards = useCallback(
     (response: GetGymBoardsForSwitcherQueryResponse) =>
-      response.gymBoards.filter((board) => isBoardTypeVisible(board.boardType)),
-    [isBoardTypeVisible],
+      response.gymBoards.filter((board) => isBoardConfigVisible(board)),
+    [isBoardConfigVisible],
   );
   // Read rather than subscribe: the roster only matters for the first paint, and
   // `useMyBoards` already re-renders the surfaces that care when it changes.

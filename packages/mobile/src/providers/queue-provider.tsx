@@ -80,6 +80,8 @@ import {
   type SessionLiveStatsEvent,
   type GetSessionQueueStateQueryResponse,
 } from '../lib/graphql/operations';
+import { useIsBoardConfigVisible } from '../hooks/use-board-visibility';
+import { parseBoardPath } from '@boardsesh/board-config';
 import { getStoredActiveBoard } from '../lib/active-board-store';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
 import {
@@ -569,7 +571,16 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // to the live angle, and so inbound SessionBoardPathChanged events can write
   // the new angle back. `setActiveBoard` is stable; keep a ref for the WS
   // handler so the subscription effect doesn't re-subscribe on board changes.
-  const { data: activeBoard, isPending: isActiveBoardPending } = useActiveBoard();
+  const {
+    data: activeBoard,
+    isPending: isActiveBoardPending,
+    isRolloutBlocked: activeBoardRolloutBlocked,
+  } = useActiveBoard();
+  const isBoardConfigVisible = useIsBoardConfigVisible();
+  const boardVisibilityRef = useRef(isBoardConfigVisible);
+  boardVisibilityRef.current = isBoardConfigVisible;
+  const activeBoardRolloutBlockedRef = useRef(activeBoardRolloutBlocked);
+  activeBoardRolloutBlockedRef.current = activeBoardRolloutBlocked;
   const setActiveBoard = useSetActiveBoard();
   const setActiveBoardRef = useRef(setActiveBoard);
   setActiveBoardRef.current = setActiveBoard;
@@ -959,11 +970,18 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       createJoinSessionTracker({
         getBoardPath: async () => {
           const activeBoard = await getStoredActiveBoard();
-          if (!activeBoard) return null;
+          if (!activeBoard || !boardVisibilityRef.current(activeBoard)) return null;
           return buildSessionBoardPath(activeBoard);
         },
         execute: async ({ sessionId: sid, boardPath }) => {
           const joinCredentialGeneration = getCredentialGeneration();
+          const tuple = parseBoardPath(boardPath);
+          const assertJoinAvailable = () => {
+            if (activeBoardRolloutBlockedRef.current || (tuple && !boardVisibilityRef.current(tuple))) {
+              throw new Error('Session board unavailable');
+            }
+          };
+          assertJoinAvailable();
           // Snapshot identity at the moment we build the payload. If the profile
           // resolves while JOIN is in flight, we must record the values we
           // actually sent — not identityRef.current's newer ones — so the
@@ -976,6 +994,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           // The probe and the join both read the live client (#6766): one read
           // before an await can be disposed by the time the send goes out.
           const capabilities = await probeQueueServerCapabilities(getWsClient);
+          assertJoinAvailable();
           attributionServerRef.current = capabilities.attribution;
           const nowSlotServer = nowSlotFlagRef.current ? capabilities.nowSlot : null;
           nowSlotServerRef.current = nowSlotServer;
@@ -997,8 +1016,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
             username: sentIdentity.username,
             avatarUrl: sentIdentity.avatarUrl,
           };
-          const runJoin = (query: string) =>
-            execute<JoinSessionResponse>(getWsClient, { query, variables: joinVariables });
+          const runJoin = (query: string) => {
+            assertJoinAvailable();
+            return execute<JoinSessionResponse>(getWsClient, { query, variables: joinVariables });
+          };
           let result: JoinSessionResponse;
           if (nowSlotModeRef.current) {
             try {
@@ -1015,6 +1036,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           } else {
             result = await runJoin(JOIN_SESSION);
           }
+          assertJoinAvailable();
           if (joinCredentialGeneration !== getCredentialGeneration()) throw new Error('Queue authorization changed');
           // Remember what we announced so the re-announce effect only fires if
           // the identity changes after this join (profile loaded late / edited).
@@ -1047,7 +1069,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     [setNowSlotMode],
   );
   const ensureJoined = useCallback(
-    (sessionIdToJoin: string) => joinTracker.ensureJoined(sessionIdToJoin),
+    (sessionIdToJoin: string) => {
+      if (activeBoardRolloutBlockedRef.current) return Promise.reject(new Error('Session board unavailable'));
+      return joinTracker.ensureJoined(sessionIdToJoin);
+    },
     [joinTracker],
   );
   // A join belongs to the connection it ran on. The realtime engine bumps the
@@ -1244,6 +1269,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // local change hasn't already superseded this one.
   const setSessionBoardPath = useCallback(
     async (boardPath: string) => {
+      const board = parseBoardPath(boardPath);
+      if (board && !boardVisibilityRef.current(board)) return;
       const token = ++boardPathBroadcastTokenRef.current;
       pendingLocalBoardPathRef.current = boardPath;
       try {
@@ -1289,6 +1316,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     playlistSuggestionSource,
     setPlaylistSuggestionSourceState,
     activeBoardSettled: !isActiveBoardPending,
+    activeBoardRolloutBlocked,
+    getSessionRestoreBoard: getStoredActiveBoard,
+    isBoardAvailable: isBoardConfigVisible,
   });
 
   const sessionContextRevision = useRef(0);

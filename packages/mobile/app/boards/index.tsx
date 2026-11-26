@@ -59,7 +59,7 @@ import { OfflineCatalogCta } from '../../src/components/offline/OfflineCatalogCt
 import { ShelfSection, type ShelfHeaderAction } from '../../src/components/ShelfHeader';
 import { Text } from '../../src/components/Text';
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
-import { useIsBoardTypeVisible } from '../../src/hooks/use-board-visibility';
+import { useIsBoardConfigVisible, useIsBoardTypeVisible } from '../../src/hooks/use-board-visibility';
 import { useStoredUserId } from '../../src/hooks/use-current-user-id';
 import { trackBoardCardAction } from '../../src/lib/boards/board-card-action-analytics';
 import {
@@ -252,9 +252,9 @@ export default function BoardSelection() {
   const scrollBottomPadding = bottomChrome.scrollBottomPadding;
 
   const isBoardTypeVisible = useIsBoardTypeVisible();
+  const isBoardConfigVisible = useIsBoardConfigVisible();
   const { data: restoredActiveBoard, isError: boardRestoreFailed } = useActiveBoard();
-  const activeBoard =
-    restoredActiveBoard && isBoardTypeVisible(restoredActiveBoard.boardType) ? restoredActiveBoard : null;
+  const activeBoard = restoredActiveBoard && isBoardConfigVisible(restoredActiveBoard) ? restoredActiveBoard : null;
   const clearActiveBoard = useClearActiveBoardIfCurrentGeneration();
   const setActiveBoardIfCurrentGeneration = useSetActiveBoardIfCurrentGeneration();
   const { clearSession } = useQueueActions();
@@ -281,7 +281,7 @@ export default function BoardSelection() {
   const currentUserId = profile?.id ?? storedUserId;
 
   const [storedDetailBoard, setDetailBoard] = useState<UserBoard | null>(null);
-  const detailBoard = storedDetailBoard && isBoardTypeVisible(storedDetailBoard.boardType) ? storedDetailBoard : null;
+  const detailBoard = storedDetailBoard && isBoardConfigVisible(storedDetailBoard) ? storedDetailBoard : null;
   // Where the open detail sheet was opened from, so its Climb here reports that.
   const detailPick = useRef<PickerPick>({ pickSource: 'your_boards' });
   // The gym named by a "your board came off {{gym}}" notification, while its
@@ -390,8 +390,8 @@ export default function BoardSelection() {
     unfinishedWallUuids,
   } = useSprayImportProgress(boardConnection?.boards ?? EMPTY_BOARDS);
   const myBoards = useMemo(
-    () => allMyBoards.filter((board) => isBoardTypeVisible(board.boardType)),
-    [allMyBoards, isBoardTypeVisible],
+    () => allMyBoards.filter((board) => isBoardConfigVisible(board)),
+    [allMyBoards, isBoardConfigVisible],
   );
 
   // Whether Climbs' no-board entry gets "Where do you climb?": only when the
@@ -451,9 +451,9 @@ export default function BoardSelection() {
             cachedMyBoards: myBoards,
             activeBoard: activeBoard ?? null,
             downloadedScopeKeys: downloadedScopeKeys ?? [],
-          }).filter((board) => isBoardTypeVisible(board.boardType))
+          }).filter((board) => isBoardConfigVisible(board))
         : [],
-    [isLocalOnly, offlineCards, myBoards, activeBoard, downloadedScopeKeys, isBoardTypeVisible],
+    [isLocalOnly, offlineCards, myBoards, activeBoard, downloadedScopeKeys, isBoardConfigVisible],
   );
 
   // The top of the picker: the Bluetooth scan behind it, and what it leads
@@ -651,14 +651,14 @@ export default function BoardSelection() {
         orderBoardsForPartnerWorkout(
           nearbyBoardType
             ? (nearby?.boards ?? []).filter(
-                (board) => board.boardType === nearbyBoardType && isBoardTypeVisible(board.boardType),
+                (board) => board.boardType === nearbyBoardType && isBoardConfigVisible(board),
               )
-            : (nearby?.boards ?? []).filter((board) => isBoardTypeVisible(board.boardType)),
+            : (nearby?.boards ?? []).filter((board) => isBoardConfigVisible(board)),
           preferredWorkoutBoard,
         ),
         { activeUuid: activeBoard?.uuid, labelOptions },
       ),
-    [nearby?.boards, nearbyBoardType, activeBoard?.uuid, labelOptions, preferredWorkoutBoard, isBoardTypeVisible],
+    [nearby?.boards, nearbyBoardType, activeBoard?.uuid, labelOptions, preferredWorkoutBoard, isBoardConfigVisible],
   );
   // Near you leaves out boards already shown above it (the top and Your
   // boards). Not under "Where do you climb?", which draws Near you above Your

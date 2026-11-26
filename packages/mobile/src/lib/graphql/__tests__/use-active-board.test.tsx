@@ -81,7 +81,14 @@ describe('useActiveBoard', () => {
   });
 
   it('hides an offline Quantum selection until enabled without changing the saved preference', async () => {
-    const quantum = { ...storedBoard, uuid: 'quantum', boardType: 'quantum' };
+    const quantum = {
+      ...storedBoard,
+      uuid: 'quantum',
+      boardType: 'quantum',
+      layoutId: 9101,
+      sizeId: 9201,
+      setIds: '1',
+    };
     const { setStoredActiveBoard, getStoredActiveBoard } = await import('../../active-board-store');
     await setStoredActiveBoard(quantum);
     onlineManager.setOnline(false);
@@ -105,7 +112,9 @@ describe('useActiveBoard', () => {
     const { getStoredActiveBoard } = await import('../../active-board-store');
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const { result } = renderHook(() => useSetActiveBoard(), { wrapper: wrapper(queryClient) });
-    await expect(result.current({ ...storedBoard, boardType: 'quantum' })).resolves.toBe(false);
+    await expect(
+      result.current({ ...storedBoard, boardType: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' }),
+    ).resolves.toBe(false);
     expect(queryClient.getQueryData(ACTIVE_BOARD_QUERY_KEY)).toBeUndefined();
     await expect(getStoredActiveBoard()).resolves.toBeNull();
   });
@@ -131,7 +140,7 @@ describe('useActiveBoard', () => {
     const { result, rerender } = renderHook(() => useSetActiveBoard(), { wrapper: wrapper() });
     const first = result.current(storedBoard);
     await firstStarted;
-    const queued = result.current({ ...storedBoard, boardType: 'quantum' });
+    const queued = result.current({ ...storedBoard, boardType: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' });
     rollout.enabled = false;
     rerender();
     release();

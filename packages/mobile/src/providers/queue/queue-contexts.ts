@@ -207,7 +207,7 @@ type QueueContextValue = {
    * intentional leave (e.g. switching sessions) to emit LEAVE_SESSION so peers
    * see the departure immediately instead of after the disconnect grace timer.
    */
-  clearSession: (options?: { notifyServer?: boolean }) => Promise<void>;
+  clearSession: (options?: { notifyServer?: boolean; isOperationCurrent?: () => boolean }) => Promise<void>;
   /**
    * End the active session. An optional recap (`notes`) is trimmed and sent only
    * when non-empty; the returned SessionSummary echoes it back for the summary

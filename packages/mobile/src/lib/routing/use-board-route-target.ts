@@ -1,4 +1,5 @@
-import { useIsBoardTypeVisible } from '../../hooks/use-board-visibility';
+import type { BoardVisibilityConfig } from '@boardsesh/board-config/visibility';
+import { useIsBoardConfigVisible, useIsBoardTypeVisible } from '../../hooks/use-board-visibility';
 // Turns a canonical board URL into an open play drawer / climbs list.
 //
 // `app.boardsesh.com` serves the same URL shapes the Next app does, and Expo
@@ -217,6 +218,9 @@ function useAdoptedBoard(
   const { isAuthenticated, isLoading: authIsLoading } = useAuth();
   const isBoardTypeVisible = useIsBoardTypeVisible();
   const visibilityRef = useRef(isBoardTypeVisible);
+  const isBoardConfigVisible = useIsBoardConfigVisible();
+  const configVisibilityRef = useRef(isBoardConfigVisible);
+  configVisibilityRef.current = isBoardConfigVisible;
   const createBoard = useCreateBoard();
   const setActiveBoard = useSetActiveBoard();
   const queryClient = useQueryClient();
@@ -262,7 +266,7 @@ function useAdoptedBoard(
   // Only a resolve that finished for THIS path may be read; see AdoptedBoardState.
   const settled = adopted && adopted.path === resolutionKey ? adopted : null;
   const settledBoard = settled?.board ?? null;
-  const board = settledBoard && isBoardTypeVisible(settledBoard.boardType) ? settledBoard : null;
+  const board = settledBoard && isBoardConfigVisible(settledBoard) ? settledBoard : null;
   const error = settled?.board === null || (settledBoard !== null && board === null);
 
   // The resolve effect deliberately runs once per path, so it must not close
@@ -317,10 +321,14 @@ function useAdoptedBoard(
       if (!visible) blockedTypeRef.current = { path: resolutionKey, boardType };
       return visible;
     };
+    const boardConfigIsVisible = (config: BoardVisibilityConfig) => {
+      const boardType = 'boardType' in config ? config.boardType : config.boardName;
+      return boardTypeIsVisible(boardType) && configVisibilityRef.current(config);
+    };
     void (async () => {
       try {
         const tupleConfig = urlBoardConfig(target);
-        if (tupleConfig && !boardTypeIsVisible(tupleConfig.boardName)) throw new Error('Board unavailable');
+        if (tupleConfig && !boardConfigIsVisible(tupleConfig)) throw new Error('Board unavailable');
         // Ordinary board routes do not need the spray renderer or native auth
         // storage. Load these dependencies only when redeeming a capability.
         const capabilityModules = wallUuid
@@ -374,6 +382,8 @@ function useAdoptedBoard(
         const resolved =
           localBoard ??
           (await resolveBoardForSession(boardPath, {
+            isOperationCurrent: () => !cancelled,
+            isBoardAvailable: boardConfigIsVisible,
             // The account-verified snapshot is already collected above, so the
             // resolver can re-check ownerId without starting a second walk.
             loadOwnedBoards: async () => {
@@ -383,8 +393,12 @@ function useAdoptedBoard(
               return ownedBoardSnapshot;
             },
             createBoard: (input) => {
-              if (!boardTypeIsVisible(input.boardType)) throw new Error('Board unavailable');
-              return createBoardOrAdoptDuplicate(input, (createInput) => createBoardMutation.mutateAsync(createInput));
+              if (!boardConfigIsVisible(input)) throw new Error('Board unavailable');
+              return createBoardOrAdoptDuplicate(
+                input,
+                (createInput) => createBoardMutation.mutateAsync(createInput),
+                () => !cancelled && boardConfigIsVisible(input),
+              );
             },
             // Local first here too, so a named board already on the device opens
             // offline. The named-path angle rule (URL angle, else the board's
@@ -400,17 +414,17 @@ function useAdoptedBoard(
                         resolveBoardSlugLocalFirst,
                         queriesRef.current.confirmBoardJoin,
                         () => !cancelled,
-                        boardTypeIsVisible,
+                        boardConfigIsVisible,
                       )
                   : resolveBoardSlugLocalFirst,
           }));
         if (cancelled) return;
-        if (!boardTypeIsVisible(resolved.boardType)) throw new Error('Board unavailable');
+        if (!boardConfigIsVisible(resolved)) throw new Error('Board unavailable');
         if (credentialGeneration !== null && !credentialStore?.isAuthCredentialGenerationCurrent(credentialGeneration))
           return;
         const adoptionIsCurrent = () =>
           !cancelled &&
-          boardTypeIsVisible(resolved.boardType) &&
+          boardConfigIsVisible(resolved) &&
           (credentialGeneration === null || !!credentialStore?.isAuthCredentialGenerationCurrent(credentialGeneration));
         // The storage write can queue behind another board choice. Its own
         // guard must retain this credential scope until persistence commits.
@@ -423,7 +437,7 @@ function useAdoptedBoard(
           (credentialGeneration !== null && !credentialStore?.isAuthCredentialGenerationCurrent(credentialGeneration))
         )
           return;
-        if (!boardTypeIsVisible(resolved.boardType) || !adoptedBoard) {
+        if (!boardConfigIsVisible(resolved) || !adoptedBoard) {
           settledThisRun = true;
           setAdopted({ path: resolutionKey, board: null });
           return;
@@ -659,8 +673,8 @@ export function useBoardRouteTarget(
     [board, anonymousUrlAngle],
   );
   const boardConfig = configFromUrl ?? configFromBoard;
-  const isBoardTypeVisible = useIsBoardTypeVisible();
-  const rolloutBlocked = boardConfig !== null && !isBoardTypeVisible(boardConfig.boardName);
+  const isBoardConfigVisible = useIsBoardConfigVisible();
+  const rolloutBlocked = boardConfig !== null && !isBoardConfigVisible(boardConfig);
 
   // `!authRequired` is what makes the short-circuit below true to its word: the
   // tuple form carries its whole config in the URL, so without this the climb

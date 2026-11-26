@@ -23,7 +23,7 @@ import {
   type GymFinderSearchKind,
 } from '@boardsesh/analytics';
 import { placeSuggestionLabel } from '@boardsesh/gym-filters';
-import { useIsBoardTypeVisible } from '../../hooks/use-board-visibility';
+import { useIsBoardConfigVisible, useIsBoardTypeVisible } from '../../hooks/use-board-visibility';
 import { useNearbyBoards, useNearbyGyms } from '../../lib/graphql/hooks';
 import { useGymBoards } from '../../lib/graphql/hooks/use-gym-boards';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
@@ -155,6 +155,7 @@ export function useGymFinder({ revealRow, mapAvailableOnOpen = true }: UseGymFin
   // so typing doesn't fire a request per keystroke.
   const [inputText, setInputText] = useState('');
   const isBoardTypeVisible = useIsBoardTypeVisible();
+  const isBoardConfigVisible = useIsBoardConfigVisible();
   const [storedFilter, setAppliedFilter] = useState<WallFinderFilter>(() => initialWallFinderFilter(boardType));
   const appliedFilter = useMemo(() => {
     if (!storedFilter.boardTypes?.some((type) => !isBoardTypeVisible(type))) return storedFilter;
@@ -274,10 +275,8 @@ export function useGymFinder({ revealRow, mapAvailableOnOpen = true }: UseGymFin
   // keep showing standalone boards from the city that was just cleared.
   const boards = useMemo(
     () =>
-      search.center !== null
-        ? (boardConnection?.boards ?? []).filter((board) => isBoardTypeVisible(board.boardType))
-        : [],
-    [boardConnection?.boards, isBoardTypeVisible, search.center],
+      search.center !== null ? (boardConnection?.boards ?? []).filter((board) => isBoardConfigVisible(board)) : [],
+    [boardConnection?.boards, isBoardConfigVisible, search.center],
   );
 
   // Boards not attached to a gym still deserve discovery — surface them as their

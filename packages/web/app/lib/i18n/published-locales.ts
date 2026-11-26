@@ -18,10 +18,10 @@ const BOARD_APP_GUIDE_PATHS = {
   soill: '/apps/aurora#so-ill',
   woods: '/apps/woods',
   spray: APP_GUIDE_COMPARISON_PATH,
-} as const satisfies Record<BoardName, string>;
+} as const satisfies Record<Exclude<BoardName, 'quantum'>, string>;
 
 export function getBoardAppGuidePath(boardName: BoardName) {
-  return BOARD_APP_GUIDE_PATHS[boardName];
+  return boardName === 'quantum' ? null : BOARD_APP_GUIDE_PATHS[boardName];
 }
 
 export function isAppGuidePath(pathname: string): boolean {

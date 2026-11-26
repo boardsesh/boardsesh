@@ -33,7 +33,7 @@ beforeEach(() => {
 
 describe('useHomeBoard', () => {
   it('projects saved and active Quantum boards without changing the stored list', () => {
-    const quantum = board({ uuid: 'quantum', boardType: 'quantum' });
+    const quantum = board({ uuid: 'quantum', boardType: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' });
     const kilter = board({ uuid: 'kilter' });
     const savedBoards = [quantum, kilter];
     vi.mocked(useActiveBoard).mockReturnValue({ data: quantum, isLoading: false } as never);

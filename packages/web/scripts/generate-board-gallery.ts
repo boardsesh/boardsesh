@@ -9,7 +9,11 @@ import { getBoardSetsForLayoutAndSize, supportsStaticBoardRender } from '@boards
 import { getBoardImageDetailsForBoard } from '@boardsesh/board-config/image-metadata';
 import { getBackgroundRelPaths, resolveArtPath, type RenderableBoardDetails } from '@boardsesh/board-render';
 import { composeBoardBaseBuffer } from '@boardsesh/board-render/pipeline';
-import { getLargestGalleryBoardSize, getOrderedGalleryLayouts } from '../app/boards/board-gallery-config';
+import {
+  getGalleryBoardMeasurements,
+  getLargestGalleryBoardSize,
+  getOrderedGalleryLayouts,
+} from '../app/boards/board-gallery-config';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const publicRoot = join(repositoryRoot, 'packages/web/public');
@@ -29,6 +33,8 @@ async function generateGallery() {
     for (const layout of getOrderedGalleryLayouts(boardName)) {
       const size = getLargestGalleryBoardSize(boardName, layout.id);
       const sizeId = size.id;
+      const measurements = getGalleryBoardMeasurements(size);
+      if (!measurements) throw new Error(`No gallery board measurements for ${boardName}/${layout.id}/${sizeId}`);
       const setIds = getBoardSetsForLayoutAndSize(boardName, layout.id, sizeId).map((set) => set.id);
       if (setIds.length === 0) throw new Error(`No hold sets for ${boardName}/${layout.id}/${sizeId}`);
       const details = getBoardImageDetailsForBoard({
@@ -74,8 +80,7 @@ async function generateGallery() {
         layoutName: layout.name,
         sizeId,
         sizeName: size.name,
-        physicalWidth: size.edgeRight - size.edgeLeft,
-        physicalHeight: size.edgeTop - size.edgeBottom,
+        ...measurements,
         setIds,
         src: `/images/board-gallery/${filename}`,
         width: outputWidth,

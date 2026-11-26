@@ -7,6 +7,7 @@ import { getDatabaseHandle } from '../../db';
 import { isOfflineEngineEnabled } from '../offline-engine';
 import { searchClimbsLocal, countClimbsLocal, isOfflineSearchSupported } from '../../db/queries/search-climbs-local';
 import { getClimbLocal } from '../../db/queries/get-climb-local';
+import { isQuantumClimbRetired } from '../../db/queries/quantum-climb-retirement';
 import { fillClimbRevisionNumbersLocal } from '../../db/queries/climb-revisions-local';
 import { getBoardseshGradeLocal, getBoardseshGradesForAnglesLocal } from '../../db/queries/get-boardsesh-grade-local';
 import { getSetterStatsLocal } from '../../db/queries/get-setter-stats-local';
@@ -310,24 +311,32 @@ registerOfflineOperation<SearchClimbsQueryVariables, SearchClimbsCountQueryRespo
   networkVariables: withLostHoldRule,
 });
 
+type LocalClimbDetailResponse = GetClimbQueryResponse & { locallyRetired?: true };
+
 for (const document of [GET_CLIMB, GET_SPRAY_CLIMB])
-  registerOfflineOperation<GetClimbQueryVariables, GetClimbQueryResponse>({
+  registerOfflineOperation<GetClimbQueryVariables, LocalClimbDetailResponse>({
     document,
     surface: 'climb_detail',
     boardNameOf: (variables) => variables.boardName,
-    // Detail has no filters — local whenever the exact scope is downloaded.
-    canServeLocal: (db, variables) => isBoardDownloadedLocally(db, scopeOf(variables)),
-    resolveLocal: async (db, variables) => ({
-      climb: await getClimbLocal(db, {
-        boardName: variables.boardName,
-        layoutId: variables.layoutId,
-        angle: variables.angle,
-        climbUuid: variables.climbUuid,
-        viewerId: await readViewerId(),
-      }),
-    }),
+    canServeLocal: async (db, variables) =>
+      (await isBoardDownloadedLocally(db, scopeOf(variables))) ||
+      (variables.boardName === 'quantum' && (await isQuantumClimbRetired(variables.climbUuid, db))),
+    resolveLocal: async (db, variables) => {
+      if (variables.boardName === 'quantum' && (await isQuantumClimbRetired(variables.climbUuid, db))) {
+        return { climb: null, locallyRetired: true };
+      }
+      return {
+        climb: await getClimbLocal(db, {
+          boardName: variables.boardName,
+          layoutId: variables.layoutId,
+          angle: variables.angle,
+          climbUuid: variables.climbUuid,
+          viewerId: await readViewerId(),
+        }),
+      };
+    },
     offlineFallback: () => ({ climb: null }),
-    isLocalMiss: (response) => response.climb === null,
+    isLocalMiss: (response) => response.climb === null && !response.locallyRetired,
     enrichNetworkResponse: fillDetailRevisionNumbers,
   });
 

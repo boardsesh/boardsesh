@@ -68,8 +68,12 @@ describe('board gallery catalog', () => {
     ({ boardName, layoutId, sizeId, physicalWidth, physicalHeight }) => {
       const selectedSize = getLargestGalleryBoardSize(boardName, layoutId);
       expect(selectedSize.id).toBe(sizeId);
-      expect(selectedSize.edgeRight - selectedSize.edgeLeft).toBe(physicalWidth);
-      expect(selectedSize.edgeTop - selectedSize.edgeBottom).toBe(physicalHeight);
+      const { edgeLeft, edgeRight, edgeBottom, edgeTop } = selectedSize;
+      if (edgeLeft == null || edgeRight == null || edgeBottom == null || edgeTop == null) {
+        throw new Error('Gallery sizes require physical measurements');
+      }
+      expect(edgeRight - edgeLeft).toBe(physicalWidth);
+      expect(edgeTop - edgeBottom).toBe(physicalHeight);
     },
   );
 

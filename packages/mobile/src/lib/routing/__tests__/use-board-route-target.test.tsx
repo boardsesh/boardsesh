@@ -1834,7 +1834,7 @@ describe('Quantum route rollout', () => {
 
   it('does not adopt a delayed server answer after the flag turns off', async () => {
     rollout.enabled = true;
-    const quantum = board({ uuid: 'quantum', boardType: 'quantum' });
+    const quantum = board({ uuid: 'quantum', boardType: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' });
     const pending = deferredBoard(quantum);
     resolveBoardForSession.mockReturnValueOnce(pending.promise).mockResolvedValue(quantum);
     const target: BoardRouteTarget = { kind: 'slug-list', slug: 'quantum-wall', angle: null };

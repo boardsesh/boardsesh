@@ -1,3 +1,6 @@
+import { useIsBoardConfigVisible } from '../hooks/use-board-visibility';
+import { isClimbBoardAvailable } from '../lib/boards/climb-render-board';
+import { isQuantumClimbRetired } from '../db/queries/quantum-climb-retirement';
 import { useCurrentClimbSurface } from '../hooks/use-current-climb-surface';
 import type { TickClimbIdentity } from '@boardsesh/board-config';
 /**
@@ -355,6 +358,10 @@ function navigateToPlayer() {
 export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const navigationRef = useNavigationContainerRef();
   const composerCredentialScope = usePrivacyCredentialScope();
+  const isBoardConfigVisible = useIsBoardConfigVisible();
+  const boardVisibilityRef = useRef(isBoardConfigVisible);
+  boardVisibilityRef.current = isBoardConfigVisible;
+  const playOpenAttemptRef = useRef(0);
   // The climb to show in the player route, with a per-open nonce so a re-tap
   // while `/play` is already up still re-applies (navigate is a no-op then). The
   // route consumes this via usePlayDrawerRoute and runs PlayDrawer's openDrawer.
@@ -553,8 +560,11 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   }, [activeBoard]);
 
   const activeBoardConfig: BoardConfig | null = useMemo(
-    () => boardConfigOverride ?? storedActiveBoardConfig,
-    [boardConfigOverride, storedActiveBoardConfig],
+    () =>
+      boardConfigOverride && !isBoardConfigVisible(boardConfigOverride)
+        ? null
+        : (boardConfigOverride ?? storedActiveBoardConfig),
+    [boardConfigOverride, storedActiveBoardConfig, isBoardConfigVisible],
   );
 
   // A spray wall's photo and holds are runtime data, not bundled assets, so
@@ -605,7 +615,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const myBoardsRef = useRef(myBoardsConn);
   myBoardsRef.current = myBoardsConn;
 
-  const openPlayDrawer = useCallback(
+  const commitOpenPlayDrawer = useCallback(
     (climb: Climb, options?: OpenPlayDrawerOptions) => {
       if (composerCredentialScope !== getCredentialGeneration()) return;
       // Pull `boardConfig` out so it doesn't reach the open target.
@@ -665,6 +675,32 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       navigateToPlayer();
     },
     [setPaneTarget, setPlayTarget, composerCredentialScope],
+  );
+
+  const openPlayDrawer = useCallback(
+    (climb: Climb, options?: OpenPlayDrawerOptions) => {
+      const attempt = ++playOpenAttemptRef.current;
+      const board = options?.boardConfig ?? storedActiveBoardConfigRef.current;
+      const targetClimb = options?.previewQueueItem?.climb ?? climb;
+      const canOpen = () =>
+        composerCredentialScope === getCredentialGeneration() &&
+        (!!options?.boardConfig || board === storedActiveBoardConfigRef.current) &&
+        isClimbBoardAvailable(targetClimb, board, boardVisibilityRef.current);
+      if (!canOpen()) return;
+      if (targetClimb.boardType !== 'quantum' && board?.boardName !== 'quantum') {
+        commitOpenPlayDrawer(climb, options);
+        return;
+      }
+      void isQuantumClimbRetired(targetClimb.uuid)
+        .then((retired) => {
+          if (retired || !hostMountedRef.current || attempt !== playOpenAttemptRef.current || !canOpen()) return;
+          commitOpenPlayDrawer(climb, options);
+        })
+        .catch(() => {
+          // A failed local read must not surface a potentially withdrawn cached route.
+        });
+    },
+    [commitOpenPlayDrawer, composerCredentialScope],
   );
 
   // Drop the pane's selected climb when the pane goes away (a resize into compact,
@@ -847,14 +883,21 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     [activeBoard, boardConfigOverride, sessionId, setBoardAngle, setSessionBoardPath],
   );
 
-  const openLogAscent = openLogAscentSheet;
+  const openLogAscent = useCallback(
+    (input: LogAscentInput) => {
+      if (boardVisibilityRef.current(input)) openLogAscentSheet(input);
+    },
+    [openLogAscentSheet],
+  );
 
   // Resolve a menu snapshot during render; native long-press owns presentation.
   const getClimbActions = useCallback(
     (climb: Climb, boardConfigOverride?: BoardConfig, options?: OpenClimbActionsOptions): ClimbActionsTarget | null => {
       if (composerCredentialScope !== getCredentialGeneration()) return null;
       const boardConfig = boardConfigOverride ?? storedActiveBoardConfigRef.current;
-      return boardConfig ? { climb, boardConfig, ...options } : null;
+      return boardConfig && isClimbBoardAvailable(climb, boardConfig, boardVisibilityRef.current)
+        ? { climb, boardConfig, ...options }
+        : null;
     },
     [composerCredentialScope],
   );
@@ -862,7 +905,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const openAddToPlaylist = useCallback(
     (climb: Climb, boardConfigOverride?: BoardConfig, anchorPoint?: WindowAnchorPoint) => {
       const boardConfig = boardConfigOverride ?? storedActiveBoardConfigRef.current;
-      if (!boardConfig) return;
+      if (!boardConfig || !isClimbBoardAvailable(climb, boardConfig, boardVisibilityRef.current)) return;
       openPlaylistSheet({ climb, boardConfig, anchorPoint });
     },
     [openPlaylistSheet],
@@ -877,7 +920,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const openAddBetaVideo = useCallback(
     (climb: Climb, boardConfigOverride?: BoardConfig) => {
       const boardConfig = boardConfigOverride ?? storedActiveBoardConfigRef.current;
-      if (!boardConfig) return;
+      if (!boardConfig || !isClimbBoardAvailable(climb, boardConfig, boardVisibilityRef.current)) return;
       openBetaVideoSheet({ climb, boardConfig });
     },
     [openBetaVideoSheet],
@@ -896,7 +939,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     (climb: Climb, boardConfigOverride?: BoardConfig) => {
       if (!moderationEnabled) return;
       const boardConfig = boardConfigOverride ?? storedActiveBoardConfigRef.current;
-      if (!boardConfig) return;
+      if (!boardConfig || !isClimbBoardAvailable(climb, boardConfig, boardVisibilityRef.current)) return;
       openReportClimbSheet({ climb, boardConfig });
     },
     [moderationEnabled, openReportClimbSheet],
@@ -1083,7 +1126,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       // to the opener's board would send the climber somewhere the prompt never
       // mentioned (#5099).
       const override = climbBoardConfig ?? boardConfigOverrideRef.current;
-      if (!override) return;
+      if (!override || !boardVisibilityRef.current(override)) return;
 
       // A board at this gym goes through the real switch first. The legacy path
       // below only writes the active board, so a move made during a party
@@ -1261,7 +1304,10 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             mismatchBoardLabel,
             reachableBoardKeys,
             onSwitchBoard: handleSwitchBoardFromDrawer,
-            openTarget: paneTarget,
+            openTarget:
+              paneTarget && isClimbBoardAvailable(paneTarget.climb, activeBoardConfig, isBoardConfigVisible)
+                ? paneTarget
+                : null,
           }
         : null,
     [
@@ -1274,6 +1320,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       reachableBoardKeys,
       handleSwitchBoardFromDrawer,
       paneTarget,
+      isBoardConfigVisible,
     ],
   );
 
@@ -1357,7 +1404,10 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       onSwitchBoard: handleSwitchBoardFromDrawer,
       onPlayDrawerClosed,
       onPlayDrawerTargetConsumed,
-      playTarget,
+      playTarget:
+        playTarget && isClimbBoardAvailable(playTarget.climb, activeBoardConfig, isBoardConfigVisible)
+          ? playTarget
+          : null,
     }),
     [
       activeBoardConfig,
@@ -1370,6 +1420,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       onPlayDrawerClosed,
       onPlayDrawerTargetConsumed,
       playTarget,
+      isBoardConfigVisible,
     ],
   );
 
@@ -1386,7 +1437,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             <ClimbBoardConnectContext.Provider value={climbBoardConnectValue}>
               {children}
             </ClimbBoardConnectContext.Provider>
-            {logAscentData ? (
+            {logAscentData && isBoardConfigVisible(logAscentData) ? (
               <LogAscentSheet
                 key={composerCredentialScope}
                 visible={logAscentVisible}
@@ -1406,7 +1457,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
                 consensusGradeName={logAscentData.consensusGradeName}
               />
             ) : null}
-            {betaVideoData ? (
+            {betaVideoData && isBoardConfigVisible(betaVideoData.boardConfig) ? (
               <AddBetaVideoSheet
                 key={composerCredentialScope}
                 visible={betaVideoVisible}
@@ -1418,7 +1469,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
                 onFullyDismissed={clearBetaVideoSheet}
               />
             ) : null}
-            {reportClimbData ? (
+            {reportClimbData && isBoardConfigVisible(reportClimbData.boardConfig) ? (
               <ReportClimbSheet
                 key={composerCredentialScope}
                 visible={reportClimbVisible}
@@ -1432,7 +1483,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
                 onFullyDismissed={clearReportClimbSheet}
               />
             ) : null}
-            {playlistData ? (
+            {playlistData && isBoardConfigVisible(playlistData.boardConfig) ? (
               <AddToPlaylistSheet
                 key={composerCredentialScope}
                 visible={playlistVisible}

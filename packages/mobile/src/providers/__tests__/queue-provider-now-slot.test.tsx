@@ -163,6 +163,7 @@ vi.mock('@boardsesh/play-view', async (importOriginal) => ({
   emitWallConfirm: vi.fn(),
 }));
 vi.mock('../feature-flags-provider', () => ({
+  useFeatureFlag: () => false,
   useSharedSessionBrowseEnabled: () => false,
   useQueueNowSlotEnabled: () => flags.nowSlot,
 }));

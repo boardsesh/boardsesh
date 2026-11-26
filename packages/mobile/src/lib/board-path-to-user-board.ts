@@ -14,6 +14,7 @@
 
 import type { CreateBoardInput, UserBoard } from '@boardsesh/shared-schema';
 import { parseBoardPath, parseNamedBoardPath, formatBoardDisplayName } from '@boardsesh/board-config';
+import { isBoardConfigVisible, type BoardVisibilityConfig } from '@boardsesh/board-config/visibility';
 import { findOwnedBoardForConfig } from '../components/board-discovery/board-items';
 
 export type OwnedBoardSnapshot = {
@@ -34,6 +35,7 @@ export type ResolvedBoardConfig = {
 export type ResolveBoardDeps = {
   /** False when this join or route resolution was superseded while awaiting I/O. */
   isOperationCurrent?: () => boolean;
+  isBoardAvailable?: (config: BoardVisibilityConfig) => boolean;
   /**
    * The account-verified board list, loaded on demand. `myBoards` also includes
    * followed boards, so resolution must match each row's `ownerId` to `viewerId`.
@@ -125,6 +127,10 @@ export function buildCreateBoardInput(config: ResolvedBoardConfig): CreateBoardI
  * the same input to step 2 and mint a duplicate or adopt a followed board.
  */
 export async function resolveBoardForSession(boardPath: string, deps: ResolveBoardDeps): Promise<UserBoard> {
+  const isBoardAvailable = deps.isBoardAvailable ?? isBoardConfigVisible;
+  const assertBoardAvailable = (config: BoardVisibilityConfig) => {
+    if (!isBoardAvailable(config)) throw new Error('Session board unavailable');
+  };
   const assertOperationCurrent = () => {
     if (deps.isOperationCurrent && !deps.isOperationCurrent()) {
       throw new Error('Session board resolution was superseded');
@@ -139,6 +145,7 @@ export async function resolveBoardForSession(boardPath: string, deps: ResolveBoa
     if (!board) {
       throw new Error(`Cannot resolve a board from session boardPath: ${boardPath}`);
     }
+    assertBoardAvailable(board);
     const angle = named.angle ?? board.angle;
     return board.angle === angle ? board : { ...board, angle };
   }
@@ -148,8 +155,10 @@ export async function resolveBoardForSession(boardPath: string, deps: ResolveBoa
     throw new Error(`Cannot resolve a board from session boardPath: ${boardPath}`);
   }
 
+  assertBoardAvailable(config);
   const snapshot = await deps.loadOwnedBoards();
   assertOperationCurrent();
+  assertBoardAvailable(config);
   if (typeof snapshot.viewerId !== 'string' || snapshot.viewerId.trim().length === 0) {
     throw new Error('Cannot resolve a board without a verified account owner');
   }
@@ -167,5 +176,6 @@ export async function resolveBoardForSession(boardPath: string, deps: ResolveBoa
   assertOperationCurrent();
   const createdBoard = await deps.createBoard(buildCreateBoardInput(config));
   assertOperationCurrent();
+  assertBoardAvailable(createdBoard);
   return createdBoard;
 }

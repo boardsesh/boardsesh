@@ -15,7 +15,7 @@
 import { useCallback, useMemo } from 'react';
 import { Platform } from 'react-native';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { useIsBoardTypeVisible } from '../../hooks/use-board-visibility';
+import { useIsBoardConfigVisible } from '../../hooks/use-board-visibility';
 import { useGymBoards } from '../../lib/graphql/hooks';
 import { usePickerAutoScanEnabled } from '../../providers/feature-flags-provider';
 import { useSetting } from '../../settings/hooks';
@@ -71,15 +71,17 @@ export function usePickerInRange({
   // Only while this screen is on top and showing the online layout: the
   // offline list and the error state have no top to fill.
   const autoStart = usePickerAutoScanEnabled();
-  const isBoardTypeVisible = useIsBoardTypeVisible();
+  const isBoardConfigVisible = useIsBoardConfigVisible();
   const scan = usePickerBoardScan({ focused: focused && showsTop, autoStart, knownBoards });
   const { phase, rows: allRows, lookup, start } = scan;
   const rows = useMemo(
     () =>
       allRows.filter(
-        (row) => row.kind === 'lookup_failed' || isBoardTypeVisible(row.kind === 'board' ? row.board.boardType : row.boardType),
+        (row) =>
+          row.kind === 'lookup_failed' ||
+          isBoardConfigVisible(row.kind === 'board' ? row.board : { boardType: row.boardType }),
       ),
-    [allRows, isBoardTypeVisible],
+    [allRows, isBoardConfigVisible],
   );
 
   const [bluetoothNotNow, setBluetoothNotNow] = useSetting('pickerBluetoothNotNow');
@@ -88,7 +90,7 @@ export function usePickerInRange({
   // Nothing a scan heard leads for its first seconds after hearing anything,
   // or while the lookup is still naming it; once it has led it stays put
   // until the results leave the screen (use-steady-picker-top.ts).
-  const steadiness = usePickerTopSteadiness(phase, lookup, isBoardTypeVisible);
+  const steadiness = usePickerTopSteadiness(phase, lookup, isBoardConfigVisible);
   const drawnTop = steadiness.drawn;
   const scanHold = usePickerScanHold(phase, scanHeardAnything(rows, lookup));
   const holdScanLead = scanHold || steadiness.waitsOnLookup;
