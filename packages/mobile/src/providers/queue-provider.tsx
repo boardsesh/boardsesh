@@ -1328,6 +1328,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   }, [resetQueueMutationLane]);
   const getCurrentSessionId = useCallback(() => sessionIdRef.current, []);
   const getSessionContextRevision = useCallback(() => sessionContextRevision.current, []);
+  const pendingSessionLeaves = useRef(0);
+  const isSessionLeavePending = useCallback(() => pendingSessionLeaves.current > 0, []);
+  const beginSessionLeave = useCallback(() => {
+    pendingSessionLeaves.current += 1;
+    return () => {
+      pendingSessionLeaves.current -= 1;
+    };
+  }, []);
 
   // Explicit session lifecycle commands: create (Start button), join, end, clear.
   // See useSessionCommands. clearSessionRef is read by the session-realtime
@@ -1344,6 +1352,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     sessionIdRef,
     authenticatedUserIdRef,
     onSessionContextChanging,
+    beginSessionLeave,
     dispatch,
     setPlaylistSuggestionSourceState,
     setActiveBoard,
@@ -3766,8 +3775,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       accountId: authenticatedUserId,
       getCurrentSessionId,
       getSessionContextRevision,
+      isSessionLeavePending,
     }),
-    [sessionId, undoScope, authenticatedUserId, getCurrentSessionId, getSessionContextRevision],
+    [sessionId, undoScope, authenticatedUserId, getCurrentSessionId, getSessionContextRevision, isSessionLeavePending],
   );
 
   // Live analytics + presence: the ≤1/2s party push recreates only this small

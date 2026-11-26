@@ -5,6 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runMigrations } from '@boardsesh/offline-sync';
 import { createTestDatabase } from '@boardsesh/offline-sync/testing';
 import { getQuantumBundledGeometry } from '@boardsesh/board-constants/quantum';
+import type { UserBoard } from '@boardsesh/shared-schema';
+import { useQuantumBluetoothSelection } from '../use-quantum-bluetooth-selection';
+import { QueueRestoredContext, QueueSessionIdContext } from '../queue/queue-contexts';
 import type { DevicePickerFn } from '../../lib/ble/types';
 import { invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
 
@@ -91,6 +94,7 @@ const presence = vi.hoisted(() => ({
 }));
 
 const localRecovery = vi.hoisted(() => ({
+  isQuantumClimbRetired: vi.fn(),
   getDatabaseHandle: vi.fn(),
   getRoutePresenceClimbs: vi.fn(),
   getQuantumGeometry: vi.fn(),
@@ -134,6 +138,13 @@ vi.mock('../../lib/ble/quantum-layer-identity-store', () => ({
 vi.mock('../../lib/session-store', () => ({ getStoredCreatedSessionId: playerStorage.creatorMarker }));
 vi.mock('../../db', () => ({
   getDatabaseHandle: localRecovery.getDatabaseHandle,
+}));
+vi.mock('../feature-flags-provider', () => ({
+  useFeatureFlag: () => true,
+  useFeatureFlagsResolved: () => true,
+}));
+vi.mock('../../db/queries/quantum-climb-retirement', () => ({
+  isQuantumClimbRetired: localRecovery.isQuantumClimbRetired,
 }));
 vi.mock('../../db/queries/quantum-route-presence-local', () => ({
   getQuantumRoutePresenceClimbsLocal: localRecovery.getRoutePresenceClimbs,
@@ -234,6 +245,12 @@ function provider(
   });
 }
 
+function WithWrappedSelection({ isBoardSelectionCurrent }: { isBoardSelectionCurrent: () => boolean }) {
+  const board = { uuid: 'board-A', boardType: 'quantum', layoutId: 9101, sizeId: 9201 } as UserBoard;
+  const selection = useQuantumBluetoothSelection(board, isBoardSelectionCurrent);
+  return createElement(QuantumBluetoothProvider, { ...selection, children: createElement(Probe) });
+}
+
 function installPendingPickerAttempt(): AbortController {
   const abortController = new AbortController();
   transport.requestAndConnect.mockImplementationOnce(async () => {
@@ -256,7 +273,6 @@ describe('QuantumBluetoothProvider', () => {
     permissions.request.mockReset().mockResolvedValue(true);
     playerStorage.solo.mockReset().mockResolvedValue({
       controllerUserUuid: CONTROLLER_USER_UUID,
-      legacyCleanupUserUuids: ['20000000-0000-4000-8000-000000000002'],
     });
     playerStorage.session.mockReset().mockResolvedValue(null);
     playerStorage.creatorMarker.mockReset().mockResolvedValue(null);
@@ -281,6 +297,7 @@ describe('QuantumBluetoothProvider', () => {
     controller.refresh.mockResolvedValue(controller.initialSnapshot);
     controller.publishSnapshot = undefined;
     localRecovery.getDatabaseHandle.mockReturnValue(null);
+    localRecovery.isQuantumClimbRetired.mockReset().mockResolvedValue(false);
     localRecovery.getRoutePresenceClimbs.mockResolvedValue([]);
     localRecovery.getQuantumGeometryGeneration.mockReturnValue(1);
     localRecovery.getQuantumGeometry.mockImplementation((layoutId: number, sizeId: number) =>
@@ -330,7 +347,6 @@ describe('QuantumBluetoothProvider', () => {
     playerStorage.creatorMarker.mockResolvedValue('shared-room');
     playerStorage.session.mockResolvedValue({
       controllerUserUuid: STARTED_SESSION_USER_UUID,
-      legacyCleanupUserUuids: [],
     });
     controller.refresh.mockResolvedValue({ revision: 1, observedAtMs: 1_000, players: [] });
     controller.activate.mockResolvedValue({ revision: 2, observedAtMs: 1_100, players: [] });
@@ -398,6 +414,87 @@ describe('QuantumBluetoothProvider', () => {
       });
       expect(controller.activate).not.toHaveBeenCalled();
       expect(controller.remove).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['board persistence', 'LEAVE'] as const)(
+    'blocks freshly rendered actions on the old link during pending %s',
+    async (pending) => {
+      let boardReady = true;
+      let leavePending = false;
+      let sessionRevision = 0;
+      playerStorage.creatorMarker.mockResolvedValue('room-A');
+      playerStorage.session.mockResolvedValue({ controllerUserUuid: STARTED_SESSION_USER_UUID });
+      const sessionContext = {
+        sessionId: 'room-A',
+        accountId: 'account-A',
+        undoScope: 'test',
+        getCurrentSessionId: () => 'room-A',
+        getSessionContextRevision: () => sessionRevision,
+        isSessionLeavePending: () => leavePending,
+      };
+      const renderSelection = () =>
+        createElement(
+          QueueSessionIdContext.Provider,
+          { value: sessionContext },
+          createElement(
+            QueueRestoredContext.Provider,
+            { value: true },
+            createElement(WithWrappedSelection, { isBoardSelectionCurrent: () => boardReady }),
+          ),
+        );
+      const view = render(renderSelection());
+      await waitFor(() => expect(latestState?.driverStatus).toBe('available'));
+      await act(async () => {
+        await latestActions!.connect();
+      });
+      const oldActions = latestActions;
+      controller.refresh.mockClear();
+      if (pending === 'board persistence') boardReady = false;
+      else {
+        leavePending = true;
+        sessionRevision += 1;
+      }
+      view.rerender(renderSelection());
+      expect(latestState?.status).toBe('connected');
+      expect(latestActions).not.toBe(oldActions);
+      await expect(latestActions!.activateLayer(ACTIVATION)).rejects.toThrow('not connected');
+      await expect(
+        latestActions!.removeLayer({
+          controllerUserUuid: STARTED_SESSION_USER_UUID,
+          controllerRouteUuid: ROUTE_UUID,
+        }),
+      ).rejects.toThrow('not connected');
+      expect(controller.refresh).not.toHaveBeenCalled();
+      expect(controller.activate).not.toHaveBeenCalled();
+      expect(controller.remove).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['before preflight', 'after preflight'] as const)(
+    'blocks a retired climb %s and permits removal of an already owned layer',
+    async (phase) => {
+      const late = phase === 'after preflight';
+      controller.refresh.mockResolvedValue({ revision: 1, observedAtMs: 1_000, players: [] });
+      controller.remove.mockResolvedValue({ revision: 2, observedAtMs: 2_000, players: [] });
+      render(provider('xl'));
+      await act(async () => {
+        await latestActions!.connect();
+      });
+      controller.refresh.mockClear();
+      localRecovery.isQuantumClimbRetired.mockResolvedValueOnce(!late).mockResolvedValue(true);
+      await expect(
+        latestActions!.activateLayer({
+          ...ACTIVATION,
+          climbUuid: 'retained-quantum-climb',
+        }),
+      ).rejects.toThrow('no longer available to light');
+      expect(controller.refresh).toHaveBeenCalledTimes(late ? 1 : 0);
+      expect(controller.activate).not.toHaveBeenCalled();
+      await act(async () => {
+        await latestActions!.removeLayer({ controllerUserUuid: CONTROLLER_USER_UUID, controllerRouteUuid: ROUTE_UUID });
+      });
+      expect(controller.remove).toHaveBeenCalledOnce();
     },
   );
 
@@ -1380,7 +1477,6 @@ describe('QuantumBluetoothProvider', () => {
     firstClient.unmount();
     playerStorage.solo.mockResolvedValue({
       controllerUserUuid: '20000000-0000-4000-8000-000000000003',
-      legacyCleanupUserUuids: [],
     });
     presence.reportLayersForBoard.mockClear();
     render(provider('xl'));

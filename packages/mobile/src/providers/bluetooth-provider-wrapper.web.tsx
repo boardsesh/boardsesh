@@ -18,8 +18,8 @@ import { useActiveBoard } from '../lib/graphql/use-active-board';
  * `undefined → board` transition. LiveActivityBridge is iOS-native and omitted.
  */
 export function BluetoothProviderWrapper({ children }: { children: ReactNode }) {
-  const { data: activeBoard } = useActiveBoard();
-  const quantumSelection = useQuantumBluetoothSelection(activeBoard);
+  const { data: activeBoard, isBoardSelectionCurrent } = useActiveBoard();
+  const quantumSelection = useQuantumBluetoothSelection(activeBoard, isBoardSelectionCurrent);
   const legacyActiveBoard = activeBoard?.boardType === 'quantum' ? undefined : activeBoard;
 
   return (

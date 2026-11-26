@@ -32,6 +32,7 @@ export const ACTIVE_BOARD_QUERY_KEY = ['activeBoard'] as const;
 //    queued behind it and therefore remains the final persisted value.
 let activeBoardWriteGeneration = 0;
 let activeBoardWriteQueue: Promise<void> = Promise.resolve();
+let activeBoardWritesPending = 0;
 subscribeToCredentialChanges(() => {
   activeBoardWriteGeneration += 1;
 });
@@ -55,24 +56,29 @@ function enqueueActiveBoardWrite(
   isStillCurrent: () => boolean = () => true,
 ): Promise<boolean> {
   const credentialGeneration = getCredentialGeneration();
-  const operation = activeBoardWriteQueue.then(async () => {
-    if (retireOnPrivacyChange && credentialGeneration !== getCredentialGeneration()) return false;
-    // Always execute queued storage operations in intent order. In particular,
-    // auth cleanup may target the previous user's scoped key and must not be
-    // skipped merely because the next user already selected a board.
-    await writeStorage();
+  activeBoardWritesPending += 1;
+  const operation = activeBoardWriteQueue
+    .then(async () => {
+      if (retireOnPrivacyChange && credentialGeneration !== getCredentialGeneration()) return false;
+      // Always execute queued storage operations in intent order. In particular,
+      // auth cleanup may target the previous user's scoped key and must not be
+      // skipped merely because the next user already selected a board.
+      await writeStorage();
 
-    // A newer intent may have arrived while AsyncStorage was in flight. Its
-    // write is queued next, so do not briefly roll the React Query cache back.
-    if (
-      generation !== activeBoardWriteGeneration ||
-      credentialGeneration !== getCredentialGeneration() ||
-      !isStillCurrent()
-    )
-      return false;
-    commitCache();
-    return true;
-  });
+      // A newer intent may have arrived while AsyncStorage was in flight. Its
+      // write is queued next, so do not briefly roll the React Query cache back.
+      if (
+        generation !== activeBoardWriteGeneration ||
+        credentialGeneration !== getCredentialGeneration() ||
+        !isStillCurrent()
+      )
+        return false;
+      commitCache();
+      return true;
+    })
+    .finally(() => {
+      activeBoardWritesPending -= 1;
+    });
 
   // A failed write must not poison the queue for every later board selection.
   activeBoardWriteQueue = operation.then(
@@ -113,6 +119,7 @@ export async function clearStoredActiveBoardCoordinated(owner?: UserStorageOwner
 /** Test-only reset; callers must invoke it only after pending writes settle. */
 export function resetActiveBoardWriteCoordinatorForTests(): void {
   activeBoardWriteGeneration = 0;
+  activeBoardWritesPending = 0;
   activeBoardWriteQueue = Promise.resolve();
 }
 
@@ -121,6 +128,7 @@ export function resetActiveBoardWriteCoordinatorForTests(): void {
  * picked one yet — callers surface the board picker rather than defaulting.
  */
 export function useActiveBoard() {
+  const queryClient = useQueryClient();
   const isBoardConfigVisible = useIsBoardConfigVisible();
   useSyncExternalStore(subscribeToCredentialChanges, getCredentialGeneration, getCredentialGeneration);
   const query = useQuery({
@@ -139,7 +147,19 @@ export function useActiveBoard() {
   });
   const board = query.data ? currentActiveBoardProjection(query.data) : query.data;
   const isRolloutBlocked = board != null && !isBoardConfigVisible(board);
-  return { ...query, data: isRolloutBlocked ? null : board, isRolloutBlocked };
+  const selectionGeneration = getActiveBoardWriteGeneration();
+  const selectedQueryData = query.data;
+  // A rerender while persistence is pending still displays the old board.
+  // Bind hardware eligibility to the displayed query value and require
+  // the serialized write lane to have settled before touching the wall.
+  const isBoardSelectionCurrent = useCallback(
+    () =>
+      activeBoardWritesPending === 0 &&
+      selectionGeneration === getActiveBoardWriteGeneration() &&
+      selectedQueryData === queryClient.getQueryData(ACTIVE_BOARD_QUERY_KEY),
+    [queryClient, selectedQueryData, selectionGeneration],
+  );
+  return { ...query, data: isRolloutBlocked ? null : board, isRolloutBlocked, isBoardSelectionCurrent };
 }
 
 /**

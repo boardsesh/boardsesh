@@ -259,6 +259,44 @@ describe('useActiveBoard', () => {
     await expect(getStoredActiveBoard()).resolves.toEqual(otherBoard);
   });
 
+  it('keeps the displayed board fenced on a fresh render while switch persistence is pending', async () => {
+    const { useActiveBoard, useSetActiveBoard } = await import('../use-active-board');
+    const { setStoredActiveBoard } = await import('../../active-board-store');
+    const asyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+    await setStoredActiveBoard(storedBoard);
+    const { result, rerender } = renderHook(
+      () => ({
+        selection: useActiveBoard(),
+        select: useSetActiveBoard(),
+      }),
+      { wrapper: wrapper() },
+    );
+    await waitFor(() => expect(result.current.selection.data?.uuid).toBe(storedBoard.uuid));
+    const oldSelection = result.current.selection.isBoardSelectionCurrent;
+    expect(oldSelection()).toBe(true);
+
+    let finishStorageWrite!: () => void;
+    const pendingStorage = new Promise<void>((resolve) => {
+      finishStorageWrite = resolve;
+    });
+    vi.spyOn(asyncStorage, 'setItem').mockImplementationOnce(() => pendingStorage);
+    const switching = result.current.select(otherBoard);
+    rerender();
+    expect(result.current.selection.data?.uuid).toBe(storedBoard.uuid);
+    const rerenderedSelection = result.current.selection.isBoardSelectionCurrent;
+    expect(oldSelection()).toBe(false);
+    expect(rerenderedSelection()).toBe(false);
+
+    await act(async () => {
+      finishStorageWrite();
+      await switching;
+    });
+    // Even before a new render, the stale cache projection can no longer authorize A.
+    expect(rerenderedSelection()).toBe(false);
+    await waitFor(() => expect(result.current.selection.data?.uuid).toBe(otherBoard.uuid));
+    expect(result.current.selection.isBoardSelectionCurrent()).toBe(true);
+  });
+
   it('does not publish a persisted board after the owning join operation becomes stale', async () => {
     const { ACTIVE_BOARD_QUERY_KEY, useSetActiveBoard } = await import('../use-active-board');
     const asyncStorage = (await import('@react-native-async-storage/async-storage'))

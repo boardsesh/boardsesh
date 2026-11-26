@@ -27,13 +27,13 @@ import { LiveActivityBridge } from '../lib/live-activity/live-activity-bridge';
  * it alone is gated on `activeBoard`.
  */
 export function BluetoothProviderWrapper({ children }: { children: ReactNode }) {
-  const { data: activeBoard } = useActiveBoard();
+  const { data: activeBoard, isBoardSelectionCurrent } = useActiveBoard();
   // The auto-sender must not treat a climb on the board across the room the same
   // way it treats one on a board in another city. It still refuses to WRITE
   // either — this wall can't draw them — but it may not advance the queue past
   // the first, because the climber navigated there on purpose.
   const reachableBoardKeys = useReachableBoardKeys(activeBoard);
-  const quantumSelection = useQuantumBluetoothSelection(activeBoard);
+  const quantumSelection = useQuantumBluetoothSelection(activeBoard, isBoardSelectionCurrent);
   const legacyActiveBoard = activeBoard?.boardType === 'quantum' ? undefined : activeBoard;
 
   return (

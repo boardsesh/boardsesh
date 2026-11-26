@@ -180,9 +180,8 @@ export function BleControlSheetHost({
   }, [quantumPlayer, quantumPlayers, quantumTarget]);
   const quantumRemovals = useMemo<QuantumLayerRemovalRow[]>(() => {
     if (!quantumPlayer || !quantumPlayers) return [];
-    const ownedUserUuids = [quantumPlayer.controllerUserUuid, ...quantumPlayer.legacyCleanupUserUuids];
     return quantumPlayers.flatMap((player) => {
-      if (!ownedUserUuids.some((userUuid) => quantumUuidsEqual(userUuid, player.userId))) return [];
+      if (!quantumUuidsEqual(quantumPlayer.controllerUserUuid, player.userId)) return [];
       const color = BOARD_LAYER_COLORS.find((candidate) => quantumLayerColorNumber(candidate) === player.color);
       return [
         {

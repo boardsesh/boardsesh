@@ -123,6 +123,7 @@ function renderSessionCommands() {
     sessionIdRef: { current: null },
     authenticatedUserIdRef: { current: 'account-a' },
     onSessionContextChanging: vi.fn(),
+    beginSessionLeave: vi.fn(() => vi.fn()),
     dispatch: vi.fn(),
     setPlaylistSuggestionSourceState: vi.fn(),
     setActiveBoard: vi.fn(() => Promise.resolve(true)),
@@ -371,6 +372,9 @@ describe('clearSession after active board removal', () => {
       leaving = result.current.clearSession({ notifyServer: true });
     });
     expect(params.onSessionContextChanging).toHaveBeenCalledTimes(1);
+    expect(params.beginSessionLeave).toHaveBeenCalledTimes(1);
+    const settleLeave = params.beginSessionLeave.mock.results[0].value;
+    expect(settleLeave).not.toHaveBeenCalled();
     expect(params.dispatch).not.toHaveBeenCalled();
     sessionRef.current = 'new-room';
     await act(async () => {
@@ -378,6 +382,7 @@ describe('clearSession after active board removal', () => {
       await leaving;
     });
     expect(sessionRef.current).toBe('new-room');
+    expect(settleLeave).toHaveBeenCalledOnce();
     expect(params.dispatch).not.toHaveBeenCalled();
     expect(mocks.clearStoredQueueSnapshot).not.toHaveBeenCalled();
   });
@@ -445,6 +450,29 @@ describe('partner initial seed recovery', () => {
     mocks.rememberPartnerWorkout.mockClear();
     mocks.setStoredSessionId.mockClear();
     mocks.clearStoredQueueSnapshot.mockClear();
+  });
+
+  it('never mints a driver when two phones receive the same partner Start session', async () => {
+    mocks.storedActiveBoard = { ...homeBoard(), boardType: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' };
+    mocks.rememberStartedQuantumSessionPlayer.mockClear();
+    mocks.request.mockResolvedValue({
+      createSession: {
+        id: 'original-session',
+        isPublic: false,
+        queueState: { sequence: 1, queue: [], currentClimbQueueItem: null },
+      },
+    });
+    const firstPhone = renderSessionCommands();
+    const secondPhone = renderSessionCommands();
+    await act(async () => {
+      await expect(
+        Promise.all([
+          firstPhone.result.current.createSessionWithConfig({ appWorkoutId: 'wk', appWorkoutSeed: seed }),
+          secondPhone.result.current.createSessionWithConfig({ appWorkoutId: 'wk', appWorkoutSeed: seed }),
+        ]),
+      ).resolves.toEqual(['original-session', 'original-session']);
+    });
+    expect(mocks.rememberStartedQuantumSessionPlayer).not.toHaveBeenCalled();
   });
 
   it('after a lost response, hydrates only the original server winner without seeding again', async () => {

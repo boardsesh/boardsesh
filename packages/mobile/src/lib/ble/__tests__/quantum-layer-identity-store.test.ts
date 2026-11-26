@@ -32,7 +32,7 @@ describe('Quantum controller players in native SecureStore', () => {
       getOrCreateQuantumSoloPlayer(generate),
       getOrCreateQuantumSoloPlayer(generate),
     ]);
-    expect(first).toEqual({ controllerUserUuid: SOLO_ID, legacyCleanupUserUuids: [] });
+    expect(first).toEqual({ controllerUserUuid: SOLO_ID });
     expect(second).toEqual(first);
     expect(generate).toHaveBeenCalledOnce();
     expect(secureStore.setItemAsync).toHaveBeenCalledOnce();
@@ -41,7 +41,7 @@ describe('Quantum controller players in native SecureStore', () => {
     });
   });
 
-  it('retains all four older IDs for cleanup while driving with a new credential', async () => {
+  it('leaves a restored v1 blob untouched and treats all its IDs as foreign', async () => {
     const legacyKey = 'boardsesh_quantum_layer_ids_v1';
     const ids = Array.from({ length: 4 }, (_, index) => SOLO_ID.slice(0, -1) + (index + 1));
     const legacy = JSON.stringify({ version: 1, controllerUserUuids: ids });
@@ -50,7 +50,6 @@ describe('Quantum controller players in native SecureStore', () => {
     const generator = vi.fn(() => SESSION_ID);
     expect(await getOrCreateQuantumSoloPlayer(generator)).toEqual({
       controllerUserUuid: SESSION_ID,
-      legacyCleanupUserUuids: ids,
     });
     expect(generator).toHaveBeenCalledOnce();
     expect(secureStore.stored.get(legacyKey)).toBe(legacy);

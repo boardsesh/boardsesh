@@ -65,6 +65,7 @@ type UseSessionCommandsParams = {
   authenticatedUserIdRef?: React.RefObject<string | null>;
   /** Starts a fresh playlist-send lane before the active room changes. */
   onSessionContextChanging: () => void;
+  beginSessionLeave?: () => () => void;
   dispatch: React.Dispatch<QueueAction>;
   setPlaylistSuggestionSourceState: React.Dispatch<React.SetStateAction<PlaylistSuggestionSource | null>>;
   /** Raw active-board setter (useSetActiveBoard), NOT the ref-wrapped one. */
@@ -102,6 +103,7 @@ export function useSessionCommands({
   sessionIdRef,
   authenticatedUserIdRef,
   onSessionContextChanging,
+  beginSessionLeave,
   dispatch,
   setPlaylistSuggestionSourceState,
   setActiveBoard,
@@ -198,11 +200,15 @@ export function useSessionCommands({
           // Leave everywhere else, which is the whole point of #3502 — the
           // same climber's second phone has no way to know it's the second
           // phone from the roster alone (see session-store.ts for why).
-          // Best-effort: a failed write only costs this device the End-first
-          // emphasis, never the End action itself.
+          // Best-effort for the session itself. Quantum lighting fails closed
+          // if this phone could not record its start provenance.
           try {
             await setStoredCreatedSessionId(newId);
+            // A partner workout Start can return an existing shared session ID
+            // on either phone. It carries no witness that this device created it.
             if (
+              !config?.appWorkoutId &&
+              !config?.appWorkoutSeed &&
               accountId &&
               activeBoard.boardType === 'quantum' &&
               isReleasedQuantumConfig(activeBoard.layoutId, activeBoard.sizeId)
@@ -214,7 +220,7 @@ export function useSessionCommands({
                 () =>
                   credentialGeneration === getCredentialGeneration() &&
                   accountId === authenticatedUserIdRef?.current &&
-                  (sessionIdRef.current === newId || (config?.appWorkoutSeed != null && isPartnerScopeCurrent())),
+                  sessionIdRef.current === newId,
               );
             }
           } catch (provenanceError) {
@@ -378,10 +384,13 @@ export function useSessionCommands({
       // caller (remote SessionEnded, endSession) unchanged. Mirrors web's
       // sendLeaveOnCleanup in use-session-lifecycle.ts.
       if (options?.notifyServer && sessionIdRef.current) {
+        const settleLeave = beginSessionLeave?.();
         try {
           await execute(getWsClient, { query: LEAVE_SESSION }, 5000);
         } catch (error) {
           if (__DEV__) console.warn('[queue] leaveSession on switch failed', error);
+        } finally {
+          settleLeave?.();
         }
       }
       // A new room or board selected while LEAVE was in flight owns the state
@@ -418,7 +427,7 @@ export function useSessionCommands({
       // with new joins/starts, so a newer session's persisted identity wins.
       await Promise.all([clearStoredSessionId(), clearStoredCreatedSessionId()]);
     },
-    [onSessionContextChanging],
+    [beginSessionLeave, onSessionContextChanging],
   );
 
   const endSession = useCallback(

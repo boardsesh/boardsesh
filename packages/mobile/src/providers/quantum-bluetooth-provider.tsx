@@ -36,6 +36,7 @@ import type { DevicePickerFn } from '../lib/ble/types';
 import type { BleBoardConfig } from '../lib/ble/board-config-match';
 import { getDatabaseHandle } from '../db';
 import { getQuantumRoutePresenceClimbsLocal } from '../db/queries/quantum-route-presence-local';
+import { isQuantumClimbRetired } from '../db/queries/quantum-climb-retirement';
 import {
   assessQuantumActivationSafety,
   quantumLayerColorNumber,
@@ -844,6 +845,13 @@ export function QuantumBluetoothProvider({
         };
         // Validate the complete command before even asking the wall for a roster.
         encodeQuantumActivation(activation);
+        const assertClimbAvailable = async () => {
+          if (input.climbUuid && (await isQuantumClimbRetired(input.climbUuid))) {
+            throw new Error('This Quantum climb is no longer available to light');
+          }
+          if (!canUseConnection()) throw new Error('Quantum controller connection changed during activation preflight');
+        };
+        await assertClimbAvailable();
         const preflightSnapshot = await controller.refresh(canUseConnection);
         if (!canUseConnection()) throw new Error('Quantum controller connection changed during activation preflight');
         const rosterRecovered = await recoverAndReportRoster({
@@ -876,6 +884,7 @@ export function QuantumBluetoothProvider({
         ) {
           throw new Error('Quantum route is already active on another layer');
         }
+        await assertClimbAvailable();
         const currentGeometryGeneration = getQuantumGeometryGeneration(selectedModel.layoutId, selectedModel.sizeId);
         const currentGeometry = getQuantumGeometry(selectedModel.layoutId, selectedModel.sizeId);
         let diodeIds: number[];
@@ -950,14 +959,13 @@ export function QuantumBluetoothProvider({
         const player = requireCurrentPlayer();
         const controller = controllerRef.current;
         if (!controller) throw new Error('Quantum controller is not connected');
-        const ownedUserUuid = [player.controllerUserUuid, ...player.legacyCleanupUserUuids].find((userUuid) =>
-          quantumUuidsEqual(userUuid, input.controllerUserUuid),
-        );
-        if (!ownedUserUuid) throw new Error('This phone does not own the requested Quantum layer');
+        if (!quantumUuidsEqual(player.controllerUserUuid, input.controllerUserUuid)) {
+          throw new Error('This phone does not own the requested Quantum layer');
+        }
 
         const presenceConnection = activePresenceConnectionRef.current;
         const snapshot = await controller.remove({
-          userId: ownedUserUuid,
+          userId: player.controllerUserUuid,
           routeId: input.controllerRouteUuid,
           isEligible: canUseConnection,
         });

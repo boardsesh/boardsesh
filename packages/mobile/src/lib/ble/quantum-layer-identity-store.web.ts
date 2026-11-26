@@ -8,13 +8,13 @@ let sessionPlayer: (QuantumSessionPlayerScope & QuantumLocalPlayer) | null = nul
 export async function getOrCreateQuantumSoloPlayer(
   generateUuid: () => string = randomUUID,
 ): Promise<QuantumLocalPlayer> {
-  soloPlayer ??= { controllerUserUuid: generateUuid(), legacyCleanupUserUuids: [] };
+  soloPlayer ??= { controllerUserUuid: generateUuid() };
   return soloPlayer;
 }
 
 export async function getQuantumSessionPlayer(scope: QuantumSessionPlayerScope): Promise<QuantumLocalPlayer | null> {
   if (sessionPlayer?.sessionId !== scope.sessionId || sessionPlayer.accountId !== scope.accountId) return null;
-  return { controllerUserUuid: sessionPlayer.controllerUserUuid, legacyCleanupUserUuids: [] };
+  return { controllerUserUuid: sessionPlayer.controllerUserUuid };
 }
 
 /** A reload loses the driver credential. A restored session can only read it. */
@@ -25,5 +25,5 @@ export async function rememberStartedQuantumSessionPlayer(
 ): Promise<void> {
   if (!isCurrent() || (sessionPlayer?.sessionId === scope.sessionId && sessionPlayer.accountId === scope.accountId))
     return;
-  sessionPlayer = { ...scope, controllerUserUuid: generateUuid(), legacyCleanupUserUuids: [] };
+  sessionPlayer = { ...scope, controllerUserUuid: generateUuid() };
 }

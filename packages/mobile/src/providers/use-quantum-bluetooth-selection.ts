@@ -2,11 +2,13 @@ import { useCallback, useContext } from 'react';
 import { QUANTUM_MODELS, QUANTUM_RELEASED_MODELS } from '@boardsesh/board-constants/quantum';
 import { QUANTUM_BOARD_FLAG } from '@boardsesh/board-config/visibility';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { getActiveBoardWriteGeneration } from '../lib/graphql/use-active-board';
 import { useFeatureFlag, useFeatureFlagsResolved } from './feature-flags-provider';
 import { QueueSessionIdContext, useQueueRestored } from './queue/queue-contexts';
 
-export function useQuantumBluetoothSelection(activeBoard: UserBoard | null | undefined) {
+export function useQuantumBluetoothSelection(
+  activeBoard: UserBoard | null | undefined,
+  isBoardSelectionCurrent: () => boolean,
+) {
   const flagEnabled = useFeatureFlag(QUANTUM_BOARD_FLAG) === true;
   const flagsResolved = useFeatureFlagsResolved();
   const session = useContext(QueueSessionIdContext);
@@ -19,12 +21,13 @@ export function useQuantumBluetoothSelection(activeBoard: UserBoard | null | und
         }) ?? null)
       : null;
 
-  const boardGeneration = selectedModelId ? getActiveBoardWriteGeneration() : null;
   const readSessionRevision = session?.getSessionContextRevision;
   const sessionRevision = readSessionRevision?.();
+  const isSessionLeavePending = session?.isSessionLeavePending;
   const isSelectionIntentCurrent = useCallback(
-    () => boardGeneration === getActiveBoardWriteGeneration() && sessionRevision === readSessionRevision?.(),
-    [boardGeneration, readSessionRevision, sessionRevision],
+    () =>
+      isBoardSelectionCurrent() && sessionRevision === readSessionRevision?.() && isSessionLeavePending?.() !== true,
+    [isBoardSelectionCurrent, isSessionLeavePending, readSessionRevision, sessionRevision],
   );
   return {
     selectedModelId,
