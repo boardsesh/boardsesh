@@ -453,9 +453,15 @@ importers:
 
   packages/board-constants:
     dependencies:
+      '@boardsesh/moonboard-ble-protocol':
+        specifier: workspace:*
+        version: link:../shared/moonboard-ble-protocol
       '@boardsesh/shared-schema':
         specifier: workspace:*
         version: link:../shared-schema
+      '@boardsesh/woods-ble-protocol':
+        specifier: workspace:*
+        version: link:../shared/woods-ble-protocol
     devDependencies:
       '@types/node':
         specifier: ^25.9.5
@@ -1211,6 +1217,16 @@ importers:
         specifier: ~7.0.2
         version: 7.0.2
 
+  packages/shared/aurora-ble-protocol:
+    dependencies:
+      '@boardsesh/ble-core':
+        specifier: workspace:*
+        version: link:../ble-core
+    devDependencies:
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
   packages/shared/auth-protocol:
     dependencies:
       zod:
@@ -1221,12 +1237,36 @@ importers:
         specifier: ~7.0.2
         version: 7.0.2
 
+  packages/shared/ble-core:
+    devDependencies:
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
   packages/shared/ble-protocol:
     dependencies:
+      '@boardsesh/aurora-ble-protocol':
+        specifier: workspace:*
+        version: link:../aurora-ble-protocol
+      '@boardsesh/ble-core':
+        specifier: workspace:*
+        version: link:../ble-core
       '@boardsesh/board-constants':
         specifier: workspace:*
         version: link:../../board-constants
+      '@boardsesh/kilter-ble-protocol':
+        specifier: workspace:*
+        version: link:../kilter-ble-protocol
+      '@boardsesh/moonboard-ble-protocol':
+        specifier: workspace:*
+        version: link:../moonboard-ble-protocol
+      '@boardsesh/woods-ble-protocol':
+        specifier: workspace:*
+        version: link:../woods-ble-protocol
     devDependencies:
+      '@types/node':
+        specifier: ^25.9.5
+        version: 25.9.5
       typescript:
         specifier: ~7.0.2
         version: 7.0.2
@@ -1597,6 +1637,19 @@ importers:
         specifier: ~7.0.2
         version: 7.0.2
 
+  packages/shared/kilter-ble-protocol:
+    dependencies:
+      '@boardsesh/aurora-ble-protocol':
+        specifier: workspace:*
+        version: link:../aurora-ble-protocol
+      '@boardsesh/ble-core':
+        specifier: workspace:*
+        version: link:../ble-core
+    devDependencies:
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
   packages/shared/kiosk:
     dependencies:
       zod:
@@ -1632,6 +1685,16 @@ importers:
       '@boardsesh/profile-stats':
         specifier: workspace:*
         version: link:../profile-stats
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
+  packages/shared/moonboard-ble-protocol:
+    dependencies:
+      '@boardsesh/ble-core':
+        specifier: workspace:*
+        version: link:../ble-core
+    devDependencies:
       typescript:
         specifier: ~7.0.2
         version: 7.0.2
@@ -1898,6 +1961,20 @@ importers:
         version: 7.0.2
 
   packages/shared/wled-ble-protocol:
+    dependencies:
+      '@boardsesh/ble-core':
+        specifier: workspace:*
+        version: link:../ble-core
+    devDependencies:
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
+  packages/shared/woods-ble-protocol:
+    dependencies:
+      '@boardsesh/ble-core':
+        specifier: workspace:*
+        version: link:../ble-core
     devDependencies:
       typescript:
         specifier: ~7.0.2
