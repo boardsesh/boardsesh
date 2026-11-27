@@ -899,6 +899,18 @@ version is `useCreateClimbNavigation`
 points (`useClimbActions`, behind both the native row menu and the player's ⋯) go through
 it.
 
+**Keep the destination tab’s list underneath a cross-tab push.** The Climbs stack
+exports `unstable_settings = { anchor: 'index' }`. A link from another tab,
+the player, or a root surface into a nested Climbs route passes `{ withAnchor: true }`
+to `router.push`. Both parts are required when a nested destination opens before
+its tab's stack has mounted, as Android or the browser's JS tabs can. Without the
+anchor, that destination
+becomes its only screen, so Back leaves the tab and the climb list stays missing.
+Same-tab pushes keep their existing history. Discover's setter rows use Discover's
+own route and stay in that tab. Reproduce a cold Climbs stack by choosing Home
+as the startup screen and relaunching; the default Climbs startup already mounts
+the list and conceals this failure.
+
 Two things that are easy to get wrong:
 
 - **Let the route own its close waiter.** The actual `/play` route subscribes to its native
