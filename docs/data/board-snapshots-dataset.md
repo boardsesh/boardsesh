@@ -97,6 +97,12 @@ the viewer-authorized API, so account privacy changes can revoke access. `is_dra
 always false or NULL; `is_listed` keeps its source value, so filter on it for a public-only browse. There is no size filter either: a layout's artifact spans every wall
 size, so filter with `compatible_size_ids`.
 
+**Decided 2026-11-25, not built:** published, listed climbs set by a Boardsesh account will be
+distributed too, with the setter's display name, and they stay in the dataset once published. A
+climb has no audience ([privacy.md](../product/privacy.md)), so nothing about it is revocable; drafts
+and personal beta stay out as today. Until that ships the paragraph above is the contract. Context:
+[board-manufacturer-sync.md](../integrations/board-manufacturer-sync.md#the-public-snapshot).
+
 **`board_climb_stats`** — community stats per `(climb, angle)`: `ascensionist_count`,
 `difficulty_average` and `display_difficulty` (in the board's native difficulty scale),
 `benchmark_difficulty` where the community designates benchmarks, `quality_average` (0–5 star

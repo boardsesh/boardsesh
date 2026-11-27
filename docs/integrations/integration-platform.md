@@ -81,6 +81,14 @@ Not available, by design, at any milestone on this roadmap:
 - Acting without a climber (client-credentials tokens). Nothing in the first
   use cases needs it.
 
+**Board manufacturers (proposed, not built).** The proposal in
+[board-manufacturer-sync.md](board-manufacturer-sync.md) has Boardsesh sync
+with a manufacturer's own service by calling that manufacturer's API, so it
+changes nothing in this document. Only its fallback, a manufacturer that
+prefers to read from Boardsesh, would add catalogue feeds and a system
+credential for that manufacturer's boards, reversing two items of the list
+above for that one kind of partner.
+
 ---
 
 ## Decisions

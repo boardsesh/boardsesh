@@ -9,6 +9,7 @@ The partner developer contract, internal integration architecture, local trainin
 - [Boardsesh API for apps](partner-api.md)
 - [Integration platform: how third-party apps connect to Boardsesh](integration-platform.md)
 - [Workouts over the API: implementation and launch gates](partner-workouts-internal.md)
+- [Two-way sync with a board manufacturer: proposal](board-manufacturer-sync.md)
 - [Local training MCP](local-training-mcp.md)
 - [Hosted gym-management MCP](hosted-gym-mcp.md)
 
@@ -24,6 +25,9 @@ a production rollout or a physical-device result.
 | [Kilter HTTP API Specification](KILTER_HTTP_API_SPEC.md) | `KILTER_HTTP_API_SPEC.md` |
 | [Kilter Live Board Activity Specification](KILTER_LIVE_SPEC.md) | `KILTER_LIVE_SPEC.md` |
 | [Kilter PowerSync Specification](KILTER_POWERSYNC_SPEC.md) | `KILTER_POWERSYNC_SPEC.md` |
+| [Two-way sync with a board manufacturer: proposal](board-manufacturer-sync.md) | `board-manufacturer-sync.md` |
+| [Quantum Board and eWalls: what we propose and what we need](quantum-ewalls.md) | `quantum-ewalls.md` |
+| [Quantum Board / ewalls API integration notes](QUANTUM_API_SPEC.md) | `QUANTUM_API_SPEC.md` |
 | [Integration consumers: Sequence and DivePeaks](integration-consumers.md) | `integration-consumers.md` |
 | [Integration platform: how third-party apps connect to Boardsesh](integration-platform.md) | `integration-platform.md` |
 | [External platform and board account integrations](integrations.md) | `integrations.md` |
