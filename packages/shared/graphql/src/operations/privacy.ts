@@ -256,3 +256,14 @@ export const GET_BOARD_SHARE_LINK_PREVIEW = gql`
     }
   }
 `;
+export const GET_BOARD_SHARE_LINK_ELIGIBILITY = gql`
+  query BoardShareLinkEligibility($token: String!) {
+    boardShareLinkPreview(token: $token) {
+      name
+      boardType
+      layoutId
+      sizeId
+      setIds
+    }
+  }
+`;

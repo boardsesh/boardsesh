@@ -1,13 +1,18 @@
 import type { TFunction } from 'i18next';
-import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
+import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
+import { isBoardTypeVisible } from '@boardsesh/board-config/visibility';
 import { boardTypeLabel } from '@boardsesh/board-constants/board-type-labels';
 import { LOCALE_LABELS, type Locale } from '@/app/lib/i18n/config';
 
-const boards = SUPPORTED_BOARDS.filter((board) => board !== 'spray')
-  .map(boardTypeLabel)
-  .join(', ');
+const defaultBoardNames = SUPPORTED_BOARDS.filter((board) => board !== 'spray' && isBoardTypeVisible(board));
 
-export function getSiteFooterLabels(t: TFunction<'common'>, privacyChoices: string, locale: Locale) {
+export function getSiteFooterLabels(
+  t: TFunction<'common'>,
+  privacyChoices: string,
+  locale: Locale,
+  boardNames: readonly BoardName[] = defaultBoardNames,
+) {
+  const boards = boardNames.map(boardTypeLabel).join(', ');
   return {
     climb: t('footer.journeys.climb'),
     supportedBoards: t('footer.journeys.supportedBoards'),

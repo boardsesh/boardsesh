@@ -986,6 +986,7 @@ vi.mock('../../../../src/lib/filter-tokens', async (importOriginal) => {
       mocks.realFilterTokens ? original.getActiveFilterTokens(...args) : [],
   };
 });
+vi.mock('@boardsesh/board-presence-react', () => ({ useBoardPresenceLayers: () => null }));
 vi.mock('../../../../src/lib/search-name', () => ({
   normalizeSearchName: (text: string) => text.trim(),
   visibleSearchTextNeedsSync: (visibleText: string, name: string) => visibleText.trim() !== name,

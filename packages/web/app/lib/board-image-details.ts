@@ -1,3 +1,4 @@
+import { hasProductSizeEdges } from '@boardsesh/board-constants/catalog-metadata';
 // This leaf is safe in client components: it never imports the full geometry or renderer pipeline.
 export {
   getBoardImageDetailsForBoard,
@@ -30,7 +31,7 @@ export function getBoardImageDetailsForPlaylist(
   const boardName = boardType as BoardName;
   const effectiveLayoutId = layoutId ?? Number(Object.keys(LAYOUTS[boardName] ?? {})[0]);
   if (!effectiveLayoutId) return null;
-  const sizes = getSizesForLayoutId(boardName, effectiveLayoutId);
+  const sizes = getSizesForLayoutId(boardName, effectiveLayoutId).filter(hasProductSizeEdges);
   if (sizes.length === 0) return null;
   const largest = sizes.reduce((best, size) =>
     (size.edgeRight - size.edgeLeft) * (size.edgeTop - size.edgeBottom) >

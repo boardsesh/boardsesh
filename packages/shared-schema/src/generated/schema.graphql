@@ -318,6 +318,12 @@ type BoardShareLinkRedemption {
 "What a signed-out visitor holding a share link may see: the board's name only."
 type BoardShareLinkPreview {
   name: String!
+  "Board family for signed-in link holders checking rollout eligibility."
+  boardType: String
+  "Quantum configuration for signed-in link holders checking rollout eligibility."
+  layoutId: Int
+  sizeId: Int
+  setIds: String
 }
 extend type PublicUserProfile {
   isPrivate: Boolean!
@@ -421,6 +427,8 @@ type Climb {
   description: String
   "Encoded hold positions and colors for lighting up the board"
   frames: String!
+  "External route identifier understood by the physical board controller. Null for boards that use the Boardsesh climb UUID directly."
+  controllerRouteUuid: ID
   "The angle the climber is browsing at. Named for the set angle historically, but every producer stamps the browsed angle here, and ticks, the queue and the BLE spill guard all key on that. See statsAngle for where the numbers below came from."
   angle: Int!
   "The angle the grade, ascents and quality on this climb were actually read from. Equals angle normally; differs when the browsed angle had no stats row and the climb own set angle supplied them: in a search that set ClimbSearchInput.crossAngleStats (issue #5405), in a by-name search on Woods, and on the Woods climb detail read (issue #5642). Null when the climb has no stats at any angle, i.e. a genuine project. Display only: show it beside the grade when it differs, never key on it. Deliberately absent from ClimbInput, so a queued climb carries no set-angle marker, because adding a field there means changing four lists at once (see queue-climb-field-contract.test.ts) and the marker is not worth that."
@@ -566,6 +574,8 @@ input ClimbInput {
   name: String!
   description: String
   frames: String!
+  "External route identifier understood by the physical board controller."
+  controllerRouteUuid: ID
   angle: Int!
   ascensionist_count: Int!
   difficulty: String!
@@ -722,6 +732,10 @@ input ClimbSearchInput {
   zoneBox: ZoneBoxInput
   "How the zone should match climb holds. Defaults to allHolds when omitted."
   zoneMode: ZoneMatchMode
+  "Occupied placement IDs from a confirmed Quantum controller roster. Controller identities are never sent."
+  occupiedPlacementIds: [Int!]
+  "Maximum occupied holds a climb may share: 0 for none, 1 for at most one. Omit to disable."
+  maxOccupiedOverlap: Int
 }
 
 """
@@ -6862,6 +6876,8 @@ type SaveClimbResult {
   "True when the UUID already existed and no fields were changed."
   replayed: Boolean
   uuid: ID!
+  "Stable controller-native route UUID. Present for user-created Quantum climbs."
+  controllerRouteUuid: ID
   synced: Boolean!
   "ISO timestamp of when the row was created"
   createdAt: String
@@ -9264,6 +9280,12 @@ type Query {
   """
   sessionStatus(sessionId: ID!): SessionStatus
 
+  """
+  Geometry of an accessible session's current board, including when its live
+  roster is empty. Returns null when the target cannot be disclosed or resolved.
+  """
+  sessionRestoreBoardPath(sessionId: ID!): String
+
   # ============================================
   # Board Configuration Queries
   # ============================================
@@ -9804,6 +9826,12 @@ type Query {
     "The board's uuid, its link. The numeric id alone is countable, so without this an Unlisted board reads as NOT_FOUND."
     boardUuid: ID
   ): BoardConnectionHolder
+
+  """
+  Latest confirmed QuantumBoard layer roster. Returns null until a compatible
+  controller reports readback. Controller identities are never exposed.
+  """
+  boardLayers(boardId: Int!, boardUuid: ID): BoardLayersSnapshot
 
   """
   Redacted "Up next" snapshot of the party-session queue bound to a shared
@@ -10572,6 +10600,8 @@ type Mutation {
     sessionName: String
     "Entries of initialQueue before Up next when no seed climb is current in it (F3). Ignored when initialCurrentClimb is in initialQueue."
     initialHistoryCount: Int
+    "Require the current saved board and angle to match this positional path before switching rooms."
+    expectedBoardPath: String
   ): Session!
 
   """
@@ -10841,6 +10871,13 @@ type Mutation {
   Returns whether the clear was accepted.
   """
   reportBoardClear(boardId: Int!): Boolean!
+
+  """
+  Publish a confirmed QuantumBoard controller roster after BLE readback.
+  The caller must have live proof-of-presence for this board. Controller
+  user and route UUIDs are deliberately absent from the input.
+  """
+  reportBoardLayers(boardId: Int!, layers: [ReportBoardLayerInput!]!): BoardLayersSnapshot!
 
   # ============================================
   # User Management Mutations (require auth)
@@ -13168,6 +13205,54 @@ type BoardConnectionChanged {
 }
 
 """
+One sanitized QuantumBoard layer confirmed by controller readback. Physical
+controller user and route UUIDs are intentionally excluded.
+"""
+type BoardLayerPresence {
+  "Fixed display colour for this layer."
+  color: String!
+  "Controller-reported lifetime remaining, in seconds."
+  remainingSeconds: Int!
+  "Resolved Boardsesh climb UUID, or null for an unknown foreign layer."
+  climbUuid: String
+  "Wall angle associated with the resolved climb, when known."
+  angle: Int
+  "Whether Boardsesh has hold geometry for overlap filtering and rendering."
+  geometryKnown: Boolean!
+  "Catalogue placement ids occupied by this layer; never supplied by the reporting client."
+  placementIds: [Int!]!
+}
+
+"""
+Latest confirmed, sanitized QuantumBoard roster for a shared wall.
+"""
+type BoardLayersSnapshot {
+  boardId: Int!
+  layers: [BoardLayerPresence!]!
+  "ISO 8601 timestamp stamped by the backend when readback was reported."
+  observedAt: String!
+  "True after the reporting wall holder disconnects."
+  stale: Boolean!
+  "Monotonic per-board sequence shared with other presence events."
+  seq: Int!
+}
+
+"""
+Input for one confirmed QuantumBoard layer; contains no controller IDs.
+"""
+input ReportBoardLayerInput {
+  color: String!
+  remainingSeconds: Int!
+  climbUuid: String
+  angle: Int
+  geometryKnown: Boolean!
+}
+
+type BoardLayersChanged {
+  snapshot: BoardLayersSnapshot!
+}
+
+"""
 Union of board-presence events streamed by `boardNowPlaying`.
 """
 type BoardHistoryUpdated {
@@ -13197,6 +13282,7 @@ union BoardPresenceEvent =
   | BoardStatsUpdated
   | BoardConnectionChanged
   | BoardHistoryUpdated
+  | BoardLayersChanged
 
 """
 The first climber to send the hardest grade logged on this wall.

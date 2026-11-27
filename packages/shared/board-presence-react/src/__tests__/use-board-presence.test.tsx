@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, renderHook, waitFor } from '@testing-library/react';
 import type {
   BoardConnectionHolder,
+  BoardLayersSnapshot,
   BoardPresenceClimb,
   BoardPresenceEvent,
   BoardPresenceStats,
@@ -247,7 +248,10 @@ beforeEach(() => {
   vi.spyOn(Date, 'now').mockReturnValue(TEST_NOW);
 });
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe('useBoardPresence — null inputs', () => {
   it('stays inert with a null boardId', () => {
@@ -741,6 +745,59 @@ describe('useBoardPresence — reconnect / foreground / manual catch-up', () => 
     expect(view.result.current.lastHolderChangeSeq > connectionSeqAtTake).toBe(true);
   });
 
+  it('does not let another stream advance an older layer catch-up over a live roster', async () => {
+    const harness = makeClient();
+    const initialLayers: BoardLayersSnapshot = {
+      boardId: 1,
+      layers: [],
+      observedAt: '2026-08-30T00:00:00.000Z',
+      stale: false,
+      seq: 10,
+    };
+    const delayedLayers = deferred<BoardLayersSnapshot | null>();
+    const fetchLayers = vi.fn().mockResolvedValueOnce(initialLayers).mockReturnValueOnce(delayedLayers.promise);
+    const client: BoardPresenceClient = { ...harness.client, fetchLayers };
+    const { result } = renderHook(() => useBoardPresence(1, client));
+
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('first', 1)]);
+      await harness.resolveStats(1, { ...emptyStats });
+      await harness.resolveConnection(1, null);
+    });
+    await waitFor(() => expect(result.current.layers?.seq).toBe(10));
+
+    act(() => result.current.refresh());
+    expect(fetchLayers).toHaveBeenCalledTimes(2);
+    const liveLayers: BoardLayersSnapshot = {
+      ...initialLayers,
+      layers: [
+        {
+          color: '#00FF00',
+          remainingSeconds: 120,
+          climbUuid: 'live-layer',
+          angle: 40,
+          geometryKnown: true,
+          placementIds: [1_000_001],
+        },
+      ],
+      observedAt: '2026-08-30T00:00:10.000Z',
+      seq: 12,
+    };
+    act(() => {
+      harness.emit({ __typename: 'BoardLayersChanged', snapshot: liveLayers });
+    });
+
+    await act(async () => {
+      delayedLayers.resolve(initialLayers);
+      await delayedLayers.promise;
+      await harness.resolveRecent(1, [climb('newer-other-stream', 15), climb('first', 1)]);
+      await harness.resolveStats(1, { ...emptyStats });
+      await harness.resolveConnection(1, null);
+    });
+
+    await waitFor(() => expect(result.current.layers).toEqual(liveLayers));
+  });
+
   it('refresh("foreground") reports the foreground reason', async () => {
     const onCatchUp = vi.fn();
     const { harness, view } = await mountSeeded(onCatchUp);
@@ -1226,6 +1283,76 @@ describe('BoardPresenceProvider — split contexts', () => {
     expect(current?.clearedClimbUuid).toBe('cleared');
   });
 
+  it('treats a fetched non-stale roster as untrusted until a live heartbeat arrives', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-30T00:00:29.000Z'));
+    const harness = makeClient();
+    const fetchedLayers: BoardLayersSnapshot = {
+      boardId: 1,
+      layers: [],
+      observedAt: '2026-08-30T00:00:00.000Z',
+      stale: false,
+      seq: 20,
+    };
+    const client: BoardPresenceClient = {
+      ...harness.client,
+      fetchLayers: vi.fn(async () => fetchedLayers),
+    };
+    const { result } = renderHook(() => useBoardPresence(1, client));
+
+    await act(async () => Promise.resolve());
+    expect(result.current.layers).toEqual({ ...fetchedLayers, stale: true });
+
+    act(() => {
+      harness.emit({
+        __typename: 'BoardLayersChanged',
+        snapshot: { ...fetchedLayers, observedAt: '2026-08-30T00:00:29.000Z' },
+      });
+    });
+    expect(result.current.layers?.stale).toBe(false);
+  });
+
+  it.each([
+    ['behind', '2026-08-29T23:00:00.000Z'],
+    ['ahead', '2026-08-30T01:00:00.000Z'],
+  ])('marks a live layer snapshot stale from receipt time when the device clock is %s', (_clockSkew, observedAt) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-30T00:00:00.000Z'));
+    const harness = makeClient();
+    const snapshot: BoardLayersSnapshot = {
+      boardId: 1,
+      layers: [
+        {
+          color: '#00FF00',
+          remainingSeconds: 120,
+          climbUuid: 'quantum-climb',
+          angle: 40,
+          geometryKnown: true,
+          placementIds: [1_000_001],
+        },
+      ],
+      observedAt,
+      stale: false,
+      seq: 20,
+    };
+    const { result } = renderHook(() => useBoardPresence(1, harness.client));
+
+    act(() => {
+      harness.emit({ __typename: 'BoardLayersChanged', snapshot });
+    });
+    expect(result.current.layers?.stale).toBe(false);
+
+    act(() => {
+      vi.advanceTimersByTime(29_999);
+    });
+    expect(result.current.layers?.stale).toBe(false);
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(result.current.layers?.stale).toBe(true);
+  });
+
   it('keeps action-only consumers stable when current/feed state changes', async () => {
     const harness = makeClient();
     const renderCounts = { actions: 0, current: 0, feed: 0 };
@@ -1589,9 +1716,13 @@ describe('terminal subscription recovery (#2713)', () => {
     act(() => harness.emitError(new Error('offline')));
     expect(result.current.isLive).toBe(false);
     expect(result.current.currentClimb?.climbUuid).toBe('loaded');
-    act(() => vi.advanceTimersByTime(999));
+    act(() => {
+      vi.advanceTimersByTime(999);
+    });
     expect(harness.subscribeNowPlaying).toHaveBeenCalledTimes(1);
-    act(() => vi.advanceTimersByTime(1));
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
     expect(harness.subscribeNowPlaying).toHaveBeenCalledTimes(2);
     act(() => {
       retiredComplete?.();
@@ -1600,14 +1731,20 @@ describe('terminal subscription recovery (#2713)', () => {
     expect(result.current.isDenied).toBe(false);
     expect(result.current.currentClimb?.climbUuid).toBe('loaded');
     act(() => harness.emitError(new Error('still offline')));
-    act(() => vi.advanceTimersByTime(1999));
+    act(() => {
+      vi.advanceTimersByTime(1999);
+    });
     expect(harness.subscribeNowPlaying).toHaveBeenCalledTimes(2);
-    act(() => vi.advanceTimersByTime(1));
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
     expect(harness.subscribeNowPlaying).toHaveBeenCalledTimes(3);
     act(() => harness.emit(setEvent(climb('recovered', 11))));
     expect(result.current.currentClimb?.climbUuid).toBe('recovered');
     act(() => harness.emitError(new Error('new outage')));
-    act(() => vi.advanceTimersByTime(1000));
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
     expect(harness.subscribeNowPlaying).toHaveBeenCalledTimes(4);
     unmount();
     expect(vi.getTimerCount()).toBe(0);
@@ -1623,7 +1760,9 @@ describe('terminal subscription recovery (#2713)', () => {
       else result.current.refresh(reason);
     });
     expect(harness.subscribeNowPlaying).toHaveBeenCalledTimes(2);
-    act(() => vi.advanceTimersByTime(1000));
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
     expect(harness.subscribeNowPlaying).toHaveBeenCalledTimes(2);
     unmount();
   });
@@ -1636,10 +1775,14 @@ describe('terminal subscription recovery (#2713)', () => {
     });
     const { result, unmount } = renderHook(() => useBoardPresence(1, harness.client));
     expect(result.current.isLive).toBe(false);
-    act(() => vi.advanceTimersByTime(1000));
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
     act(() => harness.emitError(NOT_FOUND_ERROR));
     expect(result.current.isDenied).toBe(true);
-    act(() => vi.advanceTimersByTime(60_000));
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
     expect(harness.subscribeNowPlaying).toHaveBeenCalledTimes(2);
     unmount();
   });
@@ -1651,9 +1794,13 @@ describe('terminal subscription recovery (#2713)', () => {
     for (const delay of [1000, 2000, 4000, 8000, 16000, 30000, 30000]) {
       const attempts = harness.subscribeNowPlaying.mock.calls.length;
       act(() => harness.emitError(new Error('offline')));
-      act(() => vi.advanceTimersByTime(delay - 1));
+      act(() => {
+        vi.advanceTimersByTime(delay - 1);
+      });
       expect(harness.subscribeNowPlaying).toHaveBeenCalledTimes(attempts);
-      act(() => vi.advanceTimersByTime(1));
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
       expect(harness.subscribeNowPlaying).toHaveBeenCalledTimes(attempts + 1);
     }
     unmount();
@@ -1667,7 +1814,9 @@ describe('terminal subscription recovery (#2713)', () => {
     });
     act(() => harness.emitError(new Error('offline')));
     rerender({ boardId: 2 });
-    act(() => vi.advanceTimersByTime(60_000));
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
     expect(harness.subscribeNowPlaying).toHaveBeenCalledTimes(2);
     expect(harness.getSubscribedBoardId()).toBe(2);
     unmount();

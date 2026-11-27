@@ -49,6 +49,7 @@ const CLIMB_SEARCH_FIELDS = `
   name
   description
   frames
+  controllerRouteUuid
   angle
   statsAngle
   ascensionist_count
@@ -82,6 +83,7 @@ const CLIMB_DETAIL_FIELDS = `
   name
   description
   frames
+  controllerRouteUuid
   angle
   statsAngle
   ascensionist_count
@@ -715,16 +717,19 @@ export type GetSessionOwnerQueryResponse = {
 // Presence-independent lifecycle check, read on cold start to decide whether a
 // persisted session id should be restored or dropped (#2683). Unlike GET_SESSION
 // (gated on live roster, so an ended session and a dormant-but-active solo
-// session both read as null), this hits the durable session row. Returns the
-// SessionStatus enum directly; null means the session does not exist.
+// session both read as null), this hits the durable session row. The access-
+// checked geometry also verifies that the current board is available before a
+// reconnect. A null status means that the row no longer exists.
 export const SESSION_STATUS = gql`
   query SessionStatus($sessionId: ID!) {
     sessionStatus(sessionId: $sessionId)
+    sessionRestoreBoardPath(sessionId: $sessionId)
   }
 `;
 
 export type SessionStatusQueryResponse = {
   sessionStatus: SessionStatus | null;
+  sessionRestoreBoardPath: string | null;
 };
 
 // Authoritative queue snapshot for the active session, fetched after a queue
@@ -1276,6 +1281,7 @@ export const SUBSCRIPTION_CLIMB_FIELDS = `
   name
   description
   frames
+  controllerRouteUuid
   setter_username
   angle
   ascensionist_count

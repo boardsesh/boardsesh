@@ -251,6 +251,7 @@ const user = (overrides: Partial<SessionUser> = {}): SessionUser => ({
 
 const statusResponse = (status: SessionStatus | null = 'active') => ({
   sessionStatus: status,
+  sessionRestoreBoardPath: 'kilter/1/10/1/40',
 });
 
 function createJoinSessionResponse() {

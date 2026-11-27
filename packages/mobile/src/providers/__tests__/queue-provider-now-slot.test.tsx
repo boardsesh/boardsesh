@@ -163,6 +163,7 @@ vi.mock('@boardsesh/play-view', async (importOriginal) => ({
   emitWallConfirm: vi.fn(),
 }));
 vi.mock('../feature-flags-provider', () => ({
+  useFeatureFlag: () => false,
   useSharedSessionBrowseEnabled: () => false,
   useQueueNowSlotEnabled: () => flags.nowSlot,
 }));
@@ -264,7 +265,10 @@ const sessionUser = (id: string): SessionUser => ({
   connectionState: 'CONNECTED',
 });
 
-const statusResponse = (status: SessionStatus | null = 'active') => ({ sessionStatus: status });
+const statusResponse = (status: SessionStatus | null = 'active') => ({
+  sessionStatus: status,
+  sessionRestoreBoardPath: 'kilter/1/10/1/40',
+});
 
 function uuidsOf(snapshot: Snapshot | undefined): string[] {
   return snapshot?.state.queue.map(({ uuid }) => uuid) ?? [];

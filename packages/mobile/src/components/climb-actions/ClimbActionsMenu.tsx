@@ -1,3 +1,6 @@
+import { useIsBoardConfigVisible } from '../../hooks/use-board-visibility';
+import { isClimbBoardAvailable } from '../../lib/boards/climb-render-board';
+import { isQuantumClimbRetired } from '../../db/queries/quantum-climb-retirement';
 import {
   createContext,
   useCallback,
@@ -107,6 +110,9 @@ export function ClimbMenusProvider({
 }) {
   const [selection, setSelection] = usePrivacyScopedState<Selection>(null);
   const nonce = useRef(0);
+  const isBoardConfigVisible = useIsBoardConfigVisible();
+  const boardVisibilityRef = useRef(isBoardConfigVisible);
+  boardVisibilityRef.current = isBoardConfigVisible;
   const activeClimbUuid = useActiveClimbUuid();
   // The rows `findReplayFromHereItem` replays from: History, in now-slot mode
   // only. Subscribed to the mode itself, so turning it off or on redraws the
@@ -127,8 +133,25 @@ export function ClimbMenusProvider({
   useLayoutEffect(() => queueStore.setState(queueState), [queueStore, queueState]);
   const execute = useCallback(
     (target: ClimbActionsTarget, id: ClimbActionId) => {
-      nonce.current += 1;
-      setSelection({ target, id, nonce: nonce.current, credentialGeneration: getCredentialGeneration() });
+      const attempt = ++nonce.current;
+      const credentialGeneration = getCredentialGeneration();
+      const canExecute = () =>
+        attempt === nonce.current &&
+        credentialGeneration === getCredentialGeneration() &&
+        isClimbBoardAvailable(target.climb, target.boardConfig, boardVisibilityRef.current);
+      if (!canExecute()) return;
+      const select = () => setSelection({ target, id, nonce: attempt, credentialGeneration });
+      if (target.climb.boardType !== 'quantum' && target.boardConfig.boardName !== 'quantum') {
+        select();
+        return;
+      }
+      void isQuantumClimbRetired(target.climb.uuid)
+        .then((retired) => {
+          if (!retired && canExecute()) select();
+        })
+        .catch(() => {
+          // Keep a potentially withdrawn cached route out of the action host.
+        });
     },
     [setSelection],
   );
@@ -144,7 +167,8 @@ export function ClimbMenusProvider({
   return (
     <MenuRuntimeContext.Provider value={runtime}>
       {children}
-      {selection ? (
+      {selection &&
+      isClimbBoardAvailable(selection.target.climb, selection.target.boardConfig, isBoardConfigVisible) ? (
         <ClimbActionExecutor
           key={selection.nonce}
           selection={selection}

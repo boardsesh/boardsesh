@@ -1,3 +1,4 @@
+import { isBoardLaunchFlag } from '@boardsesh/board-config/visibility';
 import * as Sentry from '@sentry/nextjs';
 import { PostHog } from 'posthog-js-lite';
 import { createAnalytics } from '@boardsesh/analytics';
@@ -569,10 +570,14 @@ export function readPosthogFeatureFlags(keys: readonly string[]): Record<string,
     let rawFlagValue: unknown;
     if (typeof featureFlagClient.getFeatureFlag === 'function') {
       rawFlagValue = featureFlagClient.getFeatureFlag(key, READ_WITHOUT_EXPOSURE_EVENT);
-    } else if (typeof featureFlagClient.isFeatureEnabled === 'function') {
+    } else if (typeof featureFlagClient.isFeatureEnabled === 'function' && !isBoardLaunchFlag(key)) {
       rawFlagValue = featureFlagClient.isFeatureEnabled(key, READ_WITHOUT_EXPOSURE_EVENT);
     }
-    const flagValue = coerceFeatureFlagBoolean(rawFlagValue);
+    const flagValue = isBoardLaunchFlag(key)
+      ? typeof rawFlagValue === 'boolean'
+        ? rawFlagValue
+        : undefined
+      : coerceFeatureFlagBoolean(rawFlagValue);
     if (flagValue !== undefined) {
       flags[key] = flagValue;
     }

@@ -28,6 +28,18 @@ const NullableBoardSerialInputSchema = z.preprocess((value) => {
 /** Cap on `CreateBoardInput.acknowledgedWallUuids`; also the most candidates `existingWallCandidates` returns. */
 export const MAX_ACKNOWLEDGED_WALL_UUIDS = 40;
 
+const DEFAULT_BOARD_ANGLE_MAX = 70;
+const QUANTUM_BOARD_ANGLE_MAX = 90;
+
+export function boardAngleInputSchemaFor(boardType: string) {
+  return z
+    .number()
+    .int()
+    .min(-5)
+    .max(boardType === 'quantum' ? QUANTUM_BOARD_ANGLE_MAX : DEFAULT_BOARD_ANGLE_MAX)
+    .refine((angle) => isBoardAngleSupported(boardType, angle), BOARD_ANGLE_VALIDATION_MESSAGE);
+}
+
 /**
  * Create board input validation schema
  */
@@ -53,7 +65,7 @@ export const CreateBoardInputSchema = z
     hideLocation: z.boolean().optional(),
     isOwned: z.boolean().optional(),
     gymUuid: UUIDSchema.optional(),
-    angle: z.number().int().min(-5).max(70).optional(),
+    angle: z.number().int().min(-5).max(QUANTUM_BOARD_ANGLE_MAX).optional(),
     isAngleAdjustable: z.boolean().optional(),
     hasLeds: z.boolean().optional(),
     litByWallDevice: z.boolean().optional(),
@@ -81,7 +93,14 @@ export const CreateBoardInputSchema = z
   .refine((input) => isBoardAngleSupported(input.boardType, input.angle), {
     message: BOARD_ANGLE_VALIDATION_MESSAGE,
     path: ['angle'],
-  });
+  })
+  .refine(
+    (input) => input.angle === undefined || boardAngleInputSchemaFor(input.boardType).safeParse(input.angle).success,
+    {
+      message: 'Angle is outside the supported range for this board',
+      path: ['angle'],
+    },
+  );
 
 /**
  * existingWallCandidates input. The draft setup is all-or-nothing: without all
@@ -123,7 +142,7 @@ export const UpdateBoardInputSchema = z.object({
   isOwned: z.boolean().optional(),
   // The board type comes from the stored board, so the resolver performs the
   // board-aware check after lookup.
-  angle: z.number().int().min(-5).max(70).optional(),
+  angle: z.number().int().min(-5).max(QUANTUM_BOARD_ANGLE_MAX).optional(),
   isAngleAdjustable: z.boolean().optional(),
   hasLeds: z.boolean().optional(),
   litByWallDevice: z.boolean().optional(),

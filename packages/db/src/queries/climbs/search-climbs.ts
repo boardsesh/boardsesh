@@ -43,6 +43,7 @@ type RawSelectResult = {
   userId: string | null;
   name: string | null;
   frames: string | null;
+  controller_route_uuid: string | null;
   is_draft: boolean | null;
   is_hidden: boolean | null;
   angle: number | null;
@@ -101,6 +102,7 @@ function mapResultToClimbRow(result: RawSelectResult, params: BoardRouteParams, 
     userId: result.userId ?? null,
     name: result.name || '',
     frames: result.frames || '',
+    controllerRouteUuid: result.controller_route_uuid ?? null,
     // The search is scoped to one board + layout (the WHERE filter), so every
     // row belongs to it — stamp from the route params like `angle`. Lets the
     // queue's BLE spill guard tell a climb set for another board apart.
@@ -426,6 +428,7 @@ export function statsDrivenClimbFields() {
     userId: boardClimbs.userId,
     name: boardClimbs.name,
     frames: boardClimbs.frames,
+    controller_route_uuid: boardClimbs.controllerRouteUuid,
     is_draft: boardClimbs.isDraft,
     // Carried, never filtered on, in the SELECT: the row can reach a surface
     // that legitimately shows a hidden climb (a by-name search) and the client
@@ -983,6 +986,7 @@ async function runStandardSearch(
     userId: boardClimbs.userId,
     name: boardClimbs.name,
     frames: boardClimbs.frames,
+    controller_route_uuid: boardClimbs.controllerRouteUuid,
     is_draft: boardClimbs.isDraft,
     // Carried, never filtered on, in the SELECT: the row can reach a surface
     // that legitimately shows a hidden climb (a by-name search) and the client

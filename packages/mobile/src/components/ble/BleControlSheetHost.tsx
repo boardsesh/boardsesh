@@ -1,6 +1,8 @@
-import { useCallback, useContext, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
+import { BOARD_LAYER_COLORS } from '@boardsesh/board-layers';
+import { quantumUuidsEqual } from '@boardsesh/ble-protocol/quantum';
 import { announceQueued } from '../../lib/announce-queued';
 import { hapticSelection } from '../../lib/haptics';
 import {
@@ -13,8 +15,17 @@ import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider'
 import { QueueActiveClimbContext } from '../../providers/queue/queue-contexts';
 import { markWallCleared, resetWallCleared } from './wall-cleared-store';
 import { getDriveMode, stopDrivingForLink } from '../play-drawer/drive-mode-store';
+import {
+  useOptionalQuantumBluetoothActions,
+  useOptionalQuantumBluetoothState,
+} from '../../providers/quantum-bluetooth-context';
 import { disconnectAllBluetooth } from '../../lib/ble/bluetooth-status-store';
 import { BleControlSheet } from './BleControlSheet';
+import {
+  QuantumBleControlSheet,
+  type QuantumLayerControlRow,
+  type QuantumLayerRemovalRow,
+} from './QuantumBleControlSheet';
 import { useSetting } from '../../settings';
 import { trackSettingChanged } from '../../lib/settings-analytics';
 import { keepLightingLabel } from '../settings/board-lighting/board-lighting-model';
@@ -25,6 +36,15 @@ import type { BleKeepLightingRowModel } from './BleKeepLightingRow';
  * so the Settings root's ranking leaves it out; the keys are the Board page's.
  */
 export const BOARD_CONTROLS_SETTINGS_PAGE = 'boardControls';
+import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { useQueueData } from '../../providers/queue-provider';
+import { getQuantumGeometryGeneration, useQuantumGeometry } from '../../lib/quantum-geometry-store';
+import {
+  buildQuantumClimbLightTarget,
+  deriveQuantumLayerAction,
+  quantumLayerColorNumber,
+} from '../../lib/ble/quantum-climb-lights';
+import type { Climb } from '@boardsesh/shared-schema';
 
 type BleControlSheetHostProps = {
   visible: boolean;
@@ -51,18 +71,22 @@ type BleControlSheetHostProps = {
   onDrive?: () => void;
   /** The player's status line at the top of its sheet (spec B3); the app-wide sheet has none. */
   status?: ReactNode;
+  /** Exact editor snapshot when the sheet opens from create-climb. The queue
+   * reducer may retain an older same-uuid WIP, so that path must not read it. */
+  controlClimbTarget?: Climb | null;
 };
 
 /**
  * Renders the BLE controls sheet (Re-light / Turn off all lights / Disconnect)
  * with its standard handlers, leaving visible/onClose to the caller. Hosted in
- * TWO places so the menu presents from the right view controller:
+ * Three places so the menu presents from the right view controller:
  *   - app root (BleControlSheetProvider) for the persistent accessory bar, and
- *   - inside the play route (PlayDrawer) so the lightbulb's sheet presents ABOVE
- *     the route instead of behind it (an @expo/ui sheet presents off the VC that
- *     owns its subtree; a root-only instance lands under the modal player).
+ *   - inside the play route (PlayDrawer) and create drawer so their lightbulb
+ *     sheets present above the owning modal route. An @expo/ui sheet presents
+ *     from the view controller that owns its subtree.
  */
 export function BleControlSheetHost({
+  controlClimbTarget,
   visible,
   onClose,
   showLightingSwitches = true,
@@ -72,8 +96,21 @@ export function BleControlSheetHost({
 }: BleControlSheetHostProps) {
   const { t } = useTranslation('common');
   const bluetooth = useOptionalBluetoothContext();
-  const isConnected =
-    (bluetooth?.isConnected ?? false) || (bluetooth?.boardName === 'spray' && Boolean(bluetooth.canDriveWall));
+  const quantumState = useOptionalQuantumBluetoothState();
+  const quantumActions = useOptionalQuantumBluetoothActions();
+  const quantumActive = quantumState?.status !== undefined && quantumState.status !== 'inactive';
+  const isConnected = quantumActive
+    ? quantumState.status === 'connected'
+    : Boolean(bluetooth?.isConnected || (bluetooth?.boardName === 'spray' && bluetooth.canDriveWall));
+  const { data: activeBoard } = useActiveBoard();
+  const { currentClimbQueueItem } = useQueueData();
+  const quantumGeometry = useQuantumGeometry(
+    activeBoard?.layoutId ?? 0,
+    activeBoard?.sizeId ?? 0,
+    quantumActive && activeBoard?.boardType === 'quantum',
+  );
+  const [busyAction, setBusyAction] = useState<string | number | null>(null);
+  const [actionFailed, setActionFailed] = useState(false);
   const wallIdentity = `${bluetooth?.boardName}:${bluetooth?.layoutId}:${bluetooth?.sizeId}`;
   const currentWall = useRef(wallIdentity);
   currentWall.current = wallIdentity;
@@ -110,6 +147,87 @@ export function BleControlSheetHost({
 
   // Read without the throwing hook: the root host can mount outside a queue.
   const activeClimbUuid = useContext(QueueActiveClimbContext)?.activeClimbUuid ?? null;
+
+  useEffect(() => {
+    if (!visible) {
+      setBusyAction(null);
+      setActionFailed(false);
+    }
+  }, [visible]);
+
+  const quantumTargetResult = useMemo(() => {
+    const climb = controlClimbTarget ?? currentClimbQueueItem?.climb;
+    if (!quantumActive || !climb || !activeBoard || activeBoard.boardType !== 'quantum') return null;
+    return buildQuantumClimbLightTarget(
+      climb,
+      quantumGeometry,
+      activeBoard.layoutId,
+      getQuantumGeometryGeneration(activeBoard.layoutId, activeBoard.sizeId),
+    );
+  }, [activeBoard, currentClimbQueueItem?.climb, controlClimbTarget, quantumActive, quantumGeometry]);
+  const quantumTarget = quantumTargetResult?.ok ? quantumTargetResult.target : null;
+  const targetError = quantumTargetResult && !quantumTargetResult.ok ? quantumTargetResult.reason : null;
+  const quantumPlayer = quantumState?.player;
+  const quantumPlayers = quantumState?.roster?.players;
+  const quantumRows = useMemo<QuantumLayerControlRow[]>(() => {
+    if (!quantumPlayer || !quantumPlayers) return [];
+    return BOARD_LAYER_COLORS.map((color, slot) => ({
+      slot,
+      colorKey: color.key,
+      colorHex: color.hex,
+      action: deriveQuantumLayerAction(quantumPlayer.controllerUserUuid, color, quantumPlayers, quantumTarget),
+    }));
+  }, [quantumPlayer, quantumPlayers, quantumTarget]);
+  const quantumRemovals = useMemo<QuantumLayerRemovalRow[]>(() => {
+    if (!quantumPlayer || !quantumPlayers) return [];
+    return quantumPlayers.flatMap((player) => {
+      if (!quantumUuidsEqual(quantumPlayer.controllerUserUuid, player.userId)) return [];
+      const color = BOARD_LAYER_COLORS.find((candidate) => quantumLayerColorNumber(candidate) === player.color);
+      return [
+        {
+          controllerUserUuid: player.userId,
+          controllerRouteUuid: player.routeId,
+          colorKey: color?.key,
+          colorHex: '#' + player.color.toString(16).padStart(6, '0'),
+        },
+      ];
+    });
+  }, [quantumPlayer, quantumPlayers]);
+
+  const handleQuantumLayerPress = useCallback(
+    (row: QuantumLayerControlRow) => {
+      if (!quantumActions || busyAction !== null || !quantumTarget) return;
+      if (row.action.kind !== 'light' && row.action.kind !== 'replace') return;
+      setBusyAction(row.slot);
+      setActionFailed(false);
+      void quantumActions
+        .activateLayer({
+          slot: row.slot,
+          ...quantumTarget,
+          expectedOwnedRouteUuid: row.action.kind === 'replace' ? row.action.activeRouteUuid : undefined,
+        })
+        .catch(() => setActionFailed(true))
+        .finally(() => setBusyAction(null));
+    },
+    [busyAction, quantumActions, quantumTarget],
+  );
+
+  const handleQuantumRemove = useCallback(
+    (row: QuantumLayerRemovalRow) => {
+      if (!quantumActions || busyAction !== null) return;
+      setBusyAction(row.controllerUserUuid);
+      setActionFailed(false);
+      void quantumActions
+        .removeLayer(row)
+        .catch(() => setActionFailed(true))
+        .finally(() => setBusyAction(null));
+    },
+    [busyAction, quantumActions],
+  );
+
+  const handleQuantumDisconnect = useCallback(() => {
+    void quantumActions?.disconnect();
+  }, [quantumActions]);
 
   const handleReassert = useCallback(() => {
     resetWallCleared();
@@ -178,6 +296,22 @@ export function BleControlSheetHost({
     },
     [setAlwaysDrive],
   );
+  if (quantumActive && quantumActions && quantumState) {
+    return (
+      <QuantumBleControlSheet
+        visible={visible}
+        rows={quantumRows}
+        targetError={targetError}
+        removals={quantumRemovals}
+        busyAction={busyAction}
+        actionFailed={actionFailed}
+        onLayerPress={handleQuantumLayerPress}
+        onRemove={handleQuantumRemove}
+        onDisconnect={handleQuantumDisconnect}
+        onClose={onClose}
+      />
+    );
+  }
 
   if (!bluetooth) return null;
 

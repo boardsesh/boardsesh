@@ -1,4 +1,9 @@
-import { climbDraftVisibilityCondition, privateSafeFirstAscentName } from '@boardsesh/db/queries';
+import {
+  climbDraftVisibilityCondition,
+  privateSafeFirstAscentName,
+  retiredQuantumCatalogClimbCondition,
+} from '@boardsesh/db/queries';
+import { QUANTUM_MODELS, QUANTUM_RELEASED_MODELS } from '@boardsesh/board-constants/quantum';
 import { sql, type SQL } from 'drizzle-orm';
 import type {
   ConnectionContext,
@@ -233,13 +238,30 @@ function boardClimbsLayoutSizeConditions(
   layoutId: number | null,
   sizeId: number | null,
   prefix: SQL = sql``,
+  includeQuantumRetirements = false,
 ): SQL[] {
   const conditions: SQL[] = [];
+  if (boardType === 'quantum') {
+    const allowedLayouts = [
+      ...new Set(
+        QUANTUM_RELEASED_MODELS.map((model) => QUANTUM_MODELS[model])
+          .filter((model) => sizeId === null || model.sizeId === sizeId)
+          .map((model) => model.layoutId),
+      ),
+    ];
+    if (allowedLayouts.length === 0) return [sql`false`];
+    conditions.push(sql`${prefix}layout_id IN ${allowedLayouts}`);
+  }
   if (layoutId !== null) {
     conditions.push(sql`${prefix}layout_id = ${layoutId}`);
   }
   if (sizeId !== null && isSizeScopedBoard(boardType)) {
-    conditions.push(sql`${prefix}compatible_size_ids @> ARRAY[${sizeId}]::int[]`);
+    const member = sql`${prefix}compatible_size_ids @> ARRAY[${sizeId}]::int[]`;
+    conditions.push(
+      boardType === 'quantum' && includeQuantumRetirements
+        ? sql`(${member} OR ${retiredQuantumCatalogClimbCondition(prefix)})`
+        : member,
+    );
   }
   return conditions;
 }
@@ -250,9 +272,56 @@ function boardClimbsLayoutSizeConditions(
  */
 function boardClimbsScope(boardType: string, layoutId: number | null, sizeId: number | null): SQL {
   return sql.join(
-    [sql`board_type = ${boardType}`, ...boardClimbsLayoutSizeConditions(boardType, layoutId, sizeId)],
+    [sql`board_type = ${boardType}`, ...boardClimbsLayoutSizeConditions(boardType, layoutId, sizeId, sql``, true)],
     sql` AND `,
   );
+}
+
+/** Deliver a durable replacement for previously downloaded source rows. The
+ * canonical ID keeps tick FKs valid; provider identifiers and climb details
+ * never leave the server once the public catalogue withdraws the route. */
+function syncClimbSelectList(boardType: string): SQL {
+  const columns = [
+    'setter_id',
+    'setter_username',
+    'description',
+    'hsm',
+    'edge_left',
+    'edge_right',
+    'edge_bottom',
+    'edge_top',
+    'angle',
+    'frames_count',
+    'frames_pace',
+    'frames',
+    'controller_route_uuid',
+    'created_at',
+    'published_at',
+    'required_set_ids',
+    'compatible_size_ids',
+    'characteristics',
+    'hold_fingerprint',
+    'missing_hold_count',
+  ].map((column) => {
+    const identifier = sql.identifier(column);
+    return boardType === 'quantum'
+      ? sql`CASE WHEN ${retiredQuantumCatalogClimbCondition(sql``)} THEN NULL ELSE ${identifier} END AS ${identifier}`
+      : identifier;
+  });
+  const name =
+    boardType === 'quantum'
+      ? sql`CASE WHEN ${retiredQuantumCatalogClimbCondition(sql``)} THEN '' ELSE name END AS name`
+      : sql`name`;
+  const isHidden =
+    boardType === 'quantum'
+      ? sql`(is_hidden OR ${retiredQuantumCatalogClimbCondition(sql``)}) AS is_hidden`
+      : sql`is_hidden`;
+  const isListed =
+    boardType === 'quantum'
+      ? sql`CASE WHEN ${retiredQuantumCatalogClimbCondition(sql``)} THEN false ELSE is_listed END AS is_listed`
+      : sql`is_listed`;
+  return sql`uuid, board_type, layout_id, ${name}, ${isListed}, ${isHidden}, ${sql.join(columns, sql`, `)},
+    is_draft, user_id, is_boardsesh_authored, retired_by_reset, revision_number, holds_revision_number, updated_at, sync_seq`;
 }
 
 /** A supplemental page must name the exact imported climb boundary, never a guessed latest manifest. */
@@ -280,7 +349,7 @@ function prepareSnapshotSupplement(
  * export time that became an imported reference climb afterward.
  *
  * Keep this aligned with CLIMBS_WHERE in export-board-snapshots.ts. Published
- * unlisted climbs remain public; the existing draft and spray guards still
+ * unlisted climbs on other boards stay public; the existing draft and spray guards still
  * decide authorization independently of artifact membership.
  */
 function snapshotSupplementCondition(watermark: SyncCursor, prefix: SQL = sql``): SQL {
@@ -288,6 +357,9 @@ function snapshotSupplementCondition(watermark: SyncCursor, prefix: SQL = sql``)
     NOT (
       ${prefix}user_id IS NULL AND NOT ${prefix}is_boardsesh_authored
       AND ${prefix}is_draft IS NOT TRUE
+      AND (${prefix}board_type <> 'quantum' OR (
+        ${prefix}is_listed IS TRUE AND ${prefix}controller_route_uuid IS NOT NULL
+      ))
     )
     OR (${prefix}updated_at, ${prefix}sync_seq) > (${watermark.updatedAt}::timestamp, ${watermark.syncSeq}::bigint)
   )`;
@@ -315,6 +387,7 @@ async function runSnapshotSupplementRefPage(params: {
     [
       sql`bc.board_type = ${boardType}`,
       ...boardClimbsLayoutSizeConditions(boardType, layoutId, sizeId, sql`bc.`),
+      ...(boardType === 'quantum' ? [sql`NOT ${retiredQuantumCatalogClimbCondition(sql`bc.`)}`] : []),
       climbDraftVisibilityCondition(
         { isDraft: sql`bc.is_draft`, userId: sql`bc.user_id`, boardType: sql`bc.board_type` },
         params.viewerUserId,
@@ -395,6 +468,7 @@ async function runScopedBoardRefSyncPage(params: {
   // climb has no audience, so its rows go to everyone whoever set it.
   const scopeConditions = [
     ...boardClimbsLayoutSizeConditions(boardType, layoutId, sizeId, sql`bc.`),
+    ...(boardType === 'quantum' ? [sql`NOT ${retiredQuantumCatalogClimbCondition(sql`bc.`)}`] : []),
     climbDraftVisibilityCondition(
       { isDraft: sql`bc.is_draft`, userId: sql`bc.user_id`, boardType: sql`bc.board_type` },
       params.viewerUserId,
@@ -714,11 +788,7 @@ export const syncQueries = {
     }
 
     return runSyncPage({
-      selectList: sql`uuid, board_type, layout_id, setter_id, setter_username, name, description,
-        hsm, edge_left, edge_right, edge_bottom, edge_top, angle, frames_count, frames_pace, frames,
-        is_draft, is_listed, is_hidden, created_at, published_at, user_id, required_set_ids, compatible_size_ids,
-        characteristics, hold_fingerprint, missing_hold_count, retired_by_reset, revision_number, holds_revision_number,
-        updated_at, sync_seq`,
+      selectList: syncClimbSelectList(validBoardType),
       fromClause: sql`board_climbs`,
       scope: sql`(${boardClimbsScope(validBoardType, lid, sid)}) AND ${climbDraftVisibilityCondition({ isDraft: sql`board_climbs.is_draft`, userId: sql`board_climbs.user_id`, boardType: sql`board_climbs.board_type` }, ctx.userId)}${supplementalWatermark ? sql` AND ${snapshotSupplementCondition(supplementalWatermark, sql`board_climbs.`)}` : sql``}`,
       updatedAtColumn: sql`updated_at`,

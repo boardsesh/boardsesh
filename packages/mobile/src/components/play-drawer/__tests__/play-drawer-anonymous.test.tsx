@@ -38,6 +38,7 @@
 //   9. The mirror toggle doesn't push a previewed climb's frames to a board that
 //      is lit with the LIVE climb.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render as renderInitial, act, waitFor } from '@testing-library/react';
 import { createElement, type ReactElement, type ReactNode } from 'react';
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
@@ -662,8 +663,12 @@ function flushOpeningFrame() {
   openingFrames.clear();
   act(() => scheduled.forEach((callback) => callback(0)));
 }
-function render(...args: Parameters<typeof renderInitial>) {
-  const rendered = renderInitial(...args);
+function render(ui: Parameters<typeof renderInitial>[0]) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function QueryWrapper({ children }: { children: ReactNode }) {
+    return createElement(QueryClientProvider, { client }, children);
+  }
+  const rendered = renderInitial(ui, { wrapper: QueryWrapper });
   flushOpeningFrame();
   return rendered;
 }

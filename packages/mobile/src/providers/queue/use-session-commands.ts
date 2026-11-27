@@ -1,6 +1,9 @@
+import { isReleasedQuantumConfig } from '@boardsesh/board-constants/quantum';
 import { clearActivePartnerWorkout, rememberPartnerWorkout } from '../../lib/pending-workout-store';
 import { useCallback, useContext, useRef } from 'react';
 import { QueryClientContext } from '@tanstack/react-query';
+import { useIsBoardConfigVisible } from '../../hooks/use-board-visibility';
+import { parseBoardPath } from '@boardsesh/board-config';
 import { buildSessionBoardPath } from '../../lib/boards/session-board-path';
 import { execute } from '@boardsesh/graphql-client';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -37,11 +40,26 @@ import { toClimbQueueItem } from '../../lib/queue-conversion';
 import type { ToastVariant } from '../../components/Toast';
 import type { EndSessionOptions, StartSessionConfig } from './queue-contexts';
 
+type JoinSessionOptions = {
+  boardPath: string;
+  expectedBoardPath?: string;
+  userBoard: UserBoard;
+  isOperationCurrent?: () => boolean;
+};
+
+export type ConfirmedSessionJoin = {
+  sessionId: string;
+  boardPath: string;
+  expectedBoardPath: string;
+  isOperationCurrent: () => boolean;
+};
+
 type UseSessionCommandsParams = {
   showToast: (message: string, variant?: ToastVariant, duration?: number) => void;
   t: (key: string) => string;
   stateRef: React.RefObject<QueueState>;
   ensureJoined: (sessionIdToJoin: string) => Promise<unknown>;
+  joinConfirmedSession?: (request: ConfirmedSessionJoin, commit: () => Promise<boolean>) => Promise<boolean>;
   /** `mutations.setQueue` — the party-sync seed used by createSessionWithConfig. */
   setQueueMutation: (
     queue: ClimbQueueItem[],
@@ -59,8 +77,11 @@ type UseSessionCommandsParams = {
   seedFailedSessionIdRef: React.RefObject<string | null>;
   setSessionId: React.Dispatch<React.SetStateAction<string | null>>;
   sessionIdRef: React.RefObject<string | null>;
+  authenticatedUserIdRef?: React.RefObject<string | null>;
   /** Starts a fresh playlist-send lane before the active room changes. */
   onSessionContextChanging: () => void;
+  beginSessionLeave?: () => () => void;
+  beginClearingSavedSession?: () => () => void;
   dispatch: React.Dispatch<QueueAction>;
   setPlaylistSuggestionSourceState: React.Dispatch<React.SetStateAction<PlaylistSuggestionSource | null>>;
   /** Raw active-board setter (useSetActiveBoard), NOT the ref-wrapped one. */
@@ -72,12 +93,9 @@ type UseSessionCommandsParams = {
 
 type SessionCommands = {
   createSessionWithConfig: (config?: StartSessionConfig) => Promise<string | null>;
-  joinSession: (
-    sessionId: string,
-    opts: { boardPath: string; userBoard: UserBoard; isOperationCurrent?: () => boolean },
-  ) => Promise<boolean>;
+  joinSession: (sessionId: string, opts: JoinSessionOptions) => Promise<boolean>;
   endSession: (options?: EndSessionOptions) => Promise<SessionSummary | null>;
-  clearSession: (options?: { notifyServer?: boolean }) => Promise<void>;
+  clearSession: (options?: { notifyServer?: boolean; isOperationCurrent?: () => boolean }) => Promise<void>;
 };
 
 /**
@@ -91,12 +109,16 @@ export function useSessionCommands({
   t,
   stateRef,
   ensureJoined,
+  joinConfirmedSession,
   setQueueMutation,
   nowSlotModeRef,
   seedFailedSessionIdRef,
   setSessionId,
   sessionIdRef,
+  authenticatedUserIdRef,
   onSessionContextChanging,
+  beginSessionLeave,
+  beginClearingSavedSession,
   dispatch,
   setPlaylistSuggestionSourceState,
   setActiveBoard,
@@ -110,6 +132,9 @@ export function useSessionCommands({
   // still renders without a QueryClientProvider; endSession then skips the
   // summary cache write.
   const queryClient = useContext(QueryClientContext);
+  const isBoardConfigVisible = useIsBoardConfigVisible();
+  const boardVisibilityRef = useRef(isBoardConfigVisible);
+  boardVisibilityRef.current = isBoardConfigVisible;
 
   // Explicit session creation — the Start button (PreSessionView) and nothing
   // else. Sessions are never created lazily: the solo queue lives locally
@@ -122,6 +147,7 @@ export function useSessionCommands({
       const createPromise = (async () => {
         const initialSessionId = sessionIdRef.current;
         const credentialGeneration = getCredentialGeneration();
+        const accountId = authenticatedUserIdRef?.current;
         const boardGeneration = getActiveBoardWriteGeneration();
         const isPartnerScopeCurrent = () =>
           !config?.appWorkoutSeed ||
@@ -130,7 +156,7 @@ export function useSessionCommands({
             sessionIdRef.current === initialSessionId);
         const activeBoard = await getStoredActiveBoard();
         if (!isPartnerScopeCurrent()) return null;
-        if (!activeBoard) {
+        if (!activeBoard || !boardVisibilityRef.current(activeBoard)) {
           // The Start button is gated on the React Query copy of the active board;
           // if the stored board is somehow missing, fail loudly so the user knows
           // to pick a board instead of tapping into a silent no-op.
@@ -189,10 +215,29 @@ export function useSessionCommands({
           // Leave everywhere else, which is the whole point of #3502 — the
           // same climber's second phone has no way to know it's the second
           // phone from the roster alone (see session-store.ts for why).
-          // Best-effort: a failed write only costs this device the End-first
-          // emphasis, never the End action itself.
+          // Best-effort for the session itself. Quantum lighting fails closed
+          // if this phone could not record its start provenance.
           try {
             await setStoredCreatedSessionId(newId);
+            // A partner workout Start can return an existing shared session ID
+            // on either phone. It carries no witness that this device created it.
+            if (
+              !config?.appWorkoutId &&
+              !config?.appWorkoutSeed &&
+              accountId &&
+              activeBoard.boardType === 'quantum' &&
+              isReleasedQuantumConfig(activeBoard.layoutId, activeBoard.sizeId)
+            ) {
+              const { rememberStartedQuantumSessionPlayer } =
+                await import('../../lib/ble/quantum-layer-identity-store');
+              await rememberStartedQuantumSessionPlayer(
+                { sessionId: newId, accountId },
+                () =>
+                  credentialGeneration === getCredentialGeneration() &&
+                  accountId === authenticatedUserIdRef?.current &&
+                  sessionIdRef.current === newId,
+              );
+            }
           } catch (provenanceError) {
             if (__DEV__) console.warn('[queue] created-session provenance write failed', provenanceError);
           }
@@ -334,13 +379,14 @@ export function useSessionCommands({
         if (sessionCreationRef.current === createPromise) sessionCreationRef.current = null;
       }
     },
-    [ensureJoined, onSessionContextChanging, setQueueMutation, showToast, t],
+    [authenticatedUserIdRef, ensureJoined, onSessionContextChanging, setQueueMutation, showToast, t],
   );
 
   const clearSession = useCallback(
-    async (options?: { notifyServer?: boolean }) => {
+    async (options?: { notifyServer?: boolean; isOperationCurrent?: () => boolean }) => {
       const sessionToClear = sessionIdRef.current;
       const activeBoardGeneration = getActiveBoardWriteGeneration();
+      if (options?.isOperationCurrent?.() === false) return;
       // This callback only resets the mutation lane. Solo queues also have
       // pending content writes, so invalidate them before LEAVE can await I/O.
       onSessionContextChanging();
@@ -353,15 +399,24 @@ export function useSessionCommands({
       // caller (remote SessionEnded, endSession) unchanged. Mirrors web's
       // sendLeaveOnCleanup in use-session-lifecycle.ts.
       if (options?.notifyServer && sessionIdRef.current) {
+        const settleLeave = beginSessionLeave?.();
         try {
           await execute(getWsClient, { query: LEAVE_SESSION }, 5000);
         } catch (error) {
           if (__DEV__) console.warn('[queue] leaveSession on switch failed', error);
+        } finally {
+          settleLeave?.();
         }
       }
       // A new room or board selected while LEAVE was in flight owns the state
       // now; an old removal must not clear that newer selection.
-      if (sessionIdRef.current !== sessionToClear || getActiveBoardWriteGeneration() !== activeBoardGeneration) return;
+      if (
+        options?.isOperationCurrent?.() === false ||
+        sessionIdRef.current !== sessionToClear ||
+        getActiveBoardWriteGeneration() !== activeBoardGeneration
+      )
+        return;
+      const markSavedSessionCleared = beginClearingSavedSession?.();
       const snapshotRemoval = clearStoredQueueSnapshot();
       if (sessionToClear)
         void clearActivePartnerWorkout(sessionToClear).catch((error: unknown) => {
@@ -387,8 +442,9 @@ export function useSessionCommands({
       // Enqueue both removals before yielding. Session-store serializes them
       // with new joins/starts, so a newer session's persisted identity wins.
       await Promise.all([clearStoredSessionId(), clearStoredCreatedSessionId()]);
+      if (sessionIdRef.current === null) markSavedSessionCleared?.();
     },
-    [onSessionContextChanging],
+    [beginClearingSavedSession, beginSessionLeave, onSessionContextChanging],
   );
 
   const endSession = useCallback(
@@ -468,36 +524,74 @@ export function useSessionCommands({
   );
 
   const joinSession = useCallback(
-    async (
-      sessionToJoin: string,
-      opts: { boardPath: string; userBoard: UserBoard; isOperationCurrent?: () => boolean },
-    ): Promise<boolean> => {
-      const isOperationCurrent = opts.isOperationCurrent ?? (() => true);
+    async (sessionToJoin: string, opts: JoinSessionOptions): Promise<boolean> => {
+      const pathBoard = parseBoardPath(opts.boardPath);
+      const previousSessionId = sessionIdRef.current;
+      let locallyPublished = false;
+      const isOperationCurrent = () =>
+        sessionIdRef.current === (locallyPublished ? sessionToJoin : previousSessionId) &&
+        opts.isOperationCurrent?.() !== false &&
+        boardVisibilityRef.current(opts.userBoard) &&
+        (!pathBoard || boardVisibilityRef.current(pathBoard));
       if (!isOperationCurrent()) return false;
       // Idempotent against double-tap / re-entrant deep links.
       if (sessionIdRef.current === sessionToJoin) return true;
-      // Switch the active board to the session's board FIRST (and persist it) so
-      // the session effect's JOIN_SESSION reads the correct boardPath and the
-      // whole tree (BLE wrapper, BoardProvider, climb list, play drawer) renders
-      // on the joined board. Unlike startSession (which reads the active board to
-      // build the new session's path), joinSession writes it from the session.
-      const activeBoardSet = await setActiveBoard(opts.userBoard, isOperationCurrent);
-      if (!activeBoardSet || !isOperationCurrent()) return false;
-      // Claim session publication synchronously only while the originating
-      // account and mounted Join operation still own this continuation.
-      // Start a new serialized playlist-send lane only after the active-board
-      // write was accepted for this still-current join operation.
-      onSessionContextChanging();
-      sessionIdRef.current = sessionToJoin;
-      setSessionId(sessionToJoin);
-      await setStoredSessionId(sessionToJoin);
-      if (!isOperationCurrent()) return false;
-      // The session's FullSync replaces the local queue — drop the solo
-      // snapshot so a stale copy can't resurrect on a later cold start.
-      await clearStoredQueueSnapshot();
-      return isOperationCurrent();
+      const commit = async () => {
+        const activeBoardSet = await setActiveBoard(opts.userBoard, isOperationCurrent);
+        if (!activeBoardSet || !isOperationCurrent()) return false;
+        onSessionContextChanging();
+        if (opts.expectedBoardPath && previousSessionId) {
+          seedFailedSessionIdRef.current = null;
+          dispatch({ type: 'INITIAL_QUEUE_DATA', payload: { queue: [], currentClimbQueueItem: null } });
+          setPlaylistSuggestionSourceState(null);
+          void clearActivePartnerWorkout(previousSessionId).catch((error: unknown) => {
+            reportHandledError(error, { tags: { source: 'partner-workout', op: 'switch-session' } });
+          });
+        }
+        locallyPublished = true;
+        sessionIdRef.current = sessionToJoin;
+        setSessionId(sessionToJoin);
+        const persistJoin = async () => {
+          await Promise.all([
+            setStoredSessionId(sessionToJoin),
+            opts.expectedBoardPath && previousSessionId ? clearStoredCreatedSessionId() : undefined,
+          ]);
+          if (!isOperationCurrent()) return;
+          // A FullSync now owns the queue. Discard the stale solo snapshot.
+          await clearStoredQueueSnapshot();
+        };
+        try {
+          await persistJoin();
+        } catch (error) {
+          if (!opts.expectedBoardPath) throw error;
+          // The accepted room is already live. Surface a failed cold-start
+          // preference write without making the accepted switch look refused.
+          reportHandledError(error, { tags: { source: 'queue-sync', op: 'persist-confirmed-join' } });
+        }
+        return isOperationCurrent();
+      };
+      if (!opts.expectedBoardPath) return commit();
+      if (!joinConfirmedSession) return false;
+      return joinConfirmedSession(
+        {
+          sessionId: sessionToJoin,
+          boardPath: opts.boardPath,
+          expectedBoardPath: opts.expectedBoardPath,
+          isOperationCurrent,
+        },
+        commit,
+      );
     },
-    [onSessionContextChanging, setActiveBoard],
+    [
+      dispatch,
+      joinConfirmedSession,
+      onSessionContextChanging,
+      seedFailedSessionIdRef,
+      sessionIdRef,
+      setActiveBoard,
+      setPlaylistSuggestionSourceState,
+      setSessionId,
+    ],
   );
 
   return { createSessionWithConfig, joinSession, endSession, clearSession };

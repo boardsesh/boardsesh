@@ -1,8 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { AURORA_BOARDS, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
-import { getBoardCapabilities, type BoardCapabilities } from '../board-capabilities';
+import {
+  getBoardCapabilities,
+  STATIC_BOARD_RENDER_NAMES,
+  supportsStaticBoardRender,
+  supportsPublicClimbLinks,
+  supportsLayerOverlapFiltering,
+  type BoardCapabilities,
+} from '../board-capabilities';
 
 const AURORA_ROW: BoardCapabilities = {
+  catalogSource: 'bundled',
+  angleOptionsSource: 'bundled',
+  publicClimbLinks: true,
   crowdGrade: true,
   // Aurora grades every angle independently, so the browsed angle is the right
   // one to read and search stays pinned to it unless a caller opts out (#5405).
@@ -13,6 +23,9 @@ const AURORA_ROW: BoardCapabilities = {
   nativeBoardControl: true,
   auroraAppLink: true,
   benchmarkTerm: 'benchmark',
+  maxActiveWallClimbs: 1,
+  wallSendMode: 'automatic',
+  staticBoardRender: true,
 };
 
 // The whole table in one place: change a row here and the reviewer sees exactly
@@ -26,6 +39,9 @@ const EXPECTED: Record<string, BoardCapabilities> = {
   grasshopper: AURORA_ROW,
   soill: AURORA_ROW,
   moonboard: {
+    catalogSource: 'bundled',
+    angleOptionsSource: 'bundled',
+    publicClimbLinks: true,
     crowdGrade: false,
     // One grade per problem, at the angle it was set at — so the same shape as
     // Woods, but held false because the fallback costs 1 ms -> 936 ms on its
@@ -38,8 +54,14 @@ const EXPECTED: Record<string, BoardCapabilities> = {
     nativeBoardControl: true,
     auroraAppLink: false,
     benchmarkTerm: 'benchmark',
+    maxActiveWallClimbs: 1,
+    wallSendMode: 'automatic',
+    staticBoardRender: true,
   },
   woods: {
+    catalogSource: 'bundled',
+    angleOptionsSource: 'bundled',
+    publicClimbLinks: true,
     crowdGrade: false,
     // 5,392 listed climbs share 5,398 stats rows — one per climb, at its set angle.
     angleBoundClimbs: true,
@@ -51,8 +73,14 @@ const EXPECTED: Record<string, BoardCapabilities> = {
     nativeBoardControl: true,
     auroraAppLink: false,
     benchmarkTerm: 'benchmark',
+    maxActiveWallClimbs: 1,
+    wallSendMode: 'automatic',
+    staticBoardRender: true,
   },
   spray: {
+    catalogSource: 'personal',
+    angleOptionsSource: 'bundled',
+    publicClimbLinks: true,
     // A climber's own wall: the only thing it does is let climbs be set on it.
     // No LEDs and no firmware (so nothing native to drive), no vendor site, no
     // crowd grade (the setter's grade is required on publish instead), and one
@@ -66,6 +94,25 @@ const EXPECTED: Record<string, BoardCapabilities> = {
     nativeBoardControl: false,
     auroraAppLink: false,
     benchmarkTerm: 'benchmark',
+    maxActiveWallClimbs: 1,
+    wallSendMode: 'automatic',
+    staticBoardRender: false,
+  },
+  quantum: {
+    catalogSource: 'bundled',
+    angleOptionsSource: 'catalog',
+    publicClimbLinks: false,
+    crowdGrade: true,
+    angleBoundClimbs: false,
+    climbCreation: true,
+    explicitClimbRules: false,
+    multiFrameClimbs: false,
+    nativeBoardControl: false,
+    auroraAppLink: false,
+    benchmarkTerm: 'benchmark',
+    maxActiveWallClimbs: 4,
+    wallSendMode: 'explicit-layer',
+    staticBoardRender: false,
   },
 };
 
@@ -106,7 +153,7 @@ describe('getBoardCapabilities', () => {
     // to light the wall. Spray is a product decision instead: a wall has no
     // lights to step through, so a route/circuit has nothing to animate.
     const singleFrameOnly = SUPPORTED_BOARDS.filter((boardName) => !getBoardCapabilities(boardName).multiFrameClimbs);
-    expect(singleFrameOnly.sort()).toEqual(['spray', 'woods']);
+    expect(singleFrameOnly.sort()).toEqual(['quantum', 'spray', 'woods']);
   });
 
   it('drives no board natively except through a Boardsesh binary, and never spray', () => {
@@ -129,5 +176,33 @@ describe('getBoardCapabilities', () => {
     expect(getBoardCapabilities(undefined)).toEqual(AURORA_ROW);
     expect(getBoardCapabilities('')).toEqual(AURORA_ROW);
     expect(getBoardCapabilities('not-a-board')).toEqual(AURORA_ROW);
+  });
+
+  it('derives the static renderer allowlist from the same total table', () => {
+    expect(STATIC_BOARD_RENDER_NAMES).toContain('woods');
+    expect(STATIC_BOARD_RENDER_NAMES).not.toContain('quantum');
+    expect(supportsStaticBoardRender('Kilter')).toBe(true);
+    expect(supportsStaticBoardRender('quantum')).toBe(false);
+    expect(supportsStaticBoardRender('not-a-board')).toBe(false);
+  });
+});
+
+describe('public climb links', () => {
+  it.each(SUPPORTED_BOARDS)('keeps the public link contract for %s', (boardName) => {
+    expect(supportsPublicClimbLinks(boardName)).toBe(boardName !== 'quantum');
+  });
+  it('keeps the established unknown-board fallback', () => {
+    expect(supportsPublicClimbLinks(undefined)).toBe(true);
+    expect(supportsPublicClimbLinks('QUANTUM')).toBe(false);
+  });
+});
+
+describe('independent-layer occupancy filtering', () => {
+  it.each(SUPPORTED_BOARDS)('uses the controller layer capability for %s', (boardName) => {
+    expect(supportsLayerOverlapFiltering(boardName)).toBe(boardName === 'quantum');
+  });
+  it('keeps unknown boards on the single-climb fallback', () => {
+    expect(supportsLayerOverlapFiltering(undefined)).toBe(false);
+    expect(supportsLayerOverlapFiltering('QUANTUM')).toBe(true);
   });
 });

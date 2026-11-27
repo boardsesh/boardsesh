@@ -75,6 +75,12 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     sessionStatus(sessionId: ID!): SessionStatus
 
+    """
+    Geometry of an accessible session's current board, including when its live
+    roster is empty. Returns null when the target cannot be disclosed or resolved.
+    """
+    sessionRestoreBoardPath(sessionId: ID!): String
+
     # ============================================
     # Board Configuration Queries
     # ============================================
@@ -615,6 +621,12 @@ export const queriesTypeDefs = /* GraphQL */ `
       "The board's uuid, its link. The numeric id alone is countable, so without this an Unlisted board reads as NOT_FOUND."
       boardUuid: ID
     ): BoardConnectionHolder
+
+    """
+    Latest confirmed QuantumBoard layer roster. Returns null until a compatible
+    controller reports readback. Controller identities are never exposed.
+    """
+    boardLayers(boardId: Int!, boardUuid: ID): BoardLayersSnapshot
 
     """
     Redacted "Up next" snapshot of the party-session queue bound to a shared

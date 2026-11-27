@@ -1,5 +1,9 @@
-import { climbDraftVisibilityCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
-import { eq, and, inArray, sql, type SQL } from 'drizzle-orm';
+import {
+  climbDraftVisibilityCondition,
+  sprayClimbVisibilityCondition,
+  unavailableQuantumClimbCondition,
+} from '@boardsesh/db/queries';
+import { eq, and, inArray, not, sql, type SQL } from 'drizzle-orm';
 import { type Climb, type BoardName } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
 import { getClimbStars, getGradeLabel, toConfidenceTier } from '@boardsesh/db/queries';
@@ -194,6 +198,7 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       frames: tables.climbs.frames,
       frames_count: tables.climbs.framesCount,
       frames_pace: tables.climbs.framesPace,
+      controller_route_uuid: tables.climbs.controllerRouteUuid,
       // The sizes the climb fits on. Playlist rows and the activation canary
       // both run `canAddClimbToBoard` over these climbs, and on Woods this is
       // the only field that stops an 8x10 climb reading as an exact fit on a
@@ -251,6 +256,7 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
     .where(
       and(
         inArray(tables.climbs.uuid, uuids),
+        not(unavailableQuantumClimbCondition()),
         // The draft rule. Every caller hydrates from a list it did not write (a
         // playlist, a liked list, a logbook), and any of them can name someone
         // else's draft. A published climb hydrates whoever set it.
@@ -305,6 +311,7 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       frames: row.frames || '',
       framesCount: row.frames_count ?? null,
       framesPace: row.frames_pace ?? null,
+      controllerRouteUuid: row.controller_route_uuid ?? null,
       compatibleSizeIds: row.compatible_size_ids ?? null,
       requiredSetIds: row.required_set_ids ?? null,
       missingHoldCount: row.missing_hold_count ?? null,

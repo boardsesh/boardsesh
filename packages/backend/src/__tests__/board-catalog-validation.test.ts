@@ -4,6 +4,8 @@ import { GraphQLError } from 'graphql';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { QUANTUM_MODELS, QUANTUM_SET_ID } from '@boardsesh/board-constants';
+import { QUANTUM_RELEASED_MODELS } from '@boardsesh/board-constants/quantum';
 import {
   MOONBOARD_LAYOUTS,
   MOONBOARD_SETS,
@@ -351,6 +353,39 @@ describe('assertKnownBoardConfig', () => {
     // Static catalog: not one of those seven answers came from the database.
     expect(selectSpy).not.toHaveBeenCalled();
   });
+
+  it('validates only exact Quantum model pairs with the single canonical set', async () => {
+    const selectSpy = vi.spyOn(db, 'select');
+
+    for (const modelName of QUANTUM_RELEASED_MODELS) {
+      const model = QUANTUM_MODELS[modelName];
+      await expect(
+        assertKnownBoardConfig('quantum', model.layoutId, model.sizeId, String(QUANTUM_SET_ID)),
+      ).resolves.toBeUndefined();
+    }
+    await expectUnknownBoardConfig(
+      assertKnownBoardConfig(
+        'quantum',
+        QUANTUM_MODELS.belay.layoutId,
+        QUANTUM_MODELS.belay.sizeId,
+        String(QUANTUM_SET_ID),
+      ),
+    );
+    await expectUnknownBoardConfig(
+      assertKnownBoardConfig('quantum', QUANTUM_MODELS.xl.layoutId, QUANTUM_MODELS.s.sizeId, String(QUANTUM_SET_ID)),
+    );
+    await expectUnknownBoardConfig(
+      assertKnownBoardConfig('quantum', QUANTUM_MODELS.s.layoutId, QUANTUM_MODELS.l.sizeId, String(QUANTUM_SET_ID)),
+    );
+    await expectUnknownBoardConfig(
+      assertKnownBoardConfig('quantum', 9102, QUANTUM_MODELS.l.sizeId, String(QUANTUM_SET_ID)),
+    );
+    await expectUnknownBoardConfig(
+      assertKnownBoardConfig('quantum', QUANTUM_MODELS.xl.layoutId, QUANTUM_MODELS.xl.sizeId, '2'),
+    );
+
+    expect(selectSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe('UNKNOWN_BOARD_CONFIG detail', () => {
@@ -378,6 +413,19 @@ describe('UNKNOWN_BOARD_CONFIG detail', () => {
     expect(
       await refusalExtensions(assertKnownBoardConfig('not-a-board', LAYOUT_ID, SIZE_ID, String(SET_A_ID))),
     ).toEqual({ code: 'UNKNOWN_BOARD_CONFIG', field: 'boardType' });
+  });
+
+  it('identifies an unknown Quantum layout separately from a size from another Quantum layout', async () => {
+    const setIds = String(QUANTUM_SET_ID);
+    expect(
+      await refusalExtensions(
+        assertKnownBoardConfig('quantum', QUANTUM_MODELS.xl.layoutId, QUANTUM_MODELS.s.sizeId, setIds),
+      ),
+    ).toEqual({ code: 'UNKNOWN_BOARD_CONFIG', field: 'sizeId' });
+    expect(await refusalExtensions(assertKnownBoardConfig('quantum', 9102, QUANTUM_MODELS.l.sizeId, setIds))).toEqual({
+      code: 'UNKNOWN_BOARD_CONFIG',
+      field: 'layoutId',
+    });
   });
 
   it('names the MoonBoard field and its unknown sets without a catalogue query', async () => {
@@ -766,6 +814,25 @@ describe('social board create catalog gate', () => {
       ),
     );
 
+    expect(await sideEffectCounts(AUTO_GYM_USER_ID)).toEqual(before);
+  });
+
+  it('rejects direct creation of the deferred Quantum Belay board before any write', async () => {
+    const before = await sideEffectCounts(AUTO_GYM_USER_ID);
+    await expectUnknownBoardConfig(
+      socialBoardMutations.createBoard(
+        undefined,
+        {
+          input: createInput({
+            boardType: 'quantum',
+            layoutId: QUANTUM_MODELS.belay.layoutId,
+            sizeId: QUANTUM_MODELS.belay.sizeId,
+            setIds: String(QUANTUM_SET_ID),
+          }),
+        },
+        authCtx(AUTO_GYM_USER_ID),
+      ),
+    );
     expect(await sideEffectCounts(AUTO_GYM_USER_ID)).toEqual(before);
   });
 

@@ -25,13 +25,21 @@ import {
   type GetGymKioskQueryResponse,
   type GymKioskOperationResult,
 } from '@boardsesh/graphql/operations';
-import { disambiguateBoardSubtitles, stripGymNamePrefix } from '@boardsesh/board-config';
+import {
+  disambiguateBoardSubtitles,
+  stripGymNamePrefix,
+  supportsPublicClimbLinks,
+  supportsStaticBoardRender,
+} from '@boardsesh/board-config';
 import { getBoardDiscovery } from '@/app/lib/server-board-discovery';
 import GymPopularClimbPreview, {
   type GymPopularPreviewBoard,
 } from '@/app/components/gym-entity/gym-popular-climb-preview';
 import { gymMapsUrl } from '@/app/lib/gym-maps-url';
 import { constructBoardSlugListUrl } from '@/app/lib/url-utils';
+import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
+import { isBoardConfigVisible } from '@boardsesh/board-config/visibility';
+import { getBoardVisibilityFlags } from '@/app/lib/boards/board-visibility.server';
 import { boardTypeLabel, CATALOGUE_BOARD_TYPES } from '@boardsesh/board-constants';
 import { parseGymQrLanding } from '@boardsesh/analytics';
 import { gymRedirectAttributionQuery } from '@/app/lib/gym-attribution';
@@ -147,6 +155,12 @@ const fetchGymBoards = cache(async (gymUuid: string, token: string | undefined):
     return [];
   }
 });
+
+async function visibleGymBoards(boards: UserBoard[]): Promise<UserBoard[]> {
+  if (boards.every((board) => isBoardConfigVisible(board))) return boards;
+  const flags = await getBoardVisibilityFlags();
+  return boards.filter((board) => isBoardConfigVisible(board, flags));
+}
 
 /**
  * The gym's spray walls, as its members and the open web respectively may see them.
@@ -269,6 +283,7 @@ async function buildGymShareCard(
   locale: string,
   t: KioskTranslate,
   boards: UserBoard[],
+  allBoardsVisible: boolean,
 ): Promise<{ ogTitle: string; ogDescription: string; imagePath?: string }> {
   const boardTypes = [...new Set(boards.map((board) => board.boardType))];
   const labels = boardTypes.map(boardTypeLabel);
@@ -294,7 +309,8 @@ async function buildGymShareCard(
   return {
     ogTitle: labels.length > 0 ? t('gymPage.ogTitle', { gymName: gym.name, boards: labels.join(' + ') }) : gym.name,
     ogDescription: gym.description?.trim() || generated,
-    ...(imageUrl ? { imagePath: imageUrl } : {}),
+    // The public image renderer reads the full roster independently.
+    ...(imageUrl && allBoardsVisible ? { imagePath: imageUrl } : {}),
   };
 }
 
@@ -311,7 +327,8 @@ export async function generateMetadata(props: GymRouteProps): Promise<Metadata> 
     });
   }
 
-  const boards = gym.isPublic ? await fetchGymBoards(gym.uuid, undefined) : [];
+  const roster = gym.isPublic ? await fetchGymBoards(gym.uuid, undefined) : [];
+  const boards = await visibleGymBoards(roster);
   const { title, description } = buildGymSearchCopy(gym, boards, locale, t);
   // `path` is the SLUG PATH ONLY — never concatenate anything from
   // `searchParams` into it. Every canonical and every hreflang alternate is
@@ -324,7 +341,9 @@ export async function generateMetadata(props: GymRouteProps): Promise<Metadata> 
   // it has one. A private gym is only ever seen by an editor previewing it, and
   // the backend card answers 404 for it, so it keeps the generic site card.
   const canonicalSlug = gym.slug || gym_slug;
-  const shareCard = gym.isPublic ? await buildGymShareCard(gym, canonicalSlug, locale, t, boards) : {};
+  const shareCard = gym.isPublic
+    ? await buildGymShareCard(gym, canonicalSlug, locale, t, boards, boards.length === roster.length)
+    : {};
 
   // A gym that isn't a public venue — a private listing, or a climber's personal
   // home wall (see `gymIsIndexableVenue`) — gets `noindex, follow` AND NO
@@ -390,21 +409,21 @@ export default async function GymPage(props: GymRouteProps) {
   const { t } = await getServerTranslation('kiosk');
   const { t: tBoards } = await getServerTranslation('boards');
   const storeLabels = await getStoreButtonLabels();
-  const [kiosk, allBoards, gymSprayWalls, discoveryBoards, reportsEnabled, setupSuggestionsEnabled] = await Promise.all(
-    [
-      fetchDefaultKiosk(gym_slug, token),
-      fetchGymBoards(gym.uuid, token),
-      fetchGymSprayWalls(gym.uuid, token),
-      getBoardDiscovery({ gymUuid: gym.uuid, limit: 12 }),
-      isDirectoryReportsEnabled(),
-      isDirectorySetupSuggestionsEnabled(),
-    ],
-  );
+  const [kiosk, roster, gymSprayWalls, discoveryBoards, reportsEnabled, setupSuggestionsEnabled] = await Promise.all([
+    fetchDefaultKiosk(gym_slug, token),
+    fetchGymBoards(gym.uuid, token),
+    fetchGymSprayWalls(gym.uuid, token),
+    getBoardDiscovery({ gymUuid: gym.uuid, limit: 12 }),
+    isDirectoryReportsEnabled(),
+    isDirectorySetupSuggestionsEnabled(),
+  ]);
+  const allBoards = await visibleGymBoards(roster);
+  const visibleBoardCount = Math.max(0, gym.boardCount - (roster.length - allBoards.length));
   const sprayWalls = gymSprayWalls ?? [];
   const previewBoard = (discoveryBoards as GymPopularPreviewBoard[]).find(
     (board) =>
       board.popularClimb?.frames &&
-      board.boardType !== 'spray' &&
+      supportsStaticBoardRender(board.boardType) &&
       allBoards.some((visibleBoard) => visibleBoard.uuid === board.uuid),
   );
 
@@ -633,11 +652,11 @@ export default async function GymPage(props: GymRouteProps) {
             )}
 
             <Box sx={{ display: 'flex', gap: 2.5, flexWrap: 'wrap', mb: 3 }}>
-              {gym.boardCount > 0 && (
+              {visibleBoardCount > 0 && (
                 <GymStatChip
                   icon={<FitnessCenterOutlined sx={{ fontSize: 18 }} />}
-                  value={gym.boardCount}
-                  label={tBoards('gymEntity.stats.boards', { count: gym.boardCount })}
+                  value={visibleBoardCount}
+                  label={tBoards('gymEntity.stats.boards', { count: visibleBoardCount })}
                 />
               )}
               {gym.memberCount > 0 && (
@@ -725,43 +744,49 @@ export default async function GymPage(props: GymRouteProps) {
                   component="ul"
                   sx={{ listStyle: 'none', p: 0, m: 0, display: 'flex', flexDirection: 'column', gap: 1 }}
                 >
-                  {boards.map((board, boardIndex) => (
-                    <Box
-                      component="li"
-                      key={board.uuid}
-                      sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 1 }}
-                    >
-                      <MuiLink
-                        component={LocaleLink}
-                        href={`/b/${board.slug}`}
-                        underline="hover"
-                        sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 1, color: 'var(--color-primary)' }}
+                  {boards.map((board, boardIndex) => {
+                    const hasWebClimbList = supportsPublicClimbLinks(board.boardType);
+                    const encodedSlug = encodeURIComponent(board.slug);
+                    const boardPath = `/b/${hasWebClimbList ? board.slug : encodedSlug}`;
+                    const listPath = constructBoardSlugListUrl(encodedSlug, board.angle);
+                    return (
+                      <Box
+                        component="li"
+                        key={board.uuid}
+                        sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 1 }}
                       >
-                        <Typography component="span" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
-                          {stripGymNamePrefix(board.name, gym.name)}
-                        </Typography>
-                        <Typography component="span" variant="body2" color="text.secondary">
-                          {boardRowSubtitle(boardIndex)}
-                        </Typography>
-                      </MuiLink>
-                      <MuiLink
-                        component={LocaleLink}
-                        href={constructBoardSlugListUrl(encodeURIComponent(board.slug), board.angle)}
-                        sx={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, ml: 2 }}
-                      >
-                        {t('gymPage.seeClimbs')}
-                      </MuiLink>
-                      {showReportProblem && (
-                        <Box sx={{ ml: 'auto' }}>
-                          <ReportBoardButton
-                            gymUuid={gym.uuid}
-                            boardUuid={board.uuid}
-                            boardName={stripGymNamePrefix(board.name, gym.name)}
-                          />
-                        </Box>
-                      )}
-                    </Box>
-                  ))}
+                        <MuiLink
+                          component={LocaleLink}
+                          href={hasWebClimbList ? boardPath : buildAppHandoffUrl(boardPath)}
+                          underline="hover"
+                          sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 1, color: 'var(--color-primary)' }}
+                        >
+                          <Typography component="span" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
+                            {stripGymNamePrefix(board.name, gym.name)}
+                          </Typography>
+                          <Typography component="span" variant="body2" color="text.secondary">
+                            {boardRowSubtitle(boardIndex)}
+                          </Typography>
+                        </MuiLink>
+                        <MuiLink
+                          component={LocaleLink}
+                          href={hasWebClimbList ? listPath : buildAppHandoffUrl(listPath)}
+                          sx={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, ml: 2 }}
+                        >
+                          {t('gymPage.seeClimbs')}
+                        </MuiLink>
+                        {showReportProblem && (
+                          <Box sx={{ ml: 'auto' }}>
+                            <ReportBoardButton
+                              gymUuid={gym.uuid}
+                              boardUuid={board.uuid}
+                              boardName={stripGymNamePrefix(board.name, gym.name)}
+                            />
+                          </Box>
+                        )}
+                      </Box>
+                    );
+                  })}
                 </Box>
               )}
             </Box>

@@ -11,7 +11,9 @@ import type {
 } from '@boardsesh/shared-schema';
 import type Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
+import { z } from 'zod';
 import { logger } from '../utils/logger';
+import { BoardPresenceEventRedisSchema } from '../validation/schemas/board-presence';
 
 // Channel naming convention
 const QUEUE_CHANNEL_PREFIX = 'boardsesh:queue:';
@@ -74,6 +76,12 @@ function isHighFrequencySessionEvent(event: unknown): boolean {
     eventType === 'SessionRestCadenceChanged'
   );
 }
+
+const RedisMessageEnvelopeSchema = z.object({
+  instanceId: z.string().min(1).max(100),
+  event: z.unknown(),
+  timestamp: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+});
 
 export type RedisPubSubAdapter = {
   publishQueueEvent(sessionId: string, event: QueueEvent): Promise<void>;
@@ -155,6 +163,9 @@ export function createRedisPubSubAdapter(publisher: Redis, subscriber: Redis): R
         }
         return;
       }
+      if (channel.startsWith(BOARD_PRESENCE_CHANNEL_PREFIX)) {
+        RedisMessageEnvelopeSchema.parse(payload);
+      }
       parsed = payload;
     } catch {
       rejectedMessageCounts.invalidJson++;
@@ -216,8 +227,14 @@ export function createRedisPubSubAdapter(publisher: Redis, subscriber: Redis): R
         // prefix wins (NEW_CLIMB is `boardsesh:new-climbs:` so they don't
         // actually overlap, but ordering keeps intent obvious).
         const boardId = channel.slice(BOARD_PRESENCE_CHANNEL_PREFIX.length);
+        const event = BoardPresenceEventRedisSchema.parse(parsed.event);
+        if (event.__typename === 'BoardLayersChanged' && String(event.snapshot.boardId) !== boardId) {
+          throw new Error(
+            `BoardLayersChanged snapshot board ${event.snapshot.boardId} does not match Redis channel board ${boardId}`,
+          );
+        }
         if (boardPresenceMessageCallback) {
-          boardPresenceMessageCallback(boardId, parsed.event as BoardPresenceEvent);
+          boardPresenceMessageCallback(boardId, event);
         }
       } else if (channel.startsWith(NEW_CLIMB_CHANNEL_PREFIX)) {
         const channelKey = channel.slice(NEW_CLIMB_CHANNEL_PREFIX.length);

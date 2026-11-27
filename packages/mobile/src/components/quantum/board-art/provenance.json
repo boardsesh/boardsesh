@@ -1,0 +1,174 @@
+{
+  "apk": {
+    "app": "eWalls Android",
+    "versionName": "2.6.5",
+    "versionCode": 552,
+    "sha256": "20c4e15e81491499e4487fe0b786c74734ca120bd9960defd10e81bc1537827f"
+  },
+  "geometry": {
+    "path": "docs/quantum-board-geometry/catalogue-snapshot.json",
+    "sha256": "f670b25bc8deb68d05929e95efa27500d824d0b2371456616b471c11b90c9303"
+  },
+  "displayTransforms": {
+    "standard": {
+      "scaleX": 20.47419725,
+      "scaleY": 20.47813435,
+      "offsetX": 132.77138,
+      "offsetY": 2030.65532
+    },
+    "fitness": {
+      "scaleX": 11.028746,
+      "scaleY": 17.47828,
+      "offsetX": 252.43056,
+      "offsetY": 1836.32819
+    }
+  },
+  "heldOutValidationTransforms": {
+    "standard": {
+      "scaleX": 20.474117023374635,
+      "scaleY": 20.48108657539898,
+      "offsetX": 132.76896660436236,
+      "offsetY": 2030.818055320335
+    },
+    "fitness": {
+      "scaleX": 11.03019292020374,
+      "scaleY": 17.478234017906313,
+      "offsetX": 252.40532927366652,
+      "offsetY": 1836.3283551966542
+    }
+  },
+  "models": {
+    "xl": {
+      "transform": "standard",
+      "original": {
+        "member": "res/drawable-mdpi-v4/assets_board_big_boardsmall.png",
+        "pixels": [2200, 2200],
+        "sha256": "73c1ddc6c11a9270dce36358953154fd47ae669403dc7907cb2943eb680bea32"
+      },
+      "cropPixels": [126, 44, 2090, 2028],
+      "derivatives": {
+        "full": {
+          "filename": "quantum-xl.webp",
+          "pixels": [1964, 1984],
+          "sha256": "c56e2dbb927102e9e86e7253312643c37807c102df4b7fc6c9a78b55fdabf174"
+        },
+        "thumb": {
+          "filename": "quantum-xl-thumb.webp",
+          "pixels": [491, 496],
+          "sha256": "86fd53617f0464cad6a7e692ab66162becfe702c41ab796b0dd975acc6981172"
+        }
+      },
+      "heldOutWall": {
+        "wallTotal": 120,
+        "darkCentersDetected": 120,
+        "rmsPixels": 0.479,
+        "p95Pixels": 0.745,
+        "maxPixels": 1.723
+      },
+      "heldOutExample": {
+        "autocadId": 2105,
+        "source": [1.7793363645986993, 83.12257989473844],
+        "observedFilePx": [169.078, 328.95]
+      }
+    },
+    "l": {
+      "transform": "standard",
+      "original": {
+        "member": "res/drawable-mdpi-v4/assets_board_medium_boardsmall.png",
+        "pixels": [2200, 2200],
+        "sha256": "3f5e34981aafeff35f9aee8dbc321cc8741306e3c56e626557c14ed3a12cc51f"
+      },
+      "cropPixels": [126, 334, 2090, 2026],
+      "derivatives": {
+        "full": {
+          "filename": "quantum-l.webp",
+          "pixels": [1964, 1692],
+          "sha256": "9c7aa7b546c40d1c19fab0bbb149b24134529bd405b1119b3ce8f183bea5e3bd"
+        },
+        "thumb": {
+          "filename": "quantum-l-thumb.webp",
+          "pixels": [491, 423],
+          "sha256": "fa05bac649ff2969345cfdf988ab33c5bb601a5ebcecbbafe360a723b7b6f38c"
+        }
+      },
+      "heldOutWall": {
+        "wallTotal": 96,
+        "darkCentersDetected": 96,
+        "rmsPixels": 0.478,
+        "p95Pixels": 0.732,
+        "maxPixels": 1.723
+      },
+      "heldOutExample": {
+        "autocadId": 2110,
+        "source": [1.7793383162019938, 58.734089536652995],
+        "observedFilePx": [169.035, 828.859]
+      }
+    },
+    "m": {
+      "transform": "standard",
+      "original": {
+        "member": "res/drawable-mdpi-v4/assets_board_small_boardsmall.png",
+        "pixels": [2200, 2200],
+        "sha256": "4414bb3233b905c5699b527e76b87667bf9490ae66beb0fbef64a2d761c4dfc1"
+      },
+      "cropPixels": [324, 334, 1872, 2026],
+      "derivatives": {
+        "full": {
+          "filename": "quantum-m.webp",
+          "pixels": [1548, 1692],
+          "sha256": "26fb79d61afdc7a28fa53c3d378853ca92c61d3558db69c1663ac676a299331d"
+        },
+        "thumb": {
+          "filename": "quantum-m-thumb.webp",
+          "pixels": [387, 423],
+          "sha256": "390cefdd088eab3c430bf85d43e46bf000d430d3a25d71a0711ebbf79f49b575"
+        }
+      },
+      "heldOutWall": {
+        "wallTotal": 76,
+        "darkCentersDetected": 76,
+        "rmsPixels": 0.422,
+        "p95Pixels": 0.648,
+        "maxPixels": 0.738
+      },
+      "heldOutExample": {
+        "autocadId": 2020,
+        "source": [14.302280949816518, 27.02905207114191],
+        "observedFilePx": [425.856, 1476.935]
+      }
+    },
+    "s-fitness": {
+      "transform": "fitness",
+      "original": {
+        "member": "res/drawable-mdpi-v4/assets_board_xsmall_boardsmall.jpg",
+        "pixels": [1920, 1920],
+        "sha256": "07cbaa0f948a12b9f74a17b76f44bb2ca5307890a98f22631cdee3fa8a8af3e6"
+      },
+      "cropPixels": [372, 24, 1548, 1916],
+      "derivatives": {
+        "full": {
+          "filename": "quantum-s-fitness.webp",
+          "pixels": [1176, 1892],
+          "sha256": "43b68869f63d762d054455435180885f43f7ac0b98d5c4f022b2a4786f683005"
+        },
+        "thumb": {
+          "filename": "quantum-s-fitness-thumb.webp",
+          "pixels": [294, 473],
+          "sha256": "7c73f6fe08ed2d27d5af024a6b56032e18d8460011c92cf09d52ecf0d898eb3e"
+        }
+      },
+      "heldOutWall": {
+        "wallTotal": 50,
+        "darkCentersDetected": 50,
+        "rmsPixels": 0.768,
+        "p95Pixels": 1.446,
+        "maxPixels": 2.192
+      },
+      "heldOutExample": {
+        "autocadId": 1090,
+        "source": [18.914326419120822, 38.44123129701709],
+        "observedFilePx": [461.077, 1164.219]
+      }
+    }
+  }
+}

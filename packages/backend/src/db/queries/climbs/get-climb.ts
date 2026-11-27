@@ -1,4 +1,5 @@
 import { and, sql } from 'drizzle-orm';
+import { isReleasedQuantumConfig } from '@boardsesh/board-constants/quantum';
 import { db } from '../../client';
 import { UNIFIED_TABLES, type BoardName } from '../util/table-select';
 import {
@@ -10,6 +11,7 @@ import {
   effectiveStatsColumn,
   gradeJoinAngleSql,
   resolveDetailCrossAngleStats,
+  retiredQuantumCatalogClimbCondition,
   resolvedStatsAngleSql,
   setAngleStatsJoinConditions,
   type StatsColumnKey,
@@ -28,6 +30,7 @@ type GetClimbParams = {
 
 export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | null> => {
   const tables = UNIFIED_TABLES;
+  if (params.board_name === 'quantum' && !isReleasedQuantumConfig(params.layout_id, params.size_id)) return null;
 
   try {
     // Resolve through board_climb_aliases first: an old/bookmarked/shared
@@ -57,6 +60,7 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
       name: tables.climbs.name,
       description: tables.climbs.description,
       frames: tables.climbs.frames,
+      controller_route_uuid: tables.climbs.controllerRouteUuid,
       frames_count: tables.climbs.framesCount,
       frames_pace: tables.climbs.framesPace,
       // The angle the stats below were actually read from — see ./effective-stats
@@ -129,7 +133,7 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
       .where(
         sql`${tables.climbs.boardType} = ${params.board_name}
         AND ${tables.climbs.layoutId} = ${params.layout_id}
-        AND ${tables.climbs.uuid} = ${climbUuid}`,
+        AND ${tables.climbs.uuid} = ${climbUuid}${params.board_name === 'quantum' ? sql` AND NOT ${retiredQuantumCatalogClimbCondition()}` : sql``}`,
       )
       .limit(1);
 
@@ -146,6 +150,7 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
       name: row.name || '',
       description: row.description || '',
       frames: row.frames || '',
+      controllerRouteUuid: row.controller_route_uuid ?? null,
       // Scoped by the WHERE clause to this board + layout — carry them so the
       // queue's BLE spill guard can tell a climb set for another board apart.
       boardType: params.board_name,

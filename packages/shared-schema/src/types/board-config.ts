@@ -13,6 +13,7 @@ export const SUPPORTED_BOARDS = [
   'soill',
   'woods',
   'spray',
+  'quantum',
 ] as const;
 
 /**
@@ -33,6 +34,7 @@ export const BOARD_DISPLAY_ORDER = [
   'moonboard',
   'woods',
   'spray',
+  'quantum',
 ] as const satisfies readonly (typeof SUPPORTED_BOARDS)[number][];
 
 export type BoardName = (typeof SUPPORTED_BOARDS)[number];

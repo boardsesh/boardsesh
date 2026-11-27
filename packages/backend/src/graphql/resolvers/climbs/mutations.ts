@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { GraphQLError } from 'graphql';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
   type ConnectionContext,
   type SaveClimbResult,
@@ -15,6 +15,7 @@ import {
   withNoMatch,
 } from '@boardsesh/shared-schema';
 import type { BoardName } from '@boardsesh/board-constants';
+import { isReleasedQuantumConfig, QUANTUM_MODELS, QUANTUM_RELEASED_MODELS } from '@boardsesh/board-constants/quantum';
 import { fingerprintFromHolds } from '@boardsesh/kilter-sync/sync';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -74,6 +75,8 @@ import {
   SaveClimbInputSchema,
   SaveMoonBoardClimbInputSchema,
   UpdateClimbInputSchema,
+  isQuantumLayoutId,
+  parseQuantumClimbPlacementIds,
 } from '../../../validation/schemas';
 
 /**
@@ -98,6 +101,46 @@ type UpdateClimbOutcome = {
   holdsRevisionNumber: number;
   replayedPublishAt?: string | null;
 };
+
+async function assertQuantumHoldsFitBoard(
+  transaction: Pick<typeof db, 'select'>,
+  layoutId: number,
+  sizeId: number | null | undefined,
+  placementIds: number[],
+): Promise<void> {
+  // Installed clients may omit sizeId. They must still fit wholly within at
+  // least one released physical size associated with the requested layout.
+  const allowedSizes =
+    sizeId == null
+      ? QUANTUM_RELEASED_MODELS.map((model) => QUANTUM_MODELS[model])
+          .filter((model) => model.layoutId === layoutId)
+          .map((model) => model.sizeId)
+      : [sizeId];
+  const { boardPlacements, boardLeds } = dbSchema;
+  const [matchingSize] = await transaction
+    .select({ sizeId: boardLeds.productSizeId })
+    .from(boardPlacements)
+    .innerJoin(
+      boardLeds,
+      and(eq(boardLeds.boardType, boardPlacements.boardType), eq(boardLeds.holeId, boardPlacements.holeId)),
+    )
+    .where(
+      and(
+        eq(boardPlacements.boardType, 'quantum'),
+        eq(boardPlacements.layoutId, layoutId),
+        inArray(boardPlacements.id, placementIds),
+        inArray(boardLeds.productSizeId, allowedSizes),
+      ),
+    )
+    .groupBy(boardLeds.productSizeId)
+    .having(sql`count(DISTINCT ${boardPlacements.id}) = ${placementIds.length}`)
+    .limit(1);
+  if (!matchingSize) {
+    throw new GraphQLError('One or more holds are not on this Quantum Board layout or size', {
+      extensions: { code: 'BAD_USER_INPUT' },
+    });
+  }
+}
 
 function generateClimbUuid(): string {
   // Match Aurora-style uppercase UUID without dashes
@@ -270,6 +313,11 @@ export const climbMutations = {
 
     const framesCount = validated.framesCount ?? 1;
     const holdEntries = parseFramesToHoldEntries(boardType, validated.frames);
+    const quantumPlacementIds =
+      validated.boardType === 'quantum' ? parseQuantumClimbPlacementIds(validated.frames) : null;
+    if (validated.boardType === 'quantum' && quantumPlacementIds === null) {
+      throw new GraphQLError('Invalid Quantum climb geometry', { extensions: { code: 'BAD_USER_INPUT' } });
+    }
     const uuid = validated.uuid ?? generateClimbUuid();
     let replayedCreate: SaveClimbResult | undefined;
 
@@ -287,6 +335,9 @@ export const climbMutations = {
         extensions: { code: SPRAY_CLIMB_CODES.gradeRequired },
       });
     }
+    // Stable physical-controller route identity, used only for explicit layer lighting.
+    const controllerRouteUuid = boardType === 'quantum' ? crypto.randomUUID() : null;
+    const isLocalOnlyClimb = !!woodsShape || boardType === 'quantum';
 
     // Atomicity envelope: gate-check, insert, holds seed, and stats seed all
     // run inside one transaction so a half-completed publish can never leave
@@ -314,6 +365,7 @@ export const climbMutations = {
             layoutId: dbSchema.boardClimbs.layoutId,
             createdAt: dbSchema.boardClimbs.createdAt,
             publishedAt: dbSchema.boardClimbs.publishedAt,
+            controllerRouteUuid: dbSchema.boardClimbs.controllerRouteUuid,
             synced: dbSchema.boardClimbs.synced,
             compatibleSizeIds: dbSchema.boardClimbs.compatibleSizeIds,
           })
@@ -340,6 +392,7 @@ export const climbMutations = {
             .onConflictDoNothing();
           replayedCreate = {
             uuid,
+            controllerRouteUuid: existing.controllerRouteUuid,
             replayed: true,
             synced: existing.synced ?? false,
             createdAt: existing.createdAt,
@@ -360,6 +413,10 @@ export const climbMutations = {
         if (deleted) throw new GraphQLError('Climb not found', { extensions: { code: 'CLIMB_NOT_FOUND' } });
       }
       if (sprayTarget) assertSprayTargetNotArchived(sprayTarget);
+      if (quantumPlacementIds !== null) {
+        await assertQuantumHoldsFitBoard(tx, validated.layoutId, validated.sizeId, quantumPlacementIds);
+      }
+
       if (shouldGate) {
         await acquireDuplicateGateLock(tx, boardType, validated.layoutId, gateSignature, {
           ruleSignature: gateRuleSignature,
@@ -416,16 +473,17 @@ export const climbMutations = {
         framesCount,
         framesPace: validated.framesPace ?? 0,
         frames: validated.frames,
+        controllerRouteUuid,
         isDraft: validated.isDraft,
         isListed,
         createdAt: now,
         publishedAt,
-        // Woods climbs are Boardsesh-only: there is no Aurora account to push
-        // them to, so `synced: false` would park them in a pending-sync state
-        // forever. Every other board still owes Aurora a round-trip.
-        synced: !!woodsShape,
+        // Quantum and Woods saves are complete in Boardsesh. The legacy
+        // `synced` flag acknowledges that save; it does not schedule an upload.
+        synced: isLocalOnlyClimb,
         syncError: null,
         characteristics: storedCharacteristics,
+        ...(boardType === 'quantum' ? { holdFingerprint: fingerprintFromHolds(holdEntries) } : {}),
         // Woods' denormalised columns can't be re-derived downstream —
         // populateDenormalizedColumns bails out for the board precisely because
         // there are no placements or product sizes behind it — so they are
@@ -581,9 +639,7 @@ export const climbMutations = {
       });
     }
 
-    // Mirrors the column: a Woods climb has nowhere to sync to and is already
-    // final, so the client shouldn't show it as pending.
-    return { uuid, synced: !!woodsShape, createdAt: now, publishedAt };
+    return { uuid, controllerRouteUuid, synced: isLocalOnlyClimb, createdAt: now, publishedAt };
   },
 
   /**
@@ -953,6 +1009,19 @@ export const climbMutations = {
       const nextFrames = validated.frames ?? existing.frames ?? '';
       const nextFramesCount = validated.framesCount ?? existing.framesCount ?? 1;
       const nextHoldEntries = parseFramesToHoldEntries(boardType, nextFrames);
+      let quantumGeometry: { layoutId: number; placementIds: number[] } | null = null;
+      if (boardType === 'quantum') {
+        const placementIds = parseQuantumClimbPlacementIds(nextFrames);
+        if (
+          !isQuantumLayoutId(existing.layoutId) ||
+          (validated.sizeId != null && !isReleasedQuantumConfig(existing.layoutId, validated.sizeId)) ||
+          nextFramesCount !== 1 ||
+          placementIds === null
+        ) {
+          throw new GraphQLError('Invalid Quantum climb geometry', { extensions: { code: 'BAD_USER_INPUT' } });
+        }
+        quantumGeometry = { layoutId: existing.layoutId, placementIds };
+      }
 
       // An edit may not turn a single-frame wall climb into a sequence — same reason
       // as the create path. Placed here because it needs the post-edit shape.
@@ -1091,6 +1160,14 @@ export const climbMutations = {
       const gateSignature = shouldGate ? buildHoldSignature(nextHoldEntries) : '';
 
       const outcome = await database.transaction(async (tx): Promise<UpdateClimbOutcome> => {
+        if (quantumGeometry !== null) {
+          await assertQuantumHoldsFitBoard(
+            tx,
+            quantumGeometry.layoutId,
+            validated.sizeId,
+            quantumGeometry.placementIds,
+          );
+        }
         if (shouldGate) {
           await acquireDuplicateGateLock(tx, boardType, existing.layoutId, gateSignature, {
             ruleSignature: nextRuleSignature,
@@ -1203,11 +1280,9 @@ export const climbMutations = {
         if (validated.angle !== undefined) updateSet.angle = validated.angle;
         if (validated.framesCount !== undefined) updateSet.framesCount = validated.framesCount;
         if (validated.framesPace !== undefined) updateSet.framesPace = validated.framesPace;
-        // Woods writes its own hold fingerprint (nothing downstream can re-derive
-        // it for that board), so an edit that moves the holds has to move it too or
-        // it describes the climb the user replaced. Other boards get theirs from
-        // the Aurora sync and are left alone here.
-        if (woodsSizeId !== undefined && framesChanged) {
+        // Keep authored Quantum/Woods fingerprints with their frames, so both
+        // change together when the setter edits the holds.
+        if ((woodsSizeId !== undefined || boardType === 'quantum') && framesChanged) {
           updateSet.holdFingerprint = fingerprintFromHolds(nextHoldEntries);
         }
         // Spray, same reason: nothing downstream can re-derive a wall climb's

@@ -1222,13 +1222,64 @@
       "hideCard": "Ocultar esta tarjeta",
       "settingTitle": "Mostrar peticiones de apoyo",
       "settingFooter": "Una fila «Apoya Boardsesh» en Cuenta y una tarjeta en Inicio la primera semana de cada mes."
-    }
+    },
+    "more": {
+      "accessibility": {
+        "mode": {},
+        "sliders": {},
+        "shapes": {},
+        "preview": {},
+        "cvd": {},
+        "compare": {},
+        "brush": {},
+        "size": {},
+        "roles": {}
+      },
+      "storage": {},
+      "appearance": {},
+      "gradeFormat": {},
+      "displayOptions": {},
+      "offline": {},
+      "language": {},
+      "diagnostics": {},
+      "integrations": {},
+      "syncIssues": {},
+      "signOut": {}
+    },
+    "previewChannels": {}
   },
   "lightControl": {
     "turnOffAll": "Apagar todas las luces",
     "lightAdjacentHolds": "Iluminar la presa de arriba",
     "lightAdjacentHoldsHelp": "Enciende un segundo LED, más tenue, sobre cada presa de inicio o de mano iluminada. Requiere un controlador MoonBoard con la función de LED adicional.",
-    "disconnect": "Desconectar plafón"
+    "disconnect": "Desconectar plafón",
+    "quantum": {
+      "open": "Abrir capas Quantum",
+      "layerTitle": "Capa {{color}}",
+      "layerAction": "Capa {{color}}: {{action}}",
+      "colors": {
+        "green": "verde",
+        "cyan": "cian",
+        "magenta": "magenta",
+        "yellow": "amarilla"
+      },
+      "light": "Iluminar este bloque",
+      "replace": "Sustituir por este bloque",
+      "foreign": "En uso por otra persona",
+      "boardFull": "Las cuatro plazas del plafón están ocupadas",
+      "noClimb": "Elige un bloque para iluminar",
+      "routeMissing": "Este bloque no tiene ruta de control",
+      "saveFirst": "Guarda este bloque antes de iluminarlo",
+      "geometryMissing": "Las posiciones LED aún no están listas para este bloque",
+      "multiFrameUnsupported": "Los bloques de varias secuencias aún no se pueden iluminar en Quantum",
+      "tooManyHolds": "Este bloque supera el límite de 92 luces de Boardsesh",
+      "actionFailed": "No se pudo actualizar el plafón. Actualiza e inténtalo de nuevo.",
+      "active": "Encendido en el plafón",
+      "remove": "Apagar mis luces",
+      "removeColor": "Apagar mis luces de color {{color}}",
+      "invalidFrames": "No se han podido leer las presas de este bloque",
+      "sessionDriver": "El móvil que inició la sesión controla las luces"
+    }
   },
   "bluetooth": {
     "boardNotFound": "No se encontró tu plafón. Asegúrate de que esté encendido y cerca; y si otro teléfono está conectado, desconéctalo allí primero.",
@@ -1313,5 +1364,9 @@
     "continue": "Continuar a Boardsesh",
     "formPending": "Nuestro formulario de terminología aún no está listo. Puedes colaborar desde Ayudar a traducir en Ajustes → General.",
     "formDescription": "Rellena nuestro formulario de Google para ayudarnos a elegir términos de escalada naturales en chino."
+  },
+  "moonboardImport": {},
+  "otaPreview": {
+    "metadata": {}
   }
 }

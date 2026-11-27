@@ -517,7 +517,10 @@
         "removeSets_one": "Toglilo",
         "removeSets_other": "Toglili",
         "noField": "Non conosciamo questa configurazione. Controlla pannello, layout, dimensione e prese."
-      }
+      },
+      "geometryLoading": "Caricamento delle posizioni delle prese di questo modello…",
+      "catalogAnglesLoading": "Caricamento delle inclinazioni del catalogo…",
+      "catalogAnglesUnavailable": "Le inclinazioni del catalogo non sono ancora disponibili."
     },
     "custom": {
       "board": "Pannello",

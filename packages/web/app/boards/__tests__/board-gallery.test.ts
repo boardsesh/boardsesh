@@ -7,6 +7,7 @@ import sharp from 'sharp';
 import { describe, expect, it } from 'vite-plus/test';
 import { getBoardLayouts, getBoardSetsForLayoutAndSize, getBoardSizesForLayoutId } from '@boardsesh/board-config';
 import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
+import { supportsStaticBoardRender } from '@boardsesh/board-config';
 import { getStaticAssetObjectKey } from '@boardsesh/static-assets';
 import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
 import { getLargestGalleryBoardSize, getOrderedGalleryLayouts } from '../board-gallery-config';
@@ -45,7 +46,9 @@ const EXPECTED_LAYOUTS = [
 ] as const satisfies readonly ExpectedLayout[];
 
 const PUBLIC_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../public');
-const catalogBoards = SUPPORTED_BOARDS.filter((boardName): boardName is CatalogBoardName => boardName !== 'spray');
+const catalogBoards = SUPPORTED_BOARDS.filter(
+  (boardName): boardName is CatalogBoardName => boardName !== 'spray' && supportsStaticBoardRender(boardName),
+);
 const sha256 = (contents: Buffer): string => createHash('sha256').update(contents).digest('hex');
 
 describe('board gallery catalog', () => {
@@ -65,8 +68,12 @@ describe('board gallery catalog', () => {
     ({ boardName, layoutId, sizeId, physicalWidth, physicalHeight }) => {
       const selectedSize = getLargestGalleryBoardSize(boardName, layoutId);
       expect(selectedSize.id).toBe(sizeId);
-      expect(selectedSize.edgeRight - selectedSize.edgeLeft).toBe(physicalWidth);
-      expect(selectedSize.edgeTop - selectedSize.edgeBottom).toBe(physicalHeight);
+      const { edgeLeft, edgeRight, edgeBottom, edgeTop } = selectedSize;
+      if (edgeLeft == null || edgeRight == null || edgeBottom == null || edgeTop == null) {
+        throw new Error('Gallery sizes require physical measurements');
+      }
+      expect(edgeRight - edgeLeft).toBe(physicalWidth);
+      expect(edgeTop - edgeBottom).toBe(physicalHeight);
     },
   );
 

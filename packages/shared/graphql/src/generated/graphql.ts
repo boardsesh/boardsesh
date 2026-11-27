@@ -953,6 +953,44 @@ export type BoardHoldOutlines = {
   sizeId: Scalars['Int']['output'];
 };
 
+/**
+ * One sanitized QuantumBoard layer confirmed by controller readback. Physical
+ * controller user and route UUIDs are intentionally excluded.
+ */
+export type BoardLayerPresence = {
+  __typename?: 'BoardLayerPresence';
+  /** Wall angle associated with the resolved climb, when known. */
+  angle?: Maybe<Scalars['Int']['output']>;
+  /** Resolved Boardsesh climb UUID, or null for an unknown foreign layer. */
+  climbUuid?: Maybe<Scalars['String']['output']>;
+  /** Fixed display colour for this layer. */
+  color: Scalars['String']['output'];
+  /** Whether Boardsesh has hold geometry for overlap filtering and rendering. */
+  geometryKnown: Scalars['Boolean']['output'];
+  /** Catalogue placement ids occupied by this layer; never supplied by the reporting client. */
+  placementIds: Array<Scalars['Int']['output']>;
+  /** Controller-reported lifetime remaining, in seconds. */
+  remainingSeconds: Scalars['Int']['output'];
+};
+
+export type BoardLayersChanged = {
+  __typename?: 'BoardLayersChanged';
+  snapshot: BoardLayersSnapshot;
+};
+
+/** Latest confirmed, sanitized QuantumBoard roster for a shared wall. */
+export type BoardLayersSnapshot = {
+  __typename?: 'BoardLayersSnapshot';
+  boardId: Scalars['Int']['output'];
+  layers: Array<BoardLayerPresence>;
+  /** ISO 8601 timestamp stamped by the backend when readback was reported. */
+  observedAt: Scalars['String']['output'];
+  /** Monotonic per-board sequence shared with other presence events. */
+  seq: Scalars['Int']['output'];
+  /** True after the reporting wall holder disconnects. */
+  stale: Scalars['Boolean']['output'];
+};
+
 /** Board leaderboard result. */
 export type BoardLeaderboard = {
   __typename?: 'BoardLeaderboard';
@@ -1056,6 +1094,7 @@ export type BoardPresenceEvent =
   | BoardClimbSet
   | BoardConnectionChanged
   | BoardHistoryUpdated
+  | BoardLayersChanged
   | BoardStatsUpdated;
 
 /** The first climber to send the hardest grade logged on this wall. */
@@ -1311,7 +1350,13 @@ export type BoardShareLink = {
 /** What a signed-out visitor holding a share link may see: the board's name only. */
 export type BoardShareLinkPreview = {
   __typename?: 'BoardShareLinkPreview';
+  /** Board family for signed-in link holders checking rollout eligibility. */
+  boardType?: Maybe<Scalars['String']['output']>;
+  /** Quantum configuration for signed-in link holders checking rollout eligibility. */
+  layoutId?: Maybe<Scalars['Int']['output']>;
   name: Scalars['String']['output'];
+  setIds?: Maybe<Scalars['String']['output']>;
+  sizeId?: Maybe<Scalars['Int']['output']>;
 };
 
 /** Where a redeemed share link points, so the client can open the board. */
@@ -1483,6 +1528,8 @@ export type Climb = {
    * apart (see canAddClimbToBoard rule 5).
    */
   compatibleSizeIds?: Maybe<Array<Scalars['Int']['output']>>;
+  /** External route identifier understood by the physical board controller. Null for boards that use the Boardsesh climb UUID directly. */
+  controllerRouteUuid?: Maybe<Scalars['ID']['output']>;
   /** ISO timestamp of when this climb row was created */
   created_at?: Maybe<Scalars['String']['output']>;
   /** Setter-written notes about the climb (nullable). Carried on search results too — the play drawer and the www climb page both render it. */
@@ -1626,6 +1673,8 @@ export type ClimbInput = {
   characteristics?: InputMaybe<Array<Scalars['String']['input']>>;
   /** Product sizes this climb fits on. Round-tripped through the queue so a party peer on a different-sized wall can tell the climb doesn't fit theirs — on Woods the two sizes' hold ids overlap, so this is the only signal that separates them. */
   compatibleSizeIds?: InputMaybe<Array<Scalars['Int']['input']>>;
+  /** External route identifier understood by the physical board controller. */
+  controllerRouteUuid?: InputMaybe<Scalars['ID']['input']>;
   description?: InputMaybe<Scalars['String']['input']>;
   difficulty: Scalars['String']['input'];
   difficulty_error: Scalars['String']['input'];
@@ -1871,6 +1920,8 @@ export type ClimbSearchInput = {
   layoutId: Scalars['Int']['input'];
   /** Maximum difficulty grade ID */
   maxGrade?: InputMaybe<Scalars['Int']['input']>;
+  /** Maximum occupied holds a climb may share: 0 for none, 1 for at most one. Omit to disable. */
+  maxOccupiedOverlap?: InputMaybe<Scalars['Int']['input']>;
   /** Minimum number of ascents */
   minAscents?: InputMaybe<Scalars['Int']['input']>;
   /** Minimum difficulty grade ID */
@@ -1881,6 +1932,8 @@ export type ClimbSearchInput = {
   minUserRating?: InputMaybe<Scalars['Int']['input']>;
   /** Filter by climb name (partial match) */
   name?: InputMaybe<Scalars['String']['input']>;
+  /** Occupied placement IDs from a confirmed Quantum controller roster. Controller identities are never sent. */
+  occupiedPlacementIds?: InputMaybe<Array<Scalars['Int']['input']>>;
   /** Only show benchmark climbs */
   onlyBenchmarks?: InputMaybe<Scalars['Boolean']['input']>;
   /** Show only the user's draft climbs (requires auth) */
@@ -6135,6 +6188,12 @@ export type Mutation = {
    */
   reportBoardDisconnect: Scalars['Boolean']['output'];
   /**
+   * Publish a confirmed QuantumBoard controller roster after BLE readback.
+   * The caller must have live proof-of-presence for this board. Controller
+   * user and route UUIDs are deliberately absent from the input.
+   */
+  reportBoardLayers: BoardLayersSnapshot;
+  /**
    * Report a climb for hiding or a grade change. Joins an existing open proposal
    * (one vote + one comment per user) or opens one.
    */
@@ -6921,6 +6980,7 @@ export type MutationInviteResourceMemberArgs = {
 export type MutationJoinSessionArgs = {
   avatarUrl?: InputMaybe<Scalars['String']['input']>;
   boardPath: Scalars['String']['input'];
+  expectedBoardPath?: InputMaybe<Scalars['String']['input']>;
   initialCurrentClimb?: InputMaybe<ClimbQueueItemInput>;
   initialHistoryCount?: InputMaybe<Scalars['Int']['input']>;
   initialQueue?: InputMaybe<Array<ClimbQueueItemInput>>;
@@ -7131,6 +7191,12 @@ export type MutationReportBoardClimbArgs = {
 /** Root mutation type for all write operations. */
 export type MutationReportBoardDisconnectArgs = {
   boardId: Scalars['Int']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationReportBoardLayersArgs = {
+  boardId: Scalars['Int']['input'];
+  layers: Array<ReportBoardLayerInput>;
 };
 
 /** Root mutation type for all write operations. */
@@ -8874,6 +8940,11 @@ export type Query = {
   /** Last seven days of chronological display history with an opaque, board-scoped cursor. Expired cursors return an empty final page. */
   boardHistoryPage: BoardHistoryPage;
   /**
+   * Latest confirmed QuantumBoard layer roster. Returns null until a compatible
+   * controller reports readback. Controller identities are never exposed.
+   */
+  boardLayers?: Maybe<BoardLayersSnapshot>;
+  /**
    * Get leaderboard for a board. Anonymous access is allowed for public and
    * system-shared boards; private boards are masked as NOT_FOUND for anonymous
    * callers. The 'day' period is a rolling last-24-hours window, not the
@@ -9517,6 +9588,11 @@ export type Query = {
    */
   sessionHealthExport?: Maybe<SessionHealthExport>;
   /**
+   * Geometry of an accessible session's current board, including when its live
+   * roster is empty. Returns null when the target cannot be disclosed or resolved.
+   */
+  sessionRestoreBoardPath?: Maybe<Scalars['String']['output']>;
+  /**
    * Lightweight, presence-independent lifecycle check for a session.
    * Reads the durable session row (not live Redis presence), so it tells an
    * ended session apart from one that is merely empty. Returns null when the
@@ -9926,6 +10002,12 @@ export type QueryBoardHistoryPageArgs = {
   boardUuid?: InputMaybe<Scalars['ID']['input']>;
   includeAurora?: InputMaybe<Scalars['Boolean']['input']>;
   limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryBoardLayersArgs = {
+  boardId: Scalars['Int']['input'];
+  boardUuid?: InputMaybe<Scalars['ID']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -10550,6 +10632,11 @@ export type QuerySessionGroupedFeedArgs = {
 
 /** Root query type for all read operations. */
 export type QuerySessionHealthExportArgs = {
+  sessionId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySessionRestoreBoardPathArgs = {
   sessionId: Scalars['ID']['input'];
 };
 
@@ -11198,6 +11285,15 @@ export type ReportBoardInput = {
   suggestedSetup?: InputMaybe<BoardSetupInput>;
 };
 
+/** Input for one confirmed QuantumBoard layer; contains no controller IDs. */
+export type ReportBoardLayerInput = {
+  angle?: InputMaybe<Scalars['Int']['input']>;
+  climbUuid?: InputMaybe<Scalars['String']['input']>;
+  color: Scalars['String']['input'];
+  geometryKnown: Scalars['Boolean']['input'];
+  remainingSeconds: Scalars['Int']['input'];
+};
+
 export type ReportClimbInput = {
   /** Required for grade reports; ignored for hide */
   angle?: InputMaybe<Scalars['Int']['input']>;
@@ -11463,6 +11559,8 @@ export type SaveClimbInput = {
 
 export type SaveClimbResult = {
   __typename?: 'SaveClimbResult';
+  /** Stable controller-native route UUID. Present for user-created Quantum climbs. */
+  controllerRouteUuid?: Maybe<Scalars['ID']['output']>;
   /** ISO timestamp of when the row was created */
   createdAt?: Maybe<Scalars['String']['output']>;
   /** ISO timestamp of when the row was first published (null while still a draft) */
@@ -16331,6 +16429,7 @@ export type GetUserFavoriteClimbsQuery = {
       frames: string;
       framesCount?: number | null;
       framesPace?: number | null;
+      controllerRouteUuid?: string | null;
       angle: number;
       ascensionist_count: number;
       difficulty: string;
@@ -16955,6 +17054,7 @@ export type SaveClimbMutation = {
     __typename?: 'SaveClimbResult';
     uuid: string;
     replayed?: boolean | null;
+    controllerRouteUuid?: string | null;
     synced: boolean;
     createdAt?: string | null;
     publishedAt?: string | null;
@@ -17464,6 +17564,7 @@ export type GetPlaylistClimbsQuery = {
       frames: string;
       framesCount?: number | null;
       framesPace?: number | null;
+      controllerRouteUuid?: string | null;
       angle: number;
       ascensionist_count: number;
       difficulty: string;
@@ -17616,6 +17717,7 @@ export type GetSmartPlaylistQuery = {
       frames: string;
       framesCount?: number | null;
       framesPace?: number | null;
+      controllerRouteUuid?: string | null;
       angle: number;
       ascensionist_count: number;
       difficulty: string;
@@ -17933,6 +18035,22 @@ export type BoardShareLinkPreviewQueryVariables = Exact<{
 export type BoardShareLinkPreviewQuery = {
   __typename?: 'Query';
   boardShareLinkPreview?: { __typename?: 'BoardShareLinkPreview'; name: string } | null;
+};
+
+export type BoardShareLinkEligibilityQueryVariables = Exact<{
+  token: Scalars['String']['input'];
+}>;
+
+export type BoardShareLinkEligibilityQuery = {
+  __typename?: 'Query';
+  boardShareLinkPreview?: {
+    __typename?: 'BoardShareLinkPreview';
+    name: string;
+    boardType?: string | null;
+    layoutId?: number | null;
+    sizeId?: number | null;
+    setIds?: string | null;
+  } | null;
 };
 
 export type GetClimbProposalsQueryVariables = Exact<{
@@ -19140,6 +19258,7 @@ export type GetSetterClimbsFullQuery = {
       frames: string;
       framesCount?: number | null;
       framesPace?: number | null;
+      controllerRouteUuid?: string | null;
       angle: number;
       ascensionist_count: number;
       difficulty: string;
@@ -19177,6 +19296,7 @@ export type GetUserClimbsQuery = {
       frames: string;
       framesCount?: number | null;
       framesPace?: number | null;
+      controllerRouteUuid?: string | null;
       angle: number;
       ascensionist_count: number;
       difficulty: string;
@@ -23094,6 +23214,7 @@ export const GetUserFavoriteClimbsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'framesCount' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'framesPace' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'controllerRouteUuid' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'ascensionist_count' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
@@ -24541,6 +24662,7 @@ export const SaveClimbDocument = {
               selections: [
                 { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'replayed' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'controllerRouteUuid' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'synced' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'publishedAt' } },
@@ -25974,6 +26096,7 @@ export const GetPlaylistClimbsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'framesCount' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'framesPace' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'controllerRouteUuid' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'ascensionist_count' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
@@ -26397,6 +26520,7 @@ export const GetSmartPlaylistDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'framesCount' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'framesPace' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'controllerRouteUuid' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'ascensionist_count' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
@@ -27606,6 +27730,49 @@ export const BoardShareLinkPreviewDocument = {
     },
   ],
 } as unknown as DocumentNode<BoardShareLinkPreviewQuery, BoardShareLinkPreviewQueryVariables>;
+export const BoardShareLinkEligibilityDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'BoardShareLinkEligibility' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'token' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'boardShareLinkPreview' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'token' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'token' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'sizeId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'setIds' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<BoardShareLinkEligibilityQuery, BoardShareLinkEligibilityQueryVariables>;
 export const GetClimbProposalsDocument = {
   kind: 'Document',
   definitions: [
@@ -30360,6 +30527,7 @@ export const GetSetterClimbsFullDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'framesCount' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'framesPace' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'controllerRouteUuid' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'ascensionist_count' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
@@ -30430,6 +30598,7 @@ export const GetUserClimbsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'framesCount' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'framesPace' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'controllerRouteUuid' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'ascensionist_count' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },

@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, waitFor } from '@testing-library/react';
 import { createElement, useLayoutEffect, useState } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
+const rollout = vi.hoisted(() => ({ enabled: false }));
+vi.mock('../../../providers/feature-flags-provider', () => ({ useFeatureFlag: () => rollout.enabled }));
 import { buildBoardClimbTarget, type BoardRouteTarget } from '../board-route-target';
 import { createClimbHandoffIntent } from '../climb-handoff-intent';
 
@@ -237,6 +239,7 @@ function boardConfigOf(container: HTMLElement): unknown {
 }
 
 beforeEach(() => {
+  rollout.enabled = false;
   vi.clearAllMocks();
   // `clearAllMocks` wipes calls, not implementations — and one case below gives
   // `replace` a real one that unmounts the harness.
@@ -305,6 +308,7 @@ describe('useBoardRouteTarget', () => {
       'friends-garage',
       expect.any(Function),
       undefined,
+      expect.any(Function),
       expect.any(Function),
     );
     expect(setActiveBoard).toHaveBeenCalledWith(memberBoard, expect.any(Function));
@@ -1787,5 +1791,86 @@ describe('useBoardRouteTarget hand-off callback', () => {
 
     await waitFor(() => expect(statusOf(container)).toBe('unmounted'));
     expect(onHandedOff).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Quantum route rollout', () => {
+  it('rejects a disabled tuple before any create or adoption', async () => {
+    const { container } = render(
+      createElement(Harness, {
+        target: {
+          kind: 'list',
+          board: { ...KILTER_BOARD, boardName: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' },
+        } as BoardRouteTarget,
+      }),
+    );
+    await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+    expect(fetchAllMyOwnedBoards).not.toHaveBeenCalled();
+    expect(createBoardMutateAsync).not.toHaveBeenCalled();
+    expect(setActiveBoard).not.toHaveBeenCalled();
+  });
+
+  it('gates a downloaded slug off/on and preserves the local board', async () => {
+    useRealResolver();
+    connectivity.isOnline = false;
+    const quantum = board({
+      uuid: 'quantum',
+      slug: 'quantum-wall',
+      boardType: 'quantum',
+      layoutId: 9101,
+      sizeId: 9201,
+      setIds: '1',
+    });
+    getOfflineBoards.mockReturnValue([quantum]);
+    const target: BoardRouteTarget = { kind: 'slug-list', slug: 'quantum-wall', angle: null };
+    const { container, rerender } = render(createElement(Harness, { target }));
+    await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+    expect(setActiveBoard).not.toHaveBeenCalled();
+    rollout.enabled = true;
+    rerender(createElement(Harness, { target }));
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith(quantum));
+    expect(fetchBoardBySlug).not.toHaveBeenCalled();
+  });
+
+  it('does not adopt a delayed server answer after the flag turns off', async () => {
+    rollout.enabled = true;
+    const quantum = board({ uuid: 'quantum', boardType: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' });
+    const pending = deferredBoard(quantum);
+    resolveBoardForSession.mockReturnValueOnce(pending.promise).mockResolvedValue(quantum);
+    const target: BoardRouteTarget = { kind: 'slug-list', slug: 'quantum-wall', angle: null };
+    const { container, rerender } = render(createElement(Harness, { target }));
+    await waitFor(() => expect(resolveBoardForSession).toHaveBeenCalled());
+    rollout.enabled = false;
+    rerender(createElement(Harness, { target }));
+    await act(async () => pending.release());
+    expect(setActiveBoard).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(statusOf(container)).not.toBe('anonymous-climb');
+  });
+});
+
+describe('rollout changes preserve ordinary handoffs', () => {
+  it('does not restart a Kilter invite while a confirmation is pending', async () => {
+    useRealResolver();
+    const member = board({ uuid: 'ordinary', slug: 'ordinary-wall' });
+    const pending = deferredBoard(member);
+    fetchBoardFromShareLink.mockReturnValue(pending.promise);
+    const target: BoardRouteTarget = { kind: 'slug-list', slug: 'ordinary-wall', angle: null };
+    const { rerender } = render(createElement(Harness, { target, inviteToken: 'Ab3_dE-fGhIjKlMnOpQrSt' }));
+    await waitFor(() => expect(fetchBoardFromShareLink).toHaveBeenCalledTimes(1));
+    rollout.enabled = true;
+    rerender(createElement(Harness, { target, inviteToken: 'Ab3_dE-fGhIjKlMnOpQrSt' }));
+    expect(fetchBoardFromShareLink).toHaveBeenCalledTimes(1);
+    await act(async () => pending.release());
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalled());
+  });
+
+  it('settles a superseded active-board write instead of leaving the route spinning', async () => {
+    setActiveBoard.mockResolvedValueOnce(false);
+    const { container } = render(
+      createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }),
+    );
+    await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+    expect(router.replace).not.toHaveBeenCalled();
   });
 });

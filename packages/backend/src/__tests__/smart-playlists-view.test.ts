@@ -751,6 +751,58 @@ describe('smartPlaylist — views (real DB, #6651)', () => {
       }
     });
 
+    it('counts only playable Quantum projects while retaining the owner’s legacy unlisted project', async () => {
+      const userId = 'smart-view-quantum-projects';
+      const viewer = makeCtx({ isAuthenticated: true, userId });
+      await db.insert(users).values({ id: userId, email: `${userId}@test.invalid` });
+      const legacyProject = 'k-project-unlisted';
+      const activeProject = 'q-project-active';
+      const withdrawnProject = 'q-project-withdrawn';
+      const unsupportedProject = 'q-project-belay';
+
+      await seedClimb(legacyProject, 'kilter', 1, 'Unlisted Kilter project');
+      await seedClimb(activeProject, 'quantum', 9101, 'Public Quantum project');
+      await seedClimb(withdrawnProject, 'quantum', 9101, 'Withdrawn Quantum project');
+      await seedClimb(unsupportedProject, 'quantum', 9105, 'Belay project');
+      await db.execute(sql`
+        UPDATE board_climbs SET is_listed = false, is_boardsesh_authored = true, user_id = ${userId}
+        WHERE board_type = 'kilter' AND uuid = ${legacyProject}
+      `);
+      await db.execute(sql`
+        UPDATE board_climbs SET is_listed = uuid <> ${withdrawnProject}, is_boardsesh_authored = false,
+          controller_route_uuid = CASE WHEN uuid = ${withdrawnProject}
+            THEN '96970a9f-5fe5-40f8-a525-c85b46ac399f' ELSE '96970a9f-5fe5-40f8-a525-c85b46ac399e' END
+        WHERE board_type = 'quantum' AND uuid IN (${activeProject}, ${withdrawnProject})
+      `);
+      for (const { climbUuid, boardType, attempts } of [
+        { climbUuid: legacyProject, boardType: 'kilter', attempts: 2 },
+        { climbUuid: activeProject, boardType: 'quantum', attempts: 4 },
+        { climbUuid: withdrawnProject, boardType: 'quantum', attempts: 6 },
+        { climbUuid: unsupportedProject, boardType: 'quantum', attempts: 8 },
+      ]) {
+        await seedTick({
+          uuid: `tick-${climbUuid}`,
+          climbUuid,
+          boardType,
+          userId,
+          attempts,
+          status: 'attempt',
+          climbedAt: '2026-05-01T12:00:00Z',
+        });
+      }
+
+      for (const [boardName, expected] of [
+        [undefined, [activeProject, legacyProject]],
+        ['kilter', [legacyProject]],
+        ['quantum', [activeProject]],
+      ] as const) {
+        const paged = await pageThrough({ type: 'PROJECTS', userId, boardName }, 1, viewer);
+        expect(paged, boardName).toEqual({ collected: expected, totalCount: expected.length });
+      }
+      const cards = await playlistQueries.mySmartPlaylistCounts(null, undefined, viewer);
+      expect(cards).toContainEqual({ type: 'PROJECTS', count: 2 });
+    });
+
     it('each library card counts what its list’s header counts, with alias, deleted-climb and deleted-wall ticks present (#6808)', async () => {
       for (const userId of [GUARDED_OWNER, ALIAS_OWNER]) {
         const ownersOwn = makeCtx({ isAuthenticated: true, userId });

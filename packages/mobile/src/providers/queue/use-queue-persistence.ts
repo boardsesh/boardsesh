@@ -1,6 +1,7 @@
 import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
 import { getCurrentUserStorageOwner } from '../../lib/user-storage-owner';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import type { UserBoard } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem, PlaylistSuggestionSource, QueueAction, QueueState } from '@boardsesh/queue';
 import {
   getStoredQueueSnapshot,
@@ -9,8 +10,9 @@ import {
 } from '../../lib/queue-snapshot-store';
 import { getStoredSessionId, clearStoredSessionId } from '../../lib/session-store';
 import { announceStoredSessionEnded } from '../../lib/ended-session-signal';
-import { getHttpClient } from '../../lib/graphql/client';
-import { SESSION_STATUS, type SessionStatusQueryResponse } from '../../lib/graphql/operations';
+import { onlineManager } from '@tanstack/react-query';
+import { isBoardConfigVisible, type BoardVisibilityConfig } from '@boardsesh/board-config/visibility';
+import { readSessionRestoreBoard } from '../../lib/boards/session-restore-board';
 import { reportError } from '../../lib/error-reporting';
 import { track } from '../../lib/analytics';
 import { nowMs } from '../../lib/clock';
@@ -65,6 +67,10 @@ type UseQueuePersistenceParams = {
    * reason — every source masks out against an unresolved board.
    */
   activeBoardSettled: boolean;
+  activeBoardRolloutBlocked?: boolean;
+  /** Reads the underlying board for the cold session guard, before status or join I/O. */
+  getSessionRestoreBoard?: () => Promise<UserBoard | null>;
+  isBoardAvailable?: (board: BoardVisibilityConfig) => boolean;
 };
 
 /**
@@ -95,7 +101,14 @@ export function useQueuePersistence({
   playlistSuggestionSource,
   setPlaylistSuggestionSourceState,
   activeBoardSettled,
-}: UseQueuePersistenceParams): { restored: boolean } {
+  activeBoardRolloutBlocked = false,
+  getSessionRestoreBoard,
+  isBoardAvailable = isBoardConfigVisible,
+}: UseQueuePersistenceParams): {
+  restored: boolean;
+  sessionAuthorityReady: boolean;
+  beginClearingSavedSession: () => () => void;
+} {
   const [verifiedOwner, setVerifiedOwner] = useState<{ userId: string; generation: number } | null>(null);
   useEffect(() => {
     if (identityReady) return;
@@ -136,6 +149,35 @@ export function useQueuePersistence({
   const ownerReady = identityReady || !!ownerUserId;
   const hydrationScope = JSON.stringify([ownerReady, ownerUserId, credentialGeneration ?? getCredentialGeneration()]);
   const [hydratedScope, setHydratedScope] = useState<string | null>(null);
+  const [blockedRestoreScope, setBlockedRestoreScope] = useState<string | null>(null);
+  const [verifiedSessionScope, setVerifiedSessionScope] = useState<string | null>(null);
+  const savedSessionRevisionRef = useRef(0);
+  const beginClearingSavedSession = useCallback(() => {
+    const revision = ++savedSessionRevisionRef.current;
+    const generation = getCredentialGeneration();
+    setVerifiedSessionScope(null);
+    setBlockedRestoreScope(hydrationScope);
+    return () => {
+      if (revision !== savedSessionRevisionRef.current || generation !== getCredentialGeneration()) return;
+      setBlockedRestoreScope(null);
+      setVerifiedSessionScope(hydrationScope);
+      setHydratedScope(hydrationScope);
+    };
+  }, [hydrationScope]);
+  const boardAvailabilityRef = useRef({ activeBoardRolloutBlocked, isBoardAvailable });
+  boardAvailabilityRef.current = { activeBoardRolloutBlocked, isBoardAvailable };
+  const waitForConnection = useRef(false);
+  const [restoreRetry, setRestoreRetry] = useState(0);
+  useEffect(
+    () =>
+      onlineManager.subscribe((online) => {
+        if (online && waitForConnection.current) {
+          waitForConnection.current = false;
+          setRestoreRetry((retry) => retry + 1);
+        }
+      }),
+    [],
+  );
 
   const restoreQueueSnapshot = useCallback(
     (snapshot: {
@@ -179,9 +221,15 @@ export function useQueuePersistence({
   // save effect from clobbering a stored snapshot with the initial empty state.
   useEffect(() => {
     if (!ownerReady) return;
+    if (activeBoardRolloutBlocked) {
+      setHydratedScope(hydrationScope);
+      return;
+    }
     let cancelled = false;
     const generation = getCredentialGeneration();
-    const isCurrent = () => !cancelled && generation === getCredentialGeneration();
+    const revision = savedSessionRevisionRef.current;
+    const isCurrent = () =>
+      !cancelled && generation === getCredentialGeneration() && revision === savedSessionRevisionRef.current;
     const owner = getCurrentUserStorageOwner() ?? (ownerUserId ? { userId: ownerUserId, authSessionId: '' } : null);
     const hydrateLocalSnapshot = async () => {
       const snapshotGeneration = getQueueSnapshotGeneration();
@@ -198,80 +246,62 @@ export function useQueuePersistence({
       setHydratedScope(hydrationScope);
       restoreQueueSnapshot(snapshot);
     };
-    void getStoredSessionId()
+    void getStoredSessionId(undefined, { requireReadable: true })
       .then(async (storedId) => {
         if (!isCurrent() || sessionIdRef.current !== null) return;
         if (__DEV__) {
           console.info(`[session] restored from store: ${storedId ?? '(none)'}`);
         }
         if (!storedId) {
+          setBlockedRestoreScope(null);
+          setVerifiedSessionScope(hydrationScope);
           await hydrateLocalSnapshot();
           return;
         }
-        // During a backend outage this call no longer hangs the cold start: the
-        // interactive HTTP client is timed (20s) and, while the connectivity
-        // store says we're offline, short-circuits with a
-        // BackendUnavailableError. That error carries no `response`, so it
-        // falls to the optimistic-restore branch below — the queue comes back
-        // and the realtime join that follows is DEFERRED by
-        // use-session-realtime.ts rather than retrying every 5s. A session
-        // that turns out to be dead stays escapable via End Session (#4862).
+        const storedBoard = await getSessionRestoreBoard?.();
+        if (!isCurrent() || sessionIdRef.current !== null) return;
+        const isLocalBoardBlocked = () =>
+          boardAvailabilityRef.current.activeBoardRolloutBlocked ||
+          !!(storedBoard && !boardAvailabilityRef.current.isBoardAvailable(storedBoard));
+        setBlockedRestoreScope(hydrationScope);
+        if (isLocalBoardBlocked()) return;
         try {
-          // Verify the stored session is still alive before rejoining. Without
-          // this, JOIN_SESSION recreates a server-ended room as an empty zombie
-          // and we land in InSessionView with no peers (#2683). sessionStatus
-          // reads the durable session row, NOT the presence-gated `session`
-          // query — that one returns null for any empty session, so it can't
-          // tell an ended session apart from a dormant-but-active solo session.
-          // null means the session row no longer exists; anything but 'active'
-          // means drop the stored id.
-          const { sessionStatus } = await getHttpClient().request<SessionStatusQueryResponse>(SESSION_STATUS, {
-            sessionId: storedId,
-          });
-          if (!isCurrent() || sessionIdRef.current !== null) return;
-          if (sessionStatus !== 'active') {
-            if (__DEV__) {
-              console.info(`[session] stored session ${storedId} ended/missing; clearing`);
-            }
-            // A workout run for it is over too (#6903): its last copy and recap
-            // would otherwise wait for a session id that never comes back.
-            // Announced before any await, still under the isCurrent() check above.
+          const { status, board } = await readSessionRestoreBoard(storedId);
+          if (!isCurrent() || sessionIdRef.current !== null || isLocalBoardBlocked()) return;
+          if (status === 'ended' || status === null) {
+            // An ended or missing session cannot be rejoined. A missing board
+            // on an active session has different meaning: keep that session ID.
             announceStoredSessionEnded(storedId);
             await clearStoredSessionId();
             await hydrateLocalSnapshot();
+            if (isCurrent()) {
+              setBlockedRestoreScope(null);
+              setVerifiedSessionScope(hydrationScope);
+            }
             return;
           }
-          // `restored` turns true in the `finally` below, before the session's
-          // queue arrives from the server (the rejoin's FullSync). So a last
-          // pick made while launching into an open crew session is cleared
-          // when that queue lands: LastPickWatcher can't tell it from a
-          // crewmate's newer put-up, which must end the pick. Same for the
-          // offline rejoin below.
+          if (status !== 'active' || !board || !boardAvailabilityRef.current.isBoardAvailable(board)) return;
           setSessionId(storedId);
-        } catch (err) {
-          if (!isCurrent()) return;
-          // graphql-request's ClientError always carries `response`; a genuine
-          // network failure (fetch reject) doesn't — same structural check as
-          // createSessionWithConfig's error handling above.
-          const isServerResponse = !!err && typeof err === 'object' && 'response' in err;
-          if (isServerResponse) {
-            // The backend answered but the query failed (version skew — an
-            // older backend without sessionStatus — or a masked 500). Don't
-            // restore: a zombie session would put the whole app "in session".
-            // Don't clear either: the id may verify fine once backend/app
-            // versions align, so the next launch retries.
-            reportError(err, { tags: { source: 'sessionRestore' } });
-            await hydrateLocalSnapshot();
-            return;
+          setBlockedRestoreScope(null);
+          setVerifiedSessionScope(hydrationScope);
+        } catch (error) {
+          if (!isCurrent() || isLocalBoardBlocked()) return;
+          const didAnswer = !!error && typeof error === 'object' && 'response' in error;
+          if (didAnswer) {
+            reportError(error, { tags: { source: 'sessionRestore' } });
+          } else {
+            waitForConnection.current = true;
           }
-          // Offline cold start: can't verify the session status, so restore
-          // optimistically so the queue still comes back. A genuinely-dead
-          // session stays escapable via End Session.
-          if (__DEV__) {
-            console.warn('[session] status check failed; restoring optimistically', err);
-          }
-          if (isCurrent() && sessionIdRef.current === null) setSessionId(storedId);
+          // Keep the stored room and solo snapshot intact until its actual board
+          // can be verified. The solo queue remains available while offline.
+          await hydrateLocalSnapshot();
         }
+      })
+      .catch(async (error: unknown) => {
+        if (!isCurrent()) return;
+        setBlockedRestoreScope(hydrationScope);
+        reportError(error, { tags: { source: 'storedSessionRead' } });
+        await hydrateLocalSnapshot();
       })
       .finally(() => {
         if (isCurrent()) setHydratedScope(hydrationScope);
@@ -279,7 +309,16 @@ export function useQueuePersistence({
     return () => {
       cancelled = true;
     };
-  }, [restoreQueueSnapshot, ownerUserId, ownerReady, hydrationScope]);
+  }, [
+    restoreQueueSnapshot,
+    ownerUserId,
+    ownerReady,
+    hydrationScope,
+    activeBoardRolloutBlocked,
+    getSessionRestoreBoard,
+    isBoardAvailable,
+    restoreRetry,
+  ]);
 
   // Only the clock's time is saved; it is always stamped for the current climb,
   // so its uuid needs no column of its own. A string, so the save effect's deps
@@ -292,7 +331,15 @@ export function useQueuePersistence({
   // as the clear when the user empties the queue or a session teardown resets
   // it; the debounce coalesces mutation bursts (swipes, clear-queue removals).
   useEffect(() => {
-    if (!ownerReady || hydratedScope !== hydrationScope || sessionId !== null || !activeBoardSettled) return undefined;
+    if (
+      !ownerReady ||
+      hydratedScope !== hydrationScope ||
+      blockedRestoreScope === hydrationScope ||
+      sessionId !== null ||
+      !activeBoardSettled ||
+      activeBoardRolloutBlocked
+    )
+      return undefined;
     const snapshotGeneration = getQueueSnapshotGeneration();
     const generation = getCredentialGeneration();
     const owner = getCurrentUserStorageOwner() ?? (ownerUserId ? { userId: ownerUserId, authSessionId: '' } : null);
@@ -323,13 +370,25 @@ export function useQueuePersistence({
     playlistSuggestionSource,
     sessionId,
     activeBoardSettled,
+    activeBoardRolloutBlocked,
+    blockedRestoreScope,
     ownerUserId,
     ownerReady,
     hydrationScope,
     hydratedScope,
   ]);
 
-  return { restored: hydratedScope === hydrationScope };
+  return {
+    restored: hydratedScope === hydrationScope,
+    // A usable solo snapshot does not establish that there is no saved crew.
+    sessionAuthorityReady:
+      sessionId !== null ||
+      (ownerReady &&
+        hydratedScope === hydrationScope &&
+        verifiedSessionScope === hydrationScope &&
+        blockedRestoreScope !== hydrationScope),
+    beginClearingSavedSession,
+  };
 }
 
 let queueSnapshotRestoreReported = false;

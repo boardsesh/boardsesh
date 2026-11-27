@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createElement, type ReactNode } from 'react';
 import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
 import type { WorkoutRun } from '@boardsesh/playlist-generator';
 import type { BoardConfig } from '../../../providers/drawer-host-provider';
@@ -69,10 +71,12 @@ type HookInput = {
 };
 
 function renderOutcome(initial: HookInput) {
+  const client = new QueryClient();
+  const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client }, children);
   return renderHook(
     ({ barClimb, climbBoard = exact, reachable, playerRouteUp = false }: HookInput) =>
       useMiniPlayerWorkoutOutcome({ climb: barClimb, climbBoard, reachableBoardKeys: reachable, playerRouteUp }),
-    { initialProps: initial },
+    { initialProps: initial, wrapper },
   );
 }
 

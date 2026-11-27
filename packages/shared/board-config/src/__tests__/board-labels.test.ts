@@ -4,6 +4,7 @@ import {
   boardConfigLabel,
   boardRowSubtitle,
   disambiguateBoardSubtitles,
+  formatSizeDimensions,
   stripGymNamePrefix,
   type BoardLabelSource,
 } from '../board-labels';
@@ -51,6 +52,21 @@ describe('boardPlaceLabel', () => {
     const board = { ...kilter, gymName: 'Bergen Klatresenter', locationName: 'Bergen, Norway' };
     expect(boardPlaceLabel(board)).toBe('Bergen Klatresenter');
     expect(boardPlaceLabel({ ...kilter, locationName: 'Bergen, Norway' })).toBe('Bergen, Norway');
+  });
+});
+
+describe('formatSizeDimensions', () => {
+  it.each(['XL', 'Max', 'Extra Wide'])('preserves the named size %s', (name) => {
+    expect(formatSizeDimensions({ name })).toBe(name);
+  });
+
+  it.each([
+    ['12 x 14', '12×14'],
+    ['10X12', '10×12'],
+    ['12 high x 16 wide', '12×16'],
+    ['12 x 12 with kickboard', '12×12 with kickboard'],
+  ])('formats %s as %s', (name, expected) => {
+    expect(formatSizeDimensions({ name })).toBe(expected);
   });
 });
 

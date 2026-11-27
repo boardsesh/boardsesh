@@ -43,7 +43,10 @@ import { ensureOfflineWriteDeliveryJournal } from '../mutation-queue/delivery-jo
 
 export type Migration = {
   version: number;
+  /** Canonical DDL for the migration and for snapshot exports. */
   statements: string[];
+  /** Select the DDL still needed on a device when shipped schemas diverged. */
+  deviceStatements?: (txn: SqlExecutor) => Promise<string[]>;
   /**
    * An optional DATA step, run after `statements` and inside the SAME exclusive
    * transaction as the version stamp. Exists for the one thing a DDL string
@@ -54,6 +57,12 @@ export type Migration = {
    */
   run?: (txn: SqlExecutor) => Promise<void>;
 };
+
+const QUANTUM_CLIMB_COLUMNS = [
+  { name: 'controller_route_uuid', statement: 'ALTER TABLE board_climbs ADD COLUMN controller_route_uuid TEXT;' },
+  // Unknown provenance must never authorize recovery of mutable route geometry.
+  { name: 'is_boardsesh_authored', statement: 'ALTER TABLE board_climbs ADD COLUMN is_boardsesh_authored INTEGER;' },
+];
 
 // Migration 1 stands up the full v1 schema. Future schema changes append
 // { version: 2, statements: [...] }, etc. — never edit a shipped migration.
@@ -271,6 +280,18 @@ export const MIGRATIONS: Migration[] = [
     statements: [],
     run: ensureOfflineWriteDeliveryJournal,
   },
+  {
+    // The Quantum preview also stamped v15, but added these columns without
+    // creating the delivery journal. Converge both histories in one transaction.
+    version: 16,
+    statements: QUANTUM_CLIMB_COLUMNS.map(({ statement }) => statement),
+    deviceStatements: async (txn) => {
+      const columns = await txn.getAllAsync<{ name: string }>('PRAGMA table_info(board_climbs)');
+      const columnNames = new Set(columns.map(({ name }) => name));
+      return QUANTUM_CLIMB_COLUMNS.filter(({ name }) => !columnNames.has(name)).map(({ statement }) => statement);
+    },
+    run: ensureOfflineWriteDeliveryJournal,
+  },
 ];
 
 const SCHEMA_VERSION_TABLE = `
@@ -418,7 +439,8 @@ export async function runMigrations(db: OfflineDatabase): Promise<SchemaCompatib
       // Migrations run on their own connection (busy_timeout defaults to 0); wait for
       // any straggling write on the main connection rather than failing the migration.
       await applyBusyTimeout(txn);
-      for (const statement of migration.statements) {
+      const statements = migration.deviceStatements ? await migration.deviceStatements(txn) : migration.statements;
+      for (const statement of statements) {
         await txn.execAsync(statement);
       }
       await migration.run?.(txn);

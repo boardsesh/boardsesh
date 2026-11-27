@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { randomUUID } from 'expo-crypto';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { useQueryClient } from '@tanstack/react-query';
+import { onlineManager, useQueryClient } from '@tanstack/react-query';
+import { useIsBoardConfigVisible } from '../../hooks/use-board-visibility';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import {
   isNoMatchClimb,
@@ -30,13 +31,11 @@ import { GraphQLOperationError } from '@boardsesh/graphql-client';
 import { getLayoutName } from '@boardsesh/board-constants/product-sizes';
 import { SHARED_EVENTS, boardTypeProperty } from '@boardsesh/analytics';
 import { track } from '../../lib/analytics';
-import { trackBoardConnectTapped } from '../../lib/analytics-board-connect';
 import { useAuth } from '../../providers/auth-provider';
 import { useProfile, useClimb } from '../../lib/graphql/hooks';
 import { resolveProvisionalSetter } from './provisional-setter';
 import { climbEditRefusal, climbEditRefusalMessage } from './climb-edit-refusal';
 import { useQueueActions } from '../../providers/queue-provider';
-import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useToast } from '../../providers/toast-provider';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
 import { getSprayWall, refreshSprayWall, SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-registry';
@@ -63,7 +62,7 @@ import {
 } from './spray-climb-rules';
 import { useCreateClimbAutosave } from './use-create-climb-autosave';
 import { deriveDraftStatusView, type DraftStatusView } from './draft-status-view';
-import { useBleFrameWriter } from '../../lib/ble/use-ble-frame-writer';
+import { useAuthoringWallControl } from './use-authoring-wall-control';
 import { useCreateClimbPlayback } from './use-create-climb-playback';
 
 // The save button's visual state, derived from auth + the saved-climb snapshot +
@@ -109,7 +108,6 @@ type UseCreateClimbScreenArgs = {
   sprayWallToken?: string;
 };
 
-const BLE_PREVIEW_DEBOUNCE_MS = 250;
 const JUST_SAVED_MS = 3000;
 
 /** Field separator for the payload signature — cannot occur in JSON or user text. */
@@ -193,6 +191,7 @@ function parseSavedClimbSnapshot(serialized: string | undefined): SavedClimbSnap
     if (typeof parsed?.uuid !== 'string' || typeof parsed?.boardType !== 'string') return null;
     return {
       uuid: parsed.uuid,
+      controllerRouteUuid: typeof parsed.controllerRouteUuid === 'string' ? parsed.controllerRouteUuid : null,
       boardType: parsed.boardType,
       createdAt: parsed.createdAt ?? null,
       publishedAt: parsed.publishedAt ?? null,
@@ -289,9 +288,11 @@ export function useCreateClimbScreen({
   const auth = useAuth();
   const { data: profile } = useProfile();
   const { setCurrentClimb, refreshAuthoredClimb } = useQueueActions();
-  const bluetooth = useOptionalBluetoothContext();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
+  const isBoardConfigVisible = useIsBoardConfigVisible();
+  const boardVisibilityRef = useRef(isBoardConfigVisible);
+  boardVisibilityRef.current = isBoardConfigVisible;
 
   const isForking = !!forkFrames;
   const isEditing = !!editClimbUuid;
@@ -814,6 +815,7 @@ export function useCreateClimbScreen({
     });
     const serverSnapshot: SavedClimbSnapshot = {
       uuid: editClimb.uuid,
+      controllerRouteUuid: editClimb.controllerRouteUuid ?? null,
       boardType: board.boardName,
       createdAt: editClimb.created_at ?? null,
       publishedAt: editClimb.published_at ?? null,
@@ -1073,48 +1075,6 @@ export function useCreateClimbScreen({
   const [handedOff, setHandedOff] = useState(false);
   const reclaimWall = useCallback(() => setHandedOff(false), []);
 
-  // Preview through the active wall transport while this phone drives it.
-  const sendFramesRef = useRef(bluetooth?.sendFramesToBoard);
-  sendFramesRef.current = bluetooth?.sendFramesToBoard;
-  const wallMatchesEditor =
-    (board.boardName !== 'woods' && board.boardName !== 'spray') ||
-    (bluetooth?.boardName === board.boardName &&
-      bluetooth.layoutId === board.layoutId &&
-      bluetooth.sizeId === board.sizeId);
-  const bleConnected =
-    Boolean(bluetooth?.isConnected || (bluetooth?.boardName === 'spray' && bluetooth.canDriveWall)) &&
-    wallMatchesEditor;
-  const invalidateWallState = bluetooth?.invalidateWallState;
-  const invalidateWallStateRef = useRef(invalidateWallState);
-  invalidateWallStateRef.current = invalidateWallState;
-  const isPlaying = playback.isPlaying;
-  useEffect(() => {
-    // While playing, the frame writer below owns the wall — at MIN_PACE_MS this
-    // debounce would swallow every frame and send nothing until playback stops.
-    if (!bleConnected || editSizeMismatch || isPlaying || handedOff) return;
-    const handle = setTimeout(() => {
-      // The active frame only — the wall mirrors whatever you're painting
-      // right now, not multi-frame route syntax the BLE packet builder can't
-      // parse.
-      invalidateWallStateRef.current?.();
-      void sendFramesRef.current?.(currentFrameBleString());
-    }, BLE_PREVIEW_DEBOUNCE_MS);
-    return () => clearTimeout(handle);
-  }, [holdsJson, bleConnected, editSizeMismatch, isPlaying, handedOff, currentFrameBleString]);
-
-  // Latest-wins writer for playback frames — the same drain the play drawer uses.
-  useBleFrameWriter({
-    frame: isPlaying && bleConnected && !handedOff && !editSizeMismatch ? playback.currentFrameString : null,
-    send: bluetooth?.sendFramesToBoard,
-    mirrored: false,
-    resetKey: draftKey,
-    // The creator writes straight past the auto-sender, so its record of what
-    // the wall physically shows has to be dropped — otherwise re-selecting the
-    // previously-lit queue item hits the dedup skip and confirms a climb over a
-    // wall showing the creator's frame 3.
-    onWrite: invalidateWallState,
-  });
-
   // ---- Painting + role assignment. ----
   // A tap sets the tapped hold straight to the selected brush — cycling only
   // kicks in when the tap can't just do that: re-tapping the same hold with
@@ -1301,7 +1261,7 @@ export function useCreateClimbScreen({
   }, [resetHolds, discardAutosaveSlot, isEditing, isForking, onStartedNewClimb, reclaimWall, board.boardName]);
 
   const confirmNewClimb = useCallback(() => {
-    if (saveInFlightRef.current || startNewInFlightRef.current) return;
+    if (saveInFlightRef.current || startNewInFlightRef.current || !boardVisibilityRef.current(board)) return;
     startNewInFlightRef.current = true;
     void resetToBlankClimb();
   }, [resetToBlankClimb]);
@@ -1348,8 +1308,15 @@ export function useCreateClimbScreen({
   // called, so the state this closure sees is still the row from BEFORE the save
   // (null on a first save) and a first publish would queue as a draft.
   const buildProvisionalClimb = useCallback(
-    (uuid: string, frames: string, saved: SavedClimbSnapshot | null = savedClimb): Climb => ({
+    (uuid: string, frames: string, saved: SavedClimbSnapshot | null = savedClimb, acceptedSave = false): Climb => ({
       uuid,
+      // Quantum controller routes are server-owned and stable. An unsaved WIP
+      // must not substitute its provisional climb UUID: the save mutation would
+      // return a different route and strand the physical layer on the old ID.
+      controllerRouteUuid:
+        acceptedSave || (savedSignature === payloadSignature && !saveInFlightRef.current)
+          ? (saved?.controllerRouteUuid ?? null)
+          : null,
       boardType: board.boardName,
       layoutId: board.layoutId,
       ...(board.boardName === 'woods' ? { compatibleSizeIds: [board.sizeId] } : {}),
@@ -1409,6 +1376,8 @@ export function useCreateClimbScreen({
       isEditing,
       editClimb,
       savedClimb,
+      savedSignature,
+      payloadSignature,
       board.angle,
       board.boardName,
       board.layoutId,
@@ -1433,7 +1402,7 @@ export function useCreateClimbScreen({
       setHandedOff(true);
       // The snapshot is passed in rather than read off state — see
       // `buildProvisionalClimb`.
-      const climb = buildProvisionalClimb(saved.uuid, framesString, saved);
+      const climb = buildProvisionalClimb(saved.uuid, framesString, saved, true);
       // Marked as a save, not a choice: `Set Active Climb` is otherwise the one
       // deliberate "this climb, now" act, and a save must not count as it.
       setCurrentClimb(climbToQueueItem(climb, { uuid: saved.uuid }), { trigger: 'climb_saved' });
@@ -1460,54 +1429,37 @@ export function useCreateClimbScreen({
     [buildProvisionalClimb, setCurrentClimb, refreshAuthoredClimb],
   );
 
-  // ---- Set Active: build a minimal Climb and push to the queue. ----
-  const handleSetActive = useCallback(() => {
-    if (board.boardName === 'spray' && !savedClimb) {
-      showToast(t('mobile.create.save.beforeLogging'), 'info');
-      return;
-    }
+  const prepareControlClimb = useCallback(() => {
     const framesString = generateFramesString();
-    if (!framesString) return;
-    // Stop the transport first: a running clock would race the auto-sender's
-    // write, and the wall is about to show the whole route rather than a frame.
-    playbackPause();
-    setHandedOff(true);
+    if (!framesString) return null;
     const uuid = savedClimb?.uuid ?? previewUuidRef.current ?? randomUUID();
-    setCurrentClimb(climbToQueueItem(buildProvisionalClimb(uuid, framesString), { uuid }));
-  }, [
-    generateFramesString,
+    return buildProvisionalClimb(uuid, framesString);
+  }, [generateFramesString, savedClimb, buildProvisionalClimb]);
+  const commitControlClimb = useCallback(
+    (climb: Climb) => {
+      // The queue owns the complete route after hand-off; authoring previews stop.
+      playbackPause();
+      setHandedOff(true);
+      setCurrentClimb(climbToQueueItem(climb, { uuid: climb.uuid }));
+    },
+    [playbackPause, setCurrentClimb],
+  );
+  const wallControl = useAuthoringWallControl({
+    board,
     savedClimb,
-    buildProvisionalClimb,
-    setCurrentClimb,
-    playbackPause,
-    board.boardName,
-    showToast,
-    t,
-  ]);
-
-  // ---- BLE toggle (drives the header lightbulb): connect lights the wall with
-  // the current holds; tapping again disconnects. ----
-  const handleToggleBle = useCallback(() => {
-    if (!bluetooth) return;
-    if (!wallMatchesEditor || editSizeMismatch) {
-      showToast(t('mobile.create.wallSizeMismatch'), 'info');
-      return;
-    }
-    // Ignore taps while a connect is already running — a second concurrent
-    // connect tears down the first attempt's scan and strands the picker.
-    if (bluetooth.loading) return;
-    if (bluetooth.isConnected) {
-      void bluetooth.disconnect();
-      return;
-    }
-    if (board.boardName === 'spray') {
-      if (bluetooth.virtualWallHeld) bluetooth.releaseVirtualWall();
-      else bluetooth.takeVirtualWall();
-      return;
-    }
-    trackBoardConnectTapped({ surface: 'create_climb', boardName: bluetooth.boardName, reconnect: false });
-    void bluetooth.connect(currentFrameBleString());
-  }, [bluetooth, board.boardName, currentFrameBleString, wallMatchesEditor, editSizeMismatch, showToast, t]);
+    savedTargetCurrent: savedSignature === payloadSignature,
+    saveInFlightRef,
+    isSaving,
+    isValid,
+    prepareClimb: prepareControlClimb,
+    commitClimb: commitControlClimb,
+    editSizeMismatch,
+    handedOff,
+    holdsJson,
+    currentFrameBleString,
+    playback,
+    draftKey,
+  });
 
   // ---- Save state machine. ----
   const editLocked = computeEditLocked(savedClimb);
@@ -1635,13 +1587,20 @@ export function useCreateClimbScreen({
     const sprayWallUuid = sprayWallUuidFor(board.boardName, board.layoutId);
     let nextSavedClimb: SavedClimbSnapshot | null = null;
     try {
-      if (pendingClimbUuid && !savedClimb) {
+      if (board.boardName === 'quantum' && !onlineManager.isOnline()) {
+        await persistAutosaveSlot(autosaveDraftRef.current);
+        showToast(t('mobile.create.autosave.keptToast'), 'info');
+        return;
+      }
+      if ((pendingClimbUuid && !savedClimb) || board.boardName === 'quantum') {
         await persistAutosaveSlot({ ...autosaveDraftRef.current, pendingClimbUuid });
       }
+      if (!boardVisibilityRef.current(board)) return;
       if (canUpdate && savedClimb) {
         const result = await updateClimb({
           uuid: savedClimb.uuid,
           boardType: board.boardName,
+          ...(board.boardName === 'quantum' ? { editorBoard: board } : {}),
           name: name.trim(),
           description: fullDescription,
           frames,
@@ -1664,6 +1623,7 @@ export function useCreateClimbScreen({
         });
         nextSavedClimb = {
           uuid: result.uuid,
+          controllerRouteUuid: savedClimb.controllerRouteUuid ?? null,
           boardType: board.boardName,
           createdAt: result.createdAt ?? savedClimb.createdAt,
           publishedAt: result.publishedAt ?? savedClimb.publishedAt,
@@ -1683,8 +1643,9 @@ export function useCreateClimbScreen({
       } else {
         const result = await saveClimb({
           ...(pendingClimbUuid ? { uuid: pendingClimbUuid } : {}),
-          layout_id: board.layoutId,
-          size_id: board.sizeId,
+          ...(board.boardName === 'quantum'
+            ? { editorBoard: board }
+            : { layout_id: board.layoutId, size_id: board.sizeId }),
           name: name.trim(),
           description: fullDescription,
           is_draft: isDraft,
@@ -1699,6 +1660,7 @@ export function useCreateClimbScreen({
         });
         nextSavedClimb = {
           uuid: result.uuid,
+          controllerRouteUuid: result.controllerRouteUuid ?? null,
           boardType: board.boardName,
           createdAt: result.createdAt ?? null,
           publishedAt: result.publishedAt ?? null,
@@ -1894,8 +1856,6 @@ export function useCreateClimbScreen({
     setFramesPaceMs(clampAuthoredPaceMs(paceMs));
   }, []);
 
-  const canSetActive = isValid;
-
   // ---- Dismissing the sheet. ----
   // No confirm on any of the four dismiss paths (chevron, pan-down, backdrop,
   // hardware back): pan-down is the most-used gesture on this surface and a modal
@@ -2011,8 +1971,8 @@ export function useCreateClimbScreen({
     saveState,
     handleSave,
     publishBlocked,
-    canSetActive,
-    handleSetActive,
+    canSetActive: wallControl.canSetActive,
+    handleSetActive: wallControl.setActive,
     publishDuplicateError,
     dismissDuplicateError,
     focusNameSignal,
@@ -2024,11 +1984,8 @@ export function useCreateClimbScreen({
     draftStatus,
     persistWorkingDraft,
     notifyDraftKeptOnDismiss,
-    // ble
-    bleAvailable: !!bluetooth,
-    bleConnected,
-    bleConnecting: bluetooth?.loading ?? false,
-    handleToggleBle,
+    // wall control
+    wallControl,
     // auth (re-export so the screen can render a login affordance if needed)
     isAuthenticated,
     refreshAuthState: auth.refreshAuthState,

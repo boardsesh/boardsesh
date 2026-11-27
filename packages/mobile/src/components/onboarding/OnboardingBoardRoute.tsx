@@ -1,3 +1,4 @@
+import { useIsBoardConfigVisible } from '../../hooks/use-board-visibility';
 import { useCallback, useMemo, useRef } from 'react';
 import { router } from 'expo-router';
 import type { UserBoard } from '@boardsesh/shared-schema';
@@ -37,7 +38,11 @@ export function OnboardingBoardRoute({ bodyColor, backgroundColor }: { bodyColor
   const currentUserId = profile?.id ?? storedUserId;
 
   const { data: boardConnection, isLoading, isError } = useMyBoards(undefined, { enabled: isAuthenticated });
-  const boards = boardConnection?.boards ?? EMPTY_BOARDS;
+  const isBoardConfigVisible = useIsBoardConfigVisible();
+  const boards = useMemo(
+    () => (boardConnection?.boards ?? EMPTY_BOARDS).filter((board) => isBoardConfigVisible(board)),
+    [boardConnection?.boards, isBoardConfigVisible],
+  );
 
   const isOffline = useIsOffline();
   const offlineDownloadsEnabled = useOfflineDownloadsEnabled();

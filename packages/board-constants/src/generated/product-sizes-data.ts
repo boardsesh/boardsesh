@@ -470,6 +470,7 @@ export const AURORA_PRODUCT_SIZES: Record<BoardName, Record<number, ProductSizeD
   moonboard: {},
   woods: {},
   spray: {},
+  quantum: {},
 };
 
 export const LAYOUTS: Record<BoardName, Record<number, LayoutData>> = {
@@ -497,6 +498,7 @@ export const LAYOUTS: Record<BoardName, Record<number, LayoutData>> = {
   moonboard: {},
   woods: {},
   spray: {},
+  quantum: {},
 };
 
 export const SETS: Record<BoardName, Record<string, SetData[]>> = {
@@ -744,6 +746,7 @@ export const SETS: Record<BoardName, Record<string, SetData[]>> = {
   moonboard: {},
   woods: {},
   spray: {},
+  quantum: {},
 };
 
 export const IMAGE_FILENAMES: Record<BoardName, Record<string, string>> = {
@@ -919,4 +922,5 @@ export const IMAGE_FILENAMES: Record<BoardName, Record<string, string>> = {
   moonboard: {},
   woods: {},
   spray: {},
+  quantum: {},
 };

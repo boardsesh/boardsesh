@@ -286,6 +286,34 @@ describe('local playlist climb coverage', () => {
     expect(await readPage({ playlistId: 'not-owned' })).toBeNull();
   });
 
+  it('omits downloaded withdrawal markers from offline coverage, rows, and counts', async () => {
+    await db.runAsync(
+      `INSERT INTO board_climbs (uuid, board_type, layout_id, is_draft, is_listed, is_hidden, is_boardsesh_authored)
+       VALUES ('withdrawn-quantum', 'quantum', 9101, 0, 0, 1, 0)`,
+    );
+    await member('withdrawn-quantum', 0);
+    expect(await readPage()).toEqual({
+      playlistClimbs: { climbs: [], totalCount: 0, unfilteredCount: null, hasMore: false },
+    });
+
+    await climb({ uuid: 'available-quantum', boardType: 'quantum', layoutId: 9101, sizes: [9203] });
+    await member('available-quantum', 1);
+    await downloaded('quantum:9101:9203');
+    expect((await readPage({ pageSize: 1 }))?.playlistClimbs).toMatchObject({
+      climbs: [{ uuid: 'available-quantum' }],
+      totalCount: 1,
+      unfilteredCount: null,
+      hasMore: false,
+    });
+    expect((await readPage({ view: { name: 'absent' } }))?.playlistClimbs).toMatchObject({
+      totalCount: 0,
+      unfilteredCount: 1,
+    });
+    expect((await getAllUserPlaylistsLocal(db, {}, 'owner'))?.allUserPlaylists).toMatchObject({
+      playlists: [{ uuid: 'playlist', climbCount: 1 }],
+    });
+  });
+
   it('declines missing or partially downloaded members instead of publishing a partial page', async () => {
     await climb({ uuid: 'one' });
     await member('one');

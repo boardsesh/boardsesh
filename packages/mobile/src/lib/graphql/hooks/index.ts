@@ -1,3 +1,4 @@
+import { useIsBoardConfigVisible } from '../../../hooks/use-board-visibility';
 import { offlineWriteFetch } from '../../../offline/offline-write-transport';
 import { useQuery, useMutation, useQueryClient, keepPreviousData, onlineManager } from '@tanstack/react-query';
 import type {
@@ -626,8 +627,12 @@ export function useNearbyGyms(
 
 export function useCreateBoard() {
   const queryClient = useQueryClient();
+  const isBoardConfigVisible = useIsBoardConfigVisible();
+  const boardVisibilityRef = useRef(isBoardConfigVisible);
+  boardVisibilityRef.current = isBoardConfigVisible;
   return useMutation({
     mutationFn: async (input: CreateBoardInput) => {
+      if (!boardVisibilityRef.current(input)) throw new Error('Board unavailable');
       const response = await getHttpClient().request<CreateBoardMutationResponse>(CREATE_BOARD, { input });
       return response.createBoard;
     },
@@ -1065,12 +1070,13 @@ export function useGrades(boardName: string, enabled = true) {
   });
 }
 
-export function useAngles(boardName: string, layoutId: number) {
+export function useAngles(boardName: string, layoutId: number, enabled = true) {
   return useQuery({
     queryKey: ['angles', boardName, layoutId],
     queryFn: () => getHttpClient().request<GetAnglesQueryResponse>(GET_ANGLES, { boardName, layoutId }),
     select: (data) => data.angles,
     staleTime: 24 * 60 * 60 * 1000,
+    enabled: enabled && boardName.length > 0 && layoutId > 0,
   });
 }
 
@@ -1132,10 +1138,15 @@ export function useSetterStats(input: SetterStatsInput, enabled = true) {
 }
 
 export function useClimb(variables: GetClimbQueryVariables | null) {
+  const isBoardConfigVisible = useIsBoardConfigVisible();
+  const eligibleVariables = variables && isBoardConfigVisible(variables) ? variables : null;
   const scopedVariables =
-    variables?.boardName === 'spray'
-      ? { ...variables, sprayWallUuid: variables.sprayWallUuid ?? getSprayWall(variables.layoutId)?.wallUuid }
-      : variables;
+    eligibleVariables?.boardName === 'spray'
+      ? {
+          ...eligibleVariables,
+          sprayWallUuid: eligibleVariables.sprayWallUuid ?? getSprayWall(eligibleVariables.layoutId)?.wallUuid,
+        }
+      : eligibleVariables;
   return useQuery({
     queryKey: [...CLIMB_QUERY_KEY, scopedVariables],
     queryFn: () =>
@@ -1144,7 +1155,7 @@ export function useClimb(variables: GetClimbQueryVariables | null) {
         scopedVariables!,
       ),
     select: (data) => data.climb,
-    enabled: !!variables,
+    enabled: !!scopedVariables,
   });
 }
 

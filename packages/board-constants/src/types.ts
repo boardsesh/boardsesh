@@ -6,10 +6,11 @@ export type ProductSizeData = {
   id: number;
   name: string;
   description: string;
-  edgeLeft: number;
-  edgeRight: number;
-  edgeBottom: number;
-  edgeTop: number;
+  /** Null until a board catalogue supplies calibrated source-coordinate bounds. */
+  edgeLeft: number | null;
+  edgeRight: number | null;
+  edgeBottom: number | null;
+  edgeTop: number | null;
   productId: number;
 };
 
@@ -30,6 +31,8 @@ export type SizeEdges = {
   edgeBottom: number;
   edgeTop: number;
 };
+
+export type ProductSizeWithEdges = ProductSizeData & SizeEdges;
 
 export type HoldTuple = [number, number | null, number, number];
 

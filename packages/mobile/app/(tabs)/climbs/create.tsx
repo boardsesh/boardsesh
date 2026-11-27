@@ -1,3 +1,4 @@
+import { useIsBoardConfigVisible } from '../../../src/hooks/use-board-visibility';
 import { useEffect, useMemo, useRef } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
@@ -163,9 +164,14 @@ export default function CreateClimbRoute() {
   const editorOpenedRef = useRef(false);
   const refuseArchivedWall = wallArchived && !editorOpenedRef.current;
 
+  const isBoardConfigVisible = useIsBoardConfigVisible();
+  const boardUnavailable = resolvedBoard != null && !isBoardConfigVisible(resolvedBoard);
   const exitReason = useMemo(
-    () => createExitReason(params, activeBoard, activeBoardPending, resolvedBoard, refuseArchivedWall),
-    [params, activeBoard, activeBoardPending, resolvedBoard, refuseArchivedWall],
+    () =>
+      boardUnavailable
+        ? 'boardTypeUnsupported'
+        : createExitReason(params, activeBoard, activeBoardPending, resolvedBoard, refuseArchivedWall),
+    [params, activeBoard, activeBoardPending, resolvedBoard, refuseArchivedWall, boardUnavailable],
   );
   const exitMessage = useMemo(() => {
     switch (exitReason) {

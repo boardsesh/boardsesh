@@ -63,11 +63,17 @@ vi.mock('../use-accessory-climb-tap', () => ({
   useAccessoryClimbTap: () => ({ openPlay: vi.fn() }),
 }));
 vi.mock('../../ble/use-lightbulb-control', () => ({
-  useLightbulbControl: () => ({ onPress: vi.fn() }),
+  useLightbulbControl: () => ({
+    onPress: vi.fn(),
+    pressAction: 'disconnect',
+    accessibilityLabel: 'lightControl.disconnect',
+    drivingAccessibilityLabel: 'ble.barControl.stopDrivingLabel',
+  }),
 }));
 vi.mock('../../ble/use-board-connection-state', () => ({
   useBoardConnectionState: () => ({
     bluetooth: {},
+    controlAvailable: true,
     localConnected: true,
     inAppBoardConnection: 'connectedByMe',
     ledless: false,

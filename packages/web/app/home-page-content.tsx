@@ -4,6 +4,7 @@ import Box from '@mui/material/Box';
 import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
+import { isBoardTypeVisible } from '@boardsesh/board-config/visibility';
 import {
   compatibilityBoardSelected,
   spraywallPathClicked,
@@ -22,6 +23,7 @@ import { MarketingPreviewSwitchControl } from '@/app/components/marketing/market
 import HomeShowcaseVideo from '@/app/components/home/home-showcase-video';
 import { WebsiteJourneyLink } from '@/app/components/marketing/website-journey-link';
 import { WebsiteJourneyChip } from '@/app/components/marketing/website-journey-chip';
+import { QuantumCompatibilityChip } from '@/app/components/marketing/quantum-compatibility-chip';
 import { getServerTranslationForLocale, loadServerResources } from '@/app/lib/i18n/server';
 import { selectI18nResources } from '@/app/lib/i18n/select-resources';
 import styles from './home-page-content.module.css';
@@ -179,7 +181,7 @@ export default async function HomePageContent({
       </PageCard>
       <PageSection title={website('boardChoices')}>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-          {SUPPORTED_BOARDS.filter((board) => board !== 'spray').map((board) => (
+          {SUPPORTED_BOARDS.filter((board) => board !== 'spray' && isBoardTypeVisible(board)).map((board) => (
             <WebsiteJourneyChip
               key={board}
               href={`/boards#${board}`}
@@ -187,6 +189,7 @@ export default async function HomePageContent({
               label={boardTypeLabel(board)}
             />
           ))}
+          <QuantumCompatibilityChip />
           <WebsiteJourneyChip
             href="/spraywalls"
             event={spraywallPathClicked('home-chip')}

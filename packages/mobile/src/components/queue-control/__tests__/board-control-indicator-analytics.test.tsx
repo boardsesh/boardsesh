@@ -49,12 +49,18 @@ vi.mock('../use-accessory-climb-tap', () => ({ useAccessoryClimbTap: () => ({ op
 vi.mock('../../ble/use-lightbulb-control', () => ({
   useLightbulbControl: (options: unknown) => {
     signals.lightbulbOptions.push(options);
-    return { onPress: signals.lightbulbPress };
+    return {
+      onPress: signals.lightbulbPress,
+      pressAction: 'disconnect',
+      accessibilityLabel: 'lightControl.disconnect',
+      drivingAccessibilityLabel: 'ble.barControl.stopDrivingLabel',
+    };
   },
 }));
 vi.mock('../../ble/use-board-connection-state', () => ({
   useBoardConnectionState: () => ({
     bluetooth: {},
+    controlAvailable: true,
     localConnected: true,
     inAppBoardConnection: 'connectedByMe',
     ledless: false,
@@ -85,7 +91,11 @@ describe('BoardControlIndicator analytics source', () => {
 
   it('passes the platter placement to the connect path', () => {
     render(createElement(BoardControlIndicator, { placement: 'inline' }));
-    expect(signals.lightbulbOptions.at(-1)).toEqual({ surface: 'board_control_indicator', placement: 'inline' });
+    expect(signals.lightbulbOptions.at(-1)).toEqual({
+      surface: 'board_control_indicator',
+      placement: 'inline',
+      onOpenControls: signals.openControls,
+    });
   });
 
   it('opens the controls sheet from a long-press, saying where it came from', () => {

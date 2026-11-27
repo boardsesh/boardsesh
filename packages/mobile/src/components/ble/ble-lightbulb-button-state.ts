@@ -76,7 +76,14 @@ export function getBleLightbulbAccessibilityHint(
 }
 
 /** Which sentence the bulb's accessibility label should carry. */
-export type BleLightbulbLabelKind = 'disconnect' | 'relay' | 'peerDriving' | 'connect' | 'takeWall' | 'releaseWall';
+export type BleLightbulbLabelKind =
+  | 'disconnect'
+  | 'relay'
+  | 'peerDriving'
+  | 'connect'
+  | 'takeWall'
+  | 'releaseWall'
+  | 'openControls';
 
 /**
  * The bulb's accessibility label, chosen from what a tap will ACTUALLY do.
@@ -97,7 +104,7 @@ export function getBleLightbulbLabelKind(
   pressAction: PlayDrawerLightbulbPressAction,
   holderIsAuthoritative: boolean,
 ): BleLightbulbLabelKind {
-  if (pressAction === 'takeWall' || pressAction === 'releaseWall') return pressAction;
+  if (pressAction === 'takeWall' || pressAction === 'releaseWall' || pressAction === 'openControls') return pressAction;
   if (pressAction === 'disconnect') return 'disconnect';
   if (pressAction === 'relay') return 'relay';
   if (pressAction === 'noop' && holderIsAuthoritative) return 'peerDriving';

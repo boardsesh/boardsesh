@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
+import { useQuantumBluetoothSelection } from './use-quantum-bluetooth-selection';
 import { BluetoothProvider } from './bluetooth-provider';
+import { QuantumBluetoothProvider } from './quantum-bluetooth-provider';
 import { useActiveBoard } from '../lib/graphql/use-active-board';
 import { useReachableBoardKeys } from './queue/use-reachable-board-keys';
 import { LiveActivityBridge } from '../lib/live-activity/live-activity-bridge';
@@ -25,35 +27,39 @@ import { LiveActivityBridge } from '../lib/live-activity/live-activity-bridge';
  * it alone is gated on `activeBoard`.
  */
 export function BluetoothProviderWrapper({ children }: { children: ReactNode }) {
-  const { data: activeBoard } = useActiveBoard();
+  const { data: activeBoard, isBoardSelectionCurrent } = useActiveBoard();
   // The auto-sender must not treat a climb on the board across the room the same
   // way it treats one on a board in another city. It still refuses to WRITE
   // either — this wall can't draw them — but it may not advance the queue past
   // the first, because the climber navigated there on purpose.
   const reachableBoardKeys = useReachableBoardKeys(activeBoard);
+  const quantumSelection = useQuantumBluetoothSelection(activeBoard, isBoardSelectionCurrent);
+  const legacyActiveBoard = activeBoard?.boardType === 'quantum' ? undefined : activeBoard;
 
   return (
-    <BluetoothProvider
-      angle={activeBoard?.angle}
-      reachableBoardKeys={reachableBoardKeys}
-      boardName={activeBoard?.boardType}
-      layoutId={activeBoard?.layoutId}
-      sizeId={activeBoard?.sizeId}
-      setIds={activeBoard?.setIds}
-      boardUuid={activeBoard?.uuid}
-      boardSerialNumber={activeBoard?.serialNumber}
-      hasLeds={activeBoard?.hasLeds}
-      litByWallDevice={activeBoard?.litByWallDevice}
-    >
-      {activeBoard ? (
-        <LiveActivityBridge
-          boardName={activeBoard.boardType}
-          layoutId={activeBoard.layoutId}
-          sizeId={activeBoard.sizeId}
-          setIds={activeBoard.setIds}
-        />
-      ) : null}
-      {children}
-    </BluetoothProvider>
+    <QuantumBluetoothProvider {...quantumSelection}>
+      <BluetoothProvider
+        angle={legacyActiveBoard?.angle}
+        reachableBoardKeys={reachableBoardKeys}
+        boardName={legacyActiveBoard?.boardType}
+        layoutId={legacyActiveBoard?.layoutId}
+        sizeId={legacyActiveBoard?.sizeId}
+        setIds={legacyActiveBoard?.setIds}
+        boardUuid={legacyActiveBoard?.uuid}
+        boardSerialNumber={legacyActiveBoard?.serialNumber}
+        hasLeds={legacyActiveBoard?.hasLeds}
+        litByWallDevice={legacyActiveBoard?.litByWallDevice}
+      >
+        {legacyActiveBoard ? (
+          <LiveActivityBridge
+            boardName={legacyActiveBoard.boardType}
+            layoutId={legacyActiveBoard.layoutId}
+            sizeId={legacyActiveBoard.sizeId}
+            setIds={legacyActiveBoard.setIds}
+          />
+        ) : null}
+        {children}
+      </BluetoothProvider>
+    </QuantumBluetoothProvider>
   );
 }

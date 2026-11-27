@@ -330,7 +330,7 @@ async function renderRestoredSession(snapshots: Snapshot[]) {
   sessionStore.getStoredSessionId.mockResolvedValue('session-1');
   http.request.mockImplementation((operation: string) =>
     operation.includes('SessionStatus')
-      ? Promise.resolve({ sessionStatus: 'active' })
+      ? Promise.resolve({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' })
       : Promise.resolve({ createSession: { id: 'session-new' } }),
   );
   queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(null);
@@ -507,7 +507,7 @@ describe('QueueProvider local solo queue', () => {
     sessionStore.getStoredSessionId.mockResolvedValue('session-1');
     http.request.mockImplementation((operation: string) =>
       operation.includes('SessionStatus')
-        ? Promise.resolve({ sessionStatus: 'active' })
+        ? Promise.resolve({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' })
         : Promise.resolve({ createSession: { id: 'session-new' } }),
     );
     const item = makeQueueItem('stale-item');
@@ -685,7 +685,7 @@ describe('QueueProvider local solo queue', () => {
         callOrder.push('create');
         return { createSession: { id: 'session-new' } };
       }
-      return { sessionStatus: null };
+      return { sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1,2/40' };
     });
     graph.execute.mockImplementation(async () => {
       callOrder.push('join');
@@ -932,7 +932,7 @@ describe('QueueProvider local solo queue', () => {
     sessionStore.getStoredSessionId.mockResolvedValue('session-1');
     http.request.mockImplementation((operation: string) =>
       operation.includes('SessionStatus')
-        ? Promise.resolve({ sessionStatus: 'active' })
+        ? Promise.resolve({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' })
         : Promise.resolve({ createSession: { id: 'session-new' } }),
     );
     queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(null);
@@ -968,7 +968,7 @@ describe('QueueProvider local solo queue', () => {
     sessionStore.getStoredSessionId.mockResolvedValue('session-1');
     http.request.mockImplementation((operation: string) =>
       operation.includes('SessionStatus')
-        ? Promise.resolve({ sessionStatus: 'active' })
+        ? Promise.resolve({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' })
         : Promise.resolve({ createSession: { id: 'session-new' } }),
     );
     queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(null);
@@ -1137,7 +1137,7 @@ describe('QueueProvider local solo queue', () => {
       http.request.mockImplementation((operation: string) =>
         operation.includes('GetSessionQueueState')
           ? heldSnapshot.promise
-          : Promise.resolve({ sessionStatus: 'active' }),
+          : Promise.resolve({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' }),
       );
       queueMutations.removeQueueItem.mockImplementation(async (uuid) => {
         if (uuid === second.uuid || uuid === removedProbe.uuid) throw new Error('partial removal failed');
@@ -1403,7 +1403,9 @@ describe('QueueProvider local solo queue', () => {
     const rendered = await renderRestoredSession(snapshots);
     const heldSnapshot = deferred<unknown>();
     http.request.mockImplementation((operation: string) =>
-      operation.includes('GetSessionQueueState') ? heldSnapshot.promise : Promise.resolve({ sessionStatus: 'active' }),
+      operation.includes('GetSessionQueueState')
+        ? heldSnapshot.promise
+        : Promise.resolve({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' }),
     );
     queueMutations.addQueueItem.mockRejectedValueOnce(new Error('account A send failed'));
 
@@ -1455,7 +1457,9 @@ describe('QueueProvider local solo queue', () => {
     const rendered = await renderRestoredSession(snapshots);
     const heldSnapshot = deferred<unknown>();
     http.request.mockImplementation((operation: string) =>
-      operation.includes('GetSessionQueueState') ? heldSnapshot.promise : Promise.resolve({ sessionStatus: 'active' }),
+      operation.includes('GetSessionQueueState')
+        ? heldSnapshot.promise
+        : Promise.resolve({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' }),
     );
     queueMutations.addQueueItem.mockRejectedValueOnce(new Error('account A send failed'));
 
@@ -1494,7 +1498,9 @@ describe('QueueProvider local solo queue', () => {
     const rendered = await renderRestoredSession(snapshots);
     const heldSnapshot = deferred<unknown>();
     http.request.mockImplementation((operation: string) =>
-      operation.includes('GetSessionQueueState') ? heldSnapshot.promise : Promise.resolve({ sessionStatus: 'active' }),
+      operation.includes('GetSessionQueueState')
+        ? heldSnapshot.promise
+        : Promise.resolve({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' }),
     );
     queueMutations.addQueueItem.mockRejectedValueOnce(new Error('authenticated send failed'));
 
@@ -1522,7 +1528,9 @@ describe('QueueProvider local solo queue', () => {
     await renderRestoredSession(snapshots);
     const heldSnapshot = deferred<unknown>();
     http.request.mockImplementation((operation: string) =>
-      operation.includes('GetSessionQueueState') ? heldSnapshot.promise : Promise.resolve({ sessionStatus: 'active' }),
+      operation.includes('GetSessionQueueState')
+        ? heldSnapshot.promise
+        : Promise.resolve({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' }),
     );
     queueMutations.addQueueItem.mockRejectedValueOnce(new Error('old room send failed'));
     const oldRoomItem = makeQueueItem('old-room-pending');
@@ -1568,7 +1576,7 @@ describe('QueueProvider local solo queue', () => {
       http.request.mockImplementation((operation: string) =>
         operation.includes('GetSessionQueueState')
           ? heldSnapshot.promise
-          : Promise.resolve({ sessionStatus: 'active' }),
+          : Promise.resolve({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' }),
       );
       queueMutations.addQueueItem.mockRejectedValueOnce(new Error('old queue send failed'));
       const oldItem = makeQueueItem('old-queue-item');
@@ -1606,7 +1614,7 @@ describe('QueueProvider local solo queue', () => {
     let queueReadIndex = 0;
     http.request.mockImplementation((operation: string) => {
       if (operation.includes('GetSessionQueueState')) return queueReads[queueReadIndex++].promise;
-      return Promise.resolve({ sessionStatus: 'active' });
+      return Promise.resolve({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' });
     });
     queueMutations.addQueueItem
       .mockRejectedValueOnce(new Error('account A send failed'))
@@ -1657,7 +1665,9 @@ describe('QueueProvider local solo queue', () => {
     const rendered = await renderRestoredSession(snapshots);
     const heldSnapshot = deferred<unknown>();
     http.request.mockImplementation((operation: string) =>
-      operation.includes('GetSessionQueueState') ? heldSnapshot.promise : Promise.resolve({ sessionStatus: 'active' }),
+      operation.includes('GetSessionQueueState')
+        ? heldSnapshot.promise
+        : Promise.resolve({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' }),
     );
     queueMutations.addQueueItem.mockRejectedValueOnce(new Error('current-origin send failed'));
 
@@ -1691,7 +1701,7 @@ describe('QueueProvider local solo queue', () => {
     sessionStore.getStoredSessionId.mockResolvedValue('session-1');
     http.request.mockImplementation((operation: string) =>
       operation.includes('SessionStatus')
-        ? Promise.resolve({ sessionStatus: 'active' })
+        ? Promise.resolve({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' })
         : Promise.resolve({ createSession: { id: 'session-new' } }),
     );
     queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(null);
@@ -1800,7 +1810,7 @@ describe('QueueProvider local solo queue', () => {
       sessionStore.getStoredSessionId.mockResolvedValue('session-1');
       http.request.mockImplementation((operation: string) =>
         operation.includes('SessionStatus')
-          ? Promise.resolve({ sessionStatus: 'active' })
+          ? Promise.resolve({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' })
           : Promise.resolve({ createSession: { id: 'session-new' } }),
       );
       queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(null);
@@ -1834,7 +1844,7 @@ describe('QueueProvider local solo queue', () => {
       sessionStore.getStoredSessionId.mockResolvedValue('session-1');
       http.request.mockImplementation((operation: string) =>
         operation.includes('SessionStatus')
-          ? Promise.resolve({ sessionStatus: 'active' })
+          ? Promise.resolve({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' })
           : Promise.resolve({ createSession: { id: 'session-new' } }),
       );
       queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(null);
@@ -2139,7 +2149,7 @@ describe('QueueProvider local solo queue', () => {
       sessionStore.getStoredSessionId.mockResolvedValue('session-1');
       http.request.mockImplementation((operation: string) =>
         operation.includes('SessionStatus')
-          ? Promise.resolve({ sessionStatus: 'active' })
+          ? Promise.resolve({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' })
           : Promise.resolve({ createSession: { id: 'session-new' } }),
       );
       queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(null);
@@ -2345,7 +2355,7 @@ describe('QueueProvider local solo queue', () => {
     sessionStore.getStoredSessionId.mockResolvedValue('session-1');
     http.request.mockImplementation((operation: string) =>
       operation.includes('SessionStatus')
-        ? Promise.resolve({ sessionStatus: 'active' })
+        ? Promise.resolve({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' })
         : Promise.resolve({ createSession: { id: 'session-new' } }),
     );
     const itemA = makeQueueItem('item-a');
@@ -2385,7 +2395,7 @@ describe('QueueProvider local solo queue', () => {
     sessionStore.getStoredSessionId.mockResolvedValue('session-1');
     http.request.mockImplementation((operation: string) =>
       operation.includes('SessionStatus')
-        ? Promise.resolve({ sessionStatus: 'active' })
+        ? Promise.resolve({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' })
         : Promise.resolve({ createSession: { id: 'session-new' } }),
     );
     const thin = makeQueueItem('thin-item');

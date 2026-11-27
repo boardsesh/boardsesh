@@ -211,4 +211,5 @@ export const BOARD_IMAGE_DIMENSIONS: Record<BoardName, ImageDimensions> = {
   // stored per wall version in the private bucket and sized at upload — there is
   // no bundled image whose dimensions could be listed here.
   spray: {},
+  quantum: {},
 };

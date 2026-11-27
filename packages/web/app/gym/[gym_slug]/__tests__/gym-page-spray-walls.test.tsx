@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import React from 'react';
 import { getBoardDiscovery } from '@/app/lib/server-board-discovery';
 import type { Gym } from '@boardsesh/shared-schema';
+import { QUANTUM_MODELS, QUANTUM_RELEASED_MODELS, QUANTUM_SET_ID } from '@boardsesh/board-constants/quantum';
+import { APP_URL } from '@/app/lib/app-origin';
+import GymPopularClimbPreview from '@/app/components/gym-entity/gym-popular-climb-preview';
 
 /**
  * SW-14: a gym's spray walls on its public page.
@@ -18,6 +21,10 @@ import type { Gym } from '@boardsesh/shared-schema';
  */
 
 vi.mock('server-only', () => ({}));
+const visibility = vi.hoisted(() => ({ enabled: false }));
+vi.mock('@/app/lib/boards/board-visibility.server', () => ({
+  getBoardVisibilityFlags: async () => ({ 'quantum-board': visibility.enabled }),
+}));
 vi.mock('@/app/lib/server-board-discovery', () => ({ getBoardDiscovery: vi.fn(async () => []) }));
 
 class NotFoundSignal extends Error {}
@@ -156,6 +163,7 @@ const renderPage = (slug: string) =>
   GymPage({ params: Promise.resolve({ gym_slug: slug }), searchParams: Promise.resolve({}) });
 
 beforeEach(() => {
+  visibility.enabled = false;
   executeAuthenticatedGraphQL.mockReset();
   vi.mocked(getBoardDiscovery).mockResolvedValue([]);
 });
@@ -241,4 +249,74 @@ describe('gym front door essentials', () => {
       true,
     );
   });
+});
+
+const kilterBoard = {
+  uuid: 'kilter-board',
+  slug: 'kilter-wall',
+  name: 'Kilter Wall',
+  boardType: 'kilter',
+  layoutId: 1,
+  sizeId: 7,
+  setIds: '1,20',
+  angle: 40,
+};
+
+function quantumBoard(model: keyof typeof QUANTUM_MODELS) {
+  const { layoutId, sizeId, displayName } = QUANTUM_MODELS[model];
+  return {
+    uuid: `quantum-${model}-board`,
+    slug: `quantum-${model}-wall`,
+    name: `Quantum ${displayName}`,
+    boardType: 'quantum',
+    layoutId,
+    sizeId,
+    setIds: String(QUANTUM_SET_ID),
+    angle: 40,
+  };
+}
+
+it.each([false, true])('hands released Quantum boards off to the app when rollout is %s', async (enabled) => {
+  visibility.enabled = enabled;
+  const slug = `rollout-${enabled}`;
+  const released = QUANTUM_RELEASED_MODELS.map(quantumBoard);
+  const invalid = { ...quantumBoard('s'), slug: 'quantum-mismatched-wall', layoutId: QUANTUM_MODELS.xl.layoutId };
+  respondWith({ gym: gym(slug), boards: [...released, quantumBoard('belay'), invalid, kilterBoard] });
+
+  const hrefs = linkHrefs(await renderPage(slug));
+  const appOrigin = APP_URL.replace(/\/+$/, '');
+  for (const board of released) {
+    expect(hrefs.includes(`${appOrigin}/b/${board.slug}`)).toBe(enabled);
+    expect(hrefs.includes(`${appOrigin}/b/${board.slug}/${board.angle}/list`)).toBe(enabled);
+    expect(hrefs).not.toContain(`/b/${board.slug}`);
+    expect(hrefs).not.toContain(`/b/${board.slug}/${board.angle}/list`);
+  }
+  expect(hrefs.some((href) => /quantum-(belay|mismatched)-wall/.test(href))).toBe(false);
+  expect(hrefs).toContain('/b/kilter-wall');
+  expect(hrefs).toContain('/b/kilter-wall/40/list');
+});
+
+it('selects a renderable popular climb when an app-only board comes first', async () => {
+  visibility.enabled = true;
+  const slug = 'popular-climb';
+  const quantum = quantumBoard('s');
+  const venue = gym(slug);
+  respondWith({ gym: venue, boards: [quantum, kilterBoard] });
+  const discoveryDetails = {
+    gymUuid: venue.uuid,
+    gymName: venue.name,
+    gymSlug: slug,
+    locationName: null,
+    uniqueClimbers: 12,
+    currentClimb: null,
+    popularClimb: { uuid: 'popular', name: 'Local favourite', frames: 'p1r15', angle: 40 },
+  };
+  vi.mocked(getBoardDiscovery).mockResolvedValue([
+    { ...quantum, ...discoveryDetails },
+    { ...kilterBoard, ...discoveryDetails },
+  ]);
+
+  const previews = allElements(await renderPage(slug)).filter((element) => element.type === GymPopularClimbPreview);
+  expect(previews).toHaveLength(1);
+  expect(previews[0].props).toMatchObject({ board: { uuid: kilterBoard.uuid } });
 });

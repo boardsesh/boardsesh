@@ -15,7 +15,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const cryptoMock = vi.hoisted(() => {
   let counter = 0;
-  return { randomUUID: vi.fn(() => `uuid-${++counter}`) };
+  return {
+    randomUUID: vi.fn(() => `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}`),
+  };
 });
 
 const board = vi.hoisted(() => ({
@@ -31,6 +33,10 @@ const draftStore = vi.hoisted(() => ({ clearDraft: vi.fn(async () => {}) }));
 const edit = vi.hoisted(() => ({ climb: undefined as Record<string, unknown> | undefined }));
 const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn(), refreshAuthoredClimb: vi.fn() }));
 const router = vi.hoisted(() => ({ push: vi.fn() }));
+const quantum = vi.hoisted(() => ({
+  state: null as null | { status: 'connected' | 'disconnected'; isAvailable: boolean | null },
+  connect: vi.fn(),
+}));
 
 const createClimb = vi.hoisted(() => ({
   litUpHoldsMap: { 1: { state: 'STARTING' }, 2: { state: 'HAND' }, 3: { state: 'FINISH' } },
@@ -66,7 +72,8 @@ vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('expo-crypto', () => ({ randomUUID: cryptoMock.randomUUID }));
 vi.mock('expo-router', () => ({ useRouter: () => router }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('@tanstack/react-query', () => ({
+vi.mock('@tanstack/react-query', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-query')>()),
   useQueryClient: () => ({ invalidateQueries: cache.invalidateQueries }),
 }));
 // Partial: the controller now reads @boardsesh/board-config too, which imports
@@ -109,6 +116,10 @@ vi.mock('../../../providers/queue-provider', () => ({
 vi.mock('../../../providers/bluetooth-provider', () => ({
   useOptionalBluetoothContext: () => null,
 }));
+vi.mock('../../../providers/quantum-bluetooth-context', () => ({
+  useOptionalQuantumBluetoothState: () => quantum.state,
+  useOptionalQuantumBluetoothActions: () => (quantum.state ? { connect: quantum.connect } : null),
+}));
 vi.mock('../../../providers/toast-provider', () => ({
   useToast: () => ({ showToast: toast.showToast }),
 }));
@@ -144,6 +155,8 @@ import { climbToQueueItem, toClimbInput } from '../../../lib/climb-to-queue-item
 import { useCreateClimbScreen } from '../use-create-climb-screen';
 
 const kilterBoard = { boardName: 'kilter' as const, layoutId: 8, sizeId: 17, setIds: '26,27', angle: 40 };
+vi.mock('../../../providers/feature-flags-provider', () => ({ useFeatureFlag: () => true }));
+const quantumBoard = { boardName: 'quantum' as const, layoutId: 9101, sizeId: 9201, setIds: '1', angle: 25 };
 
 /** The queue item handed to setCurrentClimb by the last Set Active / save sync. */
 function lastQueuedItem(): ClimbQueueItem {
@@ -166,6 +179,8 @@ beforeEach(() => {
   cache.invalidateQueries.mockClear();
   draftStore.clearDraft.mockClear();
   createClimb.generateFramesString.mockReturnValue('p1r12p2r13p3r14');
+  quantum.state = null;
+  quantum.connect.mockReset();
 });
 
 describe('create-climb queue hand-off carries board identity', () => {
@@ -221,6 +236,83 @@ describe('create-climb queue hand-off carries board identity', () => {
     expect(climb.uuid).toBe('saved-1');
     expect(climb.boardType).toBe('kilter');
     expect(climb.layoutId).toBe(8);
+  });
+
+  it('carries the backend controller route UUID into a saved Quantum queue item', async () => {
+    const controllerRouteUuid = 'd83da8a9-68d2-48f8-9ac5-605d131e0940';
+    quantum.state = { status: 'connected', isAvailable: true };
+    board.saveClimb.mockResolvedValue({
+      uuid: 'saved-quantum',
+      controllerRouteUuid,
+      createdAt: null,
+      publishedAt: null,
+      isDraft: true,
+    });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: quantumBoard }));
+
+    act(() => result.current.setName('Quantum Project'));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(lastQueuedItem().climb.controllerRouteUuid).toBe(controllerRouteUuid);
+    act(() => result.current.wallControl.onPress());
+    expect(result.current.wallControl.controlsVisible).toBe(true);
+    expect(result.current.wallControl.controlClimbTarget?.controllerRouteUuid).toBe(controllerRouteUuid);
+  });
+
+  it('requires a confirmed save of edited Quantum holds before reusing its controller route', async () => {
+    const controllerRouteUuid = 'd83da8a9-68d2-48f8-9ac5-605d131e0940';
+    quantum.state = { status: 'connected', isAvailable: true };
+    board.saveClimb.mockResolvedValue({
+      uuid: 'saved-quantum',
+      controllerRouteUuid,
+      createdAt: null,
+      publishedAt: null,
+      isDraft: true,
+    });
+    board.updateClimb.mockResolvedValue({ uuid: 'saved-quantum' });
+    const { result, rerender } = renderHook(() => useCreateClimbScreen({ board: quantumBoard }));
+    act(() => result.current.setName('Quantum Project'));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    act(() => result.current.wallControl.onPress());
+    expect(result.current.wallControl.controlsVisible).toBe(true);
+    act(() => result.current.wallControl.closeControls());
+
+    createClimb.litUpHoldsMap = { 1: { state: 'STARTING' }, 2: { state: 'FINISH' }, 3: { state: 'HAND' } };
+    createClimb.frames = [createClimb.litUpHoldsMap];
+    createClimb.generateFramesString.mockReturnValue('p1r12p2r14p3r13');
+    rerender();
+    queue.setCurrentClimb.mockClear();
+    act(() => result.current.handleSetActive());
+    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+    act(() => result.current.wallControl.onPress());
+    expect(result.current.wallControl.controlsVisible).toBe(false);
+    expect(result.current.wallControl.controlClimbTarget).toBeNull();
+    expect(toast.showToast).toHaveBeenCalledWith('lightControl.quantum.saveFirst', 'info');
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    act(() => result.current.wallControl.onPress());
+    expect(result.current.wallControl.controlsVisible).toBe(true);
+    expect(result.current.wallControl.controlClimbTarget?.frames).toBe('p1r12p2r14p3r13');
+    expect(result.current.wallControl.controlClimbTarget?.controllerRouteUuid).toBe(controllerRouteUuid);
+  });
+
+  it('requires a persisted Quantum controller route before opening layer controls', () => {
+    quantum.state = { status: 'connected', isAvailable: true };
+    const { result } = renderHook(() => useCreateClimbScreen({ board: quantumBoard }));
+
+    act(() => result.current.setName('Unsaved Quantum Project'));
+    act(() => result.current.wallControl.onPress());
+
+    expect(result.current.wallControl.controlsVisible).toBe(false);
+    expect(result.current.wallControl.controlClimbTarget).toBeNull();
+    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(toast.showToast).toHaveBeenCalledWith('lightControl.quantum.saveFirst', 'info');
   });
 
   it('sends both toggled characteristics to saveClimb, and null when neither is set', async () => {

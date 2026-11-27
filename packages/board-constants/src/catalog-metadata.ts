@@ -1,6 +1,12 @@
 import { AURORA_BOARDS, type BoardName } from '@boardsesh/shared-schema';
-import { AURORA_PRODUCT_SIZES, IMAGE_FILENAMES, LAYOUTS, SETS } from './generated/product-sizes-data';
-import type { LayoutData, ProductSizeData, SetData, SizeEdges } from './types';
+import {
+  AURORA_PRODUCT_SIZES,
+  IMAGE_FILENAMES,
+  LAYOUTS as GENERATED_LAYOUTS,
+  SETS as GENERATED_SETS,
+} from './generated/product-sizes-data';
+import { QUANTUM_LAYOUTS, QUANTUM_PRODUCT_SIZES, QUANTUM_SETS } from './quantum';
+import type { LayoutData, ProductSizeData, ProductSizeWithEdges, SetData, SizeEdges } from './types';
 
 export type { LayoutData, ProductSizeData, SetData, SizeEdges } from './types';
 
@@ -48,9 +54,15 @@ export const PRODUCT_SIZES: Record<BoardName, Record<number, ProductSizeData>> =
   ...AURORA_PRODUCT_SIZES,
   moonboard: MOONBOARD_PRODUCT_SIZES,
   woods: WOODS_PRODUCT_SIZES,
+  quantum: QUANTUM_PRODUCT_SIZES,
 };
 
-export { LAYOUTS, SETS, IMAGE_FILENAMES };
+export const LAYOUTS: Record<BoardName, Record<number, LayoutData>> = {
+  ...GENERATED_LAYOUTS,
+  quantum: QUANTUM_LAYOUTS,
+};
+export const SETS: Record<BoardName, Record<string, SetData[]>> = { ...GENERATED_SETS, quantum: QUANTUM_SETS };
+export { IMAGE_FILENAMES };
 
 // The Kilter Original layout in Aurora's catalogue. Shared by build plans and
 // other consumers that distinguish Original from Homewall.
@@ -74,9 +86,23 @@ export const isKilterHomewallTallSizeId = (sizeId: number): boolean => KILTER_HO
 
 export const isKilterHomewallWideSizeId = (sizeId: number): boolean => KILTER_HOMEWALL_WIDE_SIZE_ID_SET.has(sizeId);
 
+/** Whether a product size has source-calibrated bounds safe for geometry math. */
+export const hasProductSizeEdges = (size: ProductSizeData): size is ProductSizeWithEdges => {
+  return (
+    size.edgeLeft !== null &&
+    size.edgeRight !== null &&
+    size.edgeBottom !== null &&
+    size.edgeTop !== null &&
+    Number.isFinite(size.edgeLeft) &&
+    Number.isFinite(size.edgeRight) &&
+    Number.isFinite(size.edgeBottom) &&
+    Number.isFinite(size.edgeTop)
+  );
+};
+
 export const getSizeEdges = (boardName: BoardName, sizeId: number): SizeEdges | null => {
   const size = PRODUCT_SIZES[boardName]?.[sizeId];
-  if (!size) return null;
+  if (!size || !hasProductSizeEdges(size)) return null;
 
   return {
     edgeLeft: size.edgeLeft,
@@ -118,6 +144,11 @@ export const getSizesForLayoutId = (boardName: BoardName, layoutId: number): Pro
   if (!layout) return [];
 
   const sizes = PRODUCT_SIZES[boardName];
+  const associatedSizeIds = new Set<number>();
+  for (const associationKey of Object.keys(SETS[boardName] ?? {})) {
+    const [associatedLayoutId, associatedSizeId] = associationKey.split('-').map(Number);
+    if (associatedLayoutId === layoutId && Number.isInteger(associatedSizeId)) associatedSizeIds.add(associatedSizeId);
+  }
   return Object.values(sizes).filter((size) => {
     // Basic product ID check
     if (size.productId !== layout.productId) return false;
@@ -126,7 +157,7 @@ export const getSizesForLayoutId = (boardName: BoardName, layoutId: number): Pro
     // Hide 'GrandMaster' (id: 1) in favor of 'GrandMaster with Tweeners' (id: 4)
     if (boardName === 'grasshopper' && size.id === 1) return false;
 
-    return true;
+    return associatedSizeIds.size === 0 || associatedSizeIds.has(size.id);
   });
 };
 
@@ -187,14 +218,17 @@ export const getTallWideScope = (boardName: BoardName, layoutId: number, sizeId:
   const layout = getLayout(boardName, layoutId);
   // A mismatched (layout, size) — a stale/crafted combo whose size belongs to a
   // different product than the layout — has no coherent family; fail closed.
-  if (!activeSize || !layout || activeSize.productId !== layout.productId) return EMPTY_TALL_WIDE_SCOPE;
+  if (!activeSize || !hasProductSizeEdges(activeSize) || !layout || activeSize.productId !== layout.productId)
+    return EMPTY_TALL_WIDE_SCOPE;
 
   const activeWidth = activeSize.edgeRight - activeSize.edgeLeft;
   const activeHeight = activeSize.edgeTop - activeSize.edgeBottom;
 
   // Whole product family (not getSizesForProduct, which drops a Grasshopper
   // duplicate for the picker) — the reference set needs every size class.
-  const family = Object.values(PRODUCT_SIZES[boardName] ?? {}).filter((size) => size.productId === layout.productId);
+  const family = Object.values(PRODUCT_SIZES[boardName] ?? {}).filter(
+    (size): size is ProductSizeWithEdges => size.productId === layout.productId && hasProductSizeEdges(size),
+  );
 
   const narrowerSizeIds = family.filter((size) => size.edgeRight - size.edgeLeft < activeWidth).map((size) => size.id);
   const shorterSizeIds = family.filter((size) => size.edgeTop - size.edgeBottom < activeHeight).map((size) => size.id);
@@ -247,6 +281,7 @@ export const getBoardSelectorOptions = () => {
     grasshopper: [],
     soill: [],
     woods: [],
+    quantum: [],
     spray: [],
   };
   const sizes: Record<string, { id: number; name: string; description: string }[]> = {};

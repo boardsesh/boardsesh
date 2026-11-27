@@ -1,3 +1,6 @@
+import { useQuery } from '@tanstack/react-query';
+import { useIsBoardConfigVisible } from '../../hooks/use-board-visibility';
+import { isQuantumClimbRetired } from '../../db/queries/quantum-climb-retirement';
 import { PlayTopChromeView } from './PlayTopChromeView';
 import { PlayStageView } from './PlayStageView';
 import { randomUUID } from 'expo-crypto';
@@ -35,7 +38,11 @@ import { configKey, getQueueBoardKey, isClimbOnReachableBoard } from '@boardsesh
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { boardSupportsMirroring } from '@boardsesh/play-view';
 import { BoardPresenceClientContext } from '@boardsesh/board-presence-react';
-import { formatRenderBoardLabel, resolveClimbRenderBoard } from '../../lib/boards/climb-render-board';
+import {
+  formatRenderBoardLabel,
+  isClimbBoardAvailable,
+  resolveClimbRenderBoard,
+} from '../../lib/boards/climb-render-board';
 import {
   findGymBoardToConnectForClimb,
   gymBoardButtonName,
@@ -204,7 +211,7 @@ import { useMiniPlayerMirrorsPlayer } from './use-mini-player-mirrors';
 import { isWallPresenceTrusted, usePresenceFresh } from '../../lib/board-presence/presence-freshness';
 import { resolvePlayerAngle } from './player-angle';
 import { activeBoardIsMoonboard } from '../../hooks/use-active-board-is-moonboard';
-import { isMoonboardBoardName } from '@boardsesh/board-config';
+import { isMoonboardBoardName, supportsPublicClimbLinks } from '@boardsesh/board-config';
 import { LostHoldsBanner } from './LostHoldsBanner';
 import { useLostHoldRemix } from './use-lost-hold-remix';
 import { getBoardRenderData } from '../../lib/board-details';
@@ -623,7 +630,21 @@ export function PlayCore({
     setSwitchBoardCardHeight((previous) => (Math.abs(previous - measured) > 1 ? measured : previous));
   }, []);
 
-  const displayedQueueItem = drawerPreviewItem ?? currentClimbQueueItem;
+  const pendingDisplayItem = drawerPreviewItem ?? currentClimbQueueItem;
+  const isBoardConfigVisible = useIsBoardConfigVisible();
+  const displayBoardAvailable = isClimbBoardAvailable(pendingDisplayItem?.climb, boardConfig, isBoardConfigVisible);
+  const quantumClimbUuid =
+    displayBoardAvailable && (boardConfig.boardName === 'quantum' || pendingDisplayItem?.climb.boardType === 'quantum')
+      ? pendingDisplayItem?.climb.uuid
+      : undefined;
+  const retirement = useQuery({
+    queryKey: ['climb', 'quantumRetirement', quantumClimbUuid],
+    queryFn: () => isQuantumClimbRetired(quantumClimbUuid!),
+    enabled: !!quantumClimbUuid,
+    networkMode: 'always',
+  });
+  const displayedQueueItem =
+    displayBoardAvailable && (!quantumClimbUuid || retirement.data === false) ? pendingDisplayItem : null;
   const displayedClimb = displayedQueueItem?.climb;
   // The slot ⋯ → Play next moves when the same climb is queued twice.
   const displayedQueueItemUuid = displayedQueueItem?.uuid;
@@ -892,6 +913,7 @@ export function PlayCore({
     lit: lightbulbActive,
     localConnected: radioConnected,
     pending: lightbulbPending,
+    available: lightbulbAvailable,
     onPress: handleLightbulb,
     connect: connectRadio,
     moveToClimbBoard: moveLightbulbToClimbBoard,
@@ -901,6 +923,7 @@ export function PlayCore({
     ledless: boardIsLedless,
   } = useLightbulbControl({
     surface: 'play_drawer',
+    onOpenControls: () => setBleControlVisible(true),
     onRelayToHolder: handleRelayToHolder,
     canRelay: canRelayToHolder,
   });
@@ -1902,6 +1925,8 @@ export function PlayCore({
     source: 'play_drawer',
     analyticsContext: actionsAnalytics,
   });
+  // TODO(#7918): enable public links once runtime board geometry renders on www.
+  const canShareDisplayedClimb = !displayedClimbIsDraft && supportsPublicClimbLinks(boardName);
 
   // A draft is visible to its setter alone: a share link opens nowhere for
   // anyone else, and the only person who can report it is the setter (#5960).
@@ -3222,7 +3247,7 @@ export function PlayCore({
       // uuid they do not have and whose first-ever visit would
       // open with a pairing prompt. Anonymous wall lighting is
       // its own feature (#4606), not a v1 side effect.
-      showLightbulb={bluetooth !== null}
+      showLightbulb={lightbulbAvailable}
       hasWall={playerHasWall}
       // The back chip owns the driver's face whenever it renders
       // the avatar; suppress the bulb's pip so the same face never
@@ -3248,7 +3273,7 @@ export function PlayCore({
       onOpenQueue={handleOpenQueueFromBar}
       onPlayNext={handlePlayNext}
       playNextDisabled={displayedClimbUuid === currentClimbQueueItem?.climb.uuid}
-      onShare={displayedClimbIsDraft ? undefined : handleShare}
+      onShare={canShareDisplayedClimb ? handleShare : undefined}
       onTickPress={handleTickFabPress}
       onTickLongPress={handleTickFabLongPress}
       viewer={viewer}

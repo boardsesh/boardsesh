@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act, renderHook } from '@testing-library/react';
+import { act, waitFor } from '@testing-library/react';
+import { renderHookWithQueryClient as renderHook } from './test-query-client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource, PlaylistTrackResume } from '@boardsesh/queue';
 import type { TrackPosition } from '@boardsesh/play-view';
@@ -29,6 +30,11 @@ const targets = vi.hoisted(() => ({
   // Where the climb it steps from stands on the list.
   position: { kind: 'off' } as TrackPosition,
 }));
+const quantum = vi.hoisted(() => ({ enabled: true, isRetired: vi.fn<(climbUuid: string) => Promise<boolean>>() }));
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useFeatureFlag: (key: string) => key === 'quantum-board' && quantum.enabled,
+}));
+vi.mock('../../../db/queries/quantum-climb-retirement', () => ({ isQuantumClimbRetired: quantum.isRetired }));
 const settings = vi.hoisted(() => ({ alwaysDrive: false }));
 const drawer = vi.hoisted(() => ({ openPlayDrawer: vi.fn() }));
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
@@ -38,6 +44,12 @@ vi.mock('../../../providers/queue-provider', () => ({
     nextClimb: queue.nextClimb,
     previousClimb: queue.previousClimb,
     setCurrentClimb: queue.setCurrentClimb,
+    getQueueSnapshot: () => ({
+      queue: queue.items,
+      currentClimbQueueItem: queue.current,
+      playlistSuggestionSource: queue.source,
+      historyCount: queue.historyCount,
+    }),
   }),
   useQueueData: () => ({
     queue: queue.items,
@@ -47,12 +59,24 @@ vi.mock('../../../providers/queue-provider', () => ({
   usePlaylistSuggestionSource: () => queue.source,
   useIsSharedSession: () => queue.inSharedSession,
 }));
-vi.mock('../../../providers/queue/use-reachable-board-keys', () => ({ useReachableBoardKeys: () => new Set() }));
+vi.mock('../../../providers/queue/use-reachable-board-keys', () => {
+  const reachable = new Set();
+  return { useReachableBoardKeys: () => reachable };
+});
 vi.mock('../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({ openPlayDrawer: drawer.openPlayDrawer, boardConfig: null }),
 }));
-vi.mock('../../../lib/boards/climb-render-board', () => ({ resolveClimbRenderBoard: () => null }));
-vi.mock('../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: null }) }));
+vi.mock('../../../lib/boards/climb-render-board', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../lib/boards/climb-render-board')>();
+  return {
+    ...actual,
+    resolveClimbRenderBoard: (...args: Parameters<typeof actual.resolveClimbRenderBoard>) =>
+      args[0]?.boardType === 'quantum' ? actual.resolveClimbRenderBoard(...args) : null,
+  };
+});
+vi.mock('../../../lib/graphql/use-active-board', () => ({
+  useActiveBoard: () => ({ data: null, isBoardSelectionCurrent: () => true }),
+}));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../lib/analytics', () => ({ track: analytics.track }));
 vi.mock('../../../lib/playlists/track-pager', () => ({ canLoadMoreOfTrack: () => targets.canLoadMore }));
@@ -135,6 +159,8 @@ function makeItem(uuid: string): ClimbQueueItem {
 
 describe('useMiniPlayerNavigation', () => {
   beforeEach(() => {
+    quantum.enabled = true;
+    quantum.isRetired.mockReset().mockResolvedValue(false);
     queue.items = [];
     queue.historyCount = 0;
     targets.position = { kind: 'off' };
@@ -155,6 +181,83 @@ describe('useMiniPlayerNavigation', () => {
     resetDriveModeForTests();
     drawer.openPlayDrawer.mockClear();
     analytics.track.mockClear();
+  });
+
+  function quantumItem(uuid: string): ClimbQueueItem {
+    const item = makeItem(uuid);
+    return { ...item, climb: { ...item.climb, boardType: 'quantum', layoutId: 9104, compatibleSizeIds: [9204] } };
+  }
+
+  it('does not drive onto a retired next climb and keeps its queue occurrence', async () => {
+    driveAlways();
+    const retiredItem = quantumItem('retired');
+    targets.nextItem = retiredItem;
+    queue.items = [queue.current!, retiredItem];
+    quantum.isRetired.mockResolvedValue(true);
+    const { result } = renderHook(() => useMiniPlayerNavigation());
+    await act(async () => result.current.onNext());
+
+    expect(result.current.canNext).toBe(false);
+    expect(queue.nextClimb).not.toHaveBeenCalled();
+    expect(navigationEvents()).toHaveLength(0);
+    expect(queue.items).toContain(retiredItem);
+  });
+
+  it('continues to drive to available Quantum neighbours and uses normal queue navigation', async () => {
+    driveAlways();
+    const previousItem = quantumItem('available');
+    targets.prevItem = previousItem;
+    queue.items = [previousItem, queue.current!];
+    const { result } = renderHook(() => useMiniPlayerNavigation());
+    await waitFor(() => expect(result.current.canPrevious).toBe(true));
+    await act(async () => result.current.onPrevious());
+
+    expect(queue.previousClimb).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a stale Next tap from before a retired Quantum neighbour took the slot', () => {
+    driveAlways();
+    const kilterItem = makeItem('old-kilter-neighbour');
+    targets.nextItem = kilterItem;
+    queue.items = [queue.current!, kilterItem];
+    const { result } = renderHook(() => useMiniPlayerNavigation());
+    const staleNext = result.current.onNext;
+    const retiredItem = quantumItem('retired');
+    targets.nextItem = retiredItem;
+    queue.items = [queue.current!, retiredItem];
+    quantum.isRetired.mockResolvedValue(true);
+
+    act(staleNext);
+
+    expect(queue.nextClimb).not.toHaveBeenCalled();
+    expect(quantum.isRetired).not.toHaveBeenCalled();
+    expect(navigationEvents()).toHaveLength(0);
+    expect(queue.items).toContain(retiredItem);
+  });
+
+  it('drops the drive step if the queue changes while the local check is pending', async () => {
+    driveAlways();
+    const checkedItem = quantumItem('checked');
+    targets.nextItem = checkedItem;
+    queue.items = [queue.current!, checkedItem];
+    const { result } = renderHook(() => useMiniPlayerNavigation());
+    await waitFor(() => expect(result.current.canNext).toBe(true));
+    let completeRead: (retired: boolean) => void = () => {};
+    quantum.isRetired.mockReturnValueOnce(
+      new Promise((resolve) => {
+        completeRead = resolve;
+      }),
+    );
+    act(result.current.onNext);
+    expect(quantum.isRetired).toHaveBeenCalledTimes(2);
+
+    // The provider's live snapshot moved before the component could re-render.
+    targets.nextItem = quantumItem('unchecked');
+    queue.items = [queue.current!, targets.nextItem];
+    await act(async () => completeRead(false));
+
+    expect(queue.nextClimb).not.toHaveBeenCalled();
+    expect(navigationEvents()).toHaveLength(0);
   });
 
   function navigationEvents() {

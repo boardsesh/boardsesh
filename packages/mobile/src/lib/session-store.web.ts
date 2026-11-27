@@ -5,12 +5,16 @@ import { parseStoredSessionVisibility, serializeSessionVisibility } from './sess
 import { userScopedStorageKey } from './user-storage-owner.web';
 import type { UserStorageOwner } from './user-storage-owner';
 
-export async function getStoredSessionId(owner?: UserStorageOwner | null): Promise<string | null> {
+export async function getStoredSessionId(
+  owner?: UserStorageOwner | null,
+  options?: { requireReadable?: boolean },
+): Promise<string | null> {
   const storageKey = userScopedStorageKey(SESSION_ID_KEY, owner);
   if (!storageKey) return null;
   try {
     return await SecureStore.getItemAsync(storageKey);
-  } catch {
+  } catch (error) {
+    if (options?.requireReadable) throw error;
     return null;
   }
 }

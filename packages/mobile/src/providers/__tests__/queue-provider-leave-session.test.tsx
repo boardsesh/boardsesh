@@ -197,7 +197,9 @@ describe('QueueProvider clearSession notifyServer', () => {
     // keep the stored session active so these tests land in-session before
     // clearSession.
     http.request.mockImplementation(async (operation: unknown) =>
-      operationText(operation).includes('SessionStatus') ? { sessionStatus: 'active' } : {},
+      operationText(operation).includes('SessionStatus')
+        ? { sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' }
+        : {},
     );
     graph.execute.mockReset();
     // joinSession resolves the active session; leaveSession resolves true.
@@ -278,7 +280,7 @@ describe('QueueProvider clearSession notifyServer', () => {
       // itself — otherwise the restore guard sees no status and clears the
       // stored session before the test gets in-session.
       if (queryText.includes('SessionStatus')) {
-        return Promise.resolve({ sessionStatus: 'active' });
+        return Promise.resolve({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' });
       }
       if (queryText.includes('GetSession')) {
         return Promise.resolve({ session: { id: 'session-1', endedAt: null } });
@@ -338,7 +340,8 @@ describe('QueueProvider clearSession notifyServer', () => {
     await waitFor(() => expect(snapshots.at(-1)?.sessionId).toBe('session-1'));
 
     http.request.mockImplementation(async (operation: unknown) => {
-      if (operationText(operation).includes('SessionStatus')) return { sessionStatus: 'active' };
+      if (operationText(operation).includes('SessionStatus'))
+        return { sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' };
       if (operationText(operation).includes('endSession')) throw new Error('Only the session creator can end this');
       return {};
     });

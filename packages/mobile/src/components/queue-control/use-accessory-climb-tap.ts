@@ -28,8 +28,8 @@ export type AccessoryClimbTap = {
 };
 
 export function useAccessoryClimbTap(): AccessoryClimbTap {
-  const { openPlayDrawer } = useDrawerHost();
-  const { item, pick } = useBarClimb();
+  const { openPlayDrawer, boardConfig } = useDrawerHost();
+  const { item, pick } = useBarClimb(boardConfig);
 
   // The preview's own item, not the bar's drawn copy: the player puts the flip back itself.
   const accessoryClimb = item?.climb ?? null;

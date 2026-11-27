@@ -1,3 +1,4 @@
+import { QUANTUM_BOARD_FLAG } from '@boardsesh/board-config/visibility';
 // FeatureFlagsProvider — mirrors `packages/web/app/components/providers/feature-flags-provider.tsx`.
 // Mobile reads live PostHog flags when the SDK is available, accepts an
 // optional `flags` prop as a local/dev/emergency override, and falls back to an
@@ -74,6 +75,12 @@ export type FeatureFlagDefinition = {
 };
 
 export const FEATURE_FLAG_DEFINITIONS = [
+  {
+    key: QUANTUM_BOARD_FLAG,
+    label: 'Quantum Board',
+    description: 'Show Quantum Board in board discovery and setup. Off or unresolved keeps it hidden.',
+    defaultEnabled: false,
+  },
   {
     key: 'app-workouts',
     label: 'Partner workouts',

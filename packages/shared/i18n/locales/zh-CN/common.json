@@ -953,7 +953,34 @@
     "turnOffAll": "关闭所有灯光",
     "lightAdjacentHolds": "点亮上方岩点",
     "lightAdjacentHoldsHelp": "在每个已点亮的起步点和手点上方添加较暗的 LED。需要支持额外 LED 功能的 MoonBoard 控制器。",
-    "disconnect": "断开训练板连接"
+    "disconnect": "断开训练板连接",
+    "quantum": {
+      "open": "打开 Quantum 图层",
+      "layerTitle": "{{color}}图层",
+      "layerAction": "{{color}}图层：{{action}}",
+      "colors": {
+        "green": "绿色",
+        "cyan": "青色",
+        "magenta": "品红色",
+        "yellow": "黄色"
+      },
+      "light": "点亮此线路",
+      "replace": "替换为此线路",
+      "foreign": "其他攀岩者正在使用",
+      "boardFull": "墙上的四个图层均已占用",
+      "noClimb": "选择要点亮的线路",
+      "routeMissing": "此线路没有控制器线路标识",
+      "saveFirst": "请先保存此线路，再点亮岩点",
+      "geometryMissing": "此线路的 LED 位置尚未就绪",
+      "tooManyHolds": "此线路超过了 Boardsesh 的 92 盏灯限制",
+      "actionFailed": "无法更新攀岩墙。请刷新后重试。",
+      "multiFrameUnsupported": "Quantum 暂不支持点亮多帧线路",
+      "active": "已在岩壁上点亮",
+      "remove": "关闭我的灯光",
+      "removeColor": "关闭我的{{color}}灯光",
+      "invalidFrames": "无法读取这条线路的岩点",
+      "sessionDriver": "发起本次活动的手机负责控制灯光"
+    }
   },
   "bluetooth": {
     "boardNotFound": "找不到你的训练板。请确认已开启并在附近；如另一部手机已连接，请先在那部手机上断开。",

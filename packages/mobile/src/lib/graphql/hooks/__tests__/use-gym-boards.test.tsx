@@ -20,6 +20,9 @@ import type { GetMyBoardsQueryResponse } from '../../operations';
 import { shouldRetryQuery } from '../../query-retry';
 import { gymBoardsQueryKey, GYM_BOARDS_QUERY_KEY, myBoardsQueryKey } from '../../query-keys';
 
+const rollout = vi.hoisted(() => ({ enabled: false }));
+vi.mock('../../../../providers/feature-flags-provider', () => ({ useFeatureFlag: () => rollout.enabled }));
+
 const requestMock = vi.hoisted(() => vi.fn());
 vi.mock('../../client', () => ({ getHttpClient: () => ({ request: requestMock }) }));
 
@@ -85,10 +88,29 @@ function pendingRequest() {
 }
 
 beforeEach(() => {
+  rollout.enabled = false;
   requestMock.mockReset();
 });
 
 describe('useGymBoards', () => {
+  it('hides Quantum in cached gym rosters until enabled and preserves the raw response', async () => {
+    const quantum = makeBoard({ uuid: 'quantum', boardType: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' });
+    const kilter = makeBoard({ uuid: 'kilter' });
+    requestMock.mockResolvedValue({ gymBoards: [quantum, kilter] });
+    const { queryClient, Wrapper } = makeWrapper();
+    const { result, rerender } = renderHook(() => useGymBoards(GYM_UUID), { wrapper: Wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual([kilter]);
+    expect(queryClient.getQueryData(gymBoardsQueryKey(GYM_UUID))).toEqual({ gymBoards: [quantum, kilter] });
+    rollout.enabled = true;
+    rerender();
+    expect(result.current.data).toEqual([quantum, kilter]);
+    rollout.enabled = false;
+    rerender();
+    expect(result.current.data).toEqual([kilter]);
+    expect(requestMock).toHaveBeenCalledTimes(1);
+  });
+
   it('stays disabled until a gym uuid resolves', async () => {
     const { Wrapper } = makeWrapper();
     const { result } = renderHook(() => useGymBoards(null), { wrapper: Wrapper });

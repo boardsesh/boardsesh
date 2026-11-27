@@ -23,6 +23,8 @@ export const climbTypeDefs = /* GraphQL */ `
     description: String
     "Encoded hold positions and colors for lighting up the board"
     frames: String!
+    "External route identifier understood by the physical board controller. Null for boards that use the Boardsesh climb UUID directly."
+    controllerRouteUuid: ID
     "The angle the climber is browsing at. Named for the set angle historically, but every producer stamps the browsed angle here, and ticks, the queue and the BLE spill guard all key on that. See statsAngle for where the numbers below came from."
     angle: Int!
     "The angle the grade, ascents and quality on this climb were actually read from. Equals angle normally; differs when the browsed angle had no stats row and the climb own set angle supplied them: in a search that set ClimbSearchInput.crossAngleStats (issue #5405), in a by-name search on Woods, and on the Woods climb detail read (issue #5642). Null when the climb has no stats at any angle, i.e. a genuine project. Display only: show it beside the grade when it differs, never key on it. Deliberately absent from ClimbInput, so a queued climb carries no set-angle marker, because adding a field there means changing four lists at once (see queue-climb-field-contract.test.ts) and the marker is not worth that."
@@ -168,6 +170,8 @@ export const climbTypeDefs = /* GraphQL */ `
     name: String!
     description: String
     frames: String!
+    "External route identifier understood by the physical board controller."
+    controllerRouteUuid: ID
     angle: Int!
     ascensionist_count: Int!
     difficulty: String!
@@ -324,6 +328,10 @@ export const climbTypeDefs = /* GraphQL */ `
     zoneBox: ZoneBoxInput
     "How the zone should match climb holds. Defaults to allHolds when omitted."
     zoneMode: ZoneMatchMode
+    "Occupied placement IDs from a confirmed Quantum controller roster. Controller identities are never sent."
+    occupiedPlacementIds: [Int!]
+    "Maximum occupied holds a climb may share: 0 for none, 1 for at most one. Omit to disable."
+    maxOccupiedOverlap: Int
   }
 
   """

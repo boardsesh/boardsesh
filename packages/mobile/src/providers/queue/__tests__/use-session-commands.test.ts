@@ -18,6 +18,7 @@ import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
 const mocks = vi.hoisted(() => ({
+  quantumEnabled: false,
   storedActiveBoard: null as UserBoard | null,
   boardRead: null as (() => Promise<UserBoard | null>) | null,
   activeBoardGeneration: 0,
@@ -28,10 +29,23 @@ const mocks = vi.hoisted(() => ({
   execute: vi.fn(() => Promise.resolve({})),
   request: vi.fn(),
   rememberPartnerWorkout: vi.fn(async (_sessionId: string, _workoutId: string) => undefined),
+  setStoredCreatedSessionId: vi.fn((_sessionId: string) => Promise.resolve()),
+  rememberStartedQuantumSessionPlayer: vi.fn(),
   setStoredSessionId: vi.fn((_sessionId: string) => Promise.resolve()),
   setStoredSessionVisibility: vi.fn((_sessionId: string, _isPublic: boolean) => Promise.resolve()),
 }));
 
+vi.mock('../../feature-flags-provider', () => ({
+  useFeatureFlag: (flag: string) => flag === 'quantum-board' && mocks.quantumEnabled,
+}));
+
+beforeEach(() => {
+  mocks.quantumEnabled = false;
+});
+
+vi.mock('../../../lib/ble/quantum-layer-identity-store', () => ({
+  rememberStartedQuantumSessionPlayer: mocks.rememberStartedQuantumSessionPlayer,
+}));
 vi.mock('../../../lib/pending-workout-store', () => ({
   rememberPartnerWorkout: mocks.rememberPartnerWorkout,
   clearActivePartnerWorkout: vi.fn(async () => undefined),
@@ -60,7 +74,7 @@ vi.mock('../../../lib/graphql/extract-error-message', () => ({
 vi.mock('../../../lib/session-store', () => ({
   clearStoredCreatedSessionId: mocks.clearStoredCreatedSessionId,
   clearStoredSessionId: mocks.clearStoredSessionId,
-  setStoredCreatedSessionId: () => Promise.resolve(),
+  setStoredCreatedSessionId: mocks.setStoredCreatedSessionId,
   setStoredSessionId: mocks.setStoredSessionId,
   setStoredSessionVisibility: mocks.setStoredSessionVisibility,
 }));
@@ -106,7 +120,7 @@ function homeBoard(): UserBoard {
   } as unknown as UserBoard;
 }
 
-function renderSessionCommands() {
+function renderSessionCommands(options?: Pick<SessionCommandsParams, 'joinConfirmedSession'>) {
   const params = {
     showToast: vi.fn(),
     t: (key: string) => key,
@@ -115,13 +129,16 @@ function renderSessionCommands() {
     setQueueMutation: vi.fn(() => Promise.resolve()),
     seedFailedSessionIdRef: { current: null },
     setSessionId: vi.fn(),
-    sessionIdRef: { current: null },
+    sessionIdRef: { current: null as string | null },
+    authenticatedUserIdRef: { current: 'account-a' },
     onSessionContextChanging: vi.fn(),
+    beginSessionLeave: vi.fn(() => vi.fn()),
     dispatch: vi.fn(),
     setPlaylistSuggestionSourceState: vi.fn(),
     setActiveBoard: vi.fn(() => Promise.resolve(true)),
     locallyEndingSessionIdRef: { current: null },
     suppressedRemoteEndSessionIdRef: { current: null },
+    ...options,
   };
   return { ...renderHook(() => useSessionCommands(params as unknown as SessionCommandsParams)), params };
 }
@@ -137,6 +154,8 @@ describe('useSessionCommands — createSessionWithConfig boardPath', () => {
     mocks.storedActiveBoard = null;
     mocks.request.mockReset().mockResolvedValue({ createSession: { id: 'session-1' } });
     mocks.setStoredSessionId.mockClear();
+    mocks.setStoredCreatedSessionId.mockClear();
+    mocks.rememberStartedQuantumSessionPlayer.mockReset().mockResolvedValue(undefined);
     mocks.clearStoredQueueSnapshot.mockClear();
   });
 
@@ -160,6 +179,34 @@ describe('useSessionCommands — createSessionWithConfig boardPath', () => {
     });
 
     expect(lastCreatedBoardPath()).toBe('kilter/8/17/27,28/40');
+  });
+
+  it('creates one Quantum session credential only after saving creator-device provenance', async () => {
+    mocks.quantumEnabled = true;
+    mocks.storedActiveBoard = { ...homeBoard(), boardType: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' };
+    const { result } = renderSessionCommands();
+    await act(async () => {
+      expect(await result.current.createSessionWithConfig()).toBe('session-1');
+    });
+    expect(mocks.setStoredCreatedSessionId).toHaveBeenCalledOnce();
+    expect(mocks.rememberStartedQuantumSessionPlayer).toHaveBeenCalledWith(
+      { sessionId: 'session-1', accountId: 'account-a' },
+      expect.any(Function),
+    );
+    expect(mocks.setStoredCreatedSessionId.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.rememberStartedQuantumSessionPlayer.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('does not create a Quantum session or player while the rollout is disabled', async () => {
+    mocks.storedActiveBoard = { ...homeBoard(), boardType: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' };
+    const { result } = renderSessionCommands();
+    await act(async () => {
+      expect(await result.current.createSessionWithConfig()).toBeNull();
+    });
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(mocks.setStoredCreatedSessionId).not.toHaveBeenCalled();
+    expect(mocks.rememberStartedQuantumSessionPlayer).not.toHaveBeenCalled();
   });
 
   it('keeps a personal ledless wall and its capability when another climber joins', async () => {
@@ -205,6 +252,39 @@ describe('useSessionCommands — createSessionWithConfig boardPath', () => {
     expect(joiner.params.onSessionContextChanging.mock.invocationCallOrder[0]).toBeLessThan(
       joiner.params.setSessionId.mock.invocationCallOrder[0],
     );
+  });
+
+  it.each([true, false])('updates the current room only after a guarded join accepts: %s', async (accepted) => {
+    let finishJoin: (accepted: boolean) => void = () => {};
+    const pendingAcceptance = new Promise<boolean>((resolve) => {
+      finishJoin = resolve;
+    });
+    const joinConfirmedSession: NonNullable<SessionCommandsParams['joinConfirmedSession']> = async (_, commit) =>
+      (await pendingAcceptance) && commit();
+    const { result, params } = renderSessionCommands({ joinConfirmedSession });
+    params.sessionIdRef.current = 'session-current';
+    const boardPath = 'kilter/8/17/27,28/40';
+    const joining = result.current.joinSession('session-next', {
+      boardPath,
+      expectedBoardPath: boardPath,
+      userBoard: homeBoard(),
+    });
+
+    expect(params.sessionIdRef.current).toBe('session-current');
+    expect(params.setActiveBoard).not.toHaveBeenCalled();
+    expect(params.setSessionId).not.toHaveBeenCalled();
+    expect(mocks.setStoredSessionId).not.toHaveBeenCalled();
+    expect(params.dispatch).not.toHaveBeenCalled();
+
+    await act(async () => {
+      finishJoin(accepted);
+      expect(await joining).toBe(accepted);
+    });
+
+    expect(params.sessionIdRef.current).toBe(accepted ? 'session-next' : 'session-current');
+    expect(params.setActiveBoard).toHaveBeenCalledTimes(Number(accepted));
+    expect(mocks.setStoredSessionId).toHaveBeenCalledTimes(Number(accepted));
+    expect(params.dispatch).toHaveBeenCalledTimes(Number(accepted));
   });
 
   it('does not claim the session after the auth generation expires during active-board persistence', async () => {
@@ -347,6 +427,9 @@ describe('clearSession after active board removal', () => {
       leaving = result.current.clearSession({ notifyServer: true });
     });
     expect(params.onSessionContextChanging).toHaveBeenCalledTimes(1);
+    expect(params.beginSessionLeave).toHaveBeenCalledTimes(1);
+    const settleLeave = params.beginSessionLeave.mock.results[0].value;
+    expect(settleLeave).not.toHaveBeenCalled();
     expect(params.dispatch).not.toHaveBeenCalled();
     sessionRef.current = 'new-room';
     await act(async () => {
@@ -354,6 +437,7 @@ describe('clearSession after active board removal', () => {
       await leaving;
     });
     expect(sessionRef.current).toBe('new-room');
+    expect(settleLeave).toHaveBeenCalledOnce();
     expect(params.dispatch).not.toHaveBeenCalled();
     expect(mocks.clearStoredQueueSnapshot).not.toHaveBeenCalled();
   });
@@ -421,6 +505,30 @@ describe('partner initial seed recovery', () => {
     mocks.rememberPartnerWorkout.mockClear();
     mocks.setStoredSessionId.mockClear();
     mocks.clearStoredQueueSnapshot.mockClear();
+  });
+
+  it('never mints a driver when two phones receive the same partner Start session', async () => {
+    mocks.quantumEnabled = true;
+    mocks.storedActiveBoard = { ...homeBoard(), boardType: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' };
+    mocks.rememberStartedQuantumSessionPlayer.mockClear();
+    mocks.request.mockResolvedValue({
+      createSession: {
+        id: 'original-session',
+        isPublic: false,
+        queueState: { sequence: 1, queue: [], currentClimbQueueItem: null },
+      },
+    });
+    const firstPhone = renderSessionCommands();
+    const secondPhone = renderSessionCommands();
+    await act(async () => {
+      await expect(
+        Promise.all([
+          firstPhone.result.current.createSessionWithConfig({ appWorkoutId: 'wk', appWorkoutSeed: seed }),
+          secondPhone.result.current.createSessionWithConfig({ appWorkoutId: 'wk', appWorkoutSeed: seed }),
+        ]),
+      ).resolves.toEqual(['original-session', 'original-session']);
+    });
+    expect(mocks.rememberStartedQuantumSessionPlayer).not.toHaveBeenCalled();
   });
 
   it('after a lost response, hydrates only the original server winner without seeding again', async () => {

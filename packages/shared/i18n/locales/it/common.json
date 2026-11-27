@@ -947,13 +947,64 @@
       "hideCard": "Nascondi questa scheda",
       "settingTitle": "Mostra le richieste di sostegno",
       "settingFooter": "Una voce Sostieni Boardsesh in Account e una scheda in Home nella prima settimana di ogni mese."
-    }
+    },
+    "more": {
+      "accessibility": {
+        "mode": {},
+        "sliders": {},
+        "shapes": {},
+        "preview": {},
+        "cvd": {},
+        "compare": {},
+        "brush": {},
+        "size": {},
+        "roles": {}
+      },
+      "storage": {},
+      "appearance": {},
+      "gradeFormat": {},
+      "displayOptions": {},
+      "offline": {},
+      "language": {},
+      "diagnostics": {},
+      "integrations": {},
+      "syncIssues": {},
+      "signOut": {}
+    },
+    "previewChannels": {}
   },
   "lightControl": {
     "turnOffAll": "Spegni tutte le luci",
     "lightAdjacentHolds": "Illumina la presa sopra",
     "lightAdjacentHoldsHelp": "Aggiunge un LED più tenue sopra ogni presa di partenza e intermedia illuminata. Richiede un controller MoonBoard con la funzione LED aggiuntivo.",
-    "disconnect": "Disconnetti il pannello"
+    "disconnect": "Disconnetti il pannello",
+    "quantum": {
+      "open": "Apri i livelli Quantum",
+      "layerTitle": "Livello {{color}}",
+      "layerAction": "Livello {{color}}: {{action}}",
+      "colors": {
+        "green": "Verde",
+        "cyan": "Ciano",
+        "magenta": "Magenta",
+        "yellow": "Giallo"
+      },
+      "light": "Illumina questo blocco",
+      "replace": "Sostituisci con questo blocco",
+      "foreign": "In uso da un altro climber",
+      "boardFull": "Tutti e quattro i livelli del pannello sono occupati",
+      "noClimb": "Scegli un blocco da illuminare",
+      "routeMissing": "Questo blocco non ha un identificativo per il controller",
+      "saveFirst": "Salva questo blocco prima di illuminarlo",
+      "geometryMissing": "Le posizioni dei LED non sono pronte per questo blocco",
+      "tooManyHolds": "Questo blocco supera il limite di 92 luci di Boardsesh",
+      "actionFailed": "Impossibile aggiornare il pannello. Aggiorna e riprova.",
+      "multiFrameUnsupported": "I blocchi con più sequenze non possono ancora essere illuminati su Quantum",
+      "active": "Illuminato in parete",
+      "remove": "Spegni le mie luci",
+      "removeColor": "Spegni le mie luci ({{color}})",
+      "invalidFrames": "Impossibile leggere le prese del blocco",
+      "sessionDriver": "Il telefono che ha avviato la sessione controlla le luci"
+    }
   },
   "bluetooth": {
     "boardNotFound": "Impossibile trovare il tuo pannello. Controlla che sia acceso e vicino; se un altro telefono è connesso, disconnettilo prima da lì.",
@@ -1313,5 +1364,9 @@
     "continue": "Continua su Boardsesh",
     "formPending": "Il nostro modulo sui termini di arrampicata non è ancora pronto. Puoi contribuire da Aiuta a tradurre in Impostazioni → Generali.",
     "formDescription": "Compila il nostro modulo Google per aiutarci a scegliere termini di arrampicata naturali in cinese."
+  },
+  "moonboardImport": {},
+  "otaPreview": {
+    "metadata": {}
   }
 }

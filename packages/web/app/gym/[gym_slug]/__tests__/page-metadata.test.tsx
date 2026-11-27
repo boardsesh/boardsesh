@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { Gym, UserBoard } from '@boardsesh/shared-schema';
+import { QUANTUM_MODELS, QUANTUM_SET_ID } from '@boardsesh/board-constants/quantum';
 import { createInstance } from 'i18next';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { SUPPORTED_LOCALES, type Locale } from '@/app/lib/i18n/config';
@@ -11,6 +12,10 @@ import itKiosk from '@boardsesh/i18n/locales/it/kiosk.json';
 import zhKiosk from '@boardsesh/i18n/locales/zh-CN/kiosk.json';
 
 vi.mock('server-only', () => ({}));
+const visibility = vi.hoisted(() => ({ enabled: false }));
+vi.mock('@/app/lib/boards/board-visibility.server', () => ({
+  getBoardVisibilityFlags: async () => ({ 'quantum-board': visibility.enabled }),
+}));
 vi.mock('@/app/lib/server-board-discovery', () => ({ getBoardDiscovery: vi.fn(async () => []) }));
 
 vi.mock('next/navigation', () => ({
@@ -67,6 +72,7 @@ const metadataFor = (slug: string, params: Record<string, string | string[] | un
   });
 
 beforeEach(() => {
+  visibility.enabled = false;
   executeAuthenticatedGraphQL.mockReset();
   viewer.token = undefined;
 });
@@ -409,3 +415,27 @@ describe('gym search metadata evidence', () => {
     }
   });
 });
+
+it.each([
+  { model: 's', enabled: false, visible: false },
+  { model: 's', enabled: true, visible: true },
+  { model: 'belay', enabled: true, visible: false },
+] as const)(
+  'uses Quantum $model in public gym share metadata when visible ($visible)',
+  async ({ model, enabled, visible }) => {
+    visibility.enabled = enabled;
+    const slug = `rollout-${model}-${enabled}`;
+    const { layoutId, sizeId } = QUANTUM_MODELS[model];
+    serveGym(gym(slug, { description: null }), [
+      publicBoard({ boardType: 'quantum', layoutId, sizeId, setIds: String(QUANTUM_SET_ID) }),
+    ]);
+    const metadata = await metadataFor(slug, {});
+    expect(metadata.openGraph?.title).toBe(visible ? 'gymPage.ogTitle:Boulderwelt' : 'Boulderwelt');
+    expect(metadata.openGraph?.description).toBe(
+      visible ? 'gymPage.ogDescriptionOneType:Boulderwelt' : 'gymPage.ogDescriptionNoBoards',
+    );
+    const imageUrl = ogImages(metadata)[0].url;
+    if (visible) expect(imageUrl).toMatch(CARD_URL(slug));
+    else expect(imageUrl).toBe('/opengraph-image');
+  },
+);

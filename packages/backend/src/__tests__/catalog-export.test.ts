@@ -363,6 +363,53 @@ describe('board catalogue export', () => {
     }
   });
 
+  it('publishes only eligible Quantum route references and retains released geometry', async () => {
+    await db.execute(sql`
+      INSERT INTO board_products (board_type, id, name, is_listed)
+      VALUES ('quantum', 91, 'Quantum Board', true)
+    `);
+    await db.execute(sql`
+      INSERT INTO board_layouts (board_type, id, product_id, name, is_listed)
+      VALUES ('quantum', 9101, 91, 'Standard', true)
+    `);
+    await db.execute(sql`
+      INSERT INTO board_climbs (uuid, board_type, layout_id, name, is_draft, is_listed, controller_route_uuid)
+      VALUES ('quantum-active', 'quantum', 9101, 'Public route', false, true, '11111111-1111-4111-8111-111111111111'),
+             ('quantum-withdrawn', 'quantum', 9101, 'Withdrawn route', false, false, '22222222-2222-4222-8222-222222222222'),
+             ('quantum-belay', 'quantum', 9105, 'Belay route', false, true, '33333333-3333-4333-8333-333333333333'),
+             ('quantum-no-controller', 'quantum', 9101, 'Unknown origin', false, true, NULL)
+    `);
+    await db.execute(sql`
+      INSERT INTO board_climb_aliases (board_type, alias_uuid, canonical_uuid, source)
+      SELECT board_type, 'source-' || uuid, uuid, 'quantum' FROM board_climbs WHERE board_type = 'quantum'
+    `);
+    await db.execute(sql`
+      INSERT INTO board_beta_links (board_type, climb_uuid, link, is_listed)
+      SELECT board_type, uuid, 'https://example.test/' || uuid, true FROM board_climbs WHERE board_type = 'quantum'
+    `);
+    const workDir = mkdtempSync(join(tmpdir(), 'quantum-catalog-export-'));
+    const filePath = join(workDir, 'catalog.db');
+    try {
+      await buildCatalogArtifact({ sqlClient: createPool(), filePath, builtAt: BUILT_AT });
+      const artifact = new DatabaseSync(filePath, { readOnly: true });
+      try {
+        expect(artifact.prepare("SELECT id FROM board_layouts WHERE board_type = 'quantum'").all()).toEqual([
+          { id: 9101 },
+        ]);
+        expect(
+          artifact.prepare("SELECT alias_uuid FROM board_climb_aliases WHERE board_type = 'quantum'").all(),
+        ).toEqual([{ alias_uuid: 'source-quantum-active' }]);
+        expect(artifact.prepare("SELECT link FROM board_beta_links WHERE board_type = 'quantum'").all()).toEqual([
+          { link: 'https://example.test/quantum-active' },
+        ]);
+      } finally {
+        artifact.close();
+      }
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
   // The artifact is written in load order, and the loader replays it in that
   // order. A table appearing before one its foreign keys point at would fail the
   // image build, not the export.

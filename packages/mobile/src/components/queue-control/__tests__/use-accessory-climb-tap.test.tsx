@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { renderHook } from '@testing-library/react';
+import { renderHookWithQueryClient as renderHook } from './test-query-client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
 

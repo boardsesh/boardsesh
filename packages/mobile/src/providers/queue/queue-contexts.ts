@@ -207,7 +207,7 @@ type QueueContextValue = {
    * intentional leave (e.g. switching sessions) to emit LEAVE_SESSION so peers
    * see the departure immediately instead of after the disconnect grace timer.
    */
-  clearSession: (options?: { notifyServer?: boolean }) => Promise<void>;
+  clearSession: (options?: { notifyServer?: boolean; isOperationCurrent?: () => boolean }) => Promise<void>;
   /**
    * End the active session. An optional recap (`notes`) is trimmed and sent only
    * when non-empty; the returned SessionSummary echoes it back for the summary
@@ -226,14 +226,15 @@ type QueueContextValue = {
   /**
    * Join an existing session created by someone else (party mode). Switches the
    * active board to the session's board, sets + persists the sessionId, and
-   * relies on the session effect to run JOIN_SESSION + open the realtime
-   * subscriptions. No-ops if already in this session. Differs from
+   * opens realtime subscriptions. Invite confirmations require server
+   * acceptance of the expected board before changing local state.
+   * No-ops if already in this session. Differs from
    * `startSession`, which *reads* the active board to create a new session;
    * `joinSession` *writes* the active board from the session's boardPath.
    */
   joinSession: (
     sessionId: string,
-    opts: { boardPath: string; userBoard: UserBoard; isOperationCurrent?: () => boolean },
+    opts: { boardPath: string; expectedBoardPath?: string; userBoard: UserBoard; isOperationCurrent?: () => boolean },
   ) => Promise<boolean>;
   /**
    * Broadcast the session's boardPath so every party member follows the same
@@ -322,6 +323,13 @@ export const QueueSessionControlContext = createContext<QueueSessionControlConte
  */
 type QueueSessionIdContextValue = {
   sessionId: string | null;
+  /** Includes explicit session transitions before their render commits. */
+  getCurrentSessionId?: () => string | null;
+  getSessionContextRevision?: () => number;
+  isSessionLeavePending?: () => boolean;
+  /** A saved crew was verified, removed, or confirmed absent. */
+  sessionAuthorityReady?: boolean;
+  accountId?: string | null;
   /** Scope for Undo offers: session, physical board configuration and account. */
   undoScope: string;
 };

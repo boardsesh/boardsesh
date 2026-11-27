@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
 import {
   computeNavigationTargetsWithSuggestions,
   resolveNavigationSuggestionSource,
@@ -8,13 +8,7 @@ import {
   resolveTrackPosition,
   stepCrossesIntoList,
 } from '@boardsesh/play-view';
-import { toBoardName } from '@boardsesh/board-config';
-import {
-  isClimbOnReachableBoard,
-  type ClimbQueueItem,
-  type PlaylistSuggestionSource,
-  type PlaylistTrackResume,
-} from '@boardsesh/queue';
+import type { ClimbQueueItem, PlaylistSuggestionSource, PlaylistTrackResume } from '@boardsesh/queue';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { QueueNavigationDirection, QueueNavigationWalk } from '@boardsesh/analytics';
 import {
@@ -23,6 +17,10 @@ import {
   useQueueActions,
   useQueueData,
 } from '../../providers/queue-provider';
+import {
+  reachableClimbPredicate,
+  toActiveBoardCompatibilityConfig,
+} from '../../providers/queue/active-board-compatibility';
 import { useReachableBoardKeys } from '../../providers/queue/use-reachable-board-keys';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
@@ -31,13 +29,20 @@ import { trackQueueNavigation } from '../../lib/queue-navigation-analytics';
 import { canLoadMoreOfTrack } from '../../lib/playlists/track-pager';
 import { useSetting } from '../../settings/hooks';
 import { getSwipeNavigationTarget, getViewOnlyPreviewNavigationTarget } from '../play-drawer/play-drawer-navigation';
-import { useDrivingWall } from '../play-drawer/use-climb-change-lights';
+import { isDrivingWall, useDrivingWall } from '../play-drawer/use-climb-change-lights';
 import { drivingAtPick } from '../play-drawer/drive-mode-store';
 import { useTrackPaging } from '../play-drawer/use-track-paging';
 import { resolvePreviewStepCommit } from '../play-drawer/preview-step-commit';
 import { countUpNext } from '../play-drawer/track-end';
 import { resolvePickBoard } from './pick-board';
 import { barOpenOptions, useBarClimb } from './use-bar-climb';
+import { getLastPick, resolveBarPick } from '../../lib/last-pick-store';
+import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
+import {
+  isQuantumClimbTarget,
+  useClimbTargetAvailable,
+  useRunAvailableClimbAction,
+} from '../../hooks/use-climb-target-availability';
 import { miniPlayerStepWalk, type MiniPlayerStepWalk } from './mini-player-step-label';
 
 export type MiniPlayerNavigation = {
@@ -87,18 +92,18 @@ export type MiniPlayerNavigation = {
  * (`previousWalk` / `nextWalk`, worded by `describeMiniPlayerStep`).
  */
 export function useMiniPlayerNavigation(): MiniPlayerNavigation {
-  const { nextClimb, previousClimb, setCurrentClimb } = useQueueActions();
+  const { nextClimb, previousClimb, setCurrentClimb, getQueueSnapshot } = useQueueActions();
   const { queue, currentClimbQueueItem, historyCount } = useQueueData();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   // The climber's last pick on the bar, or null while it shows the queue's current.
-  const { pick } = useBarClimb();
+  const { openPlayDrawer, boardConfig } = useDrawerHost();
+  const { pick } = useBarClimb(boardConfig);
   // For Queue Navigation: the session, and Always drive the wall.
   const inSharedSession = useIsSharedSession();
   const [alwaysDrive] = useSetting('alwaysDrive');
   // Driving the wall (#7113): every step lights it, in a crew too.
   const driving = useDrivingWall();
-  const { openPlayDrawer, boardConfig } = useDrawerHost();
-  const { data: activeBoard } = useActiveBoard();
+  const { data: activeBoard, isBoardSelectionCurrent } = useActiveBoard();
   const reachableBoardKeys = useReachableBoardKeys(activeBoard);
 
   // The walk starts from the pick, along its list, as the player's walk from a
@@ -128,24 +133,36 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
   }, [pick, boardConfig]);
 
   // The same targets the player's ⏮ ⏭ would offer from the climb it shows.
-  const { prevItem, nextItem, atTrackEnd, prevTrackResume, nextTrackResume } = useMemo(() => {
-    const boardName = activeBoard ? toBoardName(activeBoard.boardType) : null;
-    const activeConfig = activeBoard && boardName ? { boardName, layoutId: activeBoard.layoutId } : undefined;
-    const isReachable =
-      reachableBoardKeys.size === 0
-        ? undefined
-        : (climb: { boardType?: string | null; layoutId?: number | null }) =>
-            isClimbOnReachableBoard(climb, reachableBoardKeys);
-    return computeNavigationTargetsWithSuggestions(
-      queue,
-      stepFrom,
-      stepSource,
-      activeConfig,
-      isReachable,
-      undefined,
-      historyCount,
-    );
-  }, [queue, stepFrom, stepSource, activeBoard, reachableBoardKeys, historyCount]);
+  const { prevItem, nextItem, atTrackEnd, prevTrackResume, nextTrackResume } = useMemo(
+    () =>
+      computeNavigationTargetsWithSuggestions(
+        queue,
+        stepFrom,
+        stepSource,
+        toActiveBoardCompatibilityConfig(activeBoard),
+        reachableClimbPredicate(reachableBoardKeys),
+        undefined,
+        historyCount,
+      ),
+    [queue, stepFrom, stepSource, activeBoard, reachableBoardKeys, historyCount],
+  );
+  const navigationBoard = pick?.boardConfig ?? boardConfig;
+  const previousAvailable = useClimbTargetAvailable(prevItem?.climb ?? null, navigationBoard);
+  const nextAvailable = useClimbTargetAvailable(nextItem?.climb ?? null, navigationBoard);
+  const runPrevious = useRunAvailableClimbAction(prevItem?.climb ?? null, navigationBoard);
+  const runNext = useRunAvailableClimbAction(nextItem?.climb ?? null, navigationBoard);
+  const navigationContext = useMemo(
+    () => ({ activeBoard, reachableBoardKeys, navigationBoard, pick }),
+    [activeBoard, reachableBoardKeys, navigationBoard, pick],
+  );
+  const liveNavigationContext = useRef<typeof navigationContext | null>(null);
+  useLayoutEffect(() => {
+    liveNavigationContext.current = navigationContext;
+    return () => {
+      liveNavigationContext.current = null;
+    };
+  }, [navigationContext]);
+  const moveAttempt = useRef(0);
   // The list is done, not still loading: the player's end card takes it from
   // here. A pick's list is paged only by the player, so its loaded end hands
   // over too: the player loads the rest, or shows the end card.
@@ -183,11 +200,12 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
       targetItem: ClimbQueueItem | null,
       trackResume: PlaylistTrackResume | null | undefined,
       navigateQueue: () => void,
+      runAvailableStep: (commit: () => void) => void,
       direction: QueueNavigationDirection,
       walk: QueueNavigationWalk,
     ) => {
       if (!targetItem) return;
-      hapticSelection();
+      const attempt = ++moveAttempt.current;
       // A keep-lighting window past its end lights nothing, even before the
       // watcher has tidied it (#7038).
       const lights = drivingAtPick(driving);
@@ -221,6 +239,7 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
         });
       if (target.viewOnly) {
         if (!target.targetItem) return;
+        hapticSelection();
         openPlayDrawer(target.targetItem.climb as Climb, {
           previewQueueItem: target.targetItem,
           // The step keeps the list it walked (the pick's own, or the one the
@@ -239,24 +258,55 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
         trackStep('preview');
         return;
       }
-      if (pick) {
-        // The neighbour goes up as the player's swipe off the preview puts it
-        // up, with the pick's list and the step's place in Up next (#7227): a
-        // pick a look left on the list's climb steps into Up next, and without
-        // that place the list would go dormant.
-        const { item, options } = resolvePreviewStepCommit({
-          previewSuggestionSource: resolvePreviewStepSource(pick.suggestionSource, trackResume, {
-            steppedOffQueueItemUuid: stepFromUuid,
-          }),
-          targetItem,
-          direction,
-        });
-        setCurrentClimb(item, options);
+      const commitStep = () => {
+        hapticSelection();
+        if (pick) {
+          // Keep the pick's track and the step's place in Up next, the way
+          // the player's swipe off a preview does.
+          const { item, options } = resolvePreviewStepCommit({
+            previewSuggestionSource: resolvePreviewStepSource(pick.suggestionSource, trackResume, {
+              steppedOffQueueItemUuid: stepFromUuid,
+            }),
+            targetItem,
+            direction,
+          });
+          setCurrentClimb(item, options);
+        } else {
+          navigateQueue();
+        }
         trackStep('moved');
+      };
+      // Queue navigation chooses its target again when called. Even an
+      // ordinary rendered neighbour can become a Quantum target by tap time.
+      // Keep the step inputs and session fixed through any retirement lookup.
+      const { sessionId } = getQueueSnapshot();
+      const storedPick = getLastPick();
+      if (resolveBarPick(storedPick, currentClimbQueueItem?.uuid ?? null, getCredentialGeneration()) !== pick) {
         return;
       }
-      navigateQueue();
-      trackStep('moved');
+      const isStepCurrent = () => {
+        const snapshot = getQueueSnapshot();
+        return (
+          attempt === moveAttempt.current &&
+          navigationContext === liveNavigationContext.current &&
+          isBoardSelectionCurrent() &&
+          isDrivingWall() &&
+          getLastPick() === storedPick &&
+          snapshot.sessionId === sessionId &&
+          snapshot.queue === queue &&
+          snapshot.currentClimbQueueItem === currentClimbQueueItem &&
+          snapshot.playlistSuggestionSource === playlistSuggestionSource &&
+          (snapshot.historyCount ?? null) === (historyCount ?? null)
+        );
+      };
+      if (!isStepCurrent()) return;
+      if (!isQuantumClimbTarget(targetItem.climb, navigationBoard)) {
+        commitStep();
+        return;
+      }
+      runAvailableStep(() => {
+        if (isStepCurrent()) commitStep();
+      });
     },
     [
       alwaysDrive,
@@ -270,17 +320,24 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
       pickOnOtherBoard,
       setCurrentClimb,
       stepFromUuid,
+      navigationBoard,
+      getQueueSnapshot,
+      navigationContext,
+      isBoardSelectionCurrent,
+      queue,
+      currentClimbQueueItem,
+      historyCount,
     ],
   );
   const onPrevious = useCallback(
     () =>
-      move(prevItem, prevTrackResume, previousClimb, 'previous', {
+      move(prevItem, prevTrackResume, previousClimb, runPrevious, 'previous', {
         track: previousTrack,
         from,
         upNextCount,
         crossed: previousCrosses,
       }),
-    [move, prevItem, prevTrackResume, previousClimb, previousTrack, from, upNextCount, previousCrosses],
+    [move, prevItem, prevTrackResume, previousClimb, runPrevious, previousTrack, from, upNextCount, previousCrosses],
   );
   const onNext = useCallback(() => {
     if (nextItem === null && listEnded && stepFrom) {
@@ -290,7 +347,12 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
       openPlayDrawer(stepFrom.climb as Climb, barOpenOptions(pick));
       return;
     }
-    move(nextItem, nextTrackResume, nextClimb, 'next', { track: nextTrack, from, upNextCount, crossed: nextCrosses });
+    move(nextItem, nextTrackResume, nextClimb, runNext, 'next', {
+      track: nextTrack,
+      from,
+      upNextCount,
+      crossed: nextCrosses,
+    });
   }, [
     nextItem,
     nextTrackResume,
@@ -300,6 +362,7 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
     openPlayDrawer,
     move,
     nextClimb,
+    runNext,
     nextTrack,
     from,
     upNextCount,
@@ -307,8 +370,8 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
   ]);
 
   return {
-    canPrevious: prevItem !== null,
-    canNext: nextItem !== null || listEnded,
+    canPrevious: prevItem !== null && previousAvailable,
+    canNext: (nextItem !== null && nextAvailable) || listEnded,
     onPrevious,
     onNext,
     previousWalk,

@@ -1,4 +1,4 @@
-import { and, eq, exists, isNotNull, isNull, ne, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { and, eq, exists, isNotNull, isNull, ne, not, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { alias, QueryBuilder } from 'drizzle-orm/pg-core';
 import * as schema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
@@ -11,6 +11,7 @@ import {
   publicClimbCondition,
   sessionCoMemberTickCondition,
   sprayClimbVisibilityCondition,
+  unavailableQuantumClimbCondition,
 } from '@boardsesh/db/queries';
 import { playlistVisibilityCondition } from '../playlists/helpers/enrichment';
 import { gymVisibleCondition } from '../social/gym-visibility';
@@ -198,6 +199,7 @@ export function betaPrivacyCondition(
           and(
             eq(climb.uuid, beta.climbUuid),
             eq(climb.boardType, beta.boardType),
+            not(unavailableQuantumClimbCondition(sql`privacy_beta_climb.`)),
             // Beta is listed (recent beta, profiles, the climb's own section):
             // an unlisted climb's beta stays out like its logs.
             listedClimbCondition(climb, viewerId),

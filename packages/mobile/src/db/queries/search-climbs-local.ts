@@ -1,7 +1,8 @@
+import { QUANTUM_CLIMB_RETIREMENT_SQL } from './quantum-climb-retirement';
 import { getLocalUserId, type OfflineDatabase } from '@boardsesh/offline-sync';
 import type { BoardName, Climb, ClimbSearchInput } from '@boardsesh/shared-schema';
 import { resolveClimbNoMatch } from '@boardsesh/shared-schema';
-import { getBoardCapabilities, isSizeScopedBoard } from '@boardsesh/board-config';
+import { getBoardCapabilities, isSizeScopedBoard, supportsLayerOverlapFiltering } from '@boardsesh/board-config';
 import { getTallWideScope } from '@boardsesh/board-constants';
 import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
 import { climbNameLikePattern } from '@boardsesh/climb-filters';
@@ -450,6 +451,7 @@ export function buildJoinAndWhere(
   // Playlists own their membership, visibility and geometry. Their filters
   // reuse the expressions below against stats joined at each row's display angle.
   if (context === 'catalogue') {
+    if (boardType === 'quantum') push(`(${QUANTUM_CLIMB_RETIREMENT_SQL}) IS NOT TRUE`);
     push('c.board_type = ?', boardType);
     push('c.layout_id = ?', input.layoutId);
     if (isDraftQuery) {
@@ -618,6 +620,25 @@ export function buildJoinAndWhere(
     push(`c.frames NOT LIKE ? ESCAPE '\\'`, `%p${holdId}r%`);
   }
 
+  // Quantum coexistence. The offline snapshot does not carry board_climb_holds,
+  // so count exact `p<placement>r` tokens in the synced frames string. Apply it
+  // in the same WHERE clause as online search — before pagination, count and
+  // seeded random order. Omission means geometry is unknown and disables it.
+  if (
+    supportsLayerOverlapFiltering(boardType) &&
+    input.maxOccupiedOverlap !== undefined &&
+    input.occupiedPlacementIds &&
+    input.occupiedPlacementIds.length > 0
+  ) {
+    const occupiedPlacementIds = [...new Set(input.occupiedPlacementIds)].slice(0, 368);
+    const overlapTerms = occupiedPlacementIds.map(() => "CASE WHEN c.frames LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END");
+    push(
+      `(${overlapTerms.join(' + ')}) <= ?`,
+      ...occupiedPlacementIds.map((placementId) => `%p${placementId}r%`),
+      input.maxOccupiedOverlap,
+    );
+  }
+
   // Tall / Wide (size-grid) filters over the synced compatible_size_ids —
   // mirrors the server (create-climb-filters.ts) so an online and offline search
   // return the same rows. getTallWideScope fails closed (empty sets) when the
@@ -772,6 +793,7 @@ export type LocalClimbRow = {
   user_id: string | null;
   name: string | null;
   frames: string | null;
+  controller_route_uuid: string | null;
   is_draft: number | null;
   /** SQLite integer mirror of `board_climbs.is_hidden`; NULL on rows pulled
    *  before the column existed (migration v5), read as visible. */
@@ -872,6 +894,7 @@ export function mapRowToClimb(
     frames: row.frames ?? '',
     // The browsed angle, matching the server mapper. Ticks, the queue and the BLE
     // spill guard key on it; `statsAngle` says where the numbers came from.
+    controllerRouteUuid: row.controller_route_uuid,
     angle,
     statsAngle: row.stats_angle ?? null,
     ascensionist_count: Number(row.ascensionist_count ?? 0),
@@ -1226,7 +1249,7 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
       EXISTS (SELECT 1 FROM pending_mutations mutation WHERE mutation.table_name = 'board_climbs'
         AND mutation.entity_key = 'climb:' || c.board_type || ':' || c.uuid) AS local_write_pending,
       c.missing_hold_count, c.holds_revision_number, c.characteristics,
-      c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
+      c.controller_route_uuid, c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
       ${eff('ascensionist_count')} AS ascensionist_count,
       ${effectiveDisplayDifficultySql(boardType, crossAngle)} AS display_difficulty,
       ${eff('difficulty_average')} AS difficulty_average,

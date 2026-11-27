@@ -404,10 +404,12 @@ function readFixture(file: string): GraphqlFixtureFile {
   return JSON.parse(readFileSync(join(FIXTURES_DIR, file), 'utf8')) as GraphqlFixtureFile;
 }
 
-/** The same evidence the replay server hands the compatibility adapters: this set's JoinSession recordings. */
+/** Same-set evidence as supplied by the replay server. */
 const compatibilityEvidence: ReplayCompatibilityEvidence = {
   joinSessionFixtures: () =>
     manifest.graphql.filter((entry) => entry.operationName === 'JoinSession').map((entry) => readFixture(entry.file)),
+  getSessionFixtures: () =>
+    manifest.graphql.filter((entry) => entry.operationName === 'GetSession').map((entry) => readFixture(entry.file)),
 };
 
 // ---------------------------------------------------------------------------

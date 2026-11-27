@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Climb } from '@boardsesh/shared-schema';
+import { getQuantumBundledGeometry } from '@boardsesh/board-constants/quantum';
+import { toClimbQueueItem, type SubscriptionQueueItem } from '../queue-conversion';
+import { toSchemaClimb } from '../climb-types';
+import { buildQuantumClimbLightTarget } from '../ble/quantum-climb-lights';
 
 vi.mock('expo-crypto', () => ({
   randomUUID: () => 'generated-uuid',
@@ -53,6 +57,31 @@ describe('climbToQueueItem (SEED-2 frame metadata)', () => {
 
     expect(result.climb.framesCount).toBeNull();
     expect(result.climb.framesPace).toBeNull();
+  });
+});
+
+describe('retained Quantum size membership', () => {
+  it('preserves a playlist/search allowlist through queue persistence and peer reconstruction before lighting', () => {
+    const large = getQuantumBundledGeometry(9101, 9202)!;
+    const source = makeClimb({
+      boardType: 'quantum',
+      layoutId: 9101,
+      controllerRouteUuid: '20000000-0000-4000-8000-000000000001',
+      frames: `p${large.placements[0]!.placementId}r12`,
+      compatibleSizeIds: [9202],
+    });
+    // Playlist activation uses this same schema seam and queue mapper. The wire
+    // mapper plus persisted/FullSync reconstruction must retain source limits.
+    const local = climbToQueueItem(toSchemaClimb(source));
+    const wire = toQueueItemWireInput(local);
+    const persisted: unknown = JSON.parse(JSON.stringify(wire));
+    const restored = toClimbQueueItem(persisted as SubscriptionQueueItem);
+    expect(restored.climb.compatibleSizeIds).toEqual([9202]);
+    expect(buildQuantumClimbLightTarget(restored.climb, getQuantumBundledGeometry(9101, 9201), 9101, 1)).toEqual({
+      ok: false,
+      reason: 'wrong-size',
+    });
+    expect(buildQuantumClimbLightTarget(restored.climb, large, 9101, 1).ok).toBe(true);
   });
 });
 

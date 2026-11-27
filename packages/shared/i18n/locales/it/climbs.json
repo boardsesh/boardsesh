@@ -567,7 +567,17 @@
       "nameToken": "“{{name}}”",
       "drafts": "Le mie bozze",
       "popularityUnrepeated": "Mai ripetuti",
-      "wallDrafts": "Bozze"
+      "wallDrafts": "Bozze",
+      "quantumOverlap": {
+        "label": "Sovrapposizione con prese illuminate",
+        "description": "Nascondi i blocchi che usano prese già illuminate sul pannello.",
+        "unavailable": "Leggi i livelli attivi del QuantumBoard per filtrare le prese illuminate.",
+        "off": "Disattivato",
+        "none": "0 prese",
+        "atMostOne": "≤1 presa",
+        "noneToken": "Nessuna presa illuminata in comune",
+        "atMostOneToken": "≤1 presa illuminata in comune"
+      }
     },
     "search": {
       "recentFilters": "Recenti",

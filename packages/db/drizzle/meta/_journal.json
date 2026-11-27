@@ -2472,6 +2472,13 @@
       "when": 1795644950513,
       "tag": "0352_board_access_notification_types",
       "breakpoints": true
+    },
+    {
+      "idx": 353,
+      "version": "7",
+      "when": 1795709980133,
+      "tag": "0353_quantum_board_catalog",
+      "breakpoints": true
     }
   ]
 }

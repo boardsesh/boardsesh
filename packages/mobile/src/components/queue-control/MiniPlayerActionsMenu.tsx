@@ -21,6 +21,7 @@ import { useActiveClimbUuid } from '../../providers/queue-provider';
 import { useProfile } from '../../lib/graphql/hooks';
 import { isPlayerRoute } from '../../lib/route-segments';
 import type { MiniPlayerButtonId } from '../../lib/mini-player-buttons';
+import { useRunAvailableClimbAction } from '../../hooks/use-climb-target-availability';
 import { useMiniPlayerFavorite, useMiniPlayerMirrorToggle, useOpenMiniPlayerQueue } from './MiniPlayerButtons';
 
 /**
@@ -254,13 +255,19 @@ export const MiniPlayerActionsMenu = memo(function MiniPlayerActionsMenu({
   // 2 left (a draft has no Share, signed out has neither of the first two) falls back
   // to plain rows, since a one-item control group looks odd.
   const menuRows = useMemo(() => withPaletteRows(rows), [rows]);
+  const runClimbAction = useRunAvailableClimbAction(climb, climbBoard);
   const handleSelectIndex = useCallback(
     (index: number) => {
       const row = rows[index];
       if (!row || row.disabled) return;
-      row.run();
+      // Favourite and Mirror already recheck availability in their shared handlers.
+      if (row.id === 'favorite' || row.id === 'mirror') {
+        row.run();
+      } else {
+        runClimbAction(row.run);
+      }
     },
-    [rows],
+    [rows, runClimbAction],
   );
   const rowSignature = rows.map((row) => (row.disabled ? `${row.id}:off` : row.id)).join(',');
 

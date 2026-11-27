@@ -160,7 +160,13 @@ function barProps(connected: boolean) {
     canSetActive: false,
     onSetActive: vi.fn(),
     draftStatus: null,
-    lightbulb: { connected, connecting: false, onToggle },
+    lightbulb: {
+      connected,
+      pending: false,
+      onPress: onToggle,
+      accessibilityLabel: connected ? 'lightControl.disconnect' : 'ble.connectBoard',
+      drivingAccessibilityLabel: 'ble.barControl.stopDrivingLabel',
+    },
   };
 }
 

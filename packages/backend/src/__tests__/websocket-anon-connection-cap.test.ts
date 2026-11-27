@@ -28,6 +28,7 @@ vi.mock('../services/room-manager', () => ({
     removeClient,
     clearBoardWriterForConnection: vi.fn().mockResolvedValue(undefined),
     disconnectClient: vi.fn().mockResolvedValue(undefined),
+    markClientClosing: vi.fn(() => false),
   },
 }));
 

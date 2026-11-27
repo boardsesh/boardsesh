@@ -9,6 +9,19 @@ export function uint8ArrayToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/** Decode a react-native-ble-plx characteristic value without routing through
+ * a text encoding. Quantum controller broadcasts contain arbitrary UUID and
+ * CRC bytes, so every byte must survive unchanged. */
+export function base64ToUint8Array(base64?: string | null): Uint8Array | undefined {
+  if (!base64) return undefined;
+  try {
+    const binary = atob(base64);
+    return Uint8Array.from(binary, (character) => character.charCodeAt(0) & 0xff);
+  } catch {
+    return undefined;
+  }
+}
+
 // ble-plx surfaces advertisement manufacturer/service data as base64. Normalize
 // to lowercase hex so the recon payload matches the native iOS path (which
 // hex-encodes on the Swift side). Returns undefined for null/empty/undecodable

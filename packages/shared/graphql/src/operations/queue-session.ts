@@ -19,6 +19,7 @@ const CLIMB_FIELDS = `
   name
   description
   frames
+  controllerRouteUuid
   framesCount
   framesPace
   angle
@@ -60,8 +61,8 @@ const QUEUE_ITEM_FIELDS = `
 
 // Mutations
 export const JOIN_SESSION = `
-  mutation JoinSession($sessionId: ID!, $boardPath: String!, $username: String, $avatarUrl: String, $participantId: ID, $initialQueue: [ClimbQueueItemInput!], $initialCurrentClimb: ClimbQueueItemInput, $sessionName: String) {
-    joinSession(sessionId: $sessionId, boardPath: $boardPath, username: $username, avatarUrl: $avatarUrl, participantId: $participantId, initialQueue: $initialQueue, initialCurrentClimb: $initialCurrentClimb, sessionName: $sessionName) {
+  mutation JoinSession($sessionId: ID!, $boardPath: String!, $username: String, $avatarUrl: String, $participantId: ID, $initialQueue: [ClimbQueueItemInput!], $initialCurrentClimb: ClimbQueueItemInput, $sessionName: String, $expectedBoardPath: String) {
+    joinSession(sessionId: $sessionId, boardPath: $boardPath, username: $username, avatarUrl: $avatarUrl, participantId: $participantId, initialQueue: $initialQueue, initialCurrentClimb: $initialCurrentClimb, sessionName: $sessionName, expectedBoardPath: $expectedBoardPath) {
       id
       name
       boardPath
@@ -98,6 +99,29 @@ export const JOIN_SESSION = `
   }
 `;
 
+// A confirmed invite needs only the room and roster. Realtime consumes this
+// acknowledgement after the local board and room have been published.
+export const JOIN_CONFIRMED_SESSION = `
+  mutation JoinConfirmedSession($sessionId: ID!, $boardPath: String!, $expectedBoardPath: String!, $username: String, $avatarUrl: String) {
+    joinSession(sessionId: $sessionId, boardPath: $boardPath, expectedBoardPath: $expectedBoardPath, username: $username, avatarUrl: $avatarUrl) {
+      id
+      boardPath
+      clientId
+      participantId
+      isLeader
+      lastConnectedBoardSerial
+      users {
+        id
+        username
+        avatarUrl
+        isLeader
+        userId
+        connectionState
+      }
+    }
+  }
+`;
+
 // F3 (#6666, docs/product/current-climb-outside-queue.md section 2): the same join with
 // the seed's History / Up next line, selecting the two new QueueState fields.
 //
@@ -109,8 +133,8 @@ export const JOIN_SESSION = `
 // (QUEUE_STATE_FIELDS_PROBE) found the fields. Deleted with the legacy set in
 // the F3 cleanup PR.
 export const JOIN_SESSION_NOW_SLOT = `
-  mutation JoinSessionNowSlot($sessionId: ID!, $boardPath: String!, $username: String, $avatarUrl: String, $participantId: ID, $initialQueue: [ClimbQueueItemInput!], $initialCurrentClimb: ClimbQueueItemInput, $sessionName: String, $initialHistoryCount: Int) {
-    joinSession(sessionId: $sessionId, boardPath: $boardPath, username: $username, avatarUrl: $avatarUrl, participantId: $participantId, initialQueue: $initialQueue, initialCurrentClimb: $initialCurrentClimb, sessionName: $sessionName, initialHistoryCount: $initialHistoryCount) {
+  mutation JoinSessionNowSlot($sessionId: ID!, $boardPath: String!, $username: String, $avatarUrl: String, $participantId: ID, $initialQueue: [ClimbQueueItemInput!], $initialCurrentClimb: ClimbQueueItemInput, $sessionName: String, $initialHistoryCount: Int, $expectedBoardPath: String) {
+    joinSession(sessionId: $sessionId, boardPath: $boardPath, username: $username, avatarUrl: $avatarUrl, participantId: $participantId, initialQueue: $initialQueue, initialCurrentClimb: $initialCurrentClimb, sessionName: $sessionName, initialHistoryCount: $initialHistoryCount, expectedBoardPath: $expectedBoardPath) {
       id
       name
       boardPath

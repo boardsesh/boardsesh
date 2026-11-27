@@ -11,6 +11,8 @@ import {
   selectSetupLayout,
   selectSetupSize,
   toggleSetupSet,
+  getBoardCapabilities,
+  normalizeBoardCatalogAngles,
 } from '@boardsesh/board-config';
 import { defaultAngle } from '../../lib/boards/default-angle';
 import type { BoardConfigPreset } from '../../lib/boards/board-config-preset';
@@ -93,6 +95,10 @@ function sameSetup(preset: BoardConfigPreset, layoutId: number | null, sizeId: n
   return normaliseSetIds(preset.setIds.join(',')) === normaliseSetIds(setIds.join(','));
 }
 
+function sameAngles(first: readonly number[], second: readonly number[]): boolean {
+  return first.length === second.length && first.every((angle, index) => angle === second[index]);
+}
+
 /**
  * The cascading board-config state machine behind the create-board builder
  * (board → layout → size → sets → angle), plus the optional "more options" meta
@@ -121,6 +127,10 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
   const [sizeId, setSizeId] = useState<number | null>(seed?.sizeId ?? initialPreset?.sizeId ?? null);
   const [setIds, setSetIds] = useState<number[]>(seed ? parseSetIds(seed.setIds) : (initialPreset?.setIds ?? []));
   const [angle, setAngle] = useState<number>(seed?.angle ?? defaultAngle(initialBoard));
+  // Downloaded angles come from the catalogue query after a model is
+  // selected. Keeping that result in the builder lets create and edit share the
+  // same validation boundary without putting network I/O in this pure hook.
+  const [catalogAngles, setCatalogAngles] = useState<number[]>([]);
   // Meta seeds (edit) run once here — NOT in the re-seed effect — so re-renders
   // can't clobber edits. Create / Popular omit them, so the home-board defaults apply.
   const [name, setName] = useState(seed?.name ?? '');
@@ -183,6 +193,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
     setSizeId(current.sizeId);
     setSetIds(parseSetIds(current.setIds));
     setAngle(current.angle ?? defaultAngle(current.boardName));
+    setCatalogAngles([]);
   }, [seedKey]);
 
   // Late preset data (#5654). The popular list the preset reads is usually
@@ -223,7 +234,8 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
     () => (layoutId != null && sizeId != null ? getBoardSetsForLayoutAndSize(boardName, layoutId, sizeId) : []),
     [boardName, layoutId, sizeId],
   );
-  const angles = ANGLES[boardName] ?? [];
+  const requiresCatalogAngles = getBoardCapabilities(boardName).angleOptionsSource === 'catalog';
+  const angles = requiresCatalogAngles ? catalogAngles : (ANGLES[boardName] ?? []);
   const rawLayoutName = layouts.find((layout) => layout.id === layoutId)?.name ?? boardName;
 
   // Each level resets everything below it so the cascade stays consistent.
@@ -247,6 +259,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
     setSetIds(preset?.setIds ?? []);
     setAppliedPreset(preset);
     setAngle(defaultAngle(next));
+    setCatalogAngles([]);
     // A heard serial belongs to the box's own board type: another type is
     // another box. One the climber typed over stays.
     const offer = heardSerialOfferRef.current;
@@ -264,6 +277,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
       setLayoutId(selected.layoutId);
       setSizeId(selected.sizeId);
       setSetIds(selected.setIds);
+      if (getBoardCapabilities(boardName).angleOptionsSource === 'catalog') setCatalogAngles([]);
     },
     [boardName],
   );
@@ -276,6 +290,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
       const selected = selectSetupSize({ boardName, layoutId, sizeId: null, setIds: [] }, next);
       setSizeId(selected.sizeId);
       setSetIds(selected.setIds);
+      if (getBoardCapabilities(boardName).angleOptionsSource === 'catalog') setCatalogAngles([]);
     },
     [boardName, layoutId],
   );
@@ -288,7 +303,20 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
     [boardName],
   );
 
-  const canCreate = layoutId != null && sizeId != null && setIds.length > 0;
+  const setCatalogAngleOptions = useCallback((nextAngles: readonly number[]) => {
+    const normalizedAngles = normalizeBoardCatalogAngles(nextAngles);
+    setCatalogAngles((previousAngles) =>
+      sameAngles(previousAngles, normalizedAngles) ? previousAngles : normalizedAngles,
+    );
+    // Preserve an edit seed or the user's selection when it is valid. Only seed
+    // the first sorted catalogue value after the query has returned options.
+    if (normalizedAngles.length > 0) {
+      setAngle((previousAngle) => (normalizedAngles.includes(previousAngle) ? previousAngle : normalizedAngles[0]));
+    }
+  }, []);
+
+  const hasRequiredCatalogAngle = !requiresCatalogAngles || angles.length > 0;
+  const canCreate = layoutId != null && sizeId != null && setIds.length > 0 && hasRequiredCatalogAngle;
   // The selection is exactly the preset the builder chose for this board type:
   // a board saved like this was never changed below the board-type chips.
   const presetKept = appliedPreset != null && sameSetup(appliedPreset, layoutId, sizeId, setIds);
@@ -330,7 +358,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
    * used when the user left the name blank; defaults to the cleaned layout name.
    */
   const buildCreateInput = (fallbackName?: string): CreateBoardInput | null => {
-    if (layoutId == null || sizeId == null || setIds.length === 0) return null;
+    if (layoutId == null || sizeId == null || setIds.length === 0 || !hasRequiredCatalogAngle) return null;
     return {
       boardType: boardName,
       layoutId,
@@ -382,7 +410,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
       currentConfig?: { layoutId: number; sizeId: number; setIds: string };
     },
   ): UpdateBoardInput | null => {
-    if (layoutId == null || sizeId == null || setIds.length === 0) return null;
+    if (layoutId == null || sizeId == null || setIds.length === 0 || !hasRequiredCatalogAngle) return null;
     const input: UpdateBoardInput = {
       boardUuid,
       name: name.trim() || options?.fallbackName?.trim() || cleanLayoutName(rawLayoutName, boardName),
@@ -457,6 +485,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
     selectLayout,
     selectSize,
     toggleSet,
+    setCatalogAngleOptions,
     setAngle,
     setName,
     setIsOwned,

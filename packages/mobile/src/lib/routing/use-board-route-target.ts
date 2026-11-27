@@ -1,3 +1,5 @@
+import type { BoardVisibilityConfig } from '@boardsesh/board-config/visibility';
+import { useIsBoardConfigVisible, useIsBoardTypeVisible } from '../../hooks/use-board-visibility';
 // Turns a canonical board URL into an open play drawer / climbs list.
 //
 // `app.boardsesh.com` serves the same URL shapes the Next app does, and Expo
@@ -214,6 +216,11 @@ function useAdoptedBoard(
   confirmBoardJoin?: (boardName: string) => Promise<boolean>,
 ): { board: UserBoard | null; error: boolean } {
   const { isAuthenticated, isLoading: authIsLoading } = useAuth();
+  const isBoardTypeVisible = useIsBoardTypeVisible();
+  const visibilityRef = useRef(isBoardTypeVisible);
+  const isBoardConfigVisible = useIsBoardConfigVisible();
+  const configVisibilityRef = useRef(isBoardConfigVisible);
+  configVisibilityRef.current = isBoardConfigVisible;
   const createBoard = useCreateBoard();
   const setActiveBoard = useSetActiveBoard();
   const queryClient = useQueryClient();
@@ -243,11 +250,24 @@ function useAdoptedBoard(
   // pending earlier link must not keep the next link's answer out of the route.
   const resolutionKey = boardPath ? JSON.stringify([boardPath, wallUuid ?? null, inviteToken ?? null]) : null;
   const resolvedPathRef = useRef<string | null>(null);
+  const blockedTypeRef = useRef<{ path: string; boardType: string } | null>(null);
+  const knownBoardType =
+    urlBoardConfig(target)?.boardName ??
+    (adopted?.path === resolutionKey ? adopted.board?.boardType : undefined) ??
+    (blockedTypeRef.current?.path === resolutionKey ? blockedTypeRef.current.boardType : undefined);
+  const previousVisibility = visibilityRef.current;
+  visibilityRef.current = isBoardTypeVisible;
+  if (knownBoardType && previousVisibility(knownBoardType) !== isBoardTypeVisible(knownBoardType)) {
+    resolvedPathRef.current = null;
+    setAdopted(null);
+    setRetryNonce((nonce) => nonce + 1);
+  }
 
   // Only a resolve that finished for THIS path may be read; see AdoptedBoardState.
   const settled = adopted && adopted.path === resolutionKey ? adopted : null;
-  const board = settled?.board ?? null;
-  const error = settled?.board === null;
+  const settledBoard = settled?.board ?? null;
+  const board = settledBoard && isBoardConfigVisible(settledBoard) ? settledBoard : null;
+  const error = settled?.board === null || (settledBoard !== null && board === null);
 
   // The resolve effect deliberately runs once per path, so it must not close
   // over the first render's values — the session is exactly the one that lands
@@ -296,8 +316,19 @@ function useAdoptedBoard(
 
     let cancelled = false;
     let settledThisRun = false;
+    const boardTypeIsVisible = (boardType: string) => {
+      const visible = visibilityRef.current(boardType);
+      if (!visible) blockedTypeRef.current = { path: resolutionKey, boardType };
+      return visible;
+    };
+    const boardConfigIsVisible = (config: BoardVisibilityConfig) => {
+      const boardType = 'boardType' in config ? config.boardType : config.boardName;
+      return boardTypeIsVisible(boardType) && configVisibilityRef.current(config);
+    };
     void (async () => {
       try {
+        const tupleConfig = urlBoardConfig(target);
+        if (tupleConfig && !boardConfigIsVisible(tupleConfig)) throw new Error('Board unavailable');
         // Ordinary board routes do not need the spray renderer or native auth
         // storage. Load these dependencies only when redeeming a capability.
         const capabilityModules = wallUuid
@@ -351,6 +382,8 @@ function useAdoptedBoard(
         const resolved =
           localBoard ??
           (await resolveBoardForSession(boardPath, {
+            isOperationCurrent: () => !cancelled,
+            isBoardAvailable: boardConfigIsVisible,
             // The account-verified snapshot is already collected above, so the
             // resolver can re-check ownerId without starting a second walk.
             loadOwnedBoards: async () => {
@@ -359,8 +392,14 @@ function useAdoptedBoard(
               }
               return ownedBoardSnapshot;
             },
-            createBoard: (input) =>
-              createBoardOrAdoptDuplicate(input, (createInput) => createBoardMutation.mutateAsync(createInput)),
+            createBoard: (input) => {
+              if (!boardConfigIsVisible(input)) throw new Error('Board unavailable');
+              return createBoardOrAdoptDuplicate(
+                input,
+                (createInput) => createBoardMutation.mutateAsync(createInput),
+                () => !cancelled && boardConfigIsVisible(input),
+              );
+            },
             // Local first here too, so a named board already on the device opens
             // offline. The named-path angle rule (URL angle, else the board's
             // own) stays inside `resolveBoardForSession` for both branches.
@@ -375,14 +414,17 @@ function useAdoptedBoard(
                         resolveBoardSlugLocalFirst,
                         queriesRef.current.confirmBoardJoin,
                         () => !cancelled,
+                        boardConfigIsVisible,
                       )
                   : resolveBoardSlugLocalFirst,
           }));
         if (cancelled) return;
+        if (!boardConfigIsVisible(resolved)) throw new Error('Board unavailable');
         if (credentialGeneration !== null && !credentialStore?.isAuthCredentialGenerationCurrent(credentialGeneration))
           return;
         const adoptionIsCurrent = () =>
           !cancelled &&
+          boardConfigIsVisible(resolved) &&
           (credentialGeneration === null || !!credentialStore?.isAuthCredentialGenerationCurrent(credentialGeneration));
         // The storage write can queue behind another board choice. Its own
         // guard must retain this credential scope until persistence commits.
@@ -390,7 +432,16 @@ function useAdoptedBoard(
           credentialGeneration === null
             ? await setActiveBoard(resolved)
             : await setActiveBoard(resolved, adoptionIsCurrent);
-        if (!adoptionIsCurrent() || (credentialGeneration !== null && !adoptedBoard)) return;
+        if (
+          cancelled ||
+          (credentialGeneration !== null && !credentialStore?.isAuthCredentialGenerationCurrent(credentialGeneration))
+        )
+          return;
+        if (!boardConfigIsVisible(resolved) || !adoptedBoard) {
+          settledThisRun = true;
+          setAdopted({ path: resolutionKey, board: null });
+          return;
+        }
         settledThisRun = true;
         setAdopted({ path: resolutionKey, board: resolved });
       } catch (resolveError) {
@@ -622,11 +673,15 @@ export function useBoardRouteTarget(
     [board, anonymousUrlAngle],
   );
   const boardConfig = configFromUrl ?? configFromBoard;
+  const isBoardConfigVisible = useIsBoardConfigVisible();
+  const rolloutBlocked = boardConfig !== null && !isBoardConfigVisible(boardConfig);
 
   // `!authRequired` is what makes the short-circuit below true to its word: the
   // tuple form carries its whole config in the URL, so without this the climb
   // query would fire for a visitor we have already decided to send to login.
-  const climbQuery = useClimb(!authRequired && boardConfig && climbUuid ? { ...boardConfig, climbUuid } : null);
+  const climbQuery = useClimb(
+    !rolloutBlocked && !authRequired && boardConfig && climbUuid ? { ...boardConfig, climbUuid } : null,
+  );
   const climb = climbQuery.data;
 
   // Hand off exactly once per target. The ref guards a re-render firing the open
@@ -654,7 +709,7 @@ export function useBoardRouteTarget(
   useEffect(() => {
     if (!launchHoldReleased) return;
     if (!target || !targetKey || handedOffRef.current === targetKey) return;
-    if (authRequired) return;
+    if (authRequired || rolloutBlocked) return;
     // The anonymous climb renders where it stands. Handing off would navigate to
     // `/(tabs)/climbs` and then `/play`, both outside the read-only allow-set,
     // and `AuthProvider` re-reads `window.location.pathname` on every
@@ -726,6 +781,7 @@ export function useBoardRouteTarget(
     leave();
     openDrawer();
   }, [
+    rolloutBlocked,
     adoptsBoard,
     anonymousClimb,
     authRequired,
@@ -741,18 +797,20 @@ export function useBoardRouteTarget(
     wantsClimb,
   ]);
 
-  const status = resolveStatus({
-    parsedUrl: target !== null,
-    authRequired,
-    boardError,
-    // Only a settled query says the climb is gone: `isLoading` briefly reads
-    // false in the render where the query switches on, which would flash a
-    // not-found over a climb that is about to arrive.
-    climbIsGone: wantsClimb && (climbQuery.isError || (climbQuery.isSuccess && !climb)),
-    // The anonymous branch has nothing to draw until the climb lands, and
-    // nowhere else to be meanwhile — so it sits on the spinner.
-    anonymousClimbReady: anonymousClimb && climb != null && boardConfig != null,
-  });
+  const status = rolloutBlocked
+    ? 'not-found'
+    : resolveStatus({
+        parsedUrl: target !== null,
+        authRequired,
+        boardError,
+        // Only a settled query says the climb is gone: `isLoading` briefly reads
+        // false in the render where the query switches on, which would flash a
+        // not-found over a climb that is about to arrive.
+        climbIsGone: wantsClimb && (climbQuery.isError || (climbQuery.isSuccess && !climb)),
+        // The anonymous branch has nothing to draw until the climb lands, and
+        // nowhere else to be meanwhile — so it sits on the spinner.
+        anonymousClimbReady: anonymousClimb && climb != null && boardConfig != null,
+      });
 
   // Only the slug branch resolves a board anonymously; a tuple URL has none, and
   // `true` is what `createBoard` would have stored for it anyway.

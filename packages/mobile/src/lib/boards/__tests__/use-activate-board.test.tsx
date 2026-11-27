@@ -395,3 +395,21 @@ describe('useActivateBoard', () => {
     expect(dismissToMock).not.toHaveBeenCalled();
   });
 });
+
+describe('refused board activation', () => {
+  it('does not follow, download, track or navigate when the board write is refused', async () => {
+    vi.clearAllMocks();
+    setActiveBoardMock.mockResolvedValueOnce(false);
+    const onBound = vi.fn();
+    const { result } = renderHook(() =>
+      useActivateBoard({ source: 'onboarding', returnTo: '/(tabs)/climbs', onBound }),
+    );
+    await act(async () => result.current(BOARD));
+    expect(adoptFoundBoardMock).not.toHaveBeenCalled();
+    expect(markOnboardingSeenMock).not.toHaveBeenCalled();
+    expect(trackMock).not.toHaveBeenCalled();
+    expect(dismissToMock).not.toHaveBeenCalled();
+    expect(replaceMock).not.toHaveBeenCalled();
+    expect(onBound).not.toHaveBeenCalled();
+  });
+});

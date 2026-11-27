@@ -52,6 +52,7 @@ import {
   type SnapshotExportDependencies,
   type SnapshotExportLogger,
 } from './export-board-snapshots';
+import { snapshotQuantumEligibility } from './quantum-snapshot-eligibility';
 
 export const DEFAULT_CATALOG_KEY_PREFIX = 'board-snapshots/v1-catalog';
 const SAFE_KEY_PREFIX = /^[a-z0-9]+(?:[/-][a-z0-9]+)*$/;
@@ -198,14 +199,16 @@ async function streamTableIntoSqlite(
             AND snapshot_beta_climb.uuid = board_beta_links.climb_uuid
             AND snapshot_beta_climb.user_id IS NULL AND NOT snapshot_beta_climb.is_boardsesh_authored
             AND snapshot_beta_climb.is_draft IS NOT TRUE
-            AND snapshot_beta_climb.board_type <> 'spray')`
+            AND snapshot_beta_climb.board_type <> 'spray'
+            AND ${snapshotQuantumEligibility('snapshot_beta_climb.')})`
       : tableName === 'board_climb_aliases'
         ? ` WHERE EXISTS (SELECT 1 FROM board_climbs snapshot_alias_climb
           WHERE snapshot_alias_climb.board_type = board_climb_aliases.board_type
             AND snapshot_alias_climb.uuid = board_climb_aliases.canonical_uuid
             AND snapshot_alias_climb.user_id IS NULL AND NOT snapshot_alias_climb.is_boardsesh_authored
             AND snapshot_alias_climb.is_draft IS NOT TRUE
-            AND snapshot_alias_climb.board_type <> 'spray')`
+            AND snapshot_alias_climb.board_type <> 'spray'
+            AND ${snapshotQuantumEligibility('snapshot_alias_climb.')})`
         : '';
   // Spray walls are private, runtime-created catalogue rows (a wall's name, its
   // marked holds). No table publishes them. See CATALOG_SNAPSHOT_EXCLUDED_BOARD_TYPES.

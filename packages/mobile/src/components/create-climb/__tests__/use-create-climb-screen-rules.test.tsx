@@ -535,7 +535,7 @@ describe('Woods preview wall size', () => {
       else {
         expect(sendFramesToBoard).not.toHaveBeenCalled();
         ble.context.isConnected = false;
-        act(() => result.current.handleToggleBle());
+        act(() => result.current.wallControl.onPress());
         expect(connect).not.toHaveBeenCalled();
       }
       unmount();

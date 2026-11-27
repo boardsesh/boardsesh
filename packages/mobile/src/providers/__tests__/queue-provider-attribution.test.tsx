@@ -246,7 +246,10 @@ function createJoinSessionResponse() {
   };
 }
 
-const statusResponse = (status: SessionStatus | null = 'active') => ({ sessionStatus: status });
+const statusResponse = (status: SessionStatus | null = 'active') => ({
+  sessionStatus: status,
+  sessionRestoreBoardPath: 'kilter/1/10/1/40',
+});
 
 function makeQueueItem(uuid: string, climbUuid = uuid): ClimbQueueItem {
   return {

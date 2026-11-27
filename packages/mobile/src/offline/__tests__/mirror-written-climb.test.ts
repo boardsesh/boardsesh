@@ -15,7 +15,8 @@ vi.mock('@boardsesh/offline-sync', () => ({
   isSigningOut: () => false,
   isScopeDownloadComplete: () => Promise.resolve(mocks.downloaded),
   mirrorSavedClimb: mocks.mirror,
-  offlineBoardKeyForBoard: () => 'spray:12:12',
+  offlineBoardKey: (scope: { boardType: string; layoutId: number; sizeId: number }) =>
+    `${scope.boardType}:${scope.layoutId}:${scope.sizeId}`,
   purgeNamespaceKey: () => 'spray:12',
 }));
 vi.mock('../../db', () => ({ getDatabaseHandle: () => ({}) }));
@@ -95,4 +96,20 @@ describe('mirror a written climb on the downloaded active board', () => {
     await expect(mirrorWrittenClimb(write)).rejects.toBe(failure);
     expect(mocks.report).toHaveBeenCalledWith(failure, expect.any(Object));
   });
+});
+
+it('mirrors a written Quantum climb on the explicit downloaded editor board', async () => {
+  await mirrorWrittenClimb({ ...write, boardType: 'quantum', layoutId: 9104, sizeId: 9204 });
+  expect(mocks.request).toHaveBeenCalledWith(expect.any(String), {
+    boardType: 'quantum',
+    layoutId: 9104,
+    climbUuid: 'saved-climb',
+  });
+  expect(mocks.mirror).toHaveBeenCalledWith(
+    expect.anything(),
+    { boardType: 'quantum', layoutId: 9104, sizeId: 9204 },
+    'saved-climb',
+    documents,
+    expect.any(Function),
+  );
 });

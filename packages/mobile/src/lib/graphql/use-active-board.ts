@@ -10,7 +10,8 @@
 //
 // The queryFn returns `UserBoard | null`.
 
-import { useCallback, useSyncExternalStore } from 'react';
+import { useCallback, useRef, useSyncExternalStore } from 'react';
+import { useIsBoardConfigVisible } from '../../hooks/use-board-visibility';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { getStoredActiveBoard, setStoredActiveBoard, clearStoredActiveBoard } from '../active-board-store';
@@ -31,6 +32,7 @@ export const ACTIVE_BOARD_QUERY_KEY = ['activeBoard'] as const;
 //    queued behind it and therefore remains the final persisted value.
 let activeBoardWriteGeneration = 0;
 let activeBoardWriteQueue: Promise<void> = Promise.resolve();
+let activeBoardWritesPending = 0;
 subscribeToCredentialChanges(() => {
   activeBoardWriteGeneration += 1;
 });
@@ -54,24 +56,29 @@ function enqueueActiveBoardWrite(
   isStillCurrent: () => boolean = () => true,
 ): Promise<boolean> {
   const credentialGeneration = getCredentialGeneration();
-  const operation = activeBoardWriteQueue.then(async () => {
-    if (retireOnPrivacyChange && credentialGeneration !== getCredentialGeneration()) return false;
-    // Always execute queued storage operations in intent order. In particular,
-    // auth cleanup may target the previous user's scoped key and must not be
-    // skipped merely because the next user already selected a board.
-    await writeStorage();
+  activeBoardWritesPending += 1;
+  const operation = activeBoardWriteQueue
+    .then(async () => {
+      if (retireOnPrivacyChange && credentialGeneration !== getCredentialGeneration()) return false;
+      // Always execute queued storage operations in intent order. In particular,
+      // auth cleanup may target the previous user's scoped key and must not be
+      // skipped merely because the next user already selected a board.
+      await writeStorage();
 
-    // A newer intent may have arrived while AsyncStorage was in flight. Its
-    // write is queued next, so do not briefly roll the React Query cache back.
-    if (
-      generation !== activeBoardWriteGeneration ||
-      credentialGeneration !== getCredentialGeneration() ||
-      !isStillCurrent()
-    )
-      return false;
-    commitCache();
-    return true;
-  });
+      // A newer intent may have arrived while AsyncStorage was in flight. Its
+      // write is queued next, so do not briefly roll the React Query cache back.
+      if (
+        generation !== activeBoardWriteGeneration ||
+        credentialGeneration !== getCredentialGeneration() ||
+        !isStillCurrent()
+      )
+        return false;
+      commitCache();
+      return true;
+    })
+    .finally(() => {
+      activeBoardWritesPending -= 1;
+    });
 
   // A failed write must not poison the queue for every later board selection.
   activeBoardWriteQueue = operation.then(
@@ -112,6 +119,7 @@ export async function clearStoredActiveBoardCoordinated(owner?: UserStorageOwner
 /** Test-only reset; callers must invoke it only after pending writes settle. */
 export function resetActiveBoardWriteCoordinatorForTests(): void {
   activeBoardWriteGeneration = 0;
+  activeBoardWritesPending = 0;
   activeBoardWriteQueue = Promise.resolve();
 }
 
@@ -120,6 +128,8 @@ export function resetActiveBoardWriteCoordinatorForTests(): void {
  * picked one yet — callers surface the board picker rather than defaulting.
  */
 export function useActiveBoard() {
+  const queryClient = useQueryClient();
+  const isBoardConfigVisible = useIsBoardConfigVisible();
   useSyncExternalStore(subscribeToCredentialChanges, getCredentialGeneration, getCredentialGeneration);
   const query = useQuery({
     queryKey: ACTIVE_BOARD_QUERY_KEY,
@@ -135,7 +145,21 @@ export function useActiveBoard() {
     // no value in background refetching here.
     staleTime: Infinity,
   });
-  return { ...query, data: query.data ? currentActiveBoardProjection(query.data) : query.data };
+  const board = query.data ? currentActiveBoardProjection(query.data) : query.data;
+  const isRolloutBlocked = board != null && !isBoardConfigVisible(board);
+  const selectionGeneration = getActiveBoardWriteGeneration();
+  const selectedQueryData = query.data;
+  // A rerender while persistence is pending still displays the old board.
+  // Bind hardware eligibility to the displayed query value and require
+  // the serialized write lane to have settled before touching the wall.
+  const isBoardSelectionCurrent = useCallback(
+    () =>
+      activeBoardWritesPending === 0 &&
+      selectionGeneration === getActiveBoardWriteGeneration() &&
+      selectedQueryData === queryClient.getQueryData(ACTIVE_BOARD_QUERY_KEY),
+    [queryClient, selectedQueryData, selectionGeneration],
+  );
+  return { ...query, data: isRolloutBlocked ? null : board, isRolloutBlocked, isBoardSelectionCurrent };
 }
 
 /**
@@ -144,6 +168,9 @@ export function useActiveBoard() {
  * every reader re-renders with the new board immediately, no refetch.
  */
 export function useSetActiveBoard() {
+  const isBoardConfigVisible = useIsBoardConfigVisible();
+  const visibilityRef = useRef(isBoardConfigVisible);
+  visibilityRef.current = isBoardConfigVisible;
   const queryClient = useQueryClient();
   const credentialGeneration = useSyncExternalStore(
     subscribeToCredentialChanges,
@@ -152,22 +179,30 @@ export function useSetActiveBoard() {
   );
   return useCallback(
     async (board: UserBoard, isOperationCurrent?: () => boolean): Promise<boolean> => {
-      if (credentialGeneration !== getCredentialGeneration() || (isOperationCurrent && !isOperationCurrent()))
-        return false;
+      const isCurrent = () => visibilityRef.current(board) && (!isOperationCurrent || isOperationCurrent());
+      if (credentialGeneration !== getCredentialGeneration() || !isCurrent()) return false;
       const generation = beginActiveBoardWrite();
       const owner = getCurrentUserStorageOwner();
       return enqueueActiveBoardWrite(
         generation,
-        () => {
-          if (isOperationCurrent && !isOperationCurrent()) return Promise.resolve();
-          return setStoredActiveBoard(board, owner);
+        async () => {
+          if (!isCurrent()) return;
+          const previous = isOperationCurrent ? await getStoredActiveBoard(owner) : null;
+          if (credentialGeneration !== getCredentialGeneration() || !isCurrent()) return;
+          await setStoredActiveBoard(board, owner);
+          // IndexedDB/AsyncStorage may have completed after a guarded
+          // navigation was canceled. Repair it before the next queued intent.
+          if (isOperationCurrent && credentialGeneration === getCredentialGeneration() && !isCurrent()) {
+            if (previous) await setStoredActiveBoard(previous, owner);
+            else await clearStoredActiveBoard(owner);
+          }
         },
         () => {
           const cached = queryClient.setQueryData<UserBoard | null>(ACTIVE_BOARD_QUERY_KEY, board);
           if (cached) authorizeActiveBoardProjection(cached);
         },
         true,
-        isOperationCurrent,
+        isCurrent,
       );
     },
     [queryClient, credentialGeneration],

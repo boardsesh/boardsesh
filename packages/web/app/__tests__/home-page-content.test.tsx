@@ -310,6 +310,7 @@ describe('HomePageContent', () => {
         .filter((link) => link.getAttribute('href')?.startsWith('/boards#'));
       expect(boardLinks).toHaveLength(8);
       expect(boardLinks.map((link) => link.textContent)).toContain('Woods');
+      expect(boardLinks.map((link) => link.getAttribute('href'))).not.toContain('/boards#quantum');
       expect(
         boardLinks[0].compareDocumentPosition(screen.getByTestId('features')) & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();

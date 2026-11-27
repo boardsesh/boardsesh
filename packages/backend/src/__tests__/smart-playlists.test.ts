@@ -301,13 +301,20 @@ describe('smartPlaylist resolver', () => {
       expect(calls.having).toHaveLength(1);
       expect(sqlText(calls.having[0][0])).toMatch(/NOT bool_or\(\s*IN \('flash', 'send'\)\)/);
       expect(calls.as[0]).toEqual(['projects']);
-      // The climb row is not joined, only probed by the tick privacy rule (a
-      // listed or own climb behind the canonical uuid), so the page and the
-      // count skip a tick the hydrator would drop (#6661). That rule is
-      // stricter than the hydrator's readable rule, so no second probe runs.
+      // Legacy ticks retain their listed-or-own privacy rule. The additional
+      // probe applies only to Quantum and checks the canonical climb for both
+      // the page and its count.
       const where = renderedSql(calls.where[0][0]);
       expect(where).toContain('"privacy_tick_climb"');
-      expect(where).not.toContain('privacy_reference_climb');
+      expect(where).toContain(
+        `"boardsesh_ticks"."board_type" <> 'quantum' OR EXISTS (SELECT 1 FROM board_climbs privacy_reference_climb`,
+      );
+      expect(where).toContain(
+        'privacy_reference_climb.uuid = COALESCE("board_climb_aliases"."canonical_uuid", "boardsesh_ticks"."climb_uuid")',
+      );
+      expect(where).toContain('privacy_reference_climb.is_listed IS NOT TRUE');
+      expect(where).toContain('privacy_reference_climb.is_boardsesh_authored IS FALSE');
+      expect(where).toContain('privacy_reference_climb.controller_route_uuid IS NOT NULL');
     }
     expect(pageCalls.leftJoin).toHaveLength(0);
     expect(pageCalls.limit[0]).toEqual([20]);

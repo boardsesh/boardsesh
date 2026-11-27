@@ -12,6 +12,10 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
+import { parseBoardPath } from '@boardsesh/board-config';
+
+const rollout = vi.hoisted(() => ({ quantum: undefined as unknown }));
+vi.mock('../../../src/providers/feature-flags-provider', () => ({ useFeatureFlag: () => rollout.quantum }));
 
 const queue = vi.hoisted(() => ({
   sessionId: null as string | null,
@@ -32,6 +36,8 @@ const fetchAllMyOwnedBoards = vi.hoisted(() => vi.fn());
 const fetchBoardBySlug = vi.hoisted(() => vi.fn());
 const fetchBoardByUuid = vi.hoisted(() => vi.fn());
 const createBoardMutateAsync = vi.hoisted(() => vi.fn());
+const restoreTarget = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/lib/boards/session-restore-board', () => ({ readSessionRestoreBoard: restoreTarget }));
 
 const SESSION_BOARD_PATH = 'kilter/8/17/27,28/40';
 
@@ -172,8 +178,14 @@ beforeEach(() => {
   auth.generation = 0;
   alerts.actions = [];
   queue.sessionId = null;
+  rollout.quantum = undefined;
   preview.data.boardPath = SESSION_BOARD_PATH;
   preview.data.isPermanent = false;
+  restoreTarget.mockReset().mockImplementation(async () => ({
+    status: 'active',
+    geometryPath: preview.data.boardPath,
+    board: parseBoardPath(preview.data.boardPath),
+  }));
   fetchAllMyOwnedBoards.mockResolvedValue({ viewerId: 'viewer-1', boards: [] });
   fetchBoardBySlug.mockResolvedValue(null);
   fetchBoardByUuid.mockResolvedValue(null);
@@ -182,6 +194,77 @@ beforeEach(() => {
 });
 
 describe('JoinSessionScreen board resolution', () => {
+  it.each([
+    ['quantum/9101/9201/1/40', undefined],
+    ['quantum/9101/9201/1/40', false],
+    ['quantum/9105/9205/1/40', true],
+  ])('blocks %s under rollout %s without switching sessions or minting a board', (boardPath, flag) => {
+    preview.data.boardPath = boardPath;
+    rollout.quantum = flag;
+    queue.sessionId = 'current-session';
+
+    const screen = render(createElement(JoinSessionScreen));
+
+    expect(screen.queryByRole('button', { name: 'mobileJoin.join' })).toBeNull();
+    expect(screen.getByText('mobileJoin.joinError')).toBeDefined();
+    expect(queue.clearSession).not.toHaveBeenCalled();
+    expect(queue.joinSession).not.toHaveBeenCalled();
+    expect(fetchAllMyOwnedBoards).not.toHaveBeenCalled();
+    expect(createBoardMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it.each(['quantum/9104/9204/1/35', 'kilter/8/17/27,28/45'])(
+    'keeps the current session when the durable board became %s before confirming',
+    async (geometryPath) => {
+      queue.sessionId = 'current-session';
+      await pressJoin();
+      expect(restoreTarget).not.toHaveBeenCalled();
+      restoreTarget.mockResolvedValue({ status: 'active', geometryPath, board: parseBoardPath(geometryPath) });
+
+      await act(async () => alerts.actions.find((action) => action.text === 'mobileJoin.join')?.onPress?.());
+      await waitFor(() => expect(showToast).toHaveBeenCalledWith('mobileJoin.joinError', 'error'));
+
+      expect(fetchAllMyOwnedBoards).not.toHaveBeenCalled();
+      expect(createBoardMutateAsync).not.toHaveBeenCalled();
+      expect(queue.clearSession).not.toHaveBeenCalled();
+      expect(queue.joinSession).not.toHaveBeenCalled();
+    },
+  );
+
+  it('resolves a disabled named Quantum board before leaving the current session', async () => {
+    preview.data.boardPath = '/b/quantum-gym-wall';
+    const geometryPath = 'quantum/9101/9201/1/40';
+    restoreTarget.mockResolvedValue({ status: 'active', geometryPath, board: parseBoardPath(geometryPath) });
+    queue.sessionId = 'current-session';
+    fetchBoardBySlug.mockResolvedValue(board({ boardType: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' }));
+
+    await pressJoin();
+    await act(async () => alerts.actions.find((action) => action.text === 'mobileJoin.join')?.onPress?.());
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('mobileJoin.joinError', 'error'));
+
+    expect(queue.clearSession).not.toHaveBeenCalled();
+    expect(queue.joinSession).not.toHaveBeenCalled();
+    expect(fetchAllMyOwnedBoards).not.toHaveBeenCalled();
+    expect(createBoardMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('joins on released S Fitness when enabled', async () => {
+    preview.data.boardPath = 'quantum/9104/9204/1/35';
+    rollout.quantum = true;
+    const fitness = board({ boardType: 'quantum', layoutId: 9104, sizeId: 9204, setIds: '1' });
+    fetchAllMyOwnedBoards.mockResolvedValue({ viewerId: 'viewer-1', boards: [fitness] });
+
+    await pressJoin();
+
+    expect(queue.joinSession).toHaveBeenCalledWith(
+      'session-42',
+      expect.objectContaining({
+        userBoard: { ...fitness, angle: 35 },
+      }),
+    );
+    expect(createBoardMutateAsync).not.toHaveBeenCalled();
+  });
+
   // The real resolver re-checks ownership even when a followed row sorts first;
   // the loader's profile and pagination contract has its own GraphQL tests.
   it('tells the climber that everyone in the session will see their name before they join', () => {
@@ -214,6 +297,7 @@ describe('JoinSessionScreen board resolution', () => {
     expect(createBoardMutateAsync).not.toHaveBeenCalled();
     expect(queue.joinSession).toHaveBeenCalledWith('session-42', {
       boardPath: SESSION_BOARD_PATH,
+      expectedBoardPath: SESSION_BOARD_PATH,
       // Adopted at the session's angle, not the board's stored 20.
       userBoard: { ...matching, angle: 40 },
       isOperationCurrent: expect.any(Function),
@@ -232,6 +316,7 @@ describe('JoinSessionScreen board resolution', () => {
     expect(createBoardMutateAsync).toHaveBeenCalledTimes(1);
     expect(queue.joinSession).toHaveBeenCalledWith('session-42', {
       boardPath: SESSION_BOARD_PATH,
+      expectedBoardPath: SESSION_BOARD_PATH,
       userBoard: expect.objectContaining({ uuid: 'minted-uuid', isOwned: false }),
       isOperationCurrent: expect.any(Function),
     });
@@ -250,6 +335,7 @@ describe('JoinSessionScreen board resolution', () => {
     expect(fetchBoardByUuid).toHaveBeenCalledWith('existing-uuid');
     expect(queue.joinSession).toHaveBeenCalledWith('session-42', {
       boardPath: SESSION_BOARD_PATH,
+      expectedBoardPath: SESSION_BOARD_PATH,
       userBoard: { ...existing, angle: 40 },
       isOperationCurrent: expect.any(Function),
     });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { LAYOUTS, getSetsForLayoutAndSize, getSizesForLayoutId } from '@boardsesh/board-constants/catalog-metadata';
+import { supportsStaticBoardRender } from '@boardsesh/board-config';
 import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, type MoonBoardLayoutKey } from '@boardsesh/board-config/moonboard-metadata';
 import { WOODS_LAYOUTS, WOODS_SETS, WOODS_SIZES } from '@boardsesh/board-config/woods-metadata';
 import { getBoardImageDetailsForBoard, type BoardImageDetails } from '@/app/lib/board-image-details';
@@ -26,9 +27,9 @@ function catalogueBoard(boardName: BoardName, layoutId: number, sizeId: number):
   return getBoardImageDetailsForBoard({ board_name: boardName, layout_id: layoutId, size_id: sizeId, set_ids: setIds });
 }
 
-/** Every layout and size a board list can be built for: the Aurora catalogue, MoonBoard's layouts and Woods' sizes. */
+/** Every layout and size with a static web list and matching board art. */
 function everyListableBoard(): BoardImageDetails[] {
-  const auroraBoards = (Object.keys(LAYOUTS) as BoardName[]).flatMap((boardName) =>
+  const catalogueBoards = (Object.keys(LAYOUTS) as BoardName[]).filter(supportsStaticBoardRender).flatMap((boardName) =>
     Object.keys(LAYOUTS[boardName] ?? {}).flatMap((layoutKey) =>
       getSizesForLayoutId(boardName, Number(layoutKey))
         .filter((size) => getSetsForLayoutAndSize(boardName, Number(layoutKey), size.id).length > 0)
@@ -51,7 +52,7 @@ function everyListableBoard(): BoardImageDetails[] {
       set_ids: WOODS_SETS.map((set) => set.id),
     }),
   );
-  return [...auroraBoards, ...moonBoards, ...woodsBoards];
+  return [...catalogueBoards, ...moonBoards, ...woodsBoards];
 }
 
 describe('board configuration search name', () => {
@@ -98,7 +99,7 @@ describe('board configuration search name', () => {
     expect(boardConfigForSearch({ board_name: 'kilter', layout_id: 999, size_id: 999 })).toBe('Kilter');
   });
 
-  it('gives every layout and size in the catalogue its own name, so no two board lists share a title', () => {
+  it('gives every layout and size with a static web list its own title', () => {
     const boards = everyListableBoard();
     const configsByName = new Map<string, string[]>();
     for (const board of boards) {
@@ -110,8 +111,8 @@ describe('board configuration search name', () => {
     }
     const sharedNames = [...configsByName].filter(([, configs]) => configs.length > 1);
 
-    // Not vacuous: the walk has to reach every catalogue board. Spray walls are
-    // not on the list: their layouts are created at runtime and have no board list.
+    // Keep the static web coverage explicit so an empty walk cannot pass.
+    // App-only configurations and runtime spray layouts have no static board lists.
     expect(boards.length).toBeGreaterThan(40);
     expect(new Set(boards.map((board) => board.board_name))).toEqual(
       new Set(['kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill', 'moonboard', 'woods']),

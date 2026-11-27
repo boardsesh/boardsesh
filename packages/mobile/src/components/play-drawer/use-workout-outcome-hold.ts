@@ -14,6 +14,7 @@
 // ⋯, the connect pill, the opening layout key), so the swap is one change, at
 // the end of the hold, never one at the beat and another after it.
 import { useEffect, useMemo, useState } from 'react';
+import { useClimbTargetAvailable } from '../../hooks/use-climb-target-availability';
 import { WALL_MOVED_GRACE_MS, type WorkoutOutcomeTarget } from './workout-outcome';
 
 /** What the Fell / Sent row shows, and whether it is held for the climb the wall left. */
@@ -90,8 +91,14 @@ export function useWorkoutOutcomeHold({
     return () => clearTimeout(timeout);
   }, [hold, held]);
 
+  // The saved hold has its own board and route. Testing the wall's new climb
+  // would keep the old controls visible after withdrawal or a rollout change.
+  const candidate = live ?? held?.target ?? null;
+  const available = useClimbTargetAvailable(candidate?.climb ?? null, candidate);
+
   return useMemo<WorkoutOutcomeShown | null>(() => {
+    if (!available) return null;
     if (live !== null) return { target: live, wallLeftAtMs: null };
     return held !== null ? { target: held.target, wallLeftAtMs: held.wallLeftAtMs } : null;
-  }, [live, held]);
+  }, [live, held, available]);
 }

@@ -1,4 +1,4 @@
-import { eq, and, asc, desc, sql, type SQL } from 'drizzle-orm';
+import { eq, and, asc, desc, not, sql, type SQL } from 'drizzle-orm';
 import {
   type ConnectionContext,
   type BoardName,
@@ -12,6 +12,7 @@ import {
   climbDraftVisibilityCondition,
   playlistBoardScopeConditions,
   sprayClimbVisibilityCondition,
+  unavailableQuantumClimbCondition,
 } from '@boardsesh/db/queries';
 import { applyRateLimit, validateInput } from '../../shared/helpers';
 import { GetPlaylistClimbsInputSchema } from '../../../../validation/schemas';
@@ -80,6 +81,7 @@ function buildSpecificBoardClimbJoinConditions(
 ) {
   const climbJoinConditions = [
     eq(tables.climbs.uuid, dbSchema.playlistClimbs.climbUuid),
+    not(unavailableQuantumClimbCondition()),
     // The draft rule: a playlist anyone can open must not substitute its own
     // visibility for a draft's, which is its owner's alone. A published climb
     // shows whoever set it, unlisted included.
@@ -148,6 +150,7 @@ function specificBoardHydrateOptions(
 function allBoardsWhereConditions(playlistId: bigint, viewerUserId: string | null | undefined): SQL[] {
   return [
     eq(dbSchema.playlistClimbs.playlistId, playlistId),
+    not(unavailableQuantumClimbCondition()),
     climbDraftVisibilityCondition(
       {
         boardType: dbSchema.boardClimbs.boardType,

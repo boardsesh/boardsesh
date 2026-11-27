@@ -14,6 +14,8 @@ import {
 // Mutable across tests so each seeds its own deep-link params + stored board.
 const routeParams = vi.hoisted(() => ({ current: {} as Record<string, string | string[]> }));
 const activeBoard = vi.hoisted(() => ({ current: null as UserBoard | null | undefined }));
+const rollout = vi.hoisted(() => ({ quantum: undefined as unknown }));
+vi.mock('../../../../src/providers/feature-flags-provider', () => ({ useFeatureFlag: () => rollout.quantum }));
 const activeBoardPending = vi.hoisted(() => ({ current: false }));
 const router = vi.hoisted(() => ({
   canGoBack: vi.fn(() => false),
@@ -104,6 +106,7 @@ const WOODS_ACTIVE_BOARD = {
 beforeEach(() => {
   vi.clearAllMocks();
   routeParams.current = {};
+  rollout.quantum = undefined;
   activeBoard.current = null;
   activeBoardPending.current = false;
   editorBoard.latest = null;
@@ -113,6 +116,37 @@ beforeEach(() => {
 });
 
 describe('CreateClimbRoute board resolution', () => {
+  it.each([false, undefined, 'tester'])('blocks a direct Quantum editor link while rollout is %s', (flag) => {
+    rollout.quantum = flag;
+    activeBoard.current = KILTER_ACTIVE_BOARD;
+    routeParams.current = { boardName: 'quantum', layoutId: '9101', sizeId: '9202', setIds: '1', angle: '40' };
+
+    const { container } = render(<CreateClimbRoute />);
+
+    expect(container.querySelector('[data-editor]')).toBeNull();
+    expect(editorBoard.latest).toBeNull();
+  });
+
+  it.each([KILTER_ACTIVE_BOARD, null])('opens S Fitness independently of the active board', (board) => {
+    rollout.quantum = true;
+    activeBoard.current = board;
+    routeParams.current = { boardName: 'quantum', layoutId: '9104', sizeId: '9204', setIds: '1', angle: '35' };
+
+    const { container } = render(<CreateClimbRoute />);
+
+    expect(container.querySelector('[data-editor]')).not.toBeNull();
+    expect(editorBoard.latest).toEqual({ boardName: 'quantum', layoutId: 9104, sizeId: 9204, setIds: '1', angle: 35 });
+  });
+
+  it('keeps Belay out of the editor even with the rollout enabled', () => {
+    rollout.quantum = true;
+    routeParams.current = { boardName: 'quantum', layoutId: '9105', sizeId: '9205', setIds: '1', angle: '35' };
+
+    const { container } = render(<CreateClimbRoute />);
+
+    expect(container.querySelector('[data-editor]')).toBeNull();
+  });
+
   it('opens the editor on the board and geometry the link named', () => {
     routeParams.current = { boardName: 'tension', layoutId: '8', sizeId: '25', setIds: '20,21', angle: '40' };
     activeBoard.current = KILTER_ACTIVE_BOARD;

@@ -37,6 +37,8 @@ const EXEMPT: Record<string, string> = {
   'src/lib/board-details.ts': 'Defines it. Already folds `sprayCacheToken` into its own memo key.',
   'src/lib/background-image-cache.ts': 'Not React. Called from the render hook, which subscribes for it.',
   'src/lib/create-board-holds.ts': 'Not React. Calls `ensureSprayWallLoaded` itself and keys its memo on the token.',
+  'src/lib/use-board-render-data.ts':
+    'The shared reactive boundary. Subscribes with useSyncExternalStore through subscribeBoardGeometry and loads through the source adapter; its runtime arrival/replacement/removal tests cover spray and downloaded geometry.',
   'src/lib/playlists/playlist-climb-render-board.ts':
     'Not React. Calls `ensureSprayWallLoaded` itself and keys its memo on the token.',
   'src/hooks/use-native-climb-render.ts':

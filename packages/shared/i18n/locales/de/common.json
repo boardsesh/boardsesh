@@ -947,13 +947,64 @@
       "hideCard": "Diese Karte ausblenden",
       "settingTitle": "Aufrufe zur Unterstützung zeigen",
       "settingFooter": "Eine Zeile „Boardsesh unterstützen“ unter Konto und in der ersten Woche jedes Monats eine Karte auf Start."
-    }
+    },
+    "more": {
+      "accessibility": {
+        "mode": {},
+        "sliders": {},
+        "shapes": {},
+        "preview": {},
+        "cvd": {},
+        "compare": {},
+        "brush": {},
+        "size": {},
+        "roles": {}
+      },
+      "storage": {},
+      "appearance": {},
+      "gradeFormat": {},
+      "displayOptions": {},
+      "offline": {},
+      "language": {},
+      "diagnostics": {},
+      "integrations": {},
+      "syncIssues": {},
+      "signOut": {}
+    },
+    "previewChannels": {}
   },
   "lightControl": {
     "turnOffAll": "Alle Lichter ausschalten",
     "lightAdjacentHolds": "Griff darüber beleuchten",
     "lightAdjacentHoldsHelp": "Lässt eine zweite, gedimmte LED über jedem beleuchteten Start- oder Handgriff leuchten. Erfordert einen MoonBoard-Controller mit der Zusatz-LED-Funktion.",
-    "disconnect": "Board trennen"
+    "disconnect": "Board trennen",
+    "quantum": {
+      "open": "Quantum-Ebenen öffnen",
+      "layerTitle": "{{color}} Ebene",
+      "layerAction": "{{color}} Ebene: {{action}}",
+      "colors": {
+        "green": "Grüne",
+        "cyan": "Türkise",
+        "magenta": "Magenta",
+        "yellow": "Gelbe"
+      },
+      "light": "Diesen Boulder beleuchten",
+      "replace": "Durch diesen Boulder ersetzen",
+      "foreign": "Von einer anderen Person belegt",
+      "boardFull": "Alle vier Plätze am Board sind belegt",
+      "noClimb": "Wähle einen Boulder zum Beleuchten",
+      "routeMissing": "Dieser Boulder hat keine Controller-Route",
+      "saveFirst": "Speichere diesen Boulder, bevor du ihn am Board beleuchtest",
+      "geometryMissing": "Die LED-Positionen für diesen Boulder sind noch nicht bereit",
+      "multiFrameUnsupported": "Boulder mit mehreren Frames können auf Quantum noch nicht beleuchtet werden",
+      "tooManyHolds": "Dieser Boulder überschreitet das Limit von 92 Lichtern in Boardsesh",
+      "actionFailed": "Das Board konnte nicht aktualisiert werden. Aktualisiere und versuche es erneut.",
+      "active": "Am Board beleuchtet",
+      "remove": "Meine Lichter ausschalten",
+      "removeColor": "Meine Lichter ausschalten ({{color}})",
+      "invalidFrames": "Die Griffe dieses Boulders konnten nicht gelesen werden",
+      "sessionDriver": "Das Handy, das die Session gestartet hat, steuert die Lichter"
+    }
   },
   "bluetooth": {
     "boardNotFound": "Dein Board wurde nicht gefunden. Prüf, ob es an und in Reichweite ist — und wenn ein anderes Handy verbunden ist, trenn dort zuerst.",
@@ -1313,5 +1364,9 @@
     "continue": "Weiter zu Boardsesh",
     "formPending": "Unser Formular für Kletterbegriffe ist noch nicht fertig. Du kannst über Beim Übersetzen helfen unter Einstellungen → Allgemein mitmachen.",
     "formDescription": "Hilf uns im Google-Formular, natürliche chinesische Kletterbegriffe zu finden."
+  },
+  "moonboardImport": {},
+  "otaPreview": {
+    "metadata": {}
   }
 }

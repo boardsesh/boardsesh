@@ -23,6 +23,7 @@ import {
   type GymFinderSearchKind,
 } from '@boardsesh/analytics';
 import { placeSuggestionLabel } from '@boardsesh/gym-filters';
+import { useIsBoardConfigVisible, useIsBoardTypeVisible } from '../../hooks/use-board-visibility';
 import { useNearbyBoards, useNearbyGyms } from '../../lib/graphql/hooks';
 import { useGymBoards } from '../../lib/graphql/hooks/use-gym-boards';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
@@ -153,7 +154,15 @@ export function useGymFinder({ revealRow, mapAvailableOnOpen = true }: UseGymFin
   // location); `searchLabel` drives the "Showing X" caption. Filters apply on submit
   // so typing doesn't fire a request per keystroke.
   const [inputText, setInputText] = useState('');
-  const [appliedFilter, setAppliedFilter] = useState<WallFinderFilter>(() => initialWallFinderFilter(boardType));
+  const isBoardTypeVisible = useIsBoardTypeVisible();
+  const isBoardConfigVisible = useIsBoardConfigVisible();
+  const [storedFilter, setAppliedFilter] = useState<WallFinderFilter>(() => initialWallFinderFilter(boardType));
+  const appliedFilter = useMemo(() => {
+    if (!storedFilter.boardTypes?.some((type) => !isBoardTypeVisible(type))) return storedFilter;
+    const boardTypes = storedFilter.boardTypes.filter(isBoardTypeVisible);
+    return { ...clearWallFinderChipFilters(storedFilter), boardTypes };
+  }, [storedFilter, isBoardTypeVisible]);
+  if (storedFilter !== appliedFilter) setAppliedFilter(appliedFilter);
   const appliedFilterRef = useRef(appliedFilter);
   appliedFilterRef.current = appliedFilter;
   const [viewCenter, setViewCenter] = useState<Coords | null>(null);
@@ -255,12 +264,19 @@ export function useGymFinder({ revealRow, mapAvailableOnOpen = true }: UseGymFin
     if (search.center !== null) void refetchBoards();
   }, [refetchGyms, refetchBoards, search.center, search.filter.name]);
 
-  const gyms = useMemo(() => gymConnection?.gyms ?? [], [gymConnection?.gyms]);
+  const gyms = useMemo(
+    () =>
+      (gymConnection?.gyms ?? [])
+        .map((gym) => ({ ...gym, boardTypes: (gym.boardTypes ?? []).filter(isBoardTypeVisible) }))
+        .filter((gym) => !search.filter.multiBoardTypeOnly || gym.boardTypes.length > 1),
+    [gymConnection?.gyms, isBoardTypeVisible, search.filter.multiBoardTypeOnly],
+  );
   // A name-only gym search disables board discovery. Retained data must not
   // keep showing standalone boards from the city that was just cleared.
   const boards = useMemo(
-    () => (search.center !== null ? (boardConnection?.boards ?? []) : []),
-    [boardConnection?.boards, search.center],
+    () =>
+      search.center !== null ? (boardConnection?.boards ?? []).filter((board) => isBoardConfigVisible(board)) : [],
+    [boardConnection?.boards, isBoardConfigVisible, search.center],
   );
 
   // Boards not attached to a gym still deserve discovery — surface them as their

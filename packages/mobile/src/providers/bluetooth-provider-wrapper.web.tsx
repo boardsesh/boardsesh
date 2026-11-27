@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
+import { useQuantumBluetoothSelection } from './use-quantum-bluetooth-selection';
 import { BluetoothProvider } from './bluetooth-provider';
+import { QuantumBluetoothProvider } from './quantum-bluetooth-provider';
 import { useActiveBoard } from '../lib/graphql/use-active-board';
 
 /**
@@ -16,20 +18,24 @@ import { useActiveBoard } from '../lib/graphql/use-active-board';
  * `undefined → board` transition. LiveActivityBridge is iOS-native and omitted.
  */
 export function BluetoothProviderWrapper({ children }: { children: ReactNode }) {
-  const { data: activeBoard } = useActiveBoard();
+  const { data: activeBoard, isBoardSelectionCurrent } = useActiveBoard();
+  const quantumSelection = useQuantumBluetoothSelection(activeBoard, isBoardSelectionCurrent);
+  const legacyActiveBoard = activeBoard?.boardType === 'quantum' ? undefined : activeBoard;
 
   return (
-    <BluetoothProvider
-      angle={activeBoard?.angle}
-      boardName={activeBoard?.boardType}
-      layoutId={activeBoard?.layoutId}
-      sizeId={activeBoard?.sizeId}
-      setIds={activeBoard?.setIds}
-      boardUuid={activeBoard?.uuid}
-      hasLeds={activeBoard?.hasLeds}
-      litByWallDevice={activeBoard?.litByWallDevice}
-    >
-      {children}
-    </BluetoothProvider>
+    <QuantumBluetoothProvider {...quantumSelection}>
+      <BluetoothProvider
+        angle={legacyActiveBoard?.angle}
+        boardName={legacyActiveBoard?.boardType}
+        layoutId={legacyActiveBoard?.layoutId}
+        sizeId={legacyActiveBoard?.sizeId}
+        setIds={legacyActiveBoard?.setIds}
+        boardUuid={legacyActiveBoard?.uuid}
+        hasLeds={legacyActiveBoard?.hasLeds}
+        litByWallDevice={legacyActiveBoard?.litByWallDevice}
+      >
+        {children}
+      </BluetoothProvider>
+    </QuantumBluetoothProvider>
   );
 }

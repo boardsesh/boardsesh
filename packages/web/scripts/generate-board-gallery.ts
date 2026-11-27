@@ -5,11 +5,15 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
-import { getBoardSetsForLayoutAndSize } from '@boardsesh/board-config';
+import { getBoardSetsForLayoutAndSize, supportsStaticBoardRender } from '@boardsesh/board-config';
 import { getBoardImageDetailsForBoard } from '@boardsesh/board-config/image-metadata';
 import { getBackgroundRelPaths, resolveArtPath, type RenderableBoardDetails } from '@boardsesh/board-render';
 import { composeBoardBaseBuffer } from '@boardsesh/board-render/pipeline';
-import { getLargestGalleryBoardSize, getOrderedGalleryLayouts } from '../app/boards/board-gallery-config';
+import {
+  getGalleryBoardMeasurements,
+  getLargestGalleryBoardSize,
+  getOrderedGalleryLayouts,
+} from '../app/boards/board-gallery-config';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const publicRoot = join(repositoryRoot, 'packages/web/public');
@@ -25,10 +29,12 @@ async function generateGallery() {
   await mkdir(outputDirectory, { recursive: true });
   const layouts = [];
   for (const boardName of SUPPORTED_BOARDS) {
-    if (boardName === 'spray') continue;
+    if (boardName === 'spray' || !supportsStaticBoardRender(boardName)) continue;
     for (const layout of getOrderedGalleryLayouts(boardName)) {
       const size = getLargestGalleryBoardSize(boardName, layout.id);
       const sizeId = size.id;
+      const measurements = getGalleryBoardMeasurements(size);
+      if (!measurements) throw new Error(`No gallery board measurements for ${boardName}/${layout.id}/${sizeId}`);
       const setIds = getBoardSetsForLayoutAndSize(boardName, layout.id, sizeId).map((set) => set.id);
       if (setIds.length === 0) throw new Error(`No hold sets for ${boardName}/${layout.id}/${sizeId}`);
       const details = getBoardImageDetailsForBoard({
@@ -74,8 +80,7 @@ async function generateGallery() {
         layoutName: layout.name,
         sizeId,
         sizeName: size.name,
-        physicalWidth: size.edgeRight - size.edgeLeft,
-        physicalHeight: size.edgeTop - size.edgeBottom,
+        ...measurements,
         setIds,
         src: `/images/board-gallery/${filename}`,
         width: outputWidth,

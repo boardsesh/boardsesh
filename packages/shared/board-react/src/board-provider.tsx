@@ -5,11 +5,15 @@
 // the orchestration and the public surface are the same.
 
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
-import type { BoardName, UpdateClimbInput } from '@boardsesh/shared-schema';
+import type { BoardName } from '@boardsesh/shared-schema';
 import { useBoardAdapter } from './adapter';
 import { useLogbook as useLogbookQuery } from './use-logbook';
 import { useSaveTick as useSaveTickMutation } from './use-save-tick';
-import { useSaveClimb as useSaveClimbMutation, useUpdateClimb as useUpdateClimbMutation } from './use-save-climb';
+import {
+  useSaveClimb as useSaveClimbMutation,
+  useUpdateClimb as useUpdateClimbMutation,
+  type UpdateClimbOptions,
+} from './use-save-climb';
 import { logbookClimbAngleKey, type LogbookEntry } from './logbook-keys';
 import type { SaveTickOptions } from './tick-helpers';
 import type { SaveClimbOptions, SaveClimbResponse, UpdateClimbResponse } from './climb-helpers';
@@ -51,7 +55,7 @@ export type BoardContextType = {
   getLogbook: (climbUuids: string[]) => Promise<void>;
   saveTick: (options: SaveTickOptions) => Promise<void>;
   saveClimb: (options: SaveClimbOptions) => Promise<SaveClimbResponse>;
-  updateClimb: (input: UpdateClimbInput) => Promise<UpdateClimbResponse>;
+  updateClimb: (input: UpdateClimbOptions) => Promise<UpdateClimbResponse>;
 };
 
 /**
@@ -183,7 +187,7 @@ export function BoardProvider({
     return saveClimbMutateRef.current(options);
   }, []);
 
-  const updateClimb = useCallback(async (input: UpdateClimbInput): Promise<UpdateClimbResponse> => {
+  const updateClimb = useCallback(async (input: UpdateClimbOptions): Promise<UpdateClimbResponse> => {
     return updateClimbMutateRef.current(input);
   }, []);
 

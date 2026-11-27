@@ -20,9 +20,11 @@ type Children = { children?: ReactNode };
 type PressProps = { children?: ReactNode; onPress?: () => void; accessibilityLabel?: string };
 
 const hapticSelection = vi.fn();
+const rollout = vi.hoisted(() => ({ enabled: false }));
+vi.mock('../../../providers/feature-flags-provider', () => ({ useFeatureFlag: () => rollout.enabled }));
 
-vi.mock('@boardsesh/board-config', () => ({
-  SUPPORTED_BOARDS: ['kilter', 'tension', 'moonboard', 'woods'],
+vi.mock('@boardsesh/board-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/board-config')>()),
   formatBoardDisplayName: (boardType: string) => boardType.charAt(0).toUpperCase() + boardType.slice(1),
 }));
 
@@ -52,6 +54,7 @@ vi.mock('../../../theme/tokens', () => ({
 }));
 vi.mock('../../../theme/animations', () => ({ springs: { snappy: {} } }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: () => hapticSelection() }));
+
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
@@ -82,7 +85,10 @@ function baseProps(overrides: Partial<WallFinderFilterChipsProps> = {}): WallFin
   };
 }
 
-beforeEach(() => hapticSelection.mockClear());
+beforeEach(() => {
+  hapticSelection.mockClear();
+  rollout.enabled = false;
+});
 
 describe('WallFinderFilterChips', () => {
   it('renders the multi-board chip and a chip per supported board', () => {
@@ -93,8 +99,17 @@ describe('WallFinderFilterChips', () => {
     expect(getByText('Moonboard')).toBeTruthy();
   });
 
-  // Woods rides the same generic chip row, but it's the board whose layout/size
-  // tiers used to come up empty (#4751) — so pin the whole cascade end to end.
+  it('offers Quantum only while its rollout is enabled', () => {
+    const { queryByText, getByText, rerender } = render(<WallFinderFilterChips {...baseProps()} />);
+    expect(queryByText('Quantum')).toBeNull();
+    rollout.enabled = true;
+    rerender(<WallFinderFilterChips {...baseProps()} />);
+    expect(getByText('Quantum')).toBeTruthy();
+    rollout.enabled = false;
+    rerender(<WallFinderFilterChips {...baseProps()} />);
+    expect(queryByText('Quantum')).toBeNull();
+  });
+
   it('renders the Woods chip and its layout + size chips', () => {
     const onToggle = vi.fn();
     const onToggleLayout = vi.fn();

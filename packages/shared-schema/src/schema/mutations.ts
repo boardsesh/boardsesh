@@ -21,6 +21,8 @@ export const mutationsTypeDefs = /* GraphQL */ `
       sessionName: String
       "Entries of initialQueue before Up next when no seed climb is current in it (F3). Ignored when initialCurrentClimb is in initialQueue."
       initialHistoryCount: Int
+      "Require the current saved board and angle to match this positional path before switching rooms."
+      expectedBoardPath: String
     ): Session!
 
     """
@@ -290,6 +292,13 @@ export const mutationsTypeDefs = /* GraphQL */ `
     Returns whether the clear was accepted.
     """
     reportBoardClear(boardId: Int!): Boolean!
+
+    """
+    Publish a confirmed QuantumBoard controller roster after BLE readback.
+    The caller must have live proof-of-presence for this board. Controller
+    user and route UUIDs are deliberately absent from the input.
+    """
+    reportBoardLayers(boardId: Int!, layers: [ReportBoardLayerInput!]!): BoardLayersSnapshot!
 
     # ============================================
     # User Management Mutations (require auth)

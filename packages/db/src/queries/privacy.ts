@@ -1,5 +1,6 @@
 import { playlists } from '../schema/app/playlists';
 import { Column, getTableName, is, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { unavailableQuantumClimbCondition } from './climbs/quantum-catalog-ownership';
 type ViewerId = string | null | undefined;
 type PrivacyResourceKind = 'board' | 'session';
 
@@ -644,6 +645,7 @@ export function climbReferenceReadableCondition(
 ): SQL {
   return sql`EXISTS (SELECT 1 FROM board_climbs privacy_reference_climb
     WHERE privacy_reference_climb.board_type = ${reference.boardType} AND privacy_reference_climb.uuid = ${reference.climbUuid}
+    AND NOT ${unavailableQuantumClimbCondition(sql`privacy_reference_climb.`)}
     AND ${climbDraftVisibilityCondition({ userId: sql`privacy_reference_climb.user_id`, isDraft: sql`privacy_reference_climb.is_draft`, boardType: sql`privacy_reference_climb.board_type` }, viewerId)})`;
 }
 

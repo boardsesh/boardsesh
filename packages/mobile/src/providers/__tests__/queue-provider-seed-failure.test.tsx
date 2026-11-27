@@ -342,7 +342,7 @@ function routeHttpRequest() {
       return { session: { queueState: { sequence: 0, stateHash: 'empty', queue: [], currentClimbQueueItem: null } } };
     }
     if (operation.includes('SessionStatus')) {
-      return { sessionStatus: 'active' };
+      return { sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' };
     }
     return {};
   });

@@ -4,17 +4,24 @@ import type { BoardName, SaveClimbInput } from '@boardsesh/shared-schema';
 // Mirrors the subset of web's `SaveClimbOptions` (aurora types) that the save
 // mutation actually maps. snake_case is preserved so form payloads can be
 // forwarded unchanged from existing create-climb forms on both platforms.
-export type SaveClimbOptions = {
+export type ClimbAuthoringBoard = {
+  boardName: BoardName;
+  layoutId: number;
+  sizeId: number;
+};
+
+type SaveClimbScope =
+  | { editorBoard: ClimbAuthoringBoard; layout_id?: never; size_id?: never }
+  | {
+      editorBoard?: undefined;
+      layout_id: number;
+      /** The painted size, required where hold membership differs by size. */
+      size_id?: number;
+    };
+
+export type SaveClimbOptions = SaveClimbScope & {
   /** Stable identity supplied by offline-capable clients. */
   uuid?: string;
-  layout_id: number;
-  /**
-   * The board size the climb was painted on. Optional because the Aurora forms
-   * never needed it — a hold id means the same hold on every Aurora size. It is
-   * load-bearing on Woods, whose two sizes number their holds from their own
-   * origins, so the same frames string describes different holds on each.
-   */
-  size_id?: number;
   name: string;
   description: string;
   is_draft: boolean;
@@ -53,6 +60,7 @@ export type SaveClimbOptions = {
 export type SaveClimbResponse = {
   uuid: string;
   isDraft?: boolean;
+  controllerRouteUuid?: string | null;
   createdAt?: string | null;
   publishedAt?: string | null;
   delivery?: 'queued' | 'acknowledged';
@@ -75,11 +83,12 @@ export type UpdateClimbResponse = {
  * A form that owns the switch sends the boolean either way, including `false`.
  */
 export function toSaveClimbInput(boardName: BoardName, options: SaveClimbOptions): SaveClimbInput {
+  const editorBoard = options.editorBoard;
   return {
     ...(options.uuid ? { uuid: options.uuid } : {}),
-    boardType: boardName,
-    layoutId: options.layout_id,
-    sizeId: options.size_id,
+    boardType: editorBoard?.boardName ?? boardName,
+    layoutId: editorBoard ? editorBoard.layoutId : options.layout_id,
+    sizeId: editorBoard ? editorBoard.sizeId : options.size_id,
     name: options.name,
     description: options.description || '',
     isDraft: options.is_draft,

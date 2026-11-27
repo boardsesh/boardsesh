@@ -349,6 +349,7 @@ vi.mock('../../../src/providers/theme-provider', () => ({
   }),
 }));
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
+  useFeatureFlag: () => false,
   useOfflineDownloadsEnabled: () => true,
   useOfflineDownloadProgressEnabled: () => state.downloadProgressEnabled,
   useAddBoardWizardEnabled: () => state.wizard,

@@ -103,6 +103,17 @@ describe('boardSnapshotDdlStatements', () => {
     expect(tableNamesAfterApplying(boardSnapshotDdlStatements())).toEqual(ARTIFACT_TABLES);
   });
 
+  it.each([1, 2] as const)('carries Quantum climb identity without delivery state in artifact shape %s', (shape) => {
+    const statements = boardSnapshotDdlStatements(['board_climbs', 'board_climb_stats'], shape);
+    const { columns } = layoutAfterApplying(statements);
+    expect(columns.board_climbs).toEqual(
+      expect.arrayContaining(['controller_route_uuid TEXT 0', 'is_boardsesh_authored INTEGER 0']),
+    );
+    expect(statements.join(' ')).not.toMatch(
+      /offline_write_delivery|pending_mutations|delivery_context|delivery_target/,
+    );
+  });
+
   it('never carries a device-only table', () => {
     expect([...DEVICE_ONLY_TABLES].sort()).toEqual([
       'board_climb_hold_postings',

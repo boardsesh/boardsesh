@@ -51,6 +51,24 @@ describe('readPosthogFeatureFlags', () => {
     expect(readPosthogFeatureFlags([{ key: 'strava-integration' }])).toEqual({});
   });
 
+  it.each([true, false, 'true', 'false', 'control', undefined])(
+    'keeps board launch flags strictly boolean (%s)',
+    (rawFlag) => {
+      getFeatureFlag.mockReturnValue(rawFlag);
+      expect(readPosthogFeatureFlags([{ key: 'quantum-board' }])).toEqual(
+        typeof rawFlag === 'boolean' ? { 'quantum-board': rawFlag } : {},
+      );
+    },
+  );
+
+  it('does not open a board launch gate through an SDK fallback that coerces variants', () => {
+    posthogClientMocks.getPostHogClient.mockReturnValue({
+      isFeatureEnabled: () => true,
+      getFeatureFlagDetails: () => ({ requestId: 'coercion-response' }),
+    });
+    expect(readPosthogFeatureFlags([{ key: 'quantum-board' }])).toEqual({});
+  });
+
   describe('a plain boolean flag (no variants)', () => {
     it('keeps a real boolean unchanged', () => {
       getFeatureFlag.mockReturnValue(true);

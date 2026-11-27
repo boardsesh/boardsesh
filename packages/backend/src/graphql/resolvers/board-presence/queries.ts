@@ -1,6 +1,7 @@
 import { getGradeColor } from '@boardsesh/board-constants';
 import { isAuroraBoardName } from '@boardsesh/aurora-sync/api';
 import { BOARD_HISTORY_WINDOW_MS, filterRecentBoardHistory, isNativeBoardClimb } from '@boardsesh/board-presence';
+import { supportsLayerOverlapFiltering } from '@boardsesh/board-config';
 import { withRecentSenderBoardContext } from '../shared/board-session-privacy';
 import { tickPrivacyCondition } from '../shared/activity-privacy';
 import { redactBoardClimbs, redactBoardStats, redactBoardHolder } from '../../../services/board-session-privacy';
@@ -13,6 +14,7 @@ import type {
   BoardPresenceClimb,
   BoardPresenceStats,
   BoardConnectionHolder,
+  BoardLayersSnapshot,
 } from '@boardsesh/shared-schema';
 import { resolveCanonicalClimbUuid } from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
@@ -428,5 +430,17 @@ export const boardPresenceQueries = {
     // wall's own rule, like every other presence read here (hidden = owner only).
     await requireReadablePresenceBoard(boardId, ctx.userId, boardUuid);
     return redactBoardHolder(await resolveBoardHolder(boardId), ctx.userId, boardId);
+  },
+
+  /** Latest sanitized simultaneous-climb roster for late joiners. */
+  boardLayers: async (
+    _: unknown,
+    { boardId, boardUuid }: { boardId: number; boardUuid?: string | null },
+    ctx: ConnectionContext,
+  ): Promise<BoardLayersSnapshot | null> => {
+    await applyRateLimit(ctx, 60, 'boardLayers');
+    const { board } = await requireReadablePresenceBoard(boardId, ctx.userId, boardUuid);
+    if (!supportsLayerOverlapFiltering(board?.boardType)) return null;
+    return pubsub.getBoardLayers(String(boardId));
   },
 };

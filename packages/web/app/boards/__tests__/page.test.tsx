@@ -17,6 +17,10 @@ vi.mock('@/app/lib/db/db', () => ({
     },
   },
 }));
+const rollout = vi.hoisted(() => ({ enabled: false }));
+vi.mock('@/app/lib/boards/board-visibility.server', () => ({
+  getBoardVisibilityFlags: async () => ({ 'quantum-board': rollout.enabled }),
+}));
 vi.mock('@/app/lib/i18n/server', () => ({
   getServerTranslation: async (namespace: string | readonly string[]) => ({
     t: (key: string, options?: Record<string, unknown>) => tFromCatalog(namespace, key, options),
@@ -50,6 +54,18 @@ async function renderPage() {
 }
 
 describe('supported boards public entry', () => {
+  it('shows the Quantum compatibility link only when rollout is enabled', async () => {
+    expect((await renderPage()).querySelector('#quantum')).toBeNull();
+    rollout.enabled = true;
+    try {
+      const document = await renderPage();
+      expect(document.querySelector('#quantum h2')?.textContent).toBe('Quantum Board');
+      expect(document.querySelector('#quantum a[href="/gyms?boardType=quantum"]')).toBeTruthy();
+    } finally {
+      rollout.enabled = false;
+    }
+  });
+
   it('server-renders all 17 real layouts and a spray photo with intrinsic dimensions', async () => {
     const document = await renderPage();
     expect(document.querySelector('h1')?.textContent).toBe('Your board, on Boardsesh');

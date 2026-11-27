@@ -1,19 +1,20 @@
 /**
  * Board-size "fullness" scoring for the recommendation engine.
  *
- * A climb's `compatible_size_ids` lists every board size whose edge box encloses
- * it (geometric containment within one coordinate frame). We use this to score
+ * A climb's `compatible_size_ids` lists every size that supports its holds.
+ * Most catalogues use geometric containment; fixed Quantum maps use exact
+ * per-size LED membership. We use that common list to score
  * how fully a climb uses the user's biggest board: a climb that also fits a
  * shorter size uses less of the wall's height; one that only fits a
  * same-height-but-narrower size keeps full height but less width. Height is the
  * dominant axis (a 10x10 owner loses no height on a 7x10 climb, so those rank
  * just below full-width; a 10x12 owner ranks kickboard-using climbs highest).
  */
-import { PRODUCT_SIZES } from './catalog-metadata';
-import type { BoardName, ProductSizeData } from './types';
+import { PRODUCT_SIZES, hasProductSizeEdges } from './catalog-metadata';
+import type { BoardName, ProductSizeWithEdges } from './types';
 
-const sizeHeight = (size: ProductSizeData): number => size.edgeTop - size.edgeBottom;
-const sizeWidth = (size: ProductSizeData): number => size.edgeRight - size.edgeLeft;
+const sizeHeight = (size: ProductSizeWithEdges): number => size.edgeTop - size.edgeBottom;
+const sizeWidth = (size: ProductSizeWithEdges): number => size.edgeRight - size.edgeLeft;
 
 export type SizeFullnessTiers = {
   /** Same-product sizes whose usable height is LESS than the target. */
@@ -32,7 +33,9 @@ export type SizeFullnessTiers = {
 export function getSizeFullnessTiers(boardName: BoardName, targetSizeId: number): SizeFullnessTiers {
   const sizes = PRODUCT_SIZES[boardName];
   const target = sizes?.[targetSizeId];
-  if (!target) return { shorterSizeIds: [], narrowerSameHeightSizeIds: [] };
+  if (!target || !hasProductSizeEdges(target)) {
+    return { shorterSizeIds: [], narrowerSameHeightSizeIds: [] };
+  }
 
   const targetHeight = sizeHeight(target);
   const targetWidth = sizeWidth(target);
@@ -40,7 +43,7 @@ export function getSizeFullnessTiers(boardName: BoardName, targetSizeId: number)
   const narrowerSameHeightSizeIds: number[] = [];
 
   for (const size of Object.values(sizes)) {
-    if (size.id === target.id || size.productId !== target.productId) continue;
+    if (size.id === target.id || size.productId !== target.productId || !hasProductSizeEdges(size)) continue;
     const height = sizeHeight(size);
     if (height < targetHeight) {
       shorterSizeIds.push(size.id);
@@ -66,7 +69,7 @@ export function getSizeFullnessTiers(boardName: BoardName, targetSizeId: number)
  */
 export function getSizeRank(boardName: BoardName, sizeId: number): number {
   const size = PRODUCT_SIZES[boardName]?.[sizeId];
-  if (!size) return -1;
+  if (!size || !hasProductSizeEdges(size)) return -1;
   return sizeHeight(size) * 100000 + sizeWidth(size);
 }
 

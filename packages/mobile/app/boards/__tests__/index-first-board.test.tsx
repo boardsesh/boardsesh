@@ -305,6 +305,7 @@ vi.mock('../../../src/offline/use-confirm-board-download', () => ({
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
   useDirectoryReportsEnabled: () => false,
   useFeatureFlagsResolved: () => true,
+  useFeatureFlag: () => false,
   useOfflineDownloadsEnabled: () => true,
   usePickerAutoScanEnabled: () => state.autoScanEnabled,
   useAddBoardWizardEnabled: () => state.wizard,

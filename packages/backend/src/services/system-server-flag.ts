@@ -93,6 +93,7 @@ export function createSystemServerFlag(options: {
   flagKey: string;
   logLabel: string;
   outageConsequence: string;
+  booleanOnly?: boolean;
 }): SystemServerFlag {
   const { flagKey } = options;
   const distinctId = `system:${flagKey}`;
@@ -106,13 +107,25 @@ export function createSystemServerFlag(options: {
   let outageLogged = false;
 
   function readOverride(environment: FlagEnvironment): boolean | undefined {
-    return parseFeatureFlagOverrides(environment[FEATURE_FLAG_OVERRIDES_ENV])[flagKey];
+    const raw = environment[FEATURE_FLAG_OVERRIDES_ENV];
+    if (!options.booleanOnly) return parseFeatureFlagOverrides(raw)[flagKey];
+    let enabled: boolean | undefined;
+    for (const entry of raw?.split(',') ?? []) {
+      const [key, ...parts] = entry.trim().split('=');
+      if (key.trim() === flagKey) enabled = parts.length === 0 || parts.join('=').trim() === 'true';
+    }
+    return enabled;
   }
 
   function readAnswer(payload: unknown): boolean | null {
     if (!isRecord(payload)) return null;
     const { flags, featureFlags, errorsWhileComputingFlags } = payload as PosthogFlagsResponse;
     const detail = flags?.[flagKey];
+    if (options.booleanOnly) {
+      if (errorsWhileComputingFlags === true) return false;
+      if (isRecord(flags) && Object.hasOwn(flags, flagKey)) return isRecord(detail) && detail.enabled === true;
+      return isRecord(featureFlags) && featureFlags[flagKey] === true;
+    }
     if (detail && typeof detail.enabled === 'boolean') return detail.enabled;
     const legacy = featureFlags?.[flagKey];
     if (typeof legacy === 'boolean') return legacy;
@@ -158,7 +171,7 @@ export function createSystemServerFlag(options: {
       }
       // Keep a real answer for one more interval rather than flapping off on one
       // slow request. An answer already carried once, or none at all: off.
-      const carryOver = cachedAnswer !== null && !cachedAnswer.carried && cachedAnswer.enabled;
+      const carryOver = !options.booleanOnly && cachedAnswer !== null && !cachedAnswer.carried && cachedAnswer.enabled;
       cachedAnswer = { enabled: carryOver, expiresAt: Date.now() + SYSTEM_SERVER_FLAG_CACHE_MS, carried: true };
       return carryOver;
     }

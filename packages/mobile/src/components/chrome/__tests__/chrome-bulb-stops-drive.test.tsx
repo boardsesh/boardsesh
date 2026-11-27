@@ -40,12 +40,14 @@ vi.mock('../../../lib/analytics-wall-control', () => ({
   trackWallControlTapped: signals.wallControlTapped,
 }));
 vi.mock('../../../lib/analytics-board-connect', () => ({ trackBoardConnectTapped: vi.fn() }));
+vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../providers/bluetooth-provider', () => ({ useOptionalBluetoothContext: () => null }));
 vi.mock('../../ble/use-crew-holder-unconfirmed', () => ({ useCrewHolderUnconfirmed: () => false }));
 vi.mock('../../../lib/boards/climb-board-connect-context', () => ({ useClimbBoardConnect: () => null }));
 vi.mock('../../ble/use-board-connection-state', () => ({
   useBoardConnectionState: () => ({
     bluetooth: signals.bluetooth,
+    controlAvailable: signals.bluetooth !== null,
     lit: signals.board.inAppBoardConnection !== 'disconnected',
     localConnected: signals.board.localConnected,
     pending: false,

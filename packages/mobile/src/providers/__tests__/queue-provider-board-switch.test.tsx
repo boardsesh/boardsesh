@@ -191,6 +191,7 @@ vi.mock('../queue/use-cross-board-add-gate', () => ({
   useCrossBoardAddGate: () => async () => ({ outcome: 'add' }),
 }));
 vi.mock('../feature-flags-provider', () => ({
+  useFeatureFlag: () => false,
   useSharedSessionBrowseEnabled: () => false,
   useQueueNowSlotEnabled: () => false,
 }));

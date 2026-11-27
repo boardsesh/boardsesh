@@ -296,14 +296,20 @@ export async function redeemBoardShareLink(token: string, userId: string): Promi
   );
 }
 
-/** The board's name for a signed-out visitor holding an active link, or null. */
-export async function previewBoardShareLink(token: string): Promise<{ name: string } | null> {
+/** Active link holders see its name. Signed-in clients can also check board rollout eligibility. */
+export async function previewBoardShareLink(
+  token: string,
+  { includeBoardConfiguration = false }: { includeBoardConfiguration?: boolean } = {},
+): Promise<{ name: string; boardType?: string; layoutId?: number; sizeId?: number; setIds?: string } | null> {
   if (!isBoardShareTokenShape(token)) return null;
   const [row] = await withoutTokenInErrors(() =>
     db
       .select({
         name: schema.userBoards.name,
         boardType: schema.userBoards.boardType,
+        layoutId: schema.userBoards.layoutId,
+        sizeId: schema.userBoards.sizeId,
+        setIds: schema.userBoards.setIds,
         audience: schema.resourcePrivacy.audience,
       })
       .from(schema.boardShareLinks)
@@ -322,5 +328,7 @@ export async function previewBoardShareLink(token: string): Promise<{ name: stri
       .limit(1),
   );
   if (!row || row.boardType === 'spray' || !isShareLinkAudience(row.audience)) return null;
-  return { name: row.name };
+  const { name, boardType, layoutId, sizeId, setIds } = row;
+  if (!includeBoardConfiguration) return { name };
+  return boardType === 'quantum' ? { name, boardType, layoutId, sizeId, setIds } : { name, boardType };
 }

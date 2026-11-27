@@ -29,6 +29,7 @@ import {
   graphqlFixtureKey,
   findUnpseudonymisedPersonFields,
   isPseudonymDisplayName,
+  legacyScreenshotJoinVariables,
   normalizeDocument,
   replayCompatibleFixtureResponse,
   SESSION_REST_CADENCE_SELECTION,
@@ -52,6 +53,35 @@ import {
   type ScreenshotBackendLogLine,
   type ScreenshotFixtureManifest,
 } from '../lib/screenshot-fixtures';
+
+it('replays a guarded join only against the same positional board and unchanged selection', () => {
+  const boardPath = 'kilter/8/25/26,27,28,29/35';
+  const variables = { sessionId: 'crew', boardPath };
+  const query =
+    'mutation JoinSession($sessionId: ID!, $boardPath: String!) { joinSession(sessionId: $sessionId, boardPath: $boardPath) { id } }';
+  const guarded = query
+    .replace('String!)', 'String!, $expectedBoardPath: String)')
+    .replace('boardPath: $boardPath)', 'boardPath: $boardPath, expectedBoardPath: $expectedBoardPath)');
+  const response = { data: { joinSession: { id: 'crew' } } };
+  const fixture: GraphqlFixtureFile = {
+    formatVersion: 1,
+    ...graphqlFixtureKey({ operationName: 'JoinSession', query, variables }, sha256Hex),
+    query,
+    variables,
+    response,
+    recordedAt: '2026-09-08T09:00:00Z',
+    status: 200,
+    upstream: 'https://ws.boardsesh.com',
+  };
+
+  expect(legacyScreenshotJoinVariables({ ...variables, expectedBoardPath: `/${boardPath}` })).toEqual(variables);
+  expect(legacyScreenshotJoinVariables({ ...variables, expectedBoardPath: `${boardPath}/30` })).toBeNull();
+  expect(
+    legacyScreenshotJoinVariables({ ...variables, boardPath: '/b/wall/35', expectedBoardPath: '/b/wall/35' }),
+  ).toBeNull();
+  expect(replayCompatibleFixtureResponse(guarded, fixture)).toEqual({ response });
+  expect(replayCompatibleFixtureResponse(guarded.replace('{ id }', '{ id name }'), fixture)).toBeNull();
+});
 
 const sha256Hex = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex');
 
@@ -725,6 +755,57 @@ describe('legacy GetSmartPlaylist replay compatibility', () => {
       ),
     ).toBeNull();
     expect(replayCompatibleFixtureResponse(current, fixture(null))).toBeNull();
+  });
+});
+
+describe('historical climb controller identity replay', () => {
+  const legacy = 'query GetClimb { climb { uuid frames boardType } }';
+  const current = legacy.replace('uuid', 'uuid controllerRouteUuid');
+  const recording = (boardType = 'kilter'): GraphqlFixtureFile => ({
+    formatVersion: 1,
+    operationName: 'GetClimb',
+    documentHash: 'original-hash',
+    variablesHash: 'variables',
+    query: legacy,
+    variables: { boardName: boardType },
+    response: { data: { climb: { uuid: 'c-1', frames: 'p1r12', boardType } } },
+    status: 200,
+    recordedAt: '2026-01-01T00:00:00Z',
+    upstream: 'https://example.test',
+  });
+
+  it('adds nullable controller identity without modifying recorded bytes', () => {
+    const recorded = recording();
+    const original = JSON.stringify(recorded);
+    expect(replayCompatibleFixtureResponse(current, recorded)).toEqual({
+      response: {
+        data: { climb: { uuid: 'c-1', frames: 'p1r12', boardType: 'kilter', controllerRouteUuid: null } },
+      },
+    });
+    expect(JSON.stringify(recorded)).toBe(original);
+  });
+
+  it('requires a genuine recording for Quantum identities', () => {
+    expect(replayCompatibleFixtureResponse(current, recording('quantum'))).toBeNull();
+  });
+
+  it('keeps unrelated document changes detectable', () => {
+    expect(replayCompatibleFixtureResponse(current.replace('frames', 'frames name'), recording())).toBeNull();
+  });
+
+  it('composes with the historical smart-playlist count adapter', () => {
+    const recorded: GraphqlFixtureFile = {
+      ...recording(),
+      operationName: 'GetSmartPlaylist',
+      query: 'query GetSmartPlaylist { smartPlaylist { climbs { uuid frames } totalCount hasMore } }',
+      response: { data: { smartPlaylist: { climbs: [], totalCount: 0, hasMore: false } } },
+    };
+    const request = recorded.query
+      .replace('uuid', 'uuid controllerRouteUuid')
+      .replace('hasMore', 'unfilteredCount hasMore');
+    expect(replayCompatibleFixtureResponse(request, recorded)).toEqual({
+      response: { data: { smartPlaylist: { climbs: [], totalCount: 0, unfilteredCount: null, hasMore: false } } },
+    });
   });
 });
 
@@ -2196,6 +2277,54 @@ describe('Aurora history opt-in recording compatibility', () => {
         current.replace('$includeAurora: Boolean)', '$includeAurora: Boolean!)'),
         fixture,
       ),
+    ).toBeNull();
+  });
+});
+
+describe('SessionStatus replay geometry', () => {
+  const legacy = 'query SessionStatus($sessionId: ID!) { sessionStatus(sessionId: $sessionId) }';
+  const current = legacy.replace(') }', ') sessionRestoreBoardPath(sessionId: $sessionId) }');
+  const fixture = (operationName: string, query: string, sessionId: string, data: unknown): GraphqlFixtureFile => ({
+    formatVersion: 1,
+    operationName,
+    documentHash: 'original-hash',
+    variablesHash: 'variables',
+    query,
+    variables: { sessionId },
+    response: { data },
+    status: 200,
+    recordedAt: '2026-01-01T00:00:00Z',
+    upstream: 'https://example.test',
+  });
+  const status = fixture('SessionStatus', legacy, 'crew-1', { sessionStatus: 'active' });
+  const preview = (boardPath: string, sessionId = 'crew-1') =>
+    fixture('GetSession', 'query GetSession { session { id boardPath } }', sessionId, {
+      session: { id: sessionId, boardPath },
+    });
+
+  it('recovers the current board from a matching GetSession recording', () => {
+    const boardPath = 'kilter/8/25/26/40';
+    expect(
+      replayCompatibleFixtureResponse(current, status, { getSessionFixtures: () => [preview(boardPath)] }),
+    ).toEqual({
+      response: { data: { sessionStatus: 'active', sessionRestoreBoardPath: boardPath } },
+    });
+  });
+
+  it('requires authoritative geometry from an unambiguous same-session recording', () => {
+    expect(replayCompatibleFixtureResponse(current, status)).toBeNull();
+    expect(
+      replayCompatibleFixtureResponse(current, status, {
+        getSessionFixtures: () => [preview('kilter/8/25/26/40', 'other')],
+      }),
+    ).toBeNull();
+    expect(
+      replayCompatibleFixtureResponse(current, status, {
+        getSessionFixtures: () => [preview('kilter/8/25/26/40'), preview('quantum/9104/9204/1/35')],
+      }),
+    ).toBeNull();
+    expect(
+      replayCompatibleFixtureResponse(current, status, { getSessionFixtures: () => [preview('/b/warehouse')] }),
     ).toBeNull();
   });
 });

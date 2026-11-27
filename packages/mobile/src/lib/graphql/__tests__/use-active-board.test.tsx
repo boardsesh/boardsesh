@@ -4,6 +4,8 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
+const rollout = vi.hoisted(() => ({ enabled: false }));
+vi.mock('../../../providers/feature-flags-provider', () => ({ useFeatureFlag: () => rollout.enabled }));
 
 // AsyncStorage-backed preference store (in-memory).
 vi.mock('@react-native-async-storage/async-storage', () => {
@@ -62,6 +64,7 @@ async function resetAsyncStorage() {
 
 describe('useActiveBoard', () => {
   beforeEach(async () => {
+    rollout.enabled = false;
     vi.clearAllMocks();
     vi.resetModules();
     await resetAsyncStorage();
@@ -75,6 +78,104 @@ describe('useActiveBoard', () => {
     };
     asyncStorage.__restoreSetItem();
     onlineManager.setOnline(true);
+  });
+
+  it('hides an offline Quantum selection until enabled without changing the saved preference', async () => {
+    const quantum = {
+      ...storedBoard,
+      uuid: 'quantum',
+      boardType: 'quantum',
+      layoutId: 9101,
+      sizeId: 9201,
+      setIds: '1',
+    };
+    const { setStoredActiveBoard, getStoredActiveBoard } = await import('../../active-board-store');
+    await setStoredActiveBoard(quantum);
+    onlineManager.setOnline(false);
+    const { useActiveBoard, ACTIVE_BOARD_QUERY_KEY } = await import('../use-active-board');
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result, rerender } = renderHook(() => useActiveBoard(), { wrapper: wrapper(queryClient) });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toBeNull();
+    expect(queryClient.getQueryData(ACTIVE_BOARD_QUERY_KEY)).toMatchObject(quantum);
+    rollout.enabled = true;
+    rerender();
+    expect(result.current.data).toMatchObject(quantum);
+    rollout.enabled = false;
+    rerender();
+    expect(result.current.data).toBeNull();
+    await expect(getStoredActiveBoard()).resolves.toMatchObject(quantum);
+  });
+
+  it('refuses selecting Quantum while disabled', async () => {
+    const { useSetActiveBoard, ACTIVE_BOARD_QUERY_KEY } = await import('../use-active-board');
+    const { getStoredActiveBoard } = await import('../../active-board-store');
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result } = renderHook(() => useSetActiveBoard(), { wrapper: wrapper(queryClient) });
+    await expect(
+      result.current({ ...storedBoard, boardType: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' }),
+    ).resolves.toBe(false);
+    expect(queryClient.getQueryData(ACTIVE_BOARD_QUERY_KEY)).toBeUndefined();
+    await expect(getStoredActiveBoard()).resolves.toBeNull();
+  });
+
+  it('restores the previous stored board if a guarded selection is canceled during storage', async () => {
+    const { useSetActiveBoard } = await import('../use-active-board');
+    const { getStoredActiveBoard, setStoredActiveBoard } = await import('../../active-board-store');
+    const asyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+    await setStoredActiveBoard(storedBoard);
+    const originalWrite = asyncStorage.setItem.bind(asyncStorage);
+    let resumeWrite = () => {};
+    const hold = new Promise<void>((resolve) => {
+      resumeWrite = resolve;
+    });
+    let announceWrite = () => {};
+    const written = new Promise<void>((resolve) => {
+      announceWrite = resolve;
+    });
+    vi.spyOn(asyncStorage, 'setItem').mockImplementationOnce(async (key, payload) => {
+      await originalWrite(key, payload);
+      announceWrite();
+      await hold;
+    });
+    const { result } = renderHook(() => useSetActiveBoard(), { wrapper: wrapper() });
+    let current = true;
+    const writing = result.current(otherBoard, () => current);
+    await written;
+    current = false;
+    resumeWrite();
+    await expect(writing).resolves.toBe(false);
+    await expect(getStoredActiveBoard()).resolves.toMatchObject(storedBoard);
+  });
+
+  it('drops a queued Quantum selection when its flag is revoked before persistence', async () => {
+    rollout.enabled = true;
+    const { useSetActiveBoard } = await import('../use-active-board');
+    const asyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+    const originalSetItem = vi.mocked(asyncStorage).setItem.getMockImplementation()!;
+    let release: () => void = () => {};
+    let started: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const firstStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const write = vi.spyOn(asyncStorage, 'setItem').mockImplementation(async (...args) => {
+      started();
+      await gate;
+      return originalSetItem(...args);
+    });
+    const { result, rerender } = renderHook(() => useSetActiveBoard(), { wrapper: wrapper() });
+    const first = result.current(storedBoard);
+    await firstStarted;
+    const queued = result.current({ ...storedBoard, boardType: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' });
+    rollout.enabled = false;
+    rerender();
+    release();
+    await first;
+    await expect(queued).resolves.toBe(false);
+    expect(write).toHaveBeenCalledTimes(1);
   });
 
   it('returns the stored board', async () => {
@@ -185,6 +286,44 @@ describe('useActiveBoard', () => {
 
     await waitFor(() => expect(read.result.current.data).toEqual(otherBoard));
     await expect(getStoredActiveBoard()).resolves.toEqual(otherBoard);
+  });
+
+  it('keeps the displayed board fenced on a fresh render while switch persistence is pending', async () => {
+    const { useActiveBoard, useSetActiveBoard } = await import('../use-active-board');
+    const { setStoredActiveBoard } = await import('../../active-board-store');
+    const asyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+    await setStoredActiveBoard(storedBoard);
+    const { result, rerender } = renderHook(
+      () => ({
+        selection: useActiveBoard(),
+        select: useSetActiveBoard(),
+      }),
+      { wrapper: wrapper() },
+    );
+    await waitFor(() => expect(result.current.selection.data?.uuid).toBe(storedBoard.uuid));
+    const oldSelection = result.current.selection.isBoardSelectionCurrent;
+    expect(oldSelection()).toBe(true);
+
+    let finishStorageWrite!: () => void;
+    const pendingStorage = new Promise<void>((resolve) => {
+      finishStorageWrite = resolve;
+    });
+    vi.spyOn(asyncStorage, 'setItem').mockImplementationOnce(() => pendingStorage);
+    const switching = result.current.select(otherBoard);
+    rerender();
+    expect(result.current.selection.data?.uuid).toBe(storedBoard.uuid);
+    const rerenderedSelection = result.current.selection.isBoardSelectionCurrent;
+    expect(oldSelection()).toBe(false);
+    expect(rerenderedSelection()).toBe(false);
+
+    await act(async () => {
+      finishStorageWrite();
+      await switching;
+    });
+    // Even before a new render, the stale cache projection can no longer authorize A.
+    expect(rerenderedSelection()).toBe(false);
+    await waitFor(() => expect(result.current.selection.data?.uuid).toBe(otherBoard.uuid));
+    expect(result.current.selection.isBoardSelectionCurrent()).toBe(true);
   });
 
   it('does not publish a persisted board after the owning join operation becomes stale', async () => {

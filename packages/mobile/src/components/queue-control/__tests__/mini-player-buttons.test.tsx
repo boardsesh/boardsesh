@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/queue';
 import type { BoardConfig } from '../../../providers/drawer-host-provider';
@@ -14,6 +14,8 @@ const favorite = vi.hoisted(() => ({
   serverFavorited: undefined as boolean | undefined,
   statusArgs: [] as unknown[],
   mutate: vi.fn(),
+  quantumEnabled: false,
+  isRetired: vi.fn<() => Promise<boolean>>(),
 }));
 const share = vi.hoisted(() => ({ handleShare: vi.fn(), args: null as unknown }));
 const navigation = vi.hoisted(() => ({
@@ -92,6 +94,10 @@ vi.mock('../../../providers/theme-provider', () => ({
   }),
 }));
 vi.mock('../../../theme/tokens', () => ({ opacity: { disabled: 0.4 } }));
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useFeatureFlag: (key: string) => key === 'quantum-board' && favorite.quantumEnabled,
+}));
+vi.mock('../../../db/queries/quantum-climb-retirement', () => ({ isQuantumClimbRetired: favorite.isRetired }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: effects.showToast }) }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueSessionId: () => ({ sessionId: queue.sessionId }),
@@ -137,7 +143,7 @@ vi.mock('../use-mini-player-navigation', () => ({
   MiniPlayerTrackPager: () => createElement('span', { 'data-track-pager': true }),
 }));
 
-import { MiniPlayerLeadingButtons } from '../MiniPlayerButtons';
+import { useMiniPlayerFavorite, MiniPlayerLeadingButtons } from '../MiniPlayerButtons';
 import { getLastPick, resetLastPickForTests, setLastPick } from '../../../lib/last-pick-store';
 
 const climb = {
@@ -194,6 +200,8 @@ function renderButtons(
 beforeEach(() => {
   vi.clearAllMocks();
   favorite.serverFavorited = undefined;
+  favorite.quantumEnabled = false;
+  favorite.isRetired.mockResolvedValue(false);
   navigation.canPrevious = true;
   navigation.canNext = false;
   navigation.playerOpen = false;
@@ -250,6 +258,52 @@ describe('MiniPlayerLeadingButtons', () => {
   });
 
   describe('Favorite', () => {
+    const quantumBoard: BoardConfig = { boardName: 'quantum', layoutId: 9104, sizeId: 9204, setIds: '1', angle: 0 };
+    const quantumClimb = { ...climb, boardType: 'quantum' as const, layoutId: 9104, angle: 0, frames: '' };
+
+    it('checks a Quantum heart against the local catalogue at tap time', async () => {
+      favorite.quantumEnabled = true;
+      favorite.isRetired.mockResolvedValueOnce(true);
+      const { getByLabelText } = renderButtons(['favorite'], { climbBoard: quantumBoard, shownClimb: quantumClimb });
+      const heart = getByLabelText('playView.actionBar.addFavoriteAria');
+      await act(async () => fireEvent.click(heart));
+      expect(favorite.mutate).not.toHaveBeenCalled();
+      fireEvent.click(heart);
+      await waitFor(() =>
+        expect(favorite.mutate).toHaveBeenCalledWith(
+          expect.objectContaining({ input: { boardName: 'quantum', climbUuid: climb.uuid, angle: 0 } }),
+          expect.any(Object),
+        ),
+      );
+    });
+
+    it('discards a Quantum heart tap when the flag turns off during the local read', async () => {
+      favorite.quantumEnabled = true;
+      let completeRead: (retired: boolean) => void = () => {};
+      favorite.isRetired.mockReturnValueOnce(
+        new Promise((resolve) => {
+          completeRead = resolve;
+        }),
+      );
+      const { result, rerender } = renderHook(() =>
+        useMiniPlayerFavorite({
+          climb: quantumClimb,
+          climbBoard: quantumBoard,
+          source: 'mini_player',
+          bluetoothConnected: false,
+        }),
+      );
+      const staleToggle = result.current.toggle;
+      act(staleToggle);
+      expect(favorite.isRetired).toHaveBeenCalledOnce();
+      favorite.quantumEnabled = false;
+      rerender();
+      await act(async () => completeRead(false));
+      act(staleToggle);
+      expect(favorite.isRetired).toHaveBeenCalledOnce();
+      expect(favorite.mutate).not.toHaveBeenCalled();
+    });
+
     it('reads the heart for the climb on its own board and angle', () => {
       renderButtons(['favorite']);
       expect(favorite.statusArgs).toEqual(['kilter', 'climb-a', 40, { enabled: true }]);

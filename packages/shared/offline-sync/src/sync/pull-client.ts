@@ -1124,6 +1124,7 @@ async function syncTable(
           preserveNewerRows:
             !!refresh ||
             !!pageSupplement ||
+            boardScope?.boardType === 'quantum' ||
             (boardScope?.boardType === 'spray' && (tableName === 'board_climbs' || tableName === 'board_climb_stats')),
           afterUpsert: async (transaction) => {
             if (tableName === 'board_climbs' && boardScope?.boardType === 'spray') {

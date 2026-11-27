@@ -56,7 +56,10 @@ vi.mock('../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({ ...openers, boardConfig: null }),
   boardConfigsMatch: () => false,
 }));
-vi.mock('../../../providers/feature-flags-provider', () => ({ useClimbModerationEnabled: () => true }));
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useClimbModerationEnabled: () => true,
+  useFeatureFlag: () => undefined,
+}));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueActions: () => ({
     addToQueue: openers.addToQueue,

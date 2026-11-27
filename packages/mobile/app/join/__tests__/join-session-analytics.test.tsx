@@ -33,13 +33,15 @@ const preview = vi.hoisted(() => ({
 
 // Reconfigurable board-config + resolver mocks so each test can drive a tuple or
 // named-board (`/b/{slug}`) path.
+const restoreTarget = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/lib/boards/session-restore-board', () => ({ readSessionRestoreBoard: restoreTarget }));
 const boardConfig = vi.hoisted(() => ({
   parseBoardPath: vi.fn((_path: string) => ({ boardName: 'kilter', layoutId: 1, angle: 40 }) as unknown),
   parseNamedBoardPath: vi.fn((_path: string) => null as unknown),
   formatBoardDisplayName: vi.fn(() => 'Kilter'),
 }));
 const boardResolver = vi.hoisted(() => ({
-  resolveBoardForSession: vi.fn(async () => ({ uuid: 'board-1', boardType: 'kilter', layoutId: 1 }) as unknown),
+  resolveBoardForSession: vi.fn(),
 }));
 const slugBoardQuery = vi.hoisted(() => ({ data: null as unknown }));
 
@@ -67,7 +69,8 @@ vi.mock('expo-router', () => ({
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0 }) }));
 
-vi.mock('@boardsesh/board-config', () => ({
+vi.mock('@boardsesh/board-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/board-config')>()),
   parseBoardPath: boardConfig.parseBoardPath,
   parseNamedBoardPath: boardConfig.parseNamedBoardPath,
   formatBoardDisplayName: boardConfig.formatBoardDisplayName,
@@ -143,9 +146,27 @@ beforeEach(() => {
   searchParams.current = { sessionId: 'session-42' };
   preview.data.boardPath = '/kilter/1/10/1,2/40';
   preview.data.endedAt = null;
-  boardConfig.parseBoardPath.mockReturnValue({ boardName: 'kilter', layoutId: 1, angle: 40 });
+  boardConfig.parseBoardPath.mockReturnValue({
+    boardName: 'kilter',
+    layoutId: 1,
+    sizeId: 10,
+    setIds: '1,2',
+    angle: 40,
+  });
+  restoreTarget.mockReset().mockResolvedValue({
+    status: 'active',
+    geometryPath: '/kilter/1/10/1,2/40',
+    board: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 },
+  });
+  boardResolver.resolveBoardForSession.mockReset().mockResolvedValue({
+    uuid: 'board-1',
+    boardType: 'kilter',
+    layoutId: 1,
+    sizeId: 10,
+    setIds: '1,2',
+    angle: 40,
+  });
   boardConfig.parseNamedBoardPath.mockReturnValue(null);
-  boardResolver.resolveBoardForSession.mockResolvedValue({ uuid: 'board-1', boardType: 'kilter', layoutId: 1 });
   slugBoardQuery.data = null;
 });
 
@@ -179,7 +200,19 @@ describe('JoinSessionScreen analytics', () => {
     boardConfig.parseBoardPath.mockReturnValue(null);
     boardConfig.parseNamedBoardPath.mockReturnValue({ slug: 'my-gym-moonboard', angle: 40 });
     slugBoardQuery.data = { boardType: 'moonboard', layoutId: 3, angle: 40 };
-    boardResolver.resolveBoardForSession.mockResolvedValue({ uuid: 'named-1', boardType: 'moonboard', layoutId: 3 });
+    restoreTarget.mockResolvedValue({
+      status: 'active',
+      geometryPath: '/moonboard/3/10/1/40',
+      board: { boardName: 'moonboard', layoutId: 3, sizeId: 10, setIds: '1', angle: 40 },
+    });
+    boardResolver.resolveBoardForSession.mockResolvedValue({
+      uuid: 'named-1',
+      boardType: 'moonboard',
+      layoutId: 3,
+      sizeId: 10,
+      setIds: '1',
+      angle: 40,
+    });
 
     render(createElement(JoinSessionScreen));
     expect(buttons.joinPress).not.toBeNull();

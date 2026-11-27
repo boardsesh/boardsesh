@@ -5,6 +5,7 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { PgBoss } from 'pg-boss';
 import { eq, inArray, sql } from 'drizzle-orm';
+import { getQuantumSourceDiodeBindings } from '@boardsesh/board-constants/quantum';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { encrypt } from '@boardsesh/crypto';
 import { BACKGROUND_JOB_QUEUES, type BackgroundWorkerRole } from '@boardsesh/db/background-jobs';
@@ -18,6 +19,7 @@ import {
   type BackgroundJobPayload,
 } from '../../workers/jobs';
 import { logger } from '../../utils/logger';
+import { quantumCanonicalClimbUuid } from '../quantum-catalog-mapping';
 import type { BackgroundJobContext } from '../../workers/families';
 import type { ProviderSyncAdapter } from '../../workers/families/provider-sync-batch';
 import {
@@ -39,7 +41,7 @@ import {
  * Two schemas:
  *
  * - the backend test schema (every CI run): the routine cycle for both
- *   providers, the Aurora shared catalog, the history snapshot, setter
+ *   providers, the Aurora and Quantum shared catalogs, the history snapshot, setter
  *   notifications and the stats self-heal. It has no PostGIS and no Kilter
  *   catalog tables, so gyms and the Kilter catalog cannot run there;
  * - a fully migrated database (the dev DB image), when
@@ -111,6 +113,9 @@ const KILTER_CATALOG_CLIMB = 'PSYNCKCATALOG0000000000000000001';
 const KILTER_HOLES = [990_101, 990_102, 990_103];
 const KILTER_PLACEMENTS = [990_201, 990_202, 990_203];
 const MOONBOARD_GYM = 'Psync MoonBoard Gym';
+const QUANTUM_ACCOUNT = 'rgrant-catalogue-only';
+const QUANTUM_ROUTE = 'a702d376-a856-4bd8-a6cc-1603b4291b95';
+const QUANTUM_CLIMB = quantumCanonicalClimbUuid(9101, QUANTUM_ROUTE);
 const AURORA_GYM_PIN = 990_301;
 
 function json(body: unknown, init: ResponseInit = {}): Response {
@@ -355,7 +360,37 @@ function stubProviders(options: { gyms: boolean }) {
   </form>`;
   const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-    const { pathname } = new URL(url);
+    const { pathname, searchParams } = new URL(url);
+    if (pathname === '/api/v1/users/current-user') return json({ id: QUANTUM_ACCOUNT });
+    if (pathname === '/api/v1/board/routes-delta') {
+      const timestamp = `catalogue checkpoint ${searchParams.get('forcedType')}`;
+      if (searchParams.has('lastFetch')) return json({ timestamp, routes: { changed: [], deleted: [] } });
+
+      const diodes = getQuantumSourceDiodeBindings(9101, 9201)!.slice(0, 2);
+      const routes =
+        searchParams.get('forcedType') === 'big'
+          ? [
+              {
+                id: QUANTUM_ROUTE,
+                name: 'Psync Quantum route',
+                type: 'big',
+                minVariant: 'big',
+                angle: 35,
+                grade: '[19]',
+                disabled: false,
+                lights: diodes.map(({ diodeUuid }, index) => ({ diodeId: diodeUuid, step: index === 0 ? 1 : 3 })),
+              },
+            ]
+          : [];
+      return json({
+        initialSync: true,
+        timestamp,
+        totalCount: routes.length,
+        hasMore: false,
+        routes,
+        diodes: routes.length ? diodes.map(({ diodeUuid, autocadId }) => ({ id: diodeUuid, autocadId })) : [],
+      });
+    }
     const body =
       typeof init?.body === 'string' ? init.body : init?.body instanceof URLSearchParams ? init.body.toString() : '';
     // Aurora
@@ -508,6 +543,19 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
       sql`DELETE FROM board_kits WHERE board_type = ${SHARED_BOARD} AND serial_number = 'psync-kit'`,
     );
     await database.execute(sql`DELETE FROM board_shared_syncs WHERE board_type = ${SHARED_BOARD}`);
+    await database.execute(sql`
+      DELETE FROM board_shared_syncs WHERE board_type = 'quantum' AND metadata->>'upstreamAccountId' = ${QUANTUM_ACCOUNT}
+    `);
+    await database.execute(
+      sql`DELETE FROM board_climb_aliases WHERE board_type = 'quantum' AND canonical_uuid = ${QUANTUM_CLIMB}`,
+    );
+    await database.execute(
+      sql`DELETE FROM board_climb_holds WHERE board_type = 'quantum' AND climb_uuid = ${QUANTUM_CLIMB}`,
+    );
+    await database.execute(
+      sql`DELETE FROM board_climb_stats WHERE board_type = 'quantum' AND climb_uuid = ${QUANTUM_CLIMB}`,
+    );
+    await database.execute(sql`DELETE FROM board_climbs WHERE board_type = 'quantum' AND uuid = ${QUANTUM_CLIMB}`);
     if (full) {
       await database.execute(
         sql`DELETE FROM board_climb_aliases WHERE upper(canonical_uuid) = ${KILTER_CATALOG_CLIMB}`,
@@ -701,6 +749,41 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
     }>;
     expect(cooldown.cursor).toContain('#finished:');
 
+    // Bootstrap through the real queued family and the production role's grants.
+    vi.stubEnv('FEATURE_FLAG_OVERRIDES', 'quantum-catalog-sync');
+    vi.stubEnv('QUANTUM_API_TOKEN', 'test-catalogue-bearer');
+    vi.stubEnv('QUANTUM_API_ACCOUNT_ID', QUANTUM_ACCOUNT);
+    vi.stubEnv('QUANTUM_API_CATALOG_VISIBILITY', 'public');
+    vi.stubEnv('QUANTUM_API_BOARD_NAME', '');
+    await runAs('routine-provider', routine, 'quantum-catalog-sync', {});
+    const checkpoints = await database.execute(sql`
+      SELECT metadata->'scope'->>'forcedType' AS model, metadata->>'checkpoint' AS checkpoint
+      FROM board_shared_syncs WHERE board_type = 'quantum' AND metadata->>'upstreamAccountId' = ${QUANTUM_ACCOUNT}
+      ORDER BY model
+    `);
+    expect(checkpoints).toEqual(
+      ['big', 'medium', 'small', 'xsmall'].map((model) => ({ model, checkpoint: `catalogue checkpoint ${model}` })),
+    );
+    expect(
+      await count(sql`
+      SELECT count(*)::int AS count FROM board_climbs
+      WHERE board_type = 'quantum' AND uuid = ${QUANTUM_CLIMB} AND controller_route_uuid = ${QUANTUM_ROUTE} AND is_listed
+    `),
+    ).toBe(1);
+    expect(
+      await count(sql`
+      SELECT count(*)::int AS count FROM board_climb_holds WHERE board_type = 'quantum' AND climb_uuid = ${QUANTUM_CLIMB}
+    `),
+    ).toBe(2);
+    expect(
+      await count(sql`
+      SELECT count(*)::int AS count FROM board_climb_stats stats
+      JOIN board_difficulty_grades grades ON grades.board_type = stats.board_type AND grades.difficulty = stats.display_difficulty
+      WHERE stats.board_type = 'quantum' AND stats.climb_uuid = ${QUANTUM_CLIMB} AND stats.angle = 35
+        AND grades.boulder_name = '6c+/V5'
+    `),
+    ).toBe(1);
+
     if (full) {
       expect(
         await count(
@@ -850,6 +933,15 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
     const routineDb = routine.boss.getDb();
     await expect(routineDb.executeSql('SELECT email FROM public.users LIMIT 1')).rejects.toThrow('permission denied');
     await expect(routineDb.executeSql('DELETE FROM public.gyms WHERE false')).rejects.toThrow('permission denied');
+    await expect(routineDb.executeSql('DELETE FROM public.board_climb_holds WHERE false')).rejects.toThrow(
+      'permission denied',
+    );
+    await expect(routineDb.executeSql('DELETE FROM public.board_difficulty_grades WHERE false')).rejects.toThrow(
+      'permission denied',
+    );
+    await expect(
+      routineDb.executeSql('UPDATE public.board_difficulty_grades SET difficulty = 1 WHERE false'),
+    ).rejects.toThrow('permission denied');
     await expect(routineDb.executeSql('SELECT body FROM public.comments LIMIT 1')).rejects.toThrow('permission denied');
     const maintenanceDb = maintenance.boss.getDb();
     await expect(maintenanceDb.executeSql('SELECT id FROM public.aurora_credentials LIMIT 1')).rejects.toThrow(
@@ -924,7 +1016,7 @@ const MIGRATED_OWNER_URL = process.env.ROUTINE_GRANTS_DATABASE_URL ?? '';
 
 describe('routine-provider and maintenance-delivery worker grants', () => {
   it.skipIf(TEST_OWNER_URL === '')(
-    'run the routine cycle, the Aurora shared catalog and the self-heal as the restricted roles (test schema)',
+    'run the routine cycle, the Aurora and Quantum catalogs and the self-heal as the restricted roles (test schema)',
     async () => {
       await proveRoutineGrants({ full: false, ownerUrl: TEST_OWNER_URL });
     },

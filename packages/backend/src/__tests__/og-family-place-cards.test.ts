@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import sharp from 'sharp';
-import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
+import { STATIC_BOARD_RENDER_NAMES } from '@boardsesh/board-config';
 import type { BoardConfig } from '../services/og-family/card-model';
 import { isRenderableConfig } from '../services/og-family/card-model';
 import {
@@ -33,7 +33,7 @@ vi.mock('../lib/resolve-addresses', () => ({
 const kilter: BoardConfig = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20' };
 
 describe('every board type has a card', () => {
-  const catalogueBoards = SUPPORTED_BOARDS.filter((boardName) => boardName !== 'spray');
+  const catalogueBoards = STATIC_BOARD_RENDER_NAMES;
 
   it.each(catalogueBoards)('%s resolves a renderable default config', (boardName) => {
     const choice = pickGymBoardConfig([boardName], [{ boardType: boardName, angle: 25 }]);
@@ -46,6 +46,11 @@ describe('every board type has a card', () => {
 
   it('draws no catalogue art for a gym with only a spray wall', () => {
     expect(pickGymBoardConfig(['spray'], [{ boardType: 'spray', angle: 40 }])).toBeNull();
+  });
+
+  it('draws no catalogue art before a board has a static renderer', () => {
+    expect(pickGymBoardConfig(['quantum'], [{ boardType: 'quantum', angle: 40 }])).toBeNull();
+    expect(isRenderableConfig({ boardName: 'quantum', layoutId: 9101, sizeId: 9201, setIds: '1' })).toBe(false);
   });
 
   it('prefers Kilter over an alphabetically earlier type', () => {

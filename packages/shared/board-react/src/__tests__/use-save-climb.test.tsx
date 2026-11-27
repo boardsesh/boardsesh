@@ -65,6 +65,28 @@ describe('useSaveClimb (shared)', () => {
     expect(result.current.data).toEqual({ uuid: 'new-uuid' });
   });
 
+  it.each(['kilter', null] as const)(
+    'uses the explicit Quantum editor scope with active board %s',
+    async (activeBoard) => {
+      const executeWs = vi.fn().mockResolvedValue({ saveClimb: { uuid: 'quantum-climb' } });
+      const afterClimbWrite = vi.fn();
+      const { wrapper } = createWrapper({ executeWs, afterClimbWrite });
+      const { result } = renderHook(() => useSaveClimb(activeBoard), { wrapper });
+      const { layout_id: _layout, size_id: _size, ...fields } = climbOptions();
+
+      await act(async () => {
+        await result.current.mutateAsync({
+          ...fields,
+          editorBoard: { boardName: 'quantum', layoutId: 9104, sizeId: 9204 },
+        });
+      });
+
+      const scope = { boardType: 'quantum', layoutId: 9104, sizeId: 9204 };
+      expect(executeWs.mock.calls[0][0].variables.input).toMatchObject(scope);
+      expect(afterClimbWrite).toHaveBeenCalledWith(expect.objectContaining({ ...scope, climbUuid: 'quantum-climb' }));
+    },
+  );
+
   it('fires showError("saveClimbFailed") on a non-duplicate failure', async () => {
     const executeWs = vi.fn().mockRejectedValue(new Error('boom'));
     const showError = vi.fn();
@@ -191,6 +213,29 @@ describe('useUpdateClimb (shared)', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual({ uuid: 'climb-1', isDraft: false });
+  });
+
+  it('updates and refreshes the explicit Quantum editor scope', async () => {
+    const executeWs = vi.fn().mockResolvedValue({ updateClimb: { uuid: 'quantum-climb', isDraft: false } });
+    const afterClimbWrite = vi.fn();
+    const { wrapper, queryClient } = createWrapper({ executeWs, afterClimbWrite });
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    const { result } = renderHook(() => useUpdateClimb(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        ...updateInput,
+        uuid: 'quantum-climb',
+        editorBoard: { boardName: 'quantum', layoutId: 9104, sizeId: 9204 },
+      });
+    });
+
+    expect(executeWs.mock.calls[0][0].variables.input).toMatchObject({ boardType: 'quantum', sizeId: 9204 });
+    expect(executeWs.mock.calls[0][0].variables.input).not.toHaveProperty('editorBoard');
+    expect(afterClimbWrite).toHaveBeenCalledWith(
+      expect.objectContaining({ boardType: 'quantum', layoutId: 9104, sizeId: 9204 }),
+    );
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['climb'] });
   });
 
   it('fires showError("updateClimbFailed") on failure', async () => {

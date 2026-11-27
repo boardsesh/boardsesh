@@ -28,6 +28,7 @@ describe('family registry', () => {
       'provider-routine-cycle',
       'aurora-shared-sync',
       'kilter-catalog-sync',
+      'quantum-catalog-sync',
       'moonboard-locations-sync',
       'climb-stats-self-heal',
       'user-data-export',

@@ -21,9 +21,21 @@
 //    the firmware accepts), not a product capability. It lives with the adapter
 //    factory.
 
-import type { BoardName } from '@boardsesh/shared-schema';
+import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
+
+export type WallSendMode = 'automatic' | 'explicit-layer';
+
+export type BoardCatalogSource = 'bundled' | 'personal';
 
 export type BoardCapabilities = {
+  /** Where setup options and geometry come from. Personal walls use their own
+   * creation flow; every catalogue board ships a fixed physical map. */
+  catalogSource: BoardCatalogSource;
+  /** A shipped angle ladder, or angles observed in catalogue climb data. The
+   * latter is not a claim about a board's mechanical adjustment range. */
+  angleOptionsSource: 'bundled' | 'catalog';
+  /** A public climb can be opened using Boardsesh's shared climb URL contract. */
+  publicClimbLinks: boolean;
   /**
    * The board has a crowd/consensus grade behind it, so the nightly Boardsesh
    * grade job has ascent data to compute from.
@@ -157,6 +169,12 @@ export type BoardCapabilities = {
    * "benchmark" on every board.
    */;
   benchmarkTerm: 'benchmark' | 'verified';
+  /** Maximum independent climbs the physical controller retains. */
+  maxActiveWallClimbs: number;
+  /** Quantum lighting always requires an explicit layer choice. */
+  wallSendMode: WallSendMode;
+  /** Whether bundled geometry can drive the synchronous WASM renderer. */
+  staticBoardRender: boolean;
 };
 
 /**
@@ -168,6 +186,9 @@ export type BoardCapabilities = {
  * it separately.
  */
 const AURORA_CAPABILITIES: BoardCapabilities = {
+  catalogSource: 'bundled',
+  angleOptionsSource: 'bundled',
+  publicClimbLinks: true,
   crowdGrade: true,
   angleBoundClimbs: false,
   climbCreation: true,
@@ -176,6 +197,9 @@ const AURORA_CAPABILITIES: BoardCapabilities = {
   nativeBoardControl: true,
   auroraAppLink: true,
   benchmarkTerm: 'benchmark',
+  maxActiveWallClimbs: 1,
+  wallSendMode: 'automatic',
+  staticBoardRender: true,
 };
 
 /**
@@ -185,6 +209,9 @@ const AURORA_CAPABILITIES: BoardCapabilities = {
  * grade and a `moonboardapp.com` climb page.
  */
 const MOONBOARD_CAPABILITIES: BoardCapabilities = {
+  catalogSource: 'bundled',
+  angleOptionsSource: 'bundled',
+  publicClimbLinks: true,
   crowdGrade: false,
   // Same angle-bound shape as Woods, still off — see the field's doc for why.
   angleBoundClimbs: false,
@@ -194,6 +221,9 @@ const MOONBOARD_CAPABILITIES: BoardCapabilities = {
   nativeBoardControl: true,
   auroraAppLink: false,
   benchmarkTerm: 'benchmark',
+  maxActiveWallClimbs: 1,
+  wallSendMode: 'automatic',
+  staticBoardRender: true,
 };
 
 /**
@@ -204,6 +234,9 @@ const MOONBOARD_CAPABILITIES: BoardCapabilities = {
  * grade data behind it.
  */
 const WOODS_CAPABILITIES: BoardCapabilities = {
+  catalogSource: 'bundled',
+  angleOptionsSource: 'bundled',
+  publicClimbLinks: true,
   crowdGrade: false,
   angleBoundClimbs: true,
   climbCreation: true,
@@ -212,6 +245,9 @@ const WOODS_CAPABILITIES: BoardCapabilities = {
   nativeBoardControl: true,
   auroraAppLink: false,
   benchmarkTerm: 'benchmark',
+  maxActiveWallClimbs: 1,
+  wallSendMode: 'automatic',
+  staticBoardRender: true,
 };
 
 /**
@@ -232,6 +268,9 @@ const WOODS_CAPABILITIES: BoardCapabilities = {
  * geometry to reflect holds through.
  */
 const SPRAY_CAPABILITIES: BoardCapabilities = {
+  catalogSource: 'personal',
+  angleOptionsSource: 'bundled',
+  publicClimbLinks: true,
   crowdGrade: false,
   // A wall's angle is fixed at creation, so every climb on it is set — and
   // browsed — at that one angle. There is no other angle for a stats row to be
@@ -244,6 +283,27 @@ const SPRAY_CAPABILITIES: BoardCapabilities = {
   nativeBoardControl: false,
   auroraAppLink: false,
   benchmarkTerm: 'benchmark',
+  maxActiveWallClimbs: 1,
+  wallSendMode: 'automatic',
+  staticBoardRender: false,
+};
+
+const QUANTUM_CAPABILITIES: BoardCapabilities = {
+  catalogSource: 'bundled',
+  angleOptionsSource: 'catalog',
+  // TODO(#7918): enable once public Quantum climb and collection routes are ready.
+  publicClimbLinks: false,
+  crowdGrade: true,
+  angleBoundClimbs: false,
+  climbCreation: true,
+  explicitClimbRules: false,
+  multiFrameClimbs: false,
+  nativeBoardControl: false,
+  auroraAppLink: false,
+  benchmarkTerm: 'benchmark',
+  maxActiveWallClimbs: 4,
+  wallSendMode: 'explicit-layer',
+  staticBoardRender: false,
 };
 
 // Typed as a total Record over BoardName, so adding a board to SUPPORTED_BOARDS
@@ -259,6 +319,7 @@ const CAPABILITIES_BY_BOARD: Record<BoardName, BoardCapabilities> = {
   moonboard: MOONBOARD_CAPABILITIES,
   woods: WOODS_CAPABILITIES,
   spray: SPRAY_CAPABILITIES,
+  quantum: QUANTUM_CAPABILITIES,
 };
 
 /**
@@ -269,4 +330,33 @@ export function getBoardCapabilities(boardName: string | undefined): BoardCapabi
   if (!boardName) return AURORA_CAPABILITIES;
   const capabilities: BoardCapabilities | undefined = CAPABILITIES_BY_BOARD[boardName.toLowerCase() as BoardName];
   return capabilities ?? AURORA_CAPABILITIES;
+}
+
+/** True only when a known board can use the synchronous photo/WASM renderer. */
+export function supportsStaticBoardRender(boardName: string | undefined): boolean {
+  if (!boardName) return false;
+  return CAPABILITIES_BY_BOARD[boardName.toLowerCase() as BoardName]?.staticBoardRender ?? false;
+}
+
+/** Exact input tuple for renderer validation and render-version projection. */
+export const STATIC_BOARD_RENDER_NAMES = SUPPORTED_BOARDS.filter(supportsStaticBoardRender) as [
+  BoardName,
+  ...BoardName[],
+];
+
+/** Public link support follows the same unknown-board fallback as capabilities.
+ * Quantum is temporarily excluded until its public routes ship (#7918). */
+export function supportsPublicClimbLinks(boardName: string | undefined): boolean {
+  return getBoardCapabilities(boardName).publicClimbLinks;
+}
+
+/** Known boards accepted by public climb links, including specialised renderers. */
+export const PUBLIC_CLIMB_LINK_BOARD_NAMES = SUPPORTED_BOARDS.filter(supportsPublicClimbLinks) as [
+  BoardName,
+  ...BoardName[],
+];
+
+/** Layer-overlap search only applies to controllers retaining independent climbs. */
+export function supportsLayerOverlapFiltering(boardName: string | undefined): boolean {
+  return getBoardCapabilities(boardName).maxActiveWallClimbs > 1;
 }

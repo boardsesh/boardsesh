@@ -1,9 +1,14 @@
-import { eq, and, sql, desc } from 'drizzle-orm';
+import { eq, and, not, sql, desc } from 'drizzle-orm';
 import { type ConnectionContext, type Climb, type BoardName, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
-import { getClimbStars, getGradeLabel, toConfidenceTier } from '@boardsesh/db/queries';
+import {
+  getClimbStars,
+  getGradeLabel,
+  toConfidenceTier,
+  unavailableQuantumClimbCondition,
+} from '@boardsesh/db/queries';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { GetUserFavoriteClimbsInputSchema } from '../../../validation/schemas';
 import { UNIFIED_TABLES, isValidBoardName } from '../../../db/queries/util/table-select';
@@ -54,6 +59,7 @@ export const favoriteClimbsQuery = {
         and(
           eq(dbSchema.userFavorites.userId, userId),
           eq(dbSchema.userFavorites.boardName, boardName),
+          not(unavailableQuantumClimbCondition()),
           // A favourite is a reference the user PERSISTED, so it outlives the
           // wall's visibility: without this, a climb favourited while the wall was
           // public keeps returning its name, description and frames after the owner
@@ -81,6 +87,7 @@ export const favoriteClimbsQuery = {
         frames: tables.climbs.frames,
         frames_count: tables.climbs.framesCount,
         frames_pace: tables.climbs.framesPace,
+        controller_route_uuid: tables.climbs.controllerRouteUuid,
         compatible_size_ids: tables.climbs.compatibleSizeIds,
         required_set_ids: tables.climbs.requiredSetIds,
         // How many of the climb's holds have come off the wall. Spray walls only —
@@ -138,6 +145,7 @@ export const favoriteClimbsQuery = {
         and(
           eq(dbSchema.userFavorites.userId, userId),
           eq(dbSchema.userFavorites.boardName, boardName),
+          not(unavailableQuantumClimbCondition()),
           // A favourite is a reference the user PERSISTED, so it outlives the
           // wall's visibility: without this, a climb favourited while the wall was
           // public keeps returning its name, description and frames after the owner
@@ -164,6 +172,7 @@ export const favoriteClimbsQuery = {
       frames: result.frames || '',
       framesCount: result.frames_count ?? null,
       framesPace: result.frames_pace ?? null,
+      controllerRouteUuid: result.controller_route_uuid ?? null,
       compatibleSizeIds: result.compatible_size_ids ?? null,
       requiredSetIds: result.required_set_ids ?? null,
       missingHoldCount: result.missing_hold_count ?? null,

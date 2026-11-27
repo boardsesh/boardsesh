@@ -5,6 +5,7 @@ import { useToast } from '../providers/toast-provider';
 import { shareLink } from '../lib/share-link';
 import { buildReadableClimbViewPath } from '@boardsesh/play-view/readable-url-utils';
 import type { Climb } from '@boardsesh/shared-schema';
+import { supportsPublicClimbLinks } from '@boardsesh/board-config';
 import { CLIMB_SHARE_BASE_URL } from '../lib/env';
 import { buildOgImageUrl, prewarmShareCaches } from '../lib/share-prewarm';
 import { buildSprayClimbSharePath, sprayWallVisibility, type SprayWallVisibility } from '../lib/spray/spray-share';
@@ -71,7 +72,8 @@ export function useShareClimb({ climb, boardName, layoutId, sizeId, setIds, angl
   const { t } = useTranslation('session');
   const { showToast } = useToast();
   return useCallback(async () => {
-    if (!climb) return;
+    // TODO(#7918): enable public links after the runtime-geometry renderer lands.
+    if (!climb || !supportsPublicClimbLinks(boardName)) return;
     const { path, sprayVisibility } = resolveShareTarget(climb, { boardName, layoutId, sizeId, setIds, angle });
 
     if (!path) {

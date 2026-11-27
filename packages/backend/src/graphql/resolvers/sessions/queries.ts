@@ -1,3 +1,5 @@
+import { toBoardName } from '@boardsesh/board-config';
+import { projectSessionBoardPath } from '../../../services/board-session-privacy';
 import { redactQueueEvents } from '../../../services/privacy-queue-events';
 import { canAccessResource } from '../../../services/privacy';
 import type {
@@ -14,7 +16,9 @@ import { SessionIdSchema, LatitudeSchema, LongitudeSchema, RadiusMetersSchema } 
 import { generateSessionHealthExport, generateSessionSummary } from './session-summary';
 import { getDistributedState } from '../../../services/distributed-state';
 import { buildSessionPayload } from './helpers';
-import { dbRead } from '../../../db/client';
+import { db, dbRead } from '../../../db/client';
+import { parseSessionBoardPath } from '../../../services/session-board';
+import { sprayLayoutIsReadableWithCapability } from '../climbs/spray-read-access';
 import { sessions } from '../../../db/schema';
 
 export const sessionQueries = {
@@ -181,6 +185,31 @@ export const sessionQueries = {
     validateInput(SessionIdSchema, sessionId, 'sessionId');
     if (!ctx.userId) throw new Error('Authentication required to perform this operation');
     return generateSessionHealthExport(sessionId, ctx.userId);
+  },
+
+  /** Read the authorized board geometry without joining or consulting live presence. */
+  sessionRestoreBoardPath: async (_: unknown, { sessionId }: { sessionId: string }, ctx: ConnectionContext) => {
+    // The lifecycle status stays public for compatibility. The board belongs
+    // to an authenticated restore operation and retains normal session access.
+    requireAuthenticated(ctx);
+    if (!ctx.userId) return null;
+    validateInput(SessionIdSchema, sessionId, 'sessionId');
+    if (!(await canAccessResource('session', sessionId, ctx.userId))) return null;
+    const session = await roomManager.getSessionById(sessionId);
+    if (!session?.boardPath) return null;
+    const boardPath = await projectSessionBoardPath(session.boardPath, ctx.userId, { geometryOnly: true });
+    const { config } = parseSessionBoardPath(boardPath);
+    if (!config || !toBoardName(config.boardType)) return null;
+
+    // A spray layout identifies one wall. Holding the session link alone does
+    // not grant access to that wall, including when its path was a saved slug.
+    if (
+      config.boardType === 'spray' &&
+      !(await sprayLayoutIsReadableWithCapability(config.boardType, config.layoutId, ctx.userId, undefined, db))
+    ) {
+      return null;
+    }
+    return boardPath;
   },
 
   /**

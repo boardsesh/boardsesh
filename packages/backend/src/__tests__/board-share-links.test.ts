@@ -1,5 +1,9 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { and, count, eq } from 'drizzle-orm';
+import { createRequire } from 'node:module';
+import type * as GraphQLModule from 'graphql';
+import { GET_BOARD_SHARE_LINK_ELIGIBILITY } from '@boardsesh/graphql/operations/privacy';
+import { schema as executableSchema } from '../graphql/index';
 import { v4 as uuidv4 } from 'uuid';
 import * as schema from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
@@ -50,9 +54,9 @@ async function seedBoard(
       ownerId,
       name: `Share Link ${audience} ${boardSerial}`,
       boardType,
-      layoutId: 1,
+      layoutId: boardType === 'quantum' ? 9105 : 1,
       // A distinct size per board keeps the per-owner config unique index happy.
-      sizeId: 100 + boardSerial,
+      sizeId: boardType === 'quantum' ? 9205 : 100 + boardSerial,
       setIds: '1',
       isPublic: audience === 'public' || audience === 'unlisted',
       isUnlisted: audience === 'unlisted',
@@ -558,6 +562,44 @@ describe('the signed-out preview', () => {
     const preview = await boardShareLinkQueries.boardShareLinkPreview(null, { token: link!.token }, anonymous());
     expect(preview).toEqual({ name: expect.stringContaining('Share Link invite_only') });
     expect(JSON.stringify(preview)).not.toContain('Example Street');
+  });
+
+  it('returns the Quantum rollout configuration for a signed-in token holder without granting access', async () => {
+    const board = await seedBoard(owner, 'invite_only', 'quantum');
+    const link = await shareLink(board.uuid);
+    const args = { token: link!.token };
+    const name = expect.stringContaining('Share Link invite_only');
+    const query = boardShareLinkQueries.boardShareLinkPreview;
+    const configuration = { layoutId: 9105, sizeId: 9205, setIds: '1' };
+    await expect(query(null, args, context(stranger))).resolves.toEqual({
+      name,
+      boardType: 'quantum',
+      ...configuration,
+    });
+    await expect(query(null, args, anonymous())).resolves.toEqual({ name });
+    await expect(query(null, args, { ...anonymous(), userId: stranger })).resolves.toEqual({ name });
+    const { graphql } = createRequire(import.meta.url)('graphql') as typeof GraphQLModule;
+    for (const [viewer, expectedType] of [
+      [anonymous(), null],
+      [context(stranger), 'quantum'],
+    ] as const) {
+      const reply = await graphql({
+        schema: executableSchema,
+        source: GET_BOARD_SHARE_LINK_ELIGIBILITY,
+        variableValues: args,
+        contextValue: viewer,
+      });
+      expect(reply).toEqual({
+        data: {
+          boardShareLinkPreview: {
+            name,
+            boardType: expectedType,
+            ...(expectedType === null ? { layoutId: null, sizeId: null, setIds: null } : configuration),
+          },
+        },
+      });
+    }
+    await expect(grantRows(board.uuid, stranger)).resolves.toEqual([]);
   });
 
   it('says nothing for a revoked, unknown or malformed token, or with the controls off', async () => {
