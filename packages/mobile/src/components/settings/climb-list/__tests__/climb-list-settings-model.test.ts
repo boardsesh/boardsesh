@@ -12,6 +12,7 @@ describe('Climb list settings model', () => {
       preview: 'example',
       previewHeight: 177,
       layout: null,
+      tabBarSearch: null,
     });
     expect(model.sections.map((section) => section.key)).toEqual([
       'preview',
@@ -34,6 +35,7 @@ describe('Climb list settings model', () => {
       preview: null,
       previewHeight: 177,
       layout: null,
+      tabBarSearch: null,
     });
     const setter = model.sections.flatMap((section) => section.rows).find((row) => row.key === 'setter');
     expect(setter?.kind).toBe('toggle');
@@ -57,6 +59,7 @@ describe('Climb list settings model', () => {
       preview: null,
       previewHeight: 177,
       layout: { value: 'two', onChange },
+      tabBarSearch: null,
     });
     expect(model.sections.map((section) => section.key).slice(0, 2)).toEqual(['preview', 'layout']);
     const layoutSection = model.sections.find((section) => section.key === 'layout');
@@ -78,7 +81,44 @@ describe('Climb list settings model', () => {
       preview: null,
       previewHeight: 177,
       layout: null,
+      tabBarSearch: null,
     });
     expect(model.sections.some((section) => section.key === 'layout')).toBe(false);
+  });
+
+  it('leaves the tab bar section out where the bar has no search tab', () => {
+    const model = buildClimbListSettingsModel({
+      display: DEFAULT_CLIMB_ROW_DISPLAY,
+      t: translate,
+      setField: vi.fn(),
+      preview: null,
+      previewHeight: 177,
+      layout: null,
+      tabBarSearch: null,
+    });
+    expect(model.sections.map((section) => section.key)).not.toContain('tabBar');
+  });
+  it('ends with the tab bar switch, which restores the old bar when turned off', () => {
+    const onChange = vi.fn();
+    const model = buildClimbListSettingsModel({
+      display: DEFAULT_CLIMB_ROW_DISPLAY,
+      t: translate,
+      setField: vi.fn(),
+      preview: null,
+      previewHeight: 177,
+      layout: null,
+      tabBarSearch: { enabled: true, onChange },
+    });
+    const section = model.sections.at(-1);
+    expect(section).toMatchObject({
+      key: 'tabBar',
+      title: 'mobile.settings.tabBarSearch.sectionTitle',
+      footer: 'mobile.settings.tabBarSearch.footer',
+    });
+    const row = section?.rows[0];
+    if (row?.kind !== 'toggle') throw new Error('Missing tab bar switch');
+    expect(row).toMatchObject({ key: 'climbsTabBarSearch', label: 'mobile.settings.tabBarSearch.title', value: true });
+    row.onValueChange(false);
+    expect(onChange).toHaveBeenCalledWith(false);
   });
 });

@@ -381,8 +381,13 @@
         "personalGradesDescription": "Affiche la cotation que tu as donnée à un bloc plutôt que celle de la communauté, et trie et filtre avec."
       },
       "tabBarSearch": {
+        "sectionTitle": "Barre d'onglets",
         "title": "Rechercher depuis la barre d'onglets",
-        "footer": "Blocs a son propre bouton à droite de la barre d'onglets, avec un champ pour le nom des blocs. Désactivé, c'est un onglet normal et tu cherches les noms dans Filtres. Prend effet après le redémarrage de Boardsesh."
+        "footer": "Blocs a son propre bouton à droite de la barre d'onglets, avec un champ pour le nom des blocs. Désactivé, c'est un onglet normal et tu cherches les noms dans Filtres. Prend effet après le redémarrage de Boardsesh.",
+        "restartTitle": "Redémarrer Boardsesh ?",
+        "restartMessage": "La nouvelle barre d'onglets s'affiche après le redémarrage.",
+        "restartNow": "Redémarrer maintenant",
+        "restartLater": "Plus tard"
       },
       "offline": {
         "title": "Hors ligne",

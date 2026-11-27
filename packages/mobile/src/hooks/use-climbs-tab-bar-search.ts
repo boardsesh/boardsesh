@@ -68,8 +68,9 @@ export function resetClimbsTabBarSearchLaunchChoiceForTests(): void {
  * set apart at the right of the bar, with a climb-name search field in the bar
  * itself, like Apple Music's Search. The tab layout reads this for the trigger's
  * role and the Climbs screen for its `headerSearchBarOptions`, so the two always
- * agree. The climber turns it off under Settings › Climbs & grades, from the
- * next launch.
+ * agree. The climber turns it off in the Climbs list's View options (Climbs ⋯ ›
+ * View options › Tab bar, also Settings › Climbs & grades › Climb list), from
+ * the next launch; off, the bar is the one from before #8261.
  */
 export function useClimbsTabBarSearch(): boolean {
   const available = useClimbsTabBarSearchAvailable();

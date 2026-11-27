@@ -10,6 +10,7 @@ import { useClimbRowDisplayControls } from './use-climb-row-display-controls';
 import { ClimbRowSettingsPreview } from './ClimbRowSettingsPreview';
 import { useClimbListLayout, useClimbListTwoColumnsPossible } from '../../../hooks/use-climb-list-layout';
 import { hapticSelection } from '../../../lib/haptics';
+import { useTabBarSearchSwitch } from './use-tab-bar-search-switch';
 import type { ClimbListLayoutPreference } from '../../climb-list-thumbnail-metrics';
 
 export function ClimbListSettingsScreen() {
@@ -31,6 +32,7 @@ export function ClimbListSettingsScreen() {
     () => (twoColumnsPossible ? { value: listLayout, onChange: handleLayoutChange } : null),
     [twoColumnsPossible, listLayout, handleLayoutChange],
   );
+  const tabBarSearch = useTabBarSearchSwitch();
   const preview = useMemo(
     () => (
       <ClimbRowSettingsPreview
@@ -52,8 +54,9 @@ export function ClimbListSettingsScreen() {
         preview,
         previewHeight: previewLayout.height,
         layout,
+        tabBarSearch,
       }),
-    [display, setField, t, preview, previewLayout.height, layout],
+    [display, setField, t, preview, previewLayout.height, layout, tabBarSearch],
   );
   return Platform.OS === 'android' ? <MoreFormRN model={model} /> : <MoreForm model={model} />;
 }

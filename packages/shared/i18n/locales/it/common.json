@@ -381,8 +381,13 @@
         "personalGradesDescription": "Mostra il grado che hai dato a un blocco al posto di quello della community, e ordina e filtra in base a quello."
       },
       "tabBarSearch": {
+        "sectionTitle": "Barra delle schede",
         "title": "Cerca dalla barra delle schede",
-        "footer": "Blocchi ha un pulsante tutto suo a destra della barra delle schede, con un campo per i nomi dei blocchi. Disattivato, è una scheda normale e cerchi i nomi in Filtri. Vale dopo aver riavviato Boardsesh."
+        "footer": "Blocchi ha un pulsante tutto suo a destra della barra delle schede, con un campo per i nomi dei blocchi. Disattivato, è una scheda normale e cerchi i nomi in Filtri. Vale dopo aver riavviato Boardsesh.",
+        "restartTitle": "Riavviare Boardsesh?",
+        "restartMessage": "La nuova barra delle schede compare dopo il riavvio.",
+        "restartNow": "Riavvia ora",
+        "restartLater": "Più tardi"
       },
       "offline": {
         "title": "Offline",
