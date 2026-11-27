@@ -1039,12 +1039,22 @@ export function QueueProvider({ children }: { children: ReactNode }) {
               { message: 'This session has ended', extensions: { code: 'SESSION_ENDED' } },
             ]);
           }
-          const sessionBoard = confirmedBoardPath ? parseBoardPath(confirmedBoardPath) : target?.board;
+          // Signed out, the server keeps the session's board to itself and there
+          // is no account board to protect: join on this phone's own board without
+          // the guard, as before it existed. getBoardPath checked that board's
+          // visibility; a positional path is rechecked with the rest below.
+          const joinsUnguarded = target?.signedOut === true;
+          const sessionBoard = confirmedBoardPath
+            ? parseBoardPath(confirmedBoardPath)
+            : joinsUnguarded
+              ? tuple
+              : target?.board;
+          const isSessionBoardVisible = () =>
+            sessionBoard ? boardVisibilityRef.current(sessionBoard) : joinsUnguarded;
           if (
             (!confirmedBoardPath && (activeBoardRolloutBlockedRef.current || target?.status !== 'active')) ||
-            !expectedBoardPath ||
-            !sessionBoard ||
-            !boardVisibilityRef.current(sessionBoard)
+            (!expectedBoardPath && !joinsUnguarded) ||
+            !isSessionBoardVisible()
           ) {
             throw new Error('Session board unavailable');
           }
@@ -1058,8 +1068,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
             // The saved board and the server's wall can differ during a cold
             // rejoin. Use the target's privacy-projected tuple as the guard.
             boardPath:
-              confirmation || sessionBoardPathsMatch(boardPath, expectedBoardPath) ? boardPath : expectedBoardPath,
-            expectedBoardPath,
+              confirmation || !expectedBoardPath || sessionBoardPathsMatch(boardPath, expectedBoardPath)
+                ? boardPath
+                : expectedBoardPath,
+            expectedBoardPath: expectedBoardPath ?? undefined,
             username: sentIdentity.username,
             avatarUrl: sentIdentity.avatarUrl,
           };
@@ -1074,7 +1086,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
               return await execute<JoinSessionResponse>(
                 () => {
                   assertJoinAvailable();
-                  if (!boardVisibilityRef.current(sessionBoard) || getWsClient() !== client) {
+                  if (!isSessionBoardVisible() || getWsClient() !== client) {
                     throw new Error('Session board unavailable');
                   }
                   return client;
@@ -1122,7 +1134,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           // before an await can be disposed by the time the send goes out.
           const capabilities = await probeQueueServerCapabilities(getWsClient);
           assertJoinAvailable();
-          if (!boardVisibilityRef.current(sessionBoard)) throw new Error('Session board unavailable');
+          if (!isSessionBoardVisible()) throw new Error('Session board unavailable');
           attributionServerRef.current = capabilities.attribution;
           const nowSlotServer = nowSlotFlagRef.current ? capabilities.nowSlot : null;
           nowSlotServerRef.current = nowSlotServer;
@@ -1153,7 +1165,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           if (!isJoinCurrent() || (dispatchedClient && getWsClient() !== dispatchedClient)) {
             throw new Error('Queue authorization changed');
           }
-          if (!boardVisibilityRef.current(sessionBoard)) {
+          if (!isSessionBoardVisible()) {
             // The guarded JOIN may already have bound this connection to
             // the room. Retire it before any queued mutation or stream can
             // use that membership, without touching a replacement socket.

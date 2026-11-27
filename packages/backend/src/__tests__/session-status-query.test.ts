@@ -13,13 +13,22 @@ import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 
 const dbClient = vi.hoisted(() => {
   const limit = vi.fn();
+  // A read replica that has not replayed the row yet: it never has one.
+  const replicaLimit = vi.fn(async () => []);
   return {
     limit,
+    replicaLimit,
     db: {
       select: vi.fn().mockReturnThis(),
       from: vi.fn().mockReturnThis(),
       where: vi.fn().mockReturnThis(),
       limit,
+    },
+    replica: {
+      select: vi.fn().mockReturnThis(),
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      limit: replicaLimit,
     },
   };
 });
@@ -37,7 +46,7 @@ vi.mock('../services/board-session-privacy', async (importOriginal) => ({
 }));
 vi.mock('../pubsub/index', () => ({ pubsub: {} }));
 vi.mock('../services/distributed-state', () => ({ getDistributedState: () => null }));
-vi.mock('../db/client', () => ({ db: dbClient.db, dbRead: dbClient.db }));
+vi.mock('../db/client', () => ({ db: dbClient.db, dbRead: dbClient.replica }));
 
 import { sessionQueries } from '../graphql/resolvers/sessions/queries';
 
@@ -49,6 +58,7 @@ describe('sessionStatus query', () => {
     dbClient.db.select.mockClear();
     dbClient.db.from.mockClear();
     dbClient.db.where.mockClear();
+    dbClient.replicaLimit.mockClear();
   });
 
   it('returns active for a live session row', async () => {
@@ -94,6 +104,17 @@ describe('sessionStatus query', () => {
   it('rejects a malformed session id before querying', async () => {
     await expect(sessionQueries.sessionStatus({}, { sessionId: 'bad id!' })).rejects.toThrow();
     expect(dbClient.limit).not.toHaveBeenCalled();
+  });
+
+  // Mobile reads this before the first join, one round trip after createSession
+  // commits on the primary, and treats null as ended.
+  it('sees a session createSession just committed while the replica still lags', async () => {
+    dbClient.limit.mockResolvedValue([{ status: 'active', endedAt: null }]);
+
+    const result = await sessionQueries.sessionStatus({}, { sessionId: 'just-created' });
+
+    expect(result).toBe('active');
+    expect(dbClient.replicaLimit).not.toHaveBeenCalled();
   });
 });
 
