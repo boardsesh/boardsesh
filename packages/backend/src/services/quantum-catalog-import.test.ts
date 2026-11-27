@@ -333,7 +333,7 @@ describe('Quantum catalog database import', () => {
     });
   });
 
-  it('changes only the edited route and stats without rewriting immutable holds', async () => {
+  it('rewrites only the edited climb row, leaving its stats and immutable holds untouched', async () => {
     const firstRoute = quantumCatalogFixture();
     const secondRoute = quantumCatalogFixture({ routeId: '22222222-2222-4222-8222-222222222222' });
     const snapshot = { ...firstRoute, routes: [...firstRoute.routes, ...secondRoute.routes] };
@@ -373,7 +373,8 @@ describe('Quantum catalog database import', () => {
     const edited = {
       ...identical,
       checkpoint: 'third',
-      // The fixture's 12 ascents become 13: the stats row changes along with the climb row.
+      // eWalls ascents are source metadata only: 12 becomes 13 on the climb row,
+      // and the stats row, which never carried them, stays as it was.
       routes: identical.routes.map((route, index) =>
         index === 0 ? { ...route, name: 'Edited route', ascents: 13 } : route,
       ),
@@ -390,9 +391,15 @@ describe('Quantum catalog database import', () => {
     expect(changed.climbs.find((climb) => climb.uuid === CATALOG_UUID)?.revision).not.toBe(
       initial.climbs.find((climb) => climb.uuid === CATALOG_UUID)?.revision,
     );
-    expect(changed.stats.find((stats) => stats.climbUuid === CATALOG_UUID)?.revision).not.toBe(
-      initial.stats.find((stats) => stats.climbUuid === CATALOG_UUID)?.revision,
+    expect(changed.stats.find((stats) => stats.climbUuid === CATALOG_UUID)).toEqual(
+      initial.stats.find((stats) => stats.climbUuid === CATALOG_UUID),
     );
+    await expect(
+      db
+        .select({ name: boardClimbs.name, sourceMetadata: boardClimbs.sourceMetadata })
+        .from(boardClimbs)
+        .where(eq(boardClimbs.uuid, CATALOG_UUID)),
+    ).resolves.toMatchObject([{ name: 'Edited route', sourceMetadata: { ascents: 13 } }]);
   });
 
   it('stores one shared-family climb and preserves canonical identity when size membership changes', async () => {
@@ -526,16 +533,18 @@ describe('Quantum catalog database import', () => {
       'quantum_kickplate',
       'quantum_matching',
     ]);
+    // eWalls ascents and rating stay in source metadata (above); the stats row
+    // carries only the mapped grade.
     await expect(
       db.select().from(boardClimbStats).where(eq(boardClimbStats.boardType, 'quantum')),
     ).resolves.toMatchObject([
       {
         angle: 40,
         displayDifficulty: 15,
-        upstreamAscensionistCount: 12,
-        ascensionistCount: 12,
-        upstreamQualityAverage: 4.5,
-        qualityAverage: 4.5,
+        upstreamAscensionistCount: null,
+        ascensionistCount: null,
+        upstreamQualityAverage: null,
+        qualityAverage: null,
       },
     ]);
     await expect(catalogSyncStates()).resolves.toMatchObject([
@@ -870,8 +879,19 @@ describe('Quantum catalog database import', () => {
   });
 
   it('retires obsolete route-level aggregates across known and unknown angles while keeping local history', async () => {
-    await importFixture(quantumCatalogFixture({ angle: 30 }));
+    // The old angle's row carries upstream aggregates (12 ascents, 4.5 rating)
+    // so retiring them is observable; eWalls itself never supplies any.
+    await importFixture(quantumCatalogFixture({ angle: 30, injectUpstreamAggregates: true }));
     const oldAngle = and(eq(boardClimbStats.climbUuid, CATALOG_UUID), eq(boardClimbStats.angle, 30));
+    expect(
+      await db
+        .select({
+          upstreamAscensionistCount: boardClimbStats.upstreamAscensionistCount,
+          upstreamQualityAverage: boardClimbStats.upstreamQualityAverage,
+        })
+        .from(boardClimbStats)
+        .where(oldAngle),
+    ).toEqual([{ upstreamAscensionistCount: 12, upstreamQualityAverage: 4.5 }]);
     await db
       .update(boardClimbStats)
       .set({ boardseshAscensionistCount: 2, boardseshQualitySum: 7, boardseshQualityCount: 2 })
@@ -896,9 +916,10 @@ describe('Quantum catalog database import', () => {
       difficultyAverage: null,
       displayDifficulty: null,
     });
+    // The new angle comes from the production mapper: the grade, no aggregates.
     expect(await row(40)).toMatchObject({
-      upstreamAscensionistCount: 12,
-      upstreamQualityAverage: 4.5,
+      upstreamAscensionistCount: null,
+      upstreamQualityAverage: null,
       displayDifficulty: 15,
     });
     const tickGrade = '2026-09-01T12:00:00';

@@ -35,7 +35,7 @@ const QUANTUM_DEFAULT_ROLE_ID = 13;
 // Authoring keeps the app's current activation cap; imported routes remain complete.
 const QUANTUM_MAX_DIODES_PER_ACTIVATION = 92;
 
-export const QUANTUM_ROLE_ROWS = [
+const QUANTUM_ROLE_ROWS = [
   {
     boardType: QUANTUM_BOARD_TYPE,
     id: 12,
@@ -70,7 +70,7 @@ export const QUANTUM_ROLE_ROWS = [
 
 type QuantumHoldState = 'STARTING' | 'HAND' | 'FINISH';
 
-export type PreparedQuantumHold = Readonly<{
+type PreparedQuantumHold = Readonly<{
   boardType: typeof QUANTUM_BOARD_TYPE;
   climbUuid: string;
   holdId: number;
@@ -78,7 +78,7 @@ export type PreparedQuantumHold = Readonly<{
   holdState: QuantumHoldState;
 }>;
 
-export type PreparedQuantumClimb = Readonly<{
+type PreparedQuantumClimb = Readonly<{
   uuid: string;
   boardType: typeof QUANTUM_BOARD_TYPE;
   layoutId: number;
@@ -110,7 +110,7 @@ export type PreparedQuantumClimb = Readonly<{
   sourceMetadata: Readonly<Record<string, unknown>>;
 }>;
 
-export type PreparedQuantumStat = Readonly<{
+type PreparedQuantumStat = Readonly<{
   boardType: typeof QUANTUM_BOARD_TYPE;
   climbUuid: string;
   angle: number;

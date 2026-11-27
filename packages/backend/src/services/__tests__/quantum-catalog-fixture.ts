@@ -7,8 +7,12 @@ import { importPreparedEwallsCatalog } from '../quantum-catalog-import';
 
 /**
  * Catalogue fixtures built through the production eWalls mapper, on the real
- * bundled geometry. Bindings are ordered by placement id, so the shared hole
- * (the lowest M placement) sorts before the XL-only holes in every frame.
+ * bundled geometry. The prepared catalogue is exactly what
+ * `prepareEwallsCatalog` returns, with one opt-in exception: a fixture made
+ * with `injectUpstreamAggregates` rewrites its stats rows (see
+ * `withInjectedUpstreamAggregates`). Bindings are ordered by placement id, so
+ * the shared hole (the lowest M placement) sorts before the XL-only holes in
+ * every frame.
  */
 function requireBinding(binding: QuantumSourceDiodeBinding | undefined, label: string): QuantumSourceDiodeBinding {
   if (!binding) throw new Error(`Quantum fixture geometry has no ${label} diode`);
@@ -50,13 +54,14 @@ type LightStep = 1 | 2 | 3;
 type StandardFit = 'big' | 'medium' | 'small';
 
 /** One bootstrap acquisition of a single eWalls catalogue scope. */
-export type QuantumFixture = Readonly<{
+type QuantumFixture = Readonly<{
   checkpoint: string;
   forcedType: string;
   routes: readonly EwallsIdentifiedRecord[];
+  injectUpstreamAggregates: boolean;
 }>;
 
-export type QuantumFixtureOptions = Readonly<{
+type QuantumFixtureOptions = Readonly<{
   checkpoint?: string;
   routeId?: string;
   routeName?: string;
@@ -64,8 +69,15 @@ export type QuantumFixtureOptions = Readonly<{
   grade?: string;
   /** eWalls route fit. The default, `big`, keeps the route on XL only. */
   minVariant?: StandardFit;
-  /** One step per fixture diode, shared hole first. */
+  /** One step per fixture diode, shared hole first; at most four. */
   steps?: readonly LightStep[];
+  /**
+   * Not production behaviour. Copies each route's source ascents and rating
+   * into its stats row as upstream aggregates, which `prepareEwallsCatalog`
+   * always leaves null. Only for tests of the importer's aggregate blending and
+   * retirement.
+   */
+  injectUpstreamAggregates?: boolean;
 }>;
 
 const NO_CHANGES = { upsert: [], deleted: [] };
@@ -76,6 +88,11 @@ function diodeRecord(binding: QuantumSourceDiodeBinding): EwallsRecord {
 
 function quantumFixtureRoute(options: QuantumFixtureOptions = {}): EwallsIdentifiedRecord {
   const steps = options.steps ?? [1, 2, 3, 2];
+  if (steps.length > STANDARD_ROUTE_DIODES.length) {
+    throw new Error(
+      `The Quantum fixture route has ${STANDARD_ROUTE_DIODES.length} diodes; ${steps.length} steps were requested`,
+    );
+  }
   return {
     id: options.routeId ?? QUANTUM_FIXTURE_ROUTE_ID,
     name: options.routeName ?? 'Synthetic Quantum Route',
@@ -98,16 +115,18 @@ function quantumFixtureRoute(options: QuantumFixtureOptions = {}): EwallsIdentif
     standard: true,
     tags: ['pinch', 'technical'],
     tips: 'Stay close to the wall.',
-    lights: STANDARD_ROUTE_DIODES.slice(0, steps.length).map((diode, index) => ({
-      diode: { id: diode.diodeUuid },
-      step: steps[index],
-    })),
+    lights: steps.map((step, index) => ({ diode: { id: STANDARD_ROUTE_DIODES[index]!.diodeUuid }, step })),
   };
 }
 
 /** One XL-only route acquired through the XL catalogue scope. */
 export function quantumCatalogFixture(options: QuantumFixtureOptions = {}): QuantumFixture {
-  return { checkpoint: options.checkpoint ?? 'first', forcedType: 'big', routes: [quantumFixtureRoute(options)] };
+  return {
+    checkpoint: options.checkpoint ?? 'first',
+    forcedType: 'big',
+    routes: [quantumFixtureRoute(options)],
+    injectUpstreamAggregates: options.injectUpstreamAggregates ?? false,
+  };
 }
 
 /** One route on the shared hole only, fitting XL, L and M unless `minVariant` narrows it. */
@@ -120,6 +139,7 @@ export function quantumSFitnessFixture(options: Pick<QuantumFixtureOptions, 'che
   return {
     checkpoint: options.checkpoint ?? 'first',
     forcedType: 'xsmall',
+    injectUpstreamAggregates: false,
     routes: [
       {
         ...quantumFixtureRoute(),
@@ -144,12 +164,13 @@ function quantumFixtureBatch(fixture: QuantumFixture): EwallsBootstrap {
 }
 
 /**
- * eWalls route ascents and ratings have unconfirmed semantics, so the mapper
- * keeps them in source metadata and leaves the stats aggregates empty. The
- * importer still blends upstream aggregates whenever a catalogue carries them,
- * so the fixture promotes those two source fields into each stats row.
+ * The fixture's only departure from production output. eWalls route ascents
+ * and ratings have unconfirmed semantics, so `prepareEwallsCatalog` keeps them
+ * in source metadata and always leaves the stats aggregates null. The importer
+ * still blends and retires upstream aggregates whenever a catalogue carries
+ * them; tests of that behaviour opt in to this rewrite.
  */
-function withSourceAggregates(catalog: PreparedQuantumCatalog): PreparedQuantumCatalog {
+function withInjectedUpstreamAggregates(catalog: PreparedQuantumCatalog): PreparedQuantumCatalog {
   const metadataByClimb = new Map(catalog.climbs.map((climb) => [climb.uuid, climb.sourceMetadata]));
   return {
     ...catalog,
@@ -171,7 +192,10 @@ function withSourceAggregates(catalog: PreparedQuantumCatalog): PreparedQuantumC
 export function prepareQuantumFixture(fixture: QuantumFixture, now: Date = new Date()) {
   const batch = quantumFixtureBatch(fixture);
   const prepared = prepareEwallsCatalog(batch, [], now);
-  return { ...prepared, batch, catalog: withSourceAggregates(prepared.catalog) };
+  const catalog = fixture.injectUpstreamAggregates
+    ? withInjectedUpstreamAggregates(prepared.catalog)
+    : prepared.catalog;
+  return { ...prepared, batch, catalog };
 }
 
 export async function importFixture(fixture: QuantumFixture, options: { database?: Database; now?: () => Date } = {}) {
