@@ -80,7 +80,7 @@ ${blocks}
 }
 
 // Preserve the committed Swift header to avoid a native fingerprint change for documentation relocation.
-// The historical docs directory forwards readers to the canonical package documentation.
+// The path in that header no longer exists; `docs/boards/woods-board-led-maps/` forwards readers to the package documentation.
 export function renderWoodsBoardDataSwift(tables: WoodsLedTables): string {
   // One-line JSON literal decoded at runtime, like BoardPlacementData.swift —
   // a 1,379-entry Swift dictionary literal would blow up the type-checker.
