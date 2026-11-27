@@ -34,16 +34,23 @@ vi.mock('../ListRow', () => ({
 vi.mock('../SwitchRow', () => ({
   SwitchRow: ({
     label,
+    description,
     value,
     onValueChange,
   }: {
     label: string;
+    description?: string;
     value: boolean;
     onValueChange: (next: boolean) => void;
   }) =>
     createElement(
       'button',
-      { 'data-switch-row': label, 'aria-checked': value, onClick: () => onValueChange(!value) },
+      {
+        'data-switch-row': label,
+        'data-description': description,
+        'aria-checked': value,
+        onClick: () => onValueChange(!value),
+      },
       label,
     ),
 }));
@@ -106,6 +113,20 @@ describe('BleControlSheet', () => {
   it('paints the disconnect glyph with the theme error colour, not a static red', () => {
     const { container } = render(<BleControlSheet {...baseProps} />);
     expect(container.querySelector('[data-icon="bluetooth.off"]')?.getAttribute('data-color')).toBe('theme-error');
+  });
+
+  it('keeps the Spraywall upper-light switch in place with its own explanation', () => {
+    const { container, getByText } = render(
+      <BleControlSheet {...baseProps} showLightAdjacentHolds spraywallAdjacentLighting />,
+    );
+    expect(getByText('lightControl.lightAdjacentHolds').getAttribute('data-description')).toBe(
+      'lightControl.spraywallLightAdjacentHoldsHelp',
+    );
+    expect(Array.from(container.querySelectorAll('[data-switch-row]')).map((row) => row.textContent)).toEqual([
+      'ble.lighting.drivingEnds.label',
+      'lightControl.lightAdjacentHolds',
+      'ble.lighting.alwaysDriveLabel',
+    ]);
   });
 
   it('renders re-light, turn-off-all-lights, and disconnect rows', () => {

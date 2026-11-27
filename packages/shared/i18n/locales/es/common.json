@@ -1228,6 +1228,7 @@
     "turnOffAll": "Apagar todas las luces",
     "lightAdjacentHolds": "Iluminar la presa de arriba",
     "lightAdjacentHoldsHelp": "Enciende un segundo LED, más tenue, sobre cada presa de inicio o de mano iluminada. Requiere un controlador MoonBoard con la función de LED adicional.",
+    "spraywallLightAdjacentHoldsHelp": "Enciende los LED asignados sobre cada presa iluminada en blanco al 25 % de brillo.",
     "disconnect": "Desconectar plafón"
   },
   "bluetooth": {

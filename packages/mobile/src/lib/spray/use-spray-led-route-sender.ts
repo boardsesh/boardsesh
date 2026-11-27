@@ -10,11 +10,19 @@ import { getCredentialGeneration, subscribeToCredentialChanges } from '../privac
 import { hexToRgb, type HoldColorOverrides } from '../hold-color-overrides';
 import { subscribeSprayLedConfiguration } from './spray-led-config-events';
 import { sprayLedPhotoKey } from './spray-led-photo-key';
-import { lookPreviewSourceFromRenderData } from './spray-look-preview';
 import { getSprayWall, sprayWallRemovalGeneration, subscribeToSprayWallWithdrawals } from './spray-wall-registry';
 import { sprayPrivacyGeneration } from './spray-privacy-generation';
 
 type RouteRuntime = { wallUuid: string; url: string; lightingKey: string; session: LedPreviewSession };
+type RouteRequest = { frames: string; mirrored?: boolean; signal?: AbortSignal; pending: boolean };
+type AcknowledgedRoute = { request: RouteRequest; session: LedPreviewSession; upperLighting: boolean };
+type RouteWrite = (
+  frames: string,
+  mirrored?: boolean,
+  signal?: AbortSignal,
+  refreshSession?: LedPreviewSession,
+) => Promise<boolean | null>;
+const ABOVE_HOLD_WHITE = Math.round(255 * 0.25);
 
 /**
  * LAN writes share the normal wall commit path and require a deliberate wall
@@ -25,12 +33,14 @@ export function useSprayLedRouteSender({
   boardName,
   layoutId,
   colorOverrides,
+  lightAboveHolds = false,
   onInvalidated,
   onFailure,
 }: {
   boardName?: string;
   layoutId?: number;
   colorOverrides?: HoldColorOverrides;
+  lightAboveHolds?: boolean;
   onInvalidated: (retry?: boolean) => void;
   onFailure?: () => void;
 }) {
@@ -57,18 +67,46 @@ export function useSprayLedRouteSender({
   config.current = currentConfig;
   const colors = useRef(colorOverrides);
   colors.current = colorOverrides;
+  const upperLighting = useRef(lightAboveHolds);
+  upperLighting.current = lightAboveHolds;
+  const latestRoute = useRef<RouteRequest | null>(null);
+  const acknowledgedRoute = useRef<AcknowledgedRoute | null>(null);
+  const deferredUpperLighting = useRef<AcknowledgedRoute | null>(null);
+  const writeRoute = useRef<RouteWrite | null>(null);
 
   const stop = useCallback((lights: 'off' | 'leave' = 'off') => {
     requestGeneration.current++;
     missedWhileAway.current = false;
     const previous = runtime.current;
     runtime.current = null;
+    latestRoute.current = null;
+    acknowledgedRoute.current = null;
+    deferredUpperLighting.current = null;
     if (previous) {
       void (lights === 'off' ? previous.session.close() : previous.session.detach()).catch(() => undefined);
     }
     if (mounted.current) invalidate.current();
   }, []);
   const release = useCallback(() => stop('leave'), [stop]);
+
+  const previousUpperLighting = useRef(lightAboveHolds);
+  useEffect(() => {
+    if (previousUpperLighting.current === lightAboveHolds) return;
+    previousUpperLighting.current = lightAboveHolds;
+    if (boardName !== 'spray') return;
+    const acknowledged = acknowledgedRoute.current;
+    if (!acknowledged) return;
+    const { request, session } = acknowledged;
+    if (!request.frames || request.signal?.aborted || runtime.current?.session !== session || !session.isOwner())
+      return;
+    // A pending send reads the latest option itself and keeps its original acknowledgement.
+    // A settled send may refresh only the same route while this session still owns the lights.
+    if (latestRoute.current?.pending) {
+      deferredUpperLighting.current = acknowledged;
+      return;
+    }
+    void writeRoute.current?.(request.frames, request.mirrored, request.signal, session);
+  }, [boardName, lightAboveHolds]);
 
   useEffect(() => {
     mounted.current = true;
@@ -105,7 +143,12 @@ export function useSprayLedRouteSender({
   }, [boardName, layoutId, stop]);
 
   const send = useCallback(
-    async (frames: string, mirrored?: boolean, signal?: AbortSignal): Promise<boolean | null> => {
+    async (
+      frames: string,
+      mirrored?: boolean,
+      signal?: AbortSignal,
+      refreshSession?: LedPreviewSession,
+    ): Promise<boolean | null> => {
       if (boardName !== 'spray' || layoutId === undefined) return null;
       const generation = ++requestGeneration.current;
       const credentials = getCredentialGeneration();
@@ -121,6 +164,8 @@ export function useSprayLedRouteSender({
         removal === sprayWallRemovalGeneration(layoutId) &&
         credentials === getCredentialGeneration();
       if (!isCurrent()) return false;
+      const requested: RouteRequest = { frames, mirrored, signal, pending: true };
+      latestRoute.current = requested;
       let enabled = false;
       const fail = () => {
         if (!enabled || !isCurrent()) return false;
@@ -133,8 +178,10 @@ export function useSprayLedRouteSender({
         }
         return false;
       };
-      const settled = (acknowledged: boolean) => {
+      const settled = (acknowledged: boolean, session: LedPreviewSession, appliedUpperLighting: boolean) => {
         if (!acknowledged || !isCurrent()) return false;
+        acknowledgedRoute.current = { request: requested, session, upperLighting: appliedUpperLighting };
+        deferredUpperLighting.current = null;
         missedWhileAway.current = false;
         failureShown.current = false;
         return true;
@@ -147,13 +194,15 @@ export function useSprayLedRouteSender({
         // Load network modules only for a spray-wall write, keeping native BLE's
         // existing boot/module graph independent of private spray-wall queries.
         const [
-          { fetchSprayWallUuid, fetchSprayWallRenderData },
+          { fetchSprayWallUuid },
           { loadSprayWallLedSettings },
           { loadSprayWallTnutLayout },
+          { loadSprayLedRouteGeometry },
         ] = await Promise.all([
           import('./spray-wall-loader'),
           import('./use-spray-wall-led-settings'),
           import('./spray-wall-tnut-store'),
+          import('./spray-led-route-geometry'),
         ]);
         const wallUuid = getSprayWall(layoutId)?.wallUuid ?? (await fetchSprayWallUuid(queryClient, layoutId));
         if (!isCurrent() || !wallUuid) return false;
@@ -203,36 +252,57 @@ export function useSprayLedRouteSender({
           runtime.current = current;
         }
         if (!isCurrent()) return false;
-        if (!frames) return settled(await current.session.clear());
-        const [payload, layout] = await Promise.all([
-          fetchSprayWallRenderData(queryClient, wallUuid),
+        if (!frames) return settled(await current.session.clear(), current.session, upperLighting.current);
+        const [geometry, layout] = await Promise.all([
+          loadSprayLedRouteGeometry(queryClient, wallUuid, layoutId),
           loadSprayWallTnutLayout(wallUuid),
         ]);
         if (!isCurrent()) return false;
-        if (!payload || payload.wall.layoutId !== layoutId || !layout?.wiring) return fail();
-        const source = lookPreviewSourceFromRenderData(payload, {
-          layoutId,
-          versionId: payload.wall.currentVersion?.id,
-        });
-        if (!source || layout.photoKey !== sprayLedPhotoKey(source)) return fail();
-        const holds = payload.holds.map(({ id, cx, cy, r, outline }) => ({ id, cx, cy, r, outline }));
-        const mapping = buildSprayLedMapping(layout, source.frame, holds);
+        if (!geometry || !layout?.wiring || layout.photoKey !== sprayLedPhotoKey(geometry)) return fail();
+        const mapping = buildSprayLedMapping(layout, geometry.frame, geometry.holds);
         const byHold = new Map(mapping.holds.map((hold) => [hold.holdId, hold]));
         const litHolds = accumulateFramesToMaps(toFlatFrames(frames, 'spray'), 'spray')[0];
         if (!litHolds || Object.keys(litHolds).length === 0) return fail();
-        const pixels = new Map<number, LedPixel>();
-        for (const [id, hold] of Object.entries(litHolds)) {
-          const match = byHold.get(Number(id));
-          if (!match?.indices.length) return fail();
-          const override = colors.current?.[hold.state as keyof HoldColorOverrides];
-          const rgb = hexToRgb(override ?? hold.color);
-          if (!rgb) return fail();
-          for (const index of match.indices) {
-            pixels.set(index, { index, color: [rgb.red, rgb.green, rgb.blue] });
+        let wrote = false;
+        while (isCurrent()) {
+          const upperLightingForWrite = upperLighting.current;
+          const pixels = new Map<number, LedPixel>();
+          const upperPixels = new Map<number, LedPixel>();
+          const includeUpper = upperLightingForWrite && ['below', 'alternating'].includes(layout.ledPlacement ?? '');
+          for (const [id, hold] of Object.entries(litHolds)) {
+            const match = byHold.get(Number(id));
+            // A conservative geometric/manual empty assignment is intentional.
+            // A known assigned LED without any physical index still means the
+            // cable setup is incomplete; a missing hold means stale route data.
+            if (!match || (match.ledIds.length > 0 && !match.indices.length)) return fail();
+            const override = colors.current?.[hold.state as keyof HoldColorOverrides];
+            const rgb = hexToRgb(override ?? hold.color);
+            if (!rgb) return fail();
+            for (const index of match.indices) pixels.set(index, { index, color: [rgb.red, rgb.green, rgb.blue] });
+            if (includeUpper) {
+              for (const index of match.aboveIndices ?? []) {
+                upperPixels.set(index, {
+                  index,
+                  color: [ABOVE_HOLD_WHITE, ABOVE_HOLD_WHITE, ABOVE_HOLD_WHITE],
+                });
+              }
+            }
           }
+          // A route's main LED always wins over another hold's dim upper reference.
+          for (const [index, pixel] of upperPixels) if (!pixels.has(index)) pixels.set(index, pixel);
+          if (!isCurrent()) return false;
+          if (refreshSession && (current.session !== refreshSession || !refreshSession.isOwner())) return false;
+          if (wrote && !current.session.isOwner()) return false;
+          if (!pixels.size && !current.session.isOwner()) return false;
+          const acknowledged = pixels.size
+            ? await current.session.show([...pixels.keys()], [...pixels.values()])
+            : await current.session.clear();
+          if (!acknowledged || !isCurrent()) return false;
+          wrote = true;
+          if (upperLighting.current === upperLightingForWrite)
+            return settled(true, current.session, upperLightingForWrite);
         }
-        if (!isCurrent()) return false;
-        return settled(await current.session.show([...pixels.keys()], [...pixels.values()]));
+        return false;
       } catch {
         if (isCurrent()) {
           fail();
@@ -241,11 +311,30 @@ export function useSprayLedRouteSender({
         }
         return false;
       } finally {
+        requested.pending = false;
         signal?.removeEventListener('abort', abort);
+        const deferred = deferredUpperLighting.current;
+        if (deferred && isCurrent() && latestRoute.current === requested) {
+          deferredUpperLighting.current = null;
+          const { request, session } = deferred;
+          // A failed replacement leaves the last acknowledged route in charge.
+          // Do not revive it after a takeover, or consume the foreground retry.
+          if (
+            !away.current &&
+            deferred.upperLighting !== upperLighting.current &&
+            acknowledgedRoute.current === deferred &&
+            !request.signal?.aborted &&
+            runtime.current?.session === session &&
+            session.isOwner()
+          ) {
+            void writeRoute.current?.(request.frames, request.mirrored, request.signal, session);
+          }
+        }
       }
     },
     [boardName, layoutId, queryClient, stop],
   );
+  writeRoute.current = send;
 
   return { send, release };
 }

@@ -90,6 +90,7 @@ export const iconMap = {
   paw: { ios: 'pawprint.fill', android: 'paw' },
   flag: { ios: 'flag', android: 'flag-outline' },
   link: { ios: 'link', android: 'link-variant' },
+  scissors: { ios: 'scissors', android: 'content-cut' },
   github: { ios: 'chevron.left.forwardslash.chevron.right', android: 'github' },
   upload: { ios: 'arrow.up.to.line', android: 'upload-outline' },
   delete: { ios: 'trash', android: 'delete-outline' },

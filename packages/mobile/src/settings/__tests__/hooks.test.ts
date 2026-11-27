@@ -44,6 +44,7 @@ describe('settings', () => {
       expect(getSetting('autoConnectBle')).toBe(true);
       expect(getSetting('alwaysDrive')).toBe(false);
       expect(getSetting('disconnectWhenDrivingEnds')).toBe(false);
+      expect(getSetting('spraywallLightAdjacentHolds')).toBe(false);
       expect(getSetting('theme')).toBe('system');
       expect(getSetting('qaPromptOnLaunch')).toBe(false);
       expect(getSetting('defaultBoardUuid')).toBeNull();
@@ -82,6 +83,14 @@ describe('settings', () => {
   });
 
   describe('setSetting', () => {
+    it('keeps Spraywall upper lighting independent from MoonBoard upper lighting', () => {
+      setSetting('moonboardLightAdjacentHolds', true);
+      expect(getSetting('spraywallLightAdjacentHolds')).toBe(false);
+      setSetting('spraywallLightAdjacentHolds', true);
+      setSetting('moonboardLightAdjacentHolds', false);
+      expect(getSetting('spraywallLightAdjacentHolds')).toBe(true);
+      expect(getSetting('moonboardLightAdjacentHolds')).toBe(false);
+    });
     it('writes JSON-stringified boolean to storage', () => {
       setSetting('autoConnectBle', false);
       expect(mockStorage.get('autoConnectBle')).toBe('false');

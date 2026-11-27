@@ -1,11 +1,15 @@
 import { homographyFromAnchors, invert, mapPoint } from './homography';
+import { MAX_LED_POSITIONS } from './led-limits';
+export { MAX_LED_POSITIONS } from './led-limits';
 import { generateTnutGrid, isValidTnutCorners, type TnutLayout, type TnutPoint } from './tnut-layout';
 
 export type LedPosition = TnutPoint & {
   id: string;
   /** Original mounting hole. Moving an LED keeps its logical association. */
   hole?: TnutPoint;
-  /** Original complementary slot, which can belong to more than one mounting hole. */
+  /** Derived mounting hole for the optional upper light; rebuilt from the original slot. */
+  aboveHole?: TnutPoint;
+  /** Original vertical-placement slot. Moving a marker does not move its associations. */
   origin?: TnutPoint;
 };
 export type CableDirection = 'horizontal' | 'vertical' | 'custom';
@@ -18,7 +22,6 @@ export type TnutWiring = {
   /** Unused physical LEDs before the first visible LED. Missing in older saves. */
   initialSkip?: number;
 };
-export const MAX_LED_POSITIONS = 6000;
 export const MAX_WIRING_SKIP = 10000;
 export const MAX_WIRING_TOTAL_SKIPS = 1000000;
 const validSkipCount = (count: unknown): count is number =>
@@ -46,6 +49,11 @@ export function readLedPositions(candidate: unknown): LedPosition[] | null {
           typeof point.hole.x !== 'number' ||
           typeof point.hole.y !== 'number' ||
           !boundedPoint({ x: point.hole.x, y: point.hole.y }))) ||
+      (point.aboveHole !== undefined &&
+        (!record(point.aboveHole) ||
+          typeof point.aboveHole.x !== 'number' ||
+          typeof point.aboveHole.y !== 'number' ||
+          !boundedPoint({ x: point.aboveHole.x, y: point.aboveHole.y }))) ||
       (point.origin !== undefined &&
         (!record(point.origin) ||
           typeof point.origin.x !== 'number' ||
@@ -59,6 +67,9 @@ export function readLedPositions(candidate: unknown): LedPosition[] | null {
       x: point.x,
       y: point.y,
       ...(point.hole !== undefined ? { hole: { x: (point.hole as TnutPoint).x, y: (point.hole as TnutPoint).y } } : {}),
+      ...(point.aboveHole !== undefined
+        ? { aboveHole: { x: (point.aboveHole as TnutPoint).x, y: (point.aboveHole as TnutPoint).y } }
+        : {}),
       ...(point.origin !== undefined
         ? { origin: { x: (point.origin as TnutPoint).x, y: (point.origin as TnutPoint).y } }
         : {}),
@@ -138,6 +149,7 @@ function wallFrame(layout: TnutLayout) {
 /** Offsets are applied in the calibrated grid plane, as in CRUX, before projection. */
 export function generateLedPositions(layout: TnutLayout): LedPosition[] {
   if (!layout.ledPlacement) return [];
+  if (layout.ledPlacement === 'stripe') return layout.ledPositions ?? [];
   let points: (TnutPoint & { hole?: TnutPoint })[] = [];
   if (layout.ledPlacement === 'alternating' && layout.pattern === 'offset')
     points = generateTnutGrid({ ...layout, pattern: 'offset', firstRowOffset: !layout.firstRowOffset });
@@ -239,23 +251,75 @@ export function createWiring(
   direction: CableDirection,
   startCorner: CableStartCorner,
   layout?: TnutLayout,
+  units: readonly (readonly string[])[] = [],
 ): TnutWiring {
   const wiring: TnutWiring = { direction, startCorner, paths: [], skips: [] };
   if (direction === 'custom' || !leds.length) return wiring;
-  const groups = ledGroups(leds, direction, layout);
+  const byId = new Map(leds.map((led) => [led.id, led]));
+  const stripes =
+    layout?.ledPlacement === 'stripe' ? (layout.ledStripes?.stripes.map((stripe) => stripe.ledIds) ?? []) : [];
+  const stripeMembers = new Set(stripes.flat());
+  const cableUnits = [...stripes, ...units.filter((unit) => !unit.some((id) => stripeMembers.has(id)))];
+  const unitStarts = new Map<string, { midpoint: LedPosition; members: string[] }>();
+  const unitEnds = new Set<string>();
+  const usedMembers = new Set<string>();
+  const frame = cableUnits.length && layout ? wallFrame(layout) : null;
+  for (const unit of cableUnits) {
+    if (!unit.length || new Set(unit).size !== unit.length || unit.some((id) => !byId.has(id) || usedMembers.has(id)))
+      continue;
+    const firstId = unit[0];
+    const first = byId.get(firstId)!;
+    const second = byId.get(unit[unit.length - 1])!;
+    const [firstX, firstY] = frame ? mapPoint(frame.toUnit, first.x, first.y) : [first.x, first.y];
+    const [secondX, secondY] = frame ? mapPoint(frame.toUnit, second.x, second.y) : [second.x, second.y];
+    const along = direction === 'horizontal' ? firstX - secondX : firstY - secondY;
+    const across = direction === 'horizontal' ? firstY - secondY : firstX - secondX;
+    unitStarts.set(firstId, {
+      midpoint: {
+        id: firstId,
+        x: unit.reduce((total, id) => total + byId.get(id)!.x, 0) / unit.length,
+        y: unit.reduce((total, id) => total + byId.get(id)!.y, 0) / unit.length,
+      },
+      members: (Math.abs(along) > 1e-8 ? along : across) <= 0 ? [...unit] : [...unit].reverse(),
+    });
+    for (const id of unit) usedMembers.add(id);
+    for (const id of unit.slice(1)) unitEnds.add(id);
+  }
+  const stops = leds.filter(({ id }) => !unitEnds.has(id)).map((led) => unitStarts.get(led.id)?.midpoint ?? led);
+  const groups = ledGroups(stops, direction, layout);
   const reversePrimary = direction === 'horizontal' ? startCorner[0] === 'b' : startCorner[1] === 'r';
   const reverseSecondary = direction === 'horizontal' ? startCorner[1] === 'r' : startCorner[0] === 'b';
   if (reversePrimary) groups.reverse();
   const path: string[] = [];
   groups.forEach((group, index) => {
-    if (reverseSecondary !== (index % 2 === 1)) group.reverse();
-    path.push(...group.map((point) => point.id));
+    const backwards = reverseSecondary !== (index % 2 === 1);
+    if (backwards) group.reverse();
+    for (const { id } of group) {
+      const members = unitStarts.get(id)?.members;
+      if (members && stripeMembers.has(id)) {
+        const entry = byId.get(path[path.length - 1]) ?? {
+          x: startCorner[1] === 'r' ? 1 : 0,
+          y: startCorner[0] === 'b' ? 1 : 0,
+        };
+        const first = byId.get(members[0])!;
+        const last = byId.get(members[members.length - 1])!;
+        const firstDistance = (first.x - entry.x) ** 2 + (first.y - entry.y) ** 2;
+        const lastDistance = (last.x - entry.x) ** 2 + (last.y - entry.y) ** 2;
+        path.push(...(lastDistance < firstDistance ? [...members].reverse() : members));
+      } else {
+        path.push(...(members ? (backwards ? [...members].reverse() : members) : [id]));
+      }
+    }
   });
   wiring.paths = [path];
   return wiring;
 }
-/** Append one trace to the existing tail, never start another section or revisit an LED. */
-export function extendWiring(wiring: TnutWiring, ids: string[]): TnutWiring {
+/** Append to a section's output, defaulting to the final tail; never branch or revisit an LED. */
+export function extendWiring(wiring: TnutWiring, ids: string[], from?: string): TnutWiring {
+  const section = from === undefined ? wiring.paths.length - 1 : wiring.paths.findIndex((path) => path.at(-1) === from);
+  // A selected end can disappear after Undo or another cable edit. Do not move
+  // that edit silently to a different section or turn an interior LED into a branch.
+  if (from !== undefined && section < 0) return wiring;
   const used = new Set(wiring.paths.flat());
   const additions: string[] = [];
   for (const id of ids) {
@@ -266,7 +330,7 @@ export function extendWiring(wiring: TnutWiring, ids: string[]): TnutWiring {
   }
   if (!additions.length) return wiring;
   const paths = wiring.paths.slice();
-  if (paths.length) paths[paths.length - 1] = [...paths[paths.length - 1], ...additions];
+  if (section >= 0) paths[section] = [...paths[section], ...additions];
   else paths.push(additions);
   return { ...wiring, paths };
 }

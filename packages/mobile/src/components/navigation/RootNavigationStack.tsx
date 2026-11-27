@@ -11,16 +11,14 @@ import { useHeaderBlurEffect } from '../../hooks/use-header-blur-effect';
 export function RootNavigationStack({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { isTablet, foldableInnerDisplay } = useDeviceLayout();
-  // Root-level pushed screens (session, about, a climber's profile) inherit the
-  // header from here, so they take the same blur gate as every glass stack: none
-  // on iOS 26, which draws its own scroll edge effect.
+  // Root-level pushed screens inherit the same blur gate as every glass stack.
   const headerBlurEffect = useHeaderBlurEffect();
-  const orientation =
-    pathname === '/spray-led-fullscreen'
-      ? 'all'
-      : Platform.OS !== 'web' && !isTablet && !foldableInnerDisplay
-        ? 'portrait'
-        : undefined;
+  const isSprayFullscreen = pathname === '/spray-led-fullscreen';
+  const orientation = isSprayFullscreen
+    ? 'all'
+    : Platform.OS !== 'web' && !isTablet && !foldableInnerDisplay
+      ? 'portrait'
+      : undefined;
   return (
     <Stack
       screenOptions={{
@@ -29,6 +27,10 @@ export function RootNavigationStack({ children }: { children: ReactNode }) {
         headerShown: false,
         contentStyle: undefined,
         orientation,
+        // Attached Android screens reapply these traits during a window update.
+        ...(Platform.OS === 'android'
+          ? { statusBarHidden: isSprayFullscreen, navigationBarHidden: isSprayFullscreen }
+          : {}),
       }}
     >
       {children}

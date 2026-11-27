@@ -18,6 +18,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   offlineMode: false,
   autoConnectBle: true,
   moonboardLightAdjacentHolds: false,
+  spraywallLightAdjacentHolds: false,
   moonboardGridLabels: true,
   gpuAcceleration: true,
   alwaysDrive: false,

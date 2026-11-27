@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, type MutableRefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type MutableRefObject } from 'react';
 import { Gesture, type GestureType } from 'react-native-gesture-handler';
-import { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import { runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
 import { clampViewportPan, focalZoomPan } from './tnut-corner-viewport';
 
 /** At any zoom the photo can move a quarter of the frame, so two fingers can pan it before a pinch. */
@@ -14,9 +14,14 @@ export function useSprayPhotoViewport(
   panEnabled = true,
   failures: readonly MutableRefObject<GestureType | undefined>[] = [],
 ) {
-  const zoom = useSharedValue(1),
-    panX = useSharedValue(0),
-    panY = useSharedValue(0);
+  const zoom = useSharedValue(1);
+  // Store the pan as a fraction of the image. A resize can render the photo,
+  // overlays and hit targets at their new size in the same update without
+  // borrowing one frame's pan in pixels from the previous orientation.
+  const panFractionX = useSharedValue(0);
+  const panFractionY = useSharedValue(0);
+  const panX = useDerivedValue(() => panFractionX.value * width);
+  const panY = useDerivedValue(() => panFractionY.value * height);
   const isPinching = useSharedValue(false),
     pinchStarted = useSharedValue(false),
     interactions = useSharedValue(0);
@@ -33,12 +38,10 @@ export function useSprayPhotoViewport(
       callback.current?.(false);
     };
   }, []);
-  useEffect(() => {
-    zoom.value = 1;
-    panX.value = 0;
-    panY.value = 0;
-  }, [width, height, zoom, panX, panY]);
   const pointerCount = useSharedValue(0);
+  useLayoutEffect(() => {
+    pointerCount.value = 0;
+  }, [width, height, pointerCount]);
   const pinchRef = useRef<GestureType | undefined>(undefined);
   const startZoom = useSharedValue(1),
     startScale = useSharedValue(1),
@@ -87,8 +90,8 @@ export function useSprayPhotoViewport(
         pointerCount.value = event.numberOfPointers;
         startZoom.value = zoom.value;
         startScale.value = event.scale || 1;
-        startX.value = panX.value;
-        startY.value = panY.value;
+        startX.value = panFractionX.value * width;
+        startY.value = panFractionY.value * height;
         focalX.value = event.focalX;
         focalY.value = event.focalY;
       })
@@ -104,31 +107,33 @@ export function useSprayPhotoViewport(
           pointerCount.value = count;
           startZoom.value = zoom.value;
           startScale.value = event.scale || 1;
-          startX.value = panX.value;
-          startY.value = panY.value;
+          startX.value = panFractionX.value * width;
+          startY.value = panFractionY.value * height;
           focalX.value = event.focalX;
           focalY.value = event.focalY;
           return;
         }
         const next = Math.max(1, Math.min(6, (startZoom.value * event.scale) / startScale.value));
-        panX.value = focalZoomPan(
-          focalX.value,
-          event.focalX,
-          width,
-          startZoom.value,
-          next,
-          startX.value,
-          SPRAY_PHOTO_MIN_PAN_TRAVEL,
-        );
-        panY.value = focalZoomPan(
-          focalY.value,
-          event.focalY,
-          height,
-          startZoom.value,
-          next,
-          startY.value,
-          SPRAY_PHOTO_MIN_PAN_TRAVEL,
-        );
+        panFractionX.value =
+          focalZoomPan(
+            focalX.value,
+            event.focalX,
+            width,
+            startZoom.value,
+            next,
+            startX.value,
+            SPRAY_PHOTO_MIN_PAN_TRAVEL,
+          ) / width;
+        panFractionY.value =
+          focalZoomPan(
+            focalY.value,
+            event.focalY,
+            height,
+            startZoom.value,
+            next,
+            startY.value,
+            SPRAY_PHOTO_MIN_PAN_TRAVEL,
+          ) / height;
         zoom.value = next;
       })
       .onFinalize(() => {
@@ -155,8 +160,10 @@ export function useSprayPhotoViewport(
         lastX.value = event.translationX;
         lastY.value = event.translationY;
         if (isPinching.value) return;
-        panX.value = clampViewportPan(panX.value + dx, width, zoom.value, SPRAY_PHOTO_MIN_PAN_TRAVEL);
-        panY.value = clampViewportPan(panY.value + dy, height, zoom.value, SPRAY_PHOTO_MIN_PAN_TRAVEL);
+        panFractionX.value =
+          clampViewportPan(panFractionX.value * width + dx, width, zoom.value, SPRAY_PHOTO_MIN_PAN_TRAVEL) / width;
+        panFractionY.value =
+          clampViewportPan(panFractionY.value * height + dy, height, zoom.value, SPRAY_PHOTO_MIN_PAN_TRAVEL) / height;
       })
       .onFinalize(() => {
         if (!panning.value) return;
@@ -185,8 +192,10 @@ export function useSprayPhotoViewport(
         lastTwoX.value = event.translationX;
         lastTwoY.value = event.translationY;
         if (!panEnabled || pinchStarted.value) return;
-        panX.value = clampViewportPan(panX.value + dx, width, zoom.value, SPRAY_PHOTO_MIN_PAN_TRAVEL);
-        panY.value = clampViewportPan(panY.value + dy, height, zoom.value, SPRAY_PHOTO_MIN_PAN_TRAVEL);
+        panFractionX.value =
+          clampViewportPan(panFractionX.value * width + dx, width, zoom.value, SPRAY_PHOTO_MIN_PAN_TRAVEL) / width;
+        panFractionY.value =
+          clampViewportPan(panFractionY.value * height + dy, height, zoom.value, SPRAY_PHOTO_MIN_PAN_TRAVEL) / height;
       })
       .onFinalize(() => {
         if (!twoFingerPanning.value) return;
@@ -201,8 +210,8 @@ export function useSprayPhotoViewport(
     panEnabled,
     failures,
     zoom,
-    panX,
-    panY,
+    panFractionX,
+    panFractionY,
     isPinching,
     pinchStarted,
     interactions,
@@ -222,7 +231,11 @@ export function useSprayPhotoViewport(
     twoFingerPanning,
   ]);
   const imageTransform = useAnimatedStyle(() => ({
-    transform: [{ translateX: panX.value }, { translateY: panY.value }, { scale: zoom.value }],
+    transform: [
+      { translateX: panFractionX.value * width },
+      { translateY: panFractionY.value * height },
+      { scale: zoom.value },
+    ],
   }));
   return { zoom, panX, panY, isPinching, interactions, reportInteraction, pinchRef, viewportGesture, imageTransform };
 }

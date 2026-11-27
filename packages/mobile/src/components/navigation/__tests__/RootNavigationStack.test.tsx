@@ -7,6 +7,7 @@ const route = vi.hoisted(() => ({
   pathname: '/boards',
   listeners: new Set<() => void>(),
   orientation: undefined as string | undefined,
+  barsHidden: false,
   headerBlurEffect: undefined as string | undefined,
   glassCapable: false,
   platformOS: 'android',
@@ -41,10 +42,16 @@ vi.mock('expo-router', () => ({
     screenOptions,
     children,
   }: {
-    screenOptions: { orientation?: string; headerBlurEffect?: string };
+    screenOptions: {
+      orientation?: string;
+      statusBarHidden?: boolean;
+      navigationBarHidden?: boolean;
+      headerBlurEffect?: string;
+    };
     children: ReactNode;
   }) => {
     route.orientation = screenOptions.orientation;
+    route.barsHidden = Boolean(screenOptions.statusBarHidden && screenOptions.navigationBarHidden);
     route.headerBlurEffect = screenOptions.headerBlurEffect;
     return createElement('div', null, children);
   },
@@ -86,13 +93,45 @@ describe('root header blur', () => {
   });
 });
 describe('fullscreen native orientation', () => {
+  it.each([false, true])('keeps the iOS header blur gate through fullscreen rotation (glass=%s)', (glassCapable) => {
+    route.platformOS = 'ios';
+    route.glassCapable = glassCapable;
+    const { rerender } = render(createElement(RootNavigationStack, null, 'screen'));
+    const expectedBlur = glassCapable ? undefined : 'systemMaterial';
+    navigate('/spray-led-fullscreen');
+    expect(route.orientation).toBe('all');
+    expect(route.headerBlurEffect).toBe(expectedBlur);
+    route.width = 800;
+    route.height = 400;
+    rerender(createElement(RootNavigationStack, null, 'screen'));
+    expect(route.orientation).toBe('all');
+    expect(route.headerBlurEffect).toBe(expectedBlur);
+    navigate('/boards');
+    expect(route.orientation).toBe('portrait');
+    expect(route.headerBlurEffect).toBe(expectedBlur);
+  });
+
   it('unlocks attached screens below a frozen provider and restores portrait on exit', () => {
     render(createElement(FrozenProvider, null, createElement(RootNavigationStack, null, 'screen')));
     expect(route.orientation).toBe('portrait');
     navigate('/spray-led-fullscreen');
     expect(route.orientation).toBe('all');
+    expect(route.barsHidden).toBe(true);
     route.width = 800;
     route.height = 400;
+    navigate('/boards');
+    expect(route.orientation).toBe('portrait');
+    expect(route.barsHidden).toBe(false);
+  });
+
+  it('lets a fullscreen editor open in portrait and rotate without resetting the stack orientation', () => {
+    const { rerender } = render(createElement(RootNavigationStack, null, 'screen'));
+    navigate('/spray-led-fullscreen');
+    expect(route.orientation).toBe('all');
+    route.width = 800;
+    route.height = 400;
+    rerender(createElement(RootNavigationStack, null, 'screen'));
+    expect(route.orientation).toBe('all');
     navigate('/boards');
     expect(route.orientation).toBe('portrait');
   });

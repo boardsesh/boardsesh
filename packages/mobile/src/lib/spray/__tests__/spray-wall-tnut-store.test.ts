@@ -11,6 +11,7 @@ vi.mock('../../preference-store', () => ({
 }));
 
 vi.mock('../spray-wall-led-sync', () => ({
+  prepareSprayWallLedEdit: vi.fn(async () => undefined),
   prepareSprayWallLedRead: vi.fn(async () => undefined),
   markSprayWallLedSaveStarted: vi.fn(async (_wallUuid: string, _field: string, writeCopy?: () => Promise<void>) =>
     writeCopy?.(),
@@ -18,7 +19,12 @@ vi.mock('../spray-wall-led-sync', () => ({
   queueSprayWallLedUpload: vi.fn(),
 }));
 
-import { markSprayWallLedSaveStarted, prepareSprayWallLedRead, queueSprayWallLedUpload } from '../spray-wall-led-sync';
+import {
+  markSprayWallLedSaveStarted,
+  prepareSprayWallLedEdit,
+  prepareSprayWallLedRead,
+  queueSprayWallLedUpload,
+} from '../spray-wall-led-sync';
 import { eraseSprayWallLedCache } from '../spray-wall-led-cache';
 import { loadSprayWallTnutLayout, saveSprayWallTnutLayout } from '../spray-wall-tnut-store';
 
@@ -36,6 +42,8 @@ function configured(): TnutLayout {
       { x: 0.7, y: 0.8 },
     ],
     photoKey: '42:version-9',
+    tnutLeds: [],
+    holdAboveLeds: [],
   };
 }
 function deferred() {
@@ -49,6 +57,8 @@ function deferred() {
 }
 
 beforeEach(() => {
+  vi.mocked(prepareSprayWallLedEdit).mockClear();
+  vi.mocked(prepareSprayWallLedRead).mockClear();
   preferences.records.clear();
   preferences.get.mockReset().mockImplementation(async (key: string) => preferences.records.get(key) ?? null);
   preferences.set.mockReset().mockImplementation(async (key: string, layout: unknown) => {
@@ -61,6 +71,20 @@ describe('the phone copy of a wall\u2019s T-nut layout', () => {
     await expect(loadSprayWallTnutLayout('wall-one')).resolves.toBeNull();
     expect(preferences.get).toHaveBeenCalledWith(layoutKey, { strictParsing: true });
     expect(preferences.set).not.toHaveBeenCalled();
+  });
+
+  it('waits for the editor refresh before capturing the cached layout', async () => {
+    preferences.records.set(layoutKey, configured());
+    const refresh = deferred();
+    vi.mocked(prepareSprayWallLedEdit).mockReturnValueOnce(refresh.promise);
+    const reading = loadSprayWallTnutLayout('wall-one', { forEditing: true });
+    await vi.waitFor(() => expect(prepareSprayWallLedEdit).toHaveBeenCalledWith('wall-one'));
+    expect(preferences.get).not.toHaveBeenCalled();
+    const newerLayout = { ...configured(), holes: [{ x: 0.4, y: 0.6 }] };
+    preferences.records.set(layoutKey, newerLayout);
+    refresh.resolve();
+    await expect(reading).resolves.toEqual(newerLayout);
+    expect(prepareSprayWallLedRead).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -97,7 +121,7 @@ describe('the phone copy of a wall\u2019s T-nut layout', () => {
     const controller = { version: 1, enabled: true, controller: { type: 'wled', url: 'http://wled.local' } };
     preferences.records.set(controllerKey, controller);
     await saveSprayWallTnutLayout('wall-one', configured());
-    expect(preferences.set).toHaveBeenCalledWith(layoutKey, configured());
+    expect(preferences.set).toHaveBeenCalledWith(layoutKey, { ...configured(), ledGroups: null, ledStripes: null });
     expect(preferences.records.get(controllerKey)).toBe(controller);
     await expect(loadSprayWallTnutLayout('wall-one')).resolves.toEqual(configured());
     await expect(loadSprayWallTnutLayout('another-wall')).resolves.toBeNull();
@@ -154,6 +178,18 @@ describe('the phone copy of a wall\u2019s T-nut layout', () => {
     await expect(saveSprayWallTnutLayout('wall-one', invalid)).rejects.toThrow('Invalid T-nut layout');
     expect(preferences.set).not.toHaveBeenCalled();
     expect(preferences.records.get(layoutKey)).toBe(stored);
+  });
+
+  it('stores every modern capability in the authored snapshot and drops legacy replay provenance', async () => {
+    const legacy = { ...configured(), _legacyLedCapabilities: ['ledGroups'] };
+    await saveSprayWallTnutLayout('wall-one', legacy);
+    expect(preferences.records.get(layoutKey)).toEqual({
+      ...configured(),
+      ledGroups: null,
+      tnutLeds: [],
+      holdAboveLeds: [],
+      ledStripes: null,
+    });
   });
 
   it('waits for a pending write before reopening the same wall', async () => {

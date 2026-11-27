@@ -4,11 +4,15 @@ import { useTranslation } from 'react-i18next';
 import {
   assignLedIndices,
   buildSprayLedMapping,
-  clearHoldLedLink,
+  clearTnutLedLink,
   findSprayHoldAtPoint,
-  setHoldLedLink,
+  ledPairs,
+  setTnutLedLink,
+  setSprayHoldLedSelection,
+  clearSprayHoldLedSelection,
+  prepareSprayNutLedEdit,
   type CanonicalSprayHold,
-  type SprayHoldLedLink,
+  type SprayLedLinkLayer,
   type TnutLayout,
   type TnutPoint,
 } from '@boardsesh/spray-wall-geometry';
@@ -19,20 +23,18 @@ import { Button } from '../Button';
 import { SegmentedControl } from '../SegmentedControl';
 import { Text } from '../Text';
 import { SprayPhotoStage } from './SprayPhotoStage';
-import { SpraySetupOverlay } from './SpraySetupOverlay';
+import { SprayPhotoToolButton, SprayUndoButton } from './SprayPointToolbar';
+import { SpraySetupOverlay, type SprayLedAssociation } from './SpraySetupOverlay';
 import { sprayHoldRings } from './spray-hold-rings';
+import { mapLedPairsById } from './spray-led-units';
 import { nearestPhotoPointIndex } from './tnut-corner-viewport';
 
-type TapTarget = 'holds' | 'leds';
+type TapTarget = 'holds' | 'tnuts';
+type Selection = { holdId: number } | { holeIndex: number } | null;
+type LinkSnapshot = Pick<TnutLayout, 'holdLeds' | 'holdAboveLeds' | 'tnutLeds'>;
 const NO_LEDS: NonNullable<TnutLayout['ledPositions']> = [];
 
-/**
- * Check and fix which LEDs light each hold. The app links them from the photo
- * geometry; where that is wrong, the climber picks a hold and taps its LEDs,
- * which stores a hand-made link that every later lighting (Test LEDs and
- * routes) follows. It runs before the cable, so the wall only lights the
- * chosen hold once a cable exists (when the climber comes back to it).
- */
+/** Choose a hold or mounting nut, then edit its LEDs in this wizard layer. */
 export function SprayHoldLedStep({
   wallUuid,
   layout,
@@ -40,6 +42,7 @@ export function SprayHoldLedStep({
   source,
   photoUri,
   width,
+  layer = 'primary',
   onChange,
   onInteractionChange,
 }: {
@@ -49,159 +52,302 @@ export function SprayHoldLedStep({
   source: SprayLookPreviewSource;
   photoUri: string;
   width: number;
+  layer?: SprayLedLinkLayer;
   onChange: (update: Partial<TnutLayout>) => void;
   onInteractionChange: (active: boolean) => void;
 }) {
   const { t } = useTranslation('boards');
   const { spacing, brandColors } = useTheme();
-  const preview = useSprayLedPreview(wallUuid);
+  const { available, error, show, stop } = useSprayLedPreview(wallUuid);
   const [target, setTarget] = useState<TapTarget>('holds');
-  const [holdId, setHoldId] = useState<number | null>(null);
+  const [selection, setSelection] = useState<Selection>(null);
   const [selectionAttempt, setSelectionAttempt] = useState(0);
-  // An LED with no hold, picked with "Next LED without a hold"; tapping a hold then adds it there.
-  const [freeLedId, setFreeLedId] = useState<string | null>(null);
-  const [history, setHistory] = useState<(SprayHoldLedLink[] | undefined)[]>([]);
+  const [freeUnitId, setFreeUnitId] = useState<string | null>(null);
+  const [history, setHistory] = useState<LinkSnapshot[]>([]);
   const leds = layout.ledPositions ?? NO_LEDS;
+  const pairs = useMemo(() => ledPairs(layout), [layout]);
+  const pairsById = useMemo(() => mapLedPairsById(pairs), [pairs]);
+  const rings = useMemo(() => sprayHoldRings(holds, source), [holds, source]);
+  const visibleIds = useMemo(() => new Set(rings.map((ring) => ring.id)), [rings]);
+  const visibleHolds = useMemo(() => holds.filter((hold) => visibleIds.has(hold.id)), [holds, visibleIds]);
+  // Hidden holds retain their manual ownership, so resolve the whole wall.
   const mapping = useMemo(() => buildSprayLedMapping(layout, source.frame, holds), [layout, source.frame, holds]);
-  const rings = useMemo(() => sprayHoldRings(holds, source.frame), [holds, source.frame]);
-  // This step comes before the cable, so a hold counts as linked when it has LED
-  // positions, wired or not; Test LEDs later reports the wired ones.
-  const unmappedHoldIds = useMemo(
-    () => mapping.holds.filter((hold) => !hold.ledIds.length).map((hold) => hold.holdId),
-    [mapping],
+  const holdsById = useMemo(() => new Map(mapping.holds.map((hold) => [hold.holdId, hold])), [mapping]);
+  const ledsById = useMemo(() => new Map(leds.map((led) => [led.id, led])), [leds]);
+  type Entry = (typeof mapping.holds)[number] | (typeof mapping.holes)[number];
+  const ledIdsFor = (entry: Entry) => (layer === 'above' ? entry.aboveLedIds : entry.ledIds);
+  const indicesFor = (entry: Entry) => (layer === 'above' ? entry.aboveIndices : entry.indices);
+  const nutRoleKey = layer === 'above' ? 'aboveLedIds' : 'ledIds';
+  const nutLinksByPoint = useMemo(
+    () => new Map((layout.tnutLeds ?? []).map((link) => [`${link.hole.x}:${link.hole.y}`, link])),
+    [layout.tnutLeds],
   );
-  const ledsWithHold = useMemo(() => new Set(mapping.holds.flatMap((hold) => hold.ledIds)), [mapping]);
-  const freeLeds = useMemo(() => leds.filter((led) => !ledsWithHold.has(led.id)), [leds, ledsWithHold]);
-  // Once the LED joins a hold, it is no longer the focus.
-  const focusLed = freeLedId !== null && !ledsWithHold.has(freeLedId) ? freeLedId : null;
+  const holdLinks = layer === 'above' ? layout.holdAboveLeds : layout.holdLeds;
+  const effectiveNutEntry = (holeIndex: number) => {
+    return mapping.holes[holeIndex];
+  };
+  const selectedHoldId = selection && 'holdId' in selection ? selection.holdId : null;
+  const selectedNutIndex = selection && 'holeIndex' in selection ? selection.holeIndex : null;
+  const entry =
+    selectedHoldId !== null
+      ? holdsById.get(selectedHoldId)
+      : selectedNutIndex !== null
+        ? effectiveNutEntry(selectedNutIndex)
+        : undefined;
+  const selectedNutIndices =
+    selectedHoldId !== null
+      ? (holdsById.get(selectedHoldId)?.holeIndices ?? [])
+      : selectedNutIndex === null
+        ? []
+        : [selectedNutIndex];
+  const matchedHoldId = selectedHoldId ?? (selectedNutIndex === null ? null : mapping.holes[selectedNutIndex].holdId);
+  const linkedByHand = Boolean(
+    selectedNutIndices.some((index) => {
+      const point = layout.holes[index];
+      return nutLinksByPoint.get(`${point.x}:${point.y}`)?.[nutRoleKey] !== undefined;
+    }) ||
+    (matchedHoldId !== null && holdLinks?.some((link) => link.holdId === matchedHoldId)),
+  );
+  const unmappedHoldIds = mapping.holds
+    .filter((hold) => visibleIds.has(hold.holdId) && !ledIdsFor(hold).length)
+    .map((hold) => hold.holdId);
+  const unmappedNutIndices = mapping.holes
+    .filter((nut) => !ledIdsFor(effectiveNutEntry(nut.holeIndex)).length)
+    .map((nut) => nut.holeIndex);
+  const missing = target === 'holds' ? unmappedHoldIds.length : unmappedNutIndices.length;
+  const total = target === 'holds' ? visibleHolds.length : layout.holes.length;
+  const ownedIds = new Set(
+    (target === 'holds' ? mapping.holds : mapping.holes.map((nut) => effectiveNutEntry(nut.holeIndex))).flatMap(
+      ledIdsFor,
+    ),
+  );
+  const freeLeds = leds.filter((led) => !ownedIds.has(led.id));
+  const freeIds = new Set(freeLeds.map((led) => led.id));
+  const focusMembers = freeUnitId === null ? [] : (pairsById.get(freeUnitId) ?? [freeUnitId]);
+  const unassignedMembers = focusMembers.filter((id) => freeIds.has(id));
+  const focusIds = unassignedMembers.length ? [...focusMembers] : [];
+  const selectedLedIds = entry ? ledIdsFor(entry) : focusIds;
   const wired = Boolean(layout.wiring?.paths.some((path) => path.length));
   const indexById = useMemo(
     () => new Map(layout.wiring ? assignLedIndices(layout.wiring).map(({ id, index }) => [id, index]) : []),
     [layout.wiring],
   );
-  const entry = holdId === null ? undefined : mapping.holds.find((hold) => hold.holdId === holdId);
-  const linkedByHand = holdId !== null && (layout.holdLeds ?? []).some((link) => link.holdId === holdId);
-
-  // The wall shows the chosen hold's LEDs (or the chosen loose LED), so a wrong
-  // link is obvious on the wall too.
-  const focusIndex = focusLed === null ? undefined : indexById.get(focusLed);
-  const indicesKey = entry ? entry.indices.join(',') : focusIndex === undefined ? '' : String(focusIndex);
+  const indicesKey = entry
+    ? indicesFor(entry).join(',')
+    : focusIds
+        .flatMap((id) => (indexById.has(id) ? [indexById.get(id)!] : []))
+        .sort((first, second) => first - second)
+        .join(',');
   const lastLit = useRef('');
-  const { available, show, stop } = preview;
   useEffect(() => {
-    const attemptKey = `${selectionAttempt}:${indicesKey}`;
+    const attemptKey = `${layer}:${selectionAttempt}:${indicesKey}`;
     if (!available || selectionAttempt === 0 || attemptKey === lastLit.current) return;
     lastLit.current = attemptKey;
     if (indicesKey) void show(indicesKey.split(',').map(Number));
     else void stop();
-  }, [available, indicesKey, selectionAttempt, show, stop]);
+  }, [available, indicesKey, layer, selectionAttempt, show, stop]);
+  const associations = useMemo<SprayLedAssociation[]>(() => {
+    const targets =
+      target === 'holds'
+        ? visibleHolds.map((hold) => ({
+            point: { x: hold.cx / source.frame.width, y: hold.cy / source.frame.height },
+            ledIds: layer === 'above' ? holdsById.get(hold.id)?.aboveLedIds : holdsById.get(hold.id)?.ledIds,
+          }))
+        : mapping.holes.map((nut) => {
+            return {
+              point: layout.holes[nut.holeIndex],
+              ledIds: layer === 'above' ? nut.aboveLedIds : nut.ledIds,
+            };
+          });
+    return targets.flatMap(({ point, ledIds }) =>
+      (ledIds ?? []).flatMap((id) => {
+        const led = ledsById.get(id);
+        return led ? [{ from: point, to: led }] : [];
+      }),
+    );
+  }, [target, visibleHolds, source.frame, layer, holdsById, mapping.holes, layout.holes, ledsById]);
 
   function commit(next: TnutLayout) {
-    setHistory((previous) => [...previous.slice(-49), layout.holdLeds]);
-    onChange({ holdLeds: next.holdLeds });
+    setHistory((previous) => [
+      ...previous.slice(-49),
+      { holdLeds: layout.holdLeds, holdAboveLeds: layout.holdAboveLeds, tnutLeds: layout.tnutLeds },
+    ]);
+    onChange({ holdLeds: next.holdLeds ?? [], holdAboveLeds: next.holdAboveLeds ?? [], tnutLeds: next.tnutLeds ?? [] });
   }
-  function chooseHold(id: number) {
+  function choose(next: Selection) {
+    setSelection(next);
+    setFreeUnitId(null);
     setSelectionAttempt((attempt) => attempt + 1);
-    setHoldId(id);
-    setFreeLedId(null);
-    // Picking a hold is almost always followed by fixing its LEDs.
-    setTarget('leds');
+  }
+  function changeTarget(next: TapTarget) {
+    setTarget(next);
+    choose(null);
+  }
+  function editLink(ledIds: readonly string[]) {
+    if (selectedHoldId !== null)
+      commit(setSprayHoldLedSelection(layout, source.frame, holds, selectedHoldId, ledIds, layer));
+    else if (selectedNutIndex !== null)
+      commit(setTnutLedLink(beforeNutEdit(selectedNutIndex), selectedNutIndex, ledIds, layer));
+  }
+  function beforeNutEdit(holeIndex: number) {
+    return prepareSprayNutLedEdit(layout, source.frame, holds, holeIndex, layer);
   }
   function tap(point: TnutPoint, photoWidth: number, photoHeight: number) {
-    if (target === 'leds' && holdId !== null && entry) {
-      const index = nearestPhotoPointIndex(leds, point, photoWidth, photoHeight, 18);
-      if (index >= 0) {
-        const id = leds[index].id;
-        const ledIds = entry.ledIds.includes(id) ? entry.ledIds.filter((led) => led !== id) : [...entry.ledIds, id];
-        commit(setHoldLedLink(layout, holdId, ledIds));
+    // While editing, LEDs win even where a target sits underneath one. The
+    // explicit Choose another action (or a blank tap) starts target selection.
+    if (selection && entry) {
+      const ledIndex = nearestPhotoPointIndex(leds, point, photoWidth, photoHeight, 18);
+      if (ledIndex >= 0) {
+        const id = leds[ledIndex].id;
+        const unit = pairsById.get(id) ?? [id];
+        const remove = unit.every((member) => selectedLedIds.includes(member));
+        const members = new Set(unit);
+        editLink(remove ? selectedLedIds.filter((ledId) => !members.has(ledId)) : [...selectedLedIds, ...unit]);
         return;
       }
     }
-    // Away from any LED, a tap picks the hold under the finger.
-    const hit = findSprayHoldAtPoint(holds, point, source.frame);
-    if (hit === null) return;
-    if (focusLed !== null) {
-      // "Next LED without a hold" picked this LED: the tapped hold is where it belongs.
-      const hitLeds = mapping.holds.find((hold) => hold.holdId === hit)?.ledIds ?? [];
-      commit(setHoldLedLink(layout, hit, [...hitLeds, focusLed]));
+    if (target === 'tnuts') {
+      const holeIndex = nearestPhotoPointIndex(layout.holes, point, photoWidth, photoHeight, 22);
+      if (holeIndex >= 0 && unassignedMembers.length) {
+        commit(
+          setTnutLedLink(
+            beforeNutEdit(holeIndex),
+            holeIndex,
+            [...ledIdsFor(effectiveNutEntry(holeIndex)), ...unassignedMembers],
+            layer,
+          ),
+        );
+      }
+      choose(holeIndex >= 0 ? { holeIndex } : null);
+    } else {
+      const holdId = findSprayHoldAtPoint(visibleHolds, point, source.frame);
+      if (holdId !== null && unassignedMembers.length) {
+        const mapped = holdsById.get(holdId);
+        const ids = [...(mapped ? ledIdsFor(mapped) : []), ...unassignedMembers];
+        commit(setSprayHoldLedSelection(layout, source.frame, holds, holdId, ids, layer));
+      }
+      choose(holdId !== null ? { holdId } : null);
     }
-    chooseHold(hit);
   }
-  /** Holds without an LED, top to bottom and left to right, starting after the current one. */
-  function nextUnmapped() {
-    const order = holds
-      .filter((hold) => unmappedHoldIds.includes(hold.id))
-      .sort((first, second) => first.cy - second.cy || first.cx - second.cx)
-      .map((hold) => hold.id);
-    if (!order.length) return;
-    const after = holdId === null ? -1 : order.indexOf(holdId);
-    chooseHold(order[(after + 1) % order.length]);
-  }
-  /** LEDs without a hold, in the same order. Picks one and waits for the tap on its hold. */
   function nextFreeLed() {
-    const order = [...freeLeds].sort((first, second) => first.y - second.y || first.x - second.x).map((led) => led.id);
+    const order = [
+      ...new Set(
+        [...freeLeds]
+          .sort((first, second) => first.y - second.y || first.x - second.x)
+          .map(({ id }) => pairsById.get(id)?.[0] ?? id),
+      ),
+    ];
     if (!order.length) return;
-    const after = focusLed === null ? -1 : order.indexOf(focusLed);
-    setFreeLedId(order[(after + 1) % order.length]);
-    setSelectionAttempt((attempt) => attempt + 1);
-    setHoldId(null);
-    setTarget('holds');
+    const after = order.indexOf(freeUnitId ?? '');
+    choose(null);
+    setFreeUnitId(order[(after + 1) % order.length]);
+  }
+  function nextUnmapped() {
+    if (target === 'holds') {
+      const order = visibleHolds
+        .filter((hold) => unmappedHoldIds.includes(hold.id))
+        .sort((first, second) => first.cy - second.cy || first.cx - second.cx)
+        .map((hold) => hold.id);
+      if (order.length) choose({ holdId: order[(order.indexOf(selectedHoldId ?? -1) + 1) % order.length] });
+    } else {
+      const order = [...unmappedNutIndices].sort(
+        (first, second) =>
+          layout.holes[first].y - layout.holes[second].y || layout.holes[first].x - layout.holes[second].x,
+      );
+      if (order.length) choose({ holeIndex: order[(order.indexOf(selectedNutIndex ?? -1) + 1) % order.length] });
+    }
   }
   function undo() {
     const previous = history.at(-1);
-    if (!history.length) return;
+    if (!previous) return;
     setHistory((entries) => entries.slice(0, -1));
-    onChange({ holdLeds: previous ?? [] });
+    onChange({
+      holdLeds: previous.holdLeds ?? [],
+      holdAboveLeds: previous.holdAboveLeds ?? [],
+      tnutLeds: previous.tnutLeds ?? [],
+    });
   }
-
-  const linked = mapping.holds.length - unmappedHoldIds.length;
+  function resetLink() {
+    if (selectedHoldId !== null) commit(clearSprayHoldLedSelection(layout, source.frame, holds, selectedHoldId, layer));
+    else if (selectedNutIndex !== null)
+      commit(clearTnutLedLink(beforeNutEdit(selectedNutIndex), selectedNutIndex, layer));
+  }
+  const nextLabel = target === 'holds' ? t('sprayLedSetup.holdLedsNextUnmapped') : t('sprayLedSetup.holdLedsNextTnut');
+  const chooseLabel =
+    target === 'holds' ? t('sprayLedSetup.holdLedsChooseHold') : t('sprayLedSetup.holdLedsChooseTnut');
+  const freeLabel =
+    target === 'holds' ? t('sprayLedSetup.holdLedsNextFreeLed') : t('sprayLedSetup.holdLedsNextFreeTnutLed');
   const tools = (
     <View style={{ gap: spacing[2] }}>
       <SegmentedControl
         options={[
           { key: 'holds' as const, label: t('sprayLedSetup.holdLedsPickHolds') },
-          { key: 'leds' as const, label: t('sprayLedSetup.holdLedsPickLeds') },
+          { key: 'tnuts' as const, label: t('sprayLedSetup.holdLedsPickTnuts') },
         ]}
         selectedKey={target}
-        onSelect={setTarget}
+        onSelect={changeTarget}
         accessibilityLabel={t('sprayLedSetup.holdLedsTapTarget')}
       />
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing[2] }}>
-        <Button
-          title={t('sprayLedSetup.holdLedsNextUnmapped')}
-          variant="outlined"
-          disabled={!unmappedHoldIds.length}
-          onPress={nextUnmapped}
-        />
-        <Button
-          title={t('sprayLedSetup.holdLedsNextFreeLed')}
-          variant="outlined"
-          disabled={!freeLeds.length}
-          onPress={nextFreeLed}
-        />
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing[2] }}>
+        <Button title={nextLabel} variant="outlined" disabled={!missing} onPress={nextUnmapped} />
+        <Button title={freeLabel} variant="outlined" disabled={!freeLeds.length} onPress={nextFreeLed} />
+        <Button title={chooseLabel} variant="outlined" disabled={!selection} onPress={() => choose(null)} />
         <Button
           title={t('sprayLedSetup.holdLedsReset')}
           variant="outlined"
           disabled={!linkedByHand}
-          onPress={() => {
-            if (holdId !== null) commit(clearHoldLedLink(layout, holdId));
-          }}
+          onPress={resetLink}
         />
-        <Button title={t('sprayLedSetup.undo')} variant="text" disabled={!history.length} onPress={undo} />
+        <SprayUndoButton disabled={!history.length} onPress={undo} />
       </View>
     </View>
   );
   return (
     <View style={{ gap: spacing[3] }}>
-      <Text>{t('sprayLedSetup.holdLedsHint')}</Text>
-      <Text variant="footnote">{t('sprayLedSetup.holdLedsSummary', { linked, total: holds.length })}</Text>
+      <Text>{layer === 'above' ? t('sprayLedSetup.holdLedsAboveHint') : t('sprayLedSetup.holdLedsHint')}</Text>
       <Text variant="footnote">
-        {t('sprayLedSetup.holdLedsLedSummary', { linked: leds.length - freeLeds.length, total: leds.length })}
+        {target === 'holds'
+          ? t('sprayLedSetup.holdLedsSummary', { linked: total - missing, total })
+          : t('sprayLedSetup.holdLedsTnutSummary', { linked: total - missing, total })}
       </Text>
       {tools}
       <SprayPhotoStage
         width={width}
         tools={tools}
+        fullScreenRail={
+          <>
+            <SprayPhotoToolButton
+              icon={target === 'holds' ? 'circle' : 'hand.raised'}
+              label={target === 'holds' ? t('sprayLedSetup.holdLedsPickTnuts') : t('sprayLedSetup.holdLedsPickHolds')}
+              onPress={() => changeTarget(target === 'holds' ? 'tnuts' : 'holds')}
+            />
+            <SprayPhotoToolButton
+              icon="next-unmapped-hold"
+              label={nextLabel}
+              disabled={!missing}
+              onPress={nextUnmapped}
+            />
+            <SprayPhotoToolButton
+              icon="next-free-led"
+              label={freeLabel}
+              disabled={!freeLeds.length}
+              onPress={nextFreeLed}
+            />
+            <SprayPhotoToolButton
+              icon="hand.raised"
+              label={chooseLabel}
+              disabled={!selection}
+              onPress={() => choose(null)}
+            />
+            <SprayPhotoToolButton
+              icon="mirror"
+              label={t('sprayLedSetup.holdLedsReset')}
+              disabled={!linkedByHand}
+              onPress={resetLink}
+            />
+            <SprayUndoButton disabled={!history.length} onPress={undo} />
+          </>
+        }
         canvas={{
           source,
           photoUri,
@@ -210,12 +356,23 @@ export function SprayHoldLedStep({
           onInteractionChange,
           renderOverlay: (photoWidth, photoHeight, zoom, panX, panY) => (
             <SpraySetupOverlay
-              holes={[]}
+              holes={target === 'tnuts' ? layout.holes : []}
+              mutedHoles={
+                target === 'tnuts'
+                  ? mapping.holes.filter((nut) => nut.holdId !== null).map((nut) => layout.holes[nut.holeIndex])
+                  : []
+              }
               leds={leds}
-              selected={entry?.ledIds ?? (focusLed === null ? [] : [focusLed])}
-              unmappedHoles={freeLeds}
-              holdRings={rings}
-              selectedHoldIds={holdId === null ? [] : [holdId]}
+              ledPairs={pairs}
+              associations={associations}
+              selected={selectedLedIds}
+              selectedHoles={selectedNutIndex === null ? [] : [layout.holes[selectedNutIndex]]}
+              unmappedHoles={[
+                ...freeLeds,
+                ...(target === 'tnuts' ? unmappedNutIndices.map((index) => layout.holes[index]) : []),
+              ]}
+              holdRings={target === 'holds' ? rings : undefined}
+              selectedHoldIds={selectedHoldId === null ? [] : [selectedHoldId]}
               subtleLeds
               unmappedHoldIds={unmappedHoldIds}
               width={photoWidth}
@@ -228,16 +385,36 @@ export function SprayHoldLedStep({
         }}
       />
       <Text variant="footnote" accessibilityLiveRegion="polite">
-        {focusLed !== null && !entry
-          ? t('sprayLedSetup.holdLedsFreeLedSelected')
+        {focusIds.length && !entry
+          ? target === 'holds'
+            ? t(
+                focusIds.length === 2
+                  ? 'sprayLedSetup.holdLedsFreePairSelected'
+                  : 'sprayLedSetup.holdLedsFreeLedSelected',
+              )
+            : t(
+                focusIds.length === 2
+                  ? 'sprayLedSetup.holdLedsFreeTnutPairSelected'
+                  : 'sprayLedSetup.holdLedsFreeTnutLedSelected',
+              )
           : entry
-            ? t(linkedByHand ? 'sprayLedSetup.holdLedsSelectedManual' : 'sprayLedSetup.holdLedsSelected', {
-                count: entry.ledIds.length,
-              })
-            : t('sprayLedSetup.holdLedsNoHold')}
+            ? target === 'holds'
+              ? t(linkedByHand ? 'sprayLedSetup.holdLedsSelectedManual' : 'sprayLedSetup.holdLedsSelected', {
+                  count: selectedLedIds.length,
+                })
+              : t(linkedByHand ? 'sprayLedSetup.holdLedsTnutSelectedManual' : 'sprayLedSetup.holdLedsTnutSelected', {
+                  count: selectedLedIds.length,
+                })
+            : target === 'holds'
+              ? t('sprayLedSetup.holdLedsNoHold')
+              : t('sprayLedSetup.holdLedsNoTnut')}
       </Text>
-      {target === 'leds' && entry ? <Text variant="footnote">{t('sprayLedSetup.holdLedsLedHint')}</Text> : null}
-      {preview.error ? (
+      {entry ? (
+        <Text variant="footnote">
+          {target === 'holds' ? t('sprayLedSetup.holdLedsLedHint') : t('sprayLedSetup.holdLedsTnutLedHint')}
+        </Text>
+      ) : null}
+      {error ? (
         <>
           <Text variant="footnote" color={brandColors.error} accessibilityLiveRegion="polite">
             {t('sprayLed.lightFailed')}
@@ -252,7 +429,7 @@ export function SprayHoldLedStep({
       ) : null}
       {!wired ? (
         <Text variant="footnote">{t('sprayLedSetup.holdLedsNotWired')}</Text>
-      ) : !preview.available ? (
+      ) : !available ? (
         <Text variant="footnote">{t('sprayLedSetup.lightingUnavailable')}</Text>
       ) : null}
     </View>

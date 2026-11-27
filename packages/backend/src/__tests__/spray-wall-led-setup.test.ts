@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { eq, sql } from 'drizzle-orm';
-import { DEFAULT_TNUT_CORNERS, MAX_TNUT_LAYOUT_BYTES, type TnutLayout } from '@boardsesh/spray-wall-geometry';
+import {
+  createLedStripes,
+  DEFAULT_TNUT_CORNERS,
+  MAX_TNUT_LAYOUT_BYTES,
+  type TnutLayout,
+} from '@boardsesh/spray-wall-geometry';
 import { gymMembers, gyms, resourcePrivacy, sprayWallLedSetups, sprayWalls, userBoards } from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 
@@ -19,8 +24,12 @@ vi.mock('../utils/redis-rate-limiter', () => ({ checkRateLimitRedis: vi.fn().moc
 const { db } = await import('../db/client');
 const { sprayWallMutations, sprayWallArchivedError } = await import('../graphql/resolvers/board/spray-walls');
 const { socialBoardMutations } = await import('../graphql/resolvers/social/boards');
-const { SPRAY_WALL_LED_EDIT_DENIED_CODE, sprayWallLedSetupMutations, sprayWallLedSetupQueries } =
-  await import('../graphql/resolvers/board/spray-wall-led-setup');
+const {
+  SPRAY_WALL_LED_EDIT_DENIED_CODE,
+  SPRAY_WALL_LED_STRIPE_UPGRADE_REQUIRED_CODE,
+  sprayWallLedSetupMutations,
+  sprayWallLedSetupQueries,
+} = await import('../graphql/resolvers/board/spray-wall-led-setup');
 
 const OWNER = 'led-owner';
 const STRANGER = 'led-stranger';
@@ -165,6 +174,40 @@ describe('reading a wall’s LED setup', () => {
 });
 
 describe('saving a wall’s LED setup', () => {
+  it('rejects an older layout writer rather than silently erasing a configured stripe wall', async () => {
+    const uuid = await createWall();
+    const configured = createLedStripes(layout(), 'vertical', 3);
+    if (configured === 'capacity') throw new Error('Unexpected fixture capacity');
+    await save(uuid, OWNER, { layout: configured, brightness: 51, autoOffMinutes: 30 });
+    const older = { ...layout(), ledGroups: [], tnutLeds: [], holdAboveLeds: [] };
+    await expect(save(uuid, OWNER, { layout: older, brightness: 127, autoOffMinutes: 60 })).rejects.toMatchObject({
+      extensions: { code: SPRAY_WALL_LED_STRIPE_UPGRADE_REQUIRED_CODE },
+    });
+    expect((await read(uuid, OWNER))?.setup).toMatchObject({
+      brightness: 51,
+      autoOffMinutes: 30,
+      layout: { ledPlacement: 'stripe', ledStripes: configured.ledStripes },
+    });
+    // A settings-only change from that phone remains independent of geometry.
+    await expect(save(uuid, OWNER, { enabled: false, brightness: 90, autoOffMinutes: 0 })).resolves.toMatchObject({
+      enabled: false,
+      brightness: 90,
+      autoOffMinutes: 0,
+    });
+    expect((await read(uuid, OWNER))?.setup?.layout).toHaveProperty('ledPlacement', 'stripe');
+  });
+
+  it('accepts an explicit modern change away from stripes and its later legacy saves', async () => {
+    const uuid = await createWall();
+    const configured = createLedStripes(layout(), 'horizontal', 4);
+    if (configured === 'capacity') throw new Error('Unexpected fixture capacity');
+    await save(uuid, OWNER, { layout: configured });
+    await save(uuid, OWNER, { layout: { ...layout(), ledPlacement: 'center', ledStripes: null } });
+    expect((await read(uuid, OWNER))?.setup?.layout).toHaveProperty('ledPlacement', 'center');
+    expect((await read(uuid, OWNER))?.setup?.layout).not.toHaveProperty('ledStripes');
+    await expect(save(uuid, OWNER, { layout: layout() })).resolves.toBeDefined();
+  });
+
   it('keeps each field through saves that touch only another', async () => {
     const uuid = await createWall();
     await save(uuid, OWNER, { enabled: true, controllerUrl: 'http://wled.local' });
@@ -283,6 +326,120 @@ describe('saving a wall’s LED setup', () => {
       expect(await storedLayout(uuid)).not.toHaveProperty('ledGroups');
       await save(uuid, OWNER, { layout: sides({ ledGroups: [['a1', 'b2']] }) });
       expect((await storedLayout(uuid)).ledGroups).toEqual([['a1', 'b2']]);
+    });
+  });
+
+  describe('durable nut and upper links across older apps', () => {
+    const leds = [
+      { id: 'a', x: 0.25, y: 0.5 },
+      { id: 'b', x: 0.75, y: 0.5 },
+    ];
+    const current = () =>
+      layout({
+        ledPositions: leds,
+        tnutLeds: [{ hole: { x: 0.25, y: 0.5 }, ledIds: ['a', 'b'], aboveLedIds: [] }],
+        holdAboveLeds: [{ holdId: 7, ledIds: ['b'] }],
+      });
+    const older = () => layout({ ledPositions: leds });
+    const storedLayout = async (uuid: string) => (await read(uuid, OWNER))?.setup?.layout as TnutLayout;
+
+    it('preserves modern role keys omitted by older clients, including empty lists', async () => {
+      const uuid = await createWall();
+      await save(uuid, OWNER, { layout: current() });
+      await save(uuid, OWNER, { layout: older() });
+      expect(await storedLayout(uuid)).toMatchObject({
+        tnutLeds: current().tnutLeds,
+        holdAboveLeds: current().holdAboveLeds,
+      });
+      await save(uuid, OWNER, { layout: { ...older(), tnutLeds: [], holdAboveLeds: [] } });
+      await save(uuid, OWNER, { layout: older() });
+      expect(await storedLayout(uuid)).toMatchObject({ tnutLeds: [], holdAboveLeds: [] });
+    });
+
+    it('saves brightness with an older layout without losing modern assignments or auto-off', async () => {
+      const uuid = await createWall();
+      await save(uuid, OWNER, { layout: current(), brightness: 51, autoOffMinutes: 30 });
+      await expect(save(uuid, OWNER, { layout: older(), brightness: 127 })).resolves.toMatchObject({
+        brightness: 127,
+        autoOffMinutes: 30,
+        layout: { tnutLeds: current().tnutLeds, holdAboveLeds: current().holdAboveLeds },
+      });
+      await save(uuid, OWNER, { autoOffMinutes: 0 });
+      expect((await read(uuid, OWNER))?.setup).toMatchObject({
+        brightness: 127,
+        autoOffMinutes: 0,
+        layout: { tnutLeds: current().tnutLeds, holdAboveLeds: current().holdAboveLeds },
+      });
+    });
+
+    it('accepts modern per-role resets and prunes missing LEDs and holes during old saves', async () => {
+      const uuid = await createWall();
+      await save(uuid, OWNER, { layout: current() });
+      await save(uuid, OWNER, { layout: { ...older(), ledPositions: leds.slice(1) } });
+      expect((await storedLayout(uuid)).tnutLeds).toEqual([
+        { hole: { x: 0.25, y: 0.5 }, ledIds: ['b'], aboveLedIds: [] },
+      ]);
+      await save(uuid, OWNER, { layout: { ...older(), ledPositions: leds.slice(1), holes: [{ x: 0.75, y: 0.5 }] } });
+      expect((await storedLayout(uuid)).tnutLeds).toEqual([]);
+      await save(uuid, OWNER, {
+        layout: { ...older(), tnutLeds: [{ hole: { x: 0.75, y: 0.5 }, aboveLedIds: ['a'] }], holdAboveLeds: [] },
+      });
+      expect((await storedLayout(uuid)).tnutLeds).toEqual([{ hole: { x: 0.75, y: 0.5 }, aboveLedIds: ['a'] }]);
+    });
+
+    it('does not revive links on replaced photos or rebuilt layouts reusing LED IDs', async () => {
+      const uuid = await createWall();
+      await save(uuid, OWNER, { layout: current() });
+      await save(uuid, OWNER, { layout: { ...older(), photoKey: 'replacement-photo' } });
+      expect(await storedLayout(uuid)).not.toHaveProperty('tnutLeds');
+      expect(await storedLayout(uuid)).not.toHaveProperty('holdAboveLeds');
+      await save(uuid, OWNER, { layout: current() });
+      await save(uuid, OWNER, {
+        layout: { ...older(), rows: 2, ledPositions: leds.map((led) => ({ ...led, x: led.x + 0.01 })) },
+      });
+      expect(await storedLayout(uuid)).not.toHaveProperty('tnutLeds');
+      expect(await storedLayout(uuid)).not.toHaveProperty('holdAboveLeds');
+    });
+
+    it('merges an older save after a concurrently committed modern role edit', async () => {
+      const uuid = await createWall();
+      await save(uuid, OWNER, { layout: older() });
+      const [board] = await db.select({ id: userBoards.id }).from(userBoards).where(eq(userBoards.uuid, uuid));
+      let pendingOlderSave: ReturnType<typeof save> | undefined;
+      try {
+        await db.transaction(async (transaction) => {
+          const [blocker] = await transaction.execute<{ pid: number }>(sql`SELECT pg_backend_pid() AS pid`);
+          await transaction
+            .select({ id: userBoards.id })
+            .from(userBoards)
+            .where(eq(userBoards.id, board.id))
+            .for('update');
+          await transaction
+            .update(sprayWallLedSetups)
+            .set({ layout: current() as unknown as Record<string, unknown> })
+            .where(eq(sprayWallLedSetups.boardId, board.id));
+          pendingOlderSave = save(uuid, OWNER, { layout: older() });
+          // Wait until the older writer reaches a database lock. Without the
+          // parent-row lock it reads the old layout before waiting on its upsert.
+          let waiting = false;
+          for (let attempt = 0; attempt < 100 && !waiting; attempt++) {
+            const rows = await db.execute<{ waiting: boolean }>(sql`
+              SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname = current_database()
+                AND pid <> pg_backend_pid() AND wait_event_type = 'Lock'
+                AND ${blocker.pid} = ANY(pg_blocking_pids(pid))) AS waiting
+            `);
+            waiting = rows[0]?.waiting === true;
+            if (!waiting) await new Promise((resolve) => setTimeout(resolve, 10));
+          }
+          expect(waiting).toBe(true);
+        });
+      } finally {
+        await pendingOlderSave;
+      }
+      expect(await storedLayout(uuid)).toMatchObject({
+        tnutLeds: current().tnutLeds,
+        holdAboveLeds: current().holdAboveLeds,
+      });
     });
   });
 

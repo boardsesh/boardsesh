@@ -76,31 +76,59 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    (single-hole fallback: 10% of the normalized frame). Generated
    positions outside the image are omitted. Manual edits stay within the image.
    With LEDs on both sides of the hold ("sides"), the two LEDs behind each
-   hole are a **pair**: they are drawn as interlocking rings, move together,
-   are removed together, and laying the cable through one adds the other
-   straight after it. **Pair LEDs** separates a pair with one tap (each LED can
-   then be moved or deleted on its own) or groups two single LEDs with two taps.
+   hole are a **pair**. Overlapping rings interlock. If the rings are farther
+   apart, a thin dashed yellow line links them in **Adjust LED positions**.
+   Paired LEDs move and are removed together. Laying the cable through one adds
+   the other straight after it. **Pair LEDs** works in the editor and in
+   fullscreen. Tap a pair to separate it or tap two single LEDs to pair them.
+   LEDs removed from a pair can move or be deleted on their own.
    Pairs are stored as `ledGroups` (`[id, id][]`); with no list, a "sides"
    placement pairs the LEDs it generated per hole, and an explicit empty list
    keeps every pair separated. Rebuilding the LEDs returns to those defaults.
-8. Next opens **Holds and LEDs**, which checks and fixes which LEDs belong to
-   each hold before the cable is laid: the links depend on where the LEDs are,
-   not on how the strip runs. Tapping a hold selects it and rings its LEDs on
-   the photo; holds outlined in red have no LED position. The tap target then
-   switches to **LEDs**: tapping an LED adds it to the hold or takes it away,
-   and a tap away from the LEDs picks the hold under it. That stores a
-   hand-made link (`holdLeds` in the layout) which replaces the automatic,
-   geometry-based assignment for that hold everywhere: Test LEDs and route
-   lighting. An LED linked by hand leaves the hold the geometry gave it.
-   **Next hold without LEDs** steps through the red holds top to bottom.
-   LEDs that belong to no hold get a red dashed ring, and **Next LED without a
-   hold** picks them one by one, the same way; tapping a hold then adds the
-   picked LED to it. The summary counts both holds with LEDs and LEDs with a
-   hold. **Back to automatic** drops a hold's link; Undo reverts link edits. Before
-   the cable exists the LEDs have no physical index, so the wall cannot light
-   the chosen hold; coming back to this step after the cable does light it.
-   Regenerating the LED positions clears all links, because the new LEDs reuse
-   the old ids. Removing a single LED prunes its manual links immediately, so
+   **LED strip** is available for grid and offset layouts and uses the approved
+   continuous-strip diagram. Custom spacing offers the in/behind/below choices.
+   Next asks for horizontal or vertical strips and a default LED count
+   (20 initially).
+   Vertical starts with one strip per calibrated column, horizontal with one
+   per row. Each line extends to the rectified photo's boundaries. The next
+   photo editor can move either endpoint, change a selected strip's LED count,
+   add/remove strips, and add, move or remove individual LEDs. Its tools start
+   inactive and use the usual fullscreen icon rail. The limits are 100 strips
+   and 6000 LEDs in total. Removing the last LED removes its strip. Changing
+   membership/count asks before resetting an existing cable; endpoint moves
+   preserve LED identities and the cable. Undo restores the complete layout.
+   Confirming a full strip rebuild clears manual hold and T-nut assignments so
+   the new strips use automatic mapping. Individual strip edits still prune
+   only references that no longer exist.
+   Changing the calibrated grid also requires confirming a strip rebuild,
+   even when orientation and LED count stay the same. The new strips follow
+   the updated rows, columns and anchors. Cancelling keeps the saved setup;
+   an unchanged grid retains edited strips, cable and manual assignments.
+8. Next opens **Holds and LEDs**. Switch between **Holds** and **T-nuts** to
+   choose what to link, then tap LEDs to add or remove them from that selection.
+   Several LEDs can belong to the same hold or T-nut. Dashed lines join the LEDs
+   to their hold or nut, and red outlines show missing assignments.
+   T-nuts already matched to a hold are dimmed but remain selectable. Editing
+   one updates the hold too. Manual assignments for mounted holds are stored
+   at their nut positions, so subsequently detected holds inherit the local
+   assignments even when hold IDs change. A hold can cover several nuts; an
+   explicit whole-hold edit distributes its LEDs among those nuts rather than
+   copying the entire list to every nut. Editing one nut keeps its siblings.
+   **Next hold without LEDs** becomes **Next T-nut without LEDs** in T-nut mode.
+   The unassigned LED picker treats a pair as one stop and lights both wired
+   members. The hold count and picker include only holds whose centers appear
+   in the rectified photo. **Back to automatic** restores the automatic link for
+   the selected role; the undo icon restores the preceding edit, also fullscreen.
+   **Below the hold** and **Complementary positions** have two consecutive
+   assignment steps: the main LEDs below, then the optional LEDs above. Editing
+   or resetting one step leaves the other role alone. Other placements keep one
+   step. Before the cable exists the LEDs have no physical index, so the wall
+   only lights selections after wiring (when returning to these steps).
+   Increasing the grid with the same LED pattern adds unwired positions and keeps
+   the existing cable path and physical indices. If manual LED work or unmatched
+   wired positions need checking, the setup prompts you to review the LED positions.
+   Starting the LED positions over clears the old links. Removing a single LED
+   prunes its manual links immediately, so
    adding another LED cannot inherit a deleted position’s links. Undo restores
    the previous positions and links. A failed preview shows an error; select
    the hold again or tap **Try again** to retry.
@@ -114,75 +142,205 @@ every signed-in climber who can open the wall lights it from their own phone. Se
 10. In the cable editor, choose **Lay cable**, then tap LEDs or drag across them.
    New LEDs append to the existing cable end in stroke order. Revisiting a wired
    LED does not branch, reverse or create another start. After an explicit cut,
-   drawing extends the last cable section. Choose **Select two LEDs** to cut a
-   connection or reconnect free endpoints; skipped LEDs have their own next
-   step. Lay cable and
-   Light and tap only extend the cable's end, so they are hidden while every
-   LED is already on the cable (a generated horizontal or vertical run, or a
-   finished custom one). In Light and tap, a marker is assigned only after the
-   controller acknowledges that physical LED; pending or failed writes cannot
-   change the cable. Skip respects both the remaining gap and total skip limits.
-   A note explains that rerouting is Cut and Connect
-   under Select two LEDs (a cut keeps every LED on a section). The legend
-   follows the photo, one meaning per colour: purple dots are LEDs; the
-   turquoise line is the cable, with arrows for its direction; a green ring and
-   larger green arrow mark where it starts and a turquoise ring where it ends
-   (where laying continues); small turquoise dots on a cable segment are its
-   skipped LEDs; a red ring is a loose end a cut left unconnected; faint orange
-   rings are holes. A selected LED gets a larger purple ring, and the selection
+   tap the output end of the section you want to extend, then tap new LEDs or
+   drag from that end. Either member of an output pair, or any member of an
+   output strip, selects that whole unit. A larger purple ring marks the chosen
+   output. The final cable end remains the default when no section was chosen.
+   To reconnect a cut, tap its upstream output and then the downstream section's
+   input, or drag between them. This also works after adding more LEDs before
+   reaching that input. The sections join in their saved direction, retaining
+   internal skipped LEDs. The new connection has no skipped LEDs until edited.
+   Pairs and strips join as whole units; each join has its own Undo step. A tap
+   can join a section consisting of only one unit; dragging from that unit
+   still chooses its output. The controller input and interior LEDs cannot be
+   joined this way, and a later section cannot be routed back into an earlier one.
+   **Lay cable** stays available with
+   a complete route. To reroute already wired LEDs, choose **Select two LEDs**
+   to cut the connection between two selections or reconnect free endpoints.
+   Either member selects both LEDs of a pair, and the pair counts as one selection.
+   The editor uses physical connections at the boundaries between selections.
+   **Light and tap** is available while some LEDs are still unwired. Tapping a
+   pair adds its unwired LEDs in sequence after the controller confirms their
+   physical numbers. The lit number advances by one per added LED. Skips
+   count before the first added LED and respect the gap and total limits.
+   If the controller cannot light both LEDs of an unwired pair, the current
+   number stays available. Undo removes the entire addition together.
+   **Not on the spraywall** counts as its own Undo step, even before the first
+   position is assigned. Leading skips update **Skip the first LEDs** immediately
+   without drawing a cable segment. Between positions, the pending count stays
+   available until the next assignment; the resulting gap is red in **Light and
+   tap**, as on **Skipped LEDs**, including after the cable is complete. Undoing
+   the assignment restores its pending count; another Undo reverses the skip.
+   Cutting off the last LED or unit makes it unwired again, ready to place
+   anywhere on the cable. The upstream start stays wired even if it is the only
+   position left. An interior cut retains both sections. Extending an earlier
+   section preserves section order and gap counts; later physical indices move
+   forward by the number of newly inserted LEDs. Undo restores the full edit.
+   Purple dots mark LEDs and faint orange
+   rings mark holes. Turquoise lines show the cable and arrows show its direction.
+   When both members of a pair follow one another on the cable without a skip
+   between them, incoming and outgoing lines meet at the pair's midpoint.
+   Each LED has its own physical number. New automatic paths visit both
+   members consecutively, and saved paths keep their physical order.
+   A green ring and green arrow mark the start. A turquoise ring marks the end
+   where laying continues. A red ring marks a loose end. Skipped LEDs are shown on
+   the next step and still count toward the cable's physical LED numbers.
+   A selected LED gets a larger purple ring, and the selection
    is listed below the photo by cable position (for example 3 → 4). Undo
-   restores edits. **Light selected LEDs** is an
-   optional physical preview of the selected positions using their assigned
-   WLED indices, including initial and intermediate skips.
+   restores edits, keeping both LEDs of a pair together when laying cable.
+   A drag across several pairs can be undone one pair at a time.
+   Cable and skip Undo share their history throughout this setup session, so
+   Next and Back keep earlier edits reversible, including the first position.
+   Rebuilding the cable or changing LED membership starts a new history.
+   Open the cable editor fullscreen in portrait or landscape.
+   In landscape, the controls sit to the right of the photo.
 11. Next opens **Skipped LEDs**, with the cable drawn over the photo. Tap a
-    connection (the line between two LEDs) to select it; its two end LEDs get the
-    selection ring and the page names their positions and its skipped count.
-    **Insert skipped LEDs** sets how many LEDs the strip has there that are not
-    on the wall (type it or use − and +); zero removes the gap. **Light the ends**
-    lights only the two LEDs at the ends of the selected connection, never the
-    skipped ones, so the count can be checked on the wall: with the right count,
-    both lit LEDs sit on the photo's two markers. Undo restores edits.
-12. Next opens **Test LEDs**. Switch between **Holes** and **Holds**, then tap the
-    photo to select positions. **Light selection** tests their assigned LEDs.
-    Tap a selected position again to remove it. The page reports holds linked
-    to wired LEDs and selected positions with no LED assignment. These controls
-    also work in the zoomable fullscreen photo. Light the full strip or start a quick
-    row-by-row test of wired positions from the upper left. Every row starts on
-    the left, regardless of the cable's serpentine order. Unwired positions do
-    not participate. While the whole strip is lit the button turns it off and the
-    summary says every LED is lit; the photo rings what the wall shows, including
-    the LED the row test has reached. **Stop lighting** ends the test. These controls require
-    enabled LEDs and a saved WLED address. Indices outside the controller's LED
-    count produce an error rather than addressing a different LED.
+    connection to select it. The photo rings the LEDs at both ends, including
+    both members of any pair. The page shows the physical LED numbers at the
+    connection and its skipped count. **Insert skipped LEDs** sets how many
+    LEDs the strip has there off the wall. Type the count or use − and +.
+    Zero removes the gap. Selecting the connection lights the wired LEDs at
+    both ends so you can check the count against the wall. Use the bulb to
+    turn that lighting off or on. Skipped LEDs and their connections appear
+    in red on the photo. Undo restores edits.
+12. Next opens **Test LEDs**. Switch between **Holes** and **Holds**, then tap
+    one position on the photo. Tapping another replaces the selection. Tap the
+    same position again to clear it. The bulb starts enabled so selecting a
+    position lights it. Tap the bulb to switch selection lighting off or on.
+    The page counts holds linked to wired LEDs and flags a selection with no
+    LED assignment. These controls also work in the zoomable fullscreen photo.
+    In the regular view, **Light all wired LEDs** lights the wired positions
+    visible in the photo. The row-by-row test uses the same positions and starts
+    every row on the left. LEDs outside the photo, unwired positions, and skipped
+    LEDs stay dark. The summary counts the lit positions and the photo rings
+    them. During the row test, the ring follows the LED being tested. The bulb
+    stops a running test. These controls require enabled LEDs and a saved WLED
+    address. The app reports an error when a position uses an index outside
+    the controller's configured range.
 13. Done saves positions and wiring to the wall. Partial wiring can be saved.
     Its status reports connected LEDs and separate cable sections. The assigned
     zero-based indices include skipped LEDs. The normal wall controls use the
     saved setup to illuminate routes after you deliberately take the wall.
 
+For **LED strip**, the cable tools treat every strip as an indivisible ordered
+unit. Tap or trace any member to add the complete strip, entering at the nearer
+end. Undo removes the complete addition. Automatic cable paths visit every
+member consecutively and may reverse a complete strip to enter its nearer end.
+Select two strips (or a strip and a single LED) to cut/connect their boundary;
+there is no cut or skipped-LED gap inside a strip. **Light and tap** validates
+all consecutive physical indices before saving the unit. If its last index
+exceeds the controller's capacity, no part is saved and the starting LED stays
+available. The skipped-LED step selects connections between units and highlights
+and lights their complete ends. Partial wiring is allowed only between complete
+strips; their members cannot be split into separate cable sections.
+
 ## Hold mapping and route lighting
 
 Hole positions are normalized in the rectified wall frame. Matching converts
-them into canonical pixels, where the detected holds already live. Every hole
-inside a hold outline belongs to that hold. Without a valid outline the stored
-hold radius is used. Overlaps resolve by normalized center distance, then hold
-ID. A large hold can own several holes. Holes outside a hold remain unassigned.
+them into canonical pixels, where the detected holds already live. A hold owns
+the T-nuts inside its actual outline, or its stored radius when no outline is
+available. Several covered nuts can therefore belong to one hold. Overlapping
+claims resolve by distance to the hold center in canonical pixels; ambiguous ties can
+remain unassigned. The outline still controls tapping the hold. Manual links
+can assign several LEDs, including ones outside the automatic choice.
 
 Generated LEDs retain their hole association when moved. Older generated IDs
 recover their original positions. Manual LEDs bind to nearby placement slots
-within a bounded distance. Complementary positions use the nearest opposite-phase
-slots at or below the hole, never one above it: a hole with no slot below stays
-unlit (and red in Holds and LEDs) rather than borrowing the slot above. They
+within a bounded distance. **In the hold** and **Behind the hold** keep their
+center or paired positions. **Below the hold** and **Complementary positions**
+each assign one aligned LED below a mounting hole when that slot exists. A
+sideways or upper LED never substitutes for a missing lower slot. These two
+placements also keep a separate upper reference, independent of manual primary
+links. A vertical chain of nuts covered by one hold uses the main indicator
+below its lowest nut and the optional upper one above its highest nut. Several
+columns can contribute their own outer indicators. Internal indicators do not
+multiply merely because the hold covers more rows. Automatic ownership is
+exclusive within each role: a worse competing match stays unassigned, while a
+main LED for one hold may still be another hold's optional upper reference.
+Matching uses the calibrated grid plane, including staggered rows and
+perspective, rather than the screen's vertical axis. The references
 retain their original positions after movement. Physical indices use
 the saved cable order, initial skips and gaps. Unwired positions have no index.
 
-Where the geometry gets a hold wrong, **Holds and LEDs** stores a hand-made link
-in the layout (`holdLeds`: `{ holdId, ledIds }[]`). `buildSprayLedMapping` applies
-it after the geometric pass, so Test LEDs and route lighting follow it: a linked
-hold gets exactly its chosen LEDs (an empty list means no LED), and an LED linked
-by hand leaves the hold the geometry gave it. Holes keep their geometric LEDs.
-`readTnutLayout`, which both the phone and the server's save validation use,
-drops LED ids that no longer exist and repeated holds, and rejects malformed
-links. Links to holds the wall no longer has are ignored.
+**LED strip** instead partitions each strip along its axis at the midpoints
+between neighboring nuts. Empty nuts still bound the intervals; their LEDs do
+not get borrowed by a more distant hold. A multi-nut hold receives the union of
+its intervals, and end intervals extend to the strip's edited endpoints. All
+assigned strip LEDs use the hold's normal role color. The optional dim upper
+lighting remains specific to Below/Complementary placement. Actual marker
+positions are used after individual edits. Removed/missing lines do not pull
+unrelated columns into a strip's assignment.
+
+The mapping exposes primary `ledIds`/`indices` and separate
+`aboveLedIds`/`aboveIndices` for both holes and holds. Saved positions retain the
+primary `hole`, the original `origin` and the derived `aboveHole` reference.
+Upper references are recomputed from durable origins when the geometry or LED
+positions change. An older app can drop `aboveHole` without changing the
+derived result, because it retains `origin`. Rebuilding or expanding a grid
+refreshes the upper references before saving while retaining existing wiring.
+
+Manual nut links are stored as `tnutLeds`:
+`{ hole: { x, y }, ledIds?: string[], aboveLedIds?: string[] }[]`.
+Each role is independent: an omitted role uses automatic mapping, while `[]`
+deliberately assigns no LED. `buildSprayLedMapping` applies these links before
+giving a nut's LEDs to its detected hold, so Test LEDs and route lighting follow
+them. Nut overrides take priority over older hold-ID links for the same role.
+An explicitly assigned LED leaves the other automatic assignments in that role;
+its assignment in the other role remains independent.
+
+Legacy `holdLeds` (`{ holdId, ledIds }[]`) remains readable. `holdAboveLeds` uses
+the same structure for manual upper assignments to holds with no mounting nut.
+Neither field is the durable identity for a mounted hold. The common reader
+rejects malformed links and removes references to missing LEDs or nuts. Marker
+removal prunes references immediately before a new position can reuse an ID;
+moving a nut carries its manual links, and undo restores the whole assignment.
+Browsing another wall pattern and returning before committing a change restores
+the original holes, manual assignments and cable together.
+Photo identity and calibration checks still apply: the later re-photographing
+flow must carry the physical nut layout into its new canonical frame.
+Confirming an assignment step promotes existing manual hold links to their
+unambiguous mounting nuts, without materializing automatic mappings. Converted
+hold-ID links are removed so they cannot follow a hold to a different nut.
+Existing nut overrides win. Opening the editor or lighting a route never writes
+a migration; unmounted or ambiguous legacy links remain unchanged.
+
+`saveSprayWallLedSetup` stores `holdLeds` as the app sends it. Every installed
+app knows about these links, and one leaves the key out once its last link is
+cleared (this app sends `[]`), so a layout without `holdLeds` clears the stored
+links.
+
+New uploads always include `tnutLeds` and `holdAboveLeds`, including empty lists
+when cleared. An upload without these keys comes from an older app; the server
+preserves the saved links while pruning positions that no longer exist. A
+physical-layout rebuild or changed photo identity resets obsolete references.
+Persisting these new assignments needs this PR's backend reader as well as the
+updated app. Deploy the backend before distributing the new app revision. An
+older app can still use the basic LED setup, but cannot interpret these new
+manual nut and upper-role overrides. This change does not deploy a backend or
+publish an app update.
+
+LED pairs (`ledGroups`) are newer than any installed app, so an app from before
+them saves a layout with no `ledGroups` key, which would erase a newer phone's
+pairs. `saveSprayWallLedSetup` therefore keeps the stored list
+(`keepLedPairsFromOlderApp`), an empty one too, minus pairs whose LEDs are gone.
+If the older app rebuilt the LEDs (the placement, holes, corners, rows or
+columns changed, and so did the LEDs), the stored pairs would name the wrong
+LEDs, so the new layout's default pairs apply. A current app always sends
+`ledGroups`, `null` for the default pairs, which the reader treats like no list.
+
+Strips use `ledStripes`: an orientation, monotonically increasing strip/LED ID
+counters, and ordered `{ id, start, end, ledIds }` entries. Actual LED coordinates
+remain in `ledPositions`. A strict reader checks unique membership, existing IDs,
+bounded endpoints/counters, at most 100 strips and 6000 total LED positions. Saved
+cables must contain each strip completely and consecutively, in forward or reverse
+order, with no internal skipped count. Removing and re-adding an individual LED
+allocates a new ID so old manual references cannot attach to a replacement.
+Modern uploads always include `ledStripes` (null when switching away). An older
+app cannot read the new placement at all: a stale layout write without that
+capability marker cannot overwrite an already stored strip setup. The server
+returns an upgrade-required error rather than silently acknowledging an ignored
+save. Settings-only updates remain independent; a modern confirmed pattern change
+can replace the setup. The same board-row transaction lock covers this check.
 
 `saveSprayWallLedSetup` stores `holdLeds` as the app sends it. Every installed
 app knows about these links, and one leaves the key out once its last link is
@@ -203,10 +361,30 @@ Routes illuminate their mapped LEDs using the existing start, hand, foot and
 finish colors, including saved color overrides. Route playback and creator
 previews use the same wall sender. The route editor shows its lightbulb on a
 spray wall only while that wall's LEDs are enabled; there it takes the wall, so
-the holds light as they are painted. All used holds must have wired LED mappings.
+the holds light as they are painted. Holds with assigned primary LEDs need a
+wired primary index; a deliberately unassigned hold stays dark.
 An incomplete or stale setup produces an error instead of confirming the route.
 The setup photo identity must match the current canonical frame and calibration.
 Mirrored spray routes are rejected because the wall has no defined mirror map.
+Known route holds with deliberately empty/geometrically unmatched LED lists
+remain dark while the other mapped holds light. A known assigned hold with no
+wired primary index still reports an incomplete cable setup; unknown route hold
+IDs remain an error. If every requested position is empty, the sender clears
+only its own existing lighting session and never takes another preview's lane.
+
+For **Below the hold** and **Complementary positions**, **Light the hold above**
+appears in the lightbulb's control sheet and Settings > Board, in the same places
+as the MoonBoard option. It is off by default and stored independently from the
+MoonBoard setting. It lights each lit hold's wired upper references in white at
+25% brightness (`[64, 64, 64]`), regardless of the hold's role color or overrides.
+A primary LED in the same route
+always keeps its full role color, even if another hold also uses it as an upper
+reference. A missing or unwired upper LED does not prevent lighting the primary
+LEDs. Changing the option refreshes only the actual owned route; it leaves an
+explicitly cleared wall and another setup preview alone.
+If a replacement route fails while the option changes, the last acknowledged
+route receives that change only while its original session still owns the lights.
+Background failures retain the normal retry on return.
 
 Spray LEDs follow the Bluetooth boards: locking the phone or backgrounding the
 app leaves the climb lit, and a write that fails while away is retried on
@@ -220,9 +398,11 @@ The setup test remains white and can take control of the same serialized lane.
 
 Offset grids also offer **Complementary positions**: LEDs occupy the opposite
 phase of the staggered hold grid, as in CRUX. The diagram follows the chosen
-top-row inset. Switching to grid or custom clears this offset-only choice;
-the three common placement choices remain available for every wall pattern.
-LED positions and cable paths are stored alongside the placement choice.
+top-row inset. Switching to grid or custom clears this offset-only choice.
+The in/behind/below choices remain available for every wall pattern. All LED
+placement tiles have the same size. The explanation for complementary positions appears
+below the selection only while that option is selected. LED positions and cable
+paths are stored alongside the placement choice.
 
 ## Wall image and coordinates
 
@@ -317,6 +497,23 @@ replaced and `notifySprayLedConfiguration` blanks and relights the wall; a no-ch
 refresh fires nothing. Reading the setup only ever touches the backend. The first
 LAN request still has to follow a climber's press.
 
+Route lighting also uses the current viewer's cached published geometry, or the
+owner-gated offline wall mirror, when the backend is unreachable. The mirror's
+holds stay in canonical coordinates; the photo-coordinate registry is not used
+for LED matching. A server access denial never falls back to an older copy.
+The denial is retained for that account and wall across cache eviction and
+offline restarts; only a valid fresh server response can restore access.
+The saved calibration must still match the wall's frame and homography.
+
+Opening LED setup refreshes the saved layout before the editor takes its first
+snapshot, including when playback's cached copy is still fresh. Offline reads
+and failed refreshes retain the local copy. The refresh wait is bounded, and a
+response arriving after that deadline cannot replace the editor's snapshot.
+Once editing begins, a background response never resets the climber's edits.
+An old pending layout from before strip support needs one verified server read
+before the updated editor can open it. Until then, the existing load error is
+recoverable by connecting and trying again.
+
 **Saves** write the copy, then upload. One upload runs per wall at a time and it
 reads the newest copy when it goes, so step saves collapse and cannot land out of
 order. A failed upload shows the normal save error, stays marked unsent on the
@@ -327,6 +524,16 @@ merges, local saves and upload acknowledgements share a cache write lane.
 A newer save keeps its unsent marker until its own upload succeeds. The cached
 copy is cleared at sign-out and when wall access is withdrawn; erasure waits
 for outstanding disk writes and prevents old saves from uploading afterwards.
+Queued legacy layouts retain the capabilities of the app that authored them.
+The local-only `_legacyLedCapabilities` provenance is never sent to the backend;
+a new editor save atomically replaces it with the current capability keys.
+An authoritative strip layout replaces refused legacy geometry without clearing
+dirty brightness, auto-off or controller settings. Non-strip reconciliation
+preserves newer manual assignments before the editor takes its snapshot.
+
+Changing brightness or auto-off while a full photo test is lit repeats the same
+acknowledged LED selection. It does not include skipped or off-photo positions,
+and cannot take the wall back from a newer preview or route.
 
 ## Controller boundary
 

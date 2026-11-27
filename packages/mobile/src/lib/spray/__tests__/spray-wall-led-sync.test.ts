@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_TNUT_CORNERS, type TnutLayout } from '@boardsesh/spray-wall-geometry';
+import {
+  createLedStripes,
+  DEFAULT_TNUT_CORNERS,
+  readTnutLayout,
+  type TnutLayout,
+} from '@boardsesh/spray-wall-geometry';
 
 // The sync module loads its storage and network layers on first use; under a
 // full parallel run that can take longer than the default 5 s.
@@ -9,14 +14,20 @@ const backend = vi.hoisted(() => ({ request: vi.fn() }));
 const storage = vi.hoisted(() => ({
   records: new Map<string, unknown>(),
   writes: [] as string[],
+  beforeRead: vi.fn(async (_key: string, _options?: { strictParsing?: boolean }) => undefined),
   beforeWrite: vi.fn(async (_key: string) => undefined),
 }));
 
 const auth = vi.hoisted(() => ({ token: 'token' as string | null }));
+const connectivity = vi.hoisted(() => ({ effectiveOffline: false }));
 vi.mock('../../auth-store', () => ({ getAuthToken: async () => auth.token }));
+vi.mock('../../connectivity/connectivity-store', () => ({ getConnectivitySnapshot: () => connectivity }));
 vi.mock('../../graphql/client', () => ({ getHttpClient: () => backend }));
 vi.mock('../../preference-store', () => ({
-  getPreference: async (key: string) => (storage.records.has(key) ? storage.records.get(key) : null),
+  getPreference: async (key: string, options?: { strictParsing?: boolean }) => {
+    await storage.beforeRead(key, options);
+    return storage.records.has(key) ? storage.records.get(key) : null;
+  },
   setPreference: async (key: string, value: unknown) => {
     await storage.beforeWrite(key);
     storage.writes.push(key);
@@ -40,17 +51,21 @@ import {
 } from '../spray-wall-led-cache';
 import {
   markSprayWallLedSaveStarted,
+  prepareSprayWallLedEdit,
   prepareSprayWallLedRead,
   queueSprayWallLedUpload,
   recheckSprayWallLedAccess,
   resetSprayWallLedSyncForTests,
 } from '../spray-wall-led-sync';
+import { loadSprayWallTnutLayout, saveSprayWallTnutLayout } from '../spray-wall-tnut-store';
 
 const WALL = 'wall-one';
 const SETTINGS_KEY = 'sprayWallLedSettings:wall-one';
 const LAYOUT_KEY = 'sprayWallTnutLayout:wall-one';
 const UNSENT_SETTINGS = 'sprayWallLedUnsent:settings:wall-one';
 const UNSENT_LAYOUT = 'sprayWallLedUnsent:layout:wall-one';
+const UNSENT_BRIGHTNESS = 'sprayWallLedUnsent:brightness:wall-one';
+const UNSENT_AUTO_OFF = 'sprayWallLedUnsent:autoOff:wall-one';
 
 const local = {
   version: 1,
@@ -73,8 +88,14 @@ function layout(photoKey = 'photo-key'): TnutLayout {
   };
 }
 
-/** What the upload sends: `ledGroups` is always named, null for the default pairs. */
-const uploaded = (sent: TnutLayout) => ({ ...sent, ledGroups: sent.ledGroups ?? null });
+/** Modern uploads name all supported override lists, including explicit clears. */
+const uploaded = (sent: TnutLayout) => ({
+  ...sent,
+  ledGroups: sent.ledGroups ?? null,
+  tnutLeds: sent.tnutLeds ?? [],
+  holdAboveLeds: sent.holdAboveLeds ?? [],
+  ledStripes: sent.ledStripes ?? null,
+});
 
 /** The server's row: jsonb key order differs from what the reader builds. */
 const rowFor = (overrides: Record<string, unknown> = {}) => ({
@@ -125,9 +146,11 @@ const unsubscribes: Array<() => void> = [];
 
 beforeEach(() => {
   auth.token = 'token';
+  connectivity.effectiveOffline = false;
   backend.request.mockReset().mockResolvedValue(answering(true, null));
   storage.records.clear();
   storage.writes.length = 0;
+  storage.beforeRead.mockReset().mockResolvedValue(undefined);
   storage.beforeWrite.mockReset().mockResolvedValue(undefined);
   resetSprayWallLedSyncForTests();
   configurationEvents = [];
@@ -319,7 +342,110 @@ describe('reading a wall’s LED setup', () => {
   });
 });
 
+describe('taking the editor\u2019s initial layout snapshot', () => {
+  it.each([false, true])('joins a delayed playback refresh when offline is %s', async (offline) => {
+    storage.records.set(LAYOUT_KEY, layout('old-copy'));
+    const answer = deferred<unknown>();
+    backend.request.mockReturnValueOnce(answer.promise);
+    await prepareSprayWallLedRead(WALL, 'layout');
+    connectivity.effectiveOffline = offline;
+    let ready = false;
+    const editing = prepareSprayWallLedEdit(WALL).then(() => {
+      ready = true;
+    });
+    await settle();
+    expect(ready).toBe(false);
+    expect(operations()).toEqual(['GetSprayWallLedSetup']);
+    answer.resolve(answering(true, rowFor({ layout: layout('new-server-copy') })));
+    await editing;
+    expect(storage.records.get(LAYOUT_KEY)).toEqual(layout('new-server-copy'));
+  });
+
+  it('refreshes even while the playback copy is still fresh', async () => {
+    backend.request.mockResolvedValueOnce(answering(true, rowFor({ layout: layout('old-copy') })));
+    await prepareSprayWallLedRead(WALL, 'layout');
+    backend.request.mockResolvedValueOnce(answering(true, rowFor({ layout: layout('new-server-copy') })));
+    await prepareSprayWallLedEdit(WALL);
+    expect(operations()).toEqual(['GetSprayWallLedSetup', 'GetSprayWallLedSetup']);
+    expect(storage.records.get(LAYOUT_KEY)).toEqual(layout('new-server-copy'));
+  });
+
+  it('opens the cached layout immediately when already offline without a pending refresh', async () => {
+    storage.records.set(LAYOUT_KEY, layout('offline-copy'));
+    connectivity.effectiveOffline = true;
+    await prepareSprayWallLedEdit(WALL);
+    expect(backend.request).not.toHaveBeenCalled();
+    expect(storage.records.get(LAYOUT_KEY)).toEqual(layout('offline-copy'));
+  });
+
+  it('keeps the cached layout when the backend refresh fails', async () => {
+    storage.records.set(LAYOUT_KEY, layout('offline-copy'));
+    backend.request.mockRejectedValueOnce(new Error('offline'));
+    await prepareSprayWallLedEdit(WALL);
+    expect(storage.records.get(LAYOUT_KEY)).toEqual(layout('offline-copy'));
+  });
+
+  it('bounds a stalled refresh and never applies its late answer over the editor', async () => {
+    vi.useFakeTimers();
+    try {
+      storage.records.set(LAYOUT_KEY, layout('offline-copy'));
+      const answer = deferred<unknown>();
+      backend.request.mockReturnValueOnce(answer.promise);
+      const editing = prepareSprayWallLedEdit(WALL);
+      await vi.waitFor(() => expect(backend.request).toHaveBeenCalledTimes(1));
+      await vi.advanceTimersByTimeAsync(20_000);
+      await editing;
+      expect(storage.records.get(LAYOUT_KEY)).toEqual(layout('offline-copy'));
+      answer.resolve(answering(true, rowFor({ layout: layout('late-server-copy') })));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(storage.records.get(LAYOUT_KEY)).toEqual(layout('offline-copy'));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(['account', 'wall'])(
+    'rejects the initial snapshot if %s access changes during the refresh',
+    async (scope) => {
+      storage.records.set(LAYOUT_KEY, layout('old-copy'));
+      const answer = deferred<unknown>();
+      backend.request.mockReturnValueOnce(answer.promise);
+      const editing = expect(prepareSprayWallLedEdit(WALL)).rejects.toThrow('access changed');
+      await settle();
+      if (scope === 'account') await eraseAllSprayWallLedCaches();
+      else await eraseSprayWallLedCache(WALL);
+      answer.resolve(answering(true, rowFor({ layout: layout('old-account-answer') })));
+      await editing;
+      expect(storage.records.size).toBe(0);
+    },
+  );
+
+  it('rejects a snapshot after the server withdraws wall access', async () => {
+    storage.records.set(LAYOUT_KEY, layout('old-copy'));
+    backend.request.mockResolvedValueOnce({ sprayWallLedSetup: null });
+    await expect(prepareSprayWallLedEdit(WALL)).rejects.toThrow('access changed');
+    expect(storage.records.size).toBe(0);
+  });
+});
+
 describe('one-time adoption of a phone-only setup', () => {
+  it('keeps local layout and controller settings when only brightness is dirty and the server has no row', async () => {
+    storage.records.set(LAYOUT_KEY, layout());
+    storage.records.set(SETTINGS_KEY, { ...local, brightness: 128 });
+    storage.records.set(UNSENT_BRIGHTNESS, true);
+    backend.request.mockImplementation(async (document: unknown) => {
+      if (String(document).includes('mutation')) throw new Error('offline');
+      return answering(true, null);
+    });
+    await prepareSprayWallLedRead(WALL, 'settings');
+    await settle();
+    expect(storage.records.get(SETTINGS_KEY)).toEqual({ ...local, brightness: 128 });
+    expect(storage.records.get(LAYOUT_KEY)).toEqual(layout());
+    expect(saves()).toEqual([{ boardUuid: WALL, brightness: 128 }]);
+    await expect(loadSprayWallTnutLayout(WALL, { forEditing: true })).resolves.toEqual(layout());
+    await settle();
+  });
+
   it('uploads a local setup when the wall has no row and this viewer owns it', async () => {
     storage.records.set(SETTINGS_KEY, local);
     storage.records.set(LAYOUT_KEY, layout());
@@ -338,7 +464,7 @@ describe('one-time adoption of a phone-only setup', () => {
       enabled: true,
       brightness: 64,
       autoOffMinutes: 0,
-      layout: uploaded(layout()),
+      layout: layout(),
     });
     expect(storage.records.has(UNSENT_SETTINGS)).toBe(false);
     expect(storage.records.has(UNSENT_LAYOUT)).toBe(false);
@@ -368,14 +494,17 @@ describe('one-time adoption of a phone-only setup', () => {
       .mockResolvedValueOnce({ saveSprayWallLedSetup: { boardUuid: WALL, updatedAt: 'now' } });
     await prepareSprayWallLedRead(WALL, 'settings');
     await settle();
-    expect(saves()[0]).toMatchObject({ controllerUrl: '', layout: uploaded(layout()) });
+    expect(saves()[0]).toMatchObject({ controllerUrl: '', layout: layout() });
   });
 });
 
 describe('saving', () => {
   async function saveLocally(field: 'settings' | 'layout', value: unknown) {
     await markSprayWallLedSaveStarted(WALL, field, async () => {
-      storage.records.set(field === 'settings' ? SETTINGS_KEY : LAYOUT_KEY, value);
+      storage.records.set(
+        field === 'settings' ? SETTINGS_KEY : LAYOUT_KEY,
+        field === 'layout' ? uploaded(value as TnutLayout) : value,
+      );
     });
     queueSprayWallLedUpload(WALL, field);
   }
@@ -400,7 +529,7 @@ describe('saving', () => {
     settingsWrite.resolve();
     await saving;
     await settle();
-    expect(storage.records.get(LAYOUT_KEY)).toEqual(layout('new-local'));
+    expect(storage.records.get(LAYOUT_KEY)).toMatchObject(layout('new-local'));
     expect(storage.records.get(UNSENT_LAYOUT)).toBe(true);
   });
 
@@ -430,7 +559,7 @@ describe('saving', () => {
     );
     await prepareSprayWallLedRead(WALL, 'layout');
     await settle();
-    expect(storage.records.get(LAYOUT_KEY)).toEqual(layout('newest'));
+    expect(storage.records.get(LAYOUT_KEY)).toMatchObject(layout('newest'));
     expect(storage.records.get(UNSENT_LAYOUT)).toBe(true);
   });
 
@@ -501,6 +630,42 @@ describe('saving', () => {
     expect(saves()[1].layout).toHaveProperty('ledGroups', []);
   });
 
+  it('sends the stripe capability for both a complete stripe setup and an explicit switch away', async () => {
+    backend.request.mockResolvedValue({ saveSprayWallLedSetup: { boardUuid: WALL, updatedAt: 'now' } });
+    const stripes = createLedStripes(layout(), 'vertical', 3);
+    if (stripes === 'capacity') throw new Error('Unexpected fixture capacity');
+    await saveLocally('layout', stripes);
+    await settle();
+    expect(saves()[0].layout).toHaveProperty('ledStripes', stripes.ledStripes);
+    await saveLocally('layout', layout());
+    await settle();
+    expect(saves()[1].layout).toHaveProperty('ledStripes', null);
+  });
+
+  it('sends persistent T-nut roles and upper hold links, and explicitly clears them', async () => {
+    backend.request.mockResolvedValue({ saveSprayWallLedSetup: { boardUuid: WALL, updatedAt: 'now' } });
+    const assigned: TnutLayout = {
+      ...layout(),
+      ledPositions: [{ id: 'manual-0', x: 0.5, y: 0.6 }],
+      tnutLeds: [{ hole: { x: 0.5, y: 0.5 }, ledIds: ['manual-0'], aboveLedIds: [] }],
+      holdAboveLeds: [{ holdId: 11, ledIds: ['manual-0'] }],
+    };
+    await saveLocally('layout', assigned);
+    await settle();
+    expect(saves()[0].layout).toMatchObject({
+      tnutLeds: assigned.tnutLeds,
+      holdAboveLeds: assigned.holdAboveLeds,
+    });
+    await saveLocally('layout', { ...assigned, tnutLeds: [], holdAboveLeds: [] });
+    await settle();
+    expect(saves()[1].layout).toHaveProperty('tnutLeds', []);
+    expect(saves()[1].layout).toHaveProperty('holdAboveLeds', []);
+    await saveLocally('layout', layout());
+    await settle();
+    expect(saves()[2].layout).toHaveProperty('tnutLeds', []);
+    expect(saves()[2].layout).toHaveProperty('holdAboveLeds', []);
+  });
+
   it('coalesces step saves: one upload in flight, then only the newest', async () => {
     const firstUpload = deferred<unknown>();
     backend.request
@@ -558,9 +723,9 @@ describe('saving', () => {
     await prepareSprayWallLedRead(WALL, 'layout');
     await settle();
 
-    expect(storage.records.get(LAYOUT_KEY)).toEqual(layout('mine'));
+    expect(storage.records.get(LAYOUT_KEY)).toMatchObject(layout('mine'));
     expect(saves()).toHaveLength(2);
-    expect(saves()[1].layout).toEqual(uploaded(layout('mine')));
+    expect(saves()[1].layout).toEqual(layout('mine'));
     expect(storage.records.has(UNSENT_LAYOUT)).toBe(false);
     expect(uploadOutcomes).toEqual(['failed', 'uploaded']);
   });
@@ -575,6 +740,202 @@ describe('saving', () => {
     await settle();
     expect(storage.records.has(UNSENT_SETTINGS)).toBe(false);
     expect(uploadOutcomes).toEqual(['failed']);
+  });
+});
+
+describe('replaying layouts saved before modern LED assignments', () => {
+  const stripeRefusal = {
+    response: { errors: [{ extensions: { code: 'SPRAY_WALL_LED_STRIPE_UPGRADE_REQUIRED' } }] },
+  };
+
+  function stripes() {
+    const configured = createLedStripes(layout(), 'vertical', 3);
+    if (configured === 'capacity') throw new Error('Unexpected fixture capacity');
+    return configured;
+  }
+
+  function queueLegacyLayout() {
+    storage.records.set(LAYOUT_KEY, layout());
+    storage.records.set(UNSENT_LAYOUT, true);
+    storage.records.set(SETTINGS_KEY, { ...local, brightness: 128, autoOffMinutes: 60 });
+    storage.records.set(UNSENT_BRIGHTNESS, true);
+    storage.records.set(UNSENT_AUTO_OFF, true);
+  }
+
+  it.each([null, []])(
+    'retains an older writer’s explicit pair marker %j across retry and restart',
+    async (ledGroups) => {
+      const legacy = { ...layout(), ledGroups };
+      storage.records.set(LAYOUT_KEY, legacy);
+      storage.records.set(UNSENT_LAYOUT, true);
+      backend.request.mockImplementation(async (document: unknown) => {
+        if (String(document).includes('mutation')) throw new Error('offline');
+        return answering(true, rowFor({ layout: legacy }));
+      });
+      queueSprayWallLedUpload(WALL, 'layout');
+      await settle();
+      resetSprayWallLedSyncForTests();
+      await prepareSprayWallLedRead(WALL, 'layout');
+      await settle();
+      expect(saves().map((input) => input.layout)).toEqual([legacy, legacy]);
+      expect(storage.records.get(LAYOUT_KEY)).toHaveProperty('_legacyLedCapabilities', ['ledGroups']);
+    },
+  );
+
+  it('replaces a legacy dirty layout with server strips after restart and sends only pending lighting settings', async () => {
+    queueLegacyLayout();
+    resetSprayWallLedSyncForTests();
+    const configured = stripes();
+    backend.request.mockImplementation(async (document: unknown) =>
+      String(document).includes('mutation')
+        ? { saveSprayWallLedSetup: rowFor() }
+        : answering(true, rowFor({ layout: configured })),
+    );
+    await prepareSprayWallLedRead(WALL, 'layout');
+    await settle();
+    expect(storage.records.get(LAYOUT_KEY)).toEqual(readTnutLayout(configured));
+    expect(storage.records.has(UNSENT_LAYOUT)).toBe(false);
+    expect(saves()).toEqual([{ boardUuid: WALL, brightness: 128, autoOffMinutes: 60 }]);
+    expect(storage.records.has(UNSENT_BRIGHTNESS)).toBe(false);
+    expect(storage.records.has(UNSENT_AUTO_OFF)).toBe(false);
+  });
+
+  it.each([true, false])(
+    'requires authority before opening a legacy dirty editor when offline is %s',
+    async (offline) => {
+      queueLegacyLayout();
+      connectivity.effectiveOffline = offline;
+      backend.request.mockRejectedValue(new Error('offline'));
+      await expect(loadSprayWallTnutLayout(WALL, { forEditing: true })).rejects.toThrow('before editing');
+      expect(storage.records.get(LAYOUT_KEY)).not.toHaveProperty('ledStripes');
+      expect(storage.records.get(UNSENT_LAYOUT)).toBe(true);
+      if (offline) expect(backend.request).not.toHaveBeenCalled();
+      await settle();
+    },
+  );
+
+  it('fails closed when an offline legacy editor cannot read its unsent flag', async () => {
+    queueLegacyLayout();
+    connectivity.effectiveOffline = true;
+    storage.beforeRead.mockImplementation(async (key) => {
+      if (key === UNSENT_LAYOUT) throw new SyntaxError('Corrupt dirty flag');
+    });
+    await expect(loadSprayWallTnutLayout(WALL, { forEditing: true })).rejects.toThrow('Corrupt dirty flag');
+    expect(storage.beforeRead).toHaveBeenCalledWith(UNSENT_LAYOUT, { strictParsing: true });
+    expect(storage.records.get(LAYOUT_KEY)).toEqual(layout());
+    expect(storage.writes).toEqual([]);
+  });
+
+  it('preserves server-only assignments locally without promoting their upload capabilities across restart', async () => {
+    const legacy = {
+      ...layout(),
+      ledPlacement: 'sides' as const,
+      ledPositions: [
+        { id: 'a', x: 0.49, y: 0.5 },
+        { id: 'b', x: 0.51, y: 0.5 },
+      ],
+    };
+    const modern = {
+      ...legacy,
+      ledGroups: [['a', 'b']],
+      tnutLeds: [{ hole: legacy.holes[0], ledIds: ['a'], aboveLedIds: [] }],
+      holdAboveLeds: [{ holdId: 11, ledIds: ['b'] }],
+    };
+    storage.records.set(LAYOUT_KEY, legacy);
+    storage.records.set(UNSENT_LAYOUT, true);
+    backend.request.mockImplementation(async (document: unknown) => {
+      if (String(document).includes('mutation')) throw new Error('offline');
+      return answering(true, rowFor({ layout: modern }));
+    });
+    await expect(loadSprayWallTnutLayout(WALL, { forEditing: true })).resolves.toMatchObject(modern);
+    await settle();
+    expect(storage.records.get(LAYOUT_KEY)).toHaveProperty('_legacyLedCapabilities', []);
+    expect(saves()[0].layout).toEqual(legacy);
+    resetSprayWallLedSyncForTests();
+    connectivity.effectiveOffline = true;
+    await expect(loadSprayWallTnutLayout(WALL, { forEditing: true })).rejects.toThrow('before editing');
+    connectivity.effectiveOffline = false;
+    await prepareSprayWallLedRead(WALL, 'layout');
+    await settle();
+    expect(saves()[1].layout).toEqual(legacy);
+    expect(storage.records.get(LAYOUT_KEY)).toMatchObject(modern);
+    expect(saves()[1].layout).not.toHaveProperty('_legacyLedCapabilities');
+  });
+
+  it('refreshes an explicitly refused legacy layout and retries every independent dirty field', async () => {
+    queueLegacyLayout();
+    storage.records.set(UNSENT_SETTINGS, true);
+    const answer = deferred<unknown>();
+    backend.request
+      .mockRejectedValueOnce(stripeRefusal)
+      .mockReturnValueOnce(answer.promise)
+      .mockResolvedValue({ saveSprayWallLedSetup: rowFor() });
+    queueSprayWallLedUpload(WALL, ['layout', 'settings', 'brightness', 'autoOff']);
+    await settle();
+    expect(storage.records.get(UNSENT_LAYOUT)).toBe(true);
+    expect(storage.records.get(UNSENT_BRIGHTNESS)).toBe(true);
+    const configured = stripes();
+    answer.resolve(answering(true, rowFor({ layout: configured })));
+    await settle();
+    expect(storage.records.get(LAYOUT_KEY)).toEqual(readTnutLayout(configured));
+    expect(saves()).toHaveLength(2);
+    expect(saves()[0].layout).not.toHaveProperty('ledStripes');
+    expect(saves()[1]).toEqual({
+      boardUuid: WALL,
+      controllerType: 'wled',
+      controllerUrl: 'http://wled.local',
+      enabled: true,
+      brightness: 128,
+      autoOffMinutes: 60,
+    });
+    for (const key of [UNSENT_LAYOUT, UNSENT_SETTINGS, UNSENT_BRIGHTNESS, UNSENT_AUTO_OFF]) {
+      expect(storage.records.has(key)).toBe(false);
+    }
+  });
+
+  it('keeps a refused layout fenced after a failed refresh and restart while lighting settings still upload', async () => {
+    queueLegacyLayout();
+    backend.request.mockImplementation(async (document: unknown, variables: { input?: Record<string, unknown> }) => {
+      if (!String(document).includes('mutation')) throw new Error('offline');
+      if (variables.input?.layout) throw stripeRefusal;
+      return { saveSprayWallLedSetup: rowFor() };
+    });
+    queueSprayWallLedUpload(WALL, ['layout', 'brightness', 'autoOff']);
+    await settle();
+    expect(saves()).toHaveLength(2);
+    expect(saves()[1]).toEqual({ boardUuid: WALL, brightness: 128, autoOffMinutes: 60 });
+    expect(storage.records.get(UNSENT_LAYOUT)).toBe(true);
+    expect(storage.records.has(UNSENT_BRIGHTNESS)).toBe(false);
+    expect(uploadOutcomes).not.toContain('uploaded');
+    resetSprayWallLedSyncForTests();
+    connectivity.effectiveOffline = true;
+    await expect(loadSprayWallTnutLayout(WALL, { forEditing: true })).rejects.toThrow('before editing');
+  });
+
+  it('keeps a newer authored layout and its dirty mark when a legacy upload is refused', async () => {
+    queueLegacyLayout();
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    let uploadCount = 0;
+    backend.request.mockImplementation((document: unknown) => {
+      if (!String(document).includes('mutation'))
+        return Promise.resolve(answering(true, rowFor({ layout: stripes() })));
+      uploadCount += 1;
+      return uploadCount === 1 ? first.promise : second.promise;
+    });
+    queueSprayWallLedUpload(WALL, ['layout', 'brightness']);
+    await settle();
+    const latest = layout('new-authored-photo');
+    await saveSprayWallTnutLayout(WALL, latest);
+    first.reject(stripeRefusal);
+    await settle();
+    expect(storage.records.get(LAYOUT_KEY)).toEqual(uploaded(latest));
+    expect(storage.records.get(UNSENT_LAYOUT)).toBe(true);
+    expect(saves()).toHaveLength(2);
+    expect(saves()[1]).toMatchObject({ layout: uploaded(latest), brightness: 128 });
+    second.resolve({ saveSprayWallLedSetup: rowFor() });
+    await settle();
+    expect(storage.records.has(UNSENT_LAYOUT)).toBe(false);
   });
 });
 

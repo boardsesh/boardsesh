@@ -666,6 +666,14 @@ export function fetchSprayWallUuid(queryClient: QueryClient, layoutId: number): 
     .then((response) => response.sprayWallByLayout?.uuid ?? null);
 }
 
+/** A fresh authority read without joining or cancelling another surface's cached request. */
+export async function requestSprayWallRenderData(wallUuid: string): Promise<SprayWallRenderData | null> {
+  const response = await getHttpClient().request<SprayWallRenderDataResponse>(GET_SPRAY_WALL_RENDER_DATA, {
+    uuid: wallUuid,
+  });
+  return response.sprayWallRenderData ?? null;
+}
+
 /** The render payload for a wall uuid, through the same shared cache. */
 export function fetchSprayWallRenderData(
   queryClient: QueryClient,
@@ -680,8 +688,7 @@ export function fetchSprayWallRenderData(
   return queryClient
     .fetchQuery({
       queryKey: sprayWallPublishedRenderDataQueryKey(wallUuid, viewerGeneration),
-      queryFn: () =>
-        getHttpClient().request<SprayWallRenderDataResponse>(GET_SPRAY_WALL_RENDER_DATA, { uuid: wallUuid }),
+      queryFn: async () => ({ sprayWallRenderData: await requestSprayWallRenderData(wallUuid) }),
       staleTime: RENDER_DATA_STALE_TIME_MS,
     })
     .then((response) => response.sprayWallRenderData ?? null);

@@ -7,6 +7,7 @@ export type SprayPhotoSession = {
   fullScreenRail?: ReactNode;
   overlayTools?: ReactNode;
   accessoryTools?: ReactNode;
+  fullScreenDialog?: ReactNode;
 };
 const entries = new Map<string, { snapshot: SprayPhotoSession; onClose: () => void }>();
 const listeners = new Set<() => void>();

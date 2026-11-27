@@ -19,6 +19,7 @@ export function SprayPhotoStage({
   fullScreenRail,
   overlayTools,
   accessoryTools,
+  fullScreenDialog,
   canvas,
 }: {
   width: number;
@@ -26,6 +27,7 @@ export function SprayPhotoStage({
   fullScreenRail?: ReactNode;
   overlayTools?: ReactNode;
   accessoryTools?: ReactNode;
+  fullScreenDialog?: ReactNode;
   canvas: Omit<SprayPhotoCanvasProps, 'maxWidth' | 'maxHeight'>;
 }) {
   const router = useRouter(),
@@ -48,8 +50,9 @@ export function SprayPhotoStage({
         fullScreenRail,
         overlayTools,
         accessoryTools,
+        fullScreenDialog,
       });
-  }, [viewerId, canvas, tools, fullScreenRail, overlayTools, accessoryTools, photoKey]);
+  }, [viewerId, canvas, tools, fullScreenRail, overlayTools, accessoryTools, fullScreenDialog, photoKey]);
   useEffect(
     () => () => {
       if (session.current) closeSprayPhotoSession(session.current);
@@ -71,7 +74,15 @@ export function SprayPhotoStage({
           onPress={() => {
             if (!viewerId || session.current) return;
             const photoSessionId = createSprayPhotoSession(
-              { viewerId, canvas, tools, fullScreenRail, overlayTools, accessoryTools },
+              {
+                viewerId,
+                canvas,
+                tools,
+                fullScreenRail,
+                overlayTools,
+                accessoryTools,
+                fullScreenDialog,
+              },
               () => {
                 session.current = null;
               },

@@ -16,6 +16,7 @@ import {
   type TnutWiring,
 } from '../led-layout';
 import { DEFAULT_TNUT_CORNERS, generateTnutGrid, readTnutLayout, type TnutLayout } from '../tnut-layout';
+import { ledPairs } from '../led-pairs';
 
 const leds: LedPosition[] = [
   { id: 'a', x: 0.2, y: 0.2 },
@@ -75,7 +76,7 @@ describe('unused LEDs before the cable start', () => {
   });
 });
 
-describe('drawing extends only the current cable tail', () => {
+describe('drawing extends a cable output', () => {
   it('starts once and appends only new LEDs regardless of the stroke starting point', () => {
     const started = extendWiring(empty, ['a', 'b', 'a']);
     expect(started.paths).toEqual([['a', 'b']]);
@@ -102,6 +103,75 @@ describe('drawing extends only the current cable tail', () => {
     expect(extended.initialSkip).toBe(2);
     expect(assignLedIndices(extended).map(({ index }) => index)).toEqual([2, 6, 7, 8]);
     expect(readTnutWiring(extended, leds)).toEqual(extended);
+  });
+
+  it('continues from an intermediate output without moving or joining the later section', () => {
+    const wiring: TnutWiring = {
+      ...empty,
+      paths: [
+        ['a', 'b'],
+        ['c', 'd'],
+      ],
+      initialSkip: 2,
+      skips: [
+        { from: 'a', to: 'b', count: 3 },
+        { from: 'c', to: 'd', count: 1 },
+      ],
+    };
+    const extended = extendWiring(wiring, ['a', 'e', 'd', 'f', 'e'], 'b');
+    expect(extended.paths).toEqual([
+      ['a', 'b', 'e', 'f'],
+      ['c', 'd'],
+    ]);
+    expect(extended.paths[1]).toBe(wiring.paths[1]);
+    expect(extended.initialSkip).toBe(2);
+    expect(extended.skips).toBe(wiring.skips);
+    expect(assignLedIndices(extended)).toEqual([
+      { id: 'a', index: 2 },
+      { id: 'b', index: 6 },
+      { id: 'e', index: 7 },
+      { id: 'f', index: 8 },
+      { id: 'c', index: 9 },
+      { id: 'd', index: 11 },
+    ]);
+    expect(wiring.paths).toEqual([
+      ['a', 'b'],
+      ['c', 'd'],
+    ]);
+    expect(extendWiring(extended, ['g'], 'f').paths).toEqual([
+      ['a', 'b', 'e', 'f', 'g'],
+      ['c', 'd'],
+    ]);
+  });
+
+  it('continues from the full cable end explicitly, while rejecting stale ends and interiors', () => {
+    const wiring = {
+      ...empty,
+      paths: [
+        ['a', 'b'],
+        ['c', 'd'],
+      ],
+    };
+    expect(extendWiring(wiring, ['e'], 'd').paths).toEqual([
+      ['a', 'b'],
+      ['c', 'd', 'e'],
+    ]);
+    expect(extendWiring(wiring, ['e'], 'a')).toBe(wiring);
+    expect(extendWiring(wiring, ['e'], 'c')).toBe(wiring);
+    expect(extendWiring(wiring, ['e'], 'removed')).toBe(wiring);
+    expect(extendWiring(wiring, ['e'], '')).toBe(wiring);
+    expect(extendWiring(empty, ['e'], 'removed')).toBe(empty);
+  });
+
+  it('keeps the global size bound when extending an earlier section', () => {
+    const ids = Array.from({ length: MAX_LED_POSITIONS }, (_, index) => `led-${index}`);
+    const wiring = { ...empty, paths: [ids.slice(0, 2), ids.slice(2)] };
+    expect(extendWiring(wiring, ['extra'], ids[1])).toBe(wiring);
+    const room = { ...wiring, paths: [ids.slice(0, 2), ids.slice(2, -1)] };
+    expect(extendWiring(room, ['', 'extra', 'extra', 'overflow'], ids[1]).paths).toEqual([
+      [ids[0], ids[1], 'extra'],
+      ids.slice(2, -1),
+    ]);
   });
 
   it('batches a long repeated trace up to the supported LED limit', () => {
@@ -152,6 +222,16 @@ describe('side pairs on a vertical cable', () => {
     const grid = { pattern: 'grid' as const, rows: 2, columns, corners, firstRowOffset: false };
     return { ...layout, ...grid, ledPlacement: 'sides', holes: generateTnutGrid(grid) };
   };
+
+  it('visits each supplied pair together when generating a new vertical run', () => {
+    const configured = sideLayout(3);
+    const points = generateLedPositions(configured);
+    const pairs = ledPairs({ ...configured, ledPositions: points });
+    const [path] = createWiring(points, 'vertical', 'tl', configured, pairs).paths;
+    const holeFor = new Map(points.map(({ id }, position) => [id, Math.floor(position / 2)]));
+    expect(new Set(path).size).toBe(12);
+    expect(path.map((id) => holeFor.get(id))).toEqual([0, 0, 3, 3, 4, 4, 1, 1, 2, 2, 5, 5]);
+  });
 
   it('runs up one side of every column and down the other on a 2x3 grid', () => {
     const configured = sideLayout(3);

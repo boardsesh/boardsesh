@@ -39,6 +39,7 @@ vi.mock('@boardsesh/led-controller', async (original) => ({
 }));
 
 import { useSprayLedPreview } from '../use-spray-led-preview';
+import { LedControllerError } from '@boardsesh/led-controller';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -64,6 +65,68 @@ afterEach(() => {
 });
 
 describe('spray LED preview lifecycle', () => {
+  it('acknowledges every consecutive index of an indivisible strip together', async () => {
+    const { result } = renderHook(() => useSprayLedPreview('wall'));
+    await act(async () => expect(await result.current.showUnit(4, 5)).toBe('unit'));
+    expect(mocks.show).toHaveBeenCalledExactlyOnceWith([4, 5, 6, 7, 8]);
+    expect(result.current.state).toBe('lit');
+  });
+
+  it('restores the starting LED without confirming a partial strip after an index-range failure', async () => {
+    mocks.show.mockRejectedValueOnce(new LedControllerError('invalid-indices'));
+    const { result } = renderHook(() => useSprayLedPreview('wall'));
+    await act(async () => expect(await result.current.showUnit(4, 5)).toBe('single'));
+    expect(mocks.show.mock.calls).toEqual([[[4, 5, 6, 7, 8]], [[4]]]);
+  });
+
+  it.each([0, -1, 1.5, 6001, Infinity])('never allocates or sends an invalid unit size %s', async (count) => {
+    const { result } = renderHook(() => useSprayLedPreview('wall'));
+    await act(async () => expect(await result.current.showUnit(4, count)).toBe('unavailable'));
+    expect(mocks.show).not.toHaveBeenCalled();
+  });
+
+  it('acknowledges consecutive physical indices together for a paired assignment', async () => {
+    const { result } = renderHook(() => useSprayLedPreview('wall'));
+    await act(async () => expect(await result.current.showPair(4)).toBe('pair'));
+    expect(mocks.show).toHaveBeenCalledExactlyOnceWith([4, 5]);
+    expect(result.current.state).toBe('lit');
+  });
+
+  it('restores the current single LED when a pair exceeds the strip', async () => {
+    mocks.show.mockRejectedValueOnce(new LedControllerError('invalid-indices'));
+    const { result } = renderHook(() => useSprayLedPreview('wall'));
+    await act(async () => expect(await result.current.showPair(4)).toBe('single'));
+    expect(mocks.show.mock.calls).toEqual([[[4, 5]], [[4]]]);
+    expect(result.current.state).toBe('lit');
+  });
+
+  it('rejects a late pair acknowledgement after a background transition', async () => {
+    let acknowledge!: (completed: boolean) => void;
+    mocks.show.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useSprayLedPreview('wall'));
+    let pending!: Promise<string>;
+    act(() => {
+      pending = result.current.showPair(4);
+    });
+    await act(async () => mocks.background?.('background'));
+    await act(async () => acknowledge(true));
+    expect(await pending).toBe('unavailable');
+    expect(result.current.state).toBe('idle');
+  });
+
+  it('does not restore a failed pair after another preview owns the wall', async () => {
+    mocks.isOwner.mockReturnValue(false);
+    mocks.show.mockRejectedValueOnce(new LedControllerError('invalid-indices'));
+    const { result } = renderHook(() => useSprayLedPreview('wall'));
+    await act(async () => expect(await result.current.showPair(4)).toBe('unavailable'));
+    expect(mocks.show).toHaveBeenCalledTimes(1);
+  });
+
   it('never attaches old settings when credentials change during driver loading', async () => {
     let finishLoading!: (driver: object) => void;
     mocks.loadDriver.mockReturnValueOnce(
@@ -116,6 +179,36 @@ describe('spray LED preview lifecycle', () => {
     await act(async () => rerender());
     expect(mocks.setLighting).toHaveBeenLastCalledWith({ brightness: 200, autoOffMinutes: 30 });
     expect(mocks.lightAll).toHaveBeenCalledTimes(2);
+    expect(mocks.close).not.toHaveBeenCalled();
+  });
+
+  it.each([{ brightness: 200 }, { autoOffMinutes: 30 }])(
+    'keeps the wired photo selection when lighting options change to %o',
+    async (changedLighting) => {
+      mocks.settings = { ...mocks.settings, brightness: 64, autoOffMinutes: 0 } as typeof mocks.settings;
+      const { result, rerender } = renderHook(() => useSprayLedPreview('wall'));
+      const wiredIndices = [2, 5];
+      await act(() => result.current.lightAll(wiredIndices));
+      wiredIndices.push(9);
+      mocks.settings = { ...mocks.settings, ...changedLighting } as typeof mocks.settings;
+      await act(async () => rerender());
+      expect(mocks.show.mock.calls).toEqual([[[2, 5]], [[2, 5]]]);
+      expect(mocks.lightAll).not.toHaveBeenCalled();
+      expect(mocks.create).toHaveBeenCalledTimes(1);
+      expect(mocks.close).not.toHaveBeenCalled();
+      expect(result.current.allLit).toBe(true);
+    },
+  );
+
+  it('does not reclaim another preview when a previously lit test changes brightness', async () => {
+    mocks.settings = { ...mocks.settings, brightness: 64, autoOffMinutes: 0 } as typeof mocks.settings;
+    const { result, rerender } = renderHook(() => useSprayLedPreview('wall'));
+    await act(() => result.current.lightAll([2, 5]));
+    mocks.isOwner.mockReturnValue(false);
+    mocks.settings = { ...mocks.settings, brightness: 200 } as typeof mocks.settings;
+    await act(async () => rerender());
+    expect(mocks.show).toHaveBeenCalledExactlyOnceWith([2, 5]);
+    expect(mocks.lightAll).not.toHaveBeenCalled();
     expect(mocks.close).not.toHaveBeenCalled();
   });
 
@@ -172,11 +265,34 @@ describe('spray LED preview lifecycle', () => {
     expect(result.current.allLit).toBe(false);
     await act(() => result.current.lightAll());
     expect(result.current.allLit).toBe(true);
+    expect(mocks.lightAll).toHaveBeenCalledTimes(1);
     await act(() => result.current.stop());
     expect(result.current.allLit).toBe(false);
     await act(() => result.current.lightAll());
     await act(() => result.current.show([1]));
     expect(result.current.allLit).toBe(false);
+  });
+
+  it('uses individual indices for a batch and ignores a cancelled batch acknowledgement', async () => {
+    const { result } = renderHook(() => useSprayLedPreview('wall'));
+    await act(() => result.current.lightAll([2, 5]));
+    expect(result.current.allLit).toBe(true);
+    expect(mocks.show).toHaveBeenCalledExactlyOnceWith([2, 5]);
+    expect(mocks.lightAll).not.toHaveBeenCalled();
+
+    let acknowledge!: (completed: boolean) => void;
+    mocks.show.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        acknowledge = resolve;
+      }),
+    );
+    act(() => {
+      void result.current.lightAll([2, 5]);
+    });
+    await act(() => result.current.stop());
+    await act(async () => acknowledge(true));
+    expect(result.current.allLit).toBe(false);
+    expect(result.current.state).toBe('idle');
   });
 
   it('stop cancels the chase without advancing another LED', async () => {

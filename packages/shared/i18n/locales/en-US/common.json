@@ -953,6 +953,7 @@
     "turnOffAll": "Turn off all lights",
     "lightAdjacentHolds": "Light the hold above",
     "lightAdjacentHoldsHelp": "Adds a dimmer LED above each lit start and hand hold. Needs a MoonBoard controller with the additional-LED feature.",
+    "spraywallLightAdjacentHoldsHelp": "Lights the assigned LEDs above each lit hold in white at 25% brightness.",
     "disconnect": "Disconnect board"
   },
   "bluetooth": {

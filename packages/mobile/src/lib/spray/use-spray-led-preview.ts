@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
+import { MAX_LED_POSITIONS } from '@boardsesh/spray-wall-geometry';
 import {
   createLedPreviewSession,
   getLedControllerDriver,
@@ -37,9 +38,10 @@ export function useSprayLedPreviewForSettings(
   const [state, setState] = useState<SprayLedPreviewState>('idle');
   const [error, setError] = useState<LedControllerErrorCode | null>(null);
   const [available, setAvailable] = useState(false);
-  // What the wall shows, so the screen can draw it: every LED after Light all,
-  // or the one LED the row-by-row test has reached.
+  // What the wall shows: all LEDs requested for a full test, or the current LED in a row test.
   const [allLit, setAllLit] = useState(false);
+  const allLitNow = useRef(false);
+  const allLitIndices = useRef<readonly number[] | undefined>(undefined);
   const [chaseIndex, setChaseIndex] = useState<number | null>(null);
 
   // A committed Wi-Fi control must already target its current preview session.
@@ -48,6 +50,8 @@ export function useSprayLedPreviewForSettings(
     setError(null);
     setAvailable(false);
     setAllLit(false);
+    allLitNow.current = false;
+    allLitIndices.current = undefined;
     setChaseIndex(null);
     if (!enabled || !url) return;
     const credentialGeneration = getCredentialGeneration();
@@ -65,6 +69,7 @@ export function useSprayLedPreviewForSettings(
         if (next === 'active') return;
         const generation = ++current.generation;
         setAllLit(false);
+        allLitNow.current = false;
         setChaseIndex(null);
         if (controllerType === 'wled-ble') {
           setState('idle');
@@ -131,14 +136,14 @@ export function useSprayLedPreviewForSettings(
       setError(null);
       setState(nextState);
       setAllLit(false);
+      allLitNow.current = false;
       setChaseIndex(null);
       try {
         const completed = await operation(current, generation);
-        if (current.active && current.generation === generation) {
-          setState(completed ? finishedState : 'idle');
-          // A finished or interrupted row test no longer lights one LED.
-          setChaseIndex(null);
-        }
+        if (!current.active || current.generation !== generation) return false;
+        setState(completed ? finishedState : 'idle');
+        // A finished or interrupted row test no longer lights one LED.
+        setChaseIndex(null);
         return completed;
       } catch (failure) {
         if (current.active && current.generation === generation) {
@@ -156,28 +161,74 @@ export function useSprayLedPreviewForSettings(
       run('sending', (current) => current.session.show(indices), indices.length ? 'lit' : 'idle'),
     [run],
   );
-  const lightAll = useCallback(
-    () =>
-      run(
+  /** Validate a complete strip before committing any of its physical indices. */
+  const showUnit = useCallback(
+    async (firstIndex: number, count: number): Promise<'unit' | 'single' | 'unavailable'> => {
+      if (
+        !Number.isSafeInteger(firstIndex) ||
+        firstIndex < 0 ||
+        !Number.isInteger(count) ||
+        count < 1 ||
+        count > MAX_LED_POSITIONS
+      )
+        return 'unavailable';
+      let restoredSingle = false;
+      const completed = await run(
         'sending',
         async (current, generation) => {
-          const completed = await current.session.lightAll();
-          if (completed && current.active && current.generation === generation) setAllLit(true);
+          try {
+            return await current.session.show(Array.from({ length: count }, (_, offset) => firstIndex + offset));
+          } catch (failure) {
+            if (!(failure instanceof LedControllerError) || failure.code !== 'invalid-indices') throw failure;
+            if (!current.active || current.generation !== generation || !current.session.isOwner()) return false;
+            restoredSingle = await current.session.show([firstIndex]);
+            return restoredSingle;
+          }
+        },
+        'lit',
+      );
+      return !completed ? 'unavailable' : restoredSingle ? 'single' : 'unit';
+    },
+    [run],
+  );
+  /** Preserve the existing pair API while sharing atomic index validation. */
+  const showPair = useCallback(
+    async (firstIndex: number): Promise<'pair' | 'single' | 'unavailable'> => {
+      const result = await showUnit(firstIndex, 2);
+      return result === 'unit' ? 'pair' : result;
+    },
+    [showUnit],
+  );
+  /** Without indices, test the entire controller strip. The editor supplies its wired photo LEDs. */
+  const lightAll = useCallback(
+    (indices?: readonly number[]) => {
+      if (indices?.length === 0) return Promise.resolve(false);
+      const requestedIndices = indices === undefined ? undefined : [...indices];
+      return run(
+        'sending',
+        async (current, generation) => {
+          const completed = await (requestedIndices
+            ? current.session.show(requestedIndices)
+            : current.session.lightAll());
+          if (completed && current.active && current.generation === generation) {
+            allLitIndices.current = requestedIndices;
+            allLitNow.current = true;
+            setAllLit(true);
+          }
           return completed;
         },
         'lit',
-      ),
+      );
+    },
     [run],
   );
   // A new brightness or auto-off goes to the open session; a wall lit with Light all
   // shows it straight away, anything else from its next lighting.
-  const allLitNow = useRef(false);
-  allLitNow.current = allLit;
   useEffect(() => {
     const current = runtime.current;
     if (!current?.active) return;
     current.session.setLighting({ brightness, autoOffMinutes });
-    if (allLitNow.current) void lightAll();
+    if (allLitNow.current && current.session.isOwner()) void lightAll(allLitIndices.current);
   }, [brightness, autoOffMinutes, lightAll]);
   const clear = useCallback(() => run('stopping', (current) => current.session.clear(), 'idle'), [run]);
   const stop = useCallback(() => run('stopping', (current) => current.session.stop(), 'idle'), [run]);
@@ -205,5 +256,5 @@ export function useSprayLedPreviewForSettings(
     [run],
   );
 
-  return { available, state, error, allLit, chaseIndex, show, lightAll, clear, stop, chase };
+  return { available, state, error, allLit, chaseIndex, show, showPair, showUnit, lightAll, clear, stop, chase };
 }

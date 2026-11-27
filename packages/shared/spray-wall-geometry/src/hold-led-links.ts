@@ -1,5 +1,7 @@
 import type { LedPosition } from './led-layout';
 import type { TnutLayout } from './tnut-layout';
+import type { SprayLedLinkLayer } from './tnut-led-links';
+import { MAX_LED_POSITIONS } from './led-limits';
 
 /**
  * A hold whose LEDs the climber chose by hand. It replaces the automatic,
@@ -11,7 +13,7 @@ export type SprayHoldLedLink = { holdId: number; ledIds: string[] };
 /** A wall has at most 1500 holds (MAX_HOLDS_PER_WALL on the server). */
 export const MAX_HOLD_LED_LINKS = 1500;
 /** More LEDs than any one hold needs, yet bounded. */
-export const MAX_LEDS_PER_HOLD_LINK = 64;
+export const MAX_LEDS_PER_HOLD_LINK = MAX_LED_POSITIONS;
 
 const isRecord = (candidate: unknown): candidate is Record<string, unknown> =>
   typeof candidate === 'object' && candidate !== null && !Array.isArray(candidate);
@@ -42,13 +44,20 @@ export function readHoldLedLinks(candidate: unknown, ledPositions: readonly LedP
 }
 
 /** Link a hold to exactly these LEDs, replacing any automatic or earlier manual choice. */
-export function setHoldLedLink(layout: TnutLayout, holdId: number, ledIds: readonly string[]): TnutLayout {
+export function setHoldLedLink(
+  layout: TnutLayout,
+  holdId: number,
+  ledIds: readonly string[],
+  layer: SprayLedLinkLayer = 'primary',
+): TnutLayout {
   const unique = [...new Set(ledIds)].slice(0, MAX_LEDS_PER_HOLD_LINK);
-  const others = (layout.holdLeds ?? []).filter((link) => link.holdId !== holdId);
-  return { ...layout, holdLeds: [...others, { holdId, ledIds: unique }] };
+  const field = layer === 'above' ? 'holdAboveLeds' : 'holdLeds';
+  const others = (layout[field] ?? []).filter((link) => link.holdId !== holdId);
+  return { ...layout, [field]: [...others, { holdId, ledIds: unique }] };
 }
 
 /** Give a hold back to the automatic assignment. */
-export function clearHoldLedLink(layout: TnutLayout, holdId: number): TnutLayout {
-  return { ...layout, holdLeds: (layout.holdLeds ?? []).filter((link) => link.holdId !== holdId) };
+export function clearHoldLedLink(layout: TnutLayout, holdId: number, layer: SprayLedLinkLayer = 'primary'): TnutLayout {
+  const field = layer === 'above' ? 'holdAboveLeds' : 'holdLeds';
+  return { ...layout, [field]: (layout[field] ?? []).filter((link) => link.holdId !== holdId) };
 }

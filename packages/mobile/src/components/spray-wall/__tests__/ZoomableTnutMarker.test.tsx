@@ -2,7 +2,7 @@
 import { createElement, type ComponentProps, type ReactNode } from 'react';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Quad } from '@boardsesh/spray-wall-geometry';
+import { traceLedPath, type Quad } from '@boardsesh/spray-wall-geometry';
 import type { SprayLookPreviewSource } from '../../../lib/spray/spray-look-preview';
 
 type Event = {
@@ -69,6 +69,15 @@ vi.mock('react-native-reanimated', async () => {
         },
       });
       return state.current;
+    },
+    useDerivedValue: (compute: () => unknown) => {
+      const read = useRef(compute);
+      read.current = compute;
+      return useRef({
+        get value() {
+          return read.current();
+        },
+      }).current;
     },
     useAnimatedStyle: (compute: () => Record<string, unknown>) => {
       const entry = useRef<{ compute: () => Record<string, unknown> } | null>(null);
@@ -265,6 +274,31 @@ describe('SprayPhotoCanvas', () => {
     expect(onTap).toHaveBeenCalledExactlyOnceWith({ x: 0.4, y: 0.4 }, 600, 900);
   });
 
+  it('retains zoom and the centered photo point when the fitted canvas changes', () => {
+    const onTap = vi.fn();
+    const { rerender } = render(createElement(SprayPhotoCanvas, canvasProps({ mode: 'tap', onTap })));
+    pinchTo(2);
+    const pan = runtime.gestures[1];
+    fire(pan, 'onStart');
+    fire(pan, 'onUpdate', { translationX: 60, translationY: 90 });
+    fire(pan, 'onFinalize');
+    rerender(createElement(SprayPhotoCanvas, canvasProps({ mode: 'tap', onTap, maxWidth: 450, maxHeight: 300 })));
+    expect(runtime.styles.at(-1)?.compute()).toEqual({
+      transform: [{ translateX: 40 }, { translateY: 60 }, { scale: 2 }],
+    });
+    const tap = runtime.gestures.findLast((gesture) => gesture.kind === 'tap')!;
+    end(tap, { x: 100, y: 150 });
+    expect(onTap).toHaveBeenCalledExactlyOnceWith({ x: 0.4, y: 0.4 }, 400, 600);
+
+    rerender(createElement(SprayPhotoCanvas, canvasProps({ mode: 'tap', onTap })));
+    expect(runtime.styles.at(-1)?.compute()).toEqual({
+      transform: [{ translateX: 60 }, { translateY: 90 }, { scale: 2 }],
+    });
+    const portraitTap = runtime.gestures.findLast((gesture) => gesture.kind === 'tap')!;
+    end(portraitTap, { x: 150, y: 225 });
+    expect(onTap).toHaveBeenLastCalledWith({ x: 0.4, y: 0.4 }, 600, 900);
+  });
+
   it('pans with a two-finger drag that never spreads the fingers, and leaves the pan to a running pinch', () => {
     const onTap = vi.fn();
     render(createElement(SprayPhotoCanvas, canvasProps({ mode: 'tap', onTap })));
@@ -356,6 +390,34 @@ describe('SprayPhotoCanvas', () => {
     expect(lock).toHaveBeenLastCalledWith(false);
   });
 
+  it('keeps the selected output in a cable trace started near its marker while dragging away', () => {
+    const onTrace = vi.fn<NonNullable<SprayPhotoCanvasProps['onTrace']>>();
+    const onTraceProgress = vi.fn<NonNullable<SprayPhotoCanvasProps['onTraceProgress']>>();
+    const leds = [
+      { id: 'intermediate-output', x: 0.2, y: 0.4 },
+      { id: 'new-led', x: 0.8, y: 0.8 },
+    ];
+    render(createElement(SprayPhotoCanvas, canvasProps({ mode: 'draw', onTrace, onTraceProgress, dragPoints: leds })));
+    const draw = runtime.gestures.find((gesture) => gesture.options.enabled?.[0] === true)!;
+    // 18px from the output: inside the drag hit area (22px), outside the cable trace's (14px).
+    expect(fire(draw, 'onTouchesDown', { changedTouches: [{ x: 78, y: 180 }] }).fail).not.toHaveBeenCalled();
+    fire(draw, 'onStart', { x: 84, y: 186 });
+    const bridges = runtime.bridges;
+    fire(draw, 'onUpdate', { x: 150, y: 260 });
+    expect(runtime.bridges).toBe(bridges);
+    fire(draw, 'onUpdate', { x: 240, y: 360 });
+    expect(onTraceProgress).toHaveBeenCalledTimes(1);
+    const [preview, tolerance] = onTraceProgress.mock.calls[0];
+    expect(traceLedPath(leds, preview, tolerance)).toEqual(['intermediate-output', 'new-led']);
+    fire(draw, 'onUpdate', { x: 241, y: 360 });
+    expect(onTraceProgress).toHaveBeenCalledTimes(1);
+    end(draw, { x: 240, y: 360 });
+    expect(onTrace).toHaveBeenCalledTimes(1);
+    const [committed, hitTolerance] = onTrace.mock.calls[0];
+    expect(committed[0]).toEqual({ x: 0.2, y: 0.4 });
+    expect(traceLedPath(leds, committed, hitTolerance)).toEqual(['intermediate-output', 'new-led']);
+  });
+
   it('does not add a hole when a pinch finishes before the tap callback', () => {
     const onTap = vi.fn();
     render(createElement(SprayPhotoCanvas, canvasProps({ mode: 'tap', onTap })));
@@ -406,6 +468,17 @@ describe('SprayPhotoCanvas', () => {
     expect(onMove).toHaveBeenCalledExactlyOnceWith({ x: 0.4, y: 0.4 }, { x: 0.6, y: 0.6 }, 600, 900);
     fire(move, 'onFinalize');
     expect(runtime.shapes[0].compute().d).toBe('');
+  });
+
+  it('retains the actual touch origin for a move started near a marker', () => {
+    const onMove = vi.fn();
+    render(createElement(SprayPhotoCanvas, canvasProps({ mode: 'move', onMove, dragPoints: [{ x: 0.2, y: 0.4 }] })));
+    const move = runtime.gestures.find((gesture) => gesture.options.enabled?.[0] === true)!;
+    expect(fire(move, 'onTouchesDown', { changedTouches: [{ x: 78, y: 180 }] }).fail).not.toHaveBeenCalled();
+    fire(move, 'onStart', { x: 84, y: 186 });
+    fire(move, 'onUpdate', { x: 240, y: 360 });
+    end(move, { x: 240, y: 360 });
+    expect(onMove).toHaveBeenCalledExactlyOnceWith({ x: 0.26, y: 0.4 }, { x: 0.8, y: 0.8 }, 300, 450);
   });
 
   it.each(['move', 'draw'] as const)('gives empty-space %s drags to the photo pan', (mode) => {
@@ -643,18 +716,18 @@ describe('ZoomableTnutMarker', () => {
     expect(runtime.shapes[0].compute().d).toBe('M90 135L210 135L210 315L90 315Z');
   });
 
-  it('keeps corner coordinates on rotation while resetting the zoomed viewport', () => {
+  it('keeps corner coordinates and zoom on rotation', () => {
     const onChange = vi.fn();
     const { rerender } = render(createElement(ZoomableTnutMarker, props({ onChange })));
     pinchTo(3);
     rerender(createElement(ZoomableTnutMarker, props({ onChange, renderWidth: 450, renderHeight: 675 })));
-    expect(runtime.styles[0].compute()).toEqual({ transform: [{ translateX: 0 }, { translateY: 0 }, { scale: 1 }] });
+    expect(runtime.styles[0].compute()).toEqual({ transform: [{ translateX: 0 }, { translateY: 0 }, { scale: 3 }] });
     const coordinates = runtime.shapes[0]
       .compute()
-      .d?.match(/[\d.]+/g)
+      .d?.match(/-?[\d.]+/g)
       ?.map(Number);
     expect(coordinates).toHaveLength(8);
-    [135, 202.5, 315, 202.5, 315, 472.5, 135, 472.5].forEach((coordinate, index) =>
+    [-45, -67.5, 495, -67.5, 495, 742.5, -45, 742.5].forEach((coordinate, index) =>
       expect(coordinates?.[index]).toBeCloseTo(coordinate, 8),
     );
     expect(onChange).not.toHaveBeenCalled();

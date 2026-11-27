@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Alert, Keyboard, Platform, ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native';
+import { Keyboard, Platform, ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native';
 import { useHeaderHeight } from 'expo-router/react-navigation';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -8,9 +8,18 @@ import {
   DEFAULT_TNUT_CORNERS,
   generateTnutGrid,
   generateLedPositions,
+  createLedStripes,
+  MAX_LED_POSITIONS,
+  MAX_LED_STRIPES,
+  expandLedGrid,
+  hasStaleLedGrid,
   bindLedPositionsToHoles,
+  moveTnutLedLinks,
+  pruneTnutLedLinks,
+  migrateHoldLedLinksToTnuts,
   migrateTnutLayoutColumns,
   createWiring,
+  ledPairs,
   rowMajorLedIndices,
   setWiringInitialSkip,
   MAX_WIRING_SKIP,
@@ -25,6 +34,7 @@ import {
   type TnutPoint,
   type CanonicalSprayHold,
   type LedPosition,
+  type SprayLedPlacement,
 } from '@boardsesh/spray-wall-geometry';
 import { useTheme } from '../../providers/theme-provider';
 import { useHeaderActions } from '../../hooks/use-header-actions';
@@ -33,6 +43,7 @@ import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useKeyboardHeight } from '../../hooks/use-keyboard-height';
 import { useAndroidKeyboardScroll } from '../../hooks/use-android-keyboard-scroll';
 import { useAuth } from '../../providers/auth-provider';
+import { useConfirm, type ConfirmOptions } from '../../providers/dialog-provider';
 import { useViewerUserId } from '../../hooks/use-viewer-user-id';
 import { fetchSprayWallRenderData, sprayWallPublishedRenderDataQueryKey } from '../../lib/spray/spray-wall-loader';
 import { sprayWallViewerGeneration } from '../../lib/spray/spray-wall-registry';
@@ -58,8 +69,10 @@ import { LedPlacementThumbnail } from './LedPlacementThumbnail';
 import { SprayPhotoStage } from './SprayPhotoStage';
 import { SpraySetupOverlay } from './SpraySetupOverlay';
 import { SprayLedMapEditor } from './SprayLedMapEditor';
+import { useSprayCableHistory } from './use-spray-cable-history';
 import { SprayLedLightingStep } from './SprayLedLightingStep';
 import { SprayHoldLedStep } from './SprayHoldLedStep';
+import { SprayLedStripeEditor } from './SprayLedStripeEditor';
 import { SprayPointToolbar, type SprayPointMode } from './SprayPointToolbar';
 import { nearestPhotoPointIndex } from './tnut-corner-viewport';
 import { CablePatternThumbnail } from './CablePatternThumbnail';
@@ -78,8 +91,10 @@ type Step =
   | 'align'
   | 'holes'
   | 'led'
+  | 'stripeConfig'
   | 'ledPositions'
   | 'holdLeds'
+  | 'holdAboveLeds'
   | 'cablePattern'
   | 'cableStart'
   | 'initialSkip'
@@ -91,6 +106,7 @@ type Step =
 const LED_WORK_STEPS: ReadonlySet<Step> = new Set<Step>([
   'ledPositions',
   'holdLeds',
+  'holdAboveLeds',
   'cablePattern',
   'cableStart',
   'initialSkip',
@@ -134,7 +150,7 @@ function SetupLoader({ wallUuid }: { wallUuid: string }) {
           });
         const [payload, saved] = await Promise.all([
           fetchSprayWallRenderData(queryClient, wallUuid),
-          loadSprayWallTnutLayout(wallUuid),
+          loadSprayWallTnutLayout(wallUuid, { forEditing: true }),
         ]);
         if (!active) return;
         // Any climber can light this wall; changing the setup follows Edit board.
@@ -228,6 +244,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   const { t } = useTranslation('boards');
   const { systemColors, brandColors, spacing } = useTheme();
   const router = useRouter();
+  const confirm = useConfirm();
   const viewerId = useViewerUserId();
   const fullscreenSession = useRef<string | null>(null);
   useEffect(
@@ -254,6 +271,17 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       : initial;
   });
   const [step, setStep] = useState<Step>('pattern');
+  const cableHistory = useSprayCableHistory(layout, changeLayout);
+  const hasUpperLayer = layout.ledPlacement === 'below' || layout.ledPlacement === 'alternating';
+  const [ledCardContentHeights, setLedCardContentHeights] = useState<Partial<Record<SprayLedPlacement, number>>>({});
+  const ledPlacements: SprayLedPlacement[] =
+    layout.pattern === 'custom'
+      ? ['center', 'sides', 'below']
+      : layout.pattern === 'offset'
+        ? ['center', 'sides', 'below', 'stripe', 'alternating']
+        : ['center', 'sides', 'below', 'stripe'];
+  const supportedLedPlacement = layout.ledPlacement !== undefined && ledPlacements.includes(layout.ledPlacement);
+  const ledCardContentHeight = Math.max(0, ...ledPlacements.map((placement) => ledCardContentHeights[placement] ?? 0));
   useEffect(() => {
     scrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [step]);
@@ -263,6 +291,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   const persisted = useRef<TnutLayout | null>(layout);
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
+  const [expansionTooLarge, setExpansionTooLarge] = useState(false);
   useEffect(
     () =>
       // The save lands on the phone first, so this is the only place a failed upload shows up.
@@ -276,7 +305,9 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   useEffect(() => {
     if (step === 'holes') setMode(null);
   }, [step]);
-  const [history, setHistory] = useState<TnutPoint[][]>([]);
+  const [history, setHistory] = useState<
+    { layout: TnutLayout; ledSignature: string | null; ledBasis: TnutLayout | null }[]
+  >([]);
   const [viewportWidth, setViewportWidth] = useState(0);
   const busy = useRef(false);
   const finished = useRef(false);
@@ -290,6 +321,17 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   const [direction, setDirection] = useState<CableDirection>(layout.wiring?.direction ?? 'horizontal');
   const [startCorner, setStartCorner] = useState<CableStartCorner>(layout.wiring?.startCorner ?? 'tl');
   const [initialSkipText, setInitialSkipText] = useState(String(layout.wiring?.initialSkip ?? 0));
+  const [stripeOrientation, setStripeOrientation] = useState<'vertical' | 'horizontal'>(
+    layout.ledStripes?.orientation ?? 'vertical',
+  );
+  const [stripeCountText, setStripeCountText] = useState(String(layout.ledStripes?.stripes[0]?.ledIds.length ?? 20));
+  const stripeConfigBasis = useRef(
+    layout.ledStripes
+      ? { orientation: layout.ledStripes.orientation, count: layout.ledStripes.stripes[0]?.ledIds.length ?? 20 }
+      : null,
+  );
+  const stripeCount = Number(stripeCountText);
+  const validStripeCount = /^\d+$/.test(stripeCountText) && stripeCount >= 1 && stripeCount <= MAX_LED_POSITIONS;
   const ledSignature = (draft: TnutLayout) =>
     JSON.stringify([
       draft.holes,
@@ -300,8 +342,11 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       draft.columnConvention,
       draft.firstRowOffset,
     ]);
-  const generatedLeds = useRef(layout.ledPositions ? ledSignature(layout) : null);
-  const untouchedLeds = useRef<readonly LedPosition[] | null>(null);
+  const [initialLedSignature] = useState(() =>
+    layout.ledPositions && !hasStaleLedGrid(layout) ? ledSignature(layout) : null,
+  );
+  const generatedLeds = useRef(initialLedSignature);
+  const ledBasis = useRef(layout.ledPositions ? layout : null);
   const wiringSignature = (draft: TnutLayout, axis: CableDirection, corner: CableStartCorner) =>
     JSON.stringify([draft.ledPositions?.map(({ id }) => id), axis, corner]);
   const generatedWiring = useRef(
@@ -319,6 +364,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   const initialSkip = Number(initialSkipText);
   const validInitialSkip = /^\d+$/.test(initialSkipText) && initialSkip <= skipLimit;
   const generatedSignature = useRef(matchingSaved ? gridSignature(matchingSaved) : null);
+  const pendingPattern = useRef<{ layout: TnutLayout; gridSignature: string | null } | null>(null);
   const parsedRows = Number(rowsText);
   const parsedColumns = Number(columnsText);
   const maxColumns = layout.pattern === 'offset' ? 99 : 50;
@@ -339,17 +385,22 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
 
   function withUpdate(previous: TnutLayout, update: Partial<TnutLayout>): TnutLayout {
     const updated = { ...previous, ...update };
-    return update.ledPositions ? { ...updated, ledPositions: bindLedPositionsToHoles(updated, source.frame) } : updated;
+    const bound = update.ledPositions
+      ? { ...updated, ledPositions: bindLedPositionsToHoles(updated, source.frame) }
+      : updated;
+    return update.holes ? pruneTnutLedLinks(bound) : bound;
   }
 
   function changeLayout(update: Partial<TnutLayout>) {
     if (busy.current) return;
     setLayout((previous) => withUpdate(previous, update));
     setSaveFailed(false);
+    setExpansionTooLarge(false);
   }
 
   /** Next stays instant: the store queues each wall's writes, so the newest always lands last. */
   function saveWork(draft: TnutLayout) {
+    pendingPattern.current = null;
     if (persisted.current === draft) return;
     persisted.current = draft;
     setSaveFailed(false);
@@ -363,9 +414,11 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
   function wouldDiscardHandWork() {
     if (layout.wiring?.paths.length) return true;
     // Rebuilding clears hand-made hold links too (the new LEDs reuse the old ids).
-    if (layout.holdLeds?.length) return true;
-    if (!layout.ledPositions?.length) return false;
-    const untouched = untouchedLeds.current ?? (matchingSaved ? generateLedPositions(matchingSaved) : []);
+    if (layout.holdLeds?.length || layout.holdAboveLeds?.length || layout.tnutLeds?.length) return true;
+    if (layout.ledGroups !== undefined) return true;
+    if (layout.ledStripes?.stripes.length) return true;
+    if (!layout.ledPositions) return false;
+    const untouched = ledBasis.current ? generateLedPositions(ledBasis.current) : [];
     return !sameLedPositions(layout.ledPositions, untouched);
   }
 
@@ -414,9 +467,11 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     else if (step === 'align') setStep(layout.pattern === 'offset' ? 'offset' : 'pattern');
     else if (step === 'holes') setStep(layout.pattern === 'custom' ? 'pattern' : 'align');
     else if (step === 'led') setStep('holes');
-    else if (step === 'ledPositions') setStep('led');
+    else if (step === 'stripeConfig') setStep('led');
+    else if (step === 'ledPositions') setStep(layout.ledPlacement === 'stripe' ? 'stripeConfig' : 'led');
     else if (step === 'holdLeds') setStep('ledPositions');
-    else if (step === 'cablePattern') setStep('holdLeds');
+    else if (step === 'holdAboveLeds') setStep('holdLeds');
+    else if (step === 'cablePattern') setStep(hasUpperLayer ? 'holdAboveLeds' : 'holdLeds');
     else if (step === 'cableStart') setStep('cablePattern');
     else if (step === 'initialSkip') setStep(direction === 'custom' ? 'cablePattern' : 'cableStart');
     else if (step === 'wiring') {
@@ -427,6 +482,15 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     } else if (step === 'skips') setStep('wiring');
     else if (step === 'lighting') setStep('skips');
     else router.back();
+  }
+
+  async function confirmAction(options: ConfirmOptions, action: () => void) {
+    busy.current = true;
+    try {
+      if ((await confirm(options)) && mounted.current) action();
+    } finally {
+      busy.current = false;
+    }
   }
 
   useSprayWizardLeaveGuard((leave) => {
@@ -443,10 +507,16 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       leave();
       return;
     }
-    Alert.alert(t('sprayLedSetup.discardTitle'), t('sprayLedSetup.discardBody'), [
-      { text: t('sprayLedSetup.keepEditing'), style: 'cancel' },
-      { text: t('sprayLedSetup.discard'), style: 'destructive', onPress: leave },
-    ]);
+    void confirmAction(
+      {
+        title: t('sprayLedSetup.discardTitle'),
+        message: t('sprayLedSetup.discardBody'),
+        cancelLabel: t('sprayLedSetup.keepEditing'),
+        confirmLabel: t('sprayLedSetup.discard'),
+        destructive: true,
+      },
+      leave,
+    );
   });
 
   async function next() {
@@ -465,6 +535,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       const nextLayout = { ...layout, rows: parsedRows, columns: parsedColumns };
       const signature = gridSignature(nextLayout);
       if (generatedSignature.current !== signature) {
+        pendingPattern.current = null;
         changeLayout({ ...nextLayout, holes: generateTnutGrid({ ...nextLayout, pattern: layout.pattern }) });
         generatedSignature.current = signature;
         setHistory([]);
@@ -473,32 +544,116 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       return;
     }
     if (step === 'led') {
-      if (!layout.ledPlacement) return;
+      if (!supportedLedPlacement) return;
+      if (layout.ledPlacement === 'stripe') {
+        setStep('stripeConfig');
+        return;
+      }
       const signature = ledSignature(layout);
       if (generatedLeds.current === signature) {
         saveWork(layout);
         setStep('ledPositions');
         return;
       }
-      const rebuildLeds = () => {
-        const ledPositions = generateLedPositions(layout);
-        // Regenerated LEDs reuse ids, so hand-made hold links would point at the wrong ones.
-        const draft = withUpdate(layout, { ledPositions, wiring: undefined, holdLeds: [], ledGroups: undefined });
-        untouchedLeds.current = ledPositions;
+      const finishRebuild = (draft: TnutLayout) => {
+        const bound = { ...draft, ledPositions: bindLedPositionsToHoles(draft, source.frame) };
         generatedLeds.current = signature;
-        generatedWiring.current = null;
-        setLayout(draft);
-        saveWork(draft);
+        ledBasis.current = bound;
+        generatedWiring.current = bound.wiring
+          ? wiringSignature(bound, bound.wiring.direction, bound.wiring.startCorner)
+          : null;
+        setLayout(bound);
+        saveWork(bound);
         setStep('ledPositions');
       };
+      const expanded = ledBasis.current && expandLedGrid(ledBasis.current, layout);
+      if (expanded === 'capacity') {
+        setExpansionTooLarge(true);
+        return;
+      }
+      if (expanded) {
+        const applyExpansion = () => finishRebuild(expanded.layout);
+        if (expanded.needsReview) {
+          await confirmAction(
+            {
+              title: t('sprayLedSetup.expandLedsTitle'),
+              message: t('sprayLedSetup.expandLedsBody'),
+              cancelLabel: t('sprayLedSetup.keepEditing'),
+              confirmLabel: t('sprayLedSetup.next'),
+            },
+            applyExpansion,
+          );
+        } else {
+          applyExpansion();
+        }
+        return;
+      }
+      const rebuildLeds = () => {
+        // Regenerated LEDs reuse ids, so hand-made hold links would point at the wrong ones.
+        finishRebuild({
+          ...layout,
+          ledPositions: generateLedPositions(layout),
+          wiring: undefined,
+          holdLeds: [],
+          holdAboveLeds: [],
+          tnutLeds: [],
+          ledGroups: undefined,
+          ledStripes: undefined,
+        });
+      };
       if (wouldDiscardHandWork()) {
-        Alert.alert(t('sprayLedSetup.rebuildLedsTitle'), t('sprayLedSetup.rebuildLedsBody'), [
-          { text: t('sprayLedSetup.keepEditing'), style: 'cancel' },
-          { text: t('sprayLedSetup.rebuildLeds'), style: 'destructive', onPress: rebuildLeds },
-        ]);
+        await confirmAction(
+          {
+            title: t('sprayLedSetup.rebuildLedsTitle'),
+            message: t('sprayLedSetup.rebuildLedsBody'),
+            cancelLabel: t('sprayLedSetup.keepEditing'),
+            confirmLabel: t('sprayLedSetup.rebuildLeds'),
+            destructive: true,
+          },
+          rebuildLeds,
+        );
       } else {
         rebuildLeds();
       }
+      return;
+    }
+    if (step === 'stripeConfig') {
+      if (!supportedLedPlacement || layout.ledPlacement !== 'stripe' || !validStripeCount) return;
+      const basis = stripeConfigBasis.current;
+      const unchanged =
+        layout.ledStripes &&
+        basis?.orientation === stripeOrientation &&
+        basis.count === stripeCount &&
+        generatedLeds.current === ledSignature(layout);
+      const draft = unchanged ? layout : createLedStripes(layout, stripeOrientation, stripeCount);
+      if (draft === 'capacity') {
+        setExpansionTooLarge(true);
+        return;
+      }
+      const apply = () => {
+        const bound = { ...draft, ledPositions: bindLedPositionsToHoles(draft, source.frame) };
+        setLayout(bound);
+        generatedLeds.current = ledSignature(bound);
+        ledBasis.current = bound;
+        generatedWiring.current = bound.wiring
+          ? wiringSignature(bound, bound.wiring.direction, bound.wiring.startCorner)
+          : null;
+        stripeConfigBasis.current = { orientation: stripeOrientation, count: stripeCount };
+        saveWork(bound);
+        setStep('ledPositions');
+      };
+      if (!unchanged && ledBasis.current && (wouldDiscardHandWork() || layout.ledStripes)) {
+        await confirmAction(
+          {
+            title: t('sprayLedSetup.rebuildLedsTitle'),
+            message: t('sprayLedSetup.rebuildLedsBody'),
+            cancelLabel: t('sprayLedSetup.keepEditing'),
+            confirmLabel: t('sprayLedSetup.rebuildLeds'),
+            destructive: true,
+          },
+          apply,
+        );
+      } else apply();
       return;
     }
     if (step === 'ledPositions') {
@@ -510,7 +665,16 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       return;
     }
     if (step === 'holdLeds') {
-      saveWork(layout);
+      const confirmed = migrateHoldLedLinksToTnuts(layout, source.frame, loaded.holds);
+      setLayout(confirmed);
+      saveWork(confirmed);
+      setStep(hasUpperLayer ? 'holdAboveLeds' : 'cablePattern');
+      return;
+    }
+    if (step === 'holdAboveLeds') {
+      const confirmed = migrateHoldLedLinksToTnuts(layout, source.frame, loaded.holds);
+      setLayout(confirmed);
+      saveWork(confirmed);
       setStep('cablePattern');
       return;
     }
@@ -525,7 +689,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       const wiring =
         preserveWiring && layout.wiring
           ? layout.wiring
-          : createWiring(layout.ledPositions ?? [], direction, startCorner, layout);
+          : createWiring(layout.ledPositions ?? [], direction, startCorner, layout, ledPairs(layout));
       const startingWiring = setWiringInitialSkip(wiring, initialSkip);
       const draft = startingWiring === layout.wiring ? layout : withUpdate(layout, { wiring: startingWiring });
       setLayout(draft);
@@ -543,6 +707,12 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     if (step === 'holes' || step === 'lighting') {
       if (!layout.holes.length) return;
       if (step === 'lighting' && (!layout.ledPositions?.length || !layout.wiring)) return;
+      if (step === 'holes' && ledBasis.current && generatedLeds.current !== ledSignature(layout)) {
+        // Keep the saved hole and LED geometry in agreement if the wizard is
+        // closed here. The next step saves them together once reconciled.
+        setStep('led');
+        return;
+      }
       busy.current = true;
       setSaving(true);
       setSaveFailed(false);
@@ -573,7 +743,8 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     !dragging &&
     (step !== 'align' || (validCounts && validCorners)) &&
     (step !== 'holes' || layout.holes.length > 0) &&
-    (step !== 'led' || Boolean(layout.ledPlacement)) &&
+    (step !== 'led' || supportedLedPlacement) &&
+    (step !== 'stripeConfig' || (supportedLedPlacement && layout.ledPlacement === 'stripe' && validStripeCount)) &&
     (step !== 'initialSkip' || validInitialSkip) &&
     ((step !== 'ledPositions' && step !== 'wiring' && step !== 'skips') || Boolean(layout.ledPositions?.length));
   useHeaderActions({
@@ -586,10 +757,12 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     clearOnUnmount: true,
   });
 
-  function updateHoles(holes: TnutPoint[]) {
+  function updateHoles(holes: TnutPoint[], draft: TnutLayout = layout) {
     if (busy.current) return;
-    setHistory((previous) => [...previous.slice(-29), layout.holes]);
-    changeLayout({ holes });
+    pendingPattern.current = null;
+    const snapshot = { layout, ledSignature: generatedLeds.current, ledBasis: ledBasis.current };
+    setHistory((previous) => [...previous.slice(-29), snapshot]);
+    changeLayout(pruneTnutLedLinks({ ...draft, holes }));
   }
 
   function tapHole(point: TnutPoint, width: number, height: number) {
@@ -610,7 +783,15 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     const index = nearestPhotoPointIndex(layout.holes, start, width, height, 22);
     const occupied = nearestPhotoPointIndex(layout.holes, end, width, height, 6);
     if (index >= 0 && (occupied < 0 || occupied === index)) {
-      updateHoles(layout.holes.map((hole, entry) => (entry === index ? end : hole)));
+      const holes = layout.holes.map((hole, entry) => (entry === index ? end : hole));
+      const moved = pruneTnutLedLinks({ ...moveTnutLedLinks(layout, layout.holes[index], end), holes });
+      updateHoles(holes, moved);
+      // Moving one mounting marker does not rebuild physical LEDs or the cable.
+      // Base grid/calibration changes still use the explicit rebuild path.
+      if (moved.ledPositions && generatedLeds.current === ledSignature(layout)) {
+        generatedLeds.current = ledSignature(moved);
+        ledBasis.current = moved;
+      }
     }
   }
 
@@ -621,7 +802,9 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     onUndo: () => {
       const previous = history.at(-1);
       if (!previous || busy.current) return;
-      changeLayout({ holes: previous });
+      changeLayout(previous.layout);
+      generatedLeds.current = previous.ledSignature;
+      ledBasis.current = previous.ledBasis;
       setHistory((entries) => entries.slice(0, -1));
     },
   };
@@ -643,21 +826,29 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
             ? t('sprayLedSetup.editTitle')
             : step === 'led'
               ? t('sprayLedSetup.ledTitle')
-              : step === 'ledPositions'
-                ? t('sprayLedSetup.ledPositionsTitle')
-                : step === 'cablePattern'
-                  ? t('sprayLedSetup.cablePatternTitle')
-                  : step === 'cableStart'
-                    ? t('sprayLedSetup.cableStartTitle')
-                    : step === 'initialSkip'
-                      ? t('sprayLedSetup.initialSkipTitle')
-                      : step === 'lighting'
-                        ? t('sprayLedSetup.lightingTitle')
-                        : step === 'holdLeds'
-                          ? t('sprayLedSetup.holdLedsTitle')
-                          : step === 'skips'
-                            ? t('sprayLedSetup.skipsTitle')
-                            : t('sprayLedSetup.wiringTitle');
+              : step === 'stripeConfig'
+                ? t('sprayLedSetup.stripeConfigTitle')
+                : step === 'ledPositions'
+                  ? layout.ledPlacement === 'stripe'
+                    ? t('sprayLedSetup.stripeEditorTitle')
+                    : t('sprayLedSetup.ledPositionsTitle')
+                  : step === 'cablePattern'
+                    ? t('sprayLedSetup.cablePatternTitle')
+                    : step === 'cableStart'
+                      ? t('sprayLedSetup.cableStartTitle')
+                      : step === 'initialSkip'
+                        ? t('sprayLedSetup.initialSkipTitle')
+                        : step === 'lighting'
+                          ? t('sprayLedSetup.lightingTitle')
+                          : step === 'holdLeds'
+                            ? hasUpperLayer
+                              ? t('sprayLedSetup.holdLedsBelowTitle')
+                              : t('sprayLedSetup.holdLedsTitle')
+                            : step === 'holdAboveLeds'
+                              ? t('sprayLedSetup.holdLedsAboveTitle')
+                              : step === 'skips'
+                                ? t('sprayLedSetup.skipsTitle')
+                                : t('sprayLedSetup.wiringTitle');
 
   return (
     <ScrollView
@@ -696,15 +887,27 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
                   selected={layout.pattern === pattern}
                   onPress={() => {
                     if (pattern !== layout.pattern) {
-                      changeLayout({
+                      const basis = pendingPattern.current ?? { layout, gridSignature: generatedSignature.current };
+                      const restored = pattern === basis.layout.pattern ? basis : null;
+                      pendingPattern.current = restored ? null : basis;
+                      // Browsing a pattern is reversible until its holes or LEDs
+                      // are committed. Restore manual holes and links together.
+                      const draft = restored?.layout ?? {
+                        ...layout,
                         pattern,
                         columns: Math.min(pattern === 'offset' ? 99 : 50, layout.columns),
                         holes: [],
-                        ledPlacement: layout.ledPlacement === 'alternating' ? undefined : layout.ledPlacement,
-                      });
-                      setColumnsText(String(Math.min(pattern === 'offset' ? 99 : 50, layout.columns)));
+                        ledPlacement:
+                          layout.ledPlacement === 'alternating' ||
+                          (pattern === 'custom' && layout.ledPlacement === 'stripe')
+                            ? undefined
+                            : layout.ledPlacement,
+                      };
+                      changeLayout(draft);
+                      setRowsText(String(draft.rows));
+                      setColumnsText(String(draft.columns));
                       setHistory([]);
-                      generatedSignature.current = null;
+                      generatedSignature.current = restored?.gridSignature ?? null;
                     }
                   }}
                 />
@@ -864,39 +1067,39 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
         {step === 'led' ? (
           <>
             <Text>{t('sprayLedSetup.ledHint')}</Text>
-            <View style={[styles.row, { gap: spacing[2] }]}>
-              {(['center', 'sides', 'below'] as const).map((placement) => (
-                <ChoiceCard
-                  key={placement}
-                  label={
-                    placement === 'center'
-                      ? t('sprayLedSetup.ledCenter')
-                      : placement === 'sides'
-                        ? t('sprayLedSetup.ledSides')
-                        : t('sprayLedSetup.ledBelow')
-                  }
-                  selected={layout.ledPlacement === placement}
-                  disabled={saving}
-                  onPress={() => changeLayout({ ledPlacement: placement })}
-                >
-                  <LedPlacementThumbnail placement={placement} />
-                </ChoiceCard>
+            {expansionTooLarge ? <Text color={brandColors.error}>{t('sprayLedSetup.expandLedsCapacity')}</Text> : null}
+            <View style={[styles.ledGrid, { margin: -spacing[1] }]}>
+              {ledPlacements.map((placement) => (
+                <View key={placement} style={[styles.ledCell, { padding: spacing[1] }]}>
+                  <ChoiceCard
+                    label={
+                      placement === 'center'
+                        ? t('sprayLedSetup.ledCenter')
+                        : placement === 'sides'
+                          ? t('sprayLedSetup.ledSides')
+                          : placement === 'below'
+                            ? t('sprayLedSetup.ledBelow')
+                            : placement === 'stripe'
+                              ? t('sprayLedSetup.ledStripe')
+                              : t('sprayLedSetup.ledAlternating')
+                    }
+                    selected={layout.ledPlacement === placement}
+                    disabled={saving}
+                    onPress={() => changeLayout({ ledPlacement: placement })}
+                    minimumHeight={ledCardContentHeight ? ledCardContentHeight + spacing[2] * 2 + 4 : undefined}
+                    onMeasureContent={(height) =>
+                      setLedCardContentHeights((previous) =>
+                        previous[placement] === height ? previous : { ...previous, [placement]: height },
+                      )
+                    }
+                  >
+                    <LedPlacementThumbnail placement={placement} firstRowOffset={layout.firstRowOffset} />
+                  </ChoiceCard>
+                </View>
               ))}
             </View>
-            {layout.pattern === 'offset' ? (
-              <View style={[styles.row, { gap: spacing[2], alignItems: 'center' }]}>
-                <ChoiceCard
-                  label={t('sprayLedSetup.ledAlternating')}
-                  selected={layout.ledPlacement === 'alternating'}
-                  disabled={saving}
-                  onPress={() => changeLayout({ ledPlacement: 'alternating' })}
-                >
-                  <LedPlacementThumbnail placement="alternating" firstRowOffset={layout.firstRowOffset} />
-                </ChoiceCard>
-                <View style={{ flex: 2 }}>
-                  <Text variant="footnote">{t('sprayLedSetup.ledAlternatingHint')}</Text>
-                </View>
-              </View>
+            {layout.pattern === 'offset' && layout.ledPlacement === 'alternating' ? (
+              <Text variant="footnote">{t('sprayLedSetup.ledAlternatingHint')}</Text>
             ) : null}
 
             <Text variant="footnote" color={systemColors.secondaryLabel}>
@@ -904,10 +1107,62 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
             </Text>
           </>
         ) : null}
-        {step === 'ledPositions' || step === 'wiring' || step === 'skips' ? (
+        {step === 'stripeConfig' ? (
+          <>
+            <Text>{t('sprayLedSetup.stripeConfigHint')}</Text>
+            <View style={[styles.row, { gap: spacing[2] }]}>
+              <Button
+                title={t('sprayLedSetup.vertical')}
+                variant={stripeOrientation === 'vertical' ? 'filled' : 'outlined'}
+                onPress={() => {
+                  setStripeOrientation('vertical');
+                  setExpansionTooLarge(false);
+                }}
+              />
+              <Button
+                title={t('sprayLedSetup.horizontal')}
+                variant={stripeOrientation === 'horizontal' ? 'filled' : 'outlined'}
+                onPress={() => {
+                  setStripeOrientation('horizontal');
+                  setExpansionTooLarge(false);
+                }}
+              />
+            </View>
+            <CountControl
+              label={t('sprayLedSetup.stripeCount')}
+              value={stripeCountText}
+              maximum={MAX_LED_POSITIONS}
+              onChange={(text) => {
+                setStripeCountText(text);
+                setExpansionTooLarge(false);
+              }}
+            />
+            {!validStripeCount ? (
+              <Text color={brandColors.error}>{t('sprayLedSetup.stripeCountRange', { max: MAX_LED_POSITIONS })}</Text>
+            ) : null}
+            {expansionTooLarge ? (
+              <Text color={brandColors.error} accessibilityLiveRegion="polite">
+                {t('sprayLedSetup.stripeCapacity', { max: MAX_LED_POSITIONS, stripes: MAX_LED_STRIPES })}
+              </Text>
+            ) : null}
+          </>
+        ) : null}
+        {step === 'ledPositions' && layout.ledPlacement === 'stripe' ? (
+          <SprayLedStripeEditor
+            layout={layout}
+            defaultCount={validStripeCount ? stripeCount : 20}
+            source={source}
+            photoUri={photoUri}
+            width={viewportWidth}
+            onChange={changeLayout}
+            onInteractionChange={setDragging}
+          />
+        ) : null}
+        {(step === 'ledPositions' && layout.ledPlacement !== 'stripe') || step === 'wiring' || step === 'skips' ? (
           <SprayLedMapEditor
             key={step}
             kind={step === 'ledPositions' ? 'positions' : step}
+            cableHistory={cableHistory}
             layout={layout}
             wallUuid={wallUuid}
             onChange={changeLayout}
@@ -980,8 +1235,10 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
             ) : null}
           </>
         ) : null}
-        {step === 'holdLeds' ? (
+        {step === 'holdLeds' || step === 'holdAboveLeds' ? (
           <SprayHoldLedStep
+            key={step}
+            layer={step === 'holdAboveLeds' ? 'above' : 'primary'}
             wallUuid={wallUuid}
             layout={layout}
             holds={loaded.holds}
@@ -1035,14 +1292,26 @@ function ChoiceCard({
   disabled = false,
   onPress,
   children,
+  minimumHeight,
+  onMeasureContent,
 }: {
   label: string;
   selected: boolean;
   disabled?: boolean;
   onPress: () => void;
   children: ReactNode;
+  minimumHeight?: number;
+  onMeasureContent?: (height: number) => void;
 }) {
   const { systemColors, selection, spacing } = useTheme();
+  const content = (
+    <>
+      <View style={styles.thumbnail}>{children}</View>
+      <Text variant="footnote" style={styles.cardLabel}>
+        {label}
+      </Text>
+    </>
+  );
   return (
     <PressableSurface
       onPress={onPress}
@@ -1057,13 +1326,19 @@ function ChoiceCard({
           backgroundColor: selected ? selection.fill : systemColors.secondaryGroupedBackground,
           padding: spacing[2],
           gap: spacing[2],
+          minHeight: minimumHeight,
         },
       ]}
     >
-      <View style={styles.thumbnail}>{children}</View>
-      <Text variant="footnote" style={styles.cardLabel}>
-        {label}
-      </Text>
+      {onMeasureContent ? (
+        // Measure natural content, independently of the equal card height. Long
+        // translations and Dynamic Type can grow the entire LED grid safely.
+        <View onLayout={({ nativeEvent }) => onMeasureContent(nativeEvent.layout.height)} style={{ gap: spacing[2] }}>
+          {content}
+        </View>
+      ) : (
+        content
+      )}
     </PressableSurface>
   );
 }
@@ -1101,7 +1376,7 @@ function CountControl({
             keyboardType={Platform.OS === 'ios' ? 'number-pad' : 'numeric'}
             returnKeyType="done"
             onSubmitEditing={() => Keyboard.dismiss()}
-            maxLength={3}
+            maxLength={String(maximum).length}
             selectTextOnFocus
           />
         </View>
@@ -1121,6 +1396,8 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   content: { width: '100%', maxWidth: 640, alignSelf: 'center' },
   row: { flexDirection: 'row' },
+  ledGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  ledCell: { width: '33.333333%' },
   stage: { alignItems: 'center' },
   card: { flex: 1, minWidth: 0, borderWidth: 2, borderRadius: 16 },
   thumbnail: { width: '100%', aspectRatio: 1 },

@@ -17,6 +17,7 @@ import { disconnectAllBluetooth } from '../../lib/ble/bluetooth-status-store';
 import { BleControlSheet } from './BleControlSheet';
 import { useSetting } from '../../settings';
 import { trackSettingChanged } from '../../lib/settings-analytics';
+import { useSprayWallAdjacentLightingEligible } from '../../lib/spray/use-spray-wall-adjacent-lighting';
 import { keepLightingLabel } from '../settings/board-lighting/board-lighting-model';
 import type { BleKeepLightingRowModel } from './BleKeepLightingRow';
 
@@ -78,7 +79,14 @@ export function BleControlSheetHost({
   const currentWall = useRef(wallIdentity);
   currentWall.current = wallIdentity;
   const [disconnectWhenDrivingEnds, setDisconnectWhenDrivingEnds] = useSetting('disconnectWhenDrivingEnds');
-  const showLightAdjacentHolds = isMoonboardBoardName(bluetooth?.boardName);
+  const showMoonboardLightAdjacentHolds = isMoonboardBoardName(bluetooth?.boardName);
+  const showSpraywallLightAdjacentHolds = useSprayWallAdjacentLightingEligible(
+    bluetooth?.boardName,
+    bluetooth?.layoutId,
+    visible,
+  );
+  const [spraywallLightAdjacentHolds, setSpraywallLightAdjacentHolds] = useSetting('spraywallLightAdjacentHolds');
+  const showLightAdjacentHolds = showMoonboardLightAdjacentHolds || showSpraywallLightAdjacentHolds;
   const [alwaysDrive, setAlwaysDrive] = useSetting('alwaysDrive');
   // Stop driving after (2.7, spec B4), the sheet's first row on both sheets:
   // the timer at the wall in two taps (WCAG 2.2.1), the same choice on every
@@ -151,11 +159,17 @@ export function BleControlSheetHost({
 
   const handleToggleLightAdjacentHolds = useCallback(
     (enabled: boolean) => {
+      if (showSpraywallLightAdjacentHolds) {
+        trackSettingChanged(BOARD_CONTROLS_SETTINGS_PAGE, 'spraywallLightAdjacentHolds', enabled);
+        // The provider re-lights after this setting commits, using the new value.
+        setSpraywallLightAdjacentHolds(enabled);
+        return;
+      }
       trackSettingChanged(BOARD_CONTROLS_SETTINGS_PAGE, 'moonboardLightAdjacentHolds', enabled);
       bluetooth?.setMoonboardLightAdjacentHolds(enabled);
       bluetooth?.reassertWall();
     },
-    [bluetooth],
+    [bluetooth, showSpraywallLightAdjacentHolds, setSpraywallLightAdjacentHolds],
   );
   const handleDisconnect = useCallback(() => {
     if (bluetooth?.boardName === 'spray' && !bluetooth.isConnected) bluetooth.releaseVirtualWall();
@@ -190,7 +204,10 @@ export function BleControlSheetHost({
       disconnectWhenDrivingEnds={disconnectWhenDrivingEnds}
       onToggleDisconnectWhenDrivingEnds={handleToggleDisconnectWhenDrivingEnds}
       showLightAdjacentHolds={showLightAdjacentHolds}
-      lightAdjacentHoldsEnabled={bluetooth.moonboardLightAdjacentHolds}
+      spraywallAdjacentLighting={showSpraywallLightAdjacentHolds}
+      lightAdjacentHoldsEnabled={
+        showSpraywallLightAdjacentHolds ? spraywallLightAdjacentHolds : bluetooth.moonboardLightAdjacentHolds
+      }
       onToggleLightAdjacentHolds={handleToggleLightAdjacentHolds}
       alwaysDrive={alwaysDrive}
       onToggleAlwaysDrive={handleToggleAlwaysDrive}
