@@ -8,6 +8,8 @@ manual changes). See docs/operations/mobile-ota-updates.md.
 
 ### New
 
+- With Quantum Board enabled, browse, save and light climbs on XL, L, M and S Fitness. ([#4878](https://github.com/boardsesh/boardsesh/pull/4878))
+  Your session's starting phone controls its color while everyone queues and logs.
 - Prefer the old tab bar? Turn off Search from the tab bar in the Climbs list's View options. ([#8268](https://github.com/boardsesh/boardsesh/pull/8268))
 
 ## 2026-11-26

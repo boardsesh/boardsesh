@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-11-27T20:53:32.689Z",
+  "generatedAt": "2026-11-27T21:41:33.988Z",
   "entries": [
+    {
+      "prNumber": 4878,
+      "category": "new",
+      "title": "With Quantum Board enabled, browse, save and light climbs on XL, L, M and S Fitness.",
+      "mergedAt": "2026-11-27T21:22:18Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4878",
+      "body": "Your session's starting phone controls its color while everyone queues and logs."
+    },
     {
       "prNumber": 8268,
       "category": "new",
