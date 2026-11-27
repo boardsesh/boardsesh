@@ -7,7 +7,11 @@ import sharp from 'sharp';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { getBackgroundRelPaths, getBoardDetailsForBoard, type BoardRenderDetails } from '@boardsesh/board-render';
 import { getQuantumBundledGeometry } from '@boardsesh/board-constants/quantum';
-import { getQuantumBoardDetails, projectQuantumBoardArtwork } from '@boardsesh/board-config';
+import {
+  getQuantumBoardDetails,
+  getQuantumArtworkContactSeams,
+  projectQuantumBoardArtwork,
+} from '@boardsesh/board-config';
 import { getSetsForLayoutAndSize } from '@boardsesh/board-constants/product-sizes';
 import {
   MOONBOARD_CELL_SETS,
@@ -19,6 +23,8 @@ import {
 import {
   buildWhiteKeyMask,
   buildDarkKeyMask,
+  placementsWithoutOwnPhotoBody,
+  cutPhotoContactSeams,
   mergeCoincidentPlacements,
 } from '@boardsesh/board-art-geometry/segmentation';
 import { WOODS_OCCUPIED_HOLD_IDS } from '@boardsesh/board-constants/woods';
@@ -829,9 +835,23 @@ export async function loadBoardArtLayers(board: ShardBoard): Promise<BoardArt[]>
   await assertPhotographicRouting(board);
 
   const layers: BoardArt[] = [];
-  for (const relativePath of board.backgroundRelPaths) {
+  for (const [layerIndex, relativePath] of board.backgroundRelPaths.entries()) {
     if (board.photographic) {
-      layers.push(await keyedLayer(relativePath, width, height));
+      const layer = await keyedLayer(relativePath, width, height);
+      if (board.boardName === 'quantum') {
+        cutPhotoContactSeams(layer.opaque, width, height, getQuantumArtworkContactSeams(board.layoutId, board.sizeId));
+        const withoutOwnBody = placementsWithoutOwnPhotoBody(
+          layer.opaque,
+          width,
+          height,
+          board.placementsByLayer[layerIndex],
+        );
+        board.placementsByLayer[layerIndex] = board.placementsByLayer[layerIndex].filter(
+          (placement) => !withoutOwnBody.has(placement.id),
+        );
+        for (const placementId of withoutOwnBody) board.layerOfPlacement.set(placementId, -1);
+      }
+      layers.push(layer);
       continue;
     }
     const pixels = await sharp(resolveArtPath(relativePath))

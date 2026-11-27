@@ -130,8 +130,8 @@ inside the traced polygon, 0..1.
 
 - A placement with **no traceable art** is absent from `outlines`. That is not an edge
   case: MoonBoard's placements are a synthetic 11x18 grid and most cells genuinely carry
-  no hold. **Consumers must fall back to a ring at the placement radius.** 18,493 of
-  19,053 placements are traced (97.1%); the shortfall is 232 empty MoonBoard grid cells,
+  no hold. **Consumers must fall back to a ring at the placement radius.** 18,482 of
+  19,053 placements are traced (97.0%); the shortfall is 232 empty MoonBoard grid cells,
   51 Kilter Original 12x12 placements with no art of their own, 275 empty Woods mounting slots, and 2 Decoy frame-rail
   T-nuts whose own-layer art runs to the search box.
 - A placement with **no outline** is absent from `silhouetteLightness`. There is no `-1`
@@ -1157,18 +1157,32 @@ S Fitness stays 1176×1892. Radius-unit polygons keep the same shape at either s
 The offline geometry/census catalogue includes these four boards separately from
 the public server-render catalogue, whose Quantum route remains closed.
 
-All 1,890 released Quantum placements have outlines: XL 657, L 549, M 432 and
-S Fitness 252. Disconnected holds trace whole; only genuinely touching components
-use the existing partition/contact machinery. Geometry gates include every Quantum
-size in their default art sample. The optical placement fit leaves ten XL/L and
-nine M LED centers just outside their outlines, at most 5.39 original image pixels
-(0.23 placement radii). The inspected ids and distances are pinned individually;
-controller placement identities and the shared optical transform stay unchanged.
+Of 1,890 released Quantum placements, 1,879 have traced outlines: XL 653/657,
+L 545/549, M 429/432 and S Fitness 252/252. Four logical centers sit outside
+hold substance while the nearest connected body contains another placement's
+center: 1002077, 1003056, 1006087 and 1006109. The first is not mounted on M.
+They stay valid LED addresses but have no silhouette of their own in this art;
+the renderer falls back to circles rather than inventing triangular pieces of a
+neighboring hold. Standalone holds with slightly misregistered centers still trace.
+
+Two photographed contacts need a measured one-pixel seam before tracing:
+1003058/1003063 and 1006094/1006086. Their visible source edges are calibrated in
+`getQuantumArtworkContactSeams`, projected through the same crop offsets as the
+placements, and cut only on the private segmentation mask. No source image or
+controller mapping changes. Regression landmarks protect both holds' lobes and
+reject a small hold borrowing its large neighbor's body.
+
+Disconnected holds trace whole. Other genuine contacts use the existing partition
+and contact machinery. Geometry gates include every Quantum size in their default
+art sample. Six optical LED centers on each standard size lie just outside their
+complete physical silhouettes, at most 3.61 original pixels (0.16 placement radii).
+Inspected ids and distances are pinned individually.
 
 The full 55-config atlas census passes. Quantum's assembled static GPU buffers
-measure 20.17 MiB (XL), 16.61 MiB (L), 20.50 MiB (M) and 17.48 MiB (S Fitness),
+measure 20.20 MiB (XL), 16.63 MiB (L), 20.52 MiB (M) and 17.48 MiB (S Fitness),
 all below the 128 MiB limit. The largest Quantum manifest is 462,814 bytes; the
-native atlas includes every hold at the scaled canvas dimensions.
+native atlas includes every hold, including circle fallbacks, at the scaled canvas
+dimensions. The other 51 geometry shards remain byte-identical.
 
 ## Per-board coverage
 
@@ -1178,12 +1192,12 @@ native atlas includes every hold at the scaled canvas dimensions.
 | grasshopper | 5 | 1,432 / 1,432 (100%) |
 | kilter | 16 | 5,330 / 5,381 (99.1%) |
 | moonboard | 7 | 1,022 / 1,254 (81.5%) |
-| quantum | 4 | 1,890 / 1,890 (100%) |
+| quantum | 4 | 1,879 / 1,890 (99.4%) |
 | soill | 2 | 560 / 560 (100%) |
 | tension | 15 | 5,474 / 5,474 (100%) |
 | touchstone | 1 | 648 / 648 (100%) |
 | woods | 2 | 1,104 / 1,379 (80.1%) |
-| **total** | **55** | **18,493 / 19,053 (97.1%)** |
+| **total** | **55** | **18,482 / 19,053 (97.0%)** |
 
 Per-config figures live in `src/generated/outline-counts.cjs`, written by the run that
 produced the shards, so the record cannot drift from the tables.

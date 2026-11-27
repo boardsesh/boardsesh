@@ -130,9 +130,9 @@ const ART_GATE_KEYS = RUN_EVERY_CONFIG ? ALL_SHARD_KEYS : SPIKE_SAMPLE_KEYS;
  * physical holds only, excluding empty logical mounting slots.
  */
 const PINNED_CUT_SHARES: Record<string, { neighbourMean: number; overFivePercent: number; opaqueMean: number }> = {
-  'quantum/9101-9201': { neighbourMean: 0.3, overFivePercent: 8, opaqueMean: 8.3 },
-  'quantum/9101-9202': { neighbourMean: 0.3, overFivePercent: 8, opaqueMean: 8.5 },
-  'quantum/9101-9203': { neighbourMean: 0.4, overFivePercent: 6, opaqueMean: 8.4 },
+  'quantum/9101-9201': { neighbourMean: 0.4, overFivePercent: 9, opaqueMean: 8.3 },
+  'quantum/9101-9202': { neighbourMean: 0.3, overFivePercent: 9, opaqueMean: 8.5 },
+  'quantum/9101-9203': { neighbourMean: 0.4, overFivePercent: 7, opaqueMean: 8.4 },
   'quantum/9104-9204': { neighbourMean: 0.4, overFivePercent: 3, opaqueMean: 7.5 },
   'decoy/2-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 6.2 },
   'decoy/2-2': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
@@ -213,9 +213,9 @@ const PINNED_PLACEMENT_ON_THE_EDGE: Record<string, number> = {
   // 3 while the boundary was the 37.6% isoline; the crisp profile's tighter
   // 50% cut moved one of the three beside-the-bolt screw-ons fully outside
   // (see PINNED_PLACEMENT_OUTSIDE_OUTLINE) and grazed one grasshopper bolt.
-  'quantum/9101-9201': 17,
-  'quantum/9101-9202': 17,
-  'quantum/9101-9203': 15,
+  'quantum/9101-9201': 13,
+  'quantum/9101-9202': 13,
+  'quantum/9101-9203': 12,
   'grasshopper/1-4': 1,
   'kilter/1-28': 2,
 };
@@ -237,16 +237,16 @@ const PINNED_PLACEMENT_OUTSIDE_OUTLINE: Record<string, { holds: number[]; worstD
   'kilter/1-28': { holds: [4810], worstDistancePx: 1.61 },
   // Source-art inspection: optical LED registration lies just outside these edges.
   'quantum/9101-9201': {
-    holds: [1001007, 1001012, 1001047, 1001048, 1002056, 1002077, 1003056, 1006078, 1006087, 1006109],
-    worstDistancePx: 5.39,
+    holds: [1001007, 1001012, 1001047, 1001048, 1002056, 1006078],
+    worstDistancePx: 3.61,
   },
   'quantum/9101-9202': {
-    holds: [1001007, 1001012, 1001047, 1001048, 1002056, 1002077, 1003056, 1006078, 1006087, 1006109],
-    worstDistancePx: 5.39,
+    holds: [1001007, 1001012, 1001047, 1001048, 1002056, 1006078],
+    worstDistancePx: 3.61,
   },
   'quantum/9101-9203': {
-    holds: [1001007, 1001012, 1001047, 1001048, 1002056, 1003056, 1006078, 1006087, 1006109],
-    worstDistancePx: 5.39,
+    holds: [1001007, 1001012, 1001047, 1001048, 1002056, 1006078],
+    worstDistancePx: 3.61,
   },
 };
 
