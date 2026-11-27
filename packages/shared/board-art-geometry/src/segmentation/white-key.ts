@@ -48,13 +48,17 @@ export type MutableRaster = {
  * An explicit stack rather than recursion: the ground is ~2/3 of a 1225x1400
  * image, which would blow the call stack several times over.
  */
-export function keyOutGround({ data, width, height }: MutableRaster, groundFloor: number = GROUND_FLOOR): void {
+export function keyOutGround(
+  { data, width, height }: MutableRaster,
+  groundFloor: number = GROUND_FLOOR,
+  extraSeeds: readonly number[] = [],
+): void {
   const isGround = (pixel: number) => {
     const offset = pixel * 4;
     return data[offset] >= groundFloor && data[offset + 1] >= groundFloor && data[offset + 2] >= groundFloor;
   };
 
-  const stack = [0, width - 1, (height - 1) * width, height * width - 1];
+  const stack = [0, width - 1, (height - 1) * width, height * width - 1, ...extraSeeds];
   while (stack.length > 0) {
     const pixel = stack.pop() as number;
     const offset = pixel * 4;
@@ -116,6 +120,8 @@ export function erodeEdge({ data, width, height }: MutableRaster): void {
 export type WhiteKeyOptions = {
   /** Every channel at least this bright counts as ground. */
   groundFloor?: number;
+  /** Known ground inside a decorative frame, as row-major pixel indices. */
+  extraSeeds?: readonly number[];
   /** Pixels of antialiased rim to drop after the flood. 0 skips the erode. */
   erodePx?: number;
 };
@@ -146,12 +152,15 @@ export function buildWhiteKeyMask(
   width: number,
   height: number,
   channels: number,
-  { groundFloor = GROUND_FLOOR, erodePx = 1 }: WhiteKeyOptions = {},
+  { groundFloor = GROUND_FLOOR, erodePx = 1, extraSeeds = [] }: WhiteKeyOptions = {},
 ): WhiteKeyMask {
   if (channels !== 3 && channels !== 4) {
     throw new Error(`buildWhiteKeyMask expects 3 or 4 channels, got ${channels}`);
   }
   const pixelCount = width * height;
+  if (extraSeeds.some((pixel) => !Number.isInteger(pixel) || pixel < 0 || pixel >= pixelCount)) {
+    throw new Error('buildWhiteKeyMask extraSeeds must be valid pixel indices');
+  }
   if (pixels.length < pixelCount * channels) {
     throw new Error(`buildWhiteKeyMask got ${pixels.length} bytes for ${width}x${height}x${channels}`);
   }
@@ -176,7 +185,7 @@ export function buildWhiteKeyMask(
   }
 
   const raster: MutableRaster = { data: scratch, width, height };
-  keyOutGround(raster, groundFloor);
+  keyOutGround(raster, groundFloor, extraSeeds);
 
   let ground = 0;
   for (let pixel = 0; pixel < pixelCount; pixel += 1) {

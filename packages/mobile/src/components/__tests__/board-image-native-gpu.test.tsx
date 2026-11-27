@@ -264,18 +264,25 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
     vi.useRealTimers();
   });
 
-  it.each(['kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill', 'moonboard', 'woods'] as const)(
-    'uses the catalogue capability and remote switch for %s',
-    (boardName) => {
-      const props = { ...BOARD, boardName, layoutId: 1 };
-      const { rerender } = render(<BoardImageNative {...props} />);
-      expect(screen.getByTestId('native-gpu')).toBeTruthy();
-      controls.enabled = false;
-      rerender(<BoardImageNative {...props} frames="p4131r43" />);
-      expect(controls.hookInputs.at(-1)?.gpuSurface).toBe(false);
-      expect(screen.queryByTestId('native-gpu')).toBeNull();
-    },
-  );
+  it.each([
+    'kilter',
+    'tension',
+    'decoy',
+    'touchstone',
+    'grasshopper',
+    'soill',
+    'moonboard',
+    'woods',
+    'quantum',
+  ] as const)('uses the catalogue capability and remote switch for %s', (boardName) => {
+    const props = { ...BOARD, boardName, layoutId: 1 };
+    const { rerender } = render(<BoardImageNative {...props} />);
+    expect(screen.getByTestId('native-gpu')).toBeTruthy();
+    controls.enabled = false;
+    rerender(<BoardImageNative {...props} frames="p4131r43" />);
+    expect(controls.hookInputs.at(-1)?.gpuSurface).toBe(false);
+    expect(screen.queryByTestId('native-gpu')).toBeNull();
+  });
 
   it.each([0, 2, 3, 4])('keeps catalogue rendering on PNG with API %s', (apiVersion) => {
     controls.apiVersion = apiVersion;

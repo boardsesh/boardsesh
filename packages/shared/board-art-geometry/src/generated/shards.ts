@@ -182,6 +182,22 @@ export const BOARD_ART_GEOMETRY_SHARDS: Record<string, () => BoardArtGeometry> =
     hasGlobalRequire
       ? (require('./moonboard/7-1.cjs') as BoardArtGeometry)
       : (nodeRequire()('./moonboard/7-1.cjs') as BoardArtGeometry),
+  'quantum/9101-9201': () =>
+    hasGlobalRequire
+      ? (require('./quantum/9101-9201.cjs') as BoardArtGeometry)
+      : (nodeRequire()('./quantum/9101-9201.cjs') as BoardArtGeometry),
+  'quantum/9101-9202': () =>
+    hasGlobalRequire
+      ? (require('./quantum/9101-9202.cjs') as BoardArtGeometry)
+      : (nodeRequire()('./quantum/9101-9202.cjs') as BoardArtGeometry),
+  'quantum/9101-9203': () =>
+    hasGlobalRequire
+      ? (require('./quantum/9101-9203.cjs') as BoardArtGeometry)
+      : (nodeRequire()('./quantum/9101-9203.cjs') as BoardArtGeometry),
+  'quantum/9104-9204': () =>
+    hasGlobalRequire
+      ? (require('./quantum/9104-9204.cjs') as BoardArtGeometry)
+      : (nodeRequire()('./quantum/9104-9204.cjs') as BoardArtGeometry),
   'soill/1-1': () =>
     hasGlobalRequire
       ? (require('./soill/1-1.cjs') as BoardArtGeometry)

@@ -17,7 +17,11 @@ export function supportsAuraGpu(input: {
   // Filled marks retain the exact PNG path: dense clipped fill passes still
   // differ from tiny-skia by two channel bytes in the native parity census.
   if (input.markStyle === 'fill' || input.markStyle === 'glow-fill') return false;
-  if (!['kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill', 'moonboard', 'woods'].includes(boardName)) {
+  if (
+    !['kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill', 'moonboard', 'woods', 'quantum'].includes(
+      boardName,
+    )
+  ) {
     return false;
   }
   // API2/3 still prepares the four Homewall roles understood by those binaries.

@@ -1,5 +1,5 @@
 import type { QuantumModelName } from '@boardsesh/board-constants/quantum';
-import type { QuantumBoardDetails } from '@boardsesh/board-config';
+import type { QuantumBoardDetails } from './quantum-config';
 
 type ArtworkCrop = readonly [left: number, top: number, right: number, bottom: number];
 
@@ -18,19 +18,25 @@ const CROPS = {
 
 /** Set the canvas and every hold centre to cropped artwork pixels. The IDs and
  * source geometry remain the same, including the controller's LED lookup. */
-export function projectQuantumBoardArtwork(details: QuantumBoardDetails): QuantumBoardDetails {
+export function projectQuantumBoardArtwork(
+  details: QuantumBoardDetails,
+  { scaleCanvas = true }: { scaleCanvas?: boolean } = {},
+): QuantumBoardDetails {
   const model = details.neutralGrid.model;
   if (model === 'belay') return details;
 
   const { xScale, yScale, xOrigin, yOrigin } = model === 's' ? FITNESS : STANDARD;
   const [left, top, right, bottom] = CROPS[model];
-  const boardWidth = right - left;
-  const boardHeight = bottom - top;
+  const cropWidth = right - left;
+  const cropHeight = bottom - top;
+  const canvasScale = scaleCanvas ? Math.min(1, 1536 / cropWidth, 2304 / cropHeight) : 1;
+  const boardWidth = Math.round(cropWidth * canvasScale);
+  const boardHeight = Math.round(cropHeight * canvasScale);
   const holdXScale = ((details.edge_right - details.edge_left) * xScale) / details.boardWidth;
   const holdYScale = ((details.edge_top - details.edge_bottom) * yScale) / details.boardHeight;
   const holdXOffset = details.edge_left * xScale + xOrigin - left;
   const holdYOffset = yOrigin - details.edge_top * yScale - top;
-  const radiusScale = boardWidth / details.boardWidth;
+  const radiusScale = (cropWidth / details.boardWidth) * canvasScale;
 
   return {
     ...details,
@@ -44,8 +50,8 @@ export function projectQuantumBoardArtwork(details: QuantumBoardDetails): Quantu
     neutralGrid: { ...details.neutralGrid, boardWidth, boardHeight },
     holdsData: details.holdsData.map((hold) => ({
       ...hold,
-      cx: hold.cx * holdXScale + holdXOffset,
-      cy: hold.cy * holdYScale + holdYOffset,
+      cx: (hold.cx * holdXScale + holdXOffset) * canvasScale,
+      cy: (hold.cy * holdYScale + holdYOffset) * canvasScale,
       r: hold.r * radiusScale,
     })),
   };

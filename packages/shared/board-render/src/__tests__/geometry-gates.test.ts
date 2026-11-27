@@ -32,7 +32,7 @@ import {
  * They were written for the spike as "throwaway scripts to re-run after changing
  * the tracer", and that is exactly why the record drifted: nobody re-ran them,
  * and the traced counts in the write-up stayed on a pre-fix run through two
- * rounds of fixes. Gates 1 to 5 are geometry against geometry over all 51
+ * rounds of fixes. Gates 1 to 5 are geometry against geometry over all 55
  * shards; gates 6 and 7 decode real board art, so they run a nine-board sample
  * by default and the whole catalogue under `BOARD_ART_GATES=all`.
  *
@@ -70,6 +70,10 @@ const SPIKE_SAMPLE_KEYS = [
   'moonboard/5-1',
   'woods/1-1',
   'woods/1-2',
+  'quantum/9101-9201',
+  'quantum/9101-9202',
+  'quantum/9101-9203',
+  'quantum/9104-9204',
 ];
 
 const RUN_EVERY_CONFIG = process.env.BOARD_ART_GATES === 'all';
@@ -126,6 +130,10 @@ const ART_GATE_KEYS = RUN_EVERY_CONFIG ? ALL_SHARD_KEYS : SPIKE_SAMPLE_KEYS;
  * physical holds only, excluding empty logical mounting slots.
  */
 const PINNED_CUT_SHARES: Record<string, { neighbourMean: number; overFivePercent: number; opaqueMean: number }> = {
+  'quantum/9101-9201': { neighbourMean: 0.3, overFivePercent: 8, opaqueMean: 8.3 },
+  'quantum/9101-9202': { neighbourMean: 0.3, overFivePercent: 8, opaqueMean: 8.5 },
+  'quantum/9101-9203': { neighbourMean: 0.4, overFivePercent: 6, opaqueMean: 8.4 },
+  'quantum/9104-9204': { neighbourMean: 0.4, overFivePercent: 3, opaqueMean: 7.5 },
   'decoy/2-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 6.2 },
   'decoy/2-2': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'decoy/2-3': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
@@ -205,6 +213,9 @@ const PINNED_PLACEMENT_ON_THE_EDGE: Record<string, number> = {
   // 3 while the boundary was the 37.6% isoline; the crisp profile's tighter
   // 50% cut moved one of the three beside-the-bolt screw-ons fully outside
   // (see PINNED_PLACEMENT_OUTSIDE_OUTLINE) and grazed one grasshopper bolt.
+  'quantum/9101-9201': 17,
+  'quantum/9101-9202': 17,
+  'quantum/9101-9203': 15,
   'grasshopper/1-4': 1,
   'kilter/1-28': 2,
 };
@@ -224,6 +235,19 @@ const PINNED_PLACEMENT_OUTSIDE_OUTLINE: Record<string, { holds: number[]; worstD
   // plus the half-pixel inset put it at 1.61 px — 0.05 radii, beside its own
   // hold, not on another.
   'kilter/1-28': { holds: [4810], worstDistancePx: 1.61 },
+  // Source-art inspection: optical LED registration lies just outside these edges.
+  'quantum/9101-9201': {
+    holds: [1001007, 1001012, 1001047, 1001048, 1002056, 1002077, 1003056, 1006078, 1006087, 1006109],
+    worstDistancePx: 5.39,
+  },
+  'quantum/9101-9202': {
+    holds: [1001007, 1001012, 1001047, 1001048, 1002056, 1002077, 1003056, 1006078, 1006087, 1006109],
+    worstDistancePx: 5.39,
+  },
+  'quantum/9101-9203': {
+    holds: [1001007, 1001012, 1001047, 1001048, 1002056, 1003056, 1006078, 1006087, 1006109],
+    worstDistancePx: 5.39,
+  },
 };
 
 /**
@@ -371,7 +395,7 @@ describe('board-art-geometry gates', () => {
     // the count is pinned — a shard going missing is a broken art path, not a
     // decision anyone would take quietly.
     expect(ALL_SHARD_KEYS.filter((key) => key.startsWith('woods/'))).toEqual(['woods/1-1', 'woods/1-2']);
-    expect(ALL_SHARD_KEYS.length).toBe(51);
+    expect(ALL_SHARD_KEYS.length).toBe(55);
   });
 
   it('gate 1: every outline sits on its own placement', () => {
@@ -463,6 +487,10 @@ const PINNED_AREA_RECOVERY: Record<
   string,
   { recoveryMeanFloor: number; recoveryP10Floor: number; choppedCeiling: number }
 > = {
+  'quantum/9101-9201': { recoveryMeanFloor: 0.984, recoveryP10Floor: 0.94, choppedCeiling: 7 },
+  'quantum/9101-9202': { recoveryMeanFloor: 0.983, recoveryP10Floor: 0.937, choppedCeiling: 6 },
+  'quantum/9101-9203': { recoveryMeanFloor: 0.984, recoveryP10Floor: 0.939, choppedCeiling: 5 },
+  'quantum/9104-9204': { recoveryMeanFloor: 0.994, recoveryP10Floor: 0.961, choppedCeiling: 0 },
   'decoy/2-1': { recoveryMeanFloor: 0.979, recoveryP10Floor: 0.964, choppedCeiling: 2 },
   'decoy/2-2': { recoveryMeanFloor: 0.995, recoveryP10Floor: 0.982, choppedCeiling: 0 },
   'decoy/2-3': { recoveryMeanFloor: 0.994, recoveryP10Floor: 0.982, choppedCeiling: 0 },

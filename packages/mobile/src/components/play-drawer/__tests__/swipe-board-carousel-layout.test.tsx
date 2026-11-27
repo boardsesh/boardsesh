@@ -1226,7 +1226,7 @@ describe('SwipeBoardCarousel still wall (PNG board)', () => {
     expect(bareWallProps.playSurface).toBeUndefined();
   });
 
-  it('keeps the Quantum wall behind a loading page until that page reports its own paint', async () => {
+  it('tracks Quantum page paint through the standard PNG readiness gate', async () => {
     const pager = restingPager();
     const quantumProps = {
       ...props,
@@ -1246,14 +1246,14 @@ describe('SwipeBoardCarousel still wall (PNG board)', () => {
       pageArt: SharedValue<Record<number, BoardArtReadiness>>;
     };
     expect(pageArt.value[0]).toBeUndefined();
-    expect(slotOf(bareWall).dataset.opacity).toBe('1');
+    expect(slotOf(bareWall).dataset.opacity).toBe('0');
 
     act(() => readinessCallbackFor('b')('loading'));
     // The mock recomputes animated styles on React renders. Refit the same
     // canvas to sample a new frame without unmounting its artwork.
     rerender(createElement(SwipeBoardCarousel, { ...quantumProps, containerSize: { width: 350, height: 480 } }));
     expect(getByTestId('bare-wall')).toBe(bareWall);
-    expect(slotOf(bareWall).dataset.opacity).toBe('1');
+    expect(slotOf(bareWall).dataset.opacity).toBe('0');
     expect(pageArt.value[0]).toBe('loading');
 
     act(() => readinessCallbackFor('b')('ready'));

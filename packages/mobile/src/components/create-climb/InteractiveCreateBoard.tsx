@@ -13,6 +13,7 @@ import Animated, { useDerivedValue } from 'react-native-reanimated';
 import { GestureDetector, GestureHandlerRootView, type GestureType } from 'react-native-gesture-handler';
 import type { BoardName, LitUpHoldsMap } from '@boardsesh/shared-schema';
 import { BoardImageNative } from '../BoardImageNative';
+import type { BoardArtReadiness } from '../../lib/board-render/ready-board-art';
 import { ResetZoomButton } from '../board-controls/ResetZoomButton';
 import { useZoomPanGesture } from '../play-drawer/use-zoom-pan-gesture';
 import type { ZoomViewport } from '../play-drawer/zoom-viewport-clamp';
@@ -36,6 +37,7 @@ type InteractiveCreateBoardProps = {
    * on every paint.
    */
   frames: string;
+  onArtReadinessChange?: (readiness: BoardArtReadiness) => void;
   boardName: BoardName;
   layoutId: number;
   sizeId: number;
@@ -109,6 +111,7 @@ const NO_GHOST_TARGETS: readonly BoardHoldTarget[] = [];
  */
 export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard({
   frames,
+  onArtReadinessChange,
   boardName,
   layoutId,
   sizeId,
@@ -290,6 +293,7 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
           <Animated.View testID="create-board-render-box" style={[boardBoxStyle ?? styles.board, animatedZoomStyle]}>
             <BoardImageNative
               editorSurface
+              onArtReadinessChange={onArtReadinessChange}
               frames={frames}
               boardName={boardName}
               layoutId={layoutId}

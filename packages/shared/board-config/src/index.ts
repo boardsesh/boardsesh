@@ -19,3 +19,4 @@ export * from './tick-board';
 export * from './setup-selection';
 export * from './setup-labels';
 export * from './wall-match';
+export * from './quantum-art-projection';

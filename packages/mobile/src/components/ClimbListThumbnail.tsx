@@ -7,7 +7,6 @@ import { isBoardArtInMemory, warmBoardArtMemory } from '../lib/board-render/warm
 import { useTheme } from '../providers/theme-provider';
 import { borderRadius } from '../theme/tokens';
 import { LayeredClimbImage } from './LayeredClimbImage';
-import { getBoardImageAdapter, type RuntimeBoardImageLoader } from './board-image-adapters';
 import {
   climbListThumbnailRenderWidth,
   sizedThumbnailRenderWidth,
@@ -37,13 +36,7 @@ type ClimbListThumbnailPrewarmProps = {
  * `prefetch` puts the render at the scheduler's idle-only rank: it never takes a
  * slot from a thumbnail somebody can already see.
  */
-export const ClimbListThumbnailPrewarm = React.memo(function ClimbListThumbnailPrewarm(
-  props: ClimbListThumbnailPrewarmProps,
-) {
-  return getBoardImageAdapter(props.boardName).prewarmRaster ? <PhotoClimbListThumbnailPrewarm {...props} /> : null;
-});
-
-const PhotoClimbListThumbnailPrewarm = React.memo(function PhotoClimbListThumbnailPrewarm({
+export const ClimbListThumbnailPrewarm = React.memo(function ClimbListThumbnailPrewarm({
   frames,
   boardName,
   layoutId,
@@ -103,45 +96,7 @@ type ClimbListThumbnailProps = {
  * BoardImageNative (the play-view full-size renderer) follows the same
  * pattern.
  */
-const ClimbListThumbnail = React.memo(function ClimbListThumbnail(props: ClimbListThumbnailProps) {
-  const loadImage = getBoardImageAdapter(props.boardName).loadImage;
-  return loadImage ? (
-    <RuntimeClimbListThumbnail {...props} loadImage={loadImage} />
-  ) : (
-    <PhotoClimbListThumbnail {...props} />
-  );
-});
-
-const RuntimeClimbListThumbnail = React.memo(function RuntimeClimbListThumbnail({
-  frames,
-  layoutId,
-  sizeId,
-  size,
-  readyBoardArtRef,
-  onArtDisplayed,
-  onArtError,
-  loadImage,
-}: ClimbListThumbnailProps & { loadImage: RuntimeBoardImageLoader }) {
-  const listCell = useClimbListThumbnailSize();
-  const RuntimeBoardImage = loadImage();
-  if (readyBoardArtRef) readyBoardArtRef.current = null;
-  return (
-    <View style={[styles.container, size ?? listCell]}>
-      <RuntimeBoardImage
-        frames={frames}
-        layoutId={layoutId}
-        sizeId={sizeId}
-        style={{ height: '100%' }}
-        backgroundVariant="thumb"
-        onArtDisplayed={onArtDisplayed}
-        onArtError={onArtError}
-        accessible={false}
-      />
-    </View>
-  );
-});
-
-const PhotoClimbListThumbnail = React.memo(function PhotoClimbListThumbnail({
+const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
   climbUuid,
   readyBoardArtRef,
   frames,

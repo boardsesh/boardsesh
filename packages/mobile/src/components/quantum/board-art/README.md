@@ -24,5 +24,5 @@ with the geometry's 1,000-fold coordinate scaling. Kicker targets retain the
 standard fit. The visible screw holes and apertures there did not establish
 LED alignment. The optical fit measures image registration only.
 
-See [the calibration used by the renderer](../../../lib/quantum-art-projection.ts)
+See [the calibration used by the renderer](../../../../../shared/board-config/src/quantum-art-projection.ts)
 and [the fixed geometry snapshot](../../../../../../docs/quantum-board-geometry/catalogue-snapshot.json).

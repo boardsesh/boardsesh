@@ -130,8 +130,8 @@ inside the traced polygon, 0..1.
 
 - A placement with **no traceable art** is absent from `outlines`. That is not an edge
   case: MoonBoard's placements are a synthetic 11x18 grid and most cells genuinely carry
-  no hold. **Consumers must fall back to a ring at the placement radius.** 16,603 of
-  17,163 placements are traced (96.7%); the shortfall is 232 empty MoonBoard grid cells,
+  no hold. **Consumers must fall back to a ring at the placement radius.** 18,493 of
+  19,053 placements are traced (97.1%); the shortfall is 232 empty MoonBoard grid cells,
   51 Kilter Original 12x12 placements with no art of their own, 275 empty Woods mounting slots, and 2 Decoy frame-rail
   T-nuts whose own-layer art runs to the search box.
 - A placement with **no outline** is absent from `silhouetteLightness`. There is no `-1`
@@ -1135,6 +1135,41 @@ config in the catalogue is in that state today. The 275 Woods placements with no
 empty logical mounting slots — fall back to a ring individually, which is the same contract
 MoonBoard's 232 empty grid cells already use.
 
+### Dark photographic art
+
+Quantum XL, L and M ship lossless cropped WebPs on a dark ground (corner RGB
+`33,33,33`). `buildDarkKeyMask` inverts RGB and reuses the white key's connected
+corner flood and one-pixel erode. The ground ceiling is 60; a 50–70 sweep changes
+hold coverage by less than 2.5 percentage points. Enclosed dark LED apertures stay
+filled as hold substance, so the tracer follows each hold's outside boundary.
+
+S Fitness is different: the actual bundled art has a white ground enclosed by a
+faint rectangular frame. Its white key uses the measured white pixel `(20,20)`
+as an additional ground seed inside that frame. A 225–245 white-floor sweep is
+also bounded by 2.5 percentage points. Regression tests pin ground/hold shares
+from the actual WebPs for all four sizes. Belay has no released art and is excluded.
+
+The generator and app share `projectQuantumBoardArtwork` in
+`@boardsesh/board-config`. Tracing uses original image pixels (`scaleCanvas: false`);
+the app applies `min(1,1536/cropWidth,2304/cropHeight)` after the crop, scaling every
+center and radius together. XL becomes 1536×1552, L 1536×1323, M 1536×1679 and
+S Fitness stays 1176×1892. Radius-unit polygons keep the same shape at either scale.
+The offline geometry/census catalogue includes these four boards separately from
+the public server-render catalogue, whose Quantum route remains closed.
+
+All 1,890 released Quantum placements have outlines: XL 657, L 549, M 432 and
+S Fitness 252. Disconnected holds trace whole; only genuinely touching components
+use the existing partition/contact machinery. Geometry gates include every Quantum
+size in their default art sample. The optical placement fit leaves ten XL/L and
+nine M LED centers just outside their outlines, at most 5.39 original image pixels
+(0.23 placement radii). The inspected ids and distances are pinned individually;
+controller placement identities and the shared optical transform stay unchanged.
+
+The full 55-config atlas census passes. Quantum's assembled static GPU buffers
+measure 20.17 MiB (XL), 16.61 MiB (L), 20.50 MiB (M) and 17.48 MiB (S Fitness),
+all below the 128 MiB limit. The largest Quantum manifest is 462,814 bytes; the
+native atlas includes every hold at the scaled canvas dimensions.
+
 ## Per-board coverage
 
 | Board | Configs | Traced / placements |
@@ -1143,11 +1178,12 @@ MoonBoard's 232 empty grid cells already use.
 | grasshopper | 5 | 1,432 / 1,432 (100%) |
 | kilter | 16 | 5,330 / 5,381 (99.1%) |
 | moonboard | 7 | 1,022 / 1,254 (81.5%) |
+| quantum | 4 | 1,890 / 1,890 (100%) |
 | soill | 2 | 560 / 560 (100%) |
 | tension | 15 | 5,474 / 5,474 (100%) |
 | touchstone | 1 | 648 / 648 (100%) |
 | woods | 2 | 1,104 / 1,379 (80.1%) |
-| **total** | **51** | **16,603 / 17,163 (96.7%)** |
+| **total** | **55** | **18,493 / 19,053 (97.1%)** |
 
 Per-config figures live in `src/generated/outline-counts.cjs`, written by the run that
 produced the shards, so the record cannot drift from the tables.

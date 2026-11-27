@@ -214,14 +214,22 @@ describe('getBoardRenderData', () => {
 
       expect(render.holdsData).toHaveLength(count);
       expect(render.holdsData.map(({ id }) => id)).toEqual(geometry.placements.map(({ placementId }) => placementId));
-      expect(render.backgroundImageKeys).toEqual([]);
-      expect(getBoardRenderDimensions(config)).toEqual({ boardWidth, boardHeight });
-      expect(getBoardAspectRatio(config)).toBe(boardWidth / boardHeight);
-      expect(Math.hypot(hold.cx - observedX, hold.cy - observedY)).toBeLessThan(2.3);
+      const model = sizeId === 9204 ? 's-fitness' : sizeId === 9203 ? 'm' : sizeId === 9202 ? 'l' : 'xl';
+      const canvasScale = Math.min(1, 1536 / boardWidth, 2304 / boardHeight);
+      expect(render.backgroundImageKeys).toEqual([`quantum/quantum-${model}.webp`]);
+      expect(getBoardRenderDimensions(config)).toEqual({
+        boardWidth: Math.round(boardWidth * canvasScale),
+        boardHeight: Math.round(boardHeight * canvasScale),
+      });
+      expect(getBoardAspectRatio(config)).toBe(
+        Math.round(boardWidth * canvasScale) / Math.round(boardHeight * canvasScale),
+      );
+      expect(Math.hypot(hold.cx - observedX * canvasScale, hold.cy - observedY * canvasScale)).toBeLessThan(2.3);
     },
   );
 
   it('rejects an unrelated Quantum set or layout', () => {
+    expect(getBoardRenderData({ boardName: 'quantum', layoutId: 9105, sizeId: 9205, setIds: [1] })).toBeNull();
     expect(getBoardRenderData({ boardName: 'quantum', layoutId: 9101, sizeId: 9201, setIds: [2] })).toBeNull();
     expect(getBoardRenderData({ boardName: 'quantum', layoutId: 9104, sizeId: 9201, setIds: [1] })).toBeNull();
   });

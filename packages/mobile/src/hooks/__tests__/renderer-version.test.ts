@@ -14,7 +14,7 @@ describe('RENDERER_VERSION', () => {
     // again took 10; Aura-by-default took 11; the Aura seam fix took 12; the
     // crisp silhouette re-cut took 13, extending it to MoonBoard took 14, and
     // the one Aura HAND cyan on every board took 15; Woods calibration took 16.
-    expect(RENDERER_VERSION).toBe(16);
+    expect(RENDERER_VERSION).toBe(17);
   });
 
   it('stamps the prefix every cached overlay is matched on', () => {
