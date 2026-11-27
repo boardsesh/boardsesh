@@ -14,9 +14,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   assignLedIndices,
   bindLedPositionsToHoles,
+  buildSprayLedMapping,
   createWiring,
   createLedStripes,
   moveLedStripeEndpoint,
+  setLedStripeCount,
   DEFAULT_TNUT_CORNERS,
   generateLedPositions,
   generateTnutGrid,
@@ -1218,6 +1220,207 @@ describe('SprayWallLedSetupScreen', () => {
   });
 
   describe('continuous LED strips', () => {
+    function editedStripedGrid(orientation: 'horizontal' | 'vertical'): TnutLayout {
+      const grid = { ...savedLayout(), pattern: 'grid' as const, rows: 2, columns: 2 };
+      grid.holes = generateTnutGrid(grid);
+      const generated = createLedStripes(grid, orientation, 3);
+      if (generated === 'capacity') throw new Error('fixture capacity');
+      const [first, second] = generated.ledStripes!.stripes;
+      const moved = moveLedStripeEndpoint(generated, first.id, 'start', {
+        x: first.start.x + 0.03,
+        y: first.start.y + 0.04,
+      });
+      const resized = setLedStripeCount(moved, second.id, 5);
+      if (resized === 'capacity') throw new Error('fixture capacity');
+      const firstOrder = [...resized.ledStripes!.stripes[0].ledIds].reverse();
+      const secondOrder = resized.ledStripes!.stripes[1].ledIds;
+      const edited: TnutLayout = {
+        ...resized,
+        wiring: {
+          direction: 'custom',
+          startCorner: 'br',
+          initialSkip: 2,
+          paths: [[...firstOrder, ...secondOrder]],
+          skips: [{ from: firstOrder.at(-1)!, to: secondOrder[0], count: 3 }],
+        },
+        tnutLeds: [{ hole: grid.holes[0], ledIds: [firstOrder[0]], aboveLedIds: [secondOrder[0]] }],
+        holdLeds: [{ holdId: 17, ledIds: [firstOrder[0]] }],
+        holdAboveLeds: [{ holdId: 17, ledIds: [secondOrder[0]] }],
+      };
+      return { ...edited, ledPositions: bindLedPositionsToHoles(edited, photoSource.frame) };
+    }
+
+    function expectStripWork(saved: TnutLayout, expected: TnutLayout) {
+      expect(saved.ledStripes).toEqual(expected.ledStripes);
+      expect(saved.ledPositions).toEqual(expected.ledPositions);
+      expect(saved.wiring).toEqual(expected.wiring);
+      expect(saved.tnutLeds).toEqual(expected.tnutLeds);
+      expect(saved.holdLeds).toEqual(expected.holdLeds);
+      expect(saved.holdAboveLeds).toEqual(expected.holdAboveLeds);
+    }
+
+    async function growStripGrid(saved: TnutLayout) {
+      storage.load.mockResolvedValue(saved);
+      const view = await open();
+      next();
+      fireEvent.change(field('rows'), { target: { value: '3' } });
+      fireEvent.change(field('columns'), { target: { value: '3' } });
+      next();
+      next();
+      await screen.findByText('sprayLedSetup.ledHint');
+      expect(storage.save).not.toHaveBeenCalled();
+      return view;
+    }
+
+    it.each(['horizontal', 'vertical'] as const)(
+      'regenerates %s strips and maps the middle nuts after growing the grid',
+      async (orientation) => {
+        const grid = { ...savedLayout(), pattern: 'grid' as const, rows: 2, columns: 2 };
+        grid.holes = generateTnutGrid(grid);
+        const striped = createLedStripes(grid, orientation, 3);
+        if (striped === 'capacity') throw new Error('fixture capacity');
+        await growStripGrid(striped);
+        next();
+        expect(screen.getByText('sprayLedSetup.stripeConfigTitle')).toBeTruthy();
+        next();
+        if (controls.confirm.mock.calls.length) await respondToConfirm(true);
+        expect(screen.getByText('sprayLedSetup.stripeEditorTitle')).toBeTruthy();
+        const rebuilt = lastSaved();
+        expect(rebuilt.rows).toBe(3);
+        expect(rebuilt.columns).toBe(3);
+        expect(rebuilt.ledStripes?.orientation).toBe(orientation);
+        expect(rebuilt.ledStripes?.stripes.map((stripe) => stripe.ledIds.length)).toEqual([3, 3, 3]);
+        expect(rebuilt.ledPositions).toHaveLength(9);
+        const middleHoles = rebuilt.holes.filter((hole) =>
+          orientation === 'vertical' ? Math.abs(hole.x - 0.5) < 1e-8 : Math.abs(hole.y - 0.5) < 1e-8,
+        );
+        expect(middleHoles).toHaveLength(3);
+        const mapping = buildSprayLedMapping(rebuilt, photoSource.frame, []);
+        const middleStripe = rebuilt.ledStripes!.stripes[1];
+        for (const hole of middleHoles) {
+          const linked = mapping.holes.find((entry) => rebuilt.holes[entry.holeIndex] === hole);
+          expect(linked?.ledIds.some((ledId) => middleStripe.ledIds.includes(ledId))).toBe(true);
+        }
+      },
+    );
+
+    it.each(['horizontal', 'vertical'] as const)(
+      'warns before rebuilding edited %s strips and cancellation preserves the saved work on reopen',
+      async (orientation) => {
+        const saved = editedStripedGrid(orientation);
+        const view = await growStripGrid(saved);
+        next();
+        next();
+        expect(controls.confirm).toHaveBeenCalledOnce();
+        expect(controls.confirm).toHaveBeenCalledWith(
+          expect.objectContaining({ title: 'sprayLedSetup.rebuildLedsTitle', destructive: true }),
+        );
+        await respondToConfirm(false);
+        expect(screen.getByText('sprayLedSetup.stripeConfigTitle')).toBeTruthy();
+        expect(storage.save).not.toHaveBeenCalled();
+        back(); // LED pattern
+        back(); // holes
+        back(); // alignment
+        back(); // wall pattern
+        const leave = vi.fn();
+        act(() => controls.leave?.(leave));
+        expect(controls.confirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'sprayLedSetup.discardTitle' }));
+        await respondToConfirm(true);
+        expect(leave).toHaveBeenCalledOnce();
+        expect(storage.save).not.toHaveBeenCalled();
+        view.unmount();
+        controls.confirm.mockClear();
+        await openOnLedStep();
+        next();
+        next();
+        expect(screen.getByText('sprayLedSetup.stripeEditorTitle')).toBeTruthy();
+        expect(controls.confirm).not.toHaveBeenCalled();
+        expect(lastSaved()).toMatchObject({ rows: 2, columns: 2 });
+        expectStripWork(lastSaved(), saved);
+      },
+    );
+
+    it.each(['horizontal', 'vertical'] as const)(
+      'leaves %s strips and cable untouched when exiting before strip reconciliation',
+      async (orientation) => {
+        const saved = editedStripedGrid(orientation);
+        const view = await growStripGrid(saved);
+        next();
+        expect(screen.getByText('sprayLedSetup.stripeConfigTitle')).toBeTruthy();
+        expect(storage.save).not.toHaveBeenCalled();
+        back();
+        back();
+        back();
+        back();
+        const leave = vi.fn();
+        act(() => controls.leave?.(leave));
+        await respondToConfirm(true);
+        expect(leave).toHaveBeenCalledOnce();
+        expect(storage.save).not.toHaveBeenCalled();
+        view.unmount();
+        await open();
+        next();
+        expect(field('rows').value).toBe('2');
+        expect(field('columns').value).toBe('2');
+        next();
+        expect(controls.editor?.holes).toEqual(saved.holes);
+      },
+    );
+
+    describe.each(['horizontal', 'vertical'] as const)('%s strip work', (orientation) => {
+      it.each([false, true])(
+        'preserves every edit without a dialog when tentative grid changes are reverted=%s',
+        async (revertTentativeChange) => {
+          const saved = editedStripedGrid(orientation);
+          storage.load.mockResolvedValue(saved);
+          await open();
+          next();
+          if (revertTentativeChange) {
+            fireEvent.change(field('rows'), { target: { value: '3' } });
+            fireEvent.change(field('columns'), { target: { value: '3' } });
+            fireEvent.change(field('rows'), { target: { value: '2' } });
+            fireEvent.change(field('columns'), { target: { value: '2' } });
+          }
+          next();
+          next();
+          await screen.findByText('sprayLedSetup.ledHint');
+          next();
+          next();
+          expect(screen.getByText('sprayLedSetup.stripeEditorTitle')).toBeTruthy();
+          expect(controls.confirm).not.toHaveBeenCalled();
+          expectStripWork(lastSaved(), saved);
+        },
+      );
+
+      it('keeps edited strips and wiring when moving only a nut marker', async () => {
+        const saved = editedStripedGrid(orientation);
+        storage.load.mockResolvedValue(saved);
+        await open();
+        next();
+        next();
+        const original = saved.holes[0];
+        const moved = { x: original.x + 0.02, y: original.y + 0.01 };
+        fireEvent.click(button('movePoint'));
+        act(() => controls.canvas?.onMove?.(original, moved, 500, 700));
+        next();
+        await screen.findByText('sprayLedSetup.ledHint');
+        next();
+        next();
+        expect(screen.getByText('sprayLedSetup.stripeEditorTitle')).toBeTruthy();
+        expect(controls.confirm).not.toHaveBeenCalled();
+        const updated = lastSaved();
+        expect(updated.holes).toContainEqual(moved);
+        expect(updated.ledStripes).toEqual(saved.ledStripes);
+        expect(updated.wiring).toEqual(saved.wiring);
+        expect(updated.ledPositions?.map(({ id, x, y }) => ({ id, x, y }))).toEqual(
+          saved.ledPositions?.map(({ id, x, y }) => ({ id, x, y })),
+        );
+        expect(updated.tnutLeds).toEqual([{ ...saved.tnutLeds![0], hole: moved }]);
+        expect(updated.holdLeds).toEqual(saved.holdLeds);
+        expect(updated.holdAboveLeds).toEqual(saved.holdAboveLeds);
+      });
+    });
+
     it('clears manual roles only after confirming a full strip replacement', async () => {
       const saved = savedWithLeds();
       const ledId = saved.ledPositions![0].id;

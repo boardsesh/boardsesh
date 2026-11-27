@@ -620,7 +620,11 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     if (step === 'stripeConfig') {
       if (!supportedLedPlacement || layout.ledPlacement !== 'stripe' || !validStripeCount) return;
       const basis = stripeConfigBasis.current;
-      const unchanged = layout.ledStripes && basis?.orientation === stripeOrientation && basis.count === stripeCount;
+      const unchanged =
+        layout.ledStripes &&
+        basis?.orientation === stripeOrientation &&
+        basis.count === stripeCount &&
+        generatedLeds.current === ledSignature(layout);
       const draft = unchanged ? layout : createLedStripes(layout, stripeOrientation, stripeCount);
       if (draft === 'capacity') {
         setExpansionTooLarge(true);

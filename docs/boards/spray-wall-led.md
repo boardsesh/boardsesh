@@ -100,6 +100,10 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    Confirming a full strip rebuild clears manual hold and T-nut assignments so
    the new strips use automatic mapping. Individual strip edits still prune
    only references that no longer exist.
+   Changing the calibrated grid also requires confirming a strip rebuild,
+   even when orientation and LED count stay the same. The new strips follow
+   the updated rows, columns and anchors. Cancelling keeps the saved setup;
+   an unchanged grid retains edited strips, cable and manual assignments.
 8. Next opens **Holds and LEDs**. Switch between **Holds** and **T-nuts** to
    choose what to link, then tap LEDs to add or remove them from that selection.
    Several LEDs can belong to the same hold or T-nut. Dashed lines join the LEDs
