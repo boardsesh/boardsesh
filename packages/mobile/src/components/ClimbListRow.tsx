@@ -598,7 +598,8 @@ export const ClimbListRowView = React.memo(function ClimbListRowView({
       style={styles.menuBody}
       accessible
       accessibilityRole="button"
-      accessibilityState={{ selected: !!selected }}
+      // React Native Web requires the ARIA prop to expose selection in the DOM.
+      aria-selected={!!selected}
       onAccessibilityTap={handleRowPress}
       accessibilityActions={rowAccessibilityActions}
       onAccessibilityAction={handleRowAccessibilityAction}

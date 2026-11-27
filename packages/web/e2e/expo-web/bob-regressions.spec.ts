@@ -293,6 +293,7 @@ test('climb grades and overflow buttons stay at the trailing edge at every brows
   }).toPass({ timeout: WARM_TIMEOUT_MS });
   await page.keyboard.press('Escape');
   await expect(page.getByRole('menuitem').first()).toBeHidden();
+  await expect(firstRow).toHaveAttribute('aria-selected', 'false');
   await firstRow.click({ force: true });
   await expect(firstRow).toHaveAttribute('aria-selected', 'true');
 });
