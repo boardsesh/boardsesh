@@ -20,8 +20,6 @@ import ScheduleOutlined from '@mui/icons-material/ScheduleOutlined';
 import NotesOutlined from '@mui/icons-material/NotesOutlined';
 import ArrowForwardOutlined from '@mui/icons-material/ArrowForwardOutlined';
 import LocaleLink from '@/app/components/i18n/locale-link';
-import { useFeatureFlag } from '@/app/components/providers/feature-flags-provider';
-import { GYM_KIOSK_FLAG } from '@/app/flags';
 import { themeTokens } from '@/app/theme/theme-config';
 import { ownerPromptsToShow, OWNER_PROMPT_TAB, type OwnerPromptKey } from './gym-owner-prompts-logic';
 
@@ -93,14 +91,6 @@ export default function GymOwnerPrompts({
   hasBranding,
 }: GymOwnerPromptsProps) {
   const { t } = useTranslation('kiosk');
-  const kioskFlag = useFeatureFlag(GYM_KIOSK_FLAG);
-
-  // The prompts link into the manage console, which is gated until the feature
-  // ships broadly — hide them entirely while the flag is off.
-  if (!kioskFlag) {
-    return null;
-  }
-
   const prompts = ownerPromptsToShow({ canEdit, hasBoards, hasHours, hasDescription, hasKiosk, hasBranding });
   if (prompts.length === 0) {
     return null;

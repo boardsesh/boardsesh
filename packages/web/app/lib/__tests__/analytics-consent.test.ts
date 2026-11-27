@@ -131,7 +131,7 @@ describe('web analytics consent lifecycle', () => {
 
   it('keeps flags live in memory while every product entrypoint sends nothing', async () => {
     const analytics = await import('../analytics');
-    analytics.readPosthogFeatureFlags(['gym-kiosk']);
+    analytics.readPosthogFeatureFlags(['moonboard-wide-angles']);
     expect(harness.constructors).toHaveBeenCalledWith(
       expect.objectContaining({ persistence: 'memory', defaultOptIn: false }),
     );
