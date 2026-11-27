@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-26T23:00:17.217Z",
+  "generatedAt": "2026-11-27T20:53:32.689Z",
   "entries": [
+    {
+      "prNumber": 8268,
+      "category": "new",
+      "title": "Prefer the old tab bar? Turn off Search from the tab bar in the Climbs list's View options.",
+      "mergedAt": "2026-11-27T20:48:40Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8268"
+    },
     {
       "prNumber": 8266,
       "category": "new",
