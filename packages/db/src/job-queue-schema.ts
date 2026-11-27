@@ -276,6 +276,15 @@ const ROUTINE_PROVIDER_EXTRA_GRANTS: readonly WorkerTableGrant[] = [
   { table: 'board_attempts', privileges: CATALOG_WRITE },
   { table: 'board_kits', privileges: CATALOG_WRITE },
   { table: 'board_climb_holds', privileges: CATALOG_WRITE },
+  // Quantum seeds the fixed grade reference before importing climbs. The
+  // upsert reads and updates the labels and listing status, and keeps the key.
+  { table: 'board_difficulty_grades', privileges: ['SELECT'], columns: ['route_name', 'is_listed'] },
+  {
+    table: 'board_difficulty_grades',
+    privileges: ['INSERT'],
+    columns: ['board_type', 'difficulty', 'boulder_name', 'route_name', 'is_listed'],
+  },
+  { table: 'board_difficulty_grades', privileges: ['UPDATE'], columns: ['boulder_name', 'route_name', 'is_listed'] },
   // Aurora's per-table cursors, the shared-sync and catalog cooldown slots and
   // the weekly repair and snapshot watermarks.
   { table: 'board_shared_syncs', privileges: CATALOG_WRITE },
@@ -624,7 +633,7 @@ export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly Work
   // aurora-user-sync, kilter-user-sync.
   'interactive-import': PROVIDER_SYNC_GRANTS,
   // provider-routine-cycle (a user sync), aurora-shared-sync,
-  // kilter-catalog-sync, moonboard-locations-sync.
+  // kilter-catalog-sync, quantum-catalog-sync, moonboard-locations-sync.
   'routine-provider': [...PROVIDER_SYNC_GRANTS, ...ROUTINE_PROVIDER_EXTRA_GRANTS],
   // climb-stats-self-heal, user-data-export, spray-wall-art, reclaim-logbook-snapshots,
   // prune-logbook-changes.

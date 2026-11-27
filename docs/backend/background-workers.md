@@ -193,6 +193,9 @@ these grants. A table the appliers start writing fails that test first.
 | SELECT, INSERT, UPDATE, DELETE | `board_climb_aliases` (Kilter's folded aliases and the deletions that drop them) |
 | SELECT, INSERT | `board_climb_stats_history`, `notifications` |
 | SELECT | `setter_follows`, `user_follows`, `gym_claims`, `gym_members`, `gym_follows`, `comments (entity_id, entity_type, deleted_at)`, `kilter_aurora_benchmarks` |
+| SELECT | `board_difficulty_grades (route_name, is_listed)` for the Quantum reference upsert |
+| INSERT | `board_difficulty_grades (board_type, difficulty, boulder_name, route_name, is_listed)` |
+| UPDATE | `board_difficulty_grades (boulder_name, route_name, is_listed)` |
 | INSERT | `provider_sync_controls` (a control row for a credential linked before rows existed), `users (id, name, email, emailVerified, image, created_at, updated_at)` (the system user that owns public catalog boards; none of it readable) |
 
 `maintenance-delivery` gets the grants `climb-stats-self-heal` needs

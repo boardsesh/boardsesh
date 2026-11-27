@@ -724,16 +724,12 @@ async function reconcileQuantumClimbs(
   // alias to the imported route. Canonical rows have their separate upsert guard.
   await assertNoForeignClimbUuidCollisions(transaction, prepared, signal);
 
-  // Existing source identities have immutable frames, validated above. Their
-  // hold rows therefore never need deleting and re-inserting.
-  const climbUuids = prepared.climbs.filter((climb) => !existingClimbUuids.has(climb.uuid)).map((climb) => climb.uuid);
-  await processBatches(climbUuids, async (uuidBatch) => {
-    throwIfAborted(signal);
-    await transaction
-      .delete(boardClimbHolds)
-      .where(and(eq(boardClimbHolds.boardType, QUANTUM_BOARD_TYPE), inArray(boardClimbHolds.climbUuid, uuidBatch)));
-  });
-  const newClimbUuids = new Set(climbUuids);
+  // Existing source identities retain their validated immutable frames and
+  // holds. The cascading climb foreign key guarantees new identities have no
+  // holds to clear.
+  const newClimbUuids = new Set(
+    prepared.climbs.filter((climb) => !existingClimbUuids.has(climb.uuid)).map((climb) => climb.uuid),
+  );
   await processBatches(
     prepared.holds.filter((hold) => newClimbUuids.has(hold.climbUuid)),
     async (holdBatch) => {
