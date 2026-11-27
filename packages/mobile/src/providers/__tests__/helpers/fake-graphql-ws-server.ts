@@ -15,7 +15,7 @@ export function createFakeGraphqlWsServer() {
   type OperationRecord = {
     connectionId: string;
     operationName: string;
-    outcome: 'ok' | 'not_in_session' | 'subscribed' | 'held';
+    outcome: 'ok' | 'not_in_session' | 'subscribed' | 'held' | 'rate_limited';
   };
   type WireQueueItem = { uuid: string; climb: Record<string, unknown> };
   type ClientFrame = {
@@ -64,6 +64,9 @@ export function createFakeGraphqlWsServer() {
     holdNextSetCurrentClimb: null as null | 'unapplied' | 'applied',
     /** How long a JoinSession takes to bind its connection; 0 binds it at once. */
     joinLatencyMs: 0,
+    dropNextConfirmedJoinReply: false,
+    holdNextJoin: null as ((complete: () => void) => void) | null,
+    rateLimitNextJoin: false,
   };
 
   function lowerFirst(name: string): string {
@@ -137,9 +140,9 @@ export function createFakeGraphqlWsServer() {
     addEventListener(): void {}
     removeEventListener(): void {}
 
-    completeJoin(id: string, variables: Record<string, unknown>): void {
+    completeJoin(id: string, variables: Record<string, unknown>, operationName = 'JoinSession'): void {
       this.joinedSessionId = typeof variables.sessionId === 'string' ? variables.sessionId : null;
-      operations.push({ connectionId: this.connectionId, operationName: 'JoinSession', outcome: 'ok' });
+      operations.push({ connectionId: this.connectionId, operationName, outcome: 'ok' });
       this.deliverLater([
         {
           id,
@@ -165,7 +168,35 @@ export function createFakeGraphqlWsServer() {
     private handleOperation(id: string, payload: { query?: string; variables?: Record<string, unknown> }): void {
       const operationName = /\b(?:mutation|subscription|query)\s+(\w+)/.exec(payload.query ?? '')?.[1] ?? 'Anonymous';
       const variables = payload.variables ?? {};
+      if (operationName === 'JoinConfirmedSession') {
+        if (queueFeed.dropNextConfirmedJoinReply) {
+          queueFeed.dropNextConfirmedJoinReply = false;
+          this.joinedSessionId = typeof variables.sessionId === 'string' ? variables.sessionId : null;
+          operations.push({ connectionId: this.connectionId, operationName, outcome: 'held' });
+          return;
+        }
+        this.completeJoin(id, variables, operationName);
+        return;
+      }
       if (operationName === 'JoinSession') {
+        if (queueFeed.rateLimitNextJoin) {
+          queueFeed.rateLimitNextJoin = false;
+          operations.push({ connectionId: this.connectionId, operationName, outcome: 'rate_limited' });
+          this.deliverLater([
+            {
+              id,
+              type: 'error',
+              payload: [{ message: 'Rate limit exceeded', extensions: { code: 'RATE_LIMITED', retryAfterSeconds: 2 } }],
+            },
+          ]);
+          return;
+        }
+        if (queueFeed.holdNextJoin) {
+          const hold = queueFeed.holdNextJoin;
+          queueFeed.holdNextJoin = null;
+          hold(() => this.completeJoin(id, variables));
+          return;
+        }
         if (queueFeed.joinLatencyMs > 0) {
           // A slow JOIN: the connection is bound only once it completes, so a
           // mutation that arrives first is refused, as on the real backend once
@@ -308,6 +339,9 @@ export function createFakeGraphqlWsServer() {
       queueFeed.current = null;
       queueFeed.holdNextSetCurrentClimb = null;
       queueFeed.joinLatencyMs = 0;
+      queueFeed.dropNextConfirmedJoinReply = false;
+      queueFeed.holdNextJoin = null;
+      queueFeed.rateLimitNextJoin = false;
     },
   };
 }

@@ -30,6 +30,7 @@ import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect, type RefObject } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
+import { MUTATION_TIMEOUT_MS } from '@boardsesh/graphql-client';
 
 const server = await vi.hoisted(async () =>
   (await import('./helpers/fake-graphql-ws-server')).createFakeGraphqlWsServer(),
@@ -102,7 +103,7 @@ const activeBoard = vi.hoisted(() => ({
     isFollowedByMe: false,
   } satisfies UserBoard,
   getStoredActiveBoard: vi.fn(),
-  setActiveBoard: vi.fn(async () => {}),
+  setActiveBoard: vi.fn(async () => true),
 }));
 
 const toast = vi.hoisted(() => ({
@@ -262,6 +263,8 @@ describe('QueueProvider — crew session after Offline mode on → off', () => {
       readDeviceState: async () => ({ device: 'online', deviceReachability: 'reachable' }),
       onOnlineChange: () => {},
     });
+    activeBoard.setActiveBoard.mockReset().mockResolvedValue(true);
+    sessionStore.setStoredSessionId.mockClear();
     activeBoard.getStoredActiveBoard.mockReset();
     activeBoard.getStoredActiveBoard.mockResolvedValue(activeBoard.stored);
     toast.showToast.mockClear();
@@ -271,7 +274,8 @@ describe('QueueProvider — crew session after Offline mode on → off', () => {
     http.request.mockReset();
     // Cold-start restore verifies the stored session over HTTP before joining.
     http.request.mockImplementation(async (operation: string) => {
-      if (operation.includes('SessionStatus')) return { sessionStatus: 'active' };
+      if (operation.includes('SessionStatus'))
+        return { sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' };
       if (operation.includes('GetSessionQueueState')) return { session: { queueState: null } };
       return {};
     });
@@ -304,6 +308,133 @@ describe('QueueProvider — crew session after Offline mode on → off', () => {
       { connectionId: socket.connectionId, operationName: 'ConfirmClimbOnWall', outcome: 'ok' },
     ]);
   });
+
+  it('starts the target streams without sending a second join after a confirmed switch', async () => {
+    const queueRef = renderApp();
+    const socket = await waitForLiveSession();
+    const mark = server.operations.length;
+    const boardPath = 'kilter/1/10/1,2/40';
+
+    await act(async () => {
+      expect(
+        await currentQueue(queueRef).joinSession('session-2', {
+          boardPath,
+          expectedBoardPath: boardPath,
+          userBoard: activeBoard.stored,
+        }),
+      ).toBe(true);
+    });
+    await waitFor(() => expect(socket.liveSubscriptions.size).toBe(2));
+    expect(socket.joinedSessionId).toBe('session-2');
+    expect(server.operations.slice(mark).filter(({ operationName }) => operationName.startsWith('Join'))).toEqual([
+      { connectionId: socket.connectionId, operationName: 'JoinConfirmedSession', outcome: 'ok' },
+    ]);
+  });
+
+  it('rejoins the previous room on a fresh connection if an accepted switch loses its reply', async () => {
+    const queueRef = renderApp();
+    const originalSocket = await waitForLiveSession();
+    server.queueFeed.dropNextConfirmedJoinReply = true;
+    vi.useFakeTimers();
+    const boardPath = 'kilter/1/10/1,2/40';
+    const joining = currentQueue(queueRef)
+      .joinSession('session-2', {
+        boardPath,
+        expectedBoardPath: boardPath,
+        userBoard: activeBoard.stored,
+      })
+      .catch((error: unknown) => error);
+
+    await act(async () => vi.advanceTimersByTimeAsync(100));
+    expect(originalSocket.joinedSessionId).toBe('session-2');
+    await act(async () => vi.advanceTimersByTimeAsync(MUTATION_TIMEOUT_MS + 200));
+    expect(await joining).toMatchObject({ message: expect.stringContaining('timed out') });
+    expect(originalSocket.readyState).toBe(originalSocket.CLOSED);
+    expect(server.liveSessionSocket()?.connectionId).not.toBe(originalSocket.connectionId);
+    expect(server.liveSessionSocket()?.joinedSessionId).toBe('session-1');
+    expect(currentQueue(queueRef).sessionId).toBe('session-1');
+    expect(activeBoard.setActiveBoard).not.toHaveBeenCalled();
+    expect(sessionStore.setStoredSessionId).not.toHaveBeenCalled();
+  });
+
+  it.each(['pending server join', 'timed-out join', 'rate-limit retry'] as const)(
+    'keeps subsequent writes in the confirmed room after an old %s',
+    async (oldJoin) => {
+      const queueRef = renderApp();
+      await waitForLiveSession();
+      await act(async () => setOfflineMode(true, 'more'));
+      await waitFor(() => expect(server.openSockets()).toHaveLength(0));
+
+      let finishOldJoin: () => void = () => {};
+      let oldJoinHeld = false;
+      if (oldJoin !== 'rate-limit retry') {
+        server.queueFeed.holdNextJoin = (complete) => {
+          finishOldJoin = complete;
+          oldJoinHeld = true;
+        };
+      } else {
+        server.queueFeed.rateLimitNextJoin = true;
+      }
+      const mark = server.operations.length;
+      vi.useFakeTimers();
+      await act(async () => {
+        setOfflineMode(false, 'more');
+        await vi.advanceTimersByTimeAsync(100);
+      });
+      const [oldSocket] = server.openSockets();
+      if (!oldSocket) throw new Error('Old room JOIN did not open a socket');
+      if (oldJoin !== 'rate-limit retry') {
+        expect(oldJoinHeld).toBe(true);
+      } else {
+        expect(server.operations.slice(mark)).toContainEqual({
+          connectionId: oldSocket.connectionId,
+          operationName: 'JoinSession',
+          outcome: 'rate_limited',
+        });
+      }
+
+      if (oldJoin === 'timed-out join') {
+        await act(async () => vi.advanceTimersByTimeAsync(MUTATION_TIMEOUT_MS));
+        expect(oldSocket.readyState).toBe(oldSocket.OPEN);
+      }
+
+      const boardPath = 'kilter/1/10/1,2/40';
+      await act(async () => {
+        const joining = currentQueue(queueRef).joinSession('session-2', {
+          boardPath,
+          expectedBoardPath: boardPath,
+          userBoard: activeBoard.stored,
+        });
+        await vi.advanceTimersByTimeAsync(150);
+        expect(await joining).toBe(true);
+      });
+      const [targetSocket] = server.openSockets();
+      if (!targetSocket) throw new Error('Confirmed JOIN did not open the target socket');
+      expect(targetSocket.joinedSessionId).toBe('session-2');
+      expect(targetSocket.connectionId).not.toBe(oldSocket.connectionId);
+
+      await act(async () => {
+        finishOldJoin();
+        await vi.advanceTimersByTimeAsync(4000);
+        const confirming = currentQueue(queueRef).confirmClimbOnWall('climb-on-new-room');
+        await vi.advanceTimersByTimeAsync(100);
+        await confirming;
+      });
+      expect(oldSocket.readyState).toBe(oldSocket.CLOSED);
+      expect(targetSocket.joinedSessionId).toBe('session-2');
+      expect(
+        server.operations
+          .slice(mark)
+          .filter(
+            ({ connectionId, operationName }) =>
+              connectionId === targetSocket.connectionId && operationName === 'JoinSession',
+          ),
+      ).toEqual([]);
+      expect(
+        server.operations.slice(mark).filter(({ operationName }) => operationName === 'ConfirmClimbOnWall'),
+      ).toEqual([{ connectionId: targetSocket.connectionId, operationName: 'ConfirmClimbOnWall', outcome: 'ok' }]);
+    },
+  );
 
   it('re-joins on the new connection after Offline mode on → off, so session mutations land', async () => {
     const queueRef = renderApp();
@@ -475,7 +606,8 @@ describe('QueueProvider — a wall move in flight across a socket drop', () => {
     sessionStore.getStoredSessionId.mockResolvedValue('session-1');
     http.request.mockReset();
     http.request.mockImplementation(async (operation: string) => {
-      if (operation.includes('SessionStatus')) return { sessionStatus: 'active' };
+      if (operation.includes('SessionStatus'))
+        return { sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' };
       if (operation.includes('GetSessionQueueState')) return { session: { queueState: null } };
       return {};
     });

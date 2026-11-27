@@ -9,10 +9,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { useReducer, useRef } from 'react';
+import { onlineManager } from '@tanstack/react-query';
 import { initialState, queueReducer, type ClimbQueueItem, type QueueState } from '@boardsesh/queue';
 import type { LocalQueueSnapshot } from '../../../lib/queue-snapshot-store';
 
 const storage = vi.hoisted(() => ({
+  sessionId: null as string | null,
+  readFailure: null as Error | null,
+  clearSession: vi.fn(),
+  sessionStatus: vi.fn(),
+  setSession: vi.fn(),
+  setSnapshot: vi.fn(async () => undefined),
   snapshot: null as LocalQueueSnapshot | null,
   /** When set, the snapshot read waits for the test to release it. */
   gate: null as Promise<void> | null,
@@ -22,18 +29,25 @@ vi.mock('../../../lib/queue-snapshot-store', () => ({
     if (storage.gate) await storage.gate;
     return storage.snapshot;
   }),
-  setStoredQueueSnapshot: vi.fn(async () => undefined),
+  setStoredQueueSnapshot: storage.setSnapshot,
   getQueueSnapshotGeneration: () => 0,
 }));
 vi.mock('../../../lib/session-store', () => ({
-  getStoredSessionId: vi.fn(async () => null),
-  clearStoredSessionId: vi.fn(),
+  getStoredSessionId: vi.fn(async () => {
+    if (storage.readFailure) throw storage.readFailure;
+    return storage.sessionId;
+  }),
+  clearStoredSessionId: storage.clearSession,
 }));
-vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: vi.fn() }) }));
+vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: storage.sessionStatus }) }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 
-import { resetQueueSnapshotRestoredReportForTests, useQueuePersistence } from '../use-queue-persistence';
+import {
+  resetQueueSnapshotRestoredReportForTests,
+  SOLO_QUEUE_SAVE_DEBOUNCE_MS,
+  useQueuePersistence,
+} from '../use-queue-persistence';
 
 function makeItem(uuid: string): ClimbQueueItem {
   return {
@@ -72,12 +86,12 @@ function useRestoreHarness(seen: Seen[]) {
   const stateRef = useRef<QueueState>(state);
   stateRef.current = state;
   const sessionIdRef = useRef<string | null>(null);
-  const { restored } = useQueuePersistence({
+  const { restored, beginClearingSavedSession } = useQueuePersistence({
     authenticatedUserId: 'viewer',
     identityReady: true,
     dispatch,
     sessionIdRef,
-    setSessionId: vi.fn(),
+    setSessionId: storage.setSession,
     stateRef,
     sessionId: null,
     queue: state.queue,
@@ -87,11 +101,19 @@ function useRestoreHarness(seen: Seen[]) {
     activeBoardSettled: true,
   });
   seen.push({ current: state.currentClimbQueueItem?.uuid ?? null, restored });
-  return { state, restored, dispatch };
+  return { state, restored, beginClearingSavedSession, dispatch };
 }
 
 beforeEach(() => {
   storage.snapshot = null;
+  storage.sessionId = null;
+  storage.readFailure = null;
+  storage.clearSession.mockClear();
+  storage.setSession.mockClear();
+  storage.setSnapshot.mockClear();
+  storage.sessionStatus
+    .mockReset()
+    .mockResolvedValue({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' });
   storage.gate = null;
   resetQueueSnapshotRestoredReportForTests();
 });
@@ -144,5 +166,71 @@ describe('useQueuePersistence: restored', () => {
     const { result } = renderHook(() => useRestoreHarness([]));
     await waitFor(() => expect(result.current.restored).toBe(true));
     expect(result.current.state.currentClimbQueueItem?.uuid).toBe('queue-restored');
+  });
+});
+
+describe('useQueuePersistence: saved crew restore', () => {
+  it('keeps an unverified crew and its solo queue on an offline cold start, then rejoins once online', async () => {
+    storage.sessionId = 'saved-crew';
+    storage.snapshot = savedQueue(makeItem('my-offline-climb'));
+    storage.sessionStatus.mockRejectedValue(new Error('Offline'));
+    const { result } = renderHook(() => useRestoreHarness([]));
+
+    await waitFor(() => expect(result.current.state.currentClimbQueueItem?.uuid).toBe('my-offline-climb'));
+    expect(result.current.restored).toBe(true);
+    expect(storage.setSession).not.toHaveBeenCalled();
+    expect(storage.clearSession).not.toHaveBeenCalled();
+
+    storage.sessionStatus.mockResolvedValue({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' });
+    act(() => {
+      onlineManager.setOnline(false);
+      onlineManager.setOnline(true);
+    });
+    await waitFor(() => expect(storage.setSession).toHaveBeenCalledWith('saved-crew'));
+    expect(storage.clearSession).not.toHaveBeenCalled();
+  });
+
+  it('keeps an active crew whose current board cannot be resolved, without rejoining it', async () => {
+    storage.sessionId = 'saved-crew';
+    storage.sessionStatus.mockResolvedValue({ sessionStatus: 'active', sessionRestoreBoardPath: null });
+    const { result } = renderHook(() => useRestoreHarness([]));
+
+    await waitFor(() => expect(result.current.restored).toBe(true));
+    expect(storage.sessionStatus).toHaveBeenCalledTimes(1);
+    expect(storage.setSession).not.toHaveBeenCalled();
+    expect(storage.clearSession).not.toHaveBeenCalled();
+  });
+
+  it('restores the solo queue without dropping the saved crew when secure storage cannot be read', async () => {
+    storage.readFailure = new Error('Secure storage unavailable');
+    storage.snapshot = savedQueue(makeItem('my-offline-climb'));
+    const { result } = renderHook(() => useRestoreHarness([]));
+
+    await waitFor(() => expect(result.current.restored).toBe(true));
+    expect(result.current.state.currentClimbQueueItem?.uuid).toBe('my-offline-climb');
+    expect(storage.sessionStatus).not.toHaveBeenCalled();
+    expect(storage.clearSession).not.toHaveBeenCalled();
+  });
+
+  it('saves the solo queue again only once the unverified crew is cleared', async () => {
+    storage.sessionId = 'saved-crew';
+    storage.sessionStatus.mockRejectedValue(new Error('Offline'));
+    const { result } = renderHook(() => useRestoreHarness([]));
+    await waitFor(() => expect(result.current.restored).toBe(true));
+
+    act(() => {
+      result.current.dispatch({
+        type: 'UPDATE_QUEUE',
+        payload: { queue: [makeItem('solo-pick')], currentClimbQueueItem: makeItem('solo-pick') },
+      });
+    });
+    await act(async () => new Promise((resolve) => setTimeout(resolve, SOLO_QUEUE_SAVE_DEBOUNCE_MS + 100)));
+    expect(storage.setSnapshot).not.toHaveBeenCalled();
+
+    act(() => {
+      const finishClearing = result.current.beginClearingSavedSession();
+      finishClearing();
+    });
+    await waitFor(() => expect(storage.setSnapshot).toHaveBeenCalled(), { timeout: SOLO_QUEUE_SAVE_DEBOUNCE_MS * 4 });
   });
 });

@@ -6921,6 +6921,7 @@ export type MutationInviteResourceMemberArgs = {
 export type MutationJoinSessionArgs = {
   avatarUrl?: InputMaybe<Scalars['String']['input']>;
   boardPath: Scalars['String']['input'];
+  expectedBoardPath?: InputMaybe<Scalars['String']['input']>;
   initialCurrentClimb?: InputMaybe<ClimbQueueItemInput>;
   initialHistoryCount?: InputMaybe<Scalars['Int']['input']>;
   initialQueue?: InputMaybe<Array<ClimbQueueItemInput>>;
@@ -9517,6 +9518,11 @@ export type Query = {
    */
   sessionHealthExport?: Maybe<SessionHealthExport>;
   /**
+   * Geometry of an accessible session's current board, including when its live
+   * roster is empty. Returns null when the target cannot be disclosed or resolved.
+   */
+  sessionRestoreBoardPath?: Maybe<Scalars['String']['output']>;
+  /**
    * Lightweight, presence-independent lifecycle check for a session.
    * Reads the durable session row (not live Redis presence), so it tells an
    * ended session apart from one that is merely empty. Returns null when the
@@ -10550,6 +10556,11 @@ export type QuerySessionGroupedFeedArgs = {
 
 /** Root query type for all read operations. */
 export type QuerySessionHealthExportArgs = {
+  sessionId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySessionRestoreBoardPathArgs = {
   sessionId: Scalars['ID']['input'];
 };
 

@@ -349,6 +349,7 @@ const user = (overrides: Partial<SessionUser> = {}): SessionUser => ({
 // session; 'ended' or null (no such session row) means drop the stored id.
 const statusResponse = (status: SessionStatus | null = 'active') => ({
   sessionStatus: status,
+  sessionRestoreBoardPath: 'kilter/1/10/1/40',
 });
 
 function makeQueueItem(uuid: string, climbUuid = uuid, options: { suggested?: boolean } = {}): ClimbQueueItem {
@@ -2100,24 +2101,19 @@ describe('QueueProvider session update subscription', () => {
     expect(graph.execute).not.toHaveBeenCalled();
   });
 
-  it('restores optimistically when the status check fails (offline cold start)', async () => {
+  it('preserves an unverified stored session and the solo snapshot on an offline cold start', async () => {
     http.request.mockImplementation((operation: string) =>
       operation.includes('SessionStatus')
         ? Promise.reject(new Error('offline'))
         : Promise.resolve({ endSession: { sessionId: 'session-1' } }),
     );
-
     const snapshots: Snapshot[] = [];
     renderProvider((snapshot) => snapshots.push(snapshot));
 
-    // Can't verify the session offline, so the stored id is still applied...
-    await waitFor(() => {
-      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
-    });
-    // ...and the session is joined as before, without clearing the stored id.
-    await waitFor(() => {
-      expect(graph.execute).toHaveBeenCalled();
-    });
+    await waitFor(() => expect(queueSnapshotStore.getStoredQueueSnapshot).toHaveBeenCalled());
+
+    expect(snapshots.at(-1)?.sessionId).toBeNull();
+    expect(graph.execute).not.toHaveBeenCalled();
     expect(sessionStore.clearStoredSessionId).not.toHaveBeenCalled();
   });
 

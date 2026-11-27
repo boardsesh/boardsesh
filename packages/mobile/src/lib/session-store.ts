@@ -13,10 +13,14 @@ function enqueueSessionIdentityWrite(write: () => Promise<void>): Promise<void> 
   return operation;
 }
 
-export async function getStoredSessionId(_owner?: UserStorageOwner | null): Promise<string | null> {
+export async function getStoredSessionId(
+  _owner?: UserStorageOwner | null,
+  options?: { requireReadable?: boolean },
+): Promise<string | null> {
   try {
     return await readSecureValue(SESSION_ID_KEY);
-  } catch {
+  } catch (error) {
+    if (options?.requireReadable) throw error;
     return null;
   }
 }

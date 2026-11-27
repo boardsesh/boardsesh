@@ -106,7 +106,7 @@ function homeBoard(): UserBoard {
   } as unknown as UserBoard;
 }
 
-function renderSessionCommands() {
+function renderSessionCommands(options?: Pick<SessionCommandsParams, 'joinConfirmedSession'>) {
   const params = {
     showToast: vi.fn(),
     t: (key: string) => key,
@@ -115,13 +115,14 @@ function renderSessionCommands() {
     setQueueMutation: vi.fn(() => Promise.resolve()),
     seedFailedSessionIdRef: { current: null },
     setSessionId: vi.fn(),
-    sessionIdRef: { current: null },
+    sessionIdRef: { current: null as string | null },
     onSessionContextChanging: vi.fn(),
     dispatch: vi.fn(),
     setPlaylistSuggestionSourceState: vi.fn(),
     setActiveBoard: vi.fn(() => Promise.resolve(true)),
     locallyEndingSessionIdRef: { current: null },
     suppressedRemoteEndSessionIdRef: { current: null },
+    ...options,
   };
   return { ...renderHook(() => useSessionCommands(params as unknown as SessionCommandsParams)), params };
 }
@@ -205,6 +206,39 @@ describe('useSessionCommands — createSessionWithConfig boardPath', () => {
     expect(joiner.params.onSessionContextChanging.mock.invocationCallOrder[0]).toBeLessThan(
       joiner.params.setSessionId.mock.invocationCallOrder[0],
     );
+  });
+
+  it.each([true, false])('updates the current room only after a guarded join accepts: %s', async (accepted) => {
+    let finishJoin: (accepted: boolean) => void = () => {};
+    const pendingAcceptance = new Promise<boolean>((resolve) => {
+      finishJoin = resolve;
+    });
+    const joinConfirmedSession: NonNullable<SessionCommandsParams['joinConfirmedSession']> = async (_, commit) =>
+      (await pendingAcceptance) && commit();
+    const { result, params } = renderSessionCommands({ joinConfirmedSession });
+    params.sessionIdRef.current = 'session-current';
+    const boardPath = 'kilter/8/17/27,28/40';
+    const joining = result.current.joinSession('session-next', {
+      boardPath,
+      expectedBoardPath: boardPath,
+      userBoard: homeBoard(),
+    });
+
+    expect(params.sessionIdRef.current).toBe('session-current');
+    expect(params.setActiveBoard).not.toHaveBeenCalled();
+    expect(params.setSessionId).not.toHaveBeenCalled();
+    expect(mocks.setStoredSessionId).not.toHaveBeenCalled();
+    expect(params.dispatch).not.toHaveBeenCalled();
+
+    await act(async () => {
+      finishJoin(accepted);
+      expect(await joining).toBe(accepted);
+    });
+
+    expect(params.sessionIdRef.current).toBe(accepted ? 'session-next' : 'session-current');
+    expect(params.setActiveBoard).toHaveBeenCalledTimes(Number(accepted));
+    expect(mocks.setStoredSessionId).toHaveBeenCalledTimes(Number(accepted));
+    expect(params.dispatch).toHaveBeenCalledTimes(Number(accepted));
   });
 
   it('does not claim the session after the auth generation expires during active-board persistence', async () => {

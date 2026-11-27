@@ -226,14 +226,15 @@ type QueueContextValue = {
   /**
    * Join an existing session created by someone else (party mode). Switches the
    * active board to the session's board, sets + persists the sessionId, and
-   * relies on the session effect to run JOIN_SESSION + open the realtime
-   * subscriptions. No-ops if already in this session. Differs from
+   * opens realtime subscriptions. Invite confirmations require server
+   * acceptance of the expected board before changing local state.
+   * No-ops if already in this session. Differs from
    * `startSession`, which *reads* the active board to create a new session;
    * `joinSession` *writes* the active board from the session's boardPath.
    */
   joinSession: (
     sessionId: string,
-    opts: { boardPath: string; userBoard: UserBoard; isOperationCurrent?: () => boolean },
+    opts: { boardPath: string; expectedBoardPath?: string; userBoard: UserBoard; isOperationCurrent?: () => boolean },
   ) => Promise<boolean>;
   /**
    * Broadcast the session's boardPath so every party member follows the same

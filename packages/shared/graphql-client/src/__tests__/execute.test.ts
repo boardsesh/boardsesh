@@ -187,6 +187,33 @@ describe('execute — rate-limit retry (#2655)', () => {
     });
   });
 
+  it('clears the retry timer when the client getter rejects a retired transport', async () => {
+    vi.useFakeTimers();
+    try {
+      const { client, subscribeSpy } = makeScriptedClient([rateLimited(1)]);
+      let isCurrent = true;
+      const promise = execute(
+        () => {
+          if (!isCurrent) throw new Error('Connection retired');
+          return client;
+        },
+        { query: 'mutation Foo { ok }' },
+        {
+          sleep: async () => {
+            isCurrent = false;
+          },
+          rateLimitJitterMs: 0,
+        },
+      );
+
+      await expect(promise).rejects.toThrow('Connection retired');
+      expect(subscribeSpy).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('caps the retry wait at maxRateLimitDelayMs', async () => {
     const { client } = makeScriptedClient([rateLimited(120), { kind: 'data', data: { ok: true } }]);
     const onRateLimited = vi.fn();

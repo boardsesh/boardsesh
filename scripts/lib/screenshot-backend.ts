@@ -79,6 +79,7 @@ import {
   formatScreenshotBackendLine,
   graphqlFixtureKey,
   indexBatchItemsById,
+  legacyScreenshotJoinVariables,
   pseudonymiseResponse,
   redactIgnoredVariablePaths,
   replayCompatibleFixtureResponse,
@@ -1241,6 +1242,24 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       }
     }
     let entry = graphqlIndex.get(`${operationName}\n${key.variablesHash}`);
+    if (!entry && operationName === 'JoinSession') {
+      const recordedVariables = legacyScreenshotJoinVariables(parsedBody.variables);
+      if (recordedVariables) {
+        const legacyKey = graphqlFixtureKey({ operationName, query, variables: recordedVariables }, sha256Hex);
+        const legacyEntry = graphqlIndex.get(`${operationName}\n${legacyKey.variablesHash}`);
+        if (legacyEntry && isFixtureFileWithinDirectory(fixturesDir, legacyEntry.file)) {
+          try {
+            const fixture = JSON.parse(readFileSync(join(fixturesDir, legacyEntry.file), 'utf8')) as GraphqlFixtureFile;
+            if (!fixture.query.includes('expectedBoardPath') && replayCompatibleFixtureResponse(query, fixture)) {
+              entry = legacyEntry;
+            }
+          } catch {
+            missGraphql(operationName, 'unreadable-fixture');
+            return;
+          }
+        }
+      }
+    }
     if (!entry && AURORA_HISTORY_CAPABILITY_OPERATIONS.has(operationName)) {
       const variables = parsedBody.variables;
       if (
@@ -1336,11 +1355,10 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     if (serializedResponse === undefined) {
       try {
         const fixture = JSON.parse(readFileSync(join(fixturesDir, entry.file), 'utf8')) as GraphqlFixtureFile;
-        // This set's own JoinSession replies: the only evidence an adapter may
-        // cite (GetSession's `isPermanent`, #6591). Read only when one asks.
-        const joinSessionFixtures = (): GraphqlFixtureFile[] =>
+        // A compatibility adapter can read same-set evidence on demand.
+        const evidenceForOperation = (operationName: string): GraphqlFixtureFile[] =>
           manifest.graphql
-            .filter((recorded) => recorded.operationName === 'JoinSession')
+            .filter((recorded) => recorded.operationName === operationName)
             .map((recorded) => {
               if (!isFixtureFileWithinDirectory(fixturesDir, recorded.file)) throw new Error('Invalid fixture path');
               return JSON.parse(readFileSync(join(fixturesDir, recorded.file), 'utf8')) as GraphqlFixtureFile;
@@ -1348,7 +1366,10 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
         const compatibility =
           campaignResponse ??
           (entry.documentHash !== key.documentHash
-            ? (replayCompatibleFixtureResponse(query, fixture, { joinSessionFixtures }) ??
+            ? (replayCompatibleFixtureResponse(query, fixture, {
+                joinSessionFixtures: () => evidenceForOperation('JoinSession'),
+                getSessionFixtures: () => evidenceForOperation('GetSession'),
+              }) ??
               (manifest.flow === 'app-store-campaign' || cppReplayScope
                 ? replayCampaignSessionResponse(query, parsedBody.variables, fixture)
                 : null))

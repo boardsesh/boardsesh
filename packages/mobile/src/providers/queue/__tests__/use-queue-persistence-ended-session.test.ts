@@ -24,7 +24,9 @@ vi.mock('../../../lib/session-store', () => ({
   clearStoredSessionId: sessions.clear,
 }));
 vi.mock('../../../lib/graphql/client', () => ({
-  getHttpClient: () => ({ request: async () => ({ sessionStatus: sessions.status }) }),
+  getHttpClient: () => ({
+    request: async () => ({ sessionStatus: sessions.status, sessionRestoreBoardPath: 'kilter/1/10/1/40' }),
+  }),
 }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../lib/ended-session-signal', () => ({ announceStoredSessionEnded: sessions.announce }));

@@ -59,12 +59,25 @@ import { useQueueMutations, type PublishPlaybackStateInput } from '@boardsesh/qu
 import { isNowSlotValidationError } from '@boardsesh/queue-react/create-queue-mutations';
 import type { QueueItemAttribution } from '@boardsesh/queue-react/queue-item-input';
 import type { PlaybackStateChangedEvent, SessionUser } from '@boardsesh/shared-schema';
-import { execute, isNotInSessionError, isRateLimitedError, isTransportClosedError } from '@boardsesh/graphql-client';
-import { classifyClimbBoardCompatibility } from '@boardsesh/board-config';
+import {
+  GraphQLOperationError,
+  type Client,
+  execute,
+  isNotInSessionError,
+  isRateLimitedError,
+  isTransportClosedError,
+} from '@boardsesh/graphql-client';
+import { classifyClimbBoardCompatibility, parseBoardPath, sessionBoardPathsMatch } from '@boardsesh/board-config';
+import { readSessionRestoreBoard } from '../lib/boards/session-restore-board';
 import { buildSessionBoardPath } from '../lib/boards/session-board-path';
 import { SHARED_EVENTS, boardTypeProperty } from '@boardsesh/analytics';
-import { JOIN_SESSION, JOIN_SESSION_NOW_SLOT, UPDATE_USERNAME } from '@boardsesh/graphql/operations/queue-session';
-import { getWsClient } from '../lib/graphql/ws-client';
+import {
+  JOIN_CONFIRMED_SESSION,
+  JOIN_SESSION,
+  JOIN_SESSION_NOW_SLOT,
+  UPDATE_USERNAME,
+} from '@boardsesh/graphql/operations/queue-session';
+import { disposeWsClient, getWsClient } from '../lib/graphql/ws-client';
 import { subscribeWsConnectionEnded } from '../lib/graphql/ws-client-lifecycle';
 import { getHttpClient } from '../lib/graphql/client';
 import { sanitizeQueueSnapshot } from '../lib/queue-privacy';
@@ -151,7 +164,7 @@ import { useQueueResolveClimbs } from './queue/use-queue-resolve-climbs';
 import { useQueueClimbReads } from './queue/use-queue-climb-reads';
 import { useQueuePersistence } from './queue/use-queue-persistence';
 import { useCurrentChangeClock } from './queue/use-current-change-clock';
-import { useSessionCommands } from './queue/use-session-commands';
+import { useSessionCommands, type ConfirmedSessionJoin } from './queue/use-session-commands';
 import {
   useSessionRealtime,
   createEmptySessionRuntimeState,
@@ -950,6 +963,27 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // identity, so `addToQueue` (and the memoized actions context) never churns.
   const requestCrossBoardAdd = useCrossBoardAddGate();
 
+  type JoinSessionResponse = {
+    joinSession?: {
+      participantId?: string | null;
+      clientId?: string | null;
+      isLeader?: boolean | null;
+      lastConnectedBoardSerial?: string | null;
+      boardPath?: string | null;
+      users?: SessionUser[] | null;
+    };
+  };
+  type PendingConfirmedJoin = ConfirmedSessionJoin & { client: Client | null };
+  const confirmedSessionJoinRef = useRef<PendingConfirmedJoin | null>(null);
+  const dispatchedOrdinaryJoinsRef = useRef(new Set<{ client: Client }>());
+  const unacknowledgedOrdinaryJoinRef = useRef<Client | null>(null);
+  const acknowledgedJoinRef = useRef<{
+    sessionId: string;
+    expectedBoardPath: string;
+    result: JoinSessionResponse;
+    sentIdentity: { username: string | undefined; avatarUrl: string | undefined };
+  } | null>(null);
+
   // JOIN_SESSION cache, keyed by (sessionId, connection epoch). Built once
   // per mount so its inFlight state survives re-renders. Web has a separate
   // implementation inside `persistent-session/hooks/use-session-lifecycle.ts`;
@@ -957,18 +991,112 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const joinTracker = useMemo(
     () =>
       createJoinSessionTracker({
-        getBoardPath: async () => {
+        getBoardPath: async (sessionId) => {
+          const confirmation = confirmedSessionJoinRef.current;
+          if (confirmation?.sessionId === sessionId && sessionIdRef.current !== sessionId) {
+            return confirmation.isOperationCurrent() ? confirmation.boardPath : null;
+          }
           const activeBoard = await getStoredActiveBoard();
           if (!activeBoard) return null;
           return buildSessionBoardPath(activeBoard);
         },
         execute: async ({ sessionId: sid, boardPath }) => {
           const joinCredentialGeneration = getCredentialGeneration();
+          const pendingConfirmation = confirmedSessionJoinRef.current;
+          const confirmation =
+            pendingConfirmation?.sessionId === sid && sessionIdRef.current !== sid ? pendingConfirmation : null;
+          const isJoinCurrent = () =>
+            joinCredentialGeneration === getCredentialGeneration() &&
+            (confirmation
+              ? confirmedSessionJoinRef.current === confirmation && confirmation.isOperationCurrent()
+              : sessionIdRef.current === sid &&
+                (!confirmedSessionJoinRef.current || confirmedSessionJoinRef.current.sessionId === sid));
+          const assertJoinAvailable = () => {
+            if (!isJoinCurrent()) {
+              throw new Error('Session board unavailable');
+            }
+          };
+          assertJoinAvailable();
+          const acknowledgment = acknowledgedJoinRef.current?.sessionId === sid ? acknowledgedJoinRef.current : null;
+          const confirmedBoardPath = confirmation?.expectedBoardPath ?? acknowledgment?.expectedBoardPath;
+          const target = confirmedBoardPath ? null : await readSessionRestoreBoard(sid);
+          const expectedBoardPath = confirmedBoardPath ?? target?.geometryPath;
+          assertJoinAvailable();
+          if (target && (target.status === 'ended' || target.status === null)) {
+            throw new GraphQLOperationError([
+              { message: 'This session has ended', extensions: { code: 'SESSION_ENDED' } },
+            ]);
+          }
+          const sessionBoard = confirmedBoardPath ? parseBoardPath(confirmedBoardPath) : target?.board;
+          if ((!confirmedBoardPath && target?.status !== 'active') || !expectedBoardPath || !sessionBoard) {
+            throw new Error('Session board unavailable');
+          }
           // Snapshot identity at the moment we build the payload. If the profile
           // resolves while JOIN is in flight, we must record the values we
           // actually sent — not identityRef.current's newer ones — so the
           // re-announce effect still fires UPDATE_USERNAME for the new identity.
           const sentIdentity = { username: identityRef.current.username, avatarUrl: identityRef.current.avatarUrl };
+          const joinVariables = {
+            sessionId: sid,
+            // The saved board and the server's wall can differ during a cold
+            // rejoin. Use the target's privacy-projected tuple as the guard.
+            boardPath:
+              confirmation || sessionBoardPathsMatch(boardPath, expectedBoardPath) ? boardPath : expectedBoardPath,
+            expectedBoardPath,
+            username: sentIdentity.username,
+            avatarUrl: sentIdentity.avatarUrl,
+          };
+          let dispatchedClient: Client | null = null;
+          const runJoin = async (query: string) => {
+            assertJoinAvailable();
+            const client = getWsClient();
+            const dispatch = { client };
+            dispatchedClient = client;
+            dispatchedOrdinaryJoinsRef.current.add(dispatch);
+            try {
+              return await execute<JoinSessionResponse>(
+                () => {
+                  assertJoinAvailable();
+                  if (getWsClient() !== client) {
+                    throw new Error('Session board unavailable');
+                  }
+                  return client;
+                },
+                { query, variables: joinVariables },
+              );
+            } catch (error) {
+              // A local timeout can settle the promise before the server
+              // finishes the JOIN. A later switch must still isolate it.
+              if (!(error instanceof GraphQLOperationError) && isJoinCurrent() && getWsClient() === client) {
+                unacknowledgedOrdinaryJoinRef.current = client;
+              }
+              throw error;
+            } finally {
+              dispatchedOrdinaryJoinsRef.current.delete(dispatch);
+            }
+          };
+          if (confirmation) {
+            const client = getWsClient();
+            confirmation.client = client;
+            const result = await execute<JoinSessionResponse>(
+              client,
+              {
+                query: JOIN_CONFIRMED_SESSION,
+                variables: joinVariables,
+              },
+              { rateLimitRetries: 0 },
+            );
+            if (!result?.joinSession?.participantId) throw new Error('The session join was not acknowledged');
+            if (isJoinCurrent() && getWsClient() === client) {
+              acknowledgedJoinRef.current = {
+                sessionId: sid,
+                expectedBoardPath: confirmation.expectedBoardPath,
+                result,
+                sentIdentity,
+              };
+            }
+            return result;
+          }
           // F3: probe this connection before the join, and fix the session's
           // mode for it. The tracker re-runs this on every reconnect (a deploy
           // or rollback drops the socket), so a rolled-back backend is caught
@@ -976,31 +1104,20 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           // The probe and the join both read the live client (#6766): one read
           // before an await can be disposed by the time the send goes out.
           const capabilities = await probeQueueServerCapabilities(getWsClient);
+          assertJoinAvailable();
           attributionServerRef.current = capabilities.attribution;
           const nowSlotServer = nowSlotFlagRef.current ? capabilities.nowSlot : null;
           nowSlotServerRef.current = nowSlotServer;
           if (nowSlotServer !== null) reportQueueServerProbe(nowSlotServer, 'probe');
           setNowSlotMode(nowSlotFlagRef.current && nowSlotServer === true);
-          type JoinSessionResponse = {
-            joinSession?: {
-              participantId?: string | null;
-              clientId?: string | null;
-              isLeader?: boolean | null;
-              lastConnectedBoardSerial?: string | null;
-              boardPath?: string | null;
-              users?: SessionUser[] | null;
-            };
-          };
-          const joinVariables = {
-            sessionId: sid,
-            boardPath,
-            username: sentIdentity.username,
-            avatarUrl: sentIdentity.avatarUrl,
-          };
-          const runJoin = (query: string) =>
-            execute<JoinSessionResponse>(getWsClient, { query, variables: joinVariables });
           let result: JoinSessionResponse;
-          if (nowSlotModeRef.current) {
+          if (acknowledgment && acknowledgedJoinRef.current !== acknowledgment) {
+            throw new Error('Session connection changed');
+          }
+          if (acknowledgment) {
+            result = acknowledgment.result;
+            acknowledgedJoinRef.current = null;
+          } else if (nowSlotModeRef.current) {
             try {
               result = await runJoin(JOIN_SESSION_NOW_SLOT);
             } catch (joinError) {
@@ -1015,10 +1132,12 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           } else {
             result = await runJoin(JOIN_SESSION);
           }
-          if (joinCredentialGeneration !== getCredentialGeneration()) throw new Error('Queue authorization changed');
+          if (!isJoinCurrent() || (dispatchedClient && getWsClient() !== dispatchedClient)) {
+            throw new Error('Queue authorization changed');
+          }
           // Remember what we announced so the re-announce effect only fires if
           // the identity changes after this join (profile loaded late / edited).
-          announcedIdentityRef.current = sentIdentity;
+          announcedIdentityRef.current = acknowledgment?.sentIdentity ?? sentIdentity;
           const joined = result?.joinSession;
           // Remember our participant id so we can ignore the echo of our own
           // board-path broadcasts. Only overwrite on a concrete value.
@@ -1047,14 +1166,28 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     [setNowSlotMode],
   );
   const ensureJoined = useCallback(
-    (sessionIdToJoin: string) => joinTracker.ensureJoined(sessionIdToJoin),
+    (sessionIdToJoin: string) => {
+      const confirmation = confirmedSessionJoinRef.current;
+      if (confirmation && sessionIdRef.current !== confirmation.sessionId) {
+        return Promise.reject(new Error('Session board unavailable'));
+      }
+      return joinTracker.ensureJoined(sessionIdToJoin);
+    },
     [joinTracker],
   );
   // A join belongs to the connection it ran on. The realtime engine bumps the
   // epoch on closes of the client it is bound to, but a mutation's
   // `ensureJoined` can run while the engine is parked and bound to nothing.
   // Every end of the shared connection retires the cached join.
-  useEffect(() => subscribeWsConnectionEnded(() => joinTracker.bumpEpoch()), [joinTracker]);
+  useEffect(
+    () =>
+      subscribeWsConnectionEnded(() => {
+        acknowledgedJoinRef.current = null;
+        unacknowledgedOrdinaryJoinRef.current = null;
+        joinTracker.bumpEpoch();
+      }),
+    [joinTracker],
+  );
 
   // Re-announce identity to the session when it changes after we've joined.
   // JOIN_SESSION already carries the profile in the common case; this covers the
@@ -1272,7 +1405,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // Solo-queue persistence: cold-start restore (explicit session first, then the
   // local snapshot) + the debounced solo snapshot save. See useQueuePersistence.
   // `queueRestored` is the restore landing, for QueueRestoredContext.
-  const { restored: queueRestored } = useQueuePersistence({
+  const { restored: queueRestored, beginClearingSavedSession } = useQueuePersistence({
     authenticatedUserId,
     identityReady: !isAuthenticated || !!authenticatedUserId,
     credentialGeneration,
@@ -1291,6 +1424,62 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     activeBoardSettled: !isActiveBoardPending,
   });
 
+  const joinConfirmedSession = useCallback(
+    async (request: ConfirmedSessionJoin, commit: () => Promise<boolean>) => {
+      if (confirmedSessionJoinRef.current || !request.isOperationCurrent()) return false;
+      const previousSessionId = sessionIdRef.current;
+      const credentialGeneration = getCredentialGeneration();
+      resetQueueMutationLane();
+      const pending: PendingConfirmedJoin = { ...request, client: null };
+      confirmedSessionJoinRef.current = pending;
+      let needsRecovery = false;
+      let restartPreviousRoom = false;
+      try {
+        // An ordinary JOIN already on the wire may still bind its connection
+        // after this switch succeeds. Move the confirmation to a fresh client
+        // if that request has not settled. The pending confirmation also
+        // fences preflight and rate-limit continuations for the old room.
+        const ordinaryJoins = dispatchedOrdinaryJoinsRef.current;
+        const unacknowledgedJoin = unacknowledgedOrdinaryJoinRef.current;
+        if (ordinaryJoins.size > 0 || unacknowledgedJoin) {
+          const client = getWsClient();
+          if (unacknowledgedJoin === client || Array.from(ordinaryJoins).some((join) => join.client === client)) {
+            disposeWsClient();
+            restartPreviousRoom = true;
+          }
+        }
+        joinTracker.reset();
+        await joinTracker.ensureJoined(request.sessionId);
+        needsRecovery = true;
+        // Realtime seeds the accepted roster after local publication, using
+        // the saved reply on this connection rather than rejoining the room.
+        joinTracker.reset();
+        return request.isOperationCurrent() ? await commit() : false;
+      } catch (error) {
+        const code = error instanceof GraphQLOperationError ? error.extensions?.code : null;
+        const refusedBeforeJoining =
+          code === 'SESSION_BOARD_CHANGED' || code === 'SESSION_ENDED' || isRateLimitedError(error);
+        needsRecovery ||= pending.client !== null && !refusedBeforeJoining;
+        throw error;
+      } finally {
+        confirmedSessionJoinRef.current = null;
+        if (sessionIdRef.current === previousSessionId && credentialGeneration === getCredentialGeneration()) {
+          if (needsRecovery) {
+            acknowledgedJoinRef.current = null;
+            if (pending.client && getWsClient() === pending.client) {
+              // The server could be completing a timed-out JOIN. Rejoin on a
+              // fresh socket so that late completion cannot win the switch.
+              disposeWsClient();
+              restartPreviousRoom = true;
+            }
+          }
+          if (restartPreviousRoom && previousSessionId) restartJoinedSubscriptionsRef.current?.();
+        }
+      }
+    },
+    [joinTracker, resetQueueMutationLane],
+  );
+
   // Explicit session lifecycle commands: create (Start button), join, end, clear.
   // See useSessionCommands. clearSessionRef is read by the session-realtime
   // SessionEnded handler, so keep it pointed at the latest clearSession.
@@ -1299,12 +1488,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     t,
     stateRef,
     ensureJoined,
+    joinConfirmedSession,
     setQueueMutation: mutations.setQueue,
     nowSlotModeRef,
     seedFailedSessionIdRef,
     setSessionId,
     sessionIdRef,
     onSessionContextChanging: resetQueueMutationLane,
+    beginClearingSavedSession,
     dispatch,
     setPlaylistSuggestionSourceState,
     setActiveBoard,
