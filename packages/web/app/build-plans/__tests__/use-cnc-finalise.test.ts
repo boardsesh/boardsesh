@@ -10,11 +10,14 @@ vi.mock('@/app/lib/graphql/client', () => ({
 const removePreference = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/user-preferences-db', () => ({ removePreference }));
 
-const { useCncFinalise, isCheckoutRedirectUrl, STRIPE_CHECKOUT_ORIGIN } =
-  await import('../configurator/use-cnc-finalise');
+const { useCncFinalise, cncOrderPath } = await import('../configurator/use-cnc-finalise');
 const { CNC_CONFIGURATOR_DRAFT_KEY } = await import('../configurator/configurator-state');
 
+const documentLocale = vi.hoisted(() => vi.fn(() => 'en-US'));
 const locationAssign = vi.fn();
+vi.mock('@/app/lib/i18n/document-locale-context', () => ({ useDocumentLocale: documentLocale }));
+const ORDER_PATH = '/build-plans/orders/BS-CNC-K7QM3T';
+const ORDER_URL = `https://www.boardsesh.com${ORDER_PATH}`;
 
 /** The only thing finalise sends: who the licence names. The wall is already on the order. */
 const FINALISE_INPUT: FinaliseCncOrderInput = {
@@ -38,56 +41,38 @@ beforeEach(() => {
   graphqlRequest.mockReset();
   removePreference.mockReset().mockResolvedValue(undefined);
   locationAssign.mockReset();
-  // jsdom's own `location` is not assignable; replace the whole object so the
-  // hook's `window.location.assign(url)` is observable.
+  documentLocale.mockReturnValue('en-US');
   Object.defineProperty(window, 'location', {
     configurable: true,
     writable: true,
-    value: { assign: locationAssign, href: 'http://localhost/build-plans' },
+    value: { assign: locationAssign, origin: 'http://localhost:3000' },
   });
 });
 
-describe('isCheckoutRedirectUrl', () => {
-  it('accepts Stripe-hosted checkout, whatever the path and query carry', () => {
-    expect(isCheckoutRedirectUrl(`${STRIPE_CHECKOUT_ORIGIN}/c/pay/cs_test_a1b2c3#fidkd`)).toBe(true);
+describe('cncOrderPath', () => {
+  it('builds only a local order path from a complete licence id', () => {
+    expect(cncOrderPath('BS-CNC-K7QM3T')).toBe(ORDER_PATH);
   });
 
-  it('rejects every near-miss origin', () => {
-    // The look-alikes that matter: a suffixed hostname, a subdomain of an
-    // attacker's zone, plain http, and an entirely different site.
-    for (const url of [
-      'https://checkout.stripe.com.evil.example/c/pay/cs_test',
-      'https://checkout.stripe.com.evil.example',
-      'https://evil.example/checkout.stripe.com',
-      'http://checkout.stripe.com/c/pay/cs_test',
-      'https://dashboard.stripe.com/c/pay/cs_test',
-    ]) {
-      expect({ url, allowed: isCheckoutRedirectUrl(url) }).toEqual({ url, allowed: false });
-    }
-  });
-
-  it('accepts this site itself, which is where the dev-only bypass sends the buyer', () => {
-    expect(
-      isCheckoutRedirectUrl(
-        'https://boardsesh.test/build-plans/orders/BS-CNC-ABC234?checkout=success',
-        'https://boardsesh.test',
-      ),
-    ).toBe(true);
-    expect(
-      isCheckoutRedirectUrl('https://evil.example/build-plans/orders/BS-CNC-ABC234', 'https://boardsesh.test'),
-    ).toBe(false);
-  });
-
-  it('returns false rather than throwing on a URL that does not parse', () => {
-    for (const url of ['', 'not a url', '/c/pay/cs_test', 'javascript:alert(1)']) {
-      expect({ url, allowed: isCheckoutRedirectUrl(url) }).toEqual({ url, allowed: false });
-    }
+  it.each([
+    undefined,
+    null,
+    '',
+    'BS-CNC-K7QM3',
+    'BS-CNC-K7QM3TT',
+    'BS-CNC-K7QM3T\n',
+    'https://evil.example/orders',
+    '../auth/logout',
+    'BS-CNC-../../',
+    'BS-CNC-k7qm3t',
+  ])('refuses invalid identifier %j', (licenceId) => {
+    expect(cncOrderPath(licenceId)).toBeNull();
   });
 });
 
 describe('useCncFinalise', () => {
-  it('buys the previewed order by id and sends the browser to Stripe', async () => {
-    graphqlRequest.mockResolvedValue(checkoutUrlResponse(`${STRIPE_CHECKOUT_ORIGIN}/c/pay/cs_test_a1b2c3`));
+  it('queues the previewed pack and opens its order page without payment', async () => {
+    graphqlRequest.mockResolvedValue(checkoutUrlResponse(ORDER_URL));
 
     const { result } = renderHook(() => useCncFinalise('ws-token'));
     await act(async () => {
@@ -97,41 +82,57 @@ describe('useCncFinalise', () => {
     // The order id is the whole point: nothing about the wall is sent again,
     // because the order already carries the configuration that was previewed.
     expect(graphqlRequest.mock.calls[0][1]).toEqual({ input: FINALISE_INPUT });
-    expect(locationAssign).toHaveBeenCalledWith(`${STRIPE_CHECKOUT_ORIGIN}/c/pay/cs_test_a1b2c3`);
+    expect(locationAssign).toHaveBeenCalledWith(ORDER_PATH);
     expect(removePreference).toHaveBeenCalledWith(CNC_CONFIGURATOR_DRAFT_KEY);
     expect(result.current.errorKey).toBeNull();
     // Never cleared on the success path: the navigation is already in flight,
-    // and a re-enabled button is a second Stripe session for one wall.
+    // and a re-enabled button invites a duplicate generation request.
     expect(result.current.isFinalising).toBe(true);
   });
 
-  it('refuses to navigate to a URL on any other origin', async () => {
-    graphqlRequest.mockResolvedValue(checkoutUrlResponse('https://evil.example/c/pay/cs_test_a1b2c3'));
-
+  it.each([
+    'https://www.boardsesh.com/build-plans/orders/BS-CNC-K7QM3T',
+    'https://preview.boardsesh.test/build-plans/orders/BS-CNC-K7QM3T',
+    'https://evil.example/checkout',
+    '',
+  ])('uses a fresh local document regardless of compatibility URL %j', async (checkoutUrl) => {
+    graphqlRequest.mockResolvedValue(checkoutUrlResponse(checkoutUrl));
     const { result } = renderHook(() => useCncFinalise('ws-token'));
+
     await act(async () => {
       await result.current.finalise(FINALISE_INPUT);
     });
 
-    expect(locationAssign).not.toHaveBeenCalled();
-    await waitFor(() => expect(result.current.errorKey).toBe('generic'));
-    expect(result.current.isFinalising).toBe(false);
-    // Nothing was charged, so the configuration the buyer typed must survive
-    // for the retry.
-    expect(removePreference).not.toHaveBeenCalled();
+    expect(locationAssign).toHaveBeenCalledWith(ORDER_PATH);
+    expect(removePreference).toHaveBeenCalledWith(CNC_CONFIGURATOR_DRAFT_KEY);
+    expect(result.current.errorKey).toBeNull();
   });
 
-  it('shows the same error for a malformed URL instead of throwing', async () => {
-    graphqlRequest.mockResolvedValue(checkoutUrlResponse('https://'));
-
+  it('preserves the active locale when starting a fresh order document', async () => {
+    documentLocale.mockReturnValue('fr');
+    graphqlRequest.mockResolvedValue(checkoutUrlResponse(ORDER_URL));
     const { result } = renderHook(() => useCncFinalise('ws-token'));
-    // No rejection escapes: `finalise` resolves, which is what keeps this off
-    // the unhandled-rejection path.
+
+    await act(async () => {
+      await result.current.finalise(FINALISE_INPUT);
+    });
+
+    expect(locationAssign).toHaveBeenCalledWith(`/fr${ORDER_PATH}`);
+    expect(locationAssign).not.toHaveBeenCalledWith(ORDER_URL);
+  });
+
+  it('preserves the draft and refuses navigation when the licence id is malformed', async () => {
+    graphqlRequest.mockResolvedValue({
+      finaliseCncOrder: { ...checkoutUrlResponse(ORDER_URL).finaliseCncOrder, licenceId: '../auth/logout' },
+    });
+    const { result } = renderHook(() => useCncFinalise('ws-token'));
+
     await act(async () => {
       await expect(result.current.finalise(FINALISE_INPUT)).resolves.toBeUndefined();
     });
 
     expect(locationAssign).not.toHaveBeenCalled();
+    expect(removePreference).not.toHaveBeenCalled();
     await waitFor(() => expect(result.current.errorKey).toBe('generic'));
     expect(result.current.isFinalising).toBe(false);
   });
@@ -180,10 +181,10 @@ it('preserves pending checkout and its successful response across same-login cre
   mounted.rerender({ token: 'new-token' });
   expect(mounted.result.current.isFinalising).toBe(true);
   await act(async () => {
-    finish?.(checkoutUrlResponse('https://checkout.stripe.com/c/pay/old'));
+    finish?.(checkoutUrlResponse(ORDER_URL));
     await pending;
   });
-  expect(locationAssign).toHaveBeenCalledWith('https://checkout.stripe.com/c/pay/old');
+  expect(locationAssign).toHaveBeenCalledWith(ORDER_PATH);
   expect(removePreference).toHaveBeenCalledWith(CNC_CONFIGURATOR_DRAFT_KEY);
   expect(mounted.result.current.isFinalising).toBe(true);
 });
@@ -203,7 +204,7 @@ it('ignores a checkout response after its owned component unmounts', async () =>
   });
   mounted.unmount();
   await act(async () => {
-    finish?.(checkoutUrlResponse('https://checkout.stripe.com/c/pay/previous-login'));
+    finish?.(checkoutUrlResponse(ORDER_URL));
     await pending;
   });
   expect(locationAssign).not.toHaveBeenCalled();

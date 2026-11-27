@@ -266,11 +266,18 @@ describe('CNC pg-boss generation', () => {
     expect((await requireJobQueue().getJobById(queue, run.id))?.data).toEqual({ runId: run.id });
   });
 
-  it.each(['checkoutCompleted', 'regenerate'] as const)(
+  it.each(['finaliseFree', 'checkoutCompleted', 'regenerate'] as const)(
     'commits %s and its run together, including caller transactions',
     async (event) => {
-      const order = await fixture(event === 'checkoutCompleted' ? 'pending_payment' : 'ready');
-      const patch = event === 'regenerate' ? { generation: 2, attempts: 0 } : { paidAt: new Date() };
+      const order = await fixture(
+        event === 'finaliseFree' ? 'preview_ready' : event === 'checkoutCompleted' ? 'pending_payment' : 'ready',
+      );
+      const patch =
+        event === 'regenerate'
+          ? { generation: 2, attempts: 0 }
+          : event === 'finaliseFree'
+            ? { amountCents: 0, queuedAt: new Date() }
+            : { paidAt: new Date() };
       const send = vi.spyOn(requireJobQueue(), 'send').mockRejectedValueOnce(new Error('QUEUE_UNAVAILABLE'));
       await expect(
         db.transaction((transaction) => transitionOrder(order.id, event, patch, { executor: transaction })),

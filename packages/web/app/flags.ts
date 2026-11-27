@@ -39,17 +39,13 @@ export const FEATURE_FLAG_KEYS = [GYM_KIOSK_FLAG, MOONBOARD_WIDE_ANGLES_FLAG, QU
 // the page and the operations cannot disagree on who is invited.
 export const DEVELOPER_CONSOLE_FLAG = PARTNER_DEVELOPER_CONSOLE_FLAG;
 
-// Gates `/build-plans` — the paid CNC build-pack configurator, the orders
-// pages, and the footer link into them. Server-resolved rather than client,
-// because this gate has to make an unreachable surface 404 rather than hide a
-// button: the manufacturing licence ships marked DRAFT until an Australian IP
-// lawyer has reviewed it and the Kilter-derived engrave layer, so the pages
-// must not be reachable — or indexable — before then.
+// Gates the free `/build-plans` configurator and new-generation links. This is
+// the sole release switch for the storefront and new backend generation work.
+// Owned orders and the final licence remain readable independently of rollout.
 //
-// Resolved with `allowAnonymous: true`. Build plans are bought by people who
-// have never signed in, so a gate that only evaluates for a session would keep
-// the page signed-in-only however the dashboard is configured.
-// `FEATURE_FLAG_OVERRIDES=cnc-packs` is how you reach it locally.
+// Resolved with `allowAnonymous: true` so signed-out visitors can read the
+// storefront. Signed-in evaluations use the same users.id as the backend.
+// `FEATURE_FLAG_OVERRIDES=cnc-packs` enables it locally.
 export const CNC_PACKS_FLAG = 'cnc-packs';
 
 // Report a problem on boards and gyms (docs/product/directory-reports.md). The

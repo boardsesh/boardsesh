@@ -1,8 +1,6 @@
 'use client';
 
 import React from 'react';
-import Alert from '@mui/material/Alert';
-import AlertTitle from '@mui/material/AlertTitle';
 import Box from '@mui/material/Box';
 import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
@@ -13,7 +11,7 @@ import { PageFrame, SectionCard } from '../ui';
 import styles from '../build-plans.module.css';
 
 const LICENCE_EMAIL = 'mailto:legal@boardsesh.com';
-const VOLUME_EMAIL = 'mailto:support@boardsesh.com';
+const VOLUME_EMAIL = 'mailto:partnerships@boardsesh.com';
 
 /**
  * The manufacturing licence that ships with every build-plans pack.
@@ -24,14 +22,13 @@ const VOLUME_EMAIL = 'mailto:support@boardsesh.com';
  * separated by a rule instead of by twelve cards — and the only colour is the
  * violet on the links.
  *
- * The beta keeps its DRAFT notice until the server selects the public release.
- * Public copy removes editorial draft wording without changing the terms.
+ * The final terms stay readable independently of the generator's rollout.
  *
- * Clause numbers come from the catalog strings ("3. Personal licence (A$149)"),
+ * Clause numbers come from the catalog strings ("3. Personal licence (free)"),
  * not from a CSS counter: those numbers are part of the licence a buyer may
  * quote back at us, so they belong in the translated text.
  */
-export default function LicenceContent({ publicRelease = false }: { publicRelease?: boolean }) {
+export default function LicenceContent() {
   const { t } = useTranslation('cnc-legal');
 
   const definitions = [
@@ -196,7 +193,7 @@ export default function LicenceContent({ publicRelease = false }: { publicReleas
     {
       id: 'governing-law',
       title: t('licence.governingLaw.title'),
-      body: renderParagraphs([publicRelease ? t('licence.governingLaw.publicBody') : t('licence.governingLaw.body')]),
+      body: renderParagraphs([t('licence.governingLaw.body')]),
     },
     {
       id: 'contact',
@@ -217,13 +214,6 @@ export default function LicenceContent({ publicRelease = false }: { publicReleas
       intro={t('licence.intro.p1')}
       eyebrow={<BackButton fallbackUrl="/build-plans" />}
     >
-      {!publicRelease && (
-        <Alert severity="warning" sx={{ borderRadius: 'var(--border-radius-lg)' }}>
-          <AlertTitle>{t('licence.draft.title')}</AlertTitle>
-          {t('licence.draft.body')}
-        </Alert>
-      )}
-
       <Box className={styles.licenceLayout}>
         <Box component="nav" aria-label={t('licence.contents')} className={styles.licenceToc}>
           <Typography variant="subtitle2" component="h2" className={styles.tocHeading}>
@@ -259,7 +249,7 @@ export default function LicenceContent({ publicRelease = false }: { publicReleas
             ))}
           </Box>
           <Typography variant="body2" component="p" className={styles.licenceFooter}>
-            {publicRelease ? t('licence.publicFooter') : t('licence.footer')}
+            {t('licence.footer')}
           </Typography>
         </SectionCard>
       </Box>

@@ -38,11 +38,18 @@ stored active board, unless the climber chose **Home** under Settings › Home �
 The bar itself depends on the device:
 
 - **Native iPhone:** Liquid Glass uses `NativeTabs` (the system UIKit tab bar) on
-  every iPhone, iOS 18 included. Climbs is an ordinary labelled tab, like Apple
-  Music's Search tab, not `role="search"`: since SDK 58 that role is a
-  UISearchTab, which iOS 26 sets apart from the other tabs and which brings a
-  search field into the bar. The queue accessory and scroll minimization ride
-  the iOS 26 bar. On an iOS 27 iPhone Climbs is also the bar's prominent tab, so
+  every iPhone, iOS 18 included. On the iOS 26 iPhone bar Climbs is, by default,
+  the bar's search tab (`role="search"`, a UISearchTab on iOS 26.1+), like Apple
+  Music's Search: iOS sets it apart at the right of the bar and brings the Climbs
+  screen's climb-name search field into the bar (see "Climbs search" below).
+  iOS 18, iOS 26.0 (react-native-screens builds a UISearchTab only from 26.1)
+  and the iPad sidebar keep an ordinary labelled tab. The climber can turn
+  the search tab off under Settings › Climbs & grades › Search from the tab bar
+  (`climbsTabBarSearch`, on by default; `useClimbsTabBarSearch` is the one
+  answer the tab layout and the Climbs screen both read). It is read once per
+  launch, so a flip applies after the app restarts: changing a tab's role remounts
+  the tab, and Settings can be open inside the Climbs stack. The queue accessory and scroll minimization ride
+  the iOS 26 bar. On an iOS 27 iPhone Climbs is the bar's prominent tab, search tab or not, so
   it stays on screen at the right when the bar collapses, as Music's Search does;
   the collapsed accessory fills the room left between it and the selected tab. On iOS 18 the bar has neither, and the current climb rides
   the floating JS queue bar just above the native bar.
@@ -65,10 +72,21 @@ The bar itself depends on the device:
   (`HIDDEN_HEADER_TITLE_STYLE`), not with an empty title view: the native stack keeps one
   centre view per screen, and a capsule swapped into an empty one kept its zero size and
   stayed invisible until the tab was left and re-entered.
-- **Climbs search, every platform:** the Climbs screen has no search field and
-  its header draws no "Climbs" title (`NativeRootHeader` `titleHidden`; the tab
-  names the screen). The climb-name search is the first row of the Filters
-  sheet, as in the Logbook. A second tap on the Climbs tab with the list showing
+- **Climbs search:** the Climbs header draws no "Climbs" title
+  (`NativeRootHeader` `titleHidden`; the tab names the screen). The climb-name
+  search is the first row of the Filters sheet on every platform, as in the
+  Logbook. When Climbs is the iOS 26 bar's search tab, the screen also sets
+  `headerSearchBarOptions` (`useClimbsTabBarSearchField`), which iOS moves into
+  the tab bar. Selecting the tab shows the list and leaves the field alone
+  (`disableAutomaticSearchActivation`; tapping it straight into the keyboard
+  shipped in #8261 and was reverted in #8265). Tapping the field focuses it, typing
+  searches as you type, throttled like the Filters row (the first keystroke at
+  once, then at most every 300 ms, always ending on the last text), Cancel empties it, and a
+  name set elsewhere (Filters, a recent filter, a board switch) is written back
+  into the field unless the climber is mid-typing. A second tap on the tab
+  focuses the field instead of opening Filters. iOS 26.x sets a search tab apart
+  on its own; iOS 27 does only while activation is on, hence `prominent` there. Everywhere else the screen has no
+  search field, and a second tap on the Climbs tab with the list showing
   opens Filters without the keyboard (`useTabReselect`, which listens for the tab
   bar's re-press; the JS tablet rails navigate without one, so there the Filters
   chip is the way in). On a collapsed bar that tap also expands the bar. That is UIKit, not

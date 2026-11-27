@@ -1,6 +1,36 @@
 {
-  "generatedAt": "2026-11-26T13:31:26.830Z",
+  "generatedAt": "2026-11-26T23:00:17.217Z",
   "entries": [
+    {
+      "prNumber": 8266,
+      "category": "new",
+      "title": "Search climbs by name right from the tab bar on iOS 26. You can turn it off in Settings › Climbs & grades.",
+      "mergedAt": "2026-11-26T22:56:07Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8266"
+    },
+    {
+      "prNumber": 8263,
+      "category": "improved",
+      "title": "Generate CNC build packs free for your own non-commercial wall.",
+      "mergedAt": "2026-11-26T22:11:03Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8263",
+      "body": "Support Boardsesh with an optional donation; commercial builders can contact partnerships."
+    },
+    {
+      "prNumber": 8261,
+      "category": "new",
+      "title": "Search climbs by name right from the tab bar on iOS 26. You can turn it off in Settings › Climbs & grades.",
+      "mergedAt": "2026-11-26T19:58:02Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8261"
+    },
+    {
+      "prNumber": 8260,
+      "category": "new",
+      "title": "Your climb filters now stay put when you change the angle or switch boards",
+      "mergedAt": "2026-11-26T19:33:10Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8260",
+      "body": "Changing the angle keeps your climb name search too; switching boards clears just the name\nRecent searches work on every board and angle"
+    },
     {
       "prNumber": 8210,
       "category": "new",

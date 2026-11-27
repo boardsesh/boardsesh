@@ -225,3 +225,45 @@ describe('getRecentFilters sanitizer', () => {
     for (const entry of result) expect(entry.filters).not.toHaveProperty('holdIntegrity');
   });
 });
+
+describe('addRecentFilter', () => {
+  beforeEach(async () => {
+    const store = await import('expo-secure-store');
+    (store as unknown as { __reset: () => void }).__reset();
+  });
+
+  it('records the board the search was made on', async () => {
+    const { addRecentFilter, getRecentFilters } = await import('../recent-filter-store');
+    await addRecentFilter('V3 crimp', { ...defaultFilters, sortBy: 'ascents', minGrade: 16 }, 'crimp', 'kilter|1|10|1');
+    const [saved] = await getRecentFilters();
+    expect(saved).toMatchObject({ label: 'V3 crimp', searchText: 'crimp', boardKey: 'kilter|1|10|1' });
+  });
+
+  it('keeps the same named search on two boards as two recents', async () => {
+    const { addRecentFilter, getRecentFilters } = await import('../recent-filter-store');
+    const filters = { ...defaultFilters, sortBy: 'ascents' as const, minGrade: 16 };
+    await addRecentFilter('V3 crimp', filters, 'crimp', 'kilter|1|10|1');
+    await addRecentFilter('V3 crimp', filters, 'crimp', 'tension|10|6|12');
+    expect((await getRecentFilters()).map((entry) => entry.boardKey)).toEqual(['tension|10|6|12', 'kilter|1|10|1']);
+  });
+
+  it('keeps one recent for the same search without a name, whatever the board', async () => {
+    const { addRecentFilter, getRecentFilters } = await import('../recent-filter-store');
+    const filters = { ...defaultFilters, sortBy: 'ascents' as const, minGrade: 16 };
+    await addRecentFilter('V3', filters, '', 'kilter|1|10|1');
+    await addRecentFilter('V3', filters, '', 'tension|10|6|12');
+    expect((await getRecentFilters()).map((entry) => entry.boardKey)).toEqual(['tension|10|6|12']);
+  });
+
+  it('replaces a named recent saved before boards were recorded', async () => {
+    const store = await import('expo-secure-store');
+    const filters = { ...defaultFilters, sortBy: 'ascents' as const, minGrade: 16 };
+    await store.setItemAsync(
+      'boardsesh_recent_filters',
+      JSON.stringify([{ id: 'legacy', label: 'V3 crimp', filters, searchText: 'crimp', timestamp: 0 }]),
+    );
+    const { addRecentFilter, getRecentFilters } = await import('../recent-filter-store');
+    await addRecentFilter('V3 crimp', filters, 'crimp', 'kilter|1|10|1');
+    expect((await getRecentFilters()).map((entry) => entry.boardKey)).toEqual(['kilter|1|10|1']);
+  });
+});

@@ -1069,12 +1069,25 @@ describe('ClimbFilterSheet live selections and dismissal', () => {
     expect(onDismiss).not.toHaveBeenCalled();
   });
 
-  it('ignores a native close after the presentation board or angle changed', () => {
+  it('ignores a native close after the presentation board changed', () => {
     const onDismiss = vi.fn();
     const rendered = renderFilterSheet({ onDismiss });
-    rendered.rerender(<ClimbFilterSheet {...rendered.props} boardConfig={{ ...boardConfig, angle: 45 }} />);
+    rendered.rerender(<ClimbFilterSheet {...rendered.props} boardConfig={{ ...boardConfig, sizeId: 99 }} />);
     simulateNativeClose();
     expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  // The search follows the climber across angles, so a crewmate changing the
+  // angle must not leave an open sheet unable to close or edit.
+  it('keeps closing and editing after only the angle changed', () => {
+    const onDismiss = vi.fn();
+    const onNameChange = vi.fn();
+    const rendered = renderFilterSheet({ onDismiss, onNameChange });
+    rendered.rerender(<ClimbFilterSheet {...rendered.props} boardConfig={{ ...boardConfig, angle: 45 }} />);
+    fireEvent.change(rendered.getByLabelText('mobile.filter.section.name'), { target: { value: 'crimp' } });
+    expect(onNameChange).toHaveBeenCalledWith('crimp');
+    simulateNativeClose();
+    expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -2012,11 +2025,11 @@ describe('ClimbFilterSheet name field (#3606)', () => {
     expect(onSelectionChange).not.toHaveBeenCalled();
   });
 
-  it('ignores name input and inline clear after the board or angle changes', () => {
+  it('ignores name input and inline clear after the board changes', () => {
     const onNameChange = vi.fn();
     const onClearName = vi.fn();
     const rendered = renderFilterSheet({ searchName: 'old-board-name', onNameChange, onClearName });
-    rendered.rerender(<ClimbFilterSheet {...rendered.props} boardConfig={{ ...boardConfig, angle: 45 }} />);
+    rendered.rerender(<ClimbFilterSheet {...rendered.props} boardConfig={{ ...boardConfig, sizeId: 99 }} />);
     fireEvent.change(rendered.getByLabelText('mobile.filter.section.name'), { target: { value: 'late text' } });
     fireEvent.click(rendered.getByLabelText('actions.clear'));
     expect(onNameChange).not.toHaveBeenCalled();
@@ -2773,7 +2786,7 @@ describe('Android native filter integration (#7312)', () => {
     expect(routerPush).not.toHaveBeenCalled();
     if (outcome === 'close') act(() => androidSurfaceMock.latest?.onClosePress());
     if (outcome === 'board-change')
-      view.rerender(<ClimbFilterSheet {...view.props} boardConfig={{ ...boardConfig, angle: 45 }} />);
+      view.rerender(<ClimbFilterSheet {...view.props} boardConfig={{ ...boardConfig, sizeId: 99 }} />);
     await act(async () => {
       resolveCapture?.({ sectionKey: 'quality', offsetDp: 24 });
     });

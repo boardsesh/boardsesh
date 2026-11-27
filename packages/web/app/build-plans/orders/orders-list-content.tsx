@@ -36,11 +36,13 @@ export default function OrdersListContent({
   catalog,
   locale,
   t,
+  creationEnabled,
 }: {
   orders: readonly CncOrder[];
   catalog: CncCatalog | null;
   locale: string;
   t: TFunction;
+  creationEnabled: boolean;
 }) {
   const dateFormat = createOrderDateFormatter(locale, { dateStyle: 'medium' });
 
@@ -48,17 +50,19 @@ export default function OrdersListContent({
     return (
       <EmptyPanel
         title={t('orders.empty')}
-        body={t('orders.emptyBody')}
+        body={creationEnabled ? t('orders.emptyBody') : t('errors.CNC_WORKER_UNAVAILABLE')}
         action={
-          <Button component={LocaleLink} href="/build-plans" variant="contained">
-            {t('orders.emptyCta')}
-          </Button>
+          creationEnabled ? (
+            <Button component={LocaleLink} href="/build-plans" variant="contained">
+              {t('orders.emptyCta')}
+            </Button>
+          ) : undefined
         }
       />
     );
   }
 
-  const finaliseLicenceId = newestPreviewReadyLicenceId(orders);
+  const finaliseLicenceId = creationEnabled ? newestPreviewReadyLicenceId(orders) : null;
 
   return (
     <Box className={styles.rowList}>

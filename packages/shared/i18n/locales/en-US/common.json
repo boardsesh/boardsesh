@@ -380,6 +380,10 @@
         "personalGrades": "Use my grades",
         "personalGradesDescription": "Show the grade you gave a climb instead of the crowd's, and sort and filter by it."
       },
+      "tabBarSearch": {
+        "title": "Search from the tab bar",
+        "footer": "Climbs gets its own button at the right of the tab bar, with a field for climb names. Off, it's a regular tab and you search names in Filters. Takes effect after you restart Boardsesh."
+      },
       "offline": {
         "title": "Offline",
         "offlineMode": "Offline mode",

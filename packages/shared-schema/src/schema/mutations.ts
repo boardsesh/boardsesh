@@ -1180,18 +1180,12 @@ export const mutationsTypeDefs = /* GraphQL */ `
     createCncPreview(config: CncBoardConfigInput!): CncOrder!
 
     """
-    Buy a previewed order: attach the licence and open Stripe Checkout for it.
+    Finalise an approved preview and queue a free non-commercial pack.
 
-    The order must be the caller's own and in \`preview_ready\` — this is the
-    only way a build pack is ever paid for, so nothing can be bought that was
-    not previewed first. It takes the tier, the licensee and the acceptance,
-    moves to \`pending_payment\` and returns the hosted page to send the buyer
-    to; nothing is queued for generation until Stripe confirms the charge. If
-    Stripe will not open a session the order goes back to \`preview_ready\` and
-    this throws \`CNC_CHECKOUT_UNAVAILABLE\`. The returned session expires 31
-    minutes after it is created.
-
-    Requires authentication.
+    Requires authentication, ownership, a \`preview_ready\` order and acceptance
+    of the personal manufacturing licence. Commercial use is not available
+    through this mutation; contact partnerships@boardsesh.com. The returned
+    historical checkout URL field points to the queued order page.
     """
     finaliseCncOrder(input: FinaliseCncOrderInput!): CncCheckoutSession!
 

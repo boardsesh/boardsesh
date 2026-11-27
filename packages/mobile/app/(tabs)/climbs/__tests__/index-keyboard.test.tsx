@@ -193,6 +193,8 @@ const mocks = vi.hoisted(() => ({
   refocusCount: 0,
   // What the screen asks to run when its tab is tapped again while it is showing.
   tabReselect: undefined as (() => void) | undefined,
+  // Climbs is the iOS 26 bar's search tab (`useClimbsTabBarSearch`).
+  tabBarSearch: false,
   scrollToOffset: vi.fn(),
   stackOptions: [] as NativeStackNavigationOptions[],
   // The system text size, and whether the list is fetching another page: the
@@ -836,6 +838,9 @@ vi.mock('../../../../src/hooks/use-bottom-accessory', () => ({
   useNativeAccessoryActive: () => false,
   useLiquidGlassTabBar: () => false,
 }));
+vi.mock('../../../../src/hooks/use-climbs-tab-bar-search', () => ({
+  useClimbsTabBarSearch: () => mocks.tabBarSearch,
+}));
 vi.mock('../../../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({
     scrollBottomPadding: 96,
@@ -966,8 +971,6 @@ vi.mock('../../../../src/lib/recent-filter-store', () => ({
 vi.mock('../../../../src/lib/last-search-store', () => ({
   getLastSearch: mocks.getLastSearch,
   saveLastSearch: mocks.saveLastSearch,
-  boardConfigKey: (board: BoardSearchConfig) =>
-    `${board.boardName}|${board.layoutId}|${board.sizeId}|${board.setIds}|${board.angle}`,
 }));
 
 vi.mock('../../../../src/lib/filter-summary', () => ({
@@ -986,6 +989,7 @@ vi.mock('../../../../src/lib/filter-tokens', async (importOriginal) => {
 vi.mock('@boardsesh/board-presence-react', () => ({ useBoardPresenceLayers: () => null }));
 vi.mock('../../../../src/lib/search-name', () => ({
   normalizeSearchName: (text: string) => text.trim(),
+  visibleSearchTextNeedsSync: (visibleText: string, name: string) => visibleText.trim() !== name,
 }));
 vi.mock('../../../../src/lib/analytics', () => ({ track: mocks.track }));
 vi.mock('../../../../src/theme/ios-colors', () => ({
@@ -1130,6 +1134,7 @@ beforeEach(() => {
   mocks.setGrade.mockClear();
   mocks.refocusCount = 0;
   mocks.tabReselect = undefined;
+  mocks.tabBarSearch = false;
   mocks.scrollToOffset.mockClear();
   mocks.stackOptions.length = 0;
   mocks.fontScale = 1;
@@ -1313,6 +1318,55 @@ describe('ClimbList second tap on the Climbs tab', () => {
     expect(trackedPayloads('Climb Filters Closed')).toEqual([
       { source: 'filters_chip', activeFilterCount: 0, hasName: false },
     ]);
+  });
+});
+
+describe('ClimbList with Climbs as the bar search tab', () => {
+  const searchBarOptions = () =>
+    mocks.stackOptions.findLast((options) => options.headerSearchBarOptions)?.headerSearchBarOptions;
+
+  it('hands the bar a climb-name field that searches as the climber types', async () => {
+    mocks.tabBarSearch = true;
+    const { findByText } = render(<ClimbList />);
+    await findByText('Moonage');
+
+    const field = searchBarOptions();
+    expect(field).toMatchObject({ placement: 'automatic', placeholder: 'search.placeholders.climbs' });
+    // Throttled: the first keystroke searches at once, the rest within 300 ms.
+    act(() => field?.onChangeText?.({ nativeEvent: { text: 'c' } } as never));
+    expect(mocks.setName).toHaveBeenLastCalledWith('c');
+    act(() => field?.onChangeText?.({ nativeEvent: { text: 'crimp ' } } as never));
+    expect(mocks.setName).not.toHaveBeenCalledWith('crimp');
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+    expect(mocks.setName).toHaveBeenLastCalledWith('crimp');
+  });
+
+  it('empties the name on Cancel', async () => {
+    mocks.tabBarSearch = true;
+    mocks.searchState = { filters: {}, boardFilters: {}, name: 'crimp' };
+    const { findByText } = render(<ClimbList />);
+    await findByText('Moonage');
+
+    act(() => searchBarOptions()?.onCancelButtonPress?.({} as never));
+    expect(mocks.setName).toHaveBeenLastCalledWith('');
+  });
+
+  it('focuses the search field on a second tap instead of opening Filters', async () => {
+    mocks.tabBarSearch = true;
+    const { findByText, queryByTestId } = render(<ClimbList />);
+    await findByText('Moonage');
+    const ref = searchBarOptions()?.ref as { current: unknown } | undefined;
+    if (!ref) throw new Error('Expected the tab bar search field');
+    const focus = vi.fn();
+    ref.current = { focus, blur: vi.fn(), setText: vi.fn(), clearText: vi.fn() };
+
+    expect(mocks.tabReselect).toBeDefined();
+    act(() => mocks.tabReselect?.());
+
+    expect(focus).toHaveBeenCalledOnce();
+    expect(queryByTestId('filter-sheet')).toBeNull();
   });
 });
 
@@ -2993,7 +3047,35 @@ describe('ClimbList live filter session integration', () => {
 
   afterEach(() => vi.useRealTimers());
 
-  it.each(['board arrival', 'board switch'] as const)(
+  it('writes a name typed in Filters into the tab bar field, never one typed in the field itself', async () => {
+    mocks.tabBarSearch = true;
+    const fieldCommands = { setText: vi.fn(), blur: vi.fn(), clearText: vi.fn() };
+    mocks.statefulSearch = true;
+    const view = render(<ClimbList />);
+    await view.findByText('Moonage');
+    const field = mocks.stackOptions.findLast((options) => options.headerSearchBarOptions)?.headerSearchBarOptions;
+    const ref = field?.ref as { current: unknown } | undefined;
+    if (!ref) throw new Error('Expected the tab bar search field');
+    ref.current = fieldCommands;
+    vi.useFakeTimers();
+
+    act(() => {
+      field?.onChangeText?.({ nativeEvent: { text: 'crimp ' } } as never);
+      vi.advanceTimersByTime(300);
+    });
+    expect(mocks.searchState.name).toBe('crimp');
+    expect(fieldCommands.setText).not.toHaveBeenCalled();
+
+    act(() => mocks.openFilters?.());
+    act(() => {
+      latestSheet().onNameChange('Moonlight');
+      vi.advanceTimersByTime(300);
+    });
+    expect(mocks.searchState.name).toBe('Moonlight');
+    expect(fieldCommands.setText).toHaveBeenLastCalledWith('Moonlight');
+  });
+
+  it.each(['board arrival', 'sign-out'] as const)(
     'blocks both Filters entry points until a deferred restore finishes after %s',
     async (arrival) => {
       mocks.statefulSearch = true;
@@ -3002,6 +3084,7 @@ describe('ClimbList live filter session integration', () => {
         filters: { ...selectedFilters, minGrade: 8 },
         boardFilters: {},
         searchText: 'saved climb',
+        boardKey: 'kilter|1|10|1',
         updatedAt: 1,
       };
       let resolveRestore: (saved: LastSearch) => void = () => {
@@ -3013,11 +3096,11 @@ describe('ClimbList live filter session integration', () => {
       if (arrival === 'board arrival') mocks.getLastSearch.mockReturnValueOnce(pendingRestore);
       const view = render(<ClimbList />);
       let previousBoardOpen: (() => void) | undefined;
-      if (arrival === 'board switch') {
+      if (arrival === 'sign-out') {
         await view.findByText('Moonage');
         previousBoardOpen = mocks.openFilters;
         mocks.getLastSearch.mockReturnValueOnce(pendingRestore);
-        mocks.activeBoard = { boardType: 'tension', layoutId: 10, sizeId: 7, setIds: '4', angle: 35 };
+        mocks.isAuthenticated = false;
         view.rerender(<ClimbList />);
       }
       mocks.replaceSearch.mockClear();
@@ -3058,7 +3141,7 @@ describe('ClimbList live filter session integration', () => {
         boardFilters: selectedBoardFilters,
         name: 'saved climb',
       });
-      expect(mocks.addRecentFilter).toHaveBeenCalledExactlyOnceWith('', finalFilters, 'saved climb');
+      expect(mocks.addRecentFilter).toHaveBeenCalledExactlyOnceWith('', finalFilters, 'saved climb', 'kilter|1|10|1');
     },
   );
 
@@ -3068,11 +3151,12 @@ describe('ClimbList live filter session integration', () => {
     const finalFilters = { ...selectedFilters, minGrade: 20 };
     act(() => {
       sheet.onSelectionChange(selectedFilters, selectedBoardFilters);
+      // The first keystroke commits at once (throttled); the rest waits.
+      sheet.onNameChange('  c');
       sheet.onNameChange('  crimp  ');
       sheet.onSelectionChange(finalFilters, selectedBoardFilters);
     });
-    expect(mocks.searchState).toEqual({ filters: finalFilters, boardFilters: selectedBoardFilters, name: '' });
-    expect(mocks.searchInput).toMatchObject({ filters: {}, boardFilters: {}, name: '' });
+    expect(mocks.searchState).toEqual({ filters: finalFilters, boardFilters: selectedBoardFilters, name: 'c' });
     expect(mocks.addRecentFilter).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -3082,7 +3166,7 @@ describe('ClimbList live filter session integration', () => {
     expect(view.queryByTestId('filter-sheet')).toBeNull();
     expect(mocks.searchState).toEqual({ filters: finalFilters, boardFilters: selectedBoardFilters, name: 'crimp' });
     expect(mocks.searchInput).toEqual({ filters: finalFilters, boardFilters: selectedBoardFilters, name: 'crimp' });
-    expect(mocks.addRecentFilter).toHaveBeenCalledExactlyOnceWith('', finalFilters, 'crimp');
+    expect(mocks.addRecentFilter).toHaveBeenCalledExactlyOnceWith('', finalFilters, 'crimp', 'kilter|1|10|1');
 
     act(() => mocks.openFilters?.());
     expect(view.getByTestId('filter-sheet')).toBeDefined();
@@ -3094,29 +3178,30 @@ describe('ClimbList live filter session integration', () => {
     expect(mocks.addRecentFilter).toHaveBeenCalledTimes(1);
   });
 
-  it('runs the name query at 300 ms without another filter delay or intermediate recent', async () => {
+  it('runs the name query on the first keystroke and then every 300 ms, with no intermediate recent', async () => {
     await openSheet();
     const sheet = latestSheet();
     act(() => {
       sheet.onSelectionChange(selectedFilters, selectedBoardFilters);
+      sheet.onNameChange('c');
+    });
+    expect(mocks.searchState.name).toBe('c');
+    act(() => {
+      vi.advanceTimersByTime(100);
       sheet.onNameChange('crimp');
     });
     act(() => {
-      vi.advanceTimersByTime(250);
+      vi.advanceTimersByTime(199);
     });
-    expect(mocks.searchInput).toEqual({ filters: selectedFilters, boardFilters: selectedBoardFilters, name: '' });
+    expect(mocks.searchState.name).toBe('c');
     expect(mocks.addRecentFilter).not.toHaveBeenCalled();
-    act(() => {
-      vi.advanceTimersByTime(49);
-    });
-    expect(mocks.searchState.name).toBe('');
     act(() => {
       vi.advanceTimersByTime(1);
     });
     expect(mocks.searchInput).toEqual({ filters: selectedFilters, boardFilters: selectedBoardFilters, name: 'crimp' });
     expect(mocks.addRecentFilter).not.toHaveBeenCalled();
     await act(async () => latestSheet().onDismiss());
-    expect(mocks.addRecentFilter).toHaveBeenCalledExactlyOnceWith('', selectedFilters, 'crimp');
+    expect(mocks.addRecentFilter).toHaveBeenCalledExactlyOnceWith('', selectedFilters, 'crimp', 'kilter|1|10|1');
   });
 
   it('records only the final grade-only preset after rapid edits and a close', async () => {
@@ -3132,7 +3217,7 @@ describe('ClimbList live filter session integration', () => {
       sheet.onDismiss();
       sheet.onDismiss();
     });
-    expect(mocks.addRecentFilter).toHaveBeenCalledExactlyOnceWith('', finalFilters, '');
+    expect(mocks.addRecentFilter).toHaveBeenCalledExactlyOnceWith('', finalFilters, '', 'kilter|1|10|1');
   });
 
   it('normalizes a signed-out restored draft before rendering, querying and recording the final preset', async () => {
@@ -3158,23 +3243,32 @@ describe('ClimbList live filter session integration', () => {
     expect(latestSheet().currentFilters).toEqual(expectedFilters);
     expect(mocks.searchInput).toEqual({ filters: expectedFilters, boardFilters: selectedBoardFilters, name: '' });
     await act(async () => latestSheet().onDismiss());
-    expect(mocks.addRecentFilter).toHaveBeenCalledExactlyOnceWith('', expectedFilters, '');
+    expect(mocks.addRecentFilter).toHaveBeenCalledExactlyOnceWith('', expectedFilters, '', 'kilter|1|10|1');
     expect(mocks.searchState.filters).toEqual(expectedFilters);
   });
 
-  it.each(['board', 'angle', 'signed out'] as const)(
+  it.each([
+    ['board', ''],
+    ['signed out', 'new scope'],
+  ] as const)(
     'rejects pending and stale field/selection/close callbacks after changing %s',
-    async (scopeChange) => {
+    async (scopeChange, nameAfterChange) => {
       const view = await openSheet();
       const oldSheet = latestSheet();
       act(() => oldSheet.onNameChange('unfinished old name'));
-      mocks.getLastSearch.mockResolvedValue({ filters: {}, boardFilters: {}, searchText: 'new scope', updatedAt: 1 });
+      mocks.getLastSearch.mockResolvedValue({
+        filters: {},
+        boardFilters: {},
+        searchText: 'new scope',
+        boardKey: 'kilter|1|10|1',
+        updatedAt: 1,
+      });
       if (scopeChange === 'signed out') mocks.isAuthenticated = false;
-      else if (scopeChange === 'angle') mocks.activeBoard = { ...mocks.activeBoard!, angle: 45 };
       else mocks.activeBoard = { boardType: 'tension', layoutId: 10, sizeId: 7, setIds: '4', angle: 35 };
       await act(async () => view.rerender(<ClimbList />));
       expect(view.queryByTestId('filter-sheet')).toBeNull();
-      expect(mocks.searchState.name).toBe('new scope');
+      expect(mocks.searchState.name).toBe(nameAfterChange);
+      const searchAfterChange = mocks.searchState;
       mocks.setName.mockClear();
       mocks.replaceSearch.mockClear();
 
@@ -3187,12 +3281,48 @@ describe('ClimbList live filter session integration', () => {
       });
       expect(mocks.setName).not.toHaveBeenCalled();
       expect(mocks.replaceSearch).not.toHaveBeenCalled();
-      expect(mocks.searchState).toEqual({ filters: {}, boardFilters: {}, name: 'new scope' });
+      expect(mocks.searchState).toEqual(searchAfterChange);
       expect(mocks.addRecentFilter).not.toHaveBeenCalled();
       // The app cancelled the sheet; the climber did not close it.
       expect(mocks.track.mock.calls.some(([eventName]) => eventName === 'Climb Filters Closed')).toBe(false);
     },
   );
+
+  it('keeps the open sheet, a pending name and the search when only the angle changes', async () => {
+    const view = await openSheet();
+    const sheet = latestSheet();
+    const readsBefore = mocks.getLastSearch.mock.calls.length;
+    act(() => {
+      sheet.onSelectionChange(selectedFilters, selectedBoardFilters);
+      sheet.onNameChange('crimp');
+    });
+    mocks.activeBoard = { ...mocks.activeBoard!, angle: 45 };
+    await act(async () => view.rerender(<ClimbList />));
+    expect(view.getByTestId('filter-sheet')).toBeDefined();
+    expect(mocks.getLastSearch.mock.calls.length).toBe(readsBefore);
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(mocks.searchState).toEqual({ filters: selectedFilters, boardFilters: selectedBoardFilters, name: 'crimp' });
+    await act(async () => latestSheet().onDismiss());
+    expect(mocks.addRecentFilter).toHaveBeenCalledExactlyOnceWith('', selectedFilters, 'crimp', 'kilter|1|10|1');
+  });
+
+  it('keeps the filters but clears the name on another board, without reading storage again', async () => {
+    const view = await openSheet();
+    const sheet = latestSheet();
+    act(() => {
+      sheet.onSelectionChange(selectedFilters, selectedBoardFilters);
+      sheet.onNameChange('crimp');
+      vi.advanceTimersByTime(300);
+    });
+    await act(async () => latestSheet().onDismiss());
+    const readsBefore = mocks.getLastSearch.mock.calls.length;
+    mocks.activeBoard = { boardType: 'tension', layoutId: 10, sizeId: 7, setIds: '4', angle: 35 };
+    await act(async () => view.rerender(<ClimbList />));
+    expect(mocks.getLastSearch.mock.calls.length).toBe(readsBefore);
+    expect(mocks.searchState).toEqual({ filters: selectedFilters, boardFilters: selectedBoardFilters, name: '' });
+  });
 
   it('clears a pending name through Reset without closing or restoring it later', async () => {
     const view = await openSheet();

@@ -380,6 +380,10 @@
         "personalGrades": "Usa i miei gradi",
         "personalGradesDescription": "Mostra il grado che hai dato a un blocco al posto di quello della community, e ordina e filtra in base a quello."
       },
+      "tabBarSearch": {
+        "title": "Cerca dalla barra delle schede",
+        "footer": "Blocchi ha un pulsante tutto suo a destra della barra delle schede, con un campo per i nomi dei blocchi. Disattivato, è una scheda normale e cerchi i nomi in Filtri. Vale dopo aver riavviato Boardsesh."
+      },
       "offline": {
         "title": "Offline",
         "offlineMode": "Modalità offline",

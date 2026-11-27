@@ -29,6 +29,11 @@ export type ClimbsModelInput = {
   /** "Default", or "Custom" once a list's quick-filter chips or their order changed. */
   quickFiltersLabel: string;
   onOpenQuickFilters: () => void;
+  /**
+   * Climbs as the tab bar's search tab (`useClimbsTabBarSearch`). `null` where the
+   * bar has no search tab (iOS 18, iPad, Material, Android): no row at all.
+   */
+  tabBarSearch: { enabled: boolean; onChange: (enabled: boolean) => void } | null;
 };
 
 /**
@@ -107,6 +112,23 @@ export function buildClimbsModel(input: ClimbsModelInput): MoreFormModel {
           },
         ],
       },
+      ...(input.tabBarSearch
+        ? [
+            {
+              key: 'tabBarSearch',
+              footer: t('mobile.settings.tabBarSearch.footer'),
+              rows: [
+                {
+                  kind: 'toggle' as const,
+                  key: 'climbsTabBarSearch',
+                  label: t('mobile.settings.tabBarSearch.title'),
+                  value: input.tabBarSearch.enabled,
+                  onValueChange: input.tabBarSearch.onChange,
+                },
+              ],
+            },
+          ]
+        : []),
     ],
   };
 }

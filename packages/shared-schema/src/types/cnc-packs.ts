@@ -1,5 +1,5 @@
 /**
- * CNC build packs: the client-facing shapes for the catalogue, a purchased
+ * CNC build packs: the client-facing shapes for the catalogue, a generated
  * order, and the inputs that configure one.
  *
  * Mirrors `schema/cnc-packs.ts`. Nothing here describes the pack generator's
@@ -15,9 +15,8 @@ export type CncTb2DimensionStandard = 'metric' | 'imperial';
 export type CncTb2Engraving = 'none' | 'mirror' | 'spray' | 'both';
 
 /**
- * Lifecycle of one order. It begins as a free preview and only becomes a sale
- * at `pending_payment`. `refunded` is terminal for downloads; `cancelled` only
- * ever means the checkout lapsed.
+ * New orders progress from a free preview to a free licensed manufacturing pack.
+ * Payment-related states remain for historical orders and refunds.
  */
 export type CncOrderStatus =
   | 'preview_queued'
@@ -155,7 +154,7 @@ export type CncPreviewImage = {
 export type CncOrder = {
   id: string;
   licenceId: string;
-  /** Null until the order is finalised — a preview is not a sale. */
+  /** Null until the order is finalised — a preview has no licence yet. */
   tier: CncLicenceTier | null;
   status: CncOrderStatus;
   boardName: string;
@@ -235,18 +234,16 @@ export type FinaliseCncOrderInput = {
   tier: CncLicenceTier;
   licenseeName: string;
   licenseeEmail: string;
-  /** Required for `commercial_single`, rejected for `personal`. */
+  /** Historical compatibility field. New free packs reject commercial requests. */
   customerSiteName?: string | null;
   acceptLicence: true;
 };
 
 /**
- * An opened Stripe Checkout Session and the order it will pay for.
+ * A finalised free pack and its order-page URL.
  *
- * The order already exists in `pending_payment` — creating a session is not a
- * payment, and nothing is queued for generation until the Stripe webhook
- * confirms the charge. The order page works from this moment; send the buyer to
- * `checkoutUrl` and they land back on it either way.
+ * The order is already queued when this returns. The historical type and field
+ * names remain stable for existing clients; no payment session is opened.
  */
 export type CncCheckoutSession = {
   orderId: string;

@@ -65,6 +65,8 @@ export function StoryTabLayout() {
         tabBarMinimizeBehavior={liquidGlassTabBar ? (verticalTabBar ? 'never' : 'onScrollDown') : undefined}
         accessoryNativeProps={undefined}
         prominentClimbsTab={liquidGlassTabBar && !deviceLayout.isPad && parseInt(String(Platform.Version), 10) >= 27}
+        // The story screens set no search field, so a search tab would open an empty one.
+        climbsSearchTab={false}
         showDetailPane={showDetailPane}
         showWallColumn={false}
         wallDisplayOpen={false}

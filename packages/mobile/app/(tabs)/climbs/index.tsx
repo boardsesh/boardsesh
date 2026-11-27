@@ -12,6 +12,7 @@ import { usePullRefresh } from '../../../src/hooks/use-pull-refresh';
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { View, StyleSheet, RefreshControl, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { type FlashListRef } from '@shopify/flash-list';
+import type { SearchBarCommands } from 'react-native-screens';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
@@ -82,6 +83,8 @@ import { useClimbsOnboarding } from '../../../src/hooks/climbs/use-climbs-onboar
 import { useClimbBoardPrewarming } from '../../../src/hooks/climbs/use-climb-board-prewarming';
 import { useClimbSearchAnalytics } from '../../../src/hooks/climbs/use-climb-search-analytics';
 import { useClimbSearchActivation } from '../../../src/hooks/climbs/use-climb-search-activation';
+import { useClimbsTabBarSearchField } from '../../../src/hooks/climbs/use-climbs-tab-bar-search-field';
+import { useClimbsTabBarSearch } from '../../../src/hooks/use-climbs-tab-bar-search';
 
 const PAGE_SIZE = 30;
 // Any part of a row on screen counts: this feeds pagination and thumbnail
@@ -138,7 +141,14 @@ function ClimbListInner() {
     () => (hasBoardConfig ? { boardName, layoutId, sizeId, setIds, angle } : null),
     [hasBoardConfig, boardName, layoutId, sizeId, setIds, angle],
   );
-  const searchSession = useClimbsSearchSession(boardConfig);
+  const tabBarSearch = useClimbsTabBarSearch();
+  // The bar's native search field, once it mounts. A second tap on the tab focuses it.
+  const tabBarFieldRef = useRef<SearchBarCommands>(null);
+  const focusTabBarField = useCallback(() => tabBarFieldRef.current?.focus(), []);
+  const searchSession = useClimbsSearchSession(boardConfig, {
+    tabBarSearch,
+    onTabBarSearchReselect: focusTabBarField,
+  });
   const {
     filters,
     boardFilters,
@@ -156,6 +166,10 @@ function ClimbListInner() {
     handleLiveFilterSelectionChange,
     handleSheetNameChange,
     handleSheetClearName,
+    handleClearName,
+    handleBarNameChange,
+    handleBarNameSubmit,
+    readPendingName,
     handleOpenFilters,
     handleOpenFiltersFromEmpty,
     recentFilters,
@@ -485,12 +499,27 @@ function ClimbListInner() {
     [isFetchingNextPage, listBottomSpacerStyle, rowsTrackDirections, listColumns],
   );
 
+  // When Climbs is the bar's search tab, iOS moves this screen's search
+  // controller into the tab bar: the climb-name field the climber types in there.
+  const tabBarSearchField = useClimbsTabBarSearchField({
+    enabled: tabBarSearch,
+    fieldRef: tabBarFieldRef,
+    placeholder: t('search.placeholders.climbs'),
+    name,
+    searchReady,
+    readPendingName,
+    onChangeText: handleBarNameChange,
+    onSubmit: handleBarNameSubmit,
+    onClear: handleClearName,
+    onFocus: handleDismissGradePopover,
+  });
   // NativeRootHeader owns the native header; Material hides it for its own app bar.
-  const stackOptions = useMemo(
-    () =>
-      nativeRootHeader ? {} : { headerShown: false, headerLargeTitle: false, title: tCommon('mobile.nav.climbs') },
-    [nativeRootHeader, tCommon],
-  );
+  const stackOptions = useMemo(() => {
+    if (!nativeRootHeader) {
+      return { headerShown: false, headerLargeTitle: false, title: tCommon('mobile.nav.climbs') };
+    }
+    return tabBarSearchField ? { headerSearchBarOptions: tabBarSearchField } : {};
+  }, [nativeRootHeader, tCommon, tabBarSearchField]);
 
   const renderClimbItem = useCallback(
     ({ item: climb }: { item: Climb }) => (

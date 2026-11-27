@@ -7,10 +7,6 @@
   },
   "licence": {
     "headerTitle": "Licencia de fabricación de los planos de construcción",
-    "draft": {
-      "title": "Licencia en borrador",
-      "body": "Licencia en borrador, pendiente de revisión por un abogado australiano de propiedad intelectual; todavía no te bases en ella. El texto cambiará antes de que los planos de construcción salgan a la venta."
-    },
     "intro": {
       "title": "Licencia de fabricación de los planos de construcción de Boardsesh",
       "p1": "Este es el acuerdo que acompaña a cada pack de planos de construcción. Explica qué puedes construir, qué no puedes ceder a nadie y quién asume el riesgo una vez cortadas las piezas. En lenguaje claro, a propósito."
@@ -36,11 +32,11 @@
     },
     "grant": {
       "title": "2. Qué obtienes",
-      "p1": "Comprar un pack compra una licencia para fabricar. No transfiere la propiedad de los archivos, de la geometría ni del generador que los produjo. Boardsesh conserva todos los derechos que tiene sobre el pack.",
+      "p1": "Los nuevos packs generados aquí incluyen una licencia personal gratuita para fabricar un muro para tu propio uso no comercial. El uso comercial requiere un acuerdo aparte. La licencia no transfiere la propiedad de los archivos, de la geometría ni del generador que los produjo. Boardsesh conserva todos los derechos que tiene sobre el pack.",
       "p2": "La licencia empieza cuando se entrega el pack y dura mientras cumplas las condiciones de abajo. No hay nada que renovar."
     },
     "personal": {
-      "title": "3. Licencia personal (149 A$)",
+      "title": "3. Licencia personal (gratis)",
       "summary": "Un muro, para tu propio uso no comercial.",
       "allowed1": "Fabricar un muro a partir del pack para tu propio uso no comercial.",
       "allowed2": "Cortar las piezas tú mismo o encargárselas a un taller, siempre que el muro terminado sea tuyo.",
@@ -50,8 +46,8 @@
       "notAllowed4": "Un segundo muro necesita una segunda licencia."
     },
     "commercial": {
-      "title": "4. Licencia comercial de una construcción (750 A$)",
-      "summary": "Una instalación concreta de un cliente, indicada en la licencia.",
+      "title": "4. Uso comercial por acuerdo",
+      "summary": "El uso comercial requiere un acuerdo aparte: escribe a partnerships@boardsesh.com. Las siguientes condiciones se aplican solo a las licencias comerciales ya emitidas.",
       "allowed1": "Fabricar un muro para la instalación del cliente indicada en la licencia.",
       "allowed2": "Cobrar a ese cliente lo que quieras por la construcción. Para eso está este nivel.",
       "notAllowed1": "Nada de revender, redistribuir, compartir ni publicar los archivos, enteros o en parte, modificados o no.",
@@ -63,13 +59,13 @@
       "notAllowed": "No puedes"
     },
     "volume": {
-      "title": "5. Diez construcciones y OEM",
-      "body": "¿Cortas en volumen o quieres integrar estos paneles en un producto que vendes? Los packs de diez construcciones y las condiciones OEM se acuerdan caso por caso. <mail>Escríbenos</mail> contando qué vas a construir y cuántas unidades."
+      "title": "5. Construcciones comerciales y OEM",
+      "body": "¿Construyes para un cliente o un rocódromo, cortas en volumen o incluyes estos paneles en un producto que vendes? Contacta con nuestro equipo de colaboraciones para acordar una licencia comercial. <mail>Escríbenos</mail> con lo que vas a construir y cuántas unidades."
     },
     "fingerprint": {
       "title": "6. Marcado y cumplimiento",
       "p1": "Cada pack se genera individualmente para un pedido y lleva su id de licencia en los archivos.",
-      "p2": "Los archivos también llevan marcas ligadas a la compra. Un pack que aparezca donde no debe se puede rastrear hasta el pedido que lo compró.",
+      "p2": "Los archivos también llevan marcas ligadas a la licencia. Un pack que aparezca donde no debe se puede rastrear hasta el pedido que lo generó.",
       "p3": "Incumplir las condiciones de arriba termina la licencia. Fabricar a partir de ese momento es fabricar sin licencia, y lo perseguiremos."
     },
     "compatibility": {
@@ -86,23 +82,21 @@
     },
     "refunds": {
       "title": "9. Devoluciones",
-      "body": "Los archivos generados no se pueden «des-entregar», así que un pack no es reembolsable una vez descargado. Antes de la descarga, los reembolsos quedan a criterio de Boardsesh: escríbenos y lo arreglamos."
+      "body": "Los nuevos packs personales son gratis, así que no hay ningún pago que reembolsar. Para pedidos de pago anteriores, los archivos generados no se pueden «des-entregar»: un pack no es reembolsable una vez descargado. Antes de la descarga, los reembolsos siguen a criterio de Boardsesh: escríbenos y lo arreglamos."
     },
     "privacy": {
       "title": "10. Privacidad",
-      "body": "El registro de la licencia —tu nombre, tu correo, el id de licencia y la configuración que pediste— se conserva como registro contractual. Se mantiene aunque borres la cuenta, porque la licencia y su prueba de compra sobreviven a la cuenta. Todo lo demás sigue la <privacy>política de privacidad</privacy>."
+      "body": "El registro de la licencia —tu nombre, tu correo, el id de licencia y la configuración que pediste— se conserva como registro contractual. Se mantiene aunque borres la cuenta, porque la licencia y su registro sobreviven a la cuenta. Todo lo demás sigue la <privacy>política de privacidad</privacy>."
     },
     "governingLaw": {
       "title": "11. Ley aplicable",
-      "body": "Esta licencia se rige por la ley de Victoria (Australia), y los tribunales de Victoria son los competentes. Texto provisional, pendiente de revisión legal.",
-      "publicBody": "Esta licencia se rige por la ley de Victoria (Australia), y los tribunales de Victoria son los competentes."
+      "body": "Esta licencia se rige por la ley de Victoria (Australia), y los tribunales de Victoria son los competentes."
     },
     "contact": {
       "title": "12. Contacto",
       "body": "Dudas sobre la licencia, o una licencia que necesitas que reemitamos: <mail>legal@boardsesh.com</mail>."
     },
-    "footer": "Esta página es un borrador, se ofrece a título informativo y no constituye asesoramiento legal.",
-    "publicFooter": "Esta página se ofrece a título informativo y no constituye asesoramiento legal.",
+    "footer": "Esta página se ofrece a título informativo y no constituye asesoramiento legal.",
     "contents": "Contenido"
   }
 }

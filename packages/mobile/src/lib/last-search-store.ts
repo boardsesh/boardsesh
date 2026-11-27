@@ -1,4 +1,4 @@
-import { deleteSecureValue, readSecureValue, writeSecureValue } from './secure-store-io';
+import { readSecureValue, writeSecureValue } from './secure-store-io';
 import {
   SORT_OPTIONS,
   STATUS_FILTER_VALUES,
@@ -11,32 +11,51 @@ import {
 } from '@boardsesh/climb-filters';
 import type { ClimbFilters } from './climb-filter-types';
 import { AUTH_GATED_FIELDS } from './recent-filter-store';
+import { boardGeometryKey, withoutGeometryFilters } from './climb-filter-session-reducer';
 
 export type LastSearch = {
   filters: ClimbFilters;
   boardFilters: ClimbBoardFilterState;
   searchText: string;
+  /**
+   * The board (`boardGeometryKey`: board, layout, size and hold sets; angle
+   * left out) the climb name and the hold and zone picks were made on. Those
+   * only make sense on that board; every other filter follows the climber to
+   * any board and angle.
+   */
+  boardKey: string;
   updatedAt: number;
 };
 
-// One secure-store key holds a JSON map of boardConfigKey -> LastSearch so we
-// can remember the last applied search per board config. Capped to bound
-// growth when a user hops across many board configs.
+// One search follows the climber across boards and angles. The key and its
+// JSON-map shape are kept from when each board config had its own entry
+// (`boardConfigKey -> LastSearch`): the key is pinned in the keychain
+// migration list (preference-secure-keys.ts), and an older bundle reading the
+// new map just finds no entry for its board. Writes now leave one entry under
+// LATEST_ENTRY; reads take the newest valid entry, so a map an older bundle
+// wrote still restores the climber's last search.
 export const LAST_SEARCH_KEY = 'boardsesh_last_search_by_board';
-const MAX_BOARDS = 20;
+const LATEST_ENTRY = 'latest';
 
-type LastSearchMap = Record<string, LastSearch>;
+type StoredLastSearch = Omit<LastSearch, 'boardKey'> & { boardKey?: unknown };
 
 /**
  * Stable key from a resolved board config
- * (`boardName|layoutId|sizeId|setIds|angle`). Two configs that differ in any
- * field get distinct keys, so each board restores its own last search.
+ * (`boardName|layoutId|sizeId|setIds|angle`). Scopes per-screen UI sessions
+ * (playlist and setter filter sheets) to one board config.
  */
 export function boardConfigKey(board: BoardSearchConfig): string {
-  return `${board.boardName}|${board.layoutId}|${board.sizeId}|${board.setIds}|${board.angle}`;
+  return `${boardGeometryKey(board)}|${board.angle}`;
 }
 
-function isValidLastSearch(entry: unknown): entry is LastSearch {
+// Entries written by older bundles are keyed by boardConfigKey and carry no
+// boardKey; their map key minus the trailing `|angle` is the board.
+function boardKeyFromLegacyMapKey(mapKey: string): string {
+  const lastSeparator = mapKey.lastIndexOf('|');
+  return lastSeparator === -1 ? mapKey : mapKey.slice(0, lastSeparator);
+}
+
+function isValidLastSearch(entry: unknown): entry is StoredLastSearch {
   if (entry == null || typeof entry !== 'object') return false;
   const candidate = entry as {
     filters?: { sortBy?: unknown; status?: unknown };
@@ -60,10 +79,12 @@ function isValidLastSearch(entry: unknown): entry is LastSearch {
 
 // Backfill defaults for fields added after older entries were written:
 // `status` (else a missing status renders as "active" since
-// `hasActiveClimbFilters` treats `undefined !== 'any'` as a change) and
-// `boardFilters` (older entries predate per-board board filters).
-function normalizeEntry(entry: LastSearch): LastSearch {
-  let next = entry;
+// `hasActiveClimbFilters` treats `undefined !== 'any'` as a change),
+// `boardFilters` (older entries predate per-board board filters) and
+// `boardKey` (older entries were keyed by board config instead).
+function normalizeEntry(entry: StoredLastSearch, mapKey: string): LastSearch {
+  const boardKey = typeof entry.boardKey === 'string' ? entry.boardKey : boardKeyFromLegacyMapKey(mapKey);
+  let next: LastSearch = { ...entry, boardKey };
   if (next.filters.status == null) {
     next = { ...next, filters: { ...next.filters, status: 'any' } };
   }
@@ -84,60 +105,52 @@ function stripAuthGatedFields(filters: ClimbFilters): ClimbFilters {
   return sanitized;
 }
 
-async function readMap(): Promise<LastSearchMap> {
+async function readNewestEntry(): Promise<LastSearch | null> {
   try {
     const value = await readSecureValue(LAST_SEARCH_KEY);
-    if (!value) return {};
+    if (!value) return null;
     const parsed: unknown = JSON.parse(value);
-    if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-    const result: LastSearchMap = {};
-    for (const [key, entry] of Object.entries(parsed)) {
-      if (isValidLastSearch(entry)) {
-        result[key] = normalizeEntry(entry);
-      }
+    if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    let newest: LastSearch | null = null;
+    for (const [mapKey, entry] of Object.entries(parsed)) {
+      if (!isValidLastSearch(entry)) continue;
+      if (newest === null || entry.updatedAt > newest.updatedAt) newest = normalizeEntry(entry, mapKey);
     }
-    return result;
+    return newest;
   } catch {
-    return {};
+    return null;
   }
-}
-
-// Keep the map bounded to the most-recently-updated boards.
-function capMap(map: LastSearchMap): LastSearchMap {
-  const keys = Object.keys(map);
-  if (keys.length <= MAX_BOARDS) return map;
-  const keep = keys.sort((a, b) => map[b].updatedAt - map[a].updatedAt).slice(0, MAX_BOARDS);
-  const capped: LastSearchMap = {};
-  for (const key of keep) {
-    capped[key] = map[key];
-  }
-  return capped;
 }
 
 /**
- * Returns the saved last search for this board, or `null` if the board has
- * never been searched. Pass `isAuthenticated = false` to strip auth-gated
- * filters so a search saved while signed in doesn't silently no-op on the
- * backend for a signed-out user.
+ * Returns the climber's last search as it applies on `board`, or `null` if
+ * nothing is saved. The filters come back whatever board or angle they were
+ * set on. The climb name and the hold and zone picks come back only on the
+ * board they were set on, at any angle; on any other board they are cleared. Pass `isAuthenticated = false` to strip
+ * auth-gated filters so a search saved while signed in doesn't silently no-op
+ * on the backend for a signed-out user.
  */
 export async function getLastSearch(
   board: BoardSearchConfig,
   options?: { isAuthenticated?: boolean },
 ): Promise<LastSearch | null> {
-  const map = await readMap();
-  const entry = map[boardConfigKey(board)];
+  const entry = await readNewestEntry();
   if (entry == null) return null;
-  if (options?.isAuthenticated === false) {
-    return { ...entry, filters: stripAuthGatedFields(entry.filters) };
-  }
-  return entry;
+  const sameBoard = entry.boardKey === boardGeometryKey(board);
+  return {
+    ...entry,
+    filters: options?.isAuthenticated === false ? stripAuthGatedFields(entry.filters) : entry.filters,
+    searchText: sameBoard ? entry.searchText : '',
+    boardFilters: sameBoard ? entry.boardFilters : withoutGeometryFilters(entry.boardFilters),
+  };
 }
 
 /**
- * Persists the current search for this board. When the search is back at the
- * clean default (no active filters AND empty name) any saved entry for the
- * board is *deleted* — so a climber who clears their search and returns later
- * gets the clean default instead of a resurrected stale search.
+ * Persists the current search, replacing whatever was saved before (on any
+ * board). When the search is back at the clean default (no active filters AND
+ * empty name) the saved search is cleared, so a climber who clears their
+ * search and returns later gets the clean default instead of a resurrected
+ * stale search.
  */
 export async function saveLastSearch(
   board: BoardSearchConfig,
@@ -146,39 +159,19 @@ export async function saveLastSearch(
   boardFilters: ClimbBoardFilterState = DEFAULT_CLIMB_BOARD_FILTER_STATE,
 ): Promise<void> {
   try {
-    const key = boardConfigKey(board);
     if (!hasActiveClimbFilters(filters) && !hasActiveBoardFilters(boardFilters) && searchText.trim() === '') {
-      const map = await readMap();
-      if (key in map) {
-        delete map[key];
-        await writeSecureValue(LAST_SEARCH_KEY, JSON.stringify(map));
-      }
+      const value = await readSecureValue(LAST_SEARCH_KEY);
+      if (value != null && value !== '{}') await writeSecureValue(LAST_SEARCH_KEY, '{}');
       return;
     }
-    const map = await readMap();
-    map[key] = { filters, boardFilters, searchText, updatedAt: Date.now() };
-    const capped = capMap(map);
-    await writeSecureValue(LAST_SEARCH_KEY, JSON.stringify(capped));
-  } catch {
-    // Storage failure is non-critical.
-  }
-}
-
-export async function clearLastSearch(board: BoardSearchConfig): Promise<void> {
-  try {
-    const map = await readMap();
-    const key = boardConfigKey(board);
-    if (!(key in map)) return;
-    delete map[key];
-    await writeSecureValue(LAST_SEARCH_KEY, JSON.stringify(map));
-  } catch {
-    // Storage failure is non-critical.
-  }
-}
-
-export async function clearAllLastSearches(): Promise<void> {
-  try {
-    await deleteSecureValue(LAST_SEARCH_KEY);
+    const entry: LastSearch = {
+      filters,
+      boardFilters,
+      searchText,
+      boardKey: boardGeometryKey(board),
+      updatedAt: Date.now(),
+    };
+    await writeSecureValue(LAST_SEARCH_KEY, JSON.stringify({ [LATEST_ENTRY]: entry }));
   } catch {
     // Storage failure is non-critical.
   }

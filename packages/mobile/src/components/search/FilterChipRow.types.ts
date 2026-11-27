@@ -48,7 +48,7 @@ export type FilterChipRowProps = {
   onOpenFilters: () => void;
 
   /** Saved searches for the Recent menu. A list without saved searches (a playlist) leaves these out. */
-  recentFilters?: RecentFilter[];
+  recentFilters?: readonly RecentFilter[];
   /** Current committed filters + name, to mark the active recent. */
   currentFilters?: ClimbFilters;
   currentSearchText?: string;
