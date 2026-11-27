@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
+import { describe, it, expect, vi } from 'vite-plus/test';
 import { render, screen } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
@@ -11,16 +11,6 @@ vi.mock('react-i18next', () => ({
   }),
   Trans: ({ children }: { children?: React.ReactNode }) => children ?? null,
 }));
-
-const mockFlag = vi.fn();
-vi.mock('@/app/components/providers/feature-flags-provider', () => ({
-  useFeatureFlag: () => mockFlag(),
-}));
-
-beforeEach(() => {
-  mockFlag.mockReset();
-  mockFlag.mockReturnValue(true);
-});
 
 describe('GymOwnerPrompts', () => {
   it('renders a deep-linked card for each missing piece', () => {
@@ -79,22 +69,6 @@ describe('GymOwnerPrompts', () => {
   it('renders nothing when the gym is fully set up', () => {
     const { container } = render(
       <GymOwnerPrompts gymSlug="test-gym" canEdit hasBoards hasHours hasDescription hasKiosk hasBranding />,
-    );
-    expect(container.firstChild).toBeNull();
-  });
-
-  it('renders nothing while the kiosk flag is off', () => {
-    mockFlag.mockReturnValue(false);
-    const { container } = render(
-      <GymOwnerPrompts
-        gymSlug="test-gym"
-        canEdit
-        hasBoards={false}
-        hasHours={false}
-        hasDescription={false}
-        hasKiosk={false}
-        hasBranding={false}
-      />,
     );
     expect(container.firstChild).toBeNull();
   });

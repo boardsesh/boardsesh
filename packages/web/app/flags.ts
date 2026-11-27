@@ -11,12 +11,6 @@ export type FeatureFlags = Record<string, boolean | undefined>;
 
 export const EMPTY_FEATURE_FLAGS: FeatureFlags = {};
 
-// Gates the gym-kiosk MANAGE entry points (gym manage tab, kiosk editor —
-// landing in a later PR). The public `/kiosk/{gym-slug}` TV pages themselves
-// ship flagless: a 24/7 TV can't be expected to resolve PostHog flags, and the
-// page is only reachable via a URL the gym owner configured on purpose.
-export const GYM_KIOSK_FLAG = 'gym-kiosk';
-
 // Gates offering MoonBoard's full 0-70° angle range in angle pickers (angle
 // drawer, board selector, playlist generator, log-ascent form, propose-change
 // form, create-climb form). OFF keeps every picker limited to MOONBOARD_ANGLES
@@ -29,7 +23,7 @@ export const MOONBOARD_WIDE_ANGLES_FLAG = 'moonboard-wide-angles';
 
 // Keys read from PostHog by FeatureFlagsProvider. Each must have a matching
 // PostHog feature flag; values stay `undefined` (OFF) until that flag resolves.
-export const FEATURE_FLAG_KEYS = [GYM_KIOSK_FLAG, MOONBOARD_WIDE_ANGLES_FLAG, QUANTUM_BOARD_FLAG] as const;
+export const FEATURE_FLAG_KEYS = [MOONBOARD_WIDE_ANGLES_FLAG, QUANTUM_BOARD_FLAG] as const;
 
 // Gates the developer console at /developers/apps, where a developer registers
 // partner OAuth apps (docs/integrations/integration-platform.md, milestone 1.6). Server-side
