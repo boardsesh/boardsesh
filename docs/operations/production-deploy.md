@@ -35,6 +35,10 @@ attempted build has passed, and only then do the deploy jobs run —
 runs at all is controlled by the `WEB_DEPLOY_TARGETS` Production-environment
 variable — see [Web deploy targets](#web-deploy-targets) below.
 
+`deploy-app-web` publishes the browser app after any required database migration
+and backend deployment succeed. Releases that only change the app can publish
+when both of those jobs skip.
+
 `stage-mobile-ota` calls the mobile publisher to upload the exact iOS and Android
 exports to the tester-only `pr-staging` branch during those builds. It archives
 both exports and their runtime fingerprints. `promote-mobile-ota` waits for the

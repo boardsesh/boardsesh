@@ -1431,9 +1431,20 @@ jobs:
   #
   # www now works the same way — WEB_DEPLOY_TARGETS=none is its hold — since the
   # Vercel Instant Rollback probe that used to automate it went away with Vercel.
+  # Browser GraphQL documents share the native schema contract. Publish them
+  # after the same backend rollout so new fields validate on the live API.
   deploy-app-web:
-    needs: [detect-changes, sync-static-assets]
-    if: always() && needs.detect-changes.outputs.app_changed == 'true' && (needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped') && vars.APP_WEB_DEPLOY_HOLD == ''
+    needs: [detect-changes, sync-static-assets, migrate, deploy-production-backend]
+    if: >-
+      !cancelled()
+      && needs.detect-changes.result == 'success'
+      && needs.detect-changes.outputs.app_changed == 'true'
+      && (needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped')
+      && (needs.migrate.result == 'success'
+      || (needs.detect-changes.outputs.web_changed == 'false' && needs.detect-changes.outputs.backend_changed == 'false' && needs.migrate.result == 'skipped'))
+      && (needs.deploy-production-backend.result == 'success'
+      || (needs.detect-changes.outputs.backend_changed == 'false' && needs.deploy-production-backend.result == 'skipped'))
+      && vars.APP_WEB_DEPLOY_HOLD == ''
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: Production
@@ -1798,8 +1809,17 @@ jobs:
   # summary, so a forgotten APP_WEB_DEPLOY_HOLD would quietly strand the
   # subdomain on an old bundle. No-ops if DISCORD_DEPLOY_WEBHOOK is unset.
   notify-app-web-held:
-    needs: [detect-changes, sync-static-assets]
-    if: always() && needs.detect-changes.outputs.app_changed == 'true' && (needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped') && vars.APP_WEB_DEPLOY_HOLD != ''
+    needs: [detect-changes, sync-static-assets, migrate, deploy-production-backend]
+    if: >-
+      !cancelled()
+      && needs.detect-changes.result == 'success'
+      && needs.detect-changes.outputs.app_changed == 'true'
+      && (needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped')
+      && (needs.migrate.result == 'success'
+      || (needs.detect-changes.outputs.web_changed == 'false' && needs.detect-changes.outputs.backend_changed == 'false' && needs.migrate.result == 'skipped'))
+      && (needs.deploy-production-backend.result == 'success'
+      || (needs.detect-changes.outputs.backend_changed == 'false' && needs.deploy-production-backend.result == 'skipped'))
+      && vars.APP_WEB_DEPLOY_HOLD != ''
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment: Production

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 // Guards the APP_WEB_DEPLOY_HOLD freeze on `deploy-app-web` in
 // .github/workflows/production-deploy.yml — the job that ships this directory's
@@ -20,6 +21,7 @@ import { describe, expect, it } from 'vitest';
 
 const WORKFLOW_PATH = resolve(import.meta.dirname, '..', '..', '..', '.github', 'workflows', 'production-deploy.yml');
 const workflow = readFileSync(WORKFLOW_PATH, 'utf8');
+const { jobs } = parse(workflow) as { jobs: Record<string, { if?: string; needs?: string[] }> };
 
 const HOLD_CLEAR = "vars.APP_WEB_DEPLOY_HOLD == ''";
 const HOLD_SET = "vars.APP_WEB_DEPLOY_HOLD != ''";
@@ -42,9 +44,8 @@ function jobBlock(jobId: string): string {
   return body.join('\n');
 }
 
-/** The single-line job-level `if:` expression, or undefined. */
 function jobCondition(jobId: string): string | undefined {
-  return jobBlock(jobId).match(/^ {4}if: (.+)$/m)?.[1];
+  return jobs[jobId]?.if;
 }
 
 /**
@@ -65,7 +66,7 @@ function jobRunScript(jobId: string): string {
 describe('production-deploy.yml: the app.boardsesh.com deploy hold', () => {
   it('skips deploy-app-web while APP_WEB_DEPLOY_HOLD is set', () => {
     const condition = jobCondition('deploy-app-web');
-    expect(condition, 'deploy-app-web must carry a single-line job-level `if:`').toBeTruthy();
+    expect(condition, 'deploy-app-web must carry a job-level `if:`').toBeTruthy();
     expect(condition, 'the hold must gate the deploy').toContain(HOLD_CLEAR);
     expect(condition, 'and it must still only run when the app actually changed').toContain(APP_CHANGED);
   });
@@ -103,6 +104,7 @@ describe('production-deploy.yml: the app.boardsesh.com deploy hold', () => {
     // a run the ping announces. Editing one alone opens a silent hole (held and
     // unannounced) or double-fires (deployed and announced as held).
     expect(jobCondition('deploy-app-web')?.replace(HOLD_CLEAR, HOLD_SET)).toBe(jobCondition('notify-app-web-held'));
+    expect(jobs['notify-app-web-held'].needs).toEqual(jobs['deploy-app-web'].needs);
   });
 
   it('reports a hold in the success notification instead of "unchanged"', () => {

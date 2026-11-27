@@ -1,6 +1,7 @@
 /// <reference types="node" />
 
 import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 
 const WORKFLOW_PATH = '.github/workflows/production-deploy.yml';
@@ -87,6 +88,47 @@ function runBlock(stepSource: string): string {
   if (runIndex < 0) throw new Error('step has no multiline run block');
   return lines.slice(runIndex + 1).join('\n');
 }
+
+describe('production-deploy browser schema gate', () => {
+  const job = withoutComments(mappingEntry(workflowSource, 'deploy-app-web', 2));
+  const condition = mappingEntry(job, 'if', 4)
+    .replace(/^ {4}if: >-\s*/, '')
+    .replace(/needs\.([a-z-]+)\./g, (_, name: string) => `needs[${JSON.stringify(name)}].`);
+
+  it('waits on DB migration and backend deployment before publishing the browser bundle', () => {
+    expect(mappingEntry(job, 'needs', 4)).toBe(
+      '    needs: [detect-changes, sync-static-assets, migrate, deploy-production-backend]',
+    );
+  });
+
+  it.each([
+    ['app only', 'false', 'false', 'skipped', 'skipped', true],
+    ['www and app only', 'true', 'false', 'success', 'skipped', true],
+    ['backend and app deployed', 'false', 'true', 'success', 'success', true],
+    ['backend build did not deploy', 'false', 'true', 'skipped', 'skipped', false],
+    ['schema migration failed', 'false', 'true', 'failure', 'skipped', false],
+    ['required www migration skipped', 'true', 'false', 'skipped', 'skipped', false],
+    ['backend deployment skipped', 'false', 'true', 'success', 'skipped', false],
+    ['backend deployment failed', 'false', 'true', 'success', 'failure', false],
+    ['backend deployment cancelled', 'false', 'true', 'success', 'cancelled', false],
+  ])('evaluates the browser publish gate for %s', (_, webChanged, backendChanged, migration, backend, expected) => {
+    expect(
+      runInNewContext(condition, {
+        cancelled: () => false,
+        needs: {
+          'detect-changes': {
+            result: 'success',
+            outputs: { app_changed: 'true', web_changed: webChanged, backend_changed: backendChanged },
+          },
+          'sync-static-assets': { result: 'skipped' },
+          migrate: { result: migration },
+          'deploy-production-backend': { result: backend },
+        },
+        vars: { APP_WEB_DEPLOY_HOLD: '' },
+      }),
+    ).toBe(expected);
+  });
+});
 
 describe('production-deploy web deploy targets', () => {
   const resolverJob = withoutComments(mappingEntry(workflowSource, 'resolve-web-targets', 2));
