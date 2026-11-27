@@ -220,10 +220,11 @@
       "error": "Errore",
       "expired": "Scaduto",
       "syncing": "Sincronizzazione",
-      "duplicateAccountCircuits": "I circuiti non si sincronizzano: un altro account Boardsesh è collegato a questo login del pannello, quindi la sincronizzazione delle playlist è in pausa per entrambi. Le tue ripetizioni e valutazioni arrivano comunque.",
+      "duplicateAccountCircuits": "I circuiti non si sincronizzano: un altro account Boardsesh è collegato a questo login del pannello, quindi la sincronizzazione delle playlist è in pausa per entrambi.",
       "syncingHint": "Sincronizzazione in corso, ricontrolla tra poco",
-      "foreignAccountCircuits": "I circuiti non si sincronizzano su questo account perché un altro account Boardsesh possiede le playlist corrispondenti. Le tue ripetizioni e valutazioni arrivano comunque. Contatta l'assistenza Boardsesh per risolvere la proprietà delle playlist.",
-      "ambiguousAccountCircuits": "I circuiti non si sincronizzano perché le playlist corrispondenti hanno più proprietari Boardsesh. Le tue ripetizioni e valutazioni arrivano comunque. Contatta l'assistenza Boardsesh per risolvere la proprietà delle playlist."
+      "foreignAccountCircuits": "I circuiti non si sincronizzano su questo account perché un altro account Boardsesh possiede le playlist corrispondenti. Contatta l'assistenza Boardsesh per risolvere la proprietà delle playlist.",
+      "ambiguousAccountCircuits": "I circuiti non si sincronizzano perché le playlist corrispondenti hanno più proprietari Boardsesh. Contatta l'assistenza Boardsesh per risolvere la proprietà delle playlist.",
+      "foreignAccountLogbook": "Alcune ripetizioni di questo login del pannello sono su un altro account Boardsesh, quindi non compariranno qui. Accedi a quell'account oppure contatta l'assistenza Boardsesh."
     },
     "unsynced": {
       "title_one": "{{count}} elemento in attesa di sincronizzazione",

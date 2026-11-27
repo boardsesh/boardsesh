@@ -214,7 +214,7 @@ describe('syncKilterUserData phase isolation', () => {
 
     await expect(
       syncKilterUserData({ db, userId: 'user-1', accessToken: 'token', log: () => {} } as unknown as SyncArgs),
-    ).resolves.toEqual({ skippedForeignCircuits: 0 });
+    ).resolves.toEqual({ skippedForeignCircuits: 0, skippedForeignLogs: 0 });
 
     expect(phases).toEqual(['ratings:ok', 'circuits:ok']);
   });
