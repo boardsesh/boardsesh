@@ -121,9 +121,9 @@ function createFixtureRepo() {
   for (const sourcePath of [
     'packages/backend/src/cli/quantum-sync.ts',
     'packages/backend/src/db/client.ts',
+    'packages/backend/src/services/ewalls-catalog-mapping.ts',
+    'packages/backend/src/services/ewalls-catalog-sync.ts',
     'packages/backend/src/services/quantum-catalog-import.ts',
-    'packages/backend/src/services/quantum-catalog-mapping.ts',
-    'packages/backend/src/services/quantum-catalog-sync.ts',
   ]) {
     writeFixtureFile(repoRoot, sourcePath, 'export {};\n');
   }
@@ -690,9 +690,9 @@ void test('passes when Dockerfile.sync and the sync packages are present', () =>
     for (const sourcePath of [
       'packages/backend/src/cli/quantum-sync.ts',
       'packages/backend/src/db/client.ts',
+      'packages/backend/src/services/ewalls-catalog-mapping.ts',
+      'packages/backend/src/services/ewalls-catalog-sync.ts',
       'packages/backend/src/services/quantum-catalog-import.ts',
-      'packages/backend/src/services/quantum-catalog-mapping.ts',
-      'packages/backend/src/services/quantum-catalog-sync.ts',
     ]) {
       writeFixtureFile(repoRoot, sourcePath, 'export {};\n');
     }

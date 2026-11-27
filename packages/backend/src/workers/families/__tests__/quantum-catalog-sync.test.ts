@@ -4,7 +4,7 @@ import type { BackgroundJobContext } from '../types';
 import { quantumCatalogSyncFamily } from '../quantum-catalog-sync';
 
 const syncCatalog = vi.hoisted(() => vi.fn());
-vi.mock('../../../services/quantum-catalog-sync', () => ({ syncQuantumCatalogOnce: syncCatalog }));
+vi.mock('../../../services/ewalls-catalog-sync', () => ({ syncQuantumCatalogOnce: syncCatalog }));
 
 beforeEach(() => {
   syncCatalog.mockReset();

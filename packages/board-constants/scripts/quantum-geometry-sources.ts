@@ -168,9 +168,10 @@ export function loadQuantumGeometryTables(sourcePath: string): QuantumGeometryTa
   const geometrySha256 = createHash('sha256')
     .update(JSON.stringify([models, holes, leds]))
     .digest('hex');
-  // Contract shared with backend computeQuantumHardwareFingerprint: model rows
-  // sorted by model; diode rows sorted by model, source placementId, UUID. All
-  // raw physical fields are retained. Only our internal catalogue IDs normalize.
+  // The backend importer refuses any catalogue whose fingerprint differs from
+  // this generated value. Model rows sorted by model; diode rows sorted by
+  // model, source placementId, UUID. All raw physical fields are retained.
+  // Only our internal catalogue IDs normalize.
   const canonicalModels = [...source.models]
     .sort((first, second) => first.model.localeCompare(second.model))
     .map((model) => [

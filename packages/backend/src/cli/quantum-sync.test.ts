@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const syncOnce = vi.hoisted(() => vi.fn());
-vi.mock('../services/quantum-catalog-sync', () => ({ syncQuantumCatalogOnce: syncOnce }));
+vi.mock('../services/ewalls-catalog-sync', () => ({ syncQuantumCatalogOnce: syncOnce }));
 import { runQuantumSyncCli } from './quantum-sync';
 beforeEach(() => {
   syncOnce.mockReset();

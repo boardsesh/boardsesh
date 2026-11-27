@@ -17,6 +17,7 @@ import {
   getQuantumSourceDiodeBindings,
   isReleasedQuantumConfig,
   QUANTUM_MODEL_BY_EWALLS_TYPE,
+  scaleQuantumGeometryCoordinate,
 } from '../quantum';
 import { getBoardHolePlacements } from '../hole-placements';
 import { getLedPlacements } from '../led-placements';
@@ -116,6 +117,14 @@ describe('fixed Quantum model constants', () => {
     expect(getQuantumBundledGeometry(9104, 9201)).toBeNull();
     expect(getQuantumPlacementId(9101, 1001)).toBe(1_001_001);
     expect(getQuantumPlacementId(9104, 1001)).toBe(4_001_001);
+  });
+  it('rejects source placement ids that could overlap the next layout namespace', () => {
+    expect(getQuantumPlacementId(9101, 999_999)).toBe(1_999_999);
+    expect(() => getQuantumPlacementId(9101, 1_000_000)).toThrow(/999999/);
+  });
+  it('uses SQL-compatible coordinate truncation for positive and negative fractions', () => {
+    expect(scaleQuantumGeometryCoordinate(1.2349)).toBe(1_234);
+    expect(scaleQuantumGeometryCoordinate(-1.2349)).toBe(-1_234);
   });
   it('preserves existing Kilter and MoonBoard catalogue lookup behavior', () => {
     expect(getSizesForLayoutId('kilter', 1).map((size) => size.id)).toEqual([7, 8, 10, 14, 27, 28]);

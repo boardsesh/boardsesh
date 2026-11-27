@@ -14,7 +14,7 @@ export async function runQuantumSyncCli(
   parseCommand(argv);
   const log = runtime.log ?? writeStdout;
   if (!(await quantumCatalogSyncFlag.isEnabled())) return;
-  const { syncQuantumCatalogOnce } = await import('../services/quantum-catalog-sync');
+  const { syncQuantumCatalogOnce } = await import('../services/ewalls-catalog-sync');
   await syncQuantumCatalogOnce({ signal: runtime.signal, log });
 }
 

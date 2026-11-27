@@ -27,7 +27,7 @@ export const quantumCatalogSyncFamily: BackgroundJobFamilyModule<Record<string, 
   ],
   async execute(context) {
     if (!(await quantumCatalogSyncFlag.isEnabled())) return;
-    const { syncQuantumCatalogOnce } = await import('../../services/quantum-catalog-sync');
+    const { syncQuantumCatalogOnce } = await import('../../services/ewalls-catalog-sync');
     await syncQuantumCatalogOnce({
       database: context.database,
       transaction: (run) => context.transaction(run),

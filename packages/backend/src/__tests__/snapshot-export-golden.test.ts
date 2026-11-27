@@ -75,10 +75,9 @@ import { favoriteClimbsQuery } from '../graphql/resolvers/favorites/favorite-cli
 import { playlistClimbs as queryPlaylistClimbs } from '../graphql/resolvers/playlists/queries/playlist-climbs';
 import { syncQueries } from '../graphql/resolvers/sync/queries';
 import { toIso } from '../graphql/resolvers/sync/row-normalize';
-import { prepareEwallsCatalog } from '../services/ewalls-catalog-mapping';
+import { prepareEwallsCatalog, quantumCanonicalClimbUuid } from '../services/ewalls-catalog-mapping';
 import { loadEwallsCatalogState } from '../services/ewalls-catalog-state';
 import { importPreparedEwallsCatalog } from '../services/quantum-catalog-import';
-import { quantumCanonicalClimbUuid } from '../services/quantum-catalog-mapping';
 import {
   exportLayoutSnapshot,
   selectDeletionReplayBoundary,

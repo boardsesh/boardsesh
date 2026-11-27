@@ -7,8 +7,12 @@ import {
   type QuantumSourceDiodeBinding,
 } from '@boardsesh/board-constants/quantum';
 import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
-import { prepareEwallsCatalog, normalizeEwallsRouteId } from './ewalls-catalog-mapping';
-import { quantumCanonicalClimbUuid } from './quantum-catalog-mapping';
+import {
+  mapQuantumGrade,
+  prepareEwallsCatalog,
+  normalizeEwallsRouteId,
+  quantumCanonicalClimbUuid,
+} from './ewalls-catalog-mapping';
 
 const NOW = new Date('2026-11-19T18:00:00.000Z');
 const ROUTE_ID = '11111111-1111-4111-8111-111111111111';
@@ -129,6 +133,83 @@ describe('direct eWalls catalog normalization', () => {
     expect(prepared.catalog.productSizes.map((size) => size.id)).toEqual([9201, 9202, 9203, 9204]);
     expect([...new Set(prepared.catalog.leds.map((led) => led.productSizeId))]).toEqual([9201, 9202, 9203, 9204]);
     expect([...new Set(prepared.catalog.holes.map((hole) => hole.productId))]).toEqual([91, 94]);
+  });
+
+  it('maps every source rule, bounds the route over all its holds, and keys LEDs per size', () => {
+    const prepared = prepareEwallsCatalog(
+      bootstrap(route({ standard: true, campusing: 1, edge: true, kickplate: 1, matching: true })),
+      [],
+      NOW,
+    );
+    const climb = prepared.catalog.climbs[0]!;
+    expect(climb.characteristics).toEqual([
+      'quantum_standard',
+      'quantum_campusing',
+      'quantum_edge',
+      'quantum_kickplate',
+      'quantum_matching',
+    ]);
+    const sharedPlacementIds = new Set(SHARED.map((binding) => binding.placementId));
+    const positions = getQuantumBundledGeometry(9101, 9201)!.placements.filter((placement) =>
+      sharedPlacementIds.has(placement.placementId),
+    );
+    expect(positions).toHaveLength(SHARED.length);
+    expect(climb).toMatchObject({
+      edgeLeft: Math.min(...positions.map((position) => position.x)),
+      edgeRight: Math.max(...positions.map((position) => position.x)),
+      edgeBottom: Math.min(...positions.map((position) => position.y)),
+      edgeTop: Math.max(...positions.map((position) => position.y)),
+    });
+    // One physical hole on the shared layout gets its own LED row on every size.
+    const sharedHole = SHARED[0]!;
+    const sharedHoleLeds = prepared.catalog.leds.filter((led) => led.holeId === sharedHole.placementId);
+    expect(sharedHoleLeds.map((led) => led.productSizeId)).toEqual([9201, 9202, 9203]);
+    expect(sharedHoleLeds.every((led) => led.position === sharedHole.autocadId)).toBe(true);
+    expect(new Set(prepared.catalog.leds.map((led) => led.id)).size).toBe(prepared.catalog.leds.length);
+    expect(prepared.catalog.grades).toHaveLength(24);
+    expect(prepared.catalog.grades[0]).toMatchObject({ difficulty: 10, boulderName: '4a/V0', isListed: true });
+  });
+
+  it('keeps one canonical climb identity across acquisition scopes and route fits in a physical family', () => {
+    const standardTypes = ['big', 'medium', 'small'] as const;
+    const identities = standardTypes.flatMap((forcedType) =>
+      standardTypes.map(
+        (minVariant) =>
+          prepareEwallsCatalog(bootstrap(route({ minVariant }), SHARED.map(diode), forcedType), [], NOW).catalog
+            .climbs[0]!.uuid,
+      ),
+    );
+    expect(new Set(identities)).toEqual(new Set([quantumCanonicalClimbUuid(9101, ROUTE_ID)]));
+  });
+
+  it.each([
+    ['[6]', 10],
+    ['[7]', 10],
+    ['[7,8]', 11],
+    ['[8]', 11],
+    ['[9]', 12],
+    ['[9,10]', 13],
+    ['[10]', 13],
+    ['[11]', 14],
+    ['[11,12]', 15],
+    ['[12]', 15],
+    ['[12,13]', 15],
+    ['[13]', 15],
+    ['[14]', 16],
+    ['[15]', 17],
+    ['[15,16]', 18],
+    ['[19,20]', 22],
+    ['[20,21]', 23],
+    ['[21,22]', 24],
+    ['[22,23]', 25],
+    ['[31]', 33],
+    ['[32]', 33],
+    ['not-json', null],
+    ['[5]', null],
+    ['[14,15]', null],
+    ['[1,2,3]', null],
+  ] as const)('maps source grade %s to %s', (sourceGrade, expected) => {
+    expect(mapQuantumGrade(sourceGrade)).toBe(expected);
   });
 
   it.each([

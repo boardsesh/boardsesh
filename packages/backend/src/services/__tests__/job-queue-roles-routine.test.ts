@@ -19,7 +19,7 @@ import {
   type BackgroundJobPayload,
 } from '../../workers/jobs';
 import { logger } from '../../utils/logger';
-import { quantumCanonicalClimbUuid } from '../quantum-catalog-mapping';
+import { quantumCanonicalClimbUuid } from '../ewalls-catalog-mapping';
 import type { BackgroundJobContext } from '../../workers/families';
 import type { ProviderSyncAdapter } from '../../workers/families/provider-sync-batch';
 import {
