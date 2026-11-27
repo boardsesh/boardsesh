@@ -1,0 +1,308 @@
+{
+  "baseline": "fb51eb22fd8662670d748447273ffa72346563ae",
+  "candidate": "ce0bf69b8a58eb5b3d2b862e9cf96192cbcd6d40",
+  "nativeApi": 1,
+  "fixtureKind": "Synthetic circuits on real bundled Quantum geometry",
+  "images": [
+    {
+      "stage": "before",
+      "model": "xl",
+      "surface": "player",
+      "sha256": "58830b91c8637880cb00d1f1915e64abfed5ee42e92c778cb989d96d5f320fa8",
+      "bytes": 1301094,
+      "filename": "01-xl-player.png"
+    },
+    {
+      "stage": "before",
+      "model": "xl",
+      "surface": "list",
+      "sha256": "32895cd08a3c0c1e5e3d14db0b0dc5460a7ac91d2b8011ad5fb7195b479fbd32",
+      "bytes": 476645,
+      "filename": "02-xl-list.png"
+    },
+    {
+      "stage": "before",
+      "model": "xl",
+      "surface": "editor",
+      "sha256": "3d3785c990d72fdaf5cbbeb7ebfd7657fa72260c555a7225a92a68ef23c914e6",
+      "bytes": 1112302,
+      "filename": "03-xl-editor.png"
+    },
+    {
+      "stage": "after",
+      "model": "xl",
+      "surface": "player",
+      "sha256": "2f63fc559c4c7af9e38ad1d0aaa663b5d3baf36917c1e380b8edf64b2a135a53",
+      "bytes": 1101931,
+      "filename": "00-xl-player.png"
+    },
+    {
+      "stage": "after",
+      "model": "xl",
+      "surface": "list",
+      "sha256": "7014c74fb3f4da2f6566b79f57638bb7f589e352f533b2ea981bea648cd24f51",
+      "bytes": 374407,
+      "filename": "01-xl-list.png"
+    },
+    {
+      "stage": "after",
+      "model": "xl",
+      "surface": "editor",
+      "sha256": "c3ab423356b9bbeda0674f9297af3d8aee508dcfdde1689e2a95dbfa9bc8d914",
+      "bytes": 1049739,
+      "filename": "02-xl-editor.png"
+    },
+    {
+      "stage": "before",
+      "model": "l",
+      "surface": "player",
+      "sha256": "111707657c003745ded46c4af033052c030cc8ea28c44995f1c813dde818bf86",
+      "bytes": 1134990,
+      "filename": "04-l-player.png"
+    },
+    {
+      "stage": "before",
+      "model": "l",
+      "surface": "list",
+      "sha256": "2c4400365161a1a6f0c9e9bb0dd006f8ab3671384528b7723291ce6141e75b5f",
+      "bytes": 444821,
+      "filename": "05-l-list.png"
+    },
+    {
+      "stage": "before",
+      "model": "l",
+      "surface": "editor",
+      "sha256": "75a9f1ab72657b5192fe15d15b8ff1fa20c2aa0ea60f8af134d2f7269cd25186",
+      "bytes": 899713,
+      "filename": "06-l-editor.png"
+    },
+    {
+      "stage": "after",
+      "model": "l",
+      "surface": "player",
+      "sha256": "4f3ba95e01ef28940c4b399a7a680a646f4fedee68da4dc00e14de0f7a402fb9",
+      "bytes": 976864,
+      "filename": "03-l-player.png"
+    },
+    {
+      "stage": "after",
+      "model": "l",
+      "surface": "list",
+      "sha256": "b6b8662a93bd0c9e36f454bbe5295d83c9f7f86504d5246b8d16ec9508ac19d8",
+      "bytes": 342764,
+      "filename": "04-l-list.png"
+    },
+    {
+      "stage": "after",
+      "model": "l",
+      "surface": "editor",
+      "sha256": "fe99134857d3387ccfa78af2dbcd18f5f58ad0e42121fb63482228a90ff381f0",
+      "bytes": 886019,
+      "filename": "05-l-editor.png"
+    },
+    {
+      "stage": "before",
+      "model": "m",
+      "surface": "player",
+      "sha256": "5722f6e55e52884230931fcbfc5c8dc8c9b0379a79d3a2e1204c223b0e6d50d8",
+      "bytes": 1289982,
+      "filename": "07-m-player.png"
+    },
+    {
+      "stage": "before",
+      "model": "m",
+      "surface": "list",
+      "sha256": "fc50c9a33feb09bd967df44e76c86c1dede0784d6bfc8fa1513498a28d993ff4",
+      "bytes": 448165,
+      "filename": "08-m-list.png"
+    },
+    {
+      "stage": "before",
+      "model": "m",
+      "surface": "editor",
+      "sha256": "d42820b79ac2a99005614989621151a32576e01191c3deb7716e010a84c99d18",
+      "bytes": 1054084,
+      "filename": "09-m-editor.png"
+    },
+    {
+      "stage": "after",
+      "model": "m",
+      "surface": "player",
+      "sha256": "874fc5187e01cb646c5a375d69d9db8425f44d235356edb09059875d95d6a495",
+      "bytes": 1101693,
+      "filename": "06-m-player.png"
+    },
+    {
+      "stage": "after",
+      "model": "m",
+      "surface": "list",
+      "sha256": "ce7224deb00a3733e0aa3fd1b9f83fee2e5b4b624bad61ca2740cf1e919f649b",
+      "bytes": 376119,
+      "filename": "07-m-list.png"
+    },
+    {
+      "stage": "after",
+      "model": "m",
+      "surface": "editor",
+      "sha256": "0598415c0eaefe1a711aa88d01a89e97b1d7b2b4ea054a9ba49b3c93b6d544fd",
+      "bytes": 1046869,
+      "filename": "08-m-editor.png"
+    },
+    {
+      "stage": "before",
+      "model": "s",
+      "surface": "player",
+      "sha256": "c8a45ecae48ad82eb88e0053c3bb2fc1b678c32f7ca7c7c851dfb130dbabb850",
+      "bytes": 1851176,
+      "filename": "10-s-player.png"
+    },
+    {
+      "stage": "before",
+      "model": "s",
+      "surface": "list",
+      "sha256": "e65741df592ae51c5a8f7e0a6dd406cbf82e23a582efc967e0713f3a21b77f71",
+      "bytes": 433798,
+      "filename": "11-s-list.png"
+    },
+    {
+      "stage": "before",
+      "model": "s",
+      "surface": "editor",
+      "sha256": "690c26402e43b80f1e65543d327852f36827b9209eb39bc87e98589e8325e91b",
+      "bytes": 1700585,
+      "filename": "12-s-editor.png"
+    },
+    {
+      "stage": "after",
+      "model": "s",
+      "surface": "player",
+      "sha256": "09223821d18d79964a624c9cd339059281b825b978e138e8b8515f3350001dc9",
+      "bytes": 1671652,
+      "filename": "09-s-player.png"
+    },
+    {
+      "stage": "after",
+      "model": "s",
+      "surface": "list",
+      "sha256": "821f64b1e101b6ed0fa9c7212e53ecd3c3ccf19c44678c3354c80d74edaa692e",
+      "bytes": 386224,
+      "filename": "10-s-list.png"
+    },
+    {
+      "stage": "after",
+      "model": "s",
+      "surface": "editor",
+      "sha256": "71d07581e452acac9e8f2d5535d84f3193f72f00961ca703fa7025b296c9a960",
+      "bytes": 1733371,
+      "filename": "11-s-editor.png"
+    }
+  ],
+  "capturedOn": "2026-11-28",
+  "timezone": "Australia/Sydney",
+  "device": "iPhone 16 Pro Max",
+  "os": "iOS 26.5",
+  "candidateSettings": {
+    "mode": "aura",
+    "holdShape": "silhouette",
+    "softDisc": false,
+    "glowReach": 1
+  },
+  "originalSimulatorSettingsRestored": true,
+  "temporarySetupStoryRemoved": true,
+  "nativeRenderScope": "After captures exercise Rust PNG Aura fallback; simulator native overlay API is 1.",
+  "flagsRequested": {
+    "quantum-board": true,
+    "aura-gpu-enabled": true
+  },
+  "swipeQa": {
+    "swipes": 10,
+    "durationSeconds": 19.383333,
+    "rawFramesInspected": 767,
+    "minimumRoleColorPixels": 621,
+    "zeroRoleColorFrames": 0,
+    "inspectionCrop": {
+      "x": 48,
+      "y": 839,
+      "width": 1224,
+      "height": 1100
+    },
+    "inspectionSize": {
+      "width": 408,
+      "height": 366
+    },
+    "probe": "Role-hue pixels in board-only region excluding logo and chrome; manual low-glow-frame inspection retained outgoing/incoming marks."
+  },
+  "editorTap": {
+    "model": "xl",
+    "canvasWidth": 1536,
+    "canvasHeight": 1552,
+    "expectedHoldId": 1002092,
+    "observedHoldId": 1002092,
+    "devicePoint": [78, 340],
+    "result": "Previously unlit physical hold gained cyan silhouette glow."
+  },
+  "extraRawImages": [
+    {
+      "filename": "before/s-heatmap.png",
+      "sha256": "b18d711bd323b90729a60a31b8b199ad5f17930c9e12bfa3af304ccffb0890b7",
+      "bytes": 1704440
+    },
+    {
+      "filename": "after/s-heatmap.png",
+      "sha256": "55d51ddadd7117b25f3be6d1042bdbae07a7cb14bbdbfe944ad080745341362a",
+      "bytes": 1758075
+    },
+    {
+      "filename": "xl-editor-tap-before.png",
+      "sha256": "c3ab423356b9bbeda0674f9297af3d8aee508dcfdde1689e2a95dbfa9bc8d914",
+      "bytes": 1049739
+    },
+    {
+      "filename": "xl-editor-tap-after.png",
+      "sha256": "28736b4c27a4dd3c890fe1e7f3b6a6ec469734741ffec36cbf1d9ef0cae5f2e7",
+      "bytes": 1053979
+    },
+    {
+      "filename": "xl-after-ten-swipes.png",
+      "sha256": "47c9b3b0eaa2c078d3fe57bca9200387760448a56a418e1534c5ffce23e50524",
+      "bytes": 1106303
+    }
+  ],
+  "reviewMedia": [
+    {
+      "filename": "l.webp",
+      "sha256": "10d05a3d30f193fb6255114a2838be9e3ba5d3571f156395f578bed7fefad0ec",
+      "bytes": 350442
+    },
+    {
+      "filename": "m.webp",
+      "sha256": "e4dd678d942672469da45b6114262292d140aceb1a38bc40ca3b0f8126ed7c26",
+      "bytes": 376784
+    },
+    {
+      "filename": "s-heatmap.webp",
+      "sha256": "a2507de37d553713ab195dbb267e252cf3185bdae884d7ea8bb434249ce87e88",
+      "bytes": 162364
+    },
+    {
+      "filename": "s.webp",
+      "sha256": "656f9ad14817fb0116b5912141f9d1cfdcc3a58878b6e13cf222e540e6b0dde5",
+      "bytes": 351630
+    },
+    {
+      "filename": "xl-editor-tap.webp",
+      "sha256": "a04263a3ba1c4a3533b0a8ad3cb5931ea168896218261cf548097d1db9cb1428",
+      "bytes": 37196
+    },
+    {
+      "filename": "xl-ten-swipes.mp4",
+      "sha256": "174bdcda823cc06d4ac977ef91130c7e23c619601d731f154741e0ae92515c13",
+      "bytes": 458542
+    },
+    {
+      "filename": "xl.webp",
+      "sha256": "f8c0a104eaf246970fd6362803e368c84fe53729fa6e8fc6ae44a4428f496635",
+      "bytes": 402414
+    }
+  ]
+}

@@ -1184,6 +1184,8 @@ all below the 128 MiB limit. The largest Quantum manifest is 462,814 bytes; the
 native atlas includes every hold, including circle fallbacks, at the scaled canvas
 dimensions. The other 51 geometry shards remain byte-identical.
 
+Simulator comparisons, the heatmap and editor tap checks, and the ten-swipe recording are in [Quantum Aura evidence](evidence/quantum-aura/README.md).
+
 ## Per-board coverage
 
 | Board | Configs | Traced / placements |

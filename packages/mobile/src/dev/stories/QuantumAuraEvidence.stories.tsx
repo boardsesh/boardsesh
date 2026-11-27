@@ -103,7 +103,11 @@ function Editor({ model, onReady, onError }: StoryRenderControls & { model: Mode
     },
     [onReady, onError],
   );
-  const paint = useCallback((holdId: number) => setFrames((previous) => `${previous}p${holdId}r13`), []);
+  const paint = useCallback((holdId: number) => {
+    // eslint-disable-next-line no-console
+    console.log(`[quantum-evidence] editor tapped hold=${holdId}`);
+    setFrames((previous) => `${previous}p${holdId}r13`);
+  }, []);
   if (!geometry) throw new Error('Quantum editor geometry missing');
   const width = Math.min(
     window.width - 32,
@@ -156,15 +160,21 @@ function Evidence({
     (observation: ContentRenderObservation) => {
       if (observation.route === 'play-drawer' && observation.count > 0) {
         // eslint-disable-next-line no-console
-        console.log(`[quantum-evidence] painted ${model} API${climbOverlayGpuApiVersion} holds=${observation.count}`);
+        console.log(
+          `[quantum-evidence] painted ${model} API${climbOverlayGpuApiVersion} holds=${observation.count} holdShape=${settings.boardsesh.holdShape} softDisc=${settings.boardsesh.softDisc} glowReach=${settings.boardsesh.glowReach}`,
+        );
         onReady();
       }
     },
-    [onReady, model],
+    [onReady, model, settings.boardsesh.holdShape, settings.boardsesh.softDisc, settings.boardsesh.glowReach],
   );
   if (!loaded) return null;
-  if (requestedBoardRenderMode(settings) !== 'aura')
-    throw new Error('Quantum evidence requires Aura in simulator Board settings');
+  if (
+    requestedBoardRenderMode(settings) !== 'aura' ||
+    settings.boardsesh.holdShape !== 'silhouette' ||
+    settings.boardsesh.softDisc
+  )
+    throw new Error(`Quantum evidence requires Aura silhouettes; simulator settings: ${JSON.stringify(settings)}`);
   return (
     <FeatureFlagsProvider flags={flags}>
       <StoryBoardFixtureContext.Provider value={presentation}>
