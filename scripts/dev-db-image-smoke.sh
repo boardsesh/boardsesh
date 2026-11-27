@@ -170,10 +170,18 @@ BEGIN
     RAISE EXCEPTION 'seeded board_climb_grades data is missing';
   END IF;
 
-  -- recomputeClimbStatsBulk derives ascensionist_count as upstream + boardsesh,
-  -- so a NULL upstream term would turn every seeded tick into a NULL count.
-  IF EXISTS (SELECT 1 FROM board_climb_stats WHERE upstream_ascensionist_count IS NULL) THEN
-    RAISE EXCEPTION 'seeded board_climb_stats has NULL upstream_ascensionist_count rows';
+  -- The loader seeds upstream_ascensionist_count from the published
+  -- ascensionist_count, so a NULL upstream term is only wrong when the row holds
+  -- ascents beyond Boardsesh's own: a published count the loader dropped.
+  -- A NULL published count passes through as NULL by design (Quantum: eWalls
+  -- publishes no ascent counts), and recomputeClimbStatsBulk COALESCEs it to 0.
+  IF EXISTS (
+    SELECT 1 FROM board_climb_stats
+    WHERE upstream_ascensionist_count IS NULL
+      AND ascensionist_count IS NOT NULL
+      AND ascensionist_count <> COALESCE(boardsesh_ascensionist_count, 0)
+  ) THEN
+    RAISE EXCEPTION 'seeded board_climb_stats dropped a published ascensionist_count into a NULL upstream_ascensionist_count';
   END IF;
 
   -- The legacy Aurora tables exist only as empty stubs during the build, so the
