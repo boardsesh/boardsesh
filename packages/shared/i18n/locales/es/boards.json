@@ -1824,7 +1824,7 @@
     "bottomLeft": "Abajo a la izquierda",
     "bottomRight": "Abajo a la derecha",
     "wiringTitle": "Ajusta el recorrido del cable",
-    "cableEditorHint": "Elige Colocar cable. Toca el extremo de un tramo y después más LED, o arrastra desde ese extremo sobre ellos. Usa dos dedos para desplazar la imagen o cambiar el zoom.",
+    "cableEditorHint": "Elige Colocar cable. Toca el extremo de un tramo y después más LED, o arrastra desde ese extremo sobre ellos. Para volver a unir un corte, continúa hasta el inicio del siguiente tramo. Usa dos dedos para desplazar la imagen o cambiar el zoom.",
     "drawCable": "Colocar cable",
     "lightAndTap": "Encender y tocar",
     "lightAndTapHint": "El LED {{index}} está encendido en tu Spraywall. Toca dónde está en la foto. Si tocas un par, los LED aún sin conectar reciben números consecutivos.",

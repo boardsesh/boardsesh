@@ -1824,7 +1824,7 @@
     "bottomLeft": "Bottom left",
     "bottomRight": "Bottom right",
     "wiringTitle": "Adjust the cable path",
-    "cableEditorHint": "Choose Lay cable. Tap a section's end, then more LEDs, or drag from that end across them. Use two fingers to move or zoom the image.",
+    "cableEditorHint": "Choose Lay cable. Tap a section's end, then more LEDs, or drag from that end across them. To reconnect a cut, continue to the next section's start. Use two fingers to move or zoom the image.",
     "drawCable": "Lay cable",
     "lightAndTap": "Light and tap",
     "lightAndTapHint": "LED {{index}} is lit on your Spraywall. Tap its position on the photo. Tapping a pair assigns its unwired LEDs to successive numbers.",

@@ -1824,7 +1824,7 @@
     "bottomLeft": "In basso a sinistra",
     "bottomRight": "In basso a destra",
     "wiringTitle": "Regola il percorso del cavo",
-    "cableEditorHint": "Scegli Posa cavo. Tocca l’estremità di un tratto e poi altri LED, oppure trascina da quell’estremità passando sopra i LED. Usa due dita per spostare l’immagine o regolare lo zoom.",
+    "cableEditorHint": "Scegli Posa cavo. Tocca l’estremità di un tratto e poi altri LED, oppure trascina da quell’estremità passando sopra i LED. Per ricollegare un taglio, continua fino all’inizio del tratto successivo. Usa due dita per spostare l’immagine o regolare lo zoom.",
     "drawCable": "Posa cavo",
     "lightAndTap": "Accendi e tocca",
     "lightAndTapHint": "Il LED {{index}} è acceso sulla tua Spraywall. Tocca dove si trova nella foto. Se tocchi una coppia, i LED ancora da collegare ricevono numeri consecutivi.",

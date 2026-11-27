@@ -142,6 +142,14 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    drag from that end. Either member of an output pair, or any member of an
    output strip, selects that whole unit. A larger purple ring marks the chosen
    output. The final cable end remains the default when no section was chosen.
+   To reconnect a cut, tap its upstream output and then the downstream section's
+   input, or drag between them. This also works after adding more LEDs before
+   reaching that input. The sections join in their saved direction, retaining
+   internal skipped LEDs. The new connection has no skipped LEDs until edited.
+   Pairs and strips join as whole units; each join has its own Undo step. A tap
+   can join a section consisting of only one unit; dragging from that unit
+   still chooses its output. The controller input and interior LEDs cannot be
+   joined this way, and a later section cannot be routed back into an earlier one.
    **Lay cable** stays available with
    a complete route. To reroute already wired LEDs, choose **Select two LEDs**
    to cut the connection between two selections or reconnect free endpoints.

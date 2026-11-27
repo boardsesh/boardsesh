@@ -1975,7 +1975,7 @@
     "bottomLeft": "左下",
     "bottomRight": "右下",
     "wiringTitle": "调整布线路径",
-    "cableEditorHint": "选择“铺设线缆”。先点按一段线缆的末端，再点按更多 LED；也可以从该末端拖过 LED。使用双指移动或缩放图片。",
+    "cableEditorHint": "选择“铺设线缆”。先点按一段线缆的末端，再点按更多 LED；也可以从该末端拖过 LED。要重新连接断开的线缆，请继续铺设到下一段线缆的起点。使用双指移动或缩放图片。",
     "drawCable": "铺设线缆",
     "lightAndTap": "点亮并标记",
     "lightAndTapHint": "喷点墙上的第 {{index}} 颗 LED 已点亮，请点选它在照片中的位置。点按一对 LED，会为其中未接线的 LED 分配连续编号。",

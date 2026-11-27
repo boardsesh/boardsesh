@@ -1824,7 +1824,7 @@
     "bottomLeft": "Unten links",
     "bottomRight": "Unten rechts",
     "wiringTitle": "Passe den Kabelverlauf an",
-    "cableEditorHint": "Wähle Kabel verlegen. Tippe auf das Ende eines Kabelteils und dann auf weitere LEDs, oder ziehe von diesem Ende über sie. Mit zwei Fingern kannst du das Bild verschieben oder zoomen.",
+    "cableEditorHint": "Wähle Kabel verlegen. Tippe auf das Ende eines Kabelteils und dann auf weitere LEDs, oder ziehe von diesem Ende über sie. Um eine Trennung zu schließen, verlege das Kabel bis zum Anfang des nächsten Kabelteils. Mit zwei Fingern kannst du das Bild verschieben oder zoomen.",
     "drawCable": "Kabel verlegen",
     "lightAndTap": "Leuchten und tippen",
     "lightAndTapHint": "LED {{index}} leuchtet an deiner Spraywall. Tippe im Foto an, wo sie ist. Tippst du auf ein Paar, erhalten seine noch freien LEDs aufeinanderfolgende Nummern.",

@@ -448,19 +448,16 @@ describe('continuing cut cable sections', () => {
     expect((screen.getByText('overlay undo') as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('does not retarget a chosen output by tapping another section input', () => {
+  it('joins a chosen output to a later section input and continues from its existing tail', () => {
     render(<Editor initial={sectioned} kind="wiring" />);
     fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
     tap(0.3, 0.1);
     tap(0.7, 0.1);
     tap(0.3, 0.6);
-    expect(controls.layout?.wiring?.paths).toEqual([
-      ['a', 'b', 'e'],
-      ['c', 'd'],
-    ]);
+    expect(controls.layout?.wiring?.paths).toEqual([['a', 'b', 'c', 'd', 'e']]);
   });
 
-  it('uses the first hit for both drag preview and commit when crossing another output', () => {
+  it('joins an encountered section input without retargeting to its later output', () => {
     render(<Editor initial={sectioned} kind="wiring" />);
     fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
     const stroke = [
@@ -470,13 +467,294 @@ describe('continuing cut cable sections', () => {
     ];
     act(() => controls.canvas?.onTraceProgress?.(stroke, 0.01));
     const preview = cableOverlay().props.wiring;
-    expect(preview?.paths).toEqual([
-      ['a', 'b', 'g'],
-      ['c', 'd'],
-    ]);
+    expect(preview?.paths).toEqual([['a', 'b', 'c', 'd', 'g']]);
     expect(controls.layout?.wiring?.paths).toEqual(sectioned.wiring?.paths);
     act(() => controls.canvas?.onTrace?.(stroke, 0.01));
     expect(controls.layout?.wiring).toEqual(preview);
+  });
+
+  it('reconnects an actual interior cut by tapping its input and undoes join and cut separately', () => {
+    const initial = {
+      ...sectioned,
+      wiring: {
+        ...sectioned.wiring!,
+        paths: [['a', 'b', 'c', 'd']],
+        skips: [
+          { from: 'a', to: 'b', count: 2 },
+          { from: 'b', to: 'c', count: 3 },
+          { from: 'c', to: 'd', count: 1 },
+        ],
+      },
+    };
+    render(<Editor initial={initial} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.selectLeds'));
+    tap(0.3, 0.1);
+    tap(0.7, 0.1);
+    fireEvent.click(screen.getByText('sprayLedSetup.cutCable'));
+    const split = controls.layout?.wiring;
+    expect(split?.paths).toEqual([
+      ['a', 'b'],
+      ['c', 'd'],
+    ]);
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    tap(0.3, 0.1);
+    tap(0.7, 0.1);
+    expect(controls.layout?.wiring?.paths).toEqual(initial.wiring.paths);
+    expect(controls.layout?.wiring?.skips).toEqual([
+      { from: 'a', to: 'b', count: 2 },
+      { from: 'c', to: 'd', count: 1 },
+    ]);
+    expect(controls.layout?.wiring?.initialSkip).toBe(initial.wiring.initialSkip);
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring).toEqual(split);
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring).toEqual(initial.wiring);
+  });
+
+  it('joins after extending the chosen output and preserves one Undo step per action', () => {
+    render(<Editor initial={sectioned} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    tap(0.3, 0.1);
+    tap(0.3, 0.6);
+    const extended = controls.layout?.wiring;
+    expect(extended?.paths).toEqual([
+      ['a', 'b', 'e'],
+      ['c', 'd'],
+    ]);
+    tap(0.7, 0.1);
+    expect(controls.layout?.wiring?.paths).toEqual([['a', 'b', 'e', 'c', 'd']]);
+    expect(controls.layout?.wiring?.skips).toEqual(sectioned.wiring?.skips);
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring).toEqual(extended);
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring).toEqual(sectioned.wiring);
+  });
+
+  it('previews and commits a direct drag join as one reversible edit', () => {
+    render(<Editor initial={sectioned} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    const stroke = [
+      { x: 0.3, y: 0.1 },
+      { x: 0.7, y: 0.1 },
+    ];
+    act(() => controls.canvas?.onTraceProgress?.(stroke, 0.01));
+    const preview = cableOverlay().props.wiring;
+    expect(preview?.paths).toEqual([['a', 'b', 'c', 'd']]);
+    expect(controls.layout?.wiring).toEqual(sectioned.wiring);
+    act(() => controls.canvas?.onTrace?.(stroke, 0.01));
+    expect(controls.layout?.wiring).toEqual(preview);
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring).toEqual(sectioned.wiring);
+  });
+
+  it('previews an extension followed by a join and undoes both stops independently', () => {
+    render(<Editor initial={sectioned} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    const stroke = [
+      { x: 0.3, y: 0.1 },
+      { x: 0.3, y: 0.6 },
+      { x: 0.7, y: 0.1 },
+    ];
+    act(() => controls.canvas?.onTraceProgress?.(stroke, 0.01));
+    const preview = cableOverlay().props.wiring;
+    expect(preview?.paths).toEqual([['a', 'b', 'e', 'c', 'd']]);
+    expect(controls.layout?.wiring).toEqual(sectioned.wiring);
+    act(() => controls.canvas?.onTrace?.(stroke, 0.01));
+    expect(controls.layout?.wiring).toEqual(preview);
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring?.paths).toEqual([
+      ['a', 'b', 'e'],
+      ['c', 'd'],
+    ]);
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring).toEqual(sectioned.wiring);
+  });
+
+  it('continues after a join in the same drag and keeps all three edits independently reversible', () => {
+    render(<Editor initial={sectioned} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    const stroke = [
+      { x: 0.3, y: 0.1 },
+      { x: 0.3, y: 0.6 },
+      { x: 0.7, y: 0.1 },
+      { x: 0.3, y: 0.9 },
+    ];
+    act(() => controls.canvas?.onTraceProgress?.(stroke, 0.01));
+    const preview = cableOverlay().props.wiring;
+    expect(preview?.paths).toEqual([['a', 'b', 'e', 'c', 'd', 'f']]);
+    expect(controls.layout?.wiring).toEqual(sectioned.wiring);
+    act(() => controls.canvas?.onTrace?.(stroke, 0.01));
+    expect(controls.layout?.wiring).toEqual(preview);
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring?.paths).toEqual([['a', 'b', 'e', 'c', 'd']]);
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring?.paths).toEqual([
+      ['a', 'b', 'e'],
+      ['c', 'd'],
+    ]);
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring).toEqual(sectioned.wiring);
+  });
+
+  it('starts a fresh drag from a whole target pair output instead of joining the previous source', () => {
+    const initial = {
+      ...sectioned,
+      ledGroups: [
+        ['a', 'b'],
+        ['c', 'd'],
+      ] as [string, string][],
+      wiring: {
+        ...sectioned.wiring!,
+        paths: [
+          ['a', 'b'],
+          ['d', 'c'],
+        ],
+      },
+    };
+    render(<Editor initial={initial} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    tap(0.1, 0.1);
+    const stroke = [
+      { x: 0.9, y: 0.1 },
+      { x: 0.9, y: 0.6 },
+    ];
+    act(() => controls.canvas?.onTraceProgress?.(stroke, 0.01));
+    const preview = cableOverlay().props.wiring;
+    expect(preview?.paths).toEqual([
+      ['a', 'b'],
+      ['d', 'c', 'g'],
+    ]);
+    act(() => controls.canvas?.onTrace?.(stroke, 0.01));
+    expect(controls.layout?.wiring).toEqual(preview);
+    expect(readTnutLayout(controls.layout)).not.toBeNull();
+  });
+
+  it('joins a later singleton input by Tap rather than only selecting its output', () => {
+    const initial = { ...sectioned, wiring: { ...sectioned.wiring!, paths: [['a', 'b'], ['c']] } };
+    render(<Editor initial={initial} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    tap(0.3, 0.1);
+    tap(0.7, 0.1);
+    expect(controls.layout?.wiring?.paths).toEqual([['a', 'b', 'c']]);
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring).toEqual(initial.wiring);
+  });
+
+  it('rejoins a singleton controller root without moving that root behind another section', () => {
+    const initial = { ...sectioned, wiring: { ...sectioned.wiring!, paths: [['a'], ['b', 'c', 'd']], skips: [] } };
+    render(<Editor initial={initial} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    tap(0.1, 0.1);
+    tap(0.3, 0.1);
+    expect(controls.layout?.wiring?.paths).toEqual([['a', 'b', 'c', 'd']]);
+    expect(controls.layout?.wiring?.initialSkip).toBe(initial.wiring.initialSkip);
+  });
+
+  it('never joins an output to its own input or another section interior', () => {
+    const initial = {
+      ...sectioned,
+      ledPositions: [...sectioned.ledPositions!, { id: 'inside', x: 0.8, y: 0.1 }],
+      wiring: {
+        ...sectioned.wiring!,
+        paths: [
+          ['a', 'b'],
+          ['c', 'inside', 'd'],
+        ],
+      },
+    };
+    render(<Editor initial={initial} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    tap(0.3, 0.1);
+    tap(0.1, 0.1);
+    tap(0.8, 0.1);
+    expect(controls.changed).not.toHaveBeenCalled();
+    tap(0.3, 0.6);
+    expect(controls.layout?.wiring?.paths).toEqual([
+      ['a', 'b', 'e'],
+      ['c', 'inside', 'd'],
+    ]);
+  });
+
+  it('rejects backward joins to both the controller root and an earlier non-root section', () => {
+    const initial = {
+      ...sectioned,
+      wiring: {
+        ...sectioned.wiring!,
+        paths: [
+          ['a', 'b'],
+          ['c', 'd'],
+          ['e', 'f'],
+        ],
+      },
+    };
+    render(<Editor initial={initial} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    tap(0.3, 0.9);
+    tap(0.1, 0.1);
+    tap(0.7, 0.1);
+    expect(controls.changed).not.toHaveBeenCalled();
+    tap(0.9, 0.6);
+    expect(controls.layout?.wiring?.paths).toEqual([
+      ['a', 'b'],
+      ['c', 'd'],
+      ['e', 'f', 'g'],
+    ]);
+  });
+
+  it.each([0.7, 0.9])('joins a reversed input pair through either member at x=%s', (x) => {
+    const initial = {
+      ...sectioned,
+      ledGroups: [
+        ['a', 'b'],
+        ['c', 'd'],
+      ] as [string, string][],
+      wiring: {
+        ...sectioned.wiring!,
+        paths: [
+          ['a', 'b'],
+          ['d', 'c'],
+        ],
+      },
+    };
+    render(<Editor initial={initial} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    tap(0.1, 0.1);
+    tap(x, 0.1);
+    expect(controls.layout?.wiring?.paths).toEqual([['a', 'b', 'd', 'c']]);
+    expect(readTnutLayout(controls.layout)).not.toBeNull();
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring).toEqual(initial.wiring);
+  });
+
+  it.each([0, 0.5, 1])('joins a whole reversed input stripe through its member at y=%s', (y) => {
+    const stripes = createLedStripes(
+      {
+        ...original,
+        ledPlacement: 'stripe',
+        columns: 2,
+        rows: 2,
+        holes: [
+          { x: 0.1, y: 0.1 },
+          { x: 0.9, y: 0.1 },
+          { x: 0.1, y: 0.9 },
+          { x: 0.9, y: 0.9 },
+        ],
+      },
+      'vertical',
+      3,
+    );
+    if (stripes === 'capacity') throw new Error('Unexpected fixture capacity');
+    const [first, target] = stripes.ledStripes!.stripes.map((stripe) => stripe.ledIds);
+    const second = [...target].reverse();
+    const initial = { ...stripes, wiring: { ...original.wiring!, paths: [first, second], skips: [] } };
+    render(<Editor initial={initial} kind="wiring" />);
+    fireEvent.click(screen.getByText('sprayLedSetup.drawCable'));
+    tap(0.1, 0.5);
+    tap(0.9, y);
+    expect(controls.layout?.wiring?.paths).toEqual([[...first, ...second]]);
+    expect(readTnutLayout(controls.layout)).not.toBeNull();
+    fireEvent.click(screen.getByText('overlay undo'));
+    expect(controls.layout?.wiring).toEqual(initial.wiring);
   });
 
   it('keeps the intermediate output across a multi-stop drag and undoes each addition', () => {

@@ -333,7 +333,7 @@ function CableEditor({
     [wiring],
   );
   // Light and tap must stop once there is no unwired marker left to assign.
-  // Lay cable stays available, and extending it only adds unwired LEDs.
+  // Lay cable stays available to add unwired LEDs or reconnect section ends.
   const cableComplete = leds.length > 0 && leds.every((point) => indices.has(point.id));
   const mode = cableComplete && chosenMode === 'light' ? null : chosenMode;
   const preview = useSprayLedPreview(wallUuid);
@@ -466,10 +466,10 @@ function CableEditor({
         )
       : null;
 
-  function extend(ids: string[]) {
+  function extend(ids: string[], startAtHit = true) {
     setPreviewPlan(null);
     if (mode !== 'draw' || !wiring) return;
-    const plan = planCableExtension(wiring, ids, drawFrom, unitsById, indivisibleMembers);
+    const plan = planCableExtension(wiring, ids, drawFrom, unitsById, indivisibleMembers, { startAtHit });
     if (plan.output) setDrawSection(plan.output.sectionStart);
     changeSteps(plan.steps);
   }
@@ -482,7 +482,7 @@ function CableEditor({
       drawFrom,
       unitsById,
       indivisibleMembers,
-      false,
+      { recordStops: false },
     );
     setPreviewPlan(plan.output ? plan : null);
   }
@@ -495,7 +495,7 @@ function CableEditor({
     const index = nearestPhotoPointIndex(leds, point, renderWidth, renderHeight, 22);
     if (index < 0) return;
     const id = leds[index].id;
-    if (mode === 'draw') extend([id]);
+    if (mode === 'draw') extend([id], false);
     else if (mode === 'light') assignLit(id);
     else if (mode === 'select') {
       const unitId = unitsById.get(id)?.[0] ?? id;

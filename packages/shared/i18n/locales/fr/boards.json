@@ -1824,7 +1824,7 @@
     "bottomLeft": "En bas à gauche",
     "bottomRight": "En bas à droite",
     "wiringTitle": "Ajuste le parcours du câble",
-    "cableEditorHint": "Choisis Poser le câble. Touche l’extrémité d’un tronçon, puis d’autres LED, ou glisse depuis cette extrémité sur les LED. Utilise deux doigts pour déplacer l’image ou zoomer.",
+    "cableEditorHint": "Choisis Poser le câble. Touche l’extrémité d’un tronçon, puis d’autres LED, ou glisse depuis cette extrémité sur les LED. Pour relier une coupure, continue jusqu’au début du tronçon suivant. Utilise deux doigts pour déplacer l’image ou zoomer.",
     "drawCable": "Poser le câble",
     "lightAndTap": "Allumer et toucher",
     "lightAndTapHint": "La LED {{index}} est allumée sur ton Spraywall. Touche l’endroit où elle se trouve sur la photo. Si tu touches une paire, un numéro consécutif est attribué à chaque LED encore libre.",
