@@ -1041,16 +1041,21 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           }
           // Signed out, the server keeps the session's board to itself and there
           // is no account board to protect: join on this phone's own board without
-          // the guard, as before it existed. getBoardPath checked that board's
-          // visibility; a positional path is rechecked with the rest below.
+          // the guard, as before it existed. The stored board that built this path
+          // stays under the checks below, so a wall hidden mid-join is retired.
           const joinsUnguarded = target?.signedOut === true;
+          const storedBoard = joinsUnguarded ? await getStoredActiveBoard() : null;
+          assertJoinAvailable();
+          const ownBoard = storedBoard && buildSessionBoardPath(storedBoard) === boardPath ? storedBoard : null;
           const sessionBoard = confirmedBoardPath
             ? parseBoardPath(confirmedBoardPath)
             : joinsUnguarded
-              ? tuple
+              ? ownBoard
               : target?.board;
           const isSessionBoardVisible = () =>
-            sessionBoard ? boardVisibilityRef.current(sessionBoard) : joinsUnguarded;
+            !!sessionBoard &&
+            boardVisibilityRef.current(sessionBoard) &&
+            !(joinsUnguarded && activeBoardRolloutBlockedRef.current);
           if (
             (!confirmedBoardPath && (activeBoardRolloutBlockedRef.current || target?.status !== 'active')) ||
             (!expectedBoardPath && !joinsUnguarded) ||

@@ -7,7 +7,8 @@
 // public `sessionStatus` and refuses the board, graphql-request rejects the
 // whole read, and the JOIN was never sent. These tests pin the signed-out join:
 // it goes out on the phone's own board without `expectedBoardPath`, as every
-// join did before the guard. Reuses the harness from
+// join did before the guard, but only from a phone that holds no credential,
+// and its own board stays under the visibility checks. Reuses the harness from
 // queue-provider-join-session-ended.test.tsx.
 import { act, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect } from 'react';
@@ -30,6 +31,7 @@ const ws = vi.hoisted(() => {
       }),
       subscribe: vi.fn(() => vi.fn()),
     },
+    dispose: vi.fn(),
     reset: () => {
       listeners.connected.clear();
       listeners.closed.clear();
@@ -154,6 +156,25 @@ vi.mock('@boardsesh/play-view', async (importOriginal) => ({
 
 vi.mock('../../lib/graphql/ws-client', () => ({
   getWsClient: () => ws.client,
+  disposeWsClient: ws.dispose,
+}));
+
+// What the phone holds. Read only after the server refuses the board as anonymous.
+const credential = vi.hoisted(() => ({
+  token: null as string | null,
+  recoverAuthRejection: vi.fn(async () => 'unavailable' as const),
+}));
+vi.mock('../../lib/auth-store', () => ({ getAuthToken: async () => credential.token }));
+vi.mock('../../lib/auth-interceptor', () => ({ recoverAuthRejection: credential.recoverAuthRejection }));
+
+// One stable checker whose answer a test can flip mid-join.
+const visibility = vi.hoisted(() => {
+  const state = { visible: true };
+  return { state, isVisible: () => state.visible };
+});
+vi.mock('../../hooks/use-board-visibility', () => ({
+  useIsBoardConfigVisible: () => visibility.isVisible,
+  useIsBoardTypeVisible: () => visibility.isVisible,
 }));
 
 vi.mock('../../lib/session-store', () => sessionStore);
@@ -266,6 +287,10 @@ describe('QueueProvider signed-out join', () => {
     ws.reset();
     ws.client.on.mockClear();
     ws.client.subscribe.mockClear();
+    ws.dispose.mockClear();
+    credential.token = null;
+    credential.recoverAuthRejection.mockClear();
+    visibility.state.visible = true;
     activeBoard.stored = activeBoard.base;
     activeBoard.getStoredActiveBoard.mockReset();
     activeBoard.getStoredActiveBoard.mockImplementation(async () => activeBoard.stored);
@@ -351,5 +376,69 @@ describe('QueueProvider signed-out join', () => {
 
     await waitFor(() => expect(sessionStore.clearStoredSessionId).toHaveBeenCalled());
     expect(joinCalls()).toHaveLength(0);
+  });
+
+  // An expired token the refresh could not replace reads as anonymous on the
+  // server: a 200, no 401. The phone is still signed in, so it must not skip
+  // the board guard; it refreshes and the join retries.
+  it('sends no unguarded JOIN from a phone that still holds a credential', async () => {
+    credential.token = 'expired-jwt';
+    const snapshots = renderProvider();
+    await waitFor(() => expect(snapshots.length).toBeGreaterThan(0));
+
+    await act(async () => {
+      await snapshots.at(-1)?.startSession();
+    });
+
+    await waitFor(() =>
+      expect(errorReporter.reportHandledError).toHaveBeenCalledWith(expect.anything(), joinFailureReport),
+    );
+    await waitFor(() => expect(credential.recoverAuthRejection).toHaveBeenCalled());
+    expect(joinCalls()).toHaveLength(0);
+  });
+
+  // A gym wall's `/b/<slug>/<angle>` path parses to no positional board, so the
+  // checks follow the stored board that built it.
+  it('stops the signed-out JOIN when the gym wall is hidden during the board read', async () => {
+    activeBoard.stored = { ...activeBoard.base, gymId: 7 };
+    http.request.mockImplementation(async (operation: string) => {
+      if (operation.includes('CreateSession')) return { createSession: { id: 'session-new' } };
+      if (operation.includes('SessionStatus')) {
+        visibility.state.visible = false;
+        throw signedOutBoardRefusal('active');
+      }
+      return {};
+    });
+    const snapshots = renderProvider();
+    await waitFor(() => expect(snapshots.length).toBeGreaterThan(0));
+
+    await act(async () => {
+      await snapshots.at(-1)?.startSession();
+    });
+
+    await waitFor(() =>
+      expect(errorReporter.reportHandledError).toHaveBeenCalledWith(expect.anything(), joinFailureReport),
+    );
+    expect(joinCalls()).toHaveLength(0);
+  });
+
+  it('retires the connection when the gym wall is hidden while the signed-out JOIN is out', async () => {
+    activeBoard.stored = { ...activeBoard.base, gymId: 7 };
+    graph.execute.mockImplementation((_client: unknown, operation: { query: string }) => {
+      if (!operation.query.includes('JoinSession')) return Promise.resolve({});
+      visibility.state.visible = false;
+      return Promise.resolve({
+        joinSession: { participantId: 'anonymous-connection', clientId: 'anonymous-connection', users: [] },
+      });
+    });
+    const snapshots = renderProvider();
+    await waitFor(() => expect(snapshots.length).toBeGreaterThan(0));
+
+    await act(async () => {
+      await snapshots.at(-1)?.startSession();
+    });
+
+    await waitFor(() => expect(joinCalls()).toHaveLength(1));
+    await waitFor(() => expect(ws.dispose).toHaveBeenCalled());
   });
 });
