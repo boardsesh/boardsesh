@@ -1809,8 +1809,17 @@ jobs:
   # summary, so a forgotten APP_WEB_DEPLOY_HOLD would quietly strand the
   # subdomain on an old bundle. No-ops if DISCORD_DEPLOY_WEBHOOK is unset.
   notify-app-web-held:
-    needs: [detect-changes, sync-static-assets]
-    if: always() && needs.detect-changes.outputs.app_changed == 'true' && (needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped') && vars.APP_WEB_DEPLOY_HOLD != ''
+    needs: [detect-changes, sync-static-assets, migrate, deploy-production-backend]
+    if: >-
+      !cancelled()
+      && needs.detect-changes.result == 'success'
+      && needs.detect-changes.outputs.app_changed == 'true'
+      && (needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped')
+      && (needs.migrate.result == 'success'
+      || (needs.detect-changes.outputs.web_changed == 'false' && needs.detect-changes.outputs.backend_changed == 'false' && needs.migrate.result == 'skipped'))
+      && (needs.deploy-production-backend.result == 'success'
+      || (needs.detect-changes.outputs.backend_changed == 'false' && needs.deploy-production-backend.result == 'skipped'))
+      && vars.APP_WEB_DEPLOY_HOLD != ''
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment: Production
