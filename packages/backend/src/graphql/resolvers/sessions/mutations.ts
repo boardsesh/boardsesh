@@ -16,6 +16,7 @@ import * as Sentry from '@sentry/node';
 import type { ConnectionContext, SessionEvent, ClimbQueueItem } from '@boardsesh/shared-schema';
 import { roomManager } from '../../../services/room-manager';
 import { ensureSessionRecordExists } from '../../../services/room-manager/client-lifecycle';
+import type { SessionLeaveResult } from '../../../services/room-manager/types';
 import { pubsub } from '../../../pubsub/index';
 import { updateContext } from '../../context';
 import {
@@ -114,6 +115,23 @@ async function authorizeUserControllersForSession(userId: string, sessionId: str
 // Debug logging flag - only log in development
 const DEBUG = process.env.NODE_ENV === 'development';
 
+function publishSessionDeparture(result: SessionLeaveResult, fallbackParticipantId: string) {
+  // A participant's other connections still represent them to the crew.
+  if (result.participantFullyLeft) {
+    pubsub.publishSessionEvent(result.sessionId, {
+      __typename: 'UserLeft',
+      userId: result.participantId || fallbackParticipantId,
+    });
+  }
+  if (result.newLeaderId) {
+    pubsub.publishSessionEvent(result.sessionId, {
+      __typename: 'LeaderChanged',
+      leaderId: result.newLeaderParticipantId || result.newLeaderId,
+      leaderConnectionId: result.newLeaderId,
+    });
+  }
+}
+
 export const sessionMutations = {
   /**
    * Join an existing session or create a new one
@@ -134,6 +152,7 @@ export const sessionMutations = {
       initialCurrentClimb,
       sessionName,
       initialHistoryCount,
+      expectedBoardPath,
     }: {
       sessionId: string;
       boardPath: string;
@@ -144,6 +163,7 @@ export const sessionMutations = {
       initialCurrentClimb?: ClimbQueueItem;
       sessionName?: string;
       initialHistoryCount?: number | null;
+      expectedBoardPath?: string | null;
     },
     ctx: ConnectionContext,
   ) => {
@@ -157,6 +177,7 @@ export const sessionMutations = {
     // Validate inputs
     validateInput(SessionIdSchema, sessionId, 'sessionId');
     validateInput(BoardPathSchema, boardPath, 'boardPath');
+    if (expectedBoardPath != null) validateInput(BoardPathSchema, expectedBoardPath, 'expectedBoardPath');
     if (username) validateInput(UsernameSchema, username, 'username');
     if (avatarUrl) validateInput(AvatarUrlSchema, avatarUrl, 'avatarUrl');
     if (participantId) validateInput(ParticipantIdSchema, participantId, 'participantId');
@@ -251,6 +272,7 @@ export const sessionMutations = {
       participantId || undefined,
       undefined, // isPublic: only createSession sets it
       seedHistoryCount,
+      expectedBoardPath ?? undefined,
     );
     if (DEBUG)
       logger.info(
@@ -267,6 +289,7 @@ export const sessionMutations = {
     if (DEBUG) logger.info(`[joinSession] Before updateContext - ctx.sessionId: ${ctx.sessionId}`);
     updateContext(ctx.connectionId, { sessionId, participantId: result.participantId });
     if (DEBUG) logger.info(`[joinSession] After updateContext - ctx.sessionId: ${ctx.sessionId}`);
+    if (result.previousMembership) publishSessionDeparture(result.previousMembership, ctx.connectionId);
 
     // Auto-authorize user's ESP32 controllers for this session (if authenticated)
     if (ctx.isAuthenticated && ctx.userId) {
@@ -594,35 +617,10 @@ export const sessionMutations = {
   leaveSession: async (_: unknown, __: unknown, ctx: ConnectionContext) => {
     if (!ctx.sessionId) return false;
 
-    const sessionId = ctx.sessionId;
-    const participantId = ctx.participantId;
     const result = await roomManager.leaveSession(ctx.connectionId);
 
     if (result) {
-      // Notify session about the stable participant leaving. The schema field
-      // is named `userId` for historical reasons, but current clients compare
-      // it with `SessionUser.id`, which is the stable participant ID.
-      //
-      // Only fire UserLeft when the participant's last connection just left.
-      // If the user has another tab open in the same session (authenticated
-      // users share one participantId across tabs), suppress the broadcast —
-      // peers should keep seeing the participant.
-      if (result.participantFullyLeft) {
-        pubsub.publishSessionEvent(sessionId, {
-          __typename: 'UserLeft',
-          userId: result.participantId || participantId || ctx.connectionId,
-        });
-      }
-
-      // Notify about new leader if changed
-      if (result.newLeaderId) {
-        pubsub.publishSessionEvent(sessionId, {
-          __typename: 'LeaderChanged',
-          leaderId: result.newLeaderParticipantId || result.newLeaderId,
-          leaderConnectionId: result.newLeaderId,
-        });
-      }
-
+      publishSessionDeparture(result, ctx.participantId || ctx.connectionId);
       // Only clear session/participant state. Auth set userId to the real
       // UUID at connection time and downstream resolvers on this same
       // WebSocket still need it.

@@ -1,10 +1,12 @@
 import { GraphQLError } from 'graphql';
+import { and, eq } from 'drizzle-orm';
 import { normaliseOrphanCurrent } from '@boardsesh/queue';
 import { resolveLockedSessionBoardId } from '../session-board-binding';
 import type { DbTransaction } from '../../db/after-commit';
 import { getPrivacySettings, legacyResourceAudience, requireResourceAccess } from '../privacy';
 import { resourcePrivacy } from '@boardsesh/db/schema';
-import { sessionParticipantId } from '../board-session-privacy';
+import { parseNamedBoardPath, sessionBoardPathsMatch } from '@boardsesh/board-config';
+import { projectSessionBoardPath, sessionParticipantId } from '../board-session-privacy';
 import type { ClimbQueueItem, SessionUser } from '@boardsesh/shared-schema';
 import { db, runWithDatabaseTransaction } from '../../db/client';
 import { sessions, boardSessionParticipants } from '../../db/schema';
@@ -22,6 +24,7 @@ import { restoreSessionWithLock } from './session-restoration';
 import { loadAccountSessionIdentity } from './account-identity';
 import { logger } from '../../utils/logger';
 import { markErrorReported } from '../../utils/sentry-dedupe';
+import { getPostgresErrorCode } from '../../utils/postgres-errors';
 
 /**
  * Register a new client connection.
@@ -86,6 +89,7 @@ export async function joinSession(
   participantId: string;
   participantWasKnown: boolean;
   participantWasReconnecting: boolean;
+  previousMembership?: SessionLeaveResult | null;
 }> {
   const {
     clients,
@@ -112,12 +116,16 @@ export async function joinSession(
     sessionName,
     participantId,
     isPublic,
+    expectedBoardPath,
   } = options;
 
   const client = clients.get(connectionId);
-  if (!client) {
+  if (!client || client.isClosing) {
     throw new Error('Client not registered');
   }
+  const assertClientStillConnected = () => {
+    if (clients.get(connectionId) !== client || client.isClosing) throw new Error('Client disconnected while joining');
+  };
 
   // Refuse to resurrect a server-ended session (#2696). The Postgres row is the
   // durable source of truth (Redis only holds live presence), so a stale/ended
@@ -136,6 +144,10 @@ export async function joinSession(
     markErrorReported(endedError);
     logger.info(`[RoomManager] Rejecting JOIN_SESSION for ended session ${sessionId}`);
     throw endedError;
+  }
+
+  if (expectedBoardPath !== undefined && !existingSession) {
+    throw new GraphQLError('The session is unavailable', { extensions: { code: 'SESSION_BOARD_CHANGED' } });
   }
 
   // Establish the policy before exposing any presence. Concurrent UUID joins
@@ -168,81 +180,129 @@ export async function joinSession(
   const joinUsername = username || accountIdentity?.username;
   const joinAvatarUrl = avatarUrl || accountIdentity?.avatarUrl;
 
-  // Leave current session if in one
-  if (client.sessionId) {
-    await leaveSessionFn(connectionId);
-  }
+  const establishMembership = async () => {
+    assertClientStillConnected();
+    const isSameGuardedRoom = expectedBoardPath !== undefined && client.sessionId === sessionId;
+    const previousMembership = client.sessionId && !isSameGuardedRoom ? await leaveSessionFn(connectionId) : null;
+    assertClientStillConnected();
 
-  // Update client info
-  client.sessionId = sessionId;
-  client.participantId = resolvedParticipantId;
-  if (joinUsername) {
-    client.username = joinUsername;
-  }
-  if (joinAvatarUrl) {
-    client.avatarUrl = joinAvatarUrl;
-  }
+    let isNewSession = false;
 
-  // Track if this is a new session
-  let isNewSession = false;
-
-  // Cancel grace timer if session exists locally (client reconnecting during grace period)
-  const graceTimer = sessionGraceTimers.get(sessionId);
-  if (graceTimer) {
-    clearTimeout(graceTimer);
-    sessionGraceTimers.delete(sessionId);
-    logger.info(`[RoomManager] Cancelled grace timer for session ${sessionId} (client reconnecting)`);
-  }
-
-  // Create or get session in memory - with lazy restore
-  if (!sessionsMap.has(sessionId)) {
-    if (redisStore) {
-      const restoredNewSession = await restoreSessionWithLock(sessionId, sessionsMap, redisStore, getSessionById);
-      isNewSession = createdSession || restoredNewSession;
-      if (isNewSession) {
-        logger.info(
-          `[RoomManager] Creating new session ${sessionId} with ${initialQueue?.length || 0} initial queue items`,
-        );
-      }
-    } else {
-      // No Redis: a missing Postgres row means this is a brand-new session.
-      // Ended rows were already rejected by the guard at the top of joinSession.
-      if (!existingSession) {
-        isNewSession = true;
-        logger.info(
-          `[RoomManager] Creating new session ${sessionId} with ${initialQueue?.length || 0} initial queue items`,
-        );
-      }
-      sessionsMap.set(sessionId, new Set());
+    // Cancel grace timer if session exists locally (client reconnecting during grace period)
+    const graceTimer = sessionGraceTimers.get(sessionId);
+    if (graceTimer) {
+      clearTimeout(graceTimer);
+      sessionGraceTimers.delete(sessionId);
+      logger.info(`[RoomManager] Cancelled grace timer for session ${sessionId} (client reconnecting)`);
     }
-  }
-  const sessionClientIds = sessionsMap.get(sessionId)!;
 
-  // Determine leader status
-  let isLeader: boolean;
+    // Create or get session in memory - with lazy restore
+    if (!sessionsMap.has(sessionId)) {
+      if (redisStore) {
+        const restoredNewSession = await restoreSessionWithLock(sessionId, sessionsMap, redisStore, getSessionById);
+        isNewSession = createdSession || restoredNewSession;
+        if (isNewSession) {
+          logger.info(
+            `[RoomManager] Creating new session ${sessionId} with ${initialQueue?.length || 0} initial queue items`,
+          );
+        }
+      } else {
+        // No Redis: a missing Postgres row means this is a brand-new session.
+        // Ended rows were already rejected by the guard at the top of joinSession.
+        if (!existingSession) {
+          isNewSession = true;
+          logger.info(
+            `[RoomManager] Creating new session ${sessionId} with ${initialQueue?.length || 0} initial queue items`,
+          );
+        }
+        sessionsMap.set(sessionId, new Set());
+      }
+    }
+    const sessionClientIds = sessionsMap.get(sessionId)!;
 
-  if (distributedState) {
-    const result = await distributedState.joinSession(
-      connectionId,
+    assertClientStillConnected();
+
+    // Update client info
+    client.sessionId = sessionId;
+    client.participantId = resolvedParticipantId;
+    if (joinUsername) {
+      client.username = joinUsername;
+    }
+    if (joinAvatarUrl) {
+      client.avatarUrl = joinAvatarUrl;
+    }
+
+    // Determine leader status
+    let isLeader: boolean;
+
+    if (distributedState) {
+      const result = await distributedState.joinSession(
+        connectionId,
+        sessionId,
+        client.username,
+        client.avatarUrl,
+        resolvedParticipantId,
+      );
+      isLeader = result.isLeader;
+    } else {
+      isLeader = isSameGuardedRoom ? client.isLeader : sessionClientIds.size === 0;
+    }
+
+    assertClientStillConnected();
+    client.isLeader = isLeader;
+    sessionClientIds.add(connectionId);
+    const participantStatus = upsertLocalParticipant(
       sessionId,
-      client.username,
-      client.avatarUrl,
       resolvedParticipantId,
+      client,
+      isLeader,
+      sessionParticipants,
     );
-    isLeader = result.isLeader;
-  } else {
-    isLeader = sessionClientIds.size === 0;
-  }
 
-  client.isLeader = isLeader;
-  sessionClientIds.add(connectionId);
-  const participantStatus = upsertLocalParticipant(
-    sessionId,
-    resolvedParticipantId,
-    client,
-    isLeader,
-    sessionParticipants,
-  );
+    return { isNewSession, isLeader, participantStatus, previousMembership };
+  };
+
+  const { isNewSession, isLeader, participantStatus, previousMembership } =
+    expectedBoardPath === undefined
+      ? await establishMembership()
+      : await runWithDatabaseTransaction(async (tx) => {
+          // Wall moves lock this same row FOR UPDATE. Hold a shared row lock
+          // through membership transfer so a move either wins before this
+          // check or follows the completed join.
+          const [currentSession] = await tx
+            .select({ boardPath: sessions.boardPath, status: sessions.status, endedAt: sessions.endedAt })
+            .from(sessions)
+            .where(and(eq(sessions.id, sessionId), eq(sessions.origin, 'explicit')))
+            .for('share');
+          if (!currentSession?.boardPath || currentSession.status === 'ended' || currentSession.endedAt !== null) {
+            throw new GraphQLError('The session is unavailable', { extensions: { code: 'SESSION_BOARD_CHANGED' } });
+          }
+          await requireResourceAccess('session', sessionId, client.userId);
+          const requestedSlug = parseNamedBoardPath(boardPath)?.slug;
+          const currentSlug = parseNamedBoardPath(currentSession.boardPath)?.slug;
+          if (requestedSlug !== undefined && requestedSlug !== currentSlug) {
+            throw new GraphQLError('The session board changed', { extensions: { code: 'SESSION_BOARD_CHANGED' } });
+          }
+          // Named walls can be reconfigured in place. A nonblocking lock
+          // preserves board-before-session writer ordering when both contend.
+          const currentBoardPath = await projectSessionBoardPath(currentSession.boardPath, client.userId, {
+            geometryOnly: true,
+            lockGeometry: true,
+          }).catch((error: unknown) => {
+            if (getPostgresErrorCode(error) === '55P03') {
+              throw new GraphQLError('The session board changed', { extensions: { code: 'SESSION_BOARD_CHANGED' } });
+            }
+            throw error;
+          });
+          const requestedBoardPath = await projectSessionBoardPath(boardPath, client.userId, { geometryOnly: true });
+          if (
+            !sessionBoardPathsMatch(expectedBoardPath, currentBoardPath) ||
+            !sessionBoardPathsMatch(expectedBoardPath, requestedBoardPath)
+          ) {
+            throw new GraphQLError('The session board changed', { extensions: { code: 'SESSION_BOARD_CHANGED' } });
+          }
+          return establishMembership();
+        });
 
   // Record the authenticated user as a permanent participant in this session.
   // Used by the push-token resolver to authorize Live Activity registrations.
@@ -306,6 +366,7 @@ export async function joinSession(
     participantId: resolvedParticipantId,
     participantWasKnown: participantStatus.wasKnown,
     participantWasReconnecting: participantStatus.wasReconnecting,
+    ...(expectedBoardPath !== undefined ? { previousMembership } : {}),
   };
 }
 
@@ -460,6 +521,7 @@ export async function disconnectClient(
     return null;
   }
 
+  client.isClosing = true;
   const sessionId = client.sessionId;
   const participantId = client.participantId || connectionId;
   const wasLeader = client.isLeader;
@@ -995,6 +1057,8 @@ export async function removeClient(
   connectionId: string,
 ): Promise<{ distributedStateCleanedUp: boolean }> {
   const { clients, sessions: sessionsMap, distributedState } = deps;
+  const closingClient = clients.get(connectionId);
+  if (closingClient) closingClient.isClosing = true;
   let distributedStateCleanedUp = true;
 
   if (distributedState) {

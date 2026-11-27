@@ -21,6 +21,8 @@ export const mutationsTypeDefs = /* GraphQL */ `
       sessionName: String
       "Entries of initialQueue before Up next when no seed climb is current in it (F3). Ignored when initialCurrentClimb is in initialQueue."
       initialHistoryCount: Int
+      "Require the current saved board and angle to match this positional path before switching rooms."
+      expectedBoardPath: String
     ): Session!
 
     """

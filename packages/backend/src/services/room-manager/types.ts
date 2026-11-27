@@ -16,6 +16,7 @@ export class VersionConflictError extends Error {
 
 export type ConnectedClient = {
   connectionId: string;
+  isClosing?: boolean;
   sessionId: string | null;
   participantId: string | null;
   userId: string | null;
@@ -127,6 +128,7 @@ export type JoinSessionCallbacks = {
 };
 
 export type JoinSessionOptions = {
+  expectedBoardPath?: string;
   username?: string;
   avatarUrl?: string;
   initialQueue?: ClimbQueueItem[];

@@ -1,3 +1,5 @@
+import { normalizeSetIdsForCompare } from '@boardsesh/shared-schema';
+
 export function buildBoardPath(
   boardName: string,
   layoutId: number | string,
@@ -88,4 +90,20 @@ export function parseNamedBoardPath(path: string): ParsedNamedBoardPath | null {
   const angleRaw = segments[2];
   const angle = angleRaw !== undefined && /^-?\d+$/.test(angleRaw) ? Number(angleRaw) : null;
   return { slug, angle };
+}
+
+/** Same physical board and angle in two positional session paths. */
+export function sessionBoardPathsMatch(expectedPath: string, actualPath: string): boolean {
+  const expected = parseBoardPath(expectedPath);
+  const actual = parseBoardPath(actualPath);
+  return (
+    expected !== null &&
+    expected.angle !== null &&
+    actual !== null &&
+    expected.boardName === actual.boardName &&
+    expected.layoutId === actual.layoutId &&
+    expected.sizeId === actual.sizeId &&
+    normalizeSetIdsForCompare(expected.setIds) === normalizeSetIdsForCompare(actual.setIds) &&
+    expected.angle === actual.angle
+  );
 }

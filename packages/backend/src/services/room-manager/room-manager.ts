@@ -320,6 +320,7 @@ class RoomManager {
     participantId?: string | null,
     isPublic?: boolean,
     initialHistoryCount?: number,
+    expectedBoardPath?: string,
   ): Promise<{
     clientId: string;
     users: SessionUser[];
@@ -336,6 +337,7 @@ class RoomManager {
     participantId: string;
     participantWasKnown: boolean;
     participantWasReconnecting: boolean;
+    previousMembership?: SessionLeaveResult | null;
   }> {
     return joinSessionFn(
       this.deps(),
@@ -359,6 +361,7 @@ class RoomManager {
         sessionName,
         participantId,
         isPublic,
+        expectedBoardPath,
       },
     );
   }
@@ -366,6 +369,13 @@ class RoomManager {
   async leaveSession(connectionId: string): Promise<SessionLeaveResult | null> {
     const result = await leaveSessionFn(this.deps(), connectionId);
     return result;
+  }
+
+  markClientClosing(connectionId: string): boolean {
+    const client = this.clients.get(connectionId);
+    if (!client) return false;
+    client.isClosing = true;
+    return client.sessionId !== null;
   }
 
   async disconnectClient(connectionId: string): Promise<SessionDisconnectResult | null> {

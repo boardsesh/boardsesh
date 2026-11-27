@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildBoardPath, parseBoardPath, parseNamedBoardPath } from '../board-path';
+import { buildBoardPath, parseBoardPath, parseNamedBoardPath, sessionBoardPathsMatch } from '../board-path';
 
 describe('buildBoardPath', () => {
   it('builds a path with angle', () => {
@@ -129,5 +129,24 @@ describe('parseNamedBoardPath', () => {
     expect(parseNamedBoardPath('kilter/8/17/26,27/40')).toBeNull();
     expect(parseNamedBoardPath('/b')).toBeNull();
     expect(parseNamedBoardPath('')).toBeNull();
+  });
+});
+
+describe('sessionBoardPathsMatch', () => {
+  it('matches the same board and angle across slash and set-order differences', () => {
+    expect(sessionBoardPathsMatch('/kilter/8/17/27,26/40', 'kilter/8/17/26,27/40/list')).toBe(true);
+  });
+
+  it('refuses another board, size, set list or angle', () => {
+    const expected = 'kilter/8/17/26,27/40';
+    expect(sessionBoardPathsMatch(expected, 'tension/8/17/26,27/40')).toBe(false);
+    expect(sessionBoardPathsMatch(expected, 'kilter/8/18/26,27/40')).toBe(false);
+    expect(sessionBoardPathsMatch(expected, 'kilter/8/17/26/40')).toBe(false);
+    expect(sessionBoardPathsMatch(expected, 'kilter/8/17/26,27/45')).toBe(false);
+  });
+
+  it('refuses an expected path without an angle and any named path', () => {
+    expect(sessionBoardPathsMatch('kilter/8/17/26,27', 'kilter/8/17/26,27')).toBe(false);
+    expect(sessionBoardPathsMatch('/b/my-board/40', '/b/my-board/40')).toBe(false);
   });
 });

@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { createRequire } from 'node:module';
 import { v4 as uuidv4 } from 'uuid';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
+import { buildBoardPath } from '@boardsesh/board-config';
 import { boardClimbEvents, sprayWallVersions, sprayWalls, userBoards } from '@boardsesh/db/schema';
 import { ART_RECIPE } from '@boardsesh/spray-wall-geometry';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -220,6 +221,7 @@ type SeededWorld = {
   gymSlug: string;
   playlistId: string;
   sessionId: string;
+  boardPath: string;
   serialNumber: string | null;
   username: string;
   hideProposalUuid: string;
@@ -1089,9 +1091,10 @@ async function seedWorld(): Promise<SeededWorld> {
   await db.execute(sql`UPDATE user_boards SET gym_id = ${Number(gymRow.id)} WHERE id = ${boardId}`);
 
   const sessionId = uuidv4();
+  const boardPath = buildBoardPath('spray', wall.layoutId, wall.sizeId, String(boardRow?.set_ids ?? '1'), ANGLE);
   await db.execute(sql`
     INSERT INTO board_sessions (id, board_path, created_by_user_id, name, board_id, status, started_at, created_at, last_activity)
-    VALUES (${sessionId}, ${`spray/${wall.layoutId}/${wall.sizeId}/1/${ANGLE}`}, ${OWNER}, 'Sweep session',
+    VALUES (${sessionId}, ${boardPath}, ${OWNER}, 'Sweep session',
             ${boardId}, 'active', now() - interval '1 hour', now(), now())
   `);
   await db.execute(sql`
@@ -1227,6 +1230,7 @@ async function seedWorld(): Promise<SeededWorld> {
     gymSlug: 'sweep-gym',
     playlistId: playlistUuid,
     sessionId,
+    boardPath,
     serialNumber: boardRow?.serial_number ?? null,
     username: String(userRow?.name ?? OWNER),
     hideProposalUuid,
@@ -1329,6 +1333,7 @@ beforeAll(async () => {
     { name: 'climb uuid', value: world.climbUuid, kind: 'identifier' },
     { name: 'wall uuid', value: world.wallUuid, kind: 'identifier' },
     { name: 'layout id', value: world.layoutId, kind: 'identifier' },
+    { name: 'spray board path', value: world.boardPath, kind: 'identifier' },
   ];
   rows = enumerateRows();
 
@@ -1364,6 +1369,7 @@ describe('the spray-wall visibility sweep', () => {
       'Query.userTicks',
       'Query.boardDiscovery',
       'Query.publicClimbRelatedContent',
+      'Query.sessionRestoreBoardPath',
     ]) {
       expect(swept).toContain(key);
     }
@@ -1382,6 +1388,66 @@ describe('the spray-wall visibility sweep', () => {
           betaLinks: [],
         },
       });
+    }
+  });
+
+  it('returns the dormant session configuration to the private wall owner only', () => {
+    const perViewer = outcomes.get('Query.sessionRestoreBoardPath');
+    if (!perViewer) throw new Error('sessionRestoreBoardPath must participate in the visibility sweep');
+    expect(perViewer.owner).toMatchObject({ data: { sessionRestoreBoardPath: world.boardPath }, errorMessages: [] });
+    expect(perViewer.stranger).toMatchObject({ data: { sessionRestoreBoardPath: null }, errorMessages: [] });
+    expect(perViewer.anonymous.data).toEqual({ sessionRestoreBoardPath: null });
+    expect(perViewer.anonymous.errorMessages).toContain('Authentication required to perform this operation');
+  });
+
+  it('honors and revokes a wall grant on both named and positional restore paths', async () => {
+    const row = rows.find(({ key }) => key === 'Query.sessionRestoreBoardPath');
+    if (!row || !world.wallSlug) throw new Error('Expected a restore reader and a named spray wall');
+    const { boardSessions, resourceGrants, resourcePrivacy } = dbSchema;
+    // setup.ts resets durable sessions before each test. The new dormant
+    // session is unlisted, so holding its ID opens the session itself.
+    await db.insert(boardSessions).values({
+      id: world.sessionId,
+      boardId: world.boardId,
+      boardPath: world.boardPath,
+      createdByUserId: OWNER,
+      isPublic: false,
+    });
+    const session = eq(boardSessions.id, world.sessionId);
+    const policy = and(eq(resourcePrivacy.kind, 'board'), eq(resourcePrivacy.resourceId, world.wallUuid));
+    const grant = and(
+      eq(resourceGrants.kind, 'board'),
+      eq(resourceGrants.resourceId, world.wallUuid),
+      eq(resourceGrants.userId, STRANGER),
+    );
+    await db.insert(resourcePrivacy).values({
+      kind: 'board',
+      resourceId: world.wallUuid,
+      ownerId: OWNER,
+      audience: 'invite_only',
+    });
+    try {
+      await db.insert(resourceGrants).values({ kind: 'board', resourceId: world.wallUuid, userId: STRANGER });
+      for (const status of ['approved', 'revoked'] as const) {
+        await db.update(resourceGrants).set({ status }).where(grant);
+        for (const [storedPath, geometry] of [
+          [world.boardPath, world.boardPath],
+          [`/b/${world.wallSlug}/${ANGLE}`, `/${world.boardPath}`],
+        ]) {
+          await db.update(boardSessions).set({ boardPath: storedPath }).where(session);
+          expect(await runRow(row, ctxFor(OWNER)), storedPath).toMatchObject({
+            data: { sessionRestoreBoardPath: geometry },
+            errorMessages: [],
+          });
+          expect(await runRow(row, ctxFor(STRANGER)), `${status} ${storedPath}`).toMatchObject({
+            data: { sessionRestoreBoardPath: status === 'approved' ? geometry : null },
+            errorMessages: [],
+          });
+        }
+      }
+    } finally {
+      await db.delete(resourceGrants).where(grant);
+      await db.delete(resourcePrivacy).where(policy);
     }
   });
 
