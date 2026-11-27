@@ -2256,7 +2256,7 @@ function mergeFieldTraces(
     `${outlines.size}/${totals.attempted} traced ` +
     `(${missing} fell back: ${totals.rejectedBox} hit the search box, ` +
     // Only mentioned where it happened. This line is the header comment on every
-    // shard, so an unconditional "0 crossed themselves" would rewrite all 51
+    // shard, so an unconditional "0 crossed themselves" would rewrite all 55
     // files to say nothing had gone wrong on any of them.
     (totals.rejectedCrossing > 0 ? `${totals.rejectedCrossing} crossed themselves, ` : '') +
     `${missing - totals.rejectedBox - totals.rejectedCrossing} had no art of their own; ` +
@@ -3460,10 +3460,10 @@ export function loadOutlineCounts(): OutlineCountsTable {
  * `import()` instead of `require()`.
  *
  * Metro's `require` is synchronous, so the literal `require('./kilter/1-7.cjs')`
- * calls in `shards.ts` put all 51 shards in the entry chunk even though the
- * thunks around them are lazy. That is 4.4 MB of the browser app's 15.4 MB
- * bundle for polygons the reader will never look at — a climber is on one wall,
- * not fifty-one. `import()` makes Metro emit each shard as its own async chunk
+ * calls in `shards.ts` put all 55 shards in the entry chunk even though the
+ * thunks around them are lazy. The original 51-shard measurement attributed
+ * 4.4 MB of a 15.4 MB browser bundle to these polygons. A climber is on one wall,
+ * not fifty-five. `import()` makes Metro emit each shard as its own async chunk
  * (`expo export --platform web` turns on `splitChunks`), so the browser fetches
  * exactly the board it is drawing.
  *

@@ -24,10 +24,10 @@ import { BOARD_ART_GEOMETRY_SHARDS_ASYNC } from './shards-async';
  *
  * ## Web is asynchronous
  *
- * Metro's `require` is synchronous, so those literal `require` calls put all 51
+ * Metro's `require` is synchronous, so those literal `require` calls put all 55
  * shards in the bundle even though each thunk around them is lazy. That is
- * tolerable in a binary the user already installed; it is 4.4 MB of a browser
- * app's first load, for polygons of fifty boards the reader is not on. So the
+ * tolerable in a binary the user already installed; on web it adds every board's
+ * polygons to the first load while the reader is looking at just one wall. So the
  * web build resolves `./generated/shards` to `shards.web.ts`, which leaves
  * `BOARD_ART_GEOMETRY_SHARDS` empty and fills `BOARD_ART_GEOMETRY_SHARDS_ASYNC`
  * with `import()` thunks that Metro emits as one chunk per board.
@@ -232,7 +232,7 @@ export async function prefetchBoardArtGeometry(query: BoardArtGeometryQuery): Pr
 
 /**
  * How bright one board config's wall is, for `veilOpacityFor`. Eager: the whole
- * table is 51 rows of two numbers, and the veil decision is made before any
+ * table is 55 rows of two numbers, and the veil decision is made before any
  * shard is needed.
  */
 export function getWallLightness(query: BoardArtGeometryQuery): WallLightness | null {

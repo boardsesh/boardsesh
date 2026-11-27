@@ -5,7 +5,7 @@
  * The shards are `.cjs` with no declaration files, which is fine for the native
  * index: it reaches them through `require`, and `@types/node` types that as
  * `any`. `import()` is real module resolution, so without this TypeScript raises
- * TS7016 on all 51 of them.
+ * TS7016 on all 55 of them.
  *
  * `unknown` rather than `BoardArtGeometry` on purpose — nothing has actually
  * checked what is in those files, and `unwrap()` in the generated web index is

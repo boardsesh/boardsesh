@@ -2,6 +2,7 @@ import type { BoardRenderStyle } from '../lib/board-render-style';
 import React, { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
 import { PixelRatio, View, StyleSheet } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
+import { getBoardImageMirrored } from '../lib/board-image-mirroring';
 import { useNativeClimbRender } from '../hooks/use-native-climb-render';
 import { isBoardArtInMemory, warmBoardArtMemory } from '../lib/board-render/warm-board-art-memory';
 import { useTheme } from '../providers/theme-provider';
@@ -104,12 +105,13 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
   layoutId,
   sizeId,
   setIds,
-  mirrored,
+  mirrored: requestedMirrored,
   size,
   onArtDisplayed,
   renderStyleOverride,
   onArtError,
 }: ClimbListThumbnailProps) {
+  const mirrored = getBoardImageMirrored(boardName, requestedMirrored);
   const { systemColors } = useTheme();
   const listCell = useClimbListThumbnailSize();
   const cell = size ?? listCell;

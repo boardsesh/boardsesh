@@ -2,6 +2,7 @@ import { memo, useCallback, useMemo, useState } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { Image } from 'expo-image';
 import type { BoardName, HoldStat } from '@boardsesh/shared-schema';
+import { getBoardImageMirrored } from '../../lib/board-image-mirroring';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
 import { EDITING_VEIL_OPACITY } from '../../lib/board-render-settings';
 import { useNativeClimbRender } from '../../hooks/use-native-climb-render';
@@ -81,8 +82,9 @@ function RenderedHeatmap({
   holdTargets,
   boardWidth,
   boardHeight,
-  mirrored = false,
+  mirrored: requestedMirrored = false,
 }: HeatmapOverlayProps) {
+  const mirrored = getBoardImageMirrored(boardName, requestedMirrored) ?? false;
   const frames = useMemo(() => heatLayerFrames(layer.cells), [layer.cells]);
   // The hook is always mounted (hooks cannot be conditional), but it is only
   // handed the frames once the capability probe says the fill can be drawn:

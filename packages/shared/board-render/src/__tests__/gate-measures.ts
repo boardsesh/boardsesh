@@ -587,7 +587,7 @@ export function distanceOutsidePolygon(flat: number[], pointX: number, pointY: n
  * inside a 256-pixel search box. A trace that followed the box is the box, so
  * requiring it to actually touch the box is what separates the two. The
  * `boxEdgeShare` measure above is the independent second reading, and it is 0 on
- * all 15,499 shipped outlines.
+ * all 18,482 shipped outlines.
  */
 export function reachesSearchBox(flatBoardPx: number[], box: number): boolean {
   let maxX = 0;

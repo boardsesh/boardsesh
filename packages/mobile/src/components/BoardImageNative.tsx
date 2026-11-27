@@ -26,6 +26,7 @@ import { GpuClimbOverlay, type GpuClimbTransition } from './GpuClimbOverlay';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
 import { supportsAuraGpu } from '@boardsesh/board-look';
 import type { BoardName } from '@boardsesh/shared-schema';
+import { getBoardImageMirrored } from '../lib/board-image-mirroring';
 import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
 import { useNativeClimbRender } from '../hooks/use-native-climb-render';
 import type { BackgroundVariant } from '../lib/background-image-cache';
@@ -221,7 +222,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
   setIds,
   boardWidth,
   boardHeight,
-  mirrored,
+  mirrored: requestedMirrored,
   filledStyle = false,
   playSurface = false,
   editorSurface = false,
@@ -248,6 +249,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
   emptyOverlayFallback,
   showGridLabels = false,
 }: BoardImageNativeProps) {
+  const mirrored = getBoardImageMirrored(boardName, requestedMirrored);
   // Whether the live stack is held invisible under the opening-art bridge, for
   // the play board's paint-timeout telemetry. Written after each commit below.
   const paintBridgingRef = useRef(false);

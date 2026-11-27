@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { createElement, type CSSProperties, type ReactNode } from 'react';
+import { createElement, useLayoutEffect, type CSSProperties, type ReactNode } from 'react';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HoldColorOverrides } from '../../lib/hold-color-overrides';
@@ -7,6 +7,7 @@ import type { HoldColorOverrides } from '../../lib/hold-color-overrides';
 const renderer = vi.hoisted(() => ({
   apiVersion: 5,
   enabled: true,
+  fillAvailable: true,
   requests: [] as Array<{
     frames: string;
     gpuSurface?: boolean;
@@ -19,8 +20,29 @@ const renderer = vi.hoisted(() => ({
 }));
 
 vi.mock('react-native', () => ({
-  View: ({ children, style }: { children?: ReactNode; style?: CSSProperties }) =>
-    createElement('div', { style }, children),
+  View: ({
+    children,
+    style,
+    pointerEvents,
+    onLayout,
+  }: {
+    children?: ReactNode;
+    style?: CSSProperties | CSSProperties[];
+    pointerEvents?: string;
+    onLayout?: (event: { nativeEvent: { layout: { width: number; height: number } } }) => void;
+  }) => {
+    useLayoutEffect(() => {
+      onLayout?.({ nativeEvent: { layout: { width: 300, height: 400 } } });
+    }, [onLayout]);
+    return createElement(
+      'div',
+      {
+        style: Array.isArray(style) ? Object.assign({}, ...style) : style,
+        'data-pointer-events': pointerEvents,
+      },
+      children,
+    );
+  },
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {} },
   PixelRatio: { get: () => 2 },
   Platform: { OS: 'ios' },
@@ -59,7 +81,7 @@ vi.mock('../../hooks/use-native-climb-render', () => ({
       backgroundsLoading: false,
       missingBackgroundCount: 0,
       artworkIdentity: { colorScheme: 'dark' },
-      boardseshRendererAvailable: true,
+      boardseshRendererAvailable: renderer.fillAvailable,
       rendererUnavailable: false,
       gpuConfigJson: request.gpuSurface ? 'quantum-config' : null,
       gpuStatus: request.gpuSurface ? 'ready' : 'unavailable',
@@ -67,12 +89,26 @@ vi.mock('../../hooks/use-native-climb-render', () => ({
   },
 }));
 vi.mock('../GpuClimbOverlay', () => ({
-  GpuClimbOverlay: () => createElement('div', { 'data-testid': 'quantum-gpu' }),
+  GpuClimbOverlay: ({ displayMirrored }: { displayMirrored: boolean }) =>
+    createElement('div', { 'data-testid': 'quantum-gpu', 'data-mirrored': String(displayMirrored) }),
 }));
 vi.mock('../board/MoonBoardGridLabels', () => ({ MoonBoardGridLabels: () => null }));
 vi.mock('../LayeredClimbImage', () => ({
-  LayeredClimbImage: ({ liveOverlay, underOverlay }: { liveOverlay?: { node: ReactNode }; underOverlay?: ReactNode }) =>
-    createElement('div', { 'data-testid': 'standard-board' }, underOverlay, liveOverlay?.node),
+  LayeredClimbImage: ({
+    liveOverlay,
+    underOverlay,
+    mirrored,
+  }: {
+    liveOverlay?: { node: ReactNode };
+    underOverlay?: ReactNode;
+    mirrored?: boolean;
+  }) =>
+    createElement(
+      'div',
+      { 'data-testid': 'standard-board', 'data-mirrored': String(mirrored) },
+      underOverlay,
+      liveOverlay?.node,
+    ),
 }));
 
 import { BoardImageNative } from '../BoardImageNative';
@@ -92,6 +128,7 @@ const BOARD = {
 beforeEach(() => {
   renderer.requests = [];
   renderer.enabled = true;
+  renderer.fillAvailable = true;
   renderer.apiVersion = 5;
 });
 afterEach(cleanup);
@@ -115,6 +152,54 @@ describe('Quantum standard Aura path', () => {
     expect(renderer.requests.at(-1)?.gpuSurface).toBe(false);
     expect(screen.queryByTestId('quantum-gpu')).toBeNull();
     expect(screen.getAllByTestId('standard-board').length).toBeGreaterThan(0);
+  });
+
+  it.each(['player', 'thumbnail'] as const)('ignores stale Quantum mirroring on the %s', (surface) => {
+    render(
+      surface === 'player'
+        ? createElement(BoardImageNative, { ...BOARD, playSurface: true, mirrored: true })
+        : createElement(ClimbListThumbnail, { ...BOARD, mirrored: true }),
+    );
+    for (const layer of screen.getAllByTestId('standard-board')) {
+      expect(layer.getAttribute('data-mirrored')).toBe('false');
+    }
+    if (surface === 'player') expect(screen.getByTestId('quantum-gpu').getAttribute('data-mirrored')).toBe('false');
+  });
+
+  it('preserves mirrored rendering for supported Tension climbs', () => {
+    render(
+      createElement(BoardImageNative, {
+        ...BOARD,
+        boardName: 'tension',
+        layoutId: 9,
+        playSurface: true,
+        mirrored: true,
+      }),
+    );
+    expect(screen.getByTestId('quantum-gpu').getAttribute('data-mirrored')).toBe('true');
+    for (const layer of screen.getAllByTestId('standard-board')) {
+      expect(layer.getAttribute('data-mirrored')).toBe('true');
+    }
+  });
+
+  it('keeps the Quantum heatmap dot fallback in unmirrored physical coordinates', () => {
+    renderer.fillAvailable = false;
+    const { container } = render(
+      createElement(HeatmapOverlay, {
+        ...BOARD,
+        mirrored: true,
+        boardWidth: 100,
+        boardHeight: 100,
+        holdTargets: [{ id: 1000001, cx: 20, cy: 40, r: 10 }],
+        layer: {
+          cells: [{ holdId: 1000001, bucket: 4, code: 904, color: '#ff8800' }],
+          codeColors: { 904: { color: '#ff8800' } },
+          legend: { kind: 'count', edgeValues: [1, 2, 3, 4, 5], total: 5 },
+        },
+      }),
+    );
+    const dot = container.querySelector<HTMLElement>('[data-pointer-events="none"] > div');
+    expect(dot?.style.left).toBe('20%');
   });
 
   it('honours the GPU switch and preserves per-session and preview colours', () => {

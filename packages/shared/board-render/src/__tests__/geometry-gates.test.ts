@@ -33,7 +33,7 @@ import {
  * the tracer", and that is exactly why the record drifted: nobody re-ran them,
  * and the traced counts in the write-up stayed on a pre-fix run through two
  * rounds of fixes. Gates 1 to 5 are geometry against geometry over all 55
- * shards; gates 6 and 7 decode real board art, so they run a nine-board sample
+ * shards; gates 6 and 7 decode real board art, so they run a 13-config sample
  * by default and the whole catalogue under `BOARD_ART_GATES=all`.
  *
  * Woods uses photographed art with touching holds. Its calibrated mounting grid
@@ -54,11 +54,11 @@ const ALL_SHARD_KEYS = listBoardArtGeometryKeys();
  * Homewall against the commercial Original, Grasshopper (the board the issue was
  * filed against) and two MoonBoards whose art is drawn for a white wall.
  *
- * Both Woods sizes are here because they are the ONLY configs on the white-key
- * path — mask from a flood fill instead of an alpha channel, a wider search box,
- * empty mounting slots excluded from segmentation. A code path that runs only under
- * `BOARD_ART_GATES=all` is a code path that breaks on somebody else's PR, and
- * these two cost 8 seconds.
+ * Both Woods sizes cover the white-key photograph path, wider search box and
+ * empty mounting slots excluded from segmentation. Four Quantum sizes cover
+ * dark-ground keying, S Fitness' white ground and the calibrated contact seams.
+ * A code path that runs only under `BOARD_ART_GATES=all` is a code path that
+ * breaks on somebody else's PR.
  */
 const SPIKE_SAMPLE_KEYS = [
   'grasshopper/1-5',
@@ -559,8 +559,8 @@ const MIN_AREA_RECOVERY = 0.8;
 /**
  * One decode and one pass over a shard's art, feeding both art gates.
  *
- * Memoised because gates 6 and 7 ask about the same 49 boards and decoding
- * nineteen layers of Decoy twice is minutes of nothing.
+ * Memoised because gates 6 and 7 ask about the same 13 sampled configs (or all
+ * 55 under BOARD_ART_GATES=all). Decoding nineteen Decoy layers twice wastes minutes.
  */
 const artAudits = new Map<string, Promise<ArtAudit>>();
 function artAuditFor(key: string): Promise<ArtAudit> {

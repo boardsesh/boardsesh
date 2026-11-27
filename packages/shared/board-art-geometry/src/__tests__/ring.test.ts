@@ -200,7 +200,7 @@ describe('pointInRing', () => {
 
 describe('isValidOutlineRing', () => {
   it('accepts every outline in a committed shard', () => {
-    // Kilter Original 12x12 — the largest shipped shard, 476 traced holds. If
+    // Kilter Original 12x12 has 476 traced holds. If
     // the validator's bounds were tighter than the tracer's own output, a
     // correction to a real hold could not be stored in the shape it has.
     const geometry = loadBoardArtGeometry({ boardName: 'kilter', layoutId: 1, sizeId: 10 });
@@ -361,13 +361,13 @@ describe('the centre gate the write path applies', () => {
     // when the shipped boards were Kilter and friends, and Woods alone brought
     // 34 the day its shards landed. A count that has to be renumbered per board
     // measures the catalogue; the share measures the tracer, which is the thing
-    // worth asserting. Currently 0.02% (4 of 16,603) — the Woods retrace (#4971)
-    // dropped the empty mounting slots it had been tracing, which is what left
-    // bolts outside their own silhouette, so the bar tightens with it.
+    // worth asserting. This guard covers the 51 pre-Quantum configs: 4 of their
+    // 16,603 outlines (0.02%) miss the center. The Woods retrace (#4971) dropped
+    // empty mounting slots it had been tracing, which tightened this legacy bar.
     expect(missingTheirCentre.length / (outlinesChecked - quantumOutlinesChecked)).toBeLessThan(0.001);
-    // Quantum's independent optical fit places ~2% of its centers on a physical
-    // hold edge. All still pass the unchanged 0.25r center gate above, while
-    // board-render's geometry gates pin the inspected ids and distances exactly.
+    // Quantum's independent optical fit leaves 35 of its 1,879 traced centers
+    // (1.9%) just outside a physical hold edge. All still pass the unchanged 0.25r
+    // center gate above; board-render pins the inspected ids and distances exactly.
     if (quantumOutlinesChecked > 0) {
       expect(quantumMissingTheirCentre.length / quantumOutlinesChecked).toBeLessThan(0.025);
     }

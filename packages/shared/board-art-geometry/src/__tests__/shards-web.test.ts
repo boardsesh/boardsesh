@@ -24,7 +24,7 @@ describe('generated/shards.web.ts', () => {
   });
 
   it('offers nothing synchronously, which is what makes the loader wait', async () => {
-    // If this map were ever populated on web, `require` would pull all 51 shards
+    // If this map were ever populated on web, `require` would pull all 55 shards
     // back into the entry chunk and undo the split without failing anything.
     const web = await import('../generated/shards.web');
     expect(Object.keys(web.BOARD_ART_GEOMETRY_SHARDS)).toEqual([]);
