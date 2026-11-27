@@ -1,15 +1,18 @@
 import { useCallback, useMemo, useState } from 'react';
-import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
 import type { Climb } from '@boardsesh/shared-schema';
 import { FeatureFlagsProvider } from '../../providers/feature-flags-provider';
 import { ContentRenderObserverProvider, type ContentRenderObservation } from '../../components/ContentRenderObserver';
+import { HeatmapOverlay } from '../../components/board/HeatmapOverlay';
+import type { HeatLayer } from '../../components/board/heatmap-buckets';
 import { InteractiveCreateBoard } from '../../components/create-climb/InteractiveCreateBoard';
 import { ClimbsStory } from '../../components/climbs/Climbs.stories';
 import { Text } from '../../components/Text';
 import { getCreateBoardHolds } from '../../lib/create-board-holds';
 import { getBoardRenderData } from '../../lib/board-details';
+import { requestedBoardRenderMode, useBoardRenderSettings } from '../../lib/board-render-settings';
 import type { BoardArtReadiness } from '../../lib/board-render/ready-board-art';
 import { climbOverlayGpuApiVersion } from '../../lib/board-render/gpu-native-capability';
 import { STORY_CLIMBS } from '../fixtures/climbs';
@@ -80,6 +83,17 @@ function Editor({ model, onReady, onError }: StoryRenderControls & { model: Mode
   const fixture = fixtures[model];
   const geometry = useMemo(() => getCreateBoardHolds({ ...fixture.board, setIds: [1] }), [fixture]);
   const [frames, setFrames] = useState(fixture.climbs[0].frames);
+  const [heatmapVisible, setHeatmapVisible] = useState(false);
+  const heatLayer = useMemo<HeatLayer>(
+    () => ({
+      cells: (geometry?.holdTargets ?? [])
+        .filter((_, index) => index % 23 === 0)
+        .map((hold) => ({ holdId: hold.id, bucket: 4, code: 904, color: '#ff8800' })),
+      codeColors: { 904: { color: '#ff8800' } },
+      legend: { kind: 'count', edgeValues: [1, 2, 3, 4, 5], total: 5 },
+    }),
+    [geometry],
+  );
   const window = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const readiness = useCallback(
@@ -110,8 +124,21 @@ function Editor({ model, onReady, onError }: StoryRenderControls & { model: Mode
         renderWidth={width}
         renderHeight={(width * geometry.boardHeight) / geometry.boardWidth}
         onArtReadinessChange={readiness}
+        overlay={
+          heatmapVisible ? (
+            <HeatmapOverlay
+              {...fixture.board}
+              layer={heatLayer}
+              holdTargets={geometry.holdTargets}
+              boardWidth={geometry.boardWidth}
+              boardHeight={geometry.boardHeight}
+            />
+          ) : undefined
+        }
       />
-      <Text variant="footnote">Tap a hold to add it</Text>
+      <Pressable accessibilityRole="button" onPress={() => setHeatmapVisible((visible) => !visible)}>
+        <Text variant="footnote">{heatmapVisible ? 'Hide heatmap' : 'Show heatmap'}</Text>
+      </Pressable>
     </View>
   );
 }
@@ -123,6 +150,7 @@ function Evidence({
   onError,
 }: StoryRenderControls & { model: Model; surface: 'player' | 'list' | 'editor' }) {
   const fixture = fixtures[model];
+  const { settings, loaded } = useBoardRenderSettings();
   const presentation = useMemo(() => ({ ...fixture, label: `Quantum ${model.toUpperCase()}` }), [fixture, model]);
   const displayed = useCallback(
     (observation: ContentRenderObservation) => {
@@ -134,6 +162,9 @@ function Evidence({
     },
     [onReady, model],
   );
+  if (!loaded) return null;
+  if (requestedBoardRenderMode(settings) !== 'aura')
+    throw new Error('Quantum evidence requires Aura in simulator Board settings');
   return (
     <FeatureFlagsProvider flags={flags}>
       <StoryBoardFixtureContext.Provider value={presentation}>

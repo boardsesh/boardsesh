@@ -1,5 +1,5 @@
 import type { QuantumModelName } from '@boardsesh/board-constants/quantum';
-import type { QuantumBoardDetails } from './quantum-config';
+import { getQuantumModelForConfig, type QuantumBoardDetails } from './quantum-config';
 
 type ArtworkCrop = readonly [left: number, top: number, right: number, bottom: number];
 
@@ -55,4 +55,37 @@ export function projectQuantumBoardArtwork(
       r: hold.r * radiusScale,
     })),
   };
+}
+
+// Visible contact edges measured from original lossless standard-family art.
+// XL crop-relative seams: (688,747)..(699,766), (1112,845)..(1103,855).
+// The 3058/3063 and 6094/6086 bodies touch through antialiasing; these one-pixel
+// boundaries join existing ground so each physical hold traces as one body.
+const SOURCE_CONTACT_SEAMS = [
+  [
+    [814, 791],
+    [816, 794],
+    [818, 797],
+    [820, 801],
+    [822, 806],
+    [825, 810],
+  ],
+  [
+    [1238, 889],
+    [1236, 891],
+    [1234, 893],
+    [1232, 896],
+    [1229, 899],
+  ],
+] as const;
+
+/** Offline segmentation calibration in original cropped image pixels. */
+export function getQuantumArtworkContactSeams(
+  layoutId: number,
+  sizeId: number,
+): ReadonlyArray<ReadonlyArray<readonly [number, number]>> {
+  const resolved = getQuantumModelForConfig(layoutId, sizeId);
+  if (!resolved || resolved.key === 'belay' || resolved.key === 's') return [];
+  const [left, top] = CROPS[resolved.key];
+  return SOURCE_CONTACT_SEAMS.map((seam) => seam.map(([x, y]) => [x - left, y - top] as const));
 }

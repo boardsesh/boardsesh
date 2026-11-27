@@ -61,6 +61,11 @@ import {
   getArtGeometryDetails as getBoardDetailsForBoard,
   resolveArtPath,
 } from './quantum-art-geometry-source';
+import { getQuantumArtworkContactSeams } from '../packages/shared/board-config/src/quantum-art-projection';
+import {
+  placementsWithoutOwnPhotoBody,
+  cutPhotoContactSeams,
+} from '../packages/shared/board-art-geometry/src/segmentation/photo-ownership';
 import { GROUND_CEILING, buildDarkKeyMask } from '../packages/shared/board-art-geometry/src/segmentation/dark-key';
 import { WOODS_OCCUPIED_HOLD_IDS } from '../packages/board-constants/src/woods';
 import { woodsSizeIdToDimension } from '../packages/shared/board-config/src/woods-config';
@@ -1673,9 +1678,21 @@ function photoMaskProvider(keyedLayers: KeyedPhotoLayer[]): MaskProvider {
 
     const fields: TraceField[] = [];
     for (const [index, layer] of layers.entries()) {
-      const drawn = perLayer[index];
-      if (drawn.length === 0) continue;
       const keyed = keyedLayers[index];
+      if (details.board_name === 'quantum') {
+        cutPhotoContactSeams(
+          keyed.mask,
+          layer.art.width,
+          layer.art.height,
+          getQuantumArtworkContactSeams(details.layout_id, details.size_id),
+        );
+      }
+      const withoutOwnBody =
+        details.board_name === 'quantum'
+          ? placementsWithoutOwnPhotoBody(keyed.mask, layer.art.width, layer.art.height, perLayer[index])
+          : new Set<number>();
+      const drawn = perLayer[index].filter((placement) => !withoutOwnBody.has(placement.id));
+      if (drawn.length === 0) continue;
 
       const groups = mergeCoincidentPlacements(drawn);
       const byId = new Map(drawn.map((placement) => [placement.id, placement]));
