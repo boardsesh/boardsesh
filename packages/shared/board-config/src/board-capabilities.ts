@@ -195,6 +195,16 @@ export type BoardCapabilities = {
    * `withdrawnCatalogClimbCondition` (packages/db) on the server and
    * `withdrawnClimbTombstoneSql` (packages/shared/offline-sync, which mirrors
    * {@link HIDDEN_WITHDRAWN_CLIMB_BOARD_NAMES}) on the device.
+   *
+   * The flag drives the server's climb reads (detail, favourites, playlists,
+   * logbooks, beta links), the public snapshots (eligibility and the
+   * rebuild a withdrawal forces), the sync redaction, the device's pull and
+   * snapshot import, and the app's local reads and tap checks. Three things stay
+   * with each board: its importer, which unlists the row and keeps the supplier
+   * id; its controller's lighting preflight (`quantum-bluetooth-provider.tsx`
+   * calls `isClimbWithdrawn`); and, when one climb belongs to several size
+   * scopes, the pull's newer-row guard (`preserveNewerRows` in offline-sync
+   * `pull-client.ts`), which only Quantum sets today.
    */
   withdrawnCatalogClimbs: 'readable' | 'hidden';
 };
@@ -385,8 +395,9 @@ export const PUBLIC_CLIMB_LINK_BOARD_NAMES = SUPPORTED_BOARDS.filter(supportsPub
 
 /**
  * Boards whose withdrawn catalogue climbs leave every read
- * (`withdrawnCatalogClimbs: 'hidden'`). The server and device predicates are
- * built from this list, so a new board joins them by setting its row above.
+ * (`withdrawnCatalogClimbs: 'hidden'`). The server predicates are built from
+ * this list and the device predicates from offline-sync's mirror of it, which a
+ * parity test keeps equal. What else a new board needs: the field's doc above.
  */
 export const HIDDEN_WITHDRAWN_CLIMB_BOARD_NAMES: readonly BoardName[] = SUPPORTED_BOARDS.filter(
   (boardName) => CAPABILITIES_BY_BOARD[boardName].withdrawnCatalogClimbs === 'hidden',

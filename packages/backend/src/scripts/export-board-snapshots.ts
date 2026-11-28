@@ -61,6 +61,7 @@ import {
 } from '@boardsesh/offline-sync';
 import { createPool, closePool } from '@boardsesh/db/client';
 import { QUANTUM_RELEASED_LAYOUT_IDS } from '@boardsesh/board-constants/quantum';
+import { hidesWithdrawnCatalogClimbs } from '@boardsesh/board-config';
 import { snapshotCatalogEligibility } from './catalog-snapshot-eligibility';
 import { normalizeRow, toIso, type RawRow } from '../graphql/resolvers/sync/row-normalize';
 import { uploadToS3, isS3Configured, getPublicUrl, getFromS3Strict, deleteFromS3, listS3Objects } from '../storage/s3';
@@ -707,12 +708,13 @@ async function layoutRefreshReason(params: {
   // nightly. An entry with no shape at all predates the field and is shape 1.
   if ((previousEntry.artifactShape ?? 1) !== artifactShape) return 'stale-shape';
 
-  // Withdrawals are excluded from the ordinary delta threshold. Replace any
-  // pre-withdrawal artifact at the next stable scan, even for an empty layout.
-  if (pair.boardType === 'quantum') {
+  // On a board that hides withdrawn climbs, a withdrawal is excluded from the
+  // ordinary delta threshold. Replace any pre-withdrawal artifact at the next
+  // stable scan, even for an empty layout.
+  if (hidesWithdrawnCatalogClimbs(pair.boardType)) {
     const [withdrawn] = await sqlClient`
       SELECT 1 FROM board_climbs
-      WHERE board_type = 'quantum' AND layout_id = ${pair.layoutId}
+      WHERE board_type = ${pair.boardType} AND layout_id = ${pair.layoutId}
         AND user_id IS NULL AND NOT is_boardsesh_authored AND is_draft IS NOT TRUE
         AND is_listed IS NOT TRUE
         AND updated_at >= ${previousEntry.builtAt}::timestamp

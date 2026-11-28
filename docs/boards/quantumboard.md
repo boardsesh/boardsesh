@@ -118,15 +118,25 @@ A newer upstream revision can restore a retired route with its original holds.
 Snapshot and reference exports apply the same eligibility to associated stats,
 grades and aliases. Personal response collections never become shared catalogue rows.
 
-The hiding is driven by a capability, not by Quantum checks. Quantum's row in the
-board capability table sets `withdrawnCatalogClimbs: 'hidden'`, and every read
-that hides a withdrawn climb follows that flag: on the
-server through `withdrawnCatalogClimbCondition` and `unavailableCatalogClimbCondition`
-in `packages/db`, on the phone through the tombstone predicate in
-`@boardsesh/offline-sync/withdrawn-climb`. MoonBoard and Kilter set it to
-`'readable'`, so their withdrawn climbs leave browsing but still open by uuid. A
-board whose supplier withdraws climbs that must not be shown sets the flag and
+Quantum's row in the board capability table sets `withdrawnCatalogClimbs:
+'hidden'`, and the hiding follows that flag rather than Quantum checks: the
+server's climb reads for detail, favourites, playlists, logbooks and beta links
+(`withdrawnCatalogClimbCondition` and `unavailableCatalogClimbCondition` in
+`packages/db`), the public snapshots' eligibility and the rebuild a withdrawal
+forces, the sync redaction, the phone's pull and snapshot import, and the app's
+local reads and tap checks (the tombstone predicate in
+`@boardsesh/offline-sync/withdrawn-climb`). MoonBoard and Kilter set it to
+`'readable'`, so their withdrawn climbs leave browsing but still open by uuid.
+
+A board whose supplier withdraws climbs that must not be shown sets the flag and
 adds its name to the device mirror; the mirror's parity test fails until it does.
+Three Quantum-specific pieces it would also need its own version of: the
+importer that unlists the row and keeps the supplier id in
+`controller_route_uuid`, the controller's lighting preflight
+(`quantum-bluetooth-provider.tsx` calls `isClimbWithdrawn`), and, if one climb
+belongs to several size scopes, the pull's newer-row guard (`preserveNewerRows`
+in `pull-client.ts`). Model release gating and the Quantum rollout check are
+separate rules and stay Quantum's.
 
 The API's `-1` angle sentinel stays unknown, rather than becoming a real climb
 angle. Known grade representations retain their mapping; unknown representations

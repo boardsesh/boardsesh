@@ -313,6 +313,8 @@ describe('smartPlaylist resolver', () => {
       expect(where).toContain(
         `(NOT (${unavailableBoardGate}) OR EXISTS (SELECT 1 FROM board_climbs privacy_reference_climb`,
       );
+      // Typed out too, so a regression in the gate helper itself fails here.
+      expect(where).toContain(`NOT ("boardsesh_ticks"."board_type" IN ('quantum'))`);
       expect(where).toContain(
         'privacy_reference_climb.uuid = COALESCE("board_climb_aliases"."canonical_uuid", "boardsesh_ticks"."climb_uuid")',
       );

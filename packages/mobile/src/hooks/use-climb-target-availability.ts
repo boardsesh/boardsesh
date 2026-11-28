@@ -19,6 +19,15 @@ function mayBeWithdrawnTarget(climb: Climb, board: BoardConfig | null): boolean 
   return boardHidesWithdrawnClimbs(climb.boardType) || boardHidesWithdrawnClimbs(board?.boardName);
 }
 
+/**
+ * A tap on this climb must be re-checked before it runs: Quantum's rollout can
+ * hide its board ({@link isClimbTargetBoardAvailable}), and a board that hides
+ * withdrawn climbs can hold a tombstone for it. Any other climb runs at once.
+ */
+export function climbTargetNeedsTapCheck(climb: Climb, board: BoardConfig | null): boolean {
+  return isQuantumClimbTarget(climb, board) || mayBeWithdrawnTarget(climb, board);
+}
+
 function isClimbTargetBoardAvailable(
   climb: Climb,
   board: BoardConfig | null,
@@ -52,13 +61,14 @@ export function useClimbTargetAvailable(climb: Climb | null, board: BoardConfig 
 }
 
 /**
- * Native controls and menus can retain a callback across a re-render. Check
- * the local tombstone on tap and recheck the committed target and rollout after
- * the lookup before dispatching an action on a climb that may be withdrawn.
+ * Native controls and menus can retain a callback across a re-render. For a
+ * climb that {@link climbTargetNeedsTapCheck}, check the local tombstone on tap
+ * and recheck the committed target and rollout after the lookup before
+ * dispatching the action.
  */
 export function useRunAvailableClimbAction(climb: Climb | null, board: BoardConfig | null) {
   const isBoardConfigVisible = useIsBoardConfigVisible();
-  const mayBeWithdrawn = climb !== null && mayBeWithdrawnTarget(climb, board);
+  const needsTapCheck = climb !== null && climbTargetNeedsTapCheck(climb, board);
   const available = useMemo(
     () => !climb || isClimbTargetBoardAvailable(climb, board, isBoardConfigVisible),
     [climb, board, isBoardConfigVisible],
@@ -75,16 +85,16 @@ export function useRunAvailableClimbAction(climb: Climb | null, board: BoardConf
     generation: number;
   } | null>(null);
   useLayoutEffect(() => {
-    if (!available || !mayBeWithdrawn || !climbUuid) return;
+    if (!available || !needsTapCheck || !climbUuid) return;
     currentClimb.current = { uuid: climbUuid, board, boardType: climbBoardType, layoutId: climbLayoutId, generation };
     return () => {
       currentClimb.current = null;
     };
-  }, [available, mayBeWithdrawn, climbUuid, climbBoardType, climbLayoutId, board, generation]);
+  }, [available, needsTapCheck, climbUuid, climbBoardType, climbLayoutId, board, generation]);
 
   return useCallback(
     (run: () => void) => {
-      if (!mayBeWithdrawn) {
+      if (!needsTapCheck) {
         run();
         return;
       }
@@ -107,6 +117,6 @@ export function useRunAvailableClimbAction(climb: Climb | null, board: BoardConf
           // A failed local read leaves the action unconfirmed.
         });
     },
-    [mayBeWithdrawn, climbUuid, climbBoardType, climbLayoutId, board, generation],
+    [needsTapCheck, climbUuid, climbBoardType, climbLayoutId, board, generation],
   );
 }
