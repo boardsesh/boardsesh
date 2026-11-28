@@ -20,6 +20,7 @@ export {
 } from './reconcile-identity';
 export { SHARED_EVENTS, type SharedEventKey, type SharedEventName } from './events';
 export { parseAccountCreationReceipt, type AccountCreationReceipt } from './account-creation';
+export { QR_ENTRY_SOURCES, type QrEntrySource } from './qr-entry-sources';
 // Release-watch props on BLE Picker Devices Resolved (2.7): one picker session each.
 export { blePickerSessionProps, type BlePickerSessionInput, type BlePickerSessionProps } from './ble-picker-events';
 // Props shared by more than one event, built in one place so the emitters agree.

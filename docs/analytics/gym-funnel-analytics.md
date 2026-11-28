@@ -162,6 +162,28 @@ accepts or emits latitude, longitude, or accuracy in any shape, and a test
 asserts over `Object.keys` of every payload that nothing matching
 `/lat|lon|lng|coord|accuracy/i` can appear.
 
+## QR entry source vocabulary
+
+`QR_ENTRY_SOURCES` and `QrEntrySource` in `@boardsesh/analytics` define the
+shared source list for QR attribution:
+
+| Source | QR code |
+| --- | --- |
+| `gym-poster` | Printed gym poster |
+| `board-poster` | Printed board poster |
+| `kiosk` | Kiosk screen's per-board install code |
+| `board-share` | In-app wall or board sharing code |
+| `session-invite` | In-app session invite code |
+| `embedded-session` | Embedded display's session join code |
+| `app-share` | Share Boardsesh code |
+| `tv-setup` | TV setup or reinstall code in gym management |
+
+This list reserves source labels; it does not add tracking or change the
+existing landing parameter contract below. `tv-setup` belongs to anonymous
+kiosk operational telemetry, so setup and reinstalls can be measured separately
+from climber acquisition. Tour preview codes currently contain a non-navigable
+placeholder; preview views are engagement, not QR arrivals.
+
 ## QR landing param contract
 
 Printed QR codes point at a normal Boardsesh URL carrying two extra params:
