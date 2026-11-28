@@ -95,9 +95,10 @@ function holeBindings(layout: TnutLayout, frame: ReferenceSize): Map<string, num
     // Complementary slots are shared by equally close holes. Resolve using the
     // original slot, so moving its on-screen position cannot change ownership.
     const available = leds.map((led) => ({ led, point: originalPosition(led) }));
-    // A shared slot can sit above or below a hole. A climber looks for a hold's
-    // light underneath it, so a slot above the hole never lights it, even when
-    // no slot below is left: that hold stays unlit for a hand-made link instead.
+    // A shared slot can sit above, beside or below a hole. A climber looks for a
+    // hold's light underneath it, so a slot above the hole never lights it. A
+    // hole with no slot below can still use a side slot in its own row; with
+    // neither, that hold stays unlit for a hand-made link instead.
     const notAbove = (hole: TnutPoint, slot: TnutPoint) => slot.y >= hole.y - 1e-6;
     for (const [holeIndex, hole] of layout.holes.entries()) {
       let nearest = Infinity;

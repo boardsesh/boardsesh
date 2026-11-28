@@ -170,8 +170,9 @@ ID. A large hold can own several holes. Holes outside a hold remain unassigned.
 Generated LEDs retain their hole association when moved. Older generated IDs
 recover their original positions. Manual LEDs bind to nearby placement slots
 within a bounded distance. Complementary positions use the nearest opposite-phase
-slots at or below the hole, never one above it: a hole with no slot below stays
-unlit (and red in Holds and LEDs) rather than borrowing the slot above. They
+slots at or below the hole, never one above it. A hole with no slot below can
+still use a side slot in its own row; with neither, it stays unlit (and red in
+Holds and LEDs) rather than borrowing the slot above. They
 retain their original positions after movement. Physical indices use
 the saved cable order, initial skips and gaps. Unwired positions have no index.
 
