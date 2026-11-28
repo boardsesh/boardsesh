@@ -9,6 +9,7 @@ Platform-independent TypeScript contracts and session helpers for climbing board
 | `@boardsesh/aurora-ble-protocol` | Aurora v2/v3 | RGB; semantic roles with an explicit palette |
 | `@boardsesh/kilter-ble-protocol` | Aurora with Kilter defaults | RGB; semantic roles with an explicit palette |
 | `@boardsesh/moonboard-ble-protocol` | MoonBoard ASCII | Start, hand, finish |
+| `@boardsesh/quantum-ble-protocol` | Quantum binary frames with CRC-16 | Per-player layers through `activateLayer()`; `show()` and `clear()` are unsupported |
 | `@boardsesh/woods-ble-protocol` | Woods ASCII | Start, hand, foot, finish |
 | `@boardsesh/wled-ble-protocol` | Framed JSON over the WLED BLE usermod | RGB; semantic roles with an explicit palette |
 

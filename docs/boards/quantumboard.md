@@ -233,21 +233,9 @@ Open Graph images, and links. Issue-linked TODOs mark the temporary guards.
 
 ## Layer control and presence
 
-Boardsesh currently understands four simultaneous colored layers and caps activation
-at 92 distinct diode addresses. Each player controls one layer. These are current application limits; the
-firmware's layer capacity and repeated-chunk behavior are unverified. The
-provider and encoder reject oversized activation before any command. Commands
-must fit one complete, mode-appropriate GATT write; frames are not silently
-fragmented. Persistent binary `QB_` boards use writes with response and `QBB_`
-boards use writes without response; both require separate roster confirmation.
-
-Discovery prefers the actual `fff0` service over `ffe0` and probes `fff5` for
-binary configuration. The older JSON protocol and unknown model types are
-explicitly unsupported. Finite activation durations set the explicit-duration
-flag; the board-default sentinel remains `ffff`. Scoped removal frames are 20
-bytes. Android tries MTUs 512, 247, and 185 and still checks actual write capacity.
-Whole notification values accept the documented reserved byte and trailers;
-oversized rosters cannot be truncated or reinterpreted as embedded packets.
+Each player controls one layer; Boardsesh supports four layers and 92 diodes per
+activation. The wire format, write modes, roster transactions and those limits
+are specified in the [Quantum BLE package](../../packages/shared/quantum-ble-protocol/docs/QUANTUM_BLUETOOTH_PROTOCOL_SPEC.md).
 
 Lighting uses an explicit free color and a device-local player identity. Changing
 color moves the same player. A solo climber has one local player. A shared session

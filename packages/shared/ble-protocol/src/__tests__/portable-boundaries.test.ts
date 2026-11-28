@@ -10,6 +10,7 @@ const portablePackages = [
   'aurora-ble-protocol',
   'kilter-ble-protocol',
   'moonboard-ble-protocol',
+  'quantum-ble-protocol',
   'woods-ble-protocol',
   'wled-ble-protocol',
 ];

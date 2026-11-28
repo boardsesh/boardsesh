@@ -395,6 +395,7 @@ jobs:
               - 'packages/shared/aurora-ble-protocol/**'
               - 'packages/shared/kilter-ble-protocol/**'
               - 'packages/shared/moonboard-ble-protocol/**'
+              - 'packages/shared/quantum-ble-protocol/**'
               - 'packages/shared/woods-ble-protocol/**'
               - 'packages/shared/board-config/**'
               - 'packages/shared/board-layers/**'

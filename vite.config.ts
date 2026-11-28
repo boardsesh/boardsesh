@@ -160,6 +160,7 @@ export default defineConfig({
       './packages/shared/aurora-ble-protocol/vite.config.ts',
       './packages/shared/kilter-ble-protocol/vite.config.ts',
       './packages/shared/moonboard-ble-protocol/vite.config.ts',
+      './packages/shared/quantum-ble-protocol/vite.config.ts',
       './packages/shared/woods-ble-protocol/vite.config.ts',
       './packages/shared/board-config/vite.config.ts',
       './packages/shared/board-art-geometry/vite.config.ts',
@@ -988,6 +989,9 @@ export default defineConfig({
       'typecheck:moonboard-ble-protocol': {
         command: 'pnpm --filter @boardsesh/moonboard-ble-protocol run typecheck',
       },
+      'typecheck:quantum-ble-protocol': {
+        command: 'pnpm --filter @boardsesh/quantum-ble-protocol run typecheck',
+      },
       'typecheck:woods-ble-protocol': {
         command: 'pnpm --filter @boardsesh/woods-ble-protocol run typecheck',
       },
@@ -1237,6 +1241,7 @@ export default defineConfig({
           'typecheck:aurora-ble-protocol',
           'typecheck:kilter-ble-protocol',
           'typecheck:moonboard-ble-protocol',
+          'typecheck:quantum-ble-protocol',
           'typecheck:woods-ble-protocol',
           'typecheck:queue',
           'typecheck:privacy',
