@@ -7,6 +7,7 @@ import {
   generateLedPositions,
   readLedPositions,
   readTnutWiring,
+  requiredLedCount,
   setWiringSkip,
   traceLedPath,
   type CableDirection,
@@ -393,5 +394,26 @@ describe('persisted LED setup validation', () => {
     expect(readLedPositions([leds[0], leds[0]])).toBeNull();
     expect(readLedPositions([{ ...leds[0], x: Number.NaN }])).toBeNull();
     expect(readLedPositions([{ ...leds[0], y: 1.01 }])).toBeNull();
+  });
+});
+
+describe('requiredLedCount', () => {
+  const wiring: TnutWiring = {
+    direction: 'custom',
+    startCorner: 'tl',
+    paths: [
+      ['a', 'b'],
+      ['c', 'd'],
+    ],
+    skips: [],
+  };
+  it('is one past the highest physical index, skipped and leading LEDs included', () => {
+    expect(requiredLedCount(wiring)).toBe(4);
+    expect(requiredLedCount(setWiringSkip(wiring, 'c', 'd', 5))).toBe(9);
+    expect(requiredLedCount({ ...wiring, initialSkip: 10 })).toBe(14);
+  });
+  it('is null with nothing wired', () => {
+    expect(requiredLedCount(undefined)).toBeNull();
+    expect(requiredLedCount({ ...wiring, paths: [] })).toBeNull();
   });
 });

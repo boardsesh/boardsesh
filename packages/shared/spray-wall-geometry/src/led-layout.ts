@@ -359,6 +359,16 @@ export function assignLedIndices(wiring: TnutWiring): { id: string; index: numbe
     }),
   );
 }
+/**
+ * How many LEDs the controller must drive for this wiring: one past the highest physical index,
+ * so skipped LEDs count too. `null` when nothing is wired yet.
+ */
+export function requiredLedCount(wiring: TnutWiring | undefined): number | null {
+  if (!wiring) return null;
+  let highest = -1;
+  for (const { index } of assignLedIndices(wiring)) highest = Math.max(highest, index);
+  return highest < 0 ? null : highest + 1;
+}
 /** Physical LED indices in top-to-bottom rows, left-to-right within every row. */
 export function rowMajorLedIndices(leds: LedPosition[], wiring: TnutWiring, layout?: TnutLayout): number[] {
   const indices = new Map(assignLedIndices(wiring).map(({ id, index }) => [id, index]));

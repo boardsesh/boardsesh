@@ -15,8 +15,14 @@ import {
 import { digest, CryptoDigestAlgorithm } from 'expo-crypto';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { shareAsync } from 'expo-sharing';
-import { normalizeLocalControllerUrl } from '@boardsesh/led-controller';
-import { WledInstallerError, isObject, readManifest, type InstallerIO, type InstallJournal } from './engine';
+import {
+  WledInstallerError,
+  installerControllerUrl,
+  isObject,
+  readManifest,
+  type InstallerIO,
+  type InstallJournal,
+} from './engine';
 
 const AWAKE_TAG = 'boardsesh-wled-install';
 const activeUploads = new Set<string>();
@@ -40,6 +46,7 @@ async function request<Result>(
   read: (response: Response) => Promise<Result>,
   timeoutMs = 8000,
   allowAssetRedirects = false,
+  jsonBody?: string,
 ): Promise<Result> {
   const abortController = new AbortController();
   const cancel = () => abortController.abort();
@@ -51,7 +58,11 @@ async function request<Result>(
       signal: abortController.signal,
       credentials: 'omit',
       redirect: allowAssetRedirects ? 'follow' : 'error',
-      headers: { Accept: allowAssetRedirects ? 'application/octet-stream' : 'application/json' },
+      headers: {
+        Accept: allowAssetRedirects ? 'application/octet-stream' : 'application/json',
+        ...(jsonBody === undefined ? {} : { 'Content-Type': 'application/json' }),
+      },
+      ...(jsonBody === undefined ? {} : { method: 'POST', body: jsonBody }),
     });
     if (response.status === 401 || response.status === 403) throw new WledInstallerError('locked');
     if (!response.ok) throw new WledInstallerError('unavailable');
@@ -77,8 +88,20 @@ export const nativeInstallerIO: InstallerIO = {
   },
   async checkUpdateAccess(url, signal) {
     // WLED returns the update form only after checking its PIN and OTA locks.
-    const form = await request(`${normalizeLocalControllerUrl(url)}/update`, signal, (response) => response.text());
+    const form = await request(`${installerControllerUrl(url)}/update`, signal, (response) => response.text());
     if (!form.includes('/update') || !form.includes('multipart/form-data')) throw new WledInstallerError('locked');
+  },
+  async writeConfig(url, changes, signal) {
+    // WLED merges the posted keys into its settings and saves them; a settings PIN answers 401.
+    const result = await request(
+      `${installerControllerUrl(url)}/json/cfg`,
+      signal,
+      (response) => response.json(),
+      8000,
+      false,
+      JSON.stringify(changes),
+    );
+    if (!isObject(result) || result.success !== true) throw new WledInstallerError('unavailable');
   },
   async saveBackup(identity, config, presets) {
     const directory = await ensureDirectory();
@@ -121,7 +144,7 @@ export const nativeInstallerIO: InstallerIO = {
   async upload(url, uri, signal, progress) {
     ensureNative();
     if (signal.aborted) throw new WledInstallerError('cancelled');
-    const target = normalizeLocalControllerUrl(url);
+    const target = installerControllerUrl(url);
     if (activeUploads.has(target)) throw new WledInstallerError('unavailable');
     const task = createUploadTask(
       `${target}/update`,

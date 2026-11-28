@@ -80,6 +80,26 @@
       "exportBackup": "Exporter la sauvegarde WLED",
       "securitySettings": "Ouvrir la sécurité de WLED",
       "backupHint": "La sauvegarde comprend la configuration et les préréglages. Exporte-la en lieu sûr avant l’installation.",
+      "controllerName": "Nom du contrôleur",
+      "controllerNameHint": "Les grimpeurs voient ce nom quand ils cherchent le Bluetooth de ton Spraywall. {{used}} octets sur {{max}} ; une lettre accentuée en compte deux.",
+      "droppedFeatures": "{{features}} est activé, mais ce firmware ne l’inclut pas : il ne fonctionnera plus après la mise à jour. Ses réglages restent dans ta sauvegarde exportée.",
+      "confirmDroppedFeatures": "Je comprends que {{features}} ne fonctionnera plus",
+      "droppedFeaturesDone": "{{features}} ne fonctionne plus sur ce contrôleur. Ses réglages sont dans ta sauvegarde exportée.",
+      "differences": "Réglages modifiés : {{paths}}",
+      "confirmKeepSettings": "J’ai vérifié ces réglages dans WLED et je veux les garder tels qu’ils sont",
+      "keepSettings": "Garder ces réglages",
+      "ledOutputs": {
+        "needed": "Ce contrôleur pilote {{current}} LED, mais le câblage de ton Spraywall en demande {{required}}. Les LED au-delà de {{current}} ne s’allumeront pas.",
+        "confirm": "Régler le contrôleur sur {{required}} LED sur sa sortie GPIO{{pin}}",
+        "otherOutputs": "Ses autres sorties LED sont supprimées. Laisse désactivé si tu as câblé plusieurs sorties exprès."
+      },
+      "features": {
+        "mqtt": "MQTT",
+        "hue": "Synchronisation Hue",
+        "alexa": "Alexa",
+        "ir": "Télécommande infrarouge",
+        "espnow": "ESP-NOW"
+      },
       "confirmModel": "J’ai vérifié l’étiquette : Gledopto GL-C-015WL-D",
       "confirmNoAudio": "J’accepte cette version sans effets réactifs au son",
       "install": "Installer le firmware vérifié",
@@ -88,7 +108,28 @@
       "betaReady": "Ta sauvegarde est enregistrée. Confirme le modèle du contrôleur et le statut bêta avant l’installation.",
       "betaWarning": "Bêta : les tests OTA, Android et iOS sur appareils réels ne sont pas terminés. L’installation peut échouer et tu devras peut-être restaurer les réglages WLED depuis ta sauvegarde.",
       "confirmBeta": "Je comprends que ce firmware est en bêta et que les tests sur appareils réels ne sont pas terminés",
-      "installBeta": "Installer le firmware bêta"
+      "installBeta": "Installer le firmware bêta",
+      "hotspot": {
+        "toggle": "Installer sans Wi-Fi (point d’accès du contrôleur)",
+        "hint": "Pas de Wi-Fi à ton Spraywall ? Boardsesh télécharge d’abord le firmware avec n’importe quelle connexion, données mobiles comprises. Ensuite ton téléphone rejoint le point d’accès du contrôleur pour l’installer, puis le quitte une fois terminé.",
+        "ssid": "Nom du point d’accès du contrôleur",
+        "password": "Ce mot de passe ne fonctionne pas. Les mots de passe du point d’accès WLED font de 8 à 63 caractères, et celui par défaut est wled1234.",
+        "passwordLabel": "Mot de passe du point d’accès du contrôleur",
+        "start": "Télécharger et connecter",
+        "downloading": "Téléchargement et vérification du firmware avant la connexion…",
+        "connecting": "Connexion à ton contrôleur… Accepte la demande Wi-Fi si ton téléphone te la propose.",
+        "rebooting": "WLED redémarre. Reconnexion à son point d’accès…",
+        "complete": "Bluetooth installé, et ton téléphone a quitté le point d’accès du contrôleur. Choisis Bluetooth, puis Chercher un contrôleur Bluetooth.",
+        "failed": "Impossible de terminer via le point d’accès du contrôleur. Ton téléphone l’a quitté, réessaie.",
+        "notFound": "Impossible de rejoindre {{ssid}}. Vérifie que le contrôleur est allumé et à proximité, et que le nom du réseau et le mot de passe sont corrects.",
+        "denied": "Ton téléphone n’a pas rejoint le point d’accès du contrôleur. Réessaie et choisis Se connecter quand il te le demande.",
+        "timeout": "La connexion au point d’accès du contrôleur a pris trop de temps. Rapproche-toi du contrôleur et réessaie.",
+        "unsupported": "Rejoindre le point d’accès depuis Boardsesh nécessite Android 10 ou plus récent. Rejoins {{ssid}} dans tes réglages Wi-Fi, ouvre 4.3.2.1 dans un navigateur et connecte WLED à un réseau Wi-Fi. Installe ensuite via le Wi-Fi.",
+        "lost": "WLED a redémarré, mais ton téléphone n’a pas pu rejoindre son point d’accès. Laisse le contrôleur allumé, puis vérifie l’installation.",
+        "locked": "WLED a refusé la mise à jour. Rejoins {{ssid}} dans tes réglages Wi-Fi, ouvre 4.3.2.1/settings/sec dans un navigateur, déverrouille OTA et décoche « Only allow update from same network/WiFi ». Puis réessaie.",
+        "sameNetwork": "Par le point d’accès, Boardsesh désactive dans WLED « Only allow update from same network/WiFi » pendant l’installation, puis le réactive.",
+        "leave": "Se déconnecter du contrôleur"
+      }
     }
   },
   "sprayDetection": {

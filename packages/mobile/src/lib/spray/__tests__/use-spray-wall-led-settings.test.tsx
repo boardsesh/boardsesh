@@ -101,6 +101,23 @@ describe('the phone copy of a wall\u2019s LED settings', () => {
     expect(result.current.error).toBeNull();
   });
 
+  it('keeps the settings on screen while reloading, so open work such as an install stays mounted', async () => {
+    preferences.get.mockResolvedValueOnce(configured);
+    const { result } = renderHook(() => useSprayWallLedSettings('wall-one'));
+    await waitFor(() => expect(result.current.settings).toEqual(configured));
+    const reread = deferred<unknown>();
+    preferences.get.mockReturnValueOnce(reread.promise);
+    act(() => result.current.reload());
+    expect(result.current.loading).toBe(true);
+    expect(result.current.settings).toEqual(configured);
+    await act(async () => reread.reject(new Error('locked storage')));
+    expect(result.current.error).toBe('load');
+    expect(result.current.settings).toEqual(configured);
+    // Shown, but unread: a save must not overwrite what the failed read could not see.
+    expect(await result.current.save({ ...configured, brightness: 10 })).toBe(false);
+    expect(preferences.set).not.toHaveBeenCalled();
+  });
+
   it.each([
     { version: 2, enabled: true, controller: { type: 'wled', url: 'http://wall.local' } },
     { version: 1, enabled: 'yes', controller: { type: 'wled', url: 'http://wall.local' } },

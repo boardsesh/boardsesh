@@ -4,7 +4,10 @@ import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
 import NetInfo from '@react-native-community/netinfo';
 import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
+import { requiredLedCount as wiringLedCount } from '@boardsesh/spray-wall-geometry';
 import { sprayLedSetupHref } from '../../lib/spray/spray-routes';
+import { subscribeSprayLedConfiguration } from '../../lib/spray/spray-led-config-events';
+import { loadSprayWallTnutLayout } from '../../lib/spray/spray-wall-tnut-store';
 import {
   createWledDriver,
   DEFAULT_LED_BRIGHTNESS,
@@ -95,22 +98,35 @@ export function SprayWallLedSection({
   wallUuid,
   disabled = false,
   canInstall = false,
+  wallName,
 }: {
   wallUuid: string;
   disabled?: boolean;
   canInstall?: boolean;
+  /** Suggested name the controller advertises over Bluetooth. */
+  wallName?: string;
 }) {
-  return <SprayWallLedEditor key={wallUuid} wallUuid={wallUuid} disabled={disabled} canInstall={canInstall} />;
+  return (
+    <SprayWallLedEditor
+      key={wallUuid}
+      wallUuid={wallUuid}
+      disabled={disabled}
+      canInstall={canInstall}
+      wallName={wallName}
+    />
+  );
 }
 
 function SprayWallLedEditor({
   wallUuid,
   disabled,
   canInstall,
+  wallName,
 }: {
   wallUuid: string;
   disabled: boolean;
   canInstall: boolean;
+  wallName?: string;
 }) {
   const router = useRouter();
   const { t } = useTranslation('boards');
@@ -133,6 +149,8 @@ function SprayWallLedEditor({
   }, [stop]);
   const [scan, setScan] = useState<ScanState>({ kind: 'idle' });
   const scanRequest = useRef<AbortController | null>(null);
+  // From the owner's saved wiring on this phone; the installer offers to size the controller to it.
+  const requiredLedCount = useRequiredLedCount(wallUuid, canInstall);
   const cancelScan = useCallback(() => {
     scanRequest.current?.abort();
     scanRequest.current = null;
@@ -506,8 +524,16 @@ function SprayWallLedEditor({
                             : t('sprayLed.lightFailed')}
                     </Text>
                   ) : null}
-                  {canInstall && !disabled && settings.controller.url ? (
-                    <WledBluetoothInstaller url={settings.controller.url} disabled={locked || pending !== null} />
+                  {/* No saved address: the owner can still install over the controller's hotspot. */}
+                  {canInstall && !disabled ? (
+                    // Not `locked`: a settings reload or save must not tear down an install that
+                    // holds the controller's hotspot. The installer reads only the address.
+                    <WledBluetoothInstaller
+                      url={settings.controller.url}
+                      wallName={wallName}
+                      requiredLedCount={requiredLedCount}
+                      disabled={pending !== null}
+                    />
                   ) : null}
                 </>
               )}
@@ -566,3 +592,30 @@ function SprayWallLedEditor({
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44 },
 });
+
+/** LEDs the wall's saved wiring needs, refreshed whenever the LED setup is saved. */
+function useRequiredLedCount(wallUuid: string, enabled: boolean): number | null {
+  const [count, setCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let active = true;
+    const load = () => {
+      loadSprayWallTnutLayout(wallUuid)
+        .then((layout) => {
+          if (active) setCount(wiringLedCount(layout?.wiring));
+        })
+        .catch(() => {
+          if (active) setCount(null);
+        });
+    };
+    load();
+    const unsubscribe = subscribeSprayLedConfiguration((changed) => {
+      if (changed === wallUuid) load();
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [wallUuid, enabled]);
+  return enabled ? count : null;
+}

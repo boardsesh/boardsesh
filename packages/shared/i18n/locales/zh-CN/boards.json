@@ -80,6 +80,26 @@
       "exportBackup": "导出 WLED 备份",
       "securitySettings": "打开 WLED 安全设置",
       "backupHint": "备份包含控制器配置和预设。安装前，请将其导出到安全的位置。",
+      "controllerName": "控制器名称",
+      "controllerNameHint": "攀岩者搜索喷点墙的蓝牙时会看到这个名称。已用 {{used}}/{{max}} 字节，每个汉字占 3 字节。",
+      "droppedFeatures": "{{features}} 已开启，但此固件不包含该功能，更新后将无法使用。其设置保留在你导出的备份中。",
+      "confirmDroppedFeatures": "我了解 {{features}} 将无法使用",
+      "droppedFeaturesDone": "{{features}} 在此控制器上已无法使用。其设置保存在你导出的备份中。",
+      "differences": "已更改的设置：{{paths}}",
+      "confirmKeepSettings": "我已在 WLED 中检查这些设置，并希望保持当前状态",
+      "keepSettings": "保留这些设置",
+      "ledOutputs": {
+        "needed": "此控制器只驱动 {{current}} 颗 LED，但你的喷点墙接线需要 {{required}} 颗。第 {{current}} 颗之后的 LED 不会亮。",
+        "confirm": "将控制器设置为在 GPIO{{pin}} 输出上驱动 {{required}} 颗 LED",
+        "otherOutputs": "其他 LED 输出将被移除。如果你有意接了多个输出，请保持关闭。"
+      },
+      "features": {
+        "mqtt": "MQTT",
+        "hue": "Hue 同步",
+        "alexa": "Alexa",
+        "ir": "红外遥控",
+        "espnow": "ESP-NOW"
+      },
       "confirmModel": "我已核对标签：Gledopto GL-C-015WL-D",
       "confirmNoAudio": "我同意安装不含声控灯效的此固件",
       "install": "安装已验证固件",
@@ -88,7 +108,28 @@
       "betaReady": "备份已保存，安装前请确认控制器型号并了解测试版状态。",
       "betaWarning": "测试版：真机 OTA、Android 和 iOS 测试尚未完成。安装可能失败，你可能需要从备份恢复 WLED 设置。",
       "confirmBeta": "我了解这是测试版固件，真机测试尚未完成",
-      "installBeta": "安装测试版固件"
+      "installBeta": "安装测试版固件",
+      "hotspot": {
+        "toggle": "无 Wi-Fi 安装（使用控制器热点）",
+        "hint": "喷点墙没有 Wi-Fi？Boardsesh 会先通过任意网络（包括移动数据）下载固件，然后手机连接控制器自带的热点进行安装，完成后自动断开。",
+        "ssid": "控制器热点名称",
+        "password": "此密码无效。WLED 热点密码为 8 到 63 个字符，默认密码是 wled1234。",
+        "passwordLabel": "控制器热点密码",
+        "start": "下载并连接",
+        "downloading": "连接前正在下载并检查固件…",
+        "connecting": "正在连接控制器… 如手机弹出 Wi-Fi 提示，请允许连接。",
+        "rebooting": "WLED 正在重启，正在重新连接其热点…",
+        "complete": "蓝牙支持已安装，手机已断开控制器热点。请选择蓝牙，然后点按“查找蓝牙控制器”。",
+        "failed": "无法通过控制器热点完成安装。手机已断开热点，请重试。",
+        "notFound": "无法连接 {{ssid}}。请确认控制器已开机且就在附近，并检查网络名称和密码。",
+        "denied": "手机未连接控制器热点。请重试，并在系统询问时选择“加入”。",
+        "timeout": "连接控制器热点超时。请靠近控制器后重试。",
+        "unsupported": "在 Boardsesh 中连接热点需要 Android 10 或更高版本。请在 Wi-Fi 设置中连接 {{ssid}}，在浏览器中打开 4.3.2.1，并将 WLED 连接到 Wi-Fi 网络，然后通过 Wi-Fi 安装。",
+        "lost": "WLED 已重启，但手机无法重新连接其热点。请保持控制器通电，然后检查安装。",
+        "locked": "WLED 拒绝了更新。请在 Wi-Fi 设置中连接 {{ssid}}，在浏览器中打开 4.3.2.1/settings/sec，解锁 OTA 并取消勾选“Only allow update from same network/WiFi”，然后重试。",
+        "sameNetwork": "通过热点安装时，Boardsesh 会暂时关闭 WLED 的“Only allow update from same network/WiFi”，安装完成后再重新开启。",
+        "leave": "断开控制器连接"
+      }
     }
   },
   "sprayDetection": {
