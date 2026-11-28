@@ -1473,6 +1473,12 @@ requests in the recording never expand its scope. The command exports only a
 candidate archive, proposed shared pin and hash proof. It does not publish or
 install them and does not replace the required native replay checks.
 
+The 2026-11-28 additions came from [recording run 46122012429](https://github.com/boardsesh/boardsesh/actions/runs/46122012429)
+at source `3ca65ab9a6c16209f2d8b2731736b92a47af877c`. The shared pin selects overlay
+`7c9f3b035e7d9051cd862953a8b9c455cff2c3cd0911ca79e7310e5775912d53`;
+its adjacent `.proof.json` preserves the source and request hashes. It adds two
+GraphQL files while preserving all 370 previous response and image files.
+
 ### Record the Home projects attempts page
 
 The manual **Record mobile smoke projects fixture** workflow records only the

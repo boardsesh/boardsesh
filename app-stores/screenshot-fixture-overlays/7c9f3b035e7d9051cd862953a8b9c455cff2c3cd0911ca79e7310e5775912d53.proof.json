@@ -1,0 +1,26 @@
+{
+  "sourceRunUrl": "https://github.com/boardsesh/boardsesh/actions/runs/46122012429",
+  "sourceSha": "3ca65ab9a6c16209f2d8b2731736b92a47af877c",
+  "baseArchiveSha256": "03ddb626f41d3627f587f3bff1686e2d0cc098630973d14a730f348dfe546ed1",
+  "previousOverlaySha256": "b7aca45e261b60953b3d3e79159ba9db86e5da102ffc7ae4bbbf0d61417148b4",
+  "sourceManifestSha256": "bc3a875f088b3edb3b036a9b5c8519fd1b9ad70f02788ce001020addf26267ff",
+  "sourceFlow": "smoke-fixtures",
+  "unchangedRecordedFiles": 370,
+  "addedGraphqlFiles": [
+    {
+      "operationName": "BoardLayers",
+      "documentHash": "70d1752a6884c7801f58800321f961d5080ea5db6452929fd8a85add72fc82ff",
+      "variablesHash": "8eb8794deae029abb2ed5f702e868868cf071e79712ae0ae7f24b454320893e8",
+      "file": "graphql/BoardLayers/8eb8794deae029ab.json",
+      "sha256": "286aba9ea587bec7f7a162a9f645977ab69237d990989e5d831ee6fc91f348f5"
+    },
+    {
+      "operationName": "GetUserTicks",
+      "documentHash": "cc44dba7867fe833858f968d878fbf6823939393b0148d79bf93f5cc0d19a4d9",
+      "variablesHash": "4149bb80f8b521dc5cd80b82354439db2d5d470e49bf5241dfebf8c3b0601aaf",
+      "file": "graphql/GetUserTicks/4149bb80f8b521dc.json",
+      "sha256": "c8c4dc515a2b60b3537e8f05dcfd77cc53d916e42d08b353b6aafdb870763bac"
+    }
+  ],
+  "fullNativeReplayRequired": true
+}

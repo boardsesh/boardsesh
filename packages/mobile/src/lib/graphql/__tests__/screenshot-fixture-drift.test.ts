@@ -34,6 +34,7 @@ import { describe, expect, it } from 'vitest';
 import { Kind, buildSchema, parse, validate, type DocumentNode, type GraphQLSchema } from 'graphql';
 import { typeDefs } from '@boardsesh/shared-schema';
 import { listSyncPullDocuments } from '@boardsesh/offline-sync';
+import { BOARD_TYPES } from '@boardsesh/profile-stats';
 
 import * as mobileOperations from '../operations';
 import * as sharedOperations from '@boardsesh/graphql/operations';
@@ -703,11 +704,15 @@ describe('native smoke request coverage', () => {
   });
 
   const requests: Array<[string, Record<string, unknown>]> = [
+    ...BOARD_TYPES.map((boardType): [string, Record<string, unknown>] => [
+      'GetUserTicks',
+      { userId: manifest.accountUserId, boardType },
+    ]),
     ['GetUserAscentsFeed', { userId: manifest.accountUserId, input: { statusMode: 'attempt', limit: 50, offset: 0 } }],
     ['ResolveBoardForUuid', { boardUuid: 'dcb443be-aaea-4637-8bf8-b20cbe031192' }],
     ['RecordBoardOpened', { input: { boardUuid: 'dcb443be-aaea-4637-8bf8-b20cbe031192' } }],
     ['GetSprayWallByLayout', { layoutId: 62 }],
-    ...['BoardConnection', 'BoardRecentClimbs', 'BoardPresenceStats', 'BoardRecentHistory'].map(
+    ...['BoardConnection', 'BoardRecentClimbs', 'BoardPresenceStats', 'BoardRecentHistory', 'BoardLayers'].map(
       (operationName): [string, Record<string, unknown>] => [
         operationName,
         { boardId: 4, boardUuid: 'dcb443be-aaea-4637-8bf8-b20cbe031192' },
