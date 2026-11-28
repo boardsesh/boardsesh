@@ -472,6 +472,48 @@ export function blocksHotspotUpdate(config: JsonObject, version: string): boolea
   return Number.parseInt(version, 10) >= 16;
 }
 
+/** WLED's LED limit on a classic ESP32 (MAX_LEDS). */
+export const WLED_MAX_LEDS = 4096;
+/** WLED's digital (addressable) LED types: TYPE_DIGITAL_MIN..TYPE_DIGITAL_MAX in const.h. */
+const isDigitalLedType = (type: unknown) => typeof type === 'number' && type >= 16 && type <= 39;
+export type LedOutputChange = {
+  /** What the installer writes through /json/cfg. */
+  changes: JsonObject;
+  /** LEDs and outputs the controller is set to now. */
+  current: number;
+  outputs: number;
+  /** The kept output's data pin. */
+  pin: number;
+};
+/**
+ * When the controller drives fewer LEDs than the wall's wiring needs: one output, the one that starts
+ * at LED 0, with every other setting of it kept, set to `required` LEDs. WLED rebuilds every output from
+ * the list it receives, so the others go. `null` when the controller already drives enough, or when
+ * its outputs are not something the app should rewrite.
+ */
+export function ledOutputChange(config: JsonObject, required: number): LedOutputChange | null {
+  if (!Number.isSafeInteger(required) || required <= 0 || required > WLED_MAX_LEDS) return null;
+  const led = isObject(config.hw) && isObject(config.hw.led) ? config.hw.led : null;
+  const outputs = led && Array.isArray(led.ins) ? led.ins.filter(isObject) : [];
+  if (!led || outputs.length === 0) return null;
+  const current = outputs.reduce((sum, output) => sum + (typeof output.len === 'number' ? output.len : 0), 0);
+  if (current >= required) return null;
+  const first = outputs.find((output) => (output.start ?? 0) === 0);
+  const pins = Array.isArray(first?.pin) ? first.pin : [];
+  if (!first || !isDigitalLedType(first.type) || typeof pins[0] !== 'number') return null;
+  return {
+    changes: { hw: { led: { total: required, ins: [{ ...first, start: 0, len: required }] } } },
+    current,
+    outputs: outputs.length,
+    pin: pins[0],
+  };
+}
+/** The LED count the controller should report after an install, with the installer's own LED write. */
+function expectedLedCount(pending: InstallJournal): number {
+  const led = isObject(pending.changes?.hw) && isObject(pending.changes.hw.led) ? pending.changes.hw.led : null;
+  return typeof led?.total === 'number' ? led.total : pending.before.ledCount;
+}
+
 type PreparedImage = { uri: string; bytes: number; sha256: string };
 function checkImage(release: FirmwareRelease, image: PreparedImage) {
   if (image.bytes !== release.imageBytes || image.bytes > WLED_APP_SLOT_BYTES)
@@ -604,7 +646,8 @@ function createSession(
       caps.protocolVersion === 1 &&
       caps.usermodVersion === pending.release.usermodVersion &&
       caps.audio === pending.release.audio &&
-      caps.ledCount === pending.before.ledCount &&
+      // A resize WLED did not take still shows the add-on running; the settings check reports the count.
+      (caps.ledCount === expectedLedCount(pending) || caps.ledCount === pending.before.ledCount) &&
       caps.maxMessageBytes === 8192
     );
   }
@@ -646,7 +689,7 @@ function createSession(
           update({ ...snapshot, stage: 'verifying' });
           const { config, presets } = await readSettings(signal);
           const differences = differencesFor(pending, config, presets);
-          if (identity.ledCount !== pending.before.ledCount) differences.push('leds.count');
+          if (identity.ledCount !== expectedLedCount(pending)) differences.push('leds.count');
           if (differences.length && !keepSettings) {
             update({ ...snapshot, differences });
             throw new WledInstallerError('preservation');
@@ -751,6 +794,7 @@ function createSession(
     /**
      * `name`: what the controller should advertise to climbers; trimmed as the add-on trims it.
      * `droppedFeaturesConfirmed`: the owner accepted losing integrations they use that the build leaves out.
+     * `ledCount`: the owner confirmed setting the controller to this many LEDs (see `ledOutputChange`).
      */
     install: (
       modelConfirmed: boolean,
@@ -758,6 +802,7 @@ function createSession(
       betaConfirmed = false,
       name?: string,
       droppedFeaturesConfirmed = false,
+      ledCount?: number,
     ) =>
       exclusive(async (signal) => {
         const { identity, backup, release } = snapshot;
@@ -800,6 +845,8 @@ function createSession(
         if (advertised) changes.id = { name: advertised };
         const disablesSameSubnet = link !== null && blocksHotspotUpdate(backup.config, identity.version);
         if (disablesSameSubnet) changes.ota = { 'same-subnet': false };
+        const ledOutput = ledCount === undefined ? null : ledOutputChange(backup.config, ledCount);
+        if (ledOutput) Object.assign(changes, ledOutput.changes);
         // Durable before any controller write, so a lost connection still restores the setting.
         journal = { url, before: identity, backup, release, changes, restoreSameSubnet: disablesSameSubnet };
         await io.writeJournal(journal);

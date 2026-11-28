@@ -170,7 +170,7 @@ describe('WLED beta installer consent', () => {
     fireEvent.click(checkbox('confirmBeta'));
     expect(install.disabled).toBe(false);
     fireEvent.click(install);
-    expect(runtime.install).toHaveBeenCalledWith(true, false, true, 'Norte izquierda', false);
+    expect(runtime.install).toHaveBeenCalledWith(true, false, true, 'Norte izquierda', false, undefined);
   });
   it('keeps no-audio approval separate from beta approval', async () => {
     runtime.snapshot!.release!.audio = false;
@@ -182,7 +182,7 @@ describe('WLED beta installer consent', () => {
     expect(install.disabled).toBe(true);
     fireEvent.click(checkbox('confirmNoAudio'));
     fireEvent.click(install);
-    expect(runtime.install).toHaveBeenCalledWith(true, true, true, '', false);
+    expect(runtime.install).toHaveBeenCalledWith(true, true, true, '', false, undefined);
   });
   it('resets confirmations when the owner checks again or changes the controller URL', async () => {
     const view = render(<WledBluetoothInstaller url="192.168.1.5" disabled={false} />);
@@ -207,7 +207,7 @@ describe('WLED beta installer consent', () => {
     expect(screen.queryByRole('switch', { name: 'sprayLed.installer.confirmBeta' })).toBeNull();
     fireEvent.click(checkbox('confirmModel'));
     fireEvent.click(screen.getByRole('button', { name: 'sprayLed.installer.install' }));
-    expect(runtime.install).toHaveBeenCalledWith(true, false, false, '', false);
+    expect(runtime.install).toHaveBeenCalledWith(true, false, false, '', false, undefined);
   });
   it("suggests the wall's name for the controller, trimmed as the add-on advertises it", async () => {
     render(<WledBluetoothInstaller url="192.168.1.5" wallName="Wall #2 @ the gym" disabled={false} />);
@@ -219,7 +219,7 @@ describe('WLED beta installer consent', () => {
     fireEvent.click(checkbox('confirmBeta'));
     fireEvent.click(screen.getByRole('button', { name: 'sprayLed.installer.installBeta' }));
     // 22 UTF-8 bytes: "ó" takes two, so the "r" no longer fits.
-    expect(runtime.install).toHaveBeenCalledWith(true, false, true, 'Rocódromo Escalada No', false);
+    expect(runtime.install).toHaveBeenCalledWith(true, false, true, 'Rocódromo Escalada No', false, undefined);
   });
 });
 
@@ -290,6 +290,46 @@ describe('WLED install over the controller hotspot', () => {
     expect(screen.getAllByText(message).length).toBeGreaterThan(0);
     const retry = screen.getByRole('button', { name: 'sprayLed.installer.hotspot.start' }) as HTMLButtonElement;
     expect(retry.disabled).toBe(false);
+  });
+
+  it("offers to size the controller to the wall's wiring, and sends the count only when confirmed", async () => {
+    const output = { start: 0, len: 30, pin: [16], type: 22 };
+    runtime.snapshot = {
+      ...readySnapshot(),
+      backup: {
+        uri: 'file:///backup.json',
+        config: { hw: { led: { total: 60, ins: [output, { ...output, start: 30, pin: [2] }] } } },
+        presets: {},
+      },
+    };
+    render(<WledBluetoothInstaller url="192.168.1.5" requiredLedCount={214} disabled={false} />);
+    await inspect();
+    expect(screen.getByText('sprayLed.installer.ledOutputs.needed')).toBeTruthy();
+    expect(screen.getByText('sprayLed.installer.ledOutputs.otherOutputs')).toBeTruthy();
+    fireEvent.click(checkbox('confirmModel'));
+    fireEvent.click(checkbox('confirmBeta'));
+    const resize = screen.getByRole('switch', { name: 'sprayLed.installer.ledOutputs.confirm' }) as HTMLInputElement;
+    expect(resize.checked).toBe(false);
+    const install = screen.getByRole('button', { name: 'sprayLed.installer.installBeta' });
+    fireEvent.click(install);
+    expect(runtime.install).toHaveBeenLastCalledWith(true, false, true, '', false, undefined);
+    fireEvent.click(resize);
+    fireEvent.click(install);
+    expect(runtime.install).toHaveBeenLastCalledWith(true, false, true, '', false, 214);
+  });
+
+  it('says nothing about LED outputs when the controller already drives enough', async () => {
+    runtime.snapshot = {
+      ...readySnapshot(),
+      backup: {
+        uri: 'file:///backup.json',
+        config: { hw: { led: { total: 300, ins: [{ start: 0, len: 300, pin: [16], type: 22 }] } } },
+        presets: {},
+      },
+    };
+    render(<WledBluetoothInstaller url="192.168.1.5" requiredLedCount={214} disabled={false} />);
+    await inspect();
+    expect(screen.queryByText('sprayLed.installer.ledOutputs.needed')).toBeNull();
   });
 
   it('lets the owner keep the listed settings after a failed settings check, once confirmed', async () => {

@@ -10,6 +10,7 @@ import {
   CONTROLLER_NAME_BYTES,
   droppedFeaturesInUse,
   isHotspotError,
+  ledOutputChange,
   sourceProfileFor,
   type InstallerSnapshot,
 } from '../../lib/wled-installer/engine';
@@ -44,12 +45,15 @@ const BUSY_STAGES: InstallerSnapshot['stage'][] = [
 export function WledBluetoothInstaller({
   url,
   wallName,
+  requiredLedCount,
   disabled,
   onInstalled,
 }: {
   url: string;
   /** Suggested Bluetooth name; the owner can change it before installing. */
   wallName?: string;
+  /** LEDs the wall's saved wiring needs, skipped ones included; null or absent when not wired yet. */
+  requiredLedCount?: number | null;
   disabled: boolean;
   onInstalled?: (controllerId: string) => void;
 }) {
@@ -62,6 +66,7 @@ export function WledBluetoothInstaller({
   // null until a backup is ready, then the owner's edit of the suggested name.
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [droppedConfirmed, setDroppedConfirmed] = useState(false);
+  const [ledCountConfirmed, setLedCountConfirmed] = useState(false);
   // The owner's waiver of a failed settings check; never carried to another check.
   const [keepConfirmed, setKeepConfirmed] = useState(false);
   // What the owner accepted losing at the install tap, repeated once the install completes.
@@ -124,6 +129,7 @@ export function WledBluetoothInstaller({
     setAudioDisabledConfirmed(false);
     setNameDraft(null);
     setDroppedConfirmed(false);
+    setLedCountConfirmed(false);
     setDroppedAtInstall([]);
     // The hotspot route downloads before it joins, so beta consent comes first there.
     if (!hotspotMode) setBetaConfirmed(false);
@@ -228,6 +234,10 @@ export function WledBluetoothInstaller({
       ? droppedFeaturesInUse(snapshot.backup.config, sourceProfileFor(snapshot.release, snapshot.identity))
       : [];
   const droppedNames = droppedFeatures.map(featureName).join(', ');
+  const ledOutput =
+    snapshot.stage === 'ready' && snapshot.backup && requiredLedCount
+      ? ledOutputChange(snapshot.backup.config, requiredLedCount)
+      : null;
   const switchesSameSubnet =
     hotspotMode && snapshot.backup && snapshot.identity
       ? blocksHotspotUpdate(snapshot.backup.config, snapshot.identity.version)
@@ -390,6 +400,24 @@ export function WledBluetoothInstaller({
             onValueChange={setModelConfirmed}
             disabled={disabled}
           />
+          {ledOutput && requiredLedCount ? (
+            <>
+              <Text variant="footnote" color={brandColors.error}>
+                {t('sprayLed.installer.ledOutputs.needed', { current: ledOutput.current, required: requiredLedCount })}
+              </Text>
+              <SwitchRow
+                label={t('sprayLed.installer.ledOutputs.confirm', { required: requiredLedCount, pin: ledOutput.pin })}
+                value={ledCountConfirmed}
+                onValueChange={setLedCountConfirmed}
+                disabled={disabled}
+              />
+              {ledOutput.outputs > 1 ? (
+                <Text variant="caption1" color={systemColors.secondaryLabel}>
+                  {t('sprayLed.installer.ledOutputs.otherOutputs')}
+                </Text>
+              ) : null}
+            </>
+          ) : null}
           {droppedFeatures.length ? (
             <>
               <Text variant="footnote" color={brandColors.error}>
@@ -432,6 +460,7 @@ export function WledBluetoothInstaller({
                 betaConfirmed,
                 advertisedName,
                 droppedConfirmed,
+                ledOutput && ledCountConfirmed && requiredLedCount ? requiredLedCount : undefined,
               );
             }}
           />

@@ -88,6 +88,11 @@
       "differences": "Réglages modifiés : {{paths}}",
       "confirmKeepSettings": "J’ai vérifié ces réglages dans WLED et je veux les garder tels qu’ils sont",
       "keepSettings": "Garder ces réglages",
+      "ledOutputs": {
+        "needed": "Ce contrôleur pilote {{current}} LED, mais le câblage de ton Spraywall en demande {{required}}. Les LED au-delà de {{current}} ne s’allumeront pas.",
+        "confirm": "Régler le contrôleur sur {{required}} LED sur sa sortie GPIO{{pin}}",
+        "otherOutputs": "Ses autres sorties LED sont supprimées. Laisse désactivé si tu as câblé plusieurs sorties exprès."
+      },
       "features": {
         "mqtt": "MQTT",
         "hue": "Synchronisation Hue",

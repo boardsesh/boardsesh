@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   droppedFeaturesInUse,
+  ledOutputChange,
   readManifest,
   settingsDifferences,
   WLED_APP_SLOT_BYTES,
@@ -123,5 +124,39 @@ describe('integrations the build leaves out', () => {
       settingsChanges: [...measured, { path: 'if.dmx', kind: 'removed' as const, feature: 'dmx' }],
     };
     expect(droppedFeaturesInUse(used, profile)).toEqual(['mqtt', 'ir', 'dmx']);
+  });
+});
+
+describe('sizing the controller to the wall', () => {
+  const factory = factoryConfig as JsonObject;
+  it("turns Gledopto's two 30-LED outputs into one output of what the wiring needs", () => {
+    const change = ledOutputChange(factory, 214);
+    expect(change).toMatchObject({ current: 60, outputs: 2, pin: 16 });
+    const led = (change!.changes.hw as JsonObject).led as JsonObject;
+    expect(led.total).toBe(214);
+    // Every other setting of the first output is kept, so WLED's defaults never replace them.
+    expect(led.ins).toEqual([{ ...((factory.hw as JsonObject).led as { ins: JsonObject[] }).ins[0], len: 214 }]);
+  });
+  it('leaves a controller alone that already drives enough LEDs, or one it should not rewrite', () => {
+    expect(ledOutputChange(factory, 60)).toBeNull();
+    expect(ledOutputChange(factory, 40)).toBeNull();
+    expect(ledOutputChange(factory, 5000)).toBeNull();
+    expect(ledOutputChange(factory, 0)).toBeNull();
+    const analog = structuredClone(factory) as { hw: { led: { ins: { type: number }[] } } };
+    analog.hw.led.ins[0].type = 41;
+    expect(ledOutputChange(analog as unknown as JsonObject, 214)).toBeNull();
+    expect(ledOutputChange({}, 214)).toBeNull();
+  });
+  it('accepts the resized outputs in the settings check, and only the resize', () => {
+    const change = ledOutputChange(factory, 214)!;
+    // What WLED 16 saves after rebuilding the outputs from the installer's write.
+    const resized = structuredClone(after) as { hw: { led: { total: number; ins: JsonObject[] } } };
+    resized.hw.led.total = 214;
+    resized.hw.led.ins = [{ ...resized.hw.led.ins[0], len: 214 }];
+    const config = resized as unknown as JsonObject;
+    expect(settingsDifferences(backup, config, presets, change.changes, measured)).toEqual([]);
+    expect(settingsDifferences(backup, config, presets, {}, measured)).toEqual(
+      expect.arrayContaining(['hw.led.total', 'hw.led.ins']),
+    );
   });
 });

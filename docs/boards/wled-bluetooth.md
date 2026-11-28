@@ -108,6 +108,22 @@ password; both are prefilled with WLED's defaults.
      -1), a button count that only grows, the installer's two writes above, and the
      matched source profile's measured `settingsChanges` (see below). A failed check
      lists the differing paths on screen.
+   - **LED outputs sized to the wall.** WLED cannot detect a strip: its LED count
+     is only what its settings say. Gledopto ships the GL-C-015WL-D with two
+     30-LED outputs (`IO16` for LEDs 0–29 and `IO2` for 30–59), so a strip on `IO16`
+     gets 30 LEDs. When the owner's saved wiring needs more than the controller
+     drives (one past the highest physical index, skipped LEDs included), the ready
+     screen says so and offers an opt-in switch. The switch writes one output
+     through `/json/cfg`: the output that starts at LED 0, with all its other
+     settings kept and its length set to what the wiring needs. WLED rebuilds every
+     output from the list it gets, so any other output is removed, and the screen
+     says that too. Only addressable outputs within WLED's 4,096 LEDs are
+     rewritten. A controller that already drives enough is left alone, even with
+     several outputs. The write is one of the installer's own changes, so the
+     settings check expects it. The new count must appear in `/json/info`;
+     otherwise the check lists `leds.count`. It runs before the upload, so a refused
+     upload keeps the new length: the owner asked for it, and it lights more of the
+     wall.
    - **Keeping changed settings.** After a failed settings check the owner can
      confirm they checked the listed settings and keep them ("Keep these
      settings"). Only the owner can waive a difference this way, protected ones

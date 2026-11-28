@@ -4,7 +4,10 @@ import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
 import NetInfo from '@react-native-community/netinfo';
 import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
+import { requiredLedCount as wiringLedCount } from '@boardsesh/spray-wall-geometry';
 import { sprayLedSetupHref } from '../../lib/spray/spray-routes';
+import { subscribeSprayLedConfiguration } from '../../lib/spray/spray-led-config-events';
+import { loadSprayWallTnutLayout } from '../../lib/spray/spray-wall-tnut-store';
 import {
   createWledDriver,
   DEFAULT_LED_BRIGHTNESS,
@@ -146,6 +149,8 @@ function SprayWallLedEditor({
   }, [stop]);
   const [scan, setScan] = useState<ScanState>({ kind: 'idle' });
   const scanRequest = useRef<AbortController | null>(null);
+  // From the owner's saved wiring on this phone; the installer offers to size the controller to it.
+  const requiredLedCount = useRequiredLedCount(wallUuid, canInstall);
   const cancelScan = useCallback(() => {
     scanRequest.current?.abort();
     scanRequest.current = null;
@@ -526,6 +531,7 @@ function SprayWallLedEditor({
                     <WledBluetoothInstaller
                       url={settings.controller.url}
                       wallName={wallName}
+                      requiredLedCount={requiredLedCount}
                       disabled={pending !== null}
                     />
                   ) : null}
@@ -586,3 +592,30 @@ function SprayWallLedEditor({
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44 },
 });
+
+/** LEDs the wall's saved wiring needs, refreshed whenever the LED setup is saved. */
+function useRequiredLedCount(wallUuid: string, enabled: boolean): number | null {
+  const [count, setCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let active = true;
+    const load = () => {
+      loadSprayWallTnutLayout(wallUuid)
+        .then((layout) => {
+          if (active) setCount(wiringLedCount(layout?.wiring));
+        })
+        .catch(() => {
+          if (active) setCount(null);
+        });
+    };
+    load();
+    const unsubscribe = subscribeSprayLedConfiguration((changed) => {
+      if (changed === wallUuid) load();
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [wallUuid, enabled]);
+  return enabled ? count : null;
+}

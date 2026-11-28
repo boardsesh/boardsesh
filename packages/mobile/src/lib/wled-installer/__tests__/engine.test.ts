@@ -138,6 +138,57 @@ describe('WLED owner installer', () => {
     );
     expect(io.clearJournal).toHaveBeenCalledOnce();
   });
+  it('sizes the controller to the wall when the owner confirms, and checks the new LED count', async () => {
+    const output = { start: 0, len: 30, pin: [16], type: 22, order: 0, maxpwr: 850 };
+    const twoOutputs = {
+      ...config,
+      hw: { ...config.hw, led: { total: 60, ins: [output, { ...output, start: 30, pin: [2] }] } },
+    };
+    const resized = { ...config, hw: { ...config.hw, led: { total: 214, ins: [{ ...output, len: 214 }] } } };
+    for (const reported of [214, 60]) {
+      const { io, installer } = setup();
+      vi.mocked(io.readJson).mockImplementation(async (url) => {
+        const uploaded = vi.mocked(io.upload).mock.calls.length > 0;
+        if (url.endsWith('release-manifest.json')) return { manifestVersion: 1, releases: [release] };
+        if (url.endsWith('/cfg.json')) return uploaded ? resized : twoOutputs;
+        if (url.endsWith('/presets.json')) return presets;
+        if (!uploaded) return { ...original, leds: { count: 60 } };
+        return {
+          ...original,
+          leds: { count: reported },
+          bleJson: {
+            controllerId: 'wled-001122aabbcc',
+            protocolVersion: 1,
+            usermodVersion: '0.1.0',
+            buildId: release.buildId,
+            audio: true,
+            ledCount: reported,
+            maxMessageBytes: 8192,
+          },
+        };
+      });
+      await installer.inspect();
+      await installer.install(true, false, false, undefined, false, 214);
+      expect(io.writeConfig).toHaveBeenCalledWith(
+        'http://192.168.1.5',
+        { hw: { led: { total: 214, ins: [{ ...output, len: 214 }] } } },
+        expect.anything(),
+      );
+      if (reported === 214) expect(installer.getSnapshot()).toMatchObject({ stage: 'complete' });
+      // WLED kept the old count: the add-on runs, and the owner sees the count among the differences.
+      else {
+        expect(installer.getSnapshot()).toMatchObject({ stage: 'interrupted', error: 'preservation' });
+        expect(installer.getSnapshot().differences).toContain('leds.count');
+      }
+    }
+  });
+  it('writes no LED outputs without the owner confirming a count', async () => {
+    const { io, installer } = setup();
+    await installer.inspect();
+    await installer.install(true, false);
+    expect(io.writeConfig).not.toHaveBeenCalled();
+    expect(installer.getSnapshot().stage).toBe('complete');
+  });
   it.each([
     [false, true, true],
     [true, false, true],

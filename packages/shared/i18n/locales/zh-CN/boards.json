@@ -88,6 +88,11 @@
       "differences": "已更改的设置：{{paths}}",
       "confirmKeepSettings": "我已在 WLED 中检查这些设置，并希望保持当前状态",
       "keepSettings": "保留这些设置",
+      "ledOutputs": {
+        "needed": "此控制器只驱动 {{current}} 颗 LED，但你的喷点墙接线需要 {{required}} 颗。第 {{current}} 颗之后的 LED 不会亮。",
+        "confirm": "将控制器设置为在 GPIO{{pin}} 输出上驱动 {{required}} 颗 LED",
+        "otherOutputs": "其他 LED 输出将被移除。如果你有意接了多个输出，请保持关闭。"
+      },
       "features": {
         "mqtt": "MQTT",
         "hue": "Hue 同步",

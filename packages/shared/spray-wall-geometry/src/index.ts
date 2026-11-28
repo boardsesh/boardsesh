@@ -139,6 +139,7 @@ export {
   wiringSkipCount,
   setWiringInitialSkip,
   assignLedIndices,
+  requiredLedCount,
   rowMajorLedIndices,
   traceLedPath,
   type LedPosition,
