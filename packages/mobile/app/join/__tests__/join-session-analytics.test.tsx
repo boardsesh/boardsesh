@@ -253,6 +253,14 @@ describe('JoinSessionScreen live-session funnel', () => {
     expect(analytics.track).toHaveBeenCalledWith('Session Joined', expect.anything());
   });
 
+  it("counts a join from Home's Session card under its own source", async () => {
+    searchParams.current = { sessionId: 'session-42', source: 'home_session_card' };
+
+    await pressJoin();
+
+    expect(analytics.track).toHaveBeenCalledWith('Live Session Joined', { source: 'home_session_card' });
+  });
+
   it('reads the first value when the source param repeats', async () => {
     searchParams.current = { sessionId: 'session-42', source: ['board_sheet', 'home_rail'] };
 

@@ -360,20 +360,27 @@ export const SHARED_EVENTS = {
   // Deep-link session join
   SessionJoined: 'Session Joined',
   // Live sessions ("Climbing now" rail on Home, "Climbing here now" block in
-  // the board sheet). `surface` is 'home_rail' | 'board_sheet' on all four
-  // surface events. Funnel: Shelf Viewed { surface, count, state } → Card
-  // Tapped { surface, reason, viewerIsMember, participantCount } → Live Session
-  // Joined { source } (fired by the join screen, so it only counts joins that
-  // started on a live-session card). Start Session Prompt Tapped { surface,
-  // variant } is the empty-state invitation; Home's Session card (#6289) sends
-  // it with surface and variant 'home_session_card'.
+  // the board sheet, and Home's Session card leading with a live session,
+  // #7689). `surface` is 'home_rail' | 'board_sheet' | 'home_session_card' on
+  // all four surface events. Funnel: Shelf Viewed { surface, count, state } →
+  // Card Tapped { surface, reason, viewerIsMember, participantCount } → Live
+  // Session Joined { source } (fired by the join screen, so it only counts
+  // joins that started on a live-session card). On 'home_session_card', Shelf
+  // Viewed's count is the sessions the card can lead with (somebody connected,
+  // viewer not on it), and Card Tapped is Join or a row under "+ N more".
+  // Start Session Prompt Tapped { surface, variant } is the empty-state
+  // invitation; Home's Session card (#6289) sends it with surface
+  // 'home_session_card' and variant 'home_session_card' (nobody live) or
+  // 'start_my_own' (beside Join).
   LiveSessionsShelfViewed: 'Live Sessions Shelf Viewed',
   LiveSessionCardTapped: 'Live Session Card Tapped',
   LiveSessionJoined: 'Live Session Joined',
   StartSessionPromptTapped: 'Start Session Prompt Tapped',
   // A tap inside one of Home's sections (#7689). { section: 'week' | 'session'
   // | 'projects' | 'playlists', target }: `target` names what was tapped
-  // ('record', 'start', 'open', 'climb', 'all', or a smart playlist's type).
+  // ('record', 'start', 'open', 'join', 'more', 'climb', 'all', or a smart
+  // playlist's type). On the Session card 'join' is the Join button and 'more'
+  // a session under "+ N more climbing now".
   // Projects 'climb' over shelf views is #7691's open rate. Divide by Home
   // screen views for the share of Home visits that act on a section. Added
   // together with retiring 'Add to Queue', which had no call site left.

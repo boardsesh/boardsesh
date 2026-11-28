@@ -43,10 +43,11 @@ function boardLabelFromPath(boardPath: string): string {
   return parsed.angle != null ? `${name} · ${parsed.angle}°` : name;
 }
 
-// Where a live-session card sent the climber (`/join/{id}?source=home_rail`).
+// Where a live-session card sent the climber (`/join/{id}?source=home_rail`):
+// the Climbing now rail, the board sheet, or Home's Session card (#7689).
 // Only the known surfaces count: the join screen is also a deep-link target,
 // and a hand-edited link must not add new values to the funnel.
-const LIVE_SESSION_JOIN_SOURCES = ['home_rail', 'board_sheet'] as const;
+const LIVE_SESSION_JOIN_SOURCES = ['home_rail', 'board_sheet', 'home_session_card'] as const;
 type LiveSessionJoinSource = (typeof LIVE_SESSION_JOIN_SOURCES)[number];
 
 type JoinOperation = {

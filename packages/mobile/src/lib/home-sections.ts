@@ -2,13 +2,16 @@ import { isSameSectionLayout, type SectionLayout, type SectionLayoutSpec } from 
 import { createSectionLayoutStore, settingsLayoutStorage, useSectionLayout } from './section-layout-store';
 
 // The sections Home shows, and in what order (#6289). The default is the Home
-// redesign's (#7688): This week (#7690), Session, Climbing now, Back to your
-// projects (#7691, which draws nothing for a climber with no project), At your
-// level, then the feed. Your board and Fresh beta (the beta shelf Home had until #5518)
-// start hidden, and "Focused" is one tap away.
+// redesign's (#7688): This week (#7690), Session, Back to your projects (#7691,
+// which draws nothing for a climber with no project), At your level, then the
+// feed. Your board and Fresh beta (the beta shelf Home had until #5518) start
+// hidden, and "Focused" is one tap away.
 //
-// Climbing now stays its own rail until the Session card can lead with a live
-// session and Join (#7689, waiting on the button pair in #7695).
+// Climbing now starts hidden too: the Session card leads with a live session
+// and Join (#7689), so the rail would list the same sessions twice. The id
+// stays, so a climber who customised Home keeps the rail where they put it, an
+// older build reading the record still knows it, and Customize Home can turn it
+// back on. Find climbers lives in Home's top bar.
 //
 // A climber who customised Home keeps their layout: a stored record holds every
 // section's switch and place, so a new default order or switch reaches only
@@ -43,7 +46,7 @@ export const HOME_SECTIONS: SectionLayoutSpec<HomeSectionId> = {
     visible: {
       week: true,
       session: true,
-      climbingNow: true,
+      climbingNow: false,
       projects: true,
       playlists: true,
       board: false,
