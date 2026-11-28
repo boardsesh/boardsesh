@@ -80,6 +80,21 @@
       "exportBackup": "WLED-Sicherung exportieren",
       "securitySettings": "WLED-Sicherheitseinstellungen öffnen",
       "backupHint": "Die Sicherung enthält Konfiguration und Presets. Exportiere sie vor der Installation an einen sicheren Ort.",
+      "controllerName": "Name des Controllers",
+      "controllerNameHint": "Diesen Namen sehen Kletter*innen, wenn sie das Bluetooth deiner Spraywall suchen. {{used}} von {{max}} Bytes; Umlaute zählen doppelt.",
+      "droppedFeatures": "{{features}} ist aktiviert, aber diese Firmware enthält es nicht, daher funktioniert es nach dem Update nicht mehr. Die Einstellungen bleiben in deiner exportierten Sicherung.",
+      "confirmDroppedFeatures": "Ich verstehe, dass {{features}} nicht mehr funktioniert",
+      "droppedFeaturesDone": "{{features}} funktioniert auf diesem Controller nicht mehr. Die Einstellungen sind in deiner exportierten Sicherung.",
+      "differences": "Geänderte Einstellungen: {{paths}}",
+      "confirmKeepSettings": "Ich habe diese Einstellungen in WLED geprüft und will sie so behalten",
+      "keepSettings": "Diese Einstellungen behalten",
+      "features": {
+        "mqtt": "MQTT",
+        "hue": "Hue-Sync",
+        "alexa": "Alexa",
+        "ir": "Infrarot-Fernbedienung",
+        "espnow": "ESP-NOW"
+      },
       "confirmModel": "Etikett geprüft: Gledopto GL-C-015WL-D",
       "confirmNoAudio": "Ich stimme der Installation ohne audioreaktive Effekte zu",
       "install": "Geprüfte Firmware installieren",
@@ -88,7 +103,28 @@
       "betaReady": "Dein Backup ist gespeichert. Bestätige vor der Installation das Controller-Modell und den Beta-Status.",
       "betaWarning": "Beta: OTA-, Android- und iOS-Tests auf echten Geräten sind noch nicht abgeschlossen. Die Installation kann fehlschlagen und du musst möglicherweise WLED-Einstellungen aus deinem Backup wiederherstellen.",
       "confirmBeta": "Ich verstehe, dass dies Beta-Firmware ist und Tests auf echten Geräten noch nicht abgeschlossen sind",
-      "installBeta": "Beta-Firmware installieren"
+      "installBeta": "Beta-Firmware installieren",
+      "hotspot": {
+        "toggle": "Ohne WLAN installieren (Hotspot des Controllers)",
+        "hint": "Kein WLAN an deiner Spraywall? Boardsesh lädt die Firmware zuerst über jede Internetverbindung herunter, auch mobile Daten. Dann verbindet sich dein Handy mit dem eigenen Hotspot des Controllers, installiert sie und trennt sich danach wieder.",
+        "ssid": "Hotspot-Name des Controllers",
+        "password": "Dieses Passwort funktioniert nicht. WLED-Hotspot-Passwörter haben 8 bis 63 Zeichen, voreingestellt ist wled1234.",
+        "passwordLabel": "Hotspot-Passwort des Controllers",
+        "start": "Herunterladen und verbinden",
+        "downloading": "Firmware wird vor dem Verbinden heruntergeladen und geprüft…",
+        "connecting": "Verbindung mit deinem Controller… Bestätige die WLAN-Anfrage, falls dein Handy fragt.",
+        "rebooting": "WLED startet neu. Verbindung mit seinem Hotspot wird wiederhergestellt…",
+        "complete": "Bluetooth ist installiert, und dein Handy hat den Hotspot des Controllers verlassen. Wähle Bluetooth und dann Bluetooth-Controller suchen.",
+        "failed": "Über den Hotspot des Controllers ließ sich die Installation nicht beenden. Dein Handy hat ihn verlassen. Versuch es noch einmal.",
+        "notFound": "Verbindung mit {{ssid}} fehlgeschlagen. Prüfe, ob der Controller an und in der Nähe ist und ob Netzwerkname und Passwort stimmen.",
+        "denied": "Dein Handy hat sich nicht mit dem Hotspot des Controllers verbunden. Versuch es noch einmal und wähle Verbinden, wenn es fragt.",
+        "timeout": "Die Verbindung mit dem Hotspot des Controllers hat zu lange gedauert. Geh näher an den Controller und versuch es noch einmal.",
+        "unsupported": "Für die Hotspot-Verbindung aus Boardsesh brauchst du Android 10 oder neuer. Verbinde dich in deinen WLAN-Einstellungen mit {{ssid}}, öffne 4.3.2.1 im Browser und verbinde WLED mit einem WLAN. Installiere dann über WLAN.",
+        "lost": "WLED wurde neu gestartet, aber dein Handy konnte sich nicht wieder mit seinem Hotspot verbinden. Lass den Controller eingeschaltet und prüfe dann die Installation.",
+        "locked": "WLED hat das Update abgelehnt. Verbinde dich in deinen WLAN-Einstellungen mit {{ssid}}, öffne 4.3.2.1/settings/sec im Browser, entsperre OTA und deaktiviere „Only allow update from same network/WiFi“. Versuch es dann noch einmal.",
+        "sameNetwork": "Über den Hotspot schaltet Boardsesh in WLED „Only allow update from same network/WiFi“ für die Installation aus und danach wieder ein.",
+        "leave": "Vom Controller trennen"
+      }
     }
   },
   "sprayDetection": {

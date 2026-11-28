@@ -95,22 +95,35 @@ export function SprayWallLedSection({
   wallUuid,
   disabled = false,
   canInstall = false,
+  wallName,
 }: {
   wallUuid: string;
   disabled?: boolean;
   canInstall?: boolean;
+  /** Suggested name the controller advertises over Bluetooth. */
+  wallName?: string;
 }) {
-  return <SprayWallLedEditor key={wallUuid} wallUuid={wallUuid} disabled={disabled} canInstall={canInstall} />;
+  return (
+    <SprayWallLedEditor
+      key={wallUuid}
+      wallUuid={wallUuid}
+      disabled={disabled}
+      canInstall={canInstall}
+      wallName={wallName}
+    />
+  );
 }
 
 function SprayWallLedEditor({
   wallUuid,
   disabled,
   canInstall,
+  wallName,
 }: {
   wallUuid: string;
   disabled: boolean;
   canInstall: boolean;
+  wallName?: string;
 }) {
   const router = useRouter();
   const { t } = useTranslation('boards');
@@ -506,8 +519,15 @@ function SprayWallLedEditor({
                             : t('sprayLed.lightFailed')}
                     </Text>
                   ) : null}
-                  {canInstall && !disabled && settings.controller.url ? (
-                    <WledBluetoothInstaller url={settings.controller.url} disabled={locked || pending !== null} />
+                  {/* No saved address: the owner can still install over the controller's hotspot. */}
+                  {canInstall && !disabled ? (
+                    // Not `locked`: a settings reload or save must not tear down an install that
+                    // holds the controller's hotspot. The installer reads only the address.
+                    <WledBluetoothInstaller
+                      url={settings.controller.url}
+                      wallName={wallName}
+                      disabled={pending !== null}
+                    />
                   ) : null}
                 </>
               )}

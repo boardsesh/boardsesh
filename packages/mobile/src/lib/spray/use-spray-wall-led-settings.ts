@@ -91,7 +91,13 @@ export function useSprayWallLedSettings(wallUuid: string) {
   const load = useCallback(async (session: SettingsSession) => {
     const generation = ++session.generation;
     session.loading = true;
-    setState(initialState(session.wallUuid));
+    // A reload keeps the settings on screen: clearing them would unmount the controls, and with
+    // them an owner's install that is holding the controller's hotspot.
+    setState((shown) =>
+      shown.wallUuid === session.wallUuid && shown.settings
+        ? { ...shown, loading: true, saving: false, error: null }
+        : initialState(session.wallUuid),
+    );
     try {
       const settings = await loadSprayWallLedSettings(session.wallUuid);
       if (!session.active || session.generation !== generation) return;
@@ -100,9 +106,16 @@ export function useSprayWallLedSettings(wallUuid: string) {
       setState({ wallUuid: session.wallUuid, settings, loading: false, saving: false, error: null });
     } catch {
       if (!session.active || session.generation !== generation) return;
+      // Unread again, so save() refuses to overwrite it; the screen keeps showing the last copy.
       session.settings = null;
       session.loading = false;
-      setState({ wallUuid: session.wallUuid, settings: null, loading: false, saving: false, error: 'load' });
+      setState((shown) => ({
+        wallUuid: session.wallUuid,
+        settings: shown.wallUuid === session.wallUuid ? shown.settings : null,
+        loading: false,
+        saving: false,
+        error: 'load',
+      }));
     }
   }, []);
 

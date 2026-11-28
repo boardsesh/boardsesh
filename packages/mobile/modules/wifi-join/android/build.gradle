@@ -1,0 +1,27 @@
+plugins {
+  id 'com.android.library'
+  // Canonical Expo local-module plugin: applies Kotlin + provides
+  // expo-modules-core (Module/ModuleDefinition API) on the compile classpath.
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.boardsesh'
+version = '1.0.0'
+
+android {
+  namespace 'com.boardsesh.wifijoin'
+
+  defaultConfig {
+    minSdk 24
+    // Required by expo-module-gradle-plugin's publication setup.
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
+
+dependencies {
+  // JVM unit tests for the join/bind/release state machine (WifiJoinController
+  // runs against a fake gateway, so no Robolectric). Run via :…:testDebugUnitTest
+  // in .github/workflows/android-pr-rn.yml; `vp` has no Kotlin test runner.
+  testImplementation 'junit:junit:4.13.2'
+}

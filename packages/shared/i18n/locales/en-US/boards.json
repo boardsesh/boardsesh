@@ -80,6 +80,21 @@
       "exportBackup": "Export WLED backup",
       "securitySettings": "Open WLED security settings",
       "backupHint": "The backup includes your controller configuration and presets. Export it somewhere safe before installing.",
+      "controllerName": "Controller name",
+      "controllerNameHint": "Climbers see this name when they look for your Spraywall's Bluetooth. {{used}} of {{max}} bytes used; accented letters take two.",
+      "droppedFeatures": "{{features}} is on, but this firmware leaves it out, so it stops working after the update. Its settings stay in your exported backup.",
+      "confirmDroppedFeatures": "I understand that {{features}} stops working",
+      "droppedFeaturesDone": "{{features}} no longer works on this controller. Its settings are in your exported backup.",
+      "differences": "Settings that changed: {{paths}}",
+      "confirmKeepSettings": "I checked these settings in WLED and want to keep them as they are now",
+      "keepSettings": "Keep these settings",
+      "features": {
+        "mqtt": "MQTT",
+        "hue": "Hue sync",
+        "alexa": "Alexa",
+        "ir": "Infrared remote",
+        "espnow": "ESP-NOW"
+      },
       "confirmModel": "I checked the label: Gledopto GL-C-015WL-D",
       "confirmNoAudio": "I agree to install this image without audio-reactive effects",
       "install": "Install verified firmware",
@@ -88,7 +103,28 @@
       "betaReady": "Your backup is saved. Confirm the controller model and beta status before installing.",
       "betaWarning": "Beta: real-device OTA, Android and iOS testing is incomplete. Installation may fail, and you may need to restore WLED settings from your backup.",
       "confirmBeta": "I understand this is beta firmware and real-device testing is incomplete",
-      "installBeta": "Install beta firmware"
+      "installBeta": "Install beta firmware",
+      "hotspot": {
+        "toggle": "Install without Wi-Fi (controller's hotspot)",
+        "hint": "No Wi-Fi at your Spraywall? Boardsesh downloads the firmware first on any internet, mobile data included. Then your phone joins the controller's own hotspot to install it, and leaves it when done.",
+        "ssid": "Controller hotspot name",
+        "password": "That password won't work. WLED hotspot passwords have 8 to 63 characters, and the default is wled1234.",
+        "passwordLabel": "Controller hotspot password",
+        "start": "Download and connect",
+        "downloading": "Downloading and checking the firmware before connecting…",
+        "connecting": "Connecting to your controller… Approve the Wi-Fi prompt if your phone asks.",
+        "rebooting": "WLED is restarting. Reconnecting to its hotspot…",
+        "complete": "Bluetooth support is installed and your phone has left the controller's hotspot. Choose Bluetooth, then Find Bluetooth controller.",
+        "failed": "Couldn't finish over the controller's hotspot. Your phone has left it, so try again.",
+        "notFound": "Couldn't join {{ssid}}. Check the controller is on and nearby, and the network name and password are right.",
+        "denied": "Your phone didn't join the controller's hotspot. Try again and choose Join when it asks.",
+        "timeout": "Joining the controller's hotspot took too long. Move closer to the controller and try again.",
+        "unsupported": "Joining the hotspot from Boardsesh needs Android 10 or later. Join {{ssid}} in your Wi-Fi settings, open 4.3.2.1 in a browser and connect WLED to a Wi-Fi network. Then install over Wi-Fi.",
+        "lost": "WLED restarted, but your phone couldn't rejoin its hotspot. Keep the controller powered on, then check the installation.",
+        "locked": "WLED refused the update. Join {{ssid}} in your Wi-Fi settings, open 4.3.2.1/settings/sec in a browser, unlock OTA and untick \"Only allow update from same network/WiFi\". Then try again.",
+        "sameNetwork": "Over the hotspot, Boardsesh switches off WLED's \"Only allow update from same network/WiFi\" for the install and switches it back on afterwards.",
+        "leave": "Disconnect from controller"
+      }
     }
   },
   "sprayDetection": {
