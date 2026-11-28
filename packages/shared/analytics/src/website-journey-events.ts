@@ -10,6 +10,7 @@ export const WEBSITE_JOURNEY_EVENTS = {
   NavLinkClicked: 'Nav Link Clicked',
   GymClaimPathClicked: 'Gym Claim Path Clicked',
   PartnerContactClicked: 'Partner Contact Clicked',
+  BuildPlansPathClicked: 'Build Plans Path Clicked',
 } as const;
 
 export const WEBSITE_JOURNEY_PLACEMENTS = [
@@ -118,4 +119,13 @@ export function partnerContactClicked(
   placement: 'home' | 'for-gyms',
 ): WebsiteJourneyEvent {
   return { name: WEBSITE_JOURNEY_EVENTS.PartnerContactClicked, properties: { type, placement } };
+}
+
+/**
+ * A click toward the free build-plan generator at /build-plans. The page's own
+ * `Build Plans Page Viewed` (cnc-funnel.ts) is the arrival; this is only the
+ * click that should lead to it.
+ */
+export function buildPlansPathClicked(placement: 'home'): WebsiteJourneyEvent {
+  return { name: WEBSITE_JOURNEY_EVENTS.BuildPlansPathClicked, properties: { placement } };
 }

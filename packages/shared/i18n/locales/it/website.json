@@ -38,6 +38,32 @@
   "gymBody": "Rivendica la scheda per indicare pannelli, inclinazioni e orari.",
   "wallCard": "La tua Spraywall",
   "partnerCard": "Produttori e partner",
+  "buildPlans": {
+    "title": "Vuoi costruirti il tuo pannello?",
+    "lead": "File CNC gratuiti per la tua parete a uso personale non commerciale. Ogni pezzo e ogni foro, disposti su lastre di compensato da 2440×1220 o 3600×1220 mm.",
+    "includedLabel": "Cosa contengono i file",
+    "included": {
+      "dxf": {
+        "label": "Un DXF per ogni pezzo",
+        "body": "Contorni e fori, pronti per la fresatrice."
+      },
+      "checkSheets": {
+        "label": "Fogli di verifica",
+        "body": "Da stampare in A3 o Tabloid prima di tagliare qualsiasi cosa."
+      },
+      "cutList": {
+        "label": "Distinta di taglio",
+        "body": "Numero di lastre, misure dei pezzi e tutti i fori, contati prima di ordinare il materiale."
+      },
+      "licence": {
+        "label": "Una licenza a tuo nome",
+        "body": "In ogni file del pacchetto. Una licenza copre una parete."
+      }
+    },
+    "cta": "Configura la tua parete",
+    "compatibility": "Compatibile con Kilter Homewall, Kilter Original (OG) e Tension Board 2. Prese e LED si acquistano a parte.",
+    "drawingCaption": "La griglia dei fori di un Kilter Homewall 7×10, divisa nei pezzi da tagliare"
+  },
   "freeApp": "Scarica l’app gratis",
   "trust": "Gratis. Codice aperto. Esporta il diario quando vuoi.",
   "proofNote": "Conta le volte in cui un blocco resta illuminato circa un minuto, comprese le ripetizioni.",

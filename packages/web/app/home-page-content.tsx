@@ -21,6 +21,7 @@ import HomeRecentBetaSection from '@/app/components/beta-videos/home-recent-beta
 import { MarketingScreenshot } from '@/app/components/marketing/marketing-screenshot';
 import { MarketingPreviewSwitchControl } from '@/app/components/marketing/marketing-preview-switch-control';
 import HomeShowcaseVideo from '@/app/components/home/home-showcase-video';
+import HomeBuildPlansCard from '@/app/components/home/home-build-plans-card';
 import { WebsiteJourneyLink } from '@/app/components/marketing/website-journey-link';
 import { WebsiteJourneyChip } from '@/app/components/marketing/website-journey-chip';
 import { QuantumCompatibilityChip } from '@/app/components/marketing/quantum-compatibility-chip';
@@ -179,6 +180,40 @@ export default async function HomePageContent({
           className={styles.sprayPhoto}
         />
       </PageCard>
+      {/* Right under the spray wall: both are for climbers with a wall of their
+          own, and this is the one for people still building it. */}
+      <HomeBuildPlansCard
+        copy={{
+          title: website('buildPlans.title'),
+          lead: website('buildPlans.lead'),
+          includedLabel: website('buildPlans.includedLabel'),
+          included: [
+            {
+              id: 'dxf',
+              label: website('buildPlans.included.dxf.label'),
+              body: website('buildPlans.included.dxf.body'),
+            },
+            {
+              id: 'checkSheets',
+              label: website('buildPlans.included.checkSheets.label'),
+              body: website('buildPlans.included.checkSheets.body'),
+            },
+            {
+              id: 'cutList',
+              label: website('buildPlans.included.cutList.label'),
+              body: website('buildPlans.included.cutList.body'),
+            },
+            {
+              id: 'licence',
+              label: website('buildPlans.included.licence.label'),
+              body: website('buildPlans.included.licence.body'),
+            },
+          ],
+          cta: website('buildPlans.cta'),
+          compatibility: website('buildPlans.compatibility'),
+          drawingCaption: website('buildPlans.drawingCaption'),
+        }}
+      />
       <PageSection title={website('boardChoices')}>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
           {SUPPORTED_BOARDS.filter((board) => board !== 'spray' && isBoardTypeVisible(board)).map((board) => (

@@ -1,0 +1,261 @@
+/* The homepage's build-plans card. Surface, border, radius and padding come from
+   PageCard (`padding="lg" radius="xl"`, the feature strip's recipe); this file
+   is layout, type and the drawing.
+
+   Every colour is a Graphite token. Violet appears once, as the filled CTA's
+   fill (brandCtaSx), so nothing here sets a violet text colour. */
+
+/* Drawing left, copy right: the mirror of the spray wall card directly above
+   (copy left, photo right), so the two cards don't stack the same shape. The
+   figure comes last in the markup, so a phone and a screen reader get the copy
+   first; `order` only moves it on screens with two columns. */
+.card {
+  display: grid;
+  grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
+  gap: var(--spacing-12);
+  align-items: center;
+}
+
+.card > .figure {
+  order: -1;
+}
+
+.copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+/* Doubled: MUI Typography's own class ties a single class and wins on order. */
+.title.title {
+  margin: 0;
+  font-family: var(--font-display), sans-serif;
+  font-size: 36px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.lead.lead {
+  margin: var(--spacing-3) 0 0;
+  max-width: 52ch;
+  color: var(--neutral-500);
+  font-size: var(--font-size-lg);
+  line-height: 1.6;
+}
+
+/* What is in the pack. Not a sequence, so no numbers: a two-by-two set of
+   parts, each opened by a hairline the way a drawing's parts list is ruled. */
+.included {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-5) var(--spacing-8);
+  width: 100%;
+  max-width: 600px;
+  margin: var(--spacing-8) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.includedItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  padding-top: var(--spacing-3);
+  border-top: 1px solid var(--separator);
+  min-width: 0;
+}
+
+.includedLabel.includedLabel {
+  color: var(--neutral-900);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.includedBody.includedBody {
+  color: var(--neutral-500);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-3);
+  margin-top: var(--spacing-8);
+}
+
+.compatibility.compatibility {
+  margin: 0;
+  max-width: 56ch;
+  color: var(--neutral-400);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+/* ---- the drawing ---- */
+
+.figure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  margin: 0;
+  min-width: 0;
+}
+
+/* The check sheet: a raised plate. The CTA never sits on it, so the raised
+   surface is free to be the loud thing. */
+.sheet {
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-lg);
+  background-color: var(--semantic-surface-elevated);
+  padding: var(--spacing-5);
+}
+
+.drawing {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 106 / 136;
+  overflow: visible;
+}
+
+.drawing * {
+  vector-effect: non-scaling-stroke;
+}
+
+.drawingPanelOutline {
+  fill: var(--semantic-surface-elevated);
+  stroke: var(--neutral-300);
+  stroke-width: 1px;
+}
+
+.drawingHole {
+  fill: none;
+  stroke: var(--neutral-400);
+  stroke-width: 1px;
+}
+
+.drawingHoleAux {
+  fill: var(--neutral-400);
+  stroke: none;
+}
+
+/* One panel lifted and in full contrast: the parts list says "one DXF per panel". */
+.drawingPanelHighlighted .drawingPanelOutline {
+  fill: var(--neutral-200);
+  stroke: var(--neutral-700);
+  stroke-width: 1.25px;
+}
+
+.drawingPanelHighlighted .drawingHole {
+  stroke: var(--neutral-700);
+}
+
+.drawingPanelHighlighted .drawingHoleAux {
+  fill: var(--neutral-700);
+}
+
+.drawingDimension,
+.drawingExtension {
+  fill: none;
+  stroke: var(--neutral-400);
+  stroke-width: 1px;
+}
+
+.drawingExtension {
+  stroke: var(--neutral-300);
+}
+
+/* 7′ and 10′ on the dimension lines. Grey like the lines they label. The size
+   is in SVG user units (inches), so it scales with the drawing: 4.5 reads at
+   about 14px on a laptop, and the phone's 200px drawing needs 6.5. */
+.drawingFigure {
+  fill: var(--neutral-500);
+  font-family: inherit;
+  font-size: 4.5px;
+  font-weight: 500;
+}
+
+.caption.caption {
+  color: var(--neutral-400);
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+  text-align: center;
+  text-wrap: balance;
+}
+
+@media (max-width: 1100px) {
+  .card {
+    grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
+    gap: var(--spacing-8);
+  }
+
+  .title.title {
+    font-size: 32px;
+  }
+}
+
+@media (max-width: 760px) {
+  /* Doubled to beat PageCard's padding class regardless of injection order. */
+  .card.card {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-6);
+    padding: var(--spacing-5);
+  }
+
+  /* One column: the figure goes back to its markup place, after the copy. */
+  .card > .figure {
+    order: 0;
+  }
+
+  .title.title {
+    font-size: 28px;
+  }
+
+  .lead.lead {
+    font-size: 17px;
+  }
+
+  /* A phone gets the four parts as a 2×2 of labels. The bodies are detail the
+     lead and the build-plans page already carry; with them the card ran to
+     ~1,100px on a 390px screen. */
+  .included {
+    margin-top: var(--spacing-5);
+    gap: var(--spacing-3) var(--spacing-4);
+  }
+
+  .includedItem {
+    padding-top: var(--spacing-2);
+  }
+
+  .includedLabel.includedLabel {
+    font-size: var(--font-size-sm);
+  }
+
+  .includedBody.includedBody {
+    display: none;
+  }
+
+  .actions {
+    margin-top: var(--spacing-5);
+  }
+
+  .figure {
+    justify-self: center;
+    width: 100%;
+    max-width: 200px;
+  }
+
+  .sheet {
+    padding: var(--spacing-3);
+  }
+
+  .drawingFigure {
+    font-size: 6.5px;
+  }
+}

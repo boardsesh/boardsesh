@@ -38,6 +38,32 @@
   "gymBody": "Reclama tu ficha para indicar plafones, ángulos y horarios.",
   "wallCard": "Tu propio Spraywall",
   "partnerCard": "Fabricantes y colaboradores",
+  "buildPlans": {
+    "title": "¿Vas a construir tu propio plafón?",
+    "lead": "Archivos CNC gratis para tu propio muro de uso no comercial. Cada panel y cada agujero, distribuidos en planchas de contrachapado de 2440×1220 o 3600×1220 mm.",
+    "includedLabel": "Qué incluyen los archivos",
+    "included": {
+      "dxf": {
+        "label": "Un DXF por panel",
+        "body": "Contornos y agujeros, listos para la fresadora."
+      },
+      "checkSheets": {
+        "label": "Hojas de comprobación",
+        "body": "Imprímelas en A3 o Tabloide antes de cortar nada."
+      },
+      "cutList": {
+        "label": "Una lista de corte",
+        "body": "Cuántas planchas, las medidas de cada panel y todos los agujeros, contados antes de pedir material."
+      },
+      "licence": {
+        "label": "Una licencia a tu nombre",
+        "body": "En cada archivo del pack. Una licencia cubre un muro."
+      }
+    },
+    "cta": "Configura tu muro",
+    "compatibility": "Compatible con Kilter Homewall, Kilter Original (OG) y Tension Board 2. Las presas y los LEDs se compran aparte.",
+    "drawingCaption": "La rejilla de agujeros de un Kilter Homewall 7×10, dividida en paneles"
+  },
   "freeApp": "Consigue la app gratis",
   "trust": "Gratis. Código abierto. Exporta tu historial cuando quieras.",
   "proofNote": "Cuenta las veces que un bloque permaneció iluminado aproximadamente un minuto, incluidas las repeticiones.",

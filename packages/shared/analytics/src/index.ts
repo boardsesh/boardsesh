@@ -282,6 +282,7 @@ export {
   navLinkClicked,
   gymClaimPathClicked,
   partnerContactClicked,
+  buildPlansPathClicked,
   type WebsiteJourneyPlacement,
   type WebsiteCompatibilityBoard,
   type WebsiteImportPath,

@@ -38,6 +38,32 @@
   "gymBody": "Revendiquez votre fiche pour renseigner boards, angles et horaires.",
   "wallCard": "Votre propre Spraywall",
   "partnerCard": "Fabricants et partenaires",
+  "buildPlans": {
+    "title": "Vous construisez votre board ?",
+    "lead": "Des fichiers CNC gratuits pour votre propre mur à usage non commercial. Chaque panneau et chaque perçage, répartis sur des plaques de contreplaqué de 2440×1220 ou 3600×1220 mm.",
+    "includedLabel": "Ce que contiennent les fichiers",
+    "included": {
+      "dxf": {
+        "label": "Un DXF par panneau",
+        "body": "Contours et perçages, prêts pour la fraiseuse."
+      },
+      "checkSheets": {
+        "label": "Planches de contrôle",
+        "body": "À imprimer en A3 ou Tabloid avant la moindre découpe."
+      },
+      "cutList": {
+        "label": "Une liste de débit",
+        "body": "Nombre de plaques, dimensions des panneaux et chaque perçage, comptés avant de commander la matière."
+      },
+      "licence": {
+        "label": "Une licence à votre nom",
+        "body": "Sur chaque fichier du pack. Une licence couvre un mur."
+      }
+    },
+    "cta": "Configurer votre mur",
+    "compatibility": "Compatible avec Kilter Homewall, Kilter Original (OG) et Tension Board 2. Prises et LED à acheter séparément.",
+    "drawingCaption": "La grille de perçage d’un Kilter Homewall 7×10, découpée en panneaux"
+  },
   "freeApp": "Obtenir l’app gratuite",
   "trust": "Gratuit. Code ouvert. Exportez votre carnet quand vous voulez.",
   "proofNote": "Compte les fois où un bloc est resté allumé environ une minute, répétitions comprises.",

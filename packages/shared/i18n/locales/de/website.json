@@ -38,6 +38,32 @@
   "gymBody": "Beanspruche deinen Eintrag, um Boards, Winkel und Öffnungszeiten anzugeben.",
   "wallCard": "Deine eigene Spraywall",
   "partnerCard": "Hersteller und Partner",
+  "buildPlans": {
+    "title": "Du baust dein eigenes Board?",
+    "lead": "Kostenlose CNC-Dateien für deine eigene nicht gewerblich genutzte Wand. Jedes Panel und jede Bohrung, verteilt auf Sperrholzplatten mit 2440×1220 oder 3600×1220 mm.",
+    "includedLabel": "Was in den Dateien steckt",
+    "included": {
+      "dxf": {
+        "label": "Eine DXF-Datei pro Panel",
+        "body": "Umrisse und Bohrungen, bereit für die Fräse."
+      },
+      "checkSheets": {
+        "label": "Kontrollbögen",
+        "body": "In A3 oder Tabloid drucken, bevor etwas geschnitten wird."
+      },
+      "cutList": {
+        "label": "Eine Zuschnittliste",
+        "body": "Plattenzahl, Panelmaße und jede Bohrung, gezählt bevor du Material bestellst."
+      },
+      "licence": {
+        "label": "Eine Lizenz auf deinen Namen",
+        "body": "In jeder Datei des Packs. Eine Lizenz gilt für eine Wand."
+      }
+    },
+    "cta": "Wand konfigurieren",
+    "compatibility": "Kompatibel mit Kilter Homewall, Kilter Original (OG) und Tension Board 2. Griffe und LEDs kaufst du separat.",
+    "drawingCaption": "Das Bohrraster eines Kilter Homewall 7×10, in Panels aufgeteilt"
+  },
   "freeApp": "Kostenlose App holen",
   "trust": "Kostenlos. Open Source. Exportiere dein Logbuch jederzeit.",
   "proofNote": "Zählt, wie oft ein Boulder etwa eine Minute beleuchtet blieb, einschließlich Wiederholungen.",
