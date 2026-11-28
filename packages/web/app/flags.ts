@@ -1,4 +1,4 @@
-import { QUANTUM_BOARD_FLAG } from '@boardsesh/board-config/visibility';
+import { getBoardLaunchFlags } from '@boardsesh/board-config/visibility';
 import { PARTNER_DEVELOPER_CONSOLE_FLAG } from '@boardsesh/auth-protocol/partner-oauth';
 
 // A flat bag of runtime feature flags. `Record<string, boolean | undefined>` (rather than
@@ -29,7 +29,9 @@ export const MOONBOARD_WIDE_ANGLES_FLAG = 'moonboard-wide-angles';
 
 // Keys read from PostHog by FeatureFlagsProvider. Each must have a matching
 // PostHog feature flag; values stay `undefined` (OFF) until that flag resolves.
-export const FEATURE_FLAG_KEYS = [GYM_KIOSK_FLAG, MOONBOARD_WIDE_ANGLES_FLAG, QUANTUM_BOARD_FLAG] as const;
+// Board launch flags come from the capability table's `launchFlag`
+// (@boardsesh/board-config), so a newly flagged board is read here without an edit.
+export const FEATURE_FLAG_KEYS = [GYM_KIOSK_FLAG, MOONBOARD_WIDE_ANGLES_FLAG, ...getBoardLaunchFlags()] as const;
 
 // Gates the developer console at /developers/apps, where a developer registers
 // partner OAuth apps (docs/integrations/integration-platform.md, milestone 1.6). Server-side
@@ -79,5 +81,5 @@ export const SERVER_FEATURE_FLAG_KEYS = [
   CNC_PACKS_FLAG,
   DIRECTORY_REPORTS_FLAG,
   DIRECTORY_SETUP_SUGGESTIONS_FLAG,
-  QUANTUM_BOARD_FLAG,
+  ...getBoardLaunchFlags(),
 ] as const;

@@ -11,11 +11,8 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { useReducer, useRef } from 'react';
 import { initialState, queueReducer, type ClimbQueueItem, type QueueState } from '@boardsesh/queue';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import {
-  isBoardConfigVisible,
-  QUANTUM_BOARD_FLAG,
-  type BoardVisibilityConfig,
-} from '@boardsesh/board-config/visibility';
+import { QUANTUM_BOARD_FLAG } from '@boardsesh/board-config/capabilities';
+import { isBoardConfigVisible, type BoardVisibilityConfig } from '@boardsesh/board-config/visibility';
 import type { LocalQueueSnapshot } from '../../../lib/queue-snapshot-store';
 
 const storage = vi.hoisted(() => ({

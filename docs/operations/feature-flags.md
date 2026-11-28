@@ -461,6 +461,53 @@ The [PostHog flag](https://us.posthog.com/project/412845/feature-flags/1109454)
 is disabled with 0% rollout. The shared eWalls catalogue worker is independent
 of this visibility flag.
 
+`quantum-board` is the first board launch flag, and the mechanism is not
+Quantum's: see the next section.
+
+### Board launch flags live in the capability table
+
+Whether a board is released is two optional fields on its row in
+`CAPABILITIES_BY_BOARD` (`packages/shared/board-config/src/board-capabilities.ts`):
+
+- `launchFlag`: the PostHog key that gates the board. Absent, everyone sees the
+  board. Present, only an explicit boolean `true` shows it. A multivariate
+  string never opens it, in the browser, on mobile or in server rendering
+  (`isBoardLaunchFlag`).
+- `isConfigReleased({ layoutId, sizeId, setIds? })`: which setups have shipped.
+  Absent, every setup in the catalogue is released. This is not a rollout
+  switch. An unreleased setup stays hidden with the flag on, and the backend
+  refuses it. Quantum's row releases four of its five models (not the Belay
+  Board), on its one hold set.
+
+Everything else reads the row through `@boardsesh/board-config/visibility`:
+
+- `isBoardTypeVisible` and `isBoardConfigVisible` (flags + release) at every
+  place that offers, opens or selects a board.
+- `isBoardConfigReleased` (release only, no flags) on the backend: the climb
+  read (`getClimbByUuid`) and the climb search validation. The setup cascade
+  (`getBoardLayouts`, `getBoardSizesForLayoutId`, `getBoardSetsForLayoutAndSize`,
+  `getDefaultBoardSizeForLayout`) offers only released setups the same way.
+- `getBoardLaunchFlags()`: every launch flag in the table. Web's
+  `FEATURE_FLAG_KEYS` and `SERVER_FEATURE_FLAG_KEYS`, web's server-side
+  `getBoardVisibilityFlags`, and mobile's `useIsBoardTypeVisible` /
+  `useIsBoardConfigVisible` read all of them, so none of these lists a board.
+
+To put a new board behind a launch flag:
+
+1. Set `launchFlag` (and `isConfigReleased` if only part of the board ships) on
+   its row. Spell the key once, as a constant next to the row, as
+   `QUANTUM_BOARD_FLAG` is.
+2. Add a mobile catalogue entry in `FEATURE_FLAG_DEFINITIONS` with that
+   constant as the key, so testers get a switch. A flag missing from the
+   catalogue is never read from PostHog, and
+   `feature-flag-rows.test.ts` fails until it is there.
+3. Create the PostHog flag, off, as a plain boolean flag.
+
+Launching the board removes `launchFlag` and the catalogue entry;
+`isConfigReleased` stays until every setup has shipped. Board-specific rules
+that are not about release (a board's own per-field setup validation, its BLE,
+its catalogue importer) still name the board where they live.
+
 ### Spray walls are enabled by default
 
 The former `spray-walls` rollout flag has been retired. The boards picker and

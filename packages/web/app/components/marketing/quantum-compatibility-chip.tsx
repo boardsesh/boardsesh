@@ -3,11 +3,11 @@
 import { useSyncExternalStore } from 'react';
 import { compatibilityBoardSelected } from '@boardsesh/analytics';
 import { boardTypeLabel } from '@boardsesh/board-constants/board-type-labels';
-import { isBoardTypeVisible, QUANTUM_BOARD_FLAG } from '@boardsesh/board-config/visibility';
+import { getBoardLaunchFlags, isBoardTypeVisible } from '@boardsesh/board-config/visibility';
 import { readPosthogFeatureFlags, subscribePosthogFeatureFlags } from '@/app/lib/analytics';
 import { WebsiteJourneyChip } from './website-journey-chip';
 
-const getSnapshot = () => isBoardTypeVisible('quantum', readPosthogFeatureFlags([QUANTUM_BOARD_FLAG]));
+const getSnapshot = () => isBoardTypeVisible('quantum', readPosthogFeatureFlags(getBoardLaunchFlags()));
 const getServerSnapshot = () => false;
 
 /** Keep the shared homepage HTML independent of a visitor's rollout assignment. */

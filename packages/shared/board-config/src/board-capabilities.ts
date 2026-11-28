@@ -14,6 +14,10 @@
 // did, when Woods learned to answer a hold/zone search off its own geometry
 // (boardsesh/boardsesh#4748). A future board that can't reintroduces the row.
 //
+// Whether a board is released at all is a row too: `launchFlag` and
+// `isConfigReleased`, read through `board-visibility.ts`. A board behind a
+// rollout flag is those two fields, not an edit at every call site.
+//
 // Deliberately NOT in here:
 //  - `isSizeScopedBoard` — mirrored into offline-sync by design, so it stays
 //    where the sync engine can duplicate it without importing this package.
@@ -21,13 +25,40 @@
 //    the firmware accepts), not a product capability. It lives with the adapter
 //    factory.
 
-import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
+import { isReleasedQuantumConfig, QUANTUM_SET_ID } from '@boardsesh/board-constants/quantum';
+// The `types` entry, not the package root: `@boardsesh/board-config/visibility`
+// reads this table, web's analytics module (on every page) imports that entry,
+// and the root also carries the whole GraphQL schema. Tests that mock the root
+// with a partial factory stay out of this module the same way.
+import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema/types';
 
 export type WallSendMode = 'automatic' | 'explicit-layer';
 
 export type BoardCatalogSource = 'bundled' | 'personal';
 
+/** The setup a release predicate is asked about. `setIds` absent means the caller names no sets. */
+export type BoardReleaseConfig = {
+  layoutId: number;
+  sizeId: number;
+  setIds?: readonly number[];
+};
+
 export type BoardCapabilities = {
+  /**
+   * The feature-flag key that gates this board's rollout. Absent: everyone sees
+   * the board. Present: only an explicit boolean `true` for this key shows it
+   * (`isBoardTypeVisible`), and the flag catalogues read every such key through
+   * `getBoardLaunchFlags()`, so web and mobile subscribe to it without an edit.
+   * A variant string never opens it (`isBoardLaunchFlag`).
+   */
+  launchFlag?: string;
+  /**
+   * Which layout / size / set combinations have shipped. Absent: every setup
+   * the catalogue holds is released. Unlike `launchFlag` this is not a rollout
+   * switch: an unreleased setup stays hidden with the flag on, and the backend
+   * refuses it (`isBoardConfigReleased`).
+   */
+  isConfigReleased?: (config: BoardReleaseConfig) => boolean;
   /** Where setup options and geometry come from. Personal walls use their own
    * creation flow; every catalogue board ships a fixed physical map. */
   catalogSource: BoardCatalogSource;
@@ -288,7 +319,22 @@ const SPRAY_CAPABILITIES: BoardCapabilities = {
   staticBoardRender: false,
 };
 
+/** Quantum's rollout flag. The one place the key is spelled. */
+export const QUANTUM_BOARD_FLAG = 'quantum-board';
+
+/**
+ * Four of the five Quantum models have shipped (`isReleasedQuantumConfig`; the
+ * Belay Board has not), all on the one Quantum hold set. A setup that names its
+ * sets must name exactly that set.
+ */
+function isReleasedQuantumBoardConfig({ layoutId, sizeId, setIds }: BoardReleaseConfig): boolean {
+  if (!isReleasedQuantumConfig(layoutId, sizeId)) return false;
+  return setIds === undefined || (setIds.length === 1 && setIds[0] === QUANTUM_SET_ID);
+}
+
 const QUANTUM_CAPABILITIES: BoardCapabilities = {
+  launchFlag: QUANTUM_BOARD_FLAG,
+  isConfigReleased: isReleasedQuantumBoardConfig,
   catalogSource: 'bundled',
   angleOptionsSource: 'catalog',
   // TODO(#7918): enable once public Quantum climb and collection routes are ready.

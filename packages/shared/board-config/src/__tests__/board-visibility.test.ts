@@ -1,6 +1,7 @@
 import { getBoardLayouts, getBoardSetsForLayoutAndSize, getBoardSizesForLayoutId } from '../board-catalogue-cascade';
 import { describe, expect, it } from 'vitest';
-import { isBoardConfigVisible, isBoardTypeVisible, QUANTUM_BOARD_FLAG } from '../board-visibility';
+import { QUANTUM_BOARD_FLAG } from '../board-capabilities';
+import { getBoardLaunchFlags, isBoardConfigVisible, isBoardTypeVisible } from '../board-visibility';
 
 describe('board launch visibility', () => {
   it.each([undefined, false, 'true', 1])('requires an explicit boolean opt-in (%s)', (enabled) => {
@@ -14,6 +15,14 @@ describe('board launch visibility', () => {
   });
   it.each([undefined, null, '', ' ', 1])('declines a malformed cached board type (%j)', (boardType) => {
     expect(isBoardTypeVisible(boardType, { [QUANTUM_BOARD_FLAG]: true })).toBe(false);
+  });
+  it('fits the mobile launch-flag bitmask', () => {
+    // packages/mobile/src/hooks/use-board-visibility.ts packs one bit per launch
+    // flag into a 32-bit integer (`1 << 32 === 1`), so too many flags would alias.
+    expect(
+      getBoardLaunchFlags().length,
+      'Over 31 launch flags: launch a board, or replace the bitmask in mobile use-board-visibility.ts',
+    ).toBeLessThanOrEqual(31);
   });
 });
 

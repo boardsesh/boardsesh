@@ -1,6 +1,6 @@
 import { useCallback, useContext } from 'react';
 import { QUANTUM_MODELS, QUANTUM_RELEASED_MODELS } from '@boardsesh/board-constants/quantum';
-import { QUANTUM_BOARD_FLAG } from '@boardsesh/board-config/visibility';
+import { QUANTUM_BOARD_FLAG } from '@boardsesh/board-config/capabilities';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useFeatureFlag, useFeatureFlagsResolved } from './feature-flags-provider';
 import { QueueSessionIdContext } from './queue/queue-contexts';
