@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "development-client",
+  "runUrl": "https://github.com/boardsesh/boardsesh/actions/runs/45057247167",
+  "artifactId": 14768191458,
+  "pullRequestHead": "92ab3fbfef97c2e6090bf66ba870d6e07c7b9430",
+  "sourceSha": "0ed90e4f98ea68cbd4ffe89cc42382121bde3253",
+  "runId": "4a004bda-979d-4fd5-ac69-84df6b5b978d",
+  "platform": "android",
+  "osVersion": "16",
+  "device": "emulator-5554",
+  "binarySha256": "763d4f14cf72a4960a4269cb4bcc4e6fec89c66761d2896de05ac30937fac7fe",
+  "nativeVersion": "2.8.0",
+  "nativeBuild": "1678",
+  "runtimeVersion": "90a170e74a063da819a63716e86f4b4c123cfd84",
+  "updateId": null,
+  "isEmbeddedLaunch": false,
+  "syntheticCatalogue": true,
+  "contention": {
+    "status": "passed",
+    "elapsedMs": 16110,
+    "fresh": {
+      "rows": 369000,
+      "partialRows": 0,
+      "elapsedMs": 3441,
+      "writes": [
+        {
+          "operation": "reconcile:favorite",
+          "elapsedMs": 29,
+          "importActiveAtCompletion": true
+        },
+        {
+          "operation": "reconcile:tick",
+          "elapsedMs": 55,
+          "importActiveAtCompletion": true
+        },
+        {
+          "operation": "reconcile:follow",
+          "elapsedMs": 79,
+          "importActiveAtCompletion": true
+        },
+        {
+          "operation": "batch:tick",
+          "elapsedMs": 199,
+          "importActiveAtCompletion": true
+        },
+        {
+          "operation": "batch:follow",
+          "elapsedMs": 444,
+          "importActiveAtCompletion": true
+        },
+        {
+          "operation": "batch:favorite",
+          "elapsedMs": 653,
+          "importActiveAtCompletion": true
+        }
+      ],
+      "importResult": {
+        "climbsWatermark": {
+          "updatedAt": "2026-01-01T00:00:00.000Z",
+          "syncSeq": "1"
+        },
+        "statsWatermark": {
+          "updatedAt": "2026-01-01T00:00:00.000Z",
+          "syncSeq": "1"
+        },
+        "artifactBuiltAt": "2026-01-01T00:00:00.000Z",
+        "climbsImported": 369000,
+        "statsImported": 369000,
+        "importBatches": 148,
+        "importVerifyMs": 740,
+        "importReconcileMs": 7,
+        "importRowsMs": 2545,
+        "importLockMaxMs": 28,
+        "importLockWaitMs": 71
+      },
+      "reopenedOutboxRows": 6
+    },
+    "partial": {
+      "rows": 369000,
+      "partialRows": 184500,
+      "elapsedMs": 5733,
+      "writes": [
+        {
+          "operation": "reconcile:tick",
+          "elapsedMs": 950,
+          "importActiveAtCompletion": true
+        },
+        {
+          "operation": "reconcile:follow",
+          "elapsedMs": 981,
+          "importActiveAtCompletion": true
+        },
+        {
+          "operation": "reconcile:favorite",
+          "elapsedMs": 1055,
+          "importActiveAtCompletion": true
+        },
+        {
+          "operation": "batch:follow",
+          "elapsedMs": 669,
+          "importActiveAtCompletion": true
+        },
+        {
+          "operation": "batch:favorite",
+          "elapsedMs": 970,
+          "importActiveAtCompletion": true
+        },
+        {
+          "operation": "batch:tick",
+          "elapsedMs": 2369,
+          "importActiveAtCompletion": true
+        }
+      ],
+      "importResult": {
+        "climbsWatermark": {
+          "updatedAt": "2026-01-01T00:00:00.000Z",
+          "syncSeq": "1"
+        },
+        "statsWatermark": {
+          "updatedAt": "2026-01-01T00:00:00.000Z",
+          "syncSeq": "1"
+        },
+        "artifactBuiltAt": "2026-01-01T00:00:00.000Z",
+        "climbsImported": 369000,
+        "statsImported": 369000,
+        "importBatches": 148,
+        "importVerifyMs": 752,
+        "importReconcileMs": 928,
+        "importRowsMs": 3943,
+        "importLockMaxMs": 928,
+        "importLockWaitMs": 68
+      },
+      "reopenedOutboxRows": 6
+    },
+    "prolonged": {
+      "databaseName": "offline-write-qa-4a004bda-979d-4fd5-ac69-84df6b5b978d-prolonged.db",
+      "elapsedMs": 4187,
+      "acknowledgedFailedWrite": false,
+      "newWriteSucceeded": true
+    }
+  },
+  "reload": {
+    "status": "not-run",
+    "holdingReceiptRetained": true,
+    "pidBeforeReload": "2678",
+    "reason": "Host resume failed: development package has no resolvable MAIN/LAUNCHER intent. Metro reload was not requested."
+  },
+  "receivingReleaseQualified": false,
+  "limits": [
+    "Dedicated Android emulator and generated narrow rows; no physical iPhone or production catalogue payload.",
+    "Development runtime identity does not qualify a production OTA or receiving release.",
+    "No server delivery or missing-tick conclusion follows from this local check."
+  ]
+}

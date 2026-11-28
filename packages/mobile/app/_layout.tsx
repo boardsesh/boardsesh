@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 import { usePathname, type ErrorBoundaryProps } from 'expo-router';
 import { loadIntegrationBootstrap } from '../src/dev/integration/load';
+import { loadOfflineWriteRoot, loadOfflineWriteErrorBoundary } from '../src/dev/offline-writes/load';
 import { loadStoryRoot, loadStoryErrorBoundary } from '../src/dev/stories/load';
 
 // Keep application imports lazy: their module initialization starts telemetry,
@@ -16,6 +17,10 @@ export const unstable_settings = { anchor: 'index' };
 
 export function ErrorBoundary(props: ErrorBoundaryProps) {
   const pathname = usePathname();
+  if (__DEV__ && (process.env.EXPO_PUBLIC_OFFLINE_WRITE_QA === '1' || pathname === '/dev/integration/offline-writes')) {
+    const Boundary = loadOfflineWriteErrorBoundary();
+    if (Boundary) return <Boundary {...props} />;
+  }
   if (
     __DEV__ &&
     (process.env.EXPO_PUBLIC_STORY_MODE === '1' ||
@@ -36,6 +41,10 @@ function renderApplication() {
 
 export default function RootLayout() {
   const pathname = usePathname();
+  if (__DEV__ && (process.env.EXPO_PUBLIC_OFFLINE_WRITE_QA === '1' || pathname === '/dev/integration/offline-writes')) {
+    const OfflineWriteRoot = loadOfflineWriteRoot();
+    if (OfflineWriteRoot) return <OfflineWriteRoot />;
+  }
   if (
     __DEV__ &&
     (process.env.EXPO_PUBLIC_STORY_MODE === '1' ||

@@ -49,9 +49,11 @@ for PLATFORM in ios android; do
   # markers in a production bundle means a require escaped the __DEV__ gate in
   # packages/mobile/src/dev/stories/load.ts: `[stories] ready` is the story
   # screens, `[stories] registry` the registry that pulls in every story file.
-  for MARKER in '\[stories\] ready' '\[stories\] registry'; do
+  # Offline write QA also has a native database and receipt transport. Its
+  # markers must disappear with the __DEV__-gated lazy loader in store bundles.
+  for MARKER in '\[stories\] ready' '\[stories\] registry' 'offline-write-qa' 'qa:prepared-runtime'; do
     if grep -rqa "$MARKER" "$PLATFORM_DIR"; then
-      echo "[mobile-bundle] $PLATFORM bundle: FAILED (found \"${MARKER//\\/}\": the dev-only story harness is in the production bundle; see packages/mobile/src/dev/stories/load.ts)"
+      echo "[mobile-bundle] $PLATFORM bundle: FAILED (found \"${MARKER//\\/}\": a dev-only harness is in the production bundle; check its src/dev lazy loader)"
       FAILED=1
     fi
   done

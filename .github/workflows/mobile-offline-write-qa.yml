@@ -1,0 +1,169 @@
+name: Offline native write recovery
+
+# Real SQLite and real JS runtime replacement. This does not enable automatic
+# downloads, publish an update, or turn simulator results into device evidence.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/mobile-offline-write-qa.yml'
+      - 'scripts/ci-offline-write-qa.sh'
+      - 'scripts/mobile-offline-write-qa.ts'
+      - 'scripts/lib/offline-write-qa*.ts'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'packages/mobile/package.json'
+      - 'packages/mobile/app.config.ts'
+      - 'packages/mobile/fingerprint.config.js'
+      - 'packages/mobile/app/_layout.tsx'
+      - 'packages/mobile/app/dev/integration/offline-writes.tsx'
+      - 'packages/mobile/src/dev/offline-writes/**'
+      - 'packages/mobile/src/hooks/use-offline-mutations.ts'
+      - 'packages/mobile/src/db/**'
+      - 'packages/shared/offline-sync/src/**'
+      - 'patches/expo-sqlite*'
+      - 'patches/expo-modules-core*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: offline-write-qa-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+env:
+  BOARDSESH_METRO_PORT: '8095'
+  CI: '1'
+  SENTRY_DISABLE_AUTO_UPLOAD: 'true'
+  EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+  EXPO_PUBLIC_USE_RN_FETCH: '1'
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prepare task scratch storage
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.boardsesh/tmp/offline-write-qa"
+          echo "TMPDIR=$GITHUB_WORKSPACE/.boardsesh/tmp/offline-write-qa" >> "$GITHUB_ENV"
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - run: vp install --frozen-lockfile
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: '16111833'
+          packages: ''
+      - name: Install Android build tools
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
+      - name: Resolve matching native dev client
+        id: apk
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: vp run mobile:android-apk -- --require-fresh
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Reproduce writes on Android
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          ram-size: 4096M
+          heap-size: 1024M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -timezone UTC
+          disable-animations: true
+          script: bash "$GITHUB_WORKSPACE/scripts/ci-offline-write-qa.sh" android emulator-5554 "$OFFLINE_WRITE_QA_APP_PATH"
+        env:
+          OFFLINE_WRITE_QA_APP_PATH: ${{ steps.apk.outputs.apk_path }}
+      - name: Preserve Android receipts and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-write-qa-android
+          path: .boardsesh/offline-write-qa/android/**
+          if-no-files-found: warn
+          retention-days: 30
+
+  ios:
+    runs-on: xcode-27
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare task scratch storage
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.boardsesh/tmp/offline-write-qa"
+          echo "TMPDIR=$GITHUB_WORKSPACE/.boardsesh/tmp/offline-write-qa" >> "$GITHUB_ENV"
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - run: vp install --frozen-lockfile
+      - name: Select matching Xcode
+        run: bash scripts/select-screenshot-xcode.sh
+      - name: Compute native simulator app key
+        id: appkey
+        env:
+          NATIVE_INPUT_HASH: ${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/targets/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements', 'scripts/ios-screenshot-app-cache.ts', 'scripts/select-screenshot-xcode.sh') }}
+        run: node --experimental-strip-types scripts/ios-screenshot-app-cache.ts key --native-hash "$NATIVE_INPUT_HASH" --minimum-sdk 27.1
+      - name: Restore matching simulator dev client
+        id: app-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: packages/mobile/.app-cache
+          key: ${{ steps.appkey.outputs.key }}
+      - name: Build matching simulator dev client
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        run: vp run mobile:build-sim-app -- --app-out packages/mobile/.app-cache
+      - name: Verify simulator app identity
+        env:
+          APP_CACHE_KEY: ${{ steps.appkey.outputs.key }}
+        run: node --experimental-strip-types scripts/ios-screenshot-app-cache.ts validate --key "$APP_CACHE_KEY" --app packages/mobile/.app-cache/Boardsesh.app --minimum-sdk 27.1
+      - name: Save matching simulator dev client
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: packages/mobile/.app-cache
+          key: ${{ steps.appkey.outputs.key }}
+      - name: Create a dedicated simulator
+        id: device
+        run: |
+          simulator_id=$(xcrun simctl create "Offline writes $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro-Max)
+          echo "udid=$simulator_id" >> "$GITHUB_OUTPUT"
+          BOARDSESH_IOS_SIMULATOR_UDID="$simulator_id" vp exec tsx scripts/mobile-simulator-lease.ts xcrun simctl boot "$simulator_id"
+          BOARDSESH_IOS_SIMULATOR_UDID="$simulator_id" vp exec tsx scripts/mobile-simulator-lease.ts xcrun simctl bootstatus "$simulator_id" -b
+      - name: Reproduce writes on iOS
+        env:
+          OFFLINE_WRITE_QA_DEVICE: ${{ steps.device.outputs.udid }}
+        run: bash scripts/ci-offline-write-qa.sh ios "$OFFLINE_WRITE_QA_DEVICE" packages/mobile/.app-cache/Boardsesh.app
+      - name: Shut down the dedicated simulator
+        if: always() && steps.device.outputs.udid != ''
+        env:
+          OFFLINE_WRITE_QA_DEVICE: ${{ steps.device.outputs.udid }}
+        run: BOARDSESH_IOS_SIMULATOR_UDID="$OFFLINE_WRITE_QA_DEVICE" vp exec tsx scripts/mobile-simulator-lease.ts xcrun simctl shutdown "$OFFLINE_WRITE_QA_DEVICE" || true
+      - name: Preserve iOS receipts and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-write-qa-ios
+          path: .boardsesh/offline-write-qa/ios/**
+          if-no-files-found: warn
+          retention-days: 30

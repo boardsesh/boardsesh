@@ -1,0 +1,69 @@
+{
+  "project_id": 412845,
+  "source_url": "https://us.posthog.com/project/412845/sql",
+  "collected_on": "2026-11-21",
+  "issue": "https://github.com/boardsesh/boardsesh/issues/7985",
+  "receiving_target": "Next native release from main (SDK58); observed prior SDK58 builds are context, not proof of release eligibility.",
+  "filters": {
+    "filterTestAccounts": true,
+    "properties": [
+      {
+        "type": "event",
+        "key": "environment",
+        "operator": "exact",
+        "value": "production"
+      },
+      {
+        "type": "event",
+        "key": "$os",
+        "operator": "exact",
+        "value": ["iOS", "iPadOS", "Android"]
+      },
+      {
+        "type": "hogql",
+        "key": "coalesce(properties.ota_branch, 'production') = 'production'"
+      },
+      {
+        "type": "event",
+        "key": "$app_namespace",
+        "operator": "exact",
+        "value": "com.boardsesh.app"
+      }
+    ]
+  },
+  "metric_status": "Noncanonical debugging aggregates; no matching approved metric in catalog.",
+  "limitations": [
+    "Counts cover consented/delivered events only.",
+    "Retry ladders include full local writes and outbox-only fallback; event counts are not unique failed saves or lost ticks.",
+    "Missing JS restart count is unknown. A positive count does not independently identify the holder.",
+    "People can occur in multiple native/OTA groups; do not sum group people.",
+    "SDK58 zero retries with nine observed starts in this complete seven-day window is insufficient to claim reliability.",
+    "No post-fix production outcomes or physical device qualification is established by this snapshot."
+  ],
+  "queries": [
+    {
+      "name": "local_write_runtime_attribution",
+      "query": "SELECT properties.$os AS os, properties.$app_version AS version, properties.$app_build AS build, properties.ota_runtime_version AS runtime, properties.ota_update_id AS ota, properties.ota_is_embedded AS embedded, properties.tableName AS table_name, properties.operation AS operation, properties.outcome AS outcome, properties.wasOffline AS offline, properties.jsRestartCount AS restarts, count() AS events, uniq(person_id) AS people FROM events WHERE timestamp >= '2026-10-24' AND timestamp < '2026-11-21' AND event = 'Offline Local Write Attempt Failed' AND {filters} GROUP BY os,version,build,runtime,ota,embedded,table_name,operation,outcome,offline,restarts ORDER BY events DESC LIMIT 150",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "os|version|build|runtime|ota|embedded|table_name|operation|outcome|offline|restarts|events|people\nAndroid|2.6.0|2001310|8733a10cad03453551ff474a116ef4858611f75b|b07eeecb-660e-7715-14d3-29950361a55e|False|boardsesh_ticks|create|exhausted|False|0.0|24|14\nAndroid|2.6.0|2001310|8733a10cad03453551ff474a116ef4858611f75b|fa716b2e-6b01-0657-4ca8-89928397d3d1|False|boardsesh_ticks|create|exhausted|False|1.0|11|2\nAndroid|2.6.0|2001310|8733a10cad03453551ff474a116ef4858611f75b|b07eeecb-660e-7715-14d3-29950361a55e|False|boardsesh_ticks|create|exhausted|False|1.0|8|4\nAndroid|2.5.0|2001108|154bc941c504727afc914057aed2edff2c096576|316dd54a-62b9-3990-f4fe-0bac97791385|False|boardsesh_ticks|create|exhausted|False|(null)|6|3\nAndroid|2.6.0|2001310|8733a10cad03453551ff474a116ef4858611f75b|b07eeecb-660e-7715-14d3-29950361a55e|False|boardsesh_ticks|create|recovered|False|0.0|6|6\niOS|2.7.0|13|e171c5f7e69ad32d3915a5ae23155914015b5092|db68ab2c-eeb5-e88d-d354-d83644c15efb|False|user_favorites|create|recovered|False|0.0|2|1\nAndroid|2.6.0|2001310|8733a10cad03453551ff474a116ef4858611f75b|fa716b2e-6b01-0657-4ca8-89928397d3d1|False|boardsesh_ticks|create|recovered|False|1.0|2|2\nAndroid|2.6.0|2001310|8733a10cad03453551ff474a116ef4858611f75b|c44a16ab-e4b3-9b4d-4634-fca770741d44|False|user_favorites|create|exhausted|False|(null)|2|1\nAndroid|2.6.0|2001310|8733a10cad03453551ff474a116ef4858611f75b|fa716b2e-6b01-0657-4ca8-89928397d3d1|False|boardsesh_ticks|create|exhausted|False|0.0|2|1\nAndroid|2.6.0|2001310|8733a10cad03453551ff474a116ef4858611f75b|b07eeecb-660e-7715-14d3-29950361a55e|False|boardsesh_ticks|create|recovered|False|1.0|1|1\nAndroid|2.6.0|2001310|8733a10cad03453551ff474a116ef4858611f75b|6c9e76c2-a105-4637-add6-66fbe7e74d23|True|user_favorites|create|exhausted|False|(null)|1|1\niOS|2.7.0|13|e171c5f7e69ad32d3915a5ae23155914015b5092|db68ab2c-eeb5-e88d-d354-d83644c15efb|False|boardsesh_ticks|create|exhausted|False|0.0|1|1\nAndroid|2.6.0|2001310|8733a10cad03453551ff474a116ef4858611f75b|b07eeecb-660e-7715-14d3-29950361a55e|False|user_favorites|create|exhausted|False|0.0|1|1\nAndroid|2.7.1|2001689|6fdfc1cc8705f00e5047043e52b93a3263054e30|6dd2b5f3-75b5-35ad-2038-644510217278|False|boardsesh_ticks|create|recovered|False|1.0|1|1\niOS|2.7.0|13|e171c5f7e69ad32d3915a5ae23155914015b5092|db68ab2c-eeb5-e88d-d354-d83644c15efb|False|boardsesh_ticks|create|recovered|False|0.0|1|1\nAndroid|2.6.0|2001310|8733a10cad03453551ff474a116ef4858611f75b|fa716b2e-6b01-0657-4ca8-89928397d3d1|False|user_favorites|create|exhausted|False|0.0|1|1\nAndroid|2.7.1|2001689|6fdfc1cc8705f00e5047043e52b93a3263054e30|6dd2b5f3-75b5-35ad-2038-644510217278|False|boardsesh_ticks|create|exhausted|False|1.0|1|1\nAndroid|2.6.0|2001310|8733a10cad03453551ff474a116ef4858611f75b|fa716b2e-6b01-0657-4ca8-89928397d3d1|False|user_favorites|delete|exhausted|False|0.0|1|1"
+          }
+        ]
+      }
+    },
+    {
+      "name": "sdk58_observed_cohort",
+      "query": "SELECT properties.$os AS os, properties.$app_version AS version, properties.$app_build AS build, properties.ota_runtime_version AS runtime, properties.ota_update_id AS ota, properties.ota_is_embedded AS embedded, uniq(person_id) AS people, countIf(event = 'Offline Local Write Attempt Failed' AND properties.outcome = 'exhausted') AS exhausted, countIf(event = 'Offline Local Write Attempt Failed' AND properties.outcome = 'recovered') AS recovered, countIf(event = 'Offline Board Download Started') AS starts FROM events WHERE timestamp >= '2026-11-14' AND timestamp < '2026-11-21' AND properties.$app_version IN ('2.8.0','2.8.1') AND {filters} GROUP BY os,version,build,runtime,ota,embedded ORDER BY people DESC LIMIT 50",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "os|version|build|runtime|ota|embedded|people|exhausted|recovered|starts\niOS|2.8.0|2|61f1155f027ce2f81524c6c7c9000c9cdde48523|9d697461-0366-45ed-a767-d8fc85445416|True|35|0|0|8\niOS|2.8.0|2|61f1155f027ce2f81524c6c7c9000c9cdde48523|65ab1562-b164-9ffa-b950-082dd03b047f|False|11|0|0|0\niOS|2.8.0|2|61f1155f027ce2f81524c6c7c9000c9cdde48523|2b51345e-b8df-3dd1-2942-4286b835bc6f|False|7|0|0|0\nAndroid|2.8.0|2001863|a27a9ee50f6d0891d7599e318f6bc4906f6e5917|5854eb1f-bcc7-4344-832d-7883250a3ba4|True|4|0|0|1\niOS|2.8.0|1|4eaac430c2072cf62e97eebc92a802d5699990b8|0a914db7-1346-4534-8287-f8a3b0c26312|True|3|0|0|0\niOS|2.8.0|1|4eaac430c2072cf62e97eebc92a802d5699990b8|24a331ca-7432-a4b2-49c1-0bc4e36c3887|False|3|0|0|0\nAndroid|2.8.1|2001875|f9150b0cd47603532bc74721c642b8663e11992a|37178771-fbc3-46c6-abdc-a43d36aaea43|True|2|0|0|0\niOS|2.8.0|2|61f1155f027ce2f81524c6c7c9000c9cdde48523|8f321958-6d3c-3101-e44a-a54fa849bb7f|False|1|0|0|0\niOS|2.8.0|2|61f1155f027ce2f81524c6c7c9000c9cdde48523|0e50863f-dafb-5f54-f469-9bc3b8ed8fef|False|1|0|0|0\niOS|2.8.0|2|61f1155f027ce2f81524c6c7c9000c9cdde48523|5b11f8e3-2499-f4c4-3767-8c42606a62a1|False|1|0|0|0\niOS|2.8.1|1|61f1155f027ce2f81524c6c7c9000c9cdde48523|9b7dc98d-ec70-4d12-8f52-d636c0259db0|True|1|0|0|0\nAndroid|2.8.1|2001875|f9150b0cd47603532bc74721c642b8663e11992a|1b267dde-0b5b-f036-9903-3544cdfa4b4d|False|1|0|0|0"
+          }
+        ]
+      }
+    }
+  ]
+}
