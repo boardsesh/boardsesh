@@ -73,6 +73,7 @@ let credentialDatabase: Promise<CredentialDatabase> | undefined;
 let credentialConnectionIdentity: string | undefined;
 const reviewedCapabilities: Readonly<Record<CredentialWriterContract, readonly CredentialWriterContract[]>> =
   Object.freeze({
+    'private-registration-v1': Object.freeze(['private-registration-v1', 'private-web-v1'] as const),
     'private-web-v1': Object.freeze(['private-web-v1'] as const),
     'private-browser-v1': Object.freeze(['private-web-v1', 'private-browser-v1'] as const),
     'private-provider-v1': Object.freeze(['private-web-v1', 'private-browser-v1', 'private-provider-v1'] as const),

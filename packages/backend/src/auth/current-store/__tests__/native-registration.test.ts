@@ -578,15 +578,16 @@ describe('independently opted-in native registration with reserved current-store
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
     vi.stubEnv('CURRENT_STORE_AUTH_RPC_SECRET', '');
     expect((await post({ email: `${randomUUID()}@example.test`, password })).status).toBe(201);
+    const qualifiedCounts = await counts();
     vi.stubEnv('CURRENT_STORE_NATIVE_REGISTRATION_MODE', 'legacy');
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'backend-staging');
     vi.stubEnv('CURRENT_STORE_AUTH_PROJECTION_ID', '');
     vi.stubEnv('DEBUG_SQL', 'true');
-    // Mirroring refuses this unsafe legacy writer; the default-off baseline stays unchanged.
-    expect((await post({ email: `${randomUUID()}@example.test`, password })).status).toBe(
-      process.env.AUTH_IDENTITY_MIRROR === 'on' ? 503 : 201,
-    );
-    expect((await counts()).reservations).toBe(1);
+    // The fixture is enforced: a web flag cannot opt native into its qualified
+    // writer, and the default compatibility path never writes unreserved here.
+    expect((await post({ email: `${randomUUID()}@example.test`, password })).status).toBe(503);
+    expect(await counts()).toEqual(qualifiedCounts);
+    expect(qualifiedCounts.reservations).toBe(1);
   });
   it.each([
     ['CURRENT_STORE_AUTH_PROJECTION_ID', ''],

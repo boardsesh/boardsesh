@@ -57,7 +57,7 @@ const historicalFixturePath =
 describe('owned credential writer CI boundary', () => {
   it('runs unsharded on an independent required backend dependency gate', () => {
     expect(proof.needs).toEqual(['changes']);
-    expect(proof.if).toBe(workflow.jobs['test-backend'].if);
+    expect(proof.if).toBe(workflow.jobs['test-auth-compatibility'].if);
     expect(proof['runs-on']).toBe('ubuntu-latest');
     expect(proof['timeout-minutes']).toBe(15);
     expect(proof.strategy).toBeUndefined();
@@ -288,6 +288,7 @@ describe('owned credential writer CI boundary', () => {
       'packages/backend/test-results/junit-first-password-credential-writer.xml',
       'packages/backend/test-results/junit-native-handoff-credential-writer.xml',
       'packages/backend/test-results/junit-browser-renewal-credential-writer.xml',
+      'packages/backend/test-results/junit-registration-credential-writer.xml',
     ]);
   });
 

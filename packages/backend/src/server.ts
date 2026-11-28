@@ -96,6 +96,7 @@ import {
 } from './handlers/native-auth';
 import { handleApnsStats } from './handlers/apns-stats';
 import { handleCurrentStoreWebAuth } from './handlers/current-store-web-auth';
+import { handleCurrentStoreRegistration } from './handlers/current-store-registration';
 import { handleGuessLimitCommand } from './handlers/guess-limit-commands';
 import { GUESS_LIMIT_PREFIX } from '@boardsesh/auth-protocol';
 import { handleCurrentStoreWebOAuth } from './handlers/current-store-web-oauth';
@@ -828,6 +829,10 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       }
       if (pathname.startsWith('/api/internal/auth/current-store/batch-system-users/v1/')) {
         await handleCurrentStoreBatchSystemUsers(req, res);
+        return;
+      }
+      if (pathname.startsWith('/api/internal/auth/current-store/registration/v1/')) {
+        await handleCurrentStoreRegistration(req, res);
         return;
       }
       if (pathname === '/api/internal/auth/current-store/signout') {

@@ -13,8 +13,9 @@ The handler obtains its database only after those checks pass. Each core operati
 continues to own its existing complete transaction; this change does not split a
 credential write from its reservation, profile, cutoff or revocation work.
 
-Default legacy modes still refuse these private transports before opening the
-credential connection. Missing, invalid or unqualified credential configuration
+Default legacy modes still refuse the historical staged private transports before
+opening the credential connection. The separate registration-family paths below
+are explicitly available before enforcement. Missing, invalid or unqualified credential configuration
 returns the existing sanitized unavailable reply. It never falls back to the
 generic content connection. Existing explicit database injection remains an
 in-process integration-test seam, not an HTTP parameter.
@@ -40,6 +41,23 @@ the owned pool and permits a later retry. Changing its target while a cached
 initialization/connection exists refuses rather than reusing a different target.
 Process shutdown drains requests before closing the pool; one owner's close
 failure does not skip the other owners, and admission closes last.
+
+## Registration before authority enforcement
+
+The new `/api/internal/auth/current-store/registration/v1/` family requires the
+explicit `private-registration-v1` profile. It retains the private-web grants,
+adds no direct partner revoker capability and qualifies the current trigger
+closure and a separately pinned current users shape. Historical profiles remain
+unchanged. It is not an alias that permits any later schema shape, and it does
+not grant native refresh insertion. The native facade keeps its existing backend
+transaction and shares the credential insertion seam.
+
+These private commands require the RPC secret and qualified credential pool,
+but need no enforced projection to admit an absent/prepared writer context.
+Enforced/canonical contexts return unavailable through these paths; the existing
+explicitly staged commands retain their stronger qualification. Backend,
+consumer and issuance deployment prerequisites are recorded in
+[registration-family adoption](better-auth-registration-family.md).
 
 ## Remaining capability work
 

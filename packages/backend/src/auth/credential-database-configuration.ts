@@ -35,6 +35,7 @@ export function credentialWriterContract(environment: CredentialDatabaseEnvironm
   const selectedContract = environment.AUTH_IDENTITY_DATABASE_CONTRACT;
   const contract = selectedContract === undefined || selectedContract === '' ? 'private-web-v1' : selectedContract;
   if (
+    contract !== 'private-registration-v1' &&
     contract !== 'private-web-v1' &&
     contract !== 'private-browser-v1' &&
     contract !== 'private-provider-v1' &&

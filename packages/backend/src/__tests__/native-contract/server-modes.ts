@@ -37,8 +37,9 @@ const STAGED_AUTHORITY: Environment = {
   AUTH_CUTOFF_ENFORCEMENT: 'enforce',
 };
 const SOURCE_BOUND = { AUTH_WATCH_PAIRING_MODE: 'source-bound-staging' };
+const RESERVED_REGISTRATION = { CURRENT_STORE_NATIVE_REGISTRATION_MODE: 'reserved-staging' };
 const STAGED_WRITERS = {
-  CURRENT_STORE_NATIVE_REGISTRATION_MODE: 'reserved-staging',
+  ...RESERVED_REGISTRATION,
   CURRENT_STORE_NATIVE_OAUTH_MODE: 'reserved-staging',
 };
 const GENERATION_BLOCKED = 'NATIVE_REVOCATION_ACTIVATION_BLOCKED_GARMIN_OFFLINE_TICK_QUEUE_PRESERVATION';
@@ -63,7 +64,9 @@ const MIRROR_BLOCKED = 'CREDENTIAL_WRITER_UNQUALIFIED';
  * Every selector a native endpoint reads (handlers/native-auth.ts and what it
  * calls), in the order a rollout can turn them on. Prerequisites the code
  * enforces are folded in: an enforced manifest refuses legacy watch codes, so
- * every enforced cell runs source-bound pairing; generation needs source-bound
+ * every enforced cell runs source-bound pairing and independently selected reserved
+ * registration (the default compatibility writer admits only absent/prepared
+ * state); generation needs source-bound
  * pairing; the canonical bridge needs generation and the web SID denial writer
  * (a web selector the native refresh path depends on); the identity mirror
  * needs both staged native writers and delegated web set-password. Cells run
@@ -73,9 +76,9 @@ export const SERVER_MODES: readonly ServerMode[] = [
   { name: 'legacy', manifest: 'none', selectors: {}, generation: false, startup: 'boots' },
   { name: 'watch source-bound', manifest: 'none', selectors: SOURCE_BOUND, generation: false, startup: 'boots' },
   {
-    name: 'enforced current-store manifest',
+    name: 'enforced current-store manifest with qualified registration',
     manifest: 'current-store',
-    selectors: { ...STAGED_AUTHORITY, ...SOURCE_BOUND },
+    selectors: { ...STAGED_AUTHORITY, ...SOURCE_BOUND, ...RESERVED_REGISTRATION },
     generation: false,
     startup: 'boots',
   },
@@ -91,25 +94,35 @@ export const SERVER_MODES: readonly ServerMode[] = [
     startup: 'boots',
   },
   {
-    name: 'native OAuth reserved-staging',
+    name: 'native OAuth reserved-staging with qualified registration',
     manifest: 'current-store',
-    selectors: { ...STAGED_AUTHORITY, ...SOURCE_BOUND, CURRENT_STORE_NATIVE_OAUTH_MODE: 'reserved-staging' },
+    selectors: {
+      ...STAGED_AUTHORITY,
+      ...SOURCE_BOUND,
+      ...RESERVED_REGISTRATION,
+      CURRENT_STORE_NATIVE_OAUTH_MODE: 'reserved-staging',
+    },
     generation: false,
     startup: 'boots',
   },
   {
     // Shadow runs every bridge check inside the refresh transaction and writes
     // nothing, so a refused check would surface as a refresh 401.
-    name: 'canonical bridge shadow',
+    name: 'canonical bridge shadow with qualified registration',
     manifest: 'current-store',
-    selectors: { ...STAGED_AUTHORITY, ...SOURCE_BOUND, AUTH_LEGACY_BRIDGE_MODE: 'shadow' },
+    selectors: { ...STAGED_AUTHORITY, ...SOURCE_BOUND, ...RESERVED_REGISTRATION, AUTH_LEGACY_BRIDGE_MODE: 'shadow' },
     generation: false,
     startup: 'boots',
   },
   {
-    name: 'native revocation generation',
+    name: 'native revocation generation with qualified registration',
     manifest: 'current-store',
-    selectors: { ...STAGED_AUTHORITY, ...SOURCE_BOUND, AUTH_NATIVE_REVOCATION_MODE: 'generation' },
+    selectors: {
+      ...STAGED_AUTHORITY,
+      ...SOURCE_BOUND,
+      ...RESERVED_REGISTRATION,
+      AUTH_NATIVE_REVOCATION_MODE: 'generation',
+    },
     generation: true,
     startup: [GENERATION_BLOCKED],
   },

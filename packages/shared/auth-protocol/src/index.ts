@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { webCredentialProofSchema, WEB_CREDENTIAL_PROOF_VERSION } from './web-credential-proof';
 import { issuedWebSessionSchema, presentedWebSessionSchema, webSessionRequestSchema } from './web-session';
 export * from './web-credential-proof';
+export * from './legacy-email-link';
 
 export { AUTH_BACKEND_UNAVAILABLE, isAuthBackendUnavailable } from './client-errors';
 export * from './web-oauth-v1';
@@ -22,6 +23,12 @@ export const AUTH_COMMAND_PATHS = {
   'reset-password': '/api/internal/auth/current-store/reset-password',
   'set-password': '/api/internal/auth/current-store/set-password',
   signout: '/api/internal/auth/current-store/signout',
+} as const;
+/** Default registration-family commands work before projection enforcement. */
+export const REGISTRATION_COMMAND_PATHS = {
+  register: '/api/internal/auth/current-store/registration/v1/register',
+  'verify-email': '/api/internal/auth/current-store/registration/v1/verify-email',
+  'resend-verification': '/api/internal/auth/current-store/registration/v1/resend-verification',
 } as const;
 export const AUTH_COMMAND_ENV = {
   mode: 'CURRENT_STORE_WEB_AUTH_MODE',
@@ -81,6 +88,39 @@ export const registerCommandSchema = z
   })
   .strict()
   .refine((command) => Object.hasOwn(command, 'payload'), { message: 'Missing command payload' });
+/** Separate default-family envelopes; historical staged DTOs remain strict and unchanged. */
+export const registrationClientAddressSchema = z.union([z.ipv4(), z.ipv6()]).optional();
+export const registrationFamilyRegisterCommandSchema = z
+  .object({
+    ...commandMetadata,
+    operation: z.literal('register'),
+    clientAddress: registrationClientAddressSchema,
+    payload: z.unknown(),
+  })
+  .strict()
+  .refine((command) => Object.hasOwn(command, 'payload'), { message: 'Missing command payload' });
+export const registrationFamilyResendCommandSchema = z
+  .object({
+    ...commandMetadata,
+    operation: z.literal('resend-verification'),
+    clientAddress: registrationClientAddressSchema,
+    payload: z.unknown(),
+  })
+  .strict()
+  .refine((command) => Object.hasOwn(command, 'payload'), { message: 'Missing command payload' });
+export const registrationFamilyVerifyCommandSchema = z
+  .object({
+    ...commandMetadata,
+    operation: z.literal('verify-email'),
+    clientAddress: registrationClientAddressSchema,
+    payload: z.object({ token: z.string().min(1).max(256), email: z.string().min(1).optional() }).strict(),
+  })
+  .strict();
+export type RegistrationFamilyCommand =
+  | z.infer<typeof registrationFamilyRegisterCommandSchema>
+  | z.infer<typeof registrationFamilyResendCommandSchema>
+  | z.infer<typeof registrationFamilyVerifyCommandSchema>;
+
 export const passwordCommandSchema = z
   .object({
     ...commandMetadata,

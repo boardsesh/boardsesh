@@ -1,3 +1,9 @@
+import {
+  captureRegistrationContext,
+  insertPreEnforcementPasswordIdentity,
+  revalidateRegistrationContext,
+} from '../auth/current-store/registration-context';
+import { issuePreEnforcementVerification } from '../auth/current-store/registration-family';
 import { assertLegacyIdentityWriterAllowed } from '../auth/current-store/identity-writer-gate';
 import {
   captureIdentityAuthority,
@@ -72,7 +78,6 @@ import {
 import {
   parseCurrentStorePasswordRegistration,
   prepareCurrentStorePasswordRegistration,
-  insertCurrentStorePasswordIdentity,
 } from '../auth/current-store/password-identity';
 
 /** Generic error returned for all credential validation failures. */
@@ -1051,38 +1056,54 @@ export async function handleNativeAuthRegister(
     // gate and checks the manifest again before its first lock or write, inside
     // insertCurrentStorePasswordIdentity, and holds the gate until it commits: a
     // switch landing during bcrypt is seen there and nothing is written.
-    await database.transaction(assertLegacyIdentityWriterAllowed);
+    const context = await database.transaction(async (transaction) => {
+      await transactionSettings(transaction);
+      return captureRegistrationContext(transaction);
+    });
     const prepared = await prepareCurrentStorePasswordRegistration(database, validation.registration);
-    if (!prepared) {
-      sendJson(res, 409, {
-        error: 'An account with this email already exists. Please sign in with your existing account.',
-      });
-      return;
-    }
-
     // Mirror web: unverified when the verification gate is on, verified otherwise.
     const emailVerificationEnabled = process.env.EMAIL_VERIFICATION_ENABLED === 'true';
 
     const origin = signedInNow();
     const result = await database.transaction(async (tx) => {
-      const identity = await insertCurrentStorePasswordIdentity(tx, prepared, emailVerificationEnabled);
+      await transactionSettings(tx);
+      const inserted = await insertPreEnforcementPasswordIdentity(
+        tx,
+        context,
+        validation.registration.email,
+        prepared,
+        emailVerificationEnabled,
+      );
+      if (inserted.outcome === 'exists') return inserted;
+      const { identity } = inserted;
+      if (emailVerificationEnabled) {
+        const receipt = await issuePreEnforcementVerification(tx, context, identity.userId);
+        if (!receipt) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
+        // Native's public contract carries no mailbox capability. Resend delivers
+        // a successor; the initial receipt still commits with identity/refresh.
+      }
       const tokenPair = await generateTokenPair(identity.userId, tx, origin);
-      await assertLegacyIdentityWriterAllowed(tx);
+      await revalidateRegistrationContext(tx, context);
       return {
+        outcome: 'created' as const,
         userId: identity.userId,
         tokenPair,
         accountCreation: accountCreationReceipt(identity.userId, true, 'email', identity.createdAt),
       };
     });
 
+    if (result.outcome === 'exists') {
+      sendJson(res, 409, {
+        error: 'An account with this email already exists. Please sign in with your existing account.',
+      });
+      return;
+    }
     logger.info('[NativeAuth] Registration successful');
     sendJson(res, 201, await withNativeDeviceToken({ ...result.tokenPair, accountCreation: result.accountCreation }));
   } catch (error) {
-    // Race: a concurrent request created this email between the pre-check and
-    // insert. PostgreSQL unique-violation code is '23505'. NOTE: users.email has
-    // no unique index today, so this won't fire from the email column yet — the
-    // pre-check above is the real guard. The handler stays correct once a
-    // uniqueIndex on lower-cased users.email is added (tracked as follow-up).
+    // Participating web/native registrations serialize on the normalized key
+    // and recheck the live group. Keep the existing 23505 facade for a database
+    // constraint; unfenced old writers remain a separate deployment gate.
     if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
       sendJson(res, 409, { error: 'An account with this email already exists' });
       return;
