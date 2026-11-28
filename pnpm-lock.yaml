@@ -1260,6 +1260,9 @@ importers:
       '@boardsesh/moonboard-ble-protocol':
         specifier: workspace:*
         version: link:../moonboard-ble-protocol
+      '@boardsesh/quantum-ble-protocol':
+        specifier: workspace:*
+        version: link:../quantum-ble-protocol
       '@boardsesh/woods-ble-protocol':
         specifier: workspace:*
         version: link:../woods-ble-protocol
@@ -1847,6 +1850,16 @@ importers:
       zod:
         specifier: ^4.4.3
         version: 4.4.3
+    devDependencies:
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
+  packages/shared/quantum-ble-protocol:
+    dependencies:
+      '@boardsesh/ble-core':
+        specifier: workspace:*
+        version: link:../ble-core
     devDependencies:
       typescript:
         specifier: ~7.0.2

@@ -65,6 +65,7 @@
     "@boardsesh/board-constants": "workspace:*",
     "@boardsesh/kilter-ble-protocol": "workspace:*",
     "@boardsesh/moonboard-ble-protocol": "workspace:*",
+    "@boardsesh/quantum-ble-protocol": "workspace:*",
     "@boardsesh/woods-ble-protocol": "workspace:*"
   },
   "devDependencies": {

@@ -36,7 +36,7 @@ import {
   type QuantumTime,
   type QuantumWriteEligibility,
   type QuantumWritePreflight,
-} from '../quantum';
+} from '../index';
 
 const ROUTE_ONE = '00112233-4455-6677-8899-aabbccddeeff';
 const ROUTE_TWO = '10213243-5465-7687-98a9-bacbdcedfe0f';
