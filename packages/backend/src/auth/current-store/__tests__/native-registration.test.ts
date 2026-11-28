@@ -134,6 +134,9 @@ describe('independently opted-in native registration with reserved current-store
         // Both roles execute backend staged commands; neither is the legacy NextAuth actor.
         await grantIdentityMirrorBackendTables(transaction, role);
         await transaction.execute(sql`GRANT SELECT, INSERT ON TABLE ${users} TO ${sql.identifier(role)}`);
+        // Both staged writers lock users during password insertion, including
+        // when mirroring is off, without mutating any identity column.
+        await transaction.execute(sql`GRANT UPDATE (updated_at) ON TABLE ${users} TO ${sql.identifier(role)}`);
         await transaction.execute(
           sql`GRANT INSERT ON TABLE ${userCredentials}, ${userProfiles} TO ${sql.identifier(role)}`,
         );
@@ -148,9 +151,6 @@ describe('independently opted-in native registration with reserved current-store
         );
       }
       await transaction.execute(sql`GRANT INSERT ON TABLE ${mobileRefreshTokens} TO ${sql.identifier(nativeRole)}`);
-      // PostgreSQL row locks require UPDATE on at least one column. The
-      // issuer may lock users without gaining any identity-column mutation.
-      await transaction.execute(sql`GRANT UPDATE (updated_at) ON TABLE ${users} TO ${sql.identifier(nativeRole)}`);
       await transaction.execute(sql`GRANT SELECT, INSERT ON TABLE ${verificationTokens} TO ${sql.identifier(webRole)}`);
     });
     for (const role of [nativeRole, webRole, nativeRole]) {
@@ -290,32 +290,36 @@ describe('independently opted-in native registration with reserved current-store
     if (failures.length) throw new AggregateError(failures, 'Owned native fixture cleanup failed');
   });
 
-  it('supports real user KEY SHARE with timestamp-only UPDATE and denies identity mutation or deletion', async () => {
-    const probeId = randomUUID();
-    const rollback = new Error('Owned row-lock probe rollback');
-    await expect(
-      nativeWriter.transaction(async (transaction) => {
-        await transaction.insert(users).values({ id: probeId, email: `${probeId}@lock-probe.example.test` });
-        const [subject] = await transaction
-          .select({ id: users.id })
-          .from(users)
-          .where(eq(users.id, probeId))
-          .for('key share', { of: users });
-        expect(subject?.id).toBe(probeId);
-        throw rollback;
-      }),
-    ).rejects.toBe(rollback);
-    expect(await db.select({ id: users.id }).from(users).where(eq(users.id, probeId))).toEqual([]);
-    await expect(
-      nativeWriter.update(users).set({ id: randomUUID() }).where(eq(users.id, probeId)),
-    ).rejects.toMatchObject({ cause: { code: '42501' } });
-    await expect(
-      nativeWriter.update(users).set({ email: 'forbidden@lock-probe.example.test' }).where(eq(users.id, probeId)),
-    ).rejects.toMatchObject({ cause: { code: '42501' } });
-    await expect(nativeWriter.delete(users).where(eq(users.id, probeId))).rejects.toMatchObject({
-      cause: { code: '42501' },
-    });
-  });
+  it.each(['native', 'web'] as const)(
+    '%s writer locks users and denies identity mutation or deletion',
+    async (writer) => {
+      const actor = writer === 'native' ? nativeWriter : webWriter;
+      const probeId = randomUUID();
+      const rollback = new Error('Owned row-lock probe rollback');
+      await expect(
+        actor.transaction(async (transaction) => {
+          await transaction.insert(users).values({ id: probeId, email: `${probeId}@lock-probe.example.test` });
+          const [subject] = await transaction
+            .select({ id: users.id })
+            .from(users)
+            .where(eq(users.id, probeId))
+            .for('update', { of: users });
+          expect(subject?.id).toBe(probeId);
+          throw rollback;
+        }),
+      ).rejects.toBe(rollback);
+      expect(await db.select({ id: users.id }).from(users).where(eq(users.id, probeId))).toEqual([]);
+      await expect(actor.update(users).set({ id: randomUUID() }).where(eq(users.id, probeId))).rejects.toMatchObject({
+        cause: { code: '42501' },
+      });
+      await expect(
+        actor.update(users).set({ email: 'forbidden@lock-probe.example.test' }).where(eq(users.id, probeId)),
+      ).rejects.toMatchObject({ cause: { code: '42501' } });
+      await expect(actor.delete(users).where(eq(users.id, probeId))).rejects.toMatchObject({
+        cause: { code: '42501' },
+      });
+    },
+  );
 
   it.each([false, true])(
     'preserves public token/receipt/password contracts with verification %s and minimal LOGIN grants',
@@ -406,6 +410,23 @@ describe('independently opted-in native registration with reserved current-store
       refresh: 1,
       reservations: 1,
       members: 1,
+    });
+  });
+  it('creates a web identity before a native retry with identity mirroring disabled', async () => {
+    vi.stubEnv('AUTH_IDENTITY_MIRROR', 'off');
+    const email = `Web.First.${randomUUID()}@Example.TEST`;
+    const web = await webCommand(email);
+    expect(web.response.status).toBe(201);
+    expect(web.reply).toMatchObject({ outcome: 'created' });
+    expect((await post({ email: ` ${email.toLowerCase()} `, password })).status).toBe(409);
+    expect(await counts()).toEqual({
+      ...empty,
+      users: 1,
+      credentials: 1,
+      profiles: 1,
+      reservations: 1,
+      members: 1,
+      nonces: 1,
     });
   });
   it('serializes web/native creation through the same key without changing web negative nonce semantics', async () => {

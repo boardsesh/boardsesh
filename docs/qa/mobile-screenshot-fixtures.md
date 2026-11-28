@@ -1433,6 +1433,52 @@ runtime wildcard for unrecorded session requests.
 
 ## Additive smoke recordings
 
+### Record and import missing native smoke reads
+
+The Android screenshot workflow supports `flow=smoke-fixtures`. Its dedicated
+read-only job authenticates the pinned screenshot account and records exactly two
+queries through the existing recording backend. It does not boot an emulator,
+run navigation checks, generate screenshots, post a Discord preview or push changes.
+Store captures use view stories and do not produce these backend reads. The
+required native navigation smoke remains a separate replay check.
+
+For the required-QA additions introduced with Quantum:
+
+1. Dispatch `mobile-screenshots-android.yml` on the reviewed source branch with
+   `flow=smoke-fixtures`, `fixtures=record`, `share_preview=false`, and
+   `commit_to_main=false`. Keep the default board selection and drawing mode.
+2. Wait for a successful fixed recording, then run
+   `vp exec tsx scripts/import-mobile-smoke-qa-fixtures.ts <run-id> <output-directory>`
+   from a checkout containing the recording commit.
+3. Inspect `proof.json`, copy its hash-named archive into
+   `app-stores/screenshot-fixture-overlays/`, and install `shared.reference.json`
+   as `app-stores/screenshot-fixtures.json` in the same change.
+4. Run fixture drift checks and both native replay smokes against the new pin.
+
+The importer reads the successful dispatched Android workflow and its fixed
+recording step,
+downloads its fixed artifact itself, and verifies that its source is an ancestor
+of the checkout. It checks that the run has not changed before exporting. Only
+`BoardLayers` for the recorded Kilter wall (numeric ID 4 and its existing UUID)
+and `GetUserTicks` for the pinned account with `boardType: quantum` are imported.
+The baseline must prove the same Kilter wall. Source account, upstream, fixed-recording flow,
+request documents, variables, hashes, HTTP status and recording timestamps must
+match. The genuinely recorded responses must be null layers and no Quantum ticks;
+new history or another layer state requires separate preparation and review.
+
+Every previous recording and static asset stays byte-identical. The candidate
+clock advances using the new responses' actual timestamps. Missing coverage,
+changed request keys, unsafe additions and collisions stop the import; unrelated
+requests in the recording never expand its scope. The command exports only a
+candidate archive, proposed shared pin and hash proof. It does not publish or
+install them and does not replace the required native replay checks.
+
+The 2026-11-28 additions came from [recording run 46122012429](https://github.com/boardsesh/boardsesh/actions/runs/46122012429)
+at source `3ca65ab9a6c16209f2d8b2731736b92a47af877c`. The shared pin selects overlay
+`7c9f3b035e7d9051cd862953a8b9c455cff2c3cd0911ca79e7310e5775912d53`;
+its adjacent `.proof.json` preserves the source and request hashes. It adds two
+GraphQL files while preserving all 370 previous response and image files.
+
 ### Record the Home projects attempts page
 
 The manual **Record mobile smoke projects fixture** workflow records only the
