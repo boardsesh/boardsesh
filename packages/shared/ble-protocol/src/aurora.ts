@@ -1,11 +1,22 @@
 import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
-import { MESSAGE_BODY_MAX_LENGTH } from './transport';
+import { encodeAuroraClear, encodeAuroraEntries, type AuroraBoardName } from '@boardsesh/aurora-ble-protocol';
+export {
+  AURORA_BOARDS,
+  type AuroraBoardName,
+  checksum,
+  wrapBytes,
+  parseApiLevel,
+  parseSerialNumber,
+  parseBoardTypeFromDeviceName,
+  isKilterBuiltBox,
+  encodePositionV3,
+  encodeColorV3,
+  encodePositionAndColorV3,
+  computeV2Scale,
+  scaledColorV2,
+  encodePositionAndColorV2,
+} from '@boardsesh/aurora-ble-protocol';
 
-// Canonical source: @boardsesh/shared-schema (board-config.ts, climb.ts).
-// Duplicated here so ble-protocol stays portable without pulling in
-// shared-schema's full type tree. Keep in sync when adding a new board.
-export const AURORA_BOARDS = ['kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill'] as const;
-export type AuroraBoardName = (typeof AURORA_BOARDS)[number];
 export type HoldState = 'OFF' | 'STARTING' | 'FINISH' | 'HAND' | 'FOOT' | 'ANY' | 'NOT' | 'AUX';
 
 /** LED placement positions: maps placement ID to LED position index. */
@@ -23,178 +34,6 @@ export type LedColorOverrides = Partial<Record<HoldState, string>>;
 // interior '#' ("ab#cdef") is rejected — this keeps byte-for-byte parity with
 // the Swift `sanitizedOverride`, which only strips a leading '#'.
 const SIX_DIGIT_HEX_PATTERN = /^#?[0-9a-fA-F]{6}$/;
-
-// --- API v3 command bytes (3 bytes per LED, 16-bit positions) ---
-const V3_PACKET_MIDDLE = 81; // 'Q'
-const V3_PACKET_FIRST = 82; // 'R'
-const V3_PACKET_LAST = 83; // 'S'
-const V3_PACKET_ONLY = 84; // 'T'
-
-// --- API v2 command bytes (2 bytes per LED, 10-bit positions) ---
-const V2_PACKET_MIDDLE = 77; // 'M'
-const V2_PACKET_FIRST = 78; // 'N'
-const V2_PACKET_LAST = 79; // 'O'
-const V2_PACKET_ONLY = 80; // 'P'
-
-// --- v2 power budget constants ---
-const V2_MAX_BOARD_POWER = 18.0;
-const V2_POWER_SCALES = [1.0, 0.8, 0.6, 0.4, 0.2, 0.1, 0.05];
-
-// LEDs per hold: default is 1 for all boards, except Kilter which has 2 physical
-// LEDs per hold position. Only affects v2 power budget calculation.
-const KILTER_LEDS_PER_HOLD = 2;
-const DEFAULT_LEDS_PER_HOLD = 1;
-
-const getLedsPerHold = (boardName: AuroraBoardName): number =>
-  boardName === 'kilter' ? KILTER_LEDS_PER_HOLD : DEFAULT_LEDS_PER_HOLD;
-
-// Note: AURORA_ADVERTISED_SERVICE_UUID is available from './transport' — not
-// re-exported here to avoid collisions in the barrel index.
-
-// Shared helpers — exported for testing
-export const checksum = (data: number[]) => data.reduce((acc, value) => (acc + value) & 255, 0) ^ 255;
-
-export const wrapBytes = (data: number[]) =>
-  data.length > MESSAGE_BODY_MAX_LENGTH ? [] : [1, data.length, checksum(data), 2, ...data, 3];
-
-// --- Device name parsing ---
-
-/**
- * Parse Aurora BLE device name to extract API level.
- * Format: {DisplayName}#{SerialNumber}@{APILevel}
- * Default API level is 2 if not specified.
- */
-export const parseApiLevel = (deviceName?: string): number => {
-  if (!deviceName) return 2;
-  const match = deviceName.match(/@(\d+)/);
-  return match ? parseInt(match[1], 10) : 2;
-};
-
-/**
- * Parse Aurora BLE device name to extract the serial number.
- * Format: {DisplayName}#{SerialNumber}@{APILevel}
- * Returns undefined if no serial found.
- */
-export const parseSerialNumber = (deviceName?: string): string | undefined => {
-  if (!deviceName) return undefined;
-  const match = deviceName.match(/#([^@]+)/);
-  return match ? match[1] : undefined;
-};
-
-/**
- * Infer the board type from a BLE device name.
- * e.g. "Kilter Board#751737@3" -> 'kilter', "Tension Board#123@2" -> 'tension', "So iLL Board#42@3" -> 'soill'.
- * Supports all Aurora boards: kilter, tension, decoy, touchstone, grasshopper, soill.
- * Whitespace and hyphens are stripped before matching so the multi-word "So iLL Board" name resolves.
- */
-export const parseBoardTypeFromDeviceName = (deviceName?: string): AuroraBoardName | undefined => {
-  if (!deviceName) return undefined;
-  const normalized = deviceName.toLowerCase().replace(/[\s-]/g, '');
-  return AURORA_BOARDS.find((board) => normalized.startsWith(board));
-};
-
-/**
- * True for a "Kilter-built" (manufacturer-built) LED box: an Aurora-family board
- * that advertises WITHOUT the `#serial@apiLevel` suffix (a bare name like
- * "Kilter Board"). These mid-2025+ boxes expose a UART RX characteristic with
- * only the `.write` property — the official Kilter app drives every box with
- * write-WITH-response, and iOS/CoreBluetooth silently drops a no-response write
- * to such a characteristic, so the wall stays dark. Detecting the box by its
- * bare name lets the client start on write-with-response from the first connect
- * instead of eating a stall first.
- *
- * This is a NAME signal, not the GATT property bit: a healthy box that carries a
- * serial (`Kilter Board#751737@3`) never matches, so it keeps the faster
- * without-response path — this cannot re-introduce the #3228 stale-property
- * regression, which was driven by the characteristic's `.writeWithoutResponse`
- * bit, not the advertised name.
- */
-export const isKilterBuiltBox = (deviceName?: string): boolean =>
-  parseBoardTypeFromDeviceName(deviceName) !== undefined && parseSerialNumber(deviceName) === undefined;
-
-// --- v3 encoding (API level >= 3) ---
-
-export const encodePositionV3 = (position: number) => [position & 255, (position >> 8) & 255];
-
-export const encodeColorV3 = (color: string) => {
-  const r = Math.floor(parseInt(color.substring(0, 2), 16) / 32) << 5;
-  const g = Math.floor(parseInt(color.substring(2, 4), 16) / 32) << 2;
-  const b = Math.floor(parseInt(color.substring(4, 6), 16) / 64);
-  return r | g | b;
-};
-
-export const encodePositionAndColorV3 = (position: number, ledColor: string) => [
-  ...encodePositionV3(position),
-  encodeColorV3(ledColor),
-];
-
-// --- v2 encoding (API level < 3) ---
-
-/**
- * Compute the brightness scale factor for v2 power budget.
- * Tries progressively lower scales until total power fits within 18W.
- */
-export const computeV2Scale = (ledEntries: Array<{ position: number; color: string }>, ledsPerHold: number): number => {
-  for (const scale of V2_POWER_SCALES) {
-    let totalPower = 0;
-    for (const { color } of ledEntries) {
-      const r = Math.floor(parseInt(color.substring(0, 2), 16) * scale) >> 6;
-      const g = Math.floor(parseInt(color.substring(2, 4), 16) * scale) >> 6;
-      const b = Math.floor(parseInt(color.substring(4, 6), 16) * scale) >> 6;
-      totalPower += (r + g + b) / 30;
-    }
-    if (ledsPerHold * totalPower <= V2_MAX_BOARD_POWER) {
-      return scale;
-    }
-  }
-  return 0;
-};
-
-export const scaledColorV2 = (value8bit: number, scale: number): number => Math.floor(value8bit * scale) >> 6; // Result: 0-3
-
-/**
- * Encode a single LED for v2: 2 bytes.
- * Byte 1: position[7:0]
- * Byte 2: (red_2bit << 6) | (green_2bit << 4) | (blue_2bit << 2) | position[9:8]
- */
-export const encodePositionAndColorV2 = (position: number, ledColor: string, scale: number): number[] => {
-  if (position > 1023) {
-    console.warn(`[BLE v2] Position ${position} exceeds 10-bit limit (1023), skipping`);
-    return [];
-  }
-  const posLo = position & 0xff;
-  const posHi = (position >> 8) & 0x03;
-
-  const r = scaledColorV2(parseInt(ledColor.substring(0, 2), 16), scale);
-  const g = scaledColorV2(parseInt(ledColor.substring(2, 4), 16), scale);
-  const b = scaledColorV2(parseInt(ledColor.substring(4, 6), 16), scale);
-
-  const colorByte = (r << 6) | (g << 4) | (b << 2) | posHi;
-  return [posLo, colorByte];
-};
-
-// --- Packet generation ---
-
-type CommandBytes = {
-  middle: number;
-  first: number;
-  last: number;
-  only: number;
-};
-
-const V3_COMMANDS: CommandBytes = {
-  middle: V3_PACKET_MIDDLE,
-  first: V3_PACKET_FIRST,
-  last: V3_PACKET_LAST,
-  only: V3_PACKET_ONLY,
-};
-
-const V2_COMMANDS: CommandBytes = {
-  middle: V2_PACKET_MIDDLE,
-  first: V2_PACKET_FIRST,
-  last: V2_PACKET_LAST,
-  only: V2_PACKET_ONLY,
-};
 
 export type BluetoothPacketResult = {
   packet: Uint8Array;
@@ -239,14 +78,7 @@ export type BluetoothPacketResult = {
   ledsWithColour: number;
 };
 
-/**
- * Build the BLE packet for a set of Aurora LED placements.
- *
- * Missing placements are skipped gracefully — the returned result includes
- * counts so callers can decide how to handle partial or full misses.
- *
- * @param apiLevel - Protocol version from the board's BLE name (default 3)
- */
+/** Compatibility adapter for Boardsesh's persisted frame strings and catalog colors. */
 export const getAuroraBluetoothPacket = (
   frames: string,
   placementPositions: LedPlacements,
@@ -254,15 +86,9 @@ export const getAuroraBluetoothPacket = (
   apiLevel: number = 3,
   colorOverrides?: LedColorOverrides,
 ): BluetoothPacketResult => {
-  const isV2 = apiLevel < 3;
-  const cmds = isV2 ? V2_COMMANDS : V3_COMMANDS;
-
-  // Empty frames is the "clear all LEDs" path — emit a valid ONLY-command
-  // packet with no LED entries so the board overwrites its state to "nothing
-  // lit". A zero-length Uint8Array would never reach the board over BLE.
   if (frames === '') {
     return {
-      packet: Uint8Array.from(wrapBytes([cmds.only])),
+      packet: encodeAuroraClear(apiLevel),
       skippedPositionCount: 0,
       skippedRoleCount: 0,
       totalPlacements: 0,
@@ -271,7 +97,6 @@ export const getAuroraBluetoothPacket = (
       ledsWithColour: 0,
     };
   }
-
   // Pre-collect LED entries for v2 power scaling
   const ledEntries: Array<{ position: number; color: string }> = [];
   let skippedPositionCount = 0;
@@ -324,78 +149,11 @@ export const getAuroraBluetoothPacket = (
     };
   }
 
-  // Compute v2 power scale (v3 doesn't need it)
-  const v2Scale = isV2 ? computeV2Scale(ledEntries, getLedsPerHold(boardName)) : 1;
-
-  // Build message parts
-  const resultArray: number[][] = [];
-  let tempArray = [cmds.middle];
-  let ledsWritten = 0;
-  // LEDs whose encoded bytes carry at least one non-zero colour bit. When this
-  // stays at 0 for a packet that DID write LEDs, the board receives a full,
-  // well-formed packet that lights nothing — see `allLedsDark`.
-  let ledsWithColour = 0;
-
-  for (const { position, color } of ledEntries) {
-    const encoded = isV2
-      ? encodePositionAndColorV2(position, color, v2Scale)
-      : encodePositionAndColorV3(position, color);
-
-    if (encoded.length === 0) {
-      // v2 position > 1023 — never happens with real Aurora boards (max ~641).
-      // Treat as a skipped placement to keep the contract consistent with graceful
-      // degradation (result object, not exceptions).
-      skippedPositionCount++;
-      continue;
-    }
-
-    if (tempArray.length + encoded.length > MESSAGE_BODY_MAX_LENGTH) {
-      resultArray.push(tempArray);
-      tempArray = [cmds.middle];
-    }
-    tempArray.push(...encoded);
-    ledsWritten++;
-    // Byte layout, per `encodePositionAndColorV2` / `encodePositionAndColorV3`
-    // above: v2 emits [posLo, (r<<6)|(g<<4)|(b<<2)|posHi], so colour is bits
-    // [7:2] of byte 2 and 0xfc masks off the position bits; v3 emits
-    // [posLo, posHi, colour], so colour is the whole third byte. Both must be
-    // re-read if either encoder's packing changes.
-    const colourBits = isV2 ? encoded[1] & 0xfc : encoded[2];
-    if (colourBits !== 0) ledsWithColour++;
-  }
-
-  // All LEDs overflowed the v2 10-bit limit — return empty packet so the caller
-  // can treat it as a full miss (same path as "every placement was skipped").
-  if (ledsWritten === 0) {
-    return {
-      packet: new Uint8Array(0),
-      skippedPositionCount,
-      skippedRoleCount,
-      totalPlacements,
-      allLedsDark: false,
-      ledsWritten: 0,
-      ledsWithColour: 0,
-    };
-  }
-
-  resultArray.push(tempArray);
-  if (resultArray.length === 1) resultArray[0][0] = cmds.only;
-  else {
-    resultArray[0][0] = cmds.first;
-    resultArray[resultArray.length - 1][0] = cmds.last;
-  }
-
+  const encoded = encodeAuroraEntries(ledEntries, { apiLevel, ledsPerHold: boardName === 'kilter' ? 2 : 1 });
   return {
-    packet: Uint8Array.from(resultArray.flatMap(wrapBytes)),
-    skippedPositionCount,
+    ...encoded,
+    skippedPositionCount: skippedPositionCount + encoded.skippedPositionCount,
     skippedRoleCount,
     totalPlacements,
-    // Scoped to v2 deliberately. On v3 a zero colour byte can only come from a
-    // caller-supplied near-black `LedColorOverrides` value (R<32, G<32, B<64) —
-    // that is the user's own choice, not the power ladder silently overruling
-    // them, and refusing their send with "incompatible climb" would be wrong.
-    allLedsDark: isV2 && ledsWithColour === 0,
-    ledsWritten,
-    ledsWithColour,
   };
 };

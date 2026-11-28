@@ -1,19 +1,14 @@
 import { AppState, Platform } from 'react-native';
-import type { Device, Subscription } from 'react-native-ble-plx';
+import type { Device } from 'react-native-ble-plx';
 import {
   WLED_BLE_SERVICE_UUID,
   WLED_BLE_CAPABILITIES_UUID,
-  WLED_BLE_REQUEST_UUID,
-  WLED_BLE_RESPONSE_UUID,
-  WledBleFrameAssembler,
   decodeUtf8,
-  encodeFrame,
-  fragmentFrame,
   parseCapabilities,
-  parseResponse,
+  openWledBleSession,
+  type WledBleSession,
   type WledBleCapabilities,
   type WledBleConnection,
-  type WledBleOperation,
 } from '@boardsesh/wled-ble-protocol';
 import { LedControllerError, createWledBleDriver } from '@boardsesh/led-controller';
 import { getBleManager } from '../ble/ble-manager';
@@ -28,6 +23,19 @@ import { subscribeSprayWallLedCacheErased } from './spray-wall-led-cache';
 // IDs are phone-specific and intentionally never leave this in-memory cache.
 const remembered = new Map<string, string>();
 const active = new Set<AbortController>();
+// Caller deadlines bound the UI wait, not native radio work. Keep late SDK
+// operations quarantined so their cleanup cannot disconnect a newer session.
+const pendingNative = new Set<symbol>();
+const pendingDisconnects = new Map<string, Promise<unknown>>();
+function trackNative<Result>(start: () => Promise<Result>): Promise<Result> {
+  const token = Symbol('wled-native-operation');
+  pendingNative.add(token);
+  return Promise.resolve()
+    .then(start)
+    .finally(() => {
+      pendingNative.delete(token);
+    });
+}
 function retire(): void {
   remembered.clear();
   for (const controller of active) controller.abort();
@@ -68,15 +76,25 @@ function bounded<Result>(operation: Promise<Result>, signal: AbortSignal, timeou
 }
 async function disconnectDevice(deviceId: string): Promise<void> {
   const controller = new AbortController();
+  let disconnecting = pendingDisconnects.get(deviceId);
+  if (!disconnecting) {
+    disconnecting = trackNative(() => getBleManager().cancelDeviceConnection(deviceId));
+    pendingDisconnects.set(deviceId, disconnecting);
+    const forget = () => {
+      if (pendingDisconnects.get(deviceId) === disconnecting) pendingDisconnects.delete(deviceId);
+    };
+    void disconnecting.then(forget, forget);
+  }
   try {
-    await bounded(Promise.resolve(getBleManager().cancelDeviceConnection(deviceId)), controller.signal, 1800);
+    await bounded(disconnecting, controller.signal, 1800);
   } catch {
-    /* Firmware's idle timeout also releases an unreachable radio. */
+    // The caller can finish after 1.8 seconds, but pendingNative still excludes
+    // every new operation until this actual native cancellation has settled.
   }
 }
 function operationController(signal?: AbortSignal) {
   // Discovery must not connect to or disconnect a peripheral an active write owns.
-  if (active.size > 0) throw new LedControllerError('unavailable');
+  if (active.size > 0 || pendingNative.size > 0) throw new LedControllerError('unavailable');
   const controller = new AbortController();
   const abort = () => controller.abort();
   signal?.addEventListener('abort', abort, { once: true });
@@ -100,6 +118,7 @@ async function permitted(signal: AbortSignal) {
 }
 async function scan(signal: AbortSignal): Promise<string[]> {
   check(signal);
+  if (pendingNative.size > 0) throw new LedControllerError('unavailable');
   const token = Symbol('wled-ble-scan');
   if (!claimBleScan(token)) throw new LedControllerError('unavailable');
   const candidates = new Set<string>();
@@ -144,38 +163,51 @@ async function open(
   signal: AbortSignal,
 ): Promise<{ device: Device; capabilities: WledBleCapabilities }> {
   check(signal);
+  if (pendingNative.size > 0) throw new LedControllerError('unavailable');
+  let abandoned = false;
   const abort = () => {
+    abandoned = true;
     void disconnectDevice(deviceId);
   };
   signal.addEventListener('abort', abort, { once: true });
   try {
-    const connecting = getBleManager().connectToDevice(deviceId, { timeout: 8000 });
-    // A native connection may resolve after cancellation; never retain that link.
-    void connecting.then(
-      () => {
-        if (signal.aborted) void disconnectDevice(deviceId);
-      },
-      () => undefined,
+    const connecting = trackNative(() =>
+      getBleManager()
+        .connectToDevice(deviceId, { timeout: 8000 })
+        .then(async (connected) => {
+          // Schedule late cleanup before releasing the native-operation token.
+          // This covers caller cancellation AND the bounded connect deadline.
+          if (signal.aborted || abandoned) await disconnectDevice(deviceId);
+          return connected;
+        }),
     );
     let device = await bounded(connecting, signal);
     check(signal);
-    device = await bounded(device.discoverAllServicesAndCharacteristics(), signal);
+    device = await bounded(
+      trackNative(() => device.discoverAllServicesAndCharacteristics()),
+      signal,
+    );
     check(signal);
     if (Platform.OS === 'android') {
       try {
-        device = await bounded(device.requestMTU(185), signal, 2000);
+        device = await bounded(
+          trackNative(() => device.requestMTU(185)),
+          signal,
+          2000,
+        );
       } catch {
         check(signal);
       }
     }
     const characteristic = await bounded(
-      device.readCharacteristicForService(WLED_BLE_SERVICE_UUID, WLED_BLE_CAPABILITIES_UUID),
+      trackNative(() => device.readCharacteristicForService(WLED_BLE_SERVICE_UUID, WLED_BLE_CAPABILITIES_UUID)),
       signal,
     );
     check(signal);
     const capabilities = parseCapabilities(JSON.parse(decodeUtf8(bytesFromBase64(characteristic.value))));
     return { device, capabilities };
   } catch (error) {
+    abandoned = true;
     await disconnectDevice(deviceId);
     throw error;
   } finally {
@@ -193,6 +225,7 @@ export async function discoverWledBluetooth(signal?: AbortSignal): Promise<WledB
     const controllers = new Map<string, WledBleCapabilities>();
     for (const deviceId of candidates) {
       check(controller.signal);
+      if (pendingNative.size > 0) throw new LedControllerError('unavailable');
       try {
         const opened = await open(deviceId, controller.signal);
         check(controller.signal);
@@ -211,33 +244,40 @@ export async function discoverWledBluetooth(signal?: AbortSignal): Promise<WledB
   }
 }
 
-let requestCounter = 0;
+function sessionError(error: unknown): unknown {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return error;
+  const code = error.code;
+  if (code === 'cancelled' || code === 'disconnected' || code === 'fragment-timeout') {
+    return new LedControllerError('cancelled');
+  }
+  if (code === 'timeout') return new LedControllerError('timeout');
+  return error;
+}
+
 async function connect(controllerId: string, signal?: AbortSignal): Promise<WledBleConnection> {
   const { controller, release } = operationController(signal);
   const generation = getCredentialGeneration();
   let device: Device | null = null;
-  let subscription: Subscription | null = null;
-  let disconnected: Subscription | null = null;
-  let pendingReject: ((error: Error) => void) | null = null;
-  let cancelFragmentTimeout: (() => void) | null = null;
-  let closed = false;
+  let session: WledBleSession | undefined;
+  let closing: Promise<void> | undefined;
   const onAbort = () => {
-    pendingReject?.(new LedControllerError('cancelled'));
-    if (device) void disconnectDevice(device.id);
+    if (session) void session.disconnect().catch(() => undefined);
+    else if (device) void disconnectDevice(device.id);
   };
   controller.signal.addEventListener('abort', onAbort, { once: true });
-  async function close() {
-    if (closed) return;
-    closed = true;
-    controller.abort();
-    cancelFragmentTimeout?.();
-    subscription?.remove();
-    disconnected?.remove();
-    try {
-      if (device) await disconnectDevice(device.id);
-    } finally {
-      release();
-    }
+  function close(): Promise<void> {
+    if (closing) return closing;
+    closing = Promise.resolve().then(async () => {
+      controller.abort();
+      controller.signal.removeEventListener('abort', onAbort);
+      try {
+        if (session) await session.disconnect();
+        else if (device) await disconnectDevice(device.id);
+      } finally {
+        release();
+      }
+    });
+    return closing;
   }
   try {
     await permitted(controller.signal);
@@ -256,6 +296,7 @@ async function connect(controllerId: string, signal?: AbortSignal): Promise<Wled
     if (!opened) {
       for (const deviceId of await scan(controller.signal)) {
         check(controller.signal);
+        if (pendingNative.size > 0) throw new LedControllerError('unavailable');
         try {
           const candidate = await open(deviceId, controller.signal);
           if (candidate.capabilities.controllerId === controllerId) {
@@ -275,86 +316,88 @@ async function connect(controllerId: string, signal?: AbortSignal): Promise<Wled
     remembered.set(controllerId, device.id);
     const connectedDevice = device;
     const capabilities = opened.capabilities;
-    let responseListener: ((payload: unknown) => void) | null = null;
-    const assembler = new WledBleFrameAssembler();
-    subscription = device.monitorCharacteristicForService(
-      WLED_BLE_SERVICE_UUID,
-      WLED_BLE_RESPONSE_UUID,
-      (error, characteristic) => {
-        if (closed) return;
-        if (error) {
-          controller.abort();
-          return;
-        }
-        try {
-          const payload = assembler.push(bytesFromBase64(characteristic?.value ?? null));
-          cancelFragmentTimeout?.();
-          cancelFragmentTimeout = payload === null ? setBackgroundSafeTimeout(() => controller.abort(), 5000) : null;
-          if (payload !== null) responseListener?.(payload);
-        } catch {
-          controller.abort();
-        }
+    session = await openWledBleSession(
+      {
+        deviceId: connectedDevice.id,
+        deviceName: connectedDevice.name ?? undefined,
+        maxWriteBytes: Math.max(20, Math.min(512, (connectedDevice.mtu || 23) - 3)),
+        async getCharacteristic(target) {
+          return {
+            writeWithResponse: true,
+            writeWithoutResponse: false,
+            async write(bytes, _mode, requestSignal) {
+              if (requestSignal?.aborted) throw new LedControllerError('cancelled');
+              await trackNative(() =>
+                connectedDevice.writeCharacteristicWithResponseForService(
+                  target.serviceUuid,
+                  target.characteristicUuid,
+                  uint8ArrayToBase64(bytes),
+                ),
+              );
+            },
+            async read(requestSignal) {
+              if (requestSignal?.aborted) throw new LedControllerError('cancelled');
+              const characteristic = await trackNative(() =>
+                connectedDevice.readCharacteristicForService(target.serviceUuid, target.characteristicUuid),
+              );
+              return bytesFromBase64(characteristic.value);
+            },
+            async subscribe(listener, onError, requestSignal) {
+              if (requestSignal?.aborted) throw new LedControllerError('cancelled');
+              // ble-plx returns a cancellation handle, not a CCCD-ready promise.
+              // Preserve native operation ordering; real-device notification setup
+              // remains a QA requirement (see the WLED package README).
+              const subscription = connectedDevice.monitorCharacteristicForService(
+                target.serviceUuid,
+                target.characteristicUuid,
+                (error, characteristic) => {
+                  if (error) {
+                    onError(new LedControllerError('cancelled'));
+                    return;
+                  }
+                  try {
+                    listener(bytesFromBase64(characteristic?.value ?? null));
+                  } catch {
+                    onError(new LedControllerError('cancelled'));
+                  }
+                },
+              );
+              return () => subscription.remove();
+            },
+          };
+        },
+        onDisconnect(listener) {
+          const subscription = getBleManager().onDeviceDisconnected(connectedDevice.id, () =>
+            listener(new LedControllerError('cancelled')),
+          );
+          return () => subscription.remove();
+        },
+        disconnect: () => disconnectDevice(connectedDevice.id),
+      },
+      capabilities,
+      {
+        expectedControllerId: controllerId,
+        signal: controller.signal,
+        scheduler: { now: () => Date.now(), setTimeout: setBackgroundSafeTimeout },
       },
     );
-    disconnected = getBleManager().onDeviceDisconnected(device.id, () => controller.abort());
+    check(controller.signal);
+    const activeSession = session;
     return {
       capabilities,
       disconnect: close,
-      async request(
-        op: WledBleOperation,
-        state?: Record<string, unknown>,
-        requestSignal?: AbortSignal,
-      ): Promise<unknown> {
+      async request(op, state, requestSignal) {
         check(controller.signal);
-        if (pendingReject) throw new LedControllerError('command-failed');
-        const id = `m${++requestCounter}`;
-        const frame = encodeFrame(op === 'setState' ? { id, op, state } : { id, op }, capabilities.maxMessageBytes);
-        const abort = () => controller.abort();
-        requestSignal?.addEventListener('abort', abort, { once: true });
-        if (requestSignal?.aborted) abort();
-        const response = new Promise<unknown>((resolve, reject) => {
-          pendingReject = reject;
-          responseListener = (payload) => {
-            try {
-              resolve(parseResponse(payload, id));
-            } catch (error) {
-              reject(error);
-            }
-          };
-        });
-        // Attach before any write: a fast peripheral may indicate immediately.
-        const completed = bounded(response, controller.signal, 12000);
-        void completed.catch(() => controller.abort());
         try {
-          const payloadBytes = Math.max(20, Math.min(512, (connectedDevice.mtu || 23) - 3));
-          for (const fragment of fragmentFrame(frame, payloadBytes)) {
-            check(controller.signal);
-            await bounded(
-              connectedDevice.writeCharacteristicWithResponseForService(
-                WLED_BLE_SERVICE_UUID,
-                WLED_BLE_REQUEST_UUID,
-                uint8ArrayToBase64(fragment),
-              ),
-              controller.signal,
-            );
-          }
-          return await completed;
+          return await activeSession.request(op, state, requestSignal);
         } catch (error) {
-          controller.abort();
-          throw error;
-        } finally {
-          pendingReject = null;
-          responseListener = null;
-          assembler.reset();
-          cancelFragmentTimeout?.();
-          cancelFragmentTimeout = null;
-          requestSignal?.removeEventListener('abort', abort);
+          throw sessionError(error);
         }
       },
     };
   } catch (error) {
     await close();
-    throw error;
+    throw sessionError(error);
   }
 }
 export const nativeWledBleDriver = createWledBleDriver({ connect });

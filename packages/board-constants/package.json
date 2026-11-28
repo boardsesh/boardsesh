@@ -94,7 +94,9 @@
     "generate": "node --import tsx scripts/generate-board-constants.ts"
   },
   "dependencies": {
-    "@boardsesh/shared-schema": "workspace:*"
+    "@boardsesh/moonboard-ble-protocol": "workspace:*",
+    "@boardsesh/shared-schema": "workspace:*",
+    "@boardsesh/woods-ble-protocol": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^25.9.5",

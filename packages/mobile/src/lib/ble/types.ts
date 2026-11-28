@@ -152,7 +152,7 @@ export type BleConnectDiagnostics = {
  *
  * `preferWriteWithResponse` forces acknowledged GATT writes (write request)
  * regardless of what the write characteristic advertises. The Woods board needs
- * it: its protocol spec (§8, `docs/boards/WOODS_BLUETOOTH_PROTOCOL_SPEC.md`) mandates
+ * it: its protocol spec (§8, `packages/shared/woods-ble-protocol/docs/WOODS_BLUETOOTH_PROTOCOL_SPEC.md`) mandates
  * write requests, and the acknowledgement also paces the 20-byte chunks for its
  * Arduino-class firmware. Aurora boards must never set it — write-without-
  * response is their proven path.

@@ -1,9 +1,9 @@
 # Kilter HTTP API Specification
 
 **Covered version**: Kilter Board Android 2.10.1 (versionCode 65), with live API checks from 2026-06-02
-**Sibling docs**: [KILTER_POWERSYNC_SPEC.md](KILTER_POWERSYNC_SPEC.md), [AURORA_BLUETOOTH_PROTOCOL_SPEC.md](../boards/AURORA_BLUETOOTH_PROTOCOL_SPEC.md), [KILTER_LIVE_SPEC.md](KILTER_LIVE_SPEC.md)
+**Sibling docs**: [KILTER_POWERSYNC_SPEC.md](KILTER_POWERSYNC_SPEC.md), [AURORA_BLUETOOTH_PROTOCOL_SPEC.md](../../packages/shared/aurora-ble-protocol/docs/AURORA_BLUETOOTH_PROTOCOL_SPEC.md), [KILTER_LIVE_SPEC.md](KILTER_LIVE_SPEC.md)
 
-> Kilter Grips runs their own backend, separate from the Aurora Climbing backend that other Aurora-family boards share. The wire-level Bluetooth protocol used to drive the LED hardware is shared with Aurora and is documented in [`AURORA_BLUETOOTH_PROTOCOL_SPEC.md`](../boards/AURORA_BLUETOOTH_PROTOCOL_SPEC.md). **This document only covers the HTTP and realtime-sync APIs.**
+> Kilter Grips runs their own backend, separate from the Aurora Climbing backend that other Aurora-family boards share. The wire-level Bluetooth protocol used to drive the LED hardware is shared with Aurora and is documented in [`AURORA_BLUETOOTH_PROTOCOL_SPEC.md`](../../packages/shared/aurora-ble-protocol/docs/AURORA_BLUETOOTH_PROTOCOL_SPEC.md). **This document only covers the HTTP and realtime-sync APIs.**
 >
 > This is a client and integration guide, not an authoritative server contract. The 2.10.1 package contains some URL literals that are not the routes accepted by the service; live checked routes are identified below. Method choices and full request/response shapes remain unverified unless explicitly stated.
 
@@ -228,7 +228,7 @@ For each endpoint, distinguish a path embedded in the client from a route accept
 | `curated`                                     | `curated`                    | bool?    | featured                                                                                                                                                   |
 | `isDeleted`                                   | `is_deleted`                 | bool     | soft-delete; cleared via `/delteduuids`                                                                                                                    |
 | `createdAt`,`updatedAt`                       | `created_at`,`updated_at`    | ISO-8601 |                                                                                                                                                            |
-| `climbConcat`                                 | `climb_concat`               | string   | canonical placement-encoded string (same encoding used by the LED protocol — see [`AURORA_BLUETOOTH_PROTOCOL_SPEC.md`](../boards/AURORA_BLUETOOTH_PROTOCOL_SPEC.md)) |
+| `climbConcat`                                 | `climb_concat`               | string   | canonical placement-encoded string (same encoding used by the LED protocol — see [`AURORA_BLUETOOTH_PROTOCOL_SPEC.md`](../../packages/shared/aurora-ble-protocol/docs/AURORA_BLUETOOTH_PROTOCOL_SPEC.md)) |
 
 The `create-climb/transaction` and `update-climb/transaction` request bodies are presumed to include the parent climb fields plus an array of `mountingHoles` (see [§5.5](#55-climb-mounting-holes)).
 
@@ -320,7 +320,7 @@ The 2.10.1 package contains both absolute `/api/v2/climb-rating` URLs and a rela
 }
 ```
 
-The placement-type enum is the same one used over Bluetooth (see [`AURORA_BLUETOOTH_PROTOCOL_SPEC.md`](../boards/AURORA_BLUETOOTH_PROTOCOL_SPEC.md)).
+The placement-type enum is the same one used over Bluetooth (see [`AURORA_BLUETOOTH_PROTOCOL_SPEC.md`](../../packages/shared/aurora-ble-protocol/docs/AURORA_BLUETOOTH_PROTOCOL_SPEC.md)).
 
 > Confidence: MEDIUM.
 
