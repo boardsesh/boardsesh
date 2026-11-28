@@ -272,7 +272,7 @@ export function useQueuePersistence({
           if (isCurrent()) setBlockedRestoreScope(null);
         };
         try {
-          const { status, board, signedOut } = await readSessionRestoreBoard(storedId);
+          const { status, board } = await readSessionRestoreBoard(storedId);
           if (!isCurrent() || sessionIdRef.current !== null || isLocalBoardBlocked()) return;
           if (status === 'ended' || status === null) {
             // An ended or missing session cannot be rejoined. A missing board
@@ -286,12 +286,7 @@ export function useQueuePersistence({
             }
             return;
           }
-          // Signed out there is no account board to check: the stored board
-          // passed above, and the rejoin goes unguarded as it did before.
-          if (
-            status !== 'active' ||
-            (!signedOut && (!board || !boardAvailabilityRef.current.isBoardAvailable(board)))
-          ) {
+          if (status !== 'active' || !board || !boardAvailabilityRef.current.isBoardAvailable(board)) {
             await restoreSoloQueue();
             return;
           }

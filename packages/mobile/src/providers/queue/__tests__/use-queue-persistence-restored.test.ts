@@ -47,13 +47,6 @@ vi.mock('../../../lib/session-store', () => ({
 vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: storage.sessionStatus }) }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
-// Read only after the server refuses the board as anonymous.
-const credential = vi.hoisted(() => ({
-  token: null as string | null,
-  recoverAuthRejection: vi.fn(async () => 'unavailable' as const),
-}));
-vi.mock('../../../lib/auth-store', () => ({ getAuthToken: async () => credential.token }));
-vi.mock('../../../lib/auth-interceptor', () => ({ recoverAuthRejection: credential.recoverAuthRejection }));
 
 import {
   resetQueueSnapshotRestoredReportForTests,
@@ -134,8 +127,6 @@ beforeEach(() => {
     .mockReset()
     .mockResolvedValue({ sessionStatus: 'active', sessionRestoreBoardPath: 'kilter/1/10/1/40' });
   storage.gate = null;
-  credential.token = null;
-  credential.recoverAuthRejection.mockClear();
   resetQueueSnapshotRestoredReportForTests();
 });
 
@@ -315,44 +306,6 @@ it('keeps a working, saved solo queue when the server answers the crew read with
   });
   expect(storage.setSession).not.toHaveBeenCalled();
   expect(storage.clearSession).not.toHaveBeenCalled();
-});
-
-/** What the server sends a request it reads as anonymous: the status, and a refused board. */
-function anonymousBoardRefusal() {
-  return Object.assign(new Error('Authentication required to perform this operation'), {
-    response: {
-      status: 200,
-      data: { sessionStatus: 'active', sessionRestoreBoardPath: null },
-      errors: [{ message: 'Authentication required to perform this operation', path: ['sessionRestoreBoardPath'] }],
-    },
-  });
-}
-
-it('rejoins a saved crew when the server keeps the board from a signed-out phone', async () => {
-  storage.sessionId = 'crew';
-  storage.sessionStatus.mockRejectedValue(anonymousBoardRefusal());
-  const { result } = renderHook(() => useRestoreHarness([]));
-
-  await waitFor(() => expect(storage.setSession).toHaveBeenCalledWith('crew'));
-  await waitFor(() => expect(result.current.sessionAuthorityReady).toBe(true));
-  expect(storage.clearSession).not.toHaveBeenCalled();
-});
-
-// An expired token the refresh could not replace reads as anonymous on the
-// server. The phone is still signed in, so its crew's board is unverified.
-it('does not rejoin or grant wall authority when a signed-in phone is read as anonymous', async () => {
-  credential.token = 'expired-jwt';
-  storage.sessionId = 'crew';
-  storage.snapshot = savedQueue(makeItem('solo-climb'));
-  storage.sessionStatus.mockRejectedValue(anonymousBoardRefusal());
-  const { result } = renderHook(() => useRestoreHarness([]));
-
-  await waitFor(() => expect(credential.recoverAuthRejection).toHaveBeenCalled());
-  await waitFor(() => expect(result.current.restored).toBe(true));
-  expect(storage.setSession).not.toHaveBeenCalled();
-  expect(result.current.sessionAuthorityReady).toBe(false);
-  expect(storage.clearSession).not.toHaveBeenCalled();
-  expect(result.current.state.currentClimbQueueItem?.uuid).toBe('solo-climb');
 });
 
 it('preserves solo browsing without establishing wall authority when secure storage cannot be read', async () => {
