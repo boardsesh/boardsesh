@@ -301,6 +301,7 @@ export const ClimbSearchInputSchema = z
     path: ['draftScope'],
   })
   .refine((input) => isBoardConfigReleased(input.boardName, { layoutId: input.layoutId, sizeId: input.sizeId }), {
+    // Quantum is the only board with a release rule; make this text generic when a second board gets one.
     message: 'Unknown Quantum Board layout or size',
     path: ['sizeId'],
   });

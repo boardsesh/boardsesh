@@ -258,6 +258,45 @@ describe('isBoardConfigReleased matches the guards it replaced', () => {
     }
     expect(mismatches).toEqual([]);
   });
+
+  it('reads upper-case and padded names the way isBoardConfigVisible does', () => {
+    // The guards it replaced only ever saw exact names (`BoardNameSchema` is a
+    // `z.enum`; the controller reaches `getClimbByUuid` only after an exact
+    // `board_type =` match), so these spellings never reached them. Here they are
+    // trimmed and lower-cased first: every Quantum spelling gets the old Quantum
+    // rule, and every other name, blank or off `Object.prototype` included, has
+    // no rule and is released.
+    const flagOn = { [LEGACY_QUANTUM_BOARD_FLAG]: true };
+    const unnormalizedNames = ['QUANTUM', ' Quantum ', '\tquantum\n', 'Kilter', '  spray ', '', ' ', 'constructor'];
+    unnormalizedNames.push('__proto__');
+    const setIdLists: readonly (readonly number[] | undefined)[] = [
+      undefined,
+      [QUANTUM_SET_ID],
+      [QUANTUM_SET_ID, QUANTUM_SET_ID + 1],
+    ];
+    const mismatches: string[] = [];
+    for (const boardName of unnormalizedNames) {
+      const isQuantumSpelling = boardName.trim().toLowerCase() === 'quantum';
+      for (const layoutId of layoutIds) {
+        for (const sizeId of sizeIds) {
+          for (const setIds of setIdLists) {
+            const config = { boardName, layoutId, sizeId, setIds };
+            const expected =
+              !isQuantumSpelling || legacyIsBoardConfigVisible({ ...config, boardName: 'quantum' }, flagOn);
+            const released = isBoardConfigReleased(boardName, { layoutId, sizeId, setIds });
+            // With the flag on, the two halves of the gate agree on the same spelling.
+            const visible = isQuantumSpelling ? isBoardConfigVisible(config, flagOn) : expected;
+            if (released !== expected || visible !== expected) {
+              mismatches.push(describeCase({ boardName, layoutId, sizeId, setIds, expected, released, visible }));
+            }
+          }
+        }
+      }
+    }
+    expect(mismatches).toEqual([]);
+    expect(isBoardConfigReleased(' QUANTUM ', QUANTUM_MODELS.xl)).toBe(true);
+    expect(isBoardConfigReleased(' QUANTUM ', QUANTUM_MODELS.belay)).toBe(false);
+  });
 });
 
 describe('setup cascade matches the Quantum branches it replaced', () => {

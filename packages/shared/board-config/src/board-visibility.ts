@@ -63,9 +63,10 @@ function toReleaseSetIds(setIds: BoardVisibilityConfig['setIds']): readonly numb
  * Whether a board's layout / size / sets have shipped, with no rollout flag
  * involved: for the backend, the database and sync, which never see a viewer's
  * flags. A board whose row has no `isConfigReleased` has released every setup.
+ * The name is read as `isBoardConfigVisible` reads it: trimmed, any case.
  */
 export function isBoardConfigReleased(boardName: string, config: BoardReleaseConfig): boolean {
-  const { isConfigReleased } = getBoardCapabilities(boardName);
+  const { isConfigReleased } = getBoardCapabilities(normalizeBoardType(boardName));
   return isConfigReleased === undefined || isConfigReleased(config);
 }
 
