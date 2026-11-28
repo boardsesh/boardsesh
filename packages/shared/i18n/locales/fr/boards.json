@@ -86,6 +86,8 @@
       "confirmDroppedFeatures": "Je comprends que {{features}} ne fonctionnera plus",
       "droppedFeaturesDone": "{{features}} ne fonctionne plus sur ce contrôleur. Ses réglages sont dans ta sauvegarde exportée.",
       "differences": "Réglages modifiés : {{paths}}",
+      "confirmKeepSettings": "J’ai vérifié ces réglages dans WLED et je veux les garder tels qu’ils sont",
+      "keepSettings": "Garder ces réglages",
       "features": {
         "mqtt": "MQTT",
         "hue": "Synchronisation Hue",

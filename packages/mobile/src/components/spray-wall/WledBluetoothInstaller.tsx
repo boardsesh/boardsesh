@@ -62,6 +62,8 @@ export function WledBluetoothInstaller({
   // null until a backup is ready, then the owner's edit of the suggested name.
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [droppedConfirmed, setDroppedConfirmed] = useState(false);
+  // The owner's waiver of a failed settings check; never carried to another check.
+  const [keepConfirmed, setKeepConfirmed] = useState(false);
   // What the owner accepted losing at the install tap, repeated once the install completes.
   const [droppedAtInstall, setDroppedAtInstall] = useState<string[]>([]);
   const [audioDisabledConfirmed, setAudioDisabledConfirmed] = useState(false);
@@ -295,8 +297,27 @@ export function WledBluetoothInstaller({
       ) : null}
       {snapshot.error === 'preservation' && snapshot.differences?.length ? (
         <Text variant="caption1" color={systemColors.secondaryLabel}>
-          {t('sprayLed.installer.differences', { paths: snapshot.differences.slice(0, 8).join(', ') })}
+          {t('sprayLed.installer.differences', { paths: snapshot.differences.join(', ') })}
         </Text>
+      ) : null}
+      {snapshot.stage === 'interrupted' && snapshot.error === 'preservation' && snapshot.differences?.length ? (
+        <>
+          <SwitchRow
+            label={t('sprayLed.installer.confirmKeepSettings')}
+            value={keepConfirmed}
+            onValueChange={setKeepConfirmed}
+            disabled={disabled}
+          />
+          <Button
+            title={t('sprayLed.installer.keepSettings')}
+            variant="outlined"
+            disabled={disabled || !keepConfirmed}
+            onPress={() => {
+              setKeepConfirmed(false);
+              void installer.current?.keepSettings(true);
+            }}
+          />
+        </>
       ) : null}
       {snapshot.identity ? (
         <Text variant="caption1">

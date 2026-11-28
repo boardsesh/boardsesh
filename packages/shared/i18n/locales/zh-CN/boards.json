@@ -86,6 +86,8 @@
       "confirmDroppedFeatures": "我了解 {{features}} 将无法使用",
       "droppedFeaturesDone": "{{features}} 在此控制器上已无法使用。其设置保存在你导出的备份中。",
       "differences": "已更改的设置：{{paths}}",
+      "confirmKeepSettings": "我已在 WLED 中检查这些设置，并希望保持当前状态",
+      "keepSettings": "保留这些设置",
       "features": {
         "mqtt": "MQTT",
         "hue": "Hue 同步",

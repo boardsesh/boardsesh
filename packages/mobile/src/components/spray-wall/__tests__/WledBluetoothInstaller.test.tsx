@@ -8,6 +8,7 @@ type Publish = (snapshot: InstallerSnapshot) => void;
 const runtime = vi.hoisted(() => ({
   snapshot: null as InstallerSnapshot | null,
   install: vi.fn(),
+  keepSettings: vi.fn(),
   release: vi.fn(),
   hotspotInspect: vi.fn(),
   hotspotCreated: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock('../../../lib/wled-installer/engine', async (importOriginal) => {
     release: runtime.release,
     exportBackup: vi.fn(async () => undefined),
     verify: vi.fn(async () => undefined),
+    keepSettings: runtime.keepSettings,
     getSnapshot: () => runtime.snapshot!,
     publish,
   });
@@ -288,6 +290,36 @@ describe('WLED install over the controller hotspot', () => {
     expect(screen.getAllByText(message).length).toBeGreaterThan(0);
     const retry = screen.getByRole('button', { name: 'sprayLed.installer.hotspot.start' }) as HTMLButtonElement;
     expect(retry.disabled).toBe(false);
+  });
+
+  it('lets the owner keep the listed settings after a failed settings check, once confirmed', async () => {
+    runtime.snapshot = {
+      ...readySnapshot(),
+      stage: 'interrupted',
+      error: 'preservation',
+      differences: ['vid', 'id.mdns', 'hw.ir.pin'],
+    };
+    render(<WledBluetoothInstaller url="192.168.1.5" disabled={false} />);
+    fireEvent.click(screen.getByRole('button', { name: 'sprayLed.installer.inspect' }));
+    const keep = (await screen.findByRole('button', { name: 'sprayLed.installer.keepSettings' })) as HTMLButtonElement;
+    expect(screen.getByText('sprayLed.installer.differences')).toBeTruthy();
+    expect(keep.disabled).toBe(true);
+    fireEvent.click(screen.getByRole('switch', { name: 'sprayLed.installer.confirmKeepSettings' }));
+    expect(keep.disabled).toBe(false);
+    fireEvent.click(keep);
+    expect(runtime.keepSettings).toHaveBeenCalledWith(true);
+    // The confirmation is never carried to a later check.
+    expect(
+      (screen.getByRole('switch', { name: 'sprayLed.installer.confirmKeepSettings' }) as HTMLInputElement).checked,
+    ).toBe(false);
+  });
+
+  it('offers no keep option when the check failed for another reason', async () => {
+    runtime.snapshot = { ...readySnapshot(), stage: 'interrupted', error: 'verification' };
+    render(<WledBluetoothInstaller url="192.168.1.5" disabled={false} />);
+    fireEvent.click(screen.getByRole('button', { name: 'sprayLed.installer.inspect' }));
+    await screen.findByRole('button', { name: 'sprayLed.installer.verify' });
+    expect(screen.queryByRole('button', { name: 'sprayLed.installer.keepSettings' })).toBeNull();
   });
 
   it('explains a lost hotspot after the restart and offers the installation check', async () => {

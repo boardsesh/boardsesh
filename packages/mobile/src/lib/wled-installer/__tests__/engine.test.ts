@@ -302,7 +302,66 @@ describe('WLED owner installer', () => {
     await installer.inspect();
     await installer.install(true, false);
     expect(installer.getSnapshot()).toMatchObject({ stage: 'interrupted', error: 'preservation' });
+    expect(installer.getSnapshot().differences).toContain('hw.led.pin');
     expect(io.clearJournal).not.toHaveBeenCalled();
+
+    // Only an explicit owner confirmation waives the failed check.
+    await installer.keepSettings(false);
+    expect(io.clearJournal).not.toHaveBeenCalled();
+    await installer.keepSettings(true);
+    expect(installer.getSnapshot()).toMatchObject({ stage: 'complete', error: undefined });
+    expect(io.clearJournal).toHaveBeenCalledOnce();
+    expect(io.upload).toHaveBeenCalledOnce();
+  });
+  it('offers keeping settings only after a failed settings check', async () => {
+    const { io, installer } = setup();
+    vi.mocked(io.upload).mockRejectedValue(new Error('disconnect'));
+    await installer.inspect();
+    await installer.install(true, false);
+    expect(installer.getSnapshot()).toMatchObject({ stage: 'interrupted', error: 'verification' });
+    await installer.keepSettings(true);
+    expect(io.clearJournal).not.toHaveBeenCalled();
+    expect(installer.getSnapshot().stage).toBe('interrupted');
+  });
+  it('keeps changed settings with the original firmware back and takes a fresh backup', async () => {
+    const { io, installer, setJournal } = setup();
+    const changed = { ...config, hw: { ...config.hw, led: { count: 1000, pin: 2 } } };
+    vi.mocked(io.readJson).mockImplementation(async (url) => {
+      if (url.endsWith('release-manifest.json')) return { manifestVersion: 1, releases: [release] };
+      if (url.endsWith('/cfg.json')) return changed;
+      if (url.endsWith('/presets.json')) return presets;
+      return original;
+    });
+    const identity = {
+      controllerId: 'wled-001122aabbcc',
+      name: 'Gym LEDs',
+      version: '16.0.1',
+      architecture: 'esp32',
+      flashBytes: 4_194_304,
+      brand: 'WLED',
+      product: 'FOSS',
+      ledCount: 1000,
+      capabilities: null,
+    };
+    setJournal({
+      url: 'http://192.168.1.5',
+      before: identity,
+      backup: { config, presets, uri: 'file:///old.json' },
+      release,
+      restoreSameSubnet: true,
+    });
+    await installer.inspect();
+    await installer.verify();
+    expect(installer.getSnapshot()).toMatchObject({ stage: 'interrupted', error: 'preservation' });
+    await installer.keepSettings(true);
+    expect(installer.getSnapshot()).toMatchObject({ stage: 'ready', backup: { config: changed } });
+    expect(io.saveBackup).toHaveBeenCalledWith(expect.anything(), changed, presets);
+    expect(io.writeConfig).toHaveBeenCalledWith(
+      'http://192.168.1.5',
+      { ota: { 'same-subnet': true } },
+      expect.anything(),
+    );
+    expect(io.clearJournal).toHaveBeenCalledOnce();
   });
   it('serializes duplicate install taps', async () => {
     const { io, installer } = setup();

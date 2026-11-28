@@ -108,6 +108,14 @@ password; both are prefilled with WLED's defaults.
      -1), a button count that only grows, the installer's two writes above, and the
      matched source profile's measured `settingsChanges` (see below). A failed check
      lists the differing paths on screen.
+   - **Keeping changed settings.** After a failed settings check the owner can
+     confirm they checked the listed settings and keep them ("Keep these
+     settings"). Only the owner can waive a difference this way, protected ones
+     included; a manifest never can. The app then turns the same-network check back
+     on and clears the journal. If the add-on is running, the install is done. If the
+     original firmware is back, the app takes a fresh backup and offers the install
+     again. Without this, a controller whose settings changed outside the app, for
+     example through WLED's own pages, stayed unconfirmed for good.
    - **Refused at the first byte.** A 401 from `/update` (PIN, OTA lock or the
      same-network check) means nothing was written: the journal is cleared and the
      screen shows the blocked state, not an unconfirmed install.

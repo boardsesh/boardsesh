@@ -620,7 +620,11 @@ function createSession(
       identity.capabilities?.buildId !== pending.release.buildId
     );
   }
-  async function verify(signal: AbortSignal, allowSourceRecovery = false) {
+  /**
+   * `keepSettings`: the owner saw the differing settings and accepts the controller as it is now.
+   * Only the owner can waive them; a manifest never can.
+   */
+  async function verify(signal: AbortSignal, allowSourceRecovery = false, keepSettings = false) {
     if (!journal) throw new WledInstallerError('verification');
     const pending = journal;
     // An owner's check is not a restart, and no earlier error carries into it.
@@ -643,7 +647,7 @@ function createSession(
           const { config, presets } = await readSettings(signal);
           const differences = differencesFor(pending, config, presets);
           if (identity.ledCount !== pending.before.ledCount) differences.push('leds.count');
-          if (differences.length) {
+          if (differences.length && !keepSettings) {
             update({ ...snapshot, differences });
             throw new WledInstallerError('preservation');
           }
@@ -676,7 +680,7 @@ function createSession(
       if (originalFirmware) {
         const { config, presets } = await readSettings(signal);
         const differences = differencesFor(pending, config, presets);
-        if (differences.length) {
+        if (differences.length && !keepSettings) {
           update({ ...snapshot, differences });
           throw new WledInstallerError('preservation');
         }
@@ -831,5 +835,21 @@ function createSession(
         }
         await verify(signal, true);
       }),
+    /**
+     * After a failed settings check: the owner confirmed the listed settings and keeps them. The
+     * install is then confirmed, or with the original firmware back, a fresh backup is taken.
+     */
+    keepSettings: async (confirmed: boolean) => {
+      // Not an error: the failed check and its list stay on screen.
+      if (!confirmed || !journal || snapshot.error !== 'preservation') return;
+      await exclusive(async (signal) => {
+        await io.awake(true);
+        if (link) {
+          update({ ...snapshot, stage: 'connecting' });
+          await link.ensure(signal);
+        }
+        await verify(signal, true, true);
+      });
+    },
   };
 }
