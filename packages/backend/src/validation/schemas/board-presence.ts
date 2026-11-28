@@ -130,7 +130,7 @@ const BoardLayerPresenceRedisSchema = ReportBoardLayerInputSchema.extend({
   placementIds: z.array(PositiveGraphQLIntSchema).max(MAX_DIODES_PER_LAYER),
 });
 
-/** Runtime boundary for Quantum layer snapshots read back from Redis. */
+/** Runtime boundary for board layer snapshots read back from Redis. */
 export const BoardLayersSnapshotRedisSchema: z.ZodType<BoardLayersSnapshot> = z.object({
   boardId: PositiveGraphQLIntSchema,
   layers: z.array(BoardLayerPresenceRedisSchema).max(MAX_ACTIVE_BOARD_LAYERS),

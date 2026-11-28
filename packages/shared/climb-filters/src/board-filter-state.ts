@@ -20,7 +20,11 @@ export type ClimbBoardFilterState = {
   zoneBox?: ZoneBoxInput | null;
   zoneMode?: ZoneMatchMode;
   setterId?: number;
-  /** Keep the persisted key while exposing manufacturer-independent behavior. */
+  /**
+   * The lit-hold overlap filter on any layered board. The key keeps its Quantum
+   * name because this state is persisted: mobile writes it into the saved last
+   * search (`boardsesh_last_search_by_board`) and restores it as-is.
+   */
   quantumOverlap?: BoardOverlapFilter;
 };
 

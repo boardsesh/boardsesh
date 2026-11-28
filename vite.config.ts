@@ -1066,6 +1066,7 @@ export default defineConfig({
       },
       'typecheck:board-layers': {
         command: 'pnpm --filter @boardsesh/board-layers run typecheck',
+        dependsOn: ['codegen'],
       },
       'typecheck:board-render': {
         command: 'pnpm --filter @boardsesh/board-render run typecheck',

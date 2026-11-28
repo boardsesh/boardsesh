@@ -23,8 +23,6 @@
 
 import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
 
-export type WallSendMode = 'automatic' | 'explicit-layer';
-
 export type BoardCatalogSource = 'bundled' | 'personal';
 
 export type BoardCapabilities = {
@@ -169,10 +167,14 @@ export type BoardCapabilities = {
    * "benchmark" on every board.
    */;
   benchmarkTerm: 'benchmark' | 'verified';
-  /** Maximum independent climbs the physical controller retains. */
+  /** Maximum independent climbs the physical controller retains. Above 1, each
+   * climb is a coloured layer: the board reports presence as layers and gets
+   * the lit-hold overlap filter (`supportsLayerOverlapFiltering`). */
   maxActiveWallClimbs: number;
-  /** Quantum lighting always requires an explicit layer choice. */
-  wallSendMode: WallSendMode;
+  /** Most distinct lights Boardsesh sends for one of those climbs, or null where
+   * the app sets no cap. Required on a board with `maxActiveWallClimbs > 1`:
+   * `@boardsesh/board-layers` bounds layer presence and occupancy with it. */
+  maxLightsPerWallClimb: number | null;
   /** Whether bundled geometry can drive the synchronous WASM renderer. */
   staticBoardRender: boolean;
 };
@@ -198,7 +200,7 @@ const AURORA_CAPABILITIES: BoardCapabilities = {
   auroraAppLink: true,
   benchmarkTerm: 'benchmark',
   maxActiveWallClimbs: 1,
-  wallSendMode: 'automatic',
+  maxLightsPerWallClimb: null,
   staticBoardRender: true,
 };
 
@@ -222,7 +224,7 @@ const MOONBOARD_CAPABILITIES: BoardCapabilities = {
   auroraAppLink: false,
   benchmarkTerm: 'benchmark',
   maxActiveWallClimbs: 1,
-  wallSendMode: 'automatic',
+  maxLightsPerWallClimb: null,
   staticBoardRender: true,
 };
 
@@ -246,7 +248,7 @@ const WOODS_CAPABILITIES: BoardCapabilities = {
   auroraAppLink: false,
   benchmarkTerm: 'benchmark',
   maxActiveWallClimbs: 1,
-  wallSendMode: 'automatic',
+  maxLightsPerWallClimb: null,
   staticBoardRender: true,
 };
 
@@ -284,7 +286,7 @@ const SPRAY_CAPABILITIES: BoardCapabilities = {
   auroraAppLink: false,
   benchmarkTerm: 'benchmark',
   maxActiveWallClimbs: 1,
-  wallSendMode: 'automatic',
+  maxLightsPerWallClimb: null,
   staticBoardRender: false,
 };
 
@@ -301,8 +303,10 @@ const QUANTUM_CAPABILITIES: BoardCapabilities = {
   nativeBoardControl: false,
   auroraAppLink: false,
   benchmarkTerm: 'benchmark',
+  // Application limits, not verified firmware capacity; the board-layers parity
+  // test pins both to QUANTUM_MAX_PLAYERS / QUANTUM_MAX_DIODE_IDS in ble-protocol.
   maxActiveWallClimbs: 4,
-  wallSendMode: 'explicit-layer',
+  maxLightsPerWallClimb: 92,
   staticBoardRender: false,
 };
 
@@ -360,3 +364,6 @@ export const PUBLIC_CLIMB_LINK_BOARD_NAMES = SUPPORTED_BOARDS.filter(supportsPub
 export function supportsLayerOverlapFiltering(boardName: string | undefined): boolean {
   return getBoardCapabilities(boardName).maxActiveWallClimbs > 1;
 }
+
+/** Known boards whose controller keeps several climbs lit, one per layer. */
+export const LAYERED_WALL_BOARD_NAMES: readonly BoardName[] = SUPPORTED_BOARDS.filter(supportsLayerOverlapFiltering);

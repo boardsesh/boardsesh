@@ -3,6 +3,7 @@ import { getLocalUserId, type OfflineDatabase } from '@boardsesh/offline-sync';
 import type { BoardName, Climb, ClimbSearchInput } from '@boardsesh/shared-schema';
 import { resolveClimbNoMatch } from '@boardsesh/shared-schema';
 import { getBoardCapabilities, isSizeScopedBoard, supportsLayerOverlapFiltering } from '@boardsesh/board-config';
+import { MAX_OCCUPIED_PLACEMENTS } from '@boardsesh/board-layers';
 import { getTallWideScope } from '@boardsesh/board-constants';
 import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
 import { climbNameLikePattern } from '@boardsesh/climb-filters';
@@ -620,7 +621,7 @@ export function buildJoinAndWhere(
     push(`c.frames NOT LIKE ? ESCAPE '\\'`, `%p${holdId}r%`);
   }
 
-  // Quantum coexistence. The offline snapshot does not carry board_climb_holds,
+  // Layered-board coexistence. The offline snapshot does not carry board_climb_holds,
   // so count exact `p<placement>r` tokens in the synced frames string. Apply it
   // in the same WHERE clause as online search — before pagination, count and
   // seeded random order. Omission means geometry is unknown and disables it.
@@ -630,7 +631,7 @@ export function buildJoinAndWhere(
     input.occupiedPlacementIds &&
     input.occupiedPlacementIds.length > 0
   ) {
-    const occupiedPlacementIds = [...new Set(input.occupiedPlacementIds)].slice(0, 368);
+    const occupiedPlacementIds = [...new Set(input.occupiedPlacementIds)].slice(0, MAX_OCCUPIED_PLACEMENTS);
     const overlapTerms = occupiedPlacementIds.map(() => "CASE WHEN c.frames LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END");
     push(
       `(${overlapTerms.join(' + ')}) <= ?`,

@@ -123,7 +123,7 @@ const CommitBoardLayersResultRedisSchema = z.object({
 function parseBoardLayersSnapshot(raw: string, expectedBoardId: string): BoardLayersSnapshot {
   const snapshot = BoardLayersSnapshotRedisSchema.parse(JSON.parse(raw));
   if (String(snapshot.boardId) !== expectedBoardId) {
-    throw new Error(`Quantum layer snapshot board ${snapshot.boardId} does not match Redis key ${expectedBoardId}`);
+    throw new Error(`Board layer snapshot board ${snapshot.boardId} does not match Redis key ${expectedBoardId}`);
   }
   return snapshot;
 }
@@ -191,7 +191,7 @@ const BOARD_SEQ_RESEED_THRESHOLD = 50;
 // resolveBoardForConfig) a user may report climbs to that board's feed. Long
 // enough for a climbing session; a reconnect re-stamps it.
 const BOARD_MEMBERSHIP_TTL = 43_200; // 12 hours
-// Phones report the confirmed Quantum roster every 10 seconds while active.
+// Phones report the confirmed layer roster every 10 seconds while active.
 // Three missed reports make the snapshot stale; Redis retention is then capped
 // by the controller's longest remaining timer plus this grace period.
 const BOARD_LAYERS_HEARTBEAT_GRACE_SECONDS = 30;
@@ -624,7 +624,7 @@ export class BoardPresenceStore {
     }
   }
 
-  /** Read the latest confirmed, sanitized QuantumBoard roster. */
+  /** Read the latest confirmed, sanitized board-layer roster. */
   async getBoardLayers(boardId: string): Promise<BoardLayersSnapshot | null> {
     if (!this.deps.isRedisAvailable()) {
       const local = this.readLocalBoardLayers(boardId);
@@ -657,7 +657,7 @@ export class BoardPresenceStore {
     claimToken: string,
   ): Promise<CommitBoardLayersResult> {
     if (!this.deps.isRedisAvailable()) {
-      if (this.deps.isRedisRequired()) throw new Error('Redis is required to commit Quantum board layers');
+      if (this.deps.isRedisRequired()) throw new Error('Redis is required to commit board layers');
       return this.commitLocalBoardLayers(boardId, snapshot, emitterId, claimToken);
     }
 
@@ -684,7 +684,7 @@ export class BoardPresenceStore {
         BOARD_MEMBERSHIP_TTL,
         boardLayersTtlSeconds(snapshot),
       );
-      if (typeof encodedResult !== 'string') throw new Error('Invalid Quantum layer commit response');
+      if (typeof encodedResult !== 'string') throw new Error('Invalid board layer commit response');
       const result = CommitBoardLayersResultRedisSchema.parse(JSON.parse(encodedResult));
       const committedSnapshot = parseBoardLayersSnapshot(result.snapshot, boardId);
       this.localBoardLayers.delete(boardId);

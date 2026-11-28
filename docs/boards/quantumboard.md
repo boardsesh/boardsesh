@@ -235,8 +235,10 @@ Open Graph images, and links. Issue-linked TODOs mark the temporary guards.
 
 Boardsesh currently understands four simultaneous colored layers and caps activation
 at 92 distinct diode addresses. Each player controls one layer. These are current application limits; the
-firmware's layer capacity and repeated-chunk behavior are unverified. The
-provider and encoder reject oversized activation before any command. Commands
+firmware's layer capacity and repeated-chunk behavior are unverified. They live on
+the Quantum capability row as `maxActiveWallClimbs` and `maxLightsPerWallClimb`;
+a `@boardsesh/board-layers` test pins them to the Bluetooth protocol's player and
+diode caps. The provider and encoder reject oversized activation before any command. Commands
 must fit one complete, mode-appropriate GATT write; frames are not silently
 fragmented. Persistent binary `QB_` boards use writes with response and `QBB_`
 boards use writes without response; both require separate roster confirmation.
@@ -283,7 +285,13 @@ live preview, frame playback, handoff, and exact-wall rules stay behind the
 corresponding control adapter.
 
 Board-layer presence and overlap filtering are generic capabilities, initially
-enabled for Quantum. Public reports contain sanitized display data and confirmed
+enabled for Quantum. The server, search and the filter sheet turn them on for any
+board whose capability row has `maxActiveWallClimbs` above 1. Such a board must
+also set a `maxLightsPerWallClimb` cap, which bounds its layers; a board-config
+test enforces that. A new layered board still needs its own controller adapter to
+read and report the roster, and a geometry binding in `board-layer-catalog.ts` before another phone's
+layer counts as occupied; an unregistered board reports unknown geometry. Public
+reports contain sanitized display data and confirmed
 placement evidence, never controller user credentials. App-authored route IDs can
 survive edits, so current catalog frames do not prove which holds another phone
 physically lit. Recovery preserves that uncertainty instead of guessing.

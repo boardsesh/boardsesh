@@ -1,6 +1,6 @@
+import { getBoardCapabilities } from '@boardsesh/board-config';
 import type { OfflineDatabase } from '@boardsesh/offline-sync';
 
-const MAX_QUANTUM_ROSTER_ROUTES = 4;
 const CANONICAL_QUANTUM_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 type QuantumRoutePresenceRow = {
@@ -33,8 +33,10 @@ export async function getQuantumRoutePresenceClimbsLocal(
     CANONICAL_QUANTUM_UUID.test(routeUuid),
   );
   if (canonicalRouteUuids.length === 0) return [];
-  if (canonicalRouteUuids.length > MAX_QUANTUM_ROSTER_ROUTES) {
-    throw new Error(`Quantum roster lookup is limited to ${MAX_QUANTUM_ROSTER_ROUTES} routes`);
+  // One route per layer the Quantum row says the controller keeps lit.
+  const maxRosterRoutes = getBoardCapabilities('quantum').maxActiveWallClimbs;
+  if (canonicalRouteUuids.length > maxRosterRoutes) {
+    throw new Error(`Quantum roster lookup is limited to ${maxRosterRoutes} routes`);
   }
 
   const placeholders = canonicalRouteUuids.map(() => '?').join(', ');

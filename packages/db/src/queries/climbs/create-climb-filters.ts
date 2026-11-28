@@ -599,8 +599,9 @@ export const createClimbFilters = (
     ...climbTypeFilterConditions,
   ];
 
-  // Quantum controllers can keep four routes live. Filter by the union of the
-  // confirmed players' placement ids before pagination/count/random/heatmap.
+  // A layered controller keeps `maxActiveWallClimbs` routes live (four on
+  // Quantum). Filter by the union of the confirmed layers' placement ids before
+  // pagination/count/random/heatmap.
   // Unknown geometry is represented by omitting maxOccupiedOverlap, which
   // deliberately disables this condition instead of hiding every climb.
   const occupiedPlacementIds = searchParams.occupiedPlacementIds ?? [];

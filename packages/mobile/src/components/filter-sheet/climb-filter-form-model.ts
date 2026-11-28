@@ -69,7 +69,8 @@ type SortInput =
 
 export type ClimbFilterFormInput = {
   t: TFunction<'climbs'>;
-  quantumOverlap?: ClimbFilterFormSection;
+  /** The lit-hold overlap section, set only on a board with layers. */
+  layerOverlap?: ClimbFilterFormSection;
   filters: ClimbFilters;
   isAuthenticated: boolean;
   name: {
@@ -463,7 +464,7 @@ export function buildClimbFilterFormModel(input: ClimbFilterFormInput): ClimbFil
     progressSection(input),
     qualitySection(input),
     climbSection(input),
-    input.quantumOverlap ?? null,
+    input.layerOverlap ?? null,
     pickerSection(input),
     sortSection(input),
     quickFiltersSection(input),
