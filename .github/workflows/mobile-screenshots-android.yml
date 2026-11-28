@@ -93,12 +93,13 @@ on:
   workflow_dispatch:
     inputs:
       flow:
-        description: 'Maestro flow to run'
+        description: 'Capture screenshots, or run the navigation smoke and optionally record its genuine backend reads.'
         type: choice
         default: app-store
         options:
           - app-store
           - onboarding
+          - smoke
       android_device:
         description: 'Android emulator device label used for screenshot output'
         type: string
@@ -291,9 +292,9 @@ jobs:
       # guards them only runs for the app-store flow, so refuse an onboarding
       # commit up front instead of pushing the wrong screens to the store.
       - name: Validate commit inputs
-        if: ${{ env.COMMIT_RUN == 'true' && inputs.flow == 'onboarding' }}
+        if: ${{ env.COMMIT_RUN == 'true' && (inputs.flow || 'app-store') != 'app-store' }}
         run: |
-          echo "::error::commit_to_main requires the app-store flow. The onboarding flow is capture-only."
+          echo "::error::commit_to_main requires the app-store flow. Onboarding and smoke flows are capture-only."
           exit 1
 
       # Mint the GitHub App token FIRST so checkout persists ITS credentials for
@@ -400,7 +401,7 @@ jobs:
           retention-days: 7
 
       - name: Assert screenshots are not blank
-        if: ${{ inputs.flow != 'onboarding' }}
+        if: ${{ (inputs.flow || 'app-store') == 'app-store' }}
         run: |
           set -euo pipefail
           baseline="$RUNNER_TEMP/committed-screenshots"
@@ -410,9 +411,9 @@ jobs:
             --baseline-dir "$baseline/app-stores/google/screenshots"
 
       - name: Assert screenshot dimensions
-        # The onboarding flow captures different screens than the Play Store set, so
-        # the dimension gate doesn't apply to it.
-        if: ${{ inputs.flow != 'onboarding' }}
+        # Onboarding captures different screens; smoke records no screenshots.
+        # Neither uses the Play Store image gates.
+        if: ${{ (inputs.flow || 'app-store') == 'app-store' }}
         run: vp run check:screenshot-dimensions -- --platform android
 
       # Post the captured set to the Discord deploy channel — a visual preview of
@@ -425,7 +426,7 @@ jobs:
       # later commit step runs after this, so its outcome can't suppress the
       # preview. Best-effort, so a webhook hiccup never fails the run.
       - name: Post screenshots to Discord
-        if: ${{ success() && inputs.flow != 'onboarding' && inputs.fixtures != 'record' && (github.event_name != 'workflow_dispatch' || inputs.share_preview == true) }}
+        if: ${{ success() && (inputs.flow || 'app-store') == 'app-store' && inputs.fixtures != 'record' && (github.event_name != 'workflow_dispatch' || inputs.share_preview == true) }}
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -477,7 +478,7 @@ jobs:
       # a no-op. No [skip ci], on purpose — the metadata workflow MUST see this push
       # (an app-token push does trigger workflows).
       - name: Commit screenshots to main
-        if: ${{ success() && env.COMMIT_RUN == 'true' && inputs.flow != 'onboarding' && vars.OTA_PUSH_APP_ID != '' }}
+        if: ${{ success() && env.COMMIT_RUN == 'true' && (inputs.flow || 'app-store') == 'app-store' && vars.OTA_PUSH_APP_ID != '' }}
         run: |
           set -euo pipefail
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -511,7 +512,7 @@ jobs:
           exit 1
 
       - name: Upload native captures for review
-        if: always()
+        if: ${{ always() && inputs.flow != 'smoke' }}
         uses: actions/upload-artifact@v4
         with:
           name: raw-android-screenshots
@@ -520,7 +521,7 @@ jobs:
           retention-days: 7
 
       - name: Upload screenshots artifact
-        if: always()
+        if: ${{ always() && inputs.flow != 'smoke' }}
         uses: actions/upload-artifact@v4
         with:
           name: mobile-screenshots-android

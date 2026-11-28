@@ -965,6 +965,37 @@ printf 'shipped=true\\nsource_sha=%s\\n' "$STUB_BINARY_SHA" >> "$GITHUB_OUTPUT"
     },
   );
 
+  it('offers Android smoke recording without screenshot publication or image gates', () => {
+    const workflow = parseWorkflow(ANDROID_WORKFLOW_PATH);
+    const dispatch = workflow.on?.workflow_dispatch as {
+      inputs: Record<string, { options?: string[] }>;
+    };
+    expect(dispatch.inputs.flow.options).toContain('smoke');
+    const steps = workflow.jobs.android.steps ?? [];
+    const capture = steps.find((step) => step.name === 'Capture Android screenshots');
+    expect(capture?.with?.flow).toBe("${{ inputs.flow || 'app-store' }}");
+    expect(capture?.with?.fixtures).toBe("${{ inputs.fixtures || 'replay' }}");
+    const guard = steps.find((step) => step.name === 'Validate commit inputs');
+    expect(guard?.if).toBe("${{ env.COMMIT_RUN == 'true' && (inputs.flow || 'app-store') != 'app-store' }}");
+    expect(guard?.run).toContain('exit 1');
+    for (const name of [
+      'Assert screenshots are not blank',
+      'Assert screenshot dimensions',
+      'Post screenshots to Discord',
+      'Commit screenshots to main',
+    ]) {
+      expect(steps.find((step) => step.name === name)?.if, name).toContain(
+        "(inputs.flow || 'app-store') == 'app-store'",
+      );
+    }
+    for (const name of ['Upload native captures for review', 'Upload screenshots artifact']) {
+      expect(steps.find((step) => step.name === name)?.if, name).toContain("inputs.flow != 'smoke'");
+    }
+    expect(steps.find((step) => step.name === 'Upload recorded fixtures')?.if).toBe(
+      "${{ always() && inputs.fixtures == 'record' }}",
+    );
+  });
+
   it.each(workflows)('$platform only reads dispatch inputs in null-tolerant positions', (entry) => {
     expect(nullIntolerantInputReads(readYaml(entry.path))).toEqual([]);
   });
@@ -1006,7 +1037,7 @@ printf 'shipped=true\\nsource_sha=%s\\n' "$STUB_BINARY_SHA" >> "$GITHUB_OUTPUT"
     });
     const previewStep = workflow.jobs.android.steps?.find((step) => step.name === 'Post screenshots to Discord');
     expect(flatten(previewStep?.if)).toBe(
-      "${{ success() && inputs.flow != 'onboarding' && inputs.fixtures != 'record' && (github.event_name != 'workflow_dispatch' || inputs.share_preview == true) }}",
+      "${{ success() && (inputs.flow || 'app-store') == 'app-store' && inputs.fixtures != 'record' && (github.event_name != 'workflow_dispatch' || inputs.share_preview == true) }}",
     );
   });
 

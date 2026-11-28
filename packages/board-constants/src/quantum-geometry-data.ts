@@ -1,5 +1,5 @@
-/// <reference types="node" />
 import { QUANTUM_GEOMETRY_METADATA, QUANTUM_GEOMETRY_SHA256 } from './generated/quantum-geometry-metadata';
+import loadQuantumGeometryTables from './quantum-geometry-loader.cjs';
 import type { HoldTuple } from './types';
 
 export type QuantumGeometryPlacement = Readonly<{
@@ -41,17 +41,7 @@ const sourceDiodesByConfig = new Map<string, readonly QuantumSourceDiodeBinding[
 
 function getTables(): QuantumGeometryTables {
   if (tables) return tables;
-  // Literal requires keep the fixed data out of every other board's startup.
-  if (typeof require === 'function') {
-    tables = require('./generated/quantum-geometry.cjs') as QuantumGeometryTables;
-  } else {
-    const builtin = (process as unknown as { getBuiltinModule(id: string): unknown }).getBuiltinModule(
-      'node:module',
-    ) as {
-      createRequire(path: string): (id: string) => unknown;
-    };
-    tables = builtin.createRequire(import.meta.url)('./generated/quantum-geometry.cjs') as QuantumGeometryTables;
-  }
+  tables = loadQuantumGeometryTables() as QuantumGeometryTables;
   for (const holds of Object.values(tables.holes)) {
     for (const hold of holds) Object.freeze(hold);
     Object.freeze(holds);
