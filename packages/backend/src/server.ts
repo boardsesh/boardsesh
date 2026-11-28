@@ -96,6 +96,8 @@ import {
 } from './handlers/native-auth';
 import { handleApnsStats } from './handlers/apns-stats';
 import { handleCurrentStoreWebAuth } from './handlers/current-store-web-auth';
+import { handleCurrentStoreNativeTransfer } from './handlers/current-store-native-transfer';
+import { NATIVE_TRANSFER_COMMAND_PATH } from '@boardsesh/auth-protocol/native-oauth-transfer';
 import { handleGuessLimitCommand } from './handlers/guess-limit-commands';
 import { GUESS_LIMIT_PREFIX } from '@boardsesh/auth-protocol';
 import { handleCurrentStoreWebOAuth } from './handlers/current-store-web-oauth';
@@ -840,6 +842,10 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       }
       if (pathname.startsWith('/api/internal/auth/current-store/web-oauth/v1/')) {
         await handleCurrentStoreWebOAuth(req, res);
+        return;
+      }
+      if (pathname === NATIVE_TRANSFER_COMMAND_PATH) {
+        await handleCurrentStoreNativeTransfer(req, res);
         return;
       }
       if (

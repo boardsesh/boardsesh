@@ -22,6 +22,7 @@ import {
 import {
   admitPasswordLogin,
   createPasswordCommandAuthRequest,
+  createNativeTransferAuthRequest,
   unavailablePasswordAuthResponse,
 } from '@/app/lib/auth/password-command-auth.server';
 import { cloudflareVouchedVisitorAddress } from '@/app/lib/auth/trusted-client-ip.server';
@@ -202,6 +203,14 @@ async function postAuth(
     const response = await commandHandler(request, context);
     const retryAfterSeconds = commandRequest.limited();
     if (retryAfterSeconds !== undefined) return unavailablePasswordAuthResponse(request.url, retryAfterSeconds);
+    return commandRequest.unavailable()
+      ? unavailablePasswordAuthResponse(request.url)
+      : clearLegacyCookieIfSessionWritten(response);
+  }
+  if (action === 'callback' && provider === 'native-oauth') {
+    const commandRequest = createNativeTransferAuthRequest(options);
+    const commandHandler = NextAuth(commandRequest.options) as NextAuthHandler;
+    const response = await commandHandler(request, context);
     return commandRequest.unavailable()
       ? unavailablePasswordAuthResponse(request.url)
       : clearLegacyCookieIfSessionWritten(response);

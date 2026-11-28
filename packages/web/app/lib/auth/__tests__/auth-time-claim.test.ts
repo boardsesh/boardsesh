@@ -91,7 +91,7 @@ import * as Sentry from '@sentry/nextjs';
 import * as schema from '@/app/lib/db/schema';
 import { GET, POST } from '@/app/api/auth/[...nextauth]/route';
 import { authOptions } from '../auth-options';
-import { issueNativeOAuthTransferToken } from '../native-oauth-transfer';
+import { issueNativeOAuthTransferToken, verifyNativeOAuthTransferToken } from '../native-oauth-transfer';
 import { createWebOAuthIdentityAuthRequest } from '../web-oauth-auth.server';
 
 // Only the database, the backend admission call and Next's ambient request I/O are
@@ -779,5 +779,154 @@ describe('native transfer source proof at actual cookie publication', () => {
         account: accountFor('native-oauth'),
       }),
     ).rejects.toThrow('Backend web credential proof required');
+  });
+});
+
+describe('delegated browser native-transfer publication', () => {
+  function enableDelegation(overwrite?: (reply: Record<string, unknown>) => Record<string, unknown>) {
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'backend-staging');
+    vi.stubEnv('CURRENT_STORE_AUTH_BACKEND_ORIGIN', 'http://localhost:8080');
+    vi.stubEnv('CURRENT_STORE_AUTH_RPC_SECRET', 'native-transfer-synthetic-private-rpc-secret');
+    const claimed = new Set<string>();
+    const backend = vi.fn<typeof fetch>(async (_input, init) => {
+      const request = JSON.parse(typeof init?.body === 'string' ? init.body : 'null') as {
+        requestId: string;
+        payload: { transferToken: string };
+      };
+      const decoded = verifyNativeOAuthTransferToken(request.payload.transferToken);
+      if (!decoded) throw new Error('Fixture expects the original signed transfer');
+      const metadata = { nativeTransferProtocolVersion: 1, operation: 'claim', requestId: request.requestId };
+      if (claimed.has(request.payload.transferToken))
+        return Response.json({ ...metadata, outcome: 'denied' }, { status: 401 });
+      claimed.add(request.payload.transferToken);
+      const reply = {
+        ...metadata,
+        outcome: 'claimed',
+        user: { id: climber.id, email: climber.email, name: climber.name, image: climber.image },
+        sourceGeneration: decoded.generation,
+        ...(decoded.credentialProof ? { credentialProof: decoded.credentialProof } : {}),
+      };
+      return Response.json(overwrite ? overwrite(reply) : reply);
+    });
+    vi.stubGlobal('fetch', backend);
+    return backend;
+  }
+  function transferSignIn(transferToken: string) {
+    return invoke('callback/native-oauth', { transferToken, csrfToken, json: 'true', callbackUrl: baseUrl });
+  }
+  function providerAuthorize(transferToken: string) {
+    const provider = authOptions.providers.find((entry) => (entry.options?.id ?? entry.id) === 'native-oauth');
+    if (!provider || provider.type !== 'credentials') throw new Error('Actual native-oauth provider missing');
+    const configured = { ...provider, ...provider.options };
+    return configured.authorize({ transferToken }, { headers: {} });
+  }
+  it('claims once through the service and preserves generation-only unknown-age cookies', async () => {
+    const backend = enableDelegation();
+    const transferToken = issueNativeOAuthTransferToken({ userId: climber.id, nextPath: '/', generation: 3 });
+    const first = await transferSignIn(transferToken);
+    expect(first.status).toBe(200);
+    remember(first);
+    expect(await currentSessionClaims()).toMatchObject({ sub: climber.id, gen: 3 });
+    expect(await currentSessionClaims()).not.toHaveProperty('auth_time');
+    expect((await transferSignIn(transferToken)).status).toBe(401);
+    expect(backend).toHaveBeenCalledTimes(2);
+    expect(insertedMarkers.size).toBe(0);
+  });
+  it.each([0, 3, 4])('keeps the signed generation %s through actual admission after reset', async (generation) => {
+    enableDelegation();
+    transferAdmission.enabled = true;
+    databaseRows.set(schema.authSubjectCutoffs, [{ generation: 4 }]);
+    const response = await transferSignIn(
+      issueNativeOAuthTransferToken({ userId: climber.id, nextPath: '/', generation }),
+    );
+    expect(transferAdmission.generations).toEqual([generation]);
+    expect(response.status).toBe(generation === 4 ? 200 : 401);
+    if (generation !== 4) expect(response.headers.getSetCookie()).toEqual([]);
+  });
+  it.each([null, new Date(SIGN_IN_AT_MS - 3_600_000).toISOString()])(
+    'preserves complete signed source proof and age %s through the mounted publisher',
+    async (authenticatedAt) => {
+      enableDelegation();
+      databaseRows.set(schema.authSubjectCutoffs, new Error('A transferred proof must not restamp from primary'));
+      const proof = {
+        version: 1 as const,
+        userId: climber.id,
+        authSessionId: 'original-login',
+        generation: 3,
+        authenticatedAt,
+        linkGuarded: authenticatedAt !== null,
+        requiresAccountCutoff: true as const,
+      };
+      const response = await transferSignIn(
+        issueNativeOAuthTransferToken({ userId: climber.id, nextPath: '/', credentialProof: proof }),
+      );
+      expect(response.status).toBe(200);
+      remember(response);
+      const claims = await currentSessionClaims();
+      expect(claims).toMatchObject({ gen: 3, authSessionId: proof.authSessionId, legacy_no_sid: true });
+      if (authenticatedAt === null) {
+        expect(claims).not.toHaveProperty('auth_time');
+        expect(claims).not.toHaveProperty('link_guarded');
+      } else
+        expect(claims).toMatchObject({ auth_time: Math.floor(Date.parse(authenticatedAt) / 1000), link_guarded: true });
+    },
+  );
+  it('does not read or write the web database in the delegated authorizer', async () => {
+    enableDelegation();
+    databaseRows.set(schema.users, new Error('Web claim database forbidden'));
+    expect(await providerAuthorize(issueNativeOAuthTransferToken({ userId: climber.id, nextPath: '/' }))).toMatchObject(
+      { id: climber.id },
+    );
+    expect(insertedMarkers.size).toBe(0);
+  });
+  it.each(['better-auth', 'unknown-mode'])('refuses browser mode %s before RPC or SQL', async (mode) => {
+    const backend = enableDelegation();
+    vi.stubEnv('AUTH_BROWSER_SESSION_MODE', mode);
+    databaseRows.set(schema.users, new Error('Web database forbidden at browser cutover'));
+    expect(await providerAuthorize(issueNativeOAuthTransferToken({ userId: climber.id, nextPath: '/' }))).toBeNull();
+    expect(backend).not.toHaveBeenCalled();
+    expect(insertedMarkers.size).toBe(0);
+  });
+  it('keeps incomplete source proof refused in required-proof mode', async () => {
+    const backend = enableDelegation();
+    vi.stubEnv('CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE', 'required');
+    await expect(
+      transferSignIn(issueNativeOAuthTransferToken({ userId: climber.id, nextPath: '/', generation: 3 })),
+    ).rejects.toThrow('Backend web credential proof required');
+    expect(backend).toHaveBeenCalledOnce();
+    expect(insertedMarkers.size).toBe(0);
+  });
+  it('answers an unavailable backend with retryable 503 and no session cookie or local fallback', async () => {
+    const backend = enableDelegation();
+    backend.mockRejectedValueOnce(new Error('Synthetic lost service reply'));
+    databaseRows.set(schema.users, new Error('No legacy SQL fallback'));
+    const response = await transferSignIn(issueNativeOAuthTransferToken({ userId: climber.id, nextPath: '/' }));
+    expect(response.status).toBe(503);
+    expect(response.headers.getSetCookie()).toEqual([]);
+    expect(insertedMarkers.size).toBe(0);
+  });
+  it.each(['generation', 'profile', 'proof'])('refuses a backend that changes signed %s', async (field) => {
+    enableDelegation((reply) =>
+      field === 'generation'
+        ? { ...reply, sourceGeneration: 9 }
+        : field === 'profile'
+          ? { ...reply, user: { id: 'other', email: climber.email, name: null, image: null } }
+          : {
+              ...reply,
+              credentialProof: {
+                version: 1,
+                userId: climber.id,
+                authSessionId: 'manufactured',
+                generation: 3,
+                authenticatedAt: null,
+                linkGuarded: false,
+              },
+            },
+    );
+    const response = await transferSignIn(
+      issueNativeOAuthTransferToken({ userId: climber.id, nextPath: '/', generation: 3 }),
+    );
+    expect(response.status).toBe(503);
+    expect(response.headers.getSetCookie()).toEqual([]);
   });
 });

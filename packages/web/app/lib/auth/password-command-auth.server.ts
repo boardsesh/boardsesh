@@ -275,3 +275,29 @@ export function admitPasswordLogin(request: Request): PasswordLoginAdmission {
     },
   };
 }
+
+/** Request-local availability state; NextAuth otherwise converts a service outage to a refused credential. */
+export function createNativeTransferAuthRequest(base: NextAuthOptions) {
+  let unavailable = false;
+  const options: NextAuthOptions = {
+    ...base,
+    providers: base.providers.map((existing) => {
+      const configured = { ...existing, ...existing.options };
+      if (configured.id !== 'native-oauth' || configured.type !== 'credentials') return existing;
+      return CredentialsProvider({
+        id: configured.id,
+        name: configured.name,
+        credentials: configured.credentials,
+        async authorize(credentials, request) {
+          try {
+            return await configured.authorize(credentials, request);
+          } catch (error) {
+            if (error instanceof AuthBackendUnavailableError) unavailable = true;
+            throw error;
+          }
+        },
+      });
+    }),
+  };
+  return { options, unavailable: () => unavailable };
+}

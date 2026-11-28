@@ -15,6 +15,7 @@ import {
   authCredentialLineage,
   authSubjectCutoffs,
   authSecurityMutationEvents,
+  verificationTokens,
 } from '@boardsesh/db/schema';
 import { createEnvironment } from '../../backend/src/auth/authority/__tests__/environment';
 import {
@@ -23,10 +24,13 @@ import {
 } from '../../backend/src/auth/current-store/email-reservations';
 import { handleCurrentStoreWebSignOut } from '../../backend/src/handlers/current-store-web-signout';
 import { handleCurrentStoreWebAuth } from '../../backend/src/handlers/current-store-web-auth';
+import { handleCurrentStoreNativeTransfer } from '../../backend/src/handlers/current-store-native-transfer';
+import { NATIVE_TRANSFER_COMMAND_PATH } from '@boardsesh/auth-protocol/native-oauth-transfer';
 import { handleCurrentStoreWebOAuth } from '../../backend/src/handlers/current-store-web-oauth';
 import { recordSecurityMutation } from '../../backend/src/auth/current-store/security-mutations';
 import { lockEnforcedProjection } from '../../backend/src/auth/current-store/foundation-context';
 import { readFirstPartySession } from '../../backend/src/auth/authority/session-reader';
+import { resetAllRateLimits } from '../../backend/src/utils/rate-limiter';
 import { bridgeLegacyCredential } from '../../backend/src/auth/authority/bridge';
 import { bridgeTokenKey } from '../../backend/src/auth/authority/session-token';
 import { recordFunctionLevelIdentityMirrorForTests } from '../../backend/src/auth/authority/mirror-activation';
@@ -43,6 +47,9 @@ const holder = vi.hoisted(() => {
     database: undefined as unknown,
     beforeEncode: undefined as (() => void) | undefined,
     routeCredential: undefined as string | undefined,
+    nativeTransferRequests: 0,
+    dropNativeTransferReply: false,
+    nativeTransferUnavailable: false,
   };
 });
 vi.mock('next-auth/jwt', async (original) => {
@@ -96,6 +103,9 @@ vi.mock('../app/lib/auth/admitted-session.server', async (original) => ({
 }));
 import { GET as mountedNativeCallback } from '../app/api/auth/native/callback/route';
 import { authOptions } from '../app/lib/auth/auth-options';
+import * as mountedAuthRoute from '../app/api/auth/[...nextauth]/route';
+import { CookieJar, callRoute, patchNextRequestIo } from './route-harness';
+import { issueNativeOAuthTransferToken, nativeOAuthTransferSpentMarker } from '../app/lib/auth/native-oauth-transfer';
 import {
   createPasswordCommandClient,
   AuthBackendUnavailableError,
@@ -172,7 +182,29 @@ describe('real backend RPC → real web JWT callback → encrypted cookie admiss
         .set({ phase: 'enforced' })
         .where(eq(authEmailProjection.projectionId, projectionId));
     });
+    patchNextRequestIo();
     server = createServer((request, response) => {
+      if (request.url === NATIVE_TRANSFER_COMMAND_PATH) {
+        holder.nativeTransferRequests += 1;
+        let database = environment.database;
+        if (holder.nativeTransferUnavailable) {
+          database = Object.create(environment.database) as typeof environment.database;
+          database.transaction = async () => {
+            throw new Error('Synthetic private SQL unavailable');
+          };
+        }
+        if (holder.dropNativeTransferReply) {
+          holder.dropNativeTransferReply = false;
+          response.end = () => {
+            response.destroy();
+            return response;
+          };
+        }
+        void handleCurrentStoreNativeTransfer(request, response, database).catch(() => {
+          response.destroy();
+        });
+        return;
+      }
       void (
         request.url?.includes('/web-oauth/v1/')
           ? handleCurrentStoreWebOAuth(request, response, environment.database)
@@ -191,6 +223,12 @@ describe('real backend RPC → real web JWT callback → encrypted cookie admiss
   });
   beforeEach(() => {
     holder.routeCredential = undefined;
+    holder.nativeTransferRequests = 0;
+    resetAllRateLimits();
+    holder.dropNativeTransferReply = false;
+    holder.nativeTransferUnavailable = false;
+    vi.stubEnv('AUTH_BROWSER_SESSION_MODE', 'legacy');
+    vi.stubEnv('AUTH_CUTOFF_ENFORCEMENT', 'enforce');
     vi.stubEnv('NEXTAUTH_SECRET', secret);
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'backend-staging');
     vi.stubEnv('CURRENT_STORE_AUTH_RPC_SECRET', rpcSecret);
@@ -619,4 +657,163 @@ describe('real backend RPC → real web JWT callback → encrypted cookie admiss
       ).toHaveLength(1);
     },
   );
+
+  describe('actual private transfer HTTP and mounted App Router publication', () => {
+    async function publish(transferToken: string) {
+      const jar = new CookieJar();
+      const csrf = await callRoute(mountedAuthRoute, '/api/auth/csrf');
+      jar.apply(csrf);
+      const { csrfToken } = (await csrf.json()) as { csrfToken: string };
+      const response = await callRoute(mountedAuthRoute, '/api/auth/callback/native-oauth', {
+        cookie: jar.header(),
+        form: { transferToken, csrfToken, json: 'true', callbackUrl: 'http://localhost:3000/' },
+      });
+      jar.apply(response);
+      const cookie = jar.get('next-auth.session-token');
+      return { response, cookie, claims: cookie ? await decode({ token: cookie, secret }) : null };
+    }
+    async function markerRows(transferToken: string) {
+      const marker = nativeOAuthTransferSpentMarker(transferToken);
+      if (!marker) throw new Error('Synthetic signed transfer marker unavailable');
+      return environment.database
+        .select()
+        .from(verificationTokens)
+        .where(eq(verificationTokens.identifier, marker.identifier));
+    }
+    it.each([true, false])(
+      'publishes the exact source proof through real HTTP with unknown age=%s',
+      async (unknownAge) => {
+        const accepted = await signIn();
+        const source = {
+          ...accepted.proof,
+          authenticatedAt: unknownAge ? null : new Date(Date.now() - 3_600_000).toISOString(),
+          linkGuarded: !unknownAge,
+          requiresAccountCutoff: true as const,
+        };
+        const transferToken = issueNativeOAuthTransferToken({
+          userId: accepted.id,
+          nextPath: '/',
+          credentialProof: source,
+        });
+        const { response, cookie, claims } = await publish(transferToken);
+        expect(response.status).toBe(200);
+        expect(holder.nativeTransferRequests).toBe(1);
+        expect(claims).toMatchObject({
+          sub: accepted.id,
+          authSessionId: source.authSessionId,
+          gen: source.generation,
+          legacy_no_sid: true,
+        });
+        if (unknownAge) {
+          expect(claims).not.toHaveProperty('auth_time');
+          expect(claims).not.toHaveProperty('link_guarded');
+        } else
+          expect(claims).toMatchObject({
+            auth_time: Math.floor(Date.parse(source.authenticatedAt!) / 1000),
+            link_guarded: true,
+          });
+        if (!cookie) throw new Error('Mounted route did not publish its accepted cookie');
+        expect(
+          (await readFirstPartySession(environment.database, { kind: 'legacy-jwe', credential: cookie, secret }))
+            .status,
+        ).toBe('admitted');
+        expect(await markerRows(transferToken)).toHaveLength(1);
+      },
+    );
+    it('refuses a stale signed generation after reset without publishing a cookie', async () => {
+      const accepted = await signIn();
+      const transferToken = issueNativeOAuthTransferToken({
+        userId: accepted.id,
+        nextPath: '/',
+        credentialProof: accepted.proof,
+      });
+      await environment.database.transaction(async (transaction) => {
+        await lockEnforcedProjection(transaction, authority);
+        await transaction.select().from(users).where(eq(users.id, accepted.id)).for('update');
+        await recordSecurityMutation(transaction, {
+          ...authority,
+          userId: accepted.id,
+          operationId: randomUUID(),
+          expectedGeneration: 0,
+          kind: 'password-reset',
+          domains: ['first-party', 'partner'],
+        });
+      });
+      const { response, cookie } = await publish(transferToken);
+      expect(response.status).toBe(401);
+      expect(cookie).toBeUndefined();
+      expect(response.headers.getSetCookie()).toEqual([]);
+      expect(holder.nativeTransferRequests).toBe(1);
+      expect(await markerRows(transferToken)).toHaveLength(1);
+    });
+    it('keeps an injected transaction failure retryable over real HTTP without a cookie or legacy fallback', async () => {
+      const accepted = await signIn();
+      const transferToken = issueNativeOAuthTransferToken({
+        userId: accepted.id,
+        nextPath: '/',
+        credentialProof: accepted.proof,
+      });
+      holder.nativeTransferUnavailable = true;
+      const { response, cookie } = await publish(transferToken);
+      expect(response.status).toBe(503);
+      expect(cookie).toBeUndefined();
+      expect(response.headers.getSetCookie()).toEqual([]);
+      expect(holder.nativeTransferRequests).toBe(1);
+      expect(await markerRows(transferToken)).toEqual([]);
+      holder.nativeTransferUnavailable = false;
+      expect((await publish(transferToken)).response.status).toBe(200);
+    });
+    it('keeps another owner signing in after repeated public replays exhaust the first owner budget', async () => {
+      const first = await signIn();
+      const second = await signIn();
+      const transferToken = issueNativeOAuthTransferToken({
+        userId: first.id,
+        nextPath: '/',
+        credentialProof: first.proof,
+      });
+      const secondToken = issueNativeOAuthTransferToken({
+        userId: second.id,
+        nextPath: '/',
+        credentialProof: second.proof,
+      });
+      const jar = new CookieJar();
+      const csrf = await callRoute(mountedAuthRoute, '/api/auth/csrf');
+      jar.apply(csrf);
+      const { csrfToken } = (await csrf.json()) as { csrfToken: string };
+      const proxy = (token: string) =>
+        callRoute(mountedAuthRoute, '/api/auth/callback/native-oauth', {
+          cookie: jar.header(),
+          form: { transferToken: token, csrfToken, json: 'true', callbackUrl: 'http://localhost:3000/' },
+        });
+      expect((await proxy(transferToken)).status).toBe(200);
+      for (let replay = 1; replay < 180; replay += 1) expect((await proxy(transferToken)).status).toBe(401);
+      const target = await proxy(secondToken);
+      expect(target.status).toBe(200);
+      const differentTokenSameOwner = issueNativeOAuthTransferToken({
+        userId: first.id,
+        nextPath: '/settings',
+        credentialProof: first.proof,
+      });
+      expect((await proxy(differentTokenSameOwner)).status).toBe(503);
+      expect(await markerRows(differentTokenSameOwner)).toEqual([]);
+      expect(holder.nativeTransferRequests).toBe(182);
+    });
+    it('keeps a committed claim terminal when its actual HTTP reply is lost', async () => {
+      const accepted = await signIn();
+      const transferToken = issueNativeOAuthTransferToken({
+        userId: accepted.id,
+        nextPath: '/',
+        credentialProof: accepted.proof,
+      });
+      holder.dropNativeTransferReply = true;
+      const { response, cookie } = await publish(transferToken);
+      expect(response.status).toBe(503);
+      expect(cookie).toBeUndefined();
+      expect(response.headers.getSetCookie()).toEqual([]);
+      expect(holder.nativeTransferRequests).toBe(1);
+      expect(await markerRows(transferToken)).toHaveLength(1);
+      expect((await publish(transferToken)).response.status).toBe(401);
+      expect(await markerRows(transferToken)).toHaveLength(1);
+    });
+  });
 });

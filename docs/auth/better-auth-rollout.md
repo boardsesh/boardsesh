@@ -151,6 +151,42 @@ again, and deleting the row alone makes the bridge deny that login.
 | Proof cookies (`__Host-boardsesh.browser-proof.*`, no env switch) | Gone | | Removed from main with the binding web core (#7596). Nothing on www reads or writes them. | A leftover cookie expires within 30 days. Until then it only counts toward the Cookie-header limits on Google and Apple sign-in. |
 | The eight readiness functions that returned `false` in code | Gone | | Every one is deleted with the code it guarded, the last (`browser-consumer-readiness.ts`) with the binding web core. | `AUTH_BROWSER_SESSION_MODE` (section 4) replaces them. Provider security and first-password cores remain; their www layers were rebuilt on first-party sessions in B5. |
 
+## Legacy browser native-transfer claim (#6977)
+
+The browser `native-oauth` credentials fallback retains its existing wire format
+and defaults to its explicit legacy implementation. With
+`CURRENT_STORE_WEB_AUTH_MODE=backend-staging`, www forwards the original signed
+transfer to `/api/internal/auth/current-store/native-transfer` over the existing
+private service transport. The backend uses the qualified `private-web-v1`
+credential LOGIN, the authority gate and the user's row lock before inserting
+the single-use marker. This adds no grant, connection budget, migration or mode.
+Malformed or expired transfers are refused before opening that pool. A verified
+source owner has a process-local budget of 180 claims per minute, keyed by a
+digest of the verified owner ID; token/request variants share the same budget.
+One owner's replays cannot spend another owner's allowance. Entries use the
+existing limiter's TTL cleanup; this is not a hard bound on active-owner count.
+
+Old, staged and reverted browser callers share the same marker:
+`sha256('native-oauth-transfer-v1\0' + encodedPayload)` under `ba03-web-auth:`,
+expiring at signed `exp + 5 seconds skew + 300 seconds cleanup margin`.
+Replayed tokens cannot be spent through the other implementation. A lost reply
+may follow a committed claim: there is no automatic retry, marker deletion or
+legacy fallback. An unavailable service yields a retryable response without
+rewriting the current session cookie.
+
+Only the source's signed generation and optional credential proof are returned.
+Claim time does not supply a fresh authentication time, SID or generation.
+Unknown age stays unknown, and no-SID ancestry survives. Token expiry is checked
+again after authority/user waits and before completion. The existing required-proof
+JWT behavior remains: a generation-only transfer cannot satisfy a required proof.
+
+`AUTH_BROWSER_SESSION_MODE=better-auth` or an invalid browser mode still refuses
+the provider before any claim RPC or web database access; the private backend
+command is disabled after that browser cutover too. The supported native exchange,
+refresh and watch pairing contracts are unchanged. This is one bounded writer
+adoption. Both `LEGACY_WEB_IDENTITY_WRITERS` gates and all production activation,
+role-fence and rollback evidence requirements remain open.
+
 ## Shared password-guess counter: web wiring (#7656)
 
 The backend PR #7783 and its web follow-up share one counter. The web never
