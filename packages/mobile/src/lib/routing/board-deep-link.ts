@@ -60,12 +60,17 @@ function qrLandingParams(entries: ReadonlyArray<readonly [string, string]>): Gym
   return params;
 }
 
-/**
- * The in-app path a board or climb link points at, or null when `url` is not
- * one: another host, a join link, a profile, a malformed path. A locale prefix
- * (`/es/kilter/…`) is dropped, because the app's route tree has none.
- */
-export function parseBoardLinkPath(url: string | null | undefined): string | null {
+/** A Boardsesh link split at its path, or null when `url` is not one of ours. */
+type BoardseshLinkParts = {
+  /** The path with one leading slash, no trailing slash and no locale prefix. */
+  path: string;
+  /** Everything after the host up to the fragment, query included. */
+  afterHost: string;
+  /** Where the query starts in `afterHost`, or -1 when there is none. */
+  queryIndex: number;
+};
+
+function splitBoardseshLink(url: string | null | undefined): BoardseshLinkParts | null {
   if (!url) return null;
   const prefix = BOARDSESH_LINK_PREFIX.exec(url);
   if (!prefix) return null;
@@ -76,7 +81,27 @@ export function parseBoardLinkPath(url: string | null | undefined): string | nul
   // The custom scheme has no host, so its path starts without a slash
   // (`com.boardsesh.app://kilter/…`); a trailing slash names the same route.
   const slashedPath = `/${rawPath.replace(/^\/+/, '').replace(/\/+$/, '')}`;
-  const path = stripLocalePrefix(slashedPath) ?? slashedPath;
+  return { path: stripLocalePrefix(slashedPath) ?? slashedPath, afterHost, queryIndex };
+}
+
+/**
+ * The path of a link on one of our hosts or the app's scheme, with no query
+ * and no locale prefix, or null for any other URL. The in-app scanner reads a
+ * session's join link with it; the router never sees this value unchecked.
+ */
+export function boardseshLinkPathname(url: string | null | undefined): string | null {
+  return splitBoardseshLink(url)?.path ?? null;
+}
+
+/**
+ * The in-app path a board or climb link points at, or null when `url` is not
+ * one: another host, a join link, a profile, a malformed path. A locale prefix
+ * (`/es/kilter/…`) is dropped, because the app's route tree has none.
+ */
+export function parseBoardLinkPath(url: string | null | undefined): string | null {
+  const parts = splitBoardseshLink(url);
+  if (!parts) return null;
+  const { path, afterHost, queryIndex } = parts;
 
   const firstSegment = path.split('/')[1];
   if (firstSegment === undefined || (firstSegment !== 'b' && !boardNames.has(firstSegment))) return null;

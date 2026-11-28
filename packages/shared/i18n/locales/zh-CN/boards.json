@@ -1054,6 +1054,21 @@
       "undo": "撤销",
       "undoAria": "将 {{name}} 从你的训练板中移除",
       "undoError": "无法将 {{name}} 从你的训练板中移除"
+    },
+    "scanCode": {
+      "button": "扫描训练板二维码",
+      "title": "扫描训练板二维码",
+      "hint": "把相机对准朋友手机上的二维码，或岩馆海报上的二维码。",
+      "viewfinderLabel": "相机正在寻找训练板二维码",
+      "notBoardsesh": "这个二维码不是 Boardsesh 训练板。",
+      "permissionTitle": "用相机扫描",
+      "permissionBody": "Boardsesh 只读取二维码，不会拍摄或保存照片。",
+      "allowCamera": "允许使用相机",
+      "deniedTitle": "Boardsesh 的相机权限已关闭",
+      "deniedBody": "在设置中打开相机即可扫描训练板二维码。也可以在这部手机上打开朋友发来的链接。",
+      "openSettings": "打开设置",
+      "unavailableTitle": "更新 Boardsesh 后即可扫描",
+      "unavailableBody": "当前版本无法扫描。请用手机自带的相机对准二维码。"
     }
   },
   "boardEntity": {

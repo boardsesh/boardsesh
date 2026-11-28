@@ -7,7 +7,7 @@
     "NSLocalNetworkUsageDescription": "Boardsesh 会连接你网络中的 LED 控制器，点亮你的喷点墙上的岩点。",
     "NSLocationWhenInUseUsageDescription": "Boardsesh 使用你的位置信息来显示附近的训练板和岩馆，并将你添加的训练板标在地图上。",
     "NSLocationAlwaysAndWhenInUseUsageDescription": "Boardsesh 使用你的位置信息来显示附近的训练板和岩馆，并将你添加的训练板标在地图上。",
-    "NSCameraUsageDescription": "Boardsesh 使用相机拍摄岩壁照片，让你在照片上定线。",
+    "NSCameraUsageDescription": "Boardsesh 使用相机扫描训练板二维码，以及拍摄岩壁照片，让你在照片上定线。",
     "NSPhotoLibraryUsageDescription": "Boardsesh 使用照片图库，让你选择头像、岩壁照片或反馈中附带的截图。"
   }
 }

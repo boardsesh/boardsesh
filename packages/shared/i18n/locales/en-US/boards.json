@@ -1054,6 +1054,21 @@
       "undo": "Undo",
       "undoAria": "Take {{name}} out of Your boards",
       "undoError": "Couldn't take {{name}} out of Your boards"
+    },
+    "scanCode": {
+      "button": "Scan a board code",
+      "title": "Scan a board code",
+      "hint": "Point the camera at the code on your friend's phone, or at a gym's poster.",
+      "viewfinderLabel": "Camera, looking for a board code",
+      "notBoardsesh": "That code isn't a Boardsesh board.",
+      "permissionTitle": "Scan with your camera",
+      "permissionBody": "Boardsesh reads the code and nothing else. No photos are taken or saved.",
+      "allowCamera": "Allow camera",
+      "deniedTitle": "Camera is off for Boardsesh",
+      "deniedBody": "Turn it on in Settings to scan a board code. Or open your friend's link on this phone.",
+      "openSettings": "Open Settings",
+      "unavailableTitle": "Update Boardsesh to scan codes",
+      "unavailableBody": "This version can't scan. Point your phone's own camera at the code instead."
     }
   },
   "boardEntity": {

@@ -131,6 +131,11 @@ const ANDROID_PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=co
 const HEALTH_UPDATE_USAGE_DESCRIPTION = 'Boardsesh saves your finished climbing sessions to Apple Health as workouts.';
 const HEALTH_SHARE_USAGE_DESCRIPTION =
   'Boardsesh reads your body weight to estimate calories and your saved Boardsesh workouts to prevent duplicates.';
+// The camera prompt's base/en string, written by both expo-image-picker (spray
+// wall photos) and expo-camera (scanning a board code). locales/en.json repeats
+// it, checked by scripts/mobile-locales-parity.test.ts.
+const CAMERA_PERMISSION =
+  'Boardsesh uses your camera to scan a board code, and so you can photograph a wall and set climbs on it.';
 
 // Public code-signing certificate for self-hosted OTA. certs/certificate.pem is the
 // V3 app's public cert, exported from the expo-open-ota (control-plane) dashboard —
@@ -692,9 +697,32 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
         {
           photosPermission:
             'Boardsesh uses your photo library so you can pick a profile picture, a photo of your wall, or a screenshot to send with feedback.',
-          cameraPermission: 'Boardsesh uses your camera so you can photograph a wall and set climbs on it.',
+          cameraPermission: CAMERA_PERMISSION,
         },
       ],
+      // The in-app "Scan a board code" camera (src/lib/board-code-scanner).
+      // Native change, ships on the next build (not OTA); the JS hides the Scan
+      // button on binaries without this module. `cameraPermission` repeats
+      // expo-image-picker's string so whichever plugin's Info.plist mod runs
+      // last writes the same prompt (the localized ones come from locales/).
+      // Nothing here records: `microphonePermission` is left unset for the same
+      // reason as expo-audio's below (`false` would delete the string
+      // expo-image-picker adds), and `recordAudioAndroid: false` keeps this
+      // plugin from asking for RECORD_AUDIO. The barcode scanner stays on: it
+      // is what reads the code.
+      [
+        'expo-camera',
+        {
+          cameraPermission: CAMERA_PERMISSION,
+          recordAudioAndroid: false,
+          barcodeScannerEnabled: true,
+        },
+      ],
+      // Leaves expo-camera's unused document scanner (Google's
+      // play-services-mlkit-document-scanner) out of the Android app: sets
+      // expo-camera's own gradle switch and excludes the artifact the prebuilt
+      // AAR pulls in regardless. Android-only, deterministic.
+      './plugins/with-android-camera-no-document-scanner',
       'react-native-ble-plx',
       // Brand tint #8C4A52 matches brandColors.tint — kept as a literal here
       // because app.config.ts runs at build time, before any theme provider.

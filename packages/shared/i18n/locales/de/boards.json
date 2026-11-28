@@ -1054,6 +1054,21 @@
       "undo": "Rückgängig",
       "undoAria": "{{name}} aus „Deine Boards“ entfernen",
       "undoError": "{{name}} ließ sich nicht aus „Deine Boards“ entfernen"
+    },
+    "scanCode": {
+      "button": "Board-Code scannen",
+      "title": "Board-Code scannen",
+      "hint": "Halte die Kamera auf den Code auf dem Handy deiner Freund*innen oder auf das Poster der Halle.",
+      "viewfinderLabel": "Kamera sucht einen Board-Code",
+      "notBoardsesh": "Dieser Code gehört zu keinem Boardsesh-Board.",
+      "permissionTitle": "Mit der Kamera scannen",
+      "permissionBody": "Boardsesh liest nur den Code. Es werden keine Fotos gemacht oder gespeichert.",
+      "allowCamera": "Kamera erlauben",
+      "deniedTitle": "Die Kamera ist für Boardsesh aus",
+      "deniedBody": "Schalte sie in den Einstellungen ein, um einen Board-Code zu scannen. Oder öffne den Link deiner Freund*innen auf diesem Handy.",
+      "openSettings": "Einstellungen öffnen",
+      "unavailableTitle": "Aktualisiere Boardsesh zum Scannen",
+      "unavailableBody": "Diese Version kann nicht scannen. Halte stattdessen die Handykamera auf den Code."
     }
   },
   "boardEntity": {

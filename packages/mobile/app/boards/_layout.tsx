@@ -106,6 +106,8 @@ function BoardsLayout() {
         <Stack.Screen name="add/new-gym" options={{ title: '' }} />
         <Stack.Screen name="add/board" options={{ title: '' }} />
         <Stack.Screen name="add/friend" options={{ title: '' }} />
+        {/* The camera for a friend's board code, pushed from "Whose board?". */}
+        <Stack.Screen name="add/scan" options={{ title: tBoards('mobile.scanCode.title') }} />
         <Stack.Screen name="add/setup-option" options={{ title: '' }} />
         {/* The retired gym-first routes (#8151), now redirects into the wizard
           for one release. They draw nothing: no title to flash. */}

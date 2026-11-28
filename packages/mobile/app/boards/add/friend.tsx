@@ -12,6 +12,10 @@
 // A board shows up here only once the climber and its owner follow each other,
 // so either side may be missing a follow: Find people is for the climber to
 // follow their friend, Share your profile for the friend to follow them.
+//
+// "Scan a board code" under the search opens the in-app camera
+// (boards/add/scan.tsx). It is hidden on a binary without the camera module
+// and in the browser app (camera-module.ts).
 
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -35,6 +39,7 @@ import type { GroupedCellPosition } from '../../../src/components/gym-page/gym-p
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
 import { useStoredUserId } from '../../../src/hooks/use-current-user-id';
 import { useOfflineQueryState } from '../../../src/hooks/use-offline-query-state';
+import { isBoardCodeScannerAvailable } from '../../../src/lib/board-code-scanner/camera-module';
 import { useProfileShareOptions } from '../../../src/hooks/use-profile-share-options';
 import { useShareLinkAction } from '../../../src/hooks/use-share-link-action';
 import { noteBoardFlowSecured } from '../../../src/lib/boards/board-create-flow';
@@ -185,6 +190,9 @@ export default function AddBoardFriend() {
   const shareProfile = useShareLinkAction(profileShare);
   const canShareProfile = profileShare.url !== null;
   const signIn = useCallback(() => openSignIn(router, 'boards'), [router]);
+  // Asked once per app run: the binary either links the camera module or not.
+  const [canScan] = useState(isBoardCodeScannerAvailable);
+  const scanCode = useCallback(() => router.push('/boards/add/scan'), [router]);
 
   const renderItem = useCallback(
     ({ item: cell }: { item: FriendBoardListCell }) =>
@@ -277,6 +285,17 @@ export default function AddBoardFriend() {
           clearAccessibilityLabel={t('mobile.friendBoards.clearSearch')}
         />
       </View>
+      {canScan ? (
+        <View style={styles.scan}>
+          <Button
+            title={t('mobile.scanCode.button')}
+            icon="camera"
+            variant="tonal"
+            onPress={scanCode}
+            testID="friend-boards-scan-code"
+          />
+        </View>
+      ) : null}
     </View>
   );
 
@@ -368,6 +387,11 @@ const styles = StyleSheet.create({
     paddingBottom: spacing[4],
   },
   search: {
+    paddingHorizontal: spacing[4],
+    paddingBottom: spacing[4],
+  },
+  scan: {
+    alignItems: 'flex-start',
     paddingHorizontal: spacing[4],
     paddingBottom: spacing[4],
   },
