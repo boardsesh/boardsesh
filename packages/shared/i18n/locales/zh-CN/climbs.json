@@ -568,7 +568,7 @@
       "drafts": "我的草稿",
       "popularityUnrepeated": "暂无完攀记录",
       "wallDrafts": "草稿",
-      "quantumOverlap": {
+      "layerOverlap": {
         "label": "已亮岩点重叠",
         "description": "隐藏使用墙上已亮岩点的线路。",
         "unavailable": "读取 QuantumBoard 的当前使用状态后，即可按已亮岩点筛选。",

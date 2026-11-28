@@ -1,16 +1,19 @@
 import { MAX_ACTIVE_BOARD_LAYERS, MAX_DIODES_PER_LAYER } from './layers';
 
-export const QUANTUM_OVERLAP_FILTERS = ['off', 'none', 'at_most_one'] as const;
-export type BoardOverlapFilter = (typeof QUANTUM_OVERLAP_FILTERS)[number];
-/** Legacy name retained for persisted filter consumers. */
-export type QuantumOverlapFilter = BoardOverlapFilter;
+// The values are persisted in the saved search's board filters; keep them.
+const LAYER_OVERLAP_FILTERS = ['off', 'none', 'at_most_one'] as const;
+export type BoardOverlapFilter = (typeof LAYER_OVERLAP_FILTERS)[number];
+
+export function isLayerOverlapFilter(value: string): value is BoardOverlapFilter {
+  return (LAYER_OVERLAP_FILTERS as readonly string[]).includes(value);
+}
 
 export type OccupiedPlacementIndex = {
   geometryKnown: boolean;
   placementIds: ReadonlySet<number>;
 };
 
-export type LayerPlacementPresence = {
+type LayerPlacementPresence = {
   geometryKnown: boolean;
   placementIds: readonly number[];
 };
@@ -47,38 +50,8 @@ export function parseBoardLayerPlacementIds(
   return placementIds;
 }
 
-export function buildOccupiedPlacementIndex(
-  controllerRouteUuids: readonly string[],
-  placementsByControllerRoute: ReadonlyMap<string, readonly number[]>,
-): OccupiedPlacementIndex {
-  const placementIds = new Set<number>();
-  if (controllerRouteUuids.length > MAX_ACTIVE_BOARD_LAYERS) {
-    return { geometryKnown: false, placementIds };
-  }
-
-  for (const controllerRouteUuid of controllerRouteUuids) {
-    const routePlacements = placementsByControllerRoute.get(controllerRouteUuid.toLowerCase());
-    if (!routePlacements || routePlacements.length === 0 || routePlacements.length > MAX_DIODES_PER_LAYER) {
-      return { geometryKnown: false, placementIds: new Set() };
-    }
-    for (const placementId of routePlacements) {
-      if (!Number.isSafeInteger(placementId) || placementId < 0) {
-        return { geometryKnown: false, placementIds: new Set() };
-      }
-      placementIds.add(placementId);
-    }
-  }
-
-  if (placementIds.size > MAX_ACTIVE_BOARD_LAYERS * MAX_DIODES_PER_LAYER) {
-    return { geometryKnown: false, placementIds: new Set() };
-  }
-  return { geometryKnown: true, placementIds };
-}
-
 /** Build the filter input from the sanitized party roster, never controller ids. */
-export function buildOccupiedPlacementIndexFromPresence(
-  layers: readonly LayerPlacementPresence[],
-): OccupiedPlacementIndex {
+function buildOccupiedPlacementIndexFromPresence(layers: readonly LayerPlacementPresence[]): OccupiedPlacementIndex {
   const placementIds = new Set<number>();
   if (layers.length > MAX_ACTIVE_BOARD_LAYERS) return { geometryKnown: false, placementIds };
 
@@ -105,33 +78,4 @@ export function buildOccupiedPlacementIndexFromSnapshot(
     return { geometryKnown: false, placementIds: new Set() };
   }
   return buildOccupiedPlacementIndexFromPresence(snapshot.layers);
-}
-
-export function countPlacementOverlap(
-  climbPlacementIds: readonly number[],
-  occupiedPlacementIds: ReadonlySet<number>,
-  stopAfter = Number.POSITIVE_INFINITY,
-): number {
-  let overlap = 0;
-  const seen = new Set<number>();
-  for (const placementId of climbPlacementIds) {
-    if (seen.has(placementId)) continue;
-    seen.add(placementId);
-    if (occupiedPlacementIds.has(placementId)) {
-      overlap += 1;
-      if (overlap > stopAfter) return overlap;
-    }
-  }
-  return overlap;
-}
-
-/** Unknown controller geometry disables the filter instead of hiding climbs. */
-export function matchesQuantumOverlapFilter(
-  climbPlacementIds: readonly number[],
-  occupied: OccupiedPlacementIndex,
-  filter: QuantumOverlapFilter,
-): boolean {
-  if (filter === 'off' || !occupied.geometryKnown) return true;
-  const maximumOverlap = filter === 'none' ? 0 : 1;
-  return countPlacementOverlap(climbPlacementIds, occupied.placementIds, maximumOverlap) <= maximumOverlap;
 }

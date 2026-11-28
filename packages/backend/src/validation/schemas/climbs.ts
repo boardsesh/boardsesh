@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MAX_DIODES_PER_LAYER } from '@boardsesh/board-layers';
+import { MAX_DIODES_PER_LAYER, MAX_OCCUPIED_PLACEMENTS } from '@boardsesh/board-layers';
 import { isReleasedQuantumConfig, QUANTUM_RELEASED_LAYOUT_IDS } from '@boardsesh/board-constants/quantum';
 import { CONFIDENCE, MAX_SEARCH_PAGE } from '@boardsesh/db/queries/constants';
 
@@ -279,8 +279,8 @@ export const ClimbSearchInputSchema = z
     // toClimbSearchInput first, not just the web client.
     boulders: z.boolean().optional(),
     routes: z.boolean().optional(),
-    // Up to four confirmed Quantum layers with 92 diodes each.
-    occupiedPlacementIds: z.array(z.number().int().min(0)).max(368).optional(),
+    // Every confirmed layer on the wall, each at its board's per-layer light cap.
+    occupiedPlacementIds: z.array(z.number().int().min(0)).max(MAX_OCCUPIED_PLACEMENTS).optional(),
     maxOccupiedOverlap: z.union([z.literal(0), z.literal(1)]).optional(),
     zoneBox: z
       .object({

@@ -1261,7 +1261,14 @@ importers:
         version: 7.0.2
 
   packages/shared/board-layers:
+    dependencies:
+      '@boardsesh/board-config':
+        specifier: workspace:*
+        version: link:../board-config
     devDependencies:
+      '@boardsesh/ble-protocol':
+        specifier: workspace:*
+        version: link:../ble-protocol
       typescript:
         specifier: ~7.0.2
         version: 7.0.2

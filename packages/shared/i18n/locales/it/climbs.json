@@ -568,7 +568,7 @@
       "drafts": "Le mie bozze",
       "popularityUnrepeated": "Mai ripetuti",
       "wallDrafts": "Bozze",
-      "quantumOverlap": {
+      "layerOverlap": {
         "label": "Sovrapposizione con prese illuminate",
         "description": "Nascondi i blocchi che usano prese già illuminate sul pannello.",
         "unavailable": "Leggi i livelli attivi del QuantumBoard per filtrare le prese illuminate.",

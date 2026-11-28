@@ -432,7 +432,7 @@
         "boulders": "Blocs",
         "routes": "Voies"
       },
-      "quantumOverlap": {
+      "layerOverlap": {
         "label": "Chevauchement des prises allumées",
         "description": "Masque les blocs qui réutilisent des prises déjà allumées.",
         "unavailable": "Lis la liste du QuantumBoard pour filtrer les prises allumées.",

@@ -432,7 +432,7 @@
         "boulders": "Boulder",
         "routes": "Routen"
       },
-      "quantumOverlap": {
+      "layerOverlap": {
         "label": "Überschneidung beleuchteter Griffe",
         "description": "Blendet Boulder aus, die bereits beleuchtete Griffe verwenden.",
         "unavailable": "Lies die QuantumBoard-Liste ein, um nach beleuchteten Griffen zu filtern.",

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { AURORA_BOARDS, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import {
   getBoardCapabilities,
+  LAYERED_WALL_BOARD_NAMES,
   STATIC_BOARD_RENDER_NAMES,
   supportsStaticBoardRender,
   supportsPublicClimbLinks,
@@ -24,7 +25,7 @@ const AURORA_ROW: BoardCapabilities = {
   auroraAppLink: true,
   benchmarkTerm: 'benchmark',
   maxActiveWallClimbs: 1,
-  wallSendMode: 'automatic',
+  maxLightsPerWallClimb: null,
   staticBoardRender: true,
 };
 
@@ -55,7 +56,7 @@ const EXPECTED: Record<string, BoardCapabilities> = {
     auroraAppLink: false,
     benchmarkTerm: 'benchmark',
     maxActiveWallClimbs: 1,
-    wallSendMode: 'automatic',
+    maxLightsPerWallClimb: null,
     staticBoardRender: true,
   },
   woods: {
@@ -74,7 +75,7 @@ const EXPECTED: Record<string, BoardCapabilities> = {
     auroraAppLink: false,
     benchmarkTerm: 'benchmark',
     maxActiveWallClimbs: 1,
-    wallSendMode: 'automatic',
+    maxLightsPerWallClimb: null,
     staticBoardRender: true,
   },
   spray: {
@@ -95,7 +96,7 @@ const EXPECTED: Record<string, BoardCapabilities> = {
     auroraAppLink: false,
     benchmarkTerm: 'benchmark',
     maxActiveWallClimbs: 1,
-    wallSendMode: 'automatic',
+    maxLightsPerWallClimb: null,
     staticBoardRender: false,
   },
   quantum: {
@@ -111,7 +112,7 @@ const EXPECTED: Record<string, BoardCapabilities> = {
     auroraAppLink: false,
     benchmarkTerm: 'benchmark',
     maxActiveWallClimbs: 4,
-    wallSendMode: 'explicit-layer',
+    maxLightsPerWallClimb: 92,
     staticBoardRender: false,
   },
 };
@@ -204,5 +205,14 @@ describe('independent-layer occupancy filtering', () => {
   it('keeps unknown boards on the single-climb fallback', () => {
     expect(supportsLayerOverlapFiltering(undefined)).toBe(false);
     expect(supportsLayerOverlapFiltering('QUANTUM')).toBe(true);
+  });
+  it('lists the layered boards from the same capability', () => {
+    expect(LAYERED_WALL_BOARD_NAMES).toEqual(['quantum']);
+  });
+  it.each(LAYERED_WALL_BOARD_NAMES)('caps the lights of every layer on %s', (boardName) => {
+    // Layer presence and the overlap filter are bounded by this cap
+    // (@boardsesh/board-layers), so a layered board without one would leave
+    // every layer's geometry unknown and the filter permanently off.
+    expect(getBoardCapabilities(boardName).maxLightsPerWallClimb).toBeGreaterThan(0);
   });
 });

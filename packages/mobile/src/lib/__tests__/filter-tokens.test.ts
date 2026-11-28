@@ -37,8 +37,8 @@ const mockT = ((key: string, options?: Record<string, unknown>) => {
   if (key === 'mobile.filter.otherAngles') return 'Other angles';
   if (key === 'mobile.holdFilter.summaryCount') return `${text(options?.count)} holds`;
   if (key === 'mobile.zoneFilter.title') return 'Board region';
-  if (key === 'mobile.filter.quantumOverlap.noneToken') return 'No lit hold overlap';
-  if (key === 'mobile.filter.quantumOverlap.atMostOneToken') return '≤1 lit hold overlap';
+  if (key === 'mobile.filter.layerOverlap.noneToken') return 'No lit hold overlap';
+  if (key === 'mobile.filter.layerOverlap.atMostOneToken') return '≤1 lit hold overlap';
   return key;
 }) as unknown as Parameters<typeof getActiveFilterTokens>[0]['t'];
 
@@ -242,9 +242,9 @@ describe('getActiveFilterTokens', () => {
     expect(patchFilters).toHaveBeenCalledWith({ includeOtherAngles: undefined });
   });
 
-  it('builds and clears a Quantum overlap token', () => {
+  it('builds and clears a layer overlap token', () => {
     const { tokens, patchBoardFilters } = build(DEFAULT_FILTERS, { quantumOverlap: 'at_most_one' });
-    const overlap = tokens.find((token) => token.key === 'quantumOverlap');
+    const overlap = tokens.find((token) => token.key === 'layerOverlap');
     expect(overlap?.label).toBe('≤1 lit hold overlap');
     overlap?.clear();
     expect(patchBoardFilters).toHaveBeenCalledWith({ quantumOverlap: undefined });

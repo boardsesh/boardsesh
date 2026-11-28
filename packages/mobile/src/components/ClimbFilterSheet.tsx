@@ -67,7 +67,7 @@ import { useGrades, useSearchClimbsCount } from '../lib/graphql/hooks';
 import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
 import { getTallWideScope } from '@boardsesh/board-constants';
 import { getBoardCapabilities, supportsLayerOverlapFiltering } from '@boardsesh/board-config';
-import type { OccupiedPlacementIndex, BoardOverlapFilter } from '@boardsesh/board-layers';
+import { isLayerOverlapFilter, type OccupiedPlacementIndex, type BoardOverlapFilter } from '@boardsesh/board-layers';
 import { buildFilterLabels, formatSettersLabel, progressFilterLabel } from '../lib/filter-labels';
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../lib/create-board-holds';
 import { subscribeToHoldsFilterSelection } from '../lib/hold-filter-handoff';
@@ -267,7 +267,7 @@ export type ClimbFilterSheetProps = {
   namePlaceholder?: string;
   /** Where the picker rows push (see ClimbFilterSheetPickers). Defaults to the Climbs list's. */
   pickers?: ClimbFilterSheetPickers;
-  /** Sanitized live Quantum roster geometry. Unknown geometry disables overlap filtering. */
+  /** Sanitized live board-layer geometry. Unknown geometry disables overlap filtering. */
   occupiedPlacements?: OccupiedPlacementIndex;
 };
 
@@ -1047,10 +1047,10 @@ export function ClimbFilterSheet({
   );
 
   const handleOverlapChange = useCallback(
-    (quantumOverlap: BoardOverlapFilter) => {
+    (overlapFilter: BoardOverlapFilter) => {
       updateBoardFilters((previous) => ({
         ...previous,
-        quantumOverlap: quantumOverlap === 'off' ? undefined : quantumOverlap,
+        quantumOverlap: overlapFilter === 'off' ? undefined : overlapFilter,
       }));
     },
     [updateBoardFilters],
@@ -1078,9 +1078,9 @@ export function ClimbFilterSheet({
   const occupiedGeometryAvailable = occupiedPlacements?.geometryKnown === true;
   const overlapOptions = useMemo(
     () => [
-      { key: 'off' as const, label: t('mobile.filter.quantumOverlap.off') },
-      { key: 'none' as const, label: t('mobile.filter.quantumOverlap.none') },
-      { key: 'at_most_one' as const, label: t('mobile.filter.quantumOverlap.atMostOne') },
+      { key: 'off' as const, label: t('mobile.filter.layerOverlap.off') },
+      { key: 'none' as const, label: t('mobile.filter.layerOverlap.none') },
+      { key: 'at_most_one' as const, label: t('mobile.filter.layerOverlap.atMostOne') },
     ],
     [t],
   );
@@ -1152,23 +1152,23 @@ export function ClimbFilterSheet({
   const formModel = nativeForm
     ? buildClimbFilterFormModel({
         t,
-        quantumOverlap: supportsLayerOverlap
+        layerOverlap: supportsLayerOverlap
           ? {
-              key: 'quantumOverlap',
-              title: t('mobile.filter.quantumOverlap.label'),
+              key: 'layerOverlap',
+              title: t('mobile.filter.layerOverlap.label'),
               footer: occupiedGeometryAvailable
-                ? t('mobile.filter.quantumOverlap.description')
-                : t('mobile.filter.quantumOverlap.unavailable'),
+                ? t('mobile.filter.layerOverlap.description')
+                : t('mobile.filter.layerOverlap.unavailable'),
               rows: [
                 {
                   kind: 'segmented',
-                  key: 'quantumOverlap',
-                  label: t('mobile.filter.quantumOverlap.label'),
+                  key: 'layerOverlap',
+                  label: t('mobile.filter.layerOverlap.label'),
                   options: overlapOptions,
                   selectedKey: selectedBoardFilters.quantumOverlap ?? 'off',
                   disabledKeys: disabledOverlapKeys,
                   onSelect: (key) => {
-                    if (key === 'off' || key === 'none' || key === 'at_most_one') handleOverlapChange(key);
+                    if (isLayerOverlapFilter(key)) handleOverlapChange(key);
                   },
                 },
               ],
@@ -1375,20 +1375,20 @@ export function ClimbFilterSheet({
         ) : (
           <ClimbFilterSheetContent
             subRoute={subRoute}
-            quantumOverlapControl={
+            layerOverlapControl={
               supportsLayerOverlap ? (
-                <FilterSheetSection title={t('mobile.filter.quantumOverlap.label')}>
+                <FilterSheetSection title={t('mobile.filter.layerOverlap.label')}>
                   <Text variant="footnote">
                     {occupiedGeometryAvailable
-                      ? t('mobile.filter.quantumOverlap.description')
-                      : t('mobile.filter.quantumOverlap.unavailable')}
+                      ? t('mobile.filter.layerOverlap.description')
+                      : t('mobile.filter.layerOverlap.unavailable')}
                   </Text>
                   <SegmentedControl<BoardOverlapFilter>
                     options={overlapOptions}
                     selectedKey={selectedBoardFilters.quantumOverlap ?? 'off'}
                     onSelect={handleOverlapChange}
                     disabledKeys={disabledOverlapKeys}
-                    accessibilityLabel={t('mobile.filter.quantumOverlap.label')}
+                    accessibilityLabel={t('mobile.filter.layerOverlap.label')}
                   />
                 </FilterSheetSection>
               ) : undefined

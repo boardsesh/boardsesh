@@ -929,7 +929,10 @@ export const boardPresenceMutations = {
       pubsub.getBoardReportGate(String(boardId), emitterId),
     ]);
 
-    if (board.boardType === 'quantum') {
+    // A layered board reports its whole roster through reportBoardLayers, which
+    // admits exactly these boards, so no board is accepted by both paths. The
+    // message keeps its wording: Quantum is the only layered board.
+    if (supportsLayerOverlapFiltering(board.boardType)) {
       throw new GraphQLError('Quantum Board presence must be reported with board layers', {
         extensions: { code: 'BAD_USER_INPUT' },
       });

@@ -1791,7 +1791,7 @@ describe('ClimbFilterSheet Quantum overlap', () => {
 
     expect((getByTestId('segment-none') as HTMLButtonElement).disabled).toBe(true);
     expect((getByTestId('segment-at_most_one') as HTMLButtonElement).disabled).toBe(true);
-    expect((getByText('mobile.filter.quantumOverlap.off').closest('button') as HTMLButtonElement).disabled).toBe(false);
+    expect((getByText('mobile.filter.layerOverlap.off').closest('button') as HTMLButtonElement).disabled).toBe(false);
   });
 });
 

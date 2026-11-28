@@ -107,7 +107,7 @@ export type ClimbFilterSheetContentProps = {
   settersRowNeedsBoard: boolean;
   boardConfig: BoardSearchConfig | null;
   followingSwitch: ReactNode;
-  quantumOverlapControl?: ReactNode;
+  layerOverlapControl?: ReactNode;
   holdFilterCount: number;
   openHoldFilter: () => void;
   zoneActive: boolean;
@@ -171,7 +171,7 @@ export function ClimbFilterSheetContent({
   settersRowNeedsBoard,
   boardConfig,
   followingSwitch,
-  quantumOverlapControl,
+  layerOverlapControl,
   holdFilterCount,
   openHoldFilter,
   zoneActive,
@@ -205,7 +205,7 @@ export function ClimbFilterSheetContent({
       {/* Flat, labeled sections — no accordions. The scroll body is one column
               child (filterSheetStyles.body) so the native sheet scrolls. */}
       <View style={filterSheetStyles.body}>
-        {quantumOverlapControl}
+        {layerOverlapControl}
         {/* 1 · NAME — the climb-name search: no list has a search field of its
                 own, so this first row is where it lives (#3606). Committed live via
                 onNameChange/onClearName. */}
