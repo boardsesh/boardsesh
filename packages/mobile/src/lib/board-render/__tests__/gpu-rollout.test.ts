@@ -93,9 +93,31 @@ describe('Aura GPU rollout', () => {
     { version: 1, enabledFamilies: ['spray'] },
     { version: 1, enabledFamilies: ['tension'], disabledFamilies: 'kilter' },
     { version: 1, enabledFamilies: Array(2) },
-    { version: 1, enabledFamilies: Array(9).fill('tension') },
   ])('cannot widen eligibility with malformed payload %j', (payload) => {
     expect(parseAuraGpuRollout(payload)).toEqual(policy());
+  });
+
+  it('keeps known families when future names extend either payload list', () => {
+    const futureFamilies = Array.from({ length: 12 }, (_, index) => `future-${index}`);
+    expect(
+      parseAuraGpuRollout({
+        version: 1,
+        enabledFamilies: [...AURA_GPU_FAMILIES, 'quantum', ...futureFamilies],
+        disabledFamilies: ['woods', 'future-disabled'],
+      }),
+    ).toEqual(policy(AURA_GPU_FAMILIES, ['woods']));
+    expect(policy(Array(9).fill('tension'))).toEqual(policy(['tension']));
+    expect(AURA_GPU_FAMILIES).not.toContain('quantum');
+  });
+
+  it('enables Quantum only with a positive global switch and the climber setting', () => {
+    for (const flag of [false, undefined, 'unknown-variant']) {
+      expect(auraGpuRolloutEnabled({ flag, policy: policy(), userEnabled: true, boardName: 'quantum' })).toBe(false);
+    }
+    expect(auraGpuRolloutEnabled({ flag: true, policy: policy(), userEnabled: true, boardName: 'quantum' })).toBe(true);
+    expect(auraGpuRolloutEnabled({ flag: true, policy: policy(), userEnabled: false, boardName: 'quantum' })).toBe(
+      false,
+    );
   });
 
   it('normalizes duplicates/order and accepts an omitted optional disable list', () => {
@@ -117,7 +139,7 @@ describe('Aura GPU rollout', () => {
   });
 
   describe('climber GPU acceleration switch', () => {
-    const everyBoard = [...AURA_GPU_FAMILIES, 'spray', 'unknown'];
+    const everyBoard = [...AURA_GPU_FAMILIES, 'quantum', 'spray', 'unknown'];
 
     it('turns every board off even when the flag and family are enabled', () => {
       const allEnabled = policy([...AURA_GPU_FAMILIES]);

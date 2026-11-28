@@ -1,7 +1,7 @@
 // Leaf subpath, not the barrel: the dark-art naming rule is shared with the server
 // renderer and www, and the barrel would pull render pipeline modules into the bundle.
 import { toDarkArtPath } from '@boardsesh/board-render/background';
-import { BOARD_BACKGROUND_ASSETS } from './board-backgrounds-manifest';
+import { BOARD_BACKGROUND_ASSETS } from './board-background-assets';
 
 // Which bundled file a piece of board art resolves to: the variant and
 // colour-scheme rules on top of the generated manifest. Kept apart from

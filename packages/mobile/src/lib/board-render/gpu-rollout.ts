@@ -23,10 +23,10 @@ export const DEFAULT_AURA_GPU_ROLLOUT: AuraGpuRollout = {
   disabledFamilies: [],
 };
 
-function isFamilyList(candidate: unknown): candidate is AuraGpuFamily[] {
-  if (!Array.isArray(candidate) || candidate.length > AURA_GPU_FAMILIES.length) return false;
+function isFamilyList(candidate: unknown): candidate is string[] {
+  if (!Array.isArray(candidate)) return false;
   for (const family of candidate) {
-    if (typeof family !== 'string' || !AURA_GPU_FAMILIES.some((knownFamily) => knownFamily === family)) return false;
+    if (typeof family !== 'string') return false;
   }
   return true;
 }
@@ -61,6 +61,9 @@ export function auraGpuRolloutEnabled(input: {
   // The no-board form answers the emergency switch only, for existing callers.
   const boardName = input.boardName;
   if (!boardName) return true;
+  // Quantum has its own board release flag. Never add it to the remote family
+  // payload: old bundles reject unknown names and would lose catalogue rollout.
+  if (boardName.toLowerCase() === 'quantum') return input.flag === true;
   const family = AURA_GPU_FAMILIES.find((knownFamily) => knownFamily === boardName.toLowerCase());
   if (!family || input.policy.disabledFamilies.includes(family)) return false;
   return (

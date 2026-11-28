@@ -2,13 +2,13 @@ import { memo, useCallback, useMemo, useState } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { Image } from 'expo-image';
 import type { BoardName, HoldStat } from '@boardsesh/shared-schema';
+import { getBoardImageMirrored } from '../../lib/board-image-mirroring';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
 import { EDITING_VEIL_OPACITY } from '../../lib/board-render-settings';
 import { useNativeClimbRender } from '../../hooks/use-native-climb-render';
 import { useTheme } from '../../providers/theme-provider';
 import { hexWithAlpha, holdGeometry } from '../create-climb/holdLayout';
 import { buildHeatLayer, heatLayerFrames, type HeatCell, type HeatLayer, type HeatMetric } from './heatmap-buckets';
-import { getBoardImageAdapter } from '../board-image-adapters';
 
 const NO_LAYER: HeatLayer = { cells: [], codeColors: {}, legend: { kind: 'count', edgeValues: [], total: 0 } };
 
@@ -70,19 +70,6 @@ export type HeatmapOverlayProps = {
 export const HeatmapOverlay = memo(function HeatmapOverlay(props: HeatmapOverlayProps) {
   // Nothing to draw → no render request at all.
   if (props.layer.cells.length === 0) return null;
-  // Runtime board images do not have a native raster config, even when the
-  // renderer is available for other boards on this binary.
-  if (getBoardImageAdapter(props.boardName).loadImage !== null) {
-    return (
-      <HeatmapDots
-        cells={props.layer.cells}
-        holdTargets={props.holdTargets}
-        boardWidth={props.boardWidth}
-        boardHeight={props.boardHeight}
-        mirrored={props.mirrored ?? false}
-      />
-    );
-  }
   return <RenderedHeatmap {...props} />;
 });
 
@@ -95,8 +82,9 @@ function RenderedHeatmap({
   holdTargets,
   boardWidth,
   boardHeight,
-  mirrored = false,
+  mirrored: requestedMirrored = false,
 }: HeatmapOverlayProps) {
+  const mirrored = getBoardImageMirrored(boardName, requestedMirrored) ?? false;
   const frames = useMemo(() => heatLayerFrames(layer.cells), [layer.cells]);
   // The hook is always mounted (hooks cannot be conditional), but it is only
   // handed the frames once the capability probe says the fill can be drawn:

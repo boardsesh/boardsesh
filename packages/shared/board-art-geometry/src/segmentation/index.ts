@@ -11,3 +11,5 @@
 export type { CoincidentGroups, MutableRaster, PlacementCentre, WhiteKeyMask, WhiteKeyOptions } from './white-key';
 export { GROUND_FLOOR, buildWhiteKeyMask, erodeEdge, keyOutGround, mergeCoincidentPlacements } from './white-key';
 export { isSimpleRing } from './led-ring';
+export { GROUND_CEILING, buildDarkKeyMask } from './dark-key';
+export { placementsWithoutOwnPhotoBody, cutPhotoContactSeams } from './photo-ownership';

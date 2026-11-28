@@ -79,7 +79,8 @@ function sampled(key: string): boolean {
 
 function properties(context: Context) {
   return {
-    board_name: AURA_GPU_FAMILIES.find((family) => family === context.boardName.toLowerCase()) ?? 'unknown',
+    board_name:
+      [...AURA_GPU_FAMILIES, 'quantum'].find((family) => family === context.boardName.toLowerCase()) ?? 'unknown',
     api_version: Number.isSafeInteger(context.apiVersion) ? context.apiVersion : 0,
     surface: context.surface,
     sample_rate: SAMPLE_RATE,

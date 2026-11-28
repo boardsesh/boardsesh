@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 import { Asset } from 'expo-asset';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { getBoardRenderData } from './board-details';
-import { BOARD_BACKGROUND_ASSETS } from './board-backgrounds-manifest';
+import { BOARD_BACKGROUND_ASSETS } from './board-background-assets';
 import { resolveManifestKey, type BackgroundColorScheme, type BackgroundVariant } from './bundled-board-art';
 import { parseSprayBackgroundKey } from './spray/spray-photo-keys';
 import { ensureSprayPhotoCached, tryGetSprayPhotoPathSync } from './spray/spray-photo-cache';

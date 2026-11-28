@@ -56,8 +56,17 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import path from 'node:path';
 import process from 'node:process';
 import sharp from 'sharp';
-import { listCatalogueEntries } from '../packages/shared/board-render/src/render-version-projection';
-import { getBoardDetailsForBoard } from '../packages/shared/board-render/src/board-details';
+import {
+  listArtGeometryEntries as listCatalogueEntries,
+  getArtGeometryDetails as getBoardDetailsForBoard,
+  resolveArtPath,
+} from './quantum-art-geometry-source';
+import { getQuantumArtworkContactSeams } from '../packages/shared/board-config/src/quantum-art-projection';
+import {
+  placementsWithoutOwnPhotoBody,
+  cutPhotoContactSeams,
+} from '../packages/shared/board-art-geometry/src/segmentation/photo-ownership';
+import { GROUND_CEILING, buildDarkKeyMask } from '../packages/shared/board-art-geometry/src/segmentation/dark-key';
 import { WOODS_OCCUPIED_HOLD_IDS } from '../packages/board-constants/src/woods';
 import { woodsSizeIdToDimension } from '../packages/shared/board-config/src/woods-config';
 import { getBackgroundRelPaths } from '../packages/shared/board-render/src/background';
@@ -93,12 +102,9 @@ import {
 
 const ROOT_DIR = path.resolve(import.meta.dirname, '..');
 /**
- * The board art. Same directory `scripts/generate-dark-board-art.ts` reads:
- * `getBackgroundRelPaths` returns `public/`-relative paths, so the art lives at
- * `packages/web/public/images/...` even though the files are also served from
- * object storage since #4776.
+ * Generated geometry is shared by native and server renderers. Art paths resolve
+ * through the offline source adapter: web public layers plus bundled Quantum WebPs.
  */
-const PUBLIC_DIR = path.join(ROOT_DIR, 'packages/web/public');
 const PACKAGE_DIR = path.join(ROOT_DIR, 'packages/shared/board-art-geometry');
 const GENERATED_DIR = path.join(PACKAGE_DIR, 'src/generated');
 
@@ -1397,7 +1403,7 @@ type DecodedLayer = { relativePath: string; art: BoardArt };
 async function decodeLayers(relativePaths: string[], width: number, height: number): Promise<DecodedLayer[]> {
   const layers: DecodedLayer[] = [];
   for (const relativePath of relativePaths) {
-    const pixels = await sharp(path.join(PUBLIC_DIR, relativePath))
+    const pixels = await sharp(resolveArtPath(relativePath))
       .resize(width, height, { fit: 'fill' })
       .ensureAlpha()
       .raw()
@@ -1672,9 +1678,21 @@ function photoMaskProvider(keyedLayers: KeyedPhotoLayer[]): MaskProvider {
 
     const fields: TraceField[] = [];
     for (const [index, layer] of layers.entries()) {
-      const drawn = perLayer[index];
-      if (drawn.length === 0) continue;
       const keyed = keyedLayers[index];
+      if (details.board_name === 'quantum') {
+        cutPhotoContactSeams(
+          keyed.mask,
+          layer.art.width,
+          layer.art.height,
+          getQuantumArtworkContactSeams(details.layout_id, details.size_id),
+        );
+      }
+      const withoutOwnBody =
+        details.board_name === 'quantum'
+          ? placementsWithoutOwnPhotoBody(keyed.mask, layer.art.width, layer.art.height, perLayer[index])
+          : new Set<number>();
+      const drawn = perLayer[index].filter((placement) => !withoutOwnBody.has(placement.id));
+      if (drawn.length === 0) continue;
 
       const groups = mergeCoincidentPlacements(drawn);
       const byId = new Map(drawn.map((placement) => [placement.id, placement]));
@@ -1719,10 +1737,10 @@ function photoMaskProvider(keyedLayers: KeyedPhotoLayer[]): MaskProvider {
         // disconnected piece owns its entire body even across a Voronoi edge.
         // Only genuinely touching holds need the partition and contact trim.
         profile:
-          details.board_name === 'woods'
+          details.board_name === 'woods' || details.board_name === 'quantum'
             ? { ...DEFAULT_TRACER_PROFILE, contestedCutsOnly: true }
             : DEFAULT_TRACER_PROFILE,
-        uncontestedMustFit: details.board_name === 'woods',
+        uncontestedMustFit: details.board_name === 'woods' || details.board_name === 'quantum',
       });
     }
     return fields;
@@ -2238,7 +2256,7 @@ function mergeFieldTraces(
     `${outlines.size}/${totals.attempted} traced ` +
     `(${missing} fell back: ${totals.rejectedBox} hit the search box, ` +
     // Only mentioned where it happened. This line is the header comment on every
-    // shard, so an unconditional "0 crossed themselves" would rewrite all 51
+    // shard, so an unconditional "0 crossed themselves" would rewrite all 55
     // files to say nothing had gone wrong on any of them.
     (totals.rejectedCrossing > 0 ? `${totals.rejectedCrossing} crossed themselves, ` : '') +
     `${missing - totals.rejectedBox - totals.rejectedCrossing} had no art of their own; ` +
@@ -2500,11 +2518,14 @@ async function keyPhotographicLayers(
 ): Promise<{ layers: KeyedPhotoLayer[] } | { reason: string }> {
   const keyed: KeyedPhotoLayer[] = [];
   for (const layer of layers) {
-    const losslessPath = layer.relativePath.replace(/\.(webp|jpg|jpeg)$/i, '.png');
-    if (!existsSync(path.join(PUBLIC_DIR, losslessPath))) {
+    const bundledLossless = layer.relativePath.startsWith('quantum/');
+    const losslessPath = bundledLossless
+      ? layer.relativePath
+      : layer.relativePath.replace(/\.(webp|jpg|jpeg)$/i, '.png');
+    if (!existsSync(resolveArtPath(losslessPath))) {
       return { reason: `no lossless source beside ${layer.relativePath} — expected ${losslessPath}` };
     }
-    const { data, info } = await sharp(path.join(PUBLIC_DIR, losslessPath)).raw().toBuffer({ resolveWithObject: true });
+    const { data, info } = await sharp(resolveArtPath(losslessPath)).raw().toBuffer({ resolveWithObject: true });
     if (info.width !== boardWidth || info.height !== boardHeight) {
       throw new Error(
         `${losslessPath} is ${info.width}x${info.height} but the board is ${boardWidth}x${boardHeight}; ` +
@@ -2512,11 +2533,22 @@ async function keyPhotographicLayers(
       );
     }
     assertLosslessMatchesShipped(layer, { pixels: data, channels: info.channels, relativePath: losslessPath });
-    const mask = buildWhiteKeyMask(data, info.width, info.height, info.channels, { erodePx: WHITE_KEY_ERODE_PX });
+    const corners = [0, info.width - 1, (info.height - 1) * info.width, info.width * info.height - 1];
+    const cornersAreDark = corners.every(
+      (pixel) =>
+        Math.max(data[pixel * info.channels], data[pixel * info.channels + 1], data[pixel * info.channels + 2]) <=
+        GROUND_CEILING,
+    );
+    const keyMask = cornersAreDark ? buildDarkKeyMask : buildWhiteKeyMask;
+    // S Fitness has a faint enclosing frame: (20,20) is measured white ground inside it.
+    const mask = keyMask(data, info.width, info.height, info.channels, {
+      erodePx: WHITE_KEY_ERODE_PX,
+      ...(layer.relativePath === 'quantum/s-fitness' ? { extraSeeds: [20 * info.width + 20] } : {}),
+    });
     if (mask.maskShare >= OPAQUE_ART_CEILING) {
       return {
         reason:
-          `keying the white ground out of ${losslessPath} left ${(mask.maskShare * 100).toFixed(1)}% of it opaque ` +
+          `keying the board ground out of ${losslessPath} left ${(mask.maskShare * 100).toFixed(1)}% of it opaque ` +
           `(only ${(mask.groundShare * 100).toFixed(1)}% flooded from the corners) — its corners are not board ground`,
       };
     }
@@ -2688,7 +2720,7 @@ async function buildCanonicalLayout(boardName: string, layoutId: number): Promis
 
   for (const source of canonicalSources) {
     const relativePaths = getBackgroundRelPaths(source.details, false);
-    if (relativePaths.some((relativePath) => !existsSync(path.join(PUBLIC_DIR, relativePath)))) continue;
+    if (relativePaths.some((relativePath) => !existsSync(resolveArtPath(relativePath)))) continue;
     const layers = await decodeLayers(relativePaths, source.details.boardWidth, source.details.boardHeight);
     const fields = perImageMaskProvider(source.details, layers);
     for (const field of fields) {
@@ -2801,8 +2833,9 @@ async function measureConfig(
     return { skipped: `${key}: board details threw — ${error instanceof Error ? error.message : String(error)}` };
   }
 
-  const relativePaths = getBackgroundRelPaths(details, false);
-  const missingArt = relativePaths.filter((relativePath) => !existsSync(path.join(PUBLIC_DIR, relativePath)));
+  const relativePaths =
+    details.board_name === 'quantum' ? Object.keys(details.images_to_holds) : getBackgroundRelPaths(details, false);
+  const missingArt = relativePaths.filter((relativePath) => !existsSync(resolveArtPath(relativePath)));
   if (relativePaths.length === 0) return { skipped: `${key}: no board art layers` };
   if (missingArt.length > 0) return { skipped: `${key}: missing art — ${missingArt.join(', ')}` };
 
@@ -3427,10 +3460,10 @@ export function loadOutlineCounts(): OutlineCountsTable {
  * `import()` instead of `require()`.
  *
  * Metro's `require` is synchronous, so the literal `require('./kilter/1-7.cjs')`
- * calls in `shards.ts` put all 51 shards in the entry chunk even though the
- * thunks around them are lazy. That is 4.4 MB of the browser app's 15.4 MB
- * bundle for polygons the reader will never look at — a climber is on one wall,
- * not fifty-one. `import()` makes Metro emit each shard as its own async chunk
+ * calls in `shards.ts` put all 55 shards in the entry chunk even though the
+ * thunks around them are lazy. The original 51-shard measurement attributed
+ * 4.4 MB of a 15.4 MB browser bundle to these polygons. A climber is on one wall,
+ * not fifty-five. `import()` makes Metro emit each shard as its own async chunk
  * (`expo export --platform web` turns on `splitChunks`), so the browser fetches
  * exactly the board it is drawing.
  *

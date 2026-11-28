@@ -26,6 +26,7 @@ import { GpuClimbOverlay, type GpuClimbTransition } from './GpuClimbOverlay';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
 import { supportsAuraGpu } from '@boardsesh/board-look';
 import type { BoardName } from '@boardsesh/shared-schema';
+import { getBoardImageMirrored } from '../lib/board-image-mirroring';
 import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
 import { useNativeClimbRender } from '../hooks/use-native-climb-render';
 import type { BackgroundVariant } from '../lib/background-image-cache';
@@ -43,7 +44,6 @@ import {
   type ReadyBoardArtSnapshot,
   type BoardArtReadiness,
 } from '../lib/board-render/ready-board-art';
-import { getBoardImageAdapter } from './board-image-adapters';
 
 type BoardImageNativeProps = {
   readyBoardArt?: ReadyBoardArtSnapshot;
@@ -210,32 +210,7 @@ export const GPU_PNG_HEDGE_DELAY_MS = 300;
  * holds flipped together) — the Rust `mirrored` flag is intentionally
  * not used here, so a single cached PNG serves both orientations.
  */
-const BoardImageNative = React.memo(function BoardImageNative({ boardName, ...props }: BoardImageNativeProps) {
-  const loadImage = getBoardImageAdapter(boardName).loadImage;
-  if (loadImage) {
-    const RuntimeBoardImage = loadImage();
-    return (
-      <RuntimeBoardImage
-        frames={props.frames}
-        layoutId={props.layoutId}
-        sizeId={props.sizeId}
-        style={props.style}
-        backgroundVariant={props.backgroundVariant ?? (props.renderWidth == null ? 'full' : 'thumb')}
-        overlayTestID={props.overlayTestID}
-        onArtReadinessChange={props.onArtReadinessChange}
-        accessible={props.accessible}
-        underOverlay={props.underOverlay}
-        holdColorOverride={props.holdColorOverride}
-      />
-    );
-  }
-
-  return <PhotoBoardImageNative boardName={boardName} {...props} />;
-});
-
-/** Existing photo-background renderer. Split out so its render hook is never
- * called for Quantum, whose overlays use the existing SVG renderer. */
-const PhotoBoardImageNative = React.memo(function PhotoBoardImageNative({
+const BoardImageNative = React.memo(function BoardImageNative({
   readyBoardArt,
   onReadyArtDisplayed,
   onArtReadinessChange,
@@ -247,7 +222,7 @@ const PhotoBoardImageNative = React.memo(function PhotoBoardImageNative({
   setIds,
   boardWidth,
   boardHeight,
-  mirrored,
+  mirrored: requestedMirrored,
   filledStyle = false,
   playSurface = false,
   editorSurface = false,
@@ -274,6 +249,7 @@ const PhotoBoardImageNative = React.memo(function PhotoBoardImageNative({
   emptyOverlayFallback,
   showGridLabels = false,
 }: BoardImageNativeProps) {
+  const mirrored = getBoardImageMirrored(boardName, requestedMirrored);
   // Whether the live stack is held invisible under the opening-art bridge, for
   // the play board's paint-timeout telemetry. Written after each commit below.
   const paintBridgingRef = useRef(false);

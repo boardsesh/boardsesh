@@ -552,3 +552,39 @@ describe('bundledBoardArtSource', () => {
     expect(bundledBoardArtSource('moonboard/not-bundled.webp', 'dark')).toBeNull();
   });
 });
+
+describe('Quantum photographic background stack', () => {
+  it.each(['xl', 'l', 'm', 's-fitness'])(
+    'resolves %s full and thumbnail art through the same lookup',
+    async (model) => {
+      const { QUANTUM_BACKGROUND_ASSETS } = await import('../../components/quantum/quantum-board-artwork');
+      const { resolveManifestKey } = await import('../bundled-board-art');
+      const backgroundImageKey = `quantum/quantum-${model}.webp`;
+      vi.mocked(getBoardRenderData).mockReturnValue({
+        boardWidth: 1536,
+        boardHeight: 1552,
+        edgeLeft: 0,
+        edgeRight: 1,
+        edgeTop: 1,
+        edgeBottom: 0,
+        holdsData: [],
+        backgroundImageKeys: [backgroundImageKey],
+      });
+      for (const variant of ['full', 'thumb'] as const) {
+        const manifestKey = variant === 'full' ? backgroundImageKey : `quantum/thumbs/quantum-${model}.webp`;
+        const moduleId = QUANTUM_BACKGROUND_ASSETS[manifestKey];
+        expect(moduleId).toBeDefined();
+        expect(resolveManifestKey(backgroundImageKey, variant, 'dark')).toBe(manifestKey);
+        const result = await ensureBackgroundsCached({
+          boardName: 'quantum',
+          layoutId: model === 's-fitness' ? 9104 : 9101,
+          sizeId: 9201,
+          setIds: [1],
+          variant,
+          colorScheme: 'dark',
+        });
+        expect(result).toEqual({ paths: [`/bundled/${moduleId}.webp`], missingCount: 0 });
+      }
+    },
+  );
+});

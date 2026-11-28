@@ -13,6 +13,8 @@ import {
   getWoodsBoardDetails,
 } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
+import { isReleasedQuantumConfig } from '@boardsesh/board-constants/quantum';
+import { getQuantumBackgroundImageKey } from './quantum-background-key';
 import type { HoldPlacement } from '../components/board-renderer/types';
 import { activeSprayArt, getSprayWall } from './spray/spray-wall-registry';
 import { sprayBackgroundKey } from './spray/spray-photo-keys';
@@ -171,9 +173,11 @@ function getQuantumRenderData(params: { layoutId: number; sizeId: number; setIds
   const { layoutId, sizeId, setIds } = params;
   // Quantum has one exact synthetic set. A stale or crafted route must not
   // borrow geometry from another configuration.
-  if (setIds.length !== 1 || setIds[0] !== 1) return null;
+  if (setIds.length !== 1 || setIds[0] !== 1 || !isReleasedQuantumConfig(layoutId, sizeId)) return null;
   const details = getQuantumGeometryBoardDetails(layoutId, sizeId);
   if (!details) return null;
+  const backgroundImageKey = getQuantumBackgroundImageKey(details.neutralGrid.model);
+  if (!backgroundImageKey) return null;
   return {
     boardWidth: details.boardWidth,
     boardHeight: details.boardHeight,
@@ -181,7 +185,7 @@ function getQuantumRenderData(params: { layoutId: number; sizeId: number; setIds
     edgeRight: details.edge_right,
     edgeBottom: details.edge_bottom,
     edgeTop: details.edge_top,
-    backgroundImageKeys: [],
+    backgroundImageKeys: [backgroundImageKey],
     holdsData: details.holdsData.map((hold) => ({ ...hold })),
   };
 }

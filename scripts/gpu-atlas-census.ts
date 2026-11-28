@@ -4,21 +4,21 @@ import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { HOLD_STATE_MAP } from '../packages/board-constants/src/hold-states';
 import { loadBoardArtGeometry, getWallLightness } from '../packages/shared/board-art-geometry/src/loader';
-import { getBoardDetailsForBoard } from '../packages/shared/board-render/src/board-details';
+import { getArtGeometryDetails, listArtGeometryEntries } from './quantum-art-geometry-source';
 import { buildRenderConfig } from '../packages/shared/board-render/src/render-config';
-import {
-  listCatalogueEntries,
-  type CatalogueEntry,
-} from '../packages/shared/board-render/src/render-version-projection';
+import { type CatalogueEntry } from '../packages/shared/board-render/src/render-version-projection';
 
 /** Same catalogue, calibrated roles and full-resolution geometry as the app. */
 export function buildCatalogueGpuConfig(entry: CatalogueEntry) {
-  const boardDetails = getBoardDetailsForBoard({
-    board_name: entry.boardName,
-    layout_id: entry.layoutId,
-    size_id: entry.sizeId,
-    set_ids: entry.setIds,
-  });
+  const boardDetails = getArtGeometryDetails(
+    {
+      board_name: entry.boardName,
+      layout_id: entry.layoutId,
+      size_id: entry.sizeId,
+      set_ids: entry.setIds,
+    },
+    true,
+  );
   const geometry = loadBoardArtGeometry(entry);
   if (!geometry) throw new Error(`Missing geometry: ${entry.boardName}/${entry.layoutId}-${entry.sizeId}`);
   const { config } = buildRenderConfig({
@@ -53,7 +53,7 @@ export function buildCatalogueGpuConfig(entry: CatalogueEntry) {
   };
 }
 
-const CATALOGUE_CONFIGURATION_COUNT = 51;
+const CATALOGUE_CONFIGURATION_COUNT = 55;
 const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
 const MAX_ASSEMBLED_GPU_BYTES = 128 * 1024 * 1024;
 
@@ -92,7 +92,7 @@ function main() {
   }
   const outputDirectory = resolve(outputArgument < 0 ? '/tmp/boardsesh-aura-census' : process.argv[outputArgument + 1]);
   mkdirSync(outputDirectory, { recursive: true });
-  const entries = listCatalogueEntries();
+  const entries = listArtGeometryEntries();
   const configsOnly = process.argv.includes('--configs-only');
   const baseline = process.argv.includes('--baseline');
   const rows = entries.map((entry) => {

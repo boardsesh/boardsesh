@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { supportsAuraGpu } from '../gpu-capability';
 
 describe('native Aura capability', () => {
-  it.each(['kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill', 'moonboard', 'woods'])(
+  it.each(['kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill', 'moonboard', 'woods', 'quantum'])(
     'supports catalogue %s only on the new binary',
     (boardName) => {
       expect(supportsAuraGpu({ boardName, layoutId: 1, catalogueNative: true })).toBe(true);

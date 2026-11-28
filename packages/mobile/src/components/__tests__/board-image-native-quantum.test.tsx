@@ -1,263 +1,246 @@
 // @vitest-environment jsdom
-import { createElement, useLayoutEffect, type CSSProperties, type ReactNode, type SVGProps } from 'react';
-import { cleanup, fireEvent, render } from '@testing-library/react';
+import { createElement, useLayoutEffect, type CSSProperties, type ReactNode } from 'react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { HoldColorOverrides } from '../../lib/hold-color-overrides';
 
-const nativeRender = vi.hoisted(() => ({ calls: 0, runtimeLoads: 0, variants: [] as Array<string | undefined> }));
-
-vi.mock('expo-image', () => ({
-  Image: ({ testID, onDisplay, style }: { testID?: string; onDisplay?: () => void; style?: CSSProperties }) =>
-    createElement('img', { 'data-testid': testID, onLoad: onDisplay, style }),
+const renderer = vi.hoisted(() => ({
+  apiVersion: 5,
+  enabled: true,
+  fillAvailable: true,
+  requests: [] as Array<{
+    frames: string;
+    gpuSurface?: boolean;
+    filledStyle?: boolean;
+    prefetch?: boolean;
+    holdColorOverride?: HoldColorOverrides;
+    markStyleOverride?: string;
+    extraHoldStates?: Record<number, { color: string }>;
+  }>,
 }));
 
-type MockViewProps = {
-  children?: ReactNode;
-  style?: CSSProperties | CSSProperties[];
-  pointerEvents?: string;
-  onLayout?: (event: { nativeEvent: { layout: { width: number; height: number } } }) => void;
-};
-
 vi.mock('react-native', () => ({
-  View: ({ children, style, pointerEvents, onLayout }: MockViewProps) => {
+  View: ({
+    children,
+    style,
+    pointerEvents,
+    onLayout,
+  }: {
+    children?: ReactNode;
+    style?: CSSProperties | CSSProperties[];
+    pointerEvents?: string;
+    onLayout?: (event: { nativeEvent: { layout: { width: number; height: number } } }) => void;
+  }) => {
     useLayoutEffect(() => {
       onLayout?.({ nativeEvent: { layout: { width: 300, height: 400 } } });
     }, [onLayout]);
     return createElement(
       'div',
-      { style: Array.isArray(style) ? Object.assign({}, ...style) : style, 'data-pointer-events': pointerEvents },
+      {
+        style: Array.isArray(style) ? Object.assign({}, ...style) : style,
+        'data-pointer-events': pointerEvents,
+      },
       children,
     );
   },
-  StyleSheet: {
-    create: (styles: Record<string, unknown>) => styles,
-    absoluteFill: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
-  },
+  StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {} },
   PixelRatio: { get: () => 2 },
   Platform: { OS: 'ios' },
 }));
-
-vi.mock('react-native-svg', () => {
-  const element =
-    (tag: string) =>
-    ({ testID, ...props }: SVGProps<SVGElement> & { testID?: string }) =>
-      createElement(tag, { ...props, 'data-testid': testID });
-  return {
-    default: element('svg'),
-    Path: element('path'),
-    Rect: element('rect'),
-    Circle: element('circle'),
-    Polygon: element('polygon'),
-    G: element('g'),
-  };
-});
-
+vi.mock('expo-image', () => ({ Image: () => createElement('img', { alt: 'heatmap' }) }));
 vi.mock('../../../modules/climb-overlay-gpu/src', () => ({
-  NativeFrameClimbOverlayGPU: null,
-  NativeMotionClimbOverlayGPU: null,
+  NativeFrameClimbOverlayGPU: () => null,
+  NativeMotionClimbOverlayGPU: () => null,
 }));
-vi.mock('../../providers/feature-flags-provider', () => ({ useGpuClimbOverlayEnabled: () => false }));
+vi.mock('../../lib/board-render/gpu-native-capability', () => ({
+  get climbOverlayGpuApiVersion() {
+    return renderer.apiVersion;
+  },
+}));
+vi.mock('../../providers/feature-flags-provider', () => ({ useGpuClimbOverlayEnabled: () => renderer.enabled }));
 vi.mock('../../lib/app-visibility', () => ({ useIsAppBackgrounded: () => false }));
-vi.mock('../../providers/theme-provider', () => ({
-  useTheme: () => ({
-    systemColors: { fill: '#ddd' },
-    chartColors: { secondaryBackground: '#eeeeee', separator: '#cccccc', secondaryLabel: '#777777' },
-  }),
-}));
+vi.mock('../../hooks/use-board-accessibility-summary', () => ({ useBoardAccessibilitySummary: () => 'Quantum climb' }));
+vi.mock('../../providers/theme-provider', () => ({ useTheme: () => ({ systemColors: { fill: '#ddd' } }) }));
 vi.mock('../../lib/board-render/warm-board-art-memory', () => ({
-  isBoardArtInMemory: () => false,
+  isBoardArtInMemory: () => true,
   warmBoardArtMemory: vi.fn(),
 }));
-
 vi.mock('../../theme/tokens', () => ({ borderRadius: { md: 8 } }));
-
 vi.mock('../../hooks/use-native-climb-render', () => ({
-  useNativeClimbRender: () => {
-    nativeRender.calls += 1;
+  useNativeClimbRender: (request: (typeof renderer.requests)[number]) => {
+    renderer.requests.push(request);
     return {
-      overlayUri: null,
-      overlayLoadKey: null,
-      onOverlayLoad: () => {},
-      onOverlayError: () => {},
-      backgroundPaths: [],
+      overlayUri: '/quantum-overlay.png',
+      overlayLoadKey: 'quantum-overlay',
+      overlayCacheKey: 'quantum-cache',
+      overlayImmediate: true,
+      overlayUnavailable: false,
+      onOverlayLoad: vi.fn(),
+      onOverlayError: vi.fn(),
+      backgroundPaths: ['/quantum-xl.webp'],
+      backgroundsLoading: false,
       missingBackgroundCount: 0,
       artworkIdentity: { colorScheme: 'dark' },
-      boardseshRendererAvailable: true,
+      boardseshRendererAvailable: renderer.fillAvailable,
       rendererUnavailable: false,
+      gpuConfigJson: request.gpuSurface ? 'quantum-config' : null,
+      gpuStatus: request.gpuSurface ? 'ready' : 'unavailable',
     };
   },
 }));
-
-vi.mock('../GpuClimbOverlay', () => ({ GpuClimbOverlay: () => null }));
-vi.mock('../board/MoonBoardGridLabels', () => ({ MoonBoardGridLabels: () => null }));
-
-vi.mock('../LayeredClimbImage', () => ({
-  LayeredClimbImage: () => createElement('div', { 'data-testid': 'photo-board' }),
+vi.mock('../GpuClimbOverlay', () => ({
+  GpuClimbOverlay: ({ displayMirrored }: { displayMirrored: boolean }) =>
+    createElement('div', { 'data-testid': 'quantum-gpu', 'data-mirrored': String(displayMirrored) }),
 }));
-
-vi.mock('../quantum/quantum-board-image-loader', async () => {
-  const { QuantumBoardImage } = await import('../quantum/QuantumBoardImage');
-  const RuntimeImage = (props: Parameters<typeof QuantumBoardImage>[0]) => {
-    nativeRender.variants.push(props.backgroundVariant);
-    return createElement('div', { 'data-testid': 'quantum-board' }, createElement(QuantumBoardImage, props));
-  };
-  return {
-    loadQuantumBoardImage: () => {
-      nativeRender.runtimeLoads += 1;
-      return RuntimeImage;
-    },
-  };
-});
+vi.mock('../board/MoonBoardGridLabels', () => ({ MoonBoardGridLabels: () => null }));
+vi.mock('../LayeredClimbImage', () => ({
+  LayeredClimbImage: ({
+    liveOverlay,
+    underOverlay,
+    mirrored,
+  }: {
+    liveOverlay?: { node: ReactNode };
+    underOverlay?: ReactNode;
+    mirrored?: boolean;
+  }) =>
+    createElement(
+      'div',
+      { 'data-testid': 'standard-board', 'data-mirrored': String(mirrored) },
+      underOverlay,
+      liveOverlay?.node,
+    ),
+}));
 
 import { BoardImageNative } from '../BoardImageNative';
 import { ClimbListThumbnail, ClimbListThumbnailPrewarm } from '../ClimbListThumbnail';
 import { HeatmapOverlay } from '../board/HeatmapOverlay';
-import { getQuantumGeometryBoardDetails } from '../../lib/quantum-geometry-store';
-import { loadHoldColorOverrides, setHoldColorOverridesPreference } from '../../lib/hold-color-overrides';
 
-const baseProps = {
-  frames: '',
+const BOARD = {
+  boardName: 'quantum' as const,
+  frames: 'p1000001r12',
   layoutId: 9101,
   sizeId: 9201,
   setIds: '1',
-  boardWidth: 1500,
-  boardHeight: 1500,
+  boardWidth: 1536,
+  boardHeight: 1552,
 };
 
-beforeEach(async () => {
-  nativeRender.calls = 0;
-  nativeRender.runtimeLoads = 0;
-  nativeRender.variants = [];
-  await setHoldColorOverridesPreference({});
+beforeEach(() => {
+  renderer.requests = [];
+  renderer.enabled = true;
+  renderer.fillAvailable = true;
+  renderer.apiVersion = 5;
 });
-
 afterEach(cleanup);
 
-describe('BoardImageNative Quantum routing', () => {
-  it('uses full Quantum artwork without invoking the raster renderer hook', () => {
-    const { getByTestId, queryByTestId } = render(
-      createElement(BoardImageNative, { ...baseProps, boardName: 'quantum' }),
-    );
-
-    expect(getByTestId('quantum-board')).toBeTruthy();
-    expect(queryByTestId('photo-board')).toBeNull();
-    expect(nativeRender.calls).toBe(0);
-    expect(nativeRender.variants.at(-1)).toBe('full');
+describe('Quantum standard Aura path', () => {
+  it.each([
+    [9101, 9201],
+    [9101, 9202],
+    [9101, 9203],
+    [9104, 9204],
+  ])('requests GPU rendering for released model %i/%i', (layoutId, sizeId) => {
+    render(createElement(BoardImageNative, { ...BOARD, layoutId, sizeId, playSurface: true }));
+    expect(renderer.requests.at(-1)?.gpuSurface).toBe(true);
+    expect(screen.getAllByTestId('standard-board').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('quantum-gpu')).toBeTruthy();
   });
 
-  it('leaves the existing photo-backed board path unchanged', () => {
-    const { getByTestId, queryByTestId } = render(
+  it.each([0, 2, 3, 4])('uses the standard PNG path below API5 (API%i)', (apiVersion) => {
+    renderer.apiVersion = apiVersion;
+    render(createElement(BoardImageNative, { ...BOARD, playSurface: true }));
+    expect(renderer.requests.at(-1)?.gpuSurface).toBe(false);
+    expect(screen.queryByTestId('quantum-gpu')).toBeNull();
+    expect(screen.getAllByTestId('standard-board').length).toBeGreaterThan(0);
+  });
+
+  it.each(['player', 'thumbnail'] as const)('ignores stale Quantum mirroring on the %s', (surface) => {
+    render(
+      surface === 'player'
+        ? createElement(BoardImageNative, { ...BOARD, playSurface: true, mirrored: true })
+        : createElement(ClimbListThumbnail, { ...BOARD, mirrored: true }),
+    );
+    for (const layer of screen.getAllByTestId('standard-board')) {
+      expect(layer.getAttribute('data-mirrored')).toBe('false');
+    }
+    if (surface === 'player') expect(screen.getByTestId('quantum-gpu').getAttribute('data-mirrored')).toBe('false');
+  });
+
+  it('preserves mirrored rendering for supported Tension climbs', () => {
+    render(
       createElement(BoardImageNative, {
-        ...baseProps,
-        boardName: 'kilter',
-        layoutId: 1,
-        sizeId: 10,
+        ...BOARD,
+        boardName: 'tension',
+        layoutId: 9,
+        playSurface: true,
+        mirrored: true,
       }),
     );
-
-    expect(getByTestId('photo-board')).toBeTruthy();
-    expect(queryByTestId('quantum-board')).toBeNull();
-    expect(nativeRender.calls).toBe(1);
-    expect(nativeRender.runtimeLoads).toBe(0);
+    expect(screen.getByTestId('quantum-gpu').getAttribute('data-mirrored')).toBe('true');
+    for (const layer of screen.getAllByTestId('standard-board')) {
+      expect(layer.getAttribute('data-mirrored')).toBe('true');
+    }
   });
 
-  it('draws the real authoring heatmap under lit holds without requesting an unsupported native render', () => {
-    const details = getQuantumGeometryBoardDetails(baseProps.layoutId, baseProps.sizeId);
-    const hold = details?.holdsData[0];
-    if (!details || !hold) throw new Error('Expected fixed Quantum hold geometry');
-    const { container, getByTestId } = render(
+  it('keeps the Quantum heatmap dot fallback in unmirrored physical coordinates', () => {
+    renderer.fillAvailable = false;
+    const { container } = render(
+      createElement(HeatmapOverlay, {
+        ...BOARD,
+        mirrored: true,
+        boardWidth: 100,
+        boardHeight: 100,
+        holdTargets: [{ id: 1000001, cx: 20, cy: 40, r: 10 }],
+        layer: {
+          cells: [{ holdId: 1000001, bucket: 4, code: 904, color: '#ff8800' }],
+          codeColors: { 904: { color: '#ff8800' } },
+          legend: { kind: 'count', edgeValues: [1, 2, 3, 4, 5], total: 5 },
+        },
+      }),
+    );
+    const dot = container.querySelector<HTMLElement>('[data-pointer-events="none"] > div');
+    expect(dot?.style.left).toBe('20%');
+  });
+
+  it('honours the GPU switch and preserves per-session and preview colours', () => {
+    renderer.enabled = false;
+    const overrides = { STARTING: '#abcdef' };
+    const view = render(createElement(BoardImageNative, { ...BOARD, playSurface: true, holdColorOverride: overrides }));
+    expect(renderer.requests.at(-1)).toMatchObject({ gpuSurface: false, holdColorOverride: overrides });
+    view.rerender(createElement(BoardImageNative, { ...BOARD, holdColorOverride: {} }));
+    expect(renderer.requests.at(-1)?.holdColorOverride).toEqual({});
+  });
+
+  it('renders and prewarms list thumbnails through the standard raster hook', () => {
+    render(createElement(ClimbListThumbnail, BOARD));
+    expect(screen.getAllByTestId('standard-board').length).toBeGreaterThan(0);
+    expect(renderer.requests.at(-1)?.filledStyle).toBe(true);
+    render(createElement(ClimbListThumbnailPrewarm, BOARD));
+    expect(renderer.requests.at(-1)).toMatchObject({ filledStyle: true, prefetch: true });
+  });
+
+  it('requests silhouette fills for the authoring heatmap under the lit climb', () => {
+    render(
       createElement(BoardImageNative, {
-        ...baseProps,
-        boardName: 'quantum',
-        frames: `p${hold.id}r12`,
-        overlayTestID: 'lit-climb',
+        ...BOARD,
         underOverlay: createElement(HeatmapOverlay, {
-          ...baseProps,
-          boardName: 'quantum',
-          boardWidth: details.boardWidth,
-          boardHeight: details.boardHeight,
-          holdTargets: details.holdsData,
+          ...BOARD,
+          holdTargets: [{ id: 1000001, cx: 50, cy: 60, r: 10 }],
           layer: {
-            cells: [{ holdId: hold.id, bucket: 4, code: 904, color: '#ff8800' }],
+            cells: [{ holdId: 1000001, bucket: 4, code: 904, color: '#ff8800' }],
             codeColors: { 904: { color: '#ff8800' } },
             legend: { kind: 'count', edgeValues: [1, 2, 3, 4, 5], total: 5 },
           },
         }),
       }),
     );
-    const heatDot = Array.from(container.querySelectorAll('div')).find(
-      (element) => element.style.backgroundColor === 'rgba(255, 136, 0, 0.85)',
-    );
-    expect(heatDot).toBeDefined();
-    if (!heatDot) throw new Error('Expected a measured Quantum heatmap dot');
-    expect(heatDot.closest('svg')).toBeNull();
-    expect(Number.parseFloat(heatDot.style.width)).toBeGreaterThan(0);
-    expect(heatDot.parentElement?.getAttribute('data-pointer-events')).toBe('none');
-
-    const wall = getByTestId('quantum-board-artwork');
-    fireEvent.load(wall);
-    const litClimb = getByTestId('lit-climb');
-    expect(wall.compareDocumentPosition(heatDot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(heatDot.compareDocumentPosition(litClimb) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(litClimb.querySelector('circle')?.getAttribute('fill')).toBe('#00FF00');
-    expect(litClimb.querySelector('circle')?.getAttribute('fill-opacity')).toBe('0.6');
-    expect(litClimb.getAttribute('pointer-events')).toBe('none');
-    expect(litClimb.style.position).toBe('absolute');
-    expect(litClimb.getAttribute('viewBox')).toBe(`0 0 ${details.boardWidth} ${details.boardHeight}`);
-    expect(Number(wall.style.zIndex)).toBeLessThan(Number(heatDot.parentElement?.parentElement?.style.zIndex));
-    expect(Number(heatDot.parentElement?.parentElement?.style.zIndex)).toBeLessThan(Number(litClimb.style.zIndex));
-    expect(nativeRender.calls).toBe(0);
-  });
-
-  it('renders candidate palettes, shipped colours, and stored colours without changing preferences', async () => {
-    const hold = getQuantumGeometryBoardDetails(baseProps.layoutId, baseProps.sizeId)?.holdsData[0];
-    if (!hold) throw new Error('Expected fixed Quantum hold geometry');
-    await setHoldColorOverridesPreference({ STARTING: '#123456' });
-    const props = { ...baseProps, boardName: 'quantum' as const, frames: `p${hold.id}r12` };
-    const view = render(createElement(BoardImageNative, { ...props, holdColorOverride: { STARTING: '#abcdef' } }));
-    expect(view.container.querySelector('circle')?.getAttribute('fill')).toBe('#abcdef');
-
-    view.rerender(createElement(BoardImageNative, { ...props, holdColorOverride: { STARTING: '#654321' } }));
-    expect(view.container.querySelector('circle')?.getAttribute('fill')).toBe('#654321');
-    view.rerender(createElement(BoardImageNative, { ...props, holdColorOverride: {} }));
-    expect(view.container.querySelector('circle')?.getAttribute('fill')).toBe('#00FF00');
-    view.rerender(createElement(BoardImageNative, props));
-    expect(view.container.querySelector('circle')?.getAttribute('fill')).toBe('#123456');
-    expect(await loadHoldColorOverrides()).toEqual({ STARTING: '#123456' });
-  });
-});
-
-describe('ClimbListThumbnail Quantum routing', () => {
-  it('does not load a runtime image or start raster work while prewarming', () => {
-    const { container } = render(createElement(ClimbListThumbnailPrewarm, { ...baseProps, boardName: 'quantum' }));
-    expect(container.childElementCount).toBe(0);
-    expect(nativeRender.calls).toBe(0);
-    expect(nativeRender.runtimeLoads).toBe(0);
-  });
-
-  it('uses thumbnail Quantum artwork without invoking the raster renderer hook', () => {
-    const { getByTestId, queryByTestId } = render(
-      createElement(ClimbListThumbnail, { ...baseProps, boardName: 'quantum' }),
-    );
-
-    expect(getByTestId('quantum-board')).toBeTruthy();
-    expect(queryByTestId('photo-board')).toBeNull();
-    expect(nativeRender.calls).toBe(0);
-    expect(nativeRender.variants.at(-1)).toBe('thumb');
-  });
-
-  it('keeps photo-backed list thumbnails on the native raster path', () => {
-    const { getByTestId, queryByTestId } = render(
-      createElement(ClimbListThumbnail, {
-        ...baseProps,
-        boardName: 'kilter',
-        layoutId: 1,
-        sizeId: 10,
+    expect(renderer.requests).toContainEqual(
+      expect.objectContaining({
+        frames: 'p1000001r904',
+        markStyleOverride: 'fill',
+        extraHoldStates: { 904: { color: '#ff8800' } },
       }),
     );
-
-    expect(getByTestId('photo-board')).toBeTruthy();
-    expect(queryByTestId('quantum-board')).toBeNull();
-    expect(nativeRender.calls).toBe(1);
-    expect(nativeRender.runtimeLoads).toBe(0);
+    expect(screen.getByRole('img', { name: 'heatmap' })).toBeTruthy();
   });
 });

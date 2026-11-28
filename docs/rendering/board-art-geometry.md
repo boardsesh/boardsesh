@@ -50,7 +50,7 @@ visible around the hold proper. Same flat, implicitly-closed, 4-decimal radius-u
 `outlines`. Two sources fill it: the automatic extractor (see The LED base-plate extractor
 below), which qualifies the ten Kilter Homewall configs whose art carries a two-tone plate,
 and hand-drawn `led_inner` annotations, which replace an extraction wherever one exists.
-The other 39 shards carry no table at all. An absent table and an absent placement mean the
+The other 45 shards carry no table at all. An absent table and an absent placement mean the
 same thing to a consumer — light the whole silhouette.
 
 The renderer injection boundary is `HoldGeometryInput` in
@@ -130,10 +130,11 @@ inside the traced polygon, 0..1.
 
 - A placement with **no traceable art** is absent from `outlines`. That is not an edge
   case: MoonBoard's placements are a synthetic 11x18 grid and most cells genuinely carry
-  no hold. **Consumers must fall back to a ring at the placement radius.** 16,603 of
-  17,163 placements are traced (96.7%); the shortfall is 232 empty MoonBoard grid cells,
-  51 Kilter Original 12x12 placements with no art of their own, 275 empty Woods mounting slots, and 2 Decoy frame-rail
-  T-nuts whose own-layer art runs to the search box.
+  no hold. **Consumers must fall back to a ring at the placement radius.** 18,482 of
+  19,053 placements are traced (97.0%); the 571 missing outlines are 232 empty MoonBoard grid cells,
+  51 Kilter Original 12x12 placements with no art of their own, 275 empty Woods mounting slots,
+  2 Decoy frame-rail T-nuts whose own-layer art runs to the search box, and 11 Quantum
+  placements without separate visible hold bodies across XL, L and M.
 - A placement with **no outline** is absent from `silhouetteLightness`. There is no `-1`
   sentinel — the spike shipped one and a `?? target` read straight past it, painting 94
   of MoonBoard's 198 holds as if their art were black.
@@ -316,9 +317,9 @@ dual `require` / `createRequire` shim in `src/generated/shards.ts` is copied fro
 `@boardsesh/board-constants`' `hole-placements.ts`; it is the only shape that works in
 Metro, webpack, bare Node ESM and vitest at once.
 
-3.1 MB of generated data across 51 shards, largest 120 KB (Tension Board 2 12x12 Wide,
-690 holds) — well under `scripts/check-large-files.mjs`'s 2 MB per-file limit, so no
-allowlist entry is needed.
+5.44 MiB of generated data (5,705,094 bytes) across 55 shards, largest 230 KiB
+(235,920 bytes, Kilter Homewall 10x12 Full Ride, 499 holds). Every shard stays
+under `scripts/check-large-files.mjs`'s 2 MB per-file limit, so no allowlist entry is needed.
 
 ### Who reads it
 
@@ -331,11 +332,12 @@ allowlist entry is needed.
 - **The browser**, over `GET /render/geometry` on the backend
   (`packages/backend/src/handlers/board-geometry.ts`, same-origin alias
   `/api/internal/board-geometry`). www's WASM worker cannot import this package —
-  the shard index is 51 literal `require`s, so webpack would put all 5.2 MB in the
-  client bundle to draw one board. The endpoint hands over the single config
+  the shard index has 55 literal `require`s, so webpack would include every board
+  in the client bundle to draw one board. The endpoint hands over the single config
   instead: `{ outlines, ledInner, ledBright, silhouetteLightness, wallLightness }`,
-  gzipped, immutably cached under the same `v=` the images carry. 43 KB gzipped at
-  the worst (Kilter Original 12x12), fetched once per board config per session.
+  gzipped, immutably cached under the same `v=` the images carry. 73 KiB gzipped at
+  the worst (74,714 bytes, Kilter Homewall 10x12 Full Ride), fetched once per board
+  config per session.
   A config with no shard answers `{}` with a 200, not a 404 — "no silhouettes" is
   a normal answer, and a 404 would make every caller special-case it.
 - **The tracer's own gates** and the iPad outline editor (`hold_outline_overrides` below).
@@ -344,12 +346,12 @@ The renderer-facing half of the contract is `HoldGeometryInput` in
 `packages/shared/board-render/src/render-config.ts`: outlines, LED plates, LED offsets and
 silhouette lightness go in, per-hold `outline` / `led_inner` / `led` /
 `silhouette_lightness` come out on the WASM config. It is a parameter and not an import,
-so the browser can fetch the one config it needs rather than bundling all 51 shards.
+so the browser can fetch the one config it needs rather than bundling all 55 shards.
 
 ### `@boardsesh/board-art-geometry/spill`, `/veil`, `/types`
 
 Three more subpaths that reach nothing else, for the same reason `ring` exists: a config
-builder needs `isWithinSpillRange` or `veilOpacityFor`, not 3.0 MB of polygons.
+builder needs `isWithinSpillRange` or `veilOpacityFor`, not 5.44 MiB of geometry shards.
 `packages/shared/board-render/src/render-config.ts` imports through them precisely so it
 stays safe to pull into a browser bundle.
 
@@ -364,7 +366,7 @@ import { pointInRing, roundRing, isValidOutlineRing } from '@boardsesh/board-art
 ```
 
 The isolation is the point. Metro bundles what a module can reach, so importing the
-package index to run a point-in-polygon test would put all 3.0 MB of polygons into the
+package index to run a point-in-polygon test would put all 5.44 MiB of geometry shards into the
 mobile bundle. The subpath is ~2 KB and reaches nothing else.
 
 `simplifyRing` and `SIMPLIFY_EPSILON` are the tracer's own Douglas-Peucker, copied verbatim
@@ -435,7 +437,7 @@ like any untraced placement.
 ## Hand-corrected outlines (`hold_outline_overrides`)
 
 The tracer gets most holds right; the ones it does not are fixed as database rows rather
-than by regenerating and redeploying 3.0 MB of shards. `hold_outline_overrides` is keyed by
+than by regenerating and redeploying 5.44 MiB of shards. `hold_outline_overrides` is keyed by
 the shard's own merge key plus a placement and a kind — `(board_name, layout_id, size_id,
 placement_id, kind)` — with the same flat, implicitly-closed, 4-decimal ring in the same
 radius units, so a consumer swaps one for the other with no conversion. Latest write wins;
@@ -957,21 +959,22 @@ The catalogue integration tests live in `board-render`, which already depends on
 `board-art-geometry`. This keeps the geometry package independent of its renderer.
 
 `packages/shared/board-render/src/__tests__/geometry-gates.test.ts`, over the
-committed shards. Gates 1-5 run on all 51; gates 6 and 7 decode real board art, so they
-run a nine-board sample by default — the seven the spike drew, plus both Woods sizes,
-which are the only configs on the white-key path — and the whole catalogue under
-`BOARD_ART_GATES=all`. The measurements deliberately **restate** the generator's constants
+committed shards. Gates 1-5 run on all 55; gates 6 and 7 decode real board art, so they
+run a 13-config sample by default: the seven the spike drew, both Woods sizes, and
+all four released Quantum sizes. This covers the white-key, dark-key and calibrated
+contact-seam paths. `BOARD_ART_GATES=all` checks the whole catalogue. The measurements
+deliberately **restate** the generator's constants
 and its placement→image routing rather than importing them: a gate that shares its inputs
 with the code it audits only checks that the code agrees with itself.
 
-**One input is shared, deliberately.** The gates *import* `buildWhiteKeyMask` and
-`mergeCoincidentPlacements` for the photographic boards. A mask is not a threshold to
-re-derive, it is the substance itself: measure a silhouette's boundary against a mask cut
+**Photographic substance is shared, deliberately.** The gates *import* the white/dark
+keys, measured contact-seam cuts, photo-body ownership and coincident-placement merge
+for the photographic boards. A mask is not a threshold to re-derive, it is the substance itself: measure a silhouette's boundary against a mask cut
 half a pixel differently to the one the tracer cut it from, and the gate reports the
 difference between two flood fills rather than a defect in the geometry — noise on exactly
-the board it is newest on. The independent anchor for that half sits in `white-key.test.ts`
-instead, which pins the mask's ground and hold shares on the real art as golden four-decimal
-numbers. Both Woods sizes must have zero coincident groups, independently checked
+the board it is newest on. `white-key.test.ts` and `dark-key.test.ts` independently pin
+the mask's ground and hold shares on the real art as golden four-decimal numbers.
+`quantum-photo-ownership.test.ts` pins omitted logical slots and visible hold landmarks. Both Woods sizes must have zero coincident groups, independently checked
 by the calibrated position tests in `@boardsesh/board-config`. A
 change to the key that moves one pixel fails there before it can move a gate here.
 
@@ -1135,6 +1138,57 @@ config in the catalogue is in that state today. The 275 Woods placements with no
 empty logical mounting slots — fall back to a ring individually, which is the same contract
 MoonBoard's 232 empty grid cells already use.
 
+### Dark photographic art
+
+Quantum XL, L and M ship lossless cropped WebPs on a dark ground (corner RGB
+`33,33,33`). `buildDarkKeyMask` inverts RGB and reuses the white key's connected
+corner flood and one-pixel erode. The ground ceiling is 60; a 50–70 sweep changes
+hold coverage by less than 2.5 percentage points. Enclosed dark LED apertures stay
+filled as hold substance, so the tracer follows each hold's outside boundary.
+
+S Fitness is different: the actual bundled art has a white ground enclosed by a
+faint rectangular frame. Its white key uses the measured white pixel `(20,20)`
+as an additional ground seed inside that frame. A 225–245 white-floor sweep is
+also bounded by 2.5 percentage points. Regression tests pin ground/hold shares
+from the actual WebPs for all four sizes. Belay has no released art and is excluded.
+
+The generator and app share `projectQuantumBoardArtwork` in
+`@boardsesh/board-config`. Tracing uses original image pixels (`scaleCanvas: false`);
+the app applies `min(1,1536/cropWidth,2304/cropHeight)` after the crop, scaling every
+center and radius together. XL becomes 1536×1552, L 1536×1323, M 1536×1679 and
+S Fitness stays 1176×1892. Radius-unit polygons keep the same shape at either scale.
+The offline geometry/census catalogue includes these four boards separately from
+the public server-render catalogue, whose Quantum route remains closed.
+
+Of 1,890 released Quantum placements, 1,879 have traced outlines: XL 653/657,
+L 545/549, M 429/432 and S Fitness 252/252. Four logical centers sit outside
+hold substance while the nearest connected body contains another placement's
+center: 1002077, 1003056, 1006087 and 1006109. The first is not mounted on M.
+They stay valid LED addresses but have no silhouette of their own in this art;
+the renderer falls back to circles rather than inventing triangular pieces of a
+neighboring hold. Standalone holds with slightly misregistered centers still trace.
+
+Two photographed contacts need a measured one-pixel seam before tracing:
+1003058/1003063 and 1006094/1006086. Their visible source edges are calibrated in
+`getQuantumArtworkContactSeams`, projected through the same crop offsets as the
+placements, and cut only on the private segmentation mask. No source image or
+controller mapping changes. Regression landmarks protect both holds' lobes and
+reject a small hold borrowing its large neighbor's body.
+
+Disconnected holds trace whole. Other genuine contacts use the existing partition
+and contact machinery. Geometry gates include every Quantum size in their default
+art sample. Six optical LED centers on each standard size lie just outside their
+complete physical silhouettes, at most 3.61 original pixels (0.16 placement radii).
+Inspected ids and distances are pinned individually.
+
+The full 55-config atlas census passes. Quantum's assembled static GPU buffers
+measure 20.20 MiB (XL), 16.63 MiB (L), 20.52 MiB (M) and 17.48 MiB (S Fitness),
+all below the 128 MiB limit. The largest Quantum manifest is 462,814 bytes; the
+native atlas includes every hold, including circle fallbacks, at the scaled canvas
+dimensions. The other 51 geometry shards remain byte-identical.
+
+Simulator comparisons, the heatmap and editor tap checks, and the ten-swipe recording are in [Quantum Aura evidence](evidence/quantum-aura/README.md).
+
 ## Per-board coverage
 
 | Board | Configs | Traced / placements |
@@ -1143,11 +1197,12 @@ MoonBoard's 232 empty grid cells already use.
 | grasshopper | 5 | 1,432 / 1,432 (100%) |
 | kilter | 16 | 5,330 / 5,381 (99.1%) |
 | moonboard | 7 | 1,022 / 1,254 (81.5%) |
+| quantum | 4 | 1,879 / 1,890 (99.4%) |
 | soill | 2 | 560 / 560 (100%) |
 | tension | 15 | 5,474 / 5,474 (100%) |
 | touchstone | 1 | 648 / 648 (100%) |
 | woods | 2 | 1,104 / 1,379 (80.1%) |
-| **total** | **51** | **16,603 / 17,163 (96.7%)** |
+| **total** | **55** | **18,482 / 19,053 (97.0%)** |
 
 Per-config figures live in `src/generated/outline-counts.cjs`, written by the run that
 produced the shards, so the record cannot drift from the tables.

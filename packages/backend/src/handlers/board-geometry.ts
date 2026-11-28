@@ -12,18 +12,18 @@ import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 /**
  * The traced board art, for renderers that run in a browser.
  *
- * The shards in `@boardsesh/board-art-geometry` are 5.2 MB across 51 files
+ * The shards in `@boardsesh/board-art-geometry` are 5.44 MiB across 55 files
  * behind an index of literal `require`s, so any import of them from web code
  * puts every board's polygons in the bundle — to draw one. This endpoint hands
- * over the single config a page actually needs (43 KB gzipped at the worst,
- * Kilter Original 12x12; most are a fraction of that), which the worker fetches
- * once and keeps.
+ * over the single config a page actually needs (73 KiB gzipped at the worst,
+ * Kilter Homewall 10x12 Full Ride; most are a fraction of that), fetched once
+ * and kept by the worker.
  *
  * Same data the server renderer reads for its own Aura renders, so the two draw
  * the same silhouettes.
  */
 
-// Compressing off-thread: a 40-70 KB payload is a short block, but it is a
+// Compressing off-thread: a geometry payload is a short block, but it is a
 // block on the same loop that serves every WebSocket session, and a cold
 // process asked for several board configs at once pays it once per config.
 const gzipAsync = promisify(gzip);
@@ -38,8 +38,8 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 /**
  * Responses are pure functions of `(board, layout, size)` and the shipped
  * tables, so one process-lifetime cache of the encoded bytes serves every
- * request. 51 configs, ~5 MB uncompressed if every one is asked for — bounded
- * by the catalogue, not by traffic, so there is nothing to evict.
+ * request. The 51 server-supported configs total 4.90 MiB of uncompressed JSON,
+ * bounded by the catalogue rather than traffic, so there is nothing to evict.
  */
 type EncodedGeometry = { json: Buffer; gzip: Buffer };
 const encodedCache = new Map<string, Promise<EncodedGeometry>>();

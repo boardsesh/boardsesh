@@ -133,7 +133,8 @@
  * circular import — the hook imports the warm-up, so the warm-up must not import
  * back from the hook.
  */
-export const RENDERER_VERSION = 16;
+// v17 adds Quantum silhouettes and its scaled art canvas.
+export const RENDERER_VERSION = 17;
 
 /** Cache-key prefix stamped on every overlay produced by the current renderer. */
 export const currentOverlayVersionPrefix = (): string => `v${RENDERER_VERSION}_`;

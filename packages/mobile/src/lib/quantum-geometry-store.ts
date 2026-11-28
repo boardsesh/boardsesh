@@ -5,8 +5,7 @@ import {
   type QuantumBundledGeometry,
   type QuantumGeometryPlacement,
 } from '@boardsesh/board-constants/quantum';
-import { getQuantumBoardDetails, type QuantumBoardDetails } from '@boardsesh/board-config';
-import { projectQuantumBoardArtwork } from './quantum-art-projection';
+import { getQuantumBoardDetails, projectQuantumBoardArtwork, type QuantumBoardDetails } from '@boardsesh/board-config';
 
 /** Fixed app-bundled map, matching the usual board-constants hold/LED tables.
  * The old module name stays as a compatibility import boundary; there is no

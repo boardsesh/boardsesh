@@ -5,7 +5,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import type { BoardName } from '@boardsesh/shared-schema';
-import { getBackgroundRelPaths, getBoardDetailsForBoard } from '@boardsesh/board-render';
+import { getBackgroundRelPaths, getBoardDetailsForBoard, type BoardRenderDetails } from '@boardsesh/board-render';
+import { getQuantumBundledGeometry } from '@boardsesh/board-constants/quantum';
+import {
+  getQuantumBoardDetails,
+  getQuantumArtworkContactSeams,
+  projectQuantumBoardArtwork,
+} from '@boardsesh/board-config';
 import { getSetsForLayoutAndSize } from '@boardsesh/board-constants/product-sizes';
 import {
   MOONBOARD_CELL_SETS,
@@ -14,7 +20,13 @@ import {
   WOODS_LAYOUTS,
   WOODS_SETS,
 } from '@boardsesh/board-config';
-import { buildWhiteKeyMask, mergeCoincidentPlacements } from '@boardsesh/board-art-geometry/segmentation';
+import {
+  buildWhiteKeyMask,
+  buildDarkKeyMask,
+  placementsWithoutOwnPhotoBody,
+  cutPhotoContactSeams,
+  mergeCoincidentPlacements,
+} from '@boardsesh/board-art-geometry/segmentation';
 import { WOODS_OCCUPIED_HOLD_IDS } from '@boardsesh/board-constants/woods';
 
 /**
@@ -67,7 +79,7 @@ export const OPAQUE_ART_CEILING = 0.95;
  * (or a listed board whose art gains an alpha channel) breaks the gate rather
  * than quietly measuring the wrong thing.
  */
-const PHOTOGRAPHIC_BOARDS = new Set(['woods']);
+const PHOTOGRAPHIC_BOARDS = new Set(['woods', 'quantum']);
 /** Two placements this close in ROUNDED board px are one hold — see `mergeCoincidentPlacements`. */
 const COINCIDENT_EPSILON_PX = 2;
 /** Fraction of perimeter allowed on the search-box boundary before the trace is junk. */
@@ -332,12 +344,29 @@ export function shardBoardForKey(key: string): ShardBoard {
       .sort((left, right) => left - right);
   }
 
-  const details = getBoardDetailsForBoard({
-    board_name: boardName,
-    layout_id: layoutId,
-    size_id: sizeId,
-    set_ids: setIds,
-  });
+  const quantumSource = boardName === 'quantum' ? getQuantumBundledGeometry(layoutId, sizeId) : null;
+  const quantumDetails = quantumSource
+    ? getQuantumBoardDetails({
+        ...quantumSource,
+        placements: quantumSource.placements.map((hold) => ({ id: hold.placementId, x: hold.x, y: hold.y })),
+      })
+    : null;
+  const projected = quantumDetails ? projectQuantumBoardArtwork(quantumDetails, { scaleCanvas: false }) : null;
+  const details: BoardRenderDetails = projected
+    ? {
+        ...projected,
+        set_ids: [1],
+        set_names: ['Default'],
+        images_to_holds: {
+          [`quantum/${projected.neutralGrid.model === 's' ? 's-fitness' : projected.neutralGrid.model}`]: [],
+        },
+      }
+    : getBoardDetailsForBoard({
+        board_name: boardName,
+        layout_id: layoutId,
+        size_id: sizeId,
+        set_ids: setIds,
+      });
 
   // A board can list the same placement under more than one set; the tracer
   // emits one outline per id, so the gates count placements the same way.
@@ -411,7 +440,8 @@ export function shardBoardForKey(key: string): ShardBoard {
     boardHeight: details.boardHeight,
     placements,
     placementById,
-    backgroundRelPaths: getBackgroundRelPaths(details, false),
+    backgroundRelPaths:
+      boardName === 'quantum' ? Object.keys(details.images_to_holds) : getBackgroundRelPaths(details, false),
     layerOfPlacement,
     placementsByLayer,
     searchRadii: photographic ? PHOTO_SEARCH_RADII : SEARCH_RADII,
@@ -557,7 +587,7 @@ export function distanceOutsidePolygon(flat: number[], pointX: number, pointY: n
  * inside a 256-pixel search box. A trace that followed the box is the box, so
  * requiring it to actually touch the box is what separates the two. The
  * `boxEdgeShare` measure above is the independent second reading, and it is 0 on
- * all 15,499 shipped outlines.
+ * all 18,482 shipped outlines.
  */
 export function reachesSearchBox(flatBoardPx: number[], box: number): boolean {
   let maxX = 0;
@@ -752,13 +782,24 @@ export function spurArea(flatBoardPx: number[], radius: number): number {
  */
 export const PUBLIC_DIR = fileURLToPath(new URL('../../../../web/public/', import.meta.url));
 
+function resolveArtPath(relativePath: string): string {
+  return relativePath.startsWith('quantum/')
+    ? fileURLToPath(
+        new URL(
+          `../../../../mobile/src/components/quantum/board-art/quantum-${relativePath.slice('quantum/'.length)}.webp`,
+          import.meta.url,
+        ),
+      )
+    : path.join(PUBLIC_DIR, relativePath);
+}
+
 export type BoardArt = { opaque: Uint8Array; width: number; height: number };
 
 export async function loadBoardArt(width: number, height: number, relativePaths: string[]): Promise<BoardArt> {
   const rawLayer = { width, height, channels: 4 as const };
   let composite: Buffer | null = null;
   for (const relativePath of relativePaths) {
-    const layer = await sharp(path.join(PUBLIC_DIR, relativePath))
+    const layer = await sharp(resolveArtPath(relativePath))
       .resize(width, height, { fit: 'fill' })
       .ensureAlpha()
       .raw()
@@ -794,12 +835,26 @@ export async function loadBoardArtLayers(board: ShardBoard): Promise<BoardArt[]>
   await assertPhotographicRouting(board);
 
   const layers: BoardArt[] = [];
-  for (const relativePath of board.backgroundRelPaths) {
+  for (const [layerIndex, relativePath] of board.backgroundRelPaths.entries()) {
     if (board.photographic) {
-      layers.push(await keyedLayer(relativePath, width, height));
+      const layer = await keyedLayer(relativePath, width, height);
+      if (board.boardName === 'quantum') {
+        cutPhotoContactSeams(layer.opaque, width, height, getQuantumArtworkContactSeams(board.layoutId, board.sizeId));
+        const withoutOwnBody = placementsWithoutOwnPhotoBody(
+          layer.opaque,
+          width,
+          height,
+          board.placementsByLayer[layerIndex],
+        );
+        board.placementsByLayer[layerIndex] = board.placementsByLayer[layerIndex].filter(
+          (placement) => !withoutOwnBody.has(placement.id),
+        );
+        for (const placementId of withoutOwnBody) board.layerOfPlacement.set(placementId, -1);
+      }
+      layers.push(layer);
       continue;
     }
-    const pixels = await sharp(path.join(PUBLIC_DIR, relativePath))
+    const pixels = await sharp(resolveArtPath(relativePath))
       .resize(width, height, { fit: 'fill' })
       .ensureAlpha()
       .raw()
@@ -823,12 +878,22 @@ export async function loadBoardArtLayers(board: ShardBoard): Promise<BoardArt[]>
  * and the mismatch is asserted rather than interpolated away.
  */
 async function keyedLayer(relativePath: string, width: number, height: number): Promise<BoardArt> {
-  const losslessPath = relativePath.replace(/\.(webp|jpg|jpeg)$/i, '.png');
-  const { data, info } = await sharp(path.join(PUBLIC_DIR, losslessPath)).raw().toBuffer({ resolveWithObject: true });
+  const losslessPath = relativePath.startsWith('quantum/')
+    ? relativePath
+    : relativePath.replace(/\.(webp|jpg|jpeg)$/i, '.png');
+  const { data, info } = await sharp(resolveArtPath(losslessPath)).raw().toBuffer({ resolveWithObject: true });
   if (info.width !== width || info.height !== height) {
     throw new Error(`${losslessPath} is ${info.width}x${info.height}, not the board's ${width}x${height}`);
   }
-  const keyed = buildWhiteKeyMask(data, info.width, info.height, info.channels);
+  const keyMask =
+    relativePath.startsWith('quantum/') && relativePath !== 'quantum/s-fitness' ? buildDarkKeyMask : buildWhiteKeyMask;
+  const keyed = keyMask(
+    data,
+    info.width,
+    info.height,
+    info.channels,
+    relativePath === 'quantum/s-fitness' ? { extraSeeds: [20 * info.width + 20] } : {},
+  );
   return { opaque: keyed.mask, width, height };
 }
 
