@@ -39,7 +39,7 @@ import { barOpenOptions, useBarClimb } from './use-bar-climb';
 import { getLastPick, resolveBarPick } from '../../lib/last-pick-store';
 import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
 import {
-  isQuantumClimbTarget,
+  climbTargetNeedsTapCheck,
   useClimbTargetAvailable,
   useRunAvailableClimbAction,
 } from '../../hooks/use-climb-target-availability';
@@ -277,8 +277,8 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
         trackStep('moved');
       };
       // Queue navigation chooses its target again when called. Even an
-      // ordinary rendered neighbour can become a Quantum target by tap time.
-      // Keep the step inputs and session fixed through any retirement lookup.
+      // ordinary rendered neighbour can become a checked target by tap time.
+      // Keep the step inputs and session fixed through any withdrawal lookup.
       const { sessionId } = getQueueSnapshot();
       const storedPick = getLastPick();
       if (resolveBarPick(storedPick, currentClimbQueueItem?.uuid ?? null, getCredentialGeneration()) !== pick) {
@@ -300,7 +300,7 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
         );
       };
       if (!isStepCurrent()) return;
-      if (!isQuantumClimbTarget(targetItem.climb, navigationBoard)) {
+      if (!climbTargetNeedsTapCheck(targetItem.climb, navigationBoard)) {
         commitStep();
         return;
       }

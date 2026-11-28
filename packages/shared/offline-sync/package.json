@@ -20,6 +20,11 @@
       "types": "./src/mutation-queue/error-classification.ts",
       "import": "./src/mutation-queue/error-classification.ts",
       "default": "./src/mutation-queue/error-classification.ts"
+    },
+    "./withdrawn-climb": {
+      "types": "./src/sync/withdrawn-climb.ts",
+      "import": "./src/sync/withdrawn-climb.ts",
+      "default": "./src/sync/withdrawn-climb.ts"
     }
   },
   "scripts": {

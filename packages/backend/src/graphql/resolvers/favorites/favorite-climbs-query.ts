@@ -7,7 +7,7 @@ import {
   getClimbStars,
   getGradeLabel,
   toConfidenceTier,
-  unavailableQuantumClimbCondition,
+  unavailableCatalogClimbCondition,
 } from '@boardsesh/db/queries';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { GetUserFavoriteClimbsInputSchema } from '../../../validation/schemas';
@@ -59,7 +59,7 @@ export const favoriteClimbsQuery = {
         and(
           eq(dbSchema.userFavorites.userId, userId),
           eq(dbSchema.userFavorites.boardName, boardName),
-          not(unavailableQuantumClimbCondition()),
+          not(unavailableCatalogClimbCondition()),
           // A favourite is a reference the user PERSISTED, so it outlives the
           // wall's visibility: without this, a climb favourited while the wall was
           // public keeps returning its name, description and frames after the owner
@@ -145,7 +145,7 @@ export const favoriteClimbsQuery = {
         and(
           eq(dbSchema.userFavorites.userId, userId),
           eq(dbSchema.userFavorites.boardName, boardName),
-          not(unavailableQuantumClimbCondition()),
+          not(unavailableCatalogClimbCondition()),
           // A favourite is a reference the user PERSISTED, so it outlives the
           // wall's visibility: without this, a climb favourited while the wall was
           // public keeps returning its name, description and frames after the owner

@@ -11,7 +11,7 @@ import {
   publicClimbCondition,
   sessionCoMemberTickCondition,
   sprayClimbVisibilityCondition,
-  unavailableQuantumClimbCondition,
+  unavailableCatalogClimbCondition,
 } from '@boardsesh/db/queries';
 import { playlistVisibilityCondition } from '../playlists/helpers/enrichment';
 import { gymVisibleCondition } from '../social/gym-visibility';
@@ -199,7 +199,7 @@ export function betaPrivacyCondition(
           and(
             eq(climb.uuid, beta.climbUuid),
             eq(climb.boardType, beta.boardType),
-            not(unavailableQuantumClimbCondition(sql`privacy_beta_climb.`)),
+            not(unavailableCatalogClimbCondition(sql`privacy_beta_climb.`)),
             // Beta is listed (recent beta, profiles, the climb's own section):
             // an unlisted climb's beta stays out like its logs.
             listedClimbCondition(climb, viewerId),

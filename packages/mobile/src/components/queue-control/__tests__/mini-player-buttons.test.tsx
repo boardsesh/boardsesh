@@ -97,7 +97,7 @@ vi.mock('../../../theme/tokens', () => ({ opacity: { disabled: 0.4 } }));
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useFeatureFlag: (key: string) => key === 'quantum-board' && favorite.quantumEnabled,
 }));
-vi.mock('../../../db/queries/quantum-climb-retirement', () => ({ isQuantumClimbRetired: favorite.isRetired }));
+vi.mock('../../../db/queries/withdrawn-climb', () => ({ isClimbWithdrawn: favorite.isRetired }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: effects.showToast }) }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueSessionId: () => ({ sessionId: queue.sessionId }),

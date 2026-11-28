@@ -7,7 +7,7 @@ import { getDatabaseHandle } from '../../db';
 import { isOfflineEngineEnabled } from '../offline-engine';
 import { searchClimbsLocal, countClimbsLocal, isOfflineSearchSupported } from '../../db/queries/search-climbs-local';
 import { getClimbLocal } from '../../db/queries/get-climb-local';
-import { isQuantumClimbRetired } from '../../db/queries/quantum-climb-retirement';
+import { isClimbWithdrawn } from '../../db/queries/withdrawn-climb';
 import { fillClimbRevisionNumbersLocal } from '../../db/queries/climb-revisions-local';
 import { getBoardseshGradeLocal, getBoardseshGradesForAnglesLocal } from '../../db/queries/get-boardsesh-grade-local';
 import { getSetterStatsLocal } from '../../db/queries/get-setter-stats-local';
@@ -32,6 +32,7 @@ import {
 import { recordLocalUserRead, type OfflineUserReadFamily } from './offline-user-read-recovery';
 import { registerOfflineUserOperations } from './offline-user-operations';
 import { assertLocalUserDataOwner, canServeLocalUserData, ensureHoldIndex } from '@boardsesh/offline-sync';
+import { boardHidesWithdrawnClimbs } from '@boardsesh/offline-sync/withdrawn-climb';
 import type { OfflineReadLane, OfflineReadSurface, OfflineUnavailableReason } from '@boardsesh/offline-sync';
 import { getSimilarClimbsLocal } from '../../db/queries/get-similar-climbs-local';
 import { parseHoldRows } from '../../offline/hold-index-parser';
@@ -311,7 +312,7 @@ registerOfflineOperation<SearchClimbsQueryVariables, SearchClimbsCountQueryRespo
   networkVariables: withLostHoldRule,
 });
 
-type LocalClimbDetailResponse = GetClimbQueryResponse & { locallyRetired?: true };
+type LocalClimbDetailResponse = GetClimbQueryResponse & { locallyWithdrawn?: true };
 
 for (const document of [GET_CLIMB, GET_SPRAY_CLIMB])
   registerOfflineOperation<GetClimbQueryVariables, LocalClimbDetailResponse>({
@@ -320,10 +321,10 @@ for (const document of [GET_CLIMB, GET_SPRAY_CLIMB])
     boardNameOf: (variables) => variables.boardName,
     canServeLocal: async (db, variables) =>
       (await isBoardDownloadedLocally(db, scopeOf(variables))) ||
-      (variables.boardName === 'quantum' && (await isQuantumClimbRetired(variables.climbUuid, db))),
+      (boardHidesWithdrawnClimbs(variables.boardName) && (await isClimbWithdrawn(variables.climbUuid, db))),
     resolveLocal: async (db, variables) => {
-      if (variables.boardName === 'quantum' && (await isQuantumClimbRetired(variables.climbUuid, db))) {
-        return { climb: null, locallyRetired: true };
+      if (boardHidesWithdrawnClimbs(variables.boardName) && (await isClimbWithdrawn(variables.climbUuid, db))) {
+        return { climb: null, locallyWithdrawn: true };
       }
       return {
         climb: await getClimbLocal(db, {
@@ -336,7 +337,7 @@ for (const document of [GET_CLIMB, GET_SPRAY_CLIMB])
       };
     },
     offlineFallback: () => ({ climb: null }),
-    isLocalMiss: (response) => response.climb === null && !response.locallyRetired,
+    isLocalMiss: (response) => response.climb === null && !response.locallyWithdrawn,
     enrichNetworkResponse: fillDetailRevisionNumbers,
   });
 

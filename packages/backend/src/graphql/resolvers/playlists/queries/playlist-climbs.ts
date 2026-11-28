@@ -12,7 +12,7 @@ import {
   climbDraftVisibilityCondition,
   playlistBoardScopeConditions,
   sprayClimbVisibilityCondition,
-  unavailableQuantumClimbCondition,
+  unavailableCatalogClimbCondition,
 } from '@boardsesh/db/queries';
 import { applyRateLimit, validateInput } from '../../shared/helpers';
 import { GetPlaylistClimbsInputSchema } from '../../../../validation/schemas';
@@ -81,7 +81,7 @@ function buildSpecificBoardClimbJoinConditions(
 ) {
   const climbJoinConditions = [
     eq(tables.climbs.uuid, dbSchema.playlistClimbs.climbUuid),
-    not(unavailableQuantumClimbCondition()),
+    not(unavailableCatalogClimbCondition()),
     // The draft rule: a playlist anyone can open must not substitute its own
     // visibility for a draft's, which is its owner's alone. A published climb
     // shows whoever set it, unlisted included.
@@ -150,7 +150,7 @@ function specificBoardHydrateOptions(
 function allBoardsWhereConditions(playlistId: bigint, viewerUserId: string | null | undefined): SQL[] {
   return [
     eq(dbSchema.playlistClimbs.playlistId, playlistId),
-    not(unavailableQuantumClimbCondition()),
+    not(unavailableCatalogClimbCondition()),
     climbDraftVisibilityCondition(
       {
         boardType: dbSchema.boardClimbs.boardType,

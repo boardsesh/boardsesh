@@ -1,5 +1,6 @@
 import { and, sql } from 'drizzle-orm';
 import { isReleasedQuantumConfig } from '@boardsesh/board-constants/quantum';
+import { hidesWithdrawnCatalogClimbs } from '@boardsesh/board-config';
 import { db } from '../../client';
 import { UNIFIED_TABLES, type BoardName } from '../util/table-select';
 import {
@@ -11,10 +12,10 @@ import {
   effectiveStatsColumn,
   gradeJoinAngleSql,
   resolveDetailCrossAngleStats,
-  retiredQuantumCatalogClimbCondition,
   resolvedStatsAngleSql,
   setAngleStatsJoinConditions,
   type StatsColumnKey,
+  withdrawnCatalogClimbCondition,
 } from '@boardsesh/db/queries';
 import { boardClimbGrades } from '@boardsesh/db/schema';
 import type { Climb } from '@boardsesh/shared-schema';
@@ -133,7 +134,7 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
       .where(
         sql`${tables.climbs.boardType} = ${params.board_name}
         AND ${tables.climbs.layoutId} = ${params.layout_id}
-        AND ${tables.climbs.uuid} = ${climbUuid}${params.board_name === 'quantum' ? sql` AND NOT ${retiredQuantumCatalogClimbCondition()}` : sql``}`,
+        AND ${tables.climbs.uuid} = ${climbUuid}${hidesWithdrawnCatalogClimbs(params.board_name) ? sql` AND NOT ${withdrawnCatalogClimbCondition()}` : sql``}`,
       )
       .limit(1);
 

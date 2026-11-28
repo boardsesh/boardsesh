@@ -27,7 +27,7 @@ import {
   acquireUpstreamPlaylistLock,
   recordDeletedUpstreamPlaylist,
   refreshPlaylistGradeSummariesFor,
-  unavailableQuantumClimbCondition,
+  unavailableCatalogClimbCondition,
 } from '@boardsesh/db/queries';
 
 type ClimbBoardScope = { boardType: string; layoutId: number };
@@ -777,7 +777,7 @@ export const playlistMutations = {
           : await tx
               .select({ uuid: UNIFIED_TABLES.climbs.uuid })
               .from(UNIFIED_TABLES.climbs)
-              .where(and(inArray(UNIFIED_TABLES.climbs.uuid, rowClimbUuids), not(unavailableQuantumClimbCondition())));
+              .where(and(inArray(UNIFIED_TABLES.climbs.uuid, rowClimbUuids), not(unavailableCatalogClimbCondition())));
       const resolvableClimbUuids = new Set(resolvableRows.map((row) => row.uuid));
 
       // Throws if the climb isn't in the playlist; returns only the rows whose

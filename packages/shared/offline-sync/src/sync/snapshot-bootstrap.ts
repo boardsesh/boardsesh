@@ -50,7 +50,7 @@ import {
 } from './bootstrap-retry';
 import type { SchemaDriftReporter } from './pull-client';
 import type { SnapshotBootstrapFailureReason } from './bootstrap-failure-reason';
-import { quantumRetirementSql } from './quantum-retirement';
+import { boardHidesWithdrawnClimbs, withdrawnClimbTombstoneSql } from './withdrawn-climb';
 import { syncTimestampKey } from './pull-write';
 
 /**
@@ -1040,15 +1040,14 @@ async function importScopeBatched(
   const climbSelectList = climbColumns.map((column) => `c.${column}`).join(', ');
   // A cached artifact can predate a withdrawal the device already applied
   // through another compatible size. Only a newer public row can restore it.
-  const quantumClimbGuard =
-    scope.boardType === 'quantum'
-      ? `AND NOT EXISTS (
-    SELECT 1 FROM main.board_climbs retired
-    WHERE retired.uuid = c.uuid AND ${quantumRetirementSql('retired.')}
-      AND (${syncTimestampKey('retired.updated_at')}, retired.sync_seq)
+  const withdrawnClimbGuard = boardHidesWithdrawnClimbs(scope.boardType)
+    ? `AND NOT EXISTS (
+    SELECT 1 FROM main.board_climbs withdrawn
+    WHERE withdrawn.uuid = c.uuid AND ${withdrawnClimbTombstoneSql('withdrawn.')}
+      AND (${syncTimestampKey('withdrawn.updated_at')}, withdrawn.sync_seq)
           >= (${syncTimestampKey('c.updated_at')}, c.sync_seq)
   )`
-      : '';
+    : '';
   for (let cursor = 0; cursor < maxStagedRowid; cursor += options.batchRows) {
     const upperRowid = Math.min(cursor + options.batchRows, maxStagedRowid);
     const lowerRowid = cursor;
@@ -1057,7 +1056,7 @@ async function importScopeBatched(
         `INSERT OR REPLACE INTO main.board_climbs (${climbTargetList})
          SELECT ${climbSelectList} FROM ${SNAPSHOT_ALIAS}.board_climbs c
          JOIN temp.${IMPORT_STAGING_TABLE} t ON t.uuid = c.uuid
-         WHERE t.rowid > ? AND t.rowid <= ? ${quantumClimbGuard}`,
+         WHERE t.rowid > ? AND t.rowid <= ? ${withdrawnClimbGuard}`,
         [lowerRowid, upperRowid],
       );
       climbsImported += result.changes;
@@ -1094,7 +1093,7 @@ async function importScopeBatched(
         `INSERT OR REPLACE INTO main.board_climb_stats (${statsTargetList})
          SELECT ${statsSelectList} FROM ${SNAPSHOT_ALIAS}.board_climb_stats s
          WHERE ${statsKeysetSql(boundary !== null)}
-           ${scope.boardType === 'quantum' ? quantumSnapshotReferenceGuard('s') : ''}`,
+           ${boardHidesWithdrawnClimbs(scope.boardType) ? withdrawnSnapshotReferenceGuard('s') : ''}`,
         statsKeysetParams(scope.boardType, batchFrom, boundary ?? undefined),
       );
       statsImported += result.changes;
@@ -1111,9 +1110,9 @@ async function importScopeBatched(
   return { climbsImported, statsImported, batches };
 }
 
-function quantumSnapshotReferenceGuard(alias: 's' | 'g'): string {
-  return `AND NOT EXISTS (SELECT 1 FROM main.board_climbs retired
-    WHERE retired.uuid = ${alias}.climb_uuid AND ${quantumRetirementSql('retired.')})`;
+function withdrawnSnapshotReferenceGuard(alias: 's' | 'g'): string {
+  return `AND NOT EXISTS (SELECT 1 FROM main.board_climbs withdrawn
+    WHERE withdrawn.uuid = ${alias}.climb_uuid AND ${withdrawnClimbTombstoneSql('withdrawn.')})`;
 }
 
 // --- Verification -------------------------------------------------------------
@@ -1836,7 +1835,7 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
                SELECT ${gradeColumns.map((column) => `g.${column}`).join(', ')}
                FROM ${GRADES_ALIAS}.${GRADES_TABLE} g
                WHERE ${keyset}${boundary ? ' AND (g.climb_uuid, g.angle) <= (?, ?)' : ''}
-                 ${scope.boardType === 'quantum' ? quantumSnapshotReferenceGuard('g') : ''}`,
+                 ${boardHidesWithdrawnClimbs(scope.boardType) ? withdrawnSnapshotReferenceGuard('g') : ''}`,
               [...keysetParams, ...(boundary ? [boundary.climb_uuid, boundary.angle] : [])],
             );
             rowsImported += inserted.changes;

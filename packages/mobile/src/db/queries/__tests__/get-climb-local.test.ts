@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { runMigrations, ensureMutationQueueTable } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
-import { isQuantumClimbRetired } from '../quantum-climb-retirement';
+import { isClimbWithdrawn } from '../withdrawn-climb';
 import { getClimbLocal } from '../get-climb-local';
 import { getBoardseshGradeLocal, getBoardseshGradesForAnglesLocal } from '../get-boardsesh-grade-local';
 import { getClimbStatsHistoryLocal } from '../get-climb-stats-history-local';
@@ -117,9 +117,9 @@ describe('getClimbLocal — Boardsesh grade join', () => {
     const read = (climbUuid: string) =>
       getClimbLocal(db, { boardName: 'quantum', layoutId: 1, angle: 40, climbUuid, viewerId: 'setter' });
 
-    expect(await isQuantumClimbRetired('withdrawn', db)).toBe(true);
-    expect(await isQuantumClimbRetired('authored', db)).toBe(false);
-    expect(await isQuantumClimbRetired('unknown', db)).toBe(false);
+    expect(await isClimbWithdrawn('withdrawn', db)).toBe(true);
+    expect(await isClimbWithdrawn('authored', db)).toBe(false);
+    expect(await isClimbWithdrawn('unknown', db)).toBe(false);
     expect(await read('withdrawn')).toBeNull();
     expect(await read('authored')).toMatchObject({ uuid: 'authored' });
     expect(await read('old-import')).toMatchObject({ uuid: 'old-import' });

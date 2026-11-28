@@ -46,7 +46,7 @@ const quantum = vi.hoisted(() => ({ enabled: true, isRetired: vi.fn<(climbUuid: 
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useFeatureFlag: (key: string) => key === 'quantum-board' && quantum.enabled,
 }));
-vi.mock('../../../db/queries/quantum-climb-retirement', () => ({ isQuantumClimbRetired: quantum.isRetired }));
+vi.mock('../../../db/queries/withdrawn-climb', () => ({ isClimbWithdrawn: quantum.isRetired }));
 const boardState = vi.hoisted(() => ({ current: null as unknown }));
 const toastMock = vi.hoisted(() => ({ showToast: vi.fn() }));
 const presenceState = vi.hoisted(() => ({ enabled: false, boardId: null as number | null }));

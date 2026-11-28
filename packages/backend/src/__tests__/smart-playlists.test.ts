@@ -3,6 +3,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { playlistQueries } from '../graphql/resolvers/playlists/queries';
 import { sqlText } from '@boardsesh/db/test-utils';
+import { unavailableCatalogClimbBoardCondition } from '@boardsesh/db/queries';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
 
@@ -302,13 +303,18 @@ describe('smartPlaylist resolver', () => {
       expect(sqlText(calls.having[0][0])).toMatch(/NOT bool_or\(\s*IN \('flash', 'send'\)\)/);
       expect(calls.as[0]).toEqual(['projects']);
       // Legacy ticks retain their listed-or-own privacy rule. The additional
-      // probe applies only to Quantum and checks the canonical climb for both
-      // the page and its count.
+      // probe applies only on boards whose climbs can be unavailable (Quantum
+      // today) and checks the canonical climb for both the page and its count.
       const where = renderedSql(calls.where[0][0]);
+      const unavailableBoardGate = renderedSql(
+        unavailableCatalogClimbBoardCondition(dbSchema.boardseshTicks.boardType),
+      );
       expect(where).toContain('"privacy_tick_climb"');
       expect(where).toContain(
-        `"boardsesh_ticks"."board_type" <> 'quantum' OR EXISTS (SELECT 1 FROM board_climbs privacy_reference_climb`,
+        `(NOT (${unavailableBoardGate}) OR EXISTS (SELECT 1 FROM board_climbs privacy_reference_climb`,
       );
+      // Typed out too, so a regression in the gate helper itself fails here.
+      expect(where).toContain(`NOT ("boardsesh_ticks"."board_type" IN ('quantum'))`);
       expect(where).toContain(
         'privacy_reference_climb.uuid = COALESCE("board_climb_aliases"."canonical_uuid", "boardsesh_ticks"."climb_uuid")',
       );

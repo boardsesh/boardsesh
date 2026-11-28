@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { AURORA_BOARDS, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import {
   getBoardCapabilities,
+  HIDDEN_WITHDRAWN_CLIMB_BOARD_NAMES,
+  hidesWithdrawnCatalogClimbs,
   STATIC_BOARD_RENDER_NAMES,
   supportsStaticBoardRender,
   supportsPublicClimbLinks,
@@ -26,6 +28,7 @@ const AURORA_ROW: BoardCapabilities = {
   maxActiveWallClimbs: 1,
   wallSendMode: 'automatic',
   staticBoardRender: true,
+  withdrawnCatalogClimbs: 'readable',
 };
 
 // The whole table in one place: change a row here and the reviewer sees exactly
@@ -57,6 +60,7 @@ const EXPECTED: Record<string, BoardCapabilities> = {
     maxActiveWallClimbs: 1,
     wallSendMode: 'automatic',
     staticBoardRender: true,
+    withdrawnCatalogClimbs: 'readable',
   },
   woods: {
     catalogSource: 'bundled',
@@ -76,6 +80,7 @@ const EXPECTED: Record<string, BoardCapabilities> = {
     maxActiveWallClimbs: 1,
     wallSendMode: 'automatic',
     staticBoardRender: true,
+    withdrawnCatalogClimbs: 'readable',
   },
   spray: {
     catalogSource: 'personal',
@@ -97,6 +102,7 @@ const EXPECTED: Record<string, BoardCapabilities> = {
     maxActiveWallClimbs: 1,
     wallSendMode: 'automatic',
     staticBoardRender: false,
+    withdrawnCatalogClimbs: 'readable',
   },
   quantum: {
     catalogSource: 'bundled',
@@ -113,6 +119,7 @@ const EXPECTED: Record<string, BoardCapabilities> = {
     maxActiveWallClimbs: 4,
     wallSendMode: 'explicit-layer',
     staticBoardRender: false,
+    withdrawnCatalogClimbs: 'hidden',
   },
 };
 
@@ -204,5 +211,24 @@ describe('independent-layer occupancy filtering', () => {
   it('keeps unknown boards on the single-climb fallback', () => {
     expect(supportsLayerOverlapFiltering(undefined)).toBe(false);
     expect(supportsLayerOverlapFiltering('QUANTUM')).toBe(true);
+  });
+});
+
+describe('withdrawn catalogue climbs', () => {
+  it('hides them on Quantum only; every other board keeps them readable by uuid', () => {
+    // MoonBoard withdrawn problems and Kilter deletions stay readable so a logbook
+    // entry still resolves. Quantum's supplier withdraws a route it may no longer show.
+    expect(HIDDEN_WITHDRAWN_CLIMB_BOARD_NAMES).toEqual(['quantum']);
+  });
+  it.each(SUPPORTED_BOARDS)('answers the gate from the capability row for %s', (boardName) => {
+    expect(hidesWithdrawnCatalogClimbs(boardName)).toBe(
+      getBoardCapabilities(boardName).withdrawnCatalogClimbs === 'hidden',
+    );
+  });
+  it('matches board names exactly, as the SQL predicates and the old `=== quantum` gates do', () => {
+    expect(hidesWithdrawnCatalogClimbs('QUANTUM')).toBe(false);
+    expect(hidesWithdrawnCatalogClimbs(undefined)).toBe(false);
+    expect(hidesWithdrawnCatalogClimbs(null)).toBe(false);
+    expect(hidesWithdrawnCatalogClimbs('not-a-board')).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import { playlistVisibilityCondition, unavailableQuantumClimbCondition } from '@boardsesh/db/queries';
+import { playlistVisibilityCondition, unavailableCatalogClimbCondition } from '@boardsesh/db/queries';
 import { eq, and, inArray, not, sql } from 'drizzle-orm';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -34,7 +34,7 @@ export async function getClimbCounts(playlistIds: bigint[]): Promise<Map<string,
     })
     .from(dbSchema.playlistClimbs)
     .leftJoin(dbSchema.boardClimbs, eq(dbSchema.boardClimbs.uuid, dbSchema.playlistClimbs.climbUuid))
-    .where(and(inArray(dbSchema.playlistClimbs.playlistId, playlistIds), not(unavailableQuantumClimbCondition())))
+    .where(and(inArray(dbSchema.playlistClimbs.playlistId, playlistIds), not(unavailableCatalogClimbCondition())))
     .groupBy(dbSchema.playlistClimbs.playlistId);
 
   return new Map(climbCounts.map((c) => [c.playlistId.toString(), c.count]));

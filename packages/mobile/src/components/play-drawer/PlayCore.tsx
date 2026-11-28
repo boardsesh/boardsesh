@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useIsBoardConfigVisible } from '../../hooks/use-board-visibility';
-import { isQuantumClimbRetired } from '../../db/queries/quantum-climb-retirement';
+import { boardHidesWithdrawnClimbs } from '@boardsesh/offline-sync/withdrawn-climb';
+import { isClimbWithdrawn } from '../../db/queries/withdrawn-climb';
 import { PlayTopChromeView } from './PlayTopChromeView';
 import { PlayStageView } from './PlayStageView';
 import { randomUUID } from 'expo-crypto';
@@ -633,18 +634,19 @@ export function PlayCore({
   const pendingDisplayItem = drawerPreviewItem ?? currentClimbQueueItem;
   const isBoardConfigVisible = useIsBoardConfigVisible();
   const displayBoardAvailable = isClimbBoardAvailable(pendingDisplayItem?.climb, boardConfig, isBoardConfigVisible);
-  const quantumClimbUuid =
-    displayBoardAvailable && (boardConfig.boardName === 'quantum' || pendingDisplayItem?.climb.boardType === 'quantum')
+  const withdrawableClimbUuid =
+    displayBoardAvailable &&
+    (boardHidesWithdrawnClimbs(boardConfig.boardName) || boardHidesWithdrawnClimbs(pendingDisplayItem?.climb.boardType))
       ? pendingDisplayItem?.climb.uuid
       : undefined;
-  const retirement = useQuery({
-    queryKey: ['climb', 'quantumRetirement', quantumClimbUuid],
-    queryFn: () => isQuantumClimbRetired(quantumClimbUuid!),
-    enabled: !!quantumClimbUuid,
+  const withdrawal = useQuery({
+    queryKey: ['climb', 'withdrawn', withdrawableClimbUuid],
+    queryFn: () => isClimbWithdrawn(withdrawableClimbUuid!),
+    enabled: !!withdrawableClimbUuid,
     networkMode: 'always',
   });
   const displayedQueueItem =
-    displayBoardAvailable && (!quantumClimbUuid || retirement.data === false) ? pendingDisplayItem : null;
+    displayBoardAvailable && (!withdrawableClimbUuid || withdrawal.data === false) ? pendingDisplayItem : null;
   const displayedClimb = displayedQueueItem?.climb;
   // The slot ⋯ → Play next moves when the same climb is queued twice.
   const displayedQueueItemUuid = displayedQueueItem?.uuid;
