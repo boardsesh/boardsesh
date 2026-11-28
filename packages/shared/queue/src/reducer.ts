@@ -961,17 +961,29 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
 
     case 'SET_NOW_SLOT_MODE': {
       if ((state.nowSlotMode ?? false) === action.payload) return state;
+      // A pending move belongs to the mode it was sent in. Retire it on a
+      // real transition so the next FullSync cannot replay or resend it
+      // under different placement rules. Pending echo ids still apply.
       // Entering the mode takes a line a restore held for it, while that line
       // still describes this queue; otherwise it derives the line from the
       // current climb, and the next FullSync (or restore) brings the server's
       // or the snapshot's value. Either way the held line is spent.
-      if (!action.payload) return { ...state, nowSlotMode: false, historyCount: null, heldHistoryLine: null };
+      if (!action.payload) {
+        return {
+          ...state,
+          nowSlotMode: false,
+          historyCount: null,
+          heldHistoryLine: null,
+          unconfirmedMove: null,
+        };
+      }
       const held = heldHistoryCount(state);
       return {
         ...state,
         nowSlotMode: true,
         historyCount: held === null ? historyLine(state) : payloadLine(state.queue, state.currentClimbQueueItem, held),
         heldHistoryLine: null,
+        unconfirmedMove: null,
       };
     }
 
