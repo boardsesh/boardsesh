@@ -965,13 +965,30 @@ printf 'shipped=true\\nsource_sha=%s\\n' "$STUB_BINARY_SHA" >> "$GITHUB_OUTPUT"
     },
   );
 
-  it('offers Android smoke recording without screenshot publication or image gates', () => {
+  it('offers fixed Android smoke fixture recording without screenshot publication or image gates', () => {
     const workflow = parseWorkflow(ANDROID_WORKFLOW_PATH);
     const dispatch = workflow.on?.workflow_dispatch as {
       inputs: Record<string, { options?: string[] }>;
     };
-    expect(dispatch.inputs.flow.options).toContain('smoke');
+    expect(dispatch.inputs.flow.options).toContain('smoke-fixtures');
+    expect(dispatch.inputs.flow.options).not.toContain('smoke');
     const steps = workflow.jobs.android.steps ?? [];
+    const recording = workflow.jobs['record-smoke-fixtures'];
+    expect(recording.if).toContain("inputs.flow == 'smoke-fixtures'");
+    expect(workflow.jobs.android.if).toContain("inputs.flow != 'smoke-fixtures'");
+    expect(recording.permissions).toEqual({ contents: 'read' });
+    expect(recording.environment).toBeUndefined();
+    expect(recording.steps?.find((step) => step.name === 'Record exact mobile smoke requests')?.run).toBe(
+      'vp exec tsx scripts/record-mobile-smoke-qa-fixtures.ts',
+    );
+    const fixedGuard = workflow.jobs.gate.steps?.find((step) => step.name === 'Validate fixed smoke fixture inputs');
+    expect(fixedGuard?.run).toContain('"$FIXTURES" != record');
+    expect(fixedGuard?.run).toContain('"$COMMIT_TO_MAIN" != false');
+    expect(fixedGuard?.run).toContain('"$SHARE_PREVIEW" != false');
+    expect(fixedGuard?.run).toContain('exit 1');
+    expect(
+      recording.steps?.some((step) => /maestro|android-emulator|git push|Discord/.test(JSON.stringify(step))),
+    ).toBe(false);
     const capture = steps.find((step) => step.name === 'Capture Android screenshots');
     expect(capture?.with?.flow).toBe("${{ inputs.flow || 'app-store' }}");
     expect(capture?.with?.fixtures).toBe("${{ inputs.fixtures || 'replay' }}");
@@ -989,7 +1006,7 @@ printf 'shipped=true\\nsource_sha=%s\\n' "$STUB_BINARY_SHA" >> "$GITHUB_OUTPUT"
       );
     }
     for (const name of ['Upload native captures for review', 'Upload screenshots artifact']) {
-      expect(steps.find((step) => step.name === name)?.if, name).toContain("inputs.flow != 'smoke'");
+      expect(steps.find((step) => step.name === name)?.if, name).toBe('always()');
     }
     expect(steps.find((step) => step.name === 'Upload recorded fixtures')?.if).toBe(
       "${{ always() && inputs.fixtures == 'record' }}",
@@ -1057,9 +1074,11 @@ printf 'shipped=true\\nsource_sha=%s\\n' "$STUB_BINARY_SHA" >> "$GITHUB_OUTPUT"
 
   it('gates the whole Android capture on one job instead of fifteen steps', () => {
     const workflow = parseWorkflow(ANDROID_WORKFLOW_PATH);
-    expect(Object.keys(workflow.jobs)).toEqual(['gate', 'android']);
+    expect(Object.keys(workflow.jobs)).toEqual(['gate', 'record-smoke-fixtures', 'android']);
     expect(workflow.jobs.android.needs).toBe('gate');
-    expect(flatten(workflow.jobs.android.if)).toBe("needs.gate.outputs.shipped == 'true'");
+    expect(flatten(workflow.jobs.android.if)).toBe(
+      "needs.gate.outputs.shipped == 'true' && inputs.flow != 'smoke-fixtures'",
+    );
   });
 });
 

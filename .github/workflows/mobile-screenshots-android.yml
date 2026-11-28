@@ -93,13 +93,13 @@ on:
   workflow_dispatch:
     inputs:
       flow:
-        description: 'Capture screenshots, or run the navigation smoke and optionally record its genuine backend reads.'
+        description: 'Capture screenshots, or record the two exact backend reads required by native smoke QA.'
         type: choice
         default: app-store
         options:
           - app-store
           - onboarding
-          - smoke
+          - smoke-fixtures
       android_device:
         description: 'Android emulator device label used for screenshot output'
         type: string
@@ -203,6 +203,23 @@ jobs:
       SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
       EVENT_NAME: ${{ github.event_name }}
     steps:
+      - name: Validate fixed smoke fixture inputs
+        if: ${{ inputs.flow == 'smoke-fixtures' }}
+        env:
+          FIXTURES: ${{ inputs.fixtures || 'replay' }}
+          COMMIT_TO_MAIN: ${{ inputs.commit_to_main == true }}
+          SHARE_PREVIEW: ${{ inputs.share_preview == true }}
+          BOARDS: ${{ inputs.boards || '' }}
+          RENDER_MODE: ${{ inputs.render_mode || '' }}
+          FIXTURE_SNAPSHOT: ${{ inputs.fixture_snapshot || '' }}
+          FROZEN_NOW: ${{ inputs.frozen_now || '' }}
+        run: |
+          set -euo pipefail
+          if [ "$FIXTURES" != record ] || [ "$COMMIT_TO_MAIN" != false ] || [ "$SHARE_PREVIEW" != false ] || [ -n "$BOARDS$RENDER_MODE$FIXTURE_SNAPSHOT$FROZEN_NOW" ]; then
+            echo '::error::smoke-fixtures requires record mode, capture-only flags and no overrides.'
+            exit 1
+          fi
+
       # Replay needs no credentials. Live captures use the dedicated test account.
       - name: Require credentials for live recording
         if: ${{ (inputs.fixtures || 'replay') != 'replay' }}
@@ -243,11 +260,42 @@ jobs:
           source_sha="$(sed -n 's/^source_sha=//p' "$source_file")"
           if [ -n "$source_sha" ]; then echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"; fi
 
+  record-smoke-fixtures:
+    needs: gate
+    if: needs.gate.outputs.shipped == 'true' && inputs.flow == 'smoke-fixtures'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.source_sha }}
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: false
+      - run: vp install --frozen-lockfile
+      - name: Record exact mobile smoke requests
+        env:
+          SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
+          SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
+          SMOKE_QA_RECORDING_DIRECTORY: ${{ runner.temp }}/smoke-qa-recording
+        run: vp exec tsx scripts/record-mobile-smoke-qa-fixtures.ts
+      - name: Upload genuine fixed-request recordings
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot-fixtures-android
+          path: ${{ runner.temp }}/smoke-qa-recording/
+          if-no-files-found: error
+          retention-days: 7
+
   android:
     needs: gate
     # No status function here on purpose: a skipped or failed `gate` must skip
     # this job too, which the implicit needs check already does.
-    if: needs.gate.outputs.shipped == 'true'
+    if: needs.gate.outputs.shipped == 'true' && inputs.flow != 'smoke-fixtures'
     # Gate the crown-jewel secret (OTA_PUSH_APP_PRIVATE_KEY — a GitHub App key on
     # main's PR-bypass allowlist) behind the Production environment, whose branch
     # policy (main and main) fences it off from any other pushed branch.
@@ -512,7 +560,7 @@ jobs:
           exit 1
 
       - name: Upload native captures for review
-        if: ${{ always() && inputs.flow != 'smoke' }}
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: raw-android-screenshots
@@ -521,7 +569,7 @@ jobs:
           retention-days: 7
 
       - name: Upload screenshots artifact
-        if: ${{ always() && inputs.flow != 'smoke' }}
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mobile-screenshots-android
