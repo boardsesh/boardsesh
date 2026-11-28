@@ -41,15 +41,17 @@ async function lightLayer(connector: BleConnector, selectedDeviceId: string, use
 
 `diodeIds` are physical diode addresses for the controller's model; resolve catalog holds before calling this package. `expectedModelId` is required: pass the model of the board setup the climber selected. `open()` refuses a controller whose FFF5 metadata is missing or reports another model, before any roster command, so diode addresses for one model never reach another. A layer operation resolves only after a fresh roster read shows the expected result for the caller's layer and every other player's layer; write success alone is never treated as proof. `expectedPlayers` refuses the mutation if the wall changed since the caller last looked. Requests are copied when submitted and run one at a time.
 
-`rosterState` holds the last roster a transaction confirmed. FFF1 roster and wall-cleared broadcasts caused by other phones do not update it; subscribe with `onBroadcast()` to mirror them.
+`rosterState` holds the last roster a transaction confirmed. FFF1 roster and wall-cleared broadcasts caused by other phones do not update it; subscribe with `onBroadcast()` to mirror them. Under an injected scheduler, `observedAtMs` follows the scheduler's clock, while the elapsed time behind the layer-survival rule still uses `performance.now()`.
 
-## Cancelling a layer call
+## Cancellation and failed calls
 
-Aborting the `AbortSignal` passed to `refreshRoster()`, `activateLayer()` or `removeLayer()` rejects that call with `BleError('cancelled')` straight away. What it means for the wall:
+Aborting the `AbortSignal` passed to `refreshRoster()`, `activateLayer()` or `removeLayer()` rejects that call with `BleError('cancelled')` straight away, and a mutation the call had not written yet is never written. Once a mutation (`0x41`, `0x43` or `0x44`) has been written, what `rosterState` tells you depends on how the call ends:
 
-- A mutation the call had not written yet is never written.
-- A mutation it had already written may have changed the wall. The session still reads the roster back, so `rosterState` shows what the wall holds. A replacement cancelled after its release (`0x43`) leaves the climber with no layer: the old one is gone and the new one was not lit.
-- Call `refreshRoster()` to learn the outcome. It queues behind the read-back, and every later call also starts from its own fresh roster.
+- **The write resolved.** Its read-back still runs, even after an abort, and `rosterState` is the roster that read-back confirmed. A replacement cancelled after its release (`0x43`) leaves the climber with no layer: the old one is gone and the new one was not lit.
+- **The call failed before reading that mutation back, and the link is still up** (the write rejected, the controller refused it, or the read-back request failed). The controller may still have applied it, so the session sends `0x47` and re-reads the roster before the next call runs and before the failed call rejects with its own error. If that re-read fails too, `rosterState` reports the re-read's failure.
+- **The link was retired** (a timeout, a disconnect or lost notifications). Nothing more is read. `rosterState` keeps the last confirmed roster, which may now be stale; reconnect and call `refreshRoster()`.
+
+Every call starts from its own fresh roster, so a call queued behind a cancelled or failed one never acts on a stale view.
 
 Aborting the signal passed to `open()` closes the connection and rejects with `BleError('cancelled')`.
 
@@ -80,13 +82,14 @@ Compared with `quantum-adapter.ts` (iOS and Android), `quantum-adapter.web.ts` a
 | Write size | Refuses `maxWriteBytes` below 45 | No floor; Android gives up only when even an MTU 185 request fails |
 | `rosterState` | Confirmed transaction rosters only | `QuantumBoardController` also folds FFF1 rosters and wall-cleared broadcasts into its roster |
 | Caller cancellation | `AbortSignal`, as above | None; `isEligible` turns false only while the link is abandoned |
+| Mutation written, call fails before its read-back, link up | Re-reads the roster, then rejects with the original error | No re-read; `rosterState` keeps the pre-mutation roster |
 | Commands written | `0x41`, `0x43`, `0x44`, `0x47` only | Any frame passed in |
-| Link failures | `BleError` (`disconnected`, `timeout`, `cancelled`) | Plain `Error`, or the machine's `transport-failed` |
+| Errors a call rejects with | Link retired or lost: `BleError('timeout')` after a deadline, otherwise the error the transport reported (FFF1 `onError` or `onDisconnect`) or `BleError('disconnected')`; later calls get `BleError('disconnected')`. Caller abort: `BleError('cancelled')`. A platform write or read error on a live link: the machine's `transport-failed`, with the platform error as `cause` | The machine's `transport-failed`, with the adapter's plain `Error` as `cause` |
 | Transaction delays | The injected scheduler | Global `setTimeout` |
 
 Both require the model check; the released-model policy stays in the app.
 
-Pure codecs (`encodeQuantumActivation()`, `parseQuantumBroadcast()`, `parseQuantumControllerMetadata()` and the rest) and `QuantumRosterTransactionMachine` remain available for integrations that already own BLE delivery.
+Pure codecs (`encodeQuantumActivation()`, `parseQuantumBroadcast()`, `parseQuantumControllerMetadata()` and the rest) and `QuantumRosterTransactionMachine` remain available for integrations that already own BLE delivery. `createQuantumRosterTransport()` is a low-level building block: it checks a frame's first byte and command, not its CRC or who owns the layer. Ownership is enforced only by `QuantumRosterTransactionMachine`, so never hand-build frames for it.
 
 See the [protocol specification](./docs/QUANTUM_BLUETOOTH_PROTOCOL_SPEC.md) for frame layouts, the transaction rules and verification limits. Quantum Board is a trademark of its owner; this is an independent compatibility implementation, not manufacturer-endorsed software.
 

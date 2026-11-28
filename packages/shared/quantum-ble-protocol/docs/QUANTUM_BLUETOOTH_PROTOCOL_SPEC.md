@@ -206,24 +206,44 @@ read and FFF5 read has a 5 s deadline, and each setup lookup or subscription
 another 5 s. A timed-out write or read, or a roster notification wait that
 expires, closes the link: nothing proves the platform cancelled the operation.
 An FFF1 notification error also closes the session. The 50 ms and 250 ms
-delays and every deadline run on the injected `BleScheduler`; elapsed time
-for the layer-survival rule uses `performance.now()`.
+delays and every deadline run on the injected `BleScheduler`. Under an injected
+scheduler, `observedAtMs` follows the scheduler's clock, while elapsed time for
+the layer-survival rule uses `performance.now()`.
 
 `rosterState` is the last roster a transaction confirmed. FFF1 roster and
 wall-cleared broadcasts do not update it; `onBroadcast()` delivers them.
+
+`createQuantumRosterTransport()` is a low-level building block: it checks a
+frame's first byte and command, not its CRC or who owns the layer. Ownership is
+enforced only by `QuantumRosterTransactionMachine`, so callers must not
+hand-build frames for it.
 
 The caller's `isEligible` and `assertTargetAvailable` checks run inside the
 queue with no deadline, as in the app adapters. One that never settles holds
 later calls until `disconnect()`.
 
-**Cancellation.** Aborting a layer call's signal rejects the call with
-`BleError('cancelled')` at once. The transaction then sends no mutation it had
-not yet written. If it had already written one (`0x41`, `0x43` or `0x44`), its
-`0x47` read-back still runs under the connection, so `rosterState` shows what
-the wall holds. For the wall, a cancelled call either changed nothing, or made
-the change and confirmed it, or (a replacement cancelled after `0x43`) removed
-the climber's old layer without lighting the new one. The next call starts from
-its own fresh roster; `refreshRoster()` queues behind the read-back.
+**Cancellation and failed calls.** Aborting a layer call's signal rejects the
+call with `BleError('cancelled')` at once, and the transaction sends no
+mutation it had not yet written. Once a mutation (`0x41`, `0x43` or `0x44`) has
+been written, the guarantee depends on how the call ends:
+
+1. *The write resolved.* Its `0x47` read-back still runs under the connection,
+   even after an abort, and `rosterState` is the roster it confirmed. For the
+   wall, a cancelled call either changed nothing, or made the change and
+   confirmed it, or (a replacement cancelled after `0x43`) removed the
+   climber's old layer without lighting the new one.
+2. *The call failed before any roster confirmed that mutation, on a live link*
+   (the write rejected, the controller refused it, or the read-back request
+   failed). The controller may still have applied it, so the session sends
+   `0x47` and re-reads the roster before the next call runs and before the
+   failed call rejects with its own error. If that re-read fails too,
+   `rosterState` reports the re-read's failure.
+3. *The link was retired* (a timeout, a disconnect or lost notifications).
+   Nothing more is read; `rosterState` keeps the last confirmed roster, which
+   may be stale.
+
+Every call starts from its own fresh roster, so a call queued behind a
+cancelled or failed one never acts on a stale view.
 
 **Differences from the Boardsesh app adapters** (`quantum-adapter.ts`,
 `quantum-adapter.web.ts` and `QuantumBoardController` in `packages/mobile`):
@@ -238,8 +258,9 @@ its own fresh roster; `refreshRoster()` queues behind the read-back.
 | Write size | Refuses `maxWriteBytes` below 45 | No floor; Android gives up only when even an MTU 185 request fails |
 | `rosterState` | Confirmed transaction rosters only | `QuantumBoardController` also folds FFF1 rosters and wall-cleared broadcasts into its roster |
 | Caller cancellation | `AbortSignal`, as above | None; `isEligible` turns false only while the link is abandoned |
+| Mutation written, call fails before its read-back, link up | Re-reads the roster, then rejects with the original error | No re-read; `rosterState` keeps the pre-mutation roster |
 | Commands written | `0x41`, `0x43`, `0x44`, `0x47` only | Any frame passed in |
-| Link failures | `BleError` (`disconnected`, `timeout`, `cancelled`) | Plain `Error`, or the machine's `transport-failed` |
+| Errors a call rejects with | Link retired or lost: `BleError('timeout')` after a deadline, otherwise the error the transport reported (FFF1 `onError` or `onDisconnect`) or `BleError('disconnected')`; later calls get `BleError('disconnected')`. Caller abort: `BleError('cancelled')`. A platform write or read error on a live link: the machine's `transport-failed`, with the platform error as `cause` | The machine's `transport-failed`, with the adapter's plain `Error` as `cause` |
 | Transaction delays | The injected scheduler | Global `setTimeout` |
 
 A connector must report the payload sizes the adapters use: Android 182 or more

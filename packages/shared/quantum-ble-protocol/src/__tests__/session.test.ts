@@ -594,7 +594,9 @@ describe('Quantum BLE layer sessions', () => {
     await expect(
       session.activateLayer({ routeId: ROUTE_ONE, userId: USER_ONE, diodeIds: [1], color: 0x00ff00 }),
     ).rejects.toMatchObject({ code: 'controller-refused', controllerFailure: 'color-taken' });
-    expect(radio.commands()).toEqual([REQUEST_USER_ROUTE_LIST, ACTIVATE_WALL]);
+    // The refusal arrived before any read-back, so the session re-reads the wall.
+    expect(radio.commands()).toEqual([REQUEST_USER_ROUTE_LIST, ACTIVATE_WALL, REQUEST_USER_ROUTE_LIST]);
+    expect(session.rosterState).toMatchObject({ phase: 'live', snapshot: { revision: 2, players: [] } });
     await session.disconnect();
   });
 
@@ -610,8 +612,14 @@ describe('Quantum BLE layer sessions', () => {
     const queued = session.refreshRoster();
 
     await expect(refused).rejects.toMatchObject({ code: 'controller-refused' });
-    await expect(queued).resolves.toMatchObject({ players: [] });
-    expect(radio.commands()).toEqual([REQUEST_USER_ROUTE_LIST, ACTIVATE_WALL, REQUEST_USER_ROUTE_LIST]);
+    await expect(queued).resolves.toMatchObject({ revision: 3, players: [] });
+    // Activation, its re-read, then the queued refresh.
+    expect(radio.commands()).toEqual([
+      REQUEST_USER_ROUTE_LIST,
+      ACTIVATE_WALL,
+      REQUEST_USER_ROUTE_LIST,
+      REQUEST_USER_ROUTE_LIST,
+    ]);
     expect(session.rosterState).toMatchObject({ phase: 'live', snapshot: { players: [] } });
     expect(radio.disconnect).not.toHaveBeenCalled();
     await session.disconnect();
@@ -789,6 +797,128 @@ describe('Quantum BLE cancellation', () => {
     expect(removed.players).toEqual([FOREIGN_LAYER]);
     expect(session.rosterState).toMatchObject({ phase: 'live', snapshot: { revision: 4, players: [FOREIGN_LAYER] } });
     await session.disconnect();
+  });
+
+  it.each([
+    {
+      wait: 'the preflight',
+      heldRosterRequest: 1,
+      frames: [REQUEST_USER_ROUTE_LIST],
+      state: { phase: 'failed', lastError: 'operation-cancelled', snapshot: { revision: 1 } },
+      players: [],
+    },
+    {
+      wait: 'the read-back',
+      heldRosterRequest: 2,
+      frames: [REQUEST_USER_ROUTE_LIST, ACTIVATE_WALL, REQUEST_USER_ROUTE_LIST],
+      state: { phase: 'live', snapshot: { revision: 2 } },
+      players: [NEW_LAYER],
+    },
+  ])(
+    'keeps waiting for FFF1 when the caller aborts during $wait notification wait',
+    async ({ heldRosterRequest, frames, state, players }) => {
+      const radio = fixture();
+      const session = await open(radio);
+      const controller = new AbortController();
+      let rosterRequests = 0;
+      // FFF4 never holds a fresh 0x47 roster, so every roster comes from FFF1.
+      radio.setReadHandler(() => rosterFrame(radio.roster, ACTIVATE_WALL));
+      radio.setWriteHandler((frame, apply) => {
+        apply();
+        if (frame[1] !== REQUEST_USER_ROUTE_LIST) return;
+        rosterRequests += 1;
+        if (rosterRequests !== heldRosterRequest) radio.notify(rosterFrame(radio.roster));
+      });
+
+      const activating = session.activateLayer(
+        { routeId: ROUTE_ONE, userId: USER_ONE, diodeIds: [1], color: 0x00ff00 },
+        controller.signal,
+      );
+      const cancelled = expect(activating).rejects.toMatchObject({ code: 'cancelled' });
+      await vi.waitFor(() => expect(radio.stateReads).toBe(heldRosterRequest));
+      controller.abort();
+      await cancelled;
+      radio.notify(rosterFrame(radio.roster));
+
+      await vi.waitFor(() => expect(session.rosterState).toMatchObject(state));
+      expect(radio.commands()).toEqual(frames);
+      expect(session.rosterState.snapshot?.players).toEqual(players);
+      expect(radio.disconnect).not.toHaveBeenCalled();
+      await session.disconnect();
+    },
+  );
+});
+
+describe('Quantum BLE mutations that fail before their read-back', () => {
+  it.each([
+    { outcome: 'applied it', applied: true, players: [FOREIGN_LAYER, NEW_LAYER] },
+    { outcome: 'did not apply it', applied: false, players: [FOREIGN_LAYER] },
+  ])('re-reads the wall when an 0x41 write fails and the controller $outcome', async ({ applied, players }) => {
+    const radio = fixture({ players: [FOREIGN_LAYER] });
+    const session = await open(radio);
+    const platformError = new Error('GATT error 133');
+    radio.setWriteHandler((frame, apply) => {
+      if (frame[1] !== ACTIVATE_WALL) return apply();
+      if (applied) apply();
+      throw platformError;
+    });
+
+    // The call keeps its own error; the re-read finishes before it rejects.
+    await expect(
+      session.activateLayer({ routeId: ROUTE_ONE, userId: USER_ONE, diodeIds: [1], color: 0x00ff00 }),
+    ).rejects.toMatchObject({ code: 'transport-failed', cause: platformError });
+
+    expect(radio.commands()).toEqual([REQUEST_USER_ROUTE_LIST, ACTIVATE_WALL, REQUEST_USER_ROUTE_LIST]);
+    expect(radio.stateReads).toBe(2);
+    expect(session.rosterState).toMatchObject({ phase: 'live', snapshot: { revision: 2 } });
+    expect(session.rosterState.snapshot?.players).toEqual(players);
+    expect(radio.roster).toEqual(players);
+    expect(radio.disconnect).not.toHaveBeenCalled();
+    await session.disconnect();
+  });
+
+  it('re-reads before a queued call runs, so it starts from what the wall holds', async () => {
+    const radio = fixture();
+    const session = await open(radio);
+    radio.setWriteHandler((frame, apply) => {
+      apply();
+      if (frame[1] === ACTIVATE_WALL) throw new Error('GATT error 133');
+    });
+
+    const failing = session.activateLayer({ routeId: ROUTE_ONE, userId: USER_ONE, diodeIds: [1], color: 0x00ff00 });
+    const queued = session.removeLayer({ userId: USER_ONE, routeId: ROUTE_ONE });
+
+    await expect(failing).rejects.toMatchObject({ code: 'transport-failed' });
+    await expect(queued).resolves.toMatchObject({ players: [] });
+    expect(radio.commands()).toEqual([
+      REQUEST_USER_ROUTE_LIST,
+      ACTIVATE_WALL,
+      REQUEST_USER_ROUTE_LIST,
+      REQUEST_USER_ROUTE_LIST,
+      TURN_OFF_BY_USER,
+      REQUEST_USER_ROUTE_LIST,
+    ]);
+    await session.disconnect();
+  });
+
+  it('reads nothing more when the failed mutation retired the link', async () => {
+    vi.useFakeTimers();
+    const radio = fixture();
+    const session = await open(radio);
+    radio.setWriteHandler((frame, apply) => {
+      if (frame[1] === ACTIVATE_WALL) return new Promise<void>(() => {});
+      return apply();
+    });
+
+    const activating = session.activateLayer({ routeId: ROUTE_ONE, userId: USER_ONE, diodeIds: [1] });
+    const timedOut = expect(activating).rejects.toMatchObject({ code: 'timeout' });
+    await vi.advanceTimersByTimeAsync(QUANTUM_GATT_OPERATION_TIMEOUT_MS);
+    await timedOut;
+
+    await vi.waitFor(() => expect(radio.disconnect).toHaveBeenCalledOnce());
+    // No re-read on a retired link: rosterState keeps the last confirmed (now stale) roster.
+    expect(radio.commands()).toEqual([REQUEST_USER_ROUTE_LIST, ACTIVATE_WALL]);
+    expect(session.rosterState).toMatchObject({ phase: 'failed', snapshot: { revision: 1, players: [] } });
   });
 });
 

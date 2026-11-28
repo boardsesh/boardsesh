@@ -75,9 +75,17 @@ const QUANTUM_TRANSACTION_COMMANDS: ReadonlySet<number> = new Set([
  * another climber's layer. Use the layer methods instead.
  *
  * Aborting a layer call's signal rejects that call with `BleError('cancelled')`
- * at once. A mutation not yet written is never written. A mutation already
- * written is still read back, so `rosterState` shows what the wall holds; the
- * wall may have changed even though the call rejected.
+ * at once, and a mutation not yet written is never written. What `rosterState`
+ * shows after a call that wrote a mutation:
+ * - The write resolved: its read-back still runs, even after an abort, and
+ *   `rosterState` is the roster it confirmed.
+ * - The call failed before reading that mutation back, on a live link (the
+ *   write rejected, the controller refused, the read-back request failed): the
+ *   session re-reads the roster before the next call runs and before the failed
+ *   call rejects with its own error. If that re-read fails too, `rosterState`
+ *   reports the re-read's failure.
+ * - The link was retired (timeout, disconnect, lost notifications): nothing is
+ *   read. `rosterState` keeps the last confirmed roster, which may be stale.
  */
 export interface QuantumBleSession extends BoardBleSession {
   /** FFF5 metadata read during open(). Diode addresses are specific to this model. */
@@ -153,8 +161,10 @@ const QUANTUM_CAPABILITIES: BoardBleCapabilities = Object.freeze({
 /** One layer call's cancellation state, shared with the roster transport. */
 export type QuantumTransactionScope = {
   readonly signal: AbortSignal;
-  /** Set once a mutation frame has been submitted; its read-back then survives cancellation. */
-  mutationWritten: boolean;
+  /** True once a mutation frame has been submitted; its read-back then survives cancellation. */
+  readonly mutationWritten: boolean;
+  /** The roster transport calls this immediately before it submits a mutation frame. */
+  mutationSubmitted(): void;
 };
 
 export interface QuantumRosterTransportOptions {
@@ -172,12 +182,15 @@ export interface QuantumRosterTransportOptions {
 
 /**
  * Adapts raw ble-core characteristics to the transaction machine's transport.
+ * A low-level building block: it checks a frame's first byte and command, not
+ * its CRC or who owns the layer. Ownership is enforced only by
+ * `QuantumRosterTransactionMachine`, so never hand it frames built elsewhere.
+ *
  * Platform operations run under the connection lifetime, not a caller's
  * signal, so a caller never abandons a GATT operation midway. A cancelled layer
  * call sends no further mutation but keeps the read-back of one already
- * written. Only the commands layer transactions use are accepted. A timed-out
- * write, read or roster notification retires the link, because nothing proves
- * the platform cancelled it.
+ * written. A timed-out write, read or roster notification retires the link,
+ * because nothing proves the platform cancelled it.
  */
 export function createQuantumRosterTransport({
   write,
@@ -231,7 +244,7 @@ export function createQuantumRosterTransport({
           assertQuantumWriteEligible(isEligible);
         }
         // Once submitted, a mutation may reach the wall even if the write fails.
-        if (!isRosterRequest && transaction) transaction.mutationWritten = true;
+        if (!isRosterRequest) transaction?.mutationSubmitted();
         // Mark immediately before the request: a delayed notification from an
         // earlier command cannot cross this freshness floor.
         if (isRosterRequest) inbox.markRosterRequest();
@@ -459,10 +472,34 @@ async function openQuantumBleSession(
     // read-back before the next call reads its own fresh roster.
     const runTransaction = <Result>(work: () => Promise<Result>, callerSignal?: AbortSignal) =>
       runtime.run(async (operationSignal) => {
-        const transaction: QuantumTransactionScope = { signal: operationSignal, mutationWritten: false };
+        let mutationWritten = false;
+        let revisionAtMutation: number | undefined;
+        const transaction: QuantumTransactionScope = {
+          signal: operationSignal,
+          get mutationWritten() {
+            return mutationWritten;
+          },
+          mutationSubmitted() {
+            mutationWritten = true;
+            revisionAtMutation = machine.state.snapshot?.revision;
+          },
+        };
         activeTransaction = transaction;
         try {
           return await work();
+        } catch (error) {
+          // A mutation went out but the call failed before any roster confirmed it
+          // (the write rejected, the controller refused, the read-back failed). The
+          // controller may have applied it, so re-read the wall on this live link
+          // before the next call runs. A retired link has nothing left to read.
+          if (mutationWritten && !runtime.signal.aborted && machine.state.snapshot?.revision === revisionAtMutation) {
+            try {
+              await machine.refresh(eligibility());
+            } catch {
+              /* rosterState then reports the re-read's own failure. */
+            }
+          }
+          throw error;
         } finally {
           if (activeTransaction === transaction) activeTransaction = undefined;
         }
