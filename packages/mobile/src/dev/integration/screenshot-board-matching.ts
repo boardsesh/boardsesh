@@ -1,5 +1,7 @@
 /** The roster fields needed to match a human-entered screenshot selector. */
 export interface ScreenshotBoardMatchingFields {
+  uuid?: string;
+  gymUuid?: string | null;
   name: string;
   layoutName?: string | null;
 }
@@ -26,6 +28,10 @@ export function matchScreenshotBoardCandidates<Board extends ScreenshotBoardMatc
   boards: readonly Board[],
   selector: string,
 ): Board[] {
+  if (selector.startsWith('uuid:')) {
+    const pin = /^uuid:([^:|]+):gym:([^:|]+)$/.exec(selector);
+    return pin ? boards.filter((board) => board.uuid === pin[1] && board.gymUuid === pin[2]) : [];
+  }
   const wanted = looseKey(selector);
   if (!wanted) return [];
   const matchTiers = [

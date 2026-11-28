@@ -85,6 +85,7 @@ Boardsesh is a monorepo. Next.js 16 web app + React Native (Expo) mobile app for
 - No AI-generated images. Real photos or diagrams only.
 - No buzzwords. Concrete numbers, plain language.
 - Default to action. Full autonomy except no data deletion without asking.
+- **Production QA uses QA boards and QA accounts.** Automated tests, agent-driven browser/API checks, simulator recordings and manual verification that write presence, board history, sessions or ticks must target the dedicated [Boardsesh QA gym](docs/qa/prod-qa-gym.md), never a climber's real wall (including Marco's Board). Resolve and verify the board's UUID and QA gym membership before the first write; a matching layout, convenient saved board or available personal login is not permission to use it. If the QA fixture/account is unavailable, stop that live check or use the local seeded backend. Read-only inspection of real history is allowed; deleting or rewriting existing history requires explicit approval.
 - **Bluetooth changes require a Fable or Astra review.** Any change touching Bluetooth/BLE code — `packages/shared/ble-protocol/`, `packages/mobile/src/lib/ble/`, `packages/mobile/modules/live-activity/ios/`, or the web Bluetooth LED control in `packages/web` — must be reviewed by Fable or Astra before merge.
 
 ## PR Lifecycle (mandatory)
