@@ -10,7 +10,8 @@ import {
   isRecommendationType,
   RECOMMENDATION_TYPES,
   sprayClimbVisibilityCondition,
-  unavailableQuantumClimbCondition,
+  unavailableCatalogClimbBoardCondition,
+  unavailableCatalogClimbCondition,
   withSerialPlan,
   type RecommendationType,
 } from '@boardsesh/db/queries';
@@ -129,7 +130,9 @@ function smartBaseConditions(
   const conditions: SQL[] = [
     eq(dbSchema.boardseshTicks.userId, userId),
     tickPrivacyCondition(viewerUserId, dbSchema.boardseshTicks),
-    sql`(${dbSchema.boardseshTicks.boardType} <> 'quantum' OR ${climbReferenceReadableCondition(
+    // On a board whose climbs can be unavailable (withdrawn, or on an unreleased
+    // model), a tick also needs its climb readable.
+    sql`(NOT (${unavailableCatalogClimbBoardCondition(dbSchema.boardseshTicks.boardType)}) OR ${climbReferenceReadableCondition(
       {
         boardType: dbSchema.boardseshTicks.boardType,
         climbUuid: canonicalTickClimbUuid,
@@ -491,7 +494,7 @@ export function logbookViewSource(
       eq(climbs.uuid, smartRowsColumn('climb_uuid')),
     )!,
     where: and(
-      not(unavailableQuantumClimbCondition()),
+      not(unavailableCatalogClimbCondition()),
       climbDraftVisibilityCondition(
         { boardType: climbs.boardType, userId: climbs.userId, isDraft: climbs.isDraft },
         viewerUserId,

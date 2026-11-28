@@ -2,19 +2,25 @@ import type { SqlExecutor, SqlValue } from '../database';
 import { buildMultiRowInsertSql, multiRowChunkSize } from './pull-write';
 import { reportExtraColumn, type SchemaDriftReporter } from './schema-compatibility';
 import { climbMutationEntityKey } from '../mutation-queue/queue';
-import { isQuantumRetirement, quantumRetirementSql } from './quantum-retirement';
+import {
+  boardHidesWithdrawnClimbs,
+  isWithdrawnClimbTombstone,
+  withdrawnClimbTombstoneSql,
+  withdrawnTombstoneBoardSql,
+} from './withdrawn-climb';
 import { getCheckpointKey } from './checkpoints';
 
-const QUANTUM_REFERENCE_TABLES = ['board_climb_stats', 'board_climb_grades'] as const;
+const WITHDRAWN_CLIMB_REFERENCE_TABLES = ['board_climb_stats', 'board_climb_grades'] as const;
 
-async function retiredPublicCandidates(
+/** Published supplier documents whose climb this device currently holds as a tombstone. */
+async function withdrawnPublishedCandidates(
   transaction: SqlExecutor,
   documents: readonly Record<string, unknown>[],
 ): Promise<string[]> {
   const published = documents
     .filter(
       (document) =>
-        document.board_type === 'quantum' &&
+        boardHidesWithdrawnClimbs(document.board_type) &&
         document.is_listed === true &&
         document.is_boardsesh_authored === false &&
         document.user_id === null &&
@@ -22,30 +28,33 @@ async function retiredPublicCandidates(
     )
     .map((document) => String(document.uuid));
   if (!published.length) return [];
-  const retired = await transaction.getAllAsync<{ uuid: string }>(
-    `SELECT uuid FROM board_climbs WHERE ${quantumRetirementSql()}
+  const withdrawn = await transaction.getAllAsync<{ uuid: string }>(
+    `SELECT uuid FROM board_climbs WHERE ${withdrawnClimbTombstoneSql()}
       AND uuid IN (${published.map(() => '?').join(', ')})`,
     published,
   );
-  return retired.map((row) => row.uuid);
+  return withdrawn.map((row) => row.uuid);
 }
 
-async function replayRestoredQuantumReferences(transaction: SqlExecutor, previouslyRetired: string[]): Promise<void> {
-  if (!previouslyRetired.length) return;
+async function replayRestoredWithdrawnReferences(
+  transaction: SqlExecutor,
+  previouslyWithdrawn: string[],
+): Promise<void> {
+  if (!previouslyWithdrawn.length) return;
   // Check the persisted row after the cursor guard. A stale public page must
   // neither reopen the route nor clear checkpoints for one still withdrawn.
-  const restoredLayouts = await transaction.getAllAsync<{ layout_id: number }>(
-    `SELECT DISTINCT layout_id FROM board_climbs
-      WHERE board_type = 'quantum' AND is_listed = 1
-        AND uuid IN (${previouslyRetired.map(() => '?').join(', ')})`,
-    previouslyRetired,
+  const restoredLayouts = await transaction.getAllAsync<{ board_type: string; layout_id: number }>(
+    `SELECT DISTINCT board_type, layout_id FROM board_climbs
+      WHERE ${withdrawnTombstoneBoardSql()} AND is_listed = 1
+        AND uuid IN (${previouslyWithdrawn.map(() => '?').join(', ')})`,
+    previouslyWithdrawn,
   );
-  for (const { layout_id: layoutId } of restoredLayouts) {
-    for (const referenceTable of QUANTUM_REFERENCE_TABLES) {
+  for (const { board_type: boardType, layout_id: layoutId } of restoredLayouts) {
+    for (const referenceTable of WITHDRAWN_CLIMB_REFERENCE_TABLES) {
       // The server retains these reference rows during withdrawal. They may
       // have older cursors than the ones this device already walked.
       await transaction.runAsync('DELETE FROM sync_meta WHERE key LIKE ?', [
-        getCheckpointKey(referenceTable, `quantum:${layoutId}:%`),
+        getCheckpointKey(referenceTable, `${boardType}:${layoutId}:%`),
       ]);
     }
   }
@@ -87,8 +96,8 @@ export async function writePullDocuments(
     );
     if (writableDocuments.length === 0) return;
   }
-  const previouslyRetired =
-    tableName === 'board_climbs' ? await retiredPublicCandidates(transaction, writableDocuments) : [];
+  const previouslyWithdrawn =
+    tableName === 'board_climbs' ? await withdrawnPublishedCandidates(transaction, writableDocuments) : [];
   // Unknown columns are SKIPPED, not fatal: the backend deploys before OTA
   // clients update, so a newly-added server column must not brick every older
   // client's sync loop. SQL safety is unaffected — the statement's column list
@@ -137,18 +146,19 @@ export async function writePullDocuments(
   for (let chunkStart = 0; chunkStart < writableDocuments.length; chunkStart += chunkSize) {
     let chunk = writableDocuments.slice(chunkStart, chunkStart + chunkSize);
     if (tableName === 'board_climb_stats' || tableName === 'board_climb_grades') {
-      const quantumClimbUuids = chunk
-        .filter((document) => document.board_type === 'quantum' && typeof document.climb_uuid === 'string')
+      const hidingBoardClimbUuids = chunk
+        .filter((document) => boardHidesWithdrawnClimbs(document.board_type) && typeof document.climb_uuid === 'string')
         .map((document) => String(document.climb_uuid));
-      if (quantumClimbUuids.length > 0) {
-        const retiredRows = await transaction.getAllAsync<{ uuid: string }>(
-          `SELECT uuid FROM board_climbs WHERE ${quantumRetirementSql()}
-            AND uuid IN (${quantumClimbUuids.map(() => '?').join(', ')})`,
-          quantumClimbUuids,
+      if (hidingBoardClimbUuids.length > 0) {
+        const withdrawnRows = await transaction.getAllAsync<{ uuid: string }>(
+          `SELECT uuid FROM board_climbs WHERE ${withdrawnClimbTombstoneSql()}
+            AND uuid IN (${hidingBoardClimbUuids.map(() => '?').join(', ')})`,
+          hidingBoardClimbUuids,
         );
-        const retiredUuids = new Set(retiredRows.map((row) => row.uuid));
+        const withdrawnUuids = new Set(withdrawnRows.map((row) => row.uuid));
         chunk = chunk.filter(
-          (document) => document.board_type !== 'quantum' || !retiredUuids.has(String(document.climb_uuid)),
+          (document) =>
+            !boardHidesWithdrawnClimbs(document.board_type) || !withdrawnUuids.has(String(document.climb_uuid)),
         );
       }
     }
@@ -161,19 +171,19 @@ export async function writePullDocuments(
     }
     await transaction.runAsync(sqlForRowCount(chunk.length), values);
     if (tableName === 'board_climbs') {
-      const retirements = chunk.filter(isQuantumRetirement).map((document) => String(document.uuid));
-      if (retirements.length === 0) continue;
-      for (const referenceTable of QUANTUM_REFERENCE_TABLES) {
+      const tombstones = chunk.filter(isWithdrawnClimbTombstone).map((document) => String(document.uuid));
+      if (tombstones.length === 0) continue;
+      for (const referenceTable of WITHDRAWN_CLIMB_REFERENCE_TABLES) {
         // Read the resulting row: an older page may have lost the cursor guard
         // to a newer public version, whose references must remain intact.
         await transaction.runAsync(
-          `DELETE FROM ${referenceTable} WHERE board_type = 'quantum' AND climb_uuid IN (
-             SELECT uuid FROM board_climbs WHERE ${quantumRetirementSql()}
-               AND uuid IN (${retirements.map(() => '?').join(', ')}))`,
-          retirements,
+          `DELETE FROM ${referenceTable} WHERE ${withdrawnTombstoneBoardSql()} AND climb_uuid IN (
+             SELECT uuid FROM board_climbs WHERE ${withdrawnClimbTombstoneSql()}
+               AND uuid IN (${tombstones.map(() => '?').join(', ')}))`,
+          tombstones,
         );
       }
     }
   }
-  await replayRestoredQuantumReferences(transaction, previouslyRetired);
+  await replayRestoredWithdrawnReferences(transaction, previouslyWithdrawn);
 }

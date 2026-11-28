@@ -1,4 +1,4 @@
-import { QUANTUM_CLIMB_RETIREMENT_SQL } from './quantum-climb-retirement';
+import { boardHidesWithdrawnClimbs, withdrawnClimbTombstoneSql } from '@boardsesh/offline-sync/withdrawn-climb';
 import type { OfflineDatabase } from '@boardsesh/offline-sync';
 import type { Climb } from '@boardsesh/shared-schema';
 import {
@@ -91,7 +91,7 @@ export async function getClimbLocal(db: OfflineDatabase, input: GetClimbLocalInp
     WHERE c.uuid = ? AND c.board_type = ?
       AND (COALESCE(c.is_draft, 0) = 0 OR c.user_id = ?
         OR (c.board_type = 'spray' AND EXISTS (SELECT 1 FROM spray_walls wall WHERE wall.layout_id = c.layout_id)))
-      ${boardName === 'quantum' ? `AND (${QUANTUM_CLIMB_RETIREMENT_SQL}) IS NOT TRUE` : ''}
+      ${boardHidesWithdrawnClimbs(boardName) ? `AND (${withdrawnClimbTombstoneSql('c.')}) IS NOT TRUE` : ''}
     LIMIT 1
   `;
   // Bind order follows the SQL text: the two tick subqueries, the stats join, the

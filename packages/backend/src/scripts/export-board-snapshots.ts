@@ -61,7 +61,7 @@ import {
 } from '@boardsesh/offline-sync';
 import { createPool, closePool } from '@boardsesh/db/client';
 import { QUANTUM_RELEASED_LAYOUT_IDS } from '@boardsesh/board-constants/quantum';
-import { snapshotQuantumEligibility } from './quantum-snapshot-eligibility';
+import { snapshotCatalogEligibility } from './catalog-snapshot-eligibility';
 import { normalizeRow, toIso, type RawRow } from '../graphql/resolvers/sync/row-normalize';
 import { uploadToS3, isS3Configured, getPublicUrl, getFromS3Strict, deleteFromS3, listS3Objects } from '../storage/s3';
 import { logger } from '../utils/logger';
@@ -539,7 +539,7 @@ function assertSafeColumns(columns: readonly string[]): void {
 // because a `privacyVersion: 1` import replays the live scope sync from epoch.
 const CLIMBS_WHERE = `board_type = $1 AND layout_id = $2 AND user_id IS NULL AND NOT is_boardsesh_authored
     AND is_draft IS NOT TRUE
-    AND ${snapshotQuantumEligibility()}
+    AND ${snapshotCatalogEligibility()}
     AND updated_at < now() - make_interval(secs => $3)`;
 
 const STATS_WHERE = `board_type = $1
@@ -547,7 +547,7 @@ const STATS_WHERE = `board_type = $1
       SELECT 1 FROM board_climbs bc
       WHERE bc.uuid = board_climb_stats.climb_uuid AND bc.board_type = $1 AND bc.layout_id = $2
         AND bc.user_id IS NULL AND NOT bc.is_boardsesh_authored AND bc.is_draft IS NOT TRUE
-        AND ${snapshotQuantumEligibility('bc.')}
+        AND ${snapshotCatalogEligibility('bc.')}
     )
     AND updated_at < now() - make_interval(secs => $3)`;
 
@@ -560,7 +560,7 @@ const GRADES_WHERE = `board_type = $1
       SELECT 1 FROM board_climbs bc
       WHERE bc.uuid = board_climb_grades.climb_uuid AND bc.board_type = $1 AND bc.layout_id = $2
         AND bc.user_id IS NULL AND NOT bc.is_boardsesh_authored AND bc.is_draft IS NOT TRUE
-        AND ${snapshotQuantumEligibility('bc.')}
+        AND ${snapshotCatalogEligibility('bc.')}
     )
     AND computed_at < now() - make_interval(secs => $3)`;
 

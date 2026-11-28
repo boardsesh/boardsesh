@@ -1,6 +1,7 @@
 import { useIsBoardConfigVisible } from '../hooks/use-board-visibility';
 import { isClimbBoardAvailable } from '../lib/boards/climb-render-board';
-import { isQuantumClimbRetired } from '../db/queries/quantum-climb-retirement';
+import { boardHidesWithdrawnClimbs } from '@boardsesh/offline-sync/withdrawn-climb';
+import { isClimbWithdrawn } from '../db/queries/withdrawn-climb';
 import { useCurrentClimbSurface } from '../hooks/use-current-climb-surface';
 import type { TickClimbIdentity } from '@boardsesh/board-config';
 /**
@@ -687,13 +688,13 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         (!!options?.boardConfig || board === storedActiveBoardConfigRef.current) &&
         isClimbBoardAvailable(targetClimb, board, boardVisibilityRef.current);
       if (!canOpen()) return;
-      if (targetClimb.boardType !== 'quantum' && board?.boardName !== 'quantum') {
+      if (!boardHidesWithdrawnClimbs(targetClimb.boardType) && !boardHidesWithdrawnClimbs(board?.boardName)) {
         commitOpenPlayDrawer(climb, options);
         return;
       }
-      void isQuantumClimbRetired(targetClimb.uuid)
-        .then((retired) => {
-          if (retired || !hostMountedRef.current || attempt !== playOpenAttemptRef.current || !canOpen()) return;
+      void isClimbWithdrawn(targetClimb.uuid)
+        .then((withdrawn) => {
+          if (withdrawn || !hostMountedRef.current || attempt !== playOpenAttemptRef.current || !canOpen()) return;
           commitOpenPlayDrawer(climb, options);
         })
         .catch(() => {

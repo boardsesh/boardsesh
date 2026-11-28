@@ -2,7 +2,8 @@ import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { BoardVisibilityConfig } from '@boardsesh/board-config/visibility';
 import type { Climb } from '@boardsesh/queue';
-import { isQuantumClimbRetired } from '../db/queries/quantum-climb-retirement';
+import { boardHidesWithdrawnClimbs } from '@boardsesh/offline-sync/withdrawn-climb';
+import { isClimbWithdrawn } from '../db/queries/withdrawn-climb';
 import { useIsBoardConfigVisible } from './use-board-visibility';
 import { isClimbBoardAvailable, resolveClimbRenderBoard } from '../lib/boards/climb-render-board';
 import { CLIMB_QUERY_KEY } from '../lib/graphql/query-keys';
@@ -11,6 +12,11 @@ import type { BoardConfig } from '../providers/drawer-host-provider';
 
 export function isQuantumClimbTarget(climb: Climb, board: BoardConfig | null): boolean {
   return climb.boardType === 'quantum' || board?.boardName === 'quantum';
+}
+
+/** The climb's own board or the board it is opened on hides withdrawn climbs, so a tombstone can stand in for it. */
+function mayBeWithdrawnTarget(climb: Climb, board: BoardConfig | null): boolean {
+  return boardHidesWithdrawnClimbs(climb.boardType) || boardHidesWithdrawnClimbs(board?.boardName);
 }
 
 function isClimbTargetBoardAvailable(
@@ -27,7 +33,7 @@ function isClimbTargetBoardAvailable(
 /**
  * The visible state uses the local catalogue and refreshes with the same
  * climb queries a board pull invalidates. Unknown or undownloaded rows have
- * no retirement marker.
+ * no withdrawal tombstone.
  */
 export function useClimbTargetAvailable(climb: Climb | null, board: BoardConfig | null): boolean {
   const isBoardConfigVisible = useIsBoardConfigVisible();
@@ -35,24 +41,24 @@ export function useClimbTargetAvailable(climb: Climb | null, board: BoardConfig 
     () => !climb || isClimbTargetBoardAvailable(climb, board, isBoardConfigVisible),
     [climb, board, isBoardConfigVisible],
   );
-  const quantumClimbUuid = climb && boardAvailable && isQuantumClimbTarget(climb, board) ? climb.uuid : undefined;
-  const retirement = useQuery({
-    queryKey: [...CLIMB_QUERY_KEY, 'quantumRetirement', quantumClimbUuid],
-    queryFn: () => isQuantumClimbRetired(quantumClimbUuid!),
-    enabled: quantumClimbUuid !== undefined,
+  const withdrawableClimbUuid = climb && boardAvailable && mayBeWithdrawnTarget(climb, board) ? climb.uuid : undefined;
+  const withdrawal = useQuery({
+    queryKey: [...CLIMB_QUERY_KEY, 'withdrawn', withdrawableClimbUuid],
+    queryFn: () => isClimbWithdrawn(withdrawableClimbUuid!),
+    enabled: withdrawableClimbUuid !== undefined,
     networkMode: 'always',
   });
-  return boardAvailable && (!quantumClimbUuid || (retirement.data === false && !retirement.isError));
+  return boardAvailable && (!withdrawableClimbUuid || (withdrawal.data === false && !withdrawal.isError));
 }
 
 /**
  * Native controls and menus can retain a callback across a re-render. Check
- * the local marker on tap and recheck the committed target and rollout after
- * the lookup before dispatching a Quantum climb action.
+ * the local tombstone on tap and recheck the committed target and rollout after
+ * the lookup before dispatching an action on a climb that may be withdrawn.
  */
 export function useRunAvailableClimbAction(climb: Climb | null, board: BoardConfig | null) {
   const isBoardConfigVisible = useIsBoardConfigVisible();
-  const quantum = climb !== null && isQuantumClimbTarget(climb, board);
+  const mayBeWithdrawn = climb !== null && mayBeWithdrawnTarget(climb, board);
   const available = useMemo(
     () => !climb || isClimbTargetBoardAvailable(climb, board, isBoardConfigVisible),
     [climb, board, isBoardConfigVisible],
@@ -69,16 +75,16 @@ export function useRunAvailableClimbAction(climb: Climb | null, board: BoardConf
     generation: number;
   } | null>(null);
   useLayoutEffect(() => {
-    if (!available || !quantum || !climbUuid) return;
+    if (!available || !mayBeWithdrawn || !climbUuid) return;
     currentClimb.current = { uuid: climbUuid, board, boardType: climbBoardType, layoutId: climbLayoutId, generation };
     return () => {
       currentClimb.current = null;
     };
-  }, [available, quantum, climbUuid, climbBoardType, climbLayoutId, board, generation]);
+  }, [available, mayBeWithdrawn, climbUuid, climbBoardType, climbLayoutId, board, generation]);
 
   return useCallback(
     (run: () => void) => {
-      if (!quantum) {
+      if (!mayBeWithdrawn) {
         run();
         return;
       }
@@ -93,14 +99,14 @@ export function useRunAvailableClimbAction(climb: Climb | null, board: BoardConf
       ) {
         return;
       }
-      void isQuantumClimbRetired(selection.uuid)
-        .then((retired) => {
-          if (!retired && currentClimb.current === selection && generation === getCredentialGeneration()) run();
+      void isClimbWithdrawn(selection.uuid)
+        .then((withdrawn) => {
+          if (!withdrawn && currentClimb.current === selection && generation === getCredentialGeneration()) run();
         })
         .catch(() => {
           // A failed local read leaves the action unconfirmed.
         });
     },
-    [quantum, climbUuid, climbBoardType, climbLayoutId, board, generation],
+    [mayBeWithdrawn, climbUuid, climbBoardType, climbLayoutId, board, generation],
   );
 }

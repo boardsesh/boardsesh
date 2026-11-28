@@ -37,7 +37,7 @@ import type { DevicePickerFn } from '../lib/ble/types';
 import type { BleBoardConfig } from '../lib/ble/board-config-match';
 import { getDatabaseHandle } from '../db';
 import { getQuantumRoutePresenceClimbsLocal } from '../db/queries/quantum-route-presence-local';
-import { isQuantumClimbRetired } from '../db/queries/quantum-climb-retirement';
+import { isClimbWithdrawn } from '../db/queries/withdrawn-climb';
 import {
   assessQuantumActivationSafety,
   quantumLayerColorNumber,
@@ -849,7 +849,7 @@ export function QuantumBluetoothProvider({
         const climbUuid = input.climbUuid;
         const assertTargetAvailable = climbUuid
           ? async () => {
-              if (await isQuantumClimbRetired(climbUuid)) {
+              if (await isClimbWithdrawn(climbUuid)) {
                 throw new QuantumRosterTransactionError(
                   'target-unavailable',
                   'This Quantum climb is no longer available to light',

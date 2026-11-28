@@ -1,6 +1,7 @@
 import { useIsBoardConfigVisible } from '../../hooks/use-board-visibility';
 import { isClimbBoardAvailable } from '../../lib/boards/climb-render-board';
-import { isQuantumClimbRetired } from '../../db/queries/quantum-climb-retirement';
+import { boardHidesWithdrawnClimbs } from '@boardsesh/offline-sync/withdrawn-climb';
+import { isClimbWithdrawn } from '../../db/queries/withdrawn-climb';
 import {
   createContext,
   useCallback,
@@ -141,13 +142,16 @@ export function ClimbMenusProvider({
         isClimbBoardAvailable(target.climb, target.boardConfig, boardVisibilityRef.current);
       if (!canExecute()) return;
       const select = () => setSelection({ target, id, nonce: attempt, credentialGeneration });
-      if (target.climb.boardType !== 'quantum' && target.boardConfig.boardName !== 'quantum') {
+      if (
+        !boardHidesWithdrawnClimbs(target.climb.boardType) &&
+        !boardHidesWithdrawnClimbs(target.boardConfig.boardName)
+      ) {
         select();
         return;
       }
-      void isQuantumClimbRetired(target.climb.uuid)
-        .then((retired) => {
-          if (!retired && canExecute()) select();
+      void isClimbWithdrawn(target.climb.uuid)
+        .then((withdrawn) => {
+          if (!withdrawn && canExecute()) select();
         })
         .catch(() => {
           // Keep a potentially withdrawn cached route out of the action host.

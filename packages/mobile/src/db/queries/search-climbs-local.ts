@@ -1,4 +1,3 @@
-import { QUANTUM_CLIMB_RETIREMENT_SQL } from './quantum-climb-retirement';
 import { getLocalUserId, type OfflineDatabase } from '@boardsesh/offline-sync';
 import type { BoardName, Climb, ClimbSearchInput } from '@boardsesh/shared-schema';
 import { resolveClimbNoMatch } from '@boardsesh/shared-schema';
@@ -446,12 +445,12 @@ export function buildJoinAndWhere(
     whereBinds.push(...binds);
   };
 
-  // Base: board / layout / listed / non-draft.
+  // Base: board / layout / listed / non-draft. A withdrawal tombstone is
+  // unlisted and ownerless, so it fails both the listed and the own-draft arm.
   if (followedCondition) push(followedCondition.sql, ...followedCondition.binds);
   // Playlists own their membership, visibility and geometry. Their filters
   // reuse the expressions below against stats joined at each row's display angle.
   if (context === 'catalogue') {
-    if (boardType === 'quantum') push(`(${QUANTUM_CLIMB_RETIREMENT_SQL}) IS NOT TRUE`);
     push('c.board_type = ?', boardType);
     push('c.layout_id = ?', input.layoutId);
     if (isDraftQuery) {

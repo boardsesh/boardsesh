@@ -175,6 +175,28 @@ export type BoardCapabilities = {
   wallSendMode: WallSendMode;
   /** Whether bundled geometry can drive the synchronous WASM renderer. */
   staticBoardRender: boolean;
+  /**
+   * What a catalogue climb becomes once the board's supplier withdraws it. The
+   * importer marks the supplier's row `is_listed = false` either way.
+   *
+   * `'readable'`: it leaves browse and search but still opens by uuid, so a
+   * logbook entry, a playlist or a shared link keeps resolving. MoonBoard
+   * withdrawn problems and Kilter deletions work this way.
+   *
+   * `'hidden'`: it leaves every read. The server stops returning it from the
+   * climb detail, favourites, playlists, logbooks and public exports; the offline
+   * sync replaces a downloaded copy with a redacted row (no name, no holds, no
+   * supplier id) that keeps the uuid so ticks still point at it; and the app
+   * refuses to open, act on or light it. Quantum only: eWalls withdraws a route
+   * when it may no longer be shown.
+   *
+   * A supplier row is one with no Boardsesh owner, not authored in the app, that
+   * carries the supplier's id in `controller_route_uuid`. The predicates are
+   * `withdrawnCatalogClimbCondition` (packages/db) on the server and
+   * `withdrawnClimbTombstoneSql` (packages/shared/offline-sync, which mirrors
+   * {@link HIDDEN_WITHDRAWN_CLIMB_BOARD_NAMES}) on the device.
+   */
+  withdrawnCatalogClimbs: 'readable' | 'hidden';
 };
 
 /**
@@ -200,6 +222,7 @@ const AURORA_CAPABILITIES: BoardCapabilities = {
   maxActiveWallClimbs: 1,
   wallSendMode: 'automatic',
   staticBoardRender: true,
+  withdrawnCatalogClimbs: 'readable',
 };
 
 /**
@@ -224,6 +247,7 @@ const MOONBOARD_CAPABILITIES: BoardCapabilities = {
   maxActiveWallClimbs: 1,
   wallSendMode: 'automatic',
   staticBoardRender: true,
+  withdrawnCatalogClimbs: 'readable',
 };
 
 /**
@@ -248,6 +272,7 @@ const WOODS_CAPABILITIES: BoardCapabilities = {
   maxActiveWallClimbs: 1,
   wallSendMode: 'automatic',
   staticBoardRender: true,
+  withdrawnCatalogClimbs: 'readable',
 };
 
 /**
@@ -286,6 +311,7 @@ const SPRAY_CAPABILITIES: BoardCapabilities = {
   maxActiveWallClimbs: 1,
   wallSendMode: 'automatic',
   staticBoardRender: false,
+  withdrawnCatalogClimbs: 'readable',
 };
 
 const QUANTUM_CAPABILITIES: BoardCapabilities = {
@@ -304,6 +330,7 @@ const QUANTUM_CAPABILITIES: BoardCapabilities = {
   maxActiveWallClimbs: 4,
   wallSendMode: 'explicit-layer',
   staticBoardRender: false,
+  withdrawnCatalogClimbs: 'hidden',
 };
 
 // Typed as a total Record over BoardName, so adding a board to SUPPORTED_BOARDS
@@ -355,6 +382,24 @@ export const PUBLIC_CLIMB_LINK_BOARD_NAMES = SUPPORTED_BOARDS.filter(supportsPub
   BoardName,
   ...BoardName[],
 ];
+
+/**
+ * Boards whose withdrawn catalogue climbs leave every read
+ * (`withdrawnCatalogClimbs: 'hidden'`). The server and device predicates are
+ * built from this list, so a new board joins them by setting its row above.
+ */
+export const HIDDEN_WITHDRAWN_CLIMB_BOARD_NAMES: readonly BoardName[] = SUPPORTED_BOARDS.filter(
+  (boardName) => CAPABILITIES_BY_BOARD[boardName].withdrawnCatalogClimbs === 'hidden',
+);
+
+/**
+ * Whether this board hides its withdrawn catalogue climbs. Exact-case on purpose,
+ * unlike {@link getBoardCapabilities}: the SQL predicates compare `board_type`
+ * exactly, and every caller this replaced compared with `=== 'quantum'`.
+ */
+export function hidesWithdrawnCatalogClimbs(boardName: string | null | undefined): boolean {
+  return boardName != null && (HIDDEN_WITHDRAWN_CLIMB_BOARD_NAMES as readonly string[]).includes(boardName);
+}
 
 /** Layer-overlap search only applies to controllers retaining independent climbs. */
 export function supportsLayerOverlapFiltering(boardName: string | undefined): boolean {

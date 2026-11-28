@@ -5,8 +5,8 @@ vi.mock('../feature-flags-provider', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../feature-flags-provider')>()),
   useFeatureFlag: () => quantumRollout.flag,
 }));
-vi.mock('../../db/queries/quantum-climb-retirement', () => ({
-  isQuantumClimbRetired: quantumRollout.isRetired,
+vi.mock('../../db/queries/withdrawn-climb', () => ({
+  isClimbWithdrawn: quantumRollout.isRetired,
 }));
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect, useState, type ChangeEvent, type ReactNode } from 'react';

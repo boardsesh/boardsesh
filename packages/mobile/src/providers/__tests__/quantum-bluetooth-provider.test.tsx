@@ -95,7 +95,7 @@ const presence = vi.hoisted(() => ({
 }));
 
 const localRecovery = vi.hoisted(() => ({
-  isQuantumClimbRetired: vi.fn(),
+  isClimbWithdrawn: vi.fn(),
   getDatabaseHandle: vi.fn(),
   getRoutePresenceClimbs: vi.fn(),
   getQuantumGeometry: vi.fn(),
@@ -144,8 +144,8 @@ vi.mock('../feature-flags-provider', () => ({
   useFeatureFlag: () => true,
   useFeatureFlagsResolved: () => true,
 }));
-vi.mock('../../db/queries/quantum-climb-retirement', () => ({
-  isQuantumClimbRetired: localRecovery.isQuantumClimbRetired,
+vi.mock('../../db/queries/withdrawn-climb', () => ({
+  isClimbWithdrawn: localRecovery.isClimbWithdrawn,
 }));
 vi.mock('../../db/queries/quantum-route-presence-local', () => ({
   getQuantumRoutePresenceClimbsLocal: localRecovery.getRoutePresenceClimbs,
@@ -298,7 +298,7 @@ describe('QuantumBluetoothProvider', () => {
     controller.refresh.mockResolvedValue(controller.initialSnapshot);
     controller.publishSnapshot = undefined;
     localRecovery.getDatabaseHandle.mockReturnValue(null);
-    localRecovery.isQuantumClimbRetired.mockReset().mockResolvedValue(false);
+    localRecovery.isClimbWithdrawn.mockReset().mockResolvedValue(false);
     localRecovery.getRoutePresenceClimbs.mockResolvedValue([]);
     localRecovery.getQuantumGeometryGeneration.mockReturnValue(1);
     localRecovery.getQuantumGeometry.mockImplementation((layoutId: number, sizeId: number) =>
@@ -509,7 +509,7 @@ describe('QuantumBluetoothProvider', () => {
         await latestActions!.connect();
       });
       controller.refresh.mockClear();
-      localRecovery.isQuantumClimbRetired.mockResolvedValueOnce(!late).mockResolvedValue(true);
+      localRecovery.isClimbWithdrawn.mockResolvedValueOnce(!late).mockResolvedValue(true);
       const write = vi.fn();
       if (late) {
         controller.activate.mockImplementationOnce(async (request: QuantumActivateTransaction) => {

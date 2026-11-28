@@ -47,7 +47,7 @@ const quantum = vi.hoisted(() => ({ enabled: true, isRetired: vi.fn<() => Promis
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useFeatureFlag: (key: string) => key === 'quantum-board' && quantum.enabled,
 }));
-vi.mock('../../../db/queries/quantum-climb-retirement', () => ({ isQuantumClimbRetired: quantum.isRetired }));
+vi.mock('../../../db/queries/withdrawn-climb', () => ({ isClimbWithdrawn: quantum.isRetired }));
 
 /** The last timed climb on the wall, with its row up. */
 const onTheLimitClimb: WorkoutOutcomeHoldInput = {

@@ -118,6 +118,16 @@ A newer upstream revision can restore a retired route with its original holds.
 Snapshot and reference exports apply the same eligibility to associated stats,
 grades and aliases. Personal response collections never become shared catalogue rows.
 
+The hiding is driven by a capability, not by Quantum checks. Quantum's row in the
+board capability table sets `withdrawnCatalogClimbs: 'hidden'`, and every read
+that hides a withdrawn climb follows that flag: on the
+server through `withdrawnCatalogClimbCondition` and `unavailableCatalogClimbCondition`
+in `packages/db`, on the phone through the tombstone predicate in
+`@boardsesh/offline-sync/withdrawn-climb`. MoonBoard and Kilter set it to
+`'readable'`, so their withdrawn climbs leave browsing but still open by uuid. A
+board whose supplier withdraws climbs that must not be shown sets the flag and
+adds its name to the device mirror; the mirror's parity test fails until it does.
+
 The API's `-1` angle sentinel stays unknown, rather than becoming a real climb
 angle. Known grade representations retain their mapping; unknown representations
 stay unknown. Unconfirmed supplier count and rating semantics are retained as
