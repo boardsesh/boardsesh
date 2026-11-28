@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-27T21:41:33.988Z",
+  "generatedAt": "2026-11-28T06:59:19.943Z",
   "entries": [
+    {
+      "prNumber": 8272,
+      "category": "new",
+      "title": "Quantum Board climbs now glow around each hold's real shape.",
+      "mergedAt": "2026-11-28T06:54:57Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/8272"
+    },
     {
       "prNumber": 4878,
       "category": "new",

@@ -4,6 +4,12 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/operations/mobile-ota-updates.md.
 
+## 2026-11-28
+
+### New
+
+- Quantum Board climbs now glow around each hold's real shape. ([#8272](https://github.com/boardsesh/boardsesh/pull/8272))
+
 ## 2026-11-27
 
 ### New
