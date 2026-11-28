@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { v5 as uuidv5 } from 'uuid';
 import type { EwallsBootstrap, EwallsDelta, EwallsRecord } from '@boardsesh/quantum-sync';
 import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
 import {
@@ -8,28 +9,212 @@ import {
   QUANTUM_LAYOUTS,
   QUANTUM_MODEL_BY_EWALLS_TYPE,
   QUANTUM_MODELS,
+  QUANTUM_PRODUCT_ID,
   QUANTUM_RELEASED_MODELS,
   QUANTUM_PRODUCT_SIZES,
+  QUANTUM_SET_ID,
   type QuantumModelName,
   type QuantumSourceDiodeBinding,
   type QuantumGeometryPlacement,
 } from '@boardsesh/board-constants/quantum';
+import type {
+  NewBoardDifficultyGrade,
+  NewBoardHole,
+  NewBoardLayout,
+  NewBoardLed,
+  NewBoardPlacement,
+  NewBoardProductSize,
+  NewBoardProductSizeLayoutSet,
+} from '@boardsesh/db/schema';
+import { fingerprintFromHolds } from '@boardsesh/kilter-sync/sync';
 import { CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
 import { RELEASED_EWALLS_BOARD_TYPES, releasedEwallsModel } from './ewalls-catalog-scope';
-import {
-  fingerprintFromHolds,
-  mapQuantumGrade,
-  quantumCanonicalClimbUuid,
-  QUANTUM_BOARD_TYPE,
-  QUANTUM_DEFAULT_ROLE_ID,
-  QUANTUM_MAX_DIODES_PER_ACTIVATION,
-  QUANTUM_ROLE_ROWS,
-  QUANTUM_SET_ID,
-  type PreparedQuantumCatalog,
-  type PreparedQuantumClimb,
-  type PreparedQuantumHold,
-  type PreparedQuantumStat,
-} from './quantum-catalog-mapping';
+
+export const QUANTUM_BOARD_TYPE = 'quantum' as const;
+const QUANTUM_DEFAULT_ROLE_ID = 13;
+// Authoring keeps the app's current activation cap; imported routes remain complete.
+const QUANTUM_MAX_DIODES_PER_ACTIVATION = 92;
+
+const QUANTUM_ROLE_ROWS = [
+  {
+    boardType: QUANTUM_BOARD_TYPE,
+    id: 12,
+    productId: QUANTUM_PRODUCT_ID,
+    position: 1,
+    name: 'STARTING',
+    fullName: 'Starting hold',
+    ledColor: '#00FF00',
+    screenColor: '#00FF00',
+  },
+  {
+    boardType: QUANTUM_BOARD_TYPE,
+    id: 13,
+    productId: QUANTUM_PRODUCT_ID,
+    position: 2,
+    name: 'HAND',
+    fullName: 'Hand hold',
+    ledColor: '#00FFFF',
+    screenColor: '#00FFFF',
+  },
+  {
+    boardType: QUANTUM_BOARD_TYPE,
+    id: 14,
+    productId: QUANTUM_PRODUCT_ID,
+    position: 3,
+    name: 'FINISH',
+    fullName: 'Finish hold',
+    ledColor: '#FF00FF',
+    screenColor: '#FF00FF',
+  },
+] as const;
+
+type QuantumHoldState = 'STARTING' | 'HAND' | 'FINISH';
+
+type PreparedQuantumHold = Readonly<{
+  boardType: typeof QUANTUM_BOARD_TYPE;
+  climbUuid: string;
+  holdId: number;
+  frameNumber: 0;
+  holdState: QuantumHoldState;
+}>;
+
+type PreparedQuantumClimb = Readonly<{
+  uuid: string;
+  boardType: typeof QUANTUM_BOARD_TYPE;
+  layoutId: number;
+  setterId: null;
+  setterUsername: string | null;
+  name: string;
+  description: string;
+  hsm: null;
+  edgeLeft: number;
+  edgeRight: number;
+  edgeBottom: number;
+  edgeTop: number;
+  angle: number | null;
+  framesCount: 1;
+  framesPace: 0;
+  frames: string;
+  controllerRouteUuid: string;
+  isDraft: false;
+  isListed: boolean;
+  createdAt: string | null;
+  publishedAt: string | null;
+  synced: true;
+  syncError: null;
+  userId: null;
+  requiredSetIds: readonly [typeof QUANTUM_SET_ID];
+  compatibleSizeIds: readonly number[];
+  holdFingerprint: string;
+  characteristics: readonly string[];
+  sourceMetadata: Readonly<Record<string, unknown>>;
+}>;
+
+type PreparedQuantumStat = Readonly<{
+  boardType: typeof QUANTUM_BOARD_TYPE;
+  climbUuid: string;
+  angle: number;
+  displayDifficulty: number | null;
+  difficultyAverage: number | null;
+  upstreamAscensionistCount: number | null;
+  ascensionistCount: number | null;
+  upstreamQualityAverage: number | null;
+  qualityAverage: number | null;
+  qualityNormalized: true;
+  upstreamSyncedAt: string;
+}>;
+
+export type PreparedQuantumCatalog = Readonly<{
+  hardwareFingerprint: string;
+  grades: readonly Readonly<NewBoardDifficultyGrade>[];
+  products: readonly Readonly<{
+    boardType: typeof QUANTUM_BOARD_TYPE;
+    id: number;
+    name: string;
+    isListed: boolean;
+    password: null;
+    minCountInFrame: number;
+    maxCountInFrame: number;
+  }>[];
+  sets: readonly Readonly<{
+    boardType: typeof QUANTUM_BOARD_TYPE;
+    id: number;
+    name: string;
+    hsm: null;
+  }>[];
+  roles: typeof QUANTUM_ROLE_ROWS;
+  layouts: readonly Readonly<NewBoardLayout>[];
+  productSizes: readonly Readonly<NewBoardProductSize>[];
+  productSizeLayoutSets: readonly Readonly<NewBoardProductSizeLayoutSet>[];
+  holes: readonly Readonly<NewBoardHole>[];
+  placements: readonly Readonly<NewBoardPlacement>[];
+  leds: readonly Readonly<NewBoardLed>[];
+  climbs: readonly PreparedQuantumClimb[];
+  aliases: readonly Readonly<{ aliasUuid: string; canonicalUuid: string }>[];
+  holds: readonly PreparedQuantumHold[];
+  stats: readonly PreparedQuantumStat[];
+}>;
+
+/**
+ * Translate the source grade-id array to Boardsesh's canonical grade
+ * ids. Unknown and malformed encodings stay null; the source's top id maps to
+ * 34 and is deliberately clamped to Boardsesh's current maximum of 33.
+ */
+export function mapQuantumGrade(rawGrade: string): number | null {
+  const gradeIds = parseGradeIds(rawGrade);
+  if (!gradeIds) return null;
+
+  const exactRangeGrades: Readonly<Record<string, number>> = {
+    '[6]': 10,
+    '[7]': 10,
+    '[7,8]': 11,
+    '[8]': 11,
+    '[9]': 12,
+    '[9,10]': 13,
+    '[10]': 13,
+    '[11]': 14,
+    '[11,12]': 15,
+    '[12]': 15,
+    '[12,13]': 15,
+    '[13]': 15,
+    '[15,16]': 18,
+    '[19,20]': 22,
+    '[20,21]': 23,
+    '[21,22]': 24,
+    '[22,23]': 25,
+  };
+  const exactGrade = exactRangeGrades[JSON.stringify(gradeIds)];
+  if (exactGrade !== undefined) return exactGrade;
+
+  if (gradeIds.length === 1) {
+    const sourceGrade = gradeIds[0];
+    if (sourceGrade !== undefined && sourceGrade >= 14 && sourceGrade <= 32) {
+      return Math.min(sourceGrade + 2, 33);
+    }
+  }
+  return null;
+}
+
+function parseGradeIds(rawGrade: string): readonly number[] | null {
+  try {
+    const parsed: unknown = JSON.parse(rawGrade);
+    if (
+      !Array.isArray(parsed) ||
+      (parsed.length !== 1 && parsed.length !== 2) ||
+      parsed.some((gradeId) => !Number.isSafeInteger(gradeId))
+    ) {
+      return null;
+    }
+    return parsed as number[];
+  } catch {
+    return null;
+  }
+}
+
+/** Canonical identity survives source model additions/removals within one physical family. */
+export function quantumCanonicalClimbUuid(layoutId: number, controllerRouteUuid: string): string {
+  return uuidv5(`https://boardsesh.com/catalog/quantum/${layoutId}/${controllerRouteUuid.toLowerCase()}`, uuidv5.URL);
+}
 
 type EwallsBoardType = keyof typeof QUANTUM_MODEL_BY_EWALLS_TYPE;
 type Model = (typeof QUANTUM_MODELS)[QuantumModelName];

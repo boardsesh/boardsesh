@@ -31,9 +31,7 @@ import {
 import { blendedQualityAverageSql, quantumCatalogClimbCondition } from '@boardsesh/db/queries';
 import type { EwallsBootstrap, EwallsDelta, EwallsRecord } from '@boardsesh/quantum-sync';
 import { db, type Database } from '../db/client';
-import { QUANTUM_BOARD_TYPE, type PreparedQuantumCatalog } from './quantum-catalog-mapping';
 import { QUANTUM_HARDWARE_FINGERPRINT, QUANTUM_MODELS } from '@boardsesh/board-constants/quantum';
-import { quantumCanonicalClimbUuid } from './quantum-catalog-mapping';
 import {
   EWALLS_CATALOG_STATE_PREFIX,
   ewallsCatalogStateKey,
@@ -44,7 +42,10 @@ import {
 import {
   normalizeEwallsRouteId,
   normalizeEwallsTimestamp,
+  quantumCanonicalClimbUuid,
+  QUANTUM_BOARD_TYPE,
   type EwallsVisibilityWithdrawal,
+  type PreparedQuantumCatalog,
 } from './ewalls-catalog-mapping';
 import { releasedEwallsModel, RELEASED_EWALLS_BOARD_TYPES } from './ewalls-catalog-scope';
 

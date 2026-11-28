@@ -9,8 +9,20 @@ import { boardPresenceQueries } from '../graphql/resolvers/board-presence/querie
 import { syncQueries } from '../graphql/resolvers/sync/queries';
 import { pubsub } from '../pubsub';
 import { roomManager } from '../services/room-manager';
-import { quantumCanonicalClimbUuid } from '../services/quantum-catalog-mapping';
-import { importFixture, quantumCatalogFixture } from '../services/__tests__/quantum-catalog-fixture';
+import { quantumCanonicalClimbUuid } from '../services/ewalls-catalog-mapping';
+import {
+  importFixture,
+  quantumCatalogFixture,
+  QUANTUM_FIXTURE_PLACEMENT_IDS,
+  QUANTUM_FIXTURE_SHARED_PLACEMENT,
+  QUANTUM_FIXTURE_XL_ONLY_PLACEMENTS,
+} from '../services/__tests__/quantum-catalog-fixture';
+
+const [FIRST_XL_ONLY, SECOND_XL_ONLY, THIRD_XL_ONLY] = QUANTUM_FIXTURE_XL_ONLY_PLACEMENTS;
+/** A hold on every standard size plus one on XL only: the climb fits XL alone. */
+const XL_ONLY_FRAMES = `p${QUANTUM_FIXTURE_SHARED_PLACEMENT}r12p${FIRST_XL_ONLY}r14`;
+/** Two other XL-only holds: a hold edit that still fits XL alone. */
+const EDITED_XL_ONLY_FRAMES = `p${SECOND_XL_ONLY}r12p${THIRD_XL_ONLY}r14`;
 
 const OWNER = 'quantum-safety-owner';
 const VIEWER = 'quantum-safety-viewer';
@@ -72,7 +84,7 @@ describe('Quantum authored-climb safety', () => {
           layoutId: 9101,
           name: 'Quantum edge test',
           isDraft: true,
-          frames: 'p1000007r12p1000009r14',
+          frames: XL_ONLY_FRAMES,
           angle: 40,
         },
       },
@@ -89,7 +101,7 @@ describe('Quantum authored-climb safety', () => {
         input: {
           uuid: saved.uuid,
           boardType: 'quantum',
-          frames: 'p1000008r12p1000010r14',
+          frames: EDITED_XL_ONLY_FRAMES,
         },
       },
       context(OWNER),
@@ -106,7 +118,7 @@ describe('Quantum authored-climb safety', () => {
       layoutId: 9101,
       name: 'Quantum scope validation',
       isDraft: true,
-      frames: 'p1000007r12p1000009r14',
+      frames: XL_ONLY_FRAMES,
       angle: 40,
     };
     await expect(
@@ -117,7 +129,7 @@ describe('Quantum authored-climb safety', () => {
       climbMutations.updateClimb(
         {},
         {
-          input: { uuid: saved.uuid, boardType: 'quantum', sizeId: 9203, frames: 'p1000008r12p1000010r14' },
+          input: { uuid: saved.uuid, boardType: 'quantum', sizeId: 9203, frames: EDITED_XL_ONLY_FRAMES },
         },
         context(OWNER),
       ),
@@ -137,7 +149,7 @@ describe('Quantum authored-climb safety', () => {
       name: 'Personal draft',
       isDraft: true,
       isListed: false,
-      frames: 'p1000007r12p1000009r14',
+      frames: XL_ONLY_FRAMES,
       controllerRouteUuid: '44444444-4444-4444-8444-444444444444',
     });
     const [board] = await db
@@ -208,7 +220,7 @@ describe('Quantum authored-climb safety', () => {
       {
         climbUuid: quantumCanonicalClimbUuid(9101, '11111111-1111-4111-8111-111111111111'),
         geometryKnown: true,
-        placementIds: [1000007, 1000008, 1000009, 1000010],
+        placementIds: QUANTUM_FIXTURE_PLACEMENT_IDS,
       },
     ]);
   });
@@ -260,7 +272,7 @@ describe('Quantum authored-climb safety', () => {
       isListed: true,
       name: 'Mutable public route',
       publishedAt: new Date().toISOString(),
-      frames: 'p1000007r12p1000009r14',
+      frames: XL_ONLY_FRAMES,
       framesCount: 1,
       angle: 40,
     });
@@ -301,13 +313,13 @@ describe('Quantum authored-climb safety', () => {
         input: {
           uuid: climbUuid,
           boardType: 'quantum',
-          frames: 'p1000008r12p1000010r14',
+          frames: EDITED_XL_ONLY_FRAMES,
         },
       },
       { ...context(OWNER), connectionId: 'quantum-second-owner-phone' },
     );
     const [edited] = await db.select().from(schema.boardClimbs).where(eq(schema.boardClimbs.uuid, climbUuid));
-    expect(edited).toMatchObject({ controllerRouteUuid, frames: 'p1000008r12p1000010r14' });
+    expect(edited).toMatchObject({ controllerRouteUuid, frames: EDITED_XL_ONLY_FRAMES });
     expect((await reportLitRoute(OWNER)).layers).toMatchObject([{ climbUuid, geometryKnown: false, placementIds: [] }]);
     expect((await reportLitRoute(VIEWER)).layers).toMatchObject([
       { climbUuid, geometryKnown: false, placementIds: [] },
