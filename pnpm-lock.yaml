@@ -400,7 +400,7 @@ importers:
         version: 4.23.12
       uuid:
         specifier: ^14.0.1
-        version: 14.0.2
+        version: 14.0.3
       winston:
         specifier: ^3.19.0
         version: 3.19.0
@@ -530,7 +530,7 @@ importers:
         version: 3.4.9(patch_hash=1c2f0335f127be464a29a2e1a0ab433b2881c5eda2ca8028da5641c6dcc93703)
       uuid:
         specifier: ^14.0.1
-        version: 14.0.2
+        version: 14.0.3
     devDependencies:
       '@faker-js/faker':
         specifier: ^10.5.0
@@ -2240,7 +2240,7 @@ importers:
         version: 10.1.1(react@19.2.8)
       uuid:
         specifier: ^14.0.1
-        version: 14.0.2
+        version: 14.0.3
       web-vitals:
         specifier: ^6.0.1
         version: 6.1.1
@@ -11940,8 +11940,8 @@ packages:
     resolution: {integrity: sha512-vIYxrBCC/N/K+Js3qSN88go7kIfNPssr/hHCesKCQNAjmgvYS2oqr69kIufEG+O4+PfezOH4EbIeHCfFov8ZgQ==}
     hasBin: true
 
-  uuid@14.0.2:
-    resolution: {integrity: sha512-xZe/16rV4aa+HGSOCiY2YeLT1OybRLrrkL/Rqaq7p7GMVXjFh+6wN4oMYgjFmnSnhY8t6Xpdl2l9qmnHYuMHwQ==}
+  uuid@14.0.3:
+    resolution: {integrity: sha512-Sc5u1VVln93y1Xnz4R+CunOZc7R9LUcTmhj7Rc7Eg3HVcf7rVn2FOoa812fe0W8p3jD7xeoGSYbfqCGGH2B6xw==}
     hasBin: true
 
   uuid@7.0.3:
@@ -24020,7 +24020,7 @@ snapshots:
 
   uuid@11.1.1: {}
 
-  uuid@14.0.2: {}
+  uuid@14.0.3: {}
 
   uuid@7.0.3: {}
 
