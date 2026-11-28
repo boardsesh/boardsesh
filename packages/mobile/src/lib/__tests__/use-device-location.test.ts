@@ -52,7 +52,7 @@ describe('locationPermissionFrom', () => {
 describe('useDeviceLocation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    expoLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' });
+    expoLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'undetermined' });
     expoLocation.requestForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' });
     expoLocation.getCurrentPositionAsync.mockResolvedValue({ coords: { latitude: 1, longitude: 2 } });
   });
@@ -60,10 +60,10 @@ describe('useDeviceLocation', () => {
   // The board picker searches Near you on open, but only for a climber who
   // already said yes: the question itself waits for a tap.
   it.each([
-    { permission: 'granted', status: 'granted', asked: true },
-    { permission: 'undetermined', status: 'idle', asked: false },
-    { permission: 'denied', status: 'idle', asked: false },
-  ])('requestIfAllowed with $permission → $status', async ({ permission, status, asked }) => {
+    { permission: 'granted', status: 'granted' },
+    { permission: 'undetermined', status: 'idle' },
+    { permission: 'denied', status: 'idle' },
+  ])('requestIfAllowed with $permission → $status', async ({ permission, status }) => {
     expoLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: permission });
     const { result } = renderHook(() => useDeviceLocation());
 
@@ -72,7 +72,7 @@ describe('useDeviceLocation', () => {
     });
 
     expect(result.current.status).toBe(status);
-    expect(expoLocation.requestForegroundPermissionsAsync).toHaveBeenCalledTimes(asked ? 1 : 0);
+    expect(expoLocation.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
   });
 
   // The picker offers Allow location or Open Settings before anything is asked.
@@ -167,6 +167,99 @@ describe('useDeviceLocation', () => {
     expect(onAnswer).toHaveBeenCalledExactlyOnceWith('granted');
   });
 
+  it('allows an onAnswer retry after the first permission read fails', async () => {
+    expoLocation.getForegroundPermissionsAsync
+      .mockRejectedValueOnce(new Error('permission read failed'))
+      .mockResolvedValueOnce({ status: 'undetermined' });
+    const { result } = renderHook(() => useDeviceLocation());
+    let retry: Promise<LocationPermission> | undefined;
+    const onAnswer = vi.fn(() => {
+      retry = result.current.request();
+    });
+
+    await act(async () => {
+      const first = result.current.request({ onAnswer });
+      await first;
+      expect(retry).toBeDefined();
+      expect(await retry).toBe('granted');
+    });
+
+    expect(onAnswer).toHaveBeenCalledExactlyOnceWith('unknown');
+    expect(expoLocation.getForegroundPermissionsAsync).toHaveBeenCalledTimes(2);
+    expect(expoLocation.requestForegroundPermissionsAsync).toHaveBeenCalledOnce();
+    expect(result.current.status).toBe('granted');
+  });
+
+  it('never prompts when a foreground grant expires between automatic reads', async () => {
+    expoLocation.getForegroundPermissionsAsync
+      .mockResolvedValueOnce({ status: 'granted' })
+      .mockResolvedValueOnce({ status: 'undetermined' });
+    const { result } = renderHook(() => useDeviceLocation());
+
+    await act(async () => {
+      await result.current.requestIfAllowed();
+    });
+    expect(result.current.status).toBe('granted');
+    expect(expoLocation.getForegroundPermissionsAsync).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await result.current.requestIfAllowed();
+    });
+    expect(result.current.permission).toBe('ask');
+    expect(result.current.coords).toBeNull();
+    expect(expoLocation.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { permission: 'granted', prompts: 0 },
+    { permission: 'undetermined', prompts: 1 },
+  ])('preserves a tap during an automatic $permission permission read', async ({ permission, prompts }) => {
+    let resolvePermission: ((permission: { status: string }) => void) | undefined;
+    let resolvePosition: ((position: { coords: { latitude: number; longitude: number } }) => void) | undefined;
+    expoLocation.getForegroundPermissionsAsync.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolvePermission = resolve;
+      }),
+    );
+    expoLocation.getCurrentPositionAsync.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolvePosition = resolve;
+      }),
+    );
+    const { result } = renderHook(() => useDeviceLocation());
+    let first: Promise<LocationPermission> = Promise.resolve('unknown');
+    act(() => {
+      first = result.current.requestIfAllowed();
+    });
+    await waitFor(() => expect(expoLocation.getForegroundPermissionsAsync).toHaveBeenCalledTimes(1));
+
+    const onAnswer = vi.fn();
+    let repeatedAutomatic: Promise<LocationPermission> = Promise.resolve('unknown');
+    let explicitTap: Promise<LocationPermission> = Promise.resolve('unknown');
+    act(() => {
+      repeatedAutomatic = result.current.requestIfAllowed();
+      explicitTap = result.current.request({ onAnswer });
+    });
+    expect(expoLocation.getForegroundPermissionsAsync).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolvePermission?.({ status: permission });
+    });
+    await waitFor(() => expect(onAnswer).toHaveBeenCalledExactlyOnceWith('granted'));
+    expect(result.current.status).toBe('loading');
+
+    let answers: LocationPermission[] = [];
+    await act(async () => {
+      resolvePosition?.({ coords: { latitude: 1, longitude: 2 } });
+      answers = await Promise.all([first, repeatedAutomatic, explicitTap]);
+    });
+    expect(answers).toEqual(['granted', 'granted', 'granted']);
+    expect(onAnswer).toHaveBeenCalledOnce();
+    expect(result.current.status).toBe('granted');
+    expect(expoLocation.getCurrentPositionAsync).toHaveBeenCalledTimes(1);
+    expect(expoLocation.requestForegroundPermissionsAsync).toHaveBeenCalledTimes(prompts);
+  });
+
   it('takes the permission from the answer to the prompt', async () => {
     expoLocation.requestForegroundPermissionsAsync.mockResolvedValue({ status: 'denied', canAskAgain: false });
     const { result } = renderHook(() => useDeviceLocation({ retryAfterDenial: true }));
@@ -234,6 +327,90 @@ describe('useDeviceLocation', () => {
 
     expect(result.current.status).toBe('granted');
     expect(result.current.coords).toEqual({ latitude: 1, longitude: 2 });
+  });
+
+  it.each([{ ios: { scope: 'whenInUse', accuracy: 'reduced' } }, { android: { scope: 'coarse', accuracy: 'coarse' } }])(
+    'accepts approximate foreground access: %j',
+    async (details) => {
+      expoLocation.requestForegroundPermissionsAsync.mockResolvedValue({ status: 'granted', ...details });
+      expoLocation.getCurrentPositionAsync.mockResolvedValue({
+        coords: { latitude: 52.36, longitude: 4.9, accuracy: 5000 },
+      });
+      const { result } = renderHook(() => useDeviceLocation());
+
+      await act(async () => {
+        await result.current.request();
+      });
+
+      expect(result.current.status).toBe('granted');
+      expect(result.current.permission).toBe('granted');
+      expect(result.current.coords).toEqual({ latitude: 52.36, longitude: 4.9 });
+      expect(expoLocation.getCurrentPositionAsync).toHaveBeenCalledWith({ accuracy: expoLocation.Accuracy.Balanced });
+    },
+  );
+
+  it('uses an existing When In Use grant without another permission request', async () => {
+    expoLocation.getForegroundPermissionsAsync.mockResolvedValue({
+      status: 'granted',
+      ios: { scope: 'whenInUse', accuracy: 'reduced' },
+    });
+    const { result } = renderHook(() => useDeviceLocation());
+
+    await act(async () => {
+      await result.current.request();
+    });
+
+    expect(result.current.status).toBe('granted');
+    expect(expoLocation.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
+  });
+
+  it('clears an expired one-time grant on foreground without prompting', async () => {
+    expoLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' });
+    const { result } = renderHook(() => useDeviceLocation({ rereadWhenActive: true }));
+    await act(async () => {
+      await result.current.requestIfAllowed();
+    });
+    expect(result.current.status).toBe('granted');
+
+    expoLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'undetermined' });
+    await act(async () => {
+      for (const listener of appState.listeners) listener('active');
+    });
+
+    expect(result.current.permission).toBe('ask');
+    expect(result.current.status).toBe('idle');
+    expect(result.current.coords).toBeNull();
+    expect(expoLocation.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
+    expect(expoLocation.getCurrentPositionAsync).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await result.current.request();
+    });
+    expect(result.current.status).toBe('granted');
+    expect(expoLocation.requestForegroundPermissionsAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('replaces a precise fix after Settings switches to approximate access', async () => {
+    expoLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' });
+    const { result } = renderHook(() => useDeviceLocation({ rereadWhenActive: true }));
+    await act(async () => {
+      await result.current.requestIfAllowed();
+    });
+
+    expoLocation.getForegroundPermissionsAsync.mockResolvedValue({
+      status: 'granted',
+      ios: { scope: 'whenInUse', accuracy: 'reduced' },
+    });
+    expoLocation.getCurrentPositionAsync.mockResolvedValue({
+      coords: { latitude: 52.36, longitude: 4.9, accuracy: 5000 },
+    });
+    await act(async () => {
+      for (const listener of appState.listeners) listener('active');
+    });
+
+    expect(result.current.status).toBe('granted');
+    expect(result.current.coords).toEqual({ latitude: 52.36, longitude: 4.9 });
+    expect(expoLocation.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
   });
 
   it('reports denied when permission is refused, without fetching position', async () => {
@@ -306,6 +483,7 @@ describe('useDeviceLocation', () => {
       await act(async () => {
         await hook.result.current.request();
       });
+      expoLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' });
       return hook;
     }
 
@@ -349,6 +527,21 @@ describe('useDeviceLocation', () => {
       expect(moved).toBe(false);
       expect(result.current.status).toBe('granted');
       expect(result.current.coords).toEqual({ latitude: 1, longitude: 2 });
+    });
+
+    it('clears coordinates when foreground access has been revoked', async () => {
+      const { result } = await granted();
+      expoLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'denied', canAskAgain: false });
+
+      await act(async () => {
+        expect(await result.current.refresh()).toBe(false);
+      });
+
+      expect(result.current.permission).toBe('blocked');
+      expect(result.current.status).toBe('denied');
+      expect(result.current.coords).toBeNull();
+      expect(expoLocation.getCurrentPositionAsync).toHaveBeenCalledTimes(1);
+      expect(expoLocation.requestForegroundPermissionsAsync).toHaveBeenCalledTimes(1);
     });
 
     it('does nothing before location is granted', async () => {
@@ -443,15 +636,16 @@ describe('useDeviceLocation', () => {
     });
     await waitFor(() => expect(result.current.status).toBe('loading'));
 
-    // Second tap while loading is a no-op.
-    await act(async () => {
-      await result.current.request();
+    // Both taps wait for the same native permission request.
+    let second: Promise<LocationPermission> = Promise.resolve('unknown');
+    act(() => {
+      second = result.current.request();
     });
     expect(expoLocation.requestForegroundPermissionsAsync).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       resolvePermission?.({ status: 'granted' });
-      await first;
+      expect(await Promise.all([first, second])).toEqual(['granted', 'granted']);
     });
     expect(result.current.status).toBe('granted');
   });

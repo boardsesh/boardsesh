@@ -6,7 +6,6 @@
     "NSBluetoothPeripheralUsageDescription": "Boardsesh uses Bluetooth to connect to your climbing board and control the LED holds.",
     "NSLocalNetworkUsageDescription": "Boardsesh connects to the LED controller on your network to light up the holds on your Spraywall.",
     "NSLocationWhenInUseUsageDescription": "Boardsesh uses your location to show boards and gyms near you, and to put a board you add on the map.",
-    "NSLocationAlwaysAndWhenInUseUsageDescription": "Boardsesh uses your location to show boards and gyms near you, and to put a board you add on the map.",
     "NSCameraUsageDescription": "Boardsesh uses your camera so you can photograph a wall and set climbs on it.",
     "NSPhotoLibraryUsageDescription": "Boardsesh uses your photo library so you can pick a profile picture, a photo of your wall, or a screenshot to send with feedback."
   }

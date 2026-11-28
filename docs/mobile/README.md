@@ -23,6 +23,7 @@ a production rollout or a physical-device result.
 | [Contributing to existing screens](contributing-to-screens.md) | `contributing-to-screens.md` |
 | [Repeatable local iOS profiling](ios-profiling.md) | `ios-profiling.md` |
 | [Live Activity Board Control Roadmap](live-activity-board-control.md) | `live-activity-board-control.md` |
+| [Device location permissions](location-permissions.md) | `location-permissions.md` |
 | [Mobile CPU profiling on physical phones](mobile-performance-profiling.md) | `mobile-performance-profiling.md` |
 | [Mobile: sheets vs. routes — which surface to use](mobile-sheets-vs-routes.md) | `mobile-sheets-vs-routes.md` |
 | [Mobile view stories](mobile-stories.md) | `mobile-stories.md` |

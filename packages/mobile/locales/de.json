@@ -6,7 +6,6 @@
     "NSBluetoothPeripheralUsageDescription": "Boardsesh verbindet sich über Bluetooth mit deinem Board und steuert die LED-Griffe.",
     "NSLocalNetworkUsageDescription": "Boardsesh verbindet sich mit dem LED-Controller in deinem Netzwerk, um die Griffe an deiner Spraywall zu beleuchten.",
     "NSLocationWhenInUseUsageDescription": "Boardsesh nutzt deinen Standort, um dir Boards und Kletterhallen in deiner Nähe zu zeigen und ein Board, das du hinzufügst, auf der Karte einzutragen.",
-    "NSLocationAlwaysAndWhenInUseUsageDescription": "Boardsesh nutzt deinen Standort, um dir Boards und Kletterhallen in deiner Nähe zu zeigen und ein Board, das du hinzufügst, auf der Karte einzutragen.",
     "NSCameraUsageDescription": "Boardsesh nutzt deine Kamera, damit du eine Wand fotografieren und darauf Boulder setzen kannst.",
     "NSPhotoLibraryUsageDescription": "Boardsesh nutzt deine Fotomediathek, damit du ein Profilbild, ein Foto deiner Wand oder einen Screenshot für dein Feedback auswählen kannst."
   }

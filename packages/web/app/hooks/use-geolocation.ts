@@ -22,7 +22,7 @@ export type UseGeolocationReturn = GeolocationState & {
 };
 
 const defaultOptions: PositionOptions = {
-  enableHighAccuracy: true,
+  enableHighAccuracy: false,
   timeout: 10000,
   maximumAge: 60000, // Cache position for 1 minute
 };

@@ -105,8 +105,8 @@ export type DeviceLocationOptions = {
   retryAfterDenial?: boolean;
   /**
    * Run `requestIfAllowed` again whenever the app comes back to the
-   * foreground: a climber back from Settings with location turned on gets the
-   * search, and `permission` follows whatever they chose there. Off by default.
+   * foreground: permission and coordinates follow changes in Settings,
+   * including approximate access or an expired one-time grant. Off by default.
    */
   rereadWhenActive?: boolean;
 };
@@ -126,81 +126,97 @@ export function useDeviceLocation({
     setPermissionState(next);
   }, []);
   const [coords, setCoords] = useState<Coords | null>(null);
-  // Once a request reaches a terminal state (granted / denied / unavailable),
-  // or while one is in flight, further taps are no-ops — no redundant native
-  // permission/location calls. iOS only shows the permission prompt once
-  // anyway, so re-requesting after a denial would silently re-resolve denied.
+  // Settled requests ignore repeated taps. Silent foreground reads can still
+  // observe Settings changes or an expired one-time grant. The separate flight
+  // guard also serializes permission reads and coordinate refreshes.
   const settledRef = useRef(false);
+  const inFlightRef = useRef(false);
+  const mayAskPermissionRef = useRef(false);
+  const requestPromiseRef = useRef<Promise<LocationPermission> | null>(null);
+  const answerKnownRef = useRef(false);
+  const answerCallbacksRef = useRef<Array<(answer: LocationPermission) => void>>([]);
   const statusRef = useRef<LocationStatus>('idle');
   statusRef.current = status;
   const coordsRef = useRef<Coords | null>(null);
   coordsRef.current = coords;
 
-  const request = useCallback<LocationRequest>(
-    async (options) => {
-      // Read off an options object, never a positional callback: a request
-      // wired straight to an onPress gets the press event here, which has no
-      // `onAnswer`.
+  const locate = useCallback(
+    (mayAskPermission: boolean, options?: LocationRequestOptions): Promise<LocationPermission> => {
       const onAnswer = options?.onAnswer;
-      let answered = false;
-      const answerOnce = (permissionNow: LocationPermission) => {
-        if (answered) return;
-        answered = true;
-        onAnswer?.(permissionNow);
+      if (mayAskPermission && settledRef.current) {
+        onAnswer?.(permissionRef.current);
+        return Promise.resolve(permissionRef.current);
+      }
+      // A tap during an automatic permission read still authorizes the prompt.
+      // Reuse that read so a slow native import cannot swallow the first tap.
+      if (mayAskPermission) {
+        mayAskPermissionRef.current = true;
+        setStatus('loading');
+      }
+      if (onAnswer) {
+        if (inFlightRef.current && answerKnownRef.current) onAnswer(permissionRef.current);
+        else answerCallbacksRef.current.push(onAnswer);
+      }
+      if (inFlightRef.current) return requestPromiseRef.current ?? Promise.resolve(permissionRef.current);
+      inFlightRef.current = true;
+      answerKnownRef.current = false;
+      const answerPendingCallbacks = () => {
+        answerKnownRef.current = true;
+        const callbacks = answerCallbacksRef.current;
+        answerCallbacksRef.current = [];
+        for (const callback of callbacks) callback(permissionRef.current);
       };
-      if (settledRef.current) {
-        answerOnce(permissionRef.current);
-        return permissionRef.current;
-      }
-      settledRef.current = true;
-      setStatus('loading');
 
-      try {
-        const Location = await import('expo-location');
-        const answer = await Location.requestForegroundPermissionsAsync();
-        setPermission(locationPermissionFrom(answer));
-        setPermissionChecked(true);
-        answerOnce(permissionRef.current);
-        if (answer.status !== 'granted') {
-          if (retryAfterDenial) settledRef.current = false;
-          setStatus('denied');
-          return permissionRef.current;
+      requestPromiseRef.current = (async (): Promise<LocationPermission> => {
+        let resolvingPosition = false;
+        try {
+          const Location = await import('expo-location');
+          const existingPermission = await Location.getForegroundPermissionsAsync();
+          const canAskPermission = mayAskPermissionRef.current;
+          const answer =
+            existingPermission.status === 'granted' || !canAskPermission
+              ? existingPermission
+              : await Location.requestForegroundPermissionsAsync();
+          setPermission(locationPermissionFrom(answer));
+          setPermissionChecked(true);
+          settledRef.current = answer.status === 'granted' || (canAskPermission && !retryAfterDenial);
+          answerPendingCallbacks();
+          if (answer.status !== 'granted') {
+            setCoords(null);
+            setStatus(canAskPermission ? 'denied' : 'idle');
+            return permissionRef.current;
+          }
+
+          resolvingPosition = true;
+          setStatus('loading');
+          const position = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          setCoords({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+          setStatus('granted');
+        } catch {
+          // A silent permission read can fail on an older binary. Only show an
+          // error after a tap or when an allowed position request actually fails.
+          if (mayAskPermissionRef.current || resolvingPosition) {
+            settledRef.current = false;
+            setStatus('unavailable');
+          }
+        } finally {
+          setPermissionChecked(true);
+          mayAskPermissionRef.current = false;
+          inFlightRef.current = false;
+          requestPromiseRef.current = null;
+          answerPendingCallbacks();
         }
-
-        const position = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        setCoords({ latitude: position.coords.latitude, longitude: position.coords.longitude });
-        setStatus('granted');
-      } catch {
-        setPermissionChecked(true);
-        // Module missing (pre-expo-location build) or a location error — either
-        // way there's nothing to show; surface it as unavailable, not a crash.
-        // This can be transient (a one-off GPS error), so re-open the gate to
-        // allow a later retry — unlike a permission denial, which is sticky.
-        settledRef.current = false;
-        setStatus('unavailable');
-      }
-      answerOnce(permissionRef.current);
-      return permissionRef.current;
+        return permissionRef.current;
+      })();
+      return requestPromiseRef.current;
     },
     [retryAfterDenial, setPermission],
   );
 
-  const requestIfAllowed = useCallback(async (): Promise<LocationPermission> => {
-    if (settledRef.current) return permissionRef.current;
-    try {
-      const Location = await import('expo-location');
-      const read = locationPermissionFrom(await Location.getForegroundPermissionsAsync());
-      setPermission(read);
-      if (read !== 'granted') return read;
-    } catch {
-      return permissionRef.current;
-    } finally {
-      setPermissionChecked(true);
-    }
-    return request();
-  }, [request, setPermission]);
+  const request = useCallback<LocationRequest>((options) => locate(true, options), [locate]);
+  const requestIfAllowed = useCallback(() => locate(false), [locate]);
 
   useEffect(() => {
     if (!rereadWhenActive) return undefined;
@@ -212,11 +228,21 @@ export function useDeviceLocation({
 
   const refresh = useCallback(async () => {
     // `loading` covers both a first request and another refresh in flight.
-    if (statusRef.current !== 'granted') return false;
+    if (statusRef.current !== 'granted' || inFlightRef.current) return false;
+    inFlightRef.current = true;
     statusRef.current = 'loading';
     setStatus('loading');
     try {
       const Location = await import('expo-location');
+      const read = locationPermissionFrom(await Location.getForegroundPermissionsAsync());
+      setPermission(read);
+      if (read !== 'granted') {
+        settledRef.current = false;
+        statusRef.current = 'denied';
+        setCoords(null);
+        setStatus('denied');
+        return false;
+      }
       const position = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
@@ -224,16 +250,19 @@ export function useDeviceLocation({
       const previous = coordsRef.current;
       const moved = previous?.latitude !== latitude || previous?.longitude !== longitude;
       if (moved) setCoords({ latitude, longitude });
+      statusRef.current = 'granted';
+      setStatus('granted');
       return moved;
     } catch {
       // Keep the fix we had: it is still the best answer, and permission is
       // still granted. The caller searches again from it.
-      return false;
-    } finally {
       statusRef.current = 'granted';
       setStatus('granted');
+      return false;
+    } finally {
+      inFlightRef.current = false;
     }
-  }, []);
+  }, [setPermission]);
 
   return { status, permission, permissionChecked, coords, request, requestIfAllowed, refresh };
 }
