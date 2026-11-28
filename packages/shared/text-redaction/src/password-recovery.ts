@@ -11,8 +11,19 @@ const VERSIONED_SECRET = /\b(?:pr|ev)\d+_[A-Za-z0-9_-]+/gi;
 const REDACTED = '[redacted]';
 const QUERY_FIELDS = new Set(['query_string', 'http.query', 'url.query', 'http.fragment', 'url.fragment']);
 const RECOVERY_FIELDS = new Set(['token', 'confirmationtoken', 'email', 'password', 'confirmpassword', 'recipient']);
-/** Body fields that are secrets wherever they appear. `oauth_query` is the consent pages' signed request. */
-const SECRET_FIELD = /^(?:token|confirmationToken|password|confirmPassword|oauth_query)$/i;
+/**
+ * Body fields that are secrets wherever they appear. `oauth_query` is the consent pages' signed request;
+ * `deviceToken` and its request header are the native sign-in device token (#7656).
+ */
+const SECRET_FIELD =
+  /^(?:token|confirmationToken|password|confirmPassword|oauth_query|deviceToken|x-boardsesh-device-token)$/i;
+const DEVICE_TOKEN_HEADER = 'x-boardsesh-device-token';
+/** A header line or `name: value` pair naming the device-token header, in free text. */
+const DEVICE_TOKEN_HEADER_ASSIGNMENT = /(x-boardsesh-device-token["']?\s*[:=]\s*["']?)[^\s;,"'<>\\]+/gi;
+/** A `deviceToken` field left in free text (a logged or truncated JSON body). */
+const DEVICE_TOKEN_FIELD_ASSIGNMENT = /(["']?deviceToken["']?\s*[:=]\s*["']?)[^\s;,"'<>\\]+/gi;
+/** The v1 device token itself (`v1.<22>.<issued-at>.<43>`), wherever it appears. */
+const DEVICE_TOKEN_TEXT = /\bv1\.[A-Za-z0-9_-]{22}\.[1-9]\d{0,11}\.[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])/g;
 const CUSTODY_COOKIE_PREFIXES = [
   '__host-boardsesh.browser-renewal',
   '__host-boardsesh.expired-binding',
@@ -55,6 +66,10 @@ function isRenewalCookieField(name: string): boolean {
   const decoded = decodedName(name);
   return CUSTODY_COOKIE_PREFIXES.some((prefix) => decoded.startsWith(prefix));
 }
+/** A `[name, value]` pair or `{ name, value }` record whose value is a secret: a custody cookie or the device-token header. */
+function isSecretPairName(name: string): boolean {
+  return isRenewalCookieField(name) || decodedName(name) === DEVICE_TOKEN_HEADER;
+}
 
 /**
  * A recognized recovery or verification URL loses its entire query/fragment,
@@ -67,6 +82,9 @@ export function redactPasswordRecoveryUrls(text: string): string {
   return text
     .replace(CUSTODY_COOKIE_ASSIGNMENT, (_match, prefix: string) => `${prefix}${REDACTED}`)
     .replace(SESSION_COOKIE_ASSIGNMENT, (_match, prefix: string) => `${prefix}${REDACTED}`)
+    .replace(DEVICE_TOKEN_HEADER_ASSIGNMENT, (_match, prefix: string) => `${prefix}${REDACTED}`)
+    .replace(DEVICE_TOKEN_FIELD_ASSIGNMENT, (_match, prefix: string) => `${prefix}${REDACTED}`)
+    .replace(DEVICE_TOKEN_TEXT, REDACTED)
     .replace(RECOVERY_URL, (_match, path: string, marker: string) => `${path}${marker}${REDACTED}`)
     .replace(VERSIONED_SECRET, REDACTED);
 }
@@ -120,20 +138,23 @@ export function scrubPasswordRecoveryEvent<TEvent>(event: TEvent): TEvent {
       return REDACTED;
     }
     if (typeof input === 'string') {
-      let next = redactPasswordRecoveryUrls(input);
+      let next = input;
       // Some SDKs retain a serialized request body or flags payload.
-      if (/^\s*[[{]/.test(next)) {
+      // Parse before free-text replacement: replacing an unquoted null, number
+      // or compound deviceToken would otherwise invalidate the JSON and skip
+      // redaction of sibling credentials.
+      if (/^\s*[[{]/.test(input)) {
         try {
-          const parsed: unknown = JSON.parse(next);
+          const parsed: unknown = JSON.parse(input);
           mark(parsed, recoveryContext);
-          const before = changed;
           const scrubbed = scrub(parsed, recoveryContext);
-          if (changed !== before || JSON.stringify(scrubbed) !== JSON.stringify(parsed))
-            next = JSON.stringify(scrubbed);
+          const serialized = JSON.stringify(scrubbed);
+          if (serialized !== JSON.stringify(parsed)) next = serialized;
         } catch {
           // Non-JSON messages still receive whole recovery-URL scrubbing.
+          next = redactPasswordRecoveryUrls(input);
         }
-      }
+      } else next = redactPasswordRecoveryUrls(input);
       if (next !== input) changed = true;
       return next;
     }
@@ -142,7 +163,7 @@ export function scrubPasswordRecoveryEvent<TEvent>(event: TEvent): TEvent {
     if (Array.isArray(input)) {
       const result: unknown[] = [];
       copies.set(input, result);
-      const cookiePair = input.length === 2 && typeof input[0] === 'string' && isRenewalCookieField(input[0]);
+      const cookiePair = input.length === 2 && typeof input[0] === 'string' && isSecretPairName(input[0]);
       for (const [index, item] of input.entries()) {
         if (cookiePair && index === 1 && item !== null && item !== undefined) {
           result.push(REDACTED);
@@ -156,7 +177,7 @@ export function scrubPasswordRecoveryEvent<TEvent>(event: TEvent): TEvent {
     const result: Record<string, unknown> = Object.create(Object.getPrototypeOf(input)) as Record<string, unknown>;
     copies.set(input, result);
     for (const [key, item] of Object.entries(input)) {
-      const namedCookie = typeof input.name === 'string' && isRenewalCookieField(input.name);
+      const namedCookie = typeof input.name === 'string' && isSecretPairName(input.name);
       const secretField =
         SECRET_FIELD.test(key) ||
         isRenewalCookieField(key) ||
@@ -166,8 +187,9 @@ export function scrubPasswordRecoveryEvent<TEvent>(event: TEvent): TEvent {
         secretField && item !== null && item !== undefined
           ? REDACTED
           : scrub(item, context, context && QUERY_FIELDS.has(key));
-      if (next !== item && secretField) changed = true;
-      Object.defineProperty(result, key, { value: next, enumerable: true, writable: true, configurable: true });
+      const scrubbedKey = redactPasswordRecoveryUrls(key);
+      if ((next !== item && secretField) || scrubbedKey !== key) changed = true;
+      Object.defineProperty(result, scrubbedKey, { value: next, enumerable: true, writable: true, configurable: true });
     }
     return result;
   }

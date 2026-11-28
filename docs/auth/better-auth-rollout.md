@@ -68,6 +68,8 @@ These are not modes. Most `CURRENT_STORE_*` modes below need them, and a missing
 | `ACCOUNT_EMAIL_RESOLVE_DATABASE_URL` | Operator shell | Connection string for the intended database; never falls back to `DATABASE_URL` (unset) | Input to `resolve-account-emails.ts`. | Private evidence and decisions files | Unset it. |
 | `AUTH_IDENTITY_AUDIT_DATABASE_URL` | Operator shell | A local PostgreSQL URL only (unset) | Input to `audit-auth-identities.ts`; production URLs are refused. | Nothing | Unset it. |
 
+The native app keeps device tokens for up to five accounts in the keychain. It sends the matching token on a password sign-in for the typed email. Signing out keeps the token, and deleting the account on the phone removes it. Expo web sends no native device-token header.
+
 ## 3. Staged writer modes (`CURRENT_STORE_*` and `AUTH_WATCH_PAIRING_MODE`)
 
 Each moves one kind of credential write from the old path into the backend's current-store service. All are off by default. A staged writer needs the section 2 values and an `enforced` authority, so **none can work until `activate` runs** (it cannot today). The backend also refuses to start with any of them on while `AUTH_CUTOFF_ENFORCEMENT=observe`, and with `AUTH_IDENTITY_MIRROR=on` unless the native modes are `reserved-staging`.

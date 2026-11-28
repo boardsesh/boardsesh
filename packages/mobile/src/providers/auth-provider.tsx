@@ -270,6 +270,12 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // These are the only sign-out leftovers that can carry a previous user across
   // a cold start on a shared device, so a signed-out checkAuth clears them even
   // when there's no live in-session cache to wipe (see handleSignedOutTransition).
+  //
+  // Deliberately NOT cleared here: `boardsesh_device_tokens` (device-token-store.ts,
+  // up to 5 user ids with their emails and sign-in device tokens). It is kept
+  // across sign-out on purpose (#7656 decision b): a signed-out phone must still
+  // be a recognised device on its next password sign-in. Only deleting the
+  // account on this phone removes its entry (use-delete-account.ts).
   const clearPersistedUserStores = useCallback(
     (owner: UserStorageOwner | null | undefined, exportCredentialGeneration: number) => {
       // This is the shared confirmed account boundary for manual/forced sign-out,
