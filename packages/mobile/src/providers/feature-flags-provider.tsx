@@ -1,4 +1,4 @@
-import { QUANTUM_BOARD_FLAG } from '@boardsesh/board-config/visibility';
+import { QUANTUM_BOARD_FLAG } from '@boardsesh/board-config/capabilities';
 // FeatureFlagsProvider — mirrors `packages/web/app/components/providers/feature-flags-provider.tsx`.
 // Mobile reads live PostHog flags when the SDK is available, accepts an
 // optional `flags` prop as a local/dev/emergency override, and falls back to an

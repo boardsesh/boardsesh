@@ -1,6 +1,5 @@
 import type { BoardName } from '@boardsesh/shared-schema';
 import { MOONBOARD_GRID } from '@boardsesh/board-constants/moonboard';
-import { isReleasedQuantumConfig, QUANTUM_MODELS, QUANTUM_RELEASED_MODELS } from '@boardsesh/board-constants/quantum';
 import {
   getAllLayouts,
   getDefaultSizeForLayout,
@@ -11,6 +10,8 @@ import {
   type ProductSizeData,
   type SetData,
 } from '@boardsesh/board-constants/product-sizes';
+import { getBoardCapabilities } from './board-capabilities';
+import { isBoardConfigReleased } from './board-visibility';
 import {
   getLayoutById,
   MOONBOARD_LAYOUTS,
@@ -85,10 +86,9 @@ export function getBoardLayouts(boardName: BoardName): LayoutData[] {
   }
 
   const layouts = getAllLayouts(boardName);
-  if (boardName !== 'quantum') return layouts;
-  return layouts.filter((layout) =>
-    QUANTUM_RELEASED_MODELS.some((model) => QUANTUM_MODELS[model].layoutId === layout.id),
-  );
+  if (!getBoardCapabilities(boardName).isConfigReleased) return layouts;
+  // Only part of this board has shipped: offer a layout while one of its sizes has.
+  return layouts.filter((layout) => getBoardSizesForLayoutId(boardName, layout.id).length > 0);
 }
 
 export function getBoardSizesForLayoutId(boardName: BoardName, layoutId: number): ProductSizeData[] {
@@ -105,7 +105,8 @@ export function getBoardSizesForLayoutId(boardName: BoardName, layoutId: number)
   }
 
   const sizes = getSizesForLayoutId(boardName, layoutId);
-  return boardName === 'quantum' ? sizes.filter((size) => isReleasedQuantumConfig(layoutId, size.id)) : sizes;
+  const { isConfigReleased } = getBoardCapabilities(boardName);
+  return isConfigReleased ? sizes.filter((size) => isConfigReleased({ layoutId, sizeId: size.id })) : sizes;
 }
 
 export function getBoardSetsForLayoutAndSize(boardName: BoardName, layoutId: number, sizeId: number): SetData[] {
@@ -121,7 +122,7 @@ export function getBoardSetsForLayoutAndSize(boardName: BoardName, layoutId: num
     return WOODS_SETS.map((set) => ({ id: set.id, name: set.name }));
   }
 
-  if (boardName === 'quantum' && !isReleasedQuantumConfig(layoutId, sizeId)) return [];
+  if (!isBoardConfigReleased(boardName, { layoutId, sizeId })) return [];
   return getSetsForLayoutAndSize(boardName, layoutId, sizeId);
 }
 
@@ -137,6 +138,9 @@ export function getDefaultBoardSizeForLayout(boardName: BoardName, layoutId: num
     return isWoodsLayoutId(layoutId) ? WOODS_DEFAULT_SIZE_ID : null;
   }
 
-  if (boardName === 'quantum') return getBoardSizesForLayoutId(boardName, layoutId)[0]?.id ?? null;
+  // Only part of this board has shipped: the default is its first released size.
+  if (getBoardCapabilities(boardName).isConfigReleased) {
+    return getBoardSizesForLayoutId(boardName, layoutId)[0]?.id ?? null;
+  }
   return getDefaultSizeForLayout(boardName, layoutId);
 }

@@ -1,6 +1,7 @@
 import { getBoardLayouts, getBoardSetsForLayoutAndSize, getBoardSizesForLayoutId } from '../board-catalogue-cascade';
 import { describe, expect, it } from 'vitest';
-import { isBoardConfigVisible, isBoardTypeVisible, QUANTUM_BOARD_FLAG } from '../board-visibility';
+import { QUANTUM_BOARD_FLAG } from '../board-capabilities';
+import { isBoardConfigVisible, isBoardTypeVisible } from '../board-visibility';
 
 describe('board launch visibility', () => {
   it.each([undefined, false, 'true', 1])('requires an explicit boolean opt-in (%s)', (enabled) => {

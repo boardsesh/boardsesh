@@ -1,5 +1,5 @@
 import { and, sql } from 'drizzle-orm';
-import { isReleasedQuantumConfig } from '@boardsesh/board-constants/quantum';
+import { isBoardConfigReleased } from '@boardsesh/board-config/visibility';
 import { db } from '../../client';
 import { UNIFIED_TABLES, type BoardName } from '../util/table-select';
 import {
@@ -30,7 +30,7 @@ type GetClimbParams = {
 
 export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | null> => {
   const tables = UNIFIED_TABLES;
-  if (params.board_name === 'quantum' && !isReleasedQuantumConfig(params.layout_id, params.size_id)) return null;
+  if (!isBoardConfigReleased(params.board_name, { layoutId: params.layout_id, sizeId: params.size_id })) return null;
 
   try {
     // Resolve through board_climb_aliases first: an old/bookmarked/shared

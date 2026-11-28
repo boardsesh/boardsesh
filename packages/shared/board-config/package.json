@@ -39,6 +39,11 @@
       "types": "./src/board-visibility.ts",
       "import": "./src/board-visibility.ts",
       "default": "./src/board-visibility.ts"
+    },
+    "./capabilities": {
+      "types": "./src/board-capabilities.ts",
+      "import": "./src/board-capabilities.ts",
+      "default": "./src/board-capabilities.ts"
     }
   },
   "scripts": {

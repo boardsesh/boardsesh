@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { MAX_DIODES_PER_LAYER } from '@boardsesh/board-layers';
 import { isReleasedQuantumConfig, QUANTUM_RELEASED_LAYOUT_IDS } from '@boardsesh/board-constants/quantum';
+import { isBoardConfigReleased } from '@boardsesh/board-config/visibility';
 import { CONFIDENCE, MAX_SEARCH_PAGE } from '@boardsesh/db/queries/constants';
 
 import { CLIMB_CHARACTERISTICS, TOGGLEABLE_CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
@@ -299,7 +300,7 @@ export const ClimbSearchInputSchema = z
     message: 'Wall draft scope is only supported for spray walls',
     path: ['draftScope'],
   })
-  .refine((input) => input.boardName !== 'quantum' || isReleasedQuantumConfig(input.layoutId, input.sizeId), {
+  .refine((input) => isBoardConfigReleased(input.boardName, { layoutId: input.layoutId, sizeId: input.sizeId }), {
     message: 'Unknown Quantum Board layout or size',
     path: ['sizeId'],
   });

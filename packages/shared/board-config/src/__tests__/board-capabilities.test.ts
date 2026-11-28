@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { AURORA_BOARDS, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import {
   getBoardCapabilities,
+  QUANTUM_BOARD_FLAG,
   STATIC_BOARD_RENDER_NAMES,
   supportsStaticBoardRender,
   supportsPublicClimbLinks,
@@ -99,6 +100,9 @@ const EXPECTED: Record<string, BoardCapabilities> = {
     staticBoardRender: false,
   },
   quantum: {
+    launchFlag: QUANTUM_BOARD_FLAG,
+    // Pinned by board-visibility-equivalence.test.ts, against the pre-table rule.
+    isConfigReleased: expect.any(Function),
     catalogSource: 'bundled',
     angleOptionsSource: 'catalog',
     publicClimbLinks: false,

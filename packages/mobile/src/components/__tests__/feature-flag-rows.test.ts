@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { getBoardLaunchFlags } from '@boardsesh/board-config/visibility';
 import {
   buildFeatureFlagRows,
   findStaleFeatureFlagOverrideKeys,
@@ -50,6 +51,13 @@ describe('buildFeatureFlagRows', () => {
     expect(keys).not.toContain('offline-download-task-api');
     expect(keys).not.toContain('offline-download-background-session');
     expect(keys).not.toContain('offline-discovery-nudges');
+  });
+
+  it('lists every board launch flag from the capability table', () => {
+    // A flag missing here is never read from PostHog, so its board would stay hidden for everyone.
+    const keys: readonly string[] = FEATURE_FLAG_DEFINITIONS.map((definition) => definition.key);
+    expect(getBoardLaunchFlags().length).toBeGreaterThan(0);
+    for (const launchFlag of getBoardLaunchFlags()) expect(keys).toContain(launchFlag);
   });
 
   it('keeps ordinary flags on `=== true` semantics', () => {
