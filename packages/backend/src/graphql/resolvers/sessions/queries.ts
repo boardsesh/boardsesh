@@ -16,7 +16,7 @@ import { SessionIdSchema, LatitudeSchema, LongitudeSchema, RadiusMetersSchema } 
 import { generateSessionHealthExport, generateSessionSummary } from './session-summary';
 import { getDistributedState } from '../../../services/distributed-state';
 import { buildSessionPayload } from './helpers';
-import { db, dbRead } from '../../../db/client';
+import { db } from '../../../db/client';
 import { parseSessionBoardPath } from '../../../services/session-board';
 import { sprayLayoutIsReadableWithCapability } from '../climbs/spray-read-access';
 import { sessions } from '../../../db/schema';
@@ -221,10 +221,14 @@ export const sessionQueries = {
    * (#2683). No auth: it exposes only existence + ended-state, and auth may not
    * be restored yet at cold start. Returns the bare SessionStatus enum; null
    * means no such session.
+   *
+   * Reads the primary: mobile checks this before every join, including the one
+   * straight after createSession, and treats null as ended. A replica that has
+   * not replayed the new row yet would end the session it just started.
    */
   sessionStatus: async (_: unknown, { sessionId }: { sessionId: string }): Promise<SessionStatus | null> => {
     validateInput(SessionIdSchema, sessionId, 'sessionId');
-    const rows = await dbRead
+    const rows = await db
       .select({ status: sessions.status, endedAt: sessions.endedAt })
       .from(sessions)
       .where(eq(sessions.id, sessionId))

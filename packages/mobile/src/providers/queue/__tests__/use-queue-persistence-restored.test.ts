@@ -48,7 +48,11 @@ vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request:
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 
-import { resetQueueSnapshotRestoredReportForTests, useQueuePersistence } from '../use-queue-persistence';
+import {
+  resetQueueSnapshotRestoredReportForTests,
+  SOLO_QUEUE_SAVE_DEBOUNCE_MS,
+  useQueuePersistence,
+} from '../use-queue-persistence';
 
 function makeItem(uuid: string): ClimbQueueItem {
   return {
@@ -252,6 +256,56 @@ it('establishes solo wall authority when no crew was saved, including offline', 
   expect(result.current.sessionAuthorityReady).toBe(false);
   await waitFor(() => expect(result.current.sessionAuthorityReady).toBe(true));
   expect(storage.sessionStatus).not.toHaveBeenCalled();
+});
+
+/** The queue uuids of the last solo snapshot written. */
+function lastSavedQueue(): string[] | undefined {
+  const calls = storage.setSnapshot.mock.calls as unknown as Array<[{ queue: ClimbQueueItem[] }]>;
+  return calls.at(-1)?.[0].queue.map((item) => item.uuid);
+}
+
+/** A climb added after launch, so the save has something new to write. */
+function addAfterLaunch({ dispatch, state }: Pick<ReturnType<typeof useRestoreHarness>, 'dispatch' | 'state'>) {
+  const queue = [...state.queue, makeItem('added-after-launch')];
+  act(() => {
+    dispatch({ type: 'UPDATE_QUEUE', payload: { queue, currentClimbQueueItem: state.currentClimbQueueItem } });
+  });
+}
+
+it('keeps a working, saved solo queue when the saved crew board cannot be verified', async () => {
+  storage.sessionId = 'unverifiable-crew';
+  storage.snapshot = savedQueue(makeItem('solo-climb'));
+  storage.sessionStatus.mockResolvedValue({ sessionStatus: 'active', sessionRestoreBoardPath: null });
+  const { result } = renderHook(() => useRestoreHarness([]));
+
+  await waitFor(() => expect(result.current.state.currentClimbQueueItem?.uuid).toBe('solo-climb'));
+  addAfterLaunch(result.current);
+  await waitFor(() => expect(lastSavedQueue()).toEqual(['solo-climb', 'up-next', 'added-after-launch']), {
+    timeout: SOLO_QUEUE_SAVE_DEBOUNCE_MS * 4,
+  });
+  // The crew is kept for a later launch, and still grants no wall authority.
+  expect(storage.setSession).not.toHaveBeenCalled();
+  expect(storage.clearSession).not.toHaveBeenCalled();
+  expect(result.current.sessionAuthorityReady).toBe(false);
+});
+
+it('keeps a working, saved solo queue when the server answers the crew read with an error', async () => {
+  storage.sessionId = 'crew';
+  storage.snapshot = savedQueue(makeItem('solo-climb'));
+  storage.sessionStatus.mockRejectedValue(
+    Object.assign(new Error('Something went wrong'), {
+      response: { status: 200, errors: [{ message: 'Something went wrong on our end. Please try again.' }] },
+    }),
+  );
+  const { result } = renderHook(() => useRestoreHarness([]));
+
+  await waitFor(() => expect(result.current.state.currentClimbQueueItem?.uuid).toBe('solo-climb'));
+  addAfterLaunch(result.current);
+  await waitFor(() => expect(lastSavedQueue()).toEqual(['solo-climb', 'up-next', 'added-after-launch']), {
+    timeout: SOLO_QUEUE_SAVE_DEBOUNCE_MS * 4,
+  });
+  expect(storage.setSession).not.toHaveBeenCalled();
+  expect(storage.clearSession).not.toHaveBeenCalled();
 });
 
 it('preserves solo browsing without establishing wall authority when secure storage cannot be read', async () => {

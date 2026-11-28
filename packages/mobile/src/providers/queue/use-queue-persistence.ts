@@ -265,6 +265,12 @@ export function useQueuePersistence({
           !!(storedBoard && !boardAvailabilityRef.current.isBoardAvailable(storedBoard));
         setBlockedRestoreScope(hydrationScope);
         if (isLocalBoardBlocked()) return;
+        // This run will not rejoin the saved crew. Its id stays for a later
+        // launch, but the solo queue comes back and keeps saving meanwhile.
+        const restoreSoloQueue = async () => {
+          await hydrateLocalSnapshot();
+          if (isCurrent()) setBlockedRestoreScope(null);
+        };
         try {
           const { status, board } = await readSessionRestoreBoard(storedId);
           if (!isCurrent() || sessionIdRef.current !== null || isLocalBoardBlocked()) return;
@@ -280,7 +286,10 @@ export function useQueuePersistence({
             }
             return;
           }
-          if (status !== 'active' || !board || !boardAvailabilityRef.current.isBoardAvailable(board)) return;
+          if (status !== 'active' || !board || !boardAvailabilityRef.current.isBoardAvailable(board)) {
+            await restoreSoloQueue();
+            return;
+          }
           setSessionId(storedId);
           setBlockedRestoreScope(null);
           setVerifiedSessionScope(hydrationScope);
@@ -288,10 +297,12 @@ export function useQueuePersistence({
           if (!isCurrent() || isLocalBoardBlocked()) return;
           const didAnswer = !!error && typeof error === 'object' && 'response' in error;
           if (didAnswer) {
+            // The server answered, so nothing retries this run.
             reportError(error, { tags: { source: 'sessionRestore' } });
-          } else {
-            waitForConnection.current = true;
+            await restoreSoloQueue();
+            return;
           }
+          waitForConnection.current = true;
           // Keep the stored room and solo snapshot intact until its actual board
           // can be verified. The solo queue remains available while offline.
           await hydrateLocalSnapshot();
