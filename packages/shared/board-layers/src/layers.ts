@@ -11,8 +11,10 @@ export const MAX_ACTIVE_BOARD_LAYERS = Math.max(
   ...layeredWallCapabilities.map(({ maxActiveWallClimbs }) => maxActiveWallClimbs),
 );
 
-/** Most distinct lights one layer can hold on any layered board. A missing cap
- * counts as 0, so its layers never parse and the overlap filter stays off. */
+/** Most distinct lights one layer can hold on any layered board. This is a
+ * maximum over boards, so a layered board with a null cap would still parse at
+ * the largest other board's cap; the board-config capability test stops that by
+ * requiring a cap above 0 on every layered board. */
 export const MAX_DIODES_PER_LAYER = Math.max(
   0,
   ...layeredWallCapabilities.map(({ maxLightsPerWallClimb }) => maxLightsPerWallClimb ?? 0),

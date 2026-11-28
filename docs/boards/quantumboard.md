@@ -285,10 +285,11 @@ live preview, frame playback, handoff, and exact-wall rules stay behind the
 corresponding control adapter.
 
 Board-layer presence and overlap filtering are generic capabilities, initially
-enabled for Quantum. The server, search and the filter sheet turn them on from the
-capability row: `maxActiveWallClimbs` above 1 plus a `maxLightsPerWallClimb` cap.
-A new layered board still needs its own controller adapter to read and report the
-roster, and a geometry binding in `board-layer-catalog.ts` before another phone's
+enabled for Quantum. The server, search and the filter sheet turn them on for any
+board whose capability row has `maxActiveWallClimbs` above 1. Such a board must
+also set a `maxLightsPerWallClimb` cap, which bounds its layers; a board-config
+test enforces that. A new layered board still needs its own controller adapter to
+read and report the roster, and a geometry binding in `board-layer-catalog.ts` before another phone's
 layer counts as occupied; an unregistered board reports unknown geometry. Public
 reports contain sanitized display data and confirmed
 placement evidence, never controller user credentials. App-authored route IDs can
