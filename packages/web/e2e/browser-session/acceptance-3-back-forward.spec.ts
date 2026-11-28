@@ -128,9 +128,10 @@ test('Router Cache: a client-side back to A’s /settings after the switch does 
   await pageA.goto(`${WWW_ORIGIN}/settings`);
   await expect(pageA.getByRole('heading', { name: 'Settings' })).toBeVisible({ timeout: 60_000 });
   await markDocument(pageA);
-  // A client-side navigation away, so going back is served from the Router Cache.
-  await pageA.locator('a[href="/"]').first().click();
-  await pageA.waitForURL(`${WWW_ORIGIN}/`);
+  // Stay inside ApplicationDocument: the marketing home intentionally starts a new document.
+  // This soft navigation leaves A's settings in the Router Cache for the back navigation.
+  await pageA.locator('a[href="/help"]').first().click();
+  await pageA.waitForURL(`${WWW_ORIGIN}/help`);
   expect(await isSameDocument(pageA), 'the link was a client-side navigation').toBe(true);
 
   const pageB = await context.newPage();
