@@ -1,30 +1,47 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { BleError, type BleCharacteristic, type BleTransport, type BleWriteMode } from '@boardsesh/ble-core';
+import {
+  BleError,
+  BleSessionRuntime,
+  type BleCharacteristic,
+  type BleScheduler,
+  type BleTransport,
+  type BleWriteMode,
+} from '@boardsesh/ble-core';
 import {
   QUANTUM_BOARD_MODELS,
   QUANTUM_GATT_OPERATION_TIMEOUT_MS,
   QUANTUM_LEGACY_SERVICE_UUID,
   QUANTUM_METADATA_CHARACTERISTIC_UUID,
+  QUANTUM_MIN_WRITE_BYTES,
   QUANTUM_NOTIFY_CHARACTERISTIC_UUID,
   QUANTUM_SERVICE_UUID,
   QUANTUM_STATE_CHARACTERISTIC_UUID,
   QUANTUM_WRITE_CHARACTERISTIC_UUID,
   QuantumCommand,
   QuantumControllerModelMismatchError,
+  QuantumNotificationInbox,
   createQuantumBleProtocol,
+  createQuantumRosterTransport,
   decodeQuantumUuid,
   encodeQuantumActivation,
+  encodeQuantumRosterRequest,
+  encodeQuantumTurnOffAll,
+  encodeQuantumTurnOffRoute,
+  encodeQuantumTurnOnAll,
   encodeQuantumUuid,
   quantumFrameHasValidCrc,
   quantumUuidsEqual,
   type QuantumActivePlayer,
-  type QuantumBleSessionOptions,
+  type QuantumBleProtocolOptions,
   type QuantumBoardModel,
+  type QuantumBoardModelId,
   type QuantumTime,
 } from '../index';
 
+const { ACTIVATE_WALL, BOARD_SWIPE, REQUEST_USER_ROUTE_LIST, TURN_OFF_ALL, TURN_OFF_BY_USER } = QuantumCommand;
 const ROUTE_ONE = '00112233-4455-6677-8899-aabbccddeeff';
 const ROUTE_TWO = '10213243-5465-7687-98a9-bacbdcedfe0f';
+const ROUTE_THREE = '20314253-6475-8697-a8b9-cadbecfd0e1f';
 const USER_ONE = '11111111-2222-4333-8444-555555555555';
 const USER_TWO = '66666666-7777-4888-8999-aaaaaaaaaaaa';
 const FOREIGN_LAYER: QuantumActivePlayer = {
@@ -33,11 +50,21 @@ const FOREIGN_LAYER: QuantumActivePlayer = {
   color: 0xff00ff,
   remainingSeconds: 600,
 };
+/** USER_ONE's current layer, replaced by ROUTE_ONE in the replace-flow tests. */
+const OWN_LAYER: QuantumActivePlayer = {
+  routeId: ROUTE_THREE,
+  userId: USER_ONE,
+  color: 0x00ff00,
+  remainingSeconds: 600,
+};
+const NEW_LAYER: QuantumActivePlayer = {
+  routeId: ROUTE_ONE,
+  userId: USER_ONE,
+  color: 0x00ff00,
+  remainingSeconds: 0xffff,
+};
 
-function rosterFrame(
-  players: readonly QuantumActivePlayer[],
-  command: number = QuantumCommand.REQUEST_USER_ROUTE_LIST,
-): Uint8Array {
+function rosterFrame(players: readonly QuantumActivePlayer[], command: number = REQUEST_USER_ROUTE_LIST): Uint8Array {
   const frame = new Uint8Array(4 + players.length * 37);
   frame.set([1, command, players.length, 0]);
   players.forEach((activePlayer, playerIndex) => {
@@ -71,6 +98,10 @@ function deferred<Result>() {
   return { promise, resolve };
 }
 
+function diodes(count: number): number[] {
+  return Array.from({ length: count }, (_, diodeIndex) => diodeIndex + 1);
+}
+
 class ManualQuantumTime implements QuantumTime {
   readonly sleeps: number[] = [];
   private timestamp = 10_000;
@@ -89,6 +120,37 @@ class ManualQuantumTime implements QuantumTime {
   }
 }
 
+/** A BleScheduler whose timers fire only when the test advances it. */
+class ManualScheduler implements BleScheduler {
+  private current = 0;
+  private readonly timers = new Set<{ dueAt: number; delay: number; callback: () => void }>();
+
+  now(): number {
+    return this.current;
+  }
+
+  setTimeout(callback: () => void, milliseconds: number): () => void {
+    const timer = { dueAt: this.current + milliseconds, delay: milliseconds, callback };
+    this.timers.add(timer);
+    return () => {
+      this.timers.delete(timer);
+    };
+  }
+
+  pendingDelays(): number[] {
+    return [...this.timers].map((timer) => timer.delay);
+  }
+
+  advance(milliseconds: number): void {
+    this.current += milliseconds;
+    for (const timer of [...this.timers]) {
+      if (timer.dueAt > this.current) continue;
+      this.timers.delete(timer);
+      timer.callback();
+    }
+  }
+}
+
 type WriteHandler = (frame: Uint8Array, apply: () => void) => Promise<void> | void;
 type ReadHandler = (value: Uint8Array) => Promise<Uint8Array> | Uint8Array;
 
@@ -97,6 +159,7 @@ type FixtureOptions = {
   maxWriteBytes?: number;
   model?: QuantumBoardModel;
   metadata?: Uint8Array;
+  metadataRead?: () => Promise<Uint8Array>;
   players?: readonly QuantumActivePlayer[];
   missingServices?: readonly string[];
   lookupError?: Error;
@@ -104,12 +167,13 @@ type FixtureOptions = {
   writeWithoutResponse?: boolean;
 };
 
-/** A scripted controller: 0x47 publishes the roster on FFF4, 0x41 adds or moves a layer, 0x43 removes one. */
+/** A scripted controller: 0x47 publishes the roster on FFF4, 0x41/0x44 add or move a layer, 0x43 removes one. */
 function fixture(options: FixtureOptions = {}) {
   const roster: QuantumActivePlayer[] = (options.players ?? []).map((layer) => ({ ...layer }));
   const writes: { frame: Uint8Array; mode: BleWriteMode }[] = [];
   const lookups: string[] = [];
   let stateReads = 0;
+  let metadataReads = 0;
   let stateValue: Uint8Array = new Uint8Array(0);
   let notifyListener: ((bytes: Uint8Array) => void) | undefined;
   let notifyError: ((error: unknown) => void) | undefined;
@@ -120,9 +184,9 @@ function fixture(options: FixtureOptions = {}) {
   const disconnect = vi.fn(async () => {});
 
   const apply = (frame: Uint8Array) => {
-    if (frame[1] === QuantumCommand.REQUEST_USER_ROUTE_LIST) {
+    if (frame[1] === REQUEST_USER_ROUTE_LIST) {
       stateValue = rosterFrame(roster);
-    } else if (frame[1] === QuantumCommand.ACTIVATE_WALL) {
+    } else if (frame[1] === ACTIVATE_WALL || frame[1] === BOARD_SWIPE) {
       const layer: QuantumActivePlayer = {
         routeId: decodeQuantumUuid(frame, 2),
         userId: decodeQuantumUuid(frame, 18),
@@ -132,7 +196,7 @@ function fixture(options: FixtureOptions = {}) {
       const ownedIndex = roster.findIndex((existing) => quantumUuidsEqual(existing.userId, layer.userId));
       if (ownedIndex >= 0) roster[ownedIndex] = layer;
       else roster.push(layer);
-    } else if (frame[1] === QuantumCommand.TURN_OFF_BY_USER) {
+    } else if (frame[1] === TURN_OFF_BY_USER) {
       const userId = decodeQuantumUuid(frame, 2);
       const survivors = roster.filter((existing) => !quantumUuidsEqual(existing.userId, userId));
       roster.splice(0, roster.length, ...survivors);
@@ -154,7 +218,7 @@ function fixture(options: FixtureOptions = {}) {
       throw new Error('Read-only characteristic');
     },
   };
-  const stateCharacteristic: BleCharacteristic = {
+  const stateCharacteristic: BleCharacteristic & Required<Pick<BleCharacteristic, 'read'>> = {
     ...readOnly,
     async read() {
       stateReads += 1;
@@ -163,7 +227,11 @@ function fixture(options: FixtureOptions = {}) {
   };
   const metadataCharacteristic: BleCharacteristic = {
     ...readOnly,
-    read: async () => options.metadata ?? metadataFor(options.model ?? QUANTUM_BOARD_MODELS.xl),
+    async read() {
+      metadataReads += 1;
+      if (options.metadataRead) return options.metadataRead();
+      return options.metadata ?? metadataFor(options.model ?? QUANTUM_BOARD_MODELS.xl);
+    },
   };
   const subscribe = vi.fn<NonNullable<BleCharacteristic['subscribe']>>(async (listener, onError) => {
     notifyListener = listener;
@@ -208,8 +276,13 @@ function fixture(options: FixtureOptions = {}) {
     subscribe,
     unsubscribe,
     disconnect,
+    writeCharacteristic,
+    stateCharacteristic,
     get stateReads() {
       return stateReads;
+    },
+    get metadataReads() {
+      return metadataReads;
     },
     commands: () => writes.map(({ frame }) => frame[1]),
     notify: (bytes: Uint8Array) => notifyListener?.(bytes),
@@ -224,19 +297,39 @@ function fixture(options: FixtureOptions = {}) {
   };
 }
 
-function open(radio: ReturnType<typeof fixture>, options: Omit<QuantumBleSessionOptions, 'signal' | 'scheduler'> = {}) {
-  return createQuantumBleProtocol({ time: new ManualQuantumTime(), ...options }).open(radio.transport);
+type Radio = ReturnType<typeof fixture>;
+
+function open(radio: Radio, options: Partial<QuantumBleProtocolOptions> = {}) {
+  return createQuantumBleProtocol({ expectedModelId: 'xl', time: new ManualQuantumTime(), ...options }).open(
+    radio.transport,
+  );
+}
+
+/** Abort the caller's signal from inside the controller, right after it applies `command`. */
+function abortAfter(radio: Radio, command: number, controller: AbortController) {
+  radio.setWriteHandler((frame, apply) => {
+    apply();
+    if (frame[1] === command) controller.abort();
+  });
 }
 
 afterEach(() => vi.useRealTimers());
 
 describe('Quantum BLE discovery and open', () => {
   it('declares name-based discovery with both services available to the transport', () => {
-    expect(createQuantumBleProtocol().discovery).toEqual({
+    expect(createQuantumBleProtocol({ expectedModelId: 'xl' }).discovery).toEqual({
       serviceUuids: [],
       optionalServiceUuids: [QUANTUM_SERVICE_UUID, QUANTUM_LEGACY_SERVICE_UUID],
       namePrefixes: ['QB_', 'QBB_'],
     });
+  });
+
+  it('requires a known controller model before a protocol can be created', () => {
+    // @ts-expect-error The model check cannot be skipped: expectedModelId is required.
+    expect(() => createQuantumBleProtocol({})).toThrow(RangeError);
+    expect(() => createQuantumBleProtocol({ expectedModelId: 'home' as string as QuantumBoardModelId })).toThrow(
+      RangeError,
+    );
   });
 
   it('opens without writing: FFF1/FFF2/FFF4/FFF5 in order, FFF5 model check, FFF1 enabled', async () => {
@@ -312,10 +405,19 @@ describe('Quantum BLE discovery and open', () => {
     expect(radio.disconnect).toHaveBeenCalledOnce();
   });
 
-  it('refuses invalid metadata, unknown names and invalid payload limits', async () => {
-    const invalidMetadata = fixture({ metadata: new Uint8Array(40) });
-    await expect(open(invalidMetadata)).rejects.toMatchObject({ code: 'unsupported' });
-    expect(invalidMetadata.subscribe).not.toHaveBeenCalled();
+  it('treats missing or invalid FFF5 metadata as a model mismatch', async () => {
+    const radio = fixture({ metadata: new Uint8Array(40) });
+    const opening = open(radio, { expectedModelId: 'm' });
+    await expect(opening).rejects.toBeInstanceOf(QuantumControllerModelMismatchError);
+    await expect(opening).rejects.toMatchObject({ selectedModelId: 'm', controllerModelId: undefined });
+    expect(radio.subscribe).not.toHaveBeenCalled();
+    expect(radio.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it('refuses unknown names and payload limits below one single-diode activation', async () => {
+    expect(encodeQuantumActivation({ routeId: ROUTE_ONE, userId: USER_ONE, diodeIds: [1] })).toHaveLength(
+      QUANTUM_MIN_WRITE_BYTES,
+    );
 
     const foreignName = fixture({ deviceName: 'eWalls_gym_a1b2c3d4e5f6' });
     await expect(open(foreignName)).rejects.toMatchObject({ code: 'unsupported' });
@@ -325,6 +427,43 @@ describe('Quantum BLE discovery and open', () => {
     const invalidLimit = fixture({ maxWriteBytes: 0 });
     await expect(open(invalidLimit)).rejects.toMatchObject({ code: 'invalid-input' });
     expect(invalidLimit.lookups).toEqual([]);
+
+    const defaultMtu = fixture({ maxWriteBytes: 20 });
+    await expect(open(defaultMtu)).rejects.toMatchObject({ code: 'unsupported' });
+    expect(defaultMtu.lookups).toEqual([]);
+    expect(defaultMtu.disconnect).toHaveBeenCalledOnce();
+
+    const smallest = fixture({ maxWriteBytes: QUANTUM_MIN_WRITE_BYTES });
+    await (await open(smallest)).disconnect();
+  });
+
+  it('reports a caller cancelling the connect as cancelled, not as a lost connection', async () => {
+    const metadataGate = deferred<Uint8Array>();
+    const radio = fixture({ metadataRead: () => metadataGate.promise });
+    const controller = new AbortController();
+
+    const opening = createQuantumBleProtocol({ expectedModelId: 'xl' }).open(radio.transport, {
+      signal: controller.signal,
+    });
+    const cancelled = expect(opening).rejects.toMatchObject({ code: 'cancelled', name: 'AbortError' });
+    await vi.waitFor(() => expect(radio.metadataReads).toBe(1));
+    controller.abort();
+    await cancelled;
+    metadataGate.resolve(metadataFor(QUANTUM_BOARD_MODELS.xl));
+
+    expect(radio.subscribe).not.toHaveBeenCalled();
+    expect(radio.disconnect).toHaveBeenCalledOnce();
+
+    const alreadyCancelled = fixture();
+    const abortedFirst = new AbortController();
+    abortedFirst.abort();
+    await expect(
+      createQuantumBleProtocol({ expectedModelId: 'xl' }).open(alreadyCancelled.transport, {
+        signal: abortedFirst.signal,
+      }),
+    ).rejects.toMatchObject({ code: 'cancelled' });
+    expect(alreadyCancelled.lookups).toEqual([]);
+    expect(alreadyCancelled.disconnect).toHaveBeenCalledOnce();
   });
 });
 
@@ -343,31 +482,44 @@ describe('Quantum BLE layer sessions', () => {
 
     const activated = await session.activateLayer(activation);
 
-    expect(radio.commands()).toEqual([
-      QuantumCommand.REQUEST_USER_ROUTE_LIST,
-      QuantumCommand.ACTIVATE_WALL,
-      QuantumCommand.REQUEST_USER_ROUTE_LIST,
-    ]);
+    expect(radio.commands()).toEqual([REQUEST_USER_ROUTE_LIST, ACTIVATE_WALL, REQUEST_USER_ROUTE_LIST]);
     expect(radio.writes[1].frame).toEqual(encodeQuantumActivation(activation));
     expect(radio.writes.every(({ frame, mode }) => mode === 'with-response' && quantumFrameHasValidCrc(frame))).toBe(
       true,
     );
-    expect(activated.players).toEqual([
-      FOREIGN_LAYER,
-      { routeId: ROUTE_ONE, userId: USER_ONE, color: 0x00ff00, remainingSeconds: 60 },
-    ]);
+    expect(activated.players).toEqual([FOREIGN_LAYER, { ...NEW_LAYER, remainingSeconds: 60 }]);
     expect(time.sleeps).toEqual([50, 250, 50]);
 
     const removed = await session.removeLayer({ userId: USER_ONE, routeId: ROUTE_ONE });
 
-    expect(radio.commands().slice(3)).toEqual([
-      QuantumCommand.REQUEST_USER_ROUTE_LIST,
-      QuantumCommand.TURN_OFF_BY_USER,
-      QuantumCommand.REQUEST_USER_ROUTE_LIST,
-    ]);
+    expect(radio.commands().slice(3)).toEqual([REQUEST_USER_ROUTE_LIST, TURN_OFF_BY_USER, REQUEST_USER_ROUTE_LIST]);
     expect(removed.players).toEqual([FOREIGN_LAYER]);
     expect(session.rosterState).toMatchObject({ phase: 'live', snapshot: { revision: 4 } });
-    expect(radio.commands()).not.toContain(QuantumCommand.TURN_OFF_ALL);
+    expect(radio.commands()).not.toContain(TURN_OFF_ALL);
+    await session.disconnect();
+  });
+
+  it('sends a QBB_ replacement, its release and every read-back without response', async () => {
+    const radio = fixture({ deviceName: 'QBB_AABBCCDDEEFF', players: [OWN_LAYER] });
+    const session = await open(radio);
+
+    const replaced = await session.activateLayer({
+      routeId: ROUTE_ONE,
+      userId: USER_ONE,
+      diodeIds: [1],
+      color: 0x00ff00,
+      expectedOwnedRouteId: ROUTE_THREE,
+    });
+
+    expect(radio.commands()).toEqual([
+      REQUEST_USER_ROUTE_LIST,
+      TURN_OFF_BY_USER,
+      REQUEST_USER_ROUTE_LIST,
+      ACTIVATE_WALL,
+      REQUEST_USER_ROUTE_LIST,
+    ]);
+    expect(radio.writes.every(({ mode }) => mode === 'without-response')).toBe(true);
+    expect(replaced.players).toEqual([NEW_LAYER]);
     await session.disconnect();
   });
 
@@ -402,32 +554,94 @@ describe('Quantum BLE layer sessions', () => {
     await session.disconnect();
   });
 
+  it('refuses a mutation when the wall changed since the caller looked', async () => {
+    const radio = fixture({ players: [FOREIGN_LAYER] });
+    const session = await open(radio);
+
+    await expect(
+      session.activateLayer({ routeId: ROUTE_ONE, userId: USER_ONE, diodeIds: [1], expectedPlayers: [] }),
+    ).rejects.toMatchObject({ code: 'roster-changed' });
+
+    expect(radio.commands()).toEqual([REQUEST_USER_ROUTE_LIST]);
+    expect(session.rosterState).toMatchObject({ phase: 'failed', lastError: 'roster-changed' });
+    await session.disconnect();
+  });
+
+  it('refuses a frame longer than one write and never splits it', async () => {
+    const radio = fixture({ maxWriteBytes: 100 });
+    const session = await open(radio);
+
+    // 43 + 2 × 29 = 101 bytes.
+    await expect(
+      session.activateLayer({ routeId: ROUTE_ONE, userId: USER_ONE, diodeIds: diodes(29) }),
+    ).rejects.toMatchObject({ code: 'frame-too-large' });
+    expect(radio.writes).toEqual([]);
+
+    // 43 + 2 × 28 = 99 bytes: one write, never chunked.
+    await session.activateLayer({ routeId: ROUTE_ONE, userId: USER_ONE, diodeIds: diodes(28) });
+    expect(radio.writes.map(({ frame }) => frame.length)).toEqual([5, 99, 5]);
+    await session.disconnect();
+  });
+
   it('surfaces a buffered FFF1 refusal of the activation instead of confirming it', async () => {
     const radio = fixture();
     const session = await open(radio);
     radio.setWriteHandler((frame, apply) => {
-      if (frame[1] === QuantumCommand.ACTIVATE_WALL) radio.notify(Uint8Array.of(1, 0xc1, 7));
+      if (frame[1] === ACTIVATE_WALL) radio.notify(Uint8Array.of(1, 0xc1, 7));
       else apply();
     });
 
     await expect(
       session.activateLayer({ routeId: ROUTE_ONE, userId: USER_ONE, diodeIds: [1], color: 0x00ff00 }),
     ).rejects.toMatchObject({ code: 'controller-refused', controllerFailure: 'color-taken' });
-    expect(radio.commands()).toEqual([QuantumCommand.REQUEST_USER_ROUTE_LIST, QuantumCommand.ACTIVATE_WALL]);
+    expect(radio.commands()).toEqual([REQUEST_USER_ROUTE_LIST, ACTIVATE_WALL]);
+    await session.disconnect();
+  });
+
+  it('runs a queued transaction after a failure that kept the link', async () => {
+    const radio = fixture();
+    const session = await open(radio);
+    radio.setWriteHandler((frame, apply) => {
+      if (frame[1] === ACTIVATE_WALL) radio.notify(Uint8Array.of(1, 0xc1, 7));
+      else apply();
+    });
+
+    const refused = session.activateLayer({ routeId: ROUTE_ONE, userId: USER_ONE, diodeIds: [1], color: 0x00ff00 });
+    const queued = session.refreshRoster();
+
+    await expect(refused).rejects.toMatchObject({ code: 'controller-refused' });
+    await expect(queued).resolves.toMatchObject({ players: [] });
+    expect(radio.commands()).toEqual([REQUEST_USER_ROUTE_LIST, ACTIVATE_WALL, REQUEST_USER_ROUTE_LIST]);
+    expect(session.rosterState).toMatchObject({ phase: 'live', snapshot: { players: [] } });
+    expect(radio.disconnect).not.toHaveBeenCalled();
     await session.disconnect();
   });
 
   it('falls back to a fresh FFF1 roster when FFF4 still holds another command', async () => {
     const radio = fixture({ players: [FOREIGN_LAYER] });
     const session = await open(radio);
-    radio.setReadHandler(() => rosterFrame([FOREIGN_LAYER], QuantumCommand.ACTIVATE_WALL));
+    radio.setReadHandler(() => rosterFrame([FOREIGN_LAYER], ACTIVATE_WALL));
     radio.setWriteHandler((frame, apply) => {
       apply();
-      if (frame[1] === QuantumCommand.REQUEST_USER_ROUTE_LIST) radio.notify(rosterFrame(radio.roster));
+      if (frame[1] === REQUEST_USER_ROUTE_LIST) radio.notify(rosterFrame(radio.roster));
     });
 
     await expect(session.refreshRoster()).resolves.toMatchObject({ players: [FOREIGN_LAYER] });
     expect(radio.disconnect).not.toHaveBeenCalled();
+    await session.disconnect();
+  });
+
+  it('ignores an FFF1 roster that arrived before the 0x47 request', async () => {
+    const radio = fixture({ players: [FOREIGN_LAYER] });
+    const session = await open(radio);
+    radio.notify(rosterFrame([{ ...FOREIGN_LAYER, routeId: ROUTE_ONE }]));
+    radio.setReadHandler(() => rosterFrame([], ACTIVATE_WALL));
+    radio.setWriteHandler((frame, apply) => {
+      apply();
+      if (frame[1] === REQUEST_USER_ROUTE_LIST) radio.notify(rosterFrame(radio.roster));
+    });
+
+    await expect(session.refreshRoster()).resolves.toMatchObject({ players: [FOREIGN_LAYER] });
     await session.disconnect();
   });
 
@@ -440,42 +654,145 @@ describe('Quantum BLE layer sessions', () => {
     });
     session.onBroadcast((broadcast) => seen.push(broadcast.type));
 
-    radio.notify(rosterFrame([FOREIGN_LAYER], QuantumCommand.ACTIVATE_WALL));
+    radio.notify(rosterFrame([FOREIGN_LAYER], ACTIVATE_WALL));
 
     expect(seen).toEqual(['roster']);
     await session.disconnect();
   });
 
-  it('stops a cancelled transaction before its next physical mutation and stays usable', async () => {
+  it('refuses every command layer transactions never send, with no write', async () => {
     const radio = fixture();
+    const runtime = new BleSessionRuntime(radio.transport);
+    const rosterTransport = createQuantumRosterTransport({
+      write: radio.writeCharacteristic,
+      state: radio.stateCharacteristic,
+      writeMode: 'with-response',
+      maximumWriteBytes: 244,
+      inbox: new QuantumNotificationInbox(),
+      runtime,
+    });
+
+    const wallWideFrames = [
+      encodeQuantumTurnOffAll(),
+      encodeQuantumTurnOffRoute(ROUTE_ONE),
+      encodeQuantumTurnOnAll(0xffffff),
+    ];
+    for (const frame of wallWideFrames) {
+      await expect(rosterTransport.writeFrame(frame)).rejects.toMatchObject({ code: 'unsupported' });
+    }
+    expect(radio.writes).toEqual([]);
+
+    await rosterTransport.writeFrame(encodeQuantumRosterRequest());
+    expect(radio.commands()).toEqual([REQUEST_USER_ROUTE_LIST]);
+    await runtime.disconnect();
+  });
+});
+
+describe('Quantum BLE cancellation', () => {
+  it('sends no mutation when the caller aborts before it is written', async () => {
+    const radio = fixture({ players: [FOREIGN_LAYER] });
     const session = await open(radio);
-    const gate = deferred<void>();
+    const readGate = deferred<void>();
     radio.setReadHandler(async (value) => {
-      await gate.promise;
+      await readGate.promise;
       return value;
     });
     const controller = new AbortController();
 
     const activating = session.activateLayer(
-      { routeId: ROUTE_ONE, userId: USER_ONE, diodeIds: [1] },
+      { routeId: ROUTE_ONE, userId: USER_ONE, diodeIds: [1], color: 0x00ff00 },
       controller.signal,
     );
     const cancelled = expect(activating).rejects.toMatchObject({ code: 'cancelled' });
     await vi.waitFor(() => expect(radio.stateReads).toBe(1));
     controller.abort();
     await cancelled;
-    gate.resolve();
+    readGate.resolve();
 
     await vi.waitFor(() =>
       expect(session.rosterState).toMatchObject({ phase: 'failed', lastError: 'operation-cancelled' }),
     );
-    expect(radio.commands()).toEqual([QuantumCommand.REQUEST_USER_ROUTE_LIST]);
+    // Wire: 0x47 only. The confirmed preflight roster is kept.
+    expect(radio.commands()).toEqual([REQUEST_USER_ROUTE_LIST]);
+    expect(session.rosterState.snapshot?.players).toEqual([FOREIGN_LAYER]);
+    expect(radio.roster).toEqual([FOREIGN_LAYER]);
+
     radio.setReadHandler((value) => value);
-    await expect(session.refreshRoster()).resolves.toMatchObject({ players: [] });
+    await expect(session.refreshRoster()).resolves.toMatchObject({ players: [FOREIGN_LAYER] });
     expect(radio.disconnect).not.toHaveBeenCalled();
     await session.disconnect();
   });
 
+  it('still reads back an activation the caller aborted after it was written', async () => {
+    const radio = fixture({ players: [FOREIGN_LAYER] });
+    const session = await open(radio);
+    const controller = new AbortController();
+    abortAfter(radio, ACTIVATE_WALL, controller);
+
+    const activating = session.activateLayer(
+      { routeId: ROUTE_ONE, userId: USER_ONE, diodeIds: [1], color: 0x00ff00 },
+      controller.signal,
+    );
+    await expect(activating).rejects.toMatchObject({ code: 'cancelled' });
+
+    // Wire: 0x47, 0x41, then the read-back 0x47. The state shows the lit layer.
+    await vi.waitFor(() => expect(session.rosterState).toMatchObject({ phase: 'live', snapshot: { revision: 2 } }));
+    expect(radio.commands()).toEqual([REQUEST_USER_ROUTE_LIST, ACTIVATE_WALL, REQUEST_USER_ROUTE_LIST]);
+    expect(session.rosterState.snapshot?.players).toEqual([FOREIGN_LAYER, NEW_LAYER]);
+    await session.disconnect();
+  });
+
+  it('confirms the release and skips the activation when a replacement is aborted between 0x43 and 0x41', async () => {
+    const radio = fixture({ players: [FOREIGN_LAYER, OWN_LAYER] });
+    const session = await open(radio);
+    const controller = new AbortController();
+    abortAfter(radio, TURN_OFF_BY_USER, controller);
+
+    const replacing = session.activateLayer(
+      { routeId: ROUTE_ONE, userId: USER_ONE, diodeIds: [1], color: 0x00ff00, expectedOwnedRouteId: ROUTE_THREE },
+      controller.signal,
+    );
+    await expect(replacing).rejects.toMatchObject({ code: 'cancelled' });
+
+    await vi.waitFor(() =>
+      expect(session.rosterState).toMatchObject({ phase: 'failed', lastError: 'operation-cancelled' }),
+    );
+    // Wire: 0x47, 0x43, the release read-back 0x47, and no 0x41. The state shows the layer gone.
+    expect(radio.commands()).toEqual([REQUEST_USER_ROUTE_LIST, TURN_OFF_BY_USER, REQUEST_USER_ROUTE_LIST]);
+    expect(session.rosterState.snapshot?.players).toEqual([FOREIGN_LAYER]);
+    expect(radio.roster).toEqual([FOREIGN_LAYER]);
+    await session.disconnect();
+  });
+
+  it('starts the next queued transaction from the roster confirmed after an aborted one', async () => {
+    const radio = fixture({ players: [FOREIGN_LAYER] });
+    const session = await open(radio);
+    const controller = new AbortController();
+    abortAfter(radio, ACTIVATE_WALL, controller);
+
+    const activating = session.activateLayer(
+      { routeId: ROUTE_ONE, userId: USER_ONE, diodeIds: [1], color: 0x00ff00 },
+      controller.signal,
+    );
+    await expect(activating).rejects.toMatchObject({ code: 'cancelled' });
+    const removed = await session.removeLayer({ userId: USER_ONE, routeId: ROUTE_ONE });
+
+    // The removal saw the aborted call's layer on its own fresh roster, so it sent 0x43.
+    expect(radio.commands()).toEqual([
+      REQUEST_USER_ROUTE_LIST,
+      ACTIVATE_WALL,
+      REQUEST_USER_ROUTE_LIST,
+      REQUEST_USER_ROUTE_LIST,
+      TURN_OFF_BY_USER,
+      REQUEST_USER_ROUTE_LIST,
+    ]);
+    expect(removed.players).toEqual([FOREIGN_LAYER]);
+    expect(session.rosterState).toMatchObject({ phase: 'live', snapshot: { revision: 4, players: [FOREIGN_LAYER] } });
+    await session.disconnect();
+  });
+});
+
+describe('Quantum BLE link failures and timers', () => {
   it('rejects active and queued work on disconnect mid-transaction and sends nothing more', async () => {
     const radio = fixture();
     const session = await open(radio);
@@ -499,7 +816,7 @@ describe('Quantum BLE layer sessions', () => {
     gate.resolve();
 
     await vi.waitFor(() => expect(session.rosterState.phase).toBe('failed'));
-    expect(radio.commands()).toEqual([QuantumCommand.REQUEST_USER_ROUTE_LIST]);
+    expect(radio.commands()).toEqual([REQUEST_USER_ROUTE_LIST]);
     expect(closed).toHaveBeenCalledOnce();
     expect(radio.unsubscribe).toHaveBeenCalledOnce();
     expect(radio.disconnect).toHaveBeenCalledOnce();
@@ -524,7 +841,7 @@ describe('Quantum BLE layer sessions', () => {
     await timedOut;
 
     await vi.waitFor(() => expect(radio.disconnect).toHaveBeenCalledOnce());
-    expect(radio.commands()).toEqual([QuantumCommand.REQUEST_USER_ROUTE_LIST]);
+    expect(radio.commands()).toEqual([REQUEST_USER_ROUTE_LIST]);
     expect(closed).toHaveBeenCalledOnce();
   });
 
@@ -532,7 +849,7 @@ describe('Quantum BLE layer sessions', () => {
     vi.useFakeTimers();
     const radio = fixture();
     const session = await open(radio);
-    radio.setReadHandler(() => rosterFrame([], QuantumCommand.ACTIVATE_WALL));
+    radio.setReadHandler(() => rosterFrame([], ACTIVATE_WALL));
 
     const refreshing = session.refreshRoster();
     const timedOut = expect(refreshing).rejects.toMatchObject({ code: 'timeout' });
@@ -540,7 +857,7 @@ describe('Quantum BLE layer sessions', () => {
     await timedOut;
 
     await vi.waitFor(() => expect(radio.disconnect).toHaveBeenCalledOnce());
-    expect(radio.commands()).toEqual([QuantumCommand.REQUEST_USER_ROUTE_LIST]);
+    expect(radio.commands()).toEqual([REQUEST_USER_ROUTE_LIST]);
   });
 
   it('closes the session when FFF1 notifications fail', async () => {
@@ -554,5 +871,26 @@ describe('Quantum BLE layer sessions', () => {
     await vi.waitFor(() => expect(radio.disconnect).toHaveBeenCalledOnce());
     expect(closed).toHaveBeenCalledOnce();
     await expect(session.refreshRoster()).rejects.toMatchObject({ code: 'disconnected' });
+  });
+
+  it('runs the 50 ms and 250 ms transaction delays on the injected scheduler', async () => {
+    const radio = fixture();
+    const scheduler = new ManualScheduler();
+    const session = await createQuantumBleProtocol({ expectedModelId: 'xl' }).open(radio.transport, { scheduler });
+
+    const activating = session.activateLayer({ routeId: ROUTE_ONE, userId: USER_ONE, diodeIds: [1], color: 0x00ff00 });
+    await vi.waitFor(() => expect(scheduler.pendingDelays()).toEqual([50]));
+    // The FFF4 read waits for the injected scheduler, not a global timer.
+    expect(radio.stateReads).toBe(0);
+    scheduler.advance(50);
+    await vi.waitFor(() => expect(scheduler.pendingDelays()).toEqual([250]));
+    expect(radio.commands()).toEqual([REQUEST_USER_ROUTE_LIST, ACTIVATE_WALL]);
+    scheduler.advance(250);
+    await vi.waitFor(() => expect(scheduler.pendingDelays()).toEqual([50]));
+    scheduler.advance(50);
+
+    await expect(activating).resolves.toMatchObject({ observedAtMs: 350, players: [NEW_LAYER] });
+    expect(radio.commands()).toEqual([REQUEST_USER_ROUTE_LIST, ACTIVATE_WALL, REQUEST_USER_ROUTE_LIST]);
+    await session.disconnect();
   });
 });

@@ -174,29 +174,79 @@ disappear only if its last reported remaining seconds are at most the elapsed
 monotonic seconds since the first roster, rounded up. A controller error for the
 mutation, buffered on FFF1 since it was written, fails the transaction as
 `controller-refused`. The caller's eligibility check runs before every write,
-after the optional pre-write check, and around every read.
+after the optional pre-write check, and around every read. The portable session
+(§7) keeps that check tied to the connection and applies a caller's
+`AbortSignal` only to frames not yet written.
 
 No transaction sends `0x45`. Clearing the wall would remove other climbers' layers.
 
 ## 7. Portable session
 
-`createQuantumBleProtocol().open(transport)` takes a connected `BleTransport`
-from `@boardsesh/ble-core` and writes nothing:
+`createQuantumBleProtocol({ expectedModelId }).open(transport)` takes a
+connected `BleTransport` from `@boardsesh/ble-core` and writes nothing.
+`expectedModelId` is required and must be a model id from §5:
 
-1. Refuse a name outside §2 and a non-positive `maxWriteBytes`.
+1. Refuse a non-positive `maxWriteBytes`, one below 45 bytes (a single-diode
+   activation, `QUANTUM_MIN_WRITE_BYTES`) and a name outside §2.
 2. Look up FFF1, FFF2, FFF4 and FFF5 one at a time, on FFF0 and then on FFE0.
    Only `BleError('service-missing')` moves on to FFE0; other errors close the link.
 3. Check FFF2 supports the write mode for the name.
-4. Read FFF5 and, when `expectedModelId` is set, refuse another model.
+4. Read FFF5. Missing or invalid metadata, or another model, throws
+   `QuantumControllerModelMismatchError`.
 5. Enable FFF1 notifications; `subscribe()` resolves once they are on.
+
+Aborting the signal passed to `open()` closes the link and rejects with
+`BleError('cancelled')`.
 
 The session's `show()` and `clear()` always reject `BleError('unsupported')`.
 `refreshRoster()`, `activateLayer()` and `removeLayer()` run §6 through one queue.
-Each FFF2 write, FFF4 read and FFF5 read has a 5 s deadline, and each setup
-lookup or subscription another 5 s. A timed-out write or read, or a roster
-notification wait that expires, closes the link: nothing proves the platform
-cancelled the operation. A caller's `AbortSignal` rejects its promise at once and
-stops the transaction at its next eligibility check, never mid-operation.
+FFF2 accepts only `0x41`, `0x43`, `0x44` and `0x47`; any other command is
+refused with `BleError('unsupported')` before a write. Each FFF2 write, FFF4
+read and FFF5 read has a 5 s deadline, and each setup lookup or subscription
+another 5 s. A timed-out write or read, or a roster notification wait that
+expires, closes the link: nothing proves the platform cancelled the operation.
+An FFF1 notification error also closes the session. The 50 ms and 250 ms
+delays and every deadline run on the injected `BleScheduler`; elapsed time
+for the layer-survival rule uses `performance.now()`.
+
+`rosterState` is the last roster a transaction confirmed. FFF1 roster and
+wall-cleared broadcasts do not update it; `onBroadcast()` delivers them.
+
+The caller's `isEligible` and `assertTargetAvailable` checks run inside the
+queue with no deadline, as in the app adapters. One that never settles holds
+later calls until `disconnect()`.
+
+**Cancellation.** Aborting a layer call's signal rejects the call with
+`BleError('cancelled')` at once. The transaction then sends no mutation it had
+not yet written. If it had already written one (`0x41`, `0x43` or `0x44`), its
+`0x47` read-back still runs under the connection, so `rosterState` shows what
+the wall holds. For the wall, a cancelled call either changed nothing, or made
+the change and confirmed it, or (a replacement cancelled after `0x43`) removed
+the climber's old layer without lighting the new one. The next call starts from
+its own fresh roster; `refreshRoster()` queues behind the read-back.
+
+**Differences from the Boardsesh app adapters** (`quantum-adapter.ts`,
+`quantum-adapter.web.ts` and `QuantumBoardController` in `packages/mobile`):
+
+| Behaviour | This session | App adapters today |
+| --- | --- | --- |
+| FFF1 notification error | Closes the session | Native ignores monitor errors |
+| Roster notification wait expires (3 s) | Closes the link | Native closes it; web does not |
+| Deadlines | 5 s per write, read and setup step | Native: the same 5 s; web: none |
+| FFF4 read times out | Always closes the link | Native stops using FFF4 for that link when it could cancel the read, and closes only when it could not |
+| FFE0 fallback | Only after `service-missing` | After any FFF0 error |
+| Write size | Refuses `maxWriteBytes` below 45 | No floor; Android gives up only when even an MTU 185 request fails |
+| `rosterState` | Confirmed transaction rosters only | `QuantumBoardController` also folds FFF1 rosters and wall-cleared broadcasts into its roster |
+| Caller cancellation | `AbortSignal`, as above | None; `isEligible` turns false only while the link is abandoned |
+| Commands written | `0x41`, `0x43`, `0x44`, `0x47` only | Any frame passed in |
+| Link failures | `BleError` (`disconnected`, `timeout`, `cancelled`) | Plain `Error`, or the machine's `transport-failed` |
+| Transaction delays | The injected scheduler | Global `setTimeout` |
+
+A connector must report the payload sizes the adapters use: Android 182 or more
+after requesting MTU 512, 247 and 185 in turn; iOS `QB_` 512 (acknowledged long
+writes); otherwise the negotiated MTU minus 3; Web Bluetooth 509. Above the
+45-byte floor, an activation longer than the limit is refused as
+`frame-too-large` before any write.
 
 ## 8. Boardsesh limits and transport notes
 

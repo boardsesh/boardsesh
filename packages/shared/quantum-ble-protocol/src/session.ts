@@ -17,6 +17,7 @@ import {
   QUANTUM_DEVICE_NAME_PREFIXES,
   QUANTUM_LEGACY_SERVICE_UUID,
   QUANTUM_METADATA_CHARACTERISTIC_UUID,
+  QUANTUM_MODELS,
   QUANTUM_NOTIFY_CHARACTERISTIC_UUID,
   QUANTUM_SERVICE_UUID,
   QUANTUM_STATE_CHARACTERISTIC_UUID,
@@ -32,6 +33,7 @@ import {
 } from './codec';
 import { QuantumNotificationInbox } from './notifications';
 import {
+  QuantumRosterTransactionError,
   QuantumRosterTransactionMachine,
   assertQuantumWriteEligible,
   type QuantumActivateTransaction,
@@ -48,12 +50,34 @@ import {
 export const QUANTUM_GATT_OPERATION_TIMEOUT_MS = 5_000;
 /** Deadline for each characteristic lookup and for enabling FFF1 notifications. */
 export const QUANTUM_SETUP_OPERATION_TIMEOUT_MS = 5_000;
+/**
+ * Smallest `maxWriteBytes` open() accepts: one activation with a single diode
+ * (43 + 2 bytes), and therefore every removal (20) and route-list request (5).
+ * Activations longer than the link's limit are refused as `frame-too-large`
+ * before any write. Report the native values: Android 182+ after the MTU
+ * 512/247/185 ladder, iOS `QB_` 512, Web Bluetooth 509.
+ */
+export const QUANTUM_MIN_WRITE_BYTES = 45;
+
+/** The only commands layer transactions send. Turn-off-all (0x45), turn-off-by-route
+ * (0x42) and turn-on-all (0x64) affect other climbers' layers and are refused. */
+const QUANTUM_TRANSACTION_COMMANDS: ReadonlySet<number> = new Set([
+  QuantumCommand.ACTIVATE_WALL,
+  QuantumCommand.BOARD_SWIPE,
+  QuantumCommand.TURN_OFF_BY_USER,
+  QuantumCommand.REQUEST_USER_ROUTE_LIST,
+]);
 
 /**
  * A Quantum wall is shared: each player owns at most one coloured layer.
  * `show()` and `clear()` always reject `BleError('unsupported')` without a
  * write, so code holding a generic `BoardBleSession` cannot overwrite or wipe
  * another climber's layer. Use the layer methods instead.
+ *
+ * Aborting a layer call's signal rejects that call with `BleError('cancelled')`
+ * at once. A mutation not yet written is never written. A mutation already
+ * written is still read back, so `rosterState` shows what the wall holds; the
+ * wall may have changed even though the call rejected.
  */
 export interface QuantumBleSession extends BoardBleSession {
   /** FFF5 metadata read during open(). Diode addresses are specific to this model. */
@@ -62,7 +86,11 @@ export interface QuantumBleSession extends BoardBleSession {
   readonly serial: string;
   /** `QB_` controllers take acknowledged writes, `QBB_` controllers unacknowledged writes. */
   readonly writeMode: BleWriteMode;
-  /** Phase of the roster transaction machine and its last confirmed roster. */
+  /**
+   * Phase of the roster transaction machine and the last roster a transaction
+   * confirmed. FFF1 roster and wall-cleared broadcasts do not update it; mirror
+   * those through `onBroadcast()`.
+   */
   readonly rosterState: QuantumRosterMachineState;
   /** Request (0x47) and read back a fresh roster. Sends no mutation. */
   refreshRoster(signal?: AbortSignal): Promise<QuantumRosterSnapshot>;
@@ -75,12 +103,18 @@ export interface QuantumBleSession extends BoardBleSession {
 }
 
 export interface QuantumBleSessionOptions extends BleOpenOptions {
-  /** Refuse, before any roster command, a controller whose FFF5 metadata reports another model. */
-  expectedModelId?: QuantumBoardModelId;
-  /** Roster clock and transaction delays. Defaults to Date.now, performance.now and setTimeout. */
+  /**
+   * The model of the board setup the climber selected. Required: open() refuses
+   * a controller whose FFF5 metadata is missing or reports another model, before
+   * any roster command, because diode addresses differ between models.
+   */
+  expectedModelId: QuantumBoardModelId;
+  /** Roster clock and transaction delays. Defaults to the session scheduler, with performance.now for elapsed time. */
   time?: QuantumTime;
   machine?: QuantumRosterMachineOptions;
 }
+
+export type QuantumBleProtocolOptions = Omit<QuantumBleSessionOptions, keyof BleOpenOptions>;
 
 /** The selected setup and the physical controller disagree. Never send diode
  * addresses from the selected setup when this is thrown. */
@@ -116,6 +150,13 @@ const QUANTUM_CAPABILITIES: BoardBleCapabilities = Object.freeze({
   readback: true,
 });
 
+/** One layer call's cancellation state, shared with the roster transport. */
+export type QuantumTransactionScope = {
+  readonly signal: AbortSignal;
+  /** Set once a mutation frame has been submitted; its read-back then survives cancellation. */
+  mutationWritten: boolean;
+};
+
 export interface QuantumRosterTransportOptions {
   write: BleCharacteristic;
   state: ReadableBleCharacteristic;
@@ -125,15 +166,18 @@ export interface QuantumRosterTransportOptions {
   inbox: QuantumNotificationInbox;
   /** Supplies the connection lifetime, the scheduler and teardown on an uncertain link. */
   runtime: BleSessionRuntime;
+  /** The layer call in progress. Once its signal aborts, only read-backs of an already written mutation are sent. */
+  currentTransaction?: () => QuantumTransactionScope | undefined;
 }
 
 /**
  * Adapts raw ble-core characteristics to the transaction machine's transport.
  * Platform operations run under the connection lifetime, not a caller's
- * signal: a cancelled transaction stops at the machine's next eligibility
- * check, never in the middle of a GATT operation. A timed-out write, read or
- * roster notification retires the link, because nothing proves the platform
- * cancelled it.
+ * signal, so a caller never abandons a GATT operation midway. A cancelled layer
+ * call sends no further mutation but keeps the read-back of one already
+ * written. Only the commands layer transactions use are accepted. A timed-out
+ * write, read or roster notification retires the link, because nothing proves
+ * the platform cancelled it.
  */
 export function createQuantumRosterTransport({
   write,
@@ -142,6 +186,7 @@ export function createQuantumRosterTransport({
   maximumWriteBytes,
   inbox,
   runtime,
+  currentTransaction,
 }: QuantumRosterTransportOptions): QuantumRosterTransport {
   const lifetime = runtime.signal;
   const scheduler = runtime.scheduler;
@@ -154,23 +199,42 @@ export function createQuantumRosterTransport({
   return {
     maximumWriteBytes,
     writeFrame(frame, isEligible, beforeWrite) {
+      if (frame[0] !== 1 || !QUANTUM_TRANSACTION_COMMANDS.has(frame[1])) {
+        return Promise.reject(new BleError('unsupported', 'Layer transactions never send this Quantum command'));
+      }
       if (frame.length === 0 || frame.length > maximumWriteBytes) {
         return Promise.reject(
           new Error(`Quantum frame needs ${frame.length} atomic bytes; transport allows ${maximumWriteBytes}`),
         );
       }
       const payload = frame.slice();
+      const isRosterRequest = payload[1] === QuantumCommand.REQUEST_USER_ROUTE_LIST;
+      const transaction = currentTransaction?.();
+      const assertNotCancelled = () => {
+        // A cancelled call still reads back a mutation it already sent, so the
+        // wall's state is known; it never sends anything else.
+        if (transaction?.signal.aborted && (!isRosterRequest || !transaction.mutationWritten)) {
+          throw new QuantumRosterTransactionError(
+            'operation-cancelled',
+            'Quantum layer call was cancelled before this command was written',
+          );
+        }
+      };
       return (async () => {
         throwIfAborted(lifetime);
+        assertNotCancelled();
         assertQuantumWriteEligible(isEligible);
         if (beforeWrite) {
           await beforeWrite();
           throwIfAborted(lifetime);
+          assertNotCancelled();
           assertQuantumWriteEligible(isEligible);
         }
+        // Once submitted, a mutation may reach the wall even if the write fails.
+        if (!isRosterRequest && transaction) transaction.mutationWritten = true;
         // Mark immediately before the request: a delayed notification from an
         // earlier command cannot cross this freshness floor.
-        if (payload[1] === QuantumCommand.REQUEST_USER_ROUTE_LIST) inbox.markRosterRequest();
+        if (isRosterRequest) inbox.markRosterRequest();
         else inbox.markMutation();
         try {
           await bounded(
@@ -203,6 +267,25 @@ export function createQuantumRosterTransport({
       return frame;
     },
   };
+}
+
+/** Transaction delays follow the injected scheduler. BleScheduler has no
+ * monotonic clock, so elapsed-time checks keep performance.now(). */
+function schedulerTime(scheduler: BleScheduler): QuantumTime {
+  return {
+    now: () => scheduler.now(),
+    monotonicNow: () => performance.now(),
+    sleep: (milliseconds) =>
+      new Promise<void>((resolve) => {
+        scheduler.setTimeout(resolve, milliseconds);
+      }),
+  };
+}
+
+function assertKnownModel(modelId: QuantumBoardModelId): void {
+  if (!QUANTUM_MODELS.some((model) => model.id === modelId)) {
+    throw new RangeError('expectedModelId must be a Quantum model id');
+  }
 }
 
 function snapshotPlayers<Player extends object>(players: readonly Player[] | undefined): Player[] | undefined {
@@ -277,8 +360,9 @@ async function openQuantumBleSession(
     },
     scheduler,
   );
+  // A caller cancelling the connect sees a cancellation, not a lost connection.
   const abortOpen = () => {
-    void runtime.disconnect().catch(() => undefined);
+    void runtime.disconnect(new BleError('cancelled')).catch(() => undefined);
   };
   options.signal?.addEventListener('abort', abortOpen, { once: true });
   if (options.signal?.aborted) abortOpen();
@@ -287,8 +371,15 @@ async function openQuantumBleSession(
   };
   try {
     throwIfAborted(runtime.signal);
+    assertKnownModel(options.expectedModelId);
     if (!Number.isSafeInteger(transport.maxWriteBytes) || transport.maxWriteBytes < 1) {
       throw new BleError('invalid-input', 'maxWriteBytes must be a positive integer');
+    }
+    if (transport.maxWriteBytes < QUANTUM_MIN_WRITE_BYTES) {
+      throw new BleError(
+        'unsupported',
+        `Quantum needs ${QUANTUM_MIN_WRITE_BYTES}-byte writes; negotiate a larger MTU before opening`,
+      );
     }
     const deviceName = transport.deviceName;
     const serial = parseQuantumDeviceSerial(deviceName);
@@ -314,10 +405,9 @@ async function openQuantumBleSession(
     );
     throwIfAborted(runtime.signal);
     const metadata = parseQuantumControllerMetadata(metadataBytes);
-    if (options.expectedModelId !== undefined && metadata?.model.id !== options.expectedModelId) {
+    if (!metadata || metadata.model.id !== options.expectedModelId) {
       throw new QuantumControllerModelMismatchError(options.expectedModelId, metadata?.model.id);
     }
-    if (!metadata) throw new BleError('unsupported', 'Quantum controller metadata is missing or invalid');
     const controller = Object.freeze({ ...metadata });
 
     // Enable FFF1 notifications before the first roster command can be written.
@@ -344,6 +434,7 @@ async function openQuantumBleSession(
     unsubscribe = await bounded(subscribing, runtime.signal, QUANTUM_SETUP_OPERATION_TIMEOUT_MS, scheduler);
     throwIfAborted(runtime.signal);
 
+    let activeTransaction: QuantumTransactionScope | undefined;
     const machine = new QuantumRosterTransactionMachine(
       createQuantumRosterTransport({
         write: characteristics.write,
@@ -352,16 +443,30 @@ async function openQuantumBleSession(
         maximumWriteBytes: transport.maxWriteBytes,
         inbox,
         runtime,
+        currentTransaction: () => activeTransaction,
       }),
-      options.time,
+      options.time ?? schedulerTime(scheduler),
       options.machine,
     );
-    // The caller's signal and the connection lifetime join every eligibility
-    // check, so cancellation stops a transaction before its next physical mutation.
+    // The machine's eligibility follows the connection, not the caller's signal:
+    // a cancelled call must still read back a mutation it already wrote. The
+    // roster transport applies the caller's signal to unsent frames instead.
     const eligibility =
-      (operationSignal: AbortSignal, callerEligibility?: QuantumWriteEligibility): QuantumWriteEligibility =>
+      (callerEligibility?: QuantumWriteEligibility): QuantumWriteEligibility =>
       () =>
-        !operationSignal.aborted && (callerEligibility?.() ?? true);
+        !runtime.signal.aborted && (callerEligibility?.() ?? true);
+    // One layer call at a time; the runtime queue waits for a cancelled call's
+    // read-back before the next call reads its own fresh roster.
+    const runTransaction = <Result>(work: () => Promise<Result>, callerSignal?: AbortSignal) =>
+      runtime.run(async (operationSignal) => {
+        const transaction: QuantumTransactionScope = { signal: operationSignal, mutationWritten: false };
+        activeTransaction = transaction;
+        try {
+          return await work();
+        } finally {
+          if (activeTransaction === transaction) activeTransaction = undefined;
+        }
+      }, callerSignal);
 
     return {
       capabilities: QUANTUM_CAPABILITIES,
@@ -372,7 +477,7 @@ async function openQuantumBleSession(
         return machine.state;
       },
       refreshRoster(signal) {
-        return runtime.run((operationSignal) => machine.refresh(eligibility(operationSignal)), signal);
+        return runTransaction(() => machine.refresh(eligibility()), signal);
       },
       activateLayer(request, signal) {
         let snapshot: QuantumActivateTransaction;
@@ -386,9 +491,8 @@ async function openQuantumBleSession(
         } catch (error) {
           return Promise.reject(error);
         }
-        return runtime.run(
-          (operationSignal) =>
-            machine.activate({ ...snapshot, isEligible: eligibility(operationSignal, snapshot.isEligible) }),
+        return runTransaction(
+          () => machine.activate({ ...snapshot, isEligible: eligibility(snapshot.isEligible) }),
           signal,
         );
       },
@@ -399,9 +503,8 @@ async function openQuantumBleSession(
         } catch (error) {
           return Promise.reject(error);
         }
-        return runtime.run(
-          (operationSignal) =>
-            machine.remove({ ...snapshot, isEligible: eligibility(operationSignal, snapshot.isEligible) }),
+        return runTransaction(
+          () => machine.remove({ ...snapshot, isEligible: eligibility(snapshot.isEligible) }),
           signal,
         );
       },
@@ -427,16 +530,17 @@ async function openQuantumBleSession(
     };
   } catch (error) {
     await runtime.disconnect().catch(() => undefined);
+    if (options.signal?.aborted) throw new BleError('cancelled');
     throw error;
   } finally {
     options.signal?.removeEventListener('abort', abortOpen);
   }
 }
 
-export function createQuantumBleProtocol(
-  options: Omit<QuantumBleSessionOptions, keyof BleOpenOptions> = {},
-): BoardBleProtocol<QuantumBleSession> {
-  const configuration: Omit<QuantumBleSessionOptions, keyof BleOpenOptions> = {
+/** `expectedModelId` is required: there is no way to open a session without the model check. */
+export function createQuantumBleProtocol(options: QuantumBleProtocolOptions): BoardBleProtocol<QuantumBleSession> {
+  assertKnownModel(options.expectedModelId);
+  const configuration: QuantumBleProtocolOptions = {
     ...options,
     machine: options.machine ? { ...options.machine } : undefined,
   };
@@ -450,6 +554,12 @@ export function createQuantumBleProtocol(
       optionalServiceUuids: [QUANTUM_SERVICE_UUID, QUANTUM_LEGACY_SERVICE_UUID],
       namePrefixes: QUANTUM_DEVICE_NAME_PREFIXES,
     },
-    open: (transport, openOptions = {}) => openQuantumBleSession(transport, { ...configuration, ...openOptions }),
+    // Only the signal and scheduler come from open(): the model check cannot be overridden there.
+    open: (transport, openOptions = {}) =>
+      openQuantumBleSession(transport, {
+        ...configuration,
+        signal: openOptions.signal,
+        scheduler: openOptions.scheduler,
+      }),
   };
 }
